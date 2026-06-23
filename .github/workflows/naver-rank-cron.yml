@@ -13,4 +13,5 @@ jobs:
       - name: Refresh due Naver rank trackers
         run: |
           curl --fail --show-error --silent \
+            -H "Authorization: Bearer ${{ secrets.MI_RANK_CRON_SECRET }}" \
             "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=20"

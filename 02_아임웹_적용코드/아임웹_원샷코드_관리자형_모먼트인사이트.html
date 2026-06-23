@@ -1369,78 +1369,179 @@
       text-align: center;
     }
 
-    #mi-admin .mi-ratio-block {
+    #mi-admin .mi-ratio-card {
+      position: relative;
+      overflow: visible;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 20px;
+      padding: 22px;
       background: #fff;
     }
 
-    #mi-admin .mi-ratio-block strong {
-      display: block;
-      margin-bottom: 14px;
+    #mi-admin .mi-ratio-card.is-wide {
+      grid-column: 1 / -1;
+    }
+
+    #mi-admin .mi-ratio-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 18px;
       color: var(--mi-navy);
-      font-size: 18px;
+      font-size: 20px;
+      font-weight: 950;
       letter-spacing: -0.02em;
     }
 
-    #mi-admin .mi-ratio-stack {
-      display: flex;
-      min-height: 30px;
-      overflow: hidden;
-      border-radius: 8px;
-      background: #e5e7eb;
-    }
-
-    #mi-admin .mi-ratio-stack span {
-      display: flex;
+    #mi-admin .mi-ratio-help {
+      display: inline-flex;
+      width: 20px;
+      height: 20px;
       align-items: center;
-      padding: 0 10px;
-      color: #fff;
+      justify-content: center;
+      border: 1px solid #cbd5e1;
+      border-radius: 999px;
+      color: #64748b;
       font-size: 12px;
       font-weight: 950;
+    }
+
+    #mi-admin .mi-ratio-chart {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(var(--ratio-cols, 7), minmax(0, 1fr));
+      gap: 13px;
+      align-items: end;
+      min-height: 230px;
+      border-left: 1px solid #d9dee7;
+      border-bottom: 1px solid #b8bec8;
+      padding: 28px 0 0 44px;
+      background:
+        linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), #e7eaf0 calc(25% - 1px), #e7eaf0 25%, transparent 25%, transparent calc(50% - 1px), #e7eaf0 calc(50% - 1px), #e7eaf0 50%, transparent 50%, transparent calc(75% - 1px), #e7eaf0 calc(75% - 1px), #e7eaf0 75%, transparent 75%);
+    }
+
+    #mi-admin .mi-ratio-axis {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 42px;
+      pointer-events: none;
+    }
+
+    #mi-admin .mi-ratio-axis span {
+      position: absolute;
+      right: 8px;
+      transform: translateY(-50%);
+      color: #8b8f97;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1;
+    }
+
+    #mi-admin .mi-ratio-bars {
+      display: contents;
+    }
+
+    #mi-admin .mi-ratio-column {
+      position: relative;
+      display: grid;
+      min-height: 202px;
+      align-items: end;
+      justify-items: center;
+      color: #7a8494;
+      font-size: 13px;
+      font-weight: 850;
+      text-align: center;
+      cursor: default;
+    }
+
+    #mi-admin .mi-ratio-column i {
+      display: block;
+      width: 72%;
+      min-height: 4px;
+      border-radius: 2px 2px 0 0;
+      background: #94c3f2;
+      transition: background 0.16s ease, transform 0.16s ease;
+    }
+
+    #mi-admin .mi-ratio-column.is-peak i,
+    #mi-admin .mi-ratio-column:hover i,
+    #mi-admin .mi-ratio-column.is-hover i {
+      background: #4ca4e8;
+      transform: translateY(-2px);
+    }
+
+    #mi-admin .mi-ratio-column b {
+      display: block;
+      margin-top: 12px;
+      color: #808793;
+      font-size: 14px;
+      font-weight: 900;
+      line-height: 1.15;
       white-space: nowrap;
     }
 
-    #mi-admin .mi-ratio-primary {
-      background: #1167d8;
-    }
-
-    #mi-admin .mi-ratio-secondary {
-      justify-content: flex-end;
-      background: var(--mi-navy);
-    }
-
-    #mi-admin .mi-bar-row {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 14px;
-      align-items: end;
-      min-height: 156px;
-    }
-
-    #mi-admin .mi-bar {
-      display: grid;
-      align-items: end;
-      gap: 6px;
-      height: 100%;
-      color: var(--mi-muted);
-      font-size: 15px;
+    #mi-admin .mi-ratio-pop {
+      position: absolute;
+      z-index: 8;
+      left: 50%;
+      bottom: calc(var(--ratio-height, 20%) + 42px);
+      transform: translateX(-50%) translateY(8px);
+      min-width: 126px;
+      border-radius: 6px;
+      padding: 9px 11px;
+      color: #fff;
+      background: rgba(20, 20, 20, 0.9);
+      box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+      font-size: 12px;
+      font-style: normal;
       font-weight: 850;
-      text-align: center;
+      line-height: 1.45;
+      opacity: 0;
+      pointer-events: none;
+      text-align: left;
+      white-space: nowrap;
+      transition: opacity 0.12s ease, transform 0.12s ease;
     }
 
-    #mi-admin .mi-bar i {
+    #mi-admin .mi-ratio-pop:after {
+      position: absolute;
+      left: 50%;
+      bottom: -6px;
+      width: 12px;
+      height: 12px;
+      transform: translateX(-50%) rotate(45deg);
+      background: rgba(20, 20, 20, 0.9);
+      content: "";
+    }
+
+    #mi-admin .mi-ratio-pop strong {
       display: block;
-      width: 100%;
-      min-height: 12px;
-      border-radius: 8px 8px 0 0;
-      background: #a8cff4;
+      margin-bottom: 4px;
+      color: #fff;
+      font-size: 13px;
     }
 
-    #mi-admin .mi-week-row {
-      grid-template-columns: repeat(7, minmax(0, 1fr));
-      min-height: 142px;
+    #mi-admin .mi-ratio-pop span {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    #mi-admin .mi-ratio-pop span:before {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #fff;
+      background: #58a9ee;
+      content: "";
+    }
+
+    #mi-admin .mi-ratio-column:hover .mi-ratio-pop,
+    #mi-admin .mi-ratio-column.is-hover .mi-ratio-pop {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
     }
 
     #mi-admin .mi-channel-inputs {
@@ -2327,36 +2428,17 @@
             </div>
 
             <aside class="mi-keyword-side">
-              <div class="mi-ratio-block">
-                <strong>기기별 클릭 비율</strong>
-                <div class="mi-ratio-stack"><span class="mi-ratio-primary" data-keyword-device-mobile style="width:85%;">모바일 85%</span><span class="mi-ratio-secondary" data-keyword-device-pc style="width:15%;">PC 15%</span></div>
+              <div class="mi-ratio-card">
+                <div class="mi-ratio-title">월별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-chart" data-keyword-ratio-chart="month" style="--ratio-cols:12;"></div>
               </div>
-              <div class="mi-ratio-block">
-                <strong>성별 클릭 비율</strong>
-                <div class="mi-ratio-stack"><span class="mi-ratio-primary" data-keyword-gender-female style="width:79%;">여성 79%</span><span class="mi-ratio-secondary" data-keyword-gender-male style="width:21%;">남성 21%</span></div>
+              <div class="mi-ratio-card">
+                <div class="mi-ratio-title">요일별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-chart" data-keyword-ratio-chart="week" style="--ratio-cols:7;"></div>
               </div>
-              <div class="mi-ratio-block">
-                <strong>연령별 클릭 비율</strong>
-                <div class="mi-bar-row">
-                  <span class="mi-bar"><i data-keyword-age-bar="0" style="height:18%;"></i>10대</span>
-                  <span class="mi-bar"><i data-keyword-age-bar="1" style="height:28%;"></i>20대</span>
-                  <span class="mi-bar"><i data-keyword-age-bar="2" style="height:58%;"></i>30대</span>
-                  <span class="mi-bar"><i data-keyword-age-bar="3" style="height:84%;"></i>40대</span>
-                  <span class="mi-bar"><i data-keyword-age-bar="4" style="height:70%;"></i>50대</span>
-                  <span class="mi-bar"><i data-keyword-age-bar="5" style="height:36%;"></i>60대</span>
-                </div>
-              </div>
-              <div class="mi-ratio-block">
-                <strong>요일별 클릭 비율</strong>
-                <div class="mi-bar-row mi-week-row">
-                  <span class="mi-bar"><i data-keyword-week-bar="0" style="height:82%;"></i>월</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="1" style="height:88%;"></i>화</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="2" style="height:86%;"></i>수</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="3" style="height:79%;"></i>목</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="4" style="height:74%;"></i>금</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="5" style="height:66%;"></i>토</span>
-                  <span class="mi-bar"><i data-keyword-week-bar="6" style="height:76%;"></i>일</span>
-                </div>
+              <div class="mi-ratio-card is-wide">
+                <div class="mi-ratio-title">연령별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-chart" data-keyword-ratio-chart="age" style="--ratio-cols:5;"></div>
               </div>
             </aside>
           </article>
@@ -3264,8 +3346,8 @@
         }).join("");
       }
 
-      function rangeSeries(keyword, data) {
-        var count = keywordRangeMonths[keywordRange] || 12;
+      function rangeSeries(keyword, data, countOverride) {
+        var count = countOverride || keywordRangeMonths[keywordRange] || 12;
         var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : makeKeywordSeries(data.volume);
         if (source.length >= count) return source.slice(source.length - count);
 
@@ -3281,17 +3363,57 @@
         return values;
       }
 
-      function setRatio(selector, label, value) {
-        var node = root.querySelector(selector);
-        if (!node) return;
-        node.style.width = Math.max(6, Number(value || 0)) + "%";
-        node.textContent = label + " " + Math.round(Number(value || 0)) + "%";
+      function normalizePercentValues(values) {
+        var source = values.map(function (value) {
+          return Math.max(0, Number(value || 0));
+        });
+        var total = source.reduce(function (sum, value) {
+          return sum + value;
+        }, 0);
+        if (!total) {
+          var even = Math.round((100 / Math.max(1, source.length)) * 10) / 10;
+          return source.map(function () { return even; });
+        }
+        return source.map(function (value) {
+          return Math.round((value / total) * 1000) / 10;
+        });
       }
 
-      function setBars(selector, values) {
-        root.querySelectorAll(selector).forEach(function (node) {
-          var index = Number(node.getAttribute(selector.indexOf("age") > -1 ? "data-keyword-age-bar" : "data-keyword-week-bar"));
-          node.style.height = Math.max(10, Number(values[index] || 0)) + "%";
+      function ratioAxisMax(values, minimum) {
+        var max = Math.max.apply(null, values.concat([minimum || 20]));
+        return Math.max(minimum || 20, Math.ceil(max / 10) * 10);
+      }
+
+      function formatRatioPercent(value) {
+        return (Math.round(Number(value || 0) * 10) / 10).toFixed(1) + "%";
+      }
+
+      function renderRatioChart(type, labels, rawValues, minimumAxis) {
+        var chart = root.querySelector('[data-keyword-ratio-chart="' + type + '"]');
+        if (!chart) return;
+        var values = normalizePercentValues(rawValues);
+        var axisMax = ratioAxisMax(values, minimumAxis);
+        var step = axisMax <= 20 ? 5 : 10;
+        var ticks = [];
+        for (var tick = axisMax; tick >= 0; tick -= step) ticks.push(tick);
+        if (ticks[ticks.length - 1] !== 0) ticks.push(0);
+        var peak = Math.max.apply(null, values);
+        chart.style.setProperty("--ratio-cols", labels.length);
+        chart.innerHTML = '<div class="mi-ratio-axis">' + ticks.map(function (value) {
+          var top = axisMax ? ((axisMax - value) / axisMax) * 100 : 100;
+          return '<span style="top:' + top.toFixed(2) + '%;">' + value + '%</span>';
+        }).join("") + '</div><div class="mi-ratio-bars">' + labels.map(function (label, index) {
+          var value = values[index] || 0;
+          var height = axisMax ? Math.max(3, (value / axisMax) * 100) : 3;
+          var isPeak = value === peak ? " is-peak" : "";
+          return '<span class="mi-ratio-column' + isPeak + '" style="--ratio-height:' + height.toFixed(2) + '%;">' +
+            '<em class="mi-ratio-pop"><strong>' + escapeHtml(label) + '</strong><span>검색 비율: ' + formatRatioPercent(value) + '</span></em>' +
+            '<i style="height:' + height.toFixed(2) + '%;"></i><b>' + escapeHtml(label) + '</b></span>';
+        }).join("") + '</div>';
+        chart.querySelectorAll(".mi-ratio-column").forEach(function (column) {
+          column.addEventListener("mouseenter", function () { column.classList.add("is-hover"); });
+          column.addEventListener("mousemove", function () { column.classList.add("is-hover"); });
+          column.addEventListener("mouseleave", function () { column.classList.remove("is-hover"); });
         });
       }
 
@@ -3680,12 +3802,18 @@
         renderKeywordMarket(items);
         renderKeywordMonths(labels);
         renderKeywordYAxis(chartMax);
-        setRatio("[data-keyword-device-mobile]", "모바일", profile.device.mobile);
-        setRatio("[data-keyword-device-pc]", "PC", profile.device.pc);
-        setRatio("[data-keyword-gender-female]", "여성", profile.gender.female);
-        setRatio("[data-keyword-gender-male]", "남성", profile.gender.male);
-        setBars("[data-keyword-age-bar]", profile.age);
-        setBars("[data-keyword-week-bar]", profile.week);
+        var monthLabels = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
+        var monthSeries = rangeSeries(items[0].keyword, items[0].data, 12);
+        var ageValues = [
+          Number(profile.age[0] || 0),
+          Number(profile.age[1] || 0),
+          Number(profile.age[2] || 0),
+          Number(profile.age[3] || 0),
+          Number(profile.age[4] || 0) + Number(profile.age[5] || 0)
+        ];
+        renderRatioChart("month", monthLabels, monthSeries, 30);
+        renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
+        renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
       }
 
       function getKeywordApiUrl() {

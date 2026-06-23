@@ -960,7 +960,7 @@
 
     #mi-admin .mi-keyword-chart {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 230px;
+      grid-template-columns: minmax(0, 1fr);
       gap: 0;
       overflow: hidden;
       margin-bottom: 16px;
@@ -972,37 +972,38 @@
     }
 
     #mi-admin .mi-keyword-main {
-      border-right: 1px solid var(--mi-line);
+      border-right: 0;
+      border-bottom: 1px solid var(--mi-line);
     }
 
     #mi-admin .mi-keyword-side {
       display: grid;
-      gap: 17px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
       background: #fbfcfd;
     }
 
     #mi-admin .mi-keyword-market {
       margin-bottom: 16px;
-      padding: 0;
-      overflow: hidden;
+      padding: 22px;
     }
 
     #mi-admin .mi-market-head,
     #mi-admin .mi-market-body {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 280px;
-      gap: 0;
+      grid-template-columns: 1fr;
+      gap: 14px;
     }
 
     #mi-admin .mi-market-title,
     #mi-admin .mi-market-related,
     #mi-admin .mi-market-section {
-      padding: 20px 22px;
+      padding: 0;
     }
 
     #mi-admin .mi-market-title {
-      border-right: 1px solid var(--mi-line);
-      border-bottom: 1px solid var(--mi-line);
+      border-right: 0;
+      border-bottom: 0;
     }
 
     #mi-admin .mi-market-title h3 {
@@ -1015,7 +1016,7 @@
     #mi-admin .mi-market-title p {
       margin: 0;
       color: var(--mi-muted);
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 800;
       line-height: 1.5;
     }
@@ -1023,7 +1024,7 @@
     #mi-admin .mi-market-kpis {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 10px;
+      gap: 12px;
       margin-top: 16px;
     }
 
@@ -1031,7 +1032,7 @@
     #mi-admin .mi-market-metric {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 12px;
+      padding: 16px;
       background: #fff;
     }
 
@@ -1048,7 +1049,7 @@
       display: block;
       margin-top: 5px;
       color: var(--mi-navy);
-      font-size: 22px;
+      font-size: 26px;
       font-weight: 950;
       letter-spacing: -0.02em;
     }
@@ -1064,20 +1065,46 @@
     }
 
     #mi-admin .mi-market-related {
-      border-bottom: 1px solid var(--mi-line);
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
       background: #fbfcfd;
     }
 
     #mi-admin .mi-market-related h3 {
-      margin: 0 0 12px;
+      margin: 0;
       color: var(--mi-navy);
       font-size: 18px;
+    }
+
+    #mi-admin .mi-related-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    #mi-admin .mi-related-more,
+    #mi-admin .mi-link-button {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 0 12px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      text-decoration: none;
     }
 
     #mi-admin .mi-related-table {
       display: grid;
       gap: 0;
-      font-size: 12px;
+      font-size: 13px;
     }
 
     #mi-admin .mi-related-table div {
@@ -1085,7 +1112,7 @@
       grid-template-columns: minmax(0, 1fr) 74px 72px;
       gap: 8px;
       align-items: center;
-      padding: 9px 0;
+      padding: 10px 0;
       border-bottom: 1px solid rgba(226, 232, 240, 0.9);
       color: var(--mi-navy);
       font-weight: 850;
@@ -1101,13 +1128,55 @@
     }
 
     #mi-admin .mi-market-section:first-child {
-      border-right: 1px solid var(--mi-line);
+      border-right: 0;
     }
 
     #mi-admin .mi-market-metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
+      gap: 12px;
+    }
+
+    #mi-admin .mi-market-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-market-actions .mi-row {
+      display: grid;
+      gap: 6px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-market-actions .mi-row span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-market-actions .mi-row strong {
+      color: var(--mi-navy);
+      font-size: 15px;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-related-page-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 16px;
+    }
+
+    #mi-admin .mi-related-large {
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-related-large div {
+      grid-template-columns: minmax(0, 1.2fr) 110px 110px 120px;
+      padding: 13px 0;
     }
 
     #mi-admin .mi-grade {
@@ -1300,27 +1369,35 @@
       text-align: center;
     }
 
+    #mi-admin .mi-ratio-block {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 20px;
+      background: #fff;
+    }
+
     #mi-admin .mi-ratio-block strong {
       display: block;
-      margin-bottom: 6px;
+      margin-bottom: 14px;
       color: var(--mi-navy);
-      font-size: 13px;
+      font-size: 18px;
+      letter-spacing: -0.02em;
     }
 
     #mi-admin .mi-ratio-stack {
       display: flex;
-      min-height: 18px;
+      min-height: 30px;
       overflow: hidden;
-      border-radius: 4px;
+      border-radius: 8px;
       background: #e5e7eb;
     }
 
     #mi-admin .mi-ratio-stack span {
       display: flex;
       align-items: center;
-      padding: 0 5px;
+      padding: 0 10px;
       color: #fff;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 950;
       white-space: nowrap;
     }
@@ -1337,9 +1414,9 @@
     #mi-admin .mi-bar-row {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
-      gap: 8px;
+      gap: 14px;
       align-items: end;
-      min-height: 106px;
+      min-height: 156px;
     }
 
     #mi-admin .mi-bar {
@@ -1348,7 +1425,7 @@
       gap: 6px;
       height: 100%;
       color: var(--mi-muted);
-      font-size: 11px;
+      font-size: 15px;
       font-weight: 850;
       text-align: center;
     }
@@ -1357,13 +1434,13 @@
       display: block;
       width: 100%;
       min-height: 12px;
-      border-radius: 4px 4px 0 0;
+      border-radius: 8px 8px 0 0;
       background: #a8cff4;
     }
 
     #mi-admin .mi-week-row {
       grid-template-columns: repeat(7, minmax(0, 1fr));
-      min-height: 82px;
+      min-height: 142px;
     }
 
     #mi-admin .mi-channel-inputs {
@@ -1549,9 +1626,17 @@
 
       #mi-admin .mi-market-head,
       #mi-admin .mi-market-body,
-      #mi-admin .mi-market-kpis,
-      #mi-admin .mi-market-metrics {
+      #mi-admin .mi-related-page-grid {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-market-kpis,
+      #mi-admin .mi-market-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      #mi-admin .mi-market-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       #mi-admin .mi-market-title,
@@ -1562,6 +1647,10 @@
       #mi-admin .mi-keyword-main {
         border-right: 0;
         border-bottom: 1px solid var(--mi-line);
+      }
+
+      #mi-admin .mi-keyword-side {
+        grid-template-columns: 1fr;
       }
     }
 
@@ -1580,6 +1669,13 @@
       #mi-admin h1,
       #mi-admin .mi-login h1 {
         font-size: 25px;
+      }
+
+      #mi-admin .mi-market-kpis,
+      #mi-admin .mi-market-metrics,
+      #mi-admin .mi-market-actions,
+      #mi-admin .mi-keyword-side {
+        grid-template-columns: 1fr;
       }
     }
   </style>
@@ -2155,7 +2251,10 @@
                 </div>
               </div>
               <aside class="mi-market-related">
-                <h3>연관 키워드</h3>
+                <div class="mi-related-head">
+                  <h3>연관 키워드 미리보기</h3>
+                  <a class="mi-related-more" href="#mi-admin-related-keywords" data-mi-admin-screen="related-keywords">더보기</a>
+                </div>
                 <div class="mi-related-table" data-keyword-related>
                   <div><span>키워드</span><span>검색수</span><span>상품수</span></div>
                   <div><span>냉감패드</span><span>162,400</span><span>378,612</span></div>
@@ -2174,7 +2273,7 @@
                 </div>
               </div>
               <div class="mi-market-section">
-                <div class="mi-table">
+                <div class="mi-market-actions">
                   <div class="mi-row"><span>네이버 상품지표</span><strong data-keyword-market-naver>보통 · 상품수 대비 검색수 확인</strong></div>
                   <div class="mi-row"><span>광고지표</span><strong data-keyword-market-ad>CTR/CPC 확인 후 광고 문구 테스트</strong></div>
                   <div class="mi-row"><span>추천 액션</span><strong data-keyword-market-action>SEO 후보로 등록 후 콘텐츠 제목에 반영</strong></div>
@@ -2278,6 +2377,42 @@
                 <div class="mi-row"><span>네이버 SEO</span><strong>블로그/상세페이지 제목 후보</strong></div>
                 <div class="mi-row"><span>쿠팡 SEO</span><strong>상품명·검색어·광고 키워드 후보</strong></div>
                 <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>40대 여성 클릭 비중 중심으로 메시지 설계</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="related-keywords" id="mi-admin-related-keywords">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">키워드 확장</span>
+              <h1>연관 키워드를 넓게 확인합니다.</h1>
+              <p>검색수, 상품수, 경쟁강도를 보고 콘텐츠와 광고 후보를 분류합니다.</p>
+            </div>
+            <a class="mi-link-button" href="#mi-admin-keyword" data-mi-admin-screen="keyword">차트로 돌아가기</a>
+          </header>
+
+          <div class="mi-related-page-grid">
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2 data-keyword-related-title>냉감 패드 연관 키워드</h2>
+                  <p>네이버 검색 기반 연관어를 운영 후보로 정리합니다.</p>
+                </div>
+                <span class="mi-badge">확장 리스트</span>
+              </div>
+              <div class="mi-related-table mi-related-large" data-keyword-related-full>
+                <div><span>키워드</span><span>검색수</span><span>상품수</span><span>판단</span></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>분류 기준</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>상위 후보</span><strong>검색수 높고 상품수 낮음</strong></div>
+                <div class="mi-row"><span>광고 후보</span><strong>검색수 높고 경쟁도 중간</strong></div>
+                <div class="mi-row"><span>콘텐츠 후보</span><strong>롱테일·질문형 키워드</strong></div>
+                <div class="mi-row"><span>보류</span><strong>상품수 과다·검색수 낮음</strong></div>
               </div>
             </aside>
           </div>
@@ -3257,7 +3392,16 @@
             "벽걸이 " + keyword,
             keyword + " 추천",
             "미니 " + keyword,
-            "BLDC " + keyword
+            "BLDC " + keyword,
+            "가성비 " + keyword,
+            "프리미엄 " + keyword,
+            "소형 " + keyword,
+            "무소음 " + keyword,
+            "여름 " + keyword,
+            keyword + " 비교",
+            keyword + " 후기",
+            keyword + " 순위",
+            keyword + " 브랜드"
           ]);
         }
         var list = [keyword].concat(related).filter(Boolean);
@@ -3267,7 +3411,7 @@
           if (!key || seen[key]) return false;
           seen[key] = true;
           return true;
-        }).slice(0, 8);
+        }).slice(0, 24);
       }
 
       function estimateKeywordMarket(item) {
@@ -3317,6 +3461,8 @@
         var ad = root.querySelector("[data-keyword-market-ad]");
         var action = root.querySelector("[data-keyword-market-action]");
         var relatedNode = root.querySelector("[data-keyword-related]");
+        var relatedFullNode = root.querySelector("[data-keyword-related-full]");
+        var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
         if (path) path.textContent = "네이버 검색 > " + market.keyword + " 지면 기준으로 시장성, 경쟁도, 연관 키워드를 정리합니다.";
@@ -3335,15 +3481,32 @@
         if (ad) ad.textContent = market.comp + " 경쟁도 · CTR/CPC 확인 후 소재 테스트";
         if (action) action.textContent = market.action;
 
-        if (relatedNode) {
-          var related = makeRelatedKeywords(item);
-          relatedNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span></div>' + related.map(function (name, index) {
+        var related = makeRelatedKeywords(item);
+        function relatedRow(name, index, isFull) {
             var seed = hashKeyword(name);
             var ratio = index === 0 ? 1 : (0.18 + ((seed + index * 7) % 70) / 100);
             var relatedVolume = Math.max(120, Math.round(market.volume * ratio));
             var relatedProducts = Math.max(800, Math.round(market.products * (0.22 + ((seed + index * 5) % 95) / 100)));
-            return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span></div>';
+            var relatedScore = relatedProducts / Math.max(1, relatedVolume);
+            var grade = keywordGrade(relatedScore);
+            if (!isFull) {
+              return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span></div>';
+            }
+            return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span><span><i class="mi-grade' + (grade.className ? " " + grade.className : "") + '">' + grade.label + '</i></span></div>';
+        }
+
+        if (relatedNode) {
+          relatedNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span></div>' + related.slice(0, 4).map(function (name, index) {
+            return relatedRow(name, index, false);
           }).join("");
+        }
+        if (relatedFullNode) {
+          relatedFullNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span><span>판단</span></div>' + related.map(function (name, index) {
+            return relatedRow(name, index, true);
+          }).join("");
+        }
+        if (relatedTitle) {
+          relatedTitle.textContent = market.keyword + " 연관 키워드";
         }
       }
 

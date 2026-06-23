@@ -1409,23 +1409,34 @@
     #mi-admin .mi-ratio-chart {
       position: relative;
       display: grid;
-      grid-template-columns: repeat(var(--ratio-cols, 7), minmax(0, 1fr));
-      gap: 13px;
-      align-items: end;
-      min-height: 230px;
+      grid-template-columns: 52px minmax(0, 1fr);
+      grid-template-rows: 190px 34px;
+      column-gap: 12px;
+      min-height: 228px;
+      padding-top: 4px;
+      overflow: visible;
+    }
+
+    #mi-admin .mi-ratio-chart:before {
+      position: absolute;
+      left: 52px;
+      right: 0;
+      top: 4px;
+      height: 190px;
       border-left: 1px solid #d9dee7;
       border-bottom: 1px solid #b8bec8;
-      padding: 28px 0 0 44px;
       background:
         linear-gradient(to bottom, transparent 0, transparent calc(25% - 1px), #e7eaf0 calc(25% - 1px), #e7eaf0 25%, transparent 25%, transparent calc(50% - 1px), #e7eaf0 calc(50% - 1px), #e7eaf0 50%, transparent 50%, transparent calc(75% - 1px), #e7eaf0 calc(75% - 1px), #e7eaf0 75%, transparent 75%);
+      content: "";
     }
 
     #mi-admin .mi-ratio-axis {
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 42px;
+      position: relative;
+      z-index: 1;
+      grid-column: 1;
+      grid-row: 1;
+      width: 100%;
+      height: 190px;
       pointer-events: none;
     }
 
@@ -1439,16 +1450,29 @@
       line-height: 1;
     }
 
+    #mi-admin .mi-ratio-axis span:first-child {
+      transform: translateY(0);
+    }
+
+    #mi-admin .mi-ratio-axis span:last-child {
+      transform: translateY(-100%);
+    }
+
     #mi-admin .mi-ratio-bars {
-      display: contents;
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      grid-template-columns: repeat(var(--ratio-cols, 7), minmax(0, 1fr));
+      gap: 13px;
+      height: 224px;
     }
 
     #mi-admin .mi-ratio-column {
       position: relative;
-      display: grid;
-      min-height: 202px;
-      align-items: end;
-      justify-items: center;
+      display: block;
+      height: 224px;
       color: #7a8494;
       font-size: 13px;
       font-weight: 850;
@@ -1458,8 +1482,13 @@
 
     #mi-admin .mi-ratio-column i {
       display: block;
+      position: absolute;
+      left: 50%;
+      bottom: 34px;
+      transform: translateX(-50%);
       width: 72%;
       min-height: 4px;
+      max-height: 190px;
       border-radius: 2px 2px 0 0;
       background: #94c3f2;
       transition: background 0.16s ease, transform 0.16s ease;
@@ -1469,24 +1498,31 @@
     #mi-admin .mi-ratio-column:hover i,
     #mi-admin .mi-ratio-column.is-hover i {
       background: #4ca4e8;
-      transform: translateY(-2px);
+      transform: translateX(-50%) translateY(-2px);
     }
 
     #mi-admin .mi-ratio-column b {
-      display: block;
-      margin-top: 12px;
+      position: absolute;
+      left: 50%;
+      bottom: 0;
+      display: flex;
+      min-height: 28px;
+      align-items: flex-end;
+      justify-content: center;
+      margin: 0;
       color: #808793;
       font-size: 14px;
       font-weight: 900;
       line-height: 1.15;
       white-space: nowrap;
+      transform: translateX(-50%);
     }
 
     #mi-admin .mi-ratio-pop {
       position: absolute;
       z-index: 8;
       left: 50%;
-      bottom: calc(var(--ratio-height, 20%) + 42px);
+      bottom: calc(34px + var(--ratio-height, 20%) + 10px);
       transform: translateX(-50%) translateY(8px);
       min-width: 126px;
       border-radius: 6px;
@@ -1777,6 +1813,36 @@
       #mi-admin .mi-market-actions,
       #mi-admin .mi-keyword-side {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-ratio-card {
+        padding: 18px 14px;
+      }
+
+      #mi-admin .mi-ratio-title {
+        font-size: 17px;
+      }
+
+      #mi-admin .mi-ratio-chart {
+        grid-template-columns: 42px minmax(0, 1fr);
+        column-gap: 8px;
+      }
+
+      #mi-admin .mi-ratio-chart:before {
+        left: 42px;
+      }
+
+      #mi-admin .mi-ratio-axis span {
+        right: 6px;
+        font-size: 10px;
+      }
+
+      #mi-admin .mi-ratio-bars {
+        gap: 6px;
+      }
+
+      #mi-admin .mi-ratio-column b {
+        font-size: 11px;
       }
     }
   </style>

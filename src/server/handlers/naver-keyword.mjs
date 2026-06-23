@@ -301,7 +301,7 @@ function buildShoppingProfile(payload) {
     minPrice: prices.length ? Math.min(...prices) : 0,
     maxPrice: prices.length ? Math.max(...prices) : 0,
     mallCount: malls.length,
-    source: "shopping_profile",
+    source: "naver_shopping_search",
   };
 }
 
@@ -327,7 +327,7 @@ function buildRelatedKeywordMetrics(searchAd) {
         pcVolume,
         mobileVolume,
         comp,
-        source: "monthly_search",
+        source: "naver_searchad_keyword",
       };
     })
     .filter(Boolean);
@@ -430,9 +430,9 @@ export default {
       return json(request, {
         ok: true,
         source: {
-          searchVolume: "monthly_search",
-          trend: datalabProfile ? "trend_profile" : "estimated_trend",
-          shopping: shoppingProfile ? "shopping_profile" : hasOpenapiConfig(env) ? "partial" : "pending",
+          searchVolume: "naver_searchad_keyword",
+          trend: datalabProfile ? "naver_datalab_search" : "pending",
+          shopping: shoppingProfile ? "naver_shopping_search" : hasOpenapiConfig(env) ? "partial" : "pending",
         },
         chartData: buildChartData(keyword, searchAd, datalabProfile, shoppingProfile),
       });

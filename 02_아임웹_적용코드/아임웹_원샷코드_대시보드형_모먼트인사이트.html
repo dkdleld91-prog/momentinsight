@@ -2892,7 +2892,7 @@
         data.volume = Number(data.volume ?? fallbackData.volume ?? 0);
         data.volumeLabel = chartData.volumeLabel || fallbackData.volumeLabel || "";
         data.volumeStatus = chartData.volumeStatus || (data.volume ? "확인됨" : "확인 필요");
-        data.trendStatus = chartData.trendStatus || ((payload && payload.source && payload.source.trend === "trend_profile") ? "확인됨" : "수집 대기");
+        data.trendStatus = chartData.trendStatus || ((payload && payload.source && (payload.source.trend === "naver_datalab_search" || payload.source.trend === "trend_profile")) ? "확인됨" : "수집 대기");
         data.comp = data.comp || fallbackData.comp || "확인 필요";
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
         data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";

@@ -1107,13 +1107,19 @@
     }
 
     #mi-clean .mi-months {
-      display: grid;
-      grid-template-columns: repeat(12, minmax(0, 1fr));
-      gap: 0;
+      position: relative;
+      height: 24px;
       color: #64748b;
       font-size: 11px;
       font-weight: 700;
       text-align: center;
+    }
+
+    #mi-clean .mi-months span {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      white-space: nowrap;
     }
 
     #mi-clean .mi-ratio-card {
@@ -1935,8 +1941,8 @@
                 </svg>
                 <div class="mi-chart-tooltip" data-keyword-tooltip hidden></div>
                 <div class="mi-months" data-keyword-months>
-                  <span>05</span><span>06</span><span>07</span><span>08</span><span>09</span><span>10</span>
-                  <span>11</span><span>12</span><span>01</span><span>02</span><span>03</span><span>04</span>
+                  <span style="left:4.167%;">07월</span><span style="left:12.500%;">08월</span><span style="left:20.833%;">09월</span><span style="left:29.167%;">10월</span><span style="left:37.500%;">11월</span><span style="left:45.833%;">12월</span>
+                  <span style="left:54.167%;">01월</span><span style="left:62.500%;">02월</span><span style="left:70.833%;">03월</span><span style="left:79.167%;">04월</span><span style="left:87.500%;">05월</span><span style="left:95.833%;">06월(예상)</span>
                 </div>
               </div>
             </div>
@@ -2350,7 +2356,8 @@
         var labels = [];
         for (var index = count - 1; index >= 0; index -= 1) {
           var date = new Date(now.getFullYear(), now.getMonth() - index, 1);
-          labels.push(String(date.getMonth() + 1).padStart(2, "0"));
+          var label = String(date.getMonth() + 1).padStart(2, "0") + "월";
+          labels.push(index === 0 ? label + "(예상)" : label);
         }
         return labels;
       }
@@ -2359,16 +2366,18 @@
         var node = root.querySelector("[data-keyword-months]");
         if (!node) return;
         var maxLabels = 12;
-        var visibleLabels = labels;
+        var visibleLabels = labels.map(function (label, index) {
+          return { label: label, index: index };
+        });
         if (labels.length > maxLabels) {
           var step = Math.ceil(labels.length / maxLabels);
-          visibleLabels = labels.filter(function (_label, index) {
-            return index % step === 0 || index === labels.length - 1;
+          visibleLabels = visibleLabels.filter(function (item) {
+            return item.index % step === 0 || item.index === labels.length - 1;
           });
         }
-        node.style.gridTemplateColumns = "repeat(" + visibleLabels.length + ", minmax(0, 1fr))";
-        node.innerHTML = visibleLabels.map(function (label) {
-          return "<span>" + escapeHtml(label) + "</span>";
+        node.innerHTML = visibleLabels.map(function (item) {
+          var left = labels.length > 1 ? ((item.index + 0.5) / labels.length) * 100 : 50;
+          return '<span style="left:' + left.toFixed(3) + '%;">' + escapeHtml(item.label) + '</span>';
         }).join("");
       }
 
@@ -2763,7 +2772,7 @@
 
         var seriesPointLists = seriesList.map(function (series, seriesIndex) {
           return series.map(function (value, index) {
-            var x = series.length > 1 ? (index / (series.length - 1)) * width : width / 2;
+            var x = series.length > 1 ? ((index + 0.5) / series.length) * width : width / 2;
             var y = height - bottom - ((value / chartMax) * (height - top - bottom));
             if (value >= peakInfo.value) peakInfo = { keyword: items[seriesIndex].keyword, label: labels[index] || "", value: value };
             return { x: x, y: y, value: value, label: labels[index] || "" };
@@ -2789,10 +2798,9 @@
 
         if (pointsGroup && seriesPointLists[0]) {
           seriesPointLists[0].forEach(function (basePoint, pointIndex) {
-            var prevPoint = seriesPointLists[0][pointIndex - 1];
-            var nextPoint = seriesPointLists[0][pointIndex + 1];
-            var startX = prevPoint ? (prevPoint.x + basePoint.x) / 2 : 0;
-            var endX = nextPoint ? (basePoint.x + nextPoint.x) / 2 : width;
+            var pointCount = seriesPointLists[0].length || 1;
+            var startX = (pointIndex / pointCount) * width;
+            var endX = ((pointIndex + 1) / pointCount) * width;
             var hoverPoints = seriesPointLists.map(function (points, seriesIndex) {
               var point = points[pointIndex] || basePoint;
               return {
@@ -2804,7 +2812,7 @@
                 color: keywordColors[seriesIndex % keywordColors.length]
               };
             });
-            var tooltipText = "<b>" + escapeHtml(basePoint.label) + (items[0].data.trendStatus === "확인됨" ? "월 검색량" : "월 검색량 기준선") + "</b>" + hoverPoints.map(function (point) {
+            var tooltipText = "<b>" + escapeHtml(basePoint.label) + (items[0].data.trendStatus === "확인됨" ? " 검색량" : " 검색량 기준선") + "</b>" + hoverPoints.map(function (point) {
               return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " " + formatNumber(point.value) + "</span>";
             }).join("");
             var hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");

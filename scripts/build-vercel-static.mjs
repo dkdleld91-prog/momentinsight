@@ -3,6 +3,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const sourceDir = path.join(root, "02_아임웹_적용코드");
+const publicDir = path.join(root, "public");
 const outputDir = path.join(root, "dist");
 const siteUrl = "https://insight.momentlabs.co.kr";
 
@@ -51,6 +52,10 @@ async function copyDirectory(from, to) {
 
 await fs.rm(outputDir, { recursive: true, force: true });
 await fs.mkdir(outputDir, { recursive: true });
+
+if (await exists(publicDir)) {
+  await copyDirectory(publicDir, outputDir);
+}
 
 await copyDirectory(sourceDir, path.join(outputDir, "02_아임웹_적용코드"));
 

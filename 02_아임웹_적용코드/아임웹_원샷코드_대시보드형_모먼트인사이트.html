@@ -709,6 +709,19 @@
       border-bottom: 1px solid var(--mi-line);
     }
 
+    #mi-clean .mi-keyword-main h2 {
+      margin-bottom: 6px;
+      font-size: 21px;
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    #mi-clean .mi-keyword-main p {
+      font-size: 13px;
+      font-weight: 650;
+      line-height: 1.45;
+    }
+
     #mi-clean .mi-keyword-side {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -955,15 +968,15 @@
     #mi-clean .mi-segment span,
     #mi-clean .mi-keyword-chip {
       display: inline-flex;
-      min-height: 34px;
+      min-height: 30px;
       align-items: center;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 0 12px;
+      padding: 0 10px;
       color: var(--mi-muted);
       background: #fff;
-      font-size: 12px;
-      font-weight: 900;
+      font-size: 11px;
+      font-weight: 750;
       font-family: inherit;
     }
 
@@ -991,16 +1004,16 @@
 
     #mi-clean .mi-chart-legend {
       justify-content: flex-start;
-      margin-top: 12px;
+      margin-top: 14px;
       color: var(--mi-muted);
-      font-size: 12px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 700;
     }
 
     #mi-clean .mi-dot {
       display: inline-block;
-      width: 9px;
-      height: 9px;
+      width: 8px;
+      height: 8px;
       border-radius: 999px;
       margin-right: 5px;
       background: #7b9cff;
@@ -1012,9 +1025,9 @@
 
     #mi-clean .mi-line-chart {
       position: relative;
-      min-height: 290px;
-      margin-top: 18px;
-      padding-left: 48px;
+      min-height: 274px;
+      margin-top: 20px;
+      padding-left: 42px;
       border-left: 1px solid var(--mi-line);
       border-bottom: 1px solid var(--mi-line);
     }
@@ -1022,25 +1035,25 @@
     #mi-clean .mi-line-chart svg {
       display: block;
       width: 100%;
-      height: 250px;
+      height: 238px;
     }
 
     #mi-clean .mi-y-axis {
       position: absolute;
       top: 0;
       left: 0;
-      width: 44px;
-      height: 250px;
+      width: 38px;
+      height: 238px;
       pointer-events: none;
     }
 
     #mi-clean .mi-y-axis span {
       position: absolute;
-      right: 10px;
+      right: 8px;
       transform: translateY(-50%);
-      color: #7b9cff;
-      font-size: 12px;
-      font-weight: 850;
+      color: #8a94a6;
+      font-size: 11px;
+      font-weight: 700;
       line-height: 1;
       white-space: nowrap;
     }
@@ -1063,16 +1076,16 @@
     #mi-clean .mi-chart-tooltip {
       position: absolute;
       z-index: 5;
-      min-width: 142px;
-      transform: translate(-50%, calc(-100% - 14px));
+      min-width: 126px;
+      transform: translate(-50%, calc(-100% - 12px));
       border: 1px solid rgba(6, 26, 58, 0.14);
       border-radius: 8px;
-      padding: 8px 10px;
+      padding: 7px 9px;
       color: #fff;
-      background: rgba(6, 26, 58, 0.94);
-      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.18);
-      font-size: 11px;
-      font-weight: 850;
+      background: rgba(18, 37, 67, 0.94);
+      box-shadow: 0 10px 24px rgba(6, 26, 58, 0.16);
+      font-size: 10px;
+      font-weight: 700;
       line-height: 1.45;
       pointer-events: none;
       white-space: nowrap;
@@ -1082,7 +1095,7 @@
       display: block;
       margin-bottom: 2px;
       color: #fff;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     #mi-clean .mi-axis-top {
@@ -1098,8 +1111,8 @@
       grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 0;
       color: #64748b;
-      font-size: 12px;
-      font-weight: 800;
+      font-size: 11px;
+      font-weight: 700;
       text-align: center;
     }
 
@@ -2466,10 +2479,10 @@
             marker.setAttribute("class", "mi-hover-point");
             marker.setAttribute("cx", point.x.toFixed(1));
             marker.setAttribute("cy", point.y.toFixed(1));
-            marker.setAttribute("r", "6.5");
+            marker.setAttribute("r", "5.8");
             marker.setAttribute("fill", "#fff");
             marker.setAttribute("stroke", point.color);
-            marker.setAttribute("stroke-width", "4");
+            marker.setAttribute("stroke-width", "3");
             hoverGroup.appendChild(marker);
           });
         }
@@ -2725,7 +2738,7 @@
             }).join(" "));
             line.setAttribute("fill", "none");
             line.setAttribute("stroke", color);
-            line.setAttribute("stroke-width", "3");
+            line.setAttribute("stroke-width", "2.4");
             line.setAttribute("stroke-linecap", "round");
             line.setAttribute("stroke-linejoin", "round");
             line.setAttribute("opacity", seriesIndex === 0 ? "1" : "0.9");

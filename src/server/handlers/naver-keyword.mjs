@@ -30,8 +30,8 @@ function config() {
     searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
     datalabClientId: process.env.NAVER_DATALAB_CLIENT_ID || "",
     datalabClientSecret: process.env.NAVER_DATALAB_CLIENT_SECRET || "",
-    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "",
-    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "",
+    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || "",
+    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || "",
   };
 }
 

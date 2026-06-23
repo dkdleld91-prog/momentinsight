@@ -51,14 +51,14 @@ const checks = [
   status(env, "Supabase publishable key", ["SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS"]),
   status(env, "Supabase secret key", ["SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS"]),
   status(env, "Supabase JWKS", ["SUPABASE_JWKS_URL", "SUPABASE_JWKS"]),
-  status(env, "Allowed origins", ["MI_ALLOWED_ORIGINS", "ALLOWED_ORIGINS"]),
+  status(env, "Allowed origins", ["MI_ALLOWED_ORIGINS", "ALLOWED_ORIGINS"], false),
   status(env, "Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], false),
   status(env, "Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], false),
   status(env, "Naver SearchAd customer", ["NAVER_SEARCHAD_CUSTOMER_ID"], false),
   status(env, "Naver Datalab client", ["NAVER_DATALAB_CLIENT_ID"], false),
   status(env, "Naver Datalab secret", ["NAVER_DATALAB_CLIENT_SECRET"], false),
-  status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], false),
-  status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], false),
+  status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID"], false),
+  status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET"], false),
 ];
 
 const missingRequired = checks.filter((check) => check.required && !check.present);

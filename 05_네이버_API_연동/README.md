@@ -1,52 +1,22 @@
 # 네이버 키워드 API 연결
 
-이 폴더는 모먼트 인사이트 키워드 조회 화면을 네이버 검색 기반 API와 연결하는 백엔드 프록시입니다.
+이 폴더는 네이버 API 키 발급과 운영 환경변수 세팅을 정리하는 문서 폴더입니다.
+실제 운영 API 구현은 `src/server/handlers/naver-keyword.mjs` 하나만 사용합니다.
 
-## 가능한 것
+## 운영 경로
 
-- 네이버 검색광고 API로 월간 PC/모바일 검색수, 클릭수, 클릭률, 경쟁도, 연관 키워드 조회
-- 네이버 데이터랩 API로 월별 추이, 성별/연령별 비율, 최근 28일 기준 요일별 추이 계산
-- 아임웹 HTML에서 비밀키를 노출하지 않고 백엔드만 네이버 API 호출
+- 운영 엔드포인트: `/api/naver-keyword`
+- Vercel wrapper: `api/naver-keyword.mjs`
+- 실제 서버 로직: `src/server/handlers/naver-keyword.mjs`
+- 로컬 서버: `npm run dev:server`
 
-## 불가능한 것
-
-- 네이버 API 키 없이 실제 검색량 조회
-- 아임웹 HTML 안에 `SECRET_KEY`를 넣는 방식
-- 데이터랩 API만으로 절대 검색량 확인
-
-## 실행
-
-```bash
-cd "/Users/sindongbin/Documents/모먼트 인사이트"
-cp "05_네이버_API_연동/.env.example" "05_네이버_API_연동/.env"
-```
-
-`.env`에 네이버 키를 입력한 뒤:
-
-```bash
-set -a
-source "05_네이버_API_연동/.env"
-set +a
-node "05_네이버_API_연동/naver-keyword-proxy.mjs"
-```
-
-상태 확인:
-
-```bash
-curl "http://127.0.0.1:8787/health"
-```
-
-키워드 조회:
-
-```bash
-curl "http://127.0.0.1:8787/api/naver-keyword?keyword=비타민%20앰플"
-```
+오래된 별도 프록시 파일은 충돌을 막기 위해 제거했습니다. 앞으로 네이버 키워드 로직은 `src/server/handlers/naver-keyword.mjs`만 수정합니다.
 
 ## 발급해야 하는 키
 
 ### 네이버 검색광고 API
 
-검색광고센터에서 발급합니다.
+검색광고센터에서 발급합니다. 월간 검색량 조회의 기준입니다.
 
 - `NAVER_SEARCHAD_API_KEY`
 - `NAVER_SEARCHAD_SECRET_KEY`
@@ -54,24 +24,30 @@ curl "http://127.0.0.1:8787/api/naver-keyword?keyword=비타민%20앰플"
 
 ### 네이버 데이터랩 API
 
-네이버 개발자센터에서 애플리케이션을 등록하고 `데이터랩(검색어트렌드)`를 추가합니다.
+네이버 개발자센터에서 애플리케이션을 등록하고 `데이터랩(검색어트렌드)`를 추가합니다. 월별, 요일별, 연령별 비율 조회에 필요합니다.
 
 - `NAVER_DATALAB_CLIENT_ID`
 - `NAVER_DATALAB_CLIENT_SECRET`
 
-## 화면 연결
+### 네이버 OpenAPI 쇼핑
 
-아임웹 HTML은 기본으로 아래 URL을 호출합니다.
+네이버 개발자센터에서 쇼핑 검색 API를 사용할 때 필요합니다. 상품수/쇼핑 참고 지표에만 사용합니다.
 
-```txt
-http://127.0.0.1:8787/api/naver-keyword
+- `NAVER_OPENAPI_CLIENT_ID`
+- `NAVER_OPENAPI_CLIENT_SECRET`
+
+DataLab과 OpenAPI가 같은 네이버 개발자 앱을 사용하더라도 환경변수 이름은 각각 명시해서 넣습니다. 자동 대체를 쓰면 어떤 API 키로 호출됐는지 추적이 어려워집니다.
+
+## 현재 운영 상태 확인
+
+```bash
+npm run check:env
+curl "https://insight.momentlabs.co.kr/api/health"
+curl "https://insight.momentlabs.co.kr/api/naver-keyword?keyword=냉감패드"
 ```
 
-실제 배포 시에는 페이지 상단이나 아임웹 공통 코드에 아래처럼 운영 API 주소를 넣으면 됩니다.
+## 보안 기준
 
-```html
-<script>
-  window.MI_NAVER_KEYWORD_API_URL = "https://api.your-domain.com/api/naver-keyword";
-</script>
-```
-
+- 네이버 `SECRET_KEY`, Supabase `SECRET_KEY`, access token은 HTML에 넣지 않습니다.
+- 실제 키는 Vercel Environment Variables 또는 로컬 `.env.local`에만 둡니다.
+- `.env.example`에는 키 이름과 예시값만 남깁니다.

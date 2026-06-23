@@ -2911,7 +2911,7 @@
         if (window.MI_NAVER_KEYWORD_API_URL) return window.MI_NAVER_KEYWORD_API_URL;
         var host = window.location && window.location.hostname;
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-keyword";
-        return "http://127.0.0.1:8787/api/naver-keyword";
+        return "http://127.0.0.1:8790/api/naver-keyword";
       }
 
       function buildKeywordFallback(keyword) {

@@ -1061,6 +1061,7 @@
       position: relative;
       min-height: 290px;
       margin-top: 18px;
+      padding-left: 48px;
       border-left: 1px solid var(--mi-line);
       border-bottom: 1px solid var(--mi-line);
     }
@@ -1071,14 +1072,39 @@
       height: 250px;
     }
 
-    #mi-admin .mi-chart-point {
-      cursor: pointer;
-      transition: opacity 0.16s ease;
+    #mi-admin .mi-y-axis {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 44px;
+      height: 250px;
+      pointer-events: none;
     }
 
-    #mi-admin .mi-chart-point:hover,
-    #mi-admin .mi-chart-point.is-active {
-      opacity: 1;
+    #mi-admin .mi-y-axis span {
+      position: absolute;
+      right: 10px;
+      transform: translateY(-50%);
+      color: #7b9cff;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-chart-hit {
+      cursor: crosshair;
+      opacity: 0;
+      pointer-events: all;
+    }
+
+    #mi-admin .mi-hover-guide,
+    #mi-admin .mi-hover-point {
+      pointer-events: none;
+    }
+
+    #mi-admin .mi-hover-point {
+      filter: drop-shadow(0 5px 10px rgba(6, 26, 58, 0.16));
     }
 
     #mi-admin .mi-chart-tooltip {
@@ -1107,18 +1133,13 @@
     }
 
     #mi-admin .mi-axis-top {
-      position: absolute;
-      top: 2px;
-      left: 10px;
-      color: #7b9cff;
-      font-size: 12px;
-      font-weight: 850;
+      display: none;
     }
 
     #mi-admin .mi-peak-label {
       position: absolute;
       top: 28px;
-      left: 24px;
+      left: 64px;
       color: var(--mi-navy);
       font-size: 12px;
       font-weight: 900;
@@ -1987,6 +2008,7 @@
               </div>
 
               <div class="mi-line-chart" aria-label="월별 검색수 차트">
+                <div class="mi-y-axis" data-keyword-y-axis aria-hidden="true"></div>
                 <span class="mi-axis-top" data-keyword-axis>20K</span>
                 <span class="mi-peak-label" data-keyword-peak>2026.03 · 18,400</span>
                 <svg viewBox="0 0 760 250" preserveAspectRatio="none" role="img">
@@ -1995,6 +2017,7 @@
                   <line x1="0" y1="155" x2="760" y2="155" stroke="#edf0f4" />
                   <line x1="0" y1="210" x2="760" y2="210" stroke="#edf0f4" />
                   <g data-keyword-lines></g>
+                  <g data-keyword-hover></g>
                   <g data-keyword-points></g>
                 </svg>
                 <div class="mi-chart-tooltip" data-keyword-tooltip hidden></div>
@@ -2853,6 +2876,19 @@
         return formatNumber(number);
       }
 
+      function formatAxisTick(value) {
+        var number = Number(value || 0);
+        if (number >= 1000000) {
+          var million = number / 1000000;
+          return (Number.isInteger(million) ? String(million) : million.toFixed(1)) + "M";
+        }
+        if (number >= 1000) {
+          var thousand = number / 1000;
+          return (Number.isInteger(thousand) ? String(thousand) : thousand.toFixed(1)) + "K";
+        }
+        return formatNumber(number);
+      }
+
       function makeKeywordMonthLabels(count) {
         var now = new Date();
         var labels = [];
@@ -2877,6 +2913,20 @@
         node.style.gridTemplateColumns = "repeat(" + visibleLabels.length + ", minmax(0, 1fr))";
         node.innerHTML = visibleLabels.map(function (label) {
           return "<span>" + escapeHtml(label) + "</span>";
+        }).join("");
+      }
+
+      function renderKeywordYAxis(chartMax) {
+        var node = root.querySelector("[data-keyword-y-axis]");
+        if (!node) return;
+        var height = 250;
+        var top = 18;
+        var bottom = 30;
+        var ticks = [1, 0.75, 0.5, 0.25, 0];
+        node.innerHTML = ticks.map(function (ratio) {
+          var value = Math.round(chartMax * ratio);
+          var y = ratio === 0 ? height - bottom : height - bottom - ((value / chartMax) * (height - top - bottom));
+          return '<span style="top:' + y.toFixed(1) + 'px">' + formatAxisTick(value) + '</span>';
         }).join("");
       }
 
@@ -2933,20 +2983,54 @@
         return output;
       }
 
-      function showKeywordTooltip(event, text) {
+      function showKeywordTooltip(event, text, point) {
         var tooltip = root.querySelector("[data-keyword-tooltip]");
         var chart = root.querySelector(".mi-line-chart");
         if (!tooltip || !chart) return;
         var rect = chart.getBoundingClientRect();
+        var svg = chart.querySelector("svg");
+        var svgRect = svg ? svg.getBoundingClientRect() : rect;
+        var left = point ? (svgRect.left - rect.left) + ((point.x / 760) * svgRect.width) : event.clientX - rect.left;
+        var top = point ? (svgRect.top - rect.top) + ((point.y / 250) * svgRect.height) : event.clientY - rect.top;
         tooltip.innerHTML = text;
         tooltip.hidden = false;
-        tooltip.style.left = Math.max(72, Math.min(rect.width - 72, event.clientX - rect.left)) + "px";
-        tooltip.style.top = Math.max(42, event.clientY - rect.top) + "px";
+        tooltip.style.left = Math.max(72, Math.min(rect.width - 72, left)) + "px";
+        tooltip.style.top = Math.max(42, top) + "px";
       }
 
       function hideKeywordTooltip() {
         var tooltip = root.querySelector("[data-keyword-tooltip]");
         if (tooltip) tooltip.hidden = true;
+        var hoverGroup = root.querySelector("[data-keyword-hover]");
+        if (hoverGroup) hoverGroup.innerHTML = "";
+      }
+
+      function showKeywordHover(event, point, color, text) {
+        var hoverGroup = root.querySelector("[data-keyword-hover]");
+        if (hoverGroup) {
+          hoverGroup.innerHTML = "";
+          var guide = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          guide.setAttribute("class", "mi-hover-guide");
+          guide.setAttribute("x1", point.x.toFixed(1));
+          guide.setAttribute("x2", point.x.toFixed(1));
+          guide.setAttribute("y1", "18");
+          guide.setAttribute("y2", "220");
+          guide.setAttribute("stroke", "#cbd5e1");
+          guide.setAttribute("stroke-width", "1");
+          guide.setAttribute("opacity", "0.9");
+
+          var marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          marker.setAttribute("class", "mi-hover-point");
+          marker.setAttribute("cx", point.x.toFixed(1));
+          marker.setAttribute("cy", point.y.toFixed(1));
+          marker.setAttribute("r", "6.5");
+          marker.setAttribute("fill", "#fff");
+          marker.setAttribute("stroke", color);
+          marker.setAttribute("stroke-width", "4");
+          hoverGroup.appendChild(guide);
+          hoverGroup.appendChild(marker);
+        }
+        showKeywordTooltip(event, text, point);
       }
 
       function renderKeywordChart(itemsOrKeyword, singleData) {
@@ -2980,6 +3064,7 @@
         var insight = root.querySelector("[data-keyword-insight]");
         var legend = root.querySelector("[data-keyword-legend]");
         var linesGroup = root.querySelector("[data-keyword-lines]");
+        var hoverGroup = root.querySelector("[data-keyword-hover]");
         var pointsGroup = root.querySelector("[data-keyword-points]");
         var changeRate = previousTotal > 0 ? Math.round(((totalVolume - previousTotal) / previousTotal) * 100) : 0;
         var profile = {
@@ -2999,6 +3084,7 @@
           }).join("");
         }
         if (linesGroup) linesGroup.innerHTML = "";
+        if (hoverGroup) hoverGroup.innerHTML = "";
         if (pointsGroup) pointsGroup.innerHTML = "";
 
         seriesList.forEach(function (series, seriesIndex) {
@@ -3027,23 +3113,21 @@
           if (pointsGroup) {
             pointPairs.forEach(function (point) {
               var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-              circle.setAttribute("class", "mi-chart-point");
+              var tooltipText = "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value);
+              circle.setAttribute("class", "mi-chart-hit");
               circle.setAttribute("cx", point.x.toFixed(1));
               circle.setAttribute("cy", point.y.toFixed(1));
-              circle.setAttribute("r", "4.5");
-              circle.setAttribute("fill", "#fff");
-              circle.setAttribute("stroke", color);
-              circle.setAttribute("stroke-width", "3");
-              circle.setAttribute("opacity", "0.95");
+              circle.setAttribute("r", "12");
+              circle.setAttribute("fill", "transparent");
+              circle.setAttribute("stroke", "transparent");
+              circle.setAttribute("stroke-width", "0");
               circle.addEventListener("mouseenter", function (event) {
-                circle.setAttribute("r", "7");
-                showKeywordTooltip(event, "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value));
+                showKeywordHover(event, point, color, tooltipText);
               });
               circle.addEventListener("mousemove", function (event) {
-                showKeywordTooltip(event, "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value));
+                showKeywordHover(event, point, color, tooltipText);
               });
               circle.addEventListener("mouseleave", function () {
-                circle.setAttribute("r", "4.5");
                 hideKeywordTooltip();
               });
               pointsGroup.appendChild(circle);
@@ -3056,6 +3140,7 @@
           insight.textContent = items[0].data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
         }
         renderKeywordMonths(labels);
+        renderKeywordYAxis(chartMax);
         setRatio("[data-keyword-device-mobile]", "모바일", profile.device.mobile);
         setRatio("[data-keyword-device-pc]", "PC", profile.device.pc);
         setRatio("[data-keyword-gender-female]", "여성", profile.gender.female);

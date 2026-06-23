@@ -742,7 +742,7 @@
     #mi-clean .mi-market-title h3 {
       margin: 0 0 8px;
       color: var(--mi-navy);
-      font-size: 21px;
+      font-size: 26px;
       letter-spacing: -0.02em;
     }
 
@@ -842,8 +842,8 @@
 
     #mi-clean .mi-related-table div {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 74px 72px;
-      gap: 8px;
+      grid-template-columns: minmax(0, 1fr) 96px 70px 96px;
+      gap: 10px;
       align-items: center;
       padding: 10px 0;
       border-bottom: 1px solid rgba(226, 232, 240, 0.9);
@@ -908,7 +908,7 @@
     }
 
     #mi-clean .mi-related-large div {
-      grid-template-columns: minmax(0, 1.2fr) 110px 110px 120px;
+      grid-template-columns: minmax(0, 1.2fr) 130px 90px 150px;
       padding: 13px 0;
     }
 
@@ -1665,9 +1665,9 @@
                 <h3 data-keyword-market-title>냉감 패드</h3>
                 <p data-keyword-market-path>네이버 검색 기반으로 상품 지면, 경쟁도, 관련 키워드를 한 번에 봅니다.</p>
                 <div class="mi-market-kpis">
-                  <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>378,612개</strong><small>검색량 대비 노출 경쟁 지표</small></div>
+                  <div class="mi-market-kpi"><span>지면 포화도</span><strong data-keyword-market-products>보통</strong><small>검색광고 경쟁도 기준</small></div>
                   <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>162,400회</strong><small>네이버 검색광고 기준</small></div>
-                  <div class="mi-market-kpi"><span>경쟁강도</span><strong><b data-keyword-market-score>4.28</b><i class="mi-grade" data-keyword-market-grade>좋음</i></strong><small>낮을수록 진입 여지가 큼</small></div>
+                  <div class="mi-market-kpi"><span>경쟁강도</span><strong><b data-keyword-market-score>보통</b><i class="mi-grade warn" data-keyword-market-grade>관리 필요</i></strong><small>낮음 / 보통 / 높음으로 판단</small></div>
                 </div>
               </div>
               <aside class="mi-market-related">
@@ -1676,10 +1676,10 @@
                   <a class="mi-related-more" href="#mi-related-keywords" data-mi-screen="related-keywords">더보기</a>
                 </div>
                 <div class="mi-related-table" data-keyword-related>
-                  <div><span>키워드</span><span>검색수</span><span>상품수</span></div>
-                  <div><span>냉감패드</span><span>162,400</span><span>378,612</span></div>
-                  <div><span>쿨매트</span><span>37,280</span><span>86,240</span></div>
-                  <div><span>여름이불</span><span>110,200</span><span>258,970</span></div>
+                  <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
+                  <div><span>냉감패드</span><span>162,400</span><span>보통</span><span>운영</span></div>
+                  <div><span>쿨매트</span><span>37,280</span><span>보통</span><span>검토</span></div>
+                  <div><span>여름이불</span><span>110,200</span><span>높음</span><span>분리</span></div>
                 </div>
               </aside>
             </div>
@@ -1822,7 +1822,7 @@
                 <span class="mi-period">확장 리스트</span>
               </div>
               <div class="mi-related-table mi-related-large" data-keyword-related-full>
-                <div><span>키워드</span><span>검색수</span><span>상품수</span><span>판단</span></div>
+                <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
               </div>
             </article>
 
@@ -2305,16 +2305,62 @@
       }
 
       function keywordGrade(score) {
-        if (score <= 2.8) return { label: "좋음", className: "" };
-        if (score <= 6) return { label: "보통", className: "warn" };
-        return { label: "높음", className: "bad" };
+        if (!Number.isFinite(score) || score <= 0) return { label: "확인 필요", hint: "추가 조회", className: "warn" };
+        if (score <= 2.8) return { label: "낮음", hint: "진입 여지", className: "" };
+        if (score <= 6) return { label: "보통", hint: "관리 필요", className: "warn" };
+        return { label: "높음", hint: "포화 주의", className: "bad" };
+      }
+
+      function gradeFromCompetition(comp, fallbackScore) {
+        var label = String(comp || "");
+        if (label.indexOf("높") > -1) return { label: "높음", hint: "포화 주의", className: "bad" };
+        if (label.indexOf("보통") > -1 || label.indexOf("중") > -1) return { label: "보통", hint: "관리 필요", className: "warn" };
+        if (label.indexOf("낮") > -1) return { label: "낮음", hint: "진입 여지", className: "" };
+        return keywordGrade(fallbackScore);
+      }
+
+      function displayCompetitionLabel(comp) {
+        var label = String(comp || "");
+        if (label.indexOf("높") > -1) return "높음";
+        if (label.indexOf("보통") > -1 || label.indexOf("중") > -1) return "보통";
+        if (label.indexOf("낮") > -1) return "낮음";
+        return label || "확인 필요";
+      }
+
+      function relatedJudgement(entry) {
+        var volume = Number(entry && entry.volume || 0);
+        var comp = String(entry && entry.comp || "");
+        if (!volume) return "개별 조회";
+        if (comp.indexOf("높") > -1) return "분리 운영";
+        if (volume >= 50000) return "우선 검토";
+        if (comp.indexOf("낮") > -1) return "콘텐츠 후보";
+        return "검토";
       }
 
       function makeRelatedKeywords(item) {
         var keyword = item.keyword;
-        var related = item.data && item.data.naver && Array.isArray(item.data.naver.relatedKeywords) ? item.data.naver.relatedKeywords : [];
-        if (related.length < 4) {
-          related = related.concat([
+        var data = item.data || {};
+        var naver = data.naver || {};
+        var metrics = Array.isArray(naver.relatedKeywordMetrics) ? naver.relatedKeywordMetrics : [];
+        var related = metrics.map(function (entry) {
+          return {
+            keyword: entry.keyword,
+            volume: Number(entry.volume || 0),
+            pcVolume: Number(entry.pcVolume || 0),
+            mobileVolume: Number(entry.mobileVolume || 0),
+            comp: displayCompetitionLabel(entry.comp),
+            source: entry.source || "NAVER SearchAd API"
+          };
+        });
+        if (!related.length && Array.isArray(naver.relatedKeywords)) {
+          related = naver.relatedKeywords.map(function (name) {
+          return { keyword: name, volume: null, comp: "확인 필요", source: "검색량 미제공" };
+          });
+        }
+        if (!related.length) {
+          related = [
+            { keyword: keyword, volume: Number(data.volume || 0), comp: displayCompetitionLabel(data.comp), source: "현재 조회 키워드" }
+          ].concat([
             "저소음 " + keyword,
             "신일 " + keyword,
             "대형 " + keyword,
@@ -2331,12 +2377,13 @@
             keyword + " 후기",
             keyword + " 순위",
             keyword + " 브랜드"
-          ]);
+          ].map(function (name) {
+            return { keyword: name, volume: null, comp: "확인 필요", source: "개별 조회 필요" };
+          }));
         }
-        var list = [keyword].concat(related).filter(Boolean);
         var seen = {};
-        return list.filter(function (name) {
-          var key = String(name).replace(/\s+/g, "");
+        return related.filter(function (entry) {
+          var key = String(entry && entry.keyword || "").replace(/\s+/g, "");
           if (!key || seen[key]) return false;
           seen[key] = true;
           return true;
@@ -2348,10 +2395,11 @@
         var data = item.data || {};
         var volume = Number(data.volume || 0);
         var seed = hashKeyword(keyword);
-        var comp = String(data.comp || "");
-        var compFactor = comp.indexOf("높") > -1 ? 4.8 : comp.indexOf("중") > -1 ? 2.35 : 1.45;
+        var comp = displayCompetitionLabel(data.comp);
+        var compFactor = comp.indexOf("높") > -1 ? 4.8 : comp.indexOf("보통") > -1 || comp.indexOf("중") > -1 ? 2.35 : 1.45;
         var products = Math.max(1200, Math.round(volume * compFactor + (seed % 9000)));
         var score = Math.max(0.01, products / Math.max(1, volume));
+        var grade = gradeFromCompetition(comp, score);
         var avgPrice = Math.round((52000 + (seed % 8) * 7300) / 100) * 100;
         var top10Sales = Math.max(120, Math.round(volume * 0.132));
         var top40Sales = Math.max(top10Sales + 320, Math.round(volume * 0.632));
@@ -2361,7 +2409,8 @@
           volume: volume,
           products: products,
           score: score,
-          grade: keywordGrade(score),
+          grade: grade,
+          saturation: grade.label,
           avgPrice: avgPrice,
           top10Sales: top10Sales,
           top40Sales: top40Sales,
@@ -2394,44 +2443,40 @@
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
-        if (path) path.textContent = "네이버 검색 > " + market.keyword + " 지면 기준으로 시장성, 경쟁도, 연관 키워드를 정리합니다.";
-        if (products) products.textContent = formatNumber(market.products) + "개";
+        if (path) path.textContent = "네이버 검색광고 기준 월 검색량과 경쟁강도로 운영 우선순위를 정리합니다.";
+        if (products) products.textContent = market.saturation;
         if (volume) volume.textContent = formatNumber(market.volume) + "회";
-        if (score) score.textContent = market.score.toFixed(2);
+        if (score) score.textContent = market.grade.label;
         if (grade) {
-          grade.textContent = market.grade.label;
+          grade.textContent = market.grade.hint;
           grade.className = "mi-grade" + (market.grade.className ? " " + market.grade.className : "");
         }
         if (top10Sales) top10Sales.textContent = formatNumber(market.top10Sales) + "만원";
         if (top10Units) top10Units.textContent = formatNumber(market.top10Units) + "개";
         if (top40Sales) top40Sales.textContent = formatNumber(market.top40Sales) + "만원";
         if (price) price.textContent = formatNumber(market.avgPrice) + "원";
-        if (naver) naver.textContent = market.grade.label + " · 상품수 " + formatNumber(market.products) + "개 / 검색수 " + formatNumber(market.volume) + "회";
-        if (ad) ad.textContent = market.comp + " 경쟁도 · CTR/CPC 확인 후 소재 테스트";
+        if (naver) naver.textContent = "월 검색수 " + formatNumber(market.volume) + "회 · 경쟁강도 " + market.grade.label;
+        if (ad) ad.textContent = "검색광고 경쟁도 " + market.comp + " · 캠페인 기준 CTR/CPC 확인";
         if (action) action.textContent = market.action;
 
         var related = makeRelatedKeywords(item);
-        function relatedRow(name, index, isFull) {
-            var seed = hashKeyword(name);
-            var ratio = index === 0 ? 1 : (0.18 + ((seed + index * 7) % 70) / 100);
-            var relatedVolume = Math.max(120, Math.round(market.volume * ratio));
-            var relatedProducts = Math.max(800, Math.round(market.products * (0.22 + ((seed + index * 5) % 95) / 100)));
-            var relatedScore = relatedProducts / Math.max(1, relatedVolume);
-            var grade = keywordGrade(relatedScore);
-            if (!isFull) {
-              return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span></div>';
-            }
-            return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span><span><i class="mi-grade' + (grade.className ? " " + grade.className : "") + '">' + grade.label + '</i></span></div>';
+        function relatedRow(entry) {
+            var name = entry.keyword || "";
+            var relatedVolume = Number(entry.volume || 0);
+            var volumeText = relatedVolume ? formatNumber(relatedVolume) : "확인 필요";
+            var compText = entry.comp || "확인 필요";
+            var judge = relatedJudgement(entry);
+            return '<div><span>' + escapeHtml(name) + '</span><span>' + escapeHtml(volumeText) + '</span><span>' + escapeHtml(compText) + '</span><span>' + escapeHtml(judge) + '</span></div>';
         }
 
         if (relatedNode) {
-          relatedNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span></div>' + related.slice(0, 4).map(function (name, index) {
-            return relatedRow(name, index, false);
+          relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.slice(0, 4).map(function (entry) {
+            return relatedRow(entry);
           }).join("");
         }
         if (relatedFullNode) {
-          relatedFullNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span><span>판단</span></div>' + related.map(function (name, index) {
-            return relatedRow(name, index, true);
+          relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.map(function (entry) {
+            return relatedRow(entry);
           }).join("");
         }
         if (relatedTitle) {

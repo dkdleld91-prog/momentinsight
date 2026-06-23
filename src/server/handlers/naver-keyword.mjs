@@ -248,6 +248,33 @@ function competitionLabel(compIdx) {
   return compIdx || "확인 필요";
 }
 
+function buildRelatedKeywordMetrics(searchAd) {
+  const seen = new Set();
+  return (searchAd?.related || [])
+    .map((item) => {
+      const keyword = normalizeKeyword(item.relKeyword);
+      const key = normalizeCompare(keyword);
+      if (!keyword || seen.has(key)) return null;
+      seen.add(key);
+
+      const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
+      const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
+      const volume = pcVolume + mobileVolume;
+      const comp = competitionLabel(item.compIdx);
+
+      return {
+        keyword,
+        volume,
+        pcVolume,
+        mobileVolume,
+        comp,
+        compIdx: item.compIdx || "",
+        source: "NAVER SearchAd API",
+      };
+    })
+    .filter(Boolean);
+}
+
 function buildChartData(keyword, searchAd, datalabProfile) {
   const item = searchAd?.item || {};
   const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
@@ -257,6 +284,7 @@ function buildChartData(keyword, searchAd, datalabProfile) {
   const mobileShare = volume ? Math.round((mobileVolume / volume) * 100) : 80;
   const pcShare = volume ? 100 - mobileShare : 20;
   const comp = competitionLabel(item.compIdx);
+  const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
 
   return {
     keyword,
@@ -278,7 +306,8 @@ function buildChartData(keyword, searchAd, datalabProfile) {
       monthlyAvePcCtr: item.monthlyAvePcCtr || "0",
       monthlyAveMobileCtr: item.monthlyAveMobileCtr || "0",
       compIdx: item.compIdx || "",
-      relatedKeywords: (searchAd?.related || []).map((related) => related.relKeyword).filter(Boolean),
+      relatedKeywords: relatedKeywordMetrics.map((related) => related.keyword),
+      relatedKeywordMetrics,
     },
   };
 }

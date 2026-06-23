@@ -981,6 +981,157 @@
       background: #fbfcfd;
     }
 
+    #mi-admin .mi-keyword-market {
+      margin-bottom: 16px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    #mi-admin .mi-market-head,
+    #mi-admin .mi-market-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      gap: 0;
+    }
+
+    #mi-admin .mi-market-title,
+    #mi-admin .mi-market-related,
+    #mi-admin .mi-market-section {
+      padding: 20px 22px;
+    }
+
+    #mi-admin .mi-market-title {
+      border-right: 1px solid var(--mi-line);
+      border-bottom: 1px solid var(--mi-line);
+    }
+
+    #mi-admin .mi-market-title h3 {
+      margin: 0 0 8px;
+      color: var(--mi-navy);
+      font-size: 21px;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-market-title p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-market-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    #mi-admin .mi-market-kpi,
+    #mi-admin .mi-market-metric {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-market-kpi span,
+    #mi-admin .mi-market-metric span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-market-kpi strong,
+    #mi-admin .mi-market-metric strong {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 22px;
+      font-weight: 950;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-market-kpi small,
+    #mi-admin .mi-market-metric small {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-market-related {
+      border-bottom: 1px solid var(--mi-line);
+      background: #fbfcfd;
+    }
+
+    #mi-admin .mi-market-related h3 {
+      margin: 0 0 12px;
+      color: var(--mi-navy);
+      font-size: 18px;
+    }
+
+    #mi-admin .mi-related-table {
+      display: grid;
+      gap: 0;
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-related-table div {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 74px 72px;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+      color: var(--mi-navy);
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-related-table div:first-child {
+      color: var(--mi-muted);
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-market-body {
+      border-top: 0;
+    }
+
+    #mi-admin .mi-market-section:first-child {
+      border-right: 1px solid var(--mi-line);
+    }
+
+    #mi-admin .mi-market-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-admin .mi-grade {
+      display: inline-flex;
+      align-items: center;
+      min-height: 18px;
+      margin-left: 5px;
+      border-radius: 4px;
+      padding: 0 5px;
+      color: #fff;
+      background: #16a34a;
+      font-size: 10px;
+      font-weight: 950;
+      vertical-align: middle;
+    }
+
+    #mi-admin .mi-grade.warn {
+      background: #f59e0b;
+    }
+
+    #mi-admin .mi-grade.bad {
+      background: #dc2626;
+    }
+
     #mi-admin .mi-chart-top,
     #mi-admin .mi-chart-tools,
     #mi-admin .mi-chart-legend {
@@ -1137,12 +1288,7 @@
     }
 
     #mi-admin .mi-peak-label {
-      position: absolute;
-      top: 28px;
-      left: 64px;
-      color: var(--mi-navy);
-      font-size: 12px;
-      font-weight: 900;
+      display: none;
     }
 
     #mi-admin .mi-months {
@@ -1399,6 +1545,18 @@
 
       #mi-admin .mi-keyword-chart {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-market-head,
+      #mi-admin .mi-market-body,
+      #mi-admin .mi-market-kpis,
+      #mi-admin .mi-market-metrics {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-market-title,
+      #mi-admin .mi-market-section:first-child {
+        border-right: 0;
       }
 
       #mi-admin .mi-keyword-main {
@@ -1981,6 +2139,47 @@
               </div>
               <div class="mi-note">네이버 검색광고 API 프록시를 먼저 조회합니다. API 키가 없거나 프록시가 꺼져 있으면 데모 계산값으로 표시합니다.</div>
               <div class="mi-code-status" style="margin-top:10px;" data-admin-keyword-status>키워드는 최대 3개까지 비교할 수 있습니다.</div>
+            </div>
+          </article>
+
+          <article class="mi-card mi-keyword-market" data-keyword-market>
+            <div class="mi-market-head">
+              <div class="mi-market-title">
+                <span class="mi-kicker">키워드 지면 분석</span>
+                <h3 data-keyword-market-title>냉감 패드</h3>
+                <p data-keyword-market-path>네이버 검색 기반으로 상품 지면, 경쟁도, 관련 키워드를 한 번에 봅니다.</p>
+                <div class="mi-market-kpis">
+                  <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>378,612개</strong><small>검색량 대비 노출 경쟁 지표</small></div>
+                  <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>162,400회</strong><small>네이버 검색광고 기준</small></div>
+                  <div class="mi-market-kpi"><span>경쟁강도</span><strong><b data-keyword-market-score>4.28</b><i class="mi-grade" data-keyword-market-grade>좋음</i></strong><small>낮을수록 진입 여지가 큼</small></div>
+                </div>
+              </div>
+              <aside class="mi-market-related">
+                <h3>연관 키워드</h3>
+                <div class="mi-related-table" data-keyword-related>
+                  <div><span>키워드</span><span>검색수</span><span>상품수</span></div>
+                  <div><span>냉감패드</span><span>162,400</span><span>378,612</span></div>
+                  <div><span>쿨매트</span><span>37,280</span><span>86,240</span></div>
+                  <div><span>여름이불</span><span>110,200</span><span>258,970</span></div>
+                </div>
+              </aside>
+            </div>
+            <div class="mi-market-body">
+              <div class="mi-market-section">
+                <div class="mi-market-metrics">
+                  <div class="mi-market-metric"><span>Top 10 6개월 매출</span><strong data-keyword-market-top10-sales>11,720만원</strong><small>검색량 기반 추정</small></div>
+                  <div class="mi-market-metric"><span>Top 10 판매량</span><strong data-keyword-market-top10-units>2,041개</strong><small>6개월 누적 추정</small></div>
+                  <div class="mi-market-metric"><span>Top 40 6개월 매출</span><strong data-keyword-market-top40-sales>56,020만원</strong><small>상위권 시장 규모</small></div>
+                  <div class="mi-market-metric"><span>평균 가격</span><strong data-keyword-market-price>94,700원</strong><small>콘텐츠/광고 소재 기준</small></div>
+                </div>
+              </div>
+              <div class="mi-market-section">
+                <div class="mi-table">
+                  <div class="mi-row"><span>네이버 상품지표</span><strong data-keyword-market-naver>보통 · 상품수 대비 검색수 확인</strong></div>
+                  <div class="mi-row"><span>광고지표</span><strong data-keyword-market-ad>CTR/CPC 확인 후 광고 문구 테스트</strong></div>
+                  <div class="mi-row"><span>추천 액션</span><strong data-keyword-market-action>SEO 후보로 등록 후 콘텐츠 제목에 반영</strong></div>
+                </div>
+              </div>
             </div>
           </article>
 
@@ -3005,32 +3204,147 @@
         if (hoverGroup) hoverGroup.innerHTML = "";
       }
 
-      function showKeywordHover(event, point, color, text) {
+      function showKeywordHover(event, points, text) {
+        points = Array.isArray(points) ? points : [points];
+        if (!points.length) return;
         var hoverGroup = root.querySelector("[data-keyword-hover]");
         if (hoverGroup) {
           hoverGroup.innerHTML = "";
+          var x = points[0].x;
           var guide = document.createElementNS("http://www.w3.org/2000/svg", "line");
           guide.setAttribute("class", "mi-hover-guide");
-          guide.setAttribute("x1", point.x.toFixed(1));
-          guide.setAttribute("x2", point.x.toFixed(1));
+          guide.setAttribute("x1", x.toFixed(1));
+          guide.setAttribute("x2", x.toFixed(1));
           guide.setAttribute("y1", "18");
           guide.setAttribute("y2", "220");
           guide.setAttribute("stroke", "#cbd5e1");
           guide.setAttribute("stroke-width", "1");
           guide.setAttribute("opacity", "0.9");
-
-          var marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-          marker.setAttribute("class", "mi-hover-point");
-          marker.setAttribute("cx", point.x.toFixed(1));
-          marker.setAttribute("cy", point.y.toFixed(1));
-          marker.setAttribute("r", "6.5");
-          marker.setAttribute("fill", "#fff");
-          marker.setAttribute("stroke", color);
-          marker.setAttribute("stroke-width", "4");
           hoverGroup.appendChild(guide);
-          hoverGroup.appendChild(marker);
+
+          points.forEach(function (point) {
+            var marker = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            marker.setAttribute("class", "mi-hover-point");
+            marker.setAttribute("cx", point.x.toFixed(1));
+            marker.setAttribute("cy", point.y.toFixed(1));
+            marker.setAttribute("r", "6.5");
+            marker.setAttribute("fill", "#fff");
+            marker.setAttribute("stroke", point.color);
+            marker.setAttribute("stroke-width", "4");
+            hoverGroup.appendChild(marker);
+          });
         }
-        showKeywordTooltip(event, text, point);
+        var topPoint = points.reduce(function (best, point) {
+          return point.y < best.y ? point : best;
+        }, points[0]);
+        showKeywordTooltip(event, text, { x: points[0].x, y: topPoint.y });
+      }
+
+      function keywordGrade(score) {
+        if (score <= 2.8) return { label: "좋음", className: "" };
+        if (score <= 6) return { label: "보통", className: "warn" };
+        return { label: "높음", className: "bad" };
+      }
+
+      function makeRelatedKeywords(item) {
+        var keyword = item.keyword;
+        var related = item.data && item.data.naver && Array.isArray(item.data.naver.relatedKeywords) ? item.data.naver.relatedKeywords : [];
+        if (related.length < 4) {
+          related = related.concat([
+            "저소음 " + keyword,
+            "신일 " + keyword,
+            "대형 " + keyword,
+            "벽걸이 " + keyword,
+            keyword + " 추천",
+            "미니 " + keyword,
+            "BLDC " + keyword
+          ]);
+        }
+        var list = [keyword].concat(related).filter(Boolean);
+        var seen = {};
+        return list.filter(function (name) {
+          var key = String(name).replace(/\s+/g, "");
+          if (!key || seen[key]) return false;
+          seen[key] = true;
+          return true;
+        }).slice(0, 8);
+      }
+
+      function estimateKeywordMarket(item) {
+        var keyword = item.keyword || "";
+        var data = item.data || {};
+        var volume = Number(data.volume || 0);
+        var seed = hashKeyword(keyword);
+        var comp = String(data.comp || "");
+        var compFactor = comp.indexOf("높") > -1 ? 4.8 : comp.indexOf("중") > -1 ? 2.35 : 1.45;
+        var products = Math.max(1200, Math.round(volume * compFactor + (seed % 9000)));
+        var score = Math.max(0.01, products / Math.max(1, volume));
+        var avgPrice = Math.round((52000 + (seed % 8) * 7300) / 100) * 100;
+        var top10Sales = Math.max(120, Math.round(volume * 0.132));
+        var top40Sales = Math.max(top10Sales + 320, Math.round(volume * 0.632));
+        var top10Units = Math.max(20, Math.round(volume * 0.023));
+        return {
+          keyword: keyword,
+          volume: volume,
+          products: products,
+          score: score,
+          grade: keywordGrade(score),
+          avgPrice: avgPrice,
+          top10Sales: top10Sales,
+          top40Sales: top40Sales,
+          top10Units: top10Units,
+          comp: comp || "확인 필요",
+          action: data.action || "SEO 후보로 등록 후 콘텐츠 제목에 반영",
+          insight: data.insight || "상품수 대비 검색량을 보고 진입 우선순위를 판단"
+        };
+      }
+
+      function renderKeywordMarket(items) {
+        var item = items && items[0];
+        if (!item) return;
+        var market = estimateKeywordMarket(item);
+        var title = root.querySelector("[data-keyword-market-title]");
+        var path = root.querySelector("[data-keyword-market-path]");
+        var products = root.querySelector("[data-keyword-market-products]");
+        var volume = root.querySelector("[data-keyword-market-volume]");
+        var score = root.querySelector("[data-keyword-market-score]");
+        var grade = root.querySelector("[data-keyword-market-grade]");
+        var top10Sales = root.querySelector("[data-keyword-market-top10-sales]");
+        var top10Units = root.querySelector("[data-keyword-market-top10-units]");
+        var top40Sales = root.querySelector("[data-keyword-market-top40-sales]");
+        var price = root.querySelector("[data-keyword-market-price]");
+        var naver = root.querySelector("[data-keyword-market-naver]");
+        var ad = root.querySelector("[data-keyword-market-ad]");
+        var action = root.querySelector("[data-keyword-market-action]");
+        var relatedNode = root.querySelector("[data-keyword-related]");
+
+        if (title) title.textContent = market.keyword;
+        if (path) path.textContent = "네이버 검색 > " + market.keyword + " 지면 기준으로 시장성, 경쟁도, 연관 키워드를 정리합니다.";
+        if (products) products.textContent = formatNumber(market.products) + "개";
+        if (volume) volume.textContent = formatNumber(market.volume) + "회";
+        if (score) score.textContent = market.score.toFixed(2);
+        if (grade) {
+          grade.textContent = market.grade.label;
+          grade.className = "mi-grade" + (market.grade.className ? " " + market.grade.className : "");
+        }
+        if (top10Sales) top10Sales.textContent = formatNumber(market.top10Sales) + "만원";
+        if (top10Units) top10Units.textContent = formatNumber(market.top10Units) + "개";
+        if (top40Sales) top40Sales.textContent = formatNumber(market.top40Sales) + "만원";
+        if (price) price.textContent = formatNumber(market.avgPrice) + "원";
+        if (naver) naver.textContent = market.grade.label + " · 상품수 " + formatNumber(market.products) + "개 / 검색수 " + formatNumber(market.volume) + "회";
+        if (ad) ad.textContent = market.comp + " 경쟁도 · CTR/CPC 확인 후 소재 테스트";
+        if (action) action.textContent = market.action;
+
+        if (relatedNode) {
+          var related = makeRelatedKeywords(item);
+          relatedNode.innerHTML = '<div><span>키워드</span><span>검색수</span><span>상품수</span></div>' + related.map(function (name, index) {
+            var seed = hashKeyword(name);
+            var ratio = index === 0 ? 1 : (0.18 + ((seed + index * 7) % 70) / 100);
+            var relatedVolume = Math.max(120, Math.round(market.volume * ratio));
+            var relatedProducts = Math.max(800, Math.round(market.products * (0.22 + ((seed + index * 5) % 95) / 100)));
+            return '<div><span>' + escapeHtml(name) + '</span><span>' + formatNumber(relatedVolume) + '</span><span>' + formatNumber(relatedProducts) + '</span></div>';
+          }).join("");
+        }
       }
 
       function renderKeywordChart(itemsOrKeyword, singleData) {
@@ -3087,15 +3401,17 @@
         if (hoverGroup) hoverGroup.innerHTML = "";
         if (pointsGroup) pointsGroup.innerHTML = "";
 
-        seriesList.forEach(function (series, seriesIndex) {
-          var color = keywordColors[seriesIndex % keywordColors.length];
-          var pointPairs = series.map(function (value, index) {
+        var seriesPointLists = seriesList.map(function (series, seriesIndex) {
+          return series.map(function (value, index) {
             var x = series.length > 1 ? (index / (series.length - 1)) * width : width / 2;
             var y = height - bottom - ((value / chartMax) * (height - top - bottom));
             if (value >= peakInfo.value) peakInfo = { keyword: items[seriesIndex].keyword, label: labels[index] || "", value: value };
             return { x: x, y: y, value: value, label: labels[index] || "" };
           });
+        });
 
+        seriesPointLists.forEach(function (pointPairs, seriesIndex) {
+          var color = keywordColors[seriesIndex % keywordColors.length];
           if (linesGroup) {
             var line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
             line.setAttribute("points", pointPairs.map(function (point) {
@@ -3109,36 +3425,51 @@
             line.setAttribute("opacity", seriesIndex === 0 ? "1" : "0.9");
             linesGroup.appendChild(line);
           }
-
-          if (pointsGroup) {
-            pointPairs.forEach(function (point) {
-              var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-              var tooltipText = "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value);
-              circle.setAttribute("class", "mi-chart-hit");
-              circle.setAttribute("cx", point.x.toFixed(1));
-              circle.setAttribute("cy", point.y.toFixed(1));
-              circle.setAttribute("r", "12");
-              circle.setAttribute("fill", "transparent");
-              circle.setAttribute("stroke", "transparent");
-              circle.setAttribute("stroke-width", "0");
-              circle.addEventListener("mouseenter", function (event) {
-                showKeywordHover(event, point, color, tooltipText);
-              });
-              circle.addEventListener("mousemove", function (event) {
-                showKeywordHover(event, point, color, tooltipText);
-              });
-              circle.addEventListener("mouseleave", function () {
-                hideKeywordTooltip();
-              });
-              pointsGroup.appendChild(circle);
-            });
-          }
         });
 
-        if (peak) peak.textContent = peakInfo.keyword + " · " + peakInfo.label + "월 · " + formatNumber(peakInfo.value);
+        if (pointsGroup && seriesPointLists[0]) {
+          seriesPointLists[0].forEach(function (basePoint, pointIndex) {
+            var prevPoint = seriesPointLists[0][pointIndex - 1];
+            var nextPoint = seriesPointLists[0][pointIndex + 1];
+            var startX = prevPoint ? (prevPoint.x + basePoint.x) / 2 : 0;
+            var endX = nextPoint ? (basePoint.x + nextPoint.x) / 2 : width;
+            var hoverPoints = seriesPointLists.map(function (points, seriesIndex) {
+              var point = points[pointIndex] || basePoint;
+              return {
+                x: basePoint.x,
+                y: point.y,
+                value: point.value,
+                label: basePoint.label,
+                keyword: items[seriesIndex].keyword,
+                color: keywordColors[seriesIndex % keywordColors.length]
+              };
+            });
+            var tooltipText = "<b>" + escapeHtml(basePoint.label) + "월 검색량</b>" + hoverPoints.map(function (point) {
+              return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " " + formatNumber(point.value) + "</span>";
+            }).join("");
+            var hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+            hit.setAttribute("class", "mi-chart-hit");
+            hit.setAttribute("x", startX.toFixed(1));
+            hit.setAttribute("y", "0");
+            hit.setAttribute("width", Math.max(12, endX - startX).toFixed(1));
+            hit.setAttribute("height", height.toString());
+            hit.setAttribute("fill", "transparent");
+            hit.addEventListener("mouseenter", function (event) {
+              showKeywordHover(event, hoverPoints, tooltipText);
+            });
+            hit.addEventListener("mousemove", function (event) {
+              showKeywordHover(event, hoverPoints, tooltipText);
+            });
+            hit.addEventListener("mouseleave", hideKeywordTooltip);
+            pointsGroup.appendChild(hit);
+          });
+        }
+
+        if (peak) peak.textContent = "";
         if (insight) {
           insight.textContent = items[0].data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
         }
+        renderKeywordMarket(items);
         renderKeywordMonths(labels);
         renderKeywordYAxis(chartMax);
         setRatio("[data-keyword-device-mobile]", "모바일", profile.device.mobile);

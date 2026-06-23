@@ -527,7 +527,18 @@
       }
 
       #mi-home .mi-actions {
-        display: none;
+        gap: 6px;
+      }
+
+      #mi-home .mi-topbar-inner {
+        gap: 10px;
+      }
+
+      #mi-home .mi-topbar .mi-button {
+        width: auto;
+        min-height: 34px;
+        padding: 0 10px;
+        font-size: 12px;
       }
 
       #mi-home .mi-hero {
@@ -558,6 +569,12 @@
         align-items: stretch;
       }
     }
+
+    @media (max-width: 430px) {
+      #mi-home .mi-brand span:last-child {
+        display: none;
+      }
+    }
   </style>
 
   <header class="mi-topbar">
@@ -568,8 +585,8 @@
       </a>
 
       <div class="mi-actions">
-        <a class="mi-button secondary" href="#mi-home-features">기능 보기</a>
-        <a class="mi-button primary" href="/client#mi-dashboard">화면 미리보기</a>
+        <a class="mi-button secondary" href="/client#mi-dashboard">광고주 서버</a>
+        <a class="mi-button primary" href="/admin">관리자 서버</a>
       </div>
     </div>
   </header>

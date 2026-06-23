@@ -148,7 +148,7 @@ async function findClientId(ctx, agencyCode) {
   return data?.id || null;
 }
 
-async function loadSnapshots(ctx, trackerIds, limit = 300) {
+async function loadSnapshots(ctx, trackerIds, limit = 5000) {
   if (!trackerIds.length) return new Map();
 
   const { data, error } = await ctx.supabaseAdmin
@@ -239,6 +239,9 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message)
       check_count: Number(tracker.check_count || 0) + 1,
       found_count: Number(tracker.found_count || 0) + (matchedRank ? 1 : 0),
       last_message: message,
+      product_id: tracker.product_id || result?.item?.productId || null,
+      mall_name: tracker.mall_name || result?.item?.mallName || null,
+      product_title: tracker.product_title || result?.item?.title || null,
     })
     .eq("id", tracker.id)
     .select(TRACKER_SELECT)

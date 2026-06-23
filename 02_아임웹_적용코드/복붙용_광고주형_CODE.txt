@@ -830,7 +830,7 @@
 
     #mi-clean .mi-rank-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 14px;
       margin-top: 14px;
     }
@@ -953,6 +953,140 @@
       padding: 6px 10px;
       border-radius: 7px;
       font-size: 11px;
+    }
+
+    #mi-clean .mi-rank-daily-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    #mi-clean .mi-rank-tracker-card {
+      overflow: hidden;
+      border: 1px solid #dde5f0;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    #mi-clean .mi-rank-tracker-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid #e8edf4;
+      background: #fbfcfd;
+      align-items: center;
+    }
+
+    #mi-clean .mi-rank-tracker-title {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+      color: var(--mi-navy);
+      font-weight: 900;
+    }
+
+    #mi-clean .mi-rank-tracker-title strong,
+    #mi-clean .mi-rank-tracker-title span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-tracker-title span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-rank-tracker-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+
+    #mi-clean .mi-rank-pill {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border: 1px solid #d9e2ee;
+      border-radius: 999px;
+      padding: 5px 10px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-day-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+      gap: 0;
+      padding: 10px;
+    }
+
+    #mi-clean .mi-rank-day-card {
+      min-height: 84px;
+      padding: 9px 10px;
+      border-right: 1px solid #edf1f6;
+      border-bottom: 1px solid #edf1f6;
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-clean .mi-rank-day-card strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 13px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-clean .mi-rank-day-card.is-sat strong {
+      color: #1d63d8;
+    }
+
+    #mi-clean .mi-rank-day-card.is-sun strong {
+      color: #d92323;
+    }
+
+    #mi-clean .mi-rank-day-slots {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+    }
+
+    #mi-clean .mi-rank-day-slots span {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+      padding-right: 8px;
+      border-right: 1px solid #edf1f6;
+    }
+
+    #mi-clean .mi-rank-day-slots span:last-child {
+      border-right: 0;
+      padding-right: 0;
+      padding-left: 8px;
+    }
+
+    #mi-clean .mi-rank-day-slots small {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-day-slots b {
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-clean .mi-rank-day-slots .is-empty b {
+      color: #b6c0cf;
     }
 
     #mi-clean .mi-keyword-market {
@@ -2290,9 +2424,9 @@
                 <div class="mi-rank-state">등록된 추적 항목을 불러오는 중입니다.</div>
               </div>
               <div class="mi-rank-panel mi-rank-history">
-                <h3>30일 기록</h3>
+                <h3>상품별 일별 순위</h3>
                 <div data-rank-history>
-                  <div class="mi-rank-state">추적 등록 후 3시간 단위 기록이 쌓입니다.</div>
+                  <div class="mi-rank-state">추적 등록 후 상품별 일별 순위판이 생성됩니다.</div>
                 </div>
               </div>
             </div>
@@ -3305,30 +3439,88 @@
         return "D-" + Math.max(0, Math.ceil((new Date(tracker.endsAt).getTime() - Date.now()) / 86400000));
       }
 
-      function flattenRankSnapshots(trackers) {
-        var rows = [];
-        (trackers || []).forEach(function (tracker) {
-          (tracker.snapshots || []).forEach(function (snapshot) {
-            rows.push(Object.assign({ keyword: tracker.keyword }, snapshot));
-          });
+      function rankDateKey(date) {
+        return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+      }
+
+      function rankDayLabel(date) {
+        var days = ["일", "월", "화", "수", "목", "금", "토"];
+        return String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0") + "(" + days[date.getDay()] + ")";
+      }
+
+      function rankDayClass(date) {
+        if (date.getDay() === 0) return " is-sun";
+        if (date.getDay() === 6) return " is-sat";
+        return "";
+      }
+
+      function rankTrackerTitle(tracker) {
+        var latest = (tracker.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        return tracker.productTitle || item.title || tracker.keyword || "추적 상품";
+      }
+
+      function rankTrackerMeta(tracker) {
+        var latest = (tracker.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        var productId = tracker.productId || item.productId || "-";
+        var mallName = tracker.mallName || item.mallName || "";
+        return "상품정보 : " + productId + (mallName ? " · " + mallName : "");
+      }
+
+      function groupRankSnapshotsByDay(snapshots) {
+        var grouped = {};
+        (snapshots || []).forEach(function (snapshot) {
+          if (!snapshot || !snapshot.checkedAt) return;
+          var date = new Date(snapshot.checkedAt);
+          if (Number.isNaN(date.getTime())) return;
+          var key = rankDateKey(date);
+          var slot = date.getHours() < 12 ? "am" : "pm";
+          if (!grouped[key]) grouped[key] = { date: date, am: null, pm: null };
+          if (!grouped[key][slot] || new Date(grouped[key][slot].checkedAt).getTime() < date.getTime()) {
+            grouped[key][slot] = snapshot;
+          }
         });
-        return rows.sort(function (a, b) {
-          return new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime();
-        }).slice(0, 12);
+        return grouped;
+      }
+
+      function renderRankSlot(label, snapshot) {
+        var rank = snapshot && snapshot.rank ? rankText(snapshot.rank) : "-";
+        return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + label + '</small><b>' + escapeHtml(rank) + '</b></span>';
+      }
+
+      function renderTrackerDailyBoard(tracker) {
+        var grouped = groupRankSnapshotsByDay(tracker.snapshots || []);
+        var keys = Object.keys(grouped).sort(function (a, b) {
+          return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
+        }).slice(0, 30);
+        if (!keys.length) {
+          return '<div class="mi-rank-state">첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
+        }
+        return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
+          var day = grouped[key];
+          return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
+            '</strong><div class="mi-rank-day-slots">' + renderRankSlot("PM", day.pm) + renderRankSlot("AM", day.am) + '</div></div>';
+        }).join("") + '</div>';
       }
 
       function renderRankHistory(node, trackers) {
         if (!node) return;
-        var rows = flattenRankSnapshots(trackers);
-        if (!rows.length) {
-          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 3시간 단위 기록이 쌓입니다.</div>';
+        if (!trackers || !trackers.length) {
+          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 순위판이 생성됩니다.</div>';
           return;
         }
-        node.innerHTML = '<div class="mi-rank-table is-history"><div><span>일시</span><span>키워드</span><span>순위</span><span>상태</span></div>' +
-          rows.map(function (item) {
-            return '<div><span>' + escapeHtml(formatRankShortAt(item.checkedAt)) + '</span><span>' + escapeHtml(item.keyword || "-") +
-              '</span><span>' + escapeHtml(rankText(item.rank)) + '</span><span>' + escapeHtml(item.matched ? "확인" : "미발견") + '</span></div>';
-          }).join("") + '</div>';
+        node.innerHTML = '<div class="mi-rank-daily-list">' + trackers.map(function (tracker) {
+          return '<section class="mi-rank-tracker-card"><div class="mi-rank-tracker-head"><div class="mi-rank-tracker-title"><strong title="' +
+            escapeHtml(rankTrackerTitle(tracker)) + '">' + escapeHtml(tracker.keyword || "-") + '</strong><span title="' +
+            escapeHtml(rankTrackerTitle(tracker)) + '">' + escapeHtml(rankTrackerTitle(tracker)) + '</span><span>' +
+            escapeHtml(rankTrackerMeta(tracker)) + '</span></div><div class="mi-rank-tracker-meta"><span class="mi-rank-pill">현재 ' +
+            escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
+            escapeHtml(rankText(tracker.bestRank)) + '</span><span class="mi-rank-pill">' +
+            escapeHtml(tracker.status === "active" ? "다음 " + formatRankRemain(tracker.nextCheckAt) : rankTrackerStatus(tracker)) +
+            '</span><button class="mi-link-button" type="button" data-rank-refresh="' + escapeHtml(tracker.id) + '">수동 갱신</button></div></div>' +
+            renderTrackerDailyBoard(tracker) + '</section>';
+        }).join("") + '</div>';
       }
 
       function renderRankItems(items) {

@@ -1,13 +1,13 @@
 <meta charset="utf-8" />
 <title>모먼트인사이트 | 마케팅 대행사 성과 대시보드</title>
-<meta name="description" content="광고주별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 관리하는 마케팅 데이터 플랫폼입니다." />
-<meta name="keywords" content="모먼트인사이트, 모먼트랩스, 마케팅 대시보드, 광고 성과 대시보드, KPI 보고서, 광고주 관리, 마케팅 데이터 플랫폼" />
+<meta name="description" content="브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인할 수 있는 마케팅 데이터 플랫폼입니다." />
+<meta name="keywords" content="모먼트인사이트, 모먼트랩스, 마케팅 대시보드, 광고 성과 대시보드, KPI 보고서, 브랜드 성과 관리, 마케팅 데이터 플랫폼" />
 <meta name="robots" content="index, follow" />
 <link rel="canonical" href="https://insight.momentlabs.co.kr/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="모먼트인사이트" />
 <meta property="og:title" content="모먼트인사이트 | 마케팅 대행사 성과 대시보드" />
-<meta property="og:description" content="광고주별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 관리하는 마케팅 데이터 플랫폼입니다." />
+<meta property="og:description" content="브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인할 수 있는 마케팅 데이터 플랫폼입니다." />
 <meta property="og:url" content="https://insight.momentlabs.co.kr/" />
 
 <section id="mi-home" class="mi-home-wrap">
@@ -568,8 +568,8 @@
       </a>
 
       <div class="mi-actions">
-        <a class="mi-button secondary" href="/client#mi-dashboard">광고주 포털</a>
-        <a class="mi-button primary" href="/admin#mi-admin-home">관리자 콘솔</a>
+        <a class="mi-button secondary" href="#mi-home-features">기능 보기</a>
+        <a class="mi-button primary" href="/client#mi-dashboard">화면 미리보기</a>
       </div>
     </div>
   </header>
@@ -578,30 +578,30 @@
     <section class="mi-hero" aria-label="모먼트인사이트 소개">
       <div class="mi-shell mi-hero-grid">
         <div>
-          <span class="mi-kicker">광고주 성과 공유 포털</span>
-          <h1>광고주 성과 공유를 더 간단하게.</h1>
-          <p class="mi-lead">매출, 광고 성과, 보고서, 일정, 다음 액션을 광고주용 화면과 관리자용 화면으로 나눠 정리합니다.</p>
+          <span class="mi-kicker">Marketing Performance Portal</span>
+          <h1>마케팅 성과를 한 화면에서 확인하세요.</h1>
+          <p class="mi-lead">매출, 광고 성과, KPI, 보고서, 일정, 키워드 흐름까지 브랜드 운영에 필요한 정보를 보기 쉽게 정리합니다.</p>
           <div class="mi-inline-actions">
-            <a class="mi-button primary" href="/client#mi-dashboard">광고주 포털 보기</a>
-            <a class="mi-button secondary" href="/admin#mi-admin-home">관리자 콘솔 보기</a>
+            <a class="mi-button primary" href="/client#mi-dashboard">대시보드 미리보기</a>
+            <a class="mi-button secondary" href="#mi-home-flow">운영 흐름 보기</a>
           </div>
           <div class="mi-proof-row" aria-label="핵심 장점">
-            <div class="mi-proof"><strong>분리</strong><span>광고주별 독립 화면</span></div>
-            <div class="mi-proof"><strong>검수</strong><span>관리자 승인 후 공개</span></div>
-            <div class="mi-proof"><strong>실행</strong><span>다음 액션까지 정리</span></div>
+            <div class="mi-proof"><strong>요약</strong><span>핵심 성과를 먼저 확인</span></div>
+            <div class="mi-proof"><strong>정리</strong><span>보고서와 일정을 한곳에 보관</span></div>
+            <div class="mi-proof"><strong>실행</strong><span>다음 액션까지 연결</span></div>
           </div>
         </div>
 
         <aside class="mi-preview" aria-label="대시보드 미리보기">
           <div class="mi-preview-top">
-            <strong>광고주 대시보드</strong>
-            <span class="mi-badge">공개용</span>
+            <strong>성과 대시보드</strong>
+            <span class="mi-badge">미리보기</span>
           </div>
           <div class="mi-preview-body">
             <div class="mi-preview-title">
               <div>
                 <h3>비타민 앰플 현재 성과</h3>
-                <p>관리자가 공개한 월간 합산 데이터 기준</p>
+                <p>월간 성과 요약 데이터 기준</p>
               </div>
               <span class="mi-badge">6월</span>
             </div>
@@ -624,48 +624,48 @@
     <section class="mi-section compact" id="mi-home-roles">
       <div class="mi-shell">
         <div class="mi-section-head">
-          <span class="mi-kicker">Role Based Portal</span>
-          <h2>광고주와 관리자가 보는 화면을 분리합니다.</h2>
-          <p>광고주는 공개된 결과만 보고, 관리자는 원천 데이터와 내부 메모까지 관리합니다.</p>
+          <span class="mi-kicker">For Brand Growth</span>
+          <h2>흩어진 마케팅 자료를 보기 쉽게 모읍니다.</h2>
+          <p>성과 숫자, 보고서, 일정, 실행 방향이 한 화면에 정리되면 브랜드 운영 판단이 빨라집니다.</p>
         </div>
 
         <div class="mi-grid-3">
           <article class="mi-card mi-role-card">
             <div>
               <span class="mi-card-number">01</span>
-              <h3>광고주 포털</h3>
-              <p>매출, KPI, 일정, 보고서, 공개 코멘트를 간단히 확인합니다.</p>
+              <h3>성과 요약</h3>
+              <p>매출, 광고비, ROAS, 목표 달성률을 먼저 확인합니다.</p>
             </div>
             <div class="mi-role-list">
-              <span>공개 데이터 <strong>읽기</strong></span>
-              <span>내부 메모 <strong>숨김</strong></span>
-              <span>키워드 조회 <strong>개별 사용</strong></span>
+              <span>월간 매출 <strong>요약</strong></span>
+              <span>KPI 흐름 <strong>확인</strong></span>
+              <span>핵심 변화 <strong>정리</strong></span>
             </div>
           </article>
 
           <article class="mi-card mi-role-card">
             <div>
               <span class="mi-card-number">02</span>
-              <h3>관리자 콘솔</h3>
-              <p>광고주별 데이터 입력, 보고서 관리, 공개 승인, 미리보기를 처리합니다.</p>
+              <h3>보고서 보관</h3>
+              <p>주간 보고서, 월간 보고서, KPI 자료를 한곳에서 확인합니다.</p>
             </div>
             <div class="mi-role-list">
-              <span>전체 광고주 <strong>관리</strong></span>
-              <span>공개 여부 <strong>승인</strong></span>
-              <span>보고서 <strong>등록</strong></span>
+              <span>주간 보고서 <strong>정리</strong></span>
+              <span>월간 보고서 <strong>확인</strong></span>
+              <span>자료 링크 <strong>보관</strong></span>
             </div>
           </article>
 
           <article class="mi-card mi-role-card">
             <div>
               <span class="mi-card-number">03</span>
-              <h3>키워드 분석</h3>
-              <p>네이버 검색 기반 키워드 조회를 별도 API로 연결할 수 있게 분리했습니다.</p>
+              <h3>키워드와 일정</h3>
+              <p>검색 흐름, 콘텐츠 일정, 다음 실행 방향을 함께 확인합니다.</p>
             </div>
             <div class="mi-role-list">
-              <span>검색량 <strong>API 연결</strong></span>
-              <span>월별 추이 <strong>그래프</strong></span>
-              <span>연령/요일 <strong>비율</strong></span>
+              <span>키워드 흐름 <strong>분석</strong></span>
+              <span>콘텐츠 일정 <strong>공유</strong></span>
+              <span>다음 액션 <strong>확인</strong></span>
             </div>
           </article>
         </div>
@@ -676,22 +676,22 @@
       <div class="mi-shell mi-split">
         <div class="mi-section-head">
           <span class="mi-kicker">Workflow</span>
-          <h2>운영자는 입력하고, 광고주는 결과만 봅니다.</h2>
-          <p>한 번에 많은 내용을 보여주기보다 현재 상태, 핵심 지표, 인사이트, 다음 액션 순서로 정리합니다.</p>
+          <h2>자료 확인부터 실행 방향까지 흐름이 이어집니다.</h2>
+          <p>복잡한 수치를 나열하기보다 현재 상태, 핵심 지표, 인사이트, 다음 액션 순서로 정리합니다.</p>
         </div>
 
         <div class="mi-flow" aria-label="운영 흐름">
           <div class="mi-flow-step">
-            <div><strong>광고주별 데이터 입력</strong><p>네이버, 쿠팡, 매출, KPI, 일정 데이터를 관리자 화면에서 정리합니다.</p></div>
+            <div><strong>성과 데이터 정리</strong><p>매출, 광고비, ROAS, KPI 흐름을 브랜드 기준으로 모읍니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>관리자 검수</strong><p>내부 메모와 광고주 공개 코멘트를 분리하고 공개 여부를 확인합니다.</p></div>
+            <div><strong>보고서와 일정 연결</strong><p>주간·월간 보고서, 콘텐츠 일정, 미팅 일정을 함께 확인합니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>광고주 화면 공개</strong><p>승인된 지표, 보고서, 일정, 다음 액션만 광고주 포털에 노출합니다.</p></div>
+            <div><strong>핵심 인사이트 확인</strong><p>성과가 좋은 채널과 개선이 필요한 지표를 빠르게 파악합니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>보고서와 실행 관리</strong><p>주간·월간 보고서와 실행 계획을 이어서 관리합니다.</p></div>
+            <div><strong>다음 실행 계획 공유</strong><p>다음 주에 집중할 키워드, 콘텐츠, 광고 방향을 명확히 정리합니다.</p></div>
           </div>
         </div>
       </div>
@@ -714,12 +714,12 @@
           <article class="mi-card mi-feature">
             <small>Reports</small>
             <h3>보고서 관리</h3>
-            <p>주간, 월간, KPI 보고서를 광고주별로 정리합니다.</p>
+            <p>주간, 월간, KPI 보고서를 브랜드별로 정리합니다.</p>
           </article>
           <article class="mi-card mi-feature">
             <small>Schedule</small>
             <h3>일정 공유</h3>
-            <p>촬영, 콘텐츠, 보고서, 미팅 일정을 광고주와 공유합니다.</p>
+            <p>촬영, 콘텐츠, 보고서, 미팅 일정을 한눈에 확인합니다.</p>
           </article>
           <article class="mi-card mi-feature">
             <small>Action Plan</small>
@@ -734,12 +734,12 @@
       <div class="mi-shell">
         <div class="mi-cta">
           <div>
-            <h2>이제 역할별 화면에서 흐름을 확인하세요.</h2>
-            <p>홈페이지는 간결하게, 실제 운영은 광고주 포털과 관리자 콘솔에서 확인합니다.</p>
+            <h2>브랜드 성과 관리 화면을 확인해보세요.</h2>
+            <p>숫자, 보고서, 일정, 실행 방향이 어떻게 정리되는지 미리 볼 수 있습니다.</p>
           </div>
           <div class="mi-inline-actions">
-            <a class="mi-button primary" href="/client">광고주 포털</a>
-            <a class="mi-button secondary" href="/admin">관리자 콘솔</a>
+            <a class="mi-button primary" href="/client">대시보드 미리보기</a>
+            <a class="mi-button secondary" href="#mi-home-features">기능 다시 보기</a>
           </div>
         </div>
       </div>
@@ -747,6 +747,6 @@
   </main>
 
   <footer class="mi-footer">
-    Moment Insight · Marketing Agency Data Platform · 광고주별 KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
+    Moment Insight · Marketing Agency Data Platform · KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
   </footer>
 </section>

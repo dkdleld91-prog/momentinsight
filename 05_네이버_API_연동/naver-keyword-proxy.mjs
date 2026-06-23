@@ -295,8 +295,8 @@ function buildChartData(keyword, searchAd, datalabProfile) {
     matchedKeyword,
     volume: safeVolume,
     comp,
-    action: comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠/광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 네이버 SEO 후보로 분류",
-    insight: `네이버 검색광고 기준 월 검색량 ${safeVolume.toLocaleString("ko-KR")}회, 경쟁도 ${comp}입니다.`,
+    action: comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류",
+    insight: `월 검색량 ${safeVolume.toLocaleString("ko-KR")}회, 시장 경쟁도 ${comp}입니다.`,
     series: datalabProfile?.series?.length ? datalabProfile.series : makeFallbackSeries(safeVolume),
     device: { mobile: mobileShare, pc: pcShare },
     gender: datalabProfile?.gender || { female: 50, male: 50 },
@@ -309,7 +309,6 @@ function buildChartData(keyword, searchAd, datalabProfile) {
       monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt || "0",
       monthlyAvePcCtr: item.monthlyAvePcCtr || "0",
       monthlyAveMobileCtr: item.monthlyAveMobileCtr || "0",
-      compIdx: item.compIdx || "",
       relatedKeywords: (searchAd?.related || []).map((related) => related.relKeyword).filter(Boolean)
     }
   };
@@ -319,23 +318,21 @@ async function handleKeyword(req, res, url) {
   if (!keywordApiEnabled(url)) {
     sendJson(req, res, 403, {
       ok: false,
-      message: "키워드 조회 API는 현재 비공개 상태입니다. 운영 오픈 시 서버 환경변수 MI_KEYWORD_API_ENABLED=true로 열어야 합니다."
+      message: "키워드 데이터 조회는 현재 준비 중입니다."
     });
     return;
   }
 
   const keyword = normalizeKeyword(url.searchParams.get("keyword"));
   if (!keyword) {
-    sendJson(req, res, 400, { ok: false, message: "keyword 파라미터가 필요합니다." });
+    sendJson(req, res, 400, { ok: false, message: "검색어를 입력해주세요." });
     return;
   }
 
   if (!hasSearchAdConfig()) {
     sendJson(req, res, 503, {
       ok: false,
-      configured: false,
-      message: "네이버 검색광고 API 키가 없습니다. NAVER_SEARCHAD_API_KEY, NAVER_SEARCHAD_SECRET_KEY, NAVER_SEARCHAD_CUSTOMER_ID를 설정해야 실제 검색량 조회가 가능합니다.",
-      missing: ["NAVER_SEARCHAD_API_KEY", "NAVER_SEARCHAD_SECRET_KEY", "NAVER_SEARCHAD_CUSTOMER_ID"].filter((key) => !process.env[key])
+      message: "키워드 데이터 연결이 준비되지 않았습니다. 관리자에게 문의해주세요."
     });
     return;
   }
@@ -357,13 +354,9 @@ async function handleKeyword(req, res, url) {
   sendJson(req, res, 200, {
     ok: true,
     source: {
-      searchVolume: "NAVER SearchAd API",
-      trend: datalabProfile ? "NAVER DataLab API" : "fallback",
-      datalabError
-    },
-    configured: {
-      searchAd: hasSearchAdConfig(),
-      datalab: hasDatalabConfig()
+      searchVolume: "monthly_search",
+      trend: datalabProfile ? "trend_profile" : "estimated_trend",
+      shopping: "pending"
     },
     chartData
   });
@@ -399,8 +392,7 @@ const server = http.createServer(async (req, res) => {
   } catch (error) {
     sendJson(req, res, error.status || 500, {
       ok: false,
-      message: error.message || "네이버 API 연결 중 오류가 발생했습니다.",
-      detail: safeErrorPayload(error.payload)
+      message: "키워드 데이터 조회 중 오류가 발생했습니다."
     });
   }
 });

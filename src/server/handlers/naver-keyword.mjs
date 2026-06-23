@@ -274,13 +274,12 @@ function trendLabels(payload) {
   return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
 }
 
-function trendToSeries(trendPayload, totalVolume) {
+function trendToSeries(trendPayload) {
   const data = trendData(trendPayload);
   if (!data.length) return [];
-  const base = Number(totalVolume || 0);
   return data.map((item) => {
     const ratio = Number(item.ratio || 0);
-    return Math.max(0, Math.round(base ? (base * ratio) / 100 : ratio * 100));
+    return Math.max(0, round(ratio, 1));
   });
 }
 
@@ -295,44 +294,25 @@ function weekdayShares(dailyPayload) {
   return normalizeShares(sums.map((value) => ({ value })));
 }
 
-async function buildDatalabProfile(env, keyword, totalVolume) {
+async function buildDatalabProfile(env, keyword) {
   const endDate = compactDate(dateDaysAgo(1));
   const startDate = compactDate(monthsAgo(12));
   const dailyStartDate = compactDate(dateDaysAgo(28));
 
-  const trend = await fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month" });
-  const [male, female, age10, age20, age30, age40, age50, age60, daily] = await Promise.all([
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", gender: "m" }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", gender: "f" }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["2"] }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["3", "4"] }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["5", "6"] }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["7", "8"] }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["9", "10"] }),
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: ["11"] }),
+  const [trend, daily] = await Promise.all([
+    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month" }),
     fetchDatalabSearch(env, { keyword, startDate: dailyStartDate, endDate, timeUnit: "date" }),
   ]);
 
-  const genderShares = normalizeShares([
-    { label: "male", value: ratioSum(male) },
-    { label: "female", value: ratioSum(female) },
-  ]);
-  const ageShares = normalizeShares([
-    { label: "10", value: ratioSum(age10) },
-    { label: "20", value: ratioSum(age20) },
-    { label: "30", value: ratioSum(age30) },
-    { label: "40", value: ratioSum(age40) },
-    { label: "50", value: ratioSum(age50) },
-    { label: "60", value: ratioSum(age60) },
-  ]);
-
   return {
-    series: trendToSeries(trend, totalVolume),
+    series: trendToSeries(trend),
     seriesLabels: trendLabels(trend),
     month: monthlyShares(trend),
     monthLabels: monthlyLabels(trend),
-    gender: { male: genderShares[0], female: genderShares[1] },
-    age: ageShares,
+    trendUnit: "relative_interest_index",
+    gender: null,
+    age: [],
+    demographicStatus: "shopping_insight_category_required",
     week: weekdayShares(daily),
   };
 }
@@ -426,18 +406,20 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     volume: safeVolume,
     comp,
     action: hasExactMatch
-      ? comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류"
+      ? comp === "높음" ? "검색량은 크지만 광고 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 광고 경쟁도를 기준으로 SEO 후보로 분류"
       : "정확한 월 검색량이 확인되지 않아 연관 키워드를 개별 조회",
     insight: hasExactMatch
-      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 시장 경쟁도 ${comp}입니다.`
+      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 광고 경쟁도 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
     series: datalabProfile?.series?.length ? datalabProfile.series : [],
     seriesLabels: datalabProfile?.seriesLabels || [],
+    trendUnit: datalabProfile?.trendUnit || "",
     month: datalabProfile?.month || [],
     monthLabels: datalabProfile?.monthLabels || [],
     device: { mobile: mobileShare, pc: pcShare },
     gender: datalabProfile?.gender || null,
     age: datalabProfile?.age || [],
+    demographicStatus: datalabProfile?.demographicStatus || "",
     week: datalabProfile?.week || [],
     naver: {
       monthlyPcQcCnt: item.monthlyPcQcCnt || "0",
@@ -488,7 +470,7 @@ export default {
 
       if (hasDatalabConfig(env) && baseVolume > 0) {
         try {
-          datalabProfile = await buildDatalabProfile(env, keyword, baseVolume);
+          datalabProfile = await buildDatalabProfile(env, keyword);
         } catch (error) {
           datalabError = error.message;
         }

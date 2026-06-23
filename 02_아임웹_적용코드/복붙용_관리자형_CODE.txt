@@ -2457,7 +2457,7 @@
                 <input class="mi-input" data-admin-keyword-input value="냉감 패드, 여름 이불, 쿨매트" placeholder="키워드 최대 3개 입력 · 쉼표 또는 줄바꿈 구분" />
                 <button class="mi-button" type="button" data-admin-keyword-search>키워드 조회</button>
               </div>
-              <div class="mi-note">월 검색량, 시장 경쟁도, 연관 키워드를 한 화면에서 비교합니다.</div>
+              <div class="mi-note">월 검색량, 상품 경쟁강도, 연관 키워드를 한 화면에서 비교합니다.</div>
               <div class="mi-code-status" style="margin-top:10px;" data-admin-keyword-status>키워드는 최대 3개까지 비교할 수 있습니다.</div>
             </div>
           </article>
@@ -2465,13 +2465,13 @@
           <article class="mi-card mi-keyword-market" data-keyword-market>
             <div class="mi-market-head">
               <div class="mi-market-title">
-                <span class="mi-kicker">키워드 지면 분석</span>
+                <span class="mi-kicker">키워드 시장 분석</span>
                 <h3 data-keyword-market-title>냉감 패드</h3>
-                <p data-keyword-market-path>월 검색량과 시장 경쟁도를 바탕으로 키워드 지면을 정리합니다.</p>
+                <p data-keyword-market-path>월 검색량과 상품 노출 규모를 분리해서 정리합니다.</p>
                 <div class="mi-market-kpis">
-                  <div class="mi-market-kpi"><span>상품 지면 현황</span><strong data-keyword-market-products>수집 예정</strong><small>상품 노출 흐름</small></div>
+                  <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
                   <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>162,400회</strong><small>월간 검색량</small></div>
-                  <div class="mi-market-kpi"><span>시장 경쟁도</span><strong><b data-keyword-market-score>보통</b><i class="mi-grade" data-keyword-market-grade>시장 판단</i></strong><small>낮을수록 진입 여지가 큼</small></div>
+                  <div class="mi-market-kpi"><span>상품 경쟁강도</span><strong><b data-keyword-market-score>확인 필요</b><i class="mi-grade" data-keyword-market-grade>상품수÷검색수</i></strong><small>상품수 ÷ 월 검색수</small></div>
                 </div>
               </div>
               <aside class="mi-market-related">
@@ -2480,7 +2480,7 @@
                   <a class="mi-related-more" href="#mi-admin-related-keywords" data-mi-admin-screen="related-keywords">더보기</a>
                 </div>
                 <div class="mi-related-table" data-keyword-related>
-                  <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
+                  <div><span>키워드</span><span>월 검색수</span><span>광고 경쟁도</span><span>판단</span></div>
                   <div><span>냉감패드</span><span>162,400</span><span>보통</span><span>운영</span></div>
                   <div><span>쿨매트</span><span>37,280</span><span>보통</span><span>검토</span></div>
                   <div><span>여름이불</span><span>110,200</span><span>높음</span><span>분리</span></div>
@@ -2490,16 +2490,16 @@
             <div class="mi-market-body">
               <div class="mi-market-section">
                 <div class="mi-market-metrics">
-                  <div class="mi-market-metric"><span>상품 노출 규모</span><strong data-keyword-market-top10-sales>수집 예정</strong><small>검색 결과 기반</small></div>
-                  <div class="mi-market-metric"><span>판매 흐름</span><strong data-keyword-market-top10-units>수집 예정</strong><small>운영 데이터 축적 후 표시</small></div>
-                  <div class="mi-market-metric"><span>평균 가격대</span><strong data-keyword-market-top40-sales>수집 예정</strong><small>대표 가격 흐름</small></div>
-                  <div class="mi-market-metric"><span>상품/검색 참고값</span><strong data-keyword-market-price>판단 보류</strong><small>쇼핑 결과 수 ÷ 월 검색수</small></div>
+                  <div class="mi-market-metric"><span>상품수</span><strong data-keyword-market-top10-sales>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
+                  <div class="mi-market-metric"><span>평균 가격대</span><strong data-keyword-market-top10-units>별도 확인 필요</strong><small>검색 결과 샘플 기준</small></div>
+                  <div class="mi-market-metric"><span>광고 경쟁도</span><strong data-keyword-market-top40-sales>확인 필요</strong><small>검색광고 경쟁 지표</small></div>
+                  <div class="mi-market-metric"><span>경쟁강도</span><strong data-keyword-market-price>확인 필요</strong><small>상품수 ÷ 월 검색수</small></div>
                 </div>
               </div>
               <div class="mi-market-section">
                 <div class="mi-market-actions">
-                  <div class="mi-row"><span>시장 데이터</span><strong data-keyword-market-naver>월 검색수와 시장 경쟁도 확인</strong></div>
-                  <div class="mi-row"><span>보완 데이터</span><strong data-keyword-market-ad>상품수·가격·판매 흐름은 수집 후 함께 판단</strong></div>
+                  <div class="mi-row"><span>검색 수요</span><strong data-keyword-market-naver>월 검색수와 검색 비율 확인</strong></div>
+                  <div class="mi-row"><span>상품 경쟁</span><strong data-keyword-market-ad>상품수와 광고 경쟁도를 분리해서 판단</strong></div>
                   <div class="mi-row"><span>추천 액션</span><strong data-keyword-market-action>SEO 후보로 등록 후 콘텐츠 제목에 반영</strong></div>
                 </div>
               </div>
@@ -2511,7 +2511,7 @@
               <div class="mi-chart-top">
                 <div>
                   <h2>종합 차트</h2>
-                  <p>월별 검색수, 기기/성별/연령/요일 클릭 비율을 함께 검토합니다.</p>
+                  <p>검색 관심도 추이와 월별 검색 비율을 함께 검토합니다.</p>
                 </div>
                 <div class="mi-segment" aria-label="조회 기간" data-keyword-range-tabs>
                   <button type="button" data-keyword-range="year" class="is-active">1년</button>
@@ -2522,13 +2522,13 @@
               <div class="mi-chart-tools">
                 <span class="mi-keyword-chip" data-keyword-label>냉감 패드 외 2개</span>
                 <span class="mi-badge"><span data-keyword-volume-title>비교 총 검색수</span> <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
-                <span class="mi-badge">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
+                <span class="mi-badge">지수 전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
               </div>
               <div class="mi-chart-legend" data-keyword-legend>
-                <span><i class="mi-dot"></i>검색수</span>
+                <span><i class="mi-dot"></i>검색 관심도</span>
               </div>
 
-              <div class="mi-line-chart" aria-label="월별 검색수 차트">
+              <div class="mi-line-chart" aria-label="검색 관심도 차트">
                 <div class="mi-y-axis" data-keyword-y-axis aria-hidden="true"></div>
                 <span class="mi-axis-top" data-keyword-axis>20K</span>
                 <span class="mi-peak-label" data-keyword-peak>2026.03 · 18,400</span>
@@ -2581,7 +2581,7 @@
               <div class="mi-table">
                 <div class="mi-row"><span>네이버 SEO</span><strong>블로그/상세페이지 제목 후보</strong></div>
                 <div class="mi-row"><span>쿠팡 SEO</span><strong>상품명·검색어·광고 키워드 후보</strong></div>
-                <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>40대 여성 클릭 비중 중심으로 메시지 설계</strong></div>
+                <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>40대 여성 검색 비중 중심으로 메시지 설계</strong></div>
               </div>
             </aside>
           </div>
@@ -2592,7 +2592,7 @@
             <div>
               <span class="mi-kicker">키워드 확장</span>
               <h1>연관 키워드를 넓게 확인합니다.</h1>
-              <p>검색수와 시장 경쟁도를 보고 콘텐츠와 광고 후보를 분류합니다.</p>
+              <p>검색수, 상품 경쟁강도, 광고 경쟁도를 분리해서 후보를 분류합니다.</p>
             </div>
             <a class="mi-link-button" href="#mi-admin-keyword" data-mi-admin-screen="keyword">차트로 돌아가기</a>
           </header>
@@ -3331,7 +3331,7 @@
           volume: 18400,
           comp: "보통",
           action: "콘텐츠 제목과 상품명 반영",
-          insight: "40대 여성 클릭 비중이 높아 효능/후기 메시지를 강화",
+          insight: "40대 여성 검색 비중이 높아 효능/후기 메시지를 강화",
           series: [7200, 15100, 18400, 16900, 13300, 11200, 13600, 14100, 11800, 9600, 18100, 10600],
           device: { mobile: 85, pc: 15 },
           gender: { female: 79, male: 21 },
@@ -3353,7 +3353,7 @@
           volume: 42300,
           comp: "높음",
           action: "가격/성능 비교형 키워드 확장",
-          insight: "주중 클릭 비율이 높아 비교형 광고 소재를 평일에 집중",
+          insight: "주중 검색 비율이 높아 비교형 광고 소재를 평일에 집중",
           series: [24400, 29600, 38500, 42300, 35600, 30200, 33100, 37400, 28700, 25100, 39800, 31800],
           device: { mobile: 64, pc: 36 },
           gender: { female: 42, male: 58 },
@@ -3619,17 +3619,18 @@
       }
 
       function keywordGrade(score) {
-        if (!Number.isFinite(score) || score <= 0) return { label: "확인 필요", hint: "데이터 확인", className: "warn" };
-        if (score <= 2.8) return { label: "낮음", hint: "시장 판단", className: "" };
-        if (score <= 6) return { label: "보통", hint: "시장 판단", className: "" };
-        return { label: "높음", hint: "시장 판단", className: "" };
+        if (!Number.isFinite(score) || score <= 0) return { label: "확인 필요", hint: "상품/검색 확인", className: "warn" };
+        if (score <= 1) return { label: "낮음", hint: "경쟁강도", className: "" };
+        if (score <= 3) return { label: "보통", hint: "경쟁강도", className: "" };
+        if (score <= 6) return { label: "높음", hint: "경쟁강도", className: "" };
+        return { label: "매우 높음", hint: "경쟁강도", className: "" };
       }
 
       function gradeFromCompetition(comp, fallbackScore) {
         var label = String(comp || "");
-        if (label.indexOf("높") > -1) return { label: "높음", hint: "시장 판단", className: "" };
-        if (label.indexOf("보통") > -1 || label.indexOf("중") > -1) return { label: "보통", hint: "시장 판단", className: "" };
-        if (label.indexOf("낮") > -1) return { label: "낮음", hint: "시장 판단", className: "" };
+        if (label.indexOf("높") > -1) return { label: "높음", hint: "광고 경쟁", className: "" };
+        if (label.indexOf("보통") > -1 || label.indexOf("중") > -1) return { label: "보통", hint: "광고 경쟁", className: "" };
+        if (label.indexOf("낮") > -1) return { label: "낮음", hint: "광고 경쟁", className: "" };
         return keywordGrade(fallbackScore);
       }
 
@@ -3709,25 +3710,25 @@
         var keyword = item.keyword || "";
         var data = item.data || {};
         var volume = Number(data.volume || 0);
-        var comp = displayCompetitionLabel(data.comp);
-        var grade = gradeFromCompetition(comp, 0);
+        var adComp = displayCompetitionLabel(data.comp);
         var shopping = data.shopping || {};
         var shoppingTotal = Number(shopping.total || 0);
         var averagePrice = Number(shopping.averagePrice || 0);
         var productSearchRatio = shoppingTotal && volume ? Math.round((shoppingTotal / Math.max(1, volume)) * 100) / 100 : 0;
+        var grade = keywordGrade(productSearchRatio);
         return {
           keyword: keyword,
           volume: volume,
           volumeText: formatSearchVolume(data),
           shoppingStatus: shoppingTotal ? "확인됨" : "수집 예정",
           grade: grade,
-          saturation: productSearchRatio ? productSearchRatio + "건/검색" : "판단 보류",
+          saturation: productSearchRatio ? productSearchRatio.toFixed(2) : "확인 필요",
           shoppingProducts: shoppingTotal ? formatNumber(shoppingTotal) + "건" : "수집 예정",
-          commerceSales: "수집 예정",
-          avgPrice: averagePrice ? formatNumber(averagePrice) + "원" : "수집 예정",
-          comp: comp || "확인 필요",
-          action: data.action || "검색량과 연관 키워드 기준으로 콘텐츠 후보를 먼저 선별",
-          insight: data.insight || "시장 경쟁도는 진입 난이도 신호이며 상품 지면 포화도는 추가 데이터로 함께 판단"
+          commerceSales: averagePrice ? formatNumber(averagePrice) + "원" : "별도 확인 필요",
+          avgPrice: adComp || "확인 필요",
+          comp: adComp || "확인 필요",
+          action: data.action || "검색량, 상품수, 광고 경쟁도를 분리해서 콘텐츠 후보를 선별",
+          insight: data.insight || "월 검색량은 수요, 상품수는 노출 경쟁, 검색 비율은 관심 분포로 분리해서 판단합니다."
         };
       }
 
@@ -3753,8 +3754,8 @@
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
-        if (path) path.textContent = market.keyword + " 기준으로 월 검색량과 시장 경쟁도를 정리합니다.";
-        if (products) products.textContent = market.shoppingStatus;
+        if (path) path.textContent = market.keyword + " 기준으로 검색 수요, 상품수, 검색 비율을 분리해서 봅니다.";
+        if (products) products.textContent = market.shoppingProducts;
         if (volume) volume.textContent = formatSearchVolumeWithUnit(item.data);
         if (score) score.textContent = market.grade.label;
         if (grade) {
@@ -3765,8 +3766,8 @@
         if (top10Units) top10Units.textContent = market.commerceSales;
         if (top40Sales) top40Sales.textContent = market.avgPrice;
         if (price) price.textContent = market.saturation;
-        if (naver) naver.textContent = market.volume ? "월 검색수 " + formatSearchVolumeWithUnit(item.data) + " · 시장 경쟁도 " + market.grade.label : "월 검색수 확인 필요 · 시장 경쟁도 확인 필요";
-        if (ad) ad.textContent = market.shoppingProducts !== "수집 예정" ? "상품 노출 " + market.shoppingProducts + " · 평균 가격대 " + market.avgPrice : "상품수·가격·판매 흐름은 수집 후 함께 판단";
+        if (naver) naver.textContent = market.volume ? "월 검색수 " + formatSearchVolumeWithUnit(item.data) + " · 검색 비율 확인" : "월 검색수 확인 필요 · 검색 비율 수집 대기";
+        if (ad) ad.textContent = market.shoppingProducts !== "수집 예정" ? "상품수 " + market.shoppingProducts + " · 광고 경쟁도 " + market.comp : "상품수와 광고 경쟁도 확인 필요";
         if (action) action.textContent = market.action;
 
         var related = makeRelatedKeywords(item);
@@ -3780,12 +3781,12 @@
         }
 
         if (relatedNode) {
-          relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.slice(0, 4).map(function (entry) {
+          relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>광고 경쟁도</span><span>판단</span></div>' + related.slice(0, 4).map(function (entry) {
             return relatedRow(entry);
           }).join("");
         }
         if (relatedFullNode) {
-          relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.map(function (entry) {
+          relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>광고 경쟁도</span><span>판단</span></div>' + related.map(function (entry) {
             return relatedRow(entry);
           }).join("");
         }
@@ -3823,7 +3824,10 @@
         var height = 250;
         var top = 18;
         var bottom = 30;
-        var previousTotal = seriesList.reduce(function (sum, series) {
+        var currentTrendTotal = seriesList.reduce(function (sum, series) {
+          return sum + Number(series[series.length - 1] || 0);
+        }, 0);
+        var previousTrendTotal = seriesList.reduce(function (sum, series) {
           return sum + Number(series[series.length - 2] || series[series.length - 1] || 0);
         }, 0);
         var peakInfo = { keyword: items[0].keyword, label: labels[0], value: peakValue };
@@ -3839,7 +3843,7 @@
         var hoverGroup = root.querySelector("[data-keyword-hover]");
         var pointsGroup = root.querySelector("[data-keyword-points]");
         var empty = root.querySelector("[data-keyword-chart-empty]");
-        var changeRate = previousTotal > 0 ? Math.round(((totalVolume - previousTotal) / previousTotal) * 100) : 0;
+        var changeRate = previousTrendTotal > 0 ? Math.round(((currentTrendTotal - previousTrendTotal) / previousTrendTotal) * 100) : 0;
         var profile = {
           device: firstKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
           gender: firstKeywordProfile(items, "gender", { female: 79, male: 21 }),
@@ -3863,7 +3867,7 @@
         if (pointsGroup) pointsGroup.innerHTML = "";
         if (empty) {
           empty.hidden = hasTrendSeries;
-          empty.textContent = totalVolume ? "월별 추이 데이터 수집 대기" : "검색량 조회 후 차트를 표시합니다.";
+          empty.textContent = totalVolume ? "검색 관심도 데이터 수집 대기" : "검색량 조회 후 차트를 표시합니다.";
         }
 
         var seriesPointLists = seriesList.map(function (series, seriesIndex) {
@@ -3908,8 +3912,8 @@
                 color: keywordColors[seriesIndex % keywordColors.length]
               };
             });
-            var tooltipText = "<b>" + escapeHtml(basePoint.label) + " 검색량</b>" + hoverPoints.map(function (point) {
-              return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " " + formatNumber(point.value) + "</span>";
+            var tooltipText = "<b>" + escapeHtml(basePoint.label) + " 검색 관심도</b>" + hoverPoints.map(function (point) {
+              return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " 지수 " + formatRatioPercent(point.value) + "</span>";
             }).join("");
             var hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
             hit.setAttribute("class", "mi-chart-hit");
@@ -3931,7 +3935,7 @@
 
         if (peak) peak.textContent = "";
         if (insight) {
-          insight.textContent = items[0].data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
+          insight.textContent = items[0].data.insight || "검색량과 검색 비율을 기준으로 SEO/광고 후보를 분류";
         }
         renderKeywordMarket(items);
         renderKeywordMonths(labels);
@@ -3958,7 +3962,7 @@
         if (hasRatioValues(ageValues)) {
           renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
         } else {
-          renderRatioPlaceholder("age", "연령별 비율 데이터 수집 대기");
+          renderRatioPlaceholder("age", "쇼핑인사이트 카테고리 연결 필요");
         }
       }
 
@@ -3980,11 +3984,13 @@
           insight: "월 검색량 조회 후 표시합니다.",
           series: [],
           seriesLabels: [],
+          trendUnit: "",
           month: [],
           monthLabels: [],
           device: { mobile: 0, pc: 0 },
           gender: null,
           age: [],
+          demographicStatus: "",
           week: [],
           naver: { relatedKeywordMetrics: [] },
           isFallback: true
@@ -4000,14 +4006,16 @@
         data.trendStatus = chartData.trendStatus || ((payload && payload.source && (payload.source.trend === "naver_datalab_search" || payload.source.trend === "naver_datalab_relative_ratio")) ? "확인됨" : "수집 대기");
         data.comp = data.comp || fallbackData.comp || "확인 필요";
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
-        data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
+        data.insight = data.insight || fallbackData.insight || "검색량과 검색 비율을 기준으로 SEO/광고 후보를 분류";
         data.series = Array.isArray(data.series) && data.series.length ? data.series : fallbackData.series;
         data.seriesLabels = Array.isArray(data.seriesLabels) && data.seriesLabels.length ? data.seriesLabels : fallbackData.seriesLabels;
+        data.trendUnit = data.trendUnit || fallbackData.trendUnit || "";
         data.month = Array.isArray(data.month) && data.month.length ? data.month : fallbackData.month;
         data.monthLabels = Array.isArray(data.monthLabels) && data.monthLabels.length ? data.monthLabels : fallbackData.monthLabels;
         data.device = data.device || fallbackData.device;
         data.gender = data.gender || fallbackData.gender;
         data.age = Array.isArray(data.age) && data.age.length ? data.age : fallbackData.age;
+        data.demographicStatus = data.demographicStatus || fallbackData.demographicStatus || "";
         data.week = Array.isArray(data.week) && data.week.length ? data.week : fallbackData.week;
         return data;
       }

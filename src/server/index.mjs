@@ -6,6 +6,8 @@ import clientApi from "./handlers/client-api.mjs";
 import demoApi from "./handlers/demo-api.mjs";
 import integrationStatus from "./handlers/integration-status.mjs";
 import naverKeyword from "./handlers/naver-keyword.mjs";
+import naverRankCron from "./handlers/naver-rank-cron.mjs";
+import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
 import naverShoppingRank from "./handlers/naver-shopping-rank.mjs";
 import { corsHeaders, protectedJson } from "./security.mjs";
 
@@ -57,6 +59,14 @@ export default {
 
     if (url.pathname === "/api/naver-shopping-rank") {
       return naverShoppingRank.fetch(request);
+    }
+
+    if (url.pathname === "/api/naver-rank-trackers") {
+      return naverRankTrackers.fetch(request);
+    }
+
+    if (url.pathname === "/api/naver-rank-cron") {
+      return naverRankCron.fetch(request);
     }
 
     if (url.pathname === "/api/integration-status") {

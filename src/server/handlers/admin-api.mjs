@@ -69,6 +69,16 @@ const resources = {
     table: "keyword_metrics",
     select: "id, keyword_id, client_id, period_date, current_rank, previous_rank, rank_delta, search_volume, impressions, ctr, conversion_contribution, naver_rank, coupang_rank, is_ad_exposed, needs_seo_work, monthly_search_volume, age_click_ratio, weekday_click_ratio, device_click_ratio, insight, internal_note, created_at, updated_at",
     order: "period_date"
+  },
+  "naver-rank-trackers": {
+    table: "naver_rank_trackers",
+    select: "id, client_id, brand_id, agency_code, keyword, product_url, product_id, mall_name, product_title, max_rank, status, started_at, ends_at, last_checked_at, next_check_at, current_rank, best_rank, worst_rank, check_count, found_count, last_message, created_at, updated_at",
+    order: "created_at"
+  },
+  "naver-rank-snapshots": {
+    table: "naver_rank_snapshots",
+    select: "id, tracker_id, checked_at, rank, page, position, matched, checked_count, total, item, top_items, message, source, created_at",
+    order: "checked_at"
   }
 };
 
@@ -93,12 +103,16 @@ function applyFilters(query, url, id) {
   const status = url.searchParams.get("status");
   const visibility = url.searchParams.get("visibility");
   const reportType = url.searchParams.get("report_type");
+  const agencyCode = url.searchParams.get("agency_code");
+  const trackerId = url.searchParams.get("tracker_id");
 
   if (clientId) query = query.eq("client_id", clientId);
   if (brandId) query = query.eq("brand_id", brandId);
   if (status) query = query.eq("status", status);
   if (visibility) query = query.eq("visibility", visibility);
   if (reportType) query = query.eq("report_type", reportType);
+  if (agencyCode) query = query.eq("agency_code", agencyCode);
+  if (trackerId) query = query.eq("tracker_id", trackerId);
 
   return query;
 }

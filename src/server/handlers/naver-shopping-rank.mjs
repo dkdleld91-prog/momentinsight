@@ -235,6 +235,15 @@ function rankMessage(result) {
   return "검색 결과에서 대상 상품을 찾지 못했습니다.";
 }
 
+export {
+  config as shoppingRankConfig,
+  extractProductId,
+  findRank as findShoppingRank,
+  hasOpenapiConfig as hasShoppingRankConfig,
+  normalizeText,
+  rankMessage as shoppingRankMessage,
+};
+
 export default {
   async fetch(request) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });

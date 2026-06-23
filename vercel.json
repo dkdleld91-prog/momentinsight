@@ -4,6 +4,12 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
+  "crons": [
+    {
+      "path": "/api/naver-rank-cron",
+      "schedule": "0 */3 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

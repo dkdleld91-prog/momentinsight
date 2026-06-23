@@ -1200,6 +1200,28 @@
       white-space: nowrap;
     }
 
+    #mi-admin .mi-rank-table.is-trackers div {
+      grid-template-columns: minmax(92px, 1fr) 58px 58px 92px 72px 64px;
+    }
+
+    #mi-admin .mi-rank-table.is-history div {
+      grid-template-columns: 108px minmax(92px, 1fr) 70px 96px;
+    }
+
+    #mi-admin .mi-rank-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    #mi-admin .mi-rank-actions button {
+      min-height: 30px;
+      padding: 6px 10px;
+      border-radius: 7px;
+      font-size: 11px;
+    }
+
     #mi-admin .mi-keyword-market {
       margin-bottom: 16px;
       padding: 22px;
@@ -2814,8 +2836,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">네이버 상품 순위</span>
-              <h1>상품 URL 기준 현재 순위를 확인합니다.</h1>
-              <p>키워드 조회와 분리해서 네이버 쇼핑 검색 결과의 현재 순위를 확인합니다.</p>
+              <h1>네이버 상품 순위를 30일간 추적합니다.</h1>
+              <p>상품 URL 또는 상품ID를 등록하면 3시간마다 순위를 갱신하고 30일간 기록합니다.</p>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -2824,8 +2846,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">네이버 상품 순위</span>
-                <h2>상품 URL 기준 현재 순위를 확인합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 네이버 쇼핑 검색 결과 기준 순위를 계산합니다.</p>
+                <h2>상품 URL 기준 자동 순위 추적을 시작합니다.</h2>
+                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 첫 순위를 확인하고 이후 3시간 주기로 기록합니다.</p>
               </div>
               <span class="mi-badge">관리자 확인용</span>
             </div>
@@ -2839,18 +2861,18 @@
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
-              <button class="mi-button" type="button" data-rank-run>순위 확인</button>
+              <button class="mi-button" type="button" data-rank-run>30일 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 현재 순위를 확인합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 30일 추적을 시작합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
-                <h3>현재 순위</h3>
-                <div class="mi-rank-state">아직 조회 전입니다.</div>
+                <h3>활성 추적</h3>
+                <div class="mi-rank-state">등록된 추적 항목을 불러오는 중입니다.</div>
               </div>
               <div class="mi-rank-panel mi-rank-history">
-                <h3>최근 체크 이력</h3>
+                <h3>30일 기록</h3>
                 <div data-rank-history>
-                  <div class="mi-rank-state">조회 후 이 브라우저에 최근 이력을 임시 저장합니다.</div>
+                  <div class="mi-rank-state">추적 등록 후 3시간 단위 기록이 쌓입니다.</div>
                 </div>
               </div>
             </div>
@@ -4297,25 +4319,11 @@
         return "http://127.0.0.1:8790/api/naver-shopping-rank";
       }
 
-      function rankHistoryKey(keyword, productId, targetUrl) {
-        return "miNaverRankHistory:v1:" + [keyword, productId, targetUrl].map(function (value) {
-          return String(value || "").trim().toLowerCase();
-        }).join("|");
-      }
-
-      function readRankHistory(key) {
-        try {
-          var parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
-          return Array.isArray(parsed) ? parsed : [];
-        } catch (error) {
-          return [];
-        }
-      }
-
-      function writeRankHistory(key, list) {
-        try {
-          window.localStorage.setItem(key, JSON.stringify((list || []).slice(0, 8)));
-        } catch (error) {}
+      function getRankTrackerApiUrl() {
+        if (window.MI_NAVER_RANK_TRACKERS_API_URL) return window.MI_NAVER_RANK_TRACKERS_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-rank-trackers";
+        return "http://127.0.0.1:8790/api/naver-rank-trackers";
       }
 
       function formatRankCheckedAt(iso) {
@@ -4327,16 +4335,70 @@
         }
       }
 
-      function renderRankHistory(node, list) {
+      function formatRankShortAt(iso) {
+        if (!iso) return "-";
+        try {
+          return new Date(iso).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        } catch (error) {
+          return "-";
+        }
+      }
+
+      function formatRankRemain(iso) {
+        if (!iso) return "-";
+        var diff = new Date(iso).getTime() - Date.now();
+        if (!Number.isFinite(diff)) return "-";
+        if (diff <= 0) return "대기";
+        var minutes = Math.ceil(diff / 60000);
+        if (minutes < 60) return minutes + "분";
+        var hours = Math.ceil(minutes / 60);
+        if (hours < 24) return hours + "시간";
+        return Math.ceil(hours / 24) + "일";
+      }
+
+      function rankAgencyCode() {
+        try {
+          return String((readState() || {}).code || "mml-a01").trim().toLowerCase();
+        } catch (error) {
+          return "mml-a01";
+        }
+      }
+
+      function rankText(value) {
+        return value ? value + "위" : "-";
+      }
+
+      function rankTrackerStatus(tracker) {
+        if (!tracker) return "-";
+        if (tracker.status === "paused") return "중지";
+        if (tracker.status === "completed") return "종료";
+        if (tracker.status === "failed") return "오류";
+        return "D-" + Math.max(0, Math.ceil((new Date(tracker.endsAt).getTime() - Date.now()) / 86400000));
+      }
+
+      function flattenRankSnapshots(trackers) {
+        var rows = [];
+        (trackers || []).forEach(function (tracker) {
+          (tracker.snapshots || []).forEach(function (snapshot) {
+            rows.push(Object.assign({ keyword: tracker.keyword }, snapshot));
+          });
+        });
+        return rows.sort(function (a, b) {
+          return new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime();
+        }).slice(0, 12);
+      }
+
+      function renderRankHistory(node, trackers) {
         if (!node) return;
-        if (!list || !list.length) {
-          node.innerHTML = '<div class="mi-rank-state">조회 후 이 브라우저에 최근 이력을 임시 저장합니다.</div>';
+        var rows = flattenRankSnapshots(trackers);
+        if (!rows.length) {
+          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 3시간 단위 기록이 쌓입니다.</div>';
           return;
         }
-        node.innerHTML = '<div class="mi-rank-table"><div><span>일시</span><span>키워드</span><span>순위</span><span>상태</span></div>' +
-          list.map(function (item) {
-            return '<div><span>' + escapeHtml(formatRankCheckedAt(item.checkedAt)) + '</span><span>' + escapeHtml(item.keyword || "-") +
-              '</span><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span>' + escapeHtml(item.status || "-") + '</span></div>';
+        node.innerHTML = '<div class="mi-rank-table is-history"><div><span>일시</span><span>키워드</span><span>순위</span><span>상태</span></div>' +
+          rows.map(function (item) {
+            return '<div><span>' + escapeHtml(formatRankShortAt(item.checkedAt)) + '</span><span>' + escapeHtml(item.keyword || "-") +
+              '</span><span>' + escapeHtml(rankText(item.rank)) + '</span><span>' + escapeHtml(item.matched ? "확인" : "미발견") + '</span></div>';
           }).join("") + '</div>';
       }
 
@@ -4354,34 +4416,23 @@
       function renderRankResult(node, payload) {
         if (!node) return;
         if (!payload || payload.ok === false) {
-          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "순위 조회가 대기 중입니다.") + '</div>';
+          node.innerHTML = '<h3>활성 추적</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "추적 항목을 불러오지 못했습니다.") + '</div>';
           return;
         }
-        var result = payload.result || {};
-        if (!result.matched) {
-          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml(payload.message || "대상 상품을 찾지 못했습니다.") +
-            '<br>확인 범위: 상위 ' + escapeHtml(result.checkedCount || "-") + '위</div>' + renderRankItems(result.topItems);
+        var trackers = payload.trackers || (payload.tracker ? [payload.tracker] : []);
+        if (!trackers.length) {
+          node.innerHTML = '<h3>활성 추적</h3><div class="mi-rank-state">아직 등록된 순위 추적이 없습니다.</div>';
           return;
         }
-        var item = result.item || {};
-        node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-kpis">' +
-          '<div class="mi-rank-kpi"><span>현재 순위</span><strong>' + escapeHtml(result.rank + "위") + '</strong></div>' +
-          '<div class="mi-rank-kpi"><span>페이지 / 위치</span><strong>' + escapeHtml(result.page + "p · " + result.position + "번째") + '</strong></div>' +
-          '<div class="mi-rank-kpi"><span>상품ID</span><strong>' + escapeHtml(item.productId || result.targetProductId || "-") + '</strong></div>' +
-          '</div>' + renderRankItems([item].concat(result.topItems || []));
-      }
-
-      function storeRankHistory(keyword, targetProductId, targetUrl, payload) {
-        if (!payload || !payload.ok || !payload.result || !payload.result.matched) return;
-        var key = rankHistoryKey(keyword, targetProductId || payload.result.targetProductId, targetUrl);
-        var list = readRankHistory(key);
-        list.unshift({
-          checkedAt: payload.checkedAt,
-          keyword: keyword,
-          rank: payload.result.rank,
-          status: "확인"
-        });
-        writeRankHistory(key, list);
+        node.innerHTML = '<h3>활성 추적</h3><div class="mi-rank-table is-trackers"><div><span>키워드</span><span>현재</span><span>최고</span><span>다음 갱신</span><span>상태</span><span>작업</span></div>' +
+          trackers.map(function (tracker) {
+            return '<div><span title="' + escapeHtml(tracker.keyword || "") + '">' + escapeHtml(tracker.keyword || "-") +
+              '</span><span>' + escapeHtml(rankText(tracker.currentRank)) +
+              '</span><span>' + escapeHtml(rankText(tracker.bestRank)) +
+              '</span><span>' + escapeHtml(tracker.status === "active" ? formatRankRemain(tracker.nextCheckAt) : "-") +
+              '</span><span>' + escapeHtml(rankTrackerStatus(tracker)) +
+              '</span><span><button class="mi-link-button" type="button" data-rank-refresh="' + escapeHtml(tracker.id) + '">갱신</button></span></div>';
+          }).join("") + '</div>';
       }
 
       function initRankTracking(linkedKeywordInput) {
@@ -4396,9 +4447,39 @@
         var rankResult = card.querySelector("[data-rank-result]");
         var rankHistory = card.querySelector("[data-rank-history]");
         if (!rankKeyword || !rankRun) return;
+        var rankTrackers = [];
 
-        function currentKey() {
-          return rankHistoryKey(rankKeyword.value, rankProductId ? rankProductId.value : "", rankUrl ? rankUrl.value : "");
+        async function requestRankTrackers(method, body) {
+          var options = { method: method, cache: "no-store" };
+          if (body) {
+            options.headers = { "content-type": "application/json" };
+            options.body = JSON.stringify(Object.assign({ agencyCode: rankAgencyCode() }, body));
+          }
+          var url = getRankTrackerApiUrl();
+          if (method === "GET") {
+            url += "?" + new URLSearchParams({ agencyCode: rankAgencyCode(), limit: "20" }).toString();
+          }
+          var response = await fetch(url, options);
+          var payload = await response.json().catch(function () { return null; });
+          if (!payload) payload = { ok: false, message: "순위 추적 응답을 확인할 수 없습니다." };
+          if (!response.ok && payload.ok !== false) payload.ok = false;
+          return payload;
+        }
+
+        async function loadRankTrackers(silent) {
+          try {
+            var payload = await requestRankTrackers("GET");
+            rankTrackers = payload.trackers || [];
+            renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
+            renderRankHistory(rankHistory, rankTrackers);
+            if (!silent) {
+              setStatus(rankStatus, rankTrackers.length ? "등록된 상품 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 30일 추적을 시작합니다.", rankTrackers.length ? "is-ok" : "");
+            }
+          } catch (error) {
+            renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
+            renderRankHistory(rankHistory, []);
+            if (!silent) setStatus(rankStatus, "순위 추적 서버 연결을 확인해주세요.", "is-warn");
+          }
         }
 
         function syncKeywordFromMain() {
@@ -4407,25 +4488,18 @@
           if (next && (!rankKeyword.value || rankKeyword.getAttribute("data-synced-keyword") === "true")) {
             rankKeyword.value = next;
             rankKeyword.setAttribute("data-synced-keyword", "true");
-            renderRankHistory(rankHistory, readRankHistory(currentKey()));
           }
         }
 
         rankKeyword.setAttribute("data-synced-keyword", "true");
         syncKeywordFromMain();
-        renderRankHistory(rankHistory, readRankHistory(currentKey()));
+        loadRankTrackers(false);
 
         if (linkedKeywordInput) {
           linkedKeywordInput.addEventListener("input", syncKeywordFromMain);
         }
         rankKeyword.addEventListener("input", function () {
           rankKeyword.setAttribute("data-synced-keyword", "false");
-          renderRankHistory(rankHistory, readRankHistory(currentKey()));
-        });
-        [rankUrl, rankProductId].forEach(function (node) {
-          if (node) node.addEventListener("input", function () {
-            renderRankHistory(rankHistory, readRankHistory(currentKey()));
-          });
         });
 
         rankRun.addEventListener("click", async function () {
@@ -4442,30 +4516,46 @@
           }
 
           rankRun.disabled = true;
-          setStatus(rankStatus, "네이버 쇼핑 순위를 확인 중입니다.", "");
+          setStatus(rankStatus, "30일 순위 추적을 등록하고 첫 순위를 확인 중입니다.", "");
           try {
-            var params = new URLSearchParams({
+            var payload = await requestRankTrackers("POST", {
+              action: "create",
               keyword: keyword,
               targetUrl: targetUrl,
               productId: productId,
               maxRank: rankMax ? rankMax.value : "300"
             });
-            var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
-            var payload = await response.json().catch(function () { return null; });
-            if (!payload) payload = { ok: false, message: "순위 조회 응답을 확인할 수 없습니다." };
-            renderRankResult(rankResult, payload);
-            if (!response.ok || payload.ok === false) {
-              setStatus(rankStatus, payload.message || "순위 조회가 아직 연결되지 않았습니다.", "is-warn");
-              return;
+            if (payload.tracker) {
+              rankTrackers = [payload.tracker].concat(rankTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));
             }
-            setStatus(rankStatus, payload.message || "순위 확인 완료", payload.result && payload.result.matched ? "is-ok" : "is-warn");
-            storeRankHistory(keyword, productId, targetUrl, payload);
-            renderRankHistory(rankHistory, readRankHistory(currentKey()));
+            renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
+            renderRankHistory(rankHistory, rankTrackers);
+            setStatus(rankStatus, payload.message || "순위 추적 등록 완료", payload.ok ? "is-ok" : "is-warn");
+            await loadRankTrackers(true);
           } catch (error) {
-            renderRankResult(rankResult, { ok: false, message: "순위 조회 연결을 확인해주세요." });
-            setStatus(rankStatus, "순위 조회 연결을 확인해주세요.", "is-warn");
+            renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
+            setStatus(rankStatus, "순위 추적 서버 연결을 확인해주세요.", "is-warn");
           } finally {
             rankRun.disabled = false;
+          }
+        });
+
+        card.addEventListener("click", async function (event) {
+          var refreshButton = event.target.closest("[data-rank-refresh]");
+          if (!refreshButton) return;
+          refreshButton.disabled = true;
+          setStatus(rankStatus, "선택한 상품 순위를 수동 갱신 중입니다.", "");
+          try {
+            var payload = await requestRankTrackers("POST", {
+              action: "check",
+              trackerId: refreshButton.getAttribute("data-rank-refresh")
+            });
+            setStatus(rankStatus, payload.message || "수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
+            await loadRankTrackers(true);
+          } catch (error) {
+            setStatus(rankStatus, "수동 갱신 연결을 확인해주세요.", "is-warn");
+          } finally {
+            refreshButton.disabled = false;
           }
         });
       }

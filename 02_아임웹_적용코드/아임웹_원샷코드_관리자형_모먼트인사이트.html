@@ -1305,6 +1305,28 @@
       height: 238px;
     }
 
+    #mi-admin .mi-chart-empty {
+      position: absolute;
+      left: 44px;
+      right: 0;
+      top: 92px;
+      display: grid;
+      place-items: center;
+      min-height: 86px;
+      border: 1px dashed var(--mi-line);
+      border-radius: 10px;
+      color: var(--mi-muted);
+      background: rgba(255, 255, 255, 0.82);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #mi-admin .mi-chart-empty[hidden] {
+      display: none;
+    }
+
     #mi-admin .mi-y-axis {
       position: absolute;
       top: 0;
@@ -2492,7 +2514,6 @@
                   <p>월별 검색수, 기기/성별/연령/요일 클릭 비율을 함께 검토합니다.</p>
                 </div>
                 <div class="mi-segment" aria-label="조회 기간" data-keyword-range-tabs>
-                  <button type="button" data-keyword-range="monthly">월간</button>
                   <button type="button" data-keyword-range="year" class="is-active">1년</button>
                   <button type="button" data-keyword-range="threeYear">3년</button>
                 </div>
@@ -2500,7 +2521,7 @@
 
               <div class="mi-chart-tools">
                 <span class="mi-keyword-chip" data-keyword-label>냉감 패드 외 2개</span>
-                <span class="mi-badge">비교 총 검색수 <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
+                <span class="mi-badge"><span data-keyword-volume-title>비교 총 검색수</span> <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
                 <span class="mi-badge">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
               </div>
               <div class="mi-chart-legend" data-keyword-legend>
@@ -2520,6 +2541,7 @@
                   <g data-keyword-hover></g>
                   <g data-keyword-points></g>
                 </svg>
+                <div class="mi-chart-empty" data-keyword-chart-empty hidden>월별 추이 데이터 수집 대기</div>
                 <div class="mi-chart-tooltip" data-keyword-tooltip hidden></div>
                 <div class="mi-months" data-keyword-months>
                   <span style="left:4.167%;">07월</span><span style="left:12.500%;">08월</span><span style="left:20.833%;">09월</span><span style="left:29.167%;">10월</span><span style="left:37.500%;">11월</span><span style="left:45.833%;">12월</span>
@@ -3344,7 +3366,6 @@
       var keywordRange = "year";
       var keywordDatasets = [];
       var keywordRangeMonths = {
-        monthly: 6,
         year: 12,
         threeYear: 36
       };
@@ -3469,21 +3490,12 @@
 
       function rangeSeries(keyword, data, countOverride) {
         var count = countOverride || keywordRangeMonths[keywordRange] || 12;
-        if (!hasSearchVolume(data)) return Array(count).fill(0);
-        if (data.trendStatus !== "확인됨") return Array(count).fill(Number(data.volume || 0));
-        var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : makeKeywordSeries(data.volume);
+        if (!hasSearchVolume(data)) return [];
+        if (data.trendStatus !== "확인됨") return [];
+        var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : [];
+        if (!source.length) return [];
         if (source.length >= count) return source.slice(source.length - count);
-
-        var seed = hashKeyword(keyword);
-        var values = [];
-        for (var index = 0; index < count; index += 1) {
-          var sourceValue = source[index % source.length] || data.volume || 1200;
-          var ageFactor = 0.74 + (index / Math.max(1, count - 1)) * 0.34;
-          var noise = 0.92 + ((seed + index * 13) % 18) / 100;
-          values.push(Math.max(400, Math.round(sourceValue * ageFactor * noise)));
-        }
-        if (data.volume) values[values.length - 1] = Number(data.volume);
-        return values;
+        return source;
       }
 
       function normalizePercentValues(values) {
@@ -3794,24 +3806,31 @@
         if (!items.length) return;
 
         keywordDatasets = items;
-        var count = keywordRangeMonths[keywordRange] || 12;
-        var labels = makeKeywordMonthLabels(count);
+        var requestedCount = keywordRangeMonths[keywordRange] || 12;
         var seriesList = items.map(function (item) {
           return rangeSeries(item.keyword, item.data);
         });
         var flatSeries = [].concat.apply([], seriesList);
-        var peakValue = Math.max.apply(null, flatSeries);
-        var chartMax = pickKeywordScale(peakValue);
+        var hasTrendSeries = flatSeries.some(function (value) {
+          return Number(value || 0) > 0;
+        });
+        var effectiveCount = hasTrendSeries ? Math.max.apply(null, seriesList.map(function (series) {
+          return series.length;
+        }).concat([1])) : requestedCount;
+        var labels = makeKeywordMonthLabels(effectiveCount);
+        var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
+        var peakValue = hasTrendSeries ? Math.max.apply(null, flatSeries) : 0;
+        var chartMax = pickKeywordScale(hasTrendSeries ? peakValue : Math.max(totalVolume, 1));
         var width = 760;
         var height = 250;
         var top = 18;
         var bottom = 30;
-        var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
         var previousTotal = seriesList.reduce(function (sum, series) {
           return sum + Number(series[series.length - 2] || series[series.length - 1] || 0);
         }, 0);
         var peakInfo = { keyword: items[0].keyword, label: labels[0], value: peakValue };
         var label = root.querySelector("[data-keyword-label]");
+        var volumeTitle = root.querySelector("[data-keyword-volume-title]");
         var volume = root.querySelector("[data-keyword-volume]");
         var change = root.querySelector("[data-keyword-change]");
         var axis = root.querySelector("[data-keyword-axis]");
@@ -3821,6 +3840,7 @@
         var linesGroup = root.querySelector("[data-keyword-lines]");
         var hoverGroup = root.querySelector("[data-keyword-hover]");
         var pointsGroup = root.querySelector("[data-keyword-points]");
+        var empty = root.querySelector("[data-keyword-chart-empty]");
         var changeRate = previousTotal > 0 ? Math.round(((totalVolume - previousTotal) / previousTotal) * 100) : 0;
         var profile = {
           device: firstKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
@@ -3830,8 +3850,9 @@
         };
 
         if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;
+        if (volumeTitle) volumeTitle.textContent = items.length > 1 ? "비교 총 검색수" : "월 검색수";
         if (volume) volume.textContent = totalVolume ? formatNumber(totalVolume) : "확인 필요";
-        if (change) change.textContent = items[0].data.trendStatus === "확인됨" ? (changeRate >= 0 ? "+" : "") + changeRate + "%" : "수집 대기";
+        if (change) change.textContent = hasTrendSeries ? (changeRate >= 0 ? "+" : "") + changeRate + "%" : "수집 대기";
         if (axis) axis.textContent = formatShortNumber(chartMax);
         if (legend) {
           legend.innerHTML = items.map(function (item, index) {
@@ -3841,6 +3862,10 @@
         if (linesGroup) linesGroup.innerHTML = "";
         if (hoverGroup) hoverGroup.innerHTML = "";
         if (pointsGroup) pointsGroup.innerHTML = "";
+        if (empty) {
+          empty.hidden = hasTrendSeries;
+          empty.textContent = totalVolume ? "월별 추이 데이터 수집 대기" : "검색량 조회 후 차트를 표시합니다.";
+        }
 
         var seriesPointLists = seriesList.map(function (series, seriesIndex) {
           return series.map(function (value, index) {
@@ -3884,7 +3909,7 @@
                 color: keywordColors[seriesIndex % keywordColors.length]
               };
             });
-            var tooltipText = "<b>" + escapeHtml(basePoint.label) + (items[0].data.trendStatus === "확인됨" ? " 검색량" : " 검색량 기준선") + "</b>" + hoverPoints.map(function (point) {
+            var tooltipText = "<b>" + escapeHtml(basePoint.label) + " 검색량</b>" + hoverPoints.map(function (point) {
               return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " " + formatNumber(point.value) + "</span>";
             }).join("");
             var hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -3921,7 +3946,7 @@
           Number(profile.age[3] || 0),
           Number(profile.age[4] || 0) + Number(profile.age[5] || 0)
         ];
-        if (items[0].data.trendStatus === "확인됨") {
+        if (monthSeries.length) {
           renderRatioChart("month", monthLabels, monthSeries, 30);
           renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
           renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);

@@ -2169,6 +2169,7 @@
           <p class="mi-nav-title">관리자 기능</p>
           <a href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 다운로드 <small>전달</small></a>
           <a href="#mi-admin-keyword" data-mi-admin-screen="keyword">키워드 조회 <small>SEO</small></a>
+          <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">네이버 상품 순위 <small>추적</small></a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
       </nav>
@@ -2792,9 +2793,9 @@
             <article class="mi-card mi-card-pad">
               <h2>조회 결과</h2>
               <div class="mi-table" data-admin-keyword-result>
-                <div class="mi-row"><span>월 검색량</span><strong>18,400</strong></div>
-                <div class="mi-row"><span>경쟁도</span><strong>보통</strong></div>
-                <div class="mi-row"><span>추천 작업</span><strong>콘텐츠 제목과 상품명 반영</strong></div>
+                <div class="mi-row"><span>월 검색량</span><strong>조회 후 표시</strong></div>
+                <div class="mi-row"><span>경쟁도</span><strong>조회 후 표시</strong></div>
+                <div class="mi-row"><span>추천 작업</span><strong>조회 후 표시</strong></div>
               </div>
             </article>
 
@@ -2803,15 +2804,26 @@
               <div class="mi-table">
                 <div class="mi-row"><span>네이버 SEO</span><strong>블로그/상세페이지 제목 후보</strong></div>
                 <div class="mi-row"><span>쿠팡 SEO</span><strong>상품명·검색어·광고 키워드 후보</strong></div>
-                <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>40대 여성 검색 비중 중심으로 메시지 설계</strong></div>
+                <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>조회 후 표시</strong></div>
               </div>
             </aside>
           </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="naver-rank" id="mi-admin-naver-rank">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">네이버 상품 순위</span>
+              <h1>상품 URL 기준 현재 순위를 확인합니다.</h1>
+              <p>키워드 조회와 분리해서 네이버 쇼핑 검색 결과의 현재 순위를 확인합니다.</p>
+            </div>
+            <span class="mi-badge">관리자 확인용</span>
+          </header>
 
           <article class="mi-card mi-card-pad mi-rank-card" data-rank-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 순위 추적</span>
+                <span class="mi-kicker">네이버 상품 순위</span>
                 <h2>상품 URL 기준 현재 순위를 확인합니다.</h2>
                 <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 네이버 쇼핑 검색 결과 기준 순위를 계산합니다.</p>
               </div>
@@ -4595,7 +4607,9 @@
             var missingVolume = items.filter(function (item) { return !hasSearchVolume(item.data); });
             var primaryProfile = items[0] && items[0].data ? items[0].data : {};
             var primaryMessage = primaryProfile.userMessage || "";
-            var missingProfile = !(hasRatioValues(primaryProfile.month || []) || hasRatioValues(primaryProfile.series || [])) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []);
+            var hasDeviceProfile = primaryProfile.device && (Number(primaryProfile.device.mobile || 0) > 0 || Number(primaryProfile.device.pc || 0) > 0);
+            var hasGenderProfile = primaryProfile.gender && (Number(primaryProfile.gender.female || 0) > 0 || Number(primaryProfile.gender.male || 0) > 0);
+            var missingProfile = !hasRatioValues(primaryProfile.month || []) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []) || !hasDeviceProfile || !hasGenderProfile;
             if (failed.length) {
               setStatus(keywordStatus, "해당 키워드는 검색량 확인이 필요합니다. 확인된 수치만 표시합니다.", "is-warn");
             } else if (missingVolume.length) {

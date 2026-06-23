@@ -4,18 +4,23 @@ import { corsHeaders, featureEnabled, isLocalRequest, protectedJson } from "../s
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_BASE_URL = "https://openapi.naver.com";
 const DATALAB_HISTORY_START_DATE = "2016-01-01";
+const SHOPPING_INSIGHT_START_DATE = "2017-08-01";
 const DATALAB_MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
-const DATALAB_AGE_GROUPS = [
-  { label: "10대", ages: ["2"] },
-  { label: "20대", ages: ["3", "4"] },
-  { label: "30대", ages: ["5", "6"] },
-  { label: "40대", ages: ["7", "8"] },
-  { label: "50대 이상", ages: ["9", "10", "11"] },
-];
-const DATALAB_GENDER_GROUPS = [
-  { key: "female", gender: "f" },
-  { key: "male", gender: "m" },
-];
+const SHOPPING_MAIN_CATEGORY_IDS = {
+  "패션의류": "50000000",
+  "패션잡화": "50000001",
+  "화장품/미용": "50000002",
+  "디지털/가전": "50000003",
+  "가구/인테리어": "50000004",
+  "출산/육아": "50000005",
+  "식품": "50000006",
+  "스포츠/레저": "50000007",
+  "생활/건강": "50000008",
+  "여가/생활편의": "50000009",
+};
+const SHOPPING_DEVICE_GROUPS = ["mo", "pc"];
+const SHOPPING_GENDER_GROUPS = ["f", "m"];
+const SHOPPING_AGE_GROUPS = ["10", "20", "30", "40", "50", "60"];
 const KEYWORD_CACHE_TTL_MS = Number(process.env.MI_KEYWORD_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_CACHE_MAX = Number(process.env.MI_KEYWORD_CACHE_MAX || 300);
 const KEYWORD_RATE_WINDOW_MS = Number(process.env.MI_KEYWORD_RATE_WINDOW_MS || 60_000);
@@ -348,6 +353,32 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
   });
 }
 
+async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, startDate, endDate, timeUnit = "month", device = "", gender = "", ages = [], timeoutMs }) {
+  const body = {
+    startDate,
+    endDate,
+    timeUnit,
+    category,
+    keyword,
+    device,
+    gender,
+    ages,
+  };
+
+  return fetchJson(`${DATALAB_BASE_URL}/v1/datalab/shopping/category/keyword/${endpoint}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Naver-Client-Id": env.datalabClientId,
+      "X-Naver-Client-Secret": env.datalabClientSecret,
+    },
+    body: JSON.stringify(body),
+    timeoutMs,
+    retries: 0,
+    retryDelayMs: 500,
+  });
+}
+
 async function fetchNaverShoppingSearch(env, keyword) {
   const params = new URLSearchParams({
     query: keyword,
@@ -363,11 +394,6 @@ async function fetchNaverShoppingSearch(env, keyword) {
       "X-Naver-Client-Secret": env.openapiClientSecret,
     },
   });
-}
-
-function ratioSum(payload) {
-  const data = payload?.results?.[0]?.data || [];
-  return data.reduce((sum, item) => sum + Number(item.ratio || 0), 0);
 }
 
 function fulfilledValue(result) {
@@ -459,15 +485,59 @@ function weekdayShares(dailyPayload) {
   const data = dailyPayload?.results?.[0]?.data || [];
   const sums = [0, 0, 0, 0, 0, 0, 0];
   data.forEach((item) => {
-    const date = new Date(`${item.period}T00:00:00+09:00`);
-    const day = date.getDay();
+    const [year, month, dayOfMonth] = String(item.period || "").split("-").map(Number);
+    if (!year || !month || !dayOfMonth) return;
+    const day = new Date(Date.UTC(year, month - 1, dayOfMonth)).getUTCDay();
     sums[day === 0 ? 6 : day - 1] += Number(item.ratio || 0);
   });
   return normalizeShares(sums.map((value) => ({ value })));
 }
 
-function shareFromPayloads(payloads) {
-  return normalizeShares(payloads.map((payload) => ({ value: ratioSum(payload) })));
+function groupedRatioSums(payload, allowedGroups) {
+  const allowed = new Set(allowedGroups);
+  const sums = Object.fromEntries(allowedGroups.map((group) => [group, 0]));
+  const seen = new Set();
+  const data = payload?.results?.[0]?.data || [];
+  data.forEach((item) => {
+    const group = String(item.group || "");
+    if (!allowed.has(group)) return;
+    sums[group] += Number(item.ratio || 0);
+    seen.add(group);
+  });
+  return { sums, seen };
+}
+
+function groupedShares(payload, groups) {
+  const { sums, seen } = groupedRatioSums(payload, groups);
+  if (!groups.every((group) => seen.has(group))) return null;
+  return normalizeShares(groups.map((group) => ({ value: sums[group] })));
+}
+
+function shoppingAgeShares(payload) {
+  const parsed = groupedRatioSums(payload, SHOPPING_AGE_GROUPS);
+  if (!["20", "30", "40", "50"].every((group) => parsed.seen.has(group))) return null;
+  const buckets = [
+    parsed.sums["10"],
+    parsed.sums["20"],
+    parsed.sums["30"],
+    parsed.sums["40"],
+    parsed.sums["50"] + parsed.sums["60"],
+  ];
+  return normalizeShares(buckets.map((value) => ({ value })));
+}
+
+function shoppingCategoryIdFromName(categoryName) {
+  return SHOPPING_MAIN_CATEGORY_IDS[String(categoryName || "").trim()] || "";
+}
+
+function dominantShoppingCategory(items) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const category = String(item.category1 || "").trim();
+    if (!category) return;
+    counts.set(category, (counts.get(category) || 0) + 1);
+  });
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "";
 }
 
 async function allSettledInBatches(tasks, size = 2, gapMs = 120) {
@@ -485,42 +555,79 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   const endDate = compactDate(dateDaysAgo(1));
   const trendStartDate = compactDate(monthsAgo(12));
   const ageStartDate = compactDate(monthsAgo(12));
+  const shoppingCategoryId = options.shoppingCategoryId || "";
+  const shoppingStartDate = ageStartDate < SHOPPING_INSIGHT_START_DATE ? SHOPPING_INSIGHT_START_DATE : ageStartDate;
 
   const trend = await fetchDatalabSearch(env, { keyword, startDate: trendStartDate, endDate, timeUnit: "month" });
   let month = monthlyShares(trend);
   let monthLabels = monthlyLabels(trend);
+  let monthBasis = "recent_12_month_trend_ratio";
   let week = [];
   let age = [];
+  let device = null;
   let gender = null;
   let demographicStatus = includeProfile ? "search_interest_profile" : "trend_only";
+  const profileStatus = {};
 
   if (includeProfile) {
     const profileRequests = [
       () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "month", timeoutMs: 25000 }),
       () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "date", timeoutMs: 25000 }),
-      ...DATALAB_AGE_GROUPS.map((group) => () => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", ages: group.ages })),
-      ...DATALAB_GENDER_GROUPS.map((group) => () => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", gender: group.gender })),
+      ...(shoppingCategoryId ? [
+        () => fetchShoppingInsightKeyword(env, "device", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
+        () => fetchShoppingInsightKeyword(env, "gender", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
+        () => fetchShoppingInsightKeyword(env, "age", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
+      ] : []),
     ];
     const results = await allSettledInBatches(profileRequests, 2, 150);
     const historyMonth = fulfilledValue(results[0]);
     const historyDaily = fulfilledValue(results[1]);
-    const agePayloads = results.slice(2, 2 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
-    const genderPayloads = results.slice(2 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
+    const devicePayload = shoppingCategoryId ? fulfilledValue(results[2]) : null;
+    const genderPayload = shoppingCategoryId ? fulfilledValue(results[3]) : null;
+    const agePayload = shoppingCategoryId ? fulfilledValue(results[4]) : null;
 
     if (historyMonth) {
       month = monthlySeasonalityShares(historyMonth);
       monthLabels = DATALAB_MONTH_LABELS;
+      monthBasis = "2016_current_search_ratio";
     }
     week = historyDaily ? weekdayShares(historyDaily) : [];
-    if (agePayloads.some(Boolean)) age = shareFromPayloads(agePayloads);
-    if (genderPayloads.some(Boolean)) {
-      const genderShares = shareFromPayloads(genderPayloads);
-      gender = {
-        female: genderShares[0] || 0,
-        male: genderShares[1] || 0,
-      };
+    if (devicePayload) {
+      const deviceShares = groupedShares(devicePayload, SHOPPING_DEVICE_GROUPS);
+      if (deviceShares) {
+        device = {
+          mobile: deviceShares[0] || 0,
+          pc: deviceShares[1] || 0,
+        };
+      }
     }
-    if (!week.length && !age.length && !gender) demographicStatus = "profile_pending";
+    if (genderPayload) {
+      const genderShares = groupedShares(genderPayload, SHOPPING_GENDER_GROUPS);
+      if (genderShares) {
+        gender = {
+          female: genderShares[0] || 0,
+          male: genderShares[1] || 0,
+        };
+      }
+    }
+    if (agePayload) {
+      const ageShares = shoppingAgeShares(agePayload);
+      if (ageShares) age = ageShares;
+    }
+
+    profileStatus.month = historyMonth ? "ok" : "partial";
+    profileStatus.week = historyDaily ? "ok" : "partial";
+    profileStatus.device = device ? "ok" : shoppingCategoryId ? "partial" : "category_required";
+    profileStatus.gender = gender ? "ok" : shoppingCategoryId ? "partial" : "category_required";
+    profileStatus.age = age.length ? "ok" : shoppingCategoryId ? "partial" : "category_required";
+
+    if (week.length && age.length && gender) {
+      demographicStatus = "shopping_keyword_profile";
+    } else if (week.length || age.length || gender || device) {
+      demographicStatus = "profile_partial";
+    } else {
+      demographicStatus = "profile_pending";
+    }
   }
 
   return {
@@ -529,12 +636,17 @@ async function buildDatalabProfile(env, keyword, options = {}) {
     month,
     monthLabels,
     trendUnit: "relative_interest_index",
-    monthBasis: "2016_current_search_ratio",
+    monthBasis,
     weekBasis: "2016_current_search_ratio",
-    ageBasis: "recent_1_year_search_ratio",
+    ageBasis: shoppingCategoryId ? "recent_1_year_shopping_keyword_ratio" : "recent_1_year_search_ratio",
+    device,
+    deviceBasis: shoppingCategoryId ? "recent_1_year_shopping_keyword_ratio" : "",
     gender,
+    genderBasis: shoppingCategoryId ? "recent_1_year_shopping_keyword_ratio" : "",
     age,
     demographicStatus,
+    profileStatus,
+    shoppingCategoryId,
     week,
   };
 }
@@ -554,6 +666,8 @@ function buildShoppingProfile(payload) {
     .map((item) => parseNaverNumber(item.lprice))
     .filter((price) => price > 0);
   const malls = [...new Set(items.map((item) => String(item.mallName || "").trim()).filter(Boolean))];
+  const dominantCategory = dominantShoppingCategory(items);
+  const dominantCategoryId = shoppingCategoryIdFromName(dominantCategory);
 
   return {
     total: Number(payload.total || 0),
@@ -562,6 +676,8 @@ function buildShoppingProfile(payload) {
     minPrice: prices.length ? Math.min(...prices) : 0,
     maxPrice: prices.length ? Math.max(...prices) : 0,
     mallCount: malls.length,
+    category1: dominantCategory,
+    categoryId: dominantCategoryId,
     source: "naver_shopping_search",
   };
 }
@@ -607,6 +723,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const volumeLabel = hasExactMatch ? metric.label : "확인 필요";
   const mobileShare = safeVolume ? Math.round((mobileVolume / safeVolume) * 100) : 0;
   const pcShare = safeVolume ? 100 - mobileShare : 0;
+  const deviceShare = datalabProfile?.device || { mobile: mobileShare, pc: pcShare };
   const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
   const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
   const trendIndex = datalabProfile?.series?.length ? datalabProfile.series : [];
@@ -633,11 +750,16 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     month: datalabProfile?.month || [],
     monthLabels: datalabProfile?.monthLabels || [],
     monthBasis: datalabProfile?.monthBasis || "",
-    device: { mobile: mobileShare, pc: pcShare },
+    device: deviceShare,
+    deviceBasis: datalabProfile?.deviceBasis || "naver_searchad_monthly_query_count",
     gender: datalabProfile?.gender || null,
+    genderBasis: datalabProfile?.genderBasis || "",
     age: datalabProfile?.age || [],
     ageBasis: datalabProfile?.ageBasis || "",
     demographicStatus: datalabProfile?.demographicStatus || "",
+    profileStatus: datalabProfile?.profileStatus || {},
+    shoppingCategoryId: datalabProfile?.shoppingCategoryId || shoppingProfile?.categoryId || "",
+    shoppingCategoryName: shoppingProfile?.category1 || "",
     week: datalabProfile?.week || [],
     weekBasis: datalabProfile?.weekBasis || "",
     naver: {
@@ -658,7 +780,8 @@ function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppi
   const datalabConfigured = hasDatalabConfig(env);
   const shoppingConfigured = hasOpenapiConfig(env);
   const ratioReady = Boolean(datalabProfile?.month?.length && datalabProfile?.week?.length);
-  const profileReady = !includeProfile || datalabProfile?.demographicStatus === "search_interest_profile";
+  const profileReady = !includeProfile || ["search_interest_profile", "shopping_keyword_profile"].includes(datalabProfile?.demographicStatus);
+  const profilePartial = includeProfile && datalabProfile?.demographicStatus === "profile_partial";
   const datalabErrorLabel = String(datalabError || "").includes("Query limit exceeded")
     ? "DataLab 한도 초과"
     : "검색 비율 확인 실패";
@@ -683,7 +806,9 @@ function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppi
         ? { status: "error", label: datalabErrorLabel }
         : ratioReady && profileReady
           ? { status: "ok", label: "검색 비율 확인" }
-          : { status: "partial", label: "일부 검색 비율 대기" },
+          : profilePartial || ratioReady
+            ? { status: "partial", label: "일부 검색 비율 확인" }
+            : { status: "partial", label: "일부 검색 비율 대기" },
     shopping: !shoppingConfigured
       ? { status: "not_configured", label: "쇼핑 참고 지표 연결 필요" }
       : shoppingError
@@ -769,19 +894,22 @@ export default {
       let shoppingProfile = null;
       let shoppingError = null;
 
-      if (hasDatalabConfig(env)) {
-        try {
-          datalabProfile = await buildDatalabProfile(env, keyword, { includeProfile });
-        } catch (error) {
-          datalabError = error.message;
-        }
-      }
-
       if (hasOpenapiConfig(env)) {
         try {
           shoppingProfile = buildShoppingProfile(await fetchNaverShoppingSearch(env, keyword));
         } catch (error) {
           shoppingError = error.message;
+        }
+      }
+
+      if (hasDatalabConfig(env)) {
+        try {
+          datalabProfile = await buildDatalabProfile(env, keyword, {
+            includeProfile,
+            shoppingCategoryId: shoppingProfile?.categoryId || "",
+          });
+        } catch (error) {
+          datalabError = error.message;
         }
       }
 

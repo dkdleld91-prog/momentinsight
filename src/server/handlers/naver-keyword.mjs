@@ -135,7 +135,14 @@ function keywordAction({ hasExactMatch, isUnderThreshold, volume, comp }) {
 }
 
 function keywordConfigSignature(env) {
+  const hashConfigPart = (value) => crypto
+    .createHash("sha256")
+    .update(String(value || ""))
+    .digest("hex")
+    .slice(0, 10);
+
   return [
+    hasSearchAdConfig(env) ? `searchad:${hashConfigPart(`${env.searchAdApiKey}:${env.searchAdCustomerId}`)}` : "no-searchad",
     hasDatalabConfig(env) ? "datalab" : "no-datalab",
     hasOpenapiConfig(env) ? "openapi" : "no-openapi",
   ].join(":");
@@ -172,7 +179,7 @@ function setKeywordCache(key, payload) {
 
 function canCacheKeywordPayload(payload) {
   const statuses = Object.values(payload?.sourceStatus || {}).map((item) => item?.status);
-  return !statuses.some((status) => status === "not_configured" || status === "error");
+  return statuses.length > 0 && statuses.every((status) => status === "ok");
 }
 
 function clientRateKey(request) {
@@ -276,9 +283,10 @@ async function fetchJson(url, options = {}) {
       }
 
       if (!response.ok) {
-        const message = payload?.message || payload?.title || payload?.raw || `HTTP ${response.status}`;
+        const message = payload?.errorMessage || payload?.message || payload?.title || payload?.raw || `HTTP ${response.status}`;
         const error = new Error(message);
         error.status = response.status;
+        error.code = payload?.errorCode || "";
         error.payload = payload;
         throw error;
       }
@@ -335,7 +343,7 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
     },
     body: JSON.stringify(body),
     timeoutMs,
-    retries: 2,
+    retries: 0,
     retryDelayMs: 500,
   });
 }
@@ -611,7 +619,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     volumeLabel,
     volumeUpperBound: hasExactMatch ? metric.upperBound : 0,
     isUnderThreshold: hasExactMatch ? metric.isUnderThreshold : false,
-    trendStatus: datalabProfile?.series?.length ? "확인됨" : "수집 대기",
+    trendStatus: datalabProfile?.series?.length ? "확인됨" : "연결 후 표시",
     volume: safeVolume,
     comp,
     action: keywordAction({ hasExactMatch, isUnderThreshold: metric.isUnderThreshold, volume: safeVolume, comp }),
@@ -651,27 +659,33 @@ function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppi
   const shoppingConfigured = hasOpenapiConfig(env);
   const ratioReady = Boolean(datalabProfile?.month?.length && datalabProfile?.week?.length);
   const profileReady = !includeProfile || datalabProfile?.demographicStatus === "search_interest_profile";
+  const datalabErrorLabel = String(datalabError || "").includes("Query limit exceeded")
+    ? "DataLab 한도 초과"
+    : "검색 비율 확인 실패";
+  const trendErrorLabel = String(datalabError || "").includes("Query limit exceeded")
+    ? "DataLab 한도 초과"
+    : "검색 추이 확인 실패";
 
   return {
     searchVolume: searchAd?.hasExactMatch
       ? { status: "ok", label: "월 검색량 확인" }
       : { status: "partial", label: "정확 키워드 미일치", relatedCount: searchAd?.related?.length || 0 },
     trend: !datalabConfigured
-      ? { status: "not_configured", label: "검색 추이 미연결" }
+      ? { status: "not_configured", label: "검색 추이 연결 필요" }
       : datalabError
-        ? { status: "error", label: "검색 추이 확인 실패" }
+        ? { status: "error", label: trendErrorLabel }
         : datalabProfile?.series?.length
           ? { status: "ok", label: "검색 추이 확인" }
           : { status: "pending", label: "검색 추이 대기" },
     ratios: !datalabConfigured
-      ? { status: "not_configured", label: "검색 비율 미연결" }
+      ? { status: "not_configured", label: "검색 비율 연결 필요" }
       : datalabError
-        ? { status: "error", label: "검색 비율 확인 실패" }
+        ? { status: "error", label: datalabErrorLabel }
         : ratioReady && profileReady
           ? { status: "ok", label: "검색 비율 확인" }
           : { status: "partial", label: "일부 검색 비율 대기" },
     shopping: !shoppingConfigured
-      ? { status: "not_configured", label: "쇼핑 참고 지표 미연결" }
+      ? { status: "not_configured", label: "쇼핑 참고 지표 연결 필요" }
       : shoppingError
         ? { status: "error", label: "쇼핑 참고 지표 확인 실패" }
         : shoppingProfile
@@ -687,11 +701,14 @@ function sourceUserMessage(status) {
   if (status.trend.status === "ok" && status.ratios.status === "ok") {
     return "월 검색량과 검색 비율이 확인되었습니다.";
   }
+  if (status.trend.label === "DataLab 한도 초과" || status.ratios.label === "DataLab 한도 초과") {
+    return "월 검색량과 쇼핑 지표는 확인됐고, 검색 추이와 비율은 DataLab 한도 복구 후 표시됩니다.";
+  }
   if (status.trend.status === "not_configured" && status.ratios.status === "not_configured") {
-    return "월 검색량은 확인됐고, 검색 추이와 검색 비율은 연결 대기입니다.";
+    return "월 검색량은 확인됐고, 검색 추이와 검색 비율은 연결 후 표시됩니다.";
   }
   if (status.ratios.status === "not_configured") {
-    return "월 검색량과 검색 추이는 확인됐고, 검색 비율은 연결 대기입니다.";
+    return "월 검색량과 검색 추이는 확인됐고, 검색 비율은 연결 후 표시됩니다.";
   }
   return "월 검색량은 확인됐고 일부 참고 지표는 확인 대기입니다.";
 }
@@ -718,7 +735,11 @@ export default {
     if (!hasSearchAdConfig(env)) {
       return json(request, {
         ok: false,
+        code: "NAVER_SEARCHAD_NOT_CONFIGURED",
         message: "키워드 데이터 연결이 준비되지 않았습니다. 관리자에게 문의해주세요.",
+        sourceStatus: {
+          searchVolume: { status: "not_configured", label: "월 검색량 연결 필요" },
+        },
       }, 503);
     }
 

@@ -4,8 +4,12 @@ const defaultAllowedOrigins = [
   "http://127.0.0.1:8790",
   "http://127.0.0.1:8771",
   "http://127.0.0.1:8772",
+  "http://127.0.0.1:8774",
+  "http://127.0.0.1:8775",
   "http://localhost:8784",
-  "http://localhost:8790"
+  "http://localhost:8790",
+  "http://localhost:8774",
+  "http://localhost:8775"
 ];
 
 export function allowedOrigins() {

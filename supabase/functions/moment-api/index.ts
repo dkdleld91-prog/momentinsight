@@ -223,7 +223,7 @@ function buildPublicState(data: any) {
 
   return {
     code: client.agency_code || "MI-DEMO-01",
-    client: client.name || "비타민 앰플 데모",
+    client: client.name || "브랜드 A",
     sales: formatMoney(dashboard.sales),
     roas: formatPercent(dashboard.roas),
     adSpend: formatMoney(dashboard.ad_spend),

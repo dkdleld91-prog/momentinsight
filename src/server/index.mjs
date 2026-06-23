@@ -4,6 +4,7 @@ import adminClients from "./handlers/admin-clients.mjs";
 import adminApi from "./handlers/admin-api.mjs";
 import clientApi from "./handlers/client-api.mjs";
 import demoApi from "./handlers/demo-api.mjs";
+import integrationStatus from "./handlers/integration-status.mjs";
 import naverKeyword from "./handlers/naver-keyword.mjs";
 import naverShoppingRank from "./handlers/naver-shopping-rank.mjs";
 import { corsHeaders, protectedJson } from "./security.mjs";
@@ -56,6 +57,10 @@ export default {
 
     if (url.pathname === "/api/naver-shopping-rank") {
       return naverShoppingRank.fetch(request);
+    }
+
+    if (url.pathname === "/api/integration-status") {
+      return integrationStatus.fetch(request);
     }
 
     const route = routes.find((item) => item.method === request.method && item.path === url.pathname);

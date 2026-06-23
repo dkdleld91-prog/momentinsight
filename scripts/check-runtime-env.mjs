@@ -27,6 +27,7 @@ function mergeEnv() {
   const root = process.cwd();
   return {
     ...loadEnv(path.join(root, ".env.local")),
+    ...loadEnv(path.join(root, "05_네이버_API_연동", ".env.local")),
     ...loadEnv(path.join(root, "06_Supabase_연동", ".env.local")),
     ...process.env,
   };
@@ -36,40 +37,48 @@ function hasAny(env, names) {
   return names.some((name) => Boolean(env[name]));
 }
 
-function status(env, label, names, required = true) {
+function status(env, label, names, required = true, valid = null) {
+  const present = hasAny(env, names);
   return {
     label,
     required,
     names,
-    present: hasAny(env, names),
+    present,
+    valid: valid ? Boolean(valid(env)) : present,
   };
 }
 
 const env = mergeEnv();
+const strictNaver = process.argv.includes("--naver") ||
+  process.argv.includes("--production") ||
+  env.MI_REQUIRE_NAVER_ENV === "true" ||
+  env.VERCEL_ENV === "production";
 const checks = [
   status(env, "Supabase URL", ["SUPABASE_URL"]),
   status(env, "Supabase publishable key", ["SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS"]),
   status(env, "Supabase secret key", ["SUPABASE_SECRET_KEY", "SUPABASE_SECRET_KEYS"]),
   status(env, "Supabase JWKS", ["SUPABASE_JWKS_URL", "SUPABASE_JWKS"]),
   status(env, "Allowed origins", ["MI_ALLOWED_ORIGINS", "ALLOWED_ORIGINS"], false),
-  status(env, "Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], false),
-  status(env, "Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], false),
-  status(env, "Naver SearchAd customer", ["NAVER_SEARCHAD_CUSTOMER_ID"], false),
-  status(env, "Naver Datalab client", ["NAVER_DATALAB_CLIENT_ID"], false),
-  status(env, "Naver Datalab secret", ["NAVER_DATALAB_CLIENT_SECRET"], false),
-  status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID"], false),
-  status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET"], false),
+  status(env, "Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], strictNaver),
+  status(env, "Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], strictNaver),
+  status(env, "Naver SearchAd customer", ["NAVER_SEARCHAD_CUSTOMER_ID"], strictNaver),
+  status(env, "Naver DataLab client", ["NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], strictNaver),
+  status(env, "Naver DataLab secret", ["NAVER_DATALAB_CLIENT_SECRET", "NAVER_OPENAPI_CLIENT_SECRET"], strictNaver),
+  status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], strictNaver),
+  status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], strictNaver),
+  status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),
 ];
 
-const missingRequired = checks.filter((check) => check.required && !check.present);
+const missingRequired = checks.filter((check) => check.required && !check.valid);
 
 console.log(JSON.stringify({
   ok: missingRequired.length === 0,
+  strictNaver,
   checkedAt: new Date().toISOString(),
   checks: checks.map((check) => ({
     label: check.label,
     required: check.required,
-    status: check.present ? "present" : "missing",
+    status: check.valid ? "ready" : check.present ? "invalid" : "missing",
     envNames: check.names,
   })),
 }, null, 2));

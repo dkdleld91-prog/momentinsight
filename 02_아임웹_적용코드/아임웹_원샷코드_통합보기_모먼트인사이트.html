@@ -485,7 +485,7 @@
             <button class="mi-button" type="button" data-mi-download="monthly">월간 CSV 생성</button>
           </div>
           <div class="mi-form-grid">
-            <input class="mi-input" data-mi-keyword value="비타민 앰플" placeholder="키워드 입력" />
+            <input class="mi-input" data-mi-keyword placeholder="키워드 입력" />
             <button class="mi-button secondary" type="button" data-mi-keyword-run>키워드 조회</button>
           </div>
           <div class="mi-table" style="margin-top:12px;" data-mi-keyword-result>
@@ -579,11 +579,7 @@
       };
 
       var lastCalc = null;
-      var keywordSamples = {
-        "비타민 앰플": { volume: 18400, comp: "보통", action: "콘텐츠 제목과 상품명 반영" },
-        "저자극 크림": { volume: 27100, comp: "높음", action: "후기형 콘텐츠와 상세페이지 소제목 보강" },
-        "무선 청소기": { volume: 42300, comp: "높음", action: "가격/성능 비교형 키워드 확장" }
-      };
+      var keywordSamples = {};
 
       function escapeHtml(value) {
         return String(value || "")
@@ -812,7 +808,11 @@
       });
 
       root.querySelector("[data-mi-keyword-run]").addEventListener("click", function () {
-        var keyword = root.querySelector("[data-mi-keyword]").value.trim() || "비타민 앰플";
+        var keyword = root.querySelector("[data-mi-keyword]").value.trim();
+        if (!keyword) {
+          root.querySelector("[data-mi-keyword-result]").innerHTML = '<div class="mi-row"><span>조회 상태</span><strong>키워드를 입력해주세요</strong></div>';
+          return;
+        }
         root.querySelector("[data-mi-keyword-result]").innerHTML =
           '<div class="mi-row"><span>검색 키워드</span><strong>' + escapeHtml(keyword) + '</strong></div>' +
           '<div class="mi-row"><span>월 검색량</span><strong>전용 화면에서 조회</strong></div>' +

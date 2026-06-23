@@ -81,7 +81,7 @@ const endsAt = endsAtDate.toISOString();
 
 await ensure("clients", clientId, {
   id: clientId,
-  name: "비타민 앰플 데모",
+  name: "브랜드 A",
   business_name: "모먼트 인사이트 데모 광고주",
   agency_code: "MI-DEMO-01",
   status: "active",
@@ -92,7 +92,7 @@ await ensure("clients", clientId, {
 await ensure("brands", brandId, {
   id: brandId,
   client_id: clientId,
-  name: "비타민 앰플",
+  name: "브랜드 A 대표상품",
   category: "뷰티/스킨케어",
   main_marketplace: "naver",
   status: "active"
@@ -162,7 +162,7 @@ await request("POST", "action-plans", {
 await request("POST", "keywords", {
   client_id: clientId,
   brand_id: brandId,
-  keyword: "비타민 앰플",
+  keyword: "대표 키워드",
   priority: "high",
   target_channel: "naver",
   is_active: true,

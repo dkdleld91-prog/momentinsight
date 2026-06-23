@@ -257,7 +257,7 @@ export default {
         code: "NAVER_OPENAPI_NOT_CONFIGURED",
         message: "네이버 쇼핑 검색 API가 아직 연결되지 않았습니다.",
         sourceStatus: {
-          shoppingRank: { status: "not_configured", label: "네이버 쇼핑 API 미연결" },
+          shoppingRank: { status: "not_configured", label: "네이버 쇼핑 API 연결 필요" },
         },
       }, 503);
     }

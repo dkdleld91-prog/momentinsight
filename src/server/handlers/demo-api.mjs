@@ -109,7 +109,7 @@ function buildPublicState(data) {
 
   return {
     code: client.agency_code || "mml-a01",
-    client: client.name || "비타민 앰플 데모",
+    client: client.name || "브랜드 A",
     sales: formatMoney(dashboard.sales),
     roas: formatPercent(dashboard.roas),
     adSpend: formatMoney(dashboard.ad_spend),
@@ -209,7 +209,7 @@ async function writePublicState(ctx, state) {
   const clientResult = await ctx.supabaseAdmin
     .from("clients")
     .update({
-      name: state.client || "비타민 앰플 데모",
+      name: state.client || "브랜드 A",
       agency_code: state.code || "mml-a01",
       public_summary: publicComment
     })

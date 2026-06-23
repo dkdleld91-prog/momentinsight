@@ -18,6 +18,7 @@ function loadEnvFile(filePath) {
   });
 }
 
+loadEnvFile(path.join(process.cwd(), "05_네이버_API_연동", ".env.local"));
 loadEnvFile(path.join(process.cwd(), "06_Supabase_연동", ".env.local"));
 
 const app = (await import("./index.mjs")).default;
@@ -71,4 +72,3 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Moment Insight API dev server: http://127.0.0.1:${PORT}`);
 });
-

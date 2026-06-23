@@ -3703,8 +3703,8 @@
         var secondClass = type === "device" ? "is-pc" : "is-male";
         node.innerHTML =
           '<div class="mi-profile-bar">' +
-            '<span class="mi-profile-segment ' + firstClass + '" style="width:' + firstValue + '%;">' + escapeHtml(firstLabel) + ' ' + firstValue + '%</span>' +
-            '<span class="mi-profile-segment ' + secondClass + '" style="width:' + secondValue + '%;">' + escapeHtml(secondLabel) + ' ' + secondValue + '%</span>' +
+            '<span class="mi-profile-segment ' + firstClass + '" style="width:' + firstValue + '%;" aria-label="' + escapeHtml(firstLabel) + ' ' + firstValue + '%"></span>' +
+            '<span class="mi-profile-segment ' + secondClass + '" style="width:' + secondValue + '%;" aria-label="' + escapeHtml(secondLabel) + ' ' + secondValue + '%"></span>' +
           '</div>' +
           '<div class="mi-profile-meta"><span>' + escapeHtml(firstLabel) + ' ' + firstValue + '%</span><span>' + escapeHtml(secondLabel) + ' ' + secondValue + '%</span></div>';
       }

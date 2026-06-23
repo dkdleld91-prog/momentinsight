@@ -41,6 +41,19 @@ function normalizeCompare(keyword) {
   return normalizeKeyword(keyword).replace(/\s/g, "").toLowerCase();
 }
 
+function normalizeSearchAdKeyword(keyword) {
+  return normalizeKeyword(keyword).replace(/\s/g, "");
+}
+
+function safeErrorPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  return {
+    status: payload.status || null,
+    type: payload.type || null,
+    title: payload.title || null,
+  };
+}
+
 function parseNaverNumber(value) {
   if (typeof value === "number") return value;
   if (!value) return 0;
@@ -115,7 +128,7 @@ async function fetchJson(url, options = {}) {
 
 async function fetchSearchAdKeyword(env, keyword) {
   const path = "/keywordstool";
-  const params = new URLSearchParams({ hintKeywords: keyword, showDetail: "1" });
+  const params = new URLSearchParams({ hintKeywords: normalizeSearchAdKeyword(keyword), showDetail: "1" });
   const payload = await fetchJson(`${SEARCHAD_BASE_URL}${path}?${params.toString()}`, {
     method: "GET",
     headers: naverSearchAdHeaders(env, "GET", path),
@@ -327,7 +340,7 @@ export default {
       return json({
         ok: false,
         message: error.message || "네이버 API 연결 중 오류가 발생했습니다.",
-        detail: error.payload || null,
+        detail: safeErrorPayload(error.payload),
       }, error.status || 500);
     }
   },

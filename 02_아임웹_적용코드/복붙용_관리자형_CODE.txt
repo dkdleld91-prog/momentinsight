@@ -3465,6 +3465,22 @@
         return source;
       }
 
+      function rangeLabels(data, countOverride) {
+        var count = countOverride || keywordRangeMonths[keywordRange] || 12;
+        var source = Array.isArray(data && data.seriesLabels) && data.seriesLabels.length ? data.seriesLabels.slice() : [];
+        if (!source.length) return makeKeywordMonthLabels(count);
+        if (source.length >= count) return source.slice(source.length - count);
+        return source;
+      }
+
+      function alignedMonthLabels(data, values, fallbackLabels) {
+        var source = Array.isArray(data && data.monthLabels) && data.monthLabels.length ? data.monthLabels.slice() : [];
+        var count = Array.isArray(values) ? values.length : 0;
+        if (source.length >= count && count) return source.slice(source.length - count);
+        if (Array.isArray(fallbackLabels) && fallbackLabels.length >= count && count) return fallbackLabels.slice(fallbackLabels.length - count);
+        return makeKeywordMonthLabels(count || 12);
+      }
+
       function normalizePercentValues(values) {
         var source = values.map(function (value) {
           return Math.max(0, Number(value || 0));
@@ -3795,7 +3811,11 @@
         var effectiveCount = hasTrendSeries ? Math.max.apply(null, seriesList.map(function (series) {
           return series.length;
         }).concat([1])) : requestedCount;
-        var labels = makeKeywordMonthLabels(effectiveCount);
+        var labelItem = items.find(function (item) {
+          return item && item.data && Array.isArray(item.data.seriesLabels) && item.data.seriesLabels.length;
+        }) || items[0];
+        var labels = rangeLabels(labelItem.data, effectiveCount);
+        if (labels.length !== effectiveCount) labels = makeKeywordMonthLabels(effectiveCount);
         var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
         var peakValue = hasTrendSeries ? Math.max.apply(null, flatSeries) : 0;
         var chartMax = pickKeywordScale(hasTrendSeries ? peakValue : Math.max(totalVolume, 1));
@@ -3916,8 +3936,8 @@
         renderKeywordMarket(items);
         renderKeywordMonths(labels);
         renderKeywordYAxis(chartMax);
-        var monthLabels = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
         var monthSeries = profile.month;
+        var monthLabels = alignedMonthLabels(items[0].data, monthSeries, labels);
         var ageValues = [
           Number(profile.age[0] || 0),
           Number(profile.age[1] || 0),
@@ -3959,7 +3979,9 @@
           action: "키워드 조회 후 판단",
           insight: "월 검색량 조회 후 표시합니다.",
           series: [],
+          seriesLabels: [],
           month: [],
+          monthLabels: [],
           device: { mobile: 0, pc: 0 },
           gender: null,
           age: [],
@@ -3980,7 +4002,9 @@
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
         data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
         data.series = Array.isArray(data.series) && data.series.length ? data.series : fallbackData.series;
+        data.seriesLabels = Array.isArray(data.seriesLabels) && data.seriesLabels.length ? data.seriesLabels : fallbackData.seriesLabels;
         data.month = Array.isArray(data.month) && data.month.length ? data.month : fallbackData.month;
+        data.monthLabels = Array.isArray(data.monthLabels) && data.monthLabels.length ? data.monthLabels : fallbackData.monthLabels;
         data.device = data.device || fallbackData.device;
         data.gender = data.gender || fallbackData.gender;
         data.age = Array.isArray(data.age) && data.age.length ? data.age : fallbackData.age;

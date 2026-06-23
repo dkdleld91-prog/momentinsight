@@ -223,22 +223,59 @@ function ratioSum(payload) {
   return data.reduce((sum, item) => sum + Number(item.ratio || 0), 0);
 }
 
-function normalizeShares(entries) {
+function normalizeShares(entries, digits = 1) {
   const total = entries.reduce((sum, item) => sum + Number(item.value || 0), 0);
   if (!total) {
     return entries.map(() => 0);
   }
-  return entries.map((item) => round((Number(item.value || 0) / total) * 100, 0));
+  const scale = 10 ** digits;
+  const target = 100 * scale;
+  const rawShares = entries.map((item, index) => {
+    const raw = (Number(item.value || 0) / total) * target;
+    const floor = Math.floor(raw);
+    return { index, floor, rest: raw - floor };
+  });
+  let remaining = target - rawShares.reduce((sum, item) => sum + item.floor, 0);
+  rawShares
+    .slice()
+    .sort((left, right) => right.rest - left.rest)
+    .forEach((item) => {
+      if (remaining <= 0) return;
+      rawShares[item.index].floor += 1;
+      remaining -= 1;
+    });
+
+  return rawShares.map((item) => round(item.floor / scale, digits));
+}
+
+function formatMonthPeriod(period, isLatest = false) {
+  const [, month] = String(period || "").split("-");
+  const label = month ? `${month.padStart(2, "0")}월` : String(period || "");
+  return isLatest ? `${label}(예상)` : label;
+}
+
+function trendData(payload) {
+  return payload?.results?.[0]?.data || [];
 }
 
 function monthlyShares(payload) {
-  const data = payload?.results?.[0]?.data || [];
+  const data = trendData(payload);
   if (!data.length) return [];
   return normalizeShares(data.slice(-12).map((item) => ({ value: Number(item.ratio || 0) })));
 }
 
+function monthlyLabels(payload) {
+  const data = trendData(payload).slice(-12);
+  return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
+}
+
+function trendLabels(payload) {
+  const data = trendData(payload);
+  return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
+}
+
 function trendToSeries(trendPayload, totalVolume) {
-  const data = trendPayload?.results?.[0]?.data || [];
+  const data = trendData(trendPayload);
   if (!data.length) return [];
   const base = Number(totalVolume || 0);
   return data.map((item) => {
@@ -291,7 +328,9 @@ async function buildDatalabProfile(env, keyword, totalVolume) {
 
   return {
     series: trendToSeries(trend, totalVolume),
+    seriesLabels: trendLabels(trend),
     month: monthlyShares(trend),
+    monthLabels: monthlyLabels(trend),
     gender: { male: genderShares[0], female: genderShares[1] },
     age: ageShares,
     week: weekdayShares(daily),
@@ -393,7 +432,9 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
       ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 시장 경쟁도 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
     series: datalabProfile?.series?.length ? datalabProfile.series : [],
+    seriesLabels: datalabProfile?.seriesLabels || [],
     month: datalabProfile?.month || [],
+    monthLabels: datalabProfile?.monthLabels || [],
     device: { mobile: mobileShare, pc: pcShare },
     gender: datalabProfile?.gender || null,
     age: datalabProfile?.age || [],

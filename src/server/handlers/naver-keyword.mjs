@@ -11,6 +11,8 @@ function config() {
     searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
     datalabClientId: process.env.NAVER_DATALAB_CLIENT_ID || "",
     datalabClientSecret: process.env.NAVER_DATALAB_CLIENT_SECRET || "",
+    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "",
+    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "",
   };
 }
 
@@ -20,6 +22,10 @@ function hasSearchAdConfig(env) {
 
 function hasDatalabConfig(env) {
   return Boolean(env.datalabClientId && env.datalabClientSecret);
+}
+
+function hasOpenapiConfig(env) {
+  return Boolean(env.openapiClientId && env.openapiClientSecret);
 }
 
 function json(request, body, status = 200) {
@@ -158,6 +164,23 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
   });
 }
 
+async function fetchNaverShoppingSearch(env, keyword) {
+  const params = new URLSearchParams({
+    query: keyword,
+    display: "20",
+    start: "1",
+    sort: "sim",
+  });
+
+  return fetchJson(`${DATALAB_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
+    method: "GET",
+    headers: {
+      "X-Naver-Client-Id": env.openapiClientId,
+      "X-Naver-Client-Secret": env.openapiClientSecret,
+    },
+  });
+}
+
 function ratioSum(payload) {
   const data = payload?.results?.[0]?.data || [];
   return data.reduce((sum, item) => sum + Number(item.ratio || 0), 0);
@@ -249,6 +272,25 @@ function competitionLabel(compIdx) {
   return value || "확인 필요";
 }
 
+function buildShoppingProfile(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const prices = items
+    .map((item) => parseNaverNumber(item.lprice))
+    .filter((price) => price > 0);
+  const malls = [...new Set(items.map((item) => String(item.mallName || "").trim()).filter(Boolean))];
+
+  return {
+    total: Number(payload.total || 0),
+    sampleCount: items.length,
+    averagePrice: prices.length ? Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length) : 0,
+    minPrice: prices.length ? Math.min(...prices) : 0,
+    maxPrice: prices.length ? Math.max(...prices) : 0,
+    mallCount: malls.length,
+    source: "NAVER Shopping Search API",
+  };
+}
+
 function buildRelatedKeywordMetrics(searchAd) {
   const seen = new Set();
   return (searchAd?.related || [])
@@ -276,7 +318,7 @@ function buildRelatedKeywordMetrics(searchAd) {
     .filter(Boolean);
 }
 
-function buildChartData(keyword, searchAd, datalabProfile) {
+function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const item = searchAd?.item || {};
   const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
   const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
@@ -310,6 +352,7 @@ function buildChartData(keyword, searchAd, datalabProfile) {
       relatedKeywords: relatedKeywordMetrics.map((related) => related.keyword),
       relatedKeywordMetrics,
     },
+    shopping: shoppingProfile,
   };
 }
 
@@ -344,6 +387,8 @@ export default {
       const baseVolume = parseNaverNumber(searchAd.item?.monthlyPcQcCnt) + parseNaverNumber(searchAd.item?.monthlyMobileQcCnt);
       let datalabProfile = null;
       let datalabError = null;
+      let shoppingProfile = null;
+      let shoppingError = null;
 
       if (hasDatalabConfig(env)) {
         try {
@@ -353,18 +398,29 @@ export default {
         }
       }
 
+      if (hasOpenapiConfig(env)) {
+        try {
+          shoppingProfile = buildShoppingProfile(await fetchNaverShoppingSearch(env, keyword));
+        } catch (error) {
+          shoppingError = error.message;
+        }
+      }
+
       return json(request, {
         ok: true,
         source: {
           searchVolume: "NAVER SearchAd API",
           trend: datalabProfile ? "NAVER DataLab API" : "fallback",
+          shopping: shoppingProfile ? "NAVER Shopping Search API" : hasOpenapiConfig(env) ? "error" : "not_configured",
           datalabError,
+          shoppingError,
         },
         configured: {
           searchAd: hasSearchAdConfig(env),
           datalab: hasDatalabConfig(env),
+          shoppingSearch: hasOpenapiConfig(env),
         },
-        chartData: buildChartData(keyword, searchAd, datalabProfile),
+        chartData: buildChartData(keyword, searchAd, datalabProfile, shoppingProfile),
       });
     } catch (error) {
       return json(request, {

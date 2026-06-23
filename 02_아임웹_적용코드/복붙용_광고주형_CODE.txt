@@ -1787,10 +1787,10 @@
             <div class="mi-market-body">
               <div class="mi-market-section">
                 <div class="mi-market-metrics">
-                  <div class="mi-market-metric"><span>쇼핑 상품수</span><strong data-keyword-market-top10-sales>미연동</strong><small>쇼핑 검색 API total 필요</small></div>
+                  <div class="mi-market-metric"><span>쇼핑 검색 결과 수</span><strong data-keyword-market-top10-sales>미연동</strong><small>네이버 쇼핑 검색 total</small></div>
                   <div class="mi-market-metric"><span>판매량/매출</span><strong data-keyword-market-top10-units>미연동</strong><small>커머스 또는 외부 판매 데이터 필요</small></div>
-                  <div class="mi-market-metric"><span>평균 가격</span><strong data-keyword-market-top40-sales>미연동</strong><small>쇼핑 검색 결과 연동 후 계산</small></div>
-                  <div class="mi-market-metric"><span>지면 포화도</span><strong data-keyword-market-price>판단 보류</strong><small>상품수+가격+검색수 연결 후 판단</small></div>
+                  <div class="mi-market-metric"><span>평균 최저가</span><strong data-keyword-market-top40-sales>미연동</strong><small>상위 20개 샘플 기준</small></div>
+                  <div class="mi-market-metric"><span>상품/검색 참고값</span><strong data-keyword-market-price>판단 보류</strong><small>쇼핑 결과 수 ÷ 월 검색수</small></div>
                 </div>
               </div>
               <div class="mi-market-section">
@@ -2518,15 +2518,19 @@
         var volume = Number(data.volume || 0);
         var comp = displayCompetitionLabel(data.comp);
         var grade = gradeFromCompetition(comp, 0);
+        var shopping = data.shopping || {};
+        var shoppingTotal = Number(shopping.total || 0);
+        var averagePrice = Number(shopping.averagePrice || 0);
+        var productSearchRatio = shoppingTotal && volume ? Math.round((shoppingTotal / Math.max(1, volume)) * 100) / 100 : 0;
         return {
           keyword: keyword,
           volume: volume,
-          shoppingStatus: "미연동",
+          shoppingStatus: shoppingTotal ? "연동됨" : "미연동",
           grade: grade,
-          saturation: "판단 보류",
-          shoppingProducts: "미연동",
+          saturation: productSearchRatio ? productSearchRatio + "건/검색" : "판단 보류",
+          shoppingProducts: shoppingTotal ? formatNumber(shoppingTotal) + "건" : "미연동",
           commerceSales: "미연동",
-          avgPrice: "미연동",
+          avgPrice: averagePrice ? formatNumber(averagePrice) + "원" : "미연동",
           comp: comp || "확인 필요",
           action: data.action || "검색량과 연관 키워드 기준으로 콘텐츠 후보를 먼저 선별",
           insight: data.insight || "검색광고 경쟁도는 광고 입찰 신호이며 상품 지면 포화도는 쇼핑 데이터 연결 후 판단"
@@ -2568,7 +2572,7 @@
         if (top40Sales) top40Sales.textContent = market.avgPrice;
         if (price) price.textContent = market.saturation;
         if (naver) naver.textContent = "월 검색수 " + formatNumber(market.volume) + "회 · 검색광고 경쟁도 " + market.grade.label;
-        if (ad) ad.textContent = "상품수·가격·판매량 미연동 · 쇼핑/커머스 API 연결 후 판단";
+        if (ad) ad.textContent = market.shoppingProducts !== "미연동" ? "쇼핑 검색 결과 " + market.shoppingProducts + " · 평균 최저가 " + market.avgPrice : "상품수·가격·판매량 미연동 · 쇼핑/커머스 API 연결 후 판단";
         if (action) action.textContent = market.action;
 
         var related = makeRelatedKeywords(item);

@@ -12,7 +12,7 @@ const config = {
   searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
   datalabClientId: process.env.NAVER_DATALAB_CLIENT_ID || "",
   datalabClientSecret: process.env.NAVER_DATALAB_CLIENT_SECRET || "",
-  allowedOrigins: (process.env.ALLOWED_ORIGINS || "*").split(",").map((origin) => origin.trim()).filter(Boolean)
+  allowedOrigins: (process.env.MI_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || "https://insight.momentlabs.co.kr,http://127.0.0.1:8787,http://localhost:8787").split(",").map((origin) => origin.trim()).filter(Boolean)
 };
 
 function hasSearchAdConfig() {
@@ -26,7 +26,7 @@ function hasDatalabConfig() {
 function corsOrigin(origin) {
   if (config.allowedOrigins.includes("*")) return "*";
   if (origin && config.allowedOrigins.includes(origin)) return origin;
-  return config.allowedOrigins[0] || "*";
+  return "";
 }
 
 function sendJson(req, res, statusCode, body) {
@@ -81,6 +81,14 @@ function dateDaysAgo(days) {
   const date = new Date();
   date.setDate(date.getDate() - days);
   return date;
+}
+
+function isLocalUrl(url) {
+  return ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
+}
+
+function keywordApiEnabled(url) {
+  return isLocalUrl(url) || process.env.MI_KEYWORD_API_ENABLED === "true";
 }
 
 function monthsAgo(months) {
@@ -308,6 +316,14 @@ function buildChartData(keyword, searchAd, datalabProfile) {
 }
 
 async function handleKeyword(req, res, url) {
+  if (!keywordApiEnabled(url)) {
+    sendJson(req, res, 403, {
+      ok: false,
+      message: "키워드 조회 API는 현재 비공개 상태입니다. 운영 오픈 시 서버 환경변수 MI_KEYWORD_API_ENABLED=true로 열어야 합니다."
+    });
+    return;
+  }
+
   const keyword = normalizeKeyword(url.searchParams.get("keyword"));
   if (!keyword) {
     sendJson(req, res, 400, { ok: false, message: "keyword 파라미터가 필요합니다." });

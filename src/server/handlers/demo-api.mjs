@@ -1,9 +1,13 @@
 import { withSupabase } from "@supabase/server";
 import { databaseError, json, methodNotAllowed, notFound, readBody, routeParts } from "../http.mjs";
+import { safeEqual } from "../security.mjs";
 
 const demoClientId = "11111111-1111-4111-8111-111111111111";
 const demoBrandId = "22222222-2222-4222-8222-222222222222";
-const demoAdminCode = "ADMIN-2026";
+
+function demoPublicStateEnabled() {
+  return process.env.MI_DEMO_PUBLIC_STATE_ENABLED === "true" && Boolean(process.env.MI_DEMO_ADMIN_CODE);
+}
 
 function formatMoney(value) {
   const amount = Number(value || 0);
@@ -350,9 +354,17 @@ export default {
     const { resource } = routeParts(request, "/api/demo");
     if (resource === "public-state") {
       if (request.method !== "POST") return methodNotAllowed(["POST"]);
+
+      if (!demoPublicStateEnabled()) {
+        return json({
+          ok: false,
+          message: "데모 공개 저장 API는 비공개 상태입니다. 서버 환경변수 MI_DEMO_PUBLIC_STATE_ENABLED와 MI_DEMO_ADMIN_CODE 설정 후 사용할 수 있습니다."
+        }, 403);
+      }
+
       const body = await readBody(request);
       const adminCode = request.headers.get("x-demo-admin-code") || body.adminCode;
-      if (adminCode !== demoAdminCode) {
+      if (!safeEqual(adminCode, process.env.MI_DEMO_ADMIN_CODE)) {
         return json({ ok: false, message: "Invalid demo admin code" }, 401);
       }
 

@@ -5,6 +5,7 @@ import adminApi from "./handlers/admin-api.mjs";
 import clientApi from "./handlers/client-api.mjs";
 import demoApi from "./handlers/demo-api.mjs";
 import naverKeyword from "./handlers/naver-keyword.mjs";
+import { corsHeaders, protectedJson } from "./security.mjs";
 
 const routes = [
   { method: "GET", path: "/health", app: health },
@@ -19,11 +20,10 @@ export default {
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: {
-          "access-control-allow-origin": "*",
-          "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          "access-control-allow-headers": "authorization, x-client-info, apikey, content-type, x-demo-admin-code"
-        }
+        headers: corsHeaders(request, {
+          methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code"
+        })
       });
     }
 
@@ -36,6 +36,16 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/demo/")) {
+      if (url.pathname === "/api/demo/public-state" && process.env.MI_DEMO_PUBLIC_STATE_ENABLED !== "true") {
+        return protectedJson(request, {
+          ok: false,
+          message: "데모 공개 저장 API는 비공개 상태입니다."
+        }, 403, {
+          methods: "POST, OPTIONS",
+          headers: "content-type, x-demo-admin-code"
+        });
+      }
+
       return demoApi.fetch(request);
     }
 

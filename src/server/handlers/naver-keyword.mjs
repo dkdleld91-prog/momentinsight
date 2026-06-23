@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { corsHeaders, featureEnabled, protectedJson } from "../security.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_BASE_URL = "https://openapi.naver.com";
@@ -21,16 +22,8 @@ function hasDatalabConfig(env) {
   return Boolean(env.datalabClientId && env.datalabClientSecret);
 }
 
-function json(body, status = 200) {
-  return Response.json(body, {
-    status,
-    headers: {
-      "access-control-allow-origin": "*",
-      "access-control-allow-methods": "GET, OPTIONS",
-      "access-control-allow-headers": "content-type",
-      "cache-control": "no-store",
-    },
-  });
+function json(request, body, status = 200) {
+  return protectedJson(request, body, status);
 }
 
 function normalizeKeyword(keyword) {
@@ -292,16 +285,23 @@ function buildChartData(keyword, searchAd, datalabProfile) {
 
 export default {
   async fetch(request) {
-    if (request.method === "OPTIONS") return json({ ok: true });
-    if (request.method !== "GET") return json({ ok: false, message: "Method not allowed" }, 405);
+    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
+    if (request.method !== "GET") return json(request, { ok: false, message: "Method not allowed" }, 405);
+
+    if (!featureEnabled(request, "MI_KEYWORD_API_ENABLED")) {
+      return json(request, {
+        ok: false,
+        message: "키워드 조회 API는 현재 비공개 상태입니다. 운영 오픈 시 서버 환경변수 MI_KEYWORD_API_ENABLED=true로 열어야 합니다.",
+      }, 403);
+    }
 
     const url = new URL(request.url);
     const keyword = normalizeKeyword(url.searchParams.get("keyword"));
-    if (!keyword) return json({ ok: false, message: "keyword 파라미터가 필요합니다." }, 400);
+    if (!keyword) return json(request, { ok: false, message: "keyword 파라미터가 필요합니다." }, 400);
 
     const env = config();
     if (!hasSearchAdConfig(env)) {
-      return json({
+      return json(request, {
         ok: false,
         configured: false,
         message: "네이버 검색광고 API 키가 없습니다. Vercel 환경변수에 NAVER_SEARCHAD_API_KEY, NAVER_SEARCHAD_SECRET_KEY, NAVER_SEARCHAD_CUSTOMER_ID를 설정해야 실제 검색량 조회가 가능합니다.",
@@ -323,7 +323,7 @@ export default {
         }
       }
 
-      return json({
+      return json(request, {
         ok: true,
         source: {
           searchVolume: "NAVER SearchAd API",
@@ -337,7 +337,7 @@ export default {
         chartData: buildChartData(keyword, searchAd, datalabProfile),
       });
     } catch (error) {
-      return json({
+      return json(request, {
         ok: false,
         message: error.message || "네이버 API 연결 중 오류가 발생했습니다.",
         detail: safeErrorPayload(error.payload),

@@ -1372,7 +1372,7 @@
         <h2>관리자 코드 접속</h2>
         <p>정식 개발 시 계정 인증으로 교체합니다.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-admin-login-code value="ADMIN-2026" aria-label="관리자 코드" />
+          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
           <button class="mi-button" type="button" data-admin-login-button>관리자 화면 열기</button>
           <div class="mi-code-status" data-admin-login-status>관리자 전용 화면입니다.</div>
         </div>
@@ -2093,9 +2093,19 @@
         return "http://127.0.0.1:8790";
       }
 
+      function getAdminCode() {
+        var input = root.querySelector("[data-admin-login-code]");
+        return input ? String(input.value || "").trim() : "";
+      }
+
       async function persistDemoState(state, statusNode, okMessage) {
         if (!window.fetch) {
           setStatus(statusNode, "로컬 저장 완료, API 반영 대기: 현재 브라우저에서 fetch를 사용할 수 없습니다.", "is-warn");
+          return false;
+        }
+        var adminCode = getAdminCode();
+        if (!adminCode) {
+          setStatus(statusNode, "로컬 저장 완료: 서버 반영은 관리자 코드 입력 후 가능합니다.", "is-warn");
           return false;
         }
         try {
@@ -2103,10 +2113,10 @@
             method: "POST",
             headers: {
               "content-type": "application/json",
-              "x-demo-admin-code": "ADMIN-2026"
+              "x-demo-admin-code": adminCode
             },
             body: JSON.stringify({
-              adminCode: "ADMIN-2026",
+              adminCode: adminCode,
               publicState: state
             })
           });
@@ -2438,6 +2448,16 @@
       var loginStatus = root.querySelector("[data-admin-login-status]");
       if (loginButton) {
         loginButton.addEventListener("click", function () {
+          var host = window.location && window.location.hostname;
+          var isLocalPreview = !host || host === "127.0.0.1" || host === "localhost";
+          if (!isLocalPreview && window.MI_ENABLE_ADMIN_PREVIEW !== true) {
+            setStatus(loginStatus, "운영 도메인에서는 관리자 화면이 잠겨 있습니다. 서버 로그인 연결 후 사용합니다.", "is-warn");
+            return;
+          }
+          if (!getAdminCode()) {
+            setStatus(loginStatus, "관리자 코드를 입력해주세요.", "is-warn");
+            return;
+          }
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
           setStatus(loginStatus, "관리자 화면이 열렸습니다.", "is-ok");

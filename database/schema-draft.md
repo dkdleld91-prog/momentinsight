@@ -97,5 +97,6 @@ visibility = client_visible
 internal_note is not selected
 ```
 
-관리자 화면은 내부 메모를 볼 수 있지만, 공개 코멘트와 같은 영역에 섞어 보여주면 안 됩니다.
+RLS는 행 접근 제어이지 컬럼 보안이 아닙니다. 광고주용 조회는 `select *`를 금지하고, 내부 메모가 없는 client-safe view 또는 명시적 컬럼 select만 사용해야 합니다. `internal_note`, 내부 비용, 미승인 보고서 필드는 관리자 전용 API에서만 내려갑니다.
 
+관리자 화면은 내부 메모를 볼 수 있지만, 공개 코멘트와 같은 영역에 섞어 보여주면 안 됩니다.

@@ -18,6 +18,7 @@
 
 ```bash
 npm install
+npm run check:env
 npm run check:supabase
 npm run check:server
 npm run check:admin-api
@@ -34,6 +35,7 @@ http://127.0.0.1:8790
 
 ```text
 GET /health
+GET /api/health
 GET /api/client/:resource
 POST /api/client/agency-code/connect
 GET /api/admin/:resource
@@ -55,7 +57,9 @@ supabase/functions/moment-api/index.ts
 https://unjduaxhykcrlotprsie.supabase.co/functions/v1/moment-api
 ```
 
-`/health`는 secret 없이도 상태 확인이 가능하도록 fallback 처리되어 있습니다. 현재는 secret key가 들어간 상태라 `withSupabase({ auth: "none" })` 경로에서도 서버 컨텍스트가 생성됩니다.
+로컬 서버는 `/health`, Vercel 배포본은 `/api/health`로 상태를 확인합니다. `/api/health`의 `readiness.supabaseReady`가 `true`여야 Supabase 기반 API를 정상 운영할 수 있습니다.
+
+`/health`는 secret 없이도 상태 확인이 가능하도록 fallback 처리되어 있습니다. secret key가 들어간 상태라면 `withSupabase({ auth: "none" })` 경로에서도 서버 컨텍스트가 생성됩니다.
 
 핸들러 위치:
 

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { corsHeaders, featureEnabled, protectedJson } from "../security.mjs";
+import { corsHeaders, featureEnabled, isLocalRequest, protectedJson } from "../security.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_BASE_URL = "https://openapi.naver.com";
@@ -16,6 +16,12 @@ const DATALAB_GENDER_GROUPS = [
   { key: "female", gender: "f" },
   { key: "male", gender: "m" },
 ];
+const KEYWORD_CACHE_TTL_MS = Number(process.env.MI_KEYWORD_CACHE_TTL_MS || 1000 * 60 * 30);
+const KEYWORD_CACHE_MAX = Number(process.env.MI_KEYWORD_CACHE_MAX || 300);
+const KEYWORD_RATE_WINDOW_MS = Number(process.env.MI_KEYWORD_RATE_WINDOW_MS || 60_000);
+const KEYWORD_RATE_LIMIT = Number(process.env.MI_KEYWORD_RATE_LIMIT || 30);
+const keywordCache = new Map();
+const keywordRateBucket = new Map();
 
 function config() {
   return {
@@ -45,6 +51,17 @@ function json(request, body, status = 200) {
   return protectedJson(request, body, status);
 }
 
+function jsonWithHeaders(request, body, status = 200, headers = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders(request),
+      "content-type": "application/json; charset=utf-8",
+      ...headers,
+    },
+  });
+}
+
 function normalizeKeyword(keyword) {
   return String(keyword || "").replace(/\s+/g, " ").trim();
 }
@@ -55,15 +72,6 @@ function normalizeCompare(keyword) {
 
 function normalizeSearchAdKeyword(keyword) {
   return normalizeKeyword(keyword).replace(/\s/g, "");
-}
-
-function safeErrorPayload(payload) {
-  if (!payload || typeof payload !== "object") return null;
-  return {
-    status: payload.status || null,
-    type: payload.type || null,
-    title: payload.title || null,
-  };
 }
 
 function parseNaverNumber(value) {
@@ -114,11 +122,71 @@ function keywordAction({ hasExactMatch, isUnderThreshold, volume, comp }) {
   if (isUnderThreshold) return "검색량이 낮아 단독 핵심 키워드보다 보조 키워드로 관리";
   if (volume < 1000) return "검색량이 낮아 롱테일 소재와 SEO 보조 키워드로 관리";
   if (volume < 10000) return comp === "높음"
-    ? "검색량은 중간 이하이고 광고 경쟁이 높아 콘텐츠 테스트 중심으로 운영"
+    ? "검색량은 중간 이하이고 경쟁 지표가 높아 콘텐츠 테스트 중심으로 운영"
     : "검색량과 경쟁도를 함께 보며 보조 키워드 후보로 분류";
-  if (comp === "높음") return "검색량은 확인되지만 광고 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영";
-  if (comp === "낮음") return "검색량 대비 광고 경쟁이 낮아 SEO와 광고 테스트 후보로 분류";
-  return "검색량과 광고 경쟁도를 기준으로 SEO 후보로 분류";
+  if (comp === "높음") return "검색량은 확인되지만 경쟁 지표가 높아 콘텐츠와 소재를 분리 운영";
+  if (comp === "낮음") return "검색량 대비 경쟁 지표가 낮아 SEO와 소재 테스트 후보로 분류";
+  return "검색량과 경쟁도를 기준으로 SEO 후보로 분류";
+}
+
+function keywordCacheKey(keyword, profileMode) {
+  return `${profileMode}:${normalizeCompare(keyword)}`;
+}
+
+function getKeywordCache(key) {
+  const hit = keywordCache.get(key);
+  if (!hit) return null;
+  if (Date.now() >= hit.expiresAt) {
+    keywordCache.delete(key);
+    return null;
+  }
+  return {
+    payload: hit.payload,
+    ttlSeconds: Math.max(0, Math.ceil((hit.expiresAt - Date.now()) / 1000)),
+  };
+}
+
+function setKeywordCache(key, payload) {
+  if (!KEYWORD_CACHE_TTL_MS || KEYWORD_CACHE_TTL_MS < 1) return;
+  keywordCache.set(key, {
+    payload,
+    expiresAt: Date.now() + KEYWORD_CACHE_TTL_MS,
+  });
+  while (keywordCache.size > KEYWORD_CACHE_MAX) {
+    const oldestKey = keywordCache.keys().next().value;
+    keywordCache.delete(oldestKey);
+  }
+}
+
+function clientRateKey(request) {
+  const forwarded = request.headers.get("x-forwarded-for") || "";
+  return forwarded.split(",")[0].trim() || request.headers.get("x-real-ip") || "anonymous";
+}
+
+function checkKeywordRateLimit(request) {
+  if (isLocalRequest(request)) return { allowed: true };
+  const now = Date.now();
+  const key = clientRateKey(request);
+  const fresh = (keywordRateBucket.get(key) || []).filter((time) => now - time < KEYWORD_RATE_WINDOW_MS);
+
+  if (fresh.length >= KEYWORD_RATE_LIMIT) {
+    keywordRateBucket.set(key, fresh);
+    const retryAfter = Math.max(1, Math.ceil((KEYWORD_RATE_WINDOW_MS - (now - fresh[0])) / 1000));
+    return { allowed: false, retryAfter };
+  }
+
+  fresh.push(now);
+  keywordRateBucket.set(key, fresh);
+
+  if (keywordRateBucket.size > 1000) {
+    for (const [bucketKey, times] of keywordRateBucket.entries()) {
+      const activeTimes = times.filter((time) => now - time < KEYWORD_RATE_WINDOW_MS);
+      if (activeTimes.length) keywordRateBucket.set(bucketKey, activeTimes);
+      else keywordRateBucket.delete(bucketKey);
+    }
+  }
+
+  return { allowed: true };
 }
 
 function round(value, digits = 1) {
@@ -417,14 +485,6 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   };
 }
 
-function makeFallbackSeries(volume) {
-  const base = Number(volume || 0);
-  return [0.43, 0.74, 1, 0.91, 0.76, 0.62, 0.72, 0.79, 0.66, 0.53, 0.96, 0.58].map((ratio, index) => {
-    const wave = (((base / 100) + index * 17) % 23) / 100;
-    return Math.max(800, Math.round(base * Math.min(1.08, ratio + wave)));
-  });
-}
-
 function competitionLabel(compIdx) {
   const value = String(compIdx || "");
   if (value === "high" || value.includes("높")) return "높음";
@@ -476,7 +536,8 @@ function buildRelatedKeywordMetrics(searchAd) {
         pcVolume,
         mobileVolume,
         comp,
-        source: "naver_searchad_keyword",
+        source: searchAd?.hasExactMatch ? "naver_searchad_keyword" : "naver_searchad_related_keyword",
+        matchStatus: searchAd?.hasExactMatch ? "exact_context" : "related_only",
       };
     })
     .filter(Boolean);
@@ -509,7 +570,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     comp,
     action: keywordAction({ hasExactMatch, isUnderThreshold: metric.isUnderThreshold, volume: safeVolume, comp }),
     insight: hasExactMatch
-      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 광고 경쟁도 ${comp}입니다.`
+      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 경쟁 지표 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
     series: estimatedSeries,
     seriesLabels: datalabProfile?.seriesLabels || [],
@@ -539,6 +600,50 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   };
 }
 
+function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppingProfile, shoppingError, includeProfile }) {
+  const datalabConfigured = hasDatalabConfig(env);
+  const shoppingConfigured = hasOpenapiConfig(env);
+  const ratioReady = Boolean(datalabProfile?.month?.length && datalabProfile?.week?.length);
+  const profileReady = !includeProfile || datalabProfile?.demographicStatus === "search_interest_profile";
+
+  return {
+    searchVolume: searchAd?.hasExactMatch
+      ? { status: "ok", label: "월 검색량 확인" }
+      : { status: "partial", label: "정확 키워드 미일치", relatedCount: searchAd?.related?.length || 0 },
+    trend: !datalabConfigured
+      ? { status: "not_configured", label: "검색 추이 미연결" }
+      : datalabError
+        ? { status: "error", label: "검색 추이 확인 실패" }
+        : datalabProfile?.series?.length
+          ? { status: "ok", label: "검색 추이 확인" }
+          : { status: "pending", label: "검색 추이 대기" },
+    ratios: !datalabConfigured
+      ? { status: "not_configured", label: "검색 비율 미연결" }
+      : datalabError
+        ? { status: "error", label: "검색 비율 확인 실패" }
+        : ratioReady && profileReady
+          ? { status: "ok", label: "검색 비율 확인" }
+          : { status: "partial", label: "일부 검색 비율 대기" },
+    shopping: !shoppingConfigured
+      ? { status: "not_configured", label: "쇼핑 참고 지표 미연결" }
+      : shoppingError
+        ? { status: "error", label: "쇼핑 참고 지표 확인 실패" }
+        : shoppingProfile
+          ? { status: "ok", label: "쇼핑 참고 지표 확인" }
+          : { status: "pending", label: "쇼핑 참고 지표 대기" },
+  };
+}
+
+function sourceUserMessage(status) {
+  if (status.searchVolume.status === "partial") {
+    return "정확히 일치하는 월 검색량이 없어 연관 키워드를 참고로 표시합니다.";
+  }
+  if (status.trend.status === "ok" && status.ratios.status === "ok") {
+    return "월 검색량과 검색 비율이 확인되었습니다.";
+  }
+  return "월 검색량은 확인됐고 일부 참고 지표는 확인 대기입니다.";
+}
+
 export default {
   async fetch(request) {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
@@ -563,6 +668,25 @@ export default {
         ok: false,
         message: "키워드 데이터 연결이 준비되지 않았습니다. 관리자에게 문의해주세요.",
       }, 503);
+    }
+
+    const cacheKey = keywordCacheKey(keyword, profileMode);
+    const cached = getKeywordCache(cacheKey);
+    if (cached) {
+      return json(request, {
+        ...cached.payload,
+        cache: { hit: true, ttlSeconds: cached.ttlSeconds },
+      });
+    }
+
+    const rate = checkKeywordRateLimit(request);
+    if (!rate.allowed) {
+      return jsonWithHeaders(request, {
+        ok: false,
+        code: "KEYWORD_RATE_LIMITED",
+        message: "조회 요청이 많습니다. 잠시 후 다시 시도해주세요.",
+        retryAfter: rate.retryAfter,
+      }, 429, { "retry-after": String(rate.retryAfter) });
     }
 
     try {
@@ -593,17 +717,32 @@ export default {
       if (datalabError) warnings.push("trend_unavailable");
       if (shoppingError) warnings.push("shopping_unavailable");
 
-      return json(request, {
+      const sourceStatus = buildSourceStatus({
+        env,
+        searchAd,
+        datalabProfile,
+        datalabError,
+        shoppingProfile,
+        shoppingError,
+        includeProfile,
+      });
+      const payload = {
         ok: true,
         source: {
           searchVolume: searchAd.hasExactMatch ? "naver_searchad_exact" : "naver_searchad_related_only",
-          trend: datalabProfile ? "naver_datalab_relative_ratio" : "pending",
-          profile: datalabProfile ? (includeProfile ? "search_interest_profile" : "trend_only") : "pending",
-          shopping: shoppingProfile ? "naver_shopping_search" : hasOpenapiConfig(env) ? "partial" : "pending",
+          trend: sourceStatus.trend.status === "ok" ? "naver_datalab_relative_ratio" : sourceStatus.trend.status,
+          profile: datalabProfile ? (includeProfile ? datalabProfile.demographicStatus : "trend_only") : sourceStatus.ratios.status,
+          shopping: shoppingProfile ? "naver_shopping_search" : sourceStatus.shopping.status,
         },
+        sourceStatus,
+        userMessage: sourceUserMessage(sourceStatus),
         warnings,
         chartData: buildChartData(keyword, searchAd, datalabProfile, shoppingProfile),
-      });
+        cache: { hit: false, ttlSeconds: Math.ceil(KEYWORD_CACHE_TTL_MS / 1000) },
+      };
+
+      setKeywordCache(cacheKey, payload);
+      return json(request, payload);
     } catch (error) {
       return json(request, {
         ok: false,

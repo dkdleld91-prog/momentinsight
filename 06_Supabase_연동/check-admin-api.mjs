@@ -44,13 +44,28 @@ try {
   body = { message: await response.text() };
 }
 
+function summarize(body) {
+  if (Array.isArray(body)) return { type: "array", count: body.length };
+  if (!body || typeof body !== "object") return { type: typeof body };
+  return {
+    type: "object",
+    ok: body.ok,
+    message: body.message,
+    count: Array.isArray(body.data) ? body.data.length : undefined,
+    keys: Object.keys(body).filter((key) => !["data", "result", "items"].includes(key)).slice(0, 8)
+  };
+}
+
+const allowSchemaPending = process.env.ALLOW_SCHEMA_PENDING === "true";
+const passed = response.ok || (allowSchemaPending && [404, 500, 503].includes(response.status));
+
 console.log(JSON.stringify({
-  ok: response.ok,
+  ok: passed,
   status: response.status,
   apiUrl,
-  result: body
+  result: summarize(body)
 }, null, 2));
 
-if (response.status === 401) {
+if (!passed) {
   process.exit(1);
 }

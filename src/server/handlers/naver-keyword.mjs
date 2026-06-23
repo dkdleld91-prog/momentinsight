@@ -310,6 +310,16 @@ function trendToSeries(trendPayload) {
   });
 }
 
+function estimateMonthlySearchSeries(trendSeries, referenceVolume) {
+  const source = Array.isArray(trendSeries) ? trendSeries.map((value) => Number(value || 0)) : [];
+  const anchor = Number(referenceVolume || 0);
+  if (!source.length || !anchor) return [];
+  const latest = source[source.length - 1] || 0;
+  const fallback = Math.max(...source, 1);
+  const divisor = latest > 0 ? latest : fallback;
+  return source.map((value) => Math.max(0, Math.round((value / divisor) * anchor)));
+}
+
 function weekdayShares(dailyPayload) {
   const data = dailyPayload?.results?.[0]?.data || [];
   const sums = [0, 0, 0, 0, 0, 0, 0];
@@ -450,6 +460,8 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const pcShare = safeVolume ? 100 - mobileShare : 0;
   const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
   const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
+  const trendIndex = datalabProfile?.series?.length ? datalabProfile.series : [];
+  const estimatedSeries = estimateMonthlySearchSeries(trendIndex, safeVolume);
 
   return {
     keyword,
@@ -465,9 +477,10 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     insight: hasExactMatch
       ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 광고 경쟁도 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
-    series: datalabProfile?.series?.length ? datalabProfile.series : [],
+    series: estimatedSeries,
     seriesLabels: datalabProfile?.seriesLabels || [],
-    trendUnit: datalabProfile?.trendUnit || "",
+    trendIndex,
+    trendUnit: estimatedSeries.length ? "monthly_search_volume_estimate" : datalabProfile?.trendUnit || "",
     month: datalabProfile?.month || [],
     monthLabels: datalabProfile?.monthLabels || [],
     device: { mobile: mobileShare, pc: pcShare },

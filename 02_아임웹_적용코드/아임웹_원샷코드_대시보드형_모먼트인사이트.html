@@ -2481,6 +2481,10 @@
       function renderKeywordYAxis(chartMax) {
         var node = root.querySelector("[data-keyword-y-axis]");
         if (!node) return;
+        if (!Number(chartMax || 0)) {
+          node.innerHTML = "";
+          return;
+        }
         var height = 250;
         var top = 18;
         var bottom = 30;
@@ -2890,7 +2894,7 @@
         if (labels.length !== effectiveCount) labels = makeKeywordMonthLabels(effectiveCount);
         var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
         var peakValue = hasTrendSeries ? Math.max.apply(null, flatSeries) : 0;
-        var chartMax = pickKeywordScale(hasTrendSeries ? peakValue : Math.max(totalVolume, 1));
+        var chartMax = hasTrendSeries ? pickKeywordScale(peakValue) : 0;
         var width = 760;
         var height = 250;
         var top = 18;
@@ -2927,7 +2931,7 @@
         if (volumeTitle) volumeTitle.textContent = items.length > 1 ? "월 검색수" : "월 검색수";
         if (volume) volume.textContent = totalVolume ? formatNumber(totalVolume) : "확인 필요";
         if (change) change.textContent = hasTrendSeries ? (changeRate >= 0 ? "+" : "") + changeRate + "%" : "수집 대기";
-        if (axis) axis.textContent = formatShortNumber(chartMax);
+        if (axis) axis.textContent = hasTrendSeries ? formatShortNumber(chartMax) : "";
         if (legend) {
           legend.innerHTML = items.map(function (item, index) {
           return '<span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + ' ' + escapeHtml(formatSearchVolume(item.data)) + '</span>';
@@ -2938,17 +2942,17 @@
         if (pointsGroup) pointsGroup.innerHTML = "";
         if (empty) {
           empty.hidden = hasTrendSeries;
-          empty.textContent = totalVolume ? "월별 검색량 데이터 수집 대기" : "검색량 조회 후 차트를 표시합니다.";
+          empty.textContent = totalVolume ? "월별 검색량 추이는 DataLab 연결 후 표시됩니다." : "검색량 조회 후 차트를 표시합니다.";
         }
 
-        var seriesPointLists = seriesList.map(function (series, seriesIndex) {
+        var seriesPointLists = hasTrendSeries ? seriesList.map(function (series, seriesIndex) {
           return series.map(function (value, index) {
             var x = series.length > 1 ? ((index + 0.5) / series.length) * width : width / 2;
             var y = height - bottom - ((value / chartMax) * (height - top - bottom));
             if (value >= peakInfo.value) peakInfo = { keyword: items[seriesIndex].keyword, label: labels[index] || "", value: value };
             return { x: x, y: y, value: value, label: labels[index] || "" };
           });
-        });
+        }) : [];
 
         seriesPointLists.forEach(function (pointPairs, seriesIndex) {
           var color = keywordColors[seriesIndex % keywordColors.length];
@@ -2967,7 +2971,7 @@
           }
         });
 
-        if (pointsGroup && seriesPointLists[0]) {
+        if (pointsGroup && hasTrendSeries && seriesPointLists[0]) {
           seriesPointLists[0].forEach(function (basePoint, pointIndex) {
             var pointCount = seriesPointLists[0].length || 1;
             var startX = (pointIndex / pointCount) * width;
@@ -3010,19 +3014,19 @@
         }
         renderKeywordMarket(items);
         renderKeywordMonths(labels);
-        renderKeywordYAxis(chartMax);
+        renderKeywordYAxis(hasTrendSeries ? chartMax : 0);
         renderProfileSplit("device", "모바일", "PC", profile.device && profile.device.mobile, profile.device && profile.device.pc, "기기 비율 수집 대기");
         renderProfileSplit("gender", "여성", "남성", profile.gender && profile.gender.female, profile.gender && profile.gender.male, "성별 비율 수집 대기");
-        var fallbackMonthSeries = seriesList[0] && seriesList[0].length ? seriesList[0].slice(-12) : [];
-        var monthSeries = hasRatioValues(profile.month) ? profile.month : fallbackMonthSeries;
-        var monthLabels = alignedMonthLabels(items[0].data, monthSeries, labels);
-        var ageValues = [
-          Number(profile.age[0] || 0),
-          Number(profile.age[1] || 0),
-          Number(profile.age[2] || 0),
-          Number(profile.age[3] || 0),
-          Number(profile.age[4] || 0) + Number(profile.age[5] || 0)
-        ];
+        var monthSeries = hasRatioValues(profile.month) ? profile.month : [];
+        var monthLabels = alignedMonthLabels(items[0].data, monthSeries, []);
+        var ageValues = Array.isArray(profile.age) ? profile.age.slice(0, 5).map(function (value) {
+          return Number(value || 0);
+        }) : [];
+        if (Array.isArray(profile.age) && profile.age.length > 5) {
+          ageValues[4] = profile.age.slice(4).reduce(function (sum, value) {
+            return sum + Number(value || 0);
+          }, 0);
+        }
         if (hasRatioValues(monthSeries)) {
           renderRatioChart("month", monthLabels, monthSeries, 30);
         } else {

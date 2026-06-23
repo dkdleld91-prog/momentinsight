@@ -670,6 +670,12 @@ function sourceUserMessage(status) {
   if (status.trend.status === "ok" && status.ratios.status === "ok") {
     return "월 검색량과 검색 비율이 확인되었습니다.";
   }
+  if (status.trend.status === "not_configured" && status.ratios.status === "not_configured") {
+    return "월 검색량은 확인됐고, 검색 추이와 검색 비율은 연결 대기입니다.";
+  }
+  if (status.ratios.status === "not_configured") {
+    return "월 검색량과 검색 추이는 확인됐고, 검색 비율은 연결 대기입니다.";
+  }
   return "월 검색량은 확인됐고 일부 참고 지표는 확인 대기입니다.";
 }
 

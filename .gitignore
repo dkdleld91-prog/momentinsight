@@ -1,0 +1,26 @@
+.DS_Store
+**/.DS_Store
+
+.env
+.env.*
+!.env.example
+!.env.sample
+
+node_modules/
+node_modules
+**/node_modules/
+**/node_modules
+dist/
+build/
+
+# Local agent/runtime artifacts
+.agents/
+
+# Generated or bulky artifacts that are not needed for Vercel deployment
+00_이전자료_보관/
+04_영상_산출물/
+03_운영시트_템플릿/outputs/
+*.inspect.ndjson
+
+# Supabase CLI local cache
+supabase/.temp/

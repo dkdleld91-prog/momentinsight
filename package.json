@@ -1,0 +1,22 @@
+{
+  "name": "moment-insight-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:vercel": "node scripts/build-vercel-static.mjs",
+    "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",
+    "check:admin-api": "node 06_Supabase_연동/check-admin-api.mjs",
+    "check:edge-api": "node 06_Supabase_연동/check-edge-api.mjs",
+    "check:server": "find src/server -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "dev:server": "node src/server/local-dev.mjs",
+    "deploy:backend": "node 06_Supabase_연동/deploy-backend.mjs",
+    "seed:demo": "node 06_Supabase_연동/seed-demo-via-api.mjs",
+    "supabase:db:push": "npx supabase db push",
+    "supabase:functions:deploy": "npx supabase functions deploy moment-api"
+  },
+  "dependencies": {
+    "@supabase/server": "^1.1.0",
+    "@supabase/supabase-js": "^2.108.2"
+  }
+}

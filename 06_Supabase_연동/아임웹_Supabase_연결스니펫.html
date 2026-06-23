@@ -1,0 +1,18 @@
+<!--
+  모먼트 인사이트 Supabase 연결 스니펫
+  사용 위치: 아임웹 공통 코드 또는 HTML 위젯 상단
+  주의: publishable key만 넣습니다. service_role key는 절대 넣지 않습니다.
+-->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  window.MI_SUPABASE_CONFIG = {
+    url: "https://unjduaxhykcrlotprsie.supabase.co",
+    publishableKey: "sb_publishable_0oeIYGVTa3_8MsJB60Lj6Q_G2CGfb4P"
+  };
+
+  window.MI_SUPABASE_CLIENT = window.supabase.createClient(
+    window.MI_SUPABASE_CONFIG.url,
+    window.MI_SUPABASE_CONFIG.publishableKey
+  );
+</script>
+

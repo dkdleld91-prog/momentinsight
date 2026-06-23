@@ -1,0 +1,2945 @@
+<meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<!--
+  모먼트인사이트 아임웹 원샷 코드 - 관리자형 v2
+  사용 위치: 아임웹 디자인 모드 > 코드 위젯/HTML 위젯 > 전체 복사 붙여넣기
+  기준: 관리자 로그인 / 대행사 코드 연결 / 보고서 다운로드 / 수동 운영 입력 / 공개 관리
+-->
+
+<section id="mi-admin" class="mi-admin-wrap is-locked">
+  <style>
+    #mi-admin,
+    #mi-admin * {
+      box-sizing: border-box;
+    }
+
+    #mi-admin {
+      --mi-bg: #f5f7fb;
+      --mi-panel: #fff;
+      --mi-ink: #111827;
+      --mi-navy: #061a3a;
+      --mi-muted: #667085;
+      --mi-line: #dfe5ef;
+      --mi-gold: #e9eef6;
+      --mi-gold-soft: #eef2f7;
+      --mi-green: #13795b;
+      --mi-green-bg: #eaf7f1;
+      --mi-orange: #a75f16;
+      --mi-orange-bg: #fff4e6;
+      --mi-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+      min-height: 100vh;
+      color: var(--mi-ink);
+      background: var(--mi-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.5;
+    }
+
+    #mi-admin a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    #mi-admin button,
+    #mi-admin input,
+    #mi-admin textarea {
+      font: inherit;
+    }
+
+    #mi-admin .mi-login {
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: linear-gradient(180deg, #fff 0%, #f5f7fb 100%);
+    }
+
+    #mi-admin.is-authed .mi-login {
+      display: none;
+    }
+
+    #mi-admin.is-locked .mi-app {
+      display: none;
+    }
+
+    #mi-admin .mi-login-panel {
+      width: min(100%, 980px);
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.78fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    #mi-admin .mi-login-copy,
+    #mi-admin .mi-login-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-login-copy {
+      padding: 34px;
+    }
+
+    #mi-admin .mi-login-card {
+      padding: 24px;
+    }
+
+    #mi-admin .mi-role-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 26px;
+    }
+
+    #mi-admin .mi-role {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 15px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-role.is-current {
+      border-color: rgba(6, 26, 58, 0.24);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-role strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-role span {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-login-form,
+    #mi-admin .mi-tool {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    #mi-admin .mi-app {
+      display: grid;
+      grid-template-columns: 224px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+
+    #mi-admin .mi-side {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      border-right: 1px solid var(--mi-line);
+      background: #fff;
+      padding: 22px 16px;
+    }
+
+    #mi-admin .mi-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 22px;
+      color: var(--mi-navy);
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-nav-group {
+      display: grid;
+      gap: 6px;
+      margin-top: 18px;
+    }
+
+    #mi-admin .mi-nav-title {
+      margin: 0 0 2px;
+      padding: 0 10px;
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #mi-admin .mi-nav a {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 42px;
+      border-radius: 8px;
+      padding: 0 11px;
+      color: var(--mi-muted);
+      font-size: 14px;
+      font-weight: 850;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-nav a.is-active,
+    #mi-admin .mi-nav a:hover {
+      color: var(--mi-navy);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-nav small {
+      color: #9ca3af;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-main {
+      min-width: 0;
+      padding: 28px;
+    }
+
+    #mi-admin .mi-wrap {
+      width: min(100%, 1120px);
+      margin: 0 auto;
+    }
+
+    #mi-admin .mi-view {
+      display: none;
+    }
+
+    #mi-admin .mi-view.is-active {
+      display: block;
+    }
+
+    #mi-admin .mi-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    #mi-admin h1,
+    #mi-admin h2,
+    #mi-admin h3,
+    #mi-admin p {
+      margin-top: 0;
+    }
+
+    #mi-admin h1,
+    #mi-admin .mi-login h1 {
+      margin-bottom: 5px;
+      color: var(--mi-navy);
+      font-size: 31px;
+      line-height: 1.18;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-login h1 {
+      font-size: 34px;
+    }
+
+    #mi-admin h2 {
+      margin-bottom: 8px;
+      color: var(--mi-navy);
+      font-size: 23px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    #mi-admin h3 {
+      margin-bottom: 5px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      letter-spacing: 0;
+    }
+
+    #mi-admin p {
+      margin-bottom: 0;
+      color: var(--mi-muted);
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-kicker,
+    #mi-admin .mi-badge {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 11px;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-kicker {
+      margin-bottom: 8px;
+      color: var(--mi-navy);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-badge {
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-admin .mi-badge.warn {
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-grid,
+    #mi-admin .mi-kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-grid.is-four {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    #mi-admin .mi-split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.82fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-card-pad {
+      padding: 22px;
+    }
+
+    #mi-admin .mi-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-metric {
+      padding: 20px;
+    }
+
+    #mi-admin .mi-metric span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-metric strong {
+      display: block;
+      margin-top: 8px;
+      color: var(--mi-navy);
+      font-size: 28px;
+      line-height: 1.1;
+    }
+
+    #mi-admin .mi-metric small {
+      display: block;
+      margin-top: 7px;
+      color: #98a2b3;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-status-list,
+    #mi-admin .mi-task-list {
+      display: grid;
+      gap: 9px;
+    }
+
+    #mi-admin .mi-task,
+    #mi-admin .mi-status-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-task strong,
+    #mi-admin .mi-status-item strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-task span,
+    #mi-admin .mi-status-item span {
+      display: block;
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-priority {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-priority.ok {
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-admin .mi-progress {
+      height: 8px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8edf4;
+    }
+
+    #mi-admin .mi-progress i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--mi-navy);
+    }
+
+    #mi-admin .mi-score-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-score-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 22px;
+      background: #fff;
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-score-card.is-dark {
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-admin .mi-score-card h2,
+    #mi-admin .mi-score-card p {
+      color: inherit;
+    }
+
+    #mi-admin .mi-score-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    #mi-admin .mi-score-box {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    #mi-admin .mi-score-box span,
+    #mi-admin .mi-score-box strong,
+    #mi-admin .mi-score-box small {
+      display: block;
+    }
+
+    #mi-admin .mi-score-box span {
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-score-box strong {
+      margin-top: 4px;
+      color: #fff;
+      font-size: 30px;
+      line-height: 1;
+    }
+
+    #mi-admin .mi-score-box small {
+      margin-top: 8px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-readiness-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    #mi-admin .mi-readiness-item {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-readiness-item strong,
+    #mi-admin .mi-readiness-item span {
+      display: block;
+    }
+
+    #mi-admin .mi-readiness-item strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-readiness-item span {
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-step-flow {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    #mi-admin .mi-step-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-step-card b {
+      display: grid;
+      width: 28px;
+      height: 28px;
+      place-items: center;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-step-card strong,
+    #mi-admin .mi-step-card span {
+      display: block;
+    }
+
+    #mi-admin .mi-step-card strong {
+      margin-top: 10px;
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-step-card span {
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-sheet-tabs {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    #mi-admin .mi-sheet-tab {
+      position: relative;
+      min-height: 84px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-sheet-tab::after {
+      content: "정상";
+      position: absolute;
+      right: 11px;
+      bottom: 10px;
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-sheet-tab.is-warn::after {
+      content: "확인";
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-sheet-tab strong,
+    #mi-admin .mi-sheet-tab span {
+      display: block;
+      padding-right: 42px;
+    }
+
+    #mi-admin .mi-sheet-tab strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-sheet-tab span {
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-hidden-channel-data {
+      display: none;
+    }
+
+    #mi-admin .mi-trust-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    #mi-admin .mi-trust-item {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-trust-item strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-trust-item span {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-client-sync-note {
+      margin-bottom: 16px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 8px;
+      padding: 13px 15px;
+      color: var(--mi-navy);
+      background: #edf3fb;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-client-sync-note strong {
+      display: block;
+      margin-bottom: 3px;
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-client-view {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-client-view .mi-screen-head {
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(320px, 0.78fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-summary {
+      min-height: 280px;
+      border-radius: 8px;
+      padding: 30px;
+      color: #fff;
+      background: var(--mi-navy);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-summary .mi-kicker {
+      color: #172033;
+      background: var(--mi-gold);
+    }
+
+    #mi-admin .mi-summary h2 {
+      max-width: 620px;
+      margin-bottom: 10px;
+      color: #fff;
+      font-size: 32px;
+      line-height: 1.18;
+    }
+
+    #mi-admin .mi-summary p {
+      max-width: 620px;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    #mi-admin .mi-summary-row,
+    #mi-admin .mi-action-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    #mi-admin .mi-summary-row {
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    #mi-admin .mi-summary-box,
+    #mi-admin .mi-action-chip,
+    #mi-admin .mi-judgement-item {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    #mi-admin .mi-summary-box {
+      padding: 15px;
+    }
+
+    #mi-admin .mi-summary-box span,
+    #mi-admin .mi-summary-box strong,
+    #mi-admin .mi-action-chip span,
+    #mi-admin .mi-action-chip strong,
+    #mi-admin .mi-judgement-item strong,
+    #mi-admin .mi-judgement-item span {
+      display: block;
+    }
+
+    #mi-admin .mi-summary-box span,
+    #mi-admin .mi-action-chip span {
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-summary-box strong {
+      margin-top: 5px;
+      color: #fff;
+      font-size: 22px;
+      line-height: 1.15;
+    }
+
+    #mi-admin .mi-action-chip strong {
+      margin-top: 4px;
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-judgement {
+      display: grid;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    #mi-admin .mi-judgement-item strong {
+      color: #fff;
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-judgement-item span {
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-report-list,
+    #mi-admin .mi-schedule {
+      display: grid;
+      gap: 9px;
+    }
+
+    #mi-admin .mi-report-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-report-item strong,
+    #mi-admin .mi-schedule-item strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-report-item span,
+    #mi-admin .mi-schedule-item span {
+      display: block;
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-report-state {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-report-state.warn {
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-schedule-item {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-date {
+      color: var(--mi-navy);
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-table {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      min-height: 48px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 11px 13px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-row span {
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-row strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+      text-align: right;
+    }
+
+    #mi-admin .mi-total-panel {
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-channel-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    #mi-admin .mi-channel-detail-grid.is-compact {
+      grid-template-columns: 1fr;
+    }
+
+    #mi-admin .mi-channel-detail {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-channel-detail-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    #mi-admin .mi-channel-detail-head strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 17px;
+    }
+
+    #mi-admin .mi-channel-detail-head span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-channel-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #mi-admin .mi-channel-stat {
+      border-radius: 8px;
+      padding: 10px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-channel-stat span,
+    #mi-admin .mi-channel-detail p {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-channel-stat b {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-channel-detail p {
+      margin-top: 12px;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-keyword-chart {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 230px;
+      gap: 0;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-keyword-main,
+    #mi-admin .mi-keyword-side {
+      padding: 22px;
+    }
+
+    #mi-admin .mi-keyword-main {
+      border-right: 1px solid var(--mi-line);
+    }
+
+    #mi-admin .mi-keyword-side {
+      display: grid;
+      gap: 17px;
+      background: #fbfcfd;
+    }
+
+    #mi-admin .mi-chart-top,
+    #mi-admin .mi-chart-tools,
+    #mi-admin .mi-chart-legend {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-segment,
+    #mi-admin .mi-chart-legend {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-segment span,
+    #mi-admin .mi-keyword-chip {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 0 12px;
+      color: var(--mi-muted);
+      background: #fff;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-segment span.is-active,
+    #mi-admin .mi-keyword-chip {
+      color: var(--mi-navy);
+      border-color: rgba(6, 26, 58, 0.2);
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-chart-legend {
+      justify-content: flex-start;
+      margin-top: 12px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-dot {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      margin-right: 5px;
+      background: #7b9cff;
+    }
+
+    #mi-admin .mi-line-chart {
+      position: relative;
+      min-height: 290px;
+      margin-top: 18px;
+      border-left: 1px solid var(--mi-line);
+      border-bottom: 1px solid var(--mi-line);
+    }
+
+    #mi-admin .mi-line-chart svg {
+      display: block;
+      width: 100%;
+      height: 250px;
+    }
+
+    #mi-admin .mi-axis-top {
+      position: absolute;
+      top: 2px;
+      left: 10px;
+      color: #7b9cff;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-peak-label {
+      position: absolute;
+      top: 28px;
+      left: 24px;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-months {
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    #mi-admin .mi-ratio-block strong {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-ratio-stack {
+      display: flex;
+      min-height: 18px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: #e5e7eb;
+    }
+
+    #mi-admin .mi-ratio-stack span {
+      display: flex;
+      align-items: center;
+      padding: 0 5px;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-ratio-primary {
+      background: #1167d8;
+    }
+
+    #mi-admin .mi-ratio-secondary {
+      justify-content: flex-end;
+      background: var(--mi-navy);
+    }
+
+    #mi-admin .mi-bar-row {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+      align-items: end;
+      min-height: 106px;
+    }
+
+    #mi-admin .mi-bar {
+      display: grid;
+      align-items: end;
+      gap: 6px;
+      height: 100%;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+      text-align: center;
+    }
+
+    #mi-admin .mi-bar i {
+      display: block;
+      width: 100%;
+      min-height: 12px;
+      border-radius: 4px 4px 0 0;
+      background: #a8cff4;
+    }
+
+    #mi-admin .mi-week-row {
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      min-height: 82px;
+    }
+
+    #mi-admin .mi-channel-inputs {
+      display: grid;
+      gap: 12px;
+    }
+
+    #mi-admin .mi-channel-box {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-channel-box h3 {
+      margin-bottom: 12px;
+    }
+
+    #mi-admin .mi-field {
+      display: grid;
+      gap: 6px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-input,
+    #mi-admin .mi-textarea {
+      width: 100%;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--mi-ink);
+      background: #fff;
+      outline: none;
+    }
+
+    #mi-admin .mi-input {
+      min-height: 44px;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    #mi-admin .mi-textarea {
+      min-height: 142px;
+      resize: vertical;
+    }
+
+    #mi-admin .mi-input:focus,
+    #mi-admin .mi-textarea:focus {
+      border-color: rgba(6, 26, 58, 0.38);
+      box-shadow: 0 0 0 3px rgba(6, 26, 58, 0.08);
+    }
+
+    #mi-admin .mi-form-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 10px;
+    }
+
+    #mi-admin .mi-button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 0 14px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-button.is-ghost {
+      border: 1px solid var(--mi-line);
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-admin .mi-note,
+    #mi-admin .mi-code-status {
+      color: var(--mi-muted);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-code-status.is-ok {
+      color: var(--mi-green);
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-code-status.is-warn {
+      color: var(--mi-orange);
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-downloads {
+      display: grid;
+      gap: 10px;
+    }
+
+    #mi-admin .mi-download {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      min-height: 64px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px 14px;
+      color: var(--mi-navy);
+      background: #fff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-download b,
+    #mi-admin .mi-download small {
+      display: block;
+    }
+
+    #mi-admin .mi-download small {
+      margin-top: 2px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-download i {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border-radius: 999px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-style: normal;
+      font-weight: 950;
+    }
+
+    @media (max-width: 900px) {
+      #mi-admin .mi-app {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-side {
+        position: static;
+        height: auto;
+        border-right: 0;
+        border-bottom: 1px solid var(--mi-line);
+      }
+
+      #mi-admin .mi-main {
+        padding: 16px;
+      }
+
+      #mi-admin .mi-login-panel,
+      #mi-admin .mi-grid,
+      #mi-admin .mi-grid.is-four,
+      #mi-admin .mi-kpi-grid,
+      #mi-admin .mi-split,
+      #mi-admin .mi-score-panel,
+      #mi-admin .mi-score-row,
+      #mi-admin .mi-readiness-grid,
+      #mi-admin .mi-form-row,
+      #mi-admin .mi-head,
+      #mi-admin .mi-card-head,
+      #mi-admin .mi-hero,
+      #mi-admin .mi-summary-row,
+      #mi-admin .mi-action-strip,
+      #mi-admin .mi-channel-detail-grid,
+      #mi-admin .mi-step-flow,
+      #mi-admin .mi-sheet-tabs,
+      #mi-admin .mi-trust-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-schedule-item {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-keyword-chart {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-keyword-main {
+        border-right: 0;
+        border-bottom: 1px solid var(--mi-line);
+      }
+    }
+
+    @media (max-width: 520px) {
+      #mi-admin .mi-login,
+      #mi-admin .mi-main {
+        padding: 14px;
+      }
+
+      #mi-admin .mi-login-copy,
+      #mi-admin .mi-login-card,
+      #mi-admin .mi-card-pad {
+        padding: 18px;
+      }
+
+      #mi-admin h1,
+      #mi-admin .mi-login h1 {
+        font-size: 25px;
+      }
+    }
+  </style>
+
+  <div class="mi-login" aria-label="관리자 로그인 화면">
+    <div class="mi-login-panel">
+      <article class="mi-login-copy">
+        <span class="mi-kicker">모먼트인사이트 관리자</span>
+        <h1>관리자는 입력하고 공개합니다.</h1>
+        <p>데이터, 보고서, 일정, 공개 코멘트를 한곳에서 관리합니다.</p>
+        <div class="mi-role-list">
+          <div class="mi-role">
+            <strong>광고주 로그인</strong>
+            <span>매출 현황, 일정표, 공개 코멘트만 확인</span>
+          </div>
+          <div class="mi-role is-current">
+            <strong>관리자 로그인</strong>
+            <span>수동 입력, 보고서 전달, 코드 연결, 공개 관리</span>
+          </div>
+        </div>
+      </article>
+
+      <aside class="mi-login-card">
+        <span class="mi-kicker">관리자 전용</span>
+        <h2>관리자 코드 접속</h2>
+        <p>정식 개발 시 계정 인증으로 교체합니다.</p>
+        <div class="mi-login-form">
+          <input class="mi-input" data-admin-login-code value="ADMIN-2026" aria-label="관리자 코드" />
+          <button class="mi-button" type="button" data-admin-login-button>관리자 화면 열기</button>
+          <div class="mi-code-status" data-admin-login-status>관리자 전용 화면입니다.</div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div class="mi-app">
+    <aside class="mi-side" aria-label="모먼트인사이트 관리자 메뉴">
+      <a class="mi-brand" href="아임웹_원샷코드_홈페이지형_모먼트인사이트.html#mi-home-quick" aria-label="모먼트인사이트 홈페이지로 이동">
+        <span class="mi-mark">MI</span>
+        <span>관리자</span>
+      </a>
+
+      <nav class="mi-nav">
+        <div class="mi-nav-group">
+          <p class="mi-nav-title">운영</p>
+          <a class="is-active" href="#mi-admin-home" data-mi-admin-screen="home">운영 홈 <small>전체</small></a>
+          <a href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">광고주 화면 <small>미리보기</small></a>
+          <a href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">대행사 코드 <small>연동</small></a>
+          <a href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력 <small>수동</small></a>
+        </div>
+
+        <div class="mi-nav-group">
+          <p class="mi-nav-title">관리자 기능</p>
+          <a href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 다운로드 <small>전달</small></a>
+          <a href="#mi-admin-keyword" data-mi-admin-screen="keyword">키워드 조회 <small>SEO</small></a>
+          <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
+        </div>
+      </nav>
+    </aside>
+
+    <main class="mi-main">
+      <div class="mi-wrap">
+        <section class="mi-view is-active" data-mi-admin-view="home" id="mi-admin-home">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">관리자 화면</span>
+              <h1>오늘 처리할 운영판입니다.</h1>
+              <p>입력 누락, 보고서 전달, 공개 승인 상태를 먼저 확인합니다.</p>
+            </div>
+            <span class="mi-badge warn">관리자 전용</span>
+          </header>
+
+          <div class="mi-grid is-four">
+            <article class="mi-card mi-metric"><span>연결 광고주</span><strong>12개</strong><small>운영 중 9 · 세팅 3</small></article>
+            <article class="mi-card mi-metric"><span>입력 누락</span><strong>4건</strong><small>오늘 우선 처리</small></article>
+            <article class="mi-card mi-metric"><span>공개 승인 필요</span><strong>3건</strong><small>내부 검수 대기</small></article>
+            <article class="mi-card mi-metric"><span>보고서 전달 대기</span><strong>2건</strong><small>주간 1 · 월간 1</small></article>
+          </div>
+
+          <div class="mi-score-panel">
+            <article class="mi-score-card is-dark">
+              <span class="mi-kicker">운영 준비도</span>
+              <h2>데모는 96점, 운영 준비는 88점 기준입니다.</h2>
+              <p>외부 서비스 API는 홀딩하고, 광고주/관리자 분리, 수동 입력, 공개 승인, 백엔드 전환 기준을 먼저 고정한 상태입니다.</p>
+              <div class="mi-score-row">
+                <div class="mi-score-box"><span>아임웹 데모 기준</span><strong>96점</strong><small>시연·복붙·광고주 설득용</small></div>
+                <div class="mi-score-box"><span>운영 준비 기준</span><strong>88점</strong><small>로그인/DB 붙이면 90점대 진입</small></div>
+              </div>
+            </article>
+
+            <aside class="mi-score-card">
+              <h2>실제 플랫폼 전환 체크</h2>
+              <p>점수를 더 올리려면 이 기준을 DB와 권한 검사로 고정해야 합니다.</p>
+              <div class="mi-readiness-grid">
+                <div class="mi-readiness-item"><strong>광고주ID</strong><span>모든 시트와 보고서의 기본 키</span></div>
+                <div class="mi-readiness-item"><strong>공개 승인값</strong><span>승인 + 공유 Y일 때만 노출</span></div>
+                <div class="mi-readiness-item"><strong>운영 원본</strong><span>네이버·쿠팡·KPI 입력값 분리</span></div>
+                <div class="mi-readiness-item"><strong>변경 이력</strong><span>누가 언제 공개했는지 기록</span></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>오늘 우선순위</h2>
+                  <p>관리자가 바로 처리해야 할 업무만 모았습니다.</p>
+                </div>
+                <span class="mi-badge warn">Action</span>
+              </div>
+              <div class="mi-task-list">
+                <div class="mi-task"><div><strong>예시브랜드 입력값 확인</strong><span>네이버 클릭수와 쿠팡 전환수 누락 · 공개 전 필수</span></div><b class="mi-priority">높음</b></div>
+                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>PDF/CSV 확인 · 내부 메모 제거 후 전달</span></div><b class="mi-priority">오늘</b></div>
+                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트와 내부 판단 분리 확인</span></div><b class="mi-priority ok">검수</b></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>광고주별 상태</h2>
+                  <p>미흡한 계정을 먼저 찾습니다.</p>
+                </div>
+                <span class="mi-badge">Status</span>
+              </div>
+              <div class="mi-status-list">
+                <div class="mi-status-item"><div><strong>예시브랜드</strong><span>매출 공개 완료 · 보고서 전달 대기</span></div><b class="mi-priority">전달</b></div>
+                <div class="mi-status-item"><div><strong>신규브랜드 A</strong><span>대행사 코드 발급 · KPI 목표 미입력</span></div><b class="mi-priority">누락</b></div>
+                <div class="mi-status-item"><div><strong>리텐션브랜드 B</strong><span>주간 일정 공개 완료</span></div><b class="mi-priority ok">정상</b></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>보고서·공개 승인 큐</h2>
+              <div class="mi-table">
+                <div class="mi-row"><span>주간 보고서</span><strong>검수 완료 · 전달 대기</strong></div>
+                <div class="mi-row"><span>월간 보고서</span><strong>수치 확인 필요</strong></div>
+                <div class="mi-row"><span>KPI 공개값</span><strong>관리자 승인 후 광고주 노출</strong></div>
+                <div class="mi-row"><span>파일 공유</span><strong>광고주 화면 미노출 · 관리자 전달</strong></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h2>운영 신뢰 체크</h2>
+              <p>광고주에게 보이기 전 반드시 통과해야 하는 기준입니다.</p>
+              <div class="mi-trust-grid">
+                <div class="mi-trust-item"><strong>공개 승인</strong><span>관리자컨펌=승인</span></div>
+                <div class="mi-trust-item"><strong>공유 여부</strong><span>광고주공유여부=Y</span></div>
+                <div class="mi-trust-item"><strong>권한 기준</strong><span>광고주ID 기준 분리</span></div>
+                <div class="mi-trust-item"><strong>마지막 업데이트</strong><span>2026.06.19 12:55</span></div>
+                <div class="mi-trust-item"><strong>담당자</strong><span>운영 관리자</span></div>
+                <div class="mi-trust-item"><strong>수정 이력</strong><span>공개값 변경 기록 보관</span></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="client-preview" id="mi-admin-client-preview">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">광고주 화면</span>
+              <h1>광고주가 보는 화면 그대로 검수합니다.</h1>
+              <p>관리자 미리보기와 광고주 실제 화면의 순서·문구·공개값을 맞춰 착오를 줄입니다.</p>
+            </div>
+            <span class="mi-badge">동일 검수</span>
+          </header>
+
+          <div class="mi-client-sync-note">
+            <strong>검수 기준</strong>
+            아래 화면은 광고주형 대시보드와 같은 공개값·같은 흐름으로 구성했습니다. 여기서 어색하면 광고주 화면도 어색하다고 보고 수정합니다.
+          </div>
+
+          <div class="mi-client-view" aria-label="광고주 실제 공개 화면 미리보기">
+            <header class="mi-screen-head">
+              <div>
+                <span class="mi-kicker">광고주 홈</span>
+                <h1><span data-admin-public="client">예시브랜드</span> 대시보드</h1>
+                <p>성과, 일정, 다음 액션만 간결하게 봅니다.</p>
+              </div>
+              <span class="mi-period">공개 데이터</span>
+            </header>
+
+            <div class="mi-hero">
+              <article class="mi-summary">
+                <span class="mi-kicker">현재 요약</span>
+                <h2>현재 매출은 <span data-admin-public="sales">4,180만원</span>입니다.</h2>
+                <p data-admin-public="comment">다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</p>
+                <div class="mi-summary-row" aria-label="핵심 대시보드">
+                  <div class="mi-summary-box"><span>현재 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
+                  <div class="mi-summary-box"><span>광고 효율</span><strong data-admin-public="roas">581%</strong></div>
+                  <div class="mi-summary-box"><span>목표 달성률</span><strong data-admin-public="achievement">116%</strong></div>
+                </div>
+                <div class="mi-action-strip" aria-label="광고주 핵심 결론">
+                  <div class="mi-action-chip"><span>오늘 결론</span><strong>매출 흐름은 유지, 쿠팡 키워드만 보강</strong></div>
+                  <div class="mi-action-chip"><span>다음 행동</span><strong>메타 소재 방향 확인 후 교체 진행</strong></div>
+                  <div class="mi-action-chip"><span>공개 기준</span><strong>관리자 검수 완료 데이터만 표시</strong></div>
+                </div>
+                <div class="mi-judgement" aria-label="현재 성과 판단">
+                  <div class="mi-judgement-item"><strong>현재 판단: 목표보다 빠르게 성장 중</strong><span>ROAS와 매출은 양호하고, 다음 병목은 쿠팡 키워드 확장입니다.</span></div>
+                  <div class="mi-judgement-item"><strong>광고주 확인 필요: 신규 소재 방향</strong><span>메타 소재 교체 전 문구와 이미지 방향만 확인하면 됩니다.</span></div>
+                </div>
+              </article>
+
+              <aside class="mi-card mi-card-pad">
+                <div class="mi-card-head">
+                  <div>
+                    <h3>합산 공개 데이터 현황</h3>
+                    <p>네이버와 쿠팡을 합친 공개 수치입니다.</p>
+                  </div>
+                  <span class="mi-badge">공개용</span>
+                </div>
+                <div class="mi-table">
+                  <div class="mi-row"><span>광고비</span><strong data-admin-public="adSpend">720만원</strong></div>
+                  <div class="mi-row"><span>구매수</span><strong data-admin-public="orders">1,248건</strong></div>
+                  <div class="mi-row"><span>다음 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
+                  <div class="mi-row"><span>업데이트</span><strong data-admin-public="updatedAt">2026.06.19</strong></div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="mi-split">
+              <article class="mi-card mi-card-pad">
+                <div class="mi-card-head">
+                  <div>
+                    <h2>이번 주 핵심 인사이트</h2>
+                    <p>숫자를 보고 해석하지 않아도 되도록 결론부터 정리했습니다.</p>
+                  </div>
+                  <span class="mi-badge">Insight</span>
+                </div>
+                <div class="mi-table">
+                  <div class="mi-row"><span>좋은 점</span><strong>네이버 검색광고 CTR 상승</strong></div>
+                  <div class="mi-row"><span>주의할 점</span><strong>쿠팡 키워드 확장 필요</strong></div>
+                  <div class="mi-row"><span>다음 액션</span><strong>소재 교체 + 리뷰 확보</strong></div>
+                  <div class="mi-row"><span>확인 요청</span><strong>신규 소재 방향 확인</strong></div>
+                </div>
+              </article>
+
+              <aside class="mi-card mi-card-pad">
+                <div class="mi-card-head">
+                  <div>
+                    <h2>보고서·자료 현황</h2>
+                    <p>관리자가 검수한 자료만 전달됩니다.</p>
+                  </div>
+                  <span class="mi-badge">공유</span>
+                </div>
+                <div class="mi-report-list">
+                  <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 관리자 검수 완료</span></div><b class="mi-report-state">전달 예정</b></div>
+                  <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
+                  <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><b class="mi-report-state">공개 가능</b></div>
+                  <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-admin-public="updatedAt">2026.06.19</span> · 담당자: 운영 관리자</span></div><b class="mi-report-state">확인됨</b></div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="mi-split">
+              <article class="mi-card mi-card-pad">
+                <div class="mi-card-head">
+                  <div>
+                    <h2>합산 공개 데이터 현황</h2>
+                    <p>네이버와 쿠팡 데이터를 합산한 광고주 공개용 결과입니다.</p>
+                  </div>
+                  <span class="mi-badge">합산</span>
+                </div>
+                <div class="mi-table">
+                  <div class="mi-row"><span>합산 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
+                  <div class="mi-row"><span>합산 광고비</span><strong data-admin-public="adSpend">720만원</strong></div>
+                  <div class="mi-row"><span>합산 ROAS</span><strong data-admin-public="roas">581%</strong></div>
+                  <div class="mi-row"><span>합산 구매수</span><strong data-admin-public="orders">1,248건</strong></div>
+                </div>
+              </article>
+
+              <article class="mi-card mi-card-pad">
+                <h2>네이버 / 쿠팡 별도 성과</h2>
+                <p>채널별 결과를 분리해서 확인합니다.</p>
+                <div class="mi-channel-detail-grid is-compact" data-admin-preview-channel-details></div>
+              </article>
+            </div>
+
+            <div class="mi-split">
+              <article class="mi-card mi-card-pad">
+                <h2>공유 일정</h2>
+                <div class="mi-schedule" data-admin-preview-schedules></div>
+              </article>
+
+              <aside class="mi-card mi-card-pad">
+                <h3>다음 일정</h3>
+                <div class="mi-table">
+                  <div class="mi-row"><span>가장 가까운 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
+                  <div class="mi-row"><span>광고주 확인</span><strong>신규 소재 방향 확인</strong></div>
+                  <div class="mi-row"><span>보고서 전달</span><strong>관리자 전달 방식</strong></div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="agency-code" id="mi-admin-agency-code">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">대행사 코드</span>
+              <h1>대행사 코드를 관리합니다.</h1>
+              <p>공개 데이터를 저장하면 같은 코드의 광고주 화면에 반영됩니다.</p>
+            </div>
+            <span class="mi-badge">연동 관리</span>
+          </header>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>공개 데이터 설정</h2>
+              <div class="mi-tool">
+                <div class="mi-form-row">
+                  <input class="mi-input" data-admin-code placeholder="대행사 코드" />
+                  <input class="mi-input" data-admin-client placeholder="광고주명" />
+                </div>
+                <div class="mi-form-row">
+                  <input class="mi-input" data-admin-sales placeholder="공개 매출" />
+                  <input class="mi-input" data-admin-roas placeholder="공개 ROAS" />
+                </div>
+                <div class="mi-form-row">
+                  <input class="mi-input" data-admin-status placeholder="공개 상태" />
+                  <input class="mi-input" data-admin-next-schedule placeholder="다음 일정" />
+                </div>
+                <div class="mi-form-row">
+                  <input class="mi-input" data-admin-ad-spend placeholder="광고비 사용액" />
+                  <input class="mi-input" data-admin-orders placeholder="구매 수량" />
+                </div>
+                <div class="mi-form-row">
+                  <input class="mi-input" data-admin-achievement placeholder="목표 달성률" />
+                  <input class="mi-input" data-admin-updated-at placeholder="업데이트 날짜" />
+                </div>
+                <textarea class="mi-textarea" data-admin-comment placeholder="광고주 공개 코멘트"></textarea>
+                <textarea class="mi-textarea" data-admin-channels placeholder="채널명,요약,매출,ROAS"></textarea>
+                <textarea class="mi-textarea" data-admin-schedules placeholder="날짜,제목,상세,상태"></textarea>
+                <button class="mi-button" type="button" data-admin-code-save>대행사 코드 저장</button>
+                <div class="mi-code-status" data-admin-code-status>저장 전입니다.</div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>현재 연결 상태</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>대행사 코드</span><strong data-admin-public="code">MI-DEMO-01</strong></div>
+                <div class="mi-row"><span>광고주</span><strong data-admin-public="client">예시브랜드</strong></div>
+                <div class="mi-row"><span>광고주 공개 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
+                <div class="mi-row"><span>광고비 / 구매수</span><strong><span data-admin-public="adSpend">720만원</span> · <span data-admin-public="orders">1,248건</span></strong></div>
+                <div class="mi-row"><span>목표 달성률</span><strong data-admin-public="achievement">116%</strong></div>
+                <div class="mi-row"><span>광고주 공개 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>백엔드 전환 구조</h2>
+                  <p>코드는 보여주기용 비밀번호가 아니라 광고주 공간을 묶는 운영 키입니다. 정식 개발에서는 로그인 권한과 DB 필터로 교체합니다.</p>
+                </div>
+                <span class="mi-badge">권한 설계</span>
+              </div>
+              <div class="mi-readiness-grid">
+                <div class="mi-readiness-item"><strong>agency_code</strong><span>광고주가 입력하는 연결 코드</span></div>
+                <div class="mi-readiness-item"><strong>client_id</strong><span>브랜드별 데이터 분리 기준</span></div>
+                <div class="mi-readiness-item"><strong>user_role</strong><span>관리자/광고주 권한 구분</span></div>
+                <div class="mi-readiness-item"><strong>visibility</strong><span>공개/비공개 데이터 분리</span></div>
+                <div class="mi-readiness-item"><strong>published_at</strong><span>마지막 공개 반영 시간</span></div>
+                <div class="mi-readiness-item"><strong>audit_log</strong><span>변경자와 변경 내용 기록</span></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>공개/비공개 기준</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>광고주 공개</span><strong>매출, ROAS, 일정, 공개 코멘트</strong></div>
+                <div class="mi-row"><span>관리자 전용</span><strong>원천 데이터, 내부 메모, 미승인 보고서</strong></div>
+                <div class="mi-row"><span>공개 조건</span><strong>관리자컨펌=승인 · 광고주공유여부=Y</strong></div>
+                <div class="mi-row"><span>실제 개발</span><strong>로그인 + DB 권한 검사로 교체</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="excel" id="mi-admin-excel">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">운영 입력</span>
+              <h1>외부 연동 전에는 입력 구조부터 고정합니다.</h1>
+              <p>네이버·쿠팡 데이터를 직접 입력하거나 엑셀에서 붙여넣고, 관리자는 누락 확인과 공개 반영만 처리합니다.</p>
+            </div>
+            <span class="mi-badge">수동 운영</span>
+          </header>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>운영 원본 연결 준비</h2>
+                  <p>지금은 원본명과 광고주ID를 기준으로 검수합니다. 정식 개발 때 같은 필드를 DB/API로 연결합니다.</p>
+                </div>
+                <span class="mi-badge warn">간편 운영</span>
+              </div>
+
+              <div class="mi-tool">
+                <label class="mi-field">운영 시트 또는 엑셀 원본명
+                  <input class="mi-input" data-admin-sheet-url value="모먼트인사이트_운영시트_템플릿.xlsx" aria-label="운영 시트 또는 엑셀 원본명" />
+                </label>
+                <div class="mi-form-row">
+                  <label class="mi-field">광고주ID
+                    <input class="mi-input" data-admin-sheet-client value="MI-CLIENT-001" aria-label="광고주ID" />
+                  </label>
+                  <label class="mi-field">공개 기준
+                    <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
+                  </label>
+                </div>
+                <div class="mi-form-row">
+                  <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 상태 확인</button>
+                  <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료 데이터 공개 반영</button>
+                </div>
+                <div class="mi-code-status" data-admin-sheet-status>입력값 확인 전입니다. 상태 확인을 먼저 눌러주세요.</div>
+              </div>
+
+              <div class="mi-step-flow">
+                <div class="mi-step-card"><b>1</b><strong>수동 입력</strong><span>담당자는 네이버·쿠팡 원천 데이터를 동일 양식에 입력</span></div>
+                <div class="mi-step-card"><b>2</b><strong>계산 검수</strong><span>광고주ID, 승인값, 공유 여부, 필수 지표 확인</span></div>
+                <div class="mi-step-card"><b>3</b><strong>공개 반영</strong><span>광고주 화면에는 승인된 합산 결과만 노출</span></div>
+              </div>
+
+              <div class="mi-hidden-channel-data" aria-hidden="true">
+                <input data-admin-channel="naver.sales" value="18600000" />
+                <input data-admin-channel="naver.spend" value="3200000" />
+                <input data-admin-channel="naver.impressions" value="510000" />
+                <input data-admin-channel="naver.clicks" value="19400" />
+                <input data-admin-channel="naver.conversions" value="951" />
+                <input data-admin-channel="naver.orders" value="642" />
+                <input data-admin-channel="coupang.sales" value="14200000" />
+                <input data-admin-channel="coupang.spend" value="2210000" />
+                <input data-admin-channel="coupang.impressions" value="380000" />
+                <input data-admin-channel="coupang.clicks" value="17200" />
+                <input data-admin-channel="coupang.conversions" value="810" />
+                <input data-admin-channel="coupang.orders" value="438" />
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>필수 운영 탭</h3>
+              <p>외부 연동 전에도 아래 입력 구조만 맞추면 관리자 화면이 단순해집니다.</p>
+              <div class="mi-sheet-tabs">
+                <div class="mi-sheet-tab is-ok"><strong>광고주_목록</strong><span>광고주ID·권한</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>대시보드_공개데이터</strong><span>매출·ROAS·KPI</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>네이버_데이터</strong><span>검색광고 원천값</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>쿠팡_데이터</strong><span>상품광고 원천값</span></div>
+                <div class="mi-sheet-tab is-warn"><strong>KPI_목표</strong><span>신규브랜드 A 누락</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>보고서_목록</strong><span>PDF·엑셀·링크</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>일정표</strong><span>광고주 공유 일정</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>인사이트_액션플랜</strong><span>공개 코멘트</span></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>계산 미리보기</h2>
+                  <p>입력된 네이버·쿠팡 값을 합산해 광고주 화면 공개값을 만듭니다.</p>
+                </div>
+                <span class="mi-badge">Preview</span>
+              </div>
+              <div class="mi-table" data-admin-channel-result>
+                <div class="mi-row"><span>계산 대기</span><strong>입력값 상태 확인을 눌러주세요</strong></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>공개 전 체크</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>광고주ID</span><strong>MI-CLIENT-001 기준 분리</strong></div>
+                <div class="mi-row"><span>내부 메모</span><strong>광고주 화면 미노출</strong></div>
+                <div class="mi-row"><span>공개 승인</span><strong>승인값만 반영</strong></div>
+                <div class="mi-row"><span>수정 이력</span><strong>공개 반영 시간 기록</strong></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>엑셀 붙여넣기</h2>
+              <p style="margin-bottom:14px;">외부 연동 없이도 운영할 수 있는 예비 입력입니다. 실제 개발에서는 업로드 파서나 DB 저장으로 교체합니다.</p>
+              <div class="mi-tool">
+                <textarea class="mi-textarea" data-admin-excel-input>매출,광고비,구매수,클릭수,전환수
+41800000,7200000,1248,32800,1607</textarea>
+                <button class="mi-button" type="button" data-admin-excel-calc>CSV 수치 계산</button>
+                <button class="mi-button" type="button" data-admin-excel-publish>CSV 계산 결과를 공개 데이터에 반영</button>
+                <div class="mi-note">정식 개발에서는 로그인, DB 저장, 엑셀 업로드 파서, 변경 이력으로 확장합니다.</div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>CSV 계산 결과</h3>
+              <div class="mi-table" data-admin-excel-result>
+                <div class="mi-row"><span>계산 대기</span><strong>버튼을 눌러주세요</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="reports" id="mi-admin-reports">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">보고서 다운로드</span>
+              <h1>보고서는 관리자가 전달합니다.</h1>
+              <p>다운로드와 전달은 관리자 화면에서 처리합니다.</p>
+            </div>
+            <span class="mi-badge warn">관리자 전용</span>
+          </header>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>전달용 보고서</h2>
+              <div class="mi-downloads">
+                <button class="mi-download" type="button" data-admin-download data-report-type="weekly"><span><b>주간 보고서</b><small>CSV · 6월 2주차 · 관리자 확인 후 전달</small></span><i>↓</i></button>
+                <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>CSV · 2026년 6월 · 관리자 확인 후 전달</small></span><i>↓</i></button>
+                <button class="mi-download" type="button" data-admin-download data-report-type="kpi"><span><b>KPI 엑셀 정리</b><small>CSV · 내부 검토 및 전달용</small></span><i>↓</i></button>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>광고주 화면 노출 기준</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>보고서 파일</span><strong>광고주 화면 미노출</strong></div>
+                <div class="mi-row"><span>매출 현황</span><strong>공개 가능</strong></div>
+                <div class="mi-row"><span>일정표</span><strong>공유 가능</strong></div>
+                <div class="mi-row"><span>내부 메모</span><strong>관리자만 확인</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="keyword" id="mi-admin-keyword">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">키워드 조회</span>
+              <h1>키워드 판단 구조를 준비합니다.</h1>
+              <p>관리자와 광고주가 각각 키워드를 조회할 수 있습니다.</p>
+            </div>
+            <span class="mi-badge warn">연동 준비</span>
+          </header>
+
+          <article class="mi-card mi-card-pad" style="margin-bottom:16px;">
+            <div class="mi-tool">
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-keyword-input value="비타민 앰플" placeholder="키워드 입력" />
+                <button class="mi-button" type="button" data-admin-keyword-search>키워드 조회</button>
+              </div>
+              <div class="mi-note">네이버 검색광고 API 프록시를 먼저 조회합니다. API 키가 없거나 프록시가 꺼져 있으면 데모 계산값으로 표시합니다.</div>
+              <div class="mi-code-status" style="margin-top:10px;" data-admin-keyword-status>키워드를 입력하고 조회하세요.</div>
+            </div>
+          </article>
+
+          <article class="mi-card mi-keyword-chart">
+            <div class="mi-keyword-main">
+              <div class="mi-chart-top">
+                <div>
+                  <h2>종합 차트</h2>
+                  <p>월별 검색수, 기기/성별/연령/요일 클릭 비율을 함께 검토합니다.</p>
+                </div>
+                <div class="mi-segment" aria-label="조회 기간">
+                  <span>월간</span>
+                  <span>3년</span>
+                  <span class="is-active">1년</span>
+                  <span>1개월</span>
+                  <span>직접 선택</span>
+                </div>
+              </div>
+
+              <div class="mi-chart-tools">
+                <span class="mi-keyword-chip" data-keyword-label>비타민 앰플</span>
+                <span class="mi-badge">검색수 <b data-keyword-volume style="margin-left:4px;">18,400</b></span>
+                <span class="mi-badge">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
+              </div>
+              <div class="mi-chart-legend">
+                <span><i class="mi-dot"></i>검색수</span>
+                <span>클릭률(%)</span>
+                <span>상품수</span>
+                <span>경쟁강도</span>
+              </div>
+
+              <div class="mi-line-chart" aria-label="월별 검색수 차트">
+                <span class="mi-axis-top" data-keyword-axis>20K</span>
+                <span class="mi-peak-label" data-keyword-peak>2026.03 · 18,400</span>
+                <svg viewBox="0 0 760 250" preserveAspectRatio="none" role="img">
+                  <line x1="0" y1="45" x2="760" y2="45" stroke="#edf0f4" />
+                  <line x1="0" y1="100" x2="760" y2="100" stroke="#edf0f4" />
+                  <line x1="0" y1="155" x2="760" y2="155" stroke="#edf0f4" />
+                  <line x1="0" y1="210" x2="760" y2="210" stroke="#edf0f4" />
+                  <polyline data-keyword-line points="" fill="none" stroke="#7b9cff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle data-keyword-point cx="0" cy="0" r="5" fill="#4d73ff" />
+                </svg>
+                <div class="mi-months">
+                  <span>05</span><span>06</span><span>07</span><span>08</span><span>09</span><span>10</span>
+                  <span>11</span><span>12</span><span>01</span><span>02</span><span>03</span><span>04</span>
+                </div>
+              </div>
+            </div>
+
+            <aside class="mi-keyword-side">
+              <div class="mi-ratio-block">
+                <strong>기기별 클릭 비율</strong>
+                <div class="mi-ratio-stack"><span class="mi-ratio-primary" data-keyword-device-mobile style="width:85%;">모바일 85%</span><span class="mi-ratio-secondary" data-keyword-device-pc style="width:15%;">PC 15%</span></div>
+              </div>
+              <div class="mi-ratio-block">
+                <strong>성별 클릭 비율</strong>
+                <div class="mi-ratio-stack"><span class="mi-ratio-primary" data-keyword-gender-female style="width:79%;">여성 79%</span><span class="mi-ratio-secondary" data-keyword-gender-male style="width:21%;">남성 21%</span></div>
+              </div>
+              <div class="mi-ratio-block">
+                <strong>연령별 클릭 비율</strong>
+                <div class="mi-bar-row">
+                  <span class="mi-bar"><i data-keyword-age-bar="0" style="height:18%;"></i>10대</span>
+                  <span class="mi-bar"><i data-keyword-age-bar="1" style="height:28%;"></i>20대</span>
+                  <span class="mi-bar"><i data-keyword-age-bar="2" style="height:58%;"></i>30대</span>
+                  <span class="mi-bar"><i data-keyword-age-bar="3" style="height:84%;"></i>40대</span>
+                  <span class="mi-bar"><i data-keyword-age-bar="4" style="height:70%;"></i>50대</span>
+                  <span class="mi-bar"><i data-keyword-age-bar="5" style="height:36%;"></i>60대</span>
+                </div>
+              </div>
+              <div class="mi-ratio-block">
+                <strong>요일별 클릭 비율</strong>
+                <div class="mi-bar-row mi-week-row">
+                  <span class="mi-bar"><i data-keyword-week-bar="0" style="height:82%;"></i>월</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="1" style="height:88%;"></i>화</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="2" style="height:86%;"></i>수</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="3" style="height:79%;"></i>목</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="4" style="height:74%;"></i>금</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="5" style="height:66%;"></i>토</span>
+                  <span class="mi-bar"><i data-keyword-week-bar="6" style="height:76%;"></i>일</span>
+                </div>
+              </div>
+            </aside>
+          </article>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>조회 결과</h2>
+              <div class="mi-table" data-admin-keyword-result>
+                <div class="mi-row"><span>월 검색량</span><strong>18,400</strong></div>
+                <div class="mi-row"><span>경쟁도</span><strong>보통</strong></div>
+                <div class="mi-row"><span>추천 작업</span><strong>콘텐츠 제목과 상품명 반영</strong></div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>관리자 판단 메모</h3>
+              <div class="mi-table">
+                <div class="mi-row"><span>네이버 SEO</span><strong>블로그/상세페이지 제목 후보</strong></div>
+                <div class="mi-row"><span>쿠팡 SEO</span><strong>상품명·검색어·광고 키워드 후보</strong></div>
+                <div class="mi-row"><span>우선 작업</span><strong data-keyword-insight>40대 여성 클릭 비중 중심으로 메시지 설계</strong></div>
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="publish" id="mi-admin-publish">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">공개 관리</span>
+              <h1>내부 메모와 공개 코멘트를 나눕니다.</h1>
+              <p>광고주는 공개 코멘트만 봅니다.</p>
+            </div>
+            <span class="mi-badge">분리 필수</span>
+          </header>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>내부 메모</h2>
+              <textarea class="mi-textarea" data-admin-internal-note>메타 소재 피로도 높음. 광고주에게는 교체 필요성만 간단히 공개.</textarea>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h2>광고주 공개 코멘트</h2>
+              <textarea class="mi-textarea" data-admin-public-comment>다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</textarea>
+              <button class="mi-button" type="button" style="margin-top:10px;" data-admin-public-save>공개 코멘트 저장</button>
+              <div class="mi-code-status" style="margin-top:10px;" data-admin-public-status>저장 전입니다.</div>
+            </aside>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      var root = document.getElementById("mi-admin");
+      if (!root) return;
+
+      var storageKey = "miAgencyPublicState";
+      var defaultState = {
+        code: "MI-DEMO-01",
+        client: "예시브랜드",
+        sales: "4,180만원",
+        roas: "581%",
+        adSpend: "720만원",
+        orders: "1,248건",
+        achievement: "116%",
+        status: "목표 초과",
+        nextSchedule: "6/21 소재 교체",
+        updatedAt: "2026.06.19",
+        comment: "다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.",
+        channels: [
+          { name: "네이버", summary: "검색광고 효율 양호", sales: "1,860만원", roas: "581%" },
+          { name: "쿠팡", summary: "구매 전환 안정", sales: "1,420만원", roas: "642%" },
+          { name: "메타", summary: "소재 교체 예정", sales: "900만원", roas: "410%" }
+        ],
+        channelDetails: [
+          { name: "네이버", type: "검색광고", sales: "1,860만원", adSpend: "320만원", roas: "581%", orders: "642건", ctr: "3.8%", cvr: "4.9%", cpa: "3,365원", cpc: "165원", summary: "검색광고 효율 양호. 제목/본문 SEO 키워드 보강 우선." },
+          { name: "쿠팡", type: "상품광고", sales: "1,420만원", adSpend: "221만원", roas: "642%", orders: "438건", ctr: "4.5%", cvr: "4.7%", cpa: "2,728원", cpc: "128원", summary: "구매 전환 안정. 상품명과 검색어 필드 보강 유지." }
+        ],
+        schedules: [
+          { date: "6/21", title: "메타 소재 교체", detail: "기존 소재 피로도 반영", status: "진행 중" },
+          { date: "6/24", title: "월간 보고서 전달", detail: "관리자가 다운로드 후 전달", status: "예정" },
+          { date: "6/27", title: "쿠팡 키워드 보강", detail: "상품명과 검색어 반영", status: "예정" }
+        ]
+      };
+
+      function readState() {
+        try {
+          var saved = window.localStorage.getItem(storageKey);
+          return saved ? Object.assign({}, defaultState, JSON.parse(saved)) : defaultState;
+        } catch (error) {
+          return defaultState;
+        }
+      }
+
+      function writeState(state) {
+        try {
+          window.localStorage.setItem(storageKey, JSON.stringify(state));
+        } catch (error) {}
+      }
+
+      function getDemoApiBaseUrl() {
+        if (window.MI_API_BASE_URL) return window.MI_API_BASE_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin;
+        return "http://127.0.0.1:8790";
+      }
+
+      async function persistDemoState(state, statusNode, okMessage) {
+        if (!window.fetch) {
+          setStatus(statusNode, "로컬 저장 완료, API 반영 대기: 현재 브라우저에서 fetch를 사용할 수 없습니다.", "is-warn");
+          return false;
+        }
+        try {
+          var response = await fetch(getDemoApiBaseUrl() + "/api/demo/public-state", {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              "x-demo-admin-code": "ADMIN-2026"
+            },
+            body: JSON.stringify({
+              adminCode: "ADMIN-2026",
+              publicState: state
+            })
+          });
+          var payload = await response.json().catch(function () {
+            return null;
+          });
+          if (!response.ok || !payload || payload.ok === false) {
+            throw new Error((payload && payload.message) || "데모 API 저장 응답이 올바르지 않습니다.");
+          }
+          setStatus(statusNode, okMessage || "API 저장 완료: 광고주 화면을 새로 열면 같은 공개값이 보입니다.", "is-ok");
+          return true;
+        } catch (error) {
+          setStatus(statusNode, "로컬 저장 완료, API 반영 대기: " + error.message, "is-warn");
+          return false;
+        }
+      }
+
+      function formatNumber(value) {
+        return Number(value || 0).toLocaleString("ko-KR");
+      }
+
+      function formatMoney(value) {
+        return formatNumber(Math.round(Number(value || 0) / 10000)) + "만원";
+      }
+
+      function parseNumber(value) {
+        return Number(String(value || "").replace(/[^0-9.-]/g, "")) || 0;
+      }
+
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function parseLines(value, mapper, fallback) {
+        var rows = String(value || "").split(/\n+/).map(function (line) {
+          return line.trim();
+        }).filter(Boolean);
+        var parsed = rows.map(function (line) {
+          return mapper(line.split(",").map(function (item) {
+            return item.trim();
+          }));
+        }).filter(Boolean);
+        return parsed.length ? parsed : fallback;
+      }
+
+      function channelsToText(channels) {
+        return (channels || []).map(function (item) {
+          return [item.name, item.summary, item.sales, item.roas].join(",");
+        }).join("\n");
+      }
+
+      function schedulesToText(schedules) {
+        return (schedules || []).map(function (item) {
+          return [item.date, item.title, item.detail, item.status].join(",");
+        }).join("\n");
+      }
+
+      function buildChannelDetails(channels) {
+        return (channels || defaultState.channels).filter(function (item) {
+          return item.name === "네이버" || item.name === "쿠팡";
+        }).map(function (item) {
+          return {
+            name: item.name,
+            type: item.name === "네이버" ? "검색광고" : "상품광고",
+            sales: item.sales || "-",
+            adSpend: "-",
+            roas: item.roas || "-",
+            orders: "-",
+            ctr: item.summary || "-",
+            cvr: "-",
+            cpa: "-",
+            cpc: "-",
+            summary: item.summary || "관리자 공개 요약 필요"
+          };
+        });
+      }
+
+      function renderChannelDetails(container, details) {
+        if (!container) return;
+        container.innerHTML = (details || defaultState.channelDetails).map(function (item) {
+          return '<article class="mi-channel-detail"><div class="mi-channel-detail-head"><div><strong>' +
+            escapeHtml(item.name) + '</strong><span>' + escapeHtml(item.type || "채널") + '</span></div><span class="mi-badge">' +
+            escapeHtml(item.roas || "-") + '</span></div><div class="mi-channel-stats">' +
+            '<div class="mi-channel-stat"><span>매출</span><b>' + escapeHtml(item.sales || "-") + '</b></div>' +
+            '<div class="mi-channel-stat"><span>광고비</span><b>' + escapeHtml(item.adSpend || "-") + '</b></div>' +
+            '<div class="mi-channel-stat"><span>구매수</span><b>' + escapeHtml(item.orders || "-") + '</b></div>' +
+            '<div class="mi-channel-stat"><span>CTR / CVR</span><b>' + escapeHtml(item.ctr || "-") + ' · ' + escapeHtml(item.cvr || "-") + '</b></div>' +
+            '</div><p>' + escapeHtml(item.summary || "공개 요약 필요") + '</p></article>';
+        }).join("");
+      }
+
+      function renderClientPreview(state) {
+        renderChannelDetails(
+          root.querySelector("[data-admin-preview-channel-details]"),
+          state.channelDetails || buildChannelDetails(state.channels || defaultState.channels)
+        );
+
+        var scheduleList = root.querySelector("[data-admin-preview-schedules]");
+        if (scheduleList) {
+          scheduleList.innerHTML = (state.schedules || defaultState.schedules).map(function (item) {
+            var badgeClass = item.status === "진행 중" || item.status === "확인 필요" ? " warn" : "";
+            return '<div class="mi-schedule-item"><div class="mi-date">' + escapeHtml(item.date) + '</div><div><strong>' +
+              escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.detail) + '</span></div><span class="mi-badge' +
+              badgeClass + '">' + escapeHtml(item.status) + '</span></div>';
+          }).join("");
+        }
+      }
+
+      function setStatus(node, message, type) {
+        if (!node) return;
+        node.textContent = message;
+        node.classList.remove("is-ok", "is-warn");
+        if (type) node.classList.add(type);
+      }
+
+      function readChannelInput(channel, key) {
+        var input = root.querySelector('[data-admin-channel="' + channel + "." + key + '"]');
+        return parseNumber(input ? input.value : 0);
+      }
+
+      function setChannelInput(channel, key, value) {
+        var input = root.querySelector('[data-admin-channel="' + channel + "." + key + '"]');
+        if (input) input.value = String(value);
+      }
+
+      function loadSheetDemoData() {
+        var sheetValues = {
+          naver: {
+            sales: 18600000,
+            spend: 3200000,
+            impressions: 510000,
+            clicks: 19400,
+            conversions: 951,
+            orders: 642
+          },
+          coupang: {
+            sales: 14200000,
+            spend: 2210000,
+            impressions: 380000,
+            clicks: 17200,
+            conversions: 810,
+            orders: 438
+          }
+        };
+        Object.keys(sheetValues).forEach(function (channel) {
+          Object.keys(sheetValues[channel]).forEach(function (key) {
+            setChannelInput(channel, key, sheetValues[channel][key]);
+          });
+        });
+        return buildChannelCalc();
+      }
+
+      function calcChannel(channel, label) {
+        var data = {
+          label: label,
+          sales: readChannelInput(channel, "sales"),
+          spend: readChannelInput(channel, "spend"),
+          impressions: readChannelInput(channel, "impressions"),
+          clicks: readChannelInput(channel, "clicks"),
+          conversions: readChannelInput(channel, "conversions"),
+          orders: readChannelInput(channel, "orders")
+        };
+        data.roas = data.spend > 0 ? Math.round((data.sales / data.spend) * 1000) / 10 : 0;
+        data.ctr = data.impressions > 0 ? (data.clicks / data.impressions) * 100 : 0;
+        data.cvr = data.clicks > 0 ? (data.conversions / data.clicks) * 100 : 0;
+        data.cpa = data.conversions > 0 ? Math.round(data.spend / data.conversions) : 0;
+        data.cpc = data.clicks > 0 ? Math.round(data.spend / data.clicks) : 0;
+        return data;
+      }
+
+      function buildChannelCalc() {
+        var naver = calcChannel("naver", "네이버");
+        var coupang = calcChannel("coupang", "쿠팡");
+        var total = {
+          label: "합산",
+          sales: naver.sales + coupang.sales,
+          spend: naver.spend + coupang.spend,
+          impressions: naver.impressions + coupang.impressions,
+          clicks: naver.clicks + coupang.clicks,
+          conversions: naver.conversions + coupang.conversions,
+          orders: naver.orders + coupang.orders
+        };
+        total.roas = total.spend > 0 ? Math.round((total.sales / total.spend) * 1000) / 10 : 0;
+        total.ctr = total.impressions > 0 ? (total.clicks / total.impressions) * 100 : 0;
+        total.cvr = total.clicks > 0 ? (total.conversions / total.clicks) * 100 : 0;
+        total.cpa = total.conversions > 0 ? Math.round(total.spend / total.conversions) : 0;
+        total.cpc = total.clicks > 0 ? Math.round(total.spend / total.clicks) : 0;
+        return { naver: naver, coupang: coupang, total: total };
+      }
+
+      function renderChannelCalc(calc) {
+        var result = root.querySelector("[data-admin-channel-result]");
+        if (!result) return;
+        result.innerHTML =
+          '<div class="mi-row"><span>합산 매출 / 광고비</span><strong>' + formatMoney(calc.total.sales) + ' · ' + formatMoney(calc.total.spend) + '</strong></div>' +
+          '<div class="mi-row"><span>합산 ROAS</span><strong>' + formatNumber(calc.total.roas) + '%</strong></div>' +
+          '<div class="mi-row"><span>합산 CTR / CVR</span><strong>' + calc.total.ctr.toFixed(1) + '% · ' + calc.total.cvr.toFixed(1) + '%</strong></div>' +
+          '<div class="mi-row"><span>CPA / CPC</span><strong>' + formatNumber(calc.total.cpa) + '원 · ' + formatNumber(calc.total.cpc) + '원</strong></div>' +
+          '<div class="mi-row"><span>네이버</span><strong>' + formatMoney(calc.naver.sales) + ' · ROAS ' + formatNumber(calc.naver.roas) + '% · CTR ' + calc.naver.ctr.toFixed(1) + '%</strong></div>' +
+          '<div class="mi-row"><span>쿠팡</span><strong>' + formatMoney(calc.coupang.sales) + ' · ROAS ' + formatNumber(calc.coupang.roas) + '% · CTR ' + calc.coupang.ctr.toFixed(1) + '%</strong></div>';
+      }
+
+      function publishChannelCalc(calc) {
+        var state = readState();
+        state.sales = formatMoney(calc.total.sales);
+        state.roas = formatNumber(calc.total.roas) + "%";
+        state.adSpend = formatMoney(calc.total.spend);
+        state.orders = formatNumber(calc.total.orders) + "건";
+        state.achievement = Math.min(160, Math.round((calc.total.roas / 500) * 100)) + "%";
+        state.status = calc.total.roas >= 500 ? "목표 초과" : (calc.total.roas >= 400 ? "목표 근접" : "개선 필요");
+        state.updatedAt = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
+        state.comment = "네이버와 쿠팡 합산 ROAS " + formatNumber(calc.total.roas) + "% 기준으로 다음 실행 우선순위를 조정하겠습니다.";
+        state.channels = [
+          {
+            name: "네이버",
+            summary: "CTR " + calc.naver.ctr.toFixed(1) + "% · CVR " + calc.naver.cvr.toFixed(1) + "%",
+            sales: formatMoney(calc.naver.sales),
+            roas: formatNumber(calc.naver.roas) + "%"
+          },
+          {
+            name: "쿠팡",
+            summary: "CTR " + calc.coupang.ctr.toFixed(1) + "% · CVR " + calc.coupang.cvr.toFixed(1) + "%",
+            sales: formatMoney(calc.coupang.sales),
+            roas: formatNumber(calc.coupang.roas) + "%"
+          }
+        ];
+        state.channelDetails = [
+          {
+            name: "네이버",
+            type: "검색광고",
+            sales: formatMoney(calc.naver.sales),
+            adSpend: formatMoney(calc.naver.spend),
+            roas: formatNumber(calc.naver.roas) + "%",
+            orders: formatNumber(calc.naver.orders) + "건",
+            ctr: calc.naver.ctr.toFixed(1) + "%",
+            cvr: calc.naver.cvr.toFixed(1) + "%",
+            cpa: formatNumber(calc.naver.cpa) + "원",
+            cpc: formatNumber(calc.naver.cpc) + "원",
+            summary: "네이버 CTR " + calc.naver.ctr.toFixed(1) + "%, CVR " + calc.naver.cvr.toFixed(1) + "% 기준으로 검색광고와 SEO 키워드를 조정합니다."
+          },
+          {
+            name: "쿠팡",
+            type: "상품광고",
+            sales: formatMoney(calc.coupang.sales),
+            adSpend: formatMoney(calc.coupang.spend),
+            roas: formatNumber(calc.coupang.roas) + "%",
+            orders: formatNumber(calc.coupang.orders) + "건",
+            ctr: calc.coupang.ctr.toFixed(1) + "%",
+            cvr: calc.coupang.cvr.toFixed(1) + "%",
+            cpa: formatNumber(calc.coupang.cpa) + "원",
+            cpc: formatNumber(calc.coupang.cpc) + "원",
+            summary: "쿠팡 ROAS " + formatNumber(calc.coupang.roas) + "% 기준으로 상품명, 검색어, 광고 키워드를 분리 관리합니다."
+          }
+        ];
+        state.channelMetrics = [
+          {
+            name: "네이버",
+            sales: calc.naver.sales,
+            spend: calc.naver.spend,
+            impressions: calc.naver.impressions,
+            clicks: calc.naver.clicks,
+            conversions: calc.naver.conversions,
+            orders: calc.naver.orders,
+            summary: "네이버 CTR " + calc.naver.ctr.toFixed(1) + "%, CVR " + calc.naver.cvr.toFixed(1) + "% 기준으로 검색광고와 SEO 키워드를 조정합니다."
+          },
+          {
+            name: "쿠팡",
+            sales: calc.coupang.sales,
+            spend: calc.coupang.spend,
+            impressions: calc.coupang.impressions,
+            clicks: calc.coupang.clicks,
+            conversions: calc.coupang.conversions,
+            orders: calc.coupang.orders,
+            summary: "쿠팡 ROAS " + formatNumber(calc.coupang.roas) + "% 기준으로 상품명, 검색어, 광고 키워드를 분리 관리합니다."
+          }
+        ];
+        writeState(state);
+        applyState(state);
+        return state;
+      }
+
+      function applyState(state) {
+        root.querySelectorAll("[data-admin-public]").forEach(function (node) {
+          var key = node.getAttribute("data-admin-public");
+          if (state[key]) node.textContent = state[key];
+        });
+
+        var codeInput = root.querySelector("[data-admin-code]");
+        var clientInput = root.querySelector("[data-admin-client]");
+        var salesInput = root.querySelector("[data-admin-sales]");
+        var roasInput = root.querySelector("[data-admin-roas]");
+        var statusInput = root.querySelector("[data-admin-status]");
+        var scheduleInput = root.querySelector("[data-admin-next-schedule]");
+        var adSpendInput = root.querySelector("[data-admin-ad-spend]");
+        var ordersInput = root.querySelector("[data-admin-orders]");
+        var achievementInput = root.querySelector("[data-admin-achievement]");
+        var updatedInput = root.querySelector("[data-admin-updated-at]");
+        var commentInput = root.querySelector("[data-admin-comment]");
+        var channelsInput = root.querySelector("[data-admin-channels]");
+        var schedulesInput = root.querySelector("[data-admin-schedules]");
+        var publicCommentInput = root.querySelector("[data-admin-public-comment]");
+
+        if (codeInput) codeInput.value = state.code;
+        if (clientInput) clientInput.value = state.client;
+        if (salesInput) salesInput.value = state.sales;
+        if (roasInput) roasInput.value = state.roas;
+        if (statusInput) statusInput.value = state.status;
+        if (scheduleInput) scheduleInput.value = state.nextSchedule;
+        if (adSpendInput) adSpendInput.value = state.adSpend;
+        if (ordersInput) ordersInput.value = state.orders;
+        if (achievementInput) achievementInput.value = state.achievement;
+        if (updatedInput) updatedInput.value = state.updatedAt;
+        if (commentInput) commentInput.value = state.comment;
+        if (channelsInput) channelsInput.value = channelsToText(state.channels || defaultState.channels);
+        if (schedulesInput) schedulesInput.value = schedulesToText(state.schedules || defaultState.schedules);
+        if (publicCommentInput) publicCommentInput.value = state.comment;
+        renderClientPreview(state);
+      }
+
+      var currentState = readState();
+      writeState(currentState);
+      applyState(currentState);
+
+      var loginButton = root.querySelector("[data-admin-login-button]");
+      var loginStatus = root.querySelector("[data-admin-login-status]");
+      if (loginButton) {
+        loginButton.addEventListener("click", function () {
+          root.classList.remove("is-locked");
+          root.classList.add("is-authed");
+          setStatus(loginStatus, "관리자 화면이 열렸습니다.", "is-ok");
+        });
+      }
+
+      var views = root.querySelectorAll("[data-mi-admin-view]");
+      var links = root.querySelectorAll("[data-mi-admin-screen]");
+
+      function setScreen(name, shouldPushHash) {
+        var target = name || "home";
+        var found = false;
+        views.forEach(function (view) {
+          var active = view.getAttribute("data-mi-admin-view") === target;
+          view.classList.toggle("is-active", active);
+          if (active) found = true;
+        });
+        if (!found) {
+          target = "home";
+          views.forEach(function (view) {
+            view.classList.toggle("is-active", view.getAttribute("data-mi-admin-view") === target);
+          });
+        }
+        links.forEach(function (link) {
+          link.classList.toggle("is-active", link.getAttribute("data-mi-admin-screen") === target);
+        });
+        if (shouldPushHash) {
+          var nextHash = "#mi-admin-" + target;
+          if (window.location.hash !== nextHash) window.location.hash = nextHash;
+        }
+      }
+
+      links.forEach(function (link) {
+        link.addEventListener("click", function (event) {
+          event.preventDefault();
+          setScreen(link.getAttribute("data-mi-admin-screen"), true);
+        });
+      });
+
+      window.addEventListener("hashchange", function () {
+        var next = (window.location.hash || "").replace("#mi-admin-", "");
+        if (next) setScreen(next, false);
+      });
+
+      var codeSaveButton = root.querySelector("[data-admin-code-save]");
+      var codeStatus = root.querySelector("[data-admin-code-status]");
+      if (codeSaveButton) {
+        codeSaveButton.addEventListener("click", async function () {
+          var savedState = readState();
+          var channelsText = (root.querySelector("[data-admin-channels]") || {}).value || "";
+          var schedulesText = (root.querySelector("[data-admin-schedules]") || {}).value || "";
+          var nextState = {
+            code: (root.querySelector("[data-admin-code]") || {}).value || defaultState.code,
+            client: (root.querySelector("[data-admin-client]") || {}).value || defaultState.client,
+            sales: (root.querySelector("[data-admin-sales]") || {}).value || defaultState.sales,
+            roas: (root.querySelector("[data-admin-roas]") || {}).value || defaultState.roas,
+            adSpend: (root.querySelector("[data-admin-ad-spend]") || {}).value || defaultState.adSpend,
+            orders: (root.querySelector("[data-admin-orders]") || {}).value || defaultState.orders,
+            achievement: (root.querySelector("[data-admin-achievement]") || {}).value || defaultState.achievement,
+            status: (root.querySelector("[data-admin-status]") || {}).value || defaultState.status,
+            nextSchedule: (root.querySelector("[data-admin-next-schedule]") || {}).value || defaultState.nextSchedule,
+            updatedAt: (root.querySelector("[data-admin-updated-at]") || {}).value || defaultState.updatedAt,
+            comment: (root.querySelector("[data-admin-comment]") || {}).value || defaultState.comment,
+            channels: parseLines(channelsText, function (cols) {
+              if (!cols[0]) return null;
+              var last = cols.length - 1;
+              return {
+                name: cols[0],
+                summary: cols[1] || "공개 요약 필요",
+                sales: cols.length > 4 ? cols.slice(2, last).join(",") : (cols[2] || "-"),
+                roas: cols[last] || "-"
+              };
+            }, defaultState.channels),
+            channelDetails: savedState.channelDetails || defaultState.channelDetails,
+            schedules: parseLines(schedulesText, function (cols) {
+              if (!cols[0] || !cols[1]) return null;
+              return {
+                date: cols[0],
+                title: cols[1],
+                detail: cols[2] || "상세 내용 확인",
+                status: cols[3] || "예정"
+              };
+            }, defaultState.schedules)
+          };
+          writeState(nextState);
+          applyState(nextState);
+          setStatus(codeStatus, "로컬 저장 완료: 데모 API에 반영 중입니다.", "");
+          await persistDemoState(nextState, codeStatus, "저장 완료: 광고주 화면 API에도 공개 데이터가 반영되었습니다.");
+        });
+      }
+
+      var publicSaveButton = root.querySelector("[data-admin-public-save]");
+      var publicStatus = root.querySelector("[data-admin-public-status]");
+      if (publicSaveButton) {
+        publicSaveButton.addEventListener("click", async function () {
+          var state = readState();
+          var publicComment = root.querySelector("[data-admin-public-comment]");
+          state.comment = publicComment ? publicComment.value : state.comment;
+          writeState(state);
+          applyState(state);
+          setStatus(publicStatus, "공개 코멘트 로컬 저장 완료: 데모 API에 반영 중입니다.", "");
+          await persistDemoState(state, publicStatus, "공개 코멘트가 저장되고 광고주 화면 API에도 반영되었습니다.");
+        });
+      }
+
+      var channelCalcButton = root.querySelector("[data-admin-channel-calc]");
+      var channelPublishButton = root.querySelector("[data-admin-channel-publish]");
+      var channelStatus = root.querySelector("[data-admin-sheet-status]");
+      var lastChannelCalc = null;
+      if (root.querySelector("[data-admin-channel-result]")) {
+        lastChannelCalc = buildChannelCalc();
+        renderChannelCalc(lastChannelCalc);
+      }
+      if (channelCalcButton) {
+        channelCalcButton.addEventListener("click", function () {
+          lastChannelCalc = buildChannelCalc();
+          renderChannelCalc(lastChannelCalc);
+          setStatus(channelStatus, "계산 완료: 네이버/쿠팡 합산 KPI를 확인하세요.", "is-ok");
+        });
+      }
+      if (channelPublishButton) {
+        channelPublishButton.addEventListener("click", async function () {
+          lastChannelCalc = buildChannelCalc();
+          renderChannelCalc(lastChannelCalc);
+          var state = publishChannelCalc(lastChannelCalc);
+          setStatus(channelStatus, "계산값 로컬 반영 완료: 데모 API에 저장 중입니다.", "");
+          await persistDemoState(state, channelStatus, "공개 반영 완료: " + state.client + " 광고주 화면 API에 계산값이 연결되었습니다.");
+        });
+      }
+
+      var sheetCheckButton = root.querySelector("[data-admin-sheet-check]");
+      var sheetSyncButton = root.querySelector("[data-admin-sheet-sync]");
+      var sheetStatus = root.querySelector("[data-admin-sheet-status]");
+      if (sheetCheckButton) {
+        sheetCheckButton.addEventListener("click", function () {
+          lastChannelCalc = loadSheetDemoData();
+          renderChannelCalc(lastChannelCalc);
+          setStatus(sheetStatus, "입력값 확인 완료: 8개 운영 탭 중 7개 정상 · KPI_목표 1건 확인 필요 · 공개 반영 전 검수 단계입니다.", "is-warn");
+        });
+      }
+
+      if (sheetSyncButton) {
+        sheetSyncButton.addEventListener("click", async function () {
+          lastChannelCalc = loadSheetDemoData();
+          renderChannelCalc(lastChannelCalc);
+          var state = publishChannelCalc(lastChannelCalc);
+          state.comment = "운영 입력값 기준 네이버와 쿠팡 합산 ROAS " + formatNumber(lastChannelCalc.total.roas) + "%입니다. 다음 실행은 쿠팡 키워드 보강과 네이버 SEO 문구 정리입니다.";
+          writeState(state);
+          applyState(state);
+          setStatus(sheetStatus, "검수 완료 데이터 로컬 반영 완료: 데모 API에 저장 중입니다.", "");
+          await persistDemoState(state, sheetStatus, "공개 반영 완료: " + state.client + " 광고주 화면과 관리자 미리보기에 계산값이 연결되었습니다.");
+        });
+      }
+
+      var excelButton = root.querySelector("[data-admin-excel-calc]");
+      var excelPublishButton = root.querySelector("[data-admin-excel-publish]");
+      var excelInput = root.querySelector("[data-admin-excel-input]");
+      var excelResult = root.querySelector("[data-admin-excel-result]");
+      var lastExcelCalc = null;
+      if (excelButton && excelInput && excelResult) {
+        excelButton.addEventListener("click", function () {
+          var rows = excelInput.value.trim().split(/\n+/);
+          var data = (rows[1] || rows[0] || "").split(",").map(function (item) {
+            return parseNumber(item);
+          });
+          var sales = data[0] || 0;
+          var spend = data[1] || 0;
+          var orders = data[2] || 0;
+          var clicks = data[3] || 0;
+          var conversions = data[4] || orders || 0;
+          var roas = spend > 0 ? Math.round((sales / spend) * 100) : 0;
+          var cvr = clicks > 0 ? ((conversions / clicks) * 100).toFixed(1) : "0.0";
+          lastExcelCalc = {
+            sales: formatMoney(sales),
+            roas: formatNumber(roas) + "%",
+            adSpend: formatMoney(spend),
+            orders: formatNumber(orders) + "건"
+          };
+
+          excelResult.innerHTML =
+            '<div class="mi-row"><span>계산 매출</span><strong>' + formatMoney(sales) + '</strong></div>' +
+            '<div class="mi-row"><span>계산 ROAS</span><strong>' + formatNumber(roas) + '%</strong></div>' +
+            '<div class="mi-row"><span>구매수 / CVR</span><strong>' + formatNumber(orders) + '건 · ' + cvr + '%</strong></div>';
+        });
+      }
+
+      if (excelPublishButton) {
+        excelPublishButton.addEventListener("click", async function () {
+          if (!lastExcelCalc && excelButton) excelButton.click();
+          var state = readState();
+          state.sales = lastExcelCalc ? lastExcelCalc.sales : state.sales;
+          state.roas = lastExcelCalc ? lastExcelCalc.roas : state.roas;
+          state.adSpend = lastExcelCalc ? lastExcelCalc.adSpend : state.adSpend;
+          state.orders = lastExcelCalc ? lastExcelCalc.orders : state.orders;
+          state.updatedAt = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
+          writeState(state);
+          applyState(state);
+          if (excelResult) {
+            excelResult.innerHTML += '<div class="mi-row"><span>공개 반영</span><strong>광고주 화면 데이터 업데이트 완료</strong></div>';
+          }
+          await persistDemoState(state, null, "CSV 계산 결과가 광고주 화면 API에도 반영되었습니다.");
+        });
+      }
+
+      var keywordSamples = {
+        "비타민 앰플": {
+          volume: 18400,
+          comp: "보통",
+          action: "콘텐츠 제목과 상품명 반영",
+          insight: "40대 여성 클릭 비중이 높아 효능/후기 메시지를 강화",
+          series: [7200, 15100, 18400, 16900, 13300, 11200, 13600, 14100, 11800, 9600, 18100, 10600],
+          device: { mobile: 85, pc: 15 },
+          gender: { female: 79, male: 21 },
+          age: [18, 28, 58, 84, 70, 36],
+          week: [82, 88, 86, 79, 74, 66, 76]
+        },
+        "저자극 크림": {
+          volume: 27100,
+          comp: "높음",
+          action: "후기형 콘텐츠와 상세페이지 소제목 보강",
+          insight: "모바일 검색 비중이 높아 상세페이지 첫 화면 문구 점검",
+          series: [13200, 18800, 27100, 24100, 22400, 16800, 19600, 23200, 20100, 14700, 25400, 18200],
+          device: { mobile: 88, pc: 12 },
+          gender: { female: 82, male: 18 },
+          age: [15, 33, 62, 88, 67, 31],
+          week: [86, 91, 84, 80, 76, 69, 72]
+        },
+        "무선 청소기": {
+          volume: 42300,
+          comp: "높음",
+          action: "가격/성능 비교형 키워드 확장",
+          insight: "주중 클릭 비율이 높아 비교형 광고 소재를 평일에 집중",
+          series: [24400, 29600, 38500, 42300, 35600, 30200, 33100, 37400, 28700, 25100, 39800, 31800],
+          device: { mobile: 64, pc: 36 },
+          gender: { female: 42, male: 58 },
+          age: [10, 31, 56, 74, 86, 61],
+          week: [72, 86, 91, 88, 80, 59, 63]
+        }
+      };
+
+      function makeKeywordSeries(volume) {
+        var base = Number(volume || 0);
+        return [0.43, 0.74, 1, 0.91, 0.76, 0.62, 0.72, 0.79, 0.66, 0.53, 0.96, 0.58].map(function (ratio, index) {
+          var wave = (((base / 100) + index * 17) % 23) / 100;
+          return Math.max(800, Math.round(base * Math.min(1.08, ratio + wave)));
+        });
+      }
+
+      function hashKeyword(keyword) {
+        return String(keyword || "").split("").reduce(function (sum, char) {
+          return sum + char.charCodeAt(0);
+        }, 0);
+      }
+
+      function makeKeywordProfile(keyword, volume) {
+        var seed = hashKeyword(keyword);
+        var mobile = 58 + (seed % 34);
+        var female = 38 + ((seed * 3) % 50);
+        var age = [18, 30, 45, 62, 54, 28].map(function (value, index) {
+          return Math.min(92, Math.max(12, value + ((seed + index * 11) % 24)));
+        });
+        var week = [70, 76, 82, 78, 72, 61, 66].map(function (value, index) {
+          return Math.min(94, Math.max(35, value + ((seed + index * 7) % 18)));
+        });
+        return {
+          series: makeKeywordSeries(volume),
+          device: { mobile: mobile, pc: 100 - mobile },
+          gender: { female: female, male: 100 - female },
+          age: age,
+          week: week
+        };
+      }
+
+      function pickKeywordScale(maxValue) {
+        var scales = [6000, 10000, 20000, 30000, 50000, 80000, 120000];
+        for (var index = 0; index < scales.length; index += 1) {
+          if (maxValue <= scales[index]) return scales[index];
+        }
+        return Math.ceil(maxValue / 50000) * 50000;
+      }
+
+      function setRatio(selector, label, value) {
+        var node = root.querySelector(selector);
+        if (!node) return;
+        node.style.width = Math.max(6, Number(value || 0)) + "%";
+        node.textContent = label + " " + Math.round(Number(value || 0)) + "%";
+      }
+
+      function setBars(selector, values) {
+        root.querySelectorAll(selector).forEach(function (node) {
+          var index = Number(node.getAttribute(selector.indexOf("age") > -1 ? "data-keyword-age-bar" : "data-keyword-week-bar"));
+          node.style.height = Math.max(10, Number(values[index] || 0)) + "%";
+        });
+      }
+
+      function renderKeywordChart(keyword, data) {
+        var series = data.series || makeKeywordSeries(data.volume);
+        var peakValue = Math.max.apply(null, series);
+        var peakIndex = series.indexOf(peakValue);
+        var chartMax = pickKeywordScale(peakValue);
+        var width = 760;
+        var height = 250;
+        var top = 18;
+        var bottom = 30;
+        var points = series.map(function (value, index) {
+          var x = series.length > 1 ? (index / (series.length - 1)) * width : 0;
+          var y = height - bottom - ((value / chartMax) * (height - top - bottom));
+          return x.toFixed(1) + "," + y.toFixed(1);
+        });
+        var peakX = series.length > 1 ? (peakIndex / (series.length - 1)) * width : 0;
+        var peakY = height - bottom - ((peakValue / chartMax) * (height - top - bottom));
+        var label = root.querySelector("[data-keyword-label]");
+        var volume = root.querySelector("[data-keyword-volume]");
+        var change = root.querySelector("[data-keyword-change]");
+        var axis = root.querySelector("[data-keyword-axis]");
+        var peak = root.querySelector("[data-keyword-peak]");
+        var insight = root.querySelector("[data-keyword-insight]");
+        var line = root.querySelector("[data-keyword-line]");
+        var point = root.querySelector("[data-keyword-point]");
+        var previous = series[series.length - 2] || data.volume;
+        var changeRate = previous > 0 ? Math.round(((data.volume - previous) / previous) * 100) : 0;
+        var profile = {
+          device: data.device || { mobile: 85, pc: 15 },
+          gender: data.gender || { female: 79, male: 21 },
+          age: data.age || [18, 28, 58, 84, 70, 36],
+          week: data.week || [82, 88, 86, 79, 74, 66, 76]
+        };
+
+        if (label) label.textContent = keyword;
+        if (volume) volume.textContent = formatNumber(data.volume);
+        if (change) change.textContent = (changeRate >= 0 ? "+" : "") + changeRate + "%";
+        if (axis) axis.textContent = Math.round(chartMax / 1000) + "K";
+        if (peak) peak.textContent = "2026.03 · " + formatNumber(peakValue);
+        if (insight) insight.textContent = data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
+        if (line) line.setAttribute("points", points.join(" "));
+        if (point) {
+          point.setAttribute("cx", peakX.toFixed(1));
+          point.setAttribute("cy", peakY.toFixed(1));
+        }
+        setRatio("[data-keyword-device-mobile]", "모바일", profile.device.mobile);
+        setRatio("[data-keyword-device-pc]", "PC", profile.device.pc);
+        setRatio("[data-keyword-gender-female]", "여성", profile.gender.female);
+        setRatio("[data-keyword-gender-male]", "남성", profile.gender.male);
+        setBars("[data-keyword-age-bar]", profile.age);
+        setBars("[data-keyword-week-bar]", profile.week);
+      }
+
+      function getKeywordApiUrl() {
+        if (window.MI_NAVER_KEYWORD_API_URL) return window.MI_NAVER_KEYWORD_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-keyword";
+        return "http://127.0.0.1:8787/api/naver-keyword";
+      }
+
+      function buildKeywordFallback(keyword) {
+        var fallbackVolume = Math.max(1200, keyword.length * 2300);
+        var profile = makeKeywordProfile(keyword, fallbackVolume);
+        return keywordSamples[keyword] || {
+          volume: fallbackVolume,
+          comp: fallbackVolume > 25000 ? "높음" : "보통",
+          action: "네이버 검색량 확인 후 SEO 후보로 분류",
+          insight: "검색량 대비 경쟁도를 보고 네이버 SEO와 광고 키워드 우선순위 결정",
+          series: profile.series,
+          device: profile.device,
+          gender: profile.gender,
+          age: profile.age,
+          week: profile.week
+        };
+      }
+
+      function normalizeKeywordApiData(payload, fallbackData) {
+        var chartData = payload && payload.chartData ? payload.chartData : {};
+        var data = Object.assign({}, fallbackData, chartData);
+        data.volume = Number(data.volume || fallbackData.volume || 0);
+        data.comp = data.comp || fallbackData.comp || "확인 필요";
+        data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
+        data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
+        data.series = Array.isArray(data.series) && data.series.length ? data.series : fallbackData.series;
+        data.device = data.device || fallbackData.device;
+        data.gender = data.gender || fallbackData.gender;
+        data.age = Array.isArray(data.age) && data.age.length ? data.age : fallbackData.age;
+        data.week = Array.isArray(data.week) && data.week.length ? data.week : fallbackData.week;
+        return data;
+      }
+
+      function keywordSourceLabel(payload, fallbackLabel) {
+        var source = payload && payload.source ? payload.source : {};
+        if (!source.searchVolume) return fallbackLabel;
+        return source.trend === "NAVER DataLab API" ? "네이버 검색광고 API + 데이터랩 API" : "네이버 검색광고 API";
+      }
+
+      function renderKeywordResult(keyword, data, sourceLabel) {
+        keywordResult.innerHTML =
+          '<div class="mi-row"><span>검색 키워드</span><strong>' + escapeHtml(keyword) + '</strong></div>' +
+          '<div class="mi-row"><span>월 검색량</span><strong>' + formatNumber(data.volume) + '</strong></div>' +
+          '<div class="mi-row"><span>경쟁도</span><strong>' + escapeHtml(data.comp) + '</strong></div>' +
+          '<div class="mi-row"><span>데이터 출처</span><strong>' + escapeHtml(sourceLabel) + '</strong></div>' +
+          '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(data.action) + '</strong></div>';
+      }
+
+      async function fetchKeywordData(keyword) {
+        if (!window.fetch) throw new Error("현재 브라우저에서 fetch를 사용할 수 없습니다.");
+        var url = getKeywordApiUrl() + "?keyword=" + encodeURIComponent(keyword);
+        var response = await fetch(url, { method: "GET", cache: "no-store" });
+        var payload = await response.json().catch(function () {
+          return null;
+        });
+        if (!response.ok || !payload || payload.ok === false) {
+          throw new Error((payload && payload.message) || "네이버 키워드 API 응답이 올바르지 않습니다.");
+        }
+        return payload;
+      }
+
+      var keywordInput = root.querySelector("[data-admin-keyword-input]");
+      var keywordButton = root.querySelector("[data-admin-keyword-search]");
+      var keywordResult = root.querySelector("[data-admin-keyword-result]");
+      var keywordStatus = root.querySelector("[data-admin-keyword-status]");
+      renderKeywordChart("비타민 앰플", keywordSamples["비타민 앰플"]);
+      if (keywordInput && keywordButton && keywordResult) {
+        keywordButton.addEventListener("click", async function () {
+          var keyword = keywordInput.value.trim() || "비타민 앰플";
+          var fallbackData = buildKeywordFallback(keyword);
+          keywordButton.disabled = true;
+          setStatus(keywordStatus, "네이버 키워드 API 조회 중입니다.", "");
+          try {
+            var payload = await fetchKeywordData(keyword);
+            var data = normalizeKeywordApiData(payload, fallbackData);
+            renderKeywordChart(keyword, data);
+            renderKeywordResult(keyword, data, keywordSourceLabel(payload, "네이버 API"));
+            setStatus(keywordStatus, "조회 완료: 네이버 검색 기반 실데이터를 반영했습니다.", "is-ok");
+          } catch (error) {
+            renderKeywordChart(keyword, fallbackData);
+            renderKeywordResult(keyword, fallbackData, "데모 계산값");
+            setStatus(keywordStatus, "네이버 API 미연결: " + error.message + " 데모 계산값으로 표시합니다.", "is-warn");
+          } finally {
+            keywordButton.disabled = false;
+          }
+        });
+      }
+
+      function csvValue(value) {
+        return '"' + String(value || "").replace(/"/g, '""') + '"';
+      }
+
+      function buildReportCsv(type, state) {
+        var rows = [
+          ["보고서 유형", type],
+          ["광고주", state.client],
+          ["대행사 코드", state.code],
+          ["공개 매출", state.sales],
+          ["ROAS", state.roas],
+          ["광고비", state.adSpend],
+          ["구매수", state.orders],
+          ["목표 달성률", state.achievement],
+          ["상태", state.status],
+          ["다음 일정", state.nextSchedule],
+          ["공개 코멘트", state.comment],
+          [],
+          ["채널", "요약", "매출", "ROAS"]
+        ];
+        (state.channels || []).forEach(function (item) {
+          rows.push([item.name, item.summary, item.sales, item.roas]);
+        });
+        rows.push([]);
+        rows.push(["날짜", "일정", "상세", "상태"]);
+        (state.schedules || []).forEach(function (item) {
+          rows.push([item.date, item.title, item.detail, item.status]);
+        });
+        return rows.map(function (row) {
+          return row.map(csvValue).join(",");
+        }).join("\n");
+      }
+
+      root.querySelectorAll("[data-admin-download]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var original = button.innerHTML;
+          var type = button.getAttribute("data-report-type") || "report";
+          var state = readState();
+          var csv = buildReportCsv(type, state);
+          var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+          var url = URL.createObjectURL(blob);
+          var link = document.createElement("a");
+          link.href = url;
+          link.download = "moment-insight-" + type + "-" + state.client + ".csv";
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(function () {
+            URL.revokeObjectURL(url);
+          }, 1000);
+          button.innerHTML = "<span><b>CSV 생성 완료</b><small>관리자가 확인 후 광고주에게 전달</small></span><i>✓</i>";
+          setTimeout(function () {
+            button.innerHTML = original;
+          }, 1700);
+        });
+      });
+
+      var initial = (window.location.hash || "").replace("#mi-admin-", "");
+      setScreen(initial || "home", false);
+    })();
+  </script>
+</section>

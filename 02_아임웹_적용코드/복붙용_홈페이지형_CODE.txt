@@ -1,0 +1,2099 @@
+<meta charset="utf-8" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<!--
+  모먼트인사이트 아임웹 원샷 코드 - 홈페이지형 v1
+  사용 위치: 아임웹 디자인 모드 > 코드 위젯/HTML 위젯 > 전체 복사 붙여넣기
+  기준: B2B SaaS 홈페이지 / 광고주·관리자 진입 / 서비스 구조 / 데이터 모델 / MVP 로드맵
+-->
+
+<section id="mi-home" class="mi-home-wrap">
+  <style>
+    #mi-home,
+    #mi-home * {
+      box-sizing: border-box;
+    }
+
+    #mi-home {
+      --mi-bg: #f5f7fb;
+      --mi-panel: #ffffff;
+      --mi-ink: #111827;
+      --mi-navy: #061a3a;
+      --mi-navy-2: #0b2447;
+      --mi-muted: #667085;
+      --mi-soft: #eef2f7;
+      --mi-line: #dfe5ef;
+      --mi-blue: #2563eb;
+      --mi-green: #047857;
+      --mi-green-bg: #e8f7f0;
+      --mi-red: #b42318;
+      --mi-red-bg: #fff1f0;
+      --mi-yellow: #9a6700;
+      --mi-yellow-bg: #fff8db;
+      --mi-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+      min-height: 100vh;
+      margin: 0;
+      color: var(--mi-ink);
+      background: var(--mi-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.5;
+    }
+
+    #mi-home a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    #mi-home button,
+    #mi-home input {
+      font: inherit;
+    }
+
+    #mi-home .mi-shell {
+      width: min(1180px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    #mi-home .mi-topbar {
+      position: sticky;
+      z-index: 10;
+      top: 0;
+      border-bottom: 1px solid rgba(223, 229, 239, 0.9);
+      background: rgba(245, 247, 251, 0.92);
+      backdrop-filter: blur(16px);
+    }
+
+    #mi-home .mi-topbar-inner {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    #mi-home .mi-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-nav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    #mi-home .mi-nav a {
+      display: inline-flex;
+      min-height: 36px;
+      align-items: center;
+      border-radius: 8px;
+      padding: 0 10px;
+      color: #344054;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-nav a:hover {
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-home .mi-top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #mi-home .mi-button {
+      display: inline-flex;
+      min-height: 42px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+    }
+
+    #mi-home .mi-button:hover {
+      transform: translateY(-1px);
+    }
+
+    #mi-home .mi-button.primary {
+      color: #fff;
+      background: var(--mi-navy);
+      box-shadow: 0 12px 22px rgba(6, 26, 58, 0.18);
+    }
+
+    #mi-home .mi-button.secondary {
+      border-color: var(--mi-line);
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-home .mi-hero {
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--mi-line);
+      background:
+        linear-gradient(180deg, #ffffff 0%, #f5f7fb 100%),
+        linear-gradient(90deg, rgba(6, 26, 58, 0.05) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(6, 26, 58, 0.05) 1px, transparent 1px);
+      background-size: auto, 38px 38px, 38px 38px;
+    }
+
+    #mi-home .mi-hero-grid {
+      min-height: 720px;
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(440px, 1.08fr);
+      gap: 28px;
+      align-items: center;
+      padding: 56px 0;
+    }
+
+    #mi-home .mi-kicker,
+    #mi-home .mi-badge {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 11px;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-kicker {
+      color: var(--mi-navy);
+      background: #e9eef6;
+    }
+
+    #mi-home .mi-badge {
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-home .mi-badge.warn {
+      color: var(--mi-yellow);
+      background: var(--mi-yellow-bg);
+    }
+
+    #mi-home .mi-badge.danger {
+      color: var(--mi-red);
+      background: var(--mi-red-bg);
+    }
+
+    #mi-home h1,
+    #mi-home h2,
+    #mi-home h3,
+    #mi-home p {
+      margin-top: 0;
+    }
+
+    #mi-home h1 {
+      margin: 16px 0 16px;
+      color: var(--mi-navy);
+      font-size: clamp(38px, 5vw, 64px);
+      line-height: 1.04;
+      letter-spacing: 0;
+    }
+
+    #mi-home h2 {
+      margin-bottom: 10px;
+      color: var(--mi-navy);
+      font-size: clamp(25px, 3vw, 38px);
+      line-height: 1.16;
+      letter-spacing: 0;
+    }
+
+    #mi-home h3 {
+      margin-bottom: 7px;
+      color: var(--mi-navy);
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    #mi-home p {
+      margin-bottom: 0;
+      color: var(--mi-muted);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-lead {
+      max-width: 560px;
+      color: #475467;
+      font-size: 19px;
+      font-weight: 700;
+    }
+
+    #mi-home .mi-hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 26px;
+    }
+
+    #mi-home .mi-proof-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+    #mi-home .mi-proof {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.84);
+    }
+
+    #mi-home .mi-proof strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 20px;
+      line-height: 1.1;
+    }
+
+    #mi-home .mi-proof span {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-impact-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    #mi-home .mi-impact-item {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+
+    #mi-home .mi-impact-item strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-impact-item span {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-quick-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+      gap: 10px;
+      margin-top: 14px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    #mi-home .mi-quick-panel strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-quick-panel span {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    #mi-home .mi-quick-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #mi-home .mi-quick-link {
+      display: grid;
+      align-content: center;
+      min-height: 54px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--mi-navy);
+      background: #f8fafc;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-quick-link small {
+      display: block;
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-score-panel {
+      display: grid;
+      grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    #mi-home .mi-score-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 24px;
+      background: #fff;
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-home .mi-score-card.is-dark {
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-home .mi-score-card.is-dark h2,
+    #mi-home .mi-score-card.is-dark p {
+      color: inherit;
+    }
+
+    #mi-home .mi-score-row {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    #mi-home .mi-score-box {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    #mi-home .mi-score-box span,
+    #mi-home .mi-score-box strong,
+    #mi-home .mi-score-box small {
+      display: block;
+    }
+
+    #mi-home .mi-score-box span {
+      color: rgba(255, 255, 255, 0.66);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-score-box strong {
+      margin-top: 5px;
+      color: #fff;
+      font-size: 36px;
+      line-height: 1;
+    }
+
+    #mi-home .mi-score-box small {
+      margin-top: 8px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    #mi-home .mi-completion-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    #mi-home .mi-completion-item {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 13px;
+      background: #f8fafc;
+    }
+
+    #mi-home .mi-completion-item strong,
+    #mi-home .mi-completion-item span {
+      display: block;
+    }
+
+    #mi-home .mi-completion-item strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-home .mi-completion-item span {
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    #mi-home .mi-product {
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 8px;
+      padding: 14px;
+      background: var(--mi-navy);
+      box-shadow: 0 28px 70px rgba(6, 26, 58, 0.24);
+    }
+
+    #mi-home .mi-product-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: #d9e2ef;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-product-dots {
+      display: inline-flex;
+      gap: 6px;
+    }
+
+    #mi-home .mi-product-dots i {
+      width: 8px;
+      height: 8px;
+      display: block;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.38);
+    }
+
+    #mi-home .mi-dashboard-preview {
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    #mi-home .mi-preview-side,
+    #mi-home .mi-preview-main {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 8px;
+      background: #0b2447;
+    }
+
+    #mi-home .mi-preview-side {
+      padding: 14px;
+    }
+
+    #mi-home .mi-preview-side strong {
+      display: block;
+      margin-bottom: 12px;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    #mi-home .mi-preview-menu {
+      display: grid;
+      gap: 7px;
+    }
+
+    #mi-home .mi-preview-menu span {
+      display: block;
+      border-radius: 8px;
+      padding: 9px 10px;
+      color: #b8c7dc;
+      background: rgba(255, 255, 255, 0.05);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-preview-menu span.is-active {
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-home .mi-preview-main {
+      min-height: 460px;
+      padding: 16px;
+      color: #fff;
+      background: #f8fafc;
+    }
+
+    #mi-home .mi-preview-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    #mi-home .mi-preview-head h3 {
+      margin: 0 0 4px;
+      color: var(--mi-navy);
+      font-size: 20px;
+    }
+
+    #mi-home .mi-preview-head p {
+      font-size: 12px;
+    }
+
+    #mi-home .mi-preview-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    #mi-home .mi-preview-metric {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    #mi-home .mi-preview-metric span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-preview-metric strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--mi-navy);
+      font-size: 19px;
+      line-height: 1.1;
+    }
+
+    #mi-home .mi-preview-panels {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(180px, 0.8fr);
+      gap: 10px;
+    }
+
+    #mi-home .mi-mini-chart,
+    #mi-home .mi-insight-panel {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-home .mi-mini-chart h4,
+    #mi-home .mi-insight-panel h4 {
+      margin: 0 0 10px;
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-home .mi-bars {
+      height: 170px;
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      border-bottom: 1px solid var(--mi-line);
+      padding-top: 20px;
+    }
+
+    #mi-home .mi-bars i {
+      flex: 1;
+      min-width: 14px;
+      display: block;
+      border-radius: 6px 6px 0 0;
+      background: #8fb3ff;
+    }
+
+    #mi-home .mi-insight-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-home .mi-insight-list div {
+      border-radius: 8px;
+      padding: 10px;
+      color: #344054;
+      background: #f5f7fb;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-section {
+      padding: 70px 0;
+    }
+
+    #mi-home .mi-section.compact {
+      padding-top: 36px;
+    }
+
+    #mi-home .mi-section-head {
+      max-width: 760px;
+      margin-bottom: 28px;
+    }
+
+    #mi-home .mi-section-head .mi-kicker {
+      margin-bottom: 12px;
+    }
+
+    #mi-home .mi-grid-4,
+    #mi-home .mi-grid-3,
+    #mi-home .mi-grid-2 {
+      display: grid;
+      gap: 14px;
+    }
+
+    #mi-home .mi-grid-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    #mi-home .mi-grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    #mi-home .mi-grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #mi-home .mi-card,
+    #mi-home .mi-row-card,
+    #mi-home .mi-table-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-home .mi-card {
+      padding: 18px;
+    }
+
+    #mi-home .mi-card-number {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 14px;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-card p {
+      font-size: 13px;
+    }
+
+    #mi-home .mi-chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 14px;
+    }
+
+    #mi-home .mi-chip {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 999px;
+      padding: 0 9px;
+      color: #344054;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-role-panel {
+      display: grid;
+      grid-template-columns: minmax(320px, 0.82fr) minmax(0, 1.18fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    #mi-home .mi-role-tabs {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-home .mi-role-tab {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 40px minmax(0, 1fr);
+      gap: 12px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      color: var(--mi-ink);
+      background: #fff;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    #mi-home .mi-role-tab.is-active {
+      border-color: rgba(6, 26, 58, 0.34);
+      background: #edf3fb;
+    }
+
+    #mi-home .mi-role-tab i {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-style: normal;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-role-tab strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-role-tab span {
+      display: block;
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    #mi-home .mi-role-output {
+      min-height: 100%;
+      display: grid;
+      align-content: start;
+      gap: 14px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 22px;
+      background: #fff;
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-home .mi-role-output h3 {
+      font-size: 24px;
+    }
+
+    #mi-home .mi-permission-list {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-home .mi-permission-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #f8fafc;
+    }
+
+    #mi-home .mi-permission-item strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-home .mi-permission-item span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    #mi-home .mi-menu-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    #mi-home .mi-search-box {
+      display: grid;
+      gap: 7px;
+    }
+
+    #mi-home .mi-input {
+      width: min(100%, 360px);
+      min-height: 42px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 0 12px;
+      color: var(--mi-ink);
+      background: #fff;
+      outline: none;
+    }
+
+    #mi-home .mi-input:focus {
+      border-color: rgba(37, 99, 235, 0.45);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    #mi-home .mi-menu-card {
+      min-height: 168px;
+      display: grid;
+      align-content: start;
+      gap: 10px;
+    }
+
+    #mi-home .mi-menu-card.is-hidden {
+      display: none;
+    }
+
+    #mi-home .mi-search-hint {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-align: right;
+    }
+
+    #mi-home .mi-menu-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: auto;
+    }
+
+    #mi-home .mi-flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-home .mi-flow-step {
+      position: relative;
+      min-height: 144px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    #mi-home .mi-flow-step strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 16px;
+    }
+
+    #mi-home .mi-flow-step p {
+      margin-top: 8px;
+      font-size: 13px;
+    }
+
+    #mi-home .mi-flow-step em {
+      position: absolute;
+      right: 14px;
+      bottom: 12px;
+      color: #c5ceda;
+      font-style: normal;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-table-card {
+      overflow: hidden;
+      box-shadow: none;
+    }
+
+    #mi-home .mi-data-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+      font-size: 13px;
+    }
+
+    #mi-home .mi-data-table th,
+    #mi-home .mi-data-table td {
+      border-bottom: 1px solid var(--mi-line);
+      padding: 13px 14px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    #mi-home .mi-data-table th {
+      color: var(--mi-navy);
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-data-table td {
+      color: #344054;
+    }
+
+    #mi-home .mi-data-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    #mi-home .mi-schema-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-home .mi-schema-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    #mi-home .mi-schema-card strong {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-schema-card code {
+      display: block;
+      color: #475467;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      white-space: normal;
+    }
+
+    #mi-home .mi-schema-card span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.55;
+    }
+
+    #mi-home .mi-roadmap-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    #mi-home .mi-roadmap-tab {
+      min-height: 40px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 0 13px;
+      color: #344054;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #mi-home .mi-roadmap-tab.is-active {
+      border-color: var(--mi-navy);
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-home .mi-roadmap-panel {
+      display: none;
+    }
+
+    #mi-home .mi-roadmap-panel.is-active {
+      display: grid;
+      gap: 14px;
+    }
+
+    #mi-home .mi-checklist {
+      display: grid;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    #mi-home .mi-checklist span {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      color: #344054;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    #mi-home .mi-checklist span::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      flex: 0 0 7px;
+      margin-top: 7px;
+      border-radius: 999px;
+      background: var(--mi-blue);
+    }
+
+    #mi-home .mi-decision-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    #mi-home .mi-decision-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 18px;
+      background: #fff;
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-home .mi-decision-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    #mi-home .mi-decision-item {
+      display: grid;
+      grid-template-columns: 94px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #f8fafc;
+    }
+
+    #mi-home .mi-decision-item b {
+      color: var(--mi-navy);
+      font-size: 12px;
+    }
+
+    #mi-home .mi-decision-item span {
+      color: #344054;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-faq-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    #mi-home .mi-faq-item {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    #mi-home .mi-faq-item strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 15px;
+    }
+
+    #mi-home .mi-faq-item span {
+      display: block;
+      margin-top: 7px;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.55;
+    }
+
+    #mi-home .mi-cta {
+      border-radius: 8px;
+      padding: 34px;
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-home .mi-cta h2 {
+      color: #fff;
+    }
+
+    #mi-home .mi-cta p {
+      max-width: 680px;
+      color: #cbd6e4;
+    }
+
+    #mi-home .mi-cta-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    #mi-home .mi-cta .mi-button.primary {
+      color: var(--mi-navy);
+      background: #fff;
+      box-shadow: none;
+    }
+
+    #mi-home .mi-cta .mi-button.secondary {
+      border-color: rgba(255, 255, 255, 0.22);
+      color: #fff;
+      background: transparent;
+    }
+
+    #mi-home .mi-footer {
+      padding: 26px 0 40px;
+      color: var(--mi-muted);
+      font-size: 13px;
+    }
+
+    @media (max-width: 1040px) {
+      #mi-home .mi-nav {
+        display: none;
+      }
+
+      #mi-home .mi-hero-grid,
+      #mi-home .mi-score-panel,
+      #mi-home .mi-role-panel,
+      #mi-home .mi-quick-panel,
+      #mi-home .mi-decision-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-home .mi-dashboard-preview {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-home .mi-preview-side {
+        display: none;
+      }
+
+      #mi-home .mi-grid-4,
+      #mi-home .mi-schema-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #mi-home .mi-flow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 720px) {
+      #mi-home .mi-shell {
+        width: min(100% - 28px, 1180px);
+      }
+
+      #mi-home .mi-topbar-inner {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 14px 0;
+      }
+
+      #mi-home .mi-top-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      #mi-home .mi-button {
+        width: 100%;
+      }
+
+      #mi-home .mi-hero-grid {
+        min-height: 0;
+        padding: 42px 0;
+      }
+
+      #mi-home .mi-proof-row,
+      #mi-home .mi-impact-strip,
+      #mi-home .mi-quick-actions,
+      #mi-home .mi-score-row,
+      #mi-home .mi-completion-grid,
+      #mi-home .mi-preview-grid,
+      #mi-home .mi-preview-panels,
+      #mi-home .mi-grid-2,
+      #mi-home .mi-grid-3,
+      #mi-home .mi-grid-4,
+      #mi-home .mi-schema-grid,
+      #mi-home .mi-flow {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-home .mi-section {
+        padding: 58px 0;
+      }
+
+      #mi-home .mi-product {
+        padding: 10px;
+      }
+
+      #mi-home .mi-preview-main {
+        min-height: 0;
+      }
+
+      #mi-home .mi-data-table {
+        min-width: 680px;
+      }
+
+      #mi-home .mi-table-scroll {
+        overflow-x: auto;
+      }
+
+      #mi-home .mi-cta {
+        padding: 24px;
+      }
+    }
+  </style>
+
+  <header class="mi-topbar">
+    <div class="mi-shell mi-topbar-inner">
+      <a class="mi-brand" href="#mi-home-top" aria-label="모먼트인사이트 홈">
+        <span class="mi-mark">MI</span>
+        <span>Moment Insight</span>
+      </a>
+
+      <nav class="mi-nav" aria-label="홈페이지 메뉴">
+        <a href="#mi-home-top">홈</a>
+        <a href="#mi-home-quality">완성도</a>
+        <a href="#mi-home-quick">체험 동선</a>
+        <a href="#mi-home-menus">기능</a>
+        <a href="#mi-home-faq">FAQ</a>
+        <a href="#mi-home-roadmap">로드맵</a>
+      </nav>
+
+      <div class="mi-top-actions">
+        <a class="mi-button secondary" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-dashboard">광고주 체험</a>
+        <a class="mi-button primary" href="아임웹_원샷코드_관리자형_모먼트인사이트.html#mi-admin-home">관리자 체험</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="mi-home-top">
+    <section class="mi-hero" aria-label="모먼트인사이트 소개">
+      <div class="mi-shell mi-hero-grid">
+        <div>
+          <span class="mi-kicker">Marketing Agency Data Platform</span>
+          <h1>모먼트 인사이트</h1>
+          <p class="mi-lead">광고주별 성과, 보고서, 일정, 다음 액션을 한곳에서 공유하는 마케팅 대행사용 운영 포털입니다.</p>
+          <div class="mi-hero-actions">
+            <a class="mi-button primary" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-dashboard">광고주 화면 바로 보기</a>
+            <a class="mi-button secondary" href="아임웹_원샷코드_관리자형_모먼트인사이트.html#mi-admin-home">관리자 화면 바로 보기</a>
+          </div>
+          <div class="mi-proof-row" aria-label="핵심 방향">
+            <div class="mi-proof"><strong>분리</strong><span>광고주별 독립 공간</span></div>
+            <div class="mi-proof"><strong>검수</strong><span>관리자 확인 후 공개</span></div>
+            <div class="mi-proof"><strong>실행</strong><span>다음 액션까지 공유</span></div>
+          </div>
+          <div class="mi-quick-panel" aria-label="빠른 체험">
+            <div>
+              <strong>3분 안에 확인할 화면</strong>
+              <span>광고주, 관리자, 키워드 조회 흐름을 바로 열어볼 수 있습니다.</span>
+            </div>
+            <div class="mi-quick-actions">
+              <a class="mi-quick-link" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-dashboard">광고주 화면<small>매출·일정·공개 보고서</small></a>
+              <a class="mi-quick-link" href="아임웹_원샷코드_관리자형_모먼트인사이트.html#mi-admin-home">관리자 화면<small>입력·검수·공개 승인</small></a>
+              <a class="mi-quick-link" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-keyword-tool">키워드 조회<small>네이버 프록시 우선 조회</small></a>
+            </div>
+          </div>
+        </div>
+
+        <aside class="mi-product" aria-label="대시보드 미리보기">
+          <div class="mi-product-top">
+            <span class="mi-product-dots"><i></i><i></i><i></i></span>
+            <span>광고주 대시보드 미리보기</span>
+          </div>
+          <div class="mi-dashboard-preview">
+            <div class="mi-preview-side">
+              <strong>Moment Insight</strong>
+              <div class="mi-preview-menu">
+                <span class="is-active">Dashboard</span>
+                <span>KPI Report</span>
+                <span>Sales Report</span>
+                <span>Ads Performance</span>
+                <span>Keyword Analysis</span>
+                <span>Schedule</span>
+                <span>Action Plan</span>
+              </div>
+            </div>
+            <div class="mi-preview-main">
+              <div class="mi-preview-head">
+                <div>
+                  <h3 data-mi-preview-title>예시브랜드 현재 성과</h3>
+                  <p data-mi-preview-subtitle>관리자가 공개한 네이버·쿠팡 합산 데이터 기준</p>
+                </div>
+                <span class="mi-badge" data-mi-preview-badge>공개용</span>
+              </div>
+              <div class="mi-preview-grid">
+                <div class="mi-preview-metric"><span>이번 달 매출</span><strong data-mi-preview-sales>4,180만원</strong></div>
+                <div class="mi-preview-metric"><span>광고비</span><strong data-mi-preview-spend>720만원</strong></div>
+                <div class="mi-preview-metric"><span>ROAS</span><strong data-mi-preview-roas>581%</strong></div>
+                <div class="mi-preview-metric"><span>달성률</span><strong data-mi-preview-goal>116%</strong></div>
+              </div>
+              <div class="mi-preview-panels">
+                <div class="mi-mini-chart">
+                  <h4>채널별 매출 추이</h4>
+                  <div class="mi-bars" aria-hidden="true">
+                    <i style="height: 44%;"></i>
+                    <i style="height: 58%;"></i>
+                    <i style="height: 52%;"></i>
+                    <i style="height: 70%;"></i>
+                    <i style="height: 64%;"></i>
+                    <i style="height: 86%;"></i>
+                    <i style="height: 78%;"></i>
+                    <i style="height: 92%;"></i>
+                  </div>
+                </div>
+                <div class="mi-insight-panel">
+                  <h4>이번 주 인사이트</h4>
+                  <div class="mi-insight-list">
+                    <div>네이버 검색광고 CTR 상승</div>
+                    <div>쿠팡 ROAS는 유지, 키워드 확장 필요</div>
+                    <div>다음 액션: 소재 교체 + 리뷰 확보</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="mi-section compact" id="mi-home-quality">
+      <div class="mi-shell">
+        <div class="mi-score-panel">
+          <article class="mi-score-card is-dark">
+            <span class="mi-kicker">현재 완성도</span>
+            <h2>시연용은 96점, 운영 준비는 88점까지 올렸습니다.</h2>
+            <p>외부 서비스 연동은 잠시 보류하고, 디자인 톤앤매너·광고주/관리자 흐름·권한/데이터 구조를 먼저 고정한 기준입니다.</p>
+            <div class="mi-score-row">
+              <div class="mi-score-box"><span>아임웹 데모 기준</span><strong>96점</strong><small>홈페이지, 광고주형, 관리자형 시연 기준</small></div>
+              <div class="mi-score-box"><span>운영 준비 기준</span><strong>88점</strong><small>수동 입력, 공개 승인, 백엔드 설계 기준</small></div>
+            </div>
+          </article>
+
+          <aside class="mi-score-card">
+            <span class="mi-kicker">100점까지 남은 조건</span>
+            <h2>다음 점수는 외부 연동보다 운영 안정성에서 올라갑니다.</h2>
+            <p>지금은 API보다 먼저 로그인, DB, 파일, 이력 구조를 정해야 실제 운영으로 넘어갈 수 있습니다.</p>
+            <div class="mi-completion-grid">
+              <div class="mi-completion-item"><strong>실제 로그인/권한</strong><span>광고주는 본인 client_id만 접근</span></div>
+              <div class="mi-completion-item"><strong>DB 저장 구조</strong><span>원천값, 공개값, 내부 메모 분리</span></div>
+              <div class="mi-completion-item"><strong>파일 저장소</strong><span>보고서, 이미지, 엑셀 파일 권한 관리</span></div>
+              <div class="mi-completion-item"><strong>변경 이력</strong><span>누가 언제 공개했는지 기록</span></div>
+              <div class="mi-completion-item"><strong>보고서 생성</strong><span>주간·월간 보고서 다운로드 흐름</span></div>
+              <div class="mi-completion-item"><strong>외부 연동</strong><span>네이버 키워드 프록시 우선 반영, 쿠팡·메타는 3차로 보류</span></div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-home-structure">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">전체 서비스 구조</span>
+          <h2>필요한 화면만 나눕니다.</h2>
+          <p>광고주는 결과를 보고, 관리자는 수동 입력·검수·공개 승인만 처리합니다. 실제 개발 때 같은 구조를 DB와 API로 교체합니다.</p>
+        </div>
+
+        <div class="mi-grid-4">
+          <article class="mi-card">
+            <span class="mi-card-number">01</span>
+            <h3>Public Homepage</h3>
+            <p>서비스의 첫인상과 역할별 진입을 담당합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">브랜드 신뢰</span><span class="mi-chip">역할 선택</span></div>
+          </article>
+          <article class="mi-card">
+            <span class="mi-card-number">02</span>
+            <h3>Client Dashboard</h3>
+            <p>광고주가 매출, KPI, 일정, 보고서를 확인합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">공개 데이터</span><span class="mi-chip">브랜드별 격리</span></div>
+          </article>
+          <article class="mi-card">
+            <span class="mi-card-number">03</span>
+            <h3>Admin Console</h3>
+            <p>관리자가 운영 입력, 계산, 보고서, 공개 설정을 처리합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">운영 원본</span><span class="mi-chip">공개 승인</span></div>
+          </article>
+          <article class="mi-card">
+            <span class="mi-card-number">04</span>
+            <h3>Agency Code Sync</h3>
+            <p>대행사 코드로 광고주와 관리자 데이터를 연결합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">권한 연결</span><span class="mi-chip">접근 제어</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact" id="mi-home-quick">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">체험 동선</span>
+          <h2>궁금한 화면으로 바로 들어갑니다.</h2>
+          <p>홈페이지에서 설명만 읽게 하지 않고, 역할별 핵심 화면으로 바로 이동하게 정리했습니다.</p>
+        </div>
+
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <h3>광고주 입장</h3>
+            <p>광고주가 실제로 보게 될 매출, KPI, 일정, 공개 데이터 화면을 확인합니다.</p>
+            <div class="mi-chip-row"><a class="mi-chip" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-dashboard">대시보드 열기</a><a class="mi-chip" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html#mi-sales">매출 현황</a></div>
+          </article>
+          <article class="mi-card">
+            <h3>관리자 입장</h3>
+            <p>관리자가 데이터를 입력하고 계산한 뒤 광고주 화면에 공개하는 흐름을 봅니다.</p>
+            <div class="mi-chip-row"><a class="mi-chip" href="아임웹_원샷코드_관리자형_모먼트인사이트.html#mi-admin-excel">데이터 입력</a><a class="mi-chip" href="아임웹_원샷코드_관리자형_모먼트인사이트.html#mi-admin-client-preview">광고주 미리보기</a></div>
+          </article>
+          <article class="mi-card">
+            <h3>운영 전 확인</h3>
+            <p>현재 가능한 것과 API 키가 있어야 가능한 것을 분리해서 확인합니다.</p>
+            <div class="mi-chip-row"><a class="mi-chip" href="#mi-home-faq">FAQ 보기</a><a class="mi-chip" href="#mi-home-roadmap">로드맵 보기</a></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact" id="mi-home-roles">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">사용자 권한 구조</span>
+          <h2>같은 데이터, 다른 화면.</h2>
+          <p>광고주는 공개값만 보고, 관리자는 원천 데이터와 내부 메모까지 관리합니다.</p>
+        </div>
+
+        <div class="mi-role-panel">
+          <div class="mi-role-tabs" aria-label="역할 선택">
+            <button class="mi-role-tab is-active" type="button" data-mi-role-tab="client">
+              <i>CL</i>
+              <span><strong>광고주</strong><span>본인 브랜드 성과, 일정, 공개 보고서만 확인</span></span>
+            </button>
+            <button class="mi-role-tab" type="button" data-mi-role-tab="manager">
+              <i>AD</i>
+              <span><strong>관리자</strong><span>전체 광고주, 원천 데이터, 공개 설정 관리</span></span>
+            </button>
+            <button class="mi-role-tab" type="button" data-mi-role-tab="analyst">
+              <i>AN</i>
+              <span><strong>분석 담당자</strong><span>성과 입력, 키워드 분석, 인사이트 초안 작성</span></span>
+            </button>
+          </div>
+
+          <article class="mi-role-output">
+            <span class="mi-badge" data-mi-role-badge>Client View</span>
+            <h3 data-mi-role-title>광고주는 필요한 결과만 봅니다.</h3>
+            <p data-mi-role-copy>매출, KPI, 일정, 공개 보고서만 확인합니다. 내부 메모와 원천 데이터는 숨깁니다.</p>
+            <div class="mi-permission-list" data-mi-role-list>
+              <div class="mi-permission-item"><strong>Dashboard</strong><span>읽기</span></div>
+              <div class="mi-permission-item"><strong>Reports / Files</strong><span>공개 승인 자료만</span></div>
+              <div class="mi-permission-item"><strong>Internal Memo</strong><span>숨김</span></div>
+              <div class="mi-permission-item"><strong>Data Input</strong><span>불가</span></div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact" id="mi-home-backend">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">백엔드 준비 구조</span>
+          <h2>외부 연동 전에도 운영 뼈대는 잡아둘 수 있습니다.</h2>
+          <p>지금 화면은 수동 입력과 임시 저장으로 시연하고, 실제 개발에서는 같은 필드를 로그인·DB·파일 저장소로 연결하면 됩니다.</p>
+        </div>
+
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <h3>권한 엔진</h3>
+            <p>광고주는 본인 브랜드만 보고, 관리자는 전체 광고주를 관리합니다.</p>
+            <div class="mi-checklist">
+              <span>role: admin / manager / client</span>
+              <span>client_id 기준 데이터 필터</span>
+              <span>내부 메모와 공개 코멘트 분리</span>
+            </div>
+          </article>
+          <article class="mi-card">
+            <h3>운영 DB</h3>
+            <p>수동 입력값도 나중에 그대로 DB 컬럼으로 옮길 수 있게 설계합니다.</p>
+            <div class="mi-checklist">
+              <span>KPI 목표와 실제값 분리</span>
+              <span>네이버·쿠팡·메타 채널별 원천값</span>
+              <span>보고서, 일정, 액션 플랜 저장</span>
+            </div>
+          </article>
+          <article class="mi-card">
+            <h3>공개 워크플로우</h3>
+            <p>관리자가 확인한 데이터만 광고주 화면에 반영되도록 만듭니다.</p>
+            <div class="mi-checklist">
+              <span>draft → review → published</span>
+              <span>관리자컨펌=승인 기준 유지</span>
+              <span>수정자, 공개일, 변경 이력 기록</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="mi-table-card mi-table-scroll" style="margin-top:14px;">
+          <table class="mi-data-table" aria-label="백엔드 데이터 구조">
+            <thead>
+              <tr>
+                <th>화면 기능</th>
+                <th>백엔드 테이블</th>
+                <th>필수 키</th>
+                <th>운영 기준</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>광고주 계정/권한</td>
+                <td>users, clients, client_members</td>
+                <td>user_id, client_id, role</td>
+                <td>광고주는 본인 client_id만 접근</td>
+              </tr>
+              <tr>
+                <td>대시보드/KPI</td>
+                <td>kpi_targets, dashboard_snapshots</td>
+                <td>client_id, month, channel</td>
+                <td>목표값과 실제값을 따로 저장</td>
+              </tr>
+              <tr>
+                <td>채널 성과</td>
+                <td>channel_metrics</td>
+                <td>client_id, channel, period</td>
+                <td>네이버, 쿠팡, 메타 원천값 분리</td>
+              </tr>
+              <tr>
+                <td>보고서/파일</td>
+                <td>reports, report_files</td>
+                <td>report_id, client_id, visibility</td>
+                <td>관리자 다운로드와 광고주 공개 범위 분리</td>
+              </tr>
+              <tr>
+                <td>일정/액션 플랜</td>
+                <td>schedules, action_plans</td>
+                <td>client_id, status, due_date</td>
+                <td>광고주 확인 필요 사항만 공개</td>
+              </tr>
+              <tr>
+                <td>공개 승인/이력</td>
+                <td>publish_logs, audit_logs</td>
+                <td>published_by, published_at</td>
+                <td>누가 언제 무엇을 공개했는지 기록</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-home-menus">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">추천 메뉴 구조</span>
+          <h2>요약 → 성과 → 보고서 → 실행.</h2>
+          <p>광고주에게 필요한 순서대로 메뉴를 배치합니다.</p>
+        </div>
+
+        <div class="mi-menu-toolbar">
+          <div class="mi-chip-row" aria-label="메뉴 유형">
+            <span class="mi-chip">광고주</span>
+            <span class="mi-chip">관리자</span>
+            <span class="mi-chip">공통 도구</span>
+          </div>
+          <div class="mi-search-box">
+            <input class="mi-input" data-mi-menu-search placeholder="메뉴 검색: KPI, 일정, 보고서" aria-label="메뉴 검색" />
+            <span class="mi-search-hint" data-mi-menu-count>8개 메뉴 전체 표시 중</span>
+          </div>
+        </div>
+
+        <div class="mi-grid-4" data-mi-menu-list>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="dashboard 핵심 요약 광고주 관리자">
+            <h3>Dashboard</h3>
+            <p>현재 상태와 핵심 숫자를 첫 화면에서 봅니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">광고주</span><span class="mi-chip">관리자 미리보기</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="kpi report 목표 달성률 광고주 관리자">
+            <h3>KPI Report</h3>
+            <p>목표 대비 달성률과 전월 대비를 확인합니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">진행률</span><span class="mi-chip">전월 대비</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="sales report 매출 보고서 네이버 쿠팡">
+            <h3>Sales Report</h3>
+            <p>합산 매출과 채널별 매출을 나눠 봅니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">합산</span><span class="mi-chip">채널별</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="ads performance 광고 성과 메타 네이버 쿠팡">
+            <h3>Ads Performance</h3>
+            <p>광고비, ROAS, 클릭, 전환을 채널별로 봅니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">캠페인</span><span class="mi-chip">소재</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="keyword analysis 키워드 분석 seo 검색량 순위">
+            <h3>Keyword Analysis</h3>
+            <p>검색량, 순위 변화, SEO 작업 필요도를 봅니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">검색량</span><span class="mi-chip">순위 변화</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="weekly monthly report 주간 월간 보고서">
+            <h3>Weekly / Monthly Report</h3>
+            <p>주간·월간·KPI 보고서를 한곳에 모읍니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">PDF</span><span class="mi-chip">엑셀</span><span class="mi-chip">링크</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="schedule 일정표 캘린더 리스트">
+            <h3>Schedule</h3>
+            <p>콘텐츠, 촬영, 미팅, 보고서 일정을 공유합니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">예정</span><span class="mi-chip">진행 중</span><span class="mi-chip">완료</span></div>
+          </article>
+          <article class="mi-card mi-menu-card" data-mi-menu-card="files action plan client management admin settings">
+            <h3>Files / Action Plan</h3>
+            <p>자료와 다음 실행 계획을 함께 관리합니다.</p>
+            <div class="mi-menu-meta"><span class="mi-chip">파일</span><span class="mi-chip">실행 계획</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">관리자 화면 구성</span>
+          <h2>입력하고, 검수하고, 공개합니다.</h2>
+          <p>광고주에게 보이는 값은 관리자 승인과 공유 기준을 통과한 데이터만 사용합니다. 외부 연동 전에는 수동 입력과 엑셀 붙여넣기로 운영합니다.</p>
+        </div>
+
+        <div class="mi-flow" aria-label="관리자 운영 흐름">
+          <article class="mi-flow-step"><strong>광고주 생성</strong><p>브랜드와 담당자를 연결합니다.</p><em>01</em></article>
+          <article class="mi-flow-step"><strong>운영 입력</strong><p>채널별 수치를 동일한 양식으로 입력합니다.</p><em>02</em></article>
+          <article class="mi-flow-step"><strong>자동 계산</strong><p>ROAS, CTR, CVR을 계산합니다.</p><em>03</em></article>
+          <article class="mi-flow-step"><strong>보고서 등록</strong><p>PDF, 엑셀, 링크를 모읍니다.</p><em>04</em></article>
+          <article class="mi-flow-step"><strong>공개 승인</strong><p>광고주 공개 여부를 정합니다.</p><em>05</em></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">광고주 화면 구성</span>
+          <h2>광고주는 지금 상태만 빠르게 봅니다.</h2>
+          <p>복잡한 원천 데이터는 숨기고, 결과와 다음 일정만 남깁니다.</p>
+        </div>
+
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <h3>현재 상태 요약</h3>
+            <p>매출, 광고비, ROAS, 달성률을 크게 보여줍니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">핵심 숫자</span><span class="mi-chip">전월 대비</span></div>
+          </article>
+          <article class="mi-card">
+            <h3>공개 데이터 현황</h3>
+            <p>합산과 채널별 성과를 분리해 확인합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">합산</span><span class="mi-chip">채널별</span></div>
+          </article>
+          <article class="mi-card">
+            <h3>실행 인사이트</h3>
+            <p>개선 지표와 다음 주 계획을 바로 봅니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">다음 액션</span><span class="mi-chip">확인 요청</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-home-data">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">운영 신뢰 구조</span>
+          <h2>광고주에게 보일 것만 안전하게 공개합니다.</h2>
+          <p>관리자 검수, 공개 승인, 광고주별 분리가 플랫폼 신뢰의 핵심입니다.</p>
+        </div>
+
+        <div class="mi-schema-grid">
+          <article class="mi-schema-card">
+            <strong>광고주별 독립 공간</strong>
+            <span>광고주는 본인 브랜드 데이터만 확인합니다.</span>
+          </article>
+          <article class="mi-schema-card">
+            <strong>관리자 공개 승인</strong>
+            <span>검수된 수치와 코멘트만 광고주 화면에 노출합니다.</span>
+          </article>
+          <article class="mi-schema-card">
+            <strong>내부 메모 분리</strong>
+            <span>작업 판단과 내부 기록은 관리자 화면에만 남깁니다.</span>
+          </article>
+          <article class="mi-schema-card">
+            <strong>보고서 전달 관리</strong>
+            <span>주간·월간 보고서는 관리자가 확인 후 전달합니다.</span>
+          </article>
+          <article class="mi-schema-card">
+            <strong>업데이트 기준 표시</strong>
+            <span>마지막 업데이트와 다음 일정을 함께 보여줍니다.</span>
+          </article>
+          <article class="mi-schema-card">
+            <strong>권한 확장 가능</strong>
+            <span>실제 개발에서는 client_id와 brand_id 기준으로 분리합니다.</span>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">편리해지는 지점</span>
+          <h2>보고서 전달과 광고주 응대가 단순해집니다.</h2>
+        </div>
+
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <h3>보고서 찾는 시간 감소</h3>
+            <p>주간, 월간, KPI 자료를 광고주별로 모아 관리합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">보고서</span><span class="mi-chip">파일</span></div>
+          </article>
+          <article class="mi-card">
+            <h3>광고주 응대가 쉬워짐</h3>
+            <p>현재 성과, 일정, 확인 요청을 한 화면에서 설명합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">일정</span><span class="mi-chip">코멘트</span></div>
+          </article>
+          <article class="mi-card">
+            <h3>다음 일이 명확해짐</h3>
+            <p>성과 수치가 다음 액션과 연결되도록 정리합니다.</p>
+            <div class="mi-chip-row"><span class="mi-chip">인사이트</span><span class="mi-chip">실행 계획</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section" id="mi-home-roadmap">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">MVP 개발 범위</span>
+          <h2>먼저 운영 가능한 버전부터.</h2>
+          <p>1차는 대시보드·입력·보고서·일정, 2차는 분석, 3차는 외부 연동 검토입니다.</p>
+        </div>
+
+        <div class="mi-roadmap-tabs" aria-label="개발 단계 선택">
+          <button class="mi-roadmap-tab is-active" type="button" data-mi-roadmap-tab="phase1">1차 MVP</button>
+          <button class="mi-roadmap-tab" type="button" data-mi-roadmap-tab="phase2">2차 확장</button>
+          <button class="mi-roadmap-tab" type="button" data-mi-roadmap-tab="phase3">3차 연동 보류</button>
+        </div>
+
+        <div class="mi-roadmap-panel is-active" data-mi-roadmap-panel="phase1">
+          <div class="mi-grid-3">
+            <article class="mi-card">
+              <h3>광고주별 대시보드</h3>
+              <div class="mi-checklist">
+                <span>광고주/브랜드별 공간 분리</span>
+                <span>현재 매출, 광고비, ROAS, 목표 달성률</span>
+                <span>공개 코멘트와 일정표</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>수동 입력/검수</h3>
+              <div class="mi-checklist">
+                <span>광고주 계정 생성</span>
+                <span>KPI 목표 설정</span>
+                <span>보고서 업로드와 공개 승인</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>보고서·일정 관리</h3>
+              <div class="mi-checklist">
+                <span>주간/월간/KPI 보고서 등록</span>
+                <span>일정 상태 관리</span>
+                <span>내부 메모와 공개 코멘트 분리</span>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="mi-roadmap-panel" data-mi-roadmap-panel="phase2">
+          <div class="mi-grid-3">
+            <article class="mi-card">
+              <h3>채널 성과 분석</h3>
+              <div class="mi-checklist">
+                <span>네이버, 쿠팡, 메타, 자사몰 구분</span>
+                <span>캠페인별/소재별 성과 표</span>
+                <span>자동 그래프와 전월 대비</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>키워드 분석</h3>
+              <div class="mi-checklist">
+                <span>검색량, 순위, 클릭 비율</span>
+                <span>네이버 SEO, 쿠팡 SEO 상태</span>
+                <span>작업 필요 키워드 추천</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>인사이트 입력</h3>
+              <div class="mi-checklist">
+                <span>성과 좋은 채널/낮은 채널 구분</span>
+                <span>광고비 조정 제안</span>
+                <span>다음 주 실행 계획 템플릿</span>
+              </div>
+            </article>
+          </div>
+        </div>
+
+        <div class="mi-roadmap-panel" data-mi-roadmap-panel="phase3">
+          <div class="mi-grid-3">
+            <article class="mi-card">
+              <h3>네이버 API 연결 준비</h3>
+              <div class="mi-checklist">
+                <span>네이버 검색 기반 키워드 조회 우선 연결</span>
+                <span>네이버 검색광고·데이터랩 API 프록시 연결</span>
+                <span>쿠팡·메타 자동 연동은 3차 이후 보류</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>엑셀/시트 자동화</h3>
+              <div class="mi-checklist">
+                <span>구글시트 API는 운영 구조 확정 후 연결</span>
+                <span>엑셀 템플릿 파싱</span>
+                <span>수식 기반 계산값 검증</span>
+              </div>
+            </article>
+            <article class="mi-card">
+              <h3>자동 보고서</h3>
+              <div class="mi-checklist">
+                <span>주간/월간 보고서 자동 생성</span>
+                <span>광고주별 다운로드 권한</span>
+                <span>승인 후 공유 워크플로우</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">개발 시 주의할 점</span>
+          <h2>화면 분리보다 권한 분리가 중요합니다.</h2>
+          <p>실제 운영에서는 로그인, API, DB 필터가 함께 맞아야 합니다.</p>
+        </div>
+
+        <div class="mi-grid-3">
+          <article class="mi-card">
+            <h3>권한은 서버에서 강제</h3>
+            <p>API와 DB에서 광고주 접근 범위를 검증해야 합니다.</p>
+          </article>
+          <article class="mi-card">
+            <h3>내부 메모 분리</h3>
+            <p>내부 판단과 공개 코멘트는 따로 저장합니다.</p>
+          </article>
+          <article class="mi-card">
+            <h3>원천 데이터 검증</h3>
+            <p>엑셀/CSV는 컬럼과 숫자 단위를 먼저 검증합니다.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact" id="mi-home-faq">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">FAQ</span>
+          <h2>운영 전에 헷갈리는 부분을 줄입니다.</h2>
+          <p>실제 도입 판단에 필요한 질문을 먼저 노출해 문의와 설명 시간을 줄입니다.</p>
+        </div>
+
+        <div class="mi-decision-grid">
+          <article class="mi-decision-card">
+            <h3>현재 상태 판단</h3>
+            <p>홈페이지에서 바로 보여줘야 하는 운영 가능 범위입니다.</p>
+            <div class="mi-decision-list">
+              <div class="mi-decision-item"><b>가능</b><span>광고주/관리자 분리 시연, 수동 입력, 공개 승인, 보고서/일정 구조</span></div>
+              <div class="mi-decision-item"><b>준비됨</b><span>네이버 검색광고·데이터랩 API 프록시 연결 코드</span></div>
+              <div class="mi-decision-item"><b>키 필요</b><span>실제 네이버 검색량 조회, 데이터랩 추이 조회</span></div>
+              <div class="mi-decision-item"><b>보류</b><span>쿠팡·메타 자동 연동, 구글시트 자동화, 실서버 로그인</span></div>
+            </div>
+          </article>
+
+          <div class="mi-faq-list">
+            <article class="mi-faq-item">
+              <strong>광고주는 무엇을 보나요?</strong>
+              <span>현재 매출, 광고비, ROAS, KPI 달성률, 일정, 공개 보고서, 공개 코멘트만 봅니다. 내부 메모와 원천 입력값은 숨깁니다.</span>
+            </article>
+            <article class="mi-faq-item">
+              <strong>관리자는 광고주 화면을 같이 볼 수 있나요?</strong>
+              <span>관리자 화면 안에 광고주 미리보기를 두는 구조가 맞습니다. 그래야 관리자가 광고주 계정으로 다시 로그인하지 않아도 같은 화면을 검수할 수 있습니다.</span>
+            </article>
+            <article class="mi-faq-item">
+              <strong>네이버 검색량은 바로 실데이터로 나오나요?</strong>
+              <span>API 키가 있으면 가능합니다. 키가 없으면 화면은 명확히 미연결 상태를 표시하고 데모 계산값으로만 보여줍니다.</span>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="mi-section compact">
+      <div class="mi-shell">
+        <div class="mi-cta">
+          <span class="mi-kicker">Next Screen</span>
+          <h2>설명보다 화면으로 확인하세요.</h2>
+          <p>홈페이지는 첫인상과 진입을 담당하고, 실제 운영은 광고주형과 관리자형에서 확인합니다.</p>
+          <div class="mi-cta-actions">
+            <a class="mi-button primary" href="아임웹_원샷코드_대시보드형_모먼트인사이트.html">광고주형 코드 열기</a>
+            <a class="mi-button secondary" href="아임웹_원샷코드_관리자형_모먼트인사이트.html">관리자형 코드 열기</a>
+            <a class="mi-button secondary" href="아임웹_원샷코드_통합보기_모먼트인사이트.html">통합보기 코드 열기</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mi-footer">
+    <div class="mi-shell">
+      Moment Insight · Marketing Agency Data Platform · 광고주별 KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var root = document.getElementById("mi-home");
+      if (!root) return;
+
+      var roleMap = {
+        client: {
+          badge: "Client View",
+          title: "광고주는 필요한 결과만 봅니다.",
+          copy: "매출, KPI, 일정, 공개 보고서만 확인합니다. 내부 메모와 원천 데이터는 숨깁니다.",
+          items: [
+            ["Dashboard", "읽기"],
+            ["Reports / Files", "공개 승인 자료만"],
+            ["Internal Memo", "숨김"],
+            ["Data Input", "불가"]
+          ],
+          previewTitle: "예시브랜드 현재 성과",
+          previewSubtitle: "관리자가 공개한 합산 데이터 기준",
+          previewBadge: "공개용",
+          sales: "4,180만원",
+          spend: "720만원",
+          roas: "581%",
+          goal: "116%"
+        },
+        manager: {
+          badge: "Admin View",
+          title: "관리자는 입력과 공개를 통제합니다.",
+          copy: "광고주, KPI, 데이터, 보고서, 내부 메모, 공개 코멘트를 한곳에서 관리합니다.",
+          items: [
+            ["Client Management", "전체 관리"],
+            ["Data Input", "입력/수정"],
+            ["Reports", "등록/다운로드"],
+            ["Public Approval", "승인/비공개"]
+          ],
+          previewTitle: "관리자 운영 콘솔",
+          previewSubtitle: "입력, 계산, 보고서 공개 관리",
+          previewBadge: "관리자",
+          sales: "12개사",
+          spend: "42건",
+          roas: "검수중",
+          goal: "8건 공개"
+        },
+        analyst: {
+          badge: "Analyst View",
+          title: "분석 담당자는 초안을 만듭니다.",
+          copy: "채널 성과와 키워드 분석을 정리하고, 공개 전 관리자 검수를 요청합니다.",
+          items: [
+            ["Ads Performance", "입력/분석"],
+            ["Keyword Analysis", "조회/초안"],
+            ["Action Plan", "초안 작성"],
+            ["Public Approval", "요청만 가능"]
+          ],
+          previewTitle: "성과 분석 작업 화면",
+          previewSubtitle: "성과와 키워드 분석 작성",
+          previewBadge: "분석",
+          sales: "네이버",
+          spend: "쿠팡",
+          roas: "메타",
+          goal: "키워드"
+        }
+      };
+
+      function text(selector, value) {
+        var node = root.querySelector(selector);
+        if (node) node.textContent = value;
+      }
+
+      function setRole(role) {
+        var data = roleMap[role] || roleMap.client;
+        root.querySelectorAll("[data-mi-role-tab]").forEach(function (button) {
+          button.classList.toggle("is-active", button.getAttribute("data-mi-role-tab") === role);
+        });
+        text("[data-mi-role-badge]", data.badge);
+        text("[data-mi-role-title]", data.title);
+        text("[data-mi-role-copy]", data.copy);
+        text("[data-mi-preview-title]", data.previewTitle);
+        text("[data-mi-preview-subtitle]", data.previewSubtitle);
+        text("[data-mi-preview-badge]", data.previewBadge);
+        text("[data-mi-preview-sales]", data.sales);
+        text("[data-mi-preview-spend]", data.spend);
+        text("[data-mi-preview-roas]", data.roas);
+        text("[data-mi-preview-goal]", data.goal);
+
+        var list = root.querySelector("[data-mi-role-list]");
+        if (list) {
+          list.innerHTML = data.items.map(function (item) {
+            return '<div class="mi-permission-item"><strong>' + item[0] + '</strong><span>' + item[1] + '</span></div>';
+          }).join("");
+        }
+      }
+
+      root.querySelectorAll("[data-mi-role-tab]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          setRole(button.getAttribute("data-mi-role-tab"));
+        });
+      });
+
+      var menuInput = root.querySelector("[data-mi-menu-search]");
+      var menuCount = root.querySelector("[data-mi-menu-count]");
+      if (menuInput) {
+        menuInput.addEventListener("input", function () {
+          var q = menuInput.value.trim().toLowerCase();
+          var visibleCount = 0;
+          var totalCount = 0;
+          root.querySelectorAll("[data-mi-menu-card]").forEach(function (card) {
+            var keywords = card.getAttribute("data-mi-menu-card").toLowerCase();
+            var hidden = Boolean(q && keywords.indexOf(q) === -1);
+            totalCount += 1;
+            if (!hidden) visibleCount += 1;
+            card.classList.toggle("is-hidden", hidden);
+          });
+          if (menuCount) {
+            menuCount.textContent = q ? visibleCount + "개 메뉴가 검색되었습니다." : totalCount + "개 메뉴 전체 표시 중";
+          }
+        });
+      }
+
+      function setRoadmap(phase) {
+        root.querySelectorAll("[data-mi-roadmap-tab]").forEach(function (button) {
+          button.classList.toggle("is-active", button.getAttribute("data-mi-roadmap-tab") === phase);
+        });
+        root.querySelectorAll("[data-mi-roadmap-panel]").forEach(function (panel) {
+          panel.classList.toggle("is-active", panel.getAttribute("data-mi-roadmap-panel") === phase);
+        });
+      }
+
+      root.querySelectorAll("[data-mi-roadmap-tab]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          setRoadmap(button.getAttribute("data-mi-roadmap-tab"));
+        });
+      });
+    })();
+  </script>
+</section>

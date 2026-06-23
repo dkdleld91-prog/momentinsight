@@ -3457,7 +3457,6 @@
 
       function rangeSeries(keyword, data, countOverride) {
         var count = countOverride || keywordRangeMonths[keywordRange] || 12;
-        if (!hasSearchVolume(data)) return [];
         if (data.trendStatus !== "확인됨") return [];
         var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : [];
         if (!source.length) return [];

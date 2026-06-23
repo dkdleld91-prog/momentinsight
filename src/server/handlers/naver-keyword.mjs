@@ -461,14 +461,12 @@ export default {
 
     try {
       const searchAd = await fetchSearchAdKeyword(env, keyword);
-      const searchMetric = searchVolumeMetric(searchAd.item?.monthlyPcQcCnt, searchAd.item?.monthlyMobileQcCnt);
-      const baseVolume = searchAd.hasExactMatch && !searchMetric.isUnderThreshold ? searchMetric.value : 0;
       let datalabProfile = null;
       let datalabError = null;
       let shoppingProfile = null;
       let shoppingError = null;
 
-      if (hasDatalabConfig(env) && baseVolume > 0) {
+      if (hasDatalabConfig(env)) {
         try {
           datalabProfile = await buildDatalabProfile(env, keyword);
         } catch (error) {

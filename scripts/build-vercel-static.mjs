@@ -4,6 +4,7 @@ import path from "node:path";
 const root = process.cwd();
 const sourceDir = path.join(root, "02_아임웹_적용코드");
 const outputDir = path.join(root, "dist");
+const siteUrl = "https://insight.momentlabs.co.kr";
 
 const pages = {
   home: "아임웹_원샷코드_홈페이지형_모먼트인사이트.html",
@@ -63,7 +64,7 @@ await fs.copyFile(await findPage(pages.home), path.join(outputDir, "index.html")
 
 await fs.writeFile(
   path.join(outputDir, "robots.txt"),
-  ["User-agent: *", "Allow: /", "Sitemap: https://momentinsight.com/sitemap.xml", ""].join("\n"),
+  ["User-agent: *", "Allow: /", `Sitemap: ${siteUrl}/sitemap.xml`, ""].join("\n"),
   "utf8"
 );
 
@@ -72,9 +73,7 @@ await fs.writeFile(
   [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-    "  <url><loc>https://momentinsight.com/</loc></url>",
-    "  <url><loc>https://momentinsight.com/admin.html</loc></url>",
-    "  <url><loc>https://momentinsight.com/client.html</loc></url>",
+    `  <url><loc>${siteUrl}/</loc></url>`,
     "</urlset>",
     "",
   ].join("\n"),

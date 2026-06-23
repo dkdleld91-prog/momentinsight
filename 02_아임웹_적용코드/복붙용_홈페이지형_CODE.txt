@@ -1,4 +1,14 @@
 <meta charset="utf-8" />
+<title>모먼트인사이트 | 마케팅 대행사 성과 대시보드</title>
+<meta name="description" content="광고주별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 관리하는 마케팅 데이터 플랫폼입니다." />
+<meta name="keywords" content="모먼트인사이트, 모먼트랩스, 마케팅 대시보드, 광고 성과 대시보드, KPI 보고서, 광고주 관리, 마케팅 데이터 플랫폼" />
+<meta name="robots" content="index, follow" />
+<link rel="canonical" href="https://insight.momentlabs.co.kr/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="모먼트인사이트" />
+<meta property="og:title" content="모먼트인사이트 | 마케팅 대행사 성과 대시보드" />
+<meta property="og:description" content="광고주별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 관리하는 마케팅 데이터 플랫폼입니다." />
+<meta property="og:url" content="https://insight.momentlabs.co.kr/" />
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />

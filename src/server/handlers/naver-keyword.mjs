@@ -242,10 +242,11 @@ function makeFallbackSeries(volume) {
 }
 
 function competitionLabel(compIdx) {
-  if (compIdx === "high") return "높음";
-  if (compIdx === "mid") return "보통";
-  if (compIdx === "low") return "낮음";
-  return compIdx || "확인 필요";
+  const value = String(compIdx || "");
+  if (value === "high" || value.includes("높")) return "높음";
+  if (value === "mid" || value.includes("중") || value.includes("보통")) return "보통";
+  if (value === "low" || value.includes("낮")) return "낮음";
+  return value || "확인 필요";
 }
 
 function buildRelatedKeywordMetrics(searchAd) {

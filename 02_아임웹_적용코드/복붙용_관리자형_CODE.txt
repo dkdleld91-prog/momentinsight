@@ -4117,6 +4117,9 @@
         var labels = rangeLabels(labelItem.data, effectiveCount);
         if (labels.length !== effectiveCount) labels = makeKeywordMonthLabels(effectiveCount);
         var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
+        var quotaLimited = items.some(function (item) {
+          return String(item.data && item.data.userMessage || "").indexOf("한도") > -1;
+        });
         var peakValue = hasTrendSeries ? Math.max.apply(null, flatSeries) : 0;
         var chartMax = hasTrendSeries ? pickKeywordScale(peakValue) : 0;
         var width = 760;
@@ -4166,7 +4169,7 @@
         if (pointsGroup) pointsGroup.innerHTML = "";
         if (empty) {
           empty.hidden = hasTrendSeries;
-          empty.textContent = totalVolume ? "월별 검색량 추이는 연결 후 표시됩니다." : "검색량 조회 후 차트를 표시합니다.";
+          empty.textContent = quotaLimited ? "월별 검색량 추이는 DataLab 한도 복구 후 표시됩니다." : totalVolume ? "월별 검색량 추이는 연결 후 표시됩니다." : "검색량 조회 후 차트를 표시합니다.";
         }
 
         var seriesPointLists = hasTrendSeries ? seriesList.map(function (series, seriesIndex) {
@@ -4591,11 +4594,14 @@
             var pendingTrend = items.filter(function (item) { return item.data.trendStatus !== "확인됨"; });
             var missingVolume = items.filter(function (item) { return !hasSearchVolume(item.data); });
             var primaryProfile = items[0] && items[0].data ? items[0].data : {};
+            var primaryMessage = primaryProfile.userMessage || "";
             var missingProfile = !(hasRatioValues(primaryProfile.month || []) || hasRatioValues(primaryProfile.series || [])) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []);
             if (failed.length) {
               setStatus(keywordStatus, "해당 키워드는 검색량 확인이 필요합니다. 확인된 수치만 표시합니다.", "is-warn");
             } else if (missingVolume.length) {
               setStatus(keywordStatus, "조회 완료: 해당 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
+            } else if (primaryMessage.indexOf("한도") > -1) {
+              setStatus(keywordStatus, primaryMessage, "is-warn");
             } else if (pendingTrend.length) {
               setStatus(keywordStatus, "조회 완료: 월 검색량은 확인됐고, 비율 데이터는 연결 후 표시됩니다.", "is-ok");
             } else if (missingProfile) {

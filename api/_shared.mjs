@@ -3,6 +3,15 @@ import app from "../src/server/index.mjs";
 function safeErrorPayload(response, text) {
   if (response.status < 500) return null;
 
+  try {
+    const payload = JSON.parse(text || "{}");
+    const code = String(payload?.code || "");
+    const statuses = Object.values(payload?.sourceStatus || {});
+    const isExpectedConfigPending = /_NOT_CONFIGURED$/.test(code) ||
+      statuses.some((item) => item?.status === "not_configured");
+    if (isExpectedConfigPending) return null;
+  } catch {}
+
   const sensitive = /\b(SUPABASE|SECRET|TOKEN|KEY|JWKS|MISSING_[A-Z0-9_]+)\b/i.test(text);
   return {
     status: sensitive ? 503 : 500,

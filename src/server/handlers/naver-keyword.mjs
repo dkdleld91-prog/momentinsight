@@ -60,6 +60,19 @@ function parseNaverNumber(value) {
   return Number(String(value).replace(/,/g, "")) || 0;
 }
 
+function searchVolumeLabel(pcRaw, mobileRaw, total) {
+  const isUnderThreshold = [pcRaw, mobileRaw].some((value) => String(value || "").includes("<"));
+  if (isUnderThreshold) return `${Number(total || 0).toLocaleString("ko-KR")} 미만`;
+  return Number(total || 0).toLocaleString("ko-KR");
+}
+
+function searchVolumeWithUnit(label) {
+  const text = String(label || "확인 필요");
+  if (text.includes("미만")) return `${text.replace(/\s*미만$/, "")}회 미만`;
+  if (text === "확인 필요") return text;
+  return `${text}회`;
+}
+
 function round(value, digits = 1) {
   const scale = 10 ** digits;
   return Math.round(Number(value || 0) * scale) / scale;
@@ -137,8 +150,9 @@ async function fetchSearchAdKeyword(env, keyword) {
   const exact = list.find((item) => normalizeCompare(item.relKeyword) === normalizeCompare(keyword));
   return {
     raw: payload,
-    item: exact || list[0] || null,
+    item: exact || null,
     related: list.slice(0, 10),
+    hasExactMatch: Boolean(exact),
   };
 }
 
@@ -304,10 +318,12 @@ function buildRelatedKeywordMetrics(searchAd) {
       const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
       const volume = pcVolume + mobileVolume;
       const comp = competitionLabel(item.compIdx);
+      const volumeLabel = searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, volume);
 
       return {
         keyword,
         volume,
+        volumeLabel,
         pcVolume,
         mobileVolume,
         comp,
@@ -319,27 +335,36 @@ function buildRelatedKeywordMetrics(searchAd) {
 
 function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const item = searchAd?.item || {};
+  const hasExactMatch = Boolean(searchAd?.hasExactMatch && searchAd?.item);
   const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
   const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
   const volume = pcVolume + mobileVolume;
-  const safeVolume = volume || Math.max(1200, keyword.length * 2300);
-  const mobileShare = volume ? Math.round((mobileVolume / volume) * 100) : 80;
-  const pcShare = volume ? 100 - mobileShare : 20;
-  const comp = competitionLabel(item.compIdx);
+  const safeVolume = hasExactMatch ? volume : 0;
+  const volumeLabel = hasExactMatch ? searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, safeVolume) : "확인 필요";
+  const mobileShare = safeVolume ? Math.round((mobileVolume / safeVolume) * 100) : 0;
+  const pcShare = safeVolume ? 100 - mobileShare : 0;
+  const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
   const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
 
   return {
     keyword,
-    matchedKeyword: item.relKeyword || keyword,
+    matchedKeyword: hasExactMatch ? item.relKeyword || keyword : "",
+    volumeStatus: hasExactMatch ? "확인됨" : "확인 필요",
+    volumeLabel,
+    trendStatus: datalabProfile?.series?.length ? "확인됨" : "수집 대기",
     volume: safeVolume,
     comp,
-    action: comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류",
-    insight: `월 검색량 ${safeVolume.toLocaleString("ko-KR")}회, 시장 경쟁도 ${comp}입니다.`,
-    series: datalabProfile?.series?.length ? datalabProfile.series : makeFallbackSeries(safeVolume),
+    action: hasExactMatch
+      ? comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류"
+      : "정확한 월 검색량이 확인되지 않아 연관 키워드를 개별 조회",
+    insight: hasExactMatch
+      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 시장 경쟁도 ${comp}입니다.`
+      : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
+    series: datalabProfile?.series?.length ? datalabProfile.series : [],
     device: { mobile: mobileShare, pc: pcShare },
-    gender: datalabProfile?.gender || { female: 50, male: 50 },
-    age: datalabProfile?.age || [16, 24, 42, 62, 51, 28],
-    week: datalabProfile?.week || [70, 76, 82, 78, 72, 61, 66],
+    gender: datalabProfile?.gender || null,
+    age: datalabProfile?.age || [],
+    week: datalabProfile?.week || [],
     naver: {
       monthlyPcQcCnt: item.monthlyPcQcCnt || "0",
       monthlyMobileQcCnt: item.monthlyMobileQcCnt || "0",
@@ -386,7 +411,7 @@ export default {
       let shoppingProfile = null;
       let shoppingError = null;
 
-      if (hasDatalabConfig(env)) {
+      if (hasDatalabConfig(env) && baseVolume > 0) {
         try {
           datalabProfile = await buildDatalabProfile(env, keyword, baseVolume);
         } catch (error) {

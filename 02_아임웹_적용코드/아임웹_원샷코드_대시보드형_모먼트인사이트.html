@@ -778,7 +778,7 @@
     #mi-clean .mi-market-metric {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 16px;
+      padding: 14px;
       background: #fff;
     }
 
@@ -795,9 +795,9 @@
       display: block;
       margin-top: 5px;
       color: var(--mi-navy);
-      font-size: 26px;
+      font-size: 22px;
       font-weight: 950;
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
     }
 
     #mi-clean .mi-market-kpi small,
@@ -1027,7 +1027,7 @@
       position: relative;
       min-height: 274px;
       margin-top: 20px;
-      padding-left: 42px;
+      padding-left: 44px;
       border-left: 1px solid var(--mi-line);
       border-bottom: 1px solid var(--mi-line);
     }
@@ -1053,7 +1053,7 @@
       transform: translateY(-50%);
       color: #8a94a6;
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 650;
       line-height: 1;
       white-space: nowrap;
     }
@@ -1121,7 +1121,7 @@
       overflow: visible;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 22px;
+      padding: 18px;
       background: #fff;
     }
 
@@ -1133,11 +1133,11 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 18px;
+      margin-bottom: 14px;
       color: var(--mi-navy);
-      font-size: 20px;
+      font-size: 17px;
       font-weight: 950;
-      letter-spacing: -0.02em;
+      letter-spacing: 0;
     }
 
     #mi-clean .mi-ratio-help {
@@ -1192,8 +1192,8 @@
       right: 8px;
       transform: translateY(-50%);
       color: #8b8f97;
-      font-size: 12px;
-      font-weight: 850;
+      font-size: 11px;
+      font-weight: 700;
       line-height: 1;
     }
 
@@ -1258,8 +1258,8 @@
       justify-content: center;
       margin: 0;
       color: #808793;
-      font-size: 14px;
-      font-weight: 900;
+      font-size: 12px;
+      font-weight: 800;
       line-height: 1.15;
       white-space: nowrap;
       transform: translateX(-50%);
@@ -1325,6 +1325,21 @@
     #mi-clean .mi-ratio-column.is-hover .mi-ratio-pop {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
+    }
+
+    #mi-clean .mi-ratio-empty {
+      grid-column: 1 / -1;
+      display: flex;
+      min-height: 190px;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed #d9dee7;
+      border-radius: 8px;
+      color: var(--mi-muted);
+      background: #fbfcfd;
+      font-size: 13px;
+      font-weight: 800;
+      text-align: center;
     }
 
     #mi-clean .mi-list {
@@ -1898,7 +1913,7 @@
 
               <div class="mi-chart-tools">
                 <span class="mi-keyword-chip" data-keyword-label>냉감 패드 외 2개</span>
-                <span class="mi-period">검색수 <b data-keyword-volume style="margin-left:4px;">18,400</b></span>
+                <span class="mi-period">비교 총 검색수 <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
                 <span class="mi-period">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
               </div>
               <div class="mi-chart-legend" data-keyword-legend>
@@ -2040,7 +2055,7 @@
       var root = document.getElementById("mi-clean");
       if (!root) return;
 
-      var storageKey = "miAgencyPublicState";
+      var storageKey = "miAgencyPublicState:v2";
       var selectedCodeKey = "miAgencySelectedCode";
       var defaultState = {
         code: "MI-DEMO-01",
@@ -2218,7 +2233,7 @@
           setStatus(statusNode, "공개 데이터 동기화 완료: " + nextState.client, "is-ok");
           return nextState;
         } catch (error) {
-          setStatus(statusNode, "데이터 연결 대기: " + error.message + " 저장된 공개 데이터로 표시합니다.", "is-warn");
+          setStatus(statusNode, "데이터 연결 대기: 저장된 공개 데이터로 표시합니다.", "is-warn");
           return readState();
         }
       }
@@ -2229,6 +2244,23 @@
 
       function formatNumber(value) {
         return Number(value || 0).toLocaleString("ko-KR");
+      }
+
+      function formatSearchVolume(data) {
+        if (data && data.volumeLabel) return data.volumeLabel;
+        var value = Number(data && data.volume || 0);
+        return value ? formatNumber(value) : "확인 필요";
+      }
+
+      function formatSearchVolumeWithUnit(data) {
+        var text = formatSearchVolume(data);
+        if (text.indexOf("미만") > -1) return text.replace(/\s*미만$/, "회 미만");
+        if (!hasSearchVolume(data)) return text;
+        return text + "회";
+      }
+
+      function hasSearchVolume(data) {
+        return Boolean(data && Number(data.volume || 0) > 0 && data.volumeStatus !== "확인 필요");
       }
 
       function escapeHtml(value) {
@@ -2356,6 +2388,8 @@
 
       function rangeSeries(keyword, data, countOverride) {
         var count = countOverride || keywordRangeMonths[keywordRange] || 12;
+        if (!hasSearchVolume(data)) return Array(count).fill(0);
+        if (data.trendStatus !== "확인됨") return Array(count).fill(Number(data.volume || 0));
         var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : makeKeywordSeries(data.volume);
         if (source.length >= count) return source.slice(source.length - count);
 
@@ -2423,6 +2457,12 @@
           column.addEventListener("mousemove", function () { column.classList.add("is-hover"); });
           column.addEventListener("mouseleave", function () { column.classList.remove("is-hover"); });
         });
+      }
+
+      function renderRatioPlaceholder(type, message) {
+        var chart = root.querySelector('[data-keyword-ratio-chart="' + type + '"]');
+        if (!chart) return;
+        chart.innerHTML = '<div class="mi-ratio-empty">' + escapeHtml(message) + '</div>';
       }
 
       function firstKeywordProfile(items, key, fallback) {
@@ -2591,6 +2631,7 @@
         return {
           keyword: keyword,
           volume: volume,
+          volumeText: formatSearchVolume(data),
           shoppingStatus: shoppingTotal ? "확인됨" : "수집 예정",
           grade: grade,
           saturation: productSearchRatio ? productSearchRatio + "건/검색" : "판단 보류",
@@ -2625,9 +2666,9 @@
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
-        if (path) path.textContent = "월 검색량과 시장 경쟁도를 바탕으로 키워드 지면을 정리합니다.";
+        if (path) path.textContent = market.keyword + " 기준으로 월 검색량과 시장 경쟁도를 정리합니다.";
         if (products) products.textContent = market.shoppingStatus;
-        if (volume) volume.textContent = formatNumber(market.volume) + "회";
+        if (volume) volume.textContent = formatSearchVolumeWithUnit(item.data);
         if (score) score.textContent = market.grade.label;
         if (grade) {
           grade.textContent = market.grade.hint;
@@ -2637,7 +2678,7 @@
         if (top10Units) top10Units.textContent = market.commerceSales;
         if (top40Sales) top40Sales.textContent = market.avgPrice;
         if (price) price.textContent = market.saturation;
-        if (naver) naver.textContent = "월 검색수 " + formatNumber(market.volume) + "회 · 시장 경쟁도 " + market.grade.label;
+        if (naver) naver.textContent = market.volume ? "월 검색수 " + formatSearchVolumeWithUnit(item.data) + " · 시장 경쟁도 " + market.grade.label : "월 검색수 확인 필요 · 시장 경쟁도 확인 필요";
         if (ad) ad.textContent = market.shoppingProducts !== "수집 예정" ? "상품 노출 " + market.shoppingProducts + " · 평균 가격대 " + market.avgPrice : "상품수·가격·판매 흐름은 수집 후 함께 판단";
         if (action) action.textContent = market.action;
 
@@ -2645,7 +2686,7 @@
         function relatedRow(entry) {
             var name = entry.keyword || "";
             var relatedVolume = Number(entry.volume || 0);
-            var volumeText = relatedVolume ? formatNumber(relatedVolume) : "확인 필요";
+            var volumeText = entry.volumeLabel || (relatedVolume ? formatNumber(relatedVolume) : "확인 필요");
             var compText = entry.comp || "확인 필요";
             var judge = relatedJudgement(entry);
             return '<div><span>' + escapeHtml(name) + '</span><span>' + escapeHtml(volumeText) + '</span><span>' + escapeHtml(compText) + '</span><span>' + escapeHtml(judge) + '</span></div>';
@@ -2708,12 +2749,12 @@
         };
 
         if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;
-        if (volume) volume.textContent = formatNumber(totalVolume);
-        if (change) change.textContent = (changeRate >= 0 ? "+" : "") + changeRate + "%";
+        if (volume) volume.textContent = totalVolume ? formatNumber(totalVolume) : "확인 필요";
+        if (change) change.textContent = items[0].data.trendStatus === "확인됨" ? (changeRate >= 0 ? "+" : "") + changeRate + "%" : "수집 대기";
         if (axis) axis.textContent = formatShortNumber(chartMax);
         if (legend) {
           legend.innerHTML = items.map(function (item, index) {
-            return '<span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span>';
+          return '<span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + ' ' + escapeHtml(formatSearchVolume(item.data)) + '</span>';
           }).join("");
         }
         if (linesGroup) linesGroup.innerHTML = "";
@@ -2763,7 +2804,7 @@
                 color: keywordColors[seriesIndex % keywordColors.length]
               };
             });
-            var tooltipText = "<b>" + escapeHtml(basePoint.label) + "월 검색량</b>" + hoverPoints.map(function (point) {
+            var tooltipText = "<b>" + escapeHtml(basePoint.label) + (items[0].data.trendStatus === "확인됨" ? "월 검색량" : "월 검색량 기준선") + "</b>" + hoverPoints.map(function (point) {
               return '<span style="display:block;"><i class="mi-dot" style="--keyword-color:' + point.color + '"></i>' + escapeHtml(point.keyword) + " " + formatNumber(point.value) + "</span>";
             }).join("");
             var hit = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -2800,9 +2841,15 @@
           Number(profile.age[3] || 0),
           Number(profile.age[4] || 0) + Number(profile.age[5] || 0)
         ];
-        renderRatioChart("month", monthLabels, monthSeries, 30);
-        renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
-        renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
+        if (items[0].data.trendStatus === "확인됨") {
+          renderRatioChart("month", monthLabels, monthSeries, 30);
+          renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
+          renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
+        } else {
+          renderRatioPlaceholder("month", "월별 비율 데이터 수집 대기");
+          renderRatioPlaceholder("week", "요일별 비율 데이터 수집 대기");
+          renderRatioPlaceholder("age", "연령별 비율 데이터 수집 대기");
+        }
       }
 
       function getKeywordApiUrl() {
@@ -2813,25 +2860,31 @@
       }
 
       function buildKeywordFallback(keyword) {
-        var fallbackVolume = Math.max(1200, keyword.length * 2300);
-        var profile = makeKeywordProfile(keyword, fallbackVolume);
-        return keywordSamples[keyword] || {
-          volume: fallbackVolume,
-          comp: fallbackVolume > 25000 ? "높음" : "보통",
-          action: "검색량 확인 후 콘텐츠/광고 키워드 후보로 분류",
-          insight: "검색량 대비 경쟁도를 보고 네이버 SEO와 광고 키워드 우선순위 결정",
-          series: profile.series,
-          device: profile.device,
-          gender: profile.gender,
-          age: profile.age,
-          week: profile.week
+        return {
+          volume: 0,
+          volumeLabel: "조회 필요",
+          volumeStatus: "확인 필요",
+          trendStatus: "수집 대기",
+          comp: "확인 필요",
+          action: "키워드 조회 후 판단",
+          insight: "월 검색량 조회 후 표시합니다.",
+          series: [],
+          device: { mobile: 0, pc: 0 },
+          gender: null,
+          age: [],
+          week: [],
+          naver: { relatedKeywordMetrics: [] },
+          isFallback: true
         };
       }
 
       function normalizeKeywordApiData(payload, fallbackData) {
         var chartData = payload && payload.chartData ? payload.chartData : {};
         var data = Object.assign({}, fallbackData, chartData);
-        data.volume = Number(data.volume || fallbackData.volume || 0);
+        data.volume = Number(data.volume ?? fallbackData.volume ?? 0);
+        data.volumeLabel = chartData.volumeLabel || fallbackData.volumeLabel || "";
+        data.volumeStatus = chartData.volumeStatus || (data.volume ? "확인됨" : "확인 필요");
+        data.trendStatus = chartData.trendStatus || ((payload && payload.source && payload.source.trend === "trend_profile") ? "확인됨" : "수집 대기");
         data.comp = data.comp || fallbackData.comp || "확인 필요";
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
         data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
@@ -2846,14 +2899,14 @@
       function keywordSourceLabel(payload, fallbackLabel) {
         var source = payload && payload.source ? payload.source : {};
         if (!source.searchVolume) return fallbackLabel;
-        return source.trend ? "월간 검색 데이터" : "기본 참고 데이터";
+        return payload && payload.chartData && payload.chartData.volumeStatus === "확인됨" ? "월 검색량 확인됨" : "확인 필요";
       }
 
       function renderKeywordResult(items) {
         if (!keywordResult) return;
         keywordResult.innerHTML = items.map(function (item, index) {
-          return '<div class="mi-row"><span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span><strong>' + formatNumber(item.data.volume) + ' · ' + escapeHtml(item.data.comp) + '</strong></div>' +
-            '<div class="mi-row"><span>데이터 상태</span><strong>' + escapeHtml(item.sourceLabel || "기본 참고 데이터") + '</strong></div>' +
+          return '<div class="mi-row"><span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span><strong>' + escapeHtml(formatSearchVolume(item.data)) + ' · ' + escapeHtml(item.data.comp) + '</strong></div>' +
+            '<div class="mi-row"><span>데이터 상태</span><strong>' + escapeHtml(item.sourceLabel || "확인 필요") + '</strong></div>' +
             '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(item.data.action) + '</strong></div>';
         }).join("");
       }
@@ -2885,7 +2938,7 @@
           return {
             keyword: keyword,
             data: fallbackData,
-            sourceLabel: "기본 참고 데이터",
+            sourceLabel: "확인 필요",
             ok: false,
             message: error.message
           };
@@ -3090,7 +3143,7 @@
       var keywordStatus = root.querySelector("[data-mi-keyword-status]");
       var keywordRangeButtons = root.querySelectorAll("[data-keyword-range]");
       keywordDatasets = parseKeywordInput(keywordInput ? keywordInput.value : "냉감 패드, 여름 이불, 쿨매트").map(function (keyword) {
-        return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "기본 참고 데이터", ok: false };
+        return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "조회 전", ok: false };
       });
       renderKeywordChart(keywordDatasets);
       renderKeywordResult(keywordDatasets);
@@ -3103,8 +3156,8 @@
           renderKeywordChart(keywordDatasets);
         });
       });
-      if (keywordInput && keywordButton && keywordResult) {
-        keywordButton.addEventListener("click", async function () {
+      async function runKeywordLookup() {
+        if (!keywordInput || !keywordButton || !keywordResult) return;
           var keywords = parseKeywordInput(keywordInput.value);
           if (!keywords.length) keywords = ["비타민 앰플"];
           keywordButton.disabled = true;
@@ -3115,22 +3168,34 @@
             renderKeywordChart(items);
             renderKeywordResult(items);
             var failed = items.filter(function (item) { return !item.ok; });
+            var pendingTrend = items.filter(function (item) { return item.data.trendStatus !== "확인됨"; });
+            var missingVolume = items.filter(function (item) { return !hasSearchVolume(item.data); });
             if (failed.length) {
-              setStatus(keywordStatus, "일부 키워드는 현재 확인 가능한 참고값으로 보완 표시합니다.", "is-warn");
+              setStatus(keywordStatus, "일부 키워드는 검색량 확인이 필요합니다. 확인된 키워드만 수치로 표시합니다.", "is-warn");
+            } else if (missingVolume.length) {
+              setStatus(keywordStatus, "조회 완료: 일부 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
+            } else if (pendingTrend.length) {
+              setStatus(keywordStatus, "조회 완료: 월 검색량은 확인됐고, 비율 데이터는 수집 대기입니다.", "is-ok");
             } else {
               setStatus(keywordStatus, "조회 완료: 월 검색량과 시장 흐름을 최대 3개 키워드로 비교합니다.", "is-ok");
             }
           } catch (error) {
             keywordDatasets = keywords.map(function (keyword) {
-              return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "기본 참고 데이터", ok: false };
+              return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "확인 필요", ok: false };
             });
             renderKeywordChart(keywordDatasets);
             renderKeywordResult(keywordDatasets);
-            setStatus(keywordStatus, "데이터 확인 지연: 현재 조회 가능한 기준값으로 표시합니다.", "is-warn");
+            setStatus(keywordStatus, "데이터 확인 지연: 검색량을 임의로 계산하지 않고 확인 필요 상태로 표시합니다.", "is-warn");
           } finally {
             keywordButton.disabled = false;
           }
+      }
+
+      if (keywordInput && keywordButton && keywordResult) {
+        keywordButton.addEventListener("click", function () {
+          runKeywordLookup();
         });
+        runKeywordLookup();
       }
 
       var state = readState();

@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:vercel": "node scripts/build-vercel-static.mjs",
+    "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs",
     "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",
     "check:admin-api": "node 06_Supabase_연동/check-admin-api.mjs",
     "check:edge-api": "node 06_Supabase_연동/check-edge-api.mjs",

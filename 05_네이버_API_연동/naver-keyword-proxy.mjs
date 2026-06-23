@@ -68,6 +68,19 @@ function parseNaverNumber(value) {
   return Number(String(value).replace(/,/g, "")) || 0;
 }
 
+function searchVolumeLabel(pcRaw, mobileRaw, total) {
+  const isUnderThreshold = [pcRaw, mobileRaw].some((value) => String(value || "").includes("<"));
+  if (isUnderThreshold) return `${Number(total || 0).toLocaleString("ko-KR")} 미만`;
+  return Number(total || 0).toLocaleString("ko-KR");
+}
+
+function searchVolumeWithUnit(label) {
+  const text = String(label || "확인 필요");
+  if (text.includes("미만")) return `${text.replace(/\s*미만$/, "")}회 미만`;
+  if (text === "확인 필요") return text;
+  return `${text}회`;
+}
+
 function round(value, digits = 1) {
   const scale = 10 ** digits;
   return Math.round(Number(value || 0) * scale) / scale;
@@ -156,8 +169,9 @@ async function fetchSearchAdKeyword(keyword) {
   const exact = list.find((item) => normalizeCompare(item.relKeyword) === normalizeCompare(keyword));
   return {
     raw: payload,
-    item: exact || list[0] || null,
-    related: list.slice(0, 10)
+    item: exact || null,
+    related: list.slice(0, 10),
+    hasExactMatch: Boolean(exact)
   };
 }
 
@@ -279,29 +293,67 @@ function competitionLabel(compIdx) {
   return compIdx || "확인 필요";
 }
 
+function buildRelatedKeywordMetrics(searchAd) {
+  const seen = new Set();
+  return (searchAd?.related || [])
+    .map((item) => {
+      const keyword = normalizeKeyword(item.relKeyword);
+      const key = normalizeCompare(keyword);
+      if (!keyword || seen.has(key)) return null;
+      seen.add(key);
+
+      const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
+      const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
+      const volume = pcVolume + mobileVolume;
+      const comp = competitionLabel(item.compIdx);
+      const volumeLabel = searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, volume);
+
+      return {
+        keyword,
+        volume,
+        volumeLabel,
+        pcVolume,
+        mobileVolume,
+        comp,
+        source: "monthly_search"
+      };
+    })
+    .filter(Boolean);
+}
+
 function buildChartData(keyword, searchAd, datalabProfile) {
   const item = searchAd?.item || {};
+  const hasExactMatch = Boolean(searchAd?.hasExactMatch && searchAd?.item);
   const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
   const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
   const volume = pcVolume + mobileVolume;
-  const safeVolume = volume || Math.max(1200, keyword.length * 2300);
-  const mobileShare = volume ? Math.round((mobileVolume / volume) * 100) : 80;
-  const pcShare = volume ? 100 - mobileShare : 20;
-  const comp = competitionLabel(item.compIdx);
-  const matchedKeyword = item.relKeyword || keyword;
+  const safeVolume = hasExactMatch ? volume : 0;
+  const volumeLabel = hasExactMatch ? searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, safeVolume) : "확인 필요";
+  const mobileShare = safeVolume ? Math.round((mobileVolume / safeVolume) * 100) : 0;
+  const pcShare = safeVolume ? 100 - mobileShare : 0;
+  const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
+  const matchedKeyword = hasExactMatch ? item.relKeyword || keyword : "";
+  const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
 
   return {
     keyword,
     matchedKeyword,
+    volumeStatus: hasExactMatch ? "확인됨" : "확인 필요",
+    volumeLabel,
+    trendStatus: datalabProfile?.series?.length ? "확인됨" : "수집 대기",
     volume: safeVolume,
     comp,
-    action: comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류",
-    insight: `월 검색량 ${safeVolume.toLocaleString("ko-KR")}회, 시장 경쟁도 ${comp}입니다.`,
-    series: datalabProfile?.series?.length ? datalabProfile.series : makeFallbackSeries(safeVolume),
+    action: hasExactMatch
+      ? comp === "높음" ? "검색량은 크지만 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 경쟁도를 기준으로 SEO 후보로 분류"
+      : "정확한 월 검색량이 확인되지 않아 연관 키워드를 개별 조회",
+    insight: hasExactMatch
+      ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 시장 경쟁도 ${comp}입니다.`
+      : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
+    series: datalabProfile?.series?.length ? datalabProfile.series : [],
     device: { mobile: mobileShare, pc: pcShare },
-    gender: datalabProfile?.gender || { female: 50, male: 50 },
-    age: datalabProfile?.age || [16, 24, 42, 62, 51, 28],
-    week: datalabProfile?.week || [70, 76, 82, 78, 72, 61, 66],
+    gender: datalabProfile?.gender || null,
+    age: datalabProfile?.age || [],
+    week: datalabProfile?.week || [],
     naver: {
       monthlyPcQcCnt: item.monthlyPcQcCnt || "0",
       monthlyMobileQcCnt: item.monthlyMobileQcCnt || "0",
@@ -309,7 +361,8 @@ function buildChartData(keyword, searchAd, datalabProfile) {
       monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt || "0",
       monthlyAvePcCtr: item.monthlyAvePcCtr || "0",
       monthlyAveMobileCtr: item.monthlyAveMobileCtr || "0",
-      relatedKeywords: (searchAd?.related || []).map((related) => related.relKeyword).filter(Boolean)
+      relatedKeywords: relatedKeywordMetrics.map((related) => related.keyword),
+      relatedKeywordMetrics
     }
   };
 }
@@ -342,7 +395,7 @@ async function handleKeyword(req, res, url) {
   let datalabProfile = null;
   let datalabError = null;
 
-  if (hasDatalabConfig()) {
+  if (hasDatalabConfig() && baseVolume > 0) {
     try {
       datalabProfile = await buildDatalabProfile(keyword, baseVolume);
     } catch (error) {

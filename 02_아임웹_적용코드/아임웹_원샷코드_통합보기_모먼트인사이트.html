@@ -553,7 +553,7 @@
       var root = document.getElementById("mi-unified");
       if (!root) return;
 
-      var storageKey = "miAgencyPublicState";
+      var storageKey = "miAgencyPublicState:v2";
       var defaultState = {
         code: "MI-AGENCY-2026",
         client: "예시브랜드",
@@ -813,18 +813,12 @@
 
       root.querySelector("[data-mi-keyword-run]").addEventListener("click", function () {
         var keyword = root.querySelector("[data-mi-keyword]").value.trim() || "비타민 앰플";
-        var fallbackVolume = Math.max(1200, keyword.length * 2300);
-        var data = keywordSamples[keyword] || {
-          volume: fallbackVolume,
-          comp: fallbackVolume > 25000 ? "높음" : "보통",
-          action: "네이버 검색량 확인 후 SEO 후보로 분류"
-        };
         root.querySelector("[data-mi-keyword-result]").innerHTML =
           '<div class="mi-row"><span>검색 키워드</span><strong>' + escapeHtml(keyword) + '</strong></div>' +
-          '<div class="mi-row"><span>월 검색량</span><strong>' + formatNumber(data.volume) + '</strong></div>' +
-          '<div class="mi-row"><span>경쟁도</span><strong>' + escapeHtml(data.comp) + '</strong></div>' +
-          '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(data.action) + '</strong></div>';
-        setStatus("[data-mi-tool-status]", "키워드 조회 결과는 관리자 확인용입니다.", "is-ok");
+          '<div class="mi-row"><span>월 검색량</span><strong>전용 화면에서 조회</strong></div>' +
+          '<div class="mi-row"><span>경쟁도</span><strong>전용 화면에서 조회</strong></div>' +
+          '<div class="mi-row"><span>추천 작업</span><strong>관리자/광고주 키워드 화면에서 확인</strong></div>';
+        setStatus("[data-mi-tool-status]", "통합보기에서는 검색량을 임의 계산하지 않습니다.", "is-warn");
       });
 
       var initial = readState();

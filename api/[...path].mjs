@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     res.setHeader("content-type", "application/json; charset=utf-8");
     res.end(JSON.stringify({
       ok: false,
-      message: error.message || "Internal server error",
+      message: "서버 처리 중 오류가 발생했습니다.",
     }));
   }
 }

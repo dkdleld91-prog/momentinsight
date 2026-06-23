@@ -8,7 +8,6 @@ async function healthHandler(_req, ctx) {
     service: "moment-insight-api",
     authMode: ctx?.authMode || "none",
     supabaseServerContext: Boolean(ctx),
-    hasSecretKey,
     time: new Date().toISOString()
   });
 }

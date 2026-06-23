@@ -3961,7 +3961,7 @@
         if (hasRatioValues(ageValues)) {
           renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
         } else {
-          renderRatioPlaceholder("age", "쇼핑인사이트 카테고리 연결 필요");
+          renderRatioPlaceholder("age", "연령별 비율 데이터 수집 대기");
         }
       }
 
@@ -4036,9 +4036,9 @@
         }).join("");
       }
 
-      async function fetchKeywordData(keyword) {
+      async function fetchKeywordData(keyword, profileMode) {
         if (!window.fetch) throw new Error("현재 브라우저에서 fetch를 사용할 수 없습니다.");
-        var url = getKeywordApiUrl() + "?keyword=" + encodeURIComponent(keyword);
+        var url = getKeywordApiUrl() + "?keyword=" + encodeURIComponent(keyword) + "&profile=" + encodeURIComponent(profileMode || "full");
         var response = await fetch(url, { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () {
           return null;
@@ -4049,10 +4049,10 @@
         return payload;
       }
 
-      async function resolveKeywordItem(keyword) {
+      async function resolveKeywordItem(keyword, index) {
         var fallbackData = buildKeywordFallback(keyword);
         try {
-          var payload = await fetchKeywordData(keyword);
+          var payload = await fetchKeywordData(keyword, index === 0 ? "full" : "compare");
           return {
             keyword: keyword,
             data: normalizeKeywordApiData(payload, fallbackData),
@@ -4103,12 +4103,16 @@
             var failed = items.filter(function (item) { return !item.ok; });
             var pendingTrend = items.filter(function (item) { return item.data.trendStatus !== "확인됨"; });
             var missingVolume = items.filter(function (item) { return !hasSearchVolume(item.data); });
+            var primaryProfile = items[0] && items[0].data ? items[0].data : {};
+            var missingProfile = !hasRatioValues(primaryProfile.month || []) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []);
             if (failed.length) {
               setStatus(keywordStatus, "일부 키워드는 검색량 확인이 필요합니다. 확인된 키워드만 수치로 표시합니다.", "is-warn");
             } else if (missingVolume.length) {
               setStatus(keywordStatus, "조회 완료: 일부 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
             } else if (pendingTrend.length) {
               setStatus(keywordStatus, "조회 완료: 월 검색량은 확인됐고, 비율 데이터는 수집 대기입니다.", "is-ok");
+            } else if (missingProfile) {
+              setStatus(keywordStatus, "조회 완료: 첫 키워드 기준 일부 비율 데이터는 수집 대기입니다.", "is-warn");
             } else {
               setStatus(keywordStatus, "조회 완료: 월 검색량과 시장 흐름을 최대 3개 키워드로 비교합니다.", "is-ok");
             }

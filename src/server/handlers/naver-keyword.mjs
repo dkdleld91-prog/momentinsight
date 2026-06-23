@@ -3,6 +3,17 @@ import { corsHeaders, featureEnabled, protectedJson } from "../security.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_BASE_URL = "https://openapi.naver.com";
+const DATALAB_AGE_GROUPS = [
+  { label: "10대", ages: ["2"] },
+  { label: "20대", ages: ["3", "4"] },
+  { label: "30대", ages: ["5", "6"] },
+  { label: "40대", ages: ["7", "8"] },
+  { label: "50대 이상", ages: ["9", "10", "11"] },
+];
+const DATALAB_GENDER_GROUPS = [
+  { key: "female", gender: "f" },
+  { key: "male", gender: "m" },
+];
 
 function config() {
   return {
@@ -235,6 +246,10 @@ function ratioSum(payload) {
   return data.reduce((sum, item) => sum + Number(item.ratio || 0), 0);
 }
 
+function fulfilledValue(result) {
+  return result && result.status === "fulfilled" ? result.value : null;
+}
+
 function normalizeShares(entries, digits = 1) {
   const total = entries.reduce((sum, item) => sum + Number(item.value || 0), 0);
   if (!total) {
@@ -306,15 +321,44 @@ function weekdayShares(dailyPayload) {
   return normalizeShares(sums.map((value) => ({ value })));
 }
 
-async function buildDatalabProfile(env, keyword) {
+function shareFromPayloads(payloads) {
+  return normalizeShares(payloads.map((payload) => ({ value: ratioSum(payload) })));
+}
+
+async function buildDatalabProfile(env, keyword, options = {}) {
+  const includeProfile = options.includeProfile !== false;
   const endDate = compactDate(dateDaysAgo(1));
   const startDate = compactDate(monthsAgo(12));
   const dailyStartDate = compactDate(dateDaysAgo(28));
 
-  const [trend, daily] = await Promise.all([
-    fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month" }),
-    fetchDatalabSearch(env, { keyword, startDate: dailyStartDate, endDate, timeUnit: "date" }),
-  ]);
+  const trend = await fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month" });
+  let week = [];
+  let age = [];
+  let gender = null;
+  let demographicStatus = includeProfile ? "search_interest_profile" : "trend_only";
+
+  if (includeProfile) {
+    const profileRequests = [
+      fetchDatalabSearch(env, { keyword, startDate: dailyStartDate, endDate, timeUnit: "date" }),
+      ...DATALAB_AGE_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: group.ages })),
+      ...DATALAB_GENDER_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", gender: group.gender })),
+    ];
+    const results = await Promise.allSettled(profileRequests);
+    const daily = fulfilledValue(results[0]);
+    const agePayloads = results.slice(1, 1 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
+    const genderPayloads = results.slice(1 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
+
+    week = daily ? weekdayShares(daily) : [];
+    if (agePayloads.some(Boolean)) age = shareFromPayloads(agePayloads);
+    if (genderPayloads.some(Boolean)) {
+      const genderShares = shareFromPayloads(genderPayloads);
+      gender = {
+        female: genderShares[0] || 0,
+        male: genderShares[1] || 0,
+      };
+    }
+    if (!week.length && !age.length && !gender) demographicStatus = "profile_pending";
+  }
 
   return {
     series: trendToSeries(trend),
@@ -322,10 +366,10 @@ async function buildDatalabProfile(env, keyword) {
     month: monthlyShares(trend),
     monthLabels: monthlyLabels(trend),
     trendUnit: "relative_interest_index",
-    gender: null,
-    age: [],
-    demographicStatus: "shopping_insight_category_required",
-    week: weekdayShares(daily),
+    gender,
+    age,
+    demographicStatus,
+    week,
   };
 }
 
@@ -460,6 +504,8 @@ export default {
     const url = new URL(request.url);
     const keyword = normalizeKeyword(url.searchParams.get("keyword"));
     if (!keyword) return json(request, { ok: false, message: "검색어를 입력해주세요." }, 400);
+    const profileMode = String(url.searchParams.get("profile") || "full").toLowerCase();
+    const includeProfile = profileMode !== "compare" && profileMode !== "trend";
 
     const env = config();
     if (!hasSearchAdConfig(env)) {
@@ -478,7 +524,7 @@ export default {
 
       if (hasDatalabConfig(env)) {
         try {
-          datalabProfile = await buildDatalabProfile(env, keyword);
+          datalabProfile = await buildDatalabProfile(env, keyword, { includeProfile });
         } catch (error) {
           datalabError = error.message;
         }
@@ -502,6 +548,7 @@ export default {
         source: {
           searchVolume: searchAd.hasExactMatch ? "naver_searchad_exact" : "naver_searchad_related_only",
           trend: datalabProfile ? "naver_datalab_relative_ratio" : "pending",
+          profile: datalabProfile ? (includeProfile ? "search_interest_profile" : "trend_only") : "pending",
           shopping: shoppingProfile ? "naver_shopping_search" : hasOpenapiConfig(env) ? "partial" : "pending",
         },
         warnings,

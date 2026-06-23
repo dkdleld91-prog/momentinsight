@@ -3,6 +3,8 @@ import { corsHeaders, featureEnabled, protectedJson } from "../security.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const DATALAB_BASE_URL = "https://openapi.naver.com";
+const DATALAB_HISTORY_START_DATE = "2016-01-01";
+const DATALAB_MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 const DATALAB_AGE_GROUPS = [
   { label: "10대", ages: ["2"] },
   { label: "20대", ages: ["3", "4"] },
@@ -125,7 +127,16 @@ function round(value, digits = 1) {
 }
 
 function compactDate(date) {
-  return date.toISOString().slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date).reduce((acc, item) => {
+    if (item.type !== "literal") acc[item.type] = item.value;
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
 function dateDaysAgo(days) {
@@ -202,7 +213,7 @@ async function fetchSearchAdKeyword(env, keyword) {
   };
 }
 
-async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit = "month", device, gender, ages }) {
+async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit = "month", device, gender, ages, timeoutMs }) {
   const body = {
     startDate,
     endDate,
@@ -221,6 +232,7 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
       "X-Naver-Client-Secret": env.datalabClientSecret,
     },
     body: JSON.stringify(body),
+    timeoutMs,
   });
 }
 
@@ -291,6 +303,17 @@ function monthlyShares(payload) {
   return normalizeShares(data.slice(-12).map((item) => ({ value: Number(item.ratio || 0) })));
 }
 
+function monthlySeasonalityShares(payload) {
+  const data = trendData(payload);
+  if (!data.length) return [];
+  const sums = Array(12).fill(0);
+  data.forEach((item) => {
+    const month = Number(String(item.period || "").slice(5, 7));
+    if (month >= 1 && month <= 12) sums[month - 1] += Number(item.ratio || 0);
+  });
+  return normalizeShares(sums.map((value) => ({ value })));
+}
+
 function monthlyLabels(payload) {
   const data = trendData(payload).slice(-12);
   return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
@@ -338,10 +361,12 @@ function shareFromPayloads(payloads) {
 async function buildDatalabProfile(env, keyword, options = {}) {
   const includeProfile = options.includeProfile !== false;
   const endDate = compactDate(dateDaysAgo(1));
-  const startDate = compactDate(monthsAgo(12));
-  const dailyStartDate = compactDate(dateDaysAgo(28));
+  const trendStartDate = compactDate(monthsAgo(12));
+  const ageStartDate = compactDate(monthsAgo(12));
 
-  const trend = await fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month" });
+  const trend = await fetchDatalabSearch(env, { keyword, startDate: trendStartDate, endDate, timeUnit: "month" });
+  let month = monthlyShares(trend);
+  let monthLabels = monthlyLabels(trend);
   let week = [];
   let age = [];
   let gender = null;
@@ -349,16 +374,22 @@ async function buildDatalabProfile(env, keyword, options = {}) {
 
   if (includeProfile) {
     const profileRequests = [
-      fetchDatalabSearch(env, { keyword, startDate: dailyStartDate, endDate, timeUnit: "date" }),
-      ...DATALAB_AGE_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", ages: group.ages })),
-      ...DATALAB_GENDER_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit: "month", gender: group.gender })),
+      fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "month", timeoutMs: 25000 }),
+      fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "date", timeoutMs: 25000 }),
+      ...DATALAB_AGE_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", ages: group.ages })),
+      ...DATALAB_GENDER_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", gender: group.gender })),
     ];
     const results = await Promise.allSettled(profileRequests);
-    const daily = fulfilledValue(results[0]);
-    const agePayloads = results.slice(1, 1 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
-    const genderPayloads = results.slice(1 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
+    const historyMonth = fulfilledValue(results[0]);
+    const historyDaily = fulfilledValue(results[1]);
+    const agePayloads = results.slice(2, 2 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
+    const genderPayloads = results.slice(2 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
 
-    week = daily ? weekdayShares(daily) : [];
+    if (historyMonth) {
+      month = monthlySeasonalityShares(historyMonth);
+      monthLabels = DATALAB_MONTH_LABELS;
+    }
+    week = historyDaily ? weekdayShares(historyDaily) : [];
     if (agePayloads.some(Boolean)) age = shareFromPayloads(agePayloads);
     if (genderPayloads.some(Boolean)) {
       const genderShares = shareFromPayloads(genderPayloads);
@@ -373,9 +404,12 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   return {
     series: trendToSeries(trend),
     seriesLabels: trendLabels(trend),
-    month: monthlyShares(trend),
-    monthLabels: monthlyLabels(trend),
+    month,
+    monthLabels,
     trendUnit: "relative_interest_index",
+    monthBasis: "2016_current_search_ratio",
+    weekBasis: "2016_current_search_ratio",
+    ageBasis: "recent_1_year_search_ratio",
     gender,
     age,
     demographicStatus,
@@ -483,11 +517,14 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     trendUnit: estimatedSeries.length ? "monthly_search_volume_estimate" : datalabProfile?.trendUnit || "",
     month: datalabProfile?.month || [],
     monthLabels: datalabProfile?.monthLabels || [],
+    monthBasis: datalabProfile?.monthBasis || "",
     device: { mobile: mobileShare, pc: pcShare },
     gender: datalabProfile?.gender || null,
     age: datalabProfile?.age || [],
+    ageBasis: datalabProfile?.ageBasis || "",
     demographicStatus: datalabProfile?.demographicStatus || "",
     week: datalabProfile?.week || [],
+    weekBasis: datalabProfile?.weekBasis || "",
     naver: {
       monthlyPcQcCnt: item.monthlyPcQcCnt || "0",
       monthlyMobileQcCnt: item.monthlyMobileQcCnt || "0",

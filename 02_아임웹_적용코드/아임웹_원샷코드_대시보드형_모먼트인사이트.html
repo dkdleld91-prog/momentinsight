@@ -1870,15 +1870,15 @@
             <div class="mi-card-head">
               <div>
                 <h2>키워드 조회</h2>
-                <p>월 검색량, 상품 경쟁강도, 연관 키워드를 한 화면에서 비교합니다.</p>
+                <p>월 검색량, 상품 경쟁강도, 연관 키워드를 한 키워드 기준으로 확인합니다.</p>
               </div>
-              <span class="mi-period">최대 3개 비교</span>
+              <span class="mi-period">1개 키워드</span>
             </div>
             <div class="mi-form-row">
-              <input class="mi-input" data-mi-keyword-input value="냉감 패드, 여름 이불, 쿨매트" aria-label="키워드 입력" placeholder="키워드 최대 3개 입력 · 쉼표 또는 줄바꿈 구분" />
+              <input class="mi-input" data-mi-keyword-input value="냉감 패드" aria-label="키워드 입력" placeholder="키워드 1개 입력" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status>키워드는 최대 3개까지 비교할 수 있습니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status>키워드는 1개만 조회합니다.</p>
           </article>
 
           <article class="mi-card mi-keyword-market" data-keyword-market>
@@ -1939,8 +1939,8 @@
               </div>
 
               <div class="mi-chart-tools">
-                <span class="mi-keyword-chip" data-keyword-label>냉감 패드 외 2개</span>
-                <span class="mi-period"><span data-keyword-volume-title>비교 총 검색수</span> <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
+                <span class="mi-keyword-chip" data-keyword-label>냉감 패드</span>
+                <span class="mi-period"><span data-keyword-volume-title>월 검색수</span> <b data-keyword-volume style="margin-left:4px;">조회 필요</b></span>
                 <span class="mi-period">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
               </div>
               <div class="mi-chart-legend" data-keyword-legend>
@@ -1971,15 +1971,15 @@
 
             <aside class="mi-keyword-side">
               <div class="mi-ratio-card">
-                <div class="mi-ratio-title">월별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-title">월별 검색 비율 <span class="mi-ratio-help" title="검색량 트렌드와는 다르게 2016년부터 현재까지 데이터를 종합한 결과입니다. 월별 검색 비율로 키워드의 시즈널리티를 확인합니다." aria-label="2016년부터 현재까지의 월별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="month" style="--ratio-cols:12;"></div>
               </div>
               <div class="mi-ratio-card">
-                <div class="mi-ratio-title">요일별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-title">요일별 검색 비율 <span class="mi-ratio-help" title="2016년부터 현재까지의 데이터를 기반으로 산출한 요일별 검색 비율입니다." aria-label="2016년부터 현재까지의 요일별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="week" style="--ratio-cols:7;"></div>
               </div>
               <div class="mi-ratio-card is-wide">
-                <div class="mi-ratio-title">연령별 검색 비율 <span class="mi-ratio-help">?</span></div>
+                <div class="mi-ratio-title">연령별 검색 비율 <span class="mi-ratio-help" title="최근 1년을 기준으로 산출한 키워드의 연령별 검색 비율입니다." aria-label="최근 1년 기준 연령별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="age" style="--ratio-cols:5;"></div>
               </div>
             </aside>
@@ -2308,7 +2308,7 @@
             seen[keyword] = true;
             return true;
           })
-          .slice(0, 3);
+          .slice(0, 1);
       }
 
       function pickKeywordScale(maxValue) {
@@ -2729,7 +2729,7 @@
 
       function renderKeywordChart(itemsOrKeyword, singleData) {
         var items = Array.isArray(itemsOrKeyword) ? itemsOrKeyword : [{ keyword: itemsOrKeyword, data: singleData }];
-        items = items.filter(function (item) { return item && item.keyword && item.data; }).slice(0, 3);
+        items = items.filter(function (item) { return item && item.keyword && item.data; }).slice(0, 1);
         if (!items.length) return;
 
         keywordDatasets = items;
@@ -2785,7 +2785,7 @@
         };
 
         if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;
-        if (volumeTitle) volumeTitle.textContent = items.length > 1 ? "비교 총 검색수" : "월 검색수";
+        if (volumeTitle) volumeTitle.textContent = items.length > 1 ? "월 검색수" : "월 검색수";
         if (volume) volume.textContent = totalVolume ? formatNumber(totalVolume) : "확인 필요";
         if (change) change.textContent = hasTrendSeries ? (changeRate >= 0 ? "+" : "") + changeRate + "%" : "수집 대기";
         if (axis) axis.textContent = formatShortNumber(chartMax);
@@ -3201,7 +3201,7 @@
       var keywordResult = root.querySelector("[data-mi-keyword-result]");
       var keywordStatus = root.querySelector("[data-mi-keyword-status]");
       var keywordRangeButtons = root.querySelectorAll("[data-keyword-range]");
-      keywordDatasets = parseKeywordInput(keywordInput ? keywordInput.value : "냉감 패드, 여름 이불, 쿨매트").map(function (keyword) {
+      keywordDatasets = parseKeywordInput(keywordInput ? keywordInput.value : "냉감 패드").map(function (keyword) {
         return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "조회 전", ok: false };
       });
       renderKeywordChart(keywordDatasets);
@@ -3220,7 +3220,7 @@
           var keywords = parseKeywordInput(keywordInput.value);
           if (!keywords.length) keywords = ["비타민 앰플"];
           keywordButton.disabled = true;
-          setStatus(keywordStatus, "키워드 데이터를 조회 중입니다. 최대 3개까지 비교합니다.", "");
+          setStatus(keywordStatus, "키워드 데이터를 조회 중입니다. 1개 키워드 기준으로 계산합니다.", "");
           try {
             var items = await Promise.all(keywords.map(resolveKeywordItem));
             keywordDatasets = items;
@@ -3232,15 +3232,15 @@
             var primaryProfile = items[0] && items[0].data ? items[0].data : {};
             var missingProfile = !(hasRatioValues(primaryProfile.month || []) || hasRatioValues(primaryProfile.series || [])) || !hasRatioValues(primaryProfile.week || []) || !hasRatioValues(primaryProfile.age || []);
             if (failed.length) {
-              setStatus(keywordStatus, "일부 키워드는 검색량 확인이 필요합니다. 확인된 키워드만 수치로 표시합니다.", "is-warn");
+              setStatus(keywordStatus, "해당 키워드는 검색량 확인이 필요합니다. 확인된 수치만 표시합니다.", "is-warn");
             } else if (missingVolume.length) {
-              setStatus(keywordStatus, "조회 완료: 일부 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
+              setStatus(keywordStatus, "조회 완료: 해당 키워드는 정확한 월 검색량이 확인되지 않았습니다.", "is-warn");
             } else if (pendingTrend.length) {
               setStatus(keywordStatus, "조회 완료: 월 검색량은 확인됐고, 비율 데이터는 수집 대기입니다.", "is-ok");
             } else if (missingProfile) {
-              setStatus(keywordStatus, "조회 완료: 첫 키워드 기준 일부 비율 데이터는 수집 대기입니다.", "is-warn");
+              setStatus(keywordStatus, "조회 완료: 일부 검색 비율 데이터는 수집 대기입니다.", "is-warn");
             } else {
-              setStatus(keywordStatus, "조회 완료: 월 검색량과 시장 흐름을 최대 3개 키워드로 비교합니다.", "is-ok");
+              setStatus(keywordStatus, "조회 완료: 월 검색량과 검색 비율을 1개 키워드 기준으로 표시합니다.", "is-ok");
             }
           } catch (error) {
             keywordDatasets = keywords.map(function (keyword) {

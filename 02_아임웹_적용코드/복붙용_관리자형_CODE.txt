@@ -3417,26 +3417,13 @@
         });
       }
 
-      function averageKeywordProfile(items, key, fallback) {
-        if (!items.length) return fallback;
+      function firstKeywordProfile(items, key, fallback) {
+        var first = items && items[0];
+        var value = first && first.data ? first.data[key] : null;
         if (Array.isArray(fallback)) {
-          return fallback.map(function (value, index) {
-            var total = items.reduce(function (sum, item) {
-              var values = item.data && Array.isArray(item.data[key]) ? item.data[key] : fallback;
-              return sum + Number(values[index] || value || 0);
-            }, 0);
-            return Math.round(total / items.length);
-          });
+          return Array.isArray(value) && value.length ? value : fallback;
         }
-        var output = {};
-        Object.keys(fallback).forEach(function (name) {
-          var total = items.reduce(function (sum, item) {
-            var values = item.data && item.data[key] ? item.data[key] : fallback;
-            return sum + Number(values[name] || fallback[name] || 0);
-          }, 0);
-          output[name] = Math.round(total / items.length);
-        });
-        return output;
+        return value && typeof value === "object" ? value : fallback;
       }
 
       function showKeywordTooltip(event, text, point) {
@@ -3706,10 +3693,10 @@
         var pointsGroup = root.querySelector("[data-keyword-points]");
         var changeRate = previousTotal > 0 ? Math.round(((totalVolume - previousTotal) / previousTotal) * 100) : 0;
         var profile = {
-          device: averageKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
-          gender: averageKeywordProfile(items, "gender", { female: 79, male: 21 }),
-          age: averageKeywordProfile(items, "age", [18, 28, 58, 84, 70, 36]),
-          week: averageKeywordProfile(items, "week", [82, 88, 86, 79, 74, 66, 76])
+          device: firstKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
+          gender: firstKeywordProfile(items, "gender", { female: 79, male: 21 }),
+          age: firstKeywordProfile(items, "age", [18, 28, 58, 84, 70, 36]),
+          week: firstKeywordProfile(items, "week", [82, 88, 86, 79, 74, 66, 76])
         };
 
         if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;

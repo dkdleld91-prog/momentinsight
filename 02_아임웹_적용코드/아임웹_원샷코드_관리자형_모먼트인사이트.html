@@ -1927,7 +1927,7 @@
         <h2>관리자 코드 접속</h2>
         <p>관리자 계정으로만 접근할 수 있습니다.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
+          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" value="mml-a01" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
           <button class="mi-button" type="button" data-admin-login-button>관리자 콘솔 열기</button>
           <div class="mi-code-status" data-admin-login-status>관리자 전용 화면입니다.</div>
         </div>
@@ -2244,7 +2244,7 @@
             <aside class="mi-card mi-card-pad">
               <h3>현재 연결 상태</h3>
               <div class="mi-table">
-                <div class="mi-row"><span>대행사 코드</span><strong data-admin-public="code">MI-ACCESS-01</strong></div>
+                <div class="mi-row"><span>대행사 코드</span><strong data-admin-public="code">mml-a01</strong></div>
                 <div class="mi-row"><span>광고주</span><strong data-admin-public="client">브랜드 A</strong></div>
                 <div class="mi-row"><span>광고주 공개 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
                 <div class="mi-row"><span>광고비 / 구매수</span><strong><span data-admin-public="adSpend">720만원</span> · <span data-admin-public="orders">1,248건</span></strong></div>
@@ -2658,7 +2658,7 @@
 
       var storageKey = "miAgencyPublicState:v2";
       var defaultState = {
-        code: "MI-ACCESS-01",
+        code: "mml-a01",
         client: "브랜드 A",
         sales: "4,180만원",
         roas: "581%",
@@ -2688,8 +2688,13 @@
       function normalizeLegacyState(state) {
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
+        if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         return next;
+      }
+
+      function isValidAdminCode(value) {
+        return String(value || "").trim().toLowerCase() === "mml-a01";
       }
 
       function readState() {
@@ -3086,14 +3091,12 @@
       var loginStatus = root.querySelector("[data-admin-login-status]");
       if (loginButton) {
         loginButton.addEventListener("click", function () {
-          var host = window.location && window.location.hostname;
-          var isLocalPreview = !host || host === "127.0.0.1" || host === "localhost";
-          if (!isLocalPreview && window.MI_ENABLE_ADMIN_PREVIEW !== true) {
-            setStatus(loginStatus, "운영 도메인에서는 관리자 콘솔이 잠겨 있습니다. 운영팀 계정으로 로그인 후 사용하세요.", "is-warn");
-            return;
-          }
           if (!getAdminCode()) {
             setStatus(loginStatus, "관리자 코드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!isValidAdminCode(getAdminCode())) {
+            setStatus(loginStatus, "관리자 코드가 일치하지 않습니다. mml-a01 코드를 입력해주세요.", "is-warn");
             return;
           }
           root.classList.remove("is-locked");

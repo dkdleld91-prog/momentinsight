@@ -1623,7 +1623,7 @@
         <h2>대행사 코드 접속</h2>
         <p>담당자에게 받은 접속 코드를 입력하세요.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-mi-login-code value="MI-ACCESS-01" aria-label="대행사 코드" />
+          <input class="mi-input" data-mi-login-code value="mml-a01" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status>관리자에게 받은 대행사 코드를 입력하세요.</div>
         </div>
@@ -2057,7 +2057,7 @@
               <h2>코드 연결</h2>
               <p>담당자에게 받은 접속 코드를 입력하면 브랜드 데이터가 연결됩니다.</p>
               <div class="mi-form-row">
-                <input class="mi-input" data-mi-connect-code value="MI-ACCESS-01" aria-label="대행사 코드 연결" />
+                <input class="mi-input" data-mi-connect-code value="mml-a01" aria-label="대행사 코드 연결" />
                 <button class="mi-button" type="button" data-mi-connect-button>연결 확인</button>
               </div>
               <p class="mi-code-status" style="margin-top:10px;" data-mi-connect-status>코드 연결 전입니다.</p>
@@ -2067,7 +2067,7 @@
               <h3>연결된 브랜드 데이터</h3>
               <div class="mi-table">
                 <div class="mi-row"><span>광고주</span><strong data-mi-public="client">브랜드 A</strong></div>
-                <div class="mi-row"><span>대행사 코드</span><strong data-mi-public="code">MI-ACCESS-01</strong></div>
+                <div class="mi-row"><span>대행사 코드</span><strong data-mi-public="code">mml-a01</strong></div>
                 <div class="mi-row"><span>현재 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
                 <div class="mi-row"><span>다음 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
               </div>
@@ -2086,7 +2086,7 @@
       var storageKey = "miAgencyPublicState:v2";
       var selectedCodeKey = "miAgencySelectedCode";
       var defaultState = {
-        code: "MI-ACCESS-01",
+        code: "mml-a01",
         client: "브랜드 A",
         sales: "4,180만원",
         roas: "581%",
@@ -2205,6 +2205,7 @@
       function normalizeLegacyState(state) {
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
+        if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         return next;
       }

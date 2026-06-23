@@ -108,7 +108,7 @@ function buildPublicState(data) {
     "공개 코멘트를 준비 중입니다.";
 
   return {
-    code: client.agency_code || "MI-DEMO-01",
+    code: client.agency_code || "mml-a01",
     client: client.name || "비타민 앰플 데모",
     sales: formatMoney(dashboard.sales),
     roas: formatPercent(dashboard.roas),
@@ -210,7 +210,7 @@ async function writePublicState(ctx, state) {
     .from("clients")
     .update({
       name: state.client || "비타민 앰플 데모",
-      agency_code: state.code || "MI-DEMO-01",
+      agency_code: state.code || "mml-a01",
       public_summary: publicComment
     })
     .eq("id", demoClientId)

@@ -729,6 +729,93 @@
       background: #fbfcfd;
     }
 
+    #mi-clean .mi-profile-grid {
+      display: grid;
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    #mi-clean .mi-profile-card {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-clean .mi-profile-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-clean .mi-profile-title small {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-profile-bar {
+      display: flex;
+      height: 34px;
+      overflow: hidden;
+      border: 1px solid #dbe3ee;
+      border-radius: 8px;
+      background: #eef3f9;
+    }
+
+    #mi-clean .mi-profile-segment {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: center;
+      padding: 0 8px;
+      color: #fff;
+      font-size: 12px;
+      font-weight: 950;
+      white-space: nowrap;
+      transition: width 0.18s ease;
+    }
+
+    #mi-clean .mi-profile-segment.is-mobile,
+    #mi-clean .mi-profile-segment.is-female {
+      background: #1d6fd8;
+    }
+
+    #mi-clean .mi-profile-segment.is-pc,
+    #mi-clean .mi-profile-segment.is-male {
+      background: var(--mi-navy);
+    }
+
+    #mi-clean .mi-profile-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 10px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-profile-empty {
+      display: flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      border: 1px dashed #d9dee7;
+      border-radius: 8px;
+      color: var(--mi-muted);
+      background: #fbfcfd;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
     #mi-clean .mi-keyword-market {
       margin-bottom: 16px;
       padding: 22px;
@@ -1524,6 +1611,10 @@
       #mi-clean .mi-keyword-side {
         grid-template-columns: 1fr;
       }
+
+      #mi-clean .mi-profile-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 520px) {
@@ -1970,6 +2061,16 @@
             </div>
 
             <aside class="mi-keyword-side">
+              <div class="mi-profile-grid">
+                <div class="mi-profile-card">
+                  <div class="mi-profile-title">기기별 검색 비율 <small>모바일 / PC</small></div>
+                  <div data-keyword-profile="device"></div>
+                </div>
+                <div class="mi-profile-card">
+                  <div class="mi-profile-title">성별 검색 비율 <small>여성 / 남성</small></div>
+                  <div data-keyword-profile="gender"></div>
+                </div>
+              </div>
               <div class="mi-ratio-card">
                 <div class="mi-ratio-title">월별 검색 비율 <span class="mi-ratio-help" title="검색량 트렌드와는 다르게 2016년부터 현재까지 데이터를 종합한 결과입니다. 월별 검색 비율로 키워드의 시즈널리티를 확인합니다." aria-label="2016년부터 현재까지의 월별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="month" style="--ratio-cols:12;"></div>
@@ -2500,6 +2601,36 @@
         });
       }
 
+      function boundedPercent(value) {
+        value = Number(value || 0);
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, Math.min(100, Math.round(value)));
+      }
+
+      function renderProfileSplit(type, firstLabel, secondLabel, firstValue, secondValue, emptyMessage) {
+        var node = root.querySelector('[data-keyword-profile="' + type + '"]');
+        if (!node) return;
+        firstValue = boundedPercent(firstValue);
+        secondValue = boundedPercent(secondValue);
+        if (firstValue + secondValue <= 0) {
+          node.innerHTML = '<div class="mi-profile-empty">' + escapeHtml(emptyMessage || "비율 데이터 수집 대기") + '</div>';
+          return;
+        }
+        if (firstValue + secondValue !== 100) {
+          var sum = firstValue + secondValue;
+          firstValue = Math.round((firstValue / sum) * 100);
+          secondValue = 100 - firstValue;
+        }
+        var firstClass = type === "device" ? "is-mobile" : "is-female";
+        var secondClass = type === "device" ? "is-pc" : "is-male";
+        node.innerHTML =
+          '<div class="mi-profile-bar">' +
+            '<span class="mi-profile-segment ' + firstClass + '" style="width:' + firstValue + '%;">' + escapeHtml(firstLabel) + ' ' + firstValue + '%</span>' +
+            '<span class="mi-profile-segment ' + secondClass + '" style="width:' + secondValue + '%;">' + escapeHtml(secondLabel) + ' ' + secondValue + '%</span>' +
+          '</div>' +
+          '<div class="mi-profile-meta"><span>' + escapeHtml(firstLabel) + ' ' + firstValue + '%</span><span>' + escapeHtml(secondLabel) + ' ' + secondValue + '%</span></div>';
+      }
+
       function showKeywordTooltip(event, text, point) {
         var tooltip = root.querySelector("[data-keyword-tooltip]");
         var chart = root.querySelector(".mi-line-chart");
@@ -2785,8 +2916,8 @@
         var empty = root.querySelector("[data-keyword-chart-empty]");
         var changeRate = previousTrendTotal > 0 ? Math.round(((currentTrendTotal - previousTrendTotal) / previousTrendTotal) * 100) : 0;
         var profile = {
-          device: firstKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
-          gender: firstKeywordProfile(items, "gender", { female: 79, male: 21 }),
+          device: firstKeywordProfile(items, "device", null),
+          gender: firstKeywordProfile(items, "gender", null),
           month: firstKeywordProfile(items, "month", []),
           age: firstKeywordProfile(items, "age", []),
           week: firstKeywordProfile(items, "week", [])
@@ -2880,6 +3011,8 @@
         renderKeywordMarket(items);
         renderKeywordMonths(labels);
         renderKeywordYAxis(chartMax);
+        renderProfileSplit("device", "모바일", "PC", profile.device && profile.device.mobile, profile.device && profile.device.pc, "기기 비율 수집 대기");
+        renderProfileSplit("gender", "여성", "남성", profile.gender && profile.gender.female, profile.gender && profile.gender.male, "성별 비율 수집 대기");
         var fallbackMonthSeries = seriesList[0] && seriesList[0].length ? seriesList[0].slice(-12) : [];
         var monthSeries = hasRatioValues(profile.month) ? profile.month : fallbackMonthSeries;
         var monthLabels = alignedMonthLabels(items[0].data, monthSeries, labels);

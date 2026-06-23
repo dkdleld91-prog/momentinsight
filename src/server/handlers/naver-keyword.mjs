@@ -96,6 +96,18 @@ function searchVolumeWithUnit(label) {
   return `${text}회`;
 }
 
+function keywordAction({ hasExactMatch, isUnderThreshold, volume, comp }) {
+  if (!hasExactMatch) return "정확한 월 검색량이 확인되지 않아 연관 키워드를 개별 조회";
+  if (isUnderThreshold) return "검색량이 낮아 단독 핵심 키워드보다 보조 키워드로 관리";
+  if (volume < 1000) return "검색량이 낮아 롱테일 소재와 SEO 보조 키워드로 관리";
+  if (volume < 10000) return comp === "높음"
+    ? "검색량은 중간 이하이고 광고 경쟁이 높아 콘텐츠 테스트 중심으로 운영"
+    : "검색량과 경쟁도를 함께 보며 보조 키워드 후보로 분류";
+  if (comp === "높음") return "검색량은 확인되지만 광고 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영";
+  if (comp === "낮음") return "검색량 대비 광고 경쟁이 낮아 SEO와 광고 테스트 후보로 분류";
+  return "검색량과 광고 경쟁도를 기준으로 SEO 후보로 분류";
+}
+
 function round(value, digits = 1) {
   const scale = 10 ** digits;
   return Math.round(Number(value || 0) * scale) / scale;
@@ -405,9 +417,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     trendStatus: datalabProfile?.series?.length ? "확인됨" : "수집 대기",
     volume: safeVolume,
     comp,
-    action: hasExactMatch
-      ? comp === "높음" ? "검색량은 크지만 광고 경쟁이 높아 콘텐츠와 광고 소재를 분리 운영" : "검색량과 광고 경쟁도를 기준으로 SEO 후보로 분류"
-      : "정확한 월 검색량이 확인되지 않아 연관 키워드를 개별 조회",
+    action: keywordAction({ hasExactMatch, isUnderThreshold: metric.isUnderThreshold, volume: safeVolume, comp }),
     insight: hasExactMatch
       ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 광고 경쟁도 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",

@@ -731,6 +731,7 @@
       flex-wrap: wrap;
     }
 
+    #mi-clean .mi-segment button,
     #mi-clean .mi-segment span,
     #mi-clean .mi-keyword-chip {
       display: inline-flex;
@@ -743,8 +744,24 @@
       background: #fff;
       font-size: 12px;
       font-weight: 900;
+      font-family: inherit;
     }
 
+    #mi-clean .mi-segment button {
+      cursor: pointer;
+    }
+
+    #mi-clean .mi-segment button:hover {
+      border-color: rgba(6, 26, 58, 0.25);
+      color: var(--mi-navy);
+    }
+
+    #mi-clean .mi-segment button:focus-visible {
+      outline: 3px solid rgba(77, 115, 255, 0.18);
+      outline-offset: 2px;
+    }
+
+    #mi-clean .mi-segment button.is-active,
     #mi-clean .mi-segment span.is-active,
     #mi-clean .mi-keyword-chip {
       color: var(--mi-navy);
@@ -769,6 +786,10 @@
       background: #7b9cff;
     }
 
+    #mi-clean .mi-chart-legend .mi-dot {
+      background: var(--keyword-color, #7b9cff);
+    }
+
     #mi-clean .mi-line-chart {
       position: relative;
       min-height: 290px;
@@ -781,6 +802,41 @@
       display: block;
       width: 100%;
       height: 250px;
+    }
+
+    #mi-clean .mi-chart-point {
+      cursor: pointer;
+      transition: opacity 0.16s ease;
+    }
+
+    #mi-clean .mi-chart-point:hover,
+    #mi-clean .mi-chart-point.is-active {
+      opacity: 1;
+    }
+
+    #mi-clean .mi-chart-tooltip {
+      position: absolute;
+      z-index: 5;
+      min-width: 142px;
+      transform: translate(-50%, calc(-100% - 14px));
+      border: 1px solid rgba(6, 26, 58, 0.14);
+      border-radius: 8px;
+      padding: 8px 10px;
+      color: #fff;
+      background: rgba(6, 26, 58, 0.94);
+      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.18);
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.45;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-chart-tooltip b {
+      display: block;
+      margin-bottom: 2px;
+      color: #fff;
+      font-size: 12px;
     }
 
     #mi-clean .mi-axis-top {
@@ -1321,10 +1377,10 @@
               <span class="mi-period">월간 기준</span>
             </div>
             <div class="mi-form-row">
-              <input class="mi-input" data-mi-keyword-input value="비타민 앰플" aria-label="키워드 입력" />
+              <input class="mi-input" data-mi-keyword-input value="냉감 패드, 여름 이불, 쿨매트" aria-label="키워드 입력" placeholder="키워드 최대 3개 입력 · 쉼표 또는 줄바꿈 구분" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status>키워드를 입력하고 조회하세요.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status>키워드는 최대 3개까지 비교할 수 있습니다.</p>
           </article>
 
           <article class="mi-card mi-keyword-chart">
@@ -1334,25 +1390,20 @@
                   <h2>종합 차트</h2>
                   <p>월별 검색수 추이와 클릭 비율을 함께 봅니다.</p>
                 </div>
-                <div class="mi-segment" aria-label="조회 기간">
-                  <span>월간</span>
-                  <span>3년</span>
-                  <span class="is-active">1년</span>
-                  <span>1개월</span>
-                  <span>직접 선택</span>
+                <div class="mi-segment" aria-label="조회 기간" data-keyword-range-tabs>
+                  <button type="button" data-keyword-range="monthly">월간</button>
+                  <button type="button" data-keyword-range="year" class="is-active">1년</button>
+                  <button type="button" data-keyword-range="threeYear">3년</button>
                 </div>
               </div>
 
               <div class="mi-chart-tools">
-                <span class="mi-keyword-chip" data-keyword-label>비타민 앰플</span>
+                <span class="mi-keyword-chip" data-keyword-label>냉감 패드 외 2개</span>
                 <span class="mi-period">검색수 <b data-keyword-volume style="margin-left:4px;">18,400</b></span>
                 <span class="mi-period">전월 대비 <b data-keyword-change style="margin-left:4px;">+12%</b></span>
               </div>
-              <div class="mi-chart-legend">
+              <div class="mi-chart-legend" data-keyword-legend>
                 <span><i class="mi-dot"></i>검색수</span>
-                <span>클릭률(%)</span>
-                <span>상품수</span>
-                <span>경쟁강도</span>
               </div>
 
               <div class="mi-line-chart" aria-label="월별 검색수 차트">
@@ -1363,10 +1414,11 @@
                   <line x1="0" y1="100" x2="760" y2="100" stroke="#edf0f4" />
                   <line x1="0" y1="155" x2="760" y2="155" stroke="#edf0f4" />
                   <line x1="0" y1="210" x2="760" y2="210" stroke="#edf0f4" />
-                  <polyline data-keyword-line points="" fill="none" stroke="#7b9cff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
-                  <circle data-keyword-point cx="0" cy="0" r="5" fill="#4d73ff" />
+                  <g data-keyword-lines></g>
+                  <g data-keyword-points></g>
                 </svg>
-                <div class="mi-months">
+                <div class="mi-chart-tooltip" data-keyword-tooltip hidden></div>
+                <div class="mi-months" data-keyword-months>
                   <span>05</span><span>06</span><span>07</span><span>08</span><span>09</span><span>10</span>
                   <span>11</span><span>12</span><span>01</span><span>02</span><span>03</span><span>04</span>
                 </div>
@@ -1513,6 +1565,39 @@
       };
 
       var keywordSamples = {
+        "냉감 패드": {
+          volume: 162400,
+          comp: "중간",
+          action: "여름 시즌형 소재와 검색광고 예산을 함께 점검",
+          insight: "검색량이 커서 시즌성 콘텐츠와 광고 소재를 분리 운영",
+          series: [69600, 98500, 138000, 151800, 162400, 128900, 101200, 84200, 70100, 63200, 94100, 132600],
+          device: { mobile: 84, pc: 16 },
+          gender: { female: 50, male: 50 },
+          age: [21, 34, 49, 72, 61, 38],
+          week: [68, 74, 77, 72, 66, 59, 65]
+        },
+        "여름 이불": {
+          volume: 82400,
+          comp: "중간",
+          action: "냉감 소재, 세탁 편의성 중심으로 상세 문구 보강",
+          insight: "생활형 키워드라 후기/비교 콘텐츠에서 전환 보조 가능",
+          series: [31200, 42500, 61100, 72900, 82400, 68800, 54100, 40200, 33700, 29500, 43800, 68200],
+          device: { mobile: 81, pc: 19 },
+          gender: { female: 64, male: 36 },
+          age: [17, 36, 58, 76, 63, 32],
+          week: [70, 78, 82, 76, 71, 62, 67]
+        },
+        "쿨매트": {
+          volume: 55700,
+          comp: "높음",
+          action: "경쟁도가 높아 소재 차별점과 가격 비교 문구 강화",
+          insight: "구매 의도가 강한 키워드라 광고 소재 테스트 우선",
+          series: [25400, 31800, 46200, 51500, 55700, 48800, 39000, 28800, 23600, 20100, 30400, 44700],
+          device: { mobile: 79, pc: 21 },
+          gender: { female: 57, male: 43 },
+          age: [15, 29, 52, 70, 68, 41],
+          week: [66, 73, 79, 75, 70, 64, 68]
+        },
         "비타민 앰플": {
           volume: 18400,
           comp: "보통",
@@ -1546,6 +1631,15 @@
           age: [10, 31, 56, 74, 86, 61],
           week: [72, 86, 91, 88, 80, 59, 63]
         }
+      };
+
+      var keywordColors = ["#4d73ff", "#00a3a3", "#f59e0b"];
+      var keywordRange = "year";
+      var keywordDatasets = [];
+      var keywordRangeMonths = {
+        monthly: 6,
+        year: 12,
+        threeYear: 36
       };
 
       function readState() {
@@ -1635,6 +1729,19 @@
         });
       }
 
+      function parseKeywordInput(value) {
+        var seen = {};
+        return String(value || "")
+          .split(/[\n,，]+/)
+          .map(function (keyword) { return keyword.trim(); })
+          .filter(function (keyword) {
+            if (!keyword || seen[keyword]) return false;
+            seen[keyword] = true;
+            return true;
+          })
+          .slice(0, 3);
+      }
+
       function hashKeyword(keyword) {
         return String(keyword || "").split("").reduce(function (sum, char) {
           return sum + char.charCodeAt(0);
@@ -1661,11 +1768,62 @@
       }
 
       function pickKeywordScale(maxValue) {
-        var scales = [6000, 10000, 20000, 30000, 50000, 80000, 120000];
+        var scales = [6000, 10000, 20000, 30000, 50000, 80000, 120000, 200000, 300000, 500000];
         for (var index = 0; index < scales.length; index += 1) {
           if (maxValue <= scales[index]) return scales[index];
         }
         return Math.ceil(maxValue / 50000) * 50000;
+      }
+
+      function formatShortNumber(value) {
+        var number = Number(value || 0);
+        if (number >= 1000000) return Math.round(number / 1000000) + "M";
+        if (number >= 1000) return Math.round(number / 1000) + "K";
+        return formatNumber(number);
+      }
+
+      function makeKeywordMonthLabels(count) {
+        var now = new Date();
+        var labels = [];
+        for (var index = count - 1; index >= 0; index -= 1) {
+          var date = new Date(now.getFullYear(), now.getMonth() - index, 1);
+          labels.push(String(date.getMonth() + 1).padStart(2, "0"));
+        }
+        return labels;
+      }
+
+      function renderKeywordMonths(labels) {
+        var node = root.querySelector("[data-keyword-months]");
+        if (!node) return;
+        var maxLabels = 12;
+        var visibleLabels = labels;
+        if (labels.length > maxLabels) {
+          var step = Math.ceil(labels.length / maxLabels);
+          visibleLabels = labels.filter(function (_label, index) {
+            return index % step === 0 || index === labels.length - 1;
+          });
+        }
+        node.style.gridTemplateColumns = "repeat(" + visibleLabels.length + ", minmax(0, 1fr))";
+        node.innerHTML = visibleLabels.map(function (label) {
+          return "<span>" + escapeHtml(label) + "</span>";
+        }).join("");
+      }
+
+      function rangeSeries(keyword, data) {
+        var count = keywordRangeMonths[keywordRange] || 12;
+        var source = Array.isArray(data.series) && data.series.length ? data.series.slice() : makeKeywordSeries(data.volume);
+        if (source.length >= count) return source.slice(source.length - count);
+
+        var seed = hashKeyword(keyword);
+        var values = [];
+        for (var index = 0; index < count; index += 1) {
+          var sourceValue = source[index % source.length] || data.volume || 1200;
+          var ageFactor = 0.74 + (index / Math.max(1, count - 1)) * 0.34;
+          var noise = 0.92 + ((seed + index * 13) % 18) / 100;
+          values.push(Math.max(400, Math.round(sourceValue * ageFactor * noise)));
+        }
+        if (data.volume) values[values.length - 1] = Number(data.volume);
+        return values;
       }
 
       function setRatio(selector, label, value) {
@@ -1682,50 +1840,151 @@
         });
       }
 
-      function renderKeywordChart(keyword, data) {
-        var series = data.series || makeKeywordSeries(data.volume);
-        var peakValue = Math.max.apply(null, series);
-        var peakIndex = series.indexOf(peakValue);
+      function averageKeywordProfile(items, key, fallback) {
+        if (!items.length) return fallback;
+        if (Array.isArray(fallback)) {
+          return fallback.map(function (value, index) {
+            var total = items.reduce(function (sum, item) {
+              var values = item.data && Array.isArray(item.data[key]) ? item.data[key] : fallback;
+              return sum + Number(values[index] || value || 0);
+            }, 0);
+            return Math.round(total / items.length);
+          });
+        }
+        var output = {};
+        Object.keys(fallback).forEach(function (name) {
+          var total = items.reduce(function (sum, item) {
+            var values = item.data && item.data[key] ? item.data[key] : fallback;
+            return sum + Number(values[name] || fallback[name] || 0);
+          }, 0);
+          output[name] = Math.round(total / items.length);
+        });
+        return output;
+      }
+
+      function showKeywordTooltip(event, text) {
+        var tooltip = root.querySelector("[data-keyword-tooltip]");
+        var chart = root.querySelector(".mi-line-chart");
+        if (!tooltip || !chart) return;
+        var rect = chart.getBoundingClientRect();
+        tooltip.innerHTML = text;
+        tooltip.hidden = false;
+        tooltip.style.left = Math.max(72, Math.min(rect.width - 72, event.clientX - rect.left)) + "px";
+        tooltip.style.top = Math.max(42, event.clientY - rect.top) + "px";
+      }
+
+      function hideKeywordTooltip() {
+        var tooltip = root.querySelector("[data-keyword-tooltip]");
+        if (tooltip) tooltip.hidden = true;
+      }
+
+      function renderKeywordChart(itemsOrKeyword, singleData) {
+        var items = Array.isArray(itemsOrKeyword) ? itemsOrKeyword : [{ keyword: itemsOrKeyword, data: singleData }];
+        items = items.filter(function (item) { return item && item.keyword && item.data; }).slice(0, 3);
+        if (!items.length) return;
+
+        keywordDatasets = items;
+        var count = keywordRangeMonths[keywordRange] || 12;
+        var labels = makeKeywordMonthLabels(count);
+        var seriesList = items.map(function (item) {
+          return rangeSeries(item.keyword, item.data);
+        });
+        var flatSeries = [].concat.apply([], seriesList);
+        var peakValue = Math.max.apply(null, flatSeries);
         var chartMax = pickKeywordScale(peakValue);
         var width = 760;
         var height = 250;
         var top = 18;
         var bottom = 30;
-        var points = series.map(function (value, index) {
-          var x = series.length > 1 ? (index / (series.length - 1)) * width : 0;
-          var y = height - bottom - ((value / chartMax) * (height - top - bottom));
-          return x.toFixed(1) + "," + y.toFixed(1);
-        });
-        var peakX = series.length > 1 ? (peakIndex / (series.length - 1)) * width : 0;
-        var peakY = height - bottom - ((peakValue / chartMax) * (height - top - bottom));
+        var totalVolume = items.reduce(function (sum, item) { return sum + Number(item.data.volume || 0); }, 0);
+        var previousTotal = seriesList.reduce(function (sum, series) {
+          return sum + Number(series[series.length - 2] || series[series.length - 1] || 0);
+        }, 0);
+        var peakInfo = { keyword: items[0].keyword, label: labels[0], value: peakValue };
         var label = root.querySelector("[data-keyword-label]");
         var volume = root.querySelector("[data-keyword-volume]");
         var change = root.querySelector("[data-keyword-change]");
         var axis = root.querySelector("[data-keyword-axis]");
         var peak = root.querySelector("[data-keyword-peak]");
         var insight = root.querySelector("[data-keyword-insight]");
-        var line = root.querySelector("[data-keyword-line]");
-        var point = root.querySelector("[data-keyword-point]");
-        var previous = series[series.length - 2] || data.volume;
-        var changeRate = previous > 0 ? Math.round(((data.volume - previous) / previous) * 100) : 0;
+        var legend = root.querySelector("[data-keyword-legend]");
+        var linesGroup = root.querySelector("[data-keyword-lines]");
+        var pointsGroup = root.querySelector("[data-keyword-points]");
+        var changeRate = previousTotal > 0 ? Math.round(((totalVolume - previousTotal) / previousTotal) * 100) : 0;
         var profile = {
-          device: data.device || { mobile: 85, pc: 15 },
-          gender: data.gender || { female: 79, male: 21 },
-          age: data.age || [18, 28, 58, 84, 70, 36],
-          week: data.week || [82, 88, 86, 79, 74, 66, 76]
+          device: averageKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
+          gender: averageKeywordProfile(items, "gender", { female: 79, male: 21 }),
+          age: averageKeywordProfile(items, "age", [18, 28, 58, 84, 70, 36]),
+          week: averageKeywordProfile(items, "week", [82, 88, 86, 79, 74, 66, 76])
         };
 
-        if (label) label.textContent = keyword;
-        if (volume) volume.textContent = formatNumber(data.volume);
+        if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;
+        if (volume) volume.textContent = formatNumber(totalVolume);
         if (change) change.textContent = (changeRate >= 0 ? "+" : "") + changeRate + "%";
-        if (axis) axis.textContent = Math.round(chartMax / 1000) + "K";
-        if (peak) peak.textContent = "2026.03 · " + formatNumber(peakValue);
-        if (insight) insight.textContent = data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
-        if (line) line.setAttribute("points", points.join(" "));
-        if (point) {
-          point.setAttribute("cx", peakX.toFixed(1));
-          point.setAttribute("cy", peakY.toFixed(1));
+        if (axis) axis.textContent = formatShortNumber(chartMax);
+        if (legend) {
+          legend.innerHTML = items.map(function (item, index) {
+            return '<span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span>';
+          }).join("");
         }
+        if (linesGroup) linesGroup.innerHTML = "";
+        if (pointsGroup) pointsGroup.innerHTML = "";
+
+        seriesList.forEach(function (series, seriesIndex) {
+          var color = keywordColors[seriesIndex % keywordColors.length];
+          var pointPairs = series.map(function (value, index) {
+            var x = series.length > 1 ? (index / (series.length - 1)) * width : width / 2;
+            var y = height - bottom - ((value / chartMax) * (height - top - bottom));
+            if (value >= peakInfo.value) peakInfo = { keyword: items[seriesIndex].keyword, label: labels[index] || "", value: value };
+            return { x: x, y: y, value: value, label: labels[index] || "" };
+          });
+
+          if (linesGroup) {
+            var line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+            line.setAttribute("points", pointPairs.map(function (point) {
+              return point.x.toFixed(1) + "," + point.y.toFixed(1);
+            }).join(" "));
+            line.setAttribute("fill", "none");
+            line.setAttribute("stroke", color);
+            line.setAttribute("stroke-width", "3");
+            line.setAttribute("stroke-linecap", "round");
+            line.setAttribute("stroke-linejoin", "round");
+            line.setAttribute("opacity", seriesIndex === 0 ? "1" : "0.9");
+            linesGroup.appendChild(line);
+          }
+
+          if (pointsGroup) {
+            pointPairs.forEach(function (point) {
+              var circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+              circle.setAttribute("class", "mi-chart-point");
+              circle.setAttribute("cx", point.x.toFixed(1));
+              circle.setAttribute("cy", point.y.toFixed(1));
+              circle.setAttribute("r", "4.5");
+              circle.setAttribute("fill", "#fff");
+              circle.setAttribute("stroke", color);
+              circle.setAttribute("stroke-width", "3");
+              circle.setAttribute("opacity", "0.95");
+              circle.addEventListener("mouseenter", function (event) {
+                circle.setAttribute("r", "7");
+                showKeywordTooltip(event, "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value));
+              });
+              circle.addEventListener("mousemove", function (event) {
+                showKeywordTooltip(event, "<b>" + escapeHtml(items[seriesIndex].keyword) + "</b>" + escapeHtml(point.label) + "월 · 검색량 " + formatNumber(point.value));
+              });
+              circle.addEventListener("mouseleave", function () {
+                circle.setAttribute("r", "4.5");
+                hideKeywordTooltip();
+              });
+              pointsGroup.appendChild(circle);
+            });
+          }
+        });
+
+        if (peak) peak.textContent = peakInfo.keyword + " · " + peakInfo.label + "월 · " + formatNumber(peakInfo.value);
+        if (insight) {
+          insight.textContent = items[0].data.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
+        }
+        renderKeywordMonths(labels);
         setRatio("[data-keyword-device-mobile]", "모바일", profile.device.mobile);
         setRatio("[data-keyword-device-pc]", "PC", profile.device.pc);
         setRatio("[data-keyword-gender-female]", "여성", profile.gender.female);
@@ -1778,13 +2037,13 @@
         return source.trend === "NAVER DataLab API" ? "네이버 검색광고 API + 데이터랩 API" : "네이버 검색광고 API";
       }
 
-      function renderKeywordResult(keyword, data, sourceLabel) {
-        keywordResult.innerHTML =
-          '<div class="mi-row"><span>검색 키워드</span><strong>' + escapeHtml(keyword) + '</strong></div>' +
-          '<div class="mi-row"><span>월 검색량</span><strong>' + formatNumber(data.volume) + '</strong></div>' +
-          '<div class="mi-row"><span>경쟁도</span><strong>' + escapeHtml(data.comp) + '</strong></div>' +
-          '<div class="mi-row"><span>데이터 출처</span><strong>' + escapeHtml(sourceLabel) + '</strong></div>' +
-          '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(data.action) + '</strong></div>';
+      function renderKeywordResult(items) {
+        if (!keywordResult) return;
+        keywordResult.innerHTML = items.map(function (item, index) {
+          return '<div class="mi-row"><span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span><strong>' + formatNumber(item.data.volume) + ' · ' + escapeHtml(item.data.comp) + '</strong></div>' +
+            '<div class="mi-row"><span>출처</span><strong>' + escapeHtml(item.sourceLabel || "데모 계산값") + '</strong></div>' +
+            '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(item.data.action) + '</strong></div>';
+        }).join("");
       }
 
       async function fetchKeywordData(keyword) {
@@ -1798,6 +2057,27 @@
           throw new Error((payload && payload.message) || "네이버 키워드 API 응답이 올바르지 않습니다.");
         }
         return payload;
+      }
+
+      async function resolveKeywordItem(keyword) {
+        var fallbackData = buildKeywordFallback(keyword);
+        try {
+          var payload = await fetchKeywordData(keyword);
+          return {
+            keyword: keyword,
+            data: normalizeKeywordApiData(payload, fallbackData),
+            sourceLabel: keywordSourceLabel(payload, "네이버 API"),
+            ok: true
+          };
+        } catch (error) {
+          return {
+            keyword: keyword,
+            data: fallbackData,
+            sourceLabel: "데모 계산값",
+            ok: false,
+            message: error.message
+          };
+        }
       }
 
       function applyState(state) {
@@ -1996,22 +2276,44 @@
       var keywordButton = root.querySelector("[data-mi-keyword-search]");
       var keywordResult = root.querySelector("[data-mi-keyword-result]");
       var keywordStatus = root.querySelector("[data-mi-keyword-status]");
-      renderKeywordChart("비타민 앰플", keywordSamples["비타민 앰플"]);
+      var keywordRangeButtons = root.querySelectorAll("[data-keyword-range]");
+      keywordDatasets = parseKeywordInput(keywordInput ? keywordInput.value : "냉감 패드, 여름 이불, 쿨매트").map(function (keyword) {
+        return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "데모 계산값", ok: false };
+      });
+      renderKeywordChart(keywordDatasets);
+      renderKeywordResult(keywordDatasets);
+      keywordRangeButtons.forEach(function (button) {
+        button.addEventListener("click", function () {
+          keywordRange = button.getAttribute("data-keyword-range") || "year";
+          keywordRangeButtons.forEach(function (node) {
+            node.classList.toggle("is-active", node === button);
+          });
+          renderKeywordChart(keywordDatasets);
+        });
+      });
       if (keywordInput && keywordButton && keywordResult) {
         keywordButton.addEventListener("click", async function () {
-          var keyword = keywordInput.value.trim() || "비타민 앰플";
-          var fallbackData = buildKeywordFallback(keyword);
+          var keywords = parseKeywordInput(keywordInput.value);
+          if (!keywords.length) keywords = ["비타민 앰플"];
           keywordButton.disabled = true;
-          setStatus(keywordStatus, "네이버 키워드 API 조회 중입니다.", "");
+          setStatus(keywordStatus, "네이버 키워드 API 조회 중입니다. 최대 3개까지 비교합니다.", "");
           try {
-            var payload = await fetchKeywordData(keyword);
-            var data = normalizeKeywordApiData(payload, fallbackData);
-            renderKeywordChart(keyword, data);
-            renderKeywordResult(keyword, data, keywordSourceLabel(payload, "네이버 API"));
-            setStatus(keywordStatus, "조회 완료: 네이버 검색 기반 실데이터를 반영했습니다.", "is-ok");
+            var items = await Promise.all(keywords.map(resolveKeywordItem));
+            keywordDatasets = items;
+            renderKeywordChart(items);
+            renderKeywordResult(items);
+            var failed = items.filter(function (item) { return !item.ok; });
+            if (failed.length) {
+              setStatus(keywordStatus, "일부 키워드는 API 연결 실패로 데모 계산값을 함께 표시합니다.", "is-warn");
+            } else {
+              setStatus(keywordStatus, "조회 완료: 네이버 검색 기반 실데이터를 최대 3개 키워드로 비교합니다.", "is-ok");
+            }
           } catch (error) {
-            renderKeywordChart(keyword, fallbackData);
-            renderKeywordResult(keyword, fallbackData, "데모 계산값");
+            keywordDatasets = keywords.map(function (keyword) {
+              return { keyword: keyword, data: buildKeywordFallback(keyword), sourceLabel: "데모 계산값", ok: false };
+            });
+            renderKeywordChart(keywordDatasets);
+            renderKeywordResult(keywordDatasets);
             setStatus(keywordStatus, "네이버 API 미연결: " + error.message + " 데모 계산값으로 표시합니다.", "is-warn");
           } finally {
             keywordButton.disabled = false;

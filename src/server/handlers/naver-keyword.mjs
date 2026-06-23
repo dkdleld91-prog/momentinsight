@@ -24,14 +24,19 @@ const keywordCache = new Map();
 const keywordRateBucket = new Map();
 
 function config() {
+  const datalabClientId = process.env.NAVER_DATALAB_CLIENT_ID || process.env.NAVER_OPENAPI_CLIENT_ID || "";
+  const datalabClientSecret = process.env.NAVER_DATALAB_CLIENT_SECRET || process.env.NAVER_OPENAPI_CLIENT_SECRET || "";
+  const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
+  const openapiClientSecret = process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "";
+
   return {
     searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY || "",
     searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY || "",
     searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
-    datalabClientId: process.env.NAVER_DATALAB_CLIENT_ID || "",
-    datalabClientSecret: process.env.NAVER_DATALAB_CLIENT_SECRET || "",
-    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || "",
-    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || "",
+    datalabClientId,
+    datalabClientSecret,
+    openapiClientId,
+    openapiClientSecret,
   };
 }
 
@@ -129,8 +134,15 @@ function keywordAction({ hasExactMatch, isUnderThreshold, volume, comp }) {
   return "검색량과 경쟁도를 기준으로 SEO 후보로 분류";
 }
 
-function keywordCacheKey(keyword, profileMode) {
-  return `${profileMode}:${normalizeCompare(keyword)}`;
+function keywordConfigSignature(env) {
+  return [
+    hasDatalabConfig(env) ? "datalab" : "no-datalab",
+    hasOpenapiConfig(env) ? "openapi" : "no-openapi",
+  ].join(":");
+}
+
+function keywordCacheKey(keyword, profileMode, env) {
+  return `${profileMode}:${keywordConfigSignature(env)}:${normalizeCompare(keyword)}`;
 }
 
 function getKeywordCache(key) {
@@ -156,6 +168,11 @@ function setKeywordCache(key, payload) {
     const oldestKey = keywordCache.keys().next().value;
     keywordCache.delete(oldestKey);
   }
+}
+
+function canCacheKeywordPayload(payload) {
+  const statuses = Object.values(payload?.sourceStatus || {}).map((item) => item?.status);
+  return !statuses.some((status) => status === "not_configured" || status === "error");
 }
 
 function clientRateKey(request) {
@@ -705,7 +722,7 @@ export default {
       }, 503);
     }
 
-    const cacheKey = keywordCacheKey(keyword, profileMode);
+    const cacheKey = keywordCacheKey(keyword, profileMode, env);
     const cached = getKeywordCache(cacheKey);
     if (cached) {
       return json(request, {
@@ -776,7 +793,7 @@ export default {
         cache: { hit: false, ttlSeconds: Math.ceil(KEYWORD_CACHE_TTL_MS / 1000) },
       };
 
-      if (!datalabError && !shoppingError) setKeywordCache(cacheKey, payload);
+      if (!datalabError && !shoppingError && canCacheKeywordPayload(payload)) setKeywordCache(cacheKey, payload);
       return json(request, payload);
     } catch (error) {
       return json(request, {

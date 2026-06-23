@@ -6,9 +6,12 @@ const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const rankRateBucket = new Map();
 
 function config() {
+  const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
+  const openapiClientSecret = process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "";
+
   return {
-    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || "",
-    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || "",
+    openapiClientId,
+    openapiClientSecret,
   };
 }
 

@@ -56,14 +56,37 @@ function safeErrorPayload(payload) {
 function parseNaverNumber(value) {
   if (typeof value === "number") return value;
   if (!value) return 0;
-  if (String(value).includes("<")) return 10;
   return Number(String(value).replace(/,/g, "")) || 0;
 }
 
-function searchVolumeLabel(pcRaw, mobileRaw, total) {
-  const isUnderThreshold = [pcRaw, mobileRaw].some((value) => String(value || "").includes("<"));
-  if (isUnderThreshold) return `${Number(total || 0).toLocaleString("ko-KR")} 미만`;
-  return Number(total || 0).toLocaleString("ko-KR");
+function parseSearchCount(value) {
+  if (typeof value === "number") return { value, upperBound: value, isUnderThreshold: false };
+  const text = String(value || "").trim();
+  if (!text) return { value: 0, upperBound: 0, isUnderThreshold: false };
+  if (text.includes("<")) {
+    const upperBound = Number(text.replace(/[^\d.]/g, "")) || 10;
+    return { value: 0, upperBound, isUnderThreshold: true };
+  }
+  const parsed = Number(text.replace(/,/g, "")) || 0;
+  return { value: parsed, upperBound: parsed, isUnderThreshold: false };
+}
+
+function searchVolumeMetric(pcRaw, mobileRaw) {
+  const pc = parseSearchCount(pcRaw);
+  const mobile = parseSearchCount(mobileRaw);
+  const isUnderThreshold = pc.isUnderThreshold || mobile.isUnderThreshold;
+  const value = isUnderThreshold ? 0 : pc.value + mobile.value;
+  const upperBound = pc.upperBound + mobile.upperBound;
+  return {
+    pc,
+    mobile,
+    value,
+    upperBound,
+    isUnderThreshold,
+    label: isUnderThreshold
+      ? `${Number(upperBound || 0).toLocaleString("ko-KR")} 미만`
+      : Number(value || 0).toLocaleString("ko-KR"),
+  };
 }
 
 function searchVolumeWithUnit(label) {
@@ -203,10 +226,15 @@ function ratioSum(payload) {
 function normalizeShares(entries) {
   const total = entries.reduce((sum, item) => sum + Number(item.value || 0), 0);
   if (!total) {
-    const even = Math.round(100 / entries.length);
-    return entries.map(() => even);
+    return entries.map(() => 0);
   }
   return entries.map((item) => round((Number(item.value || 0) / total) * 100, 0));
+}
+
+function monthlyShares(payload) {
+  const data = payload?.results?.[0]?.data || [];
+  if (!data.length) return [];
+  return normalizeShares(data.slice(-12).map((item) => ({ value: Number(item.ratio || 0) })));
 }
 
 function trendToSeries(trendPayload, totalVolume) {
@@ -219,7 +247,7 @@ function trendToSeries(trendPayload, totalVolume) {
   });
 }
 
-function weekdayHeights(dailyPayload) {
+function weekdayShares(dailyPayload) {
   const data = dailyPayload?.results?.[0]?.data || [];
   const sums = [0, 0, 0, 0, 0, 0, 0];
   data.forEach((item) => {
@@ -227,8 +255,7 @@ function weekdayHeights(dailyPayload) {
     const day = date.getDay();
     sums[day === 0 ? 6 : day - 1] += Number(item.ratio || 0);
   });
-  const max = Math.max(...sums, 1);
-  return sums.map((value) => Math.max(10, Math.round((value / max) * 100)));
+  return normalizeShares(sums.map((value) => ({ value })));
 }
 
 async function buildDatalabProfile(env, keyword, totalVolume) {
@@ -264,9 +291,10 @@ async function buildDatalabProfile(env, keyword, totalVolume) {
 
   return {
     series: trendToSeries(trend, totalVolume),
+    month: monthlyShares(trend),
     gender: { male: genderShares[0], female: genderShares[1] },
     age: ageShares,
-    week: weekdayHeights(daily),
+    week: weekdayShares(daily),
   };
 }
 
@@ -314,16 +342,18 @@ function buildRelatedKeywordMetrics(searchAd) {
       if (!keyword || seen.has(key)) return null;
       seen.add(key);
 
-      const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
-      const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
-      const volume = pcVolume + mobileVolume;
+      const metric = searchVolumeMetric(item.monthlyPcQcCnt, item.monthlyMobileQcCnt);
+      const pcVolume = metric.pc.value;
+      const mobileVolume = metric.mobile.value;
+      const volume = metric.value;
       const comp = competitionLabel(item.compIdx);
-      const volumeLabel = searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, volume);
 
       return {
         keyword,
         volume,
-        volumeLabel,
+        volumeLabel: metric.label,
+        volumeUpperBound: metric.upperBound,
+        isUnderThreshold: metric.isUnderThreshold,
         pcVolume,
         mobileVolume,
         comp,
@@ -336,11 +366,11 @@ function buildRelatedKeywordMetrics(searchAd) {
 function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const item = searchAd?.item || {};
   const hasExactMatch = Boolean(searchAd?.hasExactMatch && searchAd?.item);
-  const pcVolume = parseNaverNumber(item.monthlyPcQcCnt);
-  const mobileVolume = parseNaverNumber(item.monthlyMobileQcCnt);
-  const volume = pcVolume + mobileVolume;
-  const safeVolume = hasExactMatch ? volume : 0;
-  const volumeLabel = hasExactMatch ? searchVolumeLabel(item.monthlyPcQcCnt, item.monthlyMobileQcCnt, safeVolume) : "확인 필요";
+  const metric = searchVolumeMetric(item.monthlyPcQcCnt, item.monthlyMobileQcCnt);
+  const pcVolume = metric.pc.value;
+  const mobileVolume = metric.mobile.value;
+  const safeVolume = hasExactMatch ? metric.value : 0;
+  const volumeLabel = hasExactMatch ? metric.label : "확인 필요";
   const mobileShare = safeVolume ? Math.round((mobileVolume / safeVolume) * 100) : 0;
   const pcShare = safeVolume ? 100 - mobileShare : 0;
   const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
@@ -349,8 +379,10 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   return {
     keyword,
     matchedKeyword: hasExactMatch ? item.relKeyword || keyword : "",
-    volumeStatus: hasExactMatch ? "확인됨" : "확인 필요",
+    volumeStatus: hasExactMatch && !metric.isUnderThreshold ? "확인됨" : hasExactMatch ? "범위 확인" : "확인 필요",
     volumeLabel,
+    volumeUpperBound: hasExactMatch ? metric.upperBound : 0,
+    isUnderThreshold: hasExactMatch ? metric.isUnderThreshold : false,
     trendStatus: datalabProfile?.series?.length ? "확인됨" : "수집 대기",
     volume: safeVolume,
     comp,
@@ -361,6 +393,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
       ? `월 검색량 ${searchVolumeWithUnit(volumeLabel)}, 시장 경쟁도 ${comp}입니다.`
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
     series: datalabProfile?.series?.length ? datalabProfile.series : [],
+    month: datalabProfile?.month || [],
     device: { mobile: mobileShare, pc: pcShare },
     gender: datalabProfile?.gender || null,
     age: datalabProfile?.age || [],
@@ -405,7 +438,8 @@ export default {
 
     try {
       const searchAd = await fetchSearchAdKeyword(env, keyword);
-      const baseVolume = parseNaverNumber(searchAd.item?.monthlyPcQcCnt) + parseNaverNumber(searchAd.item?.monthlyMobileQcCnt);
+      const searchMetric = searchVolumeMetric(searchAd.item?.monthlyPcQcCnt, searchAd.item?.monthlyMobileQcCnt);
+      const baseVolume = searchAd.hasExactMatch && !searchMetric.isUnderThreshold ? searchMetric.value : 0;
       let datalabProfile = null;
       let datalabError = null;
       let shoppingProfile = null;
@@ -427,13 +461,19 @@ export default {
         }
       }
 
+      const warnings = [];
+      if (!searchAd.hasExactMatch) warnings.push("exact_keyword_not_found");
+      if (datalabError) warnings.push("trend_unavailable");
+      if (shoppingError) warnings.push("shopping_unavailable");
+
       return json(request, {
         ok: true,
         source: {
-          searchVolume: "naver_searchad_keyword",
-          trend: datalabProfile ? "naver_datalab_search" : "pending",
+          searchVolume: searchAd.hasExactMatch ? "naver_searchad_exact" : "naver_searchad_related_only",
+          trend: datalabProfile ? "naver_datalab_relative_ratio" : "pending",
           shopping: shoppingProfile ? "naver_shopping_search" : hasOpenapiConfig(env) ? "partial" : "pending",
         },
+        warnings,
         chartData: buildChartData(keyword, searchAd, datalabProfile, shoppingProfile),
       });
     } catch (error) {

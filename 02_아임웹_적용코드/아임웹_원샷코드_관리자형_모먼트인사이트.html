@@ -962,7 +962,7 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       gap: 0;
-      overflow: hidden;
+      overflow: visible;
       margin-bottom: 16px;
     }
 
@@ -1416,7 +1416,7 @@
       overflow: visible;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 18px;
+      padding: 16px;
       background: #fff;
     }
 
@@ -1428,9 +1428,9 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
       color: var(--mi-navy);
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 950;
       letter-spacing: 0;
     }
@@ -1451,20 +1451,20 @@
     #mi-admin .mi-ratio-chart {
       position: relative;
       display: grid;
-      grid-template-columns: 52px minmax(0, 1fr);
-      grid-template-rows: 190px 34px;
-      column-gap: 12px;
-      min-height: 228px;
-      padding-top: 4px;
+      grid-template-columns: 46px minmax(0, 1fr);
+      grid-template-rows: 174px 34px;
+      column-gap: 10px;
+      min-height: 208px;
+      padding-top: 0;
       overflow: visible;
     }
 
     #mi-admin .mi-ratio-chart:before {
       position: absolute;
-      left: 52px;
+      left: 46px;
       right: 0;
-      top: 4px;
-      height: 190px;
+      top: 0;
+      height: 174px;
       border-left: 1px solid #d9dee7;
       border-bottom: 1px solid #b8bec8;
       background:
@@ -1478,7 +1478,7 @@
       grid-column: 1;
       grid-row: 1;
       width: 100%;
-      height: 190px;
+      height: 174px;
       pointer-events: none;
     }
 
@@ -1507,16 +1507,16 @@
       grid-column: 2;
       grid-row: 1 / span 2;
       grid-template-columns: repeat(var(--ratio-cols, 7), minmax(0, 1fr));
-      gap: 13px;
-      height: 224px;
+      gap: clamp(6px, 1vw, 10px);
+      height: 208px;
     }
 
     #mi-admin .mi-ratio-column {
       position: relative;
       display: block;
-      height: 224px;
+      height: 208px;
       color: #7a8494;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
       text-align: center;
       cursor: default;
@@ -1528,9 +1528,9 @@
       left: 50%;
       bottom: 34px;
       transform: translateX(-50%);
-      width: 72%;
+      width: min(64%, 34px);
       min-height: 4px;
-      max-height: 190px;
+      max-height: 174px;
       border-radius: 2px 2px 0 0;
       background: #94c3f2;
       transition: background 0.16s ease, transform 0.16s ease;
@@ -1553,10 +1553,10 @@
       justify-content: center;
       margin: 0;
       color: #808793;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 800;
       line-height: 1.15;
-      white-space: nowrap;
+      white-space: normal;
       transform: translateX(-50%);
     }
 
@@ -2448,7 +2448,7 @@
               <h1>키워드 판단 구조를 준비합니다.</h1>
               <p>관리자와 광고주가 각각 키워드를 조회할 수 있습니다.</p>
             </div>
-            <span class="mi-badge warn">연동 준비</span>
+            <span class="mi-badge">개별 조회</span>
           </header>
 
           <article class="mi-card mi-card-pad" style="margin-bottom:16px;">
@@ -3370,14 +3370,6 @@
         threeYear: 36
       };
 
-      function makeKeywordSeries(volume) {
-        var base = Number(volume || 0);
-        return [0.43, 0.74, 1, 0.91, 0.76, 0.62, 0.72, 0.79, 0.66, 0.53, 0.96, 0.58].map(function (ratio, index) {
-          var wave = (((base / 100) + index * 17) % 23) / 100;
-          return Math.max(800, Math.round(base * Math.min(1.08, ratio + wave)));
-        });
-      }
-
       function parseKeywordInput(value) {
         var seen = {};
         return String(value || "")
@@ -3389,31 +3381,6 @@
             return true;
           })
           .slice(0, 3);
-      }
-
-      function hashKeyword(keyword) {
-        return String(keyword || "").split("").reduce(function (sum, char) {
-          return sum + char.charCodeAt(0);
-        }, 0);
-      }
-
-      function makeKeywordProfile(keyword, volume) {
-        var seed = hashKeyword(keyword);
-        var mobile = 58 + (seed % 34);
-        var female = 38 + ((seed * 3) % 50);
-        var age = [18, 30, 45, 62, 54, 28].map(function (value, index) {
-          return Math.min(92, Math.max(12, value + ((seed + index * 11) % 24)));
-        });
-        var week = [70, 76, 82, 78, 72, 61, 66].map(function (value, index) {
-          return Math.min(94, Math.max(35, value + ((seed + index * 7) % 18)));
-        });
-        return {
-          series: makeKeywordSeries(volume),
-          device: { mobile: mobile, pc: 100 - mobile },
-          gender: { female: female, male: 100 - female },
-          age: age,
-          week: week
-        };
       }
 
       function pickKeywordScale(maxValue) {
@@ -3506,8 +3473,7 @@
           return sum + value;
         }, 0);
         if (!total) {
-          var even = Math.round((100 / Math.max(1, source.length)) * 10) / 10;
-          return source.map(function () { return even; });
+          return source.map(function () { return 0; });
         }
         return source.map(function (value) {
           return Math.round((value / total) * 1000) / 10;
@@ -3527,6 +3493,11 @@
         var chart = root.querySelector('[data-keyword-ratio-chart="' + type + '"]');
         if (!chart) return;
         var values = normalizePercentValues(rawValues);
+        var hasValues = values.some(function (value) { return Number(value || 0) > 0; });
+        if (!hasValues) {
+          renderRatioPlaceholder(type, "비율 데이터 수집 대기");
+          return;
+        }
         var axisMax = ratioAxisMax(values, minimumAxis);
         var step = axisMax <= 20 ? 5 : 10;
         var ticks = [];
@@ -3565,6 +3536,12 @@
           return Array.isArray(value) && value.length ? value : fallback;
         }
         return value && typeof value === "object" ? value : fallback;
+      }
+
+      function hasRatioValues(values) {
+        return Array.isArray(values) && values.some(function (value) {
+          return Number(value || 0) > 0;
+        });
       }
 
       function showKeywordTooltip(event, text, point) {
@@ -3667,6 +3644,7 @@
           return {
             keyword: entry.keyword,
             volume: Number(entry.volume || 0),
+            volumeLabel: entry.volumeLabel || "",
             pcVolume: Number(entry.pcVolume || 0),
             mobileVolume: Number(entry.mobileVolume || 0),
             comp: displayCompetitionLabel(entry.comp),
@@ -3845,8 +3823,9 @@
         var profile = {
           device: firstKeywordProfile(items, "device", { mobile: 85, pc: 15 }),
           gender: firstKeywordProfile(items, "gender", { female: 79, male: 21 }),
-          age: firstKeywordProfile(items, "age", [18, 28, 58, 84, 70, 36]),
-          week: firstKeywordProfile(items, "week", [82, 88, 86, 79, 74, 66, 76])
+          month: firstKeywordProfile(items, "month", []),
+          age: firstKeywordProfile(items, "age", []),
+          week: firstKeywordProfile(items, "week", [])
         };
 
         if (label) label.textContent = items.length > 1 ? items[0].keyword + " 외 " + (items.length - 1) + "개" : items[0].keyword;
@@ -3938,7 +3917,7 @@
         renderKeywordMonths(labels);
         renderKeywordYAxis(chartMax);
         var monthLabels = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
-        var monthSeries = rangeSeries(items[0].keyword, items[0].data, 12);
+        var monthSeries = profile.month;
         var ageValues = [
           Number(profile.age[0] || 0),
           Number(profile.age[1] || 0),
@@ -3946,13 +3925,19 @@
           Number(profile.age[3] || 0),
           Number(profile.age[4] || 0) + Number(profile.age[5] || 0)
         ];
-        if (monthSeries.length) {
+        if (hasRatioValues(monthSeries)) {
           renderRatioChart("month", monthLabels, monthSeries, 30);
-          renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
-          renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
         } else {
           renderRatioPlaceholder("month", "월별 비율 데이터 수집 대기");
+        }
+        if (hasRatioValues(profile.week)) {
+          renderRatioChart("week", ["월", "화", "수", "목", "금", "토", "일"], profile.week, 20);
+        } else {
           renderRatioPlaceholder("week", "요일별 비율 데이터 수집 대기");
+        }
+        if (hasRatioValues(ageValues)) {
+          renderRatioChart("age", ["10대", "20대", "30대", "40대", "50대 이상"], ageValues, 40);
+        } else {
           renderRatioPlaceholder("age", "연령별 비율 데이터 수집 대기");
         }
       }
@@ -3974,6 +3959,7 @@
           action: "키워드 조회 후 판단",
           insight: "월 검색량 조회 후 표시합니다.",
           series: [],
+          month: [],
           device: { mobile: 0, pc: 0 },
           gender: null,
           age: [],
@@ -3989,11 +3975,12 @@
         data.volume = Number(data.volume ?? fallbackData.volume ?? 0);
         data.volumeLabel = chartData.volumeLabel || fallbackData.volumeLabel || "";
         data.volumeStatus = chartData.volumeStatus || (data.volume ? "확인됨" : "확인 필요");
-        data.trendStatus = chartData.trendStatus || ((payload && payload.source && (payload.source.trend === "naver_datalab_search" || payload.source.trend === "trend_profile")) ? "확인됨" : "수집 대기");
+        data.trendStatus = chartData.trendStatus || ((payload && payload.source && (payload.source.trend === "naver_datalab_search" || payload.source.trend === "naver_datalab_relative_ratio")) ? "확인됨" : "수집 대기");
         data.comp = data.comp || fallbackData.comp || "확인 필요";
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
         data.insight = data.insight || fallbackData.insight || "검색량과 클릭 비율을 기준으로 SEO/광고 후보를 분류";
         data.series = Array.isArray(data.series) && data.series.length ? data.series : fallbackData.series;
+        data.month = Array.isArray(data.month) && data.month.length ? data.month : fallbackData.month;
         data.device = data.device || fallbackData.device;
         data.gender = data.gender || fallbackData.gender;
         data.age = Array.isArray(data.age) && data.age.length ? data.age : fallbackData.age;
@@ -4004,7 +3991,9 @@
       function keywordSourceLabel(payload, fallbackLabel) {
         var source = payload && payload.source ? payload.source : {};
         if (!source.searchVolume) return fallbackLabel;
-        return payload && payload.chartData && payload.chartData.volumeStatus === "확인됨" ? "월 검색량 확인됨" : "확인 필요";
+        if (payload && payload.chartData && payload.chartData.volumeStatus === "확인됨") return "월 검색량 확인됨";
+        if (payload && payload.chartData && payload.chartData.volumeStatus === "범위 확인") return "검색량 범위 확인";
+        return "확인 필요";
       }
 
       function renderKeywordResult(items) {

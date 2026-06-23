@@ -1,0 +1,16 @@
+name: Naver Rank Tracking
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+
+jobs:
+  refresh-ranks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Refresh due Naver rank trackers
+        run: |
+          curl --fail --show-error --silent \
+            "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=20"

@@ -236,31 +236,48 @@ function naverSearchAdHeaders(env, method, path) {
   };
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function fetchJson(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs || 15000));
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    const text = await response.text();
-    let payload = null;
+  const retries = Number(options.retries || 0);
+  const retryDelayMs = Number(options.retryDelayMs || 350);
+  let lastError = null;
+
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs || 15000));
     try {
-      payload = text ? JSON.parse(text) : null;
-    } catch {
-      payload = { raw: text };
-    }
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      const text = await response.text();
+      let payload = null;
+      try {
+        payload = text ? JSON.parse(text) : null;
+      } catch {
+        payload = { raw: text };
+      }
 
-    if (!response.ok) {
-      const message = payload?.message || payload?.title || payload?.raw || `HTTP ${response.status}`;
-      const error = new Error(message);
-      error.status = response.status;
-      error.payload = payload;
-      throw error;
-    }
+      if (!response.ok) {
+        const message = payload?.message || payload?.title || payload?.raw || `HTTP ${response.status}`;
+        const error = new Error(message);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+      }
 
-    return payload;
-  } finally {
-    clearTimeout(timeout);
+      return payload;
+    } catch (error) {
+      lastError = error;
+      const transient = error?.name === "AbortError" || error?.status === 429 || Number(error?.status || 0) >= 500;
+      if (!transient || attempt >= retries) throw error;
+      await delay(retryDelayMs * (attempt + 1));
+    } finally {
+      clearTimeout(timeout);
+    }
   }
+
+  throw lastError;
 }
 
 async function fetchSearchAdKeyword(env, keyword) {
@@ -301,6 +318,8 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
     },
     body: JSON.stringify(body),
     timeoutMs,
+    retries: 2,
+    retryDelayMs: 500,
   });
 }
 
@@ -426,6 +445,16 @@ function shareFromPayloads(payloads) {
   return normalizeShares(payloads.map((payload) => ({ value: ratioSum(payload) })));
 }
 
+async function allSettledInBatches(tasks, size = 2, gapMs = 120) {
+  const results = [];
+  for (let index = 0; index < tasks.length; index += size) {
+    const batch = tasks.slice(index, index + size).map((task) => task());
+    results.push(...await Promise.allSettled(batch));
+    if (index + size < tasks.length) await delay(gapMs);
+  }
+  return results;
+}
+
 async function buildDatalabProfile(env, keyword, options = {}) {
   const includeProfile = options.includeProfile !== false;
   const endDate = compactDate(dateDaysAgo(1));
@@ -442,12 +471,12 @@ async function buildDatalabProfile(env, keyword, options = {}) {
 
   if (includeProfile) {
     const profileRequests = [
-      fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "month", timeoutMs: 25000 }),
-      fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "date", timeoutMs: 25000 }),
-      ...DATALAB_AGE_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", ages: group.ages })),
-      ...DATALAB_GENDER_GROUPS.map((group) => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", gender: group.gender })),
+      () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "month", timeoutMs: 25000 }),
+      () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "date", timeoutMs: 25000 }),
+      ...DATALAB_AGE_GROUPS.map((group) => () => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", ages: group.ages })),
+      ...DATALAB_GENDER_GROUPS.map((group) => () => fetchDatalabSearch(env, { keyword, startDate: ageStartDate, endDate, timeUnit: "month", gender: group.gender })),
     ];
-    const results = await Promise.allSettled(profileRequests);
+    const results = await allSettledInBatches(profileRequests, 2, 150);
     const historyMonth = fulfilledValue(results[0]);
     const historyDaily = fulfilledValue(results[1]);
     const agePayloads = results.slice(2, 2 + DATALAB_AGE_GROUPS.length).map(fulfilledValue);
@@ -741,7 +770,7 @@ export default {
         cache: { hit: false, ttlSeconds: Math.ceil(KEYWORD_CACHE_TTL_MS / 1000) },
       };
 
-      setKeywordCache(cacheKey, payload);
+      if (!datalabError && !shoppingError) setKeywordCache(cacheKey, payload);
       return json(request, payload);
     } catch (error) {
       return json(request, {

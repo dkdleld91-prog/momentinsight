@@ -1083,6 +1083,123 @@
       font-weight: 850;
     }
 
+    #mi-admin .mi-rank-card {
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-rank-form {
+      display: grid;
+      grid-template-columns: 1.1fr 2fr 1fr 120px auto;
+      gap: 8px;
+      margin-top: 14px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-rank-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      gap: 14px;
+      margin-top: 14px;
+    }
+
+    #mi-admin .mi-rank-panel {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-rank-panel h3 {
+      margin-bottom: 10px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-rank-kpis {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    #mi-admin .mi-rank-kpi {
+      border: 1px solid #e5ebf3;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfd;
+    }
+
+    #mi-admin .mi-rank-kpi span,
+    #mi-admin .mi-rank-history small {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-rank-kpi strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-navy);
+      font-size: 20px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-rank-state {
+      display: grid;
+      place-items: center;
+      min-height: 118px;
+      border: 1px dashed var(--mi-line);
+      border-radius: 8px;
+      color: var(--mi-muted);
+      background: #fbfcfd;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-rank-table {
+      display: grid;
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid #e5ebf3;
+      border-radius: 8px;
+    }
+
+    #mi-admin .mi-rank-table div {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr) 92px 74px;
+      gap: 8px;
+      padding: 9px 10px;
+      border-bottom: 1px solid #edf1f6;
+      align-items: center;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-rank-table div:first-child {
+      color: var(--mi-muted);
+      background: #fbfcfd;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-rank-table div:last-child {
+      border-bottom: 0;
+    }
+
+    #mi-admin .mi-rank-table span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     #mi-admin .mi-keyword-market {
       margin-bottom: 16px;
       padding: 22px;
@@ -1937,6 +2054,12 @@
       #mi-admin .mi-profile-grid {
         grid-template-columns: 1fr;
       }
+
+      #mi-admin .mi-rank-form,
+      #mi-admin .mi-rank-grid,
+      #mi-admin .mi-rank-kpis {
+        grid-template-columns: 1fr;
+      }
     }
 
     @media (max-width: 520px) {
@@ -2686,6 +2809,42 @@
               </div>
             </aside>
           </div>
+
+          <article class="mi-card mi-card-pad mi-rank-card" data-rank-card>
+            <div class="mi-card-head">
+              <div>
+                <span class="mi-kicker">네이버 순위 추적</span>
+                <h2>상품 URL 기준 현재 순위를 확인합니다.</h2>
+                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 네이버 쇼핑 검색 결과 기준 순위를 계산합니다.</p>
+              </div>
+              <span class="mi-badge">관리자 확인용</span>
+            </div>
+            <div class="mi-rank-form">
+              <input class="mi-input" data-rank-keyword value="냉감 패드" aria-label="순위 추적 키워드" placeholder="키워드" />
+              <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
+              <input class="mi-input" data-rank-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
+              <select class="mi-input" data-rank-max aria-label="조회 범위">
+                <option value="100">100위</option>
+                <option value="300" selected>300위</option>
+                <option value="500">500위</option>
+                <option value="1000">1000위</option>
+              </select>
+              <button class="mi-button" type="button" data-rank-run>순위 확인</button>
+            </div>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 현재 순위를 확인합니다.</p>
+            <div class="mi-rank-grid">
+              <div class="mi-rank-panel" data-rank-result>
+                <h3>현재 순위</h3>
+                <div class="mi-rank-state">아직 조회 전입니다.</div>
+              </div>
+              <div class="mi-rank-panel mi-rank-history">
+                <h3>최근 체크 이력</h3>
+                <div data-rank-history>
+                  <div class="mi-rank-state">조회 후 이 브라우저에 최근 이력을 임시 저장합니다.</div>
+                </div>
+              </div>
+            </div>
+          </article>
         </section>
 
         <section class="mi-view" data-mi-admin-view="related-keywords" id="mi-admin-related-keywords">
@@ -4125,6 +4284,186 @@
         return "http://127.0.0.1:8790/api/naver-keyword";
       }
 
+      function getShoppingRankApiUrl() {
+        if (window.MI_NAVER_SHOPPING_RANK_API_URL) return window.MI_NAVER_SHOPPING_RANK_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-shopping-rank";
+        return "http://127.0.0.1:8790/api/naver-shopping-rank";
+      }
+
+      function rankHistoryKey(keyword, productId, targetUrl) {
+        return "miNaverRankHistory:v1:" + [keyword, productId, targetUrl].map(function (value) {
+          return String(value || "").trim().toLowerCase();
+        }).join("|");
+      }
+
+      function readRankHistory(key) {
+        try {
+          var parsed = JSON.parse(window.localStorage.getItem(key) || "[]");
+          return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function writeRankHistory(key, list) {
+        try {
+          window.localStorage.setItem(key, JSON.stringify((list || []).slice(0, 8)));
+        } catch (error) {}
+      }
+
+      function formatRankCheckedAt(iso) {
+        if (!iso) return "-";
+        try {
+          return new Date(iso).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        } catch (error) {
+          return "-";
+        }
+      }
+
+      function renderRankHistory(node, list) {
+        if (!node) return;
+        if (!list || !list.length) {
+          node.innerHTML = '<div class="mi-rank-state">조회 후 이 브라우저에 최근 이력을 임시 저장합니다.</div>';
+          return;
+        }
+        node.innerHTML = '<div class="mi-rank-table"><div><span>일시</span><span>키워드</span><span>순위</span><span>상태</span></div>' +
+          list.map(function (item) {
+            return '<div><span>' + escapeHtml(formatRankCheckedAt(item.checkedAt)) + '</span><span>' + escapeHtml(item.keyword || "-") +
+              '</span><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span>' + escapeHtml(item.status || "-") + '</span></div>';
+          }).join("") + '</div>';
+      }
+
+      function renderRankItems(items) {
+        var rows = (items || []).slice(0, 5);
+        if (!rows.length) return "";
+        return '<div class="mi-rank-table"><div><span>순위</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
+          rows.map(function (item) {
+            return '<div><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span title="' + escapeHtml(item.title || "") + '">' +
+              escapeHtml(item.title || "-") + '</span><span>' + escapeHtml(item.mallName || "-") + '</span><span>' +
+              escapeHtml(item.lprice ? formatNumber(item.lprice) : "-") + '</span></div>';
+          }).join("") + '</div>';
+      }
+
+      function renderRankResult(node, payload) {
+        if (!node) return;
+        if (!payload || payload.ok === false) {
+          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "순위 조회가 대기 중입니다.") + '</div>';
+          return;
+        }
+        var result = payload.result || {};
+        if (!result.matched) {
+          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml(payload.message || "대상 상품을 찾지 못했습니다.") +
+            '<br>확인 범위: 상위 ' + escapeHtml(result.checkedCount || "-") + '위</div>' + renderRankItems(result.topItems);
+          return;
+        }
+        var item = result.item || {};
+        node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-kpis">' +
+          '<div class="mi-rank-kpi"><span>현재 순위</span><strong>' + escapeHtml(result.rank + "위") + '</strong></div>' +
+          '<div class="mi-rank-kpi"><span>페이지 / 위치</span><strong>' + escapeHtml(result.page + "p · " + result.position + "번째") + '</strong></div>' +
+          '<div class="mi-rank-kpi"><span>상품ID</span><strong>' + escapeHtml(item.productId || result.targetProductId || "-") + '</strong></div>' +
+          '</div>' + renderRankItems([item].concat(result.topItems || []));
+      }
+
+      function storeRankHistory(keyword, targetProductId, targetUrl, payload) {
+        if (!payload || !payload.ok || !payload.result || !payload.result.matched) return;
+        var key = rankHistoryKey(keyword, targetProductId || payload.result.targetProductId, targetUrl);
+        var list = readRankHistory(key);
+        list.unshift({
+          checkedAt: payload.checkedAt,
+          keyword: keyword,
+          rank: payload.result.rank,
+          status: "확인"
+        });
+        writeRankHistory(key, list);
+      }
+
+      function initRankTracking(linkedKeywordInput) {
+        var card = root.querySelector("[data-rank-card]");
+        if (!card) return;
+        var rankKeyword = card.querySelector("[data-rank-keyword]");
+        var rankUrl = card.querySelector("[data-rank-url]");
+        var rankProductId = card.querySelector("[data-rank-product-id]");
+        var rankMax = card.querySelector("[data-rank-max]");
+        var rankRun = card.querySelector("[data-rank-run]");
+        var rankStatus = card.querySelector("[data-rank-status]");
+        var rankResult = card.querySelector("[data-rank-result]");
+        var rankHistory = card.querySelector("[data-rank-history]");
+        if (!rankKeyword || !rankRun) return;
+
+        function currentKey() {
+          return rankHistoryKey(rankKeyword.value, rankProductId ? rankProductId.value : "", rankUrl ? rankUrl.value : "");
+        }
+
+        function syncKeywordFromMain() {
+          if (!linkedKeywordInput || !rankKeyword) return;
+          var next = parseKeywordInput(linkedKeywordInput.value)[0] || "";
+          if (next && (!rankKeyword.value || rankKeyword.getAttribute("data-synced-keyword") === "true")) {
+            rankKeyword.value = next;
+            rankKeyword.setAttribute("data-synced-keyword", "true");
+            renderRankHistory(rankHistory, readRankHistory(currentKey()));
+          }
+        }
+
+        rankKeyword.setAttribute("data-synced-keyword", "true");
+        syncKeywordFromMain();
+        renderRankHistory(rankHistory, readRankHistory(currentKey()));
+
+        if (linkedKeywordInput) {
+          linkedKeywordInput.addEventListener("input", syncKeywordFromMain);
+        }
+        rankKeyword.addEventListener("input", function () {
+          rankKeyword.setAttribute("data-synced-keyword", "false");
+          renderRankHistory(rankHistory, readRankHistory(currentKey()));
+        });
+        [rankUrl, rankProductId].forEach(function (node) {
+          if (node) node.addEventListener("input", function () {
+            renderRankHistory(rankHistory, readRankHistory(currentKey()));
+          });
+        });
+
+        rankRun.addEventListener("click", async function () {
+          var keyword = (rankKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
+          var targetUrl = rankUrl ? rankUrl.value.trim() : "";
+          var productId = rankProductId ? rankProductId.value.trim() : "";
+          if (!keyword) {
+            setStatus(rankStatus, "키워드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!targetUrl && !productId) {
+            setStatus(rankStatus, "네이버 상품 URL 또는 상품ID를 입력해주세요.", "is-warn");
+            return;
+          }
+
+          rankRun.disabled = true;
+          setStatus(rankStatus, "네이버 쇼핑 순위를 확인 중입니다.", "");
+          try {
+            var params = new URLSearchParams({
+              keyword: keyword,
+              targetUrl: targetUrl,
+              productId: productId,
+              maxRank: rankMax ? rankMax.value : "300"
+            });
+            var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
+            var payload = await response.json().catch(function () { return null; });
+            if (!payload) payload = { ok: false, message: "순위 조회 응답을 확인할 수 없습니다." };
+            renderRankResult(rankResult, payload);
+            if (!response.ok || payload.ok === false) {
+              setStatus(rankStatus, payload.message || "순위 조회가 아직 연결되지 않았습니다.", "is-warn");
+              return;
+            }
+            setStatus(rankStatus, payload.message || "순위 확인 완료", payload.result && payload.result.matched ? "is-ok" : "is-warn");
+            storeRankHistory(keyword, productId, targetUrl, payload);
+            renderRankHistory(rankHistory, readRankHistory(currentKey()));
+          } catch (error) {
+            renderRankResult(rankResult, { ok: false, message: "순위 조회 연결을 확인해주세요." });
+            setStatus(rankStatus, "순위 조회 연결을 확인해주세요.", "is-warn");
+          } finally {
+            rankRun.disabled = false;
+          }
+        });
+      }
+
       function buildKeywordFallback(keyword) {
         return {
           volume: 0,
@@ -4297,6 +4636,7 @@
         });
         runKeywordLookup();
       }
+      initRankTracking(keywordInput);
 
       function csvValue(value) {
         return '"' + String(value || "").replace(/"/g, '""') + '"';

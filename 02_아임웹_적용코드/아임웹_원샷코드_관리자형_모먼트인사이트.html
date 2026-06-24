@@ -3357,7 +3357,7 @@
               <div>
                 <span class="mi-kicker">네이버 SEO 점수</span>
                 <h2>광고주에게 공개하기 전 상품 SEO 상태를 먼저 점검합니다.</h2>
-                <p>키워드 조회와 상품 순위 API를 함께 사용해 상품명, 현재 순위, 검색 수요, 리뷰 기준을 확인합니다.</p>
+                <p>키워드 조회와 상품 순위 조회를 함께 사용해 상품명, 오가닉 순위, 검색 수요, 리뷰 기준을 확인합니다.</p>
               </div>
               <span class="mi-badge warn">내부 검수</span>
             </div>
@@ -3384,7 +3384,7 @@
                 </div>
                 <div class="mi-seo-summary" data-seo-summary>
                   <div><span>기준 키워드</span><strong>조회 후 표시</strong></div>
-                  <div><span>현재 순위</span><strong>조회 후 표시</strong></div>
+                  <div><span>오가닉 순위</span><strong>조회 후 표시</strong></div>
                   <div><span>시장 상태</span><strong>조회 후 표시</strong></div>
                 </div>
               </aside>
@@ -3410,13 +3410,13 @@
                     <div class="mi-seo-preview" data-seo-preview>
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
-                        <h4>네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.</h4>
-                        <p>광고주에게 전달하기 전에 상품명, 검색 수요, 현재 순위, 리뷰 기준을 내부에서 먼저 검수합니다.</p>
+                        <h4>네이버 상품 URL을 입력하면 오가닉 순위와 상품 정보를 함께 확인합니다.</h4>
+                        <p>광고주에게 전달하기 전에 상품명, 검색 수요, 오가닉 순위, 리뷰 기준을 내부에서 먼저 검수합니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
                           <span class="mi-seo-pill">카테고리</span>
                           <span class="mi-seo-pill">검색량</span>
-                          <span class="mi-seo-pill">현재 순위</span>
+                          <span class="mi-seo-pill">오가닉 순위</span>
                         </div>
                       </div>
                     </div>
@@ -3431,8 +3431,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">네이버 상품 순위</span>
-              <h1>네이버 상품 순위를 30일간 추적합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 3시간마다 순위를 갱신하고 30일간 기록합니다.</p>
+              <h1>네이버 오가닉 상품 순위를 30일간 추적합니다.</h1>
+              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고 30일간 기록합니다.</p>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -3440,9 +3440,9 @@
           <article class="mi-card mi-card-pad mi-rank-card" data-rank-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 상품 순위</span>
-                <h2>상품 URL 기준 자동 순위 추적을 시작합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 첫 순위를 확인하고 이후 3시간 주기로 기록합니다.</p>
+                <span class="mi-kicker">네이버 오가닉 순위</span>
+                <h2>상품 URL 기준 오가닉 순위 추적을 시작합니다.</h2>
+                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 3시간 주기로 기록합니다.</p>
               </div>
               <span class="mi-badge">관리자 확인용</span>
             </div>
@@ -3456,18 +3456,18 @@
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
-              <button class="mi-button" type="button" data-rank-run>30일 추적 시작</button>
+              <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 30일 추적을 시작합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
                 <h3>활성 추적</h3>
                 <div class="mi-rank-state">등록된 추적 항목을 불러오는 중입니다.</div>
               </div>
               <div class="mi-rank-panel mi-rank-history">
-                <h3>상품별 일별 순위</h3>
+                <h3>상품별 일별 오가닉 순위</h3>
                 <div data-rank-history>
-                  <div class="mi-rank-state">추적 등록 후 상품별 일별 순위판이 생성됩니다.</div>
+                  <div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>
                 </div>
               </div>
             </div>
@@ -5039,7 +5039,7 @@
           return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
         }).slice(0, 30);
         if (!keys.length) {
-          return '<div class="mi-rank-state">첫 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
+          return '<div class="mi-rank-state">첫 오가닉 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
         }
         return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
@@ -5051,7 +5051,7 @@
       function renderRankHistory(node, trackers) {
         if (!node) return;
         if (!trackers || !trackers.length) {
-          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 순위판이 생성됩니다.</div>';
+          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>';
           return;
         }
         node.innerHTML = '<div class="mi-rank-daily-list">' + trackers.map(function (tracker) {
@@ -5142,7 +5142,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 상품 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 30일 추적을 시작합니다.", rankTrackers.length ? "is-ok" : "");
+              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.", rankTrackers.length ? "is-ok" : "");
             }
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
@@ -5185,7 +5185,7 @@
           }
 
           rankRun.disabled = true;
-          setStatus(rankStatus, "30일 순위 추적을 등록하고 첫 순위를 확인 중입니다.", "");
+          setStatus(rankStatus, "30일 오가닉 순위 추적을 등록하고 첫 순위를 확인 중입니다.", "");
           try {
             var payload = await requestRankTrackers("POST", {
               action: "create",
@@ -5559,12 +5559,13 @@
       }
 
       function seoRankBasis(rankResult) {
-        if (!rankResult) return "상품 URL 입력 후 네이버 쇼핑 검색 결과에서 순위를 확인합니다.";
-        var checked = rankResult.checkedCount ? "상위 " + formatNumber(rankResult.checkedCount) + "개 결과" : "검색 결과";
+        if (!rankResult) return "상품 URL 입력 후 광고 영역을 제외한 네이버 쇼핑 오가닉 순위를 확인합니다.";
+        var checked = rankResult.checkedCount ? "오가닉 상위 " + formatNumber(rankResult.checkedCount) + "개 결과" : "오가닉 검색 결과";
         if (rankResult.matched) {
-          return checked + "에서 " + formatNumber(rankResult.rank) + "위로 확인했습니다. 매칭 기준은 " + seoRankMatchLabel(rankResult.matchType) + "입니다.";
+          var pageCopy = rankResult.page && rankResult.position ? " 40개 단위 기준 " + formatNumber(rankResult.page) + "페이지 " + formatNumber(rankResult.position) + "번째입니다." : "";
+          return checked + "에서 광고 제외 " + formatNumber(rankResult.rank) + "위로 확인했습니다." + pageCopy + " 매칭 기준은 " + seoRankMatchLabel(rankResult.matchType) + "입니다.";
         }
-        return checked + "에서 대상 상품을 찾지 못했습니다. 상품 URL 또는 상품ID가 정확한지 확인하세요.";
+        return checked + "에서 대상 상품을 찾지 못했습니다. 광고 영역은 순위에서 제외하며 상품 URL 또는 상품ID가 정확한지 확인하세요.";
       }
 
       function seoReviewDetail(reviewCount) {
@@ -5580,7 +5581,7 @@
           title: "상품명 앞 10자 안에 기준 키워드를 배치하고, 같은 단어 반복은 2회 이하로 줄이세요. 구조는 핵심키워드 + 제품유형 + 차별점 + 옵션 순서가 좋습니다.",
           category: "네이버 쇼핑 카테고리와 상품 속성이 실제 상품군과 맞는지 확인하세요. 카테고리가 틀리면 순위 확인과 노출 판단이 같이 흔들립니다.",
           market: "월 검색량이 확인되는 키워드만 주 키워드로 쓰고, 검색량이 낮거나 정확 미일치 키워드는 보조 키워드로 분리하세요.",
-          rank: "현재 순위가 낮거나 미확인이라면 상품명, 대표 이미지, 가격, 배송혜택을 수정한 뒤 3시간 단위 순위 추적에서 변화 여부를 확인하세요.",
+          rank: "오가닉 순위가 낮거나 미확인이라면 상품명, 대표 이미지, 가격, 배송혜택을 수정한 뒤 3시간 단위 순위 추적에서 변화 여부를 확인하세요.",
           benefit: "상위 상품 대비 가격, 배송비, 쿠폰, 포인트 중 최소 1개 우위를 상세페이지 상단과 썸네일에서 바로 보이게 정리하세요.",
           trust: "리뷰 수만 보지 말고 최근 리뷰 증가 속도와 포토리뷰 비중을 같이 관리하세요. 리뷰가 적으면 클릭 이후 구매 장벽이 큽니다."
         };
@@ -5658,7 +5659,7 @@
         } else if (input.url || input.productId) {
           rankScore = 3;
         }
-        addCheck("rank", "현재 순위 검증", seoRankBasis(rankResult), rankScore, 15);
+        addCheck("rank", "오가닉 순위 검증", seoRankBasis(rankResult), rankScore, 15);
 
         var benefitScore = 0;
         if (price > 0) benefitScore += 6;
@@ -5709,7 +5710,7 @@
           checks: checks,
           actions: actions,
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
-          rankMessage: rankPayload && rankPayload.message ? rankPayload.message : "상품 순위는 네이버 상품 URL 입력 시 확인됩니다.",
+          rankMessage: rankPayload && rankPayload.message ? rankPayload.message : "오가닉 순위는 네이버 상품 URL 입력 시 확인됩니다.",
           volumeText: formatSearchVolumeWithUnit(keywordData),
           shoppingTotal: shoppingTotal,
           item: item
@@ -5735,7 +5736,7 @@
           summary.innerHTML =
             '<div><span>기준 키워드</span><strong>' + escapeHtml(evaluation.keyword) + '</strong></div>' +
             '<div><span>월 검색수</span><strong>' + escapeHtml(evaluation.volumeText) + '</strong></div>' +
-            '<div><span>현재 순위</span><strong>' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</strong></div>' +
+            '<div><span>오가닉 순위</span><strong>' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</strong></div>' +
             '<div><span>상품수</span><strong>' + escapeHtml(evaluation.shoppingTotal ? formatNumber(evaluation.shoppingTotal) + "건" : "확인 필요") + '</strong></div>';
         }
 
@@ -5771,7 +5772,7 @@
             '<span class="mi-seo-pill">점수 ' + evaluation.score + '</span>' +
             '<span class="mi-seo-pill">' + escapeHtml(evaluation.grade.label.split(" · ")[0]) + '</span>' +
             '<span class="mi-seo-pill">월 검색수 ' + escapeHtml(evaluation.volumeText) + '</span>' +
-            '<span class="mi-seo-pill">순위 ' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</span>' +
+            '<span class="mi-seo-pill">오가닉 순위 ' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</span>' +
             '</div></div>';
         }
       }
@@ -5779,7 +5780,7 @@
       function resetSeoView() {
         renderSeoEvaluation({
           keyword: "조회 전",
-          title: "네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.",
+          title: "네이버 상품 URL을 입력하면 오가닉 순위와 상품 정보를 함께 확인합니다.",
           category: "",
           price: 0,
           reviewCount: 0,
@@ -5874,7 +5875,7 @@
               productId = foundItem.productId || "";
             }
           } catch (error) {
-            rankMessage = error.message || "현재 순위는 별도 확인이 필요합니다.";
+            rankMessage = error.message || "오가닉 순위는 별도 확인이 필요합니다.";
           }
 
           var evaluation = buildSeoEvaluation({

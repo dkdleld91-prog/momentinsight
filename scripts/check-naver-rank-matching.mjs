@@ -2,10 +2,14 @@
 
 import assert from "node:assert/strict";
 import {
+  buildRankTarget,
   canonicalUrlKey,
   extractProductId,
+  findOrganicMatchInItems,
+  isAdItem,
   matchTargetItem,
   productIdCandidates,
+  rankPagePosition,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 
 const smartstoreUrl = "https://smartstore.naver.com/sample-store/products/1234567890?NaPm=ct%3Dabc%7Cci%3D999999999999999999999";
@@ -65,5 +69,51 @@ assert.equal(matchTargetItem({
   title: "정확한 상품",
   mallName: "sample-store",
 }, target).matched, true);
+
+assert.equal(isAdItem({ productId: "1234567890", title: "광고 상품", isAd: true }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "협찬 상품", sponsored: "Y" }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "일반 상품", mallName: "sample-store" }), false);
+
+assert.deepEqual(rankPagePosition(40), { page: 1, position: 40, pageSize: 40 });
+assert.deepEqual(rankPagePosition(41), { page: 2, position: 1, pageSize: 40 });
+assert.deepEqual(rankPagePosition(81), { page: 3, position: 1, pageSize: 40 });
+
+const organicTarget = buildRankTarget({ targetProductId: "9999999999" });
+const shoppingItem = (productId, overrides = {}) => ({
+  productId,
+  link: `https://smartstore.naver.com/sample-store/products/${productId}`,
+  title: `테스트 상품 ${productId}`,
+  mallName: "sample-store",
+  ...overrides,
+});
+
+const adOnlyMatch = findOrganicMatchInItems([
+  shoppingItem("9999999999", { isAd: true }),
+], organicTarget, { limit: 100, topItems: [] });
+assert.equal(adOnlyMatch.matched, false);
+assert.equal(adOnlyMatch.organicCheckedCount, 0);
+assert.equal(adOnlyMatch.excludedAdCount, 1);
+
+const mixedMatch = findOrganicMatchInItems([
+  shoppingItem("1111111111"),
+  shoppingItem("9999999999", { isAd: true }),
+  shoppingItem("2222222222"),
+  shoppingItem("9999999999"),
+], organicTarget, { limit: 100, topItems: [] });
+assert.equal(mixedMatch.matched, true);
+assert.equal(mixedMatch.rank, 3);
+assert.equal(mixedMatch.page, 1);
+assert.equal(mixedMatch.position, 3);
+assert.equal(mixedMatch.excludedAdCount, 1);
+
+const fortyOrganicAhead = Array.from({ length: 40 }, (_, index) => shoppingItem(String(1000000000 + index)));
+const pageTwoMatch = findOrganicMatchInItems([
+  ...fortyOrganicAhead,
+  shoppingItem("9999999999"),
+], organicTarget, { limit: 100, topItems: [] });
+assert.equal(pageTwoMatch.matched, true);
+assert.equal(pageTwoMatch.rank, 41);
+assert.equal(pageTwoMatch.page, 2);
+assert.equal(pageTwoMatch.position, 1);
 
 console.log("Naver rank matching checks passed.");

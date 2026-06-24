@@ -1087,6 +1087,266 @@
       margin-bottom: 16px;
     }
 
+    #mi-admin .mi-seo-card {
+      display: grid;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-seo-form {
+      display: grid;
+      grid-template-columns: 1fr 2fr 0.8fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-seo-form .mi-button {
+      min-height: 44px;
+    }
+
+    #mi-admin .mi-seo-layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    #mi-admin .mi-seo-score-card,
+    #mi-admin .mi-seo-panel {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-seo-score-card {
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+      align-content: start;
+    }
+
+    #mi-admin .mi-seo-score-ring {
+      --score: 0;
+      display: grid;
+      width: 150px;
+      height: 150px;
+      place-items: center;
+      justify-self: center;
+      border-radius: 999px;
+      background:
+        radial-gradient(circle at center, #fff 0 58%, transparent 59%),
+        conic-gradient(#061a3a calc(var(--score) * 1%), #e8eef6 0);
+    }
+
+    #mi-admin .mi-seo-score-ring strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 32px;
+      font-weight: 950;
+      line-height: 1;
+      text-align: center;
+    }
+
+    #mi-admin .mi-seo-score-ring span {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+      text-align: center;
+    }
+
+    #mi-admin .mi-seo-grade {
+      display: grid;
+      gap: 4px;
+      text-align: center;
+    }
+
+    #mi-admin .mi-seo-grade strong {
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-seo-grade span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-seo-summary {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-seo-summary div {
+      display: grid;
+      grid-template-columns: 86px minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+      border-top: 1px solid #edf1f6;
+      padding-top: 8px;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-seo-summary span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-seo-main {
+      display: grid;
+      gap: 14px;
+    }
+
+    #mi-admin .mi-seo-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    #mi-admin .mi-seo-panel {
+      padding: 16px;
+    }
+
+    #mi-admin .mi-seo-panel.is-wide {
+      grid-column: 1 / -1;
+    }
+
+    #mi-admin .mi-seo-panel h3 {
+      margin: 0 0 12px;
+      color: var(--mi-navy);
+      font-size: 17px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-seo-check-list,
+    #mi-admin .mi-seo-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-seo-check,
+    #mi-admin .mi-seo-action {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: #fbfcfd;
+    }
+
+    #mi-admin .mi-seo-check strong,
+    #mi-admin .mi-seo-action strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 950;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-seo-check span,
+    #mi-admin .mi-seo-action span {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-seo-point {
+      display: inline-flex;
+      min-width: 44px;
+      min-height: 28px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: #fff;
+      background: #061a3a;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-seo-point.warn {
+      background: #f59e0b;
+    }
+
+    #mi-admin .mi-seo-point.bad {
+      background: #dc2626;
+    }
+
+    #mi-admin .mi-seo-preview {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 14px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-seo-preview-img {
+      display: grid;
+      width: 110px;
+      height: 110px;
+      place-items: center;
+      overflow: hidden;
+      border: 1px solid #edf1f6;
+      border-radius: 8px;
+      color: var(--mi-muted);
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 850;
+      text-align: center;
+    }
+
+    #mi-admin .mi-seo-preview-img img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    #mi-admin .mi-seo-preview h4 {
+      margin: 0 0 8px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 950;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-seo-preview p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 750;
+      line-height: 1.55;
+    }
+
+    #mi-admin .mi-seo-pills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    #mi-admin .mi-seo-pill {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border: 1px solid #dfe7f1;
+      border-radius: 999px;
+      padding: 5px 9px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
     #mi-admin .mi-rank-form {
       display: grid;
       grid-template-columns: 1.1fr 2fr 1fr 120px auto;
@@ -2320,9 +2580,16 @@
       }
 
       #mi-admin .mi-rank-form,
+      #mi-admin .mi-seo-form,
+      #mi-admin .mi-seo-layout,
+      #mi-admin .mi-seo-grid,
       #mi-admin .mi-rank-grid,
       #mi-admin .mi-rank-kpis {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-seo-panel.is-wide {
+        grid-column: auto;
       }
     }
 
@@ -2433,6 +2700,7 @@
           <p class="mi-nav-title">관리자 기능</p>
           <a href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 다운로드 <small>전달</small></a>
           <a href="#mi-admin-keyword" data-mi-admin-screen="keyword">키워드 조회 <small>SEO</small></a>
+          <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 <small>네이버</small></a>
           <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">네이버 상품 순위 <small>추적</small></a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
@@ -3072,6 +3340,91 @@
               </div>
             </aside>
           </div>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="seo-check" id="mi-admin-seo-check">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">네이버 SEO 확인</span>
+              <h1>상품 URL 기준 SEO 점수를 확인합니다.</h1>
+              <p>키워드, 네이버 상품 URL, 리뷰수량만 입력하고 상품명·가격·카테고리는 조회 결과로 보완합니다.</p>
+            </div>
+            <span class="mi-badge">관리자 확인용</span>
+          </header>
+
+          <article class="mi-card mi-card-pad mi-seo-card" data-seo-card>
+            <div class="mi-card-head">
+              <div>
+                <span class="mi-kicker">네이버 SEO 점수</span>
+                <h2>광고주에게 공개하기 전 상품 SEO 상태를 먼저 점검합니다.</h2>
+                <p>키워드 조회와 상품 순위 API를 함께 사용해 상품명, 현재 순위, 검색 수요, 리뷰 기준을 확인합니다.</p>
+              </div>
+              <span class="mi-badge warn">내부 검수</span>
+            </div>
+
+            <div class="mi-seo-form">
+              <input class="mi-input" data-seo-keyword aria-label="SEO 기준 키워드" placeholder="기준 키워드" />
+              <input class="mi-input" data-seo-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL" />
+              <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
+              <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
+            </div>
+            <p class="mi-code-status" data-seo-status>키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+
+            <div class="mi-seo-layout">
+              <aside class="mi-seo-score-card">
+                <div class="mi-seo-score-ring" data-seo-score-ring style="--score:0;">
+                  <div>
+                    <strong data-seo-score>--</strong>
+                    <span>네이버 SEO 점수</span>
+                  </div>
+                </div>
+                <div class="mi-seo-grade">
+                  <strong data-seo-grade>조회 전</strong>
+                  <span data-seo-grade-copy>상품 정보 입력 후 점검 결과를 표시합니다.</span>
+                </div>
+                <div class="mi-seo-summary" data-seo-summary>
+                  <div><span>기준 키워드</span><strong>조회 후 표시</strong></div>
+                  <div><span>현재 순위</span><strong>조회 후 표시</strong></div>
+                  <div><span>시장 상태</span><strong>조회 후 표시</strong></div>
+                </div>
+              </aside>
+
+              <div class="mi-seo-main">
+                <div class="mi-seo-grid">
+                  <section class="mi-seo-panel">
+                    <h3>점검 항목</h3>
+                    <div class="mi-seo-check-list" data-seo-checks>
+                      <div class="mi-seo-check"><div><strong>조회 후 표시</strong><span>상품 정보를 입력하면 항목별 점수를 표시합니다.</span></div><b class="mi-seo-point warn">-</b></div>
+                    </div>
+                  </section>
+
+                  <section class="mi-seo-panel">
+                    <h3>바로 수정할 항목</h3>
+                    <div class="mi-seo-actions" data-seo-actions>
+                      <div class="mi-seo-action"><div><strong>키워드와 네이버 상품 URL 입력</strong><span>상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
+                    </div>
+                  </section>
+
+                  <section class="mi-seo-panel is-wide">
+                    <h3>상품 노출 연결</h3>
+                    <div class="mi-seo-preview" data-seo-preview>
+                      <div class="mi-seo-preview-img">상품 확인 전</div>
+                      <div>
+                        <h4>네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.</h4>
+                        <p>광고주에게 전달하기 전에 상품명, 검색 수요, 현재 순위, 리뷰 기준을 내부에서 먼저 검수합니다.</p>
+                        <div class="mi-seo-pills">
+                          <span class="mi-seo-pill">상품명</span>
+                          <span class="mi-seo-pill">카테고리</span>
+                          <span class="mi-seo-pill">검색량</span>
+                          <span class="mi-seo-pill">현재 순위</span>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </article>
         </section>
 
         <section class="mi-view" data-mi-admin-view="naver-rank" id="mi-admin-naver-rank">
@@ -5155,6 +5508,355 @@
         };
       }
 
+      function parseSeoNumber(value) {
+        return Number(String(value || "").replace(/[^0-9.]/g, "")) || 0;
+      }
+
+      function compactText(value) {
+        return String(value || "").replace(/\s+/g, "").toLowerCase();
+      }
+
+      function seoPointClass(score, max) {
+        var ratio = max ? score / max : 0;
+        if (ratio < 0.45) return " bad";
+        if (ratio < 0.75) return " warn";
+        return "";
+      }
+
+      function seoGrade(score) {
+        if (score >= 90) return { label: "A · 바로 운영 가능", copy: "상품 등록 완성도가 높습니다. 순위 변화만 계속 추적하면 됩니다." };
+        if (score >= 80) return { label: "B+ · 일부 보완", copy: "큰 문제는 없지만 상품명, 리뷰, 혜택 중 일부를 더 다듬으면 좋습니다." };
+        if (score >= 70) return { label: "B · 보완 필요", copy: "노출 준비는 됐지만 경쟁 상품 대비 약한 항목을 먼저 수정해야 합니다." };
+        if (score >= 55) return { label: "C · 수정 우선", copy: "상품명, 카테고리, 혜택, 리뷰 중 여러 항목을 보완해야 합니다." };
+        return { label: "D · SEO 재점검", copy: "현재 상태로는 키워드 기준 검색 노출 준비도가 낮습니다. 기본 정보부터 다시 잡아야 합니다." };
+      }
+
+      function titleRepeatIssue(title, keyword) {
+        var compactKeyword = compactText(keyword);
+        var compactTitle = compactText(title);
+        if (compactKeyword && compactTitle.split(compactKeyword).length - 1 > 2) return true;
+        var words = String(title || "").split(/\s+/).filter(function (word) { return word.length > 1; });
+        var counts = {};
+        return words.some(function (word) {
+          var key = word.toLowerCase();
+          counts[key] = (counts[key] || 0) + 1;
+          return counts[key] > 3;
+        });
+      }
+
+      function categoryPath(item, manualCategory) {
+        var categories = [item && item.category1, item && item.category2, item && item.category3, item && item.category4].filter(Boolean);
+        return String(manualCategory || categories.join(" > ") || "").trim();
+      }
+
+      function seoActionText(check) {
+        var map = {
+          title: "상품명 앞쪽에 기준 키워드를 자연스럽게 넣고, 중복 표현은 줄이세요.",
+          category: "네이버 상품 카테고리와 주요 속성값을 다시 확인하세요.",
+          market: "검색량이 확인되는 키워드를 기준 키워드로 잡고 연관 키워드는 보조로 분리하세요.",
+          rank: "현재 순위가 낮으면 상품명, 대표 이미지, 가격/혜택을 먼저 수정한 뒤 순위 추적을 이어가세요.",
+          benefit: "가격, 무료배송, 쿠폰, 포인트 중 최소 한 가지 강점을 명확히 보여주세요.",
+          trust: "리뷰 수와 최근 리뷰 흐름이 약하면 리뷰 확보 작업을 우선순위에 올리세요."
+        };
+        return map[check.key] || "점수가 낮은 항목부터 수정하세요.";
+      }
+
+      function buildSeoEvaluation(input, keywordData, rankPayload) {
+        var keyword = input.keyword;
+        var item = rankPayload && rankPayload.result && rankPayload.result.item ? rankPayload.result.item : null;
+        var rankResult = rankPayload && rankPayload.result ? rankPayload.result : null;
+        var title = input.title || (item && item.title) || "";
+        var category = categoryPath(item, input.category);
+        var price = input.price || (item && item.lprice) || 0;
+        var reviewCount = input.reviewCount || 0;
+        var compactKeyword = compactText(keyword);
+        var compactTitle = compactText(title);
+        var keywordIndex = compactKeyword && compactTitle ? compactTitle.indexOf(compactKeyword) : -1;
+        var titleLength = String(title || "").replace(/\s+/g, " ").trim().length;
+        var repeated = titleRepeatIssue(title, keyword);
+        var checks = [];
+
+        function addCheck(key, titleText, detail, score, max) {
+          checks.push({
+            key: key,
+            title: titleText,
+            detail: detail,
+            score: Math.max(0, Math.min(max, Math.round(score))),
+            max: max
+          });
+        }
+
+        var titleScore = 0;
+        if (keywordIndex >= 0) titleScore += 11;
+        if (keywordIndex >= 0 && keywordIndex <= 10) titleScore += 5;
+        if (titleLength >= 18 && titleLength <= 65) titleScore += 5;
+        if (title && !repeated) titleScore += 4;
+        addCheck("title", "상품명 SEO", keywordIndex >= 0 ? "기준 키워드가 상품명에 포함되어 있습니다." : "기준 키워드가 상품명에 보이지 않습니다.", titleScore, 25);
+
+        var categoryScore = 0;
+        if (category) categoryScore += 8;
+        if ((category.match(/>/g) || []).length >= 1) categoryScore += 4;
+        if (item && item.productId) categoryScore += 3;
+        addCheck("category", "카테고리/속성", category ? category : "카테고리 확인이 필요합니다.", categoryScore, 15);
+
+        var hasVolume = hasSearchVolume(keywordData);
+        var shoppingTotal = Number(keywordData && keywordData.shopping && keywordData.shopping.total || rankResult && rankResult.total || 0);
+        var marketScore = 0;
+        if (hasVolume) marketScore += 8;
+        if (shoppingTotal) marketScore += 4;
+        if (keywordData && keywordData.comp && keywordData.comp !== "확인 필요") marketScore += 3;
+        addCheck("market", "검색 수요 연결", hasVolume ? "월 검색량과 시장 규모가 확인됩니다." : "검색량 확인 후 판단 정확도가 올라갑니다.", marketScore, 15);
+
+        var rankScore = 0;
+        if (rankResult && rankResult.matched) {
+          if (rankResult.rank <= 30) rankScore = 15;
+          else if (rankResult.rank <= 100) rankScore = 11;
+          else if (rankResult.rank <= 300) rankScore = 7;
+          else rankScore = 5;
+        } else if (input.url || input.productId) {
+          rankScore = 3;
+        }
+        addCheck("rank", "현재 순위 연결", rankResult && rankResult.matched ? rankResult.rank + "위로 확인되었습니다." : "네이버 상품 URL 기준 순위 확인이 필요합니다.", rankScore, 15);
+
+        var benefitScore = 0;
+        if (price > 0) benefitScore += 6;
+        benefitScore += 4;
+        if (item && item.mallName) benefitScore += 3;
+        addCheck("benefit", "가격/혜택", price ? "판매가와 판매처 정보를 기준으로 판단했습니다." : "판매가 확인이 필요합니다.", benefitScore, 15);
+
+        var trustScore = 0;
+        if (reviewCount >= 1000) trustScore += 9;
+        else if (reviewCount >= 100) trustScore += 7;
+        else if (reviewCount >= 20) trustScore += 5;
+        else if (reviewCount > 0) trustScore += 3;
+        if (input.url || input.productId || item) trustScore += 4;
+        if (item && item.image) trustScore += 2;
+        addCheck("trust", "리뷰/신뢰도", reviewCount ? "직접 입력한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다." : "리뷰 수를 직접 입력하면 판단이 더 정확해집니다.", trustScore, 15);
+
+        var score = checks.reduce(function (sum, check) { return sum + check.score; }, 0);
+        var actions = checks
+          .filter(function (check) { return check.score / check.max < 0.75; })
+          .sort(function (a, b) { return (a.score / a.max) - (b.score / b.max); })
+          .slice(0, 5)
+          .map(function (check) {
+            return {
+              title: check.title,
+              detail: seoActionText(check),
+              score: check.score,
+              max: check.max
+            };
+          });
+
+        if (!actions.length) {
+          actions = [{ title: "유지 관리", detail: "현재 네이버 SEO 상태는 양호합니다. 순위 추적과 리뷰 흐름만 계속 확인하세요.", score: score, max: 100 }];
+        }
+
+        return {
+          keyword: keyword,
+          title: title,
+          category: category,
+          price: price,
+          reviewCount: reviewCount,
+          score: Math.max(0, Math.min(100, score)),
+          grade: seoGrade(score),
+          checks: checks,
+          actions: actions,
+          rank: rankResult && rankResult.matched ? rankResult.rank : null,
+          rankMessage: rankPayload && rankPayload.message ? rankPayload.message : "상품 순위는 네이버 상품 URL 입력 시 확인됩니다.",
+          volumeText: formatSearchVolumeWithUnit(keywordData),
+          shoppingTotal: shoppingTotal,
+          item: item
+        };
+      }
+
+      function renderSeoEvaluation(evaluation) {
+        var ring = root.querySelector("[data-seo-score-ring]");
+        var score = root.querySelector("[data-seo-score]");
+        var grade = root.querySelector("[data-seo-grade]");
+        var gradeCopy = root.querySelector("[data-seo-grade-copy]");
+        var summary = root.querySelector("[data-seo-summary]");
+        var checks = root.querySelector("[data-seo-checks]");
+        var actions = root.querySelector("[data-seo-actions]");
+        var preview = root.querySelector("[data-seo-preview]");
+
+        if (ring) ring.style.setProperty("--score", evaluation.score);
+        if (score) score.textContent = evaluation.score;
+        if (grade) grade.textContent = evaluation.grade.label;
+        if (gradeCopy) gradeCopy.textContent = evaluation.grade.copy;
+
+        if (summary) {
+          summary.innerHTML =
+            '<div><span>기준 키워드</span><strong>' + escapeHtml(evaluation.keyword) + '</strong></div>' +
+            '<div><span>월 검색수</span><strong>' + escapeHtml(evaluation.volumeText) + '</strong></div>' +
+            '<div><span>현재 순위</span><strong>' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</strong></div>' +
+            '<div><span>상품수</span><strong>' + escapeHtml(evaluation.shoppingTotal ? formatNumber(evaluation.shoppingTotal) + "건" : "확인 필요") + '</strong></div>';
+        }
+
+        if (checks) {
+          checks.innerHTML = evaluation.checks.map(function (check) {
+            return '<div class="mi-seo-check"><div><strong>' + escapeHtml(check.title) + '</strong><span>' +
+              escapeHtml(check.detail) + '</span></div><b class="mi-seo-point' + seoPointClass(check.score, check.max) +
+              '">' + check.score + '/' + check.max + '</b></div>';
+          }).join("");
+        }
+
+        if (actions) {
+          actions.innerHTML = evaluation.actions.map(function (action) {
+            return '<div class="mi-seo-action"><div><strong>' + escapeHtml(action.title) + '</strong><span>' +
+              escapeHtml(action.detail) + '</span></div><b class="mi-seo-point' + seoPointClass(action.score, action.max) +
+              '">수정</b></div>';
+          }).join("");
+        }
+
+        if (preview) {
+          var item = evaluation.item || {};
+          var image = item.image ? '<img src="' + escapeHtml(item.image) + '" alt="상품 이미지" />' : '이미지 확인';
+          var title = evaluation.title || "상품명 확인 필요";
+          var meta = [
+            evaluation.category || "카테고리 확인 필요",
+            item.mallName || "판매처 확인 필요",
+            evaluation.price ? formatNumber(evaluation.price) + "원" : "판매가 확인 필요",
+            evaluation.rankMessage
+          ].filter(Boolean).join(" · ");
+          preview.innerHTML =
+            '<div class="mi-seo-preview-img">' + image + '</div><div><h4>' + escapeHtml(title) + '</h4><p>' +
+            escapeHtml(meta) + '</p><div class="mi-seo-pills">' +
+            '<span class="mi-seo-pill">점수 ' + evaluation.score + '</span>' +
+            '<span class="mi-seo-pill">' + escapeHtml(evaluation.grade.label.split(" · ")[0]) + '</span>' +
+            '<span class="mi-seo-pill">월 검색수 ' + escapeHtml(evaluation.volumeText) + '</span>' +
+            '<span class="mi-seo-pill">순위 ' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</span>' +
+            '</div></div>';
+        }
+      }
+
+      function resetSeoView() {
+        renderSeoEvaluation({
+          keyword: "조회 전",
+          title: "네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.",
+          category: "",
+          price: 0,
+          reviewCount: 0,
+          score: 0,
+          grade: { label: "조회 전", copy: "키워드, 네이버 상품 URL, 리뷰수량 입력 후 네이버 SEO 점수를 표시합니다." },
+          checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
+          actions: [{ title: "키워드와 네이버 상품 URL 입력", detail: "상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
+          rank: null,
+          rankMessage: "상품 확인 전",
+          volumeText: "조회 후 표시",
+          shoppingTotal: 0,
+          item: null
+        });
+      }
+
+      async function fetchSeoRank(keyword, title, targetUrl, productId) {
+        if (!targetUrl && !productId) return null;
+        var params = new URLSearchParams({
+          keyword: keyword,
+          targetUrl: targetUrl || "",
+          productId: productId || "",
+          productTitle: title || "",
+          maxRank: "300"
+        });
+        var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) throw new Error("상품 순위 응답을 확인할 수 없습니다.");
+        if (!response.ok || payload.ok === false) throw new Error(payload.message || "상품 순위 확인이 어렵습니다.");
+        return payload;
+      }
+
+      function initSeoCheck(linkedKeywordInput) {
+        var seoKeyword = root.querySelector("[data-seo-keyword]");
+        var seoUrl = root.querySelector("[data-seo-url]");
+        var seoReviewCount = root.querySelector("[data-seo-review-count]");
+        var seoButton = root.querySelector("[data-seo-run]");
+        var seoStatus = root.querySelector("[data-seo-status]");
+        if (!seoKeyword || !seoButton) return;
+
+        resetSeoView();
+
+        function syncSeoKeywordFromMain() {
+          if (!linkedKeywordInput) return;
+          var next = parseKeywordInput(linkedKeywordInput.value)[0] || "";
+          if (next && (!seoKeyword.value || seoKeyword.getAttribute("data-synced-keyword") === "true")) {
+            seoKeyword.value = next;
+            seoKeyword.setAttribute("data-synced-keyword", "true");
+          }
+        }
+
+        async function runSeoCheck() {
+          var keyword = (seoKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
+          var targetUrl = seoUrl ? seoUrl.value.trim() : "";
+          var title = "";
+          var productId = "";
+          if (!keyword) {
+            setStatus(seoStatus, "기준 키워드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!targetUrl) {
+            setStatus(seoStatus, "네이버 상품 URL을 입력해주세요.", "is-warn");
+            return;
+          }
+
+          seoButton.disabled = true;
+          setStatus(seoStatus, "네이버 SEO 점수를 확인 중입니다.", "");
+          var fallbackData = buildKeywordFallback(keyword);
+          var keywordData = fallbackData;
+          var keywordMessage = "";
+          var rankPayload = null;
+          var rankMessage = "";
+
+          try {
+            var cached = keywordDatasets.find(function (item) {
+              return compactText(item.keyword) === compactText(keyword);
+            });
+            if (cached && cached.data) {
+              keywordData = cached.data;
+            } else {
+              var keywordPayload = await fetchKeywordData(keyword, "full");
+              keywordData = normalizeKeywordApiData(keywordPayload, fallbackData);
+            }
+          } catch (error) {
+            keywordMessage = "검색 수요는 입력값 기준으로 우선 계산했습니다.";
+          }
+
+          try {
+            rankPayload = await fetchSeoRank(keyword, title, targetUrl, productId);
+            var foundItem = rankPayload && rankPayload.result && rankPayload.result.item ? rankPayload.result.item : null;
+            if (foundItem) {
+              title = foundItem.title || "";
+              productId = foundItem.productId || "";
+            }
+          } catch (error) {
+            rankMessage = error.message || "현재 순위는 별도 확인이 필요합니다.";
+          }
+
+          var evaluation = buildSeoEvaluation({
+            keyword: keyword,
+            title: title,
+            url: targetUrl,
+            productId: productId,
+            category: "",
+            price: 0,
+            reviewCount: parseSeoNumber(seoReviewCount && seoReviewCount.value)
+          }, keywordData, rankPayload);
+
+          renderSeoEvaluation(evaluation);
+          var statusParts = ["점검 완료: " + evaluation.grade.label];
+          if (keywordMessage) statusParts.push(keywordMessage);
+          if (rankMessage) statusParts.push(rankMessage);
+          setStatus(seoStatus, statusParts.join(" · "), evaluation.score >= 70 ? "is-ok" : "is-warn");
+          seoButton.disabled = false;
+        }
+
+        seoKeyword.setAttribute("data-synced-keyword", "true");
+        syncSeoKeywordFromMain();
+        if (linkedKeywordInput) linkedKeywordInput.addEventListener("input", syncSeoKeywordFromMain);
+        seoKeyword.addEventListener("input", function () {
+          seoKeyword.setAttribute("data-synced-keyword", "false");
+        });
+        seoButton.addEventListener("click", runSeoCheck);
+      }
+
       var keywordInput = root.querySelector("[data-admin-keyword-input]");
       var keywordButton = root.querySelector("[data-admin-keyword-search]");
       var keywordResult = root.querySelector("[data-admin-keyword-result]");
@@ -5225,6 +5927,7 @@
           runKeywordLookup();
         });
       }
+      initSeoCheck(keywordInput);
       initRankTracking(keywordInput);
 
       function csvValue(value) {

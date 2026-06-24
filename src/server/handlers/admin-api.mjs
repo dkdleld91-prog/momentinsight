@@ -72,8 +72,9 @@ const resources = {
   },
   "naver-rank-trackers": {
     table: "naver_rank_trackers",
-    select: "id, client_id, brand_id, agency_code, keyword, product_url, product_id, mall_name, product_title, max_rank, status, started_at, ends_at, last_checked_at, next_check_at, current_rank, best_rank, worst_rank, check_count, found_count, last_message, created_at, updated_at",
-    order: "created_at"
+    select: "id, client_id, brand_id, agency_code, keyword, product_url, product_id, mall_name, product_title, max_rank, status, started_at, ends_at, last_checked_at, next_check_at, current_rank, best_rank, worst_rank, check_count, found_count, last_message, sort_order, created_at, updated_at",
+    order: "sort_order",
+    ascending: true
   },
   "naver-rank-snapshots": {
     table: "naver_rank_snapshots",
@@ -126,7 +127,7 @@ async function handleGet(request, ctx, config, id) {
     .select(config.select);
 
   query = applyFilters(query, url, id)
-    .order(config.order, { ascending: false })
+    .order(config.order, { ascending: config.ascending === true })
     .limit(limit);
 
   const { data, error } = await query;
@@ -139,6 +140,20 @@ async function handleGet(request, ctx, config, id) {
 
 async function handlePost(request, ctx, config) {
   const body = await readBody(request);
+  if (config.table === "naver_rank_trackers" && body.sort_order == null) {
+    const agencyCode = String(body.agency_code || "mml-a01").trim().toLowerCase();
+    const { data: latest, error: sortError } = await ctx.supabaseAdmin
+      .from(config.table)
+      .select("sort_order")
+      .eq("agency_code", agencyCode)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    if (sortError) {
+      return databaseError(sortError, "순위 추적 정렬값 계산에 실패했습니다.");
+    }
+    body.agency_code = agencyCode;
+    body.sort_order = Number(latest?.[0]?.sort_order || 0) + 100;
+  }
   const { data, error } = await ctx.supabaseAdmin
     .from(config.table)
     .insert(body)

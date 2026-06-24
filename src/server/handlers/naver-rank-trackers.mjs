@@ -32,6 +32,7 @@ const TRACKER_SELECT = [
   "check_count",
   "found_count",
   "last_message",
+  "sort_order",
   "created_at",
   "updated_at",
 ].join(", ");
@@ -104,6 +105,7 @@ function trackerPayload(row, snapshots = []) {
     checkCount: row.check_count,
     foundCount: row.found_count,
     lastMessage: row.last_message,
+    sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     snapshots: snapshots.map(snapshotPayload),
@@ -177,6 +179,7 @@ async function listTrackers(request, ctx) {
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
     .eq("agency_code", agencyCode)
+    .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -320,6 +323,15 @@ async function createTracker(request, ctx, body) {
 
   const now = new Date();
   const clientId = await findClientId(ctx, agencyCode);
+  const sortOrderResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("sort_order")
+    .eq("agency_code", agencyCode)
+    .order("sort_order", { ascending: false })
+    .limit(1);
+  if (sortOrderResult.error) throw sortOrderResult.error;
+  const nextSortOrder = Number(sortOrderResult.data?.[0]?.sort_order || 0) + 100;
+
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .insert({
@@ -336,6 +348,7 @@ async function createTracker(request, ctx, body) {
       ends_at: addDays(now, 30),
       next_check_at: now.toISOString(),
       last_message: "추적 등록 후 첫 순위 확인 대기",
+      sort_order: nextSortOrder,
     })
     .select(TRACKER_SELECT)
     .single();
@@ -390,6 +403,69 @@ async function stopTracker(request, ctx, body) {
   return json(request, { ok: true, tracker: trackerPayload(data), message: "추적을 중지했습니다." });
 }
 
+async function deleteTracker(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  const trackerId = normalizeText(body.trackerId || body.id);
+  if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .delete()
+    .eq("id", trackerId)
+    .eq("agency_code", agencyCode)
+    .select("id");
+
+  if (error) throw error;
+  if (!data?.length) return json(request, { ok: false, message: "삭제할 추적 항목을 찾을 수 없습니다." }, 404);
+  return json(request, { ok: true, deletedId: trackerId, message: "추적 항목을 삭제했습니다." });
+}
+
+async function moveTracker(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  const trackerId = normalizeText(body.trackerId || body.id);
+  const direction = normalizeText(body.direction || "up");
+  if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id, sort_order, created_at")
+    .eq("agency_code", agencyCode)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error) throw error;
+
+  const rows = data || [];
+  const index = rows.findIndex((row) => row.id === trackerId);
+  if (index < 0) return json(request, { ok: false, message: "이동할 추적 항목을 찾을 수 없습니다." }, 404);
+
+  const targetIndex = direction === "down" ? index + 1 : index - 1;
+  if (targetIndex < 0 || targetIndex >= rows.length) {
+    return json(request, { ok: true, message: "더 이상 이동할 위치가 없습니다." });
+  }
+
+  const current = rows[index];
+  const target = rows[targetIndex];
+  const updates = [
+    ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .update({ sort_order: target.sort_order })
+      .eq("id", current.id)
+      .eq("agency_code", agencyCode),
+    ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .update({ sort_order: current.sort_order })
+      .eq("id", target.id)
+      .eq("agency_code", agencyCode),
+  ];
+  const results = await Promise.all(updates);
+  const updateError = results.find((item) => item.error)?.error;
+  if (updateError) throw updateError;
+
+  return json(request, { ok: true, message: "추적 항목 위치를 변경했습니다." });
+}
+
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
   const limit = Math.max(1, Math.min(50, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 20)));
@@ -442,6 +518,8 @@ async function handlePost(request, ctx) {
   if (action === "create") return createTracker(request, ctx, body);
   if (action === "check") return checkOne(request, ctx, body);
   if (action === "stop") return stopTracker(request, ctx, body);
+  if (action === "delete") return deleteTracker(request, ctx, body);
+  if (action === "move") return moveTracker(request, ctx, body);
   if (action === "run-due") {
     const summary = await runDueTrackers(ctx, {
       agencyCode: body.agencyCode ? requestAgencyCode(request, body) : "",

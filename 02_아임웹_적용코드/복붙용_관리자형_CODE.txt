@@ -1224,24 +1224,34 @@
 
     #mi-admin .mi-rank-daily-list {
       display: grid;
-      gap: 12px;
+      gap: 10px;
     }
 
     #mi-admin .mi-rank-tracker-card {
-      overflow: hidden;
+      overflow-x: auto;
+      overflow-y: hidden;
       border: 1px solid #dde5f0;
       border-radius: 8px;
       background: #fff;
     }
 
-    #mi-admin .mi-rank-tracker-head {
+    #mi-admin .mi-rank-tracker-head,
+    #mi-admin .mi-rank-track-row-head {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
       gap: 12px;
-      padding: 12px 14px;
+      padding: 10px 12px;
       border-bottom: 1px solid #e8edf4;
       background: #fbfcfd;
       align-items: center;
+    }
+
+    #mi-admin .mi-rank-tracker-head {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    #mi-admin .mi-rank-track-row-head {
+      grid-template-columns: minmax(110px, 0.62fr) minmax(130px, 0.78fr) minmax(240px, 1.7fr) auto;
+      min-width: 860px;
     }
 
     #mi-admin .mi-rank-tracker-title {
@@ -1265,12 +1275,61 @@
       font-weight: 800;
     }
 
-    #mi-admin .mi-rank-tracker-meta {
+    #mi-admin .mi-rank-tracker-meta,
+    #mi-admin .mi-rank-row-actions {
       display: flex;
-      flex-wrap: wrap;
       gap: 6px;
       justify-content: flex-end;
       align-items: center;
+    }
+
+    #mi-admin .mi-rank-tracker-meta {
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-rank-row-actions {
+      flex-wrap: nowrap;
+    }
+
+    #mi-admin .mi-rank-keyword-name,
+    #mi-admin .mi-rank-product-info,
+    #mi-admin .mi-rank-product-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-rank-keyword-name {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-product-info {
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-rank-product-title {
+      color: #1e63d7;
+      font-size: 13px;
+      font-weight: 850;
+      text-align: right;
+    }
+
+    #mi-admin .mi-rank-row-actions .mi-link-button {
+      min-height: 28px;
+      padding: 0 9px;
+      border-radius: 7px;
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-link-button.is-danger {
+      border-color: #f3caca;
+      color: #b42318;
+      background: #fff7f7;
     }
 
     #mi-admin .mi-rank-pill {
@@ -1288,17 +1347,29 @@
     }
 
     #mi-admin .mi-rank-day-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
+      display: flex;
       gap: 0;
-      padding: 10px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd6e4 transparent;
+    }
+
+    #mi-admin .mi-rank-day-grid::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    #mi-admin .mi-rank-day-grid::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: #cbd6e4;
     }
 
     #mi-admin .mi-rank-day-card {
-      min-height: 84px;
-      padding: 9px 10px;
+      flex: 0 0 112px;
+      min-height: 80px;
+      padding: 9px 10px 10px;
       border-right: 1px solid #edf1f6;
-      border-bottom: 1px solid #edf1f6;
       color: var(--mi-navy);
       background: #fff;
     }
@@ -4539,6 +4610,18 @@
         return "상품정보 : " + productId + (mallName ? " · " + mallName : "");
       }
 
+      function rankTrackerProductId(tracker) {
+        var latest = (tracker.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        return tracker.productId || item.productId || "-";
+      }
+
+      function rankTrackerMallName(tracker) {
+        var latest = (tracker.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        return tracker.mallName || item.mallName || "";
+      }
+
       function groupRankSnapshotsByDay(snapshots) {
         var grouped = {};
         (snapshots || []).forEach(function (snapshot) {
@@ -4582,14 +4665,19 @@
           return;
         }
         node.innerHTML = '<div class="mi-rank-daily-list">' + trackers.map(function (tracker) {
-          return '<section class="mi-rank-tracker-card"><div class="mi-rank-tracker-head"><div class="mi-rank-tracker-title"><strong title="' +
-            escapeHtml(rankTrackerTitle(tracker)) + '">' + escapeHtml(tracker.keyword || "-") + '</strong><span title="' +
-            escapeHtml(rankTrackerTitle(tracker)) + '">' + escapeHtml(rankTrackerTitle(tracker)) + '</span><span>' +
-            escapeHtml(rankTrackerMeta(tracker)) + '</span></div><div class="mi-rank-tracker-meta"><span class="mi-rank-pill">현재 ' +
+          var title = rankTrackerTitle(tracker);
+          var mallName = rankTrackerMallName(tracker);
+          var titleText = title + (mallName ? " (" + mallName + ")" : "");
+          return '<section class="mi-rank-tracker-card"><div class="mi-rank-track-row-head"><strong class="mi-rank-keyword-name" title="' +
+            escapeHtml(tracker.keyword || "") + '">' + escapeHtml(tracker.keyword || "-") + '</strong><span class="mi-rank-product-info">' +
+            escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span><span class="mi-rank-product-title" title="' +
+            escapeHtml(titleText) + '">' + escapeHtml(titleText) + '</span><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
             escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
-            escapeHtml(rankText(tracker.bestRank)) + '</span><span class="mi-rank-pill">' +
-            escapeHtml(tracker.status === "active" ? "다음 " + formatRankRemain(tracker.nextCheckAt) : rankTrackerStatus(tracker)) +
-            '</span><button class="mi-link-button" type="button" data-rank-refresh="' + escapeHtml(tracker.id) + '">수동 갱신</button></div></div>' +
+            escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-move="' +
+            escapeHtml(tracker.id) + '" data-rank-direction="up">위</button><button class="mi-link-button" type="button" data-rank-move="' +
+            escapeHtml(tracker.id) + '" data-rank-direction="down">아래</button><button class="mi-link-button" type="button" data-rank-refresh="' +
+            escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
+            escapeHtml(tracker.id) + '">삭제</button></div></div>' +
             renderTrackerDailyBoard(tracker) + '</section>';
         }).join("") + '</div>';
       }
@@ -4733,6 +4821,47 @@
         });
 
         card.addEventListener("click", async function (event) {
+          var deleteButton = event.target.closest("[data-rank-delete]");
+          if (deleteButton) {
+            var deleteId = deleteButton.getAttribute("data-rank-delete");
+            if (!window.confirm("이 순위 추적 항목과 기록을 삭제할까요?")) return;
+            deleteButton.disabled = true;
+            setStatus(rankStatus, "선택한 순위 추적 항목을 삭제 중입니다.", "");
+            try {
+              var deletePayload = await requestRankTrackers("POST", {
+                action: "delete",
+                trackerId: deleteId
+              });
+              setStatus(rankStatus, deletePayload.message || "삭제 완료", deletePayload.ok ? "is-ok" : "is-warn");
+              await loadRankTrackers(true);
+            } catch (error) {
+              setStatus(rankStatus, "삭제 연결을 확인해주세요.", "is-warn");
+            } finally {
+              deleteButton.disabled = false;
+            }
+            return;
+          }
+
+          var moveButton = event.target.closest("[data-rank-move]");
+          if (moveButton) {
+            moveButton.disabled = true;
+            setStatus(rankStatus, "순위 추적 항목 위치를 변경 중입니다.", "");
+            try {
+              var movePayload = await requestRankTrackers("POST", {
+                action: "move",
+                trackerId: moveButton.getAttribute("data-rank-move"),
+                direction: moveButton.getAttribute("data-rank-direction") || "up"
+              });
+              setStatus(rankStatus, movePayload.message || "위치 변경 완료", movePayload.ok ? "is-ok" : "is-warn");
+              await loadRankTrackers(true);
+            } catch (error) {
+              setStatus(rankStatus, "위치 변경 연결을 확인해주세요.", "is-warn");
+            } finally {
+              moveButton.disabled = false;
+            }
+            return;
+          }
+
           var refreshButton = event.target.closest("[data-rank-refresh]");
           if (!refreshButton) return;
           refreshButton.disabled = true;

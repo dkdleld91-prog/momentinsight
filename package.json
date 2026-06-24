@@ -8,6 +8,7 @@
     "clean:workspace": "node scripts/clean-workspace.mjs",
     "clean:workspace:deps": "node scripts/clean-workspace.mjs --deps",
     "clean:workspace:dry": "node scripts/clean-workspace.mjs --dry-run",
+    "work:autosave": "node scripts/work-spec-autosave.mjs",
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
     "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",

@@ -110,6 +110,17 @@ npm run clean:workspace
 - 기본 보존 대상: `.env.local`, `.vercel`, 루트 `node_modules`
 - 의존성까지 다시 설치할 수 있을 때만 `npm run clean:workspace:deps`를 사용합니다.
 
+## 작업명세 관리
+
+개발 내역은 [작업 명세서](docs/08-work-spec-autosave.md)에 저장합니다.
+
+```bash
+npm run work:autosave
+```
+
+- 개발 완료 후에는 작업명세서에 완료 체크를 남기고 로컬 커밋합니다.
+- `git push`, Vercel 배포, Supabase 배포는 별도 지시가 있을 때만 실행합니다.
+
 ## 다음 개발 단계
 
 1. Next.js, TypeScript, Tailwind CSS 프로젝트 초기화

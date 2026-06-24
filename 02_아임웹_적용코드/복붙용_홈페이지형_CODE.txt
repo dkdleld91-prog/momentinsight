@@ -1,14 +1,59 @@
 <meta charset="utf-8" />
-<title>모먼트인사이트 | 마케팅 대행사 성과 대시보드</title>
-<meta name="description" content="브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인할 수 있는 마케팅 데이터 플랫폼입니다." />
-<meta name="keywords" content="모먼트인사이트, 모먼트랩스, 마케팅 대시보드, 광고 성과 대시보드, KPI 보고서, 브랜드 성과 관리, 마케팅 데이터 플랫폼" />
+<title>모먼트인사이트 | 모먼트랩스 마케팅 사이트·성과 대시보드</title>
+<meta name="description" content="모먼트랩스가 운영하는 모먼트인사이트 마케팅 사이트입니다. 브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인하는 마케팅 데이터 플랫폼입니다." />
+<meta name="keywords" content="마케팅 사이트, 모먼트인사이트, 모먼트랩스, 모먼트랩스 마케팅, 마케팅 대시보드, 광고 성과 대시보드, KPI 보고서, 브랜드 성과 관리, 마케팅 데이터 플랫폼" />
 <meta name="robots" content="index, follow" />
+<meta name="author" content="모먼트랩스" />
+<meta name="naver-site-verification" content="naver96888945d975d43cdab994525f9de03f" />
 <link rel="canonical" href="https://insight.momentlabs.co.kr/" />
 <meta property="og:type" content="website" />
 <meta property="og:site_name" content="모먼트인사이트" />
-<meta property="og:title" content="모먼트인사이트 | 마케팅 대행사 성과 대시보드" />
-<meta property="og:description" content="브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인할 수 있는 마케팅 데이터 플랫폼입니다." />
+<meta property="og:title" content="모먼트인사이트 | 모먼트랩스 마케팅 사이트·성과 대시보드" />
+<meta property="og:description" content="모먼트랩스가 운영하는 마케팅 데이터 플랫폼입니다. 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인합니다." />
 <meta property="og:url" content="https://insight.momentlabs.co.kr/" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="모먼트인사이트 | 모먼트랩스 마케팅 사이트" />
+<meta name="twitter:description" content="모먼트랩스의 마케팅 성과 관리 사이트. 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한 화면에서 확인합니다." />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://insight.momentlabs.co.kr/#organization",
+      "name": "모먼트랩스",
+      "alternateName": "Moment Labs",
+      "url": "https://insight.momentlabs.co.kr/",
+      "brand": {
+        "@type": "Brand",
+        "name": "모먼트인사이트"
+      }
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://insight.momentlabs.co.kr/#website",
+      "url": "https://insight.momentlabs.co.kr/",
+      "name": "모먼트인사이트",
+      "alternateName": "모먼트랩스 마케팅 사이트",
+      "publisher": {
+        "@id": "https://insight.momentlabs.co.kr/#organization"
+      },
+      "description": "모먼트랩스가 운영하는 모먼트인사이트 마케팅 사이트입니다."
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://insight.momentlabs.co.kr/#app",
+      "name": "모먼트인사이트",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "publisher": {
+        "@id": "https://insight.momentlabs.co.kr/#organization"
+      },
+      "description": "마케팅 대행사와 광고주가 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 확인하는 B2B SaaS 대시보드입니다."
+    }
+  ]
+}
+</script>
 
 <section id="mi-home" class="mi-home-wrap">
   <style>
@@ -595,9 +640,9 @@
     <section class="mi-hero" aria-label="모먼트인사이트 소개">
       <div class="mi-shell mi-hero-grid">
         <div>
-          <span class="mi-kicker">Marketing Performance Portal</span>
-          <h1>마케팅 성과를 한 화면에서 확인하세요.</h1>
-          <p class="mi-lead">매출, 광고 성과, KPI, 보고서, 일정, 키워드 흐름까지 브랜드 운영에 필요한 정보를 보기 쉽게 정리합니다.</p>
+          <span class="mi-kicker">Moment Labs Marketing Site</span>
+          <h1>모먼트랩스 마케팅 사이트, 모먼트인사이트</h1>
+          <p class="mi-lead">매출, 광고 성과, KPI, 보고서, 일정, 키워드 흐름까지 브랜드 운영에 필요한 정보를 한 화면에서 보기 쉽게 정리합니다.</p>
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client#mi-dashboard">성과 대시보드 보기</a>
             <a class="mi-button secondary" href="#mi-home-flow">운영 흐름 보기</a>
@@ -764,6 +809,6 @@
   </main>
 
   <footer class="mi-footer">
-    Moment Insight · Marketing Agency Data Platform · KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
+    Moment Labs · Moment Insight · 마케팅 사이트 · KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
   </footer>
 </section>

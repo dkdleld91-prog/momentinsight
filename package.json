@@ -11,6 +11,7 @@
     "work:autosave": "node scripts/work-spec-autosave.mjs",
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
+    "check:rank-matching": "node scripts/check-naver-rank-matching.mjs",
     "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",
     "check:admin-api": "node 06_Supabase_연동/check-admin-api.mjs",
     "check:edge-api": "node 06_Supabase_연동/check-edge-api.mjs",

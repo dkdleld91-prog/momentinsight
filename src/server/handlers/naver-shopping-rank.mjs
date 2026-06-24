@@ -42,6 +42,61 @@ function normalizeUrl(value) {
     .toLowerCase();
 }
 
+function parseUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    return new URL(withProtocol);
+  } catch {
+    return null;
+  }
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function productIdCandidates(value) {
+  const text = String(value || "");
+  const candidates = [];
+  const parsed = parseUrl(text);
+
+  if (parsed) {
+    const params = parsed.searchParams;
+    ["nvMid", "productId", "productNo", "catalogId"].forEach((key) => {
+      const found = params.get(key);
+      if (/^[0-9]{5,}$/.test(found || "")) candidates.push(found);
+    });
+
+    const path = decodeURIComponent(parsed.pathname || "");
+    [
+      /\/(?:products|product|catalog)\/([0-9]{5,})(?:[/?#]|$)/i,
+      /\/([0-9]{8,})(?:[/?#]|$)/,
+    ].forEach((pattern) => {
+      const match = path.match(pattern);
+      if (match?.[1]) candidates.push(match[1]);
+    });
+
+    return uniqueValues(candidates);
+  }
+
+  if (/^[0-9]{5,}$/.test(text.trim())) return [text.trim()];
+  return [];
+}
+
+function canonicalUrlKey(value) {
+  const parsed = parseUrl(value);
+  if (!parsed) return "";
+  const host = parsed.hostname.toLowerCase().replace(/^m\./, "").replace(/^www\./, "");
+  const pathName = decodeURIComponent(parsed.pathname || "")
+    .replace(/\/+/g, "/")
+    .replace(/\/$/, "")
+    .toLowerCase();
+  if (!host || !pathName || pathName === "/") return "";
+  return `${host}${pathName}`;
+}
+
 function safeProductUrl(value) {
   let raw = String(value || "").trim();
   if (!raw) return "";
@@ -94,19 +149,7 @@ function parseNaverNumber(value) {
 }
 
 function extractProductId(value) {
-  const text = String(value || "");
-  const patterns = [
-    /[?&](?:nvMid|productId|productNo|catalogId|cat_id)=([0-9]{5,})/i,
-    /\/(?:products|catalog)\/([0-9]{5,})/i,
-    /\/([0-9]{8,})(?:[/?#]|$)/,
-    /\b([0-9]{8,})\b/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1]) return match[1];
-  }
-  return "";
+  return productIdCandidates(value)[0] || "";
 }
 
 function clientRateKey(request) {
@@ -266,22 +309,35 @@ function itemProductId(item) {
   return String(item?.productId || extractProductId(item?.link) || "");
 }
 
-function isTargetItem(item, target) {
-  const productId = itemProductId(item);
-  if (target.productId && productId === target.productId) return true;
+function itemProductIds(item) {
+  return uniqueValues([item?.productId, ...productIdCandidates(item?.link)]);
+}
 
-  const itemUrl = normalizeUrl(item?.link);
-  if (target.normalizedUrl && itemUrl && itemUrl.includes(target.normalizedUrl)) return true;
-  if (target.productId && itemUrl && itemUrl.includes(target.productId)) return true;
+function matchTargetItem(item, target) {
+  const itemIds = itemProductIds(item);
+  const targetIds = Array.isArray(target.productIds) ? target.productIds : uniqueValues([target.productId]);
+  const targetUrlKeys = Array.isArray(target.urlKeys) ? target.urlKeys : uniqueValues([target.normalizedUrl]);
+  const hasDirectTarget = Boolean(target.hasDirectTarget || targetIds.length || targetUrlKeys.length);
+  const matchedProductId = itemIds.find((id) => targetIds.includes(id));
+  if (matchedProductId) {
+    return { matched: true, matchType: "product_id", matchedProductId };
+  }
 
-  if (target.mallName) {
+  const itemUrlKey = canonicalUrlKey(item?.link);
+  if (targetUrlKeys.length && itemUrlKey && targetUrlKeys.includes(itemUrlKey)) {
+    return { matched: true, matchType: "canonical_url" };
+  }
+
+  if (!hasDirectTarget && target.mallName) {
     const mallMatch = normalizeText(item?.mallName).toLowerCase() === target.mallName.toLowerCase();
-    if (mallMatch && target.productTitle) {
-      return stripTags(item?.title).replace(/\s/g, "").includes(target.productTitle.replace(/\s/g, ""));
+    const targetTitle = target.productTitle.replace(/\s/g, "");
+    const itemTitle = stripTags(item?.title).replace(/\s/g, "");
+    if (mallMatch && targetTitle.length >= 6 && itemTitle.includes(targetTitle)) {
+      return { matched: true, matchType: "mall_title" };
     }
   }
 
-  return false;
+  return { matched: false, matchType: "" };
 }
 
 function serializeItem(item, rank) {
@@ -305,9 +361,13 @@ function serializeItem(item, rank) {
 }
 
 async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, maxRank }) {
+  const targetProductIds = uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
   const target = {
-    productId: targetProductId || extractProductId(targetUrl),
+    productId: targetProductIds[0] || "",
+    productIds: targetProductIds,
     normalizedUrl: normalizeUrl(targetUrl),
+    urlKeys: uniqueValues([canonicalUrlKey(targetUrl)]),
+    hasDirectTarget: Boolean(targetProductId || targetUrl),
     mallName: normalizeText(targetMallName),
     productTitle: normalizeText(targetProductTitle),
   };
@@ -324,17 +384,23 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       topItems.push(serializeItem(item, start + index));
     });
 
-    const matchedIndex = items.findIndex((item) => isTargetItem(item, target));
+    const matchResults = items.map((item) => matchTargetItem(item, target));
+    const matchedIndex = matchResults.findIndex((match) => match.matched);
     if (matchedIndex >= 0) {
       const rank = start + matchedIndex;
+      const match = matchResults[matchedIndex];
       return {
         matched: true,
         rank,
         page: Math.ceil(rank / 100),
         position: matchedIndex + 1,
+        matchType: match.matchType,
+        matchedProductId: match.matchedProductId || "",
         total,
         checkedCount: start + items.length - 1,
         targetProductId: target.productId,
+        targetProductIds: target.productIds,
+        targetUrlKeys: target.urlKeys,
         item: serializeItem(items[matchedIndex], rank),
         topItems,
       };
@@ -352,6 +418,8 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     total,
     checkedCount: Math.min(limit, total || limit),
     targetProductId: target.productId,
+    targetProductIds: target.productIds,
+    targetUrlKeys: target.urlKeys,
     item: metadataItem,
     topItems,
   };
@@ -366,6 +434,9 @@ function rankMessage(result) {
 export {
   config as shoppingRankConfig,
   extractProductId,
+  productIdCandidates,
+  canonicalUrlKey,
+  matchTargetItem,
   findRank as findShoppingRank,
   hasOpenapiConfig as hasShoppingRankConfig,
   normalizeText,

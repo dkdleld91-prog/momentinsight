@@ -4482,14 +4482,40 @@
         return String(manualCategory || categories.join(" > ") || "").trim();
       }
 
+      function seoRankMatchLabel(matchType) {
+        var map = {
+          product_id: "상품ID 정확 일치",
+          canonical_url: "상품 URL 경로 일치",
+          mall_title: "판매처와 상품명 보조 일치"
+        };
+        return map[matchType] || "상품 정보 일치";
+      }
+
+      function seoRankBasis(rankResult) {
+        if (!rankResult) return "상품 URL 입력 후 네이버 쇼핑 검색 결과에서 순위를 확인합니다.";
+        var checked = rankResult.checkedCount ? "상위 " + formatNumber(rankResult.checkedCount) + "개 결과" : "검색 결과";
+        if (rankResult.matched) {
+          return checked + "에서 " + formatNumber(rankResult.rank) + "위로 확인했습니다. 매칭 기준은 " + seoRankMatchLabel(rankResult.matchType) + "입니다.";
+        }
+        return checked + "에서 대상 상품을 찾지 못했습니다. 상품 URL 또는 상품ID가 정확한지 확인하세요.";
+      }
+
+      function seoReviewDetail(reviewCount) {
+        if (reviewCount >= 1000) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 신뢰도는 충분한 편이고 최근 리뷰 증가 흐름만 유지하면 됩니다.";
+        if (reviewCount >= 100) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 기본 신뢰도는 확보했지만 경쟁 상품 대비 리뷰 격차는 확인해야 합니다.";
+        if (reviewCount >= 20) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 초기 신뢰도는 있으나 구매 장벽을 낮추려면 리뷰 확보가 더 필요합니다.";
+        if (reviewCount > 0) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 리뷰 수가 적어 상품 신뢰도 보완이 필요합니다.";
+        return "리뷰 수가 입력되지 않았습니다. 실제 리뷰 수를 넣어야 신뢰도 점수가 정확해집니다.";
+      }
+
       function seoActionText(check) {
         var map = {
-          title: "상품명 앞쪽에 기준 키워드를 자연스럽게 넣고, 중복 표현은 줄이세요.",
-          category: "네이버 상품 카테고리와 주요 속성값을 다시 확인하세요.",
-          market: "검색량이 확인되는 키워드를 기준 키워드로 잡고 연관 키워드는 보조로 분리하세요.",
-          rank: "현재 순위가 낮으면 상품명, 대표 이미지, 가격/혜택을 먼저 수정한 뒤 순위 추적을 이어가세요.",
-          benefit: "가격, 무료배송, 쿠폰, 포인트 중 최소 한 가지 강점을 명확히 보여주세요.",
-          trust: "리뷰 수와 최근 리뷰 흐름이 약하면 리뷰 확보 작업을 우선순위에 올리세요."
+          title: "상품명 앞 10자 안에 기준 키워드를 배치하고, 같은 단어 반복은 2회 이하로 줄이세요. 구조는 핵심키워드 + 제품유형 + 차별점 + 옵션 순서가 좋습니다.",
+          category: "네이버 쇼핑 카테고리와 상품 속성이 실제 상품군과 맞는지 확인하세요. 카테고리가 틀리면 순위 확인과 노출 판단이 같이 흔들립니다.",
+          market: "월 검색량이 확인되는 키워드만 주 키워드로 쓰고, 검색량이 낮거나 정확 미일치 키워드는 보조 키워드로 분리하세요.",
+          rank: "현재 순위가 낮거나 미확인이라면 상품명, 대표 이미지, 가격, 배송혜택을 수정한 뒤 3시간 단위 순위 추적에서 변화 여부를 확인하세요.",
+          benefit: "상위 상품 대비 가격, 배송비, 쿠폰, 포인트 중 최소 1개 우위를 상세페이지 상단과 썸네일에서 바로 보이게 정리하세요.",
+          trust: "리뷰 수만 보지 말고 최근 리뷰 증가 속도와 포토리뷰 비중을 같이 관리하세요. 리뷰가 적으면 클릭 이후 구매 장벽이 큽니다."
         };
         return map[check.key] || "점수가 낮은 항목부터 수정하세요.";
       }
@@ -4525,13 +4551,26 @@
         if (keywordIndex >= 0 && keywordIndex <= 10) titleScore += 5;
         if (titleLength >= 18 && titleLength <= 65) titleScore += 5;
         if (title && !repeated) titleScore += 4;
-        addCheck("title", "상품명 SEO", keywordIndex >= 0 ? "기준 키워드가 상품명에 포함되어 있습니다." : "기준 키워드가 상품명에 보이지 않습니다.", titleScore, 25);
+        var titleDetail = [];
+        if (keywordIndex >= 0) {
+          titleDetail.push("기준 키워드가 상품명 " + (keywordIndex + 1) + "번째 글자부터 확인됩니다.");
+          if (keywordIndex > 10) titleDetail.push("키워드 위치가 뒤쪽이라 앞 10자 안으로 당기면 좋습니다.");
+        } else {
+          titleDetail.push("기준 키워드가 상품명에 보이지 않습니다.");
+        }
+        if (title) titleDetail.push("상품명 길이는 " + titleLength + "자입니다" + (titleLength >= 18 && titleLength <= 65 ? "." : ". 권장 범위는 18-65자입니다."));
+        else titleDetail.push("상품명을 확인하지 못했습니다.");
+        if (repeated) titleDetail.push("동일 키워드나 단어 반복이 많아 어색하게 보일 수 있습니다.");
+        addCheck("title", "상품명 SEO", titleDetail.join(" "), titleScore, 25);
 
         var categoryScore = 0;
         if (category) categoryScore += 8;
         if ((category.match(/>/g) || []).length >= 1) categoryScore += 4;
         if (item && item.productId) categoryScore += 3;
-        addCheck("category", "카테고리/속성", category ? category : "카테고리 입력이 필요합니다.", categoryScore, 15);
+        var categoryDepth = category ? category.split(">").length : 0;
+        var categoryDetail = category ? "확인된 카테고리: " + category + ". " + (categoryDepth >= 2 ? "2단계 이상 분류가 확인됩니다." : "카테고리 단계가 짧아 세부 상품군 확인이 필요합니다.") : "상품 URL에서 카테고리를 확인하지 못했습니다.";
+        if (item && item.productId) categoryDetail += " 상품ID " + item.productId + " 기준입니다.";
+        addCheck("category", "카테고리/속성", categoryDetail, categoryScore, 15);
 
         var hasVolume = hasSearchVolume(keywordData);
         var shoppingTotal = Number(keywordData && keywordData.shopping && keywordData.shopping.total || rankResult && rankResult.total || 0);
@@ -4539,7 +4578,10 @@
         if (hasVolume) marketScore += 8;
         if (shoppingTotal) marketScore += 4;
         if (keywordData && keywordData.comp && keywordData.comp !== "확인 필요") marketScore += 3;
-        addCheck("market", "검색 수요 연결", hasVolume ? "월 검색량과 시장 규모가 확인됩니다." : "검색량 확인 후 판단 정확도가 올라갑니다.", marketScore, 15);
+        var marketDetail = hasVolume ? "월 검색수 " + formatSearchVolumeWithUnit(keywordData) + " 기준입니다." : "월 검색량을 확인하지 못했습니다.";
+        if (shoppingTotal) marketDetail += " 네이버 쇼핑 검색 결과는 약 " + formatNumber(shoppingTotal) + "개입니다.";
+        if (keywordData && keywordData.comp && keywordData.comp !== "확인 필요") marketDetail += " 경쟁 지표는 " + keywordData.comp + "입니다.";
+        addCheck("market", "검색 수요 연결", marketDetail, marketScore, 15);
 
         var rankScore = 0;
         if (rankResult && rankResult.matched) {
@@ -4550,7 +4592,7 @@
         } else if (input.url || input.productId) {
           rankScore = 3;
         }
-        addCheck("rank", "현재 순위 연결", rankResult && rankResult.matched ? rankResult.rank + "위로 확인되었습니다." : "네이버 상품 URL 기준 순위 확인이 필요합니다.", rankScore, 15);
+        addCheck("rank", "현재 순위 검증", seoRankBasis(rankResult), rankScore, 15);
 
         var benefitScore = 0;
         if (price > 0) benefitScore += 6;
@@ -4558,7 +4600,10 @@
         else if (benefit === "normal") benefitScore += 4;
         else benefitScore += 1;
         if (item && item.mallName) benefitScore += 3;
-        addCheck("benefit", "가격/혜택", price ? "판매가와 혜택 정보를 기준으로 판단했습니다." : "판매가 입력이 필요합니다.", benefitScore, 15);
+        var benefitDetail = price ? "확인된 판매가 " + formatNumber(price) + "원 기준입니다." : "판매가를 확인하지 못했습니다.";
+        if (item && item.mallName) benefitDetail += " 판매처는 " + item.mallName + "입니다.";
+        benefitDetail += " 가격, 배송, 쿠폰, 포인트 중 실제 강점을 함께 확인해야 합니다.";
+        addCheck("benefit", "가격/혜택", benefitDetail, benefitScore, 15);
 
         var trustScore = 0;
         if (reviewCount >= 1000) trustScore += 9;
@@ -4567,7 +4612,9 @@
         else if (reviewCount > 0) trustScore += 3;
         if (input.url || input.productId || item) trustScore += 4;
         if (item && item.image) trustScore += 2;
-        addCheck("trust", "리뷰/신뢰도", reviewCount ? "직접 입력한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다." : "리뷰 수를 직접 입력하면 판단이 더 정확해집니다.", trustScore, 15);
+        var trustDetail = seoReviewDetail(reviewCount);
+        if (item && item.image) trustDetail += " 대표 이미지도 확인되었습니다.";
+        addCheck("trust", "리뷰/신뢰도", trustDetail, trustScore, 15);
 
         var score = checks.reduce(function (sum, check) { return sum + check.score; }, 0);
         var actions = checks

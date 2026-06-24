@@ -466,6 +466,41 @@ async function moveTracker(request, ctx, body) {
   return json(request, { ok: true, message: "추적 항목 위치를 변경했습니다." });
 }
 
+async function reorderTrackers(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  const rawIds = Array.isArray(body.orderedIds) ? body.orderedIds : body.trackerIds;
+  const orderedIds = Array.from(new Set((Array.isArray(rawIds) ? rawIds : [])
+    .map((id) => normalizeText(id))
+    .filter(Boolean)));
+
+  if (orderedIds.length < 2) {
+    return json(request, { ok: false, message: "정렬할 추적 항목이 부족합니다." }, 400);
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id")
+    .eq("agency_code", agencyCode)
+    .in("id", orderedIds);
+
+  if (error) throw error;
+
+  const ownedIds = new Set((data || []).map((row) => row.id));
+  if (ownedIds.size !== orderedIds.length) {
+    return json(request, { ok: false, message: "정렬할 추적 항목을 확인할 수 없습니다." }, 404);
+  }
+
+  const results = await Promise.all(orderedIds.map((id, index) => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({ sort_order: (index + 1) * 100 })
+    .eq("id", id)
+    .eq("agency_code", agencyCode)));
+  const updateError = results.find((item) => item.error)?.error;
+  if (updateError) throw updateError;
+
+  return json(request, { ok: true, message: "추적 항목 순서를 저장했습니다." });
+}
+
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
   const limit = Math.max(1, Math.min(50, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 20)));
@@ -520,6 +555,7 @@ async function handlePost(request, ctx) {
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);
   if (action === "move") return moveTracker(request, ctx, body);
+  if (action === "reorder") return reorderTrackers(request, ctx, body);
   if (action === "run-due") {
     const summary = await runDueTrackers(ctx, {
       agencyCode: body.agencyCode ? requestAgencyCode(request, body) : "",

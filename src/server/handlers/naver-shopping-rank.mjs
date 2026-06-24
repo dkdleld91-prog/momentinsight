@@ -42,6 +42,52 @@ function normalizeUrl(value) {
     .toLowerCase();
 }
 
+function safeProductUrl(value) {
+  let raw = String(value || "").trim();
+  if (!raw) return "";
+  if (!/^https?:\/\//i.test(raw) && /(^|\.)naver\.com/i.test(raw)) {
+    raw = `https://${raw}`;
+  }
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase();
+    const isNaverHost = host === "naver.com" || host.endsWith(".naver.com");
+    return isNaverHost ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function decodeHtml(value) {
+  return String(value || "")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function metaContent(html, names) {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const patterns = [
+      new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["'][^>]*>`, "i"),
+      new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["'][^>]*>`, "i"),
+    ];
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) return decodeHtml(match[1]);
+    }
+  }
+  return "";
+}
+
+function titleContent(html) {
+  const match = String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return decodeHtml(match?.[1] || "");
+}
+
 function parseNaverNumber(value) {
   const number = Number(String(value || "").replace(/[^\d]/g, ""));
   return Number.isFinite(number) ? number : 0;
@@ -116,6 +162,87 @@ async function fetchJson(url, options = {}) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchText(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(options.timeoutMs || 12000));
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "user-agent": "Mozilla/5.0 MomentInsightBot/1.0",
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) return "";
+    return await response.text();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function productUrlItem(targetUrl, productId, overrides = {}) {
+  const safeUrl = safeProductUrl(targetUrl);
+  const id = productId || extractProductId(targetUrl);
+  if (!safeUrl && !id) return null;
+  return {
+    rank: null,
+    productId: id,
+    title: "",
+    link: safeUrl,
+    image: "",
+    mallName: "",
+    lprice: 0,
+    hprice: 0,
+    brand: "",
+    maker: "",
+    category1: "",
+    category2: "",
+    category3: "",
+    category4: "",
+    productType: "",
+    source: "product_url",
+    ...overrides,
+  };
+}
+
+async function fetchProductMetadata(targetUrl, productId) {
+  const safeUrl = safeProductUrl(targetUrl);
+  if (!safeUrl) return productUrlItem(targetUrl, productId);
+
+  const html = await fetchText(safeUrl);
+  if (!html) return productUrlItem(targetUrl, productId);
+
+  const parsed = new URL(safeUrl);
+  const ogTitle = metaContent(html, ["og:title", "twitter:title"]);
+  const rawTitle = ogTitle || titleContent(html);
+  const title = stripTags(rawTitle)
+    .replace(/\s*[:|-]\s*네이버\s*(쇼핑|스마트스토어)?\s*$/i, "")
+    .replace(/\s*네이버\s*(쇼핑|스마트스토어)\s*$/i, "")
+    .trim();
+  const image = metaContent(html, ["og:image", "twitter:image"]);
+  const description = metaContent(html, ["og:description", "description"]);
+  const price = parseNaverNumber(
+    metaContent(html, ["product:price:amount", "og:price:amount"]) ||
+    html.match(/"(?:salePrice|lowPrice|price|lprice)"\s*:\s*"?([0-9,]+)"?/i)?.[1] ||
+    description.match(/([0-9,]+)\s*원/)?.[1]
+  );
+  const storePath = parsed.hostname === "smartstore.naver.com" || parsed.hostname === "brand.naver.com"
+    ? decodeURIComponent(parsed.pathname.split("/").filter(Boolean)[0] || "")
+    : "";
+
+  const blockedTitle = title === "네이버쇼핑" && !image && !price;
+  const blockedBody = /쇼핑 서비스 접속이 일시적으로 제한|content_error/i.test(html);
+
+  return productUrlItem(targetUrl, productId, {
+    title: blockedTitle || blockedBody ? "" : title,
+    image,
+    mallName: storePath || "",
+    lprice: price,
+  });
 }
 
 async function fetchShoppingPage(env, keyword, start) {
@@ -216,6 +343,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     if (!items.length || items.length < 100) break;
   }
 
+  const metadataItem = await fetchProductMetadata(targetUrl, target.productId).catch(() => null);
   return {
     matched: false,
     rank: null,
@@ -224,7 +352,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     total,
     checkedCount: Math.min(limit, total || limit),
     targetProductId: target.productId,
-    item: null,
+    item: metadataItem,
     topItems,
   };
 }

@@ -1204,7 +1204,7 @@
 
     #mi-clean .mi-seo-form {
       display: grid;
-      grid-template-columns: 1fr 1.25fr 1.5fr 1fr;
+      grid-template-columns: 1fr 2fr 0.8fr auto;
       gap: 8px;
       align-items: center;
     }
@@ -2818,7 +2818,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 SEO 점수를 확인합니다.</h1>
-              <p>기준 키워드와 상품명을 기준으로 네이버 검색 노출에 필요한 수정 항목을 바로 확인합니다.</p>
+              <p>키워드와 네이버 상품 URL을 기준으로 상품 정보를 불러오고 SEO 수정 항목을 확인합니다.</p>
             </div>
             <span class="mi-badge">SEO 확인</span>
           </header>
@@ -2828,27 +2828,18 @@
               <div>
                 <span class="mi-kicker">네이버 SEO 점수</span>
                 <h2>키워드 기준 SEO 점수와 수정 액션을 함께 봅니다.</h2>
-                <p>가격과 카테고리는 상품 검색 결과로 보완하고, 리뷰 수는 직접 입력값만 반영합니다.</p>
+                <p>키워드, 네이버 상품 URL, 리뷰수량만 입력하면 상품명·가격·카테고리는 자동으로 보완합니다.</p>
               </div>
               <span class="mi-period">상품 1개 기준</span>
             </div>
 
             <div class="mi-seo-form">
               <input class="mi-input" data-seo-keyword aria-label="SEO 기준 키워드" placeholder="기준 키워드" />
-              <input class="mi-input" data-seo-title aria-label="상품명" placeholder="상품명" />
               <input class="mi-input" data-seo-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL" />
-              <input class="mi-input" data-seo-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
-              <input class="mi-input" data-seo-category aria-label="카테고리" placeholder="카테고리 예: 디지털/가전 > 계절가전" />
-              <input class="mi-input" data-seo-price aria-label="판매가" placeholder="판매가 예: 88500" />
-              <input class="mi-input" data-seo-review-count aria-label="리뷰 수 직접 입력" placeholder="리뷰 수 직접 입력" />
-              <select class="mi-input" data-seo-benefit aria-label="배송과 혜택">
-                <option value="normal" selected>배송/혜택 보통</option>
-                <option value="strong">무료배송·쿠폰·포인트 있음</option>
-                <option value="weak">배송/혜택 약함</option>
-              </select>
+              <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status>기준 키워드와 상품명을 입력하면 네이버 SEO 점수를 계산합니다. 리뷰 수는 직접 입력값 기준입니다.</p>
+            <p class="mi-code-status" data-seo-status>키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -2881,7 +2872,7 @@
                   <section class="mi-seo-panel">
                     <h3>바로 수정할 항목</h3>
                     <div class="mi-seo-actions" data-seo-actions>
-                      <div class="mi-seo-action"><div><strong>상품명과 기준 키워드 입력</strong><span>먼저 상품명에 핵심 키워드가 자연스럽게 들어갔는지 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
+                      <div class="mi-seo-action"><div><strong>키워드와 네이버 상품 URL 입력</strong><span>상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
                     </div>
                   </section>
 
@@ -2890,7 +2881,7 @@
                     <div class="mi-seo-preview" data-seo-preview>
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
-                        <h4>상품 URL 또는 상품ID를 입력하면 현재 순위와 상품 정보를 함께 확인합니다.</h4>
+                        <h4>네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.</h4>
                         <p>순위 추적과 연결해 키워드 기준 SEO 상태가 실제 노출에 어떤 영향을 주는지 볼 수 있게 구성했습니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
@@ -4559,7 +4550,7 @@
         } else if (input.url || input.productId) {
           rankScore = 3;
         }
-        addCheck("rank", "현재 순위 연결", rankResult && rankResult.matched ? rankResult.rank + "위로 확인되었습니다." : "상품 URL 또는 상품ID 기준 순위 확인이 필요합니다.", rankScore, 15);
+        addCheck("rank", "현재 순위 연결", rankResult && rankResult.matched ? rankResult.rank + "위로 확인되었습니다." : "네이버 상품 URL 기준 순위 확인이 필요합니다.", rankScore, 15);
 
         var benefitScore = 0;
         if (price > 0) benefitScore += 6;
@@ -4607,7 +4598,7 @@
           checks: checks,
           actions: actions,
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
-          rankMessage: rankPayload && rankPayload.message ? rankPayload.message : "상품 순위는 URL/ID 입력 시 확인됩니다.",
+          rankMessage: rankPayload && rankPayload.message ? rankPayload.message : "상품 순위는 네이버 상품 URL 입력 시 확인됩니다.",
           volumeText: formatSearchVolumeWithUnit(keywordData),
           shoppingTotal: shoppingTotal,
           item: item
@@ -4677,14 +4668,14 @@
       function resetSeoView() {
         renderSeoEvaluation({
           keyword: "조회 전",
-          title: "상품 URL 또는 상품ID를 입력하면 현재 순위와 상품 정보를 함께 확인합니다.",
+          title: "네이버 상품 URL을 입력하면 현재 순위와 상품 정보를 함께 확인합니다.",
           category: "",
           price: 0,
           reviewCount: 0,
           score: 0,
-          grade: { label: "조회 전", copy: "기준 키워드와 상품명 입력 후 네이버 SEO 점수를 표시합니다." },
+          grade: { label: "조회 전", copy: "키워드, 네이버 상품 URL, 리뷰수량 입력 후 네이버 SEO 점수를 표시합니다." },
           checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
-          actions: [{ title: "상품명과 기준 키워드 입력", detail: "먼저 상품명에 핵심 키워드가 자연스럽게 들어갔는지 확인합니다.", score: 0, max: 100 }],
+          actions: [{ title: "키워드와 네이버 상품 URL 입력", detail: "상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
           rank: null,
           rankMessage: "상품 확인 전",
           volumeText: "조회 후 표시",
@@ -4907,13 +4898,8 @@
       var keywordStatus = root.querySelector("[data-mi-keyword-status]");
       var keywordRangeButtons = root.querySelectorAll("[data-keyword-range]");
       var seoKeyword = root.querySelector("[data-seo-keyword]");
-      var seoTitle = root.querySelector("[data-seo-title]");
       var seoUrl = root.querySelector("[data-seo-url]");
-      var seoProductId = root.querySelector("[data-seo-product-id]");
-      var seoCategory = root.querySelector("[data-seo-category]");
-      var seoPrice = root.querySelector("[data-seo-price]");
       var seoReviewCount = root.querySelector("[data-seo-review-count]");
-      var seoBenefit = root.querySelector("[data-seo-benefit]");
       var seoButton = root.querySelector("[data-seo-run]");
       var seoStatus = root.querySelector("[data-seo-status]");
       keywordDatasets = [];
@@ -4995,15 +4981,15 @@
       async function runSeoCheck() {
         if (!seoButton || !seoKeyword) return;
         var keyword = (seoKeyword.value || (keywordInput && keywordInput.value) || "").trim();
-        var title = seoTitle ? seoTitle.value.trim() : "";
+        var title = "";
         var targetUrl = seoUrl ? seoUrl.value.trim() : "";
-        var productId = seoProductId ? seoProductId.value.trim() : "";
+        var productId = "";
         if (!keyword) {
           setStatus(seoStatus, "기준 키워드를 입력해주세요.", "is-warn");
           return;
         }
-        if (!title && !targetUrl && !productId) {
-          setStatus(seoStatus, "상품명 또는 네이버 상품 URL/상품ID를 입력해주세요.", "is-warn");
+        if (!targetUrl) {
+          setStatus(seoStatus, "네이버 상품 URL을 입력해주세요.", "is-warn");
           return;
         }
 
@@ -5033,12 +5019,8 @@
           rankPayload = await fetchSeoRank(keyword, title, targetUrl, productId);
           var foundItem = rankPayload && rankPayload.result && rankPayload.result.item ? rankPayload.result.item : null;
           if (foundItem) {
-            if (seoTitle && !seoTitle.value.trim()) seoTitle.value = foundItem.title || "";
-            if (seoProductId && !seoProductId.value.trim()) seoProductId.value = foundItem.productId || "";
-            if (seoCategory && !seoCategory.value.trim()) seoCategory.value = categoryPath(foundItem, "");
-            if (seoPrice && !seoPrice.value.trim() && foundItem.lprice) seoPrice.value = foundItem.lprice;
-            title = seoTitle ? seoTitle.value.trim() : title;
-            productId = seoProductId ? seoProductId.value.trim() : productId;
+            title = foundItem.title || "";
+            productId = foundItem.productId || "";
           }
         } catch (error) {
           if (targetUrl || productId) rankMessage = error.message || "현재 순위는 별도 확인이 필요합니다.";
@@ -5049,10 +5031,10 @@
           title: title,
           url: targetUrl,
           productId: productId,
-          category: seoCategory ? seoCategory.value.trim() : "",
-          price: parseSeoNumber(seoPrice && seoPrice.value),
+          category: "",
+          price: 0,
           reviewCount: parseSeoNumber(seoReviewCount && seoReviewCount.value),
-          benefit: seoBenefit ? seoBenefit.value : "normal"
+          benefit: "normal"
         }, keywordData, rankPayload);
 
         renderSeoEvaluation(evaluation);

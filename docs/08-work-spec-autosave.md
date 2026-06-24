@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 25. 07:47:54
-- 기준 커밋: 5bebf40
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M package.json /  M src/server/handlers/naver-shopping-rank.mjs / ?? scripts/check-naver-rank-matching.mjs
+- 마지막 자동 저장: 2026. 06. 25. 07:57:45
+- 기준 커밋: 8e7dc82
+- 작업트리: M 02_아임웹_적용코드/복붙용_홈페이지형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_홈페이지형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 홈페이지 메인 문구 정리 | 첫 화면 H1을 `모먼트 인사이트`와 `마케팅 사이트`로 분리해 가독성 개선 | `build:vercel`, 로컬 브라우저 미리보기 확인 | 배포 없음 |
 | 완료 | 네이버 SEO 순위/설명 보정 | 상품 URL/상품ID 정확 매칭으로 순위 오판 방지, SEO 부족점 설명 구체화 | `check:rank-matching`, `check:env:naver`, `build:vercel` 통과 | 배포 없음 |
 | 완료 | 프로젝트 구조 정리 | 문서, 서버, Supabase, 아임웹 코드 폴더를 단일 개발 폴더로 정리 | Git 관리 확인 | 이전 배포 반영 |
 | 완료 | 홈페이지형 메인 | 고객용 첫 화면, 관리자/광고주 진입 구조, 검색 메타 태그 구성 | Vercel 빌드 확인 | 이전 배포 반영 |

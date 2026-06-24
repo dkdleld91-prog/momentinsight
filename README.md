@@ -97,6 +97,19 @@
 - [개발 가이드](docs/07-development-guidelines.md)
 - [DB 초안](database/schema-draft.md)
 
+## 작업 폴더 정리
+
+로컬에서 무거워지는 배포 산출물과 임시 캐시는 아래 명령으로 정리합니다.
+
+```bash
+npm run clean:workspace:dry
+npm run clean:workspace
+```
+
+- 기본 정리 대상: `dist`, `supabase/.temp`, 임시 출력물, macOS 캐시 파일
+- 기본 보존 대상: `.env.local`, `.vercel`, 루트 `node_modules`
+- 의존성까지 다시 설치할 수 있을 때만 `npm run clean:workspace:deps`를 사용합니다.
+
 ## 다음 개발 단계
 
 1. Next.js, TypeScript, Tailwind CSS 프로젝트 초기화

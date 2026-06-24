@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs",
+    "clean:workspace": "node scripts/clean-workspace.mjs",
+    "clean:workspace:deps": "node scripts/clean-workspace.mjs --deps",
+    "clean:workspace:dry": "node scripts/clean-workspace.mjs --dry-run",
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
     "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",

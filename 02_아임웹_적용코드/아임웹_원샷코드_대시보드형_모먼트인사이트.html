@@ -2398,7 +2398,7 @@
           <p class="mi-nav-title">도구</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회 <small>마케팅</small></a>
           <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위 <small>추적</small></a>
-          <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 <small>등록점검</small></a>
+          <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 <small>네이버</small></a>
         </div>
 
         <div class="mi-nav-group">
@@ -2817,8 +2817,8 @@
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 상품 등록 상태를 점검합니다.</h1>
-              <p>상품명, 키워드, 카테고리, 가격, 리뷰, 현재 순위를 묶어서 수정할 항목을 바로 확인합니다.</p>
+              <h1>네이버 SEO 점수를 확인합니다.</h1>
+              <p>기준 키워드와 상품명을 기준으로 네이버 검색 노출에 필요한 수정 항목을 바로 확인합니다.</p>
             </div>
             <span class="mi-badge">SEO 확인</span>
           </header>
@@ -2826,9 +2826,9 @@
           <article class="mi-card mi-card-pad mi-seo-card" data-seo-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 상품 등록 점검</span>
-                <h2>등록 점수와 수정 액션을 함께 봅니다.</h2>
-                <p>기준 키워드와 상품 정보를 입력하면 노출 준비도를 100점 기준으로 계산합니다.</p>
+                <span class="mi-kicker">네이버 SEO 점수</span>
+                <h2>키워드 기준 SEO 점수와 수정 액션을 함께 봅니다.</h2>
+                <p>가격과 카테고리는 상품 검색 결과로 보완하고, 리뷰 수는 직접 입력값만 반영합니다.</p>
               </div>
               <span class="mi-period">상품 1개 기준</span>
             </div>
@@ -2840,7 +2840,7 @@
               <input class="mi-input" data-seo-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
               <input class="mi-input" data-seo-category aria-label="카테고리" placeholder="카테고리 예: 디지털/가전 > 계절가전" />
               <input class="mi-input" data-seo-price aria-label="판매가" placeholder="판매가 예: 88500" />
-              <input class="mi-input" data-seo-review-count aria-label="리뷰 수" placeholder="리뷰 수" />
+              <input class="mi-input" data-seo-review-count aria-label="리뷰 수 직접 입력" placeholder="리뷰 수 직접 입력" />
               <select class="mi-input" data-seo-benefit aria-label="배송과 혜택">
                 <option value="normal" selected>배송/혜택 보통</option>
                 <option value="strong">무료배송·쿠폰·포인트 있음</option>
@@ -2848,14 +2848,14 @@
               </select>
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status>기준 키워드와 상품명을 입력하면 등록 점수를 계산합니다.</p>
+            <p class="mi-code-status" data-seo-status>기준 키워드와 상품명을 입력하면 네이버 SEO 점수를 계산합니다. 리뷰 수는 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
                 <div class="mi-seo-score-ring" data-seo-score-ring style="--score:0;">
                   <div>
                     <strong data-seo-score>--</strong>
-                    <span>등록 점수</span>
+                    <span>네이버 SEO 점수</span>
                   </div>
                 </div>
                 <div class="mi-seo-grade">
@@ -2891,7 +2891,7 @@
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
                         <h4>상품 URL 또는 상품ID를 입력하면 현재 순위와 상품 정보를 함께 확인합니다.</h4>
-                        <p>순위 추적과 연결해 등록 상태가 실제 노출에 어떤 영향을 주는지 볼 수 있게 구성했습니다.</p>
+                        <p>순위 추적과 연결해 키워드 기준 SEO 상태가 실제 노출에 어떤 영향을 주는지 볼 수 있게 구성했습니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
                           <span class="mi-seo-pill">카테고리</span>
@@ -4470,7 +4470,7 @@
         if (score >= 80) return { label: "B+ · 일부 보완", copy: "큰 문제는 없지만 상품명, 리뷰, 혜택 중 일부를 더 다듬으면 좋습니다." };
         if (score >= 70) return { label: "B · 보완 필요", copy: "노출 준비는 됐지만 경쟁 상품 대비 약한 항목을 먼저 수정해야 합니다." };
         if (score >= 55) return { label: "C · 수정 우선", copy: "상품명, 카테고리, 혜택, 리뷰 중 여러 항목을 보완해야 합니다." };
-        return { label: "D · 등록 재점검", copy: "현재 상태로는 검색 노출 준비도가 낮습니다. 기본 정보부터 다시 잡아야 합니다." };
+        return { label: "D · SEO 재점검", copy: "현재 상태로는 키워드 기준 검색 노출 준비도가 낮습니다. 기본 정보부터 다시 잡아야 합니다." };
       }
 
       function titleRepeatIssue(title, keyword) {
@@ -4576,7 +4576,7 @@
         else if (reviewCount > 0) trustScore += 3;
         if (input.url || input.productId || item) trustScore += 4;
         if (item && item.image) trustScore += 2;
-        addCheck("trust", "리뷰/신뢰도", reviewCount ? "리뷰 " + formatNumber(reviewCount) + "개 기준입니다." : "리뷰 수를 입력하면 판단이 더 정확해집니다.", trustScore, 15);
+        addCheck("trust", "리뷰/신뢰도", reviewCount ? "직접 입력한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다." : "리뷰 수를 직접 입력하면 판단이 더 정확해집니다.", trustScore, 15);
 
         var score = checks.reduce(function (sum, check) { return sum + check.score; }, 0);
         var actions = checks
@@ -4593,7 +4593,7 @@
           });
 
         if (!actions.length) {
-          actions = [{ title: "유지 관리", detail: "현재 등록 상태는 양호합니다. 순위 추적과 리뷰 흐름만 계속 확인하세요.", score: score, max: 100 }];
+          actions = [{ title: "유지 관리", detail: "현재 네이버 SEO 상태는 양호합니다. 순위 추적과 리뷰 흐름만 계속 확인하세요.", score: score, max: 100 }];
         }
 
         return {
@@ -4682,7 +4682,7 @@
           price: 0,
           reviewCount: 0,
           score: 0,
-          grade: { label: "조회 전", copy: "상품 정보 입력 후 점검 결과를 표시합니다." },
+          grade: { label: "조회 전", copy: "기준 키워드와 상품명 입력 후 네이버 SEO 점수를 표시합니다." },
           checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
           actions: [{ title: "상품명과 기준 키워드 입력", detail: "먼저 상품명에 핵심 키워드가 자연스럽게 들어갔는지 확인합니다.", score: 0, max: 100 }],
           rank: null,
@@ -5008,7 +5008,7 @@
         }
 
         seoButton.disabled = true;
-        setStatus(seoStatus, "상품 등록 상태를 확인 중입니다.", "");
+        setStatus(seoStatus, "네이버 SEO 점수를 확인 중입니다.", "");
         var fallbackData = buildKeywordFallback(keyword);
         var keywordData = fallbackData;
         var keywordMessage = "";

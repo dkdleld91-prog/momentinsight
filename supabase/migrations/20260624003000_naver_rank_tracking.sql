@@ -9,7 +9,7 @@ create table if not exists public.naver_rank_trackers (
   id uuid primary key default gen_random_uuid(),
   client_id uuid references public.clients(id) on delete cascade,
   brand_id uuid references public.brands(id) on delete set null,
-  agency_code text not null default 'mml-a01',
+  agency_code text not null default 'mml93-a01',
   keyword text not null,
   product_url text,
   product_id text,

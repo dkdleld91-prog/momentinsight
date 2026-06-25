@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 25. 15:42:30
-- 기준 커밋: 1db6139
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_통합보기_모먼트인사이트.html /  M 06_Supabase_연동/.env.example /  M docs/08-work-spec-autosave.md /  M scripts/check-runtime-env.mjs
+- 마지막 자동 저장: 2026. 06. 25. 15:52:07
+- 기준 커밋: 100648a
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M src/server/handlers/super-admin-api.mjs /  M src/server/index.mjs /  M supabase/migrations/20260624003000_naver_rank_tracking.sql
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 메인 계정 코드 발급 범위 고정 | 구버전 직접 기준값을 제거하고 `mml93-a01` 메인 계정 코드 입력칸과 서버 검증을 추가 | `build:vercel`, 총관리자 API 403/200/409 테스트, 잔여 코드 검색 | 배포 없음 |
 | 완료 | 계정 코드 및 순위추적 보존 하드닝 | 기본 운영 코드를 `mml93-a01`로 통일하고, 관리자/광고주 로그인 잠금, 총관리자 코드 발급 API, 순위추적 50개 제한을 보완 | `build:vercel`, `check:env`, API 401/200/409 권한 테스트, 광고주/관리자 로그인 브라우저 확인, 민감키 패턴 검색 | 배포 없음 |
 | 완료 | 순위 추적 접근코드 분리 및 배포 | `agencyCode`를 비밀값처럼 쓰지 않도록 순위 추적 조회/쓰기 접근 코드를 분리하고 GitHub push 기반 Vercel 배포 준비 | `build:vercel`, `check:env`, API 401/200/404 권한 테스트, preflight 확인, 민감키 패턴 검색 | 배포 대기 |
 | 완료 | 순위 추적 API 권한 잠금 | `/api/naver-rank-trackers` 기본 코드 fallback 제거, POST 쓰기 작업 코드 검증, `run-due` 크론 전용 분리, 순위 응답 내부 식별자 축소, 로컬 미리보기 CORS 헤더 보완 | `build:vercel`, API 401/403 차단 응답, 소스/복붙용 diff, 정적 산출물 확인 | 배포 없음 |

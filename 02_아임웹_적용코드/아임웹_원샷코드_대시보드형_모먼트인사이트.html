@@ -3047,7 +3047,7 @@
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
         if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
-        if (String(next.code || "").toLowerCase() === "mml-a01") next.code = defaultState.code;
+        if (/^mml(?:93)?-a01$/i.test(String(next.code || ""))) next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         if (String(next.client || "").indexOf("데모") > -1) next.client = defaultState.client;
         if (next.keywords && next.keywords[0] && next.keywords[0].keyword === "\ube44\ud0c0\ubbfc \uc570\ud50c") delete next.keywords;

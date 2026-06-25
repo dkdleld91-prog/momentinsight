@@ -2985,20 +2985,21 @@
               <div class="mi-card-head">
                 <div>
                   <h2>총관리자 코드 발급</h2>
-                  <p>대표 코드로 광고주 접속 코드를 생성합니다. 현재 운영 기본 코드는 mml93-a01입니다.</p>
+                  <p>메인 계정 mml93-a01에서만 광고주 접속 코드를 생성합니다.</p>
                 </div>
                 <span class="mi-badge">Owner</span>
               </div>
               <div class="mi-tool">
                 <div class="mi-form-row">
                   <input class="mi-input" data-owner-secret-code placeholder="총관리자 코드" aria-label="총관리자 코드" />
-                  <input class="mi-input" data-owner-client-name placeholder="광고주명" aria-label="광고주명" />
+                  <input class="mi-input" data-owner-root-code value="mml93-a01" placeholder="메인 계정 코드" aria-label="메인 계정 코드" />
                 </div>
                 <div class="mi-form-row">
+                  <input class="mi-input" data-owner-client-name placeholder="광고주명" aria-label="광고주명" />
                   <input class="mi-input" data-owner-agency-code placeholder="발급 코드 예: mml93-a02" aria-label="발급 코드" />
                   <button class="mi-button" type="button" data-owner-code-create>광고주 코드 생성</button>
                 </div>
-                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자 코드 입력 후 광고주 코드를 생성할 수 있습니다.</div>
+                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자 코드와 메인 계정 코드 mml93-a01 확인 후 광고주 코드를 생성할 수 있습니다.</div>
               </div>
             </article>
 
@@ -3631,7 +3632,7 @@
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
         if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
-        if (String(next.code || "").toLowerCase() === "mml-a01") next.code = defaultState.code;
+        if (/^mml(?:93)?-a01$/i.test(String(next.code || ""))) next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         if (String(next.client || "").indexOf("데모") > -1) next.client = defaultState.client;
         if (next.keywords && next.keywords[0] && next.keywords[0].keyword === "\ube44\ud0c0\ubbfc \uc570\ud50c") delete next.keywords;
@@ -3685,11 +3686,13 @@
         var list = root.querySelector("[data-owner-code-list]");
         if (!list) return;
         var clients = payload && payload.clients ? payload.clients : [];
+        var ownerCode = payload && payload.ownerAgencyCode ? payload.ownerAgencyCode : "mml93-a01";
         if (!clients.length) {
-          list.innerHTML = '<div class="mi-row"><span>발급 코드</span><strong>아직 조회된 코드가 없습니다</strong></div>';
+          list.innerHTML = '<div class="mi-row"><span>메인 계정</span><strong>' + escapeHtml(ownerCode) + '</strong></div>' +
+            '<div class="mi-row"><span>발급 코드</span><strong>아직 조회된 코드가 없습니다</strong></div>';
           return;
         }
-        list.innerHTML = clients.map(function (client) {
+        list.innerHTML = '<div class="mi-row"><span>메인 계정</span><strong>' + escapeHtml(ownerCode) + '</strong></div>' + clients.map(function (client) {
           return '<div class="mi-row"><span>' + escapeHtml(client.name || "광고주") + '</span><strong>' +
             escapeHtml(client.agencyCode || "-") + '</strong></div>';
         }).join("") + '<div class="mi-row"><span>다음 추천 코드</span><strong>' + escapeHtml(payload.nextAgencyCode || "mml93-a02") + '</strong></div>';
@@ -3697,16 +3700,19 @@
 
       async function requestOwnerCodes(method, body) {
         var secretInput = root.querySelector("[data-owner-secret-code]");
+        var rootCodeInput = root.querySelector("[data-owner-root-code]");
         var secretCode = secretInput ? String(secretInput.value || "").trim() : "";
+        var rootCode = rootCodeInput ? String(rootCodeInput.value || "").trim() : "";
         if (!secretCode) return { ok: false, message: "총관리자 코드를 입력해주세요." };
+        if (rootCode.toLowerCase() !== "mml93-a01") return { ok: false, message: "메인 계정 코드는 mml93-a01만 사용할 수 있습니다." };
         var options = {
           method: method,
           cache: "no-store",
-          headers: { "x-mi-super-admin-code": secretCode }
+          headers: { "x-mi-super-admin-code": secretCode, "x-mi-owner-agency-code": rootCode }
         };
         if (body) {
           options.headers["content-type"] = "application/json";
-          options.body = JSON.stringify(Object.assign({ superAdminCode: secretCode }, body));
+          options.body = JSON.stringify(Object.assign({ superAdminCode: secretCode, ownerAgencyCode: rootCode }, body));
         }
         var response = await fetch(getSuperAdminApiUrl(), options);
         var payload = await response.json().catch(function () { return null; });

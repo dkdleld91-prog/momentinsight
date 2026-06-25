@@ -4,12 +4,16 @@ import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
-    headers: "content-type, x-mi-super-admin-code",
+    headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code",
   });
 }
 
 function normalizeAgencyCode(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function primaryAgencyCode() {
+  return normalizeAgencyCode(process.env.MI_PRIMARY_AGENCY_CODE || "mml93-a01");
 }
 
 function requestSuperAdminCode(request, body = {}) {
@@ -21,9 +25,24 @@ function requestSuperAdminCode(request, body = {}) {
   ).trim();
 }
 
+function requestOwnerAgencyCode(request, body = {}) {
+  return normalizeAgencyCode(
+    request.headers.get("x-mi-owner-agency-code") ||
+      body.ownerAgencyCode ||
+      body.owner_agency_code ||
+      body.rootAgencyCode ||
+      body.root_agency_code ||
+      ""
+  );
+}
+
 function superAdminAuthorized(request, body = {}) {
   const configured = process.env.MI_SUPER_ADMIN_CODE || "";
   return Boolean(configured) && safeEqual(requestSuperAdminCode(request, body), configured);
+}
+
+function ownerAgencyAuthorized(request, body = {}) {
+  return safeEqual(requestOwnerAgencyCode(request, body), primaryAgencyCode());
 }
 
 function clientPayload(row) {
@@ -62,6 +81,7 @@ async function listClients(request, ctx) {
 
   return json(request, {
     ok: true,
+    ownerAgencyCode: primaryAgencyCode(),
     nextAgencyCode: nextAgencyCode(data || []),
     clients: (data || []).map(clientPayload),
   });
@@ -108,7 +128,7 @@ async function createClient(request, ctx, body) {
       agency_code: code,
       status: "active",
       public_summary: body.publicSummary || body.public_summary || "총관리자가 발급한 광고주 코드입니다.",
-      internal_note: "MI super admin issued client code",
+      internal_note: `MI super admin issued client code from ${primaryAgencyCode()}`,
     })
     .select("id, name, business_name, agency_code, status, public_summary, created_at, updated_at")
     .single();
@@ -127,7 +147,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, OPTIONS",
-          headers: "content-type, x-mi-super-admin-code",
+          headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code",
         }),
       });
     }
@@ -138,6 +158,9 @@ export default {
     }
     if (!superAdminAuthorized(request, body)) {
       return json(request, { ok: false, message: "총관리자 코드가 일치하지 않습니다." }, 401);
+    }
+    if (!ownerAgencyAuthorized(request, body)) {
+      return json(request, { ok: false, message: `메인 계정 코드 ${primaryAgencyCode()}에서만 광고주 코드를 발급할 수 있습니다.` }, 403);
     }
 
     const url = new URL(request.url);

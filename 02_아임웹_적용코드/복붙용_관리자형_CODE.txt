@@ -3843,6 +3843,7 @@
       }
 
       var ownerCodeSnapshot = null;
+      var currentOperationTeam = null;
 
       function activeOwnerTeams(payload) {
         return ((payload && payload.teams) || []).filter(function (team) {
@@ -3858,7 +3859,11 @@
 
       function ownerTeamIsActive(teamCode) {
         var normalized = String(teamCode || "").trim().toLowerCase();
-        if (!normalized || !ownerCodeSnapshot) return false;
+        if (!normalized) return false;
+        if (currentOperationTeam && String(currentOperationTeam.teamCode || "").trim().toLowerCase() === normalized) {
+          return currentOperationTeam.status === "active";
+        }
+        if (!ownerCodeSnapshot) return false;
         return activeOwnerTeams(ownerCodeSnapshot).some(function (team) {
           return String(team.teamCode || "").trim().toLowerCase() === normalized;
         });
@@ -3866,7 +3871,11 @@
 
       function ownerTeamByCode(teamCode) {
         var normalized = String(teamCode || "").trim().toLowerCase();
-        if (!normalized || !ownerCodeSnapshot) return null;
+        if (!normalized) return null;
+        if (currentOperationTeam && String(currentOperationTeam.teamCode || "").trim().toLowerCase() === normalized) {
+          return currentOperationTeam;
+        }
+        if (!ownerCodeSnapshot) return null;
         return activeOwnerTeams(ownerCodeSnapshot).find(function (team) {
           return String(team.teamCode || "").trim().toLowerCase() === normalized;
         }) || null;
@@ -3949,6 +3958,46 @@
         rows.push('<div class="mi-row"><span>다음 광고주 코드</span><strong>' + escapeHtml(payload && payload.nextAgencyCode ? payload.nextAgencyCode : "mml93-a02") + '</strong></div>');
         list.innerHTML = rows.join("");
         syncOwnerCodeDefaults(payload);
+      }
+
+      function renderOperationTeamCodePanel(payload) {
+        var team = payload && payload.team ? payload.team : null;
+        currentOperationTeam = team;
+        ownerCodeSnapshot = null;
+
+        var list = root.querySelector("[data-owner-code-list]");
+        if (list && team) {
+          var client = team.client || null;
+          var rows = [
+            '<div class="mi-row"><span>운영팀</span><strong>' + escapeHtml(team.teamName || "운영팀") + '</strong></div>',
+            '<div class="mi-row"><span>운영팀 상태</span><strong>' + (team.status === "active" ? "활성" : "비활성") + '</strong></div>'
+          ];
+          if (client) {
+            rows.push('<div class="mi-row"><span>연결 광고주</span><strong>' + escapeHtml(client.name || client.businessName || "광고주") + '</strong></div>');
+            rows.push('<div class="mi-row"><span>광고주 상태</span><strong>' + escapeHtml(client.status || "-") + '</strong></div>');
+          } else {
+            rows.push('<div class="mi-row"><span>연결 광고주</span><strong>미연결 · 광고주 코드 1개 생성 가능</strong></div>');
+          }
+          rows.push('<div class="mi-row"><span>제한</span><strong>운영팀당 광고주 1개 연결</strong></div>');
+          list.innerHTML = rows.join("");
+        }
+
+        var teamInput = root.querySelector("[data-team-code-for-client]");
+        var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
+        var clientNameInput = root.querySelector("[data-team-client-name]");
+        var clientCreateButton = root.querySelector("[data-team-client-create]");
+        if (teamInput && team) {
+          teamInput.value = team.teamCode || "";
+          teamInput.readOnly = true;
+          teamInput.placeholder = "로그인한 운영팀 코드";
+        }
+        if (clientCodeInput && payload && payload.nextAgencyCode && !String(clientCodeInput.value || "").trim()) {
+          clientCodeInput.value = payload.nextAgencyCode;
+        }
+        [clientCodeInput, clientNameInput, clientCreateButton].forEach(function (node) {
+          if (node) node.disabled = Boolean(team && (team.client || team.clientId));
+        });
+        syncOwnerAccessFields();
       }
 
       async function requestOwnerCodes(method, body) {
@@ -4358,13 +4407,35 @@
       var loginButton = root.querySelector("[data-admin-login-button]");
       var loginStatus = root.querySelector("[data-admin-login-status]");
       if (loginButton) {
-        loginButton.addEventListener("click", function () {
-          if (!getAdminCode()) {
+        loginButton.addEventListener("click", async function () {
+          var loginCode = getAdminCode();
+          if (!loginCode) {
             setStatus(loginStatus, "관리자 코드를 입력해주세요.", "is-warn");
             return;
           }
-          if (!isValidAdminCode(getAdminCode())) {
-            setStatus(loginStatus, "관리자 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
+          currentOperationTeam = null;
+          if (!isValidAdminCode(loginCode)) {
+            loginButton.disabled = true;
+            setStatus(loginStatus, "운영팀 코드를 확인 중입니다.", "");
+            try {
+              var teamPayload = await requestTeamCodes("POST", loginCode, { action: "validate-team" });
+              if (!teamPayload.ok) throw new Error(teamPayload.message || "운영팀 코드가 일치하지 않습니다.");
+              currentOperationTeam = teamPayload.team || null;
+              root.classList.remove("is-locked");
+              root.classList.add("is-authed");
+              try {
+                window.sessionStorage.setItem("miAdminAuthedCode", loginCode);
+              } catch (error) {}
+              syncOwnerAccessFields();
+              renderOperationTeamCodePanel(teamPayload);
+              setStatus(loginStatus, "운영팀 콘솔이 열렸습니다.", "is-ok");
+              setStatus(ownerStatus, currentOperationTeam && currentOperationTeam.client ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다." : "운영팀 코드로 로그인했습니다. 광고주 코드 1개를 생성할 수 있습니다.", currentOperationTeam && currentOperationTeam.client ? "is-warn" : "is-ok");
+              window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
+              setScreen("agency-code", true);
+            } catch (error) {
+              setStatus(loginStatus, error.message || "관리자 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
+            }
+            loginButton.disabled = false;
             return;
           }
           root.classList.remove("is-locked");
@@ -4421,7 +4492,28 @@
         var loginCode = getAdminCode();
         var secretInput = root.querySelector("[data-owner-secret-code]");
         var rootCodeInput = root.querySelector("[data-owner-root-code]");
+        var ownerMode = String(loginCode || "").trim().toLowerCase() === "mml93-a01";
+        var ownerTeamCodeInput = root.querySelector("[data-owner-team-code]");
+        var ownerTeamNameInput = root.querySelector("[data-owner-team-name]");
+        var ownerCreate = root.querySelector("[data-owner-team-create]");
+        var ownerRefresh = root.querySelector("[data-owner-code-refresh]");
+        var teamForClientInput = root.querySelector("[data-team-code-for-client]");
+        var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
+        var clientNameInput = root.querySelector("[data-team-client-name]");
+        var clientCreate = root.querySelector("[data-team-client-create]");
         if (rootCodeInput) rootCodeInput.value = "mml93-a01";
+        [secretInput, ownerTeamCodeInput, ownerTeamNameInput, ownerCreate, ownerRefresh].forEach(function (node) {
+          if (node) node.disabled = !ownerMode;
+        });
+        if (ownerMode) {
+          [clientCodeInput, clientNameInput, clientCreate].forEach(function (node) {
+            if (node) node.disabled = false;
+          });
+        }
+        if (teamForClientInput) {
+          teamForClientInput.readOnly = !ownerMode;
+          if (!ownerMode && currentOperationTeam) teamForClientInput.value = currentOperationTeam.teamCode || "";
+        }
       }
 
       function canManageOwnerCodes() {
@@ -4474,7 +4566,7 @@
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
             await loadOwnerCodes(true);
-            setStatus(ownerStatus, "운영팀 생성 완료: " + payload.team.teamCode + " · 이제 광고주 코드를 생성할 수 있습니다.", "is-ok");
+            setStatus(ownerStatus, (payload.reactivated ? "운영팀 재활성화 완료: " : "운영팀 생성 완료: ") + payload.team.teamCode + " · 이제 광고주 코드를 생성할 수 있습니다.", "is-ok");
           } catch (error) {
             setStatus(ownerStatus, error.message || "운영팀 코드 생성에 실패했습니다.", "is-warn");
           }
@@ -4518,14 +4610,19 @@
               agencyCode: agencyCode
             });
             if (!payload.ok) throw new Error(payload.message || "광고주 코드 생성에 실패했습니다.");
-            setStatus(ownerStatus, "광고주 생성 완료: " + payload.client.agencyCode, "is-ok");
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
-            await loadOwnerCodes(true);
+            if (currentOperationTeam) {
+              currentOperationTeam = payload.team || currentOperationTeam;
+              renderOperationTeamCodePanel({ team: currentOperationTeam });
+            } else {
+              await loadOwnerCodes(true);
+            }
+            setStatus(ownerStatus, "광고주 생성 완료: " + payload.client.agencyCode, "is-ok");
           } catch (error) {
             setStatus(ownerStatus, error.message || "광고주 코드 생성에 실패했습니다.", "is-warn");
           }
-          teamClientButton.disabled = false;
+          teamClientButton.disabled = Boolean(currentOperationTeam && !ownerTeamCanIssueClient(currentOperationTeam.teamCode));
         });
       }
 

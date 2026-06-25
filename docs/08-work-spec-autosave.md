@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 25. 16:15:53
-- 기준 커밋: 46e09df
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M src/server/handlers/super-admin-api.mjs /  M src/server/index.mjs / ?? api/team/
+- 마지막 자동 저장: 2026. 06. 25. 16:24:51
+- 기준 커밋: b19e977
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M src/server/handlers/agency-code-api.mjs /  M src/server/handlers/super-admin-api.mjs /  M src/server/index.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

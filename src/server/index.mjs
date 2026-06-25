@@ -34,7 +34,7 @@ export default {
       });
     }
 
-    if (url.pathname.startsWith("/api/agency-code/")) {
+    if (url.pathname.startsWith("/api/agency-code/") || url.pathname === "/api/agency-code-validate") {
       return agencyCodeApi.fetch(request);
     }
 
@@ -60,11 +60,11 @@ export default {
       return demoApi.fetch(request);
     }
 
-    if (url.pathname.startsWith("/api/super-admin/")) {
+    if (url.pathname.startsWith("/api/super-admin/") || url.pathname === "/api/super-admin-agency-codes") {
       return superAdminApi.fetch(request);
     }
 
-    if (url.pathname.startsWith("/api/team/")) {
+    if (url.pathname.startsWith("/api/team/") || url.pathname === "/api/team-agency-codes") {
       return superAdminApi.fetch(request);
     }
 

@@ -152,7 +152,7 @@ async function listClients(request, ctx) {
 
   const teamsResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
-    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at, clients(id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at)")
+    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
     .eq("owner_agency_code", primaryAgencyCode())
     .order("created_at", { ascending: true })
     .limit(100);
@@ -179,7 +179,10 @@ async function listClients(request, ctx) {
     ownerAgencyCode: primaryAgencyCode(),
     nextTeamCode: nextTeamCode(teamsResult.data || []),
     nextAgencyCode: nextAgencyCode(clientsResult.data || []),
-    teams: (teamsResult.data || []).map(teamPayload),
+    teams: (teamsResult.data || []).map((team) => ({
+      ...team,
+      clients: (clientsResult.data || []).find((client) => client.id === team.client_id) || null,
+    })).map(teamPayload),
     clients: (clientsResult.data || []).map(clientPayload),
   });
 }
@@ -342,11 +345,11 @@ async function createClientForTeam(request, ctx, body) {
     .update({ client_id: client.id })
     .eq("id", teamResult.data.id)
     .is("client_id", null)
-    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at, clients(id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at)")
+    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 광고주 연결 저장에 실패했습니다.", detail: teamError.message }, 500);
 
-  return json(request, { ok: true, team: teamPayload(team), client: clientPayload(client) }, 201);
+  return json(request, { ok: true, team: teamPayload({ ...team, clients: client }), client: clientPayload(client) }, 201);
 }
 
 async function disconnectTeamClient(request, ctx, body) {
@@ -355,7 +358,7 @@ async function disconnectTeamClient(request, ctx, body) {
 
   const teamResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
-    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at, clients(id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at)")
+    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
     .ilike("team_code", teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
@@ -402,8 +405,8 @@ export default {
     const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
 
     const url = new URL(request.url);
-    const isOwnerPath = url.pathname === "/api/super-admin/agency-codes";
-    const isTeamPath = url.pathname === "/api/team/agency-codes";
+    const isOwnerPath = url.pathname === "/api/super-admin/agency-codes" || url.pathname === "/api/super-admin-agency-codes";
+    const isTeamPath = url.pathname === "/api/team/agency-codes" || url.pathname === "/api/team-agency-codes";
     if (!isOwnerPath && !isTeamPath) {
       return json(request, { ok: false, message: "Not found" }, 404);
     }

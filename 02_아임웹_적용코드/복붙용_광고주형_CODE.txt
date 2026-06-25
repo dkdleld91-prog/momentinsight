@@ -3872,7 +3872,7 @@
       function getAgencyCodeValidateApiUrl() {
         if (window.MI_AGENCY_CODE_VALIDATE_API_URL) return window.MI_AGENCY_CODE_VALIDATE_API_URL;
         var host = window.location && window.location.hostname;
-        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/agency-code/validate";
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/agency-code-validate";
         return "http://127.0.0.1:8790/api/agency-code/validate";
       }
 

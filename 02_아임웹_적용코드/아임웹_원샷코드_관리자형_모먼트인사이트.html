@@ -3688,14 +3688,14 @@
       function getSuperAdminApiUrl() {
         if (window.MI_SUPER_ADMIN_API_URL) return window.MI_SUPER_ADMIN_API_URL;
         var host = window.location && window.location.hostname;
-        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/super-admin/agency-codes";
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/super-admin-agency-codes";
         return "http://127.0.0.1:8790/api/super-admin/agency-codes";
       }
 
       function getTeamCodeApiUrl() {
         if (window.MI_TEAM_CODE_API_URL) return window.MI_TEAM_CODE_API_URL;
         var host = window.location && window.location.hostname;
-        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/team/agency-codes";
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/team-agency-codes";
         return "http://127.0.0.1:8790/api/team/agency-codes";
       }
 

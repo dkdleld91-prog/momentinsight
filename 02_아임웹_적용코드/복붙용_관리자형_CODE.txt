@@ -3067,15 +3067,15 @@
               <div class="mi-card-head">
                 <div>
                   <h2>운영팀·광고주 코드 바로 생성</h2>
-                  <p>mml93-a01로 접속한 운영자만 코드를 만들고, 활성 계정 권한을 해제할 수 있습니다.</p>
+                  <p>mml93-a01 운영자만 별도 권한 비밀값 입력 후 코드를 만들고, 활성 계정 권한을 해제할 수 있습니다.</p>
                 </div>
                 <span class="mi-badge">Owner</span>
               </div>
               <div class="mi-owner-tools">
                 <div class="mi-owner-tool">
-                  <h3>권한 코드</h3>
+                  <h3>권한 비밀값</h3>
                   <div class="mi-form-row">
-                    <input class="mi-input" data-owner-secret-code type="password" autocomplete="off" placeholder="권한 코드 입력" aria-label="권한 코드" />
+                    <input class="mi-input" data-owner-secret-code type="password" autocomplete="off" placeholder="권한 비밀값 입력" aria-label="권한 비밀값" />
                     <input class="mi-input" data-owner-root-code value="mml93-a01" readonly aria-label="메인 운영자 코드" />
                   </div>
                 </div>
@@ -3892,15 +3892,11 @@
         var loginCode = getAdminCode();
         var secretCode = secretInput ? String(secretInput.value || "").trim() : "";
         var rootCode = rootCodeInput ? String(rootCodeInput.value || "").trim() : "";
-        if (!secretCode && loginCode) {
-          secretCode = loginCode;
-          if (secretInput) secretInput.value = loginCode;
-        }
         if (!rootCode) {
           rootCode = "mml93-a01";
           if (rootCodeInput) rootCodeInput.value = rootCode;
         }
-        if (!secretCode) return { ok: false, message: "권한 코드를 입력해주세요." };
+        if (!secretCode) return { ok: false, message: "권한 비밀값을 입력해주세요." };
         if (rootCode.toLowerCase() !== "mml93-a01") return { ok: false, message: "메인 운영자 코드는 mml93-a01만 사용할 수 있습니다." };
         var options = {
           method: method,
@@ -4361,9 +4357,6 @@
         var secretInput = root.querySelector("[data-owner-secret-code]");
         var rootCodeInput = root.querySelector("[data-owner-root-code]");
         if (rootCodeInput) rootCodeInput.value = "mml93-a01";
-        if (secretInput && !String(secretInput.value || "").trim() && loginCode.toLowerCase() === "mml93-a01") {
-          secretInput.value = loginCode;
-        }
       }
 
       function canManageOwnerCodes() {

@@ -3920,21 +3920,6 @@
         }
       }
 
-      function setOperationTeamNavigation(ownerMode) {
-        var operatorMode = Boolean(currentOperationTeam && !ownerMode);
-        root.querySelectorAll("[data-mi-admin-screen]").forEach(function (link) {
-          var allowed = !operatorMode || link.getAttribute("data-mi-admin-screen") === "agency-code";
-          link.style.display = allowed ? "" : "none";
-          link.setAttribute("aria-hidden", allowed ? "false" : "true");
-        });
-        root.querySelectorAll(".mi-nav-group").forEach(function (group) {
-          var hasVisibleLink = Array.from(group.querySelectorAll("[data-mi-admin-screen]")).some(function (link) {
-            return link.style.display !== "none";
-          });
-          group.style.display = hasVisibleLink ? "" : "none";
-        });
-      }
-
       function syncOwnerCodeDefaults(payload) {
         var teamCreateInput = root.querySelector("[data-owner-team-code]");
         var teamForClientInput = root.querySelector("[data-team-code-for-client]");
@@ -4515,7 +4500,6 @@
 
       function setScreen(name, shouldPushHash) {
         var target = name || "home";
-        if (currentOperationTeam && target !== "agency-code") target = "agency-code";
         var found = false;
         views.forEach(function (view) {
           var active = view.getAttribute("data-mi-admin-view") === target;
@@ -4563,7 +4547,6 @@
         var clientNameInput = root.querySelector("[data-team-client-name]");
         var clientCreate = root.querySelector("[data-team-client-create]");
         setOwnerPanelMode(ownerMode);
-        setOperationTeamNavigation(ownerMode);
         if (rootCodeInput) rootCodeInput.value = "mml93-a01";
         [secretInput, ownerTeamCodeInput, ownerTeamNameInput, ownerCreate, ownerRefresh].forEach(function (node) {
           if (node) node.disabled = !ownerMode;

@@ -15,6 +15,7 @@ import { corsHeaders, protectedJson } from "./security.mjs";
 
 const routes = [
   { method: "GET", path: "/health", app: health },
+  { method: "GET", path: "/api/health", app: health },
   { method: "GET", path: "/api/client/dashboard", app: dashboard },
   { method: "GET", path: "/api/admin/clients", app: adminClients }
 ];

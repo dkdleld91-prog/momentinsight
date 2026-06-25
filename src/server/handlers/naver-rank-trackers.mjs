@@ -1,5 +1,5 @@
 import { withSupabase } from "@supabase/server";
-import { corsHeaders, protectedJson } from "../security.mjs";
+import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
 import {
   extractProductId,
   findShoppingRank,
@@ -9,7 +9,6 @@ import {
   shoppingRankMessage,
 } from "./naver-shopping-rank.mjs";
 
-const DEFAULT_AGENCY_CODE = "mml-a01";
 const TRACKER_SELECT = [
   "id",
   "client_id",
@@ -57,12 +56,12 @@ const SNAPSHOT_SELECT = [
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
-    headers: "authorization, content-type, x-demo-admin-code",
+    headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code",
   });
 }
 
 function normalizeAgencyCode(value) {
-  return normalizeText(value || DEFAULT_AGENCY_CODE).toLowerCase();
+  return normalizeText(value || "").toLowerCase();
 }
 
 function requestAgencyCode(request, body = {}) {
@@ -76,6 +75,30 @@ function requestAgencyCode(request, body = {}) {
   );
 }
 
+function requestAccessCode(request, body = {}) {
+  return normalizeAgencyCode(
+    body.accessCode ||
+      body.access_code ||
+      body.agencyAccessCode ||
+      body.agency_access_code ||
+      request.headers.get("x-mi-agency-code")
+  );
+}
+
+function requestAdminCode(request, body = {}) {
+  return String(
+    request.headers.get("x-demo-admin-code") ||
+      body.adminCode ||
+      body.admin_code ||
+      ""
+  ).trim();
+}
+
+function adminCodeAuthorized(request, body = {}) {
+  const configured = process.env.MI_RANK_ADMIN_CODE || process.env.MI_DEMO_ADMIN_CODE || "";
+  return Boolean(configured) && safeEqual(requestAdminCode(request, body), configured);
+}
+
 function clampMaxRank(value) {
   const number = Number(value || 300);
   if (!Number.isFinite(number)) return 300;
@@ -85,9 +108,6 @@ function clampMaxRank(value) {
 function trackerPayload(row, snapshots = []) {
   return {
     id: row.id,
-    clientId: row.client_id,
-    brandId: row.brand_id,
-    agencyCode: row.agency_code,
     keyword: row.keyword,
     productUrl: row.product_url,
     productId: row.product_id,
@@ -124,7 +144,6 @@ function snapshotPayload(row) {
     checkedCount: row.checked_count,
     total: row.total,
     item: row.item || null,
-    topItems: row.top_items || [],
     message: row.message,
     source: row.source,
     createdAt: row.created_at,
@@ -140,6 +159,7 @@ function addDays(date, days) {
 }
 
 async function findClientId(ctx, agencyCode) {
+  if (!agencyCode) return null;
   const { data, error } = await ctx.supabaseAdmin
     .from("clients")
     .select("id")
@@ -148,6 +168,38 @@ async function findClientId(ctx, agencyCode) {
 
   if (error) return null;
   return data?.id || null;
+}
+
+async function requireWriteAccess(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  if (!agencyCode) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "대행사 코드가 필요합니다." }, 401),
+    };
+  }
+
+  if (adminCodeAuthorized(request, body)) {
+    return { ok: true, agencyCode, admin: true };
+  }
+
+  const accessCode = requestAccessCode(request, body);
+  if (!safeEqual(accessCode, agencyCode)) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "순위 추적 변경 권한을 확인할 수 없습니다." }, 401),
+    };
+  }
+
+  const clientId = await findClientId(ctx, agencyCode);
+  if (!clientId) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "등록된 대행사 코드를 확인할 수 없습니다." }, 403),
+    };
+  }
+
+  return { ok: true, agencyCode, clientId, admin: false };
 }
 
 async function loadSnapshots(ctx, trackerIds, limit = 5000) {
@@ -173,6 +225,7 @@ async function loadSnapshots(ctx, trackerIds, limit = 5000) {
 async function listTrackers(request, ctx) {
   const url = new URL(request.url);
   const agencyCode = requestAgencyCode(request);
+  if (!agencyCode) return json(request, { ok: false, message: "대행사 코드가 필요합니다." }, 401);
   const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") || 20)));
 
   const { data, error } = await ctx.supabaseAdmin
@@ -550,19 +603,23 @@ async function handlePost(request, ctx) {
   const body = await request.json().catch(() => ({}));
   const action = normalizeText(body.action || "create");
 
+  if (action === "run-due") {
+    return json(request, {
+      ok: false,
+      message: "자동 갱신은 크론 전용 API에서만 실행할 수 있습니다.",
+    }, 403);
+  }
+
+  const access = await requireWriteAccess(request, ctx, body);
+  if (!access.ok) return access.response;
+  body.agencyCode = access.agencyCode;
+
   if (action === "create") return createTracker(request, ctx, body);
   if (action === "check") return checkOne(request, ctx, body);
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);
   if (action === "move") return moveTracker(request, ctx, body);
   if (action === "reorder") return reorderTrackers(request, ctx, body);
-  if (action === "run-due") {
-    const summary = await runDueTrackers(ctx, {
-      agencyCode: body.agencyCode ? requestAgencyCode(request, body) : "",
-      limit: body.limit,
-    });
-    return json(request, { ok: true, summary });
-  }
 
   return json(request, { ok: false, message: "지원하지 않는 작업입니다." }, 400);
 }
@@ -571,7 +628,7 @@ export default {
   fetch: withSupabase({ auth: "none" }, async (request, ctx) => {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
       methods: "GET, POST, OPTIONS",
-      headers: "authorization, content-type, x-demo-admin-code",
+      headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code",
     }) });
 
     try {

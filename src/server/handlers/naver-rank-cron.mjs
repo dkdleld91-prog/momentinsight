@@ -11,7 +11,7 @@ function json(request, body, status = 200) {
 
 function cronAuthorized(request) {
   const secret = process.env.CRON_SECRET || process.env.MI_RANK_CRON_SECRET || "";
-  if (!secret) return true;
+  if (!secret) return false;
 
   const authorization = request.headers.get("authorization") || "";
   const token = authorization.replace(/^Bearer\s+/i, "");

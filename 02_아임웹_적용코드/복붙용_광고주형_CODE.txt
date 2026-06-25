@@ -3900,9 +3900,9 @@
 
       function rankAgencyCode() {
         try {
-          return String((readState() || {}).code || "mml-a01").trim().toLowerCase();
+          return String(window.localStorage.getItem(selectedCodeKey) || "").trim().toLowerCase();
         } catch (error) {
-          return "mml-a01";
+          return "";
         }
       }
 
@@ -4066,14 +4066,21 @@
         var rankTrackers = [];
 
         async function requestRankTrackers(method, body) {
+          var agencyCode = rankAgencyCode();
+          if (!agencyCode) {
+            return { ok: false, message: "대행사 코드 연결 후 순위 추적을 사용할 수 있습니다." };
+          }
           var options = { method: method, cache: "no-store" };
           if (body) {
-            options.headers = { "content-type": "application/json" };
-            options.body = JSON.stringify(Object.assign({ agencyCode: rankAgencyCode() }, body));
+            options.headers = {
+              "content-type": "application/json",
+              "x-mi-agency-code": agencyCode
+            };
+            options.body = JSON.stringify(Object.assign({ agencyCode: agencyCode, accessCode: agencyCode }, body));
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: rankAgencyCode(), limit: "20" }).toString();
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "20" }).toString();
           }
           var response = await fetch(url, options);
           var payload = await response.json().catch(function () { return null; });
@@ -4110,6 +4117,9 @@
         rankKeyword.setAttribute("data-synced-keyword", "true");
         syncKeywordFromMain();
         loadRankTrackers(false);
+        window.addEventListener("mi:rank-auth-ready", function () {
+          loadRankTrackers(false);
+        });
 
         if (linkedKeywordInput) {
           linkedKeywordInput.addEventListener("input", syncKeywordFromMain);
@@ -4876,6 +4886,7 @@
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         setStatus(statusNode, "연결 완료: " + state.client + " 브랜드 데이터가 반영되었습니다.", "is-ok");
+        window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
 
@@ -4885,6 +4896,7 @@
           if (normalizeCode(selectedCode) !== normalizeCode(state.code)) return;
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
+          window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         } catch (error) {}
       }
 

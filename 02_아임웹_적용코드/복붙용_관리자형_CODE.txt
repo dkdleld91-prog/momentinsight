@@ -4015,6 +4015,7 @@
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
           setStatus(loginStatus, "관리자 콘솔이 열렸습니다.", "is-ok");
+          window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         });
       }
 
@@ -4977,9 +4978,10 @@
 
       function rankAgencyCode() {
         try {
-          return String((readState() || {}).code || "mml-a01").trim().toLowerCase();
+          if (root.classList.contains("is-locked")) return "";
+          return String((readState() || {}).code || "").trim().toLowerCase();
         } catch (error) {
-          return "mml-a01";
+          return "";
         }
       }
 
@@ -5143,14 +5145,27 @@
         var rankTrackers = [];
 
         async function requestRankTrackers(method, body) {
+          var agencyCode = rankAgencyCode();
+          if (!agencyCode) {
+            return { ok: false, message: "관리자 코드 확인 후 순위 추적을 사용할 수 있습니다." };
+          }
+          var adminCode = getAdminCode();
           var options = { method: method, cache: "no-store" };
           if (body) {
-            options.headers = { "content-type": "application/json" };
-            options.body = JSON.stringify(Object.assign({ agencyCode: rankAgencyCode() }, body));
+            options.headers = {
+              "content-type": "application/json",
+              "x-demo-admin-code": adminCode,
+              "x-mi-agency-code": agencyCode
+            };
+            options.body = JSON.stringify(Object.assign({
+              agencyCode: agencyCode,
+              accessCode: agencyCode,
+              adminCode: adminCode
+            }, body));
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: rankAgencyCode(), limit: "20" }).toString();
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "20" }).toString();
           }
           var response = await fetch(url, options);
           var payload = await response.json().catch(function () { return null; });
@@ -5187,6 +5202,9 @@
         rankKeyword.setAttribute("data-synced-keyword", "true");
         syncKeywordFromMain();
         loadRankTrackers(false);
+        window.addEventListener("mi:rank-auth-ready", function () {
+          loadRankTrackers(false);
+        });
 
         if (linkedKeywordInput) {
           linkedKeywordInput.addEventListener("input", syncKeywordFromMain);

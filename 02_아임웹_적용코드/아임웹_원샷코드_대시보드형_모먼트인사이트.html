@@ -3869,6 +3869,38 @@
         return "http://127.0.0.1:8790/api/naver-rank-trackers";
       }
 
+      function getAgencyCodeValidateApiUrl() {
+        if (window.MI_AGENCY_CODE_VALIDATE_API_URL) return window.MI_AGENCY_CODE_VALIDATE_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/agency-code/validate";
+        return "http://127.0.0.1:8790/api/agency-code/validate";
+      }
+
+      async function validateAgencyCode(code) {
+        var normalized = normalizeCode(code);
+        if (!normalized) return { ok: false, message: "대행사 코드를 입력해주세요." };
+        var response = await fetch(getAgencyCodeValidateApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ agencyCode: normalized })
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) payload = { ok: false, message: "대행사 코드 확인 응답을 읽을 수 없습니다." };
+        if (!response.ok && payload.ok !== false) payload.ok = false;
+        return payload;
+      }
+
+      function clearClientAuth() {
+        try {
+          window.localStorage.removeItem(selectedCodeKey);
+          window.localStorage.removeItem("miRankAccessCode");
+          window.sessionStorage.removeItem("miClientAuthedCode");
+        } catch (error) {}
+        root.classList.add("is-locked");
+        root.classList.remove("is-authed");
+      }
+
       function formatRankCheckedAt(iso) {
         if (!iso) return "-";
         try {
@@ -4889,13 +4921,31 @@
         if (type) node.classList.add(type);
       }
 
-      function unlockWithCode(code, statusNode) {
+      async function unlockWithCode(code, statusNode) {
         var state = readState();
-        var matched = normalizeCode(code) === normalizeCode(state.code);
-        if (!matched) {
-          setStatus(statusNode, "코드가 일치하지 않습니다. 관리자에게 받은 코드를 확인하세요.", "is-warn");
+        var normalized = normalizeCode(code);
+        if (!normalized) {
+          setStatus(statusNode, "대행사 코드를 입력해주세요.", "is-warn");
           return false;
         }
+        var payload;
+        try {
+          payload = await validateAgencyCode(normalized);
+        } catch (error) {
+          clearClientAuth();
+          setStatus(statusNode, "서버에서 대행사 코드를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.", "is-warn");
+          return false;
+        }
+        if (!payload.ok || !payload.client) {
+          clearClientAuth();
+          setStatus(statusNode, payload.message || "활성화된 대행사 코드가 아닙니다.", "is-warn");
+          return false;
+        }
+        var client = payload.client;
+        state.code = normalizeCode(client.agencyCode || normalized);
+        state.client = client.name || client.businessName || state.client;
+        if (client.publicSummary) state.publicComment = client.publicSummary;
+        writeState(state);
         try {
           window.localStorage.setItem(selectedCodeKey, state.code);
           window.localStorage.setItem("miRankAccessCode", state.code);
@@ -4909,15 +4959,25 @@
         return true;
       }
 
-      function restoreAuth(state) {
+      async function restoreAuth(state) {
         try {
           var selectedCode = window.localStorage.getItem(selectedCodeKey);
-          if (normalizeCode(selectedCode) !== normalizeCode(state.code)) return;
-          if (normalizeCode(window.sessionStorage.getItem("miClientAuthedCode")) !== normalizeCode(state.code)) return;
+          var authedCode = window.sessionStorage.getItem("miClientAuthedCode");
+          if (!selectedCode || normalizeCode(authedCode) !== normalizeCode(selectedCode)) return;
+          var payload = await validateAgencyCode(selectedCode);
+          if (!payload.ok || !payload.client) {
+            clearClientAuth();
+            return;
+          }
+          state.code = normalizeCode(payload.client.agencyCode || selectedCode);
+          state.client = payload.client.name || payload.client.businessName || state.client;
+          writeState(state);
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
-        } catch (error) {}
+        } catch (error) {
+          clearClientAuth();
+        }
       }
 
       var views = root.querySelectorAll("[data-mi-view]");
@@ -4969,7 +5029,7 @@
         loginButton.addEventListener("click", async function () {
           loginButton.disabled = true;
           await syncDemoState(loginStatus);
-          unlockWithCode(loginCode.value, loginStatus);
+          await unlockWithCode(loginCode.value, loginStatus);
           loginButton.disabled = false;
         });
       }
@@ -4981,7 +5041,7 @@
         connectButton.addEventListener("click", async function () {
           connectButton.disabled = true;
           await syncDemoState(connectStatus);
-          unlockWithCode(connectCode.value, connectStatus);
+          await unlockWithCode(connectCode.value, connectStatus);
           connectButton.disabled = false;
         });
       }

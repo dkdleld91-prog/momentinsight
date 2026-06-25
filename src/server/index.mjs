@@ -5,6 +5,7 @@ import adminApi from "./handlers/admin-api.mjs";
 import clientApi from "./handlers/client-api.mjs";
 import demoApi from "./handlers/demo-api.mjs";
 import integrationStatus from "./handlers/integration-status.mjs";
+import agencyCodeApi from "./handlers/agency-code-api.mjs";
 import naverKeyword from "./handlers/naver-keyword.mjs";
 import naverRankCron from "./handlers/naver-rank-cron.mjs";
 import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
@@ -30,6 +31,10 @@ export default {
           headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code"
         })
       });
+    }
+
+    if (url.pathname.startsWith("/api/agency-code/")) {
+      return agencyCodeApi.fetch(request);
     }
 
     if (url.pathname.startsWith("/api/admin/")) {

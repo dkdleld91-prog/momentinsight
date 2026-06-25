@@ -56,7 +56,7 @@ const SNAPSHOT_SELECT = [
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
-    headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code",
+    headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
   });
 }
 
@@ -69,7 +69,7 @@ function requestAgencyCode(request, body = {}) {
   return normalizeAgencyCode(
     body.agencyCode ||
       body.agency_code ||
-      request.headers.get("x-demo-admin-code") ||
+      request.headers.get("x-mi-agency-code") ||
       url.searchParams.get("agencyCode") ||
       url.searchParams.get("agency_code")
   );
@@ -81,7 +81,7 @@ function requestAccessCode(request, body = {}) {
       body.access_code ||
       body.agencyAccessCode ||
       body.agency_access_code ||
-      request.headers.get("x-mi-agency-code")
+      request.headers.get("x-mi-rank-access-code")
   );
 }
 
@@ -97,6 +97,18 @@ function requestAdminCode(request, body = {}) {
 function adminCodeAuthorized(request, body = {}) {
   const configured = process.env.MI_RANK_ADMIN_CODE || process.env.MI_DEMO_ADMIN_CODE || "";
   return Boolean(configured) && safeEqual(requestAdminCode(request, body), configured);
+}
+
+function rankAccessCodes() {
+  return String(process.env.MI_RANK_ACCESS_CODES || process.env.MI_RANK_ACCESS_CODE || "")
+    .split(",")
+    .map((value) => normalizeAgencyCode(value))
+    .filter(Boolean);
+}
+
+function rankAccessAuthorized(request, body = {}) {
+  const accessCode = requestAccessCode(request, body);
+  return rankAccessCodes().some((code) => safeEqual(accessCode, code));
 }
 
 function clampMaxRank(value) {
@@ -170,7 +182,7 @@ async function findClientId(ctx, agencyCode) {
   return data?.id || null;
 }
 
-async function requireWriteAccess(request, ctx, body) {
+async function requireRankAccess(request, ctx, body = {}, options = {}) {
   const agencyCode = requestAgencyCode(request, body);
   if (!agencyCode) {
     return {
@@ -179,23 +191,25 @@ async function requireWriteAccess(request, ctx, body) {
     };
   }
 
-  if (adminCodeAuthorized(request, body)) {
-    return { ok: true, agencyCode, admin: true };
-  }
-
-  const accessCode = requestAccessCode(request, body);
-  if (!safeEqual(accessCode, agencyCode)) {
-    return {
-      ok: false,
-      response: json(request, { ok: false, message: "순위 추적 변경 권한을 확인할 수 없습니다." }, 401),
-    };
-  }
-
   const clientId = await findClientId(ctx, agencyCode);
   if (!clientId) {
     return {
       ok: false,
       response: json(request, { ok: false, message: "등록된 대행사 코드를 확인할 수 없습니다." }, 403),
+    };
+  }
+
+  if (adminCodeAuthorized(request, body)) {
+    return { ok: true, agencyCode, clientId, admin: true };
+  }
+
+  if (!rankAccessAuthorized(request, body)) {
+    return {
+      ok: false,
+      response: json(request, {
+        ok: false,
+        message: options.read ? "순위 추적 조회 권한을 확인할 수 없습니다." : "순위 추적 변경 권한을 확인할 수 없습니다.",
+      }, 401),
     };
   }
 
@@ -224,8 +238,9 @@ async function loadSnapshots(ctx, trackerIds, limit = 5000) {
 
 async function listTrackers(request, ctx) {
   const url = new URL(request.url);
-  const agencyCode = requestAgencyCode(request);
-  if (!agencyCode) return json(request, { ok: false, message: "대행사 코드가 필요합니다." }, 401);
+  const access = await requireRankAccess(request, ctx, {}, { read: true });
+  if (!access.ok) return access.response;
+  const agencyCode = access.agencyCode;
   const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") || 20)));
 
   const { data, error } = await ctx.supabaseAdmin
@@ -241,7 +256,6 @@ async function listTrackers(request, ctx) {
   const snapshots = await loadSnapshots(ctx, (data || []).map((row) => row.id));
   return json(request, {
     ok: true,
-    agencyCode,
     trackers: (data || []).map((row) => trackerPayload(row, snapshots.get(row.id) || [])),
   });
 }
@@ -610,7 +624,7 @@ async function handlePost(request, ctx) {
     }, 403);
   }
 
-  const access = await requireWriteAccess(request, ctx, body);
+  const access = await requireRankAccess(request, ctx, body);
   if (!access.ok) return access.response;
   body.agencyCode = access.agencyCode;
 
@@ -628,7 +642,7 @@ export default {
   fetch: withSupabase({ auth: "none" }, async (request, ctx) => {
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
       methods: "GET, POST, OPTIONS",
-      headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code",
+      headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
     }) });
 
     try {

@@ -3906,6 +3906,14 @@
         }
       }
 
+      function rankAccessCode() {
+        try {
+          return String(window.MI_RANK_ACCESS_CODE || window.localStorage.getItem("miRankAccessCode") || "").trim();
+        } catch (error) {
+          return "";
+        }
+      }
+
       function rankText(value) {
         return value ? value + "위" : "-";
       }
@@ -4070,13 +4078,21 @@
           if (!agencyCode) {
             return { ok: false, message: "대행사 코드 연결 후 순위 추적을 사용할 수 있습니다." };
           }
-          var options = { method: method, cache: "no-store" };
+          var accessCode = rankAccessCode();
+          if (!accessCode) {
+            return { ok: false, message: "순위 추적 접근 코드 확인이 필요합니다." };
+          }
+          var options = {
+            method: method,
+            cache: "no-store",
+            headers: {
+              "x-mi-agency-code": agencyCode,
+              "x-mi-rank-access-code": accessCode
+            }
+          };
           if (body) {
-            options.headers = {
-              "content-type": "application/json",
-              "x-mi-agency-code": agencyCode
-            };
-            options.body = JSON.stringify(Object.assign({ agencyCode: agencyCode, accessCode: agencyCode }, body));
+            options.headers["content-type"] = "application/json";
+            options.body = JSON.stringify(Object.assign({ agencyCode: agencyCode }, body));
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {

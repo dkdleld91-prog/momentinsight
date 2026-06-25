@@ -5150,16 +5150,18 @@
             return { ok: false, message: "관리자 코드 확인 후 순위 추적을 사용할 수 있습니다." };
           }
           var adminCode = getAdminCode();
-          var options = { method: method, cache: "no-store" };
-          if (body) {
-            options.headers = {
-              "content-type": "application/json",
+          var options = {
+            method: method,
+            cache: "no-store",
+            headers: {
               "x-demo-admin-code": adminCode,
               "x-mi-agency-code": agencyCode
-            };
+            }
+          };
+          if (body) {
+            options.headers["content-type"] = "application/json";
             options.body = JSON.stringify(Object.assign({
               agencyCode: agencyCode,
-              accessCode: agencyCode,
               adminCode: adminCode
             }, body));
           }

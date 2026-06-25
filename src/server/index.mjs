@@ -26,7 +26,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code"
+          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code"
         })
       });
     }
@@ -46,7 +46,7 @@ export default {
           message: "데모 공개 저장 API는 비공개 상태입니다."
         }, 403, {
           methods: "POST, OPTIONS",
-          headers: "content-type, x-demo-admin-code, x-mi-agency-code"
+          headers: "content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code"
         });
       }
 

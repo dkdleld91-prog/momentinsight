@@ -131,9 +131,10 @@ function rankAccessCodes() {
     .filter(Boolean);
 }
 
-function rankAccessAuthorized(request, body = {}) {
-  const accessCode = requestAccessCode(request, body);
-  return rankAccessCodes().some((code) => safeEqual(accessCode, code));
+function rankAccessAuthorized(request, body = {}, agencyCode = "") {
+  const accessCode = canonicalAgencyCode(requestAccessCode(request, body));
+  const scopedAgencyCode = canonicalAgencyCode(agencyCode);
+  return Boolean(accessCode && scopedAgencyCode && safeEqual(accessCode, scopedAgencyCode));
 }
 
 function clampMaxRank(value) {
@@ -198,13 +199,25 @@ function addDays(date, days) {
 async function findClientId(ctx, agencyCode) {
   if (!agencyCode) return null;
   for (const code of agencyCodeScope(agencyCode)) {
-    const { data, error } = await ctx.supabaseAdmin
+    let result = await ctx.supabaseAdmin
       .from("clients")
-      .select("id")
+      .select("id, status, disconnected_at")
       .ilike("agency_code", code)
+      .eq("status", "active")
       .maybeSingle();
 
-    if (!error && data?.id) return data.id;
+    if (result.error && /disconnected_at|schema cache/i.test(result.error.message || "")) {
+      result = await ctx.supabaseAdmin
+        .from("clients")
+        .select("id, status")
+        .ilike("agency_code", code)
+        .eq("status", "active")
+        .maybeSingle();
+    }
+
+    if (!result.error && result.data?.id && result.data.status === "active" && !result.data.disconnected_at) {
+      return result.data.id;
+    }
   }
   return null;
 }
@@ -231,10 +244,8 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
   }
 
   const accessCode = canonicalAgencyCode(requestAccessCode(request, body));
-  const configuredAccessCodes = rankAccessCodes();
-  const accessAllowed = configuredAccessCodes.length
-    ? rankAccessAuthorized(request, body)
-    : isLocalRequest(request) && safeEqual(accessCode, agencyCode);
+  const accessAllowed = rankAccessAuthorized(request, body, agencyCode) ||
+    (isLocalRequest(request) && safeEqual(accessCode, agencyCode));
   if (!accessAllowed) {
     return {
       ok: false,

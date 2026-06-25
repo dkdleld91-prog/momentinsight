@@ -2975,7 +2975,8 @@
               <h3>연결된 브랜드 데이터</h3>
               <div class="mi-table">
                 <div class="mi-row"><span>광고주</span><strong data-mi-public="client">브랜드 A</strong></div>
-                <div class="mi-row"><span>대행사 코드</span><strong data-mi-public="code">mml93-a01</strong></div>
+                <div class="mi-row"><span>대행사</span><strong data-mi-public="agencyName">모먼트 인사이트 운영팀</strong></div>
+                <div class="mi-row"><span>연동 상태</span><strong data-mi-public="connectionStatus">연동 대기</strong></div>
                 <div class="mi-row"><span>현재 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
                 <div class="mi-row"><span>다음 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
               </div>
@@ -2994,8 +2995,10 @@
       var storageKey = "miAgencyPublicState:v2";
       var selectedCodeKey = "miAgencySelectedCode";
       var defaultState = {
-        code: "mml93-a01",
+        code: "",
         client: "브랜드 A",
+        agencyName: "모먼트 인사이트 운영팀",
+        connectionStatus: "연동 대기",
         sales: "4,180만원",
         roas: "581%",
         adSpend: "720만원",
@@ -3057,15 +3060,25 @@
       function readState() {
         try {
           var saved = window.localStorage.getItem(storageKey);
-          return enrichState(saved ? Object.assign({}, defaultState, normalizeLegacyState(JSON.parse(saved))) : defaultState);
+          var parsed = saved ? normalizeLegacyState(JSON.parse(saved)) : {};
+          delete parsed.code;
+          delete parsed.agencyCode;
+          return enrichState(saved ? Object.assign({}, defaultState, parsed) : defaultState);
         } catch (error) {
           return enrichState(defaultState);
         }
       }
 
+      function publicStateForStorage(state) {
+        var safeState = enrichState(normalizeLegacyState(state));
+        delete safeState.code;
+        delete safeState.agencyCode;
+        return safeState;
+      }
+
       function writeState(state) {
         try {
-          window.localStorage.setItem(storageKey, JSON.stringify(enrichState(normalizeLegacyState(state))));
+          window.localStorage.setItem(storageKey, JSON.stringify(publicStateForStorage(state)));
         } catch (error) {}
       }
 
@@ -3927,6 +3940,12 @@
           window.localStorage.removeItem(selectedCodeKey);
           window.localStorage.removeItem("miRankAccessCode");
           window.sessionStorage.removeItem("miClientAuthedCode");
+          window.sessionStorage.removeItem(selectedCodeKey);
+          window.sessionStorage.removeItem("miRankAccessCode");
+          var savedPublicState = window.localStorage.getItem(storageKey);
+          if (savedPublicState) {
+            window.localStorage.setItem(storageKey, JSON.stringify(publicStateForStorage(JSON.parse(savedPublicState))));
+          }
         } catch (error) {}
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
@@ -3964,7 +3983,7 @@
 
       function rankAgencyCode() {
         try {
-          return String(window.localStorage.getItem(selectedCodeKey) || "").trim().toLowerCase();
+          return String(window.sessionStorage.getItem(selectedCodeKey) || window.localStorage.getItem(selectedCodeKey) || "").trim().toLowerCase();
         } catch (error) {
           return "";
         }
@@ -3972,7 +3991,7 @@
 
       function rankAccessCode() {
         try {
-          return String(window.MI_RANK_ACCESS_CODE || window.localStorage.getItem("miRankAccessCode") || "").trim();
+          return String(window.MI_RANK_ACCESS_CODE || window.sessionStorage.getItem("miRankAccessCode") || window.localStorage.getItem("miRankAccessCode") || "").trim();
         } catch (error) {
           return "";
         }
@@ -4855,7 +4874,11 @@
         state = enrichState(state);
         root.querySelectorAll("[data-mi-public]").forEach(function (node) {
           var key = node.getAttribute("data-mi-public");
-          if (state[key]) node.textContent = state[key];
+          if (key === "code") {
+            node.textContent = state.connectionStatus || "연동 완료";
+          } else if (state[key]) {
+            node.textContent = state[key];
+          }
         });
 
         setText("[data-mi-action-primary]", state.primaryAction);
@@ -4974,11 +4997,13 @@
         var client = payload.client;
         state.code = normalizeCode(client.agencyCode || normalized);
         state.client = client.name || client.businessName || state.client;
+        state.agencyName = client.agencyName || client.teamName || "모먼트 인사이트 운영팀";
+        state.connectionStatus = "연동 완료";
         if (client.publicSummary) state.publicComment = client.publicSummary;
         writeState(state);
         try {
-          window.localStorage.setItem(selectedCodeKey, state.code);
-          window.localStorage.setItem("miRankAccessCode", state.code);
+          window.sessionStorage.setItem(selectedCodeKey, state.code);
+          window.sessionStorage.setItem("miRankAccessCode", state.code);
           window.sessionStorage.setItem("miClientAuthedCode", state.code);
         } catch (error) {}
         applyState(state);

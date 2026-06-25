@@ -22,13 +22,10 @@ async function readJson(request) {
 
 function clientPayload(row) {
   return {
-    id: row.id,
     name: row.name,
     businessName: row.business_name,
-    agencyCode: row.agency_code,
+    agencyName: row.agency_name || row.team_name || "모먼트 인사이트 운영팀",
     status: row.status,
-    issuedByTeamCode: row.issued_by_team_code || null,
-    disconnectedAt: row.disconnected_at || null,
     publicSummary: row.public_summary || "",
   };
 }
@@ -54,6 +51,20 @@ async function findActiveClient(ctx, code) {
   }
 
   return result;
+}
+
+async function findTeamName(ctx, teamCode) {
+  const code = normalizeAgencyCode(teamCode);
+  if (!code) return "";
+  const { data, error } = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .select("team_name")
+    .ilike("team_code", code)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (error) return "";
+  return data?.team_name || "";
 }
 
 export default {
@@ -93,6 +104,7 @@ export default {
       return json(request, { ok: false, message: "연결이 해지된 광고주 코드입니다." }, 403);
     }
 
-    return json(request, { ok: true, client: clientPayload(data) });
+    const agencyName = await findTeamName(ctx, data.issued_by_team_code);
+    return json(request, { ok: true, client: clientPayload({ ...data, agency_name: agencyName }) });
   }),
 };

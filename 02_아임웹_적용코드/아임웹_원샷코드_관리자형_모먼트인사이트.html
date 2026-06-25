@@ -3009,7 +3009,7 @@
                   <input class="mi-input" data-team-disconnect-code placeholder="해지할 운영팀 코드" aria-label="해지할 운영팀 코드" />
                   <button class="mi-button mi-button-ghost" type="button" data-team-disconnect>연결 해지</button>
                 </div>
-                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자 코드와 메인 계정 코드 mml93-a01 확인 후 운영팀/광고주 코드를 생성할 수 있습니다.</div>
+                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자는 운영팀 코드를 열고, 운영팀 코드는 광고주 1명만 연결·해지할 수 있습니다.</div>
               </div>
             </article>
 
@@ -3692,6 +3692,13 @@
         return "http://127.0.0.1:8790/api/super-admin/agency-codes";
       }
 
+      function getTeamCodeApiUrl() {
+        if (window.MI_TEAM_CODE_API_URL) return window.MI_TEAM_CODE_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/team/agency-codes";
+        return "http://127.0.0.1:8790/api/team/agency-codes";
+      }
+
       function renderOwnerCodeList(payload) {
         var list = root.querySelector("[data-owner-code-list]");
         if (!list) return;
@@ -3744,6 +3751,25 @@
         var response = await fetch(getSuperAdminApiUrl(), options);
         var payload = await response.json().catch(function () { return null; });
         if (!payload) payload = { ok: false, message: "총관리자 API 응답을 확인할 수 없습니다." };
+        if (!response.ok && payload.ok !== false) payload.ok = false;
+        return payload;
+      }
+
+      async function requestTeamCodes(method, teamCode, body) {
+        var code = String(teamCode || "").trim();
+        if (!code) return { ok: false, message: "운영팀 코드를 입력해주세요." };
+        var options = {
+          method: method,
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-mi-team-code": code
+          },
+          body: JSON.stringify(Object.assign({ teamCode: code }, body || {}))
+        };
+        var response = await fetch(getTeamCodeApiUrl(), options);
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) payload = { ok: false, message: "운영팀 API 응답을 확인할 수 없습니다." };
         if (!response.ok && payload.ok !== false) payload.ok = false;
         return payload;
       }
@@ -4224,9 +4250,8 @@
           teamClientButton.disabled = true;
           setStatus(ownerStatus, "운영팀 광고주 코드를 생성 중입니다.", "");
           try {
-            var payload = await requestOwnerCodes("POST", {
+            var payload = await requestTeamCodes("POST", teamCode, {
               action: "create-client-for-team",
-              teamCode: teamCode,
               clientName: clientName,
               businessName: clientName,
               agencyCode: agencyCode
@@ -4260,9 +4285,8 @@
           teamDisconnectButton.disabled = true;
           setStatus(ownerStatus, "운영팀 연결을 해지 중입니다.", "");
           try {
-            var payload = await requestOwnerCodes("POST", {
+            var payload = await requestTeamCodes("POST", teamCode, {
               action: "disconnect-team-client",
-              teamCode: teamCode
             });
             if (!payload.ok) throw new Error(payload.message || "운영팀 연결 해지에 실패했습니다.");
             setStatus(ownerStatus, payload.message || "연결 해지 완료", "is-ok");

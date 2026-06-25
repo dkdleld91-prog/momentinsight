@@ -4,7 +4,7 @@ import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
-    headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code",
+    headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code",
   });
 }
 
@@ -36,9 +36,31 @@ function requestOwnerAgencyCode(request, body = {}) {
   );
 }
 
+function requestTeamCode(request, body = {}) {
+  return normalizeAgencyCode(
+    request.headers.get("x-mi-team-code") ||
+      body.teamCode ||
+      body.team_code ||
+      ""
+  );
+}
+
 function superAdminAuthorized(request, body = {}) {
   const configured = process.env.MI_SUPER_ADMIN_CODE || "";
   return Boolean(configured) && safeEqual(requestSuperAdminCode(request, body), configured);
+}
+
+function ownerActionAuthorized(request, body = {}) {
+  if (!process.env.MI_SUPER_ADMIN_CODE) {
+    return { ok: false, status: 503, message: "총관리자 코드 환경변수 MI_SUPER_ADMIN_CODE가 필요합니다." };
+  }
+  if (!superAdminAuthorized(request, body)) {
+    return { ok: false, status: 401, message: "총관리자 코드가 일치하지 않습니다." };
+  }
+  if (!ownerAgencyAuthorized(request, body)) {
+    return { ok: false, status: 403, message: `메인 계정 코드 ${primaryAgencyCode()}에서만 운영팀 코드를 발급할 수 있습니다.` };
+  }
+  return { ok: true };
 }
 
 function ownerAgencyAuthorized(request, body = {}) {
@@ -254,7 +276,7 @@ async function createTeam(request, ctx, body) {
 }
 
 async function createClientForTeam(request, ctx, body) {
-  const teamCode = normalizeAgencyCode(body.teamCode || body.team_code);
+  const teamCode = requestTeamCode(request, body);
   const name = String(body.clientName || body.client_name || body.name || "").trim();
   const businessName = String(body.businessName || body.business_name || name).trim();
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
@@ -328,7 +350,7 @@ async function createClientForTeam(request, ctx, body) {
 }
 
 async function disconnectTeamClient(request, ctx, body) {
-  const teamCode = normalizeAgencyCode(body.teamCode || body.team_code);
+  const teamCode = requestTeamCode(request, body);
   if (!teamCode) return json(request, { ok: false, message: "운영팀 코드를 입력해주세요." }, 400);
 
   const teamResult = await ctx.supabaseAdmin
@@ -372,34 +394,35 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, OPTIONS",
-          headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code",
+          headers: "content-type, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code",
         }),
       });
     }
 
     const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
-    if (!process.env.MI_SUPER_ADMIN_CODE) {
-      return json(request, { ok: false, message: "총관리자 코드 환경변수 MI_SUPER_ADMIN_CODE가 필요합니다." }, 503);
-    }
-    if (!superAdminAuthorized(request, body)) {
-      return json(request, { ok: false, message: "총관리자 코드가 일치하지 않습니다." }, 401);
-    }
-    if (!ownerAgencyAuthorized(request, body)) {
-      return json(request, { ok: false, message: `메인 계정 코드 ${primaryAgencyCode()}에서만 광고주 코드를 발급할 수 있습니다.` }, 403);
-    }
 
     const url = new URL(request.url);
-    if (url.pathname !== "/api/super-admin/agency-codes") {
+    const isOwnerPath = url.pathname === "/api/super-admin/agency-codes";
+    const isTeamPath = url.pathname === "/api/team/agency-codes";
+    if (!isOwnerPath && !isTeamPath) {
       return json(request, { ok: false, message: "Not found" }, 404);
     }
 
-    if (request.method === "GET") return listClients(request, ctx);
+    if (request.method === "GET") {
+      const ownerAuth = ownerActionAuthorized(request, body);
+      if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
+      return listClients(request, ctx);
+    }
     if (request.method === "POST") {
       const action = String(body.action || "create-team").trim();
-      if (action === "create-team") return createTeam(request, ctx, body);
+      if (action === "create-team" || action === "create-client") {
+        const ownerAuth = ownerActionAuthorized(request, body);
+        if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
+        if (action === "create-team") return createTeam(request, ctx, body);
+        return createClient(request, ctx, body);
+      }
       if (action === "create-client-for-team") return createClientForTeam(request, ctx, body);
       if (action === "disconnect-team-client") return disconnectTeamClient(request, ctx, body);
-      if (action === "create-client") return createClient(request, ctx, body);
       return json(request, { ok: false, message: "지원하지 않는 코드 작업입니다." }, 400);
     }
     return json(request, { ok: false, message: "Method not allowed" }, 405);

@@ -28,7 +28,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code"
+          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code"
         })
       });
     }
@@ -60,6 +60,10 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/super-admin/")) {
+      return superAdminApi.fetch(request);
+    }
+
+    if (url.pathname.startsWith("/api/team/")) {
       return superAdminApi.fetch(request);
     }
 

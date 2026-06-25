@@ -282,6 +282,44 @@
       margin-top: 30px;
     }
 
+    #mi-home .mi-route-cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    #mi-home .mi-route-card {
+      display: block;
+      min-width: 0;
+      padding: 16px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.78);
+      box-shadow: 0 10px 26px rgba(16, 24, 40, 0.05);
+    }
+
+    #mi-home .mi-route-card:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 14px 32px rgba(16, 24, 40, 0.1);
+    }
+
+    #mi-home .mi-route-card strong {
+      display: block;
+      color: var(--mi-navy);
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    #mi-home .mi-route-card span {
+      display: block;
+      margin-top: 7px;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
     #mi-home .mi-proof-row {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -642,6 +680,7 @@
       }
 
       #mi-home .mi-proof-row,
+      #mi-home .mi-route-cards,
       #mi-home .mi-grid-3,
       #mi-home .mi-grid-4,
       #mi-home .mi-metrics {
@@ -655,6 +694,15 @@
       #mi-home .mi-inline-actions,
       #mi-home .mi-actions {
         align-items: stretch;
+      }
+
+      #mi-home .mi-topbar-inner {
+        flex-wrap: wrap;
+        padding: 10px 0;
+      }
+
+      #mi-home .mi-actions {
+        width: 100%;
       }
     }
 
@@ -692,6 +740,16 @@
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client#mi-dashboard">성과 대시보드 보기</a>
             <a class="mi-button secondary" href="#mi-home-flow">운영 흐름 보기</a>
+          </div>
+          <div class="mi-route-cards" aria-label="빠른 시작 경로">
+            <a class="mi-route-card" href="/client#mi-dashboard">
+              <strong>광고주 화면</strong>
+              <span>성과, 일정, 공개 코멘트만 간단히 확인합니다.</span>
+            </a>
+            <a class="mi-route-card" href="/admin">
+              <strong>운영팀 콘솔</strong>
+              <span>데이터 입력, 보고서 전달, 공개 관리를 처리합니다.</span>
+            </a>
           </div>
           <div class="mi-proof-row" aria-label="핵심 장점">
             <div class="mi-proof"><strong>요약</strong><span>핵심 성과를 먼저 확인</span></div>

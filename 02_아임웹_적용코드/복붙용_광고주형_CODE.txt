@@ -168,13 +168,29 @@
       font-size: 13px;
     }
 
+    #mi-clean .mi-code-status {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      border: 1px solid #e4e9f1;
+      border-radius: 8px;
+      padding: 9px 11px;
+      background: #f8fafc;
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
     #mi-clean .mi-code-status.is-ok {
       color: var(--mi-green);
+      border-color: rgba(6, 118, 71, 0.22);
+      background: #effaf4;
       font-weight: 900;
     }
 
     #mi-clean .mi-code-status.is-warn {
       color: var(--mi-orange);
+      border-color: rgba(181, 71, 8, 0.2);
+      background: #fff7ed;
       font-weight: 900;
     }
 
@@ -2371,9 +2387,9 @@
         <h2>대행사 코드 접속</h2>
         <p>담당자에게 받은 접속 코드를 입력하세요.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-mi-login-code value="mml-a01" aria-label="대행사 코드" />
+          <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button>광고주 대시보드 보기</button>
-          <div class="mi-code-status" data-mi-login-status>관리자에게 받은 대행사 코드를 입력하세요.</div>
+          <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.</div>
         </div>
       </aside>
     </div>
@@ -2630,7 +2646,7 @@
               <input class="mi-input" data-mi-keyword-input aria-label="키워드 입력" placeholder="키워드 1개 입력" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status>키워드는 1개만 조회합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드 1개를 입력하고 조회를 누르면 검색량과 비율 데이터를 확인합니다.</p>
           </article>
 
           <article class="mi-card mi-keyword-market" data-keyword-market>
@@ -2710,7 +2726,7 @@
                   <g data-keyword-hover></g>
                   <g data-keyword-points></g>
                 </svg>
-                <div class="mi-chart-empty" data-keyword-chart-empty>키워드를 조회하면 실제 데이터로 표시됩니다.</div>
+                <div class="mi-chart-empty" data-keyword-chart-empty>키워드 1개를 입력하고 조회를 누르면 월별 검색량 추이가 표시됩니다.</div>
                 <div class="mi-chart-tooltip" data-keyword-tooltip hidden></div>
                 <div class="mi-months" data-keyword-months>
                   <span style="left:4.167%;">07월</span><span style="left:12.500%;">08월</span><span style="left:20.833%;">09월</span><span style="left:29.167%;">10월</span><span style="left:37.500%;">11월</span><span style="left:45.833%;">12월</span>
@@ -2797,11 +2813,11 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
                 <h3>활성 추적</h3>
-                <div class="mi-rank-state">등록된 추적 항목을 불러오는 중입니다.</div>
+                <div class="mi-rank-state">등록된 오가닉 순위 추적 항목을 불러오는 중입니다.</div>
               </div>
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 오가닉 순위</h3>
@@ -2839,7 +2855,7 @@
               <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status>키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -2949,10 +2965,10 @@
               <h2>코드 연결</h2>
               <p>담당자에게 받은 접속 코드를 입력하면 브랜드 데이터가 연결됩니다.</p>
               <div class="mi-form-row">
-                <input class="mi-input" data-mi-connect-code value="mml-a01" aria-label="대행사 코드 연결" />
+                <input class="mi-input" data-mi-connect-code placeholder="대행사 코드 입력" aria-label="대행사 코드 연결" />
                 <button class="mi-button" type="button" data-mi-connect-button>연결 확인</button>
               </div>
-              <p class="mi-code-status" style="margin-top:10px;" data-mi-connect-status>코드 연결 전입니다.</p>
+              <p class="mi-code-status" style="margin-top:10px;" data-mi-connect-status aria-live="polite">코드 연결 전입니다.</p>
             </article>
 
             <aside class="mi-card mi-card-pad">
@@ -3092,8 +3108,6 @@
           var nextState = await fetchDemoState();
           writeState(nextState);
           applyState(nextState);
-          if (loginCode) loginCode.value = nextState.code;
-          if (connectCode) connectCode.value = nextState.code;
           setStatus(statusNode, "브랜드 데이터 동기화 완료: " + nextState.client, "is-ok");
           return nextState;
         } catch (error) {
@@ -5111,8 +5125,6 @@
 
       var state = readState();
       applyState(state);
-      if (loginCode) loginCode.value = state.code;
-      if (connectCode) connectCode.value = state.code;
       restoreAuth(state);
 
       var initial = (window.location.hash || "").replace("#mi-", "");

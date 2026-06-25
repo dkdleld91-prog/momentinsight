@@ -394,6 +394,14 @@
       font-weight: 800;
     }
 
+    #mi-admin .mi-task-action {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     #mi-admin .mi-priority {
       display: inline-flex;
       min-height: 28px;
@@ -2446,13 +2454,29 @@
       font-size: 13px;
     }
 
+    #mi-admin .mi-code-status {
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      border: 1px solid #e4e9f1;
+      border-radius: 8px;
+      padding: 9px 11px;
+      background: #f8fafc;
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
     #mi-admin .mi-code-status.is-ok {
       color: var(--mi-green);
+      border-color: rgba(6, 118, 71, 0.22);
+      background: #effaf4;
       font-weight: 900;
     }
 
     #mi-admin .mi-code-status.is-warn {
       color: var(--mi-orange);
+      border-color: rgba(181, 71, 8, 0.2);
+      background: #fff7ed;
       font-weight: 900;
     }
 
@@ -2672,9 +2696,9 @@
         <h2>관리자 코드 접속</h2>
         <p>관리자 계정으로만 접근할 수 있습니다.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" value="mml-a01" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
+          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
           <button class="mi-button" type="button" data-admin-login-button>관리자 콘솔 열기</button>
-          <div class="mi-code-status" data-admin-login-status>관리자 전용 화면입니다.</div>
+          <div class="mi-code-status" data-admin-login-status aria-live="polite">관리자 전용 화면입니다.</div>
         </div>
       </aside>
     </div>
@@ -2759,9 +2783,9 @@
                 <span class="mi-badge warn">Action</span>
               </div>
               <div class="mi-task-list">
-                <div class="mi-task"><div><strong>브랜드 A 입력값 확인</strong><span>네이버 클릭수와 쿠팡 전환수 누락 · 공개 전 필수</span></div><b class="mi-priority">높음</b></div>
-                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>PDF/CSV 확인 · 내부 메모 제거 후 전달</span></div><b class="mi-priority">오늘</b></div>
-                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트와 내부 판단 분리 확인</span></div><b class="mi-priority ok">검수</b></div>
+                <div class="mi-task"><div><strong>브랜드 A 입력값 확인</strong><span>네이버 클릭수와 쿠팡 전환수 누락 · 공개 전 필수</span></div><div class="mi-task-action"><b class="mi-priority">높음</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
+                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>PDF/CSV 확인 · 내부 메모 제거 후 전달</span></div><div class="mi-task-action"><b class="mi-priority">오늘</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
+                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트와 내부 판단 분리 확인</span></div><div class="mi-task-action"><b class="mi-priority ok">검수</b><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리</a></div></div>
               </div>
             </article>
 
@@ -2984,7 +3008,7 @@
                 <textarea class="mi-textarea" data-admin-channels placeholder="채널명,요약,매출,ROAS"></textarea>
                 <textarea class="mi-textarea" data-admin-schedules placeholder="날짜,제목,상세,상태"></textarea>
                 <button class="mi-button" type="button" data-admin-code-save>대행사 코드 저장</button>
-                <div class="mi-code-status" data-admin-code-status>저장 전입니다.</div>
+                <div class="mi-code-status" data-admin-code-status aria-live="polite">저장 전입니다.</div>
               </div>
             </article>
 
@@ -3068,7 +3092,7 @@
                   <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 상태 확인</button>
                   <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료 데이터 공개 반영</button>
                 </div>
-                <div class="mi-code-status" data-admin-sheet-status>입력값 확인 전입니다. 상태 확인을 먼저 눌러주세요.</div>
+                <div class="mi-code-status" data-admin-sheet-status aria-live="polite">입력값 확인 전입니다. 상태 확인을 먼저 눌러주세요.</div>
               </div>
 
               <div class="mi-step-flow">
@@ -3205,7 +3229,7 @@
                 <button class="mi-button" type="button" data-admin-keyword-search>키워드 조회</button>
               </div>
               <div class="mi-note">월 검색량, 시장 참고 지표, 연관 키워드를 한 키워드 기준으로 확인합니다.</div>
-              <div class="mi-code-status" style="margin-top:10px;" data-admin-keyword-status>키워드는 1개만 조회합니다.</div>
+              <div class="mi-code-status" style="margin-top:10px;" data-admin-keyword-status aria-live="polite">키워드는 1개만 조회합니다.</div>
             </div>
           </article>
 
@@ -3368,7 +3392,7 @@
               <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status>키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -3458,7 +3482,7 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status>상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
                 <h3>활성 추적</h3>
@@ -3530,7 +3554,7 @@
               <h2>광고주 공개 코멘트</h2>
               <textarea class="mi-textarea" data-admin-public-comment>다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</textarea>
               <button class="mi-button" type="button" style="margin-top:10px;" data-admin-public-save>공개 코멘트 저장</button>
-              <div class="mi-code-status" style="margin-top:10px;" data-admin-public-status>저장 전입니다.</div>
+              <div class="mi-code-status" style="margin-top:10px;" data-admin-public-status aria-live="polite">저장 전입니다.</div>
             </aside>
           </div>
         </section>
@@ -3985,7 +4009,7 @@
             return;
           }
           if (!isValidAdminCode(getAdminCode())) {
-            setStatus(loginStatus, "관리자 코드가 일치하지 않습니다. mml-a01 코드를 입력해주세요.", "is-warn");
+            setStatus(loginStatus, "관리자 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
             return;
           }
           root.classList.remove("is-locked");

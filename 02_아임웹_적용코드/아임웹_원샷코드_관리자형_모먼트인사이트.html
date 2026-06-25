@@ -2431,6 +2431,87 @@
       gap: 10px;
     }
 
+    #mi-admin .mi-form-row.mi-form-row-3 {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    }
+
+    #mi-admin .mi-owner-tools,
+    #mi-admin .mi-owner-tool {
+      display: grid;
+      gap: 12px;
+    }
+
+    #mi-admin .mi-owner-tool {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-owner-tool h3 {
+      margin: 0;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-account-list {
+      max-height: 520px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    #mi-admin .mi-row.mi-account-row {
+      align-items: flex-start;
+    }
+
+    #mi-admin .mi-row-main {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-row-main strong,
+    #mi-admin .mi-row-main small {
+      text-align: left;
+    }
+
+    #mi-admin .mi-row-main small {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-row-action {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex: 0 0 auto;
+    }
+
+    #mi-admin .mi-status-pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: var(--mi-green);
+      background: #edf8f2;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-button.mi-button-small {
+      min-height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-button.mi-button-danger {
+      background: #9f1239;
+    }
+
     #mi-admin .mi-button {
       min-height: 44px;
       border: 0;
@@ -2549,6 +2630,7 @@
       #mi-admin .mi-score-row,
       #mi-admin .mi-readiness-grid,
       #mi-admin .mi-form-row,
+      #mi-admin .mi-form-row.mi-form-row-3,
       #mi-admin .mi-head,
       #mi-admin .mi-card-head,
       #mi-admin .mi-hero,
@@ -2984,38 +3066,49 @@
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>운영팀 코드 발급</h2>
-                  <p>메인 계정 mml93-a01에서 운영팀 코드를 만들고, 운영팀은 광고주 1명만 연결합니다.</p>
+                  <h2>운영팀·광고주 코드 바로 생성</h2>
+                  <p>mml93-a01로 접속한 운영자만 코드를 만들고, 활성 계정 권한을 해제할 수 있습니다.</p>
                 </div>
                 <span class="mi-badge">Owner</span>
               </div>
-              <div class="mi-tool">
-                <div class="mi-form-row">
-                  <input class="mi-input" data-owner-secret-code placeholder="총관리자 코드" aria-label="총관리자 코드" />
-                  <input class="mi-input" data-owner-root-code value="mml93-a01" placeholder="메인 계정 코드" aria-label="메인 계정 코드" />
+              <div class="mi-owner-tools">
+                <div class="mi-owner-tool">
+                  <h3>권한 코드</h3>
+                  <div class="mi-form-row">
+                    <input class="mi-input" data-owner-secret-code type="password" autocomplete="off" placeholder="권한 코드 입력" aria-label="권한 코드" />
+                    <input class="mi-input" data-owner-root-code value="mml93-a01" readonly aria-label="메인 운영자 코드" />
+                  </div>
                 </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-owner-team-name placeholder="운영팀명" aria-label="운영팀명" />
-                  <input class="mi-input" data-owner-team-code placeholder="운영팀 코드 예: mml93-t01" aria-label="운영팀 코드" />
-                  <button class="mi-button" type="button" data-owner-team-create>운영팀 코드 생성</button>
+                <div class="mi-owner-tool">
+                  <h3>운영팀 코드 생성</h3>
+                  <div class="mi-form-row mi-form-row-3">
+                    <input class="mi-input" data-owner-team-code placeholder="운영팀 코드 예: mml93-t01" aria-label="운영팀 코드" />
+                    <input class="mi-input" data-owner-team-name placeholder="운영팀명 선택 입력" aria-label="운영팀명" />
+                    <button class="mi-button" type="button" data-owner-team-create>운영팀 바로 생성</button>
+                  </div>
                 </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-team-code-for-client placeholder="운영팀 코드" aria-label="광고주 발급용 운영팀 코드" />
-                  <input class="mi-input" data-team-client-name placeholder="광고주명" aria-label="광고주명" />
-                  <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 예: mml93-a02" aria-label="광고주 코드" />
-                  <button class="mi-button" type="button" data-team-client-create>광고주 코드 생성</button>
+                <div class="mi-owner-tool">
+                  <h3>광고주 코드 생성</h3>
+                  <div class="mi-form-row mi-form-row-3">
+                    <input class="mi-input" data-team-code-for-client placeholder="운영팀 코드" aria-label="광고주 발급용 운영팀 코드" />
+                    <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 예: mml93-a02" aria-label="광고주 코드" />
+                    <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
+                    <button class="mi-button" type="button" data-team-client-create>광고주 바로 생성</button>
+                  </div>
                 </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-team-disconnect-code placeholder="해지할 운영팀 코드" aria-label="해지할 운영팀 코드" />
-                  <button class="mi-button mi-button-ghost" type="button" data-team-disconnect>연결 해지</button>
-                </div>
-                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자는 운영팀 코드를 열고, 운영팀 코드는 광고주 1명만 연결·해지할 수 있습니다.</div>
+                <div class="mi-code-status" data-owner-code-status aria-live="polite">운영팀 코드를 만들고, 그 운영팀 코드로 광고주 코드를 1개 연결합니다.</div>
               </div>
             </article>
 
             <aside class="mi-card mi-card-pad">
-              <h3>발급 코드 현황</h3>
-              <div class="mi-table" data-owner-code-list>
+              <div class="mi-card-head">
+                <div>
+                  <h3>활성 계정</h3>
+                  <p>mml93-a01 권한 코드에서만 조회와 권한 해제가 가능합니다.</p>
+                </div>
+                <button class="mi-button is-ghost mi-button-small" type="button" data-owner-code-refresh>새로고침</button>
+              </div>
+              <div class="mi-table mi-account-list" data-owner-code-list>
                 <div class="mi-row"><span>현재 운영 코드</span><strong>mml93-a01</strong></div>
                 <div class="mi-row"><span>제한</span><strong>광고주 코드당 순위추적 50개</strong></div>
               </div>
@@ -3699,46 +3792,116 @@
         return "http://127.0.0.1:8790/api/team/agency-codes";
       }
 
+      function miFetch(url, options) {
+        options = options || {};
+        if (typeof window.fetch === "function") return window.fetch(url, options);
+        if (typeof window.XMLHttpRequest !== "function") return Promise.reject(new Error("현재 브라우저에서 API 요청을 사용할 수 없습니다."));
+        return new Promise(function (resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open(options.method || "GET", url, true);
+          var headers = options.headers || {};
+          Object.keys(headers).forEach(function (key) {
+            if (headers[key] !== undefined && headers[key] !== null) xhr.setRequestHeader(key, headers[key]);
+          });
+          xhr.onload = function () {
+            var body = xhr.responseText || "";
+            resolve({
+              ok: xhr.status >= 200 && xhr.status < 300,
+              status: xhr.status,
+              headers: { get: function (name) { return xhr.getResponseHeader(name); } },
+              text: function () { return Promise.resolve(body); },
+              json: function () {
+                try {
+                  return Promise.resolve(body ? JSON.parse(body) : null);
+                } catch (error) {
+                  return Promise.reject(error);
+                }
+              }
+            });
+          };
+          xhr.onerror = function () { reject(new Error("API 요청에 실패했습니다.")); };
+          xhr.ontimeout = function () { reject(new Error("API 요청 시간이 초과되었습니다.")); };
+          xhr.send(options.body || null);
+        });
+      }
+
+      async function readApiPayload(response, fallbackMessage) {
+        var text = await response.text().catch(function () { return ""; });
+        var payload = null;
+        try {
+          payload = text ? JSON.parse(text) : null;
+        } catch (error) {
+          var preview = text ? String(text).replace(/\s+/g, " ").slice(0, 90) : "응답 없음";
+          return {
+            ok: false,
+            message: fallbackMessage + " HTTP " + response.status + " / JSON 아님: " + preview
+          };
+        }
+        if (!payload) payload = { ok: false, message: fallbackMessage + " HTTP " + response.status };
+        if (!response.ok && payload.ok !== false) payload.ok = false;
+        return payload;
+      }
+
       function renderOwnerCodeList(payload) {
         var list = root.querySelector("[data-owner-code-list]");
         if (!list) return;
         var clients = payload && payload.clients ? payload.clients : [];
         var teams = payload && payload.teams ? payload.teams : [];
         var ownerCode = payload && payload.ownerAgencyCode ? payload.ownerAgencyCode : "mml93-a01";
-        if (!clients.length && !teams.length) {
-          list.innerHTML = '<div class="mi-row"><span>메인 계정</span><strong>' + escapeHtml(ownerCode) + '</strong></div>' +
-            '<div class="mi-row"><span>운영팀/광고주</span><strong>아직 조회된 코드가 없습니다</strong></div>';
-          return;
+        var activeTeams = teams.filter(function (team) { return team.status === "active"; });
+        var activeClients = clients.filter(function (client) { return client.status === "active"; });
+        var rows = [];
+
+        rows.push('<div class="mi-row"><span>메인 운영자</span><strong>' + escapeHtml(ownerCode) + '</strong></div>');
+        if (payload && payload.schemaPending) {
+          rows.push('<div class="mi-row"><span>DB 상태</span><strong>운영팀 마이그레이션 적용 필요</strong></div>');
         }
-        var teamHtml = teams.map(function (team) {
+
+        activeTeams.forEach(function (team) {
           var client = team.client || null;
-          var label = (team.teamName || "운영팀") + " · " + (team.teamCode || "-");
-          var value = client ? ((client.name || "광고주") + " / " + (client.agencyCode || "-")) : "광고주 미연결";
-          return '<div class="mi-row"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>';
-        }).join("");
-        var clientHtml = clients.filter(function (client) {
-          return !client.issuedByTeamCode;
-        }).map(function (client) {
-          return '<div class="mi-row"><span>직접 발급 · ' + escapeHtml(client.name || "광고주") + '</span><strong>' +
-            escapeHtml(client.agencyCode || "-") + '</strong></div>';
-        }).join("");
-        var schemaHtml = payload && payload.schemaPending
-          ? '<div class="mi-row"><span>DB 상태</span><strong>운영팀 마이그레이션 적용 필요</strong></div>'
-          : "";
-        list.innerHTML = '<div class="mi-row"><span>메인 계정</span><strong>' + escapeHtml(ownerCode) + '</strong></div>' +
-          schemaHtml +
-          teamHtml + clientHtml +
-          '<div class="mi-row"><span>다음 운영팀 코드</span><strong>' + escapeHtml(payload.nextTeamCode || "mml93-t01") + '</strong></div>' +
-          '<div class="mi-row"><span>다음 광고주 코드</span><strong>' + escapeHtml(payload.nextAgencyCode || "mml93-a02") + '</strong></div>';
+          var clientText = client ? ((client.name || "광고주") + " · " + (client.agencyCode || "-")) : "광고주 미연결";
+          rows.push('<div class="mi-row mi-account-row"><div class="mi-row-main"><span>운영팀</span><strong>' +
+            escapeHtml(team.teamName || "운영팀") + ' · ' + escapeHtml(team.teamCode || "-") +
+            '</strong><small>' + escapeHtml(clientText) + '</small></div><div class="mi-row-action"><span class="mi-status-pill">활성</span><button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
+            escapeHtml(team.teamCode || "") + '">권한 해제</button></div></div>');
+        });
+
+        activeClients.forEach(function (client) {
+          var isOwnerClient = String(client.agencyCode || "").toLowerCase() === String(ownerCode || "").toLowerCase();
+          var issued = client.issuedByTeamCode ? "운영팀 " + client.issuedByTeamCode + " 연결" : "직접 발급";
+          var action = isOwnerClient
+            ? '<span class="mi-status-pill">보호</span>'
+            : '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-client="' + escapeHtml(client.agencyCode || "") + '">권한 해제</button>';
+          rows.push('<div class="mi-row mi-account-row"><div class="mi-row-main"><span>광고주</span><strong>' +
+            escapeHtml(client.name || client.businessName || "광고주") + ' · ' + escapeHtml(client.agencyCode || "-") +
+            '</strong><small>' + escapeHtml(issued) + '</small></div><div class="mi-row-action"><span class="mi-status-pill">활성</span>' + action + '</div></div>');
+        });
+
+        if (!activeTeams.length && !activeClients.length) {
+          rows.push('<div class="mi-row"><span>활성 계정</span><strong>아직 조회된 계정이 없습니다</strong></div>');
+        }
+
+        rows.push('<div class="mi-row"><span>다음 운영팀 코드</span><strong>' + escapeHtml(payload && payload.nextTeamCode ? payload.nextTeamCode : "mml93-t01") + '</strong></div>');
+        rows.push('<div class="mi-row"><span>다음 광고주 코드</span><strong>' + escapeHtml(payload && payload.nextAgencyCode ? payload.nextAgencyCode : "mml93-a02") + '</strong></div>');
+        list.innerHTML = rows.join("");
       }
 
       async function requestOwnerCodes(method, body) {
         var secretInput = root.querySelector("[data-owner-secret-code]");
         var rootCodeInput = root.querySelector("[data-owner-root-code]");
+        var loginCode = getAdminCode();
         var secretCode = secretInput ? String(secretInput.value || "").trim() : "";
         var rootCode = rootCodeInput ? String(rootCodeInput.value || "").trim() : "";
-        if (!secretCode) return { ok: false, message: "총관리자 코드를 입력해주세요." };
-        if (rootCode.toLowerCase() !== "mml93-a01") return { ok: false, message: "메인 계정 코드는 mml93-a01만 사용할 수 있습니다." };
+        if (!secretCode && loginCode) {
+          secretCode = loginCode;
+          if (secretInput) secretInput.value = loginCode;
+        }
+        if (!rootCode) {
+          rootCode = "mml93-a01";
+          if (rootCodeInput) rootCodeInput.value = rootCode;
+        }
+        if (!secretCode) return { ok: false, message: "권한 코드를 입력해주세요." };
+        if (rootCode.toLowerCase() !== "mml93-a01") return { ok: false, message: "메인 운영자 코드는 mml93-a01만 사용할 수 있습니다." };
         var options = {
           method: method,
           cache: "no-store",
@@ -3748,11 +3911,8 @@
           options.headers["content-type"] = "application/json";
           options.body = JSON.stringify(Object.assign({ superAdminCode: secretCode, ownerAgencyCode: rootCode }, body));
         }
-        var response = await fetch(getSuperAdminApiUrl(), options);
-        var payload = await response.json().catch(function () { return null; });
-        if (!payload) payload = { ok: false, message: "총관리자 API 응답을 확인할 수 없습니다." };
-        if (!response.ok && payload.ok !== false) payload.ok = false;
-        return payload;
+        var response = await miFetch(getSuperAdminApiUrl(), options);
+        return readApiPayload(response, "총관리자 API 응답을 확인할 수 없습니다.");
       }
 
       async function requestTeamCodes(method, teamCode, body) {
@@ -3767,11 +3927,8 @@
           },
           body: JSON.stringify(Object.assign({ teamCode: code }, body || {}))
         };
-        var response = await fetch(getTeamCodeApiUrl(), options);
-        var payload = await response.json().catch(function () { return null; });
-        if (!payload) payload = { ok: false, message: "운영팀 API 응답을 확인할 수 없습니다." };
-        if (!response.ok && payload.ok !== false) payload.ok = false;
-        return payload;
+        var response = await miFetch(getTeamCodeApiUrl(), options);
+        return readApiPayload(response, "운영팀 API 응답을 확인할 수 없습니다.");
       }
 
       async function persistDemoState(state, statusNode, okMessage) {
@@ -4154,8 +4311,10 @@
           try {
             window.sessionStorage.setItem("miAdminAuthedCode", getAdminCode());
           } catch (error) {}
+          syncOwnerAccessFields();
           setStatus(loginStatus, "관리자 콘솔이 열렸습니다.", "is-ok");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
+          loadOwnerCodes(true);
         });
       }
 
@@ -4197,18 +4356,52 @@
         if (next) setScreen(next, false);
       });
 
+      function syncOwnerAccessFields() {
+        var loginCode = getAdminCode();
+        var secretInput = root.querySelector("[data-owner-secret-code]");
+        var rootCodeInput = root.querySelector("[data-owner-root-code]");
+        if (rootCodeInput) rootCodeInput.value = "mml93-a01";
+        if (secretInput && !String(secretInput.value || "").trim() && loginCode.toLowerCase() === "mml93-a01") {
+          secretInput.value = loginCode;
+        }
+      }
+
+      function canManageOwnerCodes() {
+        return getAdminCode().toLowerCase() === "mml93-a01";
+      }
+
+      async function loadOwnerCodes(silent) {
+        syncOwnerAccessFields();
+        if (!canManageOwnerCodes()) {
+          if (!silent) setStatus(ownerStatus, "활성 계정 조회는 mml93-a01 운영자 코드에서만 가능합니다.", "is-warn");
+          return false;
+        }
+        if (!silent) setStatus(ownerStatus, "활성 계정을 조회 중입니다.", "");
+        try {
+          var payload = await requestOwnerCodes("GET");
+          if (!payload.ok) throw new Error(payload.message || "활성 계정 조회에 실패했습니다.");
+          renderOwnerCodeList(payload);
+          if (!silent) setStatus(ownerStatus, "활성 계정 목록을 불러왔습니다.", "is-ok");
+          return true;
+        } catch (error) {
+          if (!silent) setStatus(ownerStatus, error.message || "활성 계정 조회에 실패했습니다.", "is-warn");
+          return false;
+        }
+      }
+
       var ownerCreateButton = root.querySelector("[data-owner-team-create]");
       var ownerStatus = root.querySelector("[data-owner-code-status]");
       if (ownerCreateButton) {
         ownerCreateButton.addEventListener("click", async function () {
           var nameInput = root.querySelector("[data-owner-team-name]");
           var codeInput = root.querySelector("[data-owner-team-code]");
-          var teamName = nameInput ? String(nameInput.value || "").trim() : "";
           var teamCode = codeInput ? String(codeInput.value || "").trim() : "";
-          if (!teamName) {
-            setStatus(ownerStatus, "운영팀명을 입력해주세요.", "is-warn");
+          var teamName = nameInput ? String(nameInput.value || "").trim() : "";
+          if (!teamCode) {
+            setStatus(ownerStatus, "생성할 운영팀 코드를 입력해주세요.", "is-warn");
             return;
           }
+          if (!teamName) teamName = teamCode;
           ownerCreateButton.disabled = true;
           setStatus(ownerStatus, "운영팀 코드를 생성 중입니다.", "");
           try {
@@ -4221,8 +4414,7 @@
             setStatus(ownerStatus, "운영팀 생성 완료: " + payload.team.teamCode, "is-ok");
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
-            var listPayload = await requestOwnerCodes("GET");
-            if (listPayload.ok) renderOwnerCodeList(listPayload);
+            await loadOwnerCodes(true);
           } catch (error) {
             setStatus(ownerStatus, error.message || "운영팀 코드 생성에 실패했습니다.", "is-warn");
           }
@@ -4237,18 +4429,19 @@
           var nameInput = root.querySelector("[data-team-client-name]");
           var codeInput = root.querySelector("[data-team-client-agency-code]");
           var teamCode = teamInput ? String(teamInput.value || "").trim() : "";
-          var clientName = nameInput ? String(nameInput.value || "").trim() : "";
           var agencyCode = codeInput ? String(codeInput.value || "").trim() : "";
+          var clientName = nameInput ? String(nameInput.value || "").trim() : "";
           if (!teamCode) {
-            setStatus(ownerStatus, "운영팀 코드를 입력해주세요.", "is-warn");
+            setStatus(ownerStatus, "광고주를 연결할 운영팀 코드를 입력해주세요.", "is-warn");
             return;
           }
-          if (!clientName) {
-            setStatus(ownerStatus, "광고주명을 입력해주세요.", "is-warn");
+          if (!agencyCode) {
+            setStatus(ownerStatus, "생성할 광고주 코드를 입력해주세요.", "is-warn");
             return;
           }
+          if (!clientName) clientName = agencyCode;
           teamClientButton.disabled = true;
-          setStatus(ownerStatus, "운영팀 광고주 코드를 생성 중입니다.", "");
+          setStatus(ownerStatus, "광고주 코드를 생성 중입니다.", "");
           try {
             var payload = await requestTeamCodes("POST", teamCode, {
               action: "create-client-for-team",
@@ -4260,8 +4453,7 @@
             setStatus(ownerStatus, "광고주 생성 완료: " + payload.client.agencyCode, "is-ok");
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
-            var listPayload = await requestOwnerCodes("GET");
-            if (listPayload.ok) renderOwnerCodeList(listPayload);
+            await loadOwnerCodes(true);
           } catch (error) {
             setStatus(ownerStatus, error.message || "광고주 코드 생성에 실패했습니다.", "is-warn");
           }
@@ -4269,33 +4461,38 @@
         });
       }
 
-      var teamDisconnectButton = root.querySelector("[data-team-disconnect]");
-      if (teamDisconnectButton) {
-        teamDisconnectButton.addEventListener("click", async function () {
-          var teamInput = root.querySelector("[data-team-disconnect-code]");
-          var teamCode = teamInput ? String(teamInput.value || "").trim() : "";
-          if (!teamCode) {
-            setStatus(ownerStatus, "해지할 운영팀 코드를 입력해주세요.", "is-warn");
+      var ownerRefreshButton = root.querySelector("[data-owner-code-refresh]");
+      if (ownerRefreshButton) {
+        ownerRefreshButton.addEventListener("click", function () {
+          loadOwnerCodes(false);
+        });
+      }
+
+      var ownerCodeList = root.querySelector("[data-owner-code-list]");
+      if (ownerCodeList) {
+        ownerCodeList.addEventListener("click", async function (event) {
+          var button = event.target && event.target.closest ? event.target.closest("[data-owner-revoke-team], [data-owner-revoke-client]") : null;
+          if (!button) return;
+          var teamCode = button.getAttribute("data-owner-revoke-team") || "";
+          var agencyCode = button.getAttribute("data-owner-revoke-client") || "";
+          var targetLabel = teamCode ? ("운영팀 " + teamCode) : ("광고주 " + agencyCode);
+          if (!window.confirm(targetLabel + " 권한을 해제하시겠습니까? 해제하면 해당 코드는 더 이상 접속할 수 없습니다.")) {
+            setStatus(ownerStatus, "권한 해제를 취소했습니다.", "is-warn");
             return;
           }
-          if (!window.confirm("정말 해지하시겠습니까? 해지하면 광고주는 기존 코드를 입력해도 접속할 수 없습니다.")) {
-            setStatus(ownerStatus, "연결 해지를 취소했습니다.", "is-warn");
-            return;
-          }
-          teamDisconnectButton.disabled = true;
-          setStatus(ownerStatus, "운영팀 연결을 해지 중입니다.", "");
+          button.disabled = true;
+          setStatus(ownerStatus, targetLabel + " 권한을 해제 중입니다.", "");
           try {
-            var payload = await requestTeamCodes("POST", teamCode, {
-              action: "disconnect-team-client",
-            });
-            if (!payload.ok) throw new Error(payload.message || "운영팀 연결 해지에 실패했습니다.");
-            setStatus(ownerStatus, payload.message || "연결 해지 완료", "is-ok");
-            var listPayload = await requestOwnerCodes("GET");
-            if (listPayload.ok) renderOwnerCodeList(listPayload);
+            var payload = teamCode
+              ? await requestOwnerCodes("POST", { action: "revoke-team", teamCode: teamCode })
+              : await requestOwnerCodes("POST", { action: "revoke-client", agencyCode: agencyCode });
+            if (!payload.ok) throw new Error(payload.message || "권한 해제에 실패했습니다.");
+            setStatus(ownerStatus, payload.message || "권한 해제 완료", "is-ok");
+            await loadOwnerCodes(true);
           } catch (error) {
-            setStatus(ownerStatus, error.message || "운영팀 연결 해지에 실패했습니다.", "is-warn");
+            setStatus(ownerStatus, error.message || "권한 해제에 실패했습니다.", "is-warn");
           }
-          teamDisconnectButton.disabled = false;
+          button.disabled = false;
         });
       }
 

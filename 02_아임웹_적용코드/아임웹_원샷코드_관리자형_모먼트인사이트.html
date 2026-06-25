@@ -3842,19 +3842,83 @@
         return payload;
       }
 
+      var ownerCodeSnapshot = null;
+
+      function activeOwnerTeams(payload) {
+        return ((payload && payload.teams) || []).filter(function (team) {
+          return team.status === "active";
+        });
+      }
+
+      function firstAvailableOwnerTeam(payload) {
+        return activeOwnerTeams(payload).find(function (team) {
+          return !team.client && !team.clientId;
+        }) || null;
+      }
+
+      function ownerTeamIsActive(teamCode) {
+        var normalized = String(teamCode || "").trim().toLowerCase();
+        if (!normalized || !ownerCodeSnapshot) return false;
+        return activeOwnerTeams(ownerCodeSnapshot).some(function (team) {
+          return String(team.teamCode || "").trim().toLowerCase() === normalized;
+        });
+      }
+
+      function ownerTeamByCode(teamCode) {
+        var normalized = String(teamCode || "").trim().toLowerCase();
+        if (!normalized || !ownerCodeSnapshot) return null;
+        return activeOwnerTeams(ownerCodeSnapshot).find(function (team) {
+          return String(team.teamCode || "").trim().toLowerCase() === normalized;
+        }) || null;
+      }
+
+      function ownerTeamCanIssueClient(teamCode) {
+        var team = ownerTeamByCode(teamCode);
+        return Boolean(team && !team.client && !team.clientId);
+      }
+
+      function syncOwnerCodeDefaults(payload) {
+        var teamCreateInput = root.querySelector("[data-owner-team-code]");
+        var teamForClientInput = root.querySelector("[data-team-code-for-client]");
+        var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
+        var nextTeamCode = payload && payload.nextTeamCode ? payload.nextTeamCode : "mml93-t01";
+        var nextAgencyCode = payload && payload.nextAgencyCode ? payload.nextAgencyCode : "mml93-a02";
+        var availableTeam = firstAvailableOwnerTeam(payload);
+
+        if (teamCreateInput && !String(teamCreateInput.value || "").trim()) {
+          teamCreateInput.value = nextTeamCode;
+        }
+        if (clientCodeInput && !String(clientCodeInput.value || "").trim()) {
+          clientCodeInput.value = nextAgencyCode;
+        }
+        if (teamForClientInput) {
+          if (availableTeam) {
+            teamForClientInput.value = availableTeam.teamCode || "";
+            teamForClientInput.placeholder = "연결 가능한 운영팀 코드";
+          } else if (!ownerTeamIsActive(teamForClientInput.value)) {
+            teamForClientInput.value = "";
+            teamForClientInput.placeholder = "먼저 운영팀 코드를 생성해주세요";
+          }
+        }
+      }
+
       function renderOwnerCodeList(payload) {
+        ownerCodeSnapshot = payload || null;
         var list = root.querySelector("[data-owner-code-list]");
         if (!list) return;
         var clients = payload && payload.clients ? payload.clients : [];
         var teams = payload && payload.teams ? payload.teams : [];
         var ownerCode = payload && payload.ownerAgencyCode ? payload.ownerAgencyCode : "mml93-a01";
-        var activeTeams = teams.filter(function (team) { return team.status === "active"; });
+        var activeTeams = activeOwnerTeams(payload);
         var activeClients = clients.filter(function (client) { return client.status === "active"; });
         var rows = [];
 
         rows.push('<div class="mi-row"><span>메인 운영자</span><strong>' + escapeHtml(ownerCode) + '</strong></div>');
         if (payload && payload.schemaPending) {
           rows.push('<div class="mi-row"><span>DB 상태</span><strong>운영팀 마이그레이션 적용 필요</strong></div>');
+        }
+        if (!activeTeams.length) {
+          rows.push('<div class="mi-row"><span>운영팀 상태</span><strong>활성 운영팀 없음 · 먼저 운영팀 코드를 생성하세요</strong></div>');
         }
 
         activeTeams.forEach(function (team) {
@@ -3884,6 +3948,7 @@
         rows.push('<div class="mi-row"><span>다음 운영팀 코드</span><strong>' + escapeHtml(payload && payload.nextTeamCode ? payload.nextTeamCode : "mml93-t01") + '</strong></div>');
         rows.push('<div class="mi-row"><span>다음 광고주 코드</span><strong>' + escapeHtml(payload && payload.nextAgencyCode ? payload.nextAgencyCode : "mml93-a02") + '</strong></div>');
         list.innerHTML = rows.join("");
+        syncOwnerCodeDefaults(payload);
       }
 
       async function requestOwnerCodes(method, body) {
@@ -4404,10 +4469,12 @@
               teamCode: teamCode
             });
             if (!payload.ok) throw new Error(payload.message || "운영팀 코드 생성에 실패했습니다.");
-            setStatus(ownerStatus, "운영팀 생성 완료: " + payload.team.teamCode, "is-ok");
+            var teamClientInput = root.querySelector("[data-team-code-for-client]");
+            if (teamClientInput && payload.team && payload.team.teamCode) teamClientInput.value = payload.team.teamCode;
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
             await loadOwnerCodes(true);
+            setStatus(ownerStatus, "운영팀 생성 완료: " + payload.team.teamCode + " · 이제 광고주 코드를 생성할 수 있습니다.", "is-ok");
           } catch (error) {
             setStatus(ownerStatus, error.message || "운영팀 코드 생성에 실패했습니다.", "is-warn");
           }
@@ -4426,6 +4493,14 @@
           var clientName = nameInput ? String(nameInput.value || "").trim() : "";
           if (!teamCode) {
             setStatus(ownerStatus, "광고주를 연결할 운영팀 코드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!ownerTeamIsActive(teamCode)) {
+            setStatus(ownerStatus, "활성 운영팀 코드가 없습니다. 먼저 운영팀 바로 생성 후 광고주 코드를 생성해주세요.", "is-warn");
+            return;
+          }
+          if (!ownerTeamCanIssueClient(teamCode)) {
+            setStatus(ownerStatus, "이 운영팀에는 이미 광고주 1명이 연결되어 있습니다. 새 운영팀 코드를 생성해주세요.", "is-warn");
             return;
           }
           if (!agencyCode) {

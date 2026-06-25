@@ -2982,6 +2982,37 @@
 
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>총관리자 코드 발급</h2>
+                  <p>대표 코드로 광고주 접속 코드를 생성합니다. 현재 운영 기본 코드는 mml93-a01입니다.</p>
+                </div>
+                <span class="mi-badge">Owner</span>
+              </div>
+              <div class="mi-tool">
+                <div class="mi-form-row">
+                  <input class="mi-input" data-owner-secret-code placeholder="총관리자 코드" aria-label="총관리자 코드" />
+                  <input class="mi-input" data-owner-client-name placeholder="광고주명" aria-label="광고주명" />
+                </div>
+                <div class="mi-form-row">
+                  <input class="mi-input" data-owner-agency-code placeholder="발급 코드 예: mml93-a02" aria-label="발급 코드" />
+                  <button class="mi-button" type="button" data-owner-code-create>광고주 코드 생성</button>
+                </div>
+                <div class="mi-code-status" data-owner-code-status aria-live="polite">총관리자 코드 입력 후 광고주 코드를 생성할 수 있습니다.</div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>발급 코드 현황</h3>
+              <div class="mi-table" data-owner-code-list>
+                <div class="mi-row"><span>현재 운영 코드</span><strong>mml93-a01</strong></div>
+                <div class="mi-row"><span>제한</span><strong>광고주 코드당 순위추적 50개</strong></div>
+              </div>
+            </aside>
+          </div>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
               <h2>공개 데이터 설정</h2>
               <div class="mi-tool">
                 <div class="mi-form-row">
@@ -3015,7 +3046,7 @@
             <aside class="mi-card mi-card-pad">
               <h3>현재 연결 상태</h3>
               <div class="mi-table">
-                <div class="mi-row"><span>대행사 코드</span><strong data-admin-public="code">mml-a01</strong></div>
+                <div class="mi-row"><span>대행사 코드</span><strong data-admin-public="code">mml93-a01</strong></div>
                 <div class="mi-row"><span>광고주</span><strong data-admin-public="client">브랜드 A</strong></div>
                 <div class="mi-row"><span>광고주 공개 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
                 <div class="mi-row"><span>광고비 / 구매수</span><strong><span data-admin-public="adSpend">720만원</span> · <span data-admin-public="orders">1,248건</span></strong></div>
@@ -3082,7 +3113,7 @@
                 </label>
                 <div class="mi-form-row">
                   <label class="mi-field">광고주ID
-                    <input class="mi-input" data-admin-sheet-client value="MI-CLIENT-001" aria-label="광고주ID" />
+                    <input class="mi-input" data-admin-sheet-client value="MML93-CLIENT-001" aria-label="광고주ID" />
                   </label>
                   <label class="mi-field">공개 기준
                     <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
@@ -3150,7 +3181,7 @@
             <aside class="mi-card mi-card-pad">
               <h3>공개 전 체크</h3>
               <div class="mi-table">
-                <div class="mi-row"><span>광고주ID</span><strong>MI-CLIENT-001 기준 분리</strong></div>
+                <div class="mi-row"><span>광고주ID</span><strong>MML93-CLIENT-001 기준 분리</strong></div>
                 <div class="mi-row"><span>내부 메모</span><strong>광고주 화면 미노출</strong></div>
                 <div class="mi-row"><span>공개 승인</span><strong>승인값만 반영</strong></div>
                 <div class="mi-row"><span>수정 이력</span><strong>공개 반영 시간 기록</strong></div>
@@ -3569,7 +3600,7 @@
 
       var storageKey = "miAgencyPublicState:v2";
       var defaultState = {
-        code: "mml-a01",
+        code: "mml93-a01",
         client: "브랜드 A",
         sales: "4,180만원",
         roas: "581%",
@@ -3600,6 +3631,7 @@
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
         if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
+        if (String(next.code || "").toLowerCase() === "mml-a01") next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         if (String(next.client || "").indexOf("데모") > -1) next.client = defaultState.client;
         if (next.keywords && next.keywords[0] && next.keywords[0].keyword === "\ube44\ud0c0\ubbfc \uc570\ud50c") delete next.keywords;
@@ -3607,7 +3639,12 @@
       }
 
       function isValidAdminCode(value) {
-        return String(value || "").trim().toLowerCase() === "mml-a01";
+        var code = String(value || "").trim().toLowerCase();
+        var configured = String(window.MI_ADMIN_LOGIN_CODES || "mml93-a01")
+          .split(",")
+          .map(function (item) { return item.trim().toLowerCase(); })
+          .filter(Boolean);
+        return configured.indexOf(code) > -1;
       }
 
       function readState() {
@@ -3635,6 +3672,47 @@
       function getAdminCode() {
         var input = root.querySelector("[data-admin-login-code]");
         return input ? String(input.value || "").trim() : "";
+      }
+
+      function getSuperAdminApiUrl() {
+        if (window.MI_SUPER_ADMIN_API_URL) return window.MI_SUPER_ADMIN_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/super-admin/agency-codes";
+        return "http://127.0.0.1:8790/api/super-admin/agency-codes";
+      }
+
+      function renderOwnerCodeList(payload) {
+        var list = root.querySelector("[data-owner-code-list]");
+        if (!list) return;
+        var clients = payload && payload.clients ? payload.clients : [];
+        if (!clients.length) {
+          list.innerHTML = '<div class="mi-row"><span>발급 코드</span><strong>아직 조회된 코드가 없습니다</strong></div>';
+          return;
+        }
+        list.innerHTML = clients.map(function (client) {
+          return '<div class="mi-row"><span>' + escapeHtml(client.name || "광고주") + '</span><strong>' +
+            escapeHtml(client.agencyCode || "-") + '</strong></div>';
+        }).join("") + '<div class="mi-row"><span>다음 추천 코드</span><strong>' + escapeHtml(payload.nextAgencyCode || "mml93-a02") + '</strong></div>';
+      }
+
+      async function requestOwnerCodes(method, body) {
+        var secretInput = root.querySelector("[data-owner-secret-code]");
+        var secretCode = secretInput ? String(secretInput.value || "").trim() : "";
+        if (!secretCode) return { ok: false, message: "총관리자 코드를 입력해주세요." };
+        var options = {
+          method: method,
+          cache: "no-store",
+          headers: { "x-mi-super-admin-code": secretCode }
+        };
+        if (body) {
+          options.headers["content-type"] = "application/json";
+          options.body = JSON.stringify(Object.assign({ superAdminCode: secretCode }, body));
+        }
+        var response = await fetch(getSuperAdminApiUrl(), options);
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) payload = { ok: false, message: "총관리자 API 응답을 확인할 수 없습니다." };
+        if (!response.ok && payload.ok !== false) payload.ok = false;
+        return payload;
       }
 
       async function persistDemoState(state, statusNode, okMessage) {
@@ -4014,6 +4092,9 @@
           }
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
+          try {
+            window.sessionStorage.setItem("miAdminAuthedCode", getAdminCode());
+          } catch (error) {}
           setStatus(loginStatus, "관리자 콘솔이 열렸습니다.", "is-ok");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         });
@@ -4056,6 +4137,39 @@
         var next = (window.location.hash || "").replace("#mi-admin-", "");
         if (next) setScreen(next, false);
       });
+
+      var ownerCreateButton = root.querySelector("[data-owner-code-create]");
+      var ownerStatus = root.querySelector("[data-owner-code-status]");
+      if (ownerCreateButton) {
+        ownerCreateButton.addEventListener("click", async function () {
+          var nameInput = root.querySelector("[data-owner-client-name]");
+          var codeInput = root.querySelector("[data-owner-agency-code]");
+          var clientName = nameInput ? String(nameInput.value || "").trim() : "";
+          var agencyCode = codeInput ? String(codeInput.value || "").trim() : "";
+          if (!clientName) {
+            setStatus(ownerStatus, "광고주명을 입력해주세요.", "is-warn");
+            return;
+          }
+          ownerCreateButton.disabled = true;
+          setStatus(ownerStatus, "광고주 코드를 생성 중입니다.", "");
+          try {
+            var payload = await requestOwnerCodes("POST", {
+              name: clientName,
+              businessName: clientName,
+              agencyCode: agencyCode
+            });
+            if (!payload.ok) throw new Error(payload.message || "광고주 코드 생성에 실패했습니다.");
+            setStatus(ownerStatus, "생성 완료: " + payload.client.agencyCode, "is-ok");
+            if (codeInput) codeInput.value = "";
+            if (nameInput) nameInput.value = "";
+            var listPayload = await requestOwnerCodes("GET");
+            if (listPayload.ok) renderOwnerCodeList(listPayload);
+          } catch (error) {
+            setStatus(ownerStatus, error.message || "광고주 코드 생성에 실패했습니다.", "is-warn");
+          }
+          ownerCreateButton.disabled = false;
+        });
+      }
 
       var codeSaveButton = root.querySelector("[data-admin-code-save]");
       var codeStatus = root.querySelector("[data-admin-code-status]");
@@ -5155,7 +5269,8 @@
             cache: "no-store",
             headers: {
               "x-demo-admin-code": adminCode,
-              "x-mi-agency-code": agencyCode
+              "x-mi-agency-code": agencyCode,
+              "x-mi-rank-access-code": adminCode
             }
           };
           if (body) {
@@ -5167,7 +5282,7 @@
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "20" }).toString();
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
           }
           var response = await fetch(url, options);
           var payload = await response.json().catch(function () { return null; });

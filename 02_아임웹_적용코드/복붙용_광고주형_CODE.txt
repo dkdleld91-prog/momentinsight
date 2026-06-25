@@ -2975,7 +2975,7 @@
               <h3>연결된 브랜드 데이터</h3>
               <div class="mi-table">
                 <div class="mi-row"><span>광고주</span><strong data-mi-public="client">브랜드 A</strong></div>
-                <div class="mi-row"><span>대행사 코드</span><strong data-mi-public="code">mml-a01</strong></div>
+                <div class="mi-row"><span>대행사 코드</span><strong data-mi-public="code">mml93-a01</strong></div>
                 <div class="mi-row"><span>현재 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
                 <div class="mi-row"><span>다음 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
               </div>
@@ -2994,7 +2994,7 @@
       var storageKey = "miAgencyPublicState:v2";
       var selectedCodeKey = "miAgencySelectedCode";
       var defaultState = {
-        code: "mml-a01",
+        code: "mml93-a01",
         client: "브랜드 A",
         sales: "4,180만원",
         roas: "581%",
@@ -3047,6 +3047,7 @@
         var next = Object.assign({}, state || {});
         if (next.code === "MI-DEMO-01") next.code = defaultState.code;
         if (next.code === "MI-ACCESS-01") next.code = defaultState.code;
+        if (String(next.code || "").toLowerCase() === "mml-a01") next.code = defaultState.code;
         if (next.client === "예시브랜드") next.client = defaultState.client;
         if (String(next.client || "").indexOf("데모") > -1) next.client = defaultState.client;
         if (next.keywords && next.keywords[0] && next.keywords[0].keyword === "\ube44\ud0c0\ubbfc \uc570\ud50c") delete next.keywords;
@@ -4096,7 +4097,7 @@
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "20" }).toString();
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
           }
           var response = await fetch(url, options);
           var payload = await response.json().catch(function () { return null; });
@@ -4897,6 +4898,8 @@
         }
         try {
           window.localStorage.setItem(selectedCodeKey, state.code);
+          window.localStorage.setItem("miRankAccessCode", state.code);
+          window.sessionStorage.setItem("miClientAuthedCode", state.code);
         } catch (error) {}
         applyState(state);
         root.classList.remove("is-locked");
@@ -4910,6 +4913,7 @@
         try {
           var selectedCode = window.localStorage.getItem(selectedCodeKey);
           if (normalizeCode(selectedCode) !== normalizeCode(state.code)) return;
+          if (normalizeCode(window.sessionStorage.getItem("miClientAuthedCode")) !== normalizeCode(state.code)) return;
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));

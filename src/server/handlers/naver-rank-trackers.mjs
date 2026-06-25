@@ -1,5 +1,5 @@
 import { withSupabase } from "@supabase/server";
-import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
+import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
   extractProductId,
   findShoppingRank,
@@ -64,9 +64,34 @@ function normalizeAgencyCode(value) {
   return normalizeText(value || "").toLowerCase();
 }
 
+function primaryAgencyCode() {
+  return normalizeAgencyCode(process.env.MI_PRIMARY_AGENCY_CODE || "mml93-a01");
+}
+
+function legacyAgencyCodes() {
+  return String(process.env.MI_LEGACY_AGENCY_CODES || "")
+    .split(",")
+    .map((value) => normalizeAgencyCode(value))
+    .filter(Boolean);
+}
+
+function canonicalAgencyCode(value) {
+  const code = normalizeAgencyCode(value);
+  if (!code) return "";
+  if (legacyAgencyCodes().includes(code)) return primaryAgencyCode();
+  return code;
+}
+
+function agencyCodeScope(agencyCode) {
+  const code = canonicalAgencyCode(agencyCode);
+  const scope = [code];
+  if (code === primaryAgencyCode()) scope.push(...legacyAgencyCodes());
+  return [...new Set(scope.filter(Boolean))];
+}
+
 function requestAgencyCode(request, body = {}) {
   const url = new URL(request.url);
-  return normalizeAgencyCode(
+  return canonicalAgencyCode(
     body.agencyCode ||
       body.agency_code ||
       request.headers.get("x-mi-agency-code") ||
@@ -172,14 +197,16 @@ function addDays(date, days) {
 
 async function findClientId(ctx, agencyCode) {
   if (!agencyCode) return null;
-  const { data, error } = await ctx.supabaseAdmin
-    .from("clients")
-    .select("id")
-    .ilike("agency_code", agencyCode)
-    .maybeSingle();
+  for (const code of agencyCodeScope(agencyCode)) {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("clients")
+      .select("id")
+      .ilike("agency_code", code)
+      .maybeSingle();
 
-  if (error) return null;
-  return data?.id || null;
+    if (!error && data?.id) return data.id;
+  }
+  return null;
 }
 
 async function requireRankAccess(request, ctx, body = {}, options = {}) {
@@ -203,7 +230,12 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
     return { ok: true, agencyCode, clientId, admin: true };
   }
 
-  if (!rankAccessAuthorized(request, body)) {
+  const accessCode = canonicalAgencyCode(requestAccessCode(request, body));
+  const configuredAccessCodes = rankAccessCodes();
+  const accessAllowed = configuredAccessCodes.length
+    ? rankAccessAuthorized(request, body)
+    : isLocalRequest(request) && safeEqual(accessCode, agencyCode);
+  if (!accessAllowed) {
     return {
       ok: false,
       response: json(request, {
@@ -246,7 +278,7 @@ async function listTrackers(request, ctx) {
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -369,7 +401,7 @@ async function createTracker(request, ctx, body) {
   let existingQuery = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .eq("keyword", keyword)
     .eq("status", "active")
     .limit(1);
@@ -390,10 +422,24 @@ async function createTracker(request, ctx, body) {
 
   const now = new Date();
   const clientId = await findClientId(ctx, agencyCode);
+  const activeCountResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .eq("status", "active");
+  if (activeCountResult.error) throw activeCountResult.error;
+  if (Number(activeCountResult.count || 0) >= 50) {
+    return json(request, {
+      ok: false,
+      message: "순위 추적은 광고주 코드당 최대 50개까지만 등록할 수 있습니다.",
+      limit: 50,
+      count: activeCountResult.count || 0,
+    }, 403);
+  }
   const sortOrderResult = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select("sort_order")
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .order("sort_order", { ascending: false })
     .limit(1);
   if (sortOrderResult.error) throw sortOrderResult.error;
@@ -439,7 +485,7 @@ async function checkOne(request, ctx, body) {
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
     .eq("id", trackerId)
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .maybeSingle();
 
   if (error) throw error;
@@ -462,7 +508,7 @@ async function stopTracker(request, ctx, body) {
     .from("naver_rank_trackers")
     .update({ status: "paused", last_message: "사용자 요청으로 추적을 중지했습니다." })
     .eq("id", trackerId)
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .select(TRACKER_SELECT)
     .single();
 
@@ -479,7 +525,7 @@ async function deleteTracker(request, ctx, body) {
     .from("naver_rank_trackers")
     .delete()
     .eq("id", trackerId)
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .select("id");
 
   if (error) throw error;
@@ -496,7 +542,7 @@ async function moveTracker(request, ctx, body) {
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select("id, sort_order, created_at")
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
     .limit(500);
@@ -519,12 +565,12 @@ async function moveTracker(request, ctx, body) {
       .from("naver_rank_trackers")
       .update({ sort_order: target.sort_order })
       .eq("id", current.id)
-      .eq("agency_code", agencyCode),
+      .in("agency_code", agencyCodeScope(agencyCode)),
     ctx.supabaseAdmin
       .from("naver_rank_trackers")
       .update({ sort_order: current.sort_order })
       .eq("id", target.id)
-      .eq("agency_code", agencyCode),
+      .in("agency_code", agencyCodeScope(agencyCode)),
   ];
   const results = await Promise.all(updates);
   const updateError = results.find((item) => item.error)?.error;
@@ -547,7 +593,7 @@ async function reorderTrackers(request, ctx, body) {
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select("id")
-    .eq("agency_code", agencyCode)
+    .in("agency_code", agencyCodeScope(agencyCode))
     .in("id", orderedIds);
 
   if (error) throw error;
@@ -561,7 +607,7 @@ async function reorderTrackers(request, ctx, body) {
     .from("naver_rank_trackers")
     .update({ sort_order: (index + 1) * 100 })
     .eq("id", id)
-    .eq("agency_code", agencyCode)));
+    .in("agency_code", agencyCodeScope(agencyCode))));
   const updateError = results.find((item) => item.error)?.error;
   if (updateError) throw updateError;
 
@@ -580,7 +626,7 @@ export async function runDueTrackers(ctx, options = {}) {
     .order("next_check_at", { ascending: true })
     .limit(limit);
 
-  if (options.agencyCode) query = query.eq("agency_code", options.agencyCode);
+  if (options.agencyCode) query = query.in("agency_code", agencyCodeScope(options.agencyCode));
 
   const { data, error } = await query;
   if (error) throw error;

@@ -141,7 +141,7 @@ async function handleGet(request, ctx, config, id) {
 async function handlePost(request, ctx, config) {
   const body = await readBody(request);
   if (config.table === "naver_rank_trackers" && body.sort_order == null) {
-    const agencyCode = String(body.agency_code || "mml-a01").trim().toLowerCase();
+    const agencyCode = String(body.agency_code || "mml93-a01").trim().toLowerCase();
     const { data: latest, error: sortError } = await ctx.supabaseAdmin
       .from(config.table)
       .select("sort_order")

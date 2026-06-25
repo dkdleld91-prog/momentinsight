@@ -14,13 +14,14 @@ with demo_client as (
     '11111111-1111-4111-8111-111111111111',
     '브랜드 A',
     '모먼트 인사이트 데모 광고주',
-    'MI-DEMO-01',
+    'mml93-a01',
     'active',
     '이번 달 핵심 지표와 실행 일정을 확인할 수 있는 데모 광고주입니다.',
     '내부 테스트용 샘플 광고주입니다.'
   )
   on conflict (id) do update
   set name = excluded.name,
+      agency_code = excluded.agency_code,
       public_summary = excluded.public_summary,
       internal_note = excluded.internal_note
   returning id

@@ -9,6 +9,7 @@ import naverKeyword from "./handlers/naver-keyword.mjs";
 import naverRankCron from "./handlers/naver-rank-cron.mjs";
 import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
 import naverShoppingRank from "./handlers/naver-shopping-rank.mjs";
+import superAdminApi from "./handlers/super-admin-api.mjs";
 import { corsHeaders, protectedJson } from "./security.mjs";
 
 const routes = [
@@ -26,7 +27,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code"
+          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code"
         })
       });
     }
@@ -51,6 +52,10 @@ export default {
       }
 
       return demoApi.fetch(request);
+    }
+
+    if (url.pathname.startsWith("/api/super-admin/")) {
+      return superAdminApi.fetch(request);
     }
 
     if (url.pathname === "/api/naver-keyword") {

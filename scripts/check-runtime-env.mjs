@@ -70,6 +70,9 @@ const checks = [
   status(env, "Rank tracker admin code", ["MI_RANK_ADMIN_CODE", "MI_DEMO_ADMIN_CODE"], false),
   status(env, "Rank tracker client access code", ["MI_RANK_ACCESS_CODE", "MI_RANK_ACCESS_CODES"], false),
   status(env, "Rank tracker cron secret", ["MI_RANK_CRON_SECRET", "CRON_SECRET"], false),
+  status(env, "Primary agency code", ["MI_PRIMARY_AGENCY_CODE"], false),
+  status(env, "Legacy agency codes", ["MI_LEGACY_AGENCY_CODES"], false),
+  status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], false),
 ];
 
 const missingRequired = checks.filter((check) => check.required && !check.valid);

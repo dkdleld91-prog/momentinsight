@@ -3090,11 +3090,42 @@
         return "http://127.0.0.1:8790";
       }
 
+      function miFetch(url, options) {
+        options = options || {};
+        if (typeof window.fetch === "function") return window.fetch(url, options);
+        if (typeof window.XMLHttpRequest !== "function") return Promise.reject(new Error("현재 브라우저에서 API 요청을 사용할 수 없습니다."));
+        return new Promise(function (resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open(options.method || "GET", url, true);
+          var headers = options.headers || {};
+          Object.keys(headers).forEach(function (key) {
+            if (headers[key] !== undefined && headers[key] !== null) xhr.setRequestHeader(key, headers[key]);
+          });
+          xhr.onload = function () {
+            var body = xhr.responseText || "";
+            resolve({
+              ok: xhr.status >= 200 && xhr.status < 300,
+              status: xhr.status,
+              text: function () { return Promise.resolve(body); },
+              json: function () {
+                try {
+                  return Promise.resolve(body ? JSON.parse(body) : null);
+                } catch (error) {
+                  return Promise.reject(error);
+                }
+              }
+            });
+          };
+          xhr.onerror = function () { reject(new Error("API 요청에 실패했습니다.")); };
+          xhr.ontimeout = function () { reject(new Error("API 요청 시간이 초과되었습니다.")); };
+          xhr.send(options.body || null);
+        });
+      }
+
       async function fetchDemoState() {
-        if (!window.fetch) throw new Error("현재 브라우저에서 fetch를 사용할 수 없습니다.");
         var publicStateUrl = window.MI_PUBLIC_STATE_API_URL || "";
         if (!publicStateUrl) throw new Error("공개 데이터 API가 설정되지 않았습니다.");
-        var response = await fetch(publicStateUrl, { method: "GET", cache: "no-store" });
+        var response = await miFetch(publicStateUrl, { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () {
           return null;
         });
@@ -3879,7 +3910,7 @@
       async function validateAgencyCode(code) {
         var normalized = normalizeCode(code);
         if (!normalized) return { ok: false, message: "대행사 코드를 입력해주세요." };
-        var response = await fetch(getAgencyCodeValidateApiUrl(), {
+        var response = await miFetch(getAgencyCodeValidateApiUrl(), {
           method: "POST",
           cache: "no-store",
           headers: { "content-type": "application/json" },
@@ -4131,7 +4162,7 @@
           if (method === "GET") {
             url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
           }
-          var response = await fetch(url, options);
+          var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });
           if (!payload) payload = { ok: false, message: "순위 추적 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
@@ -4491,9 +4522,8 @@
       }
 
       async function fetchKeywordData(keyword, profileMode) {
-        if (!window.fetch) throw new Error("현재 브라우저에서 fetch를 사용할 수 없습니다.");
         var url = getKeywordApiUrl() + "?keyword=" + encodeURIComponent(keyword) + "&profile=" + encodeURIComponent(profileMode || "full");
-        var response = await fetch(url, { method: "GET", cache: "no-store" });
+        var response = await miFetch(url, { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () {
           return null;
         });
@@ -4814,7 +4844,7 @@
           productTitle: title || "",
           maxRank: "300"
         });
-        var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
+        var response = await miFetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () { return null; });
         if (!payload) throw new Error("상품 순위 응답을 확인할 수 없습니다.");
         if (!response.ok || payload.ok === false) throw new Error(payload.message || "상품 순위 확인이 어렵습니다.");
@@ -4959,25 +4989,10 @@
         return true;
       }
 
-      async function restoreAuth(state) {
-        try {
-          var selectedCode = window.localStorage.getItem(selectedCodeKey);
-          var authedCode = window.sessionStorage.getItem("miClientAuthedCode");
-          if (!selectedCode || normalizeCode(authedCode) !== normalizeCode(selectedCode)) return;
-          var payload = await validateAgencyCode(selectedCode);
-          if (!payload.ok || !payload.client) {
-            clearClientAuth();
-            return;
-          }
-          state.code = normalizeCode(payload.client.agencyCode || selectedCode);
-          state.client = payload.client.name || payload.client.businessName || state.client;
-          writeState(state);
-          root.classList.remove("is-locked");
-          root.classList.add("is-authed");
-          window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
-        } catch (error) {
-          clearClientAuth();
-        }
+      function requireCodeEntry() {
+        clearClientAuth();
+        setStatus(loginStatus, "담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.", "");
+        setStatus(connectStatus, "코드 연결 전입니다.", "");
       }
 
       var views = root.querySelectorAll("[data-mi-view]");
@@ -5217,7 +5232,7 @@
 
       var state = readState();
       applyState(state);
-      restoreAuth(state);
+      requireCodeEntry();
 
       var initial = (window.location.hash || "").replace("#mi-", "");
       setScreen(initial || "dashboard", false);

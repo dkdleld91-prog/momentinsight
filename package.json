@@ -9,6 +9,7 @@
     "clean:workspace:deps": "node scripts/clean-workspace.mjs --deps",
     "clean:workspace:dry": "node scripts/clean-workspace.mjs --dry-run",
     "work:autosave": "node scripts/work-spec-autosave.mjs",
+    "check:baseline": "node scripts/check-release-baseline.mjs",
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
     "check:rank-matching": "node scripts/check-naver-rank-matching.mjs",

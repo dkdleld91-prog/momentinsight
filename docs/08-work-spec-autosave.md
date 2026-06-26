@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 26. 21:44:04
-- 기준 커밋: 34c4509
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M src/server/handlers/naver-rank-trackers.mjs / ?? supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql
+- 마지막 자동 저장: 2026. 06. 26. 22:02:10
+- 기준 커밋: 3193933
+- 작업트리: M docs/08-work-spec-autosave.md /  M package.json / ?? scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 릴리즈 기준선 검사 추가 | 향후 기능 추가 시 기존 관리자/광고주/총관리자/순위추적 기준이 깨지면 바로 실패하도록 `check:baseline` 자동 검사를 추가 | `check:baseline`, `build:vercel`, `git diff --check`, 라이브 HTML/API 확인 | 배포 대기 |
 | 완료 | 총관리자 계정 권한 확장 | `mml93-a01` 총관리자가 운영팀 없이 광고주 코드를 직접 발급할 수 있게 UI/API 호출을 분기하고, 총관리자 순위추적은 서버와 DB 트리거 모두 50개 제한 예외로 처리 | `build:vercel`, `git diff --check`, 서버 문법 검사, 원본/복붙/빌드 산출물 정적 검사, 신규 Supabase 마이그레이션 확인 | 배포 대기 |
 | 완료 | 관리자 UI/UX 권한 문맥 보강 | 관리자 화면 상단에 현재 권한 모드(총관리자/운영팀)를 표시하고, 대행사 코드 화면에 Owner/운영팀 역할 차이와 광고주 1개 제한 안내를 추가. 운영팀 전체 메뉴 접근은 유지 | `build:vercel`, `git diff --check`, 원본/복붙/빌드 산출물 메뉴 10개 확인, 권한 문구/Owner 전용/권한해제 코드 유지 확인, 로컬 HTTP 200 확인 | 배포 대기 |
 | 완료 | 운영팀 메뉴 과잠금 복구 | 운영팀 로그인 시 전체 관리자/도구 메뉴가 `대행사 코드` 하나로 제한되던 과도한 잠금을 제거하고, 기존 메뉴 접근은 유지하되 Owner 전용 코드 발급 블록만 숨기도록 복구 | `build:vercel`, `git diff --check`, 빌드 산출물 메뉴 10개 확인, 메뉴 제한 코드 제거 및 Owner/권한해제 코드 유지 확인 | 배포 대기 |

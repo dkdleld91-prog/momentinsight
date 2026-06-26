@@ -346,14 +346,14 @@ async function handleAgencyCodeConnect(request: Request, ctx: any) {
   if (!userId) return json({ ok: false, message: "Missing user id" }, 401);
 
   const body = await readBody(request);
-  const agencyCode = String(body.agency_code || body.agencyCode || "").trim().toUpperCase();
+  const agencyCode = String(body.agency_code || body.agencyCode || "").trim().toLowerCase();
   if (!agencyCode) return json({ ok: false, message: "agency_code is required" }, 400);
 
   const { data: client, error: clientError } = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, agency_code, status, public_summary")
-    .eq("agency_code", agencyCode)
-    .neq("status", "archived")
+    .ilike("agency_code", agencyCode)
+    .eq("status", "active")
     .maybeSingle();
 
   if (clientError) {

@@ -33,6 +33,9 @@ const checks = {
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
+  clientCodeReactivationExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
+    && superAdminServer.includes("reactivated: true")
+    && superAdminServer.includes("Reissued by operation team"),
   ownerActiveAccountsFullView: adminSource.includes('data-mi-admin-view="active-accounts"')
     && adminSource.includes("data-owner-team-full-list")
     && adminSource.includes("data-owner-client-full-list")

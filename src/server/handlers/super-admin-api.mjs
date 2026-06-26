@@ -256,7 +256,27 @@ async function createClient(request, ctx, body) {
     return json(request, { ok: false, message: "중복 코드 확인에 실패했습니다.", detail: existing.error.message }, 500);
   }
   if (existing.data) {
-    return json(request, { ok: false, message: "이미 존재하는 대행사 코드입니다.", client: clientPayload(existing.data) }, 409);
+    if (existing.data.status === "active") {
+      return json(request, { ok: false, message: "이미 활성화된 대행사 코드입니다.", client: clientPayload(existing.data) }, 409);
+    }
+    const { data, error } = await ctx.supabaseAdmin
+      .from("clients")
+      .update({
+        name,
+        business_name: businessName || name,
+        status: "active",
+        issued_by_team_code: null,
+        disconnected_at: null,
+        public_summary: body.publicSummary || body.public_summary || "총관리자가 재활성화한 광고주 코드입니다.",
+        internal_note: `MI super admin reactivated client code from ${primaryAgencyCode()}`,
+      })
+      .eq("id", existing.data.id)
+      .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
+      .single();
+    if (error) {
+      return json(request, { ok: false, message: "광고주 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
+    }
+    return json(request, { ok: true, reactivated: true, client: clientPayload(data) }, 200);
   }
 
   const { data, error } = await ctx.supabaseAdmin
@@ -269,7 +289,7 @@ async function createClient(request, ctx, body) {
       public_summary: body.publicSummary || body.public_summary || "총관리자가 발급한 광고주 코드입니다.",
       internal_note: `MI super admin issued client code from ${primaryAgencyCode()}`,
     })
-    .select("id, name, business_name, agency_code, status, public_summary, created_at, updated_at")
+    .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
     .single();
 
   if (error) {
@@ -406,19 +426,36 @@ async function createClientForTeam(request, ctx, body) {
     .ilike("agency_code", code)
     .maybeSingle();
   if (existing.error) return json(request, { ok: false, message: "광고주 코드 중복 확인에 실패했습니다.", detail: existing.error.message }, 500);
-  if (existing.data) return json(request, { ok: false, message: "이미 존재하는 광고주 코드입니다.", client: clientPayload(existing.data) }, 409);
+  if (existing.data && existing.data.status === "active") {
+    return json(request, { ok: false, message: "이미 활성화된 광고주 코드입니다.", client: clientPayload(existing.data) }, 409);
+  }
 
-  const { data: client, error: clientError } = await ctx.supabaseAdmin
-    .from("clients")
-    .insert({
-      name,
-      business_name: businessName || name,
-      agency_code: code,
-      issued_by_team_code: teamResult.data.team_code,
-      status: "active",
-      public_summary: body.publicSummary || body.public_summary || "운영팀이 발급한 광고주 코드입니다.",
-      internal_note: `Issued by operation team ${teamResult.data.team_code}`,
-    })
+  const clientMutation = existing.data
+    ? ctx.supabaseAdmin
+      .from("clients")
+      .update({
+        name,
+        business_name: businessName || name,
+        issued_by_team_code: teamResult.data.team_code,
+        status: "active",
+        disconnected_at: null,
+        public_summary: body.publicSummary || body.public_summary || "운영팀이 재활성화한 광고주 코드입니다.",
+        internal_note: `Reissued by operation team ${teamResult.data.team_code}`,
+      })
+      .eq("id", existing.data.id)
+    : ctx.supabaseAdmin
+      .from("clients")
+      .insert({
+        name,
+        business_name: businessName || name,
+        agency_code: code,
+        issued_by_team_code: teamResult.data.team_code,
+        status: "active",
+        public_summary: body.publicSummary || body.public_summary || "운영팀이 발급한 광고주 코드입니다.",
+        internal_note: `Issued by operation team ${teamResult.data.team_code}`,
+      });
+
+  const { data: client, error: clientError } = await clientMutation
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
     .single();
   if (clientError) return json(request, { ok: false, message: "광고주 코드 생성에 실패했습니다.", detail: clientError.message }, 500);
@@ -432,7 +469,7 @@ async function createClientForTeam(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 광고주 연결 저장에 실패했습니다.", detail: teamError.message }, 500);
 
-  return json(request, { ok: true, team: teamPayload({ ...team, clients: client }), client: clientPayload(client) }, 201);
+  return json(request, { ok: true, reactivated: Boolean(existing.data), team: teamPayload({ ...team, clients: client }), client: clientPayload(client) }, existing.data ? 200 : 201);
 }
 
 async function disconnectTeamClient(request, ctx, body) {

@@ -4964,7 +4964,7 @@
             } else {
               await loadOwnerCodes(true);
             }
-            setStatus(ownerStatus, "광고주 생성 완료: " + payload.client.agencyCode, "is-ok");
+            setStatus(ownerStatus, (payload.reactivated ? "광고주 재활성화 완료: " : "광고주 생성 완료: ") + payload.client.agencyCode, "is-ok");
           } catch (error) {
             setStatus(ownerStatus, error.message || "광고주 코드 생성에 실패했습니다.", "is-warn");
           }

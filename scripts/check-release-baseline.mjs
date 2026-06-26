@@ -49,6 +49,10 @@ const checks = {
     && adminSource.includes("총관리자 직접 광고주"),
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
+  clientLoginRoleSelection: clientSource.includes('data-client-login-mode="client"')
+    && clientSource.includes('data-client-login-mode="operator"')
+    && clientSource.includes("운영팀 화면으로 이동")
+    && clientSource.includes("getOperatorEntryUrl"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

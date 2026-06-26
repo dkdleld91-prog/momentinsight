@@ -105,15 +105,26 @@
     }
 
     #mi-clean .mi-role {
+      width: 100%;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 15px;
       background: #fff;
+      color: inherit;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      appearance: none;
     }
 
     #mi-clean .mi-role.is-current {
       border-color: rgba(6, 26, 58, 0.24);
       background: var(--mi-gold-soft);
+    }
+
+    #mi-clean .mi-role:focus-visible {
+      outline: 3px solid rgba(63, 111, 255, 0.22);
+      outline-offset: 2px;
     }
 
     #mi-clean .mi-role strong {
@@ -2370,25 +2381,25 @@
         <span class="mi-kicker">모먼트인사이트</span>
         <h1>광고주는 지금 상태만 빠르게 봅니다.</h1>
         <p>대행사 코드를 입력하면 매출, 일정, 공개 코멘트가 바로 연결됩니다.</p>
-        <div class="mi-role-list">
-          <div class="mi-role is-current">
+        <div class="mi-role-list" role="tablist" aria-label="접속 유형 선택">
+          <button class="mi-role is-current" type="button" data-client-login-mode="client" aria-selected="true">
             <strong>광고주 로그인</strong>
             <span>매출 현황, 일정표, 공개 코멘트 확인</span>
-          </div>
-          <div class="mi-role">
-            <strong>운영팀 관리</strong>
+          </button>
+          <button class="mi-role" type="button" data-client-login-mode="operator" aria-selected="false">
+            <strong>운영팀 로그인</strong>
             <span>담당자가 성과 데이터, 보고서, 공유 범위를 관리합니다.</span>
-          </div>
+          </button>
         </div>
       </article>
 
       <aside class="mi-login-card">
-        <span class="mi-kicker">광고주 전용</span>
-        <h2>대행사 코드 접속</h2>
-        <p>담당자에게 받은 접속 코드를 입력하세요.</p>
+        <span class="mi-kicker" data-client-login-kicker>광고주 전용</span>
+        <h2 data-client-login-title>대행사 코드 접속</h2>
+        <p data-client-login-desc>담당자에게 받은 접속 코드를 입력하세요.</p>
         <div class="mi-login-form">
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
-          <button class="mi-button" type="button" data-mi-login-button>광고주 대시보드 보기</button>
+          <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.</div>
         </div>
       </aside>
@@ -3101,6 +3112,14 @@
         var host = window.location && window.location.hostname;
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin;
         return "http://127.0.0.1:8790";
+      }
+
+      function getOperatorEntryUrl() {
+        var path = window.location && window.location.pathname ? window.location.pathname : "";
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return "/admin";
+        if (path.indexOf(".html") > -1) return "admin.html";
+        return "/admin.html";
       }
 
       function miFetch(url, options) {
@@ -5065,8 +5084,62 @@
       var loginCode = root.querySelector("[data-mi-login-code]");
       var loginButton = root.querySelector("[data-mi-login-button]");
       var loginStatus = root.querySelector("[data-mi-login-status]");
+      var loginMode = "client";
+      var loginModeCards = root.querySelectorAll("[data-client-login-mode]");
+      var loginKicker = root.querySelector("[data-client-login-kicker]");
+      var loginTitle = root.querySelector("[data-client-login-title]");
+      var loginDesc = root.querySelector("[data-client-login-desc]");
+
+      function setClientLoginMode(mode) {
+        loginMode = mode === "operator" ? "operator" : "client";
+        loginModeCards.forEach(function (card) {
+          var active = card.getAttribute("data-client-login-mode") === loginMode;
+          card.classList.toggle("is-current", active);
+          card.setAttribute("aria-selected", active ? "true" : "false");
+        });
+
+        if (loginMode === "operator") {
+          if (loginKicker) loginKicker.textContent = "운영팀 전용";
+          if (loginTitle) loginTitle.textContent = "운영팀 코드 접속";
+          if (loginDesc) loginDesc.textContent = "성과 입력, 보고서 관리, 광고주 코드 발급은 운영팀 화면에서 진행합니다.";
+          if (loginCode) {
+            loginCode.value = "";
+            loginCode.disabled = true;
+            loginCode.style.display = "none";
+            loginCode.setAttribute("aria-hidden", "true");
+          }
+          if (loginButton) loginButton.textContent = "운영팀 화면으로 이동";
+          setStatus(loginStatus, "운영팀 화면에서 운영팀 또는 총관리자 코드를 입력합니다.", "");
+          return;
+        }
+
+        if (loginKicker) loginKicker.textContent = "광고주 전용";
+        if (loginTitle) loginTitle.textContent = "대행사 코드 접속";
+        if (loginDesc) loginDesc.textContent = "담당자에게 받은 접속 코드를 입력하세요.";
+        if (loginCode) {
+          loginCode.disabled = false;
+          loginCode.style.display = "";
+          loginCode.removeAttribute("aria-hidden");
+          loginCode.placeholder = "대행사 코드 입력";
+          loginCode.setAttribute("aria-label", "대행사 코드");
+        }
+        if (loginButton) loginButton.textContent = "광고주 대시보드 보기";
+        setStatus(loginStatus, "담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.", "");
+      }
+
+      loginModeCards.forEach(function (card) {
+        card.addEventListener("click", function () {
+          setClientLoginMode(card.getAttribute("data-client-login-mode"));
+        });
+      });
+      setClientLoginMode("client");
+
       if (loginButton && loginCode) {
         loginButton.addEventListener("click", async function () {
+          if (loginMode === "operator") {
+            window.location.href = getOperatorEntryUrl();
+            return;
+          }
           loginButton.disabled = true;
           await syncDemoState(loginStatus);
           await unlockWithCode(loginCode.value, loginStatus);

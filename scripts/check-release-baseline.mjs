@@ -33,6 +33,10 @@ const checks = {
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
+  ownerActiveAccountsFullView: adminSource.includes('data-mi-admin-view="active-accounts"')
+    && adminSource.includes("data-owner-team-full-list")
+    && adminSource.includes("data-owner-client-full-list")
+    && adminSource.includes("data-owner-list-open"),
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),

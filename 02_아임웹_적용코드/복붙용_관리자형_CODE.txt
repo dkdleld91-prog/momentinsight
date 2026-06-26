@@ -91,15 +91,26 @@
     }
 
     #mi-admin .mi-role {
+      width: 100%;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 15px;
       background: #fff;
+      color: inherit;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      appearance: none;
     }
 
     #mi-admin .mi-role.is-current {
       border-color: rgba(6, 26, 58, 0.24);
       background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-role:focus-visible {
+      outline: 3px solid rgba(63, 111, 255, 0.22);
+      outline-offset: 2px;
     }
 
     #mi-admin .mi-role strong {
@@ -2537,6 +2548,36 @@
       gap: 10px;
     }
 
+    #mi-admin .mi-account-board {
+      display: grid;
+      gap: 14px;
+    }
+
+    #mi-admin .mi-account-root-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 14px 16px;
+      background: #f8fbff;
+    }
+
+    #mi-admin .mi-account-root-line span {
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-account-root-line strong {
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
     #mi-admin .mi-account-slot {
       display: grid;
       grid-template-columns: 72px minmax(0, 1fr) auto;
@@ -2592,6 +2633,10 @@
       background: #fbfcfd;
     }
 
+    #mi-admin .mi-account-slot.is-unlinked {
+      background: #fcfcfd;
+    }
+
     #mi-admin .mi-row.mi-account-row {
       align-items: flex-start;
     }
@@ -2631,6 +2676,16 @@
       background: #edf8f2;
       font-size: 12px;
       font-weight: 950;
+    }
+
+    #mi-admin .mi-status-pill.is-muted {
+      color: #667085;
+      background: #f1f5f9;
+    }
+
+    #mi-admin .mi-status-pill.is-warn {
+      color: #a16207;
+      background: #fff7ed;
     }
 
     #mi-admin .mi-button.mi-button-small {
@@ -2896,32 +2951,32 @@
     }
   </style>
 
-  <div class="mi-login" aria-label="관리자 로그인 화면">
+  <div class="mi-login" aria-label="운영팀 로그인 화면">
     <div class="mi-login-panel">
       <article class="mi-login-copy">
-        <span class="mi-kicker">모먼트인사이트 관리자</span>
-        <h1>관리자는 입력하고 공개합니다.</h1>
-        <p>데이터, 보고서, 일정, 공개 코멘트를 한곳에서 관리합니다.</p>
-        <div class="mi-role-list">
-          <div class="mi-role">
+        <span class="mi-kicker">모먼트인사이트 접속 선택</span>
+        <h1>접속 유형을 선택하고 들어갑니다.</h1>
+        <p>광고주는 공개 데이터만 보고, 운영팀은 입력과 공개 관리를 진행합니다.</p>
+        <div class="mi-role-list" role="tablist" aria-label="접속 유형 선택">
+          <button class="mi-role" type="button" data-login-mode="client" aria-selected="false">
             <strong>광고주 로그인</strong>
             <span>매출 현황, 일정표, 공개 코멘트만 확인</span>
-          </div>
-          <div class="mi-role is-current">
-            <strong>관리자 로그인</strong>
+          </button>
+          <button class="mi-role is-current" type="button" data-login-mode="operator" aria-selected="true">
+            <strong>운영팀 로그인</strong>
             <span>수동 입력, 보고서 전달, 코드 연결, 공개 관리</span>
-          </div>
+          </button>
         </div>
       </article>
 
       <aside class="mi-login-card">
-        <span class="mi-kicker">관리자 전용</span>
-        <h2>관리자 코드 접속</h2>
-        <p>관리자 계정으로만 접근할 수 있습니다.</p>
+        <span class="mi-kicker" data-login-mode-kicker>운영팀 전용</span>
+        <h2 data-login-mode-title>운영팀 코드 접속</h2>
+        <p data-login-mode-desc>운영팀 또는 총관리자 코드로 접근할 수 있습니다.</p>
         <div class="mi-login-form">
-          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="관리자 코드 입력" aria-label="관리자 코드" />
-          <button class="mi-button" type="button" data-admin-login-button>관리자 콘솔 열기</button>
-          <div class="mi-code-status" data-admin-login-status aria-live="polite">관리자 전용 화면입니다.</div>
+          <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="운영팀 코드 입력" aria-label="운영팀 코드" />
+          <button class="mi-button" type="button" data-admin-login-button data-login-mode-button>운영팀 콘솔 열기</button>
+          <div class="mi-code-status" data-admin-login-status aria-live="polite">운영팀 전용 화면입니다.</div>
         </div>
       </aside>
     </div>
@@ -3357,46 +3412,52 @@
             <button class="mi-button is-ghost" type="button" data-owner-list-back>대행사 코드로 돌아가기</button>
           </header>
 
-          <div class="mi-split">
+          <div class="mi-account-board">
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>운영팀 목록</h2>
-                  <p>연결된 광고주가 없으면 빈 슬롯처럼 표시합니다.</p>
+                  <h2>총관리자 <span data-owner-root-account>mml93-a01</span></h2>
+                  <p>운영팀별 광고주 연결 상태를 한 줄에서 확인합니다.</p>
                 </div>
-                <span class="mi-badge" data-owner-team-count>0개</span>
+                <div class="mi-card-actions">
+                  <span class="mi-badge">운영팀 <b data-owner-team-count>0개</b></span>
+                  <span class="mi-badge">광고주 <b data-owner-client-count>0개</b></span>
+                </div>
               </div>
-              <div class="mi-account-full-grid" data-owner-team-full-list>
+              <div class="mi-account-root-line">
+                <span>최상위 권한</span>
+                <strong data-owner-root-account-label>mml93-a01</strong>
+              </div>
+              <div class="mi-account-full-grid" data-owner-team-full-list data-owner-relationship-list>
                 <div class="mi-account-slot is-empty">
                   <span class="mi-account-slot-number">1번</span>
                   <div class="mi-account-slot-main">
-                    <span>운영팀</span>
+                    <span>운영팀 관계</span>
+                    <strong>조회 전</strong>
+                    <small>활성 계정 새로고침 후 총관리자 아래 연결 관계가 표시됩니다.</small>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="mi-card mi-card-pad">
+              <div class="mi-card-head">
+                <div>
+                  <h2>총관리자 직접 광고주</h2>
+                  <p>운영팀을 거치지 않고 mml93-a01에서 직접 발급한 광고주입니다.</p>
+                </div>
+              </div>
+              <div class="mi-account-full-grid" data-owner-client-full-list>
+                <div class="mi-account-slot is-empty">
+                  <span class="mi-account-slot-number">1번</span>
+                  <div class="mi-account-slot-main">
+                    <span>직접 광고주</span>
                     <strong>조회 전</strong>
                     <small>활성 계정 새로고침 후 표시됩니다.</small>
                   </div>
                 </div>
               </div>
             </article>
-
-            <aside class="mi-card mi-card-pad">
-              <div class="mi-card-head">
-                <div>
-                  <h2>광고주 목록</h2>
-                  <p>총관리자 직접 발급과 운영팀 연결 발급을 구분합니다.</p>
-                </div>
-                <span class="mi-badge" data-owner-client-count>0개</span>
-              </div>
-              <div class="mi-account-full-grid" data-owner-client-full-list>
-                <div class="mi-account-slot is-empty">
-                  <span class="mi-account-slot-number">1번</span>
-                  <div class="mi-account-slot-main">
-                    <span>광고주</span>
-                    <strong>조회 전</strong>
-                    <small>활성 계정 새로고침 후 표시됩니다.</small>
-                  </div>
-                </div>
-              </div>
-            </aside>
           </div>
         </section>
 
@@ -4001,6 +4062,14 @@
         return "http://127.0.0.1:8790/api/team/agency-codes";
       }
 
+      function getClientEntryUrl() {
+        var path = window.location && window.location.pathname ? window.location.pathname : "";
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return "/client#mi-dashboard";
+        if (path.indexOf(".html") > -1) return "client.html#mi-dashboard";
+        return "/client.html#mi-dashboard";
+      }
+
       function miFetch(url, options) {
         options = options || {};
         if (typeof window.fetch === "function") return window.fetch(url, options);
@@ -4192,28 +4261,42 @@
         var clientList = root.querySelector("[data-owner-client-full-list]");
         var teamCount = root.querySelector("[data-owner-team-count]");
         var clientCount = root.querySelector("[data-owner-client-count]");
+        var ownerLabels = root.querySelectorAll("[data-owner-root-account], [data-owner-root-account-label]");
         var ownerCode = payload && payload.ownerAgencyCode ? payload.ownerAgencyCode : "mml93-a01";
         var activeTeams = activeOwnerTeams(payload);
         var activeClients = activeOwnerClients(payload);
+        var linkedClientCodes = activeTeams.reduce(function (map, team) {
+          var code = team && team.client && team.client.agencyCode ? String(team.client.agencyCode).toLowerCase() : "";
+          if (code) map[code] = true;
+          return map;
+        }, {});
+        var directClients = activeClients.filter(function (client) {
+          var code = client && client.agencyCode ? String(client.agencyCode).toLowerCase() : "";
+          return !code || !linkedClientCodes[code];
+        });
 
         if (teamCount) teamCount.textContent = activeTeams.length + "개";
         if (clientCount) clientCount.textContent = activeClients.length + "개";
+        ownerLabels.forEach(function (label) {
+          label.textContent = ownerCode;
+        });
 
         if (teamList) {
           if (!payload) {
-            teamList.innerHTML = ownerEmptySlot("운영팀", "활성 계정 새로고침 후 표시됩니다.");
+            teamList.innerHTML = ownerEmptySlot("운영팀 관계", "활성 계정 새로고침 후 총관리자 아래 연결 관계가 표시됩니다.");
           } else if (!activeTeams.length) {
-            teamList.innerHTML = ownerEmptySlot("운영팀", "아직 활성 운영팀이 없습니다.");
+            teamList.innerHTML = ownerEmptySlot("운영팀 관계", "아직 활성 운영팀이 없습니다.");
           } else {
             teamList.innerHTML = activeTeams.map(function (team, index) {
               var client = team.client || null;
-              var clientText = client
-                ? "연결 광고주: " + (client.name || client.businessName || "광고주") + " · " + (client.agencyCode || "-")
-                : "광고주 미연결";
-              return '<div class="mi-account-slot"><span class="mi-account-slot-number">' + (index + 1) +
-                '번</span><div class="mi-account-slot-main"><span>운영팀</span><strong>' +
+              var clientText = client ? ((client.name || client.businessName || "광고주") + " · " + (client.agencyCode || "-")) : "미연결";
+              var linkedClass = client ? "" : " is-unlinked";
+              var status = client ? '<span class="mi-status-pill">연결 완료</span>' : '<span class="mi-status-pill is-warn">미연결</span>';
+              return '<div class="mi-account-slot' + linkedClass + '"><span class="mi-account-slot-number">' + (index + 1) +
+                '번 운영팀</span><div class="mi-account-slot-main"><span>총관리자 ' + escapeHtml(ownerCode) + ' 아래 연결</span><strong>운영팀: ' +
                 escapeHtml(team.teamName || "운영팀") + ' · ' + escapeHtml(team.teamCode || "-") +
-                '</strong><small>' + escapeHtml(clientText) + '</small></div><div class="mi-account-slot-actions"><span class="mi-status-pill">활성</span><button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
+                '</strong><small>광고주: ' + escapeHtml(clientText) + '</small></div><div class="mi-account-slot-actions">' + status +
+                '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
                 escapeHtml(team.teamCode || "") + '">권한 해제</button></div></div>';
             }).join("");
           }
@@ -4221,17 +4304,17 @@
 
         if (clientList) {
           if (!payload) {
-            clientList.innerHTML = ownerEmptySlot("광고주", "활성 계정 새로고침 후 표시됩니다.");
-          } else if (!activeClients.length) {
-            clientList.innerHTML = ownerEmptySlot("광고주", "아직 활성 광고주가 없습니다.");
+            clientList.innerHTML = ownerEmptySlot("직접 광고주", "활성 계정 새로고침 후 표시됩니다.");
+          } else if (!directClients.length) {
+            clientList.innerHTML = ownerEmptySlot("직접 광고주", "총관리자가 직접 발급한 활성 광고주가 없습니다.");
           } else {
-            clientList.innerHTML = activeClients.map(function (client, index) {
+            clientList.innerHTML = directClients.map(function (client, index) {
               var isOwnerClient = String(client.agencyCode || "").toLowerCase() === String(ownerCode || "").toLowerCase();
               var action = isOwnerClient
                 ? '<span class="mi-status-pill">보호</span>'
                 : '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-client="' + escapeHtml(client.agencyCode || "") + '">권한 해제</button>';
               return '<div class="mi-account-slot"><span class="mi-account-slot-number">' + (index + 1) +
-                '번</span><div class="mi-account-slot-main"><span>광고주</span><strong>' +
+                '번 직접</span><div class="mi-account-slot-main"><span>총관리자 직접 발급</span><strong>광고주: ' +
                 escapeHtml(client.name || client.businessName || "광고주") + ' · ' + escapeHtml(client.agencyCode || "-") +
                 '</strong><small>' + escapeHtml(ownerClientIssuedText(client)) + '</small></div><div class="mi-account-slot-actions"><span class="mi-status-pill">활성</span>' +
                 action + '</div></div>';
@@ -4734,13 +4817,68 @@
       writeState(currentState);
       applyState(currentState);
 
+      var loginMode = "operator";
+      var loginModeCards = root.querySelectorAll("[data-login-mode]");
+      var loginModeKicker = root.querySelector("[data-login-mode-kicker]");
+      var loginModeTitle = root.querySelector("[data-login-mode-title]");
+      var loginModeDesc = root.querySelector("[data-login-mode-desc]");
+      var loginInput = root.querySelector("[data-admin-login-code]");
       var loginButton = root.querySelector("[data-admin-login-button]");
       var loginStatus = root.querySelector("[data-admin-login-status]");
+
+      function setLoginMode(mode) {
+        loginMode = mode === "client" ? "client" : "operator";
+        loginModeCards.forEach(function (card) {
+          var active = card.getAttribute("data-login-mode") === loginMode;
+          card.classList.toggle("is-current", active);
+          card.setAttribute("aria-selected", active ? "true" : "false");
+        });
+
+        if (loginMode === "client") {
+          if (loginModeKicker) loginModeKicker.textContent = "광고주 전용";
+          if (loginModeTitle) loginModeTitle.textContent = "광고주 코드 접속";
+          if (loginModeDesc) loginModeDesc.textContent = "광고주 전용 화면에서 코드를 입력하고 공개 데이터만 확인합니다.";
+          if (loginInput) {
+            loginInput.value = "";
+            loginInput.disabled = true;
+            loginInput.style.display = "none";
+            loginInput.setAttribute("aria-hidden", "true");
+          }
+          if (loginButton) loginButton.textContent = "광고주 화면으로 이동";
+          setStatus(loginStatus, "광고주 코드는 광고주 화면에서 입력합니다.", "");
+          return;
+        }
+
+        if (loginModeKicker) loginModeKicker.textContent = "운영팀 전용";
+        if (loginModeTitle) loginModeTitle.textContent = "운영팀 코드 접속";
+        if (loginModeDesc) loginModeDesc.textContent = "운영팀 또는 총관리자 코드로 접근할 수 있습니다.";
+        if (loginInput) {
+          loginInput.disabled = false;
+          loginInput.style.display = "";
+          loginInput.removeAttribute("aria-hidden");
+          loginInput.placeholder = "운영팀 코드 입력";
+          loginInput.setAttribute("aria-label", "운영팀 코드");
+        }
+        if (loginButton) loginButton.textContent = "운영팀 콘솔 열기";
+        setStatus(loginStatus, "운영팀 전용 화면입니다.", "");
+      }
+
+      loginModeCards.forEach(function (card) {
+        card.addEventListener("click", function () {
+          setLoginMode(card.getAttribute("data-login-mode"));
+        });
+      });
+      setLoginMode("operator");
+
       if (loginButton) {
         loginButton.addEventListener("click", async function () {
+          if (loginMode === "client") {
+            window.location.href = getClientEntryUrl();
+            return;
+          }
           var loginCode = getAdminCode();
           if (!loginCode) {
-            setStatus(loginStatus, "관리자 코드를 입력해주세요.", "is-warn");
+            setStatus(loginStatus, "운영팀 코드를 입력해주세요.", "is-warn");
             return;
           }
           currentOperationTeam = null;
@@ -4763,7 +4901,7 @@
               window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
               setScreen("agency-code", true);
             } catch (error) {
-              setStatus(loginStatus, error.message || "관리자 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
+              setStatus(loginStatus, error.message || "운영팀 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
             }
             loginButton.disabled = false;
             return;
@@ -4774,7 +4912,7 @@
             window.sessionStorage.setItem("miAdminAuthedCode", getAdminCode());
           } catch (error) {}
           syncOwnerAccessFields();
-          setStatus(loginStatus, "관리자 콘솔이 열렸습니다.", "is-ok");
+          setStatus(loginStatus, "총관리자 콘솔이 열렸습니다.", "is-ok");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
           loadOwnerCodes(true);
         });

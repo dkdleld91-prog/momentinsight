@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 26. 22:37:55
-- 기준 커밋: eecad9d
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/server/handlers/super-admin-api.mjs /  M supabase/functions/moment-api/index.ts
+- 마지막 자동 저장: 2026. 06. 26. 23:05:42
+- 기준 커밋: 89ccc41
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 총관리자 관계도 및 운영팀 로그인 선택 UX | 활성 계정 전체보기를 `총관리자 mml93-a01` 아래 운영팀-광고주 연결 관계형 목록으로 재구성하고, 로그인 첫 화면을 광고주/운영팀 클릭 선택형으로 정리 | `check:baseline`, `build:vercel`, `git diff --check`, 로컬 HTTP 200 및 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 권한 해제 후 동일 코드 재발급 보정 | 광고주/운영팀 광고주 코드가 권한 해제 후 `paused`로 남아 있어도 같은 코드 입력 시 신규 insert가 아니라 기존 행을 `active`로 재활성화하도록 보정. Edge 함수의 광고주 코드 검증도 active만 허용하도록 정리 | 실제 로컬 API DB 상태 전이 2회 반복 검수, `check:baseline`, `build:vercel`, `git diff --check` | 배포 대기 |
 | 완료 | 활성 계정 목록 전체보기 분리 | mml93-a01 활성 계정 카드는 요약/미리보기만 남기고, 운영팀·광고주 전체 목록은 별도 전체보기 화면에서 번호형 슬롯으로 관리하도록 분리. 전체보기에서도 권한 해제 가능 | `check:baseline`, `build:vercel`, `git diff --check`, HTML/JS 정적 검사 | 배포 대기 |
 | 완료 | 릴리즈 기준선 검사 추가 | 향후 기능 추가 시 기존 관리자/광고주/총관리자/순위추적 기준이 깨지면 바로 실패하도록 `check:baseline` 자동 검사를 추가 | `check:baseline`, `build:vercel`, `git diff --check`, 라이브 HTML/API 확인 | 배포 대기 |

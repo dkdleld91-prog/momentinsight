@@ -30,6 +30,10 @@ const checks = {
   adminMenuCount: adminScreens.length === 10,
   adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
+  adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
+    && adminSource.includes('data-login-mode="operator"')
+    && adminSource.includes("운영팀 로그인")
+    && adminSource.includes("운영팀 코드 접속"),
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
@@ -40,6 +44,9 @@ const checks = {
     && adminSource.includes("data-owner-team-full-list")
     && adminSource.includes("data-owner-client-full-list")
     && adminSource.includes("data-owner-list-open"),
+  ownerRelationshipBoard: adminSource.includes("data-owner-relationship-list")
+    && adminSource.includes("data-owner-root-account")
+    && adminSource.includes("총관리자 직접 광고주"),
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),

@@ -89,6 +89,10 @@ function agencyCodeScope(agencyCode) {
   return [...new Set(scope.filter(Boolean))];
 }
 
+function isPrimaryAgencyCode(agencyCode) {
+  return safeEqual(canonicalAgencyCode(agencyCode), primaryAgencyCode());
+}
+
 function requestAgencyCode(request, body = {}) {
   const url = new URL(request.url);
   return canonicalAgencyCode(
@@ -231,6 +235,11 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
     };
   }
 
+  const adminAuthorized = adminCodeAuthorized(request, body);
+  if (adminAuthorized && isPrimaryAgencyCode(agencyCode)) {
+    return { ok: true, agencyCode, clientId: null, admin: true, owner: true };
+  }
+
   const clientId = await findClientId(ctx, agencyCode);
   if (!clientId) {
     return {
@@ -239,7 +248,7 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
     };
   }
 
-  if (adminCodeAuthorized(request, body)) {
+  if (adminAuthorized) {
     return { ok: true, agencyCode, clientId, admin: true };
   }
 
@@ -284,7 +293,8 @@ async function listTrackers(request, ctx) {
   const access = await requireRankAccess(request, ctx, {}, { read: true });
   if (!access.ok) return access.response;
   const agencyCode = access.agencyCode;
-  const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") || 20)));
+  const maxListLimit = access.admin && isPrimaryAgencyCode(agencyCode) ? 500 : 50;
+  const limit = Math.max(1, Math.min(maxListLimit, Number(url.searchParams.get("limit") || 20)));
 
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -396,7 +406,7 @@ export async function runTrackerCheck(ctx, tracker) {
   }
 }
 
-async function createTracker(request, ctx, body) {
+async function createTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const keyword = normalizeText(body.keyword);
   const productUrl = normalizeText(body.targetUrl || body.productUrl || body.product_url);
@@ -439,7 +449,8 @@ async function createTracker(request, ctx, body) {
     .in("agency_code", agencyCodeScope(agencyCode))
     .eq("status", "active");
   if (activeCountResult.error) throw activeCountResult.error;
-  if (Number(activeCountResult.count || 0) >= 50) {
+  const unlimitedOwner = Boolean(access.admin && isPrimaryAgencyCode(agencyCode));
+  if (!unlimitedOwner && Number(activeCountResult.count || 0) >= 50) {
     return json(request, {
       ok: false,
       message: "순위 추적은 광고주 코드당 최대 50개까지만 등록할 수 있습니다.",
@@ -685,7 +696,7 @@ async function handlePost(request, ctx) {
   if (!access.ok) return access.response;
   body.agencyCode = access.agencyCode;
 
-  if (action === "create") return createTracker(request, ctx, body);
+  if (action === "create") return createTracker(request, ctx, body, access);
   if (action === "check") return checkOne(request, ctx, body);
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);

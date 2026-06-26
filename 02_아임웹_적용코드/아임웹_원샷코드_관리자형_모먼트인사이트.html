@@ -3160,7 +3160,7 @@
                 <div class="mi-owner-tool">
                   <h3>광고주 코드 생성</h3>
                   <div class="mi-form-row mi-form-row-3">
-                    <input class="mi-input" data-team-code-for-client placeholder="운영팀 코드" aria-label="광고주 발급용 운영팀 코드" />
+                    <input class="mi-input" data-team-code-for-client placeholder="선택 연결 운영팀 코드 · 비우면 총관리자 직접 발급" aria-label="광고주 발급용 운영팀 코드" />
                     <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 예: mml93-a02" aria-label="광고주 코드" />
                     <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
                     <button class="mi-button" type="button" data-team-client-create>광고주 바로 생성</button>
@@ -3977,20 +3977,20 @@
         if (title) title.textContent = ownerMode ? "운영팀·광고주 코드 바로 생성" : "광고주 코드 생성";
         if (desc) {
           desc.textContent = ownerMode
-            ? "mml93-a01 운영자만 별도 권한 비밀값 입력 후 코드를 만들고, 활성 계정 권한을 해제할 수 있습니다."
+            ? "mml93-a01 운영자는 운영팀 코드와 광고주 코드를 직접 만들고, 메인 계정 순위추적은 제한 없이 운영합니다."
             : "운영팀은 연결된 광고주 1개만 생성하고, 필요 시 연결 권한을 해제할 수 있습니다.";
         }
         if (badge) badge.textContent = ownerMode ? "Owner" : "Operator";
         if (modeTitle) modeTitle.textContent = ownerMode ? "총관리자 모드" : "운영팀 모드";
         if (modeDesc) {
           modeDesc.textContent = ownerMode
-            ? "운영팀 코드 생성, 광고주 코드 생성, 활성 계정 권한 해제를 모두 관리합니다."
+            ? "운영팀 코드 생성, 광고주 직접 생성, 활성 계정 권한 해제, 메인 계정 무제한 순위추적을 관리합니다."
             : "운영 홈, 광고주 화면, 입력, 보고서, 키워드, 순위, SEO 도구는 그대로 사용하고 광고주 코드는 1개만 발급합니다.";
         }
         if (modeBadge) modeBadge.textContent = ownerMode ? "Owner" : "Operator";
         if (ownerHint) {
           ownerHint.textContent = ownerMode
-            ? "mml93-a01은 운영팀을 만들고, 운영팀별 광고주 1개 연결 상태를 조회·해제할 수 있습니다."
+            ? "mml93-a01은 운영팀 없이 광고주를 직접 발급할 수 있습니다. 운영팀 코드 칸을 비우면 총관리자 직접 발급으로 저장됩니다."
             : "운영팀은 전체 관리자 도구를 그대로 쓰되, 대행사 코드 화면에서는 자신의 광고주 코드 1개만 생성·해제합니다.";
         }
         if (listTitle) listTitle.textContent = ownerMode ? "활성 계정" : "연결 상태";
@@ -4012,7 +4012,6 @@
         var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
         var nextTeamCode = payload && payload.nextTeamCode ? payload.nextTeamCode : "mml93-t01";
         var nextAgencyCode = payload && payload.nextAgencyCode ? payload.nextAgencyCode : "mml93-a02";
-        var availableTeam = firstAvailableOwnerTeam(payload);
 
         if (teamCreateInput && !String(teamCreateInput.value || "").trim()) {
           teamCreateInput.value = nextTeamCode;
@@ -4021,9 +4020,11 @@
           clientCodeInput.value = nextAgencyCode;
         }
         if (teamForClientInput) {
-          if (availableTeam) {
-            teamForClientInput.value = availableTeam.teamCode || "";
-            teamForClientInput.placeholder = "연결 가능한 운영팀 코드";
+          if (canManageOwnerCodes()) {
+            if (String(teamForClientInput.value || "").trim() && !ownerTeamIsActive(teamForClientInput.value)) {
+              teamForClientInput.value = "";
+            }
+            teamForClientInput.placeholder = "비우면 총관리자 직접 발급";
           } else if (!ownerTeamIsActive(teamForClientInput.value)) {
             teamForClientInput.value = "";
             teamForClientInput.placeholder = "먼저 운영팀 코드를 생성해주세요";
@@ -4047,7 +4048,7 @@
           rows.push('<div class="mi-row"><span>DB 상태</span><strong>운영팀 마이그레이션 적용 필요</strong></div>');
         }
         if (!activeTeams.length) {
-          rows.push('<div class="mi-row"><span>운영팀 상태</span><strong>활성 운영팀 없음 · 먼저 운영팀 코드를 생성하세요</strong></div>');
+          rows.push('<div class="mi-row"><span>운영팀 상태</span><strong>활성 운영팀 없음 · 광고주는 총관리자 직접 발급 가능</strong></div>');
         }
 
         activeTeams.forEach(function (team) {
@@ -4717,15 +4718,16 @@
             : (teamInput ? String(teamInput.value || "").trim() : "");
           var agencyCode = codeInput ? String(codeInput.value || "").trim() : "";
           var clientName = nameInput ? String(nameInput.value || "").trim() : "";
-          if (!teamCode) {
+          var ownerMode = canManageOwnerCodes();
+          if (!ownerMode && !teamCode) {
             setStatus(ownerStatus, "광고주를 연결할 운영팀 코드를 입력해주세요.", "is-warn");
             return;
           }
-          if (!ownerTeamIsActive(teamCode)) {
+          if (teamCode && !ownerTeamIsActive(teamCode)) {
             setStatus(ownerStatus, "활성 운영팀 코드가 없습니다. 먼저 운영팀 바로 생성 후 광고주 코드를 생성해주세요.", "is-warn");
             return;
           }
-          if (!ownerTeamCanIssueClient(teamCode)) {
+          if (teamCode && !ownerTeamCanIssueClient(teamCode)) {
             setStatus(ownerStatus, "이 운영팀에는 이미 광고주 1명이 연결되어 있습니다. 새 운영팀 코드를 생성해주세요.", "is-warn");
             return;
           }
@@ -4737,12 +4739,22 @@
           teamClientButton.disabled = true;
           setStatus(ownerStatus, "광고주 코드를 생성 중입니다.", "");
           try {
-            var payload = await requestTeamCodes("POST", teamCode, {
-              action: "create-client-for-team",
-              clientName: clientName,
-              businessName: clientName,
-              agencyCode: agencyCode
-            });
+            var payload = null;
+            if (ownerMode && !teamCode) {
+              payload = await requestOwnerCodes("POST", {
+                action: "create-client",
+                clientName: clientName,
+                businessName: clientName,
+                agencyCode: agencyCode
+              });
+            } else {
+              payload = await requestTeamCodes("POST", teamCode, {
+                action: "create-client-for-team",
+                clientName: clientName,
+                businessName: clientName,
+                agencyCode: agencyCode
+              });
+            }
             if (!payload.ok) throw new Error(payload.message || "광고주 코드 생성에 실패했습니다.");
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
@@ -5918,7 +5930,8 @@
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
+            var rankListLimit = canManageOwnerCodes() && String(agencyCode || "").trim().toLowerCase() === "mml93-a01" ? "500" : "50";
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: rankListLimit }).toString();
           }
           var response = await fetch(url, options);
           var payload = await response.json().catch(function () { return null; });

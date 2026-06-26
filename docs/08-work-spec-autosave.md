@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 26. 23:56:10
-- 기준 커밋: bbc3720
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/server/handlers/demo-api.mjs
+- 마지막 자동 저장: 2026. 06. 26. 23:20:18
+- 기준 커밋: fb59437
+- 작업트리: M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,7 +32,6 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료 | 엑셀 입력 기반 디자인 보고서 MVP | 운영팀이 월간 KPI/채널별 성과를 엑셀 표 형태로 붙여넣으면 고정 디자인 보고서 미리보기를 만들고, 광고주 화면에 디자인 보고서와 PDF 저장 버튼을 노출. 생성된 보고서 요약은 공개 상태 저장 시 `reports` 테이블에도 client_visible 보고서로 upsert | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 서버 저장 마커 검사, 로컬 HTTP 200 및 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 광고주 화면 접속 유형 선택 보강 | 광고주 로그인 화면에서도 광고주/운영팀을 클릭 선택할 수 있게 하고, 운영팀 선택 시 운영팀 코드 접속 화면으로 이동하도록 연결 | `check:baseline`, `build:vercel`, `git diff --check`, 로컬 HTTP 200 및 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 총관리자 관계도 및 운영팀 로그인 선택 UX | 활성 계정 전체보기를 `총관리자 mml93-a01` 아래 운영팀-광고주 연결 관계형 목록으로 재구성하고, 로그인 첫 화면을 광고주/운영팀 클릭 선택형으로 정리 | `check:baseline`, `build:vercel`, `git diff --check`, 로컬 HTTP 200 및 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 권한 해제 후 동일 코드 재발급 보정 | 광고주/운영팀 광고주 코드가 권한 해제 후 `paused`로 남아 있어도 같은 코드 입력 시 신규 insert가 아니라 기존 행을 `active`로 재활성화하도록 보정. Edge 함수의 광고주 코드 검증도 active만 허용하도록 정리 | 실제 로컬 API DB 상태 전이 2회 반복 검수, `check:baseline`, `build:vercel`, `git diff --check` | 배포 대기 |

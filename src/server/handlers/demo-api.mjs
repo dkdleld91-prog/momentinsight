@@ -302,47 +302,6 @@ async function writePublicState(ctx, state) {
   );
   if (actionResult.error) return { error: actionResult.error };
 
-  const generatedReport = state.generatedReport || (Array.isArray(state.reports) ? state.reports[0] : null);
-  if (generatedReport && (generatedReport.title || generatedReport.summary || generatedReport.insight)) {
-    const reportDate = String(generatedReport.generatedAt || generatedReport.date || state.updatedAt || new Date().toISOString().slice(0, 10)).replace(/\./g, "-");
-    const periodStart = monthPeriod(reportDate);
-    const reportType = ["weekly", "monthly", "kpi", "sales", "ads", "keyword", "campaign", "content"].includes(generatedReport.type)
-      ? generatedReport.type
-      : "monthly";
-    const reportResult = await upsertLatestByQuery(
-      ctx,
-      "reports",
-      ctx.supabaseAdmin
-        .from("reports")
-        .select("id")
-        .eq("client_id", demoClientId)
-        .eq("brand_id", demoBrandId)
-        .eq("report_type", reportType)
-        .eq("report_date", reportDate),
-      {
-        client_id: demoClientId,
-        brand_id: demoBrandId,
-        report_type: reportType,
-        title: generatedReport.title || `${state.client || "광고주"} 월간 성과 보고서`,
-        report_date: reportDate,
-        period_start: periodStart,
-        period_end: reportDate,
-        summary: generatedReport.summary || generatedReport.insight || state.comment || "월간 성과 보고서가 생성되었습니다.",
-        public_comment: generatedReport.comment || generatedReport.action || "보고서 세부 내용은 광고주 화면에서 확인해주세요.",
-        visibility: "client_visible"
-      },
-      {
-        title: generatedReport.title || `${state.client || "광고주"} 월간 성과 보고서`,
-        period_start: periodStart,
-        period_end: reportDate,
-        summary: generatedReport.summary || generatedReport.insight || state.comment || "월간 성과 보고서가 생성되었습니다.",
-        public_comment: generatedReport.comment || generatedReport.action || "보고서 세부 내용은 광고주 화면에서 확인해주세요.",
-        visibility: "client_visible"
-      }
-    );
-    if (reportResult.error) return { error: reportResult.error };
-  }
-
   if (Array.isArray(state.channelMetrics) && state.channelMetrics.length) {
     const channelCodes = [...new Set(state.channelMetrics.map((item) => channelCode(item.name)))];
     const { data: channels, error: channelError } = await ctx.supabaseAdmin

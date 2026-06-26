@@ -2791,6 +2791,67 @@
       font-weight: 950;
     }
 
+    #mi-admin .mi-report-preview {
+      display: grid;
+      gap: 12px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 16px;
+      background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+    }
+
+    #mi-admin .mi-report-preview h3 {
+      margin: 0;
+      color: var(--mi-navy);
+      font-size: 20px;
+    }
+
+    #mi-admin .mi-report-preview p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-report-preview-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-admin .mi-report-preview-grid div {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-report-preview-grid span,
+    #mi-admin .mi-report-preview-channel span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-report-preview-grid strong,
+    #mi-admin .mi-report-preview-channel strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-report-preview-channel {
+      display: grid;
+      grid-template-columns: 1fr repeat(3, minmax(80px, auto));
+      gap: 10px;
+      align-items: center;
+      border-top: 1px solid var(--mi-line);
+      padding-top: 10px;
+    }
+
     @media (max-width: 900px) {
       #mi-admin .mi-app {
         grid-template-columns: 1fr;
@@ -3566,12 +3627,12 @@
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
               <h2>엑셀 붙여넣기</h2>
-              <p style="margin-bottom:14px;">CSV로 입력한 수치를 확인하고, 검수 후 성과 화면에 반영합니다.</p>
+              <p style="margin-bottom:14px;">엑셀 탭 복사값 또는 CSV 수치를 확인하고, 검수 후 성과 화면에 반영합니다.</p>
               <div class="mi-tool">
                 <textarea class="mi-textarea" data-admin-excel-input>매출,광고비,구매수,클릭수,전환수
 41800000,7200000,1248,32800,1607</textarea>
-                <button class="mi-button" type="button" data-admin-excel-calc>CSV 수치 계산</button>
-                <button class="mi-button" type="button" data-admin-excel-publish>CSV 계산 결과를 공개 데이터에 반영</button>
+                <button class="mi-button" type="button" data-admin-excel-calc>수치 계산</button>
+                <button class="mi-button" type="button" data-admin-excel-publish>계산 결과를 공개 데이터에 반영</button>
                 <div class="mi-note">운영 단계에서는 로그인, DB 저장, 엑셀 업로드 파서, 변경 이력으로 확장합니다.</div>
               </div>
             </article>
@@ -3594,6 +3655,45 @@
             </div>
             <span class="mi-badge warn">관리자 전용</span>
           </header>
+
+          <div class="mi-split">
+            <article class="mi-card mi-card-pad">
+              <h2>엑셀 기반 자동 보고서</h2>
+              <p style="margin-bottom:14px;">엑셀에서 아래 양식으로 복사해 붙여넣으면 고정 디자인 보고서에 자동 반영됩니다.</p>
+              <div class="mi-tool">
+                <label class="mi-field">월간 KPI 입력
+                  <textarea class="mi-textarea" data-report-kpi-input>항목,값
+광고주,브랜드 A
+보고기간,2026년 6월
+목표매출,36000000
+매출,41800000
+광고비,7200000
+구매수,1248
+클릭수,32800
+전환수,1607
+주요성과,검색 기반 매출 흐름은 양호하며 구매 전환도 안정적입니다.
+다음액션,고효율 키워드 중심으로 예산을 재배치하고 소재 피로도를 점검합니다.</textarea>
+                </label>
+                <label class="mi-field">채널별 성과 입력
+                  <textarea class="mi-textarea" data-report-channel-input>채널,매출,광고비,구매수,클릭수,전환수,메모
+네이버,18600000,3200000,642,16800,823,검색광고 효율 양호
+쿠팡,14200000,2210000,438,9300,438,구매 전환 안정
+메타,9000000,1790000,168,6700,346,소재 교체 필요</textarea>
+                </label>
+                <button class="mi-button is-ghost" type="button" data-report-generate>디자인 보고서 미리보기</button>
+                <button class="mi-button" type="button" data-report-publish>광고주 보고서로 반영</button>
+                <div class="mi-code-status" data-report-status aria-live="polite">엑셀 입력값을 붙여넣고 미리보기를 눌러주세요.</div>
+              </div>
+            </article>
+
+            <aside class="mi-card mi-card-pad">
+              <h3>보고서 디자인 미리보기</h3>
+              <div class="mi-report-preview" data-admin-designed-report-preview>
+                <h3>월간 성과 보고서</h3>
+                <p>아직 계산 전입니다. 엑셀 입력값을 기준으로 자동 구성됩니다.</p>
+              </div>
+            </aside>
+          </div>
 
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
@@ -4539,6 +4639,188 @@
         return parsed.length ? parsed : fallback;
       }
 
+      function splitReportRow(line) {
+        return String(line || "").indexOf("\t") > -1
+          ? String(line || "").split("\t").map(function (item) { return item.trim(); })
+          : String(line || "").split(",").map(function (item) { return item.trim(); });
+      }
+
+      function parseReportKeyValues(value) {
+        return String(value || "").split(/\n+/).map(function (line) {
+          return splitReportRow(line);
+        }).reduce(function (map, cols) {
+          if (!cols[0] || cols[0] === "항목") return map;
+          map[cols[0].replace(/\s+/g, "")] = cols.slice(1).join(",").trim();
+          return map;
+        }, {});
+      }
+
+      function reportValue(map, keys, fallback) {
+        for (var index = 0; index < keys.length; index += 1) {
+          var key = String(keys[index] || "").replace(/\s+/g, "");
+          if (map[key]) return map[key];
+        }
+        return fallback;
+      }
+
+      function parseReportChannels(value) {
+        var rows = String(value || "").split(/\n+/).map(function (line) {
+          return splitReportRow(line);
+        }).filter(function (cols) {
+          return cols[0] && cols[0] !== "채널";
+        });
+        return rows.map(function (cols) {
+          var sales = parseNumber(cols[1]);
+          var spend = parseNumber(cols[2]);
+          var orders = parseNumber(cols[3]);
+          var clicks = parseNumber(cols[4]);
+          var conversions = parseNumber(cols[5]);
+          var roas = spend > 0 ? Math.round((sales / spend) * 100) : 0;
+          var ctr = clicks > 0 ? "확인됨" : "미입력";
+          var cvr = clicks > 0 && conversions > 0 ? ((conversions / clicks) * 100).toFixed(1) + "%" : "-";
+          return {
+            name: cols[0],
+            summary: cols[6] || "운영 코멘트 확인 필요",
+            salesRaw: sales,
+            spendRaw: spend,
+            ordersRaw: orders,
+            clicksRaw: clicks,
+            conversionsRaw: conversions,
+            sales: formatMoney(sales),
+            adSpend: formatMoney(spend),
+            roas: formatNumber(roas) + "%",
+            orders: formatNumber(orders) + "건",
+            ctr: ctr,
+            cvr: cvr,
+            cpa: conversions > 0 ? formatNumber(Math.round(spend / conversions)) + "원" : "-",
+            cpc: clicks > 0 ? formatNumber(Math.round(spend / clicks)) + "원" : "-"
+          };
+        });
+      }
+
+      function buildDesignedReportFromInput() {
+        var kpiInput = root.querySelector("[data-report-kpi-input]");
+        var channelInput = root.querySelector("[data-report-channel-input]");
+        var map = parseReportKeyValues(kpiInput ? kpiInput.value : "");
+        var channels = parseReportChannels(channelInput ? channelInput.value : "");
+        var totalSales = parseNumber(reportValue(map, ["매출", "실제매출", "이번달매출"], 0));
+        var totalSpend = parseNumber(reportValue(map, ["광고비", "광고비용", "광고비사용액"], 0));
+        var targetSales = parseNumber(reportValue(map, ["목표매출", "목표"], 0));
+        var orders = parseNumber(reportValue(map, ["구매수", "주문수"], 0));
+        var clicks = parseNumber(reportValue(map, ["클릭수"], 0));
+        var conversions = parseNumber(reportValue(map, ["전환수"], orders));
+        if (!totalSales && channels.length) totalSales = channels.reduce(function (sum, item) { return sum + item.salesRaw; }, 0);
+        if (!totalSpend && channels.length) totalSpend = channels.reduce(function (sum, item) { return sum + item.spendRaw; }, 0);
+        if (!orders && channels.length) orders = channels.reduce(function (sum, item) { return sum + item.ordersRaw; }, 0);
+        if (!clicks && channels.length) clicks = channels.reduce(function (sum, item) { return sum + item.clicksRaw; }, 0);
+        if (!conversions && channels.length) conversions = channels.reduce(function (sum, item) { return sum + item.conversionsRaw; }, 0);
+        var roas = totalSpend > 0 ? Math.round((totalSales / totalSpend) * 100) : 0;
+        var achievement = targetSales > 0 ? Math.round((totalSales / targetSales) * 100) : 0;
+        var cvr = clicks > 0 && conversions > 0 ? ((conversions / clicks) * 100).toFixed(1) + "%" : "-";
+        return {
+          type: "monthly",
+          title: "월간 성과 보고서",
+          client: reportValue(map, ["광고주", "브랜드", "광고주명"], defaultState.client),
+          period: reportValue(map, ["보고기간", "기간", "월"], new Date().toISOString().slice(0, 7)),
+          generatedAt: new Date().toISOString().slice(0, 10).replace(/-/g, "."),
+          metrics: {
+            targetSales: formatMoney(targetSales),
+            sales: formatMoney(totalSales),
+            adSpend: formatMoney(totalSpend),
+            roas: formatNumber(roas) + "%",
+            orders: formatNumber(orders) + "건",
+            clicks: formatNumber(clicks) + "회",
+            conversions: formatNumber(conversions) + "건",
+            achievement: achievement ? formatNumber(achievement) + "%" : "목표 미입력",
+            cvr: cvr
+          },
+          insight: reportValue(map, ["주요성과", "핵심인사이트", "인사이트"], "성과 요약을 입력하면 광고주 보고서에 그대로 반영됩니다."),
+          action: reportValue(map, ["다음액션", "실행계획", "액션"], "다음 실행 계획을 입력해주세요."),
+          channels: channels
+        };
+      }
+
+      function renderAdminDesignedReport(report) {
+        var preview = root.querySelector("[data-admin-designed-report-preview]");
+        if (!preview || !report) return;
+        var channelHtml = (report.channels || []).slice(0, 4).map(function (item) {
+          return '<div class="mi-report-preview-channel"><strong>' + escapeHtml(item.name) +
+            '</strong><div><span>매출</span><strong>' + escapeHtml(item.sales) +
+            '</strong></div><div><span>광고비</span><strong>' + escapeHtml(item.adSpend) +
+            '</strong></div><div><span>ROAS</span><strong>' + escapeHtml(item.roas) +
+            '</strong></div></div>';
+        }).join("");
+        preview.innerHTML =
+          '<h3>' + escapeHtml(report.client) + ' · ' + escapeHtml(report.period) + '</h3>' +
+          '<p>' + escapeHtml(report.insight) + '</p>' +
+          '<div class="mi-report-preview-grid">' +
+          '<div><span>매출</span><strong>' + escapeHtml(report.metrics.sales) + '</strong></div>' +
+          '<div><span>광고비</span><strong>' + escapeHtml(report.metrics.adSpend) + '</strong></div>' +
+          '<div><span>ROAS</span><strong>' + escapeHtml(report.metrics.roas) + '</strong></div>' +
+          '<div><span>목표 달성률</span><strong>' + escapeHtml(report.metrics.achievement) + '</strong></div>' +
+          '</div>' +
+          channelHtml +
+          '<p><strong>다음 실행:</strong> ' + escapeHtml(report.action) + '</p>';
+      }
+
+      function publishDesignedReport(report) {
+        var state = readState();
+        state.client = report.client || state.client;
+        state.sales = report.metrics.sales;
+        state.adSpend = report.metrics.adSpend;
+        state.roas = report.metrics.roas;
+        state.orders = report.metrics.orders;
+        state.achievement = report.metrics.achievement;
+        state.status = "보고서 반영";
+        state.updatedAt = report.generatedAt;
+        state.comment = report.insight;
+        state.generatedReport = report;
+        state.reports = [{
+          title: report.period + " " + report.title,
+          type: "monthly",
+          date: report.generatedAt,
+          summary: report.insight,
+          comment: report.action,
+          generated: true
+        }].concat((state.reports || []).filter(function (item) {
+          return !(item && item.generated);
+        })).slice(0, 4);
+        if (report.channels && report.channels.length) {
+          state.channels = report.channels.map(function (item) {
+            return { name: item.name, summary: item.summary, sales: item.sales, roas: item.roas };
+          });
+          state.channelDetails = report.channels.map(function (item) {
+            return {
+              name: item.name,
+              type: item.name === "네이버" ? "검색광고" : (item.name === "쿠팡" ? "상품광고" : "운영 채널"),
+              sales: item.sales,
+              adSpend: item.adSpend,
+              roas: item.roas,
+              orders: item.orders,
+              ctr: item.ctr,
+              cvr: item.cvr,
+              cpa: item.cpa,
+              cpc: item.cpc,
+              summary: item.summary
+            };
+          });
+          state.channelMetrics = report.channels.map(function (item) {
+            return {
+              name: item.name,
+              sales: item.salesRaw,
+              spend: item.spendRaw,
+              clicks: item.clicksRaw,
+              conversions: item.conversionsRaw,
+              orders: item.ordersRaw,
+              summary: item.summary
+            };
+          });
+        }
+        writeState(state);
+        applyState(state);
+        return state;
+      }
+
       function channelsToText(channels) {
         return (channels || []).map(function (item) {
           return [item.name, item.summary, item.sales, item.roas].join(",");
@@ -5292,7 +5574,7 @@
       if (excelButton && excelInput && excelResult) {
         excelButton.addEventListener("click", function () {
           var rows = excelInput.value.trim().split(/\n+/);
-          var data = (rows[1] || rows[0] || "").split(",").map(function (item) {
+          var data = splitReportRow(rows[1] || rows[0] || "").map(function (item) {
             return parseNumber(item);
           });
           var sales = data[0] || 0;
@@ -5331,6 +5613,27 @@
             excelResult.innerHTML += '<div class="mi-row"><span>공개 반영</span><strong>광고주 화면 데이터 업데이트 완료</strong></div>';
           }
           await persistDemoState(state, null, "CSV 계산 결과가 광고주 화면에도 반영되었습니다.");
+        });
+      }
+
+      var reportGenerateButton = root.querySelector("[data-report-generate]");
+      var reportPublishButton = root.querySelector("[data-report-publish]");
+      var reportStatus = root.querySelector("[data-report-status]");
+      var lastDesignedReport = null;
+      if (reportGenerateButton) {
+        reportGenerateButton.addEventListener("click", function () {
+          lastDesignedReport = buildDesignedReportFromInput();
+          renderAdminDesignedReport(lastDesignedReport);
+          setStatus(reportStatus, "미리보기 완료: 광고주 보고서로 반영할 수 있습니다.", "is-ok");
+        });
+      }
+      if (reportPublishButton) {
+        reportPublishButton.addEventListener("click", async function () {
+          lastDesignedReport = buildDesignedReportFromInput();
+          renderAdminDesignedReport(lastDesignedReport);
+          var state = publishDesignedReport(lastDesignedReport);
+          setStatus(reportStatus, "로컬 반영 완료: 공개 데이터에 저장 중입니다.", "");
+          await persistDemoState(state, reportStatus, "보고서 반영 완료: 광고주 대시보드의 디자인 보고서 영역과 PDF 저장 버튼에 연결되었습니다.");
         });
       }
 

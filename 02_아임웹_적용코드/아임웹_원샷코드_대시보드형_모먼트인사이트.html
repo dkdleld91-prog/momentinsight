@@ -616,6 +616,135 @@
       background: var(--mi-orange-bg);
     }
 
+    #mi-clean .mi-pdf-report {
+      display: grid;
+      gap: 18px;
+      margin-bottom: 16px;
+      padding: 24px;
+      background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+    }
+
+    #mi-clean .mi-report-cover {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      border-bottom: 1px solid var(--mi-line);
+      padding-bottom: 16px;
+    }
+
+    #mi-clean .mi-report-cover h2 {
+      margin-bottom: 6px;
+      color: var(--mi-navy);
+      font-size: 26px;
+    }
+
+    #mi-clean .mi-report-cover p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    #mi-clean .mi-report-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-clean .mi-report-metric,
+    #mi-clean .mi-report-note {
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-clean .mi-report-metric span,
+    #mi-clean .mi-report-note span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-clean .mi-report-metric strong {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 23px;
+      line-height: 1.1;
+    }
+
+    #mi-clean .mi-report-note strong {
+      display: block;
+      margin-top: 7px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    #mi-clean .mi-report-channel-table {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-clean .mi-report-channel-row {
+      display: grid;
+      grid-template-columns: 1fr repeat(4, minmax(72px, auto));
+      gap: 10px;
+      align-items: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    #mi-clean .mi-report-channel-row span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-clean .mi-report-channel-row strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-print-only {
+      display: none;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+
+      #mi-clean .mi-pdf-report,
+      #mi-clean .mi-pdf-report * {
+        visibility: visible;
+      }
+
+      #mi-clean .mi-pdf-report {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        margin: 0;
+        border: 0;
+        box-shadow: none;
+      }
+
+      #mi-clean .mi-print-hide {
+        display: none !important;
+      }
+
+      #mi-clean .mi-print-only {
+        display: block;
+      }
+    }
+
     #mi-clean .mi-table {
       display: grid;
       gap: 8px;
@@ -2242,7 +2371,13 @@
       #mi-clean .mi-action-strip,
       #mi-clean .mi-grid,
       #mi-clean .mi-data-grid,
-      #mi-clean .mi-channel-detail-grid {
+      #mi-clean .mi-channel-detail-grid,
+      #mi-clean .mi-report-metrics {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-clean .mi-report-cover,
+      #mi-clean .mi-report-channel-row {
         grid-template-columns: 1fr;
       }
 
@@ -2494,6 +2629,22 @@
               </div>
             </aside>
           </div>
+
+          <article class="mi-card mi-pdf-report" data-mi-designed-report>
+            <div class="mi-report-cover">
+              <div>
+                <span class="mi-kicker">디자인 보고서</span>
+                <h2 data-mi-report-title>월간 성과 보고서</h2>
+                <p><span data-mi-report-client>브랜드 A</span> · <span data-mi-report-period>2026년 6월</span> · 업데이트 <span data-mi-report-updated>2026.06.19</span></p>
+              </div>
+              <button class="mi-button mi-print-hide" type="button" data-mi-report-print>PDF 저장</button>
+            </div>
+            <div class="mi-report-metrics" data-mi-report-metrics></div>
+            <div class="mi-report-note"><span>핵심 인사이트</span><strong data-mi-report-insight>운영팀이 보고서를 반영하면 이 영역에 요약이 표시됩니다.</strong></div>
+            <div class="mi-report-channel-table" data-mi-report-channels></div>
+            <div class="mi-report-note"><span>다음 실행 계획</span><strong data-mi-report-action>다음 액션이 준비 중입니다.</strong></div>
+            <p class="mi-print-only">본 보고서는 모먼트 인사이트에서 생성된 광고주 공유용 PDF입니다.</p>
+          </article>
 
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
@@ -4908,6 +5059,7 @@
         setText("[data-mi-insight-watch]", state.watchPoint);
         renderChannelDetails(state.channelDetails || buildChannelDetails(state.channels || defaultState.channels));
         renderReports(state.reports || defaultState.reports, state.updatedAt);
+        renderDesignedReport(state);
         renderSchedules(state.schedules || defaultState.schedules);
         if (keywordInput && state.keywords && state.keywords.length && state.keywords[0].keyword) {
           keywordInput.value = state.keywords[0].keyword;
@@ -4984,6 +5136,80 @@
         }).join("") +
           '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
           escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 담당자: 운영 관리자</span></div><b class="mi-report-state">확인됨</b></div>';
+      }
+
+      function fallbackDesignedReport(state) {
+        var latestReport = state.reports && state.reports.length ? state.reports[0] : {};
+        var channels = (state.channelDetails || buildChannelDetails(state.channels || defaultState.channels)).map(function (item) {
+          return {
+            name: item.name,
+            sales: item.sales || "-",
+            adSpend: item.adSpend || "-",
+            roas: item.roas || "-",
+            orders: item.orders || "-",
+            summary: item.summary || "공개 요약 확인"
+          };
+        });
+        return {
+          title: latestReport.title || "월간 성과 보고서",
+          client: state.client || defaultState.client,
+          period: latestReport.date || state.reportPeriod || "최근 업데이트 기준",
+          generatedAt: latestReport.date || state.updatedAt || defaultState.updatedAt,
+          metrics: {
+            sales: state.sales || defaultState.sales,
+            adSpend: state.adSpend || defaultState.adSpend,
+            roas: state.roas || defaultState.roas,
+            orders: state.orders || defaultState.orders,
+            achievement: state.achievement || defaultState.achievement,
+            clicks: "보고서 반영 후 표시",
+            conversions: "보고서 반영 후 표시",
+            cvr: "-"
+          },
+          insight: latestReport.summary || state.comment || defaultState.comment,
+          action: latestReport.comment || state.primaryAction || defaultState.primaryAction,
+          channels: channels
+        };
+      }
+
+      function renderDesignedReport(state) {
+        var report = state.generatedReport || fallbackDesignedReport(state);
+        setText("[data-mi-report-title]", report.title || "월간 성과 보고서");
+        setText("[data-mi-report-client]", report.client || state.client || defaultState.client);
+        setText("[data-mi-report-period]", report.period || "최근 업데이트 기준");
+        setText("[data-mi-report-updated]", report.generatedAt || state.updatedAt || defaultState.updatedAt);
+        setText("[data-mi-report-insight]", report.insight || state.comment || defaultState.comment);
+        setText("[data-mi-report-action]", report.action || state.primaryAction || defaultState.primaryAction);
+
+        var metrics = root.querySelector("[data-mi-report-metrics]");
+        if (metrics) {
+          var metricList = [
+            ["매출", report.metrics && report.metrics.sales],
+            ["광고비", report.metrics && report.metrics.adSpend],
+            ["ROAS", report.metrics && report.metrics.roas],
+            ["목표 달성률", report.metrics && report.metrics.achievement],
+            ["구매수", report.metrics && report.metrics.orders],
+            ["클릭수", report.metrics && report.metrics.clicks],
+            ["전환수", report.metrics && report.metrics.conversions],
+            ["전환율", report.metrics && report.metrics.cvr]
+          ];
+          metrics.innerHTML = metricList.map(function (item) {
+            return '<div class="mi-report-metric"><span>' + escapeHtml(item[0]) +
+              '</span><strong>' + escapeHtml(item[1] || "-") + '</strong></div>';
+          }).join("");
+        }
+
+        var channelTable = root.querySelector("[data-mi-report-channels]");
+        if (channelTable) {
+          var channels = report.channels && report.channels.length ? report.channels : fallbackDesignedReport(state).channels;
+          channelTable.innerHTML = '<div class="mi-report-channel-row"><strong>채널</strong><span>매출</span><span>광고비</span><span>ROAS</span><span>구매수</span></div>' +
+            channels.map(function (item) {
+              return '<div class="mi-report-channel-row"><strong>' + escapeHtml(item.name || "채널") +
+                '</strong><span>' + escapeHtml(item.sales || "-") +
+                '</span><span>' + escapeHtml(item.adSpend || "-") +
+                '</span><span>' + escapeHtml(item.roas || "-") +
+                '</span><span>' + escapeHtml(item.orders || "-") + '</span></div>';
+            }).join("");
+        }
       }
 
       function setStatus(node, message, type) {
@@ -5144,6 +5370,13 @@
           await syncDemoState(loginStatus);
           await unlockWithCode(loginCode.value, loginStatus);
           loginButton.disabled = false;
+        });
+      }
+
+      var reportPrintButton = root.querySelector("[data-mi-report-print]");
+      if (reportPrintButton) {
+        reportPrintButton.addEventListener("click", function () {
+          window.print();
         });
       }
 

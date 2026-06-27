@@ -198,6 +198,56 @@
       box-shadow: none;
     }
 
+    #mi-clean .mi-kakao-floating {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 80;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 10px 16px 10px 12px;
+      border: 1px solid rgba(6, 26, 58, 0.18);
+      border-radius: 999px;
+      background: rgba(6, 26, 58, 0.96);
+      color: #fff;
+      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.22);
+      text-decoration: none;
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    #mi-clean .mi-kakao-floating:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 22px 52px rgba(6, 26, 58, 0.28);
+    }
+
+    #mi-clean .mi-kakao-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #fee500;
+      color: #111;
+      font-size: 12px;
+      font-style: normal;
+      font-weight: 900;
+    }
+
+    #mi-clean .mi-kakao-floating span {
+      display: grid;
+      gap: 1px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 11px;
+    }
+
+    #mi-clean .mi-kakao-floating b {
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
     #mi-clean .mi-login-note,
     #mi-clean .mi-code-status {
       color: var(--mi-muted);
@@ -2510,6 +2560,17 @@
       #mi-clean .mi-schedule-item .mi-badge {
         width: max-content;
       }
+
+      #mi-clean .mi-kakao-floating {
+        right: 14px;
+        bottom: 14px;
+        min-height: 48px;
+        padding: 8px 12px 8px 8px;
+      }
+
+      #mi-clean .mi-kakao-floating span {
+        display: none;
+      }
     }
   </style>
 
@@ -2936,7 +2997,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 오가닉 상품 순위를 계속 추적합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고, 화면에는 최근 30일 기록을 표시합니다.</p>
+              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 오전 9시와 오후 3시에 자동 수집하고, 화면에는 최근 30일 기록을 표시합니다.</p>
             </div>
             <span class="mi-badge">오가닉 추적</span>
           </header>
@@ -2946,7 +3007,7 @@
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
                 <h2>상품 URL 기준 오가닉 순위 추적을 시작합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 3시간 주기로 기록합니다.</p>
+                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 오전 9시와 오후 3시 기준으로 기록합니다.</p>
               </div>
               <span class="mi-period">광고 제외 오가닉</span>
             </div>
@@ -3135,6 +3196,11 @@
       </div>
     </main>
   </div>
+
+  <a class="mi-kakao-floating" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer" aria-label="모먼트인사이트 카카오톡 채널 문의">
+    <i class="mi-kakao-icon" aria-hidden="true">톡</i>
+    <span><b>카카오톡 문의</b>모먼트인사이트 채널</span>
+  </a>
 
   <script>
     (function () {
@@ -4808,7 +4874,7 @@
           title: "상품명 앞 10자 안에 기준 키워드를 배치하고, 같은 단어 반복은 2회 이하로 줄이세요. 구조는 핵심키워드 + 제품유형 + 차별점 + 옵션 순서가 좋습니다.",
           category: "네이버 쇼핑 카테고리와 상품 속성이 실제 상품군과 맞는지 확인하세요. 카테고리가 틀리면 순위 확인과 노출 판단이 같이 흔들립니다.",
           market: "월 검색량이 확인되는 키워드만 주 키워드로 쓰고, 검색량이 낮거나 정확 미일치 키워드는 보조 키워드로 분리하세요.",
-          rank: "오가닉 순위가 낮거나 미확인이라면 상품명, 대표 이미지, 가격, 배송혜택을 수정한 뒤 3시간 단위 순위 추적에서 변화 여부를 확인하세요.",
+          rank: "오가닉 순위가 낮거나 미확인이라면 상품명, 대표 이미지, 가격, 배송혜택을 수정한 뒤 오전/오후 순위 추적에서 변화 여부를 확인하세요.",
           benefit: "상위 상품 대비 가격, 배송비, 쿠폰, 포인트 중 최소 1개 우위를 상세페이지 상단과 썸네일에서 바로 보이게 정리하세요.",
           trust: "리뷰 수만 보지 말고 최근 리뷰 증가 속도와 포토리뷰 비중을 같이 관리하세요. 리뷰가 적으면 클릭 이후 구매 장벽이 큽니다."
         };

@@ -611,6 +611,54 @@
       border-color: rgba(255, 255, 255, 0.32);
     }
 
+    #mi-home .mi-kakao-floating {
+      position: fixed;
+      right: 22px;
+      bottom: 22px;
+      z-index: 60;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 54px;
+      padding: 10px 16px 10px 12px;
+      border: 1px solid rgba(6, 26, 58, 0.18);
+      border-radius: 999px;
+      background: rgba(6, 26, 58, 0.96);
+      color: #fff;
+      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.22);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+
+    #mi-home .mi-kakao-floating:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 22px 52px rgba(6, 26, 58, 0.28);
+    }
+
+    #mi-home .mi-kakao-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: #fee500;
+      color: #111;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-kakao-floating span {
+      display: grid;
+      gap: 1px;
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 11px;
+    }
+
+    #mi-home .mi-kakao-floating b {
+      color: #fff;
+      font-size: 14px;
+      line-height: 1.2;
+    }
+
     #mi-home .mi-footer {
       padding: 28px 0 36px;
       color: #667085;
@@ -708,6 +756,17 @@
 
     @media (max-width: 430px) {
       #mi-home .mi-brand span:last-child {
+        display: none;
+      }
+
+      #mi-home .mi-kakao-floating {
+        right: 14px;
+        bottom: 14px;
+        min-height: 48px;
+        padding: 8px 12px 8px 8px;
+      }
+
+      #mi-home .mi-kakao-floating span {
         display: none;
       }
     }
@@ -915,4 +974,8 @@
   <footer class="mi-footer">
     모먼트 인사이트 · 마케팅 사이트 · KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
   </footer>
+  <a class="mi-kakao-floating" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer" aria-label="모먼트인사이트 카카오톡 채널 문의">
+    <i class="mi-kakao-icon" aria-hidden="true">톡</i>
+    <span><b>카카오톡 문의</b>모먼트인사이트 채널</span>
+  </a>
 </section>

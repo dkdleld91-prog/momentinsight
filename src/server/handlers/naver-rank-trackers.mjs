@@ -193,12 +193,31 @@ function snapshotPayload(row) {
   };
 }
 
-function addHours(date, hours) {
-  return new Date(date.getTime() + hours * 60 * 60 * 1000).toISOString();
-}
-
 function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000).toISOString();
+}
+
+function kstSlotToUtc(kstBase, hour) {
+  return new Date(Date.UTC(
+    kstBase.getUTCFullYear(),
+    kstBase.getUTCMonth(),
+    kstBase.getUTCDate(),
+    hour - 9,
+    0,
+    0,
+    0
+  ));
+}
+
+function nextRankCheckAt(date = new Date()) {
+  const kstBase = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const after = new Date(date.getTime() + 60 * 1000);
+  const slots = [
+    kstSlotToUtc(kstBase, 9),
+    kstSlotToUtc(kstBase, 15),
+    kstSlotToUtc(new Date(kstBase.getTime() + 24 * 60 * 60 * 1000), 9),
+  ];
+  return slots.find((slot) => slot > after).toISOString();
 }
 
 async function findClientId(ctx, agencyCode) {
@@ -340,7 +359,7 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
 
 async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message) {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
-  const nextCheckAt = addHours(new Date(checkedAt), 3);
+  const nextCheckAt = nextRankCheckAt(new Date(checkedAt));
   const bestRank = matchedRank
     ? Math.min(Number(tracker.best_rank || matchedRank), matchedRank)
     : tracker.best_rank;

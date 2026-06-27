@@ -19,12 +19,14 @@ const adminCopy = read("02_아임웹_적용코드/복붙용_관리자형_CODE.tx
 const clientSource = read("02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html");
 const clientCopy = read("02_아임웹_적용코드/복붙용_광고주형_CODE.txt");
 const homeSource = read("02_아임웹_적용코드/아임웹_원샷코드_홈페이지형_모먼트인사이트.html");
+const homeCopy = read("02_아임웹_적용코드/복붙용_홈페이지형_CODE.txt");
 const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_통합보기_모먼트인사이트.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const vercelConfig = JSON.parse(read("vercel.json"));
+const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -32,6 +34,7 @@ const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
 const checks = {
   adminCopySynced: adminSource === adminCopy,
   clientCopySynced: clientSource === clientCopy,
+  homeCopySynced: homeSource === homeCopy,
   adminMenuCount: adminScreens.length === 10,
   adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
@@ -100,13 +103,24 @@ const checks = {
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && read("src/server/handlers/naver-rank-cron.mjs").includes("Unauthorized cron request")
     && read("src/server/handlers/naver-rank-cron.mjs").includes("MI_RANK_CRON_SECRET"),
+  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
+    && rankCronWorkflow.includes("09:00 KST and 15:00 KST")
+    && rankCronWorkflow.includes("MI_RANK_CRON_SECRET"),
   vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
+  rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
+    && rankServer.includes("kstSlotToUtc(kstBase, 9)")
+    && rankServer.includes("kstSlotToUtc(kstBase, 15)")
+    && rankServer.includes("next_check_at: nextCheckAt"),
   rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
     && source.includes("rankTrackerStatusClass")
     && source.includes("formatRankRemain(tracker.nextCheckAt)")
     && source.includes("tracker.lastCheckedAt")
     && source.includes("tracker.lastMessage")
     && !source.includes('return "D-"')),
+  kakaoChannelCtaVisible: [homeSource, adminSource, clientSource].every((source) => source.includes("https://pf.kakao.com/_ixoLxfX")
+    && source.includes("mi-kakao-floating")
+    && source.includes("카카오톡 문의")
+    && source.includes("모먼트인사이트 채널")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   rankDbTriggerBypassesOwner: rankUnlimitedMigration.includes("lower(coalesce(new.agency_code, '')) = 'mml93-a01'"),
 };

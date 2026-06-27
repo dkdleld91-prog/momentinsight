@@ -53,6 +53,11 @@ const checks = {
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")
     && clientSource.includes("getOperatorEntryUrl"),
+  clientReportDownloadBox: clientSource.includes("data-mi-report-list")
+    && clientSource.includes("data-mi-report-download")
+    && clientSource.includes("buildClientReportCsv")
+    && clientSource.includes("downloadClientReport")
+    && clientSource.includes("운영팀이 공개한 보고서만 다운로드"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

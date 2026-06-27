@@ -90,7 +90,13 @@ const checks = {
   adminDefaultTemplateDownload: adminSource.includes("/downloads/moment-insight-operation-sheet-template.xlsx")
     && adminSource.includes("기본 양식 다운로드")
     && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
+    && adminSource.includes("연결 광고주 1곳 기준")
     && exists("public/downloads/moment-insight-operation-sheet-template.xlsx"),
+  operationSheetSingleClientSimple: sheetTemplateBuilder.includes("single-client-operation-team-template")
+    && sheetTemplateBuilder.includes("별도 광고주 코드 입력은 없습니다")
+    && sheetTemplateBuilder.includes("월간_매출입력")
+    && sheetTemplateBuilder.includes("광고주 연결")
+    && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

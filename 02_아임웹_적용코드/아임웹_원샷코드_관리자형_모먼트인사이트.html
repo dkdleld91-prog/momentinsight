@@ -2944,7 +2944,7 @@
 
     #mi-admin .mi-source-upload-head {
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       justify-content: space-between;
       gap: 12px;
     }
@@ -2966,7 +2966,7 @@
 
     #mi-admin .mi-source-box {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) 156px;
       align-items: center;
       gap: 12px;
       min-height: 74px;
@@ -2978,7 +2978,7 @@
 
     #mi-admin .mi-template-download {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) 176px;
       align-items: center;
       gap: 12px;
       border: 1px solid rgba(6, 26, 58, 0.12);
@@ -3015,6 +3015,16 @@
       line-height: 1.45;
     }
 
+    #mi-admin .mi-template-download .mi-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      min-height: 44px;
+      text-align: center;
+      white-space: normal;
+    }
+
     #mi-admin .mi-source-box strong,
     #mi-admin .mi-source-box span,
     #mi-admin .mi-source-box small {
@@ -3044,6 +3054,7 @@
 
     #mi-admin .mi-source-picker {
       display: inline-grid;
+      width: 100%;
       min-height: 40px;
       place-items: center;
       border-radius: 8px;
@@ -3881,7 +3892,7 @@
                     <div>
                       <span>기본 운영 양식</span>
                       <strong>모먼트인사이트_운영시트_템플릿.xlsx</strong>
-                      <small>새 운영팀은 이 파일을 먼저 내려받고, 광고주별 복사본을 작성한 뒤 원본 파일로 업로드합니다.</small>
+                      <small>새 운영팀은 이 파일을 먼저 내려받고, 연결 광고주 1곳 기준으로 작성한 뒤 원본 파일로 업로드합니다.</small>
                     </div>
                     <a class="mi-button is-ghost" href="/downloads/moment-insight-operation-sheet-template.xlsx" download>기본 양식 다운로드</a>
                   </div>
@@ -3907,8 +3918,8 @@
                   <div class="mi-code-status" data-admin-source-file-status aria-live="polite">서버 업로드 전 MVP 단계에서는 현재 브라우저에만 파일이 보관됩니다.</div>
                 </div>
                 <div class="mi-form-row">
-                  <label class="mi-field">광고주ID
-                    <input class="mi-input" data-admin-sheet-client value="MML93-CLIENT-001" aria-label="광고주ID" />
+                  <label class="mi-field">연결 광고주
+                    <input class="mi-input" data-admin-sheet-client value="운영팀에 연결된 광고주 1명 자동 적용" aria-label="연결 광고주" readonly />
                   </label>
                   <label class="mi-field">공개 기준
                     <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
@@ -3923,7 +3934,7 @@
 
               <div class="mi-step-flow">
                 <div class="mi-step-card"><b>1</b><strong>수동 입력</strong><span>담당자는 네이버·쿠팡 원천 데이터를 동일 양식에 입력</span></div>
-                <div class="mi-step-card"><b>2</b><strong>계산 검수</strong><span>광고주ID, 승인값, 공유 여부, 필수 지표 확인</span></div>
+                <div class="mi-step-card"><b>2</b><strong>계산 검수</strong><span>승인값, 공유 여부, 필수 지표 확인</span></div>
                 <div class="mi-step-card"><b>3</b><strong>공개 반영</strong><span>광고주 화면에는 승인된 합산 결과만 노출</span></div>
               </div>
 

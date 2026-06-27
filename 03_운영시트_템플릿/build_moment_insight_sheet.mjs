@@ -1,169 +1,153 @@
 import fs from "node:fs/promises";
 import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
-const workbook = Workbook.create();
-const outputDir = "outputs";
-const finalName = "모먼트인사이트_운영시트_템플릿.xlsx";
+const simplifiedWorkbook = Workbook.create();
+const simplifiedOutputDir = "outputs";
+const simplifiedFinalName = "모먼트인사이트_운영시트_템플릿.xlsx";
 
-const theme = {
+const miTheme = {
   navy: "#061A3A",
   ink: "#111827",
   muted: "#667085",
-  line: "#DFE5EF",
-  bg: "#F5F7FB",
-  soft: "#EEF2F7",
+  line: "#D9E1EC",
+  soft: "#EEF3F8",
+  input: "#FFF8D7",
+  calc: "#F5F7FB",
   green: "#EAF7F1",
-  orange: "#FFF4E6",
-  input: "#FFF9DB",
+  blue: "#EAF2FF",
 };
 
-function addSheet(name) {
-  const sheet = workbook.worksheets.add(name);
+function miAddSheet(name) {
+  const sheet = simplifiedWorkbook.worksheets.add(name);
+  sheet.showGridLines = false;
   return sheet;
 }
 
-function write(sheet, range, values) {
+function miWrite(sheet, range, values) {
   sheet.getRange(range).values = values;
 }
 
-function formulas(sheet, range, values) {
+function miFormulas(sheet, range, values) {
   sheet.getRange(range).formulas = values;
 }
 
-function styleTitle(sheet, range) {
-  const r = sheet.getRange(range);
-  r.format = {
-    fill: theme.navy,
+function miTitle(sheet, range) {
+  sheet.getRange(range).format = {
+    fill: miTheme.navy,
     font: { name: "Arial", size: 16, color: "#FFFFFF", bold: true },
     horizontalAlignment: "left",
     verticalAlignment: "center",
-    borders: { preset: "outside", style: "thin", color: theme.navy },
   };
 }
 
-function styleHeader(sheet, range) {
-  const r = sheet.getRange(range);
-  r.format = {
-    fill: theme.soft,
-    font: { name: "Arial", size: 10, color: theme.ink, bold: true },
+function miSection(sheet, range) {
+  sheet.getRange(range).format = {
+    fill: miTheme.soft,
+    font: { name: "Arial", size: 11, color: miTheme.navy, bold: true },
+    horizontalAlignment: "left",
+    verticalAlignment: "center",
+    borders: { preset: "outside", style: "thin", color: miTheme.line },
+  };
+}
+
+function miHeader(sheet, range) {
+  sheet.getRange(range).format = {
+    fill: miTheme.soft,
+    font: { name: "Arial", size: 10, color: miTheme.ink, bold: true },
     horizontalAlignment: "center",
     verticalAlignment: "center",
     wrapText: true,
-    borders: { preset: "all", style: "thin", color: theme.line },
+    borders: { preset: "all", style: "thin", color: miTheme.line },
   };
 }
 
-function styleBody(sheet, range) {
-  const r = sheet.getRange(range);
-  r.format = {
+function miBody(sheet, range) {
+  sheet.getRange(range).format = {
     fill: "#FFFFFF",
-    font: { name: "Arial", size: 10, color: theme.ink },
+    font: { name: "Arial", size: 10, color: miTheme.ink },
+    horizontalAlignment: "left",
     verticalAlignment: "center",
-    borders: { preset: "all", style: "thin", color: theme.line },
     wrapText: true,
+    borders: { preset: "all", style: "thin", color: miTheme.line },
   };
 }
 
-function styleInput(sheet, range) {
-  sheet.getRange(range).format.fill = theme.input;
+function miInput(sheet, range) {
+  sheet.getRange(range).format.fill = miTheme.input;
 }
 
-function finishSheet(sheet, usedRange) {
-  sheet.getRange(usedRange).format.autofitColumns();
-  sheet.getRange(usedRange).format.autofitRows();
+function miCalc(sheet, range) {
+  sheet.getRange(range).format.fill = miTheme.calc;
 }
 
-const dashboard = addSheet("운영_대시보드");
-write(dashboard, "A1:H1", [["모먼트인사이트 운영 시트 템플릿", "", "", "", "", "", "", ""]]);
-styleTitle(dashboard, "A1:H1");
-write(dashboard, "A3:B6", [
-  ["선택 광고주ID", "MI-CLIENT-001"],
-  ["운영 기준월", "2026-06"],
-  ["공개 조건", "관리자컨펌=승인 / 광고주공유여부=Y"],
-  ["사용 방식", "원천 탭에 입력하면 공개 데이터와 대시보드가 계산됩니다."],
-]);
-styleBody(dashboard, "A3:B6");
-styleInput(dashboard, "B3:B4");
-write(dashboard, "A8:H8", [["지표", "값", "상태", "", "채널", "매출", "광고비", "ROAS"]]);
-styleHeader(dashboard, "A8:H8");
-write(dashboard, "A9:A14", [
-  ["이번 달 매출"],
-  ["광고비"],
-  ["ROAS"],
-  ["구매수"],
-  ["목표 달성률"],
-  ["공개 상태"],
-]);
-formulas(dashboard, "B9:B14", [
-  ["=IFERROR(INDEX('대시보드_공개데이터'!D:D,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"\")"],
-  ["=IFERROR(INDEX('대시보드_공개데이터'!E:E,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"\")"],
-  ["=IFERROR(INDEX('대시보드_공개데이터'!J:J,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"\")"],
-  ["=IFERROR(INDEX('대시보드_공개데이터'!F:F,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"\")"],
-  ["=IFERROR(INDEX('대시보드_공개데이터'!M:M,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"\")"],
-  ["=IFERROR(IF(AND(INDEX('대시보드_공개데이터'!N:N,MATCH($B$3,'대시보드_공개데이터'!A:A,0))=\"승인\",INDEX('대시보드_공개데이터'!O:O,MATCH($B$3,'대시보드_공개데이터'!A:A,0))=\"Y\"),\"광고주 공개\",\"비공개\"),\"\")"],
-]);
-formulas(dashboard, "C9:C14", [
-  ["=IF(B9=\"\",\"대기\",IF(B9>=INDEX('대시보드_공개데이터'!C:C,MATCH($B$3,'대시보드_공개데이터'!A:A,0)),\"목표 초과\",\"추적 필요\"))"],
-  ["=IF(B10=\"\",\"대기\",\"확인\")"],
-  ["=IF(B11=\"\",\"대기\",IF(B11>=5,\"양호\",\"개선\"))"],
-  ["=IF(B12=\"\",\"대기\",\"확인\")"],
-  ["=IF(B13=\"\",\"대기\",IF(B13>=1,\"달성\",\"진행\"))"],
-  ["=B14"],
-]);
-write(dashboard, "E9:E10", [["네이버"], ["쿠팡"]]);
-formulas(dashboard, "F9:H10", [
-  [
-    "=SUMIFS('네이버_데이터'!E:E,'네이버_데이터'!A:A,$B$3,'네이버_데이터'!O:O,\"승인\",'네이버_데이터'!P:P,\"Y\")",
-    "=SUMIFS('네이버_데이터'!D:D,'네이버_데이터'!A:A,$B$3,'네이버_데이터'!O:O,\"승인\",'네이버_데이터'!P:P,\"Y\")",
-    "=IFERROR(F9/G9,0)",
-  ],
-  [
-    "=SUMIFS('쿠팡_데이터'!E:E,'쿠팡_데이터'!A:A,$B$3,'쿠팡_데이터'!O:O,\"승인\",'쿠팡_데이터'!P:P,\"Y\")",
-    "=SUMIFS('쿠팡_데이터'!D:D,'쿠팡_데이터'!A:A,$B$3,'쿠팡_데이터'!O:O,\"승인\",'쿠팡_데이터'!P:P,\"Y\")",
-    "=IFERROR(F10/G10,0)",
-  ],
-]);
-write(dashboard, "A17:H17", [["운영 체크", "기준", "현재 상태", "담당", "다음 조치", "마감", "공개 영향", "메모"]]);
-styleHeader(dashboard, "A17:H17");
-write(dashboard, "A18:H22", [
-  ["광고주ID", "모든 원천 탭 필수", "정상", "운영", "신규 광고주 생성 시 먼저 발급", "상시", "높음", "권한 분리 기준"],
-  ["공개 승인", "관리자컨펌=승인", "검수 중", "팀장", "승인 전 광고주 화면 미노출", "오늘", "높음", "내부 메모 제거 확인"],
-  ["공유 여부", "광고주공유여부=Y", "정상", "운영", "공개할 행만 Y 처리", "상시", "높음", "보고서와 데이터 동일 기준"],
-  ["시트 원본", "네이버/쿠팡 분리", "정상", "분석", "월별 원천값 업데이트", "매주", "중간", "캠페인별 확장 가능"],
-  ["보고서 전달", "관리자 확인 후 전달", "대기", "관리자", "PDF/엑셀 링크 검수", "이번 주", "중간", "광고주 직접 다운로드는 2차"],
-]);
-styleBody(dashboard, "A9:H22");
-dashboard.getRange("B9:B10").format.numberFormat = "#,##0";
-dashboard.getRange("B11:B11").format.numberFormat = "0.0x";
-dashboard.getRange("B13:B13").format.numberFormat = "0%";
-dashboard.getRange("F9:G10").format.numberFormat = "#,##0";
-dashboard.getRange("H9:H10").format.numberFormat = "0.0x";
-finishSheet(dashboard, "A1:H22");
+function miWidths(sheet, specs, rows = 80) {
+  Object.entries(specs).forEach(([col, width]) => {
+    sheet.getRange(`${col}1:${col}${rows}`).format.columnWidthPx = width;
+  });
+}
 
-const clients = addSheet("광고주_목록");
-write(clients, "A1:J1", [["client_id", "광고주명", "브랜드명", "agency_code", "담당자", "상태", "sheet_id", "로그인 이메일", "생성일", "메모"]]);
-write(clients, "A2:J5", [
-  ["MI-CLIENT-001", "예시브랜드", "예시브랜드", "MI-AGENCY-2026", "운영 관리자", "운영 중", "SHEET-DEMO-001", "client@example.com", "2026-06-01", "데모 기본 광고주"],
-  ["MI-CLIENT-002", "신규브랜드 A", "신규브랜드 A", "MI-AGENCY-A", "차장", "세팅", "SHEET-DEMO-002", "new@example.com", "2026-06-10", "KPI 목표 입력 필요"],
-  ["MI-CLIENT-003", "리텐션브랜드 B", "리텐션브랜드 B", "MI-AGENCY-B", "팀장", "운영 중", "SHEET-DEMO-003", "retention@example.com", "2026-05-20", "일정 공개 완료"],
-  ["", "", "", "", "", "", "", "", "", ""],
-]);
-styleHeader(clients, "A1:J1");
-styleBody(clients, "A2:J30");
-styleInput(clients, "A2:J30");
-finishSheet(clients, "A1:J30");
+function miTall(sheet, range, px) {
+  sheet.getRange(range).format.rowHeightPx = px;
+}
 
-const publicData = addSheet("대시보드_공개데이터");
-write(publicData, "A1:Q1", [["client_id", "기준월", "목표매출", "실제매출", "광고비", "구매수", "노출수", "클릭수", "전환수", "ROAS", "CTR", "CVR", "목표달성률", "관리자컨펌", "광고주공유여부", "공개코멘트", "업데이트일"]]);
-write(publicData, "A2:I6", [
-  ["MI-CLIENT-001", "2026-06", 36000000, 41800000, 7200000, 1248, 890000, 36600, 1761],
-  ["MI-CLIENT-002", "2026-06", 18000000, 0, 0, 0, 0, 0, 0],
-  ["MI-CLIENT-003", "2026-06", 26000000, 29100000, 5100000, 890, 612000, 22100, 1030],
-  ["", "", "", "", "", "", "", "", ""],
-  ["", "", "", "", "", "", "", "", ""],
+function miApplyMoney(sheet, range) {
+  sheet.getRange(range).format.numberFormat = "#,##0";
+  sheet.getRange(range).format.horizontalAlignment = "right";
+}
+
+function miApplyRate(sheet, range, format = "0.0%") {
+  sheet.getRange(range).format.numberFormat = format;
+  sheet.getRange(range).format.horizontalAlignment = "right";
+}
+
+function miApplyRoas(sheet, range) {
+  sheet.getRange(range).format.numberFormat = "0.0x";
+  sheet.getRange(range).format.horizontalAlignment = "right";
+}
+
+const guide = miAddSheet("처음_사용법");
+miWrite(guide, "A1:H1", [["모먼트인사이트 운영팀 기본 양식", "", "", "", "", "", "", ""]]);
+miTitle(guide, "A1:H1");
+miWrite(guide, "A3:H3", [["작성 순서", "", "", "", "", "", "", ""]]);
+miSection(guide, "A3:H3");
+miWrite(guide, "A4:H8", [
+  ["1", "월간_매출입력", "광고주 한 곳의 월 매출, 광고비, 구매수, 노출/클릭/전환수를 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
+  ["2", "네이버_일별입력", "네이버 일별 또는 캠페인별 원천 데이터를 붙여넣습니다.", "선택 입력", "", "", "", ""],
+  ["3", "쿠팡_일별입력", "쿠팡 일별 또는 상품광고 원천 데이터를 붙여넣습니다.", "선택 입력", "", "", "", ""],
+  ["4", "보고서_목록 / 일정표", "운영팀이 공개할 보고서, 일정, 요청사항을 정리합니다.", "필수 확인", "", "", "", ""],
+  ["5", "인사이트_액션플랜", "광고주에게 보여줄 결론과 다음 행동을 작성합니다.", "짧게 작성", "", "", "", ""],
 ]);
-formulas(publicData, "J2:M30", Array.from({ length: 29 }, (_, i) => {
-  const row = i + 2;
+miBody(guide, "A4:H8");
+miWrite(guide, "A10:H10", [["운영 기준", "", "", "", "", "", "", ""]]);
+miSection(guide, "A10:H10");
+miWrite(guide, "A11:H15", [
+  ["광고주 연결", "", "웹에서 운영팀 코드와 광고주 코드가 이미 1:1로 연결되므로 엑셀에는 별도 코드 입력이 없습니다.", "", "", "", "", ""],
+  ["입력 규칙", "", "노란색 칸은 운영팀 입력값이고, 회색 칸은 자동 계산값입니다.", "", "", "", "", ""],
+  ["공개 기준", "", "광고주에게 보일 문장은 공개코멘트, 일정, 인사이트 영역에만 작성합니다.", "", "", "", "", ""],
+  ["원본 보관", "", "작성 완료 후 관리자 화면의 원천 엑셀 업로드 영역에 이 파일을 업로드합니다.", "", "", "", "", ""],
+  ["주의", "", "내부 판단이나 민감한 메모는 광고주공개코멘트에 작성하지 않습니다.", "", "", "", "", ""],
+]);
+miBody(guide, "A11:H15");
+miWidths(guide, { A: 112, B: 150, C: 560, D: 140, E: 70, F: 70, G: 70, H: 70 }, 30);
+miTall(guide, "A1:H1", 34);
+miTall(guide, "A4:H15", 30);
+
+const monthly = miAddSheet("월간_매출입력");
+miWrite(monthly, "A1:O1", [["월간 매출/광고 성과 입력", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]]);
+miTitle(monthly, "A1:O1");
+miWrite(monthly, "A3:O3", [["노란색 칸만 작성하면 ROAS, CTR, CVR, 목표달성률은 자동 계산됩니다. 운영팀 1개당 광고주 1개 기준이라 별도 광고주 코드 입력은 없습니다.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]]);
+miSection(monthly, "A3:O3");
+miWrite(monthly, "A5:O5", [["채널", "기준월", "목표매출", "실제매출", "광고비", "구매수", "노출수", "클릭수", "전환수", "ROAS", "CTR", "CVR", "목표달성률", "광고주공개코멘트", "업데이트일"]]);
+miHeader(monthly, "A5:O5");
+miWrite(monthly, "A6:I9", [
+  ["네이버", "2026-06", 36000000, 41800000, 7200000, 1248, 890000, 36600, 1761],
+  ["쿠팡", "2026-06", 18000000, 14200000, 2210000, 438, 380000, 17200, 810],
+  ["메타", "2026-06", 9000000, 9000000, 2190000, 168, 230000, 7800, 231],
+  ["합계", "2026-06", 0, 0, 0, 0, 0, 0, 0],
+]);
+miFormulas(monthly, "C9:I9", [["=SUM(C6:C8)", "=SUM(D6:D8)", "=SUM(E6:E8)", "=SUM(F6:F8)", "=SUM(G6:G8)", "=SUM(H6:H8)", "=SUM(I6:I8)"]]);
+miFormulas(monthly, "J6:M9", Array.from({ length: 4 }, (_, index) => {
+  const row = index + 6;
   return [
     `=IFERROR(D${row}/E${row},0)`,
     `=IFERROR(H${row}/G${row},0)`,
@@ -171,177 +155,219 @@ formulas(publicData, "J2:M30", Array.from({ length: 29 }, (_, i) => {
     `=IFERROR(D${row}/C${row},0)`,
   ];
 }));
-write(publicData, "N2:Q6", [
-  ["승인", "Y", "다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.", "2026-06-19"],
-  ["대기", "N", "KPI 목표 입력 후 공개 예정입니다.", "2026-06-19"],
-  ["승인", "Y", "주간 일정과 매출 흐름은 정상입니다.", "2026-06-19"],
-  ["", "", "", ""],
-  ["", "", "", ""],
+miWrite(monthly, "N6:O9", [
+  ["다음 주에는 네이버 검색광고 효율은 유지하고 쿠팡 상품명 키워드를 보강합니다.", "2026-06-27"],
+  ["쿠팡은 전환은 안정적이나 검색어 보강이 필요합니다.", "2026-06-27"],
+  ["메타는 소재 피로도를 확인하고 교체 테스트를 준비합니다.", "2026-06-27"],
+  ["합산 기준으로 보고서 공개 전 수치 검수 필요", "2026-06-27"],
 ]);
-styleHeader(publicData, "A1:Q1");
-styleBody(publicData, "A2:Q30");
-styleInput(publicData, "A2:I30");
-styleInput(publicData, "N2:Q30");
-publicData.getRange("C2:E30").format.numberFormat = "#,##0";
-publicData.getRange("F2:I30").format.numberFormat = "#,##0";
-publicData.getRange("J2:J30").format.numberFormat = "0.0x";
-publicData.getRange("K2:M30").format.numberFormat = "0.0%";
-finishSheet(publicData, "A1:Q30");
+miBody(monthly, "A6:O35");
+miInput(monthly, "A6:I35");
+miInput(monthly, "N6:O35");
+miCalc(monthly, "J6:M35");
+miApplyMoney(monthly, "C6:E35");
+miApplyMoney(monthly, "F6:I35");
+miApplyRoas(monthly, "J6:J35");
+miApplyRate(monthly, "K6:M35");
+miWidths(monthly, { A: 100, B: 96, C: 112, D: 112, E: 108, F: 90, G: 106, H: 96, I: 96, J: 78, K: 78, L: 78, M: 104, N: 390, O: 112 }, 45);
+miTall(monthly, "A1:O1", 34);
+miTall(monthly, "A5:O35", 26);
+monthly.freezePanes.freezeRows(5);
 
-function buildChannelSheet(name) {
-  const sheet = addSheet(name);
-  write(sheet, "A1:P1", [["client_id", "일자", "캠페인", "광고비", "매출", "노출수", "클릭수", "전환수", "구매수", "ROAS", "CTR", "CVR", "CPA", "CPC", "관리자컨펌", "광고주공유여부"]]);
-  const sample = name.startsWith("네이버")
-    ? ["MI-CLIENT-001", "2026-06-19", "브랜드 검색 캠페인", 3200000, 18600000, 510000, 19400, 951, 642, "승인", "Y"]
-    : ["MI-CLIENT-001", "2026-06-19", "상품 검색 캠페인", 2210000, 14200000, 380000, 17200, 810, 438, "승인", "Y"];
-  write(sheet, "A2:I6", [
-    sample.slice(0, 9),
-    ["MI-CLIENT-003", "2026-06-19", name.startsWith("네이버") ? "검색 확장 캠페인" : "상품 확장 캠페인", 1800000, 9400000, 220000, 8600, 412, 301],
-    ["", "", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", ""],
+function buildDailySheet(name, firstCampaign, secondCampaign) {
+  const sheet = miAddSheet(name);
+  miWrite(sheet, "A1:L1", [[`${name} 원천 입력`, "", "", "", "", "", "", "", "", "", "", ""]]);
+  miTitle(sheet, "A1:L1");
+  miWrite(sheet, "A3:L3", [["플랫폼에서 내려받은 일별/캠페인별 수치를 그대로 입력합니다. 코드 입력 없이 광고주 한 곳 기준으로 작성합니다.", "", "", "", "", "", "", "", "", "", "", ""]]);
+  miSection(sheet, "A3:L3");
+  miWrite(sheet, "A5:L5", [["일자", "캠페인/상품군", "광고비", "매출", "노출수", "클릭수", "전환수", "구매수", "ROAS", "CTR", "CVR", "운영메모"]]);
+  miHeader(sheet, "A5:L5");
+  miWrite(sheet, "A6:H9", [
+    ["2026-06-24", firstCampaign, 1200000, 7200000, 180000, 6900, 330, 220],
+    ["2026-06-25", firstCampaign, 980000, 6100000, 152000, 5700, 284, 190],
+    ["2026-06-26", secondCampaign, 1020000, 5300000, 178000, 6800, 337, 232],
+    ["합계", "", 0, 0, 0, 0, 0, 0],
   ]);
-  formulas(sheet, "J2:N30", Array.from({ length: 29 }, (_, i) => {
-    const row = i + 2;
+  miFormulas(sheet, "C9:H9", [["=SUM(C6:C8)", "=SUM(D6:D8)", "=SUM(E6:E8)", "=SUM(F6:F8)", "=SUM(G6:G8)", "=SUM(H6:H8)"]]);
+  miFormulas(sheet, "I6:K9", Array.from({ length: 4 }, (_, index) => {
+    const row = index + 6;
     return [
-      `=IFERROR(E${row}/D${row},0)`,
+      `=IFERROR(D${row}/C${row},0)`,
+      `=IFERROR(F${row}/E${row},0)`,
       `=IFERROR(G${row}/F${row},0)`,
-      `=IFERROR(H${row}/G${row},0)`,
-      `=IFERROR(D${row}/H${row},0)`,
-      `=IFERROR(D${row}/G${row},0)`,
     ];
   }));
-  write(sheet, "O2:P6", [
-    [sample[9], sample[10]],
-    ["승인", "Y"],
-    ["", ""],
-    ["", ""],
-    ["", ""],
-  ]);
-  styleHeader(sheet, "A1:P1");
-  styleBody(sheet, "A2:P30");
-  styleInput(sheet, "A2:I30");
-  styleInput(sheet, "O2:P30");
-  sheet.getRange("D2:E30").format.numberFormat = "#,##0";
-  sheet.getRange("F2:I30").format.numberFormat = "#,##0";
-  sheet.getRange("J2:J30").format.numberFormat = "0.0x";
-  sheet.getRange("K2:L30").format.numberFormat = "0.0%";
-  sheet.getRange("M2:N30").format.numberFormat = "#,##0";
-  finishSheet(sheet, "A1:P30");
+  miWrite(sheet, "L6:L9", [["수치 확인 완료"], ["정상"], ["소재/키워드 확인"], ["합계 검수"]]);
+  miBody(sheet, "A6:L45");
+  miInput(sheet, "A6:H45");
+  miInput(sheet, "L6:L45");
+  miCalc(sheet, "I6:K45");
+  miApplyMoney(sheet, "C6:D45");
+  miApplyMoney(sheet, "E6:H45");
+  miApplyRoas(sheet, "I6:I45");
+  miApplyRate(sheet, "J6:K45");
+  miWidths(sheet, { A: 105, B: 220, C: 112, D: 112, E: 105, F: 90, G: 90, H: 90, I: 76, J: 76, K: 76, L: 260 }, 55);
+  miTall(sheet, "A1:L1", 34);
+  miTall(sheet, "A5:L45", 25);
+  sheet.freezePanes.freezeRows(5);
 }
 
-buildChannelSheet("네이버_데이터");
-buildChannelSheet("쿠팡_데이터");
+buildDailySheet("네이버_일별입력", "브랜드 검색 캠페인", "키워드 확장 캠페인");
+buildDailySheet("쿠팡_일별입력", "상품 검색 캠페인", "상품 확장 캠페인");
 
-const kpi = addSheet("KPI_목표");
-write(kpi, "A1:K1", [["client_id", "기준월", "목표매출", "목표ROAS", "목표구매수", "목표리뷰수", "목표키워드순위", "실제매출", "달성률", "상태", "메모"]]);
-write(kpi, "A2:H6", [
-  ["MI-CLIENT-001", "2026-06", 36000000, 5, 1200, 80, 3, 41800000],
-  ["MI-CLIENT-002", "2026-06", 18000000, 4, 500, 30, 10, 0],
-  ["MI-CLIENT-003", "2026-06", 26000000, 4.5, 780, 50, 5, 29100000],
+const reportsSimple = miAddSheet("보고서_목록");
+miWrite(reportsSimple, "A1:G1", [["보고서 목록", "", "", "", "", "", ""]]);
+miTitle(reportsSimple, "A1:G1");
+miWrite(reportsSimple, "A3:G3", [["운영팀이 공개할 보고서 파일명이나 링크를 정리합니다.", "", "", "", "", "", ""]]);
+miSection(reportsSimple, "A3:G3");
+miWrite(reportsSimple, "A5:G5", [["보고서유형", "기준기간", "파일명/링크", "공개상태", "작성자", "업데이트일", "메모"]]);
+miHeader(reportsSimple, "A5:G5");
+miWrite(reportsSimple, "A6:G9", [
+  ["주간 보고서", "2026-06 4주차", "moment-weekly-202606-4.pdf", "공개 가능", "운영팀", "2026-06-27", "내부 메모 제거 후 공개"],
+  ["월간 보고서", "2026-06", "moment-monthly-202606.pdf", "검수 중", "운영팀", "2026-06-27", "매출 수치 재확인"],
+  ["KPI 보고서", "2026-06", "moment-kpi-202606.xlsx", "공개 가능", "운영팀", "2026-06-27", "목표달성률 포함"],
+  ["", "", "", "", "", "", ""],
+]);
+miBody(reportsSimple, "A6:G40");
+miInput(reportsSimple, "A6:G40");
+miWidths(reportsSimple, { A: 120, B: 120, C: 310, D: 110, E: 100, F: 112, G: 300 }, 45);
+miTall(reportsSimple, "A1:G1", 34);
+miTall(reportsSimple, "A5:G40", 26);
+reportsSimple.freezePanes.freezeRows(5);
+
+const scheduleSimple = miAddSheet("일정표");
+miWrite(scheduleSimple, "A1:H1", [["일정표", "", "", "", "", "", "", ""]]);
+miTitle(scheduleSimple, "A1:H1");
+miWrite(scheduleSimple, "A3:H3", [["광고주와 공유할 일정만 정리합니다. 내부 할 일은 메모에 구분해서 작성합니다.", "", "", "", "", "", "", ""]]);
+miSection(scheduleSimple, "A3:H3");
+miWrite(scheduleSimple, "A5:H5", [["일자", "유형", "제목", "상세", "상태", "공개여부", "담당자", "메모"]]);
+miHeader(scheduleSimple, "A5:H5");
+miWrite(scheduleSimple, "A6:H10", [
+  ["2026-06-28", "보고서", "월간 보고서 공개", "운영팀 검수 후 보고서함 공개", "예정", "Y", "운영팀", "공개 전 수치 확인"],
+  ["2026-06-29", "소재", "메타 소재 교체", "기존 소재 피로도 반영", "진행 중", "Y", "디자인", "광고주 확인 필요"],
+  ["2026-06-30", "키워드", "쿠팡 키워드 보강", "상품명과 검색어 반영", "예정", "Y", "분석", "20개 확장"],
   ["", "", "", "", "", "", "", ""],
   ["", "", "", "", "", "", "", ""],
 ]);
-formulas(kpi, "I2:J30", Array.from({ length: 29 }, (_, i) => {
-  const row = i + 2;
-  return [
-    `=IFERROR(H${row}/C${row},0)`,
-    `=IF(A${row}=\"\",\"\",IF(I${row}>=1,\"달성\",IF(I${row}>=0.8,\"추적\",\"위험\")))`,
-  ];
-}));
-write(kpi, "K2:K6", [["월간 목표 초과"], ["초기 세팅 필요"], ["안정"], [""], [""]]);
-styleHeader(kpi, "A1:K1");
-styleBody(kpi, "A2:K30");
-styleInput(kpi, "A2:H30");
-styleInput(kpi, "K2:K30");
-kpi.getRange("C2:C30").format.numberFormat = "#,##0";
-kpi.getRange("D2:D30").format.numberFormat = "0.0x";
-kpi.getRange("I2:I30").format.numberFormat = "0%";
-finishSheet(kpi, "A1:K30");
+miBody(scheduleSimple, "A6:H45");
+miInput(scheduleSimple, "A6:H45");
+miWidths(scheduleSimple, { A: 108, B: 90, C: 190, D: 330, E: 100, F: 86, G: 110, H: 270 }, 50);
+miTall(scheduleSimple, "A1:H1", 34);
+miTall(scheduleSimple, "A5:H45", 26);
+scheduleSimple.freezePanes.freezeRows(5);
 
-const reports = addSheet("보고서_목록");
-write(reports, "A1:J1", [["report_id", "client_id", "보고서유형", "기준기간", "파일/링크", "관리자컨펌", "광고주공유여부", "전달상태", "담당자", "메모"]]);
-write(reports, "A2:J6", [
-  ["R-001", "MI-CLIENT-001", "주간 보고서", "2026-06 2주차", "https://drive.example/weekly", "승인", "Y", "전달 예정", "운영 관리자", "내부 메모 제거 완료"],
-  ["R-002", "MI-CLIENT-001", "월간 보고서", "2026-06", "https://drive.example/monthly", "대기", "N", "준비 중", "운영 관리자", "수치 검수 중"],
-  ["R-003", "MI-CLIENT-003", "KPI 보고서", "2026-06", "https://drive.example/kpi", "승인", "Y", "전달 완료", "팀장", "정상"],
-  ["", "", "", "", "", "", "", "", "", ""],
-  ["", "", "", "", "", "", "", "", "", ""],
+const insightSimple = miAddSheet("인사이트_액션플랜");
+miWrite(insightSimple, "A1:H1", [["인사이트 및 액션 플랜", "", "", "", "", "", "", ""]]);
+miTitle(insightSimple, "A1:H1");
+miWrite(insightSimple, "A3:H3", [["광고주가 이해해야 하는 결론과 다음 실행만 짧게 작성합니다.", "", "", "", "", "", "", ""]]);
+miSection(insightSimple, "A3:H3");
+miWrite(insightSimple, "A5:H5", [["작성일", "구분", "핵심변화", "부족한 지표", "개선제안", "다음액션", "광고주공개코멘트", "내부메모"]]);
+miHeader(insightSimple, "A5:H5");
+miWrite(insightSimple, "A6:H9", [
+  ["2026-06-27", "주간", "네이버 검색광고 CTR 상승", "쿠팡 검색어 확장 부족", "상품명/검색어 필드 보강", "쿠팡 키워드 20개 추가", "검색 유입은 유지되고 있으나 쿠팡 키워드 보강이 필요합니다.", "예산 증액은 다음 주 검토"],
+  ["2026-06-27", "월간", "합산 매출 목표 초과", "메타 소재 피로도", "소재 교체 테스트", "메타 소재 2종 교체", "월간 매출 흐름은 양호하며 다음 달은 소재 테스트를 진행합니다.", "내부용 소재 피로도 높음"],
+  ["", "", "", "", "", "", "", ""],
+  ["", "", "", "", "", "", "", ""],
 ]);
-styleHeader(reports, "A1:J1");
-styleBody(reports, "A2:J30");
-styleInput(reports, "A2:J30");
-finishSheet(reports, "A1:J30");
+miBody(insightSimple, "A6:H45");
+miInput(insightSimple, "A6:H45");
+miWidths(insightSimple, { A: 108, B: 90, C: 230, D: 190, E: 230, F: 220, G: 380, H: 260 }, 50);
+miTall(insightSimple, "A1:H1", 34);
+miTall(insightSimple, "A5:H45", 34);
+insightSimple.freezePanes.freezeRows(5);
 
-const schedule = addSheet("일정표");
-write(schedule, "A1:J1", [["schedule_id", "client_id", "일자", "일정유형", "제목", "상세", "상태", "공개여부", "담당자", "메모"]]);
-write(schedule, "A2:J7", [
-  ["S-001", "MI-CLIENT-001", "2026-06-21", "소재", "메타 소재 교체", "기존 소재 피로도 반영", "진행 중", "Y", "디자인", "광고주 문구 확인 필요"],
-  ["S-002", "MI-CLIENT-001", "2026-06-24", "보고서", "월간 보고서 공개", "운영팀 검수 후 보고서함 공개", "예정", "Y", "운영 관리자", "내부 메모 제거"],
-  ["S-003", "MI-CLIENT-001", "2026-06-27", "키워드", "쿠팡 키워드 보강", "상품명과 검색어 반영", "예정", "Y", "분석", "키워드 20개 확장"],
-  ["S-004", "MI-CLIENT-002", "2026-06-28", "세팅", "KPI 목표 확정", "초기 목표 입력", "확인 필요", "N", "차장", "공개 전"],
-  ["", "", "", "", "", "", "", "", "", ""],
-  ["", "", "", "", "", "", "", "", "", ""],
+const dashboardSimple = miAddSheet("운영_대시보드");
+miWrite(dashboardSimple, "A1:H1", [["운영 요약 대시보드", "", "", "", "", "", "", ""]]);
+miTitle(dashboardSimple, "A1:H1");
+miWrite(dashboardSimple, "A3:H3", [["월간_매출입력 시트의 합계값을 기준으로 자동 요약됩니다.", "", "", "", "", "", "", ""]]);
+miSection(dashboardSimple, "A3:H3");
+miWrite(dashboardSimple, "A5:H5", [["지표", "값", "판단", "", "채널", "매출", "광고비", "ROAS"]]);
+miHeader(dashboardSimple, "A5:H5");
+miWrite(dashboardSimple, "A6:A11", [["이번 달 매출"], ["광고비"], ["ROAS"], ["구매수"], ["목표달성률"], ["보고서 상태"]]);
+miFormulas(dashboardSimple, "B6:B11", [
+  ["='월간_매출입력'!D9"],
+  ["='월간_매출입력'!E9"],
+  ["='월간_매출입력'!J9"],
+  ["='월간_매출입력'!F9"],
+  ["='월간_매출입력'!M9"],
+  ["=IF(COUNTIF('보고서_목록'!D6:D40,\"공개 가능\")>=1,\"공개 가능\",\"검수 필요\")"],
 ]);
-styleHeader(schedule, "A1:J1");
-styleBody(schedule, "A2:J30");
-styleInput(schedule, "A2:J30");
-finishSheet(schedule, "A1:J30");
-
-const insights = addSheet("인사이트_액션플랜");
-write(insights, "A1:K1", [["insight_id", "client_id", "작성일", "구분", "핵심변화", "낮은지표", "개선제안", "다음액션", "관리자컨펌", "광고주공유여부", "내부메모"]]);
-write(insights, "A2:K6", [
-  ["I-001", "MI-CLIENT-001", "2026-06-19", "주간", "네이버 CTR 상승", "쿠팡 키워드 확장 부족", "상품명/검색어 필드 보강", "메타 소재 교체 + 쿠팡 키워드 20개 추가", "승인", "Y", "내부 판단: 예산 증액은 다음 주 검토"],
-  ["I-002", "MI-CLIENT-003", "2026-06-19", "주간", "일정 진행 안정", "리뷰 증가 속도 둔화", "리뷰 요청 프로세스 보강", "리뷰 확보 캠페인 진행", "승인", "Y", "내부 판단: 담당자 확인"],
-  ["", "", "", "", "", "", "", "", "", "", ""],
-  ["", "", "", "", "", "", "", "", "", "", ""],
-  ["", "", "", "", "", "", "", "", "", "", ""],
+miFormulas(dashboardSimple, "C6:C11", [
+  ["=IF(B6>=SUM('월간_매출입력'!C6:C8),\"목표 초과\",\"추적 필요\")"],
+  ["=IF(B7>0,\"확인\",\"입력 필요\")"],
+  ["=IF(B8>=5,\"양호\",\"개선 필요\")"],
+  ["=IF(B9>0,\"확인\",\"입력 필요\")"],
+  ["=IF(B10>=1,\"달성\",\"진행\")"],
+  ["=B11"],
 ]);
-styleHeader(insights, "A1:K1");
-styleBody(insights, "A2:K30");
-styleInput(insights, "A2:K30");
-finishSheet(insights, "A1:K30");
-
-const rules = addSheet("공개규칙");
-write(rules, "A1:F1", [["규칙", "설명", "광고주 화면 노출", "관리자 화면 노출", "필수 여부", "비고"]]);
-write(rules, "A2:F9", [
-  ["광고주ID", "모든 시트의 기본 연결 키", "본인 ID만", "전체", "필수", "이름 대신 ID로 연결"],
-  ["관리자컨펌", "승인/대기/반려", "승인만", "전체", "필수", "미승인 행은 숨김"],
-  ["광고주공유여부", "Y/N", "Y만", "전체", "필수", "내부 자료 분리"],
-  ["내부메모", "운영 판단 기록", "숨김", "표시", "필수", "광고주 화면 노출 금지"],
-  ["공개코멘트", "광고주용 해석", "표시", "표시", "권장", "짧고 실행 중심"],
-  ["보고서 파일", "PDF/엑셀/링크", "직접 노출 안 함", "관리자 전달", "권장", "초기 운영은 관리자 전달"],
-  ["시트 원본", "네이버/쿠팡/메타 원천값", "숨김", "표시", "필수", "계산값만 공개"],
-  ["변경이력", "수정자와 공개 시간", "숨김", "표시", "필수", "실제 개발 시 DB 로그"],
+miWrite(dashboardSimple, "E6:E9", [["네이버"], ["쿠팡"], ["메타"], ["합계"]]);
+miFormulas(dashboardSimple, "F6:H9", [
+  ["='월간_매출입력'!D6", "='월간_매출입력'!E6", "='월간_매출입력'!J6"],
+  ["='월간_매출입력'!D7", "='월간_매출입력'!E7", "='월간_매출입력'!J7"],
+  ["='월간_매출입력'!D8", "='월간_매출입력'!E8", "='월간_매출입력'!J8"],
+  ["='월간_매출입력'!D9", "='월간_매출입력'!E9", "='월간_매출입력'!J9"],
 ]);
-styleHeader(rules, "A1:F1");
-styleBody(rules, "A2:F20");
-finishSheet(rules, "A1:F20");
+miBody(dashboardSimple, "A6:H20");
+miCalc(dashboardSimple, "B6:C11");
+miCalc(dashboardSimple, "F6:H9");
+miWrite(dashboardSimple, "A14:H14", [["운영 체크", "상태", "다음 조치", "메모", "", "", "", ""]]);
+miHeader(dashboardSimple, "A14:H14");
+miWrite(dashboardSimple, "A15:D18", [
+  ["월간 입력", "완료", "수치 검수", "노란색 입력칸 확인"],
+  ["보고서", "검수 중", "파일 업로드", "공개 가능 보고서만 광고주 노출"],
+  ["일정", "정상", "공개 일정 확인", "Y 일정만 광고주 공유"],
+  ["인사이트", "작성 필요", "광고주 코멘트 정리", "내부 메모 분리"],
+]);
+miBody(dashboardSimple, "A15:H18");
+miApplyMoney(dashboardSimple, "B6:B7");
+miApplyRoas(dashboardSimple, "B8:B8");
+miApplyMoney(dashboardSimple, "B9:B9");
+miApplyRate(dashboardSimple, "B10:B10");
+miApplyMoney(dashboardSimple, "F6:G9");
+miApplyRoas(dashboardSimple, "H6:H9");
+miWidths(dashboardSimple, { A: 140, B: 140, C: 130, D: 260, E: 110, F: 130, G: 130, H: 90 }, 30);
+miTall(dashboardSimple, "A1:H1", 34);
+miTall(dashboardSimple, "A5:H18", 27);
+dashboardSimple.freezePanes.freezeRows(5);
 
-await fs.mkdir(outputDir, { recursive: true });
-const exported = await SpreadsheetFile.exportXlsx(workbook);
-await exported.save(`${outputDir}/${finalName}`);
-await fs.copyFile(`${outputDir}/${finalName}`, finalName);
+const rulesSimple = miAddSheet("공개규칙");
+miWrite(rulesSimple, "A1:F1", [["공개 규칙", "", "", "", "", ""]]);
+miTitle(rulesSimple, "A1:F1");
+miWrite(rulesSimple, "A3:F3", [["광고주에게 보여줄 자료와 내부 메모를 분리하는 기준입니다.", "", "", "", "", ""]]);
+miSection(rulesSimple, "A3:F3");
+miWrite(rulesSimple, "A5:F5", [["항목", "설명", "광고주 노출", "운영팀 입력", "필수", "비고"]]);
+miHeader(rulesSimple, "A5:F5");
+miWrite(rulesSimple, "A6:F12", [
+  ["월간_매출입력", "광고주 한 곳의 월간 성과", "요약 수치만 노출", "노란색 칸 작성", "필수", "코드 입력 없음"],
+  ["광고주공개코멘트", "광고주가 보는 해석 문장", "노출", "짧게 작성", "필수", "내부 판단 작성 금지"],
+  ["보고서_목록", "보고서 파일명 또는 링크", "공개 가능 상태만 노출", "운영팀 작성", "필수", "업로드 후 확인"],
+  ["일정표", "광고주 공유 일정", "공개여부 Y만 노출", "운영팀 작성", "권장", "내부 일정은 N"],
+  ["인사이트", "이번 주 결론과 다음 액션", "공개코멘트만 노출", "운영팀 작성", "권장", "내부메모는 미노출"],
+  ["원천 파일", "작성 완료한 엑셀 원본", "미노출", "관리자 화면 업로드", "필수", "다운로드 보관 가능"],
+  ["코드/ID", "웹 계정에서 연결 처리", "미노출", "엑셀 입력 없음", "자동", "운영팀 1:1 연결 기준"],
+]);
+miBody(rulesSimple, "A6:F24");
+miWidths(rulesSimple, { A: 150, B: 300, C: 160, D: 160, E: 80, F: 260 }, 30);
+miTall(rulesSimple, "A1:F1", 34);
+miTall(rulesSimple, "A5:F24", 27);
 
-const dashboardCheck = await workbook.inspect({
-  kind: "table",
-  range: "운영_대시보드!A1:H22",
-  include: "values,formulas",
-  tableMaxRows: 22,
-  tableMaxCols: 8,
-});
-const errors = await workbook.inspect({
+await fs.mkdir(simplifiedOutputDir, { recursive: true });
+const simplifiedExport = await SpreadsheetFile.exportXlsx(simplifiedWorkbook);
+await simplifiedExport.save(`${simplifiedOutputDir}/${simplifiedFinalName}`);
+await fs.copyFile(`${simplifiedOutputDir}/${simplifiedFinalName}`, simplifiedFinalName);
+
+const simplifiedErrors = await simplifiedWorkbook.inspect({
   kind: "match",
-  searchTerm: "#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A",
-  options: { useRegex: true, maxResults: 100 },
-  summary: "formula error scan",
+  searchTerm: "#REF!|#DIV/0!|#VALUE!|#NAME\\?|#N/A|####",
+  options: { useRegex: true, maxResults: 300 },
+  summary: "formula and display error scan",
 });
-await workbook.render({ sheetName: "운영_대시보드", range: "A1:H22", scale: 2 });
-await workbook.render({ sheetName: "대시보드_공개데이터", range: "A1:Q12", scale: 2 });
-
+await simplifiedWorkbook.render({ sheetName: "월간_매출입력", range: "A1:O14", scale: 2, format: "png" });
+await simplifiedWorkbook.render({ sheetName: "운영_대시보드", range: "A1:H18", scale: 2, format: "png" });
 console.log(JSON.stringify({
-  output: `${outputDir}/${finalName}`,
-  copied: finalName,
-  dashboardPreviewRows: dashboardCheck.ndjson.split("\n").filter(Boolean).length,
-  formulaErrorScan: errors.ndjson,
+  output: `${simplifiedOutputDir}/${simplifiedFinalName}`,
+  copied: simplifiedFinalName,
+  formulaErrorScan: simplifiedErrors.ndjson,
+  mode: "single-client-operation-team-template",
 }, null, 2));
+process.exit(0);

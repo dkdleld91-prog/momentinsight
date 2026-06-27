@@ -24,6 +24,7 @@ const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insigh
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
+const vercelConfig = JSON.parse(read("vercel.json"));
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -95,6 +96,14 @@ const checks = {
     && source.includes(".mi-button:disabled")
     && source.includes("translateY(1px) scale(0.98)")
     && source.includes("cursor: wait")),
+  healthRewriteConfigured: (vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/health" && rewrite.destination === "/api/health"),
+  rankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron" && cron.schedule === "0 */3 * * *"),
+  rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
+    && source.includes("rankTrackerStatusClass")
+    && source.includes("formatRankRemain(tracker.nextCheckAt)")
+    && source.includes("tracker.lastCheckedAt")
+    && source.includes("tracker.lastMessage")
+    && !source.includes('return "D-"')),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   rankDbTriggerBypassesOwner: rankUnlimitedMigration.includes("lower(coalesce(new.agency_code, '')) = 'mml93-a01'"),
 };

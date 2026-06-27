@@ -1581,6 +1581,49 @@
       min-width: 900px;
     }
 
+    #mi-admin .mi-rank-ops-row {
+      display: flex;
+      min-width: 900px;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      border-bottom: 1px solid #edf2f7;
+      padding: 8px 12px;
+      color: #5f6f86;
+      background: #fff;
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-rank-ops-row span {
+      display: inline-flex;
+      min-height: 26px;
+      align-items: center;
+      border: 1px solid #e1e8f2;
+      border-radius: 999px;
+      padding: 4px 9px;
+      background: #f8fafc;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-rank-ops-row .is-wait {
+      border-color: #dbeafe;
+      color: #1d4ed8;
+      background: #eff6ff;
+    }
+
+    #mi-admin .mi-rank-ops-row .is-error {
+      border-color: #fecaca;
+      color: #b42318;
+      background: #fff1f1;
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-ops-message {
+      max-width: min(420px, 100%);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     #mi-admin .mi-rank-tracker-card.is-dragging {
       opacity: 0.48;
     }
@@ -6199,7 +6242,14 @@
         if (tracker.status === "paused") return "중지";
         if (tracker.status === "completed") return "종료";
         if (tracker.status === "failed") return "오류";
-        return "D-" + Math.max(0, Math.ceil((new Date(tracker.endsAt).getTime() - Date.now()) / 86400000));
+        return "운영중";
+      }
+
+      function rankTrackerStatusClass(tracker) {
+        if (!tracker) return "";
+        if (tracker.status === "failed") return " is-error";
+        if (formatRankRemain(tracker.nextCheckAt) === "대기") return " is-wait";
+        return "";
       }
 
       function rankDateKey(date) {
@@ -6289,6 +6339,7 @@
           var title = rankTrackerTitle(tracker);
           var mallName = rankTrackerMallName(tracker);
           var titleText = title + (mallName ? " (" + mallName + ")" : "");
+          var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><strong class="mi-rank-keyword-name" title="' +
             escapeHtml(tracker.keyword || "") + '">' + escapeHtml(tracker.keyword || "-") + '</strong><span class="mi-rank-product-info">' +
@@ -6297,7 +6348,11 @@
             escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
             escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
             escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
-            escapeHtml(tracker.id) + '">삭제</button></div></div>' +
+            escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
+            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span>최근 ' +
+            escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
+            escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-ops-message" title="' +
+            escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
             renderTrackerDailyBoard(tracker) + '</section>';
         }).join("") + '</div>';
       }

@@ -97,7 +97,10 @@ const checks = {
     && source.includes("translateY(1px) scale(0.98)")
     && source.includes("cursor: wait")),
   healthRewriteConfigured: (vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/health" && rewrite.destination === "/api/health"),
-  rankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron" && cron.schedule === "0 */3 * * *"),
+  rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
+    && read("src/server/handlers/naver-rank-cron.mjs").includes("Unauthorized cron request")
+    && read("src/server/handlers/naver-rank-cron.mjs").includes("MI_RANK_CRON_SECRET"),
+  vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
   rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
     && source.includes("rankTrackerStatusClass")
     && source.includes("formatRankRemain(tracker.nextCheckAt)")

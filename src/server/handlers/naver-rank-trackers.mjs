@@ -148,6 +148,7 @@ function clampMaxRank(value) {
 }
 
 function trackerPayload(row, snapshots = []) {
+  const recentSnapshots = (snapshots || []).slice(0, 30);
   return {
     id: row.id,
     keyword: row.keyword,
@@ -170,7 +171,7 @@ function trackerPayload(row, snapshots = []) {
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    snapshots: snapshots.map(snapshotPayload),
+    snapshots: recentSnapshots.map(snapshotPayload),
   };
 }
 
@@ -340,9 +341,6 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
 async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message) {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
   const nextCheckAt = addHours(new Date(checkedAt), 3);
-  const status = new Date(tracker.ends_at).getTime() <= new Date(checkedAt).getTime()
-    ? "completed"
-    : tracker.status || "active";
   const bestRank = matchedRank
     ? Math.min(Number(tracker.best_rank || matchedRank), matchedRank)
     : tracker.best_rank;
@@ -353,7 +351,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message)
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .update({
-      status,
+      status: tracker.status || "active",
       last_checked_at: checkedAt,
       next_check_at: nextCheckAt,
       current_rank: matchedRank,
@@ -436,7 +434,7 @@ async function createTracker(request, ctx, body, access = {}) {
     const snapshots = await loadSnapshots(ctx, [existing.data.id], 30);
     return json(request, {
       ok: true,
-      message: "이미 30일 추적 중인 상품입니다.",
+      message: "이미 추적 중인 상품입니다. 최근 30일 기록을 이어서 표시합니다.",
       tracker: trackerPayload(existing.data, snapshots.get(existing.data.id) || []),
     });
   }
@@ -480,7 +478,7 @@ async function createTracker(request, ctx, body, access = {}) {
       max_rank: clampMaxRank(body.maxRank || body.max_rank),
       status: "active",
       started_at: now.toISOString(),
-      ends_at: addDays(now, 30),
+      ends_at: addDays(now, 3650),
       next_check_at: now.toISOString(),
       last_message: "추적 등록 후 첫 순위 확인 대기",
       sort_order: nextSortOrder,
@@ -644,7 +642,6 @@ export async function runDueTrackers(ctx, options = {}) {
     .select(TRACKER_SELECT)
     .eq("status", "active")
     .lte("next_check_at", now)
-    .gt("ends_at", now)
     .order("next_check_at", { ascending: true })
     .limit(limit);
 
@@ -659,12 +656,6 @@ export async function runDueTrackers(ctx, options = {}) {
     // eslint-disable-next-line no-await-in-loop
     results.push(await runTrackerCheck(ctx, tracker));
   }
-
-  await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .update({ status: "completed", last_message: "30일 추적 기간이 종료되었습니다." })
-    .eq("status", "active")
-    .lte("ends_at", now);
 
   return {
     now,

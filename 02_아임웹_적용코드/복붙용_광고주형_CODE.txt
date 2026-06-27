@@ -105,15 +105,26 @@
     }
 
     #mi-clean .mi-role {
+      width: 100%;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 15px;
       background: #fff;
+      color: inherit;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+      appearance: none;
     }
 
     #mi-clean .mi-role.is-current {
       border-color: rgba(6, 26, 58, 0.24);
       background: var(--mi-gold-soft);
+    }
+
+    #mi-clean .mi-role:focus-visible {
+      outline: 3px solid rgba(63, 111, 255, 0.22);
+      outline-offset: 2px;
     }
 
     #mi-clean .mi-role strong {
@@ -603,6 +614,24 @@
     #mi-clean .mi-report-state.warn {
       color: var(--mi-orange);
       background: var(--mi-orange-bg);
+    }
+
+    #mi-clean .mi-report-download {
+      border: 1px solid var(--mi-line);
+      border-radius: 999px;
+      min-height: 32px;
+      padding: 0 12px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 11px;
+      font-weight: 950;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-report-download:hover {
+      border-color: rgba(9, 31, 63, 0.34);
+      background: #f6f8fb;
     }
 
     #mi-clean .mi-table {
@@ -2370,25 +2399,25 @@
         <span class="mi-kicker">모먼트인사이트</span>
         <h1>광고주는 지금 상태만 빠르게 봅니다.</h1>
         <p>대행사 코드를 입력하면 매출, 일정, 공개 코멘트가 바로 연결됩니다.</p>
-        <div class="mi-role-list">
-          <div class="mi-role is-current">
+        <div class="mi-role-list" role="tablist" aria-label="접속 유형 선택">
+          <button class="mi-role is-current" type="button" data-client-login-mode="client" aria-selected="true">
             <strong>광고주 로그인</strong>
             <span>매출 현황, 일정표, 공개 코멘트 확인</span>
-          </div>
-          <div class="mi-role">
-            <strong>운영팀 관리</strong>
+          </button>
+          <button class="mi-role" type="button" data-client-login-mode="operator" aria-selected="false">
+            <strong>운영팀 로그인</strong>
             <span>담당자가 성과 데이터, 보고서, 공유 범위를 관리합니다.</span>
-          </div>
+          </button>
         </div>
       </article>
 
       <aside class="mi-login-card">
-        <span class="mi-kicker">광고주 전용</span>
-        <h2>대행사 코드 접속</h2>
-        <p>담당자에게 받은 접속 코드를 입력하세요.</p>
+        <span class="mi-kicker" data-client-login-kicker>광고주 전용</span>
+        <h2 data-client-login-title>대행사 코드 접속</h2>
+        <p data-client-login-desc>담당자에게 받은 접속 코드를 입력하세요.</p>
         <div class="mi-login-form">
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
-          <button class="mi-button" type="button" data-mi-login-button>광고주 대시보드 보기</button>
+          <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.</div>
         </div>
       </aside>
@@ -2504,15 +2533,15 @@
             <aside class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>보고서 전달 현황</h2>
-                  <p>확인 완료된 자료만 순차적으로 전달됩니다.</p>
+                  <h2>보고서함</h2>
+                  <p>운영팀이 공개한 보고서만 다운로드할 수 있습니다.</p>
                 </div>
                 <span class="mi-badge">공유</span>
               </div>
               <div class="mi-report-list" data-mi-report-list>
-                <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 확인 완료</span></div><b class="mi-report-state">전달 예정</b></div>
+                <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 확인 완료</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="0">다운로드</button></div>
                 <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
-                <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><b class="mi-report-state">공개 가능</b></div>
+                <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="0">다운로드</button></div>
                 <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">2026.06.19</span> · 담당자: 운영 관리자</span></div><b class="mi-report-state">확인됨</b></div>
               </div>
             </aside>
@@ -2608,7 +2637,7 @@
               <h2>공유 일정</h2>
               <div class="mi-schedule" data-mi-schedule-list>
                 <div class="mi-schedule-item"><div class="mi-date">6/21</div><div><strong>메타 소재 교체</strong><span>기존 소재 피로도 반영</span></div><span class="mi-badge warn">진행 중</span></div>
-                <div class="mi-schedule-item"><div class="mi-date">6/24</div><div><strong>월간 보고서 전달</strong><span>관리자가 다운로드 후 전달</span></div><span class="mi-badge">예정</span></div>
+                <div class="mi-schedule-item"><div class="mi-date">6/24</div><div><strong>월간 보고서 공개</strong><span>운영팀 검수 후 보고서함 공개</span></div><span class="mi-badge">예정</span></div>
                 <div class="mi-schedule-item"><div class="mi-date">6/27</div><div><strong>쿠팡 키워드 보강</strong><span>상품명과 검색어 반영</span></div><span class="mi-badge">예정</span></div>
               </div>
             </article>
@@ -2618,7 +2647,7 @@
               <div class="mi-table">
                 <div class="mi-row"><span>가장 가까운 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
                 <div class="mi-row"><span>광고주 확인</span><strong>신규 소재 방향 확인</strong></div>
-                <div class="mi-row"><span>보고서 전달</span><strong>관리자 전달 방식</strong></div>
+                <div class="mi-row"><span>보고서 공개</span><strong>보고서함 다운로드 방식</strong></div>
               </div>
             </aside>
           </div>
@@ -2786,8 +2815,8 @@
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 오가닉 상품 순위를 30일간 추적합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고 30일간 기록합니다.</p>
+              <h1>네이버 오가닉 상품 순위를 계속 추적합니다.</h1>
+              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고, 화면에는 최근 30일 기록을 표시합니다.</p>
             </div>
             <span class="mi-badge">오가닉 추적</span>
           </header>
@@ -2813,7 +2842,7 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
                 <h3>활성 추적</h3>
@@ -3031,7 +3060,7 @@
         ],
         schedules: [
           { date: "6/21", title: "메타 소재 교체", detail: "기존 소재 피로도 반영", status: "진행 중" },
-          { date: "6/24", title: "월간 보고서 전달", detail: "관리자가 다운로드 후 전달", status: "예정" },
+          { date: "6/24", title: "월간 보고서 공개", detail: "운영팀 검수 후 보고서함 공개", status: "예정" },
           { date: "6/27", title: "쿠팡 키워드 보강", detail: "상품명과 검색어 반영", status: "예정" }
         ]
       };
@@ -3101,6 +3130,14 @@
         var host = window.location && window.location.hostname;
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin;
         return "http://127.0.0.1:8790";
+      }
+
+      function getOperatorEntryUrl() {
+        var path = window.location && window.location.pathname ? window.location.pathname : "";
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return "/admin";
+        if (path.indexOf(".html") > -1) return "admin.html";
+        return "/admin.html";
       }
 
       function miFetch(url, options) {
@@ -4195,7 +4232,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.", rankTrackers.length ? "is-ok" : "");
+              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
@@ -4954,18 +4991,80 @@
         return labels[type] || "공개 보고서";
       }
 
+      function csvValue(value) {
+        var text = String(value == null ? "" : value);
+        if (/[",\n\r]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
+        return text;
+      }
+
+      function buildClientReportCsv(report, state) {
+        var rows = [
+          ["구분", "값"],
+          ["보고서명", report.title || reportTypeLabel(report.type)],
+          ["보고서 유형", reportTypeLabel(report.type)],
+          ["보고일", report.date || state.updatedAt || ""],
+          ["광고주", state.client || ""],
+          ["공개 요약", report.summary || ""],
+          ["공개 코멘트", report.comment || state.comment || ""],
+          [],
+          ["공개 KPI", "값"],
+          ["매출", state.sales],
+          ["광고비", state.adSpend],
+          ["ROAS", state.roas],
+          ["구매수", state.orders],
+          ["목표 달성률", state.achievement],
+          ["업데이트", state.updatedAt],
+          [],
+          ["채널", "요약", "매출", "ROAS"]
+        ];
+        (state.channels || []).forEach(function (item) {
+          rows.push([item.name, item.summary, item.sales, item.roas]);
+        });
+        return rows.map(function (row) {
+          return row.map(csvValue).join(",");
+        }).join("\n");
+      }
+
+      function downloadClientReport(index) {
+        var state = enrichState(readState());
+        var reports = state.reports && state.reports.length ? state.reports : defaultState.reports;
+        var report = reports[index] || reports[0];
+        if (!report) return;
+        var csv = buildClientReportCsv(report, state);
+        var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement("a");
+        var type = report.type || "report";
+        var date = String(report.date || state.updatedAt || "").replace(/[^0-9]/g, "") || "latest";
+        link.href = url;
+        link.download = "moment-insight-" + type + "-" + date + ".csv";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }
+
       function renderReports(reports, updatedAt) {
         var list = root.querySelector("[data-mi-report-list]");
         if (!list) return;
         var items = reports && reports.length ? reports : defaultState.reports;
-        list.innerHTML = items.map(function (item) {
+        list.innerHTML = items.map(function (item, index) {
           return '<div class="mi-report-item"><div><strong>' + escapeHtml(item.title || reportTypeLabel(item.type)) +
             '</strong><span>' + escapeHtml(reportTypeLabel(item.type)) + ' · ' + escapeHtml(item.date || "날짜 확인 중") +
-            '</span></div><b class="mi-report-state">공개됨</b></div>';
+            '</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="' +
+            String(index) + '">다운로드</button></div>';
         }).join("") +
           '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
           escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 담당자: 운영 관리자</span></div><b class="mi-report-state">확인됨</b></div>';
       }
+
+      root.addEventListener("click", function (event) {
+        var button = event.target.closest("[data-mi-report-download]");
+        if (!button || !root.contains(button)) return;
+        downloadClientReport(parseInt(button.getAttribute("data-report-index") || "0", 10));
+      });
 
       function setStatus(node, message, type) {
         if (!node) return;
@@ -5065,8 +5164,62 @@
       var loginCode = root.querySelector("[data-mi-login-code]");
       var loginButton = root.querySelector("[data-mi-login-button]");
       var loginStatus = root.querySelector("[data-mi-login-status]");
+      var loginMode = "client";
+      var loginModeCards = root.querySelectorAll("[data-client-login-mode]");
+      var loginKicker = root.querySelector("[data-client-login-kicker]");
+      var loginTitle = root.querySelector("[data-client-login-title]");
+      var loginDesc = root.querySelector("[data-client-login-desc]");
+
+      function setClientLoginMode(mode) {
+        loginMode = mode === "operator" ? "operator" : "client";
+        loginModeCards.forEach(function (card) {
+          var active = card.getAttribute("data-client-login-mode") === loginMode;
+          card.classList.toggle("is-current", active);
+          card.setAttribute("aria-selected", active ? "true" : "false");
+        });
+
+        if (loginMode === "operator") {
+          if (loginKicker) loginKicker.textContent = "운영팀 전용";
+          if (loginTitle) loginTitle.textContent = "운영팀 코드 접속";
+          if (loginDesc) loginDesc.textContent = "성과 입력, 보고서 관리, 광고주 코드 발급은 운영팀 화면에서 진행합니다.";
+          if (loginCode) {
+            loginCode.value = "";
+            loginCode.disabled = true;
+            loginCode.style.display = "none";
+            loginCode.setAttribute("aria-hidden", "true");
+          }
+          if (loginButton) loginButton.textContent = "운영팀 화면으로 이동";
+          setStatus(loginStatus, "운영팀 화면에서 운영팀 또는 총관리자 코드를 입력합니다.", "");
+          return;
+        }
+
+        if (loginKicker) loginKicker.textContent = "광고주 전용";
+        if (loginTitle) loginTitle.textContent = "대행사 코드 접속";
+        if (loginDesc) loginDesc.textContent = "담당자에게 받은 접속 코드를 입력하세요.";
+        if (loginCode) {
+          loginCode.disabled = false;
+          loginCode.style.display = "";
+          loginCode.removeAttribute("aria-hidden");
+          loginCode.placeholder = "대행사 코드 입력";
+          loginCode.setAttribute("aria-label", "대행사 코드");
+        }
+        if (loginButton) loginButton.textContent = "광고주 대시보드 보기";
+        setStatus(loginStatus, "담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.", "");
+      }
+
+      loginModeCards.forEach(function (card) {
+        card.addEventListener("click", function () {
+          setClientLoginMode(card.getAttribute("data-client-login-mode"));
+        });
+      });
+      setClientLoginMode("client");
+
       if (loginButton && loginCode) {
         loginButton.addEventListener("click", async function () {
+          if (loginMode === "operator") {
+            window.location.href = getOperatorEntryUrl();
+            return;
+          }
           loginButton.disabled = true;
           await syncDemoState(loginStatus);
           await unlockWithCode(loginCode.value, loginStatus);

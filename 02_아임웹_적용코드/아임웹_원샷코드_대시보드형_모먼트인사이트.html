@@ -2637,7 +2637,7 @@
               <h2>공유 일정</h2>
               <div class="mi-schedule" data-mi-schedule-list>
                 <div class="mi-schedule-item"><div class="mi-date">6/21</div><div><strong>메타 소재 교체</strong><span>기존 소재 피로도 반영</span></div><span class="mi-badge warn">진행 중</span></div>
-                <div class="mi-schedule-item"><div class="mi-date">6/24</div><div><strong>월간 보고서 전달</strong><span>관리자가 다운로드 후 전달</span></div><span class="mi-badge">예정</span></div>
+                <div class="mi-schedule-item"><div class="mi-date">6/24</div><div><strong>월간 보고서 공개</strong><span>운영팀 검수 후 보고서함 공개</span></div><span class="mi-badge">예정</span></div>
                 <div class="mi-schedule-item"><div class="mi-date">6/27</div><div><strong>쿠팡 키워드 보강</strong><span>상품명과 검색어 반영</span></div><span class="mi-badge">예정</span></div>
               </div>
             </article>
@@ -2647,7 +2647,7 @@
               <div class="mi-table">
                 <div class="mi-row"><span>가장 가까운 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
                 <div class="mi-row"><span>광고주 확인</span><strong>신규 소재 방향 확인</strong></div>
-                <div class="mi-row"><span>보고서 전달</span><strong>관리자 전달 방식</strong></div>
+                <div class="mi-row"><span>보고서 공개</span><strong>보고서함 다운로드 방식</strong></div>
               </div>
             </aside>
           </div>
@@ -2815,8 +2815,8 @@
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 오가닉 상품 순위를 30일간 추적합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고 30일간 기록합니다.</p>
+              <h1>네이버 오가닉 상품 순위를 계속 추적합니다.</h1>
+              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 3시간마다 갱신하고, 화면에는 최근 30일 기록을 표시합니다.</p>
             </div>
             <span class="mi-badge">오가닉 추적</span>
           </header>
@@ -2842,7 +2842,7 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-result>
                 <h3>활성 추적</h3>
@@ -3060,7 +3060,7 @@
         ],
         schedules: [
           { date: "6/21", title: "메타 소재 교체", detail: "기존 소재 피로도 반영", status: "진행 중" },
-          { date: "6/24", title: "월간 보고서 전달", detail: "관리자가 다운로드 후 전달", status: "예정" },
+          { date: "6/24", title: "월간 보고서 공개", detail: "운영팀 검수 후 보고서함 공개", status: "예정" },
           { date: "6/27", title: "쿠팡 키워드 보강", detail: "상품명과 검색어 반영", status: "예정" }
         ]
       };
@@ -4232,7 +4232,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 30일 추적을 시작합니다.", rankTrackers.length ? "is-ok" : "");
+              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });

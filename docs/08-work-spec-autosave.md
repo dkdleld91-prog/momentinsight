@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 27. 23:35:09
-- 기준 커밋: 16d30a6
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs
+- 마지막 자동 저장: 2026. 06. 27. 23:47:34
+- 기준 커밋: 5a94dd3
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs / ?? public/downloads/
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 운영팀 기본 양식 다운로드 배포 | 운영 시트 템플릿을 `public/downloads` 배포 자산으로 추가하고, 운영 입력 화면에서 새 운영팀이 기본 양식을 먼저 다운로드한 뒤 광고주별 복사본을 업로드하도록 흐름 보강 | `check:baseline`, `build:vercel`, `git diff --check`, 관리자 HTML 스크립트 문법 검사, `public/dist` 템플릿 파일 확인 | 배포 대기 |
 | 완료 | 운영 원본 파일 업로드·다운로드 보관 | 운영 입력 화면에 원천 엑셀/CSV/PDF 파일 선택 UI를 추가하고, 업로드한 파일을 브라우저 보관 후 같은 화면에서 다운로드/삭제할 수 있게 정리. 보고서 CSV에는 원본 파일명과 업로드 시간을 함께 기록 | `check:baseline`, `build:vercel`, `git diff --check`, 관리자 HTML 스크립트 문법 검사, 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 순위추적 오전/오후 자동 수집 기준 전환 및 카카오 문의 CTA | GitHub Actions 순위추적 호출을 한국시간 오전 9시/오후 3시로 변경하고, 서버 `next_check_at`도 다음 오전/오후 수집 슬롯으로 계산하도록 보정. 홈페이지/광고주/운영팀 화면 우측 하단에 모먼트인사이트 카카오톡 채널 문의 버튼 추가. 실제 자동 호출은 GitHub Secret `MI_RANK_CRON_SECRET` 등록 후 활성화 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 빌드 산출물 마커 확인 | 배포 대기 |
 | 완료 | 운영 헬스체크·순위추적 자동화 보강 | `/health`를 `/api/health`로 연결하고, Vercel Hobby 제한 때문에 Vercel Cron 선언은 제거했습니다. 보안된 `/api/naver-rank-cron` 엔드포인트는 유지해 GitHub Actions가 오전 9시/오후 3시에 호출할 수 있게 준비했습니다. 순위추적 카드에는 상태, 최근 갱신, 다음 갱신, 마지막 메시지를 표시 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 라이브 `/health`·cron 인증 차단·화면 마커 확인 | 배포 대기 |

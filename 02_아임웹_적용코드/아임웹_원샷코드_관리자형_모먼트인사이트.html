@@ -2976,6 +2976,45 @@
       background: #fff;
     }
 
+    #mi-admin .mi-template-download {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: #f6f9fd;
+    }
+
+    #mi-admin .mi-template-download span,
+    #mi-admin .mi-template-download strong,
+    #mi-admin .mi-template-download small {
+      display: block;
+    }
+
+    #mi-admin .mi-template-download span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-template-download strong {
+      margin-top: 2px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    #mi-admin .mi-template-download small {
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.45;
+    }
+
     #mi-admin .mi-source-box strong,
     #mi-admin .mi-source-box span,
     #mi-admin .mi-source-box small {
@@ -3160,6 +3199,7 @@
       }
 
       #mi-admin .mi-source-box,
+      #mi-admin .mi-template-download,
       #mi-admin .mi-source-library-row {
         grid-template-columns: 1fr;
       }
@@ -3836,6 +3876,14 @@
                       <p>운영팀이 받은 원본 파일을 보관하고, 검수나 보고서 작성 시 다시 다운로드합니다.</p>
                     </div>
                     <span class="mi-badge">운영팀 전용</span>
+                  </div>
+                  <div class="mi-template-download">
+                    <div>
+                      <span>기본 운영 양식</span>
+                      <strong>모먼트인사이트_운영시트_템플릿.xlsx</strong>
+                      <small>새 운영팀은 이 파일을 먼저 내려받고, 광고주별 복사본을 작성한 뒤 원본 파일로 업로드합니다.</small>
+                    </div>
+                    <a class="mi-button is-ghost" href="/downloads/moment-insight-operation-sheet-template.xlsx" download>기본 양식 다운로드</a>
                   </div>
                   <div class="mi-source-box">
                     <div>

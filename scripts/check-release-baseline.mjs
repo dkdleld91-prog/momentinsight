@@ -4,6 +4,10 @@ function read(path) {
   return fs.readFileSync(path, "utf8");
 }
 
+function exists(path) {
+  return fs.existsSync(path);
+}
+
 function uniqueMatches(source, pattern) {
   return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))];
 }
@@ -83,6 +87,10 @@ const checks = {
     && adminSource.includes("downloadSourceFile")
     && adminSource.includes("운영 원본 파일")
     && adminSource.includes("서버 업로드 전 MVP 단계"),
+  adminDefaultTemplateDownload: adminSource.includes("/downloads/moment-insight-operation-sheet-template.xlsx")
+    && adminSource.includes("기본 양식 다운로드")
+    && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
+    && exists("public/downloads/moment-insight-operation-sheet-template.xlsx"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

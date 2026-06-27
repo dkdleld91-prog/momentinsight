@@ -76,6 +76,13 @@ const checks = {
     && !clientSource.includes("관리자 전달 방식")
     && !integratedSource.includes("관리자가 다운로드 후 전달")
     && !sheetTemplateBuilder.includes("관리자가 다운로드 후 전달"),
+  adminSourceFileUploadDownload: adminSource.includes("data-admin-source-file")
+    && adminSource.includes("data-admin-source-download")
+    && adminSource.includes("data-admin-source-delete")
+    && adminSource.includes("sourceFileStorageKey")
+    && adminSource.includes("downloadSourceFile")
+    && adminSource.includes("운영 원본 파일")
+    && adminSource.includes("서버 업로드 전 MVP 단계"),
   clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

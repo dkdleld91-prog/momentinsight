@@ -2933,6 +2933,153 @@
       gap: 10px;
     }
 
+    #mi-admin .mi-source-upload {
+      display: grid;
+      gap: 10px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-source-upload-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #mi-admin .mi-source-upload-head h3 {
+      margin: 0;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-source-upload-head p {
+      margin: 3px 0 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-source-box {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 12px;
+      min-height: 74px;
+      border: 1px dashed #ccd6e4;
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-source-box strong,
+    #mi-admin .mi-source-box span,
+    #mi-admin .mi-source-box small {
+      display: block;
+    }
+
+    #mi-admin .mi-source-box span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-source-box strong {
+      margin-top: 2px;
+      color: var(--mi-navy);
+      font-size: 16px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    #mi-admin .mi-source-box small {
+      margin-top: 3px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-source-picker {
+      display: inline-grid;
+      min-height: 40px;
+      place-items: center;
+      border-radius: 8px;
+      padding: 0 14px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
+    }
+
+    #mi-admin .mi-source-picker:hover {
+      background: #082044;
+      box-shadow: 0 10px 24px rgba(6, 26, 58, 0.14);
+      transform: translateY(-1px);
+    }
+
+    #mi-admin .mi-source-picker:active {
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.22);
+      transform: translateY(1px) scale(0.98);
+    }
+
+    #mi-admin .mi-source-picker input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-source-library {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-source-library-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-source-library-row strong,
+    #mi-admin .mi-source-library-row small {
+      display: block;
+    }
+
+    #mi-admin .mi-source-library-row strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    #mi-admin .mi-source-library-row small {
+      margin-top: 2px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-source-actions {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
     #mi-admin .mi-download {
       display: flex;
       align-items: center;
@@ -3009,6 +3156,11 @@
       #mi-admin .mi-sheet-tabs,
       #mi-admin .mi-trust-grid {
         display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-source-box,
+      #mi-admin .mi-source-library-row {
         grid-template-columns: 1fr;
       }
 
@@ -3677,6 +3829,35 @@
                 <label class="mi-field">운영 시트 또는 엑셀 원본명
                   <input class="mi-input" data-admin-sheet-url value="모먼트인사이트_운영시트_템플릿.xlsx" aria-label="운영 시트 또는 엑셀 원본명" />
                 </label>
+                <div class="mi-source-upload" data-admin-source-upload>
+                  <div class="mi-source-upload-head">
+                    <div>
+                      <h3>원천 엑셀 파일 업로드</h3>
+                      <p>운영팀이 받은 원본 파일을 보관하고, 검수나 보고서 작성 시 다시 다운로드합니다.</p>
+                    </div>
+                    <span class="mi-badge">운영팀 전용</span>
+                  </div>
+                  <div class="mi-source-box">
+                    <div>
+                      <span>현재 보관 파일</span>
+                      <strong data-admin-source-file-name>업로드 파일 없음</strong>
+                      <small data-admin-source-file-meta>엑셀, CSV, PDF 파일을 선택하면 이 브라우저에 보관됩니다.</small>
+                    </div>
+                    <label class="mi-source-picker">
+                      <input type="file" data-admin-source-file accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
+                      파일 선택
+                    </label>
+                  </div>
+                  <div class="mi-source-library" data-admin-source-file-list>
+                    <div class="mi-source-library-row">
+                      <div>
+                        <strong>보관된 원본 파일이 없습니다.</strong>
+                        <small>파일 선택 후 이 위치에서 다운로드할 수 있습니다.</small>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mi-code-status" data-admin-source-file-status aria-live="polite">서버 업로드 전 MVP 단계에서는 현재 브라우저에만 파일이 보관됩니다.</div>
+                </div>
                 <div class="mi-form-row">
                   <label class="mi-field">광고주ID
                     <input class="mi-input" data-admin-sheet-client value="MML93-CLIENT-001" aria-label="광고주ID" />
@@ -4170,6 +4351,7 @@
       if (!root) return;
 
       var storageKey = "miAgencyPublicState:v2";
+      var sourceFileStorageKey = "miAdminSourceFile:v1";
       var defaultState = {
         code: "mml93-a01",
         client: "브랜드 A",
@@ -4806,6 +4988,127 @@
         if (type) node.classList.add(type);
       }
 
+      function formatFileSize(size) {
+        var value = Number(size || 0);
+        if (!value) return "0KB";
+        if (value >= 1024 * 1024) return (value / 1024 / 1024).toFixed(1) + "MB";
+        return Math.max(1, Math.round(value / 1024)) + "KB";
+      }
+
+      function formatStoredDate(value) {
+        if (!value) return "시간 확인 필요";
+        try {
+          return new Date(value).toLocaleString("ko-KR", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        } catch (error) {
+          return "시간 확인 필요";
+        }
+      }
+
+      function readSourceFile() {
+        try {
+          var saved = window.localStorage.getItem(sourceFileStorageKey);
+          return saved ? JSON.parse(saved) : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function writeSourceFile(fileRecord) {
+        try {
+          window.localStorage.setItem(sourceFileStorageKey, JSON.stringify(fileRecord));
+          return true;
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function removeSourceFile() {
+        try {
+          window.localStorage.removeItem(sourceFileStorageKey);
+        } catch (error) {}
+      }
+
+      function renderSourceFile() {
+        var fileRecord = readSourceFile();
+        var nameNode = root.querySelector("[data-admin-source-file-name]");
+        var metaNode = root.querySelector("[data-admin-source-file-meta]");
+        var listNode = root.querySelector("[data-admin-source-file-list]");
+        if (nameNode) nameNode.textContent = fileRecord ? fileRecord.name : "업로드 파일 없음";
+        if (metaNode) {
+          metaNode.textContent = fileRecord
+            ? formatFileSize(fileRecord.size) + " · " + formatStoredDate(fileRecord.uploadedAt) + " 보관"
+            : "엑셀, CSV, PDF 파일을 선택하면 이 브라우저에 보관됩니다.";
+        }
+        if (!listNode) return;
+        if (!fileRecord) {
+          listNode.innerHTML =
+            '<div class="mi-source-library-row"><div><strong>보관된 원본 파일이 없습니다.</strong>' +
+            '<small>파일 선택 후 이 위치에서 다운로드할 수 있습니다.</small></div></div>';
+          return;
+        }
+        listNode.innerHTML =
+          '<div class="mi-source-library-row"><div><strong>' + escapeHtml(fileRecord.name) + '</strong>' +
+          '<small>' + escapeHtml(formatFileSize(fileRecord.size)) + ' · ' + escapeHtml(formatStoredDate(fileRecord.uploadedAt)) +
+          ' · ' + escapeHtml(fileRecord.type || "파일") + '</small></div><div class="mi-source-actions">' +
+          '<button class="mi-button is-ghost mi-button-small" type="button" data-admin-source-download>다운로드</button>' +
+          '<button class="mi-button mi-button-small mi-button-danger" type="button" data-admin-source-delete>삭제</button>' +
+          '</div></div>';
+      }
+
+      function downloadSourceFile() {
+        var fileRecord = readSourceFile();
+        var statusNode = root.querySelector("[data-admin-source-file-status]");
+        if (!fileRecord || !fileRecord.dataUrl) {
+          setStatus(statusNode, "다운로드할 원본 파일이 없습니다.", "is-warn");
+          return;
+        }
+        var link = document.createElement("a");
+        link.href = fileRecord.dataUrl;
+        link.download = fileRecord.name || "moment-insight-source-file";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setStatus(statusNode, "원본 파일 다운로드를 시작했습니다: " + fileRecord.name, "is-ok");
+      }
+
+      function handleSourceFileSelected(file) {
+        var statusNode = root.querySelector("[data-admin-source-file-status]");
+        if (!file) return;
+        if (file.size > 4 * 1024 * 1024) {
+          setStatus(statusNode, "브라우저 보관은 4MB 이하 파일만 안정적으로 지원합니다. 정식 운영에서는 서버 저장소로 확장해야 합니다.", "is-warn");
+          return;
+        }
+        setStatus(statusNode, "원본 파일을 보관 중입니다.", "");
+        var reader = new FileReader();
+        reader.onload = function () {
+          var fileRecord = {
+            name: file.name,
+            type: file.type || "application/octet-stream",
+            size: file.size,
+            uploadedAt: new Date().toISOString(),
+            dataUrl: String(reader.result || "")
+          };
+          if (!writeSourceFile(fileRecord)) {
+            setStatus(statusNode, "브라우저 저장 공간이 부족합니다. 파일 크기를 줄이거나 서버 업로드 연결이 필요합니다.", "is-warn");
+            return;
+          }
+          var sheetInput = root.querySelector("[data-admin-sheet-url]");
+          if (sheetInput) sheetInput.value = file.name;
+          renderSourceFile();
+          setStatus(statusNode, "원본 파일 보관 완료: " + file.name + " · 다시 다운로드할 수 있습니다.", "is-ok");
+        };
+        reader.onerror = function () {
+          setStatus(statusNode, "파일을 읽지 못했습니다. 다시 선택해주세요.", "is-warn");
+        };
+        reader.readAsDataURL(file);
+      }
+
       function readChannelInput(channel, key) {
         var input = root.querySelector('[data-admin-channel="' + channel + "." + key + '"]');
         return parseNumber(input ? input.value : 0);
@@ -5013,6 +5316,7 @@
       var currentState = readState();
       writeState(currentState);
       applyState(currentState);
+      renderSourceFile();
 
       var loginMode = "operator";
       var loginModeCards = root.querySelectorAll("[data-login-mode]");
@@ -5460,6 +5764,30 @@
       var sheetCheckButton = root.querySelector("[data-admin-sheet-check]");
       var sheetSyncButton = root.querySelector("[data-admin-sheet-sync]");
       var sheetStatus = root.querySelector("[data-admin-sheet-status]");
+      var sourceFileInput = root.querySelector("[data-admin-source-file]");
+      if (sourceFileInput) {
+        sourceFileInput.addEventListener("change", function () {
+          handleSourceFileSelected(sourceFileInput.files && sourceFileInput.files[0]);
+          sourceFileInput.value = "";
+        });
+      }
+      root.addEventListener("click", function (event) {
+        var downloadButton = event.target && event.target.closest ? event.target.closest("[data-admin-source-download]") : null;
+        var deleteButton = event.target && event.target.closest ? event.target.closest("[data-admin-source-delete]") : null;
+        var statusNode = root.querySelector("[data-admin-source-file-status]");
+        if (downloadButton) {
+          downloadSourceFile();
+        }
+        if (deleteButton) {
+          if (!window.confirm("보관된 원본 파일을 삭제하시겠습니까?")) {
+            setStatus(statusNode, "원본 파일 삭제를 취소했습니다.", "is-warn");
+            return;
+          }
+          removeSourceFile();
+          renderSourceFile();
+          setStatus(statusNode, "보관된 원본 파일을 삭제했습니다.", "is-ok");
+        }
+      });
       if (sheetCheckButton) {
         sheetCheckButton.addEventListener("click", function () {
           lastChannelCalc = loadSheetDemoData();
@@ -7358,10 +7686,13 @@
       }
 
       function buildReportCsv(type, state) {
+        var sourceFile = readSourceFile();
         var rows = [
           ["보고서 유형", type],
           ["광고주", state.client],
           ["대행사 코드", state.code],
+          ["운영 원본 파일", sourceFile ? sourceFile.name : "없음"],
+          ["원본 업로드 시간", sourceFile ? formatStoredDate(sourceFile.uploadedAt) : "없음"],
           ["공개 매출", state.sales],
           ["ROAS", state.roas],
           ["광고비", state.adSpend],

@@ -1094,10 +1094,21 @@
       line-height: 1;
       touch-action: none;
       user-select: none;
+      transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, color 0.16s ease;
+    }
+
+    #mi-clean .mi-rank-drag-handle:hover {
+      border-color: #b8c6d8;
+      color: var(--mi-navy);
+      background: #f8fafc;
+      box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
+      transform: translateY(-1px);
     }
 
     #mi-clean .mi-rank-drag-handle:active {
       cursor: grabbing;
+      transform: translateY(1px) scale(0.97);
+      box-shadow: inset 0 2px 5px rgba(6, 26, 58, 0.12);
     }
 
     #mi-clean .mi-rank-keyword-name,
@@ -1133,6 +1144,33 @@
       padding: 0 9px;
       border-radius: 7px;
       font-size: 11px;
+      cursor: pointer;
+      transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
+      will-change: transform;
+    }
+
+    #mi-clean .mi-rank-row-actions .mi-link-button:hover {
+      border-color: #b8c6d8;
+      background: #f8fafc;
+      box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
+      transform: translateY(-1px);
+    }
+
+    #mi-clean .mi-rank-row-actions .mi-link-button:active {
+      box-shadow: inset 0 2px 5px rgba(6, 26, 58, 0.12);
+      transform: translateY(1px) scale(0.97);
+    }
+
+    #mi-clean .mi-rank-row-actions .mi-link-button:focus-visible {
+      outline: 3px solid rgba(30, 99, 215, 0.18);
+      outline-offset: 2px;
+    }
+
+    #mi-clean .mi-rank-row-actions .mi-link-button:disabled {
+      cursor: wait;
+      opacity: 0.72;
+      transform: none;
+      box-shadow: none;
     }
 
     #mi-clean .mi-link-button.is-danger {
@@ -1141,10 +1179,24 @@
       background: #fff7f7;
     }
 
+    #mi-clean .mi-rank-row-actions .mi-link-button.is-danger:hover {
+      border-color: #e99b9b;
+      color: #991b1b;
+      background: #fff1f1;
+      box-shadow: 0 9px 20px rgba(180, 35, 24, 0.14);
+    }
+
     #mi-clean .mi-link-button.is-danger.is-confirming {
       border-color: #b42318;
       color: #fff;
       background: #b42318;
+      box-shadow: 0 10px 22px rgba(180, 35, 24, 0.18);
+    }
+
+    #mi-clean .mi-link-button.is-danger.is-deleting {
+      border-color: #fecaca;
+      color: #7f1d1d;
+      background: #fee2e2;
     }
 
     #mi-clean .mi-rank-pill {
@@ -4326,7 +4378,7 @@
           pendingDeleteId = "";
           card.querySelectorAll("[data-rank-delete]").forEach(function (button) {
             button.textContent = "삭제";
-            button.classList.remove("is-confirming");
+            button.classList.remove("is-confirming", "is-deleting");
           });
         }
 
@@ -4467,6 +4519,8 @@
             }
             resetDeleteConfirm();
             deleteButton.disabled = true;
+            deleteButton.textContent = "삭제 중";
+            deleteButton.classList.add("is-deleting");
             setStatus(rankStatus, "선택한 순위 추적 항목을 삭제 중입니다.", "");
             try {
               var deletePayload = await requestRankTrackers("POST", {
@@ -4479,6 +4533,7 @@
               setStatus(rankStatus, "삭제 연결을 확인해주세요.", "is-warn");
             } finally {
               deleteButton.disabled = false;
+              deleteButton.classList.remove("is-deleting");
             }
             return;
           }

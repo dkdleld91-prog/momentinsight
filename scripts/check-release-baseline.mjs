@@ -83,6 +83,12 @@ const checks = {
     && !rankServer.includes('.gt("ends_at"')
     && !rankServer.includes('lte("ends_at"')
     && !rankServer.includes("30일 추적 기간이 종료되었습니다."),
+  rankDeleteMicroInteraction: [adminSource, clientSource].every((source) => source.includes("is-deleting")
+    && source.includes("삭제 중")
+    && source.includes("translateY(1px) scale(0.97)")
+    && source.includes("box-shadow: inset 0 2px 5px")
+    && source.includes(".mi-rank-row-actions .mi-link-button:hover")
+    && source.includes(".mi-rank-drag-handle:hover")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   rankDbTriggerBypassesOwner: rankUnlimitedMigration.includes("lower(coalesce(new.agency_code, '')) = 'mml93-a01'"),
 };

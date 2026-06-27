@@ -89,6 +89,12 @@ const checks = {
     && source.includes("box-shadow: inset 0 2px 5px")
     && source.includes(".mi-rank-row-actions .mi-link-button:hover")
     && source.includes(".mi-rank-drag-handle:hover")),
+  primaryButtonMicroInteraction: [adminSource, clientSource].every((source) => source.includes(".mi-button:hover")
+    && source.includes(".mi-button:active")
+    && source.includes(".mi-button:focus-visible")
+    && source.includes(".mi-button:disabled")
+    && source.includes("translateY(1px) scale(0.98)")
+    && source.includes("cursor: wait")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   rankDbTriggerBypassesOwner: rankUnlimitedMigration.includes("lower(coalesce(new.agency_code, '')) = 'mml93-a01'"),
 };

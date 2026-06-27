@@ -15,8 +15,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 27. 11:15:30
-- 기준 커밋: 3bde2e6
+- 마지막 자동 저장: 2026. 06. 27. 11:34:05
+- 기준 커밋: 6f95904
 - 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 주요 CTA 버튼 상태 피드백 통일 | 조회, 저장, 연결 확인, 생성 버튼 등 공통 CTA에 hover, active, focus-visible, disabled 상태를 추가해 클릭감과 로딩 중 대기 상태를 명확히 표시 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 빌드 산출물/라이브 마커 확인 | 배포 대기 |
 | 완료 | 순위추적 조작 피드백 보강 | 순위추적 삭제/갱신 버튼과 드래그 핸들에 hover, active, focus-visible, disabled 상태를 추가하고 삭제 진행 중에는 `삭제 중` 상태가 보이도록 정리 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 빌드 산출물/라이브 마커 확인 | 배포 대기 |
 | 완료 | 보고서 정책 통일 및 순위추적 롤링 보정 | 보고서 문구를 운영팀 검수 후 공개, 광고주 보고서함 다운로드 방식으로 통일하고 네이버 순위추적은 30일 뒤 종료하지 않고 계속 추적하되 최근 30일 기록만 표시하도록 서버 로직 보정 | `check:baseline`, `build:vercel`, `git diff --check`, 서버/HTML 문법 검사, 빌드 산출물/라이브 마커 확인 | 배포 대기 |
 | 완료 | 광고주 공개 보고서함 다운로드 복구 | 광고주 대시보드의 보고서 전달 현황을 공개 보고서함으로 정리하고, 운영팀이 공개한 reports 데이터만 CSV로 다운로드할 수 있게 버튼과 다운로드 핸들러 추가 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 빌드 산출물/라이브 마커 확인 | 배포 대기 |

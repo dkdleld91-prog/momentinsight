@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 28. 23:48:31
-- 기준 커밋: b8579c9
-- 작업트리: M .github/workflows/naver-rank-cron.yml /  M scripts/check-rank-cron-schedule.mjs /  M scripts/check-release-baseline.mjs
+- 마지막 자동 저장: 2026. 06. 29. 00:59:59
+- 기준 커밋: ca4554d
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/server/handlers/admin-api.mjs /  M src/server/handlers/super-admin-api.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

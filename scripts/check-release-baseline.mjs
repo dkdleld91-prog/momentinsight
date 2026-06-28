@@ -28,10 +28,15 @@ const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
+const adminApiServer = read("src/server/handlers/admin-api.mjs");
+const reportCenterServer = read("src/server/handlers/report-center.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
 const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
+const serverIndex = read("src/server/index.mjs");
+const securityServer = read("src/server/security.mjs");
 const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
+const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
 const vercelConfig = JSON.parse(read("vercel.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
@@ -75,6 +80,16 @@ const checks = {
     && clientSource.includes("buildClientReportCsv")
     && clientSource.includes("downloadClientReport")
     && clientSource.includes("운영팀이 공개한 보고서만 다운로드"),
+  clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
+    && clientSource.includes("syncReportCenterReports")
+    && clientSource.includes('"x-mi-agency-code": normalized')
+    && clientSource.includes("fileUrl")
+    && clientSource.includes("CSV 백업"),
+  adminReportCenterPublish: adminSource.includes("getReportCenterApiUrl")
+    && adminSource.includes("publishReportCenterRecord")
+    && adminSource.includes('"x-mi-team-code": teamCode')
+    && adminSource.includes("서버 기록 완료")
+    && adminSource.includes("운영팀-광고주 연결 후 서버 보고서함 기록 가능"),
   reportPolicyAligned: adminSource.includes("보고서는 운영팀이 검수 후 공개합니다.")
     && adminSource.includes("공개 처리된 파일만 광고주 노출")
     && clientSource.includes("보고서함 다운로드 방식")
@@ -136,6 +151,9 @@ const checks = {
     && source.includes("translateY(1px) scale(0.98)")
     && source.includes("cursor: wait")),
   healthRewriteConfigured: (vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/health" && rewrite.destination === "/api/health"),
+  localCorsOriginsMergedWithConfigured: securityServer.includes('"http://127.0.0.1:8793"')
+    && securityServer.includes('"http://localhost:8793"')
+    && securityServer.includes("[...new Set([...configured, ...defaultAllowedOrigins])]"),
   productionBuildHidesInternalSourceBundle: !staticBuildScript.includes('all: "아임웹_원샷코드_통합보기_모먼트인사이트.html"')
     && !staticBuildScript.includes('path.join(outputDir, "02_아임웹_적용코드")')
     && !staticBuildScript.includes("path.join(outputDir, fileName)")
@@ -143,6 +161,35 @@ const checks = {
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && rankCronServer.includes("Unauthorized cron request")
     && rankCronServer.includes("MI_RANK_CRON_SECRET"),
+  reportCenterEndpointReady: serverIndex.includes('url.pathname === "/api/report-center"')
+    && serverIndex.includes('import reportCenter from "./handlers/report-center.mjs"')
+    && reportCenterServer.includes('withSupabase({ auth: "none" }')
+    && reportCenterServer.includes("x-mi-agency-code")
+    && reportCenterServer.includes("x-mi-team-code")
+    && reportCenterServer.includes("x-mi-super-admin-code"),
+  reportCenterScopesByCode: reportCenterServer.includes("findActiveClientByAgencyCode")
+    && reportCenterServer.includes("findActiveClientByTeamCode")
+    && reportCenterServer.includes(".eq(\"owner_agency_code\", primaryAgencyCode())")
+    && reportCenterServer.includes(".eq(\"status\", \"active\")")
+    && reportCenterServer.includes(".is(\"disconnected_at\", null)")
+    && reportCenterServer.includes("광고주는 보고서를 등록할 수 없습니다."),
+  reportCenterClientVisibleOnly: reportCenterServer.includes('if (access.role === "client") reportsQuery = reportsQuery.eq("visibility", "client_visible")')
+    && reportCenterServer.includes('if (access.role === "client") filesQuery = filesQuery.eq("visibility", "client_visible")')
+    && reportCenterServer.includes('body.visibility === "internal" ? "internal" : "client_visible"'),
+  reportCenterUploadAndAuditReady: reportCenterServer.includes("createSignedUploadUrl")
+    && reportCenterServer.includes("moment-insight-reports")
+    && reportCenterServer.includes("report_center.report_created")
+    && reportCenterServer.includes("recordAuditLog")
+    && reportCenterServer.includes("auditLogged"),
+  adminAuditResourceReady: adminApiServer.includes('"audit-logs"')
+    && adminApiServer.includes("readonly: true")
+    && adminApiServer.includes("recordAuditLog")
+    && adminApiServer.includes("auditLogged"),
+  accessRlsRequiresActiveClient: accessAuditMigration.includes("add column if not exists disconnected_at")
+    && accessAuditMigration.includes("create or replace function public.has_client_access")
+    && accessAuditMigration.includes("c.status = 'active'")
+    && accessAuditMigration.includes("c.disconnected_at is null")
+    && accessAuditMigration.includes("idx_audit_logs_action_created"),
   rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
     && rankCronWorkflow.includes("Every day at 09:00 KST and 15:00 KST")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")

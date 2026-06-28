@@ -4188,6 +4188,13 @@
         return "http://127.0.0.1:8790/api/agency-code/validate";
       }
 
+      function getReportCenterApiUrl() {
+        if (window.MI_REPORT_CENTER_API_URL) return window.MI_REPORT_CENTER_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/report-center";
+        return "http://127.0.0.1:8790/api/report-center";
+      }
+
       async function validateAgencyCode(code) {
         var normalized = normalizeCode(code);
         if (!normalized) return { ok: false, message: "대행사 코드를 입력해주세요." };
@@ -4200,6 +4207,47 @@
         var payload = await response.json().catch(function () { return null; });
         if (!payload) payload = { ok: false, message: "대행사 코드 확인 응답을 읽을 수 없습니다." };
         if (!response.ok && payload.ok !== false) payload.ok = false;
+        return payload;
+      }
+
+      async function syncReportCenterReports(code) {
+        var normalized = normalizeCode(code || selectedAgencyCode());
+        if (!normalized) return null;
+        var response = await miFetch(getReportCenterApiUrl(), {
+          method: "GET",
+          cache: "no-store",
+          headers: { "x-mi-agency-code": normalized }
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) throw new Error("보고서함 응답을 확인할 수 없습니다.");
+        if (!response.ok || payload.ok === false) throw new Error(payload.message || "보고서함 조회에 실패했습니다.");
+
+        var filesByReportId = {};
+        (payload.files || []).forEach(function (file) {
+          if (!file.report_id || filesByReportId[file.report_id]) return;
+          filesByReportId[file.report_id] = file;
+        });
+
+        var mappedReports = (payload.reports || []).map(function (report) {
+          var file = filesByReportId[report.id] || null;
+          return {
+            id: report.id,
+            title: report.title || reportTypeLabel(report.report_type),
+            type: report.report_type || "report",
+            date: report.report_date || report.updated_at || "",
+            summary: report.summary || "",
+            comment: report.public_comment || "",
+            fileTitle: file ? file.title : "",
+            fileUrl: file ? (file.external_url || file.url || "") : "",
+            fileType: file ? file.file_type : ""
+          };
+        });
+
+        if (!mappedReports.length) return payload;
+        var state = readState(normalized);
+        state.reports = mappedReports;
+        writeState(state);
+        applyState(state);
         return payload;
       }
 
@@ -5276,6 +5324,10 @@
         var reports = state.reports && state.reports.length ? state.reports : defaultState.reports;
         var report = reports[index] || reports[0];
         if (!report) return;
+        if (report.fileUrl) {
+          window.open(report.fileUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
         var csv = buildClientReportCsv(report, state);
         var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
         var url = URL.createObjectURL(blob);
@@ -5297,10 +5349,11 @@
         if (!list) return;
         var items = reports && reports.length ? reports : defaultState.reports;
         list.innerHTML = items.map(function (item, index) {
+          var downloadLabel = item.fileUrl ? "파일 열기" : "CSV 백업";
           return '<div class="mi-report-item"><div><strong>' + escapeHtml(item.title || reportTypeLabel(item.type)) +
             '</strong><span>' + escapeHtml(reportTypeLabel(item.type)) + ' · ' + escapeHtml(item.date || "날짜 확인 중") +
             '</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="' +
-            String(index) + '">다운로드</button></div>';
+            String(index) + '">' + downloadLabel + '</button></div>';
         }).join("") +
           '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
           escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 담당자: 운영 관리자</span></div><b class="mi-report-state">확인됨</b></div>';
@@ -5352,9 +5405,15 @@
           window.sessionStorage.setItem("miClientAuthedCode", state.code);
         } catch (error) {}
         applyState(state);
+        var reportSyncNote = "";
+        try {
+          await syncReportCenterReports(state.code);
+        } catch (error) {
+          reportSyncNote = " · 보고서함은 공개 파일 등록 후 반영";
+        }
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
-        setStatus(statusNode, "연결 완료: " + state.client + " 브랜드 데이터가 반영되었습니다.", "is-ok");
+        setStatus(statusNode, "연결 완료: " + state.client + " 브랜드 데이터가 반영되었습니다." + reportSyncNote, "is-ok");
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }

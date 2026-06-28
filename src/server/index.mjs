@@ -10,6 +10,7 @@ import naverKeyword from "./handlers/naver-keyword.mjs";
 import naverRankCron from "./handlers/naver-rank-cron.mjs";
 import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
 import naverShoppingRank from "./handlers/naver-shopping-rank.mjs";
+import reportCenter from "./handlers/report-center.mjs";
 import superAdminApi from "./handlers/super-admin-api.mjs";
 import { corsHeaders, protectedJson } from "./security.mjs";
 
@@ -82,6 +83,10 @@ export default {
 
     if (url.pathname === "/api/naver-rank-cron") {
       return naverRankCron.fetch(request);
+    }
+
+    if (url.pathname === "/api/report-center") {
+      return reportCenter.fetch(request);
     }
 
     if (url.pathname === "/api/integration-status") {

@@ -124,6 +124,21 @@ function isMissingTeamSchema(error) {
   return /operation_team_codes|issued_by_team_code|disconnected_at|schema cache|does not exist/i.test(error?.message || "");
 }
 
+async function recordAuditLog(ctx, payload) {
+  const { error } = await ctx.supabaseAdmin
+    .from("audit_logs")
+    .insert({
+      actor_id: null,
+      client_id: payload.clientId || null,
+      action: payload.action,
+      target_table: payload.targetTable,
+      target_id: payload.targetId || null,
+      metadata: payload.metadata || {},
+    });
+
+  return !error;
+}
+
 async function nextAgencyCodeFromDb(ctx) {
   const list = await ctx.supabaseAdmin
     .from("clients")
@@ -276,11 +291,18 @@ async function createClient(request, ctx, body) {
       .eq("id", existing.data.id)
       .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
       .single();
-    if (error) {
-      return json(request, { ok: false, message: "광고주 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
+      if (error) {
+        return json(request, { ok: false, message: "광고주 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
+      }
+      const auditLogged = await recordAuditLog(ctx, {
+        action: "client.reactivated_by_owner",
+        clientId: data.id,
+        targetTable: "clients",
+        targetId: data.id,
+        metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), agencyCode: data.agency_code },
+      });
+      return json(request, { ok: true, reactivated: true, client: clientPayload(data), auditLogged }, 200);
     }
-    return json(request, { ok: true, reactivated: true, client: clientPayload(data) }, 200);
-  }
 
   const { data, error } = await ctx.supabaseAdmin
     .from("clients")
@@ -295,12 +317,19 @@ async function createClient(request, ctx, body) {
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
     .single();
 
-  if (error) {
-    return json(request, { ok: false, message: "광고주 코드 생성에 실패했습니다.", detail: error.message }, 500);
-  }
+    if (error) {
+      return json(request, { ok: false, message: "광고주 코드 생성에 실패했습니다.", detail: error.message }, 500);
+    }
 
-  return json(request, { ok: true, client: clientPayload(data) }, 201);
-}
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "client.created_by_owner",
+      clientId: data.id,
+      targetTable: "clients",
+      targetId: data.id,
+      metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), agencyCode: data.agency_code },
+    });
+    return json(request, { ok: true, client: clientPayload(data), auditLogged }, 201);
+  }
 
 async function createTeam(request, ctx, body) {
   const teamName = String(body.teamName || body.team_name || body.name || "").trim();
@@ -340,9 +369,15 @@ async function createTeam(request, ctx, body) {
       .eq("id", existing.data.id)
       .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
       .single();
-    if (error) return json(request, { ok: false, message: "운영팀 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
-    return json(request, { ok: true, reactivated: true, team: teamPayload(data) }, 200);
-  }
+      if (error) return json(request, { ok: false, message: "운영팀 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
+      const auditLogged = await recordAuditLog(ctx, {
+        action: "operation_team.reactivated",
+        targetTable: "operation_team_codes",
+        targetId: data.id,
+        metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), teamCode: data.team_code, teamName: data.team_name },
+      });
+      return json(request, { ok: true, reactivated: true, team: teamPayload(data), auditLogged }, 200);
+    }
 
   const { data, error } = await ctx.supabaseAdmin
     .from("operation_team_codes")
@@ -354,9 +389,15 @@ async function createTeam(request, ctx, body) {
     })
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
     .single();
-  if (error) return json(request, { ok: false, message: "운영팀 코드 생성에 실패했습니다.", detail: error.message }, 500);
-  return json(request, { ok: true, team: teamPayload(data) }, 201);
-}
+    if (error) return json(request, { ok: false, message: "운영팀 코드 생성에 실패했습니다.", detail: error.message }, 500);
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "operation_team.created",
+      targetTable: "operation_team_codes",
+      targetId: data.id,
+      metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), teamCode: data.team_code, teamName: data.team_name },
+    });
+    return json(request, { ok: true, team: teamPayload(data), auditLogged }, 201);
+  }
 
 async function validateTeam(request, ctx, body) {
   const teamCode = requestTeamCode(request, body);
@@ -472,8 +513,20 @@ async function createClientForTeam(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 광고주 연결 저장에 실패했습니다.", detail: teamError.message }, 500);
 
-  return json(request, { ok: true, reactivated: Boolean(existing.data), team: teamPayload({ ...team, clients: client }), client: clientPayload(client) }, existing.data ? 200 : 201);
-}
+    const auditLogged = await recordAuditLog(ctx, {
+      action: existing.data ? "client.reactivated_by_team" : "client.created_by_team",
+      clientId: client.id,
+      targetTable: "clients",
+      targetId: client.id,
+      metadata: {
+        source: "super-admin-api",
+        teamCode: teamResult.data.team_code,
+        teamId: teamResult.data.id,
+        agencyCode: client.agency_code,
+      },
+    });
+    return json(request, { ok: true, reactivated: Boolean(existing.data), team: teamPayload({ ...team, clients: client }), client: clientPayload(client), auditLogged }, existing.data ? 200 : 201);
+  }
 
 async function disconnectTeamClient(request, ctx, body) {
   const teamCode = requestTeamCode(request, body);
@@ -510,8 +563,15 @@ async function disconnectTeamClient(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 연결 해지 저장에 실패했습니다.", detail: teamError.message }, 500);
 
-  return json(request, { ok: true, message: "운영팀과 광고주 연결을 해지했습니다. 광고주 코드는 더 이상 접속할 수 없습니다.", team: teamPayload(team), client: clientPayload(client) });
-}
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "operation_team.client_disconnected",
+      clientId: client.id,
+      targetTable: "clients",
+      targetId: client.id,
+      metadata: { source: "super-admin-api", teamCode: teamResult.data.team_code, teamId: teamResult.data.id, agencyCode: client.agency_code },
+    });
+    return json(request, { ok: true, message: "운영팀과 광고주 연결을 해지했습니다. 광고주 코드는 더 이상 접속할 수 없습니다.", team: teamPayload(team), client: clientPayload(client), auditLogged });
+  }
 
 async function revokeTeam(request, ctx, body) {
   const teamCode = requestTeamCode(request, body);
@@ -564,13 +624,26 @@ async function revokeTeam(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 권한 해제 저장에 실패했습니다.", detail: teamError.message }, 500);
 
-  return json(request, {
-    ok: true,
-    message: "운영팀 권한을 해제했습니다. 연결된 광고주 코드는 더 이상 접속할 수 없습니다.",
-    team: teamPayload(team),
-    clients: revokedClients.map(clientPayload),
-  });
-}
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "operation_team.revoked",
+      targetTable: "operation_team_codes",
+      targetId: team.id,
+      metadata: {
+        source: "super-admin-api",
+        teamCode: team.team_code,
+        revokedClientIds: revokedClients.map((client) => client.id),
+        revokedAgencyCodes: revokedClients.map((client) => client.agency_code),
+      },
+    });
+
+    return json(request, {
+      ok: true,
+      message: "운영팀 권한을 해제했습니다. 연결된 광고주 코드는 더 이상 접속할 수 없습니다.",
+      team: teamPayload(team),
+      clients: revokedClients.map(clientPayload),
+      auditLogged,
+    });
+  }
 
 async function revokeClient(request, ctx, body) {
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
@@ -611,13 +684,22 @@ async function revokeClient(request, ctx, body) {
     team = teamResult.data ? teamPayload(teamResult.data) : null;
   }
 
-  return json(request, {
-    ok: true,
-    message: "광고주 권한을 해제했습니다. 해당 코드는 더 이상 접속할 수 없습니다.",
-    client: clientPayload(client),
-    team,
-  });
-}
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "client.revoked",
+      clientId: client.id,
+      targetTable: "clients",
+      targetId: client.id,
+      metadata: { source: "super-admin-api", agencyCode: client.agency_code, issuedByTeamCode: client.issued_by_team_code || null },
+    });
+
+    return json(request, {
+      ok: true,
+      message: "광고주 권한을 해제했습니다. 해당 코드는 더 이상 접속할 수 없습니다.",
+      client: clientPayload(client),
+      team,
+      auditLogged,
+    });
+  }
 
 export default {
   fetch: withSupabase({ auth: "none" }, async (request, ctx) => {

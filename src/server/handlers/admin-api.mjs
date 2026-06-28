@@ -50,6 +50,13 @@ const resources = {
     select: "id, client_id, report_id, title, file_type, url, external_url, storage_bucket, storage_path, visibility, uploaded_by, created_at",
     order: "created_at"
   },
+  "audit-logs": {
+    table: "audit_logs",
+    select: "id, actor_id, client_id, action, target_table, target_id, metadata, created_at",
+    order: "created_at",
+    audit: false,
+    readonly: true
+  },
   "schedule-items": {
     table: "schedule_items",
     select: "id, client_id, brand_id, title, schedule_type, status, starts_at, ends_at, assignee_id, public_comment, internal_note, visibility, created_at, updated_at",
@@ -118,6 +125,27 @@ function applyFilters(query, url, id) {
   return query;
 }
 
+function firstRow(data) {
+  return Array.isArray(data) ? data[0] : data || null;
+}
+
+async function recordAuditLog(ctx, payload) {
+  if (!payload?.targetTable || payload.targetTable === "audit_logs") return { logged: false };
+
+  const { error } = await ctx.supabaseAdmin
+    .from("audit_logs")
+    .insert({
+      actor_id: null,
+      client_id: payload.clientId || null,
+      action: payload.action,
+      target_table: payload.targetTable,
+      target_id: payload.targetId || null,
+      metadata: payload.metadata || {},
+    });
+
+  return { logged: !error, error };
+}
+
 async function handleGet(request, ctx, config, id) {
   const { url } = routeParts(request, "/api/admin");
   const limit = parseLimit(url);
@@ -139,6 +167,8 @@ async function handleGet(request, ctx, config, id) {
 }
 
 async function handlePost(request, ctx, config) {
+  if (config.readonly) return methodNotAllowed(["GET"]);
+
   const body = await readBody(request);
   if (config.table === "naver_rank_trackers" && body.sort_order == null) {
     const agencyCode = String(body.agency_code || "mml93-a01").trim().toLowerCase();
@@ -163,10 +193,25 @@ async function handlePost(request, ctx, config) {
     return databaseError(error, `${config.table} 테이블 저장에 실패했습니다.`);
   }
 
-  return json({ ok: true, data }, 201);
+  const row = firstRow(data);
+  const audit = config.audit === false ? { logged: false } : await recordAuditLog(ctx, {
+    action: `${config.table}.created`,
+    clientId: row?.client_id || body.client_id || null,
+    targetTable: config.table,
+    targetId: row?.id || null,
+    metadata: {
+      source: "admin-api",
+      resource: config.table,
+      report_id: row?.report_id || body.report_id || null,
+      visibility: row?.visibility || body.visibility || null,
+    },
+  });
+
+  return json({ ok: true, data, auditLogged: audit.logged }, 201);
 }
 
 async function handlePatch(request, ctx, config, id) {
+  if (config.readonly) return methodNotAllowed(["GET"]);
   if (!id) return json({ ok: false, message: "Missing resource id" }, 400);
 
   const body = await readBody(request);
@@ -180,10 +225,25 @@ async function handlePatch(request, ctx, config, id) {
     return databaseError(error, `${config.table} 테이블 수정에 실패했습니다.`);
   }
 
-  return json({ ok: true, data });
+  const row = firstRow(data);
+  const audit = config.audit === false ? { logged: false } : await recordAuditLog(ctx, {
+    action: `${config.table}.updated`,
+    clientId: row?.client_id || body.client_id || null,
+    targetTable: config.table,
+    targetId: row?.id || id,
+    metadata: {
+      source: "admin-api",
+      resource: config.table,
+      changed_fields: Object.keys(body || {}).sort(),
+      visibility: row?.visibility || body.visibility || null,
+    },
+  });
+
+  return json({ ok: true, data, auditLogged: audit.logged });
 }
 
 async function handleDelete(_request, ctx, config, id) {
+  if (config.readonly) return methodNotAllowed(["GET"]);
   if (!id) return json({ ok: false, message: "Missing resource id" }, 400);
 
   const { data, error } = await ctx.supabaseAdmin
@@ -196,7 +256,21 @@ async function handleDelete(_request, ctx, config, id) {
     return databaseError(error, `${config.table} 테이블 삭제에 실패했습니다.`);
   }
 
-  return json({ ok: true, data });
+  const row = firstRow(data);
+  const audit = config.audit === false ? { logged: false } : await recordAuditLog(ctx, {
+    action: `${config.table}.deleted`,
+    clientId: row?.client_id || null,
+    targetTable: config.table,
+    targetId: row?.id || id,
+    metadata: {
+      source: "admin-api",
+      resource: config.table,
+      title: row?.title || null,
+      visibility: row?.visibility || null,
+    },
+  });
+
+  return json({ ok: true, data, auditLogged: audit.logged });
 }
 
 export default {

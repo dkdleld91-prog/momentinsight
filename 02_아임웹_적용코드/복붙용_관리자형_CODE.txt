@@ -4550,6 +4550,13 @@
         return "http://127.0.0.1:8790/api/team/agency-codes";
       }
 
+      function getReportCenterApiUrl() {
+        if (window.MI_REPORT_CENTER_API_URL) return window.MI_REPORT_CENTER_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/report-center";
+        return "http://127.0.0.1:8790/api/report-center";
+      }
+
       function getClientEntryUrl() {
         var path = window.location && window.location.pathname ? window.location.pathname : "";
         var host = window.location && window.location.hostname;
@@ -4940,6 +4947,46 @@
         };
         var response = await miFetch(getTeamCodeApiUrl(), options);
         return readApiPayload(response, "운영팀 API 응답을 확인할 수 없습니다.");
+      }
+
+      function reportTypeLabel(type) {
+        var labels = {
+          weekly: "주간 보고서",
+          monthly: "월간 보고서",
+          kpi: "KPI 보고서",
+          sales: "매출 보고서",
+          ads: "광고 성과 보고서",
+          keyword: "키워드 보고서"
+        };
+        return labels[type] || "운영 보고서";
+      }
+
+      async function publishReportCenterRecord(type, state) {
+        var teamCode = currentOperationTeam && currentOperationTeam.teamCode ? String(currentOperationTeam.teamCode || "").trim() : "";
+        var hasLinkedClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
+        if (!teamCode || !hasLinkedClient) {
+          return { ok: false, skipped: true, message: "운영팀에 연결된 광고주가 있을 때 서버 보고서함에 기록됩니다." };
+        }
+
+        var reportDate = new Date().toISOString().slice(0, 10);
+        var response = await miFetch(getReportCenterApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-mi-team-code": teamCode
+          },
+          body: JSON.stringify({
+            action: "create-report",
+            reportType: type,
+            title: reportTypeLabel(type) + " · " + (state.updatedAt || reportDate),
+            reportDate: reportDate,
+            summary: state.comment || "",
+            publicComment: state.comment || "",
+            visibility: "client_visible"
+          })
+        });
+        return readApiPayload(response, "보고서 서버 등록 응답을 확인할 수 없습니다.");
       }
 
       async function persistDemoState(state, statusNode, okMessage) {
@@ -7839,10 +7886,12 @@
       }
 
       root.querySelectorAll("[data-admin-download]").forEach(function (button) {
-        button.addEventListener("click", function () {
+        button.addEventListener("click", async function () {
           var original = button.innerHTML;
           var type = button.getAttribute("data-report-type") || "report";
           var state = readState();
+          var publishResult = null;
+          button.disabled = true;
           var csv = buildReportCsv(type, state);
           var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
           var url = URL.createObjectURL(blob);
@@ -7855,9 +7904,21 @@
           setTimeout(function () {
             URL.revokeObjectURL(url);
           }, 1000);
-          button.innerHTML = "<span><b>CSV 생성 완료</b><small>관리자가 확인 후 광고주에게 전달</small></span><i>✓</i>";
+          try {
+            publishResult = await publishReportCenterRecord(type, state);
+          } catch (error) {
+            publishResult = { ok: false, message: error.message || "서버 보고서 기록 실패" };
+          }
+          if (publishResult && publishResult.ok) {
+            button.innerHTML = "<span><b>CSV 생성 · 서버 기록 완료</b><small>광고주 보고서함 공개 목록에 반영</small></span><i>✓</i>";
+          } else if (publishResult && publishResult.skipped) {
+            button.innerHTML = "<span><b>CSV 생성 완료</b><small>운영팀-광고주 연결 후 서버 보고서함 기록 가능</small></span><i>✓</i>";
+          } else {
+            button.innerHTML = "<span><b>CSV 생성 완료</b><small>서버 기록 실패 · 다시 시도 필요</small></span><i>!</i>";
+          }
           setTimeout(function () {
             button.innerHTML = original;
+            button.disabled = false;
           }, 1700);
         });
       });

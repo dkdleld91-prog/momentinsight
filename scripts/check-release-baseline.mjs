@@ -147,6 +147,10 @@ const checks = {
     && source.includes('target="_blank" rel="noopener noreferrer"')
     && source.includes("tracker.productUrl")
     && source.includes("item.link")),
+  rankTrackingKeywordPriceCompareLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerKeywordUrl")
+    && source.includes("renderRankKeywordName")
+    && source.includes("https://search.shopping.naver.com/search/catalog?query=")
+    && source.includes("가격비교탭으로 열기")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

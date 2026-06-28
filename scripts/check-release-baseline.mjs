@@ -31,6 +31,7 @@ const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const vercelConfig = JSON.parse(read("vercel.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
+const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -136,12 +137,18 @@ const checks = {
     && read("src/server/handlers/naver-rank-cron.mjs").includes("MI_RANK_CRON_SECRET"),
   rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
     && rankCronWorkflow.includes("09:00 KST and 15:00 KST")
-    && rankCronWorkflow.includes("MI_RANK_CRON_SECRET"),
+    && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
+    && rankCronWorkflow.includes("Validate cron secret")
+    && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
+    && rankCronWorkflow.includes("Naver rank cron accepted"),
   vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")
     && rankServer.includes("next_check_at: nextCheckAt"),
+  rankCronWeekendScheduleTested: rankCronScheduleCheck.includes("Saturday after afternoon slot")
+    && rankCronScheduleCheck.includes("Sunday before morning slot")
+    && rankCronScheduleCheck.includes("Sunday after afternoon slot"),
   rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
     && source.includes("rankTrackerStatusClass")
     && source.includes("formatRankRemain(tracker.nextCheckAt)")

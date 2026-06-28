@@ -10,9 +10,35 @@ jobs:
   refresh-ranks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
+      - name: Validate cron secret
+        run: |
+          if [ -z "${MI_RANK_CRON_SECRET:-}" ]; then
+            echo "::error::GitHub Actions secret MI_RANK_CRON_SECRET is missing. Add the same value used in Vercel Production."
+            exit 1
+          fi
+
       - name: Refresh due Naver rank trackers
         run: |
-          curl --fail --show-error --silent \
-            -H "Authorization: Bearer ${{ secrets.MI_RANK_CRON_SECRET }}" \
-            "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=50"
+          set -euo pipefail
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          status_code="$(
+            curl --show-error --silent \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
+              "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=50"
+          )"
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "::error::Naver rank cron failed with HTTP ${status_code}."
+            head -c 500 "$response_file"
+            echo
+            exit 1
+          fi
+
+          echo "Naver rank cron accepted with HTTP ${status_code}."

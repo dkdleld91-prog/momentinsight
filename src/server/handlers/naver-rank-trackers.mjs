@@ -209,7 +209,7 @@ function kstSlotToUtc(kstBase, hour) {
   ));
 }
 
-function nextRankCheckAt(date = new Date()) {
+export function nextRankCheckAt(date = new Date()) {
   const kstBase = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   const after = new Date(date.getTime() + 60 * 1000);
   const slots = [

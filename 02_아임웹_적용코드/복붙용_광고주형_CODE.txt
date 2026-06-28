@@ -1299,10 +1299,21 @@
     }
 
     #mi-clean .mi-rank-product-title {
+      display: block;
       color: #1e63d7;
       font-size: 13px;
       font-weight: 850;
       text-align: right;
+    }
+
+    #mi-clean a.mi-rank-product-title {
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    #mi-clean a.mi-rank-product-title:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
     }
 
     #mi-clean .mi-rank-row-actions .mi-link-button {
@@ -3120,10 +3131,6 @@
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
-              <div class="mi-rank-panel" data-rank-result>
-                <h3>활성 추적</h3>
-                <div class="mi-rank-state">등록된 오가닉 순위 추적 항목을 불러오는 중입니다.</div>
-              </div>
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 오가닉 순위</h3>
                 <div data-rank-history>
@@ -4492,6 +4499,30 @@
         return tracker.mallName || item.mallName || "";
       }
 
+      function rankTrackerProductUrl(tracker) {
+        var latest = (tracker.snapshots || [])[0] || {};
+        var item = latest.item || {};
+        var raw = tracker.productUrl || tracker.product_url || tracker.targetUrl || item.link || "";
+        if (!raw) return "";
+        var url = String(raw).trim();
+        if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+        try {
+          var parsed = new URL(url);
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+        } catch (error) {
+          return "";
+        }
+        return "";
+      }
+
+      function renderRankProductTitle(tracker, titleText) {
+        var url = rankTrackerProductUrl(tracker);
+        if (!url) {
+          return '<span class="mi-rank-product-title" title="' + escapeHtml(titleText) + '">' + escapeHtml(titleText) + '</span>';
+        }
+        return '<a class="mi-rank-product-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(titleText) + '">' + escapeHtml(titleText) + '</a>';
+      }
+
       function groupRankSnapshotsByDay(snapshots) {
         var grouped = {};
         (snapshots || []).forEach(function (snapshot) {
@@ -4542,8 +4573,7 @@
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><strong class="mi-rank-keyword-name" title="' +
             escapeHtml(tracker.keyword || "") + '">' + escapeHtml(tracker.keyword || "-") + '</strong><span class="mi-rank-product-info">' +
-            escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span><span class="mi-rank-product-title" title="' +
-            escapeHtml(titleText) + '">' + escapeHtml(titleText) + '</span><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
+            escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
             escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
             escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
             escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +

@@ -137,6 +137,12 @@ const checks = {
     && source.includes("data-rank-card"))
     && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
+  rankTrackingActivePanelRemoved: [adminSource, clientSource].every((source) => !source.includes('<div class="mi-rank-panel" data-rank-result>')),
+  rankTrackingProductTitleLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerProductUrl")
+    && source.includes("renderRankProductTitle")
+    && source.includes('target="_blank" rel="noopener noreferrer"')
+    && source.includes("tracker.productUrl")
+    && source.includes("item.link")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

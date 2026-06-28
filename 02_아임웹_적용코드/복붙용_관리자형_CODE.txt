@@ -4417,7 +4417,7 @@
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
-              <button class="mi-button" type="button" data-rank-check-run>순위 1회 조회</button>
+              <button class="mi-button" type="button" data-rank-check-run>순위 조회</button>
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-rank-check-status aria-live="polite">키워드와 상품 URL 또는 상품ID를 입력하면 현재 오가닉 순위를 조회합니다.</p>
             <div class="mi-rank-grid">
@@ -4458,7 +4458,7 @@
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
-              <button class="mi-button" type="button" data-rank-run>오가닉 추적 시작</button>
+              <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
             <div class="mi-rank-grid">

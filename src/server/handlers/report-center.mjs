@@ -25,6 +25,8 @@ const FILE_TYPES = new Set([
   "other",
 ]);
 
+const REPORT_BUCKET = "moment-reports";
+
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
@@ -123,6 +125,42 @@ function dateFolder(date = new Date()) {
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, "0");
   return `${year}-${month}`;
+}
+
+function requestedReportBucket(body = {}) {
+  const bucket = cleanText(body.bucket || body.storageBucket || body.storage_bucket, REPORT_BUCKET);
+  return bucket === REPORT_BUCKET ? bucket : "";
+}
+
+async function validateReportReferences(request, ctx, access, body) {
+  const brandId = cleanText(body.brandId || body.brand_id);
+  const channelId = cleanText(body.channelId || body.channel_id);
+
+  if (brandId) {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("brands")
+      .select("id")
+      .eq("id", brandId)
+      .eq("client_id", access.client.id)
+      .maybeSingle();
+
+    if (error) return { ok: false, response: json(request, { ok: false, message: "브랜드 소속 확인에 실패했습니다.", detail: error.message }, 500) };
+    if (!data) return { ok: false, response: json(request, { ok: false, message: "해당 광고주에 속한 브랜드만 보고서에 연결할 수 있습니다." }, 400) };
+  }
+
+  if (channelId) {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("channels")
+      .select("id")
+      .eq("id", channelId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error) return { ok: false, response: json(request, { ok: false, message: "채널 확인에 실패했습니다.", detail: error.message }, 500) };
+    if (!data) return { ok: false, response: json(request, { ok: false, message: "활성 채널만 보고서에 연결할 수 있습니다." }, 400) };
+  }
+
+  return { ok: true, brandId: brandId || null, channelId: channelId || null };
 }
 
 async function recordAuditLog(ctx, payload) {
@@ -283,7 +321,10 @@ async function handleSignedUpload(request, ctx, access, body) {
   }
 
   const filename = sanitizeFilename(body.filename || body.fileName || body.title);
-  const bucket = cleanText(body.bucket || body.storageBucket, "moment-insight-reports");
+  const bucket = requestedReportBucket(body);
+  if (!bucket) {
+    return json(request, { ok: false, message: `보고서 업로드 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400);
+  }
   const path = `clients/${access.client.id}/reports/${dateFolder()}/${Date.now()}-${filename}`;
 
   const { data, error } = await ctx.supabaseAdmin
@@ -317,16 +358,18 @@ async function handleCreateReport(request, ctx, access, body) {
 
   const visibility = body.visibility === "internal" ? "internal" : "client_visible";
   const reportDate = cleanText(body.reportDate || body.report_date, new Date().toISOString().slice(0, 10));
+  const references = await validateReportReferences(request, ctx, access, body);
+  if (!references.ok) return references.response;
 
   const reportPayload = {
     client_id: access.client.id,
-    brand_id: body.brandId || body.brand_id || null,
+    brand_id: references.brandId,
     report_type: reportType,
     title,
     report_date: reportDate,
     period_start: body.periodStart || body.period_start || null,
     period_end: body.periodEnd || body.period_end || null,
-    channel_id: body.channelId || body.channel_id || null,
+    channel_id: references.channelId,
     summary: body.summary || null,
     public_comment: body.publicComment || body.public_comment || null,
     internal_note: body.internalNote || body.internal_note || null,
@@ -366,6 +409,15 @@ async function handleCreateReport(request, ctx, access, body) {
     if (!FILE_TYPES.has(fileType)) {
       return json(request, { ok: false, message: "지원하지 않는 파일 유형입니다." }, 400);
     }
+    const storagePath = filePayload?.storagePath || filePayload?.storage_path || body.storagePath || body.storage_path || null;
+    const requestedBucket = filePayload?.bucket || filePayload?.storageBucket || filePayload?.storage_bucket || body.bucket || body.storageBucket || body.storage_bucket || REPORT_BUCKET;
+    const storageBucket = storagePath ? requestedReportBucket({ bucket: requestedBucket }) : null;
+    if (storagePath && !storageBucket) {
+      return json(request, { ok: false, message: `보고서 파일 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400);
+    }
+    if (storagePath && !String(storagePath).startsWith(`clients/${access.client.id}/`)) {
+      return json(request, { ok: false, message: "보고서 파일은 해당 광고주 전용 경로만 연결할 수 있습니다." }, 400);
+    }
 
     const fileInsert = {
       client_id: access.client.id,
@@ -374,8 +426,8 @@ async function handleCreateReport(request, ctx, access, body) {
       file_type: fileType,
       external_url: filePayload?.externalUrl || filePayload?.external_url || body.externalUrl || body.external_url || null,
       url: filePayload?.url || body.url || null,
-      storage_bucket: filePayload?.storageBucket || filePayload?.storage_bucket || body.storageBucket || body.storage_bucket || null,
-      storage_path: filePayload?.storagePath || filePayload?.storage_path || body.storagePath || body.storage_path || null,
+      storage_bucket: storageBucket,
+      storage_path: storagePath,
       visibility,
     };
 

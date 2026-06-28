@@ -30,6 +30,7 @@ const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
+const clientApiServer = read("src/server/handlers/client-api.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
 const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
 const serverIndex = read("src/server/index.mjs");
@@ -106,7 +107,7 @@ const checks = {
     && adminSource.includes("sourceFileStorageKey")
     && adminSource.includes("downloadSourceFile")
     && adminSource.includes("운영 원본 파일")
-    && adminSource.includes("서버 업로드 전 MVP 단계"),
+    && adminSource.includes("서버 저장소 연결 전에는 임시 보관 파일"),
   adminDefaultTemplateDownload: adminSource.includes("/downloads/moment-insight-operation-sheet-template.xlsx")
     && adminSource.includes("기본 양식 다운로드")
     && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
@@ -177,10 +178,16 @@ const checks = {
     && reportCenterServer.includes('if (access.role === "client") filesQuery = filesQuery.eq("visibility", "client_visible")')
     && reportCenterServer.includes('body.visibility === "internal" ? "internal" : "client_visible"'),
   reportCenterUploadAndAuditReady: reportCenterServer.includes("createSignedUploadUrl")
-    && reportCenterServer.includes("moment-insight-reports")
+    && reportCenterServer.includes('const REPORT_BUCKET = "moment-reports"')
+    && reportCenterServer.includes("requestedReportBucket")
+    && reportCenterServer.includes("validateReportReferences")
+    && reportCenterServer.includes("해당 광고주에 속한 브랜드만 보고서에 연결")
+    && reportCenterServer.includes("보고서 파일은 해당 광고주 전용 경로만 연결")
     && reportCenterServer.includes("report_center.report_created")
     && reportCenterServer.includes("recordAuditLog")
     && reportCenterServer.includes("auditLogged"),
+  clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
+    && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')
     && adminApiServer.includes("readonly: true")
     && adminApiServer.includes("recordAuditLog")
@@ -220,11 +227,18 @@ const checks = {
     && rankCronScheduleCheck.includes("after afternoon slot")
     && rankCronScheduleCheck.includes("Daily rank cron schedule checks passed."),
   rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
+    && source.includes("mi-rank-ops-summary")
+    && source.includes("rankTrackerOpsSummary")
+    && source.includes("오전 9시 · 오후 3시 기준")
     && source.includes("rankTrackerStatusClass")
     && source.includes("formatRankRemain(tracker.nextCheckAt)")
     && source.includes("tracker.lastCheckedAt")
     && source.includes("tracker.lastMessage")
     && !source.includes('return "D-"')),
+  adminDownloadMicroInteraction: adminSource.includes("#mi-admin .mi-download:hover")
+    && adminSource.includes("#mi-admin .mi-download:active")
+    && adminSource.includes("#mi-admin .mi-download:focus-visible")
+    && adminSource.includes("#mi-admin .mi-download:disabled"),
   kakaoChannelCtaVisible: [homeSource, adminSource, clientSource].every((source) => source.includes("https://pf.kakao.com/_ixoLxfX")
     && source.includes("mi-kakao-floating")
     && source.includes("카카오톡 문의")

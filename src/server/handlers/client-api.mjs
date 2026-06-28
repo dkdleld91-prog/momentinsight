@@ -164,9 +164,10 @@ async function handleAgencyCode(request, ctx) {
 
   const { data: client, error: clientError } = await ctx.supabaseAdmin
     .from("clients")
-    .select("id, name, agency_code, status, public_summary")
+    .select("id, name, agency_code, status, public_summary, disconnected_at")
     .ilike("agency_code", agencyCode)
     .eq("status", "active")
+    .is("disconnected_at", null)
     .maybeSingle();
 
   if (clientError) {

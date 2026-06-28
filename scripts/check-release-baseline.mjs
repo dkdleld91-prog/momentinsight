@@ -151,6 +151,13 @@ const checks = {
     && source.includes("renderRankKeywordName")
     && source.includes("https://search.shopping.naver.com/search/catalog?query=")
     && source.includes("가격비교탭으로 열기")),
+  rankTrackingKeywordVolumeVisible: [adminSource, clientSource].every((source) => source.includes("renderRankKeywordVolume")
+    && source.includes("keywordVolumeLabel")
+    && source.includes("키워드검색량")
+    && source.includes("mi-rank-keyword-volume"))
+    && rankServer.includes("keywordVolumeLabel")
+    && rankServer.includes("fetchSearchAdKeywordVolume")
+    && rankServer.includes("NAVER_SEARCHAD_API_KEY"),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

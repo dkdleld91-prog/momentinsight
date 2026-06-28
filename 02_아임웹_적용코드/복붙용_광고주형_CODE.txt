@@ -1151,13 +1151,13 @@
     }
 
     #mi-clean .mi-rank-track-row-head {
-      grid-template-columns: 34px minmax(110px, 0.62fr) minmax(130px, 0.78fr) minmax(240px, 1.7fr) auto;
-      min-width: 900px;
+      grid-template-columns: 34px minmax(110px, 0.58fr) minmax(124px, 0.62fr) minmax(130px, 0.7fr) minmax(240px, 1.5fr) auto;
+      min-width: 1040px;
     }
 
     #mi-clean .mi-rank-ops-row {
       display: flex;
-      min-width: 900px;
+      min-width: 1040px;
       flex-wrap: wrap;
       gap: 8px;
       align-items: center;
@@ -1278,6 +1278,7 @@
     }
 
     #mi-clean .mi-rank-keyword-name,
+    #mi-clean .mi-rank-keyword-volume,
     #mi-clean .mi-rank-product-info,
     #mi-clean .mi-rank-product-title {
       min-width: 0;
@@ -1302,6 +1303,16 @@
       color: #1e63d7;
       text-decoration: underline;
       text-underline-offset: 3px;
+    }
+
+    #mi-clean .mi-rank-keyword-volume {
+      color: #4f5f78;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-keyword-volume.is-muted {
+      color: #8a95a8;
     }
 
     #mi-clean .mi-rank-product-info {
@@ -4526,6 +4537,22 @@
         return '<a class="mi-rank-keyword-name" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(label + " 가격비교탭으로 열기") + '">' + escapeHtml(label) + '</a>';
       }
 
+      function rankKeywordVolumeText(tracker) {
+        var raw = tracker.keywordVolumeLabel || (tracker.keywordVolume ? formatNumber(tracker.keywordVolume) : "");
+        var label = String(raw || "조회 필요").trim();
+        if (!label || label === "0") return "조회 필요";
+        if (label === "조회 필요") return label;
+        if (label.indexOf("회") >= 0) return label;
+        if (label.indexOf("미만") >= 0) return label.replace(/\s*미만$/, "회 미만");
+        return label + "회";
+      }
+
+      function renderRankKeywordVolume(tracker) {
+        var text = rankKeywordVolumeText(tracker);
+        var ready = tracker.keywordVolumeStatus === "ok" || tracker.keywordVolumeStatus === "range";
+        return '<span class="mi-rank-keyword-volume' + (ready ? "" : " is-muted") + '" title="키워드검색량 ' + escapeHtml(text) + '">키워드검색량 ' + escapeHtml(text) + '</span>';
+      }
+
       function rankTrackerProductUrl(tracker) {
         var latest = (tracker.snapshots || [])[0] || {};
         var item = latest.item || {};
@@ -4598,7 +4625,7 @@
           var titleText = title + (mallName ? " (" + mallName + ")" : "");
           var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
-            '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + '<span class="mi-rank-product-info">' +
+            '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
             escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
             escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
             escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +

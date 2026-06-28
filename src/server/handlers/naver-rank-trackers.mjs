@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
@@ -8,6 +9,11 @@ import {
   shoppingRankConfig,
   shoppingRankMessage,
 } from "./naver-shopping-rank.mjs";
+
+const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
+const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
+const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
+const keywordVolumeCache = new Map();
 
 const TRACKER_SELECT = [
   "id",
@@ -62,6 +68,144 @@ function json(request, body, status = 200) {
 
 function normalizeAgencyCode(value) {
   return normalizeText(value || "").toLowerCase();
+}
+
+function normalizeKeywordCompare(value) {
+  return normalizeText(value || "").replace(/\s/g, "").toLowerCase();
+}
+
+function normalizeSearchAdKeyword(value) {
+  return normalizeText(value || "").replace(/\s/g, "");
+}
+
+function searchAdConfig() {
+  return {
+    searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY || "",
+    searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY || "",
+    searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
+  };
+}
+
+function hasSearchAdConfig(env) {
+  return Boolean(env.searchAdApiKey && env.searchAdSecretKey && env.searchAdCustomerId);
+}
+
+function parseSearchCount(value) {
+  if (typeof value === "number") return { value, upperBound: value, isUnderThreshold: false };
+  const text = String(value || "").trim();
+  if (!text) return { value: 0, upperBound: 0, isUnderThreshold: false };
+  if (text.includes("<")) {
+    const upperBound = Number(text.replace(/[^\d.]/g, "")) || 10;
+    return { value: 0, upperBound, isUnderThreshold: true };
+  }
+  const parsed = Number(text.replace(/,/g, "")) || 0;
+  return { value: parsed, upperBound: parsed, isUnderThreshold: false };
+}
+
+function searchVolumeMetric(pcRaw, mobileRaw) {
+  const pc = parseSearchCount(pcRaw);
+  const mobile = parseSearchCount(mobileRaw);
+  const isUnderThreshold = pc.isUnderThreshold || mobile.isUnderThreshold;
+  const value = isUnderThreshold ? 0 : pc.value + mobile.value;
+  const upperBound = pc.upperBound + mobile.upperBound;
+  return {
+    value,
+    upperBound,
+    isUnderThreshold,
+    label: isUnderThreshold
+      ? Number(upperBound || 0).toLocaleString("ko-KR") + " 미만"
+      : Number(value || 0).toLocaleString("ko-KR"),
+  };
+}
+
+function keywordVolumeCacheKey(keyword) {
+  return normalizeKeywordCompare(keyword);
+}
+
+function getKeywordVolumeCache(keyword) {
+  const key = keywordVolumeCacheKey(keyword);
+  const hit = key ? keywordVolumeCache.get(key) : null;
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    keywordVolumeCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setKeywordVolumeCache(keyword, value) {
+  const key = keywordVolumeCacheKey(keyword);
+  if (!key) return;
+  keywordVolumeCache.set(key, { value, expiresAt: Date.now() + KEYWORD_VOLUME_CACHE_TTL_MS });
+  while (keywordVolumeCache.size > KEYWORD_VOLUME_CACHE_MAX) {
+    const oldestKey = keywordVolumeCache.keys().next().value;
+    keywordVolumeCache.delete(oldestKey);
+  }
+}
+
+function naverSearchAdHeaders(env, method, path) {
+  const timestamp = String(Date.now());
+  const signature = crypto
+    .createHmac("sha256", env.searchAdSecretKey)
+    .update(timestamp + "." + method + "." + path)
+    .digest("base64");
+
+  return {
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Timestamp": timestamp,
+    "X-API-KEY": env.searchAdApiKey,
+    "X-Customer": String(env.searchAdCustomerId),
+    "X-Signature": signature,
+  };
+}
+
+async function fetchSearchAdKeywordVolume(env, keyword) {
+  const cached = getKeywordVolumeCache(keyword);
+  if (cached) return cached;
+
+  const path = "/keywordstool";
+  const params = new URLSearchParams({ hintKeywords: normalizeSearchAdKeyword(keyword), showDetail: "1" });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MI_RANK_KEYWORD_VOLUME_TIMEOUT_MS || 3500));
+
+  try {
+    const response = await fetch(SEARCHAD_BASE_URL + path + "?" + params.toString(), {
+      method: "GET",
+      headers: naverSearchAdHeaders(env, "GET", path),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (!response.ok) throw new Error(payload?.errorMessage || payload?.message || "HTTP " + response.status);
+
+    const list = Array.isArray(payload?.keywordList) ? payload.keywordList : [];
+    const exact = list.find((item) => normalizeKeywordCompare(item.relKeyword) === normalizeKeywordCompare(keyword));
+    const metric = exact ? searchVolumeMetric(exact.monthlyPcQcCnt, exact.monthlyMobileQcCnt) : null;
+    const value = metric
+      ? { value: metric.value, label: metric.label, status: metric.isUnderThreshold ? "range" : "ok" }
+      : { value: null, label: "조회 필요", status: "not_found" };
+    setKeywordVolumeCache(keyword, value);
+    return value;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function loadKeywordVolumes(keywords) {
+  const env = searchAdConfig();
+  const result = new Map();
+  const lookupLimit = Math.max(1, Math.min(100, Number(process.env.MI_RANK_KEYWORD_VOLUME_LOOKUP_LIMIT || 50)));
+  const uniqueKeywords = [...new Set((keywords || []).map((keyword) => normalizeText(keyword)).filter(Boolean))];
+  if (!hasSearchAdConfig(env)) return result;
+
+  await Promise.all(uniqueKeywords.slice(0, lookupLimit).map(async (keyword) => {
+    try {
+      result.set(normalizeKeywordCompare(keyword), await fetchSearchAdKeywordVolume(env, keyword));
+    } catch {
+      result.set(normalizeKeywordCompare(keyword), { value: null, label: "조회 필요", status: "error" });
+    }
+  }));
+  return result;
 }
 
 function primaryAgencyCode() {
@@ -147,11 +291,14 @@ function clampMaxRank(value) {
   return Math.max(100, Math.min(1000, Math.round(number)));
 }
 
-function trackerPayload(row, snapshots = []) {
+function trackerPayload(row, snapshots = [], keywordVolume = null) {
   const recentSnapshots = (snapshots || []).slice(0, 30);
   return {
     id: row.id,
     keyword: row.keyword,
+    keywordVolume: keywordVolume?.value ?? null,
+    keywordVolumeLabel: keywordVolume?.label || "조회 필요",
+    keywordVolumeStatus: keywordVolume?.status || "pending",
     productUrl: row.product_url,
     productId: row.product_id,
     mallName: row.mall_name,
@@ -326,10 +473,12 @@ async function listTrackers(request, ctx) {
 
   if (error) throw error;
 
-  const snapshots = await loadSnapshots(ctx, (data || []).map((row) => row.id));
+  const rows = data || [];
+  const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
+  const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
   return json(request, {
     ok: true,
-    trackers: (data || []).map((row) => trackerPayload(row, snapshots.get(row.id) || [])),
+    trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [], keywordVolumes.get(normalizeKeywordCompare(row.keyword)))),
   });
 }
 
@@ -451,10 +600,11 @@ async function createTracker(request, ctx, body, access = {}) {
   if (existing.error) throw existing.error;
   if (existing.data) {
     const snapshots = await loadSnapshots(ctx, [existing.data.id], 30);
+    const keywordVolumes = await loadKeywordVolumes([existing.data.keyword]);
     return json(request, {
       ok: true,
       message: "이미 추적 중인 상품입니다. 최근 30일 기록을 이어서 표시합니다.",
-      tracker: trackerPayload(existing.data, snapshots.get(existing.data.id) || []),
+      tracker: trackerPayload(existing.data, snapshots.get(existing.data.id) || [], keywordVolumes.get(normalizeKeywordCompare(existing.data.keyword))),
     });
   }
 
@@ -508,10 +658,11 @@ async function createTracker(request, ctx, body, access = {}) {
   if (error) throw error;
 
   const checked = await runTrackerCheck(ctx, data);
+  const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, [checked.snapshot]),
+    tracker: trackerPayload(checked.tracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
 }
 
@@ -531,10 +682,11 @@ async function checkOne(request, ctx, body) {
   if (!data) return json(request, { ok: false, message: "추적 항목을 찾을 수 없습니다." }, 404);
 
   const checked = await runTrackerCheck(ctx, data);
+  const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, [checked.snapshot]),
+    tracker: trackerPayload(checked.tracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   });
 }
 

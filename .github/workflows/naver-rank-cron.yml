@@ -2,7 +2,7 @@ name: Naver Rank Tracking
 
 on:
   schedule:
-    # 09:00 KST and 15:00 KST.
+    # Every day at 09:00 KST and 15:00 KST.
     - cron: "0 0,6 * * *"
   workflow_dispatch:
 

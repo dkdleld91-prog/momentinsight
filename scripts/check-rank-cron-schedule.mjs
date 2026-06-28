@@ -22,17 +22,24 @@ function kstStamp(iso) {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-const cases = [
-  ["Saturday before morning slot", kstDate(2026, 6, 27, 8, 58), "2026-06-27 09:00"],
-  ["Saturday before afternoon slot", kstDate(2026, 6, 27, 9, 10), "2026-06-27 15:00"],
-  ["Saturday after afternoon slot", kstDate(2026, 6, 27, 15, 10), "2026-06-28 09:00"],
-  ["Sunday before morning slot", kstDate(2026, 6, 28, 8, 58), "2026-06-28 09:00"],
-  ["Sunday after morning slot", kstDate(2026, 6, 28, 9, 10), "2026-06-28 15:00"],
-  ["Sunday after afternoon slot", kstDate(2026, 6, 28, 15, 10), "2026-06-29 09:00"],
+const dailySlots = [
+  ["Monday", 2026, 6, 22, "2026-06-22", "2026-06-23"],
+  ["Tuesday", 2026, 6, 23, "2026-06-23", "2026-06-24"],
+  ["Wednesday", 2026, 6, 24, "2026-06-24", "2026-06-25"],
+  ["Thursday", 2026, 6, 25, "2026-06-25", "2026-06-26"],
+  ["Friday", 2026, 6, 26, "2026-06-26", "2026-06-27"],
+  ["Saturday", 2026, 6, 27, "2026-06-27", "2026-06-28"],
+  ["Sunday", 2026, 6, 28, "2026-06-28", "2026-06-29"],
 ];
+
+const cases = dailySlots.flatMap(([weekday, year, month, day, today, tomorrow]) => [
+  [`${weekday} before morning slot`, kstDate(year, month, day, 8, 58), `${today} 09:00`],
+  [`${weekday} before afternoon slot`, kstDate(year, month, day, 9, 10), `${today} 15:00`],
+  [`${weekday} after afternoon slot`, kstDate(year, month, day, 15, 10), `${tomorrow} 09:00`],
+]);
 
 for (const [label, input, expected] of cases) {
   assert.equal(kstStamp(nextRankCheckAt(input)), expected, label);
 }
 
-console.log("Rank cron schedule checks passed.");
+console.log("Daily rank cron schedule checks passed.");

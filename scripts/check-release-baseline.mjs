@@ -144,7 +144,7 @@ const checks = {
     && rankCronServer.includes("Unauthorized cron request")
     && rankCronServer.includes("MI_RANK_CRON_SECRET"),
   rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
-    && rankCronWorkflow.includes("09:00 KST and 15:00 KST")
+    && rankCronWorkflow.includes("Every day at 09:00 KST and 15:00 KST")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
@@ -160,9 +160,18 @@ const checks = {
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")
     && rankServer.includes("next_check_at: nextCheckAt"),
-  rankCronWeekendScheduleTested: rankCronScheduleCheck.includes("Saturday after afternoon slot")
-    && rankCronScheduleCheck.includes("Sunday before morning slot")
-    && rankCronScheduleCheck.includes("Sunday after afternoon slot"),
+  rankCronDailyScheduleTested: rankCronScheduleCheck.includes("dailySlots")
+    && rankCronScheduleCheck.includes('"Monday"')
+    && rankCronScheduleCheck.includes('"Tuesday"')
+    && rankCronScheduleCheck.includes('"Wednesday"')
+    && rankCronScheduleCheck.includes('"Thursday"')
+    && rankCronScheduleCheck.includes('"Friday"')
+    && rankCronScheduleCheck.includes('"Saturday"')
+    && rankCronScheduleCheck.includes('"Sunday"')
+    && rankCronScheduleCheck.includes("before morning slot")
+    && rankCronScheduleCheck.includes("before afternoon slot")
+    && rankCronScheduleCheck.includes("after afternoon slot")
+    && rankCronScheduleCheck.includes("Daily rank cron schedule checks passed."),
   rankTrackerOpsStatusVisible: [adminSource, clientSource].every((source) => source.includes("mi-rank-ops-row")
     && source.includes("rankTrackerStatusClass")
     && source.includes("formatRankRemain(tracker.nextCheckAt)")

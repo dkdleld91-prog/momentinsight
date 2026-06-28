@@ -50,8 +50,8 @@ const checks = {
   adminCopySynced: adminSource === adminCopy,
   clientCopySynced: clientSource === clientCopy,
   homeCopySynced: homeSource === homeCopy,
-  adminMenuCount: adminScreens.length === 10,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 11,
+  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
   adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
     && adminSource.includes('data-login-mode="operator"')
@@ -128,7 +128,15 @@ const checks = {
     && sheetTemplateBuilder.includes("월간_매출입력")
     && sheetTemplateBuilder.includes("광고주 연결")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
-  clientToolsExist: ["keyword-tool", "naver-rank", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  naverRankScreensSplit: [adminSource, clientSource].every((source) => source.includes("data-rank-check-card")
+    && source.includes("data-rank-check-run")
+    && source.includes("initRankCheck")
+    && source.includes("네이버 상품 순위")
+    && source.includes("네이버 30일 순위")
+    && source.includes("data-rank-card"))
+    && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
+    && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

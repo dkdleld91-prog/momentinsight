@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 29. 01:44:27
-- 기준 커밋: 7e60de2
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs /  M src/server/handlers/client-api.mjs /  M src/server/handlers/report-center.mjs
+- 마지막 자동 저장: 2026. 06. 29. 02:11:30
+- 기준 커밋: a2bb1d7
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

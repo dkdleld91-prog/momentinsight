@@ -2675,7 +2675,8 @@
         <div class="mi-nav-group">
           <p class="mi-nav-title">도구</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회 <small>마케팅</small></a>
-          <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위 <small>추적</small></a>
+          <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위 <small>1회 조회</small></a>
+          <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">네이버 30일 순위 <small>추적</small></a>
           <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 <small>네이버</small></a>
         </div>
 
@@ -2690,7 +2691,8 @@
         <a href="#mi-sales" data-mi-screen="sales">매출</a>
         <a href="#mi-schedule" data-mi-screen="schedule">일정</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드</a>
-        <a href="#mi-naver-rank" data-mi-screen="naver-rank">순위</a>
+        <a href="#mi-naver-rank" data-mi-screen="naver-rank">상품순위</a>
+        <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">30일순위</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
       </nav>
@@ -3044,24 +3046,65 @@
           </div>
         </section>
 
-        <section class="mi-view" id="mi-naver-rank" data-mi-view="naver-rank" aria-label="네이버 상품 순위 화면">
+        <section class="mi-view" id="mi-naver-rank" data-mi-view="naver-rank" aria-label="네이버 상품 순위 1회 조회 화면">
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 오가닉 상품 순위를 계속 추적합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 오전 9시와 오후 3시에 자동 수집하고, 화면에는 최근 30일 기록을 표시합니다.</p>
+              <h1>네이버 오가닉 상품 순위를 바로 확인합니다.</h1>
+              <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 영역을 제외한 현재 오가닉 순위를 1회 조회합니다.</p>
             </div>
-            <span class="mi-badge">오가닉 추적</span>
+            <span class="mi-badge">1회 조회</span>
+          </header>
+
+          <article class="mi-card mi-card-pad mi-rank-card" data-rank-check-card>
+            <div class="mi-card-head">
+              <div>
+                <span class="mi-kicker">네이버 상품 순위</span>
+                <h2>지금 기준 오가닉 순위를 확인합니다.</h2>
+                <p>단건 확인용 화면입니다. 30일 동안 기록하려면 왼쪽 도구의 네이버 30일 순위를 사용합니다.</p>
+              </div>
+              <span class="mi-period">광고 제외 오가닉</span>
+            </div>
+            <div class="mi-rank-form is-check">
+              <input class="mi-input" data-rank-check-keyword aria-label="상품 순위 조회 키워드" placeholder="키워드" />
+              <input class="mi-input" data-rank-check-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
+              <input class="mi-input" data-rank-check-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
+              <select class="mi-input" data-rank-check-max aria-label="조회 범위">
+                <option value="100">100위</option>
+                <option value="300" selected>300위</option>
+                <option value="500">500위</option>
+                <option value="1000">1000위</option>
+              </select>
+              <button class="mi-button" type="button" data-rank-check-run>순위 1회 조회</button>
+            </div>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-check-status aria-live="polite">키워드와 상품 URL 또는 상품ID를 입력하면 현재 오가닉 순위를 조회합니다.</p>
+            <div class="mi-rank-grid">
+              <div class="mi-rank-panel" data-rank-check-result>
+                <h3>현재 순위</h3>
+                <div class="mi-rank-state">상품 정보를 입력하고 조회하면 현재 오가닉 순위가 표시됩니다.</div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="mi-view" id="mi-naver-rank-tracking" data-mi-view="naver-rank-tracking" aria-label="네이버 30일 순위 추적 화면">
+          <header class="mi-screen-head">
+            <div>
+              <span class="mi-kicker">마케팅 도구</span>
+              <h1>네이버 오가닉 상품 순위를 30일 기록합니다.</h1>
+              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 매일 오전 9시와 오후 3시에 자동 수집하고, 화면에는 최근 30일 기록을 표시합니다.</p>
+            </div>
+            <span class="mi-badge">30일 추적</span>
           </header>
 
           <article class="mi-card mi-card-pad mi-rank-card" data-rank-card>
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
-                <h2>상품 URL 기준 오가닉 순위 추적을 시작합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 오전 9시와 오후 3시 기준으로 기록합니다.</p>
+                <h2>상품 URL 기준 30일 오가닉 순위 추적을 시작합니다.</h2>
+                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 매일 오전 9시와 오후 3시 기준으로 기록합니다.</p>
               </div>
-              <span class="mi-period">광고 제외 오가닉</span>
+              <span class="mi-period">30일 기록</span>
             </div>
             <div class="mi-rank-form">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
@@ -4546,6 +4589,92 @@
           }).join("") + '</div>';
       }
 
+
+      function renderRankCheckResult(node, payload) {
+        if (!node) return;
+        if (!payload || payload.ok === false) {
+          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "상품 순위를 확인하지 못했습니다.") + '</div>';
+          return;
+        }
+        var result = payload.result || {};
+        var item = result.item || payload.item || null;
+        var rank = result.rank || (item && item.rank) || null;
+        var checkedCount = result.checkedCount || payload.checkedCount || 0;
+        var queryKeyword = (payload.query && payload.query.keyword) || payload.keyword || result.keyword || "-";
+        var found = Boolean(result.matched || rank);
+        var summary = found
+          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
+          : '<div class="mi-rank-state">조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</div>';
+        var itemRows = item ? renderRankItems([item]) : "";
+        var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
+        node.innerHTML = '<h3>현재 순위</h3>' + summary + (itemRows ? '<h3>조회 상품</h3>' + itemRows : "") + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
+      }
+
+      function initRankCheck(linkedKeywordInput) {
+        var card = root.querySelector("[data-rank-check-card]");
+        if (!card) return;
+        var rankKeyword = card.querySelector("[data-rank-check-keyword]");
+        var rankUrl = card.querySelector("[data-rank-check-url]");
+        var rankProductId = card.querySelector("[data-rank-check-product-id]");
+        var rankMax = card.querySelector("[data-rank-check-max]");
+        var rankRun = card.querySelector("[data-rank-check-run]");
+        var rankStatus = card.querySelector("[data-rank-check-status]");
+        var rankResult = card.querySelector("[data-rank-check-result]");
+        if (!rankKeyword || !rankRun) return;
+
+        function syncKeywordFromMain() {
+          if (!linkedKeywordInput || !rankKeyword) return;
+          var next = parseKeywordInput(linkedKeywordInput.value)[0] || "";
+          if (next && (!rankKeyword.value || rankKeyword.getAttribute("data-synced-keyword") === "true")) {
+            rankKeyword.value = next;
+            rankKeyword.setAttribute("data-synced-keyword", "true");
+          }
+        }
+
+        rankKeyword.setAttribute("data-synced-keyword", "true");
+        syncKeywordFromMain();
+        if (linkedKeywordInput) linkedKeywordInput.addEventListener("input", syncKeywordFromMain);
+        rankKeyword.addEventListener("input", function () {
+          rankKeyword.setAttribute("data-synced-keyword", "false");
+        });
+
+        rankRun.addEventListener("click", async function () {
+          var keyword = (rankKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
+          var targetUrl = rankUrl ? rankUrl.value.trim() : "";
+          var productId = rankProductId ? rankProductId.value.trim() : "";
+          if (!keyword) {
+            setStatus(rankStatus, "키워드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!targetUrl && !productId) {
+            setStatus(rankStatus, "네이버 상품 URL 또는 상품ID를 입력해주세요.", "is-warn");
+            return;
+          }
+          rankRun.disabled = true;
+          setStatus(rankStatus, "현재 오가닉 순위를 조회 중입니다.", "");
+          try {
+            var params = new URLSearchParams({
+              keyword: keyword,
+              targetUrl: targetUrl,
+              productId: productId,
+              maxRank: rankMax ? rankMax.value : "300"
+            });
+            var response = await miFetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
+            var payload = await response.json().catch(function () { return null; });
+            if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
+            if (!response.ok && payload.ok !== false) payload.ok = false;
+            renderRankCheckResult(rankResult, payload);
+            var rank = payload.result && payload.result.rank;
+            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? "조회 완료: 현재 오가닉 " + rankText(rank) + "입니다." : "조회 완료: 조회 범위 안에서 해당 상품을 찾지 못했습니다."), payload.ok === false || !rank ? "is-warn" : "is-ok");
+          } catch (error) {
+            renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
+            setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");
+          } finally {
+            rankRun.disabled = false;
+          }
+        });
+      }
+
       function initRankTracking(linkedKeywordInput) {
         var card = root.querySelector("[data-rank-card]");
         if (!card) return;
@@ -5785,6 +5914,7 @@
           runSeoCheck();
         });
       }
+      initRankCheck(keywordInput);
       initRankTracking(keywordInput);
 
       var state = readState();

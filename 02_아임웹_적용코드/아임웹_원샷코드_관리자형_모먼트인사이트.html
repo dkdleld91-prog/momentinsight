@@ -4411,8 +4411,9 @@
 
       var storageKey = "miAgencyPublicState:v2";
       var sourceFileStorageKey = "miAdminSourceFile:v1";
+      var primaryAgencyCode = "mml93-a01";
       var defaultState = {
-        code: "mml93-a01",
+        code: primaryAgencyCode,
         client: "브랜드 A",
         sales: "4,180만원",
         roas: "581%",
@@ -4450,6 +4451,45 @@
         return next;
       }
 
+      function normalizeStorageCode(value) {
+        return String(value || "").trim().toLowerCase();
+      }
+
+      function operationTeamClientCode() {
+        var client = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+        return client && client.agencyCode ? normalizeStorageCode(client.agencyCode) : "";
+      }
+
+      function currentPublicCode() {
+        return operationTeamClientCode() || normalizeStorageCode(getAdminCode());
+      }
+
+      function scopedStorageKey(baseKey, code) {
+        var normalized = normalizeStorageCode(code || currentPublicCode());
+        return baseKey + ":" + (normalized || "unauthed");
+      }
+
+      function blankPublicState(code) {
+        var normalized = normalizeStorageCode(code || currentPublicCode());
+        var client = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+        return {
+          code: normalized,
+          client: client ? (client.name || client.businessName || "연결 광고주") : "연결 광고주 없음",
+          sales: "입력 전",
+          roas: "입력 전",
+          adSpend: "입력 전",
+          orders: "입력 전",
+          achievement: "입력 전",
+          status: "입력 대기",
+          nextSchedule: "입력 전",
+          updatedAt: "입력 전",
+          comment: "운영팀이 공개 데이터를 입력하면 광고주 화면에 반영됩니다.",
+          channels: [],
+          channelDetails: [],
+          schedules: []
+        };
+      }
+
       function isValidAdminCode(value) {
         var code = String(value || "").trim().toLowerCase();
         var configured = String(window.MI_ADMIN_LOGIN_CODES || "mml93-a01")
@@ -4460,17 +4500,27 @@
       }
 
       function readState() {
+        var code = currentPublicCode();
+        var scopedKey = scopedStorageKey(storageKey, code);
         try {
-          var saved = window.localStorage.getItem(storageKey);
-          return saved ? Object.assign({}, defaultState, normalizeLegacyState(JSON.parse(saved))) : defaultState;
+          var saved = window.localStorage.getItem(scopedKey);
+          if (saved) return Object.assign({}, blankPublicState(code), normalizeLegacyState(JSON.parse(saved)), { code: code });
+          if (normalizeStorageCode(code) === primaryAgencyCode) {
+            var legacySaved = window.localStorage.getItem(storageKey);
+            if (legacySaved) return Object.assign({}, defaultState, normalizeLegacyState(JSON.parse(legacySaved)), { code: primaryAgencyCode });
+            return defaultState;
+          }
+          return blankPublicState(code);
         } catch (error) {
-          return defaultState;
+          return normalizeStorageCode(code) === primaryAgencyCode ? defaultState : blankPublicState(code);
         }
       }
 
       function writeState(state) {
+        var normalizedCode = normalizeStorageCode((state && state.code) || currentPublicCode());
+        var nextState = Object.assign({}, state || {}, { code: normalizedCode });
         try {
-          window.localStorage.setItem(storageKey, JSON.stringify(normalizeLegacyState(state)));
+          window.localStorage.setItem(scopedStorageKey(storageKey, normalizedCode), JSON.stringify(normalizeLegacyState(nextState)));
         } catch (error) {}
       }
 
@@ -5071,7 +5121,7 @@
 
       function readSourceFile() {
         try {
-          var saved = window.localStorage.getItem(sourceFileStorageKey);
+          var saved = window.localStorage.getItem(scopedStorageKey(sourceFileStorageKey));
           return saved ? JSON.parse(saved) : null;
         } catch (error) {
           return null;
@@ -5080,7 +5130,7 @@
 
       function writeSourceFile(fileRecord) {
         try {
-          window.localStorage.setItem(sourceFileStorageKey, JSON.stringify(fileRecord));
+          window.localStorage.setItem(scopedStorageKey(sourceFileStorageKey), JSON.stringify(fileRecord));
           return true;
         } catch (error) {
           return false;
@@ -5089,7 +5139,7 @@
 
       function removeSourceFile() {
         try {
-          window.localStorage.removeItem(sourceFileStorageKey);
+          window.localStorage.removeItem(scopedStorageKey(sourceFileStorageKey));
         } catch (error) {}
       }
 
@@ -5337,7 +5387,7 @@
       function applyState(state) {
         root.querySelectorAll("[data-admin-public]").forEach(function (node) {
           var key = node.getAttribute("data-admin-public");
-          if (state[key]) node.textContent = state[key];
+          node.textContent = state && Object.prototype.hasOwnProperty.call(state, key) ? state[key] : "입력 전";
         });
 
         var codeInput = root.querySelector("[data-admin-code]");
@@ -5366,14 +5416,13 @@
         if (achievementInput) achievementInput.value = state.achievement;
         if (updatedInput) updatedInput.value = state.updatedAt;
         if (commentInput) commentInput.value = state.comment;
-        if (channelsInput) channelsInput.value = channelsToText(state.channels || defaultState.channels);
-        if (schedulesInput) schedulesInput.value = schedulesToText(state.schedules || defaultState.schedules);
+        if (channelsInput) channelsInput.value = channelsToText(state.channels || []);
+        if (schedulesInput) schedulesInput.value = schedulesToText(state.schedules || []);
         if (publicCommentInput) publicCommentInput.value = state.comment;
         renderClientPreview(state);
       }
 
       var currentState = readState();
-      writeState(currentState);
       applyState(currentState);
       renderSourceFile();
 
@@ -5456,6 +5505,8 @@
               } catch (error) {}
               syncOwnerAccessFields();
               renderOperationTeamCodePanel(teamPayload);
+              applyState(readState());
+              renderSourceFile();
               setStatus(loginStatus, "운영팀 콘솔이 열렸습니다.", "is-ok");
               setStatus(ownerStatus, currentOperationTeam && currentOperationTeam.client ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다." : "운영팀 코드로 로그인했습니다. 광고주 코드 1개를 생성할 수 있습니다.", currentOperationTeam && currentOperationTeam.client ? "is-warn" : "is-ok");
               window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
@@ -5472,6 +5523,8 @@
             window.sessionStorage.setItem("miAdminAuthedCode", getAdminCode());
           } catch (error) {}
           syncOwnerAccessFields();
+          applyState(readState());
+          renderSourceFile();
           setStatus(loginStatus, "총관리자 콘솔이 열렸습니다.", "is-ok");
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
           loadOwnerCodes(true);
@@ -5531,6 +5584,7 @@
         var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
         var clientNameInput = root.querySelector("[data-team-client-name]");
         var clientCreate = root.querySelector("[data-team-client-create]");
+        var publicCodeInput = root.querySelector("[data-admin-code]");
         setOwnerPanelMode(ownerMode);
         if (rootCodeInput) rootCodeInput.value = "mml93-a01";
         [secretInput, ownerTeamCodeInput, ownerTeamNameInput, ownerCreate, ownerRefresh, ownerListOpen].forEach(function (node) {
@@ -5544,6 +5598,14 @@
         if (teamForClientInput) {
           teamForClientInput.readOnly = !ownerMode;
           if (!ownerMode && currentOperationTeam) teamForClientInput.value = currentOperationTeam.teamCode || "";
+        }
+        if (publicCodeInput && !ownerMode) {
+          publicCodeInput.value = currentPublicCode();
+          publicCodeInput.readOnly = true;
+          publicCodeInput.placeholder = currentOperationTeam && currentOperationTeam.client ? "연결 광고주 코드 자동 적용" : "광고주 연결 후 자동 적용";
+        } else if (publicCodeInput) {
+          publicCodeInput.readOnly = false;
+          publicCodeInput.placeholder = "대행사 코드";
         }
       }
 
@@ -5742,17 +5804,17 @@
           var channelsText = (root.querySelector("[data-admin-channels]") || {}).value || "";
           var schedulesText = (root.querySelector("[data-admin-schedules]") || {}).value || "";
           var nextState = {
-            code: (root.querySelector("[data-admin-code]") || {}).value || defaultState.code,
-            client: (root.querySelector("[data-admin-client]") || {}).value || defaultState.client,
-            sales: (root.querySelector("[data-admin-sales]") || {}).value || defaultState.sales,
-            roas: (root.querySelector("[data-admin-roas]") || {}).value || defaultState.roas,
-            adSpend: (root.querySelector("[data-admin-ad-spend]") || {}).value || defaultState.adSpend,
-            orders: (root.querySelector("[data-admin-orders]") || {}).value || defaultState.orders,
-            achievement: (root.querySelector("[data-admin-achievement]") || {}).value || defaultState.achievement,
-            status: (root.querySelector("[data-admin-status]") || {}).value || defaultState.status,
-            nextSchedule: (root.querySelector("[data-admin-next-schedule]") || {}).value || defaultState.nextSchedule,
-            updatedAt: (root.querySelector("[data-admin-updated-at]") || {}).value || defaultState.updatedAt,
-            comment: (root.querySelector("[data-admin-comment]") || {}).value || defaultState.comment,
+            code: (root.querySelector("[data-admin-code]") || {}).value || currentPublicCode(),
+            client: (root.querySelector("[data-admin-client]") || {}).value || savedState.client,
+            sales: (root.querySelector("[data-admin-sales]") || {}).value || savedState.sales,
+            roas: (root.querySelector("[data-admin-roas]") || {}).value || savedState.roas,
+            adSpend: (root.querySelector("[data-admin-ad-spend]") || {}).value || savedState.adSpend,
+            orders: (root.querySelector("[data-admin-orders]") || {}).value || savedState.orders,
+            achievement: (root.querySelector("[data-admin-achievement]") || {}).value || savedState.achievement,
+            status: (root.querySelector("[data-admin-status]") || {}).value || savedState.status,
+            nextSchedule: (root.querySelector("[data-admin-next-schedule]") || {}).value || savedState.nextSchedule,
+            updatedAt: (root.querySelector("[data-admin-updated-at]") || {}).value || savedState.updatedAt,
+            comment: (root.querySelector("[data-admin-comment]") || {}).value || savedState.comment,
             channels: parseLines(channelsText, function (cols) {
               if (!cols[0]) return null;
               var last = cols.length - 1;
@@ -5762,8 +5824,8 @@
                 sales: cols.length > 4 ? cols.slice(2, last).join(",") : (cols[2] || "-"),
                 roas: cols[last] || "-"
               };
-            }, defaultState.channels),
-            channelDetails: savedState.channelDetails || defaultState.channelDetails,
+            }, savedState.channels || []),
+            channelDetails: savedState.channelDetails || [],
             schedules: parseLines(schedulesText, function (cols) {
               if (!cols[0] || !cols[1]) return null;
               return {
@@ -5772,7 +5834,7 @@
                 detail: cols[2] || "상세 내용 확인",
                 status: cols[3] || "예정"
               };
-            }, defaultState.schedules)
+            }, savedState.schedules || [])
           };
           writeState(nextState);
           applyState(nextState);

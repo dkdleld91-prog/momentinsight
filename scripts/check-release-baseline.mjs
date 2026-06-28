@@ -92,6 +92,16 @@ const checks = {
     && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
     && adminSource.includes("연결 광고주 1곳 기준")
     && exists("public/downloads/moment-insight-operation-sheet-template.xlsx"),
+  publicStateScopedByCode: adminSource.includes("scopedStorageKey(storageKey")
+    && adminSource.includes("scopedStorageKey(sourceFileStorageKey")
+    && adminSource.includes("currentPublicCode")
+    && adminSource.includes("blankPublicState")
+    && adminSource.includes("operationTeamClientCode")
+    && clientSource.includes("scopedStorageKey(code)")
+    && clientSource.includes("blankPublicState(code)")
+    && clientSource.includes("readState(normalized)")
+    && !clientSource.includes("await syncDemoState(loginStatus)")
+    && !clientSource.includes("await syncDemoState(connectStatus)"),
   operationSheetSingleClientSimple: sheetTemplateBuilder.includes("single-client-operation-team-template")
     && sheetTemplateBuilder.includes("별도 광고주 코드 입력은 없습니다")
     && sheetTemplateBuilder.includes("월간_매출입력")

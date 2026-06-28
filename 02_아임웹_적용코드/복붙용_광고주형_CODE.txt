@@ -3272,15 +3272,58 @@
         return next;
       }
 
-      function readState() {
+      function scopedStorageKey(code) {
+        var normalized = normalizeCode(code || selectedAgencyCode()).toLowerCase();
+        return storageKey + ":" + (normalized || "unauthed");
+      }
+
+      function selectedAgencyCode() {
         try {
-          var saved = window.localStorage.getItem(storageKey);
+          return window.sessionStorage.getItem(selectedCodeKey) || "";
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function blankPublicState(code) {
+        return enrichState({
+          code: normalizeCode(code || selectedAgencyCode()),
+          client: "연결 광고주",
+          agencyName: "연결 운영팀",
+          connectionStatus: "연동 완료",
+          sales: "입력 전",
+          roas: "입력 전",
+          adSpend: "입력 전",
+          orders: "입력 전",
+          achievement: "입력 전",
+          status: "입력 대기",
+          nextSchedule: "입력 전",
+          updatedAt: "입력 전",
+          comment: "운영팀이 공개 데이터를 입력하면 이 화면에 반영됩니다.",
+          primaryAction: "운영팀 공개 데이터 입력 대기",
+          nextAction: "공개 데이터 입력 대기",
+          actionImpact: "공개된 운영 데이터가 아직 없습니다.",
+          clientRequest: "담당 운영팀에 공개 데이터 입력을 요청해주세요.",
+          goodPoint: "입력 대기",
+          watchPoint: "입력 대기",
+          reports: [],
+          actions: [],
+          channels: [],
+          channelDetails: [],
+          schedules: []
+        });
+      }
+
+      function readState(code) {
+        var selectedCode = normalizeCode(code || selectedAgencyCode());
+        try {
+          var saved = selectedCode ? window.localStorage.getItem(scopedStorageKey(selectedCode)) : "";
           var parsed = saved ? normalizeLegacyState(JSON.parse(saved)) : {};
           delete parsed.code;
           delete parsed.agencyCode;
-          return enrichState(saved ? Object.assign({}, defaultState, parsed) : defaultState);
+          return enrichState(saved ? Object.assign({}, blankPublicState(selectedCode), parsed, { code: selectedCode }) : (selectedCode ? blankPublicState(selectedCode) : defaultState));
         } catch (error) {
-          return enrichState(defaultState);
+          return selectedCode ? blankPublicState(selectedCode) : enrichState(defaultState);
         }
       }
 
@@ -3293,7 +3336,9 @@
 
       function writeState(state) {
         try {
-          window.localStorage.setItem(storageKey, JSON.stringify(publicStateForStorage(state)));
+          var code = normalizeCode((state && state.code) || selectedAgencyCode());
+          if (!code) return;
+          window.localStorage.setItem(scopedStorageKey(code), JSON.stringify(publicStateForStorage(state)));
         } catch (error) {}
       }
 
@@ -5275,12 +5320,12 @@
       }
 
       async function unlockWithCode(code, statusNode) {
-        var state = readState();
         var normalized = normalizeCode(code);
         if (!normalized) {
           setStatus(statusNode, "대행사 코드를 입력해주세요.", "is-warn");
           return false;
         }
+        var state = readState(normalized);
         var payload;
         try {
           payload = await validateAgencyCode(normalized);
@@ -5422,7 +5467,6 @@
             return;
           }
           loginButton.disabled = true;
-          await syncDemoState(loginStatus);
           await unlockWithCode(loginCode.value, loginStatus);
           loginButton.disabled = false;
         });
@@ -5434,7 +5478,6 @@
       if (connectButton && connectCode) {
         connectButton.addEventListener("click", async function () {
           connectButton.disabled = true;
-          await syncDemoState(connectStatus);
           await unlockWithCode(connectCode.value, connectStatus);
           connectButton.disabled = false;
         });

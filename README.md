@@ -2,7 +2,7 @@
 
 마케팅 데이터를 정리하는 성과 대시보드입니다. 마케팅 대행사가 광고주별 KPI, 매출, 광고 성과, 키워드, 보고서, 일정, 실행 인사이트를 한곳에서 관리하고 공유하기 위한 B2B SaaS 대시보드 프로젝트입니다.
 
-이 저장소는 먼저 제품 구조와 기획 문서를 기준으로 정리되어 있습니다. 이후 Next.js 기반 프론트엔드, 인증, DB, 파일 업로드, 외부 데이터 연동을 단계적으로 붙이는 방향을 전제로 합니다.
+현재 저장소는 정적 HTML 기반 화면, Vercel Serverless API, Supabase DB를 조합한 MVP 운영 구조입니다. Next.js 전환은 추후 선택 사항이며, 지금 운영 기준은 `02_아임웹_적용코드`의 화면 파일과 `src/server`의 API 핸들러입니다.
 
 ## 핵심 방향
 
@@ -15,20 +15,14 @@
 - 2차부터 채널별 분석, 키워드 인사이트, 자동 그래프 확장
 - 3차부터 네이버, 쿠팡, 메타, 구글시트, 엑셀 연동 고려
 
-## 추천 기술 스택
+## 현재 기술 구조
 
-초기 개발 기준 권장안입니다.
-
-- Frontend: Next.js, React, TypeScript
-- Styling: Tailwind CSS 또는 CSS Modules
-- UI: shadcn/ui 계열 컴포넌트 구조, lucide-react 아이콘
-- Backend: Next.js Route Handlers 또는 NestJS API
-- Database: PostgreSQL
-- ORM: Prisma
-- Auth: NextAuth/Auth.js 또는 Supabase Auth
-- File Storage: Supabase Storage, S3 호환 스토리지, Google Drive 링크 병행
-- Charts: Recharts 또는 Tremor 기반 차트
-- Deployment: Vercel, Railway, Supabase 조합
+- Frontend: 정적 HTML/CSS/JavaScript
+- Backend: Vercel Serverless API, `@supabase/server`
+- Database: Supabase PostgreSQL
+- Automation: GitHub Actions twice-daily rank tracking cron
+- Deployment: Vercel Production, `https://insight.momentlabs.co.kr`
+- Local build: `npm run build:vercel`
 
 ## 현재 저장소 구조
 
@@ -36,26 +30,25 @@
 .
 ├── AGENTS.md
 ├── README.md
-├── database/
-│   └── schema-draft.md
+├── .github/workflows/
+│   └── naver-rank-cron.yml
+├── 02_아임웹_적용코드/
+│   ├── 아임웹_원샷코드_홈페이지형_모먼트인사이트.html
+│   ├── 아임웹_원샷코드_관리자형_모먼트인사이트.html
+│   └── 아임웹_원샷코드_대시보드형_모먼트인사이트.html
+├── 03_운영시트_템플릿/
+├── 05_네이버_API_연동/
+├── 06_Supabase_연동/
+├── api/
+│   └── index.mjs
 ├── docs/
-│   ├── 00-project-structure.md
-│   ├── 01-product-requirements.md
-│   ├── 02-information-architecture.md
-│   ├── 03-page-specification.md
-│   ├── 04-data-model.md
-│   ├── 05-ui-components.md
-│   ├── 06-mvp-roadmap.md
-│   └── 07-development-guidelines.md
+│   └── 08-work-spec-autosave.md
 ├── public/
-│   └── assets/
+│   └── downloads/
+├── scripts/
+├── supabase/
 └── src/
-    ├── app/
-    ├── components/
-    ├── data/
-    ├── features/
-    ├── lib/
-    └── types/
+    └── server/
 ```
 
 ## 주요 메뉴
@@ -75,27 +68,24 @@
 
 ## 1차 MVP 범위
 
-1차는 실제 대행사 운영에 필요한 최소 기능을 우선합니다.
+1차는 실제 대행사 운영에 필요한 최소 기능을 우선합니다. 현재 구현 기준은 아래 범위입니다.
 
-- 관리자 로그인
-- 광고주 계정 및 브랜드 생성
-- 광고주별 대시보드
+- 총관리자, 운영팀, 광고주 코드 기반 접속
+- 총관리자의 운영팀/광고주 코드 생성과 권한 해제
+- 운영팀 1개당 광고주 1개 연결
+- 광고주별 대시보드와 공개 데이터 분리
 - 월간 KPI 목표와 실제값 입력
-- 보고서 업로드 및 링크 등록
-- 일정 캘린더 및 리스트
+- 보고서 다운로드 영역
+- 운영 원본 파일 업로드/다운로드 MVP
+- 일정 및 공개 코멘트 영역
 - 공개 코멘트와 내부 메모 분리
-- 광고주 전용 화면에서 본인 데이터만 조회
+- 키워드 조회, 네이버 상품 순위 추적, 네이버 SEO 확인
 
 ## 문서 안내
 
-- [제품 요구사항](docs/01-product-requirements.md)
-- [정보 구조와 메뉴](docs/02-information-architecture.md)
-- [페이지별 기능 정의](docs/03-page-specification.md)
-- [데이터 모델](docs/04-data-model.md)
-- [UI 컴포넌트 설계](docs/05-ui-components.md)
-- [MVP 로드맵](docs/06-mvp-roadmap.md)
-- [개발 가이드](docs/07-development-guidelines.md)
-- [DB 초안](database/schema-draft.md)
+- [작업 명세서](docs/08-work-spec-autosave.md)
+- [Supabase 연동 자료](06_Supabase_연동/README.md)
+- [네이버 API 연동 자료](05_네이버_API_연동/README.md)
 
 ## 작업 폴더 정리
 
@@ -119,14 +109,13 @@ npm run work:autosave
 ```
 
 - 개발 완료 후에는 작업명세서에 완료 체크를 남기고 로컬 커밋합니다.
-- `git push`, Vercel 배포, Supabase 배포는 별도 지시가 있을 때만 실행합니다.
+- `git push`, Vercel 배포, Supabase 배포는 운영상 필요하거나 별도 지시가 있을 때만 실행합니다.
+- 자동 순위추적은 Vercel의 `MI_RANK_CRON_SECRET`과 GitHub Actions repository secret `MI_RANK_CRON_SECRET`이 같은 값이어야 정상 동작합니다.
 
 ## 다음 개발 단계
 
-1. Next.js, TypeScript, Tailwind CSS 프로젝트 초기화
-2. 인증, 권한, 광고주 선택 구조 구현
-3. 대시보드 샘플 데이터와 UI 컴포넌트 구현
-4. KPI, 보고서, 일정 CRUD 구현
-5. PostgreSQL, Prisma 스키마 반영
-6. 파일 업로드와 링크 관리 구현
-7. 채널별 광고 성과와 키워드 분석 확장
+1. 보고서 업로드/다운로드를 Supabase Storage 기준으로 서버 저장화
+2. 운영팀 입력 엑셀을 서버에서 파싱해 고정 보고서 디자인에 반영
+3. 광고주별 공개 데이터 저장을 localStorage MVP에서 DB 저장 구조로 전환
+4. 순위추적 실패/성공 로그를 운영 화면에서 더 명확하게 표시
+5. 결제 전환 전 계정별 사용량 제한과 플랜 정책 정리

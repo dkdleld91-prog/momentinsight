@@ -11,7 +11,6 @@ const pages = {
   home: "아임웹_원샷코드_홈페이지형_모먼트인사이트.html",
   admin: "아임웹_원샷코드_관리자형_모먼트인사이트.html",
   client: "아임웹_원샷코드_대시보드형_모먼트인사이트.html",
-  all: "아임웹_원샷코드_통합보기_모먼트인사이트.html",
 };
 
 async function exists(filePath) {
@@ -57,11 +56,8 @@ if (await exists(publicDir)) {
   await copyDirectory(publicDir, outputDir);
 }
 
-await copyDirectory(sourceDir, path.join(outputDir, "02_아임웹_적용코드"));
-
 for (const [alias, fileName] of Object.entries(pages)) {
   const source = await findPage(fileName);
-  await fs.copyFile(source, path.join(outputDir, fileName));
   await fs.copyFile(source, path.join(outputDir, `${alias}.html`));
 }
 
@@ -93,6 +89,5 @@ console.log(JSON.stringify({
     "/home.html": "home.html",
     "/admin.html": "admin.html",
     "/client.html": "client.html",
-    "/all.html": "all.html",
   },
 }, null, 2));

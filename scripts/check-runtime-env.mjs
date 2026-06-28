@@ -53,6 +53,8 @@ const strictNaver = process.argv.includes("--naver") ||
   process.argv.includes("--production") ||
   env.MI_REQUIRE_NAVER_ENV === "true" ||
   env.VERCEL_ENV === "production";
+const productionMode = process.argv.includes("--production") ||
+  env.VERCEL_ENV === "production";
 const checks = [
   status(env, "Supabase URL", ["SUPABASE_URL"]),
   status(env, "Supabase publishable key", ["SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS"]),
@@ -69,10 +71,10 @@ const checks = [
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),
   status(env, "Rank tracker admin code", ["MI_RANK_ADMIN_CODE", "MI_DEMO_ADMIN_CODE"], false),
   status(env, "Rank tracker client access code", ["MI_RANK_ACCESS_CODE", "MI_RANK_ACCESS_CODES"], false),
-  status(env, "Rank tracker cron secret", ["MI_RANK_CRON_SECRET", "CRON_SECRET"], false),
+  status(env, "Rank tracker cron secret", ["MI_RANK_CRON_SECRET", "CRON_SECRET"], productionMode),
   status(env, "Primary agency code", ["MI_PRIMARY_AGENCY_CODE"], false),
   status(env, "Legacy agency codes", ["MI_LEGACY_AGENCY_CODES"], false),
-  status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], false),
+  status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode),
 ];
 
 const missingRequired = checks.filter((check) => check.required && !check.valid);
@@ -80,6 +82,7 @@ const missingRequired = checks.filter((check) => check.required && !check.valid)
 console.log(JSON.stringify({
   ok: missingRequired.length === 0,
   strictNaver,
+  productionMode,
   checkedAt: new Date().toISOString(),
   checks: checks.map((check) => ({
     label: check.label,

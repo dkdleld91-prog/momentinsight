@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 28. 23:16:58
-- 기준 커밋: 2c409d6
-- 작업트리: M .github/workflows/naver-rank-cron.yml /  M docs/08-work-spec-autosave.md /  M package.json /  M scripts/check-release-baseline.mjs /  M src/server/handlers/naver-rank-trackers.mjs / ?? scripts/check-rank-cron-schedule.mjs
+- 마지막 자동 저장: 2026. 06. 28. 23:39:24
+- 기준 커밋: b5f3785
+- 작업트리: M .github/workflows/naver-rank-cron.yml /  M README.md /  M scripts/build-vercel-static.mjs /  M scripts/check-release-baseline.mjs /  M scripts/check-runtime-env.mjs /  M src/server/handlers/integration-status.mjs /  M src/server/handlers/naver-rank-cron.mjs /  M src/server/handlers/super-admin-api.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

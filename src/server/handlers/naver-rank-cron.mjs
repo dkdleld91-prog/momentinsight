@@ -37,6 +37,13 @@ export default {
         agencyCode: url.searchParams.get("agencyCode") || "",
         limit: url.searchParams.get("limit") || process.env.MI_RANK_CRON_BATCH,
       });
+      if (summary.checked > 0 && summary.failed > 0) {
+        return json(request, {
+          ok: false,
+          message: "일부 네이버 상품 순위 자동 갱신이 실패했습니다.",
+          summary,
+        }, 502);
+      }
       return json(request, { ok: true, summary });
     } catch (error) {
       return json(request, {

@@ -46,7 +46,7 @@ function requestTeamCode(request, body = {}) {
 }
 
 function configuredSuperAdminCode() {
-  return String(process.env.MI_SUPER_ADMIN_CODE || primaryAgencyCode()).trim();
+  return String(process.env.MI_SUPER_ADMIN_CODE || "").trim();
 }
 
 function superAdminAuthorized(request, body = {}) {
@@ -55,6 +55,9 @@ function superAdminAuthorized(request, body = {}) {
 }
 
 function ownerActionAuthorized(request, body = {}) {
+  if (!configuredSuperAdminCode()) {
+    return { ok: false, status: 503, message: "총관리자 비밀값이 서버에 설정되지 않았습니다." };
+  }
   if (!superAdminAuthorized(request, body)) {
     return { ok: false, status: 401, message: "총관리자 코드가 일치하지 않습니다." };
   }

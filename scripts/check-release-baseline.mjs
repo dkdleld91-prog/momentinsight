@@ -28,10 +28,14 @@ const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
+const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
+const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
+const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const vercelConfig = JSON.parse(read("vercel.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
+const staticBuildScript = read("scripts/build-vercel-static.mjs");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -132,15 +136,25 @@ const checks = {
     && source.includes("translateY(1px) scale(0.98)")
     && source.includes("cursor: wait")),
   healthRewriteConfigured: (vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/health" && rewrite.destination === "/api/health"),
+  productionBuildHidesInternalSourceBundle: !staticBuildScript.includes('all: "아임웹_원샷코드_통합보기_모먼트인사이트.html"')
+    && !staticBuildScript.includes('path.join(outputDir, "02_아임웹_적용코드")')
+    && !staticBuildScript.includes("path.join(outputDir, fileName)")
+    && !staticBuildScript.includes('"/all.html"'),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
-    && read("src/server/handlers/naver-rank-cron.mjs").includes("Unauthorized cron request")
-    && read("src/server/handlers/naver-rank-cron.mjs").includes("MI_RANK_CRON_SECRET"),
+    && rankCronServer.includes("Unauthorized cron request")
+    && rankCronServer.includes("MI_RANK_CRON_SECRET"),
   rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
     && rankCronWorkflow.includes("09:00 KST and 15:00 KST")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
     && rankCronWorkflow.includes("Naver rank cron accepted"),
+  rankCronHasConcurrencyGuard: rankCronWorkflow.includes("concurrency:")
+    && rankCronWorkflow.includes("group: naver-rank-tracking")
+    && rankCronWorkflow.includes("cancel-in-progress: false"),
+  rankCronReportsPartialFailures: rankCronServer.includes("summary.checked > 0 && summary.failed > 0")
+    && rankCronServer.includes("일부 네이버 상품 순위 자동 갱신이 실패했습니다.")
+    && rankCronServer.includes("}, 502)"),
   vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
@@ -160,6 +174,15 @@ const checks = {
     && source.includes("카카오톡 문의")
     && source.includes("모먼트인사이트 채널")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
+  superAdminSecretFailsClosed: superAdminServer.includes('process.env.MI_SUPER_ADMIN_CODE || ""')
+    && superAdminServer.includes("총관리자 비밀값이 서버에 설정되지 않았습니다.")
+    && !superAdminServer.includes("process.env.MI_SUPER_ADMIN_CODE || primaryAgencyCode()"),
+  productionEnvRequiresCronAndOwnerSecrets: runtimeEnvCheck.includes('const productionMode = process.argv.includes("--production")')
+    && runtimeEnvCheck.includes('status(env, "Rank tracker cron secret", ["MI_RANK_CRON_SECRET", "CRON_SECRET"], productionMode)')
+    && runtimeEnvCheck.includes('status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode)'),
+  integrationStatusHidesEnvNamesInProduction: integrationStatusServer.includes("MI_EXPOSE_INTEGRATION_ENV_NAMES")
+    && integrationStatusServer.includes("missingEnv: exposeDetails ? missing : []")
+    && integrationStatusServer.includes("missingEnvCount: missing.length"),
   rankDbTriggerBypassesOwner: rankUnlimitedMigration.includes("lower(coalesce(new.agency_code, '')) = 'mml93-a01'"),
 };
 

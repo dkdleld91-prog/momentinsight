@@ -19,6 +19,12 @@ function requiredMissing(checks) {
     .flatMap((item) => item.envNames);
 }
 
+function canExposeEnvDetails() {
+  return process.env.NODE_ENV === "development" ||
+    process.env.VERCEL_ENV !== "production" ||
+    process.env.MI_EXPOSE_INTEGRATION_ENV_NAMES === "true";
+}
+
 export default {
   async fetch(request) {
     if (request.method !== "GET") {
@@ -40,6 +46,7 @@ export default {
     const datalabReady = checks.slice(3, 5).every((item) => item.configured);
     const openapiReady = checks.slice(5, 7).every((item) => item.configured);
     const keywordFeatureReady = process.env.MI_KEYWORD_API_ENABLED === "true";
+    const exposeDetails = canExposeEnvDetails();
 
     return protectedJson(request, {
       ok: missing.length === 0 && keywordFeatureReady,
@@ -58,8 +65,14 @@ export default {
           source: "naver_openapi_shopping",
         },
       },
-      checks,
-      missingEnv: missing,
+      checks: checks.map((item) => ({
+        label: item.label,
+        required: item.required,
+        configured: item.configured,
+        ...(exposeDetails ? { envNames: item.envNames } : {}),
+      })),
+      missingEnv: exposeDetails ? missing : [],
+      missingEnvCount: missing.length,
     });
   },
 };

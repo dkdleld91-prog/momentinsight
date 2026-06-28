@@ -7042,7 +7042,8 @@
       function rankTrackerKeywordUrl(keyword) {
         var term = String(keyword || "").trim();
         if (!term) return "";
-        return "https://search.shopping.naver.com/search/catalog?query=" + encodeURIComponent(term);
+        var encoded = encodeURIComponent(term);
+        return "https://search.shopping.naver.com/search/all?query=" + encoded + "&origQuery=" + encoded + "&productSet=model&sort=rel&viewType=list";
       }
 
       function renderRankKeywordName(keyword) {

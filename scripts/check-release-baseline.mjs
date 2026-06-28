@@ -149,7 +149,9 @@ const checks = {
     && source.includes("item.link")),
   rankTrackingKeywordPriceCompareLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerKeywordUrl")
     && source.includes("renderRankKeywordName")
-    && source.includes("https://search.shopping.naver.com/search/catalog?query=")
+    && source.includes("https://search.shopping.naver.com/search/all?query=")
+    && source.includes("productSet=model")
+    && !source.includes("https://search.shopping.naver.com/search/catalog?query=")
     && source.includes("가격비교탭으로 열기")),
   rankTrackingKeywordVolumeVisible: [adminSource, clientSource].every((source) => source.includes("renderRankKeywordVolume")
     && source.includes("keywordVolumeLabel")

@@ -147,12 +147,13 @@ const checks = {
     && source.includes('target="_blank" rel="noopener noreferrer"')
     && source.includes("tracker.productUrl")
     && source.includes("item.link")),
-  rankTrackingKeywordPriceCompareLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerKeywordUrl")
+  rankTrackingKeywordAllTabLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerKeywordUrl")
     && source.includes("renderRankKeywordName")
     && source.includes("https://search.shopping.naver.com/search/all?query=")
-    && source.includes("productSet=model")
+    && source.includes("productSet=total")
+    && !source.includes("productSet=model")
     && !source.includes("https://search.shopping.naver.com/search/catalog?query=")
-    && source.includes("가격비교탭으로 열기")),
+    && source.includes("전체탭으로 열기")),
   rankTrackingKeywordVolumeVisible: [adminSource, clientSource].every((source) => source.includes("renderRankKeywordVolume")
     && source.includes("keywordVolumeLabel")
     && source.includes("키워드검색량")

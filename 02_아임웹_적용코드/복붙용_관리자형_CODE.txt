@@ -7043,7 +7043,7 @@
         var term = String(keyword || "").trim();
         if (!term) return "";
         var encoded = encodeURIComponent(term);
-        return "https://search.shopping.naver.com/search/all?query=" + encoded + "&origQuery=" + encoded + "&productSet=model&sort=rel&viewType=list";
+        return "https://search.shopping.naver.com/search/all?query=" + encoded + "&origQuery=" + encoded + "&productSet=total&sort=rel&viewType=list";
       }
 
       function renderRankKeywordName(keyword) {
@@ -7052,7 +7052,7 @@
         if (!url) {
           return '<strong class="mi-rank-keyword-name" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</strong>';
         }
-        return '<a class="mi-rank-keyword-name" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(label + " 가격비교탭으로 열기") + '">' + escapeHtml(label) + '</a>';
+        return '<a class="mi-rank-keyword-name" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(label + " 전체탭으로 열기") + '">' + escapeHtml(label) + '</a>';
       }
 
       function rankKeywordVolumeText(tracker) {

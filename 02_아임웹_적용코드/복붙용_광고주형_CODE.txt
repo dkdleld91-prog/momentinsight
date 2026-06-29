@@ -1323,7 +1323,7 @@
       color: #5f6f86;
       background: #fff;
       font-size: 11px;
-      font-weight: 850;
+      font-weight: 700;
     }
 
     #mi-clean .mi-rank-ops-row span {
@@ -1405,7 +1405,7 @@
       gap: 4px;
       min-width: 0;
       color: var(--mi-navy);
-      font-weight: 900;
+      font-weight: 800;
     }
 
     #mi-clean .mi-rank-tracker-title strong,
@@ -1418,7 +1418,7 @@
     #mi-clean .mi-rank-tracker-title span {
       color: var(--mi-muted);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 650;
     }
 
     #mi-clean .mi-rank-tracker-meta,
@@ -1455,7 +1455,7 @@
       background: #fff;
       cursor: grab;
       font-size: 16px;
-      font-weight: 950;
+      font-weight: 800;
       line-height: 1;
       touch-action: none;
       user-select: none;
@@ -1490,7 +1490,7 @@
       display: block;
       color: var(--mi-navy);
       font-size: 13px;
-      font-weight: 950;
+      font-weight: 800;
     }
 
     #mi-clean a.mi-rank-keyword-name {
@@ -1508,7 +1508,7 @@
       min-width: 132px;
       color: #4f5f78;
       font-size: 12px;
-      font-weight: 850;
+      font-weight: 650;
     }
 
     #mi-clean .mi-rank-keyword-volume.is-muted {
@@ -1518,14 +1518,14 @@
     #mi-clean .mi-rank-product-info {
       color: var(--mi-navy);
       font-size: 12px;
-      font-weight: 850;
+      font-weight: 650;
     }
 
     #mi-clean .mi-rank-product-title {
       display: block;
       color: #1e63d7;
       font-size: 12px;
-      font-weight: 850;
+      font-weight: 700;
       text-align: right;
     }
 
@@ -1544,6 +1544,7 @@
       padding: 0 8px;
       border-radius: 7px;
       font-size: 10.5px;
+      font-weight: 750;
       cursor: pointer;
       transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
       will-change: transform;
@@ -1609,7 +1610,7 @@
       color: var(--mi-navy);
       background: #fff;
       font-size: 11px;
-      font-weight: 900;
+      font-weight: 750;
       white-space: nowrap;
     }
 
@@ -1645,7 +1646,7 @@
       display: block;
       margin-bottom: 7px;
       font-size: 13px;
-      font-weight: 950;
+      font-weight: 800;
       letter-spacing: 0;
     }
 
@@ -1680,13 +1681,13 @@
     #mi-clean .mi-rank-day-slots small {
       color: var(--mi-muted);
       font-size: 11px;
-      font-weight: 850;
+      font-weight: 650;
     }
 
     #mi-clean .mi-rank-day-slots b {
       color: var(--mi-navy);
       font-size: 15px;
-      font-weight: 950;
+      font-weight: 850;
       letter-spacing: 0;
     }
 

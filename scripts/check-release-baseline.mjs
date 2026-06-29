@@ -192,6 +192,13 @@ const checks = {
     && source.includes("font-size: 10.5px")
     && source.includes("min-width: 132px;")
     && !source.includes("min-width: 1100px")),
+  rankTrackingTypographyReduced: [adminSource, clientSource].every((source) => /mi-rank-ops-row \{[\s\S]*?font-weight: 700;/.test(source)
+    && /mi-rank-keyword-name \{[\s\S]*?font-weight: 800;/.test(source)
+    && /mi-rank-keyword-volume \{[\s\S]*?font-weight: 650;/.test(source)
+    && /mi-rank-product-info \{[\s\S]*?font-weight: 650;/.test(source)
+    && /mi-rank-product-title \{[\s\S]*?font-weight: 700;/.test(source)
+    && /mi-rank-pill \{[\s\S]*?font-weight: 750;/.test(source)
+    && /mi-rank-day-slots b \{[\s\S]*?font-weight: 850;/.test(source)),
   rankTrackingInsightLabels: [adminSource, clientSource].every((source) => source.includes("rankTrackerAverageRank")
     && source.includes("rankTrackerChangeLabel")
     && source.includes("rankTrackerInsight")

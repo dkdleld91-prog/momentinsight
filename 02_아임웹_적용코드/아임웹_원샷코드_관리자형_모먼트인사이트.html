@@ -13,7 +13,7 @@
     }
 
     #mi-admin {
-      --mi-bg: #f5f7fb;
+      --mi-bg: #f4f6fa;
       --mi-panel: #fff;
       --mi-ink: #111827;
       --mi-navy: #061a3a;
@@ -25,7 +25,7 @@
       --mi-green-bg: #eaf7f1;
       --mi-orange: #a75f16;
       --mi-orange-bg: #fff4e6;
-      --mi-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+      --mi-shadow: 0 16px 38px rgba(6, 26, 58, 0.07);
       min-height: 100vh;
       color: var(--mi-ink);
       background: var(--mi-bg);
@@ -49,7 +49,9 @@
       display: grid;
       place-items: center;
       padding: 28px;
-      background: linear-gradient(180deg, #fff 0%, #f5f7fb 100%);
+      background:
+        radial-gradient(circle at 82% 12%, rgba(37, 88, 216, 0.08), transparent 32%),
+        linear-gradient(180deg, #fff 0%, #f4f6fa 100%);
     }
 
     #mi-admin.is-authed .mi-login {
@@ -72,7 +74,7 @@
     #mi-admin .mi-login-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: var(--mi-panel);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -235,6 +237,11 @@
       justify-content: space-between;
       gap: 18px;
       margin-bottom: 18px;
+      border: 1px solid rgba(223, 229, 239, 0.9);
+      border-radius: 8px;
+      padding: 18px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
     }
 
     #mi-admin h1,
@@ -248,7 +255,7 @@
     #mi-admin .mi-login h1 {
       margin-bottom: 5px;
       color: var(--mi-navy);
-      font-size: 31px;
+      font-size: 29px;
       line-height: 1.18;
       letter-spacing: 0;
     }
@@ -368,7 +375,7 @@
     #mi-admin .mi-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: var(--mi-panel);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -382,6 +389,13 @@
       justify-content: space-between;
       gap: 12px;
       margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-card-head p {
+      max-width: 560px;
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.45;
     }
 
     #mi-admin .mi-card-actions {
@@ -2708,8 +2722,9 @@
       border-radius: 8px;
       padding: 12px;
       color: var(--mi-ink);
-      background: #fff;
+      background: #fbfdff;
       outline: none;
+      transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
     }
 
     #mi-admin .mi-input {
@@ -2727,6 +2742,7 @@
     #mi-admin .mi-textarea:focus {
       border-color: rgba(6, 26, 58, 0.38);
       box-shadow: 0 0 0 3px rgba(6, 26, 58, 0.08);
+      background: #fff;
     }
 
     #mi-admin .mi-form-row {
@@ -3542,7 +3558,7 @@
       <article class="mi-login-copy">
         <span class="mi-kicker">모먼트인사이트 접속 선택</span>
         <h1>접속 유형을 선택하고 들어갑니다.</h1>
-        <p>광고주는 공개 데이터만 보고, 운영팀은 입력과 공개 관리를 진행합니다.</p>
+        <p>광고주는 공개 데이터, 운영팀은 입력과 공개를 관리합니다.</p>
         <div class="mi-role-list" role="tablist" aria-label="접속 유형 선택">
           <button class="mi-role" type="button" data-login-mode="client" aria-selected="false">
             <strong>광고주 로그인</strong>
@@ -3572,7 +3588,7 @@
     <aside class="mi-side" aria-label="모먼트인사이트 관리자 메뉴">
       <a class="mi-brand" href="/" aria-label="모먼트인사이트 홈페이지로 이동">
         <span class="mi-mark">MI</span>
-        <span>관리자</span>
+        <span>운영팀 콘솔</span>
       </a>
 
       <nav class="mi-nav">
@@ -3585,7 +3601,7 @@
         </div>
 
         <div class="mi-nav-group">
-          <p class="mi-nav-title">관리자 기능</p>
+          <p class="mi-nav-title">운영 도구</p>
           <a href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 관리 <small>공개</small></a>
           <a href="#mi-admin-keyword" data-mi-admin-screen="keyword">키워드 조회 <small>SEO</small></a>
           <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 <small>네이버</small></a>
@@ -3609,11 +3625,11 @@
         <section class="mi-view is-active" data-mi-admin-view="home" id="mi-admin-home">
           <header class="mi-head">
             <div>
-              <span class="mi-kicker">관리자 콘솔</span>
+              <span class="mi-kicker">운영팀 콘솔</span>
               <h1>오늘 처리할 운영판입니다.</h1>
-              <p>입력 누락, 보고서 전달, 공개 승인 상태를 먼저 확인합니다.</p>
+              <p>누락, 보고서, 공개 승인 상태를 먼저 봅니다.</p>
             </div>
-            <span class="mi-badge warn">관리자 전용</span>
+            <span class="mi-badge warn">운영팀 전용</span>
           </header>
 
           <div class="mi-grid is-four">
@@ -3626,17 +3642,17 @@
           <div class="mi-score-panel">
             <article class="mi-score-card is-dark">
               <span class="mi-kicker">운영 준비도</span>
-              <h2>관리자 콘솔의 입력, 검수, 공개 흐름을 한곳에 모았습니다.</h2>
-              <p>광고주/관리자 분리, 수동 입력, 공개 승인, 권한 관리 기준을 중심으로 운영 흐름을 고정한 상태입니다.</p>
+              <h2>입력, 검수, 공개 흐름을 한곳에 모았습니다.</h2>
+              <p>공개 승인과 권한 기준을 고정한 상태입니다.</p>
               <div class="mi-score-row">
-                <div class="mi-score-box"><span>화면 구성</span><strong>완료</strong><small>광고주 포털과 관리자 콘솔 분리</small></div>
+                <div class="mi-score-box"><span>화면 구성</span><strong>완료</strong><small>광고주 포털과 운영팀 콘솔 분리</small></div>
                 <div class="mi-score-box"><span>운영 준비</span><strong>진행</strong><small>로그인, DB, 파일 이력 순차 연결</small></div>
               </div>
             </article>
 
             <aside class="mi-score-card">
               <h2>실제 플랫폼 전환 체크</h2>
-              <p>점수를 더 올리려면 이 기준을 DB와 권한 검사로 고정해야 합니다.</p>
+              <p>운영 안정성은 권한과 공개 기준에서 결정됩니다.</p>
               <div class="mi-readiness-grid">
                 <div class="mi-readiness-item"><strong>광고주ID</strong><span>모든 시트와 보고서의 기본 키</span></div>
                 <div class="mi-readiness-item"><strong>공개 승인값</strong><span>승인 + 공유 Y일 때만 노출</span></div>
@@ -3651,7 +3667,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>오늘 우선순위</h2>
-                  <p>관리자가 바로 처리해야 할 업무만 모았습니다.</p>
+                  <p>오늘 처리할 업무만 모았습니다.</p>
                 </div>
                 <span class="mi-badge warn">Action</span>
               </div>
@@ -3709,7 +3725,7 @@
             <div>
               <span class="mi-kicker">광고주 화면</span>
               <h1>광고주가 보는 화면 그대로 검수합니다.</h1>
-              <p>관리자 미리보기와 광고주 실제 화면의 순서·문구·공개값을 맞춰 착오를 줄입니다.</p>
+              <p>광고주 실제 화면과 공개값을 맞춥니다.</p>
             </div>
             <span class="mi-badge">동일 검수</span>
           </header>
@@ -3754,7 +3770,7 @@
                 <div class="mi-card-head">
                   <div>
                     <h3>합산 공개 데이터 현황</h3>
-                    <p>네이버와 쿠팡을 합친 공개 수치입니다.</p>
+                    <p>공개 채널 성과 합산입니다.</p>
                   </div>
                   <span class="mi-badge">공개용</span>
                 </div>
@@ -3772,7 +3788,7 @@
                 <div class="mi-card-head">
                   <div>
                     <h2>이번 주 핵심 인사이트</h2>
-                    <p>숫자를 보고 해석하지 않아도 되도록 결론부터 정리했습니다.</p>
+                    <p>이번 주 판단만 정리했습니다.</p>
                   </div>
                   <span class="mi-badge">Insight</span>
                 </div>
@@ -3788,12 +3804,12 @@
                 <div class="mi-card-head">
                   <div>
                     <h2>보고서·자료 현황</h2>
-                    <p>관리자가 검수한 자료만 전달됩니다.</p>
+                    <p>운영팀이 공개한 자료만 표시됩니다.</p>
                   </div>
                   <span class="mi-badge">공유</span>
                 </div>
                 <div class="mi-report-list">
-                  <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 관리자 검수 완료</span></div><b class="mi-report-state">전달 예정</b></div>
+                  <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 운영팀 검수 완료</span></div><b class="mi-report-state">전달 예정</b></div>
                   <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
                   <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><b class="mi-report-state">공개 가능</b></div>
                   <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-admin-public="updatedAt">2026.06.19</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
@@ -3806,7 +3822,7 @@
                 <div class="mi-card-head">
                   <div>
                     <h2>합산 공개 데이터 현황</h2>
-                    <p>네이버와 쿠팡 데이터를 합산한 광고주 공개용 결과입니다.</p>
+                    <p>채널별 공개 성과를 합산한 결과입니다.</p>
                   </div>
                   <span class="mi-badge">합산</span>
                 </div>
@@ -4053,7 +4069,7 @@
             <div>
               <span class="mi-kicker">운영 입력</span>
               <h1>외부 연동 전에는 입력 구조부터 고정합니다.</h1>
-              <p>네이버·쿠팡 데이터를 직접 입력하거나 엑셀에서 붙여넣고, 관리자는 누락 확인과 공개 반영만 처리합니다.</p>
+              <p>원본 파일과 채널 수치를 입력하고 공개값만 저장합니다.</p>
             </div>
             <span class="mi-badge">수동 운영</span>
           </header>
@@ -4257,7 +4273,7 @@
             <div>
               <span class="mi-kicker">키워드 조회</span>
               <h1>키워드 판단 구조를 준비합니다.</h1>
-              <p>관리자와 광고주가 각각 키워드를 조회할 수 있습니다.</p>
+              <p>운영팀과 광고주가 각각 키워드를 조회합니다.</p>
             </div>
             <span class="mi-badge">개별 조회</span>
           </header>
@@ -4278,7 +4294,7 @@
               <div class="mi-market-title">
                 <span class="mi-kicker">키워드 시장 분석</span>
                 <h3 data-keyword-market-title>키워드 조회 전</h3>
-                <p data-keyword-market-path>키워드를 입력하면 실제 API 데이터만 표시합니다.</p>
+                <p data-keyword-market-path>키워드를 입력하면 수집된 검색 데이터를 표시합니다.</p>
                 <div class="mi-market-kpis">
                   <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
                   <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>조회 후 표시</strong><small>월간 검색량</small></div>
@@ -4432,7 +4448,7 @@
               <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -4465,7 +4481,7 @@
                   <section class="mi-seo-panel">
                     <h3>바로 수정할 항목</h3>
                     <div class="mi-seo-actions" data-seo-actions>
-                      <div class="mi-seo-action"><div><strong>키워드와 네이버 상품 URL 입력</strong><span>상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
+                      <div class="mi-seo-action"><div><strong>키워드와 상품 URL 입력</strong><span>기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
                     </div>
                   </section>
 
@@ -4508,7 +4524,7 @@
             <div>
               <span class="mi-kicker">네이버 상품 순위</span>
               <h1>네이버 오가닉 상품 순위를 바로 확인합니다.</h1>
-              <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 영역을 제외한 현재 오가닉 순위를 조회합니다.</p>
+              <p>키워드와 상품 URL로 현재 오가닉 순위를 조회합니다.</p>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -4559,7 +4575,7 @@
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
                 <h2>상품 URL 기준 30일 오가닉 순위 추적을 시작합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 매일 오전 9시와 오후 3시 기준으로 기록합니다.</p>
+                <p>키워드와 상품 URL을 등록하면 최근 30일 순위 흐름을 관리합니다.</p>
               </div>
               <span class="mi-badge">관리자 확인용</span>
             </div>
@@ -5741,7 +5757,7 @@
         state.achievement = Math.min(160, Math.round((calc.total.roas / 500) * 100)) + "%";
         state.status = calc.total.roas >= 500 ? "목표 초과" : (calc.total.roas >= 400 ? "목표 근접" : "개선 필요");
         state.updatedAt = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
-        state.comment = "네이버와 쿠팡 합산 ROAS " + formatNumber(calc.total.roas) + "% 기준으로 다음 실행 우선순위를 조정하겠습니다.";
+        state.comment = "채널 합산 ROAS " + formatNumber(calc.total.roas) + "% 기준으로 다음 실행 우선순위를 조정하겠습니다.";
         state.channels = [
           {
             name: "네이버",
@@ -6350,11 +6366,11 @@
           lastChannelCalc = loadSheetDemoData();
           renderChannelCalc(lastChannelCalc);
           var state = publishChannelCalc(lastChannelCalc);
-          state.comment = "운영 입력값 기준 네이버와 쿠팡 합산 ROAS " + formatNumber(lastChannelCalc.total.roas) + "%입니다. 다음 실행은 쿠팡 키워드 보강과 네이버 SEO 문구 정리입니다.";
+          state.comment = "운영 입력값 기준 채널 합산 ROAS " + formatNumber(lastChannelCalc.total.roas) + "%입니다. 다음 실행은 쿠팡 키워드 보강과 네이버 SEO 문구 정리입니다.";
           writeState(state);
           applyState(state);
           setStatus(sheetStatus, "검수 완료 데이터 로컬 반영 완료: 공개 데이터에 저장 중입니다.", "");
-          await persistDemoState(state, sheetStatus, "공개 반영 완료: " + state.client + " 광고주 화면과 관리자 미리보기에 계산값이 연결되었습니다.");
+          await persistDemoState(state, sheetStatus, "공개 반영 완료: " + state.client + " 광고주 화면과 운영팀 미리보기에 계산값이 연결되었습니다.");
         });
       }
 
@@ -6885,7 +6901,7 @@
         var clearText = message || "키워드를 조회하면 실제 데이터로 표시됩니다.";
         var fields = [
           ["[data-keyword-market-title]", "키워드 조회 전"],
-          ["[data-keyword-market-path]", "키워드를 입력하면 실제 API 데이터만 표시합니다."],
+          ["[data-keyword-market-path]", "키워드를 입력하면 수집된 검색 데이터를 표시합니다."],
           ["[data-keyword-market-products]", "조회 후 표시"],
           ["[data-keyword-market-volume]", "조회 후 표시"],
           ["[data-keyword-market-score]", "조회 후 표시"],
@@ -8293,7 +8309,7 @@
           score: 0,
           grade: { label: "조회 전", copy: "키워드, 네이버 상품 URL, 리뷰수량 입력 후 네이버 SEO 점수를 표시합니다." },
           checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
-          actions: [{ title: "키워드와 네이버 상품 URL 입력", detail: "상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
+          actions: [{ title: "키워드와 상품 URL 입력", detail: "기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
           rank: null,
           rankMessage: "상품 확인 전",
           volumeText: "조회 후 표시",
@@ -8417,7 +8433,7 @@
       var keywordStatus = root.querySelector("[data-admin-keyword-status]");
       var keywordRangeButtons = root.querySelectorAll("[data-keyword-range]");
       keywordDatasets = [];
-      clearKeywordDataView("키워드를 입력하고 조회를 누르면 실제 API 데이터만 표시합니다.");
+      clearKeywordDataView("키워드를 입력하고 조회를 누르면 수집된 검색 데이터를 표시합니다.");
       renderKeywordResult(keywordDatasets);
       keywordRangeButtons.forEach(function (button) {
         button.addEventListener("click", function () {

@@ -81,7 +81,7 @@ const checks = {
     && clientSource.includes("data-mi-report-download")
     && clientSource.includes("buildClientReportCsv")
     && clientSource.includes("downloadClientReport")
-    && clientSource.includes("운영팀이 공개한 보고서만 다운로드")
+    && clientSource.includes("공개 보고서만 표시합니다.")
     && clientSource.includes("공개 보고서 없음")
     && clientSource.includes("reportCenterSynced"),
   clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")

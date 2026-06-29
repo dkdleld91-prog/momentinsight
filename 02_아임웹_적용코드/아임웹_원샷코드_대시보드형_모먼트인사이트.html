@@ -13,7 +13,7 @@
     }
 
     #mi-clean {
-      --mi-bg: #f5f7fb;
+      --mi-bg: #f4f6fa;
       --mi-panel: #fff;
       --mi-ink: #111827;
       --mi-navy: #061a3a;
@@ -25,7 +25,7 @@
       --mi-green-bg: #eaf7f1;
       --mi-orange: #a75f16;
       --mi-orange-bg: #fff4e6;
-      --mi-shadow: 0 20px 50px rgba(15, 23, 42, 0.08);
+      --mi-shadow: 0 16px 38px rgba(6, 26, 58, 0.07);
       min-height: 100vh;
       margin: 0;
       color: var(--mi-ink);
@@ -49,7 +49,9 @@
       display: grid;
       place-items: center;
       padding: 28px;
-      background: linear-gradient(180deg, #fff 0%, #f5f7fb 100%);
+      background:
+        radial-gradient(circle at 82% 12%, rgba(37, 88, 216, 0.08), transparent 32%),
+        linear-gradient(180deg, #fff 0%, #f4f6fa 100%);
     }
 
     #mi-clean.is-authed .mi-login {
@@ -72,7 +74,7 @@
     #mi-clean .mi-login-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: var(--mi-panel);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -153,13 +155,15 @@
       border-radius: 8px;
       padding: 0 12px;
       color: var(--mi-ink);
-      background: #fff;
+      background: #fbfdff;
       outline: none;
+      transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
     }
 
     #mi-clean .mi-input:focus {
       border-color: rgba(6, 26, 58, 0.38);
       box-shadow: 0 0 0 3px rgba(6, 26, 58, 0.08);
+      background: #fff;
     }
 
     #mi-clean .mi-button {
@@ -389,6 +393,11 @@
       justify-content: space-between;
       gap: 18px;
       margin-bottom: 18px;
+      border: 1px solid rgba(223, 229, 239, 0.9);
+      border-radius: 8px;
+      padding: 18px;
+      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
     }
 
     #mi-clean .mi-kicker {
@@ -412,7 +421,7 @@
     #mi-clean h1 {
       margin-bottom: 5px;
       color: var(--mi-navy);
-      font-size: 31px;
+      font-size: 29px;
       line-height: 1.18;
       letter-spacing: 0;
     }
@@ -469,7 +478,7 @@
     #mi-clean .mi-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: var(--mi-panel);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -483,6 +492,13 @@
       justify-content: space-between;
       gap: 12px;
       margin-bottom: 16px;
+    }
+
+    #mi-clean .mi-card-head p {
+      max-width: 560px;
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.45;
     }
 
     #mi-clean .mi-hero,
@@ -2734,7 +2750,7 @@
       <article class="mi-login-copy">
         <span class="mi-kicker">모먼트인사이트</span>
         <h1>광고주는 지금 상태만 빠르게 봅니다.</h1>
-        <p>대행사 코드를 입력하면 매출, 일정, 공개 코멘트가 바로 연결됩니다.</p>
+        <p>접속 코드로 성과와 일정이 바로 연결됩니다.</p>
         <div class="mi-role-list" role="tablist" aria-label="접속 유형 선택">
           <button class="mi-role is-current" type="button" data-client-login-mode="client" aria-selected="true">
             <strong>광고주 로그인</strong>
@@ -2742,7 +2758,7 @@
           </button>
           <button class="mi-role" type="button" data-client-login-mode="operator" aria-selected="false">
             <strong>운영팀 로그인</strong>
-            <span>담당자가 성과 데이터, 보고서, 공유 범위를 관리합니다.</span>
+            <span>담당자가 데이터, 보고서, 공유 범위를 관리합니다.</span>
           </button>
         </div>
       </article>
@@ -2754,7 +2770,7 @@
         <div class="mi-login-form">
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
-          <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.</div>
+          <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.</div>
         </div>
       </aside>
     </div>
@@ -2808,7 +2824,7 @@
             <div>
               <span class="mi-kicker">광고주 홈</span>
               <h1><span data-mi-public="client">브랜드 A</span> 대시보드</h1>
-              <p>성과, 일정, 다음 액션만 간결하게 봅니다.</p>
+              <p>성과와 다음 할 일만 확인합니다.</p>
             </div>
             <span class="mi-period">업데이트 완료</span>
           </header>
@@ -2839,7 +2855,7 @@
               <div class="mi-card-head">
                 <div>
                   <h3>합산 성과 현황</h3>
-                  <p>네이버와 쿠팡의 핵심 성과를 합산한 수치입니다.</p>
+                  <p>공개 채널 성과 합산입니다.</p>
                 </div>
                 <span class="mi-badge">공개용</span>
               </div>
@@ -2859,7 +2875,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>이번 주 핵심 인사이트</h2>
-                  <p>숫자를 보고 해석하지 않아도 되도록 결론부터 정리했습니다.</p>
+                  <p>이번 주 판단만 정리했습니다.</p>
                 </div>
                 <span class="mi-badge">Insight</span>
               </div>
@@ -2875,7 +2891,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>보고서함</h2>
-                  <p>운영팀이 공개한 보고서만 다운로드할 수 있습니다.</p>
+                  <p>공개 보고서만 표시합니다.</p>
                 </div>
                 <span class="mi-badge">공유</span>
               </div>
@@ -2897,7 +2913,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>합산 성과 현황</h2>
-                  <p>네이버와 쿠팡의 채널별 성과를 합산한 결과입니다.</p>
+                  <p>채널별 공개 성과입니다.</p>
                 </div>
                 <span class="mi-badge">합산</span>
               </div>
@@ -2940,7 +2956,7 @@
             <div class="mi-card-head">
               <div>
                 <h2>합산 성과 현황</h2>
-                <p>네이버와 쿠팡의 채널별 성과를 합산한 결과입니다.</p>
+              <p>채널별 공개 성과를 합산한 결과입니다.</p>
               </div>
               <span class="mi-badge">네이버+쿠팡</span>
             </div>
@@ -3003,7 +3019,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>키워드를 바로 조회합니다.</h1>
-              <p>검색량, 검색 비율, 작업 방향을 함께 봅니다.</p>
+              <p>검색량과 작업 방향을 확인합니다.</p>
             </div>
             <span class="mi-badge">개별 조회</span>
           </header>
@@ -3012,7 +3028,7 @@
             <div class="mi-card-head">
               <div>
                 <h2>키워드 조회</h2>
-                <p>월 검색량, 시장 참고 지표, 연관 키워드를 한 키워드 기준으로 확인합니다.</p>
+                <p>월 검색량, 시장 지표, 연관 키워드를 봅니다.</p>
               </div>
               <span class="mi-period">1개 키워드</span>
             </div>
@@ -3028,7 +3044,7 @@
               <div class="mi-market-title">
                 <span class="mi-kicker">키워드 시장 분석</span>
                 <h3 data-keyword-market-title>키워드 조회 전</h3>
-                <p data-keyword-market-path>키워드를 입력하면 실제 API 데이터만 표시합니다.</p>
+                <p data-keyword-market-path>키워드를 입력하면 수집된 검색 데이터를 표시합니다.</p>
                 <div class="mi-market-kpis">
                   <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
                   <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>조회 후 표시</strong><small>월간 검색량</small></div>
@@ -3161,7 +3177,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 오가닉 상품 순위를 바로 확인합니다.</h1>
-              <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 영역을 제외한 현재 오가닉 순위를 조회합니다.</p>
+              <p>키워드와 상품 URL로 현재 오가닉 순위를 조회합니다.</p>
             </div>
             <span class="mi-badge">조회</span>
           </header>
@@ -3171,7 +3187,7 @@
               <div>
                 <span class="mi-kicker">네이버 상품 순위</span>
                 <h2>지금 기준 오가닉 순위를 확인합니다.</h2>
-                <p>단건 확인용 화면입니다. 30일 동안 기록하려면 왼쪽 도구의 네이버 30일 순위를 사용합니다.</p>
+                <p>현재 순위만 확인합니다. 장기 기록은 네이버 30일 순위에서 관리합니다.</p>
               </div>
               <span class="mi-period">광고 제외 오가닉</span>
             </div>
@@ -3202,7 +3218,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 오가닉 상품 순위를 30일 기록합니다.</h1>
-              <p>상품 URL 또는 상품ID를 등록하면 광고 영역을 제외한 오가닉 순위를 매일 오전 9시와 오후 3시에 자동 수집하고, 화면에는 최근 30일 기록을 표시합니다.</p>
+              <p>상품을 등록하면 광고 제외 오가닉 순위를 매일 오전 9시와 오후 3시에 기록합니다.</p>
             </div>
             <span class="mi-badge">30일 추적</span>
           </header>
@@ -3211,8 +3227,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
-                <h2>상품 URL 기준 30일 오가닉 순위 추적을 시작합니다.</h2>
-                <p>키워드와 네이버 상품 URL 또는 상품ID를 넣으면 광고 제외 첫 오가닉 순위를 확인하고 이후 매일 오전 9시와 오후 3시 기준으로 기록합니다.</p>
+                <h2>30일 오가닉 순위 추적을 시작합니다.</h2>
+                <p>키워드와 상품 URL을 등록하면 최근 30일 순위 흐름을 관리합니다.</p>
               </div>
               <span class="mi-period">30일 기록</span>
             </div>
@@ -3228,7 +3244,7 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 오가닉 순위</h3>
@@ -3255,7 +3271,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 SEO 점수를 확인합니다.</h1>
-              <p>키워드와 네이버 상품 URL을 기준으로 상품 정보를 불러오고 SEO 수정 항목을 확인합니다.</p>
+              <p>키워드와 상품 URL 기준으로 SEO 보완 항목을 확인합니다.</p>
             </div>
             <span class="mi-badge">SEO 확인</span>
           </header>
@@ -3276,7 +3292,7 @@
               <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 상품 정보를 자동으로 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -3309,7 +3325,7 @@
                   <section class="mi-seo-panel">
                     <h3>바로 수정할 항목</h3>
                     <div class="mi-seo-actions" data-seo-actions>
-                      <div class="mi-seo-action"><div><strong>키워드와 네이버 상품 URL 입력</strong><span>상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
+                      <div class="mi-seo-action"><div><strong>키워드와 상품 URL 입력</strong><span>기준 키워드와 상품명의 연결성을 확인합니다.</span></div><b class="mi-seo-point warn">대기</b></div>
                     </div>
                   </section>
 
@@ -3352,7 +3368,7 @@
             <div>
               <span class="mi-kicker">키워드 확장</span>
               <h1>연관 키워드를 넓게 확인합니다.</h1>
-              <p>검색수, 시장 참고 지표, 경쟁도를 분리해서 후보를 분류합니다.</p>
+              <p>검색수, 시장 지표, 경쟁도를 기준으로 후보를 분류합니다.</p>
             </div>
             <a class="mi-link-button" href="#mi-keyword-tool" data-mi-screen="keyword-tool">차트로 돌아가기</a>
           </header>
@@ -4154,7 +4170,7 @@
         var clearText = message || "키워드를 조회하면 실제 데이터로 표시됩니다.";
         var fields = [
           ["[data-keyword-market-title]", "키워드 조회 전"],
-          ["[data-keyword-market-path]", "키워드를 입력하면 실제 API 데이터만 표시합니다."],
+          ["[data-keyword-market-path]", "키워드를 입력하면 수집된 검색 데이터를 표시합니다."],
           ["[data-keyword-market-products]", "조회 후 표시"],
           ["[data-keyword-market-volume]", "조회 후 표시"],
           ["[data-keyword-market-score]", "조회 후 표시"],
@@ -4989,7 +5005,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
+          setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
@@ -5656,7 +5672,7 @@
           score: 0,
           grade: { label: "조회 전", copy: "키워드, 네이버 상품 URL, 리뷰수량 입력 후 네이버 SEO 점수를 표시합니다." },
           checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
-          actions: [{ title: "키워드와 네이버 상품 URL 입력", detail: "상품 URL에서 상품 정보를 가져오고, 기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
+          actions: [{ title: "키워드와 상품 URL 입력", detail: "기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
           rank: null,
           rankMessage: "상품 확인 전",
           volumeText: "조회 후 표시",
@@ -5938,7 +5954,7 @@
 
       function requireCodeEntry() {
         clearClientAuth();
-        setStatus(loginStatus, "담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.", "");
+        setStatus(loginStatus, "담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.", "");
         setStatus(connectStatus, "코드 연결 전입니다.", "");
       }
 
@@ -6027,7 +6043,7 @@
           loginCode.setAttribute("aria-label", "대행사 코드");
         }
         if (loginButton) loginButton.textContent = "광고주 대시보드 보기";
-        setStatus(loginStatus, "담당자에게 받은 대행사 코드를 입력하면 광고주 화면이 열립니다.", "");
+        setStatus(loginStatus, "담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.", "");
       }
 
       loginModeCards.forEach(function (card) {
@@ -6071,7 +6087,7 @@
       var seoButton = root.querySelector("[data-seo-run]");
       var seoStatus = root.querySelector("[data-seo-status]");
       keywordDatasets = [];
-      clearKeywordDataView("키워드를 입력하고 조회를 누르면 실제 API 데이터만 표시합니다.");
+      clearKeywordDataView("키워드를 입력하고 조회를 누르면 수집된 검색 데이터를 표시합니다.");
       renderKeywordResult(keywordDatasets);
       resetSeoView();
       keywordRangeButtons.forEach(function (button) {

@@ -73,7 +73,7 @@
       --mi-navy-2: #0b2447;
       --mi-blue: #2558d8;
       --mi-green: #067647;
-      --mi-shadow: 0 20px 60px rgba(16, 24, 40, 0.08);
+      --mi-shadow: 0 18px 48px rgba(6, 26, 58, 0.09);
       min-height: 100vh;
       margin: 0;
       color: var(--mi-ink);
@@ -150,12 +150,27 @@
       font-size: 14px;
       font-weight: 800;
       white-space: nowrap;
-      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
     }
 
     #mi-home .mi-button:hover {
+      border-color: rgba(6, 26, 58, 0.2);
       transform: translateY(-1px);
-      box-shadow: 0 12px 28px rgba(16, 24, 40, 0.12);
+      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.12);
+    }
+
+    #mi-home .mi-button:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: inset 0 2px 6px rgba(6, 26, 58, 0.18);
+    }
+
+    #mi-home .mi-button:focus-visible {
+      outline: 3px solid rgba(37, 88, 216, 0.18);
+      outline-offset: 2px;
+    }
+
+    #mi-home .mi-button.primary:hover {
+      background: #082044;
     }
 
     #mi-home .mi-button.primary {
@@ -273,8 +288,8 @@
       max-width: 560px;
       margin-top: 20px;
       color: #475467;
-      font-size: 19px;
-      line-height: 1.65;
+      font-size: 18px;
+      line-height: 1.56;
     }
 
     #mi-home .mi-inline-actions {
@@ -296,12 +311,12 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.78);
-      box-shadow: 0 10px 26px rgba(16, 24, 40, 0.05);
+      box-shadow: 0 10px 26px rgba(6, 26, 58, 0.05);
     }
 
     #mi-home .mi-route-card:hover {
       transform: translateY(-1px);
-      box-shadow: 0 14px 32px rgba(16, 24, 40, 0.1);
+      box-shadow: 0 14px 32px rgba(6, 26, 58, 0.1);
     }
 
     #mi-home .mi-route-card strong {
@@ -478,7 +493,8 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       background: var(--mi-panel);
-      box-shadow: 0 12px 30px rgba(16, 24, 40, 0.04);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
     }
 
     #mi-home .mi-card h3 + p {
@@ -545,7 +561,8 @@
       padding: 18px;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: #fff;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 10px 26px rgba(6, 26, 58, 0.04);
     }
 
     #mi-home .mi-flow-step::before {
@@ -592,8 +609,9 @@
       align-items: center;
       padding: 34px;
       border-radius: 8px;
-      background: var(--mi-navy);
+      background: linear-gradient(135deg, var(--mi-navy) 0%, #0b2447 100%);
       color: #fff;
+      box-shadow: 0 18px 46px rgba(6, 26, 58, 0.16);
     }
 
     #mi-home .mi-cta h2,
@@ -795,7 +813,7 @@
             <span class="mi-title-main">모먼트 인사이트</span>
             <span class="mi-title-sub">마케팅 사이트</span>
           </h1>
-          <p class="mi-lead">매출, 광고 성과, KPI, 보고서, 일정, 키워드 흐름까지 브랜드 운영에 필요한 정보를 한 화면에서 보기 쉽게 정리합니다.</p>
+          <p class="mi-lead">성과, 보고서, 일정, 키워드를 한 화면에서 정리해 브랜드 운영 판단을 빠르게 만듭니다.</p>
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client#mi-dashboard">성과 대시보드 보기</a>
             <a class="mi-button secondary" href="#mi-home-flow">운영 흐름 보기</a>
@@ -851,7 +869,7 @@
         <div class="mi-section-head">
           <span class="mi-kicker">For Brand Growth</span>
           <h2>흩어진 마케팅 자료를 보기 쉽게 모읍니다.</h2>
-          <p>성과 숫자, 보고서, 일정, 실행 방향이 한 화면에 정리되면 브랜드 운영 판단이 빨라집니다.</p>
+          <p>성과와 실행 방향을 한 화면에서 판단합니다.</p>
         </div>
 
         <div class="mi-grid-3">
@@ -872,7 +890,7 @@
             <div>
               <span class="mi-card-number">02</span>
               <h3>보고서 보관</h3>
-              <p>주간 보고서, 월간 보고서, KPI 자료를 한곳에서 확인합니다.</p>
+              <p>주간·월간·KPI 자료를 한곳에서 확인합니다.</p>
             </div>
             <div class="mi-role-list">
               <span>주간 보고서 <strong>정리</strong></span>
@@ -885,7 +903,7 @@
             <div>
               <span class="mi-card-number">03</span>
               <h3>키워드와 일정</h3>
-              <p>검색 흐름, 콘텐츠 일정, 다음 실행 방향을 함께 확인합니다.</p>
+              <p>검색 흐름, 일정, 다음 실행 방향을 함께 봅니다.</p>
             </div>
             <div class="mi-role-list">
               <span>키워드 흐름 <strong>분석</strong></span>
@@ -902,21 +920,21 @@
         <div class="mi-section-head">
           <span class="mi-kicker">Workflow</span>
           <h2>자료 확인부터 실행 방향까지 흐름이 이어집니다.</h2>
-          <p>복잡한 수치를 나열하기보다 현재 상태, 핵심 지표, 인사이트, 다음 액션 순서로 정리합니다.</p>
+          <p>현재 상태에서 다음 액션까지 한 흐름으로 정리합니다.</p>
         </div>
 
         <div class="mi-flow" aria-label="운영 흐름">
           <div class="mi-flow-step">
-            <div><strong>성과 데이터 정리</strong><p>매출, 광고비, ROAS, KPI 흐름을 브랜드 기준으로 모읍니다.</p></div>
+            <div><strong>성과 데이터 정리</strong><p>매출, 광고비, ROAS, KPI 흐름을 모읍니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>보고서와 일정 연결</strong><p>주간·월간 보고서, 콘텐츠 일정, 미팅 일정을 함께 확인합니다.</p></div>
+            <div><strong>보고서와 일정 연결</strong><p>보고서, 콘텐츠, 미팅 일정을 함께 봅니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>핵심 인사이트 확인</strong><p>성과가 좋은 채널과 개선이 필요한 지표를 빠르게 파악합니다.</p></div>
+            <div><strong>핵심 인사이트 확인</strong><p>좋은 채널과 개선 지표를 빠르게 봅니다.</p></div>
           </div>
           <div class="mi-flow-step">
-            <div><strong>다음 실행 계획 공유</strong><p>다음 주에 집중할 키워드, 콘텐츠, 광고 방향을 명확히 정리합니다.</p></div>
+            <div><strong>다음 실행 계획 공유</strong><p>집중할 키워드, 콘텐츠, 광고 방향을 정리합니다.</p></div>
           </div>
         </div>
       </div>
@@ -927,14 +945,14 @@
         <div class="mi-section-head">
           <span class="mi-kicker">Core Features</span>
           <h2>필요한 기능만 먼저 보이게 정리했습니다.</h2>
-          <p>복잡한 설명보다 실제 운영에서 자주 쓰는 화면을 먼저 배치합니다.</p>
+          <p>운영에서 자주 쓰는 화면만 먼저 배치했습니다.</p>
         </div>
 
         <div class="mi-grid-4">
           <article class="mi-card mi-feature">
             <small>Dashboard</small>
             <h3>현재 성과 요약</h3>
-            <p>매출, 광고비, ROAS, 목표 달성률을 첫 화면에서 확인합니다.</p>
+            <p>매출, 광고비, ROAS, 목표 달성률을 확인합니다.</p>
           </article>
           <article class="mi-card mi-feature">
             <small>Reports</small>
@@ -944,12 +962,12 @@
           <article class="mi-card mi-feature">
             <small>Schedule</small>
             <h3>일정 공유</h3>
-            <p>촬영, 콘텐츠, 보고서, 미팅 일정을 한눈에 확인합니다.</p>
+            <p>촬영, 콘텐츠, 보고서 일정을 확인합니다.</p>
           </article>
           <article class="mi-card mi-feature">
             <small>Action Plan</small>
             <h3>다음 실행</h3>
-            <p>데이터를 본 뒤 무엇을 해야 하는지 액션 중심으로 정리합니다.</p>
+            <p>데이터 다음 할 일을 액션으로 정리합니다.</p>
           </article>
         </div>
       </div>
@@ -960,7 +978,7 @@
         <div class="mi-cta">
           <div>
             <h2>브랜드 성과 관리 화면을 확인해보세요.</h2>
-            <p>숫자, 보고서, 일정, 실행 방향이 어떻게 정리되는지 미리 볼 수 있습니다.</p>
+            <p>숫자, 보고서, 일정이 어떻게 정리되는지 확인할 수 있습니다.</p>
           </div>
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client">대시보드 미리보기</a>

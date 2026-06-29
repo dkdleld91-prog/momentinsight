@@ -3542,10 +3542,63 @@
       }
 
       #mi-admin .mi-side {
-        position: static;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        width: 100%;
+        min-width: 0;
         height: auto;
+        overflow: hidden;
         border-right: 0;
         border-bottom: 1px solid var(--mi-line);
+        padding: 10px 12px;
+        box-sizing: border-box;
+      }
+
+      #mi-admin .mi-brand {
+        margin-bottom: 10px;
+      }
+
+      #mi-admin .mi-mark {
+        width: 32px;
+        height: 32px;
+      }
+
+      #mi-admin .mi-nav {
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        max-width: calc(100vw - 24px);
+        gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+      }
+
+      #mi-admin .mi-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      #mi-admin .mi-nav-group {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 8px;
+        margin-top: 0;
+      }
+
+      #mi-admin .mi-nav-title,
+      #mi-admin .mi-nav small {
+        display: none;
+      }
+
+      #mi-admin .mi-nav a {
+        flex: 0 0 auto;
+        min-height: 38px;
+        border: 1px solid rgba(223, 229, 239, 0.86);
+        padding: 0 12px;
+        background: #f8fafc;
+        font-size: 13px;
+        white-space: nowrap;
       }
 
       #mi-admin .mi-main {
@@ -3803,8 +3856,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">운영팀 콘솔</span>
-              <h1>오늘 처리할 운영판입니다.</h1>
-              <p>누락, 보고서, 공개 승인 상태를 먼저 봅니다.</p>
+              <h1>오늘 할 일을 정리합니다.</h1>
+              <p>입력 누락, 공개 승인, 보고서 전달만 먼저 확인합니다.</p>
             </div>
             <span class="mi-badge warn">운영팀 전용</span>
           </header>
@@ -3819,8 +3872,8 @@
           <div class="mi-score-panel">
             <article class="mi-score-card is-dark">
               <span class="mi-kicker">운영 준비도</span>
-              <h2>입력, 검수, 공개 흐름을 한곳에 모았습니다.</h2>
-              <p>공개 승인과 권한 기준을 고정한 상태입니다.</p>
+              <h2>입력·검수·공개 흐름을 한 화면에 둡니다.</h2>
+              <p>광고주 공개 전 기준만 고정합니다.</p>
               <div class="mi-score-row">
                 <div class="mi-score-box"><span>화면 구성</span><strong>완료</strong><small>광고주 포털과 운영팀 콘솔 분리</small></div>
                 <div class="mi-score-box"><span>운영 준비</span><strong>진행</strong><small>로그인, DB, 파일 이력 순차 연결</small></div>
@@ -3828,13 +3881,13 @@
             </article>
 
             <aside class="mi-score-card">
-              <h2>실제 플랫폼 전환 체크</h2>
-              <p>운영 안정성은 권한과 공개 기준에서 결정됩니다.</p>
+              <h2>운영 기준</h2>
+              <p>공개 전 네 가지 기준만 확인합니다.</p>
               <div class="mi-readiness-grid">
-                <div class="mi-readiness-item"><strong>광고주ID</strong><span>모든 시트와 보고서의 기본 키</span></div>
-                <div class="mi-readiness-item"><strong>공개 승인값</strong><span>승인 + 공유 Y일 때만 노출</span></div>
-                <div class="mi-readiness-item"><strong>운영 원본</strong><span>네이버·쿠팡·KPI 입력값 분리</span></div>
-                <div class="mi-readiness-item"><strong>변경 이력</strong><span>누가 언제 공개했는지 기록</span></div>
+                <div class="mi-readiness-item"><strong>광고주ID</strong><span>시트·보고서 기본 키</span></div>
+                <div class="mi-readiness-item"><strong>공개 승인값</strong><span>승인 + 공유 Y만 노출</span></div>
+                <div class="mi-readiness-item"><strong>운영 원본</strong><span>채널별 입력 분리</span></div>
+                <div class="mi-readiness-item"><strong>변경 이력</strong><span>공개 시간 기록</span></div>
               </div>
             </aside>
           </div>
@@ -3844,14 +3897,14 @@
               <div class="mi-card-head">
                 <div>
                   <h2>오늘 우선순위</h2>
-                  <p>오늘 처리할 업무만 모았습니다.</p>
+                  <p>오늘 필요한 항목만 봅니다.</p>
                 </div>
                 <span class="mi-badge warn">Action</span>
               </div>
               <div class="mi-task-list">
-                <div class="mi-task"><div><strong>브랜드 A 입력값 확인</strong><span>네이버 클릭수와 쿠팡 전환수 누락 · 공개 전 필수</span></div><div class="mi-task-action"><b class="mi-priority">높음</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
-                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>PDF/CSV 확인 · 내부 메모 제거 후 전달</span></div><div class="mi-task-action"><b class="mi-priority">오늘</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
-                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트와 내부 판단 분리 확인</span></div><div class="mi-task-action"><b class="mi-priority ok">검수</b><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리</a></div></div>
+                <div class="mi-task"><div><strong>브랜드 A 입력값 확인</strong><span>클릭수·전환수 누락 확인</span></div><div class="mi-task-action"><b class="mi-priority">높음</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
+                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>파일 확인 후 공개</span></div><div class="mi-task-action"><b class="mi-priority">오늘</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
+                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트만 노출</span></div><div class="mi-task-action"><b class="mi-priority ok">검수</b><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리</a></div></div>
               </div>
             </article>
 
@@ -3859,7 +3912,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>광고주별 상태</h2>
-                  <p>미흡한 계정을 먼저 찾습니다.</p>
+                  <p>처리 필요한 계정만 봅니다.</p>
                 </div>
                 <span class="mi-badge">Status</span>
               </div>
@@ -4245,8 +4298,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">운영 입력</span>
-              <h1>외부 연동 전에는 입력 구조부터 고정합니다.</h1>
-              <p>원본 파일과 채널 수치를 입력하고 공개값만 저장합니다.</p>
+              <h1>운영 데이터를 입력합니다.</h1>
+              <p>업로드, 검수, 공개 반영 순서로 처리합니다.</p>
             </div>
             <span class="mi-badge">수동 운영</span>
           </header>
@@ -4255,8 +4308,8 @@
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>운영 원본 연결 준비</h2>
-                  <p>원본명과 광고주ID를 기준으로 검수하고, 같은 필드를 운영 데이터와 연결합니다.</p>
+                  <h2>원본 업로드와 공개 검수</h2>
+                  <p>원본 파일을 보관하고 공개값만 광고주 화면에 반영합니다.</p>
                 </div>
                 <span class="mi-badge warn">간편 운영</span>
               </div>
@@ -4269,7 +4322,7 @@
                   <div class="mi-source-upload-head">
                     <div>
                       <h3>원천 엑셀 파일 업로드</h3>
-                      <p>운영팀이 받은 원본 파일을 보관하고, 검수나 보고서 작성 시 다시 다운로드합니다.</p>
+                      <p>받은 원본을 보관하고 필요할 때 다시 내려받습니다.</p>
                     </div>
                     <span class="mi-badge">운영팀 전용</span>
                   </div>
@@ -4277,7 +4330,7 @@
                     <div>
                       <span>기본 운영 양식</span>
                       <strong>모먼트인사이트_운영시트_템플릿.xlsx</strong>
-                      <small>새 운영팀은 이 파일을 먼저 내려받고, 연결 광고주 1곳 기준으로 작성한 뒤 원본 파일로 업로드합니다.</small>
+                      <small>새 운영팀은 이 파일을 먼저 내려받고 연결 광고주 1곳 기준으로 작성합니다.</small>
                     </div>
                     <a class="mi-button is-ghost" href="/downloads/moment-insight-operation-sheet-template.xlsx" download>기본 양식 다운로드</a>
                   </div>
@@ -4303,10 +4356,10 @@
                   <div class="mi-code-status" data-admin-source-file-status aria-live="polite">현재 파일은 브라우저 임시 보관입니다. 정식 운영에서는 서버 저장소에 업로드되어야 합니다.</div>
                 </div>
                 <div class="mi-readiness-grid">
-                  <div class="mi-readiness-item"><strong>데이터 출처 고정</strong><span>원본 파일명, 업로드 시간, 공개 반영 시간을 함께 남깁니다.</span></div>
-                  <div class="mi-readiness-item"><strong>광고주 1:1 범위</strong><span>운영팀 1개는 광고주 1명 기준으로만 입력하고 공개합니다.</span></div>
-                  <div class="mi-readiness-item"><strong>검수 후 공개</strong><span>승인값과 광고주공유여부가 맞는 데이터만 광고주 화면에 반영합니다.</span></div>
-                  <div class="mi-readiness-item"><strong>보고서 근거 연결</strong><span>업로드 원본과 공개 보고서를 분리해 추적 가능하게 관리합니다.</span></div>
+                  <div class="mi-readiness-item"><strong>데이터 출처 고정</strong><span>파일명·업로드·공개 시간을 남깁니다.</span></div>
+                  <div class="mi-readiness-item"><strong>광고주 1:1 범위</strong><span>운영팀 1개는 광고주 1명만 공개합니다.</span></div>
+                  <div class="mi-readiness-item"><strong>검수 후 공개</strong><span>승인·공유값이 맞는 데이터만 반영합니다.</span></div>
+                  <div class="mi-readiness-item"><strong>보고서 근거 연결</strong><span>원본과 공개 보고서를 분리합니다.</span></div>
                 </div>
                 <div class="mi-form-row">
                   <label class="mi-field">연결 광고주
@@ -4346,8 +4399,8 @@
             </article>
 
             <aside class="mi-card mi-card-pad">
-              <h3>필수 운영 탭</h3>
-              <p>아래 입력 구조만 맞추면 채널별 수치를 빠르게 검수할 수 있습니다.</p>
+              <h3>필수 입력 항목</h3>
+              <p>공개값을 만들기 위한 최소 입력입니다.</p>
               <div class="mi-sheet-tabs">
                 <div class="mi-sheet-tab is-ok"><strong>광고주_목록</strong><span>광고주ID·권한</span></div>
                 <div class="mi-sheet-tab is-ok"><strong>대시보드_공개데이터</strong><span>매출·ROAS·KPI</span></div>
@@ -4366,7 +4419,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>계산 미리보기</h2>
-                  <p>입력된 네이버·쿠팡 값을 합산해 광고주 화면 공개값을 만듭니다.</p>
+                  <p>네이버·쿠팡 값을 합산해 공개값을 확인합니다.</p>
                 </div>
                 <span class="mi-badge">Preview</span>
               </div>
@@ -4391,13 +4444,13 @@
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
               <h2>엑셀 붙여넣기</h2>
-              <p style="margin-bottom:14px;">CSV로 입력한 수치를 확인하고, 검수 후 성과 화면에 반영합니다.</p>
+              <p style="margin-bottom:14px;">CSV 수치를 확인하고 공개값으로 반영합니다.</p>
               <div class="mi-tool">
                 <textarea class="mi-textarea" data-admin-excel-input>매출,광고비,구매수,클릭수,전환수
 41800000,7200000,1248,32800,1607</textarea>
                 <button class="mi-button" type="button" data-admin-excel-calc>CSV 수치 계산</button>
                 <button class="mi-button" type="button" data-admin-excel-publish>CSV 계산 결과를 공개 데이터에 반영</button>
-                <div class="mi-note">운영 단계에서는 로그인, DB 저장, 엑셀 업로드 파서, 변경 이력으로 확장합니다.</div>
+                <div class="mi-note">DB 저장과 변경 이력은 서버 운영 기준으로 남깁니다.</div>
               </div>
             </article>
 

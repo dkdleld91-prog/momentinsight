@@ -2729,10 +2729,26 @@
       }
 
       #mi-clean .mi-side {
-        position: static;
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        width: 100%;
+        min-width: 0;
         height: auto;
+        overflow: hidden;
         border-right: 0;
         border-bottom: 1px solid var(--mi-line);
+        padding: 10px 12px;
+        box-sizing: border-box;
+      }
+
+      #mi-clean .mi-brand {
+        margin-bottom: 10px;
+      }
+
+      #mi-clean .mi-mark {
+        width: 32px;
+        height: 32px;
       }
 
       #mi-clean .mi-nav {
@@ -2740,9 +2756,28 @@
       }
 
       #mi-clean .mi-mobile-nav {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        display: flex;
+        width: 100%;
+        min-width: 0;
+        max-width: calc(100vw - 24px);
         gap: 8px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scrollbar-width: none;
+      }
+
+      #mi-clean .mi-mobile-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      #mi-clean .mi-mobile-nav a {
+        flex: 0 0 auto;
+        min-height: 38px;
+        border: 1px solid rgba(223, 229, 239, 0.86);
+        padding: 0 12px;
+        background: #f8fafc;
+        font-size: 13px;
+        white-space: nowrap;
       }
 
       #mi-clean .mi-login-panel,

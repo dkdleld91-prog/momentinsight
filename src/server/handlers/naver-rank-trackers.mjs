@@ -13,6 +13,7 @@ import {
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
+const RANK_TRACKER_LEASE_MS = Number(process.env.MI_RANK_TRACKER_LEASE_MS || 1000 * 60 * 12);
 const keywordVolumeCache = new Map();
 
 const TRACKER_SELECT = [
@@ -76,6 +77,10 @@ function normalizeKeywordCompare(value) {
 
 function normalizeSearchAdKeyword(value) {
   return normalizeText(value || "").replace(/\s/g, "");
+}
+
+function isMissingRankLeaseColumns(error) {
+  return /processing_started_at|processing_until|schema cache|does not exist/i.test(error?.message || "");
 }
 
 function searchAdConfig() {
@@ -805,6 +810,45 @@ async function reorderTrackers(request, ctx, body) {
   return json(request, { ok: true, message: "추적 항목 순서를 저장했습니다." });
 }
 
+async function claimDueTracker(ctx, tracker, nowIso) {
+  const leaseUntil = new Date(Date.parse(nowIso) + RANK_TRACKER_LEASE_MS).toISOString();
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      processing_started_at: nowIso,
+      processing_until: leaseUntil,
+      last_message: "자동 순위 갱신 처리 중입니다.",
+    })
+    .eq("id", tracker.id)
+    .eq("status", "active")
+    .lte("next_check_at", nowIso)
+    .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingRankLeaseColumns(error)) return { claimed: true, leaseSupported: false };
+    throw error;
+  }
+
+  return { claimed: Boolean(data), leaseSupported: true };
+}
+
+async function clearDueTrackerClaim(ctx, trackerId) {
+  const { error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      processing_started_at: null,
+      processing_until: null,
+    })
+    .eq("id", trackerId);
+
+  if (error && !isMissingRankLeaseColumns(error)) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
+}
+
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
   const limit = Math.max(1, Math.min(50, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 20)));
@@ -823,9 +867,33 @@ export async function runDueTrackers(ctx, options = {}) {
 
   const results = [];
   for (const tracker of data || []) {
+    // Claim rows before checking so overlapping cron calls do not refresh the same tracker.
+    // If the DB migration is not applied yet, the helper falls back to the previous behavior.
     // Sequential checks keep Naver API quota usage predictable.
     // eslint-disable-next-line no-await-in-loop
-    results.push(await runTrackerCheck(ctx, tracker));
+    const claim = await claimDueTracker(ctx, tracker, now);
+    if (!claim.claimed) continue;
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const result = await runTrackerCheck(ctx, tracker);
+      if (claim.leaseSupported) {
+        // eslint-disable-next-line no-await-in-loop
+        const clearResult = await clearDueTrackerClaim(ctx, tracker.id);
+        if (!clearResult.ok) result.leaseClearError = clearResult.message;
+      }
+      results.push(result);
+    } catch (error) {
+      if (claim.leaseSupported) {
+        // eslint-disable-next-line no-await-in-loop
+        await clearDueTrackerClaim(ctx, tracker.id);
+      }
+      results.push({
+        ok: false,
+        tracker,
+        message: "네이버 상품 순위 자동 갱신 처리 중 오류가 발생했습니다.",
+        error: error?.message || "rank_tracker_check_failed",
+      });
+    }
   }
 
   return {

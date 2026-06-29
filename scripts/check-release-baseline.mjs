@@ -42,6 +42,7 @@ const vercelConfig = JSON.parse(read("vercel.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
 const staticBuildScript = read("scripts/build-vercel-static.mjs");
+const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -80,7 +81,9 @@ const checks = {
     && clientSource.includes("data-mi-report-download")
     && clientSource.includes("buildClientReportCsv")
     && clientSource.includes("downloadClientReport")
-    && clientSource.includes("운영팀이 공개한 보고서만 다운로드"),
+    && clientSource.includes("운영팀이 공개한 보고서만 다운로드")
+    && clientSource.includes("공개 보고서 없음")
+    && clientSource.includes("reportCenterSynced"),
   clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")
     && clientSource.includes("데이터 출처")
     && clientSource.includes("공개 승인된 보고서만 표시")
@@ -90,6 +93,7 @@ const checks = {
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes('"x-mi-agency-code": normalized')
+    && clientSource.includes("file.signed_url")
     && clientSource.includes("fileUrl")
     && clientSource.includes("CSV 백업"),
   adminReportCenterPublish: adminSource.includes("getReportCenterApiUrl")
@@ -234,8 +238,11 @@ const checks = {
     && reportCenterServer.includes("광고주는 보고서를 등록할 수 없습니다."),
   reportCenterClientVisibleOnly: reportCenterServer.includes('if (access.role === "client") reportsQuery = reportsQuery.eq("visibility", "client_visible")')
     && reportCenterServer.includes('if (access.role === "client") filesQuery = filesQuery.eq("visibility", "client_visible")')
-    && reportCenterServer.includes('body.visibility === "internal" ? "internal" : "client_visible"'),
+    && reportCenterServer.includes('body.visibility === "client_visible" ? "client_visible" : "internal"'),
   reportCenterUploadAndAuditReady: reportCenterServer.includes("createSignedUploadUrl")
+    && reportCenterServer.includes("createSignedUrl")
+    && reportCenterServer.includes("REPORT_DOWNLOAD_EXPIRES_IN")
+    && reportCenterServer.includes("signed_url")
     && reportCenterServer.includes('const REPORT_BUCKET = "moment-reports"')
     && reportCenterServer.includes("requestedReportBucket")
     && reportCenterServer.includes("validateReportReferences")
@@ -264,6 +271,15 @@ const checks = {
   rankCronHasConcurrencyGuard: rankCronWorkflow.includes("concurrency:")
     && rankCronWorkflow.includes("group: naver-rank-tracking")
     && rankCronWorkflow.includes("cancel-in-progress: false"),
+  rankCronHasDbProcessingLease: rankServer.includes("RANK_TRACKER_LEASE_MS")
+    && rankServer.includes("claimDueTracker")
+    && rankServer.includes("clearDueTrackerClaim")
+    && rankServer.includes("processing_started_at")
+    && rankServer.includes("processing_until")
+    && rankServer.includes("isMissingRankLeaseColumns")
+    && rankProcessingLeaseMigration.includes("add column if not exists processing_started_at")
+    && rankProcessingLeaseMigration.includes("add column if not exists processing_until")
+    && rankProcessingLeaseMigration.includes("idx_naver_rank_trackers_due_processing"),
   rankCronReportsPartialFailures: rankCronServer.includes("summary.checked > 0 && summary.failed > 0")
     && rankCronServer.includes("일부 네이버 상품 순위 자동 갱신이 실패했습니다.")
     && rankCronServer.includes("}, 502)"),

@@ -26,6 +26,7 @@ const FILE_TYPES = new Set([
 ]);
 
 const REPORT_BUCKET = "moment-reports";
+const REPORT_DOWNLOAD_EXPIRES_IN = 60 * 10;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -130,6 +131,27 @@ function dateFolder(date = new Date()) {
 function requestedReportBucket(body = {}) {
   const bucket = cleanText(body.bucket || body.storageBucket || body.storage_bucket, REPORT_BUCKET);
   return bucket === REPORT_BUCKET ? bucket : "";
+}
+
+async function attachSignedDownloadUrls(ctx, files = []) {
+  return Promise.all((files || []).map(async (file) => {
+    if (!file?.storage_bucket || !file?.storage_path) return file;
+    const { data, error } = await ctx.supabaseAdmin
+      .storage
+      .from(file.storage_bucket)
+      .createSignedUrl(file.storage_path, REPORT_DOWNLOAD_EXPIRES_IN);
+    if (error) {
+      return {
+        ...file,
+        signed_url_error: "보고서 파일 다운로드 URL 생성에 실패했습니다.",
+      };
+    }
+    return {
+      ...file,
+      signed_url: data?.signedUrl || "",
+      signed_url_expires_in: REPORT_DOWNLOAD_EXPIRES_IN,
+    };
+  }));
 }
 
 async function validateReportReferences(request, ctx, access, body) {
@@ -301,6 +323,7 @@ async function handleGet(request, ctx) {
 
   const { data: files, error: filesError } = await filesQuery;
   if (filesError) return json(request, { ok: false, message: "보고서 파일 조회에 실패했습니다.", detail: filesError.message }, 500);
+  const signedFiles = await attachSignedDownloadUrls(ctx, files || []);
 
   return json(request, {
     ok: true,
@@ -311,7 +334,7 @@ async function handleGet(request, ctx) {
       teamName: access.team?.team_name || null,
     },
     reports: reports || [],
-    files: files || [],
+    files: signedFiles,
   });
 }
 
@@ -356,7 +379,7 @@ async function handleCreateReport(request, ctx, access, body) {
     return json(request, { ok: false, message: "지원하지 않는 보고서 유형입니다." }, 400);
   }
 
-  const visibility = body.visibility === "internal" ? "internal" : "client_visible";
+  const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
   const reportDate = cleanText(body.reportDate || body.report_date, new Date().toISOString().slice(0, 10));
   const references = await validateReportReferences(request, ctx, access, body);
   if (!references.ok) return references.response;

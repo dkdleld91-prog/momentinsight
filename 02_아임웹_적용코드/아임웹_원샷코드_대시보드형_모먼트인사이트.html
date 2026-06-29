@@ -3359,6 +3359,7 @@
         client: "브랜드 A",
         agencyName: "모먼트 인사이트 운영팀",
         connectionStatus: "연동 대기",
+        reportCenterSynced: false,
         sales: "4,180만원",
         roas: "581%",
         adSpend: "720만원",
@@ -3436,6 +3437,7 @@
           client: "연결 광고주",
           agencyName: "연결 운영팀",
           connectionStatus: "연동 완료",
+          reportCenterSynced: true,
           sales: "입력 전",
           roas: "입력 전",
           adSpend: "입력 전",
@@ -4383,14 +4385,14 @@
             summary: report.summary || "",
             comment: report.public_comment || "",
             fileTitle: file ? file.title : "",
-            fileUrl: file ? (file.external_url || file.url || "") : "",
+            fileUrl: file ? (file.signed_url || file.external_url || file.url || "") : "",
             fileType: file ? file.file_type : ""
           };
         });
 
-        if (!mappedReports.length) return payload;
         var state = readState(normalized);
         state.reports = mappedReports;
+        state.reportCenterSynced = true;
         writeState(state);
         applyState(state);
         return payload;
@@ -5630,7 +5632,7 @@
 
       function downloadClientReport(index) {
         var state = enrichState(readState());
-        var reports = state.reports && state.reports.length ? state.reports : defaultState.reports;
+        var reports = state.reports && state.reports.length ? state.reports : (state.reportCenterSynced ? [] : defaultState.reports);
         var report = reports[index] || reports[0];
         if (!report) return;
         if (report.fileUrl) {
@@ -5656,7 +5658,14 @@
       function renderReports(reports, updatedAt) {
         var list = root.querySelector("[data-mi-report-list]");
         if (!list) return;
-        var items = reports && reports.length ? reports : defaultState.reports;
+        var syncedEmpty = Array.isArray(reports) && !reports.length && readState().reportCenterSynced;
+        var items = reports && reports.length ? reports : (syncedEmpty ? [] : defaultState.reports);
+        if (!items.length) {
+          list.innerHTML = '<div class="mi-report-item"><div><strong>공개 보고서 없음</strong><span>운영팀이 검수 후 공개한 보고서가 아직 없습니다.</span></div><b class="mi-report-state warn">대기</b></div>' +
+            '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
+            escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 공개 파일 대기</span></div><b class="mi-report-state warn">확인 필요</b></div>';
+          return;
+        }
         list.innerHTML = items.map(function (item, index) {
           var downloadLabel = item.fileUrl ? "파일 열기" : "CSV 백업";
           var fallbackCopy = item.fileUrl ? "등록 파일 열기" : "원본 파일 미등록 · 공개 데이터 CSV 백업";

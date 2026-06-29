@@ -1020,6 +1020,7 @@
     #mi-clean .mi-rank-state {
       display: grid;
       place-items: center;
+      gap: 5px;
       min-height: 118px;
       border: 1px dashed var(--mi-line);
       border-radius: 8px;
@@ -1029,6 +1030,25 @@
       font-size: 12px;
       font-weight: 850;
       line-height: 1.5;
+    }
+
+    #mi-clean .mi-rank-state strong,
+    #mi-clean .mi-rank-state small {
+      display: block;
+    }
+
+    #mi-clean .mi-rank-state strong {
+      color: var(--mi-navy);
+      font-size: 17px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-clean .mi-rank-state small {
+      max-width: 520px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
     }
 
     #mi-clean .mi-rank-table {
@@ -1266,6 +1286,24 @@
     }
 
     #mi-clean .mi-rank-ops-row .is-error {
+      border-color: #fecaca;
+      color: #b42318;
+      background: #fff1f1;
+    }
+
+    #mi-clean .mi-rank-ops-row .mi-rank-insight-pill.is-ok {
+      border-color: #cfe8d9;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-clean .mi-rank-ops-row .mi-rank-insight-pill.is-warn {
+      border-color: #fed7aa;
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-clean .mi-rank-ops-row .mi-rank-insight-pill.is-error {
       border-color: #fecaca;
       color: #b42318;
       background: #fff1f1;
@@ -2898,6 +2936,7 @@
               <div class="mi-table" style="margin-bottom:12px;">
                 <div class="mi-row"><span>공개 흐름</span><strong>운영팀 업로드 → 검수 → 공개 → 다운로드</strong></div>
                 <div class="mi-row"><span>다운로드 기준</span><strong>공개 승인된 보고서만 표시</strong></div>
+                <div class="mi-row"><span>상태 기준</span><strong>다운로드 가능 · 검수 중 · 공개 대기</strong></div>
               </div>
               <div class="mi-report-list" data-mi-report-list>
                 <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 원본 파일 미등록 시 공개 데이터 CSV 백업</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="0">CSV 백업</button></div>
@@ -4746,6 +4785,27 @@
         return rankTrackerRankValue((snapshots[1] && snapshots[1].rank) || tracker.previousRank);
       }
 
+      function rankTrackerRecentRanks(tracker, limit) {
+        return (tracker.snapshots || []).map(function (snapshot) {
+          return rankTrackerRankValue(snapshot && snapshot.rank);
+        }).filter(Boolean).slice(0, limit || 14);
+      }
+
+      function rankTrackerAverageRank(tracker, limit) {
+        var ranks = rankTrackerRecentRanks(tracker, limit || 14);
+        if (!ranks.length) return 0;
+        var total = ranks.reduce(function (sum, rank) { return sum + rank; }, 0);
+        return Math.round(total / ranks.length);
+      }
+
+      function rankTrackerChangeLabel(tracker) {
+        var latest = rankTrackerLatestRank(tracker);
+        var previous = rankTrackerPreviousRank(tracker);
+        if (!latest || !previous) return "전회 데이터 대기";
+        if (latest === previous) return "전회 대비 변동 없음";
+        return latest < previous ? "전회 대비 " + (previous - latest) + "위 상승" : "전회 대비 " + (latest - previous) + "위 하락";
+      }
+
       function rankTrackerTrend(tracker) {
         var latest = rankTrackerLatestRank(tracker);
         var previous = rankTrackerPreviousRank(tracker);
@@ -4757,6 +4817,24 @@
         var message = String(tracker.lastMessage || tracker.lastError || "");
         var retryCount = Number(tracker.retryCount || 0);
         return tracker.status === "failed" || retryCount > 0 || !rankTrackerLatestRank(tracker) || /실패|오류|환경변수|연결/.test(message);
+      }
+
+      function rankTrackerInsight(tracker) {
+        if (rankTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        var trend = rankTrackerTrend(tracker);
+        if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
+        if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
+        var latest = rankTrackerLatestRank(tracker);
+        if (latest && latest <= 10) return { label: "상위권 유지", className: "is-ok" };
+        return { label: "정상 추적", className: "is-ok" };
+      }
+
+      function rankCheckRangeLabel(payload, result, checkedCount) {
+        var raw = payload && (payload.rankCheckMax || payload.maxRank || (payload.query && payload.query.maxRank) || (result && result.maxRank));
+        var max = Number(raw || 0);
+        if (!max && checkedCount) max = Number(checkedCount);
+        if (!Number.isFinite(max) || max <= 0) max = 300;
+        return formatNumber(max) + "위";
       }
 
       function rankTrackerSearchText(tracker) {
@@ -4816,6 +4894,8 @@
           var mallName = rankTrackerMallName(tracker);
           var titleText = title + (mallName ? " (" + mallName + ")" : "");
           var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
+          var avgRank = rankTrackerAverageRank(tracker, 14);
+          var insight = rankTrackerInsight(tracker);
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
             escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
@@ -4823,7 +4903,10 @@
             escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
             escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
             escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
-            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span>최근 ' +
+            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
+            escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
+            escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
+            escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>최근 ' +
             escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
             escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-ops-message" title="' +
             escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
@@ -4877,9 +4960,10 @@
         var checkedCount = result.checkedCount || payload.checkedCount || 0;
         var queryKeyword = (payload.query && payload.query.keyword) || payload.keyword || result.keyword || "-";
         var found = Boolean(result.matched || rank);
+        var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
         var summary = found
           ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
-          : '<div class="mi-rank-state">조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</div>';
+          : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
         node.innerHTML = '<h3>현재 순위</h3>' + summary + (itemRows ? '<h3>조회 상품</h3>' + itemRows : "") + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
@@ -4928,19 +5012,21 @@
           rankRun.disabled = true;
           setStatus(rankStatus, "현재 오가닉 순위를 조회 중입니다.", "");
           try {
+            var selectedMaxRank = rankMax ? rankMax.value : "300";
             var params = new URLSearchParams({
               keyword: keyword,
               targetUrl: targetUrl,
               productId: productId,
-              maxRank: rankMax ? rankMax.value : "300"
+              maxRank: selectedMaxRank
             });
             var response = await miFetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
             var payload = await response.json().catch(function () { return null; });
             if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
+            payload.rankCheckMax = selectedMaxRank;
             if (!response.ok && payload.ok !== false) payload.ok = false;
             renderRankCheckResult(rankResult, payload);
             var rank = payload.result && payload.result.rank;
-            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? "조회 완료: 현재 오가닉 " + rankText(rank) + "입니다." : "조회 완료: 조회 범위 안에서 해당 상품을 찾지 못했습니다."), payload.ok === false || !rank ? "is-warn" : "is-ok");
+            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? "조회 완료: 현재 오가닉 " + rankText(rank) + "입니다." : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), payload.ok === false || !rank ? "is-warn" : "is-ok");
           } catch (error) {
             renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
             setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");

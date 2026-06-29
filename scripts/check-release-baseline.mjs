@@ -161,6 +161,10 @@ const checks = {
     && !source.includes("<small>1회 조회</small>")
     && !source.includes('<span class="mi-badge">1회 조회</span>')
     && !source.includes(">오가닉 추적 시작<")),
+  naverRankNoResultRangeMessage: [adminSource, clientSource].every((source) => source.includes("rankCheckRangeLabel")
+    && source.includes("이내 없음")
+    && source.includes("조회 완료: ")
+    && source.includes("선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다.")),
   rankTrackingActivePanelRemoved: [adminSource, clientSource].every((source) => !source.includes('<div class="mi-rank-panel" data-rank-result>')),
   rankTrackingProductTitleLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerProductUrl")
     && source.includes("renderRankProductTitle")
@@ -184,6 +188,11 @@ const checks = {
   rankTrackingKeywordVolumeWideColumn: [adminSource, clientSource].every((source) => source.includes("minmax(176px, 0.78fr)")
     && source.includes("min-width: 1100px")
     && source.includes("min-width: 176px;")),
+  rankTrackingInsightLabels: [adminSource, clientSource].every((source) => source.includes("rankTrackerAverageRank")
+    && source.includes("rankTrackerChangeLabel")
+    && source.includes("rankTrackerInsight")
+    && source.includes("7일 평균")
+    && source.includes("전회 대비")),
   seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO 점수 기준")
     && source.includes("상품명 키워드 25점")
     && source.includes("카테고리 연결 15점")

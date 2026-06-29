@@ -1496,6 +1496,7 @@
     #mi-admin .mi-rank-state {
       display: grid;
       place-items: center;
+      gap: 5px;
       min-height: 118px;
       border: 1px dashed var(--mi-line);
       border-radius: 8px;
@@ -1505,6 +1506,25 @@
       font-size: 12px;
       font-weight: 850;
       line-height: 1.5;
+    }
+
+    #mi-admin .mi-rank-state strong,
+    #mi-admin .mi-rank-state small {
+      display: block;
+    }
+
+    #mi-admin .mi-rank-state strong {
+      color: var(--mi-navy);
+      font-size: 17px;
+      font-weight: 950;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-rank-state small {
+      max-width: 520px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
     }
 
     #mi-admin .mi-rank-table {
@@ -1742,6 +1762,24 @@
     }
 
     #mi-admin .mi-rank-ops-row .is-error {
+      border-color: #fecaca;
+      color: #b42318;
+      background: #fff1f1;
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-ok {
+      border-color: #cfe8d9;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-warn {
+      border-color: #fed7aa;
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-error {
       border-color: #fecaca;
       color: #b42318;
       background: #fff1f1;
@@ -4201,8 +4239,10 @@
             <aside class="mi-card mi-card-pad">
               <h3>공개 전 체크</h3>
               <div class="mi-table">
-                <div class="mi-row"><span>광고주ID</span><strong>MML93-CLIENT-001 기준 분리</strong></div>
+                <div class="mi-row"><span>원본 파일</span><strong>업로드 파일명과 작성일 확인</strong></div>
+                <div class="mi-row"><span>광고주 범위</span><strong>연결 광고주 1명 기준 분리</strong></div>
                 <div class="mi-row"><span>내부 메모</span><strong>광고주 화면 미노출</strong></div>
+                <div class="mi-row"><span>이상 수치</span><strong>전월 대비 급등락은 공개 전 재확인</strong></div>
                 <div class="mi-row"><span>공개 승인</span><strong>승인값만 반영</strong></div>
                 <div class="mi-row"><span>수정 이력</span><strong>공개 반영 시간 기록</strong></div>
               </div>
@@ -4238,7 +4278,7 @@
               <h1>보고서는 운영팀이 검수 후 공개합니다.</h1>
               <p>운영팀이 보고서를 확인하고 공개 처리하면 광고주 보고서함에서 다운로드할 수 있습니다.</p>
             </div>
-            <span class="mi-badge warn">관리자 전용</span>
+            <span class="mi-badge warn">운영팀 전용</span>
           </header>
 
           <div class="mi-split">
@@ -4246,7 +4286,7 @@
               <h2>공개용 보고서</h2>
               <div class="mi-step-flow" style="margin-bottom:16px;">
                 <div class="mi-step-card"><b>1</b><strong>운영 입력</strong><span>매출·광고비·KPI 원본을 먼저 업로드</span></div>
-                <div class="mi-step-card"><b>2</b><strong>검수 승인</strong><span>수치와 공개 코멘트 확인 후 승인</span></div>
+                <div class="mi-step-card"><b>2</b><strong>검수 승인</strong><span>수치, 공개 코멘트, 내부 메모 분리 확인</span></div>
                 <div class="mi-step-card"><b>3</b><strong>광고주 공개</strong><span>공개 처리된 보고서만 다운로드 노출</span></div>
               </div>
               <div class="mi-downloads">
@@ -4574,7 +4614,7 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
-                <h2>상품 URL 기준 30일 오가닉 순위 추적을 시작합니다.</h2>
+                <h2>30일 오가닉 순위 추적을 시작합니다.</h2>
                 <p>키워드와 상품 URL을 등록하면 최근 30일 순위 흐름을 관리합니다.</p>
               </div>
               <span class="mi-badge">관리자 확인용</span>
@@ -4591,7 +4631,7 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 오가닉 순위</h3>
@@ -7383,6 +7423,27 @@
         return rankTrackerRankValue((snapshots[1] && snapshots[1].rank) || tracker.previousRank);
       }
 
+      function rankTrackerRecentRanks(tracker, limit) {
+        return (tracker.snapshots || []).map(function (snapshot) {
+          return rankTrackerRankValue(snapshot && snapshot.rank);
+        }).filter(Boolean).slice(0, limit || 14);
+      }
+
+      function rankTrackerAverageRank(tracker, limit) {
+        var ranks = rankTrackerRecentRanks(tracker, limit || 14);
+        if (!ranks.length) return 0;
+        var total = ranks.reduce(function (sum, rank) { return sum + rank; }, 0);
+        return Math.round(total / ranks.length);
+      }
+
+      function rankTrackerChangeLabel(tracker) {
+        var latest = rankTrackerLatestRank(tracker);
+        var previous = rankTrackerPreviousRank(tracker);
+        if (!latest || !previous) return "전회 데이터 대기";
+        if (latest === previous) return "전회 대비 변동 없음";
+        return latest < previous ? "전회 대비 " + (previous - latest) + "위 상승" : "전회 대비 " + (latest - previous) + "위 하락";
+      }
+
       function rankTrackerTrend(tracker) {
         var latest = rankTrackerLatestRank(tracker);
         var previous = rankTrackerPreviousRank(tracker);
@@ -7394,6 +7455,24 @@
         var message = String(tracker.lastMessage || tracker.lastError || "");
         var retryCount = Number(tracker.retryCount || 0);
         return tracker.status === "failed" || retryCount > 0 || !rankTrackerLatestRank(tracker) || /실패|오류|환경변수|연결/.test(message);
+      }
+
+      function rankTrackerInsight(tracker) {
+        if (rankTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        var trend = rankTrackerTrend(tracker);
+        if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
+        if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
+        var latest = rankTrackerLatestRank(tracker);
+        if (latest && latest <= 10) return { label: "상위권 유지", className: "is-ok" };
+        return { label: "정상 추적", className: "is-ok" };
+      }
+
+      function rankCheckRangeLabel(payload, result, checkedCount) {
+        var raw = payload && (payload.rankCheckMax || payload.maxRank || (payload.query && payload.query.maxRank) || (result && result.maxRank));
+        var max = Number(raw || 0);
+        if (!max && checkedCount) max = Number(checkedCount);
+        if (!Number.isFinite(max) || max <= 0) max = 300;
+        return formatNumber(max) + "위";
       }
 
       function rankTrackerSearchText(tracker) {
@@ -7453,6 +7532,8 @@
           var mallName = rankTrackerMallName(tracker);
           var titleText = title + (mallName ? " (" + mallName + ")" : "");
           var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
+          var avgRank = rankTrackerAverageRank(tracker, 14);
+          var insight = rankTrackerInsight(tracker);
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
             escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
@@ -7460,7 +7541,10 @@
             escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
             escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
             escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
-            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span>최근 ' +
+            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
+            escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
+            escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
+            escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>최근 ' +
             escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
             escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-ops-message" title="' +
             escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
@@ -7514,9 +7598,10 @@
         var checkedCount = result.checkedCount || payload.checkedCount || 0;
         var queryKeyword = (payload.query && payload.query.keyword) || payload.keyword || result.keyword || "-";
         var found = Boolean(result.matched || rank);
+        var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
         var summary = found
           ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
-          : '<div class="mi-rank-state">조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</div>';
+          : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
         node.innerHTML = '<h3>현재 순위</h3>' + summary + (itemRows ? '<h3>조회 상품</h3>' + itemRows : "") + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
@@ -7565,19 +7650,21 @@
           rankRun.disabled = true;
           setStatus(rankStatus, "현재 오가닉 순위를 조회 중입니다.", "");
           try {
+            var selectedMaxRank = rankMax ? rankMax.value : "300";
             var params = new URLSearchParams({
               keyword: keyword,
               targetUrl: targetUrl,
               productId: productId,
-              maxRank: rankMax ? rankMax.value : "300"
+              maxRank: selectedMaxRank
             });
             var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
             var payload = await response.json().catch(function () { return null; });
             if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
+            payload.rankCheckMax = selectedMaxRank;
             if (!response.ok && payload.ok !== false) payload.ok = false;
             renderRankCheckResult(rankResult, payload);
             var rank = payload.result && payload.result.rank;
-            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? "조회 완료: 현재 오가닉 " + rankText(rank) + "입니다." : "조회 완료: 조회 범위 안에서 해당 상품을 찾지 못했습니다."), payload.ok === false || !rank ? "is-warn" : "is-ok");
+            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? "조회 완료: 현재 오가닉 " + rankText(rank) + "입니다." : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), payload.ok === false || !rank ? "is-warn" : "is-ok");
           } catch (error) {
             renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
             setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");
@@ -7644,7 +7731,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 오가닉 순위 추적을 시작하고 최근 30일 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
+              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });

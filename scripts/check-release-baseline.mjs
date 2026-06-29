@@ -81,6 +81,12 @@ const checks = {
     && clientSource.includes("buildClientReportCsv")
     && clientSource.includes("downloadClientReport")
     && clientSource.includes("운영팀이 공개한 보고서만 다운로드"),
+  clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")
+    && clientSource.includes("데이터 출처")
+    && clientSource.includes("공개 승인된 보고서만 표시")
+    && clientSource.includes("운영팀 업로드 → 검수 → 공개 → 다운로드")
+    && clientSource.includes("원본 파일 미등록 · 공개 데이터 CSV 백업")
+    && clientSource.includes(">CSV 백업</button>"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes('"x-mi-agency-code": normalized')
@@ -107,7 +113,13 @@ const checks = {
     && adminSource.includes("sourceFileStorageKey")
     && adminSource.includes("downloadSourceFile")
     && adminSource.includes("운영 원본 파일")
-    && adminSource.includes("서버 저장소 연결 전에는 임시 보관 파일"),
+    && adminSource.includes("현재 파일은 브라우저 임시 보관입니다"),
+  adminOperatingGuardrailsVisible: adminSource.includes("데이터 출처 고정")
+    && adminSource.includes("광고주 1:1 범위")
+    && adminSource.includes("검수 후 공개")
+    && adminSource.includes("운영 입력</strong><span>매출·광고비·KPI 원본을 먼저 업로드")
+    && adminSource.includes("현재 파일은 브라우저 임시 보관입니다")
+    && adminSource.includes("다른 기기나 브라우저에서는 확인할 수 없습니다"),
   adminDefaultTemplateDownload: adminSource.includes("/downloads/moment-insight-operation-sheet-template.xlsx")
     && adminSource.includes("기본 양식 다운로드")
     && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
@@ -168,6 +180,13 @@ const checks = {
   rankTrackingKeywordVolumeWideColumn: [adminSource, clientSource].every((source) => source.includes("minmax(176px, 0.78fr)")
     && source.includes("min-width: 1100px")
     && source.includes("min-width: 176px;")),
+  seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO 점수 기준")
+    && source.includes("상품명 키워드 25점")
+    && source.includes("카테고리 연결 15점")
+    && source.includes("시장 수요 15점")
+    && source.includes("광고 제외 순위만 확인")
+    && source.includes("가격/혜택 15점")
+    && source.includes("리뷰/신뢰도 15점")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

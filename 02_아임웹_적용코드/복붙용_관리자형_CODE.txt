@@ -4024,7 +4024,7 @@
                     <div>
                       <span>현재 보관 파일</span>
                       <strong data-admin-source-file-name>업로드 파일 없음</strong>
-                      <small data-admin-source-file-meta>엑셀, CSV, PDF 파일을 선택하면 이 브라우저에 보관됩니다.</small>
+                      <small data-admin-source-file-meta>현재 파일은 이 브라우저 임시 보관이며, 다른 기기나 브라우저에서는 확인할 수 없습니다.</small>
                     </div>
                     <label class="mi-source-picker">
                       <input type="file" data-admin-source-file accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
@@ -4039,7 +4039,13 @@
                       </div>
                     </div>
                   </div>
-                  <div class="mi-code-status" data-admin-source-file-status aria-live="polite">서버 저장소 연결 전에는 임시 보관 파일로 관리됩니다.</div>
+                  <div class="mi-code-status" data-admin-source-file-status aria-live="polite">현재 파일은 브라우저 임시 보관입니다. 정식 운영에서는 서버 저장소에 업로드되어야 합니다.</div>
+                </div>
+                <div class="mi-readiness-grid">
+                  <div class="mi-readiness-item"><strong>데이터 출처 고정</strong><span>원본 파일명, 업로드 시간, 공개 반영 시간을 함께 남깁니다.</span></div>
+                  <div class="mi-readiness-item"><strong>광고주 1:1 범위</strong><span>운영팀 1개는 광고주 1명 기준으로만 입력하고 공개합니다.</span></div>
+                  <div class="mi-readiness-item"><strong>검수 후 공개</strong><span>승인값과 광고주공유여부가 맞는 데이터만 광고주 화면에 반영합니다.</span></div>
+                  <div class="mi-readiness-item"><strong>보고서 근거 연결</strong><span>업로드 원본과 공개 보고서를 분리해 추적 가능하게 관리합니다.</span></div>
                 </div>
                 <div class="mi-form-row">
                   <label class="mi-field">연결 광고주
@@ -4154,6 +4160,11 @@
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
               <h2>공개용 보고서</h2>
+              <div class="mi-step-flow" style="margin-bottom:16px;">
+                <div class="mi-step-card"><b>1</b><strong>운영 입력</strong><span>매출·광고비·KPI 원본을 먼저 업로드</span></div>
+                <div class="mi-step-card"><b>2</b><strong>검수 승인</strong><span>수치와 공개 코멘트 확인 후 승인</span></div>
+                <div class="mi-step-card"><b>3</b><strong>광고주 공개</strong><span>공개 처리된 보고서만 다운로드 노출</span></div>
+              </div>
               <div class="mi-downloads">
                 <button class="mi-download" type="button" data-admin-download data-report-type="weekly"><span><b>주간 보고서</b><small>CSV · 6월 2주차 · 검수 후 광고주 공개</small></span><i>↓</i></button>
                 <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>CSV · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
@@ -4404,6 +4415,18 @@
                           <span class="mi-seo-pill">오가닉 순위</span>
                         </div>
                       </div>
+                    </div>
+                  </section>
+
+                  <section class="mi-seo-panel is-wide">
+                    <h3>SEO 점수 기준</h3>
+                    <div class="mi-table">
+                      <div class="mi-row"><span>상품명 키워드 25점</span><strong>기준 키워드 포함과 자연스러운 상품명 구성</strong></div>
+                      <div class="mi-row"><span>카테고리 연결 15점</span><strong>상품 URL에서 확인한 카테고리와 키워드 적합성</strong></div>
+                      <div class="mi-row"><span>시장 수요 15점</span><strong>월 검색량과 연관 키워드 수요 참고</strong></div>
+                      <div class="mi-row"><span>오가닉 순위 15점</span><strong>광고 제외 순위만 확인</strong></div>
+                      <div class="mi-row"><span>가격/혜택 15점</span><strong>검색 결과 내 가격대와 구매 혜택 참고</strong></div>
+                      <div class="mi-row"><span>리뷰/신뢰도 15점</span><strong>리뷰수량은 직접 입력값 기준</strong></div>
                     </div>
                   </section>
                 </div>
@@ -5360,7 +5383,7 @@
         if (metaNode) {
           metaNode.textContent = fileRecord
             ? formatFileSize(fileRecord.size) + " · " + formatStoredDate(fileRecord.uploadedAt) + " 보관"
-            : "엑셀, CSV, PDF 파일을 선택하면 이 브라우저에 보관됩니다.";
+            : "현재 파일은 이 브라우저 임시 보관이며, 다른 기기나 브라우저에서는 확인할 수 없습니다.";
         }
         if (!listNode) return;
         if (!fileRecord) {

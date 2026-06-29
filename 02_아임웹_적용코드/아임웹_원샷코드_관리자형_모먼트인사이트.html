@@ -1599,6 +1599,64 @@
       margin-bottom: 10px;
     }
 
+    #mi-admin .mi-rank-auto-center {
+      display: grid;
+      grid-template-columns: minmax(260px, 1.2fr) repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      align-items: stretch;
+      margin-bottom: 10px;
+      border: 1px solid #dbe4ef;
+      border-radius: 8px;
+      padding: 12px;
+      background: linear-gradient(135deg, #fbfcfd 0%, #f6f9fc 100%);
+    }
+
+    #mi-admin .mi-rank-auto-head {
+      display: grid;
+      gap: 7px;
+      align-content: center;
+    }
+
+    #mi-admin .mi-rank-auto-head strong {
+      color: var(--mi-navy);
+      font-size: 17px;
+      font-weight: 950;
+      line-height: 1.25;
+    }
+
+    #mi-admin .mi-rank-auto-head small {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 850;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-rank-auto-status {
+      width: fit-content;
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border: 1px solid #cfe8d9;
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-auto-status.is-warn {
+      border-color: #fed7aa;
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-rank-auto-status.is-error {
+      border-color: #fecaca;
+      color: #b42318;
+      background: #fff1f1;
+    }
+
     #mi-admin .mi-rank-ops-card {
       min-height: 72px;
       border: 1px solid #dde5f0;
@@ -1789,6 +1847,24 @@
       max-width: min(420px, 100%);
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-ok {
+      border-color: #cfe8d9;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-warn {
+      border-color: #fed7aa;
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+    }
+
+    #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-error {
+      border-color: #fecaca;
+      color: #b42318;
+      background: #fff1f1;
     }
 
     #mi-admin .mi-rank-tracker-card.is-dragging {
@@ -3472,6 +3548,10 @@
 
       #mi-admin .mi-rank-ops-summary {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      #mi-admin .mi-rank-auto-center {
+        grid-template-columns: 1fr;
       }
 
       #mi-admin .mi-market-metrics {
@@ -7260,14 +7340,28 @@
           return tracker.status !== "paused" && tracker.status !== "completed" && (!next || next <= now);
         }).length;
         var errors = list.filter(function (tracker) {
-          var message = String(tracker.lastMessage || "");
-          return tracker.status === "failed" || /실패|오류|환경변수|연결/.test(message);
+          var message = String(tracker.lastMessage || tracker.lastError || "");
+          return tracker.status === "failed" || !rankTrackerLatestRank(tracker) || /실패|오류|환경변수|연결|미노출/.test(message);
         }).length;
         var latestAt = list.reduce(function (latest, tracker) {
           var value = tracker.lastCheckedAt ? new Date(tracker.lastCheckedAt).getTime() : 0;
           return value > latest ? value : latest;
         }, 0);
-        return '<div class="mi-rank-ops-summary">' +
+        var nextAt = list.reduce(function (next, tracker) {
+          if (tracker.status === "paused" || tracker.status === "completed") return next;
+          var value = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
+          if (!value || !Number.isFinite(value)) return next;
+          return !next || value < next ? value : next;
+        }, 0);
+        var statusLabel = errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기"));
+        var statusClass = errors ? " is-error" : (due ? " is-warn" : " is-ok");
+        return '<div class="mi-rank-auto-center">' +
+          '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
+          '</span><strong>자동추적 상태</strong><small>매일 오전 9시와 오후 3시에 등록 상품의 오가닉 순위를 갱신합니다.</small></div>' +
+          '<div class="mi-rank-ops-card"><span>마지막 갱신</span><strong>' + escapeHtml(latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-") + '</strong><small>수동/자동 포함</small></div>' +
+          '<div class="mi-rank-ops-card' + (due ? " is-warn" : " is-ok") + '"><span>다음 자동 갱신</span><strong>' + escapeHtml(nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기") + '</strong><small>오전 9시 · 오후 3시 기준</small></div>' +
+          '<div class="mi-rank-ops-card' + (errors ? " is-error" : " is-ok") + '"><span>점검 항목</span><strong>' + escapeHtml(errors + "개") + '</strong><small>실패/미노출 메시지 기준</small></div>' +
+          '</div><div class="mi-rank-ops-summary">' +
           '<div class="mi-rank-ops-card is-ok"><span>활성 추적</span><strong>' + escapeHtml(active + "개") + '</strong><small>운영 코드 기준</small></div>' +
           '<div class="mi-rank-ops-card' + (due ? " is-warn" : " is-ok") + '"><span>갱신 대기</span><strong>' + escapeHtml(due + "개") + '</strong><small>오전 9시 · 오후 3시 기준</small></div>' +
           '<div class="mi-rank-ops-card"><span>최근 갱신</span><strong>' + escapeHtml(latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-") + '</strong><small>수동/자동 포함</small></div>' +
@@ -7467,6 +7561,28 @@
         return { label: "정상 추적", className: "is-ok" };
       }
 
+      function rankTrackerActionNote(tracker) {
+        var message = String(tracker.lastMessage || tracker.lastError || "");
+        var latest = rankTrackerLatestRank(tracker);
+        var trend = rankTrackerTrend(tracker);
+        if (tracker.status === "failed" || /실패|오류|환경변수|연결/.test(message)) {
+          return { label: "연결 상태 확인", className: "is-error" };
+        }
+        if (!latest) {
+          return { label: "300위 이내 없음 · 상품명/카테고리 확인", className: "is-error" };
+        }
+        if (trend === "dropped") {
+          return { label: "하락 감지 · 가격/소재 점검", className: "is-warn" };
+        }
+        if (trend === "improved") {
+          return { label: "상승 흐름 유지", className: "is-ok" };
+        }
+        if (latest <= 10) {
+          return { label: "상위권 방어", className: "is-ok" };
+        }
+        return { label: "정상 추적 유지", className: "is-ok" };
+      }
+
       function rankCheckRangeLabel(payload, result, checkedCount) {
         var raw = payload && (payload.rankCheckMax || payload.maxRank || (payload.query && payload.query.maxRank) || (result && result.maxRank));
         var max = Number(raw || 0);
@@ -7534,6 +7650,7 @@
           var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
           var avgRank = rankTrackerAverageRank(tracker, 14);
           var insight = rankTrackerInsight(tracker);
+          var actionNote = rankTrackerActionNote(tracker);
           return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
             escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
@@ -7546,7 +7663,8 @@
             escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
             escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>최근 ' +
             escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
-            escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-ops-message" title="' +
+            escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
+            escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span class="mi-rank-ops-message" title="' +
             escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
             renderTrackerDailyBoard(tracker) + '</section>';
         }).join("") + '</div>';

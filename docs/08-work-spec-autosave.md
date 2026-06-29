@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 29. 15:03:15
-- 기준 커밋: af032d2
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 06. 29. 17:09:37
+- 기준 커밋: c73fa9e
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

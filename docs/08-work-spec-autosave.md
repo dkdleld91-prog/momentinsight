@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 29. 10:40:42
-- 기준 커밋: a272f3a
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs
+- 마지막 자동 저장: 2026. 06. 29. 12:00:57
+- 기준 커밋: 6298ff1
+- 작업트리: M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs /  M src/server/handlers/naver-rank-trackers.mjs /  M src/server/handlers/report-center.mjs / ?? supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql
 <!-- autosave:end -->
 
 ## 작업 상태 기준

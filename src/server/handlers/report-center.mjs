@@ -27,6 +27,7 @@ const FILE_TYPES = new Set([
 
 const REPORT_BUCKET = "moment-reports";
 const REPORT_DOWNLOAD_EXPIRES_IN = 60 * 10;
+const REPORT_UPLOAD_MAX_BYTES = Number(process.env.MI_REPORT_UPLOAD_MAX_BYTES || 1024 * 1024 * 8);
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -131,6 +132,31 @@ function dateFolder(date = new Date()) {
 function requestedReportBucket(body = {}) {
   const bucket = cleanText(body.bucket || body.storageBucket || body.storage_bucket, REPORT_BUCKET);
   return bucket === REPORT_BUCKET ? bucket : "";
+}
+
+function fileTypeFromName(filename, fallback = "other") {
+  const ext = cleanText(filename).split(".").pop().toLowerCase();
+  if (["xlsx", "xls", "csv", "pdf"].includes(ext)) return ext;
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "image";
+  return fallback;
+}
+
+function decodeBase64File(value) {
+  const text = String(value || "");
+  const match = text.match(/^data:([^;,]+)?;base64,(.*)$/);
+  const base64 = match ? match[2] : text;
+  const contentType = match && match[1] ? match[1] : "";
+  const normalized = base64.replace(/\s/g, "");
+  if (!normalized) return { ok: false, message: "업로드할 파일 데이터가 없습니다." };
+  const buffer = Buffer.from(normalized, "base64");
+  if (!buffer.length) return { ok: false, message: "파일 데이터를 읽을 수 없습니다." };
+  if (buffer.length > REPORT_UPLOAD_MAX_BYTES) {
+    return {
+      ok: false,
+      message: `보고서 파일은 ${(REPORT_UPLOAD_MAX_BYTES / 1024 / 1024).toFixed(0)}MB 이하만 업로드할 수 있습니다.`,
+    };
+  }
+  return { ok: true, buffer, contentType };
 }
 
 async function attachSignedDownloadUrls(ctx, files = []) {
@@ -338,6 +364,26 @@ async function handleGet(request, ctx) {
   });
 }
 
+async function signFileForAccess(ctx, file) {
+  if (!file?.storage_bucket || !file?.storage_path) {
+    return {
+      signedUrl: file?.external_url || file?.url || "",
+      expiresIn: null,
+    };
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .storage
+    .from(file.storage_bucket)
+    .createSignedUrl(file.storage_path, REPORT_DOWNLOAD_EXPIRES_IN);
+
+  if (error) return { error };
+  return {
+    signedUrl: data?.signedUrl || "",
+    expiresIn: REPORT_DOWNLOAD_EXPIRES_IN,
+  };
+}
+
 async function handleSignedUpload(request, ctx, access, body) {
   if (access.role === "client") {
     return json(request, { ok: false, message: "광고주는 보고서 파일을 업로드할 수 없습니다." }, 403);
@@ -363,6 +409,123 @@ async function handleSignedUpload(request, ctx, access, body) {
     path,
     signedUrl: data?.signedUrl,
     token: data?.token,
+  });
+}
+
+async function handleDirectUpload(request, ctx, access, body) {
+  if (access.role === "client") {
+    return json(request, { ok: false, message: "광고주는 보고서 파일을 업로드할 수 없습니다." }, 403);
+  }
+
+  const filename = sanitizeFilename(body.filename || body.fileName || body.title);
+  const decoded = decodeBase64File(body.contentBase64 || body.content_base64 || body.dataUrl || body.data_url);
+  if (!decoded.ok) return json(request, { ok: false, message: decoded.message }, 400);
+
+  const bucket = requestedReportBucket(body);
+  if (!bucket) {
+    return json(request, { ok: false, message: `보고서 업로드 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400);
+  }
+
+  const scope = cleanText(body.scope, "sources") === "reports" ? "reports" : "sources";
+  const path = `clients/${access.client.id}/${scope}/${dateFolder()}/${Date.now()}-${filename}`;
+  const contentType = cleanText(body.contentType || body.content_type || decoded.contentType, "application/octet-stream");
+
+  const upload = await ctx.supabaseAdmin
+    .storage
+    .from(bucket)
+    .upload(path, decoded.buffer, {
+      contentType,
+      upsert: false,
+    });
+
+  if (upload.error) {
+    return json(request, { ok: false, message: "보고서 파일 업로드에 실패했습니다.", detail: upload.error.message }, 500);
+  }
+
+  const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
+  const fileType = FILE_TYPES.has(cleanText(body.fileType || body.file_type))
+    ? cleanText(body.fileType || body.file_type)
+    : fileTypeFromName(filename);
+  const title = cleanText(body.title, scope === "sources" ? `원천 파일 · ${filename}` : filename);
+  const reportId = cleanText(body.reportId || body.report_id) || null;
+
+  const { data: file, error: fileError } = await ctx.supabaseAdmin
+    .from("files")
+    .insert({
+      client_id: access.client.id,
+      report_id: reportId,
+      title,
+      file_type: fileType,
+      storage_bucket: bucket,
+      storage_path: path,
+      visibility,
+    })
+    .select("id, client_id, report_id, title, file_type, url, external_url, storage_bucket, storage_path, visibility, created_at")
+    .single();
+
+  if (fileError) {
+    return json(request, { ok: false, message: "보고서 파일 기록에 실패했습니다.", detail: fileError.message }, 500);
+  }
+
+  const signed = await signFileForAccess(ctx, file);
+  const auditLogged = await recordAuditLog(ctx, {
+    action: scope === "sources" ? "report_center.source_file_uploaded" : "report_center.file_uploaded",
+    clientId: access.client.id,
+    targetTable: "files",
+    targetId: file.id,
+    metadata: {
+      role: access.role,
+      teamCode: access.team?.team_code || null,
+      scope,
+      visibility,
+      filename,
+      size: decoded.buffer.length,
+    },
+  });
+
+  return json(request, {
+    ok: true,
+    file: {
+      ...file,
+      signed_url: signed.signedUrl || "",
+      signed_url_expires_in: signed.expiresIn,
+      signed_url_error: signed.error ? "보고서 파일 다운로드 URL 생성에 실패했습니다." : undefined,
+    },
+    auditLogged,
+  }, 201);
+}
+
+async function handleSignedDownload(request, ctx, access, body) {
+  const fileId = cleanText(body.fileId || body.file_id || new URL(request.url).searchParams.get("file_id"));
+  if (!fileId) return json(request, { ok: false, message: "다운로드할 파일 ID가 필요합니다." }, 400);
+
+  let query = ctx.supabaseAdmin
+    .from("files")
+    .select("id, client_id, report_id, title, file_type, url, external_url, storage_bucket, storage_path, visibility, created_at")
+    .eq("id", fileId)
+    .eq("client_id", access.client.id);
+
+  if (access.role === "client") query = query.eq("visibility", "client_visible");
+
+  const { data: file, error } = await query.maybeSingle();
+  if (error) return json(request, { ok: false, message: "보고서 파일 확인에 실패했습니다.", detail: error.message }, 500);
+  if (!file) return json(request, { ok: false, message: "접근 가능한 보고서 파일을 찾을 수 없습니다." }, 404);
+
+  const signed = await signFileForAccess(ctx, file);
+  if (signed.error) {
+    return json(request, { ok: false, message: "보고서 파일 다운로드 URL 생성에 실패했습니다.", detail: signed.error.message }, 500);
+  }
+
+  return json(request, {
+    ok: true,
+    file: {
+      id: file.id,
+      title: file.title,
+      fileType: file.file_type,
+      visibility: file.visibility,
+    },
+    signedUrl: signed.signedUrl,
+    expiresIn: signed.expiresIn,
   });
 }
 
@@ -495,6 +658,8 @@ async function handlePost(request, ctx) {
 
   const action = cleanText(body.action, "create-report");
   if (action === "signed-upload") return handleSignedUpload(request, ctx, access, body);
+  if (action === "upload-source-file" || action === "upload-file") return handleDirectUpload(request, ctx, access, body);
+  if (action === "signed-download") return handleSignedDownload(request, ctx, access, body);
   if (action === "create-report") return handleCreateReport(request, ctx, access, body);
 
   return json(request, { ok: false, message: "지원하지 않는 보고서 작업입니다." }, 400);

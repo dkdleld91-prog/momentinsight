@@ -4384,6 +4384,7 @@
             date: report.report_date || report.updated_at || "",
             summary: report.summary || "",
             comment: report.public_comment || "",
+            fileId: file ? file.id : "",
             fileTitle: file ? file.title : "",
             fileUrl: file ? (file.signed_url || file.external_url || file.url || "") : "",
             fileType: file ? file.file_type : ""
@@ -5630,13 +5631,43 @@
         }).join("\n");
       }
 
-      function downloadClientReport(index) {
+      async function openReportFile(report, state) {
+        if (report.fileId) {
+          var response = await miFetch(getReportCenterApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "content-type": "application/json",
+              "x-mi-agency-code": normalizeCode(state.code || selectedAgencyCode())
+            },
+            body: JSON.stringify({
+              action: "signed-download",
+              fileId: report.fileId
+            })
+          });
+          var payload = await response.json().catch(function () { return null; });
+          if (!response.ok || !payload || payload.ok === false || !payload.signedUrl) {
+            throw new Error((payload && payload.message) || "보고서 파일 URL을 다시 발급하지 못했습니다.");
+          }
+          window.open(payload.signedUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+        window.open(report.fileUrl, "_blank", "noopener,noreferrer");
+      }
+
+      async function downloadClientReport(index, button) {
         var state = enrichState(readState());
         var reports = state.reports && state.reports.length ? state.reports : (state.reportCenterSynced ? [] : defaultState.reports);
         var report = reports[index] || reports[0];
         if (!report) return;
         if (report.fileUrl) {
-          window.open(report.fileUrl, "_blank", "noopener,noreferrer");
+          if (button) button.disabled = true;
+          try {
+            await openReportFile(report, state);
+          } catch (error) {
+            window.alert(error.message || "보고서 파일을 열 수 없습니다.");
+          }
+          if (button) button.disabled = false;
           return;
         }
         var csv = buildClientReportCsv(report, state);
@@ -5681,7 +5712,7 @@
       root.addEventListener("click", function (event) {
         var button = event.target.closest("[data-mi-report-download]");
         if (!button || !root.contains(button)) return;
-        downloadClientReport(parseInt(button.getAttribute("data-report-index") || "0", 10));
+        downloadClientReport(parseInt(button.getAttribute("data-report-index") || "0", 10), button);
       });
 
       function setStatus(node, message, type) {

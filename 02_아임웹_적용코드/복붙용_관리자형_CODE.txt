@@ -5020,6 +5020,15 @@
         if (!activeTeams.length) {
           rows.push('<div class="mi-row"><span>1번 운영팀</span><strong>빈칸 · 광고주는 직접 발급 가능</strong></div>');
         }
+        if (payload && payload.health) {
+          var health = payload.health;
+          rows.push('<div class="mi-row"><span>운영 상태</span><strong>추적 대기 ' +
+            escapeHtml(String((health.dueTrackers && health.dueTrackers.count) || 0)) + '건 · 실패 기록 ' +
+            escapeHtml(String((health.failedTrackers && health.failedTrackers.count) || 0)) + '건</strong></div>');
+          rows.push('<div class="mi-row"><span>보고서/원본</span><strong>공개 보고서 ' +
+            escapeHtml(String((health.publicReports && health.publicReports.count) || 0)) + '건 · 원천 파일 ' +
+            escapeHtml(String((health.sourceFiles && health.sourceFiles.count) || 0)) + '건</strong></div>');
+        }
 
         activeTeams.slice(0, 2).forEach(function (team, index) {
           var client = team.client || null;
@@ -5382,7 +5391,7 @@
         if (nameNode) nameNode.textContent = fileRecord ? fileRecord.name : "업로드 파일 없음";
         if (metaNode) {
           metaNode.textContent = fileRecord
-            ? formatFileSize(fileRecord.size) + " · " + formatStoredDate(fileRecord.uploadedAt) + " 보관"
+            ? formatFileSize(fileRecord.size) + " · " + formatStoredDate(fileRecord.uploadedAt) + (fileRecord.serverFileId ? " · 서버 보관" : " · 브라우저 보관")
             : "현재 파일은 이 브라우저 임시 보관이며, 다른 기기나 브라우저에서는 확인할 수 없습니다.";
         }
         if (!listNode) return;
@@ -5395,18 +5404,58 @@
         listNode.innerHTML =
           '<div class="mi-source-library-row"><div><strong>' + escapeHtml(fileRecord.name) + '</strong>' +
           '<small>' + escapeHtml(formatFileSize(fileRecord.size)) + ' · ' + escapeHtml(formatStoredDate(fileRecord.uploadedAt)) +
-          ' · ' + escapeHtml(fileRecord.type || "파일") + '</small></div><div class="mi-source-actions">' +
+          ' · ' + escapeHtml(fileRecord.type || "파일") + (fileRecord.serverFileId ? ' · 서버 저장' : ' · 브라우저 저장') + '</small></div><div class="mi-source-actions">' +
           '<button class="mi-button is-ghost mi-button-small" type="button" data-admin-source-download>다운로드</button>' +
           '<button class="mi-button mi-button-small mi-button-danger" type="button" data-admin-source-delete>삭제</button>' +
           '</div></div>';
       }
 
-      function downloadSourceFile() {
+      function sourceUploadTeamCode() {
+        return currentOperationTeam && currentOperationTeam.teamCode ? String(currentOperationTeam.teamCode || "").trim() : "";
+      }
+
+      function sourceFileCanServerUpload() {
+        return Boolean(sourceUploadTeamCode() && currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
+      }
+
+      async function requestSourceFileDownloadUrl(fileRecord) {
+        if (!fileRecord || !fileRecord.serverFileId || !sourceUploadTeamCode()) return "";
+        var response = await miFetch(getReportCenterApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-mi-team-code": sourceUploadTeamCode()
+          },
+          body: JSON.stringify({
+            action: "signed-download",
+            fileId: fileRecord.serverFileId
+          })
+        });
+        var payload = await readApiPayload(response, "원본 파일 다운로드 URL을 확인할 수 없습니다.");
+        if (!payload.ok || !payload.signedUrl) throw new Error(payload.message || "원본 파일 다운로드 URL 발급 실패");
+        return payload.signedUrl;
+      }
+
+      async function downloadSourceFile() {
         var fileRecord = readSourceFile();
         var statusNode = root.querySelector("[data-admin-source-file-status]");
-        if (!fileRecord || !fileRecord.dataUrl) {
+        if (!fileRecord || (!fileRecord.dataUrl && !fileRecord.serverFileId && !fileRecord.fileUrl)) {
           setStatus(statusNode, "다운로드할 원본 파일이 없습니다.", "is-warn");
           return;
+        }
+        if (fileRecord.serverFileId || fileRecord.fileUrl) {
+          try {
+            var signedUrl = await requestSourceFileDownloadUrl(fileRecord);
+            window.open(signedUrl || fileRecord.fileUrl, "_blank", "noopener,noreferrer");
+            setStatus(statusNode, "서버 보관 원본 파일을 열었습니다: " + fileRecord.name, "is-ok");
+            return;
+          } catch (error) {
+            if (!fileRecord.dataUrl) {
+              setStatus(statusNode, error.message || "서버 보관 파일 다운로드에 실패했습니다.", "is-warn");
+              return;
+            }
+          }
         }
         var link = document.createElement("a");
         link.href = fileRecord.dataUrl;
@@ -5415,6 +5464,60 @@
         link.click();
         link.remove();
         setStatus(statusNode, "원본 파일 다운로드를 시작했습니다: " + fileRecord.name, "is-ok");
+      }
+
+      async function uploadSourceFileToServer(fileRecord) {
+        if (!sourceFileCanServerUpload() || !fileRecord || !fileRecord.dataUrl) {
+          return { ok: false, skipped: true, message: "운영팀에 연결된 광고주가 있을 때 서버 보관됩니다." };
+        }
+        var response = await miFetch(getReportCenterApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: {
+            "content-type": "application/json",
+            "x-mi-team-code": sourceUploadTeamCode()
+          },
+          body: JSON.stringify({
+            action: "upload-source-file",
+            filename: fileRecord.name,
+            title: "원천 파일 · " + fileRecord.name,
+            contentType: fileRecord.type || "application/octet-stream",
+            dataUrl: fileRecord.dataUrl,
+            visibility: "internal",
+            scope: "sources"
+          })
+        });
+        return readApiPayload(response, "원본 파일 서버 업로드 응답을 확인할 수 없습니다.");
+      }
+
+      async function refreshSourceFileFromServer() {
+        if (!sourceUploadTeamCode()) return false;
+        try {
+          var response = await miFetch(getReportCenterApiUrl(), {
+            method: "GET",
+            cache: "no-store",
+            headers: { "x-mi-team-code": sourceUploadTeamCode() }
+          });
+          var payload = await readApiPayload(response, "원본 파일 서버 목록 응답을 확인할 수 없습니다.");
+          if (!payload.ok) return false;
+          var sourceFile = (payload.files || []).find(function (file) {
+            return !file.report_id && String(file.title || "").indexOf("원천 파일") === 0;
+          });
+          if (!sourceFile) return false;
+          writeSourceFile({
+            name: sourceFile.title.replace(/^원천 파일 ·\s*/, "") || sourceFile.title || "서버 보관 원본 파일",
+            type: sourceFile.file_type || "file",
+            size: 0,
+            uploadedAt: sourceFile.created_at,
+            serverFileId: sourceFile.id,
+            fileUrl: sourceFile.signed_url || sourceFile.external_url || sourceFile.url || "",
+            serverOnly: true
+          });
+          renderSourceFile();
+          return true;
+        } catch (error) {
+          return false;
+        }
       }
 
       function handleSourceFileSelected(file) {
@@ -5426,7 +5529,7 @@
         }
         setStatus(statusNode, "원본 파일을 보관 중입니다.", "");
         var reader = new FileReader();
-        reader.onload = function () {
+        reader.onload = async function () {
           var fileRecord = {
             name: file.name,
             type: file.type || "application/octet-stream",
@@ -5434,6 +5537,15 @@
             uploadedAt: new Date().toISOString(),
             dataUrl: String(reader.result || "")
           };
+          try {
+            var uploadResult = await uploadSourceFileToServer(fileRecord);
+            if (uploadResult && uploadResult.ok && uploadResult.file) {
+              fileRecord.serverFileId = uploadResult.file.id;
+              fileRecord.fileUrl = uploadResult.file.signed_url || "";
+            }
+          } catch (error) {
+            fileRecord.serverUploadError = error.message || "server_upload_failed";
+          }
           if (!writeSourceFile(fileRecord)) {
             setStatus(statusNode, "브라우저 저장 공간이 부족합니다. 파일 크기를 줄이거나 서버 업로드 연결이 필요합니다.", "is-warn");
             return;
@@ -5441,7 +5553,13 @@
           var sheetInput = root.querySelector("[data-admin-sheet-url]");
           if (sheetInput) sheetInput.value = file.name;
           renderSourceFile();
-          setStatus(statusNode, "원본 파일 보관 완료: " + file.name + " · 다시 다운로드할 수 있습니다.", "is-ok");
+          if (fileRecord.serverFileId) {
+            setStatus(statusNode, "원본 파일 서버 보관 완료: " + file.name + " · 다시 다운로드할 수 있습니다.", "is-ok");
+          } else if (fileRecord.serverUploadError) {
+            setStatus(statusNode, "브라우저 보관 완료 · 서버 보관 실패: " + fileRecord.serverUploadError, "is-warn");
+          } else {
+            setStatus(statusNode, "브라우저 보관 완료: " + file.name + " · 운영팀 연결 후 서버 보관됩니다.", "is-warn");
+          }
         };
         reader.onerror = function () {
           setStatus(statusNode, "파일을 읽지 못했습니다. 다시 선택해주세요.", "is-warn");
@@ -5738,6 +5856,7 @@
               renderOperationTeamCodePanel(teamPayload);
               applyState(readState());
               renderSourceFile();
+              await refreshSourceFileFromServer();
               setStatus(loginStatus, "운영팀 콘솔이 열렸습니다.", "is-ok");
               setStatus(ownerStatus, currentOperationTeam && currentOperationTeam.client ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다." : "운영팀 코드로 로그인했습니다. 광고주 코드 1개를 생성할 수 있습니다.", currentOperationTeam && currentOperationTeam.client ? "is-warn" : "is-ok");
               window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));

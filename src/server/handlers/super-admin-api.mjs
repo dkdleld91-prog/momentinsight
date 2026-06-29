@@ -1,5 +1,9 @@
 import { withSupabase } from "@supabase/server";
-import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
+import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
+
+const ADMIN_RATE_WINDOW_MS = Number(process.env.MI_ADMIN_CODE_RATE_WINDOW_MS || 60_000);
+const ADMIN_RATE_LIMIT = Number(process.env.MI_ADMIN_CODE_RATE_LIMIT || 40);
+const adminRateBucket = new Map();
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -10,6 +14,37 @@ function json(request, body, status = 200) {
 
 function normalizeAgencyCode(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function clientRateKey(request) {
+  const forwarded = request.headers.get("x-forwarded-for") || "";
+  return forwarded.split(",")[0].trim() || request.headers.get("x-real-ip") || "anonymous";
+}
+
+function checkAdminRateLimit(request) {
+  if (isLocalRequest(request)) return { allowed: true };
+  const now = Date.now();
+  const key = clientRateKey(request);
+  const fresh = (adminRateBucket.get(key) || []).filter((time) => now - time < ADMIN_RATE_WINDOW_MS);
+
+  if (fresh.length >= ADMIN_RATE_LIMIT) {
+    adminRateBucket.set(key, fresh);
+    const retryAfter = Math.max(1, Math.ceil((ADMIN_RATE_WINDOW_MS - (now - fresh[0])) / 1000));
+    return { allowed: false, retryAfter };
+  }
+
+  fresh.push(now);
+  adminRateBucket.set(key, fresh);
+
+  if (adminRateBucket.size > 1000) {
+    for (const [bucketKey, times] of adminRateBucket.entries()) {
+      const activeTimes = times.filter((time) => now - time < ADMIN_RATE_WINDOW_MS);
+      if (activeTimes.length) adminRateBucket.set(bucketKey, activeTimes);
+      else adminRateBucket.delete(bucketKey);
+    }
+  }
+
+  return { allowed: true };
 }
 
 function primaryAgencyCode() {
@@ -200,6 +235,63 @@ async function selectClients(ctx) {
   return result;
 }
 
+async function safeCount(query) {
+  const { count, error } = await query;
+  if (error) return { count: null, error: error.message };
+  return { count: Number(count || 0), error: null };
+}
+
+async function loadOwnerHealth(ctx) {
+  const nowIso = new Date().toISOString();
+  const [
+    activeClients,
+    activeTeams,
+    dueTrackers,
+    failedTrackers,
+    sourceFiles,
+    publicReports,
+  ] = await Promise.all([
+    safeCount(ctx.supabaseAdmin
+      .from("clients")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")),
+    safeCount(ctx.supabaseAdmin
+      .from("operation_team_codes")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_agency_code", primaryAgencyCode())
+      .eq("status", "active")),
+    safeCount(ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .lte("next_check_at", nowIso)),
+    safeCount(ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .not("last_error", "is", null)),
+    safeCount(ctx.supabaseAdmin
+      .from("files")
+      .select("id", { count: "exact", head: true })
+      .is("report_id", null)
+      .like("title", "원천 파일%")),
+    safeCount(ctx.supabaseAdmin
+      .from("reports")
+      .select("id", { count: "exact", head: true })
+      .eq("visibility", "client_visible")),
+  ]);
+
+  return {
+    checkedAt: nowIso,
+    activeClients,
+    activeTeams,
+    dueTrackers,
+    failedTrackers,
+    sourceFiles,
+    publicReports,
+  };
+}
+
 async function listClients(request, ctx) {
   const clientsResult = await selectClients(ctx);
 
@@ -236,6 +328,7 @@ async function listClients(request, ctx) {
     ownerAgencyCode: primaryAgencyCode(),
     nextTeamCode: nextTeamCode(teamsResult.data || []),
     nextAgencyCode: nextAgencyCode(clientsResult.data || []),
+    health: await loadOwnerHealth(ctx),
     teams: (teamsResult.data || []).map((team) => ({
       ...team,
       clients: (clientsResult.data || []).find((client) => client.id === team.client_id) || null,
@@ -720,6 +813,16 @@ export default {
     const isTeamPath = url.pathname === "/api/team/agency-codes" || url.pathname === "/api/team-agency-codes";
     if (!isOwnerPath && !isTeamPath) {
       return json(request, { ok: false, message: "Not found" }, 404);
+    }
+
+    const rate = checkAdminRateLimit(request);
+    if (!rate.allowed) {
+      return json(request, {
+        ok: false,
+        code: "ADMIN_CODE_RATE_LIMITED",
+        message: "코드 관리 요청이 많습니다. 잠시 후 다시 시도해주세요.",
+        retryAfter: rate.retryAfter,
+      }, 429);
     }
 
     if (request.method === "GET") {

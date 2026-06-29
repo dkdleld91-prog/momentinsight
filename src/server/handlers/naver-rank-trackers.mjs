@@ -38,6 +38,8 @@ const TRACKER_SELECT = [
   "check_count",
   "found_count",
   "last_message",
+  "last_error",
+  "retry_count",
   "sort_order",
   "created_at",
   "updated_at",
@@ -320,6 +322,8 @@ function trackerPayload(row, snapshots = [], keywordVolume = null) {
     checkCount: row.check_count,
     foundCount: row.found_count,
     lastMessage: row.last_message,
+    lastError: row.last_error || null,
+    retryCount: Number(row.retry_count || 0),
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -511,7 +515,11 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
   return data;
 }
 
-async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message) {
+function compactErrorMessage(value) {
+  return normalizeText(value || "").slice(0, 500);
+}
+
+async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "") {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
   const nextCheckAt = nextRankCheckAt(new Date(checkedAt));
   const bestRank = matchedRank
@@ -520,6 +528,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message)
   const worstRank = matchedRank
     ? Math.max(Number(tracker.worst_rank || matchedRank), matchedRank)
     : tracker.worst_rank;
+  const lastError = compactErrorMessage(errorMessage);
 
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -533,6 +542,8 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message)
       check_count: Number(tracker.check_count || 0) + 1,
       found_count: Number(tracker.found_count || 0) + (matchedRank ? 1 : 0),
       last_message: message,
+      last_error: lastError || null,
+      retry_count: lastError ? Number(tracker.retry_count || 0) + 1 : 0,
       product_id: tracker.product_id || result?.item?.productId || null,
       mall_name: tracker.mall_name || result?.item?.mallName || null,
       product_title: tracker.product_title || result?.item?.title || null,
@@ -552,7 +563,7 @@ export async function runTrackerCheck(ctx, tracker) {
   if (!hasShoppingRankConfig(env)) {
     const message = "네이버 쇼핑 검색 API 환경변수가 연결되지 않았습니다.";
     const snapshot = await insertSnapshot(ctx, tracker, checkedAt, { matched: false }, message, "configuration");
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message);
+    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message, "shopping_api_not_configured");
     return { ok: false, tracker: updated, snapshot, message };
   }
 
@@ -572,7 +583,7 @@ export async function runTrackerCheck(ctx, tracker) {
   } catch (error) {
     const message = "네이버 상품 순위 갱신에 실패했습니다.";
     const snapshot = await insertSnapshot(ctx, tracker, checkedAt, { matched: false }, message, "naver_shopping_search_api");
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message);
+    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message, error?.message || "lookup_failed");
     return { ok: false, tracker: updated, snapshot, message, error: error?.message || "lookup_failed" };
   }
 }
@@ -849,6 +860,24 @@ async function clearDueTrackerClaim(ctx, trackerId) {
   return { ok: true };
 }
 
+async function recordDueTrackerFailure(ctx, tracker, message) {
+  const { error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      processing_started_at: null,
+      processing_until: null,
+      last_message: "자동 순위 갱신 실패",
+      last_error: compactErrorMessage(message || "rank_tracker_check_failed"),
+      retry_count: Number(tracker.retry_count || 0) + 1,
+    })
+    .eq("id", tracker.id);
+
+  if (error && !isMissingRankLeaseColumns(error)) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
+}
+
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
   const limit = Math.max(1, Math.min(50, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 20)));
@@ -885,7 +914,7 @@ export async function runDueTrackers(ctx, options = {}) {
     } catch (error) {
       if (claim.leaseSupported) {
         // eslint-disable-next-line no-await-in-loop
-        await clearDueTrackerClaim(ctx, tracker.id);
+        await recordDueTrackerFailure(ctx, tracker, error?.message || "rank_tracker_check_failed");
       }
       results.push({
         ok: false,

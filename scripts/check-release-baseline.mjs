@@ -139,7 +139,11 @@ const checks = {
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
+    && source.includes("네이버 상품 순위 <small>조회</small>")
+    && source.includes('<span class="mi-badge">조회</span>')
     && !source.includes(">순위 1회 조회<")
+    && !source.includes("<small>1회 조회</small>")
+    && !source.includes('<span class="mi-badge">1회 조회</span>')
     && !source.includes(">오가닉 추적 시작<")),
   rankTrackingActivePanelRemoved: [adminSource, clientSource].every((source) => !source.includes('<div class="mi-rank-panel" data-rank-result>')),
   rankTrackingProductTitleLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerProductUrl")

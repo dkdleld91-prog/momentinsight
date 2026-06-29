@@ -1601,48 +1601,48 @@
 
     #mi-admin .mi-rank-auto-center {
       display: grid;
-      grid-template-columns: minmax(260px, 1.2fr) repeat(3, minmax(0, 1fr));
+      grid-template-columns: minmax(220px, 0.9fr) minmax(0, 2.2fr);
       gap: 10px;
-      align-items: stretch;
+      align-items: center;
       margin-bottom: 10px;
       border: 1px solid #dbe4ef;
       border-radius: 8px;
-      padding: 12px;
-      background: linear-gradient(135deg, #fbfcfd 0%, #f6f9fc 100%);
+      padding: 10px 12px;
+      background: #fbfcfd;
     }
 
     #mi-admin .mi-rank-auto-head {
       display: grid;
-      gap: 7px;
+      gap: 5px;
       align-content: center;
     }
 
     #mi-admin .mi-rank-auto-head strong {
       color: var(--mi-navy);
-      font-size: 17px;
-      font-weight: 950;
+      font-size: 15px;
+      font-weight: 850;
       line-height: 1.25;
     }
 
     #mi-admin .mi-rank-auto-head small {
       color: var(--mi-muted);
-      font-size: 12px;
-      font-weight: 850;
+      font-size: 11px;
+      font-weight: 700;
       line-height: 1.45;
     }
 
     #mi-admin .mi-rank-auto-status {
       width: fit-content;
       display: inline-flex;
-      min-height: 28px;
+      min-height: 24px;
       align-items: center;
       border: 1px solid #cfe8d9;
       border-radius: 999px;
-      padding: 4px 10px;
+      padding: 3px 9px;
       color: var(--mi-green);
       background: var(--mi-green-bg);
-      font-size: 12px;
-      font-weight: 950;
+      font-size: 11px;
+      font-weight: 850;
     }
 
     #mi-admin .mi-rank-auto-status.is-warn {
@@ -1655,6 +1655,54 @@
       border-color: #fecaca;
       color: #b42318;
       background: #fff1f1;
+    }
+
+    #mi-admin .mi-rank-auto-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #mi-admin .mi-rank-auto-metric {
+      min-height: 56px;
+      border: 1px solid #e3eaf3;
+      border-radius: 7px;
+      padding: 8px 10px;
+      background: #ffffff;
+    }
+
+    #mi-admin .mi-rank-auto-metric span,
+    #mi-admin .mi-rank-auto-metric small {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-rank-auto-metric strong {
+      display: block;
+      margin-top: 4px;
+      color: var(--mi-navy);
+      font-size: 15px;
+      font-weight: 850;
+      line-height: 1.2;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-rank-auto-metric.is-ok {
+      border-color: #cfe8d9;
+      background: #f7fcf9;
+    }
+
+    #mi-admin .mi-rank-auto-metric.is-warn {
+      border-color: #fed7aa;
+      background: #fffaf2;
+    }
+
+    #mi-admin .mi-rank-auto-metric.is-error {
+      border-color: #fecaca;
+      background: #fff7f7;
     }
 
     #mi-admin .mi-rank-ops-card {
@@ -3558,6 +3606,10 @@
       }
 
       #mi-admin .mi-rank-auto-center {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-rank-auto-metrics {
         grid-template-columns: 1fr;
       }
 
@@ -7362,18 +7414,17 @@
         }, 0);
         var statusLabel = errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기"));
         var statusClass = errors ? " is-error" : (due ? " is-warn" : " is-ok");
+        var latestText = latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-";
+        var nextText = nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기";
+        var summaryText = active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인";
         return '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
-          '</span><strong>자동추적 상태</strong><small>매일 오전 9시와 오후 3시에 등록 상품의 오가닉 순위를 갱신합니다.</small></div>' +
-          '<div class="mi-rank-ops-card"><span>마지막 갱신</span><strong>' + escapeHtml(latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-") + '</strong><small>수동/자동 포함</small></div>' +
-          '<div class="mi-rank-ops-card' + (due ? " is-warn" : " is-ok") + '"><span>다음 자동 갱신</span><strong>' + escapeHtml(nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기") + '</strong><small>오전 9시 · 오후 3시 기준</small></div>' +
-          '<div class="mi-rank-ops-card' + (errors ? " is-error" : " is-ok") + '"><span>점검 항목</span><strong>' + escapeHtml(errors + "개") + '</strong><small>실패/미노출 메시지 기준</small></div>' +
-          '</div><div class="mi-rank-ops-summary">' +
-          '<div class="mi-rank-ops-card is-ok"><span>활성 추적</span><strong>' + escapeHtml(active + "개") + '</strong><small>운영 코드 기준</small></div>' +
-          '<div class="mi-rank-ops-card' + (due ? " is-warn" : " is-ok") + '"><span>갱신 대기</span><strong>' + escapeHtml(due + "개") + '</strong><small>오전 9시 · 오후 3시 기준</small></div>' +
-          '<div class="mi-rank-ops-card"><span>최근 갱신</span><strong>' + escapeHtml(latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-") + '</strong><small>수동/자동 포함</small></div>' +
-          '<div class="mi-rank-ops-card' + (errors ? " is-error" : "") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>실패 메시지 기준</small></div>' +
-          '</div>';
+          '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
+          '<div class="mi-rank-auto-metrics">' +
+          '<div class="mi-rank-auto-metric"><span>최근 갱신</span><strong>' + escapeHtml(latestText) + '</strong><small>수동/자동</small></div>' +
+          '<div class="mi-rank-auto-metric' + (due ? " is-warn" : " is-ok") + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>매일 09:00 · 15:00</small></div>' +
+          '<div class="mi-rank-auto-metric' + (errors ? " is-error" : " is-ok") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>운영 코드 기준</small></div>' +
+          '</div></div>';
       }
 
       function rankDateKey(date) {

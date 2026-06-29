@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 29. 17:35:44
-- 기준 커밋: b47a6e4
-- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M scripts/check-release-baseline.mjs
+- 마지막 자동 저장: 2026. 06. 29. 18:16:47
+- 기준 커밋: a66904e
+- 작업트리: M 02_아임웹_적용코드/복붙용_관리자형_CODE.txt /  M 02_아임웹_적용코드/복붙용_광고주형_CODE.txt /  M 02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html /  M 02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html /  M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 네이버 30일 순위 상태 요약 압축 | 자동추적 상태 영역의 중복 8칸 요약을 1줄 상태바와 3개 핵심 지표로 정리하고, 광고주/운영팀 원본 및 복붙용 파일을 동기화. 기존 baseline도 새 UI 구조 기준으로 갱신 | `check:baseline`, `build:vercel`, `git diff --check`, 로컬 정적 서버 화면 확인 | 배포 대기 |
 | 완료 | 순위추적 필터 및 제품 개발 지침 확장 | AGENTS.md에 광고주/운영팀/총관리자 권한, MVP 우선순위, UI/검증 원칙을 상세화. 광고주/운영팀 네이버 30일 순위 화면에 키워드·상품명·상품번호 검색, 전체/확인 필요/상승/하락 필터, 표시 개수 카운터를 추가하고 복붙용 파일까지 동기화. 릴리즈 기준선에 필터 UI/로직 누락 방지 체크 추가 | `check:server`, `check:rank-cron`, `check:rank-matching`, `check:baseline`, `build:vercel`, `git diff --check`, 로컬 HTTP 200, 브라우저 DOM/콘솔 확인 | 배포 진행 |
 | 완료 | 순위추적 주말 자동화 검수 및 실패 원인 노출 | 토요일 오후 이후 다음 순위 추적 시간이 일요일 오전 9시로 계산되는지 전용 검사를 추가하고, GitHub Actions 크론에서 `MI_RANK_CRON_SECRET`이 비어 있으면 즉시 명확한 오류로 중단하도록 보강. 실제 실패 원인은 GitHub Actions Secret 누락으로 확인했으며, Vercel Production Secret과 같은 값을 GitHub 저장소 Secret에 등록해야 자동 호출이 성공 | GitHub Actions 실패 로그 확인, `check:rank-cron`, `check:rank-matching`, `check:baseline`, `build:vercel`, `git diff --check`, YAML 문법 검사, 라이브 비인증 401 차단 확인 | 배포 대기 |
 | 완료 | 운영팀별 공개데이터 격리 | 관리자와 광고주 화면의 공개데이터 저장소를 운영팀/광고주 코드별로 분리하고, 운영팀 계정에서 총관리자 `mml93-a01` 기본값이나 다른 광고주 공개데이터가 보이지 않도록 수정. 원본 업로드 파일 보관도 코드별로 분리하고 광고주 화면의 코드 검증 전 데모 동기화를 제거 | `check:baseline`, `build:vercel`, `git diff --check`, HTML 스크립트 문법 검사, 로컬 브라우저 관리자/광고주 코드별 분리 마커 확인 | 배포 대기 |

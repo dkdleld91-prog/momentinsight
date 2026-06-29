@@ -161,6 +161,9 @@ const checks = {
     && rankServer.includes("keywordVolumeLabel")
     && rankServer.includes("fetchSearchAdKeywordVolume")
     && rankServer.includes("NAVER_SEARCHAD_API_KEY"),
+  rankTrackingKeywordVolumeWideColumn: [adminSource, clientSource].every((source) => source.includes("minmax(176px, 0.78fr)")
+    && source.includes("min-width: 1100px")
+    && source.includes("min-width: 176px;")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

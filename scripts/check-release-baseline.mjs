@@ -309,6 +309,16 @@ const checks = {
     && source.includes("tracker.lastCheckedAt")
     && source.includes("tracker.lastMessage")
     && !source.includes('return "D-"')),
+  rankTrackingFilterControls: [adminSource, clientSource].every((source) => source.includes("data-rank-filter-panel")
+    && source.includes("data-rank-filter-search")
+    && source.includes('data-rank-filter-status="attention"')
+    && source.includes('data-rank-filter-status="improved"')
+    && source.includes('data-rank-filter-status="dropped"')
+    && source.includes("rankTrackerMatchesFilter")
+    && source.includes("rankTrackerNeedsAttention")
+    && source.includes("rankTrackerTrend")
+    && source.includes("updateRankFilterPanel")
+    && source.includes("키워드, 상품명, 상품번호 검색")),
   adminDownloadMicroInteraction: adminSource.includes("#mi-admin .mi-download:hover")
     && adminSource.includes("#mi-admin .mi-download:active")
     && adminSource.includes("#mi-admin .mi-download:focus-visible")

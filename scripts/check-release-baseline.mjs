@@ -185,9 +185,13 @@ const checks = {
     && rankServer.includes("keywordVolumeLabel")
     && rankServer.includes("fetchSearchAdKeywordVolume")
     && rankServer.includes("NAVER_SEARCHAD_API_KEY"),
-  rankTrackingKeywordVolumeWideColumn: [adminSource, clientSource].every((source) => source.includes("minmax(176px, 0.78fr)")
-    && source.includes("min-width: 1100px")
-    && source.includes("min-width: 176px;")),
+  rankTrackingCompactActionColumn: [adminSource, clientSource].every((source) => source.includes("minmax(132px, 0.62fr)")
+    && source.includes("minmax(184px, auto)")
+    && source.includes("position: sticky")
+    && source.includes("min-width: max-content")
+    && source.includes("font-size: 10.5px")
+    && source.includes("min-width: 132px;")
+    && !source.includes("min-width: 1100px")),
   rankTrackingInsightLabels: [adminSource, clientSource].every((source) => source.includes("rankTrackerAverageRank")
     && source.includes("rankTrackerChangeLabel")
     && source.includes("rankTrackerInsight")

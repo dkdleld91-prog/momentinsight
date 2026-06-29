@@ -1772,8 +1772,8 @@
     #mi-admin .mi-rank-tracker-head,
     #mi-admin .mi-rank-track-row-head {
       display: grid;
-      gap: 12px;
-      padding: 10px 12px;
+      gap: 8px;
+      padding: 8px 10px;
       border-bottom: 1px solid #e8edf4;
       background: #fbfcfd;
       align-items: center;
@@ -1784,31 +1784,31 @@
     }
 
     #mi-admin .mi-rank-track-row-head {
-      grid-template-columns: 34px minmax(110px, 0.54fr) minmax(176px, 0.78fr) minmax(130px, 0.64fr) minmax(240px, 1.5fr) auto;
-      min-width: 1100px;
+      grid-template-columns: 30px minmax(86px, 0.45fr) minmax(132px, 0.62fr) minmax(104px, 0.54fr) minmax(170px, 1.15fr) minmax(184px, auto);
+      min-width: 0;
     }
 
     #mi-admin .mi-rank-ops-row {
       display: flex;
-      min-width: 1100px;
+      min-width: 0;
       flex-wrap: wrap;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       border-bottom: 1px solid #edf2f7;
-      padding: 8px 12px;
+      padding: 7px 10px;
       color: #5f6f86;
       background: #fff;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 850;
     }
 
     #mi-admin .mi-rank-ops-row span {
       display: inline-flex;
-      min-height: 26px;
+      min-height: 24px;
       align-items: center;
       border: 1px solid #e1e8f2;
       border-radius: 999px;
-      padding: 4px 9px;
+      padding: 3px 7px;
       background: #f8fafc;
       white-space: nowrap;
     }
@@ -1911,12 +1911,18 @@
 
     #mi-admin .mi-rank-row-actions {
       flex-wrap: nowrap;
+      position: sticky;
+      right: 0;
+      z-index: 2;
+      min-width: max-content;
+      padding-left: 8px;
+      background: linear-gradient(90deg, rgba(251, 252, 253, 0), #fbfcfd 18%);
     }
 
     #mi-admin .mi-rank-drag-handle {
       display: inline-flex;
-      width: 30px;
-      height: 30px;
+      width: 28px;
+      height: 28px;
       align-items: center;
       justify-content: center;
       border: 1px solid #d9e2ee;
@@ -1959,7 +1965,7 @@
     #mi-admin .mi-rank-keyword-name {
       display: block;
       color: var(--mi-navy);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 950;
     }
 
@@ -1975,9 +1981,9 @@
     }
 
     #mi-admin .mi-rank-keyword-volume {
-      min-width: 176px;
+      min-width: 132px;
       color: #4f5f78;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
     }
 
@@ -1987,14 +1993,14 @@
 
     #mi-admin .mi-rank-product-info {
       color: var(--mi-navy);
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
     }
 
     #mi-admin .mi-rank-product-title {
       display: block;
       color: #1e63d7;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 850;
       text-align: right;
     }
@@ -2010,10 +2016,10 @@
     }
 
     #mi-admin .mi-rank-row-actions .mi-link-button {
-      min-height: 28px;
-      padding: 0 9px;
+      min-height: 26px;
+      padding: 0 8px;
       border-radius: 7px;
-      font-size: 11px;
+      font-size: 10.5px;
       cursor: pointer;
       transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
       will-change: transform;
@@ -2071,14 +2077,14 @@
 
     #mi-admin .mi-rank-pill {
       display: inline-flex;
-      min-height: 28px;
+      min-height: 26px;
       align-items: center;
       border: 1px solid #d9e2ee;
       border-radius: 999px;
-      padding: 5px 10px;
+      padding: 4px 8px;
       color: var(--mi-navy);
       background: #fff;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 900;
       white-space: nowrap;
     }

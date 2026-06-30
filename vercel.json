@@ -7,7 +7,7 @@
   "crons": [
     {
       "path": "/api/naver-rank-cron",
-      "schedule": "0 0,6 * * *"
+      "schedule": "0 0 * * *"
     }
   ],
   "headers": [

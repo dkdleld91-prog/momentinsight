@@ -7916,6 +7916,8 @@
         var rankHistory = card.querySelector("[data-rank-history]");
         if (!rankKeyword || !rankRun) return;
         var rankTrackers = [];
+        var rankAutoSyncingDue = false;
+        var rankAutoSyncLastAt = 0;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
 
@@ -7953,6 +7955,46 @@
           return payload;
         }
 
+        function dueRankTrackers(trackers) {
+          var now = Date.now();
+          return (trackers || []).filter(function (tracker) {
+            if (!tracker || tracker.status === "paused" || tracker.status === "completed") return false;
+            var next = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
+            return !next || next <= now;
+          });
+        }
+
+        async function syncDueRankTrackersIfNeeded(silent) {
+          var due = dueRankTrackers(rankTrackers);
+          var now = Date.now();
+          if (!due.length || rankAutoSyncingDue || now - rankAutoSyncLastAt < 60000) return;
+          rankAutoSyncingDue = true;
+          rankAutoSyncLastAt = now;
+          if (!silent) setStatus(rankStatus, "밀린 자동 순위 갱신을 확인 중입니다.", "");
+          try {
+            var payload = await requestRankTrackers("POST", {
+              action: "sync-due",
+              limit: "50"
+            });
+            var checked = Number(payload && payload.summary && payload.summary.checked || 0);
+            if (checked > 0) {
+              var refreshed = await requestRankTrackers("GET");
+              rankTrackers = refreshed.trackers || [];
+              renderRankResult(rankResult, { ok: refreshed.ok, trackers: rankTrackers, message: refreshed.message });
+              renderRankHistory(rankHistory, rankTrackers);
+              if (!silent) {
+                setStatus(rankStatus, payload.message || "밀린 자동 순위 갱신을 처리했습니다.", payload.ok ? "is-ok" : "is-warn");
+              }
+            } else if (!silent) {
+              setStatus(rankStatus, payload.message || "갱신 대기 항목이 없습니다.", payload.ok ? "is-ok" : "is-warn");
+            }
+          } catch (error) {
+            if (!silent) setStatus(rankStatus, "자동 갱신 보정 연결을 확인해주세요.", "is-warn");
+          } finally {
+            rankAutoSyncingDue = false;
+          }
+        }
+
         async function loadRankTrackers(silent) {
           try {
             var payload = await requestRankTrackers("GET");
@@ -7962,6 +8004,7 @@
             if (!silent) {
               setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
+            await syncDueRankTrackersIfNeeded(silent);
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
             renderRankHistory(rankHistory, []);

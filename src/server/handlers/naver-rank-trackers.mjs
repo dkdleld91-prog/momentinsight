@@ -821,6 +821,21 @@ async function reorderTrackers(request, ctx, body) {
   return json(request, { ok: true, message: "추적 항목 순서를 저장했습니다." });
 }
 
+async function syncDueTrackers(request, ctx, body, access) {
+  const summary = await runDueTrackers(ctx, {
+    agencyCode: access.agencyCode,
+    limit: body.limit || process.env.MI_RANK_CRON_BATCH || 50,
+  });
+  const ok = summary.failed === 0;
+  return json(request, {
+    ok,
+    message: ok
+      ? (summary.checked ? "밀린 자동 순위 갱신을 처리했습니다." : "갱신 대기 항목이 없습니다.")
+      : "일부 순위 추적 항목의 자동 갱신이 실패했습니다.",
+    summary,
+  }, ok ? 200 : 502);
+}
+
 async function claimDueTracker(ctx, tracker, nowIso) {
   const leaseUntil = new Date(Date.parse(nowIso) + RANK_TRACKER_LEASE_MS).toISOString();
   const { data, error } = await ctx.supabaseAdmin
@@ -957,6 +972,7 @@ async function handlePost(request, ctx) {
 
   if (action === "create") return createTracker(request, ctx, body, access);
   if (action === "check") return checkOne(request, ctx, body);
+  if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);
   if (action === "move") return moveTracker(request, ctx, body);

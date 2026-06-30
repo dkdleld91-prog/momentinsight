@@ -305,6 +305,12 @@ const checks = {
   rankCronReportsPartialFailures: rankCronServer.includes("summary.checked > 0 && summary.failed > 0")
     && rankCronServer.includes("일부 네이버 상품 순위 자동 갱신이 실패했습니다.")
     && rankCronServer.includes("}, 502)"),
+  rankTrackerDueSelfHeal: rankServer.includes("syncDueTrackers")
+    && rankServer.includes('action === "sync-due"')
+    && [adminSource, clientSource].every((source) => source.includes("syncDueRankTrackersIfNeeded")
+      && source.includes('action: "sync-due"')
+      && source.includes("밀린 자동 순위 갱신을 확인 중입니다.")
+      && source.includes("dueRankTrackers")),
   vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")

@@ -5075,8 +5075,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">Meta 광고 라이브러리</span>
-                <h2>소재 흐름과 메시지 포인트를 조사합니다.</h2>
-                <p>API 제한이 있는 영역은 우회하지 않고 공식 라이브러리 링크와 내부 조사 DB로 안정적으로 운영합니다.</p>
+                <h2>Meta 광고를 조회하고 필요한 소재만 저장합니다.</h2>
+                <p>공식 API에서 확인 가능한 광고는 카드로 보여주고, 원본 상세 화면은 Meta 라이브러리로 연결합니다.</p>
               </div>
               <span class="mi-badge">KR 기준</span>
             </div>
@@ -5093,9 +5093,9 @@
                 <option value="VIDEO">영상</option>
                 <option value="IMAGE">이미지</option>
               </select>
-              <button class="mi-button" type="button" data-meta-run>검색 링크 만들기</button>
+              <button class="mi-button" type="button" data-meta-run>광고 조회</button>
             </div>
-            <p class="mi-code-status" data-meta-status aria-live="polite">검색어를 입력하면 Meta 공식 광고 라이브러리 링크를 만들고 조사 기록을 남길 수 있습니다.</p>
+            <p class="mi-code-status" data-meta-status aria-live="polite">검색어를 입력하면 Meta 공식 광고 라이브러리에서 확인 가능한 광고를 조회합니다.</p>
 
             <div class="mi-meta-brief">
               <div><span>검색 기준</span><strong data-meta-summary-query>검색 전</strong></div>
@@ -8155,6 +8155,7 @@
 
       var metaResearchItemsCache = [];
       var metaResearchServerReady = false;
+      var metaLiveAdsCache = [];
 
       function metaResearchStorageKey() {
         var code = "local";
@@ -8285,14 +8286,71 @@
         return { ok: true, server: true };
       }
 
-      function renderMetaAdsResults(node, payload) {
-        if (!node) return;
-        var items = loadMetaResearchItems();
-        if (!items.length) {
-          node.innerHTML = '<div class="mi-meta-empty">공식 라이브러리에서 확인한 광고를 저장하면 이곳에 조사 리스트가 쌓입니다.</div>';
-          return;
-        }
-        node.innerHTML = items.map(function (item) {
+      function formatMetaAdDate(value) {
+        if (!value) return "-";
+        var date = new Date(value);
+        if (!Number.isFinite(date.getTime())) return String(value).slice(0, 10);
+        return String(date.getFullYear()) + ". " + String(date.getMonth() + 1) + ". " + String(date.getDate()) + ".";
+      }
+
+      function normalizeMetaAdItem(item) {
+        item = item || {};
+        return {
+          id: String(item.id || item.libraryId || ""),
+          libraryId: String(item.libraryId || item.id || ""),
+          pageName: item.pageName || "",
+          pageId: item.pageId || "",
+          snapshotUrl: item.snapshotUrl || "",
+          body: item.body || "",
+          title: item.title || "",
+          description: item.description || "",
+          deliveryStartTime: item.deliveryStartTime || "",
+          deliveryStopTime: item.deliveryStopTime || "",
+          publisherPlatforms: Array.isArray(item.publisherPlatforms) ? item.publisherPlatforms : []
+        };
+      }
+
+      async function fetchMetaAds(query, platform, mediaType) {
+        var params = new URLSearchParams({
+          query: query,
+          country: "KR",
+          status: "ACTIVE",
+          mediaType: mediaType || "ALL",
+          limit: "12"
+        });
+        if (platform) params.set("platform", platform);
+        var response = await miFetch(getMetaAdsApiUrl() + "?" + params.toString(), {
+          method: "GET",
+          headers: { "x-mi-agency-code": rankAgencyCode() }
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) return { ok: false, message: "Meta 광고 조회 응답을 확인할 수 없습니다." };
+        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 광고 조회에 실패했습니다.", code: payload.code || "", ads: [] };
+        metaLiveAdsCache = (payload.ads || []).map(normalizeMetaAdItem);
+        return { ok: true, ads: metaLiveAdsCache, count: payload.count || metaLiveAdsCache.length, source: payload.source };
+      }
+
+      function renderMetaAdCard(ad, index, query) {
+        var body = ad.body || ad.description || "광고 문구는 Meta 상세 화면에서 확인할 수 있습니다.";
+        var title = ad.title || ad.pageName || "Meta 광고";
+        var platforms = ad.publisherPlatforms.length
+          ? ad.publisherPlatforms.map(function (platform) { return "<span>" + escapeHtml(platform) + "</span>"; }).join("")
+          : "<span>Meta</span>";
+        var detailLink = ad.snapshotUrl
+          ? '<a class="mi-link-button" href="' + escapeHtml(ad.snapshotUrl) + '" target="_blank" rel="noopener noreferrer">광고 상세 보기</a>'
+          : "";
+        return '<article class="mi-meta-ad" data-meta-live-index="' + String(index) + '"><div class="mi-meta-ad-top"><span class="mi-badge ok">활성</span><span>라이브러리 ID: ' +
+          escapeHtml(ad.libraryId || "-") + '</span></div><div class="mi-meta-ad-page"><strong>' +
+          escapeHtml(ad.pageName || "페이지명 확인 필요") + '</strong><span>' + escapeHtml(formatMetaAdDate(ad.deliveryStartTime)) +
+          ' 게재 시작 · 광고</span></div><p class="mi-meta-ad-copy">' + escapeHtml(body) +
+          '</p><div class="mi-meta-ad-preview">소재 미리보기는 Meta 원본에서 확인</div><div class="mi-meta-platforms">' +
+          platforms + '</div><div class="mi-meta-saved-actions">' + detailLink +
+          '<button class="mi-link-button" type="button" data-meta-prefill="' + String(index) + '">조사로 저장</button></div></article>';
+      }
+
+      function renderMetaSavedResearchCards(items) {
+        if (!items.length) return "";
+        return '<div class="mi-meta-empty">저장한 내부 조사 기록</div>' + items.map(function (item) {
           var link = item.url
             ? '<a class="mi-link-button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener noreferrer">광고 보기</a>'
             : '';
@@ -8304,6 +8362,26 @@
             '</p><div class="mi-meta-saved-actions">' + link + '<button class="mi-link-button mi-meta-delete" type="button" data-meta-delete="' +
             escapeHtml(item.id) + '">삭제</button></div></article>';
         }).join("");
+      }
+
+      function renderMetaAdsResults(node, payload) {
+        if (!node) return;
+        var items = loadMetaResearchItems();
+        var ads = payload && Array.isArray(payload.ads) ? payload.ads.map(normalizeMetaAdItem) : metaLiveAdsCache;
+        var blocks = [];
+        if (ads.length) {
+          blocks.push('<div class="mi-meta-empty">Meta 공식 API 조회 결과</div>');
+          blocks.push(ads.map(function (ad, index) {
+            return renderMetaAdCard(ad, index, payload && payload.query || "");
+          }).join(""));
+        }
+        var saved = renderMetaSavedResearchCards(items);
+        if (saved) blocks.push(saved);
+        if (!blocks.length) {
+          node.innerHTML = '<div class="mi-meta-empty">검색어를 입력해 광고를 조회하거나, 공식 라이브러리에서 확인한 광고를 저장하면 이곳에 표시됩니다.</div>';
+          return;
+        }
+        node.innerHTML = blocks.join("");
       }
 
       function initMetaAdsTool() {
@@ -8345,7 +8423,7 @@
           refreshSummary((queryInput.value || "").trim());
         });
 
-        runButton.addEventListener("click", function () {
+        runButton.addEventListener("click", async function () {
           var query = (queryInput.value || "").trim();
           if (!query) {
             setStatus(status, "브랜드명, 제품명, 경쟁사명을 입력해주세요.", "is-warn");
@@ -8355,12 +8433,34 @@
           var mediaType = mediaInput ? mediaInput.value : "ALL";
           var url = metaAdsLibraryUrl(query, platform, mediaType);
           if (summaryQuery) summaryQuery.textContent = query;
-          if (summaryState) summaryState.textContent = "공식 확인 중";
+          if (summaryState) summaryState.textContent = "조회 중";
           if (savePanel) savePanel.hidden = false;
           if (libraryLink) libraryLink.href = url;
           if (adUrlInput && !adUrlInput.value) adUrlInput.value = url;
-          setStatus(status, "공식 Meta 광고 라이브러리 링크를 만들었습니다. 확인한 광고 URL과 메모를 저장해주세요.", "is-ok");
-          refreshSummary(query);
+          runButton.disabled = true;
+          setStatus(status, "Meta 공식 광고 라이브러리에서 광고를 조회하고 있습니다.", "is-warn");
+          try {
+            var result = await fetchMetaAds(query, platform, mediaType);
+            if (result.ok) {
+              renderMetaAdsResults(results, { ads: result.ads, query: query });
+              if (summaryState) summaryState.textContent = "조회 완료";
+              setStatus(status, result.ads.length
+                ? "Meta 공식 API에서 광고 " + formatNumber(result.ads.length) + "개를 조회했습니다."
+                : "조회 결과가 없습니다. 공식 페이지에서 더 넓은 조건으로 확인할 수 있습니다.", result.ads.length ? "is-ok" : "is-warn");
+            } else {
+              metaLiveAdsCache = [];
+              renderMetaAdsResults(results, { ads: [], query: query });
+              if (summaryState) summaryState.textContent = "공식 링크";
+              setStatus(status, result.message || "Meta API 조회가 되지 않아 공식 페이지 링크로 확인해주세요.", "is-warn");
+            }
+          } catch (error) {
+            metaLiveAdsCache = [];
+            renderMetaAdsResults(results, { ads: [], query: query });
+            if (summaryState) summaryState.textContent = "공식 링크";
+            setStatus(status, "Meta API 조회 중 오류가 발생했습니다. 공식 페이지 링크로 확인해주세요.", "is-warn");
+          } finally {
+            runButton.disabled = false;
+          }
         });
 
         if (saveButton) {
@@ -8425,6 +8525,21 @@
 
         if (results) {
           results.addEventListener("click", async function (event) {
+            var prefill = event.target && event.target.closest ? event.target.closest("[data-meta-prefill]") : null;
+            if (prefill) {
+              var index = Number(prefill.getAttribute("data-meta-prefill"));
+              var ad = metaLiveAdsCache[index];
+              if (!ad) return;
+              if (savePanel) savePanel.hidden = false;
+              if (pageNameInput) pageNameInput.value = ad.pageName || "";
+              if (adUrlInput) adUrlInput.value = ad.snapshotUrl || metaAdsLibraryUrl((queryInput.value || "").trim(), platformInput ? platformInput.value : "", mediaInput ? mediaInput.value : "ALL");
+              if (hookInput) hookInput.value = ad.body || ad.title || "";
+              if (noteInput) noteInput.value = (ad.title || "") + (ad.description ? " · " + ad.description : "");
+              if (libraryLink) libraryLink.href = ad.snapshotUrl || metaAdsLibraryUrl((queryInput.value || "").trim(), platformInput ? platformInput.value : "", mediaInput ? mediaInput.value : "ALL");
+              setStatus(status, "선택한 Meta 광고 정보를 조사 저장 폼에 채웠습니다.", "is-ok");
+              return;
+            }
+
             var button = event.target && event.target.closest ? event.target.closest("[data-meta-delete]") : null;
             if (!button) return;
             var id = button.getAttribute("data-meta-delete");

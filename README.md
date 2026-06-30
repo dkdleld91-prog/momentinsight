@@ -111,7 +111,7 @@ npm run work:autosave
 - 개발 완료 후에는 작업명세서에 완료 체크를 남기고 로컬 커밋합니다.
 - `git push`, Vercel 배포, Supabase 배포는 운영상 필요하거나 별도 지시가 있을 때만 실행합니다.
 - 자동 순위추적은 Vercel의 `MI_RANK_CRON_SECRET`과 GitHub Actions repository secret `MI_RANK_CRON_SECRET`이 같은 값이어야 정상 동작합니다.
-- Meta 광고 조사는 공식 Meta 광고 라이브러리 검색 페이지로 연결하고, 확인한 소재 URL과 메모를 `meta_ad_research_items` 서버 DB에 저장합니다. DB 테이블이 아직 반영되지 않았거나 일시 장애가 있으면 화면은 브라우저 임시 저장으로 fallback됩니다. `META_AD_LIBRARY_ACCESS_TOKEN` 기반 API 조회는 Meta 정책 범위에서만 선택적으로 사용합니다.
+- Meta 광고 조사는 `META_AD_LIBRARY_ACCESS_TOKEN` 기반 공식 API로 조회 가능한 광고를 카드로 보여주고, 원본 상세는 Meta 광고 라이브러리로 연결합니다. 필요한 소재 URL과 메모는 `meta_ad_research_items` 서버 DB에 저장하며, DB/API 일시 장애 시 화면은 브라우저 임시 저장으로 fallback됩니다.
 
 ## 다음 개발 단계
 

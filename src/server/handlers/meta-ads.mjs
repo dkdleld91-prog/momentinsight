@@ -133,22 +133,22 @@ function metaErrorResponse(payload) {
     return {
       code: "META_AD_LIBRARY_PERMISSION_DENIED",
       message: "Meta 토큰 권한이 부족합니다. 앱 토큰이 아닌 사용자 액세스 토큰으로 발급하고 ads_read 권한을 포함해야 합니다.",
-      detail,
+      detail: process.env.NODE_ENV === "development" ? detail : undefined,
     };
   }
 
   if (/active access token|invalid|expired/i.test(detail)) {
     return {
-      code: "META_AD_LIBRARY_TOKEN_INVALID",
-      message: "Meta 액세스 토큰이 유효하지 않거나 만료되었습니다. Graph API Explorer에서 사용자 토큰을 다시 발급해주세요.",
-      detail,
+      code: "META_AD_LIBRARY_AUTH_INVALID",
+      message: "Meta 액세스 권한이 유효하지 않거나 만료되었습니다. Graph API Explorer에서 사용자 토큰을 다시 발급해주세요.",
+      detail: process.env.NODE_ENV === "development" ? detail : undefined,
     };
   }
 
   return {
     code: "META_AD_LIBRARY_LOOKUP_FAILED",
     message: "Meta 광고 라이브러리 조회에 실패했습니다.",
-    detail,
+    detail: process.env.NODE_ENV === "development" ? detail : undefined,
   };
 }
 

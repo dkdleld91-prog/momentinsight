@@ -31,7 +31,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          headers: "authorization, x-client-info, apikey, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code"
+          headers: "authorization, x-client-info, apikey, content-type, x-retry-count, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code"
         })
       });
     }

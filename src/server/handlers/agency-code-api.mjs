@@ -4,7 +4,7 @@ import { corsHeaders, protectedJson } from "../security.mjs";
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "POST, OPTIONS",
-    headers: "content-type",
+    headers: "content-type, x-retry-count",
   });
 }
 
@@ -74,7 +74,7 @@ export default {
         status: 204,
         headers: corsHeaders(request, {
           methods: "POST, OPTIONS",
-          headers: "content-type",
+          headers: "content-type, x-retry-count",
         }),
       });
     }

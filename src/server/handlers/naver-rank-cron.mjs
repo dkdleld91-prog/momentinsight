@@ -2,6 +2,8 @@ import { withSupabase } from "@supabase/server";
 import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
 import { runDueTrackers } from "./naver-rank-trackers.mjs";
 
+const DEFAULT_CRON_BATCH = 50;
+
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "GET, POST, OPTIONS",
@@ -35,7 +37,7 @@ export default {
       const url = new URL(request.url);
       const summary = await runDueTrackers(ctx, {
         agencyCode: url.searchParams.get("agencyCode") || "",
-        limit: url.searchParams.get("limit") || process.env.MI_RANK_CRON_BATCH,
+        limit: url.searchParams.get("limit") || process.env.MI_RANK_CRON_BATCH || DEFAULT_CRON_BATCH,
       });
       if (summary.checked > 0 && summary.failed > 0) {
         return json(request, {

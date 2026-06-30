@@ -311,7 +311,9 @@ const checks = {
       && source.includes('action: "sync-due"')
       && source.includes("밀린 자동 순위 갱신을 확인 중입니다.")
       && source.includes("dueRankTrackers")),
-  vercelHobbyCronSafe: !(vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"),
+  vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
+    && cron.schedule === "0 0,6 * * *")
+    && rankCronServer.includes("DEFAULT_CRON_BATCH = 50"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")

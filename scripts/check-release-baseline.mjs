@@ -283,10 +283,12 @@ const checks = {
     && accessAuditMigration.includes("c.disconnected_at is null")
     && accessAuditMigration.includes("idx_audit_logs_action_created"),
   rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
-    && rankCronWorkflow.includes("Every day at 09:00 KST and 15:00 KST")
+    && rankCronWorkflow.includes('cron: "17,37 0,6 * * *"')
+    && rankCronWorkflow.includes("Primary run at 09:00/15:00 KST, with backup calls in the same window")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
+    && rankCronWorkflow.includes("Naver rank cron summary")
     && rankCronWorkflow.includes("Naver rank cron accepted"),
   rankCronHasConcurrencyGuard: rankCronWorkflow.includes("concurrency:")
     && rankCronWorkflow.includes("group: naver-rank-tracking")

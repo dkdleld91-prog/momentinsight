@@ -2,8 +2,9 @@ name: Naver Rank Tracking
 
 on:
   schedule:
-    # Every day at 09:00 KST and 15:00 KST.
+    # Primary run at 09:00/15:00 KST, with backup calls in the same window.
     - cron: "0 0,6 * * *"
+    - cron: "17,37 0,6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -38,10 +39,29 @@ jobs:
               "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=50"
           )"
 
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          let payload = {};
+          try {
+            payload = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
+          } catch {
+            payload = { ok: false, message: "invalid_json_response" };
+          }
+          const summary = payload.summary || {};
+          const safe = {
+            ok: Boolean(payload.ok),
+            message: payload.message || "",
+            checked: Number(summary.checked || 0),
+            succeeded: Number(summary.succeeded || 0),
+            failed: Number(summary.failed || 0),
+            now: summary.now || "",
+          };
+          console.log("Naver rank cron summary " + JSON.stringify(safe));
+          NODE
+
           if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
             echo "::error::Naver rank cron failed with HTTP ${status_code}."
-            head -c 500 "$response_file"
-            echo
             exit 1
           fi
 

@@ -2012,6 +2012,36 @@
       -webkit-line-clamp: 3;
     }
 
+    #mi-clean .mi-meta-ad-creative {
+      display: grid;
+      gap: 4px;
+      min-height: 42px;
+      border-top: 1px solid #eef3f8;
+      padding-top: 10px;
+    }
+
+    #mi-clean .mi-meta-ad-title,
+    #mi-clean .mi-meta-ad-description,
+    #mi-clean .mi-meta-ad-caption {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-meta-ad-title {
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-meta-ad-description,
+    #mi-clean .mi-meta-ad-caption {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
     #mi-clean .mi-meta-ad-preview {
       display: grid;
       min-height: 96px;
@@ -2046,19 +2076,6 @@
       font-size: 13px;
       font-weight: 800;
       line-height: 1.55;
-    }
-
-    #mi-clean .mi-meta-research-panel {
-      display: grid;
-      gap: 14px;
-      border: 1px solid #dbe5f0;
-      border-radius: 8px;
-      padding: 16px;
-      background: linear-gradient(180deg, #ffffff, #f8fbff);
-    }
-
-    #mi-clean .mi-meta-research-panel[hidden] {
-      display: none;
     }
 
     #mi-clean .mi-meta-save-form {
@@ -3607,7 +3624,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>메타 광고 소재를 조사합니다.</h1>
-              <p>공식 광고 라이브러리에서 확인하고, 중요한 소재만 내부 조사 리스트로 남깁니다.</p>
+              <p>공식 광고 라이브러리 기준으로 어떤 광고가 집행 중인지 빠르게 확인합니다.</p>
             </div>
             <span class="mi-badge">공식 연결</span>
           </header>
@@ -3616,8 +3633,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">Meta 광고 라이브러리</span>
-                <h2>Meta 광고를 조회하고 필요한 소재만 저장합니다.</h2>
-                <p>공식 API에서 확인 가능한 광고는 카드로 보여주고, 원본 상세 화면은 Meta 라이브러리로 연결합니다.</p>
+                <h2>Meta 광고를 조회하고 소재 흐름을 확인합니다.</h2>
+                <p>페이지명, 광고 문구, 게재일, 플랫폼, 원본 상세 링크를 카드로 정리합니다.</p>
               </div>
               <span class="mi-period">KR 기준</span>
             </div>
@@ -3640,37 +3657,12 @@
 
             <div class="mi-meta-brief">
               <div><span>검색 기준</span><strong data-meta-summary-query>검색 전</strong></div>
-              <div><span>저장한 조사</span><strong data-meta-summary-count>0개</strong></div>
+              <div><span>조회 결과</span><strong data-meta-summary-count>0개</strong></div>
               <div><span>상태</span><strong data-meta-summary-state>대기</strong></div>
             </div>
 
-            <div class="mi-meta-research-panel" data-meta-save-panel hidden>
-              <div class="mi-card-head">
-                <div>
-                  <span class="mi-kicker">내부 조사 기록</span>
-                  <h3>공식 라이브러리에서 확인한 광고를 저장합니다.</h3>
-                  <p>광고 상세 URL, 후킹 문구, 소재 유형, 적용 아이디어를 남기면 광고주별 벤치마킹 DB로 쌓입니다.</p>
-                </div>
-                <a class="mi-link-button" href="#" target="_blank" rel="noopener noreferrer" data-meta-library-link>공식 페이지 다시 열기</a>
-              </div>
-              <div class="mi-meta-save-form">
-                <input class="mi-input" data-meta-page-name aria-label="광고 페이지명" placeholder="광고 페이지명 또는 브랜드명" />
-                <input class="mi-input" data-meta-ad-url aria-label="광고 상세 URL" placeholder="광고 상세 URL 붙여넣기" />
-                <select class="mi-input" data-meta-angle aria-label="소재 유형">
-                  <option value="후킹 카피">후킹 카피</option>
-                  <option value="영상 소재">영상 소재</option>
-                  <option value="이미지 소재">이미지 소재</option>
-                  <option value="랜딩/CTA">랜딩/CTA</option>
-                  <option value="프로모션">프로모션</option>
-                </select>
-                <input class="mi-input" data-meta-hook aria-label="후킹 문구" placeholder="눈에 띈 후킹 문구" />
-                <textarea class="mi-input" data-meta-note aria-label="조사 메모" rows="3" placeholder="광고주에게 적용할 포인트, 참고할 메시지, 주의할 점"></textarea>
-                <button class="mi-button" type="button" data-meta-save>조사 저장</button>
-              </div>
-            </div>
-
             <div class="mi-meta-results" data-meta-results>
-              <div class="mi-meta-empty">공식 라이브러리에서 확인한 광고를 저장하면 이곳에 조사 리스트가 쌓입니다.</div>
+              <div class="mi-meta-empty">검색어를 입력하면 Meta 광고 조회 결과가 이곳에 표시됩니다.</div>
             </div>
           </article>
         </section>
@@ -4932,13 +4924,6 @@
         return "http://127.0.0.1:8790/api/meta-ads";
       }
 
-      function getMetaResearchApiUrl() {
-        if (window.MI_META_RESEARCH_API_URL) return window.MI_META_RESEARCH_API_URL;
-        var host = window.location && window.location.hostname;
-        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/meta-research";
-        return "http://127.0.0.1:8790/api/meta-research";
-      }
-
       function getAgencyCodeValidateApiUrl() {
         if (window.MI_AGENCY_CODE_VALIDATE_API_URL) return window.MI_AGENCY_CODE_VALIDATE_API_URL;
         var host = window.location && window.location.hostname;
@@ -5497,139 +5482,7 @@
         if (platform) params.set("publisher_platforms[0]", platform.toLowerCase());
         return "https://www.facebook.com/ads/library/?" + params.toString();
       }
-
-      var metaResearchItemsCache = [];
-      var metaResearchServerReady = false;
       var metaLiveAdsCache = [];
-
-      function metaResearchStorageKey() {
-        var code = "local";
-        try {
-          code = rankAgencyCode ? rankAgencyCode() : "local";
-        } catch (error) {
-          code = "local";
-        }
-        return "mi_meta_research_v1_" + String(code || "local").toLowerCase();
-      }
-
-      function normalizeMetaResearchItem(item) {
-        item = item || {};
-        var createdAt = item.created_at || item.createdAt || item.savedAt || "";
-        return {
-          id: String(item.id || item.localId || "meta-" + Date.now()),
-          query: item.query || item.searchTerm || "",
-          pageName: item.page_name || item.pageName || "",
-          url: item.ad_url || item.url || "",
-          sourceUrl: item.source_url || item.sourceUrl || "",
-          angle: item.angle_type || item.angle || "후킹 카피",
-          hook: item.hook_text || item.hook || "",
-          note: item.note || "",
-          platform: item.platform && item.platform !== "ALL" ? item.platform : "전체 플랫폼",
-          mediaType: item.media_type || item.mediaType || "ALL",
-          savedAt: createdAt ? formatMetaResearchSavedAt(createdAt) : "-"
-        };
-      }
-
-      function formatMetaResearchSavedAt(value) {
-        if (!value) return "-";
-        try {
-          var date = value instanceof Date ? value : new Date(value);
-          if (Number.isNaN(date.getTime())) return String(value || "-");
-          return date.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-        } catch (error) {
-          return String(value || "-");
-        }
-      }
-
-      function readMetaResearchFallbackItems() {
-        try {
-          var raw = localStorage.getItem(metaResearchStorageKey());
-          var parsed = raw ? JSON.parse(raw) : [];
-          return Array.isArray(parsed) ? parsed.map(normalizeMetaResearchItem) : [];
-        } catch (error) {
-          return [];
-        }
-      }
-
-      function loadMetaResearchItems() {
-        return metaResearchItemsCache.length ? metaResearchItemsCache : readMetaResearchFallbackItems();
-      }
-
-      function saveMetaResearchItems(items) {
-        metaResearchItemsCache = (items || []).map(normalizeMetaResearchItem).slice(0, 80);
-        try {
-          localStorage.setItem(metaResearchStorageKey(), JSON.stringify(metaResearchItemsCache));
-          return true;
-        } catch (error) {
-          return false;
-        }
-      }
-
-      function metaResearchHeaders() {
-        var code = "";
-        try {
-          code = rankAgencyCode ? rankAgencyCode() : "";
-        } catch (error) {
-          code = "";
-        }
-        var headers = { "content-type": "application/json" };
-        if (code) headers["x-mi-agency-code"] = code;
-        return headers;
-      }
-
-      async function fetchMetaResearchItems() {
-        var code = "";
-        try { code = rankAgencyCode ? rankAgencyCode() : ""; } catch (error) { code = ""; }
-        if (!code) return { ok: false, message: "코드 확인 후 서버 조사 기록을 불러옵니다." };
-        var response = await miFetch(getMetaResearchApiUrl(), {
-          method: "GET",
-          cache: "no-store",
-          headers: metaResearchHeaders()
-        });
-        var payload = await response.json().catch(function () { return null; });
-        if (!payload) return { ok: false, message: "Meta 조사 DB 응답을 확인할 수 없습니다." };
-        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 조회에 실패했습니다.", detail: payload.detail };
-        metaResearchServerReady = true;
-        saveMetaResearchItems(payload.items || []);
-        return { ok: true, items: metaResearchItemsCache };
-      }
-
-      async function createMetaResearchItem(item) {
-        var response = await miFetch(getMetaResearchApiUrl(), {
-          method: "POST",
-          cache: "no-store",
-          headers: metaResearchHeaders(),
-          body: JSON.stringify(Object.assign({ action: "save" }, item))
-        });
-        var payload = await response.json().catch(function () { return null; });
-        if (!payload) return { ok: false, message: "Meta 조사 DB 저장 응답을 확인할 수 없습니다." };
-        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 저장에 실패했습니다.", detail: payload.detail };
-        metaResearchServerReady = true;
-        var items = loadMetaResearchItems().filter(function (saved) { return saved.id !== payload.item.id; });
-        items.unshift(normalizeMetaResearchItem(payload.item));
-        saveMetaResearchItems(items);
-        return { ok: true, item: normalizeMetaResearchItem(payload.item), server: true };
-      }
-
-      async function deleteMetaResearchItem(id) {
-        if (!metaResearchServerReady || String(id).indexOf("meta-") === 0) {
-          var localItems = loadMetaResearchItems().filter(function (item) { return item.id !== id; });
-          saveMetaResearchItems(localItems);
-          return { ok: true, server: false };
-        }
-        var response = await miFetch(getMetaResearchApiUrl(), {
-          method: "POST",
-          cache: "no-store",
-          headers: metaResearchHeaders(),
-          body: JSON.stringify({ action: "delete", id: id })
-        });
-        var payload = await response.json().catch(function () { return null; });
-        if (!payload) return { ok: false, message: "Meta 조사 DB 삭제 응답을 확인할 수 없습니다." };
-        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 삭제에 실패했습니다.", detail: payload.detail };
-        var items = loadMetaResearchItems().filter(function (item) { return item.id !== id; });
-        saveMetaResearchItems(items);
-        return { ok: true, server: true };
-      }
 
       function formatMetaAdDate(value) {
         if (!value) return "-";
@@ -5647,6 +5500,7 @@
           pageId: item.pageId || "",
           snapshotUrl: item.snapshotUrl || "",
           body: item.body || "",
+          caption: item.caption || "",
           title: item.title || "",
           description: item.description || "",
           deliveryStartTime: item.deliveryStartTime || "",
@@ -5677,58 +5531,35 @@
 
       function renderMetaAdCard(ad, index, query) {
         var body = ad.body || ad.description || "광고 문구는 Meta 상세 화면에서 확인할 수 있습니다.";
-        var title = ad.title || ad.pageName || "Meta 광고";
+        var headline = ad.title ? '<strong class="mi-meta-ad-title">' + escapeHtml(ad.title) + '</strong>' : "";
+        var description = ad.description && ad.description !== body ? '<span class="mi-meta-ad-description">' + escapeHtml(ad.description) + '</span>' : "";
+        var caption = ad.caption ? '<span class="mi-meta-ad-caption">' + escapeHtml(ad.caption) + '</span>' : "";
         var platforms = ad.publisherPlatforms.length
           ? ad.publisherPlatforms.map(function (platform) { return "<span>" + escapeHtml(platform) + "</span>"; }).join("")
           : "<span>Meta</span>";
         var detailLink = ad.snapshotUrl
-          ? '<a class="mi-link-button" href="' + escapeHtml(ad.snapshotUrl) + '" target="_blank" rel="noopener noreferrer">광고 상세 보기</a>'
+          ? '<a class="mi-link-button" href="' + escapeHtml(ad.snapshotUrl) + '" target="_blank" rel="noopener noreferrer">원본 광고 보기</a>'
           : "";
         return '<article class="mi-meta-ad" data-meta-live-index="' + String(index) + '"><div class="mi-meta-ad-top"><span class="mi-badge ok">활성</span><span>라이브러리 ID: ' +
           escapeHtml(ad.libraryId || "-") + '</span></div><div class="mi-meta-ad-page"><strong>' +
           escapeHtml(ad.pageName || "페이지명 확인 필요") + '</strong><span>' + escapeHtml(formatMetaAdDate(ad.deliveryStartTime)) +
           ' 게재 시작 · 광고</span></div><p class="mi-meta-ad-copy">' + escapeHtml(body) +
-          '</p><div class="mi-meta-ad-preview">소재 미리보기는 Meta 원본에서 확인</div><div class="mi-meta-platforms">' +
-          platforms + '</div><div class="mi-meta-saved-actions">' + detailLink +
-          '<button class="mi-link-button" type="button" data-meta-prefill="' + String(index) + '">조사로 저장</button></div></article>';
-      }
-
-      function renderMetaSavedResearchCards(items) {
-        if (!items.length) return "";
-        return '<div class="mi-meta-empty">저장한 내부 조사 기록</div>' + items.map(function (item) {
-          var link = item.url
-            ? '<a class="mi-link-button" href="' + escapeHtml(item.url) + '" target="_blank" rel="noopener noreferrer">광고 보기</a>'
-            : '';
-          return '<article class="mi-meta-saved-card" data-meta-saved-id="' + escapeHtml(item.id) + '"><div class="mi-meta-ad-top"><span class="mi-badge ok">저장됨</span><span>' +
-            escapeHtml(item.savedAt || "-") + '</span></div><div><h3>' + escapeHtml(item.pageName || item.query || "조사 소재") + '</h3><p>' +
-            escapeHtml(item.hook || "후킹 문구 확인 필요") + '</p></div><div class="mi-meta-saved-tags"><span>' +
-            escapeHtml(item.query || "검색어") + '</span><span>' + escapeHtml(item.angle || "소재") + '</span><span>' +
-            escapeHtml(item.platform || "전체 플랫폼") + '</span></div><p>' + escapeHtml(item.note || "적용 메모가 아직 없습니다.") +
-            '</p><div class="mi-meta-saved-actions">' + link + '<button class="mi-link-button mi-meta-delete" type="button" data-meta-delete="' +
-            escapeHtml(item.id) + '">삭제</button></div></article>';
-        }).join("");
+          '</p><div class="mi-meta-ad-creative">' + headline + description + caption +
+          '</div><div class="mi-meta-ad-preview">소재 미리보기는 Meta 원본에서 확인</div><div class="mi-meta-platforms">' +
+          platforms + '</div><div class="mi-meta-saved-actions">' + detailLink + '</div></article>';
       }
 
       function renderMetaAdsResults(node, payload) {
         if (!node) return;
-        var items = loadMetaResearchItems();
         var ads = payload && Array.isArray(payload.ads) ? payload.ads.map(normalizeMetaAdItem) : metaLiveAdsCache;
-        var blocks = [];
         if (ads.length) {
-          blocks.push('<div class="mi-meta-empty">Meta 공식 API 조회 결과</div>');
-          blocks.push(ads.map(function (ad, index) {
+          node.innerHTML = '<div class="mi-meta-empty">Meta 공식 API 조회 결과</div>' + ads.map(function (ad, index) {
             return renderMetaAdCard(ad, index, payload && payload.query || "");
-          }).join(""));
-        }
-        var saved = renderMetaSavedResearchCards(items);
-        if (saved) blocks.push(saved);
-        if (!blocks.length) {
-          node.innerHTML = '<div class="mi-meta-empty">검색어를 입력해 광고를 조회하거나, 공식 라이브러리에서 확인한 광고를 저장하면 이곳에 표시됩니다.</div>';
+          }).join("");
           return;
         }
-        node.innerHTML = blocks.join("");
+        node.innerHTML = '<div class="mi-meta-empty">검색어를 입력하면 Meta 광고 조회 결과가 이곳에 표시됩니다.</div>';
       }
-
       function initMetaAdsTool() {
         var card = root.querySelector("[data-meta-card]");
         if (!card) return;
@@ -5736,37 +5567,21 @@
         var platformInput = card.querySelector("[data-meta-platform]");
         var mediaInput = card.querySelector("[data-meta-media]");
         var runButton = card.querySelector("[data-meta-run]");
-        var saveButton = card.querySelector("[data-meta-save]");
-        var savePanel = card.querySelector("[data-meta-save-panel]");
-        var libraryLink = card.querySelector("[data-meta-library-link]");
         var status = card.querySelector("[data-meta-status]");
         var results = card.querySelector("[data-meta-results]");
         var summaryQuery = card.querySelector("[data-meta-summary-query]");
         var summaryCount = card.querySelector("[data-meta-summary-count]");
         var summaryState = card.querySelector("[data-meta-summary-state]");
-        var pageNameInput = card.querySelector("[data-meta-page-name]");
-        var adUrlInput = card.querySelector("[data-meta-ad-url]");
-        var angleInput = card.querySelector("[data-meta-angle]");
-        var hookInput = card.querySelector("[data-meta-hook]");
-        var noteInput = card.querySelector("[data-meta-note]");
         if (!queryInput || !runButton) return;
 
         function refreshSummary(query) {
-          var items = loadMetaResearchItems();
-          if (summaryCount) summaryCount.textContent = formatNumber(items.length) + "개";
-          if (summaryState) summaryState.textContent = items.length ? (metaResearchServerReady ? "서버 DB 저장" : "임시 저장") : "대기";
+          if (summaryCount) summaryCount.textContent = formatNumber(metaLiveAdsCache.length) + "개";
+          if (summaryState) summaryState.textContent = metaLiveAdsCache.length ? "조회 완료" : "대기";
           if (query && summaryQuery) summaryQuery.textContent = query;
-          renderMetaAdsResults(results, { ok: true });
+          renderMetaAdsResults(results, { ads: metaLiveAdsCache, query: query || "" });
         }
 
         refreshSummary("");
-        fetchMetaResearchItems().then(function (result) {
-          refreshSummary((queryInput.value || "").trim());
-          if (result.ok) setStatus(status, "서버 DB의 Meta 조사 기록을 불러왔습니다.", "is-ok");
-        }).catch(function () {
-          metaResearchServerReady = false;
-          refreshSummary((queryInput.value || "").trim());
-        });
 
         runButton.addEventListener("click", async function () {
           var query = (queryInput.value || "").trim();
@@ -5776,131 +5591,36 @@
           }
           var platform = platformInput ? platformInput.value : "";
           var mediaType = mediaInput ? mediaInput.value : "ALL";
-          var url = metaAdsLibraryUrl(query, platform, mediaType);
           if (summaryQuery) summaryQuery.textContent = query;
           if (summaryState) summaryState.textContent = "조회 중";
-          if (savePanel) savePanel.hidden = false;
-          if (libraryLink) libraryLink.href = url;
-          if (adUrlInput && !adUrlInput.value) adUrlInput.value = url;
           runButton.disabled = true;
           setStatus(status, "Meta 공식 광고 라이브러리에서 광고를 조회하고 있습니다.", "is-warn");
           try {
             var result = await fetchMetaAds(query, platform, mediaType);
             if (result.ok) {
               renderMetaAdsResults(results, { ads: result.ads, query: query });
+              if (summaryCount) summaryCount.textContent = formatNumber(result.ads.length) + "개";
               if (summaryState) summaryState.textContent = "조회 완료";
               setStatus(status, result.ads.length
                 ? "Meta 공식 API에서 광고 " + formatNumber(result.ads.length) + "개를 조회했습니다."
-                : "조회 결과가 없습니다. 공식 페이지에서 더 넓은 조건으로 확인할 수 있습니다.", result.ads.length ? "is-ok" : "is-warn");
+                : "조회 결과가 없습니다. 검색어 또는 필터를 넓혀 확인해주세요.", result.ads.length ? "is-ok" : "is-warn");
             } else {
               metaLiveAdsCache = [];
               renderMetaAdsResults(results, { ads: [], query: query });
-              if (summaryState) summaryState.textContent = "공식 링크";
-              setStatus(status, result.message || "Meta API 조회가 되지 않아 공식 페이지 링크로 확인해주세요.", "is-warn");
+              if (summaryCount) summaryCount.textContent = "0개";
+              if (summaryState) summaryState.textContent = "조회 실패";
+              setStatus(status, result.message || "Meta API 조회가 되지 않습니다. 토큰과 권한을 확인해주세요.", "is-warn");
             }
           } catch (error) {
             metaLiveAdsCache = [];
             renderMetaAdsResults(results, { ads: [], query: query });
-            if (summaryState) summaryState.textContent = "공식 링크";
-            setStatus(status, "Meta API 조회 중 오류가 발생했습니다. 공식 페이지 링크로 확인해주세요.", "is-warn");
+            if (summaryCount) summaryCount.textContent = "0개";
+            if (summaryState) summaryState.textContent = "조회 실패";
+            setStatus(status, "Meta API 조회 중 오류가 발생했습니다. 서버 환경변수와 토큰 권한을 확인해주세요.", "is-warn");
           } finally {
             runButton.disabled = false;
           }
         });
-
-        if (saveButton) {
-          saveButton.addEventListener("click", async function () {
-            var query = (queryInput.value || "").trim();
-            var pageName = (pageNameInput && pageNameInput.value || "").trim();
-            var adUrl = (adUrlInput && adUrlInput.value || "").trim();
-            var hook = (hookInput && hookInput.value || "").trim();
-            var note = (noteInput && noteInput.value || "").trim();
-            if (!query) {
-              setStatus(status, "저장할 검색어를 먼저 입력해주세요.", "is-warn");
-              return;
-            }
-            if (!pageName && !hook && !note && !adUrl) {
-              setStatus(status, "광고 페이지명, URL, 후킹 문구, 메모 중 하나는 입력해주세요.", "is-warn");
-              return;
-            }
-            var item = {
-              id: "meta-" + Date.now(),
-              query: query,
-              pageName: pageName,
-              url: adUrl,
-              sourceUrl: libraryLink ? libraryLink.href : "",
-              angle: angleInput ? angleInput.value : "후킹 카피",
-              hook: hook,
-              note: note,
-              platform: platformInput && platformInput.value ? platformInput.value : "전체 플랫폼",
-              mediaType: mediaInput ? mediaInput.value : "ALL",
-              savedAt: new Date().toISOString()
-            };
-            saveButton.disabled = true;
-            try {
-              var result = await createMetaResearchItem(item);
-              if (!result.ok) {
-                var items = loadMetaResearchItems();
-                items.unshift(item);
-                if (!saveMetaResearchItems(items)) {
-                  setStatus(status, result.message || "조사 기록을 저장하지 못했습니다.", "is-warn");
-                  return;
-                }
-                metaResearchServerReady = false;
-                setStatus(status, "서버 DB 저장은 실패해 브라우저에 임시 저장했습니다. " + (result.message || ""), "is-warn");
-              } else {
-                setStatus(status, result.server ? "조사 기록을 서버 DB에 저장했습니다." : "조사 기록을 저장했습니다.", "is-ok");
-              }
-              if (pageNameInput) pageNameInput.value = "";
-              if (hookInput) hookInput.value = "";
-              if (noteInput) noteInput.value = "";
-              refreshSummary(query);
-            } catch (error) {
-              var fallbackItems = loadMetaResearchItems();
-              fallbackItems.unshift(item);
-              saveMetaResearchItems(fallbackItems);
-              metaResearchServerReady = false;
-              setStatus(status, "서버 연결이 불안정해 브라우저에 임시 저장했습니다.", "is-warn");
-              refreshSummary(query);
-            } finally {
-              saveButton.disabled = false;
-            }
-          });
-        }
-
-        if (results) {
-          results.addEventListener("click", async function (event) {
-            var prefill = event.target && event.target.closest ? event.target.closest("[data-meta-prefill]") : null;
-            if (prefill) {
-              var index = Number(prefill.getAttribute("data-meta-prefill"));
-              var ad = metaLiveAdsCache[index];
-              if (!ad) return;
-              if (savePanel) savePanel.hidden = false;
-              if (pageNameInput) pageNameInput.value = ad.pageName || "";
-              if (adUrlInput) adUrlInput.value = ad.snapshotUrl || metaAdsLibraryUrl((queryInput.value || "").trim(), platformInput ? platformInput.value : "", mediaInput ? mediaInput.value : "ALL");
-              if (hookInput) hookInput.value = ad.body || ad.title || "";
-              if (noteInput) noteInput.value = (ad.title || "") + (ad.description ? " · " + ad.description : "");
-              if (libraryLink) libraryLink.href = ad.snapshotUrl || metaAdsLibraryUrl((queryInput.value || "").trim(), platformInput ? platformInput.value : "", mediaInput ? mediaInput.value : "ALL");
-              setStatus(status, "선택한 Meta 광고 정보를 조사 저장 폼에 채웠습니다.", "is-ok");
-              return;
-            }
-
-            var button = event.target && event.target.closest ? event.target.closest("[data-meta-delete]") : null;
-            if (!button) return;
-            var id = button.getAttribute("data-meta-delete");
-            button.disabled = true;
-            var result = await deleteMetaResearchItem(id).catch(function () {
-              return { ok: false, message: "Meta 조사 기록 삭제 중 오류가 발생했습니다." };
-            });
-            if (!result.ok) {
-              button.disabled = false;
-              setStatus(status, result.message || "조사 기록을 삭제하지 못했습니다.", "is-warn");
-              return;
-            }
-            setStatus(status, result.server ? "서버 DB에서 조사 기록을 삭제했습니다." : "조사 기록을 삭제했습니다.", "is-ok");
-            refreshSummary((queryInput.value || "").trim());
-          });
-        }
       }
 
       function initRankCheck(linkedKeywordInput) {

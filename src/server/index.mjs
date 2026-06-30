@@ -7,7 +7,6 @@ import demoApi from "./handlers/demo-api.mjs";
 import integrationStatus from "./handlers/integration-status.mjs";
 import agencyCodeApi from "./handlers/agency-code-api.mjs";
 import metaAds from "./handlers/meta-ads.mjs";
-import metaResearch from "./handlers/meta-research.mjs";
 import naverKeyword from "./handlers/naver-keyword.mjs";
 import naverRankCron from "./handlers/naver-rank-cron.mjs";
 import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
@@ -89,10 +88,6 @@ export default {
 
     if (url.pathname === "/api/meta-ads") {
       return metaAds.fetch(request);
-    }
-
-    if (url.pathname === "/api/meta-research") {
-      return metaResearch.fetch(request);
     }
 
     if (url.pathname === "/api/report-center") {

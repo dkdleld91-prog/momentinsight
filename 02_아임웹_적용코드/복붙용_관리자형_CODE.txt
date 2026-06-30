@@ -7681,6 +7681,13 @@
         return "http://127.0.0.1:8790/api/meta-ads";
       }
 
+      function getMetaResearchApiUrl() {
+        if (window.MI_META_RESEARCH_API_URL) return window.MI_META_RESEARCH_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/meta-research";
+        return "http://127.0.0.1:8790/api/meta-research";
+      }
+
       function formatRankCheckedAt(iso) {
         if (!iso) return "-";
         try {
@@ -8146,6 +8153,9 @@
         return "https://www.facebook.com/ads/library/?" + params.toString();
       }
 
+      var metaResearchItemsCache = [];
+      var metaResearchServerReady = false;
+
       function metaResearchStorageKey() {
         var code = "local";
         try {
@@ -8156,23 +8166,123 @@
         return "mi_meta_research_v1_" + String(code || "local").toLowerCase();
       }
 
-      function loadMetaResearchItems() {
+      function normalizeMetaResearchItem(item) {
+        item = item || {};
+        var createdAt = item.created_at || item.createdAt || item.savedAt || "";
+        return {
+          id: String(item.id || item.localId || "meta-" + Date.now()),
+          query: item.query || item.searchTerm || "",
+          pageName: item.page_name || item.pageName || "",
+          url: item.ad_url || item.url || "",
+          sourceUrl: item.source_url || item.sourceUrl || "",
+          angle: item.angle_type || item.angle || "후킹 카피",
+          hook: item.hook_text || item.hook || "",
+          note: item.note || "",
+          platform: item.platform && item.platform !== "ALL" ? item.platform : "전체 플랫폼",
+          mediaType: item.media_type || item.mediaType || "ALL",
+          savedAt: createdAt ? formatMetaResearchSavedAt(createdAt) : "-"
+        };
+      }
+
+      function formatMetaResearchSavedAt(value) {
+        if (!value) return "-";
+        try {
+          var date = value instanceof Date ? value : new Date(value);
+          if (Number.isNaN(date.getTime())) return String(value || "-");
+          return date.toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+        } catch (error) {
+          return String(value || "-");
+        }
+      }
+
+      function readMetaResearchFallbackItems() {
         try {
           var raw = localStorage.getItem(metaResearchStorageKey());
           var parsed = raw ? JSON.parse(raw) : [];
-          return Array.isArray(parsed) ? parsed : [];
+          return Array.isArray(parsed) ? parsed.map(normalizeMetaResearchItem) : [];
         } catch (error) {
           return [];
         }
       }
 
+      function loadMetaResearchItems() {
+        return metaResearchItemsCache.length ? metaResearchItemsCache : readMetaResearchFallbackItems();
+      }
+
       function saveMetaResearchItems(items) {
+        metaResearchItemsCache = (items || []).map(normalizeMetaResearchItem).slice(0, 80);
         try {
-          localStorage.setItem(metaResearchStorageKey(), JSON.stringify((items || []).slice(0, 80)));
+          localStorage.setItem(metaResearchStorageKey(), JSON.stringify(metaResearchItemsCache));
           return true;
         } catch (error) {
           return false;
         }
+      }
+
+      function metaResearchHeaders() {
+        var code = "";
+        try {
+          code = rankAgencyCode ? rankAgencyCode() : "";
+        } catch (error) {
+          code = "";
+        }
+        var headers = { "content-type": "application/json" };
+        if (code) headers["x-mi-agency-code"] = code;
+        return headers;
+      }
+
+      async function fetchMetaResearchItems() {
+        var code = "";
+        try { code = rankAgencyCode ? rankAgencyCode() : ""; } catch (error) { code = ""; }
+        if (!code) return { ok: false, message: "코드 확인 후 서버 조사 기록을 불러옵니다." };
+        var response = await miFetch(getMetaResearchApiUrl(), {
+          method: "GET",
+          cache: "no-store",
+          headers: metaResearchHeaders()
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) return { ok: false, message: "Meta 조사 DB 응답을 확인할 수 없습니다." };
+        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 조회에 실패했습니다.", detail: payload.detail };
+        metaResearchServerReady = true;
+        saveMetaResearchItems(payload.items || []);
+        return { ok: true, items: metaResearchItemsCache };
+      }
+
+      async function createMetaResearchItem(item) {
+        var response = await miFetch(getMetaResearchApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: metaResearchHeaders(),
+          body: JSON.stringify(Object.assign({ action: "save" }, item))
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) return { ok: false, message: "Meta 조사 DB 저장 응답을 확인할 수 없습니다." };
+        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 저장에 실패했습니다.", detail: payload.detail };
+        metaResearchServerReady = true;
+        var items = loadMetaResearchItems().filter(function (saved) { return saved.id !== payload.item.id; });
+        items.unshift(normalizeMetaResearchItem(payload.item));
+        saveMetaResearchItems(items);
+        return { ok: true, item: normalizeMetaResearchItem(payload.item), server: true };
+      }
+
+      async function deleteMetaResearchItem(id) {
+        if (!metaResearchServerReady || String(id).indexOf("meta-") === 0) {
+          var localItems = loadMetaResearchItems().filter(function (item) { return item.id !== id; });
+          saveMetaResearchItems(localItems);
+          return { ok: true, server: false };
+        }
+        var response = await miFetch(getMetaResearchApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: metaResearchHeaders(),
+          body: JSON.stringify({ action: "delete", id: id })
+        });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) return { ok: false, message: "Meta 조사 DB 삭제 응답을 확인할 수 없습니다." };
+        if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 조사 DB 삭제에 실패했습니다.", detail: payload.detail };
+        var items = loadMetaResearchItems().filter(function (item) { return item.id !== id; });
+        saveMetaResearchItems(items);
+        return { ok: true, server: true };
       }
 
       function renderMetaAdsResults(node, payload) {
@@ -8221,12 +8331,19 @@
         function refreshSummary(query) {
           var items = loadMetaResearchItems();
           if (summaryCount) summaryCount.textContent = formatNumber(items.length) + "개";
-          if (summaryState) summaryState.textContent = items.length ? "조사 저장 중" : "대기";
+          if (summaryState) summaryState.textContent = items.length ? (metaResearchServerReady ? "서버 DB 저장" : "임시 저장") : "대기";
           if (query && summaryQuery) summaryQuery.textContent = query;
           renderMetaAdsResults(results, { ok: true });
         }
 
         refreshSummary("");
+        fetchMetaResearchItems().then(function (result) {
+          refreshSummary((queryInput.value || "").trim());
+          if (result.ok) setStatus(status, "서버 DB의 Meta 조사 기록을 불러왔습니다.", "is-ok");
+        }).catch(function () {
+          metaResearchServerReady = false;
+          refreshSummary((queryInput.value || "").trim());
+        });
 
         runButton.addEventListener("click", function () {
           var query = (queryInput.value || "").trim();
@@ -8247,7 +8364,7 @@
         });
 
         if (saveButton) {
-          saveButton.addEventListener("click", function () {
+          saveButton.addEventListener("click", async function () {
             var query = (queryInput.value || "").trim();
             var pageName = (pageNameInput && pageNameInput.value || "").trim();
             var adUrl = (adUrlInput && adUrlInput.value || "").trim();
@@ -8261,39 +8378,66 @@
               setStatus(status, "광고 페이지명, URL, 후킹 문구, 메모 중 하나는 입력해주세요.", "is-warn");
               return;
             }
-            var items = loadMetaResearchItems();
-            items.unshift({
+            var item = {
               id: "meta-" + Date.now(),
               query: query,
               pageName: pageName,
               url: adUrl,
+              sourceUrl: libraryLink ? libraryLink.href : "",
               angle: angleInput ? angleInput.value : "후킹 카피",
               hook: hook,
               note: note,
               platform: platformInput && platformInput.value ? platformInput.value : "전체 플랫폼",
               mediaType: mediaInput ? mediaInput.value : "ALL",
-              savedAt: new Date().toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
-            });
-            if (!saveMetaResearchItems(items)) {
-              setStatus(status, "브라우저 저장 공간이 부족해 조사 기록을 저장하지 못했습니다.", "is-warn");
-              return;
+              savedAt: new Date().toISOString()
+            };
+            saveButton.disabled = true;
+            try {
+              var result = await createMetaResearchItem(item);
+              if (!result.ok) {
+                var items = loadMetaResearchItems();
+                items.unshift(item);
+                if (!saveMetaResearchItems(items)) {
+                  setStatus(status, result.message || "조사 기록을 저장하지 못했습니다.", "is-warn");
+                  return;
+                }
+                metaResearchServerReady = false;
+                setStatus(status, "서버 DB 저장은 실패해 브라우저에 임시 저장했습니다. " + (result.message || ""), "is-warn");
+              } else {
+                setStatus(status, result.server ? "조사 기록을 서버 DB에 저장했습니다." : "조사 기록을 저장했습니다.", "is-ok");
+              }
+              if (pageNameInput) pageNameInput.value = "";
+              if (hookInput) hookInput.value = "";
+              if (noteInput) noteInput.value = "";
+              refreshSummary(query);
+            } catch (error) {
+              var fallbackItems = loadMetaResearchItems();
+              fallbackItems.unshift(item);
+              saveMetaResearchItems(fallbackItems);
+              metaResearchServerReady = false;
+              setStatus(status, "서버 연결이 불안정해 브라우저에 임시 저장했습니다.", "is-warn");
+              refreshSummary(query);
+            } finally {
+              saveButton.disabled = false;
             }
-            if (pageNameInput) pageNameInput.value = "";
-            if (hookInput) hookInput.value = "";
-            if (noteInput) noteInput.value = "";
-            setStatus(status, "조사 기록을 저장했습니다.", "is-ok");
-            refreshSummary(query);
           });
         }
 
         if (results) {
-          results.addEventListener("click", function (event) {
+          results.addEventListener("click", async function (event) {
             var button = event.target && event.target.closest ? event.target.closest("[data-meta-delete]") : null;
             if (!button) return;
             var id = button.getAttribute("data-meta-delete");
-            var items = loadMetaResearchItems().filter(function (item) { return item.id !== id; });
-            saveMetaResearchItems(items);
-            setStatus(status, "조사 기록을 삭제했습니다.", "is-ok");
+            button.disabled = true;
+            var result = await deleteMetaResearchItem(id).catch(function () {
+              return { ok: false, message: "Meta 조사 기록 삭제 중 오류가 발생했습니다." };
+            });
+            if (!result.ok) {
+              button.disabled = false;
+              setStatus(status, result.message || "조사 기록을 삭제하지 못했습니다.", "is-warn");
+              return;
+            }
+            setStatus(status, result.server ? "서버 DB에서 조사 기록을 삭제했습니다." : "조사 기록을 삭제했습니다.", "is-ok");
             refreshSummary((queryInput.value || "").trim());
           });
         }

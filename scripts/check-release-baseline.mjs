@@ -28,6 +28,7 @@ const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
+const metaResearchServer = read("src/server/handlers/meta-research.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
@@ -44,6 +45,7 @@ const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
 const staticBuildScript = read("scripts/build-vercel-static.mjs");
 const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
+const metaResearchMigration = read("supabase/migrations/20260630133401_meta_ad_research.sql");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -146,6 +148,14 @@ const checks = {
     && sheetTemplateBuilder.includes("광고주 연결")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
   clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  metaResearchEndpointReady: serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
+    && serverIndex.includes('url.pathname === "/api/meta-research"')
+    && metaResearchServer.includes("meta_ad_research_items")
+    && metaResearchServer.includes("withSupabase")
+    && metaResearchServer.includes("created_by_role")
+    && metaResearchMigration.includes("create table if not exists public.meta_ad_research_items")
+    && metaResearchMigration.includes("enable row level security")
+    && metaResearchMigration.includes("public.has_client_access(client_id)"),
   metaAdsToolReady: serverIndex.includes('import metaAds from "./handlers/meta-ads.mjs"')
     && serverIndex.includes('url.pathname === "/api/meta-ads"')
     && metaAdsServer.includes("META_AD_LIBRARY_ACCESS_TOKEN")
@@ -161,6 +171,8 @@ const checks = {
       && source.includes("data-meta-save")
       && source.includes("metaAdsLibraryUrl")
       && source.includes("metaResearchStorageKey")
+      && source.includes("getMetaResearchApiUrl")
+      && source.includes("createMetaResearchItem")
       && source.includes("initMetaAdsTool")
       && source.includes("검색 링크 만들기")
       && source.includes("내부 조사 기록")

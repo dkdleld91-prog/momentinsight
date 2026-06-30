@@ -1342,6 +1342,138 @@
       line-height: 1.45;
     }
 
+    #mi-admin .mi-meta-card {
+      display: grid;
+      gap: 16px;
+    }
+
+    #mi-admin .mi-meta-form {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) 150px 150px auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-meta-brief {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-admin .mi-meta-brief div,
+    #mi-admin .mi-meta-empty {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 14px;
+    }
+
+    #mi-admin .mi-meta-brief span {
+      display: block;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-meta-brief strong {
+      display: block;
+      margin-top: 6px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-meta-results {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-meta-ad {
+      display: grid;
+      gap: 12px;
+      min-height: 260px;
+      border: 1px solid #dce5f0;
+      border-radius: 8px;
+      background: #fff;
+      padding: 16px;
+      box-shadow: 0 14px 32px rgba(8, 28, 56, 0.07);
+    }
+
+    #mi-admin .mi-meta-ad-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-meta-ad-page {
+      display: grid;
+      gap: 4px;
+    }
+
+    #mi-admin .mi-meta-ad-page strong {
+      color: var(--mi-navy);
+      font-size: 16px;
+      font-weight: 950;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-meta-ad-page span,
+    #mi-admin .mi-meta-ad-copy {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.55;
+    }
+
+    #mi-admin .mi-meta-ad-copy {
+      display: -webkit-box;
+      overflow: hidden;
+      min-height: 58px;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+    }
+
+    #mi-admin .mi-meta-ad-preview {
+      display: grid;
+      min-height: 96px;
+      place-items: center;
+      border: 1px solid #e5edf6;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #061a3a, #12345f);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    #mi-admin .mi-meta-platforms {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-meta-platforms span {
+      border-radius: 999px;
+      background: #eef4fb;
+      color: var(--mi-muted);
+      padding: 5px 8px;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-meta-empty {
+      grid-column: 1 / -1;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 800;
+      line-height: 1.55;
+    }
+
     #mi-admin .mi-seo-point {
       display: inline-flex;
       min-width: 44px;
@@ -3689,6 +3821,9 @@
       }
 
       #mi-admin .mi-rank-form,
+      #mi-admin .mi-meta-form,
+      #mi-admin .mi-meta-brief,
+      #mi-admin .mi-meta-results,
       #mi-admin .mi-seo-form,
       #mi-admin .mi-seo-layout,
       #mi-admin .mi-seo-grid,
@@ -3837,6 +3972,7 @@
           <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 <small>네이버</small></a>
           <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">네이버 상품 순위 <small>조회</small></a>
           <a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위 <small>추적</small></a>
+          <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>소재</small></a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
       </nav>
@@ -4841,6 +4977,54 @@
                   <div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>
                 </div>
               </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="meta-ads" id="mi-admin-meta-ads">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">메타 광고 조사</span>
+              <h1>경쟁사와 브랜드의 Meta 광고 소재를 확인합니다.</h1>
+              <p>브랜드명, 제품명, 경쟁사명으로 현재 운영 중인 공개 광고 소재를 검토합니다.</p>
+            </div>
+            <span class="mi-badge">운영팀 도구</span>
+          </header>
+
+          <article class="mi-card mi-card-pad mi-meta-card" data-meta-card>
+            <div class="mi-card-head">
+              <div>
+                <span class="mi-kicker">Meta 광고 라이브러리</span>
+                <h2>소재 흐름과 메시지 포인트를 조사합니다.</h2>
+                <p>광고주에게 전달하기 전, 경쟁사 카피와 플랫폼 노출 흐름을 빠르게 확인합니다.</p>
+              </div>
+              <span class="mi-badge">KR 기준</span>
+            </div>
+            <div class="mi-meta-form">
+              <input class="mi-input" data-meta-query aria-label="메타 광고 검색어" placeholder="브랜드명, 제품명, 경쟁사명" />
+              <select class="mi-input" data-meta-platform aria-label="메타 광고 플랫폼">
+                <option value="">전체 플랫폼</option>
+                <option value="FACEBOOK">Facebook</option>
+                <option value="INSTAGRAM">Instagram</option>
+                <option value="MESSENGER">Messenger</option>
+              </select>
+              <select class="mi-input" data-meta-media aria-label="메타 광고 소재 유형">
+                <option value="ALL">전체 소재</option>
+                <option value="VIDEO">영상</option>
+                <option value="IMAGE">이미지</option>
+              </select>
+              <button class="mi-button" type="button" data-meta-run>광고 조회</button>
+            </div>
+            <p class="mi-code-status" data-meta-status aria-live="polite">검색어를 입력하면 공개 광고 소재를 조회합니다. 서버 토큰 연결 전에는 실제 결과를 표시하지 않습니다.</p>
+
+            <div class="mi-meta-brief">
+              <div><span>조회 기준</span><strong data-meta-summary-query>검색 전</strong></div>
+              <div><span>확인 광고</span><strong data-meta-summary-count>-</strong></div>
+              <div><span>상태</span><strong data-meta-summary-state>대기</strong></div>
+            </div>
+
+            <div class="mi-meta-results" data-meta-results>
+              <div class="mi-meta-empty">검색어를 입력하고 광고 조회를 누르면 결과가 표시됩니다.</div>
             </div>
           </article>
         </section>
@@ -7385,6 +7569,13 @@
         return "http://127.0.0.1:8790/api/naver-rank-trackers";
       }
 
+      function getMetaAdsApiUrl() {
+        if (window.MI_META_ADS_API_URL) return window.MI_META_ADS_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/meta-ads";
+        return "http://127.0.0.1:8790/api/meta-ads";
+      }
+
       function formatRankCheckedAt(iso) {
         if (!iso) return "-";
         try {
@@ -7834,6 +8025,100 @@
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
         node.innerHTML = '<h3>현재 순위</h3>' + summary + (itemRows ? '<h3>조회 상품</h3>' + itemRows : "") + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
+      }
+
+      function metaAdsDate(value) {
+        if (!value) return "-";
+        try {
+          return new Date(value).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" });
+        } catch (error) {
+          return "-";
+        }
+      }
+
+      function metaPlatformsHtml(platforms) {
+        var list = Array.isArray(platforms) && platforms.length ? platforms : ["Meta"];
+        return '<div class="mi-meta-platforms">' + list.slice(0, 4).map(function (platform) {
+          return '<span>' + escapeHtml(String(platform || "Meta")) + '</span>';
+        }).join("") + '</div>';
+      }
+
+      function renderMetaAdsResults(node, payload) {
+        if (!node) return;
+        if (!payload || payload.ok === false) {
+          node.innerHTML = '<div class="mi-meta-empty">' + escapeHtml((payload && payload.message) || "Meta 광고 조회 결과를 확인하지 못했습니다.") + '</div>';
+          return;
+        }
+        var ads = payload.ads || [];
+        if (!ads.length) {
+          node.innerHTML = '<div class="mi-meta-empty">조회 결과가 없습니다. 브랜드명, 제품명, 경쟁사명을 조금 다르게 입력해보세요.</div>';
+          return;
+        }
+        node.innerHTML = ads.slice(0, 12).map(function (ad) {
+          var title = ad.title || ad.pageName || "광고 소재";
+          var body = ad.body || ad.description || "광고 본문은 라이브러리 상세 화면에서 확인할 수 있습니다.";
+          var link = ad.snapshotUrl
+            ? '<a class="mi-link-button" href="' + escapeHtml(ad.snapshotUrl) + '" target="_blank" rel="noopener noreferrer">광고 상세보기</a>'
+            : '<span class="mi-period">상세 링크 없음</span>';
+          return '<article class="mi-meta-ad"><div class="mi-meta-ad-top"><span class="mi-badge ok">활성</span><span>라이브러리 ID ' +
+            escapeHtml(ad.libraryId || "-") + '</span></div><div class="mi-meta-ad-page"><strong>' +
+            escapeHtml(ad.pageName || "페이지명 확인 필요") + '</strong><span>게시 시작 ' +
+            escapeHtml(metaAdsDate(ad.deliveryStartTime)) + '</span></div><p class="mi-meta-ad-copy">' +
+            escapeHtml(body) + '</p><div class="mi-meta-ad-preview">' +
+            escapeHtml(title) + '</div>' + metaPlatformsHtml(ad.publisherPlatforms) + '<div>' + link + '</div></article>';
+        }).join("");
+      }
+
+      function initMetaAdsTool() {
+        var card = root.querySelector("[data-meta-card]");
+        if (!card) return;
+        var queryInput = card.querySelector("[data-meta-query]");
+        var platformInput = card.querySelector("[data-meta-platform]");
+        var mediaInput = card.querySelector("[data-meta-media]");
+        var runButton = card.querySelector("[data-meta-run]");
+        var status = card.querySelector("[data-meta-status]");
+        var results = card.querySelector("[data-meta-results]");
+        var summaryQuery = card.querySelector("[data-meta-summary-query]");
+        var summaryCount = card.querySelector("[data-meta-summary-count]");
+        var summaryState = card.querySelector("[data-meta-summary-state]");
+        if (!queryInput || !runButton) return;
+
+        runButton.addEventListener("click", async function () {
+          var query = (queryInput.value || "").trim();
+          if (!query) {
+            setStatus(status, "브랜드명, 제품명, 경쟁사명을 입력해주세요.", "is-warn");
+            return;
+          }
+          runButton.disabled = true;
+          setStatus(status, "Meta 광고 라이브러리에서 공개 광고를 조회 중입니다.", "");
+          if (summaryQuery) summaryQuery.textContent = query;
+          if (summaryCount) summaryCount.textContent = "-";
+          if (summaryState) summaryState.textContent = "조회 중";
+          try {
+            var params = new URLSearchParams({
+              query: query,
+              country: "KR",
+              mediaType: mediaInput ? mediaInput.value : "ALL",
+              status: "ACTIVE",
+              limit: "12"
+            });
+            if (platformInput && platformInput.value) params.set("platform", platformInput.value);
+            var response = await miFetch(getMetaAdsApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
+            var payload = await response.json().catch(function () { return null; });
+            if (!payload) payload = { ok: false, message: "Meta 광고 조회 응답을 확인할 수 없습니다." };
+            if (!response.ok && payload.ok !== false) payload.ok = false;
+            renderMetaAdsResults(results, payload);
+            if (summaryCount) summaryCount.textContent = payload.ok ? formatNumber(payload.count || 0) + "개" : "-";
+            if (summaryState) summaryState.textContent = payload.ok ? (payload.count ? "조회 완료" : "결과 없음") : "미연결";
+            setStatus(status, payload.ok ? "조회 완료: 공개 광고 " + formatNumber(payload.count || 0) + "개를 확인했습니다." : (payload.message || "Meta 광고 조회 연결을 확인해주세요."), payload.ok ? "is-ok" : "is-warn");
+          } catch (error) {
+            renderMetaAdsResults(results, { ok: false, message: "Meta 광고 조사 서버 연결을 확인해주세요." });
+            if (summaryState) summaryState.textContent = "오류";
+            setStatus(status, error.message || "Meta 광고 조사 서버 연결을 확인해주세요.", "is-warn");
+          } finally {
+            runButton.disabled = false;
+          }
+        });
       }
 
       function initRankCheck(linkedKeywordInput) {
@@ -8859,6 +9144,7 @@
       initSeoCheck(keywordInput);
       initRankCheck(keywordInput);
       initRankTracking(keywordInput);
+      initMetaAdsTool();
 
       function csvValue(value) {
         return '"' + String(value || "").replace(/"/g, '""') + '"';

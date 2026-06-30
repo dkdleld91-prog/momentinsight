@@ -79,7 +79,7 @@
 - 운영 원본 파일 업로드/다운로드 MVP
 - 일정 및 공개 코멘트 영역
 - 공개 코멘트와 내부 메모 분리
-- 키워드 조회, 네이버 상품 순위 추적, 네이버 SEO 확인
+- 키워드 조회, 네이버 상품 순위 추적, 네이버 SEO 확인, Meta 광고 조사
 
 ## 문서 안내
 
@@ -111,6 +111,7 @@ npm run work:autosave
 - 개발 완료 후에는 작업명세서에 완료 체크를 남기고 로컬 커밋합니다.
 - `git push`, Vercel 배포, Supabase 배포는 운영상 필요하거나 별도 지시가 있을 때만 실행합니다.
 - 자동 순위추적은 Vercel의 `MI_RANK_CRON_SECRET`과 GitHub Actions repository secret `MI_RANK_CRON_SECRET`이 같은 값이어야 정상 동작합니다.
+- Meta 광고 조사는 `META_AD_LIBRARY_ACCESS_TOKEN`이 Vercel Production에 있어야 실제 광고 라이브러리 결과를 조회합니다.
 
 ## 다음 개발 단계
 

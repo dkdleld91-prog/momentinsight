@@ -27,6 +27,7 @@ const homeCopy = read("02_아임웹_적용코드/복붙용_홈페이지형_CODE.
 const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_통합보기_모먼트인사이트.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
+const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
@@ -51,8 +52,8 @@ const checks = {
   adminCopySynced: adminSource === adminCopy,
   clientCopySynced: clientSource === clientCopy,
   homeCopySynced: homeSource === homeCopy,
-  adminMenuCount: adminScreens.length === 11,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 12,
+  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
   adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
     && adminSource.includes('data-login-mode="operator"')
@@ -144,7 +145,25 @@ const checks = {
     && sheetTemplateBuilder.includes("월간_매출입력")
     && sheetTemplateBuilder.includes("광고주 연결")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
-  clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  metaAdsToolReady: serverIndex.includes('import metaAds from "./handlers/meta-ads.mjs"')
+    && serverIndex.includes('url.pathname === "/api/meta-ads"')
+    && metaAdsServer.includes("META_AD_LIBRARY_ACCESS_TOKEN")
+    && metaAdsServer.includes("META_AD_LIBRARY_NOT_CONFIGURED")
+    && metaAdsServer.includes("ad_reached_countries")
+    && metaAdsServer.includes("search_terms")
+    && metaAdsServer.includes("ad_snapshot_url")
+    && metaAdsServer.includes("protectedJson")
+    && [adminSource, clientSource].every((source) => source.includes('data-meta-card')
+      && source.includes("data-meta-query")
+      && source.includes("data-meta-results")
+      && source.includes("getMetaAdsApiUrl")
+      && source.includes("initMetaAdsTool")
+      && source.includes("메타 광고 조사")
+      && source.includes("서버 토큰 연결 전에는 실제 결과를 표시하지 않습니다."))
+    && runtimeEnvCheck.includes('status(env, "Meta Ad Library access token", ["META_AD_LIBRARY_ACCESS_TOKEN", "META_ADS_LIBRARY_ACCESS_TOKEN"], false)')
+    && integrationStatusServer.includes("Meta Ad Library access token")
+    && integrationStatusServer.includes("metaAdLibrary"),
   naverRankScreensSplit: [adminSource, clientSource].every((source) => source.includes("data-rank-check-card")
     && source.includes("data-rank-check-run")
     && source.includes("initRankCheck")

@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 30. 12:29:00
-- 기준 커밋: 2cb3728
-- 작업트리: M scripts/check-release-baseline.mjs /  M vercel.json
+- 마지막 자동 저장: 2026. 06. 30. 12:35:19
+- 기준 커밋: 7dd5d3b
+- 작업트리: M src/server/handlers/meta-ads.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

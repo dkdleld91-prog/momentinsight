@@ -15,8 +15,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 06. 30. 09:58:46
-- 기준 커밋: 22b3474
+- 마지막 자동 저장: 2026. 06. 30. 10:07:50
+- 기준 커밋: 7b4a4d0
 - 작업트리: M .github/workflows/naver-rank-cron.yml /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 

@@ -282,9 +282,9 @@ const checks = {
     && accessAuditMigration.includes("c.status = 'active'")
     && accessAuditMigration.includes("c.disconnected_at is null")
     && accessAuditMigration.includes("idx_audit_logs_action_created"),
-  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0 0,6 * * *"')
-    && rankCronWorkflow.includes('cron: "17,37 0,6 * * *"')
-    && rankCronWorkflow.includes("Primary run at 09:00/15:00 KST, with backup calls in the same window")
+  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "*/10 0-7 * * *"')
+    && rankCronWorkflow.includes("Daytime safety polling")
+    && rankCronWorkflow.includes("missed 09:00/15:00 slots are retried")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")

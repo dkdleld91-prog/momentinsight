@@ -44,6 +44,7 @@ const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
 const staticBuildScript = read("scripts/build-vercel-static.mjs");
 const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
+const rankTrackerGroupsMigration = read("supabase/migrations/20260701090000_naver_rank_tracker_groups.sql");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -220,8 +221,8 @@ const checks = {
     && rankServer.includes("keywordVolumeLabel")
     && rankServer.includes("fetchSearchAdKeywordVolume")
     && rankServer.includes("NAVER_SEARCHAD_API_KEY"),
-  rankTrackingCompactActionColumn: [adminSource, clientSource].every((source) => source.includes("minmax(132px, 0.62fr)")
-    && source.includes("minmax(184px, auto)")
+  rankTrackingCompactActionColumn: [adminSource, clientSource].every((source) => source.includes("minmax(128px, 0.55fr)")
+    && source.includes("minmax(196px, auto)")
     && source.includes("position: sticky")
     && source.includes("min-width: max-content")
     && source.includes("font-size: 10.5px")
@@ -388,6 +389,18 @@ const checks = {
       && source.includes('action: "sync-due"')
       && source.includes("밀린 자동 순위 갱신을 확인 중입니다.")
       && source.includes("dueRankTrackers")),
+  rankTrackerGroupsReady: rankServer.includes("DEFAULT_RANK_GROUP")
+    && rankServer.includes("updateTrackerGroup")
+    && rankServer.includes('action === "group"')
+    && rankServer.includes("groupName: normalizeRankGroupName(row.group_name)")
+    && rankTrackerGroupsMigration.includes("add column if not exists group_name")
+    && rankTrackerGroupsMigration.includes("idx_naver_rank_trackers_agency_group_sort")
+    && [adminSource, clientSource].every((source) => source.includes("data-rank-group")
+      && source.includes("data-rank-filter-group")
+      && source.includes("rankTrackerGroupName")
+      && source.includes("data-rank-group-edit")
+      && source.includes("mi-rank-group-section")
+      && source.includes('action: "group"')),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
     && cron.schedule === "0 0 * * *")
     && rankCronServer.includes("DEFAULT_CRON_BATCH = 50"),

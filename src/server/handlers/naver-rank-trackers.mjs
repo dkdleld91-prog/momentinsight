@@ -14,6 +14,7 @@ const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
 const RANK_TRACKER_LEASE_MS = Number(process.env.MI_RANK_TRACKER_LEASE_MS || 1000 * 60 * 12);
+const DEFAULT_RANK_GROUP = "기본 그룹";
 const keywordVolumeCache = new Map();
 
 const TRACKER_SELECT = [
@@ -73,6 +74,11 @@ function normalizeAgencyCode(value) {
   return normalizeText(value || "").toLowerCase();
 }
 
+function normalizeRankGroupName(value) {
+  const normalized = normalizeText(value || "").replace(/\s+/g, " ").slice(0, 40);
+  return normalized || DEFAULT_RANK_GROUP;
+}
+
 function normalizeKeywordCompare(value) {
   return normalizeText(value || "").replace(/\s/g, "").toLowerCase();
 }
@@ -83,6 +89,10 @@ function normalizeSearchAdKeyword(value) {
 
 function isMissingRankLeaseColumns(error) {
   return /processing_started_at|processing_until|schema cache|does not exist/i.test(error?.message || "");
+}
+
+function isMissingRankGroupColumn(error) {
+  return /group_name|schema cache|does not exist/i.test(error?.message || "");
 }
 
 function searchAdConfig() {
@@ -303,6 +313,7 @@ function trackerPayload(row, snapshots = [], keywordVolume = null) {
   return {
     id: row.id,
     keyword: row.keyword,
+    groupName: normalizeRankGroupName(row.group_name),
     keywordVolume: keywordVolume?.value ?? null,
     keywordVolumeLabel: keywordVolume?.label || "조회 필요",
     keywordVolumeStatus: keywordVolume?.status || "pending",
@@ -464,6 +475,58 @@ async function loadSnapshots(ctx, trackerIds, limit = 5000) {
   return grouped;
 }
 
+async function loadTrackerGroups(ctx, trackerIds) {
+  const ids = Array.from(new Set((trackerIds || []).filter(Boolean)));
+  if (!ids.length) return new Map();
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id, group_name")
+    .in("id", ids);
+
+  if (error) {
+    if (isMissingRankGroupColumn(error)) return new Map();
+    throw error;
+  }
+
+  const groups = new Map();
+  (data || []).forEach((row) => {
+    groups.set(row.id, normalizeRankGroupName(row.group_name));
+  });
+  return groups;
+}
+
+async function attachTrackerGroups(ctx, rows) {
+  const sourceRows = rows || [];
+  if (!sourceRows.length) return sourceRows;
+  const groups = await loadTrackerGroups(ctx, sourceRows.map((row) => row.id));
+  return sourceRows.map((row) => ({
+    ...row,
+    group_name: groups.get(row.id) || normalizeRankGroupName(row.group_name),
+  }));
+}
+
+async function attachTrackerGroup(ctx, row) {
+  if (!row) return row;
+  const rows = await attachTrackerGroups(ctx, [row]);
+  return rows[0] || row;
+}
+
+async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
+  const normalizedGroupName = normalizeRankGroupName(groupName);
+  const { error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({ group_name: normalizedGroupName })
+    .eq("id", trackerId)
+    .in("agency_code", agencyCodeScope(agencyCode));
+
+  if (error) {
+    if (isMissingRankGroupColumn(error)) return { ok: false, missingColumn: true };
+    throw error;
+  }
+  return { ok: true, groupName: normalizedGroupName };
+}
+
 async function listTrackers(request, ctx) {
   const url = new URL(request.url);
   const access = await requireRankAccess(request, ctx, {}, { read: true });
@@ -482,7 +545,7 @@ async function listTrackers(request, ctx) {
 
   if (error) throw error;
 
-  const rows = data || [];
+  const rows = await attachTrackerGroups(ctx, data || []);
   const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
   const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
   return json(request, {
@@ -595,6 +658,7 @@ async function createTracker(request, ctx, body, access = {}) {
   const productId = normalizeText(body.productId || body.product_id) || extractProductId(productUrl);
   const mallName = normalizeText(body.mallName || body.mall_name);
   const productTitle = normalizeText(body.productTitle || body.product_title);
+  const groupName = normalizeRankGroupName(body.groupName || body.group_name || body.group);
 
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
   if (!productUrl && !productId && !mallName) {
@@ -615,12 +679,13 @@ async function createTracker(request, ctx, body, access = {}) {
   const existing = await existingQuery.maybeSingle();
   if (existing.error) throw existing.error;
   if (existing.data) {
-    const snapshots = await loadSnapshots(ctx, [existing.data.id], 30);
-    const keywordVolumes = await loadKeywordVolumes([existing.data.keyword]);
+    const existingTracker = await attachTrackerGroup(ctx, existing.data);
+    const snapshots = await loadSnapshots(ctx, [existingTracker.id], 30);
+    const keywordVolumes = await loadKeywordVolumes([existingTracker.keyword]);
     return json(request, {
       ok: true,
       message: "이미 추적 중인 상품입니다. 최근 30일 기록을 이어서 표시합니다.",
-      tracker: trackerPayload(existing.data, snapshots.get(existing.data.id) || [], keywordVolumes.get(normalizeKeywordCompare(existing.data.keyword))),
+      tracker: trackerPayload(existingTracker, snapshots.get(existingTracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(existingTracker.keyword))),
     });
   }
 
@@ -673,12 +738,14 @@ async function createTracker(request, ctx, body, access = {}) {
 
   if (error) throw error;
 
-  const checked = await runTrackerCheck(ctx, data);
+  await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);
+  const checked = await runTrackerCheck(ctx, { ...data, group_name: groupName });
+  const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(checkedTracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
 }
 
@@ -697,12 +764,14 @@ async function checkOne(request, ctx, body) {
   if (error) throw error;
   if (!data) return json(request, { ok: false, message: "추적 항목을 찾을 수 없습니다." }, 404);
 
-  const checked = await runTrackerCheck(ctx, data);
+  const tracker = await attachTrackerGroup(ctx, data);
+  const checked = await runTrackerCheck(ctx, tracker);
+  const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(checkedTracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   });
 }
 
@@ -720,7 +789,8 @@ async function stopTracker(request, ctx, body) {
     .single();
 
   if (error) throw error;
-  return json(request, { ok: true, tracker: trackerPayload(data), message: "추적을 중지했습니다." });
+  const tracker = await attachTrackerGroup(ctx, data);
+  return json(request, { ok: true, tracker: trackerPayload(tracker), message: "추적을 중지했습니다." });
 }
 
 async function deleteTracker(request, ctx, body) {
@@ -738,6 +808,38 @@ async function deleteTracker(request, ctx, body) {
   if (error) throw error;
   if (!data?.length) return json(request, { ok: false, message: "삭제할 추적 항목을 찾을 수 없습니다." }, 404);
   return json(request, { ok: true, deletedId: trackerId, message: "추적 항목을 삭제했습니다." });
+}
+
+async function updateTrackerGroup(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  const trackerId = normalizeText(body.trackerId || body.id);
+  const groupName = normalizeRankGroupName(body.groupName || body.group_name || body.group);
+  if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
+
+  const updated = await updateTrackerGroupName(ctx, trackerId, agencyCode, groupName);
+  if (!updated.ok && updated.missingColumn) {
+    return json(request, {
+      ok: false,
+      message: "그룹 저장 컬럼이 아직 적용되지 않았습니다. DB 마이그레이션 적용 후 다시 시도해주세요.",
+    }, 409);
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select(TRACKER_SELECT)
+    .eq("id", trackerId)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return json(request, { ok: false, message: "그룹을 변경할 추적 항목을 찾을 수 없습니다." }, 404);
+
+  const tracker = await attachTrackerGroup(ctx, { ...data, group_name: groupName });
+  return json(request, {
+    ok: true,
+    message: "추적 항목 그룹을 변경했습니다.",
+    tracker: trackerPayload(tracker),
+  });
 }
 
 async function moveTracker(request, ctx, body) {
@@ -788,10 +890,16 @@ async function moveTracker(request, ctx, body) {
 
 async function reorderTrackers(request, ctx, body) {
   const agencyCode = requestAgencyCode(request, body);
-  const rawIds = Array.isArray(body.orderedIds) ? body.orderedIds : body.trackerIds;
+  const rawTrackerItems = Array.isArray(body.trackers) ? body.trackers : [];
+  const rawIds = Array.isArray(body.orderedIds)
+    ? body.orderedIds
+    : (rawTrackerItems.length ? rawTrackerItems.map((item) => item?.id || item?.trackerId) : body.trackerIds);
   const orderedIds = Array.from(new Set((Array.isArray(rawIds) ? rawIds : [])
     .map((id) => normalizeText(id))
     .filter(Boolean)));
+  const groupById = new Map(rawTrackerItems
+    .map((item) => [normalizeText(item?.id || item?.trackerId), normalizeRankGroupName(item?.groupName || item?.group_name || item?.group)])
+    .filter(([id]) => Boolean(id)));
 
   if (orderedIds.length < 2) {
     return json(request, { ok: false, message: "정렬할 추적 항목이 부족합니다." }, 400);
@@ -817,6 +925,17 @@ async function reorderTrackers(request, ctx, body) {
     .in("agency_code", agencyCodeScope(agencyCode))));
   const updateError = results.find((item) => item.error)?.error;
   if (updateError) throw updateError;
+
+  if (groupById.size) {
+    const groupResults = await Promise.all(orderedIds.map((id) => updateTrackerGroupName(ctx, id, agencyCode, groupById.get(id))));
+    const groupColumnMissing = groupResults.some((item) => item && item.missingColumn);
+    if (groupColumnMissing) {
+      return json(request, {
+        ok: true,
+        message: "추적 항목 순서는 저장했습니다. 그룹 저장은 DB 마이그레이션 적용 후 반영됩니다.",
+      });
+    }
+  }
 
   return json(request, { ok: true, message: "추적 항목 순서를 저장했습니다." });
 }
@@ -975,6 +1094,7 @@ async function handlePost(request, ctx) {
   if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);
+  if (action === "group") return updateTrackerGroup(request, ctx, body);
   if (action === "move") return moveTracker(request, ctx, body);
   if (action === "reorder") return reorderTrackers(request, ctx, body);
 

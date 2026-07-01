@@ -1463,6 +1463,83 @@
       white-space: nowrap;
     }
 
+    #mi-clean .mi-rank-group-list {
+      display: grid;
+      gap: 12px;
+    }
+
+    #mi-clean .mi-rank-group-section {
+      overflow: hidden;
+      border: 1px solid #dfe7f1;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 8px 22px rgba(15, 35, 70, 0.04);
+    }
+
+    #mi-clean .mi-rank-group-head {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border: 0;
+      border-bottom: 1px solid #edf2f7;
+      padding: 12px 14px;
+      color: var(--mi-navy);
+      background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    #mi-clean .mi-rank-group-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-rank-group-meta {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-group-toggle {
+      min-width: 48px;
+      color: #52627a;
+      font-size: 11px;
+      font-weight: 900;
+      text-align: right;
+    }
+
+    #mi-clean .mi-rank-group-items {
+      padding: 10px;
+    }
+
+    #mi-clean .mi-rank-group-section.is-collapsed .mi-rank-group-items {
+      display: none;
+    }
+
+    #mi-clean .mi-rank-group-edit {
+      border: 1px solid #dfe7f1;
+      border-radius: 999px;
+      padding: 4px 8px;
+      color: #52627a;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #mi-clean .mi-rank-group-edit:hover {
+      border-color: #0b2346;
+      color: #0b2346;
+      transform: translateY(-1px);
+    }
+
     #mi-clean .mi-rank-tracker-card {
       overflow-x: auto;
       overflow-y: hidden;
@@ -1486,7 +1563,7 @@
     }
 
     #mi-clean .mi-rank-track-row-head {
-      grid-template-columns: 30px minmax(86px, 0.45fr) minmax(132px, 0.62fr) minmax(104px, 0.54fr) minmax(170px, 1.15fr) minmax(184px, auto);
+      grid-template-columns: 30px minmax(86px, 0.4fr) minmax(128px, 0.55fr) minmax(104px, 0.5fr) minmax(160px, 1fr) minmax(196px, auto);
       min-width: 0;
     }
 
@@ -3862,6 +3939,7 @@
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
               <input class="mi-input" data-rank-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
+              <input class="mi-input" data-rank-group aria-label="순위 추적 그룹" placeholder="그룹명 예: 브랜드A, 여름상품" />
               <select class="mi-input" data-rank-max aria-label="조회 범위">
                 <option value="100">100위</option>
                 <option value="300" selected>300위</option>
@@ -3876,6 +3954,9 @@
                 <h3>상품별 일별 오가닉 순위</h3>
                 <div class="mi-rank-filterbar" data-rank-filter-panel>
                   <input class="mi-input" data-rank-filter-search aria-label="순위 추적 검색" placeholder="키워드, 상품명, 상품번호 검색" />
+                  <select class="mi-input" data-rank-filter-group aria-label="순위 추적 그룹 필터">
+                    <option value="">전체 그룹</option>
+                  </select>
                   <div class="mi-rank-filter-actions" role="group" aria-label="순위 추적 상태 필터">
                     <button class="mi-rank-filter-button is-active" type="button" data-rank-filter-status="all">전체</button>
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="attention">확인 필요</button>
@@ -5470,6 +5551,7 @@
         var latest = (tracker.snapshots || [])[0] || {};
         var item = latest.item || {};
         return [
+          rankTrackerGroupName(tracker),
           tracker.keyword,
           tracker.productTitle,
           tracker.productId,
@@ -5481,8 +5563,62 @@
         ].join(" ").toLowerCase();
       }
 
-      function rankTrackerMatchesFilter(tracker, text, mode) {
+      function normalizeRankGroupName(value) {
+        var normalized = String(value || "").replace(/\s+/g, " ").trim();
+        return normalized || "기본 그룹";
+      }
+
+      function rankTrackerGroupName(tracker) {
+        return normalizeRankGroupName(tracker && tracker.groupName);
+      }
+
+      function rankCollapsedGroupSet(card) {
+        return new Set(String(card && card.getAttribute("data-rank-collapsed-groups") || "")
+          .split("\n")
+          .map(function (value) { return value.trim(); })
+          .filter(Boolean)
+          .map(normalizeRankGroupName)
+        );
+      }
+
+      function setRankCollapsedGroups(card, groups) {
+        if (!card) return;
+        card.setAttribute("data-rank-collapsed-groups", Array.from(groups || []).join("\n"));
+      }
+
+      function updateRankGroupFilterPanel(card, trackers, selectedGroup) {
+        var select = card && card.querySelector("[data-rank-filter-group]");
+        if (!select) return;
+        var groups = Array.from(new Set((trackers || []).map(rankTrackerGroupName))).sort(function (a, b) {
+          if (a === "기본 그룹") return -1;
+          if (b === "기본 그룹") return 1;
+          return a.localeCompare(b, "ko");
+        });
+        select.innerHTML = '<option value="">전체 그룹</option>' + groups.map(function (group) {
+          return '<option value="' + escapeHtml(group) + '">' + escapeHtml(group) + '</option>';
+        }).join("");
+        select.value = groups.indexOf(selectedGroup) >= 0 ? selectedGroup : "";
+      }
+
+      function groupRankTrackers(trackers) {
+        var grouped = [];
+        var byName = new Map();
+        (trackers || []).forEach(function (tracker) {
+          var name = rankTrackerGroupName(tracker);
+          if (!byName.has(name)) {
+            var group = { name: name, items: [] };
+            byName.set(name, group);
+            grouped.push(group);
+          }
+          byName.get(name).items.push(tracker);
+        });
+        return grouped;
+      }
+
+      function rankTrackerMatchesFilter(tracker, text, mode, group) {
         var normalizedText = String(text || "").trim().toLowerCase();
+        var normalizedGroup = normalizeRankGroupName(group);
+        if (group && rankTrackerGroupName(tracker) !== normalizedGroup) return false;
         if (normalizedText && rankTrackerSearchText(tracker).indexOf(normalizedText) < 0) return false;
         if (mode === "attention") return rankTrackerNeedsAttention(tracker);
         if (mode === "improved") return rankTrackerTrend(tracker) === "improved";
@@ -5500,48 +5636,68 @@
         });
       }
 
+      function renderRankTrackerCard(tracker) {
+        var title = rankTrackerTitle(tracker);
+        var mallName = rankTrackerMallName(tracker);
+        var titleText = title + (mallName ? " (" + mallName + ")" : "");
+        var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
+        var avgRank = rankTrackerAverageRank(tracker, 14);
+        var insight = rankTrackerInsight(tracker);
+        var actionNote = rankTrackerActionNote(tracker);
+        return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
+          '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
+          escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
+          escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
+          escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
+          escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
+          escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
+          rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
+          escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
+          escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
+          escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>그룹 ' +
+          escapeHtml(rankTrackerGroupName(tracker)) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
+          escapeHtml(tracker.id) + '">그룹 변경</button><span>최근 ' +
+          escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
+          escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
+          escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span class="mi-rank-ops-message" title="' +
+          escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
+          renderTrackerDailyBoard(tracker) + '</section>';
+      }
+
       function renderRankHistory(node, trackers) {
         if (!node) return;
         var card = node.closest("[data-rank-card]");
         var filterText = card ? card.getAttribute("data-rank-filter-text") || "" : "";
         var filterMode = card ? card.getAttribute("data-rank-filter-mode") || "all" : "all";
+        var filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
+        updateRankGroupFilterPanel(card, trackers || [], filterGroup);
         if (!trackers || !trackers.length) {
           updateRankFilterPanel(node, 0, 0, filterMode);
           node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>';
           return;
         }
         var filteredTrackers = trackers.filter(function (tracker) {
-          return rankTrackerMatchesFilter(tracker, filterText, filterMode);
+          return rankTrackerMatchesFilter(tracker, filterText, filterMode, filterGroup);
         });
         updateRankFilterPanel(node, trackers.length, filteredTrackers.length, filterMode);
         if (!filteredTrackers.length) {
           node.innerHTML = rankTrackerOpsSummary(trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
           return;
         }
-        node.innerHTML = rankTrackerOpsSummary(trackers) + '<div class="mi-rank-daily-list">' + filteredTrackers.map(function (tracker) {
-          var title = rankTrackerTitle(tracker);
-          var mallName = rankTrackerMallName(tracker);
-          var titleText = title + (mallName ? " (" + mallName + ")" : "");
-          var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
-          var avgRank = rankTrackerAverageRank(tracker, 14);
-          var insight = rankTrackerInsight(tracker);
-          var actionNote = rankTrackerActionNote(tracker);
-          return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
-            '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
-            escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
-            escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
-            escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
-            escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
-            escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
-            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
-            escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
-            escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
-            escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>최근 ' +
-            escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
-            escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
-            escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span class="mi-rank-ops-message" title="' +
-            escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
-            renderTrackerDailyBoard(tracker) + '</section>';
+        var collapsed = rankCollapsedGroupSet(card);
+        node.innerHTML = rankTrackerOpsSummary(trackers) + '<div class="mi-rank-group-list">' + groupRankTrackers(filteredTrackers).map(function (group) {
+          var collapsedClass = collapsed.has(group.name) ? " is-collapsed" : "";
+          var best = group.items.reduce(function (acc, tracker) {
+            var rank = Number(tracker.currentRank || 0);
+            return rank ? Math.min(acc || rank, rank) : acc;
+          }, 0);
+          return '<section class="mi-rank-group-section' + collapsedClass + '" data-rank-group-section data-rank-group-name="' +
+            escapeHtml(group.name) + '"><button class="mi-rank-group-head" type="button" data-rank-group-toggle="' +
+            escapeHtml(group.name) + '"><span><span class="mi-rank-group-title">' + escapeHtml(group.name) +
+            '<span class="mi-rank-group-meta">' + escapeHtml(group.items.length + "개 추적" + (best ? " · 현재 최고 " + rankText(best) : "")) +
+            '</span></span></span><span class="mi-rank-group-toggle">' + (collapsed.has(group.name) ? "펼치기" : "접기") +
+            '</span></button><div class="mi-rank-group-items mi-rank-daily-list">' +
+            group.items.map(renderRankTrackerCard).join("") + '</div></section>';
         }).join("") + '</div>';
       }
 
@@ -5873,6 +6029,7 @@
         var rankKeyword = card.querySelector("[data-rank-keyword]");
         var rankUrl = card.querySelector("[data-rank-url]");
         var rankProductId = card.querySelector("[data-rank-product-id]");
+        var rankGroup = card.querySelector("[data-rank-group]");
         var rankMax = card.querySelector("[data-rank-max]");
         var rankRun = card.querySelector("[data-rank-run]");
         var rankStatus = card.querySelector("[data-rank-status]");
@@ -5884,6 +6041,8 @@
         var rankAutoSyncLastAt = 0;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
+        card.setAttribute("data-rank-filter-group", "");
+        card.setAttribute("data-rank-collapsed-groups", "");
 
         async function requestRankTrackers(method, body) {
           var agencyCode = rankAgencyCode();
@@ -6004,6 +6163,13 @@
           renderRankHistory(rankHistory, rankTrackers);
         });
 
+        card.addEventListener("change", function (event) {
+          var groupFilter = event.target.closest("[data-rank-filter-group]");
+          if (!groupFilter) return;
+          card.setAttribute("data-rank-filter-group", groupFilter.value || "");
+          renderRankHistory(rankHistory, rankTrackers);
+        });
+
         rankRun.addEventListener("click", async function () {
           var keyword = (rankKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
           var targetUrl = rankUrl ? rankUrl.value.trim() : "";
@@ -6025,6 +6191,7 @@
               keyword: keyword,
               targetUrl: targetUrl,
               productId: productId,
+              groupName: rankGroup ? rankGroup.value : "",
               maxRank: rankMax ? rankMax.value : "300"
             });
             if (payload.tracker) {
@@ -6056,6 +6223,18 @@
             .filter(Boolean);
         }
 
+        function currentRankTrackerOrderItems() {
+          return Array.prototype.slice.call(card.querySelectorAll(".mi-rank-tracker-card[data-rank-tracker-id]"))
+            .map(function (row) {
+              var groupSection = row.closest("[data-rank-group-section]");
+              return {
+                id: row.getAttribute("data-rank-tracker-id"),
+                groupName: groupSection ? groupSection.getAttribute("data-rank-group-name") : "기본 그룹"
+              };
+            })
+            .filter(function (item) { return item.id; });
+        }
+
         function clearRankDragState() {
           card.querySelectorAll(".mi-rank-tracker-card").forEach(function (row) {
             row.classList.remove("is-dragging", "is-drag-over");
@@ -6075,7 +6254,8 @@
           if (orderedIds.length < 2) return;
           var payload = await requestRankTrackers("POST", {
             action: "reorder",
-            orderedIds: orderedIds
+            orderedIds: orderedIds,
+            trackers: currentRankTrackerOrderItems()
           });
           setStatus(rankStatus, payload.message || "순서 저장 완료", payload.ok ? "is-ok" : "is-warn");
           await loadRankTrackers(true);
@@ -6198,6 +6378,39 @@
           if (filterButton) {
             card.setAttribute("data-rank-filter-mode", filterButton.getAttribute("data-rank-filter-status") || "all");
             renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
+          var groupToggle = event.target.closest("[data-rank-group-toggle]");
+          if (groupToggle) {
+            var toggleGroup = normalizeRankGroupName(groupToggle.getAttribute("data-rank-group-toggle"));
+            var collapsed = rankCollapsedGroupSet(card);
+            if (collapsed.has(toggleGroup)) collapsed.delete(toggleGroup);
+            else collapsed.add(toggleGroup);
+            setRankCollapsedGroups(card, collapsed);
+            renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
+          var groupEditButton = event.target.closest("[data-rank-group-edit]");
+          if (groupEditButton) {
+            var groupTrackerId = groupEditButton.getAttribute("data-rank-group-edit");
+            var currentTracker = rankTrackers.find(function (item) { return item.id === groupTrackerId; });
+            var nextGroup = window.prompt("이 추적 항목의 그룹명을 입력해주세요.", rankTrackerGroupName(currentTracker));
+            if (nextGroup === null) return;
+            nextGroup = normalizeRankGroupName(nextGroup);
+            setStatus(rankStatus, "그룹을 변경 중입니다.", "");
+            try {
+              var groupPayload = await requestRankTrackers("POST", {
+                action: "group",
+                trackerId: groupTrackerId,
+                groupName: nextGroup
+              });
+              setStatus(rankStatus, groupPayload.message || "그룹 변경 완료", groupPayload.ok ? "is-ok" : "is-warn");
+              await loadRankTrackers(true);
+            } catch (error) {
+              setStatus(rankStatus, "그룹 변경 연결을 확인해주세요.", "is-warn");
+            }
             return;
           }
 

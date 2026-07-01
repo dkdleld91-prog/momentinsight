@@ -584,6 +584,10 @@ function productTitleSimilarity(sourceTitle, candidateTitle) {
   return { ratio, overlap };
 }
 
+function hasStrongModelOverlap(tokens) {
+  return (tokens || []).some((token) => /\d/.test(token) && /[a-z가-힣]/i.test(token));
+}
+
 function categorySimilarity(sourceItem, candidateItem) {
   const sourceParts = itemCategoryParts(sourceItem);
   const candidateParts = itemCategoryParts(candidateItem);
@@ -593,31 +597,35 @@ function categorySimilarity(sourceItem, candidateItem) {
   return matches / maxLength;
 }
 
-function inferCatalogFromMatchedProduct(matchedItem, organicItems) {
-  const matchedType = classifyNaverProductType(matchedItem?.productType);
-  if (!matchedType.isMatchedSingle) return null;
+function inferCatalogFromProductReference(referenceItem, organicItems, options = {}) {
+  if (!normalizeText(referenceItem?.title)) return null;
+  const referenceRank = Number(referenceItem?.rank || 0);
+  const requireMatchedSingle = options.requireMatchedSingle !== false;
+  const referenceType = classifyNaverProductType(referenceItem?.productType);
+  if (requireMatchedSingle && !referenceType.isMatchedSingle) return null;
 
-  const matchedRank = Number(matchedItem?.rank || 0);
   const candidates = (organicItems || [])
     .filter((entry) => {
       const info = classifyNaverProductType(entry?.item?.productType);
       return info.isPriceCompareCatalog && Number(entry?.rank || 0) > 0;
     })
     .map((entry) => {
-      const titleScore = productTitleSimilarity(matchedItem?.title, entry.item?.title);
-      const categoryScore = categorySimilarity(matchedItem, entry.item);
-      const brandScore = normalizeText(matchedItem?.brand)
+      const titleScore = productTitleSimilarity(referenceItem?.title, entry.item?.title);
+      const categoryScore = categorySimilarity(referenceItem, entry.item);
+      const brandScore = normalizeText(referenceItem?.brand)
         && normalizeText(entry.item?.brand)
-        && normalizeText(matchedItem.brand).toLowerCase() === normalizeText(entry.item.brand).toLowerCase()
+        && normalizeText(referenceItem.brand).toLowerCase() === normalizeText(entry.item.brand).toLowerCase()
         ? 0.15
         : 0;
-      const makerScore = normalizeText(matchedItem?.maker)
+      const makerScore = normalizeText(referenceItem?.maker)
         && normalizeText(entry.item?.maker)
-        && normalizeText(matchedItem.maker).toLowerCase() === normalizeText(entry.item.maker).toLowerCase()
+        && normalizeText(referenceItem.maker).toLowerCase() === normalizeText(entry.item.maker).toLowerCase()
         ? 0.1
         : 0;
-      const rankDistancePenalty = matchedRank && entry.rank > matchedRank ? 0.15 : 0;
-      const score = titleScore.ratio * 0.7 + categoryScore * 0.3 + brandScore + makerScore - rankDistancePenalty;
+      const rankDistancePenalty = referenceRank && entry.rank > referenceRank ? 0.15 : 0;
+      const categoryWeight = categoryScore > 0 ? 0.25 : 0;
+      const titleWeight = 0.85 - categoryWeight;
+      const score = titleScore.ratio * titleWeight + categoryScore * categoryWeight + brandScore + makerScore - rankDistancePenalty;
       return {
         ...entry,
         score,
@@ -626,16 +634,27 @@ function inferCatalogFromMatchedProduct(matchedItem, organicItems) {
         categoryRatio: categoryScore,
       };
     })
-    .sort((a, b) => b.score - a.score || Math.abs(a.rank - matchedRank) - Math.abs(b.rank - matchedRank));
+    .sort((a, b) => b.score - a.score || Math.abs(a.rank - referenceRank) - Math.abs(b.rank - referenceRank));
 
   const best = candidates[0];
   if (!best) return null;
 
-  const enoughTitle = best.titleRatio >= 0.34 && best.titleOverlap.length >= 2;
-  const enoughCategory = best.categoryRatio >= 0.5;
-  if (!enoughTitle || !enoughCategory || best.score < 0.42) return null;
+  const hasCategoryEvidence = best.categoryRatio >= 0.5;
+  const hasModelEvidence = hasStrongModelOverlap(best.titleOverlap);
+  const enoughTitleWithModel = hasModelEvidence && best.titleRatio >= 0.45 && best.titleOverlap.length >= 2;
+  const enoughTitleWithoutModel = best.titleRatio >= 0.65 && best.titleOverlap.length >= 4;
+  const enoughCategory = hasCategoryEvidence && best.titleRatio >= 0.34 && best.titleOverlap.length >= 2;
+  if ((!enoughTitleWithModel && !enoughTitleWithoutModel && !enoughCategory) || best.score < 0.42) return null;
 
   return best;
+}
+
+function inferCatalogFromMatchedProduct(matchedItem, organicItems) {
+  return inferCatalogFromProductReference(matchedItem, organicItems, { requireMatchedSingle: true });
+}
+
+function inferCatalogFromProductMetadata(metadataItem, organicItems) {
+  return inferCatalogFromProductReference(metadataItem, organicItems, { requireMatchedSingle: false });
 }
 
 function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "", targetCatalogId = "", targetMode = "" } = {}) {
@@ -804,7 +823,6 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         ranked.inferredCatalog
         && target.targetMode === "product"
         && targetUrl
-        && /(?:^|\.)smartstore\.naver\.com|(?:^|\.)brand\.naver\.com/i.test(parseUrl(targetUrl)?.hostname || "")
       ) {
         const catalogItem = ranked.inferredCatalog.item;
         const catalogRank = ranked.inferredCatalog.rank;
@@ -869,6 +887,48 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       };
     }
 
+    const metadataCatalog = target.targetMode === "product" && targetUrl && metadataItem?.title
+      ? inferCatalogFromProductMetadata(metadataItem, organicItems)
+      : null;
+
+    if (metadataCatalog) {
+      const catalogItem = metadataCatalog.item;
+      const catalogRank = metadataCatalog.rank;
+      const position = rankPagePosition(catalogRank);
+      const catalogId = itemProductId(catalogItem);
+      return {
+        matched: true,
+        rank: catalogRank,
+        page: position.page,
+        position: position.position,
+        pageSize: position.pageSize,
+        rankBasis: "organic",
+        matchType: "metadata_catalog_from_product_url",
+        matchedProductId: target.productId || "",
+        matchedSellerItem: serializeItem(metadataItem, null),
+        catalogInference: {
+          score: Number(metadataCatalog.score.toFixed(3)),
+          titleRatio: Number(metadataCatalog.titleRatio.toFixed(3)),
+          categoryRatio: Number(metadataCatalog.categoryRatio.toFixed(3)),
+          overlap: metadataCatalog.titleOverlap,
+        },
+        total,
+        checkedCount: ranked.organicCheckedCount,
+        organicCheckedCount: ranked.organicCheckedCount,
+        rawCheckedCount: ranked.rawCheckedCount,
+        excludedAdCount: ranked.excludedAdCount,
+        targetProductId: target.productId,
+        targetProductIds: uniqueValues([catalogId, ...target.productIds]),
+        targetCatalogId: catalogId,
+        targetCatalogIds: uniqueValues([catalogId]),
+        targetMode: "catalog_inferred_from_product_url",
+        targetModeLabel: "상품 URL 원부 기준",
+        targetUrlKeys: target.urlKeys,
+        item: serializeItem(catalogItem, catalogRank),
+        topItems,
+      };
+    }
+
     if (ranked.stoppedAtLimit || !items.length || items.length < NAVER_SHOPPING_API_DISPLAY) break;
   }
 
@@ -915,6 +975,7 @@ export {
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,
+  inferCatalogFromProductMetadata,
   rankPagePosition,
   classifyNaverProductType,
   findRank as findShoppingRank,

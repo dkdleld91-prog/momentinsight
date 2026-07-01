@@ -6,6 +6,7 @@ import {
   canonicalUrlKey,
   extractProductId,
   findOrganicMatchInItems,
+  inferCatalogFromProductMetadata,
   isAdItem,
   matchTargetItem,
   productIdCandidates,
@@ -146,5 +147,27 @@ assert.equal(catalogAheadMatch.matched, true);
 assert.equal(catalogAheadMatch.rank, 2);
 assert.equal(catalogAheadMatch.inferredCatalog.rank, 1);
 assert.equal(catalogAheadMatch.inferredCatalog.item.productId, "59388521435");
+
+const metadataCatalogMatch = inferCatalogFromProductMetadata({
+  productId: "8888888888",
+  link: "https://smartstore.naver.com/yncstore/products/8888888888",
+  title: "maxzen 맥스젠 진공 스팀다리미 SR13W 핸디형",
+  mallName: "YNC Store",
+  productType: "",
+}, [
+  {
+    rank: 37,
+    item: {
+      productId: "59388521435",
+      link: "https://search.shopping.naver.com/catalog/59388521435",
+      title: "맥스젠 SR13W 화이트",
+      mallName: "",
+      productType: "1",
+    },
+  },
+]);
+assert.equal(metadataCatalogMatch.rank, 37);
+assert.equal(metadataCatalogMatch.item.productId, "59388521435");
+assert.equal(metadataCatalogMatch.titleOverlap.includes("sr13w"), true);
 
 console.log("Naver rank matching checks passed.");

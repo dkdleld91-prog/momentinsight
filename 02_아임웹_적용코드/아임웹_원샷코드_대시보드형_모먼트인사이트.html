@@ -958,10 +958,15 @@
 
     #mi-clean .mi-rank-form {
       display: grid;
-      grid-template-columns: 1.1fr 2fr 1fr 120px auto;
+      grid-template-columns: minmax(150px, 0.85fr) minmax(260px, 1.7fr) minmax(170px, 0.9fr) 108px auto;
       gap: 8px;
       margin-top: 14px;
       align-items: center;
+    }
+
+    #mi-clean .mi-rank-form .mi-button {
+      min-height: 44px;
+      white-space: nowrap;
     }
 
     #mi-clean .mi-rank-grid {
@@ -3935,11 +3940,10 @@
               </div>
               <span class="mi-period">30일 기록</span>
             </div>
-            <div class="mi-rank-form">
+            <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <input class="mi-input" data-rank-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
-              <input class="mi-input" data-rank-group aria-label="순위 추적 그룹" placeholder="그룹명 예: 브랜드A, 여름상품" />
+              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹" placeholder="그룹 선택 또는 입력" />
               <select class="mi-input" data-rank-max aria-label="조회 범위">
                 <option value="100">100위</option>
                 <option value="300" selected>300위</option>
@@ -3948,7 +3952,8 @@
               </select>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.</p>
+            <datalist id="mi-rank-group-options" data-rank-group-list></datalist>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 오가닉 순위</h3>
@@ -5598,6 +5603,12 @@
           return '<option value="' + escapeHtml(group) + '">' + escapeHtml(group) + '</option>';
         }).join("");
         select.value = groups.indexOf(selectedGroup) >= 0 ? selectedGroup : "";
+        var list = card && card.querySelector("[data-rank-group-list]");
+        if (list) {
+          list.innerHTML = groups.map(function (group) {
+            return '<option value="' + escapeHtml(group) + '"></option>';
+          }).join("");
+        }
       }
 
       function groupRankTrackers(trackers) {
@@ -6125,7 +6136,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-          setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "상품 URL 또는 상품ID를 입력하면 최근 30일 순위 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
+          setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
             await syncDueRankTrackersIfNeeded(silent);
           } catch (error) {
@@ -6181,7 +6192,7 @@
             return;
           }
           if (!targetUrl && !productId) {
-            setStatus(rankStatus, "네이버 상품 URL 또는 상품ID를 입력해주세요.", "is-warn");
+            setStatus(rankStatus, "네이버 상품 URL을 입력해주세요.", "is-warn");
             return;
           }
 

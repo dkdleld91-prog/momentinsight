@@ -18,6 +18,50 @@ const META_ADS_FIELDS = [
 const META_ADS_RATE_WINDOW_MS = Number(process.env.MI_META_ADS_RATE_WINDOW_MS || 60_000);
 const META_ADS_RATE_LIMIT = Number(process.env.MI_META_ADS_RATE_LIMIT || 20);
 const metaAdsRateBucket = new Map();
+const META_COMMERCE_CONTEXT_TERMS = [
+  "가격",
+  "구매",
+  "구매하기",
+  "특가",
+  "할인",
+  "배송",
+  "무료배송",
+  "주문",
+  "판매",
+  "쇼핑",
+  "스토어",
+  "공식몰",
+  "제품",
+  "상품",
+  "리뷰",
+  "추천",
+  "런칭",
+  "브랜드",
+  "공구",
+  "원",
+  "shop",
+  "store",
+];
+const META_LOW_INTENT_CONTEXT_TERMS = [
+  "소설",
+  "웹소설",
+  "드라마",
+  "회차",
+  "다음화",
+  "읽어",
+  "읽기",
+  "novel",
+  "story",
+  "episode",
+  "아파트",
+  "분양",
+  "민간임대",
+  "계약금",
+  "입주",
+  "병원",
+  "의원",
+  "시술",
+];
 
 function config(env = {}) {
   return {
@@ -209,12 +253,51 @@ function adSearchText(ad) {
   ].join(" "));
 }
 
-function isRelevantAd(ad, terms) {
+function tokenMatchesText(text, token) {
+  const normalizedText = normalizeSearchText(text);
+  const compactText = normalizedText.replace(/\s+/g, "");
+  const normalizedToken = normalizeSearchText(token);
+  const compactToken = normalizedToken.replace(/\s+/g, "");
+  return Boolean(normalizedToken)
+    && (normalizedText.includes(normalizedToken) || compactText.includes(compactToken));
+}
+
+function countContextHits(text, terms) {
+  return terms.reduce((count, term) => count + (tokenMatchesText(text, term) ? 1 : 0), 0);
+}
+
+function metaAdRelevanceScore(ad, terms) {
   const tokens = searchTokens(terms);
-  if (!tokens.length) return true;
+  if (!tokens.length) return 1;
+
   const text = adSearchText(ad);
-  const compact = text.replace(/\s+/g, "");
-  return tokens.some((token) => text.includes(token) || compact.includes(token.replace(/\s+/g, "")));
+  const strongText = [
+    ad.pageName,
+    ad.caption,
+    ad.title,
+    ad.description,
+  ].join(" ");
+  const bodyText = ad.body;
+  const hasTerm = tokens.some((token) => tokenMatchesText(text, token));
+  if (!hasTerm) return 0;
+
+  const hasStrongTerm = tokens.some((token) => tokenMatchesText(strongText, token));
+  const hasBodyTerm = tokens.some((token) => tokenMatchesText(bodyText, token));
+  const commerceHits = countContextHits(text, META_COMMERCE_CONTEXT_TERMS);
+  const lowIntentHits = countContextHits(text, META_LOW_INTENT_CONTEXT_TERMS);
+
+  let score = 1;
+  if (hasStrongTerm) score += 4;
+  if (hasBodyTerm) score += 1;
+  score += Math.min(commerceHits, 4);
+  score -= Math.min(lowIntentHits * 2, 8);
+  if (!hasStrongTerm && commerceHits === 0) score -= 2;
+
+  return score;
+}
+
+function isRelevantAd(ad, terms) {
+  return metaAdRelevanceScore(ad, terms) >= 2;
 }
 
 function safeMetaError(payload) {
@@ -316,7 +399,13 @@ async function fetchMetaAds(env, query) {
     if (!paging && page.paging) paging = page.paging;
 
     const pageAds = page.ads || [];
-    const relevantAds = term ? pageAds.filter((ad) => isRelevantAd(ad, term)) : pageAds;
+    const relevantAds = term
+      ? pageAds
+        .map((ad) => ({ ad, score: metaAdRelevanceScore(ad, term) }))
+        .filter((item) => item.score >= 2)
+        .sort((left, right) => right.score - left.score)
+        .map((item) => ({ ...item.ad, relevanceScore: item.score }))
+      : pageAds;
     filteredCount += Math.max(0, pageAds.length - relevantAds.length);
 
     for (const ad of relevantAds) {

@@ -974,30 +974,76 @@
     #mi-clean .mi-rank-panel {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      padding: 14px;
+      padding: 18px;
       background: #fff;
     }
 
     #mi-clean .mi-rank-panel h3 {
-      margin-bottom: 10px;
+      margin: 18px 0 8px;
       color: var(--mi-navy);
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 900;
       letter-spacing: 0;
     }
 
+    #mi-clean .mi-rank-panel h3:first-child {
+      margin-top: 0;
+    }
+
+    #mi-clean .mi-rank-result-summary {
+      display: grid;
+      grid-template-columns: minmax(190px, .42fr) minmax(0, 1fr);
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    #mi-clean .mi-rank-primary {
+      display: grid;
+      align-content: space-between;
+      min-height: 128px;
+      border: 1px solid #10294f;
+      border-radius: 10px;
+      padding: 15px 16px;
+      color: #fff;
+      background: linear-gradient(135deg, #071d3d 0%, #0f315f 100%);
+      box-shadow: 0 16px 34px rgba(8, 29, 61, 0.12);
+    }
+
+    #mi-clean .mi-rank-primary span,
+    #mi-clean .mi-rank-primary small {
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-primary strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 36px;
+      font-weight: 950;
+      letter-spacing: -0.01em;
+      line-height: 1;
+    }
+
     #mi-clean .mi-rank-kpis {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
-      margin-bottom: 12px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid #e2e9f2;
+      border-radius: 10px;
+      background: #fff;
     }
 
     #mi-clean .mi-rank-kpi {
-      border: 1px solid #e5ebf3;
-      border-radius: 8px;
-      padding: 10px;
-      background: #fbfcfd;
+      min-height: 128px;
+      border-right: 1px solid #edf2f7;
+      padding: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+    }
+
+    #mi-clean .mi-rank-kpi:last-child {
+      border-right: 0;
     }
 
     #mi-clean .mi-rank-kpi span,
@@ -1010,11 +1056,21 @@
 
     #mi-clean .mi-rank-kpi strong {
       display: block;
-      margin-top: 4px;
+      margin-top: 7px;
       color: var(--mi-navy);
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 950;
       letter-spacing: 0;
+      line-height: 1.28;
+    }
+
+    #mi-clean .mi-rank-kpi small {
+      display: block;
+      margin-top: 8px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.45;
     }
 
     #mi-clean .mi-rank-state {
@@ -1055,27 +1111,29 @@
       display: grid;
       gap: 0;
       overflow: hidden;
-      border: 1px solid #e5ebf3;
-      border-radius: 8px;
+      border: 1px solid #e2e9f2;
+      border-radius: 10px;
+      background: #fff;
     }
 
     #mi-clean .mi-rank-table div {
       display: grid;
-      grid-template-columns: 64px minmax(0, 1fr) 92px 74px;
-      gap: 8px;
-      padding: 9px 10px;
+      grid-template-columns: 72px 104px minmax(220px, 1fr) 120px 96px;
+      gap: 10px;
+      padding: 12px 14px;
       border-bottom: 1px solid #edf1f6;
       align-items: center;
       color: var(--mi-navy);
       font-size: 12px;
-      font-weight: 800;
+      font-weight: 760;
     }
 
     #mi-clean .mi-rank-table div:first-child {
       color: var(--mi-muted);
-      background: #fbfcfd;
+      background: #f8fafc;
       font-size: 11px;
       font-weight: 900;
+      min-height: 38px;
     }
 
     #mi-clean .mi-rank-table div:last-child {
@@ -1087,6 +1145,24 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-table div:not(:first-child) span:first-child {
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-rank-table div:not(:first-child) span:nth-child(2) {
+      display: inline-flex;
+      width: fit-content;
+      min-height: 24px;
+      align-items: center;
+      border: 1px solid #d9e4f2;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #0b2346;
+      background: #f4f7fb;
+      font-size: 11px;
+      font-weight: 900;
     }
 
     #mi-clean .mi-rank-table.is-trackers div {
@@ -3073,6 +3149,7 @@
       #mi-clean .mi-seo-form,
       #mi-clean .mi-rank-grid,
       #mi-clean .mi-rank-filterbar,
+      #mi-clean .mi-rank-result-summary,
       #mi-clean .mi-rank-kpis {
         grid-template-columns: 1fr;
       }
@@ -5481,10 +5558,10 @@
         var kindLabel = rankProductKindLabel(item);
         var kindNote = rankProductKindNote(item);
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
-        var targetModeLabel = result.targetModeLabel || (result.targetMode === "catalog_from_product_url" ? "상품 URL 원부 기준" : (result.targetMode === "catalog" ? "원부 기준" : "상품 기준"));
+        var targetModeLabel = result.targetModeLabel || (result.targetMode === "catalog_inferred_from_product_url" || result.targetMode === "catalog_from_product_url" ? "상품 URL 원부 기준" : (result.targetMode === "catalog" ? "원부 기준" : "상품 기준"));
         var targetBasis = result.targetCatalogId ? targetModeLabel + " · 원부ID " + result.targetCatalogId : targetModeLabel;
         var summary = found
-          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasis) + '</strong><small>원부 URL 또는 원부 연결 상품은 원부 순위로 확인</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
+          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><small>' + escapeHtml(queryKeyword) + ' · 광고 제외 기준</small></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasis) + '</strong><small>원부 연결 상품은 원부 순위로 확인</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong><small>광고 제외 오가닉 결과 기준</small></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);

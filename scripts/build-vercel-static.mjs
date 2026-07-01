@@ -2,15 +2,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const root = process.cwd();
-const sourceDir = path.join(root, "02_아임웹_적용코드");
+const sourceDir = path.join(root, "src/pages");
 const publicDir = path.join(root, "public");
 const outputDir = path.join(root, "dist");
 const siteUrl = "https://insight.momentlabs.co.kr";
 
 const pages = {
-  home: "아임웹_원샷코드_홈페이지형_모먼트인사이트.html",
-  admin: "아임웹_원샷코드_관리자형_모먼트인사이트.html",
-  client: "아임웹_원샷코드_대시보드형_모먼트인사이트.html",
+  home: "home.html",
+  admin: "admin.html",
+  client: "client.html",
 };
 
 async function exists(filePath) {

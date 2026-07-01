@@ -2,7 +2,7 @@
 
 마케팅 데이터를 정리하는 성과 대시보드입니다. 마케팅 대행사가 광고주별 KPI, 매출, 광고 성과, 키워드, 보고서, 일정, 실행 인사이트를 한곳에서 관리하고 공유하기 위한 B2B SaaS 대시보드 프로젝트입니다.
 
-현재 저장소는 정적 HTML 기반 화면, Vercel Serverless API, Supabase DB를 조합한 MVP 운영 구조입니다. Next.js 전환은 추후 선택 사항이며, 지금 운영 기준은 `02_아임웹_적용코드`의 화면 파일과 `src/server`의 API 핸들러입니다.
+현재 저장소는 정적 HTML 기반 화면, Vercel Serverless API, Supabase DB를 조합한 MVP 운영 구조입니다. Next.js 전환은 추후 선택 사항이며, 지금 운영 기준은 `src/pages`의 화면 파일과 `src/server`의 API 핸들러입니다.
 
 ## 핵심 방향
 
@@ -32,10 +32,6 @@
 ├── README.md
 ├── .github/workflows/
 │   └── naver-rank-cron.yml
-├── 02_아임웹_적용코드/
-│   ├── 아임웹_원샷코드_홈페이지형_모먼트인사이트.html
-│   ├── 아임웹_원샷코드_관리자형_모먼트인사이트.html
-│   └── 아임웹_원샷코드_대시보드형_모먼트인사이트.html
 ├── 03_운영시트_템플릿/
 ├── 05_네이버_API_연동/
 ├── 06_Supabase_연동/
@@ -48,6 +44,10 @@
 ├── scripts/
 ├── supabase/
 └── src/
+    ├── pages/
+    │   ├── home.html
+    │   ├── admin.html
+    │   └── client.html
     └── server/
 ```
 

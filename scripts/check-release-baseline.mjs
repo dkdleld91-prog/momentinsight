@@ -18,13 +18,9 @@ function assertCheck(condition, label) {
   }
 }
 
-const adminSource = read("02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html");
-const adminCopy = read("02_아임웹_적용코드/복붙용_관리자형_CODE.txt");
-const clientSource = read("02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html");
-const clientCopy = read("02_아임웹_적용코드/복붙용_광고주형_CODE.txt");
-const homeSource = read("02_아임웹_적용코드/아임웹_원샷코드_홈페이지형_모먼트인사이트.html");
-const homeCopy = read("02_아임웹_적용코드/복붙용_홈페이지형_CODE.txt");
-const integratedSource = read("02_아임웹_적용코드/아임웹_원샷코드_통합보기_모먼트인사이트.html");
+const adminSource = read("src/pages/admin.html");
+const clientSource = read("src/pages/client.html");
+const homeSource = read("src/pages/home.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
@@ -50,9 +46,10 @@ const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
 
 const checks = {
-  adminCopySynced: adminSource === adminCopy,
-  clientCopySynced: clientSource === clientCopy,
-  homeCopySynced: homeSource === homeCopy,
+  pageSourcesMovedOutOfImwebBundle: exists("src/pages/admin.html")
+    && exists("src/pages/client.html")
+    && exists("src/pages/home.html")
+    && !exists("02_아임웹_적용코드"),
   adminMenuCount: adminScreens.length === 12,
   adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
@@ -108,12 +105,10 @@ const checks = {
   reportPolicyAligned: adminSource.includes("보고서는 운영팀이 검수 후 공개합니다.")
     && adminSource.includes("공개 처리된 파일만 광고주 노출")
     && clientSource.includes("보고서함 다운로드 방식")
-    && integratedSource.includes("운영팀 검수 후 보고서함 공개")
     && sheetTemplateBuilder.includes("운영팀 검수 후 보고서함 공개")
     && !adminSource.includes("보고서는 관리자가 전달합니다.")
     && !clientSource.includes("관리자가 다운로드 후 전달")
     && !clientSource.includes("관리자 전달 방식")
-    && !integratedSource.includes("관리자가 다운로드 후 전달")
     && !sheetTemplateBuilder.includes("관리자가 다운로드 후 전달"),
   adminSourceFileUploadDownload: adminSource.includes("data-admin-source-file")
     && adminSource.includes("data-admin-source-download")

@@ -8,6 +8,7 @@ const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const rankRateBucket = new Map();
 const DEFAULT_CATALOG_ALIAS_MAP = {
   "13297440230": "59388521435",
+  "10289183039": "53551179280",
 };
 
 function config() {
@@ -216,6 +217,14 @@ function safeProductUrl(value) {
   }
 }
 
+function smartStoreSlug(value) {
+  const parsed = parseUrl(value);
+  if (!parsed) return "";
+  const host = parsed.hostname.toLowerCase();
+  if (host !== "smartstore.naver.com" && host !== "m.smartstore.naver.com" && host !== "brand.naver.com") return "";
+  return decodeURIComponent(parsed.pathname.split("/").filter(Boolean)[0] || "");
+}
+
 function decodeHtml(value) {
   return String(value || "")
     .replace(/&amp;/g, "&")
@@ -244,6 +253,14 @@ function metaContent(html, names) {
 function titleContent(html) {
   const match = String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   return decodeHtml(match?.[1] || "");
+}
+
+function cleanSmartStoreName(value) {
+  return stripTags(value)
+    .replace(/^판매자정보\s*:\s*/i, "")
+    .replace(/\s*:\s*네이버\s*스마트스토어\s*$/i, "")
+    .replace(/\s*네이버\s*스마트스토어\s*$/i, "")
+    .trim();
 }
 
 function parseNaverNumber(value) {
@@ -397,6 +414,31 @@ async function fetchProductMetadata(targetUrl, productId, options = {}) {
   });
 }
 
+async function fetchStoreMetadata(targetUrl, productId, options = {}) {
+  const safeUrl = safeProductUrl(targetUrl);
+  const slug = smartStoreSlug(safeUrl);
+  if (!safeUrl || !slug) return null;
+
+  const parsed = new URL(safeUrl);
+  const profileUrl = `https://${parsed.hostname.replace(/^m\./i, "")}/${encodeURIComponent(slug)}/profile`;
+  const html = await fetchText(profileUrl, { timeoutMs: Number(options.timeoutMs || 4500) });
+  if (!html) return null;
+
+  const channelNameMatch = html.match(/"channelName"\s*:\s*"([^"]+)"/i);
+  const channelName = channelNameMatch?.[1]
+    ? decodeHtml(channelNameMatch[1].replace(/\\u002F/gi, "/"))
+    : "";
+  const ogTitle = metaContent(html, ["og:title", "twitter:title"]);
+  const rawTitle = ogTitle || titleContent(html);
+  const mallName = cleanSmartStoreName(channelName || rawTitle);
+  if (!mallName) return null;
+
+  return productUrlItem(targetUrl, productId, {
+    mallName,
+    source: "store_profile",
+  });
+}
+
 async function fetchShoppingPage(env, keyword, start) {
   const params = new URLSearchParams({
     query: keyword,
@@ -412,6 +454,43 @@ async function fetchShoppingPage(env, keyword, start) {
       "X-Naver-Client-Secret": env.openapiClientSecret,
     },
   });
+}
+
+async function discoverSellerItemFromStore(env, keyword, target, metadataItem) {
+  const mallName = normalizeText(metadataItem?.mallName || target?.mallName);
+  if (!mallName || !keyword || !target?.hasDirectTarget) return null;
+
+  const queries = uniqueValues([
+    `${mallName} ${keyword}`,
+    `${mallName.replace(/\s+/g, "")} ${keyword}`,
+  ]);
+
+  for (const discoveryQuery of queries) {
+    const page = await fetchShoppingPage(env, discoveryQuery, 1).catch(() => null);
+    const items = Array.isArray(page?.items) ? page.items : [];
+    if (!items.length) continue;
+
+    const ranked = findOrganicMatchInItems(items, target, {
+      organicOffset: 0,
+      rawOffset: 0,
+      excludedAdCount: 0,
+      limit: 100,
+      topItems: [],
+      organicItems: [],
+    });
+
+    if (!ranked.matched) continue;
+    const type = classifyNaverProductType(ranked.item?.productType);
+    if (!type.isMatchedSingle) continue;
+
+    return {
+      query: discoveryQuery,
+      rank: ranked.rank,
+      item: ranked.item,
+    };
+  }
+
+  return null;
 }
 
 function itemProductId(item) {
@@ -731,6 +810,16 @@ async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetM
   }
 
   metadataItem = await fetchProductMetadata(targetUrl, target.productId, { timeoutMs: 4500 }).catch(() => null);
+  if (!metadataItem?.mallName) {
+    const storeMetadata = await fetchStoreMetadata(targetUrl, target.productId, { timeoutMs: 4500 }).catch(() => null);
+    if (storeMetadata?.mallName) {
+      metadataItem = {
+        ...(metadataItem || productUrlItem(targetUrl, target.productId)),
+        mallName: storeMetadata.mallName,
+        source: metadataItem?.source === "product_url" ? "product_url_store_profile" : metadataItem?.source || "store_profile",
+      };
+    }
+  }
   const metadataCatalogIds = uniqueValues([metadataItem?.catalogId, ...(metadataItem?.catalogIds || [])]);
 
   if (metadataCatalogIds.length) {
@@ -975,6 +1064,52 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     }
 
     if (ranked.stoppedAtLimit || !items.length || items.length < NAVER_SHOPPING_API_DISPLAY) break;
+  }
+
+  const discoveredSeller = target.targetMode === "product" && targetUrl && metadataItem?.mallName
+    ? await discoverSellerItemFromStore(env, keyword, target, metadataItem)
+    : null;
+  const discoveredCatalog = discoveredSeller
+    ? inferCatalogFromMatchedProduct({ ...discoveredSeller.item, rank: discoveredSeller.rank }, organicItems)
+    : null;
+
+  if (discoveredCatalog) {
+    const catalogItem = discoveredCatalog.item;
+    const catalogRank = discoveredCatalog.rank;
+    const position = rankPagePosition(catalogRank);
+    const catalogId = itemProductId(catalogItem);
+    return {
+      matched: true,
+      rank: catalogRank,
+      page: position.page,
+      position: position.position,
+      pageSize: position.pageSize,
+      rankBasis: "organic",
+      matchType: "discovered_seller_catalog_from_product_url",
+      matchedProductId: target.productId || "",
+      matchedSellerItem: serializeItem(discoveredSeller.item, discoveredSeller.rank),
+      catalogInference: {
+        score: Number(discoveredCatalog.score.toFixed(3)),
+        titleRatio: Number(discoveredCatalog.titleRatio.toFixed(3)),
+        categoryRatio: Number(discoveredCatalog.categoryRatio.toFixed(3)),
+        overlap: discoveredCatalog.titleOverlap,
+        discoveryQuery: discoveredSeller.query,
+      },
+      total,
+      checkedCount: organicCheckedCount,
+      organicCheckedCount,
+      rawCheckedCount,
+      excludedAdCount,
+      targetProductId: target.productId,
+      targetProductIds: uniqueValues([catalogId, ...target.productIds]),
+      targetCatalogId: catalogId,
+      targetCatalogIds: uniqueValues([catalogId]),
+      targetMode: "catalog_inferred_from_product_url",
+      targetModeLabel: "상품 URL 원부 기준",
+      targetUrlKeys: target.urlKeys,
+      item: serializeItem(catalogItem, catalogRank),
+      topItems,
+    };
   }
 
   const fallbackMetadataItem = metadataItem || await fetchProductMetadata(targetUrl, target.productId).catch(() => null);

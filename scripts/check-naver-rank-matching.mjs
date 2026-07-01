@@ -177,6 +177,13 @@ assert.equal(groupedSellerAliasTarget.targetMode, "catalog");
 assert.equal(groupedSellerAliasTarget.catalogId, "59388521435");
 assert.deepEqual(groupedSellerAliasTarget.productIds, ["59388521435"]);
 
+const higomSellerAliasTarget = buildRankTarget({
+  targetUrl: "https://smartstore.naver.com/higommarket/products/10289183039",
+});
+assert.equal(higomSellerAliasTarget.targetMode, "catalog");
+assert.equal(higomSellerAliasTarget.catalogId, "53551179280");
+assert.deepEqual(higomSellerAliasTarget.productIds, ["53551179280"]);
+
 const explicitCatalogTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/any-store/products/1111111111",
   targetCatalogId: "59388521435",

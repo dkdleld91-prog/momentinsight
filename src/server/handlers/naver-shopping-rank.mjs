@@ -544,6 +544,100 @@ function classifyNaverProductType(value) {
   };
 }
 
+function itemCategoryParts(item) {
+  return [item?.category1, item?.category2, item?.category3, item?.category4]
+    .map((part) => normalizeText(part).toLowerCase())
+    .filter(Boolean);
+}
+
+function titleTokens(value) {
+  const text = stripTags(value)
+    .toLowerCase()
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ");
+  const stopwords = new Set([
+    "무료",
+    "배송",
+    "정품",
+    "공식",
+    "스토어",
+    "스마트스토어",
+    "네이버",
+    "최저가",
+    "판매",
+    "상품",
+    "핸디형",
+    "가정용",
+  ]);
+  return uniqueValues(text.split(/\s+/).filter((token) => token.length >= 2 && !stopwords.has(token)));
+}
+
+function productTitleSimilarity(sourceTitle, candidateTitle) {
+  const sourceTokens = titleTokens(sourceTitle);
+  const candidateTokens = titleTokens(candidateTitle);
+  if (!sourceTokens.length || !candidateTokens.length) return { ratio: 0, overlap: [] };
+
+  const overlap = sourceTokens.filter((token) => {
+    return candidateTokens.includes(token) || candidateTokens.some((candidate) => candidate.includes(token) || token.includes(candidate));
+  });
+  const ratio = overlap.length / Math.max(1, Math.min(sourceTokens.length, candidateTokens.length));
+  return { ratio, overlap };
+}
+
+function categorySimilarity(sourceItem, candidateItem) {
+  const sourceParts = itemCategoryParts(sourceItem);
+  const candidateParts = itemCategoryParts(candidateItem);
+  if (!sourceParts.length || !candidateParts.length) return 0;
+  const maxLength = Math.max(sourceParts.length, candidateParts.length);
+  const matches = sourceParts.filter((part, index) => candidateParts[index] === part).length;
+  return matches / maxLength;
+}
+
+function inferCatalogFromMatchedProduct(matchedItem, organicItems) {
+  const matchedType = classifyNaverProductType(matchedItem?.productType);
+  if (!matchedType.isMatchedSingle) return null;
+
+  const matchedRank = Number(matchedItem?.rank || 0);
+  const candidates = (organicItems || [])
+    .filter((entry) => {
+      const info = classifyNaverProductType(entry?.item?.productType);
+      return info.isPriceCompareCatalog && Number(entry?.rank || 0) > 0;
+    })
+    .map((entry) => {
+      const titleScore = productTitleSimilarity(matchedItem?.title, entry.item?.title);
+      const categoryScore = categorySimilarity(matchedItem, entry.item);
+      const brandScore = normalizeText(matchedItem?.brand)
+        && normalizeText(entry.item?.brand)
+        && normalizeText(matchedItem.brand).toLowerCase() === normalizeText(entry.item.brand).toLowerCase()
+        ? 0.15
+        : 0;
+      const makerScore = normalizeText(matchedItem?.maker)
+        && normalizeText(entry.item?.maker)
+        && normalizeText(matchedItem.maker).toLowerCase() === normalizeText(entry.item.maker).toLowerCase()
+        ? 0.1
+        : 0;
+      const rankDistancePenalty = matchedRank && entry.rank > matchedRank ? 0.15 : 0;
+      const score = titleScore.ratio * 0.7 + categoryScore * 0.3 + brandScore + makerScore - rankDistancePenalty;
+      return {
+        ...entry,
+        score,
+        titleRatio: titleScore.ratio,
+        titleOverlap: titleScore.overlap,
+        categoryRatio: categoryScore,
+      };
+    })
+    .sort((a, b) => b.score - a.score || Math.abs(a.rank - matchedRank) - Math.abs(b.rank - matchedRank));
+
+  const best = candidates[0];
+  if (!best) return null;
+
+  const enoughTitle = best.titleRatio >= 0.34 && best.titleOverlap.length >= 2;
+  const enoughCategory = best.categoryRatio >= 0.5;
+  if (!enoughTitle || !enoughCategory || best.score < 0.42) return null;
+
+  return best;
+}
+
 function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "", targetCatalogId = "", targetMode = "" } = {}) {
   const targetCatalogIds = uniqueValues([targetCatalogId, ...catalogIdCandidates(targetUrl)]);
   const targetProductIds = targetCatalogIds.length
@@ -622,6 +716,7 @@ function serializeItem(item, rank) {
 
 function findOrganicMatchInItems(items, target, options = {}) {
   const topItems = Array.isArray(options.topItems) ? options.topItems : [];
+  const organicItems = Array.isArray(options.organicItems) ? options.organicItems : [];
   const limit = Number.isFinite(Number(options.limit)) ? Number(options.limit) : Infinity;
   let organicCheckedCount = Number(options.organicOffset || 0);
   let rawCheckedCount = Number(options.rawOffset || 0);
@@ -641,6 +736,7 @@ function findOrganicMatchInItems(items, target, options = {}) {
     }
 
     organicCheckedCount += 1;
+    organicItems.push({ rank: organicCheckedCount, item });
     if (topItems.length < 5) topItems.push(serializeItem(item, organicCheckedCount));
 
     const match = matchTargetItem(item, target);
@@ -655,7 +751,9 @@ function findOrganicMatchInItems(items, target, options = {}) {
         matchType: match.matchType,
         matchedProductId: match.matchedProductId || "",
         item,
+        inferredCatalog: inferCatalogFromMatchedProduct({ ...item, rank: organicCheckedCount }, organicItems),
         topItems,
+        organicItems,
         organicCheckedCount,
         rawCheckedCount,
         excludedAdCount,
@@ -667,6 +765,7 @@ function findOrganicMatchInItems(items, target, options = {}) {
   return {
     matched: false,
     topItems,
+    organicItems,
     organicCheckedCount,
     rawCheckedCount,
     excludedAdCount,
@@ -682,6 +781,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   let rawCheckedCount = 0;
   let excludedAdCount = 0;
   const topItems = [];
+  const organicItems = [];
 
   for (let start = 1; start <= 1000 && organicCheckedCount < limit; start += NAVER_SHOPPING_API_DISPLAY) {
     const page = await fetchShoppingPage(env, keyword, start);
@@ -693,12 +793,56 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       excludedAdCount,
       limit,
       topItems,
+      organicItems,
     });
     organicCheckedCount = ranked.organicCheckedCount;
     rawCheckedCount = ranked.rawCheckedCount;
     excludedAdCount = ranked.excludedAdCount;
 
     if (ranked.matched) {
+      if (
+        ranked.inferredCatalog
+        && target.targetMode === "product"
+        && targetUrl
+        && /(?:^|\.)smartstore\.naver\.com|(?:^|\.)brand\.naver\.com/i.test(parseUrl(targetUrl)?.hostname || "")
+      ) {
+        const catalogItem = ranked.inferredCatalog.item;
+        const catalogRank = ranked.inferredCatalog.rank;
+        const position = rankPagePosition(catalogRank);
+        const catalogId = itemProductId(catalogItem);
+        return {
+          matched: true,
+          rank: catalogRank,
+          page: position.page,
+          position: position.position,
+          pageSize: position.pageSize,
+          rankBasis: "organic",
+          matchType: "inferred_catalog_from_product_url",
+          matchedProductId: ranked.matchedProductId || "",
+          matchedSellerItem: serializeItem(ranked.item, ranked.rank),
+          catalogInference: {
+            score: Number(ranked.inferredCatalog.score.toFixed(3)),
+            titleRatio: Number(ranked.inferredCatalog.titleRatio.toFixed(3)),
+            categoryRatio: Number(ranked.inferredCatalog.categoryRatio.toFixed(3)),
+            overlap: ranked.inferredCatalog.titleOverlap,
+          },
+          total,
+          checkedCount: ranked.organicCheckedCount,
+          organicCheckedCount: ranked.organicCheckedCount,
+          rawCheckedCount: ranked.rawCheckedCount,
+          excludedAdCount: ranked.excludedAdCount,
+          targetProductId: target.productId,
+          targetProductIds: uniqueValues([catalogId, ...target.productIds]),
+          targetCatalogId: catalogId,
+          targetCatalogIds: uniqueValues([catalogId]),
+          targetMode: "catalog_inferred_from_product_url",
+          targetModeLabel: "상품 URL 원부 기준",
+          targetUrlKeys: target.urlKeys,
+          item: serializeItem(catalogItem, catalogRank),
+          topItems,
+        };
+      }
+
       return {
         matched: true,
         rank: ranked.rank,

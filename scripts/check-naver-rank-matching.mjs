@@ -116,4 +116,35 @@ assert.equal(pageTwoMatch.rank, 41);
 assert.equal(pageTwoMatch.page, 2);
 assert.equal(pageTwoMatch.position, 1);
 
+const catalogAheadMatch = findOrganicMatchInItems([
+  {
+    productId: "59388521435",
+    link: "https://search.shopping.naver.com/catalog/59388521435",
+    title: "맥스젠 SR13W 화이트",
+    mallName: "",
+    productType: "1",
+    category1: "디지털/가전",
+    category2: "생활가전",
+    category3: "다리미",
+    category4: "스팀다리미",
+  },
+  {
+    productId: "90613774375",
+    link: "https://smartstore.naver.com/main/products/13069263283",
+    title: "[maxzen] 맥스젠 진공 스팀다리미 SR13W 핸디형",
+    mallName: "maxzen",
+    productType: "3",
+    category1: "디지털/가전",
+    category2: "생활가전",
+    category3: "다리미",
+    category4: "스팀다리미",
+  },
+], buildRankTarget({
+  targetUrl: "https://smartstore.naver.com/maxzen/products/13069263283",
+}), { limit: 100, topItems: [] });
+assert.equal(catalogAheadMatch.matched, true);
+assert.equal(catalogAheadMatch.rank, 2);
+assert.equal(catalogAheadMatch.inferredCatalog.rank, 1);
+assert.equal(catalogAheadMatch.inferredCatalog.item.productId, "59388521435");
+
 console.log("Naver rank matching checks passed.");

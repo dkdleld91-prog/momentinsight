@@ -333,7 +333,8 @@ const checks = {
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("productKindLabel")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("catalogIdCandidates")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("extractCatalogIdsFromHtml")
-    && read("src/server/handlers/naver-shopping-rank.mjs").includes("resolveRankTarget"),
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("resolveRankTarget")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

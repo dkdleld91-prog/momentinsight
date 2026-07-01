@@ -66,6 +66,10 @@ function normalizeLimit(value) {
   return Math.max(1, Math.min(25, Math.floor(number)));
 }
 
+function normalizeApiLimit(value) {
+  return Math.min(100, Math.max(25, normalizeLimit(value) * 6));
+}
+
 function parsePageIds(value) {
   return normalizeText(value)
     .split(",")
@@ -252,7 +256,7 @@ async function fetchMetaAdsPage(env, query, searchTerms) {
     ad_active_status: query.status,
     ad_reached_countries: JSON.stringify([query.country]),
     media_type: query.mediaType,
-    limit: String(query.limit),
+    limit: String(query.apiLimit || query.limit),
   });
 
   if (searchTerms) params.set("search_terms", searchTerms);
@@ -311,14 +315,18 @@ async function fetchMetaAds(env, query) {
     filteredCount += page.filteredCount || 0;
     if (!paging && page.paging) paging = page.paging;
 
-    for (const ad of page.ads || []) {
+    const pageAds = page.ads || [];
+    const relevantAds = term ? pageAds.filter((ad) => isRelevantAd(ad, term)) : pageAds;
+    filteredCount += Math.max(0, pageAds.length - relevantAds.length);
+
+    for (const ad of relevantAds) {
       if (!ad.id || uniqueAds.has(ad.id)) continue;
       uniqueAds.set(ad.id, { ...ad, matchedQuery: term });
     }
 
     pages.push(page);
     if (uniqueAds.size >= query.limit) break;
-    if (uniqueAds.size > 0 && term === terms[0]) break;
+    if (uniqueAds.size > 0 && term === terms[0] && terms.length === 1) break;
   }
 
   return {
@@ -358,6 +366,7 @@ export default {
       mediaType: normalizeMediaType(url.searchParams.get("mediaType")),
       status: normalizeStatus(url.searchParams.get("status")),
       limit: normalizeLimit(url.searchParams.get("limit")),
+      apiLimit: normalizeApiLimit(url.searchParams.get("limit")),
     };
 
     if (!query.searchTerms && !query.pageIds.length) {

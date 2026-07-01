@@ -38,7 +38,6 @@ const META_COMMERCE_CONTEXT_TERMS = [
   "런칭",
   "브랜드",
   "공구",
-  "원",
   "shop",
   "store",
 ];
@@ -50,6 +49,13 @@ const META_LOW_INTENT_CONTEXT_TERMS = [
   "다음화",
   "읽어",
   "읽기",
+  "읽으려면",
+  "계속 읽",
+  "무료로 계속",
+  "연재",
+  "웹툰",
+  "책",
+  "binge books",
   "novel",
   "story",
   "episode",
@@ -285,6 +291,8 @@ function metaAdRelevanceScore(ad, terms) {
   const hasBodyTerm = tokens.some((token) => tokenMatchesText(bodyText, token));
   const commerceHits = countContextHits(text, META_COMMERCE_CONTEXT_TERMS);
   const lowIntentHits = countContextHits(text, META_LOW_INTENT_CONTEXT_TERMS);
+
+  if (lowIntentHits > 0 && commerceHits === 0 && !hasStrongTerm) return 0;
 
   let score = 1;
   if (hasStrongTerm) score += 4;

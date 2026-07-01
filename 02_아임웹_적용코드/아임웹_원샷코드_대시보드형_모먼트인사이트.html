@@ -958,27 +958,19 @@
 
     #mi-clean .mi-rank-form {
       display: grid;
-      grid-template-columns: minmax(140px, 0.8fr) minmax(240px, 1.55fr) minmax(150px, 0.8fr) 104px auto auto;
+      grid-template-columns: minmax(140px, 0.8fr) minmax(240px, 1.5fr) minmax(140px, 0.8fr) 104px auto;
       gap: 8px;
       margin-top: 14px;
       align-items: center;
     }
 
+    #mi-clean .mi-rank-form.is-tracking {
+      grid-template-columns: minmax(150px, 0.9fr) minmax(300px, 1.9fr) 112px auto;
+    }
+
     #mi-clean .mi-rank-form .mi-button {
       min-height: 44px;
       white-space: nowrap;
-    }
-
-    #mi-clean .mi-rank-form [data-rank-group-create] {
-      border-color: #dfe7f1;
-      color: #0b2346;
-      background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
-      box-shadow: 0 8px 20px rgba(15, 35, 70, 0.06);
-    }
-
-    #mi-clean .mi-rank-form [data-rank-group-create]:hover {
-      border-color: #0b2346;
-      transform: translateY(-1px);
     }
 
     #mi-clean .mi-rank-grid {
@@ -1559,31 +1551,53 @@
 
     #mi-clean .mi-rank-bulk-bar {
       display: grid;
-      grid-template-columns: minmax(180px, 0.75fr) minmax(0, 1.45fr);
-      gap: 10px;
+      grid-template-columns: minmax(210px, 0.72fr) minmax(0, 1.6fr);
+      gap: 12px;
       align-items: center;
       margin-bottom: 10px;
       padding: 10px 12px;
       border: 1px solid #dfe7f1;
       border-radius: 12px;
-      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
-      box-shadow: 0 8px 18px rgba(15, 35, 70, 0.04);
+      background: #fbfcfe;
     }
 
     #mi-clean .mi-rank-bulk-title {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 6px 8px;
       align-items: center;
       color: var(--mi-navy);
       font-size: 12px;
       font-weight: 950;
     }
 
+    #mi-clean .mi-rank-bulk-title strong {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #mi-clean .mi-rank-bulk-title strong::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #0b2346;
+      box-shadow: 0 0 0 4px rgba(11, 35, 70, 0.08);
+    }
+
     #mi-clean .mi-rank-bulk-title span {
       color: var(--mi-muted);
       font-size: 11px;
       font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-bulk-title small {
+      flex-basis: 100%;
+      color: #7b8798;
+      font-size: 11px;
+      font-weight: 850;
+      line-height: 1.35;
     }
 
     #mi-clean .mi-rank-bulk-actions {
@@ -4028,14 +4042,12 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹" placeholder="그룹 선택/생성" />
               <select class="mi-input" data-rank-max aria-label="조회 범위">
                 <option value="100">100위</option>
                 <option value="300" selected>300위</option>
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
-              <button class="mi-button subtle" type="button" data-rank-group-create>그룹 만들기</button>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
             <datalist id="mi-rank-group-options" data-rank-group-list></datalist>
@@ -5783,10 +5795,10 @@
         var selected = pruneRankSelected(card, trackers);
         var count = selected.size;
         return '<div class="mi-rank-bulk-bar" data-rank-bulk-bar><div class="mi-rank-bulk-title">' +
-          '<strong>기존 추적 그룹 정리</strong><span data-rank-selected-count>' +
+          '<strong>선택 항목 그룹화</strong><span data-rank-selected-count>' +
           escapeHtml(count ? count + "개 선택됨" : "체크 후 한 번에 이동") +
-          '</span></div><div class="mi-rank-bulk-actions"><input class="mi-input" data-rank-bulk-group list="mi-rank-group-options" aria-label="선택 항목 이동 그룹" placeholder="이동할 그룹명 입력" />' +
-          '<button class="mi-button" type="button" data-rank-bulk-move>선택 그룹 이동</button>' +
+          '</span><small>아래 추적 항목을 체크하고 그룹명을 입력하면 새 그룹 생성과 이동이 한 번에 처리됩니다.</small></div><div class="mi-rank-bulk-actions"><input class="mi-input" data-rank-bulk-group list="mi-rank-group-options" aria-label="선택 항목 이동 그룹" placeholder="새 그룹명 또는 기존 그룹명" />' +
+          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 만들고 넣기</button>' +
           '<button class="mi-button subtle" type="button" data-rank-bulk-clear>선택 해제</button></div></div>';
       }
 
@@ -6225,18 +6237,20 @@
 
         function createRankGroup(groupName) {
           var nextGroup = normalizeRankGroupName(groupName);
+          var bulkInput = card.querySelector("[data-rank-bulk-group]");
           if (!nextGroup) {
             setStatus(rankStatus, "만들 그룹명을 입력해주세요.", "is-warn");
-            if (rankGroup) rankGroup.focus();
+            if (bulkInput) bulkInput.focus();
             return false;
           }
           var groups = rankCustomGroupSet(card);
+          var exists = groups.has(nextGroup);
           groups.add(nextGroup);
           setRankCustomGroups(card, groups);
           saveRankCustomGroups(groups);
-          if (rankGroup) rankGroup.value = nextGroup;
+          if (bulkInput) bulkInput.value = nextGroup;
           renderRankHistory(rankHistory, rankTrackers);
-          setStatus(rankStatus, nextGroup + " 그룹을 만들었습니다. 항목 선택 후 그룹 이동으로 배치할 수 있습니다.", "is-ok");
+          setStatus(rankStatus, exists ? nextGroup + " 그룹을 선택했습니다." : nextGroup + " 그룹을 만들었습니다.", "is-ok");
           return true;
         }
 
@@ -6590,12 +6604,6 @@
             return;
           }
 
-          var groupCreateButton = event.target.closest("[data-rank-group-create]");
-          if (groupCreateButton) {
-            createRankGroup(rankGroup ? rankGroup.value : "");
-            return;
-          }
-
           var groupToggle = event.target.closest("[data-rank-group-toggle]");
           if (groupToggle) {
             var toggleGroup = normalizeRankGroupName(groupToggle.getAttribute("data-rank-group-toggle"));
@@ -6620,17 +6628,23 @@
             var selectedIds = Array.from(rankSelectedSet(card));
             var bulkInput = card.querySelector("[data-rank-bulk-group]");
             var bulkGroup = normalizeRankGroupName(bulkInput ? bulkInput.value : "");
-            if (!selectedIds.length) {
-              setStatus(rankStatus, "그룹 이동할 추적 항목을 먼저 선택해주세요.", "is-warn");
-              return;
-            }
             if (!bulkGroup) {
-              setStatus(rankStatus, "이동할 그룹명을 입력해주세요.", "is-warn");
+              setStatus(rankStatus, "만들거나 이동할 그룹명을 입력해주세요.", "is-warn");
               if (bulkInput) bulkInput.focus();
               return;
             }
+            var groups = rankCustomGroupSet(card);
+            var isNewGroup = !groups.has(bulkGroup);
+            groups.add(bulkGroup);
+            setRankCustomGroups(card, groups);
+            saveRankCustomGroups(groups);
+            if (!selectedIds.length) {
+              renderRankHistory(rankHistory, rankTrackers);
+              setStatus(rankStatus, isNewGroup ? bulkGroup + " 그룹을 만들었습니다. 이동할 항목을 선택하면 바로 넣을 수 있습니다." : bulkGroup + " 그룹을 선택했습니다. 이동할 항목을 선택해주세요.", "is-ok");
+              return;
+            }
             bulkMoveButton.disabled = true;
-            setStatus(rankStatus, "선택한 추적 항목을 그룹으로 이동 중입니다.", "");
+            setStatus(rankStatus, "선택한 추적 항목을 " + bulkGroup + " 그룹으로 이동 중입니다.", "");
             try {
               var moved = 0;
               for (var i = 0; i < selectedIds.length; i += 1) {
@@ -6661,13 +6675,17 @@
             nextGroup = normalizeRankGroupName(nextGroup);
             setStatus(rankStatus, "그룹을 변경 중입니다.", "");
             try {
-              var groupPayload = await requestRankTrackers("POST", {
-                action: "group",
-                trackerId: groupTrackerId,
-                groupName: nextGroup
-              });
-              setStatus(rankStatus, groupPayload.message || "그룹 변경 완료", groupPayload.ok ? "is-ok" : "is-warn");
-              await loadRankTrackers(true);
+            var groupPayload = await requestRankTrackers("POST", {
+              action: "group",
+              trackerId: groupTrackerId,
+              groupName: nextGroup
+            });
+            var editedGroups = rankCustomGroupSet(card);
+            editedGroups.add(nextGroup);
+            setRankCustomGroups(card, editedGroups);
+            saveRankCustomGroups(editedGroups);
+            setStatus(rankStatus, groupPayload.message || "그룹 변경 완료", groupPayload.ok ? "is-ok" : "is-warn");
+            await loadRankTrackers(true);
             } catch (error) {
               setStatus(rankStatus, "그룹 변경 연결을 확인해주세요.", "is-warn");
             }

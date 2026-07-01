@@ -1,6 +1,7 @@
 const defaultAllowedOrigins = [
   "https://insight.momentlabs.co.kr",
   "http://127.0.0.1:8784",
+  "http://127.0.0.1:8786",
   "http://127.0.0.1:8781",
   "http://127.0.0.1:8790",
   "http://127.0.0.1:8793",
@@ -9,6 +10,7 @@ const defaultAllowedOrigins = [
   "http://127.0.0.1:8774",
   "http://127.0.0.1:8775",
   "http://localhost:8784",
+  "http://localhost:8786",
   "http://localhost:8781",
   "http://localhost:8790",
   "http://localhost:8793",

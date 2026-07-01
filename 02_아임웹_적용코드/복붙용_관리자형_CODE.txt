@@ -8137,8 +8137,10 @@
         var kindLabel = rankProductKindLabel(item);
         var kindNote = rankProductKindNote(item);
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
+        var targetModeLabel = result.targetModeLabel || (result.targetMode === "catalog_from_product_url" ? "상품 URL 원부 기준" : (result.targetMode === "catalog" ? "원부 기준" : "상품 기준"));
+        var targetBasis = result.targetCatalogId ? targetModeLabel + " · 원부ID " + result.targetCatalogId : targetModeLabel;
         var summary = found
-          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
+          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasis) + '</strong><small>원부 URL 또는 원부 연결 상품은 원부 순위로 확인</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);

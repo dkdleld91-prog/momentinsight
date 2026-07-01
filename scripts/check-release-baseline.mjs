@@ -321,12 +321,19 @@ const checks = {
     && adminSource.includes("rankProductKindNote")
     && adminSource.includes("원부형")
     && adminSource.includes("상품 형태")
+    && adminSource.includes("조회 기준")
+    && adminSource.includes("상품 URL 원부 기준")
     && clientSource.includes("rankProductKindLabel")
     && clientSource.includes("rankProductKindNote")
     && clientSource.includes("원부형")
+    && clientSource.includes("조회 기준")
+    && clientSource.includes("상품 URL 원부 기준")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("classifyNaverProductType")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isPriceCompareCatalog")
-    && read("src/server/handlers/naver-shopping-rank.mjs").includes("productKindLabel"),
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("productKindLabel")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("catalogIdCandidates")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("extractCatalogIdsFromHtml")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("resolveRankTarget"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

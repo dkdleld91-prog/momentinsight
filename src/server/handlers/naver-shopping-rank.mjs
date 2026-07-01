@@ -59,6 +59,39 @@ function uniqueValues(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
+function numericId(value) {
+  const text = String(value || "").trim();
+  return /^[0-9]{5,}$/.test(text) ? text : "";
+}
+
+function catalogIdCandidates(value) {
+  const text = String(value || "");
+  const candidates = [];
+  const parsed = parseUrl(text);
+
+  if (parsed) {
+    const params = parsed.searchParams;
+    ["catalogId", "catalogNo", "catId"].forEach((key) => {
+      const found = numericId(params.get(key));
+      if (found) candidates.push(found);
+    });
+
+    const host = parsed.hostname.toLowerCase();
+    const path = decodeURIComponent(parsed.pathname || "");
+    const catalogMatch = path.match(/\/catalog\/([0-9]{5,})(?:[/?#]|$)/i);
+    if (catalogMatch?.[1]) candidates.push(catalogMatch[1]);
+
+    const nvMid = numericId(params.get("nvMid"));
+    if (nvMid && /(^|\.)shopping\.naver\.com$/i.test(host) && /\/catalog(?:\/|$)/i.test(path)) {
+      candidates.push(nvMid);
+    }
+
+    return uniqueValues(candidates);
+  }
+
+  return [];
+}
+
 function productIdCandidates(value) {
   const text = String(value || "");
   const candidates = [];
@@ -85,6 +118,33 @@ function productIdCandidates(value) {
 
   if (/^[0-9]{5,}$/.test(text.trim())) return [text.trim()];
   return [];
+}
+
+function extractCatalogIdsFromHtml(html) {
+  const source = String(html || "");
+  if (!source) return [];
+
+  const decoded = source
+    .replace(/\\u002F/gi, "/")
+    .replace(/\\\//g, "/")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#34;/g, "\"")
+    .replace(/&amp;/g, "&");
+  const candidates = [];
+  const patterns = [
+    /(?:https?:)?\/\/search\.shopping\.naver\.com\/catalog\/([0-9]{5,})(?:[/?#"'\\]|$)/gi,
+    /["'](?:catalogId|catalogNo|stdCatalogId|parentCatalogId|comparisonCatalogId|priceCompareCatalogId)["']\s*:\s*["']?([0-9]{5,})["']?/gi,
+    /(?:catalogId|catalogNo|stdCatalogId|parentCatalogId|comparisonCatalogId|priceCompareCatalogId)=([0-9]{5,})/gi,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of decoded.matchAll(pattern)) {
+      const id = numericId(match?.[1]);
+      if (id) candidates.push(id);
+    }
+  }
+
+  return uniqueValues(candidates);
 }
 
 function canonicalUrlKey(value) {
@@ -232,6 +292,7 @@ async function fetchText(url, options = {}) {
 function productUrlItem(targetUrl, productId, overrides = {}) {
   const safeUrl = safeProductUrl(targetUrl);
   const id = productId || extractProductId(targetUrl);
+  const catalogIds = uniqueValues([...(overrides.catalogIds || []), ...catalogIdCandidates(targetUrl)]);
   if (!safeUrl && !id) return null;
   return {
     rank: null,
@@ -249,16 +310,18 @@ function productUrlItem(targetUrl, productId, overrides = {}) {
     category3: "",
     category4: "",
     productType: "",
+    catalogId: catalogIds[0] || "",
+    catalogIds,
     source: "product_url",
     ...overrides,
   };
 }
 
-async function fetchProductMetadata(targetUrl, productId) {
+async function fetchProductMetadata(targetUrl, productId, options = {}) {
   const safeUrl = safeProductUrl(targetUrl);
   if (!safeUrl) return productUrlItem(targetUrl, productId);
 
-  const html = await fetchText(safeUrl);
+  const html = await fetchText(safeUrl, { timeoutMs: Number(options.timeoutMs || 4500) });
   if (!html) return productUrlItem(targetUrl, productId);
 
   const parsed = new URL(safeUrl);
@@ -278,6 +341,7 @@ async function fetchProductMetadata(targetUrl, productId) {
   const storePath = parsed.hostname === "smartstore.naver.com" || parsed.hostname === "brand.naver.com"
     ? decodeURIComponent(parsed.pathname.split("/").filter(Boolean)[0] || "")
     : "";
+  const catalogIds = extractCatalogIdsFromHtml(html);
 
   const blockedTitle = title === "네이버쇼핑" && !image && !price;
   const blockedBody = /쇼핑 서비스 접속이 일시적으로 제한|content_error/i.test(html);
@@ -287,6 +351,8 @@ async function fetchProductMetadata(targetUrl, productId) {
     image,
     mallName: storePath || "",
     lprice: price,
+    catalogId: catalogIds[0] || "",
+    catalogIds,
   });
 }
 
@@ -478,17 +544,50 @@ function classifyNaverProductType(value) {
   };
 }
 
-function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "" } = {}) {
-  const targetProductIds = uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
+function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "", targetCatalogId = "", targetMode = "" } = {}) {
+  const targetCatalogIds = uniqueValues([targetCatalogId, ...catalogIdCandidates(targetUrl)]);
+  const targetProductIds = targetCatalogIds.length
+    ? targetCatalogIds
+    : uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
   return {
     productId: targetProductIds[0] || "",
     productIds: targetProductIds,
+    catalogId: targetCatalogIds[0] || "",
+    catalogIds: targetCatalogIds,
     normalizedUrl: normalizeUrl(targetUrl),
     urlKeys: uniqueValues([canonicalUrlKey(targetUrl)]),
     hasDirectTarget: Boolean(targetProductId || targetUrl),
     mallName: normalizeText(targetMallName),
     productTitle: normalizeText(targetProductTitle),
+    targetMode: targetMode || (targetCatalogIds.length ? "catalog" : "product"),
+    targetModeLabel: targetCatalogIds.length ? "원부 기준" : "상품 기준",
   };
+}
+
+async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "" } = {}) {
+  let target = buildRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle });
+  let metadataItem = null;
+
+  if (target.catalogIds.length || !targetUrl) {
+    return { target, metadataItem };
+  }
+
+  metadataItem = await fetchProductMetadata(targetUrl, target.productId, { timeoutMs: 4500 }).catch(() => null);
+  const metadataCatalogIds = uniqueValues([metadataItem?.catalogId, ...(metadataItem?.catalogIds || [])]);
+
+  if (metadataCatalogIds.length) {
+    target = buildRankTarget({
+      targetProductId,
+      targetUrl,
+      targetMallName: targetMallName || metadataItem?.mallName,
+      targetProductTitle: targetProductTitle || metadataItem?.title,
+      targetCatalogId: metadataCatalogIds[0],
+      targetMode: "catalog_from_product_url",
+    });
+    target.targetModeLabel = "상품 URL 원부 기준";
+  }
+
+  return { target, metadataItem };
 }
 
 function serializeItem(item, rank) {
@@ -576,7 +675,7 @@ function findOrganicMatchInItems(items, target, options = {}) {
 }
 
 async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, maxRank }) {
-  const target = buildRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle });
+  const { target, metadataItem } = await resolveRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle });
   const limit = Math.max(100, Math.min(1000, Number(maxRank || 300)));
   let total = 0;
   let organicCheckedCount = 0;
@@ -616,6 +715,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         excludedAdCount: ranked.excludedAdCount,
         targetProductId: target.productId,
         targetProductIds: target.productIds,
+        targetCatalogId: target.catalogId,
+        targetCatalogIds: target.catalogIds,
+        targetMode: target.targetMode,
+        targetModeLabel: target.targetModeLabel,
         targetUrlKeys: target.urlKeys,
         item: serializeItem(ranked.item, ranked.rank),
         topItems,
@@ -625,7 +728,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     if (ranked.stoppedAtLimit || !items.length || items.length < NAVER_SHOPPING_API_DISPLAY) break;
   }
 
-  const metadataItem = await fetchProductMetadata(targetUrl, target.productId).catch(() => null);
+  const fallbackMetadataItem = metadataItem || await fetchProductMetadata(targetUrl, target.productId).catch(() => null);
   return {
     matched: false,
     rank: null,
@@ -640,8 +743,12 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     excludedAdCount,
     targetProductId: target.productId,
     targetProductIds: target.productIds,
+    targetCatalogId: target.catalogId,
+    targetCatalogIds: target.catalogIds,
+    targetMode: target.targetMode,
+    targetModeLabel: target.targetModeLabel,
     targetUrlKeys: target.urlKeys,
-    item: metadataItem,
+    item: fallbackMetadataItem,
     topItems,
   };
 }
@@ -655,9 +762,12 @@ function rankMessage(result) {
 export {
   config as shoppingRankConfig,
   extractProductId,
+  catalogIdCandidates,
+  extractCatalogIdsFromHtml,
   productIdCandidates,
   canonicalUrlKey,
   buildRankTarget,
+  resolveRankTarget,
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,

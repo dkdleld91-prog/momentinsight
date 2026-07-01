@@ -1,10 +1,13 @@
 name: Naver Rank Tracking
 
 on:
+  push:
+    branches:
+      - main
   schedule:
-    # Daytime safety polling. The server only refreshes trackers whose next_check_at is due.
-    # Runs every 10 minutes from 09:00 to 16:50 KST so missed 09:00/15:00 slots are retried.
-    - cron: "*/10 0-7 * * *"
+    # The server only refreshes trackers whose next_check_at is due.
+    # Runs every 10 minutes during the 09:00 and 15:00 KST slots so missed exact-minute calls are retried.
+    - cron: "*/10 0,6 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -28,6 +31,11 @@ jobs:
       - name: Refresh due Naver rank trackers
         run: |
           set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            echo "Push-triggered deploy backfill: waiting briefly for production deployment."
+            sleep 90
+          fi
+
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
 

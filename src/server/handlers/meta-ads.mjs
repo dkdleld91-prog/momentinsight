@@ -280,15 +280,12 @@ async function fetchMetaAdsPage(env, query, searchTerms) {
     }
 
     const ads = Array.isArray(payload?.data) ? payload.data.map(normalizeAd) : [];
-    const relevantAds = searchTerms
-      ? ads.filter((ad) => isRelevantAd(ad, searchTerms))
-      : ads;
 
     return {
       ok: true,
-      ads: relevantAds,
+      ads,
       rawCount: ads.length,
-      filteredCount: Math.max(0, ads.length - relevantAds.length),
+      filteredCount: 0,
       paging: normalizePaging(payload?.paging),
     };
   } finally {

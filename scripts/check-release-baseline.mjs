@@ -159,6 +159,8 @@ const checks = {
     && metaAdsServer.includes("search_terms")
     && metaAdsServer.includes("isRelevantAd")
     && metaAdsServer.includes("filteredCount")
+    && metaAdsServer.includes("normalizePaging")
+    && metaAdsServer.includes("snapshotAvailable")
     && metaAdsServer.includes('ad_type: "ALL"')
     && metaAdsServer.includes("ad_snapshot_url")
     && metaAdsServer.includes("ad_creative_link_captions")

@@ -134,12 +134,14 @@ function searchTokens(value) {
 }
 
 function normalizeAd(item) {
+  const rawSnapshotUrl = normalizeText(item.ad_snapshot_url);
   return {
     id: normalizeText(item.id),
     libraryId: normalizeText(item.id),
     pageId: normalizeText(item.page_id),
     pageName: normalizeText(item.page_name),
-    snapshotUrl: normalizeText(item.ad_snapshot_url),
+    snapshotUrl: "",
+    snapshotAvailable: Boolean(rawSnapshotUrl),
     body: firstText(item.ad_creative_bodies),
     caption: firstText(item.ad_creative_link_captions),
     title: firstText(item.ad_creative_link_titles),
@@ -147,6 +149,20 @@ function normalizeAd(item) {
     deliveryStartTime: normalizeText(item.ad_delivery_start_time),
     deliveryStopTime: normalizeText(item.ad_delivery_stop_time),
     publisherPlatforms: Array.isArray(item.publisher_platforms) ? item.publisher_platforms.map(normalizeText).filter(Boolean) : [],
+  };
+}
+
+function normalizePaging(paging) {
+  if (!paging || typeof paging !== "object") return null;
+  const cursors = paging.cursors && typeof paging.cursors === "object"
+    ? {
+      before: normalizeText(paging.cursors.before),
+      after: normalizeText(paging.cursors.after),
+    }
+    : null;
+  return {
+    cursors,
+    hasNext: Boolean(paging.next),
   };
 }
 
@@ -243,7 +259,7 @@ async function fetchMetaAds(env, query) {
       ads: relevantAds,
       rawCount: ads.length,
       filteredCount: Math.max(0, ads.length - relevantAds.length),
-      paging: payload?.paging || null,
+      paging: normalizePaging(payload?.paging),
     };
   } finally {
     clearTimeout(timeout);

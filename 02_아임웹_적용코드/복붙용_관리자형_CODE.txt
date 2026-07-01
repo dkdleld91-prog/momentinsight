@@ -1697,7 +1697,7 @@
 
     #mi-admin .mi-rank-result-summary {
       display: grid;
-      grid-template-columns: minmax(220px, .36fr) minmax(0, 1fr);
+      grid-template-columns: minmax(230px, 320px) minmax(0, 1fr);
       gap: 12px;
       margin-bottom: 14px;
     }
@@ -1705,7 +1705,7 @@
     #mi-admin .mi-rank-primary {
       display: grid;
       align-content: space-between;
-      min-height: 128px;
+      min-height: 116px;
       border: 1px solid #10294f;
       border-radius: 10px;
       padding: 15px 16px;
@@ -1730,9 +1730,31 @@
       line-height: 1;
     }
 
+    #mi-admin .mi-rank-primary-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    #mi-admin .mi-rank-primary-meta em {
+      display: inline-flex;
+      min-height: 22px;
+      align-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: rgba(255, 255, 255, 0.82);
+      background: rgba(255, 255, 255, 0.08);
+      font-size: 10px;
+      font-style: normal;
+      font-weight: 850;
+      line-height: 1.2;
+    }
+
     #mi-admin .mi-rank-kpis {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 0;
       overflow: hidden;
       border: 1px solid #e2e9f2;
@@ -1745,6 +1767,9 @@
       border-right: 1px solid #edf2f7;
       padding: 15px 16px;
       background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
     }
 
     #mi-admin .mi-rank-kpi:last-child {
@@ -1763,10 +1788,13 @@
       display: block;
       margin-top: 7px;
       color: var(--mi-navy);
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 950;
       letter-spacing: 0;
       line-height: 1.28;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #mi-admin .mi-rank-kpi small {
@@ -1776,6 +1804,9 @@
       font-size: 11px;
       font-weight: 750;
       line-height: 1.45;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #mi-admin .mi-rank-mini-tags {
@@ -8252,8 +8283,9 @@
         var targetBasisTitle = isCatalogBasis ? "원부 기준" : "상품 기준";
         var targetBasisTag = targetMode === "catalog_inferred_from_product_url" ? "URL 자동 인식" : (targetMode === "catalog_from_product_url" ? "URL 원부 기준" : (isCatalogBasis ? "가격비교 원부" : "입력 상품"));
         var targetBasisId = targetCatalogId ? "원부ID " + targetCatalogId : "오가닉 기준";
+        var checkedLabel = checkedCount ? checkedCount + "개 확인" : "상위 결과";
         var summary = found
-          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><small>' + escapeHtml(queryKeyword) + ' · 광고 제외 기준</small></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong><small>광고 제외 오가닉 결과</small></div></div></div>'
+          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-primary-meta"><em>' + escapeHtml(queryKeyword) + '</em><em>광고 제외</em><em>' + escapeHtml(checkedLabel) + '</em></div></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong><small>네이버쇼핑 오가닉 기준</small></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);

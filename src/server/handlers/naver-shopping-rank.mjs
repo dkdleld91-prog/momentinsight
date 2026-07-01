@@ -394,6 +394,90 @@ function rankPagePosition(rank, pageSize = ORGANIC_PAGE_SIZE) {
   };
 }
 
+function classifyNaverProductType(value) {
+  const type = Number(value || 0);
+  const groupByType = {
+    1: "일반상품",
+    2: "일반상품",
+    3: "일반상품",
+    4: "중고상품",
+    5: "중고상품",
+    6: "중고상품",
+    7: "단종상품",
+    8: "단종상품",
+    9: "단종상품",
+    10: "판매예정상품",
+    11: "판매예정상품",
+    12: "판매예정상품",
+  };
+  const priceCompareCatalog = [1, 4, 7, 10].includes(type);
+  const priceCompareMatched = [3, 6, 9, 12].includes(type);
+  const priceCompareUnmatched = [2, 5, 8, 11].includes(type);
+
+  if (!type) {
+    return {
+      productType: "",
+      group: "",
+      kind: "unknown",
+      label: "상품 형태 확인 필요",
+      note: "네이버 쇼핑 API 결과에서 상품 형태를 확인하지 못했습니다.",
+      isPriceCompareCatalog: false,
+      isMatchedSingle: false,
+      isSingleProduct: false,
+    };
+  }
+
+  if (priceCompareCatalog) {
+    return {
+      productType: String(type),
+      group: groupByType[type] || "",
+      kind: "catalog",
+      label: "원부형",
+      note: "여러 판매처가 묶이는 가격비교 원부 상품입니다.",
+      isPriceCompareCatalog: true,
+      isMatchedSingle: false,
+      isSingleProduct: false,
+    };
+  }
+
+  if (priceCompareMatched) {
+    return {
+      productType: String(type),
+      group: groupByType[type] || "",
+      kind: "matched_single",
+      label: "단일형",
+      note: "가격비교 원부에 묶인 판매처 단일 상품입니다.",
+      isPriceCompareCatalog: false,
+      isMatchedSingle: true,
+      isSingleProduct: true,
+    };
+  }
+
+  if (priceCompareUnmatched) {
+    return {
+      productType: String(type),
+      group: groupByType[type] || "",
+      kind: "single",
+      label: "단일형",
+      note: "가격비교 원부에 묶이지 않은 일반 단일 상품입니다.",
+      isPriceCompareCatalog: false,
+      isMatchedSingle: false,
+      isSingleProduct: true,
+    };
+  }
+
+  return {
+    productType: String(type),
+    group: groupByType[type] || "",
+    kind: "unknown",
+    label: "상품 형태 확인 필요",
+    note: "네이버 쇼핑 API의 상품 타입을 해석하지 못했습니다.",
+    isPriceCompareCatalog: false,
+    isMatchedSingle: false,
+    isSingleProduct: false,
+  };
+}
+
 function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "" } = {}) {
   const targetProductIds = uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
   return {
@@ -408,6 +492,7 @@ function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName 
 }
 
 function serializeItem(item, rank) {
+  const productTypeInfo = classifyNaverProductType(item?.productType);
   return {
     rank,
     rankBasis: "organic",
@@ -425,6 +510,13 @@ function serializeItem(item, rank) {
     category3: item?.category3 || "",
     category4: item?.category4 || "",
     productType: item?.productType || "",
+    productTypeInfo,
+    productKind: productTypeInfo.kind,
+    productKindLabel: productTypeInfo.label,
+    productKindNote: productTypeInfo.note,
+    isPriceCompareCatalog: productTypeInfo.isPriceCompareCatalog,
+    isMatchedSingle: productTypeInfo.isMatchedSingle,
+    isSingleProduct: productTypeInfo.isSingleProduct,
     isAd: isAdItem(item),
   };
 }
@@ -570,6 +662,7 @@ export {
   isAdItem,
   matchTargetItem,
   rankPagePosition,
+  classifyNaverProductType,
   findRank as findShoppingRank,
   hasOpenapiConfig as hasShoppingRankConfig,
   normalizeText,

@@ -4715,9 +4715,9 @@
                 <div class="mi-step-card"><b>3</b><strong>광고주 공개</strong><span>공개 처리된 보고서만 다운로드 노출</span></div>
               </div>
               <div class="mi-downloads">
-                <button class="mi-download" type="button" data-admin-download data-report-type="weekly"><span><b>주간 보고서</b><small>CSV · 6월 2주차 · 검수 후 광고주 공개</small></span><i>↓</i></button>
-                <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>CSV · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
-                <button class="mi-download" type="button" data-admin-download data-report-type="kpi"><span><b>KPI 엑셀 정리</b><small>CSV · 내부 검토 후 공개용으로 정리</small></span><i>↓</i></button>
+                <button class="mi-download" type="button" data-admin-download data-report-type="weekly"><span><b>주간 보고서</b><small>PPTX · 6월 2주차 · 검수 후 광고주 공개</small></span><i>↓</i></button>
+                <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>PPTX · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
+                <button class="mi-download" type="button" data-admin-download data-report-type="kpi"><span><b>KPI 보고서</b><small>PPTX · 내부 검토 후 공개용으로 정리</small></span><i>↓</i></button>
                 <button class="mi-download" type="button" data-admin-ai-pptx><span><b>AI 매출 PPTX</b><small>매출·ROAS·일정 기반 자동 디자인 보고서</small></span><i>✨</i></button>
               </div>
             </article>
@@ -8070,12 +8070,30 @@
         }).join("") + '</div>';
       }
 
+      function rankProductKindLabel(item) {
+        if (!item) return "확인 필요";
+        if (item.productKindLabel) return item.productKindLabel;
+        if (item.isPriceCompareCatalog) return "원부형";
+        if (item.isSingleProduct || item.isMatchedSingle) return "단일형";
+        return "확인 필요";
+      }
+
+      function rankProductKindNote(item) {
+        if (!item) return "상품 형태를 확인하지 못했습니다.";
+        if (item.productKindNote) return item.productKindNote;
+        if (item.isPriceCompareCatalog) return "여러 판매처가 묶이는 가격비교 원부 상품입니다.";
+        if (item.isMatchedSingle) return "가격비교 원부에 묶인 판매처 단일 상품입니다.";
+        if (item.isSingleProduct) return "가격비교 원부에 묶이지 않은 단일 상품입니다.";
+        return "네이버 쇼핑 결과에서 상품 형태를 확인하지 못했습니다.";
+      }
+
       function renderRankItems(items) {
         var rows = (items || []).slice(0, 5);
         if (!rows.length) return "";
-        return '<div class="mi-rank-table"><div><span>순위</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
+        return '<div class="mi-rank-table"><div><span>순위</span><span>상품 형태</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
           rows.map(function (item) {
-            return '<div><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span title="' + escapeHtml(item.title || "") + '">' +
+            return '<div><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span title="' + escapeHtml(rankProductKindNote(item)) + '">' +
+              escapeHtml(rankProductKindLabel(item)) + '</span><span title="' + escapeHtml(item.title || "") + '">' +
               escapeHtml(item.title || "-") + '</span><span>' + escapeHtml(item.mallName || "-") + '</span><span>' +
               escapeHtml(item.lprice ? formatNumber(item.lprice) : "-") + '</span></div>';
           }).join("") + '</div>';
@@ -8116,9 +8134,11 @@
         var checkedCount = result.checkedCount || payload.checkedCount || 0;
         var queryKeyword = (payload.query && payload.query.keyword) || payload.keyword || result.keyword || "-";
         var found = Boolean(result.matched || rank);
+        var kindLabel = rankProductKindLabel(item);
+        var kindNote = rankProductKindNote(item);
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
         var summary = found
-          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
+          ? '<div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
@@ -9359,12 +9379,13 @@
         }, 1000);
       }
 
-      async function generateSalesPptxReport(state) {
+      async function generateSalesPptxReport(state, type) {
         var teamCode = currentOperationTeam && currentOperationTeam.teamCode ? String(currentOperationTeam.teamCode || "").trim() : "";
         var hasLinkedClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
         if (!teamCode || !hasLinkedClient) {
           return { ok: false, skipped: true, message: "운영팀에 연결된 광고주가 있을 때 AI PPTX 보고서를 생성할 수 있습니다." };
         }
+        var reportType = type || "sales";
         var response = await miFetch(getReportCenterApiUrl(), {
           method: "POST",
           cache: "no-store",
@@ -9374,8 +9395,8 @@
           },
           body: JSON.stringify({
             action: "generate-sales-pptx",
-            reportType: "sales",
-            title: "AI 매출 보고서 · " + (state.updatedAt || new Date().toISOString().slice(0, 10)),
+            reportType: reportType,
+            title: reportTypeLabel(reportType) + " · " + (state.updatedAt || new Date().toISOString().slice(0, 10)),
             visibility: "client_visible",
             reportData: state
           })
@@ -9393,31 +9414,19 @@
           var original = button.innerHTML;
           var type = button.getAttribute("data-report-type") || "report";
           var state = readState();
-          var publishResult = null;
           button.disabled = true;
-          var csv = buildReportCsv(type, state);
-          var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
-          var url = URL.createObjectURL(blob);
-          var link = document.createElement("a");
-          link.href = url;
-          link.download = "moment-insight-" + type + "-" + state.client + ".csv";
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          setTimeout(function () {
-            URL.revokeObjectURL(url);
-          }, 1000);
+          button.innerHTML = "<span><b>PPTX 생성 중</b><small>보고서 디자인을 적용하고 있습니다.</small></span><i>…</i>";
           try {
-            publishResult = await publishReportCenterRecord(type, state);
+            var payload = await generateSalesPptxReport(state, type);
+            if (payload.stored && payload.stored.ok) {
+              button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
+            } else if (payload.skipped) {
+              button.innerHTML = "<span><b>PPTX 생성 대기</b><small>" + escapeHtml(payload.message || "운영팀-광고주 연결이 필요합니다.") + "</small></span><i>!</i>";
+            } else {
+              button.innerHTML = "<span><b>PPTX 생성 완료</b><small>" + escapeHtml((payload.stored && payload.stored.uploadError) || "파일 다운로드 완료 · 서버 기록 확인 필요") + "</small></span><i>✓</i>";
+            }
           } catch (error) {
-            publishResult = { ok: false, message: error.message || "서버 보고서 기록 실패" };
-          }
-          if (publishResult && publishResult.ok) {
-            button.innerHTML = "<span><b>CSV 생성 · 서버 기록 완료</b><small>광고주 보고서함 공개 목록에 반영</small></span><i>✓</i>";
-          } else if (publishResult && publishResult.skipped) {
-            button.innerHTML = "<span><b>CSV 생성 완료</b><small>운영팀-광고주 연결 후 서버 보고서함 기록 가능</small></span><i>✓</i>";
-          } else {
-            button.innerHTML = "<span><b>CSV 생성 완료</b><small>서버 기록 실패 · 다시 시도 필요</small></span><i>!</i>";
+            button.innerHTML = "<span><b>PPTX 생성 실패</b><small>" + escapeHtml(error.message || "다시 시도해주세요.") + "</small></span><i>!</i>";
           }
           setTimeout(function () {
             button.innerHTML = original;
@@ -9433,7 +9442,7 @@
           button.disabled = true;
           button.innerHTML = "<span><b>AI PPTX 생성 중</b><small>데이터 분석과 디자인 보고서를 생성합니다.</small></span><i>…</i>";
           try {
-            var payload = await generateSalesPptxReport(state);
+            var payload = await generateSalesPptxReport(state, "sales");
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
             } else {

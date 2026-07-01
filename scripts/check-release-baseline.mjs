@@ -98,10 +98,10 @@ const checks = {
     && clientSource.includes("fileUrl")
     && clientSource.includes("CSV 백업"),
   adminReportCenterPublish: adminSource.includes("getReportCenterApiUrl")
-    && adminSource.includes("publishReportCenterRecord")
+    && adminSource.includes("generateSalesPptxReport")
     && adminSource.includes('"x-mi-team-code": teamCode')
-    && adminSource.includes("서버 기록 완료")
-    && adminSource.includes("운영팀-광고주 연결 후 서버 보고서함 기록 가능"),
+    && adminSource.includes("PPTX 생성 · 보고서함 기록 완료")
+    && adminSource.includes("운영팀-광고주 연결이 필요합니다."),
   reportPolicyAligned: adminSource.includes("보고서는 운영팀이 검수 후 공개합니다.")
     && adminSource.includes("공개 처리된 파일만 광고주 노출")
     && clientSource.includes("보고서함 다운로드 방식")
@@ -298,6 +298,11 @@ const checks = {
     && reportCenterServer.includes("auditLogged"),
   reportCenterAiPptxReady: adminSource.includes("data-admin-ai-pptx")
     && adminSource.includes("AI 매출 PPTX")
+    && adminSource.includes("PPTX · 6월 2주차")
+    && adminSource.includes("PPTX · 2026년 6월")
+    && !adminSource.includes("<small>CSV · 6월 2주차")
+    && !adminSource.includes("<small>CSV · 2026년 6월")
+    && !adminSource.includes("CSV 생성 완료")
     && adminSource.includes("generateSalesPptxReport")
     && adminSource.includes('action: "generate-sales-pptx"')
     && adminSource.includes("downloadBase64File")
@@ -308,6 +313,16 @@ const checks = {
     && reportCenterServer.includes('"pptx"')
     && reportCenterServer.includes("PPTX_MIME")
     && reportCenterServer.includes("report_center.ai_pptx_created"),
+  naverRankProductKindVisible: adminSource.includes("rankProductKindLabel")
+    && adminSource.includes("rankProductKindNote")
+    && adminSource.includes("원부형")
+    && adminSource.includes("상품 형태")
+    && clientSource.includes("rankProductKindLabel")
+    && clientSource.includes("rankProductKindNote")
+    && clientSource.includes("원부형")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("classifyNaverProductType")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("isPriceCompareCatalog")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("productKindLabel"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

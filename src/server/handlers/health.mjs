@@ -1,5 +1,3 @@
-import { withSupabase } from "@supabase/server";
-
 const hasSecretKey = Boolean(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SECRET_KEYS);
 const supabaseEnv = {
   url: Boolean(process.env.SUPABASE_URL),
@@ -9,12 +7,12 @@ const supabaseEnv = {
 };
 const supabaseReady = Object.values(supabaseEnv).every(Boolean);
 
-async function healthHandler(_req, ctx) {
+async function healthHandler() {
   return Response.json({
     ok: true,
     service: "moment-insight-api",
-    authMode: ctx?.authMode || "none",
-    supabaseServerContext: Boolean(ctx),
+    authMode: "none",
+    supabaseServerContext: false,
     readiness: {
       supabaseReady,
       supabaseEnv,
@@ -24,5 +22,5 @@ async function healthHandler(_req, ctx) {
 }
 
 export default {
-  fetch: hasSecretKey ? withSupabase({ auth: "none" }, healthHandler) : healthHandler
+  fetch: healthHandler
 };

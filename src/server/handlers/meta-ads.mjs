@@ -292,6 +292,7 @@ function metaAdRelevanceScore(ad, terms) {
   const commerceHits = countContextHits(text, META_COMMERCE_CONTEXT_TERMS);
   const lowIntentHits = countContextHits(text, META_LOW_INTENT_CONTEXT_TERMS);
 
+  if (lowIntentHits > 0 && commerceHits < 2) return 0;
   if (lowIntentHits > 0 && commerceHits === 0 && !hasStrongTerm) return 0;
 
   let score = 1;

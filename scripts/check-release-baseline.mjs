@@ -296,6 +296,18 @@ const checks = {
     && reportCenterServer.includes("report_center.report_created")
     && reportCenterServer.includes("recordAuditLog")
     && reportCenterServer.includes("auditLogged"),
+  reportCenterAiPptxReady: adminSource.includes("data-admin-ai-pptx")
+    && adminSource.includes("AI 매출 PPTX")
+    && adminSource.includes("generateSalesPptxReport")
+    && adminSource.includes('action: "generate-sales-pptx"')
+    && adminSource.includes("downloadBase64File")
+    && reportCenterServer.includes('import pptxgen from "pptxgenjs"')
+    && reportCenterServer.includes("OPENAI_API_KEY")
+    && reportCenterServer.includes("buildAiSalesNarrative")
+    && reportCenterServer.includes("buildSalesReportPptx")
+    && reportCenterServer.includes('"pptx"')
+    && reportCenterServer.includes("PPTX_MIME")
+    && reportCenterServer.includes("report_center.ai_pptx_created"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

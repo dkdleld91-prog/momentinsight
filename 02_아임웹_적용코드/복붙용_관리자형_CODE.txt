@@ -1697,8 +1697,8 @@
 
     #mi-admin .mi-rank-result-summary {
       display: grid;
-      grid-template-columns: minmax(190px, .42fr) minmax(0, 1fr);
-      gap: 10px;
+      grid-template-columns: minmax(220px, .36fr) minmax(0, 1fr);
+      gap: 12px;
       margin-bottom: 14px;
     }
 
@@ -1741,9 +1741,9 @@
     }
 
     #mi-admin .mi-rank-kpi {
-      min-height: 128px;
+      min-height: 116px;
       border-right: 1px solid #edf2f7;
-      padding: 14px;
+      padding: 15px 16px;
       background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
     }
 
@@ -1763,7 +1763,7 @@
       display: block;
       margin-top: 7px;
       color: var(--mi-navy);
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 950;
       letter-spacing: 0;
       line-height: 1.28;
@@ -1776,6 +1776,29 @@
       font-size: 11px;
       font-weight: 750;
       line-height: 1.45;
+    }
+
+    #mi-admin .mi-rank-mini-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+    }
+
+    #mi-admin .mi-rank-mini-tags em {
+      display: inline-flex;
+      max-width: 100%;
+      min-height: 22px;
+      align-items: center;
+      border: 1px solid #dbe6f4;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #51617a;
+      background: #f7f9fc;
+      font-size: 10px;
+      font-style: normal;
+      font-weight: 850;
+      line-height: 1.2;
     }
 
     #mi-admin .mi-rank-state {
@@ -8164,6 +8187,14 @@
         return "네이버 쇼핑 결과에서 상품 형태를 확인하지 못했습니다.";
       }
 
+      function rankProductKindShortNote(item) {
+        if (!item) return "형태 확인 필요";
+        if (item.isPriceCompareCatalog || item.productKind === "catalog") return "가격비교 묶음 상품";
+        if (item.isMatchedSingle || item.productKind === "matched_single") return "원부 내 판매처 상품";
+        if (item.isSingleProduct || item.productKind === "single") return "단일 상품";
+        return "형태 확인 필요";
+      }
+
       function renderRankItems(items) {
         var rows = (items || []).slice(0, 5);
         if (!rows.length) return "";
@@ -8213,11 +8244,16 @@
         var found = Boolean(result.matched || rank);
         var kindLabel = rankProductKindLabel(item);
         var kindNote = rankProductKindNote(item);
+        var kindShortNote = rankProductKindShortNote(item);
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
-        var targetModeLabel = result.targetModeLabel || (result.targetMode === "catalog_inferred_from_product_url" || result.targetMode === "catalog_from_product_url" ? "상품 URL 원부 기준" : (result.targetMode === "catalog" ? "원부 기준" : "상품 기준"));
-        var targetBasis = result.targetCatalogId ? targetModeLabel + " · 원부ID " + result.targetCatalogId : targetModeLabel;
+        var targetMode = result.targetMode || "";
+        var targetCatalogId = result.targetCatalogId || (result.targetCatalogIds && result.targetCatalogIds[0]) || "";
+        var isCatalogBasis = targetMode === "catalog_inferred_from_product_url" || targetMode === "catalog_from_product_url" || targetMode === "catalog" || targetCatalogId;
+        var targetBasisTitle = isCatalogBasis ? "원부 기준" : "상품 기준";
+        var targetBasisTag = targetMode === "catalog_inferred_from_product_url" ? "URL 자동 인식" : (targetMode === "catalog_from_product_url" ? "URL 원부 기준" : (isCatalogBasis ? "가격비교 원부" : "입력 상품"));
+        var targetBasisId = targetCatalogId ? "원부ID " + targetCatalogId : "오가닉 기준";
         var summary = found
-          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><small>' + escapeHtml(queryKeyword) + ' · 광고 제외 기준</small></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small>' + escapeHtml(kindNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasis) + '</strong><small>원부 연결 상품은 원부 순위로 확인</small></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong><small>광고 제외 오가닉 결과 기준</small></div></div></div>'
+          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><small>' + escapeHtml(queryKeyword) + ' · 광고 제외 기준</small></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div><div class="mi-rank-kpi"><span>확인 범위</span><strong>' + escapeHtml(checkedCount ? checkedCount + "개" : "상위 결과") + '</strong><small>광고 제외 오가닉 결과</small></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);

@@ -1545,6 +1545,79 @@
       transform: translateY(-1px);
     }
 
+    #mi-clean .mi-rank-bulk-bar {
+      display: grid;
+      grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.5fr);
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      border: 1px solid #dfe7f1;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow: 0 8px 18px rgba(15, 35, 70, 0.04);
+    }
+
+    #mi-clean .mi-rank-bulk-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-rank-bulk-title span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-clean .mi-rank-bulk-actions {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+    }
+
+    #mi-clean .mi-rank-bulk-actions .mi-input {
+      min-height: 38px;
+      border-radius: 10px;
+      font-size: 12px;
+    }
+
+    #mi-clean .mi-rank-bulk-actions button {
+      min-height: 38px;
+      border-radius: 10px;
+      padding: 0 12px;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-bulk-actions [data-rank-bulk-clear] {
+      border-color: #e5eaf2;
+      color: #52627a;
+      background: #fff;
+    }
+
+    #mi-clean .mi-rank-select {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #66748a;
+      font-size: 11px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #mi-clean .mi-rank-select input {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: #0b2346;
+    }
+
     #mi-clean .mi-rank-tracker-card {
       overflow-x: auto;
       overflow-y: hidden;
@@ -5647,7 +5720,42 @@
         });
       }
 
-      function renderRankTrackerCard(tracker) {
+      function rankSelectedSet(card) {
+        return new Set(String(card && card.getAttribute("data-rank-selected-ids") || "")
+          .split(",")
+          .map(function (id) { return id.trim(); })
+          .filter(Boolean));
+      }
+
+      function setRankSelectedSet(card, selected) {
+        if (!card) return;
+        card.setAttribute("data-rank-selected-ids", Array.from(selected || []).filter(Boolean).join(","));
+      }
+
+      function pruneRankSelected(card, trackers) {
+        var valid = new Set((trackers || []).map(function (tracker) { return tracker.id; }).filter(Boolean));
+        var selected = rankSelectedSet(card);
+        var next = new Set();
+        selected.forEach(function (id) {
+          if (valid.has(id)) next.add(id);
+        });
+        setRankSelectedSet(card, next);
+        return next;
+      }
+
+      function renderRankBulkBar(card, trackers) {
+        if (!trackers || !trackers.length) return "";
+        var selected = pruneRankSelected(card, trackers);
+        var count = selected.size;
+        return '<div class="mi-rank-bulk-bar" data-rank-bulk-bar><div class="mi-rank-bulk-title">' +
+          '<strong>기존 추적 그룹 정리</strong><span data-rank-selected-count>' +
+          escapeHtml(count ? count + "개 선택됨" : "체크 후 한 번에 이동") +
+          '</span></div><div class="mi-rank-bulk-actions"><input class="mi-input" data-rank-bulk-group list="mi-rank-group-options" aria-label="선택 항목 이동 그룹" placeholder="이동할 그룹명 입력" />' +
+          '<button class="mi-button" type="button" data-rank-bulk-move>선택 그룹 이동</button>' +
+          '<button class="mi-button subtle" type="button" data-rank-bulk-clear>선택 해제</button></div></div>';
+      }
+
+      function renderRankTrackerCard(tracker, selectedSet) {
         var title = rankTrackerTitle(tracker);
         var mallName = rankTrackerMallName(tracker);
         var titleText = title + (mallName ? " (" + mallName + ")" : "");
@@ -5655,8 +5763,10 @@
         var avgRank = rankTrackerAverageRank(tracker, 14);
         var insight = rankTrackerInsight(tracker);
         var actionNote = rankTrackerActionNote(tracker);
+        var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
-          '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
+          '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
+          escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
           escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
           escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
@@ -5692,11 +5802,12 @@
         });
         updateRankFilterPanel(node, trackers.length, filteredTrackers.length, filterMode);
         if (!filteredTrackers.length) {
-          node.innerHTML = rankTrackerOpsSummary(trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
+          node.innerHTML = rankTrackerOpsSummary(trackers) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
           return;
         }
         var collapsed = rankCollapsedGroupSet(card);
-        node.innerHTML = rankTrackerOpsSummary(trackers) + '<div class="mi-rank-group-list">' + groupRankTrackers(filteredTrackers).map(function (group) {
+        var selectedSet = pruneRankSelected(card, trackers);
+        node.innerHTML = rankTrackerOpsSummary(trackers) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-group-list">' + groupRankTrackers(filteredTrackers).map(function (group) {
           var collapsedClass = collapsed.has(group.name) ? " is-collapsed" : "";
           var best = group.items.reduce(function (acc, tracker) {
             var rank = Number(tracker.currentRank || 0);
@@ -5708,7 +5819,7 @@
             '<span class="mi-rank-group-meta">' + escapeHtml(group.items.length + "개 추적" + (best ? " · 현재 최고 " + rankText(best) : "")) +
             '</span></span></span><span class="mi-rank-group-toggle">' + (collapsed.has(group.name) ? "펼치기" : "접기") +
             '</span></button><div class="mi-rank-group-items mi-rank-daily-list">' +
-            group.items.map(renderRankTrackerCard).join("") + '</div></section>';
+            group.items.map(function (tracker) { return renderRankTrackerCard(tracker, selectedSet); }).join("") + '</div></section>';
         }).join("") + '</div>';
       }
 
@@ -6177,6 +6288,17 @@
         });
 
         card.addEventListener("change", function (event) {
+          var selectInput = event.target.closest("[data-rank-select]");
+          if (selectInput) {
+            var selected = rankSelectedSet(card);
+            var selectedId = selectInput.value || "";
+            if (selectInput.checked) selected.add(selectedId);
+            else selected.delete(selectedId);
+            setRankSelectedSet(card, selected);
+            renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
           var groupFilter = event.target.closest("[data-rank-filter-group]");
           if (!groupFilter) return;
           card.setAttribute("data-rank-filter-group", groupFilter.value || "");
@@ -6402,6 +6524,51 @@
             else collapsed.add(toggleGroup);
             setRankCollapsedGroups(card, collapsed);
             renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
+          var bulkClearButton = event.target.closest("[data-rank-bulk-clear]");
+          if (bulkClearButton) {
+            setRankSelectedSet(card, new Set());
+            renderRankHistory(rankHistory, rankTrackers);
+            setStatus(rankStatus, "선택을 해제했습니다.", "");
+            return;
+          }
+
+          var bulkMoveButton = event.target.closest("[data-rank-bulk-move]");
+          if (bulkMoveButton) {
+            var selectedIds = Array.from(rankSelectedSet(card));
+            var bulkInput = card.querySelector("[data-rank-bulk-group]");
+            var bulkGroup = normalizeRankGroupName(bulkInput ? bulkInput.value : "");
+            if (!selectedIds.length) {
+              setStatus(rankStatus, "그룹 이동할 추적 항목을 먼저 선택해주세요.", "is-warn");
+              return;
+            }
+            if (!bulkGroup) {
+              setStatus(rankStatus, "이동할 그룹명을 입력해주세요.", "is-warn");
+              if (bulkInput) bulkInput.focus();
+              return;
+            }
+            bulkMoveButton.disabled = true;
+            setStatus(rankStatus, "선택한 추적 항목을 그룹으로 이동 중입니다.", "");
+            try {
+              var moved = 0;
+              for (var i = 0; i < selectedIds.length; i += 1) {
+                var bulkPayload = await requestRankTrackers("POST", {
+                  action: "group",
+                  trackerId: selectedIds[i],
+                  groupName: bulkGroup
+                });
+                if (bulkPayload && bulkPayload.ok !== false) moved += 1;
+              }
+              setRankSelectedSet(card, new Set());
+              setStatus(rankStatus, moved + "개 추적 항목을 " + bulkGroup + " 그룹으로 이동했습니다.", moved ? "is-ok" : "is-warn");
+              await loadRankTrackers(true);
+            } catch (error) {
+              setStatus(rankStatus, "일괄 그룹 이동 연결을 확인해주세요.", "is-warn");
+            } finally {
+              bulkMoveButton.disabled = false;
+            }
             return;
           }
 

@@ -256,6 +256,7 @@ async function fetchMetaAdsPage(env, query, searchTerms) {
   });
 
   if (searchTerms) params.set("search_terms", searchTerms);
+  if (searchTerms) params.set("search_type", "KEYWORD_UNORDERED");
   if (query.pageIds.length) params.set("search_page_ids", query.pageIds.join(","));
   if (query.platform) params.set("publisher_platforms", JSON.stringify([query.platform]));
 
@@ -279,12 +280,15 @@ async function fetchMetaAdsPage(env, query, searchTerms) {
     }
 
     const ads = Array.isArray(payload?.data) ? payload.data.map(normalizeAd) : [];
+    const relevantAds = searchTerms
+      ? ads.filter((ad) => isRelevantAd(ad, searchTerms))
+      : ads;
 
     return {
       ok: true,
-      ads,
+      ads: relevantAds,
       rawCount: ads.length,
-      filteredCount: 0,
+      filteredCount: Math.max(0, ads.length - relevantAds.length),
       paging: normalizePaging(payload?.paging),
     };
   } finally {
@@ -298,6 +302,7 @@ async function fetchMetaAds(env, query) {
   const usedTerms = [];
   const uniqueAds = new Map();
   let rawCount = 0;
+  let filteredCount = 0;
   let paging = null;
 
   for (const term of terms) {
@@ -306,6 +311,7 @@ async function fetchMetaAds(env, query) {
 
     usedTerms.push(term);
     rawCount += page.rawCount || 0;
+    filteredCount += page.filteredCount || 0;
     if (!paging && page.paging) paging = page.paging;
 
     for (const ad of page.ads || []) {
@@ -315,14 +321,14 @@ async function fetchMetaAds(env, query) {
 
     pages.push(page);
     if (uniqueAds.size >= query.limit) break;
-    if ((page.rawCount || 0) > 0 && term === terms[0]) break;
+    if (uniqueAds.size > 0 && term === terms[0]) break;
   }
 
   return {
     ok: true,
     ads: [...uniqueAds.values()].slice(0, query.limit),
     rawCount,
-    filteredCount: 0,
+    filteredCount,
     searchedTerms: usedTerms,
     paging,
     pageCount: pages.length,

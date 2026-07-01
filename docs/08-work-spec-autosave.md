@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 01. 23:07:43
-- 기준 커밋: a77eebf
-- 작업트리: M 00_프로젝트_폴더_가이드.md / D  02_아임웹_적용코드/아임웹_원샷코드_관리자형_모먼트인사이트.html / D  02_아임웹_적용코드/아임웹_원샷코드_대시보드형_모먼트인사이트.html / D  02_아임웹_적용코드/아임웹_원샷코드_통합보기_모먼트인사이트.html / D  02_아임웹_적용코드/아임웹_원샷코드_홈페이지형_모먼트인사이트.html /  M README.md /  M docs/08-work-spec-autosave.md /  M scripts/build-vercel-static.mjs
+- 마지막 자동 저장: 2026. 07. 02. 00:28:58
+- 기준 커밋: bf7f325
+- 작업트리: M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -79,6 +79,7 @@
 | 완료 | 홈페이지 SEO 키워드 정리 | 검색 타깃을 `마케팅 사이트`, `모먼트 인사이트`로 정리하고 `모먼트랩스` 제거 | 라이브 메타 확인 | 이전 배포 반영 |
 | 완료 | 작업 폴더 정리 | `clean:workspace` 스크립트로 재생성 가능한 산출물 정리 | 정리 명령 및 빌드 확인 | 배포 없음 |
 | 완료 | 작업명세 오토세이브 도입 | 개발 내역을 작업명세서로 관리하고 완료 후 로컬 커밋까지만 진행하는 운영 규칙 추가 | `work:autosave`, 문법 검사, 정리 명령 확인 | 배포 없음 |
+| 완료 | 30일 순위 그룹 이동 결함 보정 | 그룹명 입력 후 체크 시 입력값이 사라지는 문제를 막고, 선택 항목 없이 그룹 생성 성공처럼 보이던 흐름을 차단했습니다. 관리자/광고주 30일 순위 화면 모두 동일 적용 | HTML 스크립트 문법 검사, 로컬 API 그룹 이동/복구 테스트, `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check` | 배포 없음 |
 
 ## 현재 진행 원칙
 

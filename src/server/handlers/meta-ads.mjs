@@ -19,9 +19,13 @@ const META_ADS_RATE_WINDOW_MS = Number(process.env.MI_META_ADS_RATE_WINDOW_MS ||
 const META_ADS_RATE_LIMIT = Number(process.env.MI_META_ADS_RATE_LIMIT || 20);
 const metaAdsRateBucket = new Map();
 
-function config() {
+function config(env = {}) {
   return {
-    accessToken: process.env.META_AD_LIBRARY_ACCESS_TOKEN || process.env.META_ADS_LIBRARY_ACCESS_TOKEN || "",
+    accessToken: env.META_AD_LIBRARY_ACCESS_TOKEN
+      || env.META_ADS_LIBRARY_ACCESS_TOKEN
+      || process.env.META_AD_LIBRARY_ACCESS_TOKEN
+      || process.env.META_ADS_LIBRARY_ACCESS_TOKEN
+      || "",
   };
 }
 
@@ -51,9 +55,9 @@ function normalizeMediaType(value) {
 }
 
 function normalizeStatus(value) {
-  const next = normalizeText(value).toUpperCase();
+  const next = normalizeText(value || "ALL").toUpperCase();
   const allowed = new Set(["ACTIVE", "INACTIVE", "ALL"]);
-  return allowed.has(next) ? next : "ACTIVE";
+  return allowed.has(next) ? next : "ALL";
 }
 
 function normalizeLimit(value) {
@@ -106,6 +110,29 @@ function firstText(values) {
   return normalizeText(values);
 }
 
+function normalizeSearchText(value) {
+  return stripMetaText(value)
+    .toLocaleLowerCase("ko-KR")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripMetaText(value) {
+  return normalizeText(String(value || "").replace(/<[^>]*>/g, " "));
+}
+
+function searchTokens(value) {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return [];
+  const compact = normalized.replace(/\s+/g, "");
+  return [...new Set([
+    normalized,
+    compact,
+    ...normalized.split(" ").filter((token) => token.length >= 2),
+  ].filter(Boolean))];
+}
+
 function normalizeAd(item) {
   return {
     id: normalizeText(item.id),
@@ -121,6 +148,24 @@ function normalizeAd(item) {
     deliveryStopTime: normalizeText(item.ad_delivery_stop_time),
     publisherPlatforms: Array.isArray(item.publisher_platforms) ? item.publisher_platforms.map(normalizeText).filter(Boolean) : [],
   };
+}
+
+function adSearchText(ad) {
+  return normalizeSearchText([
+    ad.pageName,
+    ad.body,
+    ad.caption,
+    ad.title,
+    ad.description,
+  ].join(" "));
+}
+
+function isRelevantAd(ad, terms) {
+  const tokens = searchTokens(terms);
+  if (!tokens.length) return true;
+  const text = adSearchText(ad);
+  const compact = text.replace(/\s+/g, "");
+  return tokens.some((token) => text.includes(token) || compact.includes(token.replace(/\s+/g, "")));
 }
 
 function safeMetaError(payload) {
@@ -188,9 +233,16 @@ async function fetchMetaAds(env, query) {
       };
     }
 
+    const ads = Array.isArray(payload?.data) ? payload.data.map(normalizeAd) : [];
+    const relevantAds = query.searchTerms
+      ? ads.filter((ad) => isRelevantAd(ad, query.searchTerms))
+      : ads;
+
     return {
       ok: true,
-      ads: Array.isArray(payload?.data) ? payload.data.map(normalizeAd) : [],
+      ads: relevantAds,
+      rawCount: ads.length,
+      filteredCount: Math.max(0, ads.length - relevantAds.length),
       paging: payload?.paging || null,
     };
   } finally {
@@ -199,7 +251,7 @@ async function fetchMetaAds(env, query) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, runtimeEnv = {}) {
     if (request.method !== "GET") {
       return json(request, { ok: false, message: "Method not allowed" }, 405);
     }
@@ -242,7 +294,7 @@ export default {
       }, 400);
     }
 
-    const env = config();
+    const env = config(runtimeEnv);
     if (!env.accessToken) {
       return json(request, {
         ok: false,
@@ -261,6 +313,8 @@ export default {
         checkedAt: new Date().toISOString(),
         query,
         count: result.ads.length,
+        rawCount: result.rawCount || result.ads.length,
+        filteredCount: result.filteredCount || 0,
         ads: result.ads,
         paging: result.paging,
       });

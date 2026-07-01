@@ -170,4 +170,18 @@ assert.equal(metadataCatalogMatch.rank, 37);
 assert.equal(metadataCatalogMatch.item.productId, "59388521435");
 assert.equal(metadataCatalogMatch.titleOverlap.includes("sr13w"), true);
 
+const groupedSellerAliasTarget = buildRankTarget({
+  targetUrl: "https://smartstore.naver.com/tncomm/products/13297440230",
+});
+assert.equal(groupedSellerAliasTarget.targetMode, "catalog");
+assert.equal(groupedSellerAliasTarget.catalogId, "59388521435");
+assert.deepEqual(groupedSellerAliasTarget.productIds, ["59388521435"]);
+
+const explicitCatalogTarget = buildRankTarget({
+  targetUrl: "https://smartstore.naver.com/any-store/products/1111111111",
+  targetCatalogId: "59388521435",
+});
+assert.equal(explicitCatalogTarget.catalogId, "59388521435");
+assert.deepEqual(explicitCatalogTarget.productIds, ["59388521435"]);
+
 console.log("Naver rank matching checks passed.");

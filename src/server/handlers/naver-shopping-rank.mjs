@@ -6,6 +6,9 @@ const ORGANIC_PAGE_SIZE = 40;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const rankRateBucket = new Map();
+const DEFAULT_CATALOG_ALIAS_MAP = {
+  "13297440230": "59388521435",
+};
 
 function config() {
   const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
@@ -118,6 +121,44 @@ function productIdCandidates(value) {
 
   if (/^[0-9]{5,}$/.test(text.trim())) return [text.trim()];
   return [];
+}
+
+function parseCatalogAliasMap(value) {
+  const source = String(value || "").trim();
+  if (!source) return {};
+
+  try {
+    const parsed = JSON.parse(source);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([productId, catalogId]) => [numericId(productId), numericId(catalogId)])
+        .filter(([productId, catalogId]) => productId && catalogId)
+    );
+  } catch {
+    return Object.fromEntries(
+      source
+        .split(/[,\n]/)
+        .map((pair) => pair.trim())
+        .filter(Boolean)
+        .map((pair) => pair.split(/[:=]/).map((part) => part.trim()))
+        .map(([productId, catalogId]) => [numericId(productId), numericId(catalogId)])
+        .filter(([productId, catalogId]) => productId && catalogId)
+    );
+  }
+}
+
+function catalogAliasMap() {
+  return {
+    ...DEFAULT_CATALOG_ALIAS_MAP,
+    ...parseCatalogAliasMap(process.env.MI_NAVER_CATALOG_ALIAS_MAP),
+  };
+}
+
+function catalogAliasCandidates({ targetProductId = "", targetUrl = "" } = {}) {
+  const aliases = catalogAliasMap();
+  const productIds = uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
+  return uniqueValues(productIds.map((productId) => aliases[productId]).filter(Boolean));
 }
 
 function extractCatalogIdsFromHtml(html) {
@@ -658,7 +699,11 @@ function inferCatalogFromProductMetadata(metadataItem, organicItems) {
 }
 
 function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "", targetCatalogId = "", targetMode = "" } = {}) {
-  const targetCatalogIds = uniqueValues([targetCatalogId, ...catalogIdCandidates(targetUrl)]);
+  const targetCatalogIds = uniqueValues([
+    targetCatalogId,
+    ...catalogIdCandidates(targetUrl),
+    ...catalogAliasCandidates({ targetProductId, targetUrl }),
+  ]);
   const targetProductIds = targetCatalogIds.length
     ? targetCatalogIds
     : uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
@@ -677,8 +722,8 @@ function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName 
   };
 }
 
-async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "" } = {}) {
-  let target = buildRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle });
+async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetMallName = "", targetProductTitle = "", targetCatalogId = "" } = {}) {
+  let target = buildRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId });
   let metadataItem = null;
 
   if (target.catalogIds.length || !targetUrl) {
@@ -792,8 +837,8 @@ function findOrganicMatchInItems(items, target, options = {}) {
   };
 }
 
-async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, maxRank }) {
-  const { target, metadataItem } = await resolveRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle });
+async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId, maxRank }) {
+  const { target, metadataItem } = await resolveRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId });
   const limit = Math.max(100, Math.min(1000, Number(maxRank || 300)));
   let total = 0;
   let organicCheckedCount = 0;
@@ -1015,6 +1060,7 @@ export default {
     const keyword = normalizeText(url.searchParams.get("keyword"));
     const targetUrl = normalizeText(url.searchParams.get("targetUrl"));
     const productId = normalizeText(url.searchParams.get("productId")) || extractProductId(targetUrl);
+    const targetCatalogId = numericId(url.searchParams.get("targetCatalogId"));
     const targetMallName = normalizeText(url.searchParams.get("mallName"));
     const targetProductTitle = normalizeText(url.searchParams.get("productTitle"));
     const maxRank = Number(url.searchParams.get("maxRank") || 300);
@@ -1031,6 +1077,7 @@ export default {
         targetUrl,
         targetMallName,
         targetProductTitle,
+        targetCatalogId,
         maxRank,
       });
 

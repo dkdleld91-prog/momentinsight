@@ -80,23 +80,25 @@ const checks = {
     && clientSource.includes("getOperatorEntryUrl"),
   clientReportDownloadBox: clientSource.includes("data-mi-report-list")
     && clientSource.includes("data-mi-report-download")
-    && clientSource.includes("buildClientReportCsv")
     && clientSource.includes("downloadClientReport")
     && clientSource.includes("공개 보고서만 표시합니다.")
     && clientSource.includes("공개 보고서 없음")
-    && clientSource.includes("reportCenterSynced"),
+    && clientSource.includes("reportCenterSynced")
+    && !clientSource.includes("buildClientReportCsv")
+    && !clientSource.includes("text/csv;charset=utf-8")
+    && !clientSource.includes("CSV 백업"),
   clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")
     && clientSource.includes("데이터 출처")
     && clientSource.includes("공개 승인된 보고서만 표시")
     && clientSource.includes("운영팀 업로드 → 검수 → 공개 → 다운로드")
-    && clientSource.includes("원본 파일 미등록 · 공개 데이터 CSV 백업")
-    && clientSource.includes(">CSV 백업</button>"),
+    && clientSource.includes("운영팀 공개 파일 대기")
+    && clientSource.includes("공개 대기"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes('"x-mi-agency-code": normalized')
     && clientSource.includes("file.signed_url")
     && clientSource.includes("fileUrl")
-    && clientSource.includes("CSV 백업"),
+    && clientSource.includes("운영팀이 보고서 파일을 공개하면 다운로드할 수 있습니다."),
   adminReportCenterPublish: adminSource.includes("getReportCenterApiUrl")
     && adminSource.includes("generateSalesPptxReport")
     && adminSource.includes('"x-mi-team-code": teamCode')

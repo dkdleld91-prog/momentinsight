@@ -3347,9 +3347,9 @@
                 <div class="mi-row"><span>상태 기준</span><strong>다운로드 가능 · 검수 중 · 공개 대기</strong></div>
               </div>
               <div class="mi-report-list" data-mi-report-list>
-                <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 원본 파일 미등록 시 공개 데이터 CSV 백업</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="0">CSV 백업</button></div>
+                <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 운영팀 공개 파일 대기</span></div><b class="mi-report-state warn">준비 중</b></div>
                 <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
-                <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함 · CSV 백업</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="2">CSV 백업</button></div>
+                <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함 · 운영팀 공개 파일 대기</span></div><b class="mi-report-state warn">준비 중</b></div>
                 <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">2026.06.19</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
               </div>
             </aside>
@@ -6584,40 +6584,6 @@
         return labels[type] || "공개 보고서";
       }
 
-      function csvValue(value) {
-        var text = String(value == null ? "" : value);
-        if (/[",\n\r]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
-        return text;
-      }
-
-      function buildClientReportCsv(report, state) {
-        var rows = [
-          ["구분", "값"],
-          ["보고서명", report.title || reportTypeLabel(report.type)],
-          ["보고서 유형", reportTypeLabel(report.type)],
-          ["보고일", report.date || state.updatedAt || ""],
-          ["광고주", state.client || ""],
-          ["공개 요약", report.summary || ""],
-          ["공개 코멘트", report.comment || state.comment || ""],
-          [],
-          ["공개 KPI", "값"],
-          ["매출", state.sales],
-          ["광고비", state.adSpend],
-          ["ROAS", state.roas],
-          ["구매수", state.orders],
-          ["목표 달성률", state.achievement],
-          ["업데이트", state.updatedAt],
-          [],
-          ["채널", "요약", "매출", "ROAS"]
-        ];
-        (state.channels || []).forEach(function (item) {
-          rows.push([item.name, item.summary, item.sales, item.roas]);
-        });
-        return rows.map(function (row) {
-          return row.map(csvValue).join(",");
-        }).join("\n");
-      }
-
       async function openReportFile(report, state) {
         if (report.fileId) {
           var response = await miFetch(getReportCenterApiUrl(), {
@@ -6647,7 +6613,7 @@
         var reports = state.reports && state.reports.length ? state.reports : (state.reportCenterSynced ? [] : defaultState.reports);
         var report = reports[index] || reports[0];
         if (!report) return;
-        if (report.fileUrl) {
+        if (report.fileUrl || report.fileId) {
           if (button) button.disabled = true;
           try {
             await openReportFile(report, state);
@@ -6657,20 +6623,7 @@
           if (button) button.disabled = false;
           return;
         }
-        var csv = buildClientReportCsv(report, state);
-        var blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" });
-        var url = URL.createObjectURL(blob);
-        var link = document.createElement("a");
-        var type = report.type || "report";
-        var date = String(report.date || state.updatedAt || "").replace(/[^0-9]/g, "") || "latest";
-        link.href = url;
-        link.download = "moment-insight-" + type + "-" + date + ".csv";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setTimeout(function () {
-          URL.revokeObjectURL(url);
-        }, 1000);
+        window.alert("운영팀이 보고서 파일을 공개하면 다운로드할 수 있습니다.");
       }
 
       function renderReports(reports, updatedAt) {
@@ -6685,12 +6638,15 @@
           return;
         }
         list.innerHTML = items.map(function (item, index) {
-          var downloadLabel = item.fileUrl ? "파일 열기" : "CSV 백업";
-          var fallbackCopy = item.fileUrl ? "등록 파일 열기" : "원본 파일 미등록 · 공개 데이터 CSV 백업";
+          var hasFile = Boolean(item.fileUrl || item.fileId);
+          var downloadLabel = hasFile ? "파일 열기" : "공개 대기";
+          var fallbackCopy = hasFile ? "등록 파일 열기" : "운영팀 공개 파일 대기";
+          var action = hasFile
+            ? '<button class="mi-report-download" type="button" data-mi-report-download data-report-index="' + String(index) + '">' + downloadLabel + '</button>'
+            : '<b class="mi-report-state warn">' + downloadLabel + '</b>';
           return '<div class="mi-report-item"><div><strong>' + escapeHtml(item.title || reportTypeLabel(item.type)) +
             '</strong><span>' + escapeHtml(reportTypeLabel(item.type)) + ' · ' + escapeHtml(item.date || "날짜 확인 중") +
-            ' · ' + escapeHtml(fallbackCopy) + '</span></div><button class="mi-report-download" type="button" data-mi-report-download data-report-index="' +
-            String(index) + '">' + downloadLabel + '</button></div>';
+            ' · ' + escapeHtml(fallbackCopy) + '</span></div>' + action + '</div>';
         }).join("") +
           '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
           escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>';

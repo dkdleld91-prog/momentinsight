@@ -958,7 +958,7 @@
 
     #mi-clean .mi-rank-form {
       display: grid;
-      grid-template-columns: minmax(150px, 0.85fr) minmax(260px, 1.7fr) minmax(170px, 0.9fr) 108px auto;
+      grid-template-columns: minmax(140px, 0.8fr) minmax(240px, 1.55fr) minmax(150px, 0.8fr) 104px auto auto;
       gap: 8px;
       margin-top: 14px;
       align-items: center;
@@ -967,6 +967,18 @@
     #mi-clean .mi-rank-form .mi-button {
       min-height: 44px;
       white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-form [data-rank-group-create] {
+      border-color: #dfe7f1;
+      color: #0b2346;
+      background: linear-gradient(180deg, #ffffff 0%, #f7fafc 100%);
+      box-shadow: 0 8px 20px rgba(15, 35, 70, 0.06);
+    }
+
+    #mi-clean .mi-rank-form [data-rank-group-create]:hover {
+      border-color: #0b2346;
+      transform: translateY(-1px);
     }
 
     #mi-clean .mi-rank-grid {
@@ -1547,7 +1559,7 @@
 
     #mi-clean .mi-rank-bulk-bar {
       display: grid;
-      grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.5fr);
+      grid-template-columns: minmax(180px, 0.75fr) minmax(0, 1.45fr);
       gap: 10px;
       align-items: center;
       margin-bottom: 10px;
@@ -4016,13 +4028,14 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹" placeholder="그룹 선택 또는 입력" />
+              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹" placeholder="그룹 선택/생성" />
               <select class="mi-input" data-rank-max aria-label="조회 범위">
                 <option value="100">100위</option>
                 <option value="300" selected>300위</option>
                 <option value="500">500위</option>
                 <option value="1000">1000위</option>
               </select>
+              <button class="mi-button subtle" type="button" data-rank-group-create>그룹 만들기</button>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
             <datalist id="mi-rank-group-options" data-rank-group-list></datalist>
@@ -5664,14 +5677,36 @@
         card.setAttribute("data-rank-collapsed-groups", Array.from(groups || []).join("\n"));
       }
 
-      function updateRankGroupFilterPanel(card, trackers, selectedGroup) {
-        var select = card && card.querySelector("[data-rank-filter-group]");
-        if (!select) return;
-        var groups = Array.from(new Set((trackers || []).map(rankTrackerGroupName))).sort(function (a, b) {
+      function rankCustomGroupSet(card) {
+        return new Set(
+          ((card && card.getAttribute("data-rank-custom-groups")) || "")
+            .split("\n")
+            .map(function (value) { return normalizeRankGroupName(value); })
+            .filter(Boolean)
+        );
+      }
+
+      function setRankCustomGroups(card, groups) {
+        if (!card) return;
+        card.setAttribute("data-rank-custom-groups", Array.from(groups || []).join("\n"));
+      }
+
+      function rankGroupNamesForCard(card, trackers) {
+        var names = new Set((trackers || []).map(rankTrackerGroupName));
+        rankCustomGroupSet(card).forEach(function (group) {
+          names.add(group);
+        });
+        return Array.from(names).sort(function (a, b) {
           if (a === "기본 그룹") return -1;
           if (b === "기본 그룹") return 1;
           return a.localeCompare(b, "ko");
         });
+      }
+
+      function updateRankGroupFilterPanel(card, trackers, selectedGroup) {
+        var select = card && card.querySelector("[data-rank-filter-group]");
+        if (!select) return;
+        var groups = rankGroupNamesForCard(card, trackers);
         select.innerHTML = '<option value="">전체 그룹</option>' + groups.map(function (group) {
           return '<option value="' + escapeHtml(group) + '">' + escapeHtml(group) + '</option>';
         }).join("");
@@ -6167,6 +6202,45 @@
         card.setAttribute("data-rank-filter-mode", "all");
         card.setAttribute("data-rank-filter-group", "");
         card.setAttribute("data-rank-collapsed-groups", "");
+        card.setAttribute("data-rank-custom-groups", "");
+
+        function rankCustomGroupStorageKey() {
+          return "mi-rank-custom-groups:" + (rankAgencyCode() || rankAccessCode() || "default");
+        }
+
+        function loadRankCustomGroups() {
+          try {
+            var stored = JSON.parse(localStorage.getItem(rankCustomGroupStorageKey()) || "[]");
+            setRankCustomGroups(card, new Set((stored || []).map(normalizeRankGroupName).filter(Boolean)));
+          } catch (error) {
+            setRankCustomGroups(card, new Set());
+          }
+        }
+
+        function saveRankCustomGroups(groups) {
+          try {
+            localStorage.setItem(rankCustomGroupStorageKey(), JSON.stringify(Array.from(groups || [])));
+          } catch (error) {}
+        }
+
+        function createRankGroup(groupName) {
+          var nextGroup = normalizeRankGroupName(groupName);
+          if (!nextGroup) {
+            setStatus(rankStatus, "만들 그룹명을 입력해주세요.", "is-warn");
+            if (rankGroup) rankGroup.focus();
+            return false;
+          }
+          var groups = rankCustomGroupSet(card);
+          groups.add(nextGroup);
+          setRankCustomGroups(card, groups);
+          saveRankCustomGroups(groups);
+          if (rankGroup) rankGroup.value = nextGroup;
+          renderRankHistory(rankHistory, rankTrackers);
+          setStatus(rankStatus, nextGroup + " 그룹을 만들었습니다. 항목 선택 후 그룹 이동으로 배치할 수 있습니다.", "is-ok");
+          return true;
+        }
+
+        loadRankCustomGroups();
 
         async function requestRankTrackers(method, body) {
           var agencyCode = rankAgencyCode();
@@ -6513,6 +6587,12 @@
           if (filterButton) {
             card.setAttribute("data-rank-filter-mode", filterButton.getAttribute("data-rank-filter-status") || "all");
             renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
+          var groupCreateButton = event.target.closest("[data-rank-group-create]");
+          if (groupCreateButton) {
+            createRankGroup(rankGroup ? rankGroup.value : "");
             return;
           }
 

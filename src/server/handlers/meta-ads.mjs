@@ -152,11 +152,11 @@ function metaFallbackTerms(value) {
   const terms = [original];
 
   if (compact.includes("냉풍기") || compact.includes("냉방기")) {
-    terms.push("냉방기", "이동식 에어컨", "에어컨", "선풍기");
+    terms.push("냉풍기", "냉방기");
   }
 
   if (compact.includes("써큘레이터") || compact.includes("서큘레이터")) {
-    terms.push("써큘레이터", "서큘레이터", "선풍기");
+    terms.push("써큘레이터", "서큘레이터");
   }
 
   return [...new Set(terms.map(normalizeText).filter(Boolean))].slice(0, 5);

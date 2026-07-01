@@ -148,8 +148,9 @@ const checks = {
   clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
     && !serverIndex.includes('url.pathname === "/api/meta-research"'),
-  metaAdsToolReady: serverIndex.includes('import metaAds from "./handlers/meta-ads.mjs"')
+  metaAdsToolReady: serverIndex.includes('metaAds: () => import("./handlers/meta-ads.mjs")')
     && serverIndex.includes('url.pathname === "/api/meta-ads"')
+    && serverIndex.includes('dispatch("metaAds", request)')
     && metaAdsServer.includes("META_AD_LIBRARY_ACCESS_TOKEN")
     && metaAdsServer.includes("META_AD_LIBRARY_NOT_CONFIGURED")
     && metaAdsServer.includes("ad_reached_countries")
@@ -270,7 +271,8 @@ const checks = {
     && rankCronServer.includes("Unauthorized cron request")
     && rankCronServer.includes("MI_RANK_CRON_SECRET"),
   reportCenterEndpointReady: serverIndex.includes('url.pathname === "/api/report-center"')
-    && serverIndex.includes('import reportCenter from "./handlers/report-center.mjs"')
+    && serverIndex.includes('reportCenter: () => import("./handlers/report-center.mjs")')
+    && serverIndex.includes("dispatch(\"reportCenter\", request)")
     && reportCenterServer.includes('withSupabase({ auth: "none" }')
     && reportCenterServer.includes("x-mi-agency-code")
     && reportCenterServer.includes("x-mi-team-code")

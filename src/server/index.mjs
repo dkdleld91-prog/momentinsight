@@ -1,25 +1,41 @@
-import health from "./handlers/health.mjs";
-import dashboard from "./handlers/dashboard.mjs";
-import adminClients from "./handlers/admin-clients.mjs";
-import adminApi from "./handlers/admin-api.mjs";
-import clientApi from "./handlers/client-api.mjs";
-import demoApi from "./handlers/demo-api.mjs";
-import integrationStatus from "./handlers/integration-status.mjs";
-import agencyCodeApi from "./handlers/agency-code-api.mjs";
-import metaAds from "./handlers/meta-ads.mjs";
-import naverKeyword from "./handlers/naver-keyword.mjs";
-import naverRankCron from "./handlers/naver-rank-cron.mjs";
-import naverRankTrackers from "./handlers/naver-rank-trackers.mjs";
-import naverShoppingRank from "./handlers/naver-shopping-rank.mjs";
-import reportCenter from "./handlers/report-center.mjs";
-import superAdminApi from "./handlers/super-admin-api.mjs";
 import { corsHeaders, protectedJson } from "./security.mjs";
 
+const handlerCache = new Map();
+const handlerLoaders = {
+  health: () => import("./handlers/health.mjs"),
+  dashboard: () => import("./handlers/dashboard.mjs"),
+  adminClients: () => import("./handlers/admin-clients.mjs"),
+  adminApi: () => import("./handlers/admin-api.mjs"),
+  clientApi: () => import("./handlers/client-api.mjs"),
+  demoApi: () => import("./handlers/demo-api.mjs"),
+  integrationStatus: () => import("./handlers/integration-status.mjs"),
+  agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
+  metaAds: () => import("./handlers/meta-ads.mjs"),
+  naverKeyword: () => import("./handlers/naver-keyword.mjs"),
+  naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
+  naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
+  naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
+  reportCenter: () => import("./handlers/report-center.mjs"),
+  superAdminApi: () => import("./handlers/super-admin-api.mjs"),
+};
+
+async function handler(name) {
+  if (!handlerCache.has(name)) {
+    handlerCache.set(name, handlerLoaders[name]().then((module) => module.default));
+  }
+  return handlerCache.get(name);
+}
+
+async function dispatch(name, request) {
+  const app = await handler(name);
+  return app.fetch(request);
+}
+
 const routes = [
-  { method: "GET", path: "/health", app: health },
-  { method: "GET", path: "/api/health", app: health },
-  { method: "GET", path: "/api/client/dashboard", app: dashboard },
-  { method: "GET", path: "/api/admin/clients", app: adminClients }
+  { method: "GET", path: "/health", handler: "health" },
+  { method: "GET", path: "/api/health", handler: "health" },
+  { method: "GET", path: "/api/client/dashboard", handler: "dashboard" },
+  { method: "GET", path: "/api/admin/clients", handler: "adminClients" }
 ];
 
 export default {
@@ -37,15 +53,15 @@ export default {
     }
 
     if (url.pathname.startsWith("/api/agency-code/") || url.pathname === "/api/agency-code-validate") {
-      return agencyCodeApi.fetch(request);
+      return dispatch("agencyCodeApi", request);
     }
 
     if (url.pathname.startsWith("/api/admin/")) {
-      return adminApi.fetch(request);
+      return dispatch("adminApi", request);
     }
 
     if (url.pathname.startsWith("/api/client/")) {
-      return clientApi.fetch(request);
+      return dispatch("clientApi", request);
     }
 
     if (url.pathname.startsWith("/api/demo/")) {
@@ -59,43 +75,43 @@ export default {
         });
       }
 
-      return demoApi.fetch(request);
+      return dispatch("demoApi", request);
     }
 
     if (url.pathname.startsWith("/api/super-admin/") || url.pathname === "/api/super-admin-agency-codes") {
-      return superAdminApi.fetch(request);
+      return dispatch("superAdminApi", request);
     }
 
     if (url.pathname.startsWith("/api/team/") || url.pathname === "/api/team-agency-codes") {
-      return superAdminApi.fetch(request);
+      return dispatch("superAdminApi", request);
     }
 
     if (url.pathname === "/api/naver-keyword") {
-      return naverKeyword.fetch(request);
+      return dispatch("naverKeyword", request);
     }
 
     if (url.pathname === "/api/naver-shopping-rank") {
-      return naverShoppingRank.fetch(request);
+      return dispatch("naverShoppingRank", request);
     }
 
     if (url.pathname === "/api/naver-rank-trackers") {
-      return naverRankTrackers.fetch(request);
+      return dispatch("naverRankTrackers", request);
     }
 
     if (url.pathname === "/api/naver-rank-cron") {
-      return naverRankCron.fetch(request);
+      return dispatch("naverRankCron", request);
     }
 
     if (url.pathname === "/api/meta-ads") {
-      return metaAds.fetch(request);
+      return dispatch("metaAds", request);
     }
 
     if (url.pathname === "/api/report-center") {
-      return reportCenter.fetch(request);
+      return dispatch("reportCenter", request);
     }
 
     if (url.pathname === "/api/integration-status") {
-      return integrationStatus.fetch(request);
+      return dispatch("integrationStatus", request);
     }
 
     const route = routes.find((item) => item.method === request.method && item.path === url.pathname);
@@ -108,6 +124,6 @@ export default {
       }, { status: 404 });
     }
 
-    return route.app.fetch(request);
+    return dispatch(route.handler, request);
   }
 };

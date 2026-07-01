@@ -110,6 +110,18 @@ function firstText(values) {
   return normalizeText(values);
 }
 
+function safeSnapshotUrl(value) {
+  const raw = normalizeText(value);
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    url.searchParams.delete("access_token");
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 function normalizeSearchText(value) {
   return stripMetaText(value)
     .toLocaleLowerCase("ko-KR")
@@ -133,6 +145,23 @@ function searchTokens(value) {
   ].filter(Boolean))];
 }
 
+function metaFallbackTerms(value) {
+  const original = normalizeText(value);
+  if (!original) return [""];
+  const compact = normalizeSearchText(original).replace(/\s+/g, "");
+  const terms = [original];
+
+  if (compact.includes("냉풍기") || compact.includes("냉방기")) {
+    terms.push("냉방기", "이동식 에어컨", "에어컨", "선풍기");
+  }
+
+  if (compact.includes("써큘레이터") || compact.includes("서큘레이터")) {
+    terms.push("써큘레이터", "서큘레이터", "선풍기");
+  }
+
+  return [...new Set(terms.map(normalizeText).filter(Boolean))].slice(0, 5);
+}
+
 function normalizeAd(item) {
   const rawSnapshotUrl = normalizeText(item.ad_snapshot_url);
   return {
@@ -140,7 +169,7 @@ function normalizeAd(item) {
     libraryId: normalizeText(item.id),
     pageId: normalizeText(item.page_id),
     pageName: normalizeText(item.page_name),
-    snapshotUrl: "",
+    snapshotUrl: safeSnapshotUrl(rawSnapshotUrl),
     snapshotAvailable: Boolean(rawSnapshotUrl),
     body: firstText(item.ad_creative_bodies),
     caption: firstText(item.ad_creative_link_captions),
@@ -215,7 +244,7 @@ function metaErrorResponse(payload) {
   };
 }
 
-async function fetchMetaAds(env, query) {
+async function fetchMetaAdsPage(env, query, searchTerms) {
   const params = new URLSearchParams({
     access_token: env.accessToken,
     fields: META_ADS_FIELDS,
@@ -226,7 +255,7 @@ async function fetchMetaAds(env, query) {
     limit: String(query.limit),
   });
 
-  if (query.searchTerms) params.set("search_terms", query.searchTerms);
+  if (searchTerms) params.set("search_terms", searchTerms);
   if (query.pageIds.length) params.set("search_page_ids", query.pageIds.join(","));
   if (query.platform) params.set("publisher_platforms", JSON.stringify([query.platform]));
 
@@ -250,20 +279,54 @@ async function fetchMetaAds(env, query) {
     }
 
     const ads = Array.isArray(payload?.data) ? payload.data.map(normalizeAd) : [];
-    const relevantAds = query.searchTerms
-      ? ads.filter((ad) => isRelevantAd(ad, query.searchTerms))
-      : ads;
 
     return {
       ok: true,
-      ads: relevantAds,
+      ads,
       rawCount: ads.length,
-      filteredCount: Math.max(0, ads.length - relevantAds.length),
+      filteredCount: 0,
       paging: normalizePaging(payload?.paging),
     };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchMetaAds(env, query) {
+  const terms = query.searchTerms ? metaFallbackTerms(query.searchTerms) : [""];
+  const pages = [];
+  const usedTerms = [];
+  const uniqueAds = new Map();
+  let rawCount = 0;
+  let paging = null;
+
+  for (const term of terms) {
+    const page = await fetchMetaAdsPage(env, query, term);
+    if (!page.ok) return page;
+
+    usedTerms.push(term);
+    rawCount += page.rawCount || 0;
+    if (!paging && page.paging) paging = page.paging;
+
+    for (const ad of page.ads || []) {
+      if (!ad.id || uniqueAds.has(ad.id)) continue;
+      uniqueAds.set(ad.id, { ...ad, matchedQuery: term });
+    }
+
+    pages.push(page);
+    if (uniqueAds.size >= query.limit) break;
+    if ((page.rawCount || 0) > 0 && term === terms[0]) break;
+  }
+
+  return {
+    ok: true,
+    ads: [...uniqueAds.values()].slice(0, query.limit),
+    rawCount,
+    filteredCount: 0,
+    searchedTerms: usedTerms,
+    paging,
+    pageCount: pages.length,
+  };
 }
 
 export default {
@@ -331,6 +394,7 @@ export default {
         count: result.ads.length,
         rawCount: result.rawCount || result.ads.length,
         filteredCount: result.filteredCount || 0,
+        searchedTerms: result.searchedTerms || [query.searchTerms].filter(Boolean),
         ads: result.ads,
         paging: result.paging,
       });

@@ -61,6 +61,11 @@ const checks = {
     && adminSource.includes("storedAdminAuthCode")
     && adminSource.includes("restoreAdminLogin")
     && adminSource.includes('class="mi-login-brand" href="/"'),
+  adminLogoutExists: adminSource.includes("data-admin-logout")
+    && adminSource.includes("data-admin-current-code")
+    && adminSource.includes("logoutAdmin")
+    && adminSource.includes("clearAdminAuthCode")
+    && adminSource.includes("로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요."),
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
@@ -84,6 +89,11 @@ const checks = {
     && clientSource.includes("storedClientAuthCode")
     && clientSource.includes("restoreClientLogin")
     && clientSource.includes('class="mi-login-brand" href="/"'),
+  clientLogoutExists: clientSource.includes("data-mi-logout")
+    && clientSource.includes("data-mi-current-code")
+    && clientSource.includes("logoutClient")
+    && clientSource.includes("removeClientAuthCode")
+    && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
   homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트 개발중")
     && homeSource.includes("현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.")
     && ["키워드조회", "SEO확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),

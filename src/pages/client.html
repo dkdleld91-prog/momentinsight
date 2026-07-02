@@ -384,6 +384,57 @@
       font-weight: 800;
     }
 
+    #mi-clean .mi-auth-panel {
+      display: grid;
+      gap: 8px;
+      margin-top: 18px;
+      border: 1px solid rgba(223, 229, 239, 0.92);
+      border-radius: 8px;
+      padding: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 10px 24px rgba(6, 26, 58, 0.045);
+    }
+
+    #mi-clean .mi-auth-panel span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 0.03em;
+    }
+
+    #mi-clean .mi-auth-panel strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    #mi-clean .mi-auth-panel button {
+      min-height: 38px;
+      border: 1px solid rgba(6, 26, 58, 0.14);
+      border-radius: 8px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 950;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    }
+
+    #mi-clean .mi-auth-panel button:hover,
+    #mi-clean .mi-auth-panel button:focus-visible {
+      border-color: rgba(6, 26, 58, 0.32);
+      background: var(--mi-gold-soft);
+      box-shadow: 0 10px 20px rgba(6, 26, 58, 0.08);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    #mi-clean .mi-auth-panel button:active {
+      box-shadow: none;
+      transform: translateY(0);
+    }
+
     #mi-clean .mi-mobile-nav {
       display: none;
     }
@@ -3627,6 +3678,12 @@
           <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 코드 <small>연결</small></a>
         </div>
       </nav>
+
+      <div class="mi-auth-panel" aria-label="현재 광고주 접속 정보">
+        <span>현재 접속 코드</span>
+        <strong data-mi-current-code>미연결</strong>
+        <button type="button" data-mi-logout>로그아웃</button>
+      </div>
 
       <nav class="mi-mobile-nav" aria-label="모바일 메뉴">
         <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
@@ -7490,6 +7547,23 @@
         if (type) node.classList.add(type);
       }
 
+      function updateClientAuthPanel(code) {
+        var node = root.querySelector("[data-mi-current-code]");
+        if (node) node.textContent = normalizeCode(code || storedClientAuthCode()) || "미연결";
+      }
+
+      function logoutClient() {
+        clearClientAuth();
+        updateClientAuthPanel("");
+        if (loginCode) loginCode.value = "";
+        if (connectCode) connectCode.value = "";
+        setClientLoginMode("client");
+        setStatus(loginStatus, "로그아웃되었습니다. 다른 대행사 코드를 입력해주세요.", "is-ok");
+        setStatus(connectStatus, "코드 연결 전입니다.", "");
+        setScreen("dashboard", false);
+        if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+
       async function unlockWithCode(code, statusNode) {
         var normalized = normalizeCode(code);
         if (!normalized) {
@@ -7527,6 +7601,7 @@
         }
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
+        updateClientAuthPanel(state.code);
         setStatus(statusNode, "연결 완료: " + state.client + " 브랜드 데이터가 반영되었습니다." + reportSyncNote, "is-ok");
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
@@ -7588,6 +7663,7 @@
       var loginKicker = root.querySelector("[data-client-login-kicker]");
       var loginTitle = root.querySelector("[data-client-login-title]");
       var loginDesc = root.querySelector("[data-client-login-desc]");
+      updateClientAuthPanel(storedClientAuthCode());
 
       function setClientLoginMode(mode) {
         loginMode = mode === "operator" ? "operator" : "client";
@@ -7670,6 +7746,10 @@
           connectButton.disabled = false;
         });
       }
+
+      root.querySelectorAll("[data-mi-logout]").forEach(function (button) {
+        button.addEventListener("click", logoutClient);
+      });
 
       var keywordInput = root.querySelector("[data-mi-keyword-input]");
       var keywordButton = root.querySelector("[data-mi-keyword-search]");

@@ -232,6 +232,57 @@
       font-weight: 800;
     }
 
+    #mi-admin .mi-auth-panel {
+      display: grid;
+      gap: 8px;
+      margin-top: 18px;
+      border: 1px solid rgba(223, 229, 239, 0.92);
+      border-radius: 8px;
+      padding: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      box-shadow: 0 10px 24px rgba(6, 26, 58, 0.045);
+    }
+
+    #mi-admin .mi-auth-panel span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 0.03em;
+    }
+
+    #mi-admin .mi-auth-panel strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+      word-break: break-all;
+    }
+
+    #mi-admin .mi-auth-panel button {
+      min-height: 38px;
+      border: 1px solid rgba(6, 26, 58, 0.14);
+      border-radius: 8px;
+      color: var(--mi-navy);
+      background: #fff;
+      font-size: 13px;
+      font-weight: 950;
+      cursor: pointer;
+      transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+    }
+
+    #mi-admin .mi-auth-panel button:hover,
+    #mi-admin .mi-auth-panel button:focus-visible {
+      border-color: rgba(6, 26, 58, 0.32);
+      background: var(--mi-gold-soft);
+      box-shadow: 0 10px 20px rgba(6, 26, 58, 0.08);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    #mi-admin .mi-auth-panel button:active {
+      box-shadow: none;
+      transform: translateY(0);
+    }
+
     #mi-admin .mi-main {
       min-width: 0;
       padding: 28px;
@@ -4451,6 +4502,12 @@
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
       </nav>
+
+      <div class="mi-auth-panel" aria-label="현재 운영팀 접속 정보">
+        <span>현재 접속 코드</span>
+        <strong data-admin-current-code>미연결</strong>
+        <button type="button" data-admin-logout>로그아웃</button>
+      </div>
     </aside>
 
     <main class="mi-main">
@@ -6356,6 +6413,11 @@
         if (type) node.classList.add(type);
       }
 
+      function updateAdminAuthPanel(code) {
+        var node = root.querySelector("[data-admin-current-code]");
+        if (node) node.textContent = String(code || storedAdminAuthCode() || "").trim() || "미연결";
+      }
+
       function formatFileSize(size) {
         var value = Number(size || 0);
         if (!value) return "0KB";
@@ -6802,6 +6864,7 @@
       var loginInput = root.querySelector("[data-admin-login-code]");
       var loginButton = root.querySelector("[data-admin-login-button]");
       var loginStatus = root.querySelector("[data-admin-login-status]");
+      updateAdminAuthPanel(storedAdminAuthCode());
 
       function setLoginMode(mode) {
         loginMode = mode === "client" ? "client" : "operator";
@@ -6847,6 +6910,23 @@
       });
       setLoginMode("operator");
 
+      function logoutAdmin() {
+        clearAdminAuthCode();
+        currentOperationTeam = null;
+        root.classList.add("is-locked");
+        root.classList.remove("is-authed");
+        updateAdminAuthPanel("");
+        if (loginInput) loginInput.value = "";
+        setLoginMode("operator");
+        setStatus(loginStatus, "로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요.", "is-ok");
+        setScreen("home", false);
+        if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+
+      root.querySelectorAll("[data-admin-logout]").forEach(function (button) {
+        button.addEventListener("click", logoutAdmin);
+      });
+
       if (loginButton) {
         loginButton.addEventListener("click", async function () {
           if (loginMode === "client") {
@@ -6869,6 +6949,7 @@
               root.classList.remove("is-locked");
               root.classList.add("is-authed");
               persistAdminAuthCode(loginCode);
+              updateAdminAuthPanel(loginCode);
               syncOwnerAccessFields();
               renderOperationTeamCodePanel(teamPayload);
               applyState(readState());
@@ -6888,6 +6969,7 @@
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
           persistAdminAuthCode(getAdminCode());
+          updateAdminAuthPanel(getAdminCode());
           syncOwnerAccessFields();
           applyState(readState());
           renderSourceFile();

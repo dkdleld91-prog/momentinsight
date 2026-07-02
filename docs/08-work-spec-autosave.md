@@ -15,8 +15,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 02. 12:56:55
-- 기준 커밋: 5bc9b96
+- 마지막 자동 저장: 2026. 07. 02. 13:15:30
+- 기준 커밋: 91c0797
 - 작업트리: M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html
 <!-- autosave:end -->
 

@@ -2419,8 +2419,8 @@
 
     #mi-admin .mi-rank-bulk-actions {
       display: grid;
-      grid-template-columns: minmax(240px, 1fr) auto auto;
-      gap: 8px;
+      grid-template-columns: minmax(260px, 1fr) auto auto;
+      gap: 10px;
       align-items: center;
     }
 
@@ -2447,38 +2447,49 @@
       position: relative;
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
-      gap: 8px;
+      gap: 6px;
       align-items: center;
       min-width: 0;
+      border: 1px solid #dbe5f2;
+      border-radius: 12px;
+      padding: 4px;
+      background: #fff;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 0 rgba(11, 35, 70, 0.03);
+    }
+
+    #mi-admin .mi-rank-group-combo .mi-input {
+      border: 0;
+      background: transparent;
+      box-shadow: none;
     }
 
     #mi-admin .mi-rank-group-menu-toggle {
-      border: 1px solid #dbe5f2;
-      color: var(--mi-navy);
-      background: #fff;
-      box-shadow: 0 1px 0 rgba(11, 35, 70, 0.04);
+      border: 0;
+      color: #24415f;
+      background: #edf3fb;
+      box-shadow: none;
       font-size: 12px;
       font-weight: 950;
     }
 
     #mi-admin .mi-rank-group-menu-toggle:hover {
-      border-color: #b8c6d8;
-      background: #f7faff;
+      background: #e4edf8;
       transform: translateY(-1px);
     }
 
     #mi-admin .mi-rank-group-menu {
       position: absolute;
       top: calc(100% + 8px);
-      right: 0;
+      left: 0;
       z-index: 30;
       display: none;
-      width: min(260px, 92vw);
-      padding: 8px;
+      width: 100%;
+      min-width: min(300px, 92vw);
+      padding: 10px;
       border: 1px solid #dbe5f2;
-      border-radius: 14px;
+      border-radius: 16px;
       background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 20px 50px rgba(11, 35, 70, 0.18);
+      box-shadow: 0 18px 44px rgba(11, 35, 70, 0.16);
     }
 
     #mi-admin .mi-rank-group-combo.is-open .mi-rank-group-menu {
@@ -2486,30 +2497,42 @@
       gap: 6px;
     }
 
+    #mi-admin .mi-rank-group-menu-label {
+      padding: 2px 4px 6px;
+      color: #66748a;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
     #mi-admin .mi-rank-group-option {
       width: 100%;
-      min-height: 38px;
-      border: 0;
+      min-height: 34px;
+      border: 1px solid transparent;
       border-radius: 10px;
-      padding: 0 12px;
+      padding: 0 10px;
       color: #0b2346;
-      background: #f6f9fd;
+      background: #fff;
       text-align: left;
       font-size: 12px;
       font-weight: 950;
       cursor: pointer;
-      transition: background 0.16s ease, color 0.16s ease, transform 0.16s ease;
+      transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
     }
 
     #mi-admin .mi-rank-group-option:hover {
-      color: #fff;
-      background: #0b2346;
-      transform: translateY(-1px);
+      border-color: #dbe5f2;
+      color: #0b2346;
+      background: #f5f8fc;
+      transform: translateX(2px);
     }
 
     #mi-admin .mi-rank-group-empty {
+      display: block;
+      border-radius: 10px;
       padding: 10px 12px;
-      color: var(--mi-muted);
+      color: #66748a;
+      background: #f8fafc;
       font-size: 11px;
       font-weight: 850;
     }
@@ -8744,10 +8767,11 @@
 
       function renderRankGroupOptions(card, trackers) {
         var groups = rankGroupNamesForCard(card, trackers);
+        var label = '<div class="mi-rank-group-menu-label">기존 그룹</div>';
         if (!groups.length) {
-          return '<span class="mi-rank-group-empty">이동 가능한 기존 그룹이 없습니다.</span>';
+          return label + '<span class="mi-rank-group-empty">아직 만든 그룹이 없습니다.</span>';
         }
-        return groups.map(function (group) {
+        return label + groups.map(function (group) {
           return '<button class="mi-rank-group-option" type="button" data-rank-group-option="' +
             escapeHtml(group) + '">' + escapeHtml(group) + '</button>';
         }).join("");
@@ -8759,13 +8783,13 @@
         var count = selected.size;
         var groupDraft = rankBulkGroupDraft(card);
         return '<div class="mi-rank-bulk-bar" data-rank-bulk-bar><div class="mi-rank-bulk-title">' +
-          '<strong>선택 항목 그룹 관리</strong><span data-rank-selected-count>' +
-          escapeHtml(count ? count + "개 선택됨" : "체크 후 한 번에 이동") +
-          '</span><small>기존 그룹을 선택하거나 새 그룹명을 입력해 이동하고, 그룹 해제로 미분류 상태로 되돌립니다.</small></div><div class="mi-rank-bulk-actions"><div class="mi-rank-group-combo" data-rank-group-combo><input class="mi-input" data-rank-bulk-group aria-label="선택 항목 이동 그룹" placeholder="그룹 선택 또는 새 그룹명" autocomplete="off" value="' +
+          '<strong>그룹 정리</strong><span data-rank-selected-count>' +
+          escapeHtml(count ? count + "개 선택" : "항목 선택 후 적용") +
+          '</span><small>기존 그룹을 고르거나 새 그룹명을 입력해 선택 항목을 정리합니다.</small></div><div class="mi-rank-bulk-actions"><div class="mi-rank-group-combo" data-rank-group-combo><input class="mi-input" data-rank-bulk-group aria-label="선택 항목 이동 그룹" placeholder="그룹 선택 또는 새 그룹 입력" autocomplete="off" value="' +
           escapeHtml(groupDraft) + '" />' +
-          '<button class="mi-rank-group-menu-toggle" type="button" data-rank-group-menu-toggle aria-expanded="false">그룹 선택</button><div class="mi-rank-group-menu" data-rank-group-menu>' +
+          '<button class="mi-rank-group-menu-toggle" type="button" data-rank-group-menu-toggle aria-expanded="false">기존 그룹</button><div class="mi-rank-group-menu" data-rank-group-menu>' +
           renderRankGroupOptions(card, trackers) + '</div></div>' +
-          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 생성 및 넣기</button>' +
+          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 적용</button>' +
           '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button></div></div>';
       }
 

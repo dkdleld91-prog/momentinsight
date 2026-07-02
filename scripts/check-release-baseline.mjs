@@ -96,6 +96,9 @@ const checks = {
     && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
   homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트 개발중")
     && homeSource.includes("현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.")
+    && homeSource.includes("data-mi-dev-banner")
+    && homeSource.includes("data-mi-dev-banner-close")
+    && homeSource.includes("miHomeDevBannerClosed")
     && ["키워드조회", "SEO확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
@@ -493,8 +496,10 @@ const checks = {
     && adminSource.includes("#mi-admin .mi-download:disabled"),
   kakaoChannelCtaVisible: [homeSource, adminSource, clientSource].every((source) => source.includes("https://pf.kakao.com/_ixoLxfX")
     && source.includes("mi-kakao-floating")
-    && source.includes("카카오톡 문의")
-    && source.includes("모먼트인사이트 채널")),
+    && source.includes("채널 문의")
+    && source.includes("카카오톡 상담")
+    && source.includes(".mi-kakao-icon::before")
+    && !source.includes(">톡</i>")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   superAdminSecretFailsClosed: superAdminServer.includes('process.env.MI_SUPER_ADMIN_CODE || ""')
     && superAdminServer.includes("총관리자 비밀값이 서버에 설정되지 않았습니다.")

@@ -231,42 +231,65 @@
       gap: 10px;
       min-height: 54px;
       padding: 10px 16px 10px 12px;
-      border: 1px solid rgba(6, 26, 58, 0.18);
+      border: 1px solid rgba(6, 26, 58, 0.12);
       border-radius: 999px;
-      background: rgba(6, 26, 58, 0.96);
-      color: #fff;
-      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.22);
+      background: #fee500;
+      color: #111827;
+      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.18);
       text-decoration: none;
-      transition: transform 0.18s ease, box-shadow 0.18s ease;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
     }
 
     #mi-clean .mi-kakao-floating:hover {
       transform: translateY(-2px);
-      box-shadow: 0 22px 52px rgba(6, 26, 58, 0.28);
+      filter: saturate(1.02);
+      box-shadow: 0 22px 52px rgba(6, 26, 58, 0.24);
     }
 
     #mi-clean .mi-kakao-icon {
       width: 34px;
       height: 34px;
-      display: grid;
-      place-items: center;
+      position: relative;
+      display: block;
+      flex: 0 0 34px;
       border-radius: 50%;
-      background: #fee500;
-      color: #111;
-      font-size: 12px;
+      background: #111827;
+      font-size: 0;
       font-style: normal;
-      font-weight: 900;
+    }
+
+    #mi-clean .mi-kakao-icon::before {
+      content: "";
+      position: absolute;
+      left: 9px;
+      top: 10px;
+      width: 16px;
+      height: 10px;
+      border-radius: 999px;
+      background: #fee500;
+    }
+
+    #mi-clean .mi-kakao-icon::after {
+      content: "";
+      position: absolute;
+      left: 13px;
+      top: 17px;
+      width: 7px;
+      height: 7px;
+      background: #fee500;
+      transform: rotate(45deg);
+      border-radius: 1px;
     }
 
     #mi-clean .mi-kakao-floating span {
       display: grid;
       gap: 1px;
-      color: rgba(255, 255, 255, 0.72);
+      color: rgba(17, 24, 39, 0.62);
       font-size: 11px;
     }
 
     #mi-clean .mi-kakao-floating b {
-      color: #fff;
+      color: #111827;
       font-size: 14px;
       line-height: 1.2;
     }
@@ -4374,8 +4397,8 @@
   </div>
 
   <a class="mi-kakao-floating" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer" aria-label="모먼트인사이트 카카오톡 채널 문의">
-    <i class="mi-kakao-icon" aria-hidden="true">톡</i>
-    <span><b>카카오톡 문의</b>모먼트인사이트 채널</span>
+    <i class="mi-kakao-icon" aria-hidden="true"></i>
+    <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
 
   <script>

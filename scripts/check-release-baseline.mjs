@@ -95,8 +95,12 @@ const checks = {
     && clientSource.includes("removeClientAuthCode")
     && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
   homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트는 운영 점검 중입니다.")
-    && homeSource.includes("현재는 검증된 핵심 도구를 먼저 제공합니다.")
+    && homeSource.includes("현재는 검증이 완료된 핵심 도구부터 안정적으로 제공합니다.")
     && homeSource.includes("data-mi-dev-banner")
+    && homeSource.includes("mi-dev-banner-head")
+    && homeSource.includes("mi-dev-banner-contact")
+    && homeSource.includes("카카오톡 채널")
+    && homeSource.includes("채널 문의")
     && homeSource.includes("data-mi-dev-banner-close")
     && homeSource.includes("data-mi-dev-banner-week")
     && homeSource.includes("miHomeDevBannerHiddenUntil")
@@ -256,6 +260,10 @@ const checks = {
     && source.includes("font-size: 10.5px")
     && source.includes("min-width: 132px;")
     && !source.includes("min-width: 1100px")),
+  rankTrackingRefreshAll: [adminSource, clientSource].every((source) => source.includes("data-rank-refresh-all")
+    && source.includes("refreshAllRankTrackers")
+    && source.includes("전체 순위 갱신")
+    && source.includes("갱신할 운영중 순위 추적 항목이 없습니다.")),
   rankTrackingTypographyReduced: [adminSource, clientSource].every((source) => /mi-rank-ops-row \{[\s\S]*?font-weight: 700;/.test(source)
     && /mi-rank-keyword-name \{[\s\S]*?font-weight: 800;/.test(source)
     && /mi-rank-keyword-volume \{[\s\S]*?font-weight: 650;/.test(source)

@@ -1503,7 +1503,7 @@
 
     #mi-clean .mi-rank-filterbar {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) auto auto;
+      grid-template-columns: minmax(220px, 1fr) auto auto auto;
       gap: 8px;
       align-items: center;
       margin-bottom: 10px;
@@ -1589,6 +1589,35 @@
       border-color: #0b2346;
       color: #fff;
       background: #0b2346;
+    }
+
+    #mi-clean .mi-rank-refresh-all {
+      min-height: 36px;
+      border: 1px solid #d7e2ef;
+      border-radius: 999px;
+      padding: 7px 13px;
+      color: #0b2346;
+      background: linear-gradient(135deg, #ffffff 0%, #f4f8fd 100%);
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(15, 35, 70, 0.06);
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+
+    #mi-clean .mi-rank-refresh-all:hover,
+    #mi-clean .mi-rank-refresh-all:focus-visible {
+      border-color: #aebfd3;
+      box-shadow: 0 12px 24px rgba(15, 35, 70, 0.1);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    #mi-clean .mi-rank-refresh-all:disabled {
+      cursor: wait;
+      opacity: .62;
+      transform: none;
     }
 
     #mi-clean .mi-rank-filter-count {
@@ -4319,6 +4348,7 @@
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="improved">상승</button>
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="dropped">하락</button>
                   </div>
+                  <button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button>
                   <span class="mi-rank-filter-count" data-rank-filter-count>0개 표시</span>
                 </div>
                 <div data-rank-history>
@@ -6608,6 +6638,40 @@
           }
         }
 
+        async function refreshAllRankTrackers(refreshAllButton) {
+          var targets = rankTrackers.filter(function (tracker) {
+            return tracker && tracker.id && tracker.status !== "paused" && tracker.status !== "completed";
+          });
+          if (!targets.length) {
+            setStatus(rankStatus, "갱신할 운영중 순위 추적 항목이 없습니다.", "is-warn");
+            return;
+          }
+          refreshAllButton.disabled = true;
+          rankRun.disabled = true;
+          var successCount = 0;
+          var failCount = 0;
+          try {
+            for (var i = 0; i < targets.length; i += 1) {
+              setStatus(rankStatus, "전체 순위 갱신 중입니다. " + (i + 1) + "/" + targets.length, "");
+              var payload = await requestRankTrackers("POST", {
+                action: "check",
+                trackerId: targets[i].id
+              });
+              if (payload && payload.ok && payload.tracker) successCount += 1;
+              else failCount += 1;
+            }
+            await loadRankTrackers(true);
+            setStatus(rankStatus, failCount
+              ? "전체 갱신 완료: 성공 " + successCount + "개, 확인 필요 " + failCount + "개"
+              : "전체 순위 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");
+          } catch (error) {
+            setStatus(rankStatus, "전체 순위 갱신 연결을 확인해주세요.", "is-warn");
+          } finally {
+            refreshAllButton.disabled = false;
+            rankRun.disabled = false;
+          }
+        }
+
         function syncKeywordFromMain() {
           if (!linkedKeywordInput || !rankKeyword) return;
           var next = parseKeywordInput(linkedKeywordInput.value)[0] || "";
@@ -6909,6 +6973,13 @@
           if (filterButton) {
             card.setAttribute("data-rank-filter-mode", filterButton.getAttribute("data-rank-filter-status") || "all");
             renderRankHistory(rankHistory, rankTrackers);
+            return;
+          }
+
+          var refreshAllButton = event.target.closest("[data-rank-refresh-all]");
+          if (refreshAllButton) {
+            resetDeleteConfirm();
+            await refreshAllRankTrackers(refreshAllButton);
             return;
           }
 

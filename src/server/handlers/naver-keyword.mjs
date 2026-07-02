@@ -425,10 +425,33 @@ function normalizeShares(entries, digits = 1) {
   return rawShares.map((item) => round(item.floor / scale, digits));
 }
 
-function formatMonthPeriod(period, isLatest = false) {
+function parsePeriodParts(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (!match) return null;
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: match[3] ? Number(match[3]) : 1,
+  };
+}
+
+function lastDayOfMonth(year, month) {
+  if (!year || !month) return 31;
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function isPartialMonthPeriod(period, endDate) {
+  const periodParts = parsePeriodParts(period);
+  const endParts = parsePeriodParts(endDate);
+  if (!periodParts || !endParts) return false;
+  if (periodParts.year !== endParts.year || periodParts.month !== endParts.month) return false;
+  return endParts.day < lastDayOfMonth(endParts.year, endParts.month);
+}
+
+function formatMonthPeriod(period, isEstimated = false) {
   const [, month] = String(period || "").split("-");
   const label = month ? `${month.padStart(2, "0")}월` : String(period || "");
-  return isLatest ? `${label}(예상)` : label;
+  return isEstimated ? `${label}(예상)` : label;
 }
 
 function trendData(payload) {
@@ -452,14 +475,14 @@ function monthlySeasonalityShares(payload) {
   return normalizeShares(sums.map((value) => ({ value })));
 }
 
-function monthlyLabels(payload) {
+function monthlyLabels(payload, endDate = "") {
   const data = trendData(payload).slice(-12);
-  return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
+  return data.map((item) => formatMonthPeriod(item.period, isPartialMonthPeriod(item.period, endDate)));
 }
 
-function trendLabels(payload) {
+export function trendLabels(payload, endDate = "") {
   const data = trendData(payload);
-  return data.map((item, index) => formatMonthPeriod(item.period, index === data.length - 1));
+  return data.map((item) => formatMonthPeriod(item.period, isPartialMonthPeriod(item.period, endDate)));
 }
 
 function trendToSeries(trendPayload) {
@@ -471,13 +494,23 @@ function trendToSeries(trendPayload) {
   });
 }
 
-function estimateMonthlySearchSeries(trendSeries, referenceVolume) {
+export function latestCompleteTrendIndex(trendPayload, endDate = "") {
+  const data = trendData(trendPayload);
+  for (let index = data.length - 1; index >= 0; index -= 1) {
+    if (isPartialMonthPeriod(data[index]?.period, endDate)) continue;
+    if (Number(data[index]?.ratio || 0) > 0) return index;
+  }
+  return -1;
+}
+
+export function estimateMonthlySearchSeries(trendSeries, referenceVolume, anchorIndex = -1) {
   const source = Array.isArray(trendSeries) ? trendSeries.map((value) => Number(value || 0)) : [];
   const anchor = Number(referenceVolume || 0);
   if (!source.length || !anchor) return [];
-  const latest = source[source.length - 1] || 0;
-  const fallback = Math.max(...source, 1);
-  const divisor = latest > 0 ? latest : fallback;
+  const index = Number.isInteger(anchorIndex) ? anchorIndex : -1;
+  const anchorRatio = index >= 0 && index < source.length ? source[index] : 0;
+  const fallback = source.reduce((max, value) => (value > max ? value : max), 0) || 1;
+  const divisor = anchorRatio > 0 ? anchorRatio : fallback;
   return source.map((value) => Math.max(0, Math.round((value / divisor) * anchor)));
 }
 
@@ -560,7 +593,7 @@ async function buildDatalabProfile(env, keyword, options = {}) {
 
   const trend = await fetchDatalabSearch(env, { keyword, startDate: trendStartDate, endDate, timeUnit: "month" });
   let month = monthlyShares(trend);
-  let monthLabels = monthlyLabels(trend);
+  let monthLabels = monthlyLabels(trend, endDate);
   let monthBasis = "recent_12_month_trend_ratio";
   let week = [];
   let age = [];
@@ -632,7 +665,8 @@ async function buildDatalabProfile(env, keyword, options = {}) {
 
   return {
     series: trendToSeries(trend),
-    seriesLabels: trendLabels(trend),
+    seriesLabels: trendLabels(trend, endDate),
+    seriesAnchorIndex: latestCompleteTrendIndex(trend, endDate),
     month,
     monthLabels,
     trendUnit: "relative_interest_index",
@@ -727,7 +761,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
   const comp = hasExactMatch ? competitionLabel(item.compIdx) : "확인 필요";
   const relatedKeywordMetrics = buildRelatedKeywordMetrics(searchAd);
   const trendIndex = datalabProfile?.series?.length ? datalabProfile.series : [];
-  const estimatedSeries = estimateMonthlySearchSeries(trendIndex, safeVolume);
+  const estimatedSeries = estimateMonthlySearchSeries(trendIndex, safeVolume, datalabProfile?.seriesAnchorIndex);
 
   return {
     keyword,

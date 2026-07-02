@@ -57,6 +57,10 @@ const checks = {
     && adminSource.includes('data-login-mode="operator"')
     && adminSource.includes("운영팀 로그인")
     && adminSource.includes("운영팀 코드 접속"),
+  adminLoginPersistsAfterRefresh: adminSource.includes('localStorage.setItem("miAdminAuthedCode"')
+    && adminSource.includes("storedAdminAuthCode")
+    && adminSource.includes("restoreAdminLogin")
+    && adminSource.includes('class="mi-login-brand" href="/"'),
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
@@ -76,6 +80,15 @@ const checks = {
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")
     && clientSource.includes("getOperatorEntryUrl"),
+  clientLoginPersistsAfterRefresh: clientSource.includes('localStorage.setItem("miClientAuthedCode"')
+    && clientSource.includes("storedClientAuthCode")
+    && clientSource.includes("restoreClientLogin")
+    && clientSource.includes('class="mi-login-brand" href="/"'),
+  homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트 개발중")
+    && homeSource.includes("현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.")
+    && ["키워드조회", "SEO확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
+  metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
+    && source.includes('<span class="mi-badge warn">개발중</span>')),
   clientReportDownloadBox: clientSource.includes("data-mi-report-list")
     && clientSource.includes("data-mi-report-download")
     && clientSource.includes("downloadClientReport")

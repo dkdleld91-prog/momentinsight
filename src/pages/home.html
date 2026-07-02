@@ -292,6 +292,71 @@
       line-height: 1.56;
     }
 
+    #mi-home .mi-dev-notice {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 14px;
+      align-items: start;
+      width: min(100%, 760px);
+      margin-top: 22px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 14px 34px rgba(6, 26, 58, 0.08);
+    }
+
+    #mi-home .mi-dev-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 30px;
+      border-radius: 999px;
+      padding: 0 10px;
+      background: #e8f5ef;
+      color: #08704d;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #mi-home .mi-dev-copy {
+      display: grid;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    #mi-home .mi-dev-copy strong {
+      color: var(--mi-navy);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    #mi-home .mi-dev-copy p {
+      color: #667085;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    #mi-home .mi-dev-features {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    #mi-home .mi-dev-features span {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      border: 1px solid rgba(37, 88, 216, 0.12);
+      border-radius: 999px;
+      padding: 0 10px;
+      background: #f7faff;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 850;
+    }
+
     #mi-home .mi-inline-actions {
       flex-wrap: wrap;
       margin-top: 30px;
@@ -745,6 +810,10 @@
         font-size: 16px;
       }
 
+      #mi-home .mi-dev-notice {
+        grid-template-columns: 1fr;
+      }
+
       #mi-home .mi-proof-row,
       #mi-home .mi-route-cards,
       #mi-home .mi-grid-3,
@@ -814,6 +883,19 @@
             <span class="mi-title-sub">마케팅 사이트</span>
           </h1>
           <p class="mi-lead">성과, 보고서, 일정, 키워드를 한 화면에서 정리합니다.</p>
+          <aside class="mi-dev-notice" aria-label="모먼트 인사이트 개발중 안내">
+            <span class="mi-dev-status">개발중</span>
+            <div class="mi-dev-copy">
+              <strong>모먼트 인사이트 개발중</strong>
+              <p>현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.</p>
+              <div class="mi-dev-features" aria-label="현재 사용 가능한 기능">
+                <span>키워드조회</span>
+                <span>SEO확인</span>
+                <span>네이버 상품순위</span>
+                <span>네이버 30일 순위</span>
+              </div>
+            </div>
+          </aside>
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="/client#mi-dashboard">성과 대시보드 보기</a>
             <a class="mi-button secondary" href="#mi-home-flow">운영 흐름 보기</a>

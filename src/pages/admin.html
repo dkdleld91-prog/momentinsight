@@ -46,8 +46,11 @@
 
     #mi-admin .mi-login {
       min-height: 100vh;
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
       padding: 28px;
       background:
         radial-gradient(circle at 82% 12%, rgba(37, 88, 216, 0.08), transparent 32%),
@@ -68,6 +71,22 @@
       grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.78fr);
       gap: 16px;
       align-items: stretch;
+    }
+
+    #mi-admin .mi-login-brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: min(100%, 980px);
+      color: var(--mi-navy);
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-login-brand small {
+      margin-left: auto;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 800;
     }
 
     #mi-admin .mi-login-copy,
@@ -4370,6 +4389,11 @@
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
+    <a class="mi-login-brand" href="/" aria-label="모먼트인사이트 홈페이지로 이동">
+      <span class="mi-mark">MI</span>
+      <strong>모먼트 인사이트</strong>
+      <small>홈으로 이동</small>
+    </a>
     <div class="mi-login-panel">
       <article class="mi-login-copy">
         <span class="mi-kicker">모먼트인사이트 접속 선택</span>
@@ -4423,7 +4447,7 @@
           <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 <small>네이버</small></a>
           <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">네이버 상품 순위 <small>조회</small></a>
           <a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위 <small>추적</small></a>
-          <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>소재</small></a>
+          <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
       </nav>
@@ -5447,7 +5471,7 @@
               <h1>Meta 광고 소재를 바로 조회합니다.</h1>
               <p>경쟁사와 브랜드가 어떤 광고를 집행 중인지 공식 라이브러리 기준으로 확인합니다.</p>
             </div>
-            <span class="mi-badge">운영팀 도구</span>
+            <span class="mi-badge warn">개발중</span>
           </header>
 
           <article class="mi-card mi-card-pad mi-meta-card" data-meta-card>
@@ -5687,6 +5711,32 @@
       function getAdminCode() {
         var input = root.querySelector("[data-admin-login-code]");
         return input ? String(input.value || "").trim() : "";
+      }
+
+      function storedAdminAuthCode() {
+        try {
+          return window.sessionStorage.getItem("miAdminAuthedCode")
+            || window.localStorage.getItem("miAdminAuthedCode")
+            || "";
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function persistAdminAuthCode(code) {
+        var normalized = String(code || "").trim();
+        if (!normalized) return;
+        try {
+          window.localStorage.setItem("miAdminAuthedCode", normalized);
+          window.sessionStorage.setItem("miAdminAuthedCode", normalized);
+        } catch (error) {}
+      }
+
+      function clearAdminAuthCode() {
+        try {
+          window.localStorage.removeItem("miAdminAuthedCode");
+          window.sessionStorage.removeItem("miAdminAuthedCode");
+        } catch (error) {}
       }
 
       function getSuperAdminApiUrl() {
@@ -6818,9 +6868,7 @@
               currentOperationTeam = teamPayload.team || null;
               root.classList.remove("is-locked");
               root.classList.add("is-authed");
-              try {
-                window.sessionStorage.setItem("miAdminAuthedCode", loginCode);
-              } catch (error) {}
+              persistAdminAuthCode(loginCode);
               syncOwnerAccessFields();
               renderOperationTeamCodePanel(teamPayload);
               applyState(readState());
@@ -6831,6 +6879,7 @@
               window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
               setScreen("agency-code", true);
             } catch (error) {
+              clearAdminAuthCode();
               setStatus(loginStatus, error.message || "운영팀 코드가 일치하지 않습니다. 발급받은 코드를 다시 확인해주세요.", "is-warn");
             }
             loginButton.disabled = false;
@@ -6838,9 +6887,7 @@
           }
           root.classList.remove("is-locked");
           root.classList.add("is-authed");
-          try {
-            window.sessionStorage.setItem("miAdminAuthedCode", getAdminCode());
-          } catch (error) {}
+          persistAdminAuthCode(getAdminCode());
           syncOwnerAccessFields();
           applyState(readState());
           renderSourceFile();
@@ -6848,6 +6895,15 @@
           window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
           loadOwnerCodes(true);
         });
+      }
+
+      function restoreAdminLogin() {
+        var storedCode = storedAdminAuthCode();
+        if (!storedCode || !loginInput || !loginButton) return;
+        setLoginMode("operator");
+        loginInput.value = storedCode;
+        setStatus(loginStatus, "저장된 운영팀 코드를 확인 중입니다.", "");
+        loginButton.click();
       }
 
       var views = root.querySelectorAll("[data-mi-admin-view]");
@@ -6888,6 +6944,8 @@
         var next = (window.location.hash || "").replace("#mi-admin-", "");
         if (next) setScreen(next, false);
       });
+
+      restoreAdminLogin();
 
       function syncOwnerAccessFields() {
         var loginCode = getAdminCode();

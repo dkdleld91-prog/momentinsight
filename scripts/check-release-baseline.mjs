@@ -263,7 +263,10 @@ const checks = {
   rankTrackingRefreshAll: [adminSource, clientSource].every((source) => source.includes("data-rank-refresh-all")
     && source.includes("refreshAllRankTrackers")
     && source.includes("전체 순위 갱신")
-    && source.includes("갱신할 운영중 순위 추적 항목이 없습니다.")),
+    && source.includes("갱신할 운영중 순위 추적 항목이 없습니다.")
+    && source.includes("grid-template-columns: minmax(260px, 1fr) auto auto auto;")
+    && source.includes("data-rank-bulk-clear>그룹 해제</button>' +")
+    && source.includes("data-rank-refresh-all>전체 순위 갱신</button></div></div>")),
   rankTrackingTypographyReduced: [adminSource, clientSource].every((source) => /mi-rank-ops-row \{[\s\S]*?font-weight: 700;/.test(source)
     && /mi-rank-keyword-name \{[\s\S]*?font-weight: 800;/.test(source)
     && /mi-rank-keyword-volume \{[\s\S]*?font-weight: 650;/.test(source)

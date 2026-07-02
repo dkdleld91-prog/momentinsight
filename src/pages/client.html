@@ -1503,7 +1503,7 @@
 
     #mi-clean .mi-rank-filterbar {
       display: grid;
-      grid-template-columns: minmax(220px, 1fr) auto auto auto;
+      grid-template-columns: minmax(220px, 1fr) auto auto;
       gap: 8px;
       align-items: center;
       margin-bottom: 10px;
@@ -1765,7 +1765,7 @@
 
     #mi-clean .mi-rank-bulk-actions {
       display: grid;
-      grid-template-columns: minmax(260px, 1fr) auto auto;
+      grid-template-columns: minmax(260px, 1fr) auto auto auto;
       gap: 10px;
       align-items: center;
     }
@@ -4348,7 +4348,6 @@
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="improved">상승</button>
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="dropped">하락</button>
                   </div>
-                  <button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button>
                   <span class="mi-rank-filter-count" data-rank-filter-count>0개 표시</span>
                 </div>
                 <div data-rank-history>
@@ -6133,7 +6132,8 @@
           '<button class="mi-rank-group-menu-toggle" type="button" data-rank-group-menu-toggle aria-expanded="false">기존 그룹</button><div class="mi-rank-group-menu" data-rank-group-menu>' +
           renderRankGroupOptions(card, trackers) + '</div></div>' +
           '<button class="mi-button" type="button" data-rank-bulk-move>그룹 적용</button>' +
-          '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button></div></div>';
+          '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button>' +
+          '<button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button></div></div>';
       }
 
       function renderRankTrackerCard(tracker, selectedSet) {

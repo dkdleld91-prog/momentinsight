@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { nextRankCheckAt } from "../src/server/handlers/naver-rank-trackers.mjs";
 
 function kstDate(year, month, day, hour, minute = 0) {
@@ -41,5 +42,15 @@ const cases = dailySlots.flatMap(([weekday, year, month, day, today, tomorrow]) 
 for (const [label, input, expected] of cases) {
   assert.equal(kstStamp(nextRankCheckAt(input)), expected, label);
 }
+
+const workflow = fs.readFileSync(".github/workflows/naver-rank-cron.yml", "utf8");
+assert.match(workflow, /cron: "7,37 \* \* \* \*"/, "GitHub Actions must catch up due trackers every 30 minutes");
+assert.match(workflow, /missed 09:00\/15:00 KST slots are caught up automatically/, "Workflow must document missed-slot catch-up behavior");
+
+const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
+assert.ok(
+  (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron" && cron.schedule === "7 0 * * *"),
+  "Vercel backup cron must run once daily at 09:07 KST",
+);
 
 console.log("Daily rank cron schedule checks passed.");

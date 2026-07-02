@@ -80,6 +80,7 @@
 | 완료 | 작업 폴더 정리 | `clean:workspace` 스크립트로 재생성 가능한 산출물 정리 | 정리 명령 및 빌드 확인 | 배포 없음 |
 | 완료 | 작업명세 오토세이브 도입 | 개발 내역을 작업명세서로 관리하고 완료 후 로컬 커밋까지만 진행하는 운영 규칙 추가 | `work:autosave`, 문법 검사, 정리 명령 확인 | 배포 없음 |
 | 완료 | 30일 순위 그룹 이동 결함 보정 | 그룹명 입력 후 체크 시 입력값이 사라지는 문제를 막고, 선택 항목 없이 그룹 생성 성공처럼 보이던 흐름을 차단했습니다. 관리자/광고주 30일 순위 화면 모두 동일 적용 | HTML 스크립트 문법 검사, 로컬 API 그룹 이동/복구 테스트, `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check` | 배포 없음 |
+| 완료 | 30일 순위 자동 갱신 누락 방지 | GitHub Actions 예약 실행을 09시/15시 슬롯 전용에서 30분 간격 due catch-up 방식으로 변경하고, Vercel 1일 1회 백업 Cron도 09:07 KST로 조정했습니다. 서버는 기존처럼 `next_check_at`이 지난 항목만 실제 갱신하므로 불필요한 네이버 조회를 늘리지 않습니다. | GitHub Actions schedule API 조회, 운영 tracker 최신 갱신/다음 갱신 확인, `check:rank-cron`, `check:baseline`, `check:rank-matching`, `build:vercel`, `git diff --check` | 배포 대기 |
 
 ## 현재 진행 원칙
 

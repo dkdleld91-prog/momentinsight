@@ -358,11 +358,11 @@ const checks = {
     && accessAuditMigration.includes("c.status = 'active'")
     && accessAuditMigration.includes("c.disconnected_at is null")
     && accessAuditMigration.includes("idx_audit_logs_action_created"),
-  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "*/10 0,6 * * *"')
+  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "7,37 * * * *"')
     && rankCronWorkflow.includes("push:")
     && rankCronWorkflow.includes("deploy backfill")
-    && rankCronWorkflow.includes("09:00 and 15:00 KST slots")
-    && rankCronWorkflow.includes("missed exact-minute calls are retried")
+    && rankCronWorkflow.includes("every 30 minutes off the top of the hour")
+    && rankCronWorkflow.includes("missed 09:00/15:00 KST slots are caught up automatically")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
@@ -407,7 +407,7 @@ const checks = {
       && source.includes("mi-rank-group-section")
       && source.includes('action: "group"')),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
-    && cron.schedule === "0 0 * * *")
+    && cron.schedule === "7 0 * * *")
     && rankCronServer.includes("DEFAULT_CRON_BATCH = 50"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")

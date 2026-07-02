@@ -6,8 +6,8 @@ on:
       - main
   schedule:
     # The server only refreshes trackers whose next_check_at is due.
-    # Runs every 10 minutes during the 09:00 and 15:00 KST slots so missed exact-minute calls are retried.
-    - cron: "*/10 0,6 * * *"
+    # Runs every 30 minutes off the top of the hour so missed 09:00/15:00 KST slots are caught up automatically.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
 
 concurrency:

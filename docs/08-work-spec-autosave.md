@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 02. 12:36:17
-- 기준 커밋: ab928c8
-- 작업트리: M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html /  M src/pages/home.html
+- 마지막 자동 저장: 2026. 07. 02. 12:56:55
+- 기준 커밋: 5bc9b96
+- 작업트리: M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준

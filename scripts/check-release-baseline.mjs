@@ -411,9 +411,12 @@ const checks = {
     && [adminSource, clientSource].every((source) => source.includes("data-rank-bulk-group")
       && source.includes("data-rank-filter-group")
       && source.includes("data-rank-filter-group-wrap")
-      && source.includes("그룹 보기")
+      && source.includes("그룹 필터")
       && source.includes('<option value="">전체 그룹</option>')
-      && source.includes("그룹 만들고 넣기")
+      && source.includes("그룹 생성 및 넣기")
+      && source.includes("그룹 해제")
+      && source.includes("RANK_DEFAULT_GROUP")
+      && source.includes("rankGroupDisplayName")
       && source.includes("rankCustomGroupSet")
       && source.includes("rankGroupNamesForCard")
       && source.includes("rankTrackerGroupName")
@@ -421,6 +424,7 @@ const checks = {
       && source.includes("data-rank-bulk-group-draft")
       && source.includes("groupFilterAfterMove")
       && source.includes("그룹에 넣을 추적 항목을 먼저 체크해주세요.")
+      && source.includes("그룹 해제할 추적 항목을 먼저 체크해주세요.")
       && source.includes("mi-rank-group-section")
       && source.includes('action: "group"')),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"

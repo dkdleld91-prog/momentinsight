@@ -4108,7 +4108,7 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹명" placeholder="그룹명 선택 입력" />
+              <input class="mi-input" data-rank-group list="mi-rank-group-options" aria-label="순위 추적 그룹명" placeholder="그룹 선택 또는 새 그룹명" />
               <select class="mi-input" data-rank-max aria-label="조회 범위">
                 <option value="100">100위</option>
                 <option value="300" selected>300위</option>
@@ -4125,7 +4125,7 @@
                 <div class="mi-rank-filterbar" data-rank-filter-panel>
                   <input class="mi-input" data-rank-filter-search aria-label="순위 추적 검색" placeholder="키워드, 상품명, 상품번호 검색" />
                   <label class="mi-rank-group-filter" data-rank-filter-group-wrap>
-                    <span>그룹 보기</span>
+                    <span>그룹 필터</span>
                     <select class="mi-input" data-rank-filter-group aria-label="순위 추적 그룹 필터">
                       <option value="">전체 그룹</option>
                     </select>
@@ -5764,13 +5764,24 @@
         ].join(" ").toLowerCase();
       }
 
+      var RANK_DEFAULT_GROUP = "기본 그룹";
+      var RANK_UNGROUPED_LABEL = "미분류";
+
       function normalizeRankGroupName(value) {
         var normalized = String(value || "").replace(/\s+/g, " ").trim();
-        return normalized || "기본 그룹";
+        return normalized || RANK_DEFAULT_GROUP;
       }
 
       function normalizeRankGroupInput(value) {
         return String(value || "").replace(/\s+/g, " ").trim();
+      }
+
+      function isRankDefaultGroup(group) {
+        return normalizeRankGroupName(group) === RANK_DEFAULT_GROUP;
+      }
+
+      function rankGroupDisplayName(group) {
+        return isRankDefaultGroup(group) ? RANK_UNGROUPED_LABEL : normalizeRankGroupName(group);
       }
 
       function rankTrackerGroupName(tracker) {
@@ -5796,23 +5807,28 @@
           ((card && card.getAttribute("data-rank-custom-groups")) || "")
             .split("\n")
             .map(function (value) { return normalizeRankGroupName(value); })
-            .filter(Boolean)
+            .filter(function (group) { return group && !isRankDefaultGroup(group); })
         );
       }
 
       function setRankCustomGroups(card, groups) {
         if (!card) return;
-        card.setAttribute("data-rank-custom-groups", Array.from(groups || []).join("\n"));
+        var normalized = Array.from(groups || [])
+          .map(normalizeRankGroupName)
+          .filter(function (group) { return group && !isRankDefaultGroup(group); });
+        card.setAttribute("data-rank-custom-groups", normalized.join("\n"));
       }
 
       function rankGroupNamesForCard(card, trackers) {
-        var names = new Set((trackers || []).map(rankTrackerGroupName));
+        var names = new Set();
+        (trackers || []).forEach(function (tracker) {
+          var group = rankTrackerGroupName(tracker);
+          if (!isRankDefaultGroup(group)) names.add(group);
+        });
         rankCustomGroupSet(card).forEach(function (group) {
-          names.add(group);
+          if (!isRankDefaultGroup(group)) names.add(group);
         });
         return Array.from(names).sort(function (a, b) {
-          if (a === "기본 그룹") return -1;
-          if (b === "기본 그룹") return 1;
           return a.localeCompare(b, "ko");
         });
       }
@@ -5824,7 +5840,9 @@
         select.innerHTML = '<option value="">전체 그룹</option>' + groups.map(function (group) {
           return '<option value="' + escapeHtml(group) + '">' + escapeHtml(group) + '</option>';
         }).join("");
-        select.value = groups.indexOf(selectedGroup) >= 0 ? selectedGroup : "";
+        var normalizedSelectedGroup = selectedGroup && !isRankDefaultGroup(selectedGroup) ? normalizeRankGroupName(selectedGroup) : "";
+        select.value = groups.indexOf(normalizedSelectedGroup) >= 0 ? normalizedSelectedGroup : "";
+        if (card) card.setAttribute("data-rank-filter-group", select.value);
         var list = card && card.querySelector("[data-rank-group-list]");
         if (list) {
           list.innerHTML = groups.map(function (group) {
@@ -5909,12 +5927,12 @@
         var count = selected.size;
         var groupDraft = rankBulkGroupDraft(card);
         return '<div class="mi-rank-bulk-bar" data-rank-bulk-bar><div class="mi-rank-bulk-title">' +
-          '<strong>선택 항목 그룹화</strong><span data-rank-selected-count>' +
+          '<strong>선택 항목 그룹 관리</strong><span data-rank-selected-count>' +
           escapeHtml(count ? count + "개 선택됨" : "체크 후 한 번에 이동") +
-          '</span><small>추적 항목을 체크한 뒤 그룹명을 입력하면 새 그룹 생성과 이동을 한 번에 처리합니다.</small></div><div class="mi-rank-bulk-actions"><input class="mi-input" data-rank-bulk-group list="mi-rank-group-options" aria-label="선택 항목 이동 그룹" placeholder="새 그룹명 또는 기존 그룹명" value="' +
+          '</span><small>기존 그룹을 선택하거나 새 그룹명을 입력해 이동하고, 그룹 해제로 미분류 상태로 되돌립니다.</small></div><div class="mi-rank-bulk-actions"><input class="mi-input" data-rank-bulk-group list="mi-rank-group-options" aria-label="선택 항목 이동 그룹" placeholder="그룹 선택 또는 새 그룹명" value="' +
           escapeHtml(groupDraft) + '" />' +
-          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 만들고 넣기</button>' +
-          '<button class="mi-button subtle" type="button" data-rank-bulk-clear>선택 해제</button></div></div>';
+          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 생성 및 넣기</button>' +
+          '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button></div></div>';
       }
 
       function renderRankTrackerCard(tracker, selectedSet) {
@@ -5938,7 +5956,7 @@
           escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
           escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
           escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>그룹 ' +
-          escapeHtml(rankTrackerGroupName(tracker)) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
+          escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
           escapeHtml(tracker.id) + '">그룹 변경</button><span>최근 ' +
           escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) + '</span><span>다음 ' +
           escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
@@ -5954,6 +5972,7 @@
         var filterMode = card ? card.getAttribute("data-rank-filter-mode") || "all" : "all";
         var filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
         updateRankGroupFilterPanel(card, trackers || [], filterGroup);
+        filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
         if (!trackers || !trackers.length) {
           updateRankFilterPanel(node, 0, 0, filterMode, filterGroup);
           node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>';
@@ -5977,7 +5996,7 @@
           }, 0);
           return '<section class="mi-rank-group-section' + collapsedClass + '" data-rank-group-section data-rank-group-name="' +
             escapeHtml(group.name) + '"><button class="mi-rank-group-head" type="button" data-rank-group-toggle="' +
-            escapeHtml(group.name) + '"><span><span class="mi-rank-group-title">' + escapeHtml(group.name) +
+            escapeHtml(group.name) + '"><span><span class="mi-rank-group-title">' + escapeHtml(rankGroupDisplayName(group.name)) +
             '<span class="mi-rank-group-meta">' + escapeHtml(group.items.length + "개 추적" + (best ? " · 현재 최고 " + rankText(best) : "")) +
             '</span></span></span><span class="mi-rank-group-toggle">' + (collapsed.has(group.name) ? "펼치기" : "접기") +
             '</span></button><div class="mi-rank-group-items mi-rank-daily-list">' +
@@ -6740,9 +6759,38 @@
 
           var bulkClearButton = event.target.closest("[data-rank-bulk-clear]");
           if (bulkClearButton) {
-            setRankSelectedSet(card, new Set());
-            renderRankHistory(rankHistory, rankTrackers);
-            setStatus(rankStatus, "선택을 해제했습니다.", "");
+            var clearIds = Array.from(rankSelectedSet(card));
+            var clearInput = card.querySelector("[data-rank-bulk-group]");
+            if (!clearIds.length) {
+              renderRankHistory(rankHistory, rankTrackers);
+              setStatus(rankStatus, "그룹 해제할 추적 항목을 먼저 체크해주세요.", "is-warn");
+              return;
+            }
+            bulkClearButton.disabled = true;
+            setStatus(rankStatus, "선택한 추적 항목의 그룹을 해제 중입니다.", "");
+            try {
+              var cleared = 0;
+              for (var c = 0; c < clearIds.length; c += 1) {
+                var clearPayload = await requestRankTrackers("POST", {
+                  action: "group",
+                  trackerId: clearIds[c],
+                  groupName: RANK_DEFAULT_GROUP
+                });
+                if (clearPayload && clearPayload.ok !== false) cleared += 1;
+              }
+              setRankSelectedSet(card, new Set());
+              card.setAttribute("data-rank-filter-group", "");
+              var groupFilterAfterClear = card.querySelector("[data-rank-filter-group]");
+              if (groupFilterAfterClear) groupFilterAfterClear.value = "";
+              if (clearInput) clearInput.value = "";
+              setRankBulkGroupDraft(card, "");
+              setStatus(rankStatus, cleared + "개 추적 항목을 그룹에서 해제했습니다.", cleared ? "is-ok" : "is-warn");
+              await loadRankTrackers(true);
+            } catch (error) {
+              setStatus(rankStatus, "그룹 해제 연결을 확인해주세요.", "is-warn");
+            } finally {
+              bulkClearButton.disabled = false;
+            }
             return;
           }
 
@@ -6783,7 +6831,9 @@
               card.setAttribute("data-rank-filter-group", "");
               var groupFilterAfterMove = card.querySelector("[data-rank-filter-group]");
               if (groupFilterAfterMove) groupFilterAfterMove.value = "";
-              setStatus(rankStatus, moved + "개 추적 항목을 " + bulkGroup + " 그룹으로 이동했습니다.", moved ? "is-ok" : "is-warn");
+              if (bulkInput) bulkInput.value = "";
+              setRankBulkGroupDraft(card, "");
+              setStatus(rankStatus, moved + "개 추적 항목을 " + bulkGroup + " 그룹으로 넣고 전체 그룹으로 돌아왔습니다.", moved ? "is-ok" : "is-warn");
               await loadRankTrackers(true);
             } catch (error) {
               setStatus(rankStatus, "일괄 그룹 이동 연결을 확인해주세요.", "is-warn");
@@ -6797,14 +6847,10 @@
           if (groupEditButton) {
             var groupTrackerId = groupEditButton.getAttribute("data-rank-group-edit");
             var currentTracker = rankTrackers.find(function (item) { return item.id === groupTrackerId; });
-            var nextGroup = window.prompt("이 추적 항목의 그룹명을 입력해주세요.", rankTrackerGroupName(currentTracker));
+            var nextGroup = window.prompt("이 추적 항목의 그룹명을 입력해주세요. 비워두면 그룹에서 해제됩니다.", isRankDefaultGroup(rankTrackerGroupName(currentTracker)) ? "" : rankTrackerGroupName(currentTracker));
             if (nextGroup === null) return;
-            nextGroup = normalizeRankGroupInput(nextGroup);
-            if (!nextGroup) {
-              setStatus(rankStatus, "변경할 그룹명을 입력해주세요.", "is-warn");
-              return;
-            }
-            setStatus(rankStatus, "그룹을 변경 중입니다.", "");
+            nextGroup = normalizeRankGroupInput(nextGroup) || RANK_DEFAULT_GROUP;
+            setStatus(rankStatus, isRankDefaultGroup(nextGroup) ? "그룹을 해제 중입니다." : "그룹을 변경 중입니다.", "");
             try {
             var groupPayload = await requestRankTrackers("POST", {
               action: "group",
@@ -6812,10 +6858,10 @@
               groupName: nextGroup
             });
             var editedGroups = rankCustomGroupSet(card);
-            editedGroups.add(nextGroup);
+            if (!isRankDefaultGroup(nextGroup)) editedGroups.add(nextGroup);
             setRankCustomGroups(card, editedGroups);
             saveRankCustomGroups(editedGroups);
-            setStatus(rankStatus, groupPayload.message || "그룹 변경 완료", groupPayload.ok ? "is-ok" : "is-warn");
+            setStatus(rankStatus, groupPayload.message || (isRankDefaultGroup(nextGroup) ? "그룹 해제 완료" : "그룹 변경 완료"), groupPayload.ok ? "is-ok" : "is-warn");
             await loadRankTrackers(true);
             } catch (error) {
               setStatus(rankStatus, "그룹 변경 연결을 확인해주세요.", "is-warn");

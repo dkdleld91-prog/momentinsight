@@ -2203,17 +2203,23 @@
       grid-template-columns: auto minmax(118px, 1fr);
       align-items: center;
       gap: 8px;
-      border: 1px solid #bed2ea;
+      border: 1px solid #c8d7e9;
       border-radius: 16px;
-      padding: 4px 5px 4px 12px;
-      background: linear-gradient(135deg, #eef6ff 0%, #ffffff 100%);
-      box-shadow: 0 8px 22px rgba(15, 35, 70, 0.08);
+      padding: 4px 5px 4px 6px;
+      background: linear-gradient(135deg, #f8fbff 0%, #ffffff 100%);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 18px rgba(15, 35, 70, 0.05);
     }
 
     #mi-admin .mi-rank-group-filter span {
-      color: #0b4f83;
+      min-height: 28px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 12px;
+      padding: 0 9px;
+      color: #fff;
+      background: #0b2346;
       font-size: 11px;
-      font-weight: 1000;
+      font-weight: 850;
       letter-spacing: .01em;
       white-space: nowrap;
     }
@@ -2225,7 +2231,7 @@
       padding: 6px 28px 6px 10px;
       background: rgba(255, 255, 255, 0.92);
       color: #071f3d;
-      font-weight: 1000;
+      font-weight: 850;
       box-shadow: none;
     }
 
@@ -2329,7 +2335,7 @@
       border: 1px solid #d9e3f0;
       border-radius: 18px;
       background: linear-gradient(135deg, #f9fbff 0%, #f4f8fc 100%);
-      box-shadow: 0 18px 42px rgba(15, 35, 70, 0.08);
+      box-shadow: 0 14px 34px rgba(15, 35, 70, 0.065);
     }
 
     #mi-admin .mi-rank-group-section::before {
@@ -2362,13 +2368,13 @@
       gap: 8px;
       align-items: center;
       font-size: 15px;
-      font-weight: 950;
+      font-weight: 850;
     }
 
     #mi-admin .mi-rank-group-meta {
       color: var(--mi-muted);
       font-size: 11px;
-      font-weight: 900;
+      font-weight: 800;
       border: 1px solid #dde7f3;
       border-radius: 999px;
       padding: 4px 9px;
@@ -2379,7 +2385,7 @@
       min-width: 58px;
       color: #52627a;
       font-size: 11px;
-      font-weight: 900;
+      font-weight: 800;
       text-align: right;
       border: 1px solid #dce6f2;
       border-radius: 999px;
@@ -2388,13 +2394,13 @@
     }
 
     #mi-admin .mi-rank-group-items {
-      padding: 14px 14px 16px 20px;
+      padding: 14px 14px 16px;
       background: rgba(255, 255, 255, 0.42);
     }
 
     #mi-admin .mi-rank-group-items .mi-rank-tracker-card {
       border-color: #d8e3f0;
-      box-shadow: 0 10px 22px rgba(15, 35, 70, 0.045);
+      box-shadow: 0 8px 18px rgba(15, 35, 70, 0.035);
     }
 
     #mi-admin .mi-rank-group-section.is-collapsed .mi-rank-group-items {
@@ -2408,7 +2414,7 @@
       color: #52627a;
       background: #fff;
       font-size: 11px;
-      font-weight: 900;
+      font-weight: 800;
       cursor: pointer;
     }
 
@@ -2509,6 +2515,11 @@
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 0 rgba(11, 35, 70, 0.03);
     }
 
+    #mi-admin .mi-rank-group-combo:focus-within {
+      border-color: #aebfd3;
+      box-shadow: 0 0 0 4px rgba(11, 35, 70, 0.06);
+    }
+
     #mi-admin .mi-rank-group-combo .mi-input {
       border: 0;
       background: transparent;
@@ -2518,10 +2529,10 @@
     #mi-admin .mi-rank-group-menu-toggle {
       border: 0;
       color: #24415f;
-      background: #edf3fb;
+      background: #f1f5fa;
       box-shadow: none;
       font-size: 12px;
-      font-weight: 950;
+      font-weight: 850;
     }
 
     #mi-admin .mi-rank-group-menu-toggle:hover {
@@ -2567,7 +2578,7 @@
       background: #fff;
       text-align: left;
       font-size: 12px;
-      font-weight: 950;
+      font-weight: 850;
       cursor: pointer;
       transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease;
     }
@@ -2611,17 +2622,18 @@
       overflow-x: auto;
       overflow-y: hidden;
       border: 1px solid #dde5f0;
-      border-radius: 8px;
+      border-radius: 14px;
       background: #fff;
+      box-shadow: 0 6px 18px rgba(15, 35, 70, 0.025);
     }
 
     #mi-admin .mi-rank-tracker-head,
     #mi-admin .mi-rank-track-row-head {
       display: grid;
-      gap: 8px;
-      padding: 8px 10px;
+      gap: 10px;
+      padding: 11px 12px;
       border-bottom: 1px solid #e8edf4;
-      background: #fbfcfd;
+      background: #fff;
       align-items: center;
     }
 
@@ -2638,79 +2650,80 @@
       display: flex;
       min-width: 0;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 5px;
       align-items: center;
       border-bottom: 1px solid #edf2f7;
-      padding: 7px 10px;
-      color: #5f6f86;
-      background: #fff;
+      padding: 8px 12px 10px;
+      color: #66748a;
+      background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
       font-size: 11px;
-      font-weight: 700;
+      font-weight: 650;
     }
 
     #mi-admin .mi-rank-ops-row span {
       display: inline-flex;
       min-height: 24px;
       align-items: center;
-      border: 1px solid #e1e8f2;
+      border: 1px solid #e6edf6;
       border-radius: 999px;
-      padding: 3px 7px;
-      background: #f8fafc;
+      padding: 3px 8px;
+      background: rgba(255, 255, 255, 0.86);
       white-space: nowrap;
     }
 
     #mi-admin .mi-rank-ops-row .is-wait {
       border-color: #dbeafe;
       color: #1d4ed8;
-      background: #eff6ff;
+      background: rgba(239, 246, 255, 0.72);
     }
 
     #mi-admin .mi-rank-ops-row .is-error {
       border-color: #fecaca;
       color: #b42318;
-      background: #fff1f1;
+      background: rgba(255, 241, 241, 0.74);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-ok {
       border-color: #cfe8d9;
       color: var(--mi-green);
-      background: var(--mi-green-bg);
+      background: rgba(232, 247, 239, 0.68);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-warn {
       border-color: #fed7aa;
       color: var(--mi-orange);
-      background: var(--mi-orange-bg);
+      background: rgba(255, 247, 237, 0.72);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-error {
       border-color: #fecaca;
       color: #b42318;
-      background: #fff1f1;
+      background: rgba(255, 241, 241, 0.74);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-ops-message {
       max-width: min(420px, 100%);
       overflow: hidden;
       text-overflow: ellipsis;
+      color: #66748a;
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-ok {
       border-color: #cfe8d9;
       color: var(--mi-green);
-      background: var(--mi-green-bg);
+      background: rgba(232, 247, 239, 0.68);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-warn {
       border-color: #fed7aa;
       color: var(--mi-orange);
-      background: var(--mi-orange-bg);
+      background: rgba(255, 247, 237, 0.72);
     }
 
     #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-error {
       border-color: #fecaca;
       color: #b42318;
-      background: #fff1f1;
+      background: rgba(255, 241, 241, 0.74);
     }
 
     #mi-admin .mi-rank-tracker-card.is-dragging {
@@ -2762,7 +2775,7 @@
       z-index: 2;
       min-width: max-content;
       padding-left: 8px;
-      background: linear-gradient(90deg, rgba(251, 252, 253, 0), #fbfcfd 18%);
+      background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 18%);
     }
 
     #mi-admin .mi-rank-drag-handle {
@@ -2774,7 +2787,7 @@
       border: 1px solid #d9e2ee;
       border-radius: 8px;
       color: #6b778c;
-      background: #fff;
+      background: #fbfdff;
       cursor: grab;
       font-size: 16px;
       font-weight: 800;
@@ -2812,7 +2825,7 @@
       display: block;
       color: var(--mi-navy);
       font-size: 13px;
-      font-weight: 800;
+      font-weight: 780;
     }
 
     #mi-admin a.mi-rank-keyword-name {
@@ -2830,7 +2843,7 @@
       min-width: 132px;
       color: #4f5f78;
       font-size: 12px;
-      font-weight: 650;
+      font-weight: 620;
     }
 
     #mi-admin .mi-rank-keyword-volume.is-muted {
@@ -2840,14 +2853,14 @@
     #mi-admin .mi-rank-product-info {
       color: var(--mi-navy);
       font-size: 12px;
-      font-weight: 650;
+      font-weight: 620;
     }
 
     #mi-admin .mi-rank-product-title {
       display: block;
       color: #1e63d7;
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 680;
       text-align: right;
     }
 
@@ -2930,9 +2943,9 @@
       border-radius: 999px;
       padding: 4px 8px;
       color: var(--mi-navy);
-      background: #fff;
+      background: #fbfdff;
       font-size: 11px;
-      font-weight: 750;
+      font-weight: 760;
       white-space: nowrap;
     }
 
@@ -2958,7 +2971,7 @@
     #mi-admin .mi-rank-day-card {
       flex: 0 0 112px;
       min-height: 80px;
-      padding: 9px 10px 10px;
+      padding: 9px 10px;
       border-right: 1px solid #edf1f6;
       color: var(--mi-navy);
       background: #fff;
@@ -3009,7 +3022,7 @@
     #mi-admin .mi-rank-day-slots b {
       color: var(--mi-navy);
       font-size: 15px;
-      font-weight: 850;
+      font-weight: 800;
       letter-spacing: 0;
     }
 

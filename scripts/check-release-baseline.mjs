@@ -94,12 +94,14 @@ const checks = {
     && clientSource.includes("logoutClient")
     && clientSource.includes("removeClientAuthCode")
     && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
-  homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트 개발중")
-    && homeSource.includes("현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.")
+  homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트는 운영 점검 중입니다.")
+    && homeSource.includes("현재는 검증된 핵심 도구를 먼저 제공합니다.")
     && homeSource.includes("data-mi-dev-banner")
     && homeSource.includes("data-mi-dev-banner-close")
-    && homeSource.includes("miHomeDevBannerClosed")
-    && ["키워드조회", "SEO확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
+    && homeSource.includes("data-mi-dev-banner-week")
+    && homeSource.includes("miHomeDevBannerHiddenUntil")
+    && homeSource.includes("7 * 24 * 60 * 60 * 1000")
+    && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   clientReportDownloadBox: clientSource.includes("data-mi-report-list")
@@ -422,6 +424,9 @@ const checks = {
     && rankTrackerGroupsMigration.includes("add column if not exists group_name")
     && rankTrackerGroupsMigration.includes("idx_naver_rank_trackers_agency_group_sort")
     && [adminSource, clientSource].every((source) => source.includes("data-rank-bulk-group")
+      && source.includes("data-rank-group-menu-toggle")
+      && source.includes("data-rank-group-option")
+      && source.includes("mi-rank-group-menu")
       && source.includes("data-rank-filter-group")
       && source.includes("data-rank-filter-group-wrap")
       && source.includes("그룹 필터")
@@ -430,7 +435,6 @@ const checks = {
       && source.includes("그룹 해제")
       && source.includes("RANK_DEFAULT_GROUP")
       && source.includes("rankGroupDisplayName")
-      && source.includes("rankCustomGroupSet")
       && source.includes("rankGroupNamesForCard")
       && source.includes("rankTrackerGroupName")
       && source.includes("data-rank-group-edit")
@@ -439,7 +443,9 @@ const checks = {
       && source.includes("그룹에 넣을 추적 항목을 먼저 체크해주세요.")
       && source.includes("그룹 해제할 추적 항목을 먼저 체크해주세요.")
       && source.includes("mi-rank-group-section")
-      && source.includes('action: "group"')),
+      && source.includes('action: "group"')
+      && !source.includes("data-rank-group-list")
+      && !source.includes("data-rank-group list=")),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
     && cron.schedule === "7 0 * * *")
     && rankCronServer.includes("DEFAULT_CRON_BATCH = 50"),
@@ -499,6 +505,7 @@ const checks = {
     && source.includes("채널 문의")
     && source.includes("카카오톡 상담")
     && source.includes(".mi-kakao-icon::before")
+    && source.includes("clip-path: polygon(0 0, 100% 0, 18% 100%)")
     && !source.includes(">톡</i>")),
   superAdminCanCreateClient: superAdminServer.includes('action === "create-client"') && superAdminServer.includes("return createClient(request, ctx, body)"),
   superAdminSecretFailsClosed: superAdminServer.includes('process.env.MI_SUPER_ADMIN_CODE || ""')

@@ -299,14 +299,14 @@
       z-index: 70;
       display: grid;
       grid-template-columns: auto minmax(0, 1fr) auto;
-      gap: 12px;
+      gap: 14px;
       align-items: start;
-      width: min(430px, calc(100vw - 48px));
+      width: min(520px, calc(100vw - 48px));
       border: 1px solid rgba(6, 26, 58, 0.12);
-      border-radius: 8px;
-      padding: 14px 14px 13px;
-      background: rgba(255, 255, 255, 0.94);
-      box-shadow: 0 18px 46px rgba(6, 26, 58, 0.16);
+      border-radius: 12px;
+      padding: 18px;
+      background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 255, 0.96));
+      box-shadow: 0 22px 60px rgba(6, 26, 58, 0.18);
       backdrop-filter: blur(18px);
     }
 
@@ -317,32 +317,32 @@
     #mi-home .mi-dev-banner-icon {
       display: grid;
       place-items: center;
-      width: 30px;
-      height: 30px;
+      width: 36px;
+      height: 36px;
       border-radius: 50%;
-      background: #e8f5ef;
-      color: #08704d;
-      font-size: 14px;
+      background: #071f41;
+      color: #ffffff;
+      font-size: 13px;
       font-weight: 950;
       line-height: 1;
     }
 
     #mi-home .mi-dev-banner-copy {
       display: grid;
-      gap: 7px;
+      gap: 9px;
       min-width: 0;
     }
 
     #mi-home .mi-dev-banner-copy strong {
       color: var(--mi-navy);
-      font-size: 15px;
+      font-size: 18px;
       line-height: 1.35;
     }
 
     #mi-home .mi-dev-banner-copy p {
       color: #667085;
-      font-size: 13px;
-      line-height: 1.45;
+      font-size: 14px;
+      line-height: 1.55;
     }
 
     #mi-home .mi-dev-banner-features {
@@ -366,11 +366,37 @@
       white-space: nowrap;
     }
 
+    #mi-home .mi-dev-banner-foot {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 2px;
+    }
+
+    #mi-home .mi-dev-banner-week {
+      border: 0;
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: #edf3fb;
+      color: #344054;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 850;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+
+    #mi-home .mi-dev-banner-week:hover,
+    #mi-home .mi-dev-banner-week:focus-visible {
+      background: var(--mi-navy);
+      color: #ffffff;
+      transform: translateY(-1px);
+      outline: none;
+    }
+
     #mi-home .mi-dev-banner-close {
       display: grid;
       place-items: center;
-      width: 30px;
-      height: 30px;
+      width: 32px;
+      height: 32px;
       border: 0;
       border-radius: 999px;
       background: transparent;
@@ -752,13 +778,12 @@
     }
 
     #mi-home .mi-kakao-icon {
-      width: 34px;
-      height: 34px;
+      width: 32px;
+      height: 30px;
       position: relative;
       display: block;
-      flex: 0 0 34px;
-      border-radius: 50%;
-      background: #111827;
+      flex: 0 0 32px;
+      background: transparent;
       font-size: 0;
       font-style: normal;
     }
@@ -766,24 +791,24 @@
     #mi-home .mi-kakao-icon::before {
       content: "";
       position: absolute;
-      left: 9px;
-      top: 10px;
-      width: 16px;
-      height: 10px;
-      border-radius: 999px;
-      background: #fee500;
+      left: 3px;
+      top: 5px;
+      width: 26px;
+      height: 19px;
+      border-radius: 50%;
+      background: #111827;
     }
 
     #mi-home .mi-kakao-icon::after {
       content: "";
       position: absolute;
-      left: 13px;
-      top: 17px;
-      width: 7px;
-      height: 7px;
-      background: #fee500;
-      transform: rotate(45deg);
-      border-radius: 1px;
+      left: 8px;
+      top: 20px;
+      width: 9px;
+      height: 8px;
+      background: #111827;
+      clip-path: polygon(0 0, 100% 0, 18% 100%);
+      transform: rotate(13deg);
     }
 
     #mi-home .mi-kakao-floating span {
@@ -939,15 +964,18 @@
   </header>
 
   <aside class="mi-dev-banner" data-mi-dev-banner aria-label="모먼트 인사이트 개발 안내">
-    <span class="mi-dev-banner-icon" aria-hidden="true">i</span>
+    <span class="mi-dev-banner-icon" aria-hidden="true">MI</span>
     <div class="mi-dev-banner-copy">
-      <strong>모먼트 인사이트 개발중</strong>
-      <p>현재는 검증된 핵심 도구 4가지를 우선 사용할 수 있습니다.</p>
+      <strong>모먼트 인사이트는 운영 점검 중입니다.</strong>
+      <p>현재는 검증된 핵심 도구를 먼저 제공합니다. 대시보드와 보고서는 순차적으로 안정화하고 있습니다.</p>
       <div class="mi-dev-banner-features" aria-label="현재 사용 가능한 기능">
-        <span>키워드조회</span>
-        <span>SEO확인</span>
+        <span>키워드 조회</span>
+        <span>SEO 확인</span>
         <span>네이버 상품순위</span>
         <span>네이버 30일 순위</span>
+      </div>
+      <div class="mi-dev-banner-foot">
+        <button class="mi-dev-banner-week" type="button" data-mi-dev-banner-week>1주일동안 안보기</button>
       </div>
     </div>
     <button class="mi-dev-banner-close" type="button" data-mi-dev-banner-close aria-label="개발 안내 닫기">×</button>
@@ -1149,23 +1177,32 @@
     (function () {
       var banner = document.querySelector("[data-mi-dev-banner]");
       var close = document.querySelector("[data-mi-dev-banner-close]");
-      var storageKey = "miHomeDevBannerClosed";
+      var hideWeek = document.querySelector("[data-mi-dev-banner-week]");
+      var storageKey = "miHomeDevBannerHiddenUntil";
+      var weekMs = 7 * 24 * 60 * 60 * 1000;
 
-      if (!banner || !close) {
+      if (!banner || !close || !hideWeek) {
         return;
       }
 
       try {
-        if (window.localStorage.getItem(storageKey) === "1") {
+        var hiddenUntil = Number(window.localStorage.getItem(storageKey) || 0);
+        if (hiddenUntil && Date.now() < hiddenUntil) {
           banner.classList.add("is-hidden");
+        } else if (hiddenUntil) {
+          window.localStorage.removeItem(storageKey);
         }
       } catch (error) {}
 
       close.addEventListener("click", function () {
         banner.classList.add("is-hidden");
+      });
+
+      hideWeek.addEventListener("click", function () {
         try {
-          window.localStorage.setItem(storageKey, "1");
+          window.localStorage.setItem(storageKey, String(Date.now() + weekMs));
         } catch (error) {}
+        banner.classList.add("is-hidden");
       });
     })();
   </script>

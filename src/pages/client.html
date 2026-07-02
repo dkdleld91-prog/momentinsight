@@ -1422,6 +1422,48 @@
       font-size: 12px;
     }
 
+    #mi-clean .mi-rank-group-filter {
+      min-height: 40px;
+      display: grid;
+      grid-template-columns: auto minmax(118px, 1fr);
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #bed2ea;
+      border-radius: 16px;
+      padding: 4px 5px 4px 12px;
+      background: linear-gradient(135deg, #eef6ff 0%, #ffffff 100%);
+      box-shadow: 0 8px 22px rgba(15, 35, 70, 0.08);
+    }
+
+    #mi-clean .mi-rank-group-filter span {
+      color: #0b4f83;
+      font-size: 11px;
+      font-weight: 1000;
+      letter-spacing: .01em;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-rank-group-filter .mi-input {
+      min-height: 32px;
+      border: 0;
+      border-radius: 12px;
+      padding: 6px 28px 6px 10px;
+      background: rgba(255, 255, 255, 0.92);
+      color: #071f3d;
+      font-weight: 1000;
+      box-shadow: none;
+    }
+
+    #mi-clean .mi-rank-group-filter.is-filtered {
+      border-color: #0b2346;
+      background: #0b2346;
+      box-shadow: 0 12px 28px rgba(11, 35, 70, 0.18);
+    }
+
+    #mi-clean .mi-rank-group-filter.is-filtered span {
+      color: #fff;
+    }
+
     #mi-clean .mi-rank-filter-actions {
       display: flex;
       flex-wrap: wrap;
@@ -4058,9 +4100,12 @@
                 <h3>상품별 일별 오가닉 순위</h3>
                 <div class="mi-rank-filterbar" data-rank-filter-panel>
                   <input class="mi-input" data-rank-filter-search aria-label="순위 추적 검색" placeholder="키워드, 상품명, 상품번호 검색" />
-                  <select class="mi-input" data-rank-filter-group aria-label="순위 추적 그룹 필터">
-                    <option value="">전체 그룹</option>
-                  </select>
+                  <label class="mi-rank-group-filter" data-rank-filter-group-wrap>
+                    <span>그룹 보기</span>
+                    <select class="mi-input" data-rank-filter-group aria-label="순위 추적 그룹 필터">
+                      <option value="">전체 그룹</option>
+                    </select>
+                  </label>
                   <div class="mi-rank-filter-actions" role="group" aria-label="순위 추적 상태 필터">
                     <button class="mi-rank-filter-button is-active" type="button" data-rank-filter-status="all">전체</button>
                     <button class="mi-rank-filter-button" type="button" data-rank-filter-status="attention">확인 필요</button>
@@ -5762,11 +5807,13 @@
         return true;
       }
 
-      function updateRankFilterPanel(node, total, shown, mode) {
+      function updateRankFilterPanel(node, total, shown, mode, group) {
         var card = node && node.closest("[data-rank-card]");
         if (!card) return;
         var countNode = card.querySelector("[data-rank-filter-count]");
         if (countNode) countNode.textContent = shown + "개 표시 / 전체 " + total + "개";
+        var groupWrap = card.querySelector("[data-rank-filter-group-wrap]");
+        if (groupWrap) groupWrap.classList.toggle("is-filtered", Boolean(group));
         card.querySelectorAll("[data-rank-filter-status]").forEach(function (button) {
           button.classList.toggle("is-active", button.getAttribute("data-rank-filter-status") === mode);
         });
@@ -5856,14 +5903,14 @@
         var filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
         updateRankGroupFilterPanel(card, trackers || [], filterGroup);
         if (!trackers || !trackers.length) {
-          updateRankFilterPanel(node, 0, 0, filterMode);
+          updateRankFilterPanel(node, 0, 0, filterMode, filterGroup);
           node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>';
           return;
         }
         var filteredTrackers = trackers.filter(function (tracker) {
           return rankTrackerMatchesFilter(tracker, filterText, filterMode, filterGroup);
         });
-        updateRankFilterPanel(node, trackers.length, filteredTrackers.length, filterMode);
+        updateRankFilterPanel(node, trackers.length, filteredTrackers.length, filterMode, filterGroup);
         if (!filteredTrackers.length) {
           node.innerHTML = rankTrackerOpsSummary(trackers) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
           return;
@@ -6681,6 +6728,9 @@
                 if (bulkPayload && bulkPayload.ok !== false) moved += 1;
               }
               setRankSelectedSet(card, new Set());
+              card.setAttribute("data-rank-filter-group", "");
+              var groupFilterAfterMove = card.querySelector("[data-rank-filter-group]");
+              if (groupFilterAfterMove) groupFilterAfterMove.value = "";
               setStatus(rankStatus, moved + "개 추적 항목을 " + bulkGroup + " 그룹으로 이동했습니다.", moved ? "is-ok" : "is-warn");
               await loadRankTrackers(true);
             } catch (error) {

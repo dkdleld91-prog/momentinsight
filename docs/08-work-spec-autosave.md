@@ -82,6 +82,7 @@
 | 완료 | 30일 순위 그룹 이동 결함 보정 | 그룹명 입력 후 체크 시 입력값이 사라지는 문제를 막고, 선택 항목 없이 그룹 생성 성공처럼 보이던 흐름을 차단했습니다. 관리자/광고주 30일 순위 화면 모두 동일 적용 | HTML 스크립트 문법 검사, 로컬 API 그룹 이동/복구 테스트, `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check` | 배포 없음 |
 | 완료 | 30일 순위 자동 갱신 누락 방지 | GitHub Actions 예약 실행을 09시/15시 슬롯 전용에서 30분 간격 due catch-up 방식으로 변경하고, Vercel 1일 1회 백업 Cron도 09:07 KST로 조정했습니다. 서버는 기존처럼 `next_check_at`이 지난 항목만 실제 갱신하므로 불필요한 네이버 조회를 늘리지 않습니다. | GitHub Actions schedule API 조회, 운영 tracker 최신 갱신/다음 갱신 확인, `check:rank-cron`, `check:baseline`, `check:rank-matching`, `build:vercel`, `git diff --check` | 배포 대기 |
 | 완료 | 자동 순위추적 운영 환경값 분리 점검 | GitHub Actions 호출용 `MI_RANK_CRON_SECRET`과 Vercel Cron 자동 Authorization용 `CRON_SECRET`을 별도 필수 운영값으로 분리했습니다. 두 값은 같은 비밀값이어야 하며, Vercel Hobby의 1일 1회 백업 Cron이 401로 막히는 실수를 배포 전 검사에서 잡도록 보강했습니다. | `check:baseline`, `check:rank-cron`, `build:vercel`, 운영 cron 비인증 401 확인 | 배포 대기 |
+| 완료 | 30일 순위 그룹 필터 UX 보완 | 그룹 필터를 `그룹 보기` 컨트롤로 명확히 표시하고, 선택 그룹이 있을 때만 네이비 강조 상태가 보이도록 수정했습니다. 그룹 이동 후에는 특정 그룹만 남아 보이지 않게 전체 그룹으로 자동 복귀합니다. | `check:baseline`, `check:rank-matching`, `build:vercel`, DOM 기능 테스트, 운영 페이지 응답 확인 | 배포 대기 |
 
 ## 현재 진행 원칙
 

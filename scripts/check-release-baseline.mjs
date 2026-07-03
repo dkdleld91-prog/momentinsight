@@ -18,6 +18,13 @@ function assertCheck(condition, label) {
   }
 }
 
+function functionBody(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  const end = source.indexOf(endMarker, start);
+  if (start === -1 || end === -1 || end <= start) return "";
+  return source.slice(start, end);
+}
+
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
@@ -38,6 +45,11 @@ const accessAuditMigration = read("supabase/migrations/20260628152000_harden_acc
 const vercelConfig = JSON.parse(read("vercel.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
+const rankDownloadFunctions = [adminSource, clientSource].map((source) => functionBody(
+  source,
+  "async function downloadSelectedRankTrackers",
+  "function renderRankHistory",
+));
 const staticBuildScript = read("scripts/build-vercel-static.mjs");
 const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
 const rankTrackerGroupsMigration = read("supabase/migrations/20260701090000_naver_rank_tracker_groups.sql");
@@ -253,8 +265,8 @@ const checks = {
     && rankServer.includes("keywordVolumeLabel")
     && rankServer.includes("fetchSearchAdKeywordVolume")
     && rankServer.includes("NAVER_SEARCHAD_API_KEY"),
-  rankTrackingCompactActionColumn: [adminSource, clientSource].every((source) => source.includes("minmax(150px, 0.58fr)")
-    && source.includes("minmax(190px, auto)")
+  rankTrackingCompactActionColumn: [adminSource, clientSource].every((source) => source.includes("minmax(150px, 0.56fr)")
+    && source.includes("minmax(210px, auto)")
     && source.includes("column-gap: 14px")
     && source.includes("position: sticky")
     && source.includes("min-width: max-content")
@@ -268,14 +280,25 @@ const checks = {
     && source.includes("갱신할 운영중 순위 추적 항목이 없습니다.")
     && source.includes("grid-template-columns: minmax(220px, 1fr) auto auto auto auto;")
     && source.includes("data-rank-bulk-clear>그룹 해제</button>' +")
-    && source.includes("data-rank-refresh-all>전체 순위 갱신</button></div></div>")),
+    && source.includes("data-rank-refresh-all>전체 순위 갱신</button>' +")
+    && source.includes("data-rank-download-selected>선택 이미지 저장</button></div></div>")),
   rankTrackingShareImageDownload: [adminSource, clientSource].every((source) => source.includes("data-rank-download-selected")
     && source.includes("선택 이미지 저장")
     && source.includes("downloadSelectedRankTrackers")
+    && source.includes("serializeRankExportSheet")
+    && source.includes("showRankDownloadReady")
     && source.includes("renderRankExportSheet")
     && source.includes("cloneRankCardForExport")
     && source.includes("mi-rank-export-stage")
-    && source.includes("선택 상품 30일 순위 공유")),
+    && source.includes("mi-rank-share-image")
+    && source.includes("mi-rank-download-ready")
+    && source.includes("선택 상품 30일 순위 공유")
+    && source.includes("canvas.toBlob")
+    && source.includes("reject(error);"))
+    && rankDownloadFunctions.every((fn) => fn
+      && fn.includes('var statusNode = card ? card.querySelector("[data-rank-status]") : null;')
+      && fn.includes("setStatus(statusNode")
+      && !fn.includes("setStatus(rankStatus")),
   rankTrackingTypographyReduced: [adminSource, clientSource].every((source) => /mi-rank-ops-row \{[\s\S]*?font-weight: 700;/.test(source)
     && /mi-rank-keyword-name \{[\s\S]*?font-weight: 800;/.test(source)
     && /mi-rank-keyword-volume \{[\s\S]*?font-weight: 650;/.test(source)

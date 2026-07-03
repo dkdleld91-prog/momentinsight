@@ -2309,6 +2309,37 @@
       transform: none;
     }
 
+    #mi-admin .mi-rank-share-image {
+      min-height: 36px;
+      border: 1px solid #d7e2ef;
+      border-radius: 999px;
+      padding: 7px 13px;
+      color: #0b2346;
+      background: linear-gradient(135deg, #ffffff 0%, #f4f8fd 100%);
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+      cursor: pointer;
+      box-shadow: 0 8px 18px rgba(15, 35, 70, 0.06);
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease, color .12s ease;
+    }
+
+    #mi-admin .mi-rank-share-image:hover,
+    #mi-admin .mi-rank-share-image:focus-visible {
+      border-color: #aebfd3;
+      color: #0b2346;
+      background: linear-gradient(135deg, #ffffff 0%, #eef4fb 100%);
+      box-shadow: 0 12px 24px rgba(15, 35, 70, 0.1);
+      transform: translateY(-1px);
+      outline: none;
+    }
+
+    #mi-admin .mi-rank-share-image:disabled {
+      cursor: wait;
+      opacity: .62;
+      transform: none;
+    }
+
     #mi-admin .mi-rank-filter-count {
       min-height: 36px;
       display: inline-flex;
@@ -2492,6 +2523,8 @@
       min-height: 38px;
       border-radius: 10px;
       padding: 0 12px;
+      font-size: 11px;
+      font-weight: 900;
       white-space: nowrap;
     }
 
@@ -2499,13 +2532,6 @@
       border-color: #e5eaf2;
       color: #52627a;
       background: #fff;
-    }
-
-    #mi-admin .mi-rank-bulk-actions [data-rank-download-selected] {
-      border-color: #dbe5f2;
-      color: #0b2346;
-      background: linear-gradient(180deg, #ffffff 0%, #f5f8fc 100%);
-      box-shadow: 0 10px 24px rgba(11, 35, 70, 0.06);
     }
 
     #mi-admin .mi-rank-export-stage {
@@ -2608,6 +2634,75 @@
 
     #mi-admin .mi-rank-export-sheet .mi-rank-row-actions {
       justify-content: flex-end;
+    }
+
+    #mi-admin .mi-rank-download-ready {
+      position: fixed;
+      right: 24px;
+      bottom: 92px;
+      z-index: 9999;
+      width: min(360px, calc(100vw - 32px));
+      border: 1px solid rgba(11, 35, 70, 0.13);
+      border-radius: 18px;
+      padding: 16px;
+      color: #0b2346;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 24px 60px rgba(11, 35, 70, 0.18);
+      backdrop-filter: blur(18px);
+    }
+
+    #mi-admin .mi-rank-download-ready strong {
+      display: block;
+      font-size: 14px;
+      font-weight: 950;
+      margin-bottom: 5px;
+    }
+
+    #mi-admin .mi-rank-download-ready span {
+      display: block;
+      color: #66748a;
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.45;
+      margin-bottom: 12px;
+    }
+
+    #mi-admin .mi-rank-download-ready-actions {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    #mi-admin .mi-rank-download-ready a,
+    #mi-admin .mi-rank-download-ready button {
+      display: inline-flex;
+      min-height: 34px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #d7e2ef;
+      border-radius: 999px;
+      padding: 0 12px;
+      color: #0b2346;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 900;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease, background .12s ease;
+    }
+
+    #mi-admin .mi-rank-download-ready a {
+      border-color: #0b2346;
+      color: #fff;
+      background: #0b2346;
+    }
+
+    #mi-admin .mi-rank-download-ready a:hover,
+    #mi-admin .mi-rank-download-ready button:hover {
+      border-color: #aebfd3;
+      box-shadow: 0 10px 22px rgba(15, 35, 70, 0.1);
+      transform: translateY(-1px);
     }
 
     #mi-admin .mi-rank-export-sheet .mi-rank-day-grid {
@@ -2755,7 +2850,7 @@
     }
 
     #mi-admin .mi-rank-track-row-head {
-      grid-template-columns: 30px minmax(74px, 0.32fr) minmax(132px, 0.55fr) minmax(150px, 0.58fr) minmax(162px, 0.62fr) minmax(220px, 1.1fr) minmax(190px, auto);
+      grid-template-columns: 30px minmax(74px, 0.3fr) minmax(132px, 0.5fr) minmax(150px, 0.56fr) minmax(162px, 0.58fr) minmax(160px, 0.74fr) minmax(210px, auto);
       column-gap: 14px;
       min-width: 980px;
     }
@@ -2976,6 +3071,8 @@
 
     #mi-admin .mi-rank-product-title {
       display: block;
+      justify-self: end;
+      max-width: 360px;
       color: #1e63d7;
       font-size: 12px;
       font-weight: 680;
@@ -3057,13 +3154,17 @@
       display: inline-flex;
       min-height: 26px;
       align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
       border: 1px solid #d9e2ee;
       border-radius: 999px;
-      padding: 4px 8px;
+      padding: 4px 7px;
       color: var(--mi-navy);
       background: #fbfdff;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 760;
+      line-height: 1;
+      word-break: keep-all;
       white-space: nowrap;
     }
 
@@ -8974,8 +9075,8 @@
           renderRankGroupOptions(card, trackers) + '</div></div>' +
           '<button class="mi-button" type="button" data-rank-bulk-move>그룹 적용</button>' +
           '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button>' +
-          '<button class="mi-button subtle" type="button" data-rank-download-selected>선택 이미지 저장</button>' +
-          '<button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button></div></div>';
+          '<button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button>' +
+          '<button class="mi-rank-share-image" type="button" data-rank-download-selected>선택 이미지 저장</button></div></div>';
       }
 
       function renderRankTrackerCard(tracker, selectedSet) {
@@ -9077,7 +9178,19 @@
       function rankExportStyleText() {
         return Array.prototype.slice.call(document.querySelectorAll("style")).map(function (style) {
           return style.textContent || "";
-        }).join("\n").replace(/<\/style/gi, "<\\/style");
+        }).join("\n");
+      }
+
+      function serializeRankExportSheet(sheet, rootId) {
+        var wrapper = document.createElement("div");
+        var style = document.createElement("style");
+        wrapper.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+        wrapper.id = rootId;
+        wrapper.className = "mi-rank-export-root";
+        style.textContent = rankExportStyleText();
+        wrapper.appendChild(style);
+        wrapper.appendChild(sheet.cloneNode(true));
+        return new XMLSerializer().serializeToString(wrapper);
       }
 
       function downloadBlob(blob, fileName) {
@@ -9091,35 +9204,71 @@
         window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
       }
 
+      function showRankDownloadReady(card, blob, fileName, count) {
+        var root = (card && card.closest("#mi-clean, #mi-admin")) || document.body;
+        var oldPanels = root.querySelectorAll("[data-rank-download-ready]");
+        oldPanels.forEach(function (panel) { panel.remove(); });
+        var url = URL.createObjectURL(blob);
+        var downloadLabel = /\.svg$/i.test(fileName) ? "SVG 다운로드" : "PNG 다운로드";
+        var panel = document.createElement("div");
+        panel.className = "mi-rank-download-ready";
+        panel.setAttribute("data-rank-download-ready", "true");
+        panel.innerHTML = '<strong>공유 이미지 준비 완료</strong><span>' +
+          escapeHtml(count + "개 순위 항목을 업체 공유용 이미지로 정리했습니다. 자동 저장이 막히면 아래 버튼을 눌러주세요.") +
+          '</span><div class="mi-rank-download-ready-actions"><button type="button" data-rank-download-close>닫기</button><a data-rank-download-link>' +
+          escapeHtml(downloadLabel) + '</a></div>';
+        var link = panel.querySelector("[data-rank-download-link]");
+        var close = panel.querySelector("[data-rank-download-close]");
+        if (link) {
+          link.href = url;
+          link.download = fileName;
+        }
+        if (close) {
+          close.addEventListener("click", function () {
+            URL.revokeObjectURL(url);
+            panel.remove();
+          });
+        }
+        root.appendChild(panel);
+        window.setTimeout(function () {
+          if (panel.isConnected) {
+            URL.revokeObjectURL(url);
+            panel.remove();
+          }
+        }, 300000);
+        return link;
+      }
+
       async function downloadSelectedRankTrackers(card, trackers) {
+        var statusNode = card ? card.querySelector("[data-rank-status]") : null;
         var selectedIds = Array.from(rankSelectedSet(card));
         var selectedTrackers = selectedIds.map(function (id) {
           return (trackers || []).find(function (tracker) { return tracker.id === id; });
         }).filter(Boolean);
         if (!selectedTrackers.length) {
-          setStatus(rankStatus, "이미지로 저장할 순위 추적 항목을 먼저 체크해주세요.", "is-warn");
+          setStatus(statusNode, "이미지로 저장할 순위 추적 항목을 먼저 체크해주세요.", "is-warn");
           return;
         }
-        setStatus(rankStatus, "선택한 순위 항목을 공유 이미지로 만드는 중입니다.", "");
+        setStatus(statusNode, "선택한 순위 항목을 공유 이미지로 만드는 중입니다.", "");
         var rendered = renderRankExportSheet(card, selectedTrackers);
         await new Promise(function (resolve) { window.requestAnimationFrame(resolve); });
         var width = Math.max(960, Math.ceil(rendered.sheet.scrollWidth || 1320));
         var height = Math.max(420, Math.ceil(rendered.sheet.scrollHeight || 420));
         if (!rendered.sheet.querySelector(".mi-rank-tracker-card")) {
           rendered.stage.replaceChildren();
-          setStatus(rankStatus, "현재 화면에서 선택 항목을 찾지 못했습니다. 그룹을 펼친 뒤 다시 저장해주세요.", "is-warn");
+          setStatus(statusNode, "현재 화면에서 선택 항목을 찾지 못했습니다. 그룹을 펼친 뒤 다시 저장해주세요.", "is-warn");
           return;
         }
         if (height > 30000) {
           rendered.stage.replaceChildren();
-          setStatus(rankStatus, "선택 항목이 너무 많습니다. 20개 이하로 나눠 저장해주세요.", "is-warn");
+          setStatus(statusNode, "선택 항목이 너무 많습니다. 20개 이하로 나눠 저장해주세요.", "is-warn");
           return;
         }
         var rootId = card.closest("#mi-admin") ? "mi-admin" : "mi-clean";
         var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '">' +
-          '<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" id="' + rootId + '">' +
-          '<style>' + rankExportStyleText() + '</style>' + rendered.sheet.outerHTML +
-          '</div></foreignObject></svg>';
+          '<foreignObject width="100%" height="100%">' +
+          serializeRankExportSheet(rendered.sheet, rootId) +
+          '</foreignObject></svg>';
         var svgUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
         try {
           var image = new Image();
@@ -9137,18 +9286,28 @@
               context.fillStyle = "#f7f9fc";
               context.fillRect(0, 0, canvas.width, canvas.height);
               context.drawImage(image, 0, 0, canvas.width, canvas.height);
-              canvas.toBlob(function (result) {
-                if (result) resolve(result);
-                else reject(new Error("image export failed"));
-              }, "image/png", 0.95);
+              try {
+                canvas.toBlob(function (result) {
+                  if (result) resolve(result);
+                  else reject(new Error("image export failed"));
+                }, "image/png", 0.95);
+              } catch (error) {
+                reject(error);
+              }
             };
             image.onerror = function () { reject(new Error("image load failed")); };
             image.src = svgUrl;
           });
-          downloadBlob(blob, rankExportFileName(selectedTrackers));
-          setStatus(rankStatus, selectedTrackers.length + "개 순위 항목을 공유 이미지로 저장했습니다.", "is-ok");
+          var fileName = rankExportFileName(selectedTrackers);
+          var readyLink = showRankDownloadReady(card, blob, fileName, selectedTrackers.length);
+          if (readyLink) readyLink.click();
+          setStatus(statusNode, selectedTrackers.length + "개 순위 항목의 공유 이미지가 준비되었습니다.", "is-ok");
         } catch (error) {
-          setStatus(rankStatus, "이미지 저장을 완료하지 못했습니다. 선택 항목을 줄여 다시 시도해주세요.", "is-warn");
+          var svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+          var fallbackName = rankExportFileName(selectedTrackers).replace(/\.png$/i, ".svg");
+          var fallbackLink = showRankDownloadReady(card, svgBlob, fallbackName, selectedTrackers.length);
+          if (fallbackLink) fallbackLink.click();
+          setStatus(statusNode, "PNG 생성이 막혀 SVG 이미지 파일로 준비했습니다.", "is-warn");
         } finally {
           URL.revokeObjectURL(svgUrl);
           rendered.stage.replaceChildren();

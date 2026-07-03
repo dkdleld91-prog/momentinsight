@@ -39,13 +39,20 @@ jobs:
           response_file="$(mktemp)"
           trap 'rm -f "$response_file"' EXIT
 
-          status_code="$(
+          call_cron() {
             curl --show-error --silent \
               --output "$response_file" \
               --write-out "%{http_code}" \
               -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
               "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=50"
-          )"
+          }
+
+          status_code="$(call_cron)"
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "First cron call returned HTTP ${status_code}. Retrying once after 30 seconds."
+            sleep 30
+            status_code="$(call_cron)"
+          fi
 
           node - "$response_file" <<'NODE'
           const fs = require("node:fs");

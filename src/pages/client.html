@@ -1959,8 +1959,9 @@
     }
 
     #mi-clean .mi-rank-track-row-head {
-      grid-template-columns: 30px minmax(86px, 0.4fr) minmax(128px, 0.55fr) minmax(104px, 0.5fr) minmax(160px, 1fr) minmax(196px, auto);
-      min-width: 0;
+      grid-template-columns: 30px minmax(74px, 0.32fr) minmax(132px, 0.55fr) minmax(150px, 0.58fr) minmax(162px, 0.62fr) minmax(220px, 1.1fr) minmax(190px, auto);
+      column-gap: 14px;
+      min-width: 980px;
     }
 
     #mi-clean .mi-rank-ops-row {
@@ -2157,7 +2158,9 @@
     }
 
     #mi-clean .mi-rank-keyword-volume {
-      min-width: 132px;
+      min-width: 148px;
+      padding-right: 12px;
+      border-right: 1px solid #e6edf6;
       color: #4f5f78;
       font-size: 12px;
       font-weight: 620;
@@ -2168,6 +2171,8 @@
     }
 
     #mi-clean .mi-rank-product-info {
+      min-width: 158px;
+      padding-left: 2px;
       color: var(--mi-navy);
       font-size: 12px;
       font-weight: 620;
@@ -6184,7 +6189,7 @@
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
           '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
           escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
-          escapeHtml("상품정보 : " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
+          escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
           escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +

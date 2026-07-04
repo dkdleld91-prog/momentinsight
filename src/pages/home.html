@@ -298,12 +298,12 @@
       top: 118px;
       z-index: 70;
       display: grid;
-      width: min(360px, calc(100vw - 40px));
+      width: min(348px, calc(100vw - 40px));
       overflow: hidden;
-      border: 1px solid rgba(6, 26, 58, 0.12);
-      border-radius: 16px;
+      border: 1px solid rgba(6, 26, 58, 0.14);
+      border-radius: 18px;
       background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 24px 62px rgba(6, 26, 58, 0.22);
+      box-shadow: 0 22px 56px rgba(6, 26, 58, 0.18);
       backdrop-filter: blur(18px);
     }
 
@@ -315,28 +315,28 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 50px;
+      min-height: 48px;
       padding: 0 14px 0 18px;
       color: #ffffff;
       background: linear-gradient(135deg, #061a3a, #0d2f5d);
     }
 
     #mi-home .mi-dev-banner-head span {
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 950;
       letter-spacing: 0;
     }
 
     #mi-home .mi-dev-banner-copy {
       display: grid;
-      gap: 12px;
+      gap: 11px;
       min-width: 0;
-      padding: 20px;
+      padding: 18px;
     }
 
     #mi-home .mi-dev-banner-copy strong {
       color: var(--mi-navy);
-      font-size: 19px;
+      font-size: 18px;
       line-height: 1.32;
     }
 
@@ -357,13 +357,20 @@
       display: inline-flex;
       align-items: center;
       justify-content: space-between;
-      min-height: 34px;
-      border-radius: 9px;
-      padding: 0 11px;
+      min-height: 32px;
+      border-radius: 10px;
+      padding: 0 10px;
       border: 1px solid rgba(37, 88, 216, 0.1);
-      background: #f8fbff;
+      background: #f7fafd;
       color: var(--mi-navy);
-      font-size: 12px;
+      font-size: 11.5px;
+      font-weight: 900;
+    }
+
+    #mi-home .mi-dev-banner-features span::after {
+      content: "사용 가능";
+      color: #0b7a58;
+      font-size: 10.5px;
       font-weight: 900;
     }
 
@@ -1004,22 +1011,22 @@
 
   <aside class="mi-dev-banner" data-mi-dev-banner aria-label="모먼트 인사이트 개발 안내">
     <div class="mi-dev-banner-head">
-      <span>운영 안내</span>
+      <span>서비스 안내</span>
       <button class="mi-dev-banner-close" type="button" data-mi-dev-banner-close aria-label="개발 안내 닫기">×</button>
     </div>
     <div class="mi-dev-banner-copy">
-      <strong>모먼트 인사이트는 안정화 단계입니다.</strong>
-      <p>현재 안정성이 확인된 핵심 도구를 먼저 제공합니다.</p>
+      <strong>안정화된 핵심 도구부터 먼저 운영합니다.</strong>
+      <p>정식 오픈 전까지 아래 기능을 우선 제공합니다.</p>
       <div class="mi-dev-banner-features" aria-label="현재 사용 가능한 기능">
         <span>키워드 조회</span>
         <span>SEO 확인</span>
         <span>네이버 상품순위</span>
         <span>네이버 30일 순위</span>
       </div>
-      <p class="mi-dev-banner-contact">사용 문의와 계정 연결은 <b>카카오톡 채널</b>로 남겨주시면 순차적으로 안내드립니다.</p>
+      <p class="mi-dev-banner-contact">계정 연결과 사용 문의는 <b>카카오톡 채널</b>로 남겨주시면 운영팀이 순차 안내드립니다.</p>
       <div class="mi-dev-banner-foot">
-        <a class="mi-dev-banner-kakao" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">채널 문의</a>
-        <button class="mi-dev-banner-week" type="button" data-mi-dev-banner-week>1주일동안 안보기</button>
+        <a class="mi-dev-banner-kakao" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 채널 문의</a>
+        <button class="mi-dev-banner-week" type="button" data-mi-dev-banner-week>1주일 동안 안보기</button>
       </div>
     </div>
   </aside>

@@ -11,6 +11,7 @@ import {
   matchTargetItem,
   productIdCandidates,
   rankPagePosition,
+  rankQueryKeyword,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 
 const smartstoreUrl = "https://smartstore.naver.com/sample-store/products/1234567890?NaPm=ct%3Dabc%7Cci%3D999999999999999999999";
@@ -23,6 +24,8 @@ assert.equal(extractProductId(catalogUrl), "9876543210");
 assert.deepEqual(productIdCandidates(catalogUrl), ["9876543210"]);
 assert.equal(extractProductId(brandProductUrl), "6567319094");
 assert.deepEqual(productIdCandidates(brandProductUrl), ["6567319094"]);
+assert.equal(rankQueryKeyword("콘트로이친"), "콘드로이친");
+assert.equal(rankQueryKeyword("콘드로이친"), "콘드로이친");
 
 assert.equal(
   canonicalUrlKey("https://m.smartstore.naver.com/sample-store/products/1234567890?foo=bar"),

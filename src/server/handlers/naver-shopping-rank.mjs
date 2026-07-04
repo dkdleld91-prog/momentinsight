@@ -10,6 +10,9 @@ const DEFAULT_CATALOG_ALIAS_MAP = {
   "13297440230": "59388521435",
   "10289183039": "53551179280",
 };
+const DEFAULT_KEYWORD_ALIAS_MAP = {
+  "콘트로이친": "콘드로이친",
+};
 
 function config() {
   const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
@@ -160,6 +163,42 @@ function catalogAliasCandidates({ targetProductId = "", targetUrl = "" } = {}) {
   const aliases = catalogAliasMap();
   const productIds = uniqueValues([targetProductId, ...productIdCandidates(targetUrl)]);
   return uniqueValues(productIds.map((productId) => aliases[productId]).filter(Boolean));
+}
+
+function parseKeywordAliasMap(value) {
+  const source = String(value || "").trim();
+  if (!source) return {};
+
+  try {
+    const parsed = JSON.parse(source);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed)
+        .map(([from, to]) => [normalizeText(from), normalizeText(to)])
+        .filter(([from, to]) => from && to)
+    );
+  } catch {
+    return Object.fromEntries(
+      source
+        .split(/[,\n]/)
+        .map((pair) => pair.trim())
+        .filter(Boolean)
+        .map((pair) => pair.split(/[:=]/).map((part) => normalizeText(part)))
+        .filter(([from, to]) => from && to)
+    );
+  }
+}
+
+function keywordAliasMap() {
+  return {
+    ...DEFAULT_KEYWORD_ALIAS_MAP,
+    ...parseKeywordAliasMap(process.env.MI_NAVER_KEYWORD_ALIAS_MAP),
+  };
+}
+
+function rankQueryKeyword(keyword) {
+  const normalized = normalizeText(keyword);
+  return keywordAliasMap()[normalized] || normalized;
 }
 
 function extractCatalogIdsFromHtml(html) {
@@ -928,6 +967,7 @@ function findOrganicMatchInItems(items, target, options = {}) {
 
 async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId, maxRank }) {
   const { target, metadataItem } = await resolveRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId });
+  const queryKeyword = rankQueryKeyword(keyword);
   const limit = Math.max(100, Math.min(1000, Number(maxRank || 300)));
   let total = 0;
   let organicCheckedCount = 0;
@@ -937,7 +977,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   const organicItems = [];
 
   for (let start = 1; start <= 1000 && organicCheckedCount < limit; start += NAVER_SHOPPING_API_DISPLAY) {
-    const page = await fetchShoppingPage(env, keyword, start);
+    const page = await fetchShoppingPage(env, queryKeyword, start);
     const items = Array.isArray(page?.items) ? page.items : [];
     total = Number(page?.total || total || 0);
     const ranked = findOrganicMatchInItems(items, target, {
@@ -1067,7 +1107,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   }
 
   const discoveredSeller = target.targetMode === "product" && targetUrl && metadataItem?.mallName
-    ? await discoverSellerItemFromStore(env, keyword, target, metadataItem)
+    ? await discoverSellerItemFromStore(env, queryKeyword, target, metadataItem)
     : null;
   const discoveredCatalog = discoveredSeller
     ? inferCatalogFromMatchedProduct({ ...discoveredSeller.item, rank: discoveredSeller.rank }, organicItems)
@@ -1162,6 +1202,7 @@ export {
   hasOpenapiConfig as hasShoppingRankConfig,
   normalizeText,
   rankMessage as shoppingRankMessage,
+  rankQueryKeyword,
 };
 
 export default {

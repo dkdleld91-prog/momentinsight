@@ -2615,10 +2615,19 @@
     }
 
     #mi-admin .mi-rank-export-sheet .mi-rank-track-row-head {
-      grid-template-columns: minmax(118px, 0.45fr) minmax(150px, 0.52fr) minmax(162px, 0.56fr) minmax(430px, 1.38fr) minmax(170px, auto);
+      grid-template-columns: minmax(0, 1fr) max-content;
       min-width: 0;
       column-gap: 16px;
       padding: 12px 14px;
+    }
+
+    #mi-admin .mi-rank-export-sheet .mi-rank-track-primary {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    #mi-admin .mi-rank-export-sheet .mi-rank-track-meta-line {
+      grid-template-columns: minmax(120px, 0.42fr) minmax(146px, 0.52fr) minmax(0, 1.5fr);
+      padding-left: 0;
     }
 
     #mi-admin .mi-rank-export-sheet .mi-rank-drag-handle,
@@ -2850,9 +2859,39 @@
     }
 
     #mi-admin .mi-rank-track-row-head {
-      grid-template-columns: 30px minmax(74px, 0.3fr) minmax(132px, 0.5fr) minmax(150px, 0.56fr) minmax(162px, 0.58fr) minmax(160px, 0.74fr) minmax(210px, auto);
+      grid-template-columns: minmax(0, 1fr) max-content;
       column-gap: 14px;
-      min-width: 980px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-rank-track-main {
+      display: grid;
+      min-width: 0;
+      gap: 7px;
+    }
+
+    #mi-admin .mi-rank-track-primary {
+      display: grid;
+      grid-template-columns: 92px minmax(96px, 1fr);
+      align-items: center;
+      min-width: 0;
+      column-gap: 12px;
+    }
+
+    #mi-admin .mi-rank-track-controls {
+      display: inline-flex;
+      min-width: 0;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-rank-track-meta-line {
+      display: grid;
+      grid-template-columns: minmax(116px, 0.42fr) minmax(142px, 0.52fr) minmax(0, 1.35fr);
+      min-width: 0;
+      align-items: center;
+      column-gap: 12px;
+      padding-left: 120px;
     }
 
     #mi-admin .mi-rank-ops-row {
@@ -2979,12 +3018,9 @@
 
     #mi-admin .mi-rank-row-actions {
       flex-wrap: nowrap;
-      position: sticky;
-      right: 0;
-      z-index: 2;
+      justify-self: end;
       min-width: max-content;
-      padding-left: 8px;
-      background: linear-gradient(90deg, rgba(255, 255, 255, 0), #fff 18%);
+      padding-left: 2px;
     }
 
     #mi-admin .mi-rank-drag-handle {
@@ -3049,11 +3085,8 @@
     }
 
     #mi-admin .mi-rank-keyword-volume {
-      min-width: 148px;
-      padding-right: 12px;
-      border-right: 1px solid #e6edf6;
       color: #4f5f78;
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 620;
     }
 
@@ -3062,21 +3095,19 @@
     }
 
     #mi-admin .mi-rank-product-info {
-      min-width: 158px;
-      padding-left: 2px;
       color: var(--mi-navy);
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 620;
     }
 
     #mi-admin .mi-rank-product-title {
       display: block;
-      justify-self: end;
-      max-width: 360px;
+      justify-self: stretch;
+      max-width: none;
       color: #1e63d7;
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 680;
-      text-align: right;
+      text-align: left;
     }
 
     #mi-admin a.mi-rank-product-title {
@@ -3152,16 +3183,16 @@
 
     #mi-admin .mi-rank-pill {
       display: inline-flex;
-      min-height: 26px;
+      min-height: 25px;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
       border: 1px solid #d9e2ee;
       border-radius: 999px;
-      padding: 4px 7px;
+      padding: 4px 6px;
       color: var(--mi-navy);
       background: #fbfdff;
-      font-size: 10.5px;
+      font-size: 10px;
       font-weight: 760;
       line-height: 1;
       word-break: keep-all;
@@ -9089,9 +9120,9 @@
         var actionNote = rankTrackerActionNote(tracker);
         var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
-          '"><div class="mi-rank-track-row-head"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
-          escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
-          escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '<div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
+          '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary"><div class="mi-rank-track-controls"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
+          escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' + renderRankKeywordName(tracker.keyword) + '</div><div class="mi-rank-track-meta-line">' + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
+          escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '</div></div><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
           escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
@@ -9141,7 +9172,7 @@
         clone.querySelectorAll("[draggable]").forEach(function (node) {
           node.removeAttribute("draggable");
         });
-        clone.querySelectorAll("input, button, .mi-rank-drag-handle, .mi-rank-select, .mi-link-button, .mi-rank-group-edit").forEach(function (node) {
+        clone.querySelectorAll("input, button, .mi-rank-track-controls, .mi-rank-drag-handle, .mi-rank-select, .mi-link-button, .mi-rank-group-edit").forEach(function (node) {
           node.remove();
         });
         clone.querySelectorAll("a").forEach(function (link) {

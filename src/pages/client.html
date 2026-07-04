@@ -1939,12 +1939,8 @@
     }
 
     #mi-clean .mi-rank-export-sheet .mi-rank-track-primary {
-      grid-template-columns: minmax(0, 1fr);
-    }
-
-    #mi-clean .mi-rank-export-sheet .mi-rank-track-meta-line {
-      grid-template-columns: minmax(120px, 0.42fr) minmax(146px, 0.52fr) minmax(0, 1.5fr);
-      padding-left: 0;
+      grid-template-columns: minmax(100px, 0.55fr) minmax(132px, 0.72fr) minmax(136px, 0.7fr) minmax(0, 1.4fr);
+      column-gap: 10px;
     }
 
     #mi-clean .mi-rank-export-sheet .mi-rank-drag-handle,
@@ -1955,7 +1951,7 @@
     }
 
     #mi-clean .mi-rank-export-sheet .mi-rank-product-title {
-      white-space: normal;
+      white-space: nowrap;
     }
 
     #mi-clean .mi-rank-export-sheet .mi-rank-row-actions {
@@ -2189,10 +2185,10 @@
 
     #mi-clean .mi-rank-track-primary {
       display: grid;
-      grid-template-columns: 92px minmax(96px, 1fr);
+      grid-template-columns: 88px minmax(78px, 0.48fr) minmax(132px, 0.68fr) minmax(136px, 0.66fr) minmax(96px, 1fr);
       align-items: center;
       min-width: 0;
-      column-gap: 12px;
+      column-gap: 10px;
     }
 
     #mi-clean .mi-rank-track-controls {
@@ -2200,15 +2196,6 @@
       min-width: 0;
       align-items: center;
       gap: 8px;
-    }
-
-    #mi-clean .mi-rank-track-meta-line {
-      display: grid;
-      grid-template-columns: minmax(116px, 0.42fr) minmax(142px, 0.52fr) minmax(0, 1.35fr);
-      min-width: 0;
-      align-items: center;
-      column-gap: 12px;
-      padding-left: 120px;
     }
 
     #mi-clean .mi-rank-ops-row {
@@ -2403,7 +2390,7 @@
 
     #mi-clean .mi-rank-keyword-volume {
       color: #4f5f78;
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 620;
     }
 
@@ -2413,7 +2400,7 @@
 
     #mi-clean .mi-rank-product-info {
       color: var(--mi-navy);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 620;
     }
 
@@ -2422,7 +2409,7 @@
       justify-self: stretch;
       max-width: none;
       color: #1e63d7;
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 680;
       text-align: left;
     }
@@ -6434,7 +6421,7 @@
         var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
           '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary"><div class="mi-rank-track-controls"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
-          escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' + renderRankKeywordName(tracker.keyword) + '</div><div class="mi-rank-track-meta-line">' + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
+          escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
           escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '</div></div><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
           escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +

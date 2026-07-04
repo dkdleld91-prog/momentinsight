@@ -182,6 +182,37 @@ assert.equal(brandCatalogAheadMatch.rank, 2);
 assert.equal(brandCatalogAheadMatch.inferredCatalog.rank, 1);
 assert.equal(brandCatalogAheadMatch.inferredCatalog.item.productId, "51929469110");
 
+const brandCatalogAheadProductIdOnlyMatch = findOrganicMatchInItems([
+  {
+    productId: "51929469110",
+    link: "https://search.shopping.naver.com/catalog/51929469110",
+    title: "주영엔에스 관절엔 콘드로이친 1200 900mg x 60정, 1개",
+    mallName: "네이버",
+    productType: "1",
+    category1: "식품",
+    category2: "건강식품",
+    category3: "영양제",
+    category4: "콘드로이친",
+  },
+  {
+    productId: "84111819427",
+    link: "https://smartstore.naver.com/main/products/6567319094",
+    title: "주영엔에스 관절엔 콘드로이친 1200 60정, 3개",
+    mallName: "주영엔에스",
+    productType: "3",
+    category1: "식품",
+    category2: "건강식품",
+    category3: "영양제",
+    category4: "콘드로이친",
+  },
+], buildRankTarget({
+  targetProductId: "6567319094",
+}), { limit: 100, topItems: [] });
+assert.equal(brandCatalogAheadProductIdOnlyMatch.matched, true);
+assert.equal(brandCatalogAheadProductIdOnlyMatch.rank, 2);
+assert.equal(brandCatalogAheadProductIdOnlyMatch.inferredCatalog.rank, 1);
+assert.equal(brandCatalogAheadProductIdOnlyMatch.inferredCatalog.item.productId, "51929469110");
+
 const metadataCatalogMatch = inferCatalogFromProductMetadata({
   productId: "8888888888",
   link: "https://smartstore.naver.com/yncstore/products/8888888888",

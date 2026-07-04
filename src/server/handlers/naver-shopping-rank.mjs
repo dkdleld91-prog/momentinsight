@@ -956,12 +956,12 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       if (
         ranked.inferredCatalog
         && target.targetMode === "product"
-        && targetUrl
       ) {
         const catalogItem = ranked.inferredCatalog.item;
         const catalogRank = ranked.inferredCatalog.rank;
         const position = rankPagePosition(catalogRank);
         const catalogId = itemProductId(catalogItem);
+        const inferredFromUrl = Boolean(targetUrl);
         return {
           matched: true,
           rank: catalogRank,
@@ -969,7 +969,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
           position: position.position,
           pageSize: position.pageSize,
           rankBasis: "organic",
-          matchType: "inferred_catalog_from_product_url",
+          matchType: inferredFromUrl ? "inferred_catalog_from_product_url" : "inferred_catalog_from_product_id",
           matchedProductId: ranked.matchedProductId || "",
           matchedSellerItem: serializeItem(ranked.item, ranked.rank),
           catalogInference: {
@@ -987,8 +987,8 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
           targetProductIds: uniqueValues([catalogId, ...target.productIds]),
           targetCatalogId: catalogId,
           targetCatalogIds: uniqueValues([catalogId]),
-          targetMode: "catalog_inferred_from_product_url",
-          targetModeLabel: "상품 URL 원부 기준",
+          targetMode: inferredFromUrl ? "catalog_inferred_from_product_url" : "catalog_inferred_from_product_id",
+          targetModeLabel: inferredFromUrl ? "상품 URL 원부 기준" : "상품ID 원부 기준",
           targetUrlKeys: target.urlKeys,
           item: serializeItem(catalogItem, catalogRank),
           topItems,

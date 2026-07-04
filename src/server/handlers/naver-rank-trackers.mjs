@@ -582,6 +582,16 @@ function compactErrorMessage(value) {
   return normalizeText(value || "").slice(0, 500);
 }
 
+function canonicalTrackerProductId(tracker, result) {
+  return normalizeText(
+    result?.targetCatalogId ||
+    result?.item?.productId ||
+    tracker.product_id ||
+    result?.targetProductId ||
+    "",
+  ) || null;
+}
+
 async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "") {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
   const nextCheckAt = nextRankCheckAt(new Date(checkedAt));
@@ -607,7 +617,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       last_message: message,
       last_error: lastError || null,
       retry_count: lastError ? Number(tracker.retry_count || 0) + 1 : 0,
-      product_id: tracker.product_id || result?.item?.productId || null,
+      product_id: canonicalTrackerProductId(tracker, result),
       mall_name: tracker.mall_name || result?.item?.mallName || null,
       product_title: tracker.product_title || result?.item?.title || null,
     })
@@ -665,21 +675,26 @@ async function createTracker(request, ctx, body, access = {}) {
     return json(request, { ok: false, message: "상품 URL 또는 상품ID를 입력해주세요." }, 400);
   }
 
-  let existingQuery = ctx.supabaseAdmin
+  const existingQuery = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
     .in("agency_code", agencyCodeScope(agencyCode))
     .eq("keyword", keyword)
     .eq("status", "active")
-    .limit(1);
-  if (productId) existingQuery = existingQuery.eq("product_id", productId);
-  else if (productUrl) existingQuery = existingQuery.eq("product_url", productUrl);
-  else if (mallName) existingQuery = existingQuery.eq("mall_name", mallName);
+    .limit(100);
 
-  const existing = await existingQuery.maybeSingle();
+  const existing = await existingQuery;
   if (existing.error) throw existing.error;
-  if (existing.data) {
-    const existingTracker = await attachTrackerGroup(ctx, existing.data);
+  const inputProductIdFromUrl = productUrl ? extractProductId(productUrl) : "";
+  const existingData = (existing.data || []).find((row) => (
+    (productUrl && row.product_url === productUrl) ||
+    (productId && row.product_id === productId) ||
+    (productId && row.product_url && extractProductId(row.product_url) === productId) ||
+    (inputProductIdFromUrl && row.product_url && extractProductId(row.product_url) === inputProductIdFromUrl) ||
+    (!productUrl && !productId && mallName && row.mall_name === mallName)
+  ));
+  if (existingData) {
+    const existingTracker = await attachTrackerGroup(ctx, existingData);
     const snapshots = await loadSnapshots(ctx, [existingTracker.id], 30);
     const keywordVolumes = await loadKeywordVolumes([existingTracker.keyword]);
     return json(request, {

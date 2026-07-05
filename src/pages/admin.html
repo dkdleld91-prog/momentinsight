@@ -4655,6 +4655,185 @@
       font-weight: 950;
     }
 
+    #mi-admin .mi-report-command {
+      display: grid;
+      gap: 14px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 0 0 16px;
+      background:
+        radial-gradient(circle at 8% 0%, rgba(22, 101, 216, 0.08), transparent 32%),
+        linear-gradient(180deg, #ffffff 0%, #f7f9fd 100%);
+    }
+
+    #mi-admin .mi-report-command-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    #mi-admin .mi-report-command-head span,
+    #mi-admin .mi-report-command-head strong {
+      display: block;
+    }
+
+    #mi-admin .mi-report-command-head span {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-report-command-head strong {
+      max-width: 520px;
+      color: var(--mi-navy);
+      font-size: 17px;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-report-command-head b {
+      display: inline-flex;
+      min-height: 30px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0 10px;
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+      font-size: 11px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-report-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    #mi-admin .mi-report-metric {
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    #mi-admin .mi-report-metric span,
+    #mi-admin .mi-report-metric strong,
+    #mi-admin .mi-report-metric small {
+      display: block;
+    }
+
+    #mi-admin .mi-report-metric span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-report-metric strong {
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 20px;
+      line-height: 1.12;
+    }
+
+    #mi-admin .mi-report-metric small {
+      margin-top: 6px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-report-preview {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(220px, 0.9fr);
+      gap: 12px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-report-preview span,
+    #mi-admin .mi-report-preview strong,
+    #mi-admin .mi-report-preview p {
+      display: block;
+    }
+
+    #mi-admin .mi-report-preview span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-report-preview strong {
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 16px;
+      line-height: 1.38;
+    }
+
+    #mi-admin .mi-report-preview p {
+      margin: 7px 0 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      line-height: 1.55;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-report-checklist {
+      display: grid;
+      gap: 7px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    #mi-admin .mi-report-checklist li {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-report-checklist li::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 999px;
+      background: var(--mi-green);
+      box-shadow: 0 0 0 4px rgba(6, 118, 71, 0.08);
+      flex: 0 0 auto;
+    }
+
+    #mi-admin .mi-report-publish-note {
+      margin-top: 14px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-report-publish-note span,
+    #mi-admin .mi-report-publish-note strong {
+      display: block;
+    }
+
+    #mi-admin .mi-report-publish-note span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-report-publish-note strong {
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
     @media (max-width: 900px) {
       #mi-admin .mi-app {
         grid-template-columns: 1fr;
@@ -4742,6 +4921,8 @@
       #mi-admin .mi-channel-detail-grid,
       #mi-admin .mi-mode-strip,
       #mi-admin .mi-step-flow,
+      #mi-admin .mi-report-metrics,
+      #mi-admin .mi-report-preview,
       #mi-admin .mi-sheet-tabs,
       #mi-admin .mi-trust-grid {
         display: grid;
@@ -5630,6 +5811,33 @@
                 <div class="mi-step-card"><b>2</b><strong>검수 승인</strong><span>수치, 공개 코멘트, 내부 메모 분리 확인</span></div>
                 <div class="mi-step-card"><b>3</b><strong>광고주 공개</strong><span>공개 처리된 보고서만 다운로드 노출</span></div>
               </div>
+              <div class="mi-report-command">
+                <div class="mi-report-command-head">
+                  <div>
+                    <span>보고서 입력 요약</span>
+                    <strong>운영팀은 핵심 수치만 정리하고, 공개 전 전달 문구를 한 번 더 검수합니다.</strong>
+                  </div>
+                  <b>검수형</b>
+                </div>
+                <div class="mi-report-metrics">
+                  <div class="mi-report-metric"><span>공개 매출</span><strong data-admin-public="sales">4,180만원</strong><small>엑셀 검수값 기준</small></div>
+                  <div class="mi-report-metric"><span>광고비</span><strong data-admin-public="adSpend">720만원</strong><small>채널 합산 공개값</small></div>
+                  <div class="mi-report-metric"><span>ROAS</span><strong data-admin-public="roas">581%</strong><small>보고서 대표 지표</small></div>
+                  <div class="mi-report-metric"><span>구매수</span><strong data-admin-public="orders">1,248건</strong><small>성과 요약 포함</small></div>
+                </div>
+                <div class="mi-report-preview">
+                  <div>
+                    <span>광고주 미리보기 문구</span>
+                    <strong>이번 보고서는 핵심 성과와 다음 실행 방향만 간결하게 전달합니다.</strong>
+                    <p>수치 근거, 공개 코멘트, 일정 요청사항을 분리해 광고주가 바로 이해할 수 있는 보고서로 정리합니다.</p>
+                  </div>
+                  <ul class="mi-report-checklist">
+                    <li>내부 메모 미노출 확인</li>
+                    <li>운영팀 검수 후 공개</li>
+                    <li>광고주 보고서함 다운로드 반영</li>
+                  </ul>
+                </div>
+              </div>
               <div class="mi-downloads">
                 <button class="mi-download" type="button" data-admin-download data-report-type="weekly"><span><b>주간 보고서</b><small>PPTX · 6월 2주차 · 검수 후 광고주 공개</small></span><i>↓</i></button>
                 <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>PPTX · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
@@ -5647,6 +5855,10 @@
                 <div class="mi-row"><span>매출 현황</span><strong>공개 가능</strong></div>
                 <div class="mi-row"><span>일정표</span><strong>공유 가능</strong></div>
                 <div class="mi-row"><span>내부 메모</span><strong>관리자만 확인</strong></div>
+              </div>
+              <div class="mi-report-publish-note">
+                <span>광고주 전달 원칙</span>
+                <strong>보고서는 공개 승인된 파일만 노출하고, 원본 자료와 내부 판단은 운영팀 화면에만 남깁니다.</strong>
               </div>
             </aside>
           </div>

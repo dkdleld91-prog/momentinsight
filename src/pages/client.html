@@ -817,6 +817,44 @@
       background: #f6f8fb;
     }
 
+    #mi-clean .mi-report-delivery {
+      display: grid;
+      gap: 6px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 14px;
+      margin: 0 0 12px;
+      background:
+        radial-gradient(circle at 0% 0%, rgba(22, 101, 216, 0.08), transparent 34%),
+        linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    }
+
+    #mi-clean .mi-report-delivery span,
+    #mi-clean .mi-report-delivery strong,
+    #mi-clean .mi-report-delivery p {
+      display: block;
+    }
+
+    #mi-clean .mi-report-delivery span {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-clean .mi-report-delivery strong {
+      color: var(--mi-navy);
+      font-size: 15px;
+      line-height: 1.35;
+    }
+
+    #mi-clean .mi-report-delivery p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      line-height: 1.5;
+      font-weight: 800;
+    }
+
     #mi-clean .mi-table {
       display: grid;
       gap: 8px;
@@ -4262,6 +4300,11 @@
                 <div class="mi-row"><span>다운로드</span><strong>공개 승인된 보고서만 표시</strong></div>
                 <div class="mi-row"><span>보관 기준</span><strong>보고서는 운영팀이 검수 후 공개</strong></div>
                 <div class="mi-row"><span>운영 흐름</span><strong>운영팀 업로드 → 검수 → 공개 → 다운로드</strong></div>
+              </div>
+              <div class="mi-report-delivery">
+                <span>보고서 전달 기준</span>
+                <strong>공개 승인된 보고서만 광고주 화면에서 열립니다.</strong>
+                <p>운영팀이 원본을 검수한 뒤 보고서함에 등록하면 이 화면에 동일하게 반영됩니다.</p>
               </div>
               <div class="mi-report-list" data-mi-report-list>
                 <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 운영팀 공개 파일 대기</span></div><b class="mi-report-state warn">준비 중</b></div>

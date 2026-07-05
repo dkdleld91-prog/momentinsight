@@ -442,6 +442,14 @@
       margin-bottom: 16px;
     }
 
+    #mi-admin .mi-split > *,
+    #mi-admin .mi-card,
+    #mi-admin .mi-card-pad,
+    #mi-admin .mi-tool,
+    #mi-admin .mi-field {
+      min-width: 0;
+    }
+
     #mi-admin .mi-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
@@ -4014,6 +4022,8 @@
 
     #mi-admin .mi-input,
     #mi-admin .mi-textarea {
+      min-width: 0;
+      max-width: 100%;
       width: 100%;
       border: 1px solid var(--mi-line);
       border-radius: 8px;
@@ -4046,6 +4056,10 @@
       display: grid;
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
       gap: 10px;
+    }
+
+    #mi-admin .mi-form-row > * {
+      min-width: 0;
     }
 
     #mi-admin .mi-form-row.mi-form-row-3 {
@@ -4264,6 +4278,8 @@
     }
 
     #mi-admin .mi-button {
+      max-width: 100%;
+      min-width: 0;
       min-height: 44px;
       border: 0;
       border-radius: 8px;
@@ -4465,13 +4481,18 @@
 
     #mi-admin .mi-source-quick-row {
       display: grid;
-      grid-template-columns: minmax(240px, 1fr) 176px 132px;
+      grid-template-columns: minmax(0, 1fr) minmax(148px, 176px) minmax(112px, 132px);
       align-items: stretch;
       gap: 12px;
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 8px;
       padding: 10px;
       background: #fff;
+    }
+
+    #mi-admin .mi-source-quick-row > *,
+    #mi-admin .mi-source-upload {
+      min-width: 0;
     }
 
     #mi-admin .mi-source-file-summary {
@@ -4524,6 +4545,19 @@
       border-radius: 8px;
       font-size: 13px;
       line-height: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-excel-action-row {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1.08fr);
+    }
+
+    #mi-admin .mi-excel-action-row .mi-button {
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
       white-space: nowrap;
     }
 
@@ -5756,7 +5790,7 @@
                     <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
                   </label>
                 </div>
-                <div class="mi-form-row">
+                <div class="mi-form-row mi-excel-action-row">
                   <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 상태 확인</button>
                   <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료 데이터 공개 반영</button>
                 </div>

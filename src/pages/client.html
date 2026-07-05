@@ -4226,6 +4226,7 @@
                 <div class="mi-row"><span>업데이트</span><strong data-mi-public="updatedAt">2026.06.19</strong></div>
                 <div class="mi-row"><span>데이터 출처</span><strong>운영팀 입력 · 검수 완료</strong></div>
                 <div class="mi-row"><span>공개 범위</span><strong>광고주 승인 데이터만 노출</strong></div>
+                <div class="mi-row"><span>확인 기준</span><strong>공개 승인된 성과만 합산</strong></div>
               </div>
             </aside>
           </div>
@@ -4251,14 +4252,16 @@
               <div class="mi-card-head">
                 <div>
                   <h2>보고서함</h2>
-                  <p>운영팀이 공개한 파일만 다운로드됩니다.</p>
+                  <p>공개 보고서만 표시합니다.</p>
                 </div>
                 <span class="mi-badge">공유</span>
               </div>
               <div class="mi-table" style="margin-bottom:12px;">
                 <div class="mi-row"><span>공개 기준</span><strong>운영팀 검수 후 광고주 공개</strong></div>
                 <div class="mi-row"><span>파일 형식</span><strong>PPTX · PDF · Excel · 링크 자료</strong></div>
-                <div class="mi-row"><span>다운로드</span><strong>공개 승인된 파일만 노출</strong></div>
+                <div class="mi-row"><span>다운로드</span><strong>공개 승인된 보고서만 표시</strong></div>
+                <div class="mi-row"><span>보관 기준</span><strong>보고서는 운영팀이 검수 후 공개</strong></div>
+                <div class="mi-row"><span>운영 흐름</span><strong>운영팀 업로드 → 검수 → 공개 → 다운로드</strong></div>
               </div>
               <div class="mi-report-list" data-mi-report-list>
                 <div class="mi-report-item"><div><strong>주간 보고서</strong><span>6월 2주차 · 운영팀 공개 파일 대기</span></div><b class="mi-report-state warn">준비 중</b></div>
@@ -4627,7 +4630,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 오가닉 상품 순위를 30일 기록합니다.</h1>
-              <p>상품을 등록하면 광고 제외 오가닉 순위를 매일 오전 9시와 오후 3시에 기록합니다.</p>
+              <p>상품을 등록하면 광고 제외 오가닉 순위를 매일 오전 9시와 오후 3시에 기록하고, 화면에는 최근 30일만 유지합니다.</p>
             </div>
             <span class="mi-badge">30일 추적</span>
           </header>
@@ -4637,7 +4640,7 @@
               <div>
                 <span class="mi-kicker">네이버 오가닉 순위</span>
                 <h2>30일 오가닉 순위 추적을 시작합니다.</h2>
-                <p>키워드와 상품 URL을 등록하면 최근 30일 순위 흐름을 관리합니다.</p>
+                <p>키워드와 상품 URL을 등록하면 광고 영역을 제외한 최근 30일 순위 흐름을 관리합니다.</p>
               </div>
               <span class="mi-period">30일 기록</span>
             </div>
@@ -6452,9 +6455,9 @@
           escapeHtml(count ? count + "개 선택" : "항목 선택 후 적용") +
           '</span><small>그룹명을 입력하거나 목록에서 선택하면 새 그룹 생성과 이동을 한 번에 처리합니다.</small></div><div class="mi-rank-bulk-actions"><div class="mi-rank-group-combo" data-rank-group-combo><input class="mi-input" data-rank-bulk-group aria-label="선택 항목 이동 그룹" placeholder="그룹명 선택 또는 입력" autocomplete="off" value="' +
           escapeHtml(groupDraft) + '" />' +
-          '<button class="mi-rank-group-menu-toggle" type="button" data-rank-group-menu-toggle aria-expanded="false">그룹 목록</button><div class="mi-rank-group-menu" data-rank-group-menu>' +
+          '<button class="mi-rank-group-menu-toggle" type="button" data-rank-group-menu-toggle aria-expanded="false">그룹 보기</button><div class="mi-rank-group-menu" data-rank-group-menu>' +
           renderRankGroupOptions(card, trackers) + '</div></div>' +
-          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 생성·적용</button>' +
+          '<button class="mi-button" type="button" data-rank-bulk-move>그룹 생성/적용</button>' +
           '<button class="mi-button subtle" type="button" data-rank-bulk-clear>그룹 해제</button>' +
           '<button class="mi-rank-refresh-all" type="button" data-rank-refresh-all>전체 순위 갱신</button>' +
           '<button class="mi-rank-share-image" type="button" data-rank-download-selected>선택 이미지 저장</button></div></div>';

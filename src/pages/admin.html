@@ -4465,13 +4465,21 @@
 
     #mi-admin .mi-source-quick-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 150px 128px;
-      align-items: center;
-      gap: 10px;
+      grid-template-columns: minmax(240px, 1fr) 176px 132px;
+      align-items: stretch;
+      gap: 12px;
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 8px;
-      padding: 11px 12px;
+      padding: 10px;
       background: #fff;
+    }
+
+    #mi-admin .mi-source-file-summary {
+      display: grid;
+      align-content: center;
+      min-height: 54px;
+      border-radius: 8px;
+      padding: 0 8px;
     }
 
     #mi-admin .mi-source-file-summary span,
@@ -4507,8 +4515,15 @@
 
     #mi-admin .mi-source-quick-row .mi-button,
     #mi-admin .mi-source-quick-row .mi-source-picker {
-      min-height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 54px;
       width: 100%;
+      padding: 0 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1;
       white-space: nowrap;
     }
 

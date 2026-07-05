@@ -958,7 +958,7 @@ async function reorderTrackers(request, ctx, body) {
 async function syncDueTrackers(request, ctx, body, access) {
   const summary = await runDueTrackers(ctx, {
     agencyCode: access.agencyCode,
-    limit: body.limit || process.env.MI_RANK_CRON_BATCH || 50,
+    limit: body.limit || process.env.MI_RANK_CRON_BATCH || 100,
   });
   const ok = summary.failed === 0;
   return json(request, {
@@ -1029,7 +1029,7 @@ async function recordDueTrackerFailure(ctx, tracker, message) {
 
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
-  const limit = Math.max(1, Math.min(50, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 20)));
+  const limit = Math.max(1, Math.min(100, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 100)));
   let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)

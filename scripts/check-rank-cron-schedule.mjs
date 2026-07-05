@@ -44,8 +44,10 @@ for (const [label, input, expected] of cases) {
 }
 
 const workflow = fs.readFileSync(".github/workflows/naver-rank-cron.yml", "utf8");
-assert.match(workflow, /cron: "7,37 \* \* \* \*"/, "GitHub Actions must catch up due trackers every 30 minutes");
-assert.match(workflow, /missed 09:00\/15:00 KST slots are caught up automatically/, "Workflow must document missed-slot catch-up behavior");
+assert.match(workflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "GitHub Actions must retry the 09:00/15:00 KST slots");
+assert.match(workflow, /cron: "37 \* \* \* \*"/, "GitHub Actions must keep an hourly catch-up run");
+assert.match(workflow, /KST 09:00\/15:00 rescue window/, "Workflow must document the rescue-window behavior");
+assert.match(workflow, /Hourly catch-up keeps due trackers moving/, "Workflow must document missed-slot catch-up behavior");
 
 const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
 assert.ok(

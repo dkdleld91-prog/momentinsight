@@ -430,11 +430,13 @@ const checks = {
     && accessAuditMigration.includes("c.status = 'active'")
     && accessAuditMigration.includes("c.disconnected_at is null")
     && accessAuditMigration.includes("idx_audit_logs_action_created"),
-  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "7,37 * * * *"')
+  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0,5,10,15 0,6 * * *"')
+    && rankCronWorkflow.includes('cron: "37 * * * *"')
     && rankCronWorkflow.includes("push:")
     && rankCronWorkflow.includes("deploy backfill")
-    && rankCronWorkflow.includes("every 30 minutes off the top of the hour")
-    && rankCronWorkflow.includes("missed 09:00/15:00 KST slots are caught up automatically")
+    && rankCronWorkflow.includes("KST 09:00/15:00 rescue window")
+    && rankCronWorkflow.includes("Hourly catch-up keeps due trackers moving")
+    && rankCronWorkflow.includes("limit=100")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
@@ -493,7 +495,7 @@ const checks = {
       && !source.includes("data-rank-group list=")),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
     && cron.schedule === "7 0 * * *")
-    && rankCronServer.includes("DEFAULT_CRON_BATCH = 50"),
+    && rankCronServer.includes("DEFAULT_CRON_BATCH = 100"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")

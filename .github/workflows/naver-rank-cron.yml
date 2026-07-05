@@ -6,8 +6,10 @@ on:
       - main
   schedule:
     # The server only refreshes trackers whose next_check_at is due.
-    # Runs every 30 minutes off the top of the hour so missed 09:00/15:00 KST slots are caught up automatically.
-    - cron: "7,37 * * * *"
+    # KST 09:00/15:00 rescue window: retry for 15 minutes so GitHub schedule delays are less likely to miss the slot.
+    - cron: "0,5,10,15 0,6 * * *"
+    # Hourly catch-up keeps due trackers moving even when the exact slot is delayed or skipped.
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -44,7 +46,7 @@ jobs:
               --output "$response_file" \
               --write-out "%{http_code}" \
               -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
-              "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=50"
+              "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=100"
           }
 
           status_code="$(call_cron)"

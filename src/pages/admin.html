@@ -5741,7 +5741,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>운영 원본 관리</h2>
-                  <p>양식 다운로드, 원본 보관, 공개 반영만 처리합니다.</p>
+                  <p>일별 매출을 입력하면 월간 합계와 ROAS가 자동 계산됩니다.</p>
                 </div>
                 <span class="mi-badge warn">간편 운영</span>
               </div>
@@ -5775,6 +5775,8 @@
                   <span hidden>다른 기기나 브라우저에서는 확인할 수 없습니다</span>
                 </div>
                 <div class="mi-guardrail-strip" aria-label="공개 검수 기준">
+                  <span class="mi-guardrail-chip">일별 입력</span>
+                  <span class="mi-guardrail-chip">월간 자동 합산</span>
                   <span class="mi-guardrail-chip">데이터 출처 고정</span>
                   <span class="mi-guardrail-chip">광고주 1:1 범위</span>
                   <span class="mi-guardrail-chip">검수 후 공개</span>
@@ -5818,7 +5820,8 @@
               <p>공개값을 만들기 위한 최소 입력입니다.</p>
               <div class="mi-sheet-tabs">
                 <div class="mi-sheet-tab is-ok"><strong>광고주_목록</strong><span>광고주ID·권한</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>대시보드_공개데이터</strong><span>매출·ROAS·KPI</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>일별_매출입력</strong><span>날짜·채널·매출</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>월간_매출입력</strong><span>자동 합산·ROAS</span></div>
                 <div class="mi-sheet-tab is-ok"><strong>네이버_데이터</strong><span>검색광고 원천값</span></div>
                 <div class="mi-sheet-tab is-ok"><strong>쿠팡_데이터</strong><span>상품광고 원천값</span></div>
                 <div class="mi-sheet-tab is-warn"><strong>KPI_목표</strong><span>신규브랜드 A 누락</span></div>
@@ -5834,7 +5837,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>계산 미리보기</h2>
-                  <p>네이버·쿠팡 값을 합산해 공개값을 확인합니다.</p>
+                  <p>일별 입력값이 월간 공개값으로 합산되는 흐름을 확인합니다.</p>
                 </div>
                 <span class="mi-badge">Preview</span>
               </div>
@@ -5859,7 +5862,7 @@
           <div class="mi-split">
             <article class="mi-card mi-card-pad">
               <h2>엑셀 붙여넣기</h2>
-              <p style="margin-bottom:14px;">CSV 수치를 확인하고 공개값으로 반영합니다.</p>
+              <p style="margin-bottom:14px;">간단 계산이 필요할 때만 사용합니다. 정식 운영은 기본 양식 업로드 기준입니다.</p>
               <div class="mi-tool">
                 <textarea class="mi-textarea" data-admin-excel-input>매출,광고비,구매수,클릭수,전환수
 41800000,7200000,1248,32800,1607</textarea>

@@ -184,8 +184,14 @@ const checks = {
     && !clientSource.includes("await syncDemoState(connectStatus)"),
   operationSheetSingleClientSimple: sheetTemplateBuilder.includes("single-client-operation-team-template")
     && sheetTemplateBuilder.includes("별도 광고주 코드 입력은 없습니다")
+    && sheetTemplateBuilder.includes("일별_매출입력")
     && sheetTemplateBuilder.includes("월간_매출입력")
+    && sheetTemplateBuilder.includes("월간 매출, 광고비, 구매수, ROAS가 자동 계산")
+    && sheetTemplateBuilder.includes("SUMIFS")
     && sheetTemplateBuilder.includes("광고주 연결")
+    && adminSource.includes("일별 매출을 입력하면 월간 합계와 ROAS가 자동 계산")
+    && adminSource.includes("일별_매출입력")
+    && adminSource.includes("월간_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
   clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')

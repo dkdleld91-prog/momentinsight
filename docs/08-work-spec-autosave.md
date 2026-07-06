@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 04. 21:46:32
-- 기준 커밋: 6817f72
-- 작업트리: M scripts/check-naver-rank-matching.mjs /  M src/server/handlers/naver-shopping-rank.mjs
+- 마지막 자동 저장: 2026. 07. 06. 15:57:32
+- 기준 커밋: af22a55
+- 작업트리: M 03_운영시트_템플릿/build_moment_insight_sheet.mjs /  M 03_운영시트_템플릿/모먼트인사이트_운영시트_템플릿.xlsx /  M public/downloads/moment-insight-operation-sheet-template.xlsx /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준

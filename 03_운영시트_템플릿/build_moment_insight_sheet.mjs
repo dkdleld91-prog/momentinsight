@@ -1,9 +1,15 @@
 import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
 const simplifiedWorkbook = Workbook.create();
-const simplifiedOutputDir = "outputs";
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(scriptDir, "..");
+const simplifiedOutputDir = path.join(scriptDir, "outputs");
 const simplifiedFinalName = "모먼트인사이트_운영시트_템플릿.xlsx";
+const simplifiedFinalPath = path.join(scriptDir, simplifiedFinalName);
+const publicDownloadPath = path.join(projectRoot, "public", "downloads", "moment-insight-operation-sheet-template.xlsx");
 
 const miTheme = {
   navy: "#061A3A",
@@ -128,8 +134,8 @@ miWrite(guide, "A4:H8", [
   ["1", "네이버_일별입력", "네이버 일별 매출, 광고비, 구매수, 노출/클릭/전환수를 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
   ["2", "쿠팡_일별입력", "쿠팡 일별 매출, 광고비, 구매수, 노출/클릭/전환수를 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
   ["3", "월간_매출입력", "네이버와 쿠팡 일별 입력값을 기준으로 월간 합계와 ROAS가 자동 계산됩니다.", "자동 계산 확인", "", "", "", ""],
-  ["4", "보고서_목록 / 일정표", "운영팀이 공개할 보고서, 일정, 요청사항을 정리합니다.", "필수 확인", "", "", "", ""],
-  ["5", "인사이트_액션플랜", "광고주에게 보여줄 결론과 다음 행동을 작성합니다.", "짧게 작성", "", "", "", ""],
+  ["4", "일정표", "운영팀이 광고주 공유 로드맵과 일정, 요청사항을 직접 작성합니다.", "운영팀 작성", "", "", "", ""],
+  ["5", "인사이트_액션플랜", "운영팀이 광고주에게 보여줄 결론과 다음 행동을 직접 작성합니다.", "운영팀 작성", "", "", "", ""],
 ]);
 miBody(guide, "A4:H8");
 miWrite(guide, "A10:H10", [["운영 기준", "", "", "", "", "", "", ""]]);
@@ -240,30 +246,10 @@ function buildDailySheet(name, firstCampaign, secondCampaign) {
 buildDailySheet("네이버_일별입력", "브랜드 검색 캠페인", "키워드 확장 캠페인");
 buildDailySheet("쿠팡_일별입력", "상품 검색 캠페인", "상품 확장 캠페인");
 
-const reportsSimple = miAddSheet("보고서_목록");
-miWrite(reportsSimple, "A1:G1", [["보고서 목록", "", "", "", "", "", ""]]);
-miTitle(reportsSimple, "A1:G1");
-miWrite(reportsSimple, "A3:G3", [["운영팀이 공개할 보고서 파일명이나 링크를 정리합니다.", "", "", "", "", "", ""]]);
-miSection(reportsSimple, "A3:G3");
-miWrite(reportsSimple, "A5:G5", [["보고서유형", "기준기간", "파일명/링크", "공개상태", "작성자", "업데이트일", "메모"]]);
-miHeader(reportsSimple, "A5:G5");
-miWrite(reportsSimple, "A6:G9", [
-  ["주간 보고서", "2026-06 4주차", "moment-weekly-202606-4.pdf", "공개 가능", "운영팀", "2026-06-27", "내부 메모 제거 후 공개"],
-  ["월간 보고서", "2026-06", "moment-monthly-202606.pdf", "검수 중", "운영팀", "2026-06-27", "매출 수치 재확인"],
-  ["KPI 보고서", "2026-06", "moment-kpi-202606.xlsx", "공개 가능", "운영팀", "2026-06-27", "목표달성률 포함"],
-  ["", "", "", "", "", "", ""],
-]);
-miBody(reportsSimple, "A6:G40");
-miInput(reportsSimple, "A6:G40");
-miWidths(reportsSimple, { A: 120, B: 120, C: 310, D: 110, E: 100, F: 112, G: 300 }, 45);
-miTall(reportsSimple, "A1:G1", 34);
-miTall(reportsSimple, "A5:G40", 26);
-reportsSimple.freezePanes.freezeRows(5);
-
 const scheduleSimple = miAddSheet("일정표");
 miWrite(scheduleSimple, "A1:H1", [["일정표", "", "", "", "", "", "", ""]]);
 miTitle(scheduleSimple, "A1:H1");
-miWrite(scheduleSimple, "A3:H3", [["광고주와 공유할 일정만 정리합니다. 내부 할 일은 메모에 구분해서 작성합니다.", "", "", "", "", "", "", ""]]);
+miWrite(scheduleSimple, "A3:H3", [["운영팀이 광고주와 공유할 로드맵과 일정을 직접 작성합니다. 내부 할 일은 메모에 구분해서 작성합니다.", "", "", "", "", "", "", ""]]);
 miSection(scheduleSimple, "A3:H3");
 miWrite(scheduleSimple, "A5:H5", [["일자", "유형", "제목", "상세", "상태", "공개여부", "담당자", "메모"]]);
 miHeader(scheduleSimple, "A5:H5");
@@ -315,7 +301,7 @@ miFormulas(dashboardSimple, "B6:B11", [
   ["='월간_매출입력'!J8"],
   ["='월간_매출입력'!F8"],
   ["='월간_매출입력'!M8"],
-  ["=IF(COUNTIF('보고서_목록'!D6:D40,\"공개 가능\")>=1,\"공개 가능\",\"검수 필요\")"],
+  ["=IF(COUNTA('일정표'!A6:A40)+COUNTA('인사이트_액션플랜'!A6:A40)>0,\"작성 확인\",\"작성 필요\")"],
 ]);
 miFormulas(dashboardSimple, "C6:C11", [
   ["=IF(B6>=SUM('월간_매출입력'!C6:C7),\"목표 초과\",\"추적 필요\")"],
@@ -338,7 +324,7 @@ miWrite(dashboardSimple, "A14:H14", [["운영 체크", "상태", "다음 조치"
 miHeader(dashboardSimple, "A14:H14");
 miWrite(dashboardSimple, "A15:D18", [
   ["월간 입력", "완료", "수치 검수", "노란색 입력칸 확인"],
-  ["보고서", "검수 중", "파일 업로드", "공개 가능 보고서만 광고주 노출"],
+  ["보고서", "검수 중", "PPTX 생성", "운영팀 작성값을 보고서 디자인에 배치"],
   ["일정", "정상", "공개 일정 확인", "Y 일정만 광고주 공유"],
   ["인사이트", "작성 필요", "광고주 코멘트 정리", "내부 메모 분리"],
 ]);
@@ -366,9 +352,9 @@ miWrite(rulesSimple, "A6:F13", [
   ["쿠팡_일별입력", "쿠팡 일별 매출과 광고 성과 원천값", "월간 합산 후 요약 노출", "노란색 칸 작성", "필수", "월간_매출입력 자동 합산"],
   ["월간_매출입력", "네이버와 쿠팡 입력값을 월간으로 자동 요약", "요약 수치만 노출", "목표·공개코멘트 작성", "필수", "코드 입력 없음"],
   ["광고주공개코멘트", "광고주가 보는 해석 문장", "노출", "짧게 작성", "필수", "내부 판단 작성 금지"],
-  ["보고서_목록", "보고서 파일명 또는 링크", "공개 가능 상태만 노출", "운영팀 작성", "필수", "업로드 후 확인"],
-  ["일정표", "광고주 공유 일정", "공개여부 Y만 노출", "운영팀 작성", "권장", "내부 일정은 N"],
-  ["인사이트", "이번 주 결론과 다음 액션", "공개코멘트만 노출", "운영팀 작성", "권장", "내부메모는 미노출"],
+  ["일정표", "광고주 공유 로드맵과 일정", "공개여부 Y만 노출", "운영팀 직접 작성", "권장", "내부 일정은 N"],
+  ["인사이트", "이번 주 결론과 다음 액션", "공개코멘트만 노출", "운영팀 직접 작성", "권장", "내부메모는 미노출"],
+  ["PPTX 보고서", "웹 보고서함에서 생성되는 산출물", "검수 후 공개 파일만 노출", "웹에서 생성·관리", "권장", "엑셀 입력 시트 아님"],
   ["원천 파일", "작성 완료한 엑셀 원본", "미노출", "관리자 화면 업로드", "필수", "다운로드 보관 가능"],
 ]);
 miBody(rulesSimple, "A6:F24");
@@ -378,8 +364,11 @@ miTall(rulesSimple, "A5:F24", 27);
 
 await fs.mkdir(simplifiedOutputDir, { recursive: true });
 const simplifiedExport = await SpreadsheetFile.exportXlsx(simplifiedWorkbook);
-await simplifiedExport.save(`${simplifiedOutputDir}/${simplifiedFinalName}`);
-await fs.copyFile(`${simplifiedOutputDir}/${simplifiedFinalName}`, simplifiedFinalName);
+const simplifiedOutputPath = path.join(simplifiedOutputDir, simplifiedFinalName);
+await simplifiedExport.save(simplifiedOutputPath);
+await fs.copyFile(simplifiedOutputPath, simplifiedFinalPath);
+await fs.mkdir(path.dirname(publicDownloadPath), { recursive: true });
+await fs.copyFile(simplifiedOutputPath, publicDownloadPath);
 
 const simplifiedErrors = await simplifiedWorkbook.inspect({
   kind: "match",
@@ -391,8 +380,9 @@ await simplifiedWorkbook.render({ sheetName: "월간_매출입력", range: "A1:O
 await simplifiedWorkbook.render({ sheetName: "네이버_일별입력", range: "A1:L16", scale: 2, format: "png" });
 await simplifiedWorkbook.render({ sheetName: "운영_대시보드", range: "A1:H18", scale: 2, format: "png" });
 console.log(JSON.stringify({
-  output: `${simplifiedOutputDir}/${simplifiedFinalName}`,
-  copied: simplifiedFinalName,
+  output: simplifiedOutputPath,
+  copied: simplifiedFinalPath,
+  publicDownload: publicDownloadPath,
   formulaErrorScan: simplifiedErrors.ndjson,
   mode: "single-client-operation-team-template",
 }, null, 2));

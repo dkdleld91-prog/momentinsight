@@ -32,7 +32,6 @@ Next.js App Router 기준 라우트 영역입니다.
 - `/sales-report`
 - `/ads-performance`
 - `/keyword-analysis`
-- `/weekly-report`
 - `/monthly-report`
 - `/schedule`
 - `/files`
@@ -93,4 +92,3 @@ Next.js App Router 기준 라우트 영역입니다.
 - ChannelPerformance
 - KeywordMetric
 - ActionPlan
-

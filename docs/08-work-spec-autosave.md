@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 06. 15:57:32
-- 기준 커밋: af22a55
-- 작업트리: M 03_운영시트_템플릿/build_moment_insight_sheet.mjs /  M 03_운영시트_템플릿/모먼트인사이트_운영시트_템플릿.xlsx /  M public/downloads/moment-insight-operation-sheet-template.xlsx /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html
+- 마지막 자동 저장: 2026. 07. 06. 16:35:19
+- 기준 커밋: b4c8b99
+- 작업트리: M 03_운영시트_템플릿/build_moment_insight_sheet.mjs /  M 03_운영시트_템플릿/모먼트인사이트_운영시트_템플릿.xlsx /  M database/schema-draft.md /  M docs/00-project-structure.md /  M docs/01-product-requirements.md /  M docs/04-data-model.md /  M docs/06-mvp-roadmap.md /  M public/downloads/moment-insight-operation-sheet-template.xlsx
 <!-- autosave:end -->
 
 ## 작업 상태 기준

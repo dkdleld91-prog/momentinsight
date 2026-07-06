@@ -171,7 +171,7 @@
 | id | uuid | 보고서 ID |
 | client_id | uuid | 광고주 ID |
 | brand_id | uuid | 브랜드 ID |
-| report_type | enum | weekly, monthly, kpi, sales, ads, keyword, campaign, content |
+| report_type | enum | monthly, kpi, sales, ads, keyword, campaign, content |
 | title | text | 제목 |
 | report_date | date | 보고 기준일 |
 | period_start | date | 시작일 |
@@ -216,4 +216,3 @@
 | expected_impact | text | 기대 효과 |
 | client_request | text | 광고주 확인 필요 사항 |
 | is_client_visible | boolean | 광고주 공개 여부 |
-

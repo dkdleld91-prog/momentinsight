@@ -193,6 +193,8 @@ const checks = {
     && sheetTemplateBuilder.includes("쿠팡_일별입력")
     && sheetTemplateBuilder.includes("월간_매출입력")
     && sheetTemplateBuilder.includes("월간 매출, 광고비, 구매수, ROAS가 자동 계산")
+    && sheetTemplateBuilder.includes("DAILY_TOTAL_ROW = 205")
+    && sheetTemplateBuilder.includes("C${DAILY_FIRST_INPUT_ROW}:C${DAILY_LAST_INPUT_ROW}")
     && !sheetTemplateBuilder.includes("보고서_목록")
     && sheetTemplateBuilder.includes("SUMIFS")
     && sheetTemplateBuilder.includes("광고주 연결")
@@ -201,6 +203,9 @@ const checks = {
     && adminSource.includes("쿠팡_일별입력")
     && adminSource.includes("월간_매출입력")
     && !adminSource.includes("보고서_목록")
+    && !adminSource.includes('data-report-type="weekly"')
+    && !adminSource.includes("주간 보고서")
+    && !clientSource.includes("주간 보고서")
     && !sheetTemplateBuilder.includes("일별_매출입력")
     && !adminSource.includes("일별_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
@@ -399,7 +404,7 @@ const checks = {
     && reportCenterServer.includes("auditLogged"),
   reportCenterAiPptxReady: adminSource.includes("data-admin-ai-pptx")
     && adminSource.includes("AI 매출 PPTX")
-    && adminSource.includes("PPTX · 6월 2주차")
+    && adminSource.includes("운영팀 작성값을 보고서 디자인에 자동 배치")
     && adminSource.includes("PPTX · 2026년 6월")
     && !adminSource.includes("<small>CSV · 6월 2주차")
     && !adminSource.includes("<small>CSV · 2026년 6월")

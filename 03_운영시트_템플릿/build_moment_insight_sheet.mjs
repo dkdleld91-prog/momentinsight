@@ -119,9 +119,13 @@ function miDayDate(day) {
   return new Date(Date.UTC(2026, 5, day));
 }
 
+const DAILY_FIRST_INPUT_ROW = 6;
+const DAILY_LAST_INPUT_ROW = 204;
+const DAILY_TOTAL_ROW = 205;
+
 function miDailySumFormula(row, dailyColumn) {
-  const naver = `SUMIFS('네이버_일별입력'!${dailyColumn}$6:${dailyColumn}$205,'네이버_일별입력'!$A$6:$A$205,">="&$B${row},'네이버_일별입력'!$A$6:$A$205,"<"&EDATE($B${row},1))`;
-  const coupang = `SUMIFS('쿠팡_일별입력'!${dailyColumn}$6:${dailyColumn}$205,'쿠팡_일별입력'!$A$6:$A$205,">="&$B${row},'쿠팡_일별입력'!$A$6:$A$205,"<"&EDATE($B${row},1))`;
+  const naver = `SUMIFS('네이버_일별입력'!${dailyColumn}$${DAILY_FIRST_INPUT_ROW}:${dailyColumn}$${DAILY_LAST_INPUT_ROW},'네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},">="&$B${row},'네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},"<"&EDATE($B${row},1))`;
+  const coupang = `SUMIFS('쿠팡_일별입력'!${dailyColumn}$${DAILY_FIRST_INPUT_ROW}:${dailyColumn}$${DAILY_LAST_INPUT_ROW},'쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},">="&$B${row},'쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},"<"&EDATE($B${row},1))`;
   return `=IF($A${row}="네이버",${naver},IF($A${row}="쿠팡",${coupang},${naver}+${coupang}))`;
 }
 
@@ -142,7 +146,7 @@ miWrite(guide, "A10:H10", [["운영 기준", "", "", "", "", "", "", ""]]);
 miSection(guide, "A10:H10");
 miWrite(guide, "A11:H15", [
   ["광고주 연결", "", "웹에서 운영팀 코드와 광고주 코드가 이미 1:1로 연결되므로 엑셀에는 별도 코드 입력이 없습니다.", "", "", "", "", ""],
-  ["입력 규칙", "", "노란색 칸은 운영팀 입력값이고, 회색 칸은 자동 계산값입니다.", "", "", "", "", ""],
+  ["입력 규칙", "", "노란색 칸은 운영팀 입력값이고, 회색 칸은 자동 계산값입니다. 일별 입력은 6~204행까지 이어서 작성하고, 205행 합계는 고정 검수용으로 둡니다.", "", "", "", "", ""],
   ["공개 기준", "", "광고주에게 보일 문장은 공개코멘트, 일정, 인사이트 영역에만 작성합니다.", "", "", "", "", ""],
   ["원본 보관", "", "작성 완료 후 관리자 화면의 원천 엑셀 업로드 영역에 이 파일을 업로드합니다.", "", "", "", "", ""],
   ["주의", "", "내부 판단이나 민감한 메모는 광고주공개코멘트에 작성하지 않습니다.", "", "", "", "", ""],
@@ -212,34 +216,53 @@ function buildDailySheet(name, firstCampaign, secondCampaign) {
   miSection(sheet, "A3:L3");
   miWrite(sheet, "A5:L5", [["일자", "캠페인/상품군", "광고비", "매출", "노출수", "클릭수", "전환수", "구매수", "ROAS", "CTR", "CVR", "운영메모"]]);
   miHeader(sheet, "A5:L5");
-  miWrite(sheet, "A6:H9", [
+  miWrite(sheet, "A6:H8", [
     [miDayDate(24), firstCampaign, 1200000, 7200000, 180000, 6900, 330, 220],
     [miDayDate(25), firstCampaign, 980000, 6100000, 152000, 5700, 284, 190],
     [miDayDate(26), secondCampaign, 1020000, 5300000, 178000, 6800, 337, 232],
-    ["합계", "", 0, 0, 0, 0, 0, 0],
   ]);
-  miFormulas(sheet, "C9:H9", [["=SUM(C6:C8)", "=SUM(D6:D8)", "=SUM(E6:E8)", "=SUM(F6:F8)", "=SUM(G6:G8)", "=SUM(H6:H8)"]]);
-  miFormulas(sheet, "I6:K9", Array.from({ length: 4 }, (_, index) => {
-    const row = index + 6;
+  miWrite(sheet, `A${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`, [["합계", "", 0, 0, 0, 0, 0, 0]]);
+  miFormulas(sheet, `C${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`, [[
+    `=SUM(C${DAILY_FIRST_INPUT_ROW}:C${DAILY_LAST_INPUT_ROW})`,
+    `=SUM(D${DAILY_FIRST_INPUT_ROW}:D${DAILY_LAST_INPUT_ROW})`,
+    `=SUM(E${DAILY_FIRST_INPUT_ROW}:E${DAILY_LAST_INPUT_ROW})`,
+    `=SUM(F${DAILY_FIRST_INPUT_ROW}:F${DAILY_LAST_INPUT_ROW})`,
+    `=SUM(G${DAILY_FIRST_INPUT_ROW}:G${DAILY_LAST_INPUT_ROW})`,
+    `=SUM(H${DAILY_FIRST_INPUT_ROW}:H${DAILY_LAST_INPUT_ROW})`,
+  ]]);
+  miFormulas(sheet, `I${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`, Array.from({ length: DAILY_TOTAL_ROW - DAILY_FIRST_INPUT_ROW + 1 }, (_, index) => {
+    const row = DAILY_FIRST_INPUT_ROW + index;
     return [
-      `=IFERROR(D${row}/C${row},0)`,
-      `=IFERROR(F${row}/E${row},0)`,
-      `=IFERROR(G${row}/F${row},0)`,
+      `=IF(C${row}="","",IFERROR(D${row}/C${row},0))`,
+      `=IF(E${row}="","",IFERROR(F${row}/E${row},0))`,
+      `=IF(F${row}="","",IFERROR(G${row}/F${row},0))`,
     ];
   }));
-  miWrite(sheet, "L6:L9", [["수치 확인 완료"], ["정상"], ["소재/키워드 확인"], ["합계 검수"]]);
-  miBody(sheet, "A6:L45");
-  miInput(sheet, "A6:H45");
-  miInput(sheet, "L6:L45");
-  miCalc(sheet, "I6:K45");
-  sheet.getRange("A6:A45").format.numberFormat = "yyyy-mm-dd";
-  miApplyMoney(sheet, "C6:D45");
-  miApplyMoney(sheet, "E6:H45");
-  miApplyRoas(sheet, "I6:I45");
-  miApplyRate(sheet, "J6:K45");
+  miWrite(sheet, `L6:L${DAILY_TOTAL_ROW}`, Array.from({ length: DAILY_TOTAL_ROW - DAILY_FIRST_INPUT_ROW + 1 }, (_, index) => {
+    if (index === 0) return ["수치 확인 완료"];
+    if (index === 1) return ["정상"];
+    if (index === 2) return ["소재/키워드 확인"];
+    if (DAILY_FIRST_INPUT_ROW + index === DAILY_TOTAL_ROW) return ["합계 검수"];
+    return [""];
+  }));
+  miBody(sheet, `A6:L${DAILY_TOTAL_ROW}`);
+  miInput(sheet, `A${DAILY_FIRST_INPUT_ROW}:H${DAILY_LAST_INPUT_ROW}`);
+  miInput(sheet, `L${DAILY_FIRST_INPUT_ROW}:L${DAILY_LAST_INPUT_ROW}`);
+  miCalc(sheet, `I${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`);
+  miCalc(sheet, `A${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`);
+  sheet.getRange(`A${DAILY_FIRST_INPUT_ROW}:A${DAILY_LAST_INPUT_ROW}`).format.numberFormat = "yyyy-mm-dd";
+  miApplyMoney(sheet, `C${DAILY_FIRST_INPUT_ROW}:D${DAILY_TOTAL_ROW}`);
+  miApplyMoney(sheet, `E${DAILY_FIRST_INPUT_ROW}:H${DAILY_TOTAL_ROW}`);
+  miApplyRoas(sheet, `I${DAILY_FIRST_INPUT_ROW}:I${DAILY_TOTAL_ROW}`);
+  miApplyRate(sheet, `J${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`);
   miWidths(sheet, { A: 105, B: 220, C: 112, D: 112, E: 105, F: 90, G: 90, H: 90, I: 76, J: 76, K: 76, L: 260 }, 55);
   miTall(sheet, "A1:L1", 34);
-  miTall(sheet, "A5:L45", 25);
+  miTall(sheet, `A5:L${DAILY_TOTAL_ROW}`, 25);
+  sheet.getRange(`A${DAILY_TOTAL_ROW}:L${DAILY_TOTAL_ROW}`).format = {
+    fill: "#EFF6FF",
+    font: { bold: true, color: "#0B2345" },
+    borders: { preset: "all", style: "thin", color: "#BFDBFE" },
+  };
   sheet.freezePanes.freezeRows(5);
 }
 

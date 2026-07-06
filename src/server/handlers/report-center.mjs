@@ -4,7 +4,6 @@ import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
 const REPORT_TYPES = new Set([
-  "weekly",
   "monthly",
   "kpi",
   "sales",
@@ -836,7 +835,7 @@ async function handleCreateReport(request, ctx, access, body) {
   const title = cleanText(body.title);
   if (!title) return json(request, { ok: false, message: "보고서 제목을 입력해주세요." }, 400);
 
-  const reportType = cleanText(body.reportType || body.report_type, "weekly");
+  const reportType = cleanText(body.reportType || body.report_type, "monthly");
   if (!REPORT_TYPES.has(reportType)) {
     return json(request, { ok: false, message: "지원하지 않는 보고서 유형입니다." }, 400);
   }

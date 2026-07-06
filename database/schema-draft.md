@@ -12,7 +12,7 @@ visibility: internal, client_visible
 schedule_status: planned, in_progress, done, paused, needs_check
 priority: high, medium, low
 action_status: planned, in_progress, done, blocked
-report_type: weekly, monthly, kpi, sales, ads, keyword, campaign, content
+report_type: monthly, kpi, sales, ads, keyword, campaign, content
 ```
 
 ## MVP 테이블

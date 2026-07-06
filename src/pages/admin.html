@@ -815,6 +815,12 @@
       background: var(--mi-orange-bg);
     }
 
+    #mi-admin .mi-sheet-tab.is-auto::after {
+      content: "자동";
+      color: var(--mi-muted);
+      background: #eef3f8;
+    }
+
     #mi-admin .mi-sheet-tab strong,
     #mi-admin .mi-sheet-tab span {
       display: block;
@@ -5765,7 +5771,7 @@
               <div class="mi-card-head">
                 <div>
                   <h2>운영 원본 관리</h2>
-                  <p>일별 매출을 입력하면 월간 합계와 ROAS가 자동 계산됩니다.</p>
+                  <p>운영팀은 네이버·쿠팡 일별값만 넣고, 월간 합계와 ROAS는 자동 계산합니다.</p>
                 </div>
                 <span class="mi-badge warn">간편 운영</span>
               </div>
@@ -5799,14 +5805,12 @@
                   <span hidden>다른 기기나 브라우저에서는 확인할 수 없습니다</span>
                 </div>
                 <div class="mi-guardrail-strip" aria-label="공개 검수 기준">
-                  <span class="mi-guardrail-chip" data-admin-guardrail="daily">일별 입력</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="monthly">월간 자동 합산</span>
+                  <span class="mi-guardrail-chip" data-admin-guardrail="naverDaily">네이버 일별</span>
+                  <span class="mi-guardrail-chip" data-admin-guardrail="coupangDaily">쿠팡 일별</span>
+                  <span class="mi-guardrail-chip" data-admin-guardrail="monthly">월간 자동</span>
                   <span class="mi-guardrail-chip" data-admin-guardrail="source">데이터 출처 고정</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="scope">광고주 1:1 범위</span>
                   <span class="mi-guardrail-chip" data-admin-guardrail="publish">검수 후 공개</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="evidence">보고서 근거 연결</span>
                   <span class="mi-guardrail-chip" data-admin-guardrail="memo">내부 메모 보호</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="history">변경 이력 기준</span>
                 </div>
                 <div class="mi-form-row">
                   <label class="mi-field">연결 광고주
@@ -5840,18 +5844,14 @@
             </article>
 
             <aside class="mi-card mi-card-pad">
-              <h3>필수 입력 항목</h3>
-              <p>공개값을 만들기 위한 최소 입력입니다.</p>
+              <h3>운영팀 입력 흐름</h3>
+              <p>직접 입력은 채널 일별값과 공유 자료만 남겼습니다.</p>
               <div class="mi-sheet-tabs">
-                <div class="mi-sheet-tab is-ok"><strong>광고주_목록</strong><span>광고주ID·권한</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>일별_매출입력</strong><span>날짜·채널·매출</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>월간_매출입력</strong><span>자동 합산·ROAS</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>네이버_데이터</strong><span>검색광고 원천값</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>쿠팡_데이터</strong><span>상품광고 원천값</span></div>
-                <div class="mi-sheet-tab is-warn"><strong>KPI_목표</strong><span>신규브랜드 A 누락</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>네이버_일별입력</strong><span>매출·광고비·구매수</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>쿠팡_일별입력</strong><span>매출·광고비·구매수</span></div>
                 <div class="mi-sheet-tab is-ok"><strong>보고서_목록</strong><span>PDF·엑셀·링크</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>일정표</strong><span>광고주 공유 일정</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>인사이트_액션플랜</strong><span>공개 코멘트</span></div>
+                <div class="mi-sheet-tab is-ok"><strong>일정표·인사이트</strong><span>공개 일정·다음 액션</span></div>
+                <div class="mi-sheet-tab is-auto"><strong>월간_매출입력</strong><span>일별값 자동 합산</span></div>
               </div>
             </aside>
           </div>
@@ -7460,20 +7460,15 @@
         var fileRecord = readSourceFile();
         var hasSourceFile = Boolean(fileRecord && (fileRecord.name || fileRecord.serverFileId || fileRecord.dataUrl || fileRecord.fileUrl));
         var checks = {
-          daily: { ok: true, message: "일별 매출 입력 기준을 확인했습니다." },
-          monthly: { ok: true, message: "일별 입력값 기준 월간 자동 합산 구조를 확인했습니다." },
+          naverDaily: { ok: true, message: "네이버 일별 입력 기준을 확인했습니다." },
+          coupangDaily: { ok: true, message: "쿠팡 일별 입력 기준을 확인했습니다." },
+          monthly: { ok: true, message: "네이버·쿠팡 일별값 기준 월간 자동 합산 구조를 확인했습니다." },
           source: {
             ok: hasSourceFile,
             message: hasSourceFile ? "보관 파일 기준으로 데이터 출처를 고정합니다." : "원본 파일을 먼저 선택하면 데이터 출처를 고정할 수 있습니다."
           },
-          scope: { ok: true, message: "운영팀 1곳과 광고주 1곳 기준으로 공개 범위를 제한합니다." },
           publish: { ok: true, message: "검수 완료 후 광고주 공개 데이터로 반영됩니다." },
-          evidence: {
-            ok: hasSourceFile,
-            message: hasSourceFile ? "보관 원본을 보고서 근거로 연결할 수 있습니다." : "원본 파일 보관 후 보고서 근거 연결이 완료됩니다."
-          },
-          memo: { ok: true, message: "내부 메모는 광고주 화면에 노출되지 않습니다." },
-          history: { ok: true, message: "파일명과 업로드 시각 기준으로 변경 이력을 확인합니다." }
+          memo: { ok: true, message: "내부 메모는 광고주 화면에 노출되지 않습니다." }
         };
         setAdminGuardrails(checks);
         var total = Object.keys(checks).length;

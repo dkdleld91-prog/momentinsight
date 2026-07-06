@@ -164,6 +164,11 @@ const checks = {
   adminOperatingGuardrailsVisible: adminSource.includes("데이터 출처 고정")
     && adminSource.includes("광고주 1:1 범위")
     && adminSource.includes("검수 후 공개")
+    && adminSource.includes('data-admin-guardrail="daily"')
+    && adminSource.includes("#mi-admin .mi-guardrail-chip.is-ok")
+    && adminSource.includes("function checkAdminSheetInputs")
+    && adminSource.includes("setAdminGuardrails(checks)")
+    && adminSource.includes("입력값 상태 확인 완료")
     && adminSource.includes("운영 입력</strong><span>매출·광고비·KPI 원본을 먼저 업로드")
     && adminSource.includes("현재 파일은 브라우저 임시 보관입니다")
     && adminSource.includes("다른 기기나 브라우저에서는 확인할 수 없습니다"),

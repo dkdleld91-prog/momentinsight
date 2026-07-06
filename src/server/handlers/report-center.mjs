@@ -567,21 +567,35 @@ async function findActiveClientByTeamCode(ctx, teamCode) {
 
 async function resolveAccess(request, ctx, body = {}) {
   if (superAdminAuthorized(request, body) && ownerAgencyAuthorized(request, body)) {
-    const clientId = cleanText(body.clientId || body.client_id || new URL(request.url).searchParams.get("client_id"));
-    if (!clientId) {
+    const url = new URL(request.url);
+    const clientId = cleanText(body.clientId || body.client_id || url.searchParams.get("client_id"));
+    const clientAgencyCode = normalizeCode(
+      request.headers.get("x-mi-agency-code") ||
+        body.clientAgencyCode ||
+        body.client_agency_code ||
+        body.agencyCode ||
+        body.agency_code ||
+        body.code ||
+        url.searchParams.get("client_agency_code") ||
+        url.searchParams.get("agency_code")
+    );
+
+    if (!clientId && !clientAgencyCode) {
       return {
         ok: false,
         status: 400,
-        message: "총관리자 조회는 client_id를 지정해야 합니다.",
+        message: "총관리자 조회는 client_id 또는 agency_code를 지정해야 합니다.",
       };
     }
 
-    const { data, error } = await ctx.supabaseAdmin
+    let query = ctx.supabaseAdmin
       .from("clients")
       .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at")
-      .eq("id", clientId)
       .neq("status", "archived")
-      .maybeSingle();
+      .is("disconnected_at", null);
+
+    query = clientId ? query.eq("id", clientId) : query.ilike("agency_code", clientAgencyCode);
+    const { data, error } = await query.maybeSingle();
 
     if (error) return { ok: false, status: 500, message: "총관리자 광고주 조회에 실패했습니다.", detail: error.message };
     if (!data) return { ok: false, status: 404, message: "광고주를 찾을 수 없습니다." };

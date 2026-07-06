@@ -129,14 +129,25 @@ function miDailySumFormula(row, dailyColumn) {
   return `=IF($A${row}="네이버",${naver},IF($A${row}="쿠팡",${coupang},${naver}+${coupang}))`;
 }
 
+function miDailyWeightedRateFormula(row, rateColumn, weightColumn) {
+  const naverNumerator = `SUMPRODUCT(('네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW}>=$B${row})*('네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW}<EDATE($B${row},1))*'네이버_일별입력'!${rateColumn}$${DAILY_FIRST_INPUT_ROW}:${rateColumn}$${DAILY_LAST_INPUT_ROW}*'네이버_일별입력'!${weightColumn}$${DAILY_FIRST_INPUT_ROW}:${weightColumn}$${DAILY_LAST_INPUT_ROW})`;
+  const coupangNumerator = `SUMPRODUCT(('쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW}>=$B${row})*('쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW}<EDATE($B${row},1))*'쿠팡_일별입력'!${rateColumn}$${DAILY_FIRST_INPUT_ROW}:${rateColumn}$${DAILY_LAST_INPUT_ROW}*'쿠팡_일별입력'!${weightColumn}$${DAILY_FIRST_INPUT_ROW}:${weightColumn}$${DAILY_LAST_INPUT_ROW})`;
+  const naverWeight = `SUMIFS('네이버_일별입력'!${weightColumn}$${DAILY_FIRST_INPUT_ROW}:${weightColumn}$${DAILY_LAST_INPUT_ROW},'네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},">="&$B${row},'네이버_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},"<"&EDATE($B${row},1))`;
+  const coupangWeight = `SUMIFS('쿠팡_일별입력'!${weightColumn}$${DAILY_FIRST_INPUT_ROW}:${weightColumn}$${DAILY_LAST_INPUT_ROW},'쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},">="&$B${row},'쿠팡_일별입력'!$A$${DAILY_FIRST_INPUT_ROW}:$A$${DAILY_LAST_INPUT_ROW},"<"&EDATE($B${row},1))`;
+  const naver = `IFERROR(${naverNumerator}/${naverWeight},0)`;
+  const coupang = `IFERROR(${coupangNumerator}/${coupangWeight},0)`;
+  const total = `IFERROR((${naverNumerator}+${coupangNumerator})/(${naverWeight}+${coupangWeight}),0)`;
+  return `=IF($A${row}="네이버",${naver},IF($A${row}="쿠팡",${coupang},${total}))`;
+}
+
 const guide = miAddSheet("처음_사용법");
 miWrite(guide, "A1:H1", [["모먼트인사이트 운영팀 기본 양식", "", "", "", "", "", "", ""]]);
 miTitle(guide, "A1:H1");
 miWrite(guide, "A3:H3", [["작성 순서", "", "", "", "", "", "", ""]]);
 miSection(guide, "A3:H3");
 miWrite(guide, "A4:H8", [
-  ["1", "네이버_일별입력", "네이버 일별 매출, 광고비, 구매수, 노출/클릭/전환수를 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
-  ["2", "쿠팡_일별입력", "쿠팡 일별 매출, 광고비, 구매수, 노출/클릭/전환수를 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
+  ["1", "네이버_일별입력", "광고비, 광고 노출수, 광고 클릭수, 광고 전환율, 전체 구매수, 전체 매출만 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
+  ["2", "쿠팡_일별입력", "광고비, 광고 노출수, 광고 클릭수, 광고 전환율, 전체 구매수, 전체 매출만 입력합니다.", "노란색 칸만 작성", "", "", "", ""],
   ["3", "월간_매출입력", "네이버와 쿠팡 일별 입력값을 기준으로 월간 합계와 ROAS가 자동 계산됩니다.", "자동 계산 확인", "", "", "", ""],
   ["4", "일정표", "운영팀이 광고주 공유 로드맵과 일정, 요청사항을 직접 작성합니다.", "운영팀 작성", "", "", "", ""],
   ["5", "인사이트_액션플랜", "운영팀이 광고주에게 보여줄 결론과 다음 행동을 직접 작성합니다.", "운영팀 작성", "", "", "", ""],
@@ -161,7 +172,7 @@ miWrite(monthly, "A1:O1", [["월간 매출/광고 성과 입력", "", "", "", ""
 miTitle(monthly, "A1:O1");
 miWrite(monthly, "A3:O3", [["네이버_일별입력과 쿠팡_일별입력에 날짜별 수치만 입력하면 월간 매출, 광고비, 구매수, ROAS가 자동 계산됩니다. 운영팀 1개당 광고주 1개 기준이라 별도 광고주 코드 입력은 없습니다.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]]);
 miSection(monthly, "A3:O3");
-miWrite(monthly, "A5:O5", [["채널", "기준월", "목표매출", "실제매출", "광고비", "구매수", "노출수", "클릭수", "전환수", "ROAS", "CTR", "CVR", "목표달성률", "광고주공개코멘트", "업데이트일"]]);
+miWrite(monthly, "A5:O5", [["채널", "기준월", "목표매출", "실제매출", "광고비", "구매수", "노출수", "클릭수", "광고 전환율", "ROAS", "CTR", "CVR", "목표달성률", "광고주공개코멘트", "업데이트일"]]);
 miHeader(monthly, "A5:O5");
 miWrite(monthly, "A6:I8", [
   ["네이버", miMonthDate(), 36000000, "", "", "", "", "", ""],
@@ -171,21 +182,21 @@ miWrite(monthly, "A6:I8", [
 miFormulas(monthly, "D6:I7", Array.from({ length: 2 }, (_, index) => {
   const row = index + 6;
   return [
-    miDailySumFormula(row, "D"),
-    miDailySumFormula(row, "C"),
     miDailySumFormula(row, "H"),
-    miDailySumFormula(row, "E"),
-    miDailySumFormula(row, "F"),
+    miDailySumFormula(row, "C"),
     miDailySumFormula(row, "G"),
+    miDailySumFormula(row, "D"),
+    miDailySumFormula(row, "E"),
+    miDailyWeightedRateFormula(row, "F", "E"),
   ];
 }));
-miFormulas(monthly, "C8:I8", [["=SUM(C6:C7)", "=SUM(D6:D7)", "=SUM(E6:E7)", "=SUM(F6:F7)", "=SUM(G6:G7)", "=SUM(H6:H7)", "=SUM(I6:I7)"]]);
+miFormulas(monthly, "C8:I8", [["=SUM(C6:C7)", "=SUM(D6:D7)", "=SUM(E6:E7)", "=SUM(F6:F7)", "=SUM(G6:G7)", "=SUM(H6:H7)", "=IFERROR(SUMPRODUCT(I6:I7,H6:H7)/SUM(H6:H7),0)"]]);
 miFormulas(monthly, "J6:M8", Array.from({ length: 3 }, (_, index) => {
   const row = index + 6;
   return [
     `=IFERROR(D${row}/E${row},0)`,
     `=IFERROR(H${row}/G${row},0)`,
-    `=IFERROR(I${row}/H${row},0)`,
+    `=IFERROR(I${row},0)`,
     `=IFERROR(D${row}/C${row},0)`,
   ];
 }));
@@ -200,7 +211,8 @@ miInput(monthly, "N6:O35");
 miCalc(monthly, "D6:M35");
 monthly.getRange("B6:B35").format.numberFormat = "yyyy-mm";
 miApplyMoney(monthly, "C6:E35");
-miApplyMoney(monthly, "F6:I35");
+miApplyMoney(monthly, "F6:H35");
+miApplyRate(monthly, "I6:I35");
 miApplyRoas(monthly, "J6:J35");
 miApplyRate(monthly, "K6:M35");
 miWidths(monthly, { A: 100, B: 96, C: 112, D: 112, E: 108, F: 90, G: 106, H: 96, I: 96, J: 78, K: 78, L: 78, M: 104, N: 390, O: 112 }, 45);
@@ -212,30 +224,30 @@ function buildDailySheet(name, firstCampaign, secondCampaign) {
   const sheet = miAddSheet(name);
   miWrite(sheet, "A1:L1", [[`${name} 원천 입력`, "", "", "", "", "", "", "", "", "", "", ""]]);
   miTitle(sheet, "A1:L1");
-  miWrite(sheet, "A3:L3", [["플랫폼에서 내려받은 일별/캠페인별 수치를 그대로 입력합니다. 코드 입력 없이 광고주 한 곳 기준으로 작성합니다.", "", "", "", "", "", "", "", "", "", "", ""]]);
+  miWrite(sheet, "A3:L3", [["광고비, 광고 노출수, 광고 클릭수, 광고 전환율, 전체 구매수, 전체 매출 순서로 입력합니다. 코드 입력 없이 광고주 한 곳 기준으로 작성합니다.", "", "", "", "", "", "", "", "", "", "", ""]]);
   miSection(sheet, "A3:L3");
-  miWrite(sheet, "A5:L5", [["일자", "캠페인/상품군", "광고비", "매출", "노출수", "클릭수", "전환수", "구매수", "ROAS", "CTR", "CVR", "운영메모"]]);
+  miWrite(sheet, "A5:L5", [["일자", "캠페인/상품군", "광고비", "광고 노출수", "광고 클릭수", "광고 전환율", "전체 구매수", "전체 매출", "ROAS", "CTR", "CVR", "운영메모"]]);
   miHeader(sheet, "A5:L5");
   miWrite(sheet, "A6:H8", [
-    [miDayDate(24), firstCampaign, 1200000, 7200000, 180000, 6900, 330, 220],
-    [miDayDate(25), firstCampaign, 980000, 6100000, 152000, 5700, 284, 190],
-    [miDayDate(26), secondCampaign, 1020000, 5300000, 178000, 6800, 337, 232],
+    [miDayDate(24), firstCampaign, 1200000, 180000, 6900, 0.048, 220, 7200000],
+    [miDayDate(25), firstCampaign, 980000, 152000, 5700, 0.050, 190, 6100000],
+    [miDayDate(26), secondCampaign, 1020000, 178000, 6800, 0.050, 232, 5300000],
   ]);
   miWrite(sheet, `A${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`, [["합계", "", 0, 0, 0, 0, 0, 0]]);
   miFormulas(sheet, `C${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`, [[
     `=SUM(C${DAILY_FIRST_INPUT_ROW}:C${DAILY_LAST_INPUT_ROW})`,
     `=SUM(D${DAILY_FIRST_INPUT_ROW}:D${DAILY_LAST_INPUT_ROW})`,
     `=SUM(E${DAILY_FIRST_INPUT_ROW}:E${DAILY_LAST_INPUT_ROW})`,
-    `=SUM(F${DAILY_FIRST_INPUT_ROW}:F${DAILY_LAST_INPUT_ROW})`,
+    `=IFERROR(SUMPRODUCT(F${DAILY_FIRST_INPUT_ROW}:F${DAILY_LAST_INPUT_ROW},E${DAILY_FIRST_INPUT_ROW}:E${DAILY_LAST_INPUT_ROW})/SUM(E${DAILY_FIRST_INPUT_ROW}:E${DAILY_LAST_INPUT_ROW}),0)`,
     `=SUM(G${DAILY_FIRST_INPUT_ROW}:G${DAILY_LAST_INPUT_ROW})`,
     `=SUM(H${DAILY_FIRST_INPUT_ROW}:H${DAILY_LAST_INPUT_ROW})`,
   ]]);
   miFormulas(sheet, `I${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`, Array.from({ length: DAILY_TOTAL_ROW - DAILY_FIRST_INPUT_ROW + 1 }, (_, index) => {
     const row = DAILY_FIRST_INPUT_ROW + index;
     return [
-      `=IF(C${row}="","",IFERROR(D${row}/C${row},0))`,
-      `=IF(E${row}="","",IFERROR(F${row}/E${row},0))`,
-      `=IF(F${row}="","",IFERROR(G${row}/F${row},0))`,
+      `=IF(C${row}="","",IFERROR(H${row}/C${row},0))`,
+      `=IF(D${row}="","",IFERROR(E${row}/D${row},0))`,
+      `=IF(F${row}="","",IFERROR(F${row},0))`,
     ];
   }));
   miWrite(sheet, `L6:L${DAILY_TOTAL_ROW}`, Array.from({ length: DAILY_TOTAL_ROW - DAILY_FIRST_INPUT_ROW + 1 }, (_, index) => {
@@ -251,11 +263,13 @@ function buildDailySheet(name, firstCampaign, secondCampaign) {
   miCalc(sheet, `I${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`);
   miCalc(sheet, `A${DAILY_TOTAL_ROW}:H${DAILY_TOTAL_ROW}`);
   sheet.getRange(`A${DAILY_FIRST_INPUT_ROW}:A${DAILY_LAST_INPUT_ROW}`).format.numberFormat = "yyyy-mm-dd";
-  miApplyMoney(sheet, `C${DAILY_FIRST_INPUT_ROW}:D${DAILY_TOTAL_ROW}`);
-  miApplyMoney(sheet, `E${DAILY_FIRST_INPUT_ROW}:H${DAILY_TOTAL_ROW}`);
+  miApplyMoney(sheet, `C${DAILY_FIRST_INPUT_ROW}:C${DAILY_TOTAL_ROW}`);
+  miApplyMoney(sheet, `D${DAILY_FIRST_INPUT_ROW}:E${DAILY_TOTAL_ROW}`);
+  miApplyRate(sheet, `F${DAILY_FIRST_INPUT_ROW}:F${DAILY_TOTAL_ROW}`);
+  miApplyMoney(sheet, `G${DAILY_FIRST_INPUT_ROW}:H${DAILY_TOTAL_ROW}`);
   miApplyRoas(sheet, `I${DAILY_FIRST_INPUT_ROW}:I${DAILY_TOTAL_ROW}`);
   miApplyRate(sheet, `J${DAILY_FIRST_INPUT_ROW}:K${DAILY_TOTAL_ROW}`);
-  miWidths(sheet, { A: 105, B: 220, C: 112, D: 112, E: 105, F: 90, G: 90, H: 90, I: 76, J: 76, K: 76, L: 260 }, 55);
+  miWidths(sheet, { A: 116, B: 240, C: 126, D: 132, E: 124, F: 118, G: 118, H: 128, I: 88, J: 86, K: 86, L: 300 }, 55);
   miTall(sheet, "A1:L1", 34);
   miTall(sheet, `A5:L${DAILY_TOTAL_ROW}`, 25);
   sheet.getRange(`A${DAILY_TOTAL_ROW}:L${DAILY_TOTAL_ROW}`).format = {
@@ -401,6 +415,7 @@ const simplifiedErrors = await simplifiedWorkbook.inspect({
 });
 await simplifiedWorkbook.render({ sheetName: "월간_매출입력", range: "A1:O14", scale: 2, format: "png" });
 await simplifiedWorkbook.render({ sheetName: "네이버_일별입력", range: "A1:L16", scale: 2, format: "png" });
+await simplifiedWorkbook.render({ sheetName: "쿠팡_일별입력", range: "A1:L16", scale: 2, format: "png" });
 await simplifiedWorkbook.render({ sheetName: "운영_대시보드", range: "A1:H18", scale: 2, format: "png" });
 console.log(JSON.stringify({
   output: simplifiedOutputPath,

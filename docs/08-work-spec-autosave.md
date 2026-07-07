@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 06. 16:35:19
-- 기준 커밋: b4c8b99
-- 작업트리: M 03_운영시트_템플릿/build_moment_insight_sheet.mjs /  M 03_운영시트_템플릿/모먼트인사이트_운영시트_템플릿.xlsx /  M database/schema-draft.md /  M docs/00-project-structure.md /  M docs/01-product-requirements.md /  M docs/04-data-model.md /  M docs/06-mvp-roadmap.md /  M public/downloads/moment-insight-operation-sheet-template.xlsx
+- 마지막 자동 저장: 2026. 07. 07. 21:17:15
+- 기준 커밋: aca688f
+- 작업트리: M docs/08-work-spec-autosave.md /  M src/pages/client.html /  M src/server/index.mjs / ?? .github/workflows/naver-place-rank-cron.yml / ?? src/server/handlers/naver-place-rank-cron.mjs / ?? src/server/handlers/naver-place-rank-trackers.mjs / ?? supabase/migrations/20260707000100_naver_place_rank_tracking.sql
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 부분 완료 | 네이버 플레이스 30일 순위 추적 분리 기반 | 기존 네이버 상품 30일 순위 데이터와 섞지 않도록 플레이스 전용 Supabase 테이블, 서버 API, 크론 API, 광고주 화면 메뉴/입력/기록 UI를 별도로 추가. 외부 순위 공급자가 없을 때는 기존 네이버 OpenAPI 검색 API로 상호명 기준 상위 결과를 확인하며, 공식 API 한계상 300위 전체 추적은 전문 순위 소스 연결 시 확장 | 서버 핸들러 문법 검사, 클라이언트 스크립트 문법 검사, 09시/15시 다음 갱신 계산 확인, `check:server`, `build:vercel` 통과 | 배포 없음 |
 | 완료 | 프로젝트 구조 경량화 및 화면 소스 정리 | 아임웹 복붙용 중복 파일과 통합보기 파일을 제거하고, 실제 배포 화면 원본을 `src/pages/home.html`, `src/pages/admin.html`, `src/pages/client.html`로 단순화. 빌드 스크립트와 릴리즈 기준선을 새 구조 기준으로 갱신 | `clean:workspace:dry`, `check:baseline`, `build:vercel`, `git diff --check`, 파일 구조/보안 추적 여부 확인 | 배포 대기 |
 | 완료 | 네이버 30일 순위 상태 요약 압축 | 자동추적 상태 영역의 중복 8칸 요약을 1줄 상태바와 3개 핵심 지표로 정리하고, 광고주/운영팀 원본 및 복붙용 파일을 동기화. 기존 baseline도 새 UI 구조 기준으로 갱신 | `check:baseline`, `build:vercel`, `git diff --check`, 로컬 정적 서버 화면 확인 | 배포 대기 |
 | 완료 | 순위추적 필터 및 제품 개발 지침 확장 | AGENTS.md에 광고주/운영팀/총관리자 권한, MVP 우선순위, UI/검증 원칙을 상세화. 광고주/운영팀 네이버 30일 순위 화면에 키워드·상품명·상품번호 검색, 전체/확인 필요/상승/하락 필터, 표시 개수 카운터를 추가하고 복붙용 파일까지 동기화. 릴리즈 기준선에 필터 UI/로직 누락 방지 체크 추가 | `check:server`, `check:rank-cron`, `check:rank-matching`, `check:baseline`, `build:vercel`, `git diff --check`, 로컬 HTTP 200, 브라우저 DOM/콘솔 확인 | 배포 진행 |

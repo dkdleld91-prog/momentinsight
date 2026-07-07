@@ -1,0 +1,85 @@
+name: Naver Place Rank Tracking
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # KST 09:00/15:00 rescue window. The API only refreshes trackers whose next_check_at is due.
+    - cron: "0,5,10,15 0,6 * * *"
+    # Hourly catch-up prevents missed GitHub schedules from leaving due trackers stale.
+    - cron: "43 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: naver-place-rank-tracking
+  cancel-in-progress: false
+
+jobs:
+  refresh-place-ranks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
+    steps:
+      - name: Validate cron secret
+        run: |
+          if [ -z "${MI_RANK_CRON_SECRET:-}" ]; then
+            echo "::error::GitHub Actions secret MI_RANK_CRON_SECRET is missing. Add the same value used in Vercel Production."
+            exit 1
+          fi
+
+      - name: Refresh due Naver place rank trackers
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            echo "Push-triggered deploy backfill: waiting briefly for production deployment."
+            sleep 90
+          fi
+
+          response_file="$(mktemp)"
+          trap 'rm -f "$response_file"' EXIT
+
+          call_cron() {
+            curl --show-error --silent \
+              --output "$response_file" \
+              --write-out "%{http_code}" \
+              -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
+              "https://insight.momentlabs.co.kr/api/naver-place-rank-cron?limit=100"
+          }
+
+          status_code="$(call_cron)"
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "First place cron call returned HTTP ${status_code}. Retrying once after 30 seconds."
+            sleep 30
+            status_code="$(call_cron)"
+          fi
+
+          node - "$response_file" <<'NODE'
+          const fs = require("node:fs");
+          const file = process.argv[2];
+          let payload = {};
+          try {
+            payload = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
+          } catch {
+            payload = { ok: false, message: "invalid_json_response" };
+          }
+          const summary = payload.summary || {};
+          const safe = {
+            ok: Boolean(payload.ok),
+            message: payload.message || "",
+            checked: Number(summary.checked || 0),
+            succeeded: Number(summary.succeeded || 0),
+            failed: Number(summary.failed || 0),
+            configured: Boolean(summary.configured),
+            now: summary.now || "",
+          };
+          console.log("Naver place rank cron summary " + JSON.stringify(safe));
+          NODE
+
+          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
+            echo "::error::Naver place rank cron failed with HTTP ${status_code}."
+            exit 1
+          fi
+
+          echo "Naver place rank cron accepted with HTTP ${status_code}."

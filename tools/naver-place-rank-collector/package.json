@@ -1,0 +1,13 @@
+{
+  "name": "moment-naver-place-rank-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "check": "node --check src/server.mjs && node --check src/naver-place-rank.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.55.0"
+  }
+}

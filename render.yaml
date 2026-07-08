@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: moment-place-rank-collector
+    env: docker
+    plan: free
+    rootDir: tools/naver-place-rank-collector
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: NAVER_PLACE_PROVIDER_HEADLESS
+        value: "true"
+      - key: NAVER_PLACE_PROVIDER_MAX_SCROLLS
+        value: "8"
+      - key: NAVER_PLACE_PROVIDER_TIMEOUT_MS
+        value: "30000"
+      - key: PLACE_RANK_COLLECTOR_SECRET
+        sync: false

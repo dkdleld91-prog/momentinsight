@@ -68,6 +68,8 @@ const checks = [
   status(env, "Naver DataLab secret", ["NAVER_DATALAB_CLIENT_SECRET", "NAVER_OPENAPI_CLIENT_SECRET"], strictNaver),
   status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], strictNaver),
   status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], strictNaver),
+  status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),
+  status(env, "Naver Place rank provider key", ["NAVER_PLACE_RANK_API_KEY"], false),
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),
   status(env, "Rank tracker admin code", ["MI_RANK_ADMIN_CODE", "MI_DEMO_ADMIN_CODE"], false),
   status(env, "Rank tracker client access code", ["MI_RANK_ACCESS_CODE", "MI_RANK_ACCESS_CODES"], false),

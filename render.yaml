@@ -1,9 +1,10 @@
 services:
   - type: web
     name: moment-place-rank-collector
-    env: docker
+    runtime: docker
     plan: free
-    rootDir: tools/naver-place-rank-collector
+    dockerfilePath: tools/naver-place-rank-collector/Dockerfile
+    dockerContext: tools/naver-place-rank-collector
     healthCheckPath: /health
     envVars:
       - key: HOST

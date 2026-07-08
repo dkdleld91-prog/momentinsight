@@ -71,33 +71,31 @@ curl -X POST "http://127.0.0.1:8797/rank/naver-place" \
 
 ## Render 호스팅 경로
 
-가장 쉬운 경로는 Render에 Docker Web Service로 올리는 방식입니다.
+가장 쉬운 경로는 이 저장소의 `render.yaml` 기준으로 Docker Web Service를 올리는 방식입니다.
+현재 설정은 저장소 루트에서 Dockerfile과 build context를 직접 지정합니다.
 
-1. Render 접속 후 `New +`를 누릅니다.
-2. `Web Service`를 선택합니다.
-3. GitHub 저장소 `dkdleld91-prog/momentinsight`를 연결합니다.
-4. `Root Directory`에 아래 값을 넣습니다.
-
-```txt
-tools/naver-place-rank-collector
+```yaml
+dockerfilePath: tools/naver-place-rank-collector/Dockerfile
+dockerContext: tools/naver-place-rank-collector
 ```
 
-5. `Runtime` 또는 `Environment`는 `Docker`로 선택합니다.
-6. `Advanced` 또는 Docker 세부 설정은 아래처럼 둡니다.
+Render 화면에서 수동으로 만든 서비스라면 아래처럼 맞춥니다.
 
 ```txt
-Docker Build Context Directory=비워두기 또는 .
-Dockerfile Path=Dockerfile
+Root Directory=비워두기
+Runtime 또는 Environment=Docker
+Docker Build Context Directory=tools/naver-place-rank-collector
+Dockerfile Path=tools/naver-place-rank-collector/Dockerfile
 Docker Command=비워두기
 Health Check Path=/health
 ```
 
-중요: `Root Directory`에 이미 `tools/naver-place-rank-collector`를 넣었으면
-`Docker Build Context Directory`나 `Dockerfile Path`에 같은 경로를 다시 넣지 않습니다.
-같은 경로를 한 번 더 넣으면 Render가
+중요: `Root Directory`에 `tools/naver-place-rank-collector`를 넣는 방식도 가능하지만,
+그 경우 `Docker Build Context Directory`는 비워두기 또는 `.`이고 `Dockerfile Path`는 `Dockerfile`이어야 합니다.
+두 위치에 같은 경로를 함께 넣으면 Render가
 `tools/naver-place-rank-collector/tools/naver-place-rank-collector`처럼 중복 경로를 찾다가 배포가 실패합니다.
 
-7. `Environment Variables`에 아래 값을 넣습니다.
+`Environment Variables`에는 아래 값을 넣습니다.
 
 ```txt
 HOST=0.0.0.0

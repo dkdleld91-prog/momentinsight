@@ -3,6 +3,7 @@ import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../securi
 
 const DEFAULT_CRON_BATCH = 100;
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
+const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
 const TRACKER_SELECT = [
   "id",
   "client_id",
@@ -215,6 +216,106 @@ function extractPlaceId(value) {
     if (match) return match[1];
   }
   return "";
+}
+
+function normalizeUrlCandidate(value) {
+  const text = normalizeText(value);
+  if (!text) return "";
+  if (/^https?:\/\//i.test(text)) return text;
+  if (/^(naver\.me|map\.naver\.com|m\.place\.naver\.com|place\.naver\.com)\//i.test(text)) {
+    return "https://" + text;
+  }
+  return text;
+}
+
+function isNaverPlaceUrl(value) {
+  const text = normalizeUrlCandidate(value);
+  if (!/^https?:\/\//i.test(text)) return false;
+  try {
+    const { hostname } = new URL(text);
+    return /(^|\.)naver\.me$/i.test(hostname) ||
+      /(^|\.)map\.naver\.com$/i.test(hostname) ||
+      /(^|\.)place\.naver\.com$/i.test(hostname);
+  } catch {
+    return false;
+  }
+}
+
+function metaAttributes(tag) {
+  const attrs = {};
+  String(tag || "").replace(/([a-zA-Z_:.-]+)\s*=\s*["']([^"']*)["']/g, (_all, key, value) => {
+    attrs[key.toLowerCase()] = value;
+    return _all;
+  });
+  return attrs;
+}
+
+function metaContent(html, names) {
+  const wanted = new Set(names.map((name) => name.toLowerCase()));
+  const tags = String(html || "").match(/<meta\b[^>]*>/gi) || [];
+  for (const tag of tags) {
+    const attrs = metaAttributes(tag);
+    const key = normalizeText(attrs.property || attrs.name).toLowerCase();
+    if (wanted.has(key) && normalizeText(attrs.content)) return attrs.content;
+  }
+  return "";
+}
+
+function cleanPlaceNameCandidate(value) {
+  return stripHtml(value)
+    .replace(/\s*[:|-]\s*네이버\s*(지도|플레이스)?\s*$/i, "")
+    .replace(/\s*-\s*NAVER\s*(Map|Place)?\s*$/i, "")
+    .trim();
+}
+
+async function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), NAVER_PLACE_URL_TIMEOUT_MS);
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        "user-agent": "Mozilla/5.0 MomentInsightBot/1.0 (+https://insight.momentlabs.co.kr)",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        ...(options.headers || {}),
+      },
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function resolveNaverPlaceUrl(value) {
+  const originalUrl = normalizeUrlCandidate(value);
+  const result = {
+    originalUrl,
+    url: originalUrl,
+    placeId: extractPlaceId(originalUrl),
+    placeName: "",
+    resolved: false,
+  };
+  if (!originalUrl || !isNaverPlaceUrl(originalUrl)) return result;
+
+  try {
+    const response = await fetchWithTimeout(originalUrl, { method: "GET", redirect: "follow" });
+    result.url = normalizeText(response.url) || originalUrl;
+    result.placeId = result.placeId || extractPlaceId(result.url);
+    result.resolved = result.url !== originalUrl || Boolean(result.placeId);
+
+    const contentType = normalizeText(response.headers.get("content-type"));
+    if (/text\/html/i.test(contentType)) {
+      const html = await response.text().catch(() => "");
+      result.placeId = result.placeId || extractPlaceId(html);
+      result.placeName = cleanPlaceNameCandidate(
+        metaContent(html, ["og:title", "twitter:title"]) ||
+        (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
+      );
+    }
+  } catch {
+    return result;
+  }
+  return result;
 }
 
 function kstSlotToUtc(kstBase, hour) {
@@ -538,6 +639,34 @@ async function lookupExternalPlaceProvider(config, tracker) {
   }
 }
 
+async function enrichTrackerPlaceIdentity(ctx, tracker) {
+  const placeUrl = normalizeText(tracker.place_url);
+  if (!placeUrl) return tracker;
+
+  const resolved = await resolveNaverPlaceUrl(placeUrl);
+  const resolvedUrl = normalizeText(resolved.url);
+  const resolvedPlaceId = normalizeText(resolved.placeId);
+  const resolvedPlaceName = normalizeText(resolved.placeName);
+  const updates = {};
+
+  if (resolvedUrl && resolvedUrl !== placeUrl && extractPlaceId(resolvedUrl)) updates.place_url = resolvedUrl;
+  if (resolvedPlaceId && resolvedPlaceId !== normalizeText(tracker.place_id)) updates.place_id = resolvedPlaceId;
+  if (resolvedPlaceName && !normalizeText(tracker.place_name)) updates.place_name = resolvedPlaceName;
+
+  const merged = { ...tracker, ...updates };
+  if (!Object.keys(updates).length) return merged;
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .update(updates)
+    .eq("id", tracker.id)
+    .select(TRACKER_SELECT)
+    .single();
+
+  if (error) return merged;
+  return data || merged;
+}
+
 async function lookupPlaceRank(tracker) {
   const config = placeProviderConfig();
   if (!hasPlaceRankLookupConfig(config)) {
@@ -560,12 +689,13 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
   const checkedAt = new Date().toISOString();
 
   try {
-    const result = await lookupPlaceRank(tracker);
+    const enrichedTracker = await enrichTrackerPlaceIdentity(ctx, tracker);
+    const result = await lookupPlaceRank(enrichedTracker);
     const message = result.message || providerResultMessage(result);
-    const snapshot = await insertSnapshot(ctx, tracker, checkedAt, result, message, result.source || "naver_place_rank_provider");
+    const snapshot = await insertSnapshot(ctx, enrichedTracker, checkedAt, result, message, result.source || "naver_place_rank_provider");
     const updated = await updateTrackerAfterCheck(
       ctx,
-      tracker,
+      enrichedTracker,
       checkedAt,
       result,
       message,
@@ -610,9 +740,12 @@ async function listTrackers(request, ctx) {
 async function createTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const keyword = normalizeText(body.keyword);
-  const placeUrl = normalizeText(body.placeUrl || body.place_url || body.targetUrl || body.target_url);
-  const placeId = normalizeText(body.placeId || body.place_id) || extractPlaceId(placeUrl);
-  const placeName = normalizeText(body.placeName || body.place_name);
+  const originalPlaceUrl = normalizeText(body.placeUrl || body.place_url || body.targetUrl || body.target_url);
+  const resolved = await resolveNaverPlaceUrl(originalPlaceUrl);
+  const placeUrl = normalizeText(resolved.url) || originalPlaceUrl;
+  const placeId = normalizeText(body.placeId || body.place_id) || normalizeText(resolved.placeId) || extractPlaceId(placeUrl) || extractPlaceId(originalPlaceUrl);
+  const placeName = normalizeText(body.placeName || body.place_name) || normalizeText(resolved.placeName);
+  const placeUrlCandidates = [...new Set([originalPlaceUrl, placeUrl].filter(Boolean))];
 
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
   if (!placeUrl && !placeId && !placeName) {
@@ -630,15 +763,31 @@ async function createTracker(request, ctx, body, access = {}) {
 
   const existingRow = (existing.data || []).find((row) => (
     (placeId && row.place_id === placeId) ||
-    (placeUrl && row.place_url === placeUrl) ||
+    (row.place_url && placeUrlCandidates.includes(row.place_url)) ||
     (!placeId && !placeUrl && placeName && row.place_name === placeName)
   ));
   if (existingRow) {
+    const updates = {};
+    if (placeId && !normalizeText(existingRow.place_id)) updates.place_id = placeId;
+    if (placeUrl && placeUrl !== normalizeText(existingRow.place_url) && extractPlaceId(placeUrl)) updates.place_url = placeUrl;
+    if (placeName && !normalizeText(existingRow.place_name)) updates.place_name = placeName;
+    let resolvedExistingRow = existingRow;
+    if (Object.keys(updates).length) {
+      const updatedExisting = await ctx.supabaseAdmin
+        .from("naver_place_rank_trackers")
+        .update(updates)
+        .eq("id", existingRow.id)
+        .select(TRACKER_SELECT)
+        .single();
+      if (!updatedExisting.error && updatedExisting.data) resolvedExistingRow = updatedExisting.data;
+    }
     const snapshots = await loadSnapshots(ctx, [existingRow.id], 30);
     return json(request, {
       ok: true,
-      message: "이미 추적 중인 플레이스입니다. 기존 기록을 이어서 표시합니다.",
-      tracker: trackerPayload(existingRow, snapshots.get(existingRow.id) || []),
+      message: Object.keys(updates).length
+        ? "이미 추적 중인 플레이스입니다. 장소 식별값을 보강하고 기존 기록을 이어서 표시합니다."
+        : "이미 추적 중인 플레이스입니다. 기존 기록을 이어서 표시합니다.",
+      tracker: trackerPayload(resolvedExistingRow, snapshots.get(existingRow.id) || []),
     });
   }
 

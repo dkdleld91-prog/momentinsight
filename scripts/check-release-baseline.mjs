@@ -62,8 +62,8 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 12,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 13,
+  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
   adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
     && adminSource.includes('data-login-mode="operator"')
@@ -120,6 +120,12 @@ const checks = {
     && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
+  placeRankDailyMetricBoard: [adminSource, clientSource].every((source) => source.includes("mi-place-day-card")
+    && source.includes("groupPlaceSnapshotsByDay")
+    && source.includes('renderPlaceDayMetric("블"')
+    && source.includes('renderPlaceDayMetric("방"')
+    && source.includes('renderPlaceDayMetric("월"')
+    && source.includes('renderPlaceDayMetric("업체"')),
   clientReportDownloadBox: clientSource.includes("data-mi-report-list")
     && clientSource.includes("data-mi-report-download")
     && clientSource.includes("downloadClientReport")

@@ -1,9 +1,14 @@
+import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 
 const DEFAULT_CRON_BATCH = 100;
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
+const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
+const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
+const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_MAX || 300);
+const keywordVolumeCache = new Map();
 const TRACKER_SELECT = [
   "id",
   "client_id",
@@ -347,6 +352,9 @@ function placeProviderConfig() {
     key: process.env.NAVER_PLACE_RANK_API_KEY || "",
     openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "",
     openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "",
+    searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY || "",
+    searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY || "",
+    searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
   };
 }
 
@@ -495,6 +503,7 @@ function providerResultMessage(result) {
   if (result?.matched && result.rank) return "네이버 플레이스 오가닉 " + result.rank + "위로 확인되었습니다.";
   if (result?.notConfigured) return "네이버 플레이스 순위 소스가 아직 연결되지 않았습니다.";
   if (result?.needsPlaceName) return "네이버 검색 API는 URL만으로 장소를 식별하지 못해 상호명 입력이 필요합니다.";
+  if (result?.officialPlaceIdOnly) return "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다.";
   if (result?.officialLocalLimit) return "네이버 공식 검색 API 상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 장소를 찾지 못했습니다.";
   return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 플레이스를 찾지 못했습니다.";
 }
@@ -513,6 +522,166 @@ function compactComparableText(value) {
   return stripHtml(value)
     .replace(/[^\p{L}\p{N}]+/gu, "")
     .toLowerCase();
+}
+
+function normalizeMetricNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = typeof value === "number" ? value : Number(String(value).replace(/[^\d.-]/g, ""));
+  if (!Number.isFinite(number)) return null;
+  return Math.max(0, Math.round(number));
+}
+
+function firstMetricValue(source, keys) {
+  for (const key of keys) {
+    const number = normalizeMetricNumber(source?.[key]);
+    if (number !== null) return number;
+  }
+  return null;
+}
+
+function normalizePlaceMetrics(value = {}) {
+  const source = value?.metrics && typeof value.metrics === "object" ? { ...value, ...value.metrics } : value;
+  return {
+    blogCount: firstMetricValue(source, ["blogCount", "blog_count", "blogTotal", "blog_total"]),
+    visitReviewCount: firstMetricValue(source, ["visitReviewCount", "visit_review_count", "reviewCount", "review_count", "visitorReviewCount", "visitor_review_count"]),
+    monthlySearchCount: firstMetricValue(source, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume", "searchCount", "search_count"]),
+    businessCount: firstMetricValue(source, ["businessCount", "business_count", "placeCount", "place_count", "total"]),
+  };
+}
+
+function hasPlaceMetrics(metrics) {
+  return Boolean(metrics && Object.values(metrics).some((value) => value !== null && value !== undefined));
+}
+
+function hasSearchAdConfig(config) {
+  return Boolean(config.searchAdApiKey && config.searchAdSecretKey && config.searchAdCustomerId);
+}
+
+function normalizeKeywordCompare(value) {
+  return normalizeText(value || "").replace(/\s/g, "").toLowerCase();
+}
+
+function normalizeSearchAdKeyword(value) {
+  return normalizeText(value || "").replace(/\s/g, "");
+}
+
+function parseSearchCount(value) {
+  if (typeof value === "number") return { value, upperBound: value, isUnderThreshold: false };
+  const text = String(value || "").trim();
+  if (!text) return { value: 0, upperBound: 0, isUnderThreshold: false };
+  if (text.includes("<")) {
+    const upperBound = Number(text.replace(/[^\d.]/g, "")) || 10;
+    return { value: 0, upperBound, isUnderThreshold: true };
+  }
+  const parsed = Number(text.replace(/,/g, "")) || 0;
+  return { value: parsed, upperBound: parsed, isUnderThreshold: false };
+}
+
+function searchVolumeMetric(pcRaw, mobileRaw) {
+  const pc = parseSearchCount(pcRaw);
+  const mobile = parseSearchCount(mobileRaw);
+  const isUnderThreshold = pc.isUnderThreshold || mobile.isUnderThreshold;
+  const value = isUnderThreshold ? 0 : pc.value + mobile.value;
+  const upperBound = pc.upperBound + mobile.upperBound;
+  return {
+    value,
+    upperBound,
+    isUnderThreshold,
+  };
+}
+
+function keywordVolumeCacheKey(keyword) {
+  return normalizeKeywordCompare(keyword);
+}
+
+function getKeywordVolumeCache(keyword) {
+  const key = keywordVolumeCacheKey(keyword);
+  const hit = key ? keywordVolumeCache.get(key) : null;
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    keywordVolumeCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function setKeywordVolumeCache(keyword, value) {
+  const key = keywordVolumeCacheKey(keyword);
+  if (!key) return;
+  keywordVolumeCache.set(key, { value, expiresAt: Date.now() + KEYWORD_VOLUME_CACHE_TTL_MS });
+  while (keywordVolumeCache.size > KEYWORD_VOLUME_CACHE_MAX) {
+    const oldestKey = keywordVolumeCache.keys().next().value;
+    keywordVolumeCache.delete(oldestKey);
+  }
+}
+
+function naverSearchAdHeaders(config, method, path) {
+  const timestamp = String(Date.now());
+  const signature = crypto
+    .createHmac("sha256", config.searchAdSecretKey)
+    .update(timestamp + "." + method + "." + path)
+    .digest("base64");
+
+  return {
+    "Content-Type": "application/json; charset=UTF-8",
+    "X-Timestamp": timestamp,
+    "X-API-KEY": config.searchAdApiKey,
+    "X-Customer": String(config.searchAdCustomerId),
+    "X-Signature": signature,
+  };
+}
+
+async function lookupMonthlySearchCount(config, keyword) {
+  const cached = getKeywordVolumeCache(keyword);
+  if (cached !== null) return cached;
+  if (!hasSearchAdConfig(config) || !normalizeText(keyword)) return null;
+
+  const path = "/keywordstool";
+  const params = new URLSearchParams({ hintKeywords: normalizeSearchAdKeyword(keyword), showDetail: "1" });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MI_PLACE_KEYWORD_VOLUME_TIMEOUT_MS || 3500));
+
+  try {
+    const response = await fetch(SEARCHAD_BASE_URL + path + "?" + params.toString(), {
+      method: "GET",
+      headers: naverSearchAdHeaders(config, "GET", path),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const payload = text ? JSON.parse(text) : {};
+    if (!response.ok) throw new Error(payload?.errorMessage || payload?.message || "HTTP " + response.status);
+
+    const list = Array.isArray(payload?.keywordList) ? payload.keywordList : [];
+    const exact = list.find((item) => normalizeKeywordCompare(item.relKeyword) === normalizeKeywordCompare(keyword));
+    const metric = exact ? searchVolumeMetric(exact.monthlyPcQcCnt, exact.monthlyMobileQcCnt) : null;
+    const value = metric ? (metric.isUnderThreshold ? metric.upperBound : metric.value) : null;
+    setKeywordVolumeCache(keyword, value);
+    return value;
+  } catch {
+    setKeywordVolumeCache(keyword, null);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function lookupNaverBlogCount(config, keyword) {
+  if (!hasNaverLocalSearchConfig(config) || !normalizeText(keyword)) return null;
+  const params = new URLSearchParams({ query: keyword, display: "1", start: "1" });
+  try {
+    const response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/blog.json?" + params.toString(), {
+      method: "GET",
+      headers: {
+        "X-Naver-Client-Id": config.openapiClientId,
+        "X-Naver-Client-Secret": config.openapiClientSecret,
+      },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return null;
+    return normalizeMetricNumber(payload.total);
+  } catch {
+    return null;
+  }
 }
 
 function naverLocalItemPayload(item, index) {
@@ -547,6 +716,11 @@ function naverLocalItemMatchesTracker(tracker, item) {
 async function lookupNaverLocalSearchRank(config, tracker) {
   const targetName = normalizeText(tracker.place_name);
   const targetId = normalizeText(tracker.place_id);
+  const [blogCount, monthlySearchCount] = await Promise.all([
+    lookupNaverBlogCount(config, tracker.keyword),
+    lookupMonthlySearchCount(config, tracker.keyword),
+  ]);
+
   if (!targetName && !targetId) {
     return {
       ok: true,
@@ -555,7 +729,9 @@ async function lookupNaverLocalSearchRank(config, tracker) {
       officialLocalLimit: true,
       checkedCount: 0,
       total: 0,
-      place: {},
+      place: {
+        metrics: normalizePlaceMetrics({ blogCount, monthlySearchCount }),
+      },
       topPlaces: [],
       message: "네이버 검색 API는 플레이스 URL만으로 장소를 식별하지 못해 상호명을 함께 입력해야 합니다.",
       source: "naver_openapi_local",
@@ -582,18 +758,33 @@ async function lookupNaverLocalSearchRank(config, tracker) {
   const items = Array.isArray(payload.items) ? payload.items.map(naverLocalItemPayload) : [];
   const matchedIndex = items.findIndex((item) => naverLocalItemMatchesTracker(tracker, item));
   const matchedPlace = matchedIndex >= 0 ? items[matchedIndex] : null;
+  const officialPlaceIdOnly = Boolean(targetId && !targetName && !matchedPlace);
+  const metrics = normalizePlaceMetrics({
+    blogCount,
+    monthlySearchCount,
+    businessCount: payload.total,
+  });
+  const unresolvedPlace = {
+    id: targetId,
+    name: targetName,
+    url: tracker.place_url,
+    metrics,
+  };
   return {
     ok: true,
     matched: Boolean(matchedPlace),
     rank: matchedPlace ? matchedIndex + 1 : null,
     checkedCount: items.length,
     total: Number(payload.total || items.length || 0),
-    place: matchedPlace || {},
+    place: matchedPlace ? { ...matchedPlace, metrics } : unresolvedPlace,
     topPlaces: items,
+    officialPlaceIdOnly,
     officialLocalLimit: true,
     source: "naver_openapi_local",
     message: matchedPlace
       ? "네이버 공식 검색 API 상위 " + items.length + "개 안에서 " + (matchedIndex + 1) + "위로 확인되었습니다."
+      : officialPlaceIdOnly
+        ? "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다. 상호명을 함께 넣으면 공식 검색 범위 내 매칭 정확도가 올라갑니다."
       : "네이버 공식 검색 API 상위 " + items.length + "개 안에서 대상 장소를 찾지 못했습니다.",
   };
 }
@@ -624,13 +815,16 @@ async function lookupExternalPlaceProvider(config, tracker) {
 
     const rank = Number(payload.rank || payload.position || 0);
     const matched = Boolean(payload.matched || rank > 0);
+    const metrics = normalizePlaceMetrics(payload.metrics || payload.place || payload.item || payload);
+    const place = payload.place || payload.item || {};
+    const placeWithMetrics = hasPlaceMetrics(metrics) ? { ...place, metrics: { ...(place.metrics || {}), ...metrics } } : place;
     return {
       ok: true,
       matched,
       rank: matched ? rank : null,
       checkedCount: Number(payload.checkedCount || payload.checked_count || payload.total || 0),
       total: Number(payload.total || payload.checkedCount || payload.checked_count || 0),
-      place: payload.place || payload.item || {},
+      place: placeWithMetrics,
       topPlaces: Array.isArray(payload.topPlaces) ? payload.topPlaces : (Array.isArray(payload.items) ? payload.items : []),
       source: payload.source || "naver_place_rank_provider",
     };

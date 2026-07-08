@@ -3385,6 +3385,85 @@
       color: #b6c0cf;
     }
 
+    #mi-admin .mi-place-day-grid {
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd6e4 transparent;
+    }
+
+    #mi-admin .mi-place-day-grid::-webkit-scrollbar {
+      height: 8px;
+    }
+
+    #mi-admin .mi-place-day-grid::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: #cbd6e4;
+    }
+
+    #mi-admin .mi-place-day-card {
+      flex: 0 0 118px;
+      min-height: 132px;
+      padding: 10px 12px;
+      border-right: 1px solid #edf1f6;
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-admin .mi-place-day-card strong {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 13px;
+      font-weight: 820;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-place-day-card.is-sat strong {
+      color: #1d63d8;
+    }
+
+    #mi-admin .mi-place-day-card.is-sun strong {
+      color: #d92323;
+    }
+
+    #mi-admin .mi-place-day-rank {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      font-weight: 850;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-place-day-metrics {
+      display: grid;
+      gap: 3px;
+    }
+
+    #mi-admin .mi-place-day-metrics span {
+      display: flex;
+      justify-content: space-between;
+      gap: 7px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-place-day-metrics em {
+      color: #7b8798;
+      font-style: normal;
+    }
+
+    #mi-admin .mi-place-day-metrics b {
+      color: #536174;
+      font-weight: 820;
+    }
+
     #mi-admin .mi-keyword-market {
       margin-bottom: 16px;
       padding: 22px;
@@ -9330,18 +9409,60 @@
         return '<a class="mi-rank-product-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</a>';
       }
 
+      function placeSnapshotMetric(snapshot, keys, fallback) {
+        var metrics = (snapshot && snapshot.place && snapshot.place.metrics) || {};
+        for (var index = 0; index < keys.length; index += 1) {
+          var raw = metrics[keys[index]];
+          var number = Number(String(raw === undefined || raw === null ? "" : raw).replace(/[^\d.-]/g, ""));
+          if (Number.isFinite(number) && number >= 0) return Math.round(number);
+        }
+        var fallbackNumber = Number(fallback);
+        return Number.isFinite(fallbackNumber) && fallbackNumber >= 0 ? Math.round(fallbackNumber) : null;
+      }
+
+      function renderPlaceDayMetric(label, value, suffix) {
+        var text = value === null || value === undefined ? "-" : formatNumber(value) + suffix;
+        return '<span><em>' + escapeHtml(label) + '</em><b>' + escapeHtml(text) + '</b></span>';
+      }
+
+      function groupPlaceSnapshotsByDay(snapshots) {
+        var grouped = {};
+        (snapshots || []).forEach(function (snapshot) {
+          if (!snapshot || !snapshot.checkedAt) return;
+          var date = new Date(snapshot.checkedAt);
+          if (Number.isNaN(date.getTime())) return;
+          var key = rankDateKey(date);
+          if (!grouped[key] || new Date(grouped[key].snapshot.checkedAt).getTime() < date.getTime()) {
+            grouped[key] = { date: date, snapshot: snapshot };
+          }
+        });
+        return grouped;
+      }
+
       function renderPlaceTrackerDailyBoard(tracker) {
-        var grouped = groupRankSnapshotsByDay(tracker.snapshots || []);
+        var grouped = groupPlaceSnapshotsByDay(tracker.snapshots || []);
         var keys = Object.keys(grouped).sort(function (a, b) {
           return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
         }).slice(0, 30);
         if (!keys.length) {
           return '<div class="mi-rank-state">첫 플레이스 순위 확인 후 이 장소만의 일별 기록판이 생성됩니다.</div>';
         }
-        return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
+        return '<div class="mi-place-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
-          return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
-            '</strong><div class="mi-rank-day-slots">' + renderRankSlot("PM", day.pm) + renderRankSlot("AM", day.am) + '</div></div>';
+          var snapshot = day.snapshot || {};
+          var rank = snapshot.rank ? rankText(snapshot.rank) : "-";
+          var blogCount = placeSnapshotMetric(snapshot, ["blogCount", "blog_count"], null);
+          var visitReviewCount = placeSnapshotMetric(snapshot, ["visitReviewCount", "visit_review_count", "reviewCount", "review_count"], null);
+          var monthlySearchCount = placeSnapshotMetric(snapshot, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume"], null);
+          var businessCount = placeSnapshotMetric(snapshot, ["businessCount", "business_count", "placeCount", "place_count"], snapshot.total);
+          return '<div class="mi-place-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
+            '</strong><b class="mi-place-day-rank">' + escapeHtml(rank) +
+            '</b><div class="mi-place-day-metrics">' +
+            renderPlaceDayMetric("블", blogCount, "개") +
+            renderPlaceDayMetric("방", visitReviewCount, "개") +
+            renderPlaceDayMetric("월", monthlySearchCount, "회") +
+            renderPlaceDayMetric("업체", businessCount, "개") +
+            '</div></div>';
         }).join("") + '</div>';
       }
 

@@ -83,18 +83,32 @@ tools/naver-place-rank-collector
 ```
 
 5. `Runtime` 또는 `Environment`는 `Docker`로 선택합니다.
-6. `Environment Variables`에 아래 값을 넣습니다.
+6. `Advanced` 또는 Docker 세부 설정은 아래처럼 둡니다.
+
+```txt
+Docker Build Context Directory=비워두기 또는 .
+Dockerfile Path=Dockerfile
+Docker Command=비워두기
+Health Check Path=/health
+```
+
+중요: `Root Directory`에 이미 `tools/naver-place-rank-collector`를 넣었으면
+`Docker Build Context Directory`나 `Dockerfile Path`에 같은 경로를 다시 넣지 않습니다.
+같은 경로를 한 번 더 넣으면 Render가
+`tools/naver-place-rank-collector/tools/naver-place-rank-collector`처럼 중복 경로를 찾다가 배포가 실패합니다.
+
+7. `Environment Variables`에 아래 값을 넣습니다.
 
 ```txt
 HOST=0.0.0.0
 PLACE_RANK_COLLECTOR_SECRET=직접_정한_긴_비밀값
 NAVER_PLACE_PROVIDER_HEADLESS=true
-NAVER_PLACE_PROVIDER_MAX_SCROLLS=8
-NAVER_PLACE_PROVIDER_TIMEOUT_MS=30000
+NAVER_PLACE_PROVIDER_MAX_SCROLLS=24
+NAVER_PLACE_PROVIDER_TIMEOUT_MS=45000
 ```
 
-7. 배포가 끝나면 Render 서비스 URL을 복사합니다.
-8. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.
+8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
+9. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.
 
 예:
 

@@ -5292,6 +5292,7 @@
           <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 <small>네이버</small></a>
           <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">네이버 상품 순위 <small>조회</small></a>
           <a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위 <small>추적</small></a>
+          <a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">네이버 플레이스 순위 <small>추적</small></a>
           <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리 <small>광고주</small></a>
         </div>
@@ -6307,6 +6308,49 @@
                 <p class="mi-rank-filter-help">전체 그룹은 모든 추적을 보여주고, 그룹을 선택하면 해당 그룹만 정리해서 볼 수 있습니다.</p>
                 <div data-rank-history>
                   <div class="mi-rank-state">추적 등록 후 상품별 일별 오가닉 순위판이 생성됩니다.</div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="mi-view" data-mi-admin-view="naver-place-rank-tracking" id="mi-admin-naver-place-rank-tracking">
+          <header class="mi-head">
+            <div>
+              <span class="mi-kicker">네이버 플레이스 순위</span>
+              <h1>플레이스 순위를 상품 순위와 분리해 관리합니다.</h1>
+              <p>키워드와 네이버 플레이스 URL 또는 상호명을 등록하면 운영팀 화면에서도 최근 30일 순위 흐름을 확인합니다.</p>
+            </div>
+            <span class="mi-badge">관리자 확인용</span>
+          </header>
+
+          <article class="mi-card mi-card-pad mi-rank-card mi-place-rank-card" data-place-rank-card>
+            <div class="mi-card-head">
+              <div>
+                <span class="mi-kicker">네이버 플레이스</span>
+                <h2>플레이스 전용 순위판을 생성합니다.</h2>
+                <p>상품 순위 데이터와 섞지 않고 장소 기준으로만 기록합니다.</p>
+              </div>
+              <span class="mi-period">30일 기록</span>
+            </div>
+            <div class="mi-rank-form is-tracking">
+              <input class="mi-input" data-place-rank-keyword aria-label="플레이스 순위 추적 키워드" placeholder="키워드" />
+              <input class="mi-input" data-place-rank-url aria-label="네이버 플레이스 URL" placeholder="네이버 플레이스 URL 붙여넣기" />
+              <input class="mi-input" data-place-rank-name aria-label="상호명" placeholder="상호명 선택 입력" />
+              <select class="mi-input" data-place-rank-max aria-label="조회 범위">
+                <option value="50">50위</option>
+                <option value="100">100위</option>
+                <option value="300" selected>300위</option>
+                <option value="500">500위</option>
+              </select>
+              <button class="mi-button" type="button" data-place-rank-run>순위 추적</button>
+            </div>
+            <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 네이버 플레이스 URL 또는 상호명을 입력하면 전용 30일 순위판이 생성됩니다.</p>
+            <div class="mi-rank-grid">
+              <div class="mi-rank-panel mi-rank-history">
+                <h3>플레이스별 일별 순위</h3>
+                <div data-place-rank-history>
+                  <div class="mi-rank-state">추적 등록 후 플레이스별 일별 순위판이 생성됩니다.</div>
                 </div>
               </div>
             </div>
@@ -9011,6 +9055,13 @@
         return "http://127.0.0.1:8790/api/naver-rank-trackers";
       }
 
+      function getPlaceRankTrackerApiUrl() {
+        if (window.MI_NAVER_PLACE_RANK_TRACKERS_API_URL) return window.MI_NAVER_PLACE_RANK_TRACKERS_API_URL;
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-place-rank-trackers";
+        return "http://127.0.0.1:8790/api/naver-place-rank-trackers";
+      }
+
       function getMetaAdsApiUrl() {
         if (window.MI_META_ADS_API_URL) return window.MI_META_ADS_API_URL;
         var host = window.location && window.location.hostname;
@@ -9244,6 +9295,70 @@
           return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
             '</strong><div class="mi-rank-day-slots">' + renderRankSlot("PM", day.pm) + renderRankSlot("AM", day.am) + '</div></div>';
         }).join("") + '</div>';
+      }
+
+      function placeTrackerTitle(tracker) {
+        return tracker.placeName || tracker.placeId || tracker.keyword || "추적 플레이스";
+      }
+
+      function placeTrackerMeta(tracker) {
+        var parts = [];
+        if (tracker.placeId) parts.push("플레이스ID : " + tracker.placeId);
+        if (tracker.maxRank) parts.push("조회범위 : " + formatNumber(tracker.maxRank) + "위");
+        return parts.length ? parts.join(" · ") : "플레이스 정보 확인 대기";
+      }
+
+      function placeTrackerUrl(tracker) {
+        var raw = tracker.placeUrl || tracker.place_url || "";
+        if (!raw && tracker.placeId) raw = "https://map.naver.com/p/entry/place/" + tracker.placeId;
+        if (!raw) return "";
+        var url = String(raw).trim();
+        if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+        try {
+          var parsed = new URL(url);
+          if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+        } catch (error) {
+          return "";
+        }
+        return "";
+      }
+
+      function renderPlaceTitle(tracker) {
+        var title = placeTrackerTitle(tracker);
+        var url = placeTrackerUrl(tracker);
+        if (!url) return '<span class="mi-rank-product-title" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</span>';
+        return '<a class="mi-rank-product-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</a>';
+      }
+
+      function renderPlaceTrackerDailyBoard(tracker) {
+        var grouped = groupRankSnapshotsByDay(tracker.snapshots || []);
+        var keys = Object.keys(grouped).sort(function (a, b) {
+          return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
+        }).slice(0, 30);
+        if (!keys.length) {
+          return '<div class="mi-rank-state">첫 플레이스 순위 확인 후 이 장소만의 일별 기록판이 생성됩니다.</div>';
+        }
+        return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
+          var day = grouped[key];
+          return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
+            '</strong><div class="mi-rank-day-slots">' + renderRankSlot("PM", day.pm) + renderRankSlot("AM", day.am) + '</div></div>';
+        }).join("") + '</div>';
+      }
+
+      function placeTrackerActionNote(tracker) {
+        var message = String(tracker.lastMessage || tracker.lastError || "");
+        var latest = rankTrackerLatestRank(tracker);
+        if (/소스|연결|환경변수|provider_not_configured/i.test(message)) {
+          return { label: "소스 연결 대기", className: "is-warn" };
+        }
+        if (tracker.status === "failed" || /실패|오류/.test(message)) {
+          return { label: "연결 상태 확인", className: "is-error" };
+        }
+        if (!latest) {
+          return { label: "범위 내 미노출", className: "is-error" };
+        }
+        if (latest <= 10) return { label: "상위권 유지", className: "is-ok" };
+        return { label: "정상 추적", className: "is-ok" };
       }
 
       function rankTrackerRankValue(value) {
@@ -11305,9 +11420,212 @@
           runKeywordLookup();
         });
       }
+
+      function initPlaceRankTracking(linkedKeywordInput) {
+        var card = root.querySelector("[data-place-rank-card]");
+        if (!card) return;
+        var placeKeyword = card.querySelector("[data-place-rank-keyword]");
+        var placeUrl = card.querySelector("[data-place-rank-url]");
+        var placeName = card.querySelector("[data-place-rank-name]");
+        var placeMax = card.querySelector("[data-place-rank-max]");
+        var placeRun = card.querySelector("[data-place-rank-run]");
+        var placeStatus = card.querySelector("[data-place-rank-status]");
+        var placeHistory = card.querySelector("[data-place-rank-history]");
+        if (!placeKeyword || !placeRun || !placeHistory) return;
+        var placeTrackers = [];
+
+        async function requestPlaceTrackers(method, body) {
+          var agencyCode = rankAgencyCode();
+          if (!agencyCode) {
+            return { ok: false, message: "관리자 코드 확인 후 플레이스 순위 추적을 사용할 수 있습니다." };
+          }
+          var adminCode = getAdminCode();
+          var options = {
+            method: method,
+            cache: "no-store",
+            headers: {
+              "x-demo-admin-code": adminCode,
+              "x-mi-agency-code": agencyCode,
+              "x-mi-rank-access-code": adminCode
+            }
+          };
+          if (body) {
+            options.headers["content-type"] = "application/json";
+            options.body = JSON.stringify(Object.assign({
+              agencyCode: agencyCode,
+              adminCode: adminCode
+            }, body));
+          }
+          var url = getPlaceRankTrackerApiUrl();
+          if (method === "GET") {
+            var placeListLimit = canManageOwnerCodes() && String(agencyCode || "").trim().toLowerCase() === "mml93-a01" ? "500" : "50";
+            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: placeListLimit }).toString();
+          }
+          var response = await fetch(url, options);
+          var payload = await response.json().catch(function () { return null; });
+          if (!payload) payload = { ok: false, message: "플레이스 순위 추적 응답을 확인할 수 없습니다." };
+          if (!response.ok && payload.ok !== false) payload.ok = false;
+          return payload;
+        }
+
+        function renderPlaceTrackerCard(tracker) {
+          var latest = rankTrackerLatestRank(tracker);
+          var best = rankTrackerRankValue(tracker.bestRank);
+          var average = rankTrackerAverageRank(tracker, 7);
+          var note = placeTrackerActionNote(tracker);
+          var message = tracker.lastMessage || tracker.lastError || (latest ? "네이버 플레이스 " + rankText(latest) + "로 확인되었습니다." : "플레이스 순위 확인 대기");
+          return '<section class="mi-rank-tracker-card mi-place-rank-item" data-place-rank-tracker-id="' + escapeHtml(tracker.id) +
+            '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary">' +
+            renderRankKeywordName(tracker.keyword) + '<span class="mi-rank-product-info">' + escapeHtml(placeTrackerMeta(tracker)) +
+            '</span>' + renderPlaceTitle(tracker) + '</div></div><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
+            escapeHtml(rankText(latest)) + '</span><span class="mi-rank-pill">최고 ' + escapeHtml(rankText(best)) +
+            '</span><button class="mi-link-button" type="button" data-place-rank-refresh="' + escapeHtml(tracker.id) +
+            '">갱신</button><button class="mi-link-button is-danger" type="button" data-place-rank-delete="' +
+            escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="mi-rank-insight-pill' +
+            rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) +
+            '</span><span class="mi-rank-insight-pill ' + escapeHtml(note.className) + '">' + escapeHtml(note.label) +
+            '</span><span>7일 평균 ' + escapeHtml(average ? rankText(average) : "-") +
+            '</span><span>최근 ' + escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) +
+            '</span><span>다음 ' + escapeHtml(formatRankRemain(tracker.nextCheckAt)) +
+            '</span><span class="mi-rank-ops-message" title="' + escapeHtml(message) + '">메시지 ' + escapeHtml(message) +
+            '</span></div>' + renderPlaceTrackerDailyBoard(tracker) + '</section>';
+        }
+
+        function renderPlaceHistory(node, trackers) {
+          var list = Array.isArray(trackers) ? trackers : [];
+          if (!list.length) {
+            node.innerHTML = '<div class="mi-rank-state">플레이스 추적을 등록하면 상품 순위와 분리된 전용 30일 기록판이 생성됩니다.</div>';
+            return;
+          }
+          node.innerHTML = list.map(renderPlaceTrackerCard).join("");
+        }
+
+        async function loadPlaceTrackers(silent) {
+          var payload = await requestPlaceTrackers("GET");
+          if (payload.trackers) placeTrackers = payload.trackers;
+          renderPlaceHistory(placeHistory, placeTrackers);
+          if (!silent) {
+            var message = payload.message || (placeTrackers.length ? "등록된 플레이스 순위 추적을 불러왔습니다." : "등록된 플레이스 추적이 없습니다.");
+            if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
+            if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
+            setStatus(placeStatus, message, payload.ok === false || payload.configured === false ? "is-warn" : "is-ok");
+          }
+        }
+
+        function syncPlaceKeywordFromMain() {
+          if (!linkedKeywordInput || !placeKeyword) return;
+          var next = parseKeywordInput(linkedKeywordInput.value)[0] || "";
+          if (next && (!placeKeyword.value || placeKeyword.getAttribute("data-synced-keyword") === "true")) {
+            placeKeyword.value = next;
+            placeKeyword.setAttribute("data-synced-keyword", "true");
+          }
+        }
+
+        placeKeyword.setAttribute("data-synced-keyword", "true");
+        syncPlaceKeywordFromMain();
+        loadPlaceTrackers(false).catch(function () {
+          renderPlaceHistory(placeHistory, []);
+          setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+        });
+        window.addEventListener("mi:rank-auth-ready", function () {
+          loadPlaceTrackers(false).catch(function () {
+            setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+          });
+        });
+
+        if (linkedKeywordInput) {
+          linkedKeywordInput.addEventListener("input", syncPlaceKeywordFromMain);
+        }
+        placeKeyword.addEventListener("input", function () {
+          placeKeyword.setAttribute("data-synced-keyword", "false");
+        });
+
+        placeRun.addEventListener("click", async function () {
+          var keyword = (placeKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
+          var targetUrl = placeUrl ? placeUrl.value.trim() : "";
+          var targetName = placeName ? placeName.value.trim() : "";
+          if (!keyword) {
+            setStatus(placeStatus, "플레이스 기준 키워드를 입력해주세요.", "is-warn");
+            return;
+          }
+          if (!targetUrl && !targetName) {
+            setStatus(placeStatus, "네이버 플레이스 URL 또는 상호명을 입력해주세요.", "is-warn");
+            return;
+          }
+          placeRun.disabled = true;
+          setStatus(placeStatus, "플레이스 30일 순위 추적을 등록하고 첫 상태를 확인 중입니다.", "");
+          try {
+            var payload = await requestPlaceTrackers("POST", {
+              action: "create",
+              keyword: keyword,
+              placeUrl: targetUrl,
+              placeName: targetName,
+              maxRank: placeMax ? placeMax.value : "300"
+            });
+            if (payload.tracker) {
+              placeTrackers = [payload.tracker].concat(placeTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));
+            }
+            renderPlaceHistory(placeHistory, placeTrackers);
+            setStatus(placeStatus, payload.message || "플레이스 순위 추적 등록 완료", payload.ok ? "is-ok" : "is-warn");
+            await loadPlaceTrackers(true);
+          } catch (error) {
+            setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+          } finally {
+            placeRun.disabled = false;
+          }
+        });
+
+        card.addEventListener("click", async function (event) {
+          var refreshButton = event.target.closest("[data-place-rank-refresh]");
+          if (refreshButton) {
+            refreshButton.disabled = true;
+            setStatus(placeStatus, "선택한 플레이스 순위를 수동 갱신 중입니다.", "");
+            try {
+              var payload = await requestPlaceTrackers("POST", {
+                action: "check",
+                trackerId: refreshButton.getAttribute("data-place-rank-refresh")
+              });
+              if (payload.tracker) {
+                placeTrackers = [payload.tracker].concat(placeTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));
+              }
+              renderPlaceHistory(placeHistory, placeTrackers);
+              setStatus(placeStatus, payload.message || "플레이스 순위 수동 갱신 완료", payload.ok ? "is-ok" : "is-warn");
+              await loadPlaceTrackers(true);
+            } catch (error) {
+              setStatus(placeStatus, "플레이스 순위 수동 갱신 연결을 확인해주세요.", "is-warn");
+            } finally {
+              refreshButton.disabled = false;
+            }
+            return;
+          }
+
+          var deleteButton = event.target.closest("[data-place-rank-delete]");
+          if (!deleteButton) return;
+          var trackerId = deleteButton.getAttribute("data-place-rank-delete");
+          if (!window.confirm("이 플레이스 추적과 기록을 삭제하시겠습니까?")) return;
+          deleteButton.disabled = true;
+          setStatus(placeStatus, "선택한 플레이스 추적 항목을 삭제 중입니다.", "");
+          try {
+            var payload = await requestPlaceTrackers("POST", {
+              action: "delete",
+              trackerId: trackerId
+            });
+            placeTrackers = placeTrackers.filter(function (item) { return item.id !== trackerId; });
+            renderPlaceHistory(placeHistory, placeTrackers);
+            setStatus(placeStatus, payload.message || "플레이스 추적 삭제 완료", payload.ok ? "is-ok" : "is-warn");
+            await loadPlaceTrackers(true);
+          } catch (error) {
+            setStatus(placeStatus, "플레이스 추적 삭제 연결을 확인해주세요.", "is-warn");
+          } finally {
+            deleteButton.disabled = false;
+          }
+        });
+      }
+
       initSeoCheck(keywordInput);
       initRankCheck(keywordInput);
       initRankTracking(keywordInput);
+      initPlaceRankTracking(keywordInput);
       initMetaAdsTool();
 
       function csvValue(value) {

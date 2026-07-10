@@ -3,8 +3,9 @@ services:
     name: moment-place-rank-collector
     runtime: docker
     plan: free
-    dockerfilePath: tools/naver-place-rank-collector/Dockerfile
-    dockerContext: tools/naver-place-rank-collector
+    rootDir: tools/naver-place-rank-collector
+    dockerfilePath: Dockerfile
+    dockerContext: .
     healthCheckPath: /health
     envVars:
       - key: HOST
@@ -12,8 +13,8 @@ services:
       - key: NAVER_PLACE_PROVIDER_HEADLESS
         value: "true"
       - key: NAVER_PLACE_PROVIDER_MAX_SCROLLS
-        value: "24"
+        value: "90"
       - key: NAVER_PLACE_PROVIDER_TIMEOUT_MS
-        value: "45000"
+        value: "90000"
       - key: PLACE_RANK_COLLECTOR_SECRET
         sync: false

@@ -1,6 +1,6 @@
 const DEFAULT_MAX_RANK = 300;
-const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 45000);
-const DEFAULT_MAX_SCROLLS = Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 24);
+const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000);
+const DEFAULT_MAX_SCROLLS = Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90);
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
@@ -42,29 +42,37 @@ function clampMaxRank(value) {
 }
 
 function extractPlaceId(value) {
+  return extractPlaceIds(value)[0] || "";
+}
+
+function extractPlaceIds(value) {
   const text = normalizeText(value);
-  if (!text) return "";
+  if (!text) return [];
+  const ids = new Set();
   const direct = text.match(/^\d{5,}$/);
-  if (direct) return direct[0];
+  if (direct) ids.add(direct[0]);
 
   const decoded = decodeURIComponentSafe(text);
   const patterns = [
-    /\/entry\/place\/(\d+)/i,
-    /\/place\/(\d+)/i,
-    /\/(?:restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i,
-    /[?&]placeId=(\d+)/i,
-    /[?&]id=(\d+)/i,
-    /place%2F(\d+)/i,
-    /entry%2Fplace%2F(\d+)/i,
+    /\/entry\/place\/(\d+)/gi,
+    /\/place\/(\d+)/gi,
+    /\/(?:restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/gi,
+    /[?&]placeId=(\d+)/gi,
+    /[?&]id=(\d+)/gi,
+    /place%2F(\d+)/gi,
+    /entry%2Fplace%2F(\d+)/gi,
+    /(?:placeId|place_id|businessId|business_id)["'=:\s]+(\d{5,})/gi,
   ];
 
   for (const source of [text, decoded]) {
     for (const pattern of patterns) {
-      const match = source.match(pattern);
-      if (match) return match[1];
+      pattern.lastIndex = 0;
+      for (const match of source.matchAll(pattern)) {
+        if (match[1]) ids.add(match[1]);
+      }
     }
   }
-  return "";
+  return Array.from(ids);
 }
 
 function decodeURIComponentSafe(value) {
@@ -118,9 +126,9 @@ function isLikelyPlaceName(value) {
 }
 
 function candidateMatchesTarget(candidate, target) {
-  const targetId = normalizeText(target.placeId || extractPlaceId(target.placeUrl));
-  const candidateId = normalizeText(candidate.id || extractPlaceId(candidate.url));
-  if (targetId && candidateId && targetId === candidateId) return true;
+  const targetIds = collectTargetIds(target);
+  const candidateIds = collectCandidateIds(candidate);
+  if (targetIds.length && candidateIds.some((id) => targetIds.includes(id))) return true;
 
   const targetName = normalizeComparable(target.placeName);
   const candidateName = normalizeComparable(candidate.name);
@@ -137,6 +145,52 @@ function candidateMatchesTarget(candidate, target) {
   return overlap >= 0.72 && longName.includes(shortName);
 }
 
+function collectTargetIds(target = {}) {
+  return uniqueValues([
+    target.placeId,
+    ...(Array.isArray(target.placeIds) ? target.placeIds : []),
+    ...extractPlaceIds(target.placeUrl),
+    ...extractPlaceIds(target.url),
+    ...extractPlaceIds(target.text),
+  ]);
+}
+
+function collectCandidateIds(candidate = {}) {
+  return uniqueValues([
+    candidate.id,
+    candidate.placeId,
+    ...(Array.isArray(candidate.placeIds) ? candidate.placeIds : []),
+    ...extractPlaceIds(candidate.url),
+    ...extractPlaceIds(candidate.text),
+    ...extractPlaceIds(candidate.aria),
+    ...extractPlaceIds(candidate.html),
+    ...(Array.isArray(candidate.hrefs) ? candidate.hrefs.flatMap((href) => extractPlaceIds(href)) : []),
+  ]);
+}
+
+function getCandidatePlaceUrl(candidate = {}) {
+  return (
+    candidate.url ||
+    (Array.isArray(candidate.hrefs)
+      ? candidate.hrefs.find((href) =>
+          /(?:m\.place\.naver\.com|pcmap\.place\.naver\.com|map\.naver\.com|\/(?:entry\/place|place|restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\/)/i.test(href)
+        )
+      : "") ||
+    ""
+  );
+}
+
+function uniqueValues(values) {
+  return Array.from(
+    new Set(
+      values
+        .flat()
+        .map((value) => normalizeText(value))
+        .filter(Boolean)
+    )
+  );
+}
+
 async function loadPlaywright() {
   try {
     return await import("playwright");
@@ -150,6 +204,7 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
   const result = {
     url: originalUrl,
     placeId: extractPlaceId(originalUrl),
+    placeIds: extractPlaceIds(originalUrl),
     placeName: "",
   };
 
@@ -161,17 +216,22 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
     await page.waitForTimeout(2500);
 
     result.url = normalizeText(page.url()) || originalUrl;
-    result.placeId = result.placeId || extractPlaceId(result.url);
+    result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(result.url)]);
+    result.placeId = result.placeId || result.placeIds[0] || "";
 
     for (const frame of page.frames()) {
       const frameUrl = frame.url();
-      result.placeId = result.placeId || extractPlaceId(frameUrl);
       const detailMatch = frameUrl.match(DETAIL_FRAME_PATTERN);
-      if (detailMatch) result.placeId = result.placeId || detailMatch[1];
+      result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(frameUrl), detailMatch?.[1]]);
+      result.placeId = result.placeId || result.placeIds[0] || "";
     }
 
     const pageTitle = cleanPlaceTitle(await page.title().catch(() => ""));
     const metaTitle = cleanPlaceTitle(await page.locator("meta[property='og:title']").getAttribute("content").catch(() => ""));
+    const metaUrl = await page.locator("meta[property='og:url']").getAttribute("content").catch(() => "");
+    const canonicalUrl = await page.locator("link[rel='canonical']").getAttribute("href").catch(() => "");
+    result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(metaUrl), ...extractPlaceIds(canonicalUrl)]);
+    result.placeId = result.placeId || result.placeIds[0] || "";
     const frameTitles = [];
     for (const frame of page.frames()) {
       if (!DETAIL_FRAME_PATTERN.test(frame.url())) continue;
@@ -210,6 +270,9 @@ async function extractVisibleRows(frame) {
         .map((node) => (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim())
         .filter(Boolean);
       const anchor = row.querySelector("a[href*='/place/'], a[href*='/restaurant/'], a[href*='/entry/place/']");
+      const hrefs = Array.from(row.querySelectorAll("a[href]"))
+        .map((node) => node.href || node.getAttribute("href") || "")
+        .filter(Boolean);
       const adLink = row.querySelector("a[href*='help.naver.com/support/alias/NSP/NSP_53']");
       const url = anchor?.href || anchor?.getAttribute("href") || "";
       const aria = row.getAttribute("aria-label") || "";
@@ -218,6 +281,8 @@ async function extractVisibleRows(frame) {
         text,
         aria,
         url,
+        hrefs,
+        html: (row.outerHTML || "").slice(0, 12000),
         isAd: Boolean(adLink) || /\b광고\b/.test(text),
         nameNodes: nameNodes.slice(0, 12),
       };
@@ -246,16 +311,21 @@ function appendCandidate(items, rawRow) {
   const name = rowNameFromRaw(rawRow);
   if (!isLikelyPlaceName(name)) return;
 
-  const id = extractPlaceId(rawRow.url || rawRow.text);
-  const key = id || normalizeComparable(name);
+  const placeIds = collectCandidateIds(rawRow);
+  const id = placeIds[0] || "";
+  const key = placeIds.length ? placeIds.join("|") : normalizeComparable(name + normalizeText(rawRow.text).slice(0, 80));
   if (!key || items.some((item) => item.key === key)) return;
 
   items.push({
     key,
     rank: items.length + 1,
     id,
+    placeIds,
     name,
     url: rawRow.url || "",
+    hrefs: Array.isArray(rawRow.hrefs) ? rawRow.hrefs : [],
+    aria: normalizeText(rawRow.aria),
+    html: rawRow.html || "",
     text: normalizeText(rawRow.text || rawRow.aria),
     isAd: false,
   });
@@ -315,8 +385,9 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank) {
 }
 
 async function findVerifiedMatchByClick(context, keyword, target, maxRank) {
-  const targetId = normalizeText(target.placeId || extractPlaceId(target.placeUrl));
-  if (!targetId) return null;
+  const targetIds = collectTargetIds(target);
+  const targetId = targetIds[0] || "";
+  if (!targetIds.length && !normalizeText(target.placeName)) return null;
 
   const page = await context.newPage();
   try {
@@ -343,14 +414,46 @@ async function findVerifiedMatchByClick(context, keyword, target, maxRank) {
         organicRank += 1;
         if (organicRank > maxRank) return null;
 
-        if (!candidateMatchesTarget({ name, text }, target)) continue;
-        await row.locator("a, button").first().click({ timeout: 3000 }).catch(() => row.click({ timeout: 3000 }));
+        const hrefs = await row.locator("a[href]").evaluateAll((nodes) =>
+          nodes.map((node) => node.href || node.getAttribute("href") || "").filter(Boolean)
+        ).catch(() => []);
+        const aria = await row.getAttribute("aria-label").catch(() => "");
+        const html = await row.evaluate((node) => (node.outerHTML || "").slice(0, 12000)).catch(() => "");
+        const candidate = {
+          name,
+          text,
+          aria,
+          hrefs,
+          html,
+          url: hrefs.find((href) => /\/(?:entry\/place|place|restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\//i.test(href)) || "",
+        };
+        const candidateIds = collectCandidateIds(candidate);
+        const shouldVerifyByClick =
+          candidateMatchesTarget(candidate, target) ||
+          (targetIds.length > 0 && candidateIds.length === 0) ||
+          (targetIds.length > 0 && getCandidatePlaceUrl(candidate));
+
+        if (!shouldVerifyByClick) continue;
+
+        const placeLink = row
+          .locator(
+            "a[href*='m.place.naver.com'], a[href*='pcmap.place.naver.com'], a[href*='/entry/place/'], a[href*='/place/'], a[href*='/restaurant/'], a[href*='/hospital/'], a[href*='/accommodation/'], a[href*='/hairshop/'], a[href*='/beauty/'], a[href*='/attraction/'], a[href*='/shopping/']"
+          )
+          .first();
+        const hasPlaceLink = (await placeLink.count().catch(() => 0)) > 0;
+        if (hasPlaceLink) {
+          await placeLink.click({ timeout: 3000 }).catch(() => row.click({ timeout: 3000 }));
+        } else {
+          await row.locator("a, button").first().click({ timeout: 3000 }).catch(() => row.click({ timeout: 3000 }));
+        }
         await page.waitForTimeout(1200);
         const urls = [page.url(), ...page.frames().map((item) => item.url())].join("\n");
-        if (extractPlaceId(urls) === targetId) {
+        const clickedIds = extractPlaceIds(urls);
+        if (!targetIds.length || clickedIds.some((id) => targetIds.includes(id))) {
           return {
             rank: organicRank,
-            id: targetId,
+            id: targetId || clickedIds[0] || "",
+            placeIds: uniqueValues([...targetIds, ...clickedIds]),
             name,
             url: page.url(),
             text,
@@ -373,10 +476,10 @@ async function findVerifiedMatchByClick(context, keyword, target, maxRank) {
 }
 
 function findMatch(candidates, target) {
-  const targetId = normalizeText(target.placeId || extractPlaceId(target.placeUrl));
+  const targetIds = collectTargetIds(target);
   return candidates.find((candidate) => {
-    const candidateId = normalizeText(candidate.id || extractPlaceId(candidate.url));
-    if (targetId && !candidateId) return false;
+    const candidateIds = collectCandidateIds(candidate);
+    if (targetIds.length && candidateIds.some((id) => targetIds.includes(id))) return true;
     return candidateMatchesTarget(candidate, target);
   }) || null;
 }
@@ -402,8 +505,15 @@ export async function lookupNaverPlaceRank(payload = {}) {
       userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
     });
 
-    const resolved = placeUrl ? await resolvePlaceIdentityWithBrowser(context, placeUrl) : { url: placeUrl, placeId: "", placeName: "" };
-    placeId = placeId || resolved.placeId;
+    const resolved = placeUrl ? await resolvePlaceIdentityWithBrowser(context, placeUrl) : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
+    const placeIds = uniqueValues([
+      placeId,
+      resolved.placeId,
+      ...(Array.isArray(resolved.placeIds) ? resolved.placeIds : []),
+      ...extractPlaceIds(placeUrl),
+      ...extractPlaceIds(resolved.url),
+    ]);
+    placeId = placeId || placeIds[0] || "";
     placeName = placeName || resolved.placeName;
 
     if (!placeId && !placeName) {
@@ -420,13 +530,15 @@ export async function lookupNaverPlaceRank(payload = {}) {
     const candidates = await collectCandidatesFromNaverMap(context, keyword, maxRank);
     let matched = findMatch(candidates, {
       placeId,
+      placeIds,
       placeUrl: resolved.url || placeUrl,
       placeName,
     });
 
-    if (!matched && placeId && placeName) {
+    if (!matched && (placeIds.length || placeName)) {
       matched = await findVerifiedMatchByClick(context, keyword, {
         placeId,
+        placeIds,
         placeUrl: resolved.url || placeUrl,
         placeName,
       }, maxRank);

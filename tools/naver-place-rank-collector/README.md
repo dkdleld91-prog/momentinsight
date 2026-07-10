@@ -75,17 +75,18 @@ curl -X POST "http://127.0.0.1:8797/rank/naver-place" \
 현재 설정은 저장소 루트에서 Dockerfile과 build context를 직접 지정합니다.
 
 ```yaml
-dockerfilePath: tools/naver-place-rank-collector/Dockerfile
-dockerContext: tools/naver-place-rank-collector
+rootDir: tools/naver-place-rank-collector
+dockerfilePath: Dockerfile
+dockerContext: .
 ```
 
 Render 화면에서 수동으로 만든 서비스라면 아래처럼 맞춥니다.
 
 ```txt
-Root Directory=비워두기
+Root Directory=tools/naver-place-rank-collector
 Runtime 또는 Environment=Docker
-Docker Build Context Directory=tools/naver-place-rank-collector
-Dockerfile Path=tools/naver-place-rank-collector/Dockerfile
+Docker Build Context Directory=.
+Dockerfile Path=Dockerfile
 Docker Command=비워두기
 Health Check Path=/health
 ```
@@ -101,8 +102,8 @@ Health Check Path=/health
 HOST=0.0.0.0
 PLACE_RANK_COLLECTOR_SECRET=직접_정한_긴_비밀값
 NAVER_PLACE_PROVIDER_HEADLESS=true
-NAVER_PLACE_PROVIDER_MAX_SCROLLS=24
-NAVER_PLACE_PROVIDER_TIMEOUT_MS=45000
+NAVER_PLACE_PROVIDER_MAX_SCROLLS=90
+NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 ```
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
@@ -121,7 +122,7 @@ https://moment-place-rank-collector.onrender.com/health
 ```txt
 NAVER_PLACE_RANK_API_URL=https://your-collector.example.com/rank/naver-place
 NAVER_PLACE_RANK_API_KEY=PLACE_RANK_COLLECTOR_SECRET와 동일한 값
-NAVER_PLACE_RANK_TIMEOUT_MS=45000
+NAVER_PLACE_RANK_TIMEOUT_MS=90000
 ```
 
 예를 들어 Render URL이 `https://moment-place-rank-collector.onrender.com`이면 Vercel에는 아래처럼 넣습니다.

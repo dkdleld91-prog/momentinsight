@@ -102,9 +102,15 @@ Health Check Path=/health
 HOST=0.0.0.0
 PLACE_RANK_COLLECTOR_SECRET=직접_정한_긴_비밀값
 NAVER_PLACE_PROVIDER_HEADLESS=true
+NAVER_PLACE_PROVIDER_DEEP_SCAN=false
 NAVER_PLACE_PROVIDER_MAX_SCROLLS=90
 NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 ```
+
+Render 무료 인스턴스는 브라우저 스크롤 기반의 300위 전체 조회가 요청 제한을 넘길 수 있습니다.
+`NAVER_PLACE_PROVIDER_DEEP_SCAN=false`에서는 네이버 지도 내부 검색 응답의 실제 상위 20개를 우선 확인해
+대부분의 요청을 수 초 안에 끝내고, 응답의 `checkedCount`에도 실제 확인한 범위만 기록합니다.
+유료 인스턴스나 장시간 작업 큐를 붙인 뒤에만 `true`로 변경합니다.
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
 9. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.
@@ -136,5 +142,6 @@ NAVER_PLACE_RANK_TIMEOUT_MS=45000
 ## 주의
 
 - 이 서버는 임의 순위값을 만들지 않습니다. 네이버 화면에서 확인하지 못하면 `matched:false`를 반환합니다.
+- `checkedCount`는 요청한 최대 순위가 아니라 실제로 확인한 오가닉 결과 수입니다.
 - 네이버 화면 구조 변경, CAPTCHA, 접속 차단이 생기면 수집 실패가 발생할 수 있습니다.
 - 장기 운영에서는 이 서버를 직접 운영하거나, 같은 응답 계약을 제공하는 유료 SERP/플레이스 데이터 API로 교체하는 방식이 안정적입니다.

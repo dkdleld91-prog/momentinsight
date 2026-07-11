@@ -6,6 +6,9 @@ const OVERALL_TIMEOUT_MS = Math.max(
   Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 75000), 80000)
 );
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
+const DEEP_SCAN = String(
+  process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || (process.env.RENDER ? "false" : "true")
+) === "true";
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
@@ -439,7 +442,25 @@ function buildPlaceListUrl(keyword, maxRank, searchCoord = "") {
   return url.toString();
 }
 
-async function resolveMapSearchCoord(page, keyword) {
+function candidateFromAllSearch(item, index) {
+  const id = normalizeText(item?.id || item?.placeId || item?.businessId);
+  const name = normalizeText(item?.name || item?.display || item?.title);
+  if (!id || !name) return null;
+  if (item?.adId || item?.adClickLog || item?.adDescription || item?.isAd === true) return null;
+
+  return {
+    rank: Number(item?.rank || index + 1),
+    id,
+    placeIds: [id],
+    name,
+    url: `https://map.naver.com/p/entry/place/${id}`,
+    visitorReviewCount: normalizeText(item?.placeReviewCount || item?.visitorReviewCount),
+    blogReviewCount: normalizeText(item?.reviewCount || item?.blogCafeReviewCount),
+    isAd: false,
+  };
+}
+
+async function resolveMapSearch(page, keyword) {
   const responsePromise = page
     .waitForResponse((response) => response.url().includes("/p/api/search/allSearch"), { timeout: 15000 })
     .catch(() => null);
@@ -448,11 +469,20 @@ async function resolveMapSearchCoord(page, keyword) {
     timeout: Math.min(DEFAULT_TIMEOUT_MS, 30000),
   });
   const response = await responsePromise;
-  if (!response) return "";
+  if (!response) return { searchCoord: "", candidates: [], total: 0 };
   try {
-    return new URL(response.url()).searchParams.get("searchCoord") || "";
+    const payload = await response.json();
+    const placeResult = payload?.result?.place;
+    const candidates = (Array.isArray(placeResult?.list) ? placeResult.list : [])
+      .map(candidateFromAllSearch)
+      .filter(Boolean);
+    return {
+      searchCoord: new URL(response.url()).searchParams.get("searchCoord") || "",
+      candidates,
+      total: Number(placeResult?.totalCount || candidates.length || 0),
+    };
   } catch {
-    return "";
+    return { searchCoord: "", candidates: [], total: 0 };
   }
 }
 
@@ -460,7 +490,12 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
   const page = await context.newPage();
   try {
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
-    const searchCoord = await resolveMapSearchCoord(page, keyword);
+    const initialSearch = await resolveMapSearch(page, keyword);
+    const initialCandidates = initialSearch.candidates.slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
+    if (target && findMatch(initialCandidates, target)) return initialCandidates;
+    if (!DEEP_SCAN && initialCandidates.length) return initialCandidates;
+
+    const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
       waitUntil: "domcontentloaded",
       timeout: DEFAULT_TIMEOUT_MS,

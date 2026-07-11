@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 11. 23:37:53
-- 기준 커밋: d46af18
-- 작업트리: M docs/08-work-spec-autosave.md /  M tools/naver-place-rank-collector/README.md /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs
+- 마지막 자동 저장: 2026. 07. 12. 00:15:29
+- 기준 커밋: 795e6c5
+- 작업트리: M tools/naver-place-rank-collector/src/naver-place-rank.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

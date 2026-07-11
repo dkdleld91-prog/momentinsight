@@ -681,7 +681,12 @@ export async function lookupNaverPlaceRank(payload = {}) {
         userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
       });
 
-      const resolved = placeUrl ? await resolvePlaceIdentityWithBrowser(context, placeUrl) : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
+      // Trackers persist the canonical place ID after the first resolution.
+      // Resolving the same short URL on every refresh adds a second browser
+      // navigation and can exhaust the hosted collector request budget.
+      const resolved = placeUrl && !placeId
+        ? await resolvePlaceIdentityWithBrowser(context, placeUrl)
+        : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
       const placeIds = uniqueValues([
         placeId,
         resolved.placeId,

@@ -4,7 +4,7 @@ import { lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
-const RELEASE = "2026-07-11-fast-list";
+const RELEASE = "2026-07-12-fast-id";
 
 function sendJson(response, body, status = 200) {
   response.writeHead(status, {

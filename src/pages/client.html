@@ -390,14 +390,20 @@
       font-size: 14px;
       font-weight: 850;
       cursor: pointer;
+      transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
     }
 
-    #mi-clean .mi-nav a.is-active,
-    #mi-clean .mi-mobile-nav a.is-active,
     #mi-clean .mi-nav a:hover,
     #mi-clean .mi-mobile-nav a:hover {
       color: var(--mi-navy);
-      background: var(--mi-gold-soft);
+      background: #f4f7fb;
+    }
+
+    #mi-clean .mi-nav a.is-active,
+    #mi-clean .mi-mobile-nav a.is-active {
+      color: var(--mi-navy);
+      background: #f1f5f9;
+      box-shadow: inset 3px 0 0 var(--mi-navy);
     }
 
     #mi-clean .mi-nav small {
@@ -1094,6 +1100,10 @@
 
     #mi-clean .mi-rank-form.is-tracking {
       grid-template-columns: minmax(150px, 0.8fr) minmax(320px, 1.9fr) 104px auto;
+    }
+
+    #mi-clean .mi-place-rank-card .mi-rank-form.is-tracking {
+      grid-template-columns: minmax(120px, 0.75fr) minmax(220px, 1.6fr) minmax(110px, 0.7fr) 96px auto;
     }
 
     #mi-clean .mi-rank-form .mi-button {
@@ -4089,6 +4099,25 @@
         justify-content: flex-start;
       }
 
+      #mi-clean .mi-place-rank-card .mi-rank-form.is-tracking,
+      #mi-clean .mi-rank-grid {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #mi-clean .mi-rank-panel {
+        min-width: 0;
+        overflow: hidden;
+        padding: 14px;
+      }
+
+      #mi-clean .mi-place-rank-item .mi-rank-track-row-head {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #mi-clean .mi-place-rank-item .mi-rank-row-actions {
+        justify-self: start;
+      }
+
       #mi-clean .mi-rank-group-combo {
         grid-template-columns: 1fr;
       }
@@ -4252,25 +4281,25 @@
 
       <nav class="mi-nav">
         <div class="mi-nav-group">
-          <p class="mi-nav-title">광고주 화면</p>
-          <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드 <small>요약</small></a>
-          <a href="#mi-sales" data-mi-screen="sales">매출 현황 <small>현재</small></a>
-          <a href="#mi-schedule" data-mi-screen="schedule">일정표 <small>공유</small></a>
+          <p class="mi-nav-title">성과</p>
+          <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
+          <a href="#mi-sales" data-mi-screen="sales">매출 현황</a>
+          <a href="#mi-schedule" data-mi-screen="schedule">일정표</a>
         </div>
 
         <div class="mi-nav-group">
           <p class="mi-nav-title">도구</p>
-          <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회 <small>마케팅</small></a>
-          <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위 <small>조회</small></a>
-          <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">네이버 30일 순위 <small>추적</small></a>
-          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">네이버 플레이스 순위 <small>추적</small></a>
+          <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
+          <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위</a>
+          <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">네이버 30일 순위</a>
+          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>
           <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
-          <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 <small>네이버</small></a>
+          <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인</a>
         </div>
 
         <div class="mi-nav-group">
           <p class="mi-nav-title">연동</p>
-          <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 코드 <small>연결</small></a>
+          <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 연결</a>
         </div>
       </nav>
 
@@ -4287,7 +4316,7 @@
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드</a>
         <a href="#mi-naver-rank" data-mi-screen="naver-rank">상품순위</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">30일순위</a>
-        <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">플레이스</a>
+        <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">플레이스 30일</a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
@@ -4798,22 +4827,22 @@
           </article>
         </section>
 
-        <section class="mi-view" id="mi-naver-place-rank-tracking" data-mi-view="naver-place-rank-tracking" aria-label="네이버 플레이스 30일 순위 추적 화면">
+        <section class="mi-view" id="mi-naver-place-rank-tracking" data-mi-view="naver-place-rank-tracking" aria-label="네이버 플레이스 30일 순위 화면">
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 플레이스 순위를 30일 기록합니다.</h1>
-              <p>플레이스 키워드와 장소 정보를 등록하면 상품 순위와 분리된 전용 기록판에서 최근 흐름만 정리합니다.</p>
+              <h1>네이버 플레이스 30일 순위</h1>
+              <p>핵심 키워드의 30일 순위 흐름을 확인합니다.</p>
             </div>
-            <span class="mi-badge">플레이스 추적</span>
+            <span class="mi-badge">30일 기록</span>
           </header>
 
           <article class="mi-card mi-card-pad mi-rank-card mi-place-rank-card" data-place-rank-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 플레이스</span>
-                <h2>플레이스 순위 추적을 상품 순위와 분리합니다.</h2>
-                <p>기존 네이버 검색 API 연결 시 상호명 기준으로 확인하며, 전문 순위 API 연결 시 확인 범위를 확장합니다.</p>
+                <span class="mi-kicker">순위 추적</span>
+                <h2>순위 추적 설정</h2>
+                <p>키워드와 장소를 등록해 일별 변화를 기록합니다.</p>
               </div>
               <span class="mi-period">30일 기록</span>
             </div>
@@ -4829,12 +4858,12 @@
               </select>
               <button class="mi-button" type="button" data-place-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 네이버 플레이스 URL 또는 상호명을 입력하면 전용 30일 순위판이 생성됩니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 플레이스 URL 또는 상호명을 입력하세요.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
-                <h3>플레이스별 일별 순위</h3>
+                <h3>30일 순위 기록</h3>
                 <div data-place-rank-history>
-                  <div class="mi-rank-state">추적 등록 후 플레이스별 일별 순위판이 생성됩니다.</div>
+                  <div class="mi-rank-state">등록 후 일별 순위 기록이 표시됩니다.</div>
                 </div>
               </div>
             </div>
@@ -8916,7 +8945,7 @@
         async function requestPlaceTrackers(method, body) {
           var agencyCode = rankAgencyCode();
           if (!agencyCode) {
-            return { ok: false, message: "대행사 코드 연결 후 플레이스 순위 추적을 사용할 수 있습니다." };
+            return { ok: false, message: "대행사 코드 연결 후 네이버 플레이스 30일 순위를 사용할 수 있습니다." };
           }
           var accessCode = rankAccessCode();
           if (!accessCode) {
@@ -8940,7 +8969,7 @@
           }
           var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });
-          if (!payload) payload = { ok: false, message: "플레이스 순위 추적 응답을 확인할 수 없습니다." };
+          if (!payload) payload = { ok: false, message: "플레이스 순위 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
           return payload;
         }
@@ -8971,7 +9000,7 @@
         function renderPlaceHistory(node, trackers) {
           var list = Array.isArray(trackers) ? trackers : [];
           if (!list.length) {
-            node.innerHTML = '<div class="mi-rank-state">플레이스 추적을 등록하면 상품 순위와 분리된 전용 30일 기록판이 생성됩니다.</div>';
+            node.innerHTML = '<div class="mi-rank-state">등록 후 일별 순위 기록이 표시됩니다.</div>';
             return;
           }
           node.innerHTML = list.map(renderPlaceTrackerCard).join("");
@@ -8982,7 +9011,7 @@
           if (payload.trackers) placeTrackers = payload.trackers;
           renderPlaceHistory(placeHistory, placeTrackers);
           if (!silent) {
-            var message = payload.message || (placeTrackers.length ? "등록된 플레이스 순위 추적을 불러왔습니다." : "등록된 플레이스 추적이 없습니다.");
+            var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
             if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
             if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
             setStatus(placeStatus, message, payload.ok === false || payload.configured === false ? "is-warn" : "is-ok");
@@ -9002,11 +9031,11 @@
         syncPlaceKeywordFromMain();
         loadPlaceTrackers(false).catch(function () {
           renderPlaceHistory(placeHistory, []);
-          setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+          setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
         });
         window.addEventListener("mi:rank-auth-ready", function () {
           loadPlaceTrackers(false).catch(function () {
-            setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+            setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           });
         });
 
@@ -9043,10 +9072,10 @@
               placeTrackers = [payload.tracker].concat(placeTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));
             }
             renderPlaceHistory(placeHistory, placeTrackers);
-            setStatus(placeStatus, payload.message || "플레이스 순위 추적 등록 완료", payload.ok ? "is-ok" : "is-warn");
+            setStatus(placeStatus, payload.message || "플레이스 30일 순위 등록 완료", payload.ok ? "is-ok" : "is-warn");
             await loadPlaceTrackers(true);
           } catch (error) {
-            setStatus(placeStatus, "플레이스 순위 추적 서버 연결을 확인해주세요.", "is-warn");
+            setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           } finally {
             placeRun.disabled = false;
           }

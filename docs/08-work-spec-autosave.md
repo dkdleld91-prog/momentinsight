@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 03:36:40
-- 기준 커밋: c01d4fa
-- 작업트리: M .github/workflows/naver-place-rank-cron.yml /  M docs/08-work-spec-autosave.md /  M src/server/handlers/naver-place-rank-cron.mjs /  M src/server/handlers/naver-place-rank-trackers.mjs /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs / ?? supabase/migrations/20260711173414_naver_place_rank_processing_lease.sql
+- 마지막 자동 저장: 2026. 07. 12. 05:57:09
+- 기준 커밋: 7c0c2f6
+- 작업트리: M docs/08-work-spec-autosave.md /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -89,6 +89,7 @@
 | 완료 | 자동 순위추적 운영 환경값 분리 점검 | GitHub Actions 호출용 `MI_RANK_CRON_SECRET`과 Vercel Cron 자동 Authorization용 `CRON_SECRET`을 별도 필수 운영값으로 분리했습니다. 두 값은 같은 비밀값이어야 하며, Vercel Hobby의 1일 1회 백업 Cron이 401로 막히는 실수를 배포 전 검사에서 잡도록 보강했습니다. | `check:baseline`, `check:rank-cron`, `build:vercel`, 운영 cron 비인증 401 확인 | 배포 대기 |
 | 완료 | 30일 순위 그룹 필터 UX 보완 | 그룹 필터를 `그룹 보기` 컨트롤로 명확히 표시하고, 선택 그룹이 있을 때만 네이비 강조 상태가 보이도록 수정했습니다. 그룹 이동 후에는 특정 그룹만 남아 보이지 않게 전체 그룹으로 자동 복귀합니다. | `check:baseline`, `check:rank-matching`, `build:vercel`, DOM 기능 테스트, 운영 페이지 응답 확인 | 배포 대기 |
 | 완료 | 로그인 유지 및 개발중 안내 보강 | 관리자/광고주 코드 로그인은 새로고침 후에도 저장된 코드로 서버 재검증을 거쳐 유지되도록 보정. 코드 입력 화면 상단에 홈페이지 이동 로고를 추가하고, 메타 광고 조사는 메뉴와 화면에서 개발중으로 명확히 표시. 홈페이지 첫 화면에는 현재 사용 가능한 핵심 도구 4개를 작은 개발중 배너로 안내 | `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check`, 로컬 정적 서버 마커 확인 | 배포 대기 |
+| 완료 | 운영 메뉴 IA 및 플레이스 30일 순위 명칭 정리 | 보고서 관리를 운영 카테고리로 이동하고 운영/키워드·SEO/순위 조회·추적/광고 조사로 재분류. 관리자·광고주 화면의 플레이스 명칭을 `네이버 플레이스 30일 순위`로 통일하고 구현 설명과 반복 문구를 축약. 플레이스 입력은 데스크톱 1행, 모바일 1열로 고정 | `check:baseline`, `check:server`, `check:rank-cron`, `check:rank-matching`, `check:keyword-trend`, `build:vercel`, `git diff --check`, 1280px·390px 브라우저 시각/오버플로/메뉴 이동 확인 | 배포 승인 |
 
 ## 현재 진행 원칙
 

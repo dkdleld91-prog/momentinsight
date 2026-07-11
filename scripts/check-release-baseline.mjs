@@ -12,6 +12,16 @@ function uniqueMatches(source, pattern) {
   return [...new Set([...source.matchAll(pattern)].map((match) => match[1]))];
 }
 
+function orderedIncludes(source, values) {
+  let cursor = 0;
+  return values.every((value) => {
+    const next = source.indexOf(value, cursor);
+    if (next === -1) return false;
+    cursor = next + value.length;
+    return true;
+  });
+}
+
 function assertCheck(condition, label) {
   if (!condition) {
     throw new Error(`Release baseline failed: ${label}`);
@@ -64,6 +74,25 @@ const checks = {
     && !exists("02_아임웹_적용코드"),
   adminMenuCount: adminScreens.length === 13,
   adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminNavigationTaxonomy: orderedIncludes(adminSource, [
+    '<p class="mi-nav-title">운영</p>',
+    'data-mi-admin-screen="home">운영 홈</a>',
+    'data-mi-admin-screen="client-preview">광고주 미리보기</a>',
+    'data-mi-admin-screen="agency-code">대행사 연결</a>',
+    'data-mi-admin-screen="excel">운영 입력</a>',
+    'data-mi-admin-screen="reports">보고서 관리</a>',
+    'data-mi-admin-screen="publish">공개 관리</a>',
+    '<p class="mi-nav-title">키워드·SEO</p>',
+    'data-mi-admin-screen="keyword">키워드 조회</a>',
+    'data-mi-admin-screen="seo-check">SEO 확인</a>',
+    '<p class="mi-nav-title">순위 조회·추적</p>',
+    'data-mi-admin-screen="naver-rank">네이버 상품 순위</a>',
+    'data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위</a>',
+    'data-mi-admin-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>',
+    '<p class="mi-nav-title">광고 조사</p>',
+    'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
+  ]) && adminSource.includes('<h1>보고서 관리</h1>')
+    && adminSource.includes("검수한 보고서만 광고주에게 공개합니다."),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
   adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
     && adminSource.includes('data-login-mode="operator"')
@@ -93,6 +122,21 @@ const checks = {
     && adminSource.includes("총관리자 직접 광고주"),
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
+  clientNavigationTaxonomy: orderedIncludes(clientSource, [
+    '<p class="mi-nav-title">성과</p>',
+    'data-mi-screen="dashboard">대시보드</a>',
+    'data-mi-screen="sales">매출 현황</a>',
+    'data-mi-screen="schedule">일정표</a>',
+    '<p class="mi-nav-title">도구</p>',
+    'data-mi-screen="keyword-tool">키워드 조회</a>',
+    'data-mi-screen="naver-rank">네이버 상품 순위</a>',
+    'data-mi-screen="naver-rank-tracking">네이버 30일 순위</a>',
+    'data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>',
+    'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
+    'data-mi-screen="seo-check">SEO 확인</a>',
+    '<p class="mi-nav-title">연동</p>',
+    'data-mi-screen="agency-code">대행사 연결</a>',
+  ]),
   clientLoginRoleSelection: clientSource.includes('data-client-login-mode="client"')
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")
@@ -152,7 +196,8 @@ const checks = {
     && adminSource.includes('"x-mi-team-code": teamCode')
     && adminSource.includes("PPTX 생성 · 보고서함 기록 완료")
     && adminSource.includes("운영팀-광고주 연결이 필요합니다."),
-  reportPolicyAligned: adminSource.includes("보고서는 운영팀이 검수 후 공개합니다.")
+  reportPolicyAligned: adminSource.includes("<h1>보고서 관리</h1>")
+    && adminSource.includes("검수한 보고서만 광고주에게 공개합니다.")
     && adminSource.includes("공개 처리된 파일만 광고주 노출")
     && clientSource.includes("보고서함 다운로드 방식")
     && sheetTemplateBuilder.includes("운영팀 검수 후 보고서함 공개")
@@ -263,12 +308,20 @@ const checks = {
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
-    && source.includes("네이버 상품 순위 <small>조회</small>")
+    && source.includes('>네이버 상품 순위</a>')
     && source.includes('<span class="mi-badge">조회</span>')
     && !source.includes(">순위 1회 조회<")
     && !source.includes("<small>1회 조회</small>")
     && !source.includes('<span class="mi-badge">1회 조회</span>')
     && !source.includes(">오가닉 추적 시작<")),
+  naverPlaceThirtyDayNamingAligned: [adminSource, clientSource].every((source) => source.includes("네이버 플레이스 30일 순위")
+    && source.includes("30일 순위 기록")
+    && !source.includes("네이버 플레이스 순위 <small>추적</small>")
+    && !source.includes("기존 네이버 검색 API 연결 시")),
+  naverPlaceTrackingFormUsesFiveColumns: [adminSource, clientSource].every((source) => source.includes(".mi-place-rank-card .mi-rank-form.is-tracking")
+    && source.includes("grid-template-columns: minmax(120px, 0.75fr) minmax(220px, 1.6fr) minmax(110px, 0.7fr) 96px auto;")
+    && source.includes(".mi-place-rank-item .mi-rank-track-row-head")
+    && source.includes("grid-template-columns: minmax(0, 1fr);")),
   naverRankNoResultRangeMessage: [adminSource, clientSource].every((source) => source.includes("rankCheckRangeLabel")
     && source.includes("이내 없음")
     && source.includes("조회 완료: ")

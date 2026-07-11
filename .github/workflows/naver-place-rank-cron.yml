@@ -1,14 +1,12 @@
 name: Naver Place Rank Tracking
 
 on:
-  push:
-    branches:
-      - main
   schedule:
-    # KST 09:00/15:00 rescue window. The API only refreshes trackers whose next_check_at is due.
+    # KST 09:00/15:00 processing windows. Four runs can cover 20 advertisers
+    # without running concurrent Chromium sessions on the free collector.
     - cron: "0,5,10,15 0,6 * * *"
-    # Hourly catch-up prevents missed GitHub schedules from leaving due trackers stale.
-    - cron: "43 * * * *"
+    # Post-window catch-up for delayed GitHub schedules or a sleeping collector.
+    - cron: "43 1,7 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -18,7 +16,7 @@ concurrency:
 jobs:
   refresh-place-ranks:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
@@ -32,54 +30,56 @@ jobs:
       - name: Refresh due Naver place rank trackers
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
-            echo "Push-triggered deploy backfill: waiting briefly for production deployment."
-            sleep 90
-          fi
+          node <<'NODE'
+          const endpoint = "https://insight.momentlabs.co.kr/api/naver-place-rank-cron?limit=1";
+          const secret = process.env.MI_RANK_CRON_SECRET;
+          const maxAttempts = 5;
+          const totals = { attempted: 0, succeeded: 0, failed: 0, found: 0, notFound: 0 };
 
-          response_file="$(mktemp)"
-          trap 'rm -f "$response_file"' EXIT
-
-          call_cron() {
-            curl --show-error --silent \
-              --output "$response_file" \
-              --write-out "%{http_code}" \
-              -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
-              "https://insight.momentlabs.co.kr/api/naver-place-rank-cron?limit=100"
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          async function callCron() {
+            return fetch(endpoint, { headers: { authorization: `Bearer ${secret}` } });
           }
 
-          status_code="$(call_cron)"
-          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            echo "First place cron call returned HTTP ${status_code}. Retrying once after 30 seconds."
-            sleep 30
-            status_code="$(call_cron)"
-          fi
+          for (let index = 0; index < maxAttempts; index += 1) {
+            let response;
+            try {
+              response = await callCron();
+            } catch (error) {
+              console.log(`Transport failure on item ${index + 1}; retrying once in 15 seconds.`);
+              await sleep(15000);
+              response = await callCron();
+            }
 
-          node - "$response_file" <<'NODE'
-          const fs = require("node:fs");
-          const file = process.argv[2];
-          let payload = {};
-          try {
-            payload = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
-          } catch {
-            payload = { ok: false, message: "invalid_json_response" };
+            const payload = await response.json().catch(() => ({ ok: false, message: "invalid_json_response" }));
+            const summary = payload.summary || {};
+            const safe = {
+              status: response.status,
+              ok: Boolean(payload.ok),
+              message: payload.message || "",
+              checked: Number(summary.checked || 0),
+              succeeded: Number(summary.succeeded || 0),
+              failed: Number(summary.failed || 0),
+              found: Number(summary.found || 0),
+              notFound: Number(summary.notFound || 0),
+              drained: Boolean(summary.drained),
+              configured: Boolean(summary.configured),
+            };
+            console.log("Naver place rank cron item " + JSON.stringify(safe));
+
+            if (response.status === 401 || response.status === 403) {
+              throw new Error("cron authorization failed");
+            }
+            if (safe.drained || safe.checked === 0) break;
+
+            totals.attempted += safe.checked;
+            totals.succeeded += safe.succeeded;
+            totals.failed += safe.failed;
+            totals.found += safe.found;
+            totals.notFound += safe.notFound;
+            await sleep(2000);
           }
-          const summary = payload.summary || {};
-          const safe = {
-            ok: Boolean(payload.ok),
-            message: payload.message || "",
-            checked: Number(summary.checked || 0),
-            succeeded: Number(summary.succeeded || 0),
-            failed: Number(summary.failed || 0),
-            configured: Boolean(summary.configured),
-            now: summary.now || "",
-          };
-          console.log("Naver place rank cron summary " + JSON.stringify(safe));
+
+          console.log("Naver place rank cron window " + JSON.stringify(totals));
+          if (totals.failed > 0) process.exitCode = 1;
           NODE
-
-          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            echo "::error::Naver place rank cron failed with HTTP ${status_code}."
-            exit 1
-          fi
-
-          echo "Naver place rank cron accepted with HTTP ${status_code}."

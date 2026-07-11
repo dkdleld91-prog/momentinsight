@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 00:38:02
-- 기준 커밋: f9526c3
-- 작업트리: M docs/08-work-spec-autosave.md
+- 마지막 자동 저장: 2026. 07. 12. 03:36:40
+- 기준 커밋: c01d4fa
+- 작업트리: M .github/workflows/naver-place-rank-cron.yml /  M docs/08-work-spec-autosave.md /  M src/server/handlers/naver-place-rank-cron.mjs /  M src/server/handlers/naver-place-rank-trackers.mjs /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs / ?? supabase/migrations/20260711173414_naver_place_rank_processing_lease.sql
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,6 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 네이버 플레이스 자동추적 20계정 대비 안정화 | Supabase 추적 건을 처리 임대로 원자 선점해 중복 실행을 차단하고, 무료 Render Chromium은 한 번에 1건만 처리하도록 직렬화. GitHub Actions는 오전 9시·오후 3시 처리 창마다 최대 20건을 나눠 호출하며 실패 건은 지수형 재시도, 정상 미노출은 오류가 아닌 유효 결과로 기록. 동일 키워드 후보 목록은 수집기 메모리 캐시로 재사용하고 실제 확인 개수만 응답 | 실제 Supabase 통합 테스트 2회: `구월동 맛집`/`2045794152` 오가닉 1위 저장, `1565776290` 상위 54개 미노출 정상 저장. 두 건 모두 `last_error=null`, 처리 임대 해제, 다음 09시 예약 확인. 수집기 401/429, 서버·baseline·Vercel build·diff 검사 통과 | 배포 진행 |
 | 완료 | 네이버 플레이스 Render 통합 검증 | 저장된 플레이스ID가 있으면 단축 URL을 매번 브라우저로 다시 해석하지 않고 지도 목록 조회를 바로 시작하도록 수집 경로를 단축. Vercel API에서 Render 수집기 호출 후 Supabase 스냅샷까지 저장되는 전체 경로 확인 | 운영 API 실조회 `구월동 맛집`/`2045794152` 오가닉 1위, 62개 확인, 34초, `lastError=null`; 광고 카드 ID `1565776290`은 오가닉 62개 내 미노출, 39초, `lastError=null`; Render 릴리스 `2026-07-12-fast-id` 확인 | 완료 |
 | 완료 | 플레이스 수집기 무료 서버 안정 모드 | 실제 네이버 지도 목록을 한 번만 끝까지 로딩해 확인 가능한 플레이스ID·오가닉 순위·리뷰 수를 읽도록 변경. Render 무료 인스턴스에서는 장시간 반복 스크롤을 기본 중단해 Vercel 요청 시간 초과를 막고 `checkedCount`에 실제 확인 범위만 기록 | `구월동 맛집` 실조회 ID `2045794152` 오가닉 1위 5.2초, 광고 카드 ID와 미존재 ID 각각 상위 54개 미노출 3~4초, 수집기 문법·baseline·server·rank cron·rank matching·Vercel build·diff 검사 통과 | 배포 진행 |
 | 완료 | 네이버 플레이스 지도 오가닉 수집기 정상화 | 폐기된 지도 iframe 의존을 제거하고 현재 네이버 지도 PC 목록에서 광고를 제외한 실제 장소 ID, 오가닉 순위, 방문/블로그 리뷰 수를 직접 읽도록 Render 수집기를 교체. 외부 응답은 화면에 필요한 필드만 남겨 경량화하고 목록 끝 로딩으로 서버 요청 시간을 단축 | 수집기 문법 검사, `구월동 맛집`/장소ID `2045794152` 실조회 오가닉 1위 일치, 광고 장소ID `1565776290` 미노출, 미존재 장소 미노출, 응답 내부 HTML 제거, 운영 범위 조회 약 7초 확인 | 배포 진행 |

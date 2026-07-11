@@ -2,7 +2,7 @@ import { withSupabase } from "@supabase/server";
 import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
 import { runDuePlaceTrackers } from "./naver-place-rank-trackers.mjs";
 
-const DEFAULT_CRON_BATCH = 100;
+const DEFAULT_CRON_BATCH = 1;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {

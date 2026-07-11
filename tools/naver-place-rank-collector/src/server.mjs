@@ -4,12 +4,14 @@ import { lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
-const RELEASE = "2026-07-12-fast-id";
+const RELEASE = "2026-07-12-lease-cache";
+let activeLookup = false;
 
-function sendJson(response, body, status = 200) {
+function sendJson(response, body, status = 200, headers = {}) {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
+    ...headers,
   });
   response.end(JSON.stringify(body));
 }
@@ -60,6 +62,7 @@ async function handleRequest(request, response) {
       service: "moment-naver-place-rank-collector",
       release: RELEASE,
       configured: Boolean(SECRET),
+      busy: activeLookup,
       checkedAt: new Date().toISOString(),
     });
   }
@@ -73,6 +76,11 @@ async function handleRequest(request, response) {
     return sendJson(response, { ok: false, message: "unauthorized" }, 401);
   }
 
+  if (activeLookup) {
+    return sendJson(response, { ok: false, message: "collector_busy" }, 429, { "retry-after": "10" });
+  }
+
+  activeLookup = true;
   try {
     const payload = await readJson(request);
     const result = await lookupNaverPlaceRank(payload);
@@ -83,6 +91,8 @@ async function handleRequest(request, response) {
       matched: false,
       message: error?.message || "place_rank_lookup_failed",
     }, 500);
+  } finally {
+    activeLookup = false;
   }
 }
 

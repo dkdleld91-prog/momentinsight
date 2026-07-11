@@ -2,7 +2,11 @@ import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 
-const DEFAULT_CRON_BATCH = 100;
+const DEFAULT_CRON_BATCH = 1;
+const PLACE_TRACKER_LEASE_SECONDS = Math.max(
+  120,
+  Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 240))
+);
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
@@ -30,6 +34,11 @@ const TRACKER_SELECT = [
   "found_count",
   "last_message",
   "last_error",
+  "processing_token",
+  "processing_started_at",
+  "processing_until",
+  "last_attempt_at",
+  "retry_count",
   "sort_order",
   "created_at",
   "updated_at",
@@ -488,6 +497,10 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       found_count: Number(tracker.found_count || 0) + (matchedRank ? 1 : 0),
       last_message: message,
       last_error: lastError || null,
+      processing_token: null,
+      processing_started_at: null,
+      processing_until: null,
+      retry_count: 0,
       place_id: normalizeText(result?.place?.id || tracker.place_id) || null,
       place_name: normalizeText(result?.place?.name || tracker.place_name) || null,
     })
@@ -497,6 +510,44 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
 
   if (error) throw error;
   return data;
+}
+
+function placeRetryAt(tracker, date = new Date()) {
+  const retryCount = Math.max(0, Number(tracker.retry_count || 0));
+  const delayMinutes = [5, 10, 20, 40, 80, 160, 320, 360][Math.min(retryCount, 7)];
+  return new Date(date.getTime() + delayMinutes * 60 * 1000).toISOString();
+}
+
+async function updateTrackerAfterFailure(ctx, tracker, attemptedAt, errorMessage) {
+  const retryCount = Math.max(0, Number(tracker.retry_count || 0)) + 1;
+  let query = ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .update({
+      next_check_at: placeRetryAt(tracker, new Date(attemptedAt)),
+      last_message: "네이버 플레이스 순위 갱신을 다시 시도할 예정입니다.",
+      last_error: compactErrorMessage(errorMessage || "lookup_failed"),
+      processing_token: null,
+      processing_started_at: null,
+      processing_until: null,
+      retry_count: retryCount,
+    })
+    .eq("id", tracker.id);
+
+  if (tracker.processing_token) query = query.eq("processing_token", tracker.processing_token);
+  const { data, error } = await query.select(TRACKER_SELECT).single();
+  if (error) throw error;
+  return data;
+}
+
+async function claimDuePlaceTracker(ctx, agencyCode = "") {
+  const requestedAgencyCodes = agencyCode ? agencyCodeScope(agencyCode) : null;
+  const { data, error } = await ctx.supabaseAdmin.rpc("claim_due_naver_place_rank_tracker", {
+    requested_agency_codes: requestedAgencyCodes,
+    lease_seconds: PLACE_TRACKER_LEASE_SECONDS,
+  });
+
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] || null : data || null;
 }
 
 function providerResultMessage(result) {
@@ -885,6 +936,21 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
   try {
     const enrichedTracker = await enrichTrackerPlaceIdentity(ctx, tracker);
     const result = await lookupPlaceRank(enrichedTracker);
+    if (!result.ok) {
+      const updated = await updateTrackerAfterFailure(
+        ctx,
+        enrichedTracker,
+        checkedAt,
+        result.notConfigured ? "place_rank_provider_not_configured" : result.message || "lookup_failed"
+      );
+      return {
+        ok: false,
+        outcome: result.notConfigured ? "not_configured" : "failed",
+        tracker: updated,
+        result,
+        message: result.message || providerResultMessage(result),
+      };
+    }
     const message = result.message || providerResultMessage(result);
     const snapshot = await insertSnapshot(ctx, enrichedTracker, checkedAt, result, message, result.source || "naver_place_rank_provider");
     const updated = await updateTrackerAfterCheck(
@@ -893,14 +959,25 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
       checkedAt,
       result,
       message,
-      result.notConfigured ? "place_rank_provider_not_configured" : ""
+      ""
     );
-    return { ok: Boolean(result.ok && result.matched), tracker: updated, snapshot, result, message };
+    return {
+      ok: true,
+      outcome: result.matched ? "found" : "not_found",
+      tracker: updated,
+      snapshot,
+      result,
+      message,
+    };
   } catch (error) {
-    const message = "네이버 플레이스 순위 갱신에 실패했습니다.";
-    const snapshot = await insertSnapshot(ctx, tracker, checkedAt, { matched: false }, message, "naver_place_rank_provider");
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message, error?.message || "lookup_failed");
-    return { ok: false, tracker: updated, snapshot, message, error: error?.message || "lookup_failed" };
+    const updated = await updateTrackerAfterFailure(ctx, tracker, checkedAt, error?.message || "lookup_failed");
+    return {
+      ok: false,
+      outcome: "failed",
+      tracker: updated,
+      message: "네이버 플레이스 순위 갱신에 실패해 자동 재시도를 예약했습니다.",
+      error: error?.message || "lookup_failed",
+    };
   }
 }
 
@@ -1084,35 +1161,22 @@ async function deleteTracker(request, ctx, body) {
 
 export async function runDuePlaceTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
-  const limit = Math.max(1, Math.min(100, Number(options.limit || process.env.MI_PLACE_RANK_CRON_BATCH || DEFAULT_CRON_BATCH)));
-  let query = ctx.supabaseAdmin
-    .from("naver_place_rank_trackers")
-    .select(TRACKER_SELECT)
-    .eq("status", "active")
-    .lte("next_check_at", now)
-    .order("next_check_at", { ascending: true })
-    .limit(limit);
-
-  if (options.agencyCode) query = query.in("agency_code", agencyCodeScope(options.agencyCode));
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  const results = [];
-  for (const tracker of data || []) {
-    // eslint-disable-next-line no-await-in-loop
-    results.push(await runPlaceTrackerCheck(ctx, tracker));
-  }
+  const tracker = await claimDuePlaceTracker(ctx, options.agencyCode || "");
+  const results = tracker ? [await runPlaceTrackerCheck(ctx, tracker)] : [];
 
   return {
     now,
     checked: results.length,
     succeeded: results.filter((item) => item.ok).length,
     failed: results.filter((item) => !item.ok).length,
+    found: results.filter((item) => item.outcome === "found").length,
+    notFound: results.filter((item) => item.outcome === "not_found").length,
+    drained: results.length === 0,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     results: results.map((item) => ({
       ok: item.ok,
+      outcome: item.outcome,
       trackerId: item.tracker?.id,
       keyword: item.tracker?.keyword,
       rank: item.tracker?.current_rank,

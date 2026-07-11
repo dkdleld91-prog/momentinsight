@@ -10,7 +10,13 @@ const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") 
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
-const NAVER_PLACE_MAX_RESULTS = 100;
+const NAVER_PLACE_MAX_RESULTS = 300;
+const RESULT_CACHE_TTL_MS = Math.max(
+  60000,
+  Math.min(30 * 60 * 1000, Number(process.env.NAVER_PLACE_RESULT_CACHE_TTL_MS || 10 * 60 * 1000))
+);
+const RESULT_CACHE_MAX = Math.max(5, Math.min(100, Number(process.env.NAVER_PLACE_RESULT_CACHE_MAX || 40)));
+const resultCache = new Map();
 const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping|list)/i;
 const DETAIL_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i;
 const AD_HINT_PATTERN = /광고|스폰서|파워링크/i;
@@ -196,6 +202,30 @@ function uniqueValues(values) {
         .filter(Boolean)
     )
   );
+}
+
+function cachedCandidates(keyword, maxRank) {
+  const key = normalizeComparable(keyword) + ":" + maxRank;
+  const entry = resultCache.get(key);
+  if (!entry || Date.now() - entry.cachedAt > RESULT_CACHE_TTL_MS) {
+    resultCache.delete(key);
+    return null;
+  }
+  resultCache.delete(key);
+  resultCache.set(key, entry);
+  return entry.candidates.map((candidate) => ({ ...candidate, placeIds: [...(candidate.placeIds || [])] }));
+}
+
+function rememberCandidates(keyword, maxRank, candidates) {
+  const key = normalizeComparable(keyword) + ":" + maxRank;
+  resultCache.delete(key);
+  resultCache.set(key, {
+    cachedAt: Date.now(),
+    candidates: candidates.map((candidate) => ({ ...candidate, placeIds: [...(candidate.placeIds || [])] })),
+  });
+  while (resultCache.size > RESULT_CACHE_MAX) {
+    resultCache.delete(resultCache.keys().next().value);
+  }
 }
 
 async function loadPlaywright() {
@@ -485,10 +515,14 @@ async function resolveMapSearch(page, keyword) {
 }
 
 async function collectCandidatesFromNaverMap(context, keyword, maxRank, target = null) {
+  const cached = cachedCandidates(keyword, maxRank);
+  if (cached) return cached;
+
   const page = await context.newPage();
   try {
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
-    if (!DEEP_SCAN) {
+    const shouldDeepScan = DEEP_SCAN || maxRank > 100;
+    if (!shouldDeepScan) {
       await page.goto(buildPlaceListUrl(keyword, maxRank), {
         waitUntil: "domcontentloaded",
         timeout: DEFAULT_TIMEOUT_MS,
@@ -506,14 +540,14 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
       const candidates = [];
       const visibleRows = await extractVisibleRows(page);
       visibleRows.forEach((row) => appendCandidate(candidates, row));
-      return candidates
+      const publicCandidates = candidates
         .slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS))
         .map(toPublicCandidate);
+      rememberCandidates(keyword, maxRank, publicCandidates);
+      return publicCandidates;
     }
 
     const initialSearch = await resolveMapSearch(page, keyword);
-    const initialCandidates = initialSearch.candidates.slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
-    if (target && findMatch(initialCandidates, target)) return initialCandidates;
 
     const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
@@ -539,7 +573,6 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
       const visibleRows = await extractVisibleRows(page);
       visibleRows.forEach((row) => appendCandidate(candidates, row));
 
-      if (target && findMatch(candidates, target)) break;
       if (candidates.length >= resultLimit) break;
       const scrollState = await scrollListFrame(page);
       await page.waitForTimeout(280);
@@ -552,7 +585,9 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
       previousScrollTop = Number(scrollState.scrollTop);
     }
 
-    return candidates.slice(0, resultLimit).map(toPublicCandidate);
+    const publicCandidates = candidates.slice(0, resultLimit).map(toPublicCandidate);
+    rememberCandidates(keyword, maxRank, publicCandidates);
+    return publicCandidates;
   } finally {
     await page.close().catch(() => {});
   }
@@ -729,6 +764,9 @@ export async function lookupNaverPlaceRank(payload = {}) {
         rank: matched ? matched.rank : null,
         checkedCount: candidates.length,
         total: candidates.length,
+        requestedMaxRank: maxRank,
+        complete: candidates.length >= maxRank,
+        stopReason: candidates.length >= maxRank ? "requested_range_checked" : "naver_visible_list_exhausted",
         place,
         topPlaces: candidates.slice(0, 20),
         source: "naver_map_pc_list_collector",

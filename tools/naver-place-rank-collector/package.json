@@ -8,6 +8,6 @@
     "check": "node --check src/server.mjs && node --check src/naver-place-rank.mjs"
   },
   "dependencies": {
-    "playwright": "^1.55.0"
+    "playwright": "1.61.1"
   }
 }

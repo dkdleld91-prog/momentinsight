@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 11. 23:24:00
-- 기준 커밋: 1d9ead2
-- 작업트리: M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs
+- 마지막 자동 저장: 2026. 07. 11. 23:37:53
+- 기준 커밋: d46af18
+- 작업트리: M docs/08-work-spec-autosave.md /  M tools/naver-place-rank-collector/README.md /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,7 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료 | 플레이스 수집기 무료 서버 안정 모드 | 네이버 지도 내부 `allSearch` 응답에서 실제 상위 20개 플레이스ID·오가닉 순위·리뷰 수를 먼저 읽도록 변경. Render 무료 인스턴스에서는 장시간 스크롤을 기본 중단해 Vercel 요청 시간 초과를 막고 `checkedCount`에 실제 확인 범위만 기록 | `구월동 맛집` 실조회 ID `2045794152` 오가닉 1위 4.9초, 광고 카드 ID와 미존재 ID 각각 상위 20개 미노출 2~3초, 수집기 문법·baseline·server·rank cron·rank matching·Vercel build·diff 검사 통과 | 배포 진행 |
+| 완료 | 플레이스 수집기 무료 서버 안정 모드 | 실제 네이버 지도 목록을 한 번만 끝까지 로딩해 확인 가능한 플레이스ID·오가닉 순위·리뷰 수를 읽도록 변경. Render 무료 인스턴스에서는 장시간 반복 스크롤을 기본 중단해 Vercel 요청 시간 초과를 막고 `checkedCount`에 실제 확인 범위만 기록 | `구월동 맛집` 실조회 ID `2045794152` 오가닉 1위 5.2초, 광고 카드 ID와 미존재 ID 각각 상위 54개 미노출 3~4초, 수집기 문법·baseline·server·rank cron·rank matching·Vercel build·diff 검사 통과 | 배포 진행 |
 | 완료 | 네이버 플레이스 지도 오가닉 수집기 정상화 | 폐기된 지도 iframe 의존을 제거하고 현재 네이버 지도 PC 목록에서 광고를 제외한 실제 장소 ID, 오가닉 순위, 방문/블로그 리뷰 수를 직접 읽도록 Render 수집기를 교체. 외부 응답은 화면에 필요한 필드만 남겨 경량화하고 목록 끝 로딩으로 서버 요청 시간을 단축 | 수집기 문법 검사, `구월동 맛집`/장소ID `2045794152` 실조회 오가닉 1위 일치, 광고 장소ID `1565776290` 미노출, 미존재 장소 미노출, 응답 내부 HTML 제거, 운영 범위 조회 약 7초 확인 | 배포 진행 |
 | 부분 완료 | 네이버 플레이스 30일 순위 추적 분리 기반 | 기존 네이버 상품 30일 순위 데이터와 섞지 않도록 플레이스 전용 Supabase 테이블, 서버 API, 크론 API, 광고주 화면 메뉴/입력/기록 UI를 별도로 추가. 외부 순위 공급자가 없을 때는 기존 네이버 OpenAPI 검색 API로 상호명 기준 상위 결과를 확인하며, 공식 API 한계상 300위 전체 추적은 전문 순위 소스 연결 시 확장 | 서버 핸들러 문법 검사, 클라이언트 스크립트 문법 검사, 09시/15시 다음 갱신 계산 확인, `check:server`, `build:vercel` 통과 | 배포 없음 |
 | 완료 | 프로젝트 구조 경량화 및 화면 소스 정리 | 아임웹 복붙용 중복 파일과 통합보기 파일을 제거하고, 실제 배포 화면 원본을 `src/pages/home.html`, `src/pages/admin.html`, `src/pages/client.html`로 단순화. 빌드 스크립트와 릴리즈 기준선을 새 구조 기준으로 갱신 | `clean:workspace:dry`, `check:baseline`, `build:vercel`, `git diff --check`, 파일 구조/보안 추적 여부 확인 | 배포 대기 |

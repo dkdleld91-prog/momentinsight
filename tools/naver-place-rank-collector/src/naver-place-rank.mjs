@@ -488,10 +488,32 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
   const page = await context.newPage();
   try {
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+    if (!DEEP_SCAN) {
+      await page.goto(buildPlaceListUrl(keyword, maxRank), {
+        waitUntil: "domcontentloaded",
+        timeout: DEFAULT_TIMEOUT_MS,
+        referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
+      });
+      await page.waitForSelector("#_pcmap_list_scroll_container li", { timeout: DEFAULT_TIMEOUT_MS });
+      await scrollListFrame(page);
+      await page.waitForTimeout(700);
+
+      const restrictionText = normalizeText(await page.locator("body").innerText().catch(() => ""));
+      if (/서비스 이용이 제한되었습니다|과도한 접근 요청/.test(restrictionText)) {
+        throw new Error("naver_place_access_limited");
+      }
+
+      const candidates = [];
+      const visibleRows = await extractVisibleRows(page);
+      visibleRows.forEach((row) => appendCandidate(candidates, row));
+      return candidates
+        .slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS))
+        .map(toPublicCandidate);
+    }
+
     const initialSearch = await resolveMapSearch(page, keyword);
     const initialCandidates = initialSearch.candidates.slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
     if (target && findMatch(initialCandidates, target)) return initialCandidates;
-    if (!DEEP_SCAN && initialCandidates.length) return initialCandidates;
 
     const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {

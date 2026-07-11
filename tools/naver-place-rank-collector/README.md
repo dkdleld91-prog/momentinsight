@@ -108,8 +108,8 @@ NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 ```
 
 Render 무료 인스턴스는 브라우저 스크롤 기반의 300위 전체 조회가 요청 제한을 넘길 수 있습니다.
-`NAVER_PLACE_PROVIDER_DEEP_SCAN=false`에서는 네이버 지도 내부 검색 응답의 실제 상위 20개를 우선 확인해
-대부분의 요청을 수 초 안에 끝내고, 응답의 `checkedCount`에도 실제 확인한 범위만 기록합니다.
+`NAVER_PLACE_PROVIDER_DEEP_SCAN=false`에서는 실제 네이버 지도 목록을 한 번만 끝까지 로딩해
+현재 화면이 제공한 오가닉 결과만 확인하고, 응답의 `checkedCount`에도 실제 확인한 범위만 기록합니다.
 유료 인스턴스나 장시간 작업 큐를 붙인 뒤에만 `true`로 변경합니다.
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.

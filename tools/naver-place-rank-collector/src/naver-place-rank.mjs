@@ -400,7 +400,10 @@ async function scrollListFrame(frame) {
       window.scrollBy(0, Math.max(700, window.innerHeight * 0.85));
       return { scrollTop: window.scrollY, scrollHeight: document.body.scrollHeight };
     }
-    root.scrollTop += Math.max(680, root.clientHeight * 0.85);
+    // The current PC list app appends the remaining organic rows when the
+    // scroll container reaches its end. A viewport-sized step made mid-ranked
+    // lookups exceed serverless request limits even though no ranks were lost.
+    root.scrollTop = root.scrollHeight;
     root.dispatchEvent(new Event("scroll", { bubbles: true }));
     return { scrollTop: root.scrollTop, scrollHeight: root.scrollHeight };
   });

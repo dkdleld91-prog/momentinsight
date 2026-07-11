@@ -306,7 +306,25 @@ async function extractVisibleRows(frame) {
       };
 
       const placeItem = findPlaceItem();
-      const text = (row.innerText || "").replace(/\s+/g, " ").trim();
+      const text = (row.textContent || "").replace(/\s+/g, " ").trim();
+      const adLink = row.querySelector("a[href*='help.naver.com/support/alias/NSP/NSP_53']");
+      const placeId = String(placeItem?.id || placeItem?.apolloCacheId || "");
+      if (placeId && placeItem?.name) {
+        return {
+          visibleIndex,
+          id: placeId,
+          text,
+          aria: "",
+          url: `https://map.naver.com/p/entry/place/${placeId}`,
+          hrefs: [],
+          html: "",
+          isAd: Boolean(placeItem.adId || placeItem.adClickLog || placeItem.adDescription || adLink) || /\b광고\b/.test(text),
+          nameNodes: [placeItem.name],
+          visitorReviewCount: placeItem.visitorReviewCount || "",
+          blogReviewCount: placeItem.blogCafeReviewCount || "",
+        };
+      }
+
       const nameNodes = Array.from(row.querySelectorAll("span, strong, a, div"))
         .map((node) => (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim())
         .filter(Boolean);
@@ -314,11 +332,7 @@ async function extractVisibleRows(frame) {
       const hrefs = Array.from(row.querySelectorAll("a[href]"))
         .map((node) => node.href || node.getAttribute("href") || "")
         .filter(Boolean);
-      const adLink = row.querySelector("a[href*='help.naver.com/support/alias/NSP/NSP_53']");
-      const placeId = String(placeItem?.id || placeItem?.apolloCacheId || "");
-      const url = placeId
-        ? `https://map.naver.com/p/entry/place/${placeId}`
-        : anchor?.href || anchor?.getAttribute("href") || "";
+      const url = anchor?.href || anchor?.getAttribute("href") || "";
       const aria = row.getAttribute("aria-label") || "";
       return {
         visibleIndex,
@@ -329,9 +343,9 @@ async function extractVisibleRows(frame) {
         hrefs,
         html: (row.outerHTML || "").slice(0, 12000),
         isAd: Boolean(adLink) || /\b광고\b/.test(text),
-        nameNodes: [placeItem?.name, ...nameNodes].filter(Boolean).slice(0, 12),
-        visitorReviewCount: placeItem?.visitorReviewCount || "",
-        blogReviewCount: placeItem?.blogCafeReviewCount || "",
+        nameNodes: nameNodes.slice(0, 12),
+        visitorReviewCount: "",
+        blogReviewCount: "",
       };
     }).filter((row) => row.text || row.aria || row.url);
   });

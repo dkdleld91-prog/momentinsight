@@ -4,6 +4,7 @@ import { lookupNaverPlaceRank } from "./naver-place-rank.mjs";
 const PORT = Number(process.env.PORT || 8797);
 const HOST = String(process.env.HOST || "127.0.0.1").trim();
 const SECRET = String(process.env.PLACE_RANK_COLLECTOR_SECRET || "").trim();
+const RELEASE = "2026-07-11-fast20";
 
 function sendJson(response, body, status = 200) {
   response.writeHead(status, {
@@ -57,6 +58,7 @@ async function handleRequest(request, response) {
     return sendJson(response, {
       ok: true,
       service: "moment-naver-place-rank-collector",
+      release: RELEASE,
       configured: Boolean(SECRET),
       checkedAt: new Date().toISOString(),
     });

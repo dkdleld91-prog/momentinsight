@@ -6,9 +6,7 @@ const OVERALL_TIMEOUT_MS = Math.max(
   Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 75000), 80000)
 );
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
-const DEEP_SCAN = String(
-  process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || (process.env.RENDER ? "false" : "true")
-) === "true";
+const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") === "true";
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";

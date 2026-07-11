@@ -1,6 +1,10 @@
 const DEFAULT_MAX_RANK = 300;
 const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000);
 const DEFAULT_MAX_SCROLLS = Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90);
+const OVERALL_TIMEOUT_MS = Math.max(
+  20000,
+  Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 75000), 80000)
+);
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
@@ -344,7 +348,7 @@ async function scrollListFrame(frame) {
   });
 }
 
-async function collectCandidatesFromNaverMap(context, keyword, maxRank) {
+async function collectCandidatesFromNaverMap(context, keyword, maxRank, target = null) {
   const page = await context.newPage();
   try {
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
@@ -363,6 +367,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank) {
       const visibleRows = await extractVisibleRows(frame);
       visibleRows.forEach((row) => appendCandidate(candidates, row));
 
+      if (target && findMatch(candidates, target)) break;
       if (candidates.length >= maxRank) break;
       const scrollState = await scrollListFrame(frame);
       await page.waitForTimeout(850);
@@ -497,73 +502,78 @@ export async function lookupNaverPlaceRank(payload = {}) {
 
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: HEADLESS });
+  let overallTimeout;
   try {
-    const context = await browser.newContext({
-      locale: "ko-KR",
-      timezoneId: "Asia/Seoul",
-      viewport: { width: 1440, height: 1000 },
-      userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-    });
+    const lookup = (async () => {
+      const context = await browser.newContext({
+        locale: "ko-KR",
+        timezoneId: "Asia/Seoul",
+        viewport: { width: 1440, height: 1000 },
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+      });
 
-    const resolved = placeUrl ? await resolvePlaceIdentityWithBrowser(context, placeUrl) : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
-    const placeIds = uniqueValues([
-      placeId,
-      resolved.placeId,
-      ...(Array.isArray(resolved.placeIds) ? resolved.placeIds : []),
-      ...extractPlaceIds(placeUrl),
-      ...extractPlaceIds(resolved.url),
-    ]);
-    placeId = placeId || placeIds[0] || "";
-    placeName = placeName || resolved.placeName;
+      const resolved = placeUrl ? await resolvePlaceIdentityWithBrowser(context, placeUrl) : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
+      const placeIds = uniqueValues([
+        placeId,
+        resolved.placeId,
+        ...(Array.isArray(resolved.placeIds) ? resolved.placeIds : []),
+        ...extractPlaceIds(placeUrl),
+        ...extractPlaceIds(resolved.url),
+      ]);
+      placeId = placeId || placeIds[0] || "";
+      placeName = placeName || resolved.placeName;
 
-    if (!placeId && !placeName) {
-      return {
-        ok: false,
-        matched: false,
-        checkedCount: 0,
-        total: 0,
-        message: "플레이스 URL에서 ID 또는 상호명을 확인하지 못했습니다.",
-        source: "naver_map_browser_collector",
-      };
-    }
+      if (!placeId && !placeName) {
+        return {
+          ok: false,
+          matched: false,
+          checkedCount: 0,
+          total: 0,
+          message: "플레이스 URL에서 ID 또는 상호명을 확인하지 못했습니다.",
+          source: "naver_map_browser_collector",
+        };
+      }
 
-    const candidates = await collectCandidatesFromNaverMap(context, keyword, maxRank);
-    let matched = findMatch(candidates, {
-      placeId,
-      placeIds,
-      placeUrl: resolved.url || placeUrl,
-      placeName,
-    });
-
-    if (!matched && (placeIds.length || placeName)) {
-      matched = await findVerifiedMatchByClick(context, keyword, {
+      const target = {
         placeId,
         placeIds,
         placeUrl: resolved.url || placeUrl,
         placeName,
-      }, maxRank);
-    }
+      };
+      const candidates = await collectCandidatesFromNaverMap(context, keyword, maxRank, target);
+      let matched = findMatch(candidates, target);
 
-    const place = matched || {
-      id: placeId,
-      name: placeName,
-      url: resolved.url || placeUrl,
-    };
+      if (!matched && (placeIds.length || placeName)) {
+        matched = await findVerifiedMatchByClick(context, keyword, target, maxRank);
+      }
 
-    return {
-      ok: true,
-      matched: Boolean(matched),
-      rank: matched ? matched.rank : null,
-      checkedCount: candidates.length,
-      total: candidates.length,
-      place,
-      topPlaces: candidates.slice(0, 20),
-      source: "naver_map_browser_collector",
-      message: matched
-        ? "네이버 지도 오가닉 " + matched.rank + "위로 확인되었습니다."
-        : "네이버 지도 오가닉 상위 " + candidates.length + "개 안에서 대상 플레이스를 찾지 못했습니다.",
-    };
+      const place = matched || {
+        id: placeId,
+        name: placeName,
+        url: resolved.url || placeUrl,
+      };
+
+      return {
+        ok: true,
+        matched: Boolean(matched),
+        rank: matched ? matched.rank : null,
+        checkedCount: candidates.length,
+        total: candidates.length,
+        place,
+        topPlaces: candidates.slice(0, 20),
+        source: "naver_map_browser_collector",
+        message: matched
+          ? "네이버 지도 오가닉 " + matched.rank + "위로 확인되었습니다."
+          : "네이버 지도 오가닉 상위 " + candidates.length + "개 안에서 대상 플레이스를 찾지 못했습니다.",
+      };
+    })();
+
+    const timeout = new Promise((_, reject) => {
+      overallTimeout = setTimeout(() => reject(new Error("naver_map_lookup_timeout")), OVERALL_TIMEOUT_MS);
+    });
+    return await Promise.race([lookup, timeout]);
   } finally {
+    clearTimeout(overallTimeout);
     await browser.close().catch(() => {});
   }
 }

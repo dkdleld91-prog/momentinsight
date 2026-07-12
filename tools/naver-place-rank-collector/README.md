@@ -119,8 +119,9 @@ NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 
 ```txt
 APIFY_NAVER_MAPS_TOKEN=Apify API 토큰
-APIFY_NAVER_MAPS_ACTOR_ID=abotapi~naver-map-scraper
-APIFY_NAVER_MAPS_TIMEOUT_MS=120000
+APIFY_NAVER_MAPS_IDENTITY_ACTOR_ID=abotapi~naver-map-scraper
+APIFY_NAVER_MAPS_SEARCH_ACTOR_ID=oxygenated_quagmire~naver-place-search
+APIFY_NAVER_MAPS_TIMEOUT_MS=220000
 ```
 
 토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
@@ -149,7 +150,7 @@ NAVER_PLACE_RANK_TIMEOUT_MS=240000
 ```txt
 NAVER_PLACE_RANK_API_URL=https://moment-place-rank-collector.onrender.com/rank/naver-place
 NAVER_PLACE_RANK_API_KEY=Render의 PLACE_RANK_COLLECTOR_SECRET와 동일한 값
-NAVER_PLACE_RANK_TIMEOUT_MS=45000
+NAVER_PLACE_RANK_TIMEOUT_MS=240000
 ```
 
 ## 주의

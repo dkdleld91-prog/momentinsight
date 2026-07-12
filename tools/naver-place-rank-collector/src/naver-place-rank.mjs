@@ -7,13 +7,13 @@ const OVERALL_TIMEOUT_MS = Math.max(
 );
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") === "true";
-const APIFY_ACTOR_ID = String(
+const APIFY_IDENTITY_ACTOR_ID = String(
+  process.env.APIFY_NAVER_MAPS_IDENTITY_ACTOR_ID ||
   process.env.APIFY_NAVER_MAPS_ACTOR_ID || "abotapi~naver-map-scraper"
 ).trim();
-const APIFY_RAW_RESULT_LIMIT = Math.max(
-  DEFAULT_MAX_RANK,
-  Math.min(500, Number(process.env.APIFY_NAVER_MAPS_RAW_LIMIT || 360))
-);
+const APIFY_SEARCH_ACTOR_ID = String(
+  process.env.APIFY_NAVER_MAPS_SEARCH_ACTOR_ID || "oxygenated_quagmire~naver-place-search"
+).trim();
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
@@ -296,13 +296,13 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
   const controller = new AbortController();
   const timeoutMs = Math.max(
     30000,
-    Math.min(300000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 120000))
+    Math.min(230000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 220000))
   );
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const runActor = async (input) => {
+    const runActor = async (actorId, input) => {
       const endpoint = new URL(
-        `https://api.apify.com/v2/acts/${encodeURIComponent(APIFY_ACTOR_ID)}/run-sync-get-dataset-items`
+        `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items`
       );
       endpoint.searchParams.set("token", token);
       const response = await fetchImpl(endpoint, {
@@ -324,7 +324,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     // A short naver.me URL does not contain a place ID. Resolve it once through
     // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
     if ((!collectTargetIds(target).length || !target.placeName) && target.placeUrl) {
-      const identityItems = await runActor({
+      const identityItems = await runActor(APIFY_IDENTITY_ACTOR_ID, {
         mode: "url",
         startUrls: [{ url: target.placeUrl }],
         includeDetails: false,
@@ -361,15 +361,12 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
       };
     }
 
-    const items = await runActor({
-        mode: "search",
-        keywords: [keyword],
-        sort: "relevance",
-        includeDetails: false,
-        includeReviews: false,
-        // Actor rows can contain ads or duplicate places. Request a buffer so
-        // the normalized organic list can still verify the full top 300.
-        maxItems: Math.max(maxRank, APIFY_RAW_RESULT_LIMIT),
+    const items = await runActor(APIFY_SEARCH_ACTOR_ID, {
+        queries: [keyword],
+        maxResults: maxRank,
+        includePhotos: false,
+        includeReviewSnippets: false,
+        proxyConfiguration: { useApifyProxy: true },
     });
 
     const candidates = normalizeApifyCandidates(items, maxRank);
@@ -393,7 +390,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         url: target.placeUrl,
       },
       topPlaces: candidates.slice(0, 20),
-      source: "apify_naver_maps_scraper",
+      source: "apify_naver_place_search",
       message: matched
         ? `네이버 지도 오가닉 ${matched.rank}위로 확인되었습니다.`
         : complete

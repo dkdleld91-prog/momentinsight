@@ -160,12 +160,10 @@ test("Apify provider marks 300 verified organic rows complete", async () => {
       maxRank: 300,
     }, async (_url, options) => {
       const requestBody = JSON.parse(options.body);
-      assert.equal(requestBody.mode, "search");
-      assert.deepEqual(requestBody.keywords, ["테스트 맛집"]);
-      assert.equal(requestBody.sort, "relevance");
-      assert.equal(requestBody.includeDetails, false);
-      assert.equal(requestBody.includeReviews, false);
-      assert.equal(requestBody.maxItems, 360);
+      assert.deepEqual(requestBody.queries, ["테스트 맛집"]);
+      assert.equal(requestBody.maxResults, 300);
+      assert.equal(requestBody.includePhotos, false);
+      assert.equal(requestBody.includeReviewSnippets, false);
       assert.equal("maxPages" in requestBody, false);
       assert.equal("query" in requestBody, false);
       return new Response(JSON.stringify(rows), { status: 200 });
@@ -205,9 +203,8 @@ test("resolves a URL-only tracker before matching it inside 300 organic rows", a
         }]), { status: 200 });
       }
 
-      assert.equal(requestBody.mode, "search");
-      assert.deepEqual(requestBody.keywords, ["구월동 맛집"]);
-      assert.equal(requestBody.maxItems, 360);
+      assert.deepEqual(requestBody.queries, ["구월동 맛집"]);
+      assert.equal(requestBody.maxResults, 300);
       const rows = Array.from({ length: 300 }, (_, index) => ({
         placeId: index === 236 ? targetId : String(5000000 + index),
         name: index === 236 ? "구월동 자동식별 식당" : `구월동 후보 ${index + 1}`,
@@ -251,7 +248,8 @@ test("resolves a missing place name even when the URL already contains an ID", a
         }]), { status: 200 });
       }
 
-      assert.equal(requestBody.mode, "search");
+      assert.deepEqual(requestBody.queries, ["구월동 맛집"]);
+      assert.equal(requestBody.maxResults, 300);
       const rows = Array.from({ length: 300 }, (_, index) => ({
         placeId: index === 48 ? targetId : String(8000000 + index),
         name: index === 48 ? "URL 자동식별 식당" : `후보 ${index + 1}`,
@@ -288,7 +286,7 @@ test("Apify provider verifies organic rank 300 after removing ads and duplicates
       maxRank: 300,
     }, async (_url, options) => {
       const requestBody = JSON.parse(options.body);
-      assert.equal(requestBody.maxItems, 360);
+      assert.equal(requestBody.maxResults, 300);
       return new Response(JSON.stringify(rows), { status: 200 });
     });
 

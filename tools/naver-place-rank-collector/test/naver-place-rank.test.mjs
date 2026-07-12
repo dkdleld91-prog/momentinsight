@@ -128,7 +128,7 @@ test("returns a deadline partial reason instead of overstating checkedCount", as
 test("clamps provider requests to the supported 300 result ceiling", () => {
   assert.equal(clampMaxRank(1000), 300);
   assert.equal(clampMaxRank(300), 300);
-  assert.equal(clampMaxRank(1), 20);
+  assert.equal(clampMaxRank(1), 300);
 });
 
 test("normalizes and deduplicates Apify rows while excluding ads", () => {

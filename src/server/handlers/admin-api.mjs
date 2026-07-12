@@ -170,6 +170,7 @@ async function handlePost(request, ctx, config) {
   if (config.readonly) return methodNotAllowed(["GET"]);
 
   const body = await readBody(request);
+  if (config.table === "naver_rank_trackers") body.max_rank = 300;
   if (config.table === "naver_rank_trackers" && body.sort_order == null) {
     const agencyCode = String(body.agency_code || "mml93-a01").trim().toLowerCase();
     const { data: latest, error: sortError } = await ctx.supabaseAdmin
@@ -215,6 +216,7 @@ async function handlePatch(request, ctx, config, id) {
   if (!id) return json({ ok: false, message: "Missing resource id" }, 400);
 
   const body = await readBody(request);
+  if (config.table === "naver_rank_trackers") body.max_rank = 300;
   const { data, error } = await ctx.supabaseAdmin
     .from(config.table)
     .update(body)

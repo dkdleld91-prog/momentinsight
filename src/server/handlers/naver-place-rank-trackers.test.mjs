@@ -256,11 +256,12 @@ test("normalizes place rank group names like product rank groups", () => {
 });
 
 test("reads legacy rows as the default group before the migration is applied", async () => {
-  const { ctx } = testContext([{ id: "legacy", group_name: undefined }], { missingGroupColumn: true });
+  const { ctx } = testContext([{ id: "legacy", group_name: undefined, max_rank: 1000 }], { missingGroupColumn: true });
   const result = await payload(await handlePlaceRankTrackersRequest(request("GET"), ctx));
 
   assert.equal(result.status, 200);
   assert.equal(result.body.trackers[0].groupName, "기본 그룹");
+  assert.equal(result.body.trackers[0].maxRank, 300);
 });
 
 test("returns 409 when a group update reaches a database without the migration", async () => {
@@ -283,11 +284,14 @@ test("stores groups on create and preserves them through group update and refres
     placeId: "9876543210",
     placeName: "테스트 식당",
     group_name: "  강남   지점  ",
+    maxRank: 1000,
   }), ctx));
 
   assert.equal(created.status, 201);
   assert.equal(created.body.tracker.groupName, "강남 지점");
+  assert.equal(created.body.tracker.maxRank, 300);
   assert.equal(state.tables[TRACKERS][0].group_name, "강남 지점");
+  assert.equal(state.tables[TRACKERS][0].max_rank, 300);
 
   const trackerId = created.body.tracker.id;
   const grouped = await payload(await handlePlaceRankTrackersRequest(request("POST", {

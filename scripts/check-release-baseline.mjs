@@ -40,6 +40,7 @@ const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
+const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
@@ -64,6 +65,7 @@ const staticBuildScript = read("scripts/build-vercel-static.mjs");
 const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
 const rankTrackerGroupsMigration = read("supabase/migrations/20260701090000_naver_rank_tracker_groups.sql");
 const placeRankTrackerGroupsMigration = read("supabase/migrations/20260712090000_naver_place_rank_tracker_groups.sql");
+const fixedRankScopeMigration = read("supabase/migrations/20260712042029_fix_rank_trackers_to_300.sql");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -89,7 +91,7 @@ const checks = {
     '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-admin-screen="naver-rank">네이버 상품 순위</a>',
     'data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위</a>',
-    'data-mi-admin-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>',
+    'data-mi-admin-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위 <small>(개발중)</small></a>',
     '<p class="mi-nav-title">광고 조사</p>',
     'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
   ]) && adminSource.includes('<h1>보고서 관리</h1>')
@@ -132,7 +134,7 @@ const checks = {
     'data-mi-screen="keyword-tool">키워드 조회</a>',
     'data-mi-screen="naver-rank">네이버 상품 순위</a>',
     'data-mi-screen="naver-rank-tracking">네이버 30일 순위</a>',
-    'data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>',
+    'data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위 <small>(개발중)</small></a>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
     'data-mi-screen="seo-check">SEO 확인</a>',
     '<p class="mi-nav-title">연동</p>',
@@ -165,6 +167,21 @@ const checks = {
     && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
+  placeRankMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("네이버 플레이스 30일 순위 <small>(개발중)</small>")
+    && source.includes('네이버 플레이스 30일 순위 <span class="mi-badge warn">개발중</span>')),
+  rankTrackingFixedAt300: [adminSource, clientSource].every((source) => source.includes("data-rank-fixed-range")
+    && source.includes("data-place-rank-fixed-range")
+    && !source.includes("data-rank-max")
+    && !source.includes("data-place-rank-max")
+    && source.includes("maxRank: 300"))
+    && rankServer.includes("PRODUCT_RANK_TRACKER_MAX_RANK = 300")
+    && rankServer.includes("maxRank: PRODUCT_RANK_TRACKER_MAX_RANK")
+    && placeRankServer.includes("PLACE_RANK_TRACKER_MAX_RANK = 300")
+    && placeRankServer.includes("maxRank: PLACE_RANK_TRACKER_MAX_RANK")
+    && adminApiServer.includes('if (config.table === "naver_rank_trackers") body.max_rank = 300;')
+    && fixedRankScopeMigration.includes("check (max_rank = 300)")
+    && fixedRankScopeMigration.includes("update public.naver_rank_trackers")
+    && fixedRankScopeMigration.includes("update public.naver_place_rank_trackers"),
   placeRankDailyMetricBoard: [adminSource, clientSource].every((source) => source.includes("mi-place-day-card")
     && source.includes("groupPlaceSnapshotsByDay")
     && source.includes('renderPlaceDayMetric("블"')

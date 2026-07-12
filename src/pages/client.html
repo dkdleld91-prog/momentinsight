@@ -1115,6 +1115,20 @@
       white-space: nowrap;
     }
 
+    #mi-clean .mi-rank-fixed-range {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      color: var(--mi-navy);
+      background: #f7f9fc;
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
     #mi-clean .mi-rank-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -4304,7 +4318,7 @@
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
           <a href="#mi-naver-rank" data-mi-screen="naver-rank">네이버 상품 순위</a>
           <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">네이버 30일 순위</a>
-          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위</a>
+          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위 <small>(개발중)</small></a>
           <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
           <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인</a>
         </div>
@@ -4328,7 +4342,7 @@
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드</a>
         <a href="#mi-naver-rank" data-mi-screen="naver-rank">상품순위</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">30일순위</a>
-        <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">플레이스 30일</a>
+        <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">플레이스 30일 <small>(개발중)</small></a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
@@ -4802,12 +4816,7 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <select class="mi-input" data-rank-max aria-label="조회 범위">
-                <option value="100">100위</option>
-                <option value="300" selected>300위</option>
-                <option value="500">500위</option>
-                <option value="1000">1000위</option>
-              </select>
+              <span class="mi-rank-fixed-range" data-rank-fixed-range aria-label="조회 범위 300위 고정">300위 고정</span>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.</p>
@@ -4839,11 +4848,11 @@
           </article>
         </section>
 
-        <section class="mi-view" id="mi-naver-place-rank-tracking" data-mi-view="naver-place-rank-tracking" aria-label="네이버 플레이스 30일 순위 화면">
+        <section class="mi-view" id="mi-naver-place-rank-tracking" data-mi-view="naver-place-rank-tracking" aria-label="네이버 플레이스 30일 순위 개발중 화면">
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 플레이스 30일 순위</h1>
+              <h1>네이버 플레이스 30일 순위 <span class="mi-badge warn">개발중</span></h1>
               <p>핵심 키워드의 30일 순위 흐름을 확인합니다.</p>
             </div>
             <span class="mi-badge">30일 기록</span>
@@ -4862,12 +4871,7 @@
               <input class="mi-input" data-place-rank-keyword aria-label="플레이스 순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-place-rank-url aria-label="네이버 플레이스 URL" placeholder="네이버 플레이스 URL 붙여넣기" />
               <input class="mi-input" data-place-rank-name aria-label="상호명" placeholder="상호명 선택 입력" />
-              <select class="mi-input" data-place-rank-max aria-label="조회 범위">
-                <option value="50">50위</option>
-                <option value="100">100위</option>
-                <option value="300" selected>300위</option>
-                <option value="500">500위</option>
-              </select>
+              <span class="mi-rank-fixed-range" data-place-rank-fixed-range aria-label="조회 범위 300위 고정">300위 고정</span>
               <button class="mi-button" type="button" data-place-rank-run>순위 추적</button>
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 플레이스 URL 또는 상호명을 입력하세요.</p>
@@ -7405,7 +7409,6 @@
         var rankKeyword = card.querySelector("[data-rank-keyword]");
         var rankUrl = card.querySelector("[data-rank-url]");
         var rankProductId = card.querySelector("[data-rank-product-id]");
-        var rankMax = card.querySelector("[data-rank-max]");
         var rankRun = card.querySelector("[data-rank-run]");
         var rankStatus = card.querySelector("[data-rank-status]");
         var rankResult = card.querySelector("[data-rank-result]");
@@ -7620,7 +7623,7 @@
               targetUrl: targetUrl,
               productId: productId,
               groupName: "",
-              maxRank: rankMax ? rankMax.value : "300"
+              maxRank: 300
             });
             if (payload.tracker) {
               rankTrackers = [payload.tracker].concat(rankTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));
@@ -8974,7 +8977,6 @@
         var placeKeyword = card.querySelector("[data-place-rank-keyword]");
         var placeUrl = card.querySelector("[data-place-rank-url]");
         var placeName = card.querySelector("[data-place-rank-name]");
-        var placeMax = card.querySelector("[data-place-rank-max]");
         var placeRun = card.querySelector("[data-place-rank-run]");
         var placeStatus = card.querySelector("[data-place-rank-status]");
         var placeHistory = card.querySelector("[data-place-rank-history]");
@@ -9375,7 +9377,7 @@
               keyword: keyword,
               placeUrl: targetUrl,
               placeName: targetName,
-              maxRank: placeMax ? placeMax.value : "300"
+              maxRank: 300
             });
             if (payload.tracker) {
               placeTrackers = [payload.tracker].concat(placeTrackers.filter(function (item) { return item.id !== payload.tracker.id; }));

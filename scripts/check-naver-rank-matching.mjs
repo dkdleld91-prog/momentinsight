@@ -13,10 +13,13 @@ import {
   rankPagePosition,
   rankQueryKeyword,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
+import { PRODUCT_RANK_TRACKER_MAX_RANK } from "../src/server/handlers/naver-rank-trackers.mjs";
 
 const smartstoreUrl = "https://smartstore.naver.com/sample-store/products/1234567890?NaPm=ct%3Dabc%7Cci%3D999999999999999999999";
 const catalogUrl = "https://search.shopping.naver.com/catalog/9876543210?query=%EB%82%A8%EC%84%B1%20%EC%86%8D%EC%98%B7&cat_id=50000000";
 const brandProductUrl = "https://brand.naver.com/jyns/products/6567319094";
+
+assert.equal(PRODUCT_RANK_TRACKER_MAX_RANK, 300);
 
 assert.equal(extractProductId(smartstoreUrl), "1234567890");
 assert.deepEqual(productIdCandidates(smartstoreUrl), ["1234567890"]);

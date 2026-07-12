@@ -219,10 +219,10 @@ async function requirePlaceRankAccess(request, ctx, body = {}, options = {}) {
   return { ok: true, agencyCode, clientId, admin: false };
 }
 
-function clampMaxRank(value) {
-  const number = Number(value || 300);
-  if (!Number.isFinite(number)) return 300;
-  return Math.max(50, Math.min(1000, Math.round(number)));
+export const PLACE_RANK_TRACKER_MAX_RANK = 300;
+
+function clampMaxRank() {
+  return PLACE_RANK_TRACKER_MAX_RANK;
 }
 
 function extractPlaceId(value) {
@@ -424,7 +424,7 @@ export function placeTrackerPayload(row, snapshots = []) {
     placeUrl: row.place_url,
     placeId: row.place_id,
     placeName: row.place_name,
-    maxRank: row.max_rank,
+    maxRank: PLACE_RANK_TRACKER_MAX_RANK,
     status: row.status,
     startedAt: row.started_at,
     lastCheckedAt: row.last_checked_at,
@@ -920,7 +920,7 @@ async function lookupExternalPlaceProvider(config, tracker) {
         placeId: tracker.place_id,
         placeUrl: tracker.place_url,
         placeName: tracker.place_name,
-        maxRank: tracker.max_rank,
+        maxRank: PLACE_RANK_TRACKER_MAX_RANK,
       }),
       signal: controller.signal,
     });
@@ -929,8 +929,9 @@ async function lookupExternalPlaceProvider(config, tracker) {
       throw new Error(payload.message || payload.error || "place_rank_provider_failed");
     }
 
-    const rank = Number(payload.rank || payload.position || 0);
-    const matched = Boolean(payload.matched || rank > 0);
+    const rawRank = Number(payload.rank || payload.position || 0);
+    const rank = rawRank >= 1 && rawRank <= PLACE_RANK_TRACKER_MAX_RANK ? rawRank : 0;
+    const matched = Boolean(payload.matched || rawRank > 0) && rank > 0;
     const metrics = normalizePlaceMetrics(payload.metrics || payload.place || payload.item || payload);
     const place = payload.place || payload.item || {};
     const placeWithMetrics = hasPlaceMetrics(metrics) ? { ...place, metrics: { ...(place.metrics || {}), ...metrics } } : place;
@@ -938,9 +939,9 @@ async function lookupExternalPlaceProvider(config, tracker) {
       ok: true,
       matched,
       rank: matched ? rank : null,
-      checkedCount: Number(payload.checkedCount || payload.checked_count || payload.total || 0),
+      checkedCount: Math.min(PLACE_RANK_TRACKER_MAX_RANK, Math.max(0, Number(payload.checkedCount || payload.checked_count || payload.total || 0))),
       total: Number(payload.total || payload.checkedCount || payload.checked_count || 0),
-      requestedMaxRank: Number(payload.requestedMaxRank || payload.requested_max_rank || tracker.max_rank || 0),
+      requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
       complete: payload.complete === true,
       partial: payload.partial === true || payload.complete === false,
       partialReason: payload.partialReason || payload.partial_reason || null,
@@ -1170,7 +1171,7 @@ async function createTracker(request, ctx, body, access = {}) {
       place_url: placeUrl || null,
       place_id: placeId || null,
       place_name: placeName || null,
-      max_rank: clampMaxRank(body.maxRank || body.max_rank),
+      max_rank: clampMaxRank(),
       status: "active",
       started_at: now.toISOString(),
       next_check_at: now.toISOString(),

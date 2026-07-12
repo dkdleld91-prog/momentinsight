@@ -55,10 +55,8 @@ function normalizeComparable(value) {
     .replace(/[()[\]{}'"`‘’“”·|:,._\-~!@#$%^&*+=?/\\]/g, "");
 }
 
-function clampMaxRank(value) {
-  const number = Number(value || DEFAULT_MAX_RANK);
-  if (!Number.isFinite(number)) return DEFAULT_MAX_RANK;
-  return Math.max(20, Math.min(NAVER_PLACE_MAX_RESULTS, Math.round(number)));
+function clampMaxRank() {
+  return DEFAULT_MAX_RANK;
 }
 
 function extractPlaceId(value) {

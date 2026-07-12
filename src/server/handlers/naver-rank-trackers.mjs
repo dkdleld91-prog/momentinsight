@@ -302,10 +302,10 @@ function rankAccessAuthorized(request, body = {}, agencyCode = "") {
   return Boolean(accessCode && scopedAgencyCode && safeEqual(accessCode, scopedAgencyCode));
 }
 
-function clampMaxRank(value) {
-  const number = Number(value || 300);
-  if (!Number.isFinite(number)) return 300;
-  return Math.max(100, Math.min(1000, Math.round(number)));
+export const PRODUCT_RANK_TRACKER_MAX_RANK = 300;
+
+function clampMaxRank() {
+  return PRODUCT_RANK_TRACKER_MAX_RANK;
 }
 
 function trackerPayload(row, snapshots = [], keywordVolume = null) {
@@ -321,7 +321,7 @@ function trackerPayload(row, snapshots = [], keywordVolume = null) {
     productId: row.product_id,
     mallName: row.mall_name,
     productTitle: row.product_title,
-    maxRank: row.max_rank,
+    maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     status: row.status,
     startedAt: row.started_at,
     endsAt: row.ends_at,
@@ -647,7 +647,7 @@ export async function runTrackerCheck(ctx, tracker) {
       targetUrl: tracker.product_url,
       targetMallName: tracker.mall_name,
       targetProductTitle: tracker.product_title,
-      maxRank: tracker.max_rank,
+      maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     });
     const message = shoppingRankMessage(result);
     const snapshot = await insertSnapshot(ctx, tracker, checkedAt, result, message);
@@ -740,7 +740,7 @@ async function createTracker(request, ctx, body, access = {}) {
       product_id: productId || null,
       mall_name: mallName || null,
       product_title: productTitle || null,
-      max_rank: clampMaxRank(body.maxRank || body.max_rank),
+      max_rank: clampMaxRank(),
       status: "active",
       started_at: now.toISOString(),
       ends_at: addDays(now, 3650),

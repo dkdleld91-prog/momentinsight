@@ -165,7 +165,7 @@ test("Apify provider marks 300 verified organic rows complete", async () => {
       assert.equal(requestBody.sort, "relevance");
       assert.equal(requestBody.includeDetails, false);
       assert.equal(requestBody.includeReviews, false);
-      assert.equal(requestBody.maxItems, 300);
+      assert.equal(requestBody.maxItems, 360);
       assert.equal("maxPages" in requestBody, false);
       assert.equal("query" in requestBody, false);
       return new Response(JSON.stringify(rows), { status: 200 });
@@ -175,6 +175,113 @@ test("Apify provider marks 300 verified organic rows complete", async () => {
     assert.equal(result.partial, false);
     assert.equal(result.checkedCount, 300);
     assert.equal(result.rank, 300);
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("resolves a URL-only tracker before matching it inside 300 organic rows", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const targetId = "1565776290";
+    let callCount = 0;
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "구월동 맛집",
+      placeUrl: "https://naver.me/FTXD0JDp",
+      maxRank: 300,
+    }, async (_url, options) => {
+      callCount += 1;
+      const requestBody = JSON.parse(options.body);
+      if (callCount === 1) {
+        assert.equal(requestBody.mode, "url");
+        assert.deepEqual(requestBody.startUrls, [{ url: "https://naver.me/FTXD0JDp" }]);
+        assert.equal(requestBody.maxItems, 1);
+        return new Response(JSON.stringify([{
+          placeId: targetId,
+          name: "구월동 자동식별 식당",
+          placeUrl: `https://map.naver.com/p/entry/place/${targetId}`,
+        }]), { status: 200 });
+      }
+
+      assert.equal(requestBody.mode, "search");
+      assert.deepEqual(requestBody.keywords, ["구월동 맛집"]);
+      assert.equal(requestBody.maxItems, 360);
+      const rows = Array.from({ length: 300 }, (_, index) => ({
+        placeId: index === 236 ? targetId : String(5000000 + index),
+        name: index === 236 ? "구월동 자동식별 식당" : `구월동 후보 ${index + 1}`,
+        placeUrl: `https://map.naver.com/p/entry/place/${index === 236 ? targetId : 5000000 + index}`,
+      }));
+      return new Response(JSON.stringify(rows), { status: 200 });
+    });
+
+    assert.equal(callCount, 2);
+    assert.equal(result.ok, true);
+    assert.equal(result.complete, true);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.rank, 237);
+    assert.equal(result.place.id, targetId);
+    assert.equal(result.place.name, "구월동 자동식별 식당");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("Apify provider verifies organic rank 300 after removing ads and duplicates", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const rows = [
+      { id: "ad-1", name: "광고 장소", isAd: true },
+      { placeId: "700000", name: "중복 장소" },
+      { businessId: "700000", title: "중복 장소" },
+      ...Array.from({ length: 300 }, (_, index) => ({
+        placeId: String(700001 + index),
+        name: `오가닉 장소 ${index + 1}`,
+        placeUrl: `https://map.naver.com/p/entry/place/${700001 + index}`,
+      })),
+    ];
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "300위 검증",
+      placeId: "700299",
+      maxRank: 300,
+    }, async (_url, options) => {
+      const requestBody = JSON.parse(options.body);
+      assert.equal(requestBody.maxItems, 360);
+      return new Response(JSON.stringify(rows), { status: 200 });
+    });
+
+    assert.equal(result.complete, true);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.rank, 300);
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("URL identity failure does not run keyword search or claim a 300 result", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    let callCount = 0;
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "식별 실패",
+      placeUrl: "https://naver.me/unresolved",
+      maxRank: 300,
+    }, async (_url, options) => {
+      callCount += 1;
+      const requestBody = JSON.parse(options.body);
+      assert.equal(requestBody.mode, "url");
+      return new Response("[]", { status: 200 });
+    });
+
+    assert.equal(callCount, 1);
+    assert.equal(result.ok, false);
+    assert.equal(result.complete, false);
+    assert.equal(result.stopReason, "place_identity_unresolved");
   } finally {
     if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
     else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;

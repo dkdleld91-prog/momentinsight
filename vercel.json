@@ -4,6 +4,11 @@
   "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
+  "functions": {
+    "api/[...path].mjs": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/naver-rank-cron",

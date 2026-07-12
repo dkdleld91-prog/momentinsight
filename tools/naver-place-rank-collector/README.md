@@ -141,7 +141,7 @@ https://moment-place-rank-collector.onrender.com/health
 ```txt
 NAVER_PLACE_RANK_API_URL=https://your-collector.example.com/rank/naver-place
 NAVER_PLACE_RANK_API_KEY=PLACE_RANK_COLLECTOR_SECRET와 동일한 값
-NAVER_PLACE_RANK_TIMEOUT_MS=90000
+NAVER_PLACE_RANK_TIMEOUT_MS=240000
 ```
 
 예를 들어 Render URL이 `https://moment-place-rank-collector.onrender.com`이면 Vercel에는 아래처럼 넣습니다.

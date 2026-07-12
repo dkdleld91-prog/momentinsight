@@ -1817,7 +1817,7 @@
     }
 
     #mi-admin .mi-place-rank-card .mi-rank-form.is-tracking {
-      grid-template-columns: minmax(120px, 0.75fr) minmax(220px, 1.6fr) minmax(110px, 0.7fr) 96px auto;
+      grid-template-columns: minmax(150px, 0.8fr) minmax(320px, 1.9fr) 104px auto;
     }
 
     #mi-admin .mi-rank-form .mi-button {
@@ -6409,7 +6409,7 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <span class="mi-rank-fixed-range" data-rank-fixed-range aria-label="조회 범위 300위 고정">300위 고정</span>
+              <span class="mi-rank-fixed-range" data-rank-fixed-range aria-label="조회 범위 300위 이내">300위 이내</span>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
             <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.</p>
@@ -6463,11 +6463,10 @@
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-place-rank-keyword aria-label="플레이스 순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-place-rank-url aria-label="네이버 플레이스 URL" placeholder="네이버 플레이스 URL 붙여넣기" />
-              <input class="mi-input" data-place-rank-name aria-label="상호명" placeholder="상호명 선택 입력" />
-              <span class="mi-rank-fixed-range" data-place-rank-fixed-range aria-label="조회 범위 300위 고정">300위 고정</span>
+              <span class="mi-rank-fixed-range" data-place-rank-fixed-range aria-label="조회 범위 300위 이내">300위 이내</span>
               <button class="mi-button" type="button" data-place-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 플레이스 URL 또는 상호명을 입력하세요.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-place-rank-status aria-live="polite">키워드와 플레이스 URL을 입력하세요. 상호명은 자동 확인됩니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
                 <h3>플레이스별 30일 순위 기록</h3>
@@ -11616,7 +11615,6 @@
         if (!card) return;
         var placeKeyword = card.querySelector("[data-place-rank-keyword]");
         var placeUrl = card.querySelector("[data-place-rank-url]");
-        var placeName = card.querySelector("[data-place-rank-name]");
         var placeRun = card.querySelector("[data-place-rank-run]");
         var placeStatus = card.querySelector("[data-place-rank-status]");
         var placeHistory = card.querySelector("[data-place-rank-history]");
@@ -12050,13 +12048,12 @@
         placeRun.addEventListener("click", async function () {
           var keyword = (placeKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
           var targetUrl = placeUrl ? placeUrl.value.trim() : "";
-          var targetName = placeName ? placeName.value.trim() : "";
           if (!keyword) {
             setStatus(placeStatus, "플레이스 기준 키워드를 입력해주세요.", "is-warn");
             return;
           }
-          if (!targetUrl && !targetName) {
-            setStatus(placeStatus, "네이버 플레이스 URL 또는 상호명을 입력해주세요.", "is-warn");
+          if (!targetUrl) {
+            setStatus(placeStatus, "네이버 플레이스 URL을 입력해주세요.", "is-warn");
             return;
           }
           placeRun.disabled = true;
@@ -12066,7 +12063,6 @@
               action: "create",
               keyword: keyword,
               placeUrl: targetUrl,
-              placeName: targetName,
               groupName: RANK_DEFAULT_GROUP,
               maxRank: 300
             });

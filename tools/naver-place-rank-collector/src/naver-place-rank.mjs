@@ -10,6 +10,10 @@ const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") 
 const APIFY_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_ACTOR_ID || "abotapi~naver-map-scraper"
 ).trim();
+const APIFY_RAW_RESULT_LIMIT = Math.max(
+  DEFAULT_MAX_RANK,
+  Math.min(500, Number(process.env.APIFY_NAVER_MAPS_RAW_LIMIT || 360))
+);
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
@@ -283,7 +287,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
 
   const keyword = normalizeText(payload.keyword);
   const maxRank = clampMaxRank(payload.maxRank || payload.max_rank);
-  const target = {
+  let target = {
     placeId: normalizeText(payload.placeId || payload.place_id),
     placeIds: extractPlaceIds(payload.placeUrl || payload.place_url),
     placeUrl: normalizeUrl(payload.placeUrl || payload.place_url),
@@ -296,30 +300,77 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
   );
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const endpoint = new URL(
-      `https://api.apify.com/v2/acts/${encodeURIComponent(APIFY_ACTOR_ID)}/run-sync-get-dataset-items`
-    );
-    endpoint.searchParams.set("token", token);
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const runActor = async (input) => {
+      const endpoint = new URL(
+        `https://api.apify.com/v2/acts/${encodeURIComponent(APIFY_ACTOR_ID)}/run-sync-get-dataset-items`
+      );
+      endpoint.searchParams.set("token", token);
+      const response = await fetchImpl(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      });
+      const bodyText = await response.text();
+      const items = bodyText ? JSON.parse(bodyText) : [];
+      if (!response.ok) {
+        const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
+        throw new Error(message);
+      }
+      if (!Array.isArray(items)) throw new Error("apify_dataset_items_invalid");
+      return items;
+    };
+
+    // A short naver.me URL does not contain a place ID. Resolve it once through
+    // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
+    if (!collectTargetIds(target).length && !target.placeName && target.placeUrl) {
+      const identityItems = await runActor({
+        mode: "url",
+        startUrls: [{ url: target.placeUrl }],
+        includeDetails: false,
+        includeReviews: false,
+        maxItems: 1,
+      });
+      const identity = normalizeApifyCandidates(identityItems, 1)[0];
+      if (identity) {
+        target = {
+          ...target,
+          placeId: identity.id,
+          placeIds: uniqueValues([...(target.placeIds || []), ...(identity.placeIds || []), identity.id]),
+          placeUrl: identity.url || target.placeUrl,
+          placeName: identity.name || target.placeName,
+        };
+      }
+    }
+
+    if (!collectTargetIds(target).length && !target.placeName) {
+      return {
+        ok: false,
+        matched: false,
+        checkedCount: 0,
+        total: 0,
+        requestedMaxRank: maxRank,
+        complete: false,
+        partial: true,
+        partialReason: "place_identity_unresolved",
+        stopReason: "place_identity_unresolved",
+        place: { id: "", name: "", url: target.placeUrl },
+        topPlaces: [],
+        source: "apify_naver_maps_scraper",
+        message: "플레이스 URL에서 장소 식별값을 확인하지 못했습니다.",
+      };
+    }
+
+    const items = await runActor({
         mode: "search",
         keywords: [keyword],
         sort: "relevance",
         includeDetails: false,
         includeReviews: false,
-        maxItems: maxRank,
-      }),
-      signal: controller.signal,
+        // Actor rows can contain ads or duplicate places. Request a buffer so
+        // the normalized organic list can still verify the full top 300.
+        maxItems: Math.max(maxRank, APIFY_RAW_RESULT_LIMIT),
     });
-    const bodyText = await response.text();
-    const items = bodyText ? JSON.parse(bodyText) : [];
-    if (!response.ok) {
-      const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
-      throw new Error(message);
-    }
-    if (!Array.isArray(items)) throw new Error("apify_dataset_items_invalid");
 
     const candidates = normalizeApifyCandidates(items, maxRank);
     const matched = findMatch(candidates, target);

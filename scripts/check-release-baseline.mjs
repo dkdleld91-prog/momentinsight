@@ -171,6 +171,9 @@ const checks = {
     && source.includes('네이버 플레이스 30일 순위 <span class="mi-badge warn">개발중</span>')),
   rankTrackingFixedAt300: [adminSource, clientSource].every((source) => source.includes("data-rank-fixed-range")
     && source.includes("data-place-rank-fixed-range")
+    && source.includes("300위 이내")
+    && !source.includes("300위 고정")
+    && !source.includes("data-place-rank-name")
     && !source.includes("data-rank-max")
     && !source.includes("data-place-rank-max")
     && source.includes("maxRank: 300"))
@@ -349,8 +352,8 @@ const checks = {
     && source.includes("30일 순위 기록")
     && !source.includes("네이버 플레이스 순위 <small>추적</small>")
     && !source.includes("기존 네이버 검색 API 연결 시")),
-  naverPlaceTrackingFormUsesFiveColumns: [adminSource, clientSource].every((source) => source.includes(".mi-place-rank-card .mi-rank-form.is-tracking")
-    && source.includes("grid-template-columns: minmax(120px, 0.75fr) minmax(220px, 1.6fr) minmax(110px, 0.7fr) 96px auto;")
+  naverPlaceTrackingFormUsesFourColumns: [adminSource, clientSource].every((source) => source.includes(".mi-place-rank-card .mi-rank-form.is-tracking")
+    && source.includes("grid-template-columns: minmax(150px, 0.8fr) minmax(320px, 1.9fr) 104px auto;")
     && source.includes(".mi-place-rank-item .mi-rank-track-row-head")
     && source.includes("grid-template-columns: minmax(0, 1fr);")),
   naverRankNoResultRangeMessage: [adminSource, clientSource].every((source) => source.includes("rankCheckRangeLabel")

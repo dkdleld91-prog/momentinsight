@@ -281,8 +281,8 @@ test("stores groups on create and preserves them through group update and refres
   const created = await payload(await handlePlaceRankTrackersRequest(request("POST", {
     action: "create",
     keyword: "강남 맛집",
+    placeUrl: "https://map.naver.com/p/entry/place/9876543210",
     placeId: "9876543210",
-    placeName: "테스트 식당",
     group_name: "  강남   지점  ",
     maxRank: 1000,
   }), ctx));

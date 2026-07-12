@@ -907,7 +907,10 @@ async function lookupNaverLocalSearchRank(config, tracker) {
 
 async function lookupExternalPlaceProvider(config, tracker) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 90000));
+  const timeout = setTimeout(
+    () => controller.abort(),
+    Math.max(30000, Math.min(240000, Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000)))
+  );
   try {
     const response = await fetch(config.url, {
       method: "POST",
@@ -1092,8 +1095,8 @@ async function createTracker(request, ctx, body, access = {}) {
   const placeUrlCandidates = [...new Set([originalPlaceUrl, placeUrl].filter(Boolean))];
 
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
-  if (!placeUrl && !placeId && !placeName) {
-    return json(request, { ok: false, message: "네이버 플레이스 URL 또는 플레이스명을 입력해주세요." }, 400);
+  if (!originalPlaceUrl) {
+    return json(request, { ok: false, message: "네이버 플레이스 URL을 입력해주세요." }, 400);
   }
 
   const existing = await ctx.supabaseAdmin

@@ -160,8 +160,14 @@ test("Apify provider marks 300 verified organic rows complete", async () => {
       maxRank: 300,
     }, async (_url, options) => {
       const requestBody = JSON.parse(options.body);
+      assert.equal(requestBody.mode, "search");
+      assert.deepEqual(requestBody.keywords, ["테스트 맛집"]);
+      assert.equal(requestBody.sort, "relevance");
+      assert.equal(requestBody.includeDetails, false);
+      assert.equal(requestBody.includeReviews, false);
       assert.equal(requestBody.maxItems, 300);
-      assert.equal(requestBody.maxPages, 30);
+      assert.equal("maxPages" in requestBody, false);
+      assert.equal("query" in requestBody, false);
       return new Response(JSON.stringify(rows), { status: 200 });
     });
 
@@ -197,4 +203,17 @@ test("Apify provider reports a partial result instead of claiming 300", async ()
     if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
     else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
   }
+});
+
+test("normalizes the current Naver Map Actor review fields", () => {
+  const candidates = normalizeApifyCandidates([{
+    placeId: "300",
+    name: "현재 Actor 장소",
+    placeUrl: "https://map.naver.com/p/entry/place/300",
+    visitorReviewCount: 123,
+    blogCafeReviewCount: 45,
+  }], 300);
+
+  assert.equal(candidates[0].visitorReviewCount, "123");
+  assert.equal(candidates[0].blogReviewCount, "45");
 });

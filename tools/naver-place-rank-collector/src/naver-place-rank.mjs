@@ -8,7 +8,7 @@ const OVERALL_TIMEOUT_MS = Math.max(
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") === "true";
 const APIFY_ACTOR_ID = String(
-  process.env.APIFY_NAVER_MAPS_ACTOR_ID || "searchapi~naver-maps-scraper"
+  process.env.APIFY_NAVER_MAPS_ACTOR_ID || "abotapi~naver-map-scraper"
 ).trim();
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
@@ -251,7 +251,12 @@ function apifyCandidate(item = {}, index = 0) {
       item.reviewCount,
       item.reviewsCount
     ),
-    blogReviewCount: firstText(item.blogReviewCount, item.blog_reviews, item.blogCount),
+    blogReviewCount: firstText(
+      item.blogCafeReviewCount,
+      item.blogReviewCount,
+      item.blog_reviews,
+      item.blogCount
+    ),
     isAd: false,
   };
 }
@@ -299,10 +304,12 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        query: keyword,
+        mode: "search",
+        keywords: [keyword],
+        sort: "relevance",
+        includeDetails: false,
+        includeReviews: false,
         maxItems: maxRank,
-        maxPages: Math.min(50, Math.max(1, Math.ceil(maxRank / 10))),
-        market: "ko-KR",
       }),
       signal: controller.signal,
     });

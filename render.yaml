@@ -25,7 +25,7 @@ services:
       - key: APIFY_NAVER_MAPS_SEARCH_ACTOR_ID
         value: oxygenated_quagmire~naver-place-search
       - key: APIFY_NAVER_MAPS_DEEP_SEARCH_ACTOR_ID
-        value: solidcode~naver-map-scraper
+        value: delicious_zebu~naver-map-search-results-scraper
       - key: APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID
         value: abotapi~naver-map-scraper
       - key: APIFY_NAVER_MAPS_TIMEOUT_MS

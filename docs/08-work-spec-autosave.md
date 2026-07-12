@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 19:22:29
-- 기준 커밋: 16dba46
-- 작업트리: M docs/08-work-spec-autosave.md /  M src/server/handlers/naver-place-rank-trackers.mjs
+- 마지막 자동 저장: 2026. 07. 12. 20:31:35
+- 기준 커밋: 33b4bd0
+- 작업트리: M docs/08-work-spec-autosave.md /  M render.yaml /  M tools/naver-place-rank-collector/.env.example /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs /  M tools/naver-place-rank-collector/test/naver-place-rank.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -168,6 +168,9 @@
 - 기본 Actor가 비정상 응답 또는 300개 미만 미노출을 반환하면 300개 수집 Actor로 재조회한다.
 - 메인 API는 300개 수집기의 225초 실행 예산보다 먼저 요청을 취소하지 않는다.
 - 실제 300개 확인 전에는 `300위 이내 없음`으로 확정하지 않고 부분 확인 상태로 남긴다.
+- 짧은 `naver.me` URL은 HTTP 리다이렉트와 페이지 메타데이터에서 플레이스 ID와 상호명을 자동 확인한 뒤 순위를 조회한다.
+- 300개 전용 수집 Actor의 `PlaceId`, `Name`, `NaverMapUrl` 출력도 동일한 플레이스 후보로 정규화한다.
+- 로컬 수집기 테스트 22개, 플레이스 핸들러 테스트 6개, Vercel 빌드와 릴리스 기준 검사는 통과했다. 운영 300개 완주 여부는 배포 후 실조회로만 완료 판정한다.
 
 ## 다음 후보 작업
 

@@ -12,6 +12,7 @@ const {
   lookupNaverPlaceRankViaApify,
   normalizeApifyCandidates,
   normalizeApifyResult,
+  resolvePlaceIdentityViaHttp,
 } = __testing;
 
 function placeRow(index) {
@@ -157,6 +158,16 @@ test("builds actor-specific Apify inputs", () => {
     proxyConfiguration: { useApifyProxy: true },
   });
   assert.deepEqual(buildApifySearchInput(
+    "delicious_zebu~naver-map-search-results-scraper",
+    "강남 맛집",
+    300
+  ), {
+    keywords: ["강남 맛집"],
+    urls: [],
+    scrapePlaceDetails: false,
+    maxResultsPerKeyword: 300,
+  });
+  assert.deepEqual(buildApifySearchInput(
     "solidcode~naver-map-scraper",
     "강남 맛집",
     300
@@ -193,6 +204,42 @@ test("normalizes and deduplicates Apify rows while excluding ads", () => {
     [1, "100", "첫 장소"],
     [2, "200", "둘째 장소"],
   ]);
+});
+
+test("normalizes the capitalized 300-result Actor fields", () => {
+  const candidates = normalizeApifyCandidates([
+    {
+      PlaceId: "9999999999",
+      Name: "광고 장소",
+      NaverMapUrl: "https://map.naver.com/p/entry/place/9999999999",
+      IsAd: true,
+    },
+    {
+      PlaceId: "1565776290",
+      Name: "URL 자동식별 식당",
+      NaverMapUrl: "https://map.naver.com/p/entry/place/1565776290",
+      VisitorReviewCount: 120,
+      BlogReviewCount: 34,
+    },
+  ], 300);
+
+  assert.deepEqual(candidates.map((item) => [item.id, item.name, item.visitorReviewCount, item.blogReviewCount]), [
+    ["1565776290", "URL 자동식별 식당", "120", "34"],
+  ]);
+});
+
+test("resolves a short Naver URL from page metadata without a business name", async () => {
+  const result = await resolvePlaceIdentityViaHttp("https://naver.me/FTXD0JDp", async (_url, options) => {
+    assert.equal(options.method, "GET");
+    return new Response(`<!doctype html><html><head>
+      <meta property="og:url" content="https://map.naver.com/p/entry/place/1565776290">
+      <meta property="og:title" content="구월동 자동식별 식당 : 네이버">
+    </head></html>`, { status: 200 });
+  });
+
+  assert.equal(result.placeId, "1565776290");
+  assert.equal(result.placeName, "구월동 자동식별 식당");
+  assert.equal(result.url, "https://map.naver.com/p/entry/place/1565776290");
 });
 
 test("normalizes wrapped and nested Apify result rows", () => {
@@ -261,18 +308,13 @@ test("resolves a URL-only tracker before matching it inside 300 organic rows", a
       maxRank: 300,
     }, async (_url, options) => {
       callCount += 1;
-      const requestBody = JSON.parse(options.body);
-      if (callCount === 1) {
-        assert.equal(requestBody.mode, "url");
-        assert.deepEqual(requestBody.startUrls, [{ url: "https://naver.me/FTXD0JDp" }]);
-        assert.equal(requestBody.maxItems, 1);
-        return new Response(JSON.stringify([{
-          placeId: targetId,
-          name: "구월동 자동식별 식당",
-          placeUrl: `https://map.naver.com/p/entry/place/${targetId}`,
-        }]), { status: 200 });
+      if (options.method === "GET") {
+        return new Response(`<!doctype html><html><head>
+          <meta property="og:url" content="https://map.naver.com/p/entry/place/${targetId}">
+          <meta property="og:title" content="구월동 자동식별 식당 : 네이버">
+        </head></html>`, { status: 200 });
       }
-
+      const requestBody = JSON.parse(options.body);
       assert.deepEqual(requestBody.queries, ["구월동 맛집"]);
       assert.equal(requestBody.maxResults, 300);
       const rows = Array.from({ length: 300 }, (_, index) => ({
@@ -371,12 +413,15 @@ test("URL identity failure does not run keyword search or claim a 300 result", a
       maxRank: 300,
     }, async (_url, options) => {
       callCount += 1;
+      if (options.method === "GET") {
+        return new Response("<!doctype html><html><head></head></html>", { status: 200 });
+      }
       const requestBody = JSON.parse(options.body);
       assert.equal(requestBody.mode, "url");
       return new Response("[]", { status: 200 });
     });
 
-    assert.equal(callCount, 1);
+    assert.equal(callCount, 2);
     assert.equal(result.ok, false);
     assert.equal(result.complete, false);
     assert.equal(result.stopReason, "place_identity_unresolved");
@@ -401,7 +446,7 @@ test("Apify provider keeps the deepest partial result without claiming 300", asy
       maxRank: 300,
     }, async (url) => {
       callCount += 1;
-      if (String(url).includes("solidcode~naver-map-scraper")) {
+      if (String(url).includes("delicious_zebu~naver-map-search-results-scraper")) {
         return new Response(JSON.stringify([...rows, ...Array.from({ length: 48 }, (_, index) => ({
           placeId: String(300000 + index),
           name: `추가 장소 ${index + 1}`,
@@ -442,18 +487,17 @@ test("falls back to the deep 300 Actor when the primary Actor returns an empty d
         return new Response("[]", { status: 200 });
       }
 
-      assert.match(String(url), /solidcode~naver-map-scraper/);
+      assert.match(String(url), /delicious_zebu~naver-map-search-results-scraper/);
       assert.deepEqual(requestBody, {
-        searchTerms: ["fallback 맛집"],
-        startUrls: [],
-        maxResults: 300,
-        includeReviews: false,
-        includeMenu: false,
+        keywords: ["fallback 맛집"],
+        urls: [],
+        scrapePlaceDetails: false,
+        maxResultsPerKeyword: 300,
       });
       const rows = Array.from({ length: 300 }, (_, index) => ({
-        placeId: String(990000 + index),
-        name: `fallback 장소 ${index + 1}`,
-        placeUrl: `https://map.naver.com/p/entry/place/${990000 + index}`,
+        PlaceId: String(990000 + index),
+        Name: `fallback 장소 ${index + 1}`,
+        NaverMapUrl: `https://map.naver.com/p/entry/place/${990000 + index}`,
       }));
       return new Response(JSON.stringify(rows), { status: 200 });
     });
@@ -490,7 +534,7 @@ test("falls back to the deep Actor when the primary output is unrecognized", asy
         }]), { status: 200 });
       }
       const requestBody = JSON.parse(options.body);
-      assert.deepEqual(requestBody.searchTerms, ["fallback 출력"]);
+      assert.deepEqual(requestBody.keywords, ["fallback 출력"]);
       return new Response(JSON.stringify([{
         placeId: "888888",
         name: "fallback 확인 장소",
@@ -532,7 +576,7 @@ test("falls back when the primary Actor returns an HTML gateway response", async
         });
       }
       const requestBody = JSON.parse(options.body);
-      assert.deepEqual(requestBody.searchTerms, ["HTML 복구"]);
+      assert.deepEqual(requestBody.keywords, ["HTML 복구"]);
       return new Response(JSON.stringify(rows), { status: 200 });
     });
 

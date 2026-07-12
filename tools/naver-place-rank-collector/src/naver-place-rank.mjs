@@ -15,7 +15,7 @@ const APIFY_SEARCH_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_SEARCH_ACTOR_ID || "oxygenated_quagmire~naver-place-search"
 ).trim();
 const APIFY_DEEP_SEARCH_ACTOR_ID = String(
-  process.env.APIFY_NAVER_MAPS_DEEP_SEARCH_ACTOR_ID || "solidcode~naver-map-scraper"
+  process.env.APIFY_NAVER_MAPS_DEEP_SEARCH_ACTOR_ID || "delicious_zebu~naver-map-search-results-scraper"
 ).trim();
 const APIFY_FALLBACK_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID || "abotapi~naver-map-scraper"
@@ -235,6 +235,14 @@ function buildApifyIdentityInput(actorId, placeUrl) {
 
 function buildApifySearchInput(actorId, keyword, maxRank = DEFAULT_MAX_RANK) {
   const normalizedActorId = normalizeText(actorId).toLowerCase();
+  if (normalizedActorId.includes("delicious_zebu~naver-map-search-results-scraper")) {
+    return {
+      keywords: [keyword],
+      urls: [],
+      scrapePlaceDetails: false,
+      maxResultsPerKeyword: maxRank,
+    };
+  }
   if (normalizedActorId.includes("solidcode~naver-map-scraper")) {
     return {
       searchTerms: [keyword],
@@ -261,6 +269,76 @@ function buildApifySearchInput(actorId, keyword, maxRank = DEFAULT_MAX_RANK) {
     includeReviewSnippets: false,
     proxyConfiguration: { useApifyProxy: true },
   };
+}
+
+function decodeHtmlEntities(value) {
+  return String(value || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function htmlMetaContent(html, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const patterns = [
+    new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`, "i"),
+    new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = String(html || "").match(pattern);
+    if (match?.[1]) return decodeHtmlEntities(match[1]);
+  }
+  return "";
+}
+
+async function resolvePlaceIdentityViaHttp(value, fetchImpl = fetch) {
+  const originalUrl = normalizeUrl(value);
+  const result = {
+    url: originalUrl,
+    placeId: extractPlaceId(originalUrl),
+    placeIds: extractPlaceIds(originalUrl),
+    placeName: "",
+  };
+  if (!/^https?:\/\//i.test(originalUrl) || result.placeId) return result;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 9000);
+  try {
+    const response = await fetchImpl(originalUrl, {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) return result;
+    const body = (await response.text()).slice(0, 400000);
+    const finalUrl = normalizeText(response.url) || originalUrl;
+    const ogUrl = htmlMetaContent(body, "og:url");
+    const canonicalMatch = body.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i);
+    const canonicalUrl = decodeHtmlEntities(canonicalMatch?.[1] || "");
+    const placeIds = uniqueValues([
+      ...result.placeIds,
+      ...extractPlaceIds(finalUrl),
+      ...extractPlaceIds(ogUrl),
+      ...extractPlaceIds(canonicalUrl),
+      ...extractPlaceIds(body),
+    ]);
+    return {
+      url: [canonicalUrl, ogUrl, finalUrl].find((url) => extractPlaceIds(url).length) || finalUrl,
+      placeId: placeIds[0] || "",
+      placeIds,
+      placeName: cleanPlaceTitle(htmlMetaContent(body, "og:title")),
+    };
+  } catch {
+    return result;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function firstText(...values) {
@@ -310,7 +388,10 @@ function apifyCandidate(item = {}, index = 0) {
     source.webUrl,
     source.web_url,
     source.naverUrl,
-    source.naver_url
+    source.naver_url,
+    source.NaverMapUrl,
+    source.NaverUrl,
+    source.URL
   );
   const id = firstText(
     source.placeId,
@@ -319,15 +400,29 @@ function apifyCandidate(item = {}, index = 0) {
     source.business_id,
     source.cid,
     extractPlaceId(url),
-    source.id
+    source.id,
+    source.PlaceId,
+    source.BusinessId
   );
-  const name = firstText(source.name, source.placeName, source.place_name, source.title, source.businessName);
+  const name = firstText(
+    source.name,
+    source.placeName,
+    source.place_name,
+    source.title,
+    source.businessName,
+    source.Name,
+    source.PlaceName,
+    source.BusinessName
+  );
   const isAd = Boolean(
     source.isAd === true ||
     source.is_ad === true ||
     source.isSponsored === true ||
     source.sponsored === true ||
     source.ad === true ||
+    source.IsAd === true ||
+    source.IsSponsored === true ||
+    String(source.AdType || "").toLowerCase() === "sponsored" ||
     source.adId ||
     source.ad_id
   );
@@ -344,13 +439,16 @@ function apifyCandidate(item = {}, index = 0) {
       source.visitorReviewCount,
       source.visitor_reviews,
       source.reviewCount,
-      source.reviewsCount
+      source.reviewsCount,
+      source.VisitorReviewCount,
+      source.ReviewCount
     ),
     blogReviewCount: firstText(
       source.blogCafeReviewCount,
       source.blogReviewCount,
       source.blog_reviews,
-      source.blogCount
+      source.blogCount,
+      source.BlogReviewCount
     ),
     isAd: false,
   };
@@ -411,7 +509,8 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
   const overallDeadlineAt = Date.now() + overallTimeoutMs;
   const runActor = async (actorId, input) => {
       const normalizedActorId = normalizeText(actorId).toLowerCase();
-      const configuredTimeoutMs = normalizedActorId.includes("solidcode~naver-map-scraper")
+      const configuredTimeoutMs = normalizedActorId.includes("delicious_zebu~naver-map-search-results-scraper") ||
+        normalizedActorId.includes("solidcode~naver-map-scraper")
         ? Number(process.env.APIFY_NAVER_MAPS_DEEP_TIMEOUT_MS || 170000)
         : normalizedActorId.includes("oxygenated_quagmire~naver-place-search")
           ? Number(process.env.APIFY_NAVER_MAPS_PRIMARY_TIMEOUT_MS || 35000)
@@ -454,8 +553,19 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
       }
   };
 
-    // A short naver.me URL does not contain a place ID. Resolve it once through
-    // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
+    // Resolve short/share URLs without requiring a separate business-name field.
+    if (!collectTargetIds(target).length && target.placeUrl) {
+      const resolved = await resolvePlaceIdentityViaHttp(target.placeUrl, fetchImpl);
+      target = {
+        ...target,
+        placeId: resolved.placeId || target.placeId,
+        placeIds: uniqueValues([...(target.placeIds || []), ...(resolved.placeIds || []), resolved.placeId]),
+        placeUrl: resolved.url || target.placeUrl,
+        placeName: resolved.placeName || target.placeName,
+      };
+    }
+
+    // If the share page itself does not expose an ID, use URL mode once.
     if (!collectTargetIds(target).length && target.placeUrl) {
       const identityItems = await runActor(
         APIFY_IDENTITY_ACTOR_ID,
@@ -574,7 +684,8 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         url: target.placeUrl,
       },
       topPlaces: candidates.slice(0, 20),
-      source: actorId.toLowerCase().includes("solidcode~naver-map-scraper")
+      source: actorId.toLowerCase().includes("delicious_zebu~naver-map-search-results-scraper") ||
+        actorId.toLowerCase().includes("solidcode~naver-map-scraper")
         ? "apify_naver_maps_deep_search"
         : actorId.toLowerCase().includes("abotapi~naver-map-scraper")
           ? fallbackUsed ? "apify_naver_maps_scraper_fallback" : "apify_naver_maps_scraper"
@@ -1230,7 +1341,7 @@ export async function lookupNaverPlaceRank(payload = {}) {
           matched: false,
           checkedCount: 0,
           total: 0,
-          message: "플레이스 URL에서 ID 또는 상호명을 확인하지 못했습니다.",
+          message: "플레이스 URL에서 장소 식별 정보를 확인하지 못했습니다.",
           source: "naver_map_browser_collector",
         };
       }
@@ -1305,6 +1416,7 @@ export const __testing = {
   clampMaxRank,
   collectRowsProgressively,
   lookupNaverPlaceRankViaApify,
+  resolvePlaceIdentityViaHttp,
   normalizeApifyCandidates,
   normalizeApifyResult,
 };

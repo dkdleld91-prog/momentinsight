@@ -3,6 +3,9 @@ import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
+const MAX_CRON_BATCH = 10;
+const PLACE_RANK_HISTORY_DAYS = 30;
+const PLACE_RANK_HISTORY_MAX_SNAPSHOTS = 120;
 const PLACE_TRACKER_LEASE_SECONDS = Math.max(
   120,
   Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 240))
@@ -416,7 +419,13 @@ function snapshotPayload(row) {
 }
 
 export function placeTrackerPayload(row, snapshots = []) {
-  const recentSnapshots = (snapshots || []).slice(0, 30);
+  const historyCutoff = Date.now() - PLACE_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  const recentSnapshots = (snapshots || [])
+    .filter((snapshot) => {
+      const checkedAt = new Date(snapshot?.checked_at || snapshot?.checkedAt || 0).getTime();
+      return Number.isFinite(checkedAt) && checkedAt >= historyCutoff;
+    })
+    .slice(0, PLACE_RANK_HISTORY_MAX_SNAPSHOTS);
   return {
     id: row.id,
     keyword: row.keyword,
@@ -1137,7 +1146,7 @@ async function createTracker(request, ctx, body, access = {}) {
       if (!updatedExisting.error && updatedExisting.data) resolvedExistingRow = updatedExisting.data;
     }
     const existingTracker = await attachTrackerGroup(ctx, resolvedExistingRow);
-    const snapshots = await loadSnapshots(ctx, [existingRow.id], 30);
+    const snapshots = await loadSnapshots(ctx, [existingRow.id], PLACE_RANK_HISTORY_MAX_SNAPSHOTS);
     return json(request, {
       ok: true,
       message: Object.keys(updates).length
@@ -1224,7 +1233,7 @@ async function checkOne(request, ctx, body) {
   const tracker = await attachTrackerGroup(ctx, data);
   const checked = await runPlaceTrackerCheck(ctx, tracker);
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
-  const snapshots = await loadSnapshots(ctx, [checked.tracker.id], 30);
+  const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PLACE_RANK_HISTORY_MAX_SNAPSHOTS);
   return json(request, {
     ok: checked.ok,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
@@ -1287,8 +1296,21 @@ async function updateTrackerGroup(request, ctx, body) {
 
 export async function runDuePlaceTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
-  const tracker = await claimDuePlaceTracker(ctx, options.agencyCode || "");
-  const results = tracker ? [await runPlaceTrackerCheck(ctx, tracker)] : [];
+  const limit = Math.max(1, Math.min(
+    MAX_CRON_BATCH,
+    Number(options.limit || process.env.MI_PLACE_RANK_CRON_BATCH || DEFAULT_CRON_BATCH)
+  ));
+  const results = [];
+
+  for (let index = 0; index < limit; index += 1) {
+    // Claims prevent overlapping hourly and slot-window runs from processing the same tracker.
+    // eslint-disable-next-line no-await-in-loop
+    const tracker = await claimDuePlaceTracker(ctx, options.agencyCode || "");
+    if (!tracker) break;
+    // Sequential checks keep the single-browser collector within its concurrency limit.
+    // eslint-disable-next-line no-await-in-loop
+    results.push(await runPlaceTrackerCheck(ctx, tracker));
+  }
 
   return {
     now,

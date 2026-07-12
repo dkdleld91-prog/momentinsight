@@ -1,12 +1,17 @@
 name: Naver Place Rank Tracking
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     # KST 09:00/15:00 processing windows. Four runs can cover 20 advertisers
     # without running concurrent Chromium sessions on the free collector.
     - cron: "0,5,10,15 0,6 * * *"
     # Post-window catch-up for delayed GitHub schedules or a sleeping collector.
     - cron: "43 1,7 * * *"
+    # Hourly catch-up drains delayed or retried trackers even when GitHub starts a slot late.
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -16,7 +21,7 @@ concurrency:
 jobs:
   refresh-place-ranks:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 30
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
@@ -30,6 +35,10 @@ jobs:
       - name: Refresh due Naver place rank trackers
         run: |
           set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
+            echo "Push-triggered deploy backfill: waiting briefly for production deployment."
+            sleep 90
+          fi
           node <<'NODE'
           const endpoint = "https://insight.momentlabs.co.kr/api/naver-place-rank-cron?limit=1";
           const secret = process.env.MI_RANK_CRON_SECRET;

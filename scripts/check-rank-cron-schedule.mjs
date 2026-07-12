@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { nextRankCheckAt } from "../src/server/handlers/naver-rank-trackers.mjs";
+import { nextPlaceRankCheckAt } from "../src/server/handlers/naver-place-rank-trackers.mjs";
 
 function kstDate(year, month, day, hour, minute = 0) {
   return new Date(Date.UTC(year, month - 1, day, hour - 9, minute, 0, 0));
@@ -41,6 +42,7 @@ const cases = dailySlots.flatMap(([weekday, year, month, day, today, tomorrow]) 
 
 for (const [label, input, expected] of cases) {
   assert.equal(kstStamp(nextRankCheckAt(input)), expected, label);
+  assert.equal(kstStamp(nextPlaceRankCheckAt(input)), expected, `Naver place ${label}`);
 }
 
 const workflow = fs.readFileSync(".github/workflows/naver-rank-cron.yml", "utf8");
@@ -48,6 +50,13 @@ assert.match(workflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "GitHub Actions must re
 assert.match(workflow, /cron: "37 \* \* \* \*"/, "GitHub Actions must keep an hourly catch-up run");
 assert.match(workflow, /KST 09:00\/15:00 rescue window/, "Workflow must document the rescue-window behavior");
 assert.match(workflow, /Hourly catch-up keeps due trackers moving/, "Workflow must document missed-slot catch-up behavior");
+
+const placeWorkflow = fs.readFileSync(".github/workflows/naver-place-rank-cron.yml", "utf8");
+assert.match(placeWorkflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "Naver place workflow must retry the 09:00/15:00 KST slots");
+assert.match(placeWorkflow, /cron: "37 \* \* \* \*"/, "Naver place workflow must keep an hourly catch-up run");
+assert.match(placeWorkflow, /Hourly catch-up drains delayed or retried trackers/, "Naver place workflow must document missed-slot catch-up behavior");
+assert.match(placeWorkflow, /timeout-minutes: 30/, "Naver place workflow must allow enough time for sequential collector calls");
+assert.match(placeWorkflow, /Push-triggered deploy backfill/, "Naver place workflow must backfill due trackers after deployment");
 
 const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
 assert.ok(

@@ -4,6 +4,8 @@ import test from "node:test";
 import {
   handlePlaceRankTrackersRequest,
   normalizePlaceRankGroupName,
+  placeTrackerPayload,
+  runDuePlaceTrackers,
 } from "./naver-place-rank-trackers.mjs";
 
 const AGENCY_CODE = "mml93-a01";
@@ -192,6 +194,25 @@ function testContext(rows = [], options = {}) {
         from(table) {
           return new MockQuery(state, table);
         },
+        async rpc(name, params = {}) {
+          if (name !== "claim_due_naver_place_rank_tracker") {
+            return { data: null, error: { message: `unknown rpc: ${name}` } };
+          }
+          const requestedAgencyCodes = params.requested_agency_codes;
+          const now = Date.now();
+          const tracker = state.tables[TRACKERS]
+            .filter((row) => row.status === "active")
+            .filter((row) => !requestedAgencyCodes?.length || requestedAgencyCodes.includes(row.agency_code))
+            .filter((row) => new Date(row.next_check_at).getTime() <= now)
+            .filter((row) => !row.processing_until || new Date(row.processing_until).getTime() <= now)
+            .sort((left, right) => new Date(left.next_check_at) - new Date(right.next_check_at))[0];
+          if (!tracker) return { data: [], error: null };
+          tracker.processing_token = `claim-${state.nextId++}`;
+          tracker.processing_started_at = new Date().toISOString();
+          tracker.processing_until = new Date(now + 180_000).toISOString();
+          tracker.last_attempt_at = new Date().toISOString();
+          return { data: [{ ...tracker }], error: null };
+        },
       },
     },
   };
@@ -349,4 +370,73 @@ test("migration backfills legacy rows and enforces the default group", () => {
   assert.match(migration, /set group_name = '기본 그룹'/);
   assert.match(migration, /alter column group_name set default '기본 그룹'/);
   assert.match(migration, /alter column group_name set not null/);
+});
+
+test("returns only the most recent 30 days of place rank history", () => {
+  const now = Date.now();
+  const snapshot = (id, daysAgo) => ({
+    id,
+    tracker_id: "tracker-1",
+    checked_at: new Date(now - daysAgo * 24 * 60 * 60 * 1000).toISOString(),
+    rank: daysAgo + 1,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    place: {},
+    message: "ok",
+    source: "test",
+    created_at: new Date(now).toISOString(),
+  });
+
+  const tracker = placeTrackerPayload(trackerRow(), [
+    snapshot("today", 0),
+    snapshot("day-29", 29),
+    snapshot("day-31", 31),
+  ]);
+
+  assert.deepEqual(tracker.snapshots.map((item) => item.id), ["today", "day-29"]);
+});
+
+test("processes multiple due place trackers up to the requested batch limit", async () => {
+  const dueAt = "2026-01-01T00:00:00.000Z";
+  const { ctx, state } = testContext([
+    { id: "due-1", place_id: "101", next_check_at: dueAt },
+    { id: "due-2", place_id: "102", next_check_at: dueAt },
+    { id: "due-3", place_id: "103", next_check_at: dueAt },
+    { id: "due-4", place_id: "104", next_check_at: dueAt },
+  ]);
+  const originalFetch = globalThis.fetch;
+  const previousProviderUrl = process.env.NAVER_PLACE_RANK_API_URL;
+  const previousProviderKey = process.env.NAVER_PLACE_RANK_API_KEY;
+  process.env.NAVER_PLACE_RANK_API_URL = "https://collector.example.test/rank";
+  process.env.NAVER_PLACE_RANK_API_KEY = "test-key";
+  globalThis.fetch = async (_url, options) => {
+    const requestBody = JSON.parse(options.body);
+    return new Response(JSON.stringify({
+      ok: true,
+      matched: true,
+      rank: Number(requestBody.placeId) - 100,
+      checkedCount: 300,
+      total: 300,
+      complete: true,
+      place: { id: requestBody.placeId, name: "테스트 플레이스" },
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+
+  try {
+    const summary = await runDuePlaceTrackers(ctx, { agencyCode: AGENCY_CODE, limit: 3 });
+    assert.equal(summary.checked, 3);
+    assert.equal(summary.succeeded, 3);
+    assert.equal(summary.found, 3);
+    assert.equal(state.tables[SNAPSHOTS].length, 3);
+    assert.equal(state.tables[TRACKERS].filter((row) => row.last_checked_at).length, 3);
+    assert.equal(state.tables[TRACKERS].find((row) => row.id === "due-4").last_checked_at, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousProviderUrl === undefined) delete process.env.NAVER_PLACE_RANK_API_URL;
+    else process.env.NAVER_PLACE_RANK_API_URL = previousProviderUrl;
+    if (previousProviderKey === undefined) delete process.env.NAVER_PLACE_RANK_API_KEY;
+    else process.env.NAVER_PLACE_RANK_API_KEY = previousProviderKey;
+  }
 });

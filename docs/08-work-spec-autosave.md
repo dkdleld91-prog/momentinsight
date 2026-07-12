@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 20:54:12
-- 기준 커밋: f48cc71
-- 작업트리: M docs/08-work-spec-autosave.md
+- 마지막 자동 저장: 2026. 07. 12. 22:19:01
+- 기준 커밋: 5659844
+- 작업트리: M .github/workflows/naver-place-rank-cron.yml /  M scripts/check-rank-cron-schedule.mjs /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html /  M src/server/handlers/naver-place-rank-trackers.mjs /  M src/server/handlers/naver-place-rank-trackers.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

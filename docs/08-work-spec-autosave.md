@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 20:31:35
-- 기준 커밋: 33b4bd0
-- 작업트리: M docs/08-work-spec-autosave.md /  M render.yaml /  M tools/naver-place-rank-collector/.env.example /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs /  M tools/naver-place-rank-collector/test/naver-place-rank.test.mjs
+- 마지막 자동 저장: 2026. 07. 12. 20:54:12
+- 기준 커밋: f48cc71
+- 작업트리: M docs/08-work-spec-autosave.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -170,7 +170,9 @@
 - 실제 300개 확인 전에는 `300위 이내 없음`으로 확정하지 않고 부분 확인 상태로 남긴다.
 - 짧은 `naver.me` URL은 HTTP 리다이렉트와 페이지 메타데이터에서 플레이스 ID와 상호명을 자동 확인한 뒤 순위를 조회한다.
 - 300개 전용 수집 Actor의 `PlaceId`, `Name`, `NaverMapUrl` 출력도 동일한 플레이스 후보로 정규화한다.
-- 로컬 수집기 테스트 22개, 플레이스 핸들러 테스트 6개, Vercel 빌드와 릴리스 기준 검사는 통과했다. 운영 300개 완주 여부는 배포 후 실조회로만 완료 판정한다.
+- 로컬 수집기 테스트 22개, 플레이스 핸들러 테스트 6개, Vercel 빌드와 릴리스 기준 검사를 통과했다.
+- 운영 실조회에서 기존 0건 항목은 오가닉 57위, 기존 50개 부분 조회 항목은 오가닉 81위로 확인되었고 두 기록 모두 `checkedCount=300`, `total=300`으로 저장됐다.
+- 짧은 `naver.me` URL만 전달한 등록 요청도 플레이스 ID와 상호명을 자동 식별해 기존 추적 기록과 정확히 연결했다.
 
 ## 다음 후보 작업
 

@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 19:12:18
-- 기준 커밋: cb52c47
-- 작업트리: M render.yaml /  M tools/naver-place-rank-collector/.env.example /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs
+- 마지막 자동 저장: 2026. 07. 12. 19:22:29
+- 기준 커밋: 16dba46
+- 작업트리: M docs/08-work-spec-autosave.md /  M src/server/handlers/naver-place-rank-trackers.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -166,6 +166,7 @@
 - 상호명 입력 없이 키워드와 네이버 플레이스 URL만 등록한다.
 - 화면의 조회 범위는 `300위 고정`이 아니라 `300위 이내`로 통일한다.
 - 기본 Actor가 비정상 응답 또는 300개 미만 미노출을 반환하면 300개 수집 Actor로 재조회한다.
+- 메인 API는 300개 수집기의 225초 실행 예산보다 먼저 요청을 취소하지 않는다.
 - 실제 300개 확인 전에는 `300위 이내 없음`으로 확정하지 않고 부분 확인 상태로 남긴다.
 
 ## 다음 후보 작업

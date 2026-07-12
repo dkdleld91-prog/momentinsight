@@ -907,9 +907,17 @@ async function lookupNaverLocalSearchRank(config, tracker) {
 
 async function lookupExternalPlaceProvider(config, tracker) {
   const controller = new AbortController();
+  const configuredTimeoutMs = Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000);
+  // A 300-place Actor run needs more than the old 90-second browser budget.
+  // Keep enough room for the collector's 225-second provider chain while
+  // remaining below the Vercel function's 300-second maximum duration.
+  const providerTimeoutMs = Math.max(
+    225000,
+    Math.min(240000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 240000)
+  );
   const timeout = setTimeout(
     () => controller.abort(),
-    Math.max(30000, Math.min(240000, Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000)))
+    providerTimeoutMs
   );
   try {
     const response = await fetch(config.url, {

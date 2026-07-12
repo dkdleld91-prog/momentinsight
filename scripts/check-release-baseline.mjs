@@ -153,8 +153,8 @@ const checks = {
     && clientSource.includes("logoutClient")
     && clientSource.includes("removeClientAuthCode")
     && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
-  homeDevelopmentNoticeVisible: homeSource.includes("모먼트 인사이트는 안정화 단계입니다.")
-    && homeSource.includes("현재 안정성이 확인된 핵심 도구를 먼저 제공합니다.")
+  homeDevelopmentNoticeVisible: homeSource.includes("핵심 마케팅 도구를 운영 중입니다.")
+    && homeSource.includes("현재 안정성이 확인된 다섯 가지 기능을 바로 사용할 수 있습니다.")
     && homeSource.includes("data-mi-dev-banner")
     && homeSource.includes("mi-dev-banner-head")
     && homeSource.includes("mi-dev-banner-contact")
@@ -164,7 +164,7 @@ const checks = {
     && homeSource.includes("data-mi-dev-banner-week")
     && homeSource.includes("miHomeDevBannerHiddenUntil")
     && homeSource.includes("7 * 24 * 60 * 60 * 1000")
-    && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
+    && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위", "네이버 플레이스 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   placeRankReleased: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위</a>")

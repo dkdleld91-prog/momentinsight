@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test api/*.test.mjs src/server/**/*.test.mjs && npm --prefix tools/naver-place-rank-collector test",
+    "check:quality": "npm run check:baseline && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
     "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs",
     "clean:workspace": "node scripts/clean-workspace.mjs",
     "clean:workspace:deps": "node scripts/clean-workspace.mjs --deps",

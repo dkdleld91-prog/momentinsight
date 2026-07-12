@@ -1,0 +1,38 @@
+name: Quality Gate
+
+on:
+  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install platform dependencies
+        run: npm ci
+
+      - name: Install collector dependencies
+        run: npm --prefix tools/naver-place-rank-collector ci
+
+      - name: Run release quality checks
+        run: npm run check:quality

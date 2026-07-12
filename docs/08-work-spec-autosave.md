@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 22:19:01
-- 기준 커밋: 5659844
-- 작업트리: M .github/workflows/naver-place-rank-cron.yml /  M scripts/check-rank-cron-schedule.mjs /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html /  M src/server/handlers/naver-place-rank-trackers.mjs /  M src/server/handlers/naver-place-rank-trackers.test.mjs
+- 마지막 자동 저장: 2026. 07. 13. 02:05:49
+- 기준 커밋: bbf7a96
+- 작업트리: M README.md /  M api/[...path].mjs /  M docs/08-work-spec-autosave.md /  M package.json /  M scripts/check-release-baseline.mjs /  M src/pages/home.html / ?? .github/workflows/quality.yml / ?? api/error-safety.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -89,8 +89,9 @@
 | 완료 | 30일 순위 자동 갱신 누락 방지 | GitHub Actions 예약 실행을 09시/15시 슬롯 전용에서 30분 간격 due catch-up 방식으로 변경하고, Vercel 1일 1회 백업 Cron도 09:07 KST로 조정했습니다. 서버는 기존처럼 `next_check_at`이 지난 항목만 실제 갱신하므로 불필요한 네이버 조회를 늘리지 않습니다. | GitHub Actions schedule API 조회, 운영 tracker 최신 갱신/다음 갱신 확인, `check:rank-cron`, `check:baseline`, `check:rank-matching`, `build:vercel`, `git diff --check` | 배포 대기 |
 | 완료 | 자동 순위추적 운영 환경값 분리 점검 | GitHub Actions 호출용 `MI_RANK_CRON_SECRET`과 Vercel Cron 자동 Authorization용 `CRON_SECRET`을 별도 필수 운영값으로 분리했습니다. 두 값은 같은 비밀값이어야 하며, Vercel Hobby의 1일 1회 백업 Cron이 401로 막히는 실수를 배포 전 검사에서 잡도록 보강했습니다. | `check:baseline`, `check:rank-cron`, `build:vercel`, 운영 cron 비인증 401 확인 | 배포 대기 |
 | 완료 | 30일 순위 그룹 필터 UX 보완 | 그룹 필터를 `그룹 보기` 컨트롤로 명확히 표시하고, 선택 그룹이 있을 때만 네이비 강조 상태가 보이도록 수정했습니다. 그룹 이동 후에는 특정 그룹만 남아 보이지 않게 전체 그룹으로 자동 복귀합니다. | `check:baseline`, `check:rank-matching`, `build:vercel`, DOM 기능 테스트, 운영 페이지 응답 확인 | 배포 대기 |
-| 완료 | 로그인 유지 및 개발중 안내 보강 | 관리자/광고주 코드 로그인은 새로고침 후에도 저장된 코드로 서버 재검증을 거쳐 유지되도록 보정. 코드 입력 화면 상단에 홈페이지 이동 로고를 추가하고, 메타 광고 조사는 메뉴와 화면에서 개발중으로 명확히 표시. 홈페이지 첫 화면에는 현재 사용 가능한 핵심 도구 4개를 작은 개발중 배너로 안내 | `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check`, 로컬 정적 서버 마커 확인 | 배포 대기 |
+| 완료 | 로그인 유지 및 개발중 안내 보강 | 관리자/광고주 코드 로그인은 새로고침 후에도 저장된 코드로 서버 재검증을 거쳐 유지되도록 보정. 코드 입력 화면 상단에 홈페이지 이동 로고를 추가하고, 메타 광고 조사는 메뉴와 화면에서 개발중으로 명확히 표시. 홈페이지 첫 화면에는 현재 사용 가능한 핵심 도구를 작은 개발중 배너로 안내 | `check:baseline`, `check:rank-matching`, `check:rank-cron`, `build:vercel`, `git diff --check`, 로컬 정적 서버 마커 확인 | 배포 대기 |
 | 완료 | 운영 메뉴 IA 및 플레이스 30일 순위 명칭 정리 | 보고서 관리를 운영 카테고리로 이동하고 운영/키워드·SEO/순위 조회·추적/광고 조사로 재분류. 관리자·광고주 화면의 플레이스 명칭을 `네이버 플레이스 30일 순위`로 통일하고 구현 설명과 반복 문구를 축약. 플레이스 입력은 데스크톱 1행, 모바일 1열로 고정 | `check:baseline`, `check:server`, `check:rank-cron`, `check:rank-matching`, `check:keyword-trend`, `build:vercel`, `git diff --check`, 1280px·390px 브라우저 시각/오버플로/메뉴 이동 확인 | 배포 승인 |
+| 완료 | 서비스 안내·운영 오류 안전화·품질 게이트 | 홈페이지 서비스 안내를 안정화된 5개 도구 기준으로 갱신하고 네이버 플레이스 30일 순위를 추가. 운영 API의 500 오류에서 DB 오류·환경변수명이 노출되지 않도록 응답을 정리하고, PR/main 변경마다 전체 품질 검사를 실행하는 GitHub Actions를 추가 | `check:quality`, API 오류 안전화 4개 테스트, 플레이스 API 8개 및 수집기 22개 테스트, Supabase RLS/추적 예약 조회, 1280px·390px 브라우저 시각·오버플로 확인 | 배포 대기 |
 
 ## 현재 진행 원칙
 
@@ -118,7 +119,7 @@
 
 ### 현재 사용 가능 도구
 
-- 현재 안정 사용 기능은 키워드 조회, 네이버 SEO 확인, 네이버 상품 순위 조회, 네이버 30일 순위 추적이다.
+- 현재 안정 사용 기능은 키워드 조회, 네이버 SEO 확인, 네이버 상품 순위 조회, 네이버 30일 순위 추적, 네이버 플레이스 30일 순위 추적이다.
 - Meta 광고 조사는 메뉴와 화면에서 `개발중`으로 표시한다.
 - 네이버 플레이스 순위 추적은 상품 순위와 분리된 별도 기능으로 다룬다.
 - 외부 API 기준과 내부 계산식은 광고주 화면에 설명하지 않는다.
@@ -180,5 +181,6 @@
 | --- | --- | --- |
 | 대기 | 네이버 SEO 확인 v2 | 점수 기준을 `네이버 상품 노출 준비도`로 재정의하고 경쟁상품 비교, 신뢰도 표시, 순위 변화 검증을 추가 |
 | 대기 | 순위 추적 DB 하드닝 | `client_id` nullable, `agency_code` FK 부재, 광고주 공개 view 부재는 Supabase 마이그레이션으로 별도 보완 필요 |
+| 대기 | 코드 로그인 세션 전환 | 예측 가능한 운영팀·광고주 코드를 데이터 API의 실질 인증값으로 사용 중이다. 기존 계정 접근을 끊지 않도록 Supabase Auth 또는 서버 발급 단기 세션으로 단계 전환하고 코드 검증 rate limit을 함께 도입해야 함 |
 | 대기 | 아임웹 원샷 코드 모듈화 | 관리자/광고주/홈페이지 HTML 중복을 줄이고 생성 스크립트 기준으로 관리 |
 | 대기 | 원격 배포 이력 정리 | Vercel에서 삭제할 배포 URL을 대표님이 지정하면 해당 배포만 정리 |

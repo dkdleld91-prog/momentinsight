@@ -1,9 +1,9 @@
 import app from "../src/server/index.mjs";
 
-function safeErrorPayload(response, text) {
+export function safeErrorPayload(response, text) {
   if (response.status < 500) return null;
 
-  const sensitive = /\b(SUPABASE|SECRET|TOKEN|KEY|JWKS|MISSING_[A-Z0-9_]+)\b/i.test(text);
+  const sensitive = /(?:^|[^A-Z0-9])(SUPABASE|SECRET|TOKEN|KEY|JWKS|MISSING_[A-Z0-9_]+)(?:$|[^A-Z0-9])/i.test(text);
   try {
     const payload = JSON.parse(text || "{}");
     const code = String(payload?.code || "");
@@ -11,7 +11,6 @@ function safeErrorPayload(response, text) {
     const isExpectedConfigPending = /_NOT_CONFIGURED$/.test(code) ||
       statuses.some((item) => item?.status === "not_configured");
     if (isExpectedConfigPending) return null;
-    if (payload && payload.ok === false && payload.message && !sensitive) return null;
   } catch {}
 
   return {

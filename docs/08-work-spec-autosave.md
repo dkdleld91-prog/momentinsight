@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 12. 18:21:02
-- 기준 커밋: ea9f082
-- 작업트리: M docs/08-work-spec-autosave.md /  M render.yaml /  M src/server/handlers/naver-place-rank-trackers.test.mjs /  M tools/naver-place-rank-collector/.env.example /  M tools/naver-place-rank-collector/README.md /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs /  M tools/naver-place-rank-collector/test/naver-place-rank.test.mjs
+- 마지막 자동 저장: 2026. 07. 12. 19:02:37
+- 기준 커밋: 25954ae
+- 작업트리: M docs/08-work-spec-autosave.md /  M render.yaml /  M src/server/handlers/naver-place-rank-trackers.mjs /  M tools/naver-place-rank-collector/.env.example /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs /  M tools/naver-place-rank-collector/test/naver-place-rank.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -160,6 +160,13 @@
 - 검증하지 못한 항목은 성공으로 보고하지 않는다.
 - 대표님이 배포 승인한 경우에만 push와 배포를 진행한다.
 - 배포 전후로 `git status`, 최신 커밋, 라이브 `/health`, 핵심 API 200/401 응답을 확인한다.
+
+### 2026-07-12 플레이스 URL 전용 300위 보강
+
+- 상호명 입력 없이 키워드와 네이버 플레이스 URL만 등록한다.
+- 화면의 조회 범위는 `300위 고정`이 아니라 `300위 이내`로 통일한다.
+- 기본 Actor가 비정상 응답 또는 300개 미만 미노출을 반환하면 300개 수집 Actor로 재조회한다.
+- 실제 300개 확인 전에는 `300위 이내 없음`으로 확정하지 않고 부분 확인 상태로 남긴다.
 
 ## 다음 후보 작업
 

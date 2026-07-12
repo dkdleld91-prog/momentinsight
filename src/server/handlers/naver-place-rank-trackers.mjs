@@ -618,7 +618,7 @@ async function claimDuePlaceTracker(ctx, agencyCode = "") {
 function providerResultMessage(result) {
   if (result?.matched && result.rank) return "네이버 플레이스 오가닉 " + result.rank + "위로 확인되었습니다.";
   if (result?.notConfigured) return "네이버 플레이스 순위 소스가 아직 연결되지 않았습니다.";
-  if (result?.needsPlaceName) return "네이버 검색 API는 URL만으로 장소를 식별하지 못해 상호명 입력이 필요합니다.";
+  if (result?.needsPlaceName) return "플레이스 URL 자동 식별에 실패했습니다. URL을 확인한 뒤 다시 시도해주세요.";
   if (result?.officialPlaceIdOnly) return "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다.";
   if (result?.officialLocalLimit) return "네이버 공식 검색 API 상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 장소를 찾지 못했습니다.";
   return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 플레이스를 찾지 못했습니다.";
@@ -849,7 +849,7 @@ async function lookupNaverLocalSearchRank(config, tracker) {
         metrics: normalizePlaceMetrics({ blogCount, monthlySearchCount }),
       },
       topPlaces: [],
-      message: "네이버 검색 API는 플레이스 URL만으로 장소를 식별하지 못해 상호명을 함께 입력해야 합니다.",
+      message: "플레이스 URL에서 장소 식별값을 자동 확인하지 못했습니다.",
       source: "naver_openapi_local",
     };
   }
@@ -900,7 +900,7 @@ async function lookupNaverLocalSearchRank(config, tracker) {
     message: matchedPlace
       ? "네이버 공식 검색 API 상위 " + items.length + "개 안에서 " + (matchedIndex + 1) + "위로 확인되었습니다."
       : officialPlaceIdOnly
-        ? "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다. 상호명을 함께 넣으면 공식 검색 범위 내 매칭 정확도가 올라갑니다."
+        ? "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다. 300위 수집기로 다시 확인합니다."
       : "네이버 공식 검색 API 상위 " + items.length + "개 안에서 대상 장소를 찾지 못했습니다.",
   };
 }

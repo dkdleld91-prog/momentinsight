@@ -14,6 +14,9 @@ const APIFY_IDENTITY_ACTOR_ID = String(
 const APIFY_SEARCH_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_SEARCH_ACTOR_ID || "oxygenated_quagmire~naver-place-search"
 ).trim();
+const APIFY_DEEP_SEARCH_ACTOR_ID = String(
+  process.env.APIFY_NAVER_MAPS_DEEP_SEARCH_ACTOR_ID || "solidcode~naver-map-scraper"
+).trim();
 const APIFY_FALLBACK_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID || "abotapi~naver-map-scraper"
 ).trim();
@@ -232,6 +235,15 @@ function buildApifyIdentityInput(actorId, placeUrl) {
 
 function buildApifySearchInput(actorId, keyword, maxRank = DEFAULT_MAX_RANK) {
   const normalizedActorId = normalizeText(actorId).toLowerCase();
+  if (normalizedActorId.includes("solidcode~naver-map-scraper")) {
+    return {
+      searchTerms: [keyword],
+      startUrls: [],
+      maxResults: maxRank,
+      includeReviews: false,
+      includeMenu: false,
+    };
+  }
   if (normalizedActorId.includes("abotapi~naver-map-scraper")) {
     return {
       mode: "search",
@@ -296,7 +308,9 @@ function apifyCandidate(item = {}, index = 0) {
     source.placeLink,
     source.link,
     source.webUrl,
-    source.web_url
+    source.web_url,
+    source.naverUrl,
+    source.naver_url
   );
   const id = firstText(
     source.placeId,
@@ -409,7 +423,15 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         signal: controller.signal,
       });
       const bodyText = await response.text();
-      const items = bodyText ? JSON.parse(bodyText) : [];
+      let items = [];
+      if (bodyText) {
+        try {
+          items = JSON.parse(bodyText);
+        } catch {
+          const contentType = response.headers.get("content-type") || "unknown";
+          throw new Error(`apify_non_json_response:${response.status}:${contentType}`);
+        }
+      }
       if (!response.ok) {
         const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
         throw new Error(message);
@@ -456,31 +478,59 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     }
 
     const primaryActorId = APIFY_SEARCH_ACTOR_ID;
-    const primaryItems = await runActor(
+    const actorIds = uniqueValues([
       primaryActorId,
-      buildApifySearchInput(primaryActorId, keyword, maxRank)
-    );
-    const primaryNormalized = normalizeApifyResult(primaryItems, maxRank);
-    const primaryStopReason = apifyStopReason(primaryNormalized, maxRank);
-    const canFallback = primaryNormalized.candidates.length === 0 &&
-      APIFY_FALLBACK_ACTOR_ID &&
-      APIFY_FALLBACK_ACTOR_ID !== primaryActorId;
-    let actorId = primaryActorId;
-    let normalized = primaryNormalized;
-    let fallbackUsed = false;
+      APIFY_DEEP_SEARCH_ACTOR_ID,
+      APIFY_FALLBACK_ACTOR_ID,
+    ]);
+    const actorAttempts = [];
+    let selected = null;
+    let primaryStopReason = null;
 
-    if (canFallback) {
-      const fallbackItems = await runActor(
-        APIFY_FALLBACK_ACTOR_ID,
-        buildApifySearchInput(APIFY_FALLBACK_ACTOR_ID, keyword, maxRank)
-      );
-      actorId = APIFY_FALLBACK_ACTOR_ID;
-      normalized = normalizeApifyResult(fallbackItems, maxRank);
-      fallbackUsed = true;
+    for (const actorId of actorIds) {
+      try {
+        const items = await runActor(actorId, buildApifySearchInput(actorId, keyword, maxRank));
+        const normalized = normalizeApifyResult(items, maxRank);
+        const stopReason = apifyStopReason(normalized, maxRank);
+        const matched = findMatch(normalized.candidates, target);
+        actorAttempts.push({
+          actorId,
+          stopReason,
+          rawItemCount: normalized.rawItemCount,
+          normalizedItemCount: normalized.candidates.length,
+          error: null,
+        });
+        if (actorId === APIFY_SEARCH_ACTOR_ID) primaryStopReason = stopReason;
+        if (!selected || normalized.candidates.length > selected.normalized.candidates.length) {
+          selected = { actorId, normalized, matched };
+        }
+        // A match inside the returned organic order already has a deterministic
+        // rank. Otherwise continue until one Actor proves the full 300 range.
+        if (matched || normalized.candidates.length >= maxRank) {
+          selected = { actorId, normalized, matched };
+          break;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        actorAttempts.push({
+          actorId,
+          stopReason: "apify_actor_failed",
+          rawItemCount: 0,
+          normalizedItemCount: 0,
+          error: message,
+        });
+        if (actorId === APIFY_SEARCH_ACTOR_ID) primaryStopReason = "apify_actor_failed";
+      }
     }
 
+    if (!selected) {
+      const failure = actorAttempts.map((attempt) => `${attempt.actorId}:${attempt.error || attempt.stopReason}`).join(" | ");
+      throw new Error(failure || "apify_actor_chain_failed");
+    }
+
+    const { actorId, normalized, matched } = selected;
     const candidates = normalized.candidates;
-    const matched = findMatch(candidates, target);
+    const fallbackUsed = actorId !== APIFY_SEARCH_ACTOR_ID;
     const complete = candidates.length >= maxRank;
     const stopReason = apifyStopReason(normalized, maxRank);
     return {
@@ -496,8 +546,9 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
       primaryActorId,
       fallbackUsed,
       primaryStopReason: fallbackUsed ? primaryStopReason : null,
-      primaryRawItemCount: fallbackUsed ? primaryNormalized.rawItemCount : null,
-      primaryNormalizedItemCount: fallbackUsed ? primaryNormalized.candidates.length : null,
+      primaryRawItemCount: fallbackUsed ? actorAttempts[0]?.rawItemCount ?? null : null,
+      primaryNormalizedItemCount: fallbackUsed ? actorAttempts[0]?.normalizedItemCount ?? null : null,
+      actorAttempts,
       requestedMaxRank: maxRank,
       complete,
       partial: !complete,
@@ -509,9 +560,11 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         url: target.placeUrl,
       },
       topPlaces: candidates.slice(0, 20),
-      source: actorId.toLowerCase().includes("abotapi~naver-map-scraper")
-        ? fallbackUsed ? "apify_naver_maps_scraper_fallback" : "apify_naver_maps_scraper"
-        : "apify_naver_place_search",
+      source: actorId.toLowerCase().includes("solidcode~naver-map-scraper")
+        ? "apify_naver_maps_deep_search"
+        : actorId.toLowerCase().includes("abotapi~naver-map-scraper")
+          ? fallbackUsed ? "apify_naver_maps_scraper_fallback" : "apify_naver_maps_scraper"
+          : "apify_naver_place_search",
       message: matched
         ? `네이버 지도 오가닉 ${matched.rank}위로 확인되었습니다.`
         : complete

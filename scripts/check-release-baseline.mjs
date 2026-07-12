@@ -89,9 +89,9 @@ const checks = {
     'data-mi-admin-screen="keyword">키워드 조회</a>',
     'data-mi-admin-screen="seo-check">SEO 확인</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
-    'data-mi-admin-screen="naver-rank">네이버 상품 순위</a>',
-    'data-mi-admin-screen="naver-rank-tracking">네이버 30일 순위</a>',
-    'data-mi-admin-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위 <small>(개발중)</small></a>',
+    'data-mi-admin-screen="naver-rank">N 상품 순위</a>',
+    'data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
+    'data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위 <small>(개발중)</small></a>',
     '<p class="mi-nav-title">광고 조사</p>',
     'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
   ]) && adminSource.includes('<h1>보고서 관리</h1>')
@@ -132,9 +132,9 @@ const checks = {
     'data-mi-screen="schedule">일정표</a>',
     '<p class="mi-nav-title">도구</p>',
     'data-mi-screen="keyword-tool">키워드 조회</a>',
-    'data-mi-screen="naver-rank">네이버 상품 순위</a>',
-    'data-mi-screen="naver-rank-tracking">네이버 30일 순위</a>',
-    'data-mi-screen="naver-place-rank-tracking">네이버 플레이스 30일 순위 <small>(개발중)</small></a>',
+    'data-mi-screen="naver-rank">N 상품 순위</a>',
+    'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
+    'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위 <small>(개발중)</small></a>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
     'data-mi-screen="seo-check">SEO 확인</a>',
     '<p class="mi-nav-title">연동</p>',
@@ -167,7 +167,7 @@ const checks = {
     && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위"].every((label) => homeSource.includes(label)),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
-  placeRankMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("네이버 플레이스 30일 순위 <small>(개발중)</small>")
+  placeRankMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위 <small>(개발중)</small>")
     && source.includes('네이버 플레이스 30일 순위 <span class="mi-badge warn">개발중</span>')),
   rankTrackingFixedAt300: [adminSource, clientSource].every((source) => source.includes("data-rank-fixed-range")
     && source.includes("data-place-rank-fixed-range")
@@ -339,7 +339,7 @@ const checks = {
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
-    && source.includes('>네이버 상품 순위</a>')
+    && source.includes('>N 상품 순위</a>')
     && source.includes('<span class="mi-badge">조회</span>')
     && !source.includes(">순위 1회 조회<")
     && !source.includes("<small>1회 조회</small>")

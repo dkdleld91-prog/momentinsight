@@ -18,3 +18,9 @@ services:
         value: "90000"
       - key: PLACE_RANK_COLLECTOR_SECRET
         sync: false
+      - key: APIFY_NAVER_MAPS_TOKEN
+        sync: false
+      - key: APIFY_NAVER_MAPS_ACTOR_ID
+        value: searchapi~naver-maps-scraper
+      - key: APIFY_NAVER_MAPS_TIMEOUT_MS
+        value: "120000"

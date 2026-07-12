@@ -39,6 +39,10 @@ Content-Type: application/json
   "matched": true,
   "rank": 21,
   "checkedCount": 300,
+  "complete": true,
+  "partial": false,
+  "partialReason": null,
+  "stopReason": "requested_range_checked",
   "place": {
     "id": "1565776290",
     "name": "상호명",
@@ -107,10 +111,19 @@ NAVER_PLACE_PROVIDER_MAX_SCROLLS=90
 NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 ```
 
-Render 무료 인스턴스는 브라우저 스크롤 기반의 300위 전체 조회가 요청 제한을 넘길 수 있습니다.
-`NAVER_PLACE_PROVIDER_DEEP_SCAN=false`에서는 실제 네이버 지도 목록을 한 번만 끝까지 로딩해
-현재 화면이 제공한 오가닉 결과만 확인하고, 응답의 `checkedCount`에도 실제 확인한 범위만 기록합니다.
-유료 인스턴스나 장시간 작업 큐를 붙인 뒤에만 `true`로 변경합니다.
+`maxRank=300` 요청은 실제 네이버 지도 목록을 점진적으로 로딩하면서 고유 오가닉 후보를 최대 300개까지 확인합니다.
+300개보다 적게 확인하고 종료하면 `partial=true`와 `partialReason`에 목록 소진, 수집 시간 예산 또는 최대 스크롤 횟수 사유를 반환합니다.
+`checkedCount`에는 광고와 중복을 제외하고 실제 확인한 오가닉 후보 수만 기록합니다.
+
+네이버 지도 화면이 300개를 노출하지 않는 검색어에서도 300위 확인을 완료하려면 Apify의 페이지 수집 공급자를 선택적으로 연결합니다.
+
+```txt
+APIFY_NAVER_MAPS_TOKEN=Apify API 토큰
+APIFY_NAVER_MAPS_ACTOR_ID=searchapi~naver-maps-scraper
+APIFY_NAVER_MAPS_TIMEOUT_MS=120000
+```
+
+토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
 9. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.
@@ -143,5 +156,6 @@ NAVER_PLACE_RANK_TIMEOUT_MS=45000
 
 - 이 서버는 임의 순위값을 만들지 않습니다. 네이버 화면에서 확인하지 못하면 `matched:false`를 반환합니다.
 - `checkedCount`는 요청한 최대 순위가 아니라 실제로 확인한 오가닉 결과 수입니다.
+- `partial=true`이면 `partialReason`과 `stopReason`으로 300개 미만에서 종료한 원인을 확인할 수 있습니다.
 - 네이버 화면 구조 변경, CAPTCHA, 접속 차단이 생기면 수집 실패가 발생할 수 있습니다.
 - 장기 운영에서는 이 서버를 직접 운영하거나, 같은 응답 계약을 제공하는 유료 SERP/플레이스 데이터 API로 교체하는 방식이 안정적입니다.

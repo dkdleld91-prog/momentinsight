@@ -63,6 +63,7 @@ const rankDownloadFunctions = [adminSource, clientSource].map((source) => functi
 const staticBuildScript = read("scripts/build-vercel-static.mjs");
 const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql");
 const rankTrackerGroupsMigration = read("supabase/migrations/20260701090000_naver_rank_tracker_groups.sql");
+const placeRankTrackerGroupsMigration = read("supabase/migrations/20260712090000_naver_place_rank_tracker_groups.sql");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -170,6 +171,19 @@ const checks = {
     && source.includes('renderPlaceDayMetric("방"')
     && source.includes('renderPlaceDayMetric("월"')
     && source.includes('renderPlaceDayMetric("업체"')),
+  placeRankGroupAndShareTools: [adminSource, clientSource].every((source) => source.includes("data-place-rank-filter-group")
+    && source.includes("data-place-rank-select")
+    && source.includes("data-rank-bulk-move")
+    && source.includes("data-rank-bulk-clear")
+    && source.includes("data-rank-refresh-all")
+    && source.includes("data-rank-download-selected")
+    && source.includes("그룹 생성/적용")
+    && source.includes("전체 순위 갱신")
+    && source.includes("선택 이미지 저장")
+    && source.includes("renderPlaceKeywordName")
+    && source.includes("https://map.naver.com/p/search/"))
+    && placeRankTrackerGroupsMigration.includes("add column if not exists group_name text")
+    && placeRankTrackerGroupsMigration.includes("idx_naver_place_rank_trackers_agency_group_sort"),
   clientReportDownloadBox: clientSource.includes("data-mi-report-list")
     && clientSource.includes("data-mi-report-download")
     && clientSource.includes("downloadClientReport")

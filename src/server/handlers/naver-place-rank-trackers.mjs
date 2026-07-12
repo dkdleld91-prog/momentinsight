@@ -12,6 +12,7 @@ const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_MAX || 300);
+const DEFAULT_RANK_GROUP = "기본 그룹";
 const keywordVolumeCache = new Map();
 const TRACKER_SELECT = [
   "id",
@@ -72,6 +73,15 @@ function normalizeText(value) {
 
 function normalizeAgencyCode(value) {
   return normalizeText(value).toLowerCase();
+}
+
+export function normalizePlaceRankGroupName(value) {
+  const normalized = normalizeText(value).replace(/\s+/g, " ").slice(0, 40);
+  return normalized || DEFAULT_RANK_GROUP;
+}
+
+function isMissingPlaceRankGroupColumn(error) {
+  return /group_name|schema cache|does not exist/i.test(error?.message || "");
 }
 
 function primaryAgencyCode() {
@@ -405,11 +415,12 @@ function snapshotPayload(row) {
   };
 }
 
-function trackerPayload(row, snapshots = []) {
+export function placeTrackerPayload(row, snapshots = []) {
   const recentSnapshots = (snapshots || []).slice(0, 30);
   return {
     id: row.id,
     keyword: row.keyword,
+    groupName: normalizePlaceRankGroupName(row.group_name),
     placeUrl: row.place_url,
     placeId: row.place_id,
     placeName: row.place_name,
@@ -430,6 +441,60 @@ function trackerPayload(row, snapshots = []) {
     updatedAt: row.updated_at,
     snapshots: recentSnapshots.map(snapshotPayload),
   };
+}
+
+async function loadTrackerGroups(ctx, trackerIds) {
+  const ids = Array.from(new Set((trackerIds || []).filter(Boolean)));
+  if (!ids.length) return new Map();
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .select("id, group_name")
+    .in("id", ids);
+
+  if (error) {
+    if (isMissingPlaceRankGroupColumn(error)) return new Map();
+    throw error;
+  }
+
+  const groups = new Map();
+  (data || []).forEach((row) => {
+    groups.set(row.id, normalizePlaceRankGroupName(row.group_name));
+  });
+  return groups;
+}
+
+async function attachTrackerGroups(ctx, rows) {
+  const sourceRows = rows || [];
+  if (!sourceRows.length) return sourceRows;
+  const groups = await loadTrackerGroups(ctx, sourceRows.map((row) => row.id));
+  return sourceRows.map((row) => ({
+    ...row,
+    group_name: groups.get(row.id) || normalizePlaceRankGroupName(row.group_name),
+  }));
+}
+
+async function attachTrackerGroup(ctx, row) {
+  if (!row) return row;
+  const rows = await attachTrackerGroups(ctx, [row]);
+  return rows[0] || row;
+}
+
+async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
+  const normalizedGroupName = normalizePlaceRankGroupName(groupName);
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .update({ group_name: normalizedGroupName })
+    .eq("id", trackerId)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .select("id");
+
+  if (error) {
+    if (isMissingPlaceRankGroupColumn(error)) return { ok: false, missingColumn: true };
+    throw error;
+  }
+  if (!data?.length) return { ok: false, notFound: true };
+  return { ok: true, groupName: normalizedGroupName };
 }
 
 async function loadSnapshots(ctx, trackerIds, limit = 5000) {
@@ -875,9 +940,15 @@ async function lookupExternalPlaceProvider(config, tracker) {
       rank: matched ? rank : null,
       checkedCount: Number(payload.checkedCount || payload.checked_count || payload.total || 0),
       total: Number(payload.total || payload.checkedCount || payload.checked_count || 0),
+      requestedMaxRank: Number(payload.requestedMaxRank || payload.requested_max_rank || tracker.max_rank || 0),
+      complete: payload.complete === true,
+      partial: payload.partial === true || payload.complete === false,
+      partialReason: payload.partialReason || payload.partial_reason || null,
+      stopReason: payload.stopReason || payload.stop_reason || null,
       place: placeWithMetrics,
       topPlaces: Array.isArray(payload.topPlaces) ? payload.topPlaces : (Array.isArray(payload.items) ? payload.items : []),
       source: payload.source || "naver_place_rank_provider",
+      message: normalizeText(payload.message),
     };
   } finally {
     clearTimeout(timeout);
@@ -998,13 +1069,13 @@ async function listTrackers(request, ctx) {
 
   if (error) throw error;
 
-  const rows = data || [];
+  const rows = await attachTrackerGroups(ctx, data || []);
   const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
   return json(request, {
     ok: true,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
-    trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [])),
+    trackers: rows.map((row) => placeTrackerPayload(row, snapshots.get(row.id) || [])),
   });
 }
 
@@ -1016,6 +1087,7 @@ async function createTracker(request, ctx, body, access = {}) {
   const placeUrl = normalizeText(resolved.url) || originalPlaceUrl;
   const placeId = normalizeText(body.placeId || body.place_id) || normalizeText(resolved.placeId) || extractPlaceId(placeUrl) || extractPlaceId(originalPlaceUrl);
   const placeName = normalizeText(body.placeName || body.place_name) || normalizeText(resolved.placeName);
+  const groupName = normalizePlaceRankGroupName(body.groupName || body.group_name || body.group);
   const placeUrlCandidates = [...new Set([originalPlaceUrl, placeUrl].filter(Boolean))];
 
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
@@ -1052,13 +1124,14 @@ async function createTracker(request, ctx, body, access = {}) {
         .single();
       if (!updatedExisting.error && updatedExisting.data) resolvedExistingRow = updatedExisting.data;
     }
+    const existingTracker = await attachTrackerGroup(ctx, resolvedExistingRow);
     const snapshots = await loadSnapshots(ctx, [existingRow.id], 30);
     return json(request, {
       ok: true,
       message: Object.keys(updates).length
         ? "이미 추적 중인 플레이스입니다. 장소 식별값을 보강하고 기존 기록을 이어서 표시합니다."
         : "이미 추적 중인 플레이스입니다. 기존 기록을 이어서 표시합니다.",
-      tracker: trackerPayload(resolvedExistingRow, snapshots.get(existingRow.id) || []),
+      tracker: placeTrackerPayload(existingTracker, snapshots.get(existingRow.id) || []),
     });
   }
 
@@ -1109,13 +1182,15 @@ async function createTracker(request, ctx, body, access = {}) {
 
   if (error) throw error;
 
-  const checked = await runPlaceTrackerCheck(ctx, data);
+  await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);
+  const checked = await runPlaceTrackerCheck(ctx, { ...data, group_name: groupName });
+  const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
   return json(request, {
     ok: checked.ok,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, [checked.snapshot]),
+    tracker: placeTrackerPayload(checkedTracker, [checked.snapshot].filter(Boolean)),
   }, 201);
 }
 
@@ -1134,14 +1209,16 @@ async function checkOne(request, ctx, body) {
   if (error) throw error;
   if (!data) return json(request, { ok: false, message: "플레이스 추적 항목을 찾을 수 없습니다." }, 404);
 
-  const checked = await runPlaceTrackerCheck(ctx, data);
+  const tracker = await attachTrackerGroup(ctx, data);
+  const checked = await runPlaceTrackerCheck(ctx, tracker);
+  const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], 30);
   return json(request, {
     ok: checked.ok,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     message: checked.message,
-    tracker: trackerPayload(checked.tracker, snapshots.get(checked.tracker.id) || []),
+    tracker: placeTrackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || []),
   });
 }
 
@@ -1150,13 +1227,50 @@ async function deleteTracker(request, ctx, body) {
   const trackerId = normalizeText(body.trackerId || body.id);
   if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
 
-  const { error } = await ctx.supabaseAdmin
+  const { data, error } = await ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
     .delete()
     .eq("id", trackerId)
-    .in("agency_code", agencyCodeScope(agencyCode));
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .select("id");
   if (error) throw error;
-  return json(request, { ok: true, message: "플레이스 추적 항목을 삭제했습니다." });
+  if (!data?.length) return json(request, { ok: false, message: "삭제할 플레이스 추적 항목을 찾을 수 없습니다." }, 404);
+  return json(request, { ok: true, deletedId: trackerId, message: "플레이스 추적 항목을 삭제했습니다." });
+}
+
+async function updateTrackerGroup(request, ctx, body) {
+  const agencyCode = requestAgencyCode(request, body);
+  const trackerId = normalizeText(body.trackerId || body.id);
+  const groupName = normalizePlaceRankGroupName(body.groupName || body.group_name || body.group);
+  if (!trackerId) return json(request, { ok: false, message: "trackerId가 필요합니다." }, 400);
+
+  const updated = await updateTrackerGroupName(ctx, trackerId, agencyCode, groupName);
+  if (!updated.ok && updated.missingColumn) {
+    return json(request, {
+      ok: false,
+      message: "그룹 저장 컬럼이 아직 적용되지 않았습니다. DB 마이그레이션 적용 후 다시 시도해주세요.",
+    }, 409);
+  }
+  if (!updated.ok && updated.notFound) {
+    return json(request, { ok: false, message: "그룹을 변경할 플레이스 추적 항목을 찾을 수 없습니다." }, 404);
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .select(TRACKER_SELECT)
+    .eq("id", trackerId)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return json(request, { ok: false, message: "그룹을 변경할 플레이스 추적 항목을 찾을 수 없습니다." }, 404);
+
+  const tracker = await attachTrackerGroup(ctx, { ...data, group_name: groupName });
+  return json(request, {
+    ok: true,
+    message: "플레이스 추적 항목 그룹을 변경했습니다.",
+    tracker: placeTrackerPayload(tracker),
+  });
 }
 
 export async function runDuePlaceTrackers(ctx, options = {}) {
@@ -1212,27 +1326,30 @@ async function handlePost(request, ctx) {
   if (action === "check") return checkOne(request, ctx, body);
   if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
   if (action === "delete") return deleteTracker(request, ctx, body);
+  if (action === "group") return updateTrackerGroup(request, ctx, body);
 
   return json(request, { ok: false, message: "지원하지 않는 작업입니다." }, 400);
 }
 
-export default {
-  fetch: withSupabase({ auth: "none" }, async (request, ctx) => {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
-      methods: "GET, POST, OPTIONS",
-      headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
-    }) });
+export async function handlePlaceRankTrackersRequest(request, ctx) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
+    methods: "GET, POST, OPTIONS",
+    headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
+  }) });
 
-    try {
-      if (request.method === "GET") return listTrackers(request, ctx);
-      if (request.method === "POST") return handlePost(request, ctx);
-      return json(request, { ok: false, message: "Method not allowed" }, 405);
-    } catch (error) {
-      return json(request, {
-        ok: false,
-        message: "네이버 플레이스 순위 추적 처리 중 오류가 발생했습니다.",
-        detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
-      }, 500);
-    }
-  }),
+  try {
+    if (request.method === "GET") return listTrackers(request, ctx);
+    if (request.method === "POST") return handlePost(request, ctx);
+    return json(request, { ok: false, message: "Method not allowed" }, 405);
+  } catch (error) {
+    return json(request, {
+      ok: false,
+      message: "네이버 플레이스 순위 추적 처리 중 오류가 발생했습니다.",
+      detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
+    }, 500);
+  }
+}
+
+export default {
+  fetch: withSupabase({ auth: "none" }, handlePlaceRankTrackersRequest),
 };

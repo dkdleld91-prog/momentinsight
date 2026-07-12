@@ -1,16 +1,23 @@
 const DEFAULT_MAX_RANK = 300;
 const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000);
-const DEFAULT_MAX_SCROLLS = Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90);
+const DEFAULT_MAX_SCROLLS = Math.max(1, Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90));
 const OVERALL_TIMEOUT_MS = Math.max(
   20000,
   Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 75000), 80000)
 );
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") === "true";
+const APIFY_ACTOR_ID = String(
+  process.env.APIFY_NAVER_MAPS_ACTOR_ID || "searchapi~naver-maps-scraper"
+).trim();
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
 const NAVER_PLACE_MAX_RESULTS = 300;
+const COLLECTION_DEADLINE_GUARD_MS = 5000;
+const GROWTH_POLL_INTERVAL_MS = 220;
+const GROWTH_POLL_ATTEMPTS = 6;
+const EXHAUSTED_STABLE_ROUNDS = 3;
 const RESULT_CACHE_TTL_MS = Math.max(
   60000,
   Math.min(30 * 60 * 1000, Number(process.env.NAVER_PLACE_RESULT_CACHE_TTL_MS || 10 * 60 * 1000))
@@ -51,7 +58,7 @@ function normalizeComparable(value) {
 function clampMaxRank(value) {
   const number = Number(value || DEFAULT_MAX_RANK);
   if (!Number.isFinite(number)) return DEFAULT_MAX_RANK;
-  return Math.max(20, Math.min(1000, Math.round(number)));
+  return Math.max(20, Math.min(NAVER_PLACE_MAX_RESULTS, Math.round(number)));
 }
 
 function extractPlaceId(value) {
@@ -204,6 +211,144 @@ function uniqueValues(values) {
   );
 }
 
+function apifyToken() {
+  return String(process.env.APIFY_NAVER_MAPS_TOKEN || process.env.APIFY_TOKEN || "").trim();
+}
+
+function firstText(...values) {
+  return values.map(normalizeText).find(Boolean) || "";
+}
+
+function apifyCandidate(item = {}, index = 0) {
+  const url = firstText(item.url, item.placeUrl, item.place_url, item.link, item.webUrl, item.web_url);
+  const id = firstText(
+    item.placeId,
+    item.place_id,
+    item.businessId,
+    item.business_id,
+    item.cid,
+    extractPlaceId(url),
+    item.id
+  );
+  const name = firstText(item.name, item.placeName, item.place_name, item.title, item.businessName);
+  const isAd = Boolean(
+    item.isAd === true ||
+    item.is_ad === true ||
+    item.sponsored === true ||
+    item.ad === true ||
+    item.adId ||
+    item.ad_id
+  );
+  if ((!id && !name) || isAd) return null;
+
+  return {
+    rank: index + 1,
+    id,
+    placeIds: uniqueValues([id, ...extractPlaceIds(url)]),
+    name,
+    url,
+    visitorReviewCount: firstText(
+      item.visitorReviewCount,
+      item.visitor_reviews,
+      item.reviewCount,
+      item.reviewsCount
+    ),
+    blogReviewCount: firstText(item.blogReviewCount, item.blog_reviews, item.blogCount),
+    isAd: false,
+  };
+}
+
+function normalizeApifyCandidates(items = [], maxRank = DEFAULT_MAX_RANK) {
+  const candidates = [];
+  const keys = new Set();
+  for (const item of items) {
+    const candidate = apifyCandidate(item, candidates.length);
+    if (!candidate) continue;
+    const key = candidate.id || normalizeComparable(candidate.name + candidate.url);
+    if (!key || keys.has(key)) continue;
+    keys.add(key);
+    candidate.rank = candidates.length + 1;
+    candidates.push(candidate);
+    if (candidates.length >= maxRank) break;
+  }
+  return candidates;
+}
+
+async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
+  const token = apifyToken();
+  if (!token) return null;
+
+  const keyword = normalizeText(payload.keyword);
+  const maxRank = clampMaxRank(payload.maxRank || payload.max_rank);
+  const target = {
+    placeId: normalizeText(payload.placeId || payload.place_id),
+    placeIds: extractPlaceIds(payload.placeUrl || payload.place_url),
+    placeUrl: normalizeUrl(payload.placeUrl || payload.place_url),
+    placeName: normalizeText(payload.placeName || payload.place_name),
+  };
+  const controller = new AbortController();
+  const timeoutMs = Math.max(
+    30000,
+    Math.min(300000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 120000))
+  );
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const endpoint = new URL(
+      `https://api.apify.com/v2/acts/${encodeURIComponent(APIFY_ACTOR_ID)}/run-sync-get-dataset-items`
+    );
+    endpoint.searchParams.set("token", token);
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        query: keyword,
+        maxItems: maxRank,
+        maxPages: Math.min(50, Math.max(1, Math.ceil(maxRank / 10))),
+        market: "ko-KR",
+      }),
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    const items = bodyText ? JSON.parse(bodyText) : [];
+    if (!response.ok) {
+      const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
+      throw new Error(message);
+    }
+    if (!Array.isArray(items)) throw new Error("apify_dataset_items_invalid");
+
+    const candidates = normalizeApifyCandidates(items, maxRank);
+    const matched = findMatch(candidates, target);
+    const complete = candidates.length >= maxRank;
+    const stopReason = complete ? "requested_range_checked" : "apify_result_list_exhausted";
+    return {
+      ok: true,
+      matched: Boolean(matched),
+      rank: matched ? matched.rank : null,
+      checkedCount: candidates.length,
+      total: candidates.length,
+      requestedMaxRank: maxRank,
+      complete,
+      partial: !complete,
+      partialReason: complete ? null : stopReason,
+      stopReason,
+      place: matched || {
+        id: target.placeId || target.placeIds[0] || "",
+        name: target.placeName,
+        url: target.placeUrl,
+      },
+      topPlaces: candidates.slice(0, 20),
+      source: "apify_naver_maps_scraper",
+      message: matched
+        ? `네이버 지도 오가닉 ${matched.rank}위로 확인되었습니다.`
+        : complete
+          ? `네이버 지도 오가닉 상위 ${maxRank}개 안에서 대상 플레이스를 찾지 못했습니다.`
+          : `네이버 지도 오가닉 ${candidates.length}개까지 확인했으며 300위 확인을 완료하지 못했습니다.`,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function cachedCandidates(keyword, maxRank) {
   const key = normalizeComparable(keyword) + ":" + maxRank;
   const entry = resultCache.get(key);
@@ -213,15 +358,28 @@ function cachedCandidates(keyword, maxRank) {
   }
   resultCache.delete(key);
   resultCache.set(key, entry);
-  return entry.candidates.map((candidate) => ({ ...candidate, placeIds: [...(candidate.placeIds || [])] }));
+  return {
+    ...entry.collection,
+    candidates: entry.collection.candidates.map((candidate) => ({
+      ...candidate,
+      placeIds: [...(candidate.placeIds || [])],
+    })),
+  };
 }
 
-function rememberCandidates(keyword, maxRank, candidates) {
+function rememberCandidates(keyword, maxRank, collection) {
+  if (!collection.complete && collection.stopReason !== "naver_result_list_exhausted") return;
   const key = normalizeComparable(keyword) + ":" + maxRank;
   resultCache.delete(key);
   resultCache.set(key, {
     cachedAt: Date.now(),
-    candidates: candidates.map((candidate) => ({ ...candidate, placeIds: [...(candidate.placeIds || [])] })),
+    collection: {
+      ...collection,
+      candidates: collection.candidates.map((candidate) => ({
+        ...candidate,
+        placeIds: [...(candidate.placeIds || [])],
+      })),
+    },
   });
   while (resultCache.size > RESULT_CACHE_MAX) {
     resultCache.delete(resultCache.keys().next().value);
@@ -399,14 +557,17 @@ function rowNameFromRaw(row) {
 }
 
 function appendCandidate(items, rawRow) {
-  if (!rawRow || rawRow.isAd) return;
+  if (!rawRow || rawRow.isAd) return false;
   const name = rowNameFromRaw(rawRow);
-  if (!isLikelyPlaceName(name)) return;
+  if (!isLikelyPlaceName(name)) return false;
 
   const placeIds = collectCandidateIds(rawRow);
   const id = placeIds[0] || "";
   const key = placeIds.length ? placeIds.join("|") : normalizeComparable(name + normalizeText(rawRow.text).slice(0, 80));
-  if (!key || items.some((item) => item.key === key)) return;
+  const isDuplicate = items.some((item) =>
+    item.key === key || (placeIds.length > 0 && placeIds.some((placeId) => item.placeIds.includes(placeId)))
+  );
+  if (!key || isDuplicate) return false;
 
   items.push({
     key,
@@ -423,6 +584,7 @@ function appendCandidate(items, rawRow) {
     blogReviewCount: normalizeText(rawRow.blogReviewCount),
     isAd: false,
   });
+  return true;
 }
 
 function toPublicCandidate(candidate, index) {
@@ -443,15 +605,107 @@ async function scrollListFrame(frame) {
     const root = document.querySelector("#_pcmap_list_scroll_container");
     if (!root) {
       window.scrollBy(0, Math.max(700, window.innerHeight * 0.85));
-      return { scrollTop: window.scrollY, scrollHeight: document.body.scrollHeight };
+      return {
+        scrollTop: window.scrollY,
+        scrollHeight: document.body.scrollHeight,
+        clientHeight: window.innerHeight,
+      };
     }
     // The current PC list app appends the remaining organic rows when the
     // scroll container reaches its end. A viewport-sized step made mid-ranked
     // lookups exceed serverless request limits even though no ranks were lost.
     root.scrollTop = root.scrollHeight;
     root.dispatchEvent(new Event("scroll", { bubbles: true }));
-    return { scrollTop: root.scrollTop, scrollHeight: root.scrollHeight };
+    return {
+      scrollTop: root.scrollTop,
+      scrollHeight: root.scrollHeight,
+      clientHeight: root.clientHeight,
+    };
   });
+}
+
+function collectionResult(candidates, resultLimit, stopReason, scrollCount = 0) {
+  const publicCandidates = candidates.slice(0, resultLimit).map(toPublicCandidate);
+  const complete = publicCandidates.length >= resultLimit;
+  return {
+    candidates: publicCandidates,
+    complete,
+    stopReason: complete ? "requested_range_checked" : stopReason,
+    scrollCount,
+  };
+}
+
+function atScrollEnd(state = {}) {
+  const scrollTop = Number(state.scrollTop || 0);
+  const scrollHeight = Number(state.scrollHeight || 0);
+  const clientHeight = Number(state.clientHeight || 0);
+  return scrollTop + clientHeight >= scrollHeight - 2;
+}
+
+function sameScrollState(left, right) {
+  if (!left || !right) return false;
+  return Number(left.scrollTop) === Number(right.scrollTop) &&
+    Number(left.scrollHeight) === Number(right.scrollHeight);
+}
+
+async function collectRowsProgressively({
+  resultLimit,
+  maxScrolls,
+  deadlineAt,
+  readRows,
+  advance,
+  wait,
+  now = Date.now,
+  growthPollAttempts = GROWTH_POLL_ATTEMPTS,
+  growthPollIntervalMs = GROWTH_POLL_INTERVAL_MS,
+  exhaustedStableRounds = EXHAUSTED_STABLE_ROUNDS,
+}) {
+  const candidates = [];
+  let previousScrollState = null;
+  let stableRounds = 0;
+  let scrollCount = 0;
+
+  const ingestRows = async () => {
+    const rows = await readRows();
+    for (const row of rows) appendCandidate(candidates, row);
+  };
+
+  while (true) {
+    await ingestRows();
+    if (candidates.length >= resultLimit) {
+      return collectionResult(candidates, resultLimit, "requested_range_checked", scrollCount);
+    }
+    if (now() >= deadlineAt) {
+      return collectionResult(candidates, resultLimit, "collection_deadline_reached", scrollCount);
+    }
+    if (scrollCount >= maxScrolls) {
+      return collectionResult(candidates, resultLimit, "max_scrolls_reached", scrollCount);
+    }
+
+    const countBeforeScroll = candidates.length;
+    const scrollState = await advance();
+    scrollCount += 1;
+
+    for (let attempt = 0; attempt < growthPollAttempts; attempt += 1) {
+      if (now() >= deadlineAt) {
+        return collectionResult(candidates, resultLimit, "collection_deadline_reached", scrollCount);
+      }
+      await wait(growthPollIntervalMs);
+      await ingestRows();
+      if (candidates.length >= resultLimit) {
+        return collectionResult(candidates, resultLimit, "requested_range_checked", scrollCount);
+      }
+      if (candidates.length > countBeforeScroll) break;
+    }
+
+    const noGrowth = candidates.length === countBeforeScroll;
+    const settledAtEnd = atScrollEnd(scrollState) || sameScrollState(scrollState, previousScrollState);
+    stableRounds = noGrowth && settledAtEnd ? stableRounds + 1 : 0;
+    if (stableRounds >= exhaustedStableRounds) {
+      return collectionResult(candidates, resultLimit, "naver_result_list_exhausted", scrollCount);
+    }
+    previousScrollState = scrollState;
+  }
 }
 
 function buildPlaceListUrl(keyword, maxRank, searchCoord = "") {
@@ -514,7 +768,7 @@ async function resolveMapSearch(page, keyword) {
   }
 }
 
-async function collectCandidatesFromNaverMap(context, keyword, maxRank, target = null) {
+async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt) {
   const cached = cachedCandidates(keyword, maxRank);
   if (cached) return cached;
 
@@ -540,11 +794,15 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
       const candidates = [];
       const visibleRows = await extractVisibleRows(page);
       visibleRows.forEach((row) => appendCandidate(candidates, row));
-      const publicCandidates = candidates
-        .slice(0, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS))
-        .map(toPublicCandidate);
-      rememberCandidates(keyword, maxRank, publicCandidates);
-      return publicCandidates;
+      const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
+      const collection = collectionResult(
+        candidates,
+        resultLimit,
+        "single_pass_limit_reached",
+        1
+      );
+      rememberCandidates(keyword, maxRank, collection);
+      return collection;
     }
 
     const initialSearch = await resolveMapSearch(page, keyword);
@@ -563,31 +821,17 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, target =
       throw new Error("naver_place_access_limited");
     }
 
-    const candidates = [];
-    let stableCount = 0;
-    let previousCount = 0;
-    let previousScrollTop = -1;
-
     const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
-    for (let scroll = 0; scroll <= DEFAULT_MAX_SCROLLS; scroll += 1) {
-      const visibleRows = await extractVisibleRows(page);
-      visibleRows.forEach((row) => appendCandidate(candidates, row));
-
-      if (candidates.length >= resultLimit) break;
-      const scrollState = await scrollListFrame(page);
-      await page.waitForTimeout(280);
-
-      const noGrowth = candidates.length === previousCount;
-      const noScroll = Number(scrollState.scrollTop) === previousScrollTop;
-      stableCount = noGrowth && noScroll ? stableCount + 1 : 0;
-      if (stableCount >= 3) break;
-      previousCount = candidates.length;
-      previousScrollTop = Number(scrollState.scrollTop);
-    }
-
-    const publicCandidates = candidates.slice(0, resultLimit).map(toPublicCandidate);
-    rememberCandidates(keyword, maxRank, publicCandidates);
-    return publicCandidates;
+    const collection = await collectRowsProgressively({
+      resultLimit,
+      maxScrolls: DEFAULT_MAX_SCROLLS,
+      deadlineAt,
+      readRows: () => extractVisibleRows(page),
+      advance: () => scrollListFrame(page),
+      wait: (milliseconds) => page.waitForTimeout(milliseconds),
+    });
+    rememberCandidates(keyword, maxRank, collection);
+    return collection;
   } finally {
     await page.close().catch(() => {});
   }
@@ -704,10 +948,14 @@ export async function lookupNaverPlaceRank(payload = {}) {
     return { ok: false, matched: false, message: "keyword_required" };
   }
 
+  const apifyResult = await lookupNaverPlaceRankViaApify(payload);
+  if (apifyResult) return apifyResult;
+
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: HEADLESS });
   let overallTimeout;
   try {
+    const collectionDeadlineAt = Date.now() + Math.max(1000, OVERALL_TIMEOUT_MS - COLLECTION_DEADLINE_GUARD_MS);
     const lookup = (async () => {
       const context = await browser.newContext({
         locale: "ko-KR",
@@ -749,8 +997,10 @@ export async function lookupNaverPlaceRank(payload = {}) {
         placeUrl: resolved.url || placeUrl,
         placeName,
       };
-      const candidates = await collectCandidatesFromNaverMap(context, keyword, maxRank, target);
+      const collection = await collectCandidatesFromNaverMap(context, keyword, maxRank, collectionDeadlineAt);
+      const candidates = collection.candidates;
       let matched = findMatch(candidates, target);
+      const collectionStatus = buildCollectionStatus(collection, maxRank);
 
       const place = matched || {
         id: placeId,
@@ -762,17 +1012,15 @@ export async function lookupNaverPlaceRank(payload = {}) {
         ok: true,
         matched: Boolean(matched),
         rank: matched ? matched.rank : null,
-        checkedCount: candidates.length,
-        total: candidates.length,
-        requestedMaxRank: maxRank,
-        complete: candidates.length >= maxRank,
-        stopReason: candidates.length >= maxRank ? "requested_range_checked" : "naver_visible_list_exhausted",
+        ...collectionStatus,
         place,
         topPlaces: candidates.slice(0, 20),
         source: "naver_map_pc_list_collector",
         message: matched
           ? "네이버 지도 오가닉 " + matched.rank + "위로 확인되었습니다."
-          : "네이버 지도 오가닉 상위 " + candidates.length + "개 안에서 대상 플레이스를 찾지 못했습니다.",
+          : collectionStatus.partial
+            ? "네이버 지도 오가닉 " + candidates.length + "개까지 부분 확인했으며 대상 플레이스를 찾지 못했습니다."
+            : "네이버 지도 오가닉 상위 " + candidates.length + "개 안에서 대상 플레이스를 찾지 못했습니다.",
       };
     })();
 
@@ -785,3 +1033,30 @@ export async function lookupNaverPlaceRank(payload = {}) {
     await browser.close().catch(() => {});
   }
 }
+
+function buildCollectionStatus(collection, requestedMaxRank) {
+  const checkedCount = Math.min(collection.candidates.length, requestedMaxRank);
+  const complete = checkedCount >= requestedMaxRank;
+  const stopReason = complete
+    ? "requested_range_checked"
+    : collection.stopReason || "collection_incomplete";
+  return {
+    checkedCount,
+    total: checkedCount,
+    requestedMaxRank,
+    complete,
+    partial: !complete,
+    partialReason: complete ? null : stopReason,
+    stopReason,
+  };
+}
+
+export const __testing = {
+  apifyCandidate,
+  appendCandidate,
+  buildCollectionStatus,
+  clampMaxRank,
+  collectRowsProgressively,
+  lookupNaverPlaceRankViaApify,
+  normalizeApifyCandidates,
+};

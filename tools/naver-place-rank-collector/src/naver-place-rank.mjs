@@ -323,7 +323,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
 
     // A short naver.me URL does not contain a place ID. Resolve it once through
     // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
-    if (!collectTargetIds(target).length && !target.placeName && target.placeUrl) {
+    if ((!collectTargetIds(target).length || !target.placeName) && target.placeUrl) {
       const identityItems = await runActor({
         mode: "url",
         startUrls: [{ url: target.placeUrl }],

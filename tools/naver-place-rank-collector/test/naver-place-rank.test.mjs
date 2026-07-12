@@ -229,6 +229,45 @@ test("resolves a URL-only tracker before matching it inside 300 organic rows", a
   }
 });
 
+test("resolves a missing place name even when the URL already contains an ID", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const targetId = "1565776290";
+    let callCount = 0;
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "구월동 맛집",
+      placeUrl: `https://map.naver.com/p/entry/place/${targetId}`,
+      maxRank: 300,
+    }, async (_url, options) => {
+      callCount += 1;
+      const requestBody = JSON.parse(options.body);
+      if (callCount === 1) {
+        assert.equal(requestBody.mode, "url");
+        return new Response(JSON.stringify([{
+          placeId: targetId,
+          name: "URL 자동식별 식당",
+          placeUrl: `https://map.naver.com/p/entry/place/${targetId}`,
+        }]), { status: 200 });
+      }
+
+      assert.equal(requestBody.mode, "search");
+      const rows = Array.from({ length: 300 }, (_, index) => ({
+        placeId: index === 48 ? targetId : String(8000000 + index),
+        name: index === 48 ? "URL 자동식별 식당" : `후보 ${index + 1}`,
+      }));
+      return new Response(JSON.stringify(rows), { status: 200 });
+    });
+
+    assert.equal(callCount, 2);
+    assert.equal(result.rank, 49);
+    assert.equal(result.place.name, "URL 자동식별 식당");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
 test("Apify provider verifies organic rank 300 after removing ads and duplicates", async () => {
   const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
   process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";

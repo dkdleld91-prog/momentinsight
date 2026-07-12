@@ -404,41 +404,55 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     placeUrl: normalizeUrl(payload.placeUrl || payload.place_url),
     placeName: normalizeText(payload.placeName || payload.place_name),
   };
-  const controller = new AbortController();
-  const timeoutMs = Math.max(
+  const overallTimeoutMs = Math.max(
     30000,
-    Math.min(230000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 220000))
+    Math.min(230000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 225000))
   );
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const runActor = async (actorId, input) => {
+  const overallDeadlineAt = Date.now() + overallTimeoutMs;
+  const runActor = async (actorId, input) => {
+      const normalizedActorId = normalizeText(actorId).toLowerCase();
+      const configuredTimeoutMs = normalizedActorId.includes("solidcode~naver-map-scraper")
+        ? Number(process.env.APIFY_NAVER_MAPS_DEEP_TIMEOUT_MS || 170000)
+        : normalizedActorId.includes("oxygenated_quagmire~naver-place-search")
+          ? Number(process.env.APIFY_NAVER_MAPS_PRIMARY_TIMEOUT_MS || 35000)
+          : Number(process.env.APIFY_NAVER_MAPS_FALLBACK_TIMEOUT_MS || 40000);
+      const remainingMs = overallDeadlineAt - Date.now();
+      if (remainingMs <= 1000) throw new Error("apify_actor_chain_timeout");
+      const requestTimeoutMs = Math.max(1000, Math.min(remainingMs, configuredTimeoutMs));
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
       const endpoint = new URL(
         `https://api.apify.com/v2/acts/${encodeURIComponent(actorId)}/run-sync-get-dataset-items`
       );
       endpoint.searchParams.set("token", token);
-      const response = await fetchImpl(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
-        signal: controller.signal,
-      });
-      const bodyText = await response.text();
-      let items = [];
-      if (bodyText) {
-        try {
-          items = JSON.parse(bodyText);
-        } catch {
-          const contentType = response.headers.get("content-type") || "unknown";
-          throw new Error(`apify_non_json_response:${response.status}:${contentType}`);
+      endpoint.searchParams.set("timeout", String(Math.max(1, Math.floor(requestTimeoutMs / 1000))));
+      try {
+        const response = await fetchImpl(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(input),
+          signal: controller.signal,
+        });
+        const bodyText = await response.text();
+        let items = [];
+        if (bodyText) {
+          try {
+            items = JSON.parse(bodyText);
+          } catch {
+            const contentType = response.headers.get("content-type") || "unknown";
+            throw new Error(`apify_non_json_response:${response.status}:${contentType}`);
+          }
         }
+        if (!response.ok) {
+          const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
+          throw new Error(message);
+        }
+        if (!Array.isArray(items)) throw new Error("apify_dataset_items_invalid");
+        return items;
+      } finally {
+        clearTimeout(timeout);
       }
-      if (!response.ok) {
-        const message = items?.error?.message || items?.message || `apify_http_${response.status}`;
-        throw new Error(message);
-      }
-      if (!Array.isArray(items)) throw new Error("apify_dataset_items_invalid");
-      return items;
-    };
+  };
 
     // A short naver.me URL does not contain a place ID. Resolve it once through
     // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
@@ -577,9 +591,6 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
                 ? `Apify 원본 ${normalized.flattenedItemCount}개 중 고유 오가닉 ${candidates.length}개만 확인되어 300위 확인을 완료하지 못했습니다.`
                 : `네이버 지도 오가닉 ${candidates.length}개까지 확인했으며 300위 확인을 완료하지 못했습니다.`,
     };
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 function cachedCandidates(keyword, maxRank) {

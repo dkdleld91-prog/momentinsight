@@ -276,22 +276,35 @@ test("returns 409 when a group update reaches a database without the migration",
   assert.equal(result.body.ok, false);
 });
 
-test("stores groups on create and preserves them through group update and refresh", async () => {
+test("creates from a place URL only and preserves groups through update and refresh", async () => {
   const { ctx, state } = testContext();
-  const created = await payload(await handlePlaceRankTrackersRequest(request("POST", {
-    action: "create",
-    keyword: "강남 맛집",
-    placeUrl: "https://map.naver.com/p/entry/place/9876543210",
-    placeId: "9876543210",
-    group_name: "  강남   지점  ",
-    maxRank: 1000,
-  }), ctx));
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    url: "https://map.naver.com/p/entry/place/9876543210?placePath=%2Fhome",
+    headers: new Headers({ "content-type": "text/plain" }),
+  });
+  let created;
+  try {
+    created = await payload(await handlePlaceRankTrackersRequest(request("POST", {
+      action: "create",
+      keyword: "강남 맛집",
+      placeUrl: "https://naver.me/place-url-only",
+      group_name: "  강남   지점  ",
+      maxRank: 1000,
+    }), ctx));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 
   assert.equal(created.status, 201);
   assert.equal(created.body.tracker.groupName, "강남 지점");
   assert.equal(created.body.tracker.maxRank, 300);
+  assert.equal(created.body.tracker.placeId, "9876543210");
+  assert.equal(created.body.tracker.placeUrl, "https://map.naver.com/p/entry/place/9876543210?placePath=%2Fhome");
   assert.equal(state.tables[TRACKERS][0].group_name, "강남 지점");
   assert.equal(state.tables[TRACKERS][0].max_rank, 300);
+  assert.equal(state.tables[TRACKERS][0].place_id, "9876543210");
+  assert.equal(state.tables[TRACKERS][0].place_name, null);
 
   const trackerId = created.body.tracker.id;
   const grouped = await payload(await handlePlaceRankTrackersRequest(request("POST", {

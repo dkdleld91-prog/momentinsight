@@ -14,6 +14,9 @@ const APIFY_IDENTITY_ACTOR_ID = String(
 const APIFY_SEARCH_ACTOR_ID = String(
   process.env.APIFY_NAVER_MAPS_SEARCH_ACTOR_ID || "oxygenated_quagmire~naver-place-search"
 ).trim();
+const APIFY_FALLBACK_ACTOR_ID = String(
+  process.env.APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID || "abotapi~naver-map-scraper"
+).trim();
 
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
@@ -217,31 +220,105 @@ function apifyToken() {
   return String(process.env.APIFY_NAVER_MAPS_TOKEN || process.env.APIFY_TOKEN || "").trim();
 }
 
+function buildApifyIdentityInput(actorId, placeUrl) {
+  return {
+    mode: "url",
+    startUrls: [{ url: placeUrl }],
+    includeDetails: false,
+    includeReviews: false,
+    maxItems: 1,
+  };
+}
+
+function buildApifySearchInput(actorId, keyword, maxRank = DEFAULT_MAX_RANK) {
+  const normalizedActorId = normalizeText(actorId).toLowerCase();
+  if (normalizedActorId.includes("abotapi~naver-map-scraper")) {
+    return {
+      mode: "search",
+      keywords: [keyword],
+      sort: "relevance",
+      includeDetails: false,
+      includeReviews: false,
+      maxItems: maxRank,
+    };
+  }
+  return {
+    queries: [keyword],
+    maxResults: maxRank,
+    includePhotos: false,
+    includeReviewSnippets: false,
+    proxyConfiguration: { useApifyProxy: true },
+  };
+}
+
 function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || "";
 }
 
+function flattenApifyItems(items = []) {
+  const flattened = [];
+  const visit = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+      return;
+    }
+    if (!value || typeof value !== "object") return;
+
+    const nested = [value.results, value.places, value.items]
+      .filter(Array.isArray)
+      .flat();
+    if (Array.isArray(value.data)) nested.push(...value.data);
+    if (nested.length) {
+      nested.forEach(visit);
+      return;
+    }
+    if (value.data && typeof value.data === "object" && !Array.isArray(value.data)) {
+      const dataHasResults = [value.data.results, value.data.places, value.data.items].some(Array.isArray);
+      if (dataHasResults) {
+        visit(value.data);
+        return;
+      }
+    }
+    flattened.push(value);
+  };
+  visit(items);
+  return flattened;
+}
+
 function apifyCandidate(item = {}, index = 0) {
-  const url = firstText(item.url, item.placeUrl, item.place_url, item.link, item.webUrl, item.web_url);
+  const nestedPlace = [item.place, item.business]
+    .find((value) => value && typeof value === "object" && !Array.isArray(value)) || {};
+  const source = { ...item, ...nestedPlace };
+  const url = firstText(
+    source.url,
+    source.placeUrl,
+    source.place_url,
+    source.placeLink,
+    source.link,
+    source.webUrl,
+    source.web_url
+  );
   const id = firstText(
-    item.placeId,
-    item.place_id,
-    item.businessId,
-    item.business_id,
-    item.cid,
+    source.placeId,
+    source.place_id,
+    source.businessId,
+    source.business_id,
+    source.cid,
     extractPlaceId(url),
-    item.id
+    source.id
   );
-  const name = firstText(item.name, item.placeName, item.place_name, item.title, item.businessName);
+  const name = firstText(source.name, source.placeName, source.place_name, source.title, source.businessName);
   const isAd = Boolean(
-    item.isAd === true ||
-    item.is_ad === true ||
-    item.sponsored === true ||
-    item.ad === true ||
-    item.adId ||
-    item.ad_id
+    source.isAd === true ||
+    source.is_ad === true ||
+    source.isSponsored === true ||
+    source.sponsored === true ||
+    source.ad === true ||
+    source.adId ||
+    source.ad_id
   );
-  if ((!id && !name) || isAd) return null;
+  const isErrorRecord = Boolean(source.error || source.errorMessage || source.error_message || source.failed === true);
+  if (!name || (!id && !url) || isAd || isErrorRecord) return null;
 
   return {
     rank: index + 1,
@@ -250,25 +327,28 @@ function apifyCandidate(item = {}, index = 0) {
     name,
     url,
     visitorReviewCount: firstText(
-      item.visitorReviewCount,
-      item.visitor_reviews,
-      item.reviewCount,
-      item.reviewsCount
+      source.visitorReviewCount,
+      source.visitor_reviews,
+      source.reviewCount,
+      source.reviewsCount
     ),
     blogReviewCount: firstText(
-      item.blogCafeReviewCount,
-      item.blogReviewCount,
-      item.blog_reviews,
-      item.blogCount
+      source.blogCafeReviewCount,
+      source.blogReviewCount,
+      source.blog_reviews,
+      source.blogCount
     ),
     isAd: false,
   };
 }
 
-function normalizeApifyCandidates(items = [], maxRank = DEFAULT_MAX_RANK) {
+function normalizeApifyResult(items = [], maxRank = DEFAULT_MAX_RANK) {
+  const sourceItems = flattenApifyItems(items);
   const candidates = [];
   const keys = new Set();
-  for (const item of items) {
+  let examinedItemCount = 0;
+  for (const item of sourceItems) {
+    examinedItemCount += 1;
     const candidate = apifyCandidate(item, candidates.length);
     if (!candidate) continue;
     const key = candidate.id || normalizeComparable(candidate.name + candidate.url);
@@ -278,7 +358,24 @@ function normalizeApifyCandidates(items = [], maxRank = DEFAULT_MAX_RANK) {
     candidates.push(candidate);
     if (candidates.length >= maxRank) break;
   }
-  return candidates;
+  return {
+    candidates,
+    rawItemCount: Array.isArray(items) ? items.length : 0,
+    flattenedItemCount: sourceItems.length,
+    discardedItemCount: Math.max(0, examinedItemCount - candidates.length),
+  };
+}
+
+function normalizeApifyCandidates(items = [], maxRank = DEFAULT_MAX_RANK) {
+  return normalizeApifyResult(items, maxRank).candidates;
+}
+
+function apifyStopReason(normalized, maxRank = DEFAULT_MAX_RANK) {
+  if (normalized.candidates.length >= maxRank) return "requested_range_checked";
+  if (normalized.rawItemCount === 0) return "apify_empty_dataset";
+  if (normalized.candidates.length === 0) return "apify_output_unrecognized";
+  if (normalized.flattenedItemCount >= maxRank) return "apify_normalized_result_shortfall";
+  return "apify_result_list_exhausted";
 }
 
 async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
@@ -323,14 +420,11 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
 
     // A short naver.me URL does not contain a place ID. Resolve it once through
     // the Actor's URL mode, then reuse the canonical ID/name for rank matching.
-    if ((!collectTargetIds(target).length || !target.placeName) && target.placeUrl) {
-      const identityItems = await runActor(APIFY_IDENTITY_ACTOR_ID, {
-        mode: "url",
-        startUrls: [{ url: target.placeUrl }],
-        includeDetails: false,
-        includeReviews: false,
-        maxItems: 1,
-      });
+    if (!collectTargetIds(target).length && target.placeUrl) {
+      const identityItems = await runActor(
+        APIFY_IDENTITY_ACTOR_ID,
+        buildApifyIdentityInput(APIFY_IDENTITY_ACTOR_ID, target.placeUrl)
+      );
       const identity = normalizeApifyCandidates(identityItems, 1)[0];
       if (identity) {
         target = {
@@ -361,24 +455,49 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
       };
     }
 
-    const items = await runActor(APIFY_SEARCH_ACTOR_ID, {
-        queries: [keyword],
-        maxResults: maxRank,
-        includePhotos: false,
-        includeReviewSnippets: false,
-        proxyConfiguration: { useApifyProxy: true },
-    });
+    const primaryActorId = APIFY_SEARCH_ACTOR_ID;
+    const primaryItems = await runActor(
+      primaryActorId,
+      buildApifySearchInput(primaryActorId, keyword, maxRank)
+    );
+    const primaryNormalized = normalizeApifyResult(primaryItems, maxRank);
+    const primaryStopReason = apifyStopReason(primaryNormalized, maxRank);
+    const canFallback = primaryNormalized.candidates.length === 0 &&
+      APIFY_FALLBACK_ACTOR_ID &&
+      APIFY_FALLBACK_ACTOR_ID !== primaryActorId;
+    let actorId = primaryActorId;
+    let normalized = primaryNormalized;
+    let fallbackUsed = false;
 
-    const candidates = normalizeApifyCandidates(items, maxRank);
+    if (canFallback) {
+      const fallbackItems = await runActor(
+        APIFY_FALLBACK_ACTOR_ID,
+        buildApifySearchInput(APIFY_FALLBACK_ACTOR_ID, keyword, maxRank)
+      );
+      actorId = APIFY_FALLBACK_ACTOR_ID;
+      normalized = normalizeApifyResult(fallbackItems, maxRank);
+      fallbackUsed = true;
+    }
+
+    const candidates = normalized.candidates;
     const matched = findMatch(candidates, target);
     const complete = candidates.length >= maxRank;
-    const stopReason = complete ? "requested_range_checked" : "apify_result_list_exhausted";
+    const stopReason = apifyStopReason(normalized, maxRank);
     return {
-      ok: true,
+      ok: stopReason !== "apify_output_unrecognized",
       matched: Boolean(matched),
       rank: matched ? matched.rank : null,
       checkedCount: candidates.length,
       total: candidates.length,
+      rawItemCount: normalized.rawItemCount,
+      normalizedItemCount: candidates.length,
+      discardedItemCount: normalized.discardedItemCount,
+      actorId,
+      primaryActorId,
+      fallbackUsed,
+      primaryStopReason: fallbackUsed ? primaryStopReason : null,
+      primaryRawItemCount: fallbackUsed ? primaryNormalized.rawItemCount : null,
+      primaryNormalizedItemCount: fallbackUsed ? primaryNormalized.candidates.length : null,
       requestedMaxRank: maxRank,
       complete,
       partial: !complete,
@@ -390,12 +509,20 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         url: target.placeUrl,
       },
       topPlaces: candidates.slice(0, 20),
-      source: "apify_naver_place_search",
+      source: actorId.toLowerCase().includes("abotapi~naver-map-scraper")
+        ? fallbackUsed ? "apify_naver_maps_scraper_fallback" : "apify_naver_maps_scraper"
+        : "apify_naver_place_search",
       message: matched
         ? `네이버 지도 오가닉 ${matched.rank}위로 확인되었습니다.`
         : complete
           ? `네이버 지도 오가닉 상위 ${maxRank}개 안에서 대상 플레이스를 찾지 못했습니다.`
-          : `네이버 지도 오가닉 ${candidates.length}개까지 확인했으며 300위 확인을 완료하지 못했습니다.`,
+          : stopReason === "apify_empty_dataset"
+            ? "Apify 검색 Actor가 dataset 항목을 반환하지 않았습니다. 검색어와 Actor 실행 로그를 확인해주세요."
+            : stopReason === "apify_output_unrecognized"
+              ? "Apify 검색 Actor 출력에서 플레이스 항목을 인식하지 못했습니다. 출력 스키마를 확인해주세요."
+              : stopReason === "apify_normalized_result_shortfall"
+                ? `Apify 원본 ${normalized.flattenedItemCount}개 중 고유 오가닉 ${candidates.length}개만 확인되어 300위 확인을 완료하지 못했습니다.`
+                : `네이버 지도 오가닉 ${candidates.length}개까지 확인했으며 300위 확인을 완료하지 못했습니다.`,
     };
   } finally {
     clearTimeout(timeout);
@@ -1107,9 +1234,13 @@ function buildCollectionStatus(collection, requestedMaxRank) {
 export const __testing = {
   apifyCandidate,
   appendCandidate,
+  apifyStopReason,
   buildCollectionStatus,
+  buildApifyIdentityInput,
+  buildApifySearchInput,
   clampMaxRank,
   collectRowsProgressively,
   lookupNaverPlaceRankViaApify,
   normalizeApifyCandidates,
+  normalizeApifyResult,
 };

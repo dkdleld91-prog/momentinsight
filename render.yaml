@@ -20,7 +20,11 @@ services:
         sync: false
       - key: APIFY_NAVER_MAPS_TOKEN
         sync: false
-      - key: APIFY_NAVER_MAPS_ACTOR_ID
+      - key: APIFY_NAVER_MAPS_IDENTITY_ACTOR_ID
+        value: abotapi~naver-map-scraper
+      - key: APIFY_NAVER_MAPS_SEARCH_ACTOR_ID
+        value: oxygenated_quagmire~naver-place-search
+      - key: APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID
         value: abotapi~naver-map-scraper
       - key: APIFY_NAVER_MAPS_TIMEOUT_MS
-        value: "120000"
+        value: "220000"

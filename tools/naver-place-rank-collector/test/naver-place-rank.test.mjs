@@ -5,10 +5,13 @@ import { __testing } from "../src/naver-place-rank.mjs";
 
 const {
   buildCollectionStatus,
+  buildApifyIdentityInput,
+  buildApifySearchInput,
   clampMaxRank,
   collectRowsProgressively,
   lookupNaverPlaceRankViaApify,
   normalizeApifyCandidates,
+  normalizeApifyResult,
 } = __testing;
 
 function placeRow(index) {
@@ -131,6 +134,42 @@ test("clamps provider requests to the supported 300 result ceiling", () => {
   assert.equal(clampMaxRank(1), 300);
 });
 
+test("builds actor-specific Apify inputs", () => {
+  assert.deepEqual(buildApifyIdentityInput(
+    "abotapi~naver-map-scraper",
+    "https://naver.me/test"
+  ), {
+    mode: "url",
+    startUrls: [{ url: "https://naver.me/test" }],
+    includeDetails: false,
+    includeReviews: false,
+    maxItems: 1,
+  });
+  assert.deepEqual(buildApifySearchInput(
+    "oxygenated_quagmire~naver-place-search",
+    "강남 맛집",
+    300
+  ), {
+    queries: ["강남 맛집"],
+    maxResults: 300,
+    includePhotos: false,
+    includeReviewSnippets: false,
+    proxyConfiguration: { useApifyProxy: true },
+  });
+  assert.deepEqual(buildApifySearchInput(
+    "abotapi~naver-map-scraper",
+    "강남 맛집",
+    300
+  ), {
+    mode: "search",
+    keywords: ["강남 맛집"],
+    sort: "relevance",
+    includeDetails: false,
+    includeReviews: false,
+    maxItems: 300,
+  });
+});
+
 test("normalizes and deduplicates Apify rows while excluding ads", () => {
   const candidates = normalizeApifyCandidates([
     { placeId: "100", name: "첫 장소", url: "https://map.naver.com/p/entry/place/100" },
@@ -143,6 +182,26 @@ test("normalizes and deduplicates Apify rows while excluding ads", () => {
     [1, "100", "첫 장소"],
     [2, "200", "둘째 장소"],
   ]);
+});
+
+test("normalizes wrapped and nested Apify result rows", () => {
+  const normalized = normalizeApifyResult([{
+    query: "강남 맛집",
+    data: {
+      results: [{
+        place: {
+          placeId: "321",
+          name: "중첩 장소",
+          placeUrl: "https://map.naver.com/p/entry/place/321",
+        },
+      }],
+    },
+  }], 300);
+
+  assert.equal(normalized.rawItemCount, 1);
+  assert.equal(normalized.flattenedItemCount, 1);
+  assert.equal(normalized.discardedItemCount, 0);
+  assert.deepEqual(normalized.candidates.map((item) => [item.id, item.name]), [["321", "중첩 장소"]]);
 });
 
 test("Apify provider marks 300 verified organic rows complete", async () => {
@@ -226,7 +285,7 @@ test("resolves a URL-only tracker before matching it inside 300 organic rows", a
   }
 });
 
-test("resolves a missing place name even when the URL already contains an ID", async () => {
+test("skips identity lookup when the URL already contains a place ID", async () => {
   const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
   process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
   try {
@@ -239,15 +298,6 @@ test("resolves a missing place name even when the URL already contains an ID", a
     }, async (_url, options) => {
       callCount += 1;
       const requestBody = JSON.parse(options.body);
-      if (callCount === 1) {
-        assert.equal(requestBody.mode, "url");
-        return new Response(JSON.stringify([{
-          placeId: targetId,
-          name: "URL 자동식별 식당",
-          placeUrl: `https://map.naver.com/p/entry/place/${targetId}`,
-        }]), { status: 200 });
-      }
-
       assert.deepEqual(requestBody.queries, ["구월동 맛집"]);
       assert.equal(requestBody.maxResults, 300);
       const rows = Array.from({ length: 300 }, (_, index) => ({
@@ -257,7 +307,7 @@ test("resolves a missing place name even when the URL already contains an ID", a
       return new Response(JSON.stringify(rows), { status: 200 });
     });
 
-    assert.equal(callCount, 2);
+    assert.equal(callCount, 1);
     assert.equal(result.rank, 49);
     assert.equal(result.place.name, "URL 자동식별 식당");
   } finally {
@@ -329,6 +379,7 @@ test("Apify provider reports a partial result instead of claiming 300", async ()
   const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
   process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
   try {
+    let callCount = 0;
     const rows = Array.from({ length: 72 }, (_, index) => ({
       placeId: String(200000 + index),
       name: `장소 ${index + 1}`,
@@ -337,12 +388,179 @@ test("Apify provider reports a partial result instead of claiming 300", async ()
       keyword: "테스트 카페",
       placeId: "999999",
       maxRank: 300,
-    }, async () => new Response(JSON.stringify(rows), { status: 200 }));
+    }, async (url) => {
+      callCount += 1;
+      assert.match(String(url), /oxygenated_quagmire~naver-place-search/);
+      return new Response(JSON.stringify(rows), { status: 200 });
+    });
 
+    assert.equal(callCount, 1);
+    assert.equal(result.fallbackUsed, false);
     assert.equal(result.complete, false);
     assert.equal(result.partial, true);
     assert.equal(result.checkedCount, 72);
     assert.equal(result.stopReason, "apify_result_list_exhausted");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("falls back to abotapi when the primary Actor returns an empty dataset", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const targetId = "990299";
+    let callCount = 0;
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "fallback 맛집",
+      placeId: targetId,
+      maxRank: 300,
+    }, async (url, options) => {
+      callCount += 1;
+      const requestBody = JSON.parse(options.body);
+      if (callCount === 1) {
+        assert.match(String(url), /oxygenated_quagmire~naver-place-search/);
+        assert.deepEqual(requestBody.queries, ["fallback 맛집"]);
+        assert.equal(requestBody.maxResults, 300);
+        return new Response("[]", { status: 200 });
+      }
+
+      assert.match(String(url), /abotapi~naver-map-scraper/);
+      assert.deepEqual(requestBody, {
+        mode: "search",
+        keywords: ["fallback 맛집"],
+        sort: "relevance",
+        includeDetails: false,
+        includeReviews: false,
+        maxItems: 300,
+      });
+      const rows = Array.from({ length: 300 }, (_, index) => ({
+        placeId: String(990000 + index),
+        name: `fallback 장소 ${index + 1}`,
+        placeUrl: `https://map.naver.com/p/entry/place/${990000 + index}`,
+      }));
+      return new Response(JSON.stringify(rows), { status: 200 });
+    });
+
+    assert.equal(callCount, 2);
+    assert.equal(result.ok, true);
+    assert.equal(result.complete, true);
+    assert.equal(result.rank, 300);
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.primaryStopReason, "apify_empty_dataset");
+    assert.equal(result.source, "apify_naver_maps_scraper_fallback");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("falls back to abotapi when the primary output is unrecognized", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    let callCount = 0;
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "fallback 출력",
+      placeId: "888888",
+      maxRank: 300,
+    }, async (_url, options) => {
+      callCount += 1;
+      if (callCount === 1) {
+        return new Response(JSON.stringify([{
+          id: "actor-status-1",
+          title: "finished",
+          error: "unexpected_output",
+        }]), { status: 200 });
+      }
+      const requestBody = JSON.parse(options.body);
+      assert.equal(requestBody.mode, "search");
+      return new Response(JSON.stringify([{
+        placeId: "888888",
+        name: "fallback 확인 장소",
+        placeUrl: "https://map.naver.com/p/entry/place/888888",
+      }]), { status: 200 });
+    });
+
+    assert.equal(callCount, 2);
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 1);
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.primaryStopReason, "apify_output_unrecognized");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("Apify provider reports an empty dataset after both Actors return zero rows", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "빈 검색 결과",
+      placeId: "999999",
+      maxRank: 300,
+    }, async () => new Response("[]", { status: 200 }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.checkedCount, 0);
+    assert.equal(result.rawItemCount, 0);
+    assert.equal(result.complete, false);
+    assert.equal(result.stopReason, "apify_empty_dataset");
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.primaryStopReason, "apify_empty_dataset");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("Apify provider rejects an unrecognized non-empty output schema", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "출력 스키마 오류",
+      placeId: "999999",
+      maxRank: 300,
+    }, async () => new Response(JSON.stringify([{
+      id: "actor-status-1",
+      title: "Actor run failed",
+      error: "unexpected_output",
+    }]), { status: 200 }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.rawItemCount, 1);
+    assert.equal(result.normalizedItemCount, 0);
+    assert.equal(result.stopReason, "apify_output_unrecognized");
+    assert.equal(result.fallbackUsed, true);
+    assert.equal(result.primaryStopReason, "apify_output_unrecognized");
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("Apify provider reports normalization shortfall after 300 raw rows", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const rows = Array.from({ length: 300 }, (_, index) => ({
+      placeId: index === 299 ? "500000" : String(500000 + index),
+      name: `장소 ${index + 1}`,
+    }));
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "중복 포함 결과",
+      placeId: "999999",
+      maxRank: 300,
+    }, async () => new Response(JSON.stringify(rows), { status: 200 }));
+
+    assert.equal(result.complete, false);
+    assert.equal(result.checkedCount, 299);
+    assert.equal(result.discardedItemCount, 1);
+    assert.equal(result.stopReason, "apify_normalized_result_shortfall");
   } finally {
     if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
     else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;

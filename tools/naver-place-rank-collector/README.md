@@ -121,10 +121,11 @@ NAVER_PLACE_PROVIDER_TIMEOUT_MS=90000
 APIFY_NAVER_MAPS_TOKEN=Apify API 토큰
 APIFY_NAVER_MAPS_IDENTITY_ACTOR_ID=abotapi~naver-map-scraper
 APIFY_NAVER_MAPS_SEARCH_ACTOR_ID=oxygenated_quagmire~naver-place-search
+APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID=abotapi~naver-map-scraper
 APIFY_NAVER_MAPS_TIMEOUT_MS=220000
 ```
 
-토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
+토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 기본 검색 Actor가 dataset 0개를 반환하거나 출력 정규화 결과가 0개이면 fallback Actor를 한 번 호출합니다. 기본 Actor에서 유효 후보를 1개 이상 확인한 경우에는 300위 미완주여도 비용 중복을 막기 위해 fallback하지 않습니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
 9. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.
@@ -158,5 +159,10 @@ NAVER_PLACE_RANK_TIMEOUT_MS=240000
 - 이 서버는 임의 순위값을 만들지 않습니다. 네이버 화면에서 확인하지 못하면 `matched:false`를 반환합니다.
 - `checkedCount`는 요청한 최대 순위가 아니라 실제로 확인한 오가닉 결과 수입니다.
 - `partial=true`이면 `partialReason`과 `stopReason`으로 300개 미만에서 종료한 원인을 확인할 수 있습니다.
+- Apify 경로는 `rawItemCount`, `normalizedItemCount`, `discardedItemCount`를 함께 반환합니다.
+- fallback을 사용하면 `fallbackUsed=true`, `actorId`, `primaryActorId`, `primaryStopReason`으로 두 Actor의 실행 경로를 확인할 수 있습니다.
+- `apify_empty_dataset`은 Actor dataset이 0개인 경우, `apify_output_unrecognized`는 반환 행이 현재 플레이스 출력 스키마와 맞지 않는 경우입니다.
+- `apify_normalized_result_shortfall`은 원본 300개를 받았지만 광고·중복·무효 행 제거 후 300개가 남지 않은 경우입니다.
+- `apify_result_list_exhausted`는 Actor가 유효한 플레이스를 반환했지만 원본 결과 자체가 300개 미만인 경우입니다.
 - 네이버 화면 구조 변경, CAPTCHA, 접속 차단이 생기면 수집 실패가 발생할 수 있습니다.
 - 장기 운영에서는 이 서버를 직접 운영하거나, 같은 응답 계약을 제공하는 유료 SERP/플레이스 데이터 API로 교체하는 방식이 안정적입니다.

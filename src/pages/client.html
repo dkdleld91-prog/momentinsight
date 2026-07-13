@@ -327,7 +327,7 @@
 
     #mi-clean .mi-app {
       display: grid;
-      grid-template-columns: 224px minmax(0, 1fr);
+      grid-template-columns: 236px minmax(0, 1fr);
       min-height: 100vh;
     }
 
@@ -336,64 +336,56 @@
       top: 0;
       height: 100vh;
       overflow-y: auto;
-      border-right: 1px solid var(--mi-line);
-      background: #fff;
+      border-right: 1px solid rgba(213, 221, 233, 0.92);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
       padding: 22px 16px;
+      box-shadow: 12px 0 32px rgba(6, 26, 58, 0.035);
     }
 
     #mi-clean .mi-brand {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 22px;
+      gap: 12px;
+      min-height: 42px;
+      margin-bottom: 24px;
+      padding: 0 7px;
       color: var(--mi-navy);
       font-weight: 950;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-clean .mi-brand > span:last-child {
+      font-size: 17px;
     }
 
     #mi-clean .mi-mark {
       display: grid;
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       place-items: center;
-      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
       color: #fff;
-      background: var(--mi-navy);
-      font-size: 12px;
+      background: linear-gradient(145deg, #0b2a57 0%, var(--mi-navy) 72%);
+      box-shadow: 0 10px 22px rgba(6, 26, 58, 0.16);
+      font-size: 13px;
       font-weight: 950;
+      letter-spacing: 0.02em;
     }
 
     #mi-clean .mi-nav-group {
       display: grid;
-      gap: 6px;
-      margin-top: 12px;
-      padding-top: 14px;
-      border-top: 1px solid #edf1f6;
-    }
-
-    #mi-clean .mi-nav-group:first-child {
-      margin-top: 0;
-      padding-top: 0;
-      border-top: 0;
+      gap: 4px;
+      margin-top: 16px;
     }
 
     #mi-clean .mi-nav-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin: 0 0 3px;
-      padding: 0 10px;
-      color: #66758a;
+      margin: 0 0 4px;
+      padding: 0 12px;
+      color: #96a0b1;
       font-size: 10.5px;
-      font-weight: 880;
-      letter-spacing: 0.04em;
-    }
-
-    #mi-clean .mi-nav-title::before {
-      width: 5px;
-      height: 5px;
-      border-radius: 999px;
-      background: #9bacbf;
-      content: "";
+      font-weight: 900;
+      letter-spacing: 0.055em;
     }
 
     #mi-clean .mi-nav a,
@@ -402,28 +394,32 @@
       align-items: center;
       justify-content: space-between;
       gap: 6px;
-      min-height: 41px;
-      border-radius: 8px;
-      padding: 0 11px;
+      min-height: 43px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      padding: 0 12px;
       color: var(--mi-muted);
       font-size: 14px;
       font-weight: 850;
       white-space: nowrap;
       cursor: pointer;
-      transition: color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+      transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
     }
 
     #mi-clean .mi-nav a:hover,
     #mi-clean .mi-mobile-nav a:hover {
       color: var(--mi-navy);
-      background: #f4f7fb;
+      border-color: rgba(213, 221, 233, 0.82);
+      background: rgba(247, 249, 252, 0.94);
+      transform: translateX(2px);
     }
 
     #mi-clean .mi-nav a.is-active,
     #mi-clean .mi-mobile-nav a.is-active {
       color: var(--mi-navy);
-      background: #f1f5f9;
-      box-shadow: inset 3px 0 0 var(--mi-navy);
+      border-color: rgba(6, 26, 58, 0.06);
+      background: linear-gradient(90deg, #edf3fa 0%, #f4f7fb 100%);
+      box-shadow: inset 3px 0 0 var(--mi-navy), 0 8px 18px rgba(6, 26, 58, 0.045);
     }
 
     #mi-clean .mi-nav small {
@@ -437,7 +433,7 @@
       gap: 8px;
       margin-top: 18px;
       border: 1px solid rgba(223, 229, 239, 0.92);
-      border-radius: 8px;
+      border-radius: 12px;
       padding: 12px;
       background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
       box-shadow: 0 10px 24px rgba(6, 26, 58, 0.045);
@@ -4668,7 +4664,7 @@
   </div>
 
   <div class="mi-app">
-    <aside class="mi-side" aria-label="모먼트인사이트 광고주 메뉴">
+    <aside class="mi-side" data-mi-shell="premium-sidebar" aria-label="모먼트인사이트 광고주 메뉴">
       <a class="mi-brand" href="/" aria-label="모먼트인사이트 홈페이지로 이동">
         <span class="mi-mark">MI</span>
         <span>광고주 대시보드</span>
@@ -4676,25 +4672,29 @@
 
       <nav class="mi-nav">
         <div class="mi-nav-group">
-          <p class="mi-nav-title">성과 관리</p>
+          <p class="mi-nav-title">운영</p>
           <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
           <a href="#mi-sales" data-mi-screen="sales">매출 현황</a>
           <a href="#mi-schedule" data-mi-screen="schedule">일정표</a>
+          <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 연결</a>
         </div>
 
         <div class="mi-nav-group">
-          <p class="mi-nav-title">마케팅 도구</p>
+          <p class="mi-nav-title">키워드·SEO</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
-          <a href="#mi-naver-rank" data-mi-screen="naver-rank">N 상품 순위</a>
-          <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
-          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
-          <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
           <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인</a>
         </div>
 
         <div class="mi-nav-group">
-          <p class="mi-nav-title">계정 연동</p>
-          <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 연결</a>
+          <p class="mi-nav-title">순위 조회·추적</p>
+          <a href="#mi-naver-rank" data-mi-screen="naver-rank">N 상품 순위</a>
+          <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
+          <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
+        </div>
+
+        <div class="mi-nav-group">
+          <p class="mi-nav-title">광고 조사</p>
+          <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
         </div>
       </nav>
 
@@ -4708,13 +4708,13 @@
         <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
         <a href="#mi-sales" data-mi-screen="sales">매출</a>
         <a href="#mi-schedule" data-mi-screen="schedule">일정</a>
+        <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드</a>
+        <a href="#mi-seo-check" data-mi-screen="seo-check">SEO</a>
         <a href="#mi-naver-rank" data-mi-screen="naver-rank">N 상품 순위</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
         <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일</a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
-        <a href="#mi-seo-check" data-mi-screen="seo-check">SEO</a>
-        <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
       </nav>
     </aside>
 

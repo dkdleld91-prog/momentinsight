@@ -127,20 +127,23 @@ const checks = {
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientNavigationTaxonomy: orderedIncludes(clientSource, [
-    '<p class="mi-nav-title">성과 관리</p>',
+    '<p class="mi-nav-title">운영</p>',
     'data-mi-screen="dashboard">대시보드</a>',
     'data-mi-screen="sales">매출 현황</a>',
     'data-mi-screen="schedule">일정표</a>',
-    '<p class="mi-nav-title">마케팅 도구</p>',
+    'data-mi-screen="agency-code">대행사 연결</a>',
+    '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-screen="keyword-tool">키워드 조회</a>',
+    'data-mi-screen="seo-check">SEO 확인</a>',
+    '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-screen="naver-rank">N 상품 순위</a>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
+    '<p class="mi-nav-title">광고 조사</p>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
-    'data-mi-screen="seo-check">SEO 확인</a>',
-    '<p class="mi-nav-title">계정 연동</p>',
-    'data-mi-screen="agency-code">대행사 연결</a>',
   ]),
+  roleSidebarsSharePremiumShell: adminSource.includes('data-mi-shell="premium-sidebar"')
+    && clientSource.includes('data-mi-shell="premium-sidebar"'),
   clientLoginRoleSelection: clientSource.includes('data-client-login-mode="client"')
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")

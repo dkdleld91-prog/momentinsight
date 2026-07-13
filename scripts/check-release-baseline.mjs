@@ -40,6 +40,7 @@ const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
+const shoppingRankServer = read("src/server/handlers/naver-shopping-rank.mjs");
 const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs");
 const placeRankCollector = read("tools/naver-place-rank-collector/src/naver-place-rank.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
@@ -568,6 +569,13 @@ const checks = {
     && read("src/server/handlers/naver-shopping-rank.mjs").includes('adCoverage: "not_provided_by_official_api"')
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isExactTarget")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isRelatedCatalog"),
+  naverRankSellerLinkExactAndFullRange: shoppingRankServer.includes("function sellerProductIdCandidates")
+    && shoppingRankServer.includes('targetMode === "catalog" ? itemCatalogIds(item) : itemSellerProductIds(item)')
+    && shoppingRankServer.includes('matchEvidence: targetMode === "catalog" ? "catalog_id" : "seller_link_product_id"')
+    && shoppingRankServer.includes("let matchedResult = null")
+    && shoppingRankServer.includes("checkedCount: organicCheckedCount")
+    && shoppingRankServer.includes("sourceLink: serializedExactItem.link")
+    && shoppingRankServer.includes("target?.sourceUrl ? target.sourceUrl : serializedExactItem.link"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

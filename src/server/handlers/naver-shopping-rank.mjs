@@ -123,6 +123,15 @@ function productIdCandidates(value) {
   return [];
 }
 
+function sellerProductIdCandidates(value) {
+  const parsed = parseUrl(value);
+  if (!parsed) return [];
+
+  const path = decodeURIComponent(parsed.pathname || "");
+  const match = path.match(/\/(?:products|product)\/([0-9]{5,})(?:[/?#]|$)/i);
+  return match?.[1] ? [match[1]] : [];
+}
+
 function parseKeywordAliasMap(value) {
   const source = String(value || "").trim();
   if (!source) return {};
@@ -457,8 +466,16 @@ function itemProductId(item) {
   return String(item?.productId || extractProductId(item?.link) || "");
 }
 
-function itemProductIds(item) {
-  return uniqueValues([item?.productId, ...productIdCandidates(item?.link)]);
+function itemSellerProductIds(item) {
+  return sellerProductIdCandidates(item?.link);
+}
+
+function itemCatalogIds(item) {
+  const productType = classifyNaverProductType(item?.productType);
+  return uniqueValues([
+    ...catalogIdCandidates(item?.link),
+    ...(productType.isPriceCompareCatalog ? [item?.productId] : []),
+  ]);
 }
 
 function isTruthyAdValue(value) {
@@ -501,18 +518,26 @@ function isAdItem(item) {
 }
 
 function matchTargetItem(item, target) {
-  const itemIds = itemProductIds(item);
   const targetIds = Array.isArray(target.productIds) ? target.productIds : uniqueValues([target.productId]);
   const targetUrlKeys = Array.isArray(target.urlKeys) ? target.urlKeys : uniqueValues([target.normalizedUrl]);
   const hasDirectTarget = Boolean(target.hasDirectTarget || targetIds.length || targetUrlKeys.length);
+  const targetMode = target.targetMode || (target.catalogIds?.length ? "catalog" : "product");
+  // The OpenAPI productId is not the seller page product number. Seller products
+  // must match the numeric ID embedded in the result link; catalogs use catalog IDs.
+  const itemIds = targetMode === "catalog" ? itemCatalogIds(item) : itemSellerProductIds(item);
   const matchedProductId = itemIds.find((id) => targetIds.includes(id));
   if (matchedProductId) {
-    return { matched: true, matchType: "product_id", matchedProductId };
+    return {
+      matched: true,
+      matchType: "product_id",
+      matchedProductId,
+      matchEvidence: targetMode === "catalog" ? "catalog_id" : "seller_link_product_id",
+    };
   }
 
   const itemUrlKey = canonicalUrlKey(item?.link);
   if (targetUrlKeys.length && itemUrlKey && targetUrlKeys.includes(itemUrlKey)) {
-    return { matched: true, matchType: "canonical_url" };
+    return { matched: true, matchType: "canonical_url", matchEvidence: "canonical_url" };
   }
 
   if (!hasDirectTarget && target.mallName) {
@@ -520,7 +545,7 @@ function matchTargetItem(item, target) {
     const targetTitle = target.productTitle.replace(/\s/g, "");
     const itemTitle = stripTags(item?.title).replace(/\s/g, "");
     if (mallMatch && targetTitle.length >= 6 && itemTitle.includes(targetTitle)) {
-      return { matched: true, matchType: "mall_title" };
+      return { matched: true, matchType: "mall_title", matchEvidence: "mall_title" };
     }
   }
 
@@ -638,6 +663,7 @@ function buildRankTarget({ targetProductId = "", targetUrl = "", targetMallName 
     productIds: targetProductIds,
     catalogId: targetCatalogIds[0] || "",
     catalogIds: targetCatalogIds,
+    sourceUrl: safeProductUrl(targetUrl),
     normalizedUrl: normalizeUrl(targetUrl),
     urlKeys: uniqueValues([canonicalUrlKey(targetUrl)]),
     hasDirectTarget: Boolean(targetProductId || targetUrl),
@@ -779,15 +805,19 @@ function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyw
   if (!exactEntry) return relatedCatalogItems;
 
   const position = rankPagePosition(exactEntry.rank);
+  const exactMatch = matchTargetItem(exactEntry.item, target);
+  const serializedExactItem = serializeItem(exactEntry.item, exactEntry.rank);
   const exactItem = {
-    ...serializeItem(exactEntry.item, exactEntry.rank),
+    ...serializedExactItem,
+    link: target?.targetMode === "product" && target?.sourceUrl ? target.sourceUrl : serializedExactItem.link,
+    sourceLink: serializedExactItem.link,
     page: position.page,
     position: position.position,
     isExactTarget: true,
     isRelatedCatalog: false,
     exposureType: target?.targetMode === "catalog" ? "exact_catalog" : "exact_product",
     exposureLabel: target?.targetMode === "catalog" ? "조회 원부" : "정확 상품",
-    relationBasis: "exact_target",
+    relationBasis: exactMatch.matchEvidence || "exact_target",
   };
 
   return [...relatedCatalogItems, exactItem]
@@ -818,8 +848,11 @@ function findOrganicMatchInItems(items, target, options = {}) {
   let rawCheckedCount = Number(options.rawOffset || 0);
   let excludedAdCount = Number(options.excludedAdCount || 0);
   let stoppedAtLimit = false;
+  let firstMatch = null;
 
   for (const item of items || []) {
+    // Keep the official API slot order. Deduplicating similar rows changes the
+    // observed rank and no longer reflects the positions returned by Naver.
     rawCheckedCount += 1;
     if (isAdItem(item)) {
       excludedAdCount += 1;
@@ -836,29 +869,24 @@ function findOrganicMatchInItems(items, target, options = {}) {
     if (topItems.length < 5) topItems.push(serializeItem(item, organicCheckedCount));
 
     const match = matchTargetItem(item, target);
-    if (match.matched) {
+    if (match.matched && !firstMatch) {
       const position = rankPagePosition(organicCheckedCount);
-      return {
-        matched: true,
+      firstMatch = {
         rank: organicCheckedCount,
         page: position.page,
         position: position.position,
         pageSize: position.pageSize,
         matchType: match.matchType,
+        matchEvidence: match.matchEvidence || "",
         matchedProductId: match.matchedProductId || "",
         item,
-        topItems,
-        organicItems,
-        organicCheckedCount,
-        rawCheckedCount,
-        excludedAdCount,
-        stoppedAtLimit,
       };
     }
   }
 
   return {
-    matched: false,
+    matched: Boolean(firstMatch),
+    ...(firstMatch || {}),
     topItems,
     organicItems,
     organicCheckedCount,
@@ -876,6 +904,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   let organicCheckedCount = 0;
   let rawCheckedCount = 0;
   let excludedAdCount = 0;
+  let matchedResult = null;
   const topItems = [];
   const organicItems = [];
 
@@ -895,59 +924,73 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     rawCheckedCount = ranked.rawCheckedCount;
     excludedAdCount = ranked.excludedAdCount;
 
-    if (ranked.matched) {
-      const sellerItems = sellerItemsFromOrganic(ranked.organicItems, ranked.item, target);
-      const productExposureItems = productExposureItemsFromOrganic(ranked.organicItems, ranked.item, target, queryKeyword);
-      const relatedCatalogIds = productExposureItems
-        .filter((item) => item.isRelatedCatalog)
-        .map((item) => item.productId);
-      return {
-        matched: true,
+    if (ranked.matched && !matchedResult) {
+      matchedResult = {
         rank: ranked.rank,
         page: ranked.page,
         position: ranked.position,
         pageSize: ranked.pageSize,
-        rankBasis: "organic",
         matchType: ranked.matchType,
+        matchEvidence: ranked.matchEvidence || "",
         matchedProductId: ranked.matchedProductId || "",
-        total,
-        checkedCount: ranked.organicCheckedCount,
-        organicCheckedCount: ranked.organicCheckedCount,
-        rawCheckedCount: ranked.rawCheckedCount,
-        excludedAdCount: ranked.excludedAdCount,
-        targetProductId: target.productId,
-        targetProductIds: target.productIds,
-        targetCatalogId: target.catalogId,
-        targetCatalogIds: target.catalogIds,
-        targetMode: target.targetMode,
-        targetModeLabel: target.targetModeLabel,
-        targetUrlKeys: target.urlKeys,
-        item: serializeItem(ranked.item, ranked.rank),
-        sellerItems,
-        productExposureItems,
-        relatedCatalogIds,
-        productExposureSummary: {
-          keyword: normalizeText(keyword),
-          sellerName: normalizeText(ranked.item?.mallName || ranked.item?.brand),
-          totalCount: productExposureItems.length,
-          organicCount: productExposureItems.length,
-          adCount: null,
-          checkedCount: ranked.organicCheckedCount,
-          updatedAt: new Date().toISOString(),
-          adCoverage: "not_provided_by_official_api",
-        },
-        sellerResultSummary: {
-          mallName: normalizeText(ranked.item?.mallName),
-          organicCount: sellerItems.length,
-          checkedCount: ranked.organicCheckedCount,
-          adCoverage: "not_provided_by_official_api",
-          adMessage: "광고 상품과 광고 위치는 네이버 쇼핑 검색 API에서 제공하지 않아 집계하지 않습니다.",
-        },
-        topItems,
+        item: ranked.item,
       };
     }
 
     if (ranked.stoppedAtLimit || !items.length || items.length < NAVER_SHOPPING_API_DISPLAY) break;
+  }
+
+  if (matchedResult) {
+    const sellerItems = sellerItemsFromOrganic(organicItems, matchedResult.item, target);
+    const productExposureItems = productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword);
+    const relatedCatalogIds = productExposureItems
+      .filter((item) => item.isRelatedCatalog)
+      .map((item) => item.productId);
+    return {
+      matched: true,
+      rank: matchedResult.rank,
+      page: matchedResult.page,
+      position: matchedResult.position,
+      pageSize: matchedResult.pageSize,
+      rankBasis: "organic",
+      matchType: matchedResult.matchType,
+      matchEvidence: matchedResult.matchEvidence,
+      matchedProductId: matchedResult.matchedProductId,
+      total,
+      checkedCount: organicCheckedCount,
+      organicCheckedCount,
+      rawCheckedCount,
+      excludedAdCount,
+      targetProductId: target.productId,
+      targetProductIds: target.productIds,
+      targetCatalogId: target.catalogId,
+      targetCatalogIds: target.catalogIds,
+      targetMode: target.targetMode,
+      targetModeLabel: target.targetModeLabel,
+      targetUrlKeys: target.urlKeys,
+      item: serializeItem(matchedResult.item, matchedResult.rank),
+      sellerItems,
+      productExposureItems,
+      relatedCatalogIds,
+      productExposureSummary: {
+        keyword: normalizeText(keyword),
+        sellerName: normalizeText(matchedResult.item?.mallName || matchedResult.item?.brand),
+        totalCount: productExposureItems.length,
+        organicCount: productExposureItems.length,
+        adCount: null,
+        checkedCount: organicCheckedCount,
+        updatedAt: new Date().toISOString(),
+        adCoverage: "not_provided_by_official_api",
+      },
+      sellerResultSummary: {
+        mallName: normalizeText(matchedResult.item?.mallName),
+        organicCount: sellerItems.length,
+        checkedCount: organicCheckedCount,
+        adCoverage: "not_provided_by_official_api",
+        adMessage: "광고 상품과 광고 위치는 네이버 쇼핑 검색 API에서 제공하지 않아 집계하지 않습니다.",
+      },
+      topItems,
+    };
   }
 
   const fallbackMetadataItem = metadataItem || await fetchProductMetadata(targetUrl, target.productId).catch(() => null);
@@ -987,6 +1030,7 @@ export {
   catalogIdCandidates,
   extractCatalogIdsFromHtml,
   productIdCandidates,
+  sellerProductIdCandidates,
   canonicalUrlKey,
   buildRankTarget,
   resolveRankTarget,

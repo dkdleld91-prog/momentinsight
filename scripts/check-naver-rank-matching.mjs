@@ -10,6 +10,7 @@ import {
   matchTargetItem,
   productExposureItemsFromOrganic,
   productIdCandidates,
+  sellerProductIdCandidates,
   rankPagePosition,
   rankQueryKeyword,
   sellerItemsFromOrganic,
@@ -28,6 +29,8 @@ assert.equal(extractProductId(catalogUrl), "9876543210");
 assert.deepEqual(productIdCandidates(catalogUrl), ["9876543210"]);
 assert.equal(extractProductId(brandProductUrl), "6567319094");
 assert.deepEqual(productIdCandidates(brandProductUrl), ["6567319094"]);
+assert.deepEqual(sellerProductIdCandidates(brandProductUrl), ["6567319094"]);
+assert.deepEqual(sellerProductIdCandidates(catalogUrl), []);
 assert.equal(rankQueryKeyword("콘트로이친"), "콘드로이친");
 assert.equal(rankQueryKeyword("콘드로이친"), "콘드로이친");
 
@@ -72,6 +75,27 @@ assert.deepEqual(matchTargetItem({
   matched: true,
   matchType: "product_id",
   matchedProductId: "1234567890",
+  matchEvidence: "seller_link_product_id",
+});
+
+assert.equal(matchTargetItem({
+  productId: "1234567890",
+  link: "https://smartstore.naver.com/another-store/products/9876543210",
+  title: "API 상품번호만 우연히 같은 다른 판매자 상품",
+  mallName: "another-store",
+}, target).matched, false);
+
+assert.deepEqual(matchTargetItem({
+  productId: "9876543210",
+  link: catalogUrl,
+  title: "정확한 원부",
+  mallName: "네이버",
+  productType: "1",
+}, buildRankTarget({ targetCatalogId: "9876543210" })), {
+  matched: true,
+  matchType: "product_id",
+  matchedProductId: "9876543210",
+  matchEvidence: "catalog_id",
 });
 
 assert.equal(matchTargetItem({
@@ -110,12 +134,14 @@ const mixedMatch = findOrganicMatchInItems([
   shoppingItem("9999999999", { isAd: true }),
   shoppingItem("2222222222"),
   shoppingItem("9999999999"),
+  shoppingItem("3333333333"),
 ], organicTarget, { limit: 100, topItems: [] });
 assert.equal(mixedMatch.matched, true);
 assert.equal(mixedMatch.rank, 3);
 assert.equal(mixedMatch.page, 1);
 assert.equal(mixedMatch.position, 3);
 assert.equal(mixedMatch.excludedAdCount, 1);
+assert.equal(mixedMatch.organicCheckedCount, 4);
 
 const fortyOrganicAhead = Array.from({ length: 40 }, (_, index) => shoppingItem(String(1000000000 + index)));
 const pageTwoMatch = findOrganicMatchInItems([
@@ -239,6 +265,29 @@ assert.equal(exactLavTarget.targetMode, "product");
 assert.equal(exactLavTarget.catalogId, "");
 assert.deepEqual(exactLavTarget.productIds, ["5145848584"]);
 
+const electricToothbrushTarget = buildRankTarget({
+  targetUrl: "https://brand.naver.com/lav/products/12649811979",
+});
+assert.equal(matchTargetItem({
+  productId: "12649811979",
+  link: "https://smartstore.naver.com/other-store/products/5555555555",
+  title: "우연히 API 상품번호만 같은 다른 상품",
+  mallName: "다른 판매자",
+  productType: "3",
+}, electricToothbrushTarget).matched, false);
+assert.deepEqual(matchTargetItem({
+  productId: "90194322885",
+  link: "https://smartstore.naver.com/main/products/12649811979",
+  title: "라이브오랄스 음파 전동칫솔 회전 IPX8 방수 C타입 충전식 초극세모 칫솔모 3P",
+  mallName: "라이브오랄스",
+  productType: "3",
+}, electricToothbrushTarget), {
+  matched: true,
+  matchType: "product_id",
+  matchedProductId: "12649811979",
+  matchEvidence: "seller_link_product_id",
+});
+
 const exactLavMatch = findOrganicMatchInItems([
   {
     productId: "56704991367",
@@ -333,6 +382,8 @@ assert.equal(exactLavExposureItems[0].exposureLabel, "관련 원부");
 assert.equal(exactLavExposureItems[1].rank, 5);
 assert.equal(exactLavExposureItems[1].sellerProductId, "5145848584");
 assert.equal(exactLavExposureItems[1].isExactTarget, true);
+assert.equal(exactLavExposureItems[1].link, "https://brand.naver.com/lav/products/5145848584");
+assert.equal(exactLavExposureItems[1].sourceLink, "https://smartstore.naver.com/main/products/5145848584");
 assert.equal(exactLavExposureItems.some((item) => item.sellerProductId === "5100000000"), false);
 
 const guardedLavExposureItems = productExposureItemsFromOrganic([

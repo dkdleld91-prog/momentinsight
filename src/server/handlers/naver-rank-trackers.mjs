@@ -584,10 +584,10 @@ function compactErrorMessage(value) {
 
 function canonicalTrackerProductId(tracker, result) {
   return normalizeText(
-    result?.targetCatalogId ||
-    result?.item?.productId ||
+    extractProductId(tracker.product_url) ||
     tracker.product_id ||
     result?.targetProductId ||
+    result?.item?.productId ||
     "",
   ) || null;
 }

@@ -2098,6 +2098,57 @@
       font-weight: 900;
     }
 
+    #mi-admin .mi-rank-seller-summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      border: 1px solid #e2e9f2;
+      border-radius: 10px;
+      padding: 12px 14px;
+      background: #f8fafc;
+    }
+
+    #mi-admin .mi-rank-seller-summary > div,
+    #mi-admin .mi-rank-seller-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-rank-seller-summary strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-rank-seller-summary span,
+    #mi-admin .mi-rank-seller-tags em {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-rank-seller-tags em {
+      border: 1px solid #d9e4f2;
+      border-radius: 999px;
+      padding: 4px 8px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-rank-seller-note {
+      margin: 8px 2px 0;
+      color: var(--mi-muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-rank-table.is-seller-results div.is-exact-target {
+      background: #f3f7fd;
+    }
+
     #mi-admin .mi-rank-table.is-trackers div {
       grid-template-columns: minmax(92px, 1fr) 58px 58px 92px 72px 64px;
     }
@@ -3416,7 +3467,9 @@
       gap: 0;
       overflow-x: auto;
       overflow-y: hidden;
-      padding: 0;
+      padding: 4px;
+      border-top: 1px solid #e8eef6;
+      background: #f8fafc;
       scrollbar-width: thin;
       scrollbar-color: #cbd6e4 transparent;
     }
@@ -3431,19 +3484,19 @@
     }
 
     #mi-admin .mi-place-day-card {
-      flex: 0 0 118px;
-      min-height: 132px;
-      padding: 10px 12px;
-      border-right: 1px solid #edf1f6;
+      flex: 0 0 152px;
+      min-height: 150px;
+      padding: 14px 16px;
+      border-right: 1px solid #e8eef6;
       color: var(--mi-navy);
       background: #fff;
     }
 
     #mi-admin .mi-place-day-card strong {
       display: block;
-      margin-bottom: 7px;
-      font-size: 13px;
-      font-weight: 820;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 780;
       letter-spacing: 0;
     }
 
@@ -3457,9 +3510,9 @@
 
     #mi-admin .mi-place-day-rank {
       display: block;
-      margin-bottom: 8px;
+      margin-bottom: 12px;
       color: var(--mi-navy);
-      font-size: 18px;
+      font-size: 22px;
       font-weight: 850;
       line-height: 1;
       white-space: nowrap;
@@ -3467,16 +3520,16 @@
 
     #mi-admin .mi-place-day-metrics {
       display: grid;
-      gap: 3px;
+      gap: 5px;
     }
 
     #mi-admin .mi-place-day-metrics span {
-      display: flex;
-      justify-content: space-between;
-      gap: 7px;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr);
+      gap: 10px;
       color: var(--mi-muted);
       font-size: 11px;
-      font-weight: 720;
+      font-weight: 680;
       white-space: nowrap;
     }
 
@@ -3487,7 +3540,59 @@
 
     #mi-admin .mi-place-day-metrics b {
       color: #536174;
-      font-weight: 820;
+      font-weight: 780;
+      text-align: right;
+    }
+
+    #mi-admin .mi-place-rank-item {
+      border-color: #dce6f2;
+      box-shadow: 0 10px 28px rgba(11, 35, 70, 0.045);
+    }
+
+    #mi-admin .mi-place-rank-item .mi-rank-track-row-head {
+      grid-template-columns: minmax(0, 1fr) max-content;
+      column-gap: 18px;
+      padding: 14px 16px;
+    }
+
+    #mi-admin .mi-place-rank-item .mi-rank-track-primary {
+      grid-template-columns: 72px minmax(100px, 0.55fr) minmax(176px, 0.8fr) minmax(0, 1.6fr);
+      column-gap: 16px;
+    }
+
+    #mi-admin .mi-place-rank-item .mi-rank-row-actions {
+      flex-wrap: nowrap;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-place-ops-row {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 8px 12px;
+      align-items: center;
+      padding: 10px 16px;
+    }
+
+    #mi-admin .mi-place-ops-primary,
+    #mi-admin .mi-place-ops-meta,
+    #mi-admin .mi-place-ops-message {
+      display: flex;
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+    }
+
+    #mi-admin .mi-place-ops-message {
+      grid-column: 1 / -1;
+      justify-content: flex-start;
+    }
+
+    #mi-admin .mi-place-ops-message .mi-rank-ops-message {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     #mi-admin .mi-keyword-market {
@@ -5258,12 +5363,47 @@
         padding: 14px;
       }
 
+      #mi-admin .mi-rank-seller-summary {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #mi-admin .mi-rank-table.is-seller-results > div:first-child,
+      #mi-admin .mi-rank-table.is-organic-results > div:first-child {
+        display: none;
+      }
+
+      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child),
+      #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) {
+        grid-template-columns: 96px minmax(0, 1fr);
+        gap: 8px 10px;
+      }
+
+      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child) span:nth-child(3),
+      #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) span:nth-child(3) {
+        grid-column: 1 / -1;
+        white-space: normal;
+      }
+
+      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child) span:nth-child(5),
+      #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) span:nth-child(5) {
+        text-align: right;
+      }
+
       #mi-admin .mi-place-rank-item .mi-rank-track-row-head {
         grid-template-columns: minmax(0, 1fr);
       }
 
       #mi-admin .mi-place-rank-item .mi-rank-row-actions {
         justify-self: start;
+      }
+
+      #mi-admin .mi-place-ops-row {
+        grid-template-columns: minmax(0, 1fr);
+      }
+
+      #mi-admin .mi-place-ops-message {
+        justify-content: flex-start;
       }
 
       #mi-admin .mi-rank-group-combo {
@@ -9527,9 +9667,9 @@
           return '<div class="mi-place-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
             '</strong><b class="mi-place-day-rank">' + escapeHtml(rank) +
             '</b><div class="mi-place-day-metrics">' +
-            renderPlaceDayMetric("블", blogCount, "개") +
-            renderPlaceDayMetric("방", visitReviewCount, "개") +
-            renderPlaceDayMetric("월", monthlySearchCount, "회") +
+            renderPlaceDayMetric("블로그", blogCount, "개") +
+            renderPlaceDayMetric("방문", visitReviewCount, "개") +
+            renderPlaceDayMetric("월검색", monthlySearchCount, "회") +
             renderPlaceDayMetric("업체", businessCount, "개") +
             '</div></div>';
         }).join("") + '</div>';
@@ -10119,13 +10259,34 @@
       function renderRankItems(items) {
         var rows = (items || []).slice(0, 5);
         if (!rows.length) return "";
-        return '<div class="mi-rank-table"><div><span>순위</span><span>상품 형태</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
+        return '<div class="mi-rank-table is-organic-results"><div><span>순위</span><span>상품 형태</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
           rows.map(function (item) {
             return '<div><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") + '</span><span title="' + escapeHtml(rankProductKindNote(item)) + '">' +
               escapeHtml(rankProductKindLabel(item)) + '</span><span title="' + escapeHtml(item.title || "") + '">' +
               escapeHtml(item.title || "-") + '</span><span>' + escapeHtml(item.mallName || "-") + '</span><span>' +
               escapeHtml(item.lprice ? formatNumber(item.lprice) : "-") + '</span></div>';
           }).join("") + '</div>';
+      }
+
+      function renderSellerRankItems(result) {
+        var rows = (result && result.sellerItems || []).slice(0, 10);
+        if (!rows.length) return "";
+        var scope = result.sellerResultSummary || {};
+        var sellerName = scope.mallName || rows[0].mallName || "동일 판매처";
+        var checked = scope.checkedCount ? scope.checkedCount + "위까지 확인" : "확인 범위 내";
+        var summary = '<div class="mi-rank-seller-summary"><div><strong>' + escapeHtml(sellerName) +
+          '</strong><span>동일 판매처 오가닉 ' + escapeHtml(rows.length) + '건</span></div><div class="mi-rank-seller-tags"><em>' +
+          escapeHtml(checked) + '</em><em>광고 데이터 API 미제공</em></div></div>';
+        var table = '<div class="mi-rank-table is-seller-results"><div><span>순위</span><span>구분</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
+          rows.map(function (item) {
+            var itemId = item.sellerProductId || item.productId || "";
+            var label = item.isExactTarget ? "정확 상품" : "동일 판매처";
+            return '<div class="' + (item.isExactTarget ? 'is-exact-target' : '') + '"><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") +
+              '</span><span title="' + escapeHtml(itemId ? "상품ID " + itemId : label) + '">' + escapeHtml(label) +
+              '</span><span title="' + escapeHtml(item.title || "") + '">' + escapeHtml(item.title || "-") +
+              '</span><span>' + escapeHtml(item.mallName || "-") + '</span><span>' + escapeHtml(item.lprice ? formatNumber(item.lprice) : "-") + '</span></div>';
+          }).join("") + '</div>';
+        return summary + table + '<p class="mi-rank-seller-note">광고 상품과 광고 위치는 공식 네이버 쇼핑 검색 API에서 제공하지 않아 임의 값으로 표시하지 않습니다.</p>';
       }
 
       function renderRankResult(node, payload) {
@@ -10169,17 +10330,19 @@
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
         var targetMode = result.targetMode || "";
         var targetCatalogId = result.targetCatalogId || (result.targetCatalogIds && result.targetCatalogIds[0]) || "";
-        var isCatalogBasis = targetMode === "catalog_inferred_from_product_url" || targetMode === "catalog_from_product_url" || targetMode === "catalog" || targetCatalogId;
+        var targetProductId = result.targetProductId || (payload.query && payload.query.productId) || "";
+        var isCatalogBasis = targetMode === "catalog" || Boolean(targetCatalogId);
         var targetBasisTitle = isCatalogBasis ? "원부 기준" : "상품 기준";
-        var targetBasisTag = targetMode === "catalog_inferred_from_product_url" ? "URL 자동 인식" : (targetMode === "catalog_from_product_url" ? "URL 원부 기준" : (isCatalogBasis ? "가격비교 원부" : "입력 상품"));
-        var targetBasisId = targetCatalogId ? "원부ID " + targetCatalogId : "오가닉 기준";
+        var targetBasisTag = isCatalogBasis ? "가격비교 원부" : "상품ID·판매자 일치";
+        var targetBasisId = targetCatalogId ? "원부ID " + targetCatalogId : (targetProductId ? "상품ID " + targetProductId : "정확 일치");
         var checkedLabel = checkedCount ? checkedCount + "개 확인" : "상위 결과";
         var summary = found
           ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-primary-meta"><em>' + escapeHtml(queryKeyword) + '</em><em>광고 제외</em><em>' + escapeHtml(checkedLabel) + '</em></div></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong><small>네이버쇼핑 오가닉 기준</small></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
+        var sellerRows = renderSellerRankItems(result);
         var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
-        node.innerHTML = '<h3>현재 순위</h3>' + summary + (itemRows ? '<h3>조회 상품</h3>' + itemRows : "") + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
+        node.innerHTML = '<h3>현재 순위</h3>' + summary + (sellerRows ? '<h3>동일 판매처 검색 결과</h3>' + sellerRows : (itemRows ? '<h3>조회 상품</h3>' + itemRows : "")) + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
       }
 
       function metaAdsLibraryUrl(query, platform, mediaType) {
@@ -11744,6 +11907,7 @@
           var note = placeTrackerActionNote(tracker);
           var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
           var message = tracker.lastMessage || tracker.lastError || (latest ? "네이버 플레이스 " + rankText(latest) + "로 확인되었습니다." : "플레이스 순위 확인 대기");
+          var noteMarkup = note.label && note.label !== insight.label ? '<span class="mi-rank-action-note ' + escapeHtml(note.className) + '">권고 ' + escapeHtml(note.label) + '</span>' : '';
           return '<section class="mi-rank-tracker-card mi-place-rank-item" data-place-rank-tracker-id="' + escapeHtml(tracker.id) +
             '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary"><div class="mi-rank-track-controls"><label class="mi-rank-select"><input type="checkbox" data-place-rank-select value="' +
             escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' +
@@ -11752,18 +11916,17 @@
             escapeHtml(rankText(latest)) + '</span><span class="mi-rank-pill">최고 ' + escapeHtml(rankText(best)) +
             '</span><button class="mi-link-button" type="button" data-place-rank-refresh="' + escapeHtml(tracker.id) +
             '">갱신</button><button class="mi-link-button is-danger" type="button" data-place-rank-delete="' +
-            escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="mi-rank-insight-pill' +
+            escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row mi-place-ops-row"><div class="mi-place-ops-primary"><span class="mi-rank-insight-pill' +
             rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) +
             '</span><span class="mi-rank-insight-pill ' + escapeHtml(insight.className) + '">' + escapeHtml(insight.label) +
-            '</span><span class="mi-rank-insight-pill ' + escapeHtml(note.className) + '">' + escapeHtml(note.label) +
             '</span><span>' + escapeHtml(rankTrackerChangeLabel(tracker)) +
             '</span><span>7일 평균 ' + escapeHtml(average ? rankText(average) : "-") +
-            '</span><span>그룹 ' + escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) +
+            '</span></div><div class="mi-place-ops-meta"><span>그룹 ' + escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) +
             '</span><button class="mi-rank-group-edit" type="button" data-place-rank-group-edit="' + escapeHtml(tracker.id) + '">그룹 변경</button>' +
             '<span>최근 ' + escapeHtml(formatRankShortAt(tracker.lastCheckedAt)) +
             '</span><span>다음 ' + escapeHtml(formatRankRemain(tracker.nextCheckAt)) +
-            '</span><span class="mi-rank-ops-message" title="' + escapeHtml(message) + '">메시지 ' + escapeHtml(message) +
-            '</span></div>' + renderPlaceTrackerDailyBoard(tracker) + '</section>';
+            '</span></div><div class="mi-place-ops-message">' + noteMarkup + '<span class="mi-rank-ops-message" title="' + escapeHtml(message) + '">안내 ' + escapeHtml(message) +
+            '</span></div></div>' + renderPlaceTrackerDailyBoard(tracker) + '</section>';
         }
 
         function renderPlaceHistory(node, trackers) {

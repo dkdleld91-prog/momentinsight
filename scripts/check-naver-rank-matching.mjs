@@ -6,12 +6,12 @@ import {
   canonicalUrlKey,
   extractProductId,
   findOrganicMatchInItems,
-  inferCatalogFromProductMetadata,
   isAdItem,
   matchTargetItem,
   productIdCandidates,
   rankPagePosition,
   rankQueryKeyword,
+  sellerItemsFromOrganic,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 import { PRODUCT_RANK_TRACKER_MAX_RANK } from "../src/server/handlers/naver-rank-trackers.mjs";
 
@@ -154,8 +154,7 @@ const catalogAheadMatch = findOrganicMatchInItems([
 }), { limit: 100, topItems: [] });
 assert.equal(catalogAheadMatch.matched, true);
 assert.equal(catalogAheadMatch.rank, 2);
-assert.equal(catalogAheadMatch.inferredCatalog.rank, 1);
-assert.equal(catalogAheadMatch.inferredCatalog.item.productId, "59388521435");
+assert.equal(catalogAheadMatch.inferredCatalog, undefined);
 
 const brandCatalogAheadMatch = findOrganicMatchInItems([
   {
@@ -185,8 +184,7 @@ const brandCatalogAheadMatch = findOrganicMatchInItems([
 }), { limit: 100, topItems: [] });
 assert.equal(brandCatalogAheadMatch.matched, true);
 assert.equal(brandCatalogAheadMatch.rank, 2);
-assert.equal(brandCatalogAheadMatch.inferredCatalog.rank, 1);
-assert.equal(brandCatalogAheadMatch.inferredCatalog.item.productId, "51929469110");
+assert.equal(brandCatalogAheadMatch.inferredCatalog, undefined);
 
 const brandCatalogAheadProductIdOnlyMatch = findOrganicMatchInItems([
   {
@@ -216,44 +214,81 @@ const brandCatalogAheadProductIdOnlyMatch = findOrganicMatchInItems([
 }), { limit: 100, topItems: [] });
 assert.equal(brandCatalogAheadProductIdOnlyMatch.matched, true);
 assert.equal(brandCatalogAheadProductIdOnlyMatch.rank, 2);
-assert.equal(brandCatalogAheadProductIdOnlyMatch.inferredCatalog.rank, 1);
-assert.equal(brandCatalogAheadProductIdOnlyMatch.inferredCatalog.item.productId, "51929469110");
-
-const metadataCatalogMatch = inferCatalogFromProductMetadata({
-  productId: "8888888888",
-  link: "https://smartstore.naver.com/yncstore/products/8888888888",
-  title: "maxzen 맥스젠 진공 스팀다리미 SR13W 핸디형",
-  mallName: "YNC Store",
-  productType: "",
-}, [
-  {
-    rank: 37,
-    item: {
-      productId: "59388521435",
-      link: "https://search.shopping.naver.com/catalog/59388521435",
-      title: "맥스젠 SR13W 화이트",
-      mallName: "",
-      productType: "1",
-    },
-  },
-]);
-assert.equal(metadataCatalogMatch.rank, 37);
-assert.equal(metadataCatalogMatch.item.productId, "59388521435");
-assert.equal(metadataCatalogMatch.titleOverlap.includes("sr13w"), true);
+assert.equal(brandCatalogAheadProductIdOnlyMatch.inferredCatalog, undefined);
 
 const groupedSellerAliasTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/tncomm/products/13297440230",
 });
-assert.equal(groupedSellerAliasTarget.targetMode, "catalog");
-assert.equal(groupedSellerAliasTarget.catalogId, "59388521435");
-assert.deepEqual(groupedSellerAliasTarget.productIds, ["59388521435"]);
+assert.equal(groupedSellerAliasTarget.targetMode, "product");
+assert.equal(groupedSellerAliasTarget.catalogId, "");
+assert.deepEqual(groupedSellerAliasTarget.productIds, ["13297440230"]);
 
 const higomSellerAliasTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/higommarket/products/10289183039",
 });
-assert.equal(higomSellerAliasTarget.targetMode, "catalog");
-assert.equal(higomSellerAliasTarget.catalogId, "53551179280");
-assert.deepEqual(higomSellerAliasTarget.productIds, ["53551179280"]);
+assert.equal(higomSellerAliasTarget.targetMode, "product");
+assert.equal(higomSellerAliasTarget.catalogId, "");
+assert.deepEqual(higomSellerAliasTarget.productIds, ["10289183039"]);
+
+const exactLavTarget = buildRankTarget({
+  targetProductId: "59606749556",
+  targetUrl: "https://brand.naver.com/lav/products/5145848584",
+});
+assert.equal(exactLavTarget.targetMode, "product");
+assert.equal(exactLavTarget.catalogId, "");
+assert.deepEqual(exactLavTarget.productIds, ["5145848584"]);
+
+const exactLavMatch = findOrganicMatchInItems([
+  {
+    productId: "59606749556",
+    link: "https://search.shopping.naver.com/catalog/59606749556",
+    title: "라브 라이브오랄스 퓨어다이아 셀프 치아미백제 세트",
+    mallName: "네이버",
+    productType: "1",
+  },
+  {
+    productId: "81000000002",
+    link: "https://smartstore.naver.com/main/products/5100000000",
+    title: "라이브오랄스 퓨어다이아 셀프 치아미백제 2주분",
+    mallName: "라이브오랄스",
+    productType: "3",
+  },
+  {
+    productId: "90000000001",
+    link: "https://smartstore.naver.com/other-seller/products/9999999999",
+    title: "라브 라이브오랄스 퓨어다이아 셀프 치아미백제 세트",
+    mallName: "다른 판매자",
+    productType: "3",
+  },
+  {
+    productId: "82690369440",
+    link: "https://smartstore.naver.com/main/products/5145848584",
+    title: "본사직영 라이브오랄스 셀프 치아미백제 화이트닝 마우스피스",
+    mallName: "라이브오랄스",
+    productType: "3",
+    isAd: true,
+  },
+  {
+    productId: "82690369440",
+    link: "https://smartstore.naver.com/main/products/5145848584",
+    title: "본사직영 라이브오랄스 셀프 치아미백제 화이트닝 마우스피스",
+    mallName: "라이브오랄스",
+    productType: "3",
+  },
+], exactLavTarget, { limit: 100, topItems: [] });
+assert.equal(exactLavMatch.matched, true);
+assert.equal(exactLavMatch.rank, 4);
+assert.equal(exactLavMatch.excludedAdCount, 1);
+assert.equal(exactLavMatch.matchedProductId, "5145848584");
+
+const exactLavSellerItems = sellerItemsFromOrganic(exactLavMatch.organicItems, exactLavMatch.item, exactLavTarget);
+assert.equal(exactLavSellerItems.length, 2);
+assert.equal(exactLavSellerItems[0].rank, 2);
+assert.equal(exactLavSellerItems[0].isExactTarget, false);
+assert.equal(exactLavSellerItems[0].sellerProductId, "5100000000");
+assert.equal(exactLavSellerItems[1].rank, 4);
+assert.equal(exactLavSellerItems[1].isExactTarget, true);
+assert.equal(exactLavSellerItems[1].sellerProductId, "5145848584");
 
 const explicitCatalogTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/any-store/products/1111111111",

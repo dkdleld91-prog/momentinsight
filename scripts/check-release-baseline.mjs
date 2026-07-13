@@ -126,18 +126,18 @@ const checks = {
   ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientNavigationTaxonomy: orderedIncludes(clientSource, [
-    '<p class="mi-nav-title">성과</p>',
+    '<p class="mi-nav-title">성과 관리</p>',
     'data-mi-screen="dashboard">대시보드</a>',
     'data-mi-screen="sales">매출 현황</a>',
     'data-mi-screen="schedule">일정표</a>',
-    '<p class="mi-nav-title">도구</p>',
+    '<p class="mi-nav-title">마케팅 도구</p>',
     'data-mi-screen="keyword-tool">키워드 조회</a>',
     'data-mi-screen="naver-rank">N 상품 순위</a>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
     'data-mi-screen="seo-check">SEO 확인</a>',
-    '<p class="mi-nav-title">연동</p>',
+    '<p class="mi-nav-title">계정 연동</p>',
     'data-mi-screen="agency-code">대행사 연결</a>',
   ]),
   clientLoginRoleSelection: clientSource.includes('data-client-login-mode="client"')
@@ -189,9 +189,9 @@ const checks = {
     && fixedRankScopeMigration.includes("update public.naver_place_rank_trackers"),
   placeRankDailyMetricBoard: [adminSource, clientSource].every((source) => source.includes("mi-place-day-card")
     && source.includes("groupPlaceSnapshotsByDay")
-    && source.includes('renderPlaceDayMetric("블"')
-    && source.includes('renderPlaceDayMetric("방"')
-    && source.includes('renderPlaceDayMetric("월"')
+    && source.includes('renderPlaceDayMetric("블로그"')
+    && source.includes('renderPlaceDayMetric("방문"')
+    && source.includes('renderPlaceDayMetric("월검색"')
     && source.includes('renderPlaceDayMetric("업체"')),
   placeRankGroupAndShareTools: [adminSource, clientSource].every((source) => source.includes("data-place-rank-filter-group")
     && source.includes("data-place-rank-select")
@@ -519,15 +519,15 @@ const checks = {
     && adminSource.includes("원부형")
     && adminSource.includes("상품 형태")
     && adminSource.includes("조회 기준")
-    && adminSource.includes("URL 자동 인식")
     && adminSource.includes("원부ID ")
+    && adminSource.includes("상품ID ")
     && adminSource.includes("가격비교 묶음 상품")
     && clientSource.includes("rankProductKindLabel")
     && clientSource.includes("rankProductKindNote")
     && clientSource.includes("원부형")
     && clientSource.includes("조회 기준")
-    && clientSource.includes("URL 자동 인식")
     && clientSource.includes("원부ID ")
+    && clientSource.includes("상품ID ")
     && clientSource.includes("가격비교 묶음 상품")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("classifyNaverProductType")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isPriceCompareCatalog")
@@ -535,7 +535,18 @@ const checks = {
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("catalogIdCandidates")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("extractCatalogIdsFromHtml")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("resolveRankTarget")
-    && read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url"),
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("const urlProductIds = productIdCandidates(targetUrl)")
+    && !read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url")
+    && adminSource.includes("상품ID·판매자 일치")
+    && clientSource.includes("상품ID·판매자 일치"),
+  naverRankExactSellerResults: [adminSource, clientSource].every((source) => source.includes("renderSellerRankItems")
+    && source.includes("동일 판매처 검색 결과")
+    && source.includes("정확 상품")
+    && source.includes("광고 데이터 API 미제공")
+    && source.includes("공식 네이버 쇼핑 검색 API에서 제공하지 않아 임의 값으로 표시하지 않습니다"))
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("sellerItemsFromOrganic")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes('adCoverage: "not_provided_by_official_api"')
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("isExactTarget"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

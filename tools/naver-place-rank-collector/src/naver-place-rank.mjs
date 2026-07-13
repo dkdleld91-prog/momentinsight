@@ -345,6 +345,14 @@ function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || "";
 }
 
+function positiveRank(...values) {
+  for (const value of values) {
+    const parsed = Number(String(value ?? "").replace(/[^\d.]/g, ""));
+    if (Number.isFinite(parsed) && parsed >= 1) return Math.floor(parsed);
+  }
+  return null;
+}
+
 function flattenApifyItems(items = []) {
   const flattened = [];
   const visit = (value) => {
@@ -429,8 +437,21 @@ function apifyCandidate(item = {}, index = 0) {
   const isErrorRecord = Boolean(source.error || source.errorMessage || source.error_message || source.failed === true);
   if (!name || (!id && !url) || isAd || isErrorRecord) return null;
 
+  const sourceRank = positiveRank(
+    source.organicRank,
+    source.organic_rank,
+    source.searchRank,
+    source.search_rank,
+    source.rank,
+    source.position,
+    source.Rank,
+    source.Position
+  );
+
   return {
     rank: index + 1,
+    sourceRank,
+    sourceIndex: index,
     id,
     placeIds: uniqueValues([id, ...extractPlaceIds(url)]),
     name,
@@ -466,12 +487,22 @@ function normalizeApifyResult(items = [], maxRank = DEFAULT_MAX_RANK) {
     const key = candidate.id || normalizeComparable(candidate.name + candidate.url);
     if (!key || keys.has(key)) continue;
     keys.add(key);
-    candidate.rank = candidates.length + 1;
     candidates.push(candidate);
-    if (candidates.length >= maxRank) break;
   }
+  candidates.sort((left, right) => {
+    const leftRank = Number(left.sourceRank || 0);
+    const rightRank = Number(right.sourceRank || 0);
+    if (leftRank && rightRank && leftRank !== rightRank) return leftRank - rightRank;
+    if (leftRank && !rightRank) return -1;
+    if (!leftRank && rightRank) return 1;
+    return Number(left.sourceIndex || 0) - Number(right.sourceIndex || 0);
+  });
+  const limitedCandidates = candidates.slice(0, maxRank).map((candidate, index) => ({
+    ...candidate,
+    rank: index + 1,
+  }));
   return {
-    candidates,
+    candidates: limitedCandidates,
     rawItemCount: Array.isArray(items) ? items.length : 0,
     flattenedItemCount: sourceItems.length,
     discardedItemCount: Math.max(0, examinedItemCount - candidates.length),
@@ -488,6 +519,12 @@ function apifyStopReason(normalized, maxRank = DEFAULT_MAX_RANK) {
   if (normalized.candidates.length === 0) return "apify_output_unrecognized";
   if (normalized.flattenedItemCount >= maxRank) return "apify_normalized_result_shortfall";
   return "apify_result_list_exhausted";
+}
+
+function isApifyAccountLimitError(value) {
+  return /monthly usage hard limit exceeded|usage limit exceeded|not enough credits|account.*limit/i.test(
+    normalizeText(value)
+  );
 }
 
 async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
@@ -644,6 +681,10 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
           error: message,
         });
         if (actorId === APIFY_SEARCH_ACTOR_ID) primaryStopReason = "apify_actor_failed";
+        // All Actors share the same Apify account balance. Once the account
+        // itself is blocked, trying the remaining Actors only burns request
+        // time that the native Naver Map fallback needs.
+        if (isApifyAccountLimitError(message)) break;
       }
     }
 
@@ -1292,7 +1333,24 @@ function findMatch(candidates, target) {
   }) || null;
 }
 
-export async function lookupNaverPlaceRank(payload = {}) {
+function finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult) {
+  const selectedResult = apifyPartialResult && !browserResult.matched &&
+    Number(apifyPartialResult.checkedCount || 0) >= Number(browserResult.checkedCount || 0)
+    ? apifyPartialResult
+    : browserResult;
+  if (!apifyFailure && !apifyPartialResult) return selectedResult;
+  return {
+    ...selectedResult,
+    providerFallbackUsed: true,
+    providerFallbackReason: apifyFailure || apifyPartialResult?.stopReason || "apify_partial_result",
+    providerPartialCheckedCount: apifyPartialResult ? Number(apifyPartialResult.checkedCount || 0) : null,
+    source: selectedResult === browserResult
+      ? String(browserResult.source || "naver_map_pc_list_collector") + "_fallback"
+      : selectedResult.source,
+  };
+}
+
+export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
   const keyword = normalizeText(payload.keyword);
   const maxRank = clampMaxRank(payload.maxRank || payload.max_rank);
   const placeUrl = normalizeUrl(payload.placeUrl || payload.place_url);
@@ -1303,8 +1361,22 @@ export async function lookupNaverPlaceRank(payload = {}) {
     return { ok: false, matched: false, message: "keyword_required" };
   }
 
-  const apifyResult = await lookupNaverPlaceRankViaApify(payload);
-  if (apifyResult) return apifyResult;
+  let apifyPartialResult = null;
+  let apifyFailure = "";
+  try {
+    const apifyLookup = dependencies.apifyLookup || lookupNaverPlaceRankViaApify;
+    const apifyResult = await apifyLookup(payload);
+    if (apifyResult?.ok !== false && (apifyResult?.matched || apifyResult?.complete)) return apifyResult;
+    if (apifyResult?.ok !== false && apifyResult) apifyPartialResult = apifyResult;
+    else if (apifyResult) apifyFailure = normalizeText(apifyResult.message || apifyResult.stopReason || "apify_lookup_failed");
+  } catch (error) {
+    apifyFailure = error instanceof Error ? error.message : String(error);
+  }
+
+  if (dependencies.browserLookup) {
+    const browserResult = await dependencies.browserLookup(payload);
+    return finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult);
+  }
 
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: HEADLESS });
@@ -1382,7 +1454,8 @@ export async function lookupNaverPlaceRank(payload = {}) {
     const timeout = new Promise((_, reject) => {
       overallTimeout = setTimeout(() => reject(new Error("naver_map_lookup_timeout")), OVERALL_TIMEOUT_MS);
     });
-    return await Promise.race([lookup, timeout]);
+    const browserResult = await Promise.race([lookup, timeout]);
+    return finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult);
   } finally {
     clearTimeout(overallTimeout);
     await browser.close().catch(() => {});
@@ -1419,4 +1492,6 @@ export const __testing = {
   resolvePlaceIdentityViaHttp,
   normalizeApifyCandidates,
   normalizeApifyResult,
+  isApifyAccountLimitError,
+  finalizeProviderFallback,
 };

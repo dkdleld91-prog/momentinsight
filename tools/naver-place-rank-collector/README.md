@@ -125,7 +125,7 @@ APIFY_NAVER_MAPS_FALLBACK_ACTOR_ID=abotapi~naver-map-scraper
 APIFY_NAVER_MAPS_TIMEOUT_MS=220000
 ```
 
-토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 기본 검색 Actor가 dataset 0개를 반환하거나 출력 정규화 결과가 0개이면 fallback Actor를 한 번 호출합니다. 기본 Actor에서 유효 후보를 1개 이상 확인한 경우에는 300위 미완주여도 비용 중복을 막기 위해 fallback하지 않습니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
+토큰이 있으면 Apify 공급자를 우선 사용하고, 없으면 기존 브라우저 수집기로 돌아갑니다. 기본 검색 Actor가 dataset 0개를 반환하거나 출력 정규화 결과가 0개이면 deep/fallback Actor를 순서대로 확인합니다. Actor가 반환한 `organicRank`, `searchRank`, `rank`, `position` 값이 있으면 그 순서를 우선 정규화합니다. Apify 계정 월 사용 한도 초과처럼 모든 Actor에 공통인 오류는 첫 응답에서 체인을 중단하고 자체 네이버 지도 브라우저 수집기로 전환합니다. 어느 경로에서도 실제 확인한 수보다 `checkedCount`를 크게 표시하지 않습니다.
 
 8. 배포가 끝나면 Render 서비스 URL을 복사합니다.
 9. `/health`를 붙여 접속했을 때 `ok:true`가 나오면 서버가 켜진 상태입니다.

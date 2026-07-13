@@ -6875,7 +6875,13 @@
         return '<div class="mi-place-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
           var snapshot = day.snapshot || {};
-          var rank = snapshot.rank ? rankText(snapshot.rank) : "-";
+          var checkedCount = Number(snapshot.checkedCount || 0);
+          var requestedMaxRank = Number(snapshot.requestedMaxRank || tracker.maxRank || 300);
+          var rank = snapshot.rank
+            ? rankText(snapshot.rank)
+            : checkedCount > 0 && checkedCount < requestedMaxRank
+              ? formatNumber(checkedCount) + "위까지"
+              : "-";
           var blogCount = placeSnapshotMetric(snapshot, ["blogCount", "blog_count", "blogReviewCount", "blog_review_count"], null);
           var visitReviewCount = placeSnapshotMetric(snapshot, ["visitReviewCount", "visit_review_count", "visitorReviewCount", "visitor_review_count", "reviewCount", "review_count"], null);
           var monthlySearchCount = placeSnapshotMetric(snapshot, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume"], null);
@@ -6894,6 +6900,9 @@
       function placeTrackerActionNote(tracker) {
         var message = String(tracker.lastMessage || tracker.lastError || "");
         var latest = rankTrackerLatestRank(tracker);
+        var latestSnapshot = tracker.snapshots && tracker.snapshots[0] ? tracker.snapshots[0] : {};
+        var checkedCount = Number(latestSnapshot.checkedCount || 0);
+        var requestedMaxRank = Number(latestSnapshot.requestedMaxRank || tracker.maxRank || 300);
         if (/소스|연결|환경변수|provider_not_configured/i.test(message)) {
           return { label: "소스 연결 대기", className: "is-warn" };
         }
@@ -6901,6 +6910,9 @@
           return { label: "연결 상태 확인", className: "is-error" };
         }
         if (!latest) {
+          if (checkedCount > 0 && checkedCount < requestedMaxRank) {
+            return { label: formatNumber(checkedCount) + "위까지 확인 · 이후 미검증", className: "is-warn" };
+          }
           return { label: "범위 내 미노출", className: "is-error" };
         }
         if (latest <= 10) return { label: "상위권 유지", className: "is-ok" };

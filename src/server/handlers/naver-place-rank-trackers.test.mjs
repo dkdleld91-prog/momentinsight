@@ -395,6 +395,29 @@ test("returns only the most recent 30 days of place rank history", () => {
   ]);
 
   assert.deepEqual(tracker.snapshots.map((item) => item.id), ["today", "day-29"]);
+  assert.equal(tracker.snapshots[0].requestedMaxRank, 300);
+  assert.equal(tracker.snapshots[0].complete, true);
+  assert.equal(tracker.snapshots[0].partial, false);
+});
+
+test("marks a short place-rank snapshot as partial instead of 300-rank absence", () => {
+  const tracker = placeTrackerPayload(trackerRow(), [{
+    id: "partial",
+    tracker_id: "tracker-1",
+    checked_at: new Date().toISOString(),
+    rank: null,
+    matched: false,
+    checked_count: 54,
+    total: 54,
+    place: { id: "2019299673", name: "팽오리농장 부평점" },
+    message: "오가닉 54개까지 부분 확인",
+    source: "naver_map_pc_list_collector_fallback",
+    created_at: new Date().toISOString(),
+  }]);
+
+  assert.equal(tracker.snapshots[0].checkedCount, 54);
+  assert.equal(tracker.snapshots[0].complete, false);
+  assert.equal(tracker.snapshots[0].partial, true);
 });
 
 test("processes multiple due place trackers up to the requested batch limit", async () => {

@@ -403,6 +403,7 @@ function compactErrorMessage(value) {
 }
 
 function snapshotPayload(row) {
+  const checkedCount = Math.max(0, Number(row.checked_count || 0));
   return {
     id: row.id,
     trackerId: row.tracker_id,
@@ -410,6 +411,9 @@ function snapshotPayload(row) {
     rank: row.rank,
     matched: row.matched,
     checkedCount: row.checked_count,
+    requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
+    complete: checkedCount >= PLACE_RANK_TRACKER_MAX_RANK,
+    partial: checkedCount > 0 && checkedCount < PLACE_RANK_TRACKER_MAX_RANK,
     total: row.total,
     place: row.place || null,
     message: row.message,

@@ -41,6 +41,7 @@ const homeSource = read("src/pages/home.html");
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs");
+const placeRankCollector = read("tools/naver-place-rank-collector/src/naver-place-rank.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
@@ -193,6 +194,11 @@ const checks = {
     && source.includes('renderPlaceDayMetric("방문"')
     && source.includes('renderPlaceDayMetric("월검색"')
     && source.includes('renderPlaceDayMetric("업체"')),
+  placeRankPartialResultsStayTruthful: [adminSource, clientSource].every((source) => source.includes("위까지 확인 · 이후 미검증")
+    && source.includes('formatNumber(checkedCount) + "위까지"'))
+    && placeRankServer.includes("checkedCount >= PLACE_RANK_TRACKER_MAX_RANK")
+    && placeRankCollector.includes("providerFallbackUsed: true")
+    && placeRankCollector.includes("isApifyAccountLimitError"),
   placeRankGroupAndShareTools: [adminSource, clientSource].every((source) => source.includes("data-place-rank-filter-group")
     && source.includes("data-place-rank-select")
     && source.includes("data-rank-bulk-move")

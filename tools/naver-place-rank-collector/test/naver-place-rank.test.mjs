@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { __testing } from "../src/naver-place-rank.mjs";
+import { __testing, lookupNaverPlaceRank } from "../src/naver-place-rank.mjs";
 
 const {
   buildCollectionStatus,
@@ -10,6 +10,7 @@ const {
   clampMaxRank,
   collectRowsProgressively,
   lookupNaverPlaceRankViaApify,
+  isApifyAccountLimitError,
   normalizeApifyCandidates,
   normalizeApifyResult,
   resolvePlaceIdentityViaHttp,
@@ -204,6 +205,80 @@ test("normalizes and deduplicates Apify rows while excluding ads", () => {
     [1, "100", "첫 장소"],
     [2, "200", "둘째 장소"],
   ]);
+});
+
+test("uses explicit organic rank fields when Actor rows arrive out of order", () => {
+  const candidates = normalizeApifyCandidates([
+    { placeId: "303", name: "세 번째 장소", organicRank: 3 },
+    { placeId: "301", name: "첫 번째 장소", organic_rank: 1 },
+    { placeId: "302", name: "두 번째 장소", searchRank: 2 },
+  ], 300);
+
+  assert.deepEqual(candidates.map((item) => [item.rank, item.sourceRank, item.id]), [
+    [1, 1, "301"],
+    [2, 2, "302"],
+    [3, 3, "303"],
+  ]);
+});
+
+test("recognizes an Apify account hard limit and stops the shared Actor chain", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    let callCount = 0;
+    await assert.rejects(
+      lookupNaverPlaceRankViaApify({
+        keyword: "부평 맛집",
+        placeId: "2019299673",
+        maxRank: 300,
+      }, async () => {
+        callCount += 1;
+        return new Response(JSON.stringify({
+          error: { message: "Monthly usage hard limit exceeded" },
+        }), { status: 402, headers: { "content-type": "application/json" } });
+      }),
+      /Monthly usage hard limit exceeded/
+    );
+    assert.equal(callCount, 1);
+    assert.equal(isApifyAccountLimitError("Monthly usage hard limit exceeded"), true);
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("returns the native browser result when the paid provider is unavailable", async () => {
+  let browserCalls = 0;
+  const result = await lookupNaverPlaceRank({
+    keyword: "부평 맛집",
+    placeUrl: "https://map.naver.com/p/entry/place/2019299673",
+    maxRank: 300,
+  }, {
+    apifyLookup: async () => {
+      throw new Error("Monthly usage hard limit exceeded");
+    },
+    browserLookup: async () => {
+      browserCalls += 1;
+      return {
+        ok: true,
+        matched: false,
+        rank: null,
+        checkedCount: 54,
+        requestedMaxRank: 300,
+        complete: false,
+        partial: true,
+        stopReason: "collection_deadline_reached",
+        source: "naver_map_pc_list_collector",
+      };
+    },
+  });
+
+  assert.equal(browserCalls, 1);
+  assert.equal(result.ok, true);
+  assert.equal(result.checkedCount, 54);
+  assert.equal(result.providerFallbackUsed, true);
+  assert.equal(result.providerFallbackReason, "Monthly usage hard limit exceeded");
+  assert.equal(result.source, "naver_map_pc_list_collector_fallback");
 });
 
 test("normalizes the capitalized 300-result Actor fields", () => {

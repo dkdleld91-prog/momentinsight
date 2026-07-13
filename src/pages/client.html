@@ -1403,17 +1403,17 @@
     #mi-clean .mi-rank-exposure-board {
       overflow: hidden;
       border: 1px solid #dbe4ef;
-      border-radius: 18px;
+      border-radius: 14px;
       background: #fff;
-      box-shadow: 0 18px 48px rgba(11, 47, 91, 0.08);
+      box-shadow: 0 12px 30px rgba(11, 47, 91, 0.065);
     }
 
     #mi-clean .mi-rank-exposure-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 18px;
-      padding: 20px 22px;
+      gap: 12px;
+      padding: 14px 16px;
       border-bottom: 1px solid #e5ebf2;
       background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
     }
@@ -1428,85 +1428,86 @@
     }
 
     #mi-clean .mi-rank-exposure-identity {
-      gap: 11px;
+      gap: 9px;
       min-width: 0;
     }
 
     #mi-clean .mi-rank-exposure-identity strong {
       color: #071a38;
-      font-size: 17px;
+      font-size: 15px;
       font-weight: 950;
     }
 
     #mi-clean .mi-rank-exposure-identity > span:not(.mi-rank-exposure-linkmark) {
-      padding-left: 12px;
+      padding-left: 10px;
       border-left: 1px solid #dbe3ed;
       color: #334155;
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 850;
     }
 
     #mi-clean .mi-rank-exposure-linkmark {
       display: inline-flex;
-      width: 24px;
-      height: 24px;
+      width: 22px;
+      height: 22px;
       align-items: center;
       justify-content: center;
       border-radius: 7px;
-      color: #fff;
-      background: linear-gradient(135deg, #b36b3d, #8f4f2b);
+      border: 1px solid rgba(3, 199, 90, 0.18);
+      color: #057a3b;
+      background: linear-gradient(135deg, #e9fbf1, #dff7e9);
       font-size: 12px;
-      box-shadow: 0 5px 12px rgba(164, 93, 50, 0.22);
+      box-shadow: 0 5px 12px rgba(3, 199, 90, 0.12);
     }
 
     #mi-clean .mi-rank-exposure-stats {
       justify-content: flex-end;
-      gap: 7px;
+      gap: 6px;
       color: #64748b;
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 800;
     }
 
     #mi-clean .mi-rank-exposure-stats em {
       border: 1px solid #dbe4ef;
       border-radius: 999px;
-      padding: 6px 9px;
+      padding: 4px 8px;
       color: #475569;
       background: rgba(255, 255, 255, 0.88);
       font-style: normal;
     }
 
     #mi-clean .mi-rank-exposure-stats b {
-      color: #1f5fbf;
+      color: #087f45;
     }
 
     #mi-clean .mi-rank-exposure-item {
       position: relative;
       display: grid;
-      grid-template-columns: 116px minmax(0, 1fr) auto;
-      gap: 20px;
+      grid-template-columns: 84px minmax(0, 1fr) auto;
+      gap: 14px;
       align-items: center;
-      min-height: 164px;
-      padding: 22px;
+      min-height: 116px;
+      padding: 14px 16px;
       border-bottom: 1px solid #e8edf3;
       background: #fff;
     }
 
     #mi-clean .mi-rank-exposure-item.is-exact {
-      background: linear-gradient(90deg, #f4f8ff 0%, #ffffff 72%);
-      box-shadow: inset 4px 0 0 #0b2f5b;
+      background: linear-gradient(90deg, #f6f9fd 0%, #ffffff 72%);
+      box-shadow: inset 3px 0 0 #0b2f5b;
     }
 
     #mi-clean .mi-rank-exposure-media {
       position: relative;
       display: flex;
-      width: 116px;
-      height: 116px;
+      width: 84px;
+      height: 84px;
       align-items: center;
       justify-content: center;
       overflow: hidden;
       border: 1px solid #e4eaf1;
-      border-radius: 14px;
+      border-radius: 12px;
       color: #8fa1b8;
       background: #f7f9fc;
       font-size: 18px;
@@ -1522,11 +1523,11 @@
 
     #mi-clean .mi-rank-exposure-badge {
       position: absolute;
-      top: 8px;
-      left: 8px;
+      top: 6px;
+      left: 6px;
       z-index: 1;
       border-radius: 7px;
-      padding: 5px 7px;
+      padding: 4px 6px;
       color: #fff;
       background: #0b2f5b;
       font-size: 10px;
@@ -1535,8 +1536,10 @@
     }
 
     #mi-clean .mi-rank-exposure-badge.is-catalog {
-      background: #a45d32;
-      box-shadow: 0 5px 12px rgba(164, 93, 50, 0.22);
+      border: 1px solid #bcebd0;
+      color: #087f45;
+      background: #eaf9f0;
+      box-shadow: 0 5px 12px rgba(3, 199, 90, 0.11);
     }
 
     #mi-clean .mi-rank-exposure-content {
@@ -1545,37 +1548,39 @@
 
     #mi-clean .mi-rank-exposure-eyebrow {
       gap: 6px;
-      margin-bottom: 7px;
+      margin-bottom: 4px;
     }
 
     #mi-clean .mi-rank-exposure-eyebrow span {
       border: 1px solid #dbe4ef;
       border-radius: 999px;
-      padding: 4px 7px;
+      padding: 3px 6px;
       color: #52627a;
       background: #f8fafc;
-      font-size: 10px;
+      font-size: 9.5px;
       font-weight: 900;
     }
 
     #mi-clean .mi-rank-exposure-title {
       display: block;
       color: #0b172d;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 900;
-      line-height: 1.45;
+      line-height: 1.4;
       text-decoration: none;
     }
 
     #mi-clean a.mi-rank-exposure-title:hover {
-      color: #1f5fbf;
+      color: #087f45;
       text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 3px;
     }
 
     #mi-clean .mi-rank-exposure-rank {
-      margin-top: 8px;
+      margin-top: 5px;
       color: #1f5fbf;
-      font-size: 17px;
+      font-size: 16px;
       font-weight: 950;
     }
 
@@ -1588,7 +1593,7 @@
 
     #mi-clean .mi-rank-exposure-meta {
       gap: 7px 14px;
-      margin-top: 9px;
+      margin-top: 5px;
       color: #64748b;
       font-size: 11px;
       font-weight: 750;
@@ -1602,15 +1607,15 @@
 
     #mi-clean .mi-rank-exposure-action {
       display: inline-flex;
-      min-height: 36px;
+      min-height: 32px;
       align-items: center;
       justify-content: center;
       border: 1px solid #ccd8e7;
       border-radius: 10px;
-      padding: 0 12px;
+      padding: 0 10px;
       color: #0b2f5b;
       background: #fff;
-      font-size: 11px;
+      font-size: 10.5px;
       font-weight: 950;
       text-decoration: none;
     }
@@ -1622,7 +1627,7 @@
 
     #mi-clean .mi-rank-exposure-note {
       margin: 0;
-      padding: 13px 22px;
+      padding: 10px 16px;
       color: #64748b;
       background: #f8fafc;
       font-size: 11px;
@@ -4442,24 +4447,24 @@
       }
 
       #mi-clean .mi-rank-exposure-item {
-        grid-template-columns: 88px minmax(0, 1fr);
-        gap: 14px;
+        grid-template-columns: 72px minmax(0, 1fr);
+        gap: 11px;
         min-height: 0;
-        padding: 16px;
+        padding: 12px;
       }
 
       #mi-clean .mi-rank-exposure-media {
-        width: 88px;
-        height: 88px;
-        border-radius: 12px;
+        width: 72px;
+        height: 72px;
+        border-radius: 10px;
       }
 
       #mi-clean .mi-rank-exposure-title {
-        font-size: 14px;
+        font-size: 13px;
       }
 
       #mi-clean .mi-rank-exposure-rank {
-        font-size: 15px;
+        font-size: 14px;
       }
 
       #mi-clean .mi-rank-exposure-action {
@@ -4468,7 +4473,7 @@
       }
 
       #mi-clean .mi-rank-exposure-note {
-        padding: 12px 16px;
+        padding: 10px 12px;
       }
 
       #mi-clean .mi-rank-table.is-organic-results > div:first-child {
@@ -7512,6 +7517,7 @@
         if (!rows.length) return "";
         var exactItem = rows.filter(function (item) { return item.isExactTarget; })[0] || rows[0];
         var keyword = scope.keyword || result.keyword || "-";
+        var keywordUrl = rankTrackerKeywordUrl(keyword === "-" ? "" : keyword);
         var sellerName = scope.sellerName || exactItem.mallName || exactItem.brand || "판매처 확인 필요";
         var organicCount = Number(scope.organicCount || rows.length);
         var totalCount = Number(scope.totalCount || rows.length);
@@ -7527,8 +7533,8 @@
           var imageUrl = rankTrackerProductUrl({ productUrl: item.image || "" });
           var label = item.exposureLabel || (item.isRelatedCatalog ? "관련 원부" : "정확 상품");
           var title = item.title || "상품명 확인 필요";
-          var titleHtml = productUrl
-            ? '<a class="mi-rank-exposure-title" href="' + escapeHtml(productUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(title) + '</a>'
+          var titleHtml = keywordUrl
+            ? '<a class="mi-rank-exposure-title" href="' + escapeHtml(keywordUrl) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(keyword + " 키워드 검색 결과 보기") + '">' + escapeHtml(title) + '</a>'
             : '<span class="mi-rank-exposure-title">' + escapeHtml(title) + '</span>';
           var imageHtml = imageUrl
             ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy">'

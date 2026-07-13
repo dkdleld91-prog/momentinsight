@@ -2098,55 +2098,233 @@
       font-weight: 900;
     }
 
-    #mi-admin .mi-rank-seller-summary {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 8px;
-      border: 1px solid #e2e9f2;
-      border-radius: 10px;
-      padding: 12px 14px;
-      background: #f8fafc;
+    #mi-admin .mi-rank-exposure-board {
+      overflow: hidden;
+      border: 1px solid #dbe4ef;
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 18px 48px rgba(11, 47, 91, 0.08);
     }
 
-    #mi-admin .mi-rank-seller-summary > div,
-    #mi-admin .mi-rank-seller-tags {
+    #mi-admin .mi-rank-exposure-head {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
       align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 20px 22px;
+      border-bottom: 1px solid #e5ebf2;
+      background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
     }
 
-    #mi-admin .mi-rank-seller-summary strong {
-      color: var(--mi-navy);
-      font-size: 13px;
-      font-weight: 900;
+    #mi-admin .mi-rank-exposure-identity,
+    #mi-admin .mi-rank-exposure-stats,
+    #mi-admin .mi-rank-exposure-eyebrow,
+    #mi-admin .mi-rank-exposure-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
     }
 
-    #mi-admin .mi-rank-seller-summary span,
-    #mi-admin .mi-rank-seller-tags em {
-      color: var(--mi-muted);
+    #mi-admin .mi-rank-exposure-identity {
+      gap: 11px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-rank-exposure-identity strong {
+      color: #071a38;
+      font-size: 17px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-exposure-identity > span:not(.mi-rank-exposure-linkmark) {
+      padding-left: 12px;
+      border-left: 1px solid #dbe3ed;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-rank-exposure-linkmark {
+      display: inline-flex;
+      width: 24px;
+      height: 24px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 7px;
+      color: #fff;
+      background: linear-gradient(135deg, #b36b3d, #8f4f2b);
+      font-size: 12px;
+      box-shadow: 0 5px 12px rgba(164, 93, 50, 0.22);
+    }
+
+    #mi-admin .mi-rank-exposure-stats {
+      justify-content: flex-end;
+      gap: 7px;
+      color: #64748b;
       font-size: 11px;
-      font-style: normal;
       font-weight: 800;
     }
 
-    #mi-admin .mi-rank-seller-tags em {
-      border: 1px solid #d9e4f2;
+    #mi-admin .mi-rank-exposure-stats em {
+      border: 1px solid #dbe4ef;
       border-radius: 999px;
-      padding: 4px 8px;
+      padding: 6px 9px;
+      color: #475569;
+      background: rgba(255, 255, 255, 0.88);
+      font-style: normal;
+    }
+
+    #mi-admin .mi-rank-exposure-stats b {
+      color: #1f5fbf;
+    }
+
+    #mi-admin .mi-rank-exposure-item {
+      position: relative;
+      display: grid;
+      grid-template-columns: 116px minmax(0, 1fr) auto;
+      gap: 20px;
+      align-items: center;
+      min-height: 164px;
+      padding: 22px;
+      border-bottom: 1px solid #e8edf3;
       background: #fff;
     }
 
-    #mi-admin .mi-rank-seller-note {
-      margin: 8px 2px 0;
-      color: var(--mi-muted);
-      font-size: 11px;
-      line-height: 1.5;
+    #mi-admin .mi-rank-exposure-item.is-exact {
+      background: linear-gradient(90deg, #f4f8ff 0%, #ffffff 72%);
+      box-shadow: inset 4px 0 0 #0b2f5b;
     }
 
-    #mi-admin .mi-rank-table.is-seller-results div.is-exact-target {
-      background: #f3f7fd;
+    #mi-admin .mi-rank-exposure-media {
+      position: relative;
+      display: flex;
+      width: 116px;
+      height: 116px;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid #e4eaf1;
+      border-radius: 14px;
+      color: #8fa1b8;
+      background: #f7f9fc;
+      font-size: 18px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-exposure-media img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      background: #fff;
+    }
+
+    #mi-admin .mi-rank-exposure-badge {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 1;
+      border-radius: 7px;
+      padding: 5px 7px;
+      color: #fff;
+      background: #0b2f5b;
+      font-size: 10px;
+      font-weight: 950;
+      box-shadow: 0 5px 12px rgba(11, 47, 91, 0.2);
+    }
+
+    #mi-admin .mi-rank-exposure-badge.is-catalog {
+      background: #a45d32;
+      box-shadow: 0 5px 12px rgba(164, 93, 50, 0.22);
+    }
+
+    #mi-admin .mi-rank-exposure-content {
+      min-width: 0;
+    }
+
+    #mi-admin .mi-rank-exposure-eyebrow {
+      gap: 6px;
+      margin-bottom: 7px;
+    }
+
+    #mi-admin .mi-rank-exposure-eyebrow span {
+      border: 1px solid #dbe4ef;
+      border-radius: 999px;
+      padding: 4px 7px;
+      color: #52627a;
+      background: #f8fafc;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-rank-exposure-title {
+      display: block;
+      color: #0b172d;
+      font-size: 16px;
+      font-weight: 900;
+      line-height: 1.45;
+      text-decoration: none;
+    }
+
+    #mi-admin a.mi-rank-exposure-title:hover {
+      color: #1f5fbf;
+      text-decoration: underline;
+    }
+
+    #mi-admin .mi-rank-exposure-rank {
+      margin-top: 8px;
+      color: #1f5fbf;
+      font-size: 17px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-exposure-rank small {
+      margin-left: 5px;
+      color: #7c8ba1;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-rank-exposure-meta {
+      gap: 7px 14px;
+      margin-top: 9px;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    #mi-admin .mi-rank-exposure-meta strong {
+      color: #101c32;
+      font-size: 13px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-rank-exposure-action {
+      display: inline-flex;
+      min-height: 36px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #ccd8e7;
+      border-radius: 10px;
+      padding: 0 12px;
+      color: #0b2f5b;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 950;
+      text-decoration: none;
+    }
+
+    #mi-admin .mi-rank-exposure-action:hover {
+      border-color: #0b2f5b;
+      background: #f4f8ff;
+    }
+
+    #mi-admin .mi-rank-exposure-note {
+      margin: 0;
+      padding: 13px 22px;
+      color: #64748b;
+      background: #f8fafc;
+      font-size: 11px;
+      line-height: 1.55;
     }
 
     #mi-admin .mi-rank-table.is-trackers div {
@@ -5363,29 +5541,60 @@
         padding: 14px;
       }
 
-      #mi-admin .mi-rank-seller-summary {
+      #mi-admin .mi-rank-exposure-head {
         align-items: flex-start;
         flex-direction: column;
+        padding: 16px;
       }
 
-      #mi-admin .mi-rank-table.is-seller-results > div:first-child,
+      #mi-admin .mi-rank-exposure-stats {
+        justify-content: flex-start;
+      }
+
+      #mi-admin .mi-rank-exposure-item {
+        grid-template-columns: 88px minmax(0, 1fr);
+        gap: 14px;
+        min-height: 0;
+        padding: 16px;
+      }
+
+      #mi-admin .mi-rank-exposure-media {
+        width: 88px;
+        height: 88px;
+        border-radius: 12px;
+      }
+
+      #mi-admin .mi-rank-exposure-title {
+        font-size: 14px;
+      }
+
+      #mi-admin .mi-rank-exposure-rank {
+        font-size: 15px;
+      }
+
+      #mi-admin .mi-rank-exposure-action {
+        grid-column: 2;
+        justify-self: start;
+      }
+
+      #mi-admin .mi-rank-exposure-note {
+        padding: 12px 16px;
+      }
+
       #mi-admin .mi-rank-table.is-organic-results > div:first-child {
         display: none;
       }
 
-      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child),
       #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) {
         grid-template-columns: 96px minmax(0, 1fr);
         gap: 8px 10px;
       }
 
-      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child) span:nth-child(3),
       #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) span:nth-child(3) {
         grid-column: 1 / -1;
         white-space: normal;
       }
 
-      #mi-admin .mi-rank-table.is-seller-results > div:not(:first-child) span:nth-child(5),
       #mi-admin .mi-rank-table.is-organic-results > div:not(:first-child) span:nth-child(5) {
         text-align: right;
       }
@@ -10268,25 +10477,55 @@
           }).join("") + '</div>';
       }
 
-      function renderSellerRankItems(result) {
-        var rows = (result && result.sellerItems || []).slice(0, 10);
+      function formatRankExposureTime(value) {
+        var date = value ? new Date(value) : null;
+        if (!date || !Number.isFinite(date.getTime())) return "방금 조회";
+        function pad(number) { return String(number).padStart(2, "0"); }
+        return date.getFullYear() + "." + pad(date.getMonth() + 1) + "." + pad(date.getDate()) + " " + pad(date.getHours()) + ":" + pad(date.getMinutes());
+      }
+
+      function renderProductExposureCards(result) {
+        var scope = result && result.productExposureSummary || {};
+        var rows = (result && result.productExposureItems || []).slice(0, 5);
+        if (!rows.length && result && result.matched && result.item) {
+          rows = [Object.assign({}, result.item, { isExactTarget: true, exposureLabel: "정확 상품" })];
+        }
         if (!rows.length) return "";
-        var scope = result.sellerResultSummary || {};
-        var sellerName = scope.mallName || rows[0].mallName || "동일 판매처";
-        var checked = scope.checkedCount ? scope.checkedCount + "위까지 확인" : "확인 범위 내";
-        var summary = '<div class="mi-rank-seller-summary"><div><strong>' + escapeHtml(sellerName) +
-          '</strong><span>동일 판매처 오가닉 ' + escapeHtml(rows.length) + '건</span></div><div class="mi-rank-seller-tags"><em>' +
-          escapeHtml(checked) + '</em><em>광고 데이터 API 미제공</em></div></div>';
-        var table = '<div class="mi-rank-table is-seller-results"><div><span>순위</span><span>구분</span><span>상품명</span><span>판매처</span><span>가격</span></div>' +
-          rows.map(function (item) {
-            var itemId = item.sellerProductId || item.productId || "";
-            var label = item.isExactTarget ? "정확 상품" : "동일 판매처";
-            return '<div class="' + (item.isExactTarget ? 'is-exact-target' : '') + '"><span>' + escapeHtml(item.rank ? item.rank + "위" : "-") +
-              '</span><span title="' + escapeHtml(itemId ? "상품ID " + itemId : label) + '">' + escapeHtml(label) +
-              '</span><span title="' + escapeHtml(item.title || "") + '">' + escapeHtml(item.title || "-") +
-              '</span><span>' + escapeHtml(item.mallName || "-") + '</span><span>' + escapeHtml(item.lprice ? formatNumber(item.lprice) : "-") + '</span></div>';
-          }).join("") + '</div>';
-        return summary + table + '<p class="mi-rank-seller-note">광고 상품과 광고 위치는 공식 네이버 쇼핑 검색 API에서 제공하지 않아 임의 값으로 표시하지 않습니다.</p>';
+        var exactItem = rows.filter(function (item) { return item.isExactTarget; })[0] || rows[0];
+        var keyword = scope.keyword || result.keyword || "-";
+        var sellerName = scope.sellerName || exactItem.mallName || exactItem.brand || "판매처 확인 필요";
+        var organicCount = Number(scope.organicCount || rows.length);
+        var totalCount = Number(scope.totalCount || rows.length);
+        var header = '<div class="mi-rank-exposure-head"><div class="mi-rank-exposure-identity"><strong>' + escapeHtml(keyword) +
+          '</strong><span class="mi-rank-exposure-linkmark" aria-hidden="true">↗</span><span>' + escapeHtml(sellerName) +
+          '</span></div><div class="mi-rank-exposure-stats"><em>상품수 <b>' + escapeHtml(totalCount) + '</b></em><em>일반상품 <b>' +
+          escapeHtml(organicCount) + '</b></em><em>광고상품 미연결</em><span>' + escapeHtml(formatRankExposureTime(scope.updatedAt)) + '</span></div></div>';
+        var cards = rows.map(function (item) {
+          var rank = Number(item.rank || 0);
+          var page = Number(item.page || (rank ? Math.ceil(rank / 40) : 0));
+          var position = Number(item.position || (rank ? ((rank - 1) % 40) + 1 : 0));
+          var productUrl = rankTrackerProductUrl({ productUrl: item.link || "" });
+          var imageUrl = rankTrackerProductUrl({ productUrl: item.image || "" });
+          var label = item.exposureLabel || (item.isRelatedCatalog ? "관련 원부" : "정확 상품");
+          var title = item.title || "상품명 확인 필요";
+          var titleHtml = productUrl
+            ? '<a class="mi-rank-exposure-title" href="' + escapeHtml(productUrl) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(title) + '</a>'
+            : '<span class="mi-rank-exposure-title">' + escapeHtml(title) + '</span>';
+          var imageHtml = imageUrl
+            ? '<img src="' + escapeHtml(imageUrl) + '" alt="" loading="lazy">'
+            : '<span aria-hidden="true">MI</span>';
+          var actionHtml = productUrl
+            ? '<a class="mi-rank-exposure-action" href="' + escapeHtml(productUrl) + '" target="_blank" rel="noopener noreferrer">상품 열기 ↗</a>'
+            : '';
+          var pagePosition = page && position ? page + "페이지 " + position + "위" : "오가닉 결과";
+          return '<article class="mi-rank-exposure-item' + (item.isExactTarget ? ' is-exact' : '') + '"><div class="mi-rank-exposure-media"><span class="mi-rank-exposure-badge' +
+            (item.isRelatedCatalog ? ' is-catalog' : '') + '">' + escapeHtml(label) + '</span>' + imageHtml + '</div><div class="mi-rank-exposure-content"><div class="mi-rank-exposure-eyebrow"><span>오가닉</span><span>' +
+            escapeHtml(rankProductKindLabel(item)) + '</span></div>' + titleHtml + '<div class="mi-rank-exposure-rank">' + escapeHtml(rank ? rank + "위" : "순위 없음") + '<small>' +
+            escapeHtml(pagePosition) + '</small></div><div class="mi-rank-exposure-meta"><span>판매가 <strong>' + escapeHtml(item.lprice ? formatNumber(item.lprice) + "원" : "-") + '</strong></span><span>판매처 ' +
+            escapeHtml(item.mallName || item.brand || sellerName) + '</span></div></div>' + actionHtml + '</article>';
+        }).join("");
+        return '<section class="mi-rank-exposure-board">' + header + '<div class="mi-rank-exposure-list">' + cards +
+          '</div><p class="mi-rank-exposure-note">관련 원부는 키워드·브랜드·카테고리 일치 기준으로 별도 표시하며 정확 상품 순위를 변경하지 않습니다. 현재 조회는 오가닉 상품만 집계합니다. 광고 노출 위치는 별도 데이터 연동 후 제공됩니다.</p></section>';
       }
 
       function renderRankResult(node, payload) {
@@ -10340,9 +10579,8 @@
           ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(rankText(rank)) + '</strong></div><div class="mi-rank-primary-meta"><em>' + escapeHtml(queryKeyword) + '</em><em>광고 제외</em><em>' + escapeHtml(checkedLabel) + '</em></div></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong><small>네이버쇼핑 오가닉 기준</small></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
-        var sellerRows = renderSellerRankItems(result);
-        var topItems = renderRankItems(result.topItems || payload.items || payload.topItems || []);
-        node.innerHTML = '<h3>현재 순위</h3>' + summary + (sellerRows ? '<h3>동일 판매처 검색 결과</h3>' + sellerRows : (itemRows ? '<h3>조회 상품</h3>' + itemRows : "")) + (topItems ? '<h3>상위 오가닉 결과</h3>' + topItems : "");
+        var exposureCards = renderProductExposureCards(result);
+        node.innerHTML = '<h3>현재 순위</h3>' + summary + (exposureCards ? '<h3>상품 노출 결과</h3>' + exposureCards : (itemRows ? '<h3>조회 상품</h3>' + itemRows : ""));
       }
 
       function metaAdsLibraryUrl(query, platform, mediaType) {

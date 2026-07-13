@@ -8,6 +8,7 @@ import {
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,
+  productExposureItemsFromOrganic,
   productIdCandidates,
   rankPagePosition,
   rankQueryKeyword,
@@ -240,11 +241,29 @@ assert.deepEqual(exactLavTarget.productIds, ["5145848584"]);
 
 const exactLavMatch = findOrganicMatchInItems([
   {
+    productId: "56704991367",
+    link: "https://search.shopping.naver.com/catalog/56704991367",
+    title: "라이브오랄스 퓨어다이아 셀프 치아미백제 2주분 10g, 1개",
+    mallName: "네이버",
+    productType: "1",
+    lprice: "26460",
+    brand: "라이브오랄스",
+    category1: "생활/건강",
+    category2: "구강위생용품",
+    category3: "치아미백제",
+  },
+  {
     productId: "59606749556",
     link: "https://search.shopping.naver.com/catalog/59606749556",
     title: "라브 라이브오랄스 퓨어다이아 셀프 치아미백제 세트",
     mallName: "네이버",
     productType: "1",
+    lprice: "25060",
+    brand: "라이브오랄스",
+    maker: "라브",
+    category1: "생활/건강",
+    category2: "구강위생용품",
+    category3: "치아미백제",
   },
   {
     productId: "81000000002",
@@ -266,6 +285,11 @@ const exactLavMatch = findOrganicMatchInItems([
     title: "본사직영 라이브오랄스 셀프 치아미백제 화이트닝 마우스피스",
     mallName: "라이브오랄스",
     productType: "3",
+    lprice: "29400",
+    brand: "라이브오랄스",
+    category1: "생활/건강",
+    category2: "구강위생용품",
+    category3: "치아미백제",
     isAd: true,
   },
   {
@@ -274,21 +298,75 @@ const exactLavMatch = findOrganicMatchInItems([
     title: "본사직영 라이브오랄스 셀프 치아미백제 화이트닝 마우스피스",
     mallName: "라이브오랄스",
     productType: "3",
+    lprice: "29400",
+    brand: "라이브오랄스",
+    category1: "생활/건강",
+    category2: "구강위생용품",
+    category3: "치아미백제",
   },
 ], exactLavTarget, { limit: 100, topItems: [] });
 assert.equal(exactLavMatch.matched, true);
-assert.equal(exactLavMatch.rank, 4);
+assert.equal(exactLavMatch.rank, 5);
 assert.equal(exactLavMatch.excludedAdCount, 1);
 assert.equal(exactLavMatch.matchedProductId, "5145848584");
 
 const exactLavSellerItems = sellerItemsFromOrganic(exactLavMatch.organicItems, exactLavMatch.item, exactLavTarget);
 assert.equal(exactLavSellerItems.length, 2);
-assert.equal(exactLavSellerItems[0].rank, 2);
+assert.equal(exactLavSellerItems[0].rank, 3);
 assert.equal(exactLavSellerItems[0].isExactTarget, false);
 assert.equal(exactLavSellerItems[0].sellerProductId, "5100000000");
-assert.equal(exactLavSellerItems[1].rank, 4);
+assert.equal(exactLavSellerItems[1].rank, 5);
 assert.equal(exactLavSellerItems[1].isExactTarget, true);
 assert.equal(exactLavSellerItems[1].sellerProductId, "5145848584");
+
+const exactLavExposureItems = productExposureItemsFromOrganic(
+  exactLavMatch.organicItems,
+  exactLavMatch.item,
+  exactLavTarget,
+  "치아미백제",
+);
+assert.equal(exactLavExposureItems.length, 2);
+assert.equal(exactLavExposureItems[0].rank, 1);
+assert.equal(exactLavExposureItems[0].productId, "56704991367");
+assert.equal(exactLavExposureItems[0].isRelatedCatalog, true);
+assert.equal(exactLavExposureItems[0].exposureLabel, "관련 원부");
+assert.equal(exactLavExposureItems[1].rank, 5);
+assert.equal(exactLavExposureItems[1].sellerProductId, "5145848584");
+assert.equal(exactLavExposureItems[1].isExactTarget, true);
+assert.equal(exactLavExposureItems.some((item) => item.sellerProductId === "5100000000"), false);
+
+const guardedLavExposureItems = productExposureItemsFromOrganic([
+  {
+    rank: 1,
+    item: {
+      productId: "11111111111",
+      link: "https://search.shopping.naver.com/catalog/11111111111",
+      title: "라이브오랄스 치아미백제 기획 상품",
+      mallName: "네이버",
+      productType: "1",
+      brand: "라이브오랄스",
+      category1: "생활/건강",
+      category2: "생활용품",
+    },
+  },
+  {
+    rank: 2,
+    item: {
+      productId: "22222222222",
+      link: "https://search.shopping.naver.com/catalog/22222222222",
+      title: "다른브랜드 치아미백제 2주분",
+      mallName: "네이버",
+      productType: "1",
+      brand: "다른브랜드",
+      category1: "생활/건강",
+      category2: "구강위생용품",
+    },
+  },
+  { rank: 3, item: exactLavMatch.item },
+], exactLavMatch.item, exactLavTarget, "치아미백제");
+assert.equal(guardedLavExposureItems.length, 1);
+assert.equal(guardedLavExposureItems[0].isExactTarget, true);
+assert.equal(guardedLavExposureItems[0].rank, 3);
 
 const explicitCatalogTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/any-store/products/1111111111",

@@ -539,14 +539,20 @@ const checks = {
     && !read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url")
     && adminSource.includes("상품ID·판매자 일치")
     && clientSource.includes("상품ID·판매자 일치"),
-  naverRankExactSellerResults: [adminSource, clientSource].every((source) => source.includes("renderSellerRankItems")
-    && source.includes("동일 판매처 검색 결과")
+  naverRankPremiumExposureCards: [adminSource, clientSource].every((source) => source.includes("renderProductExposureCards")
+    && source.includes("mi-rank-exposure-board")
+    && source.includes("상품 노출 결과")
+    && source.includes("관련 원부")
     && source.includes("정확 상품")
-    && source.includes("광고 데이터 API 미제공")
-    && source.includes("공식 네이버 쇼핑 검색 API에서 제공하지 않아 임의 값으로 표시하지 않습니다"))
+    && source.includes("광고상품 미연결")
+    && source.includes("광고 노출 위치는 별도 데이터 연동 후 제공됩니다"))
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("productExposureItemsFromOrganic")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("productExposureSummary")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("relatedCatalogIds")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("sellerItemsFromOrganic")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes('adCoverage: "not_provided_by_official_api"')
-    && read("src/server/handlers/naver-shopping-rank.mjs").includes("isExactTarget"),
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("isExactTarget")
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes("isRelatedCatalog"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

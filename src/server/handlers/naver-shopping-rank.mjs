@@ -710,6 +710,90 @@ function mallNameKey(value) {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
+function itemCategoryParts(item) {
+  return [item?.category1, item?.category2, item?.category3, item?.category4]
+    .map((value) => mallNameKey(value))
+    .filter(Boolean);
+}
+
+function itemIdentityKeys(item) {
+  return uniqueValues([item?.brand, item?.maker, item?.mallName]
+    .map((value) => mallNameKey(value))
+    .filter((value) => value && value !== "네이버"));
+}
+
+function keywordEvidence(keyword, ...items) {
+  const compactKeyword = mallNameKey(keyword);
+  if (!compactKeyword) return false;
+  return items.every((item) => mallNameKey(item?.title).includes(compactKeyword));
+}
+
+function categoriesAlign(referenceItem, candidateItem) {
+  const reference = itemCategoryParts(referenceItem);
+  const candidate = itemCategoryParts(candidateItem);
+  if (reference.length < 2 || candidate.length < 2) return false;
+  return reference[0] === candidate[0] && reference[1] === candidate[1];
+}
+
+function identitiesAlign(referenceItem, candidateItem) {
+  const reference = itemIdentityKeys(referenceItem);
+  const candidate = itemIdentityKeys(candidateItem);
+  if (!reference.length || !candidate.length) return false;
+  return reference.some((value) => candidate.includes(value));
+}
+
+function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
+  const matchedType = classifyNaverProductType(matchedItem?.productType);
+  if (!matchedItem || matchedType.isPriceCompareCatalog) return [];
+
+  return (organicItems || [])
+    .filter((entry) => {
+      const candidateType = classifyNaverProductType(entry?.item?.productType);
+      return candidateType.isPriceCompareCatalog
+        && keywordEvidence(keyword, matchedItem, entry.item)
+        && identitiesAlign(matchedItem, entry.item)
+        && categoriesAlign(matchedItem, entry.item);
+    })
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .slice(0, 1)
+    .map((entry) => {
+      const position = rankPagePosition(entry.rank);
+      return {
+        ...serializeItem(entry.item, entry.rank),
+        page: position.page,
+        position: position.position,
+        isExactTarget: false,
+        isRelatedCatalog: true,
+        exposureType: "related_catalog",
+        exposureLabel: "관련 원부",
+        relationBasis: "keyword_brand_category",
+      };
+    });
+}
+
+function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyword) {
+  const relatedCatalogItems = target?.targetMode === "catalog"
+    ? []
+    : relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword);
+  const exactEntry = (organicItems || []).find((entry) => matchTargetItem(entry?.item, target).matched);
+  if (!exactEntry) return relatedCatalogItems;
+
+  const position = rankPagePosition(exactEntry.rank);
+  const exactItem = {
+    ...serializeItem(exactEntry.item, exactEntry.rank),
+    page: position.page,
+    position: position.position,
+    isExactTarget: true,
+    isRelatedCatalog: false,
+    exposureType: target?.targetMode === "catalog" ? "exact_catalog" : "exact_product",
+    exposureLabel: target?.targetMode === "catalog" ? "조회 원부" : "정확 상품",
+    relationBasis: "exact_target",
+  };
+
+  return [...relatedCatalogItems, exactItem]
+    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
+}
+
 function sellerItemsFromOrganic(organicItems, matchedItem, target) {
   const matchedMallKey = mallNameKey(matchedItem?.mallName);
   if (!matchedMallKey) return [];
@@ -813,6 +897,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
 
     if (ranked.matched) {
       const sellerItems = sellerItemsFromOrganic(ranked.organicItems, ranked.item, target);
+      const productExposureItems = productExposureItemsFromOrganic(ranked.organicItems, ranked.item, target, queryKeyword);
+      const relatedCatalogIds = productExposureItems
+        .filter((item) => item.isRelatedCatalog)
+        .map((item) => item.productId);
       return {
         matched: true,
         rank: ranked.rank,
@@ -836,6 +924,18 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         targetUrlKeys: target.urlKeys,
         item: serializeItem(ranked.item, ranked.rank),
         sellerItems,
+        productExposureItems,
+        relatedCatalogIds,
+        productExposureSummary: {
+          keyword: normalizeText(keyword),
+          sellerName: normalizeText(ranked.item?.mallName || ranked.item?.brand),
+          totalCount: productExposureItems.length,
+          organicCount: productExposureItems.length,
+          adCount: null,
+          checkedCount: ranked.organicCheckedCount,
+          updatedAt: new Date().toISOString(),
+          adCoverage: "not_provided_by_official_api",
+        },
         sellerResultSummary: {
           mallName: normalizeText(ranked.item?.mallName),
           organicCount: sellerItems.length,
@@ -893,6 +993,8 @@ export {
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,
+  relatedCatalogItemsFromOrganic,
+  productExposureItemsFromOrganic,
   sellerItemsFromOrganic,
   rankPagePosition,
   classifyNaverProductType,

@@ -45,6 +45,12 @@
 - 두 화면 모두 브라우저 콘솔 오류 0건
 - 모바일 상위 오가닉 상품명 줄바꿈과 전체 행 높이 확인
 
-## 아직 남은 검증
+## Production 배포 후 검증
 
-- Production 배포 후 `/health`, 라이브 상품 순위 API, 관리자·광고주 배포 화면을 다시 확인한다.
+- `https://insight.momentlabs.co.kr/health`: HTTP 200, Supabase 준비 상태 정상
+- 관리자·광고주 HTML: `renderSellerRankItems`, `광고 데이터 API 미제공` 신규 마커 확인
+- 라이브 상품 순위 API: HTTP 200, 오가닉 48위, `matchType=product_id`, `targetProductId=5145848584`, `targetCatalogId` 빈값
+- 라이브 동일 판매처 결과: 44위 다른 상품, 48위 정확 상품
+- 잘못된 카탈로그 ID `59606749556`: 라이브 결과에 없음
+- 라이브 관리자 화면: 직접 로그인·입력·조회 후 정확 상품과 동일 판매처 표 렌더링 확인
+- 라이브 관리자 브라우저 콘솔 오류: 0건

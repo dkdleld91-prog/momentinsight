@@ -15,9 +15,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 14. 00:34:52
-- 기준 커밋: f1f94b6
-- 작업트리: M docs/08-work-spec-autosave.md /  M scripts/check-naver-rank-matching.mjs /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html /  M src/server/handlers/naver-rank-trackers.mjs /  M src/server/handlers/naver-shopping-rank.mjs / ?? docs/DECISIONS.md
+- 마지막 자동 저장: 2026. 07. 14. 00:38:33
+- 기준 커밋: 508ceb8
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -32,7 +32,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료 | 네이버 상품 정확 일치 및 동일 판매처 결과 보강 | 판매자 상품 URL을 원부 카탈로그 ID로 자동 승격하던 추론을 제거하고 URL의 상품ID `5145848584`를 정확 일치 기준으로 고정. 같은 원부·다른 상품ID·다른 판매자·광고 상품은 정확 상품으로 집계하지 않으며, 동일 판매처 오가닉 결과는 정확 상품과 별도 상품으로 구분 표시. 공식 API가 광고 위치를 제공하지 않는 한계도 화면에 명시 | `check:quality`, `check:env:naver`, `check:supabase`, 실조회 오가닉 48위·동일 판매처 2건·정확 상품 1건 확인, 관리자/광고주 1440px·390px 브라우저 조회와 콘솔/가로 넘침 검사, `git diff --check` | 사전 승인 · 배포 전 최종 검토 |
+| 완료 | 네이버 상품 정확 일치 및 동일 판매처 결과 보강 | 판매자 상품 URL을 원부 카탈로그 ID로 자동 승격하던 추론을 제거하고 URL의 상품ID `5145848584`를 정확 일치 기준으로 고정. 같은 원부·다른 상품ID·다른 판매자·광고 상품은 정확 상품으로 집계하지 않으며, 동일 판매처 오가닉 결과는 정확 상품과 별도 상품으로 구분 표시. 공식 API가 광고 위치를 제공하지 않는 한계도 화면에 명시 | `check:quality`, `check:env:naver`, `check:supabase`, 실조회 오가닉 48위·동일 판매처 2건·정확 상품 1건 확인, 관리자/광고주 1440px·390px 브라우저 조회와 콘솔/가로 넘침 검사, Production `/health`·API·관리자 화면 재검증 | 배포 완료 |
 | 완료 | 네이버 플레이스 자동추적 20계정 대비 안정화 | Supabase 추적 건을 처리 임대로 원자 선점해 중복 실행을 차단하고, 무료 Render Chromium은 한 번에 1건만 처리하도록 직렬화. GitHub Actions는 오전 9시·오후 3시 처리 창마다 최대 20건을 나눠 호출하며 실패 건은 지수형 재시도, 정상 미노출은 오류가 아닌 유효 결과로 기록. 동일 키워드 후보 목록은 수집기 메모리 캐시로 재사용하고 실제 확인 개수만 응답 | 실제 Supabase 통합 테스트 2회: `구월동 맛집`/`2045794152` 오가닉 1위 저장, `1565776290` 상위 54개 미노출 정상 저장. 두 건 모두 `last_error=null`, 처리 임대 해제, 다음 09시 예약 확인. 수집기 401/429, 서버·baseline·Vercel build·diff 검사 통과 | 배포 진행 |
 | 완료 | 네이버 플레이스 Render 통합 검증 | 저장된 플레이스ID가 있으면 단축 URL을 매번 브라우저로 다시 해석하지 않고 지도 목록 조회를 바로 시작하도록 수집 경로를 단축. Vercel API에서 Render 수집기 호출 후 Supabase 스냅샷까지 저장되는 전체 경로 확인 | 운영 API 실조회 `구월동 맛집`/`2045794152` 오가닉 1위, 62개 확인, 34초, `lastError=null`; 광고 카드 ID `1565776290`은 오가닉 62개 내 미노출, 39초, `lastError=null`; Render 릴리스 `2026-07-12-fast-id` 확인 | 완료 |
 | 완료 | 플레이스 수집기 무료 서버 안정 모드 | 실제 네이버 지도 목록을 한 번만 끝까지 로딩해 확인 가능한 플레이스ID·오가닉 순위·리뷰 수를 읽도록 변경. Render 무료 인스턴스에서는 장시간 반복 스크롤을 기본 중단해 Vercel 요청 시간 초과를 막고 `checkedCount`에 실제 확인 범위만 기록 | `구월동 맛집` 실조회 ID `2045794152` 오가닉 1위 5.2초, 광고 카드 ID와 미존재 ID 각각 상위 54개 미노출 3~4초, 수집기 문법·baseline·server·rank cron·rank matching·Vercel build·diff 검사 통과 | 배포 진행 |

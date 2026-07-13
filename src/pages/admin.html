@@ -533,6 +533,34 @@
       font-weight: 850;
     }
 
+    #mi-admin .mi-metric-link {
+      position: relative;
+      color: inherit;
+      text-decoration: none;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    #mi-admin .mi-metric-link::after {
+      content: "→";
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      color: #98a2b3;
+      font-size: 16px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-metric-link:hover {
+      transform: translateY(-2px);
+      border-color: rgba(15, 39, 73, 0.28);
+      box-shadow: 0 14px 28px rgba(15, 39, 73, 0.08);
+    }
+
+    #mi-admin .mi-metric-link:focus-visible {
+      outline: 3px solid rgba(30, 64, 175, 0.24);
+      outline-offset: 3px;
+    }
+
     #mi-admin .mi-status-list,
     #mi-admin .mi-task-list {
       display: grid;
@@ -5825,21 +5853,21 @@
             <span class="mi-badge warn">운영팀 전용</span>
           </header>
 
-          <div class="mi-grid is-four">
-            <article class="mi-card mi-metric"><span>연결 광고주</span><strong>12개</strong><small>운영 중 9 · 세팅 3</small></article>
-            <article class="mi-card mi-metric"><span>입력 누락</span><strong>4건</strong><small>오늘 우선 처리</small></article>
-            <article class="mi-card mi-metric"><span>공개 승인 필요</span><strong>3건</strong><small>내부 검수 대기</small></article>
-            <article class="mi-card mi-metric"><span>보고서 전달 대기</span><strong>2건</strong><small>주간 1 · 월간 1</small></article>
+          <div class="mi-grid is-four" data-admin-home-truthful-state>
+            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code"><span>광고주 연결</span><strong>연결 확인</strong><small>활성 계정과 권한 관계 보기</small></a>
+            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-excel" data-mi-admin-screen="excel"><span>운영 데이터</span><strong>입력 확인</strong><small>연결 광고주의 공개값 점검</small></a>
+            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-publish" data-mi-admin-screen="publish"><span>공개 상태</span><strong>승인 확인</strong><small>승인·공유 조건 검수</small></a>
+            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-reports" data-mi-admin-screen="reports"><span>보고서함</span><strong>전달 확인</strong><small>검수·공개 파일 상태 보기</small></a>
           </div>
 
           <div class="mi-score-panel">
             <article class="mi-score-card is-dark">
-              <span class="mi-kicker">운영 준비도</span>
-              <h2>입력·검수·공개 흐름을 한 화면에 둡니다.</h2>
-              <p>광고주 공개 전 기준만 고정합니다.</p>
+              <span class="mi-kicker">운영 흐름</span>
+              <h2>연결 범위부터 공개 상태까지 순서대로 확인합니다.</h2>
+              <p>실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</p>
               <div class="mi-score-row">
-                <div class="mi-score-box"><span>화면 구성</span><strong>완료</strong><small>광고주 포털과 운영팀 콘솔 분리</small></div>
-                <div class="mi-score-box"><span>운영 준비</span><strong>진행</strong><small>로그인, DB, 파일 이력 순차 연결</small></div>
+                <div class="mi-score-box"><span>1. 범위 확인</span><strong>계정·광고주</strong><small>현재 접속 권한과 연결 관계 확인</small></div>
+                <div class="mi-score-box"><span>2. 공개 준비</span><strong>입력·검수</strong><small>승인된 값과 파일만 광고주 공개</small></div>
               </div>
             </article>
 
@@ -5859,30 +5887,30 @@
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>오늘 우선순위</h2>
-                  <p>오늘 필요한 항목만 봅니다.</p>
+                  <h2>운영 시작 순서</h2>
+                  <p>실제 연결 상태를 확인한 뒤 작업합니다.</p>
                 </div>
                 <span class="mi-badge warn">Action</span>
               </div>
               <div class="mi-task-list">
-                <div class="mi-task"><div><strong>브랜드 A 입력값 확인</strong><span>클릭수·전환율 누락 확인</span></div><div class="mi-task-action"><b class="mi-priority">높음</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
-                <div class="mi-task"><div><strong>월간 보고서 검수 후 전달</strong><span>파일 확인 후 공개</span></div><div class="mi-task-action"><b class="mi-priority">오늘</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
-                <div class="mi-task"><div><strong>쿠팡 키워드 보강 코멘트 공개 승인</strong><span>공개 코멘트만 노출</span></div><div class="mi-task-action"><b class="mi-priority ok">검수</b><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리</a></div></div>
+                <div class="mi-task"><div><strong>연결 광고주와 권한 확인</strong><span>현재 접속 코드의 데이터 범위를 먼저 확인합니다.</span></div><div class="mi-task-action"><b class="mi-priority">1단계</b><a class="mi-link-button" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">연결 확인</a></div></div>
+                <div class="mi-task"><div><strong>운영 데이터 입력·검수</strong><span>실제 원본과 공개할 수치를 광고주별로 확인합니다.</span></div><div class="mi-task-action"><b class="mi-priority">2단계</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
+                <div class="mi-task"><div><strong>보고서와 공개 상태 확인</strong><span>검수된 파일과 공개 코멘트만 전달합니다.</span></div><div class="mi-task-action"><b class="mi-priority ok">3단계</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
               </div>
             </article>
 
             <aside class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>
-                  <h2>광고주별 상태</h2>
-                  <p>처리 필요한 계정만 봅니다.</p>
+                  <h2>실제 상태 확인</h2>
+                  <p>계정·입력·공개 화면의 현재값을 기준으로 판단합니다.</p>
                 </div>
                 <span class="mi-badge">Status</span>
               </div>
               <div class="mi-status-list">
-                <div class="mi-status-item"><div><strong>브랜드 A</strong><span>매출 공개 완료 · 보고서 전달 대기</span></div><b class="mi-priority">전달</b></div>
-                <div class="mi-status-item"><div><strong>신규브랜드 A</strong><span>대행사 코드 발급 · KPI 목표 미입력</span></div><b class="mi-priority">누락</b></div>
-                <div class="mi-status-item"><div><strong>리텐션브랜드 B</strong><span>주간 일정 공개 완료</span></div><b class="mi-priority ok">정상</b></div>
+                <div class="mi-status-item"><div><strong>활성 계정 관계</strong><span>총관리자·운영팀·광고주 연결 상태를 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">계정 보기</a></div>
+                <div class="mi-status-item"><div><strong>광고주 공개 데이터</strong><span>입력값과 승인 여부는 실제 저장 상태로 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 보기</a></div>
+                <div class="mi-status-item"><div><strong>공개 화면 최종 검수</strong><span>광고주에게 보이는 결과를 같은 화면에서 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">미리보기</a></div>
               </div>
             </aside>
           </div>
@@ -5905,8 +5933,8 @@
                 <div class="mi-trust-item"><strong>공개 승인</strong><span>관리자컨펌=승인</span></div>
                 <div class="mi-trust-item"><strong>공유 여부</strong><span>광고주공유여부=Y</span></div>
                 <div class="mi-trust-item"><strong>권한 기준</strong><span>광고주ID 기준 분리</span></div>
-                <div class="mi-trust-item"><strong>마지막 업데이트</strong><span>2026.06.19 12:55</span></div>
-                <div class="mi-trust-item"><strong>담당자</strong><span>운영 관리자</span></div>
+                <div class="mi-trust-item"><strong>마지막 업데이트</strong><span>공개 저장 시 자동 기록</span></div>
+                <div class="mi-trust-item"><strong>담당 범위</strong><span>현재 접속 권한 기준</span></div>
                 <div class="mi-trust-item"><strong>수정 이력</strong><span>공개값 변경 기록 보관</span></div>
               </div>
             </aside>
@@ -8394,6 +8422,9 @@
         if (shouldPushHash) {
           var nextHash = "#mi-admin-" + target;
           if (window.location.hash !== nextHash) window.location.hash = nextHash;
+          window.requestAnimationFrame(function () {
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+          });
         }
       }
 

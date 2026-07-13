@@ -145,6 +145,7 @@ const checks = {
   ]),
   roleSidebarsSharePremiumShell: adminSource.includes('data-mi-shell="premium-sidebar"')
     && clientSource.includes('data-mi-shell="premium-sidebar"'),
+  roleNavigationResetsScroll: [adminSource, clientSource].every((source) => source.includes('window.scrollTo({ top: 0, left: 0, behavior: "auto" })')),
   clientLoginRoleSelection: clientSource.includes('data-client-login-mode="client"')
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")
@@ -222,15 +223,30 @@ const checks = {
     && clientSource.includes("공개 보고서만 표시합니다.")
     && clientSource.includes("공개 보고서 없음")
     && clientSource.includes("reportCenterSynced")
+    && clientSource.includes("renderReports(state.reports, state.updatedAt, state.reportCenterSynced)")
     && !clientSource.includes("buildClientReportCsv")
     && !clientSource.includes("text/csv;charset=utf-8")
     && !clientSource.includes("CSV 백업"),
   clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")
+    && clientSource.includes("데이터 상태: 공개 데이터 연결 대기")
+    && clientSource.includes("data-mi-summary-empty")
+    && clientSource.includes("data-mi-update-state")
+    && clientSource.includes("data-mi-performance-state")
+    && clientSource.includes("운영팀 공개 입력 전")
     && clientSource.includes("데이터 출처")
     && clientSource.includes("공개 승인된 보고서만 표시")
     && clientSource.includes("운영팀 업로드 → 검수 → 공개 → 다운로드")
     && clientSource.includes("운영팀 공개 파일 대기")
     && clientSource.includes("공개 대기"),
+  adminHomeAvoidsFabricatedCounts: adminSource.includes("data-admin-home-truthful-state")
+    && adminSource.includes("실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.")
+    && !adminSource.includes("<strong>12개</strong>")
+    && !adminSource.includes("<strong>4건</strong>")
+    && !adminSource.includes("<strong>3건</strong>")
+    && !adminSource.includes("<strong>2건</strong>")
+    && !adminSource.includes("브랜드 A 입력값 확인")
+    && !adminSource.includes("신규브랜드 A")
+    && !adminSource.includes("리텐션브랜드 B"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes('"x-mi-agency-code": normalized')

@@ -19,9 +19,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 14. 10:25:46
-- 기준 커밋: 5020825
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 07. 14. 10:42:25
+- 기준 커밋: de0064c
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/DECISIONS.md /  M docs/NEXT_ACTIONS.md /  M docs/PROJECT_MEMORY.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-naver-rank-matching.mjs /  M scripts/check-release-baseline.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -36,6 +36,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
+| 완료 | 네이버 상품 30일 대표 순위 원부 비교 | 단건 상품 ID 일치는 유지하되 30일 추적 저장 시 정확 상품과 관련 원부의 공식 API 순번을 비교해 숫자가 더 낮은 쪽을 대표 순위로 기록. 스냅샷과 카드에 `상품` 또는 `원부` 근거를 함께 표시 | 순위 선택 단위검사, `check:rank-matching`, `check:baseline`, 실조회 `치아미백제` 43/9→9위·`치아미백` 60/14→14위, 전체 `check:quality` 2회, 소스·빌드 HTML 스크립트 문법/마커, `git diff --check` 통과. 로컬 브라우저는 보안 정책으로 접근 차단 | 별도 배포 지시 전 대기 |
 | 배포 대기 | UI/UX 1차 고도화·상태 진실성 | 운영 홈의 가짜 집계·예시 브랜드·과거 날짜를 제거하고 실제 관리 화면으로 이동하는 작업 카드로 전환. 광고주 데이터 있음/없음 상태, 보고서 빈 상태, 모바일 요약 밀도와 역할 공통 스크롤 복귀를 보강 | 전체 `check:quality`, 서버 13/13, 플레이스 25/25, Vercel 빌드, Supabase HTTP 200, 1280px·390×844 DOM/육안 검수, 빈/데이터 있음 회귀, 역할별 스크롤 `0`, 브라우저 로그 0건 | 운영 영향 보고 후 진행 |
 | 완료 | 네이버 상품 판매자 ID 정확 일치·300위 완주 보강 | 카드 UI는 유지. API `productId`와 결과 링크의 판매자 상품ID를 분리해 다른 링크 상품의 오일치를 차단하고, 첫 정확 일치 뒤에도 선택 범위 300개까지 확인. 정확 카드 상세는 입력 원본 URL 유지 | `전동칫솔` 원문·상품 페이지 대조: 원부 33위·동일 입력 상품 173위·300개 확인. `치아미백제` 7위/48위 정상 회귀, 잘못된 키워드 300개 미발견, 전체 `check:quality` 2회, 환경·Supabase, 운영팀 1280px·광고주 390×844 운영 실조회·콘솔 0건 통과 | Production `momentinsight-mmeqlbh43-momentlabs.vercel.app` · 운영 별칭 반영 완료 |
 | 완료 | 오가닉 노출 카드 컴팩트 프리미엄화·링크 분리 | 운영팀·광고주 단건 상품 순위의 노출 카드를 낮고 촘촘하게 재설계하고, 관련 원부를 네이버 민트 톤으로 조정. 상품명은 조회 키워드 검색 결과, `상품 열기`는 기존 상품 상세로 분리 연결 | 전체 `check:quality`, 링크 회귀 기준선, 운영 실조회 48위·관련 원부 7위, 두 역할 데스크톱 카드 127px·이미지 84px, 두 역할 390×844 카드 276px·이미지 72px·`scrollWidth=390`, 콘솔 오류 0건, `/health`·HTML 200 | Production `momentinsight-c4ylvfjb4-momentlabs.vercel.app` · 운영 별칭 반영 완료 |

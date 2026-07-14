@@ -15,13 +15,82 @@ import {
   rankQueryKeyword,
   sellerItemsFromOrganic,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
-import { PRODUCT_RANK_TRACKER_MAX_RANK } from "../src/server/handlers/naver-rank-trackers.mjs";
+import {
+  PRODUCT_RANK_TRACKER_MAX_RANK,
+  representativeTrackingRankMessage,
+  selectRepresentativeTrackingRank,
+} from "../src/server/handlers/naver-rank-trackers.mjs";
 
 const smartstoreUrl = "https://smartstore.naver.com/sample-store/products/1234567890?NaPm=ct%3Dabc%7Cci%3D999999999999999999999";
 const catalogUrl = "https://search.shopping.naver.com/catalog/9876543210?query=%EB%82%A8%EC%84%B1%20%EC%86%8D%EC%98%B7&cat_id=50000000";
 const brandProductUrl = "https://brand.naver.com/jyns/products/6567319094";
 
 assert.equal(PRODUCT_RANK_TRACKER_MAX_RANK, 300);
+
+const relatedCatalogWins = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 48,
+  item: { productId: "5145848584", title: "정확 상품" },
+  productExposureItems: [
+    { rank: 7, productId: "56704991367", title: "관련 원부", isRelatedCatalog: true },
+    { rank: 48, productId: "5145848584", title: "정확 상품", isExactTarget: true },
+  ],
+});
+assert.equal(relatedCatalogWins.rank, 7);
+assert.equal(relatedCatalogWins.trackingRankSource, "related_catalog");
+assert.equal(relatedCatalogWins.trackingRankSourceLabel, "관련 원부 기준");
+assert.equal(relatedCatalogWins.exactProductRank, 48);
+assert.equal(relatedCatalogWins.relatedCatalogRank, 7);
+assert.equal(relatedCatalogWins.relatedCatalogProductId, "56704991367");
+assert.equal(relatedCatalogWins.item.productId, "5145848584");
+assert.match(representativeTrackingRankMessage(relatedCatalogWins), /관련 원부.*7번째.*입력 상품 48번째.*30일 대표 순위/);
+
+const exactProductWins = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 5,
+  productExposureItems: [
+    { rank: 12, productId: "56704991367", title: "관련 원부", isRelatedCatalog: true },
+    { rank: 5, productId: "5145848584", title: "정확 상품", isExactTarget: true },
+  ],
+});
+assert.equal(exactProductWins.rank, 5);
+assert.equal(exactProductWins.trackingRankSource, "exact_product");
+assert.equal(exactProductWins.exactProductRank, 5);
+assert.equal(exactProductWins.relatedCatalogRank, 12);
+assert.match(representativeTrackingRankMessage(exactProductWins), /입력 상품.*5번째.*관련 원부는 12번째/);
+
+const highestRelatedCatalogWins = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 30,
+  productExposureItems: [
+    { rank: 11, productId: "11111111111", isRelatedCatalog: true },
+    { rank: 8, productId: "22222222222", isRelatedCatalog: true },
+    { rank: 3, productId: "33333333333", isRelatedCatalog: false },
+  ],
+});
+assert.equal(highestRelatedCatalogWins.rank, 8);
+assert.equal(highestRelatedCatalogWins.relatedCatalogProductId, "22222222222");
+
+const exactProductWinsTie = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 10,
+  productExposureItems: [
+    { rank: 10, productId: "56704991367", isRelatedCatalog: true },
+  ],
+});
+assert.equal(exactProductWinsTie.rank, 10);
+assert.equal(exactProductWinsTie.trackingRankSource, "exact_product");
+
+const unrelatedCandidateDoesNotCreateRank = selectRepresentativeTrackingRank({
+  matched: false,
+  rank: null,
+  productExposureItems: [
+    { rank: 1, productId: "99999999999", isRelatedCatalog: false },
+  ],
+});
+assert.equal(unrelatedCandidateDoesNotCreateRank.rank, null);
+assert.equal(unrelatedCandidateDoesNotCreateRank.matched, false);
+assert.equal(unrelatedCandidateDoesNotCreateRank.trackingRankSource, "not_found");
 
 assert.equal(extractProductId(smartstoreUrl), "1234567890");
 assert.deepEqual(productIdCandidates(smartstoreUrl), ["1234567890"]);

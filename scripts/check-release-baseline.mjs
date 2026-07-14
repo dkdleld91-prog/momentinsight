@@ -603,6 +603,15 @@ const checks = {
     && shoppingRankServer.includes("page: null")
     && shoppingRankServer.includes("position: null")
     && !shoppingRankServer.includes("function rankPagePosition"),
+  naverRankTrackingUsesBestExactOrCatalog: [adminSource, clientSource].every((source) => source.includes("정확 상품과 관련 원부를 함께 비교해 더 높은 공식 API 순번")
+    && source.includes("function rankSnapshotSourceLabel")
+    && source.includes('source === "related_catalog"')
+    && source.includes('" · " + currentSource'))
+    && rankServer.includes("function selectRepresentativeTrackingRank")
+    && rankServer.includes('rankSelectionBasis: "best_of_exact_product_and_related_catalog"')
+    && rankServer.includes('trackingRankSource: result.trackingRankSource')
+    && rankServer.includes("const result = selectRepresentativeTrackingRank(lookupResult)")
+    && rankServer.includes("representativeTrackingRankMessage(result)"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

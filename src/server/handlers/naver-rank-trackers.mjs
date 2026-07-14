@@ -310,6 +310,7 @@ function clampMaxRank() {
 
 function trackerPayload(row, snapshots = [], keywordVolume = null) {
   const recentSnapshots = (snapshots || []).slice(0, 30);
+  const latestTrackingItem = recentSnapshots[0]?.item || {};
   return {
     id: row.id,
     keyword: row.keyword,
@@ -328,6 +329,10 @@ function trackerPayload(row, snapshots = [], keywordVolume = null) {
     lastCheckedAt: row.last_checked_at,
     nextCheckAt: row.next_check_at,
     currentRank: row.current_rank,
+    currentRankSource: latestTrackingItem.trackingRankSource || "",
+    currentRankSourceLabel: latestTrackingItem.trackingRankSourceLabel || "",
+    exactProductRank: latestTrackingItem.exactProductRank || null,
+    relatedCatalogRank: latestTrackingItem.relatedCatalogRank || null,
     bestRank: row.best_rank,
     worstRank: row.worst_rank,
     checkCount: row.check_count,
@@ -555,6 +560,18 @@ async function listTrackers(request, ctx) {
 }
 
 async function insertSnapshot(ctx, tracker, checkedAt, result, message, source = "naver_shopping_search_api") {
+  const item = {
+    ...(result?.item || {}),
+    ...(result?.trackingRankSource ? {
+      trackingRankSource: result.trackingRankSource,
+      trackingRankSourceLabel: result.trackingRankSourceLabel,
+      exactProductRank: result.exactProductRank || null,
+      relatedCatalogRank: result.relatedCatalogRank || null,
+      relatedCatalogProductId: result.relatedCatalogProductId || null,
+      relatedCatalogTitle: result.relatedCatalogTitle || null,
+      rankSelectionBasis: result.rankSelectionBasis,
+    } : {}),
+  };
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_snapshots")
     .insert({
@@ -566,7 +583,7 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
       matched: Boolean(result?.matched),
       checked_count: result?.checkedCount || null,
       total: result?.total || null,
-      item: result?.item || {},
+      item,
       top_items: result?.topItems || [],
       message,
       source,
@@ -590,6 +607,55 @@ function canonicalTrackerProductId(tracker, result) {
     result?.item?.productId ||
     "",
   ) || null;
+}
+
+function positiveRank(value) {
+  const rank = Number(value);
+  return Number.isInteger(rank) && rank > 0 ? rank : null;
+}
+
+export function selectRepresentativeTrackingRank(result = {}) {
+  const exactProductRank = result?.matched ? positiveRank(result.rank) : null;
+  const relatedCatalog = (Array.isArray(result?.productExposureItems) ? result.productExposureItems : [])
+    .filter((item) => item?.isRelatedCatalog)
+    .map((item) => ({ ...item, rank: positiveRank(item?.rank) }))
+    .filter((item) => item.rank)
+    .sort((a, b) => a.rank - b.rank)[0] || null;
+  const relatedCatalogRank = relatedCatalog?.rank || null;
+  const useRelatedCatalog = Boolean(relatedCatalogRank && (!exactProductRank || relatedCatalogRank < exactProductRank));
+  const selectedRank = useRelatedCatalog ? relatedCatalogRank : exactProductRank;
+  const trackingRankSource = selectedRank
+    ? (useRelatedCatalog ? "related_catalog" : "exact_product")
+    : "not_found";
+
+  return {
+    ...result,
+    matched: Boolean(selectedRank),
+    rank: selectedRank,
+    trackingRankSource,
+    trackingRankSourceLabel: trackingRankSource === "related_catalog"
+      ? "관련 원부 기준"
+      : (trackingRankSource === "exact_product" ? "상품 ID 기준" : "미발견"),
+    rankSelectionBasis: "best_of_exact_product_and_related_catalog",
+    exactProductRank,
+    relatedCatalogRank,
+    relatedCatalogProductId: relatedCatalog?.productId || null,
+    relatedCatalogTitle: relatedCatalog?.title || null,
+  };
+}
+
+export function representativeTrackingRankMessage(result = {}) {
+  if (result.trackingRankSource === "related_catalog" && result.rank) {
+    const exactLabel = result.exactProductRank ? `입력 상품 ${result.exactProductRank}번째보다 ` : "";
+    return `관련 원부가 공식 API ${result.rank}번째로 ${exactLabel}높아 30일 대표 순위로 기록했습니다.`;
+  }
+  if (result.trackingRankSource === "exact_product" && result.rank) {
+    const relatedLabel = result.relatedCatalogRank
+      ? ` 관련 원부는 ${result.relatedCatalogRank}번째입니다.`
+      : "";
+    return `입력 상품의 공식 API ${result.rank}번째를 30일 대표 순위로 기록했습니다.${relatedLabel}`;
+  }
+  return shoppingRankMessage(result);
 }
 
 async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "") {
@@ -641,7 +707,7 @@ export async function runTrackerCheck(ctx, tracker) {
   }
 
   try {
-    const result = await findShoppingRank(env, {
+    const lookupResult = await findShoppingRank(env, {
       keyword: tracker.keyword,
       targetProductId: tracker.product_id,
       targetUrl: tracker.product_url,
@@ -649,7 +715,8 @@ export async function runTrackerCheck(ctx, tracker) {
       targetProductTitle: tracker.product_title,
       maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     });
-    const message = shoppingRankMessage(result);
+    const result = selectRepresentativeTrackingRank(lookupResult);
+    const message = representativeTrackingRankMessage(result);
     const snapshot = await insertSnapshot(ctx, tracker, checkedAt, result, message);
     const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message);
     return { ok: true, tracker: updated, snapshot, result, message };

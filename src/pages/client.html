@@ -5229,7 +5229,7 @@
             <div>
               <span class="mi-kicker">마케팅 도구</span>
               <h1>네이버 공식 검색 API의 상품 순번을 30일 기록합니다.</h1>
-              <p>상품을 등록하면 공식 API 결과 순번을 매일 오전 9시와 오후 3시에 기록합니다. 실제 쇼핑 화면 위치와는 구분합니다.</p>
+              <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 매일 오전 9시와 오후 3시에 기록합니다. 실제 쇼핑 화면 위치와는 구분합니다.</p>
             </div>
             <span class="mi-badge">30일 추적</span>
           </header>
@@ -5239,7 +5239,7 @@
               <div>
                 <span class="mi-kicker">네이버 공식 API 순번</span>
                 <h2>30일 API 결과 순번 추적을 시작합니다.</h2>
-                <p>키워드와 상품 URL을 등록하면 공식 API 결과 배열의 최근 30일 변화를 관리합니다.</p>
+                <p>정확 상품과 관련 원부를 함께 비교해 더 높은 공식 API 순번의 최근 30일 변화를 관리합니다.</p>
               </div>
               <span class="mi-period">30일 기록</span>
             </div>
@@ -6667,6 +6667,21 @@
         return value ? value + "위" : "-";
       }
 
+      function rankSnapshotSourceLabel(snapshot, compact) {
+        var item = snapshot && snapshot.item || {};
+        var source = item.trackingRankSource || "";
+        if (source === "related_catalog") return compact ? "원부" : "원부 기준";
+        if (source === "exact_product") return compact ? "상품" : "상품 기준";
+        return "";
+      }
+
+      function rankTrackerCurrentSourceLabel(tracker) {
+        if (tracker && tracker.currentRankSourceLabel) {
+          return tracker.currentRankSource === "related_catalog" ? "원부" : "상품";
+        }
+        return rankSnapshotSourceLabel(((tracker && tracker.snapshots) || [])[0], true);
+      }
+
       function rankTrackerStatus(tracker) {
         if (!tracker) return "-";
         if (tracker.status === "paused") return "중지";
@@ -6843,7 +6858,9 @@
 
       function renderRankSlot(label, snapshot) {
         var rank = snapshot && snapshot.rank ? rankText(snapshot.rank) : "-";
-        return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + label + '</small><b>' + escapeHtml(rank) + '</b></span>';
+        var source = rankSnapshotSourceLabel(snapshot, true);
+        var sourceLabel = source ? label + " · " + source : label;
+        return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + '</small><b>' + escapeHtml(rank) + '</b></span>';
       }
 
       function renderTrackerDailyBoard(tracker) {
@@ -7254,12 +7271,13 @@
         var avgRank = rankTrackerAverageRank(tracker, 14);
         var insight = rankTrackerInsight(tracker);
         var actionNote = rankTrackerActionNote(tracker);
+        var currentSource = rankTrackerCurrentSourceLabel(tracker);
         var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
         return '<section class="mi-rank-tracker-card" draggable="true" data-rank-tracker-id="' + escapeHtml(tracker.id) +
           '"><div class="mi-rank-track-row-head"><div class="mi-rank-track-main"><div class="mi-rank-track-primary"><div class="mi-rank-track-controls"><span class="mi-rank-drag-handle" draggable="true" data-rank-drag title="드래그해서 순서 변경" aria-label="순서 변경">≡</span><label class="mi-rank-select"><input type="checkbox" data-rank-select value="' +
           escapeHtml(tracker.id) + '"' + isSelected + ' /><span>선택</span></label></div>' + renderRankKeywordName(tracker.keyword) + renderRankKeywordVolume(tracker) + '<span class="mi-rank-product-info">' +
           escapeHtml("상품정보 · " + rankTrackerProductId(tracker)) + '</span>' + renderRankProductTitle(tracker, titleText) + '</div></div><div class="mi-rank-row-actions"><span class="mi-rank-pill">현재 ' +
-          escapeHtml(rankText(tracker.currentRank)) + '</span><span class="mi-rank-pill">최고 ' +
+          escapeHtml(rankText(tracker.currentRank) + (currentSource ? " · " + currentSource : "")) + '</span><span class="mi-rank-pill">최고 ' +
           escapeHtml(rankText(tracker.bestRank)) + '</span><button class="mi-link-button" type="button" data-rank-refresh="' +
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
           escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +

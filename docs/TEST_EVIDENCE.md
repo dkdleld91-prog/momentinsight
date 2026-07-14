@@ -12,7 +12,14 @@
   - 서버 테스트 13/13, 플레이스 수집기 테스트 25/25, 순위 매칭·기준선·크론·키워드 트렌드·Vercel 빌드 통과
 - 로컬 인앱 브라우저는 `127.0.0.1` 접근이 `ERR_BLOCKED_BY_CLIENT`로 차단되어 운영 배포 후 실제 도메인에서 관리자·광고주 화면을 재검증한다.
 - 공식 Shopping Search API의 검색 순번은 제공되지만 실제 쇼핑 화면 페이지 위치와의 동일성은 공식 문서에서 보장되지 않으므로 페이지 환산을 금지한다.
-- Production 배포: 진행 중
+- Production: `momentinsight-1z4jt31ot-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY
+- 운영 `/health`: HTTP 200
+- 운영 API 재조회:
+  - `전동칫솔`: 공식 API 168번째, 관련 원부 34번째, 판매자 상품ID 일치, 300개 확인
+  - `치아미백제`: 공식 API 43번째, 관련 원부 9번째, 판매자 상품ID 일치, 300개 확인
+  - 두 응답 모두 `page=null`, `position=null`, `pageSize=null`, `webPageVerified=false`
+- 운영 관리자 브라우저: 공식 API 168번째, 화면 위치 미검증, 300개 확인, 관련 원부/상품 ID 일치 카드와 각 링크 목적지 확인
+- 운영 관리자·광고주 HTML: 공식 API 결과 순번·실제 화면 위치 아님·상품 ID 일치·프리미엄 사이드바 마커 확인, 40개 단위 페이지 환산 코드 없음
 
 ## 2026-07-14 · 네이버 상품 페이지 오표기 제거
 

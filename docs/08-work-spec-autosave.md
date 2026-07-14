@@ -19,8 +19,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 14. 10:21:28
-- 기준 커밋: 04ae40a
+- 마지막 자동 저장: 2026. 07. 14. 10:25:46
+- 기준 커밋: 5020825
 - 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
@@ -83,7 +83,7 @@
 | 완료 | 순위 추적 접근코드 분리 및 배포 | `agencyCode`를 비밀값처럼 쓰지 않도록 순위 추적 조회/쓰기 접근 코드를 분리하고 GitHub push 기반 Vercel 배포 준비 | `build:vercel`, `check:env`, API 401/200/404 권한 테스트, preflight 확인, 민감키 패턴 검색 | 배포 대기 |
 | 완료 | 순위 추적 API 권한 잠금 | `/api/naver-rank-trackers` 기본 코드 fallback 제거, POST 쓰기 작업 코드 검증, `run-due` 크론 전용 분리, 순위 응답 내부 식별자 축소, 로컬 미리보기 CORS 헤더 보완 | `build:vercel`, API 401/403 차단 응답, 소스/복붙용 diff, 정적 산출물 확인 | 배포 없음 |
 | 완료 | UI/UX E2E 1차 개선 | RTF 개발 지시서 기준으로 첫 진입, 사용자 흐름, CTA, 빈/오류 상태, 반응형을 우선 점검 및 개선 | `build:vercel`, 소스/복붙용 diff, 로컬 브라우저 홈·광고주·관리자 입력 상태 확인 | 배포 없음 |
-| 완료 | 네이버 상품 순위 페이지 오표기 제거 | 공식 쇼핑 검색 API 결과 배열의 168번째 항목을 실제 네이버 쇼핑 `5페이지 8위`로 환산하던 로직을 제거. 판매자 상품ID 일치는 유지하되 화면과 API 응답을 `공식 API 결과 순번·실제 화면 위치 미검증`으로 명확히 구분 | 운영/로컬 API 실조회, `check:rank-matching`, `check:baseline`, `check:quality`, `git diff --check` | 배포 보류 |
+| 완료 | 네이버 상품 순위 페이지 오표기 제거 | 공식 쇼핑 검색 API 결과 배열의 168번째 항목을 실제 네이버 쇼핑 `5페이지 8위`로 환산하던 로직을 제거. 판매자 상품ID 일치는 유지하되 화면과 API 응답을 `공식 API 결과 순번·실제 화면 위치 미검증`으로 명확히 구분 | 운영/로컬 API 실조회, `check:rank-matching`, `check:baseline`, `check:quality` 2회, 운영 관리자 브라우저, `git diff --check` | Production `momentinsight-1z4jt31ot-momentlabs.vercel.app`, 운영 별칭 반영 |
 | 완료 | 네이버 오가닉 순위 기준 보정 | 광고 제외 오가닉 기준과 40개 단위 전체 순위 계산 적용 | `check:rank-matching`, `build:vercel`, 생성 HTML 문구 확인 통과 | 배포 없음 |
 | 완료 | 홈페이지 메인 문구 정리 | 첫 화면 H1을 `모먼트 인사이트`와 `마케팅 사이트`로 분리해 가독성 개선 | `build:vercel`, 로컬 브라우저 미리보기 확인 | 배포 없음 |
 | 완료 | 네이버 SEO 순위/설명 보정 | 상품 URL/상품ID 정확 매칭으로 순위 오판 방지, SEO 부족점 설명 구체화 | `check:rank-matching`, `check:env:naver`, `build:vercel` 통과 | 배포 없음 |

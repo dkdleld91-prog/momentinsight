@@ -5,13 +5,13 @@ import {
   buildRankTarget,
   canonicalUrlKey,
   extractProductId,
+  findShoppingRank,
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,
   productExposureItemsFromOrganic,
   productIdCandidates,
   sellerProductIdCandidates,
-  rankPagePosition,
   rankQueryKeyword,
   sellerItemsFromOrganic,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
@@ -109,10 +109,6 @@ assert.equal(isAdItem({ productId: "1234567890", title: "광고 상품", isAd: t
 assert.equal(isAdItem({ productId: "1234567890", title: "협찬 상품", sponsored: "Y" }), true);
 assert.equal(isAdItem({ productId: "1234567890", title: "일반 상품", mallName: "sample-store" }), false);
 
-assert.deepEqual(rankPagePosition(40), { page: 1, position: 40, pageSize: 40 });
-assert.deepEqual(rankPagePosition(41), { page: 2, position: 1, pageSize: 40 });
-assert.deepEqual(rankPagePosition(81), { page: 3, position: 1, pageSize: 40 });
-
 const organicTarget = buildRankTarget({ targetProductId: "9999999999" });
 const shoppingItem = (productId, overrides = {}) => ({
   productId,
@@ -138,20 +134,20 @@ const mixedMatch = findOrganicMatchInItems([
 ], organicTarget, { limit: 100, topItems: [] });
 assert.equal(mixedMatch.matched, true);
 assert.equal(mixedMatch.rank, 3);
-assert.equal(mixedMatch.page, 1);
-assert.equal(mixedMatch.position, 3);
+assert.equal(mixedMatch.page, undefined);
+assert.equal(mixedMatch.position, undefined);
 assert.equal(mixedMatch.excludedAdCount, 1);
 assert.equal(mixedMatch.organicCheckedCount, 4);
 
 const fortyOrganicAhead = Array.from({ length: 40 }, (_, index) => shoppingItem(String(1000000000 + index)));
-const pageTwoMatch = findOrganicMatchInItems([
+const fortyFirstApiResultMatch = findOrganicMatchInItems([
   ...fortyOrganicAhead,
   shoppingItem("9999999999"),
 ], organicTarget, { limit: 100, topItems: [] });
-assert.equal(pageTwoMatch.matched, true);
-assert.equal(pageTwoMatch.rank, 41);
-assert.equal(pageTwoMatch.page, 2);
-assert.equal(pageTwoMatch.position, 1);
+assert.equal(fortyFirstApiResultMatch.matched, true);
+assert.equal(fortyFirstApiResultMatch.rank, 41);
+assert.equal(fortyFirstApiResultMatch.page, undefined);
+assert.equal(fortyFirstApiResultMatch.position, undefined);
 
 const catalogAheadMatch = findOrganicMatchInItems([
   {
@@ -376,12 +372,17 @@ const exactLavExposureItems = productExposureItemsFromOrganic(
 );
 assert.equal(exactLavExposureItems.length, 2);
 assert.equal(exactLavExposureItems[0].rank, 1);
+assert.equal(exactLavExposureItems[0].page, undefined);
+assert.equal(exactLavExposureItems[0].position, undefined);
 assert.equal(exactLavExposureItems[0].productId, "56704991367");
 assert.equal(exactLavExposureItems[0].isRelatedCatalog, true);
 assert.equal(exactLavExposureItems[0].exposureLabel, "관련 원부");
 assert.equal(exactLavExposureItems[1].rank, 5);
+assert.equal(exactLavExposureItems[1].page, undefined);
+assert.equal(exactLavExposureItems[1].position, undefined);
 assert.equal(exactLavExposureItems[1].sellerProductId, "5145848584");
 assert.equal(exactLavExposureItems[1].isExactTarget, true);
+assert.equal(exactLavExposureItems[1].exposureLabel, "상품 ID 일치");
 assert.equal(exactLavExposureItems[1].link, "https://brand.naver.com/lav/products/5145848584");
 assert.equal(exactLavExposureItems[1].sourceLink, "https://smartstore.naver.com/main/products/5145848584");
 assert.equal(exactLavExposureItems.some((item) => item.sellerProductId === "5100000000"), false);
@@ -418,6 +419,40 @@ const guardedLavExposureItems = productExposureItemsFromOrganic([
 assert.equal(guardedLavExposureItems.length, 1);
 assert.equal(guardedLavExposureItems[0].isExactTarget, true);
 assert.equal(guardedLavExposureItems[0].rank, 3);
+
+const originalFetch = globalThis.fetch;
+globalThis.fetch = async () => new Response(JSON.stringify({
+  total: 2,
+  start: 1,
+  display: 2,
+  items: [
+    shoppingItem("1111111111"),
+    shoppingItem("9999999999"),
+  ],
+}), { status: 200, headers: { "content-type": "application/json" } });
+
+try {
+  const officialApiResult = await findShoppingRank({
+    openapiClientId: "test-client",
+    openapiClientSecret: "test-secret",
+  }, {
+    keyword: "테스트",
+    targetProductId: "9999999999",
+    maxRank: 100,
+  });
+  assert.equal(officialApiResult.matched, true);
+  assert.equal(officialApiResult.rank, 2);
+  assert.equal(officialApiResult.rankBasis, "official_api_result_order");
+  assert.equal(officialApiResult.webPageVerified, false);
+  assert.equal(officialApiResult.page, null);
+  assert.equal(officialApiResult.position, null);
+  assert.equal(officialApiResult.pageSize, null);
+  assert.equal(officialApiResult.productExposureItems[0].page, undefined);
+  assert.equal(officialApiResult.productExposureItems[0].position, undefined);
+  assert.equal(officialApiResult.productExposureItems[0].exposureLabel, "상품 ID 일치");
+} finally {
+  globalThis.fetch = originalFetch;
+}
 
 const explicitCatalogTarget = buildRankTarget({
   targetUrl: "https://smartstore.naver.com/any-store/products/1111111111",

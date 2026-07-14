@@ -2,7 +2,6 @@ import { corsHeaders, isLocalRequest, protectedJson } from "../security.mjs";
 
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const NAVER_SHOPPING_API_DISPLAY = 100;
-const ORGANIC_PAGE_SIZE = 40;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const rankRateBucket = new Map();
@@ -552,19 +551,6 @@ function matchTargetItem(item, target) {
   return { matched: false, matchType: "" };
 }
 
-function rankPagePosition(rank, pageSize = ORGANIC_PAGE_SIZE) {
-  const rankNumber = Number(rank || 0);
-  const size = Math.max(1, Number(pageSize || ORGANIC_PAGE_SIZE));
-  if (!Number.isFinite(rankNumber) || rankNumber < 1) {
-    return { page: null, position: null, pageSize: size };
-  }
-  return {
-    page: Math.ceil(rankNumber / size),
-    position: ((rankNumber - 1) % size) + 1,
-    pageSize: size,
-  };
-}
-
 function classifyNaverProductType(value) {
   const type = Number(value || 0);
   const groupByType = {
@@ -703,7 +689,7 @@ function serializeItem(item, rank) {
   const productTypeInfo = classifyNaverProductType(item?.productType);
   return {
     rank,
-    rankBasis: "organic",
+    rankBasis: "official_api_result_order",
     productId: itemProductId(item),
     sellerProductId: extractProductId(item?.link),
     title: stripTags(item?.title),
@@ -783,11 +769,8 @@ function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
     .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
     .slice(0, 1)
     .map((entry) => {
-      const position = rankPagePosition(entry.rank);
       return {
         ...serializeItem(entry.item, entry.rank),
-        page: position.page,
-        position: position.position,
         isExactTarget: false,
         isRelatedCatalog: true,
         exposureType: "related_catalog",
@@ -804,19 +787,16 @@ function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyw
   const exactEntry = (organicItems || []).find((entry) => matchTargetItem(entry?.item, target).matched);
   if (!exactEntry) return relatedCatalogItems;
 
-  const position = rankPagePosition(exactEntry.rank);
   const exactMatch = matchTargetItem(exactEntry.item, target);
   const serializedExactItem = serializeItem(exactEntry.item, exactEntry.rank);
   const exactItem = {
     ...serializedExactItem,
     link: target?.targetMode === "product" && target?.sourceUrl ? target.sourceUrl : serializedExactItem.link,
     sourceLink: serializedExactItem.link,
-    page: position.page,
-    position: position.position,
     isExactTarget: true,
     isRelatedCatalog: false,
     exposureType: target?.targetMode === "catalog" ? "exact_catalog" : "exact_product",
-    exposureLabel: target?.targetMode === "catalog" ? "조회 원부" : "정확 상품",
+    exposureLabel: target?.targetMode === "catalog" ? "조회 원부" : "상품 ID 일치",
     relationBasis: exactMatch.matchEvidence || "exact_target",
   };
 
@@ -870,12 +850,8 @@ function findOrganicMatchInItems(items, target, options = {}) {
 
     const match = matchTargetItem(item, target);
     if (match.matched && !firstMatch) {
-      const position = rankPagePosition(organicCheckedCount);
       firstMatch = {
         rank: organicCheckedCount,
-        page: position.page,
-        position: position.position,
-        pageSize: position.pageSize,
         matchType: match.matchType,
         matchEvidence: match.matchEvidence || "",
         matchedProductId: match.matchedProductId || "",
@@ -927,9 +903,6 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     if (ranked.matched && !matchedResult) {
       matchedResult = {
         rank: ranked.rank,
-        page: ranked.page,
-        position: ranked.position,
-        pageSize: ranked.pageSize,
         matchType: ranked.matchType,
         matchEvidence: ranked.matchEvidence || "",
         matchedProductId: ranked.matchedProductId || "",
@@ -949,10 +922,14 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     return {
       matched: true,
       rank: matchedResult.rank,
-      page: matchedResult.page,
-      position: matchedResult.position,
-      pageSize: matchedResult.pageSize,
-      rankBasis: "organic",
+      page: null,
+      position: null,
+      pageSize: null,
+      rankBasis: "official_api_result_order",
+      rankBasisLabel: "네이버 쇼핑 검색 API 결과 순번",
+      webPageVerified: false,
+      webPagePosition: null,
+      webPagePositionReason: "공식 API 결과 순서는 실제 네이버 쇼핑 화면의 페이지와 위치를 보장하지 않습니다.",
       matchType: matchedResult.matchType,
       matchEvidence: matchedResult.matchEvidence,
       matchedProductId: matchedResult.matchedProductId,
@@ -999,8 +976,12 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     rank: null,
     page: null,
     position: null,
-    pageSize: ORGANIC_PAGE_SIZE,
-    rankBasis: "organic",
+    pageSize: null,
+    rankBasis: "official_api_result_order",
+    rankBasisLabel: "네이버 쇼핑 검색 API 결과 순번",
+    webPageVerified: false,
+    webPagePosition: null,
+    webPagePositionReason: "공식 API 결과 순서는 실제 네이버 쇼핑 화면의 페이지와 위치를 보장하지 않습니다.",
     total,
     checkedCount: Math.min(limit, organicCheckedCount),
     organicCheckedCount,
@@ -1019,8 +1000,8 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
 }
 
 function rankMessage(result) {
-  if (result.matched) return `광고 제외 오가닉 ${result.rank}위로 확인되었습니다.`;
-  if (result.total) return `광고 제외 오가닉 상위 ${result.checkedCount}위 안에서 대상 상품을 찾지 못했습니다.`;
+  if (result.matched) return `네이버 쇼핑 검색 API ${result.rank}번째 결과에서 대상 상품 ID가 일치했습니다.`;
+  if (result.total) return `네이버 쇼핑 검색 API 상위 ${result.checkedCount}개 결과에서 대상 상품을 찾지 못했습니다.`;
   return "검색 결과에서 대상 상품을 찾지 못했습니다.";
 }
 
@@ -1040,7 +1021,6 @@ export {
   relatedCatalogItemsFromOrganic,
   productExposureItemsFromOrganic,
   sellerItemsFromOrganic,
-  rankPagePosition,
   classifyNaverProductType,
   findRank as findShoppingRank,
   hasOpenapiConfig as hasShoppingRankConfig,
@@ -1105,7 +1085,7 @@ export default {
         ok: true,
         source: "naver_shopping_search_api",
         sourceStatus: {
-          shoppingRank: { status: result.matched ? "ok" : "not_found", label: result.matched ? "오가닉 순위 확인" : "오가닉 상품 미발견" },
+          shoppingRank: { status: result.matched ? "ok" : "not_found", label: result.matched ? "공식 API 상품 일치" : "공식 API 상품 미발견" },
         },
         checkedAt: new Date().toISOString(),
         query: {

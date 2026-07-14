@@ -368,7 +368,7 @@ const checks = {
     && source.includes("data-rank-card"))
     && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
-  naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
+  naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">API 조회<")
     && source.includes(">순위 추적<")
     && source.includes('>N 상품 순위</a>')
     && source.includes('<span class="mi-badge">조회</span>')
@@ -436,7 +436,7 @@ const checks = {
     && source.includes("mi-rank-export-stage")
     && source.includes("mi-rank-share-image")
     && source.includes("mi-rank-download-ready")
-    && source.includes("선택 상품 30일 순위 공유")
+    && source.includes("선택 상품 30일 API 순번 공유")
     && source.includes("canvas.toBlob")
     && source.includes("reject(error);"))
     && rankDownloadFunctions.every((fn) => fn
@@ -459,7 +459,7 @@ const checks = {
     && source.includes("상품명 키워드 25점")
     && source.includes("카테고리 연결 15점")
     && source.includes("시장 수요 15점")
-    && source.includes("광고 제외 순위만 확인")
+    && source.includes("실제 화면 위치와 구분")
     && source.includes("가격/혜택 15점")
     && source.includes("리뷰/신뢰도 15점")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
@@ -567,9 +567,9 @@ const checks = {
     && clientSource.includes("상품ID·판매자 일치"),
   naverRankPremiumExposureCards: [adminSource, clientSource].every((source) => source.includes("renderProductExposureCards")
     && source.includes("mi-rank-exposure-board")
-    && source.includes("상품 노출 결과")
+    && source.includes("API 상품 일치 결과")
     && source.includes("관련 원부")
-    && source.includes("정확 상품")
+    && source.includes("상품 ID 일치")
     && source.includes("광고상품 미연결")
     && source.includes('var keywordUrl = rankTrackerKeywordUrl(keyword === "-" ? "" : keyword)')
     && source.includes('class="mi-rank-exposure-title" href="\' + escapeHtml(keywordUrl)')
@@ -577,7 +577,8 @@ const checks = {
     && source.includes("키워드 검색 결과 보기")
     && source.includes("background: #eaf9f0")
     && source.includes("color: #087f45")
-    && source.includes("광고 노출 위치는 별도 데이터 연동 후 제공됩니다"))
+    && source.includes("실제 네이버 쇼핑 화면은 노출 구성과 정렬이 달라")
+    && source.includes("실제 쇼핑 화면 위치 아님"))
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("productExposureItemsFromOrganic")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("productExposureSummary")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("relatedCatalogIds")
@@ -592,6 +593,16 @@ const checks = {
     && shoppingRankServer.includes("checkedCount: organicCheckedCount")
     && shoppingRankServer.includes("sourceLink: serializedExactItem.link")
     && shoppingRankServer.includes("target?.sourceUrl ? target.sourceUrl : serializedExactItem.link"),
+  naverRankDoesNotFabricateWebPagePosition: [adminSource, clientSource].every((source) => source.includes("공식 API 검색 순번")
+    && source.includes("화면 위치 미검증")
+    && source.includes("실제 쇼핑 화면 위치 아님")
+    && !source.includes('page + "페이지 " + position + "위"')
+    && !source.includes("Math.ceil(rank / 40)"))
+    && shoppingRankServer.includes('rankBasis: "official_api_result_order"')
+    && shoppingRankServer.includes("webPageVerified: false")
+    && shoppingRankServer.includes("page: null")
+    && shoppingRankServer.includes("position: null")
+    && !shoppingRankServer.includes("function rankPagePosition"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

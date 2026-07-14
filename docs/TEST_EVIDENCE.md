@@ -1,5 +1,20 @@
 # Test Evidence
 
+## 2026-07-14 · 네이버 상품 페이지 오표기 제거
+
+- 운영 API 재현: `전동칫솔`/판매자 상품ID `12649811979`는 공식 쇼핑 검색 API 168번째 결과에서 링크 상품ID가 정확히 일치했다.
+- 기존 오류: API 배열 순번 168을 40개 단위로 환산해 `5페이지 8위`로 표시했으나 실제 쇼핑 화면 위치를 검증하는 근거가 없었다.
+- 실화면 접근: 인앱 브라우저, 사용자 Chrome, 직접 HTTP 요청 모두 네이버 쇼핑의 비정상 접근 제한(HTTP 418)으로 차단됐다. 우회하지 않고 미검증으로 처리했다.
+- 로컬 API: `rank=168`, `rankBasis=official_api_result_order`, `page=null`, `position=null`, `pageSize=null`, `webPageVerified=false`, `matchedProductId=12649811979`.
+- 카드 결과: 관련 원부 API 34번째, 입력 상품 API 168번째. 두 카드 모두 페이지 위치를 표시하지 않는다.
+- `npm run check:rank-matching`: 통과. 40개 단위 환산 함수 제거, 41번째 결과도 페이지 필드가 없음을 회귀 검사했다.
+- `npm run check:baseline`: `naverRankDoesNotFabricateWebPagePosition=true` 포함 전체 통과.
+- `npm run check:quality`: 독립 실행 2회 통과. 각 실행에 서버 테스트 13개, 플레이스 수집기 25개, Vercel 정적 빌드 포함.
+- `git diff --check`: 통과.
+- 운영 배포: 없음.
+
+> 아래 과거 기록의 `N페이지 N번째`, `광고 제외 오가닉 순위` 표현은 당시 API 배열 순번을 화면 순위로 해석한 기록이다. 현재 결정과 테스트는 위 기준이 우선한다.
+
 기준일: 2026-07-14
 
 ## UI/UX 1차 고도화 · 상태 진실성 및 첫 화면 밀도

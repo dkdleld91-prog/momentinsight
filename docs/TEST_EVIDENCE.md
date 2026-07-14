@@ -11,7 +11,12 @@
 - 릴리즈 기준선: `placeRankPremiumCompactCards=true`.
 - 자동 검사: 전체 `npm run check:quality` 독립 2회 통과. 각 실행에서 서버 13/13, 플레이스 수집기 25/25, 릴리즈 기준선·서버 문법·크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 통과.
 - `git diff --check`: 통과.
-- 배포 전 상태: 사용자 승인 조건 충족. Production 배포와 운영 별칭 실화면 재검증 예정.
+- 커밋: `7710008` (`style: compact Place rank tracking cards`)을 `main`에 푸시.
+- Production: `momentinsight-m19imug8x-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY.
+- 운영 HTTP: `/health` 200, 리다이렉트 후 `/admin.html`·`/client.html` 최종 200, 두 HTML의 140px 카드·2×2 지표 마커 확인.
+- 운영 데스크톱: 운영팀·광고주 모두 첫 카드 858×264px, 일별 셀 140×129px, 긴 수치 오버플로 0건.
+- 운영 390px: 운영팀·광고주 모두 첫 카드 248×285px, 상태 영역 246×43px, 일별 셀 140×127px, 문서 `scrollWidth=390`, 상태 영역 `nowrap`, 긴 수치 오버플로 0건.
+- 운영 브라우저: 운영팀·광고주 데스크톱·모바일 콘솔 경고/오류 0건.
 
 ## 2026-07-14 · 써큘레이터 원부 누락 원인 및 모델 식별 보강
 

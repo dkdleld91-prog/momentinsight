@@ -19,9 +19,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 14. 23:08:53
-- 기준 커밋: 8d08a90
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M src/pages/admin.html /  M src/pages/client.html
+- 마지막 자동 저장: 2026. 07. 14. 23:21:27
+- 기준 커밋: 7710008
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -36,7 +36,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료 | 플레이스 30일 순위 컴팩트 프리미엄 UI | 운영팀·광고주 플레이스 30일 카드의 데이터·버튼·그룹·기록은 유지하고, 일별 기록을 140px 카드·2×2 보조지표·낮은 그림자·작은 상태 배지로 재구성. 모바일 상태 영역은 한 줄 가로 탐색으로 바꿔 핵심 순위가 먼저 읽히도록 통일 | 두 역할 데스크톱 카드 858×264px, 390px 카드 248×285px, 문서 가로 넘침·긴 수치 잘림·콘솔 경고/오류 0건, `check:quality` 독립 2회 및 `git diff --check` 통과 | Production 배포 승인 조건 충족, 배포 후 운영 재검증 예정 |
+| 완료 | 플레이스 30일 순위 컴팩트 프리미엄 UI | 운영팀·광고주 플레이스 30일 카드의 데이터·버튼·그룹·기록은 유지하고, 일별 기록을 140px 카드·2×2 보조지표·낮은 그림자·작은 상태 배지로 재구성. 모바일 상태 영역은 한 줄 가로 탐색으로 바꿔 핵심 순위가 먼저 읽히도록 통일 | 두 역할 데스크톱 카드 858×264px, 390px 카드 248×285px, 문서 가로 넘침·긴 수치 잘림·콘솔 경고/오류 0건, `check:quality` 독립 2회 및 운영 재검증 통과 | 커밋 `7710008`, Production `momentinsight-m19imug8x-momentlabs.vercel.app` · 운영 별칭 반영 완료 |
 | 완료 | 전 키워드 원부·단일형 대표 순위 모델 식별 보강 | `써큘레이터`/상품ID `11687310806`의 정확 상품에는 키워드가 있으나 원부 제목에는 모델명만 있어 기존 키워드 공통 포함 조건이 원부를 누락한 원인을 확정. 원부는 모델번호 완전 일치 또는 기존 키워드 근거에 브랜드·상위 카테고리 일치까지 충족할 때만 연결하고 정확 상품 ID 판정은 그대로 보존 | 공식 API 원부 8위·정확 상품 59위, 아이템스카우트 원부 9위·정확 상품 60위 교차확인, 다른 모델 접두 유사값 제외, `치아미백제`·`전동 칫솔` 회귀, 운영팀·광고주 실조회·링크·390px·콘솔 0건, `check:quality` 독립 2회, 네이버 환경·Supabase 통과 | Production `momentinsight-cjx4bkodl-momentlabs.vercel.app` · 운영 별칭 반영 완료 |
 | 완료 | 상품 순위 추적 광고 완전 제외 보강 | 단건 조회, 추적 생성·수동 갱신·자동 크론·Supabase 스냅샷 전 경로에서 `isAdProduct`·`adId`·sponsored/paid·비오가닉 삽입 타입을 제거하고 대표 순위·상위 결과를 오가닉만 저장 | 광고 혼입·오가닉 오탐 방지 단위검사, 네이버 실화면 product 40/supersaving 5 분리, Supabase 실스냅샷 `organic_only`, 양 역할 UI, `check:quality` 2회, 운영 재조회 통과 | Production `momentinsight-iddnfo068-momentlabs.vercel.app` · 운영 별칭 반영 완료 |
 | 완료 | 네이버 상품 대표 순위·페이지 표기 정상화 | 단건 조회도 정확 상품과 관련 원부 중 오가닉 순위가 더 높은 결과를 대표 순위·상품 형태로 채택하고, 40개 보기 기준 페이지·페이지 내 순위를 함께 표시. 정확 상품 카드는 별도 보존 | 로그인 네이버 실화면·API 교차검증, 운영팀·광고주 로컬 실조회, 데스크톱·390px 육안검수, 콘솔 0건, `check:quality` 독립 2회 통과. `전동칫솔` 원부 34위(1p 34)·정확 상품 168위(5p 8) | 배포 승인 범위·운영 재검증 전 대기 |

@@ -3689,12 +3689,12 @@
 
     #mi-admin .mi-place-day-grid {
       display: flex;
-      gap: 0;
+      gap: 6px;
       overflow-x: auto;
       overflow-y: hidden;
-      padding: 4px;
+      padding: 8px 10px 10px;
       border-top: 1px solid #e8eef6;
-      background: #f8fafc;
+      background: linear-gradient(180deg, #f8fafc 0%, #fbfcfe 100%);
       scrollbar-width: thin;
       scrollbar-color: #cbd6e4 transparent;
     }
@@ -3709,18 +3709,20 @@
     }
 
     #mi-admin .mi-place-day-card {
-      flex: 0 0 152px;
-      min-height: 150px;
-      padding: 14px 16px;
-      border-right: 1px solid #e8eef6;
+      flex: 0 0 var(--mi-place-day-width, 140px);
+      min-height: 108px;
+      padding: 10px 11px;
+      border: 1px solid #e6ecf4;
+      border-radius: 10px;
       color: var(--mi-navy);
       background: #fff;
+      box-shadow: 0 3px 10px rgba(11, 35, 70, 0.025);
     }
 
     #mi-admin .mi-place-day-card strong {
       display: block;
-      margin-bottom: 10px;
-      font-size: 12px;
+      margin-bottom: 6px;
+      font-size: 10px;
       font-weight: 780;
       letter-spacing: 0;
     }
@@ -3735,54 +3737,60 @@
 
     #mi-admin .mi-place-day-rank {
       display: block;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       color: var(--mi-navy);
-      font-size: 22px;
-      font-weight: 850;
+      font-size: 17px;
+      font-weight: 900;
       line-height: 1;
       white-space: nowrap;
     }
 
     #mi-admin .mi-place-day-metrics {
       display: grid;
-      gap: 5px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 5px 9px;
     }
 
     #mi-admin .mi-place-day-metrics span {
       display: grid;
-      grid-template-columns: 42px minmax(0, 1fr);
-      gap: 10px;
+      min-width: 0;
+      gap: 1px;
       color: var(--mi-muted);
-      font-size: 11px;
-      font-weight: 680;
+      font-weight: 700;
       white-space: nowrap;
     }
 
     #mi-admin .mi-place-day-metrics em {
       color: #7b8798;
+      font-size: 8.5px;
       font-style: normal;
     }
 
     #mi-admin .mi-place-day-metrics b {
       color: #536174;
-      font-weight: 780;
-      text-align: right;
+      overflow: hidden;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-align: left;
+      text-overflow: ellipsis;
     }
 
     #mi-admin .mi-place-rank-item {
-      border-color: #dce6f2;
-      box-shadow: 0 10px 28px rgba(11, 35, 70, 0.045);
+      --mi-place-day-width: 140px;
+      border-color: #e1e8f1;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(11, 35, 70, 0.035);
     }
 
     #mi-admin .mi-place-rank-item .mi-rank-track-row-head {
       grid-template-columns: minmax(0, 1fr) max-content;
-      column-gap: 18px;
-      padding: 14px 16px;
+      column-gap: 14px;
+      padding: 10px 14px;
     }
 
     #mi-admin .mi-place-rank-item .mi-rank-track-primary {
-      grid-template-columns: 72px minmax(100px, 0.55fr) minmax(176px, 0.8fr) minmax(0, 1.6fr);
-      column-gap: 16px;
+      grid-template-columns: 60px minmax(92px, 0.5fr) minmax(160px, 0.8fr) minmax(0, 1.55fr);
+      column-gap: 12px;
     }
 
     #mi-admin .mi-place-rank-item .mi-rank-row-actions {
@@ -3790,12 +3798,19 @@
       white-space: nowrap;
     }
 
+    #mi-admin .mi-place-rank-item .mi-rank-row-actions .mi-rank-pill:first-child {
+      border-color: #0b2346;
+      color: #fff;
+      background: #0b2346;
+      box-shadow: 0 5px 14px rgba(11, 35, 70, 0.12);
+    }
+
     #mi-admin .mi-place-ops-row {
       display: grid;
       grid-template-columns: auto minmax(0, 1fr);
-      gap: 8px 12px;
+      gap: 5px 10px;
       align-items: center;
-      padding: 10px 16px;
+      padding: 7px 14px 8px;
     }
 
     #mi-admin .mi-place-ops-primary,
@@ -3804,8 +3819,14 @@
       display: flex;
       min-width: 0;
       flex-wrap: wrap;
-      gap: 5px;
+      gap: 4px;
       align-items: center;
+    }
+
+    #mi-admin .mi-place-ops-row span {
+      min-height: 20px;
+      padding: 2px 7px;
+      font-size: 9.5px;
     }
 
     #mi-admin .mi-place-ops-message {
@@ -5648,6 +5669,32 @@
 
       #mi-admin .mi-place-rank-item .mi-rank-track-row-head {
         grid-template-columns: minmax(0, 1fr);
+        padding: 10px 12px;
+      }
+
+      #mi-admin .mi-place-rank-item .mi-rank-track-primary {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 4px 8px;
+      }
+
+      #mi-admin .mi-place-rank-item .mi-rank-product-info {
+        grid-column: 1;
+      }
+
+      #mi-admin .mi-place-rank-item .mi-rank-product-title {
+        grid-column: 2;
+      }
+
+      #mi-admin .mi-place-rank-item .mi-rank-product-info,
+      #mi-admin .mi-place-rank-item .mi-rank-product-title {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      #mi-admin .mi-place-rank-item {
+        --mi-place-day-width: 140px;
       }
 
       #mi-admin .mi-place-rank-item .mi-rank-row-actions {
@@ -5655,11 +5702,38 @@
       }
 
       #mi-admin .mi-place-ops-row {
-        grid-template-columns: minmax(0, 1fr);
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding: 7px 12px 8px;
+        scrollbar-width: none;
+      }
+
+      #mi-admin .mi-place-ops-row::-webkit-scrollbar {
+        display: none;
+      }
+
+      #mi-admin .mi-place-ops-primary,
+      #mi-admin .mi-place-ops-meta,
+      #mi-admin .mi-place-ops-message {
+        flex: 0 0 auto;
+        flex-wrap: nowrap;
       }
 
       #mi-admin .mi-place-ops-message {
+        grid-column: auto;
         justify-content: flex-start;
+      }
+
+      #mi-admin .mi-place-ops-message .mi-rank-ops-message {
+        max-width: 180px;
+      }
+
+      #mi-admin .mi-place-day-card {
+        min-height: 104px;
+        padding: 9px;
       }
 
       #mi-admin .mi-rank-group-combo {

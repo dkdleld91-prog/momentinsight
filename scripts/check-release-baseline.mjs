@@ -199,6 +199,11 @@ const checks = {
     && source.includes('renderPlaceDayMetric("방문"')
     && source.includes('renderPlaceDayMetric("월검색"')
     && source.includes('renderPlaceDayMetric("업체"')),
+  placeRankPremiumCompactCards: [adminSource, clientSource].every((source) => source.includes("--mi-place-day-width: 140px")
+    && source.includes("flex: 0 0 var(--mi-place-day-width, 140px)")
+    && source.includes("grid-template-columns: repeat(2, minmax(0, 1fr));")
+    && source.includes(".mi-place-rank-item .mi-rank-row-actions .mi-rank-pill:first-child")
+    && source.includes("--mi-place-day-width: 140px")),
   placeRankPartialResultsStayTruthful: [adminSource, clientSource].every((source) => source.includes("위까지 확인 · 이후 미검증")
     && source.includes('formatNumber(checkedCount) + "위까지"'))
     && placeRankServer.includes("checkedCount >= PLACE_RANK_TRACKER_MAX_RANK")

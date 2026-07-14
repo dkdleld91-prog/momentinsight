@@ -2906,7 +2906,7 @@
     #mi-clean .mi-rank-day-card {
       flex: 0 0 108px;
       min-height: 78px;
-      padding: 9px 10px;
+      padding: 9px 8px;
       border-right: 1px solid #edf1f6;
       color: var(--mi-navy);
       background: #fff;
@@ -2938,20 +2938,26 @@
       display: grid;
       gap: 2px;
       min-width: 0;
-      padding-right: 8px;
+      padding-right: 3px;
       border-right: 1px solid #edf1f6;
     }
 
     #mi-clean .mi-rank-day-slots span:last-child {
       border-right: 0;
       padding-right: 0;
-      padding-left: 8px;
+      padding-left: 3px;
     }
 
     #mi-clean .mi-rank-day-slots small {
+      display: block;
+      min-width: 0;
+      overflow: hidden;
       color: var(--mi-muted);
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 650;
+      letter-spacing: -0.01em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #mi-clean .mi-rank-day-slots b {

@@ -583,7 +583,7 @@ const checks = {
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("productExposureSummary")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("relatedCatalogIds")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("sellerItemsFromOrganic")
-    && read("src/server/handlers/naver-shopping-rank.mjs").includes('adCoverage: "not_provided_by_official_api"')
+    && read("src/server/handlers/naver-shopping-rank.mjs").includes('adCoverage: "explicit_ad_markers_excluded"')
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isExactTarget")
     && read("src/server/handlers/naver-shopping-rank.mjs").includes("isRelatedCatalog"),
   naverRankSellerLinkExactAndFullRange: shoppingRankServer.includes("function sellerProductIdCandidates")
@@ -611,6 +611,19 @@ const checks = {
     && rankServer.includes('trackingRankSource: result.trackingRankSource')
     && rankServer.includes("const result = selectRepresentativeTrackingRank(lookupResult)")
     && rankServer.includes("representativeTrackingRankMessage(result)"),
+  naverRankTrackingExcludesAds: [adminSource, clientSource].every((source) => source.includes("광고 제외")
+    && source.includes("오가닉 순위"))
+    && shoppingRankServer.includes('"isadproduct"')
+    && shoppingRankServer.includes('"adid"')
+    && shoppingRankServer.includes('"supersaving"')
+    && shoppingRankServer.includes("if (isAdItem(item))")
+    && shoppingRankServer.includes('rankPolicy: "organic_only"')
+    && shoppingRankServer.includes("adExcluded: true")
+    && rankServer.includes("sanitizeOrganicTrackingItems")
+    && rankServer.includes("exactExposureRejectedAsAd")
+    && rankServer.includes('top_items: sanitizeOrganicTrackingItems(result?.topItems)')
+    && rankServer.includes('rankPolicy: "organic_only"')
+    && rankServer.includes("adExcluded: true"),
   clientConnectRejectsDisconnected: clientApiServer.includes("disconnected_at")
     && clientApiServer.includes('.is("disconnected_at", null)'),
   adminAuditResourceReady: adminApiServer.includes('"audit-logs"')

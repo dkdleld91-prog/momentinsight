@@ -1,5 +1,21 @@
 # Test Evidence
 
+## 2026-07-14 · 상품 순위 추적 광고 완전 제외
+
+- 코드 경로: 단건 검색 배열 → 관련 원부·정확 상품 후보 → 30일 대표값 → 수동/자동 `runTrackerCheck` → Supabase 스냅샷까지 동일 오가닉 정책 적용
+- 광고 혼입 차단: `isAdProduct`, `adId`, sponsored/paid, `supersaving`, `brand_ad` 후보는 순위·대표값·상위 결과에서 제거
+- 오탐 방지: 실제 오가닉 상품에도 존재한 `cr.shopping.naver.com/adcr` 링크와 `organic_expose_order` 조합은 광고로 오판하지 않음
+- 로그인 네이버 가격비교 `전동칫솔` 1페이지: `product` 40개, 별도 `supersaving` 5개, product 순번 1~40 연속 확인
+- 광고 혼합 단위검사: 광고 정확 상품 1위·광고 원부 1위는 무효, 뒤의 오가닉 정확 상품 10위 또는 원부 7위만 대표값으로 선택
+- 실조회 `전동칫솔`: 대표 원부 34위, 정확 상품 167위, 300개 확인, 노출 카드 모두 `isAd=false`, `isOrganic=true`
+- Supabase 실제 추적 갱신 `치아미백제`: 대표 원부 8위, 정확 상품 44위, 300개 확인
+- Supabase 최신 스냅샷: `rankPolicy=organic_only`, `adExcluded=true`, 대표 `isAd=false`, 대표 `isOrganic=true`, `top_items` 5개 전부 오가닉
+- `npm run check:env:naver`, `npm run check:supabase`, `check:rank-matching`, `check:baseline`, 서버 문법, `git diff --check`: 통과
+- 전체 `npm run check:quality`: 독립 2회 통과. 각 실행에서 서버 13/13, 플레이스 수집기 25/25, 크론·순위·키워드·Vercel 빌드 통과
+- 관리자·광고주 로컬 빌드 화면: 두 역할 모두 광고 제외 40개 보기 안내, 오가닉 추적 UI·최근 기록 렌더링 정상
+- Supabase 스키마·RLS·Storage 변경 없음. 유효한 신규 스냅샷 1건만 기존 추적에 추가
+- 배포: 검증 완료 후 사용자 승인 범위에서 Production 진행 예정
+
 ## 2026-07-14 · 상품 30일 대표 순위 원부 비교
 
 - 선택 규칙: 정확 상품과 관련 원부 중 숫자가 더 낮은 공식 API 순번을 30일 대표 순위로 저장한다.

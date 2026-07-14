@@ -71,6 +71,14 @@ assert.equal(representativeExposure.representativeItem.rank, 34);
 assert.equal(representativeExposure.exactItem.rank, 168);
 assert.equal(representativeExposure.trackingRankSource, "related_catalog");
 
+const representativeExposureRejectsAds = selectRepresentativeExposure([
+  { rank: 1, productId: "ad-catalog", isRelatedCatalog: true, isAd: true },
+  { rank: 7, productId: "organic-catalog", isRelatedCatalog: true, isOrganic: true },
+  { rank: 10, productId: "organic-exact", isExactTarget: true, isOrganic: true },
+]);
+assert.equal(representativeExposureRejectsAds.representativeItem.productId, "organic-catalog");
+assert.equal(representativeExposureRejectsAds.representativeItem.rank, 7);
+
 const highestRelatedCatalogWins = selectRepresentativeTrackingRank({
   matched: true,
   rank: 30,
@@ -103,6 +111,43 @@ const unrelatedCandidateDoesNotCreateRank = selectRepresentativeTrackingRank({
 assert.equal(unrelatedCandidateDoesNotCreateRank.rank, null);
 assert.equal(unrelatedCandidateDoesNotCreateRank.matched, false);
 assert.equal(unrelatedCandidateDoesNotCreateRank.trackingRankSource, "not_found");
+
+const trackingRejectsAdCandidates = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 1,
+  exactProductRank: 1,
+  exactItem: { rank: 1, productId: "ad-exact", isExactTarget: true, isAdProduct: true },
+  item: { rank: 1, productId: "ad-exact", isAdProduct: true },
+  productExposureItems: [
+    { rank: 1, productId: "ad-catalog", isRelatedCatalog: true, adId: "nad-a001-test" },
+    { rank: 2, productId: "ad-exact", isExactTarget: true, isAdProduct: true },
+  ],
+  topItems: [
+    { rank: 1, productId: "ad-catalog", adId: "nad-a001-test" },
+  ],
+});
+assert.equal(trackingRejectsAdCandidates.matched, false);
+assert.equal(trackingRejectsAdCandidates.rank, null);
+assert.equal(trackingRejectsAdCandidates.trackingRankSource, "not_found");
+assert.equal(trackingRejectsAdCandidates.item, null);
+assert.deepEqual(trackingRejectsAdCandidates.productExposureItems, []);
+assert.deepEqual(trackingRejectsAdCandidates.topItems, []);
+assert.equal(trackingRejectsAdCandidates.adExcluded, true);
+
+const trackingKeepsOrganicBehindAd = selectRepresentativeTrackingRank({
+  matched: true,
+  rank: 1,
+  exactProductRank: 10,
+  exactItem: { rank: 10, productId: "organic-exact", isExactTarget: true, isOrganic: true },
+  productExposureItems: [
+    { rank: 1, productId: "ad-catalog", isRelatedCatalog: true, isAdProduct: true },
+    { rank: 10, productId: "organic-exact", isExactTarget: true, isOrganic: true },
+  ],
+});
+assert.equal(trackingKeepsOrganicBehindAd.rank, 10);
+assert.equal(trackingKeepsOrganicBehindAd.trackingRankSource, "exact_product");
+assert.equal(trackingKeepsOrganicBehindAd.relatedCatalogRank, null);
+assert.equal(trackingKeepsOrganicBehindAd.excludedAdCount, 1);
 
 assert.equal(extractProductId(smartstoreUrl), "1234567890");
 assert.deepEqual(productIdCandidates(smartstoreUrl), ["1234567890"]);
@@ -188,7 +233,18 @@ assert.equal(matchTargetItem({
 
 assert.equal(isAdItem({ productId: "1234567890", title: "광고 상품", isAd: true }), true);
 assert.equal(isAdItem({ productId: "1234567890", title: "협찬 상품", sponsored: "Y" }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "광고 상품", isAdProduct: true }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "브랜드 광고", adId: "nad-a001-02-123" }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "프로모션 삽입", itemType: "supersaving" }), true);
+assert.equal(isAdItem({ productId: "1234567890", title: "브랜드 광고", resultType: "brand_ad" }), true);
 assert.equal(isAdItem({ productId: "1234567890", title: "일반 상품", mallName: "sample-store" }), false);
+assert.equal(isAdItem({
+  productId: "1234567890",
+  title: "정상 오가닉 상품",
+  adcrUrl: "https://cr.shopping.naver.com/adcr?x=organic-tracking-link",
+  organic_expose_order: "1",
+  mallInfoCache: { adsrType: "SHOPN" },
+}), false);
 
 const organicTarget = buildRankTarget({ targetProductId: "9999999999" });
 const shoppingItem = (productId, overrides = {}) => ({
@@ -219,6 +275,18 @@ assert.equal(mixedMatch.page, undefined);
 assert.equal(mixedMatch.position, undefined);
 assert.equal(mixedMatch.excludedAdCount, 1);
 assert.equal(mixedMatch.organicCheckedCount, 4);
+
+const explicitAdMarkersMatch = findOrganicMatchInItems([
+  shoppingItem("9999999999", { isAdProduct: true }),
+  shoppingItem("8888888888", { adId: "nad-a001-02-test" }),
+  shoppingItem("1111111111"),
+  shoppingItem("9999999999"),
+], organicTarget, { limit: 100, topItems: [] });
+assert.equal(explicitAdMarkersMatch.matched, true);
+assert.equal(explicitAdMarkersMatch.rank, 2);
+assert.equal(explicitAdMarkersMatch.excludedAdCount, 2);
+assert.equal(explicitAdMarkersMatch.organicCheckedCount, 2);
+assert.equal(explicitAdMarkersMatch.organicItems.every((entry) => entry.isOrganic === true), true);
 
 const fortyOrganicAhead = Array.from({ length: 40 }, (_, index) => shoppingItem(String(1000000000 + index)));
 const fortyFirstApiResultMatch = findOrganicMatchInItems([
@@ -503,10 +571,11 @@ assert.equal(guardedLavExposureItems[0].rank, 3);
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async () => new Response(JSON.stringify({
-  total: 2,
+  total: 3,
   start: 1,
-  display: 2,
+  display: 3,
   items: [
+    shoppingItem("9999999999", { isAdProduct: true, adId: "nad-a001-02-exact-ad" }),
     shoppingItem("1111111111"),
     shoppingItem("9999999999"),
   ],
@@ -531,8 +600,16 @@ try {
   assert.equal(officialApiResult.pageSize, 40);
   assert.equal(officialApiResult.exactProductRank, 2);
   assert.equal(officialApiResult.trackingRankSource, "exact_product");
+  assert.equal(officialApiResult.rankPolicy, "organic_only");
+  assert.equal(officialApiResult.adExcluded, true);
+  assert.equal(officialApiResult.excludedAdCount, 1);
+  assert.equal(officialApiResult.organicCheckedCount, 2);
+  assert.equal(officialApiResult.rawCheckedCount, 3);
+  assert.equal(officialApiResult.topItems.every((item) => item.isAd === false && item.isOrganic === true), true);
   assert.equal(officialApiResult.productExposureItems[0].page, 1);
   assert.equal(officialApiResult.productExposureItems[0].position, 2);
+  assert.equal(officialApiResult.productExposureItems[0].isAd, false);
+  assert.equal(officialApiResult.productExposureItems[0].isOrganic, true);
   assert.equal(officialApiResult.productExposureItems[0].exposureLabel, "상품 ID 일치");
 } finally {
   globalThis.fetch = originalFetch;

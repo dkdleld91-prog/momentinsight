@@ -486,34 +486,66 @@ function isTruthyAdValue(value) {
   return ["true", "1", "y", "yes", "ad", "ads", "sponsored", "paid", "광고"].includes(text);
 }
 
-function isAdItem(item) {
-  if (!item || typeof item !== "object") return false;
-  const directKeys = [
+function normalizedAdKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9가-힣]+/g, "");
+}
+
+function isAdTypeValue(value) {
+  const text = normalizeText(value).toLowerCase().replace(/[^a-z0-9가-힣]+/g, "");
+  return [
     "ad",
     "ads",
-    "isAd",
-    "is_ad",
-    "adId",
-    "ad_id",
-    "adType",
-    "ad_type",
-    "sponsored",
-    "isSponsored",
-    "is_sponsored",
     "advertising",
-    "isAdvertising",
-    "is_advertising",
-    "promoted",
-    "isPromoted",
-    "is_promoted",
+    "advertisement",
+    "sponsored",
     "paid",
-    "isPaid",
-    "is_paid",
-  ];
-  if (directKeys.some((key) => isTruthyAdValue(item[key]))) return true;
+    "promoted",
+    "supersaving",
+    "brandad",
+    "광고",
+    "광고상품",
+  ].includes(text);
+}
+
+function isAdItem(item) {
+  if (!item || typeof item !== "object") return false;
+  const flagKeys = new Set([
+    "ad",
+    "ads",
+    "isad",
+    "isadproduct",
+    "sponsored",
+    "issponsored",
+    "advertising",
+    "isadvertising",
+    "promoted",
+    "ispromoted",
+    "paid",
+    "ispaid",
+  ]);
+  const evidenceKeys = new Set([
+    "adid",
+    "advertisingid",
+    "sponsorid",
+    "sponsoredid",
+  ]);
+  const typeKeys = new Set([
+    "adtype",
+    "advertisingtype",
+    "itemtype",
+    "contenttype",
+    "resulttype",
+    "listingtype",
+    "exposuretype",
+    "sourcetype",
+  ]);
+
   return Object.entries(item).some(([key, value]) => {
-    if (!/(^|_)(ad|ads|sponsored|advertising|promoted|paid)(_|$)/i.test(key)) return false;
-    return isTruthyAdValue(value);
+    const normalizedKey = normalizedAdKey(key);
+    if (flagKeys.has(normalizedKey)) return isTruthyAdValue(value);
+    if (evidenceKeys.has(normalizedKey)) return Boolean(normalizeText(value));
+    if (typeKeys.has(normalizedKey)) return isAdTypeValue(value);
+    return false;
   });
 }
 
@@ -689,6 +721,7 @@ async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetM
 function serializeItem(item, rank) {
   const productTypeInfo = classifyNaverProductType(item?.productType);
   const normalizedRank = Number(rank || 0);
+  const isAd = isAdItem(item);
   const page = normalizedRank > 0 ? Math.ceil(normalizedRank / NAVER_SHOPPING_PAGE_SIZE) : null;
   const position = normalizedRank > 0
     ? ((normalizedRank - 1) % NAVER_SHOPPING_PAGE_SIZE) + 1
@@ -721,12 +754,15 @@ function serializeItem(item, rank) {
     isPriceCompareCatalog: productTypeInfo.isPriceCompareCatalog,
     isMatchedSingle: productTypeInfo.isMatchedSingle,
     isSingleProduct: productTypeInfo.isSingleProduct,
-    isAd: isAdItem(item),
+    isAd,
+    isOrganic: !isAd,
+    organicRank: normalizedRank || null,
   };
 }
 
 function selectRepresentativeExposure(productExposureItems = []) {
   const rankedItems = (Array.isArray(productExposureItems) ? productExposureItems : [])
+    .filter((item) => item?.isAd !== true && item?.isOrganic !== false)
     .filter((item) => Number.isInteger(Number(item?.rank)) && Number(item.rank) > 0)
     .sort((a, b) => Number(a.rank) - Number(b.rank));
   const exactItem = rankedItems.find((item) => item?.isExactTarget) || null;
@@ -794,6 +830,7 @@ function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
 
   return (organicItems || [])
     .filter((entry) => {
+      if (entry?.isOrganic === false || isAdItem(entry?.item)) return false;
       const candidateType = classifyNaverProductType(entry?.item?.productType);
       return candidateType.isPriceCompareCatalog
         && keywordEvidence(keyword, matchedItem, entry.item)
@@ -818,7 +855,11 @@ function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyw
   const relatedCatalogItems = target?.targetMode === "catalog"
     ? []
     : relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword);
-  const exactEntry = (organicItems || []).find((entry) => matchTargetItem(entry?.item, target).matched);
+  const exactEntry = (organicItems || []).find((entry) => (
+    entry?.isOrganic !== false
+    && !isAdItem(entry?.item)
+    && matchTargetItem(entry?.item, target).matched
+  ));
   if (!exactEntry) return relatedCatalogItems;
 
   const exactMatch = matchTargetItem(exactEntry.item, target);
@@ -843,6 +884,7 @@ function sellerItemsFromOrganic(organicItems, matchedItem, target) {
   if (!matchedMallKey) return [];
 
   return (organicItems || [])
+    .filter((entry) => entry?.isOrganic !== false && !isAdItem(entry?.item))
     .filter((entry) => mallNameKey(entry?.item?.mallName) === matchedMallKey)
     .map((entry) => {
       const exactMatch = matchTargetItem(entry.item, target);
@@ -879,7 +921,7 @@ function findOrganicMatchInItems(items, target, options = {}) {
     }
 
     organicCheckedCount += 1;
-    organicItems.push({ rank: organicCheckedCount, item });
+    organicItems.push({ rank: organicCheckedCount, item, isOrganic: true });
     if (topItems.length < 5) topItems.push(serializeItem(item, organicCheckedCount));
 
     const match = matchTargetItem(item, target);
@@ -982,6 +1024,8 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       trackingRankSource: representative.trackingRankSource,
       trackingRankSourceLabel: representative.trackingRankSourceLabel,
       rankSelectionBasis: representative.rankSelectionBasis,
+      rankPolicy: "organic_only",
+      adExcluded: true,
       total,
       checkedCount: organicCheckedCount,
       organicCheckedCount,
@@ -1005,17 +1049,17 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         sellerName: normalizeText(matchedResult.item?.mallName || matchedResult.item?.brand),
         totalCount: productExposureItems.length,
         organicCount: productExposureItems.length,
-        adCount: null,
+        adCount: excludedAdCount,
         checkedCount: organicCheckedCount,
         updatedAt: new Date().toISOString(),
-        adCoverage: "not_provided_by_official_api",
+        adCoverage: "explicit_ad_markers_excluded",
       },
       sellerResultSummary: {
         mallName: normalizeText(matchedResult.item?.mallName),
         organicCount: sellerItems.length,
         checkedCount: organicCheckedCount,
-        adCoverage: "not_provided_by_official_api",
-        adMessage: "광고 상품과 광고 위치는 네이버 쇼핑 검색 API에서 제공하지 않아 집계하지 않습니다.",
+        adCoverage: "explicit_ad_markers_excluded",
+        adMessage: "광고 표식이 있는 항목은 순위 계산 전에 제외하고 오가닉 상품만 집계합니다.",
       },
       topItems,
     };
@@ -1038,6 +1082,8 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     organicCheckedCount,
     rawCheckedCount,
     excludedAdCount,
+    rankPolicy: "organic_only",
+    adExcluded: true,
     targetProductId: target.productId,
     targetProductIds: target.productIds,
     targetCatalogId: target.catalogId,

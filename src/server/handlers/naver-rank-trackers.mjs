@@ -5,6 +5,7 @@ import {
   extractProductId,
   findShoppingRank,
   hasShoppingRankConfig,
+  isAdItem,
   normalizeText,
   shoppingRankConfig,
   shoppingRankMessage,
@@ -560,8 +561,12 @@ async function listTrackers(request, ctx) {
 }
 
 async function insertSnapshot(ctx, tracker, checkedAt, result, message, source = "naver_shopping_search_api") {
+  const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : {};
   const item = {
-    ...(result?.item || {}),
+    ...safeResultItem,
+    rankPolicy: "organic_only",
+    adExcluded: true,
+    excludedAdCount: Number(result?.excludedAdCount || 0),
     ...(result?.trackingRankSource ? {
       trackingRankSource: result.trackingRankSource,
       trackingRankSourceLabel: result.trackingRankSourceLabel,
@@ -584,7 +589,7 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
       checked_count: result?.checkedCount || null,
       total: result?.total || null,
       item,
-      top_items: result?.topItems || [],
+      top_items: sanitizeOrganicTrackingItems(result?.topItems),
       message,
       source,
     })
@@ -614,20 +619,58 @@ function positiveRank(value) {
   return Number.isInteger(rank) && rank > 0 ? rank : null;
 }
 
+function isOrganicTrackingItem(item) {
+  return Boolean(
+    item
+    && typeof item === "object"
+    && item.isAd !== true
+    && item.isOrganic !== false
+    && !isAdItem(item)
+  );
+}
+
+function sanitizeOrganicTrackingItems(items) {
+  return (Array.isArray(items) ? items : []).filter(isOrganicTrackingItem);
+}
+
 export function selectRepresentativeTrackingRank(result = {}) {
-  const exactProductRank = positiveRank(result?.exactProductRank)
-    || (result?.matched && result?.trackingRankSource !== "related_catalog" ? positiveRank(result.rank) : null);
-  const relatedCatalog = (Array.isArray(result?.productExposureItems) ? result.productExposureItems : [])
+  const exposureItems = Array.isArray(result?.productExposureItems) ? result.productExposureItems : [];
+  const organicExposureItems = sanitizeOrganicTrackingItems(exposureItems);
+  const exactExposure = organicExposureItems
+    .filter((item) => item?.isExactTarget)
+    .map((item) => ({ ...item, rank: positiveRank(item?.rank) }))
+    .filter((item) => item.rank)
+    .sort((a, b) => a.rank - b.rank)[0] || null;
+  const relatedCatalog = organicExposureItems
     .filter((item) => item?.isRelatedCatalog)
     .map((item) => ({ ...item, rank: positiveRank(item?.rank) }))
     .filter((item) => item.rank)
     .sort((a, b) => a.rank - b.rank)[0] || null;
-  const relatedCatalogRank = positiveRank(result?.relatedCatalogRank) || relatedCatalog?.rank || null;
+  const exactExposureRejectedAsAd = exposureItems.some((item) => item?.isExactTarget && !isOrganicTrackingItem(item));
+  const relatedExposurePresent = exposureItems.some((item) => item?.isRelatedCatalog);
+  const explicitExactItem = result?.exactItem;
+  const safeExactItem = isOrganicTrackingItem(explicitExactItem) ? explicitExactItem : exactExposure;
+  const legacyExactAllowed = !explicitExactItem
+    && !exactExposureRejectedAsAd
+    && (!result?.item || isOrganicTrackingItem(result.item));
+  const exactProductRank = exactExposure?.rank
+    || (safeExactItem ? positiveRank(safeExactItem.rank) || positiveRank(result?.exactProductRank) : null)
+    || (legacyExactAllowed
+      ? positiveRank(result?.exactProductRank)
+        || (result?.matched && result?.trackingRankSource !== "related_catalog" ? positiveRank(result.rank) : null)
+      : null);
+  const relatedCatalogRank = relatedCatalog?.rank
+    || (!relatedExposurePresent ? positiveRank(result?.relatedCatalogRank) : null);
   const useRelatedCatalog = Boolean(relatedCatalogRank && (!exactProductRank || relatedCatalogRank < exactProductRank));
   const selectedRank = useRelatedCatalog ? relatedCatalogRank : exactProductRank;
   const trackingRankSource = selectedRank
     ? (useRelatedCatalog ? "related_catalog" : "exact_product")
     : "not_found";
+  const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : null;
+  const representativeItem = useRelatedCatalog
+    ? relatedCatalog
+    : (safeExactItem || safeResultItem || null);
+  const excludedInSelection = exposureItems.length - organicExposureItems.length;
 
   return {
     ...result,
@@ -641,10 +684,18 @@ export function selectRepresentativeTrackingRank(result = {}) {
       ? "관련 원부 기준"
       : (trackingRankSource === "exact_product" ? "상품 ID 기준" : "미발견"),
     rankSelectionBasis: "best_of_exact_product_and_related_catalog",
+    rankPolicy: "organic_only",
+    adExcluded: true,
+    excludedAdCount: Math.max(Number(result?.excludedAdCount || 0), excludedInSelection),
     exactProductRank,
     relatedCatalogRank,
     relatedCatalogProductId: relatedCatalog?.productId || null,
     relatedCatalogTitle: relatedCatalog?.title || null,
+    item: safeResultItem || safeExactItem || relatedCatalog || null,
+    exactItem: safeExactItem || null,
+    representativeItem,
+    productExposureItems: organicExposureItems,
+    topItems: sanitizeOrganicTrackingItems(result?.topItems),
   };
 }
 

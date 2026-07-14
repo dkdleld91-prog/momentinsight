@@ -13,6 +13,9 @@
 - 반응형·브라우저: 광고주 390px에서 `scrollWidth=390`, 결과 카드 가로 넘침 없음. 운영팀·광고주 콘솔 경고·오류 0건, 두 화면 육안 확인 통과.
 - 자동 검사: `check:rank-matching`, 전체 `check:quality` 독립 2회, 서버 13/13, 플레이스 수집기 25/25, Vercel 정적 빌드, `check:env:naver`, `check:supabase`, `git diff --check` 통과.
 - `admin.html`, `client.html`, Supabase 스키마·RLS·Storage·운영 데이터는 수정하지 않았다.
+- 커밋·배포: `d9b97ca`를 `main`에 푸시하고 Production `momentinsight-cjx4bkodl-momentlabs.vercel.app`을 운영 별칭 `https://insight.momentlabs.co.kr`에 반영했다.
+- 운영 검증: `/health`와 순위 API HTTP 200, 대표 원부 `53687717527` 8위·정확 판매자 상품 `11687310806` 59위·`checkedCount=300`·`rankPolicy=organic_only`.
+- 운영팀·광고주 실화면: 두 역할 모두 원부 8위·정확 상품 59위 카드, 상품명 키워드 검색 링크와 각 상세 링크 정상, 콘솔 경고·오류 0건. 광고주 390px `scrollWidth=390`.
 
 ## 2026-07-14 · 상품 순위 추적 광고 완전 제외
 

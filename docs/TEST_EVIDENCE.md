@@ -1,5 +1,19 @@
 # Test Evidence
 
+## 2026-07-14 · 네이버 상품 페이지 오표기 배포 전 재검증
+
+- 대상 1: `전동칫솔` / 판매자 상품ID `12649811979`
+  - 공식 API 결과 순번 168, 관련 원부 34, `checkedCount=300`
+  - `matchedProductId=12649811979`, `page=null`, `position=null`, `pageSize=null`, `webPageVerified=false`
+- 대상 2: `치아미백제` / 판매자 상품ID `5145848584`
+  - 공식 API 결과 순번 43, 관련 원부 9, `checkedCount=300`
+  - `matchedProductId=5145848584`, `page=null`, `position=null`, `pageSize=null`, `webPageVerified=false`
+- `npm run check:quality` 독립 2회 통과
+  - 서버 테스트 13/13, 플레이스 수집기 테스트 25/25, 순위 매칭·기준선·크론·키워드 트렌드·Vercel 빌드 통과
+- 로컬 인앱 브라우저는 `127.0.0.1` 접근이 `ERR_BLOCKED_BY_CLIENT`로 차단되어 운영 배포 후 실제 도메인에서 관리자·광고주 화면을 재검증한다.
+- 공식 Shopping Search API의 검색 순번은 제공되지만 실제 쇼핑 화면 페이지 위치와의 동일성은 공식 문서에서 보장되지 않으므로 페이지 환산을 금지한다.
+- Production 배포: 진행 중
+
 ## 2026-07-14 · 네이버 상품 페이지 오표기 제거
 
 - 운영 API 재현: `전동칫솔`/판매자 상품ID `12649811979`는 공식 쇼핑 검색 API 168번째 결과에서 링크 상품ID가 정확히 일치했다.

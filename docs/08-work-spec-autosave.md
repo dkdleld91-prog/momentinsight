@@ -19,9 +19,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 14. 10:11:57
-- 기준 커밋: 52d9a33
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/DECISIONS.md /  M docs/NEXT_ACTIONS.md /  M docs/PROJECT_MEMORY.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-naver-rank-matching.mjs /  M scripts/check-release-baseline.mjs
+- 마지막 자동 저장: 2026. 07. 14. 10:21:28
+- 기준 커밋: 04ae40a
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준

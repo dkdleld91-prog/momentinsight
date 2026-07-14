@@ -12,7 +12,12 @@
 - 브라우저: 양 역할 데스크톱·390px 콘솔 경고/오류 0건, 육안 확인에서 `PM · 상품`과 `AM` 순위가 같은 행으로 표시됨.
 - 자동 검사: `rankTrackingDailySlotAlignment=true`, 전체 `npm run check:quality` 독립 2회, 서버 13/13, 플레이스 수집기 25/25, 릴리즈 기준선·순위 매칭·크론·Vercel 정적 빌드 통과.
 - `git diff --check`: 통과.
-- 배포 전 상태: 사용자 배포 승인 조건 충족. Production 배포와 운영 실화면 재검증 예정.
+- 커밋: `01935d2` (`fix: align Naver rank daily slots`)을 `main`에 푸시.
+- Production: `momentinsight-fhgibit9c-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY.
+- 운영 HTTP: `/health`·`/admin.html`·`/client.html` HTTP 200, 두 HTML의 한 줄 라벨·오버플로 방지 CSS 마커 확인.
+- 운영팀·광고주 데스크톱: 각 207개 일별 카드, 오전·오후 순위 상단 좌표 최대 차이 0px, `PM · 상품` 포함 라벨 오버플로 0건.
+- 운영팀 390px: 207개 일별 카드, 오전·오후 순위 상단 좌표 최대 차이 0px, 라벨 오버플로 0건.
+- 운영 브라우저: 운영팀 데스크톱·390px, 광고주 데스크톱 콘솔 경고/오류 0건. 육안으로 첫 카드의 PM 4위·AM 4위 동일 행 확인.
 
 ## 2026-07-14 · 플레이스 30일 순위 컴팩트 프리미엄 UI
 

@@ -6660,7 +6660,7 @@
               <div>
                 <span class="mi-kicker">네이버 SEO 점수</span>
                 <h2>광고주에게 공개하기 전 상품 SEO 상태를 먼저 점검합니다.</h2>
-                <p>키워드 조회와 상품 API 조회를 함께 사용해 상품명, 공식 API 결과 순번, 검색 수요, 리뷰 기준을 확인합니다.</p>
+                <p>키워드 조회와 상품 순위 조회를 함께 사용해 상품명, 오가닉 순위, 검색 수요, 리뷰 기준을 확인합니다.</p>
               </div>
               <span class="mi-badge warn">내부 검수</span>
             </div>
@@ -6687,7 +6687,7 @@
                 </div>
                 <div class="mi-seo-summary" data-seo-summary>
                   <div><span>기준 키워드</span><strong>조회 후 표시</strong></div>
-                  <div><span>API 결과 순번</span><strong>조회 후 표시</strong></div>
+                  <div><span>오가닉 순위</span><strong>조회 후 표시</strong></div>
                   <div><span>시장 상태</span><strong>조회 후 표시</strong></div>
                 </div>
               </aside>
@@ -6713,13 +6713,13 @@
                     <div class="mi-seo-preview" data-seo-preview>
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
-                        <h4>네이버 상품 URL을 입력하면 공식 API 결과 순번과 상품 정보를 함께 확인합니다.</h4>
-                        <p>광고주에게 전달하기 전에 상품명, 검색 수요, API 결과 순번, 리뷰 기준을 내부에서 먼저 검수합니다.</p>
+                        <h4>네이버 상품 URL을 입력하면 오가닉 순위와 상품 정보를 함께 확인합니다.</h4>
+                        <p>광고주에게 전달하기 전에 상품명, 검색 수요, 대표 순위, 리뷰 기준을 내부에서 먼저 검수합니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
                           <span class="mi-seo-pill">카테고리</span>
                           <span class="mi-seo-pill">검색량</span>
-                          <span class="mi-seo-pill">API 결과 순번</span>
+                          <span class="mi-seo-pill">오가닉 순위</span>
                         </div>
                       </div>
                     </div>
@@ -6731,7 +6731,7 @@
                       <div class="mi-row"><span>상품명 키워드 25점</span><strong>기준 키워드 포함과 자연스러운 상품명 구성</strong></div>
                       <div class="mi-row"><span>카테고리 연결 15점</span><strong>상품 URL에서 확인한 카테고리와 키워드 적합성</strong></div>
                       <div class="mi-row"><span>시장 수요 15점</span><strong>월 검색량과 연관 키워드 수요 참고</strong></div>
-                      <div class="mi-row"><span>API 결과 순번 15점</span><strong>실제 화면 위치와 구분</strong></div>
+                      <div class="mi-row"><span>오가닉 순위 15점</span><strong>원부·정확 상품 상위 노출</strong></div>
                       <div class="mi-row"><span>가격/혜택 15점</span><strong>검색 결과 내 가격대와 구매 혜택 참고</strong></div>
                       <div class="mi-row"><span>리뷰/신뢰도 15점</span><strong>리뷰수량은 직접 입력값 기준</strong></div>
                     </div>
@@ -6746,8 +6746,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">네이버 상품 순위</span>
-              <h1>네이버 공식 검색 API의 상품 순번을 확인합니다.</h1>
-              <p>상품 ID 일치 여부와 API 결과 순번을 확인하며, 실제 쇼핑 화면 페이지 위치로 환산하지 않습니다.</p>
+              <h1>네이버쇼핑 상품의 현재 오가닉 순위를 확인합니다.</h1>
+              <p>상품 ID를 정확히 대조하고 원부·단일 상품 중 더 높은 순위와 페이지 위치를 표시합니다.</p>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -6756,8 +6756,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">네이버 상품 순위</span>
-                <h2>지금 기준 공식 API 결과 순번을 확인합니다.</h2>
-                <p>상품 ID 일치와 API 결과 순번을 확인합니다. 실제 쇼핑 화면 페이지 위치는 제공하지 않습니다.</p>
+                <h2>지금 기준 네이버쇼핑 오가닉 순위를 확인합니다.</h2>
+                <p>정확 상품과 관련 원부를 함께 확인하고 더 높은 노출을 대표 순위와 상품 형태로 표시합니다.</p>
               </div>
               <span class="mi-badge">조회</span>
             </div>
@@ -6771,13 +6771,13 @@
                 <option value="500">상위 500개</option>
                 <option value="1000">상위 1000개</option>
               </select>
-              <button class="mi-button" type="button" data-rank-check-run>API 조회</button>
+              <button class="mi-button" type="button" data-rank-check-run>순위 조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-check-status aria-live="polite">키워드와 상품 URL 또는 상품ID를 입력하면 공식 검색 API 결과를 조회합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-check-status aria-live="polite">키워드와 상품 URL 또는 상품ID를 입력하면 상위 300개 오가닉 순위를 조회합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel" data-rank-check-result>
-                <h3>API 조회 결과</h3>
-                <div class="mi-rank-state">상품 정보를 입력하면 공식 검색 API의 상품 ID 일치 여부와 결과 순번이 표시됩니다.</div>
+                <h3>현재 순위</h3>
+                <div class="mi-rank-state">상품 정보를 입력하면 대표 순위와 페이지, 정확 상품·관련 원부 노출이 표시됩니다.</div>
               </div>
             </div>
           </article>
@@ -6787,8 +6787,8 @@
           <header class="mi-head">
             <div>
               <span class="mi-kicker">네이버 30일 순위</span>
-              <h1>네이버 공식 검색 API의 상품 순번을 30일 기록합니다.</h1>
-              <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 매일 오전 9시와 오후 3시에 기록합니다. 실제 쇼핑 화면 위치와는 구분합니다.</p>
+              <h1>네이버쇼핑 대표 오가닉 순위를 30일 기록합니다.</h1>
+              <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 매일 오전 9시와 오후 3시에 기록합니다. 광고 제외 40개 보기 기준의 페이지와 페이지 내 순위도 함께 표시합니다.</p>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -6796,9 +6796,9 @@
           <article class="mi-card mi-card-pad mi-rank-card" data-rank-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 공식 API 순번</span>
-                <h2>30일 API 결과 순번 추적을 시작합니다.</h2>
-                <p>정확 상품과 관련 원부를 함께 비교해 더 높은 공식 API 순번의 최근 30일 변화를 관리합니다.</p>
+                <span class="mi-kicker">네이버 오가닉 순위</span>
+                <h2>30일 대표 순위 추적을 시작합니다.</h2>
+                <p>정확 상품과 관련 원부를 함께 비교해 더 높은 오가닉 순위의 최근 30일 변화를 관리합니다.</p>
               </div>
               <span class="mi-badge">관리자 확인용</span>
             </div>
@@ -6811,7 +6811,7 @@
             <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
-                <h3>상품별 일별 API 결과 순번</h3>
+                <h3>상품별 일별 대표 순위</h3>
                 <div class="mi-rank-filterbar" data-rank-filter-panel>
                   <input class="mi-input" data-rank-filter-search aria-label="순위 추적 검색" placeholder="키워드, 상품명, 상품번호 검색" />
                   <label class="mi-rank-group-filter" data-rank-filter-group-wrap>
@@ -6830,7 +6830,7 @@
                 </div>
                 <p class="mi-rank-filter-help">전체 그룹은 모든 추적을 보여주고, 그룹을 선택하면 해당 그룹만 정리해서 볼 수 있습니다.</p>
                 <div data-rank-history>
-                  <div class="mi-rank-state">추적 등록 후 상품별 일별 API 결과 순번판이 생성됩니다.</div>
+                  <div class="mi-rank-state">추적 등록 후 상품별 일별 대표 순위판이 생성됩니다.</div>
                 </div>
               </div>
             </div>
@@ -9851,7 +9851,7 @@
           return new Date(grouped[b].date).getTime() - new Date(grouped[a].date).getTime();
         }).slice(0, 30);
         if (!keys.length) {
-          return '<div class="mi-rank-state">첫 공식 API 결과 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
+          return '<div class="mi-rank-state">첫 오가닉 순위 확인 후 이 상품만의 일별 기록판이 생성됩니다.</div>';
         }
         return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
@@ -10329,7 +10329,7 @@
           minute: "2-digit"
         });
         sheet.className = "mi-rank-export-sheet";
-        sheet.innerHTML = '<header class="mi-rank-export-header"><div><small>Moment Insight · Naver API Result Order</small><h2>선택 상품 30일 API 순번 공유</h2><p>네이버 쇼핑 검색 API 결과 순번 기준이며 실제 쇼핑 화면 위치와는 다를 수 있습니다.</p></div><span class="mi-rank-export-date">' +
+        sheet.innerHTML = '<header class="mi-rank-export-header"><div><small>Moment Insight · Naver Organic Rank</small><h2>선택 상품 30일 대표 순위 공유</h2><p>광고 제외 오가닉 순위이며 원부와 정확 상품 중 더 높은 노출을 기록합니다.</p></div><span class="mi-rank-export-date">' +
           escapeHtml(nowLabel) + '</span></header>';
         var list = document.createElement("div");
         list.className = "mi-rank-export-list";
@@ -10491,7 +10491,7 @@
         filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
         if (!trackers || !trackers.length) {
           updateRankFilterPanel(node, 0, 0, filterMode, filterGroup);
-          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 API 결과 순번판이 생성됩니다.</div>';
+          node.innerHTML = '<div class="mi-rank-state">추적 등록 후 상품별 일별 대표 순위판이 생성됩니다.</div>';
           return;
         }
         var filteredTrackers = trackers.filter(function (tracker) {
@@ -10596,14 +10596,17 @@
           var actionHtml = productUrl
             ? '<a class="mi-rank-exposure-action" href="' + escapeHtml(productUrl) + '" target="_blank" rel="noopener noreferrer">상품 열기 ↗</a>'
             : '';
-          var resultOrder = rank ? "공식 API " + formatNumber(rank) + "번째" : "API 결과 없음";
+          var page = Number(item.page || (rank ? Math.ceil(rank / 40) : 0));
+          var position = Number(item.position || (rank ? ((rank - 1) % 40) + 1 : 0));
+          var resultOrder = rank ? formatNumber(rank) + "위" : "순위 없음";
+          var pageOrder = page && position ? page + "페이지 " + position + "위" : "페이지 확인 필요";
           return '<article class="mi-rank-exposure-item' + (item.isExactTarget ? ' is-exact' : '') + '"><div class="mi-rank-exposure-media"><span class="mi-rank-exposure-badge' +
-            (item.isRelatedCatalog ? ' is-catalog' : '') + '">' + escapeHtml(label) + '</span>' + imageHtml + '</div><div class="mi-rank-exposure-content"><div class="mi-rank-exposure-eyebrow"><span>공식 API</span><span>' +
-            escapeHtml(rankProductKindLabel(item)) + '</span></div>' + titleHtml + '<div class="mi-rank-exposure-rank">' + escapeHtml(resultOrder) + '<small>실제 쇼핑 화면 위치 아님</small></div><div class="mi-rank-exposure-meta"><span>판매가 <strong>' + escapeHtml(item.lprice ? formatNumber(item.lprice) + "원" : "-") + '</strong></span><span>판매처 ' +
+            (item.isRelatedCatalog ? ' is-catalog' : '') + '">' + escapeHtml(label) + '</span>' + imageHtml + '</div><div class="mi-rank-exposure-content"><div class="mi-rank-exposure-eyebrow"><span>오가닉</span><span>' +
+            escapeHtml(rankProductKindLabel(item)) + '</span></div>' + titleHtml + '<div class="mi-rank-exposure-rank">' + escapeHtml(resultOrder) + '<small>' + escapeHtml(pageOrder) + '</small></div><div class="mi-rank-exposure-meta"><span>판매가 <strong>' + escapeHtml(item.lprice ? formatNumber(item.lprice) + "원" : "-") + '</strong></span><span>판매처 ' +
             escapeHtml(item.mallName || item.brand || sellerName) + '</span></div></div>' + actionHtml + '</article>';
         }).join("");
         return '<section class="mi-rank-exposure-board">' + header + '<div class="mi-rank-exposure-list">' + cards +
-          '</div><p class="mi-rank-exposure-note">표시 값은 네이버 쇼핑 검색 API의 결과 배열 순번입니다. 실제 네이버 쇼핑 화면은 노출 구성과 정렬이 달라 페이지·위치가 일치한다고 보장할 수 없습니다. 관련 원부는 키워드·브랜드·카테고리 기준으로 별도 표시합니다.</p></section>';
+          '</div><p class="mi-rank-exposure-note">광고를 제외한 네이버쇼핑 오가닉 순위이며 40개 보기 기준 페이지·페이지 내 순위를 함께 표시합니다. 관련 원부와 정확 상품 중 더 높은 노출을 대표 순위와 상품 형태로 사용합니다.</p></section>';
       }
 
       function renderRankResult(node, payload) {
@@ -10632,7 +10635,7 @@
       function renderRankCheckResult(node, payload) {
         if (!node) return;
         if (!payload || payload.ok === false) {
-          node.innerHTML = '<h3>API 조회 결과</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "상품 API 결과를 확인하지 못했습니다.") + '</div>';
+          node.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">' + escapeHtml((payload && payload.message) || "상품 순위를 확인하지 못했습니다.") + '</div>';
           return;
         }
         var result = payload.result || {};
@@ -10646,19 +10649,22 @@
         var kindShortNote = rankProductKindShortNote(item);
         var rangeLabel = rankCheckRangeLabel(payload, result, checkedCount);
         var targetMode = result.targetMode || "";
-        var targetCatalogId = result.targetCatalogId || (result.targetCatalogIds && result.targetCatalogIds[0]) || "";
+        var targetCatalogId = result.trackingRankSource === "related_catalog" ? (result.representativeProductId || "") : (result.targetCatalogId || (result.targetCatalogIds && result.targetCatalogIds[0]) || "");
         var targetProductId = result.targetProductId || (payload.query && payload.query.productId) || "";
-        var isCatalogBasis = targetMode === "catalog" || Boolean(targetCatalogId);
+        var isCatalogBasis = result.trackingRankSource === "related_catalog" || targetMode === "catalog" || Boolean(targetCatalogId);
         var targetBasisTitle = isCatalogBasis ? "원부 기준" : "상품 기준";
         var targetBasisTag = isCatalogBasis ? "가격비교 원부" : "상품ID·판매자 일치";
         var targetBasisId = targetCatalogId ? "원부ID " + targetCatalogId : (targetProductId ? "상품ID " + targetProductId : "정확 일치");
         var checkedLabel = checkedCount ? checkedCount + "개 확인" : "상위 결과";
+        var page = Number(result.page || (rank ? Math.ceil(rank / 40) : 0));
+        var position = Number(result.position || (rank ? ((rank - 1) % 40) + 1 : 0));
+        var pageLabel = page && position ? page + "페이지 " + position + "위" : "페이지 확인 필요";
         var summary = found
-          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>공식 API 검색 순번</span><strong>' + escapeHtml(formatNumber(rank) + "번째") + '</strong></div><div class="mi-rank-primary-meta"><em>' + escapeHtml(queryKeyword) + '</em><em>화면 위치 미검증</em><em>' + escapeHtml(checkedLabel) + '</em></div></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong><small>네이버 쇼핑 검색 API 기준</small></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>조회 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div></div></div>'
+          ? '<div class="mi-rank-result-summary"><div class="mi-rank-primary"><div><span>현재 오가닉 순위</span><strong>' + escapeHtml(formatNumber(rank) + "위") + '</strong></div><div class="mi-rank-primary-meta"><em>' + escapeHtml(queryKeyword) + '</em><em>' + escapeHtml(pageLabel) + '</em><em>' + escapeHtml(checkedLabel) + '</em></div></div><div class="mi-rank-kpis"><div class="mi-rank-kpi"><span>조회 키워드</span><strong>' + escapeHtml(queryKeyword) + '</strong><small>네이버쇼핑 오가닉 기준</small></div><div class="mi-rank-kpi"><span>상품 형태</span><strong>' + escapeHtml(kindLabel) + '</strong><small title="' + escapeHtml(kindNote) + '">' + escapeHtml(kindShortNote) + '</small></div><div class="mi-rank-kpi"><span>대표 기준</span><strong>' + escapeHtml(targetBasisTitle) + '</strong><div class="mi-rank-mini-tags"><em>' + escapeHtml(targetBasisTag) + '</em><em>' + escapeHtml(targetBasisId) + '</em></div></div></div></div>'
           : '<div class="mi-rank-state"><strong>' + escapeHtml(rangeLabel + " 이내 없음") + '</strong><small>선택한 조회 범위 안에서 해당 상품을 찾지 못했습니다. URL 또는 상품ID를 확인하거나 조회 범위를 늘려주세요.</small></div>';
         var itemRows = item ? renderRankItems([item]) : "";
         var exposureCards = renderProductExposureCards(result);
-        node.innerHTML = '<h3>API 조회 결과</h3>' + summary + (exposureCards ? '<h3>API 상품 일치 결과</h3>' + exposureCards : (itemRows ? '<h3>조회 상품</h3>' + itemRows : ""));
+        node.innerHTML = '<h3>현재 순위</h3>' + summary + (exposureCards ? '<h3>상품 노출 결과</h3>' + exposureCards : (itemRows ? '<h3>조회 상품</h3>' + itemRows : ""));
       }
 
       function metaAdsLibraryUrl(query, platform, mediaType) {
@@ -10868,7 +10874,7 @@
             return;
           }
           rankRun.disabled = true;
-          setStatus(rankStatus, "네이버 쇼핑 검색 API 결과를 조회 중입니다.", "");
+          setStatus(rankStatus, "정확 상품과 관련 원부의 오가닉 순위를 조회 중입니다.", "");
           try {
             var selectedMaxRank = rankMax ? rankMax.value : "300";
             var params = new URLSearchParams({
@@ -10884,7 +10890,7 @@
             if (!response.ok && payload.ok !== false) payload.ok = false;
             renderRankCheckResult(rankResult, payload);
             var rank = payload.result && payload.result.rank;
-            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순번 확인이 어렵습니다.") : (rank ? "조회 완료: 공식 검색 API " + formatNumber(rank) + "번째 결과에서 상품 ID가 일치했습니다. 실제 쇼핑 화면 위치는 아닙니다." : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), "is-warn");
+            setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? (payload.message || "조회 완료: 현재 오가닉 " + formatNumber(rank) + "위입니다.") : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), rank ? "is-ok" : "is-warn");
           } catch (error) {
             renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
             setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");
@@ -10994,7 +11000,7 @@
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 공식 API 순번 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 API 결과 순번을 표시합니다.", rankTrackers.length ? "is-ok" : "");
+              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
             await syncDueRankTrackersIfNeeded(silent);
           } catch (error) {
@@ -11108,7 +11114,7 @@
           }
 
           rankRun.disabled = true;
-          setStatus(rankStatus, "30일 공식 API 순번 추적을 등록하고 첫 결과를 확인 중입니다.", "");
+          setStatus(rankStatus, "30일 오가닉 순위 추적을 등록하고 첫 결과를 확인 중입니다.", "");
           try {
             var payload = await requestRankTrackers("POST", {
               action: "create",

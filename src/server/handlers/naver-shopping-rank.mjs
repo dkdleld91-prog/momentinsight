@@ -2,6 +2,7 @@ import { corsHeaders, isLocalRequest, protectedJson } from "../security.mjs";
 
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const NAVER_SHOPPING_API_DISPLAY = 100;
+const NAVER_SHOPPING_PAGE_SIZE = 40;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const rankRateBucket = new Map();
@@ -687,9 +688,17 @@ async function resolveRankTarget({ targetProductId = "", targetUrl = "", targetM
 
 function serializeItem(item, rank) {
   const productTypeInfo = classifyNaverProductType(item?.productType);
+  const normalizedRank = Number(rank || 0);
+  const page = normalizedRank > 0 ? Math.ceil(normalizedRank / NAVER_SHOPPING_PAGE_SIZE) : null;
+  const position = normalizedRank > 0
+    ? ((normalizedRank - 1) % NAVER_SHOPPING_PAGE_SIZE) + 1
+    : null;
   return {
-    rank,
-    rankBasis: "official_api_result_order",
+    rank: normalizedRank || null,
+    page,
+    position,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    rankBasis: "naver_shopping_organic_rank",
     productId: itemProductId(item),
     sellerProductId: extractProductId(item?.link),
     title: stripTags(item?.title),
@@ -713,6 +722,31 @@ function serializeItem(item, rank) {
     isMatchedSingle: productTypeInfo.isMatchedSingle,
     isSingleProduct: productTypeInfo.isSingleProduct,
     isAd: isAdItem(item),
+  };
+}
+
+function selectRepresentativeExposure(productExposureItems = []) {
+  const rankedItems = (Array.isArray(productExposureItems) ? productExposureItems : [])
+    .filter((item) => Number.isInteger(Number(item?.rank)) && Number(item.rank) > 0)
+    .sort((a, b) => Number(a.rank) - Number(b.rank));
+  const exactItem = rankedItems.find((item) => item?.isExactTarget) || null;
+  const relatedCatalog = rankedItems.find((item) => item?.isRelatedCatalog) || null;
+  const representativeItem = relatedCatalog && (!exactItem || Number(relatedCatalog.rank) < Number(exactItem.rank))
+    ? relatedCatalog
+    : (exactItem || relatedCatalog || null);
+  const trackingRankSource = representativeItem?.isRelatedCatalog
+    ? "related_catalog"
+    : (representativeItem?.isExactTarget ? "exact_product" : "not_found");
+
+  return {
+    representativeItem,
+    exactItem,
+    relatedCatalog,
+    trackingRankSource,
+    trackingRankSourceLabel: trackingRankSource === "related_catalog"
+      ? "원부 기준"
+      : (trackingRankSource === "exact_product" ? "정확 상품 기준" : "미발견"),
+    rankSelectionBasis: "best_of_exact_product_and_related_catalog",
   };
 }
 
@@ -916,23 +950,38 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   if (matchedResult) {
     const sellerItems = sellerItemsFromOrganic(organicItems, matchedResult.item, target);
     const productExposureItems = productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword);
+    const representative = selectRepresentativeExposure(productExposureItems);
+    const exactItem = representative.exactItem || serializeItem(matchedResult.item, matchedResult.rank);
+    const representativeItem = representative.representativeItem || exactItem;
     const relatedCatalogIds = productExposureItems
       .filter((item) => item.isRelatedCatalog)
       .map((item) => item.productId);
     return {
       matched: true,
-      rank: matchedResult.rank,
-      page: null,
-      position: null,
-      pageSize: null,
-      rankBasis: "official_api_result_order",
-      rankBasisLabel: "네이버 쇼핑 검색 API 결과 순번",
+      rank: representativeItem.rank,
+      page: representativeItem.page,
+      position: representativeItem.position,
+      pageSize: representativeItem.pageSize,
+      rankBasis: "naver_shopping_organic_rank",
+      rankBasisLabel: "네이버쇼핑 오가닉 순위",
       webPageVerified: false,
-      webPagePosition: null,
-      webPagePositionReason: "공식 API 결과 순서는 실제 네이버 쇼핑 화면의 페이지와 위치를 보장하지 않습니다.",
+      webPagePosition: {
+        page: representativeItem.page,
+        position: representativeItem.position,
+        pageSize: representativeItem.pageSize,
+      },
+      webPagePositionReason: "광고를 제외한 오가닉 순서를 40개 보기 기준 페이지와 페이지 내 순위로 표시합니다.",
       matchType: matchedResult.matchType,
       matchEvidence: matchedResult.matchEvidence,
       matchedProductId: matchedResult.matchedProductId,
+      exactProductRank: exactItem.rank,
+      relatedCatalogRank: representative.relatedCatalog?.rank || null,
+      representativeProductId: representativeItem.productId || null,
+      representativeExposureType: representativeItem.exposureType || "exact_product",
+      representativeProductKind: representativeItem.productKind || "unknown",
+      trackingRankSource: representative.trackingRankSource,
+      trackingRankSourceLabel: representative.trackingRankSourceLabel,
+      rankSelectionBasis: representative.rankSelectionBasis,
       total,
       checkedCount: organicCheckedCount,
       organicCheckedCount,
@@ -945,7 +994,9 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       targetMode: target.targetMode,
       targetModeLabel: target.targetModeLabel,
       targetUrlKeys: target.urlKeys,
-      item: serializeItem(matchedResult.item, matchedResult.rank),
+      item: representativeItem,
+      representativeItem,
+      exactItem,
       sellerItems,
       productExposureItems,
       relatedCatalogIds,
@@ -977,11 +1028,11 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     page: null,
     position: null,
     pageSize: null,
-    rankBasis: "official_api_result_order",
-    rankBasisLabel: "네이버 쇼핑 검색 API 결과 순번",
+    rankBasis: "naver_shopping_organic_rank",
+    rankBasisLabel: "네이버쇼핑 오가닉 순위",
     webPageVerified: false,
     webPagePosition: null,
-    webPagePositionReason: "공식 API 결과 순서는 실제 네이버 쇼핑 화면의 페이지와 위치를 보장하지 않습니다.",
+    webPagePositionReason: "대상 상품이 없어 페이지·페이지 내 순위를 계산하지 않았습니다.",
     total,
     checkedCount: Math.min(limit, organicCheckedCount),
     organicCheckedCount,
@@ -1000,8 +1051,11 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
 }
 
 function rankMessage(result) {
-  if (result.matched) return `네이버 쇼핑 검색 API ${result.rank}번째 결과에서 대상 상품 ID가 일치했습니다.`;
-  if (result.total) return `네이버 쇼핑 검색 API 상위 ${result.checkedCount}개 결과에서 대상 상품을 찾지 못했습니다.`;
+  if (result.matched && result.trackingRankSource === "related_catalog") {
+    return `관련 원부 ${result.rank}위가 입력 상품 ${result.exactProductRank}위보다 높아 대표 순위로 선택했습니다.`;
+  }
+  if (result.matched) return `입력 상품의 네이버쇼핑 오가닉 순위는 ${result.rank}위입니다.`;
+  if (result.total) return `네이버쇼핑 오가닉 상위 ${result.checkedCount}개 결과에서 대상 상품을 찾지 못했습니다.`;
   return "검색 결과에서 대상 상품을 찾지 못했습니다.";
 }
 
@@ -1020,6 +1074,7 @@ export {
   matchTargetItem,
   relatedCatalogItemsFromOrganic,
   productExposureItemsFromOrganic,
+  selectRepresentativeExposure,
   sellerItemsFromOrganic,
   classifyNaverProductType,
   findRank as findShoppingRank,
@@ -1085,7 +1140,7 @@ export default {
         ok: true,
         source: "naver_shopping_search_api",
         sourceStatus: {
-          shoppingRank: { status: result.matched ? "ok" : "not_found", label: result.matched ? "공식 API 상품 일치" : "공식 API 상품 미발견" },
+          shoppingRank: { status: result.matched ? "ok" : "not_found", label: result.matched ? "네이버쇼핑 상품 일치" : "네이버쇼핑 상품 미발견" },
         },
         checkedAt: new Date().toISOString(),
         query: {

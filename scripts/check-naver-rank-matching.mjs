@@ -10,6 +10,7 @@ import {
   isAdItem,
   matchTargetItem,
   productExposureItemsFromOrganic,
+  selectRepresentativeExposure,
   productIdCandidates,
   sellerProductIdCandidates,
   rankQueryKeyword,
@@ -43,7 +44,9 @@ assert.equal(relatedCatalogWins.exactProductRank, 48);
 assert.equal(relatedCatalogWins.relatedCatalogRank, 7);
 assert.equal(relatedCatalogWins.relatedCatalogProductId, "56704991367");
 assert.equal(relatedCatalogWins.item.productId, "5145848584");
-assert.match(representativeTrackingRankMessage(relatedCatalogWins), /관련 원부.*7번째.*입력 상품 48번째.*30일 대표 순위/);
+assert.equal(relatedCatalogWins.page, 1);
+assert.equal(relatedCatalogWins.position, 7);
+assert.match(representativeTrackingRankMessage(relatedCatalogWins), /관련 원부 7위.*입력 상품 48위.*30일 대표 순위/);
 
 const exactProductWins = selectRepresentativeTrackingRank({
   matched: true,
@@ -57,7 +60,16 @@ assert.equal(exactProductWins.rank, 5);
 assert.equal(exactProductWins.trackingRankSource, "exact_product");
 assert.equal(exactProductWins.exactProductRank, 5);
 assert.equal(exactProductWins.relatedCatalogRank, 12);
-assert.match(representativeTrackingRankMessage(exactProductWins), /입력 상품.*5번째.*관련 원부는 12번째/);
+assert.match(representativeTrackingRankMessage(exactProductWins), /입력 상품.*5위.*관련 원부는 12위/);
+
+const representativeExposure = selectRepresentativeExposure([
+  { rank: 34, page: 1, position: 34, productId: "57907660073", isRelatedCatalog: true },
+  { rank: 168, page: 5, position: 8, productId: "90194322885", isExactTarget: true },
+]);
+assert.equal(representativeExposure.representativeItem.productId, "57907660073");
+assert.equal(representativeExposure.representativeItem.rank, 34);
+assert.equal(representativeExposure.exactItem.rank, 168);
+assert.equal(representativeExposure.trackingRankSource, "related_catalog");
 
 const highestRelatedCatalogWins = selectRepresentativeTrackingRank({
   matched: true,
@@ -441,14 +453,14 @@ const exactLavExposureItems = productExposureItemsFromOrganic(
 );
 assert.equal(exactLavExposureItems.length, 2);
 assert.equal(exactLavExposureItems[0].rank, 1);
-assert.equal(exactLavExposureItems[0].page, undefined);
-assert.equal(exactLavExposureItems[0].position, undefined);
+assert.equal(exactLavExposureItems[0].page, 1);
+assert.equal(exactLavExposureItems[0].position, 1);
 assert.equal(exactLavExposureItems[0].productId, "56704991367");
 assert.equal(exactLavExposureItems[0].isRelatedCatalog, true);
 assert.equal(exactLavExposureItems[0].exposureLabel, "관련 원부");
 assert.equal(exactLavExposureItems[1].rank, 5);
-assert.equal(exactLavExposureItems[1].page, undefined);
-assert.equal(exactLavExposureItems[1].position, undefined);
+assert.equal(exactLavExposureItems[1].page, 1);
+assert.equal(exactLavExposureItems[1].position, 5);
 assert.equal(exactLavExposureItems[1].sellerProductId, "5145848584");
 assert.equal(exactLavExposureItems[1].isExactTarget, true);
 assert.equal(exactLavExposureItems[1].exposureLabel, "상품 ID 일치");
@@ -511,13 +523,16 @@ try {
   });
   assert.equal(officialApiResult.matched, true);
   assert.equal(officialApiResult.rank, 2);
-  assert.equal(officialApiResult.rankBasis, "official_api_result_order");
+  assert.equal(officialApiResult.rankBasis, "naver_shopping_organic_rank");
   assert.equal(officialApiResult.webPageVerified, false);
-  assert.equal(officialApiResult.page, null);
-  assert.equal(officialApiResult.position, null);
-  assert.equal(officialApiResult.pageSize, null);
-  assert.equal(officialApiResult.productExposureItems[0].page, undefined);
-  assert.equal(officialApiResult.productExposureItems[0].position, undefined);
+  assert.equal(officialApiResult.rank, 2);
+  assert.equal(officialApiResult.page, 1);
+  assert.equal(officialApiResult.position, 2);
+  assert.equal(officialApiResult.pageSize, 40);
+  assert.equal(officialApiResult.exactProductRank, 2);
+  assert.equal(officialApiResult.trackingRankSource, "exact_product");
+  assert.equal(officialApiResult.productExposureItems[0].page, 1);
+  assert.equal(officialApiResult.productExposureItems[0].position, 2);
   assert.equal(officialApiResult.productExposureItems[0].exposureLabel, "상품 ID 일치");
 } finally {
   globalThis.fetch = originalFetch;

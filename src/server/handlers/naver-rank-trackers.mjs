@@ -615,13 +615,14 @@ function positiveRank(value) {
 }
 
 export function selectRepresentativeTrackingRank(result = {}) {
-  const exactProductRank = result?.matched ? positiveRank(result.rank) : null;
+  const exactProductRank = positiveRank(result?.exactProductRank)
+    || (result?.matched && result?.trackingRankSource !== "related_catalog" ? positiveRank(result.rank) : null);
   const relatedCatalog = (Array.isArray(result?.productExposureItems) ? result.productExposureItems : [])
     .filter((item) => item?.isRelatedCatalog)
     .map((item) => ({ ...item, rank: positiveRank(item?.rank) }))
     .filter((item) => item.rank)
     .sort((a, b) => a.rank - b.rank)[0] || null;
-  const relatedCatalogRank = relatedCatalog?.rank || null;
+  const relatedCatalogRank = positiveRank(result?.relatedCatalogRank) || relatedCatalog?.rank || null;
   const useRelatedCatalog = Boolean(relatedCatalogRank && (!exactProductRank || relatedCatalogRank < exactProductRank));
   const selectedRank = useRelatedCatalog ? relatedCatalogRank : exactProductRank;
   const trackingRankSource = selectedRank
@@ -632,6 +633,9 @@ export function selectRepresentativeTrackingRank(result = {}) {
     ...result,
     matched: Boolean(selectedRank),
     rank: selectedRank,
+    page: selectedRank ? Math.ceil(selectedRank / 40) : null,
+    position: selectedRank ? ((selectedRank - 1) % 40) + 1 : null,
+    pageSize: 40,
     trackingRankSource,
     trackingRankSourceLabel: trackingRankSource === "related_catalog"
       ? "관련 원부 기준"
@@ -646,14 +650,14 @@ export function selectRepresentativeTrackingRank(result = {}) {
 
 export function representativeTrackingRankMessage(result = {}) {
   if (result.trackingRankSource === "related_catalog" && result.rank) {
-    const exactLabel = result.exactProductRank ? `입력 상품 ${result.exactProductRank}번째보다 ` : "";
-    return `관련 원부가 공식 API ${result.rank}번째로 ${exactLabel}높아 30일 대표 순위로 기록했습니다.`;
+    const exactLabel = result.exactProductRank ? `입력 상품 ${result.exactProductRank}위보다 ` : "";
+    return `관련 원부 ${result.rank}위가 ${exactLabel}높아 30일 대표 순위로 기록했습니다.`;
   }
   if (result.trackingRankSource === "exact_product" && result.rank) {
     const relatedLabel = result.relatedCatalogRank
-      ? ` 관련 원부는 ${result.relatedCatalogRank}번째입니다.`
+      ? ` 관련 원부는 ${result.relatedCatalogRank}위입니다.`
       : "";
-    return `입력 상품의 공식 API ${result.rank}번째를 30일 대표 순위로 기록했습니다.${relatedLabel}`;
+    return `입력 상품의 오가닉 ${result.rank}위를 30일 대표 순위로 기록했습니다.${relatedLabel}`;
   }
   return shoppingRankMessage(result);
 }
@@ -684,8 +688,8 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       last_error: lastError || null,
       retry_count: lastError ? Number(tracker.retry_count || 0) + 1 : 0,
       product_id: canonicalTrackerProductId(tracker, result),
-      mall_name: tracker.mall_name || result?.item?.mallName || null,
-      product_title: tracker.product_title || result?.item?.title || null,
+      mall_name: tracker.mall_name || result?.exactItem?.mallName || result?.item?.mallName || null,
+      product_title: tracker.product_title || result?.exactItem?.title || result?.item?.title || null,
     })
     .eq("id", tracker.id)
     .select(TRACKER_SELECT)

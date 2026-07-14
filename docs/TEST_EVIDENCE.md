@@ -14,7 +14,13 @@
 - 전체 `npm run check:quality`: 독립 2회 통과. 각 실행에서 서버 13/13, 플레이스 수집기 25/25, 크론·순위·키워드·Vercel 빌드 통과
 - 관리자·광고주 로컬 빌드 화면: 두 역할 모두 광고 제외 40개 보기 안내, 오가닉 추적 UI·최근 기록 렌더링 정상
 - Supabase 스키마·RLS·Storage 변경 없음. 유효한 신규 스냅샷 1건만 기존 추적에 추가
-- 배포: 검증 완료 후 사용자 승인 범위에서 Production 진행 예정
+- 배포 커밋: `032c144`
+- Production: `momentinsight-iddnfo068-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY
+- 운영 `/health`: HTTP 200
+- 운영 단건 API `전동칫솔`: 대표 원부 34위, 정확 상품 166위, 300개 확인, `rankPolicy=organic_only`, 모든 노출·상위 항목 오가닉
+- 운영 추적 `치아미백제`: 대표 원부 8위, 정확 상품 44위, 300개 확인, 최신 스냅샷 `adExcluded=true`
+- 운영 Supabase 직접 조회: 대표 `isAd=false`·`isOrganic=true`, `top_items` 5개 전부 오가닉
+- 운영 광고주 화면: 현재 8위·원부, 자동추적 정상, 다음 오전 9시, 광고 제외 안내와 레이아웃 정상
 
 ## 2026-07-14 · 상품 30일 대표 순위 원부 비교
 

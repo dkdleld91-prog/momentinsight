@@ -93,6 +93,11 @@
 - `npm run check:quality`: 독립 2차 통과
 - 서버 테스트 13/13, 플레이스 수집기 25/25, 릴리즈 기준선과 Vercel 빌드 통과
 - `git diff --check`: 통과
+- Production 배포: `momentinsight-3whvmsjzo-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY
+- 운영 `/health`, 관리자·광고주 HTML, 순위 API: HTTP 200
+- 운영 API: 대표 원부 34위·1페이지 34위, 정확 상품 168위·5페이지 8위, `checkedCount=300`
+- 운영 관리자·광고주 실조회: 대표 원부형 34위, 정확 단일형 168위, 두 카드의 페이지 위치와 원부·스마트스토어 상세 링크 정상
+- 운영 데스크톱 육안검수: 상태 메시지·순위 요약·카드 구분·프리미엄 레이아웃 겹침 없음
 
 ## 네이버 상품 정확 일치·300위 완주 재검증
 

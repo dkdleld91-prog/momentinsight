@@ -9,7 +9,12 @@
 - 릴리즈 기준선: `rankTrackingDailySlotOmitsExactProductLabel=true`, 기존 `rankTrackingDailySlotAlignment=true` 유지.
 - 브라우저 빌드: 광고주 390px `scrollWidth=390`, 운영팀 데스크톱·광고주 모바일에서 신규 마커 반영, 구 문구 제거, 콘솔 오류 0건.
 - 자동 검사: 전체 `npm run check:quality` 통과. 서버 13/13, 플레이스 수집기 25/25, 크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 정상.
-- 배포: 현재 작업의 별도 승인이 없어 push·Production 배포하지 않음.
+- 배포 커밋: `368408d`만 `main`에 푸시.
+- Production: `momentinsight-jly55k3zm-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY. `/health` HTTP 200·`ok=true`.
+- 운영 소스: `/admin.html`·`/client.html`·`/home.html`이 `368408d` 산출물과 바이트 단위로 일치하고, 두 역할 HTML 모두 신규 조건식 1개·구 조건식 0개.
+- 운영 브라우저: 로그인 운영팀·광고주 `N 30일 순위` 각 414개 일별 슬롯에서 정확 상품의 `상품` 문구 0건, `PM`·`AM` 및 원부 구분 유지, 콘솔 오류 0건.
+- 배포 후 자동 작업: GitHub 품질 검사, 상품 순위 갱신, 플레이스 순위 갱신 모두 성공.
+- 로컬 이력: 사용자 거절 커밋 `0886833`의 홈페이지·기준선·작업 문서 변경을 `main`에서 제거하고, 현재 홈페이지 소스가 `origin/main`과 일치함을 확인.
 
 ## 2026-07-14 · N 30일 순위 오전·오후 행 정렬 복구
 

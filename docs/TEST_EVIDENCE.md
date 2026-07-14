@@ -1,5 +1,16 @@
 # Test Evidence
 
+## 2026-07-15 · N 30일 순위 슬롯 `상품` 문구 정리
+
+- 요청: 일별 오전·오후 슬롯의 `PM · 상품`에서 중복되는 `상품` 문구를 제거한다.
+- 수정 범위: 운영팀·광고주 `renderRankSlot()`에서 정확 상품 슬롯만 `PM`·`AM`으로 표시. 관련 원부는 `PM · 원부`·`AM · 원부`로 유지.
+- 기능 보존: `rankSnapshotSourceLabel()`과 카드 상단 상품/원부 표시, 순위 조회·저장·갱신·크론·광고 제외·대표값 판정·Supabase 데이터 코드는 변경하지 않음.
+- 런타임 함수 검사: 양 역할 모두 정확 상품 `<small>PM</small><b>9위</b>`, 관련 원부 `<small>AM · 원부</small><b>8위</b>` 출력.
+- 릴리즈 기준선: `rankTrackingDailySlotOmitsExactProductLabel=true`, 기존 `rankTrackingDailySlotAlignment=true` 유지.
+- 브라우저 빌드: 광고주 390px `scrollWidth=390`, 운영팀 데스크톱·광고주 모바일에서 신규 마커 반영, 구 문구 제거, 콘솔 오류 0건.
+- 자동 검사: 전체 `npm run check:quality` 통과. 서버 13/13, 플레이스 수집기 25/25, 크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 정상.
+- 배포: 현재 작업의 별도 승인이 없어 push·Production 배포하지 않음.
+
 ## 2026-07-14 · N 30일 순위 오전·오후 행 정렬 복구
 
 - 증상: `PM · 상품` 또는 `AM · 원부`처럼 선택 기준이 붙은 슬롯 라벨만 고정 폭에서 두 줄로 접혀 해당 순위 숫자가 인접 순위보다 아래에 표시됨.

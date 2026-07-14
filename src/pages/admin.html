@@ -9921,7 +9921,7 @@
       function renderRankSlot(label, snapshot) {
         var rank = snapshot && snapshot.rank ? rankText(snapshot.rank) : "-";
         var source = rankSnapshotSourceLabel(snapshot, true);
-        var sourceLabel = source ? label + " · " + source : label;
+        var sourceLabel = source && source !== "상품" ? label + " · " + source : label;
         return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + '</small><b>' + escapeHtml(rank) + '</b></span>';
       }
 

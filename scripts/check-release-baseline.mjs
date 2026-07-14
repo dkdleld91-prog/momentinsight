@@ -456,6 +456,7 @@ const checks = {
     && /mi-rank-pill \{[\s\S]*?font-size: 10px;/.test(source)
     && /mi-rank-day-slots b \{[\s\S]*?white-space: nowrap;[\s\S]*?word-break: keep-all;/.test(source)),
   rankTrackingDailySlotAlignment: [adminSource, clientSource].every((source) => /mi-rank-day-slots small \{[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/.test(source)),
+  rankTrackingDailySlotOmitsExactProductLabel: [adminSource, clientSource].every((source) => source.includes('source && source !== "상품" ? label + " · " + source : label')),
   rankTrackingInsightLabels: [adminSource, clientSource].every((source) => source.includes("rankTrackerAverageRank")
     && source.includes("rankTrackerChangeLabel")
     && source.includes("rankTrackerInsight")

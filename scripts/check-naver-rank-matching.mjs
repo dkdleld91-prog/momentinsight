@@ -433,6 +433,65 @@ assert.deepEqual(matchTargetItem({
   matchEvidence: "seller_link_product_id",
 });
 
+const circulatorTarget = buildRankTarget({
+  targetUrl: "https://smartstore.naver.com/eco/products/11687310806",
+});
+const circulatorExactItem = {
+  productId: "89231821273",
+  link: "https://smartstore.naver.com/main/products/11687310806",
+  title: "파세코 접이식 선풍기 BLDC 서큘레이터 아리아 PCF-MSF1100",
+  mallName: "이스트코퍼레이션",
+  productType: "3",
+  brand: "파세코",
+  maker: "파세코",
+  category1: "디지털/가전",
+  category2: "계절가전",
+  category3: "선풍기",
+  category4: "서큘레이터",
+};
+const circulatorCatalogItem = {
+  productId: "53687717527",
+  link: "https://search.shopping.naver.com/catalog/53687717527",
+  title: "파세코 PCF-MSF1100 화이트",
+  mallName: "네이버",
+  productType: "1",
+  brand: "파세코",
+  maker: "파세코",
+  category1: "디지털/가전",
+  category2: "계절가전",
+  category3: "선풍기",
+  category4: "서큘레이터",
+};
+const circulatorExposureItems = productExposureItemsFromOrganic([
+  { rank: 8, item: circulatorCatalogItem, isOrganic: true },
+  { rank: 59, item: circulatorExactItem, isOrganic: true },
+], circulatorExactItem, circulatorTarget, "써큘레이터");
+assert.equal(circulatorExposureItems.length, 2);
+assert.equal(circulatorExposureItems[0].rank, 8);
+assert.equal(circulatorExposureItems[0].productId, "53687717527");
+assert.equal(circulatorExposureItems[0].productKind, "catalog");
+assert.equal(circulatorExposureItems[0].productKindLabel, "원부형");
+assert.equal(circulatorExposureItems[0].relationBasis, "model_brand_category");
+assert.equal(circulatorExposureItems[1].rank, 59);
+assert.equal(circulatorExposureItems[1].sellerProductId, "11687310806");
+
+const unrelatedCirculatorCatalogIsRejected = productExposureItemsFromOrganic([
+  {
+    rank: 1,
+    item: {
+      ...circulatorCatalogItem,
+      productId: "54327455316",
+      link: "https://search.shopping.naver.com/catalog/54327455316",
+      title: "파세코 PCF-MSF11000 화이트",
+    },
+    isOrganic: true,
+  },
+  { rank: 2, item: circulatorExactItem, isOrganic: true },
+], circulatorExactItem, circulatorTarget, "써큘레이터");
+assert.equal(unrelatedCirculatorCatalogIsRejected.length, 1);
+assert.equal(unrelatedCirculatorCatalogIsRejected[0].isExactTarget, true);
+assert.equal(unrelatedCirculatorCatalogIsRejected[0].rank, 2);
+
 const exactLavMatch = findOrganicMatchInItems([
   {
     productId: "56704991367",

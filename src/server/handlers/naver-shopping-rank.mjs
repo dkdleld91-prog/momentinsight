@@ -824,29 +824,52 @@ function identitiesAlign(referenceItem, candidateItem) {
   return reference.some((value) => candidate.includes(value));
 }
 
+function modelIdentityTokens(item) {
+  const title = stripTags(item?.title).normalize("NFKC").toUpperCase();
+  const candidates = title.match(/[A-Z0-9]+(?:[-_/][A-Z0-9]+)*/g) || [];
+  return uniqueValues(candidates
+    .map((value) => value.replace(/[^A-Z0-9]/g, ""))
+    .filter((value) => value.length >= 5 && /[A-Z]/.test(value) && /[0-9]/.test(value)));
+}
+
+function modelIdentifiersAlign(referenceItem, candidateItem) {
+  const reference = modelIdentityTokens(referenceItem);
+  const candidate = modelIdentityTokens(candidateItem);
+  if (!reference.length || !candidate.length) return false;
+  return reference.some((value) => candidate.includes(value));
+}
+
+function relatedCatalogRelationBasis(keyword, referenceItem, candidateItem) {
+  if (modelIdentifiersAlign(referenceItem, candidateItem)) return "model_brand_category";
+  if (keywordEvidence(keyword, referenceItem, candidateItem)) return "keyword_brand_category";
+  return "";
+}
+
 function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
   const matchedType = classifyNaverProductType(matchedItem?.productType);
   if (!matchedItem || matchedType.isPriceCompareCatalog) return [];
 
   return (organicItems || [])
-    .filter((entry) => {
+    .map((entry) => {
       if (entry?.isOrganic === false || isAdItem(entry?.item)) return false;
       const candidateType = classifyNaverProductType(entry?.item?.productType);
-      return candidateType.isPriceCompareCatalog
-        && keywordEvidence(keyword, matchedItem, entry.item)
-        && identitiesAlign(matchedItem, entry.item)
-        && categoriesAlign(matchedItem, entry.item);
+      if (!candidateType.isPriceCompareCatalog
+        || !identitiesAlign(matchedItem, entry.item)
+        || !categoriesAlign(matchedItem, entry.item)) return null;
+      const relationBasis = relatedCatalogRelationBasis(keyword, matchedItem, entry.item);
+      return relationBasis ? { entry, relationBasis } : null;
     })
-    .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+    .filter(Boolean)
+    .sort((a, b) => Number(a.entry?.rank || 0) - Number(b.entry?.rank || 0))
     .slice(0, 1)
-    .map((entry) => {
+    .map(({ entry, relationBasis }) => {
       return {
         ...serializeItem(entry.item, entry.rank),
         isExactTarget: false,
         isRelatedCatalog: true,
         exposureType: "related_catalog",
         exposureLabel: "관련 원부",
-        relationBasis: "keyword_brand_category",
+        relationBasis,
       };
     });
 }

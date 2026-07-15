@@ -1,5 +1,18 @@
 # Test Evidence
 
+## 2026-07-15 · 메인 홈페이지 프리미엄 보완 2차
+
+- 범위: `src/pages/home.html`, 홈페이지 전용 릴리즈 기준선, 운영 문서만 변경. `admin.html`, `client.html`, 순위 수집·매칭·저장·크론·Supabase 코드는 변경하지 않음.
+- 문서 기반: `<!doctype html>`, `lang=ko`, viewport, body 여백 초기화 적용. 브라우저 계산 body margin `0px`.
+- 팝업 보존: 데스크톱 1440×900에서 348×489px·x72·y118, 모바일 390×844에서 높이 489px·x14·y82·좌우 14px. 외곽 위치·너비 규칙·헤더/본문 여백, 다섯 기능, 카카오 링크, 저장 키와 7일 계산식 유지.
+- 팝업 동작: 닫기 버튼과 `1주일 동안 안보기` 버튼을 각각 실행해 `is-hidden=true` 확인.
+- 데스크톱: 고정 헤더 69px, 샘플 대시보드 528×529px, CTA 주 행동 버튼 흰색 배경/딥네이비 글자, 문서 `scrollWidth=clientWidth=1425`, 브라우저 콘솔 로그 0건.
+- 모바일: 헤더 65px 한 줄, 버튼 2개 동일 행, 샘플 대시보드 347×494px. 반복 3개 카드는 내부 가로 탐색으로 정리하고 페이지 높이를 검증 환경 기준 약 5,498px에서 4,220px로 압축. 문서 `scrollWidth=clientWidth=375`, 외부 가로 넘침 0건.
+- 시각 확인: 딥네이비·화이트·절제된 블루 계층, 핵심 매출 카드 강조, 연결형 신뢰 패널·운영 흐름, 실제 경로만 둔 푸터를 1440×900·390×844에서 육안 검수.
+- 릴리즈 기준선: `homeDocumentShellAndViewport=true`, `homePopupGeometryPreserved=true`, `homePremiumHierarchyVisible=true`, 기존 `homeDevelopmentNoticeVisible=true`.
+- 자동 검사: `npm run check:quality`, `npm run build:vercel`, `git diff --check` 통과. 서버 13/13, 플레이스 수집기 25/25, 크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 정상.
+- 배포: 사용자 요청에 따라 push·Production 배포 없음. 운영 홈페이지는 `368408d`, 거절된 `0886833`은 미사용.
+
 ## 2026-07-15 · N 30일 순위 슬롯 `상품` 문구 정리
 
 - 요청: 일별 오전·오후 슬롯의 `PM · 상품`에서 중복되는 `상품` 문구를 제거한다.

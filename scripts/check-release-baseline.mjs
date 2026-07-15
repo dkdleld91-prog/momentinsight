@@ -171,6 +171,34 @@ const checks = {
     && homeSource.includes("miHomeDevBannerHiddenUntil")
     && homeSource.includes("7 * 24 * 60 * 60 * 1000")
     && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위", "네이버 플레이스 30일 순위"].every((label) => homeSource.includes(label)),
+  homeDocumentShellAndViewport: homeSource.startsWith("<!doctype html>")
+    && homeSource.includes('<html lang="ko">')
+    && homeSource.includes('<meta name="viewport" content="width=device-width, initial-scale=1" />')
+    && homeSource.includes("<head>")
+    && homeSource.includes("</head>")
+    && homeSource.includes("<body>")
+    && homeSource.includes("</body>")
+    && homeSource.trimEnd().endsWith("</html>"),
+  homePopupGeometryPreserved: orderedIncludes(homeSource, [
+    "left: clamp(20px, 5.4vw, 72px);",
+    "top: 118px;",
+    "width: min(348px, calc(100vw - 40px));",
+    "min-height: 48px;",
+    "padding: 0 14px 0 18px;",
+    "gap: 11px;",
+    "padding: 18px;",
+    "left: 14px;",
+    "right: 14px;",
+    "top: 82px;",
+    "max-height: calc(100vh - 110px);",
+  ]),
+  homePremiumHierarchyVisible: homeSource.includes("통합 마케팅 운영 플랫폼")
+    && homeSource.includes("샘플 화면")
+    && homeSource.includes("예시 데이터")
+    && homeSource.includes("#mi-home-trust .mi-grid-3")
+    && homeSource.includes("#mi-home .mi-cta .mi-button.primary")
+    && homeSource.includes("mi-footer-inner")
+    && homeSource.includes("카카오 문의"),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   placeRankReleased: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위</a>")

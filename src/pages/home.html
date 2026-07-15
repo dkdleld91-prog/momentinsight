@@ -1,4 +1,9 @@
+<!doctype html>
+<html lang="ko">
+<head>
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#061a3a" />
 <title>모먼트 인사이트 | 마케팅 사이트·성과 대시보드</title>
 <meta name="description" content="모먼트 인사이트는 브랜드별 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 한곳에서 확인하는 마케팅 사이트입니다." />
 <meta name="keywords" content="마케팅 사이트, 모먼트 인사이트" />
@@ -54,26 +59,35 @@
   ]
 }
 </script>
+</head>
+<body>
 
 <section id="mi-home" class="mi-home-wrap">
   <style>
+    html,
+    body {
+      min-width: 320px;
+      margin: 0;
+      background: #f4f7fb;
+    }
+
     #mi-home,
     #mi-home * {
       box-sizing: border-box;
     }
 
     #mi-home {
-      --mi-bg: #f6f8fb;
+      --mi-bg: #f4f7fb;
       --mi-panel: #ffffff;
       --mi-ink: #101828;
       --mi-muted: #667085;
-      --mi-soft: #eef2f7;
-      --mi-line: #d9e0ea;
+      --mi-soft: #f0f4f9;
+      --mi-line: #dce4ef;
       --mi-navy: #061a3a;
       --mi-navy-2: #0b2447;
       --mi-blue: #2558d8;
       --mi-green: #067647;
-      --mi-shadow: 0 18px 48px rgba(6, 26, 58, 0.09);
+      --mi-shadow: 0 22px 54px rgba(6, 26, 58, 0.1);
       min-height: 100vh;
       margin: 0;
       color: var(--mi-ink);
@@ -97,12 +111,12 @@
       z-index: 20;
       top: 0;
       border-bottom: 1px solid rgba(217, 224, 234, 0.9);
-      background: rgba(246, 248, 251, 0.92);
+      background: rgba(255, 255, 255, 0.9);
       backdrop-filter: blur(14px);
     }
 
     #mi-home .mi-topbar-inner {
-      min-height: 70px;
+      min-height: 68px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -129,11 +143,12 @@
       height: 34px;
       display: grid;
       place-items: center;
-      border-radius: 10px;
-      background: var(--mi-navy);
+      border-radius: 9px;
+      background: linear-gradient(145deg, #061a3a, #123866);
       color: #fff;
       font-size: 13px;
       letter-spacing: 0;
+      box-shadow: 0 8px 20px rgba(6, 26, 58, 0.18);
     }
 
     #mi-home .mi-button {
@@ -184,10 +199,10 @@
     }
 
     #mi-home .mi-hero {
-      padding: 86px 0 50px;
+      padding: 88px 0 58px;
       background:
-        radial-gradient(circle at 80% 12%, rgba(37, 88, 216, 0.12), transparent 34%),
-        linear-gradient(180deg, #ffffff 0%, #f6f8fb 100%);
+        radial-gradient(circle at 78% 8%, rgba(37, 88, 216, 0.11), transparent 32%),
+        linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
     }
 
     #mi-home .mi-hero-grid {
@@ -255,15 +270,15 @@
 
     #mi-home .mi-title-sub {
       width: fit-content;
-      padding: 10px 14px;
-      border: 1px solid rgba(37, 88, 216, 0.18);
-      border-radius: 8px;
-      background: #ffffff;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
       color: #2558d8;
-      font-size: 25px;
-      line-height: 1;
-      font-weight: 900;
-      box-shadow: 0 16px 34px rgba(16, 24, 40, 0.08);
+      font-size: 22px;
+      line-height: 1.2;
+      font-weight: 850;
+      box-shadow: none;
     }
 
     #mi-home h2 {
@@ -300,10 +315,10 @@
       display: grid;
       width: min(348px, calc(100vw - 40px));
       overflow: hidden;
-      border: 1px solid rgba(6, 26, 58, 0.14);
+      border: 1px solid rgba(6, 26, 58, 0.12);
       border-radius: 18px;
-      background: rgba(255, 255, 255, 0.98);
-      box-shadow: 0 22px 56px rgba(6, 26, 58, 0.18);
+      background: rgba(255, 255, 255, 0.99);
+      box-shadow: 0 24px 64px rgba(6, 26, 58, 0.16);
       backdrop-filter: blur(18px);
     }
 
@@ -318,7 +333,7 @@
       min-height: 48px;
       padding: 0 14px 0 18px;
       color: #ffffff;
-      background: linear-gradient(135deg, #061a3a, #0d2f5d);
+      background: linear-gradient(135deg, #071a36, #123660);
     }
 
     #mi-home .mi-dev-banner-head span {
@@ -360,8 +375,8 @@
       min-height: 32px;
       border-radius: 10px;
       padding: 0 10px;
-      border: 1px solid rgba(37, 88, 216, 0.1);
-      background: #f7fafd;
+      border: 1px solid #e5ebf3;
+      background: #f8fafc;
       color: var(--mi-navy);
       font-size: 11.5px;
       font-weight: 900;
@@ -425,7 +440,7 @@
       border: 0;
       border-radius: 999px;
       padding: 7px 10px;
-      background: #edf3fb;
+      background: #eef3f8;
       color: #344054;
       cursor: pointer;
       font-size: 12px;
@@ -481,12 +496,14 @@
       min-width: 0;
       padding: 16px;
       border: 1px solid var(--mi-line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.78);
-      box-shadow: 0 10px 26px rgba(6, 26, 58, 0.05);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.82);
+      box-shadow: 0 8px 24px rgba(6, 26, 58, 0.04);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
     }
 
     #mi-home .mi-route-card:hover {
+      border-color: rgba(37, 88, 216, 0.22);
       transform: translateY(-1px);
       box-shadow: 0 14px 32px rgba(6, 26, 58, 0.1);
     }
@@ -515,30 +532,30 @@
     }
 
     #mi-home .mi-proof {
-      padding: 16px;
+      padding: 14px;
       border: 1px solid var(--mi-line);
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.72);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.64);
     }
 
     #mi-home .mi-proof strong {
       display: block;
       color: var(--mi-navy);
-      font-size: 22px;
+      font-size: 18px;
       line-height: 1;
     }
 
     #mi-home .mi-proof span {
       display: block;
-      margin-top: 8px;
+      margin-top: 6px;
       color: var(--mi-muted);
       font-size: 13px;
       font-weight: 700;
     }
 
     #mi-home .mi-preview {
-      border: 1px solid var(--mi-line);
-      border-radius: 8px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 16px;
       background: #fff;
       box-shadow: var(--mi-shadow);
       overflow: hidden;
@@ -551,7 +568,7 @@
       justify-content: space-between;
       padding: 0 18px;
       border-bottom: 1px solid var(--mi-line);
-      background: #fbfcfe;
+      background: #f9fbfd;
     }
 
     #mi-home .mi-preview-body {
@@ -575,8 +592,21 @@
     #mi-home .mi-metric {
       padding: 16px;
       border: 1px solid var(--mi-line);
-      border-radius: 8px;
-      background: var(--mi-soft);
+      border-radius: 12px;
+      background: #f5f8fc;
+    }
+
+    #mi-home .mi-metric:first-child {
+      border-color: rgba(6, 26, 58, 0.16);
+      background: linear-gradient(145deg, #0a2144, #123a68);
+    }
+
+    #mi-home .mi-metric:first-child span {
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    #mi-home .mi-metric:first-child strong {
+      color: #ffffff;
     }
 
     #mi-home .mi-metric span {
@@ -623,11 +653,11 @@
     }
 
     #mi-home .mi-section {
-      padding: 74px 0;
+      padding: 72px 0;
     }
 
     #mi-home .mi-section.compact {
-      padding: 54px 0;
+      padding: 58px 0;
     }
 
     #mi-home .mi-section-head {
@@ -663,10 +693,10 @@
       min-width: 0;
       padding: 22px;
       border: 1px solid var(--mi-line);
-      border-radius: 8px;
+      border-radius: 14px;
       background: var(--mi-panel);
       background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-      box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.04);
     }
 
     #mi-home .mi-card h3 + p {
@@ -680,9 +710,9 @@
       width: 30px;
       height: 30px;
       margin-bottom: 14px;
-      border-radius: 8px;
-      background: var(--mi-navy);
-      color: #fff;
+      border-radius: 999px;
+      background: #e8eff8;
+      color: var(--mi-navy);
       font-size: 13px;
       font-weight: 900;
     }
@@ -691,6 +721,42 @@
       display: grid;
       gap: 16px;
       min-height: 230px;
+    }
+
+    #mi-home-trust .mi-grid-3 {
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid var(--mi-line);
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 18px 44px rgba(6, 26, 58, 0.055);
+    }
+
+    #mi-home-trust .mi-role-card {
+      min-height: 210px;
+      border: 0;
+      border-right: 1px solid var(--mi-line);
+      border-radius: 0;
+      background: #ffffff;
+      box-shadow: none;
+    }
+
+    #mi-home-trust .mi-role-card:last-child {
+      border-right: 0;
+    }
+
+    #mi-home-roles {
+      background: linear-gradient(180deg, rgba(237, 243, 250, 0.74), rgba(244, 247, 251, 0));
+    }
+
+    #mi-home-roles .mi-role-card {
+      border-color: rgba(6, 26, 58, 0.09);
+      box-shadow: none;
+    }
+
+    #mi-home-roles .mi-role-card:nth-child(2) {
+      transform: translateY(-6px);
+      box-shadow: 0 18px 40px rgba(6, 26, 58, 0.07);
     }
 
     #mi-home .mi-role-card strong {
@@ -719,9 +785,15 @@
     }
 
     #mi-home .mi-flow {
+      position: relative;
       counter-reset: flow;
       display: grid;
-      gap: 12px;
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 16px;
+      background: #ffffff;
+      box-shadow: 0 18px 44px rgba(6, 26, 58, 0.06);
     }
 
     #mi-home .mi-flow-step {
@@ -731,10 +803,15 @@
       gap: 14px;
       align-items: start;
       padding: 18px;
-      border: 1px solid var(--mi-line);
-      border-radius: 8px;
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
-      box-shadow: 0 10px 26px rgba(6, 26, 58, 0.04);
+      border: 0;
+      border-bottom: 1px solid var(--mi-line);
+      border-radius: 0;
+      background: #ffffff;
+      box-shadow: none;
+    }
+
+    #mi-home .mi-flow-step:last-child {
+      border-bottom: 0;
     }
 
     #mi-home .mi-flow-step::before {
@@ -744,8 +821,8 @@
       height: 38px;
       display: grid;
       place-items: center;
-      border-radius: 8px;
-      background: var(--mi-soft);
+      border-radius: 10px;
+      background: #e8eff8;
       color: var(--mi-navy);
       font-size: 12px;
       font-weight: 900;
@@ -764,6 +841,8 @@
 
     #mi-home .mi-feature {
       min-height: 160px;
+      border-color: rgba(6, 26, 58, 0.09);
+      box-shadow: none;
     }
 
     #mi-home .mi-feature small {
@@ -780,7 +859,8 @@
       gap: 24px;
       align-items: center;
       padding: 34px;
-      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
       background: linear-gradient(135deg, var(--mi-navy) 0%, #0b2447 100%);
       color: #fff;
       box-shadow: 0 18px 46px rgba(6, 26, 58, 0.16);
@@ -799,6 +879,18 @@
     #mi-home .mi-cta .mi-button.secondary {
       color: #fff;
       border-color: rgba(255, 255, 255, 0.32);
+    }
+
+    #mi-home .mi-cta .mi-button.primary {
+      border-color: #ffffff;
+      background: #ffffff;
+      color: var(--mi-navy);
+    }
+
+    #mi-home .mi-cta .mi-button.primary:hover {
+      border-color: #ffffff;
+      background: #f1f5f9;
+      color: var(--mi-navy);
     }
 
     #mi-home .mi-kakao-floating {
@@ -874,10 +966,51 @@
     }
 
     #mi-home .mi-footer {
-      padding: 28px 0 36px;
+      padding: 32px 0 40px;
+      border-top: 1px solid var(--mi-line);
+      background: #ffffff;
       color: #667085;
       font-size: 13px;
-      text-align: center;
+    }
+
+    #mi-home .mi-footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    #mi-home .mi-footer-brand {
+      display: grid;
+      gap: 4px;
+    }
+
+    #mi-home .mi-footer-brand strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-home .mi-footer-links {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px 18px;
+      color: #475467;
+      font-weight: 750;
+    }
+
+    #mi-home .mi-footer-links a:hover {
+      color: var(--mi-blue);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #mi-home *,
+      #mi-home *::before,
+      #mi-home *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
     }
 
     @media (max-width: 920px) {
@@ -906,18 +1039,19 @@
       }
 
       #mi-home .mi-topbar-inner {
-        gap: 10px;
+        min-height: 64px;
+        gap: 8px;
       }
 
       #mi-home .mi-topbar .mi-button {
         width: auto;
         min-height: 34px;
-        padding: 0 10px;
-        font-size: 12px;
+        padding: 0 9px;
+        font-size: 11.5px;
       }
 
       #mi-home .mi-hero {
-        padding: 58px 0 36px;
+        padding: 46px 0 40px;
       }
 
       #mi-home h1 {
@@ -929,11 +1063,11 @@
       }
 
       #mi-home .mi-title-main {
-        font-size: 40px;
+        font-size: 38px;
       }
 
       #mi-home .mi-title-sub {
-        padding: 8px 11px;
+        padding: 0;
         font-size: 18px;
       }
 
@@ -950,12 +1084,120 @@
         overflow-y: auto;
       }
 
-      #mi-home .mi-proof-row,
-      #mi-home .mi-route-cards,
-      #mi-home .mi-grid-3,
-      #mi-home .mi-grid-4,
+      #mi-home .mi-grid-3 {
+        grid-template-columns: none;
+        grid-auto-flow: column;
+        grid-auto-columns: 88%;
+        gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scroll-snap-type: x proximity;
+        scrollbar-width: none;
+      }
+
+      #mi-home .mi-grid-3::-webkit-scrollbar {
+        display: none;
+      }
+
+      #mi-home .mi-grid-3 > * {
+        scroll-snap-align: start;
+      }
+
+      #mi-home .mi-route-cards {
+        gap: 8px;
+      }
+
+      #mi-home .mi-route-card {
+        padding: 13px;
+      }
+
+      #mi-home .mi-route-card strong {
+        font-size: 14px;
+      }
+
+      #mi-home .mi-route-card span {
+        margin-top: 4px;
+        font-size: 11px;
+      }
+
+      #mi-home .mi-proof-row {
+        gap: 6px;
+        margin-top: 18px;
+      }
+
+      #mi-home .mi-proof {
+        padding: 11px 8px;
+        text-align: center;
+      }
+
+      #mi-home .mi-proof strong {
+        font-size: 15px;
+      }
+
+      #mi-home .mi-proof span {
+        font-size: 10px;
+      }
+
+      #mi-home .mi-preview-body {
+        padding: 18px;
+      }
+
       #mi-home .mi-metrics {
-        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      #mi-home .mi-metric {
+        padding: 13px;
+      }
+
+      #mi-home .mi-metric strong {
+        font-size: 20px;
+      }
+
+      #mi-home .mi-section,
+      #mi-home .mi-section.compact {
+        padding: 50px 0;
+      }
+
+      #mi-home .mi-section-head {
+        margin-bottom: 22px;
+      }
+
+      #mi-home .mi-role-card {
+        min-height: 300px;
+      }
+
+      #mi-home-trust .mi-grid-3 {
+        gap: 0;
+        overflow-x: auto;
+        padding-bottom: 0;
+      }
+
+      #mi-home-trust .mi-role-card {
+        border-right: 1px solid var(--mi-line);
+        border-bottom: 0;
+      }
+
+      #mi-home-trust .mi-role-card:last-child {
+        border-right: 0;
+      }
+
+      #mi-home-roles .mi-role-card:nth-child(2) {
+        transform: none;
+      }
+
+      #mi-home .mi-feature {
+        min-height: 148px;
+        padding: 18px;
+      }
+
+      #mi-home .mi-cta {
+        gap: 12px;
+        padding: 24px;
+      }
+
+      #mi-home .mi-cta .mi-inline-actions {
+        margin-top: 14px;
       }
 
       #mi-home .mi-button {
@@ -968,12 +1210,21 @@
       }
 
       #mi-home .mi-topbar-inner {
-        flex-wrap: wrap;
-        padding: 10px 0;
+        flex-wrap: nowrap;
+        padding: 0;
       }
 
       #mi-home .mi-actions {
-        width: 100%;
+        width: auto;
+      }
+
+      #mi-home .mi-footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #mi-home .mi-footer-links {
+        justify-content: flex-start;
       }
     }
 
@@ -1036,7 +1287,7 @@
     <section class="mi-hero" aria-label="모먼트인사이트 소개">
       <div class="mi-shell mi-hero-grid">
         <div>
-          <span class="mi-kicker">Marketing Site</span>
+          <span class="mi-kicker">통합 마케팅 운영 플랫폼</span>
           <h1 class="mi-hero-title">
             <span class="mi-title-main">모먼트 인사이트</span>
             <span class="mi-title-sub">마케팅 사이트</span>
@@ -1063,10 +1314,10 @@
           </div>
         </div>
 
-        <aside class="mi-preview" aria-label="성과 대시보드 요약">
+        <aside class="mi-preview" aria-label="성과 대시보드 샘플 화면">
           <div class="mi-preview-top">
             <strong>성과 대시보드</strong>
-            <span class="mi-badge">요약 화면</span>
+            <span class="mi-badge">샘플 화면</span>
           </div>
           <div class="mi-preview-body">
             <div class="mi-preview-title">
@@ -1074,7 +1325,7 @@
                 <h3>브랜드 현재 성과</h3>
                 <p>월간 성과 요약 데이터 기준</p>
               </div>
-              <span class="mi-badge">6월</span>
+              <span class="mi-badge">예시 데이터</span>
             </div>
             <div class="mi-metrics">
               <div class="mi-metric"><span>누적 매출</span><strong>4,180만원</strong></div>
@@ -1269,7 +1520,17 @@
   </main>
 
   <footer class="mi-footer">
-    모먼트 인사이트 · 마케팅 사이트 · KPI, 보고서, 일정, 광고 성과, 키워드 분석 통합 관리
+    <div class="mi-shell mi-footer-inner">
+      <div class="mi-footer-brand">
+        <strong>Moment Insight</strong>
+        <span>KPI, 보고서, 일정, 광고 성과를 연결하는 마케팅 운영 플랫폼</span>
+      </div>
+      <nav class="mi-footer-links" aria-label="하단 바로가기">
+        <a href="/client#mi-dashboard">광고주 대시보드</a>
+        <a href="/admin">운영팀 로그인</a>
+        <a href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 문의</a>
+      </nav>
+    </div>
   </footer>
   <a class="mi-kakao-floating" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer" aria-label="모먼트인사이트 카카오톡 채널 문의">
     <i class="mi-kakao-icon" aria-hidden="true"></i>
@@ -1309,3 +1570,5 @@
     })();
   </script>
 </section>
+</body>
+</html>

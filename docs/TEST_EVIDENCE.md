@@ -11,7 +11,8 @@
 - 회귀 기준선: `homeFeatureShowcasePriorityAndGroups=true`. 섹션 순서뿐 아니라 snapshot에 rank+keyword, tracking에 trend+place만 존재하는지 직접 검사한다. `homeAnonymousFeatureShowcase=true`도 유지한다.
 - 독립 2차 검토: 순서·그룹·프리미엄 톤·반응형·익명화·기능 비변경에서 차단 이슈 없음.
 - 비변경 범위: 팝업, `admin.html`, `client.html`, 순위 수집·매칭·저장·크론, Supabase·운영 데이터 변경 없음.
-- 배포: 사용자 요청에 따라 push·Production 배포 없음. 운영 홈페이지는 `368408d` 유지.
+- Production: 커밋 `9cdbaad`, `momentinsight-8rljvs8ue-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`, READY.
+- 운영 검증: `/health`·`/`·`/home.html`·`/admin.html`·`/client.html` HTTP 200, health `ok=true`·`supabaseReady=true`, 운영 HTML과 로컬 `dist` SHA-256 일치. 1440×900·390×844에서 그룹별 2카드·가로 넘침·카드 잘림·콘솔 오류 0건.
 
 ## 2026-07-15 · 메인 홈페이지 익명 기능 쇼케이스
 
@@ -26,7 +27,7 @@
 - 개인정보 기준선: 실고객 문자열 NFKC 정규화 차단, 9자리 이상 숫자, 외부 URL, 상품/원부/플레이스 ID 문구, 임시 파일·스크린샷 경로 금지. `homeAnonymousFeatureShowcase=true`.
 - 자동 검사: `npm run check:quality`, `npm run build:vercel`, `git diff --check` 통과. 서버 13/13, 플레이스 수집기 25/25, 크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 정상.
 - 비변경 범위: `admin.html`, `client.html`, `src/server`, 플레이스 수집기, Supabase·운영 데이터 변경 없음.
-- 배포: 사용자 요청에 따라 push·Production 배포 없음. 운영 홈페이지는 `368408d` 유지.
+- 배포: 커밋 `8d78d01`을 포함한 최종 `9cdbaad` Production `momentinsight-8rljvs8ue-momentlabs.vercel.app` · 운영 별칭 반영 완료.
 
 ## 2026-07-15 · 메인 홈페이지 프리미엄 보완 2차
 
@@ -39,7 +40,7 @@
 - 시각 확인: 딥네이비·화이트·절제된 블루 계층, 핵심 매출 카드 강조, 연결형 신뢰 패널·운영 흐름, 실제 경로만 둔 푸터를 1440×900·390×844에서 육안 검수.
 - 릴리즈 기준선: `homeDocumentShellAndViewport=true`, `homePopupGeometryPreserved=true`, `homePremiumHierarchyVisible=true`, 기존 `homeDevelopmentNoticeVisible=true`.
 - 자동 검사: `npm run check:quality`, `npm run build:vercel`, `git diff --check` 통과. 서버 13/13, 플레이스 수집기 25/25, 크론·순위 매칭·키워드 트렌드·Vercel 정적 빌드 정상.
-- 배포: 사용자 요청에 따라 push·Production 배포 없음. 운영 홈페이지는 `368408d`, 거절된 `0886833`은 미사용.
+- 배포: 커밋 `530839f`를 포함한 최종 `9cdbaad` Production `momentinsight-8rljvs8ue-momentlabs.vercel.app` · 운영 별칭 반영 완료. 거절된 `0886833`은 미사용.
 
 ## 2026-07-15 · N 30일 순위 슬롯 `상품` 문구 정리
 

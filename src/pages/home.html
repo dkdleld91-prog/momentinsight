@@ -773,12 +773,14 @@
       position: relative;
       overflow: hidden;
       padding: 24px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(174, 196, 224, 0.16);
       border-radius: 20px;
       background:
-        radial-gradient(circle at 88% 0%, rgba(55, 112, 220, 0.24), transparent 34%),
-        linear-gradient(145deg, #061a3a 0%, #0a284f 100%);
-      box-shadow: 0 26px 64px rgba(6, 26, 58, 0.16);
+        radial-gradient(circle at 88% 0%, rgba(93, 126, 170, 0.15), transparent 34%),
+        linear-gradient(145deg, #071421 0%, #0a1e36 54%, #102b4b 100%);
+      box-shadow:
+        0 28px 68px rgba(4, 17, 36, 0.2),
+        inset 0 1px 0 rgba(255, 255, 255, 0.06);
     }
 
     #mi-home .mi-suite-head,
@@ -834,9 +836,56 @@
       font-weight: 800;
     }
 
-    #mi-home .mi-suite-grid {
+    #mi-home .mi-suite-groups {
       position: relative;
       z-index: 1;
+      display: grid;
+      gap: 16px;
+    }
+
+    #mi-home .mi-suite-group {
+      padding: 14px;
+      border: 1px solid rgba(177, 199, 226, 0.12);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    #mi-home .mi-suite-group-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 11px;
+      padding: 0 2px;
+    }
+
+    #mi-home .mi-suite-group-head div {
+      display: flex;
+      align-items: baseline;
+      gap: 9px;
+    }
+
+    #mi-home .mi-suite-group-head small {
+      color: rgba(255, 255, 255, 0.52);
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+
+    #mi-home .mi-suite-group-head strong {
+      color: #ffffff;
+      font-size: 13px;
+      font-weight: 850;
+    }
+
+    #mi-home .mi-suite-group-head p {
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 10px;
+      font-weight: 750;
+    }
+
+    #mi-home .mi-suite-grid {
       display: grid;
       grid-template-columns: repeat(12, minmax(0, 1fr));
       gap: 12px;
@@ -847,10 +896,10 @@
       min-height: 226px;
       padding: 18px;
       overflow: hidden;
-      border: 1px solid rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(196, 208, 224, 0.72);
       border-radius: 15px;
-      background: rgba(255, 255, 255, 0.97);
-      box-shadow: 0 12px 30px rgba(1, 13, 32, 0.1);
+      background: #fbfcfe;
+      box-shadow: 0 10px 26px rgba(1, 13, 32, 0.09);
     }
 
     #mi-home .mi-suite-card.rank,
@@ -1505,13 +1554,27 @@
         justify-content: flex-start;
       }
 
+      #mi-home .mi-suite-groups {
+        gap: 12px;
+      }
+
+      #mi-home .mi-suite-group {
+        padding: 10px 0 12px;
+        border-radius: 14px;
+      }
+
+      #mi-home .mi-suite-group-head {
+        padding: 0 10px;
+      }
+
       #mi-home .mi-suite-grid {
         grid-template-columns: none;
         grid-auto-flow: column;
         grid-auto-columns: 88%;
         gap: 9px;
         overflow-x: auto;
-        padding-bottom: 4px;
+        padding: 0 10px 4px;
+        scroll-padding-left: 10px;
         scroll-snap-type: x proximity;
         scrollbar-width: none;
       }
@@ -1689,6 +1752,142 @@
       </div>
     </section>
 
+    <!-- mi-feature-showcase:start -->
+    <section class="mi-section compact" id="mi-home-features" data-mi-feature-showcase data-mi-showcase-privacy="synthetic-only">
+      <div class="mi-shell">
+        <div class="mi-section-head">
+          <span class="mi-kicker">Product Intelligence</span>
+          <h2>순위부터 시장 흐름까지, 한 번에 봅니다.</h2>
+          <p>광고를 제외한 오가닉 순위와 30일 변화, 검색 수요를 함께 확인합니다.</p>
+        </div>
+
+        <div class="mi-suite">
+          <div class="mi-suite-head">
+            <div class="mi-suite-head-copy">
+              <small>Moment Insight</small>
+              <strong>마케팅 데이터 도구</strong>
+            </div>
+            <div class="mi-suite-head-badges">
+              <span>예시 데이터</span>
+              <span>실고객 정보 미사용</span>
+            </div>
+          </div>
+
+          <div class="mi-suite-groups">
+            <section class="mi-suite-group" data-mi-showcase-group="snapshot">
+              <div class="mi-suite-group-head">
+                <div><small>Data Snapshot</small><strong>현재 데이터</strong></div>
+                <p>순위·검색 수요</p>
+              </div>
+              <div class="mi-suite-grid" aria-label="현재 데이터 기능 예시">
+                <article class="mi-suite-card rank">
+                  <div class="mi-suite-card-head">
+                    <div>
+                      <small>Naver Shopping</small>
+                      <h3>오가닉 상품 순위</h3>
+                    </div>
+                    <span class="mi-suite-chip">광고 제외</span>
+                  </div>
+                  <div class="mi-suite-rank-main">
+                    <div class="mi-suite-thumb" aria-hidden="true">MI</div>
+                    <div>
+                      <span class="mi-suite-label">예시 키워드 A · 예시 상품 A</span>
+                      <strong class="mi-suite-rank-value">7위</strong>
+                      <p>원부와 정확 상품을 비교해 더 높은 오가닉 순위를 보여줍니다.</p>
+                    </div>
+                  </div>
+                  <div class="mi-suite-pills">
+                    <span>1페이지</span>
+                    <span>300위 확인</span>
+                    <span>원부·상품 비교</span>
+                  </div>
+                </article>
+
+                <article class="mi-suite-card keyword">
+                  <div class="mi-suite-card-head">
+                    <div>
+                      <small>Keyword Market</small>
+                      <h3>키워드 시장 분석</h3>
+                    </div>
+                    <span class="mi-suite-chip">예시 키워드 B</span>
+                  </div>
+                  <div class="mi-suite-market-value">
+                    <strong>18,400회</strong>
+                    <span>경쟁도 보통</span>
+                  </div>
+                  <div class="mi-suite-bars" aria-label="예시 키워드 분석 지표">
+                    <div class="mi-suite-bar"><span>검색 수요</span><i style="--mi-bar: 72%"></i><b>72</b></div>
+                    <div class="mi-suite-bar"><span>노출 경쟁</span><i style="--mi-bar: 48%"></i><b>48</b></div>
+                    <div class="mi-suite-bar"><span>SEO 기회</span><i style="--mi-bar: 66%"></i><b>66</b></div>
+                  </div>
+                  <div class="mi-suite-pills"><span>수요 비교</span><span>SEO 후보 분류</span></div>
+                </article>
+              </div>
+            </section>
+
+            <section class="mi-suite-group" data-mi-showcase-group="tracking">
+              <div class="mi-suite-group-head">
+                <div><small>30 Day Tracking</small><strong>30일 순위 추적</strong></div>
+                <p>상품·플레이스 변화</p>
+              </div>
+              <div class="mi-suite-grid" aria-label="30일 순위 추적 기능 예시">
+                <article class="mi-suite-card trend">
+                  <div class="mi-suite-card-head">
+                    <div>
+                      <small>N Product · 30 Days</small>
+                      <h3>상품 순위 추적</h3>
+                    </div>
+                    <span class="mi-suite-chip">오전·오후 기록</span>
+                  </div>
+                  <div class="mi-suite-chart" aria-hidden="true">
+                    <svg viewBox="0 0 520 76" preserveAspectRatio="none">
+                      <path class="grid" d="M0 18H520 M0 42H520 M0 66H520"></path>
+                      <path class="line" d="M2 55 L88 47 L174 51 L260 34 L346 39 L432 21 L518 27"></path>
+                      <circle class="point" cx="2" cy="55" r="3"></circle>
+                      <circle class="point" cx="88" cy="47" r="3"></circle>
+                      <circle class="point" cx="174" cy="51" r="3"></circle>
+                      <circle class="point" cx="260" cy="34" r="3"></circle>
+                      <circle class="point" cx="346" cy="39" r="3"></circle>
+                      <circle class="point" cx="432" cy="21" r="3"></circle>
+                      <circle class="point" cx="518" cy="27" r="3"></circle>
+                    </svg>
+                  </div>
+                  <div class="mi-suite-days">
+                    <div><span>현재</span><strong>5위</strong></div>
+                    <div><span>최고</span><strong>2위</strong></div>
+                    <div><span>7일 평균</span><strong>6위</strong></div>
+                    <div><span>기준</span><strong>오가닉</strong></div>
+                  </div>
+                </article>
+
+                <article class="mi-suite-card place">
+                  <div class="mi-suite-card-head">
+                    <div>
+                      <small>Naver Place · 30 Days</small>
+                      <h3>플레이스 순위 추적</h3>
+                    </div>
+                    <span class="mi-suite-chip">예시 매장 A</span>
+                  </div>
+                  <div class="mi-suite-place-rank">
+                    <div><span>예시 키워드 C</span><strong>12위</strong></div>
+                    <span>현재 오가닉</span>
+                  </div>
+                  <div class="mi-suite-place-meta">
+                    <div><span>최고 순위</span><strong>8위</strong></div>
+                    <div><span>조회 범위</span><strong>300위</strong></div>
+                  </div>
+                  <div class="mi-suite-pills"><span>광고 제외</span><span>30일 변화 기록</span></div>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <p class="mi-suite-note">화면의 키워드·상품·매장명과 수치는 기능 설명을 위한 예시 데이터입니다.</p>
+        </div>
+      </div>
+    </section>
+    <!-- mi-feature-showcase:end -->
+
     <section class="mi-section compact" id="mi-home-trust">
       <div class="mi-shell">
         <div class="mi-section-head">
@@ -1739,126 +1938,6 @@
         </div>
       </div>
     </section>
-
-    <!-- mi-feature-showcase:start -->
-    <section class="mi-section compact" id="mi-home-features" data-mi-feature-showcase data-mi-showcase-privacy="synthetic-only">
-      <div class="mi-shell">
-        <div class="mi-section-head">
-          <span class="mi-kicker">Product Intelligence</span>
-          <h2>순위부터 시장 흐름까지, 한 번에 봅니다.</h2>
-          <p>광고를 제외한 오가닉 순위와 30일 변화, 검색 수요를 함께 확인합니다.</p>
-        </div>
-
-        <div class="mi-suite">
-          <div class="mi-suite-head">
-            <div class="mi-suite-head-copy">
-              <small>Moment Insight</small>
-              <strong>마케팅 데이터 도구</strong>
-            </div>
-            <div class="mi-suite-head-badges">
-              <span>예시 데이터</span>
-              <span>실고객 정보 미사용</span>
-            </div>
-          </div>
-
-          <div class="mi-suite-grid" aria-label="모먼트 인사이트 주요 기능 예시">
-            <article class="mi-suite-card rank">
-              <div class="mi-suite-card-head">
-                <div>
-                  <small>Naver Shopping</small>
-                  <h3>오가닉 상품 순위</h3>
-                </div>
-                <span class="mi-suite-chip">광고 제외</span>
-              </div>
-              <div class="mi-suite-rank-main">
-                <div class="mi-suite-thumb" aria-hidden="true">MI</div>
-                <div>
-                  <span class="mi-suite-label">예시 키워드 A · 예시 상품 A</span>
-                  <strong class="mi-suite-rank-value">7위</strong>
-                  <p>원부와 정확 상품을 비교해 더 높은 오가닉 순위를 보여줍니다.</p>
-                </div>
-              </div>
-              <div class="mi-suite-pills">
-                <span>1페이지</span>
-                <span>300위 확인</span>
-                <span>원부·상품 비교</span>
-              </div>
-            </article>
-
-            <article class="mi-suite-card keyword">
-              <div class="mi-suite-card-head">
-                <div>
-                  <small>Keyword Market</small>
-                  <h3>키워드 시장 분석</h3>
-                </div>
-                <span class="mi-suite-chip">예시 키워드 B</span>
-              </div>
-              <div class="mi-suite-market-value">
-                <strong>18,400회</strong>
-                <span>경쟁도 보통</span>
-              </div>
-              <div class="mi-suite-bars" aria-label="예시 키워드 분석 지표">
-                <div class="mi-suite-bar"><span>검색 수요</span><i style="--mi-bar: 72%"></i><b>72</b></div>
-                <div class="mi-suite-bar"><span>노출 경쟁</span><i style="--mi-bar: 48%"></i><b>48</b></div>
-                <div class="mi-suite-bar"><span>SEO 기회</span><i style="--mi-bar: 66%"></i><b>66</b></div>
-              </div>
-              <div class="mi-suite-pills"><span>수요 비교</span><span>SEO 후보 분류</span></div>
-            </article>
-
-            <article class="mi-suite-card trend">
-              <div class="mi-suite-card-head">
-                <div>
-                  <small>N Product · 30 Days</small>
-                  <h3>상품 순위 추적</h3>
-                </div>
-                <span class="mi-suite-chip">오전·오후 기록</span>
-              </div>
-              <div class="mi-suite-chart" aria-hidden="true">
-                <svg viewBox="0 0 520 76" preserveAspectRatio="none">
-                  <path class="grid" d="M0 18H520 M0 42H520 M0 66H520"></path>
-                  <path class="line" d="M2 55 L88 47 L174 51 L260 34 L346 39 L432 21 L518 27"></path>
-                  <circle class="point" cx="2" cy="55" r="3"></circle>
-                  <circle class="point" cx="88" cy="47" r="3"></circle>
-                  <circle class="point" cx="174" cy="51" r="3"></circle>
-                  <circle class="point" cx="260" cy="34" r="3"></circle>
-                  <circle class="point" cx="346" cy="39" r="3"></circle>
-                  <circle class="point" cx="432" cy="21" r="3"></circle>
-                  <circle class="point" cx="518" cy="27" r="3"></circle>
-                </svg>
-              </div>
-              <div class="mi-suite-days">
-                <div><span>현재</span><strong>5위</strong></div>
-                <div><span>최고</span><strong>2위</strong></div>
-                <div><span>7일 평균</span><strong>6위</strong></div>
-                <div><span>기준</span><strong>오가닉</strong></div>
-              </div>
-            </article>
-
-            <article class="mi-suite-card place">
-              <div class="mi-suite-card-head">
-                <div>
-                  <small>Naver Place · 30 Days</small>
-                  <h3>플레이스 순위 추적</h3>
-                </div>
-                <span class="mi-suite-chip">예시 매장 A</span>
-              </div>
-              <div class="mi-suite-place-rank">
-                <div><span>예시 키워드 C</span><strong>12위</strong></div>
-                <span>현재 오가닉</span>
-              </div>
-              <div class="mi-suite-place-meta">
-                <div><span>최고 순위</span><strong>8위</strong></div>
-                <div><span>조회 범위</span><strong>300위</strong></div>
-              </div>
-              <div class="mi-suite-pills"><span>광고 제외</span><span>30일 변화 기록</span></div>
-            </article>
-          </div>
-
-          <p class="mi-suite-note">화면의 키워드·상품·매장명과 수치는 기능 설명을 위한 예시 데이터입니다.</p>
-        </div>
-      </div>
-    </section>
-    <!-- mi-feature-showcase:end -->
 
     <section class="mi-section" id="mi-home-flow">
       <div class="mi-shell mi-split">

@@ -50,6 +50,16 @@ const homeFeatureShowcaseSource = functionBody(
   "<!-- mi-feature-showcase:start -->",
   "<!-- mi-feature-showcase:end -->",
 );
+const homeSnapshotShowcaseSource = functionBody(
+  homeFeatureShowcaseSource,
+  'data-mi-showcase-group="snapshot"',
+  "</section>",
+);
+const homeTrackingShowcaseSource = functionBody(
+  homeFeatureShowcaseSource,
+  'data-mi-showcase-group="tracking"',
+  "</section>",
+);
 const normalizedHomeFeatureShowcase = normalizeIdentityText(homeFeatureShowcaseSource);
 const prohibitedHomeShowcaseFragments = [
   "물티슈",
@@ -253,6 +263,22 @@ const checks = {
     && !prohibitedHomeShowcaseFragments.some((value) => normalizedHomeFeatureShowcase.includes(value))
     && !homeSource.includes("For Brand Growth")
     && !homeSource.includes("Core Features"),
+  homeFeatureShowcasePriorityAndGroups: homeSource.indexOf('id="mi-home-features"') !== -1
+    && homeSource.indexOf('id="mi-home-trust"') !== -1
+    && homeSource.indexOf('id="mi-home-features"') < homeSource.indexOf('id="mi-home-trust"')
+    && homeFeatureShowcaseSource.includes('data-mi-showcase-group="snapshot"')
+    && homeFeatureShowcaseSource.includes('data-mi-showcase-group="tracking"')
+    && homeFeatureShowcaseSource.includes("현재 데이터")
+    && homeFeatureShowcaseSource.includes("30일 순위 추적")
+    && (homeFeatureShowcaseSource.match(/class="mi-suite-grid"/g) || []).length === 2
+    && homeSnapshotShowcaseSource.includes('class="mi-suite-card rank"')
+    && homeSnapshotShowcaseSource.includes('class="mi-suite-card keyword"')
+    && !homeSnapshotShowcaseSource.includes('class="mi-suite-card trend"')
+    && !homeSnapshotShowcaseSource.includes('class="mi-suite-card place"')
+    && homeTrackingShowcaseSource.includes('class="mi-suite-card trend"')
+    && homeTrackingShowcaseSource.includes('class="mi-suite-card place"')
+    && !homeTrackingShowcaseSource.includes('class="mi-suite-card rank"')
+    && !homeTrackingShowcaseSource.includes('class="mi-suite-card keyword"'),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   placeRankReleased: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위</a>")

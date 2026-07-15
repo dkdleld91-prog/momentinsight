@@ -670,7 +670,6 @@
     }
 
     #mi-home .mi-grid-3,
-    #mi-home .mi-grid-4,
     #mi-home .mi-split {
       display: grid;
       gap: 16px;
@@ -678,10 +677,6 @@
 
     #mi-home .mi-grid-3 {
       grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    #mi-home .mi-grid-4 {
-      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     #mi-home .mi-split {
@@ -745,20 +740,6 @@
       border-right: 0;
     }
 
-    #mi-home-roles {
-      background: linear-gradient(180deg, rgba(237, 243, 250, 0.74), rgba(244, 247, 251, 0));
-    }
-
-    #mi-home-roles .mi-role-card {
-      border-color: rgba(6, 26, 58, 0.09);
-      box-shadow: none;
-    }
-
-    #mi-home-roles .mi-role-card:nth-child(2) {
-      transform: translateY(-6px);
-      box-shadow: 0 18px 40px rgba(6, 26, 58, 0.07);
-    }
-
     #mi-home .mi-role-card strong {
       color: var(--mi-navy);
     }
@@ -782,6 +763,344 @@
 
     #mi-home .mi-role-list span:last-child {
       border-bottom: 0;
+    }
+
+    #mi-home-features {
+      background: linear-gradient(180deg, rgba(237, 243, 250, 0.72), rgba(244, 247, 251, 0));
+    }
+
+    #mi-home .mi-suite {
+      position: relative;
+      overflow: hidden;
+      padding: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      background:
+        radial-gradient(circle at 88% 0%, rgba(55, 112, 220, 0.24), transparent 34%),
+        linear-gradient(145deg, #061a3a 0%, #0a284f 100%);
+      box-shadow: 0 26px 64px rgba(6, 26, 58, 0.16);
+    }
+
+    #mi-home .mi-suite-head,
+    #mi-home .mi-suite-head-copy,
+    #mi-home .mi-suite-head-badges,
+    #mi-home .mi-suite-card-head,
+    #mi-home .mi-suite-pills,
+    #mi-home .mi-suite-rank-main,
+    #mi-home .mi-suite-place-rank {
+      display: flex;
+      align-items: center;
+    }
+
+    #mi-home .mi-suite-head {
+      position: relative;
+      z-index: 1;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+
+    #mi-home .mi-suite-head-copy {
+      gap: 10px;
+      color: #ffffff;
+    }
+
+    #mi-home .mi-suite-head-copy small {
+      color: rgba(255, 255, 255, 0.54);
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    #mi-home .mi-suite-head-copy strong {
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    #mi-home .mi-suite-head-badges {
+      justify-content: flex-end;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+
+    #mi-home .mi-suite-head-badges span {
+      padding: 5px 9px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.76);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-suite-grid {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-home .mi-suite-card {
+      min-width: 0;
+      min-height: 226px;
+      padding: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.97);
+      box-shadow: 0 12px 30px rgba(1, 13, 32, 0.1);
+    }
+
+    #mi-home .mi-suite-card.rank,
+    #mi-home .mi-suite-card.trend {
+      grid-column: span 7;
+    }
+
+    #mi-home .mi-suite-card.keyword,
+    #mi-home .mi-suite-card.place {
+      grid-column: span 5;
+    }
+
+    #mi-home .mi-suite-card-head {
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    #mi-home .mi-suite-card-head div {
+      min-width: 0;
+    }
+
+    #mi-home .mi-suite-card-head small {
+      display: block;
+      margin-bottom: 3px;
+      color: var(--mi-blue);
+      font-size: 9.5px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #mi-home .mi-suite-card-head h3 {
+      font-size: 15px;
+    }
+
+    #mi-home .mi-suite-chip {
+      flex: 0 0 auto;
+      padding: 5px 8px;
+      border: 1px solid #dbe5f1;
+      border-radius: 999px;
+      background: #f6f9fc;
+      color: #52627a;
+      font-size: 9.5px;
+      font-weight: 850;
+    }
+
+    #mi-home .mi-suite-rank-main {
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    #mi-home .mi-suite-thumb {
+      width: 68px;
+      height: 68px;
+      display: grid;
+      flex: 0 0 68px;
+      place-items: center;
+      border: 1px solid #dbe5f1;
+      border-radius: 14px;
+      background: linear-gradient(145deg, #eef3f9, #ffffff);
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.08em;
+    }
+
+    #mi-home .mi-suite-label {
+      display: block;
+      overflow: hidden;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 800;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-home .mi-suite-rank-value,
+    #mi-home .mi-suite-place-rank strong {
+      display: block;
+      margin-top: 5px;
+      color: var(--mi-navy);
+      font-size: 31px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    #mi-home .mi-suite-rank-main p {
+      margin-top: 8px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #mi-home .mi-suite-pills {
+      gap: 7px;
+      margin-top: 17px;
+      flex-wrap: wrap;
+    }
+
+    #mi-home .mi-suite-pills span {
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: #edf3f9;
+      color: #475467;
+      font-size: 9.5px;
+      font-weight: 850;
+    }
+
+    #mi-home .mi-suite-market-value {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    #mi-home .mi-suite-market-value strong {
+      color: var(--mi-navy);
+      font-size: 28px;
+      line-height: 1;
+    }
+
+    #mi-home .mi-suite-market-value span {
+      color: var(--mi-green);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-home .mi-suite-bars {
+      display: grid;
+      gap: 11px;
+    }
+
+    #mi-home .mi-suite-bar {
+      display: grid;
+      grid-template-columns: 62px minmax(0, 1fr) 30px;
+      gap: 8px;
+      align-items: center;
+      color: #667085;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-suite-bar i {
+      height: 6px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8eef6;
+    }
+
+    #mi-home .mi-suite-bar i::before {
+      content: "";
+      display: block;
+      width: var(--mi-bar);
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2558d8, #4d85eb);
+    }
+
+    #mi-home .mi-suite-chart {
+      height: 76px;
+      margin-top: 2px;
+    }
+
+    #mi-home .mi-suite-chart svg {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+    }
+
+    #mi-home .mi-suite-chart .grid {
+      stroke: #e6edf5;
+      stroke-width: 1;
+    }
+
+    #mi-home .mi-suite-chart .line {
+      fill: none;
+      stroke: #2558d8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 2.5;
+    }
+
+    #mi-home .mi-suite-chart .point {
+      fill: #ffffff;
+      stroke: #2558d8;
+      stroke-width: 2;
+    }
+
+    #mi-home .mi-suite-days,
+    #mi-home .mi-suite-place-meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 7px;
+      margin-top: 12px;
+    }
+
+    #mi-home .mi-suite-days div,
+    #mi-home .mi-suite-place-meta div {
+      padding: 8px;
+      border-radius: 9px;
+      background: #f3f6fa;
+    }
+
+    #mi-home .mi-suite-days span,
+    #mi-home .mi-suite-place-meta span {
+      display: block;
+      color: #7a8699;
+      font-size: 9px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-suite-days strong,
+    #mi-home .mi-suite-place-meta strong {
+      display: block;
+      margin-top: 3px;
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-home .mi-suite-place-rank {
+      justify-content: space-between;
+      gap: 16px;
+      padding: 13px 14px;
+      border-radius: 12px;
+      background: linear-gradient(145deg, #f0f5fb, #ffffff);
+    }
+
+    #mi-home .mi-suite-place-rank strong {
+      margin-top: 0;
+    }
+
+    #mi-home .mi-suite-place-rank span {
+      color: #667085;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-home .mi-suite-place-meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #mi-home .mi-suite-note {
+      position: relative;
+      z-index: 1;
+      margin-top: 13px;
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 10px;
+      font-weight: 700;
+      text-align: right;
     }
 
     #mi-home .mi-flow {
@@ -837,20 +1156,6 @@
     #mi-home .mi-flow-step p {
       margin-top: 4px;
       font-size: 14px;
-    }
-
-    #mi-home .mi-feature {
-      min-height: 160px;
-      border-color: rgba(6, 26, 58, 0.09);
-      box-shadow: none;
-    }
-
-    #mi-home .mi-feature small {
-      display: inline-flex;
-      margin-bottom: 12px;
-      color: var(--mi-blue);
-      font-size: 12px;
-      font-weight: 900;
     }
 
     #mi-home .mi-cta {
@@ -1024,8 +1329,11 @@
         grid-template-columns: 1fr;
       }
 
-      #mi-home .mi-grid-4 {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      #mi-home .mi-suite-card.rank,
+      #mi-home .mi-suite-card.keyword,
+      #mi-home .mi-suite-card.trend,
+      #mi-home .mi-suite-card.place {
+        grid-column: span 6;
       }
     }
 
@@ -1182,13 +1490,51 @@
         border-right: 0;
       }
 
-      #mi-home-roles .mi-role-card:nth-child(2) {
-        transform: none;
+      #mi-home .mi-suite {
+        padding: 15px;
+        border-radius: 17px;
       }
 
-      #mi-home .mi-feature {
-        min-height: 148px;
-        padding: 18px;
+      #mi-home .mi-suite-head {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 13px;
+      }
+
+      #mi-home .mi-suite-head-badges {
+        justify-content: flex-start;
+      }
+
+      #mi-home .mi-suite-grid {
+        grid-template-columns: none;
+        grid-auto-flow: column;
+        grid-auto-columns: 88%;
+        gap: 9px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scroll-snap-type: x proximity;
+        scrollbar-width: none;
+      }
+
+      #mi-home .mi-suite-grid::-webkit-scrollbar {
+        display: none;
+      }
+
+      #mi-home .mi-suite-card.rank,
+      #mi-home .mi-suite-card.keyword,
+      #mi-home .mi-suite-card.trend,
+      #mi-home .mi-suite-card.place {
+        grid-column: auto;
+        min-height: 258px;
+        scroll-snap-align: start;
+      }
+
+      #mi-home .mi-suite-card {
+        padding: 16px;
+      }
+
+      #mi-home .mi-suite-note {
+        text-align: left;
       }
 
       #mi-home .mi-cta {
@@ -1394,56 +1740,125 @@
       </div>
     </section>
 
-    <section class="mi-section compact" id="mi-home-roles">
+    <!-- mi-feature-showcase:start -->
+    <section class="mi-section compact" id="mi-home-features" data-mi-feature-showcase data-mi-showcase-privacy="synthetic-only">
       <div class="mi-shell">
         <div class="mi-section-head">
-          <span class="mi-kicker">For Brand Growth</span>
-          <h2>성과, 보고서, 순위 추적을 한곳에 둡니다.</h2>
-          <p>광고주는 핵심만 보고, 운영팀은 필요한 일만 처리합니다.</p>
+          <span class="mi-kicker">Product Intelligence</span>
+          <h2>순위부터 시장 흐름까지, 한 번에 봅니다.</h2>
+          <p>광고를 제외한 오가닉 순위와 30일 변화, 검색 수요를 함께 확인합니다.</p>
         </div>
 
-        <div class="mi-grid-3">
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">01</span>
-              <h3>성과 요약</h3>
-              <p>매출과 ROAS를 먼저 봅니다.</p>
+        <div class="mi-suite">
+          <div class="mi-suite-head">
+            <div class="mi-suite-head-copy">
+              <small>Moment Insight</small>
+              <strong>마케팅 데이터 도구</strong>
             </div>
-            <div class="mi-role-list">
-              <span>매출 <strong>요약</strong></span>
-              <span>KPI <strong>확인</strong></span>
-              <span>변화 <strong>정리</strong></span>
+            <div class="mi-suite-head-badges">
+              <span>예시 데이터</span>
+              <span>실고객 정보 미사용</span>
             </div>
-          </article>
+          </div>
 
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">02</span>
-              <h3>보고서 보관</h3>
-              <p>주간·월간 자료를 한곳에 둡니다.</p>
-            </div>
-            <div class="mi-role-list">
-              <span>주간 <strong>정리</strong></span>
-              <span>월간 <strong>확인</strong></span>
-              <span>자료 <strong>보관</strong></span>
-            </div>
-          </article>
+          <div class="mi-suite-grid" aria-label="모먼트 인사이트 주요 기능 예시">
+            <article class="mi-suite-card rank">
+              <div class="mi-suite-card-head">
+                <div>
+                  <small>Naver Shopping</small>
+                  <h3>오가닉 상품 순위</h3>
+                </div>
+                <span class="mi-suite-chip">광고 제외</span>
+              </div>
+              <div class="mi-suite-rank-main">
+                <div class="mi-suite-thumb" aria-hidden="true">MI</div>
+                <div>
+                  <span class="mi-suite-label">예시 키워드 A · 예시 상품 A</span>
+                  <strong class="mi-suite-rank-value">7위</strong>
+                  <p>원부와 정확 상품을 비교해 더 높은 오가닉 순위를 보여줍니다.</p>
+                </div>
+              </div>
+              <div class="mi-suite-pills">
+                <span>1페이지</span>
+                <span>300위 확인</span>
+                <span>원부·상품 비교</span>
+              </div>
+            </article>
 
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">03</span>
-              <h3>키워드와 일정</h3>
-              <p>순위와 다음 실행을 함께 봅니다.</p>
-            </div>
-            <div class="mi-role-list">
-              <span>키워드 <strong>분석</strong></span>
-              <span>일정 <strong>공유</strong></span>
-              <span>액션 <strong>확인</strong></span>
-            </div>
-          </article>
+            <article class="mi-suite-card keyword">
+              <div class="mi-suite-card-head">
+                <div>
+                  <small>Keyword Market</small>
+                  <h3>키워드 시장 분석</h3>
+                </div>
+                <span class="mi-suite-chip">예시 키워드 B</span>
+              </div>
+              <div class="mi-suite-market-value">
+                <strong>18,400회</strong>
+                <span>경쟁도 보통</span>
+              </div>
+              <div class="mi-suite-bars" aria-label="예시 키워드 분석 지표">
+                <div class="mi-suite-bar"><span>검색 수요</span><i style="--mi-bar: 72%"></i><b>72</b></div>
+                <div class="mi-suite-bar"><span>노출 경쟁</span><i style="--mi-bar: 48%"></i><b>48</b></div>
+                <div class="mi-suite-bar"><span>SEO 기회</span><i style="--mi-bar: 66%"></i><b>66</b></div>
+              </div>
+              <div class="mi-suite-pills"><span>수요 비교</span><span>SEO 후보 분류</span></div>
+            </article>
+
+            <article class="mi-suite-card trend">
+              <div class="mi-suite-card-head">
+                <div>
+                  <small>N Product · 30 Days</small>
+                  <h3>상품 순위 추적</h3>
+                </div>
+                <span class="mi-suite-chip">오전·오후 기록</span>
+              </div>
+              <div class="mi-suite-chart" aria-hidden="true">
+                <svg viewBox="0 0 520 76" preserveAspectRatio="none">
+                  <path class="grid" d="M0 18H520 M0 42H520 M0 66H520"></path>
+                  <path class="line" d="M2 55 L88 47 L174 51 L260 34 L346 39 L432 21 L518 27"></path>
+                  <circle class="point" cx="2" cy="55" r="3"></circle>
+                  <circle class="point" cx="88" cy="47" r="3"></circle>
+                  <circle class="point" cx="174" cy="51" r="3"></circle>
+                  <circle class="point" cx="260" cy="34" r="3"></circle>
+                  <circle class="point" cx="346" cy="39" r="3"></circle>
+                  <circle class="point" cx="432" cy="21" r="3"></circle>
+                  <circle class="point" cx="518" cy="27" r="3"></circle>
+                </svg>
+              </div>
+              <div class="mi-suite-days">
+                <div><span>현재</span><strong>5위</strong></div>
+                <div><span>최고</span><strong>2위</strong></div>
+                <div><span>7일 평균</span><strong>6위</strong></div>
+                <div><span>기준</span><strong>오가닉</strong></div>
+              </div>
+            </article>
+
+            <article class="mi-suite-card place">
+              <div class="mi-suite-card-head">
+                <div>
+                  <small>Naver Place · 30 Days</small>
+                  <h3>플레이스 순위 추적</h3>
+                </div>
+                <span class="mi-suite-chip">예시 매장 A</span>
+              </div>
+              <div class="mi-suite-place-rank">
+                <div><span>예시 키워드 C</span><strong>12위</strong></div>
+                <span>현재 오가닉</span>
+              </div>
+              <div class="mi-suite-place-meta">
+                <div><span>최고 순위</span><strong>8위</strong></div>
+                <div><span>조회 범위</span><strong>300위</strong></div>
+              </div>
+              <div class="mi-suite-pills"><span>광고 제외</span><span>30일 변화 기록</span></div>
+            </article>
+          </div>
+
+          <p class="mi-suite-note">화면의 키워드·상품·매장명과 수치는 기능 설명을 위한 예시 데이터입니다.</p>
         </div>
       </div>
     </section>
+    <!-- mi-feature-showcase:end -->
 
     <section class="mi-section" id="mi-home-flow">
       <div class="mi-shell mi-split">
@@ -1466,39 +1881,6 @@
           <div class="mi-flow-step">
             <div><strong>다음 실행 계획 공유</strong><p>다음 행동을 정리합니다.</p></div>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mi-section compact" id="mi-home-features">
-      <div class="mi-shell">
-        <div class="mi-section-head">
-          <span class="mi-kicker">Core Features</span>
-          <h2>필요한 기능만 먼저 보이게 정리했습니다.</h2>
-          <p>운영에서 자주 쓰는 화면만 먼저 배치했습니다.</p>
-        </div>
-
-        <div class="mi-grid-4">
-          <article class="mi-card mi-feature">
-            <small>Dashboard</small>
-            <h3>현재 성과 요약</h3>
-            <p>매출, 광고비, ROAS, 목표 달성률을 확인합니다.</p>
-          </article>
-          <article class="mi-card mi-feature">
-            <small>Reports</small>
-            <h3>보고서 관리</h3>
-            <p>주간, 월간, KPI 보고서를 브랜드별로 정리합니다.</p>
-          </article>
-          <article class="mi-card mi-feature">
-            <small>Schedule</small>
-            <h3>일정 공유</h3>
-            <p>촬영, 콘텐츠, 보고서 일정을 확인합니다.</p>
-          </article>
-          <article class="mi-card mi-feature">
-            <small>Action Plan</small>
-            <h3>다음 실행</h3>
-            <p>데이터 다음 할 일을 액션으로 정리합니다.</p>
-          </article>
         </div>
       </div>
     </section>

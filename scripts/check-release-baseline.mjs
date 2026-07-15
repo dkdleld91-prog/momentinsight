@@ -22,6 +22,13 @@ function orderedIncludes(source, values) {
   });
 }
 
+function normalizeIdentityText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[^0-9a-z가-힣]/g, "");
+}
+
 function assertCheck(condition, label) {
   if (!condition) {
     throw new Error(`Release baseline failed: ${label}`);
@@ -38,6 +45,32 @@ function functionBody(source, startMarker, endMarker) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
+const homeFeatureShowcaseSource = functionBody(
+  homeSource,
+  "<!-- mi-feature-showcase:start -->",
+  "<!-- mi-feature-showcase:end -->",
+);
+const normalizedHomeFeatureShowcase = normalizeIdentityText(homeFeatureShowcaseSource);
+const prohibitedHomeShowcaseFragments = [
+  "물티슈",
+  "브라운물티슈",
+  "BROWN",
+  "일신한일의료기",
+  "헤든프라임",
+  "온열찜질기",
+  "운열찜질기",
+  "배찜질기",
+  "구월동 맛집",
+  "대동집 인천구월점",
+  "호르몬치치 구월점",
+  "눈썹칼기",
+  "키친타올",
+  "휴지도매",
+  "51929278883",
+  "12149720593",
+  "1565776290",
+  "2011652806",
+].map(normalizeIdentityText);
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const shoppingRankServer = read("src/server/handlers/naver-shopping-rank.mjs");
@@ -199,6 +232,27 @@ const checks = {
     && homeSource.includes("#mi-home .mi-cta .mi-button.primary")
     && homeSource.includes("mi-footer-inner")
     && homeSource.includes("카카오 문의"),
+  homeAnonymousFeatureShowcase: homeFeatureShowcaseSource.includes('data-mi-showcase-privacy="synthetic-only"')
+    && homeFeatureShowcaseSource.includes("예시 데이터")
+    && homeFeatureShowcaseSource.includes("실고객 정보 미사용")
+    && homeFeatureShowcaseSource.includes("예시 키워드 A")
+    && homeFeatureShowcaseSource.includes("예시 키워드 B")
+    && homeFeatureShowcaseSource.includes("예시 키워드 C")
+    && homeFeatureShowcaseSource.includes("예시 상품 A")
+    && homeFeatureShowcaseSource.includes("예시 매장 A")
+    && homeFeatureShowcaseSource.includes("오가닉 상품 순위")
+    && homeFeatureShowcaseSource.includes("상품 순위 추적")
+    && homeFeatureShowcaseSource.includes("플레이스 순위 추적")
+    && homeFeatureShowcaseSource.includes("키워드 시장 분석")
+    && homeFeatureShowcaseSource.includes("기능 설명을 위한 예시 데이터입니다.")
+    && (homeFeatureShowcaseSource.match(/class="mi-suite-card /g) || []).length === 4
+    && !/<img\b/i.test(homeFeatureShowcaseSource)
+    && !/https?:\/\//i.test(homeFeatureShowcaseSource)
+    && !/\b\d{9,}\b/.test(homeFeatureShowcaseSource)
+    && !["상품ID", "원부ID", "플레이스ID", "codex-clipboard", "/var/folders/", "/products/", "/entry/place/"].some((value) => homeFeatureShowcaseSource.includes(value))
+    && !prohibitedHomeShowcaseFragments.some((value) => normalizedHomeFeatureShowcase.includes(value))
+    && !homeSource.includes("For Brand Growth")
+    && !homeSource.includes("Core Features"),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   placeRankReleased: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위</a>")

@@ -12,7 +12,7 @@ const REQUIRED_FILES = [
 
 function run(command, args, options = {}) {
   const output = execFileSync(command, args, {
-    cwd: process.cwd(),
+    cwd: options.cwd || process.cwd(),
     encoding: "utf8",
     stdio: options.inherit ? "inherit" : ["ignore", "pipe", "pipe"],
   });
@@ -37,8 +37,7 @@ function argument(name, fallback = "") {
 }
 
 function fail(message) {
-  console.error(message);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function validateName(name) {
@@ -78,6 +77,14 @@ function verifyPackageLock(commit) {
   if (lockRoot.version && lockRoot.version !== packageJson.version) fail("package-lock root package version does not match.");
 }
 
+function verifyGitConnectivity() {
+  const primaryLine = git(["worktree", "list", "--porcelain"])
+    .split("\n")
+    .find((line) => line.startsWith("worktree "));
+  const primaryWorktree = primaryLine ? primaryLine.slice("worktree ".length).normalize("NFC") : process.cwd();
+  run("git", ["fsck", "--connectivity-only"], { inherit: true, cwd: primaryWorktree });
+}
+
 function verifyCheckpoint(name, quality) {
   validateName(name);
   const ref = `refs/tags/${name}`;
@@ -85,7 +92,7 @@ function verifyCheckpoint(name, quality) {
   const commit = resolveCommit(ref);
   verifyRequiredFiles(commit);
   verifyPackageLock(commit);
-  git(["fsck", "--connectivity-only"], { inherit: true });
+  verifyGitConnectivity();
   if (quality) {
     const result = spawnSync("npm", ["run", "check:quality"], { cwd: process.cwd(), stdio: "inherit" });
     if (result.status !== 0) fail("Checkpoint quality verification failed.");
@@ -120,24 +127,34 @@ function createCheckpoint(name, ref) {
     `restore=git worktree add --detach /tmp/moment-insight-recovery ${name}`,
   ].join("\n");
   git(["tag", "-a", name, commit, "-m", message]);
-  verifyCheckpoint(name, false);
+  try {
+    verifyCheckpoint(name, false);
+  } catch (error) {
+    optionalGit(["tag", "-d", name]);
+    throw error;
+  }
   console.log(JSON.stringify({ ok: true, action: "create", name, commit, createdAt }, null, 2));
 }
 
 try {
-  git(["rev-parse", "--is-inside-work-tree"]);
-} catch {
-  fail("Run this command inside the Moment Insight Git repository.");
-}
+  try {
+    git(["rev-parse", "--is-inside-work-tree"]);
+  } catch {
+    fail("Run this command inside the Moment Insight Git repository.");
+  }
 
-const action = process.argv[2] || "verify";
-const name = argument("--name");
-if (!name) fail("A checkpoint name is required. Example: --name checkpoint/production-20260716");
+  const action = process.argv[2] || "verify";
+  const name = argument("--name");
+  if (!name) fail("A checkpoint name is required. Example: --name checkpoint/production-20260716");
 
-if (action === "create") {
-  createCheckpoint(name, argument("--ref", "HEAD"));
-} else if (action === "verify") {
-  verifyCheckpoint(name, process.argv.includes("--quality"));
-} else {
-  fail(`Unsupported recovery action: ${action}`);
+  if (action === "create") {
+    createCheckpoint(name, argument("--ref", "HEAD"));
+  } else if (action === "verify") {
+    verifyCheckpoint(name, process.argv.includes("--quality"));
+  } else {
+    fail(`Unsupported recovery action: ${action}`);
+  }
+} catch (error) {
+  console.error(error?.message || String(error));
+  process.exitCode = 1;
 }

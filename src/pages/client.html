@@ -9609,6 +9609,9 @@
         var placeHistory = card.querySelector("[data-place-rank-history]");
         if (!placeKeyword || !placeRun || !placeHistory) return;
         var placeTrackers = [];
+        var placeAutoSyncingDue = false;
+        var placeAutoSyncLastAt = 0;
+        var placeProviderConfigured = true;
 
         function applyPlaceGroupMetadata(trackers) {
           return (trackers || []).map(function (tracker) {
@@ -9647,6 +9650,38 @@
           if (!payload) payload = { ok: false, message: "플레이스 순위 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
           return payload;
+        }
+
+        function duePlaceTrackers(trackers) {
+          var now = Date.now();
+          return (trackers || []).filter(function (tracker) {
+            if (!tracker || tracker.status === "paused" || tracker.status === "completed") return false;
+            var next = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
+            return !next || next <= now;
+          });
+        }
+
+        async function syncDuePlaceTrackersIfNeeded(silent) {
+          var due = duePlaceTrackers(placeTrackers);
+          var now = Date.now();
+          if (!placeProviderConfigured || !due.length || placeAutoSyncingDue || now - placeAutoSyncLastAt < 60000) return;
+          placeAutoSyncingDue = true;
+          placeAutoSyncLastAt = now;
+          if (!silent) setStatus(placeStatus, "밀린 플레이스 자동 갱신을 확인 중입니다.", "");
+          try {
+            var payload = await requestPlaceTrackers("POST", { action: "sync-due", limit: "50" });
+            var checked = Number(payload && payload.summary && payload.summary.checked || 0);
+            if (checked > 0) {
+              var refreshed = await requestPlaceTrackers("GET");
+              placeTrackers = applyPlaceGroupMetadata(refreshed.trackers || []);
+              renderPlaceHistory(placeHistory, placeTrackers);
+            }
+            if (!silent) setStatus(placeStatus, payload.message || "플레이스 자동 갱신 상태를 확인했습니다.", payload.ok ? "is-ok" : "is-warn");
+          } catch (error) {
+            if (!silent) setStatus(placeStatus, "플레이스 자동 갱신 연결을 확인해주세요.", "is-warn");
+          } finally {
+            placeAutoSyncingDue = false;
+          }
         }
 
         async function updatePlaceTrackerGroups(trackerIds, groupName) {
@@ -9916,7 +9951,8 @@
 
         async function loadPlaceTrackers(silent) {
           var payload = await requestPlaceTrackers("GET");
-          if (payload.trackers) placeTrackers = payload.trackers;
+          placeProviderConfigured = payload.configured !== false;
+          placeTrackers = applyPlaceGroupMetadata(payload.trackers || []);
           renderPlaceHistory(placeHistory, placeTrackers);
           if (!silent) {
             var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
@@ -9924,6 +9960,7 @@
             if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
             setStatus(placeStatus, message, payload.ok === false || payload.configured === false ? "is-warn" : "is-ok");
           }
+          await syncDuePlaceTrackersIfNeeded(silent);
         }
 
         function syncPlaceKeywordFromMain() {

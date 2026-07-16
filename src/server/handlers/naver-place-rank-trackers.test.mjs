@@ -12,6 +12,7 @@ const AGENCY_CODE = "mml93-a01";
 const ADMIN_CODE = "place-rank-group-test";
 const TRACKERS = "naver_place_rank_trackers";
 const SNAPSHOTS = "naver_place_rank_snapshots";
+const CLIENTS = "clients";
 
 function trackerRow(values = {}) {
   const now = "2026-07-12T00:00:00.000Z";
@@ -101,6 +102,11 @@ class MockQuery {
     return this;
   }
 
+  is(column, value) {
+    this.filters.push((row) => row[column] === value);
+    return this;
+  }
+
   order(column, options = {}) {
     this.orders.push({ column, ascending: options.ascending !== false });
     return this;
@@ -185,6 +191,7 @@ function testContext(rows = [], options = {}) {
     tables: {
       [TRACKERS]: rows.map((row) => trackerRow(row)),
       [SNAPSHOTS]: [],
+      [CLIENTS]: (options.clients || []).map((row) => ({ ...row })),
     },
   };
   return {
@@ -226,6 +233,20 @@ function request(method, body) {
       "x-demo-admin-code": ADMIN_CODE,
       "x-mi-agency-code": AGENCY_CODE,
     },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+function clientRequest(method, body, options = {}) {
+  const agencyCode = options.agencyCode || AGENCY_CODE;
+  const headers = {
+    "content-type": "application/json",
+    "x-mi-agency-code": agencyCode,
+  };
+  if (options.accessCode !== null) headers["x-mi-rank-access-code"] = options.accessCode || agencyCode;
+  return new Request("http://localhost/api/naver-place-rank-trackers?agencyCode=" + agencyCode, {
+    method,
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
 }
@@ -274,6 +295,54 @@ test("normalizes place rank group names like product rank groups", () => {
   assert.equal(normalizePlaceRankGroupName(""), "기본 그룹");
   assert.equal(normalizePlaceRankGroupName("  서울   매장  "), "서울 매장");
   assert.equal(normalizePlaceRankGroupName("가".repeat(50)).length, 40);
+});
+
+test("allows advertiser sync-due with its rank access code and rejects invalid access", async () => {
+  const { ctx } = testContext([], {
+    clients: [{ id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null }],
+  });
+
+  const allowed = await payload(await handlePlaceRankTrackersRequest(clientRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }), ctx));
+  assert.equal(allowed.status, 200);
+  assert.equal(allowed.body.ok, true);
+  assert.equal(allowed.body.summary.checked, 0);
+
+  const missing = await payload(await handlePlaceRankTrackersRequest(clientRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }, { accessCode: null }), ctx));
+  assert.equal(missing.status, 401);
+  assert.equal(missing.body.ok, false);
+
+  const wrong = await payload(await handlePlaceRankTrackersRequest(clientRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }, { accessCode: "wrong-agency" }), ctx));
+  assert.equal(wrong.status, 401);
+  assert.equal(wrong.body.ok, false);
+});
+
+test("keeps advertiser place trackers isolated by agency code", async () => {
+  const secondAgency = "agency-b02";
+  const { ctx } = testContext([
+    { id: "primary-tracker", agency_code: AGENCY_CODE },
+    { id: "second-tracker", agency_code: secondAgency, client_id: "client-2" },
+  ], {
+    clients: [
+      { id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null },
+      { id: "client-2", agency_code: secondAgency, status: "active", disconnected_at: null },
+    ],
+  });
+
+  const result = await payload(await handlePlaceRankTrackersRequest(clientRequest("GET", null, {
+    agencyCode: secondAgency,
+    accessCode: secondAgency,
+  }), ctx));
+  assert.equal(result.status, 200);
+  assert.deepEqual(result.body.trackers.map((tracker) => tracker.id), ["second-tracker"]);
 });
 
 test("reads legacy rows as the default group before the migration is applied", async () => {

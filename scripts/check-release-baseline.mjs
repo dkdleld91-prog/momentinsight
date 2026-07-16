@@ -453,7 +453,7 @@ const checks = {
     && !sheetTemplateBuilder.includes("일별_매출입력")
     && !adminSource.includes("일별_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
-  clientToolsExist: ["keyword-tool", "naver-rank", "naver-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  clientToolsExist: ["keyword-tool", "related-keywords", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
     && !serverIndex.includes('url.pathname === "/api/meta-research"'),
   metaAdsToolReady: serverIndex.includes('metaAds: () => import("./handlers/meta-ads.mjs")')

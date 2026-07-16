@@ -120,8 +120,8 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 13,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 14,
+  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords", "vat-calculator"].every((screen) => adminScreens.includes(screen)),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-admin-screen="home">운영 홈</a>',
@@ -130,6 +130,7 @@ const checks = {
     'data-mi-admin-screen="excel">운영 입력</a>',
     'data-mi-admin-screen="reports">보고서 관리</a>',
     'data-mi-admin-screen="publish">공개 관리</a>',
+    'data-mi-admin-screen="vat-calculator" data-owner-only>부가세 계산기</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-admin-screen="keyword">키워드 조회</a>',
     'data-mi-admin-screen="seo-check">SEO 확인</a>',
@@ -156,6 +157,23 @@ const checks = {
     && adminSource.includes("clearAdminAuthCode")
     && adminSource.includes("로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요."),
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
+  ownerVatCalculator: adminSource.includes('data-mi-admin-screen="vat-calculator" data-owner-only>부가세 계산기</a>')
+    && adminSource.includes('data-mi-admin-view="vat-calculator" data-owner-only')
+    && adminSource.includes('data-admin-vat-input')
+    && adminSource.includes('data-admin-vat-supply')
+    && adminSource.includes('data-admin-vat-tax')
+    && adminSource.includes('data-admin-vat-total')
+    && adminSource.includes('data-admin-vat-copy="total"')
+    && adminSource.includes('aria-label="합계금액 복사"')
+    && adminSource.includes('aria-label="공급가액 복사"')
+    && adminSource.includes('aria-label="부가세액 복사"')
+    && adminSource.includes('Math.round(normalizedSupply * 0.1)')
+    && adminSource.includes('navigator.clipboard.writeText')
+    && adminSource.includes('writeVatClipboardFallback')
+    && adminSource.includes('document.execCommand("copy")')
+    && adminSource.includes('target === "vat-calculator" && !canManageOwnerCodes()')
+    && !clientSource.includes('vat-calculator')
+    && !clientSource.includes('data-admin-vat-'),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
   clientCodeReactivationExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")

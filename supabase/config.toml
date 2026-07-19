@@ -1,10 +1,10 @@
 project_id = "unjduaxhykcrlotprsie"
 
 [functions.moment-health]
-verify_jwt = false
+verify_jwt = true
 
 [functions.moment-admin-clients]
-verify_jwt = false
+verify_jwt = true
 
 [functions.moment-api]
-verify_jwt = false
+verify_jwt = true

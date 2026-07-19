@@ -805,6 +805,17 @@ const client = withSupabase({ auth: "user" }, async (request, ctx) => {
 
 export default {
   async fetch(request: Request) {
+    // This legacy Edge API predates the HttpOnly code-session gateway and is no
+    // longer part of the production architecture. Keep a fail-closed response
+    // in source so an accidental function deployment cannot expose its former
+    // service-role demo or email-auth routes.
+    return json({
+      ok: false,
+      code: "LEGACY_EDGE_API_DISABLED",
+      message: "This legacy API is disabled. Use the canonical Vercel API.",
+    }, 410);
+
+    /* c8 ignore start -- retained only as migration reference */
     const { path } = normalizePath(request);
 
     if (request.method === "OPTIONS") {
@@ -829,5 +840,6 @@ export default {
         "DELETE /api/admin/:resource/:id"
       ]
     }, 404);
+    /* c8 ignore stop */
   }
 };

@@ -18,16 +18,27 @@ const defaultAllowedOrigins = [
   "http://localhost:8775"
 ];
 
+const productionAllowedOrigins = ["https://insight.momentlabs.co.kr"];
+
+function productionEnvironment() {
+  return process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+}
+
 export function allowedOrigins() {
   const raw = process.env.MI_ALLOWED_ORIGINS || process.env.ALLOWED_ORIGINS || "";
   const configured = raw
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
+  if (productionEnvironment()) {
+    const productionConfigured = configured.filter((origin) => origin !== "*" && /^https:\/\//i.test(origin));
+    return productionConfigured.length ? [...new Set(productionConfigured)] : productionAllowedOrigins;
+  }
   return configured.length ? [...new Set([...configured, ...defaultAllowedOrigins])] : defaultAllowedOrigins;
 }
 
 export function isLocalRequest(request) {
+  if (productionEnvironment()) return false;
   const url = new URL(request.url);
   return ["127.0.0.1", "localhost", "::1"].includes(url.hostname);
 }
@@ -41,7 +52,15 @@ export function corsHeaders(request, options = {}) {
     "access-control-allow-methods": options.methods || "GET, OPTIONS",
     "access-control-allow-headers": options.headers || "content-type",
     "cache-control": "no-store",
+    "content-security-policy": "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; frame-src 'none'; script-src-attr 'none'",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
+    "origin-agent-cluster": "?1",
+    "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=()",
+    "strict-transport-security": "max-age=31536000; includeSubDomains",
     "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "x-permitted-cross-domain-policies": "none",
     "referrer-policy": "strict-origin-when-cross-origin",
   };
 
@@ -56,7 +75,7 @@ export function corsHeaders(request, options = {}) {
 export function protectedJson(request, body, status = 200, options = {}) {
   return Response.json(body, {
     status,
-    headers: corsHeaders(request, options),
+    headers: { ...corsHeaders(request, options), ...(options.extraHeaders || {}) },
   });
 }
 

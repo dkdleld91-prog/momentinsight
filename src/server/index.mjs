@@ -1,14 +1,17 @@
 import { corsHeaders, protectedJson } from "./security.mjs";
+import { createHandlerResolver, executeRequest } from "./runtime.mjs";
+import { authorizeCodeSession, boundedApiRequest } from "./session-gate.mjs";
 
-const handlerCache = new Map();
 const handlerLoaders = {
   health: () => import("./handlers/health.mjs"),
+  ready: () => import("./handlers/ready.mjs"),
   dashboard: () => import("./handlers/dashboard.mjs"),
   adminClients: () => import("./handlers/admin-clients.mjs"),
   adminApi: () => import("./handlers/admin-api.mjs"),
   clientApi: () => import("./handlers/client-api.mjs"),
   demoApi: () => import("./handlers/demo-api.mjs"),
   integrationStatus: () => import("./handlers/integration-status.mjs"),
+  codeSessionApi: () => import("./handlers/code-session-api.mjs"),
   agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
   metaAds: () => import("./handlers/meta-ads.mjs"),
   naverKeyword: () => import("./handlers/naver-keyword.mjs"),
@@ -21,12 +24,7 @@ const handlerLoaders = {
   superAdminApi: () => import("./handlers/super-admin-api.mjs"),
 };
 
-async function handler(name) {
-  if (!handlerCache.has(name)) {
-    handlerCache.set(name, handlerLoaders[name]().then((module) => module.default));
-  }
-  return handlerCache.get(name);
-}
+const handler = createHandlerResolver(handlerLoaders);
 
 async function dispatch(name, request) {
   const app = await handler(name);
@@ -36,22 +34,31 @@ async function dispatch(name, request) {
 const routes = [
   { method: "GET", path: "/health", handler: "health" },
   { method: "GET", path: "/api/health", handler: "health" },
+  { method: "GET", path: "/ready", handler: "ready" },
+  { method: "GET", path: "/api/ready", handler: "ready" },
   { method: "GET", path: "/api/client/dashboard", handler: "dashboard" },
   { method: "GET", path: "/api/admin/clients", handler: "adminClients" }
 ];
 
-export default {
-  async fetch(request) {
-    const url = new URL(request.url);
+async function routeRequest(request) {
+  const url = new URL(request.url);
 
-    if (request.method === "OPTIONS") {
+  if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
         headers: corsHeaders(request, {
           methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS",
-          headers: "authorization, x-client-info, apikey, content-type, x-retry-count, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code, x-mi-super-admin-code, x-mi-owner-agency-code, x-mi-team-code"
+          headers: "authorization, x-client-info, apikey, content-type, x-retry-count, x-mi-csrf"
         })
       });
+    }
+
+    if (url.pathname === "/ready" || url.pathname === "/api/ready") {
+      return dispatch("ready", request);
+    }
+
+    if (url.pathname === "/api/session") {
+      return dispatch("codeSessionApi", request);
     }
 
     if (url.pathname.startsWith("/api/agency-code/") || url.pathname === "/api/agency-code-validate") {
@@ -135,5 +142,16 @@ export default {
     }
 
     return dispatch(route.handler, request);
-  }
+}
+
+export default {
+  fetch(request) {
+    return executeRequest(request, async () => {
+      const bounded = await boundedApiRequest(request);
+      if (!bounded.ok) return bounded.response;
+      const authorized = await authorizeCodeSession(bounded.request);
+      if (!authorized.ok) return authorized.response;
+      return routeRequest(authorized.request);
+    });
+  },
 };

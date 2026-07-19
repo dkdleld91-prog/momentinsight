@@ -103,6 +103,12 @@ const adminProductTracking = functionBlock(adminSource, "initRankTracking");
 const clientProductTracking = functionBlock(clientSource, "initRankTracking");
 const adminPlaceTracking = functionBlock(adminSource, "initPlaceRankTracking");
 const clientPlaceTracking = functionBlock(clientSource, "initPlaceRankTracking");
+const adminFetch = functionBlock(adminSource, "miFetch");
+const clientFetch = functionBlock(clientSource, "miFetch");
+const adminProductRequest = functionBlock(adminSource, "requestRankTrackers");
+const clientProductRequest = functionBlock(clientSource, "requestRankTrackers");
+const adminPlaceRequest = functionBlock(adminSource, "requestPlaceTrackers");
+const clientPlaceRequest = functionBlock(clientSource, "requestPlaceTrackers");
 
 const sharedPageMarkers = [
   "async function fetchKeywordData",
@@ -162,23 +168,37 @@ const checks = {
   ]),
   relatedKeywordViewsConnected: adminSource.includes('href="#mi-admin-related-keywords" data-mi-admin-screen="related-keywords"')
     && clientSource.includes('href="#mi-related-keywords" data-mi-screen="related-keywords"'),
-  adminTrackingAuthConnected: includesAll(adminSource, [
-    '"x-demo-admin-code": adminCode',
-    '"x-mi-agency-code": agencyCode',
-    '"x-mi-rank-access-code": adminCode',
-  ]),
-  clientTrackingAuthConnected: includesAll(clientSource, [
-    '"x-mi-agency-code": agencyCode',
-    '"x-mi-rank-access-code": accessCode',
-    "var response = await miFetch(url, options)",
-  ]),
+  adminTrackingAuthConnected: includesAll(adminFetch, [
+    'requestHeaders.delete("x-mi-agency-code")',
+    'requestHeaders.set("x-mi-csrf", secureSession.csrfToken)',
+  ])
+    && [adminProductRequest, adminPlaceRequest].every((block) => includesAll(block, [
+      'headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {}',
+      "var response = await miFetch(url, options)",
+    ]))
+    && !includesAll(adminSource, ['"x-demo-admin-code": adminCode'])
+    && !includesAll(adminSource, ['"x-mi-rank-access-code": adminCode'])
+    && !includesAll(adminSource, ["adminCode: adminCode"]),
+  clientTrackingAuthConnected: includesAll(clientFetch, [
+    'requestHeaders.delete(name)',
+    'requestHeaders.set("x-mi-csrf", secureClientSession.csrfToken)',
+  ])
+    && [clientProductRequest, clientPlaceRequest].every((block) => includesAll(block, [
+      'secureClientSession.role !== "client"',
+      'headers: {}',
+      'new URLSearchParams({ limit: "50" })',
+      "var response = await miFetch(url, options)",
+    ]))
+    && !clientSource.includes('"x-mi-rank-access-code": accessCode'),
   clientRankAccessLifecycleConnected: includesAll(clientSource, [
-    'localStorage.setItem("miRankAccessCode"',
-    'sessionStorage.setItem("miRankAccessCode"',
+    "var secureClientSession",
+    'requestHeaders.set("x-mi-csrf", secureClientSession.csrfToken)',
     'localStorage.removeItem("miRankAccessCode"',
     'sessionStorage.removeItem("miRankAccessCode"',
-    "function rankAccessCode()",
-  ]),
+  ])
+    && !clientSource.includes('localStorage.setItem("miRankAccessCode"')
+    && !clientSource.includes('sessionStorage.setItem("miRankAccessCode"')
+    && !clientSource.includes("function rankAccessCode()"),
   productTrackerActionsAligned: hasActions(adminProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"])
     && hasActions(clientProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"]),
   placeTrackerActionsAligned: hasActions(adminPlaceTracking, ["create", "check", "sync-due", "group", "delete"])

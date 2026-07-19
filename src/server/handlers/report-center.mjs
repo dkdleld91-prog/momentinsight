@@ -1,5 +1,6 @@
 import { withSupabase } from "@supabase/server";
 import pptxgen from "pptxgenjs";
+import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -17,7 +18,6 @@ const FILE_TYPES = new Set([
   "pdf",
   "pptx",
   "xlsx",
-  "xls",
   "csv",
   "image",
   "link",
@@ -28,7 +28,21 @@ const FILE_TYPES = new Set([
 
 const REPORT_BUCKET = "moment-reports";
 const REPORT_DOWNLOAD_EXPIRES_IN = 60 * 10;
-const REPORT_UPLOAD_MAX_BYTES = Number(process.env.MI_REPORT_UPLOAD_MAX_BYTES || 1024 * 1024 * 8);
+const DEFAULT_REPORT_UPLOAD_MAX_BYTES = 1024 * 1024 * 8;
+const MAX_REPORT_UPLOAD_MAX_BYTES = 1024 * 1024 * 25;
+
+export function reportUploadMaxBytes(value = process.env.MI_REPORT_UPLOAD_MAX_BYTES) {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return DEFAULT_REPORT_UPLOAD_MAX_BYTES;
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1024 || parsed > MAX_REPORT_UPLOAD_MAX_BYTES) {
+    return DEFAULT_REPORT_UPLOAD_MAX_BYTES;
+  }
+  return parsed;
+}
+
+const REPORT_UPLOAD_MAX_BYTES = reportUploadMaxBytes();
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 function json(request, body, status = 200) {
@@ -110,7 +124,6 @@ function clientPayload(row) {
     id: row.id,
     name: row.name,
     businessName: row.business_name,
-    agencyCode: row.agency_code,
     status: row.status,
     issuedByTeamCode: row.issued_by_team_code,
     disconnectedAt: row.disconnected_at,
@@ -139,9 +152,99 @@ function requestedReportBucket(body = {}) {
 function fileTypeFromName(filename, fallback = "other") {
   const ext = cleanText(filename).split(".").pop().toLowerCase();
   if (ext === "pptx") return "pptx";
-  if (["xlsx", "xls", "csv", "pdf"].includes(ext)) return ext;
+  if (["xlsx", "csv", "pdf"].includes(ext)) return ext;
   if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "image";
   return fallback;
+}
+
+const SAFE_UPLOAD_MIME = {
+  pdf: new Set(["application/pdf"]),
+  pptx: new Set(["application/vnd.openxmlformats-officedocument.presentationml.presentation", "application/zip", "application/octet-stream"]),
+  xlsx: new Set(["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/zip", "application/octet-stream"]),
+  csv: new Set(["text/csv", "text/plain", "application/csv", "application/octet-stream"]),
+  image: new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]),
+};
+
+function normalizedMime(value) {
+  return cleanText(value).split(";")[0].trim().toLowerCase();
+}
+
+function hasPrefix(buffer, bytes) {
+  return buffer.length >= bytes.length && bytes.every((value, index) => buffer[index] === value);
+}
+
+function imageMimeFromMagic(buffer) {
+  if (hasPrefix(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return "image/png";
+  if (hasPrefix(buffer, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
+  const gif = buffer.subarray(0, 6).toString("ascii");
+  if (gif === "GIF87a" || gif === "GIF89a") return "image/gif";
+  return "";
+}
+
+function safeCsvBytes(buffer) {
+  if (buffer.includes(0)) return false;
+  const sample = buffer.subarray(0, Math.min(buffer.length, 4096)).toString("utf8");
+  return !sample.includes("\uFFFD") && !/^\s*[=+@-](?:cmd|powershell|hyperlink|dde)/im.test(sample);
+}
+
+export function validateUploadedFile(filename, declaredMime, buffer) {
+  const fileType = fileTypeFromName(filename, "");
+  const mime = normalizedMime(declaredMime);
+  if (!fileType || !SAFE_UPLOAD_MIME[fileType]) {
+    return { ok: false, message: "허용되지 않는 파일 확장자입니다. PDF, PPTX, XLSX, CSV 또는 안전한 이미지 형식만 사용할 수 있습니다." };
+  }
+  if (mime && !SAFE_UPLOAD_MIME[fileType].has(mime)) {
+    return { ok: false, message: "파일 확장자와 콘텐츠 형식이 일치하지 않습니다." };
+  }
+
+  if (fileType === "pdf" && !hasPrefix(buffer, [...Buffer.from("%PDF-", "ascii")])) {
+    return { ok: false, message: "PDF 파일 서명을 확인할 수 없습니다." };
+  }
+  if ((fileType === "pptx" || fileType === "xlsx") && !hasPrefix(buffer, [0x50, 0x4b, 0x03, 0x04])) {
+    return { ok: false, message: "Office 파일 서명을 확인할 수 없습니다." };
+  }
+  if (fileType === "csv" && !safeCsvBytes(buffer)) {
+    return { ok: false, message: "CSV 파일에 허용되지 않는 바이너리 또는 실행 수식 패턴이 있습니다." };
+  }
+  if (fileType === "image") {
+    const detectedMime = imageMimeFromMagic(buffer);
+    if (!detectedMime || (mime && mime !== "application/octet-stream" && detectedMime !== mime)) {
+      return { ok: false, message: "이미지 확장자와 실제 파일 형식이 일치하지 않습니다." };
+    }
+    return { ok: true, fileType, contentType: detectedMime };
+  }
+  return { ok: true, fileType, contentType: mime || [...SAFE_UPLOAD_MIME[fileType]][0] };
+}
+
+function privateOrLocalHostname(hostname) {
+  const host = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host.endsWith(".internal")) return true;
+  if (/^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host)) return true;
+  const second = host.match(/^172\.(\d{1,3})\./);
+  if (second && Number(second[1]) >= 16 && Number(second[1]) <= 31) return true;
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return true;
+  return false;
+}
+
+function hostMatches(hostname, allowed) {
+  return allowed.some((host) => hostname === host || hostname.endsWith(`.${host}`));
+}
+
+export function safeExternalReportUrl(value, fileType = "link") {
+  const raw = cleanText(value);
+  if (!raw) return "";
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return "";
+  }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || privateOrLocalHostname(parsed.hostname)) return "";
+  const host = parsed.hostname.toLowerCase();
+  if (fileType === "drive" && !hostMatches(host, ["drive.google.com", "docs.google.com"])) return "";
+  if (fileType === "notion" && !hostMatches(host, ["notion.so", "notion.site"])) return "";
+  return parsed.toString();
 }
 
 function limitText(value, max = 110, fallback = "") {
@@ -446,6 +549,12 @@ function decodeBase64File(value) {
   const contentType = match && match[1] ? match[1] : "";
   const normalized = base64.replace(/\s/g, "");
   if (!normalized) return { ok: false, message: "업로드할 파일 데이터가 없습니다." };
+  if (normalized.length > Math.ceil(REPORT_UPLOAD_MAX_BYTES / 3) * 4 + 4) {
+    return { ok: false, message: "업로드 파일 데이터가 허용 크기를 초과했습니다." };
+  }
+  if (normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
+    return { ok: false, message: "파일 데이터 인코딩이 올바르지 않습니다." };
+  }
   const buffer = Buffer.from(normalized, "base64");
   if (!buffer.length) return { ok: false, message: "파일 데이터를 읽을 수 없습니다." };
   if (buffer.length > REPORT_UPLOAD_MAX_BYTES) {
@@ -518,7 +627,7 @@ async function recordAuditLog(ctx, payload) {
       action: payload.action,
       target_table: payload.targetTable,
       target_id: payload.targetId || null,
-      metadata: payload.metadata || {},
+      metadata: sanitizeAuditMetadata(payload.metadata || {}),
     });
 
   return !error;
@@ -529,8 +638,8 @@ async function findActiveClientByAgencyCode(ctx, agencyCode) {
 
   const { data, error } = await ctx.supabaseAdmin
     .from("clients")
-    .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at")
-    .ilike("agency_code", agencyCode)
+    .select("id, name, business_name, agency_code, status, disconnected_at")
+    .eq("agency_code", agencyCode)
     .eq("status", "active")
     .is("disconnected_at", null)
     .maybeSingle();
@@ -544,7 +653,7 @@ async function findActiveClientByTeamCode(ctx, teamCode) {
   const { data: team, error: teamError } = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .eq("status", "active")
     .is("revoked_at", null)
@@ -594,7 +703,7 @@ async function resolveAccess(request, ctx, body = {}) {
       .neq("status", "archived")
       .is("disconnected_at", null);
 
-    query = clientId ? query.eq("id", clientId) : query.ilike("agency_code", clientAgencyCode);
+    query = clientId ? query.eq("id", clientId) : query.eq("agency_code", clientAgencyCode);
     const { data, error } = await query.maybeSingle();
 
     if (error) return { ok: false, status: 500, message: "총관리자 광고주 조회에 실패했습니다.", detail: error.message };
@@ -668,7 +777,7 @@ async function handleGet(request, ctx) {
     access: {
       role: access.role,
       client: clientPayload(access.client),
-      teamCode: access.team?.team_code || null,
+      teamId: access.team?.id || null,
       teamName: access.team?.team_name || null,
     },
     reports: reports || [],
@@ -679,7 +788,7 @@ async function handleGet(request, ctx) {
 async function signFileForAccess(ctx, file) {
   if (!file?.storage_bucket || !file?.storage_path) {
     return {
-      signedUrl: file?.external_url || file?.url || "",
+      signedUrl: safeExternalReportUrl(file?.external_url || file?.url || "", file?.file_type || "link"),
       expiresIn: null,
     };
   }
@@ -701,27 +810,11 @@ async function handleSignedUpload(request, ctx, access, body) {
     return json(request, { ok: false, message: "광고주는 보고서 파일을 업로드할 수 없습니다." }, 403);
   }
 
-  const filename = sanitizeFilename(body.filename || body.fileName || body.title);
-  const bucket = requestedReportBucket(body);
-  if (!bucket) {
-    return json(request, { ok: false, message: `보고서 업로드 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400);
-  }
-  const path = `clients/${access.client.id}/reports/${dateFolder()}/${Date.now()}-${filename}`;
-
-  const { data, error } = await ctx.supabaseAdmin
-    .storage
-    .from(bucket)
-    .createSignedUploadUrl(path);
-
-  if (error) return json(request, { ok: false, message: "보고서 업로드 URL 생성에 실패했습니다.", detail: error.message }, 500);
-
   return json(request, {
-    ok: true,
-    bucket,
-    path,
-    signedUrl: data?.signedUrl,
-    token: data?.token,
-  });
+    ok: false,
+    code: "DIRECT_SIGNED_UPLOAD_DISABLED",
+    message: "검사 완료 확인이 없는 직접 업로드는 차단되었습니다. 검증 업로드를 사용해주세요.",
+  }, 410);
 }
 
 async function handleDirectUpload(request, ctx, access, body) {
@@ -732,6 +825,9 @@ async function handleDirectUpload(request, ctx, access, body) {
   const filename = sanitizeFilename(body.filename || body.fileName || body.title);
   const decoded = decodeBase64File(body.contentBase64 || body.content_base64 || body.dataUrl || body.data_url);
   if (!decoded.ok) return json(request, { ok: false, message: decoded.message }, 400);
+  const declaredContentType = cleanText(body.contentType || body.content_type || decoded.contentType, "application/octet-stream");
+  const validation = validateUploadedFile(filename, declaredContentType, decoded.buffer);
+  if (!validation.ok) return json(request, { ok: false, message: validation.message }, 400);
 
   const bucket = requestedReportBucket(body);
   if (!bucket) {
@@ -740,7 +836,7 @@ async function handleDirectUpload(request, ctx, access, body) {
 
   const scope = cleanText(body.scope, "sources") === "reports" ? "reports" : "sources";
   const path = `clients/${access.client.id}/${scope}/${dateFolder()}/${Date.now()}-${filename}`;
-  const contentType = cleanText(body.contentType || body.content_type || decoded.contentType, "application/octet-stream");
+  const contentType = validation.contentType;
 
   const upload = await ctx.supabaseAdmin
     .storage
@@ -755,9 +851,11 @@ async function handleDirectUpload(request, ctx, access, body) {
   }
 
   const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
-  const fileType = FILE_TYPES.has(cleanText(body.fileType || body.file_type))
-    ? cleanText(body.fileType || body.file_type)
-    : fileTypeFromName(filename);
+  const fileType = scope === "sources"
+    ? validation.fileType
+    : (FILE_TYPES.has(cleanText(body.fileType || body.file_type))
+      ? cleanText(body.fileType || body.file_type)
+      : validation.fileType);
   const title = cleanText(body.title, scope === "sources" ? `원천 파일 · ${filename}` : filename);
   const reportId = cleanText(body.reportId || body.report_id) || null;
 
@@ -922,12 +1020,23 @@ async function handleCreateReport(request, ctx, access, body) {
       report_id: data.id,
       title: cleanText(filePayload?.title || body.fileTitle || body.file_title, title),
       file_type: fileType,
-      external_url: filePayload?.externalUrl || filePayload?.external_url || body.externalUrl || body.external_url || null,
-      url: filePayload?.url || body.url || null,
+      external_url: null,
+      url: null,
       storage_bucket: storageBucket,
       storage_path: storagePath,
       visibility,
     };
+
+    const requestedExternalUrl = filePayload?.externalUrl || filePayload?.external_url || body.externalUrl || body.external_url || "";
+    const requestedUrl = filePayload?.url || body.url || "";
+    if (requestedExternalUrl) {
+      fileInsert.external_url = safeExternalReportUrl(requestedExternalUrl, fileType);
+      if (!fileInsert.external_url) return json(request, { ok: false, message: "외부 보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400);
+    }
+    if (requestedUrl) {
+      fileInsert.url = safeExternalReportUrl(requestedUrl, fileType);
+      if (!fileInsert.url) return json(request, { ok: false, message: "보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400);
+    }
 
     const { data: fileData, error: fileError } = await ctx.supabaseAdmin
       .from("files")

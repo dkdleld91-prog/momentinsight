@@ -1,8 +1,23 @@
 import { withSupabase } from "@supabase/server";
+import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 
-const ADMIN_RATE_WINDOW_MS = Number(process.env.MI_ADMIN_CODE_RATE_WINDOW_MS || 60_000);
-const ADMIN_RATE_LIMIT = Number(process.env.MI_ADMIN_CODE_RATE_LIMIT || 40);
+function boundedInteger(value, fallback, minimum, maximum) {
+  if (value === undefined || value === null || String(value).trim() === "") return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : fallback;
+}
+
+export function adminRateConfiguration(env = process.env) {
+  return {
+    windowMs: boundedInteger(env.MI_ADMIN_CODE_RATE_WINDOW_MS, 60_000, 10_000, 60 * 60 * 1000),
+    limit: boundedInteger(env.MI_ADMIN_CODE_RATE_LIMIT, 40, 5, 200),
+  };
+}
+
+const ADMIN_RATE = adminRateConfiguration();
+const ADMIN_RATE_WINDOW_MS = ADMIN_RATE.windowMs;
+const ADMIN_RATE_LIMIT = ADMIN_RATE.limit;
 const adminRateBucket = new Map();
 
 function json(request, body, status = 200) {
@@ -13,7 +28,8 @@ function json(request, body, status = 200) {
 }
 
 function normalizeAgencyCode(value) {
-  return String(value || "").trim().toLowerCase();
+  const code = String(value || "").trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{5,127}$/.test(code) ? code : "";
 }
 
 function clientRateKey(request) {
@@ -80,6 +96,14 @@ function requestTeamCode(request, body = {}) {
   );
 }
 
+function requestSessionTeamCode(request) {
+  return normalizeAgencyCode(request.headers.get("x-mi-team-code") || "");
+}
+
+function requestTargetTeamCode(body = {}) {
+  return normalizeAgencyCode(body.targetTeamCode || body.target_team_code || "");
+}
+
 function configuredSuperAdminCode() {
   return String(process.env.MI_SUPER_ADMIN_CODE || "").trim();
 }
@@ -104,6 +128,37 @@ function ownerActionAuthorized(request, body = {}) {
 
 function ownerAgencyAuthorized(request, body = {}) {
   return safeEqual(requestOwnerAgencyCode(request, body), primaryAgencyCode());
+}
+
+export function teamActionAccess(request, body = {}) {
+  const teamCode = requestSessionTeamCode(request);
+  if (teamCode) return { ok: true, teamCode, ownerTarget: false };
+
+  const targetTeamCode = requestTargetTeamCode(body);
+  if (!targetTeamCode) {
+    return { ok: false, status: 400, message: "운영팀 대상을 확인할 수 없습니다." };
+  }
+  const ownerAuth = ownerActionAuthorized(request, {});
+  if (!ownerAuth.ok) return ownerAuth;
+  return { ok: true, teamCode: targetTeamCode, ownerTarget: true };
+}
+
+function teamActionClientPayload(row, access) {
+  const payload = clientPayload(row);
+  if (!access.ownerTarget) delete payload.issuedByTeamCode;
+  return payload;
+}
+
+export function teamActionPayload(row, access) {
+  const payload = teamPayload(row);
+  if (!access.ownerTarget) {
+    delete payload.teamCode;
+    if (payload.client) {
+      delete payload.client.agencyCode;
+      delete payload.client.issuedByTeamCode;
+    }
+  }
+  return payload;
 }
 
 function clientPayload(row) {
@@ -168,7 +223,7 @@ async function recordAuditLog(ctx, payload) {
       action: payload.action,
       target_table: payload.targetTable,
       target_id: payload.targetId || null,
-      metadata: payload.metadata || {},
+      metadata: sanitizeAuditMetadata(payload.metadata || {}),
     });
 
   return !error;
@@ -201,7 +256,7 @@ async function attachTeamClient(ctx, team) {
     const result = await ctx.supabaseAdmin
       .from("clients")
       .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-      .ilike("issued_by_team_code", team.team_code)
+      .eq("issued_by_team_code", team.team_code)
       .eq("status", "active")
       .limit(1)
       .maybeSingle();
@@ -360,7 +415,7 @@ async function createClient(request, ctx, body) {
   const existing = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .ilike("agency_code", code)
+    .eq("agency_code", code)
     .maybeSingle();
 
   if (existing.error) {
@@ -379,7 +434,7 @@ async function createClient(request, ctx, body) {
         issued_by_team_code: null,
         disconnected_at: null,
         public_summary: body.publicSummary || body.public_summary || "총관리자가 재활성화한 광고주 코드입니다.",
-        internal_note: `MI super admin reactivated client code from ${primaryAgencyCode()}`,
+        internal_note: "MI super admin reactivated client access",
       })
       .eq("id", existing.data.id)
       .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
@@ -405,7 +460,7 @@ async function createClient(request, ctx, body) {
       agency_code: code,
       status: "active",
       public_summary: body.publicSummary || body.public_summary || "총관리자가 발급한 광고주 코드입니다.",
-      internal_note: `MI super admin issued client code from ${primaryAgencyCode()}`,
+      internal_note: "MI super admin issued client access",
     })
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
     .single();
@@ -443,7 +498,7 @@ async function createTeam(request, ctx, body) {
   const existing = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .ilike("team_code", code)
+    .eq("team_code", code)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
   if (existing.error) return json(request, { ok: false, message: "운영팀 코드 중복 확인에 실패했습니다.", detail: existing.error.message }, 500);
@@ -493,13 +548,12 @@ async function createTeam(request, ctx, body) {
   }
 
 async function validateTeam(request, ctx, body) {
-  const teamCode = requestTeamCode(request, body);
-  if (!teamCode) return json(request, { ok: false, message: "운영팀 코드를 입력해주세요." }, 400);
-
+  const access = teamActionAccess(request, body);
+  if (!access.ok) return json(request, { ok: false, message: access.message }, access.status);
   const teamResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", access.teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
   if (teamResult.error) return json(request, { ok: false, message: "운영팀 코드 확인에 실패했습니다.", detail: teamResult.error.message }, 500);
@@ -513,38 +567,40 @@ async function validateTeam(request, ctx, body) {
 
   return json(request, {
     ok: true,
-    team: teamPayload(teamWithClient.team),
+    team: teamActionPayload(teamWithClient.team, access),
     nextAgencyCode: nextCode.code,
   });
 }
 
 async function createClientForTeam(request, ctx, body) {
-  const teamCode = requestTeamCode(request, body);
   const name = String(body.clientName || body.client_name || body.name || "").trim();
   const businessName = String(body.businessName || body.business_name || name).trim();
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
-  if (!teamCode) return json(request, { ok: false, message: "운영팀 코드를 입력해주세요." }, 400);
   if (!name) return json(request, { ok: false, message: "광고주명을 입력해주세요." }, 400);
 
+  const access = teamActionAccess(request, body);
+  if (!access.ok) return json(request, { ok: false, message: access.message }, access.status);
   const teamResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", access.teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
   if (teamResult.error) return json(request, { ok: false, message: "운영팀 코드 확인에 실패했습니다.", detail: teamResult.error.message }, 500);
   if (!teamResult.data || teamResult.data.status !== "active") return json(request, { ok: false, message: "활성 운영팀 코드가 아닙니다." }, 403);
-  if (teamResult.data.client_id) return json(request, { ok: false, message: "이 운영팀에는 이미 광고주 1명이 연결되어 있습니다.", team: teamPayload(teamResult.data) }, 409);
+  if (teamResult.data.client_id) return json(request, { ok: false, message: "이 운영팀에는 이미 광고주 1명이 연결되어 있습니다.", team: teamActionPayload(teamResult.data, access) }, 409);
+
+  const teamCode = teamResult.data.team_code;
 
   const activeClient = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .ilike("issued_by_team_code", teamCode)
+    .eq("issued_by_team_code", teamCode)
     .eq("status", "active")
     .limit(1)
     .maybeSingle();
   if (activeClient.error) return json(request, { ok: false, message: "운영팀 광고주 연결 상태 확인에 실패했습니다.", detail: activeClient.error.message }, 500);
-  if (activeClient.data) return json(request, { ok: false, message: "이 운영팀에는 이미 활성 광고주가 연결되어 있습니다.", client: clientPayload(activeClient.data) }, 409);
+  if (activeClient.data) return json(request, { ok: false, message: "이 운영팀에는 이미 활성 광고주가 연결되어 있습니다.", client: teamActionClientPayload(activeClient.data, access) }, 409);
 
   let code = agencyCode;
   if (!code) {
@@ -560,37 +616,27 @@ async function createClientForTeam(request, ctx, body) {
   const existing = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .ilike("agency_code", code)
+    .eq("agency_code", code)
     .maybeSingle();
   if (existing.error) return json(request, { ok: false, message: "광고주 코드 중복 확인에 실패했습니다.", detail: existing.error.message }, 500);
-  if (existing.data && existing.data.status === "active") {
-    return json(request, { ok: false, message: "이미 활성화된 광고주 코드입니다.", client: clientPayload(existing.data) }, 409);
+  if (existing.data) {
+    // A team may create only a brand-new client credential. Reactivating or
+    // reassigning an existing row would transfer that client's reports and
+    // files across tenants. Only the owner flow may recover existing access.
+    return json(request, { ok: false, message: "사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요." }, 409);
   }
 
-  const clientMutation = existing.data
-    ? ctx.supabaseAdmin
-      .from("clients")
-      .update({
-        name,
-        business_name: businessName || name,
-        issued_by_team_code: teamResult.data.team_code,
-        status: "active",
-        disconnected_at: null,
-        public_summary: body.publicSummary || body.public_summary || "운영팀이 재활성화한 광고주 코드입니다.",
-        internal_note: `Reissued by operation team ${teamResult.data.team_code}`,
-      })
-      .eq("id", existing.data.id)
-    : ctx.supabaseAdmin
-      .from("clients")
-      .insert({
-        name,
-        business_name: businessName || name,
-        agency_code: code,
-        issued_by_team_code: teamResult.data.team_code,
-        status: "active",
-        public_summary: body.publicSummary || body.public_summary || "운영팀이 발급한 광고주 코드입니다.",
-        internal_note: `Issued by operation team ${teamResult.data.team_code}`,
-      });
+  const clientMutation = ctx.supabaseAdmin
+    .from("clients")
+    .insert({
+      name,
+      business_name: businessName || name,
+      agency_code: code,
+      issued_by_team_code: teamResult.data.team_code,
+      status: "active",
+      public_summary: body.publicSummary || body.public_summary || "운영팀이 발급한 광고주 코드입니다.",
+      internal_note: "Issued by authenticated operation team",
+    });
 
   const { data: client, error: clientError } = await clientMutation
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
@@ -604,10 +650,23 @@ async function createClientForTeam(request, ctx, body) {
     .is("client_id", null)
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
     .single();
-  if (teamError) return json(request, { ok: false, message: "운영팀 광고주 연결 저장에 실패했습니다.", detail: teamError.message }, 500);
+  if (teamError) {
+    const cleanup = await ctx.supabaseAdmin
+      .from("clients")
+      .delete()
+      .eq("id", client.id)
+      .eq("issued_by_team_code", teamResult.data.team_code);
+    return json(request, {
+      ok: false,
+      message: cleanup.error
+        ? "운영팀 연결이 충돌했고 임시 광고주 정리가 필요합니다. 총관리자에게 문의해주세요."
+        : "동시에 다른 연결이 처리되어 광고주 생성을 취소했습니다. 상태를 새로고침해주세요.",
+      code: cleanup.error ? "TEAM_CLIENT_LINK_CLEANUP_REQUIRED" : "TEAM_CLIENT_LINK_CONFLICT",
+    }, cleanup.error ? 500 : 409);
+  }
 
     const auditLogged = await recordAuditLog(ctx, {
-      action: existing.data ? "client.reactivated_by_team" : "client.created_by_team",
+      action: "client.created_by_team",
       clientId: client.id,
       targetTable: "clients",
       targetId: client.id,
@@ -618,17 +677,22 @@ async function createClientForTeam(request, ctx, body) {
         agencyCode: client.agency_code,
       },
     });
-    return json(request, { ok: true, reactivated: Boolean(existing.data), team: teamPayload({ ...team, clients: client }), client: clientPayload(client), auditLogged }, existing.data ? 200 : 201);
+    return json(request, {
+      ok: true,
+      reactivated: false,
+      team: teamActionPayload({ ...team, clients: client }, access),
+      client: teamActionClientPayload(client, access),
+      auditLogged,
+    }, 201);
   }
 
 async function disconnectTeamClient(request, ctx, body) {
-  const teamCode = requestTeamCode(request, body);
-  if (!teamCode) return json(request, { ok: false, message: "운영팀 코드를 입력해주세요." }, 400);
-
+  const access = teamActionAccess(request, body);
+  if (!access.ok) return json(request, { ok: false, message: access.message }, access.status);
   const teamResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", access.teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
   if (teamResult.error) return json(request, { ok: false, message: "운영팀 코드 확인에 실패했습니다.", detail: teamResult.error.message }, 500);
@@ -663,7 +727,13 @@ async function disconnectTeamClient(request, ctx, body) {
       targetId: client.id,
       metadata: { source: "super-admin-api", teamCode: teamResult.data.team_code, teamId: teamResult.data.id, agencyCode: client.agency_code },
     });
-    return json(request, { ok: true, message: "운영팀과 광고주 연결을 해지했습니다. 광고주 코드는 더 이상 접속할 수 없습니다.", team: teamPayload(team), client: clientPayload(client), auditLogged });
+    return json(request, {
+      ok: true,
+      message: "운영팀과 광고주 연결을 해지했습니다. 광고주 코드는 더 이상 접속할 수 없습니다.",
+      team: teamActionPayload(team, access),
+      client: teamActionClientPayload(client, access),
+      auditLogged,
+    });
   }
 
 async function revokeTeam(request, ctx, body) {
@@ -673,7 +743,7 @@ async function revokeTeam(request, ctx, body) {
   const teamResult = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .maybeSingle();
   if (teamResult.error) return json(request, { ok: false, message: "운영팀 코드 확인에 실패했습니다.", detail: teamResult.error.message }, 500);
@@ -702,7 +772,7 @@ async function revokeTeam(request, ctx, body) {
         disconnected_at: disconnectedAt,
         public_summary: "운영팀 권한이 해제되어 광고주 접속이 중지되었습니다.",
       })
-      .ilike("issued_by_team_code", teamResult.data.team_code)
+      .eq("issued_by_team_code", teamResult.data.team_code)
       .eq("status", "active")
       .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at");
     if (clientResult.error) return json(request, { ok: false, message: "운영팀 광고주 권한 해제에 실패했습니다.", detail: clientResult.error.message }, 500);
@@ -745,7 +815,7 @@ async function revokeClient(request, ctx, body) {
   const clientResult = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .ilike("agency_code", agencyCode)
+    .eq("agency_code", agencyCode)
     .maybeSingle();
   if (clientResult.error) return json(request, { ok: false, message: "광고주 코드 확인에 실패했습니다.", detail: clientResult.error.message }, 500);
   if (!clientResult.data) return json(request, { ok: false, message: "광고주 코드를 찾을 수 없습니다." }, 404);
@@ -769,7 +839,7 @@ async function revokeClient(request, ctx, body) {
     const teamResult = await ctx.supabaseAdmin
       .from("operation_team_codes")
       .update({ client_id: null })
-      .ilike("team_code", clientResult.data.issued_by_team_code)
+      .eq("team_code", clientResult.data.issued_by_team_code)
       .eq("owner_agency_code", primaryAgencyCode())
       .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
       .maybeSingle();

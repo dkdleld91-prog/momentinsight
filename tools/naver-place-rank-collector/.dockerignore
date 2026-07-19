@@ -1,4 +1,7 @@
-node_modules
-npm-debug.log
-.env
-.DS_Store
+**
+!Dockerfile
+!.env.example
+!package.json
+!package-lock.json
+!src/
+!src/**

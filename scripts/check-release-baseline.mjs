@@ -147,8 +147,10 @@ const checks = {
     && adminSource.includes('data-login-mode="operator"')
     && adminSource.includes("운영팀 로그인")
     && adminSource.includes("운영팀 코드 접속"),
-  adminLoginPersistsAfterRefresh: adminSource.includes('localStorage.setItem("miAdminAuthedCode"')
-    && adminSource.includes("storedAdminAuthCode")
+  adminLoginRestoresSecureServerSession: !adminSource.includes('localStorage.setItem("miAdminAuthedCode"')
+    && adminSource.includes("restoreSecureSession")
+    && adminSource.includes('window.location.origin + "/api/session"')
+    && adminSource.includes('requestHeaders.set("x-mi-csrf", secureSession.csrfToken)')
     && adminSource.includes("restoreAdminLogin")
     && adminSource.includes('class="mi-login-brand" href="/"'),
   adminLogoutExists: adminSource.includes("data-admin-logout")
@@ -176,9 +178,12 @@ const checks = {
     && !clientSource.includes('data-admin-vat-'),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
-  clientCodeReactivationExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
-    && superAdminServer.includes("reactivated: true")
-    && superAdminServer.includes("Reissued by operation team"),
+  ownerClientCodeRecoveryExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
+    && superAdminServer.includes('action: "client.reactivated_by_owner"')
+    && superAdminServer.includes("reactivated: true"),
+  teamCannotTakeOverExistingClientCode: superAdminServer.includes("사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요.")
+    && !superAdminServer.includes('action: "client.reactivated_by_team"')
+    && !superAdminServer.includes("Reissued by operation team"),
   ownerActiveAccountsFullView: adminSource.includes('data-mi-admin-view="active-accounts"')
     && adminSource.includes("data-owner-team-full-list")
     && adminSource.includes("data-owner-client-full-list")
@@ -211,8 +216,11 @@ const checks = {
     && clientSource.includes('data-client-login-mode="operator"')
     && clientSource.includes("운영팀 화면으로 이동")
     && clientSource.includes("getOperatorEntryUrl"),
-  clientLoginPersistsAfterRefresh: clientSource.includes('localStorage.setItem("miClientAuthedCode"')
-    && clientSource.includes("storedClientAuthCode")
+  clientLoginRestoresSecureServerSession: !clientSource.includes('localStorage.setItem("miClientAuthedCode"')
+    && !clientSource.includes('localStorage.setItem("miRankAccessCode"')
+    && clientSource.includes("restoreClientSession")
+    && clientSource.includes('window.location.origin + "/api/session"')
+    && clientSource.includes('requestHeaders.set("x-mi-csrf", secureClientSession.csrfToken)')
     && clientSource.includes("restoreClientLogin")
     && clientSource.includes('class="mi-login-brand" href="/"'),
   clientLogoutExists: clientSource.includes("data-mi-logout")
@@ -380,13 +388,16 @@ const checks = {
     && !adminSource.includes("리텐션브랜드 B"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
-    && clientSource.includes('"x-mi-agency-code": normalized')
+    && clientSource.includes("restoreClientSession")
+    && clientSource.includes('requestHeaders.delete(name)')
     && clientSource.includes("file.signed_url")
     && clientSource.includes("fileUrl")
     && clientSource.includes("운영팀이 보고서 파일을 공개하면 다운로드할 수 있습니다."),
   adminReportCenterPublish: adminSource.includes("getReportCenterApiUrl")
     && adminSource.includes("generateSalesPptxReport")
-    && adminSource.includes('"x-mi-team-code": teamCode')
+    && adminSource.includes("reportCenterSessionRequest")
+    && adminSource.includes('headers["x-mi-agency-code"] = agencyCode')
+    && !adminSource.includes('"x-mi-team-code": teamCode')
     && adminSource.includes("PPTX 생성 · 보고서함 기록 완료")
     && adminSource.includes("운영팀-광고주 연결이 필요합니다."),
   reportPolicyAligned: adminSource.includes("<h1>보고서 관리</h1>")
@@ -421,14 +432,20 @@ const checks = {
     && adminSource.includes("새 운영팀은 이 파일을 먼저 내려받고")
     && adminSource.includes("연결 광고주 1곳 기준")
     && exists("public/downloads/moment-insight-operation-sheet-template.xlsx"),
-  publicStateScopedByCode: adminSource.includes("scopedStorageKey(storageKey")
+  publicStateScopedBySessionIdentity: adminSource.includes("scopedStorageKey(storageKey")
     && adminSource.includes("scopedStorageKey(sourceFileStorageKey")
-    && adminSource.includes("currentPublicCode")
-    && adminSource.includes("blankPublicState")
-    && adminSource.includes("operationTeamClientCode")
+    && adminSource.includes("ownerTargetClientId")
+    && adminSource.includes('ownerTargetClientId() || "owner-unresolved"')
+    && adminSource.includes("secureSession.teamId")
+    && adminSource.includes("secureSession.clientId")
+    && adminSource.includes("secureSession.scopeKey")
+    && adminSource.includes("delete nextState.code")
+    && adminSource.includes("delete nextState.agencyCode")
     && clientSource.includes("scopedStorageKey(code)")
-    && clientSource.includes("blankPublicState(code)")
-    && clientSource.includes("readState(normalized)")
+    && clientSource.includes("secureClientSession.scopeKey")
+    && clientSource.includes("publicStateForStorage")
+    && clientSource.includes("delete safeState.code")
+    && clientSource.includes("delete safeState.agencyCode")
     && !clientSource.includes("await syncDemoState(loginStatus)")
     && !clientSource.includes("await syncDemoState(connectStatus)"),
   operationSheetSingleClientSimple: sheetTemplateBuilder.includes("single-client-operation-team-template")
@@ -618,9 +635,11 @@ const checks = {
     && source.includes("translateY(1px) scale(0.98)")
     && source.includes("cursor: wait")),
   healthRewriteConfigured: (vercelConfig.rewrites || []).some((rewrite) => rewrite.source === "/health" && rewrite.destination === "/api/health"),
-  localCorsOriginsMergedWithConfigured: securityServer.includes('"http://127.0.0.1:8793"')
+  productionCorsExcludesLocalOrigins: securityServer.includes('"http://127.0.0.1:8793"')
     && securityServer.includes('"http://localhost:8793"')
-    && securityServer.includes("[...new Set([...configured, ...defaultAllowedOrigins])]"),
+    && securityServer.includes("productionAllowedOrigins")
+    && securityServer.includes('origin !== "*"')
+    && securityServer.includes("productionEnvironment()"),
   productionBuildHidesInternalSourceBundle: !staticBuildScript.includes('all: "아임웹_원샷코드_통합보기_모먼트인사이트.html"')
     && !staticBuildScript.includes('path.join(outputDir, "02_아임웹_적용코드")')
     && !staticBuildScript.includes("path.join(outputDir, fileName)")
@@ -644,7 +663,9 @@ const checks = {
   reportCenterClientVisibleOnly: reportCenterServer.includes('if (access.role === "client") reportsQuery = reportsQuery.eq("visibility", "client_visible")')
     && reportCenterServer.includes('if (access.role === "client") filesQuery = filesQuery.eq("visibility", "client_visible")')
     && reportCenterServer.includes('body.visibility === "client_visible" ? "client_visible" : "internal"'),
-  reportCenterUploadAndAuditReady: reportCenterServer.includes("createSignedUploadUrl")
+  reportCenterUploadAndAuditReady: reportCenterServer.includes("DIRECT_SIGNED_UPLOAD_DISABLED")
+    && reportCenterServer.includes("validateUploadedFile")
+    && reportCenterServer.includes("safeExternalReportUrl")
     && reportCenterServer.includes("createSignedUrl")
     && reportCenterServer.includes("REPORT_DOWNLOAD_EXPIRES_IN")
     && reportCenterServer.includes("signed_url")
@@ -899,7 +920,11 @@ const checks = {
   productionEnvRequiresCronAndOwnerSecrets: runtimeEnvCheck.includes('const productionMode = process.argv.includes("--production")')
     && runtimeEnvCheck.includes('status(env, "Rank tracker GitHub cron secret", ["MI_RANK_CRON_SECRET"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Vercel Cron authorization secret", ["CRON_SECRET"], productionMode)')
-    && runtimeEnvCheck.includes('status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode)'),
+    && runtimeEnvCheck.includes('status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode,')
+    && runtimeEnvCheck.includes('status(env, "Encrypted session secret", ["MI_SESSION_SECRET"], productionMode,')
+    && runtimeEnvCheck.includes('status(env, "Previous encrypted session secret", ["MI_SESSION_SECRET_PREVIOUS"], false,')
+    && runtimeEnvCheck.includes('status(env, "Encrypted session TTL", ["MI_SESSION_TTL_SECONDS"], false,')
+    && runtimeEnvCheck.includes('status(env, "Owner login credential", ["MI_OWNER_LOGIN_CODE_SHA256", "MI_OWNER_LOGIN_CODE"], productionMode,'),
   integrationStatusHidesEnvNamesInProduction: integrationStatusServer.includes("MI_EXPOSE_INTEGRATION_ENV_NAMES")
     && integrationStatusServer.includes("missingEnv: exposeDetails ? missing : []")
     && integrationStatusServer.includes("missingEnvCount: missing.length"),

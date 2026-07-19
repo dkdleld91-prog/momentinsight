@@ -1,4 +1,5 @@
 import { withSupabase } from "@supabase/server";
+import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import {
   databaseError,
   json,
@@ -140,7 +141,7 @@ async function recordAuditLog(ctx, payload) {
       action: payload.action,
       target_table: payload.targetTable,
       target_id: payload.targetId || null,
-      metadata: payload.metadata || {},
+      metadata: sanitizeAuditMetadata(payload.metadata || {}),
     });
 
   return { logged: !error, error };

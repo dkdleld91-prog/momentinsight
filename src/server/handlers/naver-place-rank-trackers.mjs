@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { lookup as dnsLookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 
@@ -13,6 +15,8 @@ const PLACE_TRACKER_LEASE_SECONDS = Math.max(
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
+const NAVER_PLACE_URL_MAX_REDIRECTS = 3;
+const NAVER_PLACE_URL_MAX_HTML_BYTES = 512 * 1024;
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_MAX || 300);
 const DEFAULT_RANK_GROUP = "기본 그룹";
@@ -116,33 +120,43 @@ function isPrimaryAgencyCode(agencyCode) {
   return safeEqual(canonicalAgencyCode(agencyCode), primaryAgencyCode());
 }
 
-function requestAgencyCode(request, body = {}) {
+export function requestAgencyCode(request, body = {}) {
   const url = new URL(request.url);
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
+  const trustedAgencyCode = request.headers.get("x-mi-agency-code") || "";
   return canonicalAgencyCode(
-    body.agencyCode ||
+    trustedAgencyCode ||
+      (trustedSession ? "" : (
+      body.agencyCode ||
       body.agency_code ||
-      request.headers.get("x-mi-agency-code") ||
       url.searchParams.get("agencyCode") ||
       url.searchParams.get("agency_code")
+      ))
   );
 }
 
-function requestAccessCode(request, body = {}) {
+export function requestAccessCode(request, body = {}) {
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
   return canonicalAgencyCode(
-    body.accessCode ||
+    request.headers.get("x-mi-rank-access-code") ||
+      (trustedSession ? "" : (
+      body.accessCode ||
       body.access_code ||
       body.agencyAccessCode ||
-      body.agency_access_code ||
-      request.headers.get("x-mi-rank-access-code")
+      body.agency_access_code
+      ))
   );
 }
 
 function requestAdminCode(request, body = {}) {
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
   return String(
     request.headers.get("x-demo-admin-code") ||
+      (trustedSession ? "" : (
       body.adminCode ||
       body.admin_code ||
       ""
+      ))
   ).trim();
 }
 
@@ -163,7 +177,7 @@ async function findClientId(ctx, agencyCode) {
     let result = await ctx.supabaseAdmin
       .from("clients")
       .select("id, status, disconnected_at")
-      .ilike("agency_code", code)
+      .eq("agency_code", code)
       .eq("status", "active")
       .maybeSingle();
 
@@ -171,7 +185,7 @@ async function findClientId(ctx, agencyCode) {
       result = await ctx.supabaseAdmin
         .from("clients")
         .select("id, status")
-        .ilike("agency_code", code)
+        .eq("agency_code", code)
         .eq("status", "active")
         .maybeSingle();
     }
@@ -257,7 +271,7 @@ function normalizeUrlCandidate(value) {
 
 function isNaverPlaceUrl(value) {
   const text = normalizeUrlCandidate(value);
-  if (!/^https?:\/\//i.test(text)) return false;
+  if (!/^https:\/\//i.test(text)) return false;
   try {
     const { hostname } = new URL(text);
     return /(^|\.)naver\.me$/i.test(hostname) ||
@@ -266,6 +280,59 @@ function isNaverPlaceUrl(value) {
   } catch {
     return false;
   }
+}
+
+function privateNetworkAddress(address) {
+  const value = String(address || "").toLowerCase();
+  if (!isIP(value)) return true;
+  const mappedIpv4 = value.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (mappedIpv4) return privateNetworkAddress(mappedIpv4[1]);
+  const mappedHexIpv4 = value.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHexIpv4) {
+    const high = Number.parseInt(mappedHexIpv4[1], 16);
+    const low = Number.parseInt(mappedHexIpv4[2], 16);
+    return privateNetworkAddress([
+      high >>> 8,
+      high & 0xff,
+      low >>> 8,
+      low & 0xff,
+    ].join("."));
+  }
+  if (
+    value === "::" ||
+    value === "::1" ||
+    value === "0.0.0.0" ||
+    value.startsWith("fe80:") ||
+    value.startsWith("fc") ||
+    value.startsWith("fd") ||
+    value.startsWith("ff")
+  ) return true;
+  if (isIP(value) === 4) {
+    const parts = value.split(".").map(Number);
+    if (parts[0] === 10 || parts[0] === 127 || parts[0] === 0) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    if (parts[0] >= 224) return true;
+  }
+  return false;
+}
+
+function productionEnvironment() {
+  return process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+}
+
+export async function assertSafeNaverPlaceUrl(value, lookup = dnsLookup, enforceDns = productionEnvironment()) {
+  const candidate = normalizeUrlCandidate(value);
+  if (!isNaverPlaceUrl(candidate)) throw new Error("unsafe_naver_place_url");
+  const parsed = new URL(candidate);
+  if (isIP(parsed.hostname)) throw new Error("unsafe_naver_place_host");
+  if (!enforceDns) return parsed.toString();
+  const addresses = await lookup(parsed.hostname, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some((entry) => privateNetworkAddress(entry.address))) {
+    throw new Error("unsafe_naver_place_dns");
+  }
+  return parsed.toString();
 }
 
 function metaAttributes(tag) {
@@ -295,11 +362,11 @@ function cleanPlaceNameCandidate(value) {
     .trim();
 }
 
-async function fetchWithTimeout(url, options = {}) {
+async function fetchWithTimeout(url, options = {}, fetchImpl = globalThis.fetch) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), NAVER_PLACE_URL_TIMEOUT_MS);
   try {
-    return await fetch(url, {
+    return await fetchImpl(url, {
       ...options,
       signal: controller.signal,
       headers: {
@@ -313,7 +380,45 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
-export async function resolveNaverPlaceUrl(value) {
+async function readResponseTextLimited(response, maxBytes = NAVER_PLACE_URL_MAX_HTML_BYTES) {
+  const length = Number(response.headers.get("content-length") || 0);
+  if (length > maxBytes) throw new Error("naver_place_response_too_large");
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel("response_too_large").catch(() => {});
+      throw new Error("naver_place_response_too_large");
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks, total).toString("utf8");
+}
+
+async function fetchNaverPlaceWithRedirects(originalUrl, options = {}) {
+  const lookup = options.lookup || dnsLookup;
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  const enforceDns = options.enforceDns ?? productionEnvironment();
+  let currentUrl = await assertSafeNaverPlaceUrl(originalUrl, lookup, enforceDns);
+
+  for (let redirectCount = 0; redirectCount <= NAVER_PLACE_URL_MAX_REDIRECTS; redirectCount += 1) {
+    const response = await fetchWithTimeout(currentUrl, { method: "GET", redirect: "manual" }, fetchImpl);
+    if (![301, 302, 303, 307, 308].includes(response.status)) return { response, finalUrl: currentUrl };
+    if (redirectCount === NAVER_PLACE_URL_MAX_REDIRECTS) throw new Error("naver_place_redirect_limit");
+    const location = response.headers.get("location");
+    if (!location) throw new Error("naver_place_redirect_without_location");
+    const nextUrl = new URL(location, currentUrl).toString();
+    currentUrl = await assertSafeNaverPlaceUrl(nextUrl, lookup, enforceDns);
+  }
+  throw new Error("naver_place_redirect_limit");
+}
+
+export async function resolveNaverPlaceUrl(value, options = {}) {
   const originalUrl = normalizeUrlCandidate(value);
   const result = {
     originalUrl,
@@ -325,14 +430,14 @@ export async function resolveNaverPlaceUrl(value) {
   if (!originalUrl || !isNaverPlaceUrl(originalUrl)) return result;
 
   try {
-    const response = await fetchWithTimeout(originalUrl, { method: "GET", redirect: "follow" });
-    result.url = normalizeText(response.url) || originalUrl;
+    const { response, finalUrl } = await fetchNaverPlaceWithRedirects(originalUrl, options);
+    result.url = normalizeText(finalUrl) || originalUrl;
     result.placeId = result.placeId || extractPlaceId(result.url);
     result.resolved = result.url !== originalUrl || Boolean(result.placeId);
 
     const contentType = normalizeText(response.headers.get("content-type"));
     if (/text\/html/i.test(contentType)) {
-      const html = await response.text().catch(() => "");
+      const html = await readResponseTextLimited(response).catch(() => "");
       result.placeId = result.placeId || extractPlaceId(html);
       result.placeName = cleanPlaceNameCandidate(
         metaContent(html, ["og:title", "twitter:title"]) ||

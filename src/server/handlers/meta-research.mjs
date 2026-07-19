@@ -1,4 +1,5 @@
 import { withSupabase } from "@supabase/server";
+import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -113,7 +114,7 @@ async function findActiveClientByAgencyCode(ctx, agencyCode) {
   const { data, error } = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at")
-    .ilike("agency_code", agencyCode)
+    .eq("agency_code", agencyCode)
     .eq("status", "active")
     .is("disconnected_at", null)
     .maybeSingle();
@@ -125,7 +126,7 @@ async function findActiveClientByTeamCode(ctx, teamCode) {
   const { data: team, error: teamError } = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("id, owner_agency_code, team_name, team_code, status, client_id, revoked_at")
-    .ilike("team_code", teamCode)
+    .eq("team_code", teamCode)
     .eq("owner_agency_code", primaryAgencyCode())
     .eq("status", "active")
     .is("revoked_at", null)
@@ -182,7 +183,7 @@ async function recordAuditLog(ctx, payload) {
       action: payload.action,
       target_table: payload.targetTable,
       target_id: payload.targetId || null,
-      metadata: payload.metadata || {},
+      metadata: sanitizeAuditMetadata(payload.metadata || {}),
     });
   return !error;
 }

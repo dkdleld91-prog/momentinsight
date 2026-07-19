@@ -37,7 +37,7 @@ async function findActiveClient(ctx, code) {
   let result = await ctx.supabaseAdmin
     .from("clients")
     .select(fullSelect)
-    .ilike("agency_code", code)
+    .eq("agency_code", code)
     .eq("status", "active")
     .maybeSingle();
 
@@ -45,7 +45,7 @@ async function findActiveClient(ctx, code) {
     result = await ctx.supabaseAdmin
       .from("clients")
       .select(baseSelect)
-      .ilike("agency_code", code)
+      .eq("agency_code", code)
       .eq("status", "active")
       .maybeSingle();
   }
@@ -59,7 +59,7 @@ async function findTeamName(ctx, teamCode) {
   const { data, error } = await ctx.supabaseAdmin
     .from("operation_team_codes")
     .select("team_name")
-    .ilike("team_code", code)
+    .eq("team_code", code)
     .eq("status", "active")
     .maybeSingle();
 

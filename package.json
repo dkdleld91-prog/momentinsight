@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22 <25",
+    "npm": ">=10 <12"
+  },
   "scripts": {
-    "test": "node --test api/*.test.mjs src/server/**/*.test.mjs && npm --prefix tools/naver-place-rank-collector test",
-    "check:quality": "npm run check:baseline && npm run check:role-query-parity && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
-    "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs",
+    "test": "node --test api/*.test.mjs src/server/*.test.mjs src/server/**/*.test.mjs && npm --prefix tools/naver-place-rank-collector test",
+    "check:quality": "npm run check:supply-chain && npm run check:baseline && npm run check:role-query-parity && npm run check:server-contract && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
+    "check:production-auth": "node scripts/check-production-auth.mjs",
+    "check:release": "npm run check:quality && npm run check:production-auth",
+    "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs && npm run check:public-build",
     "clean:workspace": "node scripts/clean-workspace.mjs",
     "clean:workspace:deps": "node scripts/clean-workspace.mjs --deps",
     "clean:workspace:dry": "node scripts/clean-workspace.mjs --dry-run",
@@ -18,8 +24,11 @@
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
     "check:keyword-trend": "node scripts/check-keyword-trend-scaling.mjs",
+    "check:server-contract": "node scripts/check-server-contract.mjs",
     "check:rank-cron": "node scripts/check-rank-cron-schedule.mjs",
     "check:rank-matching": "node scripts/check-naver-rank-matching.mjs",
+    "check:supply-chain": "node scripts/check-supply-chain.mjs",
+    "check:public-build": "node scripts/check-public-build-security.mjs dist",
     "check:supabase": "node 06_Supabase_연동/check-supabase.mjs",
     "check:admin-api": "node 06_Supabase_연동/check-admin-api.mjs",
     "check:edge-api": "node 06_Supabase_연동/check-edge-api.mjs",
@@ -27,12 +36,13 @@
     "dev:server": "node src/server/local-dev.mjs",
     "deploy:backend": "node 06_Supabase_연동/deploy-backend.mjs",
     "seed:demo": "node 06_Supabase_연동/seed-demo-via-api.mjs",
-    "supabase:db:push": "npx supabase db push",
-    "supabase:functions:deploy": "npx supabase functions deploy moment-api"
+    "supabase:db:push": "npx --no-install supabase db push",
+    "supabase:functions:deploy": "node 06_Supabase_연동/deploy-backend.mjs"
   },
   "dependencies": {
-    "@supabase/server": "^1.1.0",
-    "@supabase/supabase-js": "^2.108.2",
-    "pptxgenjs": "^4.0.1"
+    "@supabase/server": "1.1.0",
+    "@supabase/supabase-js": "2.108.2",
+    "jszip": "3.10.1",
+    "pptxgenjs": "4.0.1"
   }
 }

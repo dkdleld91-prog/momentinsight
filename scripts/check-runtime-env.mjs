@@ -71,14 +71,33 @@ const checks = [
   status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),
   status(env, "Naver Place rank provider key", ["NAVER_PLACE_RANK_API_KEY"], false),
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),
-  status(env, "Rank tracker admin code", ["MI_RANK_ADMIN_CODE", "MI_DEMO_ADMIN_CODE"], false),
+  status(env, "Rank tracker admin code", ["MI_RANK_ADMIN_CODE", "MI_DEMO_ADMIN_CODE"], productionMode),
   status(env, "Rank tracker client access code", ["MI_RANK_ACCESS_CODE", "MI_RANK_ACCESS_CODES"], false),
   status(env, "Rank tracker GitHub cron secret", ["MI_RANK_CRON_SECRET"], productionMode),
   status(env, "Vercel Cron authorization secret", ["CRON_SECRET"], productionMode),
   status(env, "Meta Ad Library access token", ["META_AD_LIBRARY_ACCESS_TOKEN", "META_ADS_LIBRARY_ACCESS_TOKEN"], false),
   status(env, "Primary agency code", ["MI_PRIMARY_AGENCY_CODE"], false),
   status(env, "Legacy agency codes", ["MI_LEGACY_AGENCY_CODES"], false),
-  status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode),
+  status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode, (merged) => (
+    !productionMode || String(merged.MI_SUPER_ADMIN_CODE || "").length >= 24
+  )),
+  status(env, "Encrypted session secret", ["MI_SESSION_SECRET"], productionMode, (merged) => (
+    !productionMode || Buffer.byteLength(String(merged.MI_SESSION_SECRET || ""), "utf8") >= 32
+  )),
+  status(env, "Previous encrypted session secret", ["MI_SESSION_SECRET_PREVIOUS"], false, (merged) => (
+    !merged.MI_SESSION_SECRET_PREVIOUS || Buffer.byteLength(String(merged.MI_SESSION_SECRET_PREVIOUS), "utf8") >= 32
+  )),
+  status(env, "Encrypted session TTL", ["MI_SESSION_TTL_SECONDS"], false, (merged) => {
+    if (!merged.MI_SESSION_TTL_SECONDS) return true;
+    const value = Number(merged.MI_SESSION_TTL_SECONDS);
+    return Number.isFinite(value) && value >= 300 && value <= 86400;
+  }),
+  status(env, "Owner login credential", ["MI_OWNER_LOGIN_CODE_SHA256", "MI_OWNER_LOGIN_CODE"], productionMode, (merged) => {
+    if (!productionMode) return true;
+    const digest = String(merged.MI_OWNER_LOGIN_CODE_SHA256 || "").trim();
+    const secret = String(merged.MI_OWNER_LOGIN_CODE || "");
+    return /^[a-f0-9]{64}$/i.test(digest) || secret.length >= 16;
+  }),
 ];
 
 const missingRequired = checks.filter((check) => check.required && !check.valid);

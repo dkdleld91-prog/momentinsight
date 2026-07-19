@@ -255,33 +255,43 @@ function isPrimaryAgencyCode(agencyCode) {
   return safeEqual(canonicalAgencyCode(agencyCode), primaryAgencyCode());
 }
 
-function requestAgencyCode(request, body = {}) {
+export function requestAgencyCode(request, body = {}) {
   const url = new URL(request.url);
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
+  const trustedAgencyCode = request.headers.get("x-mi-agency-code") || "";
   return canonicalAgencyCode(
-    body.agencyCode ||
+    trustedAgencyCode ||
+      (trustedSession ? "" : (
+      body.agencyCode ||
       body.agency_code ||
-      request.headers.get("x-mi-agency-code") ||
       url.searchParams.get("agencyCode") ||
       url.searchParams.get("agency_code")
+      ))
   );
 }
 
-function requestAccessCode(request, body = {}) {
+export function requestAccessCode(request, body = {}) {
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
   return normalizeAgencyCode(
-    body.accessCode ||
+    request.headers.get("x-mi-rank-access-code") ||
+      (trustedSession ? "" : (
+      body.accessCode ||
       body.access_code ||
       body.agencyAccessCode ||
-      body.agency_access_code ||
-      request.headers.get("x-mi-rank-access-code")
+      body.agency_access_code
+      ))
   );
 }
 
 function requestAdminCode(request, body = {}) {
+  const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
   return String(
     request.headers.get("x-demo-admin-code") ||
+      (trustedSession ? "" : (
       body.adminCode ||
       body.admin_code ||
       ""
+      ))
   ).trim();
 }
 
@@ -399,7 +409,7 @@ async function findClientId(ctx, agencyCode) {
     let result = await ctx.supabaseAdmin
       .from("clients")
       .select("id, status, disconnected_at")
-      .ilike("agency_code", code)
+      .eq("agency_code", code)
       .eq("status", "active")
       .maybeSingle();
 
@@ -407,7 +417,7 @@ async function findClientId(ctx, agencyCode) {
       result = await ctx.supabaseAdmin
         .from("clients")
         .select("id, status")
-        .ilike("agency_code", code)
+        .eq("agency_code", code)
         .eq("status", "active")
         .maybeSingle();
     }

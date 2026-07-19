@@ -2,9 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 import {
+  assertSafeNaverPlaceUrl,
   handlePlaceRankTrackersRequest,
   normalizePlaceRankGroupName,
   placeTrackerPayload,
+  requestAccessCode,
+  requestAgencyCode,
+  resolveNaverPlaceUrl,
   runDuePlaceTrackers,
 } from "./naver-place-rank-trackers.mjs";
 
@@ -13,6 +17,27 @@ const ADMIN_CODE = "place-rank-group-test";
 const TRACKERS = "naver_place_rank_trackers";
 const SNAPSHOTS = "naver_place_rank_snapshots";
 const CLIENTS = "clients";
+
+test("trusted place-rank headers override conflicting body scope", () => {
+  const request = new Request("https://example.com/api/naver-place-rank-trackers?agencyCode=mml93-a98", {
+    headers: {
+      "x-mi-agency-code": "mml93-a02",
+      "x-mi-rank-access-code": "mml93-a02",
+    },
+  });
+  const body = { agencyCode: "mml93-a99", accessCode: "mml93-a99" };
+  assert.equal(requestAgencyCode(request, body), "mml93-a02");
+  assert.equal(requestAccessCode(request, body), "mml93-a02");
+});
+
+test("a place code-session request never falls back to body or query credentials", () => {
+  const request = new Request("https://example.com/api/naver-place-rank-trackers?agencyCode=mml93-a98", {
+    headers: { "x-mi-session-role": "team", "x-mi-session-scope": "account-only" },
+  });
+  const body = { agencyCode: "mml93-a99", accessCode: "mml93-a99" };
+  assert.equal(requestAgencyCode(request, body), "");
+  assert.equal(requestAccessCode(request, body), "");
+});
 
 function trackerRow(values = {}) {
   const now = "2026-07-12T00:00:00.000Z";
@@ -297,6 +322,152 @@ test("normalizes place rank group names like product rank groups", () => {
   assert.equal(normalizePlaceRankGroupName("가".repeat(50)).length, 40);
 });
 
+test("accepts only HTTPS Naver place hosts before resolving them", async () => {
+  const publicLookup = async () => [{ address: "8.8.8.8", family: 4 }];
+
+  assert.equal(
+    await assertSafeNaverPlaceUrl(
+      "https://map.naver.com/p/entry/place/2019299673?placePath=%2Fhome",
+      publicLookup,
+      true,
+    ),
+    "https://map.naver.com/p/entry/place/2019299673?placePath=%2Fhome",
+  );
+  assert.equal(
+    await assertSafeNaverPlaceUrl("naver.me/example", publicLookup, true),
+    "https://naver.me/example",
+  );
+
+  await assert.rejects(
+    assertSafeNaverPlaceUrl("http://map.naver.com/p/entry/place/2019299673", publicLookup, true),
+    /unsafe_naver_place_url/,
+  );
+  await assert.rejects(
+    assertSafeNaverPlaceUrl("https://naver.example.test/p/entry/place/2019299673", publicLookup, true),
+    /unsafe_naver_place_url/,
+  );
+  await assert.rejects(
+    assertSafeNaverPlaceUrl("https://127.0.0.1/p/entry/place/2019299673", publicLookup, true),
+    /unsafe_naver_place_url/,
+  );
+});
+
+test("rejects Naver hosts when DNS includes a private or link-local address", async () => {
+  const unsafeAddresses = [
+    "10.0.0.1",
+    "127.0.0.1",
+    "169.254.169.254",
+    "172.16.0.1",
+    "192.168.0.1",
+    "::",
+    "::1",
+    "fe80::1",
+    "fc00::1",
+    "ff02::1",
+    "::ffff:127.0.0.1",
+    "::ffff:169.254.169.254",
+    "::ffff:7f00:1",
+    "::ffff:a9fe:a9fe",
+  ];
+
+  for (const address of unsafeAddresses) {
+    await assert.rejects(
+      assertSafeNaverPlaceUrl(
+        "https://map.naver.com/p/entry/place/2019299673",
+        async () => [{ address, family: address.includes(":") ? 6 : 4 }],
+        true,
+      ),
+      /unsafe_naver_place_dns/,
+      address,
+    );
+  }
+
+  await assert.rejects(
+    assertSafeNaverPlaceUrl(
+      "https://map.naver.com/p/entry/place/2019299673",
+      async () => [
+        { address: "8.8.8.8", family: 4 },
+        { address: "169.254.169.254", family: 4 },
+      ],
+      true,
+    ),
+    /unsafe_naver_place_dns/,
+  );
+});
+
+test("stops before fetching a redirect whose Naver hostname resolves privately", async () => {
+  const originalUrl = "https://naver.me/place-short-link";
+  const lookupHosts = [];
+  let fetchCalls = 0;
+  const result = await resolveNaverPlaceUrl(originalUrl, {
+    enforceDns: true,
+    lookup: async (hostname) => {
+      lookupHosts.push(hostname);
+      return hostname === "naver.me"
+        ? [{ address: "8.8.8.8", family: 4 }]
+        : [{ address: "169.254.169.254", family: 4 }];
+    },
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://map.naver.com/p/entry/place/2019299673" },
+      });
+    },
+  });
+
+  assert.equal(fetchCalls, 1);
+  assert.deepEqual(lookupHosts, ["naver.me", "map.naver.com"]);
+  assert.equal(result.url, originalUrl);
+  assert.equal(result.resolved, false);
+});
+
+test("enforces the Naver place redirect limit", async () => {
+  const originalUrl = "https://naver.me/redirect-loop";
+  let fetchCalls = 0;
+  const result = await resolveNaverPlaceUrl(originalUrl, {
+    enforceDns: true,
+    lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return new Response(null, {
+        status: 302,
+        headers: { location: `https://map.naver.com/redirect/${fetchCalls}` },
+      });
+    },
+  });
+
+  assert.equal(fetchCalls, 4);
+  assert.equal(result.url, originalUrl);
+  assert.equal(result.resolved, false);
+});
+
+test("does not read an oversized Naver place HTML response", async () => {
+  let readerRequested = false;
+  const result = await resolveNaverPlaceUrl("https://naver.me/oversized-html", {
+    enforceDns: true,
+    lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+    fetchImpl: async () => ({
+      status: 200,
+      headers: new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "content-length": String(512 * 1024 + 1),
+      }),
+      body: {
+        getReader() {
+          readerRequested = true;
+          throw new Error("oversized body must not be read");
+        },
+      },
+    }),
+  });
+
+  assert.equal(readerRequested, false);
+  assert.equal(result.placeName, "");
+  assert.equal(result.placeId, "");
+  assert.equal(result.resolved, false);
+});
+
 test("allows advertiser sync-due with its rank access code and rejects invalid access", async () => {
   const { ctx } = testContext([], {
     clients: [{ id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null }],
@@ -369,10 +540,20 @@ test("returns 409 when a group update reaches a database without the migration",
 test("creates from a place URL only and preserves groups through update and refresh", async () => {
   const { ctx, state } = testContext();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    url: "https://map.naver.com/p/entry/place/9876543210?placePath=%2Fhome",
-    headers: new Headers({ "content-type": "text/plain" }),
-  });
+  let placeFetchCount = 0;
+  globalThis.fetch = async () => {
+    placeFetchCount += 1;
+    if (placeFetchCount === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://map.naver.com/p/entry/place/9876543210?placePath=%2Fhome" },
+      });
+    }
+    return new Response(null, {
+      status: 200,
+      headers: { "content-type": "text/plain" },
+    });
+  };
   let created;
   try {
     created = await payload(await handlePlaceRankTrackersRequest(request("POST", {

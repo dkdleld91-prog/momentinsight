@@ -5659,36 +5659,38 @@
         return storageKey + ":" + (normalized || "unauthed");
       }
 
+      var secureClientSession = {
+        csrfToken: "",
+        role: "",
+        scopeKey: "",
+        clientId: "",
+        teamId: ""
+      };
+
       function selectedAgencyCode() {
         return storedClientAuthCode();
       }
 
       function storedClientAuthCode() {
-        try {
-          return window.sessionStorage.getItem("miClientAuthedCode")
-            || window.localStorage.getItem("miClientAuthedCode")
-            || window.sessionStorage.getItem(selectedCodeKey)
-            || window.localStorage.getItem(selectedCodeKey)
-            || "";
-        } catch (error) {
-          return "";
-        }
+        return secureClientSession.scopeKey || "";
       }
 
-      function persistClientAuthCode(code) {
-        var normalized = normalizeCode(code);
-        if (!normalized) return;
-        try {
-          window.localStorage.setItem(selectedCodeKey, normalized);
-          window.localStorage.setItem("miRankAccessCode", normalized);
-          window.localStorage.setItem("miClientAuthedCode", normalized);
-          window.sessionStorage.setItem(selectedCodeKey, normalized);
-          window.sessionStorage.setItem("miRankAccessCode", normalized);
-          window.sessionStorage.setItem("miClientAuthedCode", normalized);
-        } catch (error) {}
+      function applyClientSession(payload) {
+        var session = payload && payload.session ? payload.session : {};
+        secureClientSession.csrfToken = String(session.csrfToken || "");
+        secureClientSession.role = String(session.role || "");
+        secureClientSession.scopeKey = String(session.scopeKey || "");
+        secureClientSession.clientId = String(session.clientId || "");
+        secureClientSession.teamId = String(session.teamId || "");
+        return session;
       }
 
       function removeClientAuthCode() {
+        secureClientSession.csrfToken = "";
+        secureClientSession.role = "";
+        secureClientSession.scopeKey = "";
+        secureClientSession.clientId = "";
+        secureClientSession.teamId = "";
         try {
           window.localStorage.removeItem(selectedCodeKey);
           window.localStorage.removeItem("miRankAccessCode");
@@ -5786,16 +5788,51 @@
         return "/admin.html";
       }
 
+      function getSessionApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/session";
+        return "http://127.0.0.1:8790/api/session";
+      }
+
       function miFetch(url, options) {
         options = options || {};
-        if (typeof window.fetch === "function") return window.fetch(url, options);
+        var timeoutMs = Number(options.timeoutMs || 20000);
+        var fetchOptions = Object.assign({}, options);
+        delete fetchOptions.timeoutMs;
+        fetchOptions.credentials = fetchOptions.credentials || "same-origin";
+        var requestMethod = String(fetchOptions.method || "GET").toUpperCase();
+        var requestHeaders = new Headers(fetchOptions.headers || {});
+        ["authorization", "apikey", "x-demo-admin-code", "x-mi-agency-code", "x-mi-rank-access-code", "x-mi-super-admin-code", "x-mi-owner-agency-code", "x-mi-team-code"].forEach(function (name) {
+          requestHeaders.delete(name);
+        });
+        if (["GET", "HEAD", "OPTIONS"].indexOf(requestMethod) === -1 && secureClientSession.csrfToken) {
+          requestHeaders.set("x-mi-csrf", secureClientSession.csrfToken);
+        }
+        fetchOptions.headers = requestHeaders;
+        if (typeof window.fetch === "function") {
+          if (typeof window.AbortController !== "function" || fetchOptions.signal) {
+            return window.fetch(url, fetchOptions);
+          }
+          var controller = new AbortController();
+          fetchOptions.signal = controller.signal;
+          var timer = window.setTimeout(function () {
+            controller.abort();
+          }, timeoutMs);
+          return window.fetch(url, fetchOptions).catch(function (error) {
+            if (error && error.name === "AbortError") throw new Error("API 요청 시간이 초과되었습니다.");
+            throw error;
+          }).finally(function () {
+            window.clearTimeout(timer);
+          });
+        }
         if (typeof window.XMLHttpRequest !== "function") return Promise.reject(new Error("현재 브라우저에서 API 요청을 사용할 수 없습니다."));
         return new Promise(function (resolve, reject) {
           var xhr = new XMLHttpRequest();
           xhr.open(options.method || "GET", url, true);
-          var headers = options.headers || {};
-          Object.keys(headers).forEach(function (key) {
-            if (headers[key] !== undefined && headers[key] !== null) xhr.setRequestHeader(key, headers[key]);
+          xhr.timeout = timeoutMs;
+          xhr.withCredentials = true;
+          fetchOptions.headers.forEach(function (value, key) {
+            xhr.setRequestHeader(key, value);
           });
           xhr.onload = function () {
             var body = xhr.responseText || "";
@@ -5814,7 +5851,7 @@
           };
           xhr.onerror = function () { reject(new Error("API 요청에 실패했습니다.")); };
           xhr.ontimeout = function () { reject(new Error("API 요청 시간이 초과되었습니다.")); };
-          xhr.send(options.body || null);
+          xhr.send(fetchOptions.body || null);
         });
       }
 
@@ -6610,13 +6647,6 @@
         return "http://127.0.0.1:8790/api/meta-ads";
       }
 
-      function getAgencyCodeValidateApiUrl() {
-        if (window.MI_AGENCY_CODE_VALIDATE_API_URL) return window.MI_AGENCY_CODE_VALIDATE_API_URL;
-        var host = window.location && window.location.hostname;
-        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/agency-code-validate";
-        return "http://127.0.0.1:8790/api/agency-code/validate";
-      }
-
       function getReportCenterApiUrl() {
         if (window.MI_REPORT_CENTER_API_URL) return window.MI_REPORT_CENTER_API_URL;
         var host = window.location && window.location.hostname;
@@ -6627,25 +6657,47 @@
       async function validateAgencyCode(code) {
         var normalized = normalizeCode(code);
         if (!normalized) return { ok: false, message: "대행사 코드를 입력해주세요." };
-        var response = await miFetch(getAgencyCodeValidateApiUrl(), {
+        var response = await miFetch(getSessionApiUrl() + "?action=login", {
           method: "POST",
           cache: "no-store",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ agencyCode: normalized })
+          body: JSON.stringify({ mode: "client", code: normalized })
         });
         var payload = await response.json().catch(function () { return null; });
-        if (!payload) payload = { ok: false, message: "대행사 코드 확인 응답을 읽을 수 없습니다." };
+        if (!payload) payload = { ok: false, message: "보안 접속 응답을 읽을 수 없습니다." };
         if (!response.ok && payload.ok !== false) payload.ok = false;
+        if (payload.ok && payload.session) applyClientSession(payload);
         return payload;
       }
 
-      async function syncReportCenterReports(code) {
-        var normalized = normalizeCode(code || selectedAgencyCode());
+      async function restoreClientSession() {
+        var response = await miFetch(getSessionApiUrl(), { method: "GET", cache: "no-store" });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) payload = { ok: false, message: "보안 세션 응답을 읽을 수 없습니다." };
+        if (!response.ok && payload.ok !== false) payload.ok = false;
+        if (payload.ok && payload.session) applyClientSession(payload);
+        return payload;
+      }
+
+      async function closeClientSession() {
+        try {
+          await miFetch(getSessionApiUrl() + "?action=logout", {
+            method: "POST",
+            cache: "no-store",
+            headers: { "content-type": "application/json" },
+            body: "{}"
+          });
+        } finally {
+          removeClientAuthCode();
+        }
+      }
+
+      async function syncReportCenterReports() {
+        var normalized = normalizeCode(selectedAgencyCode());
         if (!normalized) return null;
         var response = await miFetch(getReportCenterApiUrl(), {
           method: "GET",
-          cache: "no-store",
-          headers: { "x-mi-agency-code": normalized }
+          cache: "no-store"
         });
         var payload = await response.json().catch(function () { return null; });
         if (!payload) throw new Error("보고서함 응답을 확인할 수 없습니다.");
@@ -6721,22 +6773,6 @@
         var hours = Math.ceil(minutes / 60);
         if (hours < 24) return hours + "시간";
         return Math.ceil(hours / 24) + "일";
-      }
-
-      function rankAgencyCode() {
-        try {
-          return String(window.sessionStorage.getItem(selectedCodeKey) || window.localStorage.getItem(selectedCodeKey) || "").trim().toLowerCase();
-        } catch (error) {
-          return "";
-        }
-      }
-
-      function rankAccessCode() {
-        try {
-          return String(window.MI_RANK_ACCESS_CODE || window.sessionStorage.getItem("miRankAccessCode") || window.localStorage.getItem("miRankAccessCode") || "").trim();
-        } catch (error) {
-          return "";
-        }
       }
 
       function rankText(value) {
@@ -7812,8 +7848,7 @@
         });
         if (platform) params.set("platform", platform);
         var response = await miFetch(getMetaAdsApiUrl() + "?" + params.toString(), {
-          method: "GET",
-          headers: { "x-mi-agency-code": rankAgencyCode() }
+          method: "GET"
         });
         var payload = await response.json().catch(function () { return null; });
         if (!payload) return { ok: false, message: "Meta 광고 조회 응답을 확인할 수 없습니다." };
@@ -8014,29 +8049,21 @@
         card.setAttribute("data-rank-collapsed-groups", "");
 
         async function requestRankTrackers(method, body) {
-          var agencyCode = rankAgencyCode();
-          if (!agencyCode) {
+          if (!secureClientSession.clientId || secureClientSession.role !== "client") {
             return { ok: false, message: "대행사 코드 연결 후 순위 추적을 사용할 수 있습니다." };
-          }
-          var accessCode = rankAccessCode();
-          if (!accessCode) {
-            return { ok: false, message: "순위 추적 접근 코드 확인이 필요합니다." };
           }
           var options = {
             method: method,
             cache: "no-store",
-            headers: {
-              "x-mi-agency-code": agencyCode,
-              "x-mi-rank-access-code": accessCode
-            }
+            headers: {}
           };
           if (body) {
             options.headers["content-type"] = "application/json";
-            options.body = JSON.stringify(Object.assign({ agencyCode: agencyCode }, body));
+            options.body = JSON.stringify(body);
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
+            url += "?" + new URLSearchParams({ limit: "50" }).toString();
           }
           var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });
@@ -9143,14 +9170,22 @@
         return labels[type] || "공개 보고서";
       }
 
-      async function openReportFile(report, state) {
+      function safeReportNavigationUrl(value) {
+        try {
+          var parsed = new URL(String(value || ""), window.location.origin);
+          var localHttp = parsed.protocol === "http:" && (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost");
+          return parsed.protocol === "https:" || localHttp ? parsed.href : "";
+        } catch (error) {
+          return "";
+        }
+      }
+      async function openReportFile(report, state, reportWindow) {
         if (report.fileId) {
           var response = await miFetch(getReportCenterApiUrl(), {
             method: "POST",
             cache: "no-store",
             headers: {
-              "content-type": "application/json",
-              "x-mi-agency-code": normalizeCode(state.code || selectedAgencyCode())
+              "content-type": "application/json"
             },
             body: JSON.stringify({
               action: "signed-download",
@@ -9161,10 +9196,14 @@
           if (!response.ok || !payload || payload.ok === false || !payload.signedUrl) {
             throw new Error((payload && payload.message) || "보고서 파일 URL을 다시 발급하지 못했습니다.");
           }
-          window.open(payload.signedUrl, "_blank", "noopener,noreferrer");
+          var signedUrl = safeReportNavigationUrl(payload.signedUrl);
+          if (!signedUrl) throw new Error("안전한 보고서 주소를 확인할 수 없습니다.");
+          reportWindow.location.replace(signedUrl);
           return;
         }
-        window.open(report.fileUrl, "_blank", "noopener,noreferrer");
+        var externalUrl = safeReportNavigationUrl(report.fileUrl);
+        if (!externalUrl) throw new Error("안전한 보고서 주소를 확인할 수 없습니다.");
+        reportWindow.location.replace(externalUrl);
       }
 
       async function downloadClientReport(index, button) {
@@ -9173,10 +9212,17 @@
         var report = reports[index] || reports[0];
         if (!report) return;
         if (report.fileUrl || report.fileId) {
+          var reportWindow = window.open("about:blank", "_blank");
+          if (!reportWindow) {
+            window.alert("보고서를 열려면 브라우저 팝업 허용이 필요합니다.");
+            return;
+          }
+          reportWindow.opener = null;
           if (button) button.disabled = true;
           try {
-            await openReportFile(report, state);
+            await openReportFile(report, state, reportWindow);
           } catch (error) {
+            reportWindow.close();
             window.alert(error.message || "보고서 파일을 열 수 없습니다.");
           }
           if (button) button.disabled = false;
@@ -9226,11 +9272,11 @@
 
       function updateClientAuthPanel(code) {
         var node = root.querySelector("[data-mi-current-code]");
-        if (node) node.textContent = normalizeCode(code || storedClientAuthCode()) || "미연결";
+        if (node) node.textContent = String(code || "").trim() || "안전한 세션 연결";
       }
 
-      function logoutClient() {
-        clearClientAuth();
+      async function logoutClient() {
+        await closeClientSession().catch(function () { clearClientAuth(); });
         updateClientAuthPanel("");
         if (loginCode) loginCode.value = "";
         if (connectCode) connectCode.value = "";
@@ -9247,7 +9293,6 @@
           setStatus(statusNode, "대행사 코드를 입력해주세요.", "is-warn");
           return false;
         }
-        var state = readState(normalized);
         var payload;
         try {
           payload = await validateAgencyCode(normalized);
@@ -9256,30 +9301,51 @@
           setStatus(statusNode, "서버에서 대행사 코드를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.", "is-warn");
           return false;
         }
-        if (!payload.ok || !payload.client) {
+        if (!payload.ok || !payload.client || !payload.session || payload.session.role !== "client") {
           clearClientAuth();
           setStatus(statusNode, payload.message || "활성화된 대행사 코드가 아닙니다.", "is-warn");
           return false;
         }
         var client = payload.client;
-        state.code = normalizeCode(client.agencyCode || normalized);
+        var sessionScope = normalizeCode(payload.session.scopeKey || storedClientAuthCode());
+        if (!sessionScope) {
+          clearClientAuth();
+          setStatus(statusNode, "보안 세션 범위를 확인하지 못했습니다. 다시 접속해주세요.", "is-warn");
+          return false;
+        }
+        // 로그인 직후에는 저장된 화면 값을 재사용하지 않습니다. 보고서 API가
+        // 실패하더라도 과거 데모/초안 데이터가 노출되지 않도록 항상 빈 공개
+        // 상태에서 시작하고, 서버가 반환한 승인 스냅샷만 덮어씁니다.
+        var state = blankPublicState(sessionScope);
+        state.code = sessionScope;
         state.client = client.name || client.businessName || state.client;
         state.agencyName = client.agencyName || client.teamName || "모먼트 인사이트 운영팀";
         state.connectionStatus = "연동 완료";
         if (client.publicSummary) state.publicComment = client.publicSummary;
-        writeState(state);
-        persistClientAuthCode(state.code);
-        applyState(state);
-        var reportSyncNote = "";
+        var reportSyncFailed = false;
         try {
-          await syncReportCenterReports(state.code);
+          await syncReportCenterReports();
         } catch (error) {
-          reportSyncNote = " · 보고서함은 공개 파일 등록 후 반영";
+          reportSyncFailed = true;
+          state.reportCenterSynced = true;
+          state.comment = "승인된 데이터를 확인하지 못했습니다. 잠시 후 다시 연결해주세요.";
+          state.actionImpact = "승인 데이터 조회 실패로 수치를 표시하지 않습니다.";
+          state.clientRequest = "운영팀에 공개 상태 확인을 요청해주세요.";
+          writeState(state);
+          applyState(state);
         }
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
-        updateClientAuthPanel(state.code);
-        setStatus(statusNode, "연결 완료: " + state.client + " 브랜드 데이터가 반영되었습니다." + reportSyncNote, "is-ok");
+        if (loginCode) loginCode.value = "";
+        if (connectCode) connectCode.value = "";
+        updateClientAuthPanel(state.client);
+        setStatus(
+          statusNode,
+          reportSyncFailed
+            ? "연결은 확인됐지만 승인 데이터를 불러오지 못했습니다. 수치는 안전하게 숨겼습니다."
+            : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다.",
+          reportSyncFailed ? "is-warn" : "is-ok"
+        );
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -9343,7 +9409,7 @@
       var loginKicker = root.querySelector("[data-client-login-kicker]");
       var loginTitle = root.querySelector("[data-client-login-title]");
       var loginDesc = root.querySelector("[data-client-login-desc]");
-      updateClientAuthPanel(storedClientAuthCode());
+      updateClientAuthPanel("");
 
       function setClientLoginMode(mode) {
         loginMode = mode === "operator" ? "operator" : "client";
@@ -9402,13 +9468,33 @@
       }
 
       async function restoreClientLogin() {
-        var storedCode = storedClientAuthCode();
-        if (!storedCode || !loginButton || !loginCode) return;
-        setClientLoginMode("client");
-        loginCode.value = storedCode;
+        if (!loginButton || !loginCode) return;
         loginButton.disabled = true;
-        setStatus(loginStatus, "저장된 대행사 코드를 확인 중입니다.", "");
-        await unlockWithCode(storedCode, loginStatus);
+        setStatus(loginStatus, "안전한 서버 세션을 확인 중입니다.", "");
+        var payload = await restoreClientSession();
+        if (!payload.ok || !payload.session || payload.session.role !== "client" || !payload.client) {
+          loginButton.disabled = false;
+          clearClientAuth();
+          setStatus(loginStatus, "담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.", "");
+          return;
+        }
+        var session = applyClientSession(payload);
+        var sessionScope = normalizeCode(session.scopeKey || storedClientAuthCode());
+        if (!sessionScope) throw new Error("보안 세션 범위를 확인할 수 없습니다.");
+        var state = blankPublicState(sessionScope);
+        state.client = payload.client.name || payload.client.businessName || state.client;
+        state.code = sessionScope;
+        try {
+          await syncReportCenterReports();
+        } catch (error) {
+          writeState(state);
+          applyState(state);
+        }
+        root.classList.remove("is-locked");
+        root.classList.add("is-authed");
+        updateClientAuthPanel(state.client);
+        setStatus(loginStatus, "광고주 보안 세션이 복원되었습니다.", "is-ok");
+        window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         loginButton.disabled = false;
       }
 
@@ -9428,7 +9514,11 @@
       }
 
       root.querySelectorAll("[data-mi-logout]").forEach(function (button) {
-        button.addEventListener("click", logoutClient);
+        button.addEventListener("click", function () {
+          logoutClient().catch(function () {
+            setStatus(loginStatus, "로그아웃 처리 중 오류가 발생했습니다.", "is-warn");
+          });
+        });
       });
 
       var keywordInput = root.querySelector("[data-mi-keyword-input]");
@@ -9621,29 +9711,21 @@
         }
 
         async function requestPlaceTrackers(method, body) {
-          var agencyCode = rankAgencyCode();
-          if (!agencyCode) {
+          if (!secureClientSession.clientId || secureClientSession.role !== "client") {
             return { ok: false, message: "대행사 코드 연결 후 네이버 플레이스 30일 순위를 사용할 수 있습니다." };
-          }
-          var accessCode = rankAccessCode();
-          if (!accessCode) {
-            return { ok: false, message: "순위 추적 접근 코드 확인이 필요합니다." };
           }
           var options = {
             method: method,
             cache: "no-store",
-            headers: {
-              "x-mi-agency-code": agencyCode,
-              "x-mi-rank-access-code": accessCode
-            }
+            headers: {}
           };
           if (body) {
             options.headers["content-type"] = "application/json";
-            options.body = JSON.stringify(Object.assign({ agencyCode: agencyCode }, body));
+            options.body = JSON.stringify(body);
           }
           var url = getPlaceRankTrackerApiUrl();
           if (method === "GET") {
-            url += "?" + new URLSearchParams({ agencyCode: agencyCode, limit: "50" }).toString();
+            url += "?" + new URLSearchParams({ limit: "50" }).toString();
           }
           var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });

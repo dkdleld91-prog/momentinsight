@@ -24,7 +24,13 @@ async function exists(filePath) {
 
 async function findPage(fileName) {
   const direct = path.join(sourceDir, fileName);
-  if (await exists(direct)) return direct;
+  if (await exists(direct)) {
+    const stat = await fs.lstat(direct);
+    if (!stat.isFile() || stat.isSymbolicLink()) {
+      throw new Error(`배포 대상 HTML은 일반 파일이어야 합니다: ${fileName}`);
+    }
+    return direct;
+  }
 
   const normalized = fileName.normalize("NFD");
   const files = await fs.readdir(sourceDir);
@@ -32,7 +38,12 @@ async function findPage(fileName) {
   if (!match) {
     throw new Error(`배포 대상 HTML 파일을 찾지 못했습니다: ${fileName}`);
   }
-  return path.join(sourceDir, match);
+  const matchedPath = path.join(sourceDir, match);
+  const stat = await fs.lstat(matchedPath);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error(`배포 대상 HTML은 일반 파일이어야 합니다: ${fileName}`);
+  }
+  return matchedPath;
 }
 
 async function copyDirectory(from, to) {
@@ -45,6 +56,8 @@ async function copyDirectory(from, to) {
       await copyDirectory(source, target);
     } else if (entry.isFile()) {
       await fs.copyFile(source, target);
+    } else {
+      throw new Error(`public 폴더에는 일반 파일과 폴더만 허용됩니다: ${source}`);
     }
   }
 }

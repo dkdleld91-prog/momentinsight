@@ -16,6 +16,8 @@ concurrency:
   group: naver-rank-tracking
   cancel-in-progress: false
 
+permissions: {}
+
 jobs:
   refresh-ranks:
     runs-on: ubuntu-latest

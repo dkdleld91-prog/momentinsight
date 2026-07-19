@@ -20,19 +20,31 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
 
       - name: Install platform dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Install collector dependencies
-        run: npm --prefix tools/naver-place-rank-collector ci
+        run: npm --prefix tools/naver-place-rank-collector ci --ignore-scripts
+
+      - name: Block high-severity production dependency advisories
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm --prefix tools/naver-place-rank-collector audit --omit=dev --audit-level=high
+
+      - name: Verify npm registry signatures
+        run: |
+          npm audit signatures
+          npm --prefix tools/naver-place-rank-collector audit signatures
 
       - name: Run release quality checks
         run: npm run check:quality

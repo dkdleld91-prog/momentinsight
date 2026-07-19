@@ -338,6 +338,30 @@ async function withExternalProvider(fetchImpl, callback) {
   }
 }
 
+async function withSearchAdConfig(callback) {
+  const previous = {
+    apiKey: process.env.NAVER_SEARCHAD_API_KEY,
+    secretKey: process.env.NAVER_SEARCHAD_SECRET_KEY,
+    customerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID,
+  };
+  process.env.NAVER_SEARCHAD_API_KEY = "search-ad-test-key";
+  process.env.NAVER_SEARCHAD_SECRET_KEY = "search-ad-test-secret";
+  process.env.NAVER_SEARCHAD_CUSTOMER_ID = "123456";
+  try {
+    return await callback();
+  } finally {
+    const restore = {
+      NAVER_SEARCHAD_API_KEY: previous.apiKey,
+      NAVER_SEARCHAD_SECRET_KEY: previous.secretKey,
+      NAVER_SEARCHAD_CUSTOMER_ID: previous.customerId,
+    };
+    Object.entries(restore).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+}
+
 async function withOfficialProvider(fetchImpl, callback) {
   const originalFetch = globalThis.fetch;
   const previous = {
@@ -376,6 +400,9 @@ const originalEnv = {
   openapiSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET,
   datalabId: process.env.NAVER_DATALAB_CLIENT_ID,
   datalabSecret: process.env.NAVER_DATALAB_CLIENT_SECRET,
+  searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY,
+  searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY,
+  searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID,
 };
 
 test.before(() => {
@@ -386,6 +413,9 @@ test.before(() => {
   delete process.env.NAVER_OPENAPI_CLIENT_SECRET;
   delete process.env.NAVER_DATALAB_CLIENT_ID;
   delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  delete process.env.NAVER_SEARCHAD_API_KEY;
+  delete process.env.NAVER_SEARCHAD_SECRET_KEY;
+  delete process.env.NAVER_SEARCHAD_CUSTOMER_ID;
 });
 
 test.after(() => {
@@ -397,6 +427,9 @@ test.after(() => {
     NAVER_OPENAPI_CLIENT_SECRET: originalEnv.openapiSecret,
     NAVER_DATALAB_CLIENT_ID: originalEnv.datalabId,
     NAVER_DATALAB_CLIENT_SECRET: originalEnv.datalabSecret,
+    NAVER_SEARCHAD_API_KEY: originalEnv.searchAdApiKey,
+    NAVER_SEARCHAD_SECRET_KEY: originalEnv.searchAdSecretKey,
+    NAVER_SEARCHAD_CUSTOMER_ID: originalEnv.searchAdCustomerId,
   };
   Object.entries(envNames).forEach(([name, value]) => {
     if (value === undefined) delete process.env[name];
@@ -869,6 +902,233 @@ test("records a 62-result partial snapshot while preserving the last confirmed r
   assert.equal(state.tables[TRACKERS][0].check_count, 10);
   assert.equal(state.tables[TRACKERS][0].found_count, 6);
   assert.equal(state.tables[TRACKERS][0].retry_count, 0);
+});
+
+test("persists unmatched provider aggregates, coverage, and server keyword volume without turning zero into missing", async () => {
+  const { ctx, state } = testContext([{
+    id: "aggregate-provider",
+    keyword: "집계 지표 테스트",
+    current_rank: 12,
+  }]);
+
+  const result = await withSearchAdConfig(() => withExternalProvider(
+    async (url) => String(url).includes("/keywordstool")
+      ? new Response(JSON.stringify({
+        keywordList: [{ relKeyword: "집계지표테스트", monthlyPcQcCnt: 100, monthlyMobileQcCnt: 50 }],
+      }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({
+        ok: true,
+        matched: false,
+        checkedCount: 62,
+        total: 62,
+        complete: false,
+        partial: true,
+        partialReason: "collection_deadline_reached",
+        place: { id: "1234567890", name: "테스트 플레이스" },
+        metrics: {
+          blogCount: 0,
+          visitReviewCount: 1_250,
+          businessCount: 62,
+          scope: "organic_search_results",
+          coverage: {
+            blogCount: { knownCount: 62, totalCount: 62 },
+            visitReviewCount: { knownCount: 62, totalCount: 62 },
+          },
+        },
+        topPlaces: [{ id: "other-1", blogReviewCount: "999", visitorReviewCount: "999" }],
+        source: "test-collector",
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  ));
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "partial");
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.deepEqual(state.tables[SNAPSHOTS][0].place.metrics, {
+    blogCount: 0,
+    visitReviewCount: 1_250,
+    monthlySearchCount: 150,
+    businessCount: 62,
+    scope: "organic_search_results",
+    coverage: {
+      blogCount: { knownCount: 62, totalCount: 62 },
+      visitReviewCount: { knownCount: 62, totalCount: 62 },
+    },
+  });
+  const serialized = placeTrackerPayload(state.tables[TRACKERS][0], state.tables[SNAPSHOTS]);
+  assert.deepEqual(serialized.snapshots[0].place.metrics, state.tables[SNAPSHOTS][0].place.metrics);
+});
+
+test("rejects incomplete or count-mismatched provider aggregate values", async () => {
+  const { ctx, state } = testContext([{
+    id: "invalid-aggregate-provider",
+    keyword: "불완전 집계 테스트",
+    current_rank: 12,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: false,
+      checkedCount: 54,
+      total: 54,
+      complete: false,
+      partial: true,
+      partialReason: "naver_result_list_exhausted",
+      place: { id: "1234567890", name: "테스트 플레이스" },
+      metrics: {
+        blogCount: 100,
+        visitReviewCount: 200,
+        businessCount: 62,
+        scope: "organic_search_results",
+        coverage: {
+          blogCount: { knownCount: 53, totalCount: 54 },
+          visitReviewCount: { knownCount: 54, totalCount: 55 },
+        },
+      },
+      topPlaces: [{ id: "other-1", blogReviewCount: "100", visitorReviewCount: "200" }],
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(state.tables[SNAPSHOTS][0].place.metrics, {
+    scope: "organic_search_results",
+    coverage: {
+      blogCount: { knownCount: 53, totalCount: 54 },
+    },
+  });
+});
+
+test("does not persist a Search Ads under-threshold range as an exact monthly count", async () => {
+  const { ctx, state } = testContext([{
+    id: "under-threshold-search-volume",
+    keyword: "검색량 범위 테스트",
+    current_rank: 12,
+  }]);
+
+  const result = await withSearchAdConfig(() => withExternalProvider(
+    async (url) => String(url).includes("/keywordstool")
+      ? new Response(JSON.stringify({
+        keywordList: [{ relKeyword: "검색량범위테스트", monthlyPcQcCnt: "<10", monthlyMobileQcCnt: 0 }],
+      }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response(JSON.stringify({
+        ok: true,
+        matched: false,
+        checkedCount: 1,
+        total: 1,
+        complete: false,
+        partial: true,
+        partialReason: "naver_result_list_exhausted",
+        place: { id: "1234567890", name: "테스트 플레이스" },
+        metrics: {
+          blogCount: 1,
+          visitReviewCount: 2,
+          businessCount: 1,
+          scope: "organic_search_results",
+          coverage: {
+            blogCount: { knownCount: 1, totalCount: 1 },
+            visitReviewCount: { knownCount: 1, totalCount: 1 },
+          },
+        },
+        source: "test-collector",
+      }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  ));
+
+  assert.equal(result.ok, true);
+  assert.equal(Object.prototype.hasOwnProperty.call(
+    state.tables[SNAPSHOTS][0].place.metrics,
+    "monthlySearchCount",
+  ), false);
+});
+
+test("uses complete top-place evidence as a fallback while leaving partially known sums missing", async () => {
+  const { ctx, state } = testContext([{
+    id: "complete-candidate-fallback",
+    current_rank: 12,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: false,
+      checkedCount: 2,
+      total: 2,
+      complete: false,
+      partial: true,
+      partialReason: "naver_result_list_exhausted",
+      place: {
+        id: "1234567890",
+        name: "테스트 플레이스",
+        blogReviewCount: "999",
+        visitorReviewCount: "999",
+      },
+      topPlaces: [
+        { id: "other-1", blogReviewCount: "0", visitorReviewCount: "5" },
+        { id: "other-2", blogReviewCount: "", visitorReviewCount: "7" },
+      ],
+      source: "legacy-test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  const metrics = state.tables[SNAPSHOTS][0].place.metrics;
+  assert.equal(Object.prototype.hasOwnProperty.call(metrics, "blogCount"), false);
+  assert.equal(metrics.visitReviewCount, 12);
+  assert.equal(metrics.businessCount, 2);
+  assert.equal(metrics.scope, "organic_search_results");
+  assert.deepEqual(metrics.coverage, {
+    blogCount: { knownCount: 1, totalCount: 2 },
+    visitReviewCount: { knownCount: 2, totalCount: 2 },
+  });
+});
+
+test("does not let null provider metrics erase valid legacy aggregate values", async () => {
+  const { ctx, state } = testContext([{
+    id: "null-safe-provider-metrics",
+    current_rank: 12,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: false,
+      checkedCount: 62,
+      total: 62,
+      complete: false,
+      partial: true,
+      partialReason: "collection_deadline_reached",
+      place: {
+        id: "1234567890",
+        name: "테스트 플레이스",
+        metrics: {
+          blogReviewCount: 44,
+          scope: "organic_search_results",
+          coverage: { blogCount: { knownCount: 62, totalCount: 62 } },
+        },
+      },
+      metrics: {
+        blogCount: null,
+        visitReviewCount: 0,
+        businessCount: 62,
+        scope: "organic_search_results",
+        coverage: { visitReviewCount: { knownCount: 62, totalCount: 62 } },
+      },
+      source: "legacy-test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(state.tables[SNAPSHOTS][0].place.metrics.blogCount, 44);
+  assert.equal(state.tables[SNAPSHOTS][0].place.metrics.visitReviewCount, 0);
+  assert.deepEqual(state.tables[SNAPSHOTS][0].place.metrics.coverage.blogCount, {
+    knownCount: 62,
+    totalCount: 62,
+  });
 });
 
 test("refresh persists an official place name without inventing a rank", async () => {

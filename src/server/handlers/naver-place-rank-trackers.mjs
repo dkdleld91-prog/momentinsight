@@ -744,10 +744,10 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
     .insert({
       tracker_id: tracker.id,
       checked_at: checkedAt,
-      rank: result?.rank || null,
+      rank: result?.rank ?? null,
       matched: Boolean(result?.matched),
-      checked_count: result?.checkedCount || null,
-      total: result?.total || null,
+      checked_count: result?.checkedCount ?? null,
+      total: result?.total ?? null,
       place: result?.place || {},
       top_places: result?.topPlaces || [],
       message,
@@ -928,10 +928,113 @@ function firstMetricValue(source, keys) {
 function normalizePlaceMetrics(value = {}) {
   const source = value?.metrics && typeof value.metrics === "object" ? { ...value, ...value.metrics } : value;
   return {
-    blogCount: firstMetricValue(source, ["blogCount", "blog_count", "blogTotal", "blog_total"]),
+    blogCount: firstMetricValue(source, ["blogCount", "blog_count", "blogReviewCount", "blog_review_count", "blogCafeReviewCount", "blog_cafe_review_count", "blogTotal", "blog_total"]),
     visitReviewCount: firstMetricValue(source, ["visitReviewCount", "visit_review_count", "reviewCount", "review_count", "visitorReviewCount", "visitor_review_count"]),
     monthlySearchCount: firstMetricValue(source, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume", "searchCount", "search_count"]),
     businessCount: firstMetricValue(source, ["businessCount", "business_count", "placeCount", "place_count", "total"]),
+  };
+}
+
+function mergeDefinedPlaceMetrics(...values) {
+  const merged = {};
+  values.forEach((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const normalized = normalizePlaceMetrics(value);
+    Object.entries(normalized).forEach(([key, metric]) => {
+      if (metric !== null && metric !== undefined) merged[key] = metric;
+    });
+  });
+  return merged;
+}
+
+function normalizeMetricCoverageEntry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const knownCount = normalizeMetricNumber(value.knownCount ?? value.known_count);
+  const totalCount = normalizeMetricNumber(value.totalCount ?? value.total_count);
+  if (knownCount === null || totalCount === null || knownCount > totalCount) return null;
+  return { knownCount, totalCount };
+}
+
+function mergePlaceMetricMetadata(...values) {
+  const merged = {};
+  values.forEach((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const source = value.metrics && typeof value.metrics === "object" ? value.metrics : value;
+    const scope = normalizeText(source.scope);
+    if (scope) merged.scope = scope;
+    if (!source.coverage || typeof source.coverage !== "object" || Array.isArray(source.coverage)) return;
+
+    const coverage = { ...(merged.coverage || {}) };
+    ["blogCount", "visitReviewCount"].forEach((key) => {
+      const entry = normalizeMetricCoverageEntry(source.coverage[key]);
+      if (entry) coverage[key] = entry;
+    });
+    if (Object.keys(coverage).length) merged.coverage = coverage;
+  });
+  return merged;
+}
+
+function validatedAggregateMetricBundle(value, checkedCount) {
+  const expectedCount = normalizeMetricNumber(checkedCount);
+  const normalized = normalizePlaceMetrics(value);
+  const metadata = mergePlaceMetricMetadata(value);
+  const metrics = {};
+
+  if (normalized.monthlySearchCount !== null && normalized.monthlySearchCount !== undefined) {
+    metrics.monthlySearchCount = normalized.monthlySearchCount;
+  }
+  if (metadata.scope !== "organic_search_results" || expectedCount === null) {
+    return { metrics, metadata: {} };
+  }
+
+  const validCoverage = {};
+  ["blogCount", "visitReviewCount"].forEach((key) => {
+    const entry = metadata.coverage?.[key];
+    if (!entry || entry.totalCount !== expectedCount) return;
+    validCoverage[key] = entry;
+    if (entry.knownCount === entry.totalCount && normalized[key] !== null && normalized[key] !== undefined) {
+      metrics[key] = normalized[key];
+    }
+  });
+  if (normalized.businessCount === expectedCount) metrics.businessCount = expectedCount;
+
+  return {
+    metrics,
+    metadata: {
+      scope: "organic_search_results",
+      ...(Object.keys(validCoverage).length ? { coverage: validCoverage } : {}),
+    },
+  };
+}
+
+function aggregateCompleteTopPlaceMetrics(topPlaces, checkedCount) {
+  const candidates = Array.isArray(topPlaces) ? topPlaces : [];
+  if (!candidates.length || candidates.length !== checkedCount) return { metrics: {}, metadata: {} };
+
+  const sums = { blogCount: 0, visitReviewCount: 0 };
+  const known = { blogCount: 0, visitReviewCount: 0 };
+  candidates.forEach((candidate) => {
+    const metrics = normalizePlaceMetrics(candidate);
+    ["blogCount", "visitReviewCount"].forEach((key) => {
+      if (metrics[key] === null || metrics[key] === undefined) return;
+      sums[key] += metrics[key];
+      known[key] += 1;
+    });
+  });
+
+  const metrics = { businessCount: candidates.length };
+  ["blogCount", "visitReviewCount"].forEach((key) => {
+    if (known[key] === candidates.length) metrics[key] = sums[key];
+  });
+  return {
+    metrics,
+    metadata: {
+      scope: "organic_search_results",
+      coverage: {
+        blogCount: { knownCount: known.blogCount, totalCount: candidates.length },
+        visitReviewCount: { knownCount: known.visitReviewCount, totalCount: candidates.length },
+      },
+    },
   };
 }
 
@@ -1040,7 +1143,9 @@ async function lookupMonthlySearchCount(config, keyword) {
     const list = Array.isArray(payload?.keywordList) ? payload.keywordList : [];
     const exact = list.find((item) => normalizeKeywordCompare(item.relKeyword) === normalizeKeywordCompare(keyword));
     const metric = exact ? searchVolumeMetric(exact.monthlyPcQcCnt, exact.monthlyMobileQcCnt) : null;
-    const value = metric ? (metric.isUnderThreshold ? metric.upperBound : metric.value) : null;
+    // Search Ads uses values such as "<10" for low-volume keywords. That is a
+    // range, not an exact count, so do not persist its upper bound as fact.
+    const value = metric && !metric.isUnderThreshold ? metric.value : null;
     setKeywordVolumeCache(keyword, value);
     return value;
   } catch {
@@ -1199,6 +1304,7 @@ async function lookupNaverLocalSearchRank(config, tracker) {
 }
 
 async function lookupExternalPlaceProvider(config, tracker) {
+  const monthlySearchCountPromise = lookupMonthlySearchCount(config, tracker.keyword);
   const controller = new AbortController();
   const configuredTimeoutMs = Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000);
   // A 300-place lookup can use both an Actor and browser fallback. The payload
@@ -1271,8 +1377,21 @@ async function lookupExternalPlaceProvider(config, tracker) {
     }
     const complete = !matched && checkedCount >= PLACE_RANK_TRACKER_MAX_RANK;
     const partial = !matched && !complete;
-    const metrics = normalizePlaceMetrics(payload.metrics || payload.place || payload.item || payload);
     const place = payload.place || payload.item || {};
+    const topPlaceAggregate = aggregateCompleteTopPlaceMetrics(topPlaces, checkedCount);
+    const placeAggregate = validatedAggregateMetricBundle(place, checkedCount);
+    const payloadAggregate = validatedAggregateMetricBundle(payload, checkedCount);
+    const metrics = mergeDefinedPlaceMetrics(
+      placeAggregate.metrics,
+      topPlaceAggregate.metrics,
+      payloadAggregate.metrics,
+    );
+    if (metrics.monthlySearchCount === undefined) {
+      const monthlySearchCount = await monthlySearchCountPromise;
+      if (monthlySearchCount !== null && monthlySearchCount !== undefined) {
+        metrics.monthlySearchCount = monthlySearchCount;
+      }
+    }
     const targetPlaceId = normalizeText(tracker.place_id);
     const providerPlaceId = normalizeText(
       place.id ||
@@ -1290,7 +1409,14 @@ async function lookupExternalPlaceProvider(config, tracker) {
     ) {
       throw new Error("place_rank_provider_invalid_response");
     }
-    const placeWithMetrics = hasPlaceMetrics(metrics) ? { ...place, metrics: { ...(place.metrics || {}), ...metrics } } : place;
+    const metricMetadata = mergePlaceMetricMetadata(
+      placeAggregate.metadata,
+      topPlaceAggregate.metadata,
+      payloadAggregate.metadata,
+    );
+    const placeWithMetrics = hasPlaceMetrics(metrics) || Object.keys(metricMetadata).length
+      ? { ...place, metrics: { ...metrics, ...metricMetadata } }
+      : place;
     const parsedTotal = Number(payload.total ?? checkedCount);
     return {
       ok: true,

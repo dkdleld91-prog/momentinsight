@@ -366,6 +366,50 @@ function firstText(...values) {
   return values.map(normalizeText).find(Boolean) || "";
 }
 
+function firstMetricText(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    const text = String(value).normalize("NFKC").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function parseMetricCount(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).normalize("NFKC").trim().replace(/,/g, "");
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function aggregateCandidateMetrics(candidates = []) {
+  const rows = Array.isArray(candidates) ? candidates : [];
+  const aggregateMetric = (key) => {
+    const values = rows.map((candidate) => parseMetricCount(candidate?.[key]));
+    const knownValues = values.filter((value) => value !== null);
+    const coverage = { knownCount: knownValues.length, totalCount: rows.length };
+    return {
+      value: coverage.knownCount === coverage.totalCount
+        ? knownValues.reduce((sum, value) => sum + value, 0)
+        : null,
+      coverage,
+    };
+  };
+  const blog = aggregateMetric("blogReviewCount");
+  const visit = aggregateMetric("visitorReviewCount");
+  return {
+    scope: "organic_search_results",
+    blogCount: blog.value,
+    visitReviewCount: visit.value,
+    businessCount: rows.length,
+    coverage: {
+      blogCount: blog.coverage,
+      visitReviewCount: visit.coverage,
+    },
+  };
+}
+
 function positiveRank(...values) {
   for (const value of values) {
     const parsed = Number(String(value ?? "").replace(/[^\d.]/g, ""));
@@ -477,7 +521,7 @@ function apifyCandidate(item = {}, index = 0) {
     placeIds: uniqueValues([id, ...extractPlaceIds(url)]),
     name,
     url,
-    visitorReviewCount: firstText(
+    visitorReviewCount: firstMetricText(
       source.visitorReviewCount,
       source.visitor_reviews,
       source.reviewCount,
@@ -485,7 +529,7 @@ function apifyCandidate(item = {}, index = 0) {
       source.VisitorReviewCount,
       source.ReviewCount
     ),
-    blogReviewCount: firstText(
+    blogReviewCount: firstMetricText(
       source.blogCafeReviewCount,
       source.blogReviewCount,
       source.blog_reviews,
@@ -756,6 +800,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
         name: target.placeName,
         url: target.placeUrl,
       },
+      metrics: aggregateCandidateMetrics(candidates),
       topPlaces: candidates.slice(0, 20),
       source: actorId.toLowerCase().includes("delicious_zebu~naver-map-search-results-scraper") ||
         actorId.toLowerCase().includes("solidcode~naver-map-scraper")
@@ -941,8 +986,8 @@ async function extractVisibleRows(frame) {
           html: "",
           isAd: Boolean(placeItem.adId || placeItem.adClickLog || placeItem.adDescription || adLink) || /\b광고\b/.test(text),
           nameNodes: [placeItem.name],
-          visitorReviewCount: placeItem.visitorReviewCount || "",
-          blogReviewCount: placeItem.blogCafeReviewCount || "",
+          visitorReviewCount: placeItem.visitorReviewCount ?? "",
+          blogReviewCount: placeItem.blogCafeReviewCount ?? "",
         };
       }
 
@@ -1012,8 +1057,8 @@ function appendCandidate(items, rawRow) {
     aria: normalizeText(rawRow.aria),
     html: rawRow.html || "",
     text: normalizeText(rawRow.text || rawRow.aria),
-    visitorReviewCount: normalizeText(rawRow.visitorReviewCount),
-    blogReviewCount: normalizeText(rawRow.blogReviewCount),
+    visitorReviewCount: firstMetricText(rawRow.visitorReviewCount),
+    blogReviewCount: firstMetricText(rawRow.blogReviewCount),
     isAd: false,
   });
   return true;
@@ -1078,8 +1123,8 @@ function selectorFallbackCollection(initialCandidates = [], domRows = [], result
       nameNodes: [normalizeText(candidate?.name)].filter(Boolean),
       url: candidate?.url || "",
       isAd: candidate?.isAd === true,
-      visitorReviewCount: candidate?.visitorReviewCount || "",
-      blogReviewCount: candidate?.blogReviewCount || "",
+      visitorReviewCount: candidate?.visitorReviewCount ?? "",
+      blogReviewCount: candidate?.blogReviewCount ?? "",
     }));
 
   domRows
@@ -1199,8 +1244,8 @@ function candidateFromAllSearch(item, index) {
     placeIds: [id],
     name,
     url: `https://map.naver.com/p/entry/place/${id}`,
-    visitorReviewCount: normalizeText(item?.placeReviewCount || item?.visitorReviewCount),
-    blogReviewCount: normalizeText(item?.reviewCount || item?.blogCafeReviewCount),
+    visitorReviewCount: firstMetricText(item?.visitorReviewCount, item?.placeReviewCount),
+    blogReviewCount: firstMetricText(item?.blogCafeReviewCount, item?.reviewCount),
     isAd: false,
   };
 }
@@ -1541,6 +1586,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         rank: matched ? matched.rank : null,
         ...collectionStatus,
         place,
+        metrics: aggregateCandidateMetrics(candidates),
         topPlaces: candidates.slice(0, 20),
         source: "naver_map_pc_list_collector",
         message: matched
@@ -1581,6 +1627,7 @@ function buildCollectionStatus(collection, requestedMaxRank) {
 
 export const __testing = {
   apifyCandidate,
+  aggregateCandidateMetrics,
   appendCandidate,
   apifyStopReason,
   buildCollectionStatus,

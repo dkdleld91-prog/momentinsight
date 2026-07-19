@@ -349,10 +349,15 @@ const checks = {
     && fixedRankScopeMigration.includes("update public.naver_place_rank_trackers"),
   placeRankDailyMetricBoard: [adminSource, clientSource].every((source) => source.includes("mi-place-day-card")
     && source.includes("groupPlaceSnapshotsByDay")
+    && source.includes('fallback === undefined || fallback === null || String(fallback).trim() === ""')
     && source.includes('renderPlaceDayMetric("블로그"')
     && source.includes('renderPlaceDayMetric("방문"')
     && source.includes('renderPlaceDayMetric("월검색"')
-    && source.includes('renderPlaceDayMetric("업체"')),
+    && source.includes('renderPlaceDayMetric("업체"'))
+    && placeRankServer.includes("mergeDefinedPlaceMetrics")
+    && placeRankServer.includes("aggregateCompleteTopPlaceMetrics")
+    && placeRankServer.includes('"blogReviewCount", "blog_review_count"')
+    && placeRankServer.includes('scope: "organic_search_results"'),
   placeRankPremiumCompactCards: [adminSource, clientSource].every((source) => source.includes("--mi-place-day-width: 140px")
     && source.includes("flex: 0 0 var(--mi-place-day-width, 140px)")
     && source.includes("grid-template-columns: repeat(2, minmax(0, 1fr));")

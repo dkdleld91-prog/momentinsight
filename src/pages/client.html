@@ -7183,6 +7183,7 @@
           var number = Number(String(raw === undefined || raw === null ? "" : raw).replace(/[^\d.-]/g, ""));
           if (Number.isFinite(number) && number >= 0) return Math.round(number);
         }
+        if (fallback === undefined || fallback === null || String(fallback).trim() === "") return null;
         var fallbackNumber = Number(fallback);
         return Number.isFinite(fallbackNumber) && fallbackNumber >= 0 ? Math.round(fallbackNumber) : null;
       }

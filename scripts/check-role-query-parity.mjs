@@ -120,6 +120,10 @@ const adminProductSync = functionBlock(adminSource, "syncDueRankTrackersIfNeeded
 const clientProductSync = functionBlock(clientSource, "syncDueRankTrackersIfNeeded");
 const adminPlaceSync = functionBlock(adminSource, "syncDuePlaceTrackersIfNeeded");
 const clientPlaceSync = functionBlock(clientSource, "syncDuePlaceTrackersIfNeeded");
+const adminPlaceSnapshotMetric = functionBlock(adminSource, "placeSnapshotMetric");
+const clientPlaceSnapshotMetric = functionBlock(clientSource, "placeSnapshotMetric");
+const adminPlaceDailyBoard = functionBlock(adminSource, "renderPlaceTrackerDailyBoard");
+const clientPlaceDailyBoard = functionBlock(clientSource, "renderPlaceTrackerDailyBoard");
 const adminCompleteTrackerPayload = functionBlock(adminSource, "completeRankTrackerPayload");
 const clientCompleteTrackerPayload = functionBlock(clientSource, "completeRankTrackerPayload");
 const adminScopedTrackerPayload = functionBlock(adminSource, "scopedRankTrackerPayload");
@@ -226,6 +230,20 @@ const checks = {
     && hasActions(clientProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"]),
   placeTrackerActionsAligned: hasActions(adminPlaceTracking, ["create", "check", "sync-due", "group", "delete"])
     && hasActions(clientPlaceTracking, ["create", "check", "sync-due", "group", "delete"]),
+  placeMetricRenderingAlignedAndNullSafe: normalizedBlock(adminSource, "placeSnapshotMetric")
+    === normalizedBlock(clientSource, "placeSnapshotMetric")
+    && normalizedBlock(adminSource, "renderPlaceTrackerDailyBoard")
+      === normalizedBlock(clientSource, "renderPlaceTrackerDailyBoard")
+    && [adminPlaceSnapshotMetric, clientPlaceSnapshotMetric].every((block) => includesAll(block, [
+      'fallback === undefined || fallback === null || String(fallback).trim() === ""',
+      "return null",
+    ]))
+    && [adminPlaceDailyBoard, clientPlaceDailyBoard].every((block) => includesAll(block, [
+      'renderPlaceDayMetric("블로그"',
+      'renderPlaceDayMetric("방문"',
+      'renderPlaceDayMetric("월검색"',
+      'renderPlaceDayMetric("업체"',
+    ])),
   trackingAuthRefreshConnected: (adminSource.match(/mi:rank-auth-ready/g) || []).length >= 2
     && (clientSource.match(/mi:rank-auth-ready/g) || []).length >= 2,
   ownerRankDefaultScopeProtected: includesAll(adminSource, [

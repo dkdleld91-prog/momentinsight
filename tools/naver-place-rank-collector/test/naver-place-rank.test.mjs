@@ -4,6 +4,7 @@ import test from "node:test";
 import { __testing, lookupNaverPlaceRank } from "../src/naver-place-rank.mjs";
 
 const {
+  aggregateCandidateMetrics,
   buildCollectionStatus,
   buildApifyIdentityInput,
   buildApifySearchInput,
@@ -883,4 +884,89 @@ test("normalizes the current Naver Map Actor review fields", () => {
 
   assert.equal(candidates[0].visitorReviewCount, "123");
   assert.equal(candidates[0].blogReviewCount, "45");
+});
+
+test("aggregates every organic candidate metric while keeping topPlaces bounded", async () => {
+  const previousToken = process.env.APIFY_NAVER_MAPS_TOKEN;
+  process.env.APIFY_NAVER_MAPS_TOKEN = "test-token";
+  try {
+    const organicRows = Array.from({ length: 25 }, (_, index) => ({
+      placeId: String(800000 + index),
+      name: `오가닉 장소 ${index + 1}`,
+      organicRank: index + 1,
+      visitorReviewCount: 100 + index,
+      blogCafeReviewCount: 200 + index,
+    }));
+    const result = await lookupNaverPlaceRankViaApify({
+      keyword: "리뷰 지표 테스트",
+      placeId: "999999",
+      maxRank: 300,
+    }, async () => new Response(JSON.stringify([
+      ...organicRows,
+      {
+        placeId: "999998",
+        name: "광고 장소",
+        organicRank: 1,
+        visitorReviewCount: 9999,
+        blogCafeReviewCount: 9999,
+        isAd: true,
+      },
+    ]), { status: 200 }));
+
+    assert.equal(result.matched, false);
+    assert.equal(result.checkedCount, 25);
+    assert.equal(result.topPlaces.length, 20);
+    assert.equal(result.topPlaces.some((candidate) => candidate.name === "광고 장소"), false);
+    assert.deepEqual(result.metrics, {
+      scope: "organic_search_results",
+      blogCount: 5300,
+      visitReviewCount: 2800,
+      businessCount: 25,
+      coverage: {
+        blogCount: { knownCount: 25, totalCount: 25 },
+        visitReviewCount: { knownCount: 25, totalCount: 25 },
+      },
+    });
+  } finally {
+    if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
+    else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
+  }
+});
+
+test("marks an aggregate review metric null when any organic candidate is missing it", () => {
+  assert.deepEqual(aggregateCandidateMetrics([
+    { visitorReviewCount: "1,200", blogReviewCount: "300" },
+    { visitorReviewCount: "", blogReviewCount: "40" },
+  ]), {
+    scope: "organic_search_results",
+    blogCount: 340,
+    visitReviewCount: null,
+    businessCount: 2,
+    coverage: {
+      blogCount: { knownCount: 2, totalCount: 2 },
+      visitReviewCount: { knownCount: 1, totalCount: 2 },
+    },
+  });
+});
+
+test("preserves explicit zero review counts as canonical zero", () => {
+  const candidates = normalizeApifyCandidates([{
+    placeId: "700000",
+    name: "신규 오가닉 장소",
+    visitorReviewCount: 0,
+    blogCafeReviewCount: 0,
+  }], 300);
+
+  assert.equal(candidates[0].visitorReviewCount, "0");
+  assert.equal(candidates[0].blogReviewCount, "0");
+  assert.deepEqual(aggregateCandidateMetrics(candidates), {
+    scope: "organic_search_results",
+    blogCount: 0,
+    visitReviewCount: 0,
+    businessCount: 1,
+    coverage: {
+      blogCount: { knownCount: 1, totalCount: 1 },
+      visitReviewCount: { knownCount: 1, totalCount: 1 },
+    },
+  });
 });

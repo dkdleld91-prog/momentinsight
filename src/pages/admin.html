@@ -7527,12 +7527,11 @@
       }
 
       async function loadOwnerTool() {
-        discardOwnerTool();
         if (secureSession.role !== "owner") return false;
-        var generation = ownerToolGeneration;
+        var requestGeneration = ownerToolGeneration;
         var response = await miFetch(getOwnerToolApiUrl(), { method: "GET", cache: "no-store" });
         var payload = await readApiPayload(response, "총관리자 전용 도구를 확인할 수 없습니다.");
-        if (generation !== ownerToolGeneration || secureSession.role !== "owner") return false;
+        if (requestGeneration !== ownerToolGeneration || secureSession.role !== "owner") return false;
         var tool = payload && payload.tool ? payload.tool : null;
         if (!payload.ok || !tool || !/^owner-[a-z-]{1,40}$/.test(String(tool.screen || ""))) return false;
         if (typeof tool.menuHtml !== "string" || typeof tool.viewHtml !== "string" || typeof tool.styleText !== "string") return false;
@@ -7546,24 +7545,30 @@
         var view = viewTemplate.content.firstElementChild;
         if (!menu || menu.tagName !== "A" || menu.getAttribute("data-mi-admin-screen") !== tool.screen) return false;
         if (!view || view.tagName !== "SECTION" || view.getAttribute("data-mi-admin-view") !== tool.screen) return false;
+        if (!view.querySelector("[data-owner-tool-input]") || !view.querySelector("[data-owner-tool-reset]") || !view.querySelector("[data-owner-tool-status]")) return false;
+
+        var navGroup = root.querySelector(".mi-nav-group");
+        var wrap = root.querySelector(".mi-wrap");
+        if (!navGroup || !wrap || requestGeneration !== ownerToolGeneration || secureSession.role !== "owner") return false;
 
         menu.setAttribute("data-owner-tool-menu-root", "");
         view.setAttribute("data-owner-tool-view-root", "");
         var style = document.createElement("style");
         style.setAttribute("data-owner-tool-style-root", "");
         style.textContent = tool.styleText;
+        discardOwnerTool();
+        if (secureSession.role !== "owner") return false;
+        var generation = ownerToolGeneration;
         document.head.appendChild(style);
-        var navGroup = root.querySelector(".mi-nav-group");
-        var wrap = root.querySelector(".mi-wrap");
-        if (!navGroup || !wrap) {
-          discardOwnerTool();
-          return false;
-        }
         navGroup.appendChild(menu);
         wrap.appendChild(view);
         ownerToolScreen = tool.screen;
         bindOwnerTool(view, generation);
-        await calculateOwnerTool(view, "0", generation);
+        await calculateOwnerTool(view, "0", generation).catch(function (error) {
+          if (generation === ownerToolGeneration) {
+            setOwnerToolStatus(view.querySelector("[data-owner-tool-status]"), error.message || "계산 연결을 확인해주세요.", "warn");
+          }
+        });
         return true;
       }
 
@@ -7593,9 +7598,19 @@
       async function restoreSecureSession() {
         var response = await miFetch(getSessionApiUrl(), { method: "GET", cache: "no-store" });
         var payload = await readApiPayload(response, "보안 세션 응답을 확인할 수 없습니다.");
+        payload.httpStatus = Number(response.status || 0);
         if (!payload.ok || !payload.session) return payload;
-        applySecureSession(payload);
         return payload;
+      }
+
+      function sessionValidationUnavailable(payload) {
+        return Boolean(payload && (payload.code === "SESSION_VALIDATION_UNAVAILABLE" || Number(payload.httpStatus || 0) >= 500));
+      }
+
+      function waitForSessionRetry(milliseconds) {
+        return new Promise(function (resolve) {
+          window.setTimeout(resolve, milliseconds);
+        });
       }
 
       async function closeSecureSession() {
@@ -7829,7 +7844,11 @@
             }).filter(Boolean)
           ));
           if (publicCodeInput && (isOwnerScopePlaceholder(currentCode) || !activeCodes.has(currentCode))) {
+            var nextOwnerCode = normalizeStorageCode(payload.ownerAgencyCode);
             publicCodeInput.value = payload.ownerAgencyCode;
+            if (currentCode !== nextOwnerCode) {
+              window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+            }
           }
         }
         var activeTeams = activeOwnerTeams(payload);
@@ -8647,7 +8666,14 @@
         var schedulesInput = root.querySelector("[data-admin-schedules]");
         var publicCommentInput = root.querySelector("[data-admin-public-comment]");
 
-        if (codeInput) codeInput.value = state.code;
+        if (codeInput) {
+          var previousCode = normalizeStorageCode(codeInput.value);
+          var nextCode = normalizeStorageCode(state.code);
+          codeInput.value = state.code;
+          if (previousCode !== nextCode) {
+            window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+          }
+        }
         if (clientInput) clientInput.value = state.client;
         if (salesInput) salesInput.value = state.sales;
         if (roasInput) roasInput.value = state.roas;
@@ -8729,7 +8755,7 @@
           throw new Error("운영팀 화면에 허용되지 않은 계정입니다.");
         }
         applySecureSession(payload);
-        discardOwnerTool();
+        if (session.role !== "owner") discardOwnerTool();
         currentOperationTeam = null;
         if (session.role === "team") {
           currentOperationTeam = Object.assign({}, payload.team || {}, {
@@ -8753,7 +8779,11 @@
         } else if (session.role === "owner") {
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
           var ownerToolLoaded = await loadOwnerTool().catch(function () { return false; });
-          if (!ownerToolLoaded) setStatus(loginStatus, "총관리자 콘솔은 열렸지만 전용 도구는 안전을 위해 숨겼습니다.", "is-warn");
+          if (!ownerToolLoaded) {
+            setStatus(loginStatus, ownerToolScreen && root.querySelector("[data-owner-tool-view-root]")
+              ? "총관리자 전용 도구 연결을 확인하지 못해 기존 화면을 유지했습니다."
+              : "총관리자 콘솔은 열렸지만 전용 도구 연결을 확인하지 못했습니다.", "is-warn");
+          }
           await loadOwnerCodes(true);
         }
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
@@ -8765,6 +8795,7 @@
         currentOperationTeam = null;
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
+        window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         updateAdminAuthPanel("");
         if (loginInput) loginInput.value = "";
         setLoginMode("operator");
@@ -8812,14 +8843,49 @@
 
       async function restoreAdminLogin() {
         if (!loginInput || !loginButton) return;
+        loginButton.disabled = true;
         setStatus(loginStatus, "안전한 서버 세션을 확인 중입니다.", "");
-        var payload = await restoreSecureSession();
-        if (!payload.ok || !payload.session) {
-          clearAdminAuthCode();
-          setStatus(loginStatus, "운영팀 전용 화면입니다.", "");
-          return;
+        var payload = null;
+        var connectionError = null;
+        for (var attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            payload = await restoreSecureSession();
+            connectionError = null;
+          } catch (error) {
+            connectionError = error;
+          }
+          if (!connectionError && !sessionValidationUnavailable(payload)) break;
+          if (attempt === 0) await waitForSessionRetry(350);
         }
-        await activateAdminSession(payload, true);
+        if (connectionError || sessionValidationUnavailable(payload)) {
+          loginButton.disabled = false;
+          setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
+          return false;
+        }
+        if (Number(payload && payload.httpStatus || 0) === 401) {
+          clearAdminAuthCode();
+          currentOperationTeam = null;
+          root.classList.add("is-locked");
+          root.classList.remove("is-authed");
+          updateAdminAuthPanel("");
+          loginButton.disabled = false;
+          setStatus(loginStatus, "운영팀 전용 화면입니다.", "");
+          return false;
+        }
+        if (!payload.ok || !payload.session) {
+          loginButton.disabled = false;
+          setStatus(loginStatus, "세션 상태를 확정하지 못했습니다. 기존 인증은 유지하며 다시 확인해주세요.", "is-warn");
+          return false;
+        }
+        try {
+          await activateAdminSession(payload, true);
+        } catch (error) {
+          loginButton.disabled = false;
+          setStatus(loginStatus, error.message || "세션 화면을 복원하지 못했습니다. 기존 인증은 유지합니다.", "is-warn");
+          return false;
+        }
+        loginButton.disabled = false;
+        return true;
       }
 
       function setScreen(name, shouldPushHash) {
@@ -8865,12 +8931,8 @@
       });
 
       restoreAdminLogin().catch(function () {
-        clearAdminAuthCode();
-        currentOperationTeam = null;
-        root.classList.add("is-locked");
-        root.classList.remove("is-authed");
-        updateAdminAuthPanel("");
-        setStatus(loginStatus, "보안 세션을 복원하지 못했습니다. 코드를 다시 입력해주세요.", "is-warn");
+        if (loginButton) loginButton.disabled = false;
+        setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
       });
 
       function syncOwnerAccessFields() {
@@ -9109,6 +9171,12 @@
 
       var codeSaveButton = root.querySelector("[data-admin-code-save]");
       var codeStatus = root.querySelector("[data-admin-code-status]");
+      var rankScopeInput = root.querySelector("[data-admin-code]");
+      if (rankScopeInput) {
+        rankScopeInput.addEventListener("change", function () {
+          window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+        });
+      }
       if (codeSaveButton) {
         codeSaveButton.addEventListener("click", async function () {
           var savedState = readState();
@@ -9149,6 +9217,7 @@
           };
           writeState(nextState);
           applyState(nextState);
+          window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
           setStatus(codeStatus, "로컬 저장 완료: 공개 데이터에 반영 중입니다.", "");
           await persistDemoState(nextState, codeStatus, "저장 완료: 광고주 화면에도 공개 데이터가 반영되었습니다.");
         });
@@ -10043,6 +10112,142 @@
         var host = window.location && window.location.hostname;
         if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/meta-ads";
         return "http://127.0.0.1:8790/api/meta-ads";
+      }
+
+      var rankTrackerCacheTtlMs = 24 * 60 * 60 * 1000;
+
+      function verifiedRankTrackerScope() {
+        if (root.classList.contains("is-locked")) return null;
+        if (secureSession.role === "owner") {
+          var ownerAgencyCode = normalizeStorageCode(rankAgencyCode());
+          var ownerClientId = ownerTargetClientId();
+          if (!ownerAgencyCode || !ownerClientId) return null;
+          return {
+            key: "owner:" + ownerAgencyCode,
+            role: "owner",
+            agencyCode: ownerAgencyCode,
+            clientId: ""
+          };
+        }
+        if (secureSession.role !== "team") return null;
+        var linkedClient = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+        var clientId = normalizeStorageCode(secureSession.clientId || (linkedClient && linkedClient.id));
+        if (!clientId) return null;
+        return {
+          key: "team:" + clientId,
+          role: "team",
+          agencyCode: "",
+          clientId: clientId
+        };
+      }
+
+      function rankTrackerCacheKey(feature, scope) {
+        return "miRankTrackerLastGood:v1:" + feature + ":" + scope.key;
+      }
+
+      function readRankTrackerLastGood(feature, scope) {
+        if (!scope || !window.sessionStorage) return [];
+        try {
+          var raw = window.sessionStorage.getItem(rankTrackerCacheKey(feature, scope));
+          if (!raw) return [];
+          var cached = JSON.parse(raw);
+          var savedAt = Number(cached && cached.savedAt || 0);
+          if (!cached || cached.scopeKey !== scope.key || !Array.isArray(cached.trackers) || !savedAt || Date.now() - savedAt > rankTrackerCacheTtlMs) {
+            window.sessionStorage.removeItem(rankTrackerCacheKey(feature, scope));
+            return [];
+          }
+          return cached.trackers;
+        } catch (error) {
+          return [];
+        }
+      }
+
+      function compactRankSnapshotForCache(snapshot) {
+        var compact = {};
+        ["id", "trackerId", "checkedAt", "rank", "page", "position", "matched", "checkedCount", "requestedMaxRank", "complete", "partial", "total", "message", "source", "createdAt"].forEach(function (key) {
+          if (snapshot && snapshot[key] !== undefined) compact[key] = snapshot[key];
+        });
+        if (snapshot && snapshot.item) {
+          compact.item = {};
+          ["trackingRankSource", "trackingRankSourceLabel", "title", "productId", "mallName", "link"].forEach(function (key) {
+            if (snapshot.item[key] !== undefined) compact.item[key] = snapshot.item[key];
+          });
+        }
+        if (snapshot && snapshot.place) {
+          compact.place = { metrics: Object.assign({}, snapshot.place.metrics || {}) };
+          ["blogCount", "blog_count", "blogReviewCount", "blog_review_count", "visitReviewCount", "visit_review_count", "visitorReviewCount", "visitor_review_count", "reviewCount", "review_count", "monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume", "businessCount", "business_count", "placeCount", "place_count"].forEach(function (key) {
+            if (snapshot.place[key] !== undefined) compact.place[key] = snapshot.place[key];
+          });
+        }
+        return compact;
+      }
+
+      function compactRankTrackersForCache(trackers, snapshotLimit) {
+        return trackers.map(function (tracker) {
+          var compact = Object.assign({}, tracker);
+          compact.snapshots = (tracker.snapshots || []).slice(0, snapshotLimit).map(compactRankSnapshotForCache);
+          return compact;
+        });
+      }
+
+      function pruneOtherRankTrackerCaches(scope) {
+        var prefix = "miRankTrackerLastGood:v1:";
+        var keepSuffix = ":" + scope.key;
+        for (var index = window.sessionStorage.length - 1; index >= 0; index -= 1) {
+          var key = window.sessionStorage.key(index) || "";
+          if (key.indexOf(prefix) === 0 && key.slice(-keepSuffix.length) !== keepSuffix) {
+            window.sessionStorage.removeItem(key);
+          }
+        }
+      }
+
+      function writeRankTrackerLastGood(feature, scope, trackers) {
+        if (!scope || !window.sessionStorage || !Array.isArray(trackers)) return false;
+        var cacheKey = rankTrackerCacheKey(feature, scope);
+        try {
+          pruneOtherRankTrackerCaches(scope);
+          window.sessionStorage.setItem(cacheKey, JSON.stringify({
+            savedAt: Date.now(),
+            scopeKey: scope.key,
+            trackers: compactRankTrackersForCache(trackers, 62)
+          }));
+          return true;
+        } catch (error) {
+          try {
+            window.sessionStorage.setItem(cacheKey, JSON.stringify({
+              savedAt: Date.now(),
+              scopeKey: scope.key,
+              trackers: compactRankTrackersForCache(trackers, 30)
+            }));
+            return true;
+          } catch (fallbackError) {
+            return false;
+          }
+        }
+      }
+
+      function scopedRankTrackerPayload(payload, scope) {
+        if (!payload || payload.ok !== true || !Array.isArray(payload.trackers) || !scope) return false;
+        if (!Number.isSafeInteger(payload.returnedCount) || payload.returnedCount !== payload.trackers.length) return false;
+        var trackerIds = new Set();
+        for (var index = 0; index < payload.trackers.length; index += 1) {
+          var trackerId = String(payload.trackers[index] && payload.trackers[index].id || "").trim();
+          if (!trackerId || trackerIds.has(trackerId)) return false;
+          trackerIds.add(trackerId);
+        }
+        if (scope.role === "owner") {
+          return normalizeStorageCode(payload.scopeAgencyCode) === scope.agencyCode;
+        }
+        return normalizeStorageCode(payload.scopeClientId) === scope.clientId;
+      }
+
+      function completeRankTrackerPayload(payload, scope) {
+        return scopedRankTrackerPayload(payload, scope) && payload.complete === true && payload.hasMore === false;
+      }
+
+      function sameRankTrackerScope(scope) {
+        var current = verifiedRankTrackerScope();
+        return Boolean(scope && current && scope.key === current.key);
       }
 
       function formatRankCheckedAt(iso) {
@@ -11352,21 +11557,27 @@
         if (!rankKeyword || !rankRun) return;
         var rankTrackers = [];
         var rankAutoSyncingDue = false;
+        var rankAutoSyncToken = 0;
         var rankAutoSyncLastAt = 0;
+        var rankRequestGeneration = 0;
+        var rankActiveScopeKey = null;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
         card.setAttribute("data-rank-filter-group", "");
         card.setAttribute("data-rank-collapsed-groups", "");
 
-        async function requestRankTrackers(method, body) {
-          var agencyCode = rankAgencyCode();
-          if (!agencyCode) {
+        async function requestRankTrackers(method, body, expectedScope) {
+          var requestScope = expectedScope || verifiedRankTrackerScope();
+          var requestGeneration = rankRequestGeneration;
+          var agencyCode = requestScope && requestScope.role === "owner" ? requestScope.agencyCode : rankAgencyCode();
+          if (!requestScope || (requestScope.role === "owner" && !agencyCode)) {
             return { ok: false, message: "관리자 코드 확인 후 순위 추적을 사용할 수 있습니다." };
           }
           var options = {
             method: method,
             cache: "no-store",
-            headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {}
+            headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {},
+            timeoutMs: method === "POST" && body && (body.action === "check" || body.action === "sync-due") ? 120000 : 20000
           };
           if (body) {
             options.headers["content-type"] = "application/json";
@@ -11374,14 +11585,35 @@
           }
           var url = getRankTrackerApiUrl();
           if (method === "GET") {
-            var rankListLimit = canManageOwnerCodes() ? "500" : "50";
-            url += "?" + new URLSearchParams({ limit: rankListLimit }).toString();
+            url += "?" + new URLSearchParams({ limit: "500" }).toString();
           }
           var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });
+          if (requestGeneration !== rankRequestGeneration || !sameRankTrackerScope(requestScope)) {
+            throw new Error("요청 중 광고주 조회 범위가 변경되었습니다.");
+          }
           if (!payload) payload = { ok: false, message: "순위 추적 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
           return payload;
+        }
+
+        function activateRankTrackerScope() {
+          var scope = verifiedRankTrackerScope();
+          var nextKey = scope ? scope.key : "";
+          if (rankActiveScopeKey !== nextKey) {
+            rankActiveScopeKey = nextKey;
+            rankRequestGeneration += 1;
+            rankAutoSyncToken += 1;
+            rankAutoSyncingDue = false;
+            rankTrackers = scope ? readRankTrackerLastGood("product", scope) : [];
+            renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: rankTrackers.length ? "마지막 정상 순위 데이터를 표시합니다." : "" });
+            renderRankHistory(rankHistory, rankTrackers);
+          }
+          return scope;
+        }
+
+        function rankRequestIsCurrent(scope, generation) {
+          return generation === rankRequestGeneration && sameRankTrackerScope(scope) && rankActiveScopeKey === scope.key;
         }
 
         function dueRankTrackers(trackers) {
@@ -11393,23 +11625,39 @@
           });
         }
 
-        async function syncDueRankTrackersIfNeeded(silent) {
+        async function syncDueRankTrackersIfNeeded(silent, scope, generation) {
+          if (!scope || !rankRequestIsCurrent(scope, generation)) return false;
           var due = dueRankTrackers(rankTrackers);
           var now = Date.now();
           if (!due.length || rankAutoSyncingDue || now - rankAutoSyncLastAt < 60000) return;
           rankAutoSyncingDue = true;
+          var syncToken = ++rankAutoSyncToken;
           rankAutoSyncLastAt = now;
           if (!silent) setStatus(rankStatus, "밀린 자동 순위 갱신을 확인 중입니다.", "");
           try {
             var payload = await requestRankTrackers("POST", {
               action: "sync-due",
               limit: "50"
-            });
+            }, scope);
+            if (!rankRequestIsCurrent(scope, generation)) return false;
+            if (!payload || payload.ok !== true) {
+              renderRankHistory(rankHistory, rankTrackers);
+              if (!silent) setStatus(rankStatus, (payload && payload.message) || "자동 갱신 확인에 실패해 마지막 정상 순위를 유지합니다.", "is-warn");
+              return false;
+            }
             var checked = Number(payload && payload.summary && payload.summary.checked || 0);
             if (checked > 0) {
-              var refreshed = await requestRankTrackers("GET");
-              rankTrackers = refreshed.trackers || [];
-              renderRankResult(rankResult, { ok: refreshed.ok, trackers: rankTrackers, message: refreshed.message });
+              var refreshed = await requestRankTrackers("GET", null, scope);
+              if (!rankRequestIsCurrent(scope, generation)) return false;
+              if (!completeRankTrackerPayload(refreshed, scope)) {
+                renderRankHistory(rankHistory, rankTrackers);
+                if (!silent) setStatus(rankStatus, "자동 갱신 후 전체 목록 검증에 실패해 기존 순위와 이력을 유지합니다.", "is-warn");
+                return false;
+              }
+              var nextTrackers = refreshed.trackers;
+              rankTrackers = nextTrackers;
+              writeRankTrackerLastGood("product", scope, rankTrackers);
+              renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: refreshed.message });
               renderRankHistory(rankHistory, rankTrackers);
               if (!silent) {
                 setStatus(rankStatus, payload.message || "밀린 자동 순위 갱신을 처리했습니다.", payload.ok ? "is-ok" : "is-warn");
@@ -11418,33 +11666,51 @@
               setStatus(rankStatus, payload.message || "갱신 대기 항목이 없습니다.", payload.ok ? "is-ok" : "is-warn");
             }
           } catch (error) {
-            if (!silent) setStatus(rankStatus, "자동 갱신 보정 연결을 확인해주세요.", "is-warn");
+            if (rankRequestIsCurrent(scope, generation)) {
+              renderRankHistory(rankHistory, rankTrackers);
+              if (!silent) setStatus(rankStatus, "자동 갱신 연결 실패로 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
+            }
           } finally {
-            rankAutoSyncingDue = false;
+            if (syncToken === rankAutoSyncToken) rankAutoSyncingDue = false;
           }
         }
 
         async function loadRankTrackers(silent) {
+          var scope = activateRankTrackerScope();
+          var generation = ++rankRequestGeneration;
+          if (!scope) {
+            if (!silent) setStatus(rankStatus, "검증된 광고주 범위를 확인한 뒤 순위 추적을 불러옵니다.", "is-warn");
+            return false;
+          }
           try {
-            var payload = await requestRankTrackers("GET");
-            if (!payload.ok) {
-              renderRankResult(rankResult, { ok: false, message: payload.message || "순위 추적을 불러오지 못했습니다." });
+            var payload = await requestRankTrackers("GET", null, scope);
+            if (!rankRequestIsCurrent(scope, generation)) return false;
+            if (!completeRankTrackerPayload(payload, scope)) {
+              if (!rankTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
+                rankTrackers = payload.trackers;
+                renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: "검증된 일부 순위 목록을 우선 표시합니다." });
+              }
               renderRankHistory(rankHistory, rankTrackers);
-              if (!silent) setStatus(rankStatus, payload.message || "순위 추적 조회 권한과 서버 연결을 확인해주세요.", "is-warn");
+              if (!silent) setStatus(rankStatus, rankTrackers.length && payload && payload.hasMore === true
+                ? "목록이 많아 검증된 일부 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
+                : (payload && payload.message) || "전체 순위 목록 검증에 실패해 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
               return false;
             }
-            rankTrackers = payload.trackers || [];
-            renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
+            var nextTrackers = payload.trackers;
+            rankTrackers = nextTrackers;
+            writeRankTrackerLastGood("product", scope, rankTrackers);
+            renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
               setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
-            await syncDueRankTrackersIfNeeded(silent);
+            await syncDueRankTrackersIfNeeded(silent, scope, generation);
             return true;
           } catch (error) {
-            renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
-            renderRankHistory(rankHistory, rankTrackers);
-            if (!silent) setStatus(rankStatus, "순위 추적 서버 연결을 확인해주세요.", "is-warn");
+            if (rankRequestIsCurrent(scope, generation)) {
+              renderRankHistory(rankHistory, rankTrackers);
+              if (!silent) setStatus(rankStatus, "순위 추적 서버 연결 실패로 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
+            }
             return false;
           }
         }
@@ -11496,6 +11762,9 @@
         syncKeywordFromMain();
         loadRankTrackers(false);
         window.addEventListener("mi:rank-auth-ready", function () {
+          loadRankTrackers(false);
+        });
+        window.addEventListener("mi:rank-scope-changed", function () {
           loadRankTrackers(false);
         });
 
@@ -12544,8 +12813,11 @@
         if (!placeKeyword || !placeRun || !placeHistory) return;
         var placeTrackers = [];
         var placeAutoSyncingDue = false;
+        var placeAutoSyncToken = 0;
         var placeAutoSyncLastAt = 0;
         var placeProviderConfigured = true;
+        var placeRequestGeneration = 0;
+        var placeActiveScopeKey = null;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
         card.setAttribute("data-rank-filter-group", "");
@@ -12559,15 +12831,18 @@
           });
         }
 
-        async function requestPlaceTrackers(method, body) {
-          var agencyCode = rankAgencyCode();
-          if (!agencyCode) {
+        async function requestPlaceTrackers(method, body, expectedScope) {
+          var requestScope = expectedScope || verifiedRankTrackerScope();
+          var requestGeneration = placeRequestGeneration;
+          var agencyCode = requestScope && requestScope.role === "owner" ? requestScope.agencyCode : rankAgencyCode();
+          if (!requestScope || (requestScope.role === "owner" && !agencyCode)) {
             return { ok: false, message: "관리자 코드 확인 후 네이버 플레이스 30일 순위를 사용할 수 있습니다." };
           }
           var options = {
             method: method,
             cache: "no-store",
-            headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {}
+            headers: canManageOwnerCodes() ? { "x-mi-agency-code": agencyCode } : {},
+            timeoutMs: method === "POST" && body && (body.action === "check" || body.action === "sync-due") ? 270000 : 20000
           };
           if (body) {
             options.headers["content-type"] = "application/json";
@@ -12575,14 +12850,34 @@
           }
           var url = getPlaceRankTrackerApiUrl();
           if (method === "GET") {
-            var placeListLimit = canManageOwnerCodes() ? "500" : "50";
-            url += "?" + new URLSearchParams({ limit: placeListLimit }).toString();
+            url += "?" + new URLSearchParams({ limit: "500" }).toString();
           }
           var response = await miFetch(url, options);
           var payload = await response.json().catch(function () { return null; });
+          if (requestGeneration !== placeRequestGeneration || !sameRankTrackerScope(requestScope)) {
+            throw new Error("요청 중 광고주 조회 범위가 변경되었습니다.");
+          }
           if (!payload) payload = { ok: false, message: "플레이스 순위 응답을 확인할 수 없습니다." };
           if (!response.ok && payload.ok !== false) payload.ok = false;
           return payload;
+        }
+
+        function activatePlaceTrackerScope() {
+          var scope = verifiedRankTrackerScope();
+          var nextKey = scope ? scope.key : "";
+          if (placeActiveScopeKey !== nextKey) {
+            placeActiveScopeKey = nextKey;
+            placeRequestGeneration += 1;
+            placeAutoSyncToken += 1;
+            placeAutoSyncingDue = false;
+            placeTrackers = applyPlaceGroups(scope ? readRankTrackerLastGood("place", scope) : []);
+            renderPlaceHistory(placeHistory, placeTrackers);
+          }
+          return scope;
+        }
+
+        function placeRequestIsCurrent(scope, generation) {
+          return generation === placeRequestGeneration && sameRankTrackerScope(scope) && placeActiveScopeKey === scope.key;
         }
 
         async function updatePlaceTrackerGroups(trackerIds, groupName) {
@@ -12735,26 +13030,45 @@
           });
         }
 
-        async function syncDuePlaceTrackersIfNeeded(silent) {
+        async function syncDuePlaceTrackersIfNeeded(silent, scope, generation) {
+          if (!scope || !placeRequestIsCurrent(scope, generation)) return false;
           var due = duePlaceTrackers(placeTrackers);
           var now = Date.now();
           if (!placeProviderConfigured || !due.length || placeAutoSyncingDue || now - placeAutoSyncLastAt < 60000) return;
           placeAutoSyncingDue = true;
+          var syncToken = ++placeAutoSyncToken;
           placeAutoSyncLastAt = now;
           if (!silent) setStatus(placeStatus, "밀린 플레이스 자동 갱신을 확인 중입니다.", "");
           try {
-            var payload = await requestPlaceTrackers("POST", { action: "sync-due", limit: "50" });
+            var payload = await requestPlaceTrackers("POST", { action: "sync-due", limit: "1" }, scope);
+            if (!placeRequestIsCurrent(scope, generation)) return false;
+            if (!payload || payload.ok !== true) {
+              renderPlaceHistory(placeHistory, placeTrackers);
+              if (!silent) setStatus(placeStatus, (payload && payload.message) || "플레이스 자동 갱신 확인에 실패해 마지막 정상 이력을 유지합니다.", "is-warn");
+              return false;
+            }
             var checked = Number(payload && payload.summary && payload.summary.checked || 0);
             if (checked > 0) {
-              var refreshed = await requestPlaceTrackers("GET");
-              placeTrackers = applyPlaceGroups(refreshed.trackers || []);
+              var refreshed = await requestPlaceTrackers("GET", null, scope);
+              if (!placeRequestIsCurrent(scope, generation)) return false;
+              if (!completeRankTrackerPayload(refreshed, scope)) {
+                renderPlaceHistory(placeHistory, placeTrackers);
+                if (!silent) setStatus(placeStatus, "자동 갱신 후 전체 플레이스 목록 검증에 실패해 기존 이력을 유지합니다.", "is-warn");
+                return false;
+              }
+              var nextTrackers = refreshed.trackers;
+              placeTrackers = applyPlaceGroups(nextTrackers);
+              writeRankTrackerLastGood("place", scope, placeTrackers);
               renderPlaceHistory(placeHistory, placeTrackers);
             }
             if (!silent) setStatus(placeStatus, payload.message || "플레이스 자동 갱신 상태를 확인했습니다.", payload.ok ? "is-ok" : "is-warn");
           } catch (error) {
-            if (!silent) setStatus(placeStatus, "플레이스 자동 갱신 연결을 확인해주세요.", "is-warn");
+            if (placeRequestIsCurrent(scope, generation)) {
+              renderPlaceHistory(placeHistory, placeTrackers);
+              if (!silent) setStatus(placeStatus, "플레이스 자동 갱신 연결 실패로 마지막 정상 이력을 유지합니다.", "is-warn");
+            }
           } finally {
-            placeAutoSyncingDue = false;
+            if (syncToken === placeAutoSyncToken) placeAutoSyncingDue = false;
           }
         }
 
@@ -12889,23 +13203,45 @@
         }
 
         async function loadPlaceTrackers(silent) {
-          var payload = await requestPlaceTrackers("GET");
-          if (!payload.ok) {
-            renderPlaceHistory(placeHistory, placeTrackers);
-            if (!silent) setStatus(placeStatus, payload.message || "플레이스 순위 조회 권한과 서버 연결을 확인해주세요.", "is-warn");
+          var scope = activatePlaceTrackerScope();
+          var generation = ++placeRequestGeneration;
+          if (!scope) {
+            if (!silent) setStatus(placeStatus, "검증된 광고주 범위를 확인한 뒤 플레이스 순위를 불러옵니다.", "is-warn");
             return false;
           }
-          placeProviderConfigured = payload.configured !== false;
-          placeTrackers = applyPlaceGroups(payload.trackers || []);
-          renderPlaceHistory(placeHistory, placeTrackers);
-          if (!silent) {
-            var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
-            if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
-            if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
-            setStatus(placeStatus, message, payload.ok === false || payload.configured === false ? "is-warn" : "is-ok");
+          try {
+            var payload = await requestPlaceTrackers("GET", null, scope);
+            if (!placeRequestIsCurrent(scope, generation)) return false;
+            if (!completeRankTrackerPayload(payload, scope)) {
+              if (!placeTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
+                placeTrackers = applyPlaceGroups(payload.trackers);
+              }
+              renderPlaceHistory(placeHistory, placeTrackers);
+              if (!silent) setStatus(placeStatus, placeTrackers.length && payload && payload.hasMore === true
+                ? "목록이 많아 검증된 일부 플레이스 순위를 우선 표시합니다. 전체 목록은 서버 확인 후 교체됩니다."
+                : (payload && payload.message) || "전체 플레이스 목록 검증에 실패해 마지막 정상 이력을 유지합니다.", "is-warn");
+              return false;
+            }
+            placeProviderConfigured = payload.configured !== false;
+            var nextTrackers = payload.trackers;
+            placeTrackers = applyPlaceGroups(nextTrackers);
+            writeRankTrackerLastGood("place", scope, placeTrackers);
+            renderPlaceHistory(placeHistory, placeTrackers);
+            if (!silent) {
+              var message = payload.message || (placeTrackers.length ? "플레이스 30일 순위를 불러왔습니다." : "등록된 플레이스가 없습니다.");
+              if (payload.configured === false) message = "플레이스 순위 소스 연결 전입니다. 등록은 가능하지만 실제 순위값은 소스 연결 후 기록됩니다.";
+              if (payload.lookupMode === "naver-openapi-local") message = "기존 네이버 검색 API로 연결되었습니다. 상호명 기준 상위 결과를 확인합니다.";
+              setStatus(placeStatus, message, payload.configured === false ? "is-warn" : "is-ok");
+            }
+            await syncDuePlaceTrackersIfNeeded(silent, scope, generation);
+            return true;
+          } catch (error) {
+            if (placeRequestIsCurrent(scope, generation)) {
+              renderPlaceHistory(placeHistory, placeTrackers);
+              if (!silent) setStatus(placeStatus, "플레이스 순위 서버 연결 실패로 마지막 정상 이력을 유지합니다.", "is-warn");
+            }
+            return false;
           }
-          await syncDuePlaceTrackersIfNeeded(silent);
-          return true;
         }
 
         function syncPlaceKeywordFromMain() {
@@ -12924,6 +13260,11 @@
           setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
         });
         window.addEventListener("mi:rank-auth-ready", function () {
+          loadPlaceTrackers(false).catch(function () {
+            setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
+          });
+        });
+        window.addEventListener("mi:rank-scope-changed", function () {
           loadPlaceTrackers(false).catch(function () {
             setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
           });
@@ -13198,12 +13539,17 @@
               action: "delete",
               trackerId: trackerId
             });
+            if (!payload || payload.ok !== true) {
+              renderPlaceHistory(placeHistory, placeTrackers);
+              setStatus(placeStatus, (payload && payload.message) || "플레이스 추적 삭제를 확인하지 못해 기존 항목을 유지합니다.", "is-warn");
+              return;
+            }
             placeTrackers = placeTrackers.filter(function (item) { return item.id !== trackerId; });
             var selected = rankSelectedSet(card);
             selected.delete(trackerId);
             setRankSelectedSet(card, selected);
             renderPlaceHistory(placeHistory, placeTrackers);
-            setStatus(placeStatus, payload.message || "플레이스 추적 삭제 완료", payload.ok ? "is-ok" : "is-warn");
+            setStatus(placeStatus, payload.message || "플레이스 추적 삭제 완료", "is-ok");
             await loadPlaceTrackers(true);
           } catch (error) {
             setStatus(placeStatus, "플레이스 추적 삭제 연결을 확인해주세요.", "is-warn");

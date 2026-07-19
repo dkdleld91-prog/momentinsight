@@ -14,7 +14,8 @@ const resources = {
   clients: {
     table: "clients",
     select: "id, name, business_name, agency_code, status, public_summary, internal_note, created_at, updated_at",
-    order: "created_at"
+    order: "created_at",
+    hardDeleteBlocked: true
   },
   brands: {
     table: "brands",
@@ -82,14 +83,20 @@ const resources = {
     table: "naver_rank_trackers",
     select: "id, client_id, brand_id, agency_code, keyword, product_url, product_id, mall_name, product_title, max_rank, status, started_at, ends_at, last_checked_at, next_check_at, current_rank, best_rank, worst_rank, check_count, found_count, last_message, sort_order, created_at, updated_at",
     order: "sort_order",
-    ascending: true
+    ascending: true,
+    hardDeleteBlocked: true
   },
   "naver-rank-snapshots": {
     table: "naver_rank_snapshots",
     select: "id, tracker_id, checked_at, rank, page, position, matched, checked_count, total, item, top_items, message, source, created_at",
-    order: "checked_at"
+    order: "checked_at",
+    hardDeleteBlocked: true
   }
 };
+
+export function resourceHardDeleteBlocked(resource) {
+  return Boolean(resources[resource]?.hardDeleteBlocked);
+}
 
 function listRoutes() {
   const names = Object.keys(resources);
@@ -248,6 +255,13 @@ async function handlePatch(request, ctx, config, id) {
 async function handleDelete(_request, ctx, config, id) {
   if (config.readonly) return methodNotAllowed(["GET"]);
   if (!id) return json({ ok: false, message: "Missing resource id" }, 400);
+  if (config.hardDeleteBlocked) {
+    return json({
+      ok: false,
+      code: "HARD_DELETE_BLOCKED",
+      message: "운영 중인 계정 및 순위 이력은 일반 관리 API에서 영구 삭제할 수 없습니다.",
+    }, 409);
+  }
 
   const { data, error } = await ctx.supabaseAdmin
     .from(config.table)

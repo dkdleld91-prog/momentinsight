@@ -8,6 +8,11 @@ const DEFAULT_CRON_BATCH = 1;
 const MAX_CRON_BATCH = 10;
 const PLACE_RANK_HISTORY_DAYS = 30;
 const PLACE_RANK_HISTORY_MAX_SNAPSHOTS = 120;
+const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
+const SNAPSHOT_TRACKER_BATCH_SIZE = 50;
+const SNAPSHOT_QUERY_CONCURRENCY = 4;
+const TRACKER_LIST_MAX = 500;
+const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1;
 const PLACE_TRACKER_LEASE_SECONDS = Math.max(
   300,
   Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 360))
@@ -626,22 +631,86 @@ async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
   return { ok: true, groupName: normalizedGroupName };
 }
 
-async function loadSnapshots(ctx, trackerIds, limit = 5000) {
-  if (!trackerIds.length) return new Map();
+async function loadSnapshotBatch(ctx, trackerIds, perTrackerLimit, checkedAfter, checkedBefore) {
+  const grouped = new Map();
+  const seenSnapshotIds = new Set();
+  let offset = 0;
+  let expectedTotal = null;
 
-  const { data, error } = await ctx.supabaseAdmin
-    .from("naver_place_rank_snapshots")
-    .select(SNAPSHOT_SELECT)
-    .in("tracker_id", trackerIds)
-    .order("checked_at", { ascending: false })
-    .limit(limit);
+  while (true) {
+    const { data, error, count } = await ctx.supabaseAdmin
+      .from("naver_place_rank_snapshots")
+      .select(SNAPSHOT_SELECT, { count: "exact" })
+      .in("tracker_id", trackerIds)
+      .gte("checked_at", checkedAfter)
+      .lte("checked_at", checkedBefore)
+      .order("checked_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + SNAPSHOT_QUERY_PAGE_SIZE - 1);
 
-  if (error) throw error;
+    if (error) throw error;
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error("place_rank_snapshot_count_unavailable");
+    if (expectedTotal === null) expectedTotal = count;
+    else if (count !== expectedTotal) throw new Error("place_rank_snapshot_pagination_changed");
+    const rows = data || [];
+    let newSnapshotCount = 0;
+    for (const row of rows) {
+      if (!row?.id || !row?.tracker_id) throw new Error("place_rank_snapshot_identity_missing");
+      if (seenSnapshotIds.has(row.id)) continue;
+      seenSnapshotIds.add(row.id);
+      newSnapshotCount += 1;
+      const trackerSnapshots = grouped.get(row.tracker_id) || [];
+      if (trackerSnapshots.length < perTrackerLimit) {
+        trackerSnapshots.push(row);
+        grouped.set(row.tracker_id, trackerSnapshots);
+      }
+    }
+
+    if (rows.length > 0 && newSnapshotCount === 0) throw new Error("place_rank_snapshot_pagination_stalled");
+    if (trackerIds.every((trackerId) => (grouped.get(trackerId)?.length || 0) >= perTrackerLimit)) break;
+    if (offset + rows.length >= expectedTotal) break;
+    if (rows.length === 0) throw new Error("place_rank_snapshot_pagination_stalled");
+    offset += rows.length;
+  }
+  return grouped;
+}
+
+export async function loadSnapshots(ctx, trackerIds, requestedLimit = PLACE_RANK_HISTORY_MAX_SNAPSHOTS) {
+  const ids = Array.from(new Set((trackerIds || []).filter(Boolean)));
+  if (!ids.length) return new Map();
+  const numericLimit = Number(requestedLimit);
+  const perTrackerLimit = Math.max(1, Math.min(
+    PLACE_RANK_HISTORY_MAX_SNAPSHOTS,
+    Number.isFinite(numericLimit) ? Math.floor(numericLimit) : PLACE_RANK_HISTORY_MAX_SNAPSHOTS,
+  ));
+  const snapshotWindowEnd = Date.now();
+  const checkedBefore = new Date(snapshotWindowEnd).toISOString();
+  const checkedAfter = new Date(snapshotWindowEnd - PLACE_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const batches = [];
+  for (let index = 0; index < ids.length; index += SNAPSHOT_TRACKER_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + SNAPSHOT_TRACKER_BATCH_SIZE));
+  }
+
+  const batchResults = new Array(batches.length);
+  let nextBatchIndex = 0;
+  const workers = Array.from({ length: Math.min(SNAPSHOT_QUERY_CONCURRENCY, batches.length) }, async () => {
+    while (nextBatchIndex < batches.length) {
+      const batchIndex = nextBatchIndex;
+      nextBatchIndex += 1;
+      batchResults[batchIndex] = await loadSnapshotBatch(
+        ctx,
+        batches[batchIndex],
+        perTrackerLimit,
+        checkedAfter,
+        checkedBefore,
+      );
+    }
+  });
+  await Promise.all(workers);
 
   const grouped = new Map();
-  (data || []).forEach((row) => {
-    if (!grouped.has(row.tracker_id)) grouped.set(row.tracker_id, []);
-    grouped.get(row.tracker_id).push(row);
+  batchResults.forEach((batch) => {
+    batch.forEach((rows, trackerId) => grouped.set(trackerId, rows));
   });
   return grouped;
 }
@@ -1334,26 +1403,33 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
 }
 
 async function listTrackers(request, ctx) {
-  const url = new URL(request.url);
   const access = await requirePlaceRankAccess(request, ctx, {}, { read: true });
   if (!access.ok) return access.response;
-  const maxListLimit = access.admin && isPrimaryAgencyCode(access.agencyCode) ? 500 : 50;
-  const limit = Math.max(1, Math.min(maxListLimit, Number(url.searchParams.get("limit") || 50)));
 
-  const { data, error } = await ctx.supabaseAdmin
+  const { data, error, count } = await ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
-    .select(TRACKER_SELECT)
+    .select(TRACKER_SELECT, { count: "exact" })
     .in("agency_code", agencyCodeScope(access.agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(TRACKER_LIST_QUERY_LIMIT);
 
   if (error) throw error;
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error("place_rank_tracker_count_unavailable");
 
-  const rows = await attachTrackerGroups(ctx, data || []);
+  const queriedRows = data || [];
+  const hasMore = count > TRACKER_LIST_MAX || queriedRows.length > TRACKER_LIST_MAX;
+  const rows = await attachTrackerGroups(ctx, queriedRows.slice(0, TRACKER_LIST_MAX));
   const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
   return json(request, {
     ok: true,
+    scopeKey: normalizeAgencyCode(access.agencyCode),
+    scopeAgencyCode: normalizeAgencyCode(access.agencyCode),
+    scopeClientId: String(access.clientId || ""),
+    returnedCount: rows.length,
+    totalCount: count,
+    hasMore,
+    complete: !hasMore && rows.length === count,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     trackers: rows.map((row) => placeTrackerPayload(row, snapshots.get(row.id) || [])),

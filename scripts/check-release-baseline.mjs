@@ -188,7 +188,8 @@ const checks = {
   ownerRelationshipBoard: adminSource.includes("data-owner-relationship-list")
     && adminSource.includes("data-owner-root-account")
     && adminSource.includes("총관리자 직접 광고주"),
-  ownerRankListLimit500: adminSource.includes("rankListLimit") && adminSource.includes('? "500" : "50"'),
+  rankTrackerListLimit500ForBothRoles: [adminSource, clientSource].every((source) =>
+    source.includes('new URLSearchParams({ limit: "500" })')),
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientNavigationTaxonomy: orderedIncludes(clientSource, [
     '<p class="mi-nav-title">운영</p>',
@@ -612,9 +613,16 @@ const checks = {
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),
-  rankOwnerListLimit500: rankServer.includes("maxListLimit") && rankServer.includes("? 500 : 50"),
-  rankTrackerRolling30Days: rankServer.includes("recentSnapshots")
-    && rankServer.includes("slice(0, 30)")
+  rankTrackerCompleteListLimit500: rankServer.includes("const TRACKER_LIST_MAX = 500")
+    && rankServer.includes("const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1")
+    && rankServer.includes(".limit(TRACKER_LIST_QUERY_LIMIT)")
+    && rankServer.includes('.select(TRACKER_SELECT, { count: "exact" })')
+    && rankServer.includes("totalCount: count")
+    && rankServer.includes("complete: !hasMore && rows.length === count"),
+  rankTrackerRolling30Days: rankServer.includes("const PRODUCT_RANK_HISTORY_DAYS = 30")
+    && rankServer.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120")
+    && rankServer.includes("checkedAt >= historyCutoff")
+    && rankServer.includes("slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)")
     && rankServer.includes("addDays(now, 3650)")
     && !rankServer.includes('.gt("ends_at"')
     && !rankServer.includes('lte("ends_at"')

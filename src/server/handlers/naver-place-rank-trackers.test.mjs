@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   assertSafeNaverPlaceUrl,
   handlePlaceRankTrackersRequest,
+  loadSnapshots as loadPlaceSnapshots,
   normalizePlaceRankGroupName,
   placeTrackerPayload,
   requestAccessCode,
@@ -84,6 +85,8 @@ class MockQuery {
     this.filters = [];
     this.orders = [];
     this.limitValue = null;
+    this.rangeStart = 0;
+    this.rangeEnd = null;
     this.columns = "*";
     this.selectOptions = {};
     this.values = null;
@@ -139,6 +142,12 @@ class MockQuery {
     return this;
   }
 
+  gte(column, value) {
+    const expected = new Date(value).getTime();
+    this.filters.push((row) => new Date(row[column]).getTime() >= expected);
+    return this;
+  }
+
   or(expression) {
     const leaseMatch = String(expression).match(/^processing_until\.is\.null,processing_until\.lte\.(.+)$/);
     if (!leaseMatch) throw new Error(`unsupported mock or expression: ${expression}`);
@@ -154,6 +163,13 @@ class MockQuery {
 
   limit(value) {
     this.limitValue = value;
+    return this;
+  }
+
+  range(from, to) {
+    this.rangeStart = from;
+    this.rangeEnd = to;
+    this.state.ranges.push({ table: this.table, from, to });
     return this;
   }
 
@@ -209,10 +225,12 @@ class MockQuery {
         return ascending ? result : -result;
       });
     }
+    const totalCount = rows.length;
     if (Number.isFinite(this.limitValue)) rows = rows.slice(0, this.limitValue);
+    if (Number.isFinite(this.rangeEnd)) rows = rows.slice(this.rangeStart, this.rangeEnd + 1);
 
     if (this.selectOptions.count === "exact" && this.selectOptions.head) {
-      return { data: null, count: rows.length, error: null };
+      return { data: null, count: totalCount, error: null };
     }
     if (mode === "maybeSingle") return { data: rows[0] || null, error: null };
     if (mode === "single") {
@@ -220,7 +238,11 @@ class MockQuery {
         ? { data: rows[0], error: null }
         : { data: null, error: { message: "single row not found" } };
     }
-    return { data: rows, error: null };
+    return {
+      data: rows,
+      count: this.selectOptions.count === "exact" ? totalCount : null,
+      error: null,
+    };
   }
 }
 
@@ -229,9 +251,10 @@ function testContext(rows = [], options = {}) {
     missingGroupColumn: Boolean(options.missingGroupColumn),
     nextId: 10,
     lastRpcParams: null,
+    ranges: [],
     tables: {
       [TRACKERS]: rows.map((row) => trackerRow(row)),
-      [SNAPSHOTS]: [],
+      [SNAPSHOTS]: (options.snapshots || []).map((row) => ({ ...row })),
       [CLIENTS]: (options.clients || []).map((row) => ({ ...row })),
     },
   };
@@ -385,6 +408,68 @@ test("normalizes place rank group names like product rank groups", () => {
   assert.equal(normalizePlaceRankGroupName(""), "기본 그룹");
   assert.equal(normalizePlaceRankGroupName("  서울   매장  "), "서울 매장");
   assert.equal(normalizePlaceRankGroupName("가".repeat(50)).length, 40);
+});
+
+test("place tracker lists expose complete scope metadata and cap responses at 500 rows", async () => {
+  const rows = Array.from({ length: 501 }, (_, index) => ({
+    id: `tracker-${String(index).padStart(3, "0")}`,
+    sort_order: index,
+    created_at: new Date(Date.now() - index * 1000).toISOString(),
+  }));
+  const { ctx } = testContext(rows);
+  const result = await payload(await handlePlaceRankTrackersRequest(request("GET"), ctx));
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.scopeKey, AGENCY_CODE);
+  assert.equal(result.body.scopeAgencyCode, AGENCY_CODE);
+  assert.equal(result.body.scopeClientId, "");
+  assert.equal(result.body.returnedCount, 500);
+  assert.equal(result.body.totalCount, 501);
+  assert.equal(result.body.trackers.length, 500);
+  assert.equal(result.body.hasMore, true);
+  assert.equal(result.body.complete, false);
+});
+
+test("advertiser place tracker lists return the resolved client scope", async () => {
+  const { ctx } = testContext([{ id: "client-tracker" }], {
+    clients: [{ id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null }],
+  });
+  const result = await payload(await handlePlaceRankTrackersRequest(clientRequest("GET"), ctx));
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.scopeKey, AGENCY_CODE);
+  assert.equal(result.body.scopeAgencyCode, AGENCY_CODE);
+  assert.equal(result.body.scopeClientId, "client-1");
+  assert.equal(result.body.returnedCount, 1);
+  assert.equal(result.body.totalCount, 1);
+  assert.equal(result.body.hasMore, false);
+  assert.equal(result.body.complete, true);
+});
+
+test("place snapshot loading paginates recent history instead of applying one global limit", async () => {
+  const now = Date.now();
+  const trackerIds = Array.from({ length: 12 }, (_, index) => `place-tracker-${index}`);
+  const snapshots = trackerIds.flatMap((trackerId) => [
+    ...Array.from({ length: 100 }, (_, snapshotIndex) => ({
+      id: `${trackerId}-recent-${snapshotIndex}`,
+      tracker_id: trackerId,
+      checked_at: new Date(now - snapshotIndex * 60 * 60 * 1000).toISOString(),
+    })),
+    {
+      id: `${trackerId}-old`,
+      tracker_id: trackerId,
+      checked_at: new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString(),
+    },
+  ]);
+  const { ctx, state } = testContext([], { snapshots });
+
+  const grouped = await loadPlaceSnapshots(ctx, trackerIds);
+  trackerIds.forEach((trackerId) => assert.equal(grouped.get(trackerId).length, 100));
+  assert.equal(Array.from(grouped.values()).flat().some((snapshot) => snapshot.id.endsWith("-old")), false);
+  assert.deepEqual(
+    state.ranges.filter((entry) => entry.table === SNAPSHOTS).map(({ from, to }) => [from, to]),
+    [[0, 999], [1000, 1999]],
+  );
 });
 
 test("accepts only HTTPS Naver place hosts before resolving them", async () => {

@@ -15,6 +15,7 @@ const {
   normalizeApifyResult,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
+  selectorFallbackCollection,
 } = __testing;
 
 test("caps the Apify actor chain so browser fallback fits the caller budget", () => {
@@ -135,6 +136,86 @@ test("returns a deadline partial reason instead of overstating checkedCount", as
   assert.equal(status.complete, false);
   assert.equal(status.partial, true);
   assert.equal(status.partialReason, "collection_deadline_reached");
+});
+
+test("uses ordered search API and identified DOM candidates when the list selector disappears", () => {
+  const collection = selectorFallbackCollection([
+    { rank: 2, id: "20002", placeIds: ["20002"], name: "둘째 장소", url: "https://map.naver.com/p/entry/place/20002", isAd: false },
+    { rank: 1, id: "20001", placeIds: ["20001"], name: "첫째 장소", url: "https://map.naver.com/p/entry/place/20001", isAd: false },
+  ], [
+    {
+      id: "20002",
+      text: "둘째 장소",
+      nameNodes: ["둘째 장소"],
+      url: "https://map.naver.com/p/entry/place/20002",
+      isAd: false,
+    },
+    {
+      id: "20003",
+      text: "셋째 장소",
+      nameNodes: ["셋째 장소"],
+      url: "https://map.naver.com/p/entry/place/20003",
+      isAd: false,
+    },
+    {
+      id: "29999",
+      text: "광고 장소",
+      nameNodes: ["광고 장소"],
+      url: "https://map.naver.com/p/entry/place/29999",
+      isAd: true,
+    },
+    {
+      text: "식별자가 없는 메뉴 항목",
+      nameNodes: ["식별자가 없는 메뉴 항목"],
+      url: "",
+      isAd: false,
+    },
+  ], 300);
+
+  assert.ok(collection);
+  assert.deepEqual(collection.candidates.map((candidate) => [candidate.rank, candidate.id]), [
+    [1, "20001"],
+    [2, "20002"],
+    [3, "20003"],
+  ]);
+  assert.equal(collection.complete, false);
+  assert.equal(collection.stopReason, "list_selector_unavailable_fallback");
+});
+
+test("does not manufacture a successful fallback without identified candidates", () => {
+  const collection = selectorFallbackCollection([], [{
+    text: "식별할 수 없는 네이버 지도 메뉴",
+    nameNodes: ["식별할 수 없는 네이버 지도 메뉴"],
+    url: "",
+    isAd: false,
+  }], 300);
+
+  assert.equal(collection, null);
+});
+
+test("selector fallback never confirms absence even when its candidate count reaches the requested limit", () => {
+  const collection = selectorFallbackCollection([{
+    rank: 1,
+    id: "40001",
+    placeIds: ["40001"],
+    name: "비대상 장소",
+    url: "https://map.naver.com/p/entry/place/40001",
+    isAd: false,
+  }], [], 1);
+
+  assert.ok(collection);
+  assert.equal(collection.candidates.length, 1);
+  assert.equal(collection.complete, false);
+  assert.equal(collection.stopReason, "list_selector_unavailable_fallback");
+  assert.deepEqual(buildCollectionStatus(collection, 1), {
+    checkedCount: 1,
+    total: 1,
+    requestedMaxRank: 1,
+    complete: false,
+    partial: true,
+    partialReason: "list_selector_unavailable_fallback",
+    stopReason: "list_selector_unavailable_fallback",
+  });
 });
 
 test("clamps provider requests to the supported 300 result ceiling", () => {

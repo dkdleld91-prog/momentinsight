@@ -28,6 +28,7 @@ const COLLECTION_DEADLINE_GUARD_MS = 5000;
 const GROWTH_POLL_INTERVAL_MS = 220;
 const GROWTH_POLL_ATTEMPTS = 6;
 const EXHAUSTED_STABLE_ROUNDS = 3;
+const LIST_SELECTOR_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 8000));
 const RESULT_CACHE_TTL_MS = Math.max(
   60000,
   Math.min(30 * 60 * 1000, Number(process.env.NAVER_PLACE_RESULT_CACHE_TTL_MS || 10 * 60 * 1000))
@@ -1037,6 +1038,37 @@ function collectionResult(candidates, resultLimit, stopReason, scrollCount = 0) 
   };
 }
 
+function selectorFallbackCollection(initialCandidates = [], domRows = [], resultLimit = NAVER_PLACE_MAX_RESULTS) {
+  const candidates = [];
+  [...initialCandidates]
+    .sort((left, right) => Number(left?.rank || 0) - Number(right?.rank || 0))
+    .forEach((candidate) => appendCandidate(candidates, {
+      id: candidate?.id || "",
+      placeIds: Array.isArray(candidate?.placeIds) ? candidate.placeIds : [],
+      text: normalizeText(candidate?.name),
+      nameNodes: [normalizeText(candidate?.name)].filter(Boolean),
+      url: candidate?.url || "",
+      isAd: candidate?.isAd === true,
+      visitorReviewCount: candidate?.visitorReviewCount || "",
+      blogReviewCount: candidate?.blogReviewCount || "",
+    }));
+
+  domRows
+    .filter((row) => collectCandidateIds(row).length > 0)
+    .forEach((row) => appendCandidate(candidates, row));
+
+  if (!candidates.length) return null;
+  const publicCandidates = candidates
+    .slice(0, Math.min(resultLimit, NAVER_PLACE_MAX_RESULTS))
+    .map(toPublicCandidate);
+  return {
+    candidates: publicCandidates,
+    complete: false,
+    stopReason: "list_selector_unavailable_fallback",
+    scrollCount: 0,
+  };
+}
+
 function atScrollEnd(state = {}) {
   const scrollTop = Number(state.scrollTop || 0);
   const scrollHeight = Number(state.scrollHeight || 0);
@@ -1184,14 +1216,26 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         timeout: DEFAULT_TIMEOUT_MS,
         referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
       });
-      await page.waitForSelector("#_pcmap_list_scroll_container li", { timeout: DEFAULT_TIMEOUT_MS });
-      await scrollListFrame(page);
-      await page.waitForTimeout(700);
+      const selectorError = await page
+        .waitForSelector("#_pcmap_list_scroll_container li", { timeout: LIST_SELECTOR_TIMEOUT_MS })
+        .then(() => null)
+        .catch((error) => error);
 
       const restrictionText = normalizeText(await page.locator("body").innerText().catch(() => ""));
       if (/서비스 이용이 제한되었습니다|과도한 접근 요청/.test(restrictionText)) {
         throw new Error("naver_place_access_limited");
       }
+
+      if (selectorError) {
+        const domRows = await extractVisibleRows(page).catch(() => []);
+        const fallback = selectorFallbackCollection([], domRows, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
+        if (!fallback) throw selectorError;
+        rememberCandidates(keyword, maxRank, fallback);
+        return fallback;
+      }
+
+      await scrollListFrame(page);
+      await page.waitForTimeout(700);
 
       const candidates = [];
       const visibleRows = await extractVisibleRows(page);
@@ -1215,7 +1259,10 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       timeout: DEFAULT_TIMEOUT_MS,
       referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
     });
-    await page.waitForSelector("#_pcmap_list_scroll_container li", { timeout: DEFAULT_TIMEOUT_MS });
+    const selectorError = await page
+      .waitForSelector("#_pcmap_list_scroll_container li", { timeout: LIST_SELECTOR_TIMEOUT_MS })
+      .then(() => null)
+      .catch((error) => error);
     await page.waitForTimeout(900);
 
     const restrictionText = normalizeText(await page.locator("body").innerText().catch(() => ""));
@@ -1224,6 +1271,14 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     }
 
     const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
+    if (selectorError) {
+      const domRows = await extractVisibleRows(page).catch(() => []);
+      const fallback = selectorFallbackCollection(initialSearch.candidates, domRows, resultLimit);
+      if (!fallback) throw selectorError;
+      rememberCandidates(keyword, maxRank, fallback);
+      return fallback;
+    }
+
     const collection = await collectRowsProgressively({
       resultLimit,
       maxScrolls: DEFAULT_MAX_SCROLLS,
@@ -1470,7 +1525,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
 
 function buildCollectionStatus(collection, requestedMaxRank) {
   const checkedCount = Math.min(collection.candidates.length, requestedMaxRank);
-  const complete = checkedCount >= requestedMaxRank;
+  const complete = collection.complete === true && checkedCount >= requestedMaxRank;
   const stopReason = complete
     ? "requested_range_checked"
     : collection.stopReason || "collection_incomplete";
@@ -1501,4 +1556,5 @@ export const __testing = {
   normalizeApifyResult,
   isApifyAccountLimitError,
   finalizeProviderFallback,
+  selectorFallbackCollection,
 };

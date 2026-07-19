@@ -39,6 +39,9 @@ const LOGIN_WINDOW_SECONDS = LOGIN_RATE.windowSeconds;
 const LOGIN_ATTEMPT_LIMIT = LOGIN_RATE.attemptLimit;
 const LOGIN_IP_ATTEMPT_LIMIT = LOGIN_RATE.ipAttemptLimit;
 const localRateBuckets = new Map();
+const SESSION_ACTIVITY_ACTIVE = "active";
+const SESSION_ACTIVITY_REVOKED = "revoked";
+const SESSION_ACTIVITY_UNAVAILABLE = "unavailable";
 
 function isProduction(env = process.env) {
   return env.NODE_ENV === "production" || env.VERCEL_ENV === "production";
@@ -302,26 +305,42 @@ function visibleTeam(team) {
   };
 }
 
-export async function sessionStillActive(ctx, claims) {
+export async function sessionActivityState(ctx, claims) {
+  if (!claims) return { state: SESSION_ACTIVITY_REVOKED, active: null };
   if (claims.role === "owner") {
-    return ownerClaimsMatchPrimary(claims)
+    const active = ownerClaimsMatchPrimary(claims)
       && (ownerCredentialConfigured() || !isProduction())
       ? { role: "owner" }
       : null;
+    return { state: active ? SESSION_ACTIVITY_ACTIVE : SESSION_ACTIVITY_REVOKED, active };
   }
-  if (claims.role === "team") {
-    const result = await activeTeamByCode(ctx, claims.teamCode);
-    return result.data && !result.error && (!claims.teamId || result.data.id === claims.teamId)
-      ? { role: "team", team: result.data, client: result.data.client || null }
-      : null;
+
+  try {
+    if (claims.role === "team") {
+      const result = await activeTeamByCode(ctx, claims.teamCode);
+      if (result.error) return { state: SESSION_ACTIVITY_UNAVAILABLE, active: null, error: result.error };
+      const active = result.data && (!claims.teamId || result.data.id === claims.teamId)
+        ? { role: "team", team: result.data, client: result.data.client || null }
+        : null;
+      return { state: active ? SESSION_ACTIVITY_ACTIVE : SESSION_ACTIVITY_REVOKED, active };
+    }
+    if (claims.role === "client") {
+      const result = await activeClientByCode(ctx, claims.agencyCode);
+      if (result.error) return { state: SESSION_ACTIVITY_UNAVAILABLE, active: null, error: result.error };
+      const active = result.data && (!claims.clientId || result.data.id === claims.clientId)
+        ? { role: "client", client: result.data }
+        : null;
+      return { state: active ? SESSION_ACTIVITY_ACTIVE : SESSION_ACTIVITY_REVOKED, active };
+    }
+  } catch (error) {
+    return { state: SESSION_ACTIVITY_UNAVAILABLE, active: null, error };
   }
-  if (claims.role === "client") {
-    const result = await activeClientByCode(ctx, claims.agencyCode);
-    return result.data && !result.error && (!claims.clientId || result.data.id === claims.clientId)
-      ? { role: "client", client: result.data }
-      : null;
-  }
-  return null;
+  return { state: SESSION_ACTIVITY_REVOKED, active: null };
+}
+
+export async function sessionStillActive(ctx, claims) {
+  const activity = await sessionActivityState(ctx, claims);
+  return activity.state === SESSION_ACTIVITY_ACTIVE ? activity.active : null;
 }
 
 async function login(request, ctx) {
@@ -399,10 +418,21 @@ async function login(request, ctx) {
 
 async function currentSession(request, ctx) {
   const claims = sessionFromRequest(request);
-  const active = claims ? await sessionStillActive(ctx, claims) : null;
-  if (!claims || !active) {
+  if (!claims) {
     return response(request, { ok: false, message: "접속 세션이 만료되었습니다." }, 401, clearedSessionCookies());
   }
+  const activity = await sessionActivityState(ctx, claims);
+  if (activity.state === SESSION_ACTIVITY_UNAVAILABLE) {
+    return response(request, {
+      ok: false,
+      code: "SESSION_VALIDATION_UNAVAILABLE",
+      message: "계정 연결 상태를 일시적으로 확인할 수 없습니다. 잠시 후 다시 시도해주세요.",
+    }, 503);
+  }
+  if (activity.state !== SESSION_ACTIVITY_ACTIVE || !activity.active) {
+    return response(request, { ok: false, message: "접속 세션이 만료되었습니다." }, 401, clearedSessionCookies());
+  }
+  const active = activity.active;
   let responseClaims = claims;
   const cookies = [];
   if (claims.role === "team") {
@@ -411,7 +441,7 @@ async function currentSession(request, ctx) {
     if (String(claims.clientId || "") !== nextClientId || String(claims.agencyCode || "") !== nextAgencyCode) {
       const config = sessionConfiguration();
       if (!config.valid) {
-        return response(request, { ok: false, message: "보안 세션 설정을 확인할 수 없습니다." }, 503, clearedSessionCookies());
+        return response(request, { ok: false, message: "보안 세션 설정을 확인할 수 없습니다." }, 503);
       }
       responseClaims = createSessionClaims({
         role: "team",

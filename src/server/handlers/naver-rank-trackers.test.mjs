@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   claimDueTracker,
+  loadSnapshots as loadProductSnapshots,
   requestAccessCode,
   requestAgencyCode,
   runDueTrackers,
@@ -68,6 +69,74 @@ function trackerRow(values = {}) {
     created_at: "2026-07-01T00:00:00.000Z",
     updated_at: "2026-07-15T00:00:00.000Z",
     ...values,
+  };
+}
+
+function pagedProductSnapshotContext(rows, options = {}) {
+  const state = { ranges: [] };
+  return {
+    state,
+    ctx: {
+      supabaseAdmin: {
+        from(table) {
+          assert.equal(table, SNAPSHOTS);
+          const query = {
+            trackerIds: [],
+            checkedAfter: "",
+            checkedBefore: "",
+            orders: [],
+            rangeStart: 0,
+            rangeEnd: 999,
+            select() { return query; },
+            in(column, values) {
+              assert.equal(column, "tracker_id");
+              query.trackerIds = values;
+              return query;
+            },
+            gte(column, value) {
+              assert.equal(column, "checked_at");
+              query.checkedAfter = value;
+              return query;
+            },
+            lte(column, value) {
+              assert.equal(column, "checked_at");
+              query.checkedBefore = value;
+              return query;
+            },
+            order(column, orderOptions = {}) {
+              query.orders.push({ column, ascending: orderOptions.ascending !== false });
+              return query;
+            },
+            range(from, to) {
+              query.rangeStart = from;
+              query.rangeEnd = to;
+              state.ranges.push({ from, to });
+              return query;
+            },
+            then(resolve, reject) {
+              let selected = rows
+                .filter((row) => query.trackerIds.includes(row.tracker_id))
+                .filter((row) => row.checked_at >= query.checkedAfter && row.checked_at <= query.checkedBefore);
+              for (const { column, ascending } of [...query.orders].reverse()) {
+                selected = [...selected].sort((left, right) => {
+                  if (left[column] === right[column]) return 0;
+                  const result = left[column] > right[column] ? 1 : -1;
+                  return ascending ? result : -result;
+                });
+              }
+              const count = selected.length;
+              const start = options.stall ? 0 : query.rangeStart;
+              const requestedEnd = options.stall ? query.rangeEnd - query.rangeStart : query.rangeEnd;
+              const end = Number.isFinite(options.serverCap)
+                ? Math.min(requestedEnd, start + options.serverCap - 1)
+                : requestedEnd;
+              return Promise.resolve({ data: selected.slice(start, end + 1), error: null, count }).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    },
   };
 }
 
@@ -283,6 +352,82 @@ test("a failed create or manual check can serialize a tracker without a snapshot
   const payload = trackerPayload(trackerRow(), [undefined]);
   assert.deepEqual(payload.snapshots, []);
   assert.equal(payload.currentRank, 27);
+});
+
+test("product rank history keeps up to 120 snapshots from the most recent 30 days", () => {
+  const now = Date.now();
+  const recent = Array.from({ length: 121 }, (_, index) => ({
+    id: `recent-${index}`,
+    tracker_id: "tracker-1",
+    checked_at: new Date(now - index * 60 * 60 * 1000).toISOString(),
+    rank: index + 1,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: {},
+    message: "ok",
+    source: "test",
+    created_at: new Date(now).toISOString(),
+  }));
+  const older = {
+    ...recent[0],
+    id: "older-than-30-days",
+    checked_at: new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString(),
+  };
+
+  const payload = trackerPayload(trackerRow(), [...recent, older]);
+  assert.equal(payload.snapshots.length, 120);
+  assert.equal(payload.snapshots[0].id, "recent-0");
+  assert.equal(payload.snapshots.at(-1).id, "recent-119");
+  assert.equal(payload.snapshots.some((snapshot) => snapshot.id === "older-than-30-days"), false);
+});
+
+test("product snapshot loading paginates beyond 5000 rows without truncating tracker histories", async () => {
+  const now = Date.now();
+  const trackerIds = Array.from({ length: 60 }, (_, index) => `tracker-${index}`);
+  const rows = trackerIds.flatMap((trackerId, trackerIndex) => {
+    const count = trackerIndex === 0 ? 130 : 100;
+    const recent = Array.from({ length: count }, (_, snapshotIndex) => ({
+      id: `${trackerId}-recent-${snapshotIndex}`,
+      tracker_id: trackerId,
+      checked_at: new Date(now - snapshotIndex * 60 * 60 * 1000).toISOString(),
+    }));
+    return [...recent, {
+      id: `${trackerId}-old`,
+      tracker_id: trackerId,
+      checked_at: new Date(now - 31 * 24 * 60 * 60 * 1000).toISOString(),
+    }];
+  });
+  const { ctx, state } = pagedProductSnapshotContext(rows, { serverCap: 250 });
+
+  const grouped = await loadProductSnapshots(ctx, trackerIds);
+  assert.equal(grouped.get("tracker-0").length, 120);
+  trackerIds.slice(1).forEach((trackerId) => assert.equal(grouped.get(trackerId).length, 100));
+  assert.equal(Array.from(grouped.values()).reduce((sum, snapshots) => sum + snapshots.length, 0), 6020);
+  assert.ok(state.ranges.length > 20);
+  assert.equal(Array.from(grouped.values()).flat().some((snapshot) => snapshot.id.endsWith("-old")), false);
+});
+
+test("product snapshot pagination fails instead of returning a silently incomplete page", async () => {
+  const now = Date.now();
+  const rows = [
+    ...Array.from({ length: 1000 }, (_, index) => ({
+      id: `dominant-${index}`,
+      tracker_id: "tracker-dominant",
+      checked_at: new Date(now - index * 1000).toISOString(),
+    })),
+    {
+      id: "later-tracker-row",
+      tracker_id: "tracker-later",
+      checked_at: new Date(now - 2000 * 1000).toISOString(),
+    },
+  ];
+  const { ctx } = pagedProductSnapshotContext(rows, { stall: true });
+
+  await assert.rejects(
+    loadProductSnapshots(ctx, ["tracker-dominant", "tracker-later"]),
+    /rank_snapshot_pagination_stalled/,
+  );
 });
 
 test("the real shopping lookup rejects an empty 2xx payload", async () => {

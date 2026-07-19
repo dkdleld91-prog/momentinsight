@@ -15,6 +15,13 @@ const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
 const RANK_TRACKER_LEASE_MS = Number(process.env.MI_RANK_TRACKER_LEASE_MS || 1000 * 60 * 12);
+const PRODUCT_RANK_HISTORY_DAYS = 30;
+const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120;
+const SNAPSHOT_QUERY_PAGE_SIZE = 1000;
+const SNAPSHOT_TRACKER_BATCH_SIZE = 50;
+const SNAPSHOT_QUERY_CONCURRENCY = 4;
+const TRACKER_LIST_MAX = 500;
+const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1;
 const DEFAULT_RANK_GROUP = "기본 그룹";
 const keywordVolumeCache = new Map();
 
@@ -320,7 +327,13 @@ function clampMaxRank() {
 }
 
 export function trackerPayload(row, snapshots = [], keywordVolume = null) {
-  const recentSnapshots = (snapshots || []).filter(Boolean).slice(0, 30);
+  const historyCutoff = Date.now() - PRODUCT_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000;
+  const recentSnapshots = (snapshots || [])
+    .filter((snapshot) => {
+      const checkedAt = new Date(snapshot?.checked_at || snapshot?.checkedAt || 0).getTime();
+      return Number.isFinite(checkedAt) && checkedAt >= historyCutoff;
+    })
+    .slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const latestTrackingItem = recentSnapshots[0]?.item || {};
   return {
     id: row.id,
@@ -471,22 +484,86 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
   return { ok: true, agencyCode, clientId, admin: false };
 }
 
-async function loadSnapshots(ctx, trackerIds, limit = 5000) {
-  if (!trackerIds.length) return new Map();
+async function loadSnapshotBatch(ctx, trackerIds, perTrackerLimit, checkedAfter, checkedBefore) {
+  const grouped = new Map();
+  const seenSnapshotIds = new Set();
+  let offset = 0;
+  let expectedTotal = null;
 
-  const { data, error } = await ctx.supabaseAdmin
-    .from("naver_rank_snapshots")
-    .select(SNAPSHOT_SELECT)
-    .in("tracker_id", trackerIds)
-    .order("checked_at", { ascending: false })
-    .limit(limit);
+  while (true) {
+    const { data, error, count } = await ctx.supabaseAdmin
+      .from("naver_rank_snapshots")
+      .select(SNAPSHOT_SELECT, { count: "exact" })
+      .in("tracker_id", trackerIds)
+      .gte("checked_at", checkedAfter)
+      .lte("checked_at", checkedBefore)
+      .order("checked_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(offset, offset + SNAPSHOT_QUERY_PAGE_SIZE - 1);
 
-  if (error) throw error;
+    if (error) throw error;
+    if (!Number.isSafeInteger(count) || count < 0) throw new Error("rank_snapshot_count_unavailable");
+    if (expectedTotal === null) expectedTotal = count;
+    else if (count !== expectedTotal) throw new Error("rank_snapshot_pagination_changed");
+    const rows = data || [];
+    let newSnapshotCount = 0;
+    for (const row of rows) {
+      if (!row?.id || !row?.tracker_id) throw new Error("rank_snapshot_identity_missing");
+      if (seenSnapshotIds.has(row.id)) continue;
+      seenSnapshotIds.add(row.id);
+      newSnapshotCount += 1;
+      const trackerSnapshots = grouped.get(row.tracker_id) || [];
+      if (trackerSnapshots.length < perTrackerLimit) {
+        trackerSnapshots.push(row);
+        grouped.set(row.tracker_id, trackerSnapshots);
+      }
+    }
+
+    if (rows.length > 0 && newSnapshotCount === 0) throw new Error("rank_snapshot_pagination_stalled");
+    if (trackerIds.every((trackerId) => (grouped.get(trackerId)?.length || 0) >= perTrackerLimit)) break;
+    if (offset + rows.length >= expectedTotal) break;
+    if (rows.length === 0) throw new Error("rank_snapshot_pagination_stalled");
+    offset += rows.length;
+  }
+  return grouped;
+}
+
+export async function loadSnapshots(ctx, trackerIds, requestedLimit = PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS) {
+  const ids = Array.from(new Set((trackerIds || []).filter(Boolean)));
+  if (!ids.length) return new Map();
+  const numericLimit = Number(requestedLimit);
+  const perTrackerLimit = Math.max(1, Math.min(
+    PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS,
+    Number.isFinite(numericLimit) ? Math.floor(numericLimit) : PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS,
+  ));
+  const snapshotWindowEnd = Date.now();
+  const checkedBefore = new Date(snapshotWindowEnd).toISOString();
+  const checkedAfter = new Date(snapshotWindowEnd - PRODUCT_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const batches = [];
+  for (let index = 0; index < ids.length; index += SNAPSHOT_TRACKER_BATCH_SIZE) {
+    batches.push(ids.slice(index, index + SNAPSHOT_TRACKER_BATCH_SIZE));
+  }
+
+  const batchResults = new Array(batches.length);
+  let nextBatchIndex = 0;
+  const workers = Array.from({ length: Math.min(SNAPSHOT_QUERY_CONCURRENCY, batches.length) }, async () => {
+    while (nextBatchIndex < batches.length) {
+      const batchIndex = nextBatchIndex;
+      nextBatchIndex += 1;
+      batchResults[batchIndex] = await loadSnapshotBatch(
+        ctx,
+        batches[batchIndex],
+        perTrackerLimit,
+        checkedAfter,
+        checkedBefore,
+      );
+    }
+  });
+  await Promise.all(workers);
 
   const grouped = new Map();
-  (data || []).forEach((row) => {
-    if (!grouped.has(row.tracker_id)) grouped.set(row.tracker_id, []);
-    grouped.get(row.tracker_id).push(row);
+  batchResults.forEach((batch) => {
+    batch.forEach((rows, trackerId) => grouped.set(trackerId, rows));
   });
   return grouped;
 }
@@ -544,28 +621,35 @@ async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
 }
 
 async function listTrackers(request, ctx) {
-  const url = new URL(request.url);
   const access = await requireRankAccess(request, ctx, {}, { read: true });
   if (!access.ok) return access.response;
   const agencyCode = access.agencyCode;
-  const maxListLimit = access.admin && isPrimaryAgencyCode(agencyCode) ? 500 : 50;
-  const limit = Math.max(1, Math.min(maxListLimit, Number(url.searchParams.get("limit") || 20)));
 
-  const { data, error } = await ctx.supabaseAdmin
+  const { data, error, count } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
-    .select(TRACKER_SELECT)
+    .select(TRACKER_SELECT, { count: "exact" })
     .in("agency_code", agencyCodeScope(agencyCode))
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(TRACKER_LIST_QUERY_LIMIT);
 
   if (error) throw error;
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error("rank_tracker_count_unavailable");
 
-  const rows = await attachTrackerGroups(ctx, data || []);
+  const queriedRows = data || [];
+  const hasMore = count > TRACKER_LIST_MAX || queriedRows.length > TRACKER_LIST_MAX;
+  const rows = await attachTrackerGroups(ctx, queriedRows.slice(0, TRACKER_LIST_MAX));
   const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
   const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
   return json(request, {
     ok: true,
+    scopeKey: normalizeAgencyCode(agencyCode),
+    scopeAgencyCode: normalizeAgencyCode(agencyCode),
+    scopeClientId: String(access.clientId || ""),
+    returnedCount: rows.length,
+    totalCount: count,
+    hasMore,
+    complete: !hasMore && rows.length === count,
     trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [], keywordVolumes.get(normalizeKeywordCompare(row.keyword)))),
   });
 }
@@ -910,7 +994,7 @@ async function createTracker(request, ctx, body, access = {}) {
   ));
   if (existingData) {
     const existingTracker = await attachTrackerGroup(ctx, existingData);
-    const snapshots = await loadSnapshots(ctx, [existingTracker.id], 30);
+    const snapshots = await loadSnapshots(ctx, [existingTracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
     const keywordVolumes = await loadKeywordVolumes([existingTracker.keyword]);
     return json(request, {
       ok: true,
@@ -976,11 +1060,12 @@ async function createTracker(request, ctx, body, access = {}) {
     leaseStartedAt: initialLeaseStartedAt,
   });
   const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
+  const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checkedTracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
 }
 
@@ -1034,11 +1119,12 @@ async function checkOne(request, ctx, body) {
   const tracker = await attachTrackerGroup(ctx, claim.tracker);
   const checked = await runTrackerCheck(ctx, tracker, { leaseStartedAt: claim.leaseStartedAt });
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
+  const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok,
     message: checked.message,
-    tracker: trackerPayload(checkedTracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
+    tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   });
 }
 

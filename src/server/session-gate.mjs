@@ -29,6 +29,10 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-place-rank-cron",
 ]);
 
+export const SESSION_ACTIVITY_ACTIVE = "active";
+export const SESSION_ACTIVITY_REVOKED = "revoked";
+export const SESSION_ACTIVITY_UNAVAILABLE = "unavailable";
+
 function isProduction(env = process.env) {
   return env.NODE_ENV === "production" || env.VERCEL_ENV === "production";
 }
@@ -151,7 +155,7 @@ function optionalColumnUnavailable(result) {
 }
 
 async function activeClientForClaims(claims, env, fetchImpl) {
-  if (!claims.clientId || !claims.agencyCode) return false;
+  if (!claims.clientId || !claims.agencyCode) return SESSION_ACTIVITY_REVOKED;
   let result = await selectSessionRows("clients", {
     select: "id,agency_code,status,disconnected_at",
     id: `eq.${claims.clientId}`,
@@ -169,21 +173,40 @@ async function activeClientForClaims(claims, env, fetchImpl) {
       limit: "1",
     }, env, fetchImpl);
   }
-  return result.ok && result.rows.length === 1 && result.rows[0]?.id === claims.clientId;
+  if (!result.ok) return SESSION_ACTIVITY_UNAVAILABLE;
+  return result.rows.length === 1 && result.rows[0]?.id === claims.clientId
+    ? SESSION_ACTIVITY_ACTIVE
+    : SESSION_ACTIVITY_REVOKED;
 }
 
-export async function sessionActivityValid(claims, env = process.env, options = {}) {
+function normalizedActivityState(value) {
+  if ([SESSION_ACTIVITY_ACTIVE, SESSION_ACTIVITY_REVOKED, SESSION_ACTIVITY_UNAVAILABLE].includes(value)) {
+    return value;
+  }
+  return value ? SESSION_ACTIVITY_ACTIVE : SESSION_ACTIVITY_REVOKED;
+}
+
+export async function sessionActivityState(claims, env = process.env, options = {}) {
+  if (!claims) return SESSION_ACTIVITY_REVOKED;
   if (typeof options.activityCheck === "function") {
-    return Boolean(await options.activityCheck(claims));
+    try {
+      return normalizedActivityState(await options.activityCheck(claims));
+    } catch {
+      return SESSION_ACTIVITY_UNAVAILABLE;
+    }
   }
   if (claims.role === "owner") {
     return ownerClaimsMatchPrimary(claims, env)
-      && (ownerSessionConfigured(env) || !hostedEnvironment(env));
+      && (ownerSessionConfigured(env) || !hostedEnvironment(env))
+      ? SESSION_ACTIVITY_ACTIVE
+      : SESSION_ACTIVITY_REVOKED;
   }
-  if (!supabaseUrl(env) || !secretKey(env)) return !hostedEnvironment(env);
+  if (!supabaseUrl(env) || !secretKey(env)) {
+    return hostedEnvironment(env) ? SESSION_ACTIVITY_UNAVAILABLE : SESSION_ACTIVITY_ACTIVE;
+  }
   const fetchImpl = options.fetchImpl || globalThis.fetch;
   if (claims.role === "client") return activeClientForClaims(claims, env, fetchImpl);
-  if (claims.role !== "team" || !claims.teamId || !claims.teamCode) return false;
+  if (claims.role !== "team" || !claims.teamId || !claims.teamCode) return SESSION_ACTIVITY_REVOKED;
 
   let result = await selectSessionRows("operation_team_codes", {
     select: "id,team_code,client_id,status,revoked_at",
@@ -202,11 +225,16 @@ export async function sessionActivityValid(claims, env = process.env, options = 
       limit: "1",
     }, env, fetchImpl);
   }
-  if (!result.ok || result.rows.length !== 1) return false;
+  if (!result.ok) return SESSION_ACTIVITY_UNAVAILABLE;
+  if (result.rows.length !== 1) return SESSION_ACTIVITY_REVOKED;
   const team = result.rows[0];
-  if (String(team.client_id || "") !== String(claims.clientId || "")) return false;
-  if (!claims.clientId) return true;
+  if (String(team.client_id || "") !== String(claims.clientId || "")) return SESSION_ACTIVITY_REVOKED;
+  if (!claims.clientId) return SESSION_ACTIVITY_ACTIVE;
   return activeClientForClaims(claims, env, fetchImpl);
+}
+
+export async function sessionActivityValid(claims, env = process.env, options = {}) {
+  return (await sessionActivityState(claims, env, options)) === SESSION_ACTIVITY_ACTIVE;
 }
 
 export function internalRequestForSession(request, claims, env = process.env) {
@@ -286,7 +314,18 @@ export async function authorizeCodeSession(request, env = process.env, options =
       response: protectedJson(request, { ok: false, message: "요청 검증에 실패했습니다." }, 403),
     };
   }
-  if (!await sessionActivityValid(claims, env, options)) {
+  const activityState = await sessionActivityState(claims, env, options);
+  if (activityState === SESSION_ACTIVITY_UNAVAILABLE) {
+    return {
+      ok: false,
+      response: protectedJson(request, {
+        ok: false,
+        code: "SESSION_VALIDATION_UNAVAILABLE",
+        message: "계정 연결 상태를 일시적으로 확인할 수 없습니다. 잠시 후 다시 시도해주세요.",
+      }, 503),
+    };
+  }
+  if (activityState !== SESSION_ACTIVITY_ACTIVE) {
     return {
       ok: false,
       response: protectedJson(request, {

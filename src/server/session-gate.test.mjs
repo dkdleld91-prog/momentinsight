@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createSessionClaims, sealSession } from "./code-session.mjs";
 import {
+  SESSION_ACTIVITY_ACTIVE,
+  SESSION_ACTIVITY_REVOKED,
+  SESSION_ACTIVITY_UNAVAILABLE,
   authorizeCodeSession,
   boundedApiRequest,
   internalRequestForSession,
   requiresCodeSession,
   roleAllowsPath,
   sessionScopeAllowsPath,
+  sessionActivityState,
   sessionActivityValid,
 } from "./session-gate.mjs";
 
@@ -126,6 +130,11 @@ test("hosted sessions fail closed when account activity cannot be verified", asy
     agencyCode: "mml93-a02",
     clientId: "client-2",
   });
+  const state = await sessionActivityState(claims, {
+    VERCEL_ENV: "preview",
+    MI_SESSION_SECRET: "s".repeat(32),
+  });
+  assert.equal(state, SESSION_ACTIVITY_UNAVAILABLE);
   assert.equal(await sessionActivityValid(claims, {
     VERCEL_ENV: "preview",
     MI_SESSION_SECRET: "s".repeat(32),
@@ -152,8 +161,46 @@ test("client session activity is tied to the exact active client and agency code
     return Response.json([{ id: "client-2", agency_code: "mml93-a02", status: "active", disconnected_at: null }]);
   };
   const revokedFetch = async () => Response.json([]);
+  const unavailableFetch = async () => new Response(JSON.stringify({ code: "PGRST000" }), {
+    status: 503,
+    headers: { "content-type": "application/json" },
+  });
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: activeFetch }), SESSION_ACTIVITY_ACTIVE);
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: revokedFetch }), SESSION_ACTIVITY_REVOKED);
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: unavailableFetch }), SESSION_ACTIVITY_UNAVAILABLE);
   assert.equal(await sessionActivityValid(claims, env, { fetchImpl: activeFetch }), true);
   assert.equal(await sessionActivityValid(claims, env, { fetchImpl: revokedFetch }), false);
+});
+
+test("temporary activity-check outages return 503 without clearing the session cookie", async () => {
+  const claims = createSessionClaims({
+    role: "client",
+    accountLabel: "mml93-a02",
+    agencyCode: "mml93-a02",
+    clientId: "client-2",
+  });
+  const result = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, {
+    activityCheck: async () => SESSION_ACTIVITY_UNAVAILABLE,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 503);
+  assert.equal(result.response.headers.get("set-cookie"), null);
+  assert.equal((await result.response.json()).code, "SESSION_VALIDATION_UNAVAILABLE");
+});
+
+test("confirmed inactive sessions still return the revoked response", async () => {
+  const claims = createSessionClaims({
+    role: "client",
+    accountLabel: "mml93-a02",
+    agencyCode: "mml93-a02",
+    clientId: "client-2",
+  });
+  const result = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, {
+    activityCheck: async () => SESSION_ACTIVITY_REVOKED,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.response.status, 401);
+  assert.equal((await result.response.json()).code, "SESSION_REVOKED");
 });
 
 test("team session activity is invalidated when its client mapping changes", async () => {

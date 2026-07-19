@@ -8,6 +8,7 @@ import {
   normalizeLoginCode,
   ownerCredentialConfigured,
   ownerCredentialMatches,
+  sessionActivityState,
   sessionStillActive,
 } from "./code-session-api.mjs";
 
@@ -147,4 +148,28 @@ test("restored sessions remain bound to the original team and client ids", async
     error: null,
   }]), { role: "client", agencyCode: "mml93-a02", clientId: "client-1" });
   assert.equal(wrongClient, null);
+});
+
+test("restored sessions distinguish database outages from confirmed revocation", async () => {
+  const claims = { role: "client", agencyCode: "mml93-a02", clientId: "client-2" };
+  const unavailable = await sessionActivityState(contextWithRows([{
+    data: null,
+    error: { message: "temporary database outage" },
+  }]), claims);
+  assert.equal(unavailable.state, "unavailable");
+  assert.equal(unavailable.active, null);
+
+  const revoked = await sessionActivityState(contextWithRows([{
+    data: null,
+    error: null,
+  }]), claims);
+  assert.equal(revoked.state, "revoked");
+  assert.equal(revoked.active, null);
+
+  const active = await sessionActivityState(contextWithRows([{
+    data: { id: "client-2", agency_code: "mml93-a02", status: "active", disconnected_at: null },
+    error: null,
+  }]), claims);
+  assert.equal(active.state, "active");
+  assert.equal(active.active.client.id, "client-2");
 });

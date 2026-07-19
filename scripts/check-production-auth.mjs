@@ -12,6 +12,7 @@ const files = {
   clientPage: "src/pages/client.html",
   productRank: "src/server/handlers/naver-rank-trackers.mjs",
   placeRank: "src/server/handlers/naver-place-rank-trackers.mjs",
+  adminApi: "src/server/handlers/admin-api.mjs",
   migration: "supabase/migrations/20260719090000_code_session_rate_limits.sql",
 };
 
@@ -61,6 +62,19 @@ function functionBlock(text, name) {
 }
 
 const authorizeBlock = functionBlock(source.gate, "authorizeCodeSession");
+const currentSessionBlock = functionBlock(source.login, "currentSession");
+const currentSessionUnavailableBlock = currentSessionBlock.slice(
+  currentSessionBlock.indexOf("SESSION_ACTIVITY_UNAVAILABLE"),
+  currentSessionBlock.indexOf("activity.state !== SESSION_ACTIVITY_ACTIVE"),
+);
+const productListBlock = functionBlock(source.productRank, "listTrackers");
+const placeListBlock = functionBlock(source.placeRank, "listTrackers");
+const adminDeleteBlock = functionBlock(source.adminApi, "handleDelete");
+const protectedAdminResourceBlocks = [
+  source.adminApi.slice(source.adminApi.indexOf("  clients: {"), source.adminApi.indexOf("  brands: {")),
+  source.adminApi.slice(source.adminApi.indexOf('  "naver-rank-trackers": {'), source.adminApi.indexOf('  "naver-rank-snapshots": {')),
+  source.adminApi.slice(source.adminApi.indexOf('  "naver-rank-snapshots": {'), source.adminApi.indexOf("\n};")),
+];
 const adminFetch = functionBlock(source.adminPage, "miFetch");
 const clientFetch = functionBlock(source.clientPage, "miFetch");
 const adminProductRequest = functionBlock(source.adminPage, "requestRankTrackers");
@@ -78,13 +92,27 @@ const checks = [
     file: files.index,
   },
   {
-    name: "session authorization awaits live account activity before credential injection",
-    ok: source.gate.includes("export async function sessionActivityValid")
+    name: "session authorization separates revocation from temporary validation outages",
+    ok: source.gate.includes("export async function sessionActivityState")
       && source.gate.includes("export async function authorizeCodeSession")
-      && authorizeBlock.includes("if (!await sessionActivityValid(claims, env, options))")
+      && authorizeBlock.includes("const activityState = await sessionActivityState(claims, env, options)")
+      && authorizeBlock.includes("activityState === SESSION_ACTIVITY_UNAVAILABLE")
+      && authorizeBlock.includes('code: "SESSION_VALIDATION_UNAVAILABLE"')
+      && authorizeBlock.includes("}, 503)")
       && authorizeBlock.includes('code: "SESSION_REVOKED"')
-      && authorizeBlock.indexOf("await sessionActivityValid") < authorizeBlock.indexOf("internalRequestForSession"),
+      && authorizeBlock.indexOf("await sessionActivityState") < authorizeBlock.indexOf("internalRequestForSession"),
     file: files.gate,
+  },
+  {
+    name: "session restore preserves cookies when live validation is temporarily unavailable",
+    ok: source.login.includes("export async function sessionActivityState")
+      && currentSessionBlock.includes("activity.state === SESSION_ACTIVITY_UNAVAILABLE")
+      && currentSessionUnavailableBlock.includes('code: "SESSION_VALIDATION_UNAVAILABLE"')
+      && currentSessionUnavailableBlock.includes("}, 503)")
+      && !currentSessionUnavailableBlock.includes("clearedSessionCookies")
+      && currentSessionBlock.includes("activity.state !== SESSION_ACTIVITY_ACTIVE")
+      && currentSessionBlock.includes("401, clearedSessionCookies()"),
+    file: files.login,
   },
   {
     name: "session tokens are confidential authenticated cookies",
@@ -110,7 +138,7 @@ const checks = [
       && source.gate.includes("roleAllowsPath")
       && source.gate.includes("csrfMatches")
       && source.gate.includes("mutationOriginAllowed")
-      && source.gate.includes("sessionActivityValid")
+      && source.gate.includes("sessionActivityState")
       && source.gate.includes('code: "SESSION_REVOKED"'),
     file: files.gate,
   },
@@ -148,6 +176,42 @@ const checks = [
     file: `${files.productRank}, ${files.placeRank}`,
   },
   {
+    name: "rank tracker lists return a complete 500-row scoped response contract",
+    ok: [source.productRank, source.placeRank].every((handler) => (
+      handler.includes("const TRACKER_LIST_MAX = 500")
+      && handler.includes("const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1")
+    ))
+      && [productListBlock, placeListBlock].every((block) => (
+        block.includes(".limit(TRACKER_LIST_QUERY_LIMIT)")
+        && block.includes('.select(TRACKER_SELECT, { count: "exact" })')
+        && block.includes(".slice(0, TRACKER_LIST_MAX)")
+        && block.includes("scopeKey:")
+        && block.includes("scopeAgencyCode:")
+        && block.includes("scopeClientId:")
+        && block.includes("returnedCount:")
+        && block.includes("totalCount:")
+        && block.includes("hasMore,")
+        && block.includes("complete: !hasMore && rows.length === count")
+      )),
+    file: `${files.productRank}, ${files.placeRank}`,
+  },
+  {
+    name: "product rank history preserves up to 120 snapshots from the last 30 days",
+    ok: source.productRank.includes("const PRODUCT_RANK_HISTORY_DAYS = 30")
+      && source.productRank.includes("const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120")
+      && source.productRank.includes("checkedAt >= historyCutoff")
+      && source.productRank.includes(".slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS)"),
+    file: files.productRank,
+  },
+  {
+    name: "generic admin API blocks hard delete for clients and rank history",
+    ok: source.adminApi.includes("export function resourceHardDeleteBlocked")
+      && source.adminApi.includes('code: "HARD_DELETE_BLOCKED"')
+      && adminDeleteBlock.includes("if (config.hardDeleteBlocked)")
+      && protectedAdminResourceBlocks.every((block) => block.includes("hardDeleteBlocked: true")),
+    file: files.adminApi,
+  },
+  {
     name: "raw advertiser and staff codes are not persisted as browser credentials",
     ok: !/localStorage\.setItem\("miClientAuthedCode"/.test(source.clientPage)
       && !/localStorage\.setItem\("miAdminAuthedCode"/.test(source.adminPage)
@@ -159,9 +223,11 @@ const checks = [
   {
     name: "client rank requests rely on the verified session instead of retransmitting access codes",
     ok: [clientProductRequest, clientPlaceRequest].every((block) => (
-      block.includes('secureClientSession.role !== "client"')
+      block.includes("var requestScope = verifiedRankTrackerScope()")
+      && block.includes("if (!requestScope)")
+      && block.includes("!sameRankTrackerScope(requestScope)")
       && block.includes('headers: {}')
-      && block.includes('new URLSearchParams({ limit: "50" })')
+      && block.includes('new URLSearchParams({ limit: "500" })')
       && !/x-mi-(?:agency|rank-access)-code/.test(block)
       && !/\b(?:accessCode|agencyCode)\s*:/.test(block)
     ))

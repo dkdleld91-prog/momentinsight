@@ -13,12 +13,51 @@ import {
   runDuePlaceTrackers,
   runPlaceTrackerCheck,
 } from "./naver-place-rank-trackers.mjs";
+import { placeRankCronResult } from "./naver-place-rank-cron.mjs";
 
 const AGENCY_CODE = "mml93-a01";
 const ADMIN_CODE = "place-rank-group-test";
 const TRACKERS = "naver_place_rank_trackers";
 const SNAPSHOTS = "naver_place_rank_snapshots";
 const CLIENTS = "clients";
+
+test("drain cron carries failed and partial summaries so later trackers can continue", () => {
+  const failedSummary = {
+    configured: true,
+    checked: 1,
+    succeeded: 0,
+    failed: 1,
+    found: 0,
+    notFound: 0,
+    partial: 0,
+    remaining: 2,
+    drained: false,
+  };
+  const failedDrain = placeRankCronResult(failedSummary, { drainMode: true });
+  assert.equal(failedDrain.status, 200);
+  assert.equal(failedDrain.body.ok, true);
+  assert.equal(failedDrain.body.degraded, true);
+  assert.equal(failedDrain.body.summary.failed, 1);
+
+  const failedSingle = placeRankCronResult(failedSummary, { drainMode: false });
+  assert.equal(failedSingle.status, 502);
+  assert.equal(failedSingle.body.ok, false);
+
+  const partialSummary = {
+    ...failedSummary,
+    succeeded: 1,
+    failed: 0,
+    partial: 1,
+  };
+  const partialDrain = placeRankCronResult(partialSummary, { drainMode: true });
+  assert.equal(partialDrain.status, 200);
+  assert.equal(partialDrain.body.ok, true);
+  assert.equal(partialDrain.body.degraded, true);
+
+  const unavailable = placeRankCronResult({ ...failedSummary, configured: false }, { drainMode: true });
+  assert.equal(unavailable.status, 503);
+  assert.equal(unavailable.body.ok, false);
+});
 
 test("trusted place-rank headers override conflicting body scope", () => {
   const request = new Request("https://example.com/api/naver-place-rank-trackers?agencyCode=mml93-a98", {

@@ -128,9 +128,6 @@ jobs:
             if (safe.found + safe.notFound + safe.partial !== safe.succeeded) {
               throw new Error("place rank cron outcome counts are inconsistent");
             }
-            if (safe.failed > 0) {
-              throw new Error(`place rank cron reported ${safe.failed} failed tracker(s)`);
-            }
             if (!safe.configured) {
               throw new Error("place rank cron provider is not configured");
             }
@@ -157,6 +154,12 @@ jobs:
             if (safe.partial > 0) {
               console.log(`::warning::Naver place rank cron returned ${safe.partial} partial tracker result(s) in batch ${batch}`);
             }
+            if (safe.failed > 0) {
+              // A single malformed or temporarily unavailable keyword must not
+              // strand every healthy tracker behind it. Keep the workflow red,
+              // but drain the remaining queue before reporting the failure.
+              console.log(`::error::Naver place rank cron returned ${safe.failed} failed tracker(s) in batch ${batch}; continuing the remaining queue`);
+            }
             if (safe.drained) {
               drained = true;
               break;
@@ -167,6 +170,9 @@ jobs:
           console.log("Naver place rank cron window " + JSON.stringify({ ...totals, drained }));
           if (!drained) {
             throw new Error(`Naver place rank cron reached the ${maxBatches}-batch safety cap before the queue reported drained`);
+          }
+          if (totals.failed > 0) {
+            throw new Error(`Naver place rank cron drained the queue with ${totals.failed} failed tracker(s)`);
           }
           if (totals.partial > 0) {
             throw new Error(`Naver place rank cron completed with ${totals.partial} partial tracker result(s)`);

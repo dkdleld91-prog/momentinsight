@@ -108,8 +108,16 @@ check(
     /JSON\.parse\(body\)/,
     /payload\.ok !== true/,
     /safe\.failed > 0/,
+    /continuing the remaining queue/,
+    /totals\.failed > 0/,
+    /drained the queue with/,
+  ]) && hasAll(placeCron, [
+    /placeRankCronResult/,
+    /drainMode/,
+    /status: 200/,
+    /degraded: failed > 0 \|\| partial > 0/,
   ]),
-  files.placeWorkflow,
+  `${files.placeWorkflow}, ${files.placeCron}`,
 );
 check(
   "place cron inline module compiles",
@@ -228,11 +236,12 @@ check(
   ]) && hasAll(placeCron, [
     /limit: DEFAULT_CRON_BATCH/,
     /drainMode/,
-    /!summary\.configured/,
-    /summary\.partial > 0/,
+    /!summary\?\.configured/,
+    /!drainMode && partial > 0/,
     /!summary\.drained && !drainMode/,
-    /}, 503\)/,
-    /}, 502\)/,
+    /status: 503/,
+    /status: 502/,
+    /degraded: failed > 0 \|\| partial > 0/,
   ]),
   `${files.productCron}, ${files.placeCron}`,
 );

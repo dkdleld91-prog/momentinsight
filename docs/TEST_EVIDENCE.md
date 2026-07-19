@@ -10,6 +10,10 @@
 - 상품 실조회: `음파 전동칫솔` 원부 15위, `전동칫솔` 원부 25위, 정확 판매자 상품은 두 키워드 모두 상위 300위 밖이다. 정확 상품과 검증 원부는 같은 300개 응답에서 비교하며 제목이 비슷한 다른 원부와 광고 후보는 제외한다.
 - 데이터 보존: `naver_rank_trackers`, `naver_place_rank_trackers`와 기존 스냅샷을 삭제·초기화하지 않았다. `admin.html`, `client.html`도 변경하지 않았다.
 - 자동 검증: `npm run check:release` 통과. API·서버 147/147, 플레이스 수집기 32/32, 서버 계약 22/22, Production 인증 18/18, 공개 빌드와 `git diff --check` 통과.
+- 복구 지점: 원격 태그 `checkpoint/rank-hotfix-20260719-2048`은 커밋 `3fb98b9`를 가리키며 `recovery:verify --quality`를 통과했다.
+- 운영 배포: `/health`·`/ready` 릴리즈 `3fb98b9e4622`, Supabase ready, Render 릴리즈 `2026-07-19-exact-id-coordinate-rank-v11`, 관리자·광고주 HTTP 200, 보호 순위 API 비인증 401.
+- 운영 상품 저장: `음파 전동칫솔` 현재 15위, `전동칫솔` 현재 25위. 두 최신 스냅샷 모두 원부ID `57907660073`, `checked_count=300`, `matched=true`, `trackingRankSource=related_catalog`, `rankPolicy=organic_only`, `adExcluded=true`다.
+- 운영 플레이스 저장: 플레이스ID `2019299673`의 상호명은 `팽오리농장 부평점`, 현재·최고·최저 순위는 미검증이므로 null을 유지한다. 공식 GraphQL `start=71` 재요청은 HTTP 429여서 54위 이후를 임의 계산하지 않았다.
 
 ## 2026-07-15 · 메인 기능 쇼케이스 우선순위·그룹 보정
 

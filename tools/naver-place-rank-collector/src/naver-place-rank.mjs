@@ -24,11 +24,14 @@ const APIFY_FALLBACK_ACTOR_ID = String(
 const NAVER_MAP_SEARCH_BASE = "https://map.naver.com/p/search/";
 const NAVER_PLACE_LIST_BASE = "https://pcmap.place.naver.com/place/list";
 const NAVER_PLACE_MAX_RESULTS = 300;
-const COLLECTION_DEADLINE_GUARD_MS = 5000;
+// Leave enough time to serialize a truthful partial result and close Chromium
+// even when the hosted browser is briefly CPU-starved.
+const COLLECTION_DEADLINE_GUARD_MS = 12000;
 const GROWTH_POLL_INTERVAL_MS = 220;
 const GROWTH_POLL_ATTEMPTS = 6;
 const EXHAUSTED_STABLE_ROUNDS = 3;
 const LIST_SELECTOR_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 8000));
+const IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS = 1000;
 const RESULT_CACHE_TTL_MS = Math.max(
   60000,
   Math.min(30 * 60 * 1000, Number(process.env.NAVER_PLACE_RESULT_CACHE_TTL_MS || 10 * 60 * 1000))
@@ -884,9 +887,18 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
     }
 
     const pageTitle = cleanPlaceTitle(await page.title().catch(() => ""));
-    const metaTitle = cleanPlaceTitle(await page.locator("meta[property='og:title']").getAttribute("content").catch(() => ""));
-    const metaUrl = await page.locator("meta[property='og:url']").getAttribute("content").catch(() => "");
-    const canonicalUrl = await page.locator("link[rel='canonical']").getAttribute("href").catch(() => "");
+    const metaTitle = cleanPlaceTitle(await page
+      .locator("meta[property='og:title']")
+      .getAttribute("content", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .catch(() => ""));
+    const metaUrl = await page
+      .locator("meta[property='og:url']")
+      .getAttribute("content", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .catch(() => "");
+    const canonicalUrl = await page
+      .locator("link[rel='canonical']")
+      .getAttribute("href", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .catch(() => "");
     result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(metaUrl), ...extractPlaceIds(canonicalUrl)]);
     result.placeId = result.placeId || result.placeIds[0] || "";
     const frameTitles = [];
@@ -895,7 +907,7 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
       const title = await frame
         .locator("span.Fc1rA, h1, [class*='place_bluelink'], [class*='GHAhO'], [class*='YouOG']")
         .first()
-        .innerText()
+        .innerText({ timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
         .catch(() => "");
       if (title) frameTitles.push(cleanPlaceTitle(title));
     }
@@ -1241,6 +1253,52 @@ async function collectRowsProgressively({
   }
 }
 
+async function collectVerifiedListRowsProgressively({
+  resultLimit,
+  maxScrolls,
+  deadlineAt,
+  readRows,
+  advance,
+  wait,
+  selectorError,
+  now = Date.now,
+  ...progressOptions
+}) {
+  if (now() >= deadlineAt) {
+    return collectionResult([], resultLimit, "collection_deadline_reached", 0);
+  }
+  let initialRead;
+  try {
+    initialRead = await readRows();
+  } catch (error) {
+    // A failed viewport read cannot be treated as an empty page. Skipping it
+    // would pull every later organic result forward by one or more ranks.
+    throw selectorError || error;
+  }
+  const initialRows = initialRead.filter((row) => row?.isPlaceListRow === true);
+  if (!initialRows.length) {
+    throw selectorError || new Error("naver_place_list_rows_unavailable");
+  }
+
+  let useInitialRows = true;
+  return collectRowsProgressively({
+    resultLimit,
+    maxScrolls,
+    deadlineAt,
+    readRows: async () => {
+      if (useInitialRows) {
+        useInitialRows = false;
+        return initialRows;
+      }
+      return (await readRows()).filter((row) => row?.isPlaceListRow === true);
+    },
+    advance,
+    wait,
+    now,
+    ...progressOptions,
+  });
+}
+
 function buildPlaceListUrl(keyword, maxRank, searchCoord = "") {
   const [x = "126.891732", y = "37.476909"] = normalizeText(searchCoord).split(";");
   const mapUrl = NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword);
@@ -1325,27 +1383,16 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         throw new Error("naver_place_access_limited");
       }
 
-      if (selectorError) {
-        const domRows = await extractVisibleRows(page).catch(() => []);
-        const fallback = selectorFallbackCollection([], domRows, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
-        if (!fallback) throw selectorError;
-        rememberCandidates(keyword, maxRank, fallback);
-        return fallback;
-      }
-
-      await scrollListFrame(page);
-      await page.waitForTimeout(700);
-
-      const candidates = [];
-      const visibleRows = await extractVisibleRows(page);
-      visibleRows.forEach((row) => appendCandidate(candidates, row));
       const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
-      const collection = collectionResult(
-        candidates,
+      const collection = await collectVerifiedListRowsProgressively({
         resultLimit,
-        "single_pass_limit_reached",
-        1
-      );
+        maxScrolls: DEFAULT_MAX_SCROLLS,
+        deadlineAt,
+        readRows: () => extractVisibleRows(page),
+        advance: () => scrollListFrame(page),
+        wait: (milliseconds) => page.waitForTimeout(milliseconds),
+        selectorError,
+      });
       rememberCandidates(keyword, maxRank, collection);
       return collection;
     }
@@ -1371,21 +1418,14 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     }
 
     const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
-    if (selectorError) {
-      const domRows = await extractVisibleRows(page).catch(() => []);
-      const fallback = selectorFallbackCollection([], domRows, resultLimit);
-      if (!fallback) throw selectorError;
-      rememberCandidates(keyword, maxRank, fallback);
-      return fallback;
-    }
-
-    const collection = await collectRowsProgressively({
+    const collection = await collectVerifiedListRowsProgressively({
       resultLimit,
       maxScrolls: DEFAULT_MAX_SCROLLS,
       deadlineAt,
       readRows: () => extractVisibleRows(page),
       advance: () => scrollListFrame(page),
       wait: (milliseconds) => page.waitForTimeout(milliseconds),
+      selectorError,
     });
     rememberCandidates(keyword, maxRank, collection);
     return collection;
@@ -1494,6 +1534,12 @@ function findMatch(candidates, target) {
   }) || null;
 }
 
+function needsBrowserIdentityResolution(placeUrl, placeId) {
+  if (!placeUrl) return false;
+  if (normalizeText(placeId)) return false;
+  return extractPlaceIds(placeUrl).length === 0;
+}
+
 function finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult) {
   const selectedResult = apifyPartialResult && !browserResult.matched &&
     Number(apifyPartialResult.checkedCount || 0) >= Number(browserResult.checkedCount || 0)
@@ -1555,7 +1601,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
       // Trackers persist the canonical place ID after the first resolution.
       // Resolving the same short URL on every refresh adds a second browser
       // navigation and can exhaust the hosted collector request budget.
-      const resolved = placeUrl && (!placeId || !placeName)
+      const resolved = needsBrowserIdentityResolution(placeUrl, placeId)
         ? await resolvePlaceIdentityWithBrowser(context, placeUrl)
         : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
       const placeIds = uniqueValues([
@@ -1657,8 +1703,10 @@ export const __testing = {
   clampMaxRank,
   candidateMatchesTarget,
   collectRowsProgressively,
+  collectVerifiedListRowsProgressively,
   findMatch,
   lookupNaverPlaceRankViaApify,
+  needsBrowserIdentityResolution,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
   normalizeApifyCandidates,

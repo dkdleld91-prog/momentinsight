@@ -19,9 +19,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 20. 02:47:53
-- 기준 커밋: 8f0c6b5
-- 작업트리: M .github/workflows/naver-place-rank-cron.yml /  M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-server-contract.mjs /  M src/server/handlers/naver-place-rank-cron.mjs /  M src/server/handlers/naver-place-rank-trackers.test.mjs
+- 마지막 자동 저장: 2026. 07. 20. 06:07:11
+- 기준 커밋: 69513b9
+- 작업트리: M scripts/check-release-baseline.mjs /  M tools/naver-place-rank-collector/src/naver-place-rank.mjs /  M tools/naver-place-rank-collector/src/server.mjs /  M tools/naver-place-rank-collector/test/naver-place-rank.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -36,7 +36,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료 | 플레이스 오가닉 순위 실위치 전수 재검증 | 실제 지도 목록이 아닌 `allSearch` 미리보기 순번, 가상 스크롤 중간 행 누락, 중첩 프로모션 `li` 혼입을 순위 근거에서 제거. 실제 PC 목록 최상위 행·정확 플레이스ID·광고 제외 근거만 순위로 인정하고, 부분 미발견은 현재값 null·5분 재시도·불완전 캐시 금지로 처리. 개별 실패가 정상 due 큐를 막지 않되 queue drain 후 오류를 보고하도록 연속성도 보강. 기존 30일 이력과 N상품 기능은 보존 | `홍대 맛집` 실제/수집기 7위·top10 일치, `부평 맛집` 양쪽 상위 100개 미발견·top10 일치. API·서버 153/153, 플레이스 tracker 42/42, 수집기 40/40, 서버 계약 22/22, Production 인증 18/18, 역할 parity·CSP·전체 `check:release`·독립 2차 검수·`git diff --check` 통과. 활성 13건 재수집에서 개별 실패 조기 중단 재현 | 사용자 수정·배포 승인, 운영 재수집 진행 |
+| 완료 | 플레이스 오가닉 순위 실위치 전수 재검증 | 실제 지도 목록이 아닌 `allSearch` 미리보기 순번, 가상 스크롤 중간 행 누락, 중첩 프로모션 `li` 혼입을 순위 근거에서 제거. selector 지연에도 첫 화면에서 멈추지 않고, DOM 추출 실패는 순위를 압축하지 않도록 fail-closed 처리. known exact ID는 상호명 누락 시 상세 재조회를 생략. 실제 PC 목록 최상위 행·정확 플레이스ID·광고 제외 근거만 순위로 인정하고, 부분 미발견은 현재값 null·재시도·불완전 캐시 금지로 처리. 개별 실패가 정상 due 큐를 막지 않되 queue drain 후 오류를 보고하도록 연속성도 보강. 기존 30일 이력과 N상품 기능은 보존 | `홍대 맛집` 실제/수집기 7위·top10 일치, `부평 맛집` 양쪽 상위 100개 미발견·top10 일치. selector 강제 실패 9→100개, 상호명 누락 39.827초·100개/null. API·서버 153/153, 플레이스 tracker 42/42, 수집기 42/42, 서버 계약 22/22, Production 인증 18/18, 역할 parity·CSP·전체 `check:release`·독립 2차 검수 P0/P1 0·`git diff --check` 통과 | 사용자 수정·배포 승인, Vercel·Render v15 운영 재수집 진행 |
 | 완료 | 플레이스 검색결과 전체 업체 지표 정상화 | 대상 매장 일치 여부와 무관하게 키워드 검색에서 실제 확인한 모든 오가닉 업체의 블로그·방문 합계를 coverage와 함께 저장하고 키워드 월검색량을 별도 병합. 값 없음은 `-`, 명시적 0은 `0`으로 양 역할에 동일 표시. 불완전 coverage와 검색량 `<10` 상한은 확정 숫자로 저장하지 않음. 기존 순위·30일 이력·광고 제외는 보존 | `부평 맛집` 54개 전체 블로그 56,310·방문 173,749, `강남 맛집` 54개 전체 블로그 61,503·방문 145,192. API·서버 152/152, 수집기 35/35, Production 인증 18/18, 역할 parity·CSP·`check:release`·`git diff --check` 통과 | 사용자 배포 승인, 운영 반영 진행 |
 | 완료 | 부평 맛집 플레이스·상품 원부 연속 추적 긴급 정상화 | 플레이스ID `2019299673`은 정확 ID·URL 좌표·공식 상호명을 우선하고 부분 조회에서 순위를 발명하지 않도록 보강. 상품ID `12649811979`는 최근 30일의 정확한 검증 원부ID만 이어받아 정확 상품과 함께 광고 제외 상위 300개에서 비교. 기존 추적 행·스냅샷·운영팀/광고주 UI는 보존 | 플레이스 실제 URL에서 `팽오리농장 부평점` 확인, 네이버 공개 목록 54개 부분 조회를 사실대로 보존. 운영 상품 스냅샷 원부 `57907660073`이 `음파 전동칫솔` 15위·`전동칫솔` 25위로 저장됨. `check:release`, API·서버 147/147, 플레이스 32/32, Production 인증 18/18, `git diff --check` 통과 | 코드 `3fb98b9`, Vercel 운영 별칭·Render 수집기 `v11` 반영 완료. 체크포인트 `checkpoint/rank-hotfix-20260719-2048` 원격 보관 |
 | 완료 | Owner 코드 생성 화면 정렬·프리미엄 보완 | 1280px 이상에서는 운영팀·광고주 CTA를 동일한 2행 2열에 고정하고, 1220px 이하에서는 한 열·전폭 CTA로 전환. 생성 카드의 배경·테두리·간격·입력·버튼 위계만 전용 클래스 범위에서 정돈했으며 Owner 권한과 모든 생성 훅·서버 요청은 보존 | 로컬 1440·1280·1180·1024·390px에서 동일 우측 정렬 또는 전폭 전환, 가로 넘침 0 확인. `check:quality`, 서버 계약 22/22, API·서버 133/133, 플레이스 29/29, Production 인증 18/18, 공개 빌드·`git diff --check` 통과. `client.html` 변경 없음 | 커밋 `e648fc6`, 운영 별칭 반영 완료 |

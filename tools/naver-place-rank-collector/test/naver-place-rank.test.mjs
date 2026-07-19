@@ -170,6 +170,79 @@ test("does not spend the full growth poll budget on each mid-list scroll", async
   assert.equal(collection.stopReason, "max_scrolls_reached");
 });
 
+test("continues progressive scrolling when the selector wait times out but verified list rows exist", async () => {
+  const selectorError = new Error("selector timed out");
+  let phase = 0;
+  let advances = 0;
+  const rows = [
+    { isPlaceListRow: true, id: "1", text: "첫 번째", nameNodes: ["첫 번째"] },
+    { isPlaceListRow: true, id: "2", text: "두 번째", nameNodes: ["두 번째"] },
+    { isPlaceListRow: true, id: "3", text: "세 번째", nameNodes: ["세 번째"] },
+    { isPlaceListRow: true, id: "4", text: "네 번째", nameNodes: ["네 번째"] },
+  ];
+  const result = await __testing.collectVerifiedListRowsProgressively({
+    resultLimit: 4,
+    maxScrolls: 3,
+    deadlineAt: 100,
+    readRows: async () => phase === 0 ? rows.slice(0, 2) : rows.slice(2),
+    advance: async () => {
+      advances += 1;
+      phase += 1;
+      return { scrollTop: 500, scrollHeight: 1_000, clientHeight: 500 };
+    },
+    wait: async () => {},
+    now: () => 0,
+    growthPollAttempts: 1,
+    growthPollIntervalMs: 0,
+    exhaustedStableRounds: 1,
+    selectorError,
+  });
+  assert.equal(result.complete, true);
+  assert.deepEqual(result.candidates.map((candidate) => candidate.id), ["1", "2", "3", "4"]);
+  assert.equal(advances, 1);
+
+  await assert.rejects(() => __testing.collectVerifiedListRowsProgressively({
+    resultLimit: 4,
+    maxScrolls: 3,
+    deadlineAt: 100,
+    readRows: async () => [{ isPlaceListRow: false, id: "menu", text: "메뉴", nameNodes: ["메뉴"] }],
+    advance: async () => ({ scrollTop: 0, scrollHeight: 0, clientHeight: 1 }),
+    wait: async () => {},
+    now: () => 0,
+    selectorError,
+  }), selectorError);
+
+  const extractionError = new Error("viewport extraction failed");
+  await assert.rejects(() => __testing.collectVerifiedListRowsProgressively({
+    resultLimit: 4,
+    maxScrolls: 3,
+    deadlineAt: 100,
+    readRows: async () => {
+      throw extractionError;
+    },
+    advance: async () => ({ scrollTop: 0, scrollHeight: 0, clientHeight: 1 }),
+    wait: async () => {},
+    now: () => 0,
+  }), extractionError);
+
+  let expiredReadCalls = 0;
+  const expired = await __testing.collectVerifiedListRowsProgressively({
+    resultLimit: 4,
+    maxScrolls: 3,
+    deadlineAt: 100,
+    readRows: async () => {
+      expiredReadCalls += 1;
+      return rows;
+    },
+    advance: async () => ({ scrollTop: 0, scrollHeight: 0, clientHeight: 1 }),
+    wait: async () => {},
+    now: () => 100,
+  });
+  assert.equal(expiredReadCalls, 0);
+  assert.equal(expired.stopReason, "collection_deadline_reached");
+  assert.equal(expired.candidates.length, 0);
+});
+
 test("keeps ID-less organic rows in DOM order when the list selector disappears", () => {
   const collection = selectorFallbackCollection([
     { rank: 2, id: "20002", placeIds: ["20002"], name: "둘째 장소", url: "https://map.naver.com/p/entry/place/20002", isAd: false },
@@ -706,6 +779,27 @@ test("skips identity lookup when the URL already contains a place ID", async () 
     if (previousToken === undefined) delete process.env.APIFY_NAVER_MAPS_TOKEN;
     else process.env.APIFY_NAVER_MAPS_TOKEN = previousToken;
   }
+});
+
+test("native lookup skips slow detail identity when an exact place ID is already known", () => {
+  assert.equal(
+    __testing.needsBrowserIdentityResolution(
+      "https://map.naver.com/p/entry/place/2019299673",
+      "2019299673"
+    ),
+    false
+  );
+  assert.equal(
+    __testing.needsBrowserIdentityResolution(
+      "https://map.naver.com/p/entry/place/2019299673",
+      ""
+    ),
+    false
+  );
+  assert.equal(
+    __testing.needsBrowserIdentityResolution("https://naver.me/FTXD0JDp", ""),
+    true
+  );
 });
 
 test("Apify provider verifies organic rank 300 after removing ads and duplicates", async () => {

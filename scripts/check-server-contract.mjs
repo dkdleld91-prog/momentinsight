@@ -10,6 +10,7 @@ const files = {
   sessionGate: "src/server/session-gate.mjs",
   ownerIdentity: "src/server/owner-identity.mjs",
   ownerTool: "src/server/handlers/owner-tool-api.mjs",
+  ownerToolAdapter: "api/owner/tool.mjs",
   runtime: "src/server/runtime.mjs",
   errorSafety: "src/server/error-safety.mjs",
   readiness: "src/server/handlers/ready.mjs",
@@ -28,6 +29,7 @@ const serverIndex = fs.readFileSync(files.serverIndex, "utf8");
 const sessionGate = fs.readFileSync(files.sessionGate, "utf8");
 const ownerIdentity = fs.readFileSync(files.ownerIdentity, "utf8");
 const ownerTool = fs.readFileSync(files.ownerTool, "utf8");
+const ownerToolAdapter = fs.readFileSync(files.ownerToolAdapter, "utf8");
 const runtime = fs.readFileSync(files.runtime, "utf8");
 const errorSafety = fs.readFileSync(files.errorSafety, "utf8");
 const readiness = fs.readFileSync(files.readiness, "utf8");
@@ -166,6 +168,14 @@ check(
     /const tax = \(supply \+ 5n\) \/ 10n/,
   ]),
   `${files.serverIndex}, ${files.sessionGate}, ${files.ownerIdentity}, ${files.ownerTool}`,
+);
+check(
+  "owner tool has an explicit nested Vercel function adapter",
+  hasAll(ownerToolAdapter, [
+    /createHandler/,
+    /createHandler\("\/api\/owner\/tool"\)/,
+  ]),
+  files.ownerToolAdapter,
 );
 check(
   "shared runtime strips handler database and secret details from server errors",

@@ -521,6 +521,15 @@ function apifyStopReason(normalized, maxRank = DEFAULT_MAX_RANK) {
   return "apify_result_list_exhausted";
 }
 
+function resolveApifyBudgetMs(payload = {}) {
+  const requested = Number(payload.apifyBudgetMs || payload.apify_budget_ms);
+  const configured = Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 135000);
+  const candidate = Number.isFinite(requested) && requested > 0 ? requested : configured;
+  // Browser fallback is capped at 80 seconds. Keeping the Actor chain at or
+  // below 135 seconds lets both stages complete inside the 225-second caller.
+  return Math.max(30_000, Math.min(135_000, Number.isFinite(candidate) ? candidate : 135_000));
+}
+
 function isApifyAccountLimitError(value) {
   return /monthly usage hard limit exceeded|usage limit exceeded|not enough credits|account.*limit/i.test(
     normalizeText(value)
@@ -539,10 +548,7 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     placeUrl: normalizeUrl(payload.placeUrl || payload.place_url),
     placeName: normalizeText(payload.placeName || payload.place_name),
   };
-  const overallTimeoutMs = Math.max(
-    30000,
-    Math.min(230000, Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 225000))
-  );
+  const overallTimeoutMs = resolveApifyBudgetMs(payload);
   const overallDeadlineAt = Date.now() + overallTimeoutMs;
   const runActor = async (actorId, input) => {
       const normalizedActorId = normalizeText(actorId).toLowerCase();
@@ -1490,6 +1496,7 @@ export const __testing = {
   collectRowsProgressively,
   lookupNaverPlaceRankViaApify,
   resolvePlaceIdentityViaHttp,
+  resolveApifyBudgetMs,
   normalizeApifyCandidates,
   normalizeApifyResult,
   isApifyAccountLimitError,

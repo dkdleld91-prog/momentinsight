@@ -94,6 +94,7 @@ const reportCenterServer = read("src/server/handlers/report-center.mjs");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
 const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
+const cronAuthServer = read("src/server/cron-auth.mjs");
 const serverIndex = read("src/server/index.mjs");
 const securityServer = read("src/server/security.mjs");
 const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
@@ -642,7 +643,9 @@ const checks = {
     && !staticBuildScript.includes('"/all.html"'),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && rankCronServer.includes("Unauthorized cron request")
-    && rankCronServer.includes("MI_RANK_CRON_SECRET"),
+    && cronAuthServer.includes("CRON_SECRET")
+    && cronAuthServer.includes("MI_RANK_CRON_SECRET")
+    && cronAuthServer.includes("safeEqual"),
   reportCenterEndpointReady: serverIndex.includes('url.pathname === "/api/report-center"')
     && serverIndex.includes('reportCenter: () => import("./handlers/report-center.mjs")')
     && serverIndex.includes("dispatch(\"reportCenter\", request)")
@@ -791,12 +794,16 @@ const checks = {
     && rankCronWorkflow.includes("deploy backfill")
     && rankCronWorkflow.includes("KST 09:00/15:00 rescue window")
     && rankCronWorkflow.includes("Hourly catch-up keeps due trackers moving")
-    && rankCronWorkflow.includes("limit=100")
+    && rankCronWorkflow.includes("const batchSize = 1")
+    && rankCronWorkflow.includes("const maxBatches = 10")
+    && rankCronWorkflow.includes("requestTimeoutMs")
+    && rankCronWorkflow.includes("payload.ok !== true")
+    && rankCronWorkflow.includes("safe.failed > 0")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
     && rankCronWorkflow.includes("Validate cron secret")
     && rankCronWorkflow.includes("GitHub Actions secret MI_RANK_CRON_SECRET is missing")
-    && rankCronWorkflow.includes("Naver rank cron summary")
-    && rankCronWorkflow.includes("Naver rank cron accepted"),
+    && rankCronWorkflow.includes("Naver rank cron batch")
+    && rankCronWorkflow.includes("Naver rank cron window"),
   rankCronHasConcurrencyGuard: rankCronWorkflow.includes("concurrency:")
     && rankCronWorkflow.includes("group: naver-rank-tracking")
     && rankCronWorkflow.includes("cancel-in-progress: false"),
@@ -850,7 +857,7 @@ const checks = {
       && !source.includes("data-rank-group list=")),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
     && cron.schedule === "7 0 * * *")
-    && rankCronServer.includes("DEFAULT_CRON_BATCH = 100"),
+    && rankCronServer.includes("DEFAULT_CRON_BATCH = 1"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")

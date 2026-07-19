@@ -85,6 +85,10 @@ function listRoutes() {
   ];
 }
 
+export function clientSelfConnectEnabled(env = process.env) {
+  return env.MI_CLIENT_SELF_CONNECT_ENABLED === "true";
+}
+
 function applyFilters(query, url, config, userId) {
   if (config.self) query = query.eq("id", userId);
 
@@ -147,11 +151,18 @@ export default {
   })
 };
 
-async function handleAgencyCode(request, ctx) {
+export async function handleAgencyCode(request, ctx) {
   const { id: action } = routeParts(request, "/api/client");
 
   if (action !== "connect") return notFound(listRoutes());
   if (request.method !== "POST") return methodNotAllowed(["POST"]);
+  if (!clientSelfConnectEnabled()) {
+    return json({
+      ok: false,
+      code: "CLIENT_SELF_CONNECT_DISABLED",
+      message: "광고주 셀프 연결 기능이 비활성화되어 있습니다. 운영팀에 연결을 요청해주세요."
+    }, 403);
+  }
 
   const userId = ctx.userClaims?.sub || ctx.userClaims?.id || null;
   if (!userId) return json({ ok: false, message: "Missing user id" }, 401);

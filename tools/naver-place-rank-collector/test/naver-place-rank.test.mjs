@@ -14,7 +14,14 @@ const {
   normalizeApifyCandidates,
   normalizeApifyResult,
   resolvePlaceIdentityViaHttp,
+  resolveApifyBudgetMs,
 } = __testing;
+
+test("caps the Apify actor chain so browser fallback fits the caller budget", () => {
+  assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 500_000 }), 135_000);
+  assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 120_000 }), 120_000);
+  assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 1_000 }), 30_000);
+});
 
 function placeRow(index) {
   const id = String(10000 + index);

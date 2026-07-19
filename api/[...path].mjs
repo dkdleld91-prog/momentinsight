@@ -1,29 +1,6 @@
 import app from "../src/server/index.mjs";
-
-export function safeErrorPayload(response, text) {
-  if (response.status < 500) return null;
-
-  const sensitive = /(?:^|[^A-Z0-9])(SUPABASE|SECRET|TOKEN|KEY|JWKS|MISSING_[A-Z0-9_]+)(?:$|[^A-Z0-9])/i.test(text);
-  try {
-    const payload = JSON.parse(text || "{}");
-    const code = String(payload?.code || "");
-    const statuses = Object.values(payload?.sourceStatus || {});
-    const isExpectedConfigPending = /_NOT_CONFIGURED$/.test(code) ||
-      statuses.some((item) => item?.status === "not_configured");
-    if (isExpectedConfigPending) return null;
-  } catch {}
-
-  return {
-    status: sensitive ? 503 : 500,
-    body: {
-      ok: false,
-      message: sensitive
-        ? "서버 연결이 준비되지 않았습니다. 관리자 설정을 확인해주세요."
-        : "서버 처리 중 오류가 발생했습니다.",
-      code: sensitive ? "SERVER_CONFIGURATION_PENDING" : "SERVER_ERROR",
-    },
-  };
-}
+import { logAdapterFailure, nodeRequestId, safeErrorPayload } from "./error-safety.mjs";
+export { safeErrorPayload } from "./error-safety.mjs";
 
 
 async function nodeRequestToWebRequest(req) {
@@ -62,16 +39,21 @@ async function writeWebResponse(res, response) {
 }
 
 export default async function handler(req, res) {
+  const requestId = nodeRequestId(req);
   try {
     const request = await nodeRequestToWebRequest(req);
     const response = await app.fetch(request);
     await writeWebResponse(res, response);
   } catch (error) {
+    logAdapterFailure(req, requestId, error);
     res.statusCode = 500;
     res.setHeader("content-type", "application/json; charset=utf-8");
+    res.setHeader("x-request-id", requestId);
     res.end(JSON.stringify({
       ok: false,
       message: "서버 처리 중 오류가 발생했습니다.",
+      code: "SERVER_ERROR",
+      requestId,
     }));
   }
 }

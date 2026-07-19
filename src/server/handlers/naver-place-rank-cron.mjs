@@ -1,5 +1,6 @@
 import { withSupabase } from "@supabase/server";
-import { corsHeaders, protectedJson, safeEqual } from "../security.mjs";
+import { cronAuthorized } from "../cron-auth.mjs";
+import { corsHeaders, protectedJson } from "../security.mjs";
 import { runDuePlaceTrackers } from "./naver-place-rank-trackers.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
@@ -9,15 +10,6 @@ function json(request, body, status = 200) {
     methods: "GET, POST, OPTIONS",
     headers: "authorization, content-type",
   });
-}
-
-function cronAuthorized(request) {
-  const secret = process.env.CRON_SECRET || process.env.MI_RANK_CRON_SECRET || "";
-  if (!secret) return false;
-
-  const authorization = request.headers.get("authorization") || "";
-  const token = authorization.replace(/^Bearer\s+/i, "");
-  return safeEqual(token, secret);
 }
 
 export default {
@@ -42,10 +34,19 @@ export default {
 
     try {
       const url = new URL(request.url);
+      const drainMode = url.searchParams.get("mode") === "drain";
       const summary = await runDuePlaceTrackers(ctx, {
         agencyCode: url.searchParams.get("agencyCode") || "",
-        limit: url.searchParams.get("limit") || process.env.MI_PLACE_RANK_CRON_BATCH || DEFAULT_CRON_BATCH,
+        limit: DEFAULT_CRON_BATCH,
       });
+
+      if (!summary.configured) {
+        return json(request, {
+          ok: false,
+          message: "네이버 플레이스 순위 조회 연결이 준비되지 않았습니다.",
+          summary,
+        }, 503);
+      }
 
       if (summary.checked > 0 && summary.failed > 0) {
         return json(request, {
@@ -53,6 +54,22 @@ export default {
           message: "일부 네이버 플레이스 순위 자동 갱신이 실패했습니다.",
           summary,
         }, 502);
+      }
+
+      if (summary.partial > 0) {
+        return json(request, {
+          ok: false,
+          message: "일부 네이버 플레이스 순위 조회가 전체 범위를 확인하지 못했습니다.",
+          summary,
+        }, 502);
+      }
+
+      if (!summary.drained && !drainMode) {
+        return json(request, {
+          ok: false,
+          message: "네이버 플레이스 순위 갱신 대기열이 남아 있습니다.",
+          summary,
+        }, 503);
       }
 
       return json(request, { ok: true, summary });

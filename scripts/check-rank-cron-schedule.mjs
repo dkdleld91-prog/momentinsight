@@ -50,12 +50,27 @@ assert.match(workflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "GitHub Actions must re
 assert.match(workflow, /cron: "37 \* \* \* \*"/, "GitHub Actions must keep an hourly catch-up run");
 assert.match(workflow, /KST 09:00\/15:00 rescue window/, "Workflow must document the rescue-window behavior");
 assert.match(workflow, /Hourly catch-up keeps due trackers moving/, "Workflow must document missed-slot catch-up behavior");
+assert.match(workflow, /timeout-minutes: 60/, "Product workflow must cover ten bounded sequential calls");
+assert.match(workflow, /const maxBatches = 10;/, "Product workflow must keep its explicit safety cap");
+assert.match(workflow, /const requestTimeoutMs = 240000;/, "Product workflow must bound each server call");
+assert.match(workflow, /searchParams\.set\("mode", "drain"\)/, "Product workflow must identify the bounded queue-drain caller");
+assert.match(workflow, /before the queue reported drained/, "Product workflow must fail when its cap is reached before drain confirmation");
+assert.match(workflow, /safe\.drained !== \(safe\.remaining === 0\)/, "Product workflow must cross-check queue drain state");
+assert.match(workflow, /safe\.checked === 0 && !safe\.drained/, "Product workflow must reject a zero-progress non-drained batch");
+assert.match(workflow, /!safe\.configured/, "Product workflow must fail when the rank provider is unavailable");
 
 const placeWorkflow = fs.readFileSync(".github/workflows/naver-place-rank-cron.yml", "utf8");
 assert.match(placeWorkflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "Naver place workflow must retry the 09:00/15:00 KST slots");
 assert.match(placeWorkflow, /cron: "37 \* \* \* \*"/, "Naver place workflow must keep an hourly catch-up run");
 assert.match(placeWorkflow, /Hourly catch-up drains delayed or retried trackers/, "Naver place workflow must document missed-slot catch-up behavior");
-assert.match(placeWorkflow, /timeout-minutes: 30/, "Naver place workflow must allow enough time for sequential collector calls");
+assert.match(placeWorkflow, /timeout-minutes: 100/, "Naver place workflow must cover twenty bounded sequential collector calls");
+assert.match(placeWorkflow, /const maxBatches = 20;/, "Naver place workflow must keep its explicit safety cap");
+assert.match(placeWorkflow, /const requestTimeoutMs = 260000;/, "Naver place workflow must bound each collector call");
+assert.match(placeWorkflow, /searchParams\.set\("mode", "drain"\)/, "Naver place workflow must identify the bounded queue-drain caller");
+assert.match(placeWorkflow, /before the queue reported drained/, "Naver place workflow must fail when its cap is reached before drain confirmation");
+assert.match(placeWorkflow, /safe\.drained !== \(safe\.remaining === 0\)/, "Naver place workflow must cross-check queue drain state");
+assert.match(placeWorkflow, /safe\.checked === 0 && !safe\.drained/, "Naver place workflow must reject a zero-progress non-drained batch");
+assert.match(placeWorkflow, /totals\.partial > 0/, "Naver place workflow must surface partial lookups as a degraded run");
 assert.match(placeWorkflow, /Push-triggered deploy backfill/, "Naver place workflow must backfill due trackers after deployment");
 
 const vercelConfig = JSON.parse(fs.readFileSync("vercel.json", "utf8"));

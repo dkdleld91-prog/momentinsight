@@ -10,6 +10,7 @@ import {
   requestAgencyCode,
   resolveNaverPlaceUrl,
   runDuePlaceTrackers,
+  runPlaceTrackerCheck,
 } from "./naver-place-rank-trackers.mjs";
 
 const AGENCY_CODE = "mml93-a01";
@@ -132,6 +133,20 @@ class MockQuery {
     return this;
   }
 
+  lte(column, value) {
+    const expected = new Date(value).getTime();
+    this.filters.push((row) => new Date(row[column]).getTime() <= expected);
+    return this;
+  }
+
+  or(expression) {
+    const leaseMatch = String(expression).match(/^processing_until\.is\.null,processing_until\.lte\.(.+)$/);
+    if (!leaseMatch) throw new Error(`unsupported mock or expression: ${expression}`);
+    const expected = new Date(leaseMatch[1]).getTime();
+    this.filters.push((row) => !row.processing_until || new Date(row.processing_until).getTime() <= expected);
+    return this;
+  }
+
   order(column, options = {}) {
     this.orders.push({ column, ascending: options.ascending !== false });
     return this;
@@ -213,6 +228,7 @@ function testContext(rows = [], options = {}) {
   const state = {
     missingGroupColumn: Boolean(options.missingGroupColumn),
     nextId: 10,
+    lastRpcParams: null,
     tables: {
       [TRACKERS]: rows.map((row) => trackerRow(row)),
       [SNAPSHOTS]: [],
@@ -230,6 +246,7 @@ function testContext(rows = [], options = {}) {
           if (name !== "claim_due_naver_place_rank_tracker") {
             return { data: null, error: { message: `unknown rpc: ${name}` } };
           }
+          state.lastRpcParams = { ...params };
           const requestedAgencyCodes = params.requested_agency_codes;
           const now = Date.now();
           const tracker = state.tables[TRACKERS]
@@ -241,7 +258,7 @@ function testContext(rows = [], options = {}) {
           if (!tracker) return { data: [], error: null };
           tracker.processing_token = `claim-${state.nextId++}`;
           tracker.processing_started_at = new Date().toISOString();
-          tracker.processing_until = new Date(now + 180_000).toISOString();
+          tracker.processing_until = new Date(now + Number(params.lease_seconds || 0) * 1000).toISOString();
           tracker.last_attempt_at = new Date().toISOString();
           return { data: [{ ...tracker }], error: null };
         },
@@ -278,6 +295,54 @@ function clientRequest(method, body, options = {}) {
 
 async function payload(response) {
   return { status: response.status, body: await response.json() };
+}
+
+async function withExternalProvider(fetchImpl, callback) {
+  const originalFetch = globalThis.fetch;
+  const previousProviderUrl = process.env.NAVER_PLACE_RANK_API_URL;
+  const previousProviderKey = process.env.NAVER_PLACE_RANK_API_KEY;
+  process.env.NAVER_PLACE_RANK_API_URL = "https://collector.example.test/rank";
+  process.env.NAVER_PLACE_RANK_API_KEY = "test-key";
+  globalThis.fetch = fetchImpl;
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousProviderUrl === undefined) delete process.env.NAVER_PLACE_RANK_API_URL;
+    else process.env.NAVER_PLACE_RANK_API_URL = previousProviderUrl;
+    if (previousProviderKey === undefined) delete process.env.NAVER_PLACE_RANK_API_KEY;
+    else process.env.NAVER_PLACE_RANK_API_KEY = previousProviderKey;
+  }
+}
+
+async function withOfficialProvider(fetchImpl, callback) {
+  const originalFetch = globalThis.fetch;
+  const previous = {
+    providerUrl: process.env.NAVER_PLACE_RANK_API_URL,
+    providerKey: process.env.NAVER_PLACE_RANK_API_KEY,
+    openapiId: process.env.NAVER_OPENAPI_CLIENT_ID,
+    openapiSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET,
+  };
+  delete process.env.NAVER_PLACE_RANK_API_URL;
+  delete process.env.NAVER_PLACE_RANK_API_KEY;
+  process.env.NAVER_OPENAPI_CLIENT_ID = "official-test-id";
+  process.env.NAVER_OPENAPI_CLIENT_SECRET = "official-test-secret";
+  globalThis.fetch = fetchImpl;
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+    const restore = {
+      NAVER_PLACE_RANK_API_URL: previous.providerUrl,
+      NAVER_PLACE_RANK_API_KEY: previous.providerKey,
+      NAVER_OPENAPI_CLIENT_ID: previous.openapiId,
+      NAVER_OPENAPI_CLIENT_SECRET: previous.openapiSecret,
+    };
+    Object.entries(restore).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
 }
 
 const originalEnv = {
@@ -496,6 +561,257 @@ test("allows advertiser sync-due with its rank access code and rejects invalid a
   assert.equal(wrong.body.ok, false);
 });
 
+test("returns 502 when a due place refresh fails and preserves it for retry", async () => {
+  const { ctx, state } = testContext([{
+    id: "retry-place",
+    current_rank: 12,
+    best_rank: 8,
+    worst_rank: 17,
+    check_count: 9,
+    last_checked_at: "2026-07-15T00:00:00.000Z",
+    next_check_at: "2026-01-01T00:00:00.000Z",
+  }], {
+    clients: [{ id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null }],
+  });
+
+  const result = await payload(await handlePlaceRankTrackersRequest(clientRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }), ctx));
+  assert.equal(result.status, 502);
+  assert.equal(result.body.ok, false);
+  assert.equal(result.body.summary.failed, 1);
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].check_count, 9);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+});
+
+test("rejects a malformed successful provider response without creating a snapshot", async () => {
+  const { ctx, state } = testContext([{
+    id: "malformed-provider",
+    current_rank: 12,
+    best_rank: 8,
+    worst_rank: 17,
+    check_count: 9,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response("{}", { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.error, "place_rank_provider_invalid_response");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].best_rank, 8);
+  assert.equal(state.tables[TRACKERS][0].worst_rank, 17);
+  assert.equal(state.tables[TRACKERS][0].check_count, 9);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+});
+
+test("rejects contradictory or non-numeric place ranks from a successful provider", async () => {
+  const payloads = [
+    { ok: true, matched: false, rank: "abc", checkedCount: 300, complete: true },
+    { ok: true, matched: false, rank: 7, checkedCount: 300, complete: true },
+  ];
+
+  for (const [index, providerPayload] of payloads.entries()) {
+    const { ctx, state } = testContext([{
+      id: `invalid-rank-${index}`,
+      current_rank: 12,
+      best_rank: 8,
+      worst_rank: 17,
+      check_count: 9,
+    }]);
+
+    const result = await withExternalProvider(
+      async () => new Response(JSON.stringify(providerPayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "place_rank_provider_invalid_response");
+    assert.equal(state.tables[SNAPSHOTS].length, 0);
+    assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+    assert.equal(state.tables[TRACKERS][0].check_count, 9);
+  }
+});
+
+test("records a 62-result partial snapshot while preserving the last confirmed rank", async () => {
+  const { ctx, state } = testContext([{
+    id: "partial-provider",
+    current_rank: 12,
+    best_rank: 8,
+    worst_rank: 17,
+    check_count: 9,
+    found_count: 6,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: false,
+      checkedCount: 62,
+      total: 62,
+      complete: false,
+      partial: true,
+      partialReason: "collection_deadline_reached",
+      place: { id: "1234567890", name: "테스트 플레이스" },
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "partial");
+  assert.equal(result.result.complete, false);
+  assert.equal(result.result.partial, true);
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.equal(state.tables[SNAPSHOTS][0].checked_count, 62);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].best_rank, 8);
+  assert.equal(state.tables[TRACKERS][0].worst_rank, 17);
+  assert.equal(state.tables[TRACKERS][0].check_count, 10);
+  assert.equal(state.tables[TRACKERS][0].found_count, 6);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 0);
+});
+
+test("clears current rank only after a full 300-result miss", async () => {
+  const { ctx, state } = testContext([{
+    id: "full-provider-miss",
+    current_rank: 12,
+    best_rank: 8,
+    worst_rank: 17,
+    check_count: 9,
+    found_count: 6,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: false,
+      checkedCount: 300,
+      total: 300,
+      complete: true,
+      place: { id: "1234567890", name: "테스트 플레이스" },
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "not_found");
+  assert.equal(result.result.complete, true);
+  assert.equal(result.result.partial, false);
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.equal(state.tables[SNAPSHOTS][0].checked_count, 300);
+  assert.equal(state.tables[TRACKERS][0].current_rank, null);
+  assert.equal(state.tables[TRACKERS][0].best_rank, 8);
+  assert.equal(state.tables[TRACKERS][0].worst_rank, 17);
+  assert.equal(state.tables[TRACKERS][0].check_count, 10);
+});
+
+test("refuses a stale processing token before inserting a snapshot", async () => {
+  const { ctx, state } = testContext([{
+    id: "stale-lease",
+    current_rank: 12,
+    best_rank: 8,
+    worst_rank: 17,
+    check_count: 9,
+    processing_token: "claim-old",
+  }]);
+  const claimedTracker = { ...state.tables[TRACKERS][0] };
+
+  const result = await withExternalProvider(
+    async () => {
+      state.tables[TRACKERS][0].processing_token = "claim-new";
+      return new Response(JSON.stringify({
+        ok: true,
+        matched: true,
+        rank: 7,
+        checkedCount: 7,
+        total: 300,
+        complete: false,
+        place: { id: "1234567890", name: "테스트 플레이스" },
+        source: "test-collector",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+    () => runPlaceTrackerCheck(ctx, claimedTracker),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, "lease_lost");
+  assert.equal(result.error, "place_rank_tracker_lease_lost");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].processing_token, "claim-new");
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].check_count, 9);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 0);
+});
+
+test("treats an official top-five miss as partial and preserves the confirmed rank", async () => {
+  const { ctx, state } = testContext([{
+    id: "official-partial",
+    current_rank: 14,
+    best_rank: 7,
+    worst_rank: 19,
+    check_count: 4,
+    place_id: "target-place",
+    place_name: "대상 식당",
+  }]);
+  const officialItems = Array.from({ length: 5 }, (_, index) => ({
+    title: `다른 식당 ${index + 1}`,
+    link: `https://map.naver.com/p/entry/place/other-${index + 1}`,
+  }));
+
+  const result = await withOfficialProvider(
+    async (url) => String(url).includes("/v1/search/blog.json")
+      ? new Response(JSON.stringify({ total: 20 }), { status: 200 })
+      : new Response(JSON.stringify({ total: 420, items: officialItems }), { status: 200 }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "partial");
+  assert.equal(result.result.partialReason, "official_local_limit");
+  assert.equal(result.result.checkedCount, 5);
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 14);
+  assert.equal(state.tables[TRACKERS][0].best_rank, 7);
+  assert.equal(state.tables[TRACKERS][0].worst_rank, 19);
+});
+
+test("fails official lookup when neither place id nor name can be resolved", async () => {
+  const { ctx, state } = testContext([{
+    id: "official-no-identity",
+    place_id: null,
+    place_name: null,
+    current_rank: 14,
+    best_rank: 7,
+    worst_rank: 19,
+    check_count: 4,
+  }]);
+
+  const result = await withOfficialProvider(
+    async () => new Response(JSON.stringify({ total: 20 }), { status: 200 }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.outcome, "failed");
+  assert.equal(result.result.needsPlaceName, true);
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 14);
+  assert.equal(state.tables[TRACKERS][0].check_count, 4);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+});
+
 test("keeps advertiser place trackers isolated by agency code", async () => {
   const secondAgency = "agency-b02";
   const { ctx } = testContext([
@@ -670,6 +986,25 @@ test("marks a short place-rank snapshot as partial instead of 300-rank absence",
   assert.equal(tracker.snapshots[0].partial, true);
 });
 
+test("treats an early matched place as complete rather than partial", () => {
+  const tracker = placeTrackerPayload(trackerRow(), [{
+    id: "found-early",
+    tracker_id: "tracker-1",
+    checked_at: new Date().toISOString(),
+    rank: 4,
+    matched: true,
+    checked_count: 4,
+    total: 300,
+    place: { id: "2019299673", name: "테스트 플레이스" },
+    message: "오가닉 4위",
+    source: "naver_local_search_api",
+    created_at: new Date().toISOString(),
+  }]);
+
+  assert.equal(tracker.snapshots[0].complete, true);
+  assert.equal(tracker.snapshots[0].partial, false);
+});
+
 test("processes multiple due place trackers up to the requested batch limit", async () => {
   const dueAt = "2026-01-01T00:00:00.000Z";
   const { ctx, state } = testContext([
@@ -702,9 +1037,17 @@ test("processes multiple due place trackers up to the requested batch limit", as
     assert.equal(summary.checked, 3);
     assert.equal(summary.succeeded, 3);
     assert.equal(summary.found, 3);
+    assert.equal(summary.remaining, 1);
+    assert.equal(summary.drained, false);
+    assert.equal(state.lastRpcParams.lease_seconds, 360);
     assert.equal(state.tables[SNAPSHOTS].length, 3);
     assert.equal(state.tables[TRACKERS].filter((row) => row.last_checked_at).length, 3);
     assert.equal(state.tables[TRACKERS].find((row) => row.id === "due-4").last_checked_at, null);
+
+    const finalSummary = await runDuePlaceTrackers(ctx, { agencyCode: AGENCY_CODE, limit: 3 });
+    assert.equal(finalSummary.checked, 1);
+    assert.equal(finalSummary.remaining, 0);
+    assert.equal(finalSummary.drained, true);
   } finally {
     globalThis.fetch = originalFetch;
     if (previousProviderUrl === undefined) delete process.env.NAVER_PLACE_RANK_API_URL;

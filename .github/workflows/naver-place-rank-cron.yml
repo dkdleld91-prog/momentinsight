@@ -5,8 +5,8 @@ on:
     branches:
       - main
   schedule:
-    # KST 09:00/15:00 processing windows. Four runs can cover 20 advertisers
-    # without running concurrent Chromium sessions on the free collector.
+    # KST 09:00/15:00 processing windows. Each serialized job drains up to 20
+    # advertisers without running concurrent Chromium collector sessions.
     - cron: "0,5,10,15 0,6 * * *"
     # Post-window catch-up for delayed GitHub schedules or a sleeping collector.
     - cron: "43 1,7 * * *"
@@ -23,7 +23,7 @@ permissions: {}
 jobs:
   refresh-place-ranks:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 100
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
@@ -41,56 +41,134 @@ jobs:
             echo "Push-triggered deploy backfill: waiting briefly for production deployment."
             sleep 90
           fi
-          node <<'NODE'
-          const endpoint = "https://insight.momentlabs.co.kr/api/naver-place-rank-cron?limit=1";
+          node --input-type=module <<'NODE'
+          const endpoint = new URL("https://insight.momentlabs.co.kr/api/naver-place-rank-cron");
           const secret = process.env.MI_RANK_CRON_SECRET;
-          const maxAttempts = 5;
-          const totals = { attempted: 0, succeeded: 0, failed: 0, found: 0, notFound: 0 };
+          const batchSize = 1;
+          const maxBatches = 20;
+          const requestTimeoutMs = 260000;
+          const totals = { batches: 0, attempted: 0, succeeded: 0, failed: 0, found: 0, notFound: 0, partial: 0 };
+
+          endpoint.searchParams.set("limit", String(batchSize));
+          endpoint.searchParams.set("mode", "drain");
 
           const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-          async function callCron() {
-            return fetch(endpoint, { headers: { authorization: `Bearer ${secret}` } });
+
+          function count(value, label) {
+            if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+              throw new Error(`${label} must be a non-negative integer`);
+            }
+            return value;
           }
 
-          for (let index = 0; index < maxAttempts; index += 1) {
+          function flag(value, label) {
+            if (typeof value !== "boolean") {
+              throw new Error(`${label} must be a boolean`);
+            }
+            return value;
+          }
+
+          function payloadMessage(payload) {
+            return typeof payload?.message === "string" ? payload.message.slice(0, 240) : "";
+          }
+
+          async function callCron() {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
             let response;
+            let body;
             try {
-              response = await callCron();
+              response = await fetch(endpoint, {
+                headers: { authorization: `Bearer ${secret}` },
+                signal: controller.signal,
+              });
+              body = await response.text();
             } catch (error) {
-              console.log(`Transport failure on item ${index + 1}; retrying once in 15 seconds.`);
-              await sleep(15000);
-              response = await callCron();
+              throw new Error(`place rank cron transport failure: ${error?.message || "unknown_error"}`);
+            } finally {
+              clearTimeout(timeout);
             }
 
-            const payload = await response.json().catch(() => ({ ok: false, message: "invalid_json_response" }));
-            const summary = payload.summary || {};
+            if (!response.ok) {
+              throw new Error(`place rank cron returned HTTP ${response.status}`);
+            }
+
+            let payload;
+            try {
+              payload = JSON.parse(body);
+            } catch {
+              throw new Error("place rank cron returned invalid JSON");
+            }
+            if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+              throw new Error("place rank cron returned an invalid payload");
+            }
+            if (payload.ok !== true) {
+              throw new Error(`place rank cron payload reported failure: ${payloadMessage(payload) || "ok_not_true"}`);
+            }
+            if (!payload.summary || typeof payload.summary !== "object" || Array.isArray(payload.summary)) {
+              throw new Error("place rank cron response is missing summary");
+            }
+
+            const summary = payload.summary;
             const safe = {
               status: response.status,
-              ok: Boolean(payload.ok),
-              message: payload.message || "",
-              checked: Number(summary.checked || 0),
-              succeeded: Number(summary.succeeded || 0),
-              failed: Number(summary.failed || 0),
-              found: Number(summary.found || 0),
-              notFound: Number(summary.notFound || 0),
-              drained: Boolean(summary.drained),
-              configured: Boolean(summary.configured),
+              checked: count(summary.checked, "summary.checked"),
+              succeeded: count(summary.succeeded, "summary.succeeded"),
+              failed: count(summary.failed, "summary.failed"),
+              found: count(summary.found, "summary.found"),
+              notFound: count(summary.notFound, "summary.notFound"),
+              partial: summary.partial == null ? 0 : count(summary.partial, "summary.partial"),
+              remaining: count(summary.remaining, "summary.remaining"),
+              drained: flag(summary.drained, "summary.drained"),
+              configured: flag(summary.configured, "summary.configured"),
             };
-            console.log("Naver place rank cron item " + JSON.stringify(safe));
-
-            if (response.status === 401 || response.status === 403) {
-              throw new Error("cron authorization failed");
+            if (safe.checked !== safe.succeeded + safe.failed) {
+              throw new Error("place rank cron summary counts are inconsistent");
             }
-            if (safe.drained || safe.checked === 0) break;
+            if (safe.found + safe.notFound + safe.partial !== safe.succeeded) {
+              throw new Error("place rank cron outcome counts are inconsistent");
+            }
+            if (safe.failed > 0) {
+              throw new Error(`place rank cron reported ${safe.failed} failed tracker(s)`);
+            }
+            if (!safe.configured) {
+              throw new Error("place rank cron provider is not configured");
+            }
+            if (safe.drained !== (safe.remaining === 0)) {
+              throw new Error("place rank cron drained state is inconsistent with remaining count");
+            }
+            if (safe.checked === 0 && !safe.drained) {
+              throw new Error("place rank cron returned zero checked trackers before the queue drained");
+            }
+            return safe;
+          }
 
+          let drained = false;
+          for (let batch = 1; batch <= maxBatches; batch += 1) {
+            const safe = await callCron();
+            totals.batches += 1;
+            console.log("Naver place rank cron item " + JSON.stringify({ batch, ...safe }));
             totals.attempted += safe.checked;
             totals.succeeded += safe.succeeded;
             totals.failed += safe.failed;
             totals.found += safe.found;
             totals.notFound += safe.notFound;
-            await sleep(2000);
+            totals.partial += safe.partial;
+            if (safe.partial > 0) {
+              console.log(`::warning::Naver place rank cron returned ${safe.partial} partial tracker result(s) in batch ${batch}`);
+            }
+            if (safe.drained) {
+              drained = true;
+              break;
+            }
+            if (batch < maxBatches) await sleep(2000);
           }
 
-          console.log("Naver place rank cron window " + JSON.stringify(totals));
-          if (totals.failed > 0) process.exitCode = 1;
+          console.log("Naver place rank cron window " + JSON.stringify({ ...totals, drained }));
+          if (!drained) {
+            throw new Error(`Naver place rank cron reached the ${maxBatches}-batch safety cap before the queue reported drained`);
+          }
+          if (totals.partial > 0) {
+            throw new Error(`Naver place rank cron completed with ${totals.partial} partial tracker result(s)`);
+          }
           NODE

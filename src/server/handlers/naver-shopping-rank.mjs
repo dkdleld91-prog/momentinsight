@@ -453,13 +453,27 @@ async function fetchShoppingPage(env, keyword, start) {
     sort: "sim",
   });
 
-  return fetchJson(`${NAVER_OPENAPI_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
+  const payload = await fetchJson(`${NAVER_OPENAPI_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
     method: "GET",
     headers: {
       "X-Naver-Client-Id": env.openapiClientId,
       "X-Naver-Client-Secret": env.openapiClientSecret,
     },
   });
+  const total = Number(payload?.total);
+  if (
+    !payload
+    || typeof payload !== "object"
+    || Array.isArray(payload)
+    || !Array.isArray(payload.items)
+    || !Number.isInteger(total)
+    || total < 0
+    || payload.items.length > NAVER_SHOPPING_API_DISPLAY
+    || payload.items.length > total
+  ) {
+    throw new Error("shopping_rank_provider_invalid_response");
+  }
+  return { ...payload, total };
 }
 
 function itemProductId(item) {
@@ -980,13 +994,14 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   let rawCheckedCount = 0;
   let excludedAdCount = 0;
   let matchedResult = null;
+  let sourceExhausted = false;
   const topItems = [];
   const organicItems = [];
 
   for (let start = 1; start <= 1000 && organicCheckedCount < limit; start += NAVER_SHOPPING_API_DISPLAY) {
     const page = await fetchShoppingPage(env, queryKeyword, start);
     const items = Array.isArray(page?.items) ? page.items : [];
-    total = Number(page?.total || total || 0);
+    total = Number(page.total);
     const ranked = findOrganicMatchInItems(items, target, {
       organicOffset: organicCheckedCount,
       rawOffset: rawCheckedCount,
@@ -1009,7 +1024,13 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       };
     }
 
-    if (ranked.stoppedAtLimit || !items.length || items.length < NAVER_SHOPPING_API_DISPLAY) break;
+    if (ranked.stoppedAtLimit) break;
+    if (!items.length || items.length < NAVER_SHOPPING_API_DISPLAY) {
+      const availableWindowEnd = Math.min(total, 1000);
+      const returnedPageEnd = start + items.length - 1;
+      sourceExhausted = total === 0 || returnedPageEnd >= availableWindowEnd;
+      break;
+    }
   }
 
   if (matchedResult) {
@@ -1049,6 +1070,9 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       rankSelectionBasis: representative.rankSelectionBasis,
       rankPolicy: "organic_only",
       adExcluded: true,
+      complete: true,
+      partial: false,
+      stopReason: "target_found",
       total,
       checkedCount: organicCheckedCount,
       organicCheckedCount,
@@ -1089,6 +1113,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
   }
 
   const fallbackMetadataItem = metadataItem || await fetchProductMetadata(targetUrl, target.productId).catch(() => null);
+  const complete = organicCheckedCount >= limit || sourceExhausted;
   return {
     matched: false,
     rank: null,
@@ -1107,6 +1132,9 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     excludedAdCount,
     rankPolicy: "organic_only",
     adExcluded: true,
+    complete,
+    partial: !complete && organicCheckedCount > 0,
+    stopReason: complete ? (sourceExhausted ? "source_exhausted" : "rank_limit_reached") : "api_window_incomplete",
     targetProductId: target.productId,
     targetProductIds: target.productIds,
     targetCatalogId: target.catalogId,

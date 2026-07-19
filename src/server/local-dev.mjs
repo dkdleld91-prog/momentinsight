@@ -1,6 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
+import { logAdapterFailure, nodeRequestId } from "../../api/error-safety.mjs";
 
 const PORT = Number(process.env.PORT || 8790);
 
@@ -55,16 +56,21 @@ async function writeWebResponse(res, response) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const requestId = nodeRequestId(req);
   try {
     const request = await nodeRequestToWebRequest(req);
     const response = await app.fetch(request);
     await writeWebResponse(res, response);
   } catch (error) {
+    logAdapterFailure(req, requestId, error);
     res.statusCode = 500;
     res.setHeader("content-type", "application/json; charset=utf-8");
+    res.setHeader("x-request-id", requestId);
     res.end(JSON.stringify({
       ok: false,
-      message: error.message || "Internal server error"
+      message: "서버 처리 중 오류가 발생했습니다.",
+      code: "SERVER_ERROR",
+      requestId,
     }));
   }
 });

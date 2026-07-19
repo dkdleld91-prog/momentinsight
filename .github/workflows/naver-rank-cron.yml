@@ -21,7 +21,7 @@ permissions: {}
 jobs:
   refresh-ranks:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
@@ -39,49 +39,119 @@ jobs:
             echo "Push-triggered deploy backfill: waiting briefly for production deployment."
             sleep 90
           fi
+          node --input-type=module <<'NODE'
+          const endpoint = new URL("https://insight.momentlabs.co.kr/api/naver-rank-cron");
+          const secret = process.env.MI_RANK_CRON_SECRET;
+          const batchSize = 1;
+          const maxBatches = 10;
+          const requestTimeoutMs = 240000;
+          const totals = { batches: 0, checked: 0, succeeded: 0, failed: 0 };
 
-          response_file="$(mktemp)"
-          trap 'rm -f "$response_file"' EXIT
+          endpoint.searchParams.set("limit", String(batchSize));
+          endpoint.searchParams.set("mode", "drain");
 
-          call_cron() {
-            curl --show-error --silent \
-              --output "$response_file" \
-              --write-out "%{http_code}" \
-              -H "Authorization: Bearer ${MI_RANK_CRON_SECRET}" \
-              "https://insight.momentlabs.co.kr/api/naver-rank-cron?limit=100"
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          function count(value, label) {
+            if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+              throw new Error(`${label} must be a non-negative integer`);
+            }
+            return value;
           }
 
-          status_code="$(call_cron)"
-          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            echo "First cron call returned HTTP ${status_code}. Retrying once after 30 seconds."
-            sleep 30
-            status_code="$(call_cron)"
-          fi
-
-          node - "$response_file" <<'NODE'
-          const fs = require("node:fs");
-          const file = process.argv[2];
-          let payload = {};
-          try {
-            payload = JSON.parse(fs.readFileSync(file, "utf8") || "{}");
-          } catch {
-            payload = { ok: false, message: "invalid_json_response" };
+          function flag(value, label) {
+            if (typeof value !== "boolean") {
+              throw new Error(`${label} must be a boolean`);
+            }
+            return value;
           }
-          const summary = payload.summary || {};
-          const safe = {
-            ok: Boolean(payload.ok),
-            message: payload.message || "",
-            checked: Number(summary.checked || 0),
-            succeeded: Number(summary.succeeded || 0),
-            failed: Number(summary.failed || 0),
-            now: summary.now || "",
-          };
-          console.log("Naver rank cron summary " + JSON.stringify(safe));
+
+          function payloadMessage(payload) {
+            return typeof payload?.message === "string" ? payload.message.slice(0, 240) : "";
+          }
+
+          async function requestBatch() {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+            let response;
+            let body;
+            try {
+              response = await fetch(endpoint, {
+                headers: { authorization: `Bearer ${secret}` },
+                signal: controller.signal,
+              });
+              body = await response.text();
+            } catch (error) {
+              throw new Error(`rank cron transport failure: ${error?.message || "unknown_error"}`);
+            } finally {
+              clearTimeout(timeout);
+            }
+
+            if (!response.ok) {
+              throw new Error(`rank cron returned HTTP ${response.status}`);
+            }
+
+            let payload;
+            try {
+              payload = JSON.parse(body);
+            } catch {
+              throw new Error("rank cron returned invalid JSON");
+            }
+            if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+              throw new Error("rank cron returned an invalid payload");
+            }
+            if (payload.ok !== true) {
+              throw new Error(`rank cron payload reported failure: ${payloadMessage(payload) || "ok_not_true"}`);
+            }
+            if (!payload.summary || typeof payload.summary !== "object" || Array.isArray(payload.summary)) {
+              throw new Error("rank cron response is missing summary");
+            }
+
+            const safe = {
+              checked: count(payload.summary.checked, "summary.checked"),
+              succeeded: count(payload.summary.succeeded, "summary.succeeded"),
+              failed: count(payload.summary.failed, "summary.failed"),
+              remaining: count(payload.summary.remaining, "summary.remaining"),
+              drained: flag(payload.summary.drained, "summary.drained"),
+              configured: flag(payload.summary.configured, "summary.configured"),
+              now: typeof payload.summary.now === "string" ? payload.summary.now : "",
+            };
+            if (safe.checked !== safe.succeeded + safe.failed) {
+              throw new Error("rank cron summary counts are inconsistent");
+            }
+            if (safe.failed > 0) {
+              throw new Error(`rank cron reported ${safe.failed} failed tracker(s)`);
+            }
+            if (!safe.configured) {
+              throw new Error("rank cron provider is not configured");
+            }
+            if (safe.drained !== (safe.remaining === 0)) {
+              throw new Error("rank cron drained state is inconsistent with remaining count");
+            }
+            if (safe.checked === 0 && !safe.drained) {
+              throw new Error("rank cron returned zero checked trackers before the queue drained");
+            }
+            return safe;
+          }
+
+          let drained = false;
+          for (let batch = 1; batch <= maxBatches; batch += 1) {
+            const safe = await requestBatch();
+            totals.batches += 1;
+            totals.checked += safe.checked;
+            totals.succeeded += safe.succeeded;
+            totals.failed += safe.failed;
+            console.log("Naver rank cron batch " + JSON.stringify({ batch, ...safe }));
+
+            if (safe.drained) {
+              drained = true;
+              break;
+            }
+            if (batch < maxBatches) await sleep(1000);
+          }
+
+          console.log("Naver rank cron window " + JSON.stringify({ ...totals, drained }));
+          if (!drained) {
+            throw new Error(`Naver rank cron reached the ${maxBatches}-batch safety cap before the queue reported drained`);
+          }
           NODE
-
-          if [ "$status_code" -lt 200 ] || [ "$status_code" -ge 300 ]; then
-            echo "::error::Naver rank cron failed with HTTP ${status_code}."
-            exit 1
-          fi
-
-          echo "Naver rank cron accepted with HTTP ${status_code}."

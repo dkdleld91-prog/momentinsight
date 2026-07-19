@@ -9,8 +9,8 @@ const MAX_CRON_BATCH = 10;
 const PLACE_RANK_HISTORY_DAYS = 30;
 const PLACE_RANK_HISTORY_MAX_SNAPSHOTS = 120;
 const PLACE_TRACKER_LEASE_SECONDS = Math.max(
-  120,
-  Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 240))
+  300,
+  Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 360))
 );
 const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
@@ -507,18 +507,29 @@ function compactErrorMessage(value) {
   return normalizeText(value).slice(0, 500);
 }
 
+function placeTrackerLeaseLostError() {
+  const error = new Error("place_rank_tracker_lease_lost");
+  error.code = "PLACE_TRACKER_LEASE_LOST";
+  return error;
+}
+
+function isPlaceTrackerLeaseLost(error) {
+  return error?.code === "PLACE_TRACKER_LEASE_LOST" || error?.message === "place_rank_tracker_lease_lost";
+}
+
 function snapshotPayload(row) {
   const checkedCount = Math.max(0, Number(row.checked_count || 0));
+  const matched = Boolean(row.matched);
   return {
     id: row.id,
     trackerId: row.tracker_id,
     checkedAt: row.checked_at,
     rank: row.rank,
-    matched: row.matched,
+    matched,
     checkedCount: row.checked_count,
     requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
-    complete: checkedCount >= PLACE_RANK_TRACKER_MAX_RANK,
-    partial: checkedCount > 0 && checkedCount < PLACE_RANK_TRACKER_MAX_RANK,
+    complete: matched || checkedCount >= PLACE_RANK_TRACKER_MAX_RANK,
+    partial: !matched && checkedCount > 0 && checkedCount < PLACE_RANK_TRACKER_MAX_RANK,
     total: row.total,
     place: row.place || null,
     message: row.message,
@@ -657,6 +668,21 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
   return data;
 }
 
+async function assertPlaceTrackerLeaseOwnership(ctx, tracker) {
+  if (!tracker.processing_token) return;
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .select("id")
+    .eq("id", tracker.id)
+    .eq("status", "active")
+    .eq("processing_token", tracker.processing_token)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) throw placeTrackerLeaseLostError();
+}
+
 async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "") {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
   const bestRank = matchedRank
@@ -667,7 +693,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
     : tracker.worst_rank;
   const lastError = compactErrorMessage(errorMessage);
 
-  const { data, error } = await ctx.supabaseAdmin
+  let query = ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
     .update({
       status: tracker.status || "active",
@@ -687,11 +713,42 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       place_id: normalizeText(result?.place?.id || tracker.place_id) || null,
       place_name: normalizeText(result?.place?.name || tracker.place_name) || null,
     })
-    .eq("id", tracker.id)
-    .select(TRACKER_SELECT)
-    .single();
+    .eq("id", tracker.id);
+
+  // A worker whose lease expired must never overwrite a newer worker's result.
+  if (tracker.processing_token) query = query.eq("status", "active").eq("processing_token", tracker.processing_token);
+  const { data, error } = await query.select(TRACKER_SELECT).maybeSingle();
 
   if (error) throw error;
+  if (!data && tracker.processing_token) throw placeTrackerLeaseLostError();
+  if (!data) throw new Error("place_rank_tracker_not_found");
+  return data;
+}
+
+async function updateTrackerAfterPartial(ctx, tracker, checkedAt, result, message) {
+  let query = ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .update({
+      status: tracker.status || "active",
+      last_checked_at: checkedAt,
+      next_check_at: nextPlaceRankCheckAt(new Date(checkedAt)),
+      check_count: Number(tracker.check_count || 0) + 1,
+      last_message: message,
+      last_error: null,
+      processing_token: null,
+      processing_started_at: null,
+      processing_until: null,
+      retry_count: 0,
+      place_id: normalizeText(result?.place?.id || tracker.place_id) || null,
+      place_name: normalizeText(result?.place?.name || tracker.place_name) || null,
+    })
+    .eq("id", tracker.id);
+
+  if (tracker.processing_token) query = query.eq("status", "active").eq("processing_token", tracker.processing_token);
+  const { data, error } = await query.select(TRACKER_SELECT).maybeSingle();
+  if (error) throw error;
+  if (!data && tracker.processing_token) throw placeTrackerLeaseLostError();
+  if (!data) throw new Error("place_rank_tracker_not_found");
   return data;
 }
 
@@ -716,9 +773,11 @@ async function updateTrackerAfterFailure(ctx, tracker, attemptedAt, errorMessage
     })
     .eq("id", tracker.id);
 
-  if (tracker.processing_token) query = query.eq("processing_token", tracker.processing_token);
-  const { data, error } = await query.select(TRACKER_SELECT).single();
+  if (tracker.processing_token) query = query.eq("status", "active").eq("processing_token", tracker.processing_token);
+  const { data, error } = await query.select(TRACKER_SELECT).maybeSingle();
   if (error) throw error;
+  if (!data && tracker.processing_token) throw placeTrackerLeaseLostError();
+  if (!data) throw new Error("place_rank_tracker_not_found");
   return data;
 }
 
@@ -738,6 +797,7 @@ function providerResultMessage(result) {
   if (result?.notConfigured) return "네이버 플레이스 순위 소스가 아직 연결되지 않았습니다.";
   if (result?.needsPlaceName) return "플레이스 URL 자동 식별에 실패했습니다. URL을 확인한 뒤 다시 시도해주세요.";
   if (result?.officialPlaceIdOnly) return "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다.";
+  if (result?.partial) return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개까지 부분 확인했습니다. 기존 확정 순위는 유지합니다.";
   if (result?.officialLocalLimit) return "네이버 공식 검색 API 상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 장소를 찾지 못했습니다.";
   return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 플레이스를 찾지 못했습니다.";
 }
@@ -902,6 +962,8 @@ async function lookupMonthlySearchCount(config, keyword) {
 async function lookupNaverBlogCount(config, keyword) {
   if (!hasNaverLocalSearchConfig(config) || !normalizeText(keyword)) return null;
   const params = new URLSearchParams({ query: keyword, display: "1", start: "1" });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MI_PLACE_BLOG_COUNT_TIMEOUT_MS || 3500));
   try {
     const response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/blog.json?" + params.toString(), {
       method: "GET",
@@ -909,12 +971,15 @@ async function lookupNaverBlogCount(config, keyword) {
         "X-Naver-Client-Id": config.openapiClientId,
         "X-Naver-Client-Secret": config.openapiClientSecret,
       },
+      signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) return null;
     return normalizeMetricNumber(payload.total);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -957,10 +1022,12 @@ async function lookupNaverLocalSearchRank(config, tracker) {
 
   if (!targetName && !targetId) {
     return {
-      ok: true,
+      ok: false,
       matched: false,
       needsPlaceName: true,
-      officialLocalLimit: true,
+      requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
+      complete: false,
+      partial: false,
       checkedCount: 0,
       total: 0,
       place: {
@@ -977,16 +1044,25 @@ async function lookupNaverLocalSearchRank(config, tracker) {
     display: "5",
     start: "1",
   });
-  const response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/local.json?" + params.toString(), {
-    method: "GET",
-    headers: {
-      "X-Naver-Client-Id": config.openapiClientId,
-      "X-Naver-Client-Secret": config.openapiClientSecret,
-    },
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(payload.errorMessage || payload.message || "naver_local_search_failed");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.MI_PLACE_LOCAL_SEARCH_TIMEOUT_MS || 7000));
+  let response;
+  let payload;
+  try {
+    response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/local.json?" + params.toString(), {
+      method: "GET",
+      headers: {
+        "X-Naver-Client-Id": config.openapiClientId,
+        "X-Naver-Client-Secret": config.openapiClientSecret,
+      },
+      signal: controller.signal,
+    });
+    payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.errorMessage || payload.message || "naver_local_search_failed");
+    }
+  } finally {
+    clearTimeout(timeout);
   }
 
   const items = Array.isArray(payload.items) ? payload.items.map(naverLocalItemPayload) : [];
@@ -1010,6 +1086,11 @@ async function lookupNaverLocalSearchRank(config, tracker) {
     rank: matchedPlace ? matchedIndex + 1 : null,
     checkedCount: items.length,
     total: Number(payload.total || items.length || 0),
+    requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
+    complete: false,
+    partial: !matchedPlace,
+    partialReason: matchedPlace ? null : "official_local_limit",
+    stopReason: matchedPlace ? "target_found" : "official_local_limit",
     place: matchedPlace ? { ...matchedPlace, metrics } : unresolvedPlace,
     topPlaces: items,
     officialPlaceIdOnly,
@@ -1026,13 +1107,16 @@ async function lookupNaverLocalSearchRank(config, tracker) {
 async function lookupExternalPlaceProvider(config, tracker) {
   const controller = new AbortController();
   const configuredTimeoutMs = Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000);
-  // A 300-place Actor run needs more than the old 90-second browser budget.
-  // Keep enough room for the collector's 225-second provider chain while
-  // remaining below the Vercel function's 300-second maximum duration.
+  // A 300-place lookup can use both an Actor and browser fallback. The payload
+  // below splits this budget so the downstream collector finishes first.
   const providerTimeoutMs = Math.max(
     225000,
     Math.min(240000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 240000)
   );
+  // The collector may fall back from Apify to an 80-second browser lookup.
+  // Reserve that browser window and a final response buffer inside Vercel's
+  // provider timeout instead of letting the downstream job outlive its caller.
+  const apifyBudgetMs = Math.max(30_000, Math.min(135_000, providerTimeoutMs - 95_000));
   const timeout = setTimeout(
     () => controller.abort(),
     providerTimeoutMs
@@ -1050,33 +1134,68 @@ async function lookupExternalPlaceProvider(config, tracker) {
         placeUrl: tracker.place_url,
         placeName: tracker.place_name,
         maxRank: PLACE_RANK_TRACKER_MAX_RANK,
+        apifyBudgetMs,
       }),
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
-      throw new Error(payload.message || payload.error || "place_rank_provider_failed");
+    if (!response.ok || payload?.ok === false) {
+      throw new Error(payload?.message || payload?.error || "place_rank_provider_failed");
     }
 
-    const rawRank = Number(payload.rank || payload.position || 0);
-    const rank = rawRank >= 1 && rawRank <= PLACE_RANK_TRACKER_MAX_RANK ? rawRank : 0;
-    const matched = Boolean(payload.matched || rawRank > 0) && rank > 0;
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      throw new Error("place_rank_provider_invalid_response");
+    }
+
+    const hasMatchedField = Object.prototype.hasOwnProperty.call(payload, "matched");
+    if (hasMatchedField && typeof payload.matched !== "boolean") {
+      throw new Error("place_rank_provider_invalid_response");
+    }
+    const rawRankValue = payload.rank ?? payload.position ?? 0;
+    const rankProvided = rawRankValue !== null && rawRankValue !== undefined && String(rawRankValue).trim() !== "";
+    const rawRank = Number(rawRankValue);
+    const rank = Number.isInteger(rawRank) && rawRank >= 1 && rawRank <= PLACE_RANK_TRACKER_MAX_RANK
+      ? rawRank
+      : 0;
+    const invalidProvidedRank = rankProvided && rawRank !== 0 && !rank;
+    const contradictoryMatch = (payload.matched === true && !rank) || (payload.matched === false && Boolean(rank));
+    if (invalidProvidedRank || contradictoryMatch) {
+      throw new Error("place_rank_provider_invalid_response");
+    }
+    const matched = hasMatchedField ? payload.matched : rank > 0;
+    const topPlaces = Array.isArray(payload.topPlaces)
+      ? payload.topPlaces
+      : (Array.isArray(payload.items) ? payload.items : []);
+    const rawCheckedCount = payload.checkedCount ?? payload.checked_count ?? topPlaces.length;
+    const parsedCheckedCount = Number(rawCheckedCount);
+    const checkedCount = Math.min(
+      PLACE_RANK_TRACKER_MAX_RANK,
+      Math.max(matched ? rank : 0, Number.isFinite(parsedCheckedCount) ? Math.floor(parsedCheckedCount) : 0)
+    );
+    if (!matched && checkedCount <= 0) {
+      throw new Error("place_rank_provider_invalid_response");
+    }
+    const complete = !matched && checkedCount >= PLACE_RANK_TRACKER_MAX_RANK;
+    const partial = !matched && !complete;
     const metrics = normalizePlaceMetrics(payload.metrics || payload.place || payload.item || payload);
     const place = payload.place || payload.item || {};
     const placeWithMetrics = hasPlaceMetrics(metrics) ? { ...place, metrics: { ...(place.metrics || {}), ...metrics } } : place;
+    const parsedTotal = Number(payload.total ?? checkedCount);
     return {
       ok: true,
       matched,
       rank: matched ? rank : null,
-      checkedCount: Math.min(PLACE_RANK_TRACKER_MAX_RANK, Math.max(0, Number(payload.checkedCount || payload.checked_count || payload.total || 0))),
-      total: Number(payload.total || payload.checkedCount || payload.checked_count || 0),
+      checkedCount,
+      total: Number.isFinite(parsedTotal) ? Math.max(0, parsedTotal) : checkedCount,
       requestedMaxRank: PLACE_RANK_TRACKER_MAX_RANK,
-      complete: payload.complete === true,
-      partial: payload.partial === true || payload.complete === false,
-      partialReason: payload.partialReason || payload.partial_reason || null,
+      complete,
+      partial,
+      partialReason: partial
+        ? payload.partialReason || payload.partial_reason || payload.stopReason || payload.stop_reason || "collection_incomplete"
+        : null,
       stopReason: payload.stopReason || payload.stop_reason || null,
       place: placeWithMetrics,
-      topPlaces: Array.isArray(payload.topPlaces) ? payload.topPlaces : (Array.isArray(payload.items) ? payload.items : []),
+      topPlaces,
       source: payload.source || "naver_place_rank_provider",
       message: normalizeText(payload.message),
     };
@@ -1133,9 +1252,11 @@ async function lookupPlaceRank(tracker) {
 
 export async function runPlaceTrackerCheck(ctx, tracker) {
   const checkedAt = new Date().toISOString();
+  let activeTracker = tracker;
 
   try {
     const enrichedTracker = await enrichTrackerPlaceIdentity(ctx, tracker);
+    activeTracker = enrichedTracker;
     const result = await lookupPlaceRank(enrichedTracker);
     if (!result.ok) {
       const updated = await updateTrackerAfterFailure(
@@ -1152,26 +1273,56 @@ export async function runPlaceTrackerCheck(ctx, tracker) {
         message: result.message || providerResultMessage(result),
       };
     }
+    if (!result.matched && !result.complete && !result.partial) {
+      throw new Error("place_rank_provider_invalid_response");
+    }
     const message = result.message || providerResultMessage(result);
+    // Check the claim immediately before the non-transactional snapshot insert.
+    // The following tracker update is guarded by the same token as a second CAS.
+    await assertPlaceTrackerLeaseOwnership(ctx, enrichedTracker);
     const snapshot = await insertSnapshot(ctx, enrichedTracker, checkedAt, result, message, result.source || "naver_place_rank_provider");
-    const updated = await updateTrackerAfterCheck(
-      ctx,
-      enrichedTracker,
-      checkedAt,
-      result,
-      message,
-      ""
-    );
+    const updated = result.partial && !result.matched && !result.complete
+      ? await updateTrackerAfterPartial(ctx, enrichedTracker, checkedAt, result, message)
+      : await updateTrackerAfterCheck(
+        ctx,
+        enrichedTracker,
+        checkedAt,
+        result,
+        message,
+        ""
+      );
     return {
       ok: true,
-      outcome: result.matched ? "found" : "not_found",
+      outcome: result.matched ? "found" : (result.partial ? "partial" : "not_found"),
       tracker: updated,
       snapshot,
       result,
       message,
     };
   } catch (error) {
-    const updated = await updateTrackerAfterFailure(ctx, tracker, checkedAt, error?.message || "lookup_failed");
+    if (isPlaceTrackerLeaseLost(error)) {
+      return {
+        ok: false,
+        outcome: "lease_lost",
+        tracker: activeTracker,
+        message: "플레이스 순위 처리 권한이 만료되어 결과를 저장하지 않았습니다.",
+        error: "place_rank_tracker_lease_lost",
+      };
+    }
+
+    let updated;
+    try {
+      updated = await updateTrackerAfterFailure(ctx, activeTracker, checkedAt, error?.message || "lookup_failed");
+    } catch (updateError) {
+      if (!isPlaceTrackerLeaseLost(updateError)) throw updateError;
+      return {
+        ok: false,
+        outcome: "lease_lost",
+        tracker: activeTracker,
+        message: "플레이스 순위 처리 권한이 만료되어 결과를 저장하지 않았습니다.",
+        error: "place_rank_tracker_lease_lost",
+      };
+    }
     return {
       ok: false,
       outcome: "failed",
@@ -1291,6 +1442,7 @@ async function createTracker(request, ctx, body, access = {}) {
   const nextSortOrder = Number(sortOrderResult.data?.[0]?.sort_order || 0) + 100;
 
   const now = new Date();
+  const initialProcessingToken = crypto.randomUUID();
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
     .insert({
@@ -1304,6 +1456,10 @@ async function createTracker(request, ctx, body, access = {}) {
       status: "active",
       started_at: now.toISOString(),
       next_check_at: now.toISOString(),
+      processing_token: initialProcessingToken,
+      processing_started_at: now.toISOString(),
+      processing_until: new Date(now.getTime() + PLACE_TRACKER_LEASE_SECONDS * 1000).toISOString(),
+      last_attempt_at: now.toISOString(),
       last_message: "추적 등록 후 첫 플레이스 순위 확인 대기",
       sort_order: nextSortOrder,
     })
@@ -1324,6 +1480,29 @@ async function createTracker(request, ctx, body, access = {}) {
   }, 201);
 }
 
+async function claimPlaceTrackerForManualCheck(ctx, tracker, agencyCode) {
+  const now = new Date();
+  const processingToken = crypto.randomUUID();
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .update({
+      processing_token: processingToken,
+      processing_started_at: now.toISOString(),
+      processing_until: new Date(now.getTime() + PLACE_TRACKER_LEASE_SECONDS * 1000).toISOString(),
+      last_attempt_at: now.toISOString(),
+      last_message: "수동 플레이스 순위 갱신 처리 중입니다.",
+    })
+    .eq("id", tracker.id)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .eq("status", "active")
+    .or(`processing_until.is.null,processing_until.lte.${now.toISOString()}`)
+    .select(TRACKER_SELECT)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
 async function checkOne(request, ctx, body) {
   const agencyCode = requestAgencyCode(request, body);
   const trackerId = normalizeText(body.trackerId || body.id);
@@ -1339,7 +1518,11 @@ async function checkOne(request, ctx, body) {
   if (error) throw error;
   if (!data) return json(request, { ok: false, message: "플레이스 추적 항목을 찾을 수 없습니다." }, 404);
 
-  const tracker = await attachTrackerGroup(ctx, data);
+  const claimedTracker = await claimPlaceTrackerForManualCheck(ctx, data, agencyCode);
+  if (!claimedTracker) {
+    return json(request, { ok: false, message: "이미 플레이스 순위 갱신이 진행 중입니다. 잠시 후 다시 시도해주세요." }, 409);
+  }
+  const tracker = await attachTrackerGroup(ctx, claimedTracker);
   const checked = await runPlaceTrackerCheck(ctx, tracker);
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PLACE_RANK_HISTORY_MAX_SNAPSHOTS);
@@ -1421,6 +1604,17 @@ export async function runDuePlaceTrackers(ctx, options = {}) {
     results.push(await runPlaceTrackerCheck(ctx, tracker));
   }
 
+  let remainingQuery = ctx.supabaseAdmin
+    .from("naver_place_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .lte("next_check_at", now)
+    .or(`processing_until.is.null,processing_until.lte.${now}`);
+  if (options.agencyCode) remainingQuery = remainingQuery.in("agency_code", agencyCodeScope(options.agencyCode));
+  const remainingResult = await remainingQuery;
+  if (remainingResult.error) throw remainingResult.error;
+  const remaining = Math.max(0, Number(remainingResult.count || 0));
+
   return {
     now,
     checked: results.length,
@@ -1428,7 +1622,9 @@ export async function runDuePlaceTrackers(ctx, options = {}) {
     failed: results.filter((item) => !item.ok).length,
     found: results.filter((item) => item.outcome === "found").length,
     notFound: results.filter((item) => item.outcome === "not_found").length,
-    drained: results.length === 0,
+    partial: results.filter((item) => item.outcome === "partial").length,
+    remaining,
+    drained: remaining === 0,
     configured: hasPlaceRankLookupConfig(placeProviderConfig()),
     lookupMode: placeRankLookupMode(placeProviderConfig()),
     results: results.map((item) => ({
@@ -1447,11 +1643,14 @@ async function syncDueTrackers(request, ctx, body, access = {}) {
     agencyCode: access.agencyCode || requestAgencyCode(request, body),
     limit: body.limit || DEFAULT_CRON_BATCH,
   });
+  const ok = summary.failed === 0;
   return json(request, {
-    ok: true,
-    message: summary.checked ? "밀린 플레이스 순위 갱신을 처리했습니다." : "플레이스 갱신 대기 항목이 없습니다.",
+    ok,
+    message: ok
+      ? (summary.checked ? "밀린 플레이스 순위 갱신을 처리했습니다." : "플레이스 갱신 대기 항목이 없습니다.")
+      : "일부 플레이스 순위 갱신에 실패해 자동 재시도를 예약했습니다.",
     summary,
-  });
+  }, ok ? 200 : 502);
 }
 
 async function handlePost(request, ctx) {

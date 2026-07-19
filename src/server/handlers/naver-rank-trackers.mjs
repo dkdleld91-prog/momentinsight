@@ -319,8 +319,8 @@ function clampMaxRank() {
   return PRODUCT_RANK_TRACKER_MAX_RANK;
 }
 
-function trackerPayload(row, snapshots = [], keywordVolume = null) {
-  const recentSnapshots = (snapshots || []).slice(0, 30);
+export function trackerPayload(row, snapshots = [], keywordVolume = null) {
+  const recentSnapshots = (snapshots || []).filter(Boolean).slice(0, 30);
   const latestTrackingItem = recentSnapshots[0]?.item || {};
   return {
     id: row.id,
@@ -610,8 +610,33 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
   return data;
 }
 
+async function assertRankLeaseOwnership(ctx, trackerId, leaseStartedAt = "") {
+  if (!leaseStartedAt) return;
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id")
+    .eq("id", trackerId)
+    .eq("status", "active")
+    .eq("processing_started_at", leaseStartedAt)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) {
+    const leaseError = new Error("rank_tracker_lease_lost");
+    leaseError.code = "RANK_TRACKER_LEASE_LOST";
+    throw leaseError;
+  }
+}
+
 function compactErrorMessage(value) {
   return normalizeText(value || "").slice(0, 500);
+}
+
+function rankRetryAt(tracker, date = new Date()) {
+  const retryCount = Math.max(0, Number(tracker.retry_count || 0));
+  const delayMinutes = [5, 10, 20, 40, 80, 160, 320, 360][Math.min(retryCount, 7)];
+  return new Date(date.getTime() + delayMinutes * 60 * 1000).toISOString();
 }
 
 function canonicalTrackerProductId(tracker, result) {
@@ -723,7 +748,18 @@ export function representativeTrackingRankMessage(result = {}) {
   return shoppingRankMessage(result);
 }
 
-async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "") {
+function assertCompleteProductTrackingResult(result = {}) {
+  if (result.matched && positiveRank(result.rank)) return;
+
+  const checkedCount = Math.max(0, Number(result.checkedCount || 0));
+  if (result.complete === true || checkedCount >= PRODUCT_RANK_TRACKER_MAX_RANK) return;
+  if (result.partial === true || result.complete === false || checkedCount > 0) {
+    throw new Error("shopping_rank_lookup_incomplete");
+  }
+  throw new Error("shopping_rank_provider_invalid_response");
+}
+
+async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message, errorMessage = "", leaseStartedAt = "") {
   const matchedRank = result?.matched && result.rank ? Number(result.rank) : null;
   const nextCheckAt = nextRankCheckAt(new Date(checkedAt));
   const bestRank = matchedRank
@@ -734,7 +770,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
     : tracker.worst_rank;
   const lastError = compactErrorMessage(errorMessage);
 
-  const { data, error } = await ctx.supabaseAdmin
+  let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .update({
       status: tracker.status || "active",
@@ -751,28 +787,57 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       product_id: canonicalTrackerProductId(tracker, result),
       mall_name: tracker.mall_name || result?.exactItem?.mallName || result?.item?.mallName || null,
       product_title: tracker.product_title || result?.exactItem?.title || result?.item?.title || null,
+      ...(leaseStartedAt ? { processing_started_at: null, processing_until: null } : {}),
     })
-    .eq("id", tracker.id)
-    .select(TRACKER_SELECT)
-    .single();
+    .eq("id", tracker.id);
+
+  if (leaseStartedAt) query = query.eq("status", "active").eq("processing_started_at", leaseStartedAt);
+  const { data, error } = await query.select(TRACKER_SELECT).single();
 
   if (error) throw error;
   return data;
 }
 
-export async function runTrackerCheck(ctx, tracker) {
+async function updateTrackerAfterFailure(ctx, tracker, attemptedAt, message, errorMessage, leaseStartedAt = "") {
+  const retryCount = Math.max(0, Number(tracker.retry_count || 0)) + 1;
+  let query = ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      next_check_at: rankRetryAt(tracker, new Date(attemptedAt)),
+      last_message: message,
+      last_error: compactErrorMessage(errorMessage || "lookup_failed"),
+      retry_count: retryCount,
+      ...(leaseStartedAt ? { processing_started_at: null, processing_until: null } : {}),
+    })
+    .eq("id", tracker.id);
+
+  if (leaseStartedAt) query = query.eq("status", "active").eq("processing_started_at", leaseStartedAt);
+  const { data, error } = await query.select(TRACKER_SELECT).single();
+
+  if (error) throw error;
+  return data;
+}
+
+export async function runTrackerCheck(ctx, tracker, options = {}) {
   const checkedAt = new Date().toISOString();
-  const env = shoppingRankConfig();
+  const env = options.env ?? shoppingRankConfig();
+  const findShoppingRankImpl = options.findShoppingRank || findShoppingRank;
 
   if (!hasShoppingRankConfig(env)) {
-    const message = "네이버 쇼핑 검색 API 환경변수가 연결되지 않았습니다.";
-    const snapshot = await insertSnapshot(ctx, tracker, checkedAt, { matched: false }, message, "configuration");
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message, "shopping_api_not_configured");
-    return { ok: false, tracker: updated, snapshot, message };
+    const message = "네이버 쇼핑 검색 API 연결을 확인한 뒤 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
+    const updated = await updateTrackerAfterFailure(
+      ctx,
+      tracker,
+      checkedAt,
+      message,
+      "shopping_api_not_configured",
+      options.leaseStartedAt || ""
+    );
+    return { ok: false, tracker: updated, message, error: "shopping_api_not_configured" };
   }
 
   try {
-    const lookupResult = await findShoppingRank(env, {
+    const lookupResult = await findShoppingRankImpl(env, {
       keyword: tracker.keyword,
       targetProductId: tracker.product_id,
       targetUrl: tracker.product_url,
@@ -781,15 +846,33 @@ export async function runTrackerCheck(ctx, tracker) {
       maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     });
     const result = selectRepresentativeTrackingRank(lookupResult);
+    assertCompleteProductTrackingResult(result);
     const message = representativeTrackingRankMessage(result);
+    await assertRankLeaseOwnership(ctx, tracker.id, options.leaseStartedAt || "");
     const snapshot = await insertSnapshot(ctx, tracker, checkedAt, result, message);
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message);
+    const updated = await updateTrackerAfterCheck(
+      ctx,
+      tracker,
+      checkedAt,
+      result,
+      message,
+      "",
+      options.leaseStartedAt || ""
+    );
     return { ok: true, tracker: updated, snapshot, result, message };
   } catch (error) {
-    const message = "네이버 상품 순위 갱신에 실패했습니다.";
-    const snapshot = await insertSnapshot(ctx, tracker, checkedAt, { matched: false }, message, "naver_shopping_search_api");
-    const updated = await updateTrackerAfterCheck(ctx, tracker, checkedAt, { matched: false }, message, error?.message || "lookup_failed");
-    return { ok: false, tracker: updated, snapshot, message, error: error?.message || "lookup_failed" };
+    if (error?.code === "RANK_TRACKER_LEASE_LOST") throw error;
+    const message = "네이버 상품 순위 갱신에 실패해 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
+    const errorMessage = error?.message || "lookup_failed";
+    const updated = await updateTrackerAfterFailure(
+      ctx,
+      tracker,
+      checkedAt,
+      message,
+      errorMessage,
+      options.leaseStartedAt || ""
+    );
+    return { ok: false, tracker: updated, message, error: errorMessage };
   }
 }
 
@@ -837,6 +920,7 @@ async function createTracker(request, ctx, body, access = {}) {
   }
 
   const now = new Date();
+  const initialLeaseStartedAt = now.toISOString();
   const clientId = await findClientId(ctx, agencyCode);
   const activeCountResult = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -877,6 +961,8 @@ async function createTracker(request, ctx, body, access = {}) {
       started_at: now.toISOString(),
       ends_at: addDays(now, 3650),
       next_check_at: now.toISOString(),
+      processing_started_at: initialLeaseStartedAt,
+      processing_until: new Date(now.getTime() + RANK_TRACKER_LEASE_MS).toISOString(),
       last_message: "추적 등록 후 첫 순위 확인 대기",
       sort_order: nextSortOrder,
     })
@@ -886,7 +972,9 @@ async function createTracker(request, ctx, body, access = {}) {
   if (error) throw error;
 
   await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);
-  const checked = await runTrackerCheck(ctx, { ...data, group_name: groupName });
+  const checked = await runTrackerCheck(ctx, { ...data, group_name: groupName }, {
+    leaseStartedAt: initialLeaseStartedAt,
+  });
   const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
@@ -894,6 +982,34 @@ async function createTracker(request, ctx, body, access = {}) {
     message: checked.message,
     tracker: trackerPayload(checkedTracker, [checked.snapshot], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
+}
+
+async function claimTrackerForManualCheck(ctx, tracker, agencyCode) {
+  const leaseStartedAt = new Date().toISOString();
+  const leaseUntil = new Date(Date.parse(leaseStartedAt) + RANK_TRACKER_LEASE_MS).toISOString();
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      processing_started_at: leaseStartedAt,
+      processing_until: leaseUntil,
+      last_message: "수동 순위 갱신 처리 중입니다.",
+    })
+    .eq("id", tracker.id)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .eq("status", "active")
+    .or(`processing_until.is.null,processing_until.lt.${leaseStartedAt}`)
+    .select(TRACKER_SELECT)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingRankLeaseColumns(error)) {
+      const schemaError = new Error("rank_tracker_lease_schema_missing");
+      schemaError.code = "RANK_TRACKER_LEASE_SCHEMA_MISSING";
+      throw schemaError;
+    }
+    throw error;
+  }
+  return data ? { tracker: data, leaseStartedAt } : null;
 }
 
 async function checkOne(request, ctx, body) {
@@ -911,8 +1027,12 @@ async function checkOne(request, ctx, body) {
   if (error) throw error;
   if (!data) return json(request, { ok: false, message: "추적 항목을 찾을 수 없습니다." }, 404);
 
-  const tracker = await attachTrackerGroup(ctx, data);
-  const checked = await runTrackerCheck(ctx, tracker);
+  const claim = await claimTrackerForManualCheck(ctx, data, agencyCode);
+  if (!claim) {
+    return json(request, { ok: false, message: "이미 순위 갱신이 진행 중입니다. 잠시 후 다시 시도해주세요." }, 409);
+  }
+  const tracker = await attachTrackerGroup(ctx, claim.tracker);
+  const checked = await runTrackerCheck(ctx, tracker, { leaseStartedAt: claim.leaseStartedAt });
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
@@ -929,7 +1049,12 @@ async function stopTracker(request, ctx, body) {
 
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
-    .update({ status: "paused", last_message: "사용자 요청으로 추적을 중지했습니다." })
+    .update({
+      status: "paused",
+      processing_started_at: null,
+      processing_until: null,
+      last_message: "사용자 요청으로 추적을 중지했습니다.",
+    })
     .eq("id", trackerId)
     .in("agency_code", agencyCodeScope(agencyCode))
     .select(TRACKER_SELECT)
@@ -1090,7 +1215,7 @@ async function reorderTrackers(request, ctx, body) {
 async function syncDueTrackers(request, ctx, body, access) {
   const summary = await runDueTrackers(ctx, {
     agencyCode: access.agencyCode,
-    limit: body.limit || process.env.MI_RANK_CRON_BATCH || 100,
+    limit: body.limit || process.env.MI_RANK_CRON_BATCH || 1,
   });
   const ok = summary.failed === 0;
   return json(request, {
@@ -1102,7 +1227,7 @@ async function syncDueTrackers(request, ctx, body, access) {
   }, ok ? 200 : 502);
 }
 
-async function claimDueTracker(ctx, tracker, nowIso) {
+export async function claimDueTracker(ctx, tracker, nowIso) {
   const leaseUntil = new Date(Date.parse(nowIso) + RANK_TRACKER_LEASE_MS).toISOString();
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -1119,21 +1244,27 @@ async function claimDueTracker(ctx, tracker, nowIso) {
     .maybeSingle();
 
   if (error) {
-    if (isMissingRankLeaseColumns(error)) return { claimed: true, leaseSupported: false };
+    if (isMissingRankLeaseColumns(error)) {
+      const schemaError = new Error("rank_tracker_lease_schema_missing");
+      schemaError.code = "RANK_TRACKER_LEASE_SCHEMA_MISSING";
+      throw schemaError;
+    }
     throw error;
   }
 
   return { claimed: Boolean(data), leaseSupported: true };
 }
 
-async function clearDueTrackerClaim(ctx, trackerId) {
-  const { error } = await ctx.supabaseAdmin
+async function clearDueTrackerClaim(ctx, trackerId, leaseStartedAt) {
+  let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .update({
       processing_started_at: null,
       processing_until: null,
     })
     .eq("id", trackerId);
+  if (leaseStartedAt) query = query.eq("processing_started_at", leaseStartedAt);
+  const { error } = await query;
 
   if (error && !isMissingRankLeaseColumns(error)) {
     return { ok: false, message: error.message };
@@ -1141,8 +1272,8 @@ async function clearDueTrackerClaim(ctx, trackerId) {
   return { ok: true };
 }
 
-async function recordDueTrackerFailure(ctx, tracker, message) {
-  const { error } = await ctx.supabaseAdmin
+async function recordDueTrackerFailure(ctx, tracker, message, leaseStartedAt) {
+  let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .update({
       processing_started_at: null,
@@ -1150,8 +1281,11 @@ async function recordDueTrackerFailure(ctx, tracker, message) {
       last_message: "자동 순위 갱신 실패",
       last_error: compactErrorMessage(message || "rank_tracker_check_failed"),
       retry_count: Number(tracker.retry_count || 0) + 1,
+      next_check_at: rankRetryAt(tracker),
     })
     .eq("id", tracker.id);
+  if (leaseStartedAt) query = query.eq("processing_started_at", leaseStartedAt);
+  const { error } = await query;
 
   if (error && !isMissingRankLeaseColumns(error)) {
     return { ok: false, message: error.message };
@@ -1161,12 +1295,14 @@ async function recordDueTrackerFailure(ctx, tracker, message) {
 
 export async function runDueTrackers(ctx, options = {}) {
   const now = new Date().toISOString();
-  const limit = Math.max(1, Math.min(100, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 100)));
+  const configured = hasShoppingRankConfig(options.env ?? shoppingRankConfig());
+  const limit = Math.max(1, Math.min(100, Number(options.limit || process.env.MI_RANK_CRON_BATCH || 1)));
   let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
     .eq("status", "active")
     .lte("next_check_at", now)
+    .or(`processing_until.is.null,processing_until.lt.${now}`)
     .order("next_check_at", { ascending: true })
     .limit(limit);
 
@@ -1178,24 +1314,26 @@ export async function runDueTrackers(ctx, options = {}) {
   const results = [];
   for (const tracker of data || []) {
     // Claim rows before checking so overlapping cron calls do not refresh the same tracker.
-    // If the DB migration is not applied yet, the helper falls back to the previous behavior.
+    // Missing lease columns fail closed; readiness also verifies this schema contract.
     // Sequential checks keep Naver API quota usage predictable.
     // eslint-disable-next-line no-await-in-loop
     const claim = await claimDueTracker(ctx, tracker, now);
     if (!claim.claimed) continue;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const result = await runTrackerCheck(ctx, tracker);
+      const result = await runTrackerCheck(ctx, tracker, {
+        leaseStartedAt: claim.leaseSupported ? now : "",
+      });
       if (claim.leaseSupported) {
         // eslint-disable-next-line no-await-in-loop
-        const clearResult = await clearDueTrackerClaim(ctx, tracker.id);
+        const clearResult = await clearDueTrackerClaim(ctx, tracker.id, now);
         if (!clearResult.ok) result.leaseClearError = clearResult.message;
       }
       results.push(result);
     } catch (error) {
       if (claim.leaseSupported) {
         // eslint-disable-next-line no-await-in-loop
-        await recordDueTrackerFailure(ctx, tracker, error?.message || "rank_tracker_check_failed");
+        await recordDueTrackerFailure(ctx, tracker, error?.message || "rank_tracker_check_failed", now);
       }
       results.push({
         ok: false,
@@ -1206,11 +1344,25 @@ export async function runDueTrackers(ctx, options = {}) {
     }
   }
 
+  let remainingQuery = ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .lte("next_check_at", now)
+    .or(`processing_until.is.null,processing_until.lt.${now}`);
+  if (options.agencyCode) remainingQuery = remainingQuery.in("agency_code", agencyCodeScope(options.agencyCode));
+  const remainingResult = await remainingQuery;
+  if (remainingResult.error) throw remainingResult.error;
+  const remaining = Math.max(0, Number(remainingResult.count || 0));
+
   return {
     now,
     checked: results.length,
     succeeded: results.filter((item) => item.ok).length,
     failed: results.filter((item) => !item.ok).length,
+    remaining,
+    drained: remaining === 0,
+    configured,
     results: results.map((item) => ({
       ok: item.ok,
       trackerId: item.tracker?.id,

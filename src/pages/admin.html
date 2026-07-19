@@ -4583,6 +4583,47 @@
       font-weight: 950;
     }
 
+    #mi-admin .mi-owner-create-tool {
+      gap: 14px;
+      overflow: hidden;
+      border-color: rgba(6, 26, 58, 0.12);
+      padding: 16px;
+      background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.045);
+    }
+
+    #mi-admin .mi-owner-create-tool h3 {
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-owner-create-row .mi-input,
+    #mi-admin .mi-owner-create-row .mi-owner-create-action {
+      min-height: 46px;
+    }
+
+    #mi-admin .mi-owner-create-row .mi-input {
+      border-color: rgba(6, 26, 58, 0.12);
+      background: rgba(255, 255, 255, 0.94);
+    }
+
+    #mi-admin .mi-owner-create-row .mi-owner-create-action {
+      grid-column: 2;
+      grid-row: 2;
+      background: linear-gradient(135deg, #061a3a 0%, #0b2b59 100%);
+      box-shadow: 0 8px 18px rgba(6, 26, 58, 0.12);
+    }
+
+    #mi-admin .mi-owner-create-row .mi-owner-create-action:not(:disabled):hover {
+      background: linear-gradient(135deg, #082044 0%, #103665 100%);
+      box-shadow: 0 12px 24px rgba(6, 26, 58, 0.17);
+    }
+
     #mi-admin .mi-owner-hint {
       display: grid;
       gap: 6px;
@@ -5430,6 +5471,17 @@
       line-height: 1.45;
     }
 
+    @media (max-width: 1220px) {
+      #mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-owner-create-row .mi-owner-create-action {
+        grid-column: auto;
+        grid-row: auto;
+      }
+    }
+
     @media (max-width: 900px) {
       #mi-admin .mi-app {
         grid-template-columns: 1fr;
@@ -5764,6 +5816,7 @@
       #mi-admin .mi-card-actions {
         justify-content: flex-start;
       }
+
     }
 
     @media (max-width: 520px) {
@@ -6191,21 +6244,21 @@
                     <input class="mi-input" data-owner-root-code value="서버 보안 세션" readonly aria-label="메인 운영자 보안 상태" />
                   </div>
                 </div>
-                <div class="mi-owner-tool" data-owner-only>
+                <div class="mi-owner-tool mi-owner-create-tool" data-owner-only>
                   <h3>운영팀 코드 생성</h3>
-                  <div class="mi-form-row mi-form-row-3">
+                  <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
                     <input class="mi-input" data-owner-team-code placeholder="운영팀 코드" aria-label="운영팀 코드" />
                     <input class="mi-input" data-owner-team-name placeholder="운영팀명 선택 입력" aria-label="운영팀명" />
-                    <button class="mi-button" type="button" data-owner-team-create>운영팀 바로 생성</button>
+                    <button class="mi-button mi-owner-create-action" type="button" data-owner-team-create>운영팀 바로 생성</button>
                   </div>
                 </div>
-                <div class="mi-owner-tool">
+                <div class="mi-owner-tool mi-owner-create-tool">
                   <h3>광고주 코드 생성</h3>
-                  <div class="mi-form-row mi-form-row-3">
+                  <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
                     <input class="mi-input" data-team-code-for-client placeholder="선택 연결 운영팀 코드 · 비우면 총관리자 직접 발급" aria-label="광고주 발급용 운영팀 코드" />
                     <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드" aria-label="광고주 코드" />
                     <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
-                    <button class="mi-button" type="button" data-team-client-create>광고주 바로 생성</button>
+                    <button class="mi-button mi-owner-create-action" type="button" data-team-client-create>광고주 바로 생성</button>
                   </div>
                 </div>
                 <div class="mi-code-status" data-owner-code-status aria-live="polite">운영팀 코드를 만들고, 그 운영팀 코드로 광고주 코드를 1개 연결합니다.</div>

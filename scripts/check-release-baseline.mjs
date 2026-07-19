@@ -45,6 +45,16 @@ function functionBody(source, startMarker, endMarker) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
+const ownerCreateDesktopStyle = functionBody(
+  adminSource,
+  "#mi-admin .mi-owner-create-tool {",
+  "#mi-admin .mi-owner-hint {",
+);
+const ownerCreateResponsiveStyle = functionBody(
+  adminSource,
+  "@media (max-width: 1220px) {",
+  "@media (max-width: 900px) {",
+);
 const homeFeatureShowcaseSource = functionBody(
   homeSource,
   "<!-- mi-feature-showcase:start -->",
@@ -175,6 +185,18 @@ const checks = {
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
+  ownerCreateActionsSharePremiumGrid: (adminSource.match(/class="mi-form-row mi-form-row-3 mi-owner-create-row"/g) || []).length === 2
+    && (adminSource.match(/class="mi-button mi-owner-create-action" type="button" data-owner-team-create/g) || []).length === 1
+    && (adminSource.match(/class="mi-button mi-owner-create-action" type="button" data-team-client-create/g) || []).length === 1
+    && ownerCreateDesktopStyle.includes("#mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row")
+    && ownerCreateDesktopStyle.includes("grid-template-columns: repeat(2, minmax(0, 1fr));")
+    && ownerCreateDesktopStyle.includes("grid-column: 2;")
+    && ownerCreateDesktopStyle.includes("grid-row: 2;")
+    && ownerCreateDesktopStyle.includes(".mi-owner-create-action:not(:disabled):hover")
+    && ownerCreateResponsiveStyle.includes("#mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row")
+    && ownerCreateResponsiveStyle.includes("grid-template-columns: 1fr;")
+    && ownerCreateResponsiveStyle.includes("grid-column: auto;")
+    && ownerCreateResponsiveStyle.includes("grid-row: auto;"),
   ownerClientCodeRecoveryExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
     && superAdminServer.includes('action: "client.reactivated_by_owner"')
     && superAdminServer.includes("reactivated: true"),

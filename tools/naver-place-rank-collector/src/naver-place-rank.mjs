@@ -122,8 +122,26 @@ function normalizeUrl(value) {
   return text;
 }
 
+function extractMapSearchCoord(value) {
+  const candidate = normalizeUrl(value);
+  if (!/^https?:\/\//i.test(candidate)) return "";
+  try {
+    const url = new URL(candidate);
+    const lngText = normalizeText(url.searchParams.get("lng"));
+    const latText = normalizeText(url.searchParams.get("lat"));
+    const lng = Number(lngText);
+    const lat = Number(latText);
+    if (!lngText || !latText || !Number.isFinite(lng) || !Number.isFinite(lat)) return "";
+    if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return "";
+    return `${lngText};${latText}`;
+  } catch {
+    return "";
+  }
+}
+
 function cleanPlaceTitle(value) {
   return normalizeText(value)
+    .replace(/[\u0000-\u001F\u007F]+/g, " ")
     .replace(/\s*[:|-]\s*네이버\s*(지도|플레이스)?\s*$/i, "")
     .replace(/\s*-\s*NAVER\s*(Map|Place)?\s*$/i, "")
     .replace(/\s*네이버\s*지도\s*$/i, "")
@@ -157,7 +175,9 @@ function isLikelyPlaceName(value) {
 function candidateMatchesTarget(candidate, target) {
   const targetIds = collectTargetIds(target);
   const candidateIds = collectCandidateIds(candidate);
-  if (targetIds.length && candidateIds.some((id) => targetIds.includes(id))) return true;
+  // A persisted place ID is the authority. Never fall through to a fuzzy name
+  // match when the candidate identifies a different place (or has no ID).
+  if (targetIds.length) return candidateIds.some((id) => targetIds.includes(id));
 
   const targetName = normalizeComparable(target.placeName);
   const candidateName = normalizeComparable(candidate.name);
@@ -498,10 +518,15 @@ function normalizeApifyResult(items = [], maxRank = DEFAULT_MAX_RANK) {
     if (!leftRank && rightRank) return 1;
     return Number(left.sourceIndex || 0) - Number(right.sourceIndex || 0);
   });
-  const limitedCandidates = candidates.slice(0, maxRank).map((candidate, index) => ({
-    ...candidate,
-    rank: index + 1,
-  }));
+  const limitedCandidates = candidates
+    .filter((candidate) => !candidate.sourceRank || candidate.sourceRank <= maxRank)
+    .slice(0, maxRank)
+    .map((candidate, index) => ({
+      ...candidate,
+      // Some providers return sparse partial rows with their true organic rank.
+      // Preserve that evidence instead of renumbering the first returned row as 1.
+      rank: candidate.sourceRank || index + 1,
+    }));
   return {
     candidates: limitedCandidates,
     rawItemCount: Array.isArray(items) ? items.length : 0,
@@ -752,8 +777,12 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     };
 }
 
-function cachedCandidates(keyword, maxRank) {
-  const key = normalizeComparable(keyword) + ":" + maxRank;
+function candidateCacheKey(keyword, maxRank, searchCoord = "") {
+  return normalizeComparable(keyword) + ":" + maxRank + ":" + normalizeText(searchCoord);
+}
+
+function cachedCandidates(keyword, maxRank, searchCoord = "") {
+  const key = candidateCacheKey(keyword, maxRank, searchCoord);
   const entry = resultCache.get(key);
   if (!entry || Date.now() - entry.cachedAt > RESULT_CACHE_TTL_MS) {
     resultCache.delete(key);
@@ -770,9 +799,9 @@ function cachedCandidates(keyword, maxRank) {
   };
 }
 
-function rememberCandidates(keyword, maxRank, collection) {
+function rememberCandidates(keyword, maxRank, collection, searchCoord = "") {
   if (!collection.complete && collection.stopReason !== "naver_result_list_exhausted") return;
-  const key = normalizeComparable(keyword) + ":" + maxRank;
+  const key = candidateCacheKey(keyword, maxRank, searchCoord);
   resultCache.delete(key);
   resultCache.set(key, {
     cachedAt: Date.now(),
@@ -1202,8 +1231,9 @@ async function resolveMapSearch(page, keyword) {
   }
 }
 
-async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt) {
-  const cached = cachedCandidates(keyword, maxRank);
+async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt, preferredSearchCoord = "") {
+  const normalizedPreferredCoord = normalizeText(preferredSearchCoord);
+  const cached = cachedCandidates(keyword, maxRank, normalizedPreferredCoord);
   if (cached) return cached;
 
   const page = await context.newPage();
@@ -1211,7 +1241,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
     const shouldDeepScan = DEEP_SCAN || maxRank > 100;
     if (!shouldDeepScan) {
-      await page.goto(buildPlaceListUrl(keyword, maxRank), {
+      await page.goto(buildPlaceListUrl(keyword, maxRank, normalizedPreferredCoord), {
         waitUntil: "domcontentloaded",
         timeout: DEFAULT_TIMEOUT_MS,
         referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
@@ -1230,7 +1260,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         const domRows = await extractVisibleRows(page).catch(() => []);
         const fallback = selectorFallbackCollection([], domRows, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
         if (!fallback) throw selectorError;
-        rememberCandidates(keyword, maxRank, fallback);
+        rememberCandidates(keyword, maxRank, fallback, normalizedPreferredCoord);
         return fallback;
       }
 
@@ -1247,13 +1277,15 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         "single_pass_limit_reached",
         1
       );
-      rememberCandidates(keyword, maxRank, collection);
+      rememberCandidates(keyword, maxRank, collection, normalizedPreferredCoord);
       return collection;
     }
 
-    const initialSearch = await resolveMapSearch(page, keyword);
+    const initialSearch = normalizedPreferredCoord
+      ? { searchCoord: normalizedPreferredCoord, candidates: [], total: 0 }
+      : await resolveMapSearch(page, keyword);
 
-    const searchCoord = initialSearch.searchCoord;
+    const searchCoord = normalizedPreferredCoord || initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
       waitUntil: "domcontentloaded",
       timeout: DEFAULT_TIMEOUT_MS,
@@ -1275,7 +1307,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       const domRows = await extractVisibleRows(page).catch(() => []);
       const fallback = selectorFallbackCollection(initialSearch.candidates, domRows, resultLimit);
       if (!fallback) throw selectorError;
-      rememberCandidates(keyword, maxRank, fallback);
+      rememberCandidates(keyword, maxRank, fallback, normalizedPreferredCoord);
       return fallback;
     }
 
@@ -1287,7 +1319,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       advance: () => scrollListFrame(page),
       wait: (milliseconds) => page.waitForTimeout(milliseconds),
     });
-    rememberCandidates(keyword, maxRank, collection);
+    rememberCandidates(keyword, maxRank, collection, normalizedPreferredCoord);
     return collection;
   } finally {
     await page.close().catch(() => {});
@@ -1455,7 +1487,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
       // Trackers persist the canonical place ID after the first resolution.
       // Resolving the same short URL on every refresh adds a second browser
       // navigation and can exhaust the hosted collector request budget.
-      const resolved = placeUrl && !placeId
+      const resolved = placeUrl && (!placeId || !placeName)
         ? await resolvePlaceIdentityWithBrowser(context, placeUrl)
         : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
       const placeIds = uniqueValues([
@@ -1485,7 +1517,14 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         placeUrl: resolved.url || placeUrl,
         placeName,
       };
-      const collection = await collectCandidatesFromNaverMap(context, keyword, maxRank, collectionDeadlineAt);
+      const preferredSearchCoord = extractMapSearchCoord(placeUrl) || extractMapSearchCoord(resolved.url);
+      const collection = await collectCandidatesFromNaverMap(
+        context,
+        keyword,
+        maxRank,
+        collectionDeadlineAt,
+        preferredSearchCoord
+      );
       const candidates = collection.candidates;
       let matched = findMatch(candidates, target);
       const collectionStatus = buildCollectionStatus(collection, maxRank);
@@ -1548,7 +1587,10 @@ export const __testing = {
   buildApifyIdentityInput,
   buildApifySearchInput,
   clampMaxRank,
+  candidateMatchesTarget,
   collectRowsProgressively,
+  extractMapSearchCoord,
+  findMatch,
   lookupNaverPlaceRankViaApify,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,

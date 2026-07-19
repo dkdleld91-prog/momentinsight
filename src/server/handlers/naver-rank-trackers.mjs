@@ -832,6 +832,49 @@ export function representativeTrackingRankMessage(result = {}) {
   return shoppingRankMessage(result);
 }
 
+export function verifiedRelatedCatalogIdFromSnapshots(snapshots = [], trackerProductId = "") {
+  const exactProductId = normalizeText(trackerProductId);
+  const allowedSources = new Set(["related_catalog", "exact_product"]);
+  const orderedSnapshots = [...(Array.isArray(snapshots) ? snapshots : [])]
+    .sort((left, right) => (
+      (Date.parse(String(right?.checked_at || "")) || 0)
+      - (Date.parse(String(left?.checked_at || "")) || 0)
+    ));
+
+  for (const snapshot of orderedSnapshots) {
+    const item = snapshot?.item;
+    const relatedCatalogId = normalizeText(item?.relatedCatalogProductId);
+    if (snapshot?.matched !== true
+      || !item
+      || item.rankPolicy !== "organic_only"
+      || item.adExcluded !== true
+      || !allowedSources.has(item.trackingRankSource)
+      || !positiveRank(item.relatedCatalogRank)
+      || !/^[0-9]{5,}$/.test(relatedCatalogId)
+      || relatedCatalogId === exactProductId) continue;
+    return relatedCatalogId;
+  }
+  return "";
+}
+
+async function loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt) {
+  const checkedAfter = new Date(
+    new Date(checkedAt).getTime() - PRODUCT_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_rank_snapshots")
+    .select("id, tracker_id, checked_at, matched, item")
+    .eq("tracker_id", tracker.id)
+    .eq("matched", true)
+    .gte("checked_at", checkedAfter)
+    .lte("checked_at", checkedAt)
+    .order("checked_at", { ascending: false })
+    .limit(PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
+
+  if (error) throw error;
+  return verifiedRelatedCatalogIdFromSnapshots(data || [], tracker.product_id);
+}
+
 function assertCompleteProductTrackingResult(result = {}) {
   if (result.matched && positiveRank(result.rank)) return;
 
@@ -921,12 +964,14 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
   }
 
   try {
+    const verifiedRelatedCatalogId = await loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt);
     const lookupResult = await findShoppingRankImpl(env, {
       keyword: tracker.keyword,
       targetProductId: tracker.product_id,
       targetUrl: tracker.product_url,
       targetMallName: tracker.mall_name,
       targetProductTitle: tracker.product_title,
+      verifiedRelatedCatalogId,
       maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     });
     const result = selectRepresentativeTrackingRank(lookupResult);

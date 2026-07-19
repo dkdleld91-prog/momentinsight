@@ -618,6 +618,53 @@ test("does not read an oversized Naver place HTML response", async () => {
   assert.equal(result.resolved, false);
 });
 
+test("resolves a missing place name from the bounded official mobile detail page", async () => {
+  const originalUrl = "https://map.naver.com/p/entry/place/2019299673?placePath=%2Fhome";
+  const mobileHtml = [
+    "<html><head>",
+    "<meta property=\"og:title\" content=\"팽오리농장 부평점 : 네이버\u001c\">",
+    "</head><body>",
+    "x".repeat(540 * 1024),
+    "</body></html>",
+  ].join("");
+  const requestedUrls = [];
+
+  const result = await resolveNaverPlaceUrl(originalUrl, {
+    enforceDns: true,
+    lookup: async () => [{ address: "8.8.8.8", family: 4 }],
+    fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
+      if (String(url) === originalUrl) {
+        return new Response("<html><head></head><body>map shell</body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (String(url).includes("/place/2019299673/home")) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://m.place.naver.com/restaurant/2019299673/home" },
+        });
+      }
+      return new Response(mobileHtml, {
+        status: 200,
+        headers: {
+          "content-type": "text/html; charset=utf-8",
+          "content-length": String(Buffer.byteLength(mobileHtml)),
+        },
+      });
+    },
+  });
+
+  assert.equal(result.placeId, "2019299673");
+  assert.equal(result.placeName, "팽오리농장 부평점");
+  assert.deepEqual(requestedUrls, [
+    originalUrl,
+    "https://m.place.naver.com/place/2019299673/home",
+    "https://m.place.naver.com/restaurant/2019299673/home",
+  ]);
+});
+
 test("allows advertiser sync-due with its rank access code and rejects invalid access", async () => {
   const { ctx } = testContext([], {
     clients: [{ id: "client-1", agency_code: AGENCY_CODE, status: "active", disconnected_at: null }],
@@ -728,6 +775,63 @@ test("rejects contradictory or non-numeric place ranks from a successful provide
   }
 });
 
+test("rejects a provider result whose explicit place ID conflicts with the tracker", async () => {
+  const { ctx, state } = testContext([{
+    id: "conflicting-provider-id",
+    place_id: "2019299673",
+    place_name: "팽오리농장 부평점",
+    current_rank: 12,
+    check_count: 9,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: true,
+      rank: 7,
+      checkedCount: 7,
+      place: { id: "9999999999", name: "팽오리농장 부평점" },
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "place_rank_provider_invalid_response");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].place_id, "2019299673");
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].check_count, 9);
+});
+
+test("rejects a matched provider result that omits the tracked place ID", async () => {
+  const { ctx, state } = testContext([{
+    id: "missing-provider-id",
+    place_id: "2019299673",
+    place_name: "팽오리농장 부평점",
+    current_rank: 12,
+    check_count: 9,
+  }]);
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: true,
+      rank: 7,
+      checkedCount: 7,
+      place: { name: "팽오리농장 부평점" },
+      source: "test-collector",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "place_rank_provider_invalid_response");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].check_count, 9);
+});
+
 test("records a 62-result partial snapshot while preserving the last confirmed rank", async () => {
   const { ctx, state } = testContext([{
     id: "partial-provider",
@@ -765,6 +869,70 @@ test("records a 62-result partial snapshot while preserving the last confirmed r
   assert.equal(state.tables[TRACKERS][0].check_count, 10);
   assert.equal(state.tables[TRACKERS][0].found_count, 6);
   assert.equal(state.tables[TRACKERS][0].retry_count, 0);
+});
+
+test("refresh persists an official place name without inventing a rank", async () => {
+  const placeId = "2019299673";
+  const placeUrl = `https://map.naver.com/p/entry/place/${placeId}?placePath=%2Fhome`;
+  const mobileHtml = `<meta property="og:title" content="팽오리농장 부평점 : 네이버">${"x".repeat(540 * 1024)}`;
+  const { ctx, state } = testContext([{
+    id: "name-enrichment-partial",
+    place_url: placeUrl,
+    place_id: placeId,
+    place_name: null,
+    current_rank: 12,
+    check_count: 9,
+  }]);
+  let providerRequest = null;
+
+  const result = await withExternalProvider(
+    async (url, options = {}) => {
+      const requestUrl = String(url);
+      if (requestUrl === placeUrl) {
+        return new Response("<html><body>map shell</body></html>", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      }
+      if (requestUrl.includes(`/place/${placeId}/home`)) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: `https://m.place.naver.com/restaurant/${placeId}/home` },
+        });
+      }
+      if (requestUrl.includes(`/restaurant/${placeId}/home`)) {
+        return new Response(mobileHtml, {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "content-length": String(Buffer.byteLength(mobileHtml)),
+          },
+        });
+      }
+
+      providerRequest = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        ok: true,
+        matched: false,
+        rank: null,
+        checkedCount: 54,
+        total: 54,
+        complete: false,
+        partial: true,
+        partialReason: "naver_result_list_exhausted",
+        place: { id: placeId, name: "" },
+        source: "test-collector",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "partial");
+  assert.equal(result.result.rank, null);
+  assert.equal(providerRequest.placeName, "팽오리농장 부평점");
+  assert.equal(state.tables[TRACKERS][0].place_name, "팽오리농장 부평점");
+  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
 });
 
 test("clears current rank only after a full 300-result miss", async () => {
@@ -870,6 +1038,58 @@ test("treats an official top-five miss as partial and preserves the confirmed ra
   assert.equal(state.tables[TRACKERS][0].current_rank, 14);
   assert.equal(state.tables[TRACKERS][0].best_rank, 7);
   assert.equal(state.tables[TRACKERS][0].worst_rank, 19);
+});
+
+test("official lookup uses exact place ID before a same-name candidate", async () => {
+  const { ctx, state } = testContext([{
+    id: "official-exact-id",
+    place_id: "2019299673",
+    place_name: "팽오리농장 부평점",
+  }]);
+  const officialItems = [
+    {
+      title: "팽오리농장 부평점",
+      link: "https://map.naver.com/p/entry/place/9999999999",
+    },
+    {
+      title: "표시명이 변경된 대상 장소",
+      link: "https://map.naver.com/p/entry/place/2019299673",
+    },
+  ];
+
+  const result = await withOfficialProvider(
+    async (url) => String(url).includes("/v1/search/blog.json")
+      ? new Response(JSON.stringify({ total: 20 }), { status: 200 })
+      : new Response(JSON.stringify({ total: 2, items: officialItems }), { status: 200 }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "found");
+  assert.equal(result.result.rank, 2);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 2);
+});
+
+test("official lookup keeps name-only matching when the tracker has no place ID", async () => {
+  const { ctx, state } = testContext([{
+    id: "official-name-only",
+    place_id: null,
+    place_name: "대상 식당",
+  }]);
+
+  const result = await withOfficialProvider(
+    async (url) => String(url).includes("/v1/search/blog.json")
+      ? new Response(JSON.stringify({ total: 20 }), { status: 200 })
+      : new Response(JSON.stringify({
+        total: 1,
+        items: [{ title: "대상 식당", link: "https://map.naver.com/p/entry/place/1111111111" }],
+      }), { status: 200 }),
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "found");
+  assert.equal(result.result.rank, 1);
 });
 
 test("fails official lookup when neither place id nor name can be resolved", async () => {

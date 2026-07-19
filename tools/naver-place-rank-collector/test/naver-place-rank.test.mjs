@@ -8,7 +8,10 @@ const {
   buildApifyIdentityInput,
   buildApifySearchInput,
   clampMaxRank,
+  candidateMatchesTarget,
   collectRowsProgressively,
+  extractMapSearchCoord,
+  findMatch,
   lookupNaverPlaceRankViaApify,
   isApifyAccountLimitError,
   normalizeApifyCandidates,
@@ -293,6 +296,46 @@ test("normalizes and deduplicates Apify rows while excluding ads", () => {
     [1, "100", "첫 장소"],
     [2, "200", "둘째 장소"],
   ]);
+});
+
+test("requires an exact candidate ID whenever the tracker has a place ID", () => {
+  const target = { placeId: "2019299673", placeName: "팽오리농장 부평점" };
+  const wrongIdSameName = {
+    id: "9999999999",
+    name: "팽오리농장 부평점",
+    url: "https://map.naver.com/p/entry/place/9999999999",
+  };
+  const exactIdDifferentName = {
+    id: "2019299673",
+    name: "표시명이 변경된 장소",
+    url: "https://map.naver.com/p/entry/place/2019299673",
+  };
+
+  assert.equal(candidateMatchesTarget(wrongIdSameName, target), false);
+  assert.equal(candidateMatchesTarget({ name: target.placeName }, target), false);
+  assert.equal(candidateMatchesTarget(exactIdDifferentName, target), true);
+  assert.equal(findMatch([wrongIdSameName, exactIdDifferentName], target), exactIdDifferentName);
+  assert.equal(candidateMatchesTarget(wrongIdSameName, { placeName: target.placeName }), true);
+});
+
+test("preserves a sparse provider organic rank instead of renumbering it", () => {
+  const candidates = normalizeApifyCandidates([
+    { placeId: "ad-row", name: "광고 장소", organicRank: 1, isAd: true },
+    { placeId: "2019299673", name: "팽오리농장 부평점", organicRank: 87 },
+  ], 300);
+
+  assert.deepEqual(candidates.map((item) => [item.rank, item.sourceRank, item.id]), [
+    [87, 87, "2019299673"],
+  ]);
+});
+
+test("uses valid lng and lat from the tracked Naver map URL", () => {
+  assert.equal(
+    extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673?lng=126.7264456&lat=37.4925152"),
+    "126.7264456;37.4925152"
+  );
+  assert.equal(extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673?lng=999&lat=37"), "");
+  assert.equal(extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673"), "");
 });
 
 test("uses explicit organic rank fields when Actor rows arrive out of order", () => {

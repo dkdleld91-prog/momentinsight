@@ -916,6 +916,27 @@ function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyw
     .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
 }
 
+function verifiedRelatedCatalogItemFromOrganic(organicItems, verifiedRelatedCatalogId) {
+  const catalogId = numericId(verifiedRelatedCatalogId);
+  if (!catalogId) return null;
+  const catalogTarget = buildRankTarget({ targetCatalogId: catalogId });
+  const matchedEntry = (organicItems || []).find((entry) => (
+    entry?.isOrganic !== false
+    && !isAdItem(entry?.item)
+    && matchTargetItem(entry.item, catalogTarget).matched
+  ));
+  if (!matchedEntry) return null;
+
+  return {
+    ...serializeItem(matchedEntry.item, matchedEntry.rank),
+    isExactTarget: false,
+    isRelatedCatalog: true,
+    exposureType: "related_catalog",
+    exposureLabel: "관련 원부",
+    relationBasis: "prior_verified_catalog_id",
+  };
+}
+
 function sellerItemsFromOrganic(organicItems, matchedItem, target) {
   const matchedMallKey = mallNameKey(matchedItem?.mallName);
   if (!matchedMallKey) return [];
@@ -985,8 +1006,18 @@ function findOrganicMatchInItems(items, target, options = {}) {
   };
 }
 
-async function findRank(env, { keyword, targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId, maxRank }) {
+async function findRank(env, {
+  keyword,
+  targetProductId,
+  targetUrl,
+  targetMallName,
+  targetProductTitle,
+  targetCatalogId,
+  verifiedRelatedCatalogId,
+  maxRank,
+}) {
   const { target, metadataItem } = await resolveRankTarget({ targetProductId, targetUrl, targetMallName, targetProductTitle, targetCatalogId });
+  const continuityCatalogId = numericId(verifiedRelatedCatalogId);
   const queryKeyword = rankQueryKeyword(keyword);
   const limit = Math.max(100, Math.min(1000, Number(maxRank || 300)));
   let total = 0;
@@ -1033,12 +1064,24 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     }
   }
 
-  if (matchedResult) {
-    const sellerItems = sellerItemsFromOrganic(organicItems, matchedResult.item, target);
-    const productExposureItems = productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword);
+  const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(organicItems, continuityCatalogId);
+  if (matchedResult || continuityCatalogItem) {
+    const complete = organicCheckedCount >= limit || sourceExhausted;
+    const sellerItems = matchedResult ? sellerItemsFromOrganic(organicItems, matchedResult.item, target) : [];
+    const discoveredExposureItems = matchedResult
+      ? productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword)
+      : [];
+    const productExposureItems = continuityCatalogId
+      ? [
+        ...discoveredExposureItems.filter((item) => item?.isExactTarget),
+        ...(continuityCatalogItem ? [continuityCatalogItem] : []),
+      ].sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0))
+      : discoveredExposureItems;
     const representative = selectRepresentativeExposure(productExposureItems);
-    const exactItem = representative.exactItem || serializeItem(matchedResult.item, matchedResult.rank);
-    const representativeItem = representative.representativeItem || exactItem;
+    const exactItem = representative.exactItem
+      || (matchedResult ? serializeItem(matchedResult.item, matchedResult.rank) : null);
+    const representativeItem = representative.representativeItem || exactItem || continuityCatalogItem;
+    const matchedReferenceItem = matchedResult?.item || continuityCatalogItem;
     const relatedCatalogIds = productExposureItems
       .filter((item) => item.isRelatedCatalog)
       .map((item) => item.productId);
@@ -1057,10 +1100,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         pageSize: representativeItem.pageSize,
       },
       webPagePositionReason: "광고를 제외한 오가닉 순서를 40개 보기 기준 페이지와 페이지 내 순위로 표시합니다.",
-      matchType: matchedResult.matchType,
-      matchEvidence: matchedResult.matchEvidence,
-      matchedProductId: matchedResult.matchedProductId,
-      exactProductRank: exactItem.rank,
+      matchType: matchedResult?.matchType || "product_id",
+      matchEvidence: matchedResult?.matchEvidence || "prior_verified_catalog_id",
+      matchedProductId: matchedResult?.matchedProductId || continuityCatalogId,
+      exactProductRank: exactItem?.rank || null,
       relatedCatalogRank: representative.relatedCatalog?.rank || null,
       representativeProductId: representativeItem.productId || null,
       representativeExposureType: representativeItem.exposureType || "exact_product",
@@ -1070,9 +1113,9 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       rankSelectionBasis: representative.rankSelectionBasis,
       rankPolicy: "organic_only",
       adExcluded: true,
-      complete: true,
-      partial: false,
-      stopReason: "target_found",
+      complete,
+      partial: !complete && organicCheckedCount > 0,
+      stopReason: complete ? "target_found" : "api_window_incomplete",
       total,
       checkedCount: organicCheckedCount,
       organicCheckedCount,
@@ -1080,8 +1123,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       excludedAdCount,
       targetProductId: target.productId,
       targetProductIds: target.productIds,
-      targetCatalogId: target.catalogId,
-      targetCatalogIds: target.catalogIds,
+      targetCatalogId: target.catalogId || continuityCatalogId,
+      targetCatalogIds: uniqueValues([...target.catalogIds, continuityCatalogId]),
+      verifiedRelatedCatalogId: continuityCatalogId || null,
+      relatedCatalogContinuityUsed: Boolean(continuityCatalogItem),
       targetMode: target.targetMode,
       targetModeLabel: target.targetModeLabel,
       targetUrlKeys: target.urlKeys,
@@ -1093,7 +1138,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
       relatedCatalogIds,
       productExposureSummary: {
         keyword: normalizeText(keyword),
-        sellerName: normalizeText(matchedResult.item?.mallName || matchedResult.item?.brand),
+        sellerName: normalizeText(matchedReferenceItem?.mallName || matchedReferenceItem?.brand),
         totalCount: productExposureItems.length,
         organicCount: productExposureItems.length,
         adCount: excludedAdCount,
@@ -1102,7 +1147,7 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
         adCoverage: "explicit_ad_markers_excluded",
       },
       sellerResultSummary: {
-        mallName: normalizeText(matchedResult.item?.mallName),
+        mallName: normalizeText(matchedReferenceItem?.mallName),
         organicCount: sellerItems.length,
         checkedCount: organicCheckedCount,
         adCoverage: "explicit_ad_markers_excluded",
@@ -1137,8 +1182,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
     stopReason: complete ? (sourceExhausted ? "source_exhausted" : "rank_limit_reached") : "api_window_incomplete",
     targetProductId: target.productId,
     targetProductIds: target.productIds,
-    targetCatalogId: target.catalogId,
-    targetCatalogIds: target.catalogIds,
+    targetCatalogId: target.catalogId || continuityCatalogId,
+    targetCatalogIds: uniqueValues([...target.catalogIds, continuityCatalogId]),
+    verifiedRelatedCatalogId: continuityCatalogId || null,
+    relatedCatalogContinuityUsed: false,
     targetMode: target.targetMode,
     targetModeLabel: target.targetModeLabel,
     targetUrlKeys: target.urlKeys,
@@ -1149,7 +1196,10 @@ async function findRank(env, { keyword, targetProductId, targetUrl, targetMallNa
 
 function rankMessage(result) {
   if (result.matched && result.trackingRankSource === "related_catalog") {
-    return `관련 원부 ${result.rank}위가 입력 상품 ${result.exactProductRank}위보다 높아 대표 순위로 선택했습니다.`;
+    if (result.exactProductRank) {
+      return `관련 원부 ${result.rank}위가 입력 상품 ${result.exactProductRank}위보다 높아 대표 순위로 선택됐습니다.`;
+    }
+    return `과거 검증된 관련 원부가 ${result.rank}위로 확인되어 대표 순위로 선택됐습니다.`;
   }
   if (result.matched) return `입력 상품의 네이버쇼핑 오가닉 순위는 ${result.rank}위입니다.`;
   if (result.total) return `네이버쇼핑 오가닉 상위 ${result.checkedCount}개 결과에서 대상 상품을 찾지 못했습니다.`;
@@ -1171,6 +1221,7 @@ export {
   matchTargetItem,
   relatedCatalogItemsFromOrganic,
   productExposureItemsFromOrganic,
+  verifiedRelatedCatalogItemFromOrganic,
   selectRepresentativeExposure,
   sellerItemsFromOrganic,
   classifyNaverProductType,

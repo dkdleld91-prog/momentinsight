@@ -22,6 +22,7 @@ const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
 const NAVER_PLACE_URL_MAX_REDIRECTS = 3;
 const NAVER_PLACE_URL_MAX_HTML_BYTES = 512 * 1024;
+const NAVER_PLACE_DETAIL_MAX_HTML_BYTES = 768 * 1024;
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_PLACE_KEYWORD_VOLUME_CACHE_MAX || 300);
 const DEFAULT_RANK_GROUP = "기본 그룹";
@@ -253,7 +254,7 @@ function extractPlaceId(value) {
   const direct = text.match(/^\d{5,}$/);
   if (direct) return direct[0];
   const patterns = [
-    /\/place\/(\d+)/i,
+    /\/(?:entry\/place|place|restaurant|hospital|accommodation|hairshop|beauty|attraction|shopping)\/(\d+)/i,
     /[?&]placeId=(\d+)/i,
     /[?&]entry=pll[&#].*?[?&]id=(\d+)/i,
   ];
@@ -362,6 +363,7 @@ function metaContent(html, names) {
 
 function cleanPlaceNameCandidate(value) {
   return stripHtml(value)
+    .replace(/[\u0000-\u001F\u007F]+/g, " ")
     .replace(/\s*[:|-]\s*네이버\s*(지도|플레이스)?\s*$/i, "")
     .replace(/\s*-\s*NAVER\s*(Map|Place)?\s*$/i, "")
     .trim();
@@ -423,6 +425,24 @@ async function fetchNaverPlaceWithRedirects(originalUrl, options = {}) {
   throw new Error("naver_place_redirect_limit");
 }
 
+async function resolveNaverMobilePlaceName(placeId, options = {}) {
+  const normalizedPlaceId = normalizeText(placeId);
+  if (!/^\d{5,}$/.test(normalizedPlaceId)) return "";
+  try {
+    const mobileUrl = `https://m.place.naver.com/place/${normalizedPlaceId}/home`;
+    const { response } = await fetchNaverPlaceWithRedirects(mobileUrl, options);
+    const contentType = normalizeText(response.headers.get("content-type"));
+    if (!/text\/html/i.test(contentType)) return "";
+    const html = await readResponseTextLimited(response, NAVER_PLACE_DETAIL_MAX_HTML_BYTES);
+    return cleanPlaceNameCandidate(
+      metaContent(html, ["og:title", "twitter:title"]) ||
+      (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
+    );
+  } catch {
+    return "";
+  }
+}
+
 export async function resolveNaverPlaceUrl(value, options = {}) {
   const originalUrl = normalizeUrlCandidate(value);
   const result = {
@@ -448,6 +468,9 @@ export async function resolveNaverPlaceUrl(value, options = {}) {
         metaContent(html, ["og:title", "twitter:title"]) ||
         (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
       );
+    }
+    if (!result.placeName && result.placeId) {
+      result.placeName = await resolveNaverMobilePlaceName(result.placeId, options);
     }
   } catch {
     return result;
@@ -1070,13 +1093,15 @@ function naverLocalItemPayload(item, index) {
 }
 
 function naverLocalItemMatchesTracker(tracker, item) {
+  const targetId = normalizeText(tracker.place_id);
+  if (targetId) {
+    const itemId = normalizeText(item.id) || extractPlaceId(item.link);
+    return Boolean(itemId && itemId === targetId);
+  }
+
   const targetName = compactComparableText(tracker.place_name);
   const itemName = compactComparableText(item.name || item.title);
   if (targetName && itemName && (itemName.includes(targetName) || targetName.includes(itemName))) return true;
-
-  const targetId = normalizeText(tracker.place_id);
-  const itemLink = normalizeText(item.link);
-  if (targetId && itemLink && itemLink.includes(targetId)) return true;
 
   return false;
 }
@@ -1248,6 +1273,23 @@ async function lookupExternalPlaceProvider(config, tracker) {
     const partial = !matched && !complete;
     const metrics = normalizePlaceMetrics(payload.metrics || payload.place || payload.item || payload);
     const place = payload.place || payload.item || {};
+    const targetPlaceId = normalizeText(tracker.place_id);
+    const providerPlaceId = normalizeText(
+      place.id ||
+      place.placeId ||
+      place.place_id ||
+      place.businessId ||
+      place.business_id ||
+      extractPlaceId(place.url || place.link)
+    );
+    const providerIdConflicts = Boolean(providerPlaceId && providerPlaceId !== targetPlaceId);
+    const matchedWithoutExactId = matched && providerPlaceId !== targetPlaceId;
+    if (
+      targetPlaceId &&
+      (providerIdConflicts || matchedWithoutExactId)
+    ) {
+      throw new Error("place_rank_provider_invalid_response");
+    }
     const placeWithMetrics = hasPlaceMetrics(metrics) ? { ...place, metrics: { ...(place.metrics || {}), ...metrics } } : place;
     const parsedTotal = Number(payload.total ?? checkedCount);
     return {

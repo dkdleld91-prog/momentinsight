@@ -9,6 +9,7 @@ import {
   runDueTrackers,
   runTrackerCheck,
   trackerPayload,
+  verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
 import { findShoppingRank } from "./naver-shopping-rank.mjs";
 
@@ -147,6 +148,8 @@ class MockQuery {
     this.operation = "select";
     this.values = null;
     this.filters = [];
+    this.orders = [];
+    this.rowLimit = Infinity;
   }
 
   update(values) {
@@ -163,6 +166,26 @@ class MockQuery {
 
   eq(column, value) {
     this.filters.push((row) => row[column] === value);
+    return this;
+  }
+
+  gte(column, value) {
+    this.filters.push((row) => row[column] >= value);
+    return this;
+  }
+
+  lte(column, value) {
+    this.filters.push((row) => row[column] <= value);
+    return this;
+  }
+
+  order(column, options = {}) {
+    this.orders.push({ column, ascending: options.ascending !== false });
+    return this;
+  }
+
+  limit(value) {
+    this.rowLimit = Math.max(0, Number(value || 0));
     return this;
   }
 
@@ -186,6 +209,15 @@ class MockQuery {
     const rows = this.state.tables[this.table] || [];
     const matches = (row) => this.filters.every((filter) => filter(row));
     let selected = rows.filter(matches);
+
+    for (const { column, ascending } of [...this.orders].reverse()) {
+      selected = [...selected].sort((left, right) => {
+        if (left[column] === right[column]) return 0;
+        const comparison = left[column] > right[column] ? 1 : -1;
+        return ascending ? comparison : -comparison;
+      });
+    }
+    selected = selected.slice(0, this.rowLimit);
 
     if (this.operation === "update") {
       this.state.updates.push({ table: this.table, values: { ...this.values } });
@@ -211,13 +243,13 @@ class MockQuery {
   }
 }
 
-function testContext(tracker) {
+function testContext(tracker, snapshots = []) {
   const state = {
     nextId: 1,
     updates: [],
     tables: {
       [TRACKERS]: [{ ...tracker }],
-      [SNAPSHOTS]: [],
+      [SNAPSHOTS]: snapshots.map((snapshot) => ({ ...snapshot })),
     },
   };
   return {
@@ -246,6 +278,176 @@ function assertRetryTime(nextCheckAt, startedAt, finishedAt, minutes) {
   assert.ok(value >= startedAt + minutes * 60 * 1000, `retry must be at least ${minutes} minutes later`);
   assert.ok(value <= finishedAt + minutes * 60 * 1000 + 100, `retry must be about ${minutes} minutes later`);
 }
+
+function shoppingResultItem(index, overrides = {}) {
+  const sellerProductId = String(80000000000 + index);
+  return {
+    productId: String(70000000000 + index),
+    link: `https://smartstore.naver.com/other-store/products/${sellerProductId}`,
+    title: `일반 상품 ${index}`,
+    mallName: "다른판매처",
+    brand: "다른브랜드",
+    maker: "다른제조사",
+    category1: "생활/건강",
+    category2: "생활가전",
+    productType: "2",
+    ...overrides,
+  };
+}
+
+async function withShoppingResults(items, callback) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    assert.equal(url.hostname, "openapi.naver.com");
+    const start = Number(url.searchParams.get("start") || 1);
+    return new Response(JSON.stringify({
+      total: items.length,
+      items: items.slice(start - 1, start - 1 + 100),
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function verifiedCatalogSnapshot(overrides = {}) {
+  return {
+    id: "snapshot-verified-catalog",
+    tracker_id: "tracker-1",
+    checked_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    matched: true,
+    rank: 16,
+    item: {
+      trackingRankSource: "related_catalog",
+      relatedCatalogProductId: "57907660073",
+      relatedCatalogRank: 16,
+      rankPolicy: "organic_only",
+      adExcluded: true,
+    },
+    ...overrides,
+  };
+}
+
+test("only a prior matched organic snapshot can supply the continuity catalog id", () => {
+  const now = Date.now();
+  const snapshots = [
+    verifiedCatalogSnapshot({
+      id: "title-only-newer",
+      checked_at: new Date(now).toISOString(),
+      item: {
+        title: "같은 제목처럼 보이는 다른 원부",
+        productId: "99999999999",
+        relatedCatalogRank: 1,
+        trackingRankSource: "related_catalog",
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+    verifiedCatalogSnapshot({
+      id: "ad-contaminated-newer",
+      checked_at: new Date(now - 1000).toISOString(),
+      item: {
+        trackingRankSource: "related_catalog",
+        relatedCatalogProductId: "88888888888",
+        relatedCatalogRank: 2,
+        rankPolicy: "organic_only",
+        adExcluded: false,
+      },
+    }),
+    verifiedCatalogSnapshot({ checked_at: new Date(now - 2000).toISOString() }),
+  ];
+
+  assert.equal(verifiedRelatedCatalogIdFromSnapshots(snapshots, "12649811979"), "57907660073");
+  assert.equal(verifiedRelatedCatalogIdFromSnapshots([
+    verifiedCatalogSnapshot({
+      item: {
+        trackingRankSource: "related_catalog",
+        relatedCatalogProductId: "12649811979",
+        relatedCatalogRank: 3,
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+  ], "12649811979"), "");
+});
+
+test("a tracker reuses the exact prior catalog id when the seller product is outside 300", async () => {
+  const tracker = trackerRow({
+    keyword: "음파 전동칫솔",
+    product_id: "12649811979",
+    product_url: "https://smartstore.naver.com/lav/products/12649811979",
+  });
+  const { ctx, state } = testContext(tracker, [verifiedCatalogSnapshot()]);
+  let lookupOptions = null;
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: VALID_ENV,
+    findShoppingRank: async (_env, options) => {
+      lookupOptions = options;
+      return {
+        matched: true,
+        rank: 15,
+        trackingRankSource: "related_catalog",
+        exactProductRank: null,
+        relatedCatalogRank: 15,
+        checkedCount: 300,
+        complete: true,
+        partial: false,
+        productExposureItems: [{
+          rank: 15,
+          productId: "57907660073",
+          title: "라이브오랄스 오라원 회전법 음파전동칫솔",
+          isRelatedCatalog: true,
+          isOrganic: true,
+          relationBasis: "prior_verified_catalog_id",
+        }],
+        topItems: [],
+      };
+    },
+  });
+
+  assert.equal(lookupOptions.verifiedRelatedCatalogId, "57907660073");
+  assert.equal(result.ok, true);
+  assert.equal(state.tables[TRACKERS][0].current_rank, 15);
+  assert.equal(state.tables[SNAPSHOTS].length, 2);
+  assert.equal(state.tables[SNAPSHOTS][1].rank, 15);
+  assert.equal(state.tables[SNAPSHOTS][1].item.relatedCatalogProductId, "57907660073");
+  assert.equal(state.tables[SNAPSHOTS][1].item.trackingRankSource, "related_catalog");
+});
+
+test("a complete miss clears the current rank only after exact product and verified catalog are both absent", async () => {
+  const tracker = trackerRow({ product_id: "12649811979" });
+  const { ctx, state } = testContext(tracker, [verifiedCatalogSnapshot()]);
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: VALID_ENV,
+    findShoppingRank: async (_env, options) => {
+      assert.equal(options.verifiedRelatedCatalogId, "57907660073");
+      return {
+        matched: false,
+        checkedCount: 300,
+        total: 10000,
+        complete: true,
+        partial: false,
+        verifiedRelatedCatalogId: options.verifiedRelatedCatalogId,
+        productExposureItems: [],
+        topItems: [],
+      };
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(state.tables[TRACKERS][0].current_rank, null);
+  assert.equal(state.tables[TRACKERS][0].found_count, tracker.found_count);
+  assert.equal(state.tables[SNAPSHOTS].length, 2);
+  assert.equal(state.tables[SNAPSHOTS][1].matched, false);
+});
 
 test("missing shopping API config preserves the last good rank and schedules a five-minute retry", async () => {
   const tracker = trackerRow();
@@ -428,6 +630,176 @@ test("product snapshot pagination fails instead of returning a silently incomple
     loadProductSnapshots(ctx, ["tracker-dominant", "tracker-later"]),
     /rank_snapshot_pagination_stalled/,
   );
+});
+
+test("shopping lookup finds a prior verified catalog by exact id when the seller product is absent", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[14] = shoppingResultItem(14, {
+    productId: "57907660073",
+    link: "https://search.shopping.naver.com/catalog/57907660073",
+    title: "라이브오랄스 오라원 회전법 음파전동칫솔 진동 C타입 충전식",
+    mallName: "네이버",
+    brand: "라이브오랄스",
+    maker: "라이브오랄스",
+    category2: "구강청정기기",
+    productType: "1",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "음파 전동칫솔",
+      targetProductId: "12649811979",
+      verifiedRelatedCatalogId: "57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 15);
+    assert.equal(result.exactProductRank, null);
+    assert.equal(result.relatedCatalogRank, 15);
+    assert.equal(result.trackingRankSource, "related_catalog");
+    assert.equal(result.matchEvidence, "prior_verified_catalog_id");
+    assert.equal(result.relatedCatalogContinuityUsed, true);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.productExposureItems.length, 1);
+    assert.equal(result.productExposureItems[0].productId, "57907660073");
+    assert.equal(result.productExposureItems[0].relationBasis, "prior_verified_catalog_id");
+  });
+});
+
+test("shopping lookup compares the exact seller product and verified catalog in one 300-result pass", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[23] = shoppingResultItem(23, {
+    productId: "57907660073",
+    link: "https://search.shopping.naver.com/catalog/57907660073",
+    title: "라이브오랄스 오라원 회전법 음파전동칫솔",
+    mallName: "네이버",
+    brand: "라이브오랄스",
+    category2: "구강청정기기",
+    productType: "1",
+  });
+  items[167] = shoppingResultItem(167, {
+    productId: "98765432101",
+    link: "https://smartstore.naver.com/lav/products/12649811979",
+    title: "라이브오랄스 음파 전동칫솔 회전 IPX8 방수",
+    mallName: "라이브오랄스",
+    brand: "라이브오랄스",
+    category2: "구강청정기기",
+    productType: "3",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "전동칫솔",
+      targetProductId: "12649811979",
+      verifiedRelatedCatalogId: "57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 24);
+    assert.equal(result.exactProductRank, 168);
+    assert.equal(result.relatedCatalogRank, 24);
+    assert.equal(result.trackingRankSource, "related_catalog");
+    assert.equal(result.checkedCount, 300);
+    assert.deepEqual(result.productExposureItems.map((item) => item.productId), [
+      "57907660073",
+      "98765432101",
+    ]);
+  });
+});
+
+test("shopping lookup does not claim a complete window when a later provider page is missing", async () => {
+  const firstPage = Array.from({ length: 100 }, (_, index) => shoppingResultItem(index));
+  firstPage[9] = shoppingResultItem(9, {
+    productId: "98765432101",
+    link: "https://smartstore.naver.com/lav/products/12649811979",
+    title: "라이브오랄스 음파 전동칫솔",
+    mallName: "라이브오랄스",
+    productType: "3",
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    const start = Number(url.searchParams.get("start") || 1);
+    return new Response(JSON.stringify({
+      total: 500,
+      items: start === 1 ? firstPage : [],
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "전동칫솔",
+      targetProductId: "12649811979",
+      verifiedRelatedCatalogId: "57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 10);
+    assert.equal(result.checkedCount, 100);
+    assert.equal(result.complete, false);
+    assert.equal(result.partial, true);
+    assert.equal(result.stopReason, "api_window_incomplete");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("shopping lookup never substitutes a title-similar catalog for the verified catalog id", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[4] = shoppingResultItem(4, {
+    productId: "99999999999",
+    link: "https://search.shopping.naver.com/catalog/99999999999",
+    title: "라이브오랄스 오라원 회전법 음파전동칫솔 진동 C타입 충전식",
+    mallName: "네이버",
+    brand: "라이브오랄스",
+    maker: "라이브오랄스",
+    category2: "구강청정기기",
+    productType: "1",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "음파 전동칫솔",
+      targetProductId: "12649811979",
+      targetMallName: "라이브오랄스",
+      targetProductTitle: "라이브오랄스 오라원 회전법 음파전동칫솔 진동 C타입 충전식",
+      verifiedRelatedCatalogId: "57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, false);
+    assert.equal(result.complete, true);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.verifiedRelatedCatalogId, "57907660073");
+    assert.equal(result.relatedCatalogContinuityUsed, false);
+  });
+});
+
+test("shopping lookup excludes an ad even when it carries the verified catalog id", async () => {
+  const items = [
+    shoppingResultItem(999, {
+      productId: "57907660073",
+      link: "https://search.shopping.naver.com/catalog/57907660073",
+      productType: "1",
+      isAdProduct: true,
+    }),
+    ...Array.from({ length: 300 }, (_, index) => shoppingResultItem(index)),
+  ];
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "음파 전동칫솔",
+      targetProductId: "12649811979",
+      verifiedRelatedCatalogId: "57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, false);
+    assert.equal(result.complete, true);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.excludedAdCount, 1);
+  });
 });
 
 test("the real shopping lookup rejects an empty 2xx payload", async () => {

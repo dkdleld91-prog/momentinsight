@@ -10376,8 +10376,9 @@
         return "";
       }
 
-      function rankTrackerOpsSummary(trackers) {
+      function rankTrackerOpsSummary(trackers, latestRankResolver) {
         var list = trackers || [];
+        var resolveLatestRank = latestRankResolver || rankTrackerLatestRank;
         var now = Date.now();
         var active = list.filter(function (tracker) { return tracker.status !== "paused" && tracker.status !== "completed"; }).length;
         var due = list.filter(function (tracker) {
@@ -10386,7 +10387,7 @@
         }).length;
         var errors = list.filter(function (tracker) {
           var message = String(tracker.lastMessage || tracker.lastError || "");
-          return tracker.status === "failed" || !rankTrackerLatestRank(tracker) || /실패|오류|환경변수|연결|미노출/.test(message);
+          return tracker.status === "failed" || !resolveLatestRank(tracker) || /실패|오류|환경변수|연결|미노출/.test(message);
         }).length;
         var latestAt = list.reduce(function (latest, tracker) {
           var value = tracker.lastCheckedAt ? new Date(tracker.lastCheckedAt).getTime() : 0;
@@ -10638,7 +10639,7 @@
           var rank = snapshot.rank
             ? rankText(snapshot.rank)
             : checkedCount > 0 && checkedCount < requestedMaxRank
-              ? formatNumber(checkedCount) + "위까지"
+              ? formatNumber(checkedCount) + "개 확인"
               : "-";
           var blogCount = placeSnapshotMetric(snapshot, ["blogCount", "blog_count", "blogReviewCount", "blog_review_count"], null);
           var visitReviewCount = placeSnapshotMetric(snapshot, ["visitReviewCount", "visit_review_count", "visitorReviewCount", "visitor_review_count", "reviewCount", "review_count"], null);
@@ -10657,7 +10658,7 @@
 
       function placeTrackerActionNote(tracker) {
         var message = String(tracker.lastMessage || tracker.lastError || "");
-        var latest = rankTrackerLatestRank(tracker);
+        var latest = placeTrackerLatestRank(tracker);
         var latestSnapshot = tracker.snapshots && tracker.snapshots[0] ? tracker.snapshots[0] : {};
         var checkedCount = Number(latestSnapshot.checkedCount || 0);
         var requestedMaxRank = Number(latestSnapshot.requestedMaxRank || tracker.maxRank || 300);
@@ -10669,7 +10670,7 @@
         }
         if (!latest) {
           if (checkedCount > 0 && checkedCount < requestedMaxRank) {
-            return { label: formatNumber(checkedCount) + "위까지 확인 · 이후 미검증", className: "is-warn" };
+            return { label: "오가닉 " + formatNumber(checkedCount) + "개 확인 · 이후 미검증", className: "is-warn" };
           }
           return { label: "범위 내 미노출", className: "is-error" };
         }
@@ -10685,6 +10686,48 @@
       function rankTrackerLatestRank(tracker) {
         var snapshots = tracker.snapshots || [];
         return rankTrackerRankValue(tracker.currentRank || (snapshots[0] && snapshots[0].rank));
+      }
+
+      function placeTrackerLatestRank(tracker) {
+        var snapshots = tracker && tracker.snapshots ? tracker.snapshots : [];
+        if (snapshots.length) return rankTrackerRankValue(snapshots[0] && snapshots[0].rank);
+        return rankTrackerRankValue(tracker && tracker.currentRank);
+      }
+
+      function placeTrackerPreviousRank(tracker) {
+        var snapshots = tracker && tracker.snapshots ? tracker.snapshots : [];
+        return rankTrackerRankValue((snapshots[1] && snapshots[1].rank) || (snapshots.length ? 0 : tracker && tracker.previousRank));
+      }
+
+      function placeTrackerChangeLabel(tracker) {
+        var latest = placeTrackerLatestRank(tracker);
+        var previous = placeTrackerPreviousRank(tracker);
+        if (!latest || !previous) return "전회 데이터 대기";
+        if (latest === previous) return "전회 대비 변동 없음";
+        return latest < previous ? "전회 대비 " + (previous - latest) + "위 상승" : "전회 대비 " + (latest - previous) + "위 하락";
+      }
+
+      function placeTrackerTrend(tracker) {
+        var latest = placeTrackerLatestRank(tracker);
+        var previous = placeTrackerPreviousRank(tracker);
+        if (!latest || !previous || latest === previous) return "flat";
+        return latest < previous ? "improved" : "dropped";
+      }
+
+      function placeTrackerNeedsAttention(tracker) {
+        var message = String(tracker.lastMessage || tracker.lastError || "");
+        var retryCount = Number(tracker.retryCount || 0);
+        return tracker.status === "failed" || retryCount > 0 || !placeTrackerLatestRank(tracker) || /실패|오류|환경변수|연결/.test(message);
+      }
+
+      function placeTrackerInsight(tracker) {
+        if (placeTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        var trend = placeTrackerTrend(tracker);
+        if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
+        if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
+        var latest = placeTrackerLatestRank(tracker);
+        if (latest && latest <= 10) return { label: "상위권 유지", className: "is-ok" };
+        return { label: "정상 추적", className: "is-ok" };
       }
 
       function rankTrackerPreviousRank(tracker) {
@@ -12972,9 +13015,9 @@
           var normalizedText = String(text || "").trim().toLowerCase();
           if (group && rankTrackerGroupName(tracker) !== normalizeRankGroupName(group)) return false;
           if (normalizedText && placeTrackerSearchText(tracker).indexOf(normalizedText) < 0) return false;
-          if (mode === "attention") return rankTrackerNeedsAttention(tracker);
-          if (mode === "improved") return rankTrackerTrend(tracker) === "improved";
-          if (mode === "dropped") return rankTrackerTrend(tracker) === "dropped";
+          if (mode === "attention") return placeTrackerNeedsAttention(tracker);
+          if (mode === "improved") return placeTrackerTrend(tracker) === "improved";
+          if (mode === "dropped") return placeTrackerTrend(tracker) === "dropped";
           return true;
         }
 
@@ -13001,10 +13044,10 @@
         }
 
         function renderPlaceTrackerCard(tracker, selectedSet) {
-          var latest = rankTrackerLatestRank(tracker);
+          var latest = placeTrackerLatestRank(tracker);
           var best = rankTrackerRankValue(tracker.bestRank);
           var average = rankTrackerAverageRank(tracker, 7);
-          var insight = rankTrackerInsight(tracker);
+          var insight = placeTrackerInsight(tracker);
           var note = placeTrackerActionNote(tracker);
           var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
           var message = tracker.lastMessage || tracker.lastError || (latest ? "네이버 플레이스 " + rankText(latest) + "로 확인되었습니다." : "플레이스 순위 확인 대기");
@@ -13020,7 +13063,7 @@
             escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row mi-place-ops-row"><div class="mi-place-ops-primary"><span class="mi-rank-insight-pill' +
             rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) +
             '</span><span class="mi-rank-insight-pill ' + escapeHtml(insight.className) + '">' + escapeHtml(insight.label) +
-            '</span><span>' + escapeHtml(rankTrackerChangeLabel(tracker)) +
+            '</span><span>' + escapeHtml(placeTrackerChangeLabel(tracker)) +
             '</span><span>7일 평균 ' + escapeHtml(average ? rankText(average) : "-") +
             '</span></div><div class="mi-place-ops-meta"><span>그룹 ' + escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) +
             '</span><button class="mi-rank-group-edit" type="button" data-place-rank-group-edit="' + escapeHtml(tracker.id) + '">그룹 변경</button>' +
@@ -13039,7 +13082,7 @@
           filterGroup = card.getAttribute("data-rank-filter-group") || "";
           if (!list.length) {
             updatePlaceFilterPanel(0, 0, filterMode);
-            node.innerHTML = rankTrackerOpsSummary([]) + '<div class="mi-rank-state">등록 후 일별 순위 기록이 표시됩니다.</div>';
+            node.innerHTML = rankTrackerOpsSummary([], placeTrackerLatestRank) + '<div class="mi-rank-state">등록 후 일별 순위 기록이 표시됩니다.</div>';
             return;
           }
           var filtered = list.filter(function (tracker) {
@@ -13047,15 +13090,15 @@
           });
           updatePlaceFilterPanel(list.length, filtered.length, filterMode);
           if (!filtered.length) {
-            node.innerHTML = rankTrackerOpsSummary(list) + renderRankBulkBar(card, list) + '<div class="mi-rank-state">조건에 맞는 플레이스가 없습니다. 검색어 또는 필터를 조정해주세요.</div>';
+            node.innerHTML = rankTrackerOpsSummary(list, placeTrackerLatestRank) + renderRankBulkBar(card, list) + '<div class="mi-rank-state">조건에 맞는 플레이스가 없습니다. 검색어 또는 필터를 조정해주세요.</div>';
             return;
           }
           var collapsed = rankCollapsedGroupSet(card);
           var selectedSet = pruneRankSelected(card, list);
-          node.innerHTML = rankTrackerOpsSummary(list) + renderRankBulkBar(card, list) + '<div class="mi-rank-group-list">' + groupRankTrackers(filtered).map(function (group) {
+          node.innerHTML = rankTrackerOpsSummary(list, placeTrackerLatestRank) + renderRankBulkBar(card, list) + '<div class="mi-rank-group-list">' + groupRankTrackers(filtered).map(function (group) {
             var collapsedClass = collapsed.has(group.name) ? " is-collapsed" : "";
             var best = group.items.reduce(function (acc, tracker) {
-              var rank = rankTrackerLatestRank(tracker);
+              var rank = placeTrackerLatestRank(tracker);
               return rank ? Math.min(acc || rank, rank) : acc;
             }, 0);
             return '<section class="mi-rank-group-section' + collapsedClass + '" data-place-rank-group-section data-rank-group-name="' +

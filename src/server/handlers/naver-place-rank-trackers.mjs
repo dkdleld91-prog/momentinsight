@@ -818,19 +818,23 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
 }
 
 async function updateTrackerAfterPartial(ctx, tracker, checkedAt, result, message) {
+  const retryCount = Math.max(0, Number(tracker.retry_count || 0));
   let query = ctx.supabaseAdmin
     .from("naver_place_rank_trackers")
     .update({
       status: tracker.status || "active",
       last_checked_at: checkedAt,
-      next_check_at: nextPlaceRankCheckAt(new Date(checkedAt)),
+      next_check_at: placeRetryAt(tracker, new Date(checkedAt)),
+      // A partial lookup is not a current-rank observation. Preserve best/worst
+      // and snapshots, but never present the previous confirmed value as now.
+      current_rank: null,
       check_count: Number(tracker.check_count || 0) + 1,
       last_message: message,
       last_error: null,
       processing_token: null,
       processing_started_at: null,
       processing_until: null,
-      retry_count: 0,
+      retry_count: retryCount + 1,
       place_id: normalizeText(result?.place?.id || tracker.place_id) || null,
       place_name: normalizeText(result?.place?.name || tracker.place_name) || null,
     })
@@ -889,7 +893,7 @@ function providerResultMessage(result) {
   if (result?.notConfigured) return "네이버 플레이스 순위 소스가 아직 연결되지 않았습니다.";
   if (result?.needsPlaceName) return "플레이스 URL 자동 식별에 실패했습니다. URL을 확인한 뒤 다시 시도해주세요.";
   if (result?.officialPlaceIdOnly) return "플레이스ID는 확인했지만 네이버 공식 검색 API가 URL 기준 순위 매칭값을 반환하지 않았습니다.";
-  if (result?.partial) return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개까지 부분 확인했습니다. 기존 확정 순위는 유지합니다.";
+  if (result?.partial) return "오가닉 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개까지 부분 확인했으며 이후 순위는 미검증입니다.";
   if (result?.officialLocalLimit) return "네이버 공식 검색 API 상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 장소를 찾지 못했습니다.";
   return "상위 " + Number(result?.checkedCount || 0).toLocaleString("ko-KR") + "개 안에서 대상 플레이스를 찾지 못했습니다.";
 }

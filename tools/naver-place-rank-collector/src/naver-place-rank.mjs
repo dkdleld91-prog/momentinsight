@@ -122,23 +122,6 @@ function normalizeUrl(value) {
   return text;
 }
 
-function extractMapSearchCoord(value) {
-  const candidate = normalizeUrl(value);
-  if (!/^https?:\/\//i.test(candidate)) return "";
-  try {
-    const url = new URL(candidate);
-    const lngText = normalizeText(url.searchParams.get("lng"));
-    const latText = normalizeText(url.searchParams.get("lat"));
-    const lng = Number(lngText);
-    const lat = Number(latText);
-    if (!lngText || !latText || !Number.isFinite(lng) || !Number.isFinite(lat)) return "";
-    if (lng < -180 || lng > 180 || lat < -90 || lat > 90) return "";
-    return `${lngText};${latText}`;
-  } catch {
-    return "";
-  }
-}
-
 function cleanPlaceTitle(value) {
   return normalizeText(value)
     .replace(/[\u0000-\u001F\u007F]+/g, " ")
@@ -822,12 +805,12 @@ async function lookupNaverPlaceRankViaApify(payload = {}, fetchImpl = fetch) {
     };
 }
 
-function candidateCacheKey(keyword, maxRank, searchCoord = "") {
-  return normalizeComparable(keyword) + ":" + maxRank + ":" + normalizeText(searchCoord);
+function candidateCacheKey(keyword, maxRank) {
+  return normalizeComparable(keyword) + ":" + maxRank;
 }
 
-function cachedCandidates(keyword, maxRank, searchCoord = "") {
-  const key = candidateCacheKey(keyword, maxRank, searchCoord);
+function cachedCandidates(keyword, maxRank) {
+  const key = candidateCacheKey(keyword, maxRank);
   const entry = resultCache.get(key);
   if (!entry || Date.now() - entry.cachedAt > RESULT_CACHE_TTL_MS) {
     resultCache.delete(key);
@@ -844,9 +827,11 @@ function cachedCandidates(keyword, maxRank, searchCoord = "") {
   };
 }
 
-function rememberCandidates(keyword, maxRank, collection, searchCoord = "") {
-  if (!collection.complete && collection.stopReason !== "naver_result_list_exhausted") return;
-  const key = candidateCacheKey(keyword, maxRank, searchCoord);
+function rememberCandidates(keyword, maxRank, collection) {
+  // Never fan out a short or transiently truncated list to every tracker that
+  // shares a keyword. Only a fully collected requested range is cacheable.
+  if (!collection.complete) return;
+  const key = candidateCacheKey(keyword, maxRank);
   resultCache.delete(key);
   resultCache.set(key, {
     cachedAt: Date.now(),
@@ -934,8 +919,15 @@ async function waitForListFrame(page) {
 
 async function extractVisibleRows(frame) {
   return await frame.evaluate(() => {
-    const root = document.querySelector("#_pcmap_list_scroll_container") || document.body;
-    const rows = Array.from(root.querySelectorAll("li"));
+    const listRoot = document.querySelector("#_pcmap_list_scroll_container");
+    const root = listRoot || document.body;
+    // Promotional carousels such as "새로 오픈했어요" render nested <li>
+    // elements inside a real place card. Only top-level list rows represent
+    // organic rank positions.
+    const rows = Array.from(root.querySelectorAll("li")).filter((row) => {
+      const ancestorListItem = row.parentElement?.closest("li");
+      return !ancestorListItem || !root.contains(ancestorListItem);
+    });
     return rows.map((row, visibleIndex) => {
       const findPlaceItem = () => {
         const seen = new WeakSet();
@@ -974,17 +966,20 @@ async function extractVisibleRows(frame) {
       const placeItem = findPlaceItem();
       const text = (row.textContent || "").replace(/\s+/g, " ").trim();
       const adLink = row.querySelector("a[href*='help.naver.com/support/alias/NSP/NSP_53']");
+      const exactAdControl = Array.from(row.querySelectorAll("a, button, [role='button']"))
+        .some((node) => (node.textContent || "").replace(/\s+/g, " ").trim() === "광고");
       const placeId = String(placeItem?.id || placeItem?.apolloCacheId || "");
       if (placeId && placeItem?.name) {
         return {
           visibleIndex,
+          isPlaceListRow: Boolean(listRoot),
           id: placeId,
           text,
           aria: "",
           url: `https://map.naver.com/p/entry/place/${placeId}`,
           hrefs: [],
           html: "",
-          isAd: Boolean(placeItem.adId || placeItem.adClickLog || placeItem.adDescription || adLink) || /\b광고\b/.test(text),
+          isAd: Boolean(placeItem.adId || placeItem.adClickLog || placeItem.adDescription || adLink || exactAdControl),
           nameNodes: [placeItem.name],
           visitorReviewCount: placeItem.visitorReviewCount ?? "",
           blogReviewCount: placeItem.blogCafeReviewCount ?? "",
@@ -1002,13 +997,14 @@ async function extractVisibleRows(frame) {
       const aria = row.getAttribute("aria-label") || "";
       return {
         visibleIndex,
+        isPlaceListRow: Boolean(listRoot),
         id: placeId,
         text,
         aria,
         url,
         hrefs,
         html: (row.outerHTML || "").slice(0, 12000),
-        isAd: Boolean(adLink) || /\b광고\b/.test(text),
+        isAd: Boolean(adLink || exactAdControl),
         nameNodes: nameNodes.slice(0, 12),
         visitorReviewCount: "",
         blogReviewCount: "",
@@ -1077,28 +1073,55 @@ function toPublicCandidate(candidate, index) {
   };
 }
 
+function nextListScrollTop(state = {}) {
+  const scrollTop = Math.max(0, Number(state.scrollTop || 0));
+  const scrollHeight = Math.max(0, Number(state.scrollHeight || 0));
+  const clientHeight = Math.max(1, Number(state.clientHeight || 0));
+  const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+  const overlappingStep = Math.max(320, Math.floor(clientHeight * 0.72));
+  return Math.min(maxScrollTop, scrollTop + overlappingStep);
+}
+
 async function scrollListFrame(frame) {
-  return await frame.evaluate(() => {
+  const state = await frame.evaluate(() => {
     const root = document.querySelector("#_pcmap_list_scroll_container");
     if (!root) {
-      window.scrollBy(0, Math.max(700, window.innerHeight * 0.85));
+      return {
+        useWindow: true,
+        scrollTop: window.scrollY,
+        scrollHeight: document.body.scrollHeight,
+        clientHeight: window.innerHeight,
+      };
+    }
+    return {
+      useWindow: false,
+      scrollTop: root.scrollTop,
+      scrollHeight: root.scrollHeight,
+      clientHeight: root.clientHeight,
+    };
+  });
+  const nextScrollTop = nextListScrollTop(state);
+  return await frame.evaluate(({ nextScrollTop: next, useWindow }) => {
+    const root = document.querySelector("#_pcmap_list_scroll_container");
+    if (!root || useWindow) {
+      window.scrollTo(0, next);
+      window.dispatchEvent(new Event("scroll"));
       return {
         scrollTop: window.scrollY,
         scrollHeight: document.body.scrollHeight,
         clientHeight: window.innerHeight,
       };
     }
-    // The current PC list app appends the remaining organic rows when the
-    // scroll container reaches its end. A viewport-sized step made mid-ranked
-    // lookups exceed serverless request limits even though no ranks were lost.
-    root.scrollTop = root.scrollHeight;
+    // Naver virtualizes the PC list. An end jump can skip middle rows that
+    // never enter the DOM, so advance with overlap and ingest every viewport.
+    root.scrollTop = next;
     root.dispatchEvent(new Event("scroll", { bubbles: true }));
     return {
       scrollTop: root.scrollTop,
       scrollHeight: root.scrollHeight,
       clientHeight: root.clientHeight,
     };
-  });
+  }, { nextScrollTop, useWindow: Boolean(state.useWindow) });
 }
 
 function collectionResult(candidates, resultLimit, stopReason, scrollCount = 0) {
@@ -1112,26 +1135,22 @@ function collectionResult(candidates, resultLimit, stopReason, scrollCount = 0) 
   };
 }
 
-function selectorFallbackCollection(initialCandidates = [], domRows = [], resultLimit = NAVER_PLACE_MAX_RESULTS) {
+function selectorFallbackCollection(_previewCandidates = [], domRows = [], resultLimit = NAVER_PLACE_MAX_RESULTS) {
   const candidates = [];
-  [...initialCandidates]
-    .sort((left, right) => Number(left?.rank || 0) - Number(right?.rank || 0))
-    .forEach((candidate) => appendCandidate(candidates, {
-      id: candidate?.id || "",
-      placeIds: Array.isArray(candidate?.placeIds) ? candidate.placeIds : [],
-      text: normalizeText(candidate?.name),
-      nameNodes: [normalizeText(candidate?.name)].filter(Boolean),
-      url: candidate?.url || "",
-      isAd: candidate?.isAd === true,
-      visitorReviewCount: candidate?.visitorReviewCount ?? "",
-      blogReviewCount: candidate?.blogReviewCount ?? "",
-    }));
+  let identifiedCandidateCount = 0;
+  // /p/api/search/allSearch is a map-marker preview. Its order can diverge
+  // from the PC place list, so it must never become organic-rank evidence.
+  // Only rows proven to come from Naver's place-list scroll container are
+  // rank evidence. Body-wide menu/list rows must never inflate a rank.
+  // Within that verified list, ID-less organic rows still occupy a real
+  // position and must remain so a later target is never shifted upward.
+  domRows.filter((row) => row?.isPlaceListRow === true).forEach((row) => {
+    const appended = appendCandidate(candidates, row);
+    if (appended && collectCandidateIds(row).length > 0) identifiedCandidateCount += 1;
+  });
 
-  domRows
-    .filter((row) => collectCandidateIds(row).length > 0)
-    .forEach((row) => appendCandidate(candidates, row));
-
-  if (!candidates.length) return null;
+  // A body-wide fallback containing only labels/menu rows is not rank proof.
+  if (!candidates.length || identifiedCandidateCount === 0) return null;
   const publicCandidates = candidates
     .slice(0, Math.min(resultLimit, NAVER_PLACE_MAX_RESULTS))
     .map(toPublicCandidate);
@@ -1194,7 +1213,13 @@ async function collectRowsProgressively({
     const scrollState = await advance();
     scrollCount += 1;
 
-    for (let attempt = 0; attempt < growthPollAttempts; attempt += 1) {
+    // Mid-list virtual scrolling does not need six idle polls before the next
+    // overlapping step. Keep the longer wait only at the current list end,
+    // where Naver may still append another result batch.
+    const pollAttempts = atScrollEnd(scrollState)
+      ? growthPollAttempts
+      : Math.min(2, growthPollAttempts);
+    for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
       if (now() >= deadlineAt) {
         return collectionResult(candidates, resultLimit, "collection_deadline_reached", scrollCount);
       }
@@ -1276,9 +1301,8 @@ async function resolveMapSearch(page, keyword) {
   }
 }
 
-async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt, preferredSearchCoord = "") {
-  const normalizedPreferredCoord = normalizeText(preferredSearchCoord);
-  const cached = cachedCandidates(keyword, maxRank, normalizedPreferredCoord);
+async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt) {
+  const cached = cachedCandidates(keyword, maxRank);
   if (cached) return cached;
 
   const page = await context.newPage();
@@ -1286,7 +1310,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
     const shouldDeepScan = DEEP_SCAN || maxRank > 100;
     if (!shouldDeepScan) {
-      await page.goto(buildPlaceListUrl(keyword, maxRank, normalizedPreferredCoord), {
+      await page.goto(buildPlaceListUrl(keyword, maxRank), {
         waitUntil: "domcontentloaded",
         timeout: DEFAULT_TIMEOUT_MS,
         referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
@@ -1305,7 +1329,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         const domRows = await extractVisibleRows(page).catch(() => []);
         const fallback = selectorFallbackCollection([], domRows, Math.min(maxRank, NAVER_PLACE_MAX_RESULTS));
         if (!fallback) throw selectorError;
-        rememberCandidates(keyword, maxRank, fallback, normalizedPreferredCoord);
+        rememberCandidates(keyword, maxRank, fallback);
         return fallback;
       }
 
@@ -1322,15 +1346,14 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
         "single_pass_limit_reached",
         1
       );
-      rememberCandidates(keyword, maxRank, collection, normalizedPreferredCoord);
+      rememberCandidates(keyword, maxRank, collection);
       return collection;
     }
 
-    const initialSearch = normalizedPreferredCoord
-      ? { searchCoord: normalizedPreferredCoord, candidates: [], total: 0 }
-      : await resolveMapSearch(page, keyword);
-
-    const searchCoord = normalizedPreferredCoord || initialSearch.searchCoord;
+    // Ranking uses one neutral keyword search context. Coordinates embedded in
+    // the tracked place URL describe the target and must not bias list order.
+    const initialSearch = await resolveMapSearch(page, keyword);
+    const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
       waitUntil: "domcontentloaded",
       timeout: DEFAULT_TIMEOUT_MS,
@@ -1350,9 +1373,9 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     const resultLimit = Math.min(maxRank, NAVER_PLACE_MAX_RESULTS);
     if (selectorError) {
       const domRows = await extractVisibleRows(page).catch(() => []);
-      const fallback = selectorFallbackCollection(initialSearch.candidates, domRows, resultLimit);
+      const fallback = selectorFallbackCollection([], domRows, resultLimit);
       if (!fallback) throw selectorError;
-      rememberCandidates(keyword, maxRank, fallback, normalizedPreferredCoord);
+      rememberCandidates(keyword, maxRank, fallback);
       return fallback;
     }
 
@@ -1364,7 +1387,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
       advance: () => scrollListFrame(page),
       wait: (milliseconds) => page.waitForTimeout(milliseconds),
     });
-    rememberCandidates(keyword, maxRank, collection, normalizedPreferredCoord);
+    rememberCandidates(keyword, maxRank, collection);
     return collection;
   } finally {
     await page.close().catch(() => {});
@@ -1562,13 +1585,11 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         placeUrl: resolved.url || placeUrl,
         placeName,
       };
-      const preferredSearchCoord = extractMapSearchCoord(placeUrl) || extractMapSearchCoord(resolved.url);
       const collection = await collectCandidatesFromNaverMap(
         context,
         keyword,
         maxRank,
-        collectionDeadlineAt,
-        preferredSearchCoord
+        collectionDeadlineAt
       );
       const candidates = collection.candidates;
       let matched = findMatch(candidates, target);
@@ -1636,13 +1657,13 @@ export const __testing = {
   clampMaxRank,
   candidateMatchesTarget,
   collectRowsProgressively,
-  extractMapSearchCoord,
   findMatch,
   lookupNaverPlaceRankViaApify,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
   normalizeApifyCandidates,
   normalizeApifyResult,
+  nextListScrollTop,
   isApifyAccountLimitError,
   finalizeProviderFallback,
   selectorFallbackCollection,

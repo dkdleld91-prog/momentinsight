@@ -11,16 +11,22 @@ const {
   clampMaxRank,
   candidateMatchesTarget,
   collectRowsProgressively,
-  extractMapSearchCoord,
   findMatch,
   lookupNaverPlaceRankViaApify,
   isApifyAccountLimitError,
   normalizeApifyCandidates,
   normalizeApifyResult,
+  nextListScrollTop,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
   selectorFallbackCollection,
 } = __testing;
+
+test("advances the virtual place list in overlapping steps instead of jumping to the end", () => {
+  assert.equal(nextListScrollTop({ scrollTop: 0, scrollHeight: 5000, clientHeight: 1000 }), 720);
+  assert.equal(nextListScrollTop({ scrollTop: 720, scrollHeight: 5000, clientHeight: 1000 }), 1440);
+  assert.equal(nextListScrollTop({ scrollTop: 3800, scrollHeight: 5000, clientHeight: 1000 }), 4000);
+});
 
 test("caps the Apify actor chain so browser fallback fits the caller budget", () => {
   assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 500_000 }), 135_000);
@@ -142,12 +148,35 @@ test("returns a deadline partial reason instead of overstating checkedCount", as
   assert.equal(status.partialReason, "collection_deadline_reached");
 });
 
-test("uses ordered search API and identified DOM candidates when the list selector disappears", () => {
+test("does not spend the full growth poll budget on each mid-list scroll", async () => {
+  let elapsed = 0;
+  let waits = 0;
+  const collection = await collectRowsProgressively({
+    resultLimit: 300,
+    maxScrolls: 1,
+    deadlineAt: 10000,
+    now: () => elapsed,
+    readRows: async () => [placeRow(0)],
+    advance: async () => ({ scrollTop: 500, scrollHeight: 5000, clientHeight: 500 }),
+    wait: async (milliseconds) => {
+      waits += 1;
+      elapsed += milliseconds;
+    },
+    growthPollAttempts: 6,
+    growthPollIntervalMs: 220,
+  });
+
+  assert.equal(waits, 2);
+  assert.equal(collection.stopReason, "max_scrolls_reached");
+});
+
+test("keeps ID-less organic rows in DOM order when the list selector disappears", () => {
   const collection = selectorFallbackCollection([
     { rank: 2, id: "20002", placeIds: ["20002"], name: "둘째 장소", url: "https://map.naver.com/p/entry/place/20002", isAd: false },
     { rank: 1, id: "20001", placeIds: ["20001"], name: "첫째 장소", url: "https://map.naver.com/p/entry/place/20001", isAd: false },
   ], [
     {
+      isPlaceListRow: true,
       id: "20002",
       text: "둘째 장소",
       nameNodes: ["둘째 장소"],
@@ -155,6 +184,7 @@ test("uses ordered search API and identified DOM candidates when the list select
       isAd: false,
     },
     {
+      isPlaceListRow: true,
       id: "20003",
       text: "셋째 장소",
       nameNodes: ["셋째 장소"],
@@ -162,6 +192,7 @@ test("uses ordered search API and identified DOM candidates when the list select
       isAd: false,
     },
     {
+      isPlaceListRow: true,
       id: "29999",
       text: "광고 장소",
       nameNodes: ["광고 장소"],
@@ -169,6 +200,7 @@ test("uses ordered search API and identified DOM candidates when the list select
       isAd: true,
     },
     {
+      isPlaceListRow: true,
       text: "식별자가 없는 메뉴 항목",
       nameNodes: ["식별자가 없는 메뉴 항목"],
       url: "",
@@ -178,16 +210,113 @@ test("uses ordered search API and identified DOM candidates when the list select
 
   assert.ok(collection);
   assert.deepEqual(collection.candidates.map((candidate) => [candidate.rank, candidate.id]), [
-    [1, "20001"],
-    [2, "20002"],
-    [3, "20003"],
+    [1, "20002"],
+    [2, "20003"],
+    [3, ""],
   ]);
   assert.equal(collection.complete, false);
   assert.equal(collection.stopReason, "list_selector_unavailable_fallback");
 });
 
+test("does not compress a target rank past an ID-less organic row", () => {
+  const collection = selectorFallbackCollection([], [
+    {
+      isPlaceListRow: true,
+      id: "10001",
+      text: "첫째 장소",
+      nameNodes: ["첫째 장소"],
+      url: "https://map.naver.com/p/entry/place/10001",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: true,
+      text: "둘째 장소",
+      nameNodes: ["둘째 장소"],
+      url: "",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: true,
+      id: "10003",
+      text: "대상 장소",
+      nameNodes: ["대상 장소"],
+      url: "https://map.naver.com/p/entry/place/10003",
+      isAd: false,
+    },
+  ], 300);
+
+  assert.ok(collection);
+  const matched = findMatch(collection.candidates, { placeId: "10003" });
+  assert.equal(matched?.rank, 3);
+});
+
+test("does not count body menu rows as organic fallback positions", () => {
+  const collection = selectorFallbackCollection([], [
+    {
+      isPlaceListRow: false,
+      text: "지역 선택 메뉴",
+      nameNodes: ["지역 선택 메뉴"],
+      url: "",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: true,
+      id: "30001",
+      text: "첫째 장소",
+      nameNodes: ["첫째 장소"],
+      url: "https://map.naver.com/p/entry/place/30001",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: true,
+      id: "30002",
+      text: "대상 장소",
+      nameNodes: ["대상 장소"],
+      url: "https://map.naver.com/p/entry/place/30002",
+      isAd: false,
+    },
+  ], 300);
+
+  assert.ok(collection);
+  const matched = findMatch(collection.candidates, { placeId: "30002" });
+  assert.equal(matched?.rank, 2);
+});
+
+test("does not count a nested promotional card as an organic fallback position", () => {
+  const collection = selectorFallbackCollection([], [
+    {
+      isPlaceListRow: true,
+      id: "31001",
+      text: "첫째 장소",
+      nameNodes: ["첫째 장소"],
+      url: "https://map.naver.com/p/entry/place/31001",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: false,
+      text: "새로 오픈했어요 추천 장소",
+      nameNodes: ["새로 오픈했어요 추천 장소"],
+      url: "",
+      isAd: false,
+    },
+    {
+      isPlaceListRow: true,
+      id: "31002",
+      text: "대상 장소",
+      nameNodes: ["대상 장소"],
+      url: "https://map.naver.com/p/entry/place/31002",
+      isAd: false,
+    },
+  ], 300);
+
+  assert.ok(collection);
+  const matched = findMatch(collection.candidates, { placeId: "31002" });
+  assert.equal(matched?.rank, 2);
+});
+
 test("does not manufacture a successful fallback without identified candidates", () => {
   const collection = selectorFallbackCollection([], [{
+    isPlaceListRow: true,
     text: "식별할 수 없는 네이버 지도 메뉴",
     nameNodes: ["식별할 수 없는 네이버 지도 메뉴"],
     url: "",
@@ -197,7 +326,7 @@ test("does not manufacture a successful fallback without identified candidates",
   assert.equal(collection, null);
 });
 
-test("selector fallback never confirms absence even when its candidate count reaches the requested limit", () => {
+test("selector fallback ignores preview-only rows even when they reach the requested limit", () => {
   const collection = selectorFallbackCollection([{
     rank: 1,
     id: "40001",
@@ -207,19 +336,31 @@ test("selector fallback never confirms absence even when its candidate count rea
     isAd: false,
   }], [], 1);
 
+  assert.equal(collection, null);
+});
+
+test("never treats an allSearch preview rank as the PC organic rank", () => {
+  const collection = selectorFallbackCollection([{
+    rank: 7,
+    id: "1907427831",
+    placeIds: ["1907427831"],
+    name: "이화누룽지삼계탕",
+    url: "https://map.naver.com/p/entry/place/1907427831",
+    isAd: false,
+  }], [{
+    isPlaceListRow: true,
+    id: "1024272705",
+    text: "우삼집",
+    nameNodes: ["우삼집"],
+    url: "https://map.naver.com/p/entry/place/1024272705",
+    isAd: false,
+  }], 300);
+
   assert.ok(collection);
-  assert.equal(collection.candidates.length, 1);
-  assert.equal(collection.complete, false);
-  assert.equal(collection.stopReason, "list_selector_unavailable_fallback");
-  assert.deepEqual(buildCollectionStatus(collection, 1), {
-    checkedCount: 1,
-    total: 1,
-    requestedMaxRank: 1,
-    complete: false,
-    partial: true,
-    partialReason: "list_selector_unavailable_fallback",
-    stopReason: "list_selector_unavailable_fallback",
-  });
+  assert.deepEqual(collection.candidates.map((candidate) => [candidate.rank, candidate.id]), [
+    [1, "1024272705"],
+  ]);
+  assert.equal(collection.candidates.some((candidate) => candidate.id === "1907427831"), false);
 });
 
 test("clamps provider requests to the supported 300 result ceiling", () => {
@@ -328,15 +469,6 @@ test("preserves a sparse provider organic rank instead of renumbering it", () =>
   assert.deepEqual(candidates.map((item) => [item.rank, item.sourceRank, item.id]), [
     [87, 87, "2019299673"],
   ]);
-});
-
-test("uses valid lng and lat from the tracked Naver map URL", () => {
-  assert.equal(
-    extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673?lng=126.7264456&lat=37.4925152"),
-    "126.7264456;37.4925152"
-  );
-  assert.equal(extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673?lng=999&lat=37"), "");
-  assert.equal(extractMapSearchCoord("https://map.naver.com/p/entry/place/2019299673"), "");
 });
 
 test("uses explicit organic rank fields when Actor rows arrive out of order", () => {

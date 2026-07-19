@@ -865,7 +865,7 @@ test("rejects a matched provider result that omits the tracked place ID", async 
   assert.equal(state.tables[TRACKERS][0].check_count, 9);
 });
 
-test("records a 62-result partial snapshot while preserving the last confirmed rank", async () => {
+test("records a partial snapshot without presenting the previous rank as current", async () => {
   const { ctx, state } = testContext([{
     id: "partial-provider",
     current_rank: 12,
@@ -896,12 +896,16 @@ test("records a 62-result partial snapshot while preserving the last confirmed r
   assert.equal(result.result.partial, true);
   assert.equal(state.tables[SNAPSHOTS].length, 1);
   assert.equal(state.tables[SNAPSHOTS][0].checked_count, 62);
-  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].current_rank, null);
   assert.equal(state.tables[TRACKERS][0].best_rank, 8);
   assert.equal(state.tables[TRACKERS][0].worst_rank, 17);
   assert.equal(state.tables[TRACKERS][0].check_count, 10);
   assert.equal(state.tables[TRACKERS][0].found_count, 6);
-  assert.equal(state.tables[TRACKERS][0].retry_count, 0);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+  assert.equal(
+    new Date(state.tables[TRACKERS][0].next_check_at).getTime(),
+    new Date(state.tables[TRACKERS][0].last_checked_at).getTime() + 5 * 60 * 1000
+  );
 });
 
 test("persists unmatched provider aggregates, coverage, and server keyword volume without turning zero into missing", async () => {
@@ -1192,10 +1196,11 @@ test("refresh persists an official place name without inventing a rank", async (
   assert.equal(result.result.rank, null);
   assert.equal(providerRequest.placeName, "팽오리농장 부평점");
   assert.equal(state.tables[TRACKERS][0].place_name, "팽오리농장 부평점");
-  assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+  assert.equal(state.tables[TRACKERS][0].current_rank, null);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
 });
 
-test("clears current rank only after a full 300-result miss", async () => {
+test("clears current rank after a full 300-result miss", async () => {
   const { ctx, state } = testContext([{
     id: "full-provider-miss",
     current_rank: 12,
@@ -1268,7 +1273,7 @@ test("refuses a stale processing token before inserting a snapshot", async () =>
   assert.equal(state.tables[TRACKERS][0].retry_count, 0);
 });
 
-test("treats an official top-five miss as partial and preserves the confirmed rank", async () => {
+test("treats an official top-five miss as partial and marks current rank unverified", async () => {
   const { ctx, state } = testContext([{
     id: "official-partial",
     current_rank: 14,
@@ -1295,9 +1300,10 @@ test("treats an official top-five miss as partial and preserves the confirmed ra
   assert.equal(result.result.partialReason, "official_local_limit");
   assert.equal(result.result.checkedCount, 5);
   assert.equal(state.tables[SNAPSHOTS].length, 1);
-  assert.equal(state.tables[TRACKERS][0].current_rank, 14);
+  assert.equal(state.tables[TRACKERS][0].current_rank, null);
   assert.equal(state.tables[TRACKERS][0].best_rank, 7);
   assert.equal(state.tables[TRACKERS][0].worst_rank, 19);
+  assert.equal(state.tables[TRACKERS][0].retry_count, 1);
 });
 
 test("official lookup uses exact place ID before a same-name candidate", async () => {

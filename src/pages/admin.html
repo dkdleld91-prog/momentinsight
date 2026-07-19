@@ -5430,226 +5430,6 @@
       line-height: 1.45;
     }
 
-    #mi-admin .mi-vat-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 0.86fr) minmax(420px, 1.14fr);
-      gap: 16px;
-      align-items: stretch;
-    }
-
-    #mi-admin .mi-vat-entry,
-    #mi-admin .mi-vat-results {
-      min-width: 0;
-      padding: 26px;
-    }
-
-    #mi-admin .mi-vat-entry {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      gap: 24px;
-    }
-
-    #mi-admin .mi-vat-entry-head {
-      display: grid;
-      gap: 5px;
-    }
-
-    #mi-admin .mi-vat-entry-head h2,
-    #mi-admin .mi-vat-results h2 {
-      margin-bottom: 0;
-      font-size: 20px;
-    }
-
-    #mi-admin .mi-vat-entry-head p {
-      font-size: 13px;
-    }
-
-    #mi-admin .mi-vat-field {
-      display: grid;
-      gap: 9px;
-      color: var(--mi-muted);
-      font-size: 12px;
-      font-weight: 900;
-    }
-
-    #mi-admin .mi-vat-amount-control {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      align-items: center;
-      min-height: 68px;
-      border: 1px solid rgba(6, 26, 58, 0.18);
-      border-radius: 10px;
-      padding: 0 18px;
-      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-      transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
-    }
-
-    #mi-admin .mi-vat-amount-control:focus-within {
-      border-color: rgba(6, 26, 58, 0.46);
-      background: #fff;
-      box-shadow: 0 0 0 4px rgba(6, 26, 58, 0.07);
-    }
-
-    #mi-admin .mi-vat-amount-control input {
-      min-width: 0;
-      width: 100%;
-      border: 0;
-      padding: 0 12px 0 0;
-      color: var(--mi-navy);
-      background: transparent;
-      outline: 0;
-      font-size: 30px;
-      font-weight: 950;
-      letter-spacing: -0.025em;
-      text-align: right;
-    }
-
-    #mi-admin .mi-vat-amount-control input::placeholder {
-      color: #b0b8c5;
-    }
-
-    #mi-admin .mi-vat-amount-control span {
-      color: var(--mi-muted);
-      font-size: 15px;
-      font-weight: 900;
-    }
-
-    #mi-admin .mi-vat-entry-footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding-top: 2px;
-    }
-
-    #mi-admin .mi-vat-entry-footer p {
-      max-width: 310px;
-      font-size: 12px;
-      line-height: 1.55;
-    }
-
-    #mi-admin .mi-vat-results {
-      display: grid;
-      gap: 12px;
-      background: linear-gradient(145deg, #ffffff 0%, #f7f9fc 100%);
-    }
-
-    #mi-admin .mi-vat-result-list {
-      display: grid;
-      gap: 9px;
-    }
-
-    #mi-admin .mi-vat-result {
-      display: grid;
-      grid-template-columns: minmax(108px, 0.55fr) minmax(150px, 1fr) auto;
-      gap: 14px;
-      align-items: center;
-      min-height: 72px;
-      border: 1px solid var(--mi-line);
-      border-radius: 9px;
-      padding: 12px 13px 12px 16px;
-      background: rgba(255, 255, 255, 0.92);
-    }
-
-    #mi-admin .mi-vat-result.is-total {
-      border-color: rgba(6, 26, 58, 0.16);
-      background: linear-gradient(135deg, rgba(6, 26, 58, 0.965) 0%, #0b2a57 100%);
-      box-shadow: 0 14px 28px rgba(6, 26, 58, 0.13);
-    }
-
-    #mi-admin .mi-vat-result-label {
-      display: grid;
-      gap: 2px;
-      color: var(--mi-muted);
-      font-size: 13px;
-      font-weight: 900;
-    }
-
-    #mi-admin .mi-vat-result-label small {
-      color: #98a2b3;
-      font-size: 10px;
-      font-weight: 800;
-    }
-
-    #mi-admin .mi-vat-result strong {
-      color: var(--mi-navy);
-      font-size: 23px;
-      line-height: 1.15;
-      text-align: right;
-      white-space: nowrap;
-    }
-
-    #mi-admin .mi-vat-result.is-total .mi-vat-result-label,
-    #mi-admin .mi-vat-result.is-total .mi-vat-result-label small {
-      color: rgba(255, 255, 255, 0.72);
-    }
-
-    #mi-admin .mi-vat-result.is-total strong {
-      color: #fff;
-    }
-
-    #mi-admin .mi-vat-copy {
-      min-width: 74px;
-      min-height: 36px;
-      border: 1px solid rgba(6, 26, 58, 0.13);
-      border-radius: 8px;
-      padding: 0 11px;
-      color: var(--mi-navy);
-      background: #fff;
-      font-size: 12px;
-      font-weight: 900;
-      cursor: pointer;
-      transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
-    }
-
-    #mi-admin .mi-vat-copy:hover:not(:disabled) {
-      border-color: rgba(6, 26, 58, 0.34);
-      box-shadow: 0 7px 16px rgba(6, 26, 58, 0.1);
-      transform: translateY(-1px);
-    }
-
-    #mi-admin .mi-vat-copy:active:not(:disabled) {
-      transform: translateY(1px);
-    }
-
-    #mi-admin .mi-vat-copy:focus-visible {
-      outline: 3px solid rgba(30, 99, 215, 0.2);
-      outline-offset: 2px;
-    }
-
-    #mi-admin .mi-vat-copy:disabled {
-      cursor: not-allowed;
-      opacity: 0.45;
-    }
-
-    #mi-admin .mi-vat-result.is-total .mi-vat-copy {
-      border-color: rgba(255, 255, 255, 0.22);
-      color: #fff;
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    #mi-admin .mi-vat-result.is-total .mi-vat-copy:hover:not(:disabled) {
-      border-color: rgba(255, 255, 255, 0.48);
-      background: rgba(255, 255, 255, 0.16);
-    }
-
-    #mi-admin .mi-vat-status {
-      min-height: 20px;
-      color: var(--mi-muted);
-      font-size: 12px;
-      font-weight: 800;
-    }
-
-    #mi-admin .mi-vat-status.is-ok {
-      color: var(--mi-green);
-    }
-
-    #mi-admin .mi-vat-status.is-warn {
-      color: var(--mi-orange);
-    }
-
     @media (max-width: 900px) {
       #mi-admin .mi-app {
         grid-template-columns: 1fr;
@@ -5739,8 +5519,7 @@
       #mi-admin .mi-step-flow,
       #mi-admin .mi-report-metrics,
       #mi-admin .mi-sheet-tabs,
-      #mi-admin .mi-trust-grid,
-      #mi-admin .mi-vat-layout {
+      #mi-admin .mi-trust-grid {
         display: grid;
         grid-template-columns: 1fr;
       }
@@ -5995,39 +5774,8 @@
 
       #mi-admin .mi-login-copy,
       #mi-admin .mi-login-card,
-      #mi-admin .mi-card-pad,
-      #mi-admin .mi-vat-entry,
-      #mi-admin .mi-vat-results {
+      #mi-admin .mi-card-pad {
         padding: 18px;
-      }
-
-      #mi-admin .mi-vat-entry-footer {
-        align-items: flex-start;
-        flex-direction: column;
-      }
-
-      #mi-admin .mi-vat-amount-control {
-        min-height: 62px;
-        padding: 0 14px;
-      }
-
-      #mi-admin .mi-vat-amount-control input {
-        font-size: 25px;
-      }
-
-      #mi-admin .mi-vat-result {
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 7px 10px;
-        padding: 13px;
-      }
-
-      #mi-admin .mi-vat-result-label {
-        grid-column: 1 / -1;
-      }
-
-      #mi-admin .mi-vat-result strong {
-        font-size: 21px;
-        text-align: left;
       }
 
       #mi-admin h1,
@@ -6137,7 +5885,6 @@
           <a href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력</a>
           <a href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 관리</a>
           <a href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리</a>
-          <a href="#mi-admin-vat-calculator" data-mi-admin-screen="vat-calculator" data-owner-only>부가세 계산기</a>
         </div>
 
         <div class="mi-nav-group">
@@ -6271,59 +6018,6 @@
                 <div class="mi-trust-item"><strong>수정 이력</strong><span>공개값 변경 기록 보관</span></div>
               </div>
             </aside>
-          </div>
-        </section>
-
-        <section class="mi-view" data-mi-admin-view="vat-calculator" data-owner-only id="mi-admin-vat-calculator" aria-label="총관리자 전용 부가세 계산기">
-          <header class="mi-head">
-            <div>
-              <span class="mi-kicker">Owner Utility</span>
-              <h1>부가세를 빠르게 계산합니다.</h1>
-              <p>부가세 미포함 금액을 입력하면 공급가액·부가세액·합계금액을 자동으로 계산합니다.</p>
-            </div>
-            <span class="mi-badge">총관리자 전용</span>
-          </header>
-
-          <div class="mi-vat-layout">
-            <article class="mi-card mi-vat-entry">
-              <div class="mi-vat-entry-head">
-                <h2>부가세 미포함 금액</h2>
-                <p>공급가액을 입력해주세요.</p>
-              </div>
-              <label class="mi-vat-field" for="mi-admin-vat-input">
-                입력 금액
-                <span class="mi-vat-amount-control">
-                  <input id="mi-admin-vat-input" data-admin-vat-input inputmode="numeric" autocomplete="off" maxlength="19" placeholder="0" aria-describedby="mi-admin-vat-help" />
-                  <span aria-hidden="true">원</span>
-                </span>
-              </label>
-              <div class="mi-vat-entry-footer">
-                <p id="mi-admin-vat-help">입력한 공급가액의 10%를 원 단위로 반올림해 부가세액을 계산합니다.</p>
-                <button class="mi-button is-ghost mi-button-small" type="button" data-admin-vat-reset>초기화</button>
-              </div>
-            </article>
-
-            <article class="mi-card mi-vat-results" aria-label="부가세 계산 결과">
-              <h2>계산 결과</h2>
-              <div class="mi-vat-result-list">
-                <div class="mi-vat-result is-total">
-                  <span class="mi-vat-result-label">합계금액<small>공급가액 + 부가세액</small></span>
-                  <strong data-admin-vat-total>0원</strong>
-                  <button class="mi-vat-copy" type="button" data-admin-vat-copy="total" aria-label="합계금액 복사" disabled>복사</button>
-                </div>
-                <div class="mi-vat-result">
-                  <span class="mi-vat-result-label">공급가액<small>부가세 미포함</small></span>
-                  <strong data-admin-vat-supply>0원</strong>
-                  <button class="mi-vat-copy" type="button" data-admin-vat-copy="supply" aria-label="공급가액 복사" disabled>복사</button>
-                </div>
-                <div class="mi-vat-result">
-                  <span class="mi-vat-result-label">부가세액<small>10%</small></span>
-                  <strong data-admin-vat-tax>0원</strong>
-                  <button class="mi-vat-copy" type="button" data-admin-vat-copy="tax" aria-label="부가세액 복사" disabled>복사</button>
-                </div>
-              </div>
-              <div class="mi-vat-status" data-admin-vat-status aria-live="polite">금액을 입력하면 자동으로 계산됩니다.</div>
-            </article>
           </div>
         </section>
 
@@ -7578,6 +7272,12 @@
         return "http://127.0.0.1:8790/api/session";
       }
 
+      function getOwnerToolApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/owner/tool";
+        return "http://127.0.0.1:8790/api/owner/tool";
+      }
+
       function getSuperAdminApiUrl() {
         if (window.MI_SUPER_ADMIN_API_URL) return window.MI_SUPER_ADMIN_API_URL;
         var host = window.location && window.location.hostname;
@@ -7685,6 +7385,174 @@
         if (!payload) payload = { ok: false, message: fallbackMessage + " HTTP " + response.status };
         if (!response.ok && payload.ok !== false) payload.ok = false;
         return payload;
+      }
+
+      var ownerToolScreen = "";
+      var ownerToolAmounts = {};
+      var ownerToolGeneration = 0;
+      var ownerToolTimer = 0;
+
+      function discardOwnerTool() {
+        ownerToolGeneration += 1;
+        window.clearTimeout(ownerToolTimer);
+        ownerToolTimer = 0;
+        ownerToolScreen = "";
+        ownerToolAmounts = {};
+        root.querySelectorAll("[data-owner-tool-menu-root], [data-owner-tool-view-root], [data-owner-tool-style-root]").forEach(function (node) {
+          node.remove();
+        });
+      }
+
+      function ownerToolNumber(value) {
+        return Math.round(Number(value) || 0).toLocaleString("ko-KR");
+      }
+
+      function setOwnerToolStatus(node, message, state) {
+        if (!node) return;
+        node.textContent = message;
+        node.classList.toggle("is-ok", state === "ok");
+        node.classList.toggle("is-warn", state === "warn");
+      }
+
+      function renderOwnerToolAmounts(view, amounts) {
+        ownerToolAmounts = amounts && typeof amounts === "object" ? amounts : {};
+        view.querySelectorAll("[data-owner-tool-output]").forEach(function (node) {
+          var key = node.getAttribute("data-owner-tool-output") || "";
+          node.textContent = ownerToolNumber(ownerToolAmounts[key]) + "원";
+        });
+        var hasValue = Number(ownerToolAmounts.supply || 0) > 0;
+        view.querySelectorAll("[data-owner-tool-copy]").forEach(function (button) {
+          button.disabled = !hasValue;
+        });
+      }
+
+      async function calculateOwnerTool(view, rawSupply, generation) {
+        var response = await miFetch(getOwnerToolApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "calculate", supply: String(rawSupply || "0") })
+        });
+        var payload = await readApiPayload(response, "전용 도구 계산 응답을 확인할 수 없습니다.");
+        if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
+        if (!payload.ok || !payload.amounts) throw new Error(payload.message || "계산에 실패했습니다.");
+        renderOwnerToolAmounts(view, payload.amounts);
+        setOwnerToolStatus(view.querySelector("[data-owner-tool-status]"), Number(payload.amounts.supply || 0) > 0 ? "입력 금액을 안전하게 계산했습니다." : "금액을 입력하면 자동으로 계산됩니다.", Number(payload.amounts.supply || 0) > 0 ? "ok" : "");
+      }
+
+      function writeOwnerToolClipboardFallback(value) {
+        return new Promise(function (resolve, reject) {
+          var helper = document.createElement("textarea");
+          helper.value = value;
+          helper.setAttribute("readonly", "");
+          helper.style.position = "fixed";
+          helper.style.left = "-9999px";
+          document.body.appendChild(helper);
+          helper.select();
+          try {
+            if (!document.execCommand("copy")) throw new Error("copy command failed");
+            resolve();
+          } catch (error) {
+            reject(error);
+          } finally {
+            helper.remove();
+          }
+        });
+      }
+
+      function writeOwnerToolClipboard(value) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+          return navigator.clipboard.writeText(value).catch(function () {
+            return writeOwnerToolClipboardFallback(value);
+          });
+        }
+        return writeOwnerToolClipboardFallback(value);
+      }
+
+      function bindOwnerTool(view, generation) {
+        var input = view.querySelector("[data-owner-tool-input]");
+        var reset = view.querySelector("[data-owner-tool-reset]");
+        var status = view.querySelector("[data-owner-tool-status]");
+        if (!input || !reset || !status) throw new Error("전용 도구 구성을 확인할 수 없습니다.");
+
+        input.addEventListener("input", function () {
+          var digits = String(input.value || "").replace(/[^0-9]/g, "");
+          var limited = digits.slice(0, 15);
+          input.value = limited ? ownerToolNumber(Number(limited)) : "";
+          window.clearTimeout(ownerToolTimer);
+          setOwnerToolStatus(status, digits.length > limited.length ? "입력 가능한 최대 금액으로 제한했습니다." : "계산 중입니다.", digits.length > limited.length ? "warn" : "");
+          ownerToolTimer = window.setTimeout(function () {
+            calculateOwnerTool(view, limited || "0", generation).catch(function (error) {
+              if (generation === ownerToolGeneration) setOwnerToolStatus(status, error.message || "계산에 실패했습니다.", "warn");
+            });
+          }, 140);
+        });
+        input.addEventListener("focus", function () {
+          window.requestAnimationFrame(function () { input.select(); });
+        });
+        reset.addEventListener("click", function () {
+          input.value = "";
+          input.focus();
+          window.clearTimeout(ownerToolTimer);
+          calculateOwnerTool(view, "0", generation).catch(function (error) {
+            if (generation === ownerToolGeneration) setOwnerToolStatus(status, error.message || "초기화에 실패했습니다.", "warn");
+          });
+        });
+        view.querySelectorAll("[data-owner-tool-copy]").forEach(function (button) {
+          button.addEventListener("click", async function () {
+            var key = button.getAttribute("data-owner-tool-copy") || "";
+            if (!Object.prototype.hasOwnProperty.call(ownerToolAmounts, key) || Number(ownerToolAmounts.supply || 0) === 0) return;
+            try {
+              await writeOwnerToolClipboard(ownerToolNumber(ownerToolAmounts[key]));
+              button.textContent = "복사됨";
+              setOwnerToolStatus(status, "계산 결과를 복사했습니다.", "ok");
+              window.setTimeout(function () { button.textContent = "복사"; }, 1200);
+            } catch (error) {
+              setOwnerToolStatus(status, "복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해주세요.", "warn");
+            }
+          });
+        });
+      }
+
+      async function loadOwnerTool() {
+        discardOwnerTool();
+        if (secureSession.role !== "owner") return false;
+        var generation = ownerToolGeneration;
+        var response = await miFetch(getOwnerToolApiUrl(), { method: "GET", cache: "no-store" });
+        var payload = await readApiPayload(response, "총관리자 전용 도구를 확인할 수 없습니다.");
+        if (generation !== ownerToolGeneration || secureSession.role !== "owner") return false;
+        var tool = payload && payload.tool ? payload.tool : null;
+        if (!payload.ok || !tool || !/^owner-[a-z-]{1,40}$/.test(String(tool.screen || ""))) return false;
+        if (typeof tool.menuHtml !== "string" || typeof tool.viewHtml !== "string" || typeof tool.styleText !== "string") return false;
+        if (tool.menuHtml.length > 1000 || tool.viewHtml.length > 12000 || tool.styleText.length > 20000) return false;
+
+        var menuTemplate = document.createElement("template");
+        menuTemplate.innerHTML = tool.menuHtml.trim();
+        var menu = menuTemplate.content.firstElementChild;
+        var viewTemplate = document.createElement("template");
+        viewTemplate.innerHTML = tool.viewHtml.trim();
+        var view = viewTemplate.content.firstElementChild;
+        if (!menu || menu.tagName !== "A" || menu.getAttribute("data-mi-admin-screen") !== tool.screen) return false;
+        if (!view || view.tagName !== "SECTION" || view.getAttribute("data-mi-admin-view") !== tool.screen) return false;
+
+        menu.setAttribute("data-owner-tool-menu-root", "");
+        view.setAttribute("data-owner-tool-view-root", "");
+        var style = document.createElement("style");
+        style.setAttribute("data-owner-tool-style-root", "");
+        style.textContent = tool.styleText;
+        document.head.appendChild(style);
+        var navGroup = root.querySelector(".mi-nav-group");
+        var wrap = root.querySelector(".mi-wrap");
+        if (!navGroup || !wrap) {
+          discardOwnerTool();
+          return false;
+        }
+        navGroup.appendChild(menu);
+        wrap.appendChild(view);
+        ownerToolScreen = tool.screen;
+        bindOwnerTool(view, generation);
+        await calculateOwnerTool(view, "0", generation);
+        return true;
       }
 
       function applySecureSession(payload) {
@@ -8782,134 +8650,6 @@
       applyState(currentState);
       renderSourceFile();
 
-      var vatInput = root.querySelector("[data-admin-vat-input]");
-      var vatResetButton = root.querySelector("[data-admin-vat-reset]");
-      var vatSupplyOutput = root.querySelector("[data-admin-vat-supply]");
-      var vatTaxOutput = root.querySelector("[data-admin-vat-tax]");
-      var vatTotalOutput = root.querySelector("[data-admin-vat-total]");
-      var vatStatus = root.querySelector("[data-admin-vat-status]");
-      var vatCopyButtons = root.querySelectorAll("[data-admin-vat-copy]");
-      var vatMaxSupply = 999999999999999;
-      var currentVatAmounts = { supply: 0, tax: 0, total: 0 };
-
-      function formatVatNumber(value) {
-        return Math.round(Number(value) || 0).toLocaleString("ko-KR");
-      }
-
-      function formatVatWon(value) {
-        return formatVatNumber(value) + "원";
-      }
-
-      function setVatStatus(message, state) {
-        if (!vatStatus) return;
-        vatStatus.textContent = message;
-        vatStatus.classList.toggle("is-ok", state === "ok");
-        vatStatus.classList.toggle("is-warn", state === "warn");
-      }
-
-      function renderVatCalculator(supply) {
-        var normalizedSupply = Number.isFinite(supply) && supply > 0 ? Math.round(supply) : 0;
-        var tax = Math.round(normalizedSupply * 0.1);
-        var total = normalizedSupply + tax;
-        currentVatAmounts = { supply: normalizedSupply, tax: tax, total: total };
-        if (vatSupplyOutput) vatSupplyOutput.textContent = formatVatWon(normalizedSupply);
-        if (vatTaxOutput) vatTaxOutput.textContent = formatVatWon(tax);
-        if (vatTotalOutput) vatTotalOutput.textContent = formatVatWon(total);
-        vatCopyButtons.forEach(function (button) {
-          button.disabled = normalizedSupply === 0;
-        });
-      }
-
-      function handleVatInput() {
-        if (!vatInput) return;
-        var digits = String(vatInput.value || "").replace(/[^0-9]/g, "");
-        var limitedDigits = digits.slice(0, 15);
-        var supply = limitedDigits ? Number(limitedDigits) : 0;
-        if (!Number.isSafeInteger(supply) || supply > vatMaxSupply) {
-          supply = vatMaxSupply;
-          limitedDigits = String(vatMaxSupply);
-        }
-        vatInput.value = limitedDigits ? formatVatNumber(supply) : "";
-        renderVatCalculator(supply);
-        if (digits.length > limitedDigits.length) {
-          setVatStatus("최대 999조 9,999억 9,999만 9,999원까지 입력할 수 있습니다.", "warn");
-        } else if (supply > 0) {
-          setVatStatus("공급가액 기준으로 자동 계산했습니다.", "ok");
-        } else {
-          setVatStatus("금액을 입력하면 자동으로 계산됩니다.", "");
-        }
-      }
-
-      function writeVatClipboardFallback(value) {
-        return new Promise(function (resolve, reject) {
-          var helper = document.createElement("textarea");
-          helper.value = value;
-          helper.setAttribute("readonly", "");
-          helper.style.position = "fixed";
-          helper.style.left = "-9999px";
-          document.body.appendChild(helper);
-          helper.select();
-          try {
-            if (!document.execCommand("copy")) throw new Error("copy command failed");
-            resolve();
-          } catch (error) {
-            reject(error);
-          } finally {
-            document.body.removeChild(helper);
-          }
-        });
-      }
-
-      function writeVatClipboard(value) {
-        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-          return navigator.clipboard.writeText(value).catch(function () {
-            return writeVatClipboardFallback(value);
-          });
-        }
-        return writeVatClipboardFallback(value);
-      }
-
-      if (vatInput) {
-        vatInput.addEventListener("input", handleVatInput);
-        vatInput.addEventListener("focus", function () {
-          window.requestAnimationFrame(function () {
-            vatInput.select();
-          });
-        });
-      }
-
-      if (vatResetButton) {
-        vatResetButton.addEventListener("click", function () {
-          if (vatInput) {
-            vatInput.value = "";
-            vatInput.focus();
-          }
-          renderVatCalculator(0);
-          setVatStatus("입력 금액을 초기화했습니다.", "");
-        });
-      }
-
-      vatCopyButtons.forEach(function (button) {
-        button.addEventListener("click", async function () {
-          var kind = button.getAttribute("data-admin-vat-copy") || "";
-          var labels = { supply: "공급가액", tax: "부가세액", total: "합계금액" };
-          if (!Object.prototype.hasOwnProperty.call(currentVatAmounts, kind) || currentVatAmounts.supply === 0) return;
-          var copyText = formatVatNumber(currentVatAmounts[kind]);
-          try {
-            await writeVatClipboard(copyText);
-            button.textContent = "복사됨";
-            setVatStatus(labels[kind] + " " + formatVatWon(currentVatAmounts[kind]) + "을 복사했습니다.", "ok");
-            window.setTimeout(function () {
-              button.textContent = "복사";
-            }, 1200);
-          } catch (error) {
-            setVatStatus("복사하지 못했습니다. 브라우저의 클립보드 권한을 확인해주세요.", "warn");
-          }
-        });
-      });
-
-      renderVatCalculator(0);
-
       var loginMode = "operator";
       var loginModeCards = root.querySelectorAll("[data-login-mode]");
       var loginModeKicker = root.querySelector("[data-login-mode-kicker]");
@@ -8971,6 +8711,7 @@
           throw new Error("운영팀 화면에 허용되지 않은 계정입니다.");
         }
         applySecureSession(payload);
+        discardOwnerTool();
         currentOperationTeam = null;
         if (session.role === "team") {
           currentOperationTeam = Object.assign({}, payload.team || {}, {
@@ -8993,6 +8734,8 @@
           setScreen("agency-code", !restored);
         } else if (session.role === "owner") {
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
+          var ownerToolLoaded = await loadOwnerTool().catch(function () { return false; });
+          if (!ownerToolLoaded) setStatus(loginStatus, "총관리자 콘솔은 열렸지만 전용 도구는 안전을 위해 숨겼습니다.", "is-warn");
           await loadOwnerCodes(true);
         }
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
@@ -9000,6 +8743,7 @@
 
       async function logoutAdmin() {
         await closeSecureSession().catch(function () { clearAdminAuthCode(); });
+        discardOwnerTool();
         currentOperationTeam = null;
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
@@ -9060,13 +8804,12 @@
         await activateAdminSession(payload, true);
       }
 
-      var views = root.querySelectorAll("[data-mi-admin-view]");
-      var links = root.querySelectorAll("[data-mi-admin-screen]");
-
       function setScreen(name, shouldPushHash) {
         var target = name || "home";
         if (target === "active-accounts" && !canManageOwnerCodes()) target = "agency-code";
-        if (target === "vat-calculator" && !canManageOwnerCodes()) target = "agency-code";
+        if (target === ownerToolScreen && secureSession.role !== "owner") target = "agency-code";
+        var views = root.querySelectorAll("[data-mi-admin-view]");
+        var links = root.querySelectorAll("[data-mi-admin-screen]");
         var found = false;
         views.forEach(function (view) {
           var active = view.getAttribute("data-mi-admin-view") === target;
@@ -9091,11 +8834,11 @@
         }
       }
 
-      links.forEach(function (link) {
-        link.addEventListener("click", function (event) {
-          event.preventDefault();
-          setScreen(link.getAttribute("data-mi-admin-screen"), true);
-        });
+      root.addEventListener("click", function (event) {
+        var link = event.target.closest("[data-mi-admin-screen]");
+        if (!link || !root.contains(link)) return;
+        event.preventDefault();
+        setScreen(link.getAttribute("data-mi-admin-screen"), true);
       });
 
       window.addEventListener("hashchange", function () {

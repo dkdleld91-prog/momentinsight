@@ -196,6 +196,12 @@ for (const filePath of files) {
     if (pattern.test(content)) failures.push(`${rel}: detected ${label}`);
   }
   if (extension === ".html") {
+    if (["admin.html", "client.html"].includes(rel)) {
+      const ownerOnlyTaxMarkers = /부가세|mi-vat|data-admin-vat|vat-calculator/i;
+      if (ownerOnlyTaxMarkers.test(content) || /Math\.round\([^\n]*\*\s*0\.1\)/.test(content)) {
+        failures.push(`${rel}: owner-only calculator content or calculation logic is present in the public page`);
+      }
+    }
     inlineScripts(content).forEach((script, index) => {
       publicInlineScriptCount += 1;
       const hash = sha256Source(script);

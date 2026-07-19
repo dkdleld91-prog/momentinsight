@@ -12,6 +12,7 @@ const handlerLoaders = {
   demoApi: () => import("./handlers/demo-api.mjs"),
   integrationStatus: () => import("./handlers/integration-status.mjs"),
   codeSessionApi: () => import("./handlers/code-session-api.mjs"),
+  ownerToolApi: () => import("./handlers/owner-tool-api.mjs"),
   agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
   metaAds: () => import("./handlers/meta-ads.mjs"),
   naverKeyword: () => import("./handlers/naver-keyword.mjs"),
@@ -59,6 +60,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/session") {
       return dispatch("codeSessionApi", request);
+    }
+
+    if (url.pathname === "/api/owner/tool") {
+      return dispatch("ownerToolApi", request);
     }
 
     if (url.pathname.startsWith("/api/agency-code/") || url.pathname === "/api/agency-code-validate") {

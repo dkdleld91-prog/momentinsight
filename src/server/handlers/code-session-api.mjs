@@ -10,6 +10,10 @@ import {
   sessionCookie,
   sessionFromRequest,
 } from "../code-session.mjs";
+import {
+  ownerClaimsMatchPrimary,
+  primaryAgencyConfiguration,
+} from "../owner-identity.mjs";
 import { allowedOrigins, corsHeaders } from "../security.mjs";
 
 function boundedInteger(value, fallback, minimum, maximum) {
@@ -87,7 +91,7 @@ function sha256(value) {
 }
 
 function primaryAgencyCode(env = process.env) {
-  return normalizedIdentity(env.MI_PRIMARY_AGENCY_CODE || "mml93-a01");
+  return primaryAgencyConfiguration(env).effective;
 }
 
 export function ownerCredentialConfigured(env = process.env) {
@@ -95,6 +99,7 @@ export function ownerCredentialConfigured(env = process.env) {
 }
 
 export function ownerCredentialMatches(code, env = process.env) {
+  if (!primaryAgencyConfiguration(env).valid) return false;
   const expectedHash = String(env.MI_OWNER_LOGIN_CODE_SHA256 || "").trim().toLowerCase();
   if (expectedHash) return safeEqual(sha256(code), expectedHash);
   const expected = String(env.MI_OWNER_LOGIN_CODE || "").trim();
@@ -299,7 +304,10 @@ function visibleTeam(team) {
 
 export async function sessionStillActive(ctx, claims) {
   if (claims.role === "owner") {
-    return (ownerCredentialConfigured() || !isProduction()) ? { role: "owner" } : null;
+    return ownerClaimsMatchPrimary(claims)
+      && (ownerCredentialConfigured() || !isProduction())
+      ? { role: "owner" }
+      : null;
   }
   if (claims.role === "team") {
     const result = await activeTeamByCode(ctx, claims.teamCode);
@@ -331,6 +339,15 @@ async function login(request, ctx) {
       ok: false,
       code: "SESSION_CONFIGURATION_REQUIRED",
       message: "보안 세션 설정이 완료되지 않아 접속을 차단했습니다.",
+    }, 503);
+  }
+
+  const ownerIdentity = primaryAgencyConfiguration();
+  if (!ownerIdentity.valid) {
+    return response(request, {
+      ok: false,
+      code: "PRIMARY_AGENCY_CONFIGURATION_REQUIRED",
+      message: "총관리자 계정 기준 설정을 확인할 수 없어 접속을 차단했습니다.",
     }, 503);
   }
 

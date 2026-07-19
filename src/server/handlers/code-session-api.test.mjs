@@ -46,12 +46,22 @@ test("owner login fails closed in production without a separate credential", () 
 test("owner login accepts configured secret or sha256 digest", () => {
   assert.equal(ownerCredentialMatches("strong-owner-secret", {
     NODE_ENV: "production",
+    MI_PRIMARY_AGENCY_CODE: "mml93-a01",
     MI_OWNER_LOGIN_CODE: "strong-owner-secret",
   }), true);
   assert.equal(ownerCredentialMatches("strong-owner-secret", {
     NODE_ENV: "production",
+    MI_PRIMARY_AGENCY_CODE: "mml93-a01",
     MI_OWNER_LOGIN_CODE_SHA256: "ce10fd031c0c609b88de3dbcc3d597d55f111a1c036fbe9638af2ae47008907e",
   }), true);
+});
+
+test("owner login rejects a missing or mismatched production primary identity", () => {
+  const base = { NODE_ENV: "production", MI_OWNER_LOGIN_CODE: "strong-owner-secret" };
+  assert.equal(ownerCredentialMatches("strong-owner-secret", base), false);
+  assert.equal(ownerCredentialMatches("strong-owner-secret", { ...base, MI_PRIMARY_AGENCY_CODE: "mml93-a02" }), false);
+  assert.equal(ownerCredentialMatches("strong-owner-secret", { ...base, MI_PRIMARY_AGENCY_CODE: "MML93-A01" }), false);
+  assert.equal(ownerCredentialMatches("strong-owner-secret", { ...base, MI_PRIMARY_AGENCY_CODE: "mml93-a01" }), true);
 });
 
 test("login rate limiting shares an IP bucket across sequential account codes", () => {

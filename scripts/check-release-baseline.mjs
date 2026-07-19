@@ -88,6 +88,7 @@ const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs"
 const placeRankCollector = read("tools/naver-place-rank-collector/src/naver-place-rank.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
+const ownerToolServer = read("src/server/handlers/owner-tool-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
@@ -120,8 +121,8 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 14,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords", "vat-calculator"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 13,
+  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-admin-screen="home">운영 홈</a>',
@@ -130,7 +131,6 @@ const checks = {
     'data-mi-admin-screen="excel">운영 입력</a>',
     'data-mi-admin-screen="reports">보고서 관리</a>',
     'data-mi-admin-screen="publish">공개 관리</a>',
-    'data-mi-admin-screen="vat-calculator" data-owner-only>부가세 계산기</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-admin-screen="keyword">키워드 조회</a>',
     'data-mi-admin-screen="seo-check">SEO 확인</a>',
@@ -159,23 +159,19 @@ const checks = {
     && adminSource.includes("clearAdminAuthCode")
     && adminSource.includes("로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요."),
   ownerModeContextVisible: adminSource.includes("총관리자 모드") && adminSource.includes("운영팀 모드"),
-  ownerVatCalculator: adminSource.includes('data-mi-admin-screen="vat-calculator" data-owner-only>부가세 계산기</a>')
-    && adminSource.includes('data-mi-admin-view="vat-calculator" data-owner-only')
-    && adminSource.includes('data-admin-vat-input')
-    && adminSource.includes('data-admin-vat-supply')
-    && adminSource.includes('data-admin-vat-tax')
-    && adminSource.includes('data-admin-vat-total')
-    && adminSource.includes('data-admin-vat-copy="total"')
-    && adminSource.includes('aria-label="합계금액 복사"')
-    && adminSource.includes('aria-label="공급가액 복사"')
-    && adminSource.includes('aria-label="부가세액 복사"')
-    && adminSource.includes('Math.round(normalizedSupply * 0.1)')
+  ownerVatCalculator: ownerToolServer.includes('const OWNER_TOOL_PATH = "/api/owner/tool"')
+    && ownerToolServer.includes('request.headers.get("x-mi-session-role") === "owner"')
+    && ownerToolServer.includes('request.headers.get("x-mi-owner-agency-code") === PRIMARY_AGENCY_CODE')
+    && ownerToolServer.includes('data-mi-admin-screen="owner-utility"')
+    && ownerToolServer.includes('data-mi-admin-view="owner-utility"')
+    && ownerToolServer.includes('data-owner-tool-input')
+    && ownerToolServer.includes('data-owner-tool-copy="total"')
+    && ownerToolServer.includes('const tax = (supply + 5n) / 10n')
+    && adminSource.includes('window.location.origin + "/api/owner/tool"')
+    && adminSource.includes('loadOwnerTool')
     && adminSource.includes('navigator.clipboard.writeText')
-    && adminSource.includes('writeVatClipboardFallback')
-    && adminSource.includes('document.execCommand("copy")')
-    && adminSource.includes('target === "vat-calculator" && !canManageOwnerCodes()')
-    && !clientSource.includes('vat-calculator')
-    && !clientSource.includes('data-admin-vat-'),
+    && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(adminSource)
+    && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
   ownerClientCodeRecoveryExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
@@ -924,6 +920,7 @@ const checks = {
     && runtimeEnvCheck.includes('status(env, "Encrypted session secret", ["MI_SESSION_SECRET"], productionMode,')
     && runtimeEnvCheck.includes('status(env, "Previous encrypted session secret", ["MI_SESSION_SECRET_PREVIOUS"], false,')
     && runtimeEnvCheck.includes('status(env, "Encrypted session TTL", ["MI_SESSION_TTL_SECONDS"], false,')
+    && runtimeEnvCheck.includes('merged.MI_PRIMARY_AGENCY_CODE === "mml93-a01"')
     && runtimeEnvCheck.includes('status(env, "Owner login credential", ["MI_OWNER_LOGIN_CODE_SHA256", "MI_OWNER_LOGIN_CODE"], productionMode,'),
   integrationStatusHidesEnvNamesInProduction: integrationStatusServer.includes("MI_EXPOSE_INTEGRATION_ENV_NAMES")
     && integrationStatusServer.includes("missingEnv: exposeDetails ? missing : []")

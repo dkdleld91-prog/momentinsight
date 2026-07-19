@@ -1,4 +1,9 @@
 import { csrfMatches, sessionFromRequest } from "./code-session.mjs";
+import {
+  ownerClaimsMatchPrimary,
+  PRIMARY_AGENCY_CODE,
+  primaryAgencyConfiguration,
+} from "./owner-identity.mjs";
 import { allowedOrigins, protectedJson } from "./security.mjs";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -29,7 +34,7 @@ function isProduction(env = process.env) {
 }
 
 function primaryAgencyCode(env = process.env) {
-  return String(env.MI_PRIMARY_AGENCY_CODE || "mml93-a01").trim().toLowerCase();
+  return primaryAgencyConfiguration(env).effective;
 }
 
 function requestHasExternalSupabaseCredential(request) {
@@ -51,13 +56,15 @@ export function requiresCodeSession(request) {
 export function roleAllowsPath(role, path) {
   if (role === "owner") return true;
   if (role === "team") {
-    return !path.startsWith("/api/super-admin/")
+    return !path.startsWith("/api/owner/")
+      && !path.startsWith("/api/super-admin/")
       && path !== "/api/super-admin-agency-codes"
       && !path.startsWith("/api/agency-code")
       && !path.startsWith("/api/admin/");
   }
   if (role === "client") {
-    return !path.startsWith("/api/super-admin/")
+    return !path.startsWith("/api/owner/")
+      && !path.startsWith("/api/super-admin/")
       && path !== "/api/super-admin-agency-codes"
       && !path.startsWith("/api/agency-code")
       && !path.startsWith("/api/team/")
@@ -170,7 +177,8 @@ export async function sessionActivityValid(claims, env = process.env, options = 
     return Boolean(await options.activityCheck(claims));
   }
   if (claims.role === "owner") {
-    return ownerSessionConfigured(env) || !hostedEnvironment(env);
+    return ownerClaimsMatchPrimary(claims, env)
+      && (ownerSessionConfigured(env) || !hostedEnvironment(env));
   }
   if (!supabaseUrl(env) || !secretKey(env)) return !hostedEnvironment(env);
   const fetchImpl = options.fetchImpl || globalThis.fetch;
@@ -214,7 +222,7 @@ export function internalRequestForSession(request, claims, env = process.env) {
     const ownerCode = primaryAgencyCode(env);
     const superAdminCode = String(env.MI_SUPER_ADMIN_CODE || "").trim();
     const rankAdminCode = String(env.MI_RANK_ADMIN_CODE || env.MI_DEMO_ADMIN_CODE || "").trim();
-    if (ownerCode) headers.set("x-mi-owner-agency-code", ownerCode);
+    if (ownerCode === PRIMARY_AGENCY_CODE) headers.set("x-mi-owner-agency-code", ownerCode);
     if (superAdminCode) headers.set("x-mi-super-admin-code", superAdminCode);
     if (rankAdminCode) headers.set("x-demo-admin-code", rankAdminCode);
     if (requestedTarget) headers.set("x-mi-agency-code", requestedTarget);

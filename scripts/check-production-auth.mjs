@@ -5,6 +5,9 @@ const files = {
   session: "src/server/code-session.mjs",
   gate: "src/server/session-gate.mjs",
   login: "src/server/handlers/code-session-api.mjs",
+  ownerIdentity: "src/server/owner-identity.mjs",
+  ownerTool: "src/server/handlers/owner-tool-api.mjs",
+  runtimeEnv: "scripts/check-runtime-env.mjs",
   adminPage: "src/pages/admin.html",
   clientPage: "src/pages/client.html",
   productRank: "src/server/handlers/naver-rank-trackers.mjs",
@@ -195,6 +198,30 @@ const checks = [
       !/signInWithOtp|requestMagicLink|moment-auth\.js|\/api\/auth\//.test(item)
     )),
     file: `${files.adminPage}, ${files.clientPage}, ${files.index}`,
+  },
+  {
+    name: "owner sessions and private tools are bound to exact mml93-a01 identity",
+    ok: source.ownerIdentity.includes('PRIMARY_AGENCY_CODE = "mml93-a01"')
+      && source.ownerIdentity.includes('configured === PRIMARY_AGENCY_CODE')
+      && source.ownerIdentity.includes('claims.agencyCode === PRIMARY_AGENCY_CODE')
+      && source.gate.includes('!path.startsWith("/api/owner/")')
+      && source.gate.includes('ownerClaimsMatchPrimary(claims, env)')
+      && source.runtimeEnv.includes('merged.MI_PRIMARY_AGENCY_CODE === "mml93-a01"')
+      && source.index.includes('url.pathname === "/api/owner/tool"')
+      && source.ownerTool.includes('request.headers.get("x-mi-session-role") === "owner"')
+      && source.ownerTool.includes('request.headers.get("x-mi-owner-agency-code") === PRIMARY_AGENCY_CODE'),
+    file: `${files.ownerIdentity}, ${files.gate}, ${files.ownerTool}, ${files.runtimeEnv}`,
+  },
+  {
+    name: "owner-only calculator is absent from public pages and loaded after verified owner session",
+    ok: !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(source.adminPage)
+      && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(source.clientPage)
+      && source.adminPage.includes('async function loadOwnerTool()')
+      && source.adminPage.includes('if (secureSession.role !== "owner") return false;')
+      && source.adminPage.includes('await loadOwnerTool()')
+      && source.ownerTool.includes('data-owner-tool-input')
+      && source.ownerTool.includes('const tax = (supply + 5n) / 10n'),
+    file: `${files.adminPage}, ${files.clientPage}, ${files.ownerTool}`,
   },
 ];
 

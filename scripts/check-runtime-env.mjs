@@ -76,7 +76,9 @@ const checks = [
   status(env, "Rank tracker GitHub cron secret", ["MI_RANK_CRON_SECRET"], productionMode),
   status(env, "Vercel Cron authorization secret", ["CRON_SECRET"], productionMode),
   status(env, "Meta Ad Library access token", ["META_AD_LIBRARY_ACCESS_TOKEN", "META_ADS_LIBRARY_ACCESS_TOKEN"], false),
-  status(env, "Primary agency code", ["MI_PRIMARY_AGENCY_CODE"], false),
+  status(env, "Primary agency code", ["MI_PRIMARY_AGENCY_CODE"], productionMode, (merged) => (
+    !productionMode || merged.MI_PRIMARY_AGENCY_CODE === "mml93-a01"
+  )),
   status(env, "Legacy agency codes", ["MI_LEGACY_AGENCY_CODES"], false),
   status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode, (merged) => (
     !productionMode || String(merged.MI_SUPER_ADMIN_CODE || "").length >= 24

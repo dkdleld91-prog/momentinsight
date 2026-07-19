@@ -15,6 +15,7 @@ const ENV = {
   NODE_ENV: "production",
   MI_SESSION_SECRET: "test-only-session-secret-with-at-least-32-bytes",
   MI_SUPER_ADMIN_CODE: "server-only-super-secret",
+  MI_OWNER_LOGIN_CODE: "test-only-owner-login-secret",
   MI_RANK_ADMIN_CODE: "server-only-rank-secret",
   MI_PRIMARY_AGENCY_CODE: "mml93-a01",
   SUPABASE_SECRET_KEY: "sb_secret_server_only",
@@ -41,11 +42,25 @@ test("health, session and cron paths remain outside the code-session gate", () =
 
 test("roles cannot cross owner and admin boundaries", () => {
   assert.equal(roleAllowsPath("owner", "/api/admin/reports"), true);
+  assert.equal(roleAllowsPath("owner", "/api/owner/tool"), true);
+  assert.equal(roleAllowsPath("team", "/api/owner/tool"), false);
+  assert.equal(roleAllowsPath("client", "/api/owner/tool"), false);
   assert.equal(roleAllowsPath("team", "/api/admin/reports"), false);
   assert.equal(roleAllowsPath("client", "/api/team/agency-codes"), false);
   assert.equal(roleAllowsPath("client", "/api/agency-code/validate"), false);
   assert.equal(roleAllowsPath("team", "/api/agency-code/validate"), false);
   assert.equal(roleAllowsPath("client", "/api/report-center"), true);
+});
+
+test("owner session is bound to the exact primary account identity", async () => {
+  const owner = createSessionClaims({ role: "owner", agencyCode: "mml93-a01" });
+  const stale = createSessionClaims({ role: "owner", agencyCode: "mml93-a02" });
+  const missing = createSessionClaims({ role: "owner" });
+  assert.equal(await sessionActivityValid(owner, ENV), true);
+  assert.equal(await sessionActivityValid(stale, ENV), false);
+  assert.equal(await sessionActivityValid(missing, ENV), false);
+  assert.equal(await sessionActivityValid(owner, { ...ENV, MI_PRIMARY_AGENCY_CODE: "MML93-A01" }), false);
+  assert.equal(await sessionActivityValid(owner, { ...ENV, MI_PRIMARY_AGENCY_CODE: "" }), false);
 });
 
 test("an unlinked team is limited to its account provisioning endpoint", async () => {

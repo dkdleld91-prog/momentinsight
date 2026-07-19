@@ -109,6 +109,13 @@ const adminProductRequest = functionBlock(adminSource, "requestRankTrackers");
 const clientProductRequest = functionBlock(clientSource, "requestRankTrackers");
 const adminPlaceRequest = functionBlock(adminSource, "requestPlaceTrackers");
 const clientPlaceRequest = functionBlock(clientSource, "requestPlaceTrackers");
+const adminOwnerTarget = functionBlock(adminSource, "ownerTargetAgencyCode");
+const adminCurrentPublicCode = functionBlock(adminSource, "currentPublicCode");
+const adminOwnerCodeList = functionBlock(adminSource, "renderOwnerCodeList");
+const adminProductLoad = functionBlock(adminSource, "loadRankTrackers");
+const clientProductLoad = functionBlock(clientSource, "loadRankTrackers");
+const adminPlaceLoad = functionBlock(adminSource, "loadPlaceTrackers");
+const clientPlaceLoad = functionBlock(clientSource, "loadPlaceTrackers");
 
 const sharedPageMarkers = [
   "async function fetchKeywordData",
@@ -205,6 +212,34 @@ const checks = {
     && hasActions(clientPlaceTracking, ["create", "check", "sync-due", "group", "delete"]),
   trackingAuthRefreshConnected: (adminSource.match(/mi:rank-auth-ready/g) || []).length >= 2
     && (clientSource.match(/mi:rank-auth-ready/g) || []).length >= 2,
+  ownerRankDefaultScopeProtected: includesAll(adminSource, [
+    "function isOwnerScopePlaceholder",
+    'normalized === "owner-session"',
+    'normalized === "session"',
+    "normalized === normalizeStorageCode(secureSession && secureSession.scopeKey)",
+  ])
+    && includesAll(adminOwnerTarget, [
+      "isOwnerScopePlaceholder(value)",
+    ])
+    && includesAll(adminCurrentPublicCode, [
+      'secureSession.role === "owner"',
+      "normalizeStorageCode(primaryAgencyCode)",
+    ])
+    && includesAll(adminOwnerCodeList, [
+      "activeCodes",
+      "isOwnerScopePlaceholder(currentCode)",
+      "!activeCodes.has(currentCode)",
+      "publicCodeInput.value = payload.ownerAgencyCode",
+    ]),
+  trackingLoadFailuresPreserveExistingCards: [adminProductLoad, clientProductLoad].every((block) => includesAll(block, [
+    "if (!payload.ok)",
+    "renderRankHistory(rankHistory, rankTrackers)",
+    "return false",
+  ])) && [adminPlaceLoad, clientPlaceLoad].every((block) => includesAll(block, [
+    "if (!payload.ok)",
+    "renderPlaceHistory(placeHistory, placeTrackers)",
+    "return false",
+  ])),
   serverRoutesConnected: [
     ["naverKeyword", "/api/naver-keyword"],
     ["naverShoppingRank", "/api/naver-shopping-rank"],

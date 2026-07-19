@@ -7139,6 +7139,14 @@
         return String(value || "").trim().toLowerCase();
       }
 
+      function isOwnerScopePlaceholder(value) {
+        var normalized = normalizeStorageCode(value);
+        return !normalized ||
+          normalized === "owner-session" ||
+          normalized === "session" ||
+          normalized === normalizeStorageCode(secureSession && secureSession.scopeKey);
+      }
+
       var secureSession = {
         csrfToken: "",
         role: "",
@@ -7156,12 +7164,16 @@
         if (secureSession.role !== "owner") return "";
         var input = root.querySelector("[data-admin-code]");
         var value = input ? normalizeStorageCode(input.value) : "";
-        return value && value !== "owner-session" ? value : "";
+        return isOwnerScopePlaceholder(value) ? "" : value;
       }
 
       function currentPublicCode() {
-        return ownerTargetAgencyCode()
-          || operationTeamClientCode()
+        if (!secureSession.role || secureSession.role === "owner") {
+          return ownerTargetAgencyCode()
+            || normalizeStorageCode(primaryAgencyCode)
+            || "owner-session";
+        }
+        return operationTeamClientCode()
           || normalizeStorageCode(secureSession.scopeKey)
           || normalizeStorageCode(secureSession.clientId)
           || normalizeStorageCode(secureSession.teamId)
@@ -7810,7 +7822,13 @@
         if (payload && payload.ownerAgencyCode) {
           primaryAgencyCode = String(payload.ownerAgencyCode).trim().toLowerCase();
           var publicCodeInput = root.querySelector("[data-admin-code]");
-          if (publicCodeInput && (!String(publicCodeInput.value || "").trim() || String(publicCodeInput.value).trim() === "owner-session")) {
+          var currentCode = publicCodeInput ? normalizeStorageCode(publicCodeInput.value) : "";
+          var activeCodes = new Set([normalizeStorageCode(payload.ownerAgencyCode)].concat(
+            (Array.isArray(payload.clients) ? payload.clients : []).map(function (client) {
+              return normalizeStorageCode(client && client.agencyCode);
+            }).filter(Boolean)
+          ));
+          if (publicCodeInput && (isOwnerScopePlaceholder(currentCode) || !activeCodes.has(currentCode))) {
             publicCodeInput.value = payload.ownerAgencyCode;
           }
         }
@@ -11409,6 +11427,12 @@
         async function loadRankTrackers(silent) {
           try {
             var payload = await requestRankTrackers("GET");
+            if (!payload.ok) {
+              renderRankResult(rankResult, { ok: false, message: payload.message || "순위 추적을 불러오지 못했습니다." });
+              renderRankHistory(rankHistory, rankTrackers);
+              if (!silent) setStatus(rankStatus, payload.message || "순위 추적 조회 권한과 서버 연결을 확인해주세요.", "is-warn");
+              return false;
+            }
             rankTrackers = payload.trackers || [];
             renderRankResult(rankResult, { ok: payload.ok, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
@@ -11416,10 +11440,12 @@
               setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
             await syncDueRankTrackersIfNeeded(silent);
+            return true;
           } catch (error) {
             renderRankResult(rankResult, { ok: false, message: "순위 추적 서버 연결을 확인해주세요." });
-            renderRankHistory(rankHistory, []);
+            renderRankHistory(rankHistory, rankTrackers);
             if (!silent) setStatus(rankStatus, "순위 추적 서버 연결을 확인해주세요.", "is-warn");
+            return false;
           }
         }
 
@@ -12864,6 +12890,11 @@
 
         async function loadPlaceTrackers(silent) {
           var payload = await requestPlaceTrackers("GET");
+          if (!payload.ok) {
+            renderPlaceHistory(placeHistory, placeTrackers);
+            if (!silent) setStatus(placeStatus, payload.message || "플레이스 순위 조회 권한과 서버 연결을 확인해주세요.", "is-warn");
+            return false;
+          }
           placeProviderConfigured = payload.configured !== false;
           placeTrackers = applyPlaceGroups(payload.trackers || []);
           renderPlaceHistory(placeHistory, placeTrackers);
@@ -12874,6 +12905,7 @@
             setStatus(placeStatus, message, payload.ok === false || payload.configured === false ? "is-warn" : "is-ok");
           }
           await syncDuePlaceTrackersIfNeeded(silent);
+          return true;
         }
 
         function syncPlaceKeywordFromMain() {
@@ -12888,7 +12920,7 @@
         placeKeyword.setAttribute("data-synced-keyword", "true");
         syncPlaceKeywordFromMain();
         loadPlaceTrackers(false).catch(function () {
-          renderPlaceHistory(placeHistory, []);
+          renderPlaceHistory(placeHistory, placeTrackers);
           setStatus(placeStatus, "플레이스 순위 서비스 연결을 확인해주세요.", "is-warn");
         });
         window.addEventListener("mi:rank-auth-ready", function () {

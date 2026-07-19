@@ -110,3 +110,15 @@ test("request runtime cannot weaken the central response security policy", async
     assert.equal(response.headers.get(name), expected[name], name);
   }
 });
+
+test("request runtime preserves bodyless protocol responses", async () => {
+  for (const status of [204, 205, 304]) {
+    const response = await executeRequest(
+      new Request("https://insight.momentlabs.co.kr/api/session", { method: "OPTIONS" }),
+      async () => new Response(null, { status }),
+    );
+
+    assert.equal(response.status, status);
+    assert.equal(await response.text(), "");
+  }
+});

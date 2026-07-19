@@ -70,9 +70,14 @@ async function runtimeResponse(request, response, requestId, startedAt) {
     headers.set("content-type", "application/json; charset=utf-8");
   }
 
-  return new Response(safeError
-    ? JSON.stringify({ ...safeError.body, requestId: safeError.body.requestId || requestId })
-    : rawBuffer, {
+  const bodyForbidden = request.method === "HEAD" || [204, 205, 304].includes(response.status);
+  const body = bodyForbidden
+    ? null
+    : safeError
+      ? JSON.stringify({ ...safeError.body, requestId: safeError.body.requestId || requestId })
+      : rawBuffer;
+
+  return new Response(body, {
     status: safeError ? safeError.status : response.status,
     statusText: safeError ? undefined : response.statusText,
     headers,

@@ -1,10 +1,11 @@
 const DEFAULT_MAX_RANK = 300;
 const DEFAULT_TIMEOUT_MS = Number(process.env.NAVER_PLACE_PROVIDER_TIMEOUT_MS || 90000);
 const DEFAULT_MAX_SCROLLS = Math.max(1, Number(process.env.NAVER_PLACE_PROVIDER_MAX_SCROLLS || 90));
-const OVERALL_TIMEOUT_MS = Math.max(
+const DEFAULT_OVERALL_TIMEOUT_MS = Math.max(
   20000,
-  Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 75000), 80000)
+  Math.min(Number(process.env.NAVER_PLACE_PROVIDER_OVERALL_TIMEOUT_MS || 210000), 225000)
 );
+const MAX_PROVIDER_DEADLINE_MS = 225000;
 const HEADLESS = String(process.env.NAVER_PLACE_PROVIDER_HEADLESS || "true") !== "false";
 const DEEP_SCAN = String(process.env.NAVER_PLACE_PROVIDER_DEEP_SCAN || "false") === "true";
 const APIFY_IDENTITY_ACTOR_ID = String(
@@ -71,6 +72,26 @@ function normalizeComparable(value) {
 
 function clampMaxRank() {
   return DEFAULT_MAX_RANK;
+}
+
+function resolveProviderDeadlineAt(payload = {}, now = Date.now()) {
+  const requested = Number(payload.providerDeadlineAt || payload.provider_deadline_at);
+  const maximum = now + MAX_PROVIDER_DEADLINE_MS;
+  if (Number.isFinite(requested) && requested > 0) return Math.min(requested, maximum);
+  return Math.min(now + DEFAULT_OVERALL_TIMEOUT_MS, maximum);
+}
+
+function remainingTimeoutMs(deadlineAt, maximumMs, now = Date.now) {
+  const remaining = Math.floor(Number(deadlineAt) - Number(now()));
+  if (!Number.isFinite(remaining) || remaining <= 0) {
+    throw new Error("naver_map_lookup_deadline_exceeded");
+  }
+  const maximum = Math.max(1, Math.floor(Number(maximumMs) || 1));
+  return Math.max(1, Math.min(maximum, remaining));
+}
+
+async function waitWithinDeadline(page, milliseconds, deadlineAt) {
+  await page.waitForTimeout(remainingTimeoutMs(deadlineAt, milliseconds));
 }
 
 function extractPlaceId(value) {
@@ -581,8 +602,8 @@ function resolveApifyBudgetMs(payload = {}) {
   const requested = Number(payload.apifyBudgetMs || payload.apify_budget_ms);
   const configured = Number(process.env.APIFY_NAVER_MAPS_TIMEOUT_MS || 135000);
   const candidate = Number.isFinite(requested) && requested > 0 ? requested : configured;
-  // Browser fallback is capped at 80 seconds. Keeping the Actor chain at or
-  // below 135 seconds lets both stages complete inside the 225-second caller.
+  // Actor helpers are retained for diagnostics only. Keep their standalone
+  // budget bounded so a manual diagnostic call cannot outlive the service.
   return Math.max(30_000, Math.min(135_000, Number.isFinite(candidate) ? candidate : 135_000));
 }
 
@@ -859,7 +880,7 @@ async function loadPlaywright() {
   }
 }
 
-async function resolvePlaceIdentityWithBrowser(context, value) {
+async function resolvePlaceIdentityWithBrowser(context, value, deadlineAt) {
   const originalUrl = normalizeUrl(value);
   const result = {
     url: originalUrl,
@@ -872,8 +893,11 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
 
   const page = await context.newPage();
   try {
-    await page.goto(originalUrl, { waitUntil: "domcontentloaded", timeout: DEFAULT_TIMEOUT_MS });
-    await page.waitForTimeout(2500);
+    await page.goto(originalUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: remainingTimeoutMs(deadlineAt, DEFAULT_TIMEOUT_MS),
+    });
+    await waitWithinDeadline(page, 2500, deadlineAt);
 
     result.url = normalizeText(page.url()) || originalUrl;
     result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(result.url)]);
@@ -886,18 +910,22 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
       result.placeId = result.placeId || result.placeIds[0] || "";
     }
 
+    const optionalSelectorTimeoutMs = remainingTimeoutMs(
+      deadlineAt,
+      IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS
+    );
     const pageTitle = cleanPlaceTitle(await page.title().catch(() => ""));
     const metaTitle = cleanPlaceTitle(await page
       .locator("meta[property='og:title']")
-      .getAttribute("content", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .getAttribute("content", { timeout: optionalSelectorTimeoutMs })
       .catch(() => ""));
     const metaUrl = await page
       .locator("meta[property='og:url']")
-      .getAttribute("content", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .getAttribute("content", { timeout: optionalSelectorTimeoutMs })
       .catch(() => "");
     const canonicalUrl = await page
       .locator("link[rel='canonical']")
-      .getAttribute("href", { timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+      .getAttribute("href", { timeout: optionalSelectorTimeoutMs })
       .catch(() => "");
     result.placeIds = uniqueValues([...result.placeIds, ...extractPlaceIds(metaUrl), ...extractPlaceIds(canonicalUrl)]);
     result.placeId = result.placeId || result.placeIds[0] || "";
@@ -907,7 +935,7 @@ async function resolvePlaceIdentityWithBrowser(context, value) {
       const title = await frame
         .locator("span.Fc1rA, h1, [class*='place_bluelink'], [class*='GHAhO'], [class*='YouOG']")
         .first()
-        .innerText({ timeout: IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS })
+        .innerText({ timeout: optionalSelectorTimeoutMs })
         .catch(() => "");
       if (title) frameTitles.push(cleanPlaceTitle(title));
     }
@@ -1333,13 +1361,16 @@ function candidateFromAllSearch(item, index) {
   };
 }
 
-async function resolveMapSearch(page, keyword) {
+async function resolveMapSearch(page, keyword, deadlineAt) {
   const responsePromise = page
-    .waitForResponse((response) => response.url().includes("/p/api/search/allSearch"), { timeout: 15000 })
+    .waitForResponse(
+      (response) => response.url().includes("/p/api/search/allSearch"),
+      { timeout: remainingTimeoutMs(deadlineAt, 15000) }
+    )
     .catch(() => null);
   await page.goto(NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword), {
     waitUntil: "domcontentloaded",
-    timeout: Math.min(DEFAULT_TIMEOUT_MS, 30000),
+    timeout: remainingTimeoutMs(deadlineAt, Math.min(DEFAULT_TIMEOUT_MS, 30000)),
   });
   const response = await responsePromise;
   if (!response) return { searchCoord: "", candidates: [], total: 0 };
@@ -1365,16 +1396,18 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
 
   const page = await context.newPage();
   try {
-    page.setDefaultTimeout(DEFAULT_TIMEOUT_MS);
+    page.setDefaultTimeout(remainingTimeoutMs(deadlineAt, DEFAULT_TIMEOUT_MS));
     const shouldDeepScan = DEEP_SCAN || maxRank > 100;
     if (!shouldDeepScan) {
       await page.goto(buildPlaceListUrl(keyword, maxRank), {
         waitUntil: "domcontentloaded",
-        timeout: DEFAULT_TIMEOUT_MS,
+        timeout: remainingTimeoutMs(deadlineAt, DEFAULT_TIMEOUT_MS),
         referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
       });
       const selectorError = await page
-        .waitForSelector("#_pcmap_list_scroll_container li", { timeout: LIST_SELECTOR_TIMEOUT_MS })
+        .waitForSelector("#_pcmap_list_scroll_container li", {
+          timeout: remainingTimeoutMs(deadlineAt, LIST_SELECTOR_TIMEOUT_MS),
+        })
         .then(() => null)
         .catch((error) => error);
 
@@ -1399,18 +1432,20 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
 
     // Ranking uses one neutral keyword search context. Coordinates embedded in
     // the tracked place URL describe the target and must not bias list order.
-    const initialSearch = await resolveMapSearch(page, keyword);
+    const initialSearch = await resolveMapSearch(page, keyword, deadlineAt);
     const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
       waitUntil: "domcontentloaded",
-      timeout: DEFAULT_TIMEOUT_MS,
+      timeout: remainingTimeoutMs(deadlineAt, DEFAULT_TIMEOUT_MS),
       referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
     });
     const selectorError = await page
-      .waitForSelector("#_pcmap_list_scroll_container li", { timeout: LIST_SELECTOR_TIMEOUT_MS })
+      .waitForSelector("#_pcmap_list_scroll_container li", {
+        timeout: remainingTimeoutMs(deadlineAt, LIST_SELECTOR_TIMEOUT_MS),
+      })
       .then(() => null)
       .catch((error) => error);
-    await page.waitForTimeout(900);
+    await waitWithinDeadline(page, 900, deadlineAt);
 
     const restrictionText = normalizeText(await page.locator("body").innerText().catch(() => ""));
     if (/서비스 이용이 제한되었습니다|과도한 접근 요청/.test(restrictionText)) {
@@ -1540,23 +1575,6 @@ function needsBrowserIdentityResolution(placeUrl, placeId) {
   return extractPlaceIds(placeUrl).length === 0;
 }
 
-function finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult) {
-  const selectedResult = apifyPartialResult && !browserResult.matched &&
-    Number(apifyPartialResult.checkedCount || 0) >= Number(browserResult.checkedCount || 0)
-    ? apifyPartialResult
-    : browserResult;
-  if (!apifyFailure && !apifyPartialResult) return selectedResult;
-  return {
-    ...selectedResult,
-    providerFallbackUsed: true,
-    providerFallbackReason: apifyFailure || apifyPartialResult?.stopReason || "apify_partial_result",
-    providerPartialCheckedCount: apifyPartialResult ? Number(apifyPartialResult.checkedCount || 0) : null,
-    source: selectedResult === browserResult
-      ? String(browserResult.source || "naver_map_pc_list_collector") + "_fallback"
-      : selectedResult.source,
-  };
-}
-
 export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
   const keyword = normalizeText(payload.keyword);
   const maxRank = clampMaxRank(payload.maxRank || payload.max_rank);
@@ -1568,33 +1586,28 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
     return { ok: false, matched: false, message: "keyword_required" };
   }
 
-  let apifyPartialResult = null;
-  let apifyFailure = "";
-  try {
-    const apifyLookup = dependencies.apifyLookup || lookupNaverPlaceRankViaApify;
-    const apifyResult = await apifyLookup(payload);
-    if (apifyResult?.ok !== false && (apifyResult?.matched || apifyResult?.complete)) return apifyResult;
-    if (apifyResult?.ok !== false && apifyResult) apifyPartialResult = apifyResult;
-    else if (apifyResult) apifyFailure = normalizeText(apifyResult.message || apifyResult.stopReason || "apify_lookup_failed");
-  } catch (error) {
-    apifyFailure = error instanceof Error ? error.message : String(error);
+  const providerDeadlineAt = resolveProviderDeadlineAt(payload);
+  if (providerDeadlineAt - Date.now() <= COLLECTION_DEADLINE_GUARD_MS + 1000) {
+    throw new Error("naver_map_lookup_deadline_exceeded");
   }
 
+  // The native Naver PC organic list is the only rank authority. Actor output
+  // can differ from the visible list and must never overwrite a verified rank,
+  // a truthful partial scan, or a retry-preserving native failure.
   if (dependencies.browserLookup) {
-    const browserResult = await dependencies.browserLookup(payload);
-    return finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult);
+    return await dependencies.browserLookup({ ...payload, providerDeadlineAt });
   }
 
   const { chromium } = await loadPlaywright();
   const browser = await chromium.launch({ headless: HEADLESS });
   let overallTimeout;
   try {
-    const collectionDeadlineAt = Date.now() + Math.max(1000, OVERALL_TIMEOUT_MS - COLLECTION_DEADLINE_GUARD_MS);
+    const collectionDeadlineAt = providerDeadlineAt - COLLECTION_DEADLINE_GUARD_MS;
     const lookup = (async () => {
       const context = await browser.newContext({
         locale: "ko-KR",
         timezoneId: "Asia/Seoul",
-        viewport: { width: 1440, height: 1000 },
+        viewport: { width: 1440, height: 1600 },
         userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
       });
 
@@ -1602,7 +1615,7 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
       // Resolving the same short URL on every refresh adds a second browser
       // navigation and can exhaust the hosted collector request budget.
       const resolved = needsBrowserIdentityResolution(placeUrl, placeId)
-        ? await resolvePlaceIdentityWithBrowser(context, placeUrl)
+        ? await resolvePlaceIdentityWithBrowser(context, placeUrl, collectionDeadlineAt)
         : { url: placeUrl, placeId: "", placeIds: [], placeName: "" };
       const placeIds = uniqueValues([
         placeId,
@@ -1640,6 +1653,15 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
       const candidates = collection.candidates;
       let matched = findMatch(candidates, target);
       const collectionStatus = buildCollectionStatus(collection, maxRank);
+      const verifiedStatus = matched
+        ? {
+            ...collectionStatus,
+            complete: false,
+            partial: false,
+            partialReason: null,
+            stopReason: "target_found",
+          }
+        : collectionStatus;
 
       const place = matched || {
         id: placeId,
@@ -1651,24 +1673,28 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         ok: true,
         matched: Boolean(matched),
         rank: matched ? matched.rank : null,
-        ...collectionStatus,
+        ...verifiedStatus,
         place,
         metrics: aggregateCandidateMetrics(candidates),
         topPlaces: candidates.slice(0, 20),
         source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
         message: matched
           ? "네이버 지도 오가닉 " + matched.rank + "위로 확인되었습니다."
-          : collectionStatus.partial
+          : verifiedStatus.partial
             ? "네이버 지도 오가닉 " + candidates.length + "개까지 부분 확인했으며 대상 플레이스를 찾지 못했습니다."
             : "네이버 지도 오가닉 상위 " + candidates.length + "개 안에서 대상 플레이스를 찾지 못했습니다.",
       };
     })();
 
     const timeout = new Promise((_, reject) => {
-      overallTimeout = setTimeout(() => reject(new Error("naver_map_lookup_timeout")), OVERALL_TIMEOUT_MS);
+      overallTimeout = setTimeout(
+        () => reject(new Error("naver_map_lookup_timeout")),
+        remainingTimeoutMs(providerDeadlineAt, MAX_PROVIDER_DEADLINE_MS)
+      );
     });
     const browserResult = await Promise.race([lookup, timeout]);
-    return finalizeProviderFallback(apifyPartialResult, apifyFailure, browserResult);
+    return browserResult;
   } finally {
     clearTimeout(overallTimeout);
     await browser.close().catch(() => {});
@@ -1713,6 +1739,7 @@ export const __testing = {
   normalizeApifyResult,
   nextListScrollTop,
   isApifyAccountLimitError,
-  finalizeProviderFallback,
+  remainingTimeoutMs,
+  resolveProviderDeadlineAt,
   selectorFallbackCollection,
 };

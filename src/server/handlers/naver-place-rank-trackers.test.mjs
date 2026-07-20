@@ -816,10 +816,73 @@ test("rejects a malformed successful provider response without creating a snapsh
   assert.equal(state.tables[TRACKERS][0].retry_count, 1);
 });
 
+test("rejects provider ranks without native PC organic evidence", async () => {
+  const untrustedPayloads = [
+    {
+      ok: true,
+      matched: true,
+      rank: 7,
+      checkedCount: 7,
+      place: { id: "1234567890", name: "테스트 플레이스" },
+      source: "naver_map_pc_list_collector",
+    },
+    {
+      ok: true,
+      matched: true,
+      rank: 7,
+      checkedCount: 7,
+      place: { id: "1234567890", name: "테스트 플레이스" },
+      source: "apify_untrusted_order",
+      rankEvidence: "naver_pc_organic_list",
+    },
+  ];
+
+  for (const [index, providerPayload] of untrustedPayloads.entries()) {
+    const { ctx, state } = testContext([{
+      id: `untrusted-provider-${index}`,
+      place_id: "1234567890",
+      current_rank: 12,
+      best_rank: 8,
+      check_count: 9,
+    }]);
+
+    const result = await withExternalProvider(
+      async () => new Response(JSON.stringify(providerPayload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "place_rank_provider_untrusted_evidence");
+    assert.equal(state.tables[SNAPSHOTS].length, 0);
+    assert.equal(state.tables[TRACKERS][0].current_rank, 12);
+    assert.equal(state.tables[TRACKERS][0].best_rank, 8);
+    assert.equal(state.tables[TRACKERS][0].check_count, 9);
+  }
+});
+
 test("rejects contradictory or non-numeric place ranks from a successful provider", async () => {
   const payloads = [
-    { ok: true, matched: false, rank: "abc", checkedCount: 300, complete: true },
-    { ok: true, matched: false, rank: 7, checkedCount: 300, complete: true },
+    {
+      ok: true,
+      matched: false,
+      rank: "abc",
+      checkedCount: 300,
+      complete: true,
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
+    },
+    {
+      ok: true,
+      matched: false,
+      rank: 7,
+      checkedCount: 300,
+      complete: true,
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
+    },
   ];
 
   for (const [index, providerPayload] of payloads.entries()) {
@@ -863,7 +926,8 @@ test("rejects a provider result whose explicit place ID conflicts with the track
       rank: 7,
       checkedCount: 7,
       place: { id: "9999999999", name: "팽오리농장 부평점" },
-      source: "test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -892,7 +956,8 @@ test("rejects a matched provider result that omits the tracked place ID", async 
       rank: 7,
       checkedCount: 7,
       place: { name: "팽오리농장 부평점" },
-      source: "test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -914,8 +979,12 @@ test("records a partial snapshot without presenting the previous rank as current
     found_count: 6,
   }]);
 
+  let providerRequestBody = null;
+  const requestedAt = Date.now();
   const result = await withExternalProvider(
-    async () => new Response(JSON.stringify({
+    async (_url, options) => {
+      providerRequestBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({
       ok: true,
       matched: false,
       checkedCount: 62,
@@ -924,11 +993,16 @@ test("records a partial snapshot without presenting the previous rank as current
       partial: true,
       partialReason: "collection_deadline_reached",
       place: { id: "1234567890", name: "테스트 플레이스" },
-      source: "test-collector",
-    }), { status: 200, headers: { "content-type": "application/json" } }),
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
 
+  assert.ok(Number(providerRequestBody?.providerDeadlineAt) >= requestedAt + 200_000);
+  assert.ok(Number(providerRequestBody?.providerDeadlineAt) <= Date.now() + 225_000);
+  assert.equal("apifyBudgetMs" in providerRequestBody, false);
   assert.equal(result.ok, true);
   assert.equal(result.outcome, "partial");
   assert.equal(result.result.complete, false);
@@ -979,7 +1053,8 @@ test("persists unmatched provider aggregates, coverage, and server keyword volum
           },
         },
         topPlaces: [{ id: "other-1", blogReviewCount: "999", visitorReviewCount: "999" }],
-        source: "test-collector",
+        source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
       }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   ));
@@ -1030,7 +1105,8 @@ test("rejects incomplete or count-mismatched provider aggregate values", async (
         },
       },
       topPlaces: [{ id: "other-1", blogReviewCount: "100", visitorReviewCount: "200" }],
-      source: "test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -1075,7 +1151,8 @@ test("does not persist a Search Ads under-threshold range as an exact monthly co
             visitReviewCount: { knownCount: 1, totalCount: 1 },
           },
         },
-        source: "test-collector",
+        source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
       }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   ));
@@ -1112,7 +1189,8 @@ test("uses complete top-place evidence as a fallback while leaving partially kno
         { id: "other-1", blogReviewCount: "0", visitorReviewCount: "5" },
         { id: "other-2", blogReviewCount: "", visitorReviewCount: "7" },
       ],
-      source: "legacy-test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -1160,7 +1238,8 @@ test("does not let null provider metrics erase valid legacy aggregate values", a
         scope: "organic_search_results",
         coverage: { visitReviewCount: { knownCount: 62, totalCount: 62 } },
       },
-      source: "legacy-test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -1224,7 +1303,8 @@ test("refresh persists an official place name without inventing a rank", async (
         partial: true,
         partialReason: "naver_result_list_exhausted",
         place: { id: placeId, name: "" },
-        source: "test-collector",
+        source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
       }), { status: 200, headers: { "content-type": "application/json" } });
     },
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
@@ -1257,7 +1337,8 @@ test("clears current rank after a full 300-result miss", async () => {
       total: 300,
       complete: true,
       place: { id: "1234567890", name: "테스트 플레이스" },
-      source: "test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } }),
     () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
   );
@@ -1296,7 +1377,8 @@ test("refuses a stale processing token before inserting a snapshot", async () =>
         total: 300,
         complete: false,
         place: { id: "1234567890", name: "테스트 플레이스" },
-        source: "test-collector",
+        source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
       }), { status: 200, headers: { "content-type": "application/json" } });
     },
     () => runPlaceTrackerCheck(ctx, claimedTracker),
@@ -1638,7 +1720,8 @@ test("processes multiple due place trackers up to the requested batch limit", as
       total: 300,
       complete: true,
       place: { id: requestBody.placeId, name: "테스트 플레이스" },
-      source: "test-collector",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
 

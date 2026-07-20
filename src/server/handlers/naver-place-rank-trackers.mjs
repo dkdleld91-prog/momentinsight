@@ -1311,16 +1311,14 @@ async function lookupExternalPlaceProvider(config, tracker) {
   const monthlySearchCountPromise = lookupMonthlySearchCount(config, tracker.keyword);
   const controller = new AbortController();
   const configuredTimeoutMs = Number(process.env.NAVER_PLACE_RANK_TIMEOUT_MS || 240000);
-  // A 300-place lookup can use both an Actor and browser fallback. The payload
-  // below splits this budget so the downstream collector finishes first.
+  // Pass an absolute deadline so Render cold-start time is counted inside the
+  // caller's budget and the collector can return verified partial evidence
+  // before Vercel aborts the request.
   const providerTimeoutMs = Math.max(
     225000,
     Math.min(240000, Number.isFinite(configuredTimeoutMs) ? configuredTimeoutMs : 240000)
   );
-  // The collector may fall back from Apify to an 80-second browser lookup.
-  // Reserve that browser window and a final response buffer inside Vercel's
-  // provider timeout instead of letting the downstream job outlive its caller.
-  const apifyBudgetMs = Math.max(30_000, Math.min(135_000, providerTimeoutMs - 95_000));
+  const providerDeadlineAt = Date.now() + providerTimeoutMs - 15000;
   const timeout = setTimeout(
     () => controller.abort(),
     providerTimeoutMs
@@ -1338,7 +1336,7 @@ async function lookupExternalPlaceProvider(config, tracker) {
         placeUrl: tracker.place_url,
         placeName: tracker.place_name,
         maxRank: PLACE_RANK_TRACKER_MAX_RANK,
-        apifyBudgetMs,
+        providerDeadlineAt,
       }),
       signal: controller.signal,
     });
@@ -1378,6 +1376,14 @@ async function lookupExternalPlaceProvider(config, tracker) {
     );
     if (!matched && checkedCount <= 0) {
       throw new Error("place_rank_provider_invalid_response");
+    }
+    const providerSource = normalizeText(payload.source);
+    const rankEvidence = normalizeText(payload.rankEvidence || payload.rank_evidence);
+    if (
+      providerSource !== "naver_map_pc_list_collector" ||
+      rankEvidence !== "naver_pc_organic_list"
+    ) {
+      throw new Error("place_rank_provider_untrusted_evidence");
     }
     const complete = !matched && checkedCount >= PLACE_RANK_TRACKER_MAX_RANK;
     const partial = !matched && !complete;
@@ -1437,7 +1443,8 @@ async function lookupExternalPlaceProvider(config, tracker) {
       stopReason: payload.stopReason || payload.stop_reason || null,
       place: placeWithMetrics,
       topPlaces,
-      source: payload.source || "naver_place_rank_provider",
+      source: providerSource,
+      rankEvidence,
       message: normalizeText(payload.message),
     };
   } finally {

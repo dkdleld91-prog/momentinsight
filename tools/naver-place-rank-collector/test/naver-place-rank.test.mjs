@@ -17,6 +17,8 @@ const {
   normalizeApifyCandidates,
   normalizeApifyResult,
   nextListScrollTop,
+  remainingTimeoutMs,
+  resolveProviderDeadlineAt,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
   selectorFallbackCollection,
@@ -32,6 +34,19 @@ test("caps the Apify actor chain so browser fallback fits the caller budget", ()
   assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 500_000 }), 135_000);
   assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 120_000 }), 120_000);
   assert.equal(resolveApifyBudgetMs({ apifyBudgetMs: 1_000 }), 30_000);
+});
+
+test("honors the caller deadline while capping direct collector runs", () => {
+  const now = 1_000_000;
+  assert.equal(resolveProviderDeadlineAt({ providerDeadlineAt: now + 180_000 }, now), now + 180_000);
+  assert.equal(resolveProviderDeadlineAt({ providerDeadlineAt: now + 500_000 }, now), now + 225_000);
+  assert.equal(resolveProviderDeadlineAt({ providerDeadlineAt: now - 1 }, now), now - 1);
+  assert.equal(remainingTimeoutMs(now + 5_000, 30_000, () => now), 5_000);
+  assert.equal(remainingTimeoutMs(now + 50_000, 30_000, () => now), 30_000);
+  assert.throws(
+    () => remainingTimeoutMs(now, 30_000, () => now),
+    /naver_map_lookup_deadline_exceeded/
+  );
 });
 
 function placeRow(index) {
@@ -584,38 +599,81 @@ test("recognizes an Apify account hard limit and stops the shared Actor chain", 
   }
 });
 
-test("returns the native browser result when the paid provider is unavailable", async () => {
+test("uses only the native PC organic result even when an Actor reports another rank", async () => {
   let browserCalls = 0;
+  let apifyCalls = 0;
   const result = await lookupNaverPlaceRank({
     keyword: "부평 맛집",
     placeUrl: "https://map.naver.com/p/entry/place/2019299673",
     maxRank: 300,
   }, {
     apifyLookup: async () => {
-      throw new Error("Monthly usage hard limit exceeded");
+      apifyCalls += 1;
+      return {
+        ok: true,
+        matched: true,
+        rank: 3,
+        checkedCount: 3,
+        complete: false,
+        source: "apify_untrusted_order",
+      };
     },
     browserLookup: async () => {
       browserCalls += 1;
       return {
         ok: true,
-        matched: false,
-        rank: null,
-        checkedCount: 54,
+        matched: true,
+        rank: 17,
+        checkedCount: 17,
         requestedMaxRank: 300,
         complete: false,
-        partial: true,
-        stopReason: "collection_deadline_reached",
+        partial: false,
+        stopReason: "target_found",
         source: "naver_map_pc_list_collector",
+        rankEvidence: "naver_pc_organic_list",
       };
     },
   });
 
   assert.equal(browserCalls, 1);
+  assert.equal(apifyCalls, 0);
   assert.equal(result.ok, true);
-  assert.equal(result.checkedCount, 54);
-  assert.equal(result.providerFallbackUsed, true);
-  assert.equal(result.providerFallbackReason, "Monthly usage hard limit exceeded");
-  assert.equal(result.source, "naver_map_pc_list_collector_fallback");
+  assert.equal(result.rank, 17);
+  assert.equal(result.source, "naver_map_pc_list_collector");
+  assert.equal(result.rankEvidence, "naver_pc_organic_list");
+  assert.equal("providerFallbackUsed" in result, false);
+});
+
+test("keeps a native partial scan truthful instead of accepting an Actor rank", async () => {
+  let apifyCalls = 0;
+  const result = await lookupNaverPlaceRank({
+    keyword: "부평 맛집",
+    placeId: "2019299673",
+    maxRank: 300,
+  }, {
+    apifyLookup: async () => {
+      apifyCalls += 1;
+      return { ok: true, matched: true, rank: 9, checkedCount: 9, complete: false };
+    },
+    browserLookup: async () => ({
+      ok: true,
+      matched: false,
+      rank: null,
+      checkedCount: 100,
+      requestedMaxRank: 300,
+      complete: false,
+      partial: true,
+      stopReason: "naver_result_list_exhausted",
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
+    }),
+  });
+
+  assert.equal(apifyCalls, 0);
+  assert.equal(result.matched, false);
+  assert.equal(result.rank, null);
+  assert.equal(result.checkedCount, 100);
+  assert.equal(result.partial, true);
 });
 
 test("normalizes the capitalized 300-result Actor fields", () => {

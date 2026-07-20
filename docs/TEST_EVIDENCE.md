@@ -410,3 +410,17 @@
 - 라이브 관리자·광고주 데스크톱: 카드·이미지·링크 각각 2개, 가로 넘침 없음
 - 라이브 관리자·광고주 390×844: 카드·이미지·링크 각각 2개, `scrollWidth=390`
 - 잘못된 원부 `59606749556`과 같은 판매처의 무관한 불소 상품: 라이브 화면 미표시
+
+## 2026-07-20 플레이스 네이티브 오가닉 v16·네이버 API 공지 감사
+
+- 순위 권위: `source=naver_map_pc_list_collector`, `rankEvidence=naver_pc_organic_list`인 네이버 PC 실제 장소 목록만 저장한다. 두 표식 중 하나라도 누락·불일치하면 `place_rank_provider_untrusted_evidence`로 실패하고 새 snapshot을 만들지 않으며 기존 current/best/check_count·30일 이력을 보존한다.
+- 수집 예산: Vercel이 Render cold start를 포함한 절대 `providerDeadlineAt`을 전달하고, 수집기는 최대 225초 안에서 응답·브라우저 종료 여유 12초를 확보한다. viewport 1440×1600과 겹침 스크롤을 사용한다.
+- 로컬 실조회 1차: `홍대 맛집`/`1907427831` 100개 확인·정확 ID 오가닉 7위·30.770초, `부평 맛집`/`2019299673` 100개 확인·미발견·rank null·31.024초. 두 결과 모두 네이티브 source/evidence를 반환했다.
+- 육안 2차: 네이버 PC 목록의 상단 광고 3건을 순위에서 제외했고, 첫 오가닉 1~5위가 수집 결과와 일치했다. 동일 시점 독립 수집의 top10 ID·순서도 일치했다. 공개 목록이 100개에서 끝나므로 101~300위는 확정하지 않는다.
+- 자동 검증: 전체 `npm run check:release` 통과. API·서버 154/154, 플레이스 tracker 43/43, 플레이스 수집기 44/44, 서버 계약 22/22, Production 인증 18/18, 역할 query parity·공개 빌드 CSP 통과.
+- 변경 비범위: `src/pages/admin.html`, `src/pages/client.html`, N상품 수집·대표값 판정, 기존 30일 snapshot 조회·저장 로직은 diff 없음.
+- 독립 코드 재검수: 최초 P1이었던 공급자 근거 미강제를 보완한 뒤 P0/P1 0건으로 통과했다.
+- 공식 메일 확인: 발신자·공지 링크를 네이버 개발자센터 공식 공지와 대조했다. Search Trend·Shopping Insight·일반 Search 일부는 NAVER API Hub 이관 대상이지만 쇼핑 검색은 별도 공지상 이관 제외, 2026-07-31 종료, 대체 API 없음이다.
+- 2026-07-20 legacy 실호출: 기존 Search Trend·쇼핑 검색은 HTTP 200으로 응답해 이번 플레이스 오류의 직접 원인이 아님을 확인했다.
+- 공식 근거: `https://developers.naver.com/notice/article/32530`, `https://developers.naver.com/notice/article/32564`, `https://guide.ncloud-docs.com/docs/apihub-migration`.
+- 운영 배포: Vercel `/health`·`/ready` 릴리즈 `5014d1ab70c0`, Supabase `ready`; Render `/health` 릴리즈 `2026-07-20-native-organic-deadline-v16`, `configured=true`, `busy=false` 확인.

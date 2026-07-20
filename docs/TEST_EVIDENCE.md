@@ -423,4 +423,7 @@
 - 공식 메일 확인: 발신자·공지 링크를 네이버 개발자센터 공식 공지와 대조했다. Search Trend·Shopping Insight·일반 Search 일부는 NAVER API Hub 이관 대상이지만 쇼핑 검색은 별도 공지상 이관 제외, 2026-07-31 종료, 대체 API 없음이다.
 - 2026-07-20 legacy 실호출: 기존 Search Trend·쇼핑 검색은 HTTP 200으로 응답해 이번 플레이스 오류의 직접 원인이 아님을 확인했다.
 - 공식 근거: `https://developers.naver.com/notice/article/32530`, `https://developers.naver.com/notice/article/32564`, `https://guide.ncloud-docs.com/docs/apihub-migration`.
-- 운영 배포: Vercel `/health`·`/ready` 릴리즈 `5014d1ab70c0`, Supabase `ready`; Render `/health` 릴리즈 `2026-07-20-native-organic-deadline-v16`, `configured=true`, `busy=false` 확인.
+- 운영 배포: Vercel `/health`·`/ready` 릴리즈 `bfa97e38304d`(기능 코드 `5014d1a` 포함), Supabase `ready`; Render `/health` 릴리즈 `2026-07-20-native-organic-deadline-v16`, `configured=true`, `busy=false` 확인.
+- 운영 snapshot: `홍대 맛집`/`1907427831`은 `checked_count=97`, `rank=7`, `matched=true`; `부평 맛집`/`2019299673`은 `checked_count=77`, `rank=null`, `matched=false`. 두 source 모두 `naver_map_pc_list_collector`, place ID 정확 일치, 블로그·방문 coverage 전체 충족.
+- 이력 보존: 과거 `_fallback` snapshot은 그대로 남겼고 새 v16 snapshot만 추가했다. 현재값·best·기존 30일 기록 삭제·소급 재작성 없음.
+- workflow 판정: 두 호출과 저장은 정상 완료했으나 `부평 맛집`의 300위 미완주를 숨기지 않도록 `partial>0` 정책이 첫 실행을 경고 실패로 종료했다. transport·provider 오류와 tracker `last_error`는 없음.

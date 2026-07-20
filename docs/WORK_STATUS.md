@@ -6,6 +6,7 @@
 
 - 플레이스 순위 v16 운영 상태: 순위 근거를 네이버 PC 실제 장소 목록의 광고 제외 오가닉 행으로 단일화하고, Apify 배열 순번은 운영 순위에 사용하지 않는다. Vercel이 Render cold start를 포함한 절대 마감 시각을 전달하며 수집기는 1600px viewport와 겹침 스크롤로 마감 전 실제 확인 범위만 반환한다. 본 서버도 `source=naver_map_pc_list_collector`와 `rankEvidence=naver_pc_organic_list`를 모두 강제해 구버전·오염 응답은 스냅샷으로 저장하지 않고 기존 순위·30일 이력을 보존한 채 재시도한다. 코드 `5014d1a`와 Render `2026-07-20-native-organic-deadline-v16`이 운영 반영됐고 `/health`·`/ready`·Supabase ready를 확인했다.
 - v16 실조회·검증: `홍대 맛집`/`1907427831`은 100개를 확인해 실제 PC 오가닉 7위, `부평 맛집`/`2019299673`은 100개를 확인해 미발견·rank null로 종료됐다. 전체 `check:release`는 API·서버 154/154, 플레이스 수집기 44/44, 서버 계약 22/22, Production 인증 18/18, 역할 parity·CSP·공개 빌드와 `git diff --check`를 통과했다. 독립 재검수 결과 P0/P1 0건이며 `admin.html`·`client.html`·N상품·30일 이력 코드는 변경하지 않았다.
+- v16 운영 스냅샷: `홍대 맛집`은 실제 97개·정확 ID 7위, `부평 맛집`은 실제 77개·미발견/null로 새 저장됐다. 두 snapshot source는 모두 `naver_map_pc_list_collector`이고 블로그·방문 coverage도 각각 97/97·77/77이다. 기존 `_fallback` 이력은 삭제·재작성하지 않았다. 첫 workflow는 이 정상 부분 결과를 경고하는 정책 때문에 실패 결론을 냈으며 transport·수집기 오류나 데이터 소실은 없었다.
 - 네이버 API 공지 감사: 메일과 공식 공지를 대조한 결과 Search Trend·Shopping Insight·일반 Search 일부는 NAVER API Hub 이관 대상이다. 반면 현재 상품 단건·N 30일·SEO에 쓰는 쇼핑 검색 API는 이관 제외이며 2026-07-31 종료·대체 API 없음이 별도 공지로 확정됐다. 2026-07-20 legacy 실호출은 아직 200이므로 이번 플레이스 오류의 직접 원인은 아니며, 종료 전에 상품 순위 소스 교체와 이관 가능 API의 Hub 어댑터를 별도 작업으로 진행해야 한다.
 
 - 플레이스 실위치 순위 근거 정상화: `/p/api/search/allSearch`는 지도 마커 미리보기라 PC 장소 목록의 오가닉 순서와 다르므로 순위 근거에서 완전히 제외했다. 실제 `#_pcmap_list_scroll_container` 안에서 확인된 행만 순번에 포함하고, 광고는 제외하되 ID를 읽지 못한 실제 목록 행은 순서 슬롯으로 보존해 이후 대상 순위의 압축·팽창을 모두 차단했다.

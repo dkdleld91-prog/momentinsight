@@ -171,11 +171,38 @@ requireText(
   /^USER pwuser$/m,
   "collector container must run as the non-root Playwright user",
 );
-requireText(
+
+const collectorDockerIgnorePath = path.join(
+  root,
   "tools/naver-place-rank-collector/.dockerignore",
-  /^\*\*$/m,
-  "container build context must default to deny",
 );
+const collectorDockerIgnorePolicyPath = path.join(
+  root,
+  "tools/naver-place-rank-collector/dockerignore.policy",
+);
+const collectorDockerIgnorePolicy = fs.readFileSync(
+  collectorDockerIgnorePolicyPath,
+  "utf8",
+);
+
+if (!/^\*\*$/m.test(collectorDockerIgnorePolicy)) {
+  failures.push(
+    "tools/naver-place-rank-collector/dockerignore.policy: container build context must default to deny",
+  );
+}
+
+if (fs.existsSync(collectorDockerIgnorePath)) {
+  const collectorDockerIgnore = fs.readFileSync(collectorDockerIgnorePath, "utf8");
+  if (collectorDockerIgnore !== collectorDockerIgnorePolicy) {
+    failures.push(
+      "tools/naver-place-rank-collector/.dockerignore: must exactly match dockerignore.policy",
+    );
+  }
+} else if (process.env.VERCEL !== "1") {
+  failures.push(
+    "tools/naver-place-rank-collector/.dockerignore: container build context policy is missing",
+  );
+}
 
 if (failures.length) {
   for (const failure of failures) console.error(`BLOCK ${failure}`);

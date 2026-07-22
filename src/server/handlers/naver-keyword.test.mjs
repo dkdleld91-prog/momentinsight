@@ -187,7 +187,7 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const href = String(url);
-    calls.push({ href, headers: options.headers || {} });
+    calls.push({ href, headers: options.headers || {}, body: options.body || "" });
     if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
       return new Response(JSON.stringify({
         keywordList: [{
@@ -206,7 +206,13 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     }
     if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
       return new Response(JSON.stringify({
-        results: [{ data: [{ period: "2026-06-01", ratio: 100 }] }],
+        results: [{ data: Array.from({ length: 36 }, (_, index) => {
+          const date = new Date(Date.UTC(2023, 6 + index, 1));
+          return {
+            period: date.toISOString().slice(0, 10),
+            ratio: 65 + (index % 12) * 3,
+          };
+        }) }],
       }), { status: 200 });
     }
     return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
@@ -223,8 +229,15 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     assert.equal(body.source.migratedApiProvider, "hub");
     const hubCall = calls.find((call) => call.href.includes("/search-trend/v1/search"));
     const shoppingCall = calls.find((call) => call.href.includes("/v1/search/shop.json"));
+    const hubRequest = JSON.parse(hubCall.body);
+    const startParts = hubRequest.startDate.split("-").map(Number);
+    const endParts = hubRequest.endDate.split("-").map(Number);
+    const requestedMonths = ((endParts[0] - startParts[0]) * 12) + endParts[1] - startParts[1];
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY-ID"], "hub-id");
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY"], "hub-secret");
+    assert.ok(requestedMonths >= 36 && requestedMonths <= 37);
+    assert.equal(body.chartData.series.length, 36);
+    assert.equal(body.chartData.seriesPeriods.length, 36);
     assert.equal(shoppingCall.headers["X-Naver-Client-Id"], "legacy-shopping-id");
     assert.equal(shoppingCall.headers["X-Naver-Client-Secret"], "legacy-shopping-secret");
   } finally {

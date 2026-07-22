@@ -6293,6 +6293,16 @@
       function rangeLabels(data, countOverride) {
         var count = countOverride || keywordRangeMonths[keywordRange] || 12;
         var source = Array.isArray(data && data.seriesLabels) && data.seriesLabels.length ? data.seriesLabels.slice() : [];
+        var periods = Array.isArray(data && data.seriesPeriods) && data.seriesPeriods.length ? data.seriesPeriods.slice() : [];
+        if (periods.length && keywordRange === "threeYear") {
+          var selectedPeriods = periods.length >= count ? periods.slice(periods.length - count) : periods;
+          var selectedLabels = source.length >= selectedPeriods.length ? source.slice(source.length - selectedPeriods.length) : [];
+          return selectedPeriods.map(function (period, index) {
+            var match = String(period || "").match(/^(\d{4})-(\d{2})/);
+            var estimated = String(selectedLabels[index] || "").indexOf("(예상)") > -1 ? "(예상)" : "";
+            return match ? match[1].slice(2) + "." + match[2] + estimated : selectedLabels[index] || String(period || "");
+          });
+        }
         if (!source.length) return makeKeywordMonthLabels(count);
         if (source.length >= count) return source.slice(source.length - count);
         return source;

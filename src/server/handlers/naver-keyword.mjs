@@ -12,6 +12,7 @@ const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_LEGACY_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const DATALAB_HISTORY_START_DATE = "2016-01-01";
 const SHOPPING_INSIGHT_START_DATE = "2017-08-01";
+const KEYWORD_TREND_MONTHS = 36;
 const DATALAB_MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
 const SHOPPING_MAIN_CATEGORY_IDS = {
   "패션의류": "50000000",
@@ -507,6 +508,10 @@ export function trendLabels(payload, endDate = "") {
   return data.map((item) => formatMonthPeriod(item.period, isPartialMonthPeriod(item.period, endDate)));
 }
 
+function trendPeriods(payload) {
+  return trendData(payload).map((item) => String(item.period || ""));
+}
+
 function trendToSeries(trendPayload) {
   const data = trendData(trendPayload);
   if (!data.length) return [];
@@ -631,7 +636,7 @@ async function allSettledInBatches(tasks, size = 2, gapMs = 120) {
 async function buildDatalabProfile(env, keyword, options = {}) {
   const includeProfile = options.includeProfile !== false;
   const endDate = compactDate(dateDaysAgo(1));
-  const trendStartDate = compactDate(monthsAgo(12));
+  const trendStartDate = compactDate(monthsAgo(KEYWORD_TREND_MONTHS));
   const ageStartDate = compactDate(monthsAgo(12));
   const shoppingCategoryId = options.shoppingCategoryId || "";
   const shoppingStartDate = ageStartDate < SHOPPING_INSIGHT_START_DATE ? SHOPPING_INSIGHT_START_DATE : ageStartDate;
@@ -715,6 +720,7 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   return {
     series: trendToSeries(trend),
     seriesLabels: trendLabels(trend, endDate),
+    seriesPeriods: trendPeriods(trend),
     seriesAnchorIndex: latestCompleteTrendIndex(trend, endDate),
     month,
     monthLabels,
@@ -936,6 +942,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
       : "정확한 월 검색량이 확인되지 않았습니다. 연관 키워드를 개별 조회해주세요.",
     series: estimatedSeries,
     seriesLabels: datalabProfile?.seriesLabels || [],
+    seriesPeriods: datalabProfile?.seriesPeriods || [],
     trendIndex,
     trendUnit: estimatedSeries.length ? "monthly_search_volume_estimate" : datalabProfile?.trendUnit || "",
     month: datalabProfile?.month || [],

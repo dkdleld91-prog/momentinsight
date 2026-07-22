@@ -656,6 +656,17 @@ const checks = {
     && !adminSource.includes("일별_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
   clientToolsExist: ["keyword-tool", "related-keywords", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  keywordThreeYearTrendWorks: [adminSource, clientSource].every((source) => [
+    'data-keyword-range="year"',
+    'data-keyword-range="threeYear"',
+    "threeYear: 36",
+    "data.seriesPeriods",
+    'keywordRange === "threeYear"',
+    "match[1].slice(2) + \".\" + match[2]",
+  ].every((marker) => source.includes(marker)))
+    && keywordServer.includes("const KEYWORD_TREND_MONTHS = 36;")
+    && keywordServer.includes("seriesPeriods: trendPeriods(trend)")
+    && keywordServer.includes("seriesPeriods: datalabProfile?.seriesPeriods || []"),
   keywordMarketPremiumSummary: [adminSource, clientSource].every((source) => [
     "KEYWORD MARKET",
     'data-keyword-market-indicator="demand"',

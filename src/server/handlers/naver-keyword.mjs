@@ -546,17 +546,40 @@ function groupedShares(payload, groups) {
   return normalizeShares(groups.map((group) => ({ value: sums[group] })));
 }
 
-function shoppingAgeShares(payload) {
-  const parsed = groupedRatioSums(payload, SHOPPING_AGE_GROUPS);
-  if (!["20", "30", "40", "50"].every((group) => parsed.seen.has(group))) return null;
+export function shoppingAgeProfile(payload, endDate = "") {
+  const periods = new Map();
+  const data = payload?.results?.[0]?.data || [];
+
+  data.forEach((item) => {
+    const period = String(item.period || "");
+    const group = String(item.group || "");
+    const ratio = Number(item.ratio || 0);
+    if (!period || !SHOPPING_AGE_GROUPS.includes(group) || !Number.isFinite(ratio) || ratio < 0) return;
+    if (!periods.has(period)) {
+      periods.set(period, Object.fromEntries(SHOPPING_AGE_GROUPS.map((ageGroup) => [ageGroup, 0])));
+    }
+    periods.get(period)[group] += ratio;
+  });
+
+  const period = [...periods.keys()]
+    .filter((candidate) => !isPartialMonthPeriod(candidate, endDate))
+    .sort()
+    .reverse()
+    .find((candidate) => Object.values(periods.get(candidate)).some((value) => value > 0));
+  if (!period) return null;
+
+  const sums = periods.get(period);
   const buckets = [
-    parsed.sums["10"],
-    parsed.sums["20"],
-    parsed.sums["30"],
-    parsed.sums["40"],
-    parsed.sums["50"] + parsed.sums["60"],
+    sums["10"],
+    sums["20"],
+    sums["30"],
+    sums["40"],
+    sums["50"] + sums["60"],
   ];
-  return normalizeShares(buckets.map((value) => ({ value })));
+  return {
+    period,
+    shares: normalizeShares(buckets.map((value) => ({ value }))),
+  };
 }
 
 function shoppingCategoryIdFromName(categoryName) {
@@ -597,6 +620,7 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   let monthBasis = "recent_12_month_trend_ratio";
   let week = [];
   let age = [];
+  let agePeriod = "";
   let device = null;
   let gender = null;
   let demographicStatus = includeProfile ? "search_interest_profile" : "trend_only";
@@ -644,8 +668,11 @@ async function buildDatalabProfile(env, keyword, options = {}) {
       }
     }
     if (agePayload) {
-      const ageShares = shoppingAgeShares(agePayload);
-      if (ageShares) age = ageShares;
+      const ageProfile = shoppingAgeProfile(agePayload, endDate);
+      if (ageProfile) {
+        age = ageProfile.shares;
+        agePeriod = ageProfile.period;
+      }
     }
 
     profileStatus.month = historyMonth ? "ok" : "partial";
@@ -672,7 +699,8 @@ async function buildDatalabProfile(env, keyword, options = {}) {
     trendUnit: "relative_interest_index",
     monthBasis,
     weekBasis: "2016_current_search_ratio",
-    ageBasis: shoppingCategoryId ? "recent_1_year_shopping_keyword_ratio" : "recent_1_year_search_ratio",
+    ageBasis: shoppingCategoryId ? "latest_complete_month_shopping_keyword_share" : "",
+    agePeriod,
     device,
     deviceBasis: shoppingCategoryId ? "recent_1_year_shopping_keyword_ratio" : "",
     gender,
@@ -790,6 +818,7 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
     genderBasis: datalabProfile?.genderBasis || "",
     age: datalabProfile?.age || [],
     ageBasis: datalabProfile?.ageBasis || "",
+    agePeriod: datalabProfile?.agePeriod || "",
     demographicStatus: datalabProfile?.demographicStatus || "",
     profileStatus: datalabProfile?.profileStatus || {},
     shoppingCategoryId: datalabProfile?.shoppingCategoryId || shoppingProfile?.categoryId || "",

@@ -665,6 +665,7 @@ const checks = {
     "경쟁 강도",
     "판매 기회율",
     "판매 기회율은 실제 매출 전환율이 아닙니다.",
+    "grid-template-columns: minmax(112px, 1fr) 62px 42px 72px;",
     "function setKeywordMarketIndicator(",
   ].every((marker) => source.includes(marker)))
     && keywordServer.includes("export function keywordMarketIndicators(")

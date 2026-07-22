@@ -4891,6 +4891,23 @@
         justify-content: stretch;
       }
 
+      #mi-clean .mi-related-table div {
+        grid-template-columns: minmax(112px, 1fr) 62px 42px 72px;
+        gap: 6px;
+        font-size: 11px;
+      }
+
+      #mi-clean .mi-related-table div > span {
+        min-width: 0;
+        word-break: keep-all;
+      }
+
+      #mi-clean .mi-related-table div > span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       #mi-clean .mi-ratio-card {
         padding: 18px 14px;
       }

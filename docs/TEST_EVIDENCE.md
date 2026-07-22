@@ -439,3 +439,13 @@
 - 운영 snapshot: `홍대 맛집`/`1907427831`은 `checked_count=97`, `rank=7`, `matched=true`; `부평 맛집`/`2019299673`은 `checked_count=77`, `rank=null`, `matched=false`. 두 source 모두 `naver_map_pc_list_collector`, place ID 정확 일치, 블로그·방문 coverage 전체 충족.
 - 이력 보존: 과거 `_fallback` snapshot은 그대로 남겼고 새 v16 snapshot만 추가했다. 현재값·best·기존 30일 기록 삭제·소급 재작성 없음.
 - workflow 판정: 두 호출과 저장은 정상 완료했으나 `부평 맛집`의 300위 미완주를 숨기지 않도록 `partial>0` 정책이 첫 실행을 경고 실패로 종료했다. transport·provider 오류와 tracker `last_error`는 없음.
+
+## 2026-07-22 플레이스 의료 키워드 네이티브 경로 정상화
+
+- 운영 데이터 진단: 플레이스ID `1531240094`의 `종로3가한의원`·`종로한의원` 추적은 각각 retry 31회·30회, snapshot 0건이며 마지막 오류는 모두 `#_pcmap_list_scroll_container` 8초 timeout이었다. 기존 추적 행과 이력은 삭제·수정하지 않았다.
+- 직접 원인: 네이버 실제 검색 화면은 두 키워드를 `https://pcmap.place.naver.com/hospital/list`로 열고 정확 ID `1531240094`를 목록에 포함한다. 기존 수집기는 이를 `place/list?display=300`으로 다시 열어 `조건에 맞는 업체가 없습니다` 페이지로 리디렉션됐다.
+- 수정 기준: 검색 화면이 만든 정확한 HTTPS `pcmap.place.naver.com` 목록 URL만 허용한다. `hospital/list`는 네이티브 `display=70`, `clientX`·`clientY`·`searchText` 문맥을 보존하고, `restaurant/list`는 기존 `display=300` 확장을 유지한다. 호스트 문자열만 포함한 비네이버 URL은 거부한다.
+- 대상 실조회: 광고 제외 네이버 PC 오가닉 목록에서 `종로3가한의원` 3위, `종로한의원` 12위이며 두 건 모두 정확 ID `1531240094`, `source=naver_map_pc_list_collector`, `rankEvidence=naver_pc_organic_list`다.
+- 2차 회귀: `홍대 맛집`/`1907427831`은 100개 확인·7위, `부평 맛집`/`2019299673`은 100개 확인·미발견·partial이며 기존 진실 표기가 유지됐다.
+- 자동 검증: 플레이스 수집기 47/47, API·서버 154/154, 서버 계약 22/22, Production 인증 18/18, 전체 `npm run check:release`, 공개 빌드·역할 parity·`git diff --check` 통과.
+- 변경 비범위: `src/pages/admin.html`, `src/pages/client.html`, 서버 snapshot 저장 계약, Supabase 스키마, N상품 순위와 기존 30일 기록은 변경하지 않았다.

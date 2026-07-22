@@ -32,6 +32,7 @@ const GROWTH_POLL_INTERVAL_MS = 220;
 const GROWTH_POLL_ATTEMPTS = 6;
 const EXHAUSTED_STABLE_ROUNDS = 3;
 const LIST_SELECTOR_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 8000));
+const NATIVE_LIST_FRAME_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 6000));
 const IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS = 1000;
 const RESULT_CACHE_TTL_MS = Math.max(
   60000,
@@ -1327,7 +1328,31 @@ async function collectVerifiedListRowsProgressively({
   });
 }
 
-function buildPlaceListUrl(keyword, maxRank, searchCoord = "") {
+function buildPlaceListUrl(keyword, maxRank, searchCoord = "", nativeListUrl = "") {
+  const nativeUrl = normalizeUrl(nativeListUrl);
+  let nativeUrlObject = null;
+  try {
+    nativeUrlObject = nativeUrl ? new URL(nativeUrl) : null;
+  } catch {
+    nativeUrlObject = null;
+  }
+  if (
+    nativeUrlObject?.protocol === "https:" &&
+    nativeUrlObject.hostname === "pcmap.place.naver.com" &&
+    LIST_FRAME_PATTERN.test(nativeUrlObject.toString()) &&
+    /\/list$/i.test(nativeUrlObject.pathname)
+  ) {
+    const url = nativeUrlObject;
+    // Medical searches use hospital/list with a native display=70 contract.
+    // Forcing display=300 redirects that route to an empty generic place/list.
+    // Preserve Naver's full query context for that route. Restaurant lists
+    // accept the wider display value and keep the existing scan coverage.
+    if (!/\/hospital\/list$/i.test(url.pathname)) {
+      url.searchParams.set("display", String(Math.min(maxRank, NAVER_PLACE_MAX_RESULTS)));
+    }
+    return url.toString();
+  }
+
   const [x = "126.891732", y = "37.476909"] = normalizeText(searchCoord).split(";");
   const mapUrl = NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword);
   const url = new URL(NAVER_PLACE_LIST_BASE);
@@ -1341,6 +1366,19 @@ function buildPlaceListUrl(keyword, maxRank, searchCoord = "") {
   url.searchParams.set("mapUrl", mapUrl);
   url.searchParams.set("svcName", "map_pcv5");
   return url.toString();
+}
+
+async function resolveNativeListUrl(page, deadlineAt) {
+  const timeoutMs = remainingTimeoutMs(deadlineAt, NATIVE_LIST_FRAME_TIMEOUT_MS);
+  const endsAt = Date.now() + timeoutMs;
+  while (Date.now() < endsAt) {
+    const frame = page.frames().find((item) =>
+      LIST_FRAME_PATTERN.test(item.url()) && /\/list(?:\?|$)/i.test(item.url())
+    );
+    if (frame) return frame.url();
+    await page.waitForTimeout(Math.min(150, Math.max(1, endsAt - Date.now())));
+  }
+  return "";
 }
 
 function candidateFromAllSearch(item, index) {
@@ -1373,7 +1411,8 @@ async function resolveMapSearch(page, keyword, deadlineAt) {
     timeout: remainingTimeoutMs(deadlineAt, Math.min(DEFAULT_TIMEOUT_MS, 30000)),
   });
   const response = await responsePromise;
-  if (!response) return { searchCoord: "", candidates: [], total: 0 };
+  const nativeListUrl = await resolveNativeListUrl(page, deadlineAt).catch(() => "");
+  if (!response) return { searchCoord: "", candidates: [], total: 0, nativeListUrl };
   try {
     const payload = await response.json();
     const placeResult = payload?.result?.place;
@@ -1384,9 +1423,10 @@ async function resolveMapSearch(page, keyword, deadlineAt) {
       searchCoord: new URL(response.url()).searchParams.get("searchCoord") || "",
       candidates,
       total: Number(placeResult?.totalCount || candidates.length || 0),
+      nativeListUrl,
     };
   } catch {
-    return { searchCoord: "", candidates: [], total: 0 };
+    return { searchCoord: "", candidates: [], total: 0, nativeListUrl };
   }
 }
 
@@ -1434,7 +1474,7 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
     // the tracked place URL describe the target and must not bias list order.
     const initialSearch = await resolveMapSearch(page, keyword, deadlineAt);
     const searchCoord = initialSearch.searchCoord;
-    await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord), {
+    await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord, initialSearch.nativeListUrl), {
       waitUntil: "domcontentloaded",
       timeout: remainingTimeoutMs(deadlineAt, DEFAULT_TIMEOUT_MS),
       referer: NAVER_MAP_SEARCH_BASE + encodeURIComponent(keyword),
@@ -1724,6 +1764,7 @@ export const __testing = {
   appendCandidate,
   apifyStopReason,
   buildCollectionStatus,
+  buildPlaceListUrl,
   buildApifyIdentityInput,
   buildApifySearchInput,
   clampMaxRank,

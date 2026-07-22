@@ -6,6 +6,7 @@ import { __testing, lookupNaverPlaceRank } from "../src/naver-place-rank.mjs";
 const {
   aggregateCandidateMetrics,
   buildCollectionStatus,
+  buildPlaceListUrl,
   buildApifyIdentityInput,
   buildApifySearchInput,
   clampMaxRank,
@@ -23,6 +24,37 @@ const {
   resolveApifyBudgetMs,
   selectorFallbackCollection,
 } = __testing;
+
+test("preserves Naver's hospital list route and native display contract", () => {
+  const nativeUrl = "https://pcmap.place.naver.com/hospital/list?query=%EC%A2%85%EB%A1%9C3%EA%B0%80%ED%95%9C%EC%9D%98%EC%9B%90&x=126.676525&y=37.463776&clientX=126.676525&clientY=37.463776&display=70&searchText=%EC%A2%85%EB%A1%9C3%EA%B0%80%ED%95%9C%EC%9D%98%EC%9B%90";
+  const result = new URL(buildPlaceListUrl("종로3가한의원", 300, "126.676525;37.463776", nativeUrl));
+
+  assert.equal(result.pathname, "/hospital/list");
+  assert.equal(result.searchParams.get("display"), "70");
+  assert.equal(result.searchParams.get("clientX"), "126.676525");
+  assert.equal(result.searchParams.get("searchText"), "종로3가한의원");
+});
+
+test("keeps the existing 300-result expansion for native restaurant lists", () => {
+  const nativeUrl = "https://pcmap.place.naver.com/restaurant/list?query=%ED%99%8D%EB%8C%80+%EB%A7%9B%EC%A7%91&x=126.676525&y=37.463776&display=70";
+  const result = new URL(buildPlaceListUrl("홍대 맛집", 300, "126.676525;37.463776", nativeUrl));
+
+  assert.equal(result.pathname, "/restaurant/list");
+  assert.equal(result.searchParams.get("display"), "300");
+});
+
+test("rejects a non-Naver URL that only contains a native-list string", () => {
+  const result = new URL(buildPlaceListUrl(
+    "종로3가한의원",
+    300,
+    "126.676525;37.463776",
+    "https://example.invalid/?next=https://pcmap.place.naver.com/hospital/list"
+  ));
+
+  assert.equal(result.hostname, "pcmap.place.naver.com");
+  assert.equal(result.pathname, "/place/list");
+  assert.equal(result.searchParams.get("display"), "300");
+});
 
 test("advances the virtual place list in overlapping steps instead of jumping to the end", () => {
   assert.equal(nextListScrollTop({ scrollTop: 0, scrollHeight: 5000, clientHeight: 1000 }), 720);

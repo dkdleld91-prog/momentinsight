@@ -816,6 +816,21 @@ test("allows advertiser sync-due with its rank access code and rejects invalid a
   assert.equal(wrong.body.ok, false);
 });
 
+test("place due refresh stays global for cron and accepts any advertiser scope", async () => {
+  const siteWide = testContext();
+  const globalSummary = await runDuePlaceTrackers(siteWide.ctx, { limit: 1 });
+  assert.equal(globalSummary.drained, true);
+  assert.equal(siteWide.state.lastRpcParams.requested_agency_codes, null);
+
+  const advertiser = testContext();
+  const scopedSummary = await runDuePlaceTrackers(advertiser.ctx, {
+    agencyCode: "agency-b02",
+    limit: 1,
+  });
+  assert.equal(scopedSummary.drained, true);
+  assert.deepEqual(advertiser.state.lastRpcParams.requested_agency_codes, ["agency-b02"]);
+});
+
 test("returns 502 when a due place refresh fails and preserves it for retry", async () => {
   const { ctx, state } = testContext([{
     id: "retry-place",

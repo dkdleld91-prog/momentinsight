@@ -991,3 +991,52 @@ test("an empty product-rank due queue reports drained", async () => {
   assert.equal(summary.drained, true);
   assert.equal(queryCount, 2);
 });
+
+test("product due refresh stays global for cron and accepts any advertiser scope", async () => {
+  function scopeContext() {
+    let queryCount = 0;
+    const scopes = [];
+    const chain = (result) => ({
+      select() { return this; },
+      eq() { return this; },
+      lte() { return this; },
+      or() { return this; },
+      order() { return this; },
+      limit() { return this; },
+      in(column, values) {
+        scopes.push({ column, values: [...values] });
+        return this;
+      },
+      then(resolve, reject) { return Promise.resolve(result).then(resolve, reject); },
+    });
+    return {
+      scopes,
+      ctx: {
+        supabaseAdmin: {
+          from() {
+            queryCount += 1;
+            return chain(queryCount === 1
+              ? { data: [], error: null }
+              : { data: null, error: null, count: 0 });
+          },
+        },
+      },
+    };
+  }
+
+  const siteWide = scopeContext();
+  const globalSummary = await runDueTrackers(siteWide.ctx, { limit: 1 });
+  assert.equal(globalSummary.drained, true);
+  assert.deepEqual(siteWide.scopes, []);
+
+  const advertiser = scopeContext();
+  const scopedSummary = await runDueTrackers(advertiser.ctx, {
+    agencyCode: "agency-b02",
+    limit: 1,
+  });
+  assert.equal(scopedSummary.drained, true);
+  assert.deepEqual(advertiser.scopes, [
+    { column: "agency_code", values: ["agency-b02"] },
+    { column: "agency_code", values: ["agency-b02"] },
+  ]);
+});

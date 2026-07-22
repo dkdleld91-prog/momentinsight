@@ -122,8 +122,10 @@ const prohibitedHomeShowcaseFragments = [
 ].map(normalizeIdentityText);
 const sheetTemplateBuilder = read("03_운영시트_템플릿/build_moment_insight_sheet.mjs");
 const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
+const rankServerTests = read("src/server/handlers/naver-rank-trackers.test.mjs");
 const shoppingRankServer = read("src/server/handlers/naver-shopping-rank.mjs");
 const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs");
+const placeRankServerTests = read("src/server/handlers/naver-place-rank-trackers.test.mjs");
 const placeRankCollector = read("tools/naver-place-rank-collector/src/naver-place-rank.mjs");
 const placeRankCollectorTests = read("tools/naver-place-rank-collector/test/naver-place-rank.test.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
@@ -1106,6 +1108,11 @@ const checks = {
     && source.includes("for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1)")
     && source.includes("재시도 예정")
     && !source.includes("for (var i = 0; i < targets.length")),
+  rankRefreshAppliesBySessionScopeSiteWide: [adminFullRankRefreshSource, clientFullRankRefreshSource, adminFullPlaceRefreshSource, clientFullPlaceRefreshSource]
+    .every((source) => !source.includes("mml93-a01"))
+    && [adminRankTrackingSource, clientRankTrackingSource].every((source) => source.includes("verifiedRankTrackerScope()"))
+    && rankServerTests.includes("product due refresh stays global for cron and accepts any advertiser scope")
+    && placeRankServerTests.includes("place due refresh stays global for cron and accepts any advertiser scope"),
   rankPageAutoSyncIsBounded: [adminRankTrackingSource, clientRankTrackingSource].every((source) => source.includes('action: "sync-due"')
     && source.includes('limit: "2"')
     && !source.includes('limit: "50"')),

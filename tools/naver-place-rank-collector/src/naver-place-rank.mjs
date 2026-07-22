@@ -857,8 +857,13 @@ function cachedCandidates(keyword, maxRank) {
 
 function rememberCandidates(keyword, maxRank, collection) {
   // Never fan out a short or transiently truncated list to every tracker that
-  // shares a keyword. Only a fully collected requested range is cacheable.
-  if (!collection.complete) return;
+  // shares a keyword. A fully collected range or Naver's own stable list
+  // exhaustion is cacheable; deadlines, selector failures and scroll limits
+  // must always trigger a fresh collection.
+  const stableExhaustion = collection?.stopReason === "naver_result_list_exhausted"
+    && Array.isArray(collection?.candidates)
+    && collection.candidates.length > 0;
+  if (collection?.complete !== true && !stableExhaustion) return;
   const key = candidateCacheKey(keyword, maxRank);
   resultCache.delete(key);
   resultCache.set(key, {
@@ -874,6 +879,10 @@ function rememberCandidates(keyword, maxRank, collection) {
   while (resultCache.size > RESULT_CACHE_MAX) {
     resultCache.delete(resultCache.keys().next().value);
   }
+}
+
+function resetCandidateCache() {
+  resultCache.clear();
 }
 
 async function loadPlaywright() {
@@ -1781,6 +1790,7 @@ export const __testing = {
   appendCandidate,
   apifyStopReason,
   buildCollectionStatus,
+  cachedCandidates,
   buildPlaceListUrl,
   buildApifyIdentityInput,
   buildApifySearchInput,
@@ -1798,6 +1808,8 @@ export const __testing = {
   nextListScrollTop,
   isApifyAccountLimitError,
   remainingTimeoutMs,
+  rememberCandidates,
+  resetCandidateCache,
   resolveRequiredNativeListSearch,
   resolveProviderDeadlineAt,
   selectorFallbackCollection,

@@ -10,6 +10,7 @@ const {
   buildApifyIdentityInput,
   buildApifySearchInput,
   clampMaxRank,
+  cachedCandidates,
   candidateMatchesTarget,
   collectRowsProgressively,
   findMatch,
@@ -19,12 +20,46 @@ const {
   normalizeApifyResult,
   nextListScrollTop,
   remainingTimeoutMs,
+  rememberCandidates,
+  resetCandidateCache,
   resolveRequiredNativeListSearch,
   resolveProviderDeadlineAt,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
   selectorFallbackCollection,
 } = __testing;
+
+test("reuses only a verified native-list exhaustion for trackers sharing a keyword", () => {
+  resetCandidateCache();
+  const original = {
+    complete: false,
+    stopReason: "naver_result_list_exhausted",
+    candidates: [{ id: "2019299673", placeIds: ["2019299673"], rank: 77 }],
+  };
+
+  rememberCandidates("부평 맛집", 300, original);
+  const first = cachedCandidates("부평 맛집", 300);
+  assert.equal(first.stopReason, "naver_result_list_exhausted");
+  assert.deepEqual(first.candidates[0].placeIds, ["2019299673"]);
+
+  first.candidates[0].placeIds.push("mutated");
+  const second = cachedCandidates("부평 맛집", 300);
+  assert.deepEqual(second.candidates[0].placeIds, ["2019299673"]);
+  resetCandidateCache();
+});
+
+test("never reuses transiently truncated native-list collections", () => {
+  resetCandidateCache();
+  ["collection_deadline_reached", "max_scrolls_reached", "list_selector_unavailable_fallback"].forEach((stopReason) => {
+    rememberCandidates("홍대 맛집", 300, {
+      complete: false,
+      stopReason,
+      candidates: [{ id: "1907427831", placeIds: ["1907427831"], rank: 7 }],
+    });
+    assert.equal(cachedCandidates("홍대 맛집", 300), null);
+  });
+  resetCandidateCache();
+});
 
 test("preserves Naver's hospital list route and native display contract", () => {
   const nativeUrl = "https://pcmap.place.naver.com/hospital/list?query=%EC%A2%85%EB%A1%9C3%EA%B0%80%ED%95%9C%EC%9D%98%EC%9B%90&x=126.676525&y=37.463776&clientX=126.676525&clientY=37.463776&display=70&searchText=%EC%A2%85%EB%A1%9C3%EA%B0%80%ED%95%9C%EC%9D%98%EC%9B%90";

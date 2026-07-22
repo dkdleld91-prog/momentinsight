@@ -64,6 +64,12 @@ const clientMetaLookupSource = functionBody(clientSource, "async function fetchM
 const adminMetaLookupSource = functionBody(adminSource, "async function fetchMetaAds(", "function initRankCheck(");
 const clientRankCheckLookupSource = functionBody(clientSource, "function initRankCheck(", "function initRankTracking(");
 const adminRankCheckLookupSource = functionBody(adminSource, "function initRankCheck(", "function initRankTracking(");
+const adminRankTrackingSource = functionBody(adminSource, "function initRankTracking(", "function initSeoCheck(");
+const clientRankTrackingSource = functionBody(clientSource, "function initRankTracking(", "function initPlaceRankTracking(");
+const adminFullRankRefreshSource = functionBody(adminSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
+const clientFullRankRefreshSource = functionBody(clientSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
+const adminFullPlaceRefreshSource = functionBody(adminSource, "async function refreshAllPlaceTrackers(", "function placeRankExportFileName(");
+const clientFullPlaceRefreshSource = functionBody(clientSource, "async function refreshAllPlaceTrackers(", "async function loadPlaceTrackers(");
 const clientKeywordLookupSource = functionBody(clientSource, "async function runKeywordLookup() {", "if (keywordInput && keywordButton && keywordResult)");
 const adminKeywordLookupSource = functionBody(adminSource, "async function runKeywordLookup() {", "if (keywordInput && keywordButton && keywordResult)");
 const clientSeoLookupSource = functionBody(clientSource, "async function runSeoCheck() {", "if (keywordInput && seoKeyword)");
@@ -119,6 +125,7 @@ const rankServer = read("src/server/handlers/naver-rank-trackers.mjs");
 const shoppingRankServer = read("src/server/handlers/naver-shopping-rank.mjs");
 const placeRankServer = read("src/server/handlers/naver-place-rank-trackers.mjs");
 const placeRankCollector = read("tools/naver-place-rank-collector/src/naver-place-rank.mjs");
+const placeRankCollectorTests = read("tools/naver-place-rank-collector/test/naver-place-rank.test.mjs");
 const metaAdsServer = read("src/server/handlers/meta-ads.mjs");
 const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const ownerToolServer = read("src/server/handlers/owner-tool-api.mjs");
@@ -514,7 +521,8 @@ const checks = {
     && placeRankCollector.includes("An end jump can skip middle rows")
     && !placeRankCollector.includes("root.scrollTop = root.scrollHeight")
     && placeRankCollector.includes("Math.min(2, growthPollAttempts)")
-    && placeRankCollector.includes("if (!collection.complete) return;")
+    && placeRankCollector.includes('collection?.stopReason === "naver_result_list_exhausted"')
+    && placeRankCollector.includes("collection?.complete !== true && !stableExhaustion")
     && placeRankCollector.includes("isApifyAccountLimitError"),
   placeRankGroupAndShareTools: [adminSource, clientSource].every((source) => source.includes("data-place-rank-filter-group")
     && source.includes("data-place-rank-select")
@@ -1088,6 +1096,28 @@ const checks = {
     && source.includes("rankTrackerTrend")
     && source.includes("updateRankFilterPanel")
     && source.includes("키워드, 상품명, 상품번호 검색")),
+  rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes("Math.min(2, targets.length)")
+    && source.includes("Promise.all")
+    && source.includes("waitForRankAutoSyncBeforeManual")
+    && source.includes("안전 동시 갱신 2개")
+    && source.includes("재시도 예정")
+    && !source.includes("for (var i = 0; i < targets.length")),
+  rankPageAutoSyncIsBounded: [adminRankTrackingSource, clientRankTrackingSource].every((source) => source.includes('action: "sync-due"')
+    && source.includes('limit: "2"')
+    && !source.includes('limit: "50"')),
+  placeFullRefreshStaysSequential: [adminFullPlaceRefreshSource, clientFullPlaceRefreshSource].every((source) => source.includes("waitForPlaceAutoSyncBeforeManual")
+    && source.includes("for (var index = 0; index < targets.length; index += 1)")
+    && source.includes("재시도 예정")
+    && !source.includes("Promise.all")),
+  placeCollectorBusyRetryIsDeadlineBounded: placeRankServer.includes("fetchPlaceProviderWithBusyRetry")
+    && placeRankServer.includes('response.status === 429')
+    && placeRankServer.includes('"collector_busy"')
+    && placeRankServer.includes("remainingMs <= retryDelayMs + 2000"),
+  placeNativeExhaustionCacheIsFailClosed: placeRankCollector.includes('collection?.stopReason === "naver_result_list_exhausted"')
+    && placeRankCollector.includes("collection?.complete !== true && !stableExhaustion")
+    && placeRankCollectorTests.includes("never reuses transiently truncated native-list collections")
+    && placeRankCollectorTests.includes("collection_deadline_reached")
+    && placeRankCollectorTests.includes("list_selector_unavailable_fallback"),
   adminDownloadMicroInteraction: adminSource.includes("#mi-admin .mi-download:hover")
     && adminSource.includes("#mi-admin .mi-download:active")
     && adminSource.includes("#mi-admin .mi-download:focus-visible")

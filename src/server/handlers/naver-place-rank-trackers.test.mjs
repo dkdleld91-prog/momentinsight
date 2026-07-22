@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 import {
   assertSafeNaverPlaceUrl,
+  fetchPlaceProviderWithBusyRetry,
   handlePlaceRankTrackersRequest,
   loadSnapshots as loadPlaceSnapshots,
   normalizePlaceRankGroupName,
@@ -20,6 +21,56 @@ const ADMIN_CODE = "place-rank-group-test";
 const TRACKERS = "naver_place_rank_trackers";
 const SNAPSHOTS = "naver_place_rank_snapshots";
 const CLIENTS = "clients";
+
+test("waits for a busy single-browser collector and retries within the same deadline", async () => {
+  let calls = 0;
+  let nowMs = 1000;
+  const waits = [];
+  const result = await fetchPlaceProviderWithBusyRetry(async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({ ok: false, message: "collector_busy" }), {
+        status: 429,
+        headers: { "content-type": "application/json", "retry-after": "1" },
+      });
+    }
+    return new Response(JSON.stringify({ ok: true, matched: true, rank: 7 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }, "https://collector.example/lookup", { signal: new AbortController().signal }, {
+    deadlineAt: 10000,
+    now: () => nowMs,
+    wait: async (milliseconds) => {
+      waits.push(milliseconds);
+      nowMs += milliseconds;
+    },
+  });
+
+  assert.equal(calls, 2);
+  assert.deepEqual(waits, [1000]);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.payload.rank, 7);
+});
+
+test("does not start a retry when the collector deadline cannot cover it", async () => {
+  let calls = 0;
+  const result = await fetchPlaceProviderWithBusyRetry(async () => {
+    calls += 1;
+    return new Response(JSON.stringify({ ok: false, message: "collector_busy" }), {
+      status: 429,
+      headers: { "content-type": "application/json", "retry-after": "10" },
+    });
+  }, "https://collector.example/lookup", {}, {
+    deadlineAt: 11000,
+    now: () => 1000,
+    wait: async () => assert.fail("deadline guard must not wait"),
+  });
+
+  assert.equal(calls, 1);
+  assert.equal(result.response.status, 429);
+  assert.equal(result.payload.message, "collector_busy");
+});
 
 test("drain cron carries failed and partial summaries so later trackers can continue", () => {
   const failedSummary = {

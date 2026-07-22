@@ -8421,6 +8421,16 @@
           });
         }
 
+        async function waitForRankAutoSyncBeforeManual() {
+          if (!rankAutoSyncingDue) return true;
+          setStatus(rankStatus, "자동 갱신이 끝나면 전체 순위 갱신을 안전하게 이어갑니다.", "");
+          var deadline = Date.now() + 125000;
+          while (rankAutoSyncingDue && Date.now() < deadline) {
+            await new Promise(function (resolve) { setTimeout(resolve, 250); });
+          }
+          return !rankAutoSyncingDue;
+        }
+
         async function syncDueRankTrackersIfNeeded(silent, scope, generation) {
           if (!scope || !rankRequestIsCurrent(scope, generation)) return false;
           var due = dueRankTrackers(rankTrackers);
@@ -8433,7 +8443,7 @@
           try {
             var payload = await requestRankTrackers("POST", {
               action: "sync-due",
-              limit: "50"
+              limit: "2"
             });
             if (!rankRequestIsCurrent(scope, generation)) return false;
             if (!payload || payload.ok !== true) {
@@ -8524,18 +8534,36 @@
           var successCount = 0;
           var failCount = 0;
           try {
-            for (var i = 0; i < targets.length; i += 1) {
-              setStatus(rankStatus, "전체 순위 갱신 중입니다. " + (i + 1) + "/" + targets.length, "");
-              var payload = await requestRankTrackers("POST", {
-                action: "check",
-                trackerId: targets[i].id
-              });
-              if (payload && payload.ok && payload.tracker) successCount += 1;
-              else failCount += 1;
+            if (!await waitForRankAutoSyncBeforeManual()) {
+              setStatus(rankStatus, "자동 갱신이 진행 중입니다. 완료 후 전체 갱신을 다시 눌러주세요.", "is-warn");
+              return;
             }
+            var nextIndex = 0;
+            var completedCount = 0;
+            var workerCount = Math.min(2, targets.length);
+            setStatus(rankStatus, "전체 순위를 안전 동시 갱신 2개 기준으로 시작합니다.", "");
+            async function refreshWorker() {
+              while (nextIndex < targets.length) {
+                var targetIndex = nextIndex;
+                nextIndex += 1;
+                try {
+                  var payload = await requestRankTrackers("POST", {
+                    action: "check",
+                    trackerId: targets[targetIndex].id
+                  });
+                  if (payload && payload.ok && payload.tracker) successCount += 1;
+                  else failCount += 1;
+                } catch (error) {
+                  failCount += 1;
+                }
+                completedCount += 1;
+                setStatus(rankStatus, "전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length + " · 안전 동시 갱신 2개", "");
+              }
+            }
+            await Promise.all(Array.from({ length: workerCount }, function () { return refreshWorker(); }));
             await loadRankTrackers(true);
             setStatus(rankStatus, failCount
-              ? "전체 갱신 완료: 성공 " + successCount + "개, 확인 필요 " + failCount + "개"
+              ? "전체 갱신 완료: 성공 " + successCount + "개, 재시도 예정 " + failCount + "개"
               : "전체 순위 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");
           } catch (error) {
             setStatus(rankStatus, "전체 순위 갱신 연결을 확인해주세요.", "is-warn");
@@ -10270,6 +10298,16 @@
           });
         }
 
+        async function waitForPlaceAutoSyncBeforeManual() {
+          if (!placeAutoSyncingDue) return true;
+          setStatus(placeStatus, "자동 플레이스 갱신이 끝나면 전체 갱신을 안전하게 이어갑니다.", "");
+          var deadline = Date.now() + 275000;
+          while (placeAutoSyncingDue && Date.now() < deadline) {
+            await new Promise(function (resolve) { setTimeout(resolve, 500); });
+          }
+          return !placeAutoSyncingDue;
+        }
+
         async function syncDuePlaceTrackersIfNeeded(silent, scope, generation) {
           if (!scope || !placeRequestIsCurrent(scope, generation)) return false;
           var due = duePlaceTrackers(placeTrackers);
@@ -10556,18 +10594,26 @@
           var successCount = 0;
           var failCount = 0;
           try {
+            if (!await waitForPlaceAutoSyncBeforeManual()) {
+              setStatus(placeStatus, "자동 플레이스 갱신이 진행 중입니다. 완료 후 전체 갱신을 다시 눌러주세요.", "is-warn");
+              return;
+            }
             for (var index = 0; index < targets.length; index += 1) {
               setStatus(placeStatus, "전체 플레이스 순위 갱신 중입니다. " + (index + 1) + "/" + targets.length, "");
-              var payload = await requestPlaceTrackers("POST", {
-                action: "check",
-                trackerId: targets[index].id
-              });
-              if (payload && payload.ok && payload.tracker) successCount += 1;
-              else failCount += 1;
+              try {
+                var payload = await requestPlaceTrackers("POST", {
+                  action: "check",
+                  trackerId: targets[index].id
+                });
+                if (payload && payload.ok && payload.tracker) successCount += 1;
+                else failCount += 1;
+              } catch (error) {
+                failCount += 1;
+              }
             }
             await loadPlaceTrackers(true);
             setStatus(placeStatus, failCount
-              ? "전체 갱신 완료: 성공 " + successCount + "개, 확인 필요 " + failCount + "개"
+              ? "전체 갱신 완료: 성공 " + successCount + "개, 재시도 예정 " + failCount + "개"
               : "전체 플레이스 순위 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");
           } catch (error) {
             setStatus(placeStatus, "전체 플레이스 순위 갱신 연결을 확인해주세요.", "is-warn");

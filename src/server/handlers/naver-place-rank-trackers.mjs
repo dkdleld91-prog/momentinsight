@@ -1307,6 +1307,53 @@ async function lookupNaverLocalSearchRank(config, tracker) {
   };
 }
 
+function abortableProviderDelay(milliseconds, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const error = new Error("place_rank_provider_aborted");
+      error.name = "AbortError";
+      reject(error);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    function onAbort() {
+      clearTimeout(timeout);
+      const error = new Error("place_rank_provider_aborted");
+      error.name = "AbortError";
+      reject(error);
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+export async function fetchPlaceProviderWithBusyRetry(fetchImpl, url, options, retryOptions = {}) {
+  const now = retryOptions.now || Date.now;
+  const wait = retryOptions.wait || abortableProviderDelay;
+  const deadlineAt = Number.isFinite(Number(retryOptions.deadlineAt))
+    ? Number(retryOptions.deadlineAt)
+    : now() + 225000;
+
+  while (true) {
+    const response = await fetchImpl(url, options);
+    const payload = await response.json().catch(() => ({}));
+    const busy = response.status === 429
+      && (normalizeText(payload?.message) === "collector_busy" || normalizeText(payload?.error) === "collector_busy");
+    if (!busy) return { response, payload };
+
+    const retryAfterSeconds = Number.parseFloat(response.headers?.get?.("retry-after") || "");
+    const retryDelayMs = Math.min(10000, Math.max(
+      1000,
+      Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0 ? retryAfterSeconds * 1000 : 10000,
+    ));
+    const remainingMs = deadlineAt - now();
+    if (remainingMs <= retryDelayMs + 2000) return { response, payload };
+    await wait(retryDelayMs, options?.signal);
+  }
+}
+
 async function lookupExternalPlaceProvider(config, tracker) {
   const monthlySearchCountPromise = lookupMonthlySearchCount(config, tracker.keyword);
   const controller = new AbortController();
@@ -1324,7 +1371,7 @@ async function lookupExternalPlaceProvider(config, tracker) {
     providerTimeoutMs
   );
   try {
-    const response = await fetch(config.url, {
+    const providerResult = await fetchPlaceProviderWithBusyRetry(fetch, config.url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -1339,8 +1386,10 @@ async function lookupExternalPlaceProvider(config, tracker) {
         providerDeadlineAt,
       }),
       signal: controller.signal,
+    }, {
+      deadlineAt: providerDeadlineAt,
     });
-    const payload = await response.json().catch(() => ({}));
+    const { response, payload } = providerResult;
     if (!response.ok || payload?.ok === false) {
       throw new Error(payload?.message || payload?.error || "place_rank_provider_failed");
     }

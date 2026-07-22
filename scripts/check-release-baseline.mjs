@@ -662,6 +662,7 @@ const checks = {
     "threeYear: 36",
     "data.seriesPeriods",
     'keywordRange === "threeYear"',
+    'chartWidth < 640 ? 6 : 12',
     "match[1].slice(2) + \".\" + match[2]",
   ].every((marker) => source.includes(marker)))
     && keywordServer.includes("const KEYWORD_TREND_MONTHS = 36;")

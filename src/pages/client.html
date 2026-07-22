@@ -6247,7 +6247,8 @@
       function renderKeywordMonths(labels) {
         var node = root.querySelector("[data-keyword-months]");
         if (!node) return;
-        var maxLabels = 12;
+        var chartWidth = node.getBoundingClientRect().width;
+        var maxLabels = keywordRange === "threeYear" && chartWidth > 0 && chartWidth < 640 ? 6 : 12;
         var visibleLabels = labels.map(function (label, index) {
           return { label: label, index: index };
         });

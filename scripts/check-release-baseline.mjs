@@ -134,6 +134,7 @@ const ownerToolServer = read("src/server/handlers/owner-tool-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
+const keywordServer = read("src/server/handlers/naver-keyword.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
 const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
 const cronAuthServer = read("src/server/cron-auth.mjs");
@@ -655,6 +656,20 @@ const checks = {
     && !adminSource.includes("일별_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
   clientToolsExist: ["keyword-tool", "related-keywords", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  keywordMarketPremiumSummary: [adminSource, clientSource].every((source) => [
+    "KEYWORD MARKET",
+    'data-keyword-market-indicator="demand"',
+    'data-keyword-market-indicator="competition"',
+    'data-keyword-market-indicator="salesOpportunity"',
+    "검색 수요",
+    "경쟁 강도",
+    "판매 기회율",
+    "판매 기회율은 실제 매출 전환율이 아닙니다.",
+    "function setKeywordMarketIndicator(",
+  ].every((marker) => source.includes(marker)))
+    && keywordServer.includes("export function keywordMarketIndicators(")
+    && keywordServer.includes("market: keywordMarketIndicators({")
+    && keywordServer.includes("월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표"),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
     && !serverIndex.includes('url.pathname === "/api/meta-research"'),
   metaAdsToolReady: serverIndex.includes('metaAds: () => import("./handlers/meta-ads.mjs")')

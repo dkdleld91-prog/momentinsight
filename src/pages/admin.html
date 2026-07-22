@@ -4028,6 +4028,167 @@
       line-height: 1.45;
     }
 
+    #mi-admin .mi-keyword-market {
+      padding: 18px;
+      background: linear-gradient(145deg, #ffffff 0%, #f8faff 100%);
+      box-shadow: 0 16px 40px rgba(6, 26, 58, 0.07);
+    }
+
+    #mi-admin .mi-market-head {
+      grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    #mi-admin .mi-market-title,
+    #mi-admin .mi-market-related {
+      min-width: 0;
+      border: 1px solid var(--mi-line);
+      border-radius: 12px;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.92);
+    }
+
+    #mi-admin .mi-market-eyebrow,
+    #mi-admin .mi-market-value,
+    #mi-admin .mi-market-bar-label,
+    #mi-admin .mi-market-basis {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    #mi-admin .mi-market-eyebrow .mi-kicker {
+      margin: 0;
+      color: #2558d8;
+      background: #edf3ff;
+      letter-spacing: 0.08em;
+    }
+
+    #mi-admin .mi-market-chip,
+    #mi-admin .mi-market-status {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      border: 1px solid #dce5f2;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: #52627a;
+      background: #f8fafc;
+      font-size: 11px;
+      font-style: normal;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-market-title h3 {
+      margin: 12px 0 4px;
+      font-size: 21px;
+    }
+
+    #mi-admin .mi-market-title p {
+      font-size: 12.5px;
+      font-weight: 750;
+    }
+
+    #mi-admin .mi-market-value {
+      margin-top: 16px;
+      align-items: flex-end;
+    }
+
+    #mi-admin .mi-market-value > strong {
+      color: var(--mi-navy);
+      font-size: clamp(30px, 3vw, 40px);
+      font-weight: 950;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+
+    #mi-admin .mi-market-status {
+      border-color: #ccebdc;
+      color: #067647;
+      background: #eefbf5;
+    }
+
+    #mi-admin .mi-market-chip {
+      max-width: 150px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    #mi-admin .mi-market-status.is-high {
+      border-color: #fed7aa;
+      color: #b54708;
+      background: #fff7ed;
+    }
+
+    #mi-admin .mi-market-bars {
+      display: grid;
+      gap: 11px;
+      margin-top: 18px;
+    }
+
+    #mi-admin .mi-market-bar {
+      display: grid;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-market-bar-label span,
+    #mi-admin .mi-market-bar-label strong {
+      color: #667085;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    #mi-admin .mi-market-bar-label strong {
+      color: var(--mi-navy);
+    }
+
+    #mi-admin .mi-market-track {
+      display: block;
+      height: 7px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e8eef7;
+    }
+
+    #mi-admin .mi-market-track i {
+      display: block;
+      width: var(--mi-market-score, 0%);
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2558d8, #4d79e8);
+      transition: width 0.35s ease;
+    }
+
+    #mi-admin .mi-market-bar.is-competition .mi-market-track i {
+      background: linear-gradient(90deg, #526d99, #7390bd);
+    }
+
+    #mi-admin .mi-market-bar.is-opportunity .mi-market-track i {
+      background: linear-gradient(90deg, #087a58, #22a77a);
+    }
+
+    #mi-admin .mi-market-bar.is-empty .mi-market-track i {
+      width: 0;
+    }
+
+    #mi-admin .mi-market-basis {
+      margin-top: 16px;
+      border-top: 1px solid #e6ebf2;
+      padding-top: 11px;
+      align-items: flex-start;
+      color: #7b8799;
+      font-size: 10.5px;
+      font-weight: 750;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-market-related {
+      background: #ffffff;
+    }
+
     #mi-admin .mi-related-page-grid {
       display: grid;
       grid-template-columns: minmax(0, 1fr) 280px;
@@ -5843,6 +6004,20 @@
         grid-template-columns: 1fr;
       }
 
+      #mi-admin .mi-keyword-market {
+        padding: 12px;
+      }
+
+      #mi-admin .mi-market-title,
+      #mi-admin .mi-market-related {
+        padding: 15px;
+      }
+
+      #mi-admin .mi-market-basis {
+        display: grid;
+        justify-content: stretch;
+      }
+
       #mi-admin .mi-ratio-card {
         padding: 18px 14px;
       }
@@ -6647,16 +6822,33 @@
 
           <article class="mi-card mi-keyword-market" data-keyword-market>
             <div class="mi-market-head">
-              <div class="mi-market-title">
-                <span class="mi-kicker">키워드 시장 분석</span>
-                <h3 data-keyword-market-title>키워드 조회 전</h3>
-                <p data-keyword-market-path>키워드를 입력하면 수집된 검색 데이터를 표시합니다.</p>
-                <div class="mi-market-kpis">
-                  <div class="mi-market-kpi"><span>상품수</span><strong data-keyword-market-products>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
-                  <div class="mi-market-kpi"><span>한 달 검색수</span><strong data-keyword-market-volume>조회 후 표시</strong><small>월간 검색량</small></div>
-                  <div class="mi-market-kpi"><span>시장 참고 지표</span><strong><b data-keyword-market-score>확인 필요</b><i class="mi-grade" data-keyword-market-grade>상품수/검색수</i></strong><small>검색수 대비 상품수</small></div>
+              <section class="mi-market-title" aria-labelledby="mi-admin-keyword-market-title">
+                <div class="mi-market-eyebrow">
+                  <span class="mi-kicker">KEYWORD MARKET</span>
+                  <span class="mi-market-chip" data-keyword-market-chip>조회 전</span>
                 </div>
-              </div>
+                <h3 id="mi-admin-keyword-market-title" data-keyword-market-title>키워드 시장 분석</h3>
+                <p data-keyword-market-path>키워드를 입력하면 세 가지 핵심 지표를 표시합니다.</p>
+                <div class="mi-market-value">
+                  <strong data-keyword-market-volume>조회 후 표시</strong>
+                  <span class="mi-market-status" data-keyword-market-status>분석 대기</span>
+                </div>
+                <div class="mi-market-bars" aria-label="키워드 시장 핵심 지표">
+                  <div class="mi-market-bar" data-keyword-market-indicator="demand">
+                    <div class="mi-market-bar-label"><span>검색 수요</span><strong data-keyword-market-demand>—</strong></div>
+                    <span class="mi-market-track" role="progressbar" aria-label="검색 수요" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
+                  </div>
+                  <div class="mi-market-bar is-competition" data-keyword-market-indicator="competition">
+                    <div class="mi-market-bar-label"><span>경쟁 강도</span><strong data-keyword-market-competition>—</strong></div>
+                    <span class="mi-market-track" role="progressbar" aria-label="경쟁 강도" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
+                  </div>
+                  <div class="mi-market-bar is-opportunity" data-keyword-market-indicator="salesOpportunity">
+                    <div class="mi-market-bar-label"><span>판매 기회율</span><strong data-keyword-market-opportunity>—</strong></div>
+                    <span class="mi-market-track" role="progressbar" aria-label="판매 기회율" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
+                  </div>
+                </div>
+                <div class="mi-market-basis"><span data-keyword-market-basis>월 검색량·경쟁도·상품수 기반</span><span data-keyword-market-disclaimer>실제 매출 전환율이 아닙니다.</span></div>
+              </section>
               <aside class="mi-market-related">
                 <div class="mi-related-head">
                   <h3>연관 키워드 미리보기</h3>
@@ -6667,23 +6859,6 @@
                   <div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span></div>
                 </div>
               </aside>
-            </div>
-            <div class="mi-market-body">
-              <div class="mi-market-section">
-                <div class="mi-market-metrics">
-                  <div class="mi-market-metric"><span>상품수</span><strong data-keyword-market-top10-sales>수집 예정</strong><small>네이버 쇼핑 검색 결과</small></div>
-                  <div class="mi-market-metric"><span>평균 가격대</span><strong data-keyword-market-top10-units>별도 확인 필요</strong><small>검색 결과 샘플 기준</small></div>
-                  <div class="mi-market-metric"><span>경쟁도</span><strong data-keyword-market-top40-sales>확인 필요</strong><small>소재 경쟁 참고</small></div>
-                  <div class="mi-market-metric"><span>경쟁강도</span><strong data-keyword-market-price>확인 필요</strong><small>검색수 대비 상품수</small></div>
-                </div>
-              </div>
-              <div class="mi-market-section">
-                <div class="mi-market-actions">
-                  <div class="mi-row"><span>검색 수요</span><strong data-keyword-market-naver>월 검색수와 검색 비율 확인</strong></div>
-                  <div class="mi-row"><span>노출 경쟁</span><strong data-keyword-market-ad>상품수와 경쟁도를 함께 판단</strong></div>
-                  <div class="mi-row"><span>추천 액션</span><strong data-keyword-market-action>SEO 후보로 등록 후 콘텐츠 제목에 반영</strong></div>
-                </div>
-              </div>
             </div>
           </article>
 
@@ -10037,27 +10212,36 @@
       function estimateKeywordMarket(item) {
         var keyword = item.keyword || "";
         var data = item.data || {};
-        var volume = Number(data.volume || 0);
-        var adComp = displayCompetitionLabel(data.comp);
-        var shopping = data.shopping || {};
-        var shoppingTotal = Number(shopping.total || 0);
-        var averagePrice = Number(shopping.averagePrice || 0);
-        var productSearchRatio = shoppingTotal && volume ? Math.round((shoppingTotal / Math.max(1, volume)) * 100) / 100 : 0;
-        var grade = keywordGrade(productSearchRatio);
+        var indicators = data.market || {};
         return {
           keyword: keyword,
-          volume: volume,
-          volumeText: formatSearchVolume(data),
-          shoppingStatus: shoppingTotal ? "확인됨" : "수집 예정",
-          grade: grade,
-          saturation: productSearchRatio ? productSearchRatio.toFixed(2) : "확인 필요",
-          shoppingProducts: shoppingTotal ? formatNumber(shoppingTotal) + "건" : "수집 예정",
-          commerceSales: averagePrice ? formatNumber(averagePrice) + "원" : "별도 확인 필요",
-          avgPrice: adComp || "확인 필요",
-          comp: adComp || "확인 필요",
-          action: data.action || "검색량과 상품 노출 규모를 기준으로 콘텐츠 후보를 선별",
-          insight: data.insight || "월 검색량은 수요, 상품수는 노출 경쟁, 검색 비율은 관심 분포로 분리해서 판단합니다."
+          volumeText: formatSearchVolumeWithUnit(data),
+          demand: indicators.demand || null,
+          competition: indicators.competition || null,
+          salesOpportunity: indicators.salesOpportunity || null,
+          basis: indicators.basis || "월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표",
+          disclaimer: indicators.disclaimer || "판매 기회율은 실제 매출 전환율이 아닙니다."
         };
+      }
+
+      function setKeywordMarketIndicator(key, indicator, selector) {
+        var row = root.querySelector('[data-keyword-market-indicator="' + key + '"]');
+        var valueNode = root.querySelector(selector);
+        var track = row && row.querySelector(".mi-market-track");
+        var score = indicator && indicator.score !== null && indicator.score !== "" && Number.isFinite(Number(indicator.score))
+          ? Math.max(0, Math.min(100, Math.round(Number(indicator.score))))
+          : null;
+        var label = indicator && indicator.label ? String(indicator.label) : "확인 필요";
+        if (row) {
+          row.classList.toggle("is-empty", score === null);
+          row.style.setProperty("--mi-market-score", score === null ? "0%" : score + "%");
+        }
+        if (track) {
+          track.setAttribute("aria-valuenow", score === null ? "0" : String(score));
+          track.setAttribute("aria-valuetext", score === null ? "확인 필요" : label + " " + score + "점");
+        }
+        if (valueNode) valueNode.textContent = score === null ? "확인 필요" : label + " · " + score;
+        return score !== null;
       }
 
       function renderKeywordMarket(items) {
@@ -10066,37 +10250,30 @@
         var market = estimateKeywordMarket(item);
         var title = root.querySelector("[data-keyword-market-title]");
         var path = root.querySelector("[data-keyword-market-path]");
-        var products = root.querySelector("[data-keyword-market-products]");
         var volume = root.querySelector("[data-keyword-market-volume]");
-        var score = root.querySelector("[data-keyword-market-score]");
-        var grade = root.querySelector("[data-keyword-market-grade]");
-        var top10Sales = root.querySelector("[data-keyword-market-top10-sales]");
-        var top10Units = root.querySelector("[data-keyword-market-top10-units]");
-        var top40Sales = root.querySelector("[data-keyword-market-top40-sales]");
-        var price = root.querySelector("[data-keyword-market-price]");
-        var naver = root.querySelector("[data-keyword-market-naver]");
-        var ad = root.querySelector("[data-keyword-market-ad]");
-        var action = root.querySelector("[data-keyword-market-action]");
+        var chip = root.querySelector("[data-keyword-market-chip]");
+        var status = root.querySelector("[data-keyword-market-status]");
+        var basis = root.querySelector("[data-keyword-market-basis]");
+        var disclaimer = root.querySelector("[data-keyword-market-disclaimer]");
         var relatedNode = root.querySelector("[data-keyword-related]");
         var relatedFullNode = root.querySelector("[data-keyword-related-full]");
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
-        if (path) path.textContent = market.keyword + " 기준으로 검색 수요, 상품수, 검색 비율을 분리해서 봅니다.";
-        if (products) products.textContent = market.shoppingProducts;
-        if (volume) volume.textContent = formatSearchVolumeWithUnit(item.data);
-        if (score) score.textContent = market.grade.label;
-        if (grade) {
-          grade.textContent = market.grade.hint;
-          grade.className = "mi-grade" + (market.grade.className ? " " + market.grade.className : "");
+        if (path) path.textContent = market.keyword + "의 수요와 경쟁 환경을 간결하게 비교합니다.";
+        if (volume) volume.textContent = market.volumeText;
+        if (chip) chip.textContent = market.keyword;
+        if (basis) basis.textContent = market.basis;
+        if (disclaimer) disclaimer.textContent = market.disclaimer;
+        var availableCount = 0;
+        if (setKeywordMarketIndicator("demand", market.demand, "[data-keyword-market-demand]")) availableCount += 1;
+        if (setKeywordMarketIndicator("competition", market.competition, "[data-keyword-market-competition]")) availableCount += 1;
+        if (setKeywordMarketIndicator("salesOpportunity", market.salesOpportunity, "[data-keyword-market-opportunity]")) availableCount += 1;
+        if (status) {
+          var competitionScore = market.competition && market.competition.score !== null ? Number(market.competition.score) : null;
+          status.textContent = Number.isFinite(competitionScore) ? "경쟁강도 " + market.competition.label : availableCount ? "일부 확인" : "확인 필요";
+          status.classList.toggle("is-high", Number.isFinite(competitionScore) && competitionScore >= 75);
         }
-        if (top10Sales) top10Sales.textContent = market.shoppingProducts;
-        if (top10Units) top10Units.textContent = market.commerceSales;
-        if (top40Sales) top40Sales.textContent = market.avgPrice;
-        if (price) price.textContent = market.saturation;
-        if (naver) naver.textContent = market.volume ? "월 검색수 " + formatSearchVolumeWithUnit(item.data) + " · 검색 비율 확인" : "조회 후 표시";
-        if (ad) ad.textContent = market.shoppingProducts !== "수집 예정" ? "상품수 " + market.shoppingProducts + " · 경쟁도 " + market.comp : "상품수와 경쟁도 확인 필요";
-        if (action) action.textContent = market.action;
 
         var related = makeRelatedKeywords(item);
         function relatedRow(entry) {
@@ -10126,19 +10303,16 @@
       function clearKeywordDataView(message) {
         var clearText = message || "키워드를 조회하면 실제 데이터로 표시됩니다.";
         var fields = [
-          ["[data-keyword-market-title]", "키워드 조회 전"],
-          ["[data-keyword-market-path]", "키워드를 입력하면 수집된 검색 데이터를 표시합니다."],
-          ["[data-keyword-market-products]", "조회 후 표시"],
+          ["[data-keyword-market-title]", "키워드 시장 분석"],
+          ["[data-keyword-market-path]", "키워드를 입력하면 세 가지 핵심 지표를 표시합니다."],
           ["[data-keyword-market-volume]", "조회 후 표시"],
-          ["[data-keyword-market-score]", "조회 후 표시"],
-          ["[data-keyword-market-grade]", "상품수/검색수"],
-          ["[data-keyword-market-top10-sales]", "조회 후 표시"],
-          ["[data-keyword-market-top10-units]", "조회 후 표시"],
-          ["[data-keyword-market-top40-sales]", "조회 후 표시"],
-          ["[data-keyword-market-price]", "조회 후 표시"],
-          ["[data-keyword-market-naver]", "조회 후 표시"],
-          ["[data-keyword-market-ad]", "조회 후 표시"],
-          ["[data-keyword-market-action]", "조회 후 표시"],
+          ["[data-keyword-market-chip]", "조회 전"],
+          ["[data-keyword-market-status]", "분석 대기"],
+          ["[data-keyword-market-demand]", "—"],
+          ["[data-keyword-market-competition]", "—"],
+          ["[data-keyword-market-opportunity]", "—"],
+          ["[data-keyword-market-basis]", "월 검색량·경쟁도·상품수 기반"],
+          ["[data-keyword-market-disclaimer]", "실제 매출 전환율이 아닙니다."],
           ["[data-keyword-label]", "키워드 조회 전"],
           ["[data-keyword-volume]", "조회 후 표시"],
           ["[data-keyword-change]", "-"],
@@ -10150,6 +10324,20 @@
           var node = root.querySelector(pair[0]);
           if (node) node.textContent = pair[1];
         });
+        ["demand", "competition", "salesOpportunity"].forEach(function (key) {
+          var row = root.querySelector('[data-keyword-market-indicator="' + key + '"]');
+          var track = row && row.querySelector(".mi-market-track");
+          if (row) {
+            row.classList.add("is-empty");
+            row.style.setProperty("--mi-market-score", "0%");
+          }
+          if (track) {
+            track.setAttribute("aria-valuenow", "0");
+            track.setAttribute("aria-valuetext", "확인 필요");
+          }
+        });
+        var marketStatus = root.querySelector("[data-keyword-market-status]");
+        if (marketStatus) marketStatus.classList.remove("is-high");
         var relatedNode = root.querySelector("[data-keyword-related]");
         if (relatedNode) relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div><div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span></div>';
         var relatedFullNode = root.querySelector("[data-keyword-related-full]");

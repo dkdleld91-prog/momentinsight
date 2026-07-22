@@ -721,6 +721,62 @@ function competitionLabel(compIdx) {
   return value || "확인 필요";
 }
 
+function keywordMarketLabel(score) {
+  if (!Number.isFinite(score)) return "확인 필요";
+  if (score >= 75) return "매우 높음";
+  if (score >= 55) return "높음";
+  if (score >= 35) return "보통";
+  return "낮음";
+}
+
+export function keywordMarketIndicators({
+  volume = 0,
+  isUnderThreshold = false,
+  competition = "",
+  shoppingTotal = 0,
+} = {}) {
+  const exactVolume = Number(volume);
+  const exactShoppingTotal = Number(shoppingTotal);
+  const hasVolume = !isUnderThreshold && Number.isFinite(exactVolume) && exactVolume > 0;
+  const hasShoppingTotal = Number.isFinite(exactShoppingTotal) && exactShoppingTotal > 0;
+  const demandScore = hasVolume
+    ? Math.min(100, Math.max(1, Math.round((Math.log10(exactVolume + 1) / 5) * 100)))
+    : null;
+
+  const competitionText = competitionLabel(competition);
+  const adCompetitionScore = competitionText === "높음"
+    ? 84
+    : competitionText === "보통"
+      ? 56
+      : competitionText === "낮음"
+        ? 28
+        : null;
+  const supplyCompetitionScore = hasVolume && hasShoppingTotal
+    ? Math.min(100, Math.max(1, Math.round(Math.log10(1 + (exactShoppingTotal / exactVolume)) * 50)))
+    : null;
+
+  let competitionScore = null;
+  if (Number.isFinite(adCompetitionScore) && Number.isFinite(supplyCompetitionScore)) {
+    competitionScore = Math.round((adCompetitionScore * 0.6) + (supplyCompetitionScore * 0.4));
+  } else if (Number.isFinite(adCompetitionScore)) {
+    competitionScore = adCompetitionScore;
+  } else if (Number.isFinite(supplyCompetitionScore)) {
+    competitionScore = supplyCompetitionScore;
+  }
+
+  const salesOpportunityScore = Number.isFinite(demandScore) && Number.isFinite(competitionScore)
+    ? Math.min(100, Math.max(0, Math.round((demandScore * 0.65) + ((100 - competitionScore) * 0.35))))
+    : null;
+
+  return {
+    demand: { score: demandScore, label: keywordMarketLabel(demandScore) },
+    competition: { score: competitionScore, label: keywordMarketLabel(competitionScore) },
+    salesOpportunity: { score: salesOpportunityScore, label: keywordMarketLabel(salesOpportunityScore) },
+    basis: "월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표",
+    disclaimer: "판매 기회율은 실제 매출 전환율이 아닙니다.",
+  };
+}
+
 function buildShoppingProfile(payload) {
   if (!payload || typeof payload !== "object") return null;
   const items = Array.isArray(payload.items) ? payload.items : [];
@@ -836,6 +892,12 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
       relatedKeywordMetrics,
     },
     shopping: shoppingProfile,
+    market: keywordMarketIndicators({
+      volume: safeVolume,
+      isUnderThreshold: hasExactMatch ? metric.isUnderThreshold : false,
+      competition: comp,
+      shoppingTotal: shoppingProfile?.total || 0,
+    }),
   };
 }
 

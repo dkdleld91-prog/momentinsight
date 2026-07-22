@@ -382,7 +382,8 @@ const checks = {
     && homeSource.includes("data-mi-dev-banner-week")
     && homeSource.includes("miHomeDevBannerHiddenUntil")
     && homeSource.includes("7 * 24 * 60 * 60 * 1000")
-    && ["키워드 조회", "SEO 확인", "네이버 상품순위", "네이버 30일 순위", "네이버 플레이스 30일 순위"].every((label) => homeSource.includes(label)),
+    && ["키워드 조회", "SEO 확인", "N 상품 순위", "N 30일 순위", "N 플레이스 30일 순위"].every((label) => homeSource.includes(label))
+    && !["네이버 상품순위", "네이버 30일 순위", "네이버 플레이스 30일 순위"].some((label) => homeSource.includes(label)),
   homeDocumentShellAndViewport: homeSource.startsWith("<!doctype html>")
     && homeSource.includes('<html lang="ko">')
     && homeSource.includes('<meta name="viewport" content="width=device-width, initial-scale=1" />')

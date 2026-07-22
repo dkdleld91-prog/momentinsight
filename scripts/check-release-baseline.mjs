@@ -670,7 +670,9 @@ const checks = {
   ].every((marker) => source.includes(marker)))
     && keywordServer.includes("export function keywordMarketIndicators(")
     && keywordServer.includes("market: keywordMarketIndicators({")
-    && keywordServer.includes("월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표"),
+    && keywordServer.includes("absoluteShoppingSupplyScore")
+    && keywordServer.includes("Math.max(highest, score)")
+    && keywordServer.includes("월 검색량·검색광고 경쟁도·절대·수요 대비 쇼핑 상품수 기반 참고 지표"),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
     && !serverIndex.includes('url.pathname === "/api/meta-research"'),
   metaAdsToolReady: serverIndex.includes('metaAds: () => import("./handlers/meta-ads.mjs")')

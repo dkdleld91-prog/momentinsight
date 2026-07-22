@@ -729,6 +729,19 @@ function keywordMarketLabel(score) {
   return "낮음";
 }
 
+function boundedMarketScore(value, minimum = 0) {
+  if (!Number.isFinite(value)) return null;
+  return Math.min(100, Math.max(minimum, Math.round(value)));
+}
+
+function absoluteShoppingSupplyScore(shoppingTotal) {
+  if (!Number.isFinite(shoppingTotal) || shoppingTotal <= 0) return null;
+  // About 3,000 products is the lower saturation boundary and 300,000 products
+  // is treated as a fully saturated catalogue. The logarithmic scale prevents a
+  // few very large categories from flattening every smaller market.
+  return boundedMarketScore(((Math.log10(shoppingTotal) - 3.5) / 2) * 100, 1);
+}
+
 export function keywordMarketIndicators({
   volume = 0,
   isUnderThreshold = false,
@@ -751,16 +764,23 @@ export function keywordMarketIndicators({
       : competitionText === "낮음"
         ? 28
         : null;
-  const supplyCompetitionScore = hasVolume && hasShoppingTotal
-    ? Math.min(100, Math.max(1, Math.round(Math.log10(1 + (exactShoppingTotal / exactVolume)) * 50)))
+  const absoluteSupplyScore = hasShoppingTotal
+    ? absoluteShoppingSupplyScore(exactShoppingTotal)
     : null;
+  const relativeSupplyScore = hasVolume && hasShoppingTotal
+    ? boundedMarketScore(Math.log10(1 + (exactShoppingTotal / exactVolume)) * 50, 1)
+    : null;
+  const supplyCompetitionScore = [absoluteSupplyScore, relativeSupplyScore]
+    .filter(Number.isFinite)
+    .reduce((highest, score) => Math.max(highest, score), -Infinity);
+  const hasSupplyCompetitionScore = Number.isFinite(supplyCompetitionScore);
 
   let competitionScore = null;
-  if (Number.isFinite(adCompetitionScore) && Number.isFinite(supplyCompetitionScore)) {
-    competitionScore = Math.round((adCompetitionScore * 0.6) + (supplyCompetitionScore * 0.4));
+  if (Number.isFinite(adCompetitionScore) && hasSupplyCompetitionScore) {
+    competitionScore = boundedMarketScore((adCompetitionScore * 0.35) + (supplyCompetitionScore * 0.65));
   } else if (Number.isFinite(adCompetitionScore)) {
     competitionScore = adCompetitionScore;
-  } else if (Number.isFinite(supplyCompetitionScore)) {
+  } else if (hasSupplyCompetitionScore) {
     competitionScore = supplyCompetitionScore;
   }
 
@@ -772,7 +792,7 @@ export function keywordMarketIndicators({
     demand: { score: demandScore, label: keywordMarketLabel(demandScore) },
     competition: { score: competitionScore, label: keywordMarketLabel(competitionScore) },
     salesOpportunity: { score: salesOpportunityScore, label: keywordMarketLabel(salesOpportunityScore) },
-    basis: "월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표",
+    basis: "월 검색량·검색광고 경쟁도·절대·수요 대비 쇼핑 상품수 기반 참고 지표",
     disclaimer: "판매 기회율은 실제 매출 전환율이 아닙니다.",
   };
 }

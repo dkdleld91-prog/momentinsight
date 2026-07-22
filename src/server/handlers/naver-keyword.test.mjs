@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { keywordMarketIndicators, shoppingAgeProfile } from "./naver-keyword.mjs";
+import naverKeywordHandler, { keywordMarketIndicators, shoppingAgeProfile } from "./naver-keyword.mjs";
 
 function agePayload(data) {
   return { results: [{ data }] };
@@ -153,4 +153,85 @@ test("검색수요와 상품 등록 규모가 함께 커질 때 경쟁강도가 
   assert.equal(niche.competition.label, "낮음");
   assert.equal(representative.competition.label, "매우 높음");
   assert.ok(representative.competition.score > niche.competition.score);
+});
+
+test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지 않는다", async () => {
+  const names = [
+    "MI_KEYWORD_API_ENABLED",
+    "NAVER_SEARCHAD_API_KEY",
+    "NAVER_SEARCHAD_SECRET_KEY",
+    "NAVER_SEARCHAD_CUSTOMER_ID",
+    "NAVER_OPENAPI_CLIENT_ID",
+    "NAVER_OPENAPI_CLIENT_SECRET",
+    "NAVER_DATALAB_CLIENT_ID",
+    "NAVER_DATALAB_CLIENT_SECRET",
+    "NAVER_API_HUB_CLIENT_ID",
+    "NAVER_API_HUB_CLIENT_SECRET",
+    "NAVER_API_HUB_MODE",
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    MI_KEYWORD_API_ENABLED: "true",
+    NAVER_SEARCHAD_API_KEY: "search-ad-key",
+    NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
+    NAVER_SEARCHAD_CUSTOMER_ID: "123456",
+    NAVER_OPENAPI_CLIENT_ID: "legacy-shopping-id",
+    NAVER_OPENAPI_CLIENT_SECRET: "legacy-shopping-secret",
+    NAVER_API_HUB_CLIENT_ID: "hub-id",
+    NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
+    NAVER_API_HUB_MODE: "auto",
+  });
+  delete process.env.NAVER_DATALAB_CLIENT_ID;
+  delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    calls.push({ href, headers: options.headers || {} });
+    if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
+      return new Response(JSON.stringify({
+        keywordList: [{
+          relKeyword: "허브전환검증",
+          monthlyPcQcCnt: 1000,
+          monthlyMobileQcCnt: 2000,
+          compIdx: "중간",
+        }],
+      }), { status: 200 });
+    }
+    if (href.startsWith("https://openapi.naver.com/v1/search/shop.json")) {
+      return new Response(JSON.stringify({
+        total: 100,
+        items: [{ category1: "생활/건강", lprice: "10000", mallName: "테스트몰" }],
+      }), { status: 200 });
+    }
+    if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
+      return new Response(JSON.stringify({
+        results: [{ data: [{ period: "2026-06-01", ratio: 100 }] }],
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
+  };
+
+  try {
+    const response = await naverKeywordHandler.fetch(new Request(
+      "http://127.0.0.1/api/naver-keyword?keyword=%ED%97%88%EB%B8%8C%EC%A0%84%ED%99%98%EA%B2%80%EC%A6%9D&profile=trend",
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.source.migratedApiProvider, "hub");
+    const hubCall = calls.find((call) => call.href.includes("/search-trend/v1/search"));
+    const shoppingCall = calls.find((call) => call.href.includes("/v1/search/shop.json"));
+    assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY-ID"], "hub-id");
+    assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY"], "hub-secret");
+    assert.equal(shoppingCall.headers["X-Naver-Client-Id"], "legacy-shopping-id");
+    assert.equal(shoppingCall.headers["X-Naver-Client-Secret"], "legacy-shopping-secret");
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries(previous).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
 });

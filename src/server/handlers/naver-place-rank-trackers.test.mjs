@@ -459,11 +459,17 @@ async function withOfficialProvider(fetchImpl, callback) {
     providerKey: process.env.NAVER_PLACE_RANK_API_KEY,
     openapiId: process.env.NAVER_OPENAPI_CLIENT_ID,
     openapiSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET,
+    hubId: process.env.NAVER_API_HUB_CLIENT_ID,
+    hubSecret: process.env.NAVER_API_HUB_CLIENT_SECRET,
+    hubMode: process.env.NAVER_API_HUB_MODE,
   };
   delete process.env.NAVER_PLACE_RANK_API_URL;
   delete process.env.NAVER_PLACE_RANK_API_KEY;
   process.env.NAVER_OPENAPI_CLIENT_ID = "official-test-id";
   process.env.NAVER_OPENAPI_CLIENT_SECRET = "official-test-secret";
+  delete process.env.NAVER_API_HUB_CLIENT_ID;
+  delete process.env.NAVER_API_HUB_CLIENT_SECRET;
+  delete process.env.NAVER_API_HUB_MODE;
   globalThis.fetch = fetchImpl;
   try {
     return await callback();
@@ -474,8 +480,55 @@ async function withOfficialProvider(fetchImpl, callback) {
       NAVER_PLACE_RANK_API_KEY: previous.providerKey,
       NAVER_OPENAPI_CLIENT_ID: previous.openapiId,
       NAVER_OPENAPI_CLIENT_SECRET: previous.openapiSecret,
+      NAVER_API_HUB_CLIENT_ID: previous.hubId,
+      NAVER_API_HUB_CLIENT_SECRET: previous.hubSecret,
+      NAVER_API_HUB_MODE: previous.hubMode,
     };
     Object.entries(restore).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+}
+
+async function withHubOfficialProvider(fetchImpl, callback) {
+  const originalFetch = globalThis.fetch;
+  const previous = {
+    providerUrl: process.env.NAVER_PLACE_RANK_API_URL,
+    providerKey: process.env.NAVER_PLACE_RANK_API_KEY,
+    openapiId: process.env.NAVER_OPENAPI_CLIENT_ID,
+    openapiSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET,
+    datalabId: process.env.NAVER_DATALAB_CLIENT_ID,
+    datalabSecret: process.env.NAVER_DATALAB_CLIENT_SECRET,
+    hubId: process.env.NAVER_API_HUB_CLIENT_ID,
+    hubSecret: process.env.NAVER_API_HUB_CLIENT_SECRET,
+    hubMode: process.env.NAVER_API_HUB_MODE,
+  };
+  delete process.env.NAVER_PLACE_RANK_API_URL;
+  delete process.env.NAVER_PLACE_RANK_API_KEY;
+  delete process.env.NAVER_OPENAPI_CLIENT_ID;
+  delete process.env.NAVER_OPENAPI_CLIENT_SECRET;
+  delete process.env.NAVER_DATALAB_CLIENT_ID;
+  delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  process.env.NAVER_API_HUB_CLIENT_ID = "hub-test-id";
+  process.env.NAVER_API_HUB_CLIENT_SECRET = "hub-test-secret";
+  process.env.NAVER_API_HUB_MODE = "hub";
+  globalThis.fetch = fetchImpl;
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries({
+      NAVER_PLACE_RANK_API_URL: previous.providerUrl,
+      NAVER_PLACE_RANK_API_KEY: previous.providerKey,
+      NAVER_OPENAPI_CLIENT_ID: previous.openapiId,
+      NAVER_OPENAPI_CLIENT_SECRET: previous.openapiSecret,
+      NAVER_DATALAB_CLIENT_ID: previous.datalabId,
+      NAVER_DATALAB_CLIENT_SECRET: previous.datalabSecret,
+      NAVER_API_HUB_CLIENT_ID: previous.hubId,
+      NAVER_API_HUB_CLIENT_SECRET: previous.hubSecret,
+      NAVER_API_HUB_MODE: previous.hubMode,
+    }).forEach(([name, value]) => {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     });
@@ -490,6 +543,9 @@ const originalEnv = {
   openapiSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET,
   datalabId: process.env.NAVER_DATALAB_CLIENT_ID,
   datalabSecret: process.env.NAVER_DATALAB_CLIENT_SECRET,
+  hubId: process.env.NAVER_API_HUB_CLIENT_ID,
+  hubSecret: process.env.NAVER_API_HUB_CLIENT_SECRET,
+  hubMode: process.env.NAVER_API_HUB_MODE,
   searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY,
   searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY,
   searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID,
@@ -503,6 +559,9 @@ test.before(() => {
   delete process.env.NAVER_OPENAPI_CLIENT_SECRET;
   delete process.env.NAVER_DATALAB_CLIENT_ID;
   delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  delete process.env.NAVER_API_HUB_CLIENT_ID;
+  delete process.env.NAVER_API_HUB_CLIENT_SECRET;
+  delete process.env.NAVER_API_HUB_MODE;
   delete process.env.NAVER_SEARCHAD_API_KEY;
   delete process.env.NAVER_SEARCHAD_SECRET_KEY;
   delete process.env.NAVER_SEARCHAD_CUSTOMER_ID;
@@ -517,6 +576,9 @@ test.after(() => {
     NAVER_OPENAPI_CLIENT_SECRET: originalEnv.openapiSecret,
     NAVER_DATALAB_CLIENT_ID: originalEnv.datalabId,
     NAVER_DATALAB_CLIENT_SECRET: originalEnv.datalabSecret,
+    NAVER_API_HUB_CLIENT_ID: originalEnv.hubId,
+    NAVER_API_HUB_CLIENT_SECRET: originalEnv.hubSecret,
+    NAVER_API_HUB_MODE: originalEnv.hubMode,
     NAVER_SEARCHAD_API_KEY: originalEnv.searchAdApiKey,
     NAVER_SEARCHAD_SECRET_KEY: originalEnv.searchAdSecretKey,
     NAVER_SEARCHAD_CUSTOMER_ID: originalEnv.searchAdCustomerId,
@@ -1521,6 +1583,38 @@ test("official lookup uses exact place ID before a same-name candidate", async (
   assert.equal(result.outcome, "found");
   assert.equal(result.result.rank, 2);
   assert.equal(state.tables[TRACKERS][0].current_rank, 2);
+});
+
+test("official place fallback uses NAVER API Hub paths and headers when Hub mode is enabled", async () => {
+  const { ctx, state } = testContext([{
+    id: "official-hub",
+    place_id: "2019299673",
+    place_name: "팽오리농장 부평점",
+  }]);
+  const calls = [];
+
+  const result = await withHubOfficialProvider(
+    async (url, options) => {
+      calls.push({ url: String(url), headers: options.headers });
+      if (String(url).includes("/search/v1/blog")) {
+        return new Response(JSON.stringify({ total: 20 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({
+        total: 1,
+        items: [{ title: "팽오리농장 부평점", link: "https://map.naver.com/p/entry/place/2019299673" }],
+      }), { status: 200 });
+    },
+    () => runPlaceTrackerCheck(ctx, { ...state.tables[TRACKERS][0] }),
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.outcome, "found");
+  assert.equal(result.result.rank, 1);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every((call) => call.url.startsWith("https://naverapihub.apigw.ntruss.com/search/v1/")));
+  assert.ok(calls.every((call) => call.headers["X-NCP-APIGW-API-KEY-ID"] === "hub-test-id"));
+  assert.ok(calls.every((call) => call.headers["X-NCP-APIGW-API-KEY"] === "hub-test-secret"));
+  assert.ok(calls.every((call) => !call.headers["X-Naver-Client-Id"]));
 });
 
 test("official lookup keeps name-only matching when the tracker has no place ID", async () => {

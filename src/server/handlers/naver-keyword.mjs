@@ -1,8 +1,15 @@
 import crypto from "node:crypto";
 import { corsHeaders, featureEnabled, isLocalRequest, protectedJson } from "../security.mjs";
+import {
+  hasNaverMigratedApiConfig,
+  naverApiErrorMessage,
+  naverApiProviderConfig,
+  naverDatalabRequest,
+  resolveNaverApiTransport,
+} from "../naver-api-hub.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
-const DATALAB_BASE_URL = "https://openapi.naver.com";
+const NAVER_LEGACY_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const DATALAB_HISTORY_START_DATE = "2016-01-01";
 const SHOPPING_INSIGHT_START_DATE = "2017-08-01";
 const DATALAB_MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
@@ -42,6 +49,7 @@ function config() {
     datalabClientSecret,
     openapiClientId,
     openapiClientSecret,
+    naverApi: naverApiProviderConfig(),
   };
 }
 
@@ -50,7 +58,7 @@ function hasSearchAdConfig(env) {
 }
 
 function hasDatalabConfig(env) {
-  return Boolean(env.datalabClientId && env.datalabClientSecret);
+  return hasNaverMigratedApiConfig(env.naverApi, "datalab");
 }
 
 function hasOpenapiConfig(env) {
@@ -146,9 +154,14 @@ function keywordConfigSignature(env) {
     .digest("hex")
     .slice(0, 10);
 
+  const datalabProvider = resolveNaverApiTransport(env.naverApi, "datalab");
+  const datalabClientId = datalabProvider === "hub"
+    ? env.naverApi?.hub?.clientId
+    : env.naverApi?.legacy?.datalabClientId;
+
   return [
     hasSearchAdConfig(env) ? `searchad:${hashConfigPart(`${env.searchAdApiKey}:${env.searchAdCustomerId}`)}` : "no-searchad",
-    hasDatalabConfig(env) ? "datalab" : "no-datalab",
+    hasDatalabConfig(env) ? `datalab:${datalabProvider}:${hashConfigPart(datalabClientId)}` : "no-datalab",
     hasOpenapiConfig(env) ? "openapi" : "no-openapi",
   ].join(":");
 }
@@ -288,7 +301,7 @@ async function fetchJson(url, options = {}) {
       }
 
       if (!response.ok) {
-        const message = payload?.errorMessage || payload?.message || payload?.title || payload?.raw || `HTTP ${response.status}`;
+        const message = naverApiErrorMessage(payload, `HTTP ${response.status}`);
         const error = new Error(message);
         error.status = response.status;
         error.code = payload?.errorCode || "";
@@ -339,13 +352,10 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
   if (gender) body.gender = gender;
   if (ages?.length) body.ages = ages;
 
-  return fetchJson(`${DATALAB_BASE_URL}/v1/datalab/search`, {
+  const request = naverDatalabRequest(env.naverApi, "search-trend");
+  return fetchJson(request.url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Naver-Client-Id": env.datalabClientId,
-      "X-Naver-Client-Secret": env.datalabClientSecret,
-    },
+    headers: request.headers,
     body: JSON.stringify(body),
     timeoutMs,
     retries: 0,
@@ -365,13 +375,10 @@ async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, s
     ages,
   };
 
-  return fetchJson(`${DATALAB_BASE_URL}/v1/datalab/shopping/category/keyword/${endpoint}`, {
+  const request = naverDatalabRequest(env.naverApi, "shopping-insight-keyword", endpoint);
+  return fetchJson(request.url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Naver-Client-Id": env.datalabClientId,
-      "X-Naver-Client-Secret": env.datalabClientSecret,
-    },
+    headers: request.headers,
     body: JSON.stringify(body),
     timeoutMs,
     retries: 0,
@@ -387,7 +394,7 @@ async function fetchNaverShoppingSearch(env, keyword) {
     sort: "sim",
   });
 
-  return fetchJson(`${DATALAB_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
+  return fetchJson(`${NAVER_LEGACY_OPENAPI_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
     method: "GET",
     headers: {
       "X-Naver-Client-Id": env.openapiClientId,
@@ -1110,6 +1117,7 @@ export default {
           trend: sourceStatus.trend.status === "ok" ? "naver_datalab_relative_ratio" : sourceStatus.trend.status,
           profile: datalabProfile ? (includeProfile ? datalabProfile.demographicStatus : "trend_only") : sourceStatus.ratios.status,
           shopping: shoppingProfile ? "naver_shopping_search" : sourceStatus.shopping.status,
+          migratedApiProvider: resolveNaverApiTransport(env.naverApi, "datalab"),
         },
         sourceStatus,
         userMessage: sourceUserMessage(sourceStatus),

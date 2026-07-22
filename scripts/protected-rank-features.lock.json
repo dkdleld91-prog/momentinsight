@@ -32,7 +32,7 @@
     { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "b2155dfc87dc7763820e7df899f87b9b9d18871ef73b94b6ddaebd3af4409c8e" },
     { "id": "product-organic-rank-server", "file": "src/server/handlers/naver-shopping-rank.mjs", "sha256": "a89c2125953e8961158a0c5fe59b06b123461b0c6abb1549f7d7cc65c45c7aad" },
     { "id": "product-rank-cron-server", "file": "src/server/handlers/naver-rank-cron.mjs", "sha256": "e6a7ebe2b4ac33c84c58c0869574d088f90dd8848b16fb26e87d50ccc400ae57" },
-    { "id": "place-tracker-server", "file": "src/server/handlers/naver-place-rank-trackers.mjs", "sha256": "4f42936af4c5177ae0daf9b2578a36336907f557508b74f142eca90f01f49ffe" },
+    { "id": "place-tracker-server", "file": "src/server/handlers/naver-place-rank-trackers.mjs", "sha256": "cca5bf745ac159ddaa8e5eeb54541c7363c7144526f43b67351040f93897d5a4" },
     { "id": "place-rank-cron-server", "file": "src/server/handlers/naver-place-rank-cron.mjs", "sha256": "367ff71dbed817318bd63b2fad8b0a5c0752b74124c7b5a807291185fb7aed01" },
     { "id": "place-collector", "file": "tools/naver-place-rank-collector/src/naver-place-rank.mjs", "sha256": "a0cc2ed8694ca374e3742781875b6e409ea56bff58d005c6c60ebd5c27cb0d63" },
     { "id": "place-collector-server", "file": "tools/naver-place-rank-collector/src/server.mjs", "sha256": "1bd21991d60fbf604c21234f510a179eb1e612cbd95d3d7c622a570a1d894666" },

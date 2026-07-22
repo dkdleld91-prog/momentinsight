@@ -23,21 +23,39 @@
 - `NAVER_SEARCHAD_SECRET_KEY`
 - `NAVER_SEARCHAD_CUSTOMER_ID`
 
-### 네이버 데이터랩 API
+### NAVER API Hub
 
-네이버 개발자센터에서 애플리케이션을 등록하고 `데이터랩(검색어트렌드)`를 추가합니다. 월별, 요일별, 연령별 비율 조회에 필요합니다.
+2026년 6월 출시된 NAVER API Hub에서 일반 검색, 검색어 트렌드, 쇼핑 인사이트를 사용합니다. NCP 콘솔에서 Hub 애플리케이션과 사용할 API를 선택한 뒤 아래 값을 등록합니다.
+
+- `NAVER_API_HUB_CLIENT_ID`
+- `NAVER_API_HUB_CLIENT_SECRET`
+- `NAVER_API_HUB_MODE=legacy`
+
+Production은 Hub 실호출과 표본 비교가 끝날 때까지 `legacy`로 유지합니다. 검증 후 선택할 수 있는 `auto`는 Hub 키 두 값이 모두 있을 때만 새 주소와 새 인증 헤더를 사용하고, 하나라도 없으면 기존 Developers 호출을 유지합니다. 환경변수가 없거나 허용되지 않은 값이면 안전하게 `legacy`로 유지됩니다. 값이 일부만 등록된 상태에서 서로 다른 키를 섞어 호출하지 않습니다.
+
+새 호출 규격은 다음과 같습니다.
+
+- 기본 주소: `https://naverapihub.apigw.ntruss.com`
+- 인증 헤더: `X-NCP-APIGW-API-KEY-ID`, `X-NCP-APIGW-API-KEY`
+- 일반 검색: `/search/v1/*`
+- 검색어 트렌드: `/search-trend/v1/search`
+- 쇼핑 인사이트: `/shopping/v1/*`
+
+### 기존 네이버 데이터랩 API
+
+이관 검증과 비상 복귀를 위한 legacy 값입니다. 공식 유예기간 종료 전까지 검색어 트렌드와 쇼핑 인사이트의 기존 호출에 사용할 수 있습니다.
 
 - `NAVER_DATALAB_CLIENT_ID`
 - `NAVER_DATALAB_CLIENT_SECRET`
 
-### 네이버 OpenAPI 쇼핑
+### 네이버 Developers 쇼핑 검색
 
-네이버 개발자센터에서 쇼핑 검색 API를 사용할 때 필요합니다. 상품수/쇼핑 참고 지표에만 사용합니다.
+상품수·상품 단건·N 30일 순위에서 사용하는 legacy 쇼핑 검색용입니다. 이 API는 NAVER API Hub 이관 대상이 아니며, 2026년 7월 31일 종료되고 공식 대체 API가 없습니다. 따라서 Hub 키를 등록해도 이 기능의 데이터 소스는 자동 교체되지 않습니다.
 
 - `NAVER_OPENAPI_CLIENT_ID`
 - `NAVER_OPENAPI_CLIENT_SECRET`
 
-DataLab과 OpenAPI가 같은 네이버 개발자 앱을 사용하더라도 환경변수 이름은 각각 명시해서 넣습니다. 자동 대체를 쓰면 어떤 API 키로 호출됐는지 추적이 어려워집니다.
+DataLab과 OpenAPI가 같은 네이버 개발자 앱을 사용하더라도 legacy 환경변수 이름은 각각 명시해서 넣습니다. Hub 키는 별도 이름으로만 보관하며 공개 HTML·로그·문서에 실제 값을 남기지 않습니다.
 
 ### 네이버 플레이스 순위 수집
 
@@ -83,7 +101,9 @@ curl "https://insight.momentlabs.co.kr/api/integration-status"
 curl "https://insight.momentlabs.co.kr/api/naver-keyword?keyword=냉감패드"
 ```
 
-`check:env:naver`는 네이버 SearchAd, DataLab/OpenAPI, `MI_KEYWORD_API_ENABLED=true`가 없으면 실패합니다. 운영에서는 실패를 무시하지 않고 Vercel Environment Variables를 먼저 채웁니다.
+`check:env:naver`는 네이버 SearchAd, Hub 또는 legacy DataLab, 종료 전까지 필요한 legacy 쇼핑 검색, `MI_KEYWORD_API_ENABLED=true`가 없으면 실패합니다. 운영에서는 실패를 무시하지 않고 Vercel Environment Variables를 먼저 채웁니다.
+
+안전한 Hub 전환 순서는 Production을 `legacy`로 고정 → Hub 키 등록 → `/api/integration-status`의 `naverApiHubMigration.ready=true` 확인 → Preview/로컬에서 `hub`로 검색어 트렌드·쇼핑 인사이트·blog/local 표본 비교 → 오류 0건 확인 → Production을 `auto` 또는 `hub`로 전환하는 방식입니다. Hub 콘솔의 API 선택 또는 키 권한이 빠지면 401/403이므로 즉시 키·권한을 점검하고, 존재하지 않거나 종료된 경로의 404/410을 임의 데이터로 대체하지 않습니다. 429는 호출 제한으로 분류해 재시도 간격과 사용량을 확인합니다.
 
 ## 보안 기준
 

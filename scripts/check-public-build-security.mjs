@@ -42,7 +42,7 @@ const secretPatterns = [
   ["AWS access key", /\bAKIA[0-9A-Z]{16}\b/],
   [
     "server secret assignment",
-    /\b(?:SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY|MI_SUPER_ADMIN_CODE|MI_RANK_CRON_SECRET|CRON_SECRET|NAVER_SEARCHAD_SECRET_KEY|NAVER_OPENAPI_CLIENT_SECRET)\s*[:=]\s*["']?[^\s"'<>]{8,}/,
+    /\b(?:SUPABASE_SECRET_KEY|SUPABASE_SERVICE_ROLE_KEY|MI_SUPER_ADMIN_CODE|MI_RANK_CRON_SECRET|CRON_SECRET|NAVER_SEARCHAD_SECRET_KEY|NAVER_OPENAPI_CLIENT_SECRET|NAVER_DATALAB_CLIENT_SECRET|NAVER_API_HUB_CLIENT_SECRET|NAVER_API_HUB_API_KEY)\s*[:=]\s*["']?[^\s"'<>]{8,}/,
   ],
   ["source map reference", /sourceMappingURL\s*=/],
   ["embedded source map content", /["']sourcesContent["']\s*:/],

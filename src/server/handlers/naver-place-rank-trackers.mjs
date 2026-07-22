@@ -3,6 +3,13 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
+import {
+  hasNaverMigratedApiConfig,
+  naverApiErrorMessage,
+  naverApiProviderConfig,
+  naverSearchRequest,
+  resolveNaverApiTransport,
+} from "../naver-api-hub.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 const MAX_CRON_BATCH = 10;
@@ -17,7 +24,6 @@ const PLACE_TRACKER_LEASE_SECONDS = Math.max(
   300,
   Math.min(600, Number(process.env.MI_PLACE_RANK_LEASE_SECONDS || 360))
 );
-const NAVER_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const NAVER_PLACE_URL_TIMEOUT_MS = 6000;
 const NAVER_PLACE_URL_MAX_REDIRECTS = 3;
@@ -505,8 +511,7 @@ function placeProviderConfig() {
   return {
     url: process.env.NAVER_PLACE_RANK_API_URL || "",
     key: process.env.NAVER_PLACE_RANK_API_KEY || "",
-    openapiClientId: process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "",
-    openapiClientSecret: process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "",
+    naverApi: naverApiProviderConfig(),
     searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY || "",
     searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY || "",
     searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
@@ -518,7 +523,7 @@ function hasExternalPlaceProviderConfig(config) {
 }
 
 function hasNaverLocalSearchConfig(config) {
-  return Boolean(config.openapiClientId && config.openapiClientSecret);
+  return hasNaverMigratedApiConfig(config.naverApi, "search");
 }
 
 function hasPlaceRankLookupConfig(config) {
@@ -527,7 +532,11 @@ function hasPlaceRankLookupConfig(config) {
 
 function placeRankLookupMode(config) {
   if (hasExternalPlaceProviderConfig(config)) return "external-provider";
-  if (hasNaverLocalSearchConfig(config)) return "naver-openapi-local";
+  if (hasNaverLocalSearchConfig(config)) {
+    return resolveNaverApiTransport(config.naverApi, "search") === "hub"
+      ? "naver-api-hub-local"
+      : "naver-openapi-local";
+  }
   return "not-configured";
 }
 
@@ -1166,12 +1175,10 @@ async function lookupNaverBlogCount(config, keyword) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(process.env.MI_PLACE_BLOG_COUNT_TIMEOUT_MS || 3500));
   try {
-    const response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/blog.json?" + params.toString(), {
+    const apiRequest = naverSearchRequest(config.naverApi, "blog", params);
+    const response = await fetch(apiRequest.url, {
       method: "GET",
-      headers: {
-        "X-Naver-Client-Id": config.openapiClientId,
-        "X-Naver-Client-Secret": config.openapiClientSecret,
-      },
+      headers: apiRequest.headers,
       signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
@@ -1252,17 +1259,15 @@ async function lookupNaverLocalSearchRank(config, tracker) {
   let response;
   let payload;
   try {
-    response = await fetch(NAVER_OPENAPI_BASE_URL + "/v1/search/local.json?" + params.toString(), {
+    const apiRequest = naverSearchRequest(config.naverApi, "local", params);
+    response = await fetch(apiRequest.url, {
       method: "GET",
-      headers: {
-        "X-Naver-Client-Id": config.openapiClientId,
-        "X-Naver-Client-Secret": config.openapiClientSecret,
-      },
+      headers: apiRequest.headers,
       signal: controller.signal,
     });
     payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(payload.errorMessage || payload.message || "naver_local_search_failed");
+      throw new Error(naverApiErrorMessage(payload, "naver_local_search_failed"));
     }
   } finally {
     clearTimeout(timeout);

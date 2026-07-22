@@ -37,6 +37,22 @@ function hasAny(env, names) {
   return names.some((name) => Boolean(env[name]));
 }
 
+function hasPair(env, idNames, secretNames) {
+  return hasAny(env, idNames) && hasAny(env, secretNames);
+}
+
+function hasMigratedNaverPair(env, kind) {
+  const hub = hasPair(
+    env,
+    ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID"],
+    ["NAVER_API_HUB_CLIENT_SECRET", "NAVER_API_HUB_API_KEY"],
+  );
+  const legacy = kind === "datalab"
+    ? hasPair(env, ["NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], ["NAVER_DATALAB_CLIENT_SECRET", "NAVER_OPENAPI_CLIENT_SECRET"])
+    : hasPair(env, ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"]);
+  return hub || legacy;
+}
+
 function status(env, label, names, required = true, valid = null) {
   const present = hasAny(env, names);
   return {
@@ -64,8 +80,9 @@ const checks = [
   status(env, "Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], strictNaver),
   status(env, "Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], strictNaver),
   status(env, "Naver SearchAd customer", ["NAVER_SEARCHAD_CUSTOMER_ID"], strictNaver),
-  status(env, "Naver DataLab client", ["NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], strictNaver),
-  status(env, "Naver DataLab secret", ["NAVER_DATALAB_CLIENT_SECRET", "NAVER_OPENAPI_CLIENT_SECRET"], strictNaver),
+  status(env, "Naver migrated DataLab provider", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID", "NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], strictNaver, (merged) => hasMigratedNaverPair(merged, "datalab")),
+  status(env, "Naver API Hub client", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID"], false),
+  status(env, "Naver API Hub secret", ["NAVER_API_HUB_CLIENT_SECRET", "NAVER_API_HUB_API_KEY"], false),
   status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], strictNaver),
   status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], strictNaver),
   status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),

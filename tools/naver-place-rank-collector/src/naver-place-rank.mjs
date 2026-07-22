@@ -32,7 +32,10 @@ const GROWTH_POLL_INTERVAL_MS = 220;
 const GROWTH_POLL_ATTEMPTS = 6;
 const EXHAUSTED_STABLE_ROUNDS = 3;
 const LIST_SELECTOR_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 8000));
-const NATIVE_LIST_FRAME_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 6000));
+// Render's shared CPU can take longer than a local browser to attach the
+// category-specific list frame. Falling back too early is unsafe for medical
+// searches because hospital/list and place/list are not interchangeable.
+const NATIVE_LIST_FRAME_TIMEOUT_MS = Math.max(1000, Math.min(DEFAULT_TIMEOUT_MS, 20000));
 const IDENTITY_OPTIONAL_SELECTOR_TIMEOUT_MS = 1000;
 const RESULT_CACHE_TTL_MS = Math.max(
   60000,
@@ -1430,6 +1433,15 @@ async function resolveMapSearch(page, keyword, deadlineAt) {
   }
 }
 
+async function resolveRequiredNativeListSearch(searchOnce) {
+  let result = await searchOnce();
+  if (!result.nativeListUrl) result = await searchOnce();
+  if (!result.nativeListUrl) {
+    throw new Error("naver_map_native_list_frame_not_found");
+  }
+  return result;
+}
+
 async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt) {
   const cached = cachedCandidates(keyword, maxRank);
   if (cached) return cached;
@@ -1472,7 +1484,12 @@ async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadline
 
     // Ranking uses one neutral keyword search context. Coordinates embedded in
     // the tracked place URL describe the target and must not bias list order.
-    const initialSearch = await resolveMapSearch(page, keyword, deadlineAt);
+    // A slow first map boot must not send hospital/accommodation/etc. queries
+    // through the generic place/list route. Restart the neutral search once
+    // and require Naver's own category list URL before collecting ranks.
+    const initialSearch = await resolveRequiredNativeListSearch(
+      () => resolveMapSearch(page, keyword, deadlineAt)
+    );
     const searchCoord = initialSearch.searchCoord;
     await page.goto(buildPlaceListUrl(keyword, maxRank, searchCoord, initialSearch.nativeListUrl), {
       waitUntil: "domcontentloaded",
@@ -1781,6 +1798,7 @@ export const __testing = {
   nextListScrollTop,
   isApifyAccountLimitError,
   remainingTimeoutMs,
+  resolveRequiredNativeListSearch,
   resolveProviderDeadlineAt,
   selectorFallbackCollection,
 };

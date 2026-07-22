@@ -114,3 +114,10 @@
 - 판매자 상품 조회가 결과 링크의 판매자 상품ID가 아닌 API `productId`만으로 일치함
 - 300위 선택 조회가 정확 상품 발견 지점에서 중단되어 `checkedCount`가 300보다 작음
 - 플레이스 외부 응답에 네이티브 PC 오가닉 source·rankEvidence가 없거나 서로 불일치함
+
+## 즉시 확인: 의료 플레이스 v18
+
+1. Render `/health`가 `2026-07-22-native-medical-list-v18`을 반환하는지 확인한다.
+2. `종로3가한의원`·`종로한의원` 두 tracker만 재실행해 정확 플레이스 ID `1531240094`의 새 snapshot을 확인한다.
+3. snapshot은 `source=naver_map_pc_list_collector`, `rankEvidence=naver_pc_organic_list`, `matched=true`여야 한다.
+4. 실패 시 기존 순위나 유사 상호로 대체하지 않고 정확 오류를 남긴다.

@@ -19,6 +19,7 @@ const {
   normalizeApifyResult,
   nextListScrollTop,
   remainingTimeoutMs,
+  resolveRequiredNativeListSearch,
   resolveProviderDeadlineAt,
   resolvePlaceIdentityViaHttp,
   resolveApifyBudgetMs,
@@ -54,6 +55,31 @@ test("rejects a non-Naver URL that only contains a native-list string", () => {
   assert.equal(result.hostname, "pcmap.place.naver.com");
   assert.equal(result.pathname, "/place/list");
   assert.equal(result.searchParams.get("display"), "300");
+});
+
+test("retries once when the native category list frame is slow", async () => {
+  let calls = 0;
+  const result = await resolveRequiredNativeListSearch(async () => {
+    calls += 1;
+    return calls === 1
+      ? { nativeListUrl: "", searchCoord: "" }
+      : { nativeListUrl: "https://pcmap.place.naver.com/hospital/list?display=70", searchCoord: "126;37" };
+  });
+
+  assert.equal(calls, 2);
+  assert.match(result.nativeListUrl, /\/hospital\/list/);
+});
+
+test("fails closed instead of falling back to a generic list route", async () => {
+  let calls = 0;
+  await assert.rejects(
+    () => resolveRequiredNativeListSearch(async () => {
+      calls += 1;
+      return { nativeListUrl: "", searchCoord: "" };
+    }),
+    /naver_map_native_list_frame_not_found/
+  );
+  assert.equal(calls, 2);
 });
 
 test("advances the virtual place list in overlapping steps instead of jumping to the end", () => {

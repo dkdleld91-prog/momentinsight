@@ -700,6 +700,21 @@ const checks = {
     && source.includes("data-rank-card"))
     && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
+  rankFeatureLockIsBuildOnlyAndUsageStaysOpen: ![
+    serverIndex,
+    adminSource,
+    clientSource,
+    rankServer,
+    placeRankServer,
+  ].some((source) => source.includes("check-protected-rank-features"))
+    && adminSource.includes("data-admin-keyword-search")
+    && clientSource.includes("data-mi-keyword-search")
+    && [adminSource, clientSource].every((source) => source.includes("data-rank-check-run")
+      && source.includes("data-rank-run")
+      && source.includes("data-place-rank-run")
+      && source.includes('action: "create"'))
+    && rankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);')
+    && placeRankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
     && source.includes('>N 상품 순위</a>')

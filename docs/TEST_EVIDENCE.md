@@ -474,3 +474,13 @@
 - `종로3가한의원`: 2026-07-22 15:51 KST, 오가닉 3위, 정확 ID `1531240094`, `matched=true`, `checked_count=70`, `source=naver_map_pc_list_collector`.
 - `종로한의원`: 2026-07-22 15:56 KST, 오가닉 10위, 정확 ID `1531240094`, `matched=true`, `checked_count=70`, `source=naver_map_pc_list_collector`.
 - 두 tracker 현재 상태: `retry_count=0`, `last_error=null`, `check_count=1`, `found_count=1`, 처리 임대 해제, 다음 정규 실행 2026-07-23 09:00 KST.
+
+## 2026-07-22 N 상품·N 플레이스 30일 보호 잠금·운영 배포
+
+- 잠금 의미: `scripts/check-protected-rank-features.mjs`는 보호 코드의 해시와 새 순위 마이그레이션을 빌드·릴리스에서 검사할 뿐 런타임 요청 경로에는 포함되지 않는다. 신규 키워드 조회, N 상품 단건 조회, N 상품·플레이스 추적 등록과 갱신은 계속 허용한다.
+- 회귀 고정: 기준선 `rankFeatureLockIsBuildOnlyAndUsageStaysOpen`이 운영팀·광고주 신규 키워드 조회 버튼, 상품 단건 조회, 상품·플레이스 추적 등록 버튼과 양 서버의 `action=create` 경로를 확인한다.
+- 자동 검증: 정상 잠금 4개 함수·20개 파일·11개 마이그레이션, 의도적 변조 self-test 차단, API·서버 162/162, 플레이스 수집기 51/51, 서버 계약 23/23, Production 인증 18/18, 역할 parity·공개 빌드·CSP 통과.
+- 배포 빌드: Vercel CLI가 수집기 `.dockerignore`를 업로드에서 제외하는 환경 차이를 확인했다. 로컬·CI는 실제 `.dockerignore`와 `dockerignore.policy`의 완전 일치를 강제하고, Vercel은 같은 정책 사본을 검사하도록 보완해 공급망 검사를 우회하지 않았다.
+- 운영 API: `/health` HTTP 200·`release=f8bf0a3b37a1`, `/ready` HTTP 200·Supabase ready, 상품·플레이스 보호 API 비인증 401.
+- 운영 UI: 홈페이지 팝업 348×489px, `N 상품 순위`·`N 30일 순위`·`N 플레이스 30일 순위` 각 1건, 1280px 가로 넘침 0. 총관리자에서 신규 키워드 조회·상품 추적·플레이스 추적 버튼 모두 활성, 기존 상품 추적 25개·플레이스 추적 10개와 30일 이력 로드 확인.
+- 배포: Production `https://momentinsight-idchb9x5n-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`. 이번 범위는 Render 수집기 런타임 변경이 없어 Render는 재배포하지 않았다.

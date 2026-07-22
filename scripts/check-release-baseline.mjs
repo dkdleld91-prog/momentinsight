@@ -1117,8 +1117,10 @@ const checks = {
     && placeRankServer.includes('"collector_busy"')
     && placeRankServer.includes("remainingMs <= retryDelayMs + 2000"),
   placeNativeExhaustionCacheIsFailClosed: placeRankCollector.includes('collection?.stopReason === "naver_result_list_exhausted"')
-    && placeRankCollector.includes("collection?.complete !== true && !stableExhaustion")
-    && placeRankCollectorTests.includes("never reuses transiently truncated native-list collections")
+    && placeRankCollector.includes('const targetIds = collectTargetIds(target)')
+    && placeRankCollector.includes('if (!targetIds.length || !findMatch(entry.collection.candidates, target)) return null')
+    && placeRankCollector.includes('["collection_deadline_reached", "max_scrolls_reached"]')
+    && placeRankCollectorTests.includes("reuses a transient native-list collection only for an exact cached place ID")
     && placeRankCollectorTests.includes("collection_deadline_reached")
     && placeRankCollectorTests.includes("list_selector_unavailable_fallback"),
   adminDownloadMicroInteraction: adminSource.includes("#mi-admin .mi-download:hover")

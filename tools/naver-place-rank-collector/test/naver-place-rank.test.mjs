@@ -48,16 +48,29 @@ test("reuses only a verified native-list exhaustion for trackers sharing a keywo
   resetCandidateCache();
 });
 
-test("never reuses transiently truncated native-list collections", () => {
+test("reuses a transient native-list collection only for an exact cached place ID", () => {
   resetCandidateCache();
-  ["collection_deadline_reached", "max_scrolls_reached", "list_selector_unavailable_fallback"].forEach((stopReason) => {
+  ["collection_deadline_reached", "max_scrolls_reached"].forEach((stopReason) => {
     rememberCandidates("홍대 맛집", 300, {
       complete: false,
       stopReason,
       candidates: [{ id: "1907427831", placeIds: ["1907427831"], rank: 7 }],
     });
     assert.equal(cachedCandidates("홍대 맛집", 300), null);
+    assert.equal(cachedCandidates("홍대 맛집", 300, { placeId: "9999999999" }), null);
+    assert.equal(
+      cachedCandidates("홍대 맛집", 300, { placeId: "1907427831" }).candidates[0].rank,
+      7
+    );
   });
+
+  resetCandidateCache();
+  rememberCandidates("홍대 맛집", 300, {
+    complete: false,
+    stopReason: "list_selector_unavailable_fallback",
+    candidates: [{ id: "1907427831", placeIds: ["1907427831"], rank: 7 }],
+  });
+  assert.equal(cachedCandidates("홍대 맛집", 300, { placeId: "1907427831" }), null);
   resetCandidateCache();
 });
 

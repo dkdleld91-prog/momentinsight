@@ -41,6 +41,10 @@ const RESULT_CACHE_TTL_MS = Math.max(
   60000,
   Math.min(30 * 60 * 1000, Number(process.env.NAVER_PLACE_RESULT_CACHE_TTL_MS || 10 * 60 * 1000))
 );
+const MATCH_ONLY_RESULT_CACHE_TTL_MS = Math.max(
+  30000,
+  Math.min(5 * 60 * 1000, Number(process.env.NAVER_PLACE_MATCH_CACHE_TTL_MS || 3 * 60 * 1000))
+);
 const RESULT_CACHE_MAX = Math.max(5, Math.min(100, Number(process.env.NAVER_PLACE_RESULT_CACHE_MAX || 40)));
 const resultCache = new Map();
 const LIST_FRAME_PATTERN = /pcmap\.place\.naver\.com\/(?:restaurant|place|hospital|accommodation|hairshop|beauty|attraction|shopping|list)/i;
@@ -837,12 +841,20 @@ function candidateCacheKey(keyword, maxRank) {
   return normalizeComparable(keyword) + ":" + maxRank;
 }
 
-function cachedCandidates(keyword, maxRank) {
+function cachedCandidates(keyword, maxRank, target = {}) {
   const key = candidateCacheKey(keyword, maxRank);
   const entry = resultCache.get(key);
-  if (!entry || Date.now() - entry.cachedAt > RESULT_CACHE_TTL_MS) {
+  const ttlMs = entry?.matchOnly ? MATCH_ONLY_RESULT_CACHE_TTL_MS : RESULT_CACHE_TTL_MS;
+  if (!entry || Date.now() - entry.cachedAt > ttlMs) {
     resultCache.delete(key);
     return null;
+  }
+  // A transient native-list scan is reusable only when it already contains
+  // this tracker's exact persisted place ID. Misses must start a fresh scan so
+  // a short list can never turn into a false "not found" result.
+  if (entry.matchOnly) {
+    const targetIds = collectTargetIds(target);
+    if (!targetIds.length || !findMatch(entry.collection.candidates, target)) return null;
   }
   resultCache.delete(key);
   resultCache.set(key, entry);
@@ -856,18 +868,22 @@ function cachedCandidates(keyword, maxRank) {
 }
 
 function rememberCandidates(keyword, maxRank, collection) {
-  // Never fan out a short or transiently truncated list to every tracker that
-  // shares a keyword. A fully collected range or Naver's own stable list
-  // exhaustion is cacheable; deadlines, selector failures and scroll limits
-  // must always trigger a fresh collection.
+  // Never fan out a short or transiently truncated list as a keyword-wide
+  // absence. A fully collected range or Naver's stable list exhaustion can be
+  // shared normally. Deadline/scroll-limit results can only accelerate a
+  // later tracker whose exact persisted place ID already exists in that list.
   const stableExhaustion = collection?.stopReason === "naver_result_list_exhausted"
     && Array.isArray(collection?.candidates)
     && collection.candidates.length > 0;
-  if (collection?.complete !== true && !stableExhaustion) return;
+  const exactMatchReusable = ["collection_deadline_reached", "max_scrolls_reached"].includes(collection?.stopReason)
+    && Array.isArray(collection?.candidates)
+    && collection.candidates.length > 0;
+  if (collection?.complete !== true && !stableExhaustion && !exactMatchReusable) return;
   const key = candidateCacheKey(keyword, maxRank);
   resultCache.delete(key);
   resultCache.set(key, {
     cachedAt: Date.now(),
+    matchOnly: collection?.complete !== true && !stableExhaustion,
     collection: {
       ...collection,
       candidates: collection.candidates.map((candidate) => ({
@@ -1451,8 +1467,8 @@ async function resolveRequiredNativeListSearch(searchOnce) {
   return result;
 }
 
-async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt) {
-  const cached = cachedCandidates(keyword, maxRank);
+async function collectCandidatesFromNaverMap(context, keyword, maxRank, deadlineAt, target = {}) {
+  const cached = cachedCandidates(keyword, maxRank, target);
   if (cached) return cached;
 
   const page = await context.newPage();
@@ -1714,7 +1730,8 @@ export async function lookupNaverPlaceRank(payload = {}, dependencies = {}) {
         context,
         keyword,
         maxRank,
-        collectionDeadlineAt
+        collectionDeadlineAt,
+        target
       );
       const candidates = collection.candidates;
       let matched = findMatch(candidates, target);

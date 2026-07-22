@@ -1,19 +1,19 @@
 {
   "version": 1,
-  "baselineCommit": "f991854",
+  "baselineCommit": "c42b112",
   "policy": "N 상품·N 플레이스 30일 추적 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다.",
   "functions": [
     {
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "97c6daca1b649af5b32bdfc88d8efd40790108fca04b9de42941c82c83f28263"
+      "sha256": "dcc784f62aacbe911441f6d04e57c3c3ffd5335616e5c5005decc3251b56601a"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "de63986277f053d6dab9e14fd3b60f6226324241ded3c4c20a46d1bfec6d3504"
+      "sha256": "e1550c71b323de464209e93836fa792d7faacff94b1810549286d01d72059de5"
     },
     {
       "id": "operation-place-30-day",

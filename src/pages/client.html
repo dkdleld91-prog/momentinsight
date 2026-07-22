@@ -8759,7 +8759,7 @@
             var nextIndex = 0;
             var completedCount = 0;
             var workerCount = Math.min(2, targets.length);
-            setStatus(rankStatus, "전체 순위를 안전 동시 갱신 2개 기준으로 시작합니다.", "");
+            setStatus(rankStatus, "전체 순위 갱신을 시작합니다.", "");
             async function refreshWorker() {
               while (nextIndex < targets.length) {
                 var targetIndex = nextIndex;
@@ -8779,7 +8779,7 @@
                   failedTargets.push(targets[targetIndex]);
                 }
                 completedCount += 1;
-                setStatus(rankStatus, "전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length + " · 안전 동시 갱신 2개", "");
+                setStatus(rankStatus, "전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length, "");
               }
             }
             await Promise.all(Array.from({ length: workerCount }, function () { return refreshWorker(); }));

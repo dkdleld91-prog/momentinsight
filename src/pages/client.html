@@ -9337,6 +9337,10 @@
         data.comp = data.comp || fallbackData.comp || "확인 필요";
         data.action = data.action || fallbackData.action || "네이버 검색량 확인 후 SEO 후보로 분류";
         data.insight = data.insight || fallbackData.insight || "검색량과 검색 비율을 기준으로 SEO/소재 후보를 분류";
+        data.market = data.market || fallbackData.market || null;
+        data.marketComp = keywordMarketCompetitionLabel(data);
+        if (data.market && data.market.action) data.action = data.market.action;
+        if (data.market && data.market.insight) data.insight = data.market.insight;
         data.series = Array.isArray(data.series) && data.series.length ? data.series : fallbackData.series;
         data.seriesLabels = Array.isArray(data.seriesLabels) && data.seriesLabels.length ? data.seriesLabels : fallbackData.seriesLabels;
         data.trendUnit = data.trendUnit || fallbackData.trendUnit || "";
@@ -9350,6 +9354,13 @@
         data.sourceStatus = payload && payload.sourceStatus ? payload.sourceStatus : {};
         data.userMessage = payload && payload.userMessage ? payload.userMessage : "";
         return data;
+      }
+
+      function keywordMarketCompetitionLabel(data) {
+        var marketCompetition = data && data.market && data.market.competition;
+        return marketCompetition && marketCompetition.label
+          ? String(marketCompetition.label)
+          : String(data && data.comp || "확인 필요");
       }
 
       function keywordSourceLabel(payload, fallbackLabel) {
@@ -9370,7 +9381,7 @@
       function renderKeywordResult(items) {
         if (!keywordResult) return;
         keywordResult.innerHTML = items.map(function (item, index) {
-          return '<div class="mi-row"><span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span><strong>' + escapeHtml(formatSearchVolume(item.data)) + ' · ' + escapeHtml(item.data.comp) + '</strong></div>' +
+          return '<div class="mi-row"><span><i class="mi-dot" style="--keyword-color:' + keywordColors[index % keywordColors.length] + '"></i>' + escapeHtml(item.keyword) + '</span><strong>' + escapeHtml(formatSearchVolume(item.data)) + ' · ' + escapeHtml(keywordMarketCompetitionLabel(item.data)) + '</strong></div>' +
             '<div class="mi-row"><span>데이터 상태</span><strong>' + escapeHtml(item.sourceLabel || "확인 필요") + '</strong></div>' +
             (item.data.userMessage ? '<div class="mi-row"><span>조회 상태</span><strong>' + escapeHtml(item.data.userMessage) + '</strong></div>' : '') +
             '<div class="mi-row"><span>추천 작업</span><strong>' + escapeHtml(item.data.action) + '</strong></div>';
@@ -9536,10 +9547,11 @@
         var marketScore = 0;
         if (hasVolume) marketScore += 8;
         if (shoppingTotal) marketScore += 4;
-        if (keywordData && keywordData.comp && keywordData.comp !== "확인 필요") marketScore += 3;
+        var marketCompetition = keywordMarketCompetitionLabel(keywordData);
+        if (marketCompetition !== "확인 필요") marketScore += 3;
         var marketDetail = hasVolume ? "월 검색수 " + formatSearchVolumeWithUnit(keywordData) + " 기준입니다." : "월 검색량을 확인하지 못했습니다.";
         if (shoppingTotal) marketDetail += " 네이버 쇼핑 검색 결과는 약 " + formatNumber(shoppingTotal) + "개입니다.";
-        if (keywordData && keywordData.comp && keywordData.comp !== "확인 필요") marketDetail += " 경쟁 지표는 " + keywordData.comp + "입니다.";
+        if (marketCompetition !== "확인 필요") marketDetail += " 종합 경쟁강도는 " + marketCompetition + "입니다.";
         addCheck("market", "검색 수요 연결", marketDetail, marketScore, 15);
 
         var rankScore = 0;

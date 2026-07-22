@@ -792,10 +792,37 @@ export function keywordMarketIndicators({
     ? Math.min(100, Math.max(0, Math.round((demandScore * 0.65) + ((100 - competitionScore) * 0.35))))
     : null;
 
+  const demand = { score: demandScore, label: keywordMarketLabel(demandScore) };
+  const marketCompetition = { score: competitionScore, label: keywordMarketLabel(competitionScore) };
+  const salesOpportunity = { score: salesOpportunityScore, label: keywordMarketLabel(salesOpportunityScore) };
+  let action = "검색수요와 상품 공급을 함께 확인한 뒤 SEO 후보로 분류";
+  if (Number.isFinite(competitionScore) && competitionScore >= 75 && Number.isFinite(demandScore) && demandScore >= 75) {
+    action = "대표 포화 키워드 · 세부 고효율 키워드 병행 검토";
+  } else if (Number.isFinite(salesOpportunityScore) && salesOpportunityScore >= 75 && Number.isFinite(competitionScore) && competitionScore < 55) {
+    action = "수요 대비 상품 공급이 적은 SEO 우선 후보";
+  } else if (Number.isFinite(competitionScore) && competitionScore >= 75) {
+    action = "상품 등록 경쟁이 높아 세부 키워드 확장 검토";
+  } else if (Number.isFinite(salesOpportunityScore) && salesOpportunityScore >= 55) {
+    action = "수요·공급 균형이 좋은 SEO 후보";
+  }
+
+  const insightFacts = [];
+  if (hasVolume) insightFacts.push(`월 검색량 ${Number(exactVolume).toLocaleString("ko-KR")}회`);
+  if (hasShoppingTotal) insightFacts.push(`쇼핑 상품수 ${Number(exactShoppingTotal).toLocaleString("ko-KR")}개`);
+  const insight = insightFacts.length && Number.isFinite(competitionScore)
+    ? `${insightFacts.join(", ")}이며 종합 경쟁강도는 ${marketCompetition.label}으로 확인됩니다.`
+    : insightFacts.length
+      ? `${insightFacts.join(", ")}입니다.`
+      : Number.isFinite(competitionScore)
+        ? `종합 경쟁강도는 ${marketCompetition.label}으로 확인됩니다.`
+        : "검색수요와 상품 공급을 확인한 뒤 종합 경쟁강도를 표시합니다.";
+
   return {
-    demand: { score: demandScore, label: keywordMarketLabel(demandScore) },
-    competition: { score: competitionScore, label: keywordMarketLabel(competitionScore) },
-    salesOpportunity: { score: salesOpportunityScore, label: keywordMarketLabel(salesOpportunityScore) },
+    demand,
+    competition: marketCompetition,
+    salesOpportunity,
+    action,
+    insight,
     basis: "검색수요×상품규모·수요 대비 상품밀도·검색광고 경쟁도 기반 참고 지표",
     disclaimer: "판매 기회율은 실제 매출 전환율이 아닙니다.",
   };

@@ -674,6 +674,17 @@ const checks = {
     && keywordServer.includes("demandSupplyScaleScore")
     && keywordServer.includes("Math.max(highest, score)")
     && keywordServer.includes("검색수요×상품규모·수요 대비 상품밀도·검색광고 경쟁도 기반 참고 지표"),
+  keywordMarketDecisionUsesAggregateForBothRoles: [adminSource, clientSource].every((source) => [
+    "function keywordMarketCompetitionLabel(data)",
+    "data.marketComp = keywordMarketCompetitionLabel(data)",
+    "if (data.market && data.market.action) data.action = data.market.action",
+    "if (data.market && data.market.insight) data.insight = data.market.insight",
+    "escapeHtml(keywordMarketCompetitionLabel(item.data))",
+    "종합 경쟁강도는 \" + marketCompetition",
+  ].every((marker) => source.includes(marker)))
+    && keywordServer.includes("대표 포화 키워드 · 세부 고효율 키워드 병행 검토")
+    && keywordServer.includes("수요 대비 상품 공급이 적은 SEO 우선 후보")
+    && keywordServer.includes("종합 경쟁강도는 ${marketCompetition.label}으로 확인됩니다."),
   metaResearchEndpointDisabled: !serverIndex.includes('import metaResearch from "./handlers/meta-research.mjs"')
     && !serverIndex.includes('url.pathname === "/api/meta-research"'),
   metaAdsToolReady: serverIndex.includes('metaAds: () => import("./handlers/meta-ads.mjs")')

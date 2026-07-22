@@ -9,7 +9,8 @@
 - 자동 회귀: `roleLogoutAlwaysReturnsToLogin`, `roleLogoutInvalidatesStaleAuthWork`, `roleLogoutBlocksLatePrivilegedAndToolResponses`, `clientLoginButtonsRespectSessionGeneration`, `clientSessionRestoreKeepsInitialGeneration`, `adminLoginFailureCanRetry` 기준선을 추가했다. 광고주·운영팀 인라인 스크립트 문법, 로그아웃 세션·CSRF·쿠키 계약, `git diff --check`를 통과했다.
 - 전체 릴리스 검사: API·서버 154/154, 플레이스 수집기 44/44, 서버 계약 22/22, Production 인증 18/18, 역할 parity, 순위 매칭, CSP 공개 빌드 8개 파일·인라인 스크립트 6개/해시 4개를 통과했다. 기존 상품·플레이스 순위 수집·스냅샷·DB는 변경하지 않았다.
 - 2차 검수: 초기 자동 복원, 로그인 재시도 버튼, 모든 민감 도구 응답·다운로드, Owner/운영팀 계정 작업과 교차 계정 입력 초기화를 적대적으로 재검수해 P0/P1 0건을 확인했다.
-- 브라우저 검증 경계: 로컬 앱 브라우저 플러그인은 `localhost`/`127.0.0.1`을 `ERR_BLOCKED_BY_CLIENT`로 차단해 정적 브라우저 증거 대신 릴리스 검사와 독립 코드 검수를 사용했다. 운영 배포 뒤 실제 세션에서 즉시 로그인 화면 복귀·새로고침 후 로그아웃 유지·콘솔 오류를 최종 확인한다.
+- 운영 배포: 코드 커밋 `b052e85`, `/health`·`/ready` 릴리스 `b052e8597fb4`, Supabase ready, `/client`·`/admin` 200, 실제 상품·플레이스 추적 보호 API 비인증 401, 새 admin/client CSP 해시 일치를 확인했다.
+- 실제 브라우저: 기존 `우노헬스케어` 광고주 서버 세션이 자동 복원되는 것을 확인한 뒤 로그아웃 버튼을 클릭했다. 즉시 로그인 화면으로 전환돼 `로그아웃되었습니다. 다른 대행사 코드를 입력해주세요.`가 표시됐고 입력창으로 초점이 이동했으며, 새로고침 뒤에도 로그인 화면 잠금이 유지됐다. 운영팀 페이지도 로그인 잠금 상태였고 양 페이지 콘솔의 사이트 오류는 0건이다. 운영팀 인증 세션의 실제 클릭은 별도 로그인 비밀값을 사용하지 않고 자동·독립 검수 근거로 한정했다.
 
 ## 2026-07-20 · 플레이스 실목록 오가닉 순위 근거 정상화
 

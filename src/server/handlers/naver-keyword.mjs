@@ -736,10 +736,10 @@ function boundedMarketScore(value, minimum = 0) {
 
 function absoluteShoppingSupplyScore(shoppingTotal) {
   if (!Number.isFinite(shoppingTotal) || shoppingTotal <= 0) return null;
-  // About 3,000 products is the lower saturation boundary and 300,000 products
-  // is treated as a fully saturated catalogue. The logarithmic scale prevents a
-  // few very large categories from flattening every smaller market.
-  return boundedMarketScore(((Math.log10(shoppingTotal) - 3.5) / 2) * 100, 1);
+  // About 10,000 products is the lower catalogue-saturation boundary and
+  // 300,000 products is treated as fully saturated. A logarithmic scale keeps
+  // the gap between niche and representative categories meaningful.
+  return boundedMarketScore(((Math.log10(shoppingTotal) - 4) / 1.5) * 100, 1);
 }
 
 export function keywordMarketIndicators({
@@ -767,10 +767,14 @@ export function keywordMarketIndicators({
   const absoluteSupplyScore = hasShoppingTotal
     ? absoluteShoppingSupplyScore(exactShoppingTotal)
     : null;
-  const relativeSupplyScore = hasVolume && hasShoppingTotal
-    ? boundedMarketScore(Math.log10(1 + (exactShoppingTotal / exactVolume)) * 50, 1)
+  const comparableVolume = hasVolume ? exactVolume : isUnderThreshold ? 10 : null;
+  const relativeSupplyScore = Number.isFinite(comparableVolume) && comparableVolume > 0 && hasShoppingTotal
+    ? boundedMarketScore(Math.log10(1 + (exactShoppingTotal / comparableVolume)) * 50, 1)
     : null;
-  const supplyCompetitionScore = [absoluteSupplyScore, relativeSupplyScore]
+  const demandSupplyScaleScore = Number.isFinite(demandScore) && Number.isFinite(absoluteSupplyScore)
+    ? boundedMarketScore((demandScore * absoluteSupplyScore) / 100, 1)
+    : null;
+  const supplyCompetitionScore = [demandSupplyScaleScore, relativeSupplyScore]
     .filter(Number.isFinite)
     .reduce((highest, score) => Math.max(highest, score), -Infinity);
   const hasSupplyCompetitionScore = Number.isFinite(supplyCompetitionScore);
@@ -792,7 +796,7 @@ export function keywordMarketIndicators({
     demand: { score: demandScore, label: keywordMarketLabel(demandScore) },
     competition: { score: competitionScore, label: keywordMarketLabel(competitionScore) },
     salesOpportunity: { score: salesOpportunityScore, label: keywordMarketLabel(salesOpportunityScore) },
-    basis: "월 검색량·검색광고 경쟁도·절대·수요 대비 쇼핑 상품수 기반 참고 지표",
+    basis: "검색수요×상품규모·수요 대비 상품밀도·검색광고 경쟁도 기반 참고 지표",
     disclaimer: "판매 기회율은 실제 매출 전환율이 아닙니다.",
   };
 }

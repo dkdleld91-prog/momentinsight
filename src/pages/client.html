@@ -5666,6 +5666,7 @@
         clientId: "",
         teamId: ""
       };
+      var clientSessionGeneration = 0;
 
       function selectedAgencyCode() {
         return storedClientAuthCode();
@@ -5673,6 +5674,91 @@
 
       function storedClientAuthCode() {
         return secureClientSession.scopeKey || "";
+      }
+
+      function clientSessionIsCurrent(generation, scopeKey) {
+        return generation === clientSessionGeneration &&
+          secureClientSession.role === "client" &&
+          normalizeCode(secureClientSession.scopeKey) === normalizeCode(scopeKey);
+      }
+
+      function captureClientSession() {
+        return {
+          generation: clientSessionGeneration,
+          scopeKey: normalizeCode(secureClientSession.scopeKey)
+        };
+      }
+
+      function resetClientAsyncControls(options) {
+        var clearSensitiveInputs = options && options.clearSensitiveInputs === true;
+        root.querySelectorAll("[data-meta-run], [data-mi-keyword-search], [data-seo-run], [data-rank-check-run], [data-rank-run], [data-place-rank-run], [data-mi-report-download], [data-mi-connect-button], [data-mi-login-button]").forEach(function (button) {
+          button.disabled = false;
+        });
+        metaLiveAdsCache = [];
+        keywordDatasets = [];
+        root.querySelectorAll("[data-meta-results]").forEach(function (node) {
+          node.innerHTML = '<div class="mi-meta-empty">검색어를 입력하면 Meta 광고 조회 결과가 이곳에 표시됩니다.</div>';
+        });
+        clearKeywordDataView("키워드를 입력하고 조회를 누르면 수집된 검색 데이터를 표시합니다.");
+        renderKeywordResult(keywordDatasets);
+        resetSeoView();
+        if (clearSensitiveInputs) {
+          root.querySelectorAll("[data-meta-query], [data-mi-keyword-input], [data-seo-keyword], [data-seo-url], [data-seo-review-count]").forEach(function (input) {
+            input.value = "";
+          });
+          var seoKeywordInput = root.querySelector("[data-seo-keyword]");
+          if (seoKeywordInput) seoKeywordInput.setAttribute("data-synced-keyword", "true");
+          var metaPlatformInput = root.querySelector("[data-meta-platform]");
+          var metaMediaInput = root.querySelector("[data-meta-media]");
+          if (metaPlatformInput) metaPlatformInput.selectedIndex = 0;
+          if (metaMediaInput) metaMediaInput.selectedIndex = 0;
+          var metaSummaryQuery = root.querySelector("[data-meta-summary-query]");
+          var metaSummaryCount = root.querySelector("[data-meta-summary-count]");
+          var metaSummaryState = root.querySelector("[data-meta-summary-state]");
+          if (metaSummaryQuery) metaSummaryQuery.textContent = "검색 전";
+          if (metaSummaryCount) metaSummaryCount.textContent = "0개";
+          if (metaSummaryState) metaSummaryState.textContent = "대기";
+          setStatus(root.querySelector("[data-meta-status]"), "검색어를 입력하면 Meta 공식 광고 라이브러리에서 확인 가능한 광고를 조회합니다.", "");
+          setStatus(root.querySelector("[data-seo-status]"), "키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.", "");
+          root.querySelectorAll("[data-rank-check-keyword], [data-rank-check-url], [data-rank-check-product-id], [data-rank-keyword], [data-rank-url], [data-rank-product-id], [data-rank-filter-search], [data-rank-bulk-group], [data-place-rank-keyword], [data-place-rank-url], [data-place-rank-filter-search]").forEach(function (input) {
+            input.value = "";
+          });
+          root.querySelectorAll("[data-rank-check-keyword], [data-rank-keyword], [data-place-rank-keyword]").forEach(function (input) {
+            input.setAttribute("data-synced-keyword", "true");
+          });
+          var rankCheckMax = root.querySelector("[data-rank-check-max]");
+          if (rankCheckMax) rankCheckMax.value = "300";
+          root.querySelectorAll("[data-rank-card], [data-place-rank-card]").forEach(function (card) {
+            card.setAttribute("data-rank-filter-text", "");
+            card.setAttribute("data-place-rank-filter-text", "");
+            card.setAttribute("data-rank-filter-mode", "all");
+            card.setAttribute("data-place-rank-filter-mode", "all");
+            card.setAttribute("data-rank-filter-group", "");
+            card.setAttribute("data-place-rank-filter-group", "");
+            card.setAttribute("data-rank-bulk-group-draft", "");
+            card.setAttribute("data-rank-collapsed-groups", "");
+            card.querySelectorAll("[data-rank-filter-group], [data-place-rank-filter-group]").forEach(function (select) {
+              select.selectedIndex = 0;
+            });
+            card.querySelectorAll("[data-rank-filter-status], [data-place-rank-filter-status]").forEach(function (button) {
+              button.classList.toggle("is-active", button.getAttribute("data-rank-filter-status") === "all" || button.getAttribute("data-place-rank-filter-status") === "all");
+            });
+            card.querySelectorAll("[data-rank-group-combo].is-open").forEach(function (combo) {
+              combo.classList.remove("is-open");
+            });
+            card.querySelectorAll("[data-rank-group-menu-toggle]").forEach(function (toggle) {
+              toggle.setAttribute("aria-expanded", "false");
+            });
+          });
+          root.querySelectorAll("[data-rank-filter-count], [data-place-rank-filter-count]").forEach(function (node) {
+            node.textContent = "0개 표시";
+          });
+          var rankCheckResult = root.querySelector("[data-rank-check-result]");
+          if (rankCheckResult) rankCheckResult.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">상품 정보를 입력하면 대표 순위와 페이지, 정확 상품·관련 원부 노출이 표시됩니다.</div>';
+          setStatus(root.querySelector("[data-rank-check-status]"), "키워드와 상품 URL 또는 상품ID를 입력하면 상위 300개 오가닉 순위를 조회합니다.", "");
+          setStatus(root.querySelector("[data-rank-status]"), "키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.", "");
+          setStatus(root.querySelector("[data-place-rank-status]"), "키워드와 플레이스 URL을 입력하세요. 상호명은 자동 확인됩니다.", "");
+        }
       }
 
       function applyClientSession(payload) {
@@ -6786,7 +6872,6 @@
         var payload = await response.json().catch(function () { return null; });
         if (!payload) payload = { ok: false, message: "보안 접속 응답을 읽을 수 없습니다." };
         if (!response.ok && payload.ok !== false) payload.ok = false;
-        if (payload.ok && payload.session) applyClientSession(payload);
         return payload;
       }
 
@@ -6810,20 +6895,38 @@
       }
 
       async function closeClientSession() {
+        var csrfToken = String(secureClientSession.csrfToken || "");
         try {
-          await miFetch(getSessionApiUrl() + "?action=logout", {
-            method: "POST",
-            cache: "no-store",
-            headers: { "content-type": "application/json" },
-            body: "{}"
-          });
+          var lastError = null;
+          for (var attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              var response = await miFetch(getSessionApiUrl() + "?action=logout", {
+                method: "POST",
+                cache: "no-store",
+                timeoutMs: 5000,
+                headers: {
+                  "content-type": "application/json",
+                  "x-mi-csrf": csrfToken
+                },
+                body: "{}"
+              });
+              var payload = await response.json().catch(function () { return null; });
+              if (response.ok && payload && payload.ok === true) return true;
+              lastError = new Error("server_logout_not_confirmed");
+              if (Number(response.status || 0) < 500) break;
+            } catch (error) {
+              lastError = error;
+            }
+            if (attempt === 0) await waitForSessionRetry(200);
+          }
+          throw lastError || new Error("server_logout_not_confirmed");
         } finally {
           removeClientAuthCode();
         }
       }
 
-      async function syncReportCenterReports() {
-        var normalized = normalizeCode(selectedAgencyCode());
+      async function syncReportCenterReports(generation, sessionScope) {
+        var normalized = normalizeCode(sessionScope || selectedAgencyCode());
         if (!normalized) return null;
         var response = await miFetch(getReportCenterApiUrl(), {
           method: "GET",
@@ -6835,6 +6938,7 @@
         if (!Array.isArray(payload.files) || !Array.isArray(payload.reports)) {
           throw new Error("보고서함 전체 응답 형식을 확인할 수 없습니다.");
         }
+        if (!clientSessionIsCurrent(generation, normalized)) throw new Error("stale_client_session");
 
         var filesByReportId = {};
         payload.files.forEach(function (file) {
@@ -6886,6 +6990,7 @@
       }
 
       function clearClientAuth() {
+        clientSessionGeneration += 1;
         try {
           removeClientAuthCode();
           var savedPublicState = window.localStorage.getItem(storageKey);
@@ -6895,6 +7000,7 @@
         } catch (error) {}
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
+        resetClientAsyncControls({ clearSensitiveInputs: true });
       }
 
       function formatRankCheckedAt(iso) {
@@ -8049,8 +8155,8 @@
         var payload = await response.json().catch(function () { return null; });
         if (!payload) return { ok: false, message: "Meta 광고 조회 응답을 확인할 수 없습니다." };
         if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 광고 조회에 실패했습니다.", code: payload.code || "", ads: [] };
-        metaLiveAdsCache = (payload.ads || []).map(normalizeMetaAdItem);
-        return { ok: true, ads: metaLiveAdsCache, count: payload.count || metaLiveAdsCache.length, rawCount: payload.rawCount || 0, filteredCount: payload.filteredCount || 0, searchedTerms: payload.searchedTerms || [], source: payload.source };
+        var ads = (payload.ads || []).map(normalizeMetaAdItem);
+        return { ok: true, ads: ads, count: payload.count || ads.length, rawCount: payload.rawCount || 0, filteredCount: payload.filteredCount || 0, searchedTerms: payload.searchedTerms || [], source: payload.source };
       }
 
       function renderMetaAdCard(ad, index, query) {
@@ -8123,6 +8229,8 @@
             setStatus(status, "브랜드명, 제품명, 경쟁사명을 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureClientSession();
+          if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           var platform = platformInput ? platformInput.value : "";
           var mediaType = mediaInput ? mediaInput.value : "ALL";
           if (summaryQuery) summaryQuery.textContent = query;
@@ -8131,7 +8239,9 @@
           setStatus(status, "Meta 공식 광고 라이브러리에서 광고를 조회하고 있습니다.", "is-warn");
           try {
             var result = await fetchMetaAds(query, platform, mediaType);
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             if (result.ok) {
+              metaLiveAdsCache = result.ads.slice();
               renderMetaAdsResults(results, { ads: result.ads, query: query, rawCount: result.rawCount, filteredCount: result.filteredCount });
               if (summaryCount) summaryCount.textContent = formatNumber(result.ads.length) + "개";
               if (summaryState) summaryState.textContent = "조회 완료";
@@ -8147,13 +8257,14 @@
               setStatus(status, result.message || "Meta API 조회가 되지 않습니다. 토큰과 권한을 확인해주세요.", "is-warn");
             }
           } catch (error) {
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             metaLiveAdsCache = [];
             renderMetaAdsResults(results, { ads: [], query: query });
             if (summaryCount) summaryCount.textContent = "0개";
             if (summaryState) summaryState.textContent = "조회 실패";
             setStatus(status, "Meta API 조회 중 오류가 발생했습니다. 서버 환경변수와 토큰 권한을 확인해주세요.", "is-warn");
           } finally {
-            runButton.disabled = false;
+            if (clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) runButton.disabled = false;
           }
         });
       }
@@ -8198,6 +8309,8 @@
             setStatus(rankStatus, "네이버 상품 URL 또는 상품ID를 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureClientSession();
+          if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           rankRun.disabled = true;
           setStatus(rankStatus, "정확 상품과 관련 원부의 오가닉 순위를 조회 중입니다.", "");
           try {
@@ -8210,6 +8323,7 @@
             });
             var response = await miFetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
             var payload = await response.json().catch(function () { return null; });
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
             payload.rankCheckMax = selectedMaxRank;
             if (!response.ok && payload.ok !== false) payload.ok = false;
@@ -8217,10 +8331,11 @@
             var rank = payload.result && payload.result.rank;
             setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? (payload.message || "조회 완료: 현재 오가닉 " + formatNumber(rank) + "위입니다.") : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), rank ? "is-ok" : "is-warn");
           } catch (error) {
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
             setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");
           } finally {
-            rankRun.disabled = false;
+            if (clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) rankRun.disabled = false;
           }
         });
       }
@@ -9448,7 +9563,8 @@
           return "";
         }
       }
-      async function openReportFile(report, state, reportWindow) {
+      async function openReportFile(report, state, reportWindow, requestSession) {
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return false;
         if (report.fileId) {
           var response = await miFetch(getReportCenterApiUrl(), {
             method: "POST",
@@ -9462,20 +9578,25 @@
             })
           });
           var payload = await response.json().catch(function () { return null; });
+          if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return false;
           if (!response.ok || !payload || payload.ok === false || !payload.signedUrl) {
             throw new Error((payload && payload.message) || "보고서 파일 URL을 다시 발급하지 못했습니다.");
           }
           var signedUrl = safeReportNavigationUrl(payload.signedUrl);
           if (!signedUrl) throw new Error("안전한 보고서 주소를 확인할 수 없습니다.");
           reportWindow.location.replace(signedUrl);
-          return;
+          return true;
         }
         var externalUrl = safeReportNavigationUrl(report.fileUrl);
         if (!externalUrl) throw new Error("안전한 보고서 주소를 확인할 수 없습니다.");
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return false;
         reportWindow.location.replace(externalUrl);
+        return true;
       }
 
       async function downloadClientReport(index, button) {
+        var requestSession = captureClientSession();
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
         var state = enrichState(readState());
         var reports = state.reports && state.reports.length ? state.reports : (state.reportCenterSynced ? [] : defaultState.reports);
         var report = reports[index] || reports[0];
@@ -9489,12 +9610,20 @@
           reportWindow.opener = null;
           if (button) button.disabled = true;
           try {
-            await openReportFile(report, state, reportWindow);
+            var opened = await openReportFile(report, state, reportWindow, requestSession);
+            if (!opened) {
+              reportWindow.close();
+              return;
+            }
           } catch (error) {
             reportWindow.close();
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             window.alert(error.message || "보고서 파일을 열 수 없습니다.");
+          } finally {
+            if (button && button.isConnected && clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) {
+              button.disabled = false;
+            }
           }
-          if (button) button.disabled = false;
           return;
         }
         window.alert("운영팀이 보고서 파일을 공개하면 다운로드할 수 있습니다.");
@@ -9545,16 +9674,38 @@
       }
 
       async function logoutClient() {
-        await closeClientSession().catch(function () { clearClientAuth(); });
+        var logoutRequest = closeClientSession();
+        var serverLogoutConfirmed = false;
+        clearClientAuth();
         updateClientAuthPanel("");
         if (loginCode) loginCode.value = "";
         if (connectCode) connectCode.value = "";
         setClientLoginMode("client");
-        setStatus(loginStatus, "로그아웃되었습니다. 다른 대행사 코드를 입력해주세요.", "is-ok");
+        if (loginButton) loginButton.disabled = true;
+        setStatus(loginStatus, "로그인 화면으로 안전하게 전환했습니다. 세션을 종료 중입니다.", "");
         setStatus(connectStatus, "코드 연결 전입니다.", "");
         setScreen("dashboard", false);
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        window.requestAnimationFrame(function () {
+          window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+          if (loginCode && !loginCode.disabled) loginCode.focus();
+        });
+        try {
+          serverLogoutConfirmed = await logoutRequest;
+        } catch (error) {}
+        setStatus(
+          loginStatus,
+          serverLogoutConfirmed
+            ? "로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."
+            : "로그인 화면으로 전환했습니다. 서버 연결을 확인한 뒤 다시 로그인해주세요.",
+          serverLogoutConfirmed ? "is-ok" : "is-warn"
+        );
+        if (loginButton) {
+          loginButton.disabled = false;
+        }
+        if (loginCode && !loginCode.disabled) loginCode.focus();
+        return serverLogoutConfirmed;
       }
 
       async function unlockWithCode(code, statusNode) {
@@ -9563,21 +9714,25 @@
           setStatus(statusNode, "대행사 코드를 입력해주세요.", "is-warn");
           return false;
         }
+        var requestGeneration = ++clientSessionGeneration;
         var payload;
         try {
           payload = await validateAgencyCode(normalized);
         } catch (error) {
+          if (requestGeneration !== clientSessionGeneration) return false;
           clearClientAuth();
           setStatus(statusNode, "서버에서 대행사 코드를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.", "is-warn");
           return false;
         }
+        if (requestGeneration !== clientSessionGeneration) return false;
         if (!payload.ok || !payload.client || !payload.session || payload.session.role !== "client") {
           clearClientAuth();
           setStatus(statusNode, payload.message || "활성화된 대행사 코드가 아닙니다.", "is-warn");
           return false;
         }
         var client = payload.client;
-        var sessionScope = normalizeCode(payload.session.scopeKey || storedClientAuthCode());
+        var session = applyClientSession(payload);
+        var sessionScope = normalizeCode(session.scopeKey || storedClientAuthCode());
         if (!sessionScope) {
           clearClientAuth();
           setStatus(statusNode, "보안 세션 범위를 확인하지 못했습니다. 다시 접속해주세요.", "is-warn");
@@ -9593,8 +9748,9 @@
         var reportSyncFailed = false;
         var preservedApprovedState = false;
         try {
-          await syncReportCenterReports();
+          await syncReportCenterReports(requestGeneration, sessionScope);
         } catch (error) {
+          if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
           reportSyncFailed = true;
           if (lastApprovedState) {
             state = Object.assign({}, lastApprovedState, {
@@ -9609,6 +9765,7 @@
           }
           applyState(state);
         }
+        if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         if (loginCode) loginCode.value = "";
@@ -9631,6 +9788,12 @@
         clearClientAuth();
         setStatus(loginStatus, "담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.", "");
         setStatus(connectStatus, "코드 연결 전입니다.", "");
+      }
+
+      function prepareClientSessionRestore() {
+        root.classList.add("is-locked");
+        root.classList.remove("is-authed");
+        resetClientAsyncControls();
       }
 
       var views = root.querySelectorAll("[data-mi-view]");
@@ -9738,14 +9901,18 @@
             window.location.href = getOperatorEntryUrl();
             return;
           }
+          var initialGeneration = clientSessionGeneration;
           loginButton.disabled = true;
           await unlockWithCode(loginCode.value, loginStatus);
-          loginButton.disabled = false;
+          if (clientSessionGeneration === initialGeneration || clientSessionGeneration === initialGeneration + 1) {
+            loginButton.disabled = false;
+          }
         });
       }
 
       async function restoreClientLogin() {
         if (!loginButton || !loginCode) return;
+        var requestGeneration = clientSessionGeneration;
         loginButton.disabled = true;
         setStatus(loginStatus, "안전한 서버 세션을 확인 중입니다.", "");
         var payload = null;
@@ -9760,6 +9927,7 @@
           if (!connectionError && !sessionValidationUnavailable(payload)) break;
           if (attempt === 0) await waitForSessionRetry(350);
         }
+        if (requestGeneration !== clientSessionGeneration) return false;
         if (connectionError || sessionValidationUnavailable(payload)) {
           loginButton.disabled = false;
           setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
@@ -9790,8 +9958,9 @@
         var reportSyncFailed = false;
         var preservedApprovedState = false;
         try {
-          await syncReportCenterReports();
+          await syncReportCenterReports(requestGeneration, sessionScope);
         } catch (error) {
+          if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
           reportSyncFailed = true;
           if (lastApprovedState) {
             state = Object.assign({}, lastApprovedState, {
@@ -9802,6 +9971,7 @@
           }
           applyState(state);
         }
+        if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         updateClientAuthPanel(state.client);
@@ -9815,26 +9985,29 @@
         return true;
       }
 
-      restoreClientLogin().catch(function () {
-        if (loginButton) loginButton.disabled = false;
-        setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
-      });
-
       var connectCode = root.querySelector("[data-mi-connect-code]");
       var connectButton = root.querySelector("[data-mi-connect-button]");
       var connectStatus = root.querySelector("[data-mi-connect-status]");
       if (connectButton && connectCode) {
         connectButton.addEventListener("click", async function () {
+          var initialGeneration = clientSessionGeneration;
           connectButton.disabled = true;
           await unlockWithCode(connectCode.value, connectStatus);
-          connectButton.disabled = false;
+          if (clientSessionGeneration === initialGeneration || clientSessionGeneration === initialGeneration + 1) {
+            connectButton.disabled = false;
+          }
         });
       }
 
       root.querySelectorAll("[data-mi-logout]").forEach(function (button) {
         button.addEventListener("click", function () {
+          if (button.disabled) return;
+          button.disabled = true;
           logoutClient().catch(function () {
+            clearClientAuth();
             setStatus(loginStatus, "로그아웃 처리 중 오류가 발생했습니다.", "is-warn");
+          }).finally(function () {
+            button.disabled = false;
           });
         });
       });
@@ -9872,10 +10045,13 @@
             setStatus(keywordStatus, "키워드를 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureClientSession();
+          if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           keywordButton.disabled = true;
           setStatus(keywordStatus, "키워드 데이터를 조회 중입니다. 1개 키워드 기준으로 계산합니다.", "");
           try {
             var items = await Promise.all(keywords.map(resolveKeywordItem));
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             keywordDatasets = items;
             renderKeywordChart(items);
             renderKeywordResult(items);
@@ -9901,12 +10077,13 @@
               setStatus(keywordStatus, "조회 완료: 월 검색량과 검색 비율을 1개 키워드 기준으로 표시합니다.", "is-ok");
             }
           } catch (error) {
+            if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
             keywordDatasets = [];
             clearKeywordDataView("키워드 데이터 연결을 확인해주세요.");
             renderKeywordResult(keywordDatasets);
             setStatus(keywordStatus, error.message || "키워드 데이터 연결을 확인해주세요.", "is-warn");
           } finally {
-            keywordButton.disabled = false;
+            if (clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) keywordButton.disabled = false;
           }
       }
 
@@ -9940,6 +10117,8 @@
           return;
         }
 
+        var requestSession = captureClientSession();
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
         seoButton.disabled = true;
         setStatus(seoStatus, "네이버 SEO 점수를 확인 중입니다.", "");
         var fallbackData = buildKeywordFallback(keyword);
@@ -9961,6 +10140,7 @@
         } catch (error) {
           keywordMessage = "검색 수요는 입력값 기준으로 우선 계산했습니다.";
         }
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
 
         try {
           rankPayload = await fetchSeoRank(keyword, title, targetUrl, productId);
@@ -9972,6 +10152,7 @@
         } catch (error) {
           if (targetUrl || productId) rankMessage = error.message || "공식 API 결과 순번은 별도 확인이 필요합니다.";
         }
+        if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
 
         var evaluation = buildSeoEvaluation({
           keyword: keyword,
@@ -9989,7 +10170,7 @@
         if (keywordMessage) statusParts.push(keywordMessage);
         if (rankMessage) statusParts.push(rankMessage);
         setStatus(seoStatus, statusParts.join(" · "), evaluation.score >= 70 ? "is-ok" : "is-warn");
-        seoButton.disabled = false;
+        if (clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) seoButton.disabled = false;
       }
 
       if (keywordInput && seoKeyword) {
@@ -10745,7 +10926,13 @@
 
       var state = readState();
       applyState(state);
-      requireCodeEntry();
+      prepareClientSessionRestore();
+      var initialRestoreGeneration = clientSessionGeneration;
+      restoreClientLogin().catch(function () {
+        if (initialRestoreGeneration !== clientSessionGeneration) return;
+        if (loginButton) loginButton.disabled = false;
+        setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
+      });
 
       var initial = (window.location.hash || "").replace("#mi-", "");
       setScreen(initial || "dashboard", false);

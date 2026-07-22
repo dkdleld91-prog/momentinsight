@@ -1,5 +1,16 @@
 # Test Evidence
 
+## 2026-07-22 · 운영팀·광고주 로그아웃 로그인 화면 복귀 정상화
+
+- 원인 확정: 광고주 `logoutClient()`의 성공 경로는 서버 쿠키와 코드만 제거하고 `clearClientAuth()`를 호출하지 않아 루트의 `is-authed`가 남았다. 서버 `/api/session?action=logout`은 기존에도 CSRF를 확인하고 Production·개발 쿠키를 모두 만료시켰으며 응답 어댑터도 복수 `Set-Cookie`를 보존하므로 이번 잔류 화면의 직접 원인은 클라이언트 상태 전환이었다.
+- 즉시 안전 전환: 운영팀·광고주 모두 서버 요청을 먼저 시작해 CSRF를 보존한 뒤, 응답을 기다리지 않고 로컬 세션·민감 상태를 지우고 로그인 화면 최상단으로 이동한다. 서버 확인은 요청당 5초, 네트워크/5xx만 최대 2회이며 HTTP 성공과 JSON `ok=true`가 모두 맞아야 완료로 표시한다.
+- 비동기 경합 방어: 로그인·복원·보고서 동기화·원본 파일 FileReader/서버 업로드·PPTX 생성·Owner/운영팀 계정 조회/생성/해제·Meta·키워드·SEO·N상품 1회 조회는 요청 시점 generation·role·scope를 캡처한다. 로그아웃 또는 다른 계정 재로그인 뒤 도착한 이전 응답은 화면·다운로드·`currentOperationTeam`·저장소에 반영하지 않는다.
+- 교차 계정 초기화: 로그아웃 시 Meta 검색어와 요약, 키워드·SEO 입력, 상품 1회 조회 결과, 상품·플레이스 추적 URL, 검색·그룹 필터와 그룹 임시값을 지운다. 초기 세션 확인은 별도 잠금 함수로 처리해 기존 서버 세션 자동 복원 generation을 바꾸거나 입력을 지우지 않는다.
+- 자동 회귀: `roleLogoutAlwaysReturnsToLogin`, `roleLogoutInvalidatesStaleAuthWork`, `roleLogoutBlocksLatePrivilegedAndToolResponses`, `clientLoginButtonsRespectSessionGeneration`, `clientSessionRestoreKeepsInitialGeneration`, `adminLoginFailureCanRetry` 기준선을 추가했다. 광고주·운영팀 인라인 스크립트 문법, 로그아웃 세션·CSRF·쿠키 계약, `git diff --check`를 통과했다.
+- 전체 릴리스 검사: API·서버 154/154, 플레이스 수집기 44/44, 서버 계약 22/22, Production 인증 18/18, 역할 parity, 순위 매칭, CSP 공개 빌드 8개 파일·인라인 스크립트 6개/해시 4개를 통과했다. 기존 상품·플레이스 순위 수집·스냅샷·DB는 변경하지 않았다.
+- 2차 검수: 초기 자동 복원, 로그인 재시도 버튼, 모든 민감 도구 응답·다운로드, Owner/운영팀 계정 작업과 교차 계정 입력 초기화를 적대적으로 재검수해 P0/P1 0건을 확인했다.
+- 브라우저 검증 경계: 로컬 앱 브라우저 플러그인은 `localhost`/`127.0.0.1`을 `ERR_BLOCKED_BY_CLIENT`로 차단해 정적 브라우저 증거 대신 릴리스 검사와 독립 코드 검수를 사용했다. 운영 배포 뒤 실제 세션에서 즉시 로그인 화면 복귀·새로고침 후 로그아웃 유지·콘솔 오류를 최종 확인한다.
+
 ## 2026-07-20 · 플레이스 실목록 오가닉 순위 근거 정상화
 
 - 증상·DB 근거: 같은 키워드가 이전에는 62개였으나 최신 배치에서 9개만 확인됐고, `홍대 맛집`/`1907427831`은 미리보기 배열 7번째를 실제 7위처럼 저장했다. `부평 맛집`/`2019299673`도 9개 미리보기와 실제 목록이 달랐다.

@@ -7207,6 +7207,7 @@
         clientId: "",
         teamId: ""
       };
+      var adminSessionGeneration = 0;
 
       function operationTeamClientCode() {
         var client = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
@@ -7318,6 +7319,7 @@
       }
 
       function clearAdminAuthCode() {
+        adminSessionGeneration += 1;
         secureSession.csrfToken = "";
         secureSession.role = "";
         secureSession.scopeKey = "";
@@ -7329,6 +7331,106 @@
           window.localStorage.removeItem("miRankAccessCode");
           window.sessionStorage.removeItem("miRankAccessCode");
         } catch (error) {}
+        resetAdminAsyncControls({ clearSensitiveInputs: true });
+      }
+
+      function adminSessionIsCurrent(generation, role, scopeKey) {
+        if (generation !== adminSessionGeneration || secureSession.role !== role || root.classList.contains("is-locked")) return false;
+        if (!scopeKey) return true;
+        var currentScope = role === "team"
+          ? (secureSession.teamId || secureSession.scopeKey)
+          : secureSession.scopeKey;
+        return normalizeStorageCode(currentScope) === normalizeStorageCode(scopeKey);
+      }
+
+      function captureAdminSession() {
+        var role = secureSession.role;
+        return {
+          generation: adminSessionGeneration,
+          role: role,
+          scopeKey: role === "team"
+            ? (secureSession.teamId || secureSession.scopeKey)
+            : secureSession.scopeKey
+        };
+      }
+
+      function resetAdminAsyncControls(options) {
+        var clearSensitiveInputs = options && options.clearSensitiveInputs === true;
+        root.querySelectorAll("[data-meta-run], [data-admin-keyword-search], [data-seo-run], [data-rank-check-run], [data-rank-run], [data-place-rank-run], [data-admin-source-download], [data-admin-download], [data-admin-ai-pptx], [data-owner-team-create], [data-team-client-create]").forEach(function (button) {
+          button.disabled = false;
+          if ((button.hasAttribute("data-admin-download") || button.hasAttribute("data-admin-ai-pptx")) && typeof button._miIdleHtml === "string") {
+            button.innerHTML = button._miIdleHtml;
+          }
+        });
+        metaLiveAdsCache = [];
+        keywordDatasets = [];
+        root.querySelectorAll("[data-meta-results]").forEach(function (node) {
+          node.innerHTML = '<div class="mi-meta-empty">검색어를 입력하면 Meta 광고 조회 결과가 이곳에 표시됩니다.</div>';
+        });
+        clearKeywordDataView("키워드를 입력하고 조회를 누르면 수집된 검색 데이터를 표시합니다.");
+        renderKeywordResult(keywordDatasets);
+        resetSeoView();
+        if (clearSensitiveInputs) {
+          root.querySelectorAll("[data-meta-query], [data-admin-keyword-input], [data-seo-keyword], [data-seo-url], [data-seo-review-count]").forEach(function (input) {
+            input.value = "";
+          });
+          var seoKeywordInput = root.querySelector("[data-seo-keyword]");
+          if (seoKeywordInput) seoKeywordInput.setAttribute("data-synced-keyword", "true");
+          var metaPlatformInput = root.querySelector("[data-meta-platform]");
+          var metaMediaInput = root.querySelector("[data-meta-media]");
+          if (metaPlatformInput) metaPlatformInput.selectedIndex = 0;
+          if (metaMediaInput) metaMediaInput.selectedIndex = 0;
+          var metaSummaryQuery = root.querySelector("[data-meta-summary-query]");
+          var metaSummaryCount = root.querySelector("[data-meta-summary-count]");
+          var metaSummaryState = root.querySelector("[data-meta-summary-state]");
+          if (metaSummaryQuery) metaSummaryQuery.textContent = "검색 전";
+          if (metaSummaryCount) metaSummaryCount.textContent = "0개";
+          if (metaSummaryState) metaSummaryState.textContent = "대기";
+          setStatus(root.querySelector("[data-meta-status]"), "검색어를 입력하면 Meta 공식 광고 라이브러리에서 확인 가능한 광고를 조회합니다.", "");
+          setStatus(root.querySelector("[data-seo-status]"), "키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.", "");
+          root.querySelectorAll("[data-rank-check-keyword], [data-rank-check-url], [data-rank-check-product-id], [data-rank-keyword], [data-rank-url], [data-rank-product-id], [data-rank-filter-search], [data-rank-bulk-group], [data-place-rank-keyword], [data-place-rank-url], [data-place-rank-filter-search]").forEach(function (input) {
+            input.value = "";
+          });
+          root.querySelectorAll("[data-rank-check-keyword], [data-rank-keyword], [data-place-rank-keyword]").forEach(function (input) {
+            input.setAttribute("data-synced-keyword", "true");
+          });
+          var rankCheckMax = root.querySelector("[data-rank-check-max]");
+          if (rankCheckMax) rankCheckMax.value = "300";
+          root.querySelectorAll("[data-rank-card], [data-place-rank-card]").forEach(function (card) {
+            card.setAttribute("data-rank-filter-text", "");
+            card.setAttribute("data-place-rank-filter-text", "");
+            card.setAttribute("data-rank-filter-mode", "all");
+            card.setAttribute("data-place-rank-filter-mode", "all");
+            card.setAttribute("data-rank-filter-group", "");
+            card.setAttribute("data-place-rank-filter-group", "");
+            card.setAttribute("data-rank-bulk-group-draft", "");
+            card.setAttribute("data-rank-collapsed-groups", "");
+            card.querySelectorAll("[data-rank-filter-group], [data-place-rank-filter-group]").forEach(function (select) {
+              select.selectedIndex = 0;
+            });
+            card.querySelectorAll("[data-rank-filter-status], [data-place-rank-filter-status]").forEach(function (button) {
+              button.classList.toggle("is-active", button.getAttribute("data-rank-filter-status") === "all" || button.getAttribute("data-place-rank-filter-status") === "all");
+            });
+            card.querySelectorAll("[data-rank-group-combo].is-open").forEach(function (combo) {
+              combo.classList.remove("is-open");
+            });
+            card.querySelectorAll("[data-rank-group-menu-toggle]").forEach(function (toggle) {
+              toggle.setAttribute("aria-expanded", "false");
+            });
+          });
+          root.querySelectorAll("[data-rank-filter-count], [data-place-rank-filter-count]").forEach(function (node) {
+            node.textContent = "0개 표시";
+          });
+          var rankCheckResult = root.querySelector("[data-rank-check-result]");
+          if (rankCheckResult) rankCheckResult.innerHTML = '<h3>현재 순위</h3><div class="mi-rank-state">상품 정보를 입력하면 대표 순위와 페이지, 정확 상품·관련 원부 노출이 표시됩니다.</div>';
+          setStatus(root.querySelector("[data-rank-check-status]"), "키워드와 상품 URL 또는 상품ID를 입력하면 상위 300개 오가닉 순위를 조회합니다.", "");
+          setStatus(root.querySelector("[data-rank-status]"), "키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.", "");
+          setStatus(root.querySelector("[data-place-rank-status]"), "키워드와 플레이스 URL을 입력하세요. 상호명은 자동 확인됩니다.", "");
+        }
+      }
+
+      function staleAdminSessionPayload() {
+        return { ok: false, staleSession: true, message: "이전 보안 세션의 응답을 폐기했습니다." };
       }
 
       function getSessionApiUrl() {
@@ -7644,7 +7746,6 @@
         });
         var payload = await readApiPayload(response, "보안 접속 응답을 확인할 수 없습니다.");
         if (!payload.ok || !payload.session) return payload;
-        applySecureSession(payload);
         return payload;
       }
 
@@ -7667,13 +7768,31 @@
       }
 
       async function closeSecureSession() {
+        var csrfToken = String(secureSession.csrfToken || "");
         try {
-          await miFetch(getSessionApiUrl() + "?action=logout", {
-            method: "POST",
-            cache: "no-store",
-            headers: { "content-type": "application/json" },
-            body: "{}"
-          });
+          var lastError = null;
+          for (var attempt = 0; attempt < 2; attempt += 1) {
+            try {
+              var response = await miFetch(getSessionApiUrl() + "?action=logout", {
+                method: "POST",
+                cache: "no-store",
+                timeoutMs: 5000,
+                headers: {
+                  "content-type": "application/json",
+                  "x-mi-csrf": csrfToken
+                },
+                body: "{}"
+              });
+              var payload = await readApiPayload(response, "로그아웃 응답을 확인할 수 없습니다.");
+              if (response.ok && payload && payload.ok === true) return true;
+              lastError = new Error("server_logout_not_confirmed");
+              if (Number(response.status || 0) < 500) break;
+            } catch (error) {
+              lastError = error;
+            }
+            if (attempt === 0) await waitForSessionRetry(200);
+          }
+          throw lastError || new Error("server_logout_not_confirmed");
         } finally {
           clearAdminAuthCode();
         }
@@ -7993,6 +8112,7 @@
       async function refreshOperationTeamPanel() {
         if (secureSession.role !== "team" || !currentOperationTeam || !currentOperationTeam.id) return false;
         var payload = await requestTeamCodes("POST", "", { action: "validate-team" });
+        if (payload.staleSession) return false;
         if (!payload.ok) throw new Error(payload.message || "운영팀 연결 상태를 확인할 수 없습니다.");
         renderOperationTeamCodePanel(payload);
         return true;
@@ -8000,6 +8120,7 @@
 
       async function requestOwnerCodes(method, body) {
         if (secureSession.role !== "owner") return { ok: false, message: "총관리자 보안 세션이 필요합니다." };
+        var session = captureAdminSession();
         var options = {
           method: method,
           cache: "no-store",
@@ -8009,11 +8130,19 @@
           options.headers["content-type"] = "application/json";
           options.body = JSON.stringify(body);
         }
-        var response = await miFetch(getSuperAdminApiUrl(), options);
-        return readApiPayload(response, "총관리자 API 응답을 확인할 수 없습니다.");
+        try {
+          var response = await miFetch(getSuperAdminApiUrl(), options);
+          var payload = await readApiPayload(response, "총관리자 API 응답을 확인할 수 없습니다.");
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          return payload;
+        } catch (error) {
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          throw error;
+        }
       }
 
       async function requestTeamCodes(method, teamCode, body) {
+        var session = captureAdminSession();
         var code = String(teamCode || "").trim();
         var requestBody = Object.assign({}, body || {});
         delete requestBody.teamCode;
@@ -8036,8 +8165,15 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify(requestBody)
         };
-        var response = await miFetch(getTeamCodeApiUrl(), options);
-        return readApiPayload(response, "운영팀 API 응답을 확인할 수 없습니다.");
+        try {
+          var response = await miFetch(getTeamCodeApiUrl(), options);
+          var payload = await readApiPayload(response, "운영팀 API 응답을 확인할 수 없습니다.");
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          return payload;
+        } catch (error) {
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          throw error;
+        }
       }
 
       function reportTypeLabel(type) {
@@ -8352,6 +8488,8 @@
       }
 
       async function downloadSourceFile() {
+        var requestSession = captureAdminSession();
+        if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
         var fileRecord = readSourceFile();
         var statusNode = root.querySelector("[data-admin-source-file-status]");
         if (!fileRecord || (!fileRecord.dataUrl && !fileRecord.serverFileId && !fileRecord.fileUrl)) {
@@ -8367,6 +8505,10 @@
           downloadWindow.opener = null;
           try {
             var signedUrl = await requestSourceFileDownloadUrl(fileRecord);
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) {
+              downloadWindow.close();
+              return;
+            }
             var safeUrl = safeDownloadUrl(signedUrl || fileRecord.fileUrl);
             if (!safeUrl) throw new Error("안전한 다운로드 주소를 확인할 수 없습니다.");
             downloadWindow.location.replace(safeUrl);
@@ -8374,12 +8516,14 @@
             return;
           } catch (error) {
             downloadWindow.close();
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (!fileRecord.dataUrl) {
               setStatus(statusNode, error.message || "서버 보관 파일 다운로드에 실패했습니다.", "is-warn");
               return;
             }
           }
         }
+        if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
         var link = document.createElement("a");
         link.href = fileRecord.dataUrl;
         link.download = fileRecord.name || "moment-insight-source-file";
@@ -8411,7 +8555,7 @@
         return readApiPayload(response, "원본 파일 서버 업로드 응답을 확인할 수 없습니다.");
       }
 
-      async function refreshSourceFileFromServer() {
+      async function refreshSourceFileFromServer(generation, sessionScope) {
         if (!sourceFileCanServerUpload()) return false;
         try {
           var staff = reportCenterSessionRequest({});
@@ -8422,6 +8566,7 @@
           });
           var payload = await readApiPayload(response, "원본 파일 서버 목록 응답을 확인할 수 없습니다.");
           if (!payload.ok) return false;
+          if (!adminSessionIsCurrent(generation, "team", sessionScope)) return false;
           var sourceFile = (payload.files || []).find(function (file) {
             return !file.report_id && String(file.title || "").indexOf("원천 파일") === 0;
           });
@@ -8444,7 +8589,13 @@
 
       function handleSourceFileSelected(file) {
         var statusNode = root.querySelector("[data-admin-source-file-status]");
+        var requestGeneration = adminSessionGeneration;
+        var sessionRole = secureSession.role;
+        var sessionScope = sessionRole === "team"
+          ? (secureSession.teamId || secureSession.scopeKey)
+          : secureSession.scopeKey;
         if (!file) return;
+        if (!adminSessionIsCurrent(requestGeneration, sessionRole, sessionScope)) return;
         if (file.size > 4 * 1024 * 1024) {
           setStatus(statusNode, "브라우저 보관은 4MB 이하 파일만 안정적으로 지원합니다. 정식 운영에서는 서버 저장소로 확장해야 합니다.", "is-warn");
           return;
@@ -8452,6 +8603,7 @@
         setStatus(statusNode, "원본 파일을 보관 중입니다.", "");
         var reader = new FileReader();
         reader.onload = async function () {
+          if (!adminSessionIsCurrent(requestGeneration, sessionRole, sessionScope)) return;
           var fileRecord = {
             name: file.name,
             type: file.type || "application/octet-stream",
@@ -8468,6 +8620,7 @@
           } catch (error) {
             fileRecord.serverUploadError = error.message || "server_upload_failed";
           }
+          if (!adminSessionIsCurrent(requestGeneration, sessionRole, sessionScope)) return;
           if (!writeSourceFile(fileRecord)) {
             setStatus(statusNode, "브라우저 저장 공간이 부족합니다. 파일 크기를 줄이거나 서버 업로드 연결이 필요합니다.", "is-warn");
             return;
@@ -8484,6 +8637,7 @@
           }
         };
         reader.onerror = function () {
+          if (!adminSessionIsCurrent(requestGeneration, sessionRole, sessionScope)) return;
           setStatus(statusNode, "파일을 읽지 못했습니다. 다시 선택해주세요.", "is-warn");
         };
         reader.readAsDataURL(file);
@@ -8801,8 +8955,9 @@
       });
       setLoginMode("operator");
 
-      async function activateAdminSession(payload, restored) {
+      async function activateAdminSession(payload, restored, requestGeneration) {
         var session = payload && payload.session ? payload.session : {};
+        if (requestGeneration !== adminSessionGeneration) return false;
         if (!session.role) throw new Error("보안 세션 역할을 확인할 수 없습니다.");
         if (session.role !== "owner" && session.role !== "team") {
           throw new Error("운영팀 화면에 허용되지 않은 계정입니다.");
@@ -8825,42 +8980,78 @@
 
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
-          await refreshSourceFileFromServer();
+          var teamSessionScope = session.teamId || session.scopeKey;
+          await refreshSourceFileFromServer(requestGeneration, teamSessionScope);
+          if (!adminSessionIsCurrent(requestGeneration, "team", teamSessionScope)) return false;
           setStatus(loginStatus, restored ? "보안 세션이 복원되었습니다." : "운영팀 콘솔이 열렸습니다.", "is-ok");
           setStatus(ownerStatus, currentOperationTeam && currentOperationTeam.client ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다." : "운영팀 코드로 로그인했습니다. 광고주 코드 1개를 생성할 수 있습니다.", currentOperationTeam && currentOperationTeam.client ? "is-warn" : "is-ok");
           setScreen("agency-code", !restored);
         } else if (session.role === "owner") {
+          var ownerSessionScope = session.scopeKey;
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
           var ownerToolLoaded = await loadOwnerTool().catch(function () { return false; });
+          if (!adminSessionIsCurrent(requestGeneration, "owner", ownerSessionScope)) return false;
           if (!ownerToolLoaded) {
             setStatus(loginStatus, ownerToolScreen && root.querySelector("[data-owner-tool-view-root]")
               ? "총관리자 전용 도구 연결을 확인하지 못해 기존 화면을 유지했습니다."
               : "총관리자 콘솔은 열렸지만 전용 도구 연결을 확인하지 못했습니다.", "is-warn");
           }
           await loadOwnerCodes(true);
+          if (!adminSessionIsCurrent(requestGeneration, "owner", ownerSessionScope)) return false;
         }
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
+        return true;
       }
 
       async function logoutAdmin() {
-        await closeSecureSession().catch(function () { clearAdminAuthCode(); });
+        var logoutRequest = closeSecureSession();
+        var serverLogoutConfirmed = false;
+        clearAdminAuthCode();
         discardOwnerTool();
         currentOperationTeam = null;
+        ownerCodeSnapshot = null;
+        renderOwnerFullAccountView(null);
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         updateAdminAuthPanel("");
         if (loginInput) loginInput.value = "";
         setLoginMode("operator");
-        setStatus(loginStatus, "로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요.", "is-ok");
+        if (loginButton) loginButton.disabled = true;
+        setStatus(loginStatus, "로그인 화면으로 안전하게 전환했습니다. 세션을 종료 중입니다.", "");
         setScreen("home", false);
         if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+        window.requestAnimationFrame(function () {
+          window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+          if (loginInput && !loginInput.disabled) loginInput.focus();
+        });
+        try {
+          serverLogoutConfirmed = await logoutRequest;
+        } catch (error) {}
+        setStatus(
+          loginStatus,
+          serverLogoutConfirmed
+            ? "로그아웃되었습니다. 다른 운영팀 코드를 입력해주세요."
+            : "로그인 화면으로 전환했습니다. 서버 연결을 확인한 뒤 다시 로그인해주세요.",
+          serverLogoutConfirmed ? "is-ok" : "is-warn"
+        );
+        if (loginButton) {
+          loginButton.disabled = false;
+        }
+        if (loginInput && !loginInput.disabled) loginInput.focus();
+        return serverLogoutConfirmed;
       }
 
       root.querySelectorAll("[data-admin-logout]").forEach(function (button) {
         button.addEventListener("click", function () {
+          if (button.disabled) return;
+          button.disabled = true;
           logoutAdmin().catch(function () {
+            root.classList.add("is-locked");
+            root.classList.remove("is-authed");
             setStatus(loginStatus, "로그아웃 처리 중 오류가 발생했습니다.", "is-warn");
+          }).finally(function () {
+            button.disabled = false;
           });
         });
       });
@@ -8876,26 +9067,32 @@
             setStatus(loginStatus, "운영팀 코드를 입력해주세요.", "is-warn");
             return;
           }
+          var requestGeneration = ++adminSessionGeneration;
           loginButton.disabled = true;
           setStatus(loginStatus, "암호화된 서버 세션을 확인 중입니다.", "");
           try {
             var sessionPayload = await loginSecureSession(loginCode);
+            if (requestGeneration !== adminSessionGeneration) return;
             if (!sessionPayload.ok || !sessionPayload.session) throw new Error(sessionPayload.message || "접속 코드가 일치하지 않습니다.");
-            await activateAdminSession(sessionPayload, false);
+            await activateAdminSession(sessionPayload, false, requestGeneration);
           } catch (error) {
+            if (requestGeneration !== adminSessionGeneration) return;
             await closeSecureSession().catch(function () { clearAdminAuthCode(); });
             currentOperationTeam = null;
             root.classList.add("is-locked");
             root.classList.remove("is-authed");
             updateAdminAuthPanel("");
             setStatus(loginStatus, error.message || "접속 코드와 권한을 다시 확인해주세요.", "is-warn");
+            loginButton.disabled = false;
+            return;
           }
-          loginButton.disabled = false;
+          if (requestGeneration === adminSessionGeneration) loginButton.disabled = false;
         });
       }
 
       async function restoreAdminLogin() {
         if (!loginInput || !loginButton) return;
+        var requestGeneration = adminSessionGeneration;
         loginButton.disabled = true;
         setStatus(loginStatus, "안전한 서버 세션을 확인 중입니다.", "");
         var payload = null;
@@ -8910,6 +9107,7 @@
           if (!connectionError && !sessionValidationUnavailable(payload)) break;
           if (attempt === 0) await waitForSessionRetry(350);
         }
+        if (requestGeneration !== adminSessionGeneration) return false;
         if (connectionError || sessionValidationUnavailable(payload)) {
           loginButton.disabled = false;
           setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
@@ -8931,13 +9129,14 @@
           return false;
         }
         try {
-          await activateAdminSession(payload, true);
+          await activateAdminSession(payload, true, requestGeneration);
         } catch (error) {
+          if (requestGeneration !== adminSessionGeneration) return false;
           loginButton.disabled = false;
           setStatus(loginStatus, error.message || "세션 화면을 복원하지 못했습니다. 기존 인증은 유지합니다.", "is-warn");
           return false;
         }
-        loginButton.disabled = false;
+        if (requestGeneration === adminSessionGeneration) loginButton.disabled = false;
         return true;
       }
 
@@ -9050,6 +9249,8 @@
         if (!silent) setStatus(ownerStatus, "활성 계정을 조회 중입니다.", "");
         try {
           var payload = await requestOwnerCodes("GET");
+          if (payload.staleSession) return false;
+          if (!canManageOwnerCodes() || root.classList.contains("is-locked")) return false;
           if (!payload.ok) throw new Error(payload.message || "활성 계정 조회에 실패했습니다.");
           renderOwnerCodeList(payload);
           if (!silent) setStatus(ownerStatus, "활성 계정 목록을 불러왔습니다.", "is-ok");
@@ -9073,6 +9274,8 @@
             return;
           }
           if (!teamName) teamName = teamCode;
+          var actionSession = captureAdminSession();
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
           ownerCreateButton.disabled = true;
           setStatus(ownerStatus, "운영팀 코드를 생성 중입니다.", "");
           try {
@@ -9081,17 +9284,23 @@
               teamName: teamName,
               teamCode: teamCode
             });
+            if (payload.staleSession) return;
             if (!payload.ok) throw new Error(payload.message || "운영팀 코드 생성에 실패했습니다.");
             var teamClientInput = root.querySelector("[data-team-code-for-client]");
             if (teamClientInput && payload.team && payload.team.teamCode) teamClientInput.value = payload.team.teamCode;
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
             await loadOwnerCodes(true);
+            if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
             setStatus(ownerStatus, (payload.reactivated ? "운영팀 재활성화 완료: " : "운영팀 생성 완료: ") + payload.team.teamCode + " · 이제 광고주 코드를 생성할 수 있습니다.", "is-ok");
           } catch (error) {
+            if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
             setStatus(ownerStatus, error.message || "운영팀 코드 생성에 실패했습니다.", "is-warn");
+          } finally {
+            if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
+              ownerCreateButton.disabled = false;
+            }
           }
-          ownerCreateButton.disabled = false;
         });
       }
 
@@ -9122,6 +9331,8 @@
             return;
           }
           if (!clientName) clientName = agencyCode;
+          var actionSession = captureAdminSession();
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
           teamClientButton.disabled = true;
           setStatus(ownerStatus, "광고주 코드를 생성 중입니다.", "");
           try {
@@ -9141,6 +9352,7 @@
                 agencyCode: agencyCode
               });
             }
+            if (payload.staleSession) return;
             if (!payload.ok) throw new Error(payload.message || "광고주 코드 생성에 실패했습니다.");
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
@@ -9150,11 +9362,16 @@
             } else {
               await loadOwnerCodes(true);
             }
+            if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
             setStatus(ownerStatus, (payload.reactivated ? "광고주 재활성화 완료: " : "광고주 생성 완료: ") + payload.client.agencyCode, "is-ok");
           } catch (error) {
+            if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
             setStatus(ownerStatus, error.message || "광고주 코드 생성에 실패했습니다.", "is-warn");
+          } finally {
+            if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
+              teamClientButton.disabled = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
+            }
           }
-          teamClientButton.disabled = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
         });
       }
 
@@ -9198,6 +9415,8 @@
           setStatus(ownerStatus, "권한 해제를 취소했습니다.", "is-warn");
           return;
         }
+        var actionSession = captureAdminSession();
+        if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
         button.disabled = true;
         setStatus(ownerStatus, targetLabel + " 권한을 해제 중입니다.", "");
         try {
@@ -9209,17 +9428,23 @@
               ? await requestOwnerCodes("POST", { action: "revoke-team", teamCode: teamCode })
               : await requestOwnerCodes("POST", { action: "revoke-client", agencyCode: agencyCode });
           }
+          if (payload.staleSession) return;
           if (!payload.ok) throw new Error(payload.message || "권한 해제에 실패했습니다.");
-          setStatus(ownerStatus, payload.message || "권한 해제 완료", "is-ok");
           if (teamDisconnect) {
             await refreshOperationTeamPanel();
           } else {
             await loadOwnerCodes(true);
           }
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+          setStatus(ownerStatus, payload.message || "권한 해제 완료", "is-ok");
         } catch (error) {
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
           setStatus(ownerStatus, error.message || "권한 해제에 실패했습니다.", "is-warn");
+        } finally {
+          if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
+            button.disabled = false;
+          }
         }
-        button.disabled = false;
       });
 
       var codeSaveButton = root.querySelector("[data-admin-code-save]");
@@ -11465,8 +11690,8 @@
         var payload = await response.json().catch(function () { return null; });
         if (!payload) return { ok: false, message: "Meta 광고 조회 응답을 확인할 수 없습니다." };
         if (!response.ok || payload.ok === false) return { ok: false, message: payload.message || "Meta 광고 조회에 실패했습니다.", code: payload.code || "", ads: [] };
-        metaLiveAdsCache = (payload.ads || []).map(normalizeMetaAdItem);
-        return { ok: true, ads: metaLiveAdsCache, count: payload.count || metaLiveAdsCache.length, rawCount: payload.rawCount || 0, filteredCount: payload.filteredCount || 0, searchedTerms: payload.searchedTerms || [], source: payload.source };
+        var ads = (payload.ads || []).map(normalizeMetaAdItem);
+        return { ok: true, ads: ads, count: payload.count || ads.length, rawCount: payload.rawCount || 0, filteredCount: payload.filteredCount || 0, searchedTerms: payload.searchedTerms || [], source: payload.source };
       }
 
       function renderMetaAdCard(ad, index, query) {
@@ -11539,6 +11764,8 @@
             setStatus(status, "브랜드명, 제품명, 경쟁사명을 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           var platform = platformInput ? platformInput.value : "";
           var mediaType = mediaInput ? mediaInput.value : "ALL";
           if (summaryQuery) summaryQuery.textContent = query;
@@ -11547,7 +11774,9 @@
           setStatus(status, "Meta 공식 광고 라이브러리에서 광고를 조회하고 있습니다.", "is-warn");
           try {
             var result = await fetchMetaAds(query, platform, mediaType);
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (result.ok) {
+              metaLiveAdsCache = result.ads.slice();
               renderMetaAdsResults(results, { ads: result.ads, query: query, rawCount: result.rawCount, filteredCount: result.filteredCount });
               if (summaryCount) summaryCount.textContent = formatNumber(result.ads.length) + "개";
               if (summaryState) summaryState.textContent = "조회 완료";
@@ -11563,13 +11792,14 @@
               setStatus(status, result.message || "Meta API 조회가 되지 않습니다. 토큰과 권한을 확인해주세요.", "is-warn");
             }
           } catch (error) {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             metaLiveAdsCache = [];
             renderMetaAdsResults(results, { ads: [], query: query });
             if (summaryCount) summaryCount.textContent = "0개";
             if (summaryState) summaryState.textContent = "조회 실패";
             setStatus(status, "Meta API 조회 중 오류가 발생했습니다. 서버 환경변수와 토큰 권한을 확인해주세요.", "is-warn");
           } finally {
-            runButton.disabled = false;
+            if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) runButton.disabled = false;
           }
         });
       }
@@ -11614,6 +11844,8 @@
             setStatus(rankStatus, "네이버 상품 URL 또는 상품ID를 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           rankRun.disabled = true;
           setStatus(rankStatus, "정확 상품과 관련 원부의 오가닉 순위를 조회 중입니다.", "");
           try {
@@ -11626,6 +11858,7 @@
             });
             var response = await fetch(getShoppingRankApiUrl() + "?" + params.toString(), { method: "GET", cache: "no-store" });
             var payload = await response.json().catch(function () { return null; });
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
             payload.rankCheckMax = selectedMaxRank;
             if (!response.ok && payload.ok !== false) payload.ok = false;
@@ -11633,10 +11866,11 @@
             var rank = payload.result && payload.result.rank;
             setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? (payload.message || "조회 완료: 현재 오가닉 " + formatNumber(rank) + "위입니다.") : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), rank ? "is-ok" : "is-warn");
           } catch (error) {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             renderRankCheckResult(rankResult, { ok: false, message: "상품 순위 서버 연결을 확인해주세요." });
             setStatus(rankStatus, error.message || "상품 순위 서버 연결을 확인해주세요.", "is-warn");
           } finally {
-            rankRun.disabled = false;
+            if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) rankRun.disabled = false;
           }
         });
       }
@@ -12768,6 +13002,8 @@
             return;
           }
 
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           seoButton.disabled = true;
           setStatus(seoStatus, "네이버 SEO 점수를 확인 중입니다.", "");
           var fallbackData = buildKeywordFallback(keyword);
@@ -12789,6 +13025,7 @@
           } catch (error) {
             keywordMessage = "검색 수요는 입력값 기준으로 우선 계산했습니다.";
           }
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
 
           try {
             rankPayload = await fetchSeoRank(keyword, title, targetUrl, productId);
@@ -12800,6 +13037,7 @@
           } catch (error) {
             rankMessage = error.message || "공식 API 결과 순번은 별도 확인이 필요합니다.";
           }
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
 
           var evaluation = buildSeoEvaluation({
             keyword: keyword,
@@ -12816,7 +13054,7 @@
           if (keywordMessage) statusParts.push(keywordMessage);
           if (rankMessage) statusParts.push(rankMessage);
           setStatus(seoStatus, statusParts.join(" · "), evaluation.score >= 70 ? "is-ok" : "is-warn");
-          seoButton.disabled = false;
+          if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) seoButton.disabled = false;
         }
 
         seoKeyword.setAttribute("data-synced-keyword", "true");
@@ -12855,10 +13093,13 @@
             setStatus(keywordStatus, "키워드를 입력해주세요.", "is-warn");
             return;
           }
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           keywordButton.disabled = true;
           setStatus(keywordStatus, "키워드 데이터를 조회 중입니다. 1개 키워드 기준으로 계산합니다.", "");
           try {
             var items = await Promise.all(keywords.map(resolveKeywordItem));
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             keywordDatasets = items;
             renderKeywordChart(items);
             renderKeywordResult(items);
@@ -12884,12 +13125,13 @@
               setStatus(keywordStatus, "조회 완료: 월 검색량과 검색 비율을 1개 키워드 기준으로 표시합니다.", "is-ok");
             }
           } catch (error) {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             keywordDatasets = [];
             clearKeywordDataView("키워드 데이터 연결을 확인해주세요.");
             renderKeywordResult(keywordDatasets);
             setStatus(keywordStatus, error.message || "키워드 데이터 연결을 확인해주세요.", "is-warn");
           } finally {
-            keywordButton.disabled = false;
+            if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) keywordButton.disabled = false;
           }
       }
 
@@ -13717,7 +13959,8 @@
         }, 1000);
       }
 
-      async function generateSalesPptxReport(state, type) {
+      async function generateSalesPptxReport(state, type, requestSession) {
+        if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return { ok: false, staleSession: true };
         var teamReady = Boolean(secureSession.role === "team" && currentOperationTeam && currentOperationTeam.id);
         var hasLinkedClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
         var headers = { "content-type": "application/json" };
@@ -13747,6 +13990,7 @@
           body: JSON.stringify(body)
         });
         var payload = await readApiPayload(response, "AI PPTX 보고서 생성 응답을 확인할 수 없습니다.");
+        if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return { ok: false, staleSession: true };
         if (!payload.ok || !payload.contentBase64) {
           throw new Error(payload.message || "AI PPTX 보고서 생성에 실패했습니다.");
         }
@@ -13755,14 +13999,18 @@
       }
 
       root.querySelectorAll("[data-admin-download]").forEach(function (button) {
+        button._miIdleHtml = button.innerHTML;
         button.addEventListener("click", async function () {
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           var original = button.innerHTML;
           var type = button.getAttribute("data-report-type") || "report";
           var state = readState();
           button.disabled = true;
           button.innerHTML = "<span><b>PPTX 생성 중</b><small>보고서 디자인을 적용하고 있습니다.</small></span><i>…</i>";
           try {
-            var payload = await generateSalesPptxReport(state, type);
+            var payload = await generateSalesPptxReport(state, type, requestSession);
+            if (payload.staleSession || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
             } else if (payload.skipped) {
@@ -13771,9 +14019,11 @@
               button.innerHTML = "<span><b>PPTX 생성 완료</b><small>" + escapeHtml((payload.stored && payload.stored.uploadError) || "파일 다운로드 완료 · 서버 기록 확인 필요") + "</small></span><i>✓</i>";
             }
           } catch (error) {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             button.innerHTML = "<span><b>PPTX 생성 실패</b><small>" + escapeHtml(error.message || "다시 시도해주세요.") + "</small></span><i>!</i>";
           }
           setTimeout(function () {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             button.innerHTML = original;
             button.disabled = false;
           }, 1700);
@@ -13781,13 +14031,17 @@
       });
 
       root.querySelectorAll("[data-admin-ai-pptx]").forEach(function (button) {
+        button._miIdleHtml = button.innerHTML;
         button.addEventListener("click", async function () {
+          var requestSession = captureAdminSession();
+          if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           var original = button.innerHTML;
           var state = readState();
           button.disabled = true;
           button.innerHTML = "<span><b>AI PPTX 생성 중</b><small>데이터 분석과 디자인 보고서를 생성합니다.</small></span><i>…</i>";
           try {
-            var payload = await generateSalesPptxReport(state, "sales");
+            var payload = await generateSalesPptxReport(state, "sales", requestSession);
+            if (payload.staleSession || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
             } else if (payload.skipped) {
@@ -13796,9 +14050,11 @@
               button.innerHTML = "<span><b>PPTX 생성 완료</b><small>" + escapeHtml((payload.stored && payload.stored.uploadError) || "파일 다운로드 완료 · 서버 기록 확인 필요") + "</small></span><i>✓</i>";
             }
           } catch (error) {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             button.innerHTML = "<span><b>PPTX 생성 실패</b><small>" + escapeHtml(error.message || "다시 시도해주세요.") + "</small></span><i>!</i>";
           }
           setTimeout(function () {
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             button.innerHTML = original;
             button.disabled = false;
           }, 2400);

@@ -45,6 +45,29 @@ function functionBody(source, startMarker, endMarker) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
+const clientLogoutSource = functionBody(clientSource, "async function logoutClient() {", "async function unlockWithCode(");
+const adminLogoutSource = functionBody(adminSource, "async function logoutAdmin() {", 'root.querySelectorAll("[data-admin-logout]")');
+const clientUnlockSource = functionBody(clientSource, "async function unlockWithCode(", "function requireCodeEntry(");
+const clientSessionRestorePreparationSource = functionBody(clientSource, "function prepareClientSessionRestore() {", "var views =");
+const clientBootSource = functionBody(clientSource, "var state = readState();", "var initial =");
+const clientAsyncResetSource = functionBody(clientSource, "function resetClientAsyncControls(", "function applyClientSession(");
+const adminAsyncResetSource = functionBody(adminSource, "function resetAdminAsyncControls(", "function staleAdminSessionPayload(");
+const adminSourceRefreshSource = functionBody(adminSource, "async function refreshSourceFileFromServer(", "function handleSourceFileSelected(");
+const adminSourceUploadSource = functionBody(adminSource, "function handleSourceFileSelected(", "function resetAdminGuardrails(");
+const adminLoginHandlerSource = functionBody(adminSource, 'if (loginButton) {\n        loginButton.addEventListener("click"', "async function restoreAdminLogin(");
+const adminAccountRequestSource = functionBody(adminSource, "async function refreshOperationTeamPanel() {", "function reportTypeLabel(");
+const adminAccountActionSource = functionBody(adminSource, 'var ownerCreateButton = root.querySelector("[data-owner-team-create]");', 'var codeSaveButton = root.querySelector("[data-admin-code-save]");');
+const clientReportDownloadSource = functionBody(clientSource, "async function openReportFile(", "function renderReports(");
+const adminSourceDownloadSource = functionBody(adminSource, "async function downloadSourceFile() {", "async function uploadSourceFileToServer(");
+const adminPptxDownloadSource = functionBody(adminSource, "async function generateSalesPptxReport(", "var initial = (window.location.hash");
+const clientMetaLookupSource = functionBody(clientSource, "async function fetchMetaAds(", "function initRankCheck(");
+const adminMetaLookupSource = functionBody(adminSource, "async function fetchMetaAds(", "function initRankCheck(");
+const clientRankCheckLookupSource = functionBody(clientSource, "function initRankCheck(", "function initRankTracking(");
+const adminRankCheckLookupSource = functionBody(adminSource, "function initRankCheck(", "function initRankTracking(");
+const clientKeywordLookupSource = functionBody(clientSource, "async function runKeywordLookup() {", "if (keywordInput && keywordButton && keywordResult)");
+const adminKeywordLookupSource = functionBody(adminSource, "async function runKeywordLookup() {", "if (keywordInput && keywordButton && keywordResult)");
+const clientSeoLookupSource = functionBody(clientSource, "async function runSeoCheck() {", "if (keywordInput && seoKeyword)");
+const adminSeoLookupSource = functionBody(adminSource, "async function runSeoCheck() {", 'seoKeyword.setAttribute("data-synced-keyword"');
 const ownerCreateDesktopStyle = functionBody(
   adminSource,
   "#mi-admin .mi-owner-create-tool {",
@@ -248,6 +271,99 @@ const checks = {
     && clientSource.includes("logoutClient")
     && clientSource.includes("removeClientAuthCode")
     && clientSource.includes("로그아웃되었습니다. 다른 대행사 코드를 입력해주세요."),
+  roleLogoutAlwaysReturnsToLogin: /function clearClientAuth\(\) \{[\s\S]{0,1000}?root\.classList\.add\("is-locked"\)[\s\S]{0,300}?root\.classList\.remove\("is-authed"\)/.test(clientSource)
+    && orderedIncludes(clientLogoutSource, [
+      "var logoutRequest = closeClientSession();",
+      "clearClientAuth();",
+      'window.scrollTo({ top: 0, left: 0, behavior: "auto" });',
+      "serverLogoutConfirmed = await logoutRequest;",
+    ])
+    && orderedIncludes(adminLogoutSource, [
+      "var logoutRequest = closeSecureSession();",
+      'root.classList.add("is-locked");',
+      'root.classList.remove("is-authed");',
+      'window.scrollTo({ top: 0, left: 0, behavior: "auto" });',
+      "serverLogoutConfirmed = await logoutRequest;",
+    ])
+    && [adminSource, clientSource].every((source) => source.includes("response.ok && payload && payload.ok === true"))
+    && [adminSource, clientSource].every((source) => source.includes("timeoutMs: 5000")),
+  roleLogoutInvalidatesStaleAuthWork: clientSource.includes("var clientSessionGeneration = 0;")
+    && clientSource.includes("clientSessionGeneration += 1;")
+    && clientUnlockSource.includes("var requestGeneration = ++clientSessionGeneration;")
+    && clientUnlockSource.includes("clientSessionIsCurrent(requestGeneration, sessionScope)")
+    && clientSource.includes("if (!clientSessionIsCurrent(generation, normalized)) throw new Error(\"stale_client_session\");")
+    && adminSource.includes("var adminSessionGeneration = 0;")
+    && adminSource.includes("adminSessionGeneration += 1;")
+    && adminSource.includes("var requestGeneration = ++adminSessionGeneration;")
+    && adminSourceRefreshSource.includes('if (!adminSessionIsCurrent(generation, "team", sessionScope)) return false;')
+    && adminSourceUploadSource.includes("var requestGeneration = adminSessionGeneration;")
+    && (adminSourceUploadSource.match(/adminSessionIsCurrent\(requestGeneration, sessionRole, sessionScope\)/g) || []).length >= 4
+    && (adminAccountRequestSource.match(/var session = captureAdminSession\(\);/g) || []).length === 2
+    && (adminAccountRequestSource.match(/adminSessionIsCurrent\(session\.generation, session\.role, session\.scopeKey\)/g) || []).length === 4
+    && (adminAccountRequestSource.match(/if \(payload\.staleSession\) return false;/g) || []).length === 1
+    && (adminSource.match(/if \(payload\.staleSession\) return;/g) || []).length >= 3
+    && (adminAccountActionSource.match(/var actionSession = captureAdminSession\(\);/g) || []).length === 3
+    && (adminAccountActionSource.match(/finally \{/g) || []).length === 3
+    && (adminAccountActionSource.match(/adminSessionIsCurrent\(actionSession\.generation, actionSession\.role, actionSession\.scopeKey\)/g) || []).length >= 12,
+  roleLogoutBlocksLatePrivilegedAndToolResponses: clientSource.includes("function captureClientSession() {")
+    && clientSource.includes("function resetClientAsyncControls(options) {")
+    && adminSource.includes("function resetAdminAsyncControls(options) {")
+    && (clientReportDownloadSource.match(/clientSessionIsCurrent\(requestSession\.generation, requestSession\.scopeKey\)/g) || []).length >= 5
+    && (adminSourceDownloadSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (adminPptxDownloadSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 10
+    && !clientMetaLookupSource.includes("metaLiveAdsCache = (payload.ads")
+    && !adminMetaLookupSource.includes("metaLiveAdsCache = (payload.ads")
+    && (clientMetaLookupSource.match(/clientSessionIsCurrent\(requestSession\.generation, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (adminMetaLookupSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (clientKeywordLookupSource.match(/clientSessionIsCurrent\(requestSession\.generation, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (adminKeywordLookupSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (clientSeoLookupSource.match(/clientSessionIsCurrent\(requestSession\.generation, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (adminSeoLookupSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (clientRankCheckLookupSource.match(/clientSessionIsCurrent\(requestSession\.generation, requestSession\.scopeKey\)/g) || []).length >= 4
+    && (adminRankCheckLookupSource.match(/adminSessionIsCurrent\(requestSession\.generation, requestSession\.role, requestSession\.scopeKey\)/g) || []).length >= 4
+    && clientSource.includes("resetClientAsyncControls({ clearSensitiveInputs: true });")
+    && adminSource.includes("resetAdminAsyncControls({ clearSensitiveInputs: true });")
+    && [clientAsyncResetSource, adminAsyncResetSource].every((source) => source.includes("clearSensitiveInputs")
+      && source.includes("[data-meta-query]")
+      && source.includes("[data-seo-keyword]")
+      && source.includes("[data-seo-url]")
+      && source.includes("[data-seo-review-count]")
+      && source.includes("[data-meta-summary-query]")
+      && source.includes("[data-meta-summary-count]")
+      && source.includes("[data-meta-summary-state]")
+      && source.includes("[data-rank-check-run]")
+      && source.includes("[data-rank-check-keyword]")
+      && source.includes("[data-rank-check-url]")
+      && source.includes("[data-rank-check-product-id]")
+      && source.includes("[data-rank-check-result]")
+      && source.includes("[data-rank-check-status]")
+      && source.includes("[data-rank-keyword]")
+      && source.includes("[data-rank-url]")
+      && source.includes("[data-place-rank-keyword]")
+      && source.includes("[data-place-rank-url]")
+      && source.includes("data-rank-bulk-group-draft")),
+  clientLoginButtonsRespectSessionGeneration: (clientSource.match(/var initialGeneration = clientSessionGeneration;/g) || []).length === 2
+    && (clientSource.match(/clientSessionGeneration === initialGeneration \|\| clientSessionGeneration === initialGeneration \+ 1/g) || []).length === 2
+    && clientSource.includes("[data-mi-connect-button], [data-mi-login-button]"),
+  clientSessionRestoreKeepsInitialGeneration: clientSessionRestorePreparationSource.includes('root.classList.add("is-locked");')
+    && clientSessionRestorePreparationSource.includes('root.classList.remove("is-authed");')
+    && clientSessionRestorePreparationSource.includes("resetClientAsyncControls();")
+    && !clientSessionRestorePreparationSource.includes("clearClientAuth();")
+    && !clientSessionRestorePreparationSource.includes("clientSessionGeneration += 1;")
+    && orderedIncludes(clientBootSource, [
+      "applyState(state);",
+      "prepareClientSessionRestore();",
+      "var initialRestoreGeneration = clientSessionGeneration;",
+      "restoreClientLogin().catch(function () {",
+      "if (initialRestoreGeneration !== clientSessionGeneration) return;",
+    ])
+    && (clientSource.match(/restoreClientLogin\(\)\.catch/g) || []).length === 1,
+  adminLoginFailureCanRetry: orderedIncludes(adminLoginHandlerSource, [
+    "if (requestGeneration !== adminSessionGeneration) return;",
+    "await closeSecureSession().catch(function () { clearAdminAuthCode(); });",
+    "loginButton.disabled = false;",
+    "return;",
+  ]),
   homeDevelopmentNoticeVisible: homeSource.includes("핵심 마케팅 도구를 운영 중입니다.")
     && homeSource.includes("현재 안정성이 확인된 다섯 가지 기능을 바로 사용할 수 있습니다.")
     && homeSource.includes("data-mi-dev-banner")

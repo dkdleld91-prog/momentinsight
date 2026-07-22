@@ -306,15 +306,30 @@ async function fetchJson(url, options = {}) {
         error.status = response.status;
         error.code = payload?.errorCode || "";
         error.payload = payload;
+        const retryAfterSeconds = Number(response.headers.get("retry-after") || 0);
+        error.retryAfterMs = Number.isFinite(retryAfterSeconds) && retryAfterSeconds > 0
+          ? Math.min(2_000, retryAfterSeconds * 1_000)
+          : 0;
         throw error;
       }
 
       return payload;
     } catch (error) {
       lastError = error;
-      const transient = error?.name === "AbortError" || error?.status === 429 || Number(error?.status || 0) >= 500;
+      const status = Number(error?.status || 0);
+      const networkFailure = error instanceof TypeError && status === 0;
+      const transient = error?.name === "AbortError"
+        || networkFailure
+        || status === 408
+        || status === 425
+        || status === 429
+        || status >= 500;
       if (!transient || attempt >= retries) throw error;
-      await delay(retryDelayMs * (attempt + 1));
+      const waitMs = Math.min(2_000, Math.max(
+        retryDelayMs * (attempt + 1),
+        Number(error?.retryAfterMs || 0),
+      ));
+      await delay(waitMs);
     } finally {
       clearTimeout(timeout);
     }
@@ -358,8 +373,8 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
     headers: request.headers,
     body: JSON.stringify(body),
     timeoutMs,
-    retries: 0,
-    retryDelayMs: 500,
+    retries: request.provider === "hub" ? 1 : 0,
+    retryDelayMs: 350,
   });
 }
 
@@ -381,8 +396,8 @@ async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, s
     headers: request.headers,
     body: JSON.stringify(body),
     timeoutMs,
-    retries: 0,
-    retryDelayMs: 500,
+    retries: request.provider === "hub" ? 1 : 0,
+    retryDelayMs: 350,
   });
 }
 

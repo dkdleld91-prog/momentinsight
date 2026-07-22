@@ -235,3 +235,86 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     });
   }
 });
+
+test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데이터를 반환한다", async () => {
+  const names = [
+    "MI_KEYWORD_API_ENABLED",
+    "NAVER_SEARCHAD_API_KEY",
+    "NAVER_SEARCHAD_SECRET_KEY",
+    "NAVER_SEARCHAD_CUSTOMER_ID",
+    "NAVER_OPENAPI_CLIENT_ID",
+    "NAVER_OPENAPI_CLIENT_SECRET",
+    "NAVER_DATALAB_CLIENT_ID",
+    "NAVER_DATALAB_CLIENT_SECRET",
+    "NAVER_API_HUB_CLIENT_ID",
+    "NAVER_API_HUB_CLIENT_SECRET",
+    "NAVER_API_HUB_MODE",
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    MI_KEYWORD_API_ENABLED: "true",
+    NAVER_SEARCHAD_API_KEY: "search-ad-key",
+    NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
+    NAVER_SEARCHAD_CUSTOMER_ID: "123456",
+    NAVER_OPENAPI_CLIENT_ID: "legacy-shopping-id",
+    NAVER_OPENAPI_CLIENT_SECRET: "legacy-shopping-secret",
+    NAVER_API_HUB_CLIENT_ID: "hub-id",
+    NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
+    NAVER_API_HUB_MODE: "hub",
+  });
+  delete process.env.NAVER_DATALAB_CLIENT_ID;
+  delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  let hubCalls = 0;
+
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
+      return new Response(JSON.stringify({
+        keywordList: [{
+          relKeyword: "허브일시복구검증",
+          monthlyPcQcCnt: 1200,
+          monthlyMobileQcCnt: 2400,
+          compIdx: "중간",
+        }],
+      }), { status: 200 });
+    }
+    if (href.startsWith("https://openapi.naver.com/v1/search/shop.json")) {
+      return new Response(JSON.stringify({
+        total: 120,
+        items: [{ category1: "생활/건강", lprice: "12000", mallName: "테스트몰" }],
+      }), { status: 200 });
+    }
+    if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
+      hubCalls += 1;
+      if (hubCalls === 1) {
+        return new Response(JSON.stringify({ error: { message: "temporary gateway failure" } }), {
+          status: 503,
+        });
+      }
+      return new Response(JSON.stringify({
+        results: [{ data: [{ period: "2026-06-01", ratio: 100 }] }],
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
+  };
+
+  try {
+    const response = await naverKeywordHandler.fetch(new Request(
+      "http://127.0.0.1/api/naver-keyword?keyword=%ED%97%88%EB%B8%8C%EC%9D%BC%EC%8B%9C%EB%B3%B5%EA%B5%AC%EA%B2%80%EC%A6%9D&profile=trend",
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.source.migratedApiProvider, "hub");
+    assert.equal(body.sourceStatus.trend.status, "ok");
+    assert.equal(hubCalls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries(previous).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+});

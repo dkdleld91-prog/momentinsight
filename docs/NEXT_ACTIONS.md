@@ -117,7 +117,7 @@
 
 ## 즉시 확인: 의료 플레이스 v18
 
-1. Render `/health`가 `2026-07-22-native-medical-list-v18`을 반환하는지 확인한다.
-2. `종로3가한의원`·`종로한의원` 두 tracker만 재실행해 정확 플레이스 ID `1531240094`의 새 snapshot을 확인한다.
-3. snapshot은 `source=naver_map_pc_list_collector`, `rankEvidence=naver_pc_organic_list`, `matched=true`여야 한다.
+1. 완료: Render `/health`가 `2026-07-22-native-medical-list-v18`을 반환한다.
+2. 완료: `종로3가한의원`·`종로한의원` 두 tracker의 정확 플레이스 ID `1531240094` 새 snapshot을 확인했다.
+3. 완료: 두 snapshot은 `source=naver_map_pc_list_collector`, `matched=true`, 70개 확인이며 서버의 네이티브 오가닉 근거 검증을 통과했다.
 4. 실패 시 기존 순위나 유사 상호로 대체하지 않고 정확 오류를 남긴다.

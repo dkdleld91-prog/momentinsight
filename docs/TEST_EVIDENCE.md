@@ -457,3 +457,11 @@
 - 플레이스 수집기: 49/49 통과.
 - 전체 `npm run check:release`: 통과. API·서버 154/154, 서버 계약 22/22, Production 인증 18/18.
 - 로컬 실제 네이버 PC 오가닉: `종로3가한의원` 3위, `종로한의원` 10위, 각각 70개 확인·정확 ID `1531240094` 일치.
+
+### v18 Production 저장 증거
+
+- Render `/health`: `release=2026-07-22-native-medical-list-v18`, `configured=true`.
+- Vercel `/health`: `release=b7919bc86348`, HTTP 200.
+- `종로3가한의원`: 2026-07-22 15:51 KST, 오가닉 3위, 정확 ID `1531240094`, `matched=true`, `checked_count=70`, `source=naver_map_pc_list_collector`.
+- `종로한의원`: 2026-07-22 15:56 KST, 오가닉 10위, 정확 ID `1531240094`, `matched=true`, `checked_count=70`, `source=naver_map_pc_list_collector`.
+- 두 tracker 현재 상태: `retry_count=0`, `last_error=null`, `check_count=1`, `found_count=1`, 처리 임대 해제, 다음 정규 실행 2026-07-23 09:00 KST.

@@ -246,3 +246,4 @@
 - v18은 네이티브 프레임을 최대 20초 기다리고 검색을 한 번 새로 열며, 끝내 네이티브 목록을 얻지 못하면 명시적으로 실패한다. 일반 `place/list`로 의료 순위를 계산하지 않는다.
 - 자동 검증은 수집기 49/49, API·서버 154/154, 서버 계약 22/22, Production 인증 18/18과 전체 릴리스 검사를 통과했다.
 - 배포 후 두 운영 tracker의 새 snapshot과 정확 ID·source·rankEvidence를 확인하기 전까지 완료로 판정하지 않는다.
+- 운영 완료: v18과 Vercel `b7919bc86348` 반영 후 `종로3가한의원` 3위, `종로한의원` 10위를 저장했다. 두 tracker 모두 정확 ID `1531240094`, `source=naver_map_pc_list_collector`, 70개 확인, `retry_count=0`, `last_error=null`, `check_count=1`, `found_count=1`이다.

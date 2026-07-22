@@ -149,6 +149,12 @@ check(
   files.packageJson,
 );
 check(
+  "protected rank feature lock is part of the quality gate",
+  packageJson.scripts?.["check:rank-feature-lock"] === "node scripts/check-protected-rank-features.mjs"
+    && String(packageJson.scripts?.["check:quality"] || "").includes("npm run check:rank-feature-lock"),
+  files.packageJson,
+);
+check(
   "all routed requests use the shared runtime boundary",
   hasAll(serverIndex, [
     /createHandlerResolver/,

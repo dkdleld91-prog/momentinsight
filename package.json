@@ -9,7 +9,7 @@
   },
   "scripts": {
     "test": "node --test api/*.test.mjs src/server/*.test.mjs src/server/**/*.test.mjs && npm --prefix tools/naver-place-rank-collector test",
-    "check:quality": "npm run check:supply-chain && npm run check:baseline && npm run check:role-query-parity && npm run check:server-contract && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
+    "check:quality": "npm run check:supply-chain && npm run check:rank-feature-lock && npm run check:baseline && npm run check:role-query-parity && npm run check:server-contract && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
     "check:production-auth": "node scripts/check-production-auth.mjs",
     "check:release": "npm run check:quality && npm run check:production-auth",
     "build:vercel": "npm run check:server && find api -name '*.mjs' -print0 | xargs -0 -n1 node --check && node scripts/build-vercel-static.mjs && npm run check:public-build",
@@ -18,6 +18,8 @@
     "clean:workspace:dry": "node scripts/clean-workspace.mjs --dry-run",
     "work:autosave": "node scripts/work-spec-autosave.mjs",
     "check:baseline": "node scripts/check-release-baseline.mjs",
+    "check:rank-feature-lock": "node scripts/check-protected-rank-features.mjs",
+    "check:rank-feature-lock:self-test": "node scripts/check-protected-rank-features.mjs --self-test",
     "check:role-query-parity": "node scripts/check-role-query-parity.mjs",
     "recovery:checkpoint": "node scripts/recovery-checkpoint.mjs create",
     "recovery:verify": "node scripts/recovery-checkpoint.mjs verify",

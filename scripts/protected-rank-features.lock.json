@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "baselineCommit": "f991854",
+  "policy": "N 상품·N 플레이스 30일 추적 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다.",
+  "functions": [
+    {
+      "id": "operation-product-30-day",
+      "file": "src/pages/admin.html",
+      "name": "initRankTracking",
+      "sha256": "97c6daca1b649af5b32bdfc88d8efd40790108fca04b9de42941c82c83f28263"
+    },
+    {
+      "id": "advertiser-product-30-day",
+      "file": "src/pages/client.html",
+      "name": "initRankTracking",
+      "sha256": "de63986277f053d6dab9e14fd3b60f6226324241ded3c4c20a46d1bfec6d3504"
+    },
+    {
+      "id": "operation-place-30-day",
+      "file": "src/pages/admin.html",
+      "name": "initPlaceRankTracking",
+      "sha256": "38ee3aed59fa17ad6debda27d1b692872eef83d0925733a9de54924eac74dc11"
+    },
+    {
+      "id": "advertiser-place-30-day",
+      "file": "src/pages/client.html",
+      "name": "initPlaceRankTracking",
+      "sha256": "422e461af3537e0e7beee7691e09bd778e9b87179769c09fe27b6d0864e7fe09"
+    }
+  ],
+  "files": [
+    { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "b2155dfc87dc7763820e7df899f87b9b9d18871ef73b94b6ddaebd3af4409c8e" },
+    { "id": "product-organic-rank-server", "file": "src/server/handlers/naver-shopping-rank.mjs", "sha256": "a89c2125953e8961158a0c5fe59b06b123461b0c6abb1549f7d7cc65c45c7aad" },
+    { "id": "product-rank-cron-server", "file": "src/server/handlers/naver-rank-cron.mjs", "sha256": "e6a7ebe2b4ac33c84c58c0869574d088f90dd8848b16fb26e87d50ccc400ae57" },
+    { "id": "place-tracker-server", "file": "src/server/handlers/naver-place-rank-trackers.mjs", "sha256": "4f42936af4c5177ae0daf9b2578a36336907f557508b74f142eca90f01f49ffe" },
+    { "id": "place-rank-cron-server", "file": "src/server/handlers/naver-place-rank-cron.mjs", "sha256": "367ff71dbed817318bd63b2fad8b0a5c0752b74124c7b5a807291185fb7aed01" },
+    { "id": "place-collector", "file": "tools/naver-place-rank-collector/src/naver-place-rank.mjs", "sha256": "a0cc2ed8694ca374e3742781875b6e409ea56bff58d005c6c60ebd5c27cb0d63" },
+    { "id": "place-collector-server", "file": "tools/naver-place-rank-collector/src/server.mjs", "sha256": "1bd21991d60fbf604c21234f510a179eb1e612cbd95d3d7c622a570a1d894666" },
+    { "id": "product-cron-workflow", "file": ".github/workflows/naver-rank-cron.yml", "sha256": "dcd675f1ebe20724694286953c4570494e663fd047bdafd84fc82bc4a5d5a563" },
+    { "id": "place-cron-workflow", "file": ".github/workflows/naver-place-rank-cron.yml", "sha256": "094fd635a9b1910156e347879751da86b35345b9c00be68068ab248bc2dac0f5" },
+    { "id": "product-rank-schema", "file": "supabase/migrations/20260624003000_naver_rank_tracking.sql", "sha256": "526934f8244e3beba92cc88e2008b48adcfcece75694ebc479bdb571df034747", "rankMigration": true },
+    { "id": "product-rank-sort-order", "file": "supabase/migrations/20260624011000_naver_rank_sort_order.sql", "sha256": "adae0e2c75c4ac1beed6dce749e467d69f2a06d8cedc142df667d55ef3167d2a", "rankMigration": true },
+    { "id": "primary-agency-rank-scope", "file": "supabase/migrations/20260625043000_primary_agency_code.sql", "sha256": "34e91c61ead702f2d2dcb60ad764dc60e4f1d007feca77886476f8b15aa3d3b1", "rankMigration": true },
+    { "id": "product-rank-limit", "file": "supabase/migrations/20260625044000_naver_rank_tracker_limit.sql", "sha256": "b4eb3d69ac64baaa82593b9e8ed09d78261409ff8d8a623560e16f17f0902f59", "rankMigration": true },
+    { "id": "owner-product-rank-unlimited", "file": "supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql", "sha256": "6ec5315a1a808c164a8e44fa3f4cb7e98f2203c264e1b9e94861a30d0c796753", "rankMigration": true },
+    { "id": "product-rank-lease", "file": "supabase/migrations/20260629025402_naver_rank_tracker_processing_lease.sql", "sha256": "b608e6a0357c7cf4dfa446838b09f2a3520d5607b857a53f9eb117d99c261ec1", "rankMigration": true },
+    { "id": "product-rank-groups", "file": "supabase/migrations/20260701090000_naver_rank_tracker_groups.sql", "sha256": "1bbf1479e957fb7d9bc490a658e0abf18dc4202e8d81690fa175d2734b506a66", "rankMigration": true },
+    { "id": "place-rank-schema", "file": "supabase/migrations/20260707000100_naver_place_rank_tracking.sql", "sha256": "ff01117ccd652c576aad883da3de52cc4247b6cf02a17f35d8b4e4a09fcb7182", "rankMigration": true },
+    { "id": "place-rank-lease", "file": "supabase/migrations/20260711173414_naver_place_rank_processing_lease.sql", "sha256": "da6aef2b055e4dcff210d0c52bb647217ea46720ca000538aabe6dafe03daa62", "rankMigration": true },
+    { "id": "rank-limit-300", "file": "supabase/migrations/20260712042029_fix_rank_trackers_to_300.sql", "sha256": "9fc44a1258b20832a919136e4b3e2012ccb65749e30bff3f318ec1044a23f4e4", "rankMigration": true },
+    { "id": "place-rank-groups", "file": "supabase/migrations/20260712090000_naver_place_rank_tracker_groups.sql", "sha256": "074897a8d68ce38447145c8bb54771f7ecc2ba57cf0e39bb3f97e4682eace3db", "rankMigration": true }
+  ]
+}

@@ -1100,6 +1100,9 @@ const checks = {
     && source.includes("Promise.all")
     && source.includes("waitForRankAutoSyncBeforeManual")
     && source.includes("안전 동시 갱신 2개")
+    && source.includes("Boolean(refreshedTracker) && checkedAt >= batchStartedAt - 1000")
+    && source.includes("응답을 확인하지 못한 ")
+    && source.includes("for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1)")
     && source.includes("재시도 예정")
     && !source.includes("for (var i = 0; i < targets.length")),
   rankPageAutoSyncIsBounded: [adminRankTrackingSource, clientRankTrackingSource].every((source) => source.includes('action: "sync-due"')

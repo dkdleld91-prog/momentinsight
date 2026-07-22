@@ -8531,8 +8531,10 @@
           }
           refreshAllButton.disabled = true;
           rankRun.disabled = true;
+          var batchStartedAt = Date.now();
           var successCount = 0;
           var failCount = 0;
+          var failedTargets = [];
           try {
             if (!await waitForRankAutoSyncBeforeManual()) {
               setStatus(rankStatus, "자동 갱신이 진행 중입니다. 완료 후 전체 갱신을 다시 눌러주세요.", "is-warn");
@@ -8552,9 +8554,13 @@
                     trackerId: targets[targetIndex].id
                   });
                   if (payload && payload.ok && payload.tracker) successCount += 1;
-                  else failCount += 1;
+                  else {
+                    failCount += 1;
+                    failedTargets.push(targets[targetIndex]);
+                  }
                 } catch (error) {
                   failCount += 1;
+                  failedTargets.push(targets[targetIndex]);
                 }
                 completedCount += 1;
                 setStatus(rankStatus, "전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length + " · 안전 동시 갱신 2개", "");
@@ -8562,6 +8568,37 @@
             }
             await Promise.all(Array.from({ length: workerCount }, function () { return refreshWorker(); }));
             await loadRankTrackers(true);
+            var unresolvedTargets = failedTargets.filter(function (target) {
+              var refreshedTracker = rankTrackers.find(function (tracker) { return tracker.id === target.id; });
+              var checkedAt = refreshedTracker && refreshedTracker.lastCheckedAt
+                ? new Date(refreshedTracker.lastCheckedAt).getTime()
+                : 0;
+              var recovered = Boolean(refreshedTracker) && checkedAt >= batchStartedAt - 1000 && !refreshedTracker.lastError;
+              if (recovered) {
+                successCount += 1;
+                failCount = Math.max(0, failCount - 1);
+              }
+              return !recovered;
+            });
+            if (unresolvedTargets.length) {
+              setStatus(rankStatus, "응답을 확인하지 못한 " + unresolvedTargets.length + "개를 순차 재시도합니다.", "");
+              await new Promise(function (resolve) { setTimeout(resolve, 1000); });
+              for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1) {
+                try {
+                  var retryPayload = await requestRankTrackers("POST", {
+                    action: "check",
+                    trackerId: unresolvedTargets[retryIndex].id
+                  });
+                  if (retryPayload && retryPayload.ok && retryPayload.tracker) {
+                    successCount += 1;
+                    failCount = Math.max(0, failCount - 1);
+                  }
+                } catch (error) {
+                  // Keep the item in the truthful retry count after one bounded retry.
+                }
+              }
+              await loadRankTrackers(true);
+            }
             setStatus(rankStatus, failCount
               ? "전체 갱신 완료: 성공 " + successCount + "개, 재시도 예정 " + failCount + "개"
               : "전체 순위 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");

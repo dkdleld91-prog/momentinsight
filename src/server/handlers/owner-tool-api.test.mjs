@@ -16,9 +16,11 @@ function request(method = "GET", options = {}) {
   });
 }
 
-test("calculation uses integer half-up tax rounding", () => {
-  assert.deepEqual(calculateOwnerTax("1000000"), { supply: 1_000_000, tax: 100_000, total: 1_100_000 });
-  assert.deepEqual(calculateOwnerTax("15"), { supply: 15, tax: 2, total: 17 });
+test("calculation reverses a VAT-inclusive total with integer half-up rounding", () => {
+  assert.deepEqual(calculateOwnerTax("1100000"), { supply: 1_000_000, tax: 100_000, total: 1_100_000 });
+  assert.deepEqual(calculateOwnerTax("776602"), { supply: 706_002, tax: 70_600, total: 776_602 });
+  assert.deepEqual(calculateOwnerTax("17"), { supply: 15, tax: 2, total: 17 });
+  assert.deepEqual(calculateOwnerTax("10"), { supply: 9, tax: 1, total: 10 });
   assert.deepEqual(calculateOwnerTax("0"), { supply: 0, tax: 0, total: 0 });
   assert.equal(calculateOwnerTax("1,000"), null);
   assert.equal(calculateOwnerTax("1000000000000000"), null);
@@ -40,11 +42,14 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.equal(payload.tool.screen, "owner-utility");
   assert.match(payload.tool.menuHtml, /부가세 계산기/);
   assert.match(payload.tool.viewHtml, /data-owner-tool-input/);
+  assert.match(payload.tool.viewHtml, /부가세 포함 금액/);
+  assert.match(payload.tool.viewHtml, /최종 합계금액을 입력/);
+  assert.doesNotMatch(payload.tool.viewHtml, /미포함 금액을 입력/);
   assert.match(payload.tool.styleText, /mi-vat-layout/);
 });
 
 test("calculation endpoint rejects non-owner, wrong media and invalid amounts", async () => {
-  const body = JSON.stringify({ action: "calculate", supply: "1000000" });
+  const body = JSON.stringify({ action: "calculate", total: "1100000" });
   const blocked = await app.fetch(request("POST", {
     role: "client",
     headers: { "content-type": "application/json" },
@@ -57,7 +62,7 @@ test("calculation endpoint rejects non-owner, wrong media and invalid amounts", 
 
   const invalid = await app.fetch(request("POST", {
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "calculate", supply: "1e6" }),
+    body: JSON.stringify({ action: "calculate", total: "1e6" }),
   }));
   assert.equal(invalid.status, 400);
 
@@ -77,4 +82,6 @@ test("public page sources contain no owner-only tax markup, styles or calculatio
   }
   assert.match(sources[0], /\/api\/owner\/tool/);
   assert.match(sources[0], /loadOwnerTool/);
+  assert.match(sources[0], /JSON\.stringify\(\{ action: "calculate", total:/);
+  assert.doesNotMatch(sources[0], /JSON\.stringify\(\{ action: "calculate", supply:/);
 });

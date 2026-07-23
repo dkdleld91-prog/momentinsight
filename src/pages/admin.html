@@ -7846,12 +7846,12 @@
         });
       }
 
-      async function calculateOwnerTool(view, rawSupply, generation) {
+      async function calculateOwnerTool(view, rawTotal, generation) {
         var response = await miFetch(getOwnerToolApiUrl(), {
           method: "POST",
           cache: "no-store",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "calculate", supply: String(rawSupply || "0") })
+          body: JSON.stringify({ action: "calculate", total: String(rawTotal || "0") })
         });
         var payload = await readApiPayload(response, "전용 도구 계산 응답을 확인할 수 없습니다.");
         if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;

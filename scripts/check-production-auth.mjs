@@ -286,7 +286,8 @@ const checks = [
       && source.adminPage.includes('if (secureSession.role !== "owner") return false;')
       && source.adminPage.includes('await loadOwnerTool()')
       && source.ownerTool.includes('data-owner-tool-input')
-      && source.ownerTool.includes('const tax = (supply + 5n) / 10n'),
+      && source.ownerTool.includes('const supply = ((total * 10n) + 5n) / 11n')
+      && source.ownerTool.includes('const tax = total - supply'),
     file: `${files.adminPage}, ${files.clientPage}, ${files.ownerTool}`,
   },
 ];

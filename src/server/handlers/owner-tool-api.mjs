@@ -1,7 +1,7 @@
 import { PRIMARY_AGENCY_CODE } from "../owner-identity.mjs";
 import { protectedJson } from "../security.mjs";
 
-const MAX_SUPPLY = 999_999_999_999_999n;
+const MAX_TOTAL = 999_999_999_999_999n;
 const OWNER_TOOL_PATH = "/api/owner/tool";
 
 const toolCss = String.raw`
@@ -44,9 +44,9 @@ const toolCss = String.raw`
 
 const menuHtml = '<a href="#mi-admin-owner-utility" data-mi-admin-screen="owner-utility">부가세 계산기</a>';
 const viewHtml = String.raw`<section class="mi-view" data-mi-admin-view="owner-utility" id="mi-admin-owner-utility" aria-label="총관리자 전용 부가세 계산기">
-  <header class="mi-head"><div><span class="mi-kicker">Owner Utility</span><h1>부가세를 빠르게 계산합니다.</h1><p>부가세 미포함 금액을 입력하면 공급가액·부가세액·합계금액을 자동으로 계산합니다.</p></div><span class="mi-badge">총관리자 전용</span></header>
+  <header class="mi-head"><div><span class="mi-kicker">Owner Utility</span><h1>부가세를 빠르게 계산합니다.</h1><p>부가세 포함 금액을 입력하면 공급가액·부가세액·합계금액을 자동으로 계산합니다.</p></div><span class="mi-badge">총관리자 전용</span></header>
   <div class="mi-vat-layout">
-    <article class="mi-card mi-vat-entry"><div class="mi-vat-entry-head"><h2>부가세 미포함 금액</h2><p>공급가액을 입력해주세요.</p></div><label class="mi-vat-field" for="mi-owner-tool-input">입력 금액<span class="mi-vat-amount-control"><input id="mi-owner-tool-input" data-owner-tool-input inputmode="numeric" autocomplete="off" maxlength="19" placeholder="0" aria-describedby="mi-owner-tool-help"/><span aria-hidden="true">원</span></span></label><div class="mi-vat-entry-footer"><p id="mi-owner-tool-help">입력한 공급가액의 10%를 원 단위로 반올림해 부가세액을 계산합니다.</p><button class="mi-button is-ghost mi-button-small" type="button" data-owner-tool-reset>초기화</button></div></article>
+    <article class="mi-card mi-vat-entry"><div class="mi-vat-entry-head"><h2>부가세 포함 금액</h2><p>최종 합계금액을 입력해주세요.</p></div><label class="mi-vat-field" for="mi-owner-tool-input">입력 금액<span class="mi-vat-amount-control"><input id="mi-owner-tool-input" data-owner-tool-input inputmode="numeric" autocomplete="off" maxlength="19" placeholder="0" aria-describedby="mi-owner-tool-help"/><span aria-hidden="true">원</span></span></label><div class="mi-vat-entry-footer"><p id="mi-owner-tool-help">입력한 합계금액에서 공급가액과 10% 부가세액을 원 단위로 역산합니다.</p><button class="mi-button is-ghost mi-button-small" type="button" data-owner-tool-reset>초기화</button></div></article>
     <article class="mi-card mi-vat-results" aria-label="부가세 계산 결과"><h2>계산 결과</h2><div class="mi-vat-result-list">
       <div class="mi-vat-result is-total"><span class="mi-vat-result-label">합계금액<small>공급가액 + 부가세액</small></span><strong data-owner-tool-output="total">0원</strong><button class="mi-vat-copy" type="button" data-owner-tool-copy="total" aria-label="합계금액 복사" disabled>복사</button></div>
       <div class="mi-vat-result"><span class="mi-vat-result-label">공급가액<small>부가세 미포함</small></span><strong data-owner-tool-output="supply">0원</strong><button class="mi-vat-copy" type="button" data-owner-tool-copy="supply" aria-label="공급가액 복사" disabled>복사</button></div>
@@ -72,10 +72,10 @@ export function calculateOwnerTax(value) {
     ? String(value)
     : String(value ?? "").trim();
   if (!/^\d{1,15}$/.test(raw)) return null;
-  const supply = BigInt(raw);
-  if (supply > MAX_SUPPLY) return null;
-  const tax = (supply + 5n) / 10n;
-  const total = supply + tax;
+  const total = BigInt(raw);
+  if (total > MAX_TOTAL) return null;
+  const supply = ((total * 10n) + 5n) / 11n;
+  const tax = total - supply;
   return {
     supply: Number(supply),
     tax: Number(tax),
@@ -109,7 +109,7 @@ export default {
     }
     const body = await request.json().catch(() => null);
     if (!body || body.action !== "calculate") return response(request, { ok: false, message: "계산 요청을 확인해주세요." }, 400);
-    const amounts = calculateOwnerTax(body.supply);
+    const amounts = calculateOwnerTax(body.total);
     if (!amounts) return response(request, { ok: false, message: "0원 이상 999조원 이하의 금액을 입력해주세요." }, 400);
     return response(request, { ok: true, amounts });
   },

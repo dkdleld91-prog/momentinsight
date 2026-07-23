@@ -207,7 +207,8 @@ check(
   ]) && hasAll(ownerTool, [
     /x-mi-session-role/,
     /x-mi-owner-agency-code/,
-    /const tax = \(supply \+ 5n\) \/ 10n/,
+    /const supply = \(\(total \* 10n\) \+ 5n\) \/ 11n/,
+    /const tax = total - supply/,
   ]),
   `${files.serverIndex}, ${files.sessionGate}, ${files.ownerIdentity}, ${files.ownerTool}`,
 );

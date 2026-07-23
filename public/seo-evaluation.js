@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v5_public_auto_audit_20260723";
+  var VERSION = "seo_v6_verified_only_20260723";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -23,7 +23,7 @@
 
   function normalizedState(value) {
     var state = text(value).toLowerCase();
-    return ["complete", "registered", "incomplete", "direct", "reference", "applied", "none"].includes(state) ? state : "";
+    return ["applied", "none"].includes(state) ? state : "";
   }
 
   function categoryParts(value) {
@@ -54,16 +54,10 @@
     return keys.length ? { label: labels[keys[0]], count: counts[keys[0]], total: Object.values(counts).reduce(function (sum, count) { return sum + count; }, 0) } : null;
   }
 
-  function grade(score, confidence) {
-    if (confidence < 80) {
-      return {
-        label: "자동 확인 범위 제한",
-        copy: "네이버 공개 화면에서 확인된 항목만 반영했습니다. 확인되지 않은 항목의 점수는 추정하지 않습니다."
-      };
-    }
-    if (score >= 90) return { label: "A · SEO 기본 양호", copy: "상품 검색 최적화의 기본 항목이 안정적으로 갖춰져 있습니다." };
+  function grade(score) {
+    if (score >= 90) return { label: "A · 확인 항목 양호", copy: "자동으로 확인된 상품 검색 최적화 항목이 안정적으로 갖춰져 있습니다." };
     if (score >= 80) return { label: "B+ · 일부 보완", copy: "기본 구조는 양호하며 낮은 항목을 보완하면 검색 노출 준비도가 더 안정적입니다." };
-    if (score >= 70) return { label: "B · 보완 필요", copy: "상품명·카테고리·상세 정보 중 약한 항목을 먼저 개선해야 합니다." };
+    if (score >= 70) return { label: "B · 보완 필요", copy: "상품명·카테고리·리뷰·운영 설정 중 확인된 약한 항목을 먼저 개선해야 합니다." };
     if (score >= 55) return { label: "C · 수정 우선", copy: "검색 최적화 기본 항목 여러 개를 함께 보완해야 합니다." };
     return { label: "D · 재점검", copy: "상품 등록의 검색 최적화 기준을 처음부터 다시 점검해야 합니다." };
   }
@@ -71,16 +65,14 @@
   function actionText(key) {
     var actions = {
       titleKeyword: "기준 키워드를 상품명에 자연스럽게 포함하세요.",
-      titleLength: "핵심 정보만 남겨 상품명을 40자 이내로 정리하세요.",
+      titleLength: "핵심 정보만 남겨 상품명을 50자 이내로 정리하세요.",
       category: "상위 노출 상품과 동일한 세부 상품군에 속하는지 확인하고 정확한 카테고리를 선택하세요.",
       review: "정책을 준수하는 구매 경험과 리뷰 관리로 실제 리뷰를 꾸준히 확보하세요.",
-      detailPage: "상세페이지의 핵심 정보와 이미지가 잘리지 않도록 전체 구성의 80% 이상을 완성하세요.",
-      productNotice: "상품정보고시는 ‘상세페이지 참고’ 대신 각 항목을 직접 작성하세요.",
       discount: "실제 판매 정책에 맞는 할인율과 기준 가격을 명확하게 적용하세요.",
       reviewPoint: "정책 범위 안에서 리뷰 포인트 지급 조건을 설정하고 고객에게 분명히 안내하세요.",
       traffic: "상품 SEO 기본 항목은 양호합니다. 검색 노출과 유입 경로, 외부 트래픽 운영 상태를 추가 점검하세요."
     };
-    return actions[key] || "확인되지 않았거나 점수가 낮은 항목부터 보완하세요.";
+    return actions[key] || "점수가 낮은 항목부터 보완하세요.";
   }
 
   function evaluate(input) {
@@ -93,6 +85,7 @@
     var checks = [];
 
     function addCheck(key, titleText, detail, score, max, verified, source) {
+      if (!verified) return;
       checks.push({
         key: key,
         title: titleText,
@@ -118,9 +111,9 @@
 
     addCheck(
       "titleLength",
-      "상품명 40자 이내",
-      title ? "현재 상품명은 " + titleLength + "자입니다." + (titleLength <= 40 ? " 권장 범위입니다." : " 40자 이내로 줄여야 합니다.") : "상품명 길이를 확인하지 못했습니다.",
-      title && titleLength <= 40 ? 10 : 0,
+      "상품명 50자 이내",
+      title ? "현재 상품명은 " + titleLength + "자입니다." + (titleLength <= 50 ? " 권장 범위입니다." : " 50자 이내로 줄여야 합니다.") : "",
+      title && titleLength <= 50 ? 10 : 0,
       10,
       Boolean(title),
       "자동 확인"
@@ -140,7 +133,7 @@
     var reviewCount = optionalNumber(input.reviewCount);
     var reviewVerified = reviewCount !== null;
     var reviewScore = 0;
-    var reviewLabel = "자동 확인 불가";
+    var reviewLabel = "";
     if (reviewVerified) {
       if (reviewCount >= 1000) { reviewScore = 20; reviewLabel = "매우 강함"; }
       else if (reviewCount >= 300) { reviewScore = 17; reviewLabel = "강함"; }
@@ -156,35 +149,7 @@
       reviewScore,
       20,
       reviewVerified,
-      reviewVerified ? "공개 화면 자동 확인" : "자동 확인 불가"
-    );
-
-    var detailPageState = normalizedState(input.detailPageState);
-    addCheck(
-      "detailPage",
-      "상세페이지 80% 이상",
-      detailPageState === "complete"
-        ? "상세페이지 핵심 구성과 노출 상태가 자동 확인되었습니다."
-        : (detailPageState === "registered"
-          ? "상세 콘텐츠 등록은 확인했지만 공개 화면만으로 시각적 잘림과 완성도를 확정할 수 없어 등록 근거만 반영합니다."
-          : (detailPageState === "incomplete"
-            ? "상세페이지가 짧거나 일부 정보·이미지가 잘려 보완이 필요합니다."
-            : "네이버 공개 화면에서 상세 콘텐츠 상태를 자동 확인하지 못했습니다.")),
-      detailPageState === "complete" ? 10 : (detailPageState === "registered" ? 6 : 0),
-      10,
-      Boolean(detailPageState),
-      detailPageState ? "공개 화면 자동 확인" : "자동 확인 불가"
-    );
-
-    var noticeState = normalizedState(input.noticeState);
-    addCheck(
-      "productNotice",
-      "상품정보고시 직접 작성",
-      noticeState === "direct" ? "상품정보고시를 ‘상세페이지 참고’ 없이 항목별로 직접 작성했습니다." : (noticeState === "reference" ? "상품정보고시에 ‘상세페이지 참고’가 포함되어 있어 직접 작성이 필요합니다." : "네이버 공개 화면에서 상품정보고시 원문을 안정적으로 자동 확인하지 못했습니다."),
-      noticeState === "direct" ? 10 : 0,
-      10,
-      Boolean(noticeState),
-      noticeState ? "공개 화면 자동 확인" : "자동 확인 불가"
+      "공개 화면 자동 확인"
     );
 
     var discountState = normalizedState(input.discountState);
@@ -195,7 +160,7 @@
       discountState === "applied" ? 8 : 0,
       8,
       Boolean(discountState),
-      discountState ? "공개 화면 자동 확인" : "자동 확인 불가"
+      "공개 화면 자동 확인"
     );
 
     var reviewPointState = normalizedState(input.reviewPointState);
@@ -206,25 +171,25 @@
       reviewPointState === "applied" ? 7 : 0,
       7,
       Boolean(reviewPointState),
-      reviewPointState ? "공개 화면 자동 확인" : "자동 확인 불가"
+      "공개 화면 자동 확인"
     );
 
     var verifiedChecks = checks.filter(function (check) { return check.verified; });
     var verifiedMax = verifiedChecks.reduce(function (sum, check) { return sum + check.max; }, 0);
     var earned = verifiedChecks.reduce(function (sum, check) { return sum + check.score; }, 0);
-    var confidence = Math.round(verifiedMax);
+    var confidence = Math.round((verifiedMax / 80) * 100);
     var score = verifiedMax ? Math.round((earned / verifiedMax) * 100) : 0;
     var rank = optionalNumber(input.rank);
     var rankCheckedCount = optionalNumber(input.rankCheckedCount);
-    var seoBasicsStrong = confidence === 100 && score >= 85;
+    var seoBasicsStrong = verifiedMax >= 65 && score >= 85;
     var weakExposure = seoBasicsStrong && ((rank !== null && rank > 100) || (rank === null && rankCheckedCount !== null && rankCheckedCount >= 300));
-    var resultGrade = grade(score, confidence);
+    var resultGrade = grade(score);
     var diagnosis = {
       key: weakExposure ? "traffic" : (seoBasicsStrong ? "ready" : "optimize"),
       label: weakExposure ? "SEO 기본 양호 · 트래픽 점검" : (seoBasicsStrong ? "SEO 기본 양호" : "SEO 항목 보완"),
       detail: weakExposure
         ? "기본 SEO 항목은 양호하지만 오가닉 노출이 약합니다. 트래픽 부족 가능성과 노출 운영 상태를 추가 점검하세요."
-        : (seoBasicsStrong ? "상품 SEO 기본 항목과 현재 노출 상태가 양호합니다." : "낮거나 확인되지 않은 SEO 항목을 먼저 보완하세요.")
+        : (seoBasicsStrong ? "상품 SEO 기본 항목과 현재 노출 상태가 양호합니다." : "자동으로 확인된 SEO 항목 중 낮은 항목을 먼저 보완하세요.")
     };
     if (weakExposure) {
       resultGrade = {
@@ -234,10 +199,10 @@
     }
 
     var actions = checks
-      .filter(function (check) { return !check.verified || check.score / check.max < 0.75; })
+      .filter(function (check) { return check.score / check.max < 0.75; })
       .sort(function (left, right) {
-        var leftGap = left.verified ? left.max - left.score : left.max;
-        var rightGap = right.verified ? right.max - right.score : right.max;
+        var leftGap = left.max - left.score;
+        var rightGap = right.max - right.score;
         return rightGap - leftGap;
       })
       .map(function (check) {
@@ -273,8 +238,7 @@
       titleLength: titleLength,
       categoryLabel: categoryLabel,
       dominantCategory: dominantCategory ? dominantCategory.label : "",
-      autoVerifiedCount: [reviewVerified, detailPageState, noticeState, discountState, reviewPointState].filter(Boolean).length,
-      autoTotalCount: 5
+      verifiedMax: verifiedMax
     };
   }
 

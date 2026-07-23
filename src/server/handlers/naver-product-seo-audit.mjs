@@ -137,15 +137,6 @@ function extractPreloadedState(html) {
   }
 }
 
-function unavailable(label, evidence) {
-  return {
-    verified: false,
-    state: "",
-    label,
-    evidence,
-  };
-}
-
 function positiveReviewPoint(benefitsView) {
   const keys = [
     "generalPurchaseReviewPoint",
@@ -200,50 +191,34 @@ export function parseNaverProductSeoHtml(html, expectedProductId = "") {
     (discountedPrice !== null && finiteNumber(product.salePrice) !== null && discountedPrice < Number(product.salePrice))
   );
   const reviewPoint = positiveReviewPoint(benefitsView);
-  const detailRegistered = Boolean(product.detailContents?.editorType);
-
-  const signals = {
-    review: reviewCount === null
-      ? unavailable("자동 확인 불가", "공개 상품 화면에 리뷰 수가 제공되지 않았습니다.")
-      : {
-          verified: true,
-          value: reviewCount,
-          label: `${reviewCount.toLocaleString("ko-KR")}개`,
-          evidence: "네이버 공개 상품 화면의 누적 리뷰 수",
-        },
-    detailPage: detailRegistered
-      ? {
-          verified: true,
-          state: "registered",
-          label: "상세 콘텐츠 등록",
-          evidence: `네이버 상세 콘텐츠 형식 ${text(product.detailContents.editorType)} 확인`,
-        }
-      : unavailable("자동 확인 불가", "공개 상품 화면에서 상세 콘텐츠 등록 신호를 확인하지 못했습니다."),
-    productNotice: unavailable(
-      "자동 확인 불가",
-      "상품정보고시 원문은 네이버 공개 화면에서 안정적으로 제공되지 않아 점수에서 제외합니다.",
-    ),
-    discount: discountConfigured
-      ? {
-          verified: true,
-          state: discountApplied ? "applied" : "none",
-          rate: discountRatio,
-          amount: discountAmount,
-          label: discountApplied ? `할인 적용${discountRatio ? ` ${discountRatio}%` : ""}` : "할인 미적용",
-          evidence: "네이버 공개 상품 화면의 판매가·할인 정보",
-        }
-      : unavailable("자동 확인 불가", "공개 상품 화면에 할인 정책 근거가 제공되지 않았습니다."),
-    reviewPoint: reviewPoint.configured
-      ? {
-          verified: true,
-          state: reviewPoint.maxPoint > 0 ? "applied" : "none",
-          maxPoint: reviewPoint.maxPoint,
-          label: reviewPoint.maxPoint > 0 ? `최대 ${reviewPoint.maxPoint.toLocaleString("ko-KR")}원` : "리뷰 포인트 미적용",
-          evidence: "네이버 공개 상품 화면의 텍스트·포토 리뷰 혜택",
-        }
-      : unavailable("자동 확인 불가", "공개 상품 화면에 리뷰 포인트 정책 근거가 제공되지 않았습니다."),
-  };
-  const verifiedCount = Object.values(signals).filter((signal) => signal.verified).length;
+  const signals = {};
+  if (reviewCount !== null) {
+    signals.review = {
+      verified: true,
+      value: reviewCount,
+      label: `${reviewCount.toLocaleString("ko-KR")}개`,
+      evidence: "네이버 공개 상품 화면의 누적 리뷰 수",
+    };
+  }
+  if (discountConfigured) {
+    signals.discount = {
+      verified: true,
+      state: discountApplied ? "applied" : "none",
+      rate: discountRatio,
+      amount: discountAmount,
+      label: discountApplied ? `할인 적용${discountRatio ? ` ${discountRatio}%` : ""}` : "할인 미적용",
+      evidence: "네이버 공개 상품 화면의 판매가·할인 정보",
+    };
+  }
+  if (reviewPoint.configured) {
+    signals.reviewPoint = {
+      verified: true,
+      state: reviewPoint.maxPoint > 0 ? "applied" : "none",
+      maxPoint: reviewPoint.maxPoint,
+      label: reviewPoint.maxPoint > 0 ? `최대 ${reviewPoint.maxPoint.toLocaleString("ko-KR")}원` : "리뷰 포인트 미적용",
+      evidence: "네이버 공개 상품 화면의 텍스트·포토 리뷰 혜택",
+    };
+  }
 
   return {
     ok: true,
@@ -260,8 +235,8 @@ export function parseNaverProductSeoHtml(html, expectedProductId = "") {
     },
     signals,
     coverage: {
-      verifiedCount,
-      total: Object.keys(signals).length,
+      verifiedCount: Object.keys(signals).length,
+      total: 3,
     },
   };
 }

@@ -186,6 +186,10 @@ const checks = {
     "[data-admin-keyword-search]",
     "[data-seo-run]",
     "[data-seo-review-count]",
+    "[data-seo-detail-page-state]",
+    "[data-seo-notice-state]",
+    "[data-seo-discount-state]",
+    "[data-seo-review-point-state]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -194,6 +198,10 @@ const checks = {
     "[data-mi-keyword-search]",
     "[data-seo-run]",
     "[data-seo-review-count]",
+    "[data-seo-detail-page-state]",
+    "[data-seo-notice-state]",
+    "[data-seo-discount-state]",
+    "[data-seo-review-point-state]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -204,14 +212,14 @@ const checks = {
   seoEvaluationRoleParity: normalizedBlock(adminSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "buildSeoEvaluation") === normalizedBlock(clientSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "renderSeoEvaluation") === normalizedBlock(clientSource, "renderSeoEvaluation")
-    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "reviewCount"])
-    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "reviewCount"])
+    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "peerCategories", "reviewCount", "detailPageState", "noticeState", "discountState", "reviewPointState"])
+    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "peerCategories", "reviewCount", "detailPageState", "noticeState", "discountState", "reviewPointState"])
     && !includesAll(adminSeoEvaluation, ["trafficCount"])
     && !includesAll(clientSeoEvaluation, ["trafficCount"])
     && !includesAll(adminSeoEvaluation, ["orderCount"])
     && !includesAll(clientSeoEvaluation, ["orderCount"])
-    && includesAll(adminSeoRender, ["데이터 신뢰도", "상품명", "카테고리", "리뷰 신뢰"])
-    && includesAll(clientSeoRender, ["데이터 신뢰도", "상품명", "카테고리", "리뷰 신뢰"]),
+    && includesAll(adminSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "판매자 확인"])
+    && includesAll(clientSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "판매자 확인"]),
   seoManualTrafficInputsRemoved: [adminSource, clientSource].every((source) =>
     !source.includes("[data-seo-traffic-count]")
     && !source.includes("[data-seo-order-count]")

@@ -3147,6 +3147,27 @@
       min-height: 44px;
     }
 
+    #mi-clean .mi-seo-signal-form {
+      display: grid;
+      grid-template-columns: minmax(0, 180px) minmax(0, 180px) minmax(0, 1fr);
+      gap: 8px;
+      align-items: center;
+    }
+
+    #mi-clean .mi-seo-source-note {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      color: var(--mi-muted);
+      background: #f8fafc;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.55;
+    }
+
     #mi-clean .mi-seo-layout {
       display: grid;
       grid-template-columns: 260px minmax(0, 1fr);
@@ -3292,6 +3313,19 @@
       font-size: 13px;
       font-weight: 950;
       line-height: 1.35;
+    }
+
+    #mi-clean .mi-seo-source {
+      display: inline-flex;
+      margin-left: 6px;
+      padding: 3px 6px;
+      border: 1px solid #dbe5f2;
+      border-radius: 999px;
+      color: #5d6b82;
+      background: #f5f8fc;
+      font-size: 9px;
+      font-weight: 900;
+      vertical-align: middle;
     }
 
     #mi-clean .mi-seo-check span,
@@ -4622,6 +4656,7 @@
       #mi-clean .mi-meta-brief,
       #mi-clean .mi-meta-results,
       #mi-clean .mi-seo-form,
+      #mi-clean .mi-seo-signal-form,
       #mi-clean .mi-rank-grid,
       #mi-clean .mi-rank-filterbar,
       #mi-clean .mi-rank-result-summary,
@@ -5603,9 +5638,9 @@
         <section class="mi-view" id="mi-seo-check" data-mi-view="seo-check" aria-label="SEO 확인 화면">
           <header class="mi-screen-head">
             <div>
-              <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버 SEO 점수를 확인합니다.</h1>
-              <p>키워드와 상품 URL 기준으로 SEO 보완 항목을 확인합니다.</p>
+              <span class="mi-kicker">상품 SEO·노출 준비도</span>
+              <h1>상품 등록 품질과 운영 신호를 함께 확인합니다.</h1>
+              <p>키워드와 상품 URL에 최근 30일 트래픽·구매·리뷰를 더해 보완 항목을 확인합니다.</p>
             </div>
             <span class="mi-badge">SEO 확인</span>
           </header>
@@ -5613,9 +5648,9 @@
           <article class="mi-card mi-card-pad mi-seo-card" data-seo-card>
             <div class="mi-card-head">
               <div>
-                <span class="mi-kicker">네이버 SEO 점수</span>
-                <h2>키워드 기준 SEO 점수와 수정 액션을 함께 봅니다.</h2>
-                <p>키워드, 네이버 상품 URL, 리뷰수량만 입력하면 상품명·가격·카테고리는 자동으로 보완합니다.</p>
+                <span class="mi-kicker">SEO SIGNAL REVIEW</span>
+                <h2>키워드 기준 SEO 준비도와 운영 신호를 함께 봅니다.</h2>
+                <p>확인된 데이터와 직접 입력 데이터를 구분하고, 공식 API 결과 순번은 참고값으로만 제공합니다.</p>
               </div>
               <span class="mi-period">상품 1개 기준</span>
             </div>
@@ -5623,27 +5658,33 @@
             <div class="mi-seo-form">
               <input class="mi-input" data-seo-keyword aria-label="SEO 기준 키워드" placeholder="기준 키워드" />
               <input class="mi-input" data-seo-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL" />
-              <input class="mi-input" data-seo-review-count aria-label="리뷰수량" placeholder="리뷰수량" />
+              <input class="mi-input" data-seo-review-count type="number" inputmode="numeric" min="0" step="1" aria-label="현재 리뷰수" placeholder="현재 리뷰수" />
               <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
             </div>
-            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.</p>
+            <div class="mi-seo-signal-form">
+              <input class="mi-input" data-seo-traffic-count type="number" inputmode="numeric" min="0" step="1" aria-label="최근 30일 상품 유입수" placeholder="최근 30일 유입수" />
+              <input class="mi-input" data-seo-order-count type="number" inputmode="numeric" min="0" step="1" aria-label="최근 30일 구매수" placeholder="최근 30일 구매수" />
+              <div class="mi-seo-source-note">유입·구매·리뷰는 직접 입력값입니다. 트래픽은 노출 운영 신호이며 순위 상승을 보장하지 않습니다.</div>
+            </div>
+            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 유입·구매·리뷰는 직접 입력값으로 구분합니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
                 <div class="mi-seo-score-ring" data-seo-score-ring style="--score:0;">
                   <div>
                     <strong data-seo-score>--</strong>
-                    <span>네이버 SEO 점수</span>
+                    <span>SEO·노출 준비도</span>
                   </div>
                 </div>
                 <div class="mi-seo-grade">
                   <strong data-seo-grade>조회 전</strong>
-                  <span data-seo-grade-copy>상품 정보 입력 후 점검 결과를 표시합니다.</span>
+                  <span data-seo-grade-copy>상품 정보와 운영 신호 입력 후 점검 결과를 표시합니다.</span>
                 </div>
                 <div class="mi-seo-summary" data-seo-summary>
-                  <div><span>기준 키워드</span><strong>조회 후 표시</strong></div>
-                  <div><span>오가닉 순위</span><strong>조회 후 표시</strong></div>
-                  <div><span>시장 상태</span><strong>조회 후 표시</strong></div>
+                  <div><span>데이터 신뢰도</span><strong>조회 후 표시</strong></div>
+                  <div><span>30일 트래픽</span><strong>직접 입력</strong></div>
+                  <div><span>30일 전환</span><strong>직접 입력</strong></div>
+                  <div><span>리뷰 신뢰</span><strong>직접 입력</strong></div>
                 </div>
               </aside>
 
@@ -5668,27 +5709,27 @@
                     <div class="mi-seo-preview" data-seo-preview>
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
-                        <h4>네이버 상품 URL을 입력하면 오가닉 순위와 상품 정보를 함께 확인합니다.</h4>
-                        <p>대표 순위 추적과 연결해 키워드 기준 SEO 상태 변화를 참고할 수 있게 구성했습니다.</p>
+                        <h4>네이버 상품 URL을 입력하면 상품 정보와 공식 API 참고 순번을 함께 확인합니다.</h4>
+                        <p>상품명·카테고리·검색 시장과 트래픽·전환·리뷰를 분리해 과장 없는 근거만 표시합니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
                           <span class="mi-seo-pill">카테고리</span>
                           <span class="mi-seo-pill">검색량</span>
-                          <span class="mi-seo-pill">오가닉 순위</span>
+                          <span class="mi-seo-pill">운영 신호</span>
                         </div>
                       </div>
                     </div>
                   </section>
 
                   <section class="mi-seo-panel is-wide">
-                    <h3>SEO 점수 기준</h3>
+                    <h3>SEO·운영 신호 점수 기준</h3>
                     <div class="mi-table">
-                      <div class="mi-row"><span>상품명 키워드 25점</span><strong>기준 키워드 포함과 자연스러운 상품명 구성</strong></div>
-                      <div class="mi-row"><span>카테고리 연결 15점</span><strong>상품 URL에서 확인한 카테고리와 키워드 적합성</strong></div>
-                      <div class="mi-row"><span>시장 수요 15점</span><strong>월 검색량과 연관 키워드 수요 참고</strong></div>
-                      <div class="mi-row"><span>오가닉 순위 15점</span><strong>원부·정확 상품 상위 노출</strong></div>
-                      <div class="mi-row"><span>가격/혜택 15점</span><strong>검색 결과 내 가격대와 구매 혜택 참고</strong></div>
-                      <div class="mi-row"><span>리뷰/신뢰도 15점</span><strong>리뷰수량은 직접 입력값 기준</strong></div>
+                      <div class="mi-row"><span>상품명 SEO 25점</span><strong>키워드 포함 위치·길이·반복 여부</strong></div>
+                      <div class="mi-row"><span>카테고리·속성 15점</span><strong>상품군 깊이와 키워드 적합성</strong></div>
+                      <div class="mi-row"><span>검색 수요·경쟁 15점</span><strong>월 검색량·등록 상품 수·경쟁강도</strong></div>
+                      <div class="mi-row"><span>30일 트래픽 15점</span><strong>직접 입력한 상품 유입수 기준, 순위 보장 지표 아님</strong></div>
+                      <div class="mi-row"><span>30일 전환 신호 15점</span><strong>유입 대비 구매율 기준</strong></div>
+                      <div class="mi-row"><span>리뷰 신뢰도 15점</span><strong>리뷰 수가 많을수록 신뢰 점수 상승</strong></div>
                     </div>
                   </section>
                 </div>
@@ -5775,6 +5816,7 @@
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
 
+  <script src="/seo-evaluation.js"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -5895,7 +5937,7 @@
         renderKeywordResult(keywordDatasets);
         resetSeoView();
         if (clearSensitiveInputs) {
-          root.querySelectorAll("[data-meta-query], [data-mi-keyword-input], [data-seo-keyword], [data-seo-url], [data-seo-review-count]").forEach(function (input) {
+          root.querySelectorAll("[data-meta-query], [data-mi-keyword-input], [data-seo-keyword], [data-seo-url], [data-seo-review-count], [data-seo-traffic-count], [data-seo-order-count]").forEach(function (input) {
             input.value = "";
           });
           var seoKeywordInput = root.querySelector("[data-seo-keyword]");
@@ -9501,7 +9543,7 @@
         return map[check.key] || "점수가 낮은 항목부터 수정하세요.";
       }
 
-      function buildSeoEvaluation(input, keywordData, rankPayload) {
+      function buildSeoEvaluationV1Snapshot(input, keywordData, rankPayload) {
         var keyword = input.keyword;
         var item = rankPayload && rankPayload.result && rankPayload.result.item ? rankPayload.result.item : null;
         var rankResult = rankPayload && rankPayload.result ? rankPayload.result : null;
@@ -9634,6 +9676,48 @@
         };
       }
 
+      function buildSeoEvaluation(input, keywordData, rankPayload) {
+        var engine = window.MomentSeoEvaluation;
+        if (!engine || typeof engine.evaluate !== "function") {
+          throw new Error("SEO 평가 모듈을 불러오지 못했습니다. 새로고침 후 다시 확인해주세요.");
+        }
+        var keyword = input.keyword;
+        var item = rankPayload && rankPayload.result && rankPayload.result.item ? rankPayload.result.item : null;
+        var rankResult = rankPayload && rankPayload.result ? rankPayload.result : null;
+        var title = input.title || (item && item.title) || "";
+        var category = categoryPath(item, input.category);
+        var price = input.price || (item && item.lprice) || 0;
+        var keywordTotal = keywordData && keywordData.shopping ? keywordData.shopping.total : null;
+        var rankTotal = rankResult ? rankResult.total : null;
+        var shoppingTotal = keywordTotal !== null && keywordTotal !== undefined && String(keywordTotal).trim() !== ""
+          ? keywordTotal
+          : (rankTotal !== null && rankTotal !== undefined && String(rankTotal).trim() !== "" ? rankTotal : null);
+        var evaluation = engine.evaluate({
+          keyword: keyword,
+          title: title,
+          category: category,
+          productId: input.productId || (item && item.productId) || "",
+          hasVolume: hasSearchVolume(keywordData),
+          volumeText: formatSearchVolumeWithUnit(keywordData),
+          shoppingTotal: shoppingTotal,
+          competitionLabel: keywordMarketCompetitionLabel(keywordData),
+          trafficCount: input.trafficCount,
+          orderCount: input.orderCount,
+          reviewCount: input.reviewCount
+        });
+        return Object.assign(evaluation, {
+          keyword: keyword,
+          title: title,
+          category: category,
+          price: price,
+          rank: rankResult && rankResult.matched ? rankResult.rank : null,
+          rankMessage: seoRankBasis(rankResult),
+          volumeText: formatSearchVolumeWithUnit(keywordData),
+          shoppingTotal: shoppingTotal,
+          item: item
+        });
+      }
+
       function renderSeoEvaluation(evaluation) {
         var ring = root.querySelector("[data-seo-score-ring]");
         var score = root.querySelector("[data-seo-score]");
@@ -9651,25 +9735,28 @@
 
         if (summary) {
           summary.innerHTML =
-            '<div><span>기준 키워드</span><strong>' + escapeHtml(evaluation.keyword) + '</strong></div>' +
-            '<div><span>월 검색수</span><strong>' + escapeHtml(evaluation.volumeText) + '</strong></div>' +
-            '<div><span>API 결과 순번</span><strong>' + escapeHtml(evaluation.rank ? evaluation.rank + "번째" : "확인 필요") + '</strong></div>' +
-            '<div><span>상품수</span><strong>' + escapeHtml(evaluation.shoppingTotal ? formatNumber(evaluation.shoppingTotal) + "건" : "확인 필요") + '</strong></div>';
+            '<div><span>데이터 신뢰도</span><strong>' + escapeHtml(evaluation.confidence + "%") + '</strong></div>' +
+            '<div><span>30일 트래픽</span><strong>' + escapeHtml(evaluation.trafficCount !== null ? formatNumber(evaluation.trafficCount) + "회" : "미입력") + '</strong></div>' +
+            '<div><span>30일 전환</span><strong>' + escapeHtml(evaluation.conversionRate !== null ? evaluation.conversionRate.toFixed(2) + "%" : "미입력") + '</strong></div>' +
+            '<div><span>리뷰 신뢰</span><strong>' + escapeHtml(evaluation.reviewCount !== null ? formatNumber(evaluation.reviewCount) + "개" : "미입력") + '</strong></div>';
         }
 
         if (checks) {
           checks.innerHTML = evaluation.checks.map(function (check) {
-            return '<div class="mi-seo-check"><div><strong>' + escapeHtml(check.title) + '</strong><span>' +
-              escapeHtml(check.detail) + '</span></div><b class="mi-seo-point' + seoPointClass(check.score, check.max) +
-              '">' + check.score + '/' + check.max + '</b></div>';
+            var pointClass = check.verified ? seoPointClass(check.score, check.max) : " warn";
+            var pointText = check.verified ? check.score + '/' + check.max : "확인";
+            return '<div class="mi-seo-check"><div><strong>' + escapeHtml(check.title) + '<small class="mi-seo-source">' +
+              escapeHtml(check.source) + '</small></strong><span>' + escapeHtml(check.detail) +
+              '</span></div><b class="mi-seo-point' + pointClass + '">' + pointText + '</b></div>';
           }).join("");
         }
 
         if (actions) {
           actions.innerHTML = evaluation.actions.map(function (action) {
+            var actionClass = action.verified ? seoPointClass(action.score, action.max) : " warn";
             return '<div class="mi-seo-action"><div><strong>' + escapeHtml(action.title) + '</strong><span>' +
-              escapeHtml(action.detail) + '</span></div><b class="mi-seo-point' + seoPointClass(action.score, action.max) +
-              '">수정</b></div>';
+              escapeHtml(action.detail) + '</span></div><b class="mi-seo-point' + actionClass +
+              '">' + (action.verified ? "보완" : "입력") + '</b></div>';
           }).join("");
         }
 
@@ -9687,9 +9774,10 @@
             '<div class="mi-seo-preview-img">' + image + '</div><div><h4>' + escapeHtml(title) + '</h4><p>' +
             escapeHtml(meta) + '</p><div class="mi-seo-pills">' +
             '<span class="mi-seo-pill">점수 ' + evaluation.score + '</span>' +
-            '<span class="mi-seo-pill">' + escapeHtml(evaluation.grade.label.split(" · ")[0]) + '</span>' +
-            '<span class="mi-seo-pill">월 검색수 ' + escapeHtml(evaluation.volumeText) + '</span>' +
-            '<span class="mi-seo-pill">순위 ' + escapeHtml(evaluation.rank ? evaluation.rank + "위" : "확인 필요") + '</span>' +
+            '<span class="mi-seo-pill">신뢰도 ' + evaluation.confidence + '%</span>' +
+            '<span class="mi-seo-pill">트래픽 ' + escapeHtml(evaluation.trafficLabel) + '</span>' +
+            '<span class="mi-seo-pill">리뷰 ' + escapeHtml(evaluation.reviewLabel) + '</span>' +
+            '<span class="mi-seo-pill">API 참고 ' + escapeHtml(evaluation.rank ? evaluation.rank + "번째" : "확인 필요") + '</span>' +
             '</div></div>';
         }
       }
@@ -9700,11 +9788,18 @@
           title: "네이버 상품 URL을 입력하면 공식 API 결과 순번과 상품 정보를 함께 확인합니다.",
           category: "",
           price: 0,
-          reviewCount: 0,
+          reviewCount: null,
+          reviewLabel: "미입력",
+          trafficCount: null,
+          trafficLabel: "미입력",
+          orderCount: null,
+          conversionRate: null,
+          conversionLabel: "미입력",
           score: 0,
-          grade: { label: "조회 전", copy: "키워드, 네이버 상품 URL, 리뷰수량 입력 후 네이버 SEO 점수를 표시합니다." },
-          checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 점수를 표시합니다.", score: 0, max: 100 }],
-          actions: [{ title: "키워드와 상품 URL 입력", detail: "기준 키워드와 상품명의 연결성을 확인합니다.", score: 0, max: 100 }],
+          confidence: 0,
+          grade: { label: "조회 전", copy: "상품 정보와 최근 30일 운영 신호 입력 후 SEO 준비도를 표시합니다." },
+          checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 항목별 근거와 점수를 표시합니다.", score: 0, max: 100, verified: false, source: "확인 필요" }],
+          actions: [{ title: "키워드와 상품 URL 입력", detail: "상품 정보와 운영 신호를 근거별로 확인합니다.", score: 0, max: 100, verified: false }],
           rank: null,
           rankMessage: "상품 확인 전",
           volumeText: "조회 후 표시",
@@ -10314,6 +10409,8 @@
       var seoKeyword = root.querySelector("[data-seo-keyword]");
       var seoUrl = root.querySelector("[data-seo-url]");
       var seoReviewCount = root.querySelector("[data-seo-review-count]");
+      var seoTrafficCount = root.querySelector("[data-seo-traffic-count]");
+      var seoOrderCount = root.querySelector("[data-seo-order-count]");
       var seoButton = root.querySelector("[data-seo-run]");
       var seoStatus = root.querySelector("[data-seo-status]");
       keywordDatasets = [];
@@ -10448,19 +10545,27 @@
         }
         if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
 
-        var evaluation = buildSeoEvaluation({
-          keyword: keyword,
-          title: title,
-          url: targetUrl,
-          productId: productId,
-          category: "",
-          price: 0,
-          reviewCount: parseSeoNumber(seoReviewCount && seoReviewCount.value),
-          benefit: "normal"
-        }, keywordData, rankPayload);
+        var evaluation = null;
+        try {
+          evaluation = buildSeoEvaluation({
+            keyword: keyword,
+            title: title,
+            url: targetUrl,
+            productId: productId,
+            category: "",
+            price: 0,
+            trafficCount: seoTrafficCount ? seoTrafficCount.value : null,
+            orderCount: seoOrderCount ? seoOrderCount.value : null,
+            reviewCount: seoReviewCount ? seoReviewCount.value : null
+          }, keywordData, rankPayload);
+        } catch (error) {
+          setStatus(seoStatus, error.message || "SEO 평가 결과를 만들지 못했습니다.", "is-warn");
+          if (clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) seoButton.disabled = false;
+          return;
+        }
 
         renderSeoEvaluation(evaluation);
-        var statusParts = ["점검 완료: " + evaluation.grade.label];
+        var statusParts = ["점검 완료: " + evaluation.grade.label, "데이터 신뢰도 " + evaluation.confidence + "%"];
         if (keywordMessage) statusParts.push(keywordMessage);
         if (rankMessage) statusParts.push(rankMessage);
         setStatus(seoStatus, statusParts.join(" · "), evaluation.score >= 70 ? "is-ok" : "is-warn");

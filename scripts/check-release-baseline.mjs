@@ -339,6 +339,8 @@ const checks = {
       && source.includes("[data-seo-keyword]")
       && source.includes("[data-seo-url]")
       && source.includes("[data-seo-review-count]")
+      && source.includes("[data-seo-traffic-count]")
+      && source.includes("[data-seo-order-count]")
       && source.includes("[data-meta-summary-query]")
       && source.includes("[data-meta-summary-count]")
       && source.includes("[data-meta-summary-state]")
@@ -875,13 +877,17 @@ const checks = {
     && source.includes("rankTrackerInsight")
     && source.includes("7일 평균")
     && source.includes("전회 대비")),
-  seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO 점수 기준")
-    && source.includes("상품명 키워드 25점")
-    && source.includes("카테고리 연결 15점")
-    && source.includes("시장 수요 15점")
-    && source.includes("원부·정확 상품 상위 노출")
-    && source.includes("가격/혜택 15점")
-    && source.includes("리뷰/신뢰도 15점")),
+  seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO·운영 신호 점수 기준")
+    && source.includes("상품명 SEO 25점")
+    && source.includes("카테고리·속성 15점")
+    && source.includes("검색 수요·경쟁 15점")
+    && source.includes("30일 트래픽 15점")
+    && source.includes("30일 전환 신호 15점")
+    && source.includes("리뷰 신뢰도 15점")
+    && source.includes("리뷰 수가 많을수록 신뢰 점수 상승")
+    && source.includes("트래픽은 노출 운영 신호이며 순위 상승을 보장하지 않습니다.")
+    && source.includes('<script src="/seo-evaluation.js"></script>')
+    && source.includes("window.MomentSeoEvaluation")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),

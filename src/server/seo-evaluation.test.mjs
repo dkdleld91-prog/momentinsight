@@ -70,7 +70,7 @@ test("리뷰 수가 늘면 리뷰 점수와 종합 점수가 상승한다", () =
   assert.ok(high.score > low.score);
 });
 
-test("판매자 확인 항목은 확인 전 점수를 발명하지 않는다", () => {
+test("자동 확인 불가 항목은 점수를 발명하지 않는다", () => {
   const partial = seo.evaluate(baseInput({
     detailPageState: "",
     noticeState: "",
@@ -78,12 +78,12 @@ test("판매자 확인 항목은 확인 전 점수를 발명하지 않는다", (
     reviewPointState: "",
   }));
   assert.equal(partial.confidence, 65);
-  assert.equal(partial.grade.label, "확인 항목 입력 필요");
-  assert.equal(partial.manualVerifiedCount, 0);
+  assert.equal(partial.grade.label, "자동 확인 범위 제한");
+  assert.equal(partial.autoVerifiedCount, 1);
   assert.equal(partial.checks.find((check) => check.key === "detailPage").verified, false);
 });
 
-test("상세페이지·상품정보고시·할인율·리뷰 포인트를 각각 평가한다", () => {
+test("자동 수집한 상세페이지·상품정보고시·할인율·리뷰 포인트를 각각 평가한다", () => {
   const result = seo.evaluate(baseInput({
     detailPageState: "incomplete",
     noticeState: "reference",
@@ -95,6 +95,14 @@ test("상세페이지·상품정보고시·할인율·리뷰 포인트를 각각
     assert.equal(check.verified, true);
     assert.equal(check.score, 0);
   });
+});
+
+test("상세 콘텐츠 등록만 확인되면 완성도를 단정하지 않고 일부 근거만 반영한다", () => {
+  const result = seo.evaluate(baseInput({ detailPageState: "registered" }));
+  const detail = result.checks.find((check) => check.key === "detailPage");
+  assert.equal(detail.verified, true);
+  assert.equal(detail.score, 6);
+  assert.match(detail.detail, /시각적 잘림과 완성도를 확정할 수 없어/);
 });
 
 test("기본 SEO가 양호하지만 상위 300개 밖이면 트래픽·노출 점검으로 진단한다", () => {
@@ -118,5 +126,5 @@ test("점검 항목과 버전을 고정하고 우선 액션은 최대 세 개만
     "reviewPoint",
   ]);
   assert.equal(result.actions.length, 3);
-  assert.equal(result.version, "seo_v4_product_optimization_20260723");
+  assert.equal(result.version, "seo_v5_public_auto_audit_20260723");
 });

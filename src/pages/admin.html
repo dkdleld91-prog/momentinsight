@@ -1365,7 +1365,7 @@
 
     #mi-admin .mi-seo-form {
       display: grid;
-      grid-template-columns: 1fr 2fr 0.8fr auto;
+      grid-template-columns: minmax(180px, 0.75fr) minmax(320px, 2fr) auto;
       gap: 8px;
       align-items: center;
     }
@@ -7044,8 +7044,8 @@
             <div class="mi-card-head">
               <div>
                 <span class="mi-kicker">SEO SIGNAL REVIEW</span>
-                <h2>광고주에게 공개하기 전 상품 SEO 기본 상태를 점검합니다.</h2>
-                <p>자동 확인 항목과 판매자 확인 항목을 분리하고, 확인된 사실만 점수에 반영합니다.</p>
+                <h2>상품 URL 하나로 SEO 기본 상태를 자동 점검합니다.</h2>
+                <p>전문 용어를 몰라도 상품 공개 화면에서 확인된 사실만 자동 수집해 보여줍니다.</p>
               </div>
               <span class="mi-badge warn">내부 검수</span>
             </div>
@@ -7053,36 +7053,10 @@
             <div class="mi-seo-form">
               <input class="mi-input" data-seo-keyword aria-label="SEO 기준 키워드" placeholder="기준 키워드" />
               <input class="mi-input" data-seo-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL" />
-              <input class="mi-input" data-seo-review-count type="number" inputmode="numeric" min="0" step="1" aria-label="현재 리뷰수" placeholder="현재 리뷰수" />
-              <button class="mi-button" type="button" data-seo-run>SEO 확인</button>
+              <button class="mi-button" type="button" data-seo-run>자동 점검</button>
             </div>
-            <div class="mi-seo-confirm">
-              <div class="mi-seo-confirm-head"><strong>판매자 확인 항목</strong><span>공개 API에서 확정할 수 없는 항목만 직접 선택합니다.</span></div>
-              <div class="mi-seo-confirm-grid">
-                <select class="mi-input" data-seo-detail-page-state aria-label="상세페이지 완성도">
-                  <option value="">상세페이지 80% 여부</option>
-                  <option value="complete">80% 이상·잘림 없음</option>
-                  <option value="incomplete">80% 미만·잘림 있음</option>
-                </select>
-                <select class="mi-input" data-seo-notice-state aria-label="상품정보고시 작성 방식">
-                  <option value="">상품정보고시 작성 여부</option>
-                  <option value="direct">모든 항목 직접 작성</option>
-                  <option value="reference">상세페이지 참고 포함</option>
-                </select>
-                <select class="mi-input" data-seo-discount-state aria-label="할인율 적용 여부">
-                  <option value="">할인율 적용 여부</option>
-                  <option value="applied">할인율 적용</option>
-                  <option value="none">할인율 미적용</option>
-                </select>
-                <select class="mi-input" data-seo-review-point-state aria-label="리뷰 포인트 적용 여부">
-                  <option value="">리뷰 포인트 여부</option>
-                  <option value="applied">리뷰 포인트 적용</option>
-                  <option value="none">리뷰 포인트 미적용</option>
-                </select>
-              </div>
-            </div>
-            <div class="mi-seo-source-note">상품명·40자·동종 상품 카테고리는 자동 비교합니다. 리뷰와 판매자 확인 항목은 실제 확인값만 반영하며 검색 수요·경쟁은 SEO 점수에서 제외합니다.</div>
-            <p class="mi-code-status" data-seo-status aria-live="polite">키워드와 상품 URL을 입력하고 확인 가능한 운영 항목을 선택해주세요.</p>
+            <div class="mi-seo-source-note">리뷰·상세 콘텐츠·할인·리뷰 포인트는 네이버 상품 공개 화면에서 자동 확인합니다. 네이버가 공개하지 않는 값은 추정하지 않고 점수에서 제외합니다.</div>
+            <p class="mi-code-status" data-seo-status aria-live="polite">기준 키워드와 상품 URL만 입력하면 나머지 항목을 자동으로 점검합니다.</p>
 
             <div class="mi-seo-layout">
               <aside class="mi-seo-score-card">
@@ -7094,13 +7068,13 @@
                 </div>
                 <div class="mi-seo-grade">
                   <strong data-seo-grade>조회 전</strong>
-                  <span data-seo-grade-copy>상품 정보와 판매자 확인 항목 입력 후 결과를 표시합니다.</span>
+                  <span data-seo-grade-copy>상품 URL 자동 수집 후 결과를 표시합니다.</span>
                 </div>
                 <div class="mi-seo-summary" data-seo-summary>
                   <div><span>데이터 신뢰도</span><strong>조회 후 표시</strong></div>
                   <div><span>상품명 키워드</span><strong>자동 확인</strong></div>
                   <div><span>동종 카테고리</span><strong>자동 비교</strong></div>
-                  <div><span>판매자 확인</span><strong>0/4</strong></div>
+                  <div><span>자동 수집</span><strong>0/5</strong></div>
                 </div>
               </aside>
 
@@ -7147,6 +7121,7 @@
                       <div class="mi-row"><span>운영 설정 15점</span><strong>할인율 적용 8점·리뷰 포인트 적용 7점</strong></div>
                       <div class="mi-row"><span>트래픽 진단</span><strong>SEO 기본 양호 후 노출이 약할 때만 별도 안내</strong></div>
                     </div>
+                    <p class="mi-seo-source-note">검색 수요·경쟁은 SEO 점수에서 제외하며, 공개 화면에서 자동 확인되지 않은 항목도 점수에서 제외합니다.</p>
                   </section>
                 </div>
               </div>
@@ -7651,7 +7626,7 @@
         renderKeywordResult(keywordDatasets);
         resetSeoView();
         if (clearSensitiveInputs) {
-          root.querySelectorAll("[data-meta-query], [data-admin-keyword-input], [data-seo-keyword], [data-seo-url], [data-seo-review-count], [data-seo-detail-page-state], [data-seo-notice-state], [data-seo-discount-state], [data-seo-review-point-state]").forEach(function (input) {
+          root.querySelectorAll("[data-meta-query], [data-admin-keyword-input], [data-seo-keyword], [data-seo-url]").forEach(function (input) {
             input.value = "";
           });
           var seoKeywordInput = root.querySelector("[data-seo-keyword]");
@@ -7667,7 +7642,7 @@
           if (metaSummaryCount) metaSummaryCount.textContent = "0개";
           if (metaSummaryState) metaSummaryState.textContent = "대기";
           setStatus(root.querySelector("[data-meta-status]"), "검색어를 입력하면 Meta 공식 광고 라이브러리에서 확인 가능한 광고를 조회합니다.", "");
-          setStatus(root.querySelector("[data-seo-status]"), "키워드와 상품 URL을 입력하면 보완 항목을 확인합니다. 리뷰수량은 직접 입력값 기준입니다.", "");
+          setStatus(root.querySelector("[data-seo-status]"), "키워드와 상품 URL만 입력하면 공개 상품 정보를 자동으로 점검합니다.", "");
           root.querySelectorAll("[data-rank-check-keyword], [data-rank-check-url], [data-rank-check-product-id], [data-rank-keyword], [data-rank-url], [data-rank-product-id], [data-rank-filter-search], [data-rank-bulk-group], [data-place-rank-keyword], [data-place-rank-url], [data-place-rank-filter-search]").forEach(function (input) {
             input.value = "";
           });
@@ -13107,11 +13082,11 @@
       }
 
       function seoReviewDetail(reviewCount) {
-        if (reviewCount >= 1000) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 신뢰도는 충분한 편이고 최근 리뷰 증가 흐름만 유지하면 됩니다.";
-        if (reviewCount >= 100) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 기본 신뢰도는 확보했지만 경쟁 상품 대비 리뷰 격차는 확인해야 합니다.";
-        if (reviewCount >= 20) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 초기 신뢰도는 있으나 구매 장벽을 낮추려면 리뷰 확보가 더 필요합니다.";
-        if (reviewCount > 0) return "직접 입력 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 리뷰 수가 적어 상품 신뢰도 보완이 필요합니다.";
-        return "리뷰 수가 입력되지 않았습니다. 실제 리뷰 수를 넣어야 신뢰도 점수가 정확해집니다.";
+        if (reviewCount >= 1000) return "공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 신뢰도는 충분한 편이고 최근 리뷰 증가 흐름만 유지하면 됩니다.";
+        if (reviewCount >= 100) return "공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 기본 신뢰도는 확보했지만 경쟁 상품 대비 리뷰 격차는 확인해야 합니다.";
+        if (reviewCount >= 20) return "공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 초기 신뢰도는 있으나 구매 장벽을 낮추려면 리뷰 확보가 더 필요합니다.";
+        if (reviewCount > 0) return "공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준입니다. 리뷰 수가 적어 상품 신뢰도 보완이 필요합니다.";
+        return "공개 상품 화면에서 리뷰 수를 자동 확인하지 못했습니다.";
       }
 
       function seoActionText(check) {
@@ -13256,39 +13231,47 @@
         };
       }
 
-      function buildSeoEvaluation(input, keywordData, rankPayload) {
+      function buildSeoEvaluation(input, keywordData, rankPayload, auditPayload) {
         var engine = window.MomentSeoEvaluation;
         if (!engine || typeof engine.evaluate !== "function") {
           throw new Error("SEO 평가 모듈을 불러오지 못했습니다. 새로고침 후 다시 확인해주세요.");
         }
         var keyword = input.keyword;
         var rankResult = rankPayload && rankPayload.result ? rankPayload.result : null;
-        var item = rankResult ? (rankResult.exactItem || rankResult.item || null) : null;
-        var title = input.title || (item && item.title) || "";
-        var category = categoryPath(item, input.category);
-        var price = input.price || (item && item.lprice) || 0;
-        var targetProductId = input.productId || (item && item.productId) || "";
+        var rankItem = rankResult ? (rankResult.exactItem || rankResult.item || null) : null;
+        var auditProduct = auditPayload && auditPayload.product ? auditPayload.product : {};
+        var signals = auditPayload && auditPayload.signals ? auditPayload.signals : {};
+        var item = Object.assign({}, rankItem || {}, {
+          title: auditProduct.title || (rankItem && rankItem.title) || "",
+          image: auditProduct.image || (rankItem && rankItem.image) || "",
+          mallName: auditProduct.storeName || (rankItem && rankItem.mallName) || "",
+          productId: auditProduct.productId || (rankItem && rankItem.productId) || ""
+        });
+        var title = auditProduct.title || input.title || item.title || "";
+        var category = auditProduct.category || categoryPath(item, input.category);
+        var price = auditProduct.discountedPrice || auditProduct.price || input.price || item.lprice || 0;
+        var targetProductId = auditProduct.productId || input.productId || item.productId || "";
         var peerCategories = (rankResult && Array.isArray(rankResult.topItems) ? rankResult.topItems : [])
           .filter(function (peer) {
             return !targetProductId || String(peer && peer.productId || "") !== String(targetProductId);
           })
           .map(function (peer) { return categoryPath(peer, ""); })
           .filter(Boolean);
-        var listedPrice = Number(item && item.hprice || 0);
-        var salePrice = Number(item && item.lprice || 0);
-        var discountAuto = listedPrice > 0 && salePrice > 0 && listedPrice > salePrice;
-        var discountState = input.discountState || (discountAuto ? "applied" : "");
+        var reviewSignal = signals.review || {};
+        var detailSignal = signals.detailPage || {};
+        var noticeSignal = signals.productNotice || {};
+        var discountSignal = signals.discount || {};
+        var reviewPointSignal = signals.reviewPoint || {};
         var evaluation = engine.evaluate({
           keyword: keyword,
           title: title,
           category: category,
           peerCategories: peerCategories,
-          reviewCount: input.reviewCount,
-          detailPageState: input.detailPageState,
-          noticeState: input.noticeState,
-          discountState: discountState,
-          discountAuto: discountAuto,
-          reviewPointState: input.reviewPointState,
+          reviewCount: reviewSignal.verified ? reviewSignal.value : null,
+          detailPageState: detailSignal.verified ? detailSignal.state : "",
+          noticeState: noticeSignal.verified ? noticeSignal.state : "",
+          discountState: discountSignal.verified ? discountSignal.state : "",
+          reviewPointState: reviewPointSignal.verified ? reviewPointSignal.state : "",
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
           rankCheckedCount: rankResult ? rankResult.checkedCount : null
         });
@@ -13299,7 +13282,9 @@
           price: price,
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
           rankMessage: seoRankBasis(rankResult),
-          item: item
+          item: item,
+          auditCoverage: auditPayload && auditPayload.coverage ? auditPayload.coverage : { verifiedCount: 0, total: 5 },
+          auditSource: auditPayload && auditPayload.source ? auditPayload.source : ""
         });
       }
 
@@ -13325,13 +13310,13 @@
             '<div><span>데이터 신뢰도</span><strong>' + escapeHtml(evaluation.confidence + "%") + '</strong></div>' +
             '<div><span>상품명 키워드</span><strong>' + escapeHtml(titleCheck && titleCheck.verified ? (evaluation.titleKeywordIncluded ? "포함" : "미포함") : "미확인") + '</strong></div>' +
             '<div><span>동종 카테고리</span><strong>' + escapeHtml(categoryCheck && categoryCheck.verified ? evaluation.categoryLabel : "비교 필요") + '</strong></div>' +
-            '<div><span>판매자 확인</span><strong>' + escapeHtml((evaluation.manualVerifiedCount || 0) + "/4") + '</strong></div>';
+            '<div><span>자동 수집</span><strong>' + escapeHtml((evaluation.autoVerifiedCount || 0) + "/" + (evaluation.autoTotalCount || 5)) + '</strong></div>';
         }
 
         if (checks) {
           checks.innerHTML = evaluation.checks.map(function (check) {
             var pointClass = check.verified ? seoPointClass(check.score, check.max) : " warn";
-            var pointText = check.verified ? check.score + '/' + check.max : "확인";
+            var pointText = check.verified ? check.score + '/' + check.max : "미확인";
             return '<div class="mi-seo-check"><div><strong>' + escapeHtml(check.title) + '<small class="mi-seo-source">' +
               escapeHtml(check.source) + '</small></strong><span>' + escapeHtml(check.detail) +
               '</span></div><b class="mi-seo-point' + pointClass + '">' + pointText + '</b></div>';
@@ -13341,7 +13326,7 @@
         if (actions) {
           actions.innerHTML = evaluation.actions.map(function (action) {
             var actionClass = action.verified ? seoPointClass(action.score, action.max) : " warn";
-            var actionLabel = action.key === "traffic" ? "점검" : (action.verified ? "보완" : "입력");
+            var actionLabel = action.key === "traffic" ? "점검" : (action.verified ? "보완" : "자동 확인 불가");
             return '<div class="mi-seo-action"><div><strong>' + escapeHtml(action.title) + '</strong><span>' +
               escapeHtml(action.detail) + '</span></div><b class="mi-seo-point' + actionClass +
               '">' + actionLabel + '</b></div>';
@@ -13376,15 +13361,16 @@
           category: "",
           price: 0,
           reviewCount: null,
-          reviewLabel: "미입력",
+          reviewLabel: "자동 확인 전",
           score: 0,
           confidence: 0,
-          manualVerifiedCount: 0,
+          autoVerifiedCount: 0,
+          autoTotalCount: 5,
           titleKeywordIncluded: false,
           categoryLabel: "비교 필요",
-          grade: { label: "조회 전", copy: "상품 정보와 판매자 확인 항목 입력 후 SEO 상태를 표시합니다." },
-          checks: [{ key: "ready", title: "조회 후 표시", detail: "상품 정보를 입력하면 SEO 항목별 근거와 점수를 표시합니다.", score: 0, max: 100, verified: false, source: "확인 필요" }],
-          actions: [{ title: "키워드와 상품 URL 입력", detail: "상품 검색 최적화 기본 항목을 근거별로 확인합니다.", score: 0, max: 100, verified: false }],
+          grade: { label: "조회 전", copy: "상품 URL의 공개 정보를 자동 수집한 뒤 SEO 상태를 표시합니다." },
+          checks: [{ key: "ready", title: "조회 후 표시", detail: "키워드와 상품 URL을 입력하면 항목별 근거와 점수를 표시합니다.", score: 0, max: 100, verified: false, source: "자동 확인 전" }],
+          actions: [{ title: "키워드와 상품 URL 입력", detail: "전문 용어 없이 상품 검색 최적화 기본 항목을 자동 점검합니다.", score: 0, max: 100, verified: false }],
           rank: null,
           rankMessage: "상품 확인 전",
           item: null
@@ -13407,14 +13393,18 @@
         return payload;
       }
 
+      async function fetchSeoAudit(targetUrl) {
+        var params = new URLSearchParams({ targetUrl: targetUrl || "" });
+        var response = await miFetch("/api/naver-product-seo-audit?" + params.toString(), { method: "GET", cache: "no-store" });
+        var payload = await response.json().catch(function () { return null; });
+        if (!payload) throw new Error("상품 공개 정보 응답을 확인할 수 없습니다.");
+        if (!response.ok || payload.ok === false) throw new Error(payload.message || "상품 공개 정보 자동 점검이 어렵습니다.");
+        return payload;
+      }
+
       function initSeoCheck(linkedKeywordInput) {
         var seoKeyword = root.querySelector("[data-seo-keyword]");
         var seoUrl = root.querySelector("[data-seo-url]");
-        var seoReviewCount = root.querySelector("[data-seo-review-count]");
-        var seoDetailPageState = root.querySelector("[data-seo-detail-page-state]");
-        var seoNoticeState = root.querySelector("[data-seo-notice-state]");
-        var seoDiscountState = root.querySelector("[data-seo-discount-state]");
-        var seoReviewPointState = root.querySelector("[data-seo-review-point-state]");
         var seoButton = root.querySelector("[data-seo-run]");
         var seoStatus = root.querySelector("[data-seo-status]");
         if (!seoKeyword || !seoButton) return;
@@ -13450,21 +13440,34 @@
           setStatus(seoStatus, "네이버 SEO 점수를 확인 중입니다.", "");
           var keywordData = null;
           var rankPayload = null;
+          var auditPayload = null;
           var rankMessage = "";
-
-          try {
-            rankPayload = await fetchSeoRank(keyword, title, targetUrl, productId);
-            var foundItem = rankPayload && rankPayload.result
-              ? (rankPayload.result.exactItem || rankPayload.result.item || null)
-              : null;
-            if (foundItem) {
-              title = foundItem.title || "";
-              productId = foundItem.productId || "";
-            }
-          } catch (error) {
-            rankMessage = error.message || "공식 API 결과 순번은 별도 확인이 필요합니다.";
-          }
+          var auditMessage = "";
+          var lookupResults = await Promise.allSettled([
+            fetchSeoRank(keyword, title, targetUrl, productId),
+            fetchSeoAudit(targetUrl)
+          ]);
           if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
+          if (lookupResults[0].status === "fulfilled") {
+            rankPayload = lookupResults[0].value;
+          } else {
+            rankMessage = lookupResults[0].reason && lookupResults[0].reason.message
+              ? lookupResults[0].reason.message
+              : "공식 API 결과 순번은 별도 확인이 필요합니다.";
+          }
+          if (lookupResults[1].status === "fulfilled") {
+            auditPayload = lookupResults[1].value;
+          } else {
+            auditMessage = lookupResults[1].reason && lookupResults[1].reason.message
+              ? lookupResults[1].reason.message
+              : "상품 공개 정보 자동 점검이 어렵습니다.";
+          }
+          var foundItem = rankPayload && rankPayload.result
+            ? (rankPayload.result.exactItem || rankPayload.result.item || null)
+            : null;
+          var auditProduct = auditPayload && auditPayload.product ? auditPayload.product : null;
+          title = (auditProduct && auditProduct.title) || (foundItem && foundItem.title) || "";
+          productId = (auditProduct && auditProduct.productId) || (foundItem && foundItem.productId) || "";
 
           var evaluation = null;
           try {
@@ -13474,13 +13477,8 @@
               url: targetUrl,
               productId: productId,
               category: "",
-              price: 0,
-              reviewCount: seoReviewCount ? seoReviewCount.value : null,
-              detailPageState: seoDetailPageState ? seoDetailPageState.value : "",
-              noticeState: seoNoticeState ? seoNoticeState.value : "",
-              discountState: seoDiscountState ? seoDiscountState.value : "",
-              reviewPointState: seoReviewPointState ? seoReviewPointState.value : ""
-            }, keywordData, rankPayload);
+              price: 0
+            }, keywordData, rankPayload, auditPayload);
           } catch (error) {
             setStatus(seoStatus, error.message || "SEO 평가 결과를 만들지 못했습니다.", "is-warn");
             if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) seoButton.disabled = false;
@@ -13488,7 +13486,12 @@
           }
 
           renderSeoEvaluation(evaluation);
-          var statusParts = ["점검 완료: " + evaluation.grade.label, "데이터 신뢰도 " + evaluation.confidence + "%"];
+          var statusParts = [
+            "점검 완료: " + evaluation.grade.label,
+            "데이터 신뢰도 " + evaluation.confidence + "%",
+            "자동 수집 " + evaluation.autoVerifiedCount + "/" + evaluation.autoTotalCount
+          ];
+          if (auditMessage) statusParts.push(auditMessage);
           if (rankMessage) statusParts.push(rankMessage);
           setStatus(seoStatus, statusParts.join(" · "), evaluation.confidence >= 80 && evaluation.score >= 70 ? "is-ok" : "is-warn");
           if (adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) seoButton.disabled = false;

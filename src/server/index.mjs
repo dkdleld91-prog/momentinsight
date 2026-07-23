@@ -16,6 +16,7 @@ const handlerLoaders = {
   agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
   metaAds: () => import("./handlers/meta-ads.mjs"),
   naverKeyword: () => import("./handlers/naver-keyword.mjs"),
+  naverProductSeoAudit: () => import("./handlers/naver-product-seo-audit.mjs"),
   naverPlaceRankCron: () => import("./handlers/naver-place-rank-cron.mjs"),
   naverPlaceRankTrackers: () => import("./handlers/naver-place-rank-trackers.mjs"),
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
@@ -102,6 +103,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/naver-keyword") {
       return dispatch("naverKeyword", request);
+    }
+
+    if (url.pathname === "/api/naver-product-seo-audit") {
+      return dispatch("naverProductSeoAudit", request);
     }
 
     if (url.pathname === "/api/naver-shopping-rank") {

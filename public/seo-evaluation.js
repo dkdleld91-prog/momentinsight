@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v4_product_optimization_20260723";
+  var VERSION = "seo_v5_public_auto_audit_20260723";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -23,7 +23,7 @@
 
   function normalizedState(value) {
     var state = text(value).toLowerCase();
-    return ["complete", "incomplete", "direct", "reference", "applied", "none"].includes(state) ? state : "";
+    return ["complete", "registered", "incomplete", "direct", "reference", "applied", "none"].includes(state) ? state : "";
   }
 
   function categoryParts(value) {
@@ -57,8 +57,8 @@
   function grade(score, confidence) {
     if (confidence < 80) {
       return {
-        label: "확인 항목 입력 필요",
-        copy: "자동 확인 결과와 판매자 확인 항목이 모두 갖춰져야 최종 SEO 상태를 판단할 수 있습니다."
+        label: "자동 확인 범위 제한",
+        copy: "네이버 공개 화면에서 확인된 항목만 반영했습니다. 확인되지 않은 항목의 점수는 추정하지 않습니다."
       };
     }
     if (score >= 90) return { label: "A · SEO 기본 양호", copy: "상품 검색 최적화의 기본 항목이 안정적으로 갖춰져 있습니다." };
@@ -140,7 +140,7 @@
     var reviewCount = optionalNumber(input.reviewCount);
     var reviewVerified = reviewCount !== null;
     var reviewScore = 0;
-    var reviewLabel = "미입력";
+    var reviewLabel = "자동 확인 불가";
     if (reviewVerified) {
       if (reviewCount >= 1000) { reviewScore = 20; reviewLabel = "매우 강함"; }
       else if (reviewCount >= 300) { reviewScore = 17; reviewLabel = "강함"; }
@@ -152,55 +152,61 @@
     addCheck(
       "review",
       "리뷰 축적",
-      reviewVerified ? "확인된 리뷰 " + formatNumber(reviewCount) + "개 기준이며 리뷰 신호는 " + reviewLabel + "입니다." : "현재 리뷰 수를 입력하면 리뷰 축적 상태를 반영합니다.",
+      reviewVerified ? "네이버 공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준이며 리뷰 신호는 " + reviewLabel + "입니다." : "네이버 공개 화면에서 현재 리뷰 수를 자동 확인하지 못했습니다.",
       reviewScore,
       20,
       reviewVerified,
-      reviewVerified ? "직접 확인" : "확인 필요"
+      reviewVerified ? "공개 화면 자동 확인" : "자동 확인 불가"
     );
 
     var detailPageState = normalizedState(input.detailPageState);
     addCheck(
       "detailPage",
       "상세페이지 80% 이상",
-      detailPageState === "complete" ? "핵심 정보와 이미지가 잘리지 않도록 상세페이지가 80% 이상 구성된 것으로 확인했습니다." : (detailPageState === "incomplete" ? "상세페이지가 짧거나 일부 정보·이미지가 잘려 보완이 필요합니다." : "공개 API만으로 상세페이지 완성도를 확정할 수 없어 판매자 확인이 필요합니다."),
-      detailPageState === "complete" ? 10 : 0,
+      detailPageState === "complete"
+        ? "상세페이지 핵심 구성과 노출 상태가 자동 확인되었습니다."
+        : (detailPageState === "registered"
+          ? "상세 콘텐츠 등록은 확인했지만 공개 화면만으로 시각적 잘림과 완성도를 확정할 수 없어 등록 근거만 반영합니다."
+          : (detailPageState === "incomplete"
+            ? "상세페이지가 짧거나 일부 정보·이미지가 잘려 보완이 필요합니다."
+            : "네이버 공개 화면에서 상세 콘텐츠 상태를 자동 확인하지 못했습니다.")),
+      detailPageState === "complete" ? 10 : (detailPageState === "registered" ? 6 : 0),
       10,
       Boolean(detailPageState),
-      detailPageState ? "판매자 확인" : "확인 필요"
+      detailPageState ? "공개 화면 자동 확인" : "자동 확인 불가"
     );
 
     var noticeState = normalizedState(input.noticeState);
     addCheck(
       "productNotice",
       "상품정보고시 직접 작성",
-      noticeState === "direct" ? "상품정보고시를 ‘상세페이지 참고’ 없이 항목별로 직접 작성했습니다." : (noticeState === "reference" ? "상품정보고시에 ‘상세페이지 참고’가 포함되어 있어 직접 작성이 필요합니다." : "공개 API만으로 상품정보고시 입력 방식을 확정할 수 없어 판매자 확인이 필요합니다."),
+      noticeState === "direct" ? "상품정보고시를 ‘상세페이지 참고’ 없이 항목별로 직접 작성했습니다." : (noticeState === "reference" ? "상품정보고시에 ‘상세페이지 참고’가 포함되어 있어 직접 작성이 필요합니다." : "네이버 공개 화면에서 상품정보고시 원문을 안정적으로 자동 확인하지 못했습니다."),
       noticeState === "direct" ? 10 : 0,
       10,
       Boolean(noticeState),
-      noticeState ? "판매자 확인" : "확인 필요"
+      noticeState ? "공개 화면 자동 확인" : "자동 확인 불가"
     );
 
     var discountState = normalizedState(input.discountState);
     addCheck(
       "discount",
       "할인율 적용",
-      discountState === "applied" ? "할인율이 적용된 것으로 확인했습니다." : (discountState === "none" ? "할인율이 적용되지 않은 상태입니다." : "가격 API만으로 실제 할인 정책을 확정할 수 없어 판매자 확인이 필요합니다."),
+      discountState === "applied" ? "네이버 공개 판매가에서 할인 적용을 확인했습니다." : (discountState === "none" ? "네이버 공개 판매가에서 할인 미적용 상태를 확인했습니다." : "네이버 공개 화면에서 할인 정책을 자동 확인하지 못했습니다."),
       discountState === "applied" ? 8 : 0,
       8,
       Boolean(discountState),
-      input.discountAuto && discountState === "applied" ? "자동 확인" : (discountState ? "판매자 확인" : "확인 필요")
+      discountState ? "공개 화면 자동 확인" : "자동 확인 불가"
     );
 
     var reviewPointState = normalizedState(input.reviewPointState);
     addCheck(
       "reviewPoint",
       "리뷰 포인트 적용",
-      reviewPointState === "applied" ? "리뷰 포인트 지급 조건이 적용된 것으로 확인했습니다." : (reviewPointState === "none" ? "리뷰 포인트가 적용되지 않은 상태입니다." : "공개 API만으로 리뷰 포인트 정책을 확정할 수 없어 판매자 확인이 필요합니다."),
+      reviewPointState === "applied" ? "네이버 공개 혜택에서 리뷰 포인트 적용을 확인했습니다." : (reviewPointState === "none" ? "네이버 공개 혜택에서 리뷰 포인트 미적용 상태를 확인했습니다." : "네이버 공개 화면에서 리뷰 포인트 정책을 자동 확인하지 못했습니다."),
       reviewPointState === "applied" ? 7 : 0,
       7,
       Boolean(reviewPointState),
-      reviewPointState ? "판매자 확인" : "확인 필요"
+      reviewPointState ? "공개 화면 자동 확인" : "자동 확인 불가"
     );
 
     var verifiedChecks = checks.filter(function (check) { return check.verified; });
@@ -267,7 +273,8 @@
       titleLength: titleLength,
       categoryLabel: categoryLabel,
       dominantCategory: dominantCategory ? dominantCategory.label : "",
-      manualVerifiedCount: [detailPageState, noticeState, discountState, reviewPointState].filter(Boolean).length
+      autoVerifiedCount: [reviewVerified, detailPageState, noticeState, discountState, reviewPointState].filter(Boolean).length,
+      autoTotalCount: 5
     };
   }
 

@@ -85,19 +85,21 @@ const serverIndex = read("src/server/index.mjs");
 const expectedEndpoints = [
   "/api/naver-keyword",
   "/api/naver-place-rank-trackers",
+  "/api/naver-product-seo-audit",
   "/api/naver-rank-trackers",
   "/api/naver-shopping-rank",
 ].sort();
 
 const adminScreens = matches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = matches(clientSource, /data-mi-screen="([^"]+)"/g);
-const adminEndpoints = matches(adminSource, /\/api\/naver-(?:keyword|place-rank-trackers|rank-trackers|shopping-rank)/g);
-const clientEndpoints = matches(clientSource, /\/api\/naver-(?:keyword|place-rank-trackers|rank-trackers|shopping-rank)/g);
+const adminEndpoints = matches(adminSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank)/g);
+const clientEndpoints = matches(clientSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank)/g);
 const apiHelperNames = [
   "getKeywordApiUrl",
   "getShoppingRankApiUrl",
   "getRankTrackerApiUrl",
   "getPlaceRankTrackerApiUrl",
+  "fetchSeoAudit",
 ];
 const adminProductTracking = functionBlock(adminSource, "initRankTracking");
 const clientProductTracking = functionBlock(clientSource, "initRankTracking");
@@ -145,6 +147,7 @@ const sharedPageMarkers = [
   "async function fetchKeywordData",
   "async function runKeywordLookup",
   "async function runSeoCheck",
+  "async function fetchSeoAudit",
   "function makeRelatedKeywords",
   "function initRankCheck",
   "function initRankTracking",
@@ -185,11 +188,8 @@ const checks = {
   toolSelectorsWired: includesAll(adminSource, [
     "[data-admin-keyword-search]",
     "[data-seo-run]",
-    "[data-seo-review-count]",
-    "[data-seo-detail-page-state]",
-    "[data-seo-notice-state]",
-    "[data-seo-discount-state]",
-    "[data-seo-review-point-state]",
+    "[data-seo-keyword]",
+    "[data-seo-url]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -197,11 +197,8 @@ const checks = {
   ]) && includesAll(clientSource, [
     "[data-mi-keyword-search]",
     "[data-seo-run]",
-    "[data-seo-review-count]",
-    "[data-seo-detail-page-state]",
-    "[data-seo-notice-state]",
-    "[data-seo-discount-state]",
-    "[data-seo-review-point-state]",
+    "[data-seo-keyword]",
+    "[data-seo-url]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -212,19 +209,25 @@ const checks = {
   seoEvaluationRoleParity: normalizedBlock(adminSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "buildSeoEvaluation") === normalizedBlock(clientSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "renderSeoEvaluation") === normalizedBlock(clientSource, "renderSeoEvaluation")
-    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "peerCategories", "reviewCount", "detailPageState", "noticeState", "discountState", "reviewPointState"])
-    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "peerCategories", "reviewCount", "detailPageState", "noticeState", "discountState", "reviewPointState"])
+    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "auditPayload", "auditProduct", "signals.review", "signals.detailPage", "signals.productNotice", "signals.discount", "signals.reviewPoint"])
+    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "auditPayload", "auditProduct", "signals.review", "signals.detailPage", "signals.productNotice", "signals.discount", "signals.reviewPoint"])
     && !includesAll(adminSeoEvaluation, ["trafficCount"])
     && !includesAll(clientSeoEvaluation, ["trafficCount"])
     && !includesAll(adminSeoEvaluation, ["orderCount"])
     && !includesAll(clientSeoEvaluation, ["orderCount"])
-    && includesAll(adminSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "판매자 확인"])
-    && includesAll(clientSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "판매자 확인"]),
+    && includesAll(adminSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "자동 수집"])
+    && includesAll(clientSeoRender, ["데이터 신뢰도", "상품명 키워드", "동종 카테고리", "자동 수집"]),
   seoManualTrafficInputsRemoved: [adminSource, clientSource].every((source) =>
     !source.includes("[data-seo-traffic-count]")
     && !source.includes("[data-seo-order-count]")
     && !source.includes("최근 30일 유입수")
-    && !source.includes("최근 30일 구매수")),
+    && !source.includes("최근 30일 구매수")
+    && !source.includes("[data-seo-review-count]")
+    && !source.includes("[data-seo-detail-page-state]")
+    && !source.includes("[data-seo-notice-state]")
+    && !source.includes("[data-seo-discount-state]")
+    && !source.includes("[data-seo-review-point-state]")
+    && !source.includes("판매자 확인")),
   adminTrackingAuthConnected: includesAll(adminFetch, [
     'requestHeaders.delete("x-mi-agency-code")',
     'requestHeaders.set("x-mi-csrf", secureSession.csrfToken)',

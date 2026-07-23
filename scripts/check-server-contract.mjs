@@ -17,6 +17,7 @@ const files = {
   readiness: "src/server/handlers/ready.mjs",
   productCron: "src/server/handlers/naver-rank-cron.mjs",
   placeCron: "src/server/handlers/naver-place-rank-cron.mjs",
+  productSeoAudit: "src/server/handlers/naver-product-seo-audit.mjs",
   productTrackers: "src/server/handlers/naver-rank-trackers.mjs",
   clientApi: "src/server/handlers/client-api.mjs",
   vercel: "vercel.json",
@@ -37,6 +38,7 @@ const errorSafety = fs.readFileSync(files.errorSafety, "utf8");
 const readiness = fs.readFileSync(files.readiness, "utf8");
 const productCron = fs.readFileSync(files.productCron, "utf8");
 const placeCron = fs.readFileSync(files.placeCron, "utf8");
+const productSeoAudit = fs.readFileSync(files.productSeoAudit, "utf8");
 const productTrackers = fs.readFileSync(files.productTrackers, "utf8");
 const clientApi = fs.readFileSync(files.clientApi, "utf8");
 const vercel = JSON.parse(fs.readFileSync(files.vercel, "utf8"));
@@ -166,6 +168,26 @@ check(
     /cache\.delete\(name\)/,
   ]),
   `${files.serverIndex}, ${files.runtime}`,
+);
+check(
+  "product SEO audit is session protected and fail closed to verified public evidence",
+  hasAll(serverIndex, [
+    /naverProductSeoAudit: \(\) => import\("\.\/handlers\/naver-product-seo-audit\.mjs"\)/,
+    /url\.pathname === "\/api\/naver-product-seo-audit"/,
+    /dispatch\("naverProductSeoAudit", request\)/,
+  ]) && !sessionGate.includes('"/api/naver-product-seo-audit"')
+    && hasAll(productSeoAudit, [
+      /ALLOWED_HOSTS/,
+      /SEO_AUDIT_TIMEOUT_MS/,
+      /SEO_AUDIT_MAX_BYTES/,
+      /SEO_AUDIT_RATE_LIMIT/,
+      /redirectCount >= 2/,
+      /expectedProductId/,
+      /productNotice: unavailable/,
+      /verifiedCount/,
+      /protectedJson/,
+    ]),
+  `${files.serverIndex}, ${files.productSeoAudit}`,
 );
 check(
   "owner tool is server-delivered behind exact owner session authorization",

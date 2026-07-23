@@ -878,10 +878,14 @@ const checks = {
   seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO 점수 기준")
     && source.includes("상품명 25점")
     && source.includes("기준 키워드 포함 15점·50자 이내 10점")
-    && source.includes("동종 카테고리 20점")
-    && source.includes("리뷰 축적 20점")
+    && source.includes("리뷰 경쟁력 15점")
+    && source.includes("상위 오가닉 비교 상품 5개의 평균 리뷰 대비")
+    && source.includes("상품정보고시 10점")
+    && source.includes("판매자 태그 10점")
     && source.includes("운영 설정 15점")
-    && source.includes("트래픽 진단")
+    && source.includes("트래픽·노출 25점")
+    && source.includes("광고 제외 오가닉 5위 이내에서만 만점")
+    && source.includes("/seo-evaluation.js?v=seo-v8-20260723")
     && source.includes("검색 수요·경쟁은 SEO 점수에서 제외")
     && source.includes("자동 확인되지 않는 항목은 화면과 점수 기준에 표시하지 않습니다.")
     && !source.includes("상세페이지 80% 이상·상품정보고시 직접 작성")
@@ -891,7 +895,7 @@ const checks = {
     && !source.includes("[data-seo-order-count]")
     && !source.includes("최근 30일 유입수")
     && !source.includes("최근 30일 구매수")
-    && source.includes('<script src="/seo-evaluation.js"></script>')
+    && source.includes('<script src="/seo-evaluation.js?v=seo-v8-20260723"></script>')
     && source.includes("window.MomentSeoEvaluation")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

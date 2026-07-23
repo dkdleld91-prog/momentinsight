@@ -14,7 +14,7 @@ function sha256(value) {
 }
 
 function functionBlock(source, name) {
-  const match = new RegExp(`(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
+  const match = new RegExp(`(?:export\\s+)?(?:async\\s+)?function\\s+${name}\\s*\\(`).exec(source);
   if (!match) throw new Error(`함수 잠금 대상을 찾을 수 없습니다: ${name}`);
   const open = source.indexOf("{", match.index);
   if (open < 0) throw new Error(`함수 본문을 찾을 수 없습니다: ${name}`);
@@ -121,24 +121,44 @@ if (process.argv.includes("--print-current")) {
 }
 
 if (process.argv.includes("--self-test")) {
-  const altered = JSON.parse(JSON.stringify(current));
-  altered.functions[0].sha256 = sha256(altered.functions[0].sha256 + ":intentional-lock-test");
-  const selfTestFailures = collectFailures(lock, altered, discoveredMigrations);
-  if (!selfTestFailures.some((failure) => failure.startsWith(`${altered.functions[0].id}:`))) {
-    console.error("Protected rank feature lock self-test failed: intentional change was not blocked");
+  const selfTestErrors = [];
+  current.functions.forEach((entry, index) => {
+    const altered = JSON.parse(JSON.stringify(current));
+    altered.functions[index].sha256 = sha256(`${entry.sha256}:intentional-function-lock-test`);
+    const failures = collectFailures(lock, altered, discoveredMigrations);
+    if (!failures.some((failure) => failure.startsWith(`${entry.id}:`))) {
+      selfTestErrors.push(`보호 함수 변조를 차단하지 못했습니다: ${entry.id}`);
+    }
+  });
+  current.files.forEach((entry, index) => {
+    const altered = JSON.parse(JSON.stringify(current));
+    altered.files[index].sha256 = sha256(`${entry.sha256}:intentional-file-lock-test`);
+    const failures = collectFailures(lock, altered, discoveredMigrations);
+    if (!failures.some((failure) => failure.startsWith(`${entry.id}:`))) {
+      selfTestErrors.push(`보호 파일 변조를 차단하지 못했습니다: ${entry.id}`);
+    }
+  });
+  const syntheticMigration = "supabase/migrations/29999999999999_naver_rank_trackers_lock_self_test.sql";
+  const migrationFailures = collectFailures(lock, current, [...discoveredMigrations, syntheticMigration].sort());
+  if (!migrationFailures.some((failure) => failure.includes(syntheticMigration))) {
+    selfTestErrors.push("새 순위 마이그레이션 자동 탐지를 확인하지 못했습니다.");
+  }
+  if (selfTestErrors.length) {
+    console.error("Protected core feature lock self-test failed");
+    selfTestErrors.forEach((error) => console.error(`- ${error}`));
     process.exit(1);
   }
-  console.log(`Protected rank feature lock self-test passed: intentional ${altered.functions[0].id} change was blocked`);
+  console.log(`Protected core feature lock self-test passed: ${current.functions.length} functions, ${current.files.length} files, migration discovery`);
   process.exit(0);
 }
 
 const failures = collectFailures(lock, current, discoveredMigrations);
 
 if (failures.length) {
-  console.error("N 상품·N 플레이스 30일 기능 잠금이 변경을 차단했습니다.");
+  console.error("키워드 조회·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 잠금이 변경을 차단했습니다.");
   failures.forEach((failure) => console.error(`- ${failure}`));
   console.error("대표님의 명시적 변경 승인 후 대상 테스트와 전체 check:release를 통과한 경우에만 잠금 기준을 갱신하세요.");
   process.exit(1);
 }
 
-console.log(`Protected rank feature lock passed: ${current.functions.length} functions, ${current.files.length} files, ${discoveredMigrations.length} migrations`);
+console.log(`Protected core feature lock passed: ${current.functions.length} functions, ${current.files.length} files, ${discoveredMigrations.length} migrations`);

@@ -1,8 +1,32 @@
 {
-  "version": 1,
-  "baselineCommit": "c42b112",
-  "policy": "N 상품·N 플레이스 30일 추적 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다.",
+  "version": 2,
+  "baselineCommit": "0a4ef09",
+  "policy": "키워드 조회·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
   "functions": [
+    {
+      "id": "operation-keyword-lookup",
+      "file": "src/pages/admin.html",
+      "name": "runKeywordLookup",
+      "sha256": "1f080593d1269937b00a3140d40473b35d05ba5c8d6389b782e9c2e7d5fb1dfb"
+    },
+    {
+      "id": "advertiser-keyword-lookup",
+      "file": "src/pages/client.html",
+      "name": "runKeywordLookup",
+      "sha256": "2d8a53a04c21352541739a45011b91382b652692284a9726755f9a5107ff88fe"
+    },
+    {
+      "id": "operation-product-rank-check",
+      "file": "src/pages/admin.html",
+      "name": "initRankCheck",
+      "sha256": "f4f16dbc7213ce89644e7b727c7482d0995e05038e4ca841fd2db0e0f1a24811"
+    },
+    {
+      "id": "advertiser-product-rank-check",
+      "file": "src/pages/client.html",
+      "name": "initRankCheck",
+      "sha256": "fdd55a0de0c6ab0cf087bd98917c8371d9da894951d9489fdcba2f180c6f18d4"
+    },
     {
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
@@ -26,9 +50,40 @@
       "file": "src/pages/client.html",
       "name": "initPlaceRankTracking",
       "sha256": "422e461af3537e0e7beee7691e09bd778e9b87179769c09fe27b6d0864e7fe09"
+    },
+    {
+      "id": "keyword-hub-provider-config",
+      "file": "src/server/naver-api-hub.mjs",
+      "name": "naverApiProviderConfig",
+      "sha256": "658d63769c4d769e699262fd7fa92cf697028c4368558306eea7a9b640203fca"
+    },
+    {
+      "id": "keyword-hub-transport",
+      "file": "src/server/naver-api-hub.mjs",
+      "name": "resolveNaverApiTransport",
+      "sha256": "0e776b09b18d0648f4100815e6ac427b0df5607100d5562fd4875a42381d52d8"
+    },
+    {
+      "id": "keyword-hub-config-check",
+      "file": "src/server/naver-api-hub.mjs",
+      "name": "hasNaverMigratedApiConfig",
+      "sha256": "ab112f138acb247b45f9027209c383d2bbb80107ffb75ba315f433b26bfc1ed0"
+    },
+    {
+      "id": "keyword-hub-request",
+      "file": "src/server/naver-api-hub.mjs",
+      "name": "naverDatalabRequest",
+      "sha256": "f88b097a849e4119cab5b0e3f8d2bc183db0726c588cc42409993d3a8797c269"
+    },
+    {
+      "id": "keyword-hub-error-message",
+      "file": "src/server/naver-api-hub.mjs",
+      "name": "naverApiErrorMessage",
+      "sha256": "b725e9aa05e752740af32dd8b9f7dd5eed1e25c0e965dcd40e73f3f6aa2a35d0"
     }
   ],
   "files": [
+    { "id": "keyword-query-server", "file": "src/server/handlers/naver-keyword.mjs", "sha256": "140c56b80b2ecf369acb7e1fc560191efb865c62547ba2607f1911af0433962b" },
     { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "b2155dfc87dc7763820e7df899f87b9b9d18871ef73b94b6ddaebd3af4409c8e" },
     { "id": "product-organic-rank-server", "file": "src/server/handlers/naver-shopping-rank.mjs", "sha256": "a89c2125953e8961158a0c5fe59b06b123461b0c6abb1549f7d7cc65c45c7aad" },
     { "id": "product-rank-cron-server", "file": "src/server/handlers/naver-rank-cron.mjs", "sha256": "e6a7ebe2b4ac33c84c58c0869574d088f90dd8848b16fb26e87d50ccc400ae57" },

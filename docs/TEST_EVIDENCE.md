@@ -501,3 +501,12 @@
 - 운영 API: `/health` HTTP 200·`release=f8bf0a3b37a1`, `/ready` HTTP 200·Supabase ready, 상품·플레이스 보호 API 비인증 401.
 - 운영 UI: 홈페이지 팝업 348×489px, `N 상품 순위`·`N 30일 순위`·`N 플레이스 30일 순위` 각 1건, 1280px 가로 넘침 0. 총관리자에서 신규 키워드 조회·상품 추적·플레이스 추적 버튼 모두 활성, 기존 상품 추적 25개·플레이스 추적 10개와 30일 이력 로드 확인.
 - 배포: Production `https://momentinsight-idchb9x5n-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`. 이번 범위는 Render 수집기 런타임 변경이 없어 Render는 재배포하지 않았다.
+
+## 2026-07-23 4대 핵심 조회·추적 기능 변경 잠금 확장
+
+- 보호 범위: 운영팀·광고주의 `runKeywordLookup`, `initRankCheck`, `initRankTracking`, `initPlaceRankTracking`과 키워드 API Hub 핵심 함수, 키워드·상품 단건·상품/플레이스 30일 서버·크론·수집기·워크플로·순위 DB 마이그레이션을 13함수·21파일·11마이그레이션으로 고정했다.
+- 잠금 의미: 런타임 버튼이나 API를 닫는 기능이 아니다. 승인 없이 보호 코드를 바꾸면 `check:quality`와 `check:release`가 실패하며, 신규 키워드 조회·N 상품 순위 조회·상품/플레이스 추적 등록·갱신과 보호 범위 밖 신규 기능은 계속 동작한다.
+- 변조 2차 검수: self-test가 13개 보호 함수와 21개 보호 파일을 각각 하나씩 변조해 모두 차단했고, 가상 신규 순위 마이그레이션도 자동 탐지했다.
+- 사용 경로 회귀: 운영팀·광고주 양쪽에서 4개 기능 진입 함수와 버튼, 상품·플레이스 `action=create` 및 갱신 경로를 확인했다. 빌드 잠금 스크립트는 페이지·키워드·상품·플레이스 런타임 소스에 포함되지 않는다.
+- 전체 자동 검증: API·서버 179/179, 플레이스 수집기 51/51, 서버 계약 23/23, Production 인증 18/18, 역할 parity, 기준선 `rankFeatureLockIsBuildOnlyAndUsageStaysOpen`, 공개 빌드·CSP와 전체 `npm run check:release`가 통과했다.
+- 변경 비범위: 실제 키워드 조회·상품 순위 계산·상품/플레이스 수집·스냅샷 저장 코드와 `src/pages/admin.html`, `src/pages/client.html`, Supabase 데이터는 수정하지 않았다. Production 배포는 별도 승인 전까지 진행하지 않는다.

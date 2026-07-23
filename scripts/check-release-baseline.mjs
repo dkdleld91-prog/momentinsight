@@ -144,6 +144,7 @@ const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
 const vercelConfig = JSON.parse(read("vercel.json"));
+const protectedFeatureLock = JSON.parse(read("scripts/protected-rank-features.lock.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
 const rankCronScheduleCheck = read("scripts/check-rank-cron-schedule.mjs");
 const rankDownloadFunctions = [adminSource, clientSource].map((source) => functionBody(
@@ -746,15 +747,43 @@ const checks = {
     serverIndex,
     adminSource,
     clientSource,
+    keywordServer,
+    shoppingRankServer,
     rankServer,
     placeRankServer,
   ].some((source) => source.includes("check-protected-rank-features"))
+    && [
+      "operation-keyword-lookup",
+      "advertiser-keyword-lookup",
+      "operation-product-rank-check",
+      "advertiser-product-rank-check",
+      "operation-product-30-day",
+      "advertiser-product-30-day",
+      "operation-place-30-day",
+      "advertiser-place-30-day",
+      "keyword-hub-provider-config",
+      "keyword-hub-transport",
+      "keyword-hub-config-check",
+      "keyword-hub-request",
+      "keyword-hub-error-message",
+    ].every((id) => protectedFeatureLock.functions.some((entry) => entry.id === id))
+    && [
+      "keyword-query-server",
+      "product-organic-rank-server",
+      "product-tracker-server",
+      "place-tracker-server",
+      "place-collector",
+    ].every((id) => protectedFeatureLock.files.some((entry) => entry.id === id))
     && adminSource.includes("data-admin-keyword-search")
     && clientSource.includes("data-mi-keyword-search")
-    && [adminSource, clientSource].every((source) => source.includes("data-rank-check-run")
+    && [adminSource, clientSource].every((source) => source.includes("runKeywordLookup")
+      && source.includes("data-rank-check-run")
+      && source.includes("initRankCheck")
       && source.includes("data-rank-run")
       && source.includes("data-place-rank-run")
       && source.includes('action: "create"'))
+    && keywordServer.includes("keywordMarketIndicators")
+    && shoppingRankServer.includes("findShoppingRank")
     && rankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);')
     && placeRankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")

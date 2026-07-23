@@ -12,7 +12,7 @@ const SEO_AUDIT_CACHE_TTL_MS = Number(process.env.MI_SEO_AUDIT_CACHE_TTL_MS || 1
 const SEO_AUDIT_CACHE_MAX = Number(process.env.MI_SEO_AUDIT_CACHE_MAX || 200);
 const SEO_AUDIT_RATE_WINDOW_MS = Number(process.env.MI_SEO_AUDIT_RATE_WINDOW_MS || 60_000);
 const SEO_AUDIT_RATE_LIMIT = Number(process.env.MI_SEO_AUDIT_RATE_LIMIT || 20);
-const SEO_AUDIT_PEER_LIMIT = Math.max(2, Math.min(3, Number(process.env.MI_SEO_AUDIT_PEER_LIMIT || 3)));
+const SEO_AUDIT_PEER_LIMIT = Math.max(2, Math.min(5, Number(process.env.MI_SEO_AUDIT_PEER_LIMIT || 5)));
 const SEO_AUDIT_PEER_TIMEOUT_MS = Number(process.env.MI_SEO_AUDIT_PEER_TIMEOUT_MS || 3_500);
 const auditCache = new Map();
 const auditRateBucket = new Map();
@@ -160,6 +160,86 @@ function positiveReviewPoint(benefitsView) {
   };
 }
 
+function uniqueStrings(values) {
+  const seen = new Set();
+  return (Array.isArray(values) ? values : [])
+    .map((value) => {
+      if (typeof value === "string") return text(value).replace(/^#/, "");
+      if (!value || typeof value !== "object") return "";
+      return text(value.text || value.name || value.tag || value.tagName || value.value).replace(/^#/, "");
+    })
+    .filter((value) => {
+      const key = value.replace(/\s+/g, "").toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function collectLeafText(value, output = [], depth = 0) {
+  if (depth > 8 || output.length > 300) return output;
+  if (typeof value === "string") {
+    const cleaned = text(value);
+    if (cleaned) output.push(cleaned);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectLeafText(item, output, depth + 1));
+    return output;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => collectLeafText(item, output, depth + 1));
+  }
+  return output;
+}
+
+function findObjectByKey(value, pattern, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 8) return null;
+  for (const [key, child] of Object.entries(value)) {
+    if (pattern.test(key)) return child;
+  }
+  for (const child of Object.values(value)) {
+    const match = findObjectByKey(child, pattern, depth + 1);
+    if (match) return match;
+  }
+  return null;
+}
+
+export function parseNaverProductDetailJson(detail) {
+  const root = detail?.data && typeof detail.data === "object" ? detail.data : detail;
+  const signals = {};
+  const tags = uniqueStrings(
+    root?.seoInfo?.sellerTags ||
+    findObjectByKey(root, /^(sellerTags|searchTags|tags)$/i) ||
+    [],
+  );
+  if (tags.length) {
+    signals.sellerTags = {
+      verified: true,
+      values: tags,
+      count: tags.length,
+      label: `${tags.length}개`,
+      evidence: "네이버 공개 상품의 관련 태그",
+    };
+  }
+
+  const notice = findObjectByKey(root, /productInfoProvidedNotice/i);
+  if (notice && (typeof notice === "object" || typeof notice === "string")) {
+    const noticeTexts = collectLeafText(notice);
+    if (noticeTexts.length) {
+      const hasDetailReference = noticeTexts.some((value) => /상세\s*페이지|상품\s*상세|상세\s*참조/i.test(value));
+      signals.productNotice = {
+        verified: true,
+        hasDetailReference,
+        fieldCount: noticeTexts.length,
+        label: hasDetailReference ? "상세페이지 참조 있음" : "항목별 작성",
+        evidence: "네이버 공개 상품정보제공고시",
+      };
+    }
+  }
+  return signals;
+}
+
 export function parseNaverProductSeoHtml(html, expectedProductId = "") {
   const state = extractPreloadedState(html);
   const product = state?.simpleProductForDetailPage?.A;
@@ -221,6 +301,7 @@ export function parseNaverProductSeoHtml(html, expectedProductId = "") {
       evidence: "네이버 공개 상품 화면의 텍스트·포토 리뷰 혜택",
     };
   }
+  Object.assign(signals, parseNaverProductDetailJson(product));
 
   return {
     ok: true,
@@ -234,11 +315,13 @@ export function parseNaverProductSeoHtml(html, expectedProductId = "") {
       price: finiteNumber(product.salePrice),
       discountedPrice,
       image: text(product.representativeImageUrl),
+      channelUid: text(product.channel?.channelUid),
+      channelProductNo: text(product.productNo),
     },
     signals,
     coverage: {
       verifiedCount: Object.keys(signals).length,
-      total: 3,
+      total: 5,
     },
   };
 }
@@ -276,6 +359,18 @@ async function readBoundedText(response) {
     );
   }
   return body;
+}
+
+async function readBoundedJson(response) {
+  const body = await readBoundedText(response);
+  try {
+    return JSON.parse(body);
+  } catch {
+    throw sourceError(
+      "네이버 공개 상품 상세 응답 형식이 변경되어 일부 항목을 자동 확인하지 못했습니다.",
+      { code: "NAVER_PUBLIC_DETAIL_FORMAT_CHANGED" },
+    );
+  }
 }
 
 export async function fetchProductPage(target, fetchImpl = fetch, redirectCount = 0, timeoutMs = SEO_AUDIT_TIMEOUT_MS) {
@@ -352,12 +447,82 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
   }
 }
 
-async function auditProduct(target, { fetchImpl = fetch, timeoutMs = SEO_AUDIT_TIMEOUT_MS } = {}) {
-  const cached = cacheGet(target.url);
+export async function fetchProductDetail(target, product, fetchImpl = fetch, timeoutMs = SEO_AUDIT_PEER_TIMEOUT_MS) {
+  const channelUid = text(product?.channelUid);
+  const channelProductNo = text(product?.channelProductNo);
+  if (!channelUid || !/^\d+$/.test(channelProductNo)) return null;
+  const detailUrl = `https://${target.host}/i/v2/channels/${encodeURIComponent(channelUid)}/products/${channelProductNo}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(detailUrl, {
+      method: "GET",
+      redirect: "error",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        "accept-language": "ko-KR,ko;q=0.9",
+        referer: target.url,
+        "user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 Version/17.5 Mobile/15E148 Safari/604.1",
+      },
+    });
+    if (response.status === 429) {
+      throw sourceError(
+        "네이버의 일시적 조회 제한으로 상품정보제공고시를 자동 확인하지 못했습니다.",
+        { status: 429, code: "NAVER_PUBLIC_DETAIL_RATE_LIMITED" },
+      );
+    }
+    if (!response.ok) {
+      throw sourceError(
+        "네이버 공개 상품 상세 정보를 불러오지 못했습니다.",
+        { code: "NAVER_PUBLIC_DETAIL_HTTP_ERROR" },
+      );
+    }
+    const contentType = response.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      throw sourceError(
+        "네이버 공개 상품 상세 응답 형식을 확인하지 못했습니다.",
+        { code: "NAVER_PUBLIC_DETAIL_CONTENT_TYPE" },
+      );
+    }
+    return readBoundedJson(response);
+  } catch (error) {
+    if (error instanceof ProductAuditSourceError) throw error;
+    if (error?.name === "AbortError") {
+      throw sourceError(
+        "네이버 상품정보제공고시 확인 시간이 초과됐습니다.",
+        { code: "NAVER_PUBLIC_DETAIL_TIMEOUT" },
+      );
+    }
+    throw sourceError(
+      "네이버 공개 상품 상세 연결이 일시적으로 불안정합니다.",
+      { code: "NAVER_PUBLIC_DETAIL_NETWORK_ERROR" },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function auditProduct(target, {
+  fetchImpl = fetch,
+  timeoutMs = SEO_AUDIT_TIMEOUT_MS,
+  includeDetail = true,
+} = {}) {
+  const cacheKey = `${target.url}|${includeDetail ? "detail" : "summary"}`;
+  const cached = cacheGet(cacheKey);
   if (cached) return { ...cached, cached: true };
   const html = await fetchProductPage(target, fetchImpl, 0, timeoutMs);
   const payload = parseNaverProductSeoHtml(html, target.productId);
-  cacheSet(target.url, payload);
+  if (includeDetail) {
+    try {
+      const detail = await fetchProductDetail(target, payload.product, fetchImpl, SEO_AUDIT_PEER_TIMEOUT_MS);
+      if (detail) Object.assign(payload.signals, parseNaverProductDetailJson(detail));
+    } catch {
+      // 상세 API 제한이 있어도 공개 HTML에서 확정한 항목은 그대로 제공합니다.
+    }
+  }
+  payload.coverage.verifiedCount = Object.keys(payload.signals).length;
+  cacheSet(cacheKey, payload);
   return payload;
 }
 
@@ -381,7 +546,7 @@ export function buildReviewBenchmark(targetPayload, peerPayloads) {
   const peerAverage = Math.round(
     peerReviewCounts.reduce((sum, value) => sum + value, 0) / peerReviewCounts.length,
   );
-  const ratio = peerMedian > 0 ? targetReviewCount / peerMedian : (targetReviewCount > 0 ? 1 : 0);
+  const ratio = peerAverage > 0 ? targetReviewCount / peerAverage : (targetReviewCount > 0 ? 1 : 0);
   const label = ratio >= 1 ? "상위권 수준" : ratio >= 0.6 ? "근접" : ratio >= 0.3 ? "보완" : "매우 부족";
   return {
     verified: true,
@@ -441,7 +606,10 @@ export default {
       if (!peerTargets.length) return protectedJson(request, payload);
 
       const peerResults = await Promise.allSettled(
-        peerTargets.map((peer) => auditProduct(peer, { timeoutMs: SEO_AUDIT_PEER_TIMEOUT_MS })),
+        peerTargets.map((peer) => auditProduct(peer, {
+          timeoutMs: SEO_AUDIT_PEER_TIMEOUT_MS,
+          includeDetail: false,
+        })),
       );
       const peerPayloads = peerResults
         .filter((result) => result.status === "fulfilled")

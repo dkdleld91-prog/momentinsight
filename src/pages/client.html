@@ -9723,6 +9723,8 @@
         var reviewSignal = signals.review || {};
         var discountSignal = signals.discount || {};
         var reviewPointSignal = signals.reviewPoint || {};
+        var sellerTagsSignal = signals.sellerTags || {};
+        var productNoticeSignal = signals.productNotice || {};
         var reviewBenchmark = auditPayload && auditPayload.reviewBenchmark ? auditPayload.reviewBenchmark : null;
         var evaluation = engine.evaluate({
           keyword: keyword,
@@ -9733,6 +9735,8 @@
           peerCategories: peerCategories,
           reviewCount: reviewSignal.verified ? reviewSignal.value : null,
           peerReviewCounts: reviewBenchmark && reviewBenchmark.verified ? reviewBenchmark.peerReviewCounts : [],
+          sellerTags: sellerTagsSignal.verified ? sellerTagsSignal : null,
+          productNotice: productNoticeSignal.verified ? productNoticeSignal : null,
           discountState: discountSignal.verified ? discountSignal.state : "",
           reviewPointState: reviewPointSignal.verified ? reviewPointSignal.state : "",
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
@@ -9769,15 +9773,15 @@
         if (summary) {
           var titleCheck = evaluation.checks.find(function (check) { return check.key === "titleKeyword"; });
           var titleLengthCheck = evaluation.checks.find(function (check) { return check.key === "titleLength"; });
-          var categoryCheck = evaluation.checks.find(function (check) { return check.key === "category"; });
           var reviewBenchmarkCheck = evaluation.checks.find(function (check) { return check.key === "reviewBenchmark"; });
+          var sellerTagsCheck = evaluation.checks.find(function (check) { return check.key === "sellerTags"; });
           var summaryItems = [];
           if (titleCheck) summaryItems.push(["상품명 키워드", evaluation.titleKeywordIncluded ? "포함" : "미포함"]);
           if (titleLengthCheck) summaryItems.push(["상품명 길이", evaluation.titleLength <= 50 ? "50자 이내" : "50자 초과"]);
-          if (categoryCheck) summaryItems.push(["동종 카테고리", evaluation.categoryLabel]);
           if (reviewBenchmarkCheck && evaluation.reviewBenchmark) {
-            summaryItems.push(["상위 리뷰 기준", "중앙값 " + formatNumber(evaluation.reviewBenchmark.median) + "개"]);
+            summaryItems.push(["상위 리뷰 기준", "평균 " + formatNumber(evaluation.reviewBenchmark.average) + "개"]);
           }
+          if (sellerTagsCheck) summaryItems.push(["검색 태그", sellerTagsCheck.score >= sellerTagsCheck.max ? "10개 완료" : "보완 필요"]);
           if (evaluation.rank) summaryItems.push(["현재 순위", evaluation.rank + "위"]);
           summary.innerHTML = summaryItems.map(function (item) {
             return '<div><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong></div>';
@@ -9798,7 +9802,7 @@
         if (actions) {
           actions.innerHTML = evaluation.actions.map(function (action) {
             var actionClass = action.verified ? seoPointClass(action.score, action.max) : " warn";
-            var actionLabel = action.key === "traffic" ? "점검" : (action.verified ? "보완" : "대기");
+            var actionLabel = action.verified ? "보완" : "대기";
             return '<div class="mi-seo-action"><div><strong>' + escapeHtml(action.title) + '</strong><span>' +
               escapeHtml(action.detail) + '</span></div><b class="mi-seo-point' + actionClass +
               '">' + actionLabel + '</b></div>';
@@ -9874,7 +9878,7 @@
             seen[url] = true;
             return true;
           })
-          .slice(0, 3);
+          .slice(0, 5);
       }
 
       function signalsReviewVerified(auditPayload) {

@@ -401,13 +401,19 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
           { code: "NAVER_PUBLIC_PAGE_REDIRECT_MISSING" },
         );
       }
-      const redirected = normalizeProductUrl(new URL(location, target.url).toString());
-      if (redirected.productId !== target.productId) {
+      const redirectUrl = new URL(location, target.url);
+      const validatedRedirect = normalizeProductUrl(redirectUrl.toString());
+      if (validatedRedirect.productId !== target.productId) {
         throw sourceError(
           "상품 URL 이동 결과가 입력값과 일치하지 않습니다.",
           { code: "NAVER_PUBLIC_PRODUCT_MISMATCH" },
         );
       }
+      const redirected = {
+        ...validatedRedirect,
+        url: `${redirectUrl.origin}${redirectUrl.pathname}`,
+        host: redirectUrl.hostname.toLowerCase(),
+      };
       return fetchProductPage(redirected, fetchImpl, redirectCount + 1, timeoutMs);
     }
     if (response.status === 429) {

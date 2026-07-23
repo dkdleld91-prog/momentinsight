@@ -182,6 +182,27 @@ test("반복 리다이렉트는 두 번 뒤 중단한다", async () => {
   );
 });
 
+test("모바일 공개 URL이 같은 상품의 데스크톱 URL로 이동하면 그대로 확인한다", async () => {
+  const target = normalizeProductUrl("https://smartstore.naver.com/haedenprime/products/12149720593");
+  const calls = [];
+  const html = await fetchProductPage(target, async (url) => {
+    calls.push(url);
+    if (calls.length === 1) {
+      return new Response(null, {
+        status: 302,
+        headers: { location: "https://smartstore.naver.com/haedenprime/products/12149720593" },
+      });
+    }
+    return new Response(page(), {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  });
+  assert.equal(calls[0], "https://m.smartstore.naver.com/haedenprime/products/12149720593");
+  assert.equal(calls[1], "https://smartstore.naver.com/haedenprime/products/12149720593");
+  assert.match(html, /__PRELOADED_STATE__/);
+});
+
 test("네이버 429 제한은 서버 오류가 아닌 재시도 가능한 공개 소스 제한으로 분류한다", async () => {
   const target = normalizeProductUrl("https://smartstore.naver.com/haedenprime/products/12149720593");
   await assert.rejects(

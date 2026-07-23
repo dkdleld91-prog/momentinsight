@@ -509,4 +509,5 @@
 - 변조 2차 검수: self-test가 13개 보호 함수와 21개 보호 파일을 각각 하나씩 변조해 모두 차단했고, 가상 신규 순위 마이그레이션도 자동 탐지했다.
 - 사용 경로 회귀: 운영팀·광고주 양쪽에서 4개 기능 진입 함수와 버튼, 상품·플레이스 `action=create` 및 갱신 경로를 확인했다. 빌드 잠금 스크립트는 페이지·키워드·상품·플레이스 런타임 소스에 포함되지 않는다.
 - 전체 자동 검증: API·서버 179/179, 플레이스 수집기 51/51, 서버 계약 23/23, Production 인증 18/18, 역할 parity, 기준선 `rankFeatureLockIsBuildOnlyAndUsageStaysOpen`, 공개 빌드·CSP와 전체 `npm run check:release`가 통과했다.
-- 변경 비범위: 실제 키워드 조회·상품 순위 계산·상품/플레이스 수집·스냅샷 저장 코드와 `src/pages/admin.html`, `src/pages/client.html`, Supabase 데이터는 수정하지 않았다. Production 배포는 별도 승인 전까지 진행하지 않는다.
+- 변경 비범위: 실제 키워드 조회·상품 순위 계산·상품/플레이스 수집·스냅샷 저장 코드와 `src/pages/admin.html`, `src/pages/client.html`, Supabase 데이터는 수정하지 않았다.
+- 운영 배포: 사용자 승인 후 코드 `6c5d10d`를 원격 `main`과 Production `https://momentinsight-htm9llc9v-momentlabs.vercel.app`·운영 별칭 `https://insight.momentlabs.co.kr`에 반영했다. 운영 `/health`와 `/ready`가 릴리스 `6c5d10d1deef`, live, Supabase ready를 반환했다.

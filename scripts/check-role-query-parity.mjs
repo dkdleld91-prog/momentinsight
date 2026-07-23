@@ -185,8 +185,6 @@ const checks = {
   toolSelectorsWired: includesAll(adminSource, [
     "[data-admin-keyword-search]",
     "[data-seo-run]",
-    "[data-seo-traffic-count]",
-    "[data-seo-order-count]",
     "[data-seo-review-count]",
     "[data-rank-check-card]",
     "[data-rank-card]",
@@ -195,8 +193,6 @@ const checks = {
   ]) && includesAll(clientSource, [
     "[data-mi-keyword-search]",
     "[data-seo-run]",
-    "[data-seo-traffic-count]",
-    "[data-seo-order-count]",
     "[data-seo-review-count]",
     "[data-rank-check-card]",
     "[data-rank-card]",
@@ -208,10 +204,19 @@ const checks = {
   seoEvaluationRoleParity: normalizedBlock(adminSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "buildSeoEvaluation") === normalizedBlock(clientSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "renderSeoEvaluation") === normalizedBlock(clientSource, "renderSeoEvaluation")
-    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "trafficCount", "orderCount", "reviewCount"])
-    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "trafficCount", "orderCount", "reviewCount"])
-    && includesAll(adminSeoRender, ["데이터 신뢰도", "30일 트래픽", "30일 전환", "리뷰 신뢰"])
-    && includesAll(clientSeoRender, ["데이터 신뢰도", "30일 트래픽", "30일 전환", "리뷰 신뢰"]),
+    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "reviewCount"])
+    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "reviewCount"])
+    && !includesAll(adminSeoEvaluation, ["trafficCount"])
+    && !includesAll(clientSeoEvaluation, ["trafficCount"])
+    && !includesAll(adminSeoEvaluation, ["orderCount"])
+    && !includesAll(clientSeoEvaluation, ["orderCount"])
+    && includesAll(adminSeoRender, ["데이터 신뢰도", "상품명", "카테고리", "리뷰 신뢰"])
+    && includesAll(clientSeoRender, ["데이터 신뢰도", "상품명", "카테고리", "리뷰 신뢰"]),
+  seoManualTrafficInputsRemoved: [adminSource, clientSource].every((source) =>
+    !source.includes("[data-seo-traffic-count]")
+    && !source.includes("[data-seo-order-count]")
+    && !source.includes("최근 30일 유입수")
+    && !source.includes("최근 30일 구매수")),
   adminTrackingAuthConnected: includesAll(adminFetch, [
     'requestHeaders.delete("x-mi-agency-code")',
     'requestHeaders.set("x-mi-csrf", secureSession.csrfToken)',

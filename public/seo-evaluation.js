@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v6_verified_only_20260723";
+  var VERSION = "seo_v7_naver_guide_review_benchmark_20260723";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -54,23 +54,103 @@
     return keys.length ? { label: labels[keys[0]], count: counts[keys[0]], total: Object.values(counts).reduce(function (sum, count) { return sum + count; }, 0) } : null;
   }
 
+  function uniqueTextValues(values) {
+    var seen = {};
+    return (Array.isArray(values) ? values : []).map(text).filter(function (value) {
+      var key = compact(value);
+      if (!key || seen[key]) return false;
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function meaningfulTitleTokens(value) {
+    var ignored = {
+      "개": true,
+      "팩": true,
+      "세트": true,
+      "set": true,
+      "형": true,
+      "용": true,
+      "대": true,
+      "소": true
+    };
+    return (text(value).toLowerCase().match(/[가-힣a-z0-9]+/g) || []).filter(function (token) {
+      return token.length >= 2 && !ignored[token] && !/^\d+$/.test(token);
+    });
+  }
+
+  function repeatedTitleTokens(value) {
+    var counts = {};
+    meaningfulTitleTokens(value).forEach(function (token) {
+      counts[token] = (counts[token] || 0) + 1;
+    });
+    return Object.keys(counts).filter(function (token) { return counts[token] >= 2; });
+  }
+
+  function titleGuideState(value) {
+    var title = text(value);
+    var promotionMatches = title.match(/무료\s*배송|당일\s*배송|오늘\s*출발|최저가|특가|할인|쿠폰|사은품|증정|이벤트|품절|재입고|신상품|MD\s*추천|선착순|타임\s*세일|공동\s*구매|무료\s*반품/gi) || [];
+    var contactIssue = /(?:^|[^0-9])(?:0\d{1,2}[-.\s]?\d{3,4}[-.\s]?\d{4})(?:[^0-9]|$)/.test(title);
+    var specialMatches = title.match(/[^\p{L}\p{N}\s]/gu) || [];
+    var decorativeIssue = /[★☆♥♡◆◇■□●○※♬♪♠♣♦♧♤♢]/.test(title);
+    return {
+      repeatedTokens: repeatedTitleTokens(title),
+      promotionTerms: uniqueTextValues(promotionMatches),
+      contactIssue: contactIssue,
+      specialCount: specialMatches.length,
+      specialIssue: decorativeIssue || specialMatches.length > 4
+    };
+  }
+
+  function reviewBenchmarkState(input, reviewCount) {
+    var rawCounts = Array.isArray(input.peerReviewCounts)
+      ? input.peerReviewCounts.map(optionalNumber).filter(function (value) { return value !== null; })
+      : [];
+    if (reviewCount === null || rawCounts.length < 2) return null;
+    var counts = rawCounts.slice(0, 3).sort(function (left, right) { return left - right; });
+    var middle = Math.floor(counts.length / 2);
+    var median = counts.length % 2 ? counts[middle] : Math.round((counts[middle - 1] + counts[middle]) / 2);
+    var average = Math.round(counts.reduce(function (sum, value) { return sum + value; }, 0) / counts.length);
+    var ratio = median > 0 ? reviewCount / median : (reviewCount > 0 ? 1 : 0);
+    var score = ratio >= 1 ? 15 : (ratio >= 0.6 ? 12 : (ratio >= 0.3 ? 8 : (ratio >= 0.1 ? 4 : 0)));
+    var label = ratio >= 1 ? "상위권 수준" : (ratio >= 0.6 ? "근접" : (ratio >= 0.3 ? "보완" : "매우 부족"));
+    return {
+      verified: true,
+      sampleSize: counts.length,
+      peerCounts: counts,
+      median: median,
+      average: average,
+      ratio: ratio,
+      score: score,
+      max: 15,
+      label: label
+    };
+  }
+
   function grade(score) {
-    if (score >= 90) return { label: "A · 확인 항목 양호", copy: "자동으로 확인된 상품 검색 최적화 항목이 안정적으로 갖춰져 있습니다." };
+    if (score >= 90) return { label: "A · 등록 품질 양호", copy: "자동으로 확인된 상품 등록 품질이 양호합니다. 이 점수는 검색 순위를 보장하지 않습니다." };
     if (score >= 80) return { label: "B+ · 일부 보완", copy: "기본 구조는 양호하며 낮은 항목을 보완하면 검색 노출 준비도가 더 안정적입니다." };
-    if (score >= 70) return { label: "B · 보완 필요", copy: "상품명·카테고리·리뷰·운영 설정 중 확인된 약한 항목을 먼저 개선해야 합니다." };
-    if (score >= 55) return { label: "C · 수정 우선", copy: "검색 최적화 기본 항목 여러 개를 함께 보완해야 합니다." };
-    return { label: "D · 재점검", copy: "상품 등록의 검색 최적화 기준을 처음부터 다시 점검해야 합니다." };
+    if (score >= 70) return { label: "B · 보완 필요", copy: "상품명·카테고리·리뷰 경쟁력 중 확인된 약한 항목을 먼저 개선해야 합니다." };
+    if (score >= 55) return { label: "C · 수정 우선", copy: "상품 등록 품질의 기본 항목 여러 개를 함께 보완해야 합니다." };
+    return { label: "D · 재점검", copy: "상품 등록 품질 기준을 처음부터 다시 점검해야 합니다." };
   }
 
   function actionText(key) {
     var actions = {
       titleKeyword: "기준 키워드를 상품명에 자연스럽게 포함하세요.",
       titleLength: "핵심 정보만 남겨 상품명을 50자 이내로 정리하세요.",
+      titleIdentity: "공식 상품 정보에 등록된 브랜드 또는 제조사 명칭을 상품명에 정확하게 사용하세요.",
+      titleRepetition: "같은 단어나 유사한 표현을 반복하지 말고 한 번만 간결하게 사용하세요.",
+      titlePromotion: "할인·쿠폰·배송·사은품 같은 판매 조건은 상품명이 아니라 전용 정보란에 입력하세요.",
+      titleContact: "전화번호와 연락처는 상품명에서 제거하세요.",
+      titleSpecialChars: "장식용 기호와 과도한 특수문자를 제거하고 읽기 쉬운 상품명으로 정리하세요.",
       category: "상위 노출 상품과 동일한 세부 상품군에 속하는지 확인하고 정확한 카테고리를 선택하세요.",
       review: "정책을 준수하는 구매 경험과 리뷰 관리로 실제 리뷰를 꾸준히 확보하세요.",
+      reviewBenchmark: "상위 오가닉 상품의 실제 리뷰 중앙값을 기준으로 부족한 리뷰 신뢰도를 보완하세요.",
       discount: "실제 판매 정책에 맞는 할인율과 기준 가격을 명확하게 적용하세요.",
       reviewPoint: "정책 범위 안에서 리뷰 포인트 지급 조건을 설정하고 고객에게 분명히 안내하세요.",
-      traffic: "상품 SEO 기본 항목은 양호합니다. 검색 노출과 유입 경로, 외부 트래픽 운영 상태를 추가 점검하세요."
+      traffic: "상품 등록 품질과 리뷰 경쟁력은 양호합니다. 검색 유입·클릭·판매 반응을 만드는 트래픽 운영 상태를 추가 점검하세요."
     };
     return actions[key] || "점수가 낮은 항목부터 보완하세요.";
   }
@@ -119,6 +199,69 @@
       "자동 확인"
     );
 
+    var guide = titleGuideState(title);
+    var identities = uniqueTextValues([input.brand, input.maker]);
+    var identityIncluded = identities.some(function (identity) {
+      return compact(title).includes(compact(identity));
+    });
+    addCheck(
+      "titleIdentity",
+      "공식 브랜드·제조사 명칭",
+      identityIncluded
+        ? "공식 조회 정보의 " + identities.join("·") + " 명칭이 상품명에 포함되어 있습니다."
+        : "공식 조회 정보의 " + identities.join("·") + " 명칭이 상품명에 확인되지 않습니다.",
+      identityIncluded ? 10 : 0,
+      10,
+      Boolean(title && identities.length),
+      "공식 조회 자동 확인"
+    );
+
+    addCheck(
+      "titleRepetition",
+      "동일 단어 반복",
+      guide.repeatedTokens.length
+        ? "상품명에서 반복된 단어를 확인했습니다: " + guide.repeatedTokens.join(", ") + "."
+        : "같은 단어를 불필요하게 반복하지 않았습니다.",
+      guide.repeatedTokens.length ? 0 : 6,
+      6,
+      Boolean(title),
+      "네이버 가이드 자동 확인"
+    );
+
+    addCheck(
+      "titlePromotion",
+      "홍보·가격·배송 문구",
+      guide.promotionTerms.length
+        ? "상품명에서 별도 정보란에 넣어야 할 문구를 확인했습니다: " + guide.promotionTerms.join(", ") + "."
+        : "할인·쿠폰·배송·사은품 같은 홍보 문구가 상품명에 없습니다.",
+      guide.promotionTerms.length ? 0 : 6,
+      6,
+      Boolean(title),
+      "네이버 가이드 자동 확인"
+    );
+
+    addCheck(
+      "titleContact",
+      "전화번호 사용",
+      guide.contactIssue ? "상품명에서 전화번호 형식이 확인됐습니다." : "상품명에 전화번호 형식이 없습니다.",
+      guide.contactIssue ? 0 : 4,
+      4,
+      Boolean(title),
+      "네이버 가이드 자동 확인"
+    );
+
+    addCheck(
+      "titleSpecialChars",
+      "특수문자 사용",
+      guide.specialIssue
+        ? "장식용 또는 과도한 특수문자가 확인됐습니다."
+        : "상품명의 특수문자 사용이 과도하지 않습니다.",
+      guide.specialIssue ? 0 : 4,
+      4,
+      Boolean(title),
+      "네이버 가이드 자동 확인"
+    );
+
     var dominantCategory = dominantPeerCategory(input.peerCategories);
     var categoryVerified = Boolean(category && dominantCategory);
     var categoryDepth = categoryVerified ? sharedCategoryDepth(category, dominantCategory.label) : 0;
@@ -135,11 +278,11 @@
     var reviewScore = 0;
     var reviewLabel = "";
     if (reviewVerified) {
-      if (reviewCount >= 1000) { reviewScore = 20; reviewLabel = "매우 강함"; }
-      else if (reviewCount >= 300) { reviewScore = 17; reviewLabel = "강함"; }
-      else if (reviewCount >= 100) { reviewScore = 14; reviewLabel = "양호"; }
-      else if (reviewCount >= 20) { reviewScore = 10; reviewLabel = "성장"; }
-      else if (reviewCount > 0) { reviewScore = 5; reviewLabel = "보완"; }
+      if (reviewCount >= 1000) { reviewScore = 10; reviewLabel = "매우 강함"; }
+      else if (reviewCount >= 300) { reviewScore = 9; reviewLabel = "강함"; }
+      else if (reviewCount >= 100) { reviewScore = 7; reviewLabel = "양호"; }
+      else if (reviewCount >= 20) { reviewScore = 5; reviewLabel = "성장"; }
+      else if (reviewCount > 0) { reviewScore = 2; reviewLabel = "보완"; }
       else { reviewLabel = "리뷰 없음"; }
     }
     addCheck(
@@ -147,9 +290,22 @@
       "리뷰 축적",
       reviewVerified ? "네이버 공개 화면에서 확인한 리뷰 " + formatNumber(reviewCount) + "개 기준이며 리뷰 신호는 " + reviewLabel + "입니다." : "네이버 공개 화면에서 현재 리뷰 수를 자동 확인하지 못했습니다.",
       reviewScore,
-      20,
+      10,
       reviewVerified,
       "공개 화면 자동 확인"
+    );
+
+    var reviewBenchmark = reviewBenchmarkState(input, reviewCount);
+    addCheck(
+      "reviewBenchmark",
+      "상위 오가닉 리뷰 비교",
+      reviewBenchmark
+        ? "내 상품 리뷰 " + formatNumber(reviewCount) + "개와 상위 오가닉 " + reviewBenchmark.sampleSize + "개 상품의 리뷰 중앙값 " + formatNumber(reviewBenchmark.median) + "개를 비교했습니다. 현재 수준은 " + reviewBenchmark.label + "입니다."
+        : "",
+      reviewBenchmark ? reviewBenchmark.score : 0,
+      15,
+      Boolean(reviewBenchmark),
+      "상위 상품 공개 화면 자동 비교"
     );
 
     var discountState = normalizedState(input.discountState);
@@ -177,24 +333,37 @@
     var verifiedChecks = checks.filter(function (check) { return check.verified; });
     var verifiedMax = verifiedChecks.reduce(function (sum, check) { return sum + check.max; }, 0);
     var earned = verifiedChecks.reduce(function (sum, check) { return sum + check.score; }, 0);
-    var confidence = Math.round((verifiedMax / 80) * 100);
+    var confidence = Math.round((verifiedMax / 115) * 100);
     var score = verifiedMax ? Math.round((earned / verifiedMax) * 100) : 0;
     var rank = optionalNumber(input.rank);
     var rankCheckedCount = optionalNumber(input.rankCheckedCount);
-    var seoBasicsStrong = verifiedMax >= 65 && score >= 85;
-    var weakExposure = seoBasicsStrong && ((rank !== null && rank > 100) || (rank === null && rankCheckedCount !== null && rankCheckedCount >= 300));
+    var blockingKeys = [
+      "titleKeyword",
+      "titleLength",
+      "titleRepetition",
+      "titlePromotion",
+      "titleContact",
+      "titleSpecialChars",
+      "category",
+      reviewBenchmark ? "reviewBenchmark" : "review"
+    ];
+    var blockingChecks = checks.filter(function (check) { return blockingKeys.includes(check.key); });
+    var seoBasicsStrong = blockingChecks.length >= 8
+      && blockingChecks.every(function (check) { return check.score / check.max >= 0.75; })
+      && score >= 85;
+    var weakExposure = seoBasicsStrong && ((rank !== null && rank > 40) || (rank === null && rankCheckedCount !== null && rankCheckedCount >= 300));
     var resultGrade = grade(score);
     var diagnosis = {
       key: weakExposure ? "traffic" : (seoBasicsStrong ? "ready" : "optimize"),
-      label: weakExposure ? "SEO 기본 양호 · 트래픽 점검" : (seoBasicsStrong ? "SEO 기본 양호" : "SEO 항목 보완"),
+      label: weakExposure ? "등록 품질 양호 · 트래픽 부족 가능성" : (seoBasicsStrong ? "상품 등록 품질 양호" : "상품 등록 항목 보완"),
       detail: weakExposure
-        ? "기본 SEO 항목은 양호하지만 오가닉 노출이 약합니다. 트래픽 부족 가능성과 노출 운영 상태를 추가 점검하세요."
-        : (seoBasicsStrong ? "상품 SEO 기본 항목과 현재 노출 상태가 양호합니다." : "자동으로 확인된 SEO 항목 중 낮은 항목을 먼저 보완하세요.")
+        ? "자동 확인된 상품 등록 품질과 리뷰 경쟁력은 양호하지만 오가닉 순위가 낮습니다. 트래픽·클릭·판매 반응 부족 가능성을 추가 점검하세요."
+        : (seoBasicsStrong ? "자동 확인된 상품 등록 품질과 현재 노출 상태가 양호합니다." : "자동으로 확인된 상품 등록 항목 중 낮은 항목을 먼저 보완하세요.")
     };
     if (weakExposure) {
       resultGrade = {
         label: diagnosis.label,
-        copy: "기본 SEO 항목은 양호합니다. 다만 현재 노출 근거상 트래픽·노출 운영 상태를 추가로 확인해야 합니다."
+        copy: "상품 등록 품질은 양호합니다. 다만 현재 순위 근거상 트래픽·클릭·판매 반응을 추가로 확인해야 합니다."
       };
     }
 
@@ -234,6 +403,7 @@
       actions: actions,
       reviewCount: reviewCount,
       reviewLabel: reviewLabel,
+      reviewBenchmark: reviewBenchmark,
       titleKeywordIncluded: keywordIncluded,
       titleLength: titleLength,
       categoryLabel: categoryLabel,

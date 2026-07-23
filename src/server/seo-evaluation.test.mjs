@@ -19,6 +19,7 @@ function baseInput(overrides = {}) {
       "생활/건강 > 구강용품 > 전동칫솔",
     ],
     reviewCount: 300,
+    peerReviewCounts: [280, 320, 350],
     discountState: "applied",
     reviewPointState: "applied",
     rank: 8,
@@ -49,6 +50,30 @@ test("상품명 키워드 포함과 50자 이내를 각각 확인한다", () => 
   assert.equal(bad.checks.find((check) => check.key === "titleLength").score, 0);
 });
 
+test("네이버 상품명 가이드의 반복 홍보 연락처 특수문자를 자동 점검한다", () => {
+  const result = seo.evaluate(baseInput({
+    title: "전동칫솔 전동칫솔 특가 무료배송 ★★ 010-1234-5678",
+  }));
+  ["titleRepetition", "titlePromotion", "titleContact", "titleSpecialChars"].forEach((key) => {
+    assert.equal(result.checks.find((check) => check.key === key).score, 0);
+  });
+  assert.match(result.checks.find((check) => check.key === "titlePromotion").detail, /특가/);
+});
+
+test("공식 조회 브랜드 또는 제조사 명칭이 있을 때 상품명 포함 여부를 확인한다", () => {
+  const included = seo.evaluate(baseInput({
+    title: "오랄원 전동칫솔 회전형 방수 충전식",
+    brand: "오랄원",
+    maker: "오랄랩",
+  }));
+  const missing = seo.evaluate(baseInput({
+    brand: "오랄원",
+    maker: "오랄랩",
+  }));
+  assert.equal(included.checks.find((check) => check.key === "titleIdentity").score, 10);
+  assert.equal(missing.checks.find((check) => check.key === "titleIdentity").score, 0);
+});
+
 test("상위 비교 상품과 동일한 카테고리일 때 카테고리 점수를 부여한다", () => {
   const same = seo.evaluate(baseInput());
   const different = seo.evaluate(baseInput({
@@ -66,15 +91,37 @@ test("리뷰 수가 늘면 리뷰 점수와 종합 점수가 상승한다", () =
   assert.ok(high.score > low.score);
 });
 
+test("내 리뷰와 상위 오가닉 상품 리뷰 중앙값을 비교한다", () => {
+  const weak = seo.evaluate(baseInput({
+    reviewCount: 30,
+    peerReviewCounts: [300, 500, 700],
+  }));
+  const strong = seo.evaluate(baseInput({
+    reviewCount: 600,
+    peerReviewCounts: [300, 500, 700],
+  }));
+  const weakBenchmark = weak.checks.find((check) => check.key === "reviewBenchmark");
+  const strongBenchmark = strong.checks.find((check) => check.key === "reviewBenchmark");
+  assert.equal(weakBenchmark.score, 0);
+  assert.equal(strongBenchmark.score, 15);
+  assert.equal(strong.reviewBenchmark.median, 500);
+  assert.match(strongBenchmark.detail, /상위 오가닉 3개/);
+});
+
 test("자동 확인하지 못한 항목은 점검표와 수정 목록에서 제거한다", () => {
   const partial = seo.evaluate(baseInput({
     reviewCount: null,
+    peerReviewCounts: [],
     discountState: "",
     reviewPointState: "",
   }));
   assert.deepEqual(Array.from(partial.checks, (check) => check.key), [
     "titleKeyword",
     "titleLength",
+    "titleRepetition",
+    "titlePromotion",
+    "titleContact",
+    "titleSpecialChars",
     "category",
   ]);
   assert.equal(partial.checks.some((check) => !check.verified), false);
@@ -97,10 +144,15 @@ test("자동 수집한 할인율과 리뷰 포인트만 각각 평가한다", ()
 
 test("기본 SEO가 양호하지만 상위 300개 밖이면 트래픽·노출 점검으로 진단한다", () => {
   const result = seo.evaluate(baseInput({ rank: null, rankCheckedCount: 300 }));
-  assert.equal(result.confidence, 100);
   assert.equal(result.diagnosis.key, "traffic");
-  assert.equal(result.grade.label, "SEO 기본 양호 · 트래픽 점검");
+  assert.equal(result.grade.label, "등록 품질 양호 · 트래픽 부족 가능성");
   assert.equal(result.actions[0].key, "traffic");
+});
+
+test("등록 품질과 리뷰 비교가 양호해도 40위 밖이면 트래픽 부족 가능성으로 분리한다", () => {
+  const result = seo.evaluate(baseInput({ rank: 41 }));
+  assert.equal(result.diagnosis.key, "traffic");
+  assert.match(result.diagnosis.detail, /트래픽/);
 });
 
 test("자동 확인 가능한 점검 항목과 버전을 고정하고 우선 액션은 최대 세 개만 반환한다", () => {
@@ -108,11 +160,16 @@ test("자동 확인 가능한 점검 항목과 버전을 고정하고 우선 액
   assert.deepEqual(Array.from(result.checks, (check) => check.key), [
     "titleKeyword",
     "titleLength",
+    "titleRepetition",
+    "titlePromotion",
+    "titleContact",
+    "titleSpecialChars",
     "category",
     "review",
+    "reviewBenchmark",
     "discount",
     "reviewPoint",
   ]);
   assert.ok(result.actions.length >= 1 && result.actions.length <= 3);
-  assert.equal(result.version, "seo_v6_verified_only_20260723");
+  assert.equal(result.version, "seo_v7_naver_guide_review_benchmark_20260723");
 });

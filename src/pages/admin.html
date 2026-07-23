@@ -13257,12 +13257,16 @@
         var reviewSignal = signals.review || {};
         var discountSignal = signals.discount || {};
         var reviewPointSignal = signals.reviewPoint || {};
+        var reviewBenchmark = auditPayload && auditPayload.reviewBenchmark ? auditPayload.reviewBenchmark : null;
         var evaluation = engine.evaluate({
           keyword: keyword,
           title: title,
+          brand: item.brand || "",
+          maker: item.maker || "",
           category: category,
           peerCategories: peerCategories,
           reviewCount: reviewSignal.verified ? reviewSignal.value : null,
+          peerReviewCounts: reviewBenchmark && reviewBenchmark.verified ? reviewBenchmark.peerReviewCounts : [],
           discountState: discountSignal.verified ? discountSignal.state : "",
           reviewPointState: reviewPointSignal.verified ? reviewPointSignal.state : "",
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
@@ -13276,7 +13280,8 @@
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
           rankMessage: seoRankBasis(rankResult),
           item: item,
-          auditSource: auditPayload && auditPayload.source ? auditPayload.source : ""
+          auditSource: auditPayload && auditPayload.source ? auditPayload.source : "",
+          reviewBenchmark: reviewBenchmark
         });
       }
 
@@ -13299,10 +13304,14 @@
           var titleCheck = evaluation.checks.find(function (check) { return check.key === "titleKeyword"; });
           var titleLengthCheck = evaluation.checks.find(function (check) { return check.key === "titleLength"; });
           var categoryCheck = evaluation.checks.find(function (check) { return check.key === "category"; });
+          var reviewBenchmarkCheck = evaluation.checks.find(function (check) { return check.key === "reviewBenchmark"; });
           var summaryItems = [];
           if (titleCheck) summaryItems.push(["상품명 키워드", evaluation.titleKeywordIncluded ? "포함" : "미포함"]);
           if (titleLengthCheck) summaryItems.push(["상품명 길이", evaluation.titleLength <= 50 ? "50자 이내" : "50자 초과"]);
           if (categoryCheck) summaryItems.push(["동종 카테고리", evaluation.categoryLabel]);
+          if (reviewBenchmarkCheck && evaluation.reviewBenchmark) {
+            summaryItems.push(["상위 리뷰 기준", "중앙값 " + formatNumber(evaluation.reviewBenchmark.median) + "개"]);
+          }
           if (evaluation.rank) summaryItems.push(["현재 순위", evaluation.rank + "위"]);
           summary.innerHTML = summaryItems.map(function (item) {
             return '<div><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong></div>';
@@ -13342,6 +13351,7 @@
           ].filter(Boolean).join(" · ");
           var previewPills = ['<span class="mi-seo-pill">점수 ' + evaluation.score + '</span>'];
           if (evaluation.reviewLabel) previewPills.push('<span class="mi-seo-pill">리뷰 ' + escapeHtml(evaluation.reviewLabel) + '</span>');
+          if (evaluation.reviewBenchmark) previewPills.push('<span class="mi-seo-pill">상위 리뷰 대비 ' + escapeHtml(evaluation.reviewBenchmark.label) + '</span>');
           if (evaluation.rank) previewPills.push('<span class="mi-seo-pill">순위 ' + escapeHtml(evaluation.rank + "위") + '</span>');
           preview.innerHTML =
             '<div class="mi-seo-preview-img">' + image + '</div><div><h4>' + escapeHtml(title) + '</h4><p>' +
@@ -13387,8 +13397,29 @@
         return payload;
       }
 
-      async function fetchSeoAudit(targetUrl) {
+      function seoPeerProductUrls(rankPayload) {
+        var rankResult = rankPayload && rankPayload.result ? rankPayload.result : null;
+        var seen = {};
+        return (rankResult && Array.isArray(rankResult.topItems) ? rankResult.topItems : [])
+          .map(function (item) { return String(item && item.link || "").trim(); })
+          .filter(function (url) {
+            if (!/^https:\/\/(?:m\.)?(?:smartstore|brand)\.naver\.com\/[^/]+\/products\/\d+(?:[/?#]|$)/i.test(url)) return false;
+            if (seen[url]) return false;
+            seen[url] = true;
+            return true;
+          })
+          .slice(0, 3);
+      }
+
+      function signalsReviewVerified(auditPayload) {
+        return Boolean(auditPayload && auditPayload.signals && auditPayload.signals.review && auditPayload.signals.review.verified);
+      }
+
+      async function fetchSeoAudit(targetUrl, rankPayload) {
         var params = new URLSearchParams({ targetUrl: targetUrl || "" });
+        seoPeerProductUrls(rankPayload).forEach(function (peerUrl) {
+          params.append("peerUrl", peerUrl);
+        });
         var response = await miFetch("/api/naver-product-seo-audit?" + params.toString(), { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () { return null; });
         if (!payload) throw new Error("상품 공개 정보 응답을 확인할 수 없습니다.");
@@ -13450,6 +13481,14 @@
           }
           if (lookupResults[1].status === "fulfilled") {
             auditPayload = lookupResults[1].value;
+          }
+          if (rankPayload && auditPayload && signalsReviewVerified(auditPayload) && seoPeerProductUrls(rankPayload).length >= 2) {
+            try {
+              var benchmarkAuditPayload = await fetchSeoAudit(targetUrl, rankPayload);
+              if (benchmarkAuditPayload && benchmarkAuditPayload.reviewBenchmark) auditPayload = benchmarkAuditPayload;
+            } catch (error) {
+              // 상위 리뷰 표본 비교 실패는 이미 확인된 상품 SEO 결과를 막지 않습니다.
+            }
           }
           var foundItem = rankPayload && rankPayload.result
             ? (rankPayload.result.exactItem || rankPayload.result.item || null)

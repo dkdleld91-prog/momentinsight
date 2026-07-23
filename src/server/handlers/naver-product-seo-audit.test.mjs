@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildReviewBenchmark,
   fetchProductPage,
   normalizeProductUrl,
   parseNaverProductSeoHtml,
@@ -46,6 +47,30 @@ test("네이버 공개 상품 상태에서 리뷰 할인 리뷰포인트를 자�
   assert.equal("productNotice" in result.signals, false);
   assert.equal(result.coverage.verifiedCount, 3);
   assert.equal(result.coverage.total, 3);
+});
+
+test("내 상품과 실제 확인된 상위 오가닉 상품 리뷰 표본을 비교한다", () => {
+  const target = parseNaverProductSeoHtml(page({
+    reviewAmount: { totalReviewCount: 120 },
+  }), "12149720593");
+  const peers = [300, 500, 700].map((count, index) => parseNaverProductSeoHtml(page({
+    id: 22000000000 + index,
+    reviewAmount: { totalReviewCount: count },
+  }), String(22000000000 + index)));
+  const benchmark = buildReviewBenchmark(target, peers);
+  assert.equal(benchmark.sampleSize, 3);
+  assert.equal(benchmark.targetReviewCount, 120);
+  assert.equal(benchmark.median, 500);
+  assert.equal(benchmark.label, "매우 부족");
+});
+
+test("상위 리뷰 표본이 두 개 미만이면 비교 결과를 만들지 않는다", () => {
+  const target = parseNaverProductSeoHtml(page(), "12149720593");
+  const peer = parseNaverProductSeoHtml(page({
+    id: 22000000001,
+    reviewAmount: { totalReviewCount: 300 },
+  }), "22000000001");
+  assert.equal(buildReviewBenchmark(target, [peer]), null);
 });
 
 test("할인과 리뷰 포인트가 0이면 미적용으로 자동 판정한다", () => {

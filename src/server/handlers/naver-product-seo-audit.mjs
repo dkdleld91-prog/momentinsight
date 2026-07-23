@@ -12,6 +12,8 @@ const SEO_AUDIT_CACHE_TTL_MS = Number(process.env.MI_SEO_AUDIT_CACHE_TTL_MS || 1
 const SEO_AUDIT_CACHE_MAX = Number(process.env.MI_SEO_AUDIT_CACHE_MAX || 200);
 const SEO_AUDIT_RATE_WINDOW_MS = Number(process.env.MI_SEO_AUDIT_RATE_WINDOW_MS || 60_000);
 const SEO_AUDIT_RATE_LIMIT = Number(process.env.MI_SEO_AUDIT_RATE_LIMIT || 20);
+const SEO_AUDIT_PEER_LIMIT = Math.max(2, Math.min(3, Number(process.env.MI_SEO_AUDIT_PEER_LIMIT || 3)));
+const SEO_AUDIT_PEER_TIMEOUT_MS = Number(process.env.MI_SEO_AUDIT_PEER_TIMEOUT_MS || 3_500);
 const auditCache = new Map();
 const auditRateBucket = new Map();
 
@@ -276,9 +278,9 @@ async function readBoundedText(response) {
   return body;
 }
 
-export async function fetchProductPage(target, fetchImpl = fetch, redirectCount = 0) {
+export async function fetchProductPage(target, fetchImpl = fetch, redirectCount = 0, timeoutMs = SEO_AUDIT_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SEO_AUDIT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(target.url, {
       method: "GET",
@@ -311,7 +313,7 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
           { code: "NAVER_PUBLIC_PRODUCT_MISMATCH" },
         );
       }
-      return fetchProductPage(redirected, fetchImpl, redirectCount + 1);
+      return fetchProductPage(redirected, fetchImpl, redirectCount + 1, timeoutMs);
     }
     if (response.status === 429) {
       throw sourceError(
@@ -350,6 +352,68 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
   }
 }
 
+async function auditProduct(target, { fetchImpl = fetch, timeoutMs = SEO_AUDIT_TIMEOUT_MS } = {}) {
+  const cached = cacheGet(target.url);
+  if (cached) return { ...cached, cached: true };
+  const html = await fetchProductPage(target, fetchImpl, 0, timeoutMs);
+  const payload = parseNaverProductSeoHtml(html, target.productId);
+  cacheSet(target.url, payload);
+  return payload;
+}
+
+function median(values) {
+  const sorted = values.slice().sort((left, right) => left - right);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2
+    ? sorted[middle]
+    : Math.round((sorted[middle - 1] + sorted[middle]) / 2);
+}
+
+export function buildReviewBenchmark(targetPayload, peerPayloads) {
+  const targetReviewCount = finiteNumber(targetPayload?.signals?.review?.value);
+  const peerReviewCounts = (Array.isArray(peerPayloads) ? peerPayloads : [])
+    .map((payload) => finiteNumber(payload?.signals?.review?.value))
+    .filter((value) => value !== null)
+    .slice(0, SEO_AUDIT_PEER_LIMIT);
+  if (targetReviewCount === null || peerReviewCounts.length < 2) return null;
+
+  const peerMedian = median(peerReviewCounts);
+  const peerAverage = Math.round(
+    peerReviewCounts.reduce((sum, value) => sum + value, 0) / peerReviewCounts.length,
+  );
+  const ratio = peerMedian > 0 ? targetReviewCount / peerMedian : (targetReviewCount > 0 ? 1 : 0);
+  const label = ratio >= 1 ? "상위권 수준" : ratio >= 0.6 ? "근접" : ratio >= 0.3 ? "보완" : "매우 부족";
+  return {
+    verified: true,
+    source: "naver_public_peer_products",
+    sampleSize: peerReviewCounts.length,
+    targetReviewCount,
+    peerReviewCounts,
+    median: peerMedian,
+    average: peerAverage,
+    ratio: Number(ratio.toFixed(3)),
+    label,
+    evidence: `상위 오가닉 상품 공개 화면 ${peerReviewCounts.length}개 표본`,
+  };
+}
+
+function peerTargetsFromRequest(request, target) {
+  const seen = new Set([target.url]);
+  const peers = [];
+  for (const value of new URL(request.url).searchParams.getAll("peerUrl")) {
+    if (peers.length >= SEO_AUDIT_PEER_LIMIT) break;
+    try {
+      const peer = normalizeProductUrl(value);
+      if (seen.has(peer.url)) continue;
+      seen.add(peer.url);
+      peers.push(peer);
+    } catch {
+      // 공식 쇼핑 결과 중 직접 확인 가능한 네이버 상품 URL만 표본으로 사용합니다.
+    }
+  }
+  return peers;
+}
+
 export default {
   async fetch(request) {
     if (request.method !== "GET") {
@@ -371,14 +435,19 @@ export default {
       return protectedJson(request, { ok: false, message: error.message }, 400);
     }
 
-    const cached = cacheGet(target.url);
-    if (cached) return protectedJson(request, { ...cached, cached: true });
-
     try {
-      const html = await fetchProductPage(target);
-      const payload = parseNaverProductSeoHtml(html, target.productId);
-      cacheSet(target.url, payload);
-      return protectedJson(request, payload);
+      const payload = await auditProduct(target);
+      const peerTargets = peerTargetsFromRequest(request, target);
+      if (!peerTargets.length) return protectedJson(request, payload);
+
+      const peerResults = await Promise.allSettled(
+        peerTargets.map((peer) => auditProduct(peer, { timeoutMs: SEO_AUDIT_PEER_TIMEOUT_MS })),
+      );
+      const peerPayloads = peerResults
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => result.value);
+      const reviewBenchmark = buildReviewBenchmark(payload, peerPayloads);
+      return protectedJson(request, reviewBenchmark ? { ...payload, reviewBenchmark } : payload);
     } catch (error) {
       return protectedJson(request, {
         ok: false,

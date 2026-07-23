@@ -4,6 +4,7 @@ import {
   fetchProductPage,
   normalizeProductUrl,
   parseNaverProductSeoHtml,
+  ProductAuditSourceError,
 } from "./naver-product-seo-audit.mjs";
 
 function page(product = {}) {
@@ -93,5 +94,35 @@ test("반복 리다이렉트는 두 번 뒤 중단한다", async () => {
   await assert.rejects(
     () => fetchProductPage(target, redirect),
     /이동이 반복/,
+  );
+});
+
+test("네이버 429 제한은 서버 오류가 아닌 재시도 가능한 공개 소스 제한으로 분류한다", async () => {
+  const target = normalizeProductUrl("https://smartstore.naver.com/haedenprime/products/12149720593");
+  await assert.rejects(
+    () => fetchProductPage(target, async () => new Response("", { status: 429 })),
+    (error) => {
+      assert.ok(error instanceof ProductAuditSourceError);
+      assert.equal(error.status, 429);
+      assert.equal(error.code, "NAVER_PUBLIC_PAGE_RATE_LIMITED");
+      assert.match(error.message, /일시적 조회 제한/);
+      return true;
+    },
+  );
+});
+
+test("네이버 공개 화면 연결 실패도 안전한 부분 확인 상태로 분류한다", async () => {
+  const target = normalizeProductUrl("https://smartstore.naver.com/haedenprime/products/12149720593");
+  await assert.rejects(
+    () => fetchProductPage(target, async () => {
+      throw new TypeError("network unavailable");
+    }),
+    (error) => {
+      assert.ok(error instanceof ProductAuditSourceError);
+      assert.equal(error.status, 424);
+      assert.equal(error.code, "NAVER_PUBLIC_PAGE_NETWORK_ERROR");
+      assert.doesNotMatch(error.message, /network unavailable/);
+      return true;
+    },
   );
 });

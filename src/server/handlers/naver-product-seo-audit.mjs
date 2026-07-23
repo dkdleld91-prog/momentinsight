@@ -15,6 +15,19 @@ const SEO_AUDIT_RATE_LIMIT = Number(process.env.MI_SEO_AUDIT_RATE_LIMIT || 20);
 const auditCache = new Map();
 const auditRateBucket = new Map();
 
+export class ProductAuditSourceError extends Error {
+  constructor(message, { status = 424, code = "NAVER_PUBLIC_PAGE_UNAVAILABLE" } = {}) {
+    super(message);
+    this.name = "ProductAuditSourceError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function sourceError(message, options) {
+  return new ProductAuditSourceError(message, options);
+}
+
 function text(value) {
   return String(value == null ? "" : value).trim();
 }
@@ -108,11 +121,19 @@ function jsonSafeJavascriptLiteral(value) {
 
 function extractPreloadedState(html) {
   const match = text(html).match(/window\.__PRELOADED_STATE__=([\s\S]*?)<\/script>/i);
-  if (!match) throw new Error("네이버 상품 공개 정보를 확인하지 못했습니다.");
+  if (!match) {
+    throw sourceError(
+      "네이버 공개 상품 화면에서 자동 확인 정보를 찾지 못했습니다. 상품명·카테고리는 공식 조회 결과로 계속 확인합니다.",
+      { code: "NAVER_PUBLIC_PAGE_STATE_MISSING" },
+    );
+  }
   try {
     return JSON.parse(jsonSafeJavascriptLiteral(match[1]));
   } catch {
-    throw new Error("네이버 상품 정보 형식이 변경되어 자동 점검이 필요합니다.");
+    throw sourceError(
+      "네이버 공개 상품 화면 형식이 변경되어 일부 항목을 자동 확인하지 못했습니다.",
+      { code: "NAVER_PUBLIC_PAGE_FORMAT_CHANGED" },
+    );
   }
 }
 
@@ -149,9 +170,17 @@ function positiveReviewPoint(benefitsView) {
 export function parseNaverProductSeoHtml(html, expectedProductId = "") {
   const state = extractPreloadedState(html);
   const product = state?.simpleProductForDetailPage?.A;
-  if (!product || !product.id) throw new Error("네이버 상품 공개 정보를 확인하지 못했습니다.");
+  if (!product || !product.id) {
+    throw sourceError(
+      "네이버 공개 상품 화면에서 상품 정보를 확인하지 못했습니다.",
+      { code: "NAVER_PUBLIC_PRODUCT_MISSING" },
+    );
+  }
   if (expectedProductId && String(product.id) !== String(expectedProductId)) {
-    throw new Error("입력한 URL과 공개 상품 정보가 일치하지 않습니다.");
+    throw sourceError(
+      "입력한 URL과 공개 상품 정보가 일치하지 않습니다.",
+      { code: "NAVER_PUBLIC_PRODUCT_MISMATCH" },
+    );
   }
 
   const reviewCount = finiteNumber(product.reviewAmount?.totalReviewCount);
@@ -256,10 +285,18 @@ function cacheSet(key, payload) {
 
 async function readBoundedText(response) {
   const length = Number(response.headers.get("content-length") || 0);
-  if (length > SEO_AUDIT_MAX_BYTES) throw new Error("네이버 상품 응답이 허용 크기를 초과했습니다.");
+  if (length > SEO_AUDIT_MAX_BYTES) {
+    throw sourceError(
+      "네이버 공개 상품 응답이 커서 자동 확인 범위를 제한했습니다.",
+      { code: "NAVER_PUBLIC_PAGE_TOO_LARGE" },
+    );
+  }
   const body = await response.text();
   if (Buffer.byteLength(body, "utf8") > SEO_AUDIT_MAX_BYTES) {
-    throw new Error("네이버 상품 응답이 허용 크기를 초과했습니다.");
+    throw sourceError(
+      "네이버 공개 상품 응답이 커서 자동 확인 범위를 제한했습니다.",
+      { code: "NAVER_PUBLIC_PAGE_TOO_LARGE" },
+    );
   }
   return body;
 }
@@ -279,21 +316,60 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
       },
     });
     if (response.status >= 300 && response.status < 400) {
-      if (redirectCount >= 2) throw new Error("네이버 상품 URL 이동이 반복되어 자동 점검을 중단했습니다.");
+      if (redirectCount >= 2) {
+        throw sourceError(
+          "네이버 상품 URL 이동이 반복되어 자동 확인을 중단했습니다.",
+          { code: "NAVER_PUBLIC_PAGE_REDIRECT_LOOP" },
+        );
+      }
       const location = response.headers.get("location") || "";
-      if (!location) throw new Error("네이버 상품 URL 이동 위치를 확인하지 못했습니다.");
+      if (!location) {
+        throw sourceError(
+          "네이버 상품 URL 이동 위치를 확인하지 못했습니다.",
+          { code: "NAVER_PUBLIC_PAGE_REDIRECT_MISSING" },
+        );
+      }
       const redirected = normalizeProductUrl(new URL(location, target.url).toString());
-      if (redirected.productId !== target.productId) throw new Error("상품 URL 이동 결과가 입력값과 일치하지 않습니다.");
+      if (redirected.productId !== target.productId) {
+        throw sourceError(
+          "상품 URL 이동 결과가 입력값과 일치하지 않습니다.",
+          { code: "NAVER_PUBLIC_PRODUCT_MISMATCH" },
+        );
+      }
       return fetchProductPage(redirected, fetchImpl, redirectCount + 1);
     }
-    if (response.status === 429) throw new Error("네이버의 일시적 조회 제한으로 자동 점검하지 못했습니다. 잠시 후 다시 시도해주세요.");
-    if (!response.ok) throw new Error("네이버 상품 공개 화면을 불러오지 못했습니다.");
+    if (response.status === 429) {
+      throw sourceError(
+        "네이버의 일시적 조회 제한으로 리뷰·할인 정보를 자동 확인하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        { status: 429, code: "NAVER_PUBLIC_PAGE_RATE_LIMITED" },
+      );
+    }
+    if (!response.ok) {
+      throw sourceError(
+        "네이버 공개 상품 화면을 불러오지 못해 일부 항목을 자동 확인하지 못했습니다.",
+        { code: "NAVER_PUBLIC_PAGE_HTTP_ERROR" },
+      );
+    }
     const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html")) throw new Error("네이버 상품 응답 형식을 확인하지 못했습니다.");
+    if (!contentType.includes("text/html")) {
+      throw sourceError(
+        "네이버 공개 상품 응답 형식을 확인하지 못했습니다.",
+        { code: "NAVER_PUBLIC_PAGE_CONTENT_TYPE" },
+      );
+    }
     return readBoundedText(response);
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error("네이버 상품 자동 점검 시간이 초과되었습니다.");
-    throw error;
+    if (error instanceof ProductAuditSourceError) throw error;
+    if (error?.name === "AbortError") {
+      throw sourceError(
+        "네이버 공개 상품 확인 시간이 초과되어 일부 항목을 자동 확인하지 못했습니다.",
+        { code: "NAVER_PUBLIC_PAGE_TIMEOUT" },
+      );
+    }
+    throw sourceError(
+      "네이버 공개 상품 화면 연결이 일시적으로 불안정해 일부 항목을 자동 확인하지 못했습니다.",
+      { code: "NAVER_PUBLIC_PAGE_NETWORK_ERROR" },
+    );
   } finally {
     clearTimeout(timeout);
   }
@@ -332,8 +408,9 @@ export default {
       return protectedJson(request, {
         ok: false,
         message: error.message || "네이버 상품 자동 점검에 실패했습니다.",
+        code: error instanceof ProductAuditSourceError ? error.code : "NAVER_PRODUCT_SEO_AUDIT_FAILED",
         source: "naver_public_product_page",
-      }, 503);
+      }, error instanceof ProductAuditSourceError ? error.status : 503);
     }
   },
 };

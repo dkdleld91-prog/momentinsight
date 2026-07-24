@@ -6,6 +6,7 @@
 - 서버 계약: Owner 직접 생성과 운영팀 연결 생성 모두 광고주 코드가 비어 있으면 `생성할 광고주 코드를 직접 입력해주세요.`와 HTTP 400을 반환한다. `mml93-aXX` 순차 코드 계산·대체 생성 함수는 제거했다.
 - 데이터 보존: 기존 광고주 코드·운영팀 연결·세션·DB 행은 수정하거나 재발급하지 않았다. 실제 운영 광고주 생성은 검증 과정에서 실행하지 않는다.
 - 전체 검증: 전용 7/7, API·서버 206/206, 플레이스 수집기 51/51, 서버 계약 24/24, 운영팀·광고주 parity, Production 인증 18/18, 보호 기능 잠금 13함수·21파일·11마이그레이션, Vercel 공개 빌드·CSP, 전체 `npm run check:release`, `git diff --check` 통과.
+- Production 증거: 코드 `553a880`, 배포 `dpl_34DZvmNhn6mCBam2nEmaQ6nNARrV`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `553a8801e2fa`, live, Supabase ready를 반환했다. 운영 관리자 HTML은 로컬 `dist/admin.html`과 바이트 일치하고 `광고주 코드 직접 입력`·`autocomplete=off`를 포함하며 `다음 광고주 코드`·`nextAgencyCode`는 포함하지 않는다. 비인증 생성 요청은 401로 차단됐다.
 
 ## 2026-07-23 · 상품 SEO 트래픽·리뷰 평균·태그·상품정보고시 재정렬
 

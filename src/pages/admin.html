@@ -6508,7 +6508,7 @@
                   <h3>광고주 코드 생성</h3>
                   <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
                     <input class="mi-input" data-team-code-for-client placeholder="선택 연결 운영팀 코드 · 비우면 총관리자 직접 발급" aria-label="광고주 발급용 운영팀 코드" />
-                    <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드" aria-label="광고주 코드" />
+                    <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 직접 입력" aria-label="광고주 코드" autocomplete="off" autocapitalize="none" spellcheck="false" />
                     <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
                     <button class="mi-button mi-owner-create-action" type="button" data-team-client-create>광고주 바로 생성</button>
                   </div>
@@ -8151,15 +8151,10 @@
       function syncOwnerCodeDefaults(payload) {
         var teamCreateInput = root.querySelector("[data-owner-team-code]");
         var teamForClientInput = root.querySelector("[data-team-code-for-client]");
-        var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
         var nextTeamCode = payload && payload.nextTeamCode ? payload.nextTeamCode : "";
-        var nextAgencyCode = payload && payload.nextAgencyCode ? payload.nextAgencyCode : "";
 
         if (teamCreateInput && !String(teamCreateInput.value || "").trim()) {
           teamCreateInput.value = nextTeamCode;
-        }
-        if (clientCodeInput && !String(clientCodeInput.value || "").trim()) {
-          clientCodeInput.value = nextAgencyCode;
         }
         if (teamForClientInput) {
           if (canManageOwnerCodes()) {
@@ -8313,7 +8308,7 @@
         }
 
         rows.push('<div class="mi-row"><span>다음 운영팀 코드</span><strong>' + escapeHtml(payload && payload.nextTeamCode ? payload.nextTeamCode : "조회 후 표시") + '</strong></div>');
-        rows.push('<div class="mi-row"><span>다음 광고주 코드</span><strong>' + escapeHtml(payload && payload.nextAgencyCode ? payload.nextAgencyCode : "조회 후 표시") + '</strong></div>');
+        rows.push('<div class="mi-row"><span>광고주 코드 발급</span><strong>자동 제안 없이 직접 입력</strong></div>');
         list.innerHTML = rows.join("");
         renderOwnerFullAccountView(payload);
         syncOwnerCodeDefaults(payload);
@@ -8353,9 +8348,6 @@
           teamInput.value = "";
           teamInput.readOnly = true;
           teamInput.placeholder = "보안 세션에서 운영팀 확인됨";
-        }
-        if (clientCodeInput && payload && payload.nextAgencyCode && !String(clientCodeInput.value || "").trim()) {
-          clientCodeInput.value = payload.nextAgencyCode;
         }
         [clientCodeInput, clientNameInput, clientCreateButton].forEach(function (node) {
           if (node) node.disabled = Boolean(team && (team.client || team.clientId));

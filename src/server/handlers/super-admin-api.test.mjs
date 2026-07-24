@@ -114,6 +114,40 @@ test("team creation never reactivates or reveals an existing client", async () =
   assert.match(block, /\.from\("clients"\)[\s\S]*\.delete\(\)[\s\S]*\.eq\("id", client\.id\)/);
 });
 
+test("advertiser codes are never suggested or generated from an empty request", async () => {
+  const serverSource = await readFile(new URL("./super-admin-api.mjs", import.meta.url), "utf8");
+  const adminSource = await readFile(new URL("../../pages/admin.html", import.meta.url), "utf8");
+  const ownerStart = serverSource.indexOf("async function createClient(request");
+  const ownerEnd = serverSource.indexOf("async function createTeam", ownerStart);
+  const teamStart = serverSource.indexOf("async function createClientForTeam");
+  const teamEnd = serverSource.indexOf("async function disconnectTeamClient", teamStart);
+  const validateStart = serverSource.indexOf("async function validateTeam");
+  const validateEnd = serverSource.indexOf("async function createClientForTeam", validateStart);
+  const defaultsStart = adminSource.indexOf("function syncOwnerCodeDefaults");
+  const defaultsEnd = adminSource.indexOf("function activeOwnerClients", defaultsStart);
+  const operationStart = adminSource.indexOf("function renderOperationTeamCodePanel");
+  const operationEnd = adminSource.indexOf("async function refreshOperationTeamPanel", operationStart);
+
+  for (const index of [ownerStart, ownerEnd, teamStart, teamEnd, validateStart, validateEnd, defaultsStart, defaultsEnd, operationStart, operationEnd]) {
+    assert.notEqual(index, -1);
+  }
+
+  const ownerBlock = serverSource.slice(ownerStart, ownerEnd);
+  const teamBlock = serverSource.slice(teamStart, teamEnd);
+  const validateBlock = serverSource.slice(validateStart, validateEnd);
+  const defaultsBlock = adminSource.slice(defaultsStart, defaultsEnd);
+  const operationBlock = adminSource.slice(operationStart, operationEnd);
+
+  assert.match(ownerBlock, /if \(!agencyCode\) return json\([^;]*생성할 광고주 코드를 직접 입력해주세요\./);
+  assert.match(teamBlock, /if \(!agencyCode\) return json\([^;]*생성할 광고주 코드를 직접 입력해주세요\./);
+  assert.doesNotMatch(serverSource, /function nextAgencyCode\(/);
+  assert.doesNotMatch(serverSource, /nextAgencyCode:/);
+  assert.doesNotMatch(validateBlock, /nextAgencyCode|nextAgencyCodeFromDb/);
+  assert.doesNotMatch(defaultsBlock, /clientCodeInput|nextAgencyCode/);
+  assert.doesNotMatch(operationBlock, /clientCodeInput\.value\s*=\s*payload\.nextAgencyCode/);
+  assert.match(adminSource, /data-team-client-agency-code[^>]*placeholder="광고주 코드 직접 입력"[^>]*autocomplete="off"/);
+});
+
 test("admin team requests do not serialize raw team codes", async () => {
   const source = await readFile(new URL("../../pages/admin.html", import.meta.url), "utf8");
   const start = source.indexOf("async function requestTeamCodes");

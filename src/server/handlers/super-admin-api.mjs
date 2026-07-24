@@ -192,15 +192,6 @@ function teamPayload(row) {
   };
 }
 
-function nextAgencyCode(rows) {
-  const max = (rows || []).reduce((latest, row) => {
-    const match = String(row.agency_code || "").toLowerCase().match(/^mml93-a(\d+)$/);
-    if (!match) return latest;
-    return Math.max(latest, Number(match[1]) || 0);
-  }, 0);
-  return `mml93-a${String(Math.max(2, max + 1)).padStart(2, "0")}`;
-}
-
 function nextTeamCode(rows) {
   const max = (rows || []).reduce((latest, row) => {
     const match = String(row.team_code || "").toLowerCase().match(/^mml93-t(\d+)$/);
@@ -227,15 +218,6 @@ async function recordAuditLog(ctx, payload) {
     });
 
   return !error;
-}
-
-async function nextAgencyCodeFromDb(ctx) {
-  const list = await ctx.supabaseAdmin
-    .from("clients")
-    .select("agency_code")
-    .neq("status", "archived")
-    .limit(100);
-  return list.error ? { error: list.error } : { code: nextAgencyCode(list.data || []) };
 }
 
 async function attachTeamClient(ctx, team) {
@@ -369,7 +351,6 @@ async function listClients(request, ctx) {
         message: "운영팀 코드 DB 마이그레이션 적용 전입니다. 기존 광고주 코드는 조회됩니다.",
         ownerAgencyCode: primaryAgencyCode(),
         nextTeamCode: "mml93-t01",
-        nextAgencyCode: nextAgencyCode(clientsResult.data || []),
         teams: [],
         clients: (clientsResult.data || []).map(clientPayload),
       });
@@ -382,7 +363,6 @@ async function listClients(request, ctx) {
     schemaPending: Boolean(clientsResult.schemaPending),
     ownerAgencyCode: primaryAgencyCode(),
     nextTeamCode: nextTeamCode(teamsResult.data || []),
-    nextAgencyCode: nextAgencyCode(clientsResult.data || []),
     health: await loadOwnerHealth(ctx),
     teams: (teamsResult.data || []).map((team) => ({
       ...team,
@@ -398,24 +378,12 @@ async function createClient(request, ctx, body) {
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
 
   if (!name) return json(request, { ok: false, message: "광고주명을 입력해주세요." }, 400);
-
-  let code = agencyCode;
-  if (!code) {
-    const list = await ctx.supabaseAdmin
-    .from("clients")
-    .select("agency_code")
-    .neq("status", "archived")
-    .limit(100);
-    if (list.error) {
-      return json(request, { ok: false, message: "다음 코드 계산에 실패했습니다.", detail: list.error.message }, 500);
-    }
-    code = nextAgencyCode(list.data || []);
-  }
+  if (!agencyCode) return json(request, { ok: false, message: "생성할 광고주 코드를 직접 입력해주세요." }, 400);
 
   const existing = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .eq("agency_code", code)
+    .eq("agency_code", agencyCode)
     .maybeSingle();
 
   if (existing.error) {
@@ -457,7 +425,7 @@ async function createClient(request, ctx, body) {
     .insert({
       name,
       business_name: businessName || name,
-      agency_code: code,
+      agency_code: agencyCode,
       status: "active",
       public_summary: body.publicSummary || body.public_summary || "총관리자가 발급한 광고주 코드입니다.",
       internal_note: "MI super admin issued client access",
@@ -562,13 +530,9 @@ async function validateTeam(request, ctx, body) {
   const teamWithClient = await attachTeamClient(ctx, teamResult.data);
   if (teamWithClient.error) return json(request, { ok: false, message: "운영팀 광고주 연결 조회에 실패했습니다.", detail: teamWithClient.error.message }, 500);
 
-  const nextCode = await nextAgencyCodeFromDb(ctx);
-  if (nextCode.error) return json(request, { ok: false, message: "다음 광고주 코드 계산에 실패했습니다.", detail: nextCode.error.message }, 500);
-
   return json(request, {
     ok: true,
     team: teamActionPayload(teamWithClient.team, access),
-    nextAgencyCode: nextCode.code,
   });
 }
 
@@ -577,6 +541,7 @@ async function createClientForTeam(request, ctx, body) {
   const businessName = String(body.businessName || body.business_name || name).trim();
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
   if (!name) return json(request, { ok: false, message: "광고주명을 입력해주세요." }, 400);
+  if (!agencyCode) return json(request, { ok: false, message: "생성할 광고주 코드를 직접 입력해주세요." }, 400);
 
   const access = teamActionAccess(request, body);
   if (!access.ok) return json(request, { ok: false, message: access.message }, access.status);
@@ -602,21 +567,10 @@ async function createClientForTeam(request, ctx, body) {
   if (activeClient.error) return json(request, { ok: false, message: "운영팀 광고주 연결 상태 확인에 실패했습니다.", detail: activeClient.error.message }, 500);
   if (activeClient.data) return json(request, { ok: false, message: "이 운영팀에는 이미 활성 광고주가 연결되어 있습니다.", client: teamActionClientPayload(activeClient.data, access) }, 409);
 
-  let code = agencyCode;
-  if (!code) {
-    const list = await ctx.supabaseAdmin
-      .from("clients")
-      .select("agency_code")
-      .neq("status", "archived")
-      .limit(100);
-    if (list.error) return json(request, { ok: false, message: "다음 광고주 코드 계산에 실패했습니다.", detail: list.error.message }, 500);
-    code = nextAgencyCode(list.data || []);
-  }
-
   const existing = await ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at")
-    .eq("agency_code", code)
+    .eq("agency_code", agencyCode)
     .maybeSingle();
   if (existing.error) return json(request, { ok: false, message: "광고주 코드 중복 확인에 실패했습니다.", detail: existing.error.message }, 500);
   if (existing.data) {
@@ -631,7 +585,7 @@ async function createClientForTeam(request, ctx, body) {
     .insert({
       name,
       business_name: businessName || name,
-      agency_code: code,
+      agency_code: agencyCode,
       issued_by_team_code: teamResult.data.team_code,
       status: "active",
       public_summary: body.publicSummary || body.public_summary || "운영팀이 발급한 광고주 코드입니다.",

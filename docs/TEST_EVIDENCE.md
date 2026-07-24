@@ -6,6 +6,8 @@
 - 로그인 왕복 최적화: 동일 로그인 요청의 IP rate-limit과 IP·계정 rate-limit은 서로 독립된 Supabase RPC이므로 `Promise.all`로 동시에 시작한다. 두 검사는 그대로 모두 수행하며 Production DB 오류는 이전과 동일하게 fail-closed 처리한다.
 - 테스트 환경 격리: Vercel Production 변수가 주입된 빌드에서 운영의 `MI_PRIMARY_AGENCY_CODE`·`VERCEL_ENV`가 플레이스 단위 테스트의 고정 계정과 충돌해 5건이 403이 되는 현상을 확인했다. 보호된 플레이스 구현은 수정하지 않고 해당 테스트가 자체 계정·환경을 설정하고 원래 값을 복원하도록 보정했다.
 - 자동 검증: 대상 61/61, API·서버 207/207, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 순위 기능 잠금 13함수·21파일·11마이그레이션, 공개 빌드 9파일·CSP, 일반 환경 전체 `npm run check:release`, 실제 Production 환경변수가 주입된 `vercel build --prod`, `git diff --check` 통과.
+- Production 배포: 코드 `31b70e4`·배포 `dpl_DZFaojbvvLfnGVVB7G7bVA3jzSgX`·운영 별칭 `https://insight.momentlabs.co.kr`. Vercel 배포 상세의 API 함수가 `icn1`, 운영 `/health`가 `region=icn1`·릴리스 `31b70e4fb469`를 반환했고 `/ready`는 Supabase ready를 유지했다.
+- 운영 연속성 실측: `/health`·`/ready`·비인증 `/api/session`을 각 10회 연속 호출해 30/30 통과, 각 5회 동시 호출해 15/15 통과했다. 연속 p95는 각각 325ms·1,047ms·302ms, 동시 p95는 216ms·251ms·371ms였고 20초 제한 초과·5xx·네트워크 오류는 0건이다. 비인증 세션의 401은 정상 권한 차단으로 판정했다.
 - 변경 비범위: `src/pages/admin.html`, `src/pages/client.html`, 상품·플레이스 순위 계산·수집·저장·스냅샷, Supabase 스키마와 운영 데이터는 변경하지 않았다.
 
 ## 2026-07-24 · 광고주 코드 자동 제안 제거·명시 입력 강제

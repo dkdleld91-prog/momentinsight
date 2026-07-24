@@ -4,8 +4,8 @@
 
 ## 현재 상태
 
-- Vercel 서버 서울 리전·세션 지연 최적화 검증 완료: 모든 함수 실행 지역을 Supabase와 같은 `icn1`로 고정하고 Fluid Compute를 명시했다. `/api/session`은 장시간 순위 API가 사용하는 catch-all 함수와 별도 30초 함수로 분리했으며, 로그인 IP·자격증명 rate-limit의 독립 DB 요청은 동시에 시작한다. 권한·쿠키·CSRF·차단 정책과 기존 300초 장시간 API 한도는 유지했다.
-- 검증 상태: 대상 61/61, 전체 API·서버 207/207, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 4대 기능 잠금 13함수·21파일·11마이그레이션, 일반 환경 전체 `check:release`와 실제 Production 환경변수가 주입된 Vercel Production 빌드가 모두 통과했다. Production 변수와 고정 테스트 계정 충돌도 구현을 바꾸지 않고 테스트 환경 격리로 보정했다. `admin.html`·`client.html`, 순위 계산·수집·저장, Supabase 데이터는 변경하지 않았다.
+- Vercel 서버 서울 리전·세션 지연 최적화 운영 반영 완료: 모든 함수 실행 지역을 Supabase와 같은 `icn1`로 고정하고 Fluid Compute를 명시했다. `/api/session`은 장시간 순위 API가 사용하는 catch-all 함수와 별도 30초 함수로 분리했으며, 로그인 IP·자격증명 rate-limit의 독립 DB 요청은 동시에 시작한다. 권한·쿠키·CSRF·차단 정책과 기존 300초 장시간 API 한도는 유지했다.
+- 검증·배포 상태: 대상 61/61, 전체 API·서버 207/207, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 4대 기능 잠금 13함수·21파일·11마이그레이션, 일반 환경 전체 `check:release`와 실제 Production 환경변수가 주입된 Vercel Production 빌드가 모두 통과했다. 코드 `31b70e4`·Production `dpl_DZFaojbvvLfnGVVB7G7bVA3jzSgX`를 운영 별칭에 반영했고 실제 함수와 `/health`가 `icn1`을 반환했다. `/health`·`/ready`·비인증 `/api/session` 연속 30/30·동시 15/15, 실패·시간초과 0건이다. Production 변수와 고정 테스트 계정 충돌도 구현을 바꾸지 않고 테스트 환경 격리로 보정했다. `admin.html`·`client.html`, 순위 계산·수집·저장, Supabase 데이터는 변경하지 않았다.
 
 - 광고주 코드 명시 입력 보안 보완 완료: 운영팀·총관리자 광고주 생성 화면에서 `mml93-aXX` 다음 코드를 자동 제안·자동 입력하지 않는다. 사용자가 광고주 코드를 비워 제출해도 서버가 순차 코드를 대신 생성하지 않고 400으로 거부한다. 기존 광고주 코드·연결·세션·DB 데이터는 변경하지 않았다.
 - 검증·배포 상태: 전용 7/7, API·서버 206/206, 플레이스 수집기 51/51, 서버 계약 24/24, 운영팀·광고주 parity, Production 인증 18/18, 4대 기능 잠금 13함수·21파일·11마이그레이션, Vercel 공개 빌드·CSP와 전체 `check:release`가 통과했다. 코드 `553a880`과 Production `momentinsight-pms5xuqh4-momentlabs.vercel.app`을 운영 별칭에 반영했다. `/health`·`/ready`는 릴리스 `553a8801e2fa`·Supabase ready이며, 비인증 생성은 401, 운영 관리자 번들은 직접 입력 문구를 포함하고 자동 제안 문자열은 포함하지 않는다.

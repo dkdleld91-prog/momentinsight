@@ -170,11 +170,13 @@ async function consumeRateBucket(ctx, key, attemptLimit) {
   return { ...local, key, durable: false };
 }
 
-async function consumeRateLimit(request, ctx, mode, code) {
+export async function consumeRateLimit(request, ctx, mode, code) {
   const keys = loginRateKeys(request, mode, code);
-  const ipRate = await consumeRateBucket(ctx, keys.ip, LOGIN_IP_ATTEMPT_LIMIT);
+  const [ipRate, credentialRate] = await Promise.all([
+    consumeRateBucket(ctx, keys.ip, LOGIN_IP_ATTEMPT_LIMIT),
+    consumeRateBucket(ctx, keys.credential, LOGIN_ATTEMPT_LIMIT),
+  ]);
   if (ipRate.unavailable || !ipRate.allowed) return { ...ipRate, credentialKey: keys.credential };
-  const credentialRate = await consumeRateBucket(ctx, keys.credential, LOGIN_ATTEMPT_LIMIT);
   return { ...credentialRate, credentialKey: keys.credential };
 }
 

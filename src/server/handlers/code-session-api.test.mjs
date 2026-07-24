@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   activeTeamByCode,
+  consumeRateLimit,
   loginRateConfiguration,
   loginRateKeys,
   loginRequestAllowed,
@@ -84,6 +85,31 @@ test("login rate limiting isolates different source IP addresses", () => {
   }), "client", "mml93-a02");
   assert.notEqual(first.ip, second.ip);
   assert.notEqual(first.credential, second.credential);
+});
+
+test("login rate limiting starts independent IP and credential checks together", async () => {
+  const pending = [];
+  const ctx = {
+    supabaseAdmin: {
+      rpc(_name, args) {
+        return new Promise((resolve) => pending.push({ args, resolve }));
+      },
+    },
+  };
+  const request = new Request("https://insight.momentlabs.co.kr/api/session", {
+    headers: { "x-vercel-forwarded-for": "203.0.113.42" },
+  });
+
+  const resultPromise = consumeRateLimit(request, ctx, "client", "mml93-a02");
+  assert.equal(pending.length, 2);
+  assert.notEqual(pending[0].args.p_key_hash, pending[1].args.p_key_hash);
+  pending[0].resolve({ data: { allowed: true, retry_after: 0 }, error: null });
+  pending[1].resolve({ data: { allowed: true, retry_after: 0 }, error: null });
+
+  const result = await resultPromise;
+  assert.equal(result.allowed, true);
+  assert.equal(result.durable, true);
+  assert.equal(result.credentialKey, pending[1].args.p_key_hash);
 });
 
 test("invalid login rate environment values fall back to bounded protection", () => {

@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-07-24 · Vercel 서울 리전·로그인 세션 지연 최적화
+
+- 실행 지역·격리 계약: Vercel Functions는 `regions=["icn1"]`, Fluid Compute 활성으로 고정했다. `/api/session`은 별도 30초 함수, 나머지 catch-all API는 기존 300초 함수로 분리했다. `/health`는 비밀값 없이 실제 `VERCEL_REGION`을 반환해 배포 후 런타임 지역을 검증한다.
+- 로그인 왕복 최적화: 동일 로그인 요청의 IP rate-limit과 IP·계정 rate-limit은 서로 독립된 Supabase RPC이므로 `Promise.all`로 동시에 시작한다. 두 검사는 그대로 모두 수행하며 Production DB 오류는 이전과 동일하게 fail-closed 처리한다.
+- 테스트 환경 격리: Vercel Production 변수가 주입된 빌드에서 운영의 `MI_PRIMARY_AGENCY_CODE`·`VERCEL_ENV`가 플레이스 단위 테스트의 고정 계정과 충돌해 5건이 403이 되는 현상을 확인했다. 보호된 플레이스 구현은 수정하지 않고 해당 테스트가 자체 계정·환경을 설정하고 원래 값을 복원하도록 보정했다.
+- 자동 검증: 대상 61/61, API·서버 207/207, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 순위 기능 잠금 13함수·21파일·11마이그레이션, 공개 빌드 9파일·CSP, 일반 환경 전체 `npm run check:release`, 실제 Production 환경변수가 주입된 `vercel build --prod`, `git diff --check` 통과.
+- 변경 비범위: `src/pages/admin.html`, `src/pages/client.html`, 상품·플레이스 순위 계산·수집·저장·스냅샷, Supabase 스키마와 운영 데이터는 변경하지 않았다.
+
 ## 2026-07-24 · 광고주 코드 자동 제안 제거·명시 입력 강제
 
 - 화면 계약: 운영팀·총관리자 광고주 생성 입력란은 `광고주 코드 직접 입력`의 빈 상태로 시작하며 `autocomplete=off`를 사용한다. 서버 목록·운영팀 검증 응답도 다음 광고주 코드를 내려주지 않는다.

@@ -536,6 +536,9 @@ async function withHubOfficialProvider(fetchImpl, callback) {
 }
 
 const originalEnv = {
+  nodeEnv: process.env.NODE_ENV,
+  vercelEnv: process.env.VERCEL_ENV,
+  primaryAgencyCode: process.env.MI_PRIMARY_AGENCY_CODE,
   adminCode: process.env.MI_RANK_ADMIN_CODE,
   providerUrl: process.env.NAVER_PLACE_RANK_API_URL,
   providerKey: process.env.NAVER_PLACE_RANK_API_KEY,
@@ -552,6 +555,9 @@ const originalEnv = {
 };
 
 test.before(() => {
+  delete process.env.NODE_ENV;
+  delete process.env.VERCEL_ENV;
+  process.env.MI_PRIMARY_AGENCY_CODE = AGENCY_CODE;
   process.env.MI_RANK_ADMIN_CODE = ADMIN_CODE;
   delete process.env.NAVER_PLACE_RANK_API_URL;
   delete process.env.NAVER_PLACE_RANK_API_KEY;
@@ -569,6 +575,9 @@ test.before(() => {
 
 test.after(() => {
   const envNames = {
+    NODE_ENV: originalEnv.nodeEnv,
+    VERCEL_ENV: originalEnv.vercelEnv,
+    MI_PRIMARY_AGENCY_CODE: originalEnv.primaryAgencyCode,
     MI_RANK_ADMIN_CODE: originalEnv.adminCode,
     NAVER_PLACE_RANK_API_URL: originalEnv.providerUrl,
     NAVER_PLACE_RANK_API_KEY: originalEnv.providerKey,

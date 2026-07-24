@@ -2,9 +2,16 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run check:release",
   "outputDirectory": "dist",
+  "regions": [
+    "icn1"
+  ],
+  "fluid": true,
   "cleanUrls": true,
   "trailingSlash": false,
   "functions": {
+    "api/session.mjs": {
+      "maxDuration": 30
+    },
     "api/[...path].mjs": {
       "maxDuration": 300
     }

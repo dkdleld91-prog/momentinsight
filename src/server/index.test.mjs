@@ -9,6 +9,7 @@ test("health is a lightweight liveness response with runtime trace headers", asy
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.status, "live");
+  assert.equal(body.region, String(process.env.VERCEL_REGION || "local"));
   assert.equal(response.headers.get("x-request-id"), "health-check-1234");
 });
 

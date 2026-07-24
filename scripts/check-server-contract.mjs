@@ -11,6 +11,7 @@ const files = {
   ownerIdentity: "src/server/owner-identity.mjs",
   ownerTool: "src/server/handlers/owner-tool-api.mjs",
   ownerToolAdapter: "api/owner/tool.mjs",
+  sessionAdapter: "api/session.mjs",
   responseAdapter: "api/response-adapter.mjs",
   runtime: "src/server/runtime.mjs",
   errorSafety: "src/server/error-safety.mjs",
@@ -32,6 +33,7 @@ const sessionGate = fs.readFileSync(files.sessionGate, "utf8");
 const ownerIdentity = fs.readFileSync(files.ownerIdentity, "utf8");
 const ownerTool = fs.readFileSync(files.ownerTool, "utf8");
 const ownerToolAdapter = fs.readFileSync(files.ownerToolAdapter, "utf8");
+const sessionAdapter = fs.readFileSync(files.sessionAdapter, "utf8");
 const responseAdapter = fs.readFileSync(files.responseAdapter, "utf8");
 const runtime = fs.readFileSync(files.runtime, "utf8");
 const errorSafety = fs.readFileSync(files.errorSafety, "utf8");
@@ -224,6 +226,14 @@ check(
   files.ownerToolAdapter,
 );
 check(
+  "login session has a dedicated Vercel function adapter",
+  hasAll(sessionAdapter, [
+    /createHandler/,
+    /createHandler\("\/api\/session"\)/,
+  ]),
+  files.sessionAdapter,
+);
+check(
   "Vercel response adapter preserves multiple session cookie headers",
   hasAll(responseAdapter, [
     /getSetCookie/,
@@ -316,6 +326,20 @@ check(
   "Vercel exposes the readiness route",
   (vercel.rewrites || []).some((rewrite) => rewrite.source === "/ready" && rewrite.destination === "/api/ready"),
   files.vercel,
+);
+check(
+  "Vercel functions run with Fluid Compute in the Seoul database region",
+  Array.isArray(vercel.regions)
+    && vercel.regions.length === 1
+    && vercel.regions[0] === "icn1"
+    && vercel.fluid === true,
+  files.vercel,
+);
+check(
+  "Vercel isolates session latency from long-running API work",
+  vercel.functions?.["api/session.mjs"]?.maxDuration === 30
+    && vercel.functions?.["api/[...path].mjs"]?.maxDuration === 300,
+  `${files.vercel}, ${files.sessionAdapter}`,
 );
 check(
   "Vercel release requires quality and production authentication gates",

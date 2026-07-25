@@ -28,6 +28,12 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-rank-cron",
   "/api/naver-place-rank-cron",
 ]);
+const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
+  "/api/naver-keyword",
+  "/api/naver-product-seo-audit",
+  "/api/naver-shopping-rank",
+  "/api/meta-ads",
+]);
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
 export const SESSION_ACTIVITY_REVOKED = "revoked";
@@ -81,7 +87,9 @@ export function roleAllowsPath(role, path) {
 
 export function sessionScopeAllowsPath(claims, path) {
   if (claims?.role !== "team" || (claims.clientId && claims.agencyCode)) return true;
-  return path.startsWith("/api/team/") || path === "/api/team-agency-codes";
+  return path.startsWith("/api/team/")
+    || path === "/api/team-agency-codes"
+    || TEAM_ACCOUNT_ONLY_TOOL_PATHS.has(path);
 }
 
 function mutationOriginAllowed(request) {
@@ -298,7 +306,7 @@ export async function authorizeCodeSession(request, env = process.env, options =
       response: protectedJson(request, {
         ok: false,
         code: "ADVERTISER_SCOPE_REQUIRED",
-        message: "연결된 광고주가 있어야 이 기능을 사용할 수 있습니다.",
+        message: "광고주 데이터 기능입니다. 광고주를 연결하면 현재 운영팀 세션에서 바로 활성화됩니다.",
       }, 403),
     };
   }

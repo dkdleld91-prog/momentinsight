@@ -30,6 +30,8 @@ const legacyDeploy = fs.readFileSync(files.legacyDeploy, "utf8");
 const packageJson = JSON.parse(fs.readFileSync(files.packageJson, "utf8"));
 const serverIndex = fs.readFileSync(files.serverIndex, "utf8");
 const sessionGate = fs.readFileSync(files.sessionGate, "utf8");
+const sessionFreePathsBlock = sessionGate.match(/const SESSION_FREE_PATHS = new Set\(\[[\s\S]*?\]\);/)?.[0] || "";
+const teamAccountOnlyPathsBlock = sessionGate.match(/const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set\(\[[\s\S]*?\]\);/)?.[0] || "";
 const ownerIdentity = fs.readFileSync(files.ownerIdentity, "utf8");
 const ownerTool = fs.readFileSync(files.ownerTool, "utf8");
 const ownerToolAdapter = fs.readFileSync(files.ownerToolAdapter, "utf8");
@@ -172,12 +174,14 @@ check(
   `${files.serverIndex}, ${files.runtime}`,
 );
 check(
-  "product SEO audit is session protected and fail closed to verified public evidence",
+  "product SEO audit requires a session, permits exact account-only access and fails closed to verified public evidence",
   hasAll(serverIndex, [
     /naverProductSeoAudit: \(\) => import\("\.\/handlers\/naver-product-seo-audit\.mjs"\)/,
     /url\.pathname === "\/api\/naver-product-seo-audit"/,
     /dispatch\("naverProductSeoAudit", request\)/,
-  ]) && !sessionGate.includes('"/api/naver-product-seo-audit"')
+  ]) && !sessionFreePathsBlock.includes('"/api/naver-product-seo-audit"')
+    && teamAccountOnlyPathsBlock.includes('"/api/naver-product-seo-audit"')
+    && /TEAM_ACCOUNT_ONLY_TOOL_PATHS\.has\(path\)/.test(sessionGate)
     && hasAll(productSeoAudit, [
       /ALLOWED_HOSTS/,
       /SEO_AUDIT_TIMEOUT_MS/,

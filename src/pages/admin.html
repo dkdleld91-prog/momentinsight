@@ -8109,6 +8109,7 @@
         var modeDesc = root.querySelector("[data-admin-mode-desc]");
         var modeBadge = root.querySelector("[data-admin-mode-badge]");
         var ownerHint = root.querySelector("[data-owner-mode-hint] span");
+        var teamHasClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
 
         root.querySelectorAll("[data-owner-only]").forEach(function (node) {
           node.style.display = ownerMode ? "" : "none";
@@ -8119,20 +8120,26 @@
         if (desc) {
           desc.textContent = ownerMode
             ? "총관리자는 운영팀 코드와 광고주 코드를 직접 만들고 계정별 순위 추적을 관리합니다."
-            : "운영팀은 연결된 광고주 1개만 생성하고, 필요 시 연결 권한을 해제할 수 있습니다.";
+            : (teamHasClient
+              ? "연결된 광고주 1개의 데이터와 순위 추적을 관리합니다."
+              : "광고주 연결 전에는 단독 조회 도구를 사용하고, 필요할 때 광고주 1개를 연결합니다.");
         }
         if (badge) badge.textContent = ownerMode ? "Owner" : "Operator";
         if (modeTitle) modeTitle.textContent = ownerMode ? "총관리자 모드" : "운영팀 모드";
         if (modeDesc) {
           modeDesc.textContent = ownerMode
             ? "계정·권한과 무제한 순위 추적을 관리합니다."
-            : "입력·보고서·공개와 연결 광고주를 관리합니다.";
+            : (teamHasClient
+              ? "입력·보고서·공개와 연결 광고주를 관리합니다."
+              : "키워드·상품 순위·SEO 단독 조회를 사용할 수 있습니다.");
         }
-        if (modeBadge) modeBadge.textContent = ownerMode ? "Owner" : "Operator";
+        if (modeBadge) modeBadge.textContent = ownerMode ? "Owner" : (teamHasClient ? "Operator" : "Operator · 단독");
         if (ownerHint) {
           ownerHint.textContent = ownerMode
             ? "총관리자는 운영팀 없이 광고주를 직접 발급할 수 있습니다. 운영팀 코드 칸을 비우면 총관리자 직접 발급으로 저장됩니다."
-            : "운영팀은 전체 관리자 도구를 그대로 쓰되, 대행사 코드 화면에서는 자신의 광고주 코드 1개만 생성·해제합니다.";
+            : (teamHasClient
+              ? "운영팀은 연결된 광고주 1개의 보고서와 30일 순위 추적을 관리할 수 있습니다."
+              : "광고주 연결 전에도 단독 조회 도구를 사용할 수 있으며, 보고서와 30일 추적은 광고주 연결 후 활성화됩니다.");
         }
         if (listTitle) listTitle.textContent = ownerMode ? "활성 계정" : "연결 상태";
         if (listDesc) {
@@ -9201,6 +9208,38 @@
       });
       setLoginMode("operator");
 
+      async function synchronizeOperationTeamSession(requestGeneration, sessionScope) {
+        if (secureSession.role !== "team") return null;
+        var payload = await restoreSecureSession();
+        if (sessionValidationUnavailable(payload)) {
+          await waitForSessionRetry(700);
+          payload = await restoreSecureSession();
+        }
+        if (!payload.ok || !payload.session || payload.session.role !== "team") {
+          throw new Error(payload.message || "운영팀 권한 전환을 확인할 수 없습니다. 새로고침 후 다시 확인해주세요.");
+        }
+        if (!adminSessionIsCurrent(requestGeneration, "team", sessionScope)) return null;
+
+        applySecureSession(payload);
+        currentOperationTeam = Object.assign({}, payload.team || {}, {
+          client: (payload.team && payload.team.client) || payload.client || null
+        });
+        root.classList.toggle("is-account-only", !currentOperationTeam.client);
+        syncOwnerAccessFields();
+        renderOperationTeamCodePanel({ team: currentOperationTeam });
+        applyState(readState());
+        renderSourceFile();
+
+        var nextScope = secureSession.teamId || secureSession.scopeKey;
+        if (currentOperationTeam.client) {
+          await refreshSourceFileFromServer(requestGeneration, nextScope);
+        }
+        if (!adminSessionIsCurrent(requestGeneration, "team", nextScope)) return null;
+        window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+        window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
+        return payload;
+      }
+
       async function activateAdminSession(payload, restored, requestGeneration) {
         var session = payload && payload.session ? payload.session : {};
         if (requestGeneration !== adminSessionGeneration) return false;
@@ -9216,6 +9255,7 @@
             client: (payload.team && payload.team.client) || payload.client || null
           });
         }
+        root.classList.toggle("is-account-only", session.role === "team" && !currentOperationTeam.client);
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         if (loginInput) loginInput.value = "";
@@ -9227,11 +9267,16 @@
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
           var teamSessionScope = session.teamId || session.scopeKey;
-          await refreshSourceFileFromServer(requestGeneration, teamSessionScope);
+          var teamHasClient = Boolean(currentOperationTeam && currentOperationTeam.client);
+          if (teamHasClient) await refreshSourceFileFromServer(requestGeneration, teamSessionScope);
           if (!adminSessionIsCurrent(requestGeneration, "team", teamSessionScope)) return false;
-          setStatus(loginStatus, restored ? "보안 세션이 복원되었습니다." : "운영팀 콘솔이 열렸습니다.", "is-ok");
-          setStatus(ownerStatus, currentOperationTeam && currentOperationTeam.client ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다." : "운영팀 코드로 로그인했습니다. 광고주 코드 1개를 생성할 수 있습니다.", currentOperationTeam && currentOperationTeam.client ? "is-warn" : "is-ok");
-          setScreen("agency-code", !restored);
+          setStatus(loginStatus, teamHasClient
+            ? (restored ? "보안 세션이 복원되었습니다." : "운영팀 콘솔이 열렸습니다.")
+            : "운영팀 단독 모드가 열렸습니다. 조회 도구는 바로 사용할 수 있습니다.", "is-ok");
+          setStatus(ownerStatus, teamHasClient
+            ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다."
+            : "광고주 없이 운영팀 단독 사용이 가능합니다. 필요할 때 광고주 코드 1개를 연결하세요.", teamHasClient ? "is-warn" : "is-ok");
+          setScreen(teamHasClient ? "agency-code" : "home", !restored);
         } else if (session.role === "owner") {
           var ownerSessionScope = session.scopeKey;
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
@@ -9255,6 +9300,7 @@
         clearAdminAuthCode();
         discardOwnerTool();
         currentOperationTeam = null;
+        root.classList.remove("is-account-only");
         ownerCodeSnapshot = null;
         renderOwnerFullAccountView(null);
         root.classList.add("is-locked");
@@ -9603,8 +9649,8 @@
             if (codeInput) codeInput.value = "";
             if (nameInput) nameInput.value = "";
             if (currentOperationTeam) {
-              currentOperationTeam = payload.team || currentOperationTeam;
-              renderOperationTeamCodePanel({ team: currentOperationTeam });
+              var synchronizedTeam = await synchronizeOperationTeamSession(actionSession.generation, actionSession.scopeKey);
+              if (!synchronizedTeam) return;
             } else {
               await loadOwnerCodes(true);
             }
@@ -9677,7 +9723,8 @@
           if (payload.staleSession) return;
           if (!payload.ok) throw new Error(payload.message || "권한 해제에 실패했습니다.");
           if (teamDisconnect) {
-            await refreshOperationTeamPanel();
+            var synchronizedTeam = await synchronizeOperationTeamSession(actionSession.generation, actionSession.scopeKey);
+            if (!synchronizedTeam) return;
           } else {
             await loadOwnerCodes(true);
           }

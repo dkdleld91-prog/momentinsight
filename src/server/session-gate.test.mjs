@@ -67,10 +67,29 @@ test("owner session is bound to the exact primary account identity", async () =>
   assert.equal(await sessionActivityValid(owner, { ...ENV, MI_PRIMARY_AGENCY_CODE: "" }), false);
 });
 
-test("an unlinked team is limited to its account provisioning endpoint", async () => {
+test("an unlinked team can use standalone tools without crossing advertiser scope", async () => {
   const claims = createSessionClaims({ role: "team", teamCode: "mml93-t01", teamId: "team-1" });
   assert.equal(sessionScopeAllowsPath(claims, "/api/team-agency-codes"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-product-seo-audit"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-shopping-rank"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/meta-ads"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword/private"), false);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/report-center"), false);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-rank-trackers"), false);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-place-rank-trackers"), false);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/demo/public-state"), false);
+
+  const allowed = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=test", claims), ENV, {
+    activityCheck: async () => true,
+  });
+  assert.equal(allowed.ok, true);
+  assert.equal(allowed.request.headers.get("x-mi-session-role"), "team");
+  assert.equal(allowed.request.headers.get("x-mi-session-scope"), "account-only");
+  assert.equal(allowed.request.headers.get("x-mi-team-code"), "mml93-t01");
+  assert.equal(allowed.request.headers.get("x-mi-agency-code"), null);
+  assert.equal(allowed.request.headers.get("x-mi-rank-access-code"), null);
+
   const blocked = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, {
     activityCheck: async () => true,
   });

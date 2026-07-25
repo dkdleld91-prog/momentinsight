@@ -171,3 +171,29 @@ test("admin team requests do not serialize raw team codes", async () => {
   assert.notEqual(publishEnd, -1);
   assert.doesNotMatch(source.slice(publishStart, publishEnd), /["']x-mi-team-code["']/);
 });
+
+test("operation team sessions resynchronize after advertiser link changes", async () => {
+  const source = await readFile(new URL("../../pages/admin.html", import.meta.url), "utf8");
+  const syncStart = source.indexOf("async function synchronizeOperationTeamSession");
+  const syncEnd = source.indexOf("async function activateAdminSession", syncStart);
+  const createStart = source.indexOf('var teamClientButton = root.querySelector("[data-team-client-create]")');
+  const createEnd = source.indexOf('var ownerRefreshButton = root.querySelector("[data-owner-code-refresh]")', createStart);
+  const disconnectStart = source.indexOf('root.addEventListener("click", async function (event)');
+  const disconnectEnd = source.indexOf('var codeSaveButton = root.querySelector("[data-admin-code-save]")', disconnectStart);
+
+  for (const index of [syncStart, syncEnd, createStart, createEnd, disconnectStart, disconnectEnd]) {
+    assert.notEqual(index, -1);
+  }
+
+  const syncBlock = source.slice(syncStart, syncEnd);
+  const createBlock = source.slice(createStart, createEnd);
+  const disconnectBlock = source.slice(disconnectStart, disconnectEnd);
+  assert.match(syncBlock, /restoreSecureSession\(\)/);
+  assert.match(syncBlock, /applySecureSession\(payload\)/);
+  assert.match(syncBlock, /mi:rank-scope-changed/);
+  assert.match(syncBlock, /mi:rank-auth-ready/);
+  assert.match(createBlock, /synchronizeOperationTeamSession/);
+  assert.match(disconnectBlock, /synchronizeOperationTeamSession/);
+  assert.match(source, /운영팀 단독 모드가 열렸습니다/);
+  assert.match(source, /광고주 없이 운영팀 단독 사용이 가능합니다/);
+});

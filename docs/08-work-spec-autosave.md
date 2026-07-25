@@ -28,9 +28,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 07. 25. 14:53:17
-- 기준 커밋: 3c2be1c
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/WORK_STATUS.md /  M scripts/check-server-contract.mjs /  M src/pages/admin.html /  M src/server/handlers/super-admin-api.test.mjs /  M src/server/session-gate.mjs /  M src/server/session-gate.test.mjs
+- 마지막 자동 저장: 2026. 07. 25. 15:05:03
+- 기준 커밋: 7e2fbd5
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -45,7 +45,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 배포 승인 | 운영팀 단독 계정·광고주 후연결 정상화 | 광고주가 아직 없는 운영팀도 계정 발급 화면뿐 아니라 키워드 조회·N 상품 단건 순위·SEO 점검·Meta 광고 조회를 독립적으로 사용하도록 정확 경로만 허용. 광고주 보고서·공개 데이터·원본 파일·N 상품/플레이스 30일 추적은 광고주 연결 전 계속 차단하고, 광고주 생성·연결 해제 직후 현재 세션을 자동 재발급해 새 권한이 재로그인 없이 반영되도록 보강 | 단독 허용 4경로·유사 경로 및 광고주 데이터 4영역 차단·광고주 헤더 미주입·생성/해제 세션 전환 회귀 통과. 전체 `npm test`, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 역할 parity·기준선·공개 빌드/CSP·4대 기능 잠금 13함수·21파일·11마이그레이션·전체 `check:release`·`git diff --check` 통과 | 대표님 배포 승인. 커밋·Production 반영·운영 검증 진행 |
+| 완료 | 운영팀 단독 계정·광고주 후연결 정상화 | 광고주가 아직 없는 운영팀도 계정 발급 화면뿐 아니라 키워드 조회·N 상품 단건 순위·SEO 점검·Meta 광고 조회를 독립적으로 사용하도록 정확 경로만 허용. 광고주 보고서·공개 데이터·원본 파일·N 상품/플레이스 30일 추적은 광고주 연결 전 계속 차단하고, 광고주 생성·연결 해제 직후 현재 세션을 자동 재발급해 새 권한이 재로그인 없이 반영되도록 보강 | 단독 허용 4경로·유사 경로 및 광고주 데이터 4영역 차단·광고주 헤더 미주입·생성/해제 세션 전환 회귀 통과. 전체 API·서버 208/208, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 역할 parity·기준선·공개 빌드/CSP·4대 기능 잠금 13함수·21파일·11마이그레이션·전체 `check:release`·`git diff --check` 통과 | 코드 `7e2fbd5`·Production `dpl_HYfQD3avuxuqjipYfyQ1aHbUANDL`·운영 별칭 반영. `/health`·`/ready` 200, 서울 `icn1`, Supabase ready, 운영 관리자 빌드 해시 일치, 비인증 세션 401 확인 |
 | 보류 | N 플레이스 30일 부분조회·순위 UX 정상화 | 운영팀 단독 계정 우선 조치 요청으로 잠시 보류. 기존 진단·보호 잠금과 저장 데이터는 유지하고 이번 작업과 섞지 않음 | 재개 시 운영 DB·수집 로그 진단부터 이어서 진행 | 미배포 |
 | 완료 | Vercel 서울 리전·로그인 세션 함수 분리·지연 최적화 | Vercel 함수 실행 지역을 Supabase와 같은 서울 `icn1`로 고정하고 Fluid Compute를 명시 활성화. `/api/session`을 장시간 순위 API catch-all과 별도 함수로 분리하고 로그인 rate-limit DB 요청을 독립 병렬 처리해 네트워크 왕복을 줄임. 기존 권한·세션·차단 정책과 4대 조회·추적 기능 잠금은 유지 | 대상 단위 61/61, 전체 API·서버 207/207, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 보호 기능 잠금 13함수·21파일·11마이그레이션, 일반·Production 환경 `check:release`, Vercel Production 빌드·공개 빌드/CSP·`git diff --check` 통과. 운영 `/health`·`/ready`·비인증 세션 연속 30/30·동시 15/15, 실패 0건 | 코드 `31b70e4`·Production `dpl_DZFaojbvvLfnGVVB7G7bVA3jzSgX`·운영 별칭 반영. 실제 함수와 `/health`의 `region=icn1` 확인 |
 | 완료 | 광고주 코드 자동 제안 제거·명시 입력 강제 | 운영팀·총관리자 코드 생성 화면에서 다음 광고주 코드를 자동 입력하거나 노출하지 않고, 공백 제출 시 서버가 순차 코드를 대신 발급하지 않도록 차단 | 전용 7/7, API·서버 206/206, 플레이스 수집기 51/51, 서버 계약 24/24, 운영팀·광고주 parity, Production 인증 18/18, 보호 기능 잠금 13함수·21파일·11마이그레이션, 공개 빌드·CSP·전체 `check:release` 통과. 운영 `/health`·`/ready` 200, Supabase ready, 비인증 생성 401, 관리자 번들 직접 입력 문구·로컬 산출물 일치 확인 | 코드 `553a880`, Production `momentinsight-pms5xuqh4-momentlabs.vercel.app`·운영 별칭 반영. 릴리스 `553a8801e2fa` |

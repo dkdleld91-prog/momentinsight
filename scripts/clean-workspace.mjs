@@ -10,6 +10,7 @@ const includeDeps = args.has("--deps");
 
 const fixedTargets = [
   "dist",
+  ".vercel/output",
   "supabase/.temp",
   "03_운영시트_템플릿/node_modules",
   "03_운영시트_템플릿/outputs",

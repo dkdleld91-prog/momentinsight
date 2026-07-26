@@ -1,5 +1,16 @@
 # Project Memory
 
+## 파일 경로 고정
+
+- 작업 시작점: `00_프로젝트_폴더_가이드.md`
+- 문서 안내: `docs/README.md`
+- 현재 상태: `docs/WORK_STATUS.md`
+- 다음 작업: `docs/NEXT_ACTIONS.md`
+- 전체 작업명세: `docs/08-work-spec-autosave.md`
+- 초기 기획 참고: `docs/planning`
+- 재생성 산출물인 `dist`, `.vercel/output`, 운영시트 `outputs`는 원본이 아니다.
+- 실제 운영 원본은 `src/pages`, `src/server`, `api`, `public`, `supabase/migrations`, `tools/naver-place-rank-collector`에 있다.
+
 ## 제품 구조
 
 - 화면 원본: `src/pages/home.html`, `src/pages/admin.html`, `src/pages/client.html`

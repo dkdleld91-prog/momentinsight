@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-07-26 · 프로젝트 파일 안전 정리·경로 단순화
+
+- 삭제 근거: `dist`, `.vercel/output`, `03_운영시트_템플릿/outputs`, `.DS_Store`는 Git ignored이며 빌드·샘플 생성으로 다시 만들 수 있어 약 18MB를 삭제했다. `.env.local`, `.vercel/project.json`, `.vercel/.env.production.local`, 루트·플레이스 수집기 `node_modules`는 운영·검증에 필요해 보존했다.
+- 추적 파일 정리: 현재 정적 HTML·Vercel 구조와 충돌하고 다른 파일에서 참조되지 않는 `docs/00-project-structure.md`, `src/README.md`만 제거했다. 초기 제품·정보 구조·화면·데이터·UI·로드맵·개발·DB 초안 8개는 삭제하지 않고 `docs/planning`으로 이동했다.
+- 경로 고정: `00_프로젝트_폴더_가이드.md`와 `docs/README.md`에 현재 상태·다음 작업·작업명세·테스트 증거의 읽기 순서와 화면·서버·DB·수집기 원본 경로를 고정했다. 로컬 Markdown 22개 링크와 핵심 경로 존재, 제거 대상 부재 검사가 통과했다.
+- 기능 무손실: 잠금 21함수·23파일·11마이그레이션, API·서버 218/218, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 공개 빌드/CSP와 전체 `npm run check:release`가 통과했다. 검증 빌드가 만든 `dist`를 다시 안전 정리한 후 `npm run clean:workspace:dry`가 정리 대상 0개를 반환했다.
+- 비변경 범위: `src/pages`, `src/server`, `api`, `public`, `supabase`, `tools`의 운영 구현과 DB 데이터·환경변수·Vercel Production은 변경하거나 배포하지 않았다.
+
 ## 2026-07-26 · 5대 핵심 기능 보호 잠금·3역할 회귀 확장
 
 - 보호 계약: 기존 `키워드 조회`, `N 상품 순위`, `N 30일 순위`, `N 플레이스 30일 순위`에 `SEO 확인`의 공통 점수 엔진·서버 자동 점검 수집기와 운영팀·광고주 조회·평가·표시 진입점을 추가했다. 총 21함수·23파일·11마이그레이션이 승인 없는 변경을 릴리스에서 차단하며 운영 사용자의 신규 조회·점검·추적 등록·갱신은 계속 허용한다.

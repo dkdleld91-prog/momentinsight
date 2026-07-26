@@ -28,27 +28,31 @@
 
 ```txt
 .
+├── 00_프로젝트_폴더_가이드.md
 ├── AGENTS.md
 ├── README.md
 ├── .github/workflows/
-│   └── naver-rank-cron.yml
+├── api/
 ├── 03_운영시트_템플릿/
 ├── 05_네이버_API_연동/
 ├── 06_Supabase_연동/
-├── api/
-│   └── index.mjs
 ├── docs/
-│   └── 08-work-spec-autosave.md
+│   ├── README.md
+│   ├── 08-work-spec-autosave.md
+│   ├── WORK_STATUS.md
+│   ├── NEXT_ACTIONS.md
+│   └── planning/
 ├── public/
-│   └── downloads/
 ├── scripts/
 ├── supabase/
-└── src/
+├── tools/naver-place-rank-collector/
+├── src/
     ├── pages/
     │   ├── home.html
     │   ├── admin.html
     │   └── client.html
     └── server/
+└── vercel.json
 ```
 
 ## 주요 메뉴
@@ -83,6 +87,10 @@
 
 ## 문서 안내
 
+- [프로젝트 폴더 가이드](00_프로젝트_폴더_가이드.md)
+- [문서 전체 안내](docs/README.md)
+- [현재 운영 상태](docs/WORK_STATUS.md)
+- [다음 작업](docs/NEXT_ACTIONS.md)
 - [작업 명세서](docs/08-work-spec-autosave.md)
 - [Supabase 연동 자료](06_Supabase_연동/README.md)
 - [네이버 API 연동 자료](05_네이버_API_연동/README.md)
@@ -96,7 +104,7 @@ npm run clean:workspace:dry
 npm run clean:workspace
 ```
 
-- 기본 정리 대상: `dist`, `supabase/.temp`, 임시 출력물, macOS 캐시 파일
+- 기본 정리 대상: `dist`, `.vercel/output`, `supabase/.temp`, 임시 출력물, macOS 캐시 파일
 - 기본 보존 대상: `.env.local`, `.vercel`, 루트 `node_modules`
 - 의존성까지 다시 설치할 수 있을 때만 `npm run clean:workspace:deps`를 사용합니다.
 

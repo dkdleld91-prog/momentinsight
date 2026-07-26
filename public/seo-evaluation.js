@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v11_stable_six_auto_plus_manual_review_20260726";
+  var VERSION = "seo_v12_balanced_partial_relevance_20260726";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -105,7 +105,7 @@
     normalizedTokens(title).forEach(function (token) { targetTokens[token] = true; });
     var matched = common.filter(function (token) { return targetTokens[token]; });
     var ratio = common.length ? matched.length / common.length : 1;
-    var score = ratio >= 1 ? 10 : (ratio >= 0.6 ? 7 : (ratio > 0 ? 4 : 0));
+    var score = ratio >= 1 ? 10 : (ratio >= 0.75 ? 8 : (ratio >= 0.4 ? 6 : (ratio > 0 ? 3 : 0)));
     return {
       verified: true,
       sampleSize: peers.length,
@@ -114,7 +114,34 @@
       ratio: ratio,
       score: score,
       max: 10,
-      label: !common.length ? "추가 공통어 없음" : (ratio >= 1 ? "충분" : (ratio >= 0.6 ? "대체로 반영" : "보완"))
+      label: !common.length ? "추가 공통어 없음" : (ratio >= 1 ? "충분" : (ratio >= 0.4 ? "일부 반영" : "보완"))
+    };
+  }
+
+  function keywordMatchState(keyword, title, categoryBenchmark, topKeywordBenchmark) {
+    var keywordCompact = compact(keyword);
+    var titleCompact = compact(title);
+    var exact = Boolean(keywordCompact && titleCompact.includes(keywordCompact));
+    if (exact) return { exact: true, related: true, score: 10, level: "exact" };
+
+    var keywordTokens = normalizedTokens(keyword);
+    var titleTokens = normalizedTokens(title);
+    var titleTokenMap = {};
+    titleTokens.forEach(function (token) { titleTokenMap[token] = true; });
+    var matchedKeywordTokens = keywordTokens.filter(function (token) { return titleTokenMap[token]; });
+    var tokenRatio = keywordTokens.length ? matchedKeywordTokens.length / keywordTokens.length : 0;
+    var containedTitleTokens = titleTokens.filter(function (token) {
+      return token.length >= 2 && keywordCompact.includes(token);
+    });
+    var categoryRelated = Boolean(categoryBenchmark && categoryBenchmark.ratio >= 0.8);
+    var marketRelated = Boolean(topKeywordBenchmark && topKeywordBenchmark.matched.length >= 2);
+    var contextualRelated = categoryRelated && (marketRelated || containedTitleTokens.length > 0);
+    var score = tokenRatio >= 0.75 ? 8 : (tokenRatio >= 0.5 || contextualRelated ? 6 : (tokenRatio > 0 || containedTitleTokens.length > 0 ? 3 : 0));
+    return {
+      exact: false,
+      related: score >= 6,
+      score: score,
+      level: score >= 6 ? "related" : (score > 0 ? "weak" : "missing")
     };
   }
 
@@ -161,10 +188,15 @@
       });
     }
 
+    var categoryBenchmark = categoryBenchmarkState(input.category, input.peerCategories);
+    var brand = text(input.brand);
+    var maker = text(input.maker);
+    var topKeywordBenchmark = topKeywordBenchmarkState(title, input.peerTitles, keyword, brand, maker);
+    var keywordMatch = keywordMatchState(keyword, title, categoryBenchmark, topKeywordBenchmark);
     var titleQuality = titleQualityState(title);
-    var titleDetail = keywordIncluded
+    var titleDetail = keywordMatch.exact
       ? "기준 키워드 포함"
-      : "기준 키워드 미포함";
+      : (keywordMatch.related ? "기준 키워드 직접 미포함 · 상품군 관련성 확인" : "기준 키워드 미포함");
     titleDetail += " · " + titleLength + "자" + (titleLength <= 50 ? "로 권장 범위" : "로 50자 초과");
     if (titleQuality.issueCount) {
       var titleIssues = [];
@@ -179,16 +211,12 @@
       "titleFit",
       "상품명 적합도",
       titleDetail,
-      (keywordIncluded ? 10 : 0) + (titleLength <= 50 ? 5 : 0) + titleQuality.score,
+      keywordMatch.score + (titleLength <= 50 ? 5 : 0) + titleQuality.score,
       20,
       Boolean(title && keyword),
       "공식 상품명 자동 분석"
     );
 
-    var categoryBenchmark = categoryBenchmarkState(input.category, input.peerCategories);
-    var brand = text(input.brand);
-    var maker = text(input.maker);
-    var topKeywordBenchmark = topKeywordBenchmarkState(title, input.peerTitles, keyword, brand, maker);
     addCheck(
       "topKeywordFit",
       "상위 상품 핵심어",
@@ -217,7 +245,7 @@
     );
 
     var productInfoVerified = input.productInfoVerified === true;
-    var brandMakerScore = (brand ? 5 : 0) + (maker ? 5 : 0);
+    var brandMakerScore = (brand ? 7 : 0) + (maker ? 3 : 0);
     addCheck(
       "brandMaker",
       "브랜드·제조사",
@@ -270,13 +298,18 @@
     var trafficDetail = "";
     if (rank !== null) {
       if (rank <= 5) trafficScore = 10;
-      else if (rank <= 40) trafficScore = 5;
+      else if (rank <= 40) trafficScore = 9;
+      else if (rank <= 100) trafficScore = 8;
+      else if (rank <= 200) trafficScore = 5;
+      else if (rank <= 300) trafficScore = 3;
       trafficDetail = "광고를 제외한 현재 오가닉 순위는 " + rank + "위입니다. " +
         (rank <= 5
           ? "다른 항목이 모두 양호하면 총점 95점 기준입니다."
           : (rank <= 40
-            ? "다른 항목이 모두 양호하면 총점 90점 기준입니다."
-            : "다른 항목이 모두 양호하면 총점 85점 기준이며 트래픽 보완이 필요합니다."));
+            ? "상위 40위 구간으로 트래픽 점수 9점을 반영합니다."
+            : (rank <= 100
+              ? "상위 100위 구간으로 확인되어 기본 노출 근거 8점을 반영합니다."
+              : "확인된 순위 구간에 따라 기본 노출 점수를 반영하며 트래픽 보완이 필요합니다.")));
     } else if (rankVerified) {
       trafficDetail = "상위 " + rankCheckedCount + "개 오가닉 결과에서 상품을 찾지 못했습니다. 다른 항목이 모두 양호하면 총점 85점 기준이며 트래픽·클릭·판매 반응을 보완해야 합니다.";
     }
@@ -363,6 +396,7 @@
       reviewLabel: reviewLabel,
       topKeywordBenchmark: topKeywordBenchmark,
       titleKeywordIncluded: keywordIncluded,
+      titleKeywordMatchLevel: keywordMatch.level,
       titleLength: titleLength,
       titleIssues: titleQuality,
       categoryLabel: categoryBenchmark ? categoryBenchmark.label : "",

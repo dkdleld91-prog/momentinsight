@@ -878,7 +878,7 @@ const checks = {
     && source.includes("전회 대비")),
   seoScoringBasisVisible: [adminSource, clientSource].every((source) => source.includes("SEO 점수 기준")
     && source.includes("상품명 적합도 20점")
-    && source.includes("키워드 포함·50자 이내·중복 및 홍보 문구")
+    && source.includes("키워드 정확·상품군 관련성·50자 이내·중복 및 홍보 문구")
     && source.includes("상위 상품 핵심어 10점")
     && source.includes("상위 오가닉 5개 상품명의 공통어 반영")
     && source.includes("카테고리 적합도 15점")
@@ -892,9 +892,9 @@ const checks = {
     && source.includes("리뷰 수량 20점")
     && source.includes("현재 리뷰 수량 직접 입력")
     && source.includes("순위·트래픽 15점")
-    && source.includes("광고 제외 5위 이내 10점·40위 이내 5점·40위 초과 0점")
-    && source.includes("/seo-evaluation.js?v=seo-v11-20260726")
-    && source.includes("다른 항목이 모두 양호하면 5위 이내 95점, 40위 이내 90점, 40위 초과 85점")
+    && source.includes("광고 제외 5위 10점·40위 9점·100위 8점·200위 5점·300위 3점")
+    && source.includes("/seo-evaluation.js?v=seo-v12-20260726")
+    && source.includes("정확 키워드가 없어도 동일 상품군과 핵심어 관련성이 확인되면 부분 점수를 반영")
     && source.includes("공식 검색 결과와 직접 입력한 리뷰 수량만 사용해 점검합니다.")
     && !source.includes("상세페이지 80% 이상·상품정보고시 직접 작성")
     && !source.includes("태그 10개·항목별 고시·상세 이미지 8컷")
@@ -908,7 +908,7 @@ const checks = {
     && !source.includes("최근 30일 유입수")
     && !source.includes("최근 30일 구매수")
     && source.includes("[data-seo-review-count]")
-    && source.includes('<script src="/seo-evaluation.js?v=seo-v11-20260726"></script>')
+    && source.includes('<script src="/seo-evaluation.js?v=seo-v12-20260726"></script>')
     && source.includes("window.MomentSeoEvaluation")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

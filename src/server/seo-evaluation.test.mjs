@@ -87,6 +87,17 @@ test("상품명은 기준 키워드·50자 이내·중복 및 홍보 문구를 �
   assert.match(noisy.checks.find((check) => check.key === "titleFit").detail, /반복 단어|홍보 문구/);
 });
 
+test("상품군 연결 근거가 없는 다른 상품명에는 부분 관련성 점수를 주지 않는다", () => {
+  const result = seo.evaluate(baseInput({
+    keyword: "전동칫솔",
+    title: "여행용 휴대 케이스 파우치",
+  }));
+  const titleFit = result.checks.find((check) => check.key === "titleFit");
+  assert.equal(titleFit.score, 10);
+  assert.equal(result.titleKeywordMatchLevel, "missing");
+  assert.doesNotMatch(titleFit.detail, /상품군 관련성/);
+});
+
 test("상위 오가닉 상품명에서 반복되는 핵심어를 최대 5개 비교한다", () => {
   const strong = seo.evaluate(baseInput());
   const weak = seo.evaluate(baseInput({ title: "전동칫솔 휴대용" }));
@@ -114,8 +125,43 @@ test("상위 오가닉 상품의 세부 카테고리와 공식 브랜드·제조
   assert.equal(category.max, 15);
   assert.equal(category.score, 3);
   assert.match(category.detail, /상위 5개 중 1개/);
-  assert.equal(brandMaker.score, 5);
+  assert.equal(brandMaker.score, 7);
   assert.match(brandMaker.detail, /제조사 미등록/);
+});
+
+test("아이쉘 표본은 부분 관련성과 확인된 순위를 과도하게 감점하지 않는다", () => {
+  const result = seo.evaluate(baseInput({
+    keyword: "핸드폰거치대",
+    title: "아이쉘 스마트폰 촬영용 항공샷 스탠드 책상 라이브 방송 높이조절 거치대 휴대용 블랙",
+    peerTitles: [
+      "항공샷 스탠드 유튜브 침대 촬영거치 A형",
+      "항공샷 스탠드 유튜브 침대 촬영거치 B형",
+      "항공샷 스탠드 유튜브 침대 촬영거치 C형",
+      "항공샷 스탠드 유튜브 침대 촬영거치 D형",
+      "항공샷 스탠드 유튜브 침대 촬영거치 E형",
+    ],
+    brand: "아이쉘",
+    maker: "",
+    reviewCount: 133,
+    rank: 45,
+  }));
+  const scores = Object.fromEntries(Array.from(result.checks, (check) => [check.key, check.score]));
+  assert.equal(result.titleLength, 46);
+  assert.equal(result.titleKeywordIncluded, false);
+  assert.equal(result.titleKeywordMatchLevel, "related");
+  assert.equal(result.topKeywordBenchmark.matched.length, 2);
+  assert.deepEqual(scores, {
+    titleFit: 16,
+    topKeywordFit: 6,
+    categoryFit: 15,
+    brandMaker: 7,
+    imageReady: 10,
+    reviewManual: 14,
+    traffic: 8,
+  });
+  assert.equal(result.score, 76);
+  assert.match(result.checks.find((check) => check.key === "titleFit").detail, /상품군 관련성/);
+  assert.match(result.checks.find((check) => check.key === "traffic").detail, /45위/);
 });
 
 test("대표 이미지는 공식 검색 결과에서 확인하고 상품 노출 구조 카드는 만들지 않는다", () => {
@@ -144,21 +190,35 @@ test("다른 항목이 모두 충족되고 트래픽만 부족하면 5위 이내
   assert.equal(result.score, 95);
   assert.equal(result.checks.find((check) => check.key === "traffic").score, 10);
   assert.equal(result.verifiedMax, 100);
-  assert.equal(result.version, "seo_v11_stable_six_auto_plus_manual_review_20260726");
+  assert.equal(result.version, "seo_v12_balanced_partial_relevance_20260726");
 });
 
-test("다른 항목이 모두 충족되고 트래픽만 부족하면 40위 이내 90점이다", () => {
+test("다른 항목이 모두 충족되고 40위면 기본 노출 9점을 반영한다", () => {
   const result = seo.evaluate(baseInput({ rank: 40 }));
-  assert.equal(result.score, 90);
-  assert.equal(result.checks.find((check) => check.key === "traffic").score, 5);
+  assert.equal(result.score, 94);
+  assert.equal(result.checks.find((check) => check.key === "traffic").score, 9);
   assert.equal(result.diagnosis.key, "traffic");
 });
 
-test("다른 항목이 모두 충족되고 트래픽만 부족하면 41위 이후 85점이다", () => {
+test("다른 항목이 모두 충족되고 41위부터 100위면 기본 노출 8점을 반영한다", () => {
   const result = seo.evaluate(baseInput({ rank: 41 }));
-  assert.equal(result.score, 85);
-  assert.equal(result.checks.find((check) => check.key === "traffic").score, 0);
+  assert.equal(result.score, 93);
+  assert.equal(result.checks.find((check) => check.key === "traffic").score, 8);
   assert.equal(result.actions[0].key, "traffic");
+});
+
+test("확인된 오가닉 순위는 300위까지 단계적으로 기본 노출 점수를 인정한다", () => {
+  const cases = [
+    [5, 10],
+    [40, 9],
+    [100, 8],
+    [200, 5],
+    [300, 3],
+  ];
+  cases.forEach(([rank, expected]) => {
+    const result = seo.evaluate(baseInput({ rank }));
+    assert.equal(result.checks.find((check) => check.key === "traffic").score, expected);
+  });
 });
 
 test("상위 300개에서 찾지 못해도 등록 항목이 모두 양호하면 85점 기준이다", () => {
@@ -184,7 +244,7 @@ test("확인하지 못한 자동 항목은 임의 점수나 미확인 카드로 
   assert.ok(partial.confidence < 100);
 });
 
-test("온열찜질기 11위는 등록 항목이 모두 충족되면 90점이며 트래픽 보완을 먼저 표시한다", () => {
+test("온열찜질기 11위는 등록 항목이 모두 충족되면 94점이며 트래픽 보완을 먼저 표시한다", () => {
   const result = seo.evaluate(baseInput({
     keyword: "온열찜질기",
     title: "온열찜질기 방수 충전식 초극세모",
@@ -197,7 +257,8 @@ test("온열찜질기 11위는 등록 항목이 모두 충족되면 90점이며 
     ],
     rank: 11,
   }));
-  assert.equal(result.score, 90);
+  assert.equal(result.score, 94);
+  assert.equal(result.checks.find((check) => check.key === "traffic").score, 9);
   assert.equal(result.diagnosis.key, "traffic");
   assert.equal(result.actions[0].key, "traffic");
   assert.match(result.checks.find((check) => check.key === "traffic").detail, /11위/);

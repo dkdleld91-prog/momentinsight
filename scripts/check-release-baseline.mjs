@@ -893,7 +893,8 @@ const checks = {
     && source.includes("현재 리뷰 수량 직접 입력")
     && source.includes("순위·트래픽 15점")
     && source.includes("광고 제외 5위 10점·40위 9점·100위 8점·200위 5점·300위 3점")
-    && source.includes("/seo-evaluation.js?v=seo-v12-20260726")
+    && source.includes("/seo-evaluation.js?v=seo-v13-20260726")
+    && source.includes("모든 키워드에 동일 계산식을 적용합니다.")
     && source.includes("정확 키워드가 없어도 동일 상품군과 핵심어 관련성이 확인되면 부분 점수를 반영")
     && source.includes("공식 검색 결과와 직접 입력한 리뷰 수량만 사용해 점검합니다.")
     && !source.includes("상세페이지 80% 이상·상품정보고시 직접 작성")
@@ -908,7 +909,7 @@ const checks = {
     && !source.includes("최근 30일 유입수")
     && !source.includes("최근 30일 구매수")
     && source.includes("[data-seo-review-count]")
-    && source.includes('<script src="/seo-evaluation.js?v=seo-v12-20260726"></script>')
+    && source.includes('<script src="/seo-evaluation.js?v=seo-v13-20260726"></script>')
     && source.includes("window.MomentSeoEvaluation")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

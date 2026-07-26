@@ -164,6 +164,84 @@ test("아이쉘 표본은 부분 관련성과 확인된 순위를 과도하게 �
   assert.match(result.checks.find((check) => check.key === "traffic").detail, /45위/);
 });
 
+test("같은 증거는 다른 키워드와 상품군에서도 같은 계산식으로 평가한다", () => {
+  const cases = [
+    {
+      keyword: "무선청소기",
+      title: "클린홈 가정용 스틱형 강력흡입 청소기 화이트",
+      category: "생활/건강 > 청소용품 > 무선청소기",
+      peerWords: "저소음 스틱형 강력흡입 대용량",
+    },
+    {
+      keyword: "여성러닝화",
+      title: "에어핏 여성 경량 쿠셔닝 러닝 운동화 화이트",
+      category: "패션잡화 > 여성신발 > 러닝화",
+      peerWords: "경량 쿠셔닝 통기성 미끄럼방지",
+    },
+    {
+      keyword: "차량용방향제",
+      title: "아로마 자동차 송풍구 디퓨저 방향제 블랙",
+      category: "생활/건강 > 자동차용품 > 차량용방향제",
+      peerWords: "송풍구 디퓨저 리필 향기",
+    },
+  ];
+
+  cases.forEach((sample) => {
+    const result = seo.evaluate(baseInput({
+      keyword: sample.keyword,
+      title: sample.title,
+      category: sample.category,
+      peerCategories: Array(5).fill(sample.category),
+      peerTitles: Array.from({ length: 5 }, (_, index) => `${sample.peerWords} 모델${index + 1}`),
+      brand: "테스트브랜드",
+      maker: "",
+      reviewCount: 133,
+      rank: 45,
+    }));
+    const scores = Object.fromEntries(Array.from(result.checks, (check) => [check.key, check.score]));
+    assert.equal(result.policyId, "uniform_keyword_evidence_v1");
+    assert.equal(result.titleKeywordIncluded, false);
+    assert.equal(result.titleKeywordMatchLevel, "related");
+    assert.equal(result.topKeywordBenchmark.matched.length, 2);
+    assert.deepEqual(scores, {
+      titleFit: 16,
+      topKeywordFit: 6,
+      categoryFit: 15,
+      brandMaker: 7,
+      imageReady: 10,
+      reviewManual: 14,
+      traffic: 8,
+    });
+    assert.equal(result.score, 76);
+  });
+});
+
+test("정확 키워드는 상품군이 달라도 동일한 만점 등록 기준을 사용한다", () => {
+  const cases = [
+    ["써큘레이터", "가전디지털 > 계절가전 > 써큘레이터", "저소음 리모컨 스탠드"],
+    ["온열찜질기", "생활/건강 > 건강관리용품 > 온열찜질기", "전기 온도조절 복부"],
+    ["강아지사료", "생활/건강 > 반려동물 > 강아지사료", "연어 소프트 소형견"],
+    ["아이폰16케이스", "디지털/가전 > 휴대폰액세서리 > 휴대폰케이스", "맥세이프 투명 충격방지"],
+  ];
+
+  cases.forEach(([keyword, category, commonWords]) => {
+    const result = seo.evaluate(baseInput({
+      keyword,
+      title: `${keyword} ${commonWords} 화이트`,
+      category,
+      peerCategories: Array(5).fill(category),
+      peerTitles: Array.from({ length: 5 }, (_, index) => `${keyword} ${commonWords} 모델${index + 1}`),
+      rank: 5,
+    }));
+    assert.equal(result.policyId, "uniform_keyword_evidence_v1");
+    assert.equal(result.titleKeywordMatchLevel, "exact");
+    assert.equal(result.checks.find((check) => check.key === "titleFit").score, 20);
+    assert.equal(result.checks.find((check) => check.key === "topKeywordFit").score, 10);
+    assert.equal(result.checks.find((check) => check.key === "categoryFit").score, 15);
+    assert.equal(result.score, 95);
+  });
+});
+
 test("대표 이미지는 공식 검색 결과에서 확인하고 상품 노출 구조 카드는 만들지 않는다", () => {
   const result = seo.evaluate(baseInput({
     image: "",
@@ -190,7 +268,8 @@ test("다른 항목이 모두 충족되고 트래픽만 부족하면 5위 이내
   assert.equal(result.score, 95);
   assert.equal(result.checks.find((check) => check.key === "traffic").score, 10);
   assert.equal(result.verifiedMax, 100);
-  assert.equal(result.version, "seo_v12_balanced_partial_relevance_20260726");
+  assert.equal(result.version, "seo_v13_uniform_keyword_policy_20260726");
+  assert.equal(result.policyId, "uniform_keyword_evidence_v1");
 });
 
 test("다른 항목이 모두 충족되고 40위면 기본 노출 9점을 반영한다", () => {

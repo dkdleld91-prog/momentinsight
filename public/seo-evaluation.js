@@ -1,7 +1,8 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v12_balanced_partial_relevance_20260726";
+  var VERSION = "seo_v13_uniform_keyword_policy_20260726";
+  var POLICY_ID = "uniform_keyword_evidence_v1";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -386,6 +387,7 @@
 
     return {
       version: VERSION,
+      policyId: POLICY_ID,
       score: Math.max(0, Math.min(100, score)),
       confidence: Math.max(0, Math.min(100, confidence)),
       grade: resultGrade,
@@ -407,6 +409,7 @@
 
   global.MomentSeoEvaluation = Object.freeze({
     version: VERSION,
+    policyId: POLICY_ID,
     evaluate: evaluate,
     optionalNumber: optionalNumber
   });

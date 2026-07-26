@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v8_traffic_review_tags_notice_20260723";
+  var VERSION = "seo_v9_five_core_audit_20260726";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -21,11 +21,6 @@
     return Math.round(Number(value) || 0).toLocaleString("ko-KR");
   }
 
-  function normalizedState(value) {
-    var state = text(value).toLowerCase();
-    return ["applied", "none"].includes(state) ? state : "";
-  }
-
   function uniqueTextValues(values) {
     var seen = {};
     return (Array.isArray(values) ? values : []).map(text).filter(function (value) {
@@ -34,6 +29,59 @@
       seen[key] = true;
       return true;
     });
+  }
+
+  function normalizedTokens(value) {
+    return text(value)
+      .toLowerCase()
+      .replace(/[^0-9a-zA-Z가-힣]+/g, " ")
+      .split(/\s+/)
+      .filter(function (token) { return token.length >= 2; });
+  }
+
+  function titleQualityState(title) {
+    var counts = {};
+    normalizedTokens(title).forEach(function (token) {
+      counts[token] = (counts[token] || 0) + 1;
+    });
+    var duplicates = Object.keys(counts).filter(function (token) { return counts[token] > 1; });
+    var promotional = [
+      "무료배송", "최저가", "특가", "할인", "이벤트", "사은품", "증정", "쿠폰", "오늘만", "한정"
+    ].filter(function (word) { return compact(title).includes(compact(word)); });
+    var decorated = /[★☆♥♡◆◇■□●○▶▷✓✔※]{2,}/.test(title);
+    var issueCount = duplicates.length + promotional.length + (decorated ? 1 : 0);
+    return {
+      score: issueCount === 0 ? 5 : (issueCount === 1 ? 2 : 0),
+      duplicates: duplicates,
+      promotional: promotional,
+      decorated: decorated,
+      issueCount: issueCount
+    };
+  }
+
+  function categoryLeaf(value) {
+    var parts = text(value).split(/[>\/]/).map(text).filter(Boolean);
+    return compact(parts.length ? parts[parts.length - 1] : value);
+  }
+
+  function categoryBenchmarkState(category, peerCategories) {
+    var targetLeaf = categoryLeaf(category);
+    var peers = (Array.isArray(peerCategories) ? peerCategories : []).map(text).filter(Boolean).slice(0, 5);
+    if (!targetLeaf || peers.length < 2) return null;
+    var matched = peers.filter(function (peer) {
+      return categoryLeaf(peer) === targetLeaf;
+    }).length;
+    var ratio = matched / peers.length;
+    return {
+      verified: true,
+      category: text(category),
+      sampleSize: peers.length,
+      matched: matched,
+      ratio: ratio,
+      score: ratio >= 0.8 ? 12 : (ratio >= 0.6 ? 9 : (ratio >= 0.4 ? 6 : (ratio > 0 ? 3 : 0))),
+      max: 12,
+      label: ratio >= 0.8 ? "일치" : (ratio >= 0.6 ? "대체로 일치" : (ratio > 0 ? "일부 불일치" : "불일치"))
+    };
   }
 
   function reviewBenchmarkState(input, reviewCount) {
@@ -46,7 +94,7 @@
     var median = counts.length % 2 ? counts[middle] : Math.round((counts[middle - 1] + counts[middle]) / 2);
     var average = Math.round(counts.reduce(function (sum, value) { return sum + value; }, 0) / counts.length);
     var ratio = average > 0 ? reviewCount / average : (reviewCount > 0 ? 1 : 0);
-    var score = ratio >= 1 ? 15 : (ratio >= 0.6 ? 12 : (ratio >= 0.3 ? 8 : (ratio >= 0.1 ? 4 : 0)));
+    var score = ratio >= 1 ? 20 : (ratio >= 0.6 ? 16 : (ratio >= 0.3 ? 11 : (ratio >= 0.1 ? 5 : 0)));
     var label = ratio >= 1 ? "상위권 수준" : (ratio >= 0.6 ? "근접" : (ratio >= 0.3 ? "보완" : "매우 부족"));
     return {
       verified: true,
@@ -56,7 +104,7 @@
       average: average,
       ratio: ratio,
       score: score,
-      max: 15,
+      max: 20,
       label: label
     };
   }
@@ -71,13 +119,10 @@
 
   function actionText(key) {
     var actions = {
-      titleKeyword: "기준 키워드를 상품명에 자연스럽게 포함하세요.",
-      titleLength: "핵심 정보만 남겨 상품명을 50자 이내로 정리하세요.",
-      reviewBenchmark: "상위 오가닉 상품의 실제 리뷰 평균을 기준으로 부족한 리뷰 수량을 보완하세요.",
-      productNotice: "상품정보제공고시를 항목별로 작성하고 ‘상세페이지 참조’ 문구는 제거하세요.",
-      sellerTags: "상품과 관련된 검색 태그를 중복 없이 10개 등록하세요.",
-      discount: "실제 판매 정책에 맞는 할인율과 기준 가격을 명확하게 적용하세요.",
-      reviewPoint: "정책 범위 안에서 리뷰 포인트 지급 조건을 설정하고 고객에게 분명히 안내하세요.",
+      titleFit: "기준 키워드를 자연스럽게 포함하고, 중복·홍보 문구를 덜어 상품명을 50자 이내로 정리하세요.",
+      productFit: "상위 오가닉 상품과 동일한 세부 카테고리를 사용하고 브랜드·제조사 정보를 정확히 등록하세요.",
+      reviewCompetitiveness: "상위 오가닉 상품 5개의 실제 리뷰 평균을 기준으로 부족한 리뷰 수량을 보완하세요.",
+      registrationCompleteness: "검색 태그 10개, 항목별 상품정보제공고시, 상세 이미지 8컷을 완성하세요.",
       traffic: "현재 오가닉 순위가 5위 밖입니다. 검색 유입·클릭·판매 반응을 만드는 트래픽 운영을 보완하세요."
     };
     return actions[key] || "점수가 낮은 항목부터 보완하세요.";
@@ -104,26 +149,62 @@
       });
     }
 
+    var titleQuality = titleQualityState(title);
+    var titleDetail = keywordIncluded
+      ? "기준 키워드 포함"
+      : "기준 키워드 미포함";
+    titleDetail += " · " + titleLength + "자" + (titleLength <= 50 ? "로 권장 범위" : "로 50자 초과");
+    if (titleQuality.issueCount) {
+      var titleIssues = [];
+      if (titleQuality.duplicates.length) titleIssues.push("반복 단어 " + titleQuality.duplicates.join(", "));
+      if (titleQuality.promotional.length) titleIssues.push("홍보 문구 " + titleQuality.promotional.join(", "));
+      if (titleQuality.decorated) titleIssues.push("과도한 장식 기호");
+      titleDetail += " · " + titleIssues.join(" · ") + " 확인";
+    } else {
+      titleDetail += " · 중복·홍보 문구 없음";
+    }
     addCheck(
-      "titleKeyword",
-      "상품명 키워드",
-      title
-        ? (keywordIncluded ? "기준 키워드가 상품명에 포함되어 있습니다." : "기준 키워드가 상품명에 포함되어 있지 않습니다.")
-        : "상품 URL에서 정확한 상품명을 확인하지 못했습니다.",
-      keywordIncluded ? 15 : 0,
-      15,
+      "titleFit",
+      "상품명 적합도",
+      titleDetail,
+      (keywordIncluded ? 15 : 0) + (titleLength <= 50 ? 5 : 0) + titleQuality.score,
+      25,
       Boolean(title && keyword),
-      "자동 확인"
+      "공식 상품명 자동 분석"
     );
 
+    var categoryBenchmark = categoryBenchmarkState(input.category, input.peerCategories);
+    var brand = text(input.brand);
+    var maker = text(input.maker);
+    var productFitScore = 0;
+    var productFitMax = 0;
+    var productDetails = [];
+    if (categoryBenchmark) {
+      productFitScore += categoryBenchmark.score;
+      productFitMax += categoryBenchmark.max;
+      productDetails.push(
+        "세부 카테고리 " + categoryBenchmark.label +
+        " (상위 " + categoryBenchmark.sampleSize + "개 중 " + categoryBenchmark.matched + "개)"
+      );
+    }
+    if (brand) {
+      productFitScore += 4;
+      productFitMax += 4;
+      productDetails.push("브랜드 " + brand);
+    }
+    if (maker) {
+      productFitScore += 4;
+      productFitMax += 4;
+      productDetails.push("제조사 " + maker);
+    }
     addCheck(
-      "titleLength",
-      "상품명 50자 이내",
-      title ? "현재 상품명은 " + titleLength + "자입니다." + (titleLength <= 50 ? " 권장 범위입니다." : " 50자 이내로 줄여야 합니다.") : "",
-      title && titleLength <= 50 ? 10 : 0,
-      10,
-      Boolean(title),
-      "자동 확인"
+      "productFit",
+      "상품정보 적합도",
+      productDetails.join(" · "),
+      productFitScore,
+      productFitMax,
+      productFitMax > 0,
+      "상위 오가닉 상품 자동 비교"
     );
 
     var reviewCount = optionalNumber(input.reviewCount);
@@ -140,69 +221,50 @@
 
     var reviewBenchmark = reviewBenchmarkState(input, reviewCount);
     addCheck(
-      "reviewBenchmark",
-      "리뷰 수량",
+      "reviewCompetitiveness",
+      "리뷰 경쟁력",
       reviewBenchmark
         ? "내 상품 리뷰 " + formatNumber(reviewCount) + "개와 상위 오가닉 " + reviewBenchmark.sampleSize + "개 상품의 리뷰 평균 " + formatNumber(reviewBenchmark.average) + "개를 비교했습니다. 현재 수준은 " + reviewBenchmark.label + "입니다."
         : "",
       reviewBenchmark ? reviewBenchmark.score : 0,
-      15,
+      20,
       Boolean(reviewBenchmark),
       "상위 상품 공개 화면 자동 비교"
     );
 
     var productNotice = input.productNotice && typeof input.productNotice === "object" ? input.productNotice : null;
-    addCheck(
-      "productNotice",
-      "상품정보제공고시",
-      productNotice
-        ? (productNotice.hasDetailReference
-          ? "상품정보제공고시에 ‘상세페이지 참조’ 문구가 확인됐습니다. 항목별 정보로 작성해야 합니다."
-          : "상품정보제공고시가 항목별로 작성되어 있고 ‘상세페이지 참조’ 문구가 없습니다.")
-        : "",
-      productNotice && !productNotice.hasDetailReference ? 10 : 0,
-      10,
-      Boolean(productNotice && productNotice.verified),
-      "네이버 상품 정보 자동 확인"
-    );
-
     var sellerTags = input.sellerTags && typeof input.sellerTags === "object" ? input.sellerTags : null;
     var sellerTagCount = sellerTags && Array.isArray(sellerTags.values)
       ? uniqueTextValues(sellerTags.values).length
       : optionalNumber(sellerTags && sellerTags.count);
-    var sellerTagScore = sellerTagCount === null ? 0 : (sellerTagCount >= 10 ? 10 : Math.round((sellerTagCount / 10) * 10));
+    var detailImages = input.detailImages && typeof input.detailImages === "object" ? input.detailImages : null;
+    var detailImageCount = optionalNumber(detailImages && detailImages.count);
+    var registrationScore = 0;
+    var registrationMax = 0;
+    var registrationDetails = [];
+    if (sellerTags && sellerTags.verified && sellerTagCount !== null) {
+      registrationMax += 8;
+      registrationScore += sellerTagCount >= 10 ? 8 : Math.round((sellerTagCount / 10) * 8);
+      registrationDetails.push("검색 태그 " + sellerTagCount + "개");
+    }
+    if (productNotice && productNotice.verified) {
+      registrationMax += 7;
+      registrationScore += productNotice.hasDetailReference ? 0 : 7;
+      registrationDetails.push(productNotice.hasDetailReference ? "상품정보고시 상세페이지 참조 있음" : "상품정보고시 항목별 작성");
+    }
+    if (detailImages && detailImages.verified && detailImageCount !== null) {
+      registrationMax += 5;
+      registrationScore += detailImageCount >= 8 ? 5 : Math.round((detailImageCount / 8) * 5);
+      registrationDetails.push("상세 이미지 " + detailImageCount + "컷");
+    }
     addCheck(
-      "sellerTags",
-      "검색 태그 10개",
-      sellerTagCount === null
-        ? ""
-        : "관련 태그 " + sellerTagCount + "개를 확인했습니다." + (sellerTagCount >= 10 ? " 권장 수량 10개가 모두 등록되어 있습니다." : " 중복 없이 10개까지 보완하세요."),
-      sellerTagScore,
-      10,
-      Boolean(sellerTags && sellerTags.verified && sellerTagCount !== null),
+      "registrationCompleteness",
+      "등록정보 완성도",
+      registrationDetails.join(" · "),
+      registrationScore,
+      registrationMax,
+      registrationMax > 0,
       "네이버 공개 상품 자동 확인"
-    );
-
-    var discountState = normalizedState(input.discountState);
-    addCheck(
-      "discount",
-      "할인율 적용",
-      discountState === "applied" ? "네이버 공개 판매가에서 할인 적용을 확인했습니다." : (discountState === "none" ? "네이버 공개 판매가에서 할인 미적용 상태를 확인했습니다." : "네이버 공개 화면에서 할인 정책을 자동 확인하지 못했습니다."),
-      discountState === "applied" ? 8 : 0,
-      8,
-      Boolean(discountState),
-      "공개 화면 자동 확인"
-    );
-
-    var reviewPointState = normalizedState(input.reviewPointState);
-    addCheck(
-      "reviewPoint",
-      "리뷰 포인트 적용",
-      reviewPointState === "applied" ? "네이버 공개 혜택에서 리뷰 포인트 적용을 확인했습니다." : (reviewPointState === "none" ? "네이버 공개 혜택에서 리뷰 포인트 미적용 상태를 확인했습니다." : "네이버 공개 화면에서 리뷰 포인트 정책을 자동 확인하지 못했습니다."),
-      reviewPointState === "applied" ? 7 : 0,
-      7,
-      Boolean(reviewPointState),
-      "공개 화면 자동 확인"
     );
 
     var rank = optionalNumber(input.rank);
@@ -211,12 +273,12 @@
     var trafficScore = 0;
     var trafficDetail = "";
     if (rank !== null) {
-      if (rank <= 5) trafficScore = 25;
-      else if (rank <= 10) trafficScore = 20;
-      else if (rank <= 20) trafficScore = 15;
-      else if (rank <= 40) trafficScore = 10;
-      else if (rank <= 100) trafficScore = 5;
-      else trafficScore = 2;
+      if (rank <= 5) trafficScore = 15;
+      else if (rank <= 10) trafficScore = 12;
+      else if (rank <= 20) trafficScore = 9;
+      else if (rank <= 40) trafficScore = 6;
+      else if (rank <= 100) trafficScore = 3;
+      else trafficScore = 1;
       trafficDetail = "광고를 제외한 현재 오가닉 순위는 " + rank + "위입니다." +
         (rank <= 5 ? " 상위 5위 기준을 충족했습니다." : " 상위 5위 진입을 위해 검색 유입·클릭·판매 반응을 만드는 트래픽 보완이 필요합니다.");
     } else if (rankVerified) {
@@ -227,7 +289,7 @@
       "트래픽·노출",
       trafficDetail,
       trafficScore,
-      25,
+      15,
       rankVerified,
       "광고 제외 오가닉 순위 자동 확인"
     );
@@ -236,9 +298,10 @@
     var verifiedMax = verifiedChecks.reduce(function (sum, check) { return sum + check.max; }, 0);
     var earned = verifiedChecks.reduce(function (sum, check) { return sum + check.score; }, 0);
     var confidence = Math.round((verifiedMax / 100) * 100);
-    var score = verifiedMax ? Math.round((earned / verifiedMax) * 100) : 0;
-    if (verifiedMax < 100 || rank === null || rank > 5) score = Math.min(score, 99);
-    var blockingKeys = ["titleKeyword", "titleLength", "reviewBenchmark", "productNotice", "sellerTags", "traffic"];
+    var normalizedScore = verifiedMax ? Math.round((earned / verifiedMax) * 100) : 0;
+    var score = Math.min(normalizedScore, verifiedMax);
+    if (rank === null || rank > 5) score = Math.min(score, 99);
+    var blockingKeys = ["titleFit", "productFit", "reviewCompetitiveness", "registrationCompleteness", "traffic"];
     var blockingChecks = checks.filter(function (check) { return blockingKeys.includes(check.key); });
     var seoBasicsStrong = blockingChecks.length >= 4
       && blockingChecks.every(function (check) { return check.score / check.max >= 0.75; })
@@ -255,7 +318,7 @@
     if (weakExposure) {
       resultGrade = {
         label: diagnosis.label,
-        copy: "상품 등록 품질은 양호합니다. 다만 현재 순위 근거상 트래픽·클릭·판매 반응을 추가로 확인해야 합니다."
+        copy: "자동 확인된 등록 항목과 별개로 현재 순위 근거상 트래픽·클릭·판매 반응을 보완해야 합니다."
       };
     }
 
@@ -284,7 +347,7 @@
         title: "트래픽·노출 보완",
         detail: actionText("traffic"),
         score: trafficScore,
-        max: 25,
+        max: 15,
         verified: true
       });
     }
@@ -306,8 +369,9 @@
       reviewBenchmark: reviewBenchmark,
       titleKeywordIncluded: keywordIncluded,
       titleLength: titleLength,
-      categoryLabel: "",
-      dominantCategory: "",
+      titleIssues: titleQuality,
+      categoryLabel: categoryBenchmark ? categoryBenchmark.label : "",
+      dominantCategory: categoryBenchmark ? categoryBenchmark.category : "",
       verifiedMax: verifiedMax
     };
   }

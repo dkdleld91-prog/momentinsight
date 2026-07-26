@@ -21,6 +21,8 @@ function page(product = {}) {
         productNo: 12094096724,
         salePrice: 86100,
         representativeImageUrl: "https://shop-phinf.pstatic.net/example.jpg",
+        brandName: "해든",
+        manufacturerName: "한일의료기",
         reviewAmount: { totalReviewCount: 457 },
         detailContents: { editorType: "SEONE" },
         benefitsView: {
@@ -49,7 +51,9 @@ test("네이버 공개 상품 상태에서 리뷰 할인 리뷰포인트를 자�
   assert.equal("detailPage" in result.signals, false);
   assert.equal("productNotice" in result.signals, false);
   assert.equal(result.coverage.verifiedCount, 3);
-  assert.equal(result.coverage.total, 5);
+  assert.equal(result.coverage.total, 6);
+  assert.equal(result.product.brand, "해든");
+  assert.equal(result.product.manufacturer, "한일의료기");
   assert.equal(result.product.channelUid, "2ykVUL73OmNJTy97mNTUu");
   assert.equal(result.product.channelProductNo, "12094096724");
 });
@@ -90,6 +94,27 @@ test("관련 태그 10개와 상품정보제공고시 상세페이지 참조 여
   assert.equal(signals.productNotice.hasDetailReference, true);
 });
 
+test("공개 상세 콘텐츠에 실제 이미지가 있을 때만 상세 이미지 컷 수를 확정한다", () => {
+  const signals = parseNaverProductDetailJson({
+    detailContents: {
+      editorType: "SEONE",
+      components: Array.from({ length: 8 }, (_, index) => ({
+        type: "IMAGE",
+        imageUrl: `https://shop-phinf.pstatic.net/detail-${index + 1}.jpg`,
+      })),
+    },
+  });
+  assert.equal(signals.detailImages.verified, true);
+  assert.equal(signals.detailImages.count, 8);
+});
+
+test("상세 편집기 종류만 있고 이미지 근거가 없으면 컷 수를 추측하지 않는다", () => {
+  const signals = parseNaverProductDetailJson({
+    detailContents: { editorType: "SEONE" },
+  });
+  assert.equal("detailImages" in signals, false);
+});
+
 test("상품정보제공고시 이름만 있고 실제 필드가 없으면 통과로 추측하지 않는다", () => {
   const signals = parseNaverProductDetailJson({
     productInfoProvidedNoticeEnabled: true,
@@ -97,7 +122,7 @@ test("상품정보제공고시 이름만 있고 실제 필드가 없으면 통�
   assert.equal("productNotice" in signals, false);
 });
 
-test("공개 상품 상세 API는 상품정보제공고시 JSON만 제한적으로 읽는다", async () => {
+test("공개 상품 상세 API는 SEO 등록정보 JSON만 제한적으로 읽는다", async () => {
   const target = normalizeProductUrl("https://smartstore.naver.com/haedenprime/products/12149720593");
   const calls = [];
   const detail = await fetchProductDetail(target, {
@@ -145,7 +170,7 @@ test("공개 화면에서 확정하지 못한 신호는 응답에 만들지 않�
   }), "12149720593");
   assert.deepEqual(result.signals, {});
   assert.equal(result.coverage.verifiedCount, 0);
-  assert.equal(result.coverage.total, 5);
+  assert.equal(result.coverage.total, 6);
 });
 
 test("입력 URL 상품 ID와 공개 상품 ID가 다르면 거부한다", () => {

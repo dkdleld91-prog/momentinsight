@@ -18,6 +18,8 @@ function baseInput(overrides = {}) {
       "생활/건강 > 구강용품 > 전동칫솔",
       "생활/건강 > 구강용품 > 전동칫솔",
     ],
+    brand: "모먼트",
+    maker: "모먼트랩스",
     reviewCount: 350,
     peerReviewCounts: [280, 320, 350],
     sellerTags: {
@@ -28,8 +30,10 @@ function baseInput(overrides = {}) {
       verified: true,
       hasDetailReference: false,
     },
-    discountState: "applied",
-    reviewPointState: "applied",
+    detailImages: {
+      verified: true,
+      count: 8,
+    },
     rank: 5,
     rankCheckedCount: 300,
     ...overrides,
@@ -49,13 +53,14 @@ test("검색 수요와 경쟁 데이터는 상품 SEO 점수에 포함하지 않
   assert.equal(marketData.checks.some((check) => check.key === "market"), false);
 });
 
-test("상품명 키워드 포함과 50자 이내를 각각 확인한다", () => {
+test("상품명 키워드 포함·50자 이내·문구 품질을 하나의 적합도로 확인한다", () => {
   const good = seo.evaluate(baseInput({ title: `전동칫솔 ${"가".repeat(45)}` }));
   const bad = seo.evaluate(baseInput({ title: `전동칫솔 ${"가".repeat(46)}` }));
-  assert.equal(good.checks.find((check) => check.key === "titleKeyword").score, 15);
-  assert.equal(good.checks.find((check) => check.key === "titleLength").score, 10);
-  assert.equal(bad.checks.find((check) => check.key === "titleKeyword").score, 15);
-  assert.equal(bad.checks.find((check) => check.key === "titleLength").score, 0);
+  assert.equal(good.checks.find((check) => check.key === "titleFit").score, 25);
+  assert.equal(bad.checks.find((check) => check.key === "titleFit").score, 20);
+  const noisy = seo.evaluate(baseInput({ title: "전동칫솔 전동칫솔 최저가 ★★" }));
+  assert.ok(noisy.checks.find((check) => check.key === "titleFit").score < 25);
+  assert.match(noisy.checks.find((check) => check.key === "titleFit").detail, /반복 단어|홍보 문구/);
 });
 
 test("내 리뷰와 상위 오가닉 상품 리뷰 평균을 비교한다", () => {
@@ -67,10 +72,10 @@ test("내 리뷰와 상위 오가닉 상품 리뷰 평균을 비교한다", () =
     reviewCount: 600,
     peerReviewCounts: [300, 500, 700],
   }));
-  const weakBenchmark = weak.checks.find((check) => check.key === "reviewBenchmark");
-  const strongBenchmark = strong.checks.find((check) => check.key === "reviewBenchmark");
+  const weakBenchmark = weak.checks.find((check) => check.key === "reviewCompetitiveness");
+  const strongBenchmark = strong.checks.find((check) => check.key === "reviewCompetitiveness");
   assert.equal(weakBenchmark.score, 0);
-  assert.equal(strongBenchmark.score, 15);
+  assert.equal(strongBenchmark.score, 20);
   assert.equal(strong.reviewBenchmark.average, 500);
   assert.match(strongBenchmark.detail, /상위 오가닉 3개/);
 });
@@ -81,30 +86,29 @@ test("자동 확인하지 못한 항목은 점검표와 수정 목록에서 제�
     peerReviewCounts: [],
     sellerTags: null,
     productNotice: null,
-    discountState: "",
-    reviewPointState: "",
+    detailImages: null,
   }));
   assert.deepEqual(Array.from(partial.checks, (check) => check.key), [
-    "titleKeyword",
-    "titleLength",
+    "titleFit",
+    "productFit",
     "traffic",
   ]);
   assert.equal(partial.checks.some((check) => !check.verified), false);
-  assert.equal(partial.actions.some((action) => ["review", "discount", "reviewPoint"].includes(action.key)), false);
+  assert.equal(partial.actions.some((action) => ["reviewCompetitiveness", "registrationCompleteness"].includes(action.key)), false);
   assert.doesNotMatch(partial.grade.label, /제한|미확인/);
 });
 
-test("자동 수집한 할인율과 리뷰 포인트만 각각 평가한다", () => {
+test("가격·할인·배송·리뷰 포인트는 SEO 점수와 점검 항목에 포함하지 않는다", () => {
+  const baseline = seo.evaluate(baseInput());
   const result = seo.evaluate(baseInput({
+    price: 1,
     discountState: "none",
     reviewPointState: "none",
+    deliveryFee: 999999,
   }));
-  ["discount", "reviewPoint"].forEach((key) => {
-    const check = result.checks.find((item) => item.key === key);
-    assert.equal(check.verified, true);
-    assert.equal(check.score, 0);
-  });
-  assert.equal(result.checks.some((check) => check.key === "detailPage"), false);
+  assert.equal(result.score, baseline.score);
+  assert.equal(result.confidence, baseline.confidence);
+  assert.equal(result.checks.some((check) => ["price", "discount", "delivery", "reviewPoint"].includes(check.key)), false);
 });
 
 test("상위 300개 밖이면 트래픽·노출 보완으로 진단한다", () => {
@@ -126,17 +130,14 @@ test("상위 5위이면서 모든 자동 점검을 충족한 경우에만 100점
   const result = seo.evaluate(baseInput());
   assert.equal(result.score, 100);
   assert.deepEqual(Array.from(result.checks, (check) => check.key), [
-    "titleKeyword",
-    "titleLength",
-    "reviewBenchmark",
-    "productNotice",
-    "sellerTags",
-    "discount",
-    "reviewPoint",
+    "titleFit",
+    "productFit",
+    "reviewCompetitiveness",
+    "registrationCompleteness",
     "traffic",
   ]);
   assert.ok(result.actions.length >= 1 && result.actions.length <= 3);
-  assert.equal(result.version, "seo_v8_traffic_review_tags_notice_20260723");
+  assert.equal(result.version, "seo_v9_five_core_audit_20260726");
 });
 
 test("상위 5위여도 자동 점검 근거가 일부 없으면 100점을 표시하지 않는다", () => {
@@ -145,22 +146,41 @@ test("상위 5위여도 자동 점검 근거가 일부 없으면 100점을 표�
     peerReviewCounts: [],
     sellerTags: null,
     productNotice: null,
-    discountState: "",
-    reviewPointState: "",
+    detailImages: null,
   }));
   assert.match(result.checks.find((check) => check.key === "traffic").detail, /5위/);
   assert.ok(result.confidence < 100);
   assert.ok(result.score < 100);
 });
 
-test("상품정보제공고시의 상세페이지 참조와 태그 부족을 각각 표시한다", () => {
+test("태그·상품정보고시·상세 이미지 8컷을 등록정보 완성도로 묶는다", () => {
   const result = seo.evaluate(baseInput({
     productNotice: { verified: true, hasDetailReference: true },
     sellerTags: { verified: true, values: ["허리찜질기", "전기찜질기", "복부찜질기"] },
+    detailImages: { verified: true, count: 4 },
   }));
-  assert.equal(result.checks.find((check) => check.key === "productNotice").score, 0);
-  assert.equal(result.checks.find((check) => check.key === "sellerTags").score, 3);
-  assert.ok(result.actions.some((action) => action.key === "productNotice" || action.key === "sellerTags"));
+  const registration = result.checks.find((check) => check.key === "registrationCompleteness");
+  assert.equal(registration.max, 20);
+  assert.ok(registration.score < registration.max);
+  assert.match(registration.detail, /태그 3개/);
+  assert.match(registration.detail, /상세페이지 참조 있음/);
+  assert.match(registration.detail, /상세 이미지 4컷/);
+  assert.ok(result.actions.some((action) => action.key === "registrationCompleteness"));
+});
+
+test("상위 상품 세부 카테고리와 브랜드·제조사 정보를 상품정보 적합도로 확인한다", () => {
+  const result = seo.evaluate(baseInput({
+    peerCategories: [
+      "생활/건강 > 구강용품 > 전동칫솔",
+      "생활/건강 > 구강용품 > 칫솔",
+      "생활/건강 > 구강용품 > 칫솔",
+    ],
+  }));
+  const productFit = result.checks.find((check) => check.key === "productFit");
+  assert.equal(productFit.max, 20);
+  assert.ok(productFit.score < productFit.max);
+  assert.match(productFit.detail, /상위 3개 중 1개/);
+  assert.match(productFit.detail, /브랜드 모먼트/);
 });
 
 test("온열찜질기 실상품 11위 회귀값은 100점이 아니며 트래픽 보완을 최우선 표시한다", () => {

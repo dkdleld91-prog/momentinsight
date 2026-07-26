@@ -5665,7 +5665,7 @@
             <div>
               <span class="mi-kicker">상품 검색엔진 최적화</span>
               <h1>상품 SEO 기본 항목을 근거별로 확인합니다.</h1>
-              <p>상품명·리뷰·상품정보고시·태그·운영 설정과 오가닉 순위를 자동 점검합니다.</p>
+              <p>상품명·상품정보·리뷰·등록정보와 광고 제외 오가닉 순위를 자동 점검합니다.</p>
             </div>
             <span class="mi-badge">SEO 확인</span>
           </header>
@@ -5685,7 +5685,7 @@
               <input class="mi-input" data-seo-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL" />
               <button class="mi-button" type="button" data-seo-run>자동 점검</button>
             </div>
-            <div class="mi-seo-source-note">상품명·순위는 공식 검색 결과로 확인하고, 리뷰·태그·상품정보고시·할인·리뷰 포인트는 공개 화면에서 자동 확인되는 경우에만 표시합니다.</div>
+            <div class="mi-seo-source-note">공식 검색 결과와 공개 상품에서 확정한 상품명·카테고리·리뷰·태그·상품정보고시·상세 이미지만 SEO 점수에 반영합니다.</div>
             <p class="mi-code-status" data-seo-status aria-live="polite">기준 키워드와 상품 URL만 입력하면 나머지 항목을 자동으로 점검합니다.</p>
 
             <div class="mi-seo-layout">
@@ -5701,9 +5701,11 @@
                   <span data-seo-grade-copy>상품 URL 자동 수집 후 결과를 표시합니다.</span>
                 </div>
                 <div class="mi-seo-summary" data-seo-summary>
-                  <div><span>상품명 키워드</span><strong>자동 확인</strong></div>
-                  <div><span>상품명 길이</span><strong>50자 이내</strong></div>
-                  <div><span>동종 카테고리</span><strong>자동 비교</strong></div>
+                  <div><span>상품명 적합도</span><strong>자동 분석</strong></div>
+                  <div><span>상품정보 적합도</span><strong>상위 비교</strong></div>
+                  <div><span>리뷰 경쟁력</span><strong>평균 비교</strong></div>
+                  <div><span>등록정보 완성도</span><strong>공개 정보</strong></div>
+                  <div><span>순위·트래픽</span><strong>오가닉 기준</strong></div>
                 </div>
               </aside>
 
@@ -5729,7 +5731,7 @@
                       <div class="mi-seo-preview-img">상품 확인 전</div>
                       <div>
                         <h4>네이버 상품 URL을 입력하면 상품 정보와 순위를 함께 확인합니다.</h4>
-                        <p>상품명·순위·리뷰·태그와 자동으로 확인된 운영 정보만 표시합니다.</p>
+                        <p>상품명·순위·리뷰·태그와 자동으로 확인된 등록 정보만 표시합니다.</p>
                         <div class="mi-seo-pills">
                           <span class="mi-seo-pill">상품명</span>
                           <span class="mi-seo-pill">순위</span>
@@ -5743,14 +5745,13 @@
                   <section class="mi-seo-panel is-wide">
                     <h3>SEO 점수 기준</h3>
                     <div class="mi-table">
-                      <div class="mi-row"><span>상품명 25점</span><strong>기준 키워드 포함 15점·50자 이내 10점</strong></div>
-                      <div class="mi-row"><span>리뷰 경쟁력 15점</span><strong>상위 오가닉 비교 상품 5개의 평균 리뷰 대비</strong></div>
-                      <div class="mi-row"><span>상품정보고시 10점</span><strong>항목별 작성 및 ‘상세페이지 참조’ 미사용</strong></div>
-                      <div class="mi-row"><span>판매자 태그 10점</span><strong>관련 태그 10개 등록 여부</strong></div>
-                      <div class="mi-row"><span>운영 설정 15점</span><strong>할인율 적용 8점·리뷰 포인트 적용 7점</strong></div>
-                      <div class="mi-row"><span>트래픽·노출 25점</span><strong>광고 제외 오가닉 5위 이내에서만 만점</strong></div>
+                      <div class="mi-row"><span>상품명 적합도 25점</span><strong>키워드 포함·50자 이내·중복 및 홍보 문구</strong></div>
+                      <div class="mi-row"><span>상품정보 적합도 20점</span><strong>상위 상품 세부 카테고리·브랜드·제조사</strong></div>
+                      <div class="mi-row"><span>리뷰 경쟁력 20점</span><strong>상위 오가닉 상품 최대 5개의 평균 리뷰 대비</strong></div>
+                      <div class="mi-row"><span>등록정보 완성도 20점</span><strong>태그 10개·항목별 고시·상세 이미지 8컷</strong></div>
+                      <div class="mi-row"><span>순위·트래픽 15점</span><strong>광고 제외 오가닉 5위 이내에서만 만점</strong></div>
                     </div>
-                    <p class="mi-seo-source-note">검색 수요·경쟁은 SEO 점수에서 제외하며, 자동 확인되지 않는 항목은 화면과 점수 기준에 표시하지 않습니다.</p>
+                    <p class="mi-seo-source-note">검색 수요·경쟁과 가격·할인·배송·리뷰 포인트는 SEO 점수에서 제외합니다. 공개 화면에서 확정된 항목만 표시합니다.</p>
                   </section>
                 </div>
               </div>
@@ -5836,7 +5837,7 @@
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
 
-  <script src="/seo-evaluation.js?v=seo-v8-20260723"></script>
+  <script src="/seo-evaluation.js?v=seo-v9-20260726"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -9716,24 +9717,22 @@
           .map(function (peer) { return categoryPath(peer, ""); })
           .filter(Boolean);
         var reviewSignal = signals.review || {};
-        var discountSignal = signals.discount || {};
-        var reviewPointSignal = signals.reviewPoint || {};
         var sellerTagsSignal = signals.sellerTags || {};
         var productNoticeSignal = signals.productNotice || {};
+        var detailImagesSignal = signals.detailImages || {};
         var reviewBenchmark = auditPayload && auditPayload.reviewBenchmark ? auditPayload.reviewBenchmark : null;
         var evaluation = engine.evaluate({
           keyword: keyword,
           title: title,
-          brand: item.brand || "",
-          maker: item.maker || "",
+          brand: auditProduct.brand || item.brand || "",
+          maker: auditProduct.manufacturer || item.maker || "",
           category: category,
           peerCategories: peerCategories,
           reviewCount: reviewSignal.verified ? reviewSignal.value : null,
           peerReviewCounts: reviewBenchmark && reviewBenchmark.verified ? reviewBenchmark.peerReviewCounts : [],
           sellerTags: sellerTagsSignal.verified ? sellerTagsSignal : null,
           productNotice: productNoticeSignal.verified ? productNoticeSignal : null,
-          discountState: discountSignal.verified ? discountSignal.state : "",
-          reviewPointState: reviewPointSignal.verified ? reviewPointSignal.state : "",
+          detailImages: detailImagesSignal.verified ? detailImagesSignal : null,
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
           rankCheckedCount: rankResult ? rankResult.checkedCount : null
         });
@@ -9766,18 +9765,11 @@
         if (gradeCopy) gradeCopy.textContent = evaluation.grade.copy;
 
         if (summary) {
-          var titleCheck = evaluation.checks.find(function (check) { return check.key === "titleKeyword"; });
-          var titleLengthCheck = evaluation.checks.find(function (check) { return check.key === "titleLength"; });
-          var reviewBenchmarkCheck = evaluation.checks.find(function (check) { return check.key === "reviewBenchmark"; });
-          var sellerTagsCheck = evaluation.checks.find(function (check) { return check.key === "sellerTags"; });
-          var summaryItems = [];
-          if (titleCheck) summaryItems.push(["상품명 키워드", evaluation.titleKeywordIncluded ? "포함" : "미포함"]);
-          if (titleLengthCheck) summaryItems.push(["상품명 길이", evaluation.titleLength <= 50 ? "50자 이내" : "50자 초과"]);
-          if (reviewBenchmarkCheck && evaluation.reviewBenchmark) {
-            summaryItems.push(["상위 리뷰 기준", "평균 " + formatNumber(evaluation.reviewBenchmark.average) + "개"]);
-          }
-          if (sellerTagsCheck) summaryItems.push(["검색 태그", sellerTagsCheck.score >= sellerTagsCheck.max ? "10개 완료" : "보완 필요"]);
-          if (evaluation.rank) summaryItems.push(["현재 순위", evaluation.rank + "위"]);
+          var summaryItems = evaluation.checks.slice(0, 5).map(function (check) {
+            var ratio = check.max ? check.score / check.max : 0;
+            var status = ratio >= 0.8 ? "양호" : (ratio >= 0.5 ? "보완" : "우선 보완");
+            return [check.title, status];
+          });
           summary.innerHTML = summaryItems.map(function (item) {
             return '<div><span>' + escapeHtml(item[0]) + '</span><strong>' + escapeHtml(item[1]) + '</strong></div>';
           }).join("");

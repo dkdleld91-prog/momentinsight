@@ -205,6 +205,26 @@ function findObjectByKey(value, pattern, depth = 0) {
   return null;
 }
 
+function collectDetailImageUrls(value, output = new Set(), depth = 0, parentKey = "") {
+  if (depth > 10 || output.size > 100) return output;
+  if (typeof value === "string") {
+    const matches = value.match(/https?:\/\/[^"' <>()]+?\.(?:jpe?g|png|webp|gif)(?:\?[^"' <>()]*)?/gi) || [];
+    matches.forEach((url) => output.add(url));
+    if (/^(?:src|url|imageUrl|imageURL|image)$/i.test(parentKey) && /\.(?:jpe?g|png|webp|gif)(?:\?|$)/i.test(value)) {
+      output.add(value);
+    }
+    return output;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectDetailImageUrls(item, output, depth + 1, parentKey));
+    return output;
+  }
+  if (value && typeof value === "object") {
+    Object.entries(value).forEach(([key, child]) => collectDetailImageUrls(child, output, depth + 1, key));
+  }
+  return output;
+}
+
 export function parseNaverProductDetailJson(detail) {
   const root = detail?.data && typeof detail.data === "object" ? detail.data : detail;
   const signals = {};
@@ -236,6 +256,17 @@ export function parseNaverProductDetailJson(detail) {
         evidence: "네이버 공개 상품정보제공고시",
       };
     }
+  }
+
+  const detailContents = findObjectByKey(root, /^(detailContents?|editorContent)$/i);
+  const detailImageUrls = detailContents ? [...collectDetailImageUrls(detailContents)] : [];
+  if (detailImageUrls.length) {
+    signals.detailImages = {
+      verified: true,
+      count: detailImageUrls.length,
+      label: `${detailImageUrls.length}컷`,
+      evidence: "네이버 공개 상세 콘텐츠의 고유 이미지",
+    };
   }
   return signals;
 }
@@ -315,13 +346,15 @@ export function parseNaverProductSeoHtml(html, expectedProductId = "") {
       price: finiteNumber(product.salePrice),
       discountedPrice,
       image: text(product.representativeImageUrl),
+      brand: text(product.brandName || product.brand?.name || product.brand?.brandName),
+      manufacturer: text(product.manufacturerName || product.manufacturer?.name || product.makerName),
       channelUid: text(product.channel?.channelUid),
       channelProductNo: text(product.productNo),
     },
     signals,
     coverage: {
       verifiedCount: Object.keys(signals).length,
-      total: 5,
+      total: 6,
     },
   };
 }
@@ -418,7 +451,7 @@ export async function fetchProductPage(target, fetchImpl = fetch, redirectCount 
     }
     if (response.status === 429) {
       throw sourceError(
-        "네이버의 일시적 조회 제한으로 리뷰·할인 정보를 자동 확인하지 못했습니다. 잠시 후 다시 시도해주세요.",
+        "네이버의 일시적 조회 제한으로 공개 상품 정보를 자동 확인하지 못했습니다. 잠시 후 다시 시도해주세요.",
         { status: 429, code: "NAVER_PUBLIC_PAGE_RATE_LIMITED" },
       );
     }
@@ -474,7 +507,7 @@ export async function fetchProductDetail(target, product, fetchImpl = fetch, tim
     });
     if (response.status === 429) {
       throw sourceError(
-        "네이버의 일시적 조회 제한으로 상품정보제공고시를 자동 확인하지 못했습니다.",
+        "네이버의 일시적 조회 제한으로 상품 등록정보를 자동 확인하지 못했습니다.",
         { status: 429, code: "NAVER_PUBLIC_DETAIL_RATE_LIMITED" },
       );
     }
@@ -496,7 +529,7 @@ export async function fetchProductDetail(target, product, fetchImpl = fetch, tim
     if (error instanceof ProductAuditSourceError) throw error;
     if (error?.name === "AbortError") {
       throw sourceError(
-        "네이버 상품정보제공고시 확인 시간이 초과됐습니다.",
+        "네이버 상품 등록정보 확인 시간이 초과됐습니다.",
         { code: "NAVER_PUBLIC_DETAIL_TIMEOUT" },
       );
     }

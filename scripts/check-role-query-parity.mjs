@@ -85,7 +85,6 @@ const serverIndex = read("src/server/index.mjs");
 const expectedEndpoints = [
   "/api/naver-keyword",
   "/api/naver-place-rank-trackers",
-  "/api/naver-product-seo-audit",
   "/api/naver-rank-trackers",
   "/api/naver-shopping-rank",
 ].sort();
@@ -99,7 +98,6 @@ const apiHelperNames = [
   "getShoppingRankApiUrl",
   "getRankTrackerApiUrl",
   "getPlaceRankTrackerApiUrl",
-  "fetchSeoAudit",
 ];
 const adminProductTracking = functionBlock(adminSource, "initRankTracking");
 const clientProductTracking = functionBlock(clientSource, "initRankTracking");
@@ -147,7 +145,6 @@ const sharedPageMarkers = [
   "async function fetchKeywordData",
   "async function runKeywordLookup",
   "async function runSeoCheck",
-  "async function fetchSeoAudit",
   "function makeRelatedKeywords",
   "function initRankCheck",
   "function initRankTracking",
@@ -190,6 +187,7 @@ const checks = {
     "[data-seo-run]",
     "[data-seo-keyword]",
     "[data-seo-url]",
+    "[data-seo-review-count]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -199,6 +197,7 @@ const checks = {
     "[data-seo-run]",
     "[data-seo-keyword]",
     "[data-seo-url]",
+    "[data-seo-review-count]",
     "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
@@ -209,30 +208,25 @@ const checks = {
   seoEvaluationRoleParity: normalizedBlock(adminSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "buildSeoEvaluation") === normalizedBlock(clientSource, "buildSeoEvaluation")
     && normalizedBlock(adminSource, "renderSeoEvaluation") === normalizedBlock(clientSource, "renderSeoEvaluation")
-    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "auditPayload", "auditProduct.brand", "auditProduct.manufacturer", "signals.review", "signals.sellerTags", "signals.productNotice", "signals.detailImages"])
-    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "auditPayload", "auditProduct.brand", "auditProduct.manufacturer", "signals.review", "signals.sellerTags", "signals.productNotice", "signals.detailImages"])
-    && !includesAll(adminSeoEvaluation, ["signals.discount"])
-    && !includesAll(clientSeoEvaluation, ["signals.discount"])
-    && !includesAll(adminSeoEvaluation, ["signals.reviewPoint"])
-    && !includesAll(clientSeoEvaluation, ["signals.reviewPoint"])
-    && !includesAll(adminSeoEvaluation, ["signals.detailPage"])
-    && !includesAll(clientSeoEvaluation, ["signals.detailPage"])
-    && !includesAll(adminSeoEvaluation, ["trafficCount"])
-    && !includesAll(clientSeoEvaluation, ["trafficCount"])
-    && !includesAll(adminSeoEvaluation, ["orderCount"])
-    && !includesAll(clientSeoEvaluation, ["orderCount"])
+    && includesAll(adminSeoEvaluation, ["window.MomentSeoEvaluation", "rankResult.exactItem", "peerCategories", "peerTitles", "productInfoVerified", "productKindLabel", "reviewCount: input.reviewCount", 'auditSource: "naver_shopping_official_result"'])
+    && includesAll(clientSeoEvaluation, ["window.MomentSeoEvaluation", "rankResult.exactItem", "peerCategories", "peerTitles", "productInfoVerified", "productKindLabel", "reviewCount: input.reviewCount", 'auditSource: "naver_shopping_official_result"'])
+    && !includesAll(adminSeoEvaluation, ["auditPayload"])
+    && !includesAll(clientSeoEvaluation, ["auditPayload"])
+    && !includesAll(adminSeoEvaluation, ["signals."])
+    && !includesAll(clientSeoEvaluation, ["signals."])
     && includesAll(adminSeoRender, ["양호", "보완", "우선 보완", "순위 "])
     && includesAll(clientSeoRender, ["양호", "보완", "우선 보완", "순위 "])
     && !includesAll(adminSeoRender, ["API 참고"])
     && !includesAll(clientSeoRender, ["API 참고"])
     && !includesAll(adminSeoRender, ["자동 확인 불가"])
     && !includesAll(clientSeoRender, ["자동 확인 불가"]),
-  seoManualTrafficInputsRemoved: [adminSource, clientSource].every((source) =>
+  seoManualReviewOnly: [adminSource, clientSource].every((source) =>
     !source.includes("[data-seo-traffic-count]")
     && !source.includes("[data-seo-order-count]")
     && !source.includes("최근 30일 유입수")
     && !source.includes("최근 30일 구매수")
-    && !source.includes("[data-seo-review-count]")
+    && source.includes("[data-seo-review-count]")
+    && source.includes("리뷰 수량 직접 입력")
     && !source.includes("[data-seo-detail-page-state]")
     && !source.includes("[data-seo-notice-state]")
     && !source.includes("[data-seo-discount-state]")

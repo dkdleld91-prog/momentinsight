@@ -887,13 +887,13 @@ const checks = {
     && source.includes("공식 상품정보 등록 여부")
     && source.includes("대표 이미지 10점")
     && source.includes("공식 검색 결과 이미지 등록 여부")
-    && source.includes("상품 노출 구조")
-    && source.includes("원부형·단일형 참고 정보 · 점수 제외")
+    && !source.includes("상품 노출 구조")
+    && !source.includes("원부형·단일형 참고 정보 · 점수 제외")
     && source.includes("리뷰 수량 20점")
     && source.includes("현재 리뷰 수량 직접 입력")
     && source.includes("순위·트래픽 15점")
     && source.includes("광고 제외 5위 이내 10점·40위 이내 5점·40위 초과 0점")
-    && source.includes("/seo-evaluation.js?v=seo-v10-20260726")
+    && source.includes("/seo-evaluation.js?v=seo-v11-20260726")
     && source.includes("다른 항목이 모두 양호하면 5위 이내 95점, 40위 이내 90점, 40위 초과 85점")
     && source.includes("공식 검색 결과와 직접 입력한 리뷰 수량만 사용해 점검합니다.")
     && !source.includes("상세페이지 80% 이상·상품정보고시 직접 작성")
@@ -908,7 +908,7 @@ const checks = {
     && !source.includes("최근 30일 유입수")
     && !source.includes("최근 30일 구매수")
     && source.includes("[data-seo-review-count]")
-    && source.includes('<script src="/seo-evaluation.js?v=seo-v10-20260726"></script>')
+    && source.includes('<script src="/seo-evaluation.js?v=seo-v11-20260726"></script>')
     && source.includes("window.MomentSeoEvaluation")),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),

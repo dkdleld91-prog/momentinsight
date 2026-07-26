@@ -31,8 +31,6 @@ function baseInput(overrides = {}) {
     maker: "모먼트랩스",
     productInfoVerified: true,
     image: "https://shopping-phinf.pstatic.net/example.jpg",
-    productKind: "single",
-    productKindLabel: "단일형",
     reviewCount: 1000,
     rank: 5,
     rankCheckedCount: 300,
@@ -48,11 +46,10 @@ test("안정적인 공식 검색 결과와 수기 리뷰만 점검한다", () =>
     "categoryFit",
     "brandMaker",
     "imageReady",
-    "exposureStructure",
     "reviewManual",
     "traffic",
   ]);
-  assert.equal(result.checks.find((check) => check.key === "exposureStructure").max, 0);
+  assert.equal(result.checks.some((check) => check.key === "exposureStructure"), false);
   assert.equal(result.checks.find((check) => check.key === "reviewManual").source, "직접 입력");
   assert.equal(result.checks.some((check) => [
     "market",
@@ -121,19 +118,14 @@ test("상위 오가닉 상품의 세부 카테고리와 공식 브랜드·제조
   assert.match(brandMaker.detail, /제조사 미등록/);
 });
 
-test("공식 검색 결과의 대표 이미지와 상품 노출 구조를 표시하되 노출 구조는 참고 항목이다", () => {
+test("대표 이미지는 공식 검색 결과에서 확인하고 상품 노출 구조 카드는 만들지 않는다", () => {
   const result = seo.evaluate(baseInput({
     image: "",
-    productKind: "catalog",
-    productKindLabel: "원부형",
   }));
   const image = result.checks.find((check) => check.key === "imageReady");
-  const exposure = result.checks.find((check) => check.key === "exposureStructure");
   assert.equal(image.score, 0);
   assert.equal(image.max, 10);
-  assert.equal(exposure.score, 0);
-  assert.equal(exposure.max, 0);
-  assert.match(exposure.detail, /가격비교 원부 기준/);
+  assert.equal(result.checks.some((check) => check.key === "exposureStructure"), false);
 });
 
 test("리뷰 수량은 자동 추정하지 않고 직접 입력값만 점수에 반영한다", () => {
@@ -152,7 +144,7 @@ test("다른 항목이 모두 충족되고 트래픽만 부족하면 5위 이내
   assert.equal(result.score, 95);
   assert.equal(result.checks.find((check) => check.key === "traffic").score, 10);
   assert.equal(result.verifiedMax, 100);
-  assert.equal(result.version, "seo_v10_stable_seven_plus_manual_review_20260726");
+  assert.equal(result.version, "seo_v11_stable_six_auto_plus_manual_review_20260726");
 });
 
 test("다른 항목이 모두 충족되고 트래픽만 부족하면 40위 이내 90점이다", () => {
@@ -182,8 +174,6 @@ test("확인하지 못한 자동 항목은 임의 점수나 미확인 카드로 
     peerCategories: [],
     peerTitles: [],
     productInfoVerified: false,
-    productKind: "",
-    productKindLabel: "",
   }));
   assert.deepEqual(Array.from(partial.checks, (check) => check.key), [
     "titleFit",

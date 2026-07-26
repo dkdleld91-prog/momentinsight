@@ -5686,7 +5686,7 @@
               <input class="mi-input" data-seo-review-count type="number" min="0" step="1" inputmode="numeric" aria-label="현재 리뷰 수량 직접 입력" placeholder="리뷰 수량 직접 입력" />
               <button class="mi-button" type="button" data-seo-run>자동 점검</button>
             </div>
-            <div class="mi-seo-source-note">상품명·상위 공통어·카테고리·브랜드·제조사·대표 이미지·상품형태·광고 제외 순위는 공식 검색 결과로 확인하며 리뷰만 직접 입력합니다.</div>
+            <div class="mi-seo-source-note">상품명·상위 공통어·카테고리·브랜드·제조사·대표 이미지·광고 제외 순위는 공식 검색 결과로 확인하며 리뷰만 직접 입력합니다.</div>
             <p class="mi-code-status" data-seo-status aria-live="polite">기준 키워드, 상품 URL, 현재 리뷰 수량을 입력해주세요.</p>
 
             <div class="mi-seo-layout">
@@ -5707,7 +5707,6 @@
                   <div><span>카테고리 적합도</span><strong>자동 비교</strong></div>
                   <div><span>브랜드·제조사</span><strong>자동 확인</strong></div>
                   <div><span>대표 이미지</span><strong>자동 확인</strong></div>
-                  <div><span>상품 노출 구조</span><strong>자동 확인</strong></div>
                   <div><span>리뷰 수량</span><strong>직접 입력</strong></div>
                   <div><span>순위·트래픽</span><strong>오가닉 기준</strong></div>
                 </div>
@@ -5754,7 +5753,6 @@
                       <div class="mi-row"><span>카테고리 적합도 15점</span><strong>상위 오가닉 상품의 세부 카테고리 비교</strong></div>
                       <div class="mi-row"><span>브랜드·제조사 10점</span><strong>공식 상품정보 등록 여부</strong></div>
                       <div class="mi-row"><span>대표 이미지 10점</span><strong>공식 검색 결과 이미지 등록 여부</strong></div>
-                      <div class="mi-row"><span>상품 노출 구조</span><strong>원부형·단일형 참고 정보 · 점수 제외</strong></div>
                       <div class="mi-row"><span>리뷰 수량 20점</span><strong>현재 리뷰 수량 직접 입력</strong></div>
                       <div class="mi-row"><span>순위·트래픽 15점</span><strong>광고 제외 5위 이내 10점·40위 이내 5점·40위 초과 0점</strong></div>
                     </div>
@@ -5844,7 +5842,7 @@
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
 
-  <script src="/seo-evaluation.js?v=seo-v10-20260726"></script>
+  <script src="/seo-evaluation.js?v=seo-v11-20260726"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -9714,8 +9712,6 @@
           .filter(function (peer) {
             return !targetProductId || String(peer && peer.productId || "") !== String(targetProductId);
           });
-        var productKind = item.productKind || (rankResult && rankResult.representativeProductKind) || "";
-        var productKindLabel = item.productKindLabel || (productKind === "catalog" ? "원부형" : (productKind === "single" || productKind === "matched_single" ? "단일형" : ""));
         var evaluation = engine.evaluate({
           keyword: keyword,
           title: title,
@@ -9726,8 +9722,6 @@
           peerTitles: peers.map(function (peer) { return String(peer && peer.title || "").trim(); }).filter(Boolean),
           productInfoVerified: Boolean(rankItem),
           image: item.image || "",
-          productKind: productKind,
-          productKindLabel: productKindLabel,
           reviewCount: input.reviewCount,
           rank: rankResult && rankResult.matched ? rankResult.rank : null,
           rankCheckedCount: rankResult ? rankResult.checkedCount : null

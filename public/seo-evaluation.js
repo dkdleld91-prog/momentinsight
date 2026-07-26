@@ -1,7 +1,7 @@
 (function (global) {
   "use strict";
 
-  var VERSION = "seo_v10_stable_seven_plus_manual_review_20260726";
+  var VERSION = "seo_v11_stable_six_auto_plus_manual_review_20260726";
 
   function text(value) {
     return String(value == null ? "" : value).trim();
@@ -241,20 +241,6 @@
       "공식 상품 이미지 자동 확인"
     );
 
-    var productKind = text(input.productKind);
-    var productKindLabel = text(input.productKindLabel);
-    addCheck(
-      "exposureStructure",
-      "상품 노출 구조",
-      productKindLabel
-        ? productKindLabel + (productKind === "catalog" ? " · 가격비교 원부 기준" : " · 판매처 상품 기준")
-        : "",
-      0,
-      0,
-      Boolean(productKind && productKind !== "unknown" && productKindLabel),
-      "공식 상품형태 자동 확인"
-    );
-
     var reviewCount = optionalNumber(input.reviewCount);
     var reviewVerified = reviewCount !== null;
     var reviewLabel = "";
@@ -381,7 +367,6 @@
       titleIssues: titleQuality,
       categoryLabel: categoryBenchmark ? categoryBenchmark.label : "",
       dominantCategory: categoryBenchmark ? categoryBenchmark.category : "",
-      productKindLabel: productKindLabel,
       verifiedMax: verifiedMax
     };
   }

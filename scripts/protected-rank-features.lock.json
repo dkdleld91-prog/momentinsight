@@ -1,7 +1,7 @@
 {
-  "version": 2,
-  "baselineCommit": "0a4ef09",
-  "policy": "키워드 조회·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
+  "version": 3,
+  "baselineCommit": "3ba297f",
+  "policy": "키워드 조회·SEO 확인·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·SEO 점검·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
   "functions": [
     {
       "id": "operation-keyword-lookup",
@@ -14,6 +14,54 @@
       "file": "src/pages/client.html",
       "name": "runKeywordLookup",
       "sha256": "2d8a53a04c21352541739a45011b91382b652692284a9726755f9a5107ff88fe"
+    },
+    {
+      "id": "operation-seo-entry",
+      "file": "src/pages/admin.html",
+      "name": "initSeoCheck",
+      "sha256": "4bcd685186a8f33ad13eecabeeeae0a69cf93e4140899964d7cd5f3b5c7f5cf8"
+    },
+    {
+      "id": "advertiser-seo-entry",
+      "file": "src/pages/client.html",
+      "name": "runSeoCheck",
+      "sha256": "551cac848499cfa7f55ae085be72ccf8586cc332ebe1c9df7364d307dce1278d"
+    },
+    {
+      "id": "operation-seo-rank-request",
+      "file": "src/pages/admin.html",
+      "name": "fetchSeoRank",
+      "sha256": "1c60b609d45c327dd463495c0ee8385b6638acfa7f7e48b31a1a82111bfde437"
+    },
+    {
+      "id": "advertiser-seo-rank-request",
+      "file": "src/pages/client.html",
+      "name": "fetchSeoRank",
+      "sha256": "fd0dfd5fd00ad573f0516075d9a256132f80ab0168e94414a44e8554f2ea6dd4"
+    },
+    {
+      "id": "operation-seo-evaluation",
+      "file": "src/pages/admin.html",
+      "name": "buildSeoEvaluation",
+      "sha256": "aad12e5a81d1e1d6678f7e923d8395082ed5104451a6cab9982c799b4ee29dac"
+    },
+    {
+      "id": "advertiser-seo-evaluation",
+      "file": "src/pages/client.html",
+      "name": "buildSeoEvaluation",
+      "sha256": "aad12e5a81d1e1d6678f7e923d8395082ed5104451a6cab9982c799b4ee29dac"
+    },
+    {
+      "id": "operation-seo-render",
+      "file": "src/pages/admin.html",
+      "name": "renderSeoEvaluation",
+      "sha256": "66a884085e9366a35c7835ad8dad30a4a007024edb995a6f59105020c2fc7649"
+    },
+    {
+      "id": "advertiser-seo-render",
+      "file": "src/pages/client.html",
+      "name": "renderSeoEvaluation",
+      "sha256": "66a884085e9366a35c7835ad8dad30a4a007024edb995a6f59105020c2fc7649"
     },
     {
       "id": "operation-product-rank-check",
@@ -83,6 +131,8 @@
     }
   ],
   "files": [
+    { "id": "seo-scoring-engine", "file": "public/seo-evaluation.js", "sha256": "8b978d1ecb0a56f40786d45f1ce1d3532eae6d160ddaf5484613431b97a28da2" },
+    { "id": "seo-audit-server", "file": "src/server/handlers/naver-product-seo-audit.mjs", "sha256": "9003b646d28fe1b9f85f4bdd663e7062ac8067fb13f8b1283433eda7bd3a06ae" },
     { "id": "keyword-query-server", "file": "src/server/handlers/naver-keyword.mjs", "sha256": "140c56b80b2ecf369acb7e1fc560191efb865c62547ba2607f1911af0433962b" },
     { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "b2155dfc87dc7763820e7df899f87b9b9d18871ef73b94b6ddaebd3af4409c8e" },
     { "id": "product-organic-rank-server", "file": "src/server/handlers/naver-shopping-rank.mjs", "sha256": "a89c2125953e8961158a0c5fe59b06b123461b0c6abb1549f7d7cc65c45c7aad" },

@@ -56,6 +56,28 @@ test("roles cannot cross owner and admin boundaries", () => {
   assert.equal(roleAllowsPath("client", "/api/report-center"), true);
 });
 
+test("owner, linked team and client sessions can use all five core tools", () => {
+  const paths = [
+    "/api/naver-keyword",
+    "/api/naver-product-seo-audit",
+    "/api/naver-shopping-rank",
+    "/api/naver-rank-trackers",
+    "/api/naver-place-rank-trackers",
+  ];
+  const sessions = [
+    createSessionClaims({ role: "owner", agencyCode: "mml93-a01" }),
+    createSessionClaims({ role: "team", teamId: "team-1", clientId: "client-1", agencyCode: "mml93-a02" }),
+    createSessionClaims({ role: "client", clientId: "client-1", agencyCode: "mml93-a02" }),
+  ];
+
+  sessions.forEach((claims) => {
+    paths.forEach((path) => {
+      assert.equal(roleAllowsPath(claims.role, path), true, `${claims.role} role ${path}`);
+      assert.equal(sessionScopeAllowsPath(claims, path), true, `${claims.role} scope ${path}`);
+    });
+  });
+});
+
 test("owner session is bound to the exact primary account identity", async () => {
   const owner = createSessionClaims({ role: "owner", agencyCode: "mml93-a01" });
   const stale = createSessionClaims({ role: "owner", agencyCode: "mml93-a02" });

@@ -155,7 +155,7 @@ if (process.argv.includes("--self-test")) {
 const failures = collectFailures(lock, current, discoveredMigrations);
 
 if (failures.length) {
-  console.error("키워드 조회·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 잠금이 변경을 차단했습니다.");
+  console.error("키워드 조회·SEO 확인·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 잠금이 변경을 차단했습니다.");
   failures.forEach((failure) => console.error(`- ${failure}`));
   console.error("대표님의 명시적 변경 승인 후 대상 테스트와 전체 check:release를 통과한 경우에만 잠금 기준을 갱신하세요.");
   process.exit(1);

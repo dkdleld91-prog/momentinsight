@@ -756,6 +756,14 @@ const checks = {
     && [
       "operation-keyword-lookup",
       "advertiser-keyword-lookup",
+      "operation-seo-entry",
+      "advertiser-seo-entry",
+      "operation-seo-rank-request",
+      "advertiser-seo-rank-request",
+      "operation-seo-evaluation",
+      "advertiser-seo-evaluation",
+      "operation-seo-render",
+      "advertiser-seo-render",
       "operation-product-rank-check",
       "advertiser-product-rank-check",
       "operation-product-30-day",
@@ -769,6 +777,8 @@ const checks = {
       "keyword-hub-error-message",
     ].every((id) => protectedFeatureLock.functions.some((entry) => entry.id === id))
     && [
+      "seo-scoring-engine",
+      "seo-audit-server",
       "keyword-query-server",
       "product-organic-rank-server",
       "product-tracker-server",

@@ -81,6 +81,7 @@ function hasActions(block, actions) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const serverIndex = read("src/server/index.mjs");
+const sessionGateSource = read("src/server/session-gate.mjs");
 
 const expectedEndpoints = [
   "/api/naver-keyword",
@@ -137,6 +138,10 @@ const adminSeoEvaluation = functionBlock(adminSource, "buildSeoEvaluation");
 const clientSeoEvaluation = functionBlock(clientSource, "buildSeoEvaluation");
 const adminSeoRender = functionBlock(adminSource, "renderSeoEvaluation");
 const clientSeoRender = functionBlock(clientSource, "renderSeoEvaluation");
+const adminSeoEntry = functionBlock(adminSource, "initSeoCheck");
+const clientSeoEntry = functionBlock(clientSource, "runSeoCheck");
+const adminSetScreen = functionBlock(adminSource, "setScreen");
+const adminActivateSession = functionBlock(adminSource, "activateAdminSession");
 const adminOwnerToolLoad = functionBlock(adminSource, "loadOwnerTool");
 const ownerToolFetchIndex = adminOwnerToolLoad.indexOf("var response = await miFetch");
 const ownerToolDiscardIndex = adminOwnerToolLoad.indexOf("discardOwnerTool()");
@@ -234,6 +239,40 @@ const checks = {
     && !source.includes("[data-seo-discount-state]")
     && !source.includes("[data-seo-review-point-state]")
     && !source.includes("판매자 확인")),
+  coreFiveToolsAvailableToAllRoles: [
+    "keyword",
+    "seo-check",
+    "naver-rank",
+    "naver-rank-tracking",
+    "naver-place-rank-tracking",
+  ].every((screen) => adminScreens.includes(screen))
+    && [
+      "keyword-tool",
+      "seo-check",
+      "naver-rank",
+      "naver-rank-tracking",
+      "naver-place-rank-tracking",
+    ].every((screen) => clientScreens.includes(screen))
+    && includesAll(adminSeoEntry, ["runSeoCheck", "fetchSeoRank", "buildSeoEvaluation", "renderSeoEvaluation"])
+    && includesAll(clientSeoEntry, ["fetchSeoRank", "buildSeoEvaluation", "renderSeoEvaluation"])
+    && includesAll(adminActivateSession, [
+      'session.role !== "owner" && session.role !== "team"',
+      'session.role === "owner"',
+      'session.role === "team"',
+    ])
+    && ![
+      "keyword",
+      "seo-check",
+      "naver-rank",
+      "naver-rank-tracking",
+      "naver-place-rank-tracking",
+    ].some((screen) => adminSetScreen.includes(`target === "${screen}"`))
+    && sessionGateSource.includes('if (role === "owner") return true;')
+    && includesAll(sessionGateSource, [
+      '"/api/naver-keyword"',
+      '"/api/naver-product-seo-audit"',
+      '"/api/naver-shopping-rank"',
+    ]),
   adminTrackingAuthConnected: includesAll(adminFetch, [
     'requestHeaders.delete("x-mi-agency-code")',
     'requestHeaders.set("x-mi-csrf", secureSession.csrfToken)',
@@ -451,8 +490,11 @@ const checks = {
     && serverIndex.includes(`url.pathname === "${endpoint}"`)
     && serverIndex.includes(`dispatch("${handler}", request)`)),
   rolePagesInitializeAllTools: adminSource.includes("initRankCheck(keywordInput);")
+    && adminSource.includes("initSeoCheck(keywordInput);")
     && adminSource.includes("initRankTracking(keywordInput);")
     && adminSource.includes("initPlaceRankTracking(keywordInput);")
+    && clientSource.includes('seoButton.addEventListener("click"')
+    && clientSource.includes("runSeoCheck();")
     && clientSource.includes("initRankCheck(keywordInput);")
     && clientSource.includes("initRankTracking(keywordInput);")
     && clientSource.includes("initPlaceRankTracking(keywordInput);"),
@@ -471,7 +513,7 @@ if (failed.length) {
 
 console.log(JSON.stringify({
   ok: true,
-  checkedRoles: ["operation", "client"],
+  checkedRoles: ["operation", "client", "owner"],
   checkedTools: ["keyword", "seo", "related-keywords", "product-rank", "product-rank-30-days", "place-rank-30-days"],
   endpoints: expectedEndpoints,
   checks,

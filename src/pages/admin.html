@@ -11177,13 +11177,7 @@
         return '<div class="mi-place-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
           var snapshot = day.snapshot || {};
-          var checkedCount = Number(snapshot.checkedCount || 0);
-          var requestedMaxRank = Number(snapshot.requestedMaxRank || tracker.maxRank || 300);
-          var rank = snapshot.rank
-            ? rankText(snapshot.rank)
-            : checkedCount > 0 && checkedCount < requestedMaxRank
-              ? formatNumber(checkedCount) + "개 확인"
-              : "-";
+          var rank = snapshot.rank ? rankText(snapshot.rank) : "-";
           var blogCount = placeSnapshotMetric(snapshot, ["blogCount", "blog_count", "blogReviewCount", "blog_review_count"], null);
           var visitReviewCount = placeSnapshotMetric(snapshot, ["visitReviewCount", "visit_review_count", "visitorReviewCount", "visitor_review_count", "reviewCount", "review_count"], null);
           var monthlySearchCount = placeSnapshotMetric(snapshot, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume"], null);

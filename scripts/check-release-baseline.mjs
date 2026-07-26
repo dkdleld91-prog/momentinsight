@@ -492,7 +492,8 @@ const checks = {
     && source.includes(".mi-place-rank-item .mi-rank-row-actions .mi-rank-pill:first-child")
     && source.includes("--mi-place-day-width: 140px")),
   placeRankPartialResultsStayTruthful: [adminSource, clientSource].every((source) => source.includes("개 확인 · 이후 미검증")
-    && source.includes('formatNumber(checkedCount) + "개 확인"')
+    && source.includes('var rank = snapshot.rank ? rankText(snapshot.rank) : "-";')
+    && !source.includes('? formatNumber(checkedCount) + "개 확인"')
     && source.includes("function placeTrackerLatestRank")
     && source.includes("function placeTrackerPreviousRank")
     && source.includes("function placeTrackerNeedsAttention")

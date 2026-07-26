@@ -6,7 +6,8 @@
 - 추적 파일 정리: 현재 정적 HTML·Vercel 구조와 충돌하고 다른 파일에서 참조되지 않는 `docs/00-project-structure.md`, `src/README.md`만 제거했다. 초기 제품·정보 구조·화면·데이터·UI·로드맵·개발·DB 초안 8개는 삭제하지 않고 `docs/planning`으로 이동했다.
 - 경로 고정: `00_프로젝트_폴더_가이드.md`와 `docs/README.md`에 현재 상태·다음 작업·작업명세·테스트 증거의 읽기 순서와 화면·서버·DB·수집기 원본 경로를 고정했다. 로컬 Markdown 22개 링크와 핵심 경로 존재, 제거 대상 부재 검사가 통과했다.
 - 기능 무손실: 잠금 21함수·23파일·11마이그레이션, API·서버 218/218, 플레이스 수집기 51/51, 서버 계약 27/27, Production 인증 18/18, 공개 빌드/CSP와 전체 `npm run check:release`가 통과했다. 검증 빌드가 만든 `dist`를 다시 안전 정리한 후 `npm run clean:workspace:dry`가 정리 대상 0개를 반환했다.
-- 비변경 범위: `src/pages`, `src/server`, `api`, `public`, `supabase`, `tools`의 운영 구현과 DB 데이터·환경변수·Vercel Production은 변경하거나 배포하지 않았다.
+- 비변경 범위: 정리 구현에서는 `src/pages`, `src/server`, `api`, `public`, `supabase`, `tools`의 운영 구현과 DB 데이터·환경변수를 변경하지 않았다. 이후 대표님 승인으로 동일 검증 결과를 Production에 반영했다.
+- Production 증거: 코드 `548b997`·배포 `dpl_D73LagXA6oRCJu3CqrHC8MuCGQtj`·운영 별칭 `https://insight.momentlabs.co.kr`. `/health`는 릴리스 `548b9973383e`·서울 `icn1`, `/ready`는 Supabase ready를 반환했다. 운영 관리자·광고주 파일은 검증 빌드와 SHA-256이 각각 일치하고 비인증 키워드·SEO·N 상품·N 상품 30일·N 플레이스 30일 API는 모두 401로 차단됐다.
 
 ## 2026-07-26 · 5대 핵심 기능 보호 잠금·3역할 회귀 확장
 

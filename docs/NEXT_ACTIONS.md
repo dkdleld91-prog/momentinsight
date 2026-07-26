@@ -11,7 +11,7 @@
 
 ## 현재 작업
 
-- 다음 작업은 `00_프로젝트_폴더_가이드.md` → `docs/WORK_STATUS.md` → `docs/NEXT_ACTIONS.md` → `docs/08-work-spec-autosave.md` 순서로 확인한다. `docs/planning`은 초기 기획 참고로만 사용하고 현재 운영 상태의 근거로 사용하지 않는다. 재생성 산출물은 `npm run clean:workspace:dry`로 먼저 확인한 뒤 `npm run clean:workspace`로만 정리하며 비밀값·Vercel 연결·의존성은 기본 정리에서 보존한다.
+- 다음 작업은 `00_프로젝트_폴더_가이드.md` → `docs/WORK_STATUS.md` → `docs/NEXT_ACTIONS.md` → `docs/08-work-spec-autosave.md` 순서로 확인한다. `docs/planning`은 초기 기획 참고로만 사용하고 현재 운영 상태의 근거로 사용하지 않는다. 재생성 산출물은 `npm run clean:workspace:dry`로 먼저 확인한 뒤 `npm run clean:workspace`로만 정리하며 비밀값·Vercel 연결·의존성은 기본 정리에서 보존한다. 정리 구조는 코드 `548b997`·Production `dpl_D73LagXA6oRCJu3CqrHC8MuCGQtj`로 운영 반영됐으며 릴리스 `548b9973383e`·서울 `icn1`·Supabase ready를 확인했다.
 
 - `키워드 조회`, `SEO 확인`, `N 상품 순위`, `N 30일 순위`, `N 플레이스 30일 순위`를 사이트 공통 5대 보호 기능으로 관리한다. 현재 잠금은 21함수·23파일·11마이그레이션이며 신규 조회·점검·추적은 계속 허용한다. 운영팀·광고주·총관리자 역할 회귀, 잠금 self-test, SEO 18/18, API·서버 218/218, 플레이스 51/51, 서버 계약 27/27, Production 인증 18/18과 전체 `check:release`를 통과했고 코드 `34431f5`·Production `dpl_AaVnUcMpHonkbS8no3DhSDutzU2g` 운영 반영과 릴리스 `34431f5b2504` 재확인을 완료했다. 이후 기능 변경도 이 잠금을 우회하지 않는다.
 

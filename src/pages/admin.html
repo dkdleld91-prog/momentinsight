@@ -931,13 +931,14 @@
       position: relative;
       overflow: hidden;
       align-items: center;
+      margin-bottom: 26px;
       border: 1px solid var(--mi-home-line);
-      border-radius: 14px;
-      padding: 24px;
+      border-radius: 18px;
+      padding: 30px;
       background:
         radial-gradient(circle at 92% 10%, rgba(41, 83, 156, 0.11), transparent 34%),
         linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
-      box-shadow: 0 18px 44px rgba(6, 26, 58, 0.055);
+      box-shadow: 0 20px 50px rgba(6, 26, 58, 0.06);
     }
 
     #mi-admin .mi-ops-home-head h1 {
@@ -977,21 +978,21 @@
 
     #mi-admin .mi-ops-quick-grid {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-      margin-bottom: 14px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin-bottom: 26px;
     }
 
     #mi-admin .mi-ops-quick-card {
       position: relative;
       min-width: 0;
-      min-height: 138px;
+      min-height: 134px;
       overflow: hidden;
       border: 1px solid var(--mi-home-line);
-      border-radius: 12px;
-      padding: 17px;
+      border-radius: 16px;
+      padding: 21px 22px;
       background: #fff;
-      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.045);
+      box-shadow: 0 14px 34px rgba(6, 26, 58, 0.05);
       transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
     }
 
@@ -1022,9 +1023,9 @@
 
     #mi-admin .mi-ops-quick-card strong {
       display: block;
-      margin-top: 15px;
+      margin-top: 18px;
       color: var(--mi-navy);
-      font-size: 18px;
+      font-size: 19px;
       letter-spacing: -0.025em;
     }
 
@@ -1040,30 +1041,28 @@
 
     #mi-admin .mi-ops-quick-card b {
       position: absolute;
-      right: 16px;
-      bottom: 15px;
+      right: 21px;
+      bottom: 19px;
       color: #9aa6b7;
       font-size: 15px;
     }
 
     #mi-admin .mi-ops-workspace {
       display: grid;
-      grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
-      gap: 14px;
+      grid-template-columns: 1fr;
+      gap: 22px;
     }
 
     #mi-admin .mi-ops-flow-card,
     #mi-admin .mi-ops-check-card {
       min-width: 0;
-      border-radius: 14px;
-      padding: 22px;
-      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.06);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 48px rgba(6, 26, 58, 0.065);
     }
 
     #mi-admin .mi-ops-flow-card {
       position: relative;
-      display: flex;
-      flex-direction: column;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.1);
       color: #fff;
@@ -1089,16 +1088,15 @@
     #mi-admin .mi-ops-flow {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 8px;
-      margin-top: 20px;
+      gap: 16px;
+      margin-top: 28px;
     }
 
     #mi-admin .mi-ops-flow-step {
+      position: relative;
       min-width: 0;
-      border: 1px solid rgba(255, 255, 255, 0.13);
-      border-radius: 10px;
-      padding: 13px;
-      background: rgba(255, 255, 255, 0.07);
+      border-top: 1px solid rgba(255, 255, 255, 0.19);
+      padding: 20px 8px 0 0;
     }
 
     #mi-admin .mi-ops-flow-step span,
@@ -1108,16 +1106,21 @@
     }
 
     #mi-admin .mi-ops-flow-step span {
-      color: rgba(255, 255, 255, 0.5);
+      position: absolute;
+      top: -10px;
+      left: 0;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #dce8ff;
+      background: #102d58;
       font-size: 10px;
       font-weight: 950;
       letter-spacing: 0.06em;
     }
 
     #mi-admin .mi-ops-flow-step strong {
-      margin-top: 7px;
       color: #fff;
-      font-size: 14px;
+      font-size: 15px;
     }
 
     #mi-admin .mi-ops-flow-step small {
@@ -1132,7 +1135,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 16px;
+      margin-top: 28px;
       color: rgba(255, 255, 255, 0.62);
       font-size: 11px;
       font-weight: 800;
@@ -1149,8 +1152,14 @@
     }
 
     #mi-admin .mi-ops-status-board {
-      margin-top: auto;
-      padding-top: 18px;
+      margin-bottom: 26px;
+      border: 1px solid var(--mi-home-line);
+      border-radius: 18px;
+      padding: 26px;
+      background:
+        radial-gradient(circle at 95% 0%, rgba(40, 81, 151, 0.07), transparent 36%),
+        #fff;
+      box-shadow: 0 18px 44px rgba(6, 26, 58, 0.05);
     }
 
     #mi-admin .mi-ops-status-head {
@@ -1158,44 +1167,45 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-bottom: 8px;
+      margin-bottom: 17px;
     }
 
     #mi-admin .mi-ops-status-head strong {
-      color: rgba(255, 255, 255, 0.9);
-      font-size: 12px;
-      letter-spacing: -0.01em;
+      color: var(--mi-navy);
+      font-size: 19px;
+      letter-spacing: -0.025em;
     }
 
     #mi-admin .mi-ops-status-head span {
-      color: rgba(255, 255, 255, 0.5);
-      font-size: 10px;
+      color: #778399;
+      font-size: 11px;
       font-weight: 850;
     }
 
     #mi-admin .mi-ops-status-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+      gap: 14px;
     }
 
     #mi-admin .mi-ops-status-card {
       min-width: 0;
-      border: 1px solid rgba(255, 255, 255, 0.14);
-      border-radius: 10px;
-      padding: 12px 13px;
-      background: rgba(255, 255, 255, 0.075);
+      min-height: 116px;
+      border: 1px solid #e2e8f1;
+      border-radius: 14px;
+      padding: 18px 19px;
+      background: #f8fafd;
       transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
     }
 
     #mi-admin .mi-ops-status-card:hover {
       transform: translateY(-1px);
-      border-color: rgba(255, 255, 255, 0.25);
-      background: rgba(255, 255, 255, 0.11);
+      border-color: rgba(15, 39, 73, 0.22);
+      background: #fff;
     }
 
     #mi-admin .mi-ops-status-card:focus-visible {
-      outline: 3px solid rgba(143, 180, 244, 0.28);
+      outline: 3px solid rgba(30, 64, 175, 0.18);
       outline-offset: 2px;
     }
 
@@ -1214,8 +1224,8 @@
     }
 
     #mi-admin .mi-ops-status-card span {
-      color: rgba(255, 255, 255, 0.58);
-      font-size: 10px;
+      color: #69768a;
+      font-size: 11px;
       font-weight: 850;
     }
 
@@ -1223,32 +1233,32 @@
       flex: 0 0 auto;
       border-radius: 999px;
       padding: 4px 7px;
-      color: #dce8ff;
-      background: rgba(143, 180, 244, 0.14);
-      font-size: 9px;
+      color: #3d5b86;
+      background: #e8eef8;
+      font-size: 10px;
       font-weight: 950;
     }
 
     #mi-admin .mi-ops-status-card b[data-state="done"] {
-      color: #c8f7e3;
-      background: rgba(63, 199, 143, 0.16);
+      color: #157052;
+      background: #def4eb;
     }
 
     #mi-admin .mi-ops-status-card b[data-state="warn"] {
-      color: #ffdf9c;
-      background: rgba(245, 173, 49, 0.17);
+      color: #94610c;
+      background: #fff1d4;
     }
 
     #mi-admin .mi-ops-status-card b[data-state="error"] {
-      color: #ffd2d2;
-      background: rgba(239, 96, 96, 0.16);
+      color: #a63a3a;
+      background: #fee8e8;
     }
 
     #mi-admin .mi-ops-status-card > strong {
       overflow: hidden;
-      margin-top: 9px;
-      color: #fff;
-      font-size: 14px;
+      margin-top: 13px;
+      color: var(--mi-navy);
+      font-size: 17px;
       letter-spacing: -0.02em;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1256,9 +1266,9 @@
 
     #mi-admin .mi-ops-status-card small {
       overflow: hidden;
-      margin-top: 3px;
-      color: rgba(255, 255, 255, 0.55);
-      font-size: 10px;
+      margin-top: 5px;
+      color: #758196;
+      font-size: 11px;
       font-weight: 750;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -1271,8 +1281,9 @@
 
     #mi-admin .mi-ops-check-list {
       display: grid;
-      gap: 0;
-      margin-top: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0 22px;
+      margin-top: 18px;
     }
 
     #mi-admin .mi-ops-check-item {
@@ -1280,11 +1291,11 @@
       grid-template-columns: 28px minmax(0, 1fr);
       gap: 10px;
       align-items: center;
-      min-height: 54px;
+      min-height: 66px;
       border-top: 1px solid #e9edf4;
     }
 
-    #mi-admin .mi-ops-check-item:first-child {
+    #mi-admin .mi-ops-check-item:nth-child(-n + 2) {
       border-top: 0;
     }
 
@@ -1322,9 +1333,9 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      margin-top: 14px;
-      border-radius: 10px;
-      padding: 12px 13px;
+      margin-top: 18px;
+      border-radius: 12px;
+      padding: 15px 16px;
       color: var(--mi-navy);
       background: var(--mi-home-soft);
     }
@@ -6514,6 +6525,21 @@
         min-height: 122px;
       }
 
+      #mi-admin .mi-ops-quick-grid,
+      #mi-admin .mi-ops-status-grid,
+      #mi-admin .mi-ops-flow,
+      #mi-admin .mi-ops-check-list {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-ops-status-board {
+        padding: 20px;
+      }
+
+      #mi-admin .mi-ops-check-item:nth-child(2) {
+        border-top: 1px solid #e9edf4;
+      }
+
       #mi-admin .mi-ops-flow-card,
       #mi-admin .mi-ops-check-card {
         padding: 18px;
@@ -6710,6 +6736,25 @@
             <a class="mi-ops-quick-card" href="#mi-admin-reports" data-mi-admin-screen="reports"><span>04</span><strong>보고서 관리</strong><small>검수 완료 파일 전달</small><b aria-hidden="true">→</b></a>
           </div>
 
+          <section class="mi-ops-status-board" aria-label="이번 달 운영 현황">
+            <div class="mi-ops-status-head">
+              <strong>이번 달 운영 현황</strong>
+              <span data-ops-home-period>기준 월 확인 중</span>
+            </div>
+            <div class="mi-ops-status-grid">
+              <a class="mi-ops-status-card" href="#mi-admin-excel" data-mi-admin-screen="excel">
+                <div><span>매출 입력</span><b data-ops-home-sales-state data-state="idle">확인 중</b></div>
+                <strong data-ops-home-sales-title>매출 상태 확인 중</strong>
+                <small data-ops-home-sales-detail>저장된 공개 매출과 입력일 기준</small>
+              </a>
+              <a class="mi-ops-status-card" href="#mi-admin-reports" data-mi-admin-screen="reports">
+                <div><span>보고서 제출</span><b data-ops-home-report-state data-state="idle">로그인 후</b></div>
+                <strong data-ops-home-report-title>보고서 상태 확인 대기</strong>
+                <small data-ops-home-report-detail>서버 보고서함의 이번 달 기록 기준</small>
+              </a>
+            </div>
+          </section>
+
           <div class="mi-ops-workspace">
             <article class="mi-ops-flow-card">
               <span class="mi-kicker">운영 루틴</span>
@@ -6722,24 +6767,6 @@
                 <div class="mi-ops-flow-step"><span>STEP 04</span><strong>공개 확인</strong><small>광고주 화면</small></div>
               </div>
               <div class="mi-ops-truth-note">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
-              <div class="mi-ops-status-board" aria-label="이번 달 운영 현황">
-                <div class="mi-ops-status-head">
-                  <strong>이번 달 운영 현황</strong>
-                  <span data-ops-home-period>기준 월 확인 중</span>
-                </div>
-                <div class="mi-ops-status-grid">
-                  <a class="mi-ops-status-card" href="#mi-admin-excel" data-mi-admin-screen="excel">
-                    <div><span>매출 입력</span><b data-ops-home-sales-state data-state="idle">확인 중</b></div>
-                    <strong data-ops-home-sales-title>매출 상태 확인 중</strong>
-                    <small data-ops-home-sales-detail>저장된 공개 매출과 입력일 기준</small>
-                  </a>
-                  <a class="mi-ops-status-card" href="#mi-admin-reports" data-mi-admin-screen="reports">
-                    <div><span>보고서 제출</span><b data-ops-home-report-state data-state="idle">로그인 후</b></div>
-                    <strong data-ops-home-report-title>보고서 상태 확인 대기</strong>
-                    <small data-ops-home-report-detail>서버 보고서함의 이번 달 기록 기준</small>
-                  </a>
-                </div>
-              </div>
             </article>
 
             <aside class="mi-ops-check-card">

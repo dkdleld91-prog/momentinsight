@@ -1062,6 +1062,8 @@
 
     #mi-admin .mi-ops-flow-card {
       position: relative;
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
       border: 1px solid rgba(255, 255, 255, 0.1);
       color: #fff;
@@ -1144,6 +1146,122 @@
       border-radius: 50%;
       background: #8fb4f4;
       box-shadow: 0 0 0 4px rgba(143, 180, 244, 0.12);
+    }
+
+    #mi-admin .mi-ops-status-board {
+      margin-top: auto;
+      padding-top: 18px;
+    }
+
+    #mi-admin .mi-ops-status-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    #mi-admin .mi-ops-status-head strong {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: 12px;
+      letter-spacing: -0.01em;
+    }
+
+    #mi-admin .mi-ops-status-head span {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 10px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-ops-status-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #mi-admin .mi-ops-status-card {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 10px;
+      padding: 12px 13px;
+      background: rgba(255, 255, 255, 0.075);
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    #mi-admin .mi-ops-status-card:hover {
+      transform: translateY(-1px);
+      border-color: rgba(255, 255, 255, 0.25);
+      background: rgba(255, 255, 255, 0.11);
+    }
+
+    #mi-admin .mi-ops-status-card:focus-visible {
+      outline: 3px solid rgba(143, 180, 244, 0.28);
+      outline-offset: 2px;
+    }
+
+    #mi-admin .mi-ops-status-card > div {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-ops-status-card span,
+    #mi-admin .mi-ops-status-card strong,
+    #mi-admin .mi-ops-status-card small {
+      display: block;
+    }
+
+    #mi-admin .mi-ops-status-card span {
+      color: rgba(255, 255, 255, 0.58);
+      font-size: 10px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-ops-status-card b {
+      flex: 0 0 auto;
+      border-radius: 999px;
+      padding: 4px 7px;
+      color: #dce8ff;
+      background: rgba(143, 180, 244, 0.14);
+      font-size: 9px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-ops-status-card b[data-state="done"] {
+      color: #c8f7e3;
+      background: rgba(63, 199, 143, 0.16);
+    }
+
+    #mi-admin .mi-ops-status-card b[data-state="warn"] {
+      color: #ffdf9c;
+      background: rgba(245, 173, 49, 0.17);
+    }
+
+    #mi-admin .mi-ops-status-card b[data-state="error"] {
+      color: #ffd2d2;
+      background: rgba(239, 96, 96, 0.16);
+    }
+
+    #mi-admin .mi-ops-status-card > strong {
+      overflow: hidden;
+      margin-top: 9px;
+      color: #fff;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-ops-status-card small {
+      overflow: hidden;
+      margin-top: 3px;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 10px;
+      font-weight: 750;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #mi-admin .mi-ops-check-card {
@@ -6604,6 +6722,24 @@
                 <div class="mi-ops-flow-step"><span>STEP 04</span><strong>공개 확인</strong><small>광고주 화면</small></div>
               </div>
               <div class="mi-ops-truth-note">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
+              <div class="mi-ops-status-board" aria-label="이번 달 운영 현황">
+                <div class="mi-ops-status-head">
+                  <strong>이번 달 운영 현황</strong>
+                  <span data-ops-home-period>기준 월 확인 중</span>
+                </div>
+                <div class="mi-ops-status-grid">
+                  <a class="mi-ops-status-card" href="#mi-admin-excel" data-mi-admin-screen="excel">
+                    <div><span>매출 입력</span><b data-ops-home-sales-state data-state="idle">확인 중</b></div>
+                    <strong data-ops-home-sales-title>매출 상태 확인 중</strong>
+                    <small data-ops-home-sales-detail>저장된 공개 매출과 입력일 기준</small>
+                  </a>
+                  <a class="mi-ops-status-card" href="#mi-admin-reports" data-mi-admin-screen="reports">
+                    <div><span>보고서 제출</span><b data-ops-home-report-state data-state="idle">로그인 후</b></div>
+                    <strong data-ops-home-report-title>보고서 상태 확인 대기</strong>
+                    <small data-ops-home-report-detail>서버 보고서함의 이번 달 기록 기준</small>
+                  </a>
+                </div>
+              </div>
             </article>
 
             <aside class="mi-ops-check-card">
@@ -9416,6 +9552,122 @@
         return state;
       }
 
+      var operationHomeReportRequest = 0;
+
+      function operationHomeMonthWindow() {
+        var now = new Date();
+        var year = now.getFullYear();
+        var monthNumber = now.getMonth() + 1;
+        var month = String(monthNumber).padStart(2, "0");
+        var lastDay = String(new Date(year, monthNumber, 0).getDate()).padStart(2, "0");
+        return {
+          key: year + "-" + month,
+          label: year + "년 " + monthNumber + "월",
+          from: year + "-" + month + "-01",
+          to: year + "-" + month + "-" + lastDay
+        };
+      }
+
+      function setOperationHomeStatus(kind, stateName, label, title, detail) {
+        var stateNode = root.querySelector("[data-ops-home-" + kind + "-state]");
+        var titleNode = root.querySelector("[data-ops-home-" + kind + "-title]");
+        var detailNode = root.querySelector("[data-ops-home-" + kind + "-detail]");
+        if (stateNode) {
+          stateNode.textContent = label;
+          stateNode.setAttribute("data-state", stateName || "idle");
+        }
+        if (titleNode) titleNode.textContent = title;
+        if (detailNode) detailNode.textContent = detail;
+      }
+
+      function operationHomeDate(value) {
+        var normalized = String(value || "").trim().replace(/\./g, "-");
+        return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : "";
+      }
+
+      function operationHomeHasValue(value) {
+        var normalized = String(value || "").trim();
+        return Boolean(normalized && normalized !== "-" && normalized !== "입력 전" && normalized !== "입력 대기");
+      }
+
+      function renderOperationHomeSalesStatus(state) {
+        var month = operationHomeMonthWindow();
+        var periodNode = root.querySelector("[data-ops-home-period]");
+        if (periodNode) periodNode.textContent = month.label;
+
+        var sales = String((state && state.sales) || "").trim();
+        var updatedAt = operationHomeDate(state && state.updatedAt);
+        if (!operationHomeHasValue(sales)) {
+          setOperationHomeStatus("sales", "idle", "입력 전", "이번 달 매출 미입력", "운영 데이터에서 매출을 입력해주세요.");
+          return;
+        }
+        if (updatedAt.slice(0, 7) !== month.key) {
+          setOperationHomeStatus(
+            "sales",
+            "warn",
+            "갱신 필요",
+            sales,
+            (updatedAt || "입력일 없음") + " 기준 · 이번 달 매출 확인 필요"
+          );
+          return;
+        }
+        setOperationHomeStatus("sales", "done", "입력 완료", sales, updatedAt + " 기준 공개 매출");
+      }
+
+      async function refreshOperationHomeReportStatus() {
+        var requestId = ++operationHomeReportRequest;
+        var session = captureAdminSession();
+        if (!session.role) {
+          setOperationHomeStatus("report", "idle", "로그인 후", "보고서 상태 확인 대기", "로그인하면 이번 달 제출 기록을 확인합니다.");
+          return;
+        }
+        if (session.role === "team" && !(currentOperationTeam && currentOperationTeam.client)) {
+          setOperationHomeStatus("report", "idle", "연결 후", "광고주 미연결", "광고주 연결 후 보고서를 제출할 수 있습니다.");
+          return;
+        }
+        if (session.role === "owner" && !ownerTargetAgencyCode()) {
+          setOperationHomeStatus("report", "idle", "대상 선택", "광고주 선택 전", "대상 광고주를 선택하면 제출 기록을 확인합니다.");
+          return;
+        }
+
+        setOperationHomeStatus("report", "idle", "확인 중", "이번 달 보고서 확인 중", "서버 보고서함을 불러오고 있습니다.");
+        try {
+          var month = operationHomeMonthWindow();
+          var endpoint = new URL(getReportCenterApiUrl(), window.location.origin);
+          endpoint.searchParams.set("from", month.from);
+          endpoint.searchParams.set("to", month.to);
+          endpoint.searchParams.set("limit", "40");
+          var staff = reportCenterSessionRequest({});
+          var response = await miFetch(endpoint.toString(), {
+            method: "GET",
+            cache: "no-store",
+            headers: staff.headers
+          });
+          var payload = await readApiPayload(response, "이번 달 보고서 조회 응답을 확인할 수 없습니다.");
+          if (requestId !== operationHomeReportRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          if (!payload.ok) throw new Error(payload.message || "이번 달 보고서 조회에 실패했습니다.");
+
+          var reports = Array.isArray(payload.reports) ? payload.reports : [];
+          var publicReports = reports.filter(function (report) {
+            return report && report.visibility === "client_visible";
+          });
+          var latest = publicReports[0] || reports[0] || null;
+          if (!latest) {
+            setOperationHomeStatus("report", "idle", "제출 전", "이번 달 보고서 없음", "보고서 관리에서 제출해주세요.");
+            return;
+          }
+          var reportDate = operationHomeDate(latest.report_date) || String(latest.report_date || "").trim() || "날짜 없음";
+          if (publicReports.length) {
+            setOperationHomeStatus("report", "done", "제출 완료", latest.title || "공개 보고서", reportDate + " · 광고주 공개");
+            return;
+          }
+          setOperationHomeStatus("report", "warn", "검수 중", latest.title || "내부 보고서", reportDate + " · 광고주 공개 전");
+        } catch (error) {
+          if (requestId !== operationHomeReportRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          setOperationHomeStatus("report", "error", "조회 실패", "보고서 상태 연결 실패", "서버 연결 후 운영 홈을 다시 열어주세요.");
+        }
+      }
+
       function applyState(state) {
         root.querySelectorAll("[data-admin-public]").forEach(function (node) {
           var key = node.getAttribute("data-admin-public");
@@ -9459,6 +9711,7 @@
         if (schedulesInput) schedulesInput.value = schedulesToText(state.schedules || []);
         if (publicCommentInput) publicCommentInput.value = state.comment;
         renderClientPreview(state);
+        renderOperationHomeSalesStatus(state);
       }
 
       var currentState = readState();
@@ -9546,6 +9799,7 @@
           await refreshSourceFileFromServer(requestGeneration, nextScope);
         }
         if (!adminSessionIsCurrent(requestGeneration, "team", nextScope)) return null;
+        refreshOperationHomeReportStatus();
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return payload;
@@ -9601,6 +9855,7 @@
           await loadOwnerCodes(true);
           if (!adminSessionIsCurrent(requestGeneration, "owner", ownerSessionScope)) return false;
         }
+        refreshOperationHomeReportStatus();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -9771,6 +10026,7 @@
             window.scrollTo({ top: 0, left: 0, behavior: "auto" });
           });
         }
+        if (target === "home" && secureSession.role) refreshOperationHomeReportStatus();
       }
 
       root.addEventListener("click", function (event) {
@@ -10057,6 +10313,7 @@
       if (rankScopeInput) {
         rankScopeInput.addEventListener("change", function () {
           window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+          refreshOperationHomeReportStatus();
         });
       }
       if (codeSaveButton) {
@@ -14788,6 +15045,7 @@
             if (payload.staleSession || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
+              refreshOperationHomeReportStatus();
             } else if (payload.skipped) {
               button.innerHTML = "<span><b>PPTX 생성 대기</b><small>" + escapeHtml(payload.message || "운영팀-광고주 연결이 필요합니다.") + "</small></span><i>!</i>";
             } else {
@@ -14819,6 +15077,7 @@
             if (payload.staleSession || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";
+              refreshOperationHomeReportStatus();
             } else if (payload.skipped) {
               button.innerHTML = "<span><b>PPTX 생성 대기</b><small>" + escapeHtml(payload.message || "운영팀-광고주 연결 또는 총관리자 권한 확인이 필요합니다.") + "</small></span><i>!</i>";
             } else {

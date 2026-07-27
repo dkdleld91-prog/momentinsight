@@ -584,6 +584,16 @@ const checks = {
     && !adminSource.includes("보고서·공개 승인 큐")
     && !adminSource.includes("운영 신뢰 체크")
     && !adminSource.includes("실제 상태 확인"),
+  adminHomeUsesRealMonthlyOperationStatus: adminSource.includes("data-ops-home-sales-state")
+    && adminSource.includes("data-ops-home-report-state")
+    && adminSource.includes("function renderOperationHomeSalesStatus")
+    && adminSource.includes("function refreshOperationHomeReportStatus")
+    && adminSource.includes('endpoint.searchParams.set("from", month.from)')
+    && adminSource.includes('report.visibility === "client_visible"')
+    && adminSource.includes("이번 달 매출 미입력")
+    && adminSource.includes("이번 달 보고서 없음")
+    && !adminSource.includes("<strong>매출 입력 완료</strong>")
+    && !adminSource.includes("<strong>보고서 제출 완료</strong>"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes("restoreClientSession")

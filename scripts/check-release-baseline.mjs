@@ -1113,8 +1113,9 @@ const checks = {
     && rankCronWorkflow.includes("deploy backfill")
     && rankCronWorkflow.includes("KST 09:00/15:00 rescue window")
     && rankCronWorkflow.includes("Hourly catch-up keeps due trackers moving")
-    && rankCronWorkflow.includes("const batchSize = 1")
-    && rankCronWorkflow.includes("const maxBatches = 10")
+    && rankCronWorkflow.includes("const batchSize = 5")
+    && rankCronWorkflow.includes("const maxBatches = 20")
+    && rankCronWorkflow.includes("drain 100 due trackers")
     && rankCronWorkflow.includes("requestTimeoutMs")
     && rankCronWorkflow.includes("payload.ok !== true")
     && rankCronWorkflow.includes("safe.failed > 0")
@@ -1176,7 +1177,9 @@ const checks = {
       && !source.includes("data-rank-group list=")),
   vercelRankCronConfigured: (vercelConfig.crons || []).some((cron) => cron.path === "/api/naver-rank-cron"
     && cron.schedule === "7 0 * * *")
-    && rankCronServer.includes("DEFAULT_CRON_BATCH = 1"),
+    && rankCronServer.includes("DEFAULT_CRON_BATCH = 1")
+    && rankCronServer.includes("MAX_CRON_BATCH = 5")
+    && rankCronServer.includes("productRankCronBatchLimit(url)"),
   rankNextCheckUsesAmPmSlots: rankServer.includes("function nextRankCheckAt")
     && rankServer.includes("kstSlotToUtc(kstBase, 9)")
     && rankServer.includes("kstSlotToUtc(kstBase, 15)")

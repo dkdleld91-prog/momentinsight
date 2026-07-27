@@ -80,8 +80,8 @@ check(
   "product cron uses repeated small batches",
   hasAll(productWorkflow, [
     /node --input-type=module <<'NODE'/,
-    /const batchSize = 1;/,
-    /const maxBatches = 10;/,
+    /const batchSize = 5;/,
+    /const maxBatches = 20;/,
     /for \(let batch = 1; batch <= maxBatches;/,
     /searchParams\.set\("limit", String\(batchSize\)\)/,
   ]) && !/limit=100/.test(productWorkflow),
@@ -287,7 +287,8 @@ check(
 check(
   "rank cron handlers fail closed when providers are unavailable",
   hasAll(productCron, [
-    /limit: DEFAULT_CRON_BATCH/,
+    /MAX_CRON_BATCH = 5/,
+    /limit: productRankCronBatchLimit\(url\)/,
     /drainMode/,
     /!summary\.configured/,
     /!summary\.drained && !drainMode/,

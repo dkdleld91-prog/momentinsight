@@ -4,6 +4,13 @@ import { corsHeaders, protectedJson } from "../security.mjs";
 import { runDueTrackers } from "./naver-rank-trackers.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
+const MAX_CRON_BATCH = 5;
+
+export function productRankCronBatchLimit(url) {
+  const requested = Number(url.searchParams.get("limit"));
+  if (!Number.isFinite(requested)) return DEFAULT_CRON_BATCH;
+  return Math.max(1, Math.min(MAX_CRON_BATCH, Math.trunc(requested)));
+}
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -30,7 +37,7 @@ export default {
       const drainMode = url.searchParams.get("mode") === "drain";
       const summary = await runDueTrackers(ctx, {
         agencyCode: url.searchParams.get("agencyCode") || "",
-        limit: DEFAULT_CRON_BATCH,
+        limit: productRankCronBatchLimit(url),
       });
       if (!summary.configured) {
         return json(request, {

@@ -593,9 +593,9 @@ const checks = {
     && adminSource.includes("이번 달 보고서 없음")
     && !adminSource.includes("<strong>매출 입력 완료</strong>")
     && !adminSource.includes("<strong>보고서 제출 완료</strong>"),
-  adminHomeGuidanceLeadsOperatingHierarchy: adminSource.indexOf('class="mi-ops-flow-card"') < adminSource.indexOf('class="mi-ops-status-board"')
-    && adminSource.indexOf('class="mi-ops-status-board"') < adminSource.indexOf('class="mi-ops-quick-grid"')
-    && adminSource.indexOf('class="mi-ops-quick-grid"') < adminSource.indexOf('class="mi-ops-check-card"')
+  adminHomeStatusLeadsOperatingHierarchy: adminSource.indexOf('class="mi-ops-status-board"') < adminSource.indexOf('class="mi-ops-quick-grid"')
+    && adminSource.indexOf('class="mi-ops-quick-grid"') < adminSource.indexOf('class="mi-ops-flow-card"')
+    && adminSource.indexOf('class="mi-ops-flow-card"') < adminSource.indexOf('class="mi-ops-check-card"')
     && adminSource.includes("grid-template-columns: repeat(2, minmax(0, 1fr));"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")

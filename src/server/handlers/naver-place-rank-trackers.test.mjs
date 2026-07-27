@@ -672,6 +672,31 @@ test("an account-only team lists an isolated place-rank scope without a client r
   assert.equal(result.body.complete, true);
 });
 
+test("an account-only team reaches every place-rank action without advertiser scope", async () => {
+  const forbiddenDb = {
+    supabaseAdmin: {
+      from() {
+        throw new Error("action validation must run before database access");
+      },
+    },
+  };
+  for (const action of ["create", "check", "group", "delete"]) {
+    const result = await payload(await handlePlaceRankTrackersRequest(teamAccountRequest("POST", { action }), forbiddenDb));
+    assert.equal(result.status, 400, `${action} must reach its action validation`);
+    assert.equal(result.body.ok, false, `${action} validation payload`);
+    assert.notEqual(result.body.message, "등록된 대행사 코드를 확인할 수 없습니다.", `${action} must not require an advertiser`);
+  }
+
+  const { ctx } = testContext();
+  const syncResult = await payload(await handlePlaceRankTrackersRequest(teamAccountRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }), ctx));
+  assert.equal(syncResult.status, 200);
+  assert.equal(syncResult.body.ok, true);
+  assert.equal(syncResult.body.summary.checked, 0);
+});
+
 test("place snapshot loading paginates recent history instead of applying one global limit", async () => {
   const now = Date.now();
   const trackerIds = Array.from({ length: 12 }, (_, index) => `place-tracker-${index}`);

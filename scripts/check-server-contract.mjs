@@ -161,6 +161,12 @@ check(
   files.packageJson,
 );
 check(
+  "role-state regression is part of the quality gate",
+  packageJson.scripts?.["check:role-state-regression"] === "node scripts/check-role-state-regression.mjs"
+    && String(packageJson.scripts?.["check:quality"] || "").includes("npm run check:role-state-regression"),
+  files.packageJson,
+);
+check(
   "all routed requests use the shared runtime boundary",
   hasAll(serverIndex, [
     /createHandlerResolver/,

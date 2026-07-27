@@ -84,6 +84,67 @@ test("an account-only team lists an isolated product-rank scope without a client
   assert.equal(body.complete, true);
 });
 
+function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {
+  return new Request("https://example.com/api/naver-rank-trackers", {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "team",
+      "x-mi-session-scope": "account-only",
+      "x-mi-team-code": teamCode,
+      "x-mi-agency-code": teamCode,
+      "x-mi-rank-access-code": teamCode,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+test("an account-only team reaches every product-rank action without advertiser scope", async () => {
+  const forbiddenDb = {
+    supabaseAdmin: {
+      from() {
+        throw new Error("action validation must run before database access");
+      },
+    },
+  };
+  for (const action of ["create", "check", "stop", "delete", "group", "move", "reorder"]) {
+    const response = await handleRankTrackersRequest(productTeamAccountRequest("POST", { action }), forbiddenDb);
+    assert.equal(response.status, 400, `${action} must reach its action validation`);
+    const body = await response.json();
+    assert.equal(body.ok, false, `${action} validation payload`);
+    assert.notEqual(body.message, "등록된 대행사 코드를 확인할 수 없습니다.", `${action} must not require an advertiser`);
+  }
+
+  const emptyDueContext = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          lte() { return query; },
+          or() { return query; },
+          order() { return query; },
+          limit() { return query; },
+          in() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+  const syncResponse = await handleRankTrackersRequest(productTeamAccountRequest("POST", {
+    action: "sync-due",
+    limit: 1,
+  }), emptyDueContext);
+  const syncBody = await syncResponse.json();
+  assert.equal(syncResponse.status, 200);
+  assert.equal(syncBody.ok, true);
+  assert.equal(syncBody.summary.checked, 0);
+});
+
 function trackerRow(values = {}) {
   return {
     id: "tracker-1",

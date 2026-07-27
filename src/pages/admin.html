@@ -922,6 +922,311 @@
       font-weight: 800;
     }
 
+    #mi-admin .mi-ops-home {
+      --mi-home-line: rgba(15, 39, 73, 0.11);
+      --mi-home-soft: #f6f8fc;
+    }
+
+    #mi-admin .mi-ops-home-head {
+      position: relative;
+      overflow: hidden;
+      align-items: center;
+      border: 1px solid var(--mi-home-line);
+      border-radius: 14px;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 92% 10%, rgba(41, 83, 156, 0.11), transparent 34%),
+        linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+      box-shadow: 0 18px 44px rgba(6, 26, 58, 0.055);
+    }
+
+    #mi-admin .mi-ops-home-head h1 {
+      max-width: 720px;
+      font-size: clamp(28px, 3vw, 38px);
+      letter-spacing: -0.045em;
+    }
+
+    #mi-admin .mi-ops-home-head p {
+      max-width: 680px;
+      margin-top: 7px;
+    }
+
+    #mi-admin .mi-ops-home-actions {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-ops-home-actions .mi-link-button {
+      min-height: 40px;
+      padding: 0 15px;
+      border-color: rgba(15, 39, 73, 0.16);
+      background: rgba(255, 255, 255, 0.86);
+      box-shadow: 0 8px 20px rgba(6, 26, 58, 0.05);
+    }
+
+    #mi-admin .mi-ops-home-actions .mi-link-button.is-primary {
+      border-color: var(--mi-navy);
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-admin .mi-ops-quick-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    #mi-admin .mi-ops-quick-card {
+      position: relative;
+      min-width: 0;
+      min-height: 138px;
+      overflow: hidden;
+      border: 1px solid var(--mi-home-line);
+      border-radius: 12px;
+      padding: 17px;
+      background: #fff;
+      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.045);
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    #mi-admin .mi-ops-quick-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(15, 39, 73, 0.24);
+      box-shadow: 0 16px 32px rgba(6, 26, 58, 0.075);
+    }
+
+    #mi-admin .mi-ops-quick-card:focus-visible {
+      outline: 3px solid rgba(30, 64, 175, 0.2);
+      outline-offset: 3px;
+    }
+
+    #mi-admin .mi-ops-quick-card > span {
+      display: inline-flex;
+      min-width: 30px;
+      min-height: 24px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      color: #52637d;
+      background: #edf1f7;
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: 0.05em;
+    }
+
+    #mi-admin .mi-ops-quick-card strong {
+      display: block;
+      margin-top: 15px;
+      color: var(--mi-navy);
+      font-size: 18px;
+      letter-spacing: -0.025em;
+    }
+
+    #mi-admin .mi-ops-quick-card small {
+      display: block;
+      max-width: calc(100% - 20px);
+      margin-top: 5px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 750;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-ops-quick-card b {
+      position: absolute;
+      right: 16px;
+      bottom: 15px;
+      color: #9aa6b7;
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-ops-workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.12fr) minmax(320px, 0.88fr);
+      gap: 14px;
+    }
+
+    #mi-admin .mi-ops-flow-card,
+    #mi-admin .mi-ops-check-card {
+      min-width: 0;
+      border-radius: 14px;
+      padding: 22px;
+      box-shadow: 0 18px 42px rgba(6, 26, 58, 0.06);
+    }
+
+    #mi-admin .mi-ops-flow-card {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      color: #fff;
+      background:
+        radial-gradient(circle at 88% 12%, rgba(111, 148, 211, 0.25), transparent 34%),
+        linear-gradient(145deg, #071d40 0%, #061630 100%);
+    }
+
+    #mi-admin .mi-ops-flow-card h2,
+    #mi-admin .mi-ops-flow-card p {
+      color: inherit;
+    }
+
+    #mi-admin .mi-ops-flow-card p {
+      color: rgba(255, 255, 255, 0.68);
+    }
+
+    #mi-admin .mi-ops-flow-card .mi-kicker {
+      color: #dce8ff;
+      background: rgba(255, 255, 255, 0.11);
+    }
+
+    #mi-admin .mi-ops-flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    #mi-admin .mi-ops-flow-step {
+      min-width: 0;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 10px;
+      padding: 13px;
+      background: rgba(255, 255, 255, 0.07);
+    }
+
+    #mi-admin .mi-ops-flow-step span,
+    #mi-admin .mi-ops-flow-step strong,
+    #mi-admin .mi-ops-flow-step small {
+      display: block;
+    }
+
+    #mi-admin .mi-ops-flow-step span {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 10px;
+      font-weight: 950;
+      letter-spacing: 0.06em;
+    }
+
+    #mi-admin .mi-ops-flow-step strong {
+      margin-top: 7px;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-ops-flow-step small {
+      margin-top: 4px;
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.4;
+    }
+
+    #mi-admin .mi-ops-truth-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 16px;
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-ops-truth-note::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: #8fb4f4;
+      box-shadow: 0 0 0 4px rgba(143, 180, 244, 0.12);
+    }
+
+    #mi-admin .mi-ops-check-card {
+      border: 1px solid var(--mi-home-line);
+      background: #fff;
+    }
+
+    #mi-admin .mi-ops-check-list {
+      display: grid;
+      gap: 0;
+      margin-top: 12px;
+    }
+
+    #mi-admin .mi-ops-check-item {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      min-height: 54px;
+      border-top: 1px solid #e9edf4;
+    }
+
+    #mi-admin .mi-ops-check-item:first-child {
+      border-top: 0;
+    }
+
+    #mi-admin .mi-ops-check-item > span {
+      display: grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      color: #345279;
+      background: #edf3fb;
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-ops-check-item strong,
+    #mi-admin .mi-ops-check-item small {
+      display: block;
+    }
+
+    #mi-admin .mi-ops-check-item strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-ops-check-item small {
+      margin-top: 2px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    #mi-admin .mi-ops-check-action {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 14px;
+      border-radius: 10px;
+      padding: 12px 13px;
+      color: var(--mi-navy);
+      background: var(--mi-home-soft);
+    }
+
+    #mi-admin .mi-ops-check-action div strong,
+    #mi-admin .mi-ops-check-action div span {
+      display: block;
+    }
+
+    #mi-admin .mi-ops-check-action div strong {
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-ops-check-action div span {
+      margin-top: 2px;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
     #mi-admin .mi-client-sync-note {
       margin-bottom: 16px;
       border: 1px solid rgba(6, 26, 58, 0.12);
@@ -5783,6 +6088,8 @@
       #mi-admin .mi-form-row.mi-form-row-3,
       #mi-admin .mi-head,
       #mi-admin .mi-card-head,
+      #mi-admin .mi-ops-home-head,
+      #mi-admin .mi-ops-workspace,
       #mi-admin .mi-hero,
       #mi-admin .mi-summary-row,
       #mi-admin .mi-action-strip,
@@ -5794,6 +6101,15 @@
       #mi-admin .mi-trust-grid {
         display: grid;
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-ops-home-actions {
+        justify-content: flex-start;
+      }
+
+      #mi-admin .mi-ops-quick-grid,
+      #mi-admin .mi-ops-flow {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
 
       #mi-admin .mi-source-box,
@@ -6057,6 +6373,34 @@
         font-size: 25px;
       }
 
+      #mi-admin .mi-ops-home-head {
+        padding: 18px;
+      }
+
+      #mi-admin .mi-ops-home-head h1 {
+        font-size: 27px;
+      }
+
+      #mi-admin .mi-ops-home-actions,
+      #mi-admin .mi-ops-check-action {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      #mi-admin .mi-ops-home-actions .mi-link-button,
+      #mi-admin .mi-ops-check-action .mi-link-button {
+        justify-content: center;
+      }
+
+      #mi-admin .mi-ops-quick-card {
+        min-height: 122px;
+      }
+
+      #mi-admin .mi-ops-flow-card,
+      #mi-admin .mi-ops-check-card {
+        padding: 18px;
+      }
+
       #mi-admin .mi-market-kpis,
       #mi-admin .mi-market-metrics,
       #mi-admin .mi-market-actions,
@@ -6228,99 +6572,60 @@
           <b class="mi-mode-pill" data-admin-mode-badge>Admin</b>
         </div>
 
-        <section class="mi-view is-active" data-mi-admin-view="home" id="mi-admin-home">
-          <header class="mi-head">
+        <section class="mi-view is-active mi-ops-home" data-mi-admin-view="home" id="mi-admin-home">
+          <header class="mi-head mi-ops-home-head">
             <div>
-              <span class="mi-kicker">운영팀 콘솔</span>
-              <h1>오늘 할 일을 정리합니다.</h1>
-              <p>입력 누락, 공개 승인, 보고서 전달만 먼저 확인합니다.</p>
+              <span class="mi-kicker">운영 워크스페이스</span>
+              <h1>오늘 운영 흐름을 한 화면에서 확인합니다.</h1>
+              <p>연결·입력·검수·공개 순서만 남겨 필요한 화면으로 바로 이동합니다.</p>
             </div>
-            <span class="mi-badge warn">운영팀 전용</span>
+            <div class="mi-ops-home-actions">
+              <a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력</a>
+              <a class="mi-link-button is-primary" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">광고주 화면 검수</a>
+            </div>
           </header>
 
-          <div class="mi-grid is-four" data-admin-home-truthful-state>
-            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code"><span>광고주 연결</span><strong>연결 확인</strong><small>활성 계정과 권한 관계 보기</small></a>
-            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-excel" data-mi-admin-screen="excel"><span>운영 데이터</span><strong>입력 확인</strong><small>연결 광고주의 공개값 점검</small></a>
-            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-publish" data-mi-admin-screen="publish"><span>공개 상태</span><strong>승인 확인</strong><small>승인·공유 조건 검수</small></a>
-            <a class="mi-card mi-metric mi-metric-link" href="#mi-admin-reports" data-mi-admin-screen="reports"><span>보고서함</span><strong>전달 확인</strong><small>검수·공개 파일 상태 보기</small></a>
+          <div class="mi-ops-quick-grid" data-admin-home-truthful-state aria-label="빠른 실행">
+            <a class="mi-ops-quick-card" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code"><span>01</span><strong>광고주 연결</strong><small>운영팀·광고주 권한 관계 확인</small><b aria-hidden="true">→</b></a>
+            <a class="mi-ops-quick-card" href="#mi-admin-excel" data-mi-admin-screen="excel"><span>02</span><strong>운영 데이터</strong><small>원본 입력과 공개값 검수</small><b aria-hidden="true">→</b></a>
+            <a class="mi-ops-quick-card" href="#mi-admin-publish" data-mi-admin-screen="publish"><span>03</span><strong>공개 관리</strong><small>승인·공유 조건 최종 확인</small><b aria-hidden="true">→</b></a>
+            <a class="mi-ops-quick-card" href="#mi-admin-reports" data-mi-admin-screen="reports"><span>04</span><strong>보고서 관리</strong><small>검수 완료 파일 전달</small><b aria-hidden="true">→</b></a>
           </div>
 
-          <div class="mi-score-panel">
-            <article class="mi-score-card is-dark">
-              <span class="mi-kicker">운영 흐름</span>
-              <h2>연결 범위부터 공개 상태까지 순서대로 확인합니다.</h2>
-              <p>실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</p>
-              <div class="mi-score-row">
-                <div class="mi-score-box"><span>1. 범위 확인</span><strong>계정·광고주</strong><small>현재 접속 권한과 연결 관계 확인</small></div>
-                <div class="mi-score-box"><span>2. 공개 준비</span><strong>입력·검수</strong><small>승인된 값과 파일만 광고주 공개</small></div>
+          <div class="mi-ops-workspace">
+            <article class="mi-ops-flow-card">
+              <span class="mi-kicker">운영 루틴</span>
+              <h2>한 방향으로만 진행합니다.</h2>
+              <p>계정 범위부터 광고주 공개까지 순서를 고정해 누락을 줄입니다.</p>
+              <div class="mi-ops-flow">
+                <div class="mi-ops-flow-step"><span>STEP 01</span><strong>범위 확인</strong><small>계정·광고주</small></div>
+                <div class="mi-ops-flow-step"><span>STEP 02</span><strong>데이터 정리</strong><small>원본·공개값</small></div>
+                <div class="mi-ops-flow-step"><span>STEP 03</span><strong>승인 검수</strong><small>보고서·공유</small></div>
+                <div class="mi-ops-flow-step"><span>STEP 04</span><strong>공개 확인</strong><small>광고주 화면</small></div>
               </div>
+              <div class="mi-ops-truth-note">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
             </article>
 
-            <aside class="mi-score-card">
-              <h2>운영 기준</h2>
-              <p>공개 전 네 가지 기준만 확인합니다.</p>
-              <div class="mi-readiness-grid">
-                <div class="mi-readiness-item"><strong>광고주ID</strong><span>시트·보고서 기본 키</span></div>
-                <div class="mi-readiness-item"><strong>공개 승인값</strong><span>승인 + 공유 Y만 노출</span></div>
-                <div class="mi-readiness-item"><strong>운영 원본</strong><span>채널별 입력 분리</span></div>
-                <div class="mi-readiness-item"><strong>변경 이력</strong><span>공개 시간 기록</span></div>
-              </div>
-            </aside>
-          </div>
-
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
+            <aside class="mi-ops-check-card">
               <div class="mi-card-head">
                 <div>
-                  <h2>운영 시작 순서</h2>
-                  <p>실제 연결 상태를 확인한 뒤 작업합니다.</p>
+                  <h2>공개 전 확인</h2>
+                  <p>광고주에게 보이기 전 필요한 기준만 확인합니다.</p>
                 </div>
-                <span class="mi-badge warn">Action</span>
+                <span class="mi-badge">4단계</span>
               </div>
-              <div class="mi-task-list">
-                <div class="mi-task"><div><strong>연결 광고주와 권한 확인</strong><span>현재 접속 코드의 데이터 범위를 먼저 확인합니다.</span></div><div class="mi-task-action"><b class="mi-priority">1단계</b><a class="mi-link-button" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">연결 확인</a></div></div>
-                <div class="mi-task"><div><strong>운영 데이터 입력·검수</strong><span>실제 원본과 공개할 수치를 광고주별로 확인합니다.</span></div><div class="mi-task-action"><b class="mi-priority">2단계</b><a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">입력 확인</a></div></div>
-                <div class="mi-task"><div><strong>보고서와 공개 상태 확인</strong><span>검수된 파일과 공개 코멘트만 전달합니다.</span></div><div class="mi-task-action"><b class="mi-priority ok">3단계</b><a class="mi-link-button" href="#mi-admin-reports" data-mi-admin-screen="reports">보고서 확인</a></div></div>
+              <div class="mi-ops-check-list">
+                <div class="mi-ops-check-item"><span>01</span><div><strong>데이터 범위</strong><small>광고주 ID 기준으로 분리</small></div></div>
+                <div class="mi-ops-check-item"><span>02</span><div><strong>공개 조건</strong><small>승인 + 공유 Y 항목만 노출</small></div></div>
+                <div class="mi-ops-check-item"><span>03</span><div><strong>파일 검수</strong><small>최종 보고서만 전달</small></div></div>
+                <div class="mi-ops-check-item"><span>04</span><div><strong>변경 기록</strong><small>저장 시간과 수정 이력 보관</small></div></div>
               </div>
-            </article>
-
-            <aside class="mi-card mi-card-pad">
-              <div class="mi-card-head">
+              <div class="mi-ops-check-action">
                 <div>
-                  <h2>실제 상태 확인</h2>
-                  <p>계정·입력·공개 화면의 현재값을 기준으로 판단합니다.</p>
+                  <strong>광고주 화면에서 마지막 확인</strong>
+                  <span>같은 공개 결과를 직접 검수합니다.</span>
                 </div>
-                <span class="mi-badge">Status</span>
-              </div>
-              <div class="mi-status-list">
-                <div class="mi-status-item"><div><strong>활성 계정 관계</strong><span>총관리자·운영팀·광고주 연결 상태를 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">계정 보기</a></div>
-                <div class="mi-status-item"><div><strong>광고주 공개 데이터</strong><span>입력값과 승인 여부는 실제 저장 상태로 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 보기</a></div>
-                <div class="mi-status-item"><div><strong>공개 화면 최종 검수</strong><span>광고주에게 보이는 결과를 같은 화면에서 확인합니다.</span></div><a class="mi-link-button" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">미리보기</a></div>
-              </div>
-            </aside>
-          </div>
-
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <h2>보고서·공개 승인 큐</h2>
-              <div class="mi-table">
-                <div class="mi-row"><span>매출 원본</span><strong>업로드 후 검수 대기</strong></div>
-                <div class="mi-row"><span>월간 보고서</span><strong>수치 확인 후 전달</strong></div>
-                <div class="mi-row"><span>KPI 공개값</span><strong>관리자 승인 후 광고주 노출</strong></div>
-                <div class="mi-row"><span>파일 공유</span><strong>검수 완료 보고서만 광고주 공개</strong></div>
-              </div>
-            </article>
-
-            <aside class="mi-card mi-card-pad">
-              <h2>운영 신뢰 체크</h2>
-              <p>광고주에게 보이기 전 반드시 통과해야 하는 기준입니다.</p>
-              <div class="mi-trust-grid">
-                <div class="mi-trust-item"><strong>공개 승인</strong><span>관리자컨펌=승인</span></div>
-                <div class="mi-trust-item"><strong>공유 여부</strong><span>광고주공유여부=Y</span></div>
-                <div class="mi-trust-item"><strong>권한 기준</strong><span>광고주ID 기준 분리</span></div>
-                <div class="mi-trust-item"><strong>마지막 업데이트</strong><span>공개 저장 시 자동 기록</span></div>
-                <div class="mi-trust-item"><strong>담당 범위</strong><span>현재 접속 권한 기준</span></div>
-                <div class="mi-trust-item"><strong>수정 이력</strong><span>공개값 변경 기록 보관</span></div>
+                <a class="mi-link-button" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">미리보기</a>
               </div>
             </aside>
           </div>

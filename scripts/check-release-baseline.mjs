@@ -573,6 +573,17 @@ const checks = {
     && !adminSource.includes("브랜드 A 입력값 확인")
     && !adminSource.includes("신규브랜드 A")
     && !adminSource.includes("리텐션브랜드 B"),
+  adminHomePremiumOperatingFlow: adminSource.includes("mi-ops-home")
+    && adminSource.includes("mi-ops-quick-grid")
+    && adminSource.includes("mi-ops-workspace")
+    && adminSource.includes("mi-ops-flow")
+    && adminSource.includes("mi-ops-check-list")
+    && adminSource.includes("빠른 실행")
+    && adminSource.includes("운영 루틴")
+    && adminSource.includes("공개 전 확인")
+    && !adminSource.includes("보고서·공개 승인 큐")
+    && !adminSource.includes("운영 신뢰 체크")
+    && !adminSource.includes("실제 상태 확인"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes("restoreClientSession")

@@ -272,6 +272,9 @@ const checks = {
       '"/api/naver-keyword"',
       '"/api/naver-product-seo-audit"',
       '"/api/naver-shopping-rank"',
+      '"/api/naver-rank-trackers"',
+      '"/api/naver-place-rank-trackers"',
+      'TEAM_ACCOUNT_ONLY_RANK_PATHS.has(path)',
     ]),
   adminTrackingAuthConnected: includesAll(adminFetch, [
     'requestHeaders.delete("x-mi-agency-code")',

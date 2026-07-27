@@ -28,11 +28,16 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-rank-cron",
   "/api/naver-place-rank-cron",
 ]);
+const TEAM_ACCOUNT_ONLY_RANK_PATHS = new Set([
+  "/api/naver-rank-trackers",
+  "/api/naver-place-rank-trackers",
+]);
 const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
   "/api/naver-keyword",
   "/api/naver-product-seo-audit",
   "/api/naver-shopping-rank",
   "/api/meta-ads",
+  ...TEAM_ACCOUNT_ONLY_RANK_PATHS,
 ]);
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
@@ -271,6 +276,9 @@ export function internalRequestForSession(request, claims, env = process.env) {
     if (claims.agencyCode) {
       headers.set("x-mi-agency-code", claims.agencyCode);
       headers.set("x-mi-rank-access-code", claims.agencyCode);
+    } else if (claims.teamCode && TEAM_ACCOUNT_ONLY_RANK_PATHS.has(path)) {
+      headers.set("x-mi-agency-code", claims.teamCode);
+      headers.set("x-mi-rank-access-code", claims.teamCode);
     }
   } else if (claims.role === "client" && claims.agencyCode) {
     headers.set("x-mi-agency-code", claims.agencyCode);

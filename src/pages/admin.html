@@ -10734,12 +10734,14 @@
         if (secureSession.role !== "team") return null;
         var linkedClient = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
         var clientId = normalizeStorageCode(secureSession.clientId || (linkedClient && linkedClient.id));
-        if (!clientId) return null;
+        var teamId = normalizeStorageCode(secureSession.teamId);
+        if (!clientId && !teamId) return null;
         return {
-          key: "team:" + clientId,
+          key: clientId ? "team:" + clientId : "team-account:" + teamId,
           role: "team",
           agencyCode: "",
-          clientId: clientId
+          clientId: clientId,
+          accountOnly: !clientId
         };
       }
 
@@ -10840,7 +10842,10 @@
         if (scope.role === "owner") {
           return normalizeStorageCode(payload.scopeAgencyCode) === scope.agencyCode;
         }
-        return normalizeStorageCode(payload.scopeClientId) === scope.clientId;
+        if (scope.accountOnly) {
+          return payload.scopeMode === "team-account" && !normalizeStorageCode(payload.scopeClientId);
+        }
+        return payload.scopeMode !== "team-account" && normalizeStorageCode(payload.scopeClientId) === scope.clientId;
       }
 
       function completeRankTrackerPayload(payload, scope) {
@@ -12220,7 +12225,7 @@
           var requestGeneration = rankRequestGeneration;
           var agencyCode = requestScope && requestScope.role === "owner" ? requestScope.agencyCode : rankAgencyCode();
           if (!requestScope || (requestScope.role === "owner" && !agencyCode)) {
-            return { ok: false, message: "관리자 코드 확인 후 순위 추적을 사용할 수 있습니다." };
+            return { ok: false, message: "순위 추적 조회 범위를 확인할 수 없습니다. 다시 로그인해주세요." };
           }
           var options = {
             method: method,
@@ -13622,7 +13627,7 @@
           var requestGeneration = placeRequestGeneration;
           var agencyCode = requestScope && requestScope.role === "owner" ? requestScope.agencyCode : rankAgencyCode();
           if (!requestScope || (requestScope.role === "owner" && !agencyCode)) {
-            return { ok: false, message: "관리자 코드 확인 후 네이버 플레이스 30일 순위를 사용할 수 있습니다." };
+            return { ok: false, message: "플레이스 순위 추적 조회 범위를 확인할 수 없습니다. 다시 로그인해주세요." };
           }
           var options = {
             method: method,

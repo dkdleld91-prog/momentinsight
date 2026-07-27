@@ -89,7 +89,7 @@ test("owner session is bound to the exact primary account identity", async () =>
   assert.equal(await sessionActivityValid(owner, { ...ENV, MI_PRIMARY_AGENCY_CODE: "" }), false);
 });
 
-test("an unlinked team can use standalone tools without crossing advertiser scope", async () => {
+test("an unlinked team can use isolated rank trackers without crossing advertiser scope", async () => {
   const claims = createSessionClaims({ role: "team", teamCode: "mml93-t01", teamId: "team-1" });
   assert.equal(sessionScopeAllowsPath(claims, "/api/team-agency-codes"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword"), true);
@@ -98,8 +98,8 @@ test("an unlinked team can use standalone tools without crossing advertiser scop
   assert.equal(sessionScopeAllowsPath(claims, "/api/meta-ads"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword/private"), false);
   assert.equal(sessionScopeAllowsPath(claims, "/api/report-center"), false);
-  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-rank-trackers"), false);
-  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-place-rank-trackers"), false);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-rank-trackers"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-place-rank-trackers"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/demo/public-state"), false);
 
   const allowed = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=test", claims), ENV, {
@@ -112,7 +112,27 @@ test("an unlinked team can use standalone tools without crossing advertiser scop
   assert.equal(allowed.request.headers.get("x-mi-agency-code"), null);
   assert.equal(allowed.request.headers.get("x-mi-rank-access-code"), null);
 
-  const blocked = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, {
+  for (const path of ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers"]) {
+    const rankAllowed = await authorizeCodeSession(requestWithSession(path, claims, {
+      headers: {
+        "x-mi-team-code": "mml93-t99",
+        "x-mi-agency-code": "mml93-a99",
+        "x-mi-rank-access-code": "forged-browser-secret",
+        "x-mi-session-role": "owner",
+        "x-mi-session-scope": "advertiser",
+      },
+    }), ENV, {
+      activityCheck: async () => true,
+    });
+    assert.equal(rankAllowed.ok, true);
+    assert.equal(rankAllowed.request.headers.get("x-mi-session-role"), "team");
+    assert.equal(rankAllowed.request.headers.get("x-mi-session-scope"), "account-only");
+    assert.equal(rankAllowed.request.headers.get("x-mi-team-code"), "mml93-t01");
+    assert.equal(rankAllowed.request.headers.get("x-mi-agency-code"), "mml93-t01");
+    assert.equal(rankAllowed.request.headers.get("x-mi-rank-access-code"), "mml93-t01");
+  }
+
+  const blocked = await authorizeCodeSession(requestWithSession("/api/report-center", claims), ENV, {
     activityCheck: async () => true,
   });
   assert.equal(blocked.ok, false);

@@ -320,6 +320,16 @@ function rankAccessAuthorized(request, body = {}, agencyCode = "") {
   return Boolean(accessCode && scopedAgencyCode && safeEqual(accessCode, scopedAgencyCode));
 }
 
+function trustedTeamAccountRankScope(request, agencyCode) {
+  const role = String(request.headers.get("x-mi-session-role") || "");
+  const sessionScope = String(request.headers.get("x-mi-session-scope") || "");
+  const teamCode = canonicalAgencyCode(request.headers.get("x-mi-team-code") || "");
+  return role === "team" &&
+    sessionScope === "account-only" &&
+    Boolean(teamCode) &&
+    safeEqual(teamCode, canonicalAgencyCode(agencyCode));
+}
+
 export const PRODUCT_RANK_TRACKER_MAX_RANK = 300;
 
 function clampMaxRank() {
@@ -454,6 +464,16 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
   const adminAuthorized = adminCodeAuthorized(request, body);
   if (adminAuthorized && isPrimaryAgencyCode(agencyCode)) {
     return { ok: true, agencyCode, clientId: null, admin: true, owner: true };
+  }
+
+  if (trustedTeamAccountRankScope(request, agencyCode)) {
+    if (!rankAccessAuthorized(request, body, agencyCode)) {
+      return {
+        ok: false,
+        response: json(request, { ok: false, message: "운영팀 순위 추적 권한을 확인할 수 없습니다." }, 401),
+      };
+    }
+    return { ok: true, agencyCode, clientId: null, admin: false, teamAccount: true };
   }
 
   const clientId = await findClientId(ctx, agencyCode);
@@ -646,6 +666,7 @@ async function listTrackers(request, ctx) {
     scopeKey: normalizeAgencyCode(agencyCode),
     scopeAgencyCode: normalizeAgencyCode(agencyCode),
     scopeClientId: String(access.clientId || ""),
+    scopeMode: access.teamAccount ? "team-account" : (access.owner ? "owner" : "advertiser"),
     returnedCount: rows.length,
     totalCount: count,
     hasMore,
@@ -1531,23 +1552,25 @@ async function handlePost(request, ctx) {
   return json(request, { ok: false, message: "지원하지 않는 작업입니다." }, 400);
 }
 
-export default {
-  fetch: withSupabase({ auth: "none" }, async (request, ctx) => {
-    if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
-      methods: "GET, POST, OPTIONS",
-      headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
-    }) });
+export async function handleRankTrackersRequest(request, ctx) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request, {
+    methods: "GET, POST, OPTIONS",
+    headers: "authorization, content-type, x-demo-admin-code, x-mi-agency-code, x-mi-rank-access-code",
+  }) });
 
-    try {
-      if (request.method === "GET") return listTrackers(request, ctx);
-      if (request.method === "POST") return handlePost(request, ctx);
-      return json(request, { ok: false, message: "Method not allowed" }, 405);
-    } catch (error) {
-      return json(request, {
-        ok: false,
-        message: "네이버 상품 순위 추적 처리 중 오류가 발생했습니다.",
-        detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
-      }, 500);
-    }
-  }),
+  try {
+    if (request.method === "GET") return listTrackers(request, ctx);
+    if (request.method === "POST") return handlePost(request, ctx);
+    return json(request, { ok: false, message: "Method not allowed" }, 405);
+  } catch (error) {
+    return json(request, {
+      ok: false,
+      message: "네이버 상품 순위 추적 처리 중 오류가 발생했습니다.",
+      detail: process.env.NODE_ENV === "development" ? error?.message : undefined,
+    }, 500);
+  }
+}
+
+export default {
+  fetch: withSupabase({ auth: "none" }, handleRankTrackersRequest),
 };

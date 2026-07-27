@@ -79,7 +79,7 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "dcc784f62aacbe911441f6d04e57c3c3ffd5335616e5c5005decc3251b56601a"
+      "sha256": "8e6c1084021d011a585895b1439080f2a33aafe98306ec4e94894b53f32fc57e"
     },
     {
       "id": "advertiser-product-30-day",
@@ -91,7 +91,7 @@
       "id": "operation-place-30-day",
       "file": "src/pages/admin.html",
       "name": "initPlaceRankTracking",
-      "sha256": "38ee3aed59fa17ad6debda27d1b692872eef83d0925733a9de54924eac74dc11"
+      "sha256": "610daefa972158ccc4b68321b60f4eaed0731e39001ea0df5d3c0b87ff1f0fa5"
     },
     {
       "id": "advertiser-place-30-day",
@@ -134,10 +134,10 @@
     { "id": "seo-scoring-engine", "file": "public/seo-evaluation.js", "sha256": "8b978d1ecb0a56f40786d45f1ce1d3532eae6d160ddaf5484613431b97a28da2" },
     { "id": "seo-audit-server", "file": "src/server/handlers/naver-product-seo-audit.mjs", "sha256": "9003b646d28fe1b9f85f4bdd663e7062ac8067fb13f8b1283433eda7bd3a06ae" },
     { "id": "keyword-query-server", "file": "src/server/handlers/naver-keyword.mjs", "sha256": "140c56b80b2ecf369acb7e1fc560191efb865c62547ba2607f1911af0433962b" },
-    { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "b2155dfc87dc7763820e7df899f87b9b9d18871ef73b94b6ddaebd3af4409c8e" },
+    { "id": "product-tracker-server", "file": "src/server/handlers/naver-rank-trackers.mjs", "sha256": "d81f12e17ad0dc2305641b9a6f028dfe498ee5f612d705449cecb11ebdfe5c3b" },
     { "id": "product-organic-rank-server", "file": "src/server/handlers/naver-shopping-rank.mjs", "sha256": "a89c2125953e8961158a0c5fe59b06b123461b0c6abb1549f7d7cc65c45c7aad" },
     { "id": "product-rank-cron-server", "file": "src/server/handlers/naver-rank-cron.mjs", "sha256": "e6a7ebe2b4ac33c84c58c0869574d088f90dd8848b16fb26e87d50ccc400ae57" },
-    { "id": "place-tracker-server", "file": "src/server/handlers/naver-place-rank-trackers.mjs", "sha256": "cca5bf745ac159ddaa8e5eeb54541c7363c7144526f43b67351040f93897d5a4" },
+    { "id": "place-tracker-server", "file": "src/server/handlers/naver-place-rank-trackers.mjs", "sha256": "36fc1914ec00cbd68e9cecac837d30fa5f0265564dc5504c6b0958aefa3bf327" },
     { "id": "place-rank-cron-server", "file": "src/server/handlers/naver-place-rank-cron.mjs", "sha256": "367ff71dbed817318bd63b2fad8b0a5c0752b74124c7b5a807291185fb7aed01" },
     { "id": "place-collector", "file": "tools/naver-place-rank-collector/src/naver-place-rank.mjs", "sha256": "a0cc2ed8694ca374e3742781875b6e409ea56bff58d005c6c60ebd5c27cb0d63" },
     { "id": "place-collector-server", "file": "tools/naver-place-rank-collector/src/server.mjs", "sha256": "1bd21991d60fbf604c21234f510a179eb1e612cbd95d3d7c622a570a1d894666" },

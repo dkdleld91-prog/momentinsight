@@ -183,6 +183,16 @@ function rankAccessAuthorized(request, body = {}, agencyCode = "") {
   return Boolean(accessCode && scopedAgencyCode && safeEqual(accessCode, scopedAgencyCode));
 }
 
+function trustedTeamAccountRankScope(request, agencyCode) {
+  const role = String(request.headers.get("x-mi-session-role") || "");
+  const sessionScope = String(request.headers.get("x-mi-session-scope") || "");
+  const teamCode = canonicalAgencyCode(request.headers.get("x-mi-team-code") || "");
+  return role === "team" &&
+    sessionScope === "account-only" &&
+    Boolean(teamCode) &&
+    safeEqual(teamCode, canonicalAgencyCode(agencyCode));
+}
+
 async function findClientId(ctx, agencyCode) {
   if (!agencyCode) return null;
   for (const code of agencyCodeScope(agencyCode)) {
@@ -221,6 +231,16 @@ async function requirePlaceRankAccess(request, ctx, body = {}, options = {}) {
   const adminAuthorized = adminCodeAuthorized(request, body);
   if (adminAuthorized && isPrimaryAgencyCode(agencyCode)) {
     return { ok: true, agencyCode, clientId: null, admin: true, owner: true };
+  }
+
+  if (trustedTeamAccountRankScope(request, agencyCode)) {
+    if (!rankAccessAuthorized(request, body, agencyCode)) {
+      return {
+        ok: false,
+        response: json(request, { ok: false, message: "운영팀 플레이스 순위 추적 권한을 확인할 수 없습니다." }, 401),
+      };
+    }
+    return { ok: true, agencyCode, clientId: null, admin: false, teamAccount: true };
   }
 
   const clientId = await findClientId(ctx, agencyCode);
@@ -1659,6 +1679,7 @@ async function listTrackers(request, ctx) {
     scopeKey: normalizeAgencyCode(access.agencyCode),
     scopeAgencyCode: normalizeAgencyCode(access.agencyCode),
     scopeClientId: String(access.clientId || ""),
+    scopeMode: access.teamAccount ? "team-account" : (access.owner ? "owner" : "advertiser"),
     returnedCount: rows.length,
     totalCount: count,
     hasMore,

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   claimDueTracker,
+  handleRankTrackersRequest,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
   requestAgencyCode,
@@ -39,6 +40,48 @@ test("a code-session request never falls back to body or query credentials", () 
   const body = { agencyCode: "mml93-a99", accessCode: "mml93-a99" };
   assert.equal(requestAgencyCode(request, body), "");
   assert.equal(requestAccessCode(request, body), "");
+});
+
+test("an account-only team lists an isolated product-rank scope without a client row", async () => {
+  const teamCode = "mml93-t01";
+  const request = new Request("https://example.com/api/naver-rank-trackers", {
+    headers: {
+      "x-mi-session-role": "team",
+      "x-mi-session-scope": "account-only",
+      "x-mi-team-code": teamCode,
+      "x-mi-agency-code": teamCode,
+      "x-mi-rank-access-code": teamCode,
+    },
+  });
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const query = {
+          select() { return query; },
+          in(column, values) {
+            assert.equal(column, "agency_code");
+            assert.deepEqual(values, [teamCode]);
+            return query;
+          },
+          order() { return query; },
+          limit() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+  const response = await handleRankTrackersRequest(request, ctx);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.scopeAgencyCode, teamCode);
+  assert.equal(body.scopeClientId, "");
+  assert.equal(body.scopeMode, "team-account");
+  assert.equal(body.returnedCount, 0);
+  assert.equal(body.complete, true);
 });
 
 function trackerRow(values = {}) {

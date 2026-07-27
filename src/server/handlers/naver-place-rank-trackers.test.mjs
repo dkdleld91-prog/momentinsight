@@ -406,6 +406,21 @@ function clientRequest(method, body, options = {}) {
   });
 }
 
+function teamAccountRequest(method, body, teamCode = "mml93-t01") {
+  return new Request("http://localhost/api/naver-place-rank-trackers", {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "team",
+      "x-mi-session-scope": "account-only",
+      "x-mi-team-code": teamCode,
+      "x-mi-agency-code": teamCode,
+      "x-mi-rank-access-code": teamCode,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
 async function payload(response) {
   return { status: response.status, body: await response.json() };
 }
@@ -637,6 +652,23 @@ test("advertiser place tracker lists return the resolved client scope", async ()
   assert.equal(result.body.returnedCount, 1);
   assert.equal(result.body.totalCount, 1);
   assert.equal(result.body.hasMore, false);
+  assert.equal(result.body.complete, true);
+});
+
+test("an account-only team lists an isolated place-rank scope without a client row", async () => {
+  const teamCode = "mml93-t01";
+  const { ctx } = testContext([{
+    id: "team-place-tracker",
+    agency_code: teamCode,
+    client_id: null,
+  }]);
+  const result = await payload(await handlePlaceRankTrackersRequest(teamAccountRequest("GET", null, teamCode), ctx));
+
+  assert.equal(result.status, 200);
+  assert.equal(result.body.scopeAgencyCode, teamCode);
+  assert.equal(result.body.scopeClientId, "");
+  assert.equal(result.body.scopeMode, "team-account");
+  assert.equal(result.body.returnedCount, 1);
   assert.equal(result.body.complete, true);
 });
 

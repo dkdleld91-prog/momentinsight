@@ -6460,9 +6460,13 @@
     #mi-admin .mi-operation-result .mi-row,
     #mi-admin .mi-operation-csv-result .mi-row {
       display: grid;
-      grid-template-columns: minmax(136px, 0.72fr) minmax(0, 1.28fr);
+      grid-template-columns: minmax(150px, 0.68fr) minmax(0, 1.32fr);
       align-items: center;
-      gap: 18px;
+      gap: 26px;
+      min-height: 58px;
+      border-radius: 12px;
+      padding: 14px 20px;
+      background: linear-gradient(90deg, #ffffff 0%, #fbfcfe 100%);
     }
 
     #mi-admin .mi-operation-result .mi-row:first-child {
@@ -6474,6 +6478,7 @@
     #mi-admin .mi-operation-csv-result .mi-row span {
       color: #7a8698;
       font-size: 12px;
+      font-weight: 900;
     }
 
     #mi-admin .mi-operation-result .mi-row strong,
@@ -6485,7 +6490,12 @@
 
     #mi-admin .mi-operation-result .mi-row strong,
     #mi-admin .mi-operation-csv-result .mi-row strong {
+      min-width: 0;
+      font-size: 14px;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.015em;
       line-height: 1.45;
+      overflow-wrap: anywhere;
       text-align: right;
     }
 
@@ -6495,14 +6505,32 @@
 
     #mi-admin .mi-operation-checklist .mi-row {
       display: grid;
-      grid-template-columns: 82px minmax(0, 1fr);
-      align-items: start;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
       gap: 14px;
+      border-radius: 12px;
+      padding: 16px 18px;
+      background: rgba(255, 255, 255, 0.76);
+    }
+
+    #mi-admin .mi-operation-checklist .mi-row span {
+      justify-self: start;
+      border-radius: 999px;
+      padding: 6px 9px;
+      color: #66738a;
+      background: #edf2f8;
+      font-size: 10px;
+      letter-spacing: -0.01em;
+      white-space: nowrap;
     }
 
     #mi-admin .mi-operation-checklist .mi-row strong {
-      line-height: 1.45;
+      min-width: 0;
+      font-size: 12.5px;
+      letter-spacing: -0.01em;
+      line-height: 1.55;
       text-align: left;
+      word-break: keep-all;
     }
 
     #mi-admin .mi-operation-advanced {
@@ -6609,7 +6637,7 @@
         min-height: 104px;
         border: 1px solid rgba(6, 26, 58, 0.08);
         border-radius: 12px;
-        padding: 14px;
+        padding: 16px;
         background: #fff;
       }
     }
@@ -7064,6 +7092,7 @@
         grid-template-columns: 1fr;
         align-items: start;
         gap: 4px;
+        padding: 14px 16px;
       }
 
       #mi-admin .mi-operation-result .mi-row strong,

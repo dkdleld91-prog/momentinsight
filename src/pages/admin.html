@@ -5614,10 +5614,12 @@
       box-shadow: none;
     }
 
-    #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create],
+    #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create] {
+      grid-area: team-action;
+    }
+
     #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-team-client-create] {
-      grid-column: auto;
-      grid-row: auto;
+      grid-area: client-action;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-input {

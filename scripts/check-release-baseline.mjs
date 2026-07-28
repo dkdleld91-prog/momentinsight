@@ -240,6 +240,8 @@ const checks = {
     && adminSource.includes('data-owner-client-title')
     && adminSource.includes("mi-owner-security")
     && adminSource.includes('#mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create]')
+    && adminSource.includes("grid-area: team-action;")
+    && adminSource.includes("grid-area: client-action;")
     && adminSource.includes("grid-column: 1 / -1;")
     && adminSource.includes('ownerMode ? "광고주 생성" : "광고주 바로 생성"')
     && adminSource.includes('ownerMode ? "6자리 이상 직접 입력" : "광고주 코드 직접 입력"')

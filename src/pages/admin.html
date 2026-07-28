@@ -8133,81 +8133,6 @@
               </div>
             </aside>
           </div>
-
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <h2>공개 데이터 설정</h2>
-              <div class="mi-tool">
-                <div class="mi-form-row">
-                  <input class="mi-input" data-admin-code placeholder="대행사 코드" />
-                  <input class="mi-input" data-admin-client placeholder="광고주명" />
-                </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-admin-sales placeholder="공개 매출" />
-                  <input class="mi-input" data-admin-roas placeholder="공개 ROAS" />
-                </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-admin-status placeholder="공개 상태" />
-                  <input class="mi-input" data-admin-next-schedule placeholder="다음 일정" />
-                </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-admin-ad-spend placeholder="광고비 사용액" />
-                  <input class="mi-input" data-admin-orders placeholder="구매 수량" />
-                </div>
-                <div class="mi-form-row">
-                  <input class="mi-input" data-admin-achievement placeholder="목표 달성률" />
-                  <input class="mi-input" data-admin-updated-at placeholder="업데이트 날짜" />
-                </div>
-                <textarea class="mi-textarea" data-admin-comment placeholder="광고주 공개 코멘트"></textarea>
-                <textarea class="mi-textarea" data-admin-channels placeholder="채널명,요약,매출,ROAS"></textarea>
-                <textarea class="mi-textarea" data-admin-schedules placeholder="날짜,제목,상세,상태"></textarea>
-                <button class="mi-button" type="button" data-admin-code-save>대행사 코드 저장</button>
-                <div class="mi-code-status" data-admin-code-status aria-live="polite">저장 전입니다.</div>
-              </div>
-            </article>
-
-            <aside class="mi-card mi-card-pad">
-              <h3>현재 연결 상태</h3>
-              <div class="mi-table">
-                <div class="mi-row"><span>대행사 연결</span><strong data-admin-public="code">미연결</strong></div>
-                <div class="mi-row"><span>광고주</span><strong data-admin-public="client">브랜드 A</strong></div>
-                <div class="mi-row"><span>광고주 공개 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
-                <div class="mi-row"><span>광고비 / 구매수</span><strong><span data-admin-public="adSpend">720만원</span> · <span data-admin-public="orders">1,248건</span></strong></div>
-                <div class="mi-row"><span>목표 달성률</span><strong data-admin-public="achievement">116%</strong></div>
-                <div class="mi-row"><span>광고주 공개 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
-              </div>
-            </aside>
-          </div>
-
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <div class="mi-card-head">
-                <div>
-                  <h2>권한 관리 구조</h2>
-                  <p>코드는 광고주 공간을 묶는 운영 키입니다. 광고주별 계정 권한과 데이터 범위를 기준으로 접근을 관리합니다.</p>
-                </div>
-                <span class="mi-badge">권한 설계</span>
-              </div>
-              <div class="mi-readiness-grid">
-                <div class="mi-readiness-item"><strong>agency_code</strong><span>광고주가 입력하는 연결 코드</span></div>
-                <div class="mi-readiness-item"><strong>client_id</strong><span>브랜드별 데이터 분리 기준</span></div>
-                <div class="mi-readiness-item"><strong>user_role</strong><span>관리자/광고주 권한 구분</span></div>
-                <div class="mi-readiness-item"><strong>visibility</strong><span>공개/비공개 데이터 분리</span></div>
-                <div class="mi-readiness-item"><strong>published_at</strong><span>마지막 공개 반영 시간</span></div>
-                <div class="mi-readiness-item"><strong>audit_log</strong><span>변경자와 변경 내용 기록</span></div>
-              </div>
-            </article>
-
-            <aside class="mi-card mi-card-pad">
-              <h3>공개/비공개 기준</h3>
-              <div class="mi-table">
-                <div class="mi-row"><span>광고주 공개</span><strong>매출, ROAS, 일정, 공개 코멘트</strong></div>
-                <div class="mi-row"><span>관리자 전용</span><strong>원천 데이터, 내부 메모, 미승인 보고서</strong></div>
-                <div class="mi-row"><span>공개 조건</span><strong>관리자컨펌=승인 · 광고주공유여부=Y</strong></div>
-                <div class="mi-row"><span>정식 운영</span><strong>로그인 + DB 권한 검사로 연결</strong></div>
-              </div>
-            </aside>
-          </div>
         </section>
 
         <section class="mi-view" data-mi-admin-view="active-accounts" id="mi-admin-active-accounts">
@@ -9006,6 +8931,43 @@
             </div>
             <span class="mi-badge">분리 필수</span>
           </header>
+
+          <article class="mi-card mi-card-pad">
+            <div class="mi-card-head">
+              <div>
+                <h2>공개 데이터 설정</h2>
+                <p>연결 광고주에게 보여줄 성과와 일정을 저장합니다.</p>
+              </div>
+              <span class="mi-badge">공개 데이터</span>
+            </div>
+            <div class="mi-tool">
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-code placeholder="대행사 코드" />
+                <input class="mi-input" data-admin-client placeholder="광고주명" />
+              </div>
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-sales placeholder="공개 매출" />
+                <input class="mi-input" data-admin-roas placeholder="공개 ROAS" />
+              </div>
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-status placeholder="공개 상태" />
+                <input class="mi-input" data-admin-next-schedule placeholder="다음 일정" />
+              </div>
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-ad-spend placeholder="광고비 사용액" />
+                <input class="mi-input" data-admin-orders placeholder="구매 수량" />
+              </div>
+              <div class="mi-form-row">
+                <input class="mi-input" data-admin-achievement placeholder="목표 달성률" />
+                <input class="mi-input" data-admin-updated-at placeholder="업데이트 날짜" />
+              </div>
+              <textarea class="mi-textarea" data-admin-comment placeholder="광고주 공개 코멘트"></textarea>
+              <textarea class="mi-textarea" data-admin-channels placeholder="채널명,요약,매출,ROAS"></textarea>
+              <textarea class="mi-textarea" data-admin-schedules placeholder="날짜,제목,상세,상태"></textarea>
+              <button class="mi-button" type="button" data-admin-code-save>공개 데이터 저장</button>
+              <div class="mi-code-status" data-admin-code-status aria-live="polite">저장 전입니다.</div>
+            </div>
+          </article>
 
           <div class="mi-split">
             <article class="mi-card mi-card-pad">

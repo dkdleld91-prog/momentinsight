@@ -160,6 +160,16 @@ const fixedRankScopeMigration = read("supabase/migrations/20260712042029_fix_ran
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
+const adminAgencyConnectionViewSource = functionBody(
+  adminSource,
+  '<section class="mi-view" data-mi-admin-view="agency-code"',
+  '<section class="mi-view" data-mi-admin-view="active-accounts"',
+);
+const adminPublishViewSource = functionBody(
+  adminSource,
+  '<section class="mi-view" data-mi-admin-view="publish"',
+  '<a class="mi-kakao-floating"',
+);
 
 const checks = {
   pageSourcesMovedOutOfImwebBundle: exists("src/pages/admin.html")
@@ -188,6 +198,19 @@ const checks = {
   ]) && adminSource.includes('<h1>보고서 관리</h1>')
     && adminSource.includes("검수한 보고서만 광고주에게 공개합니다."),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
+  agencyConnectionViewKeepsOnlyAccountManagement: adminAgencyConnectionViewSource.includes("data-owner-team-create")
+    && adminAgencyConnectionViewSource.includes("data-team-client-create")
+    && adminAgencyConnectionViewSource.includes("data-owner-code-list")
+    && !adminAgencyConnectionViewSource.includes("공개 데이터 설정")
+    && !adminAgencyConnectionViewSource.includes("현재 연결 상태")
+    && !adminAgencyConnectionViewSource.includes("권한 관리 구조")
+    && !adminAgencyConnectionViewSource.includes("공개/비공개 기준"),
+  publicDataControlsBelongToPublishView: adminPublishViewSource.includes("공개 데이터 설정")
+    && adminPublishViewSource.includes("data-admin-code")
+    && adminPublishViewSource.includes("data-admin-client")
+    && adminPublishViewSource.includes("data-admin-code-save")
+    && adminPublishViewSource.includes("data-admin-internal-note")
+    && adminPublishViewSource.includes("data-admin-public-save"),
   adminLoginRoleSelection: adminSource.includes('data-login-mode="client"')
     && adminSource.includes('data-login-mode="operator"')
     && adminSource.includes("운영팀 로그인")

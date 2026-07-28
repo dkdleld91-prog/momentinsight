@@ -5297,220 +5297,301 @@
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-account-layout {
-      grid-template-columns: minmax(0, 1.48fr) minmax(300px, 0.62fr);
-      gap: 18px;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-agency-code-head {
+      margin-bottom: 12px;
+      padding: 15px 16px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-agency-code-head h1 {
+      margin-bottom: 3px;
+      font-size: 23px;
+      line-height: 1.25;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-agency-code-head p {
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-agency-code-head .mi-badge {
+      padding: 6px 9px;
+      font-size: 10px;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-command-card {
-      border-color: rgba(6, 26, 58, 0.14);
-      background: linear-gradient(155deg, #ffffff 0%, #f7faff 100%);
-      box-shadow: 0 18px 48px rgba(6, 26, 58, 0.08);
+      border-color: rgba(6, 26, 58, 0.1);
+      padding: 16px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.05);
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-command-card > .mi-card-head {
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-command-card > .mi-card-head h2 {
+      margin-bottom: 3px;
+      font-size: 18px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-command-card > .mi-card-head p {
+      font-size: 11px;
+    }
+
+    #mi-admin.is-owner-agency-mode [data-owner-panel-badge] {
+      display: none;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-tools {
+      gap: 9px;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-account-card {
-      align-self: start;
-      border-color: rgba(6, 26, 58, 0.12);
+      align-self: stretch;
+      border-color: rgba(6, 26, 58, 0.1);
+      padding: 15px 16px;
       background: #fff;
+      box-shadow: 0 8px 24px rgba(6, 26, 58, 0.04);
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-account-card .mi-card-head {
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-account-card .mi-card-head h3 {
+      font-size: 16px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-account-card .mi-card-head p {
+      font-size: 11px;
     }
 
     #mi-admin .mi-owner-flow {
       display: grid;
-      gap: 14px;
+      grid-template-columns: 100px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
       overflow: hidden;
-      border-radius: 10px;
-      padding: 17px;
+      border-radius: 8px;
+      padding: 10px 12px;
       color: #fff;
-      background:
-        radial-gradient(circle at 92% 10%, rgba(98, 168, 255, 0.2), transparent 34%),
-        linear-gradient(135deg, #061a3a 0%, #0a2d5d 100%);
-      box-shadow: 0 16px 32px rgba(6, 26, 58, 0.13);
+      background: linear-gradient(135deg, #071b3a 0%, #0b2b55 100%);
+      box-shadow: 0 8px 20px rgba(6, 26, 58, 0.1);
     }
 
     #mi-admin .mi-owner-flow-head {
       display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 16px;
+      align-items: center;
+      gap: 8px;
     }
 
     #mi-admin .mi-owner-flow-head strong {
       color: #fff;
-      font-size: 15px;
-      font-weight: 950;
-      letter-spacing: -0.02em;
+      font-size: 12px;
+      font-weight: 900;
     }
 
     #mi-admin .mi-owner-flow-head span {
-      color: rgba(255, 255, 255, 0.68);
-      font-size: 11px;
-      font-weight: 850;
+      display: none;
     }
 
     #mi-admin .mi-owner-flow-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 8px;
+      gap: 0;
     }
 
     #mi-admin .mi-owner-flow-step {
       display: grid;
-      grid-template-columns: 30px minmax(0, 1fr);
+      grid-template-columns: 24px minmax(0, 1fr);
       align-items: center;
-      gap: 9px;
-      min-height: 66px;
-      border: 1px solid rgba(255, 255, 255, 0.13);
-      border-radius: 8px;
-      padding: 10px;
-      background: rgba(255, 255, 255, 0.06);
+      gap: 7px;
+      min-height: 38px;
+      border-left: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 3px 10px;
+      background: transparent;
+    }
+
+    #mi-admin .mi-owner-flow-step:first-child {
+      border-left: 0;
     }
 
     #mi-admin .mi-owner-flow-step > span {
       display: inline-flex;
-      width: 30px;
-      height: 30px;
+      width: 24px;
+      height: 24px;
       align-items: center;
       justify-content: center;
-      border-radius: 8px;
+      border-radius: 7px;
       color: #061a3a;
-      background: #fff;
-      font-size: 11px;
-      font-weight: 950;
+      background: rgba(255, 255, 255, 0.94);
+      font-size: 9px;
+      font-weight: 900;
     }
 
     #mi-admin .mi-owner-flow-step div {
-      display: grid;
-      gap: 3px;
+      display: block;
       min-width: 0;
     }
 
     #mi-admin .mi-owner-flow-step strong {
       color: #fff;
-      font-size: 12px;
-      font-weight: 950;
+      font-size: 11px;
+      font-weight: 850;
     }
 
     #mi-admin .mi-owner-flow-step small {
-      color: rgba(255, 255, 255, 0.62);
+      display: none;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-hint {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-color: rgba(6, 26, 58, 0.07);
+      background: #f8fafc;
+      font-size: 11px;
+      line-height: 1.4;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-hint strong {
+      flex: 0 0 auto;
       font-size: 10px;
-      font-weight: 750;
-      line-height: 1.35;
     }
 
     #mi-admin .mi-owner-security {
       display: flex;
       align-items: center;
-      gap: 10px;
-      border: 1px solid rgba(23, 125, 88, 0.14);
+      gap: 8px;
+      border: 1px solid rgba(23, 125, 88, 0.12);
       border-radius: 8px;
-      padding: 11px 13px;
+      padding: 8px 10px;
       color: var(--mi-navy);
-      background: rgba(235, 248, 242, 0.64);
+      background: rgba(235, 248, 242, 0.56);
     }
 
     #mi-admin .mi-owner-security-mark {
-      width: 9px;
-      height: 9px;
+      width: 7px;
+      height: 7px;
       flex: 0 0 auto;
       border-radius: 999px;
       background: var(--mi-green);
-      box-shadow: 0 0 0 5px rgba(23, 125, 88, 0.09);
+      box-shadow: 0 0 0 4px rgba(23, 125, 88, 0.08);
     }
 
     #mi-admin .mi-owner-security-copy {
-      display: grid;
-      gap: 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
       min-width: 0;
     }
 
     #mi-admin .mi-owner-security-copy strong {
-      font-size: 12px;
-      font-weight: 950;
+      font-size: 11px;
+      font-weight: 900;
     }
 
     #mi-admin .mi-owner-security-copy small {
       color: var(--mi-muted);
-      font-size: 11px;
-      font-weight: 750;
+      font-size: 10px;
+      font-weight: 700;
     }
 
     #mi-admin .mi-owner-security .mi-status-pill {
       margin-left: auto;
+      padding: 5px 8px;
+      font-size: 9px;
       white-space: nowrap;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-create-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1fr);
       align-items: stretch;
+      gap: 8px;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-create-tool {
-      align-content: start;
-      border-color: rgba(6, 26, 58, 0.1);
-      border-radius: 10px;
-      padding: 17px;
+      grid-template-columns: 176px minmax(0, 1fr);
+      align-items: center;
+      gap: 14px;
+      min-height: 104px;
+      border-color: rgba(6, 26, 58, 0.09);
+      border-radius: 8px;
+      padding: 13px 14px;
+      background: #fff;
       box-shadow: none;
     }
 
     #mi-admin .mi-owner-create-heading {
       display: flex;
-      align-items: flex-start;
-      gap: 10px;
+      align-items: center;
+      gap: 8px;
     }
 
     #mi-admin .mi-owner-step-badge {
       display: inline-flex;
-      min-width: 58px;
-      min-height: 26px;
+      min-width: 48px;
+      min-height: 22px;
       align-items: center;
       justify-content: center;
       border-radius: 999px;
-      padding: 0 9px;
+      padding: 0 7px;
       color: #24405f;
-      background: #eaf0f8;
-      font-size: 10px;
-      font-weight: 950;
+      background: #eef3f8;
+      font-size: 9px;
+      font-weight: 900;
       white-space: nowrap;
     }
 
     #mi-admin .mi-owner-create-heading > div {
       display: grid;
-      gap: 5px;
+      gap: 2px;
       min-width: 0;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-create-heading h3 {
+      font-size: 14px;
+      letter-spacing: -0.01em;
     }
 
     #mi-admin .mi-owner-create-heading p {
       margin: 0;
       color: var(--mi-muted);
-      font-size: 11px;
-      font-weight: 750;
-      line-height: 1.5;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.4;
     }
 
     #mi-admin .mi-owner-field-label {
       color: #52627a;
-      font-size: 10px;
-      font-weight: 950;
+      font-size: 9px;
+      font-weight: 850;
       line-height: 1;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr)) 116px;
       grid-template-areas:
-        "team-code-label team-name-label"
-        "team-code team-name"
-        "team-action team-action";
+        "team-code-label team-name-label ."
+        "team-code team-name team-action";
       align-items: center;
+      gap: 7px 9px;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: 1.15fr 1fr 1fr 116px;
       grid-template-areas:
-        "team-link-label team-link-label"
-        "team-link team-link"
-        "client-code-label client-name-label"
-        "client-code client-name"
-        "client-action client-action";
+        "team-link-label client-code-label client-name-label ."
+        "team-link client-code client-name client-action";
       align-items: center;
+      gap: 7px 9px;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-team-code-label { grid-area: team-code-label; }
@@ -5527,40 +5608,42 @@
     #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-owner-create-action {
       grid-column: auto;
       grid-row: auto;
-      min-height: 44px;
-      margin-top: 2px;
+      min-height: 40px;
+      margin-top: 0;
+      font-size: 11px;
+      box-shadow: none;
     }
 
     #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create],
     #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-team-client-create] {
-      grid-column: 1 / -1;
+      grid-column: auto;
       grid-row: auto;
     }
 
-    #mi-admin .mi-owner-card-note {
-      margin-top: auto;
-      border-top: 1px solid rgba(6, 26, 58, 0.08);
-      padding-top: 11px;
-      color: var(--mi-muted);
-      font-size: 10px;
-      font-weight: 750;
-      line-height: 1.45;
-    }
-
-    #mi-admin.is-owner-agency-mode .mi-owner-result {
-      min-height: 42px;
-      border-color: rgba(6, 26, 58, 0.09);
-      border-radius: 8px;
-      padding: 11px 13px 11px 36px;
-      color: #52627a;
-      background: #f7f9fc;
+    #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-input {
+      min-height: 40px;
+      padding: 0 10px;
       font-size: 11px;
     }
 
+    #mi-admin.is-owner-agency-mode .mi-owner-card-note {
+      display: none;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-result {
+      min-height: 36px;
+      border-color: rgba(6, 26, 58, 0.09);
+      border-radius: 8px;
+      padding: 8px 11px 8px 32px;
+      color: #52627a;
+      background: #f7f9fc;
+      font-size: 10px;
+    }
+
     #mi-admin.is-owner-agency-mode .mi-owner-result:before {
-      left: 14px;
-      width: 9px;
-      height: 9px;
+      left: 12px;
+      width: 8px;
+      height: 8px;
       border: 2px solid #7f8da3;
       background: transparent;
     }
@@ -6944,9 +7027,12 @@
         grid-row: auto;
       }
 
-      #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row,
+      #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) 116px;
+      }
+
       #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1.15fr 1fr 1fr 116px;
       }
     }
 
@@ -7306,18 +7392,92 @@
         justify-content: flex-start;
       }
 
+      #mi-admin.is-owner-agency-mode .mi-owner-create-tool {
+        grid-template-columns: 1fr;
+        gap: 11px;
+      }
+
+    }
+
+    @media (max-width: 720px) {
+      #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+          "team-code-label team-name-label"
+          "team-code team-name"
+          "team-action team-action";
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-areas:
+          "team-link-label team-link-label"
+          "team-link team-link"
+          "client-code-label client-name-label"
+          "client-code client-name"
+          "client-action client-action";
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-owner-create-action,
+      #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create],
+      #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-team-client-create] {
+        grid-column: 1 / -1;
+      }
     }
 
     @media (max-width: 520px) {
-      #mi-admin.is-owner-agency-mode .mi-owner-create-grid,
-      #mi-admin .mi-owner-flow-grid {
+      #mi-admin.is-owner-agency-mode .mi-owner-create-grid {
         grid-template-columns: 1fr;
       }
 
+      #mi-admin.is-owner-agency-mode .mi-agency-code-head {
+        padding: 13px 14px;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-agency-code-head h1 {
+        font-size: 20px;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-command-card,
+      #mi-admin.is-owner-agency-mode .mi-owner-account-card {
+        padding: 14px;
+      }
+
+      #mi-admin .mi-owner-flow {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+
       #mi-admin .mi-owner-flow-head {
-        align-items: flex-start;
-        flex-direction: column;
+        display: block;
+      }
+
+      #mi-admin .mi-owner-flow-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      #mi-admin .mi-owner-flow-step {
+        grid-template-columns: 1fr;
+        justify-items: center;
         gap: 4px;
+        padding: 4px 6px;
+        text-align: center;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-hint,
+      #mi-admin .mi-owner-security {
+        align-items: flex-start;
+      }
+
+      #mi-admin .mi-owner-security-copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-create-tool {
+        grid-template-columns: 1fr;
+        gap: 11px;
+        padding: 12px;
       }
 
       #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
@@ -7881,8 +8041,8 @@
               <div class="mi-owner-tools">
                 <div class="mi-owner-flow" data-owner-only>
                   <div class="mi-owner-flow-head">
-                    <strong>계정 연결 순서</strong>
-                    <span>운영팀 생성은 필요한 경우에만 진행합니다.</span>
+                    <strong>진행 순서</strong>
+                    <span>운영팀은 선택입니다.</span>
                   </div>
                   <div class="mi-owner-flow-grid">
                     <div class="mi-owner-flow-step">
@@ -7906,8 +8066,8 @@
                 <div class="mi-owner-security" data-owner-only>
                   <span class="mi-owner-security-mark" aria-hidden="true"></span>
                   <div class="mi-owner-security-copy">
-                    <strong>총관리자 보안 세션 연결</strong>
-                    <small>계정 발급과 권한 변경 요청은 서버에서 다시 검증합니다.</small>
+                    <strong>보안 세션 확인됨</strong>
+                    <small>발급 요청은 서버에서 재검증됩니다.</small>
                   </div>
                   <span class="mi-status-pill">보호됨</span>
                   <input data-owner-secret-code type="hidden" autocomplete="off" />
@@ -7919,7 +8079,7 @@
                       <span class="mi-owner-step-badge">선택 01</span>
                       <div>
                         <h3>운영팀 생성</h3>
-                        <p>운영 담당자가 별도 계정으로 관리해야 할 때만 생성합니다.</p>
+                        <p>별도 담당자 계정이 필요할 때만 생성</p>
                       </div>
                     </div>
                     <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
@@ -7936,7 +8096,7 @@
                       <span class="mi-owner-step-badge" data-owner-only>필수 02</span>
                       <div>
                         <h3 data-owner-client-title>광고주 코드 생성</h3>
-                        <p data-owner-client-desc data-owner-only>운영팀에 연결하거나 총관리자 직속으로 광고주를 발급합니다.</p>
+                        <p data-owner-client-desc data-owner-only>운영팀 연결 또는 총관리자 직속 발급</p>
                       </div>
                     </div>
                     <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
@@ -9601,17 +9761,17 @@
         });
 
         if (agencyKicker) agencyKicker.textContent = ownerMode ? "총관리자 · 계정 연결" : "대행사 코드";
-        if (agencyTitle) agencyTitle.textContent = ownerMode ? "계정과 연결 관계를 관리합니다." : "대행사 코드를 관리합니다.";
+        if (agencyTitle) agencyTitle.textContent = ownerMode ? "계정 연결을 관리합니다." : "대행사 코드를 관리합니다.";
         if (agencyDesc) {
           agencyDesc.textContent = ownerMode
-            ? "운영팀 생성부터 광고주 연결과 활성 상태 확인까지 한 화면에서 처리합니다."
+            ? "운영팀 생성, 광고주 발급, 연결 상태를 한 화면에서 확인합니다."
             : "공개 데이터를 저장하면 같은 코드의 광고주 화면에 반영됩니다.";
         }
         if (agencyBadge) agencyBadge.textContent = ownerMode ? "Owner 전용" : "연동 관리";
         if (title) title.textContent = ownerMode ? "계정 발급" : "광고주 코드 생성";
         if (desc) {
           desc.textContent = ownerMode
-            ? "필요한 계정만 순서대로 생성하고 연결 상태를 확인합니다."
+            ? "필요한 계정만 발급하고 상태를 확인합니다."
             : (teamHasClient
               ? "연결된 광고주 1개의 데이터와 순위 추적을 관리합니다."
               : "광고주 연결 전에도 조회 도구와 두 30일 순위 추적을 운영팀 범위에서 사용하고, 필요할 때 광고주 1개를 연결합니다.");
@@ -9620,7 +9780,7 @@
         if (clientTitle) clientTitle.textContent = ownerMode ? "광고주 생성·연결" : "광고주 코드 생성";
         if (clientDesc) {
           clientDesc.textContent = ownerMode
-            ? "운영팀에 연결하거나 총관리자 직속으로 광고주를 발급합니다."
+            ? "운영팀 연결 또는 총관리자 직속 발급"
             : "";
         }
         if (clientCodeInput) clientCodeInput.placeholder = ownerMode ? "6자리 이상 직접 입력" : "광고주 코드 직접 입력";
@@ -9637,7 +9797,7 @@
         if (modeBadge) modeBadge.textContent = ownerMode ? "Owner" : (teamHasClient ? "Operator" : "Operator · 단독");
         if (ownerHint) {
           ownerHint.textContent = ownerMode
-            ? "운영팀 연결은 선택입니다. 광고주 발급 시 운영팀 코드 칸을 비우면 총관리자 직속으로 저장됩니다."
+            ? "운영팀 코드를 비우면 광고주가 총관리자 직속으로 발급됩니다."
             : (teamHasClient
               ? "운영팀은 연결된 광고주 1개의 보고서와 30일 순위 추적을 관리할 수 있습니다."
               : "광고주 연결 전에도 조회 도구와 두 30일 순위 추적을 사용할 수 있으며, 보고서·공개 데이터는 광고주 연결 후 활성화됩니다.");
@@ -9645,7 +9805,7 @@
         if (listTitle) listTitle.textContent = ownerMode ? "연결 현황" : "연결 상태";
         if (listDesc) {
           listDesc.textContent = ownerMode
-            ? "운영팀과 광고주 상태를 확인하고 필요할 때 전체 관계를 엽니다."
+            ? "운영팀과 광고주의 활성 상태를 확인합니다."
             : "현재 운영팀에 연결된 광고주 상태입니다.";
         }
         if (refresh) refresh.style.display = ownerMode ? "" : "none";

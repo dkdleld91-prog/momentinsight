@@ -27,7 +27,7 @@ function json(request, body, status = 200) {
   });
 }
 
-function normalizeAgencyCode(value) {
+export function normalizeAgencyCode(value) {
   const code = String(value || "").trim().toLowerCase();
   return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{5,127}$/.test(code) ? code : "";
 }

@@ -72,11 +72,24 @@ async function readJson(request) {
   }
 }
 
-export function normalizeLoginCode(value) {
+function normalizeLoginCodeWithMinimum(value, minimumLength) {
   const code = String(value || "").trim();
-  if (code.length < 6 || code.length > 128) return "";
+  if (code.length < minimumLength || code.length > 128) return "";
   if (!/^[A-Za-z0-9.~!@#$^&*+=:-]+$/.test(code)) return "";
   return code;
+}
+
+export function normalizeLoginCode(value) {
+  return normalizeLoginCodeWithMinimum(value, 6);
+}
+
+export function normalizeRequestedLoginCode(value, mode) {
+  // Legacy five-character compatibility is limited to advertiser login.
+  // Authentication still requires an exact active client row, while all new
+  // account creation and operation-team/owner login keep the six-character rule.
+  return String(mode || "").trim().toLowerCase() === "client"
+    ? normalizeLoginCodeWithMinimum(value, 5)
+    : normalizeLoginCode(value);
 }
 
 function normalizedIdentity(value) {
@@ -374,7 +387,7 @@ async function login(request, ctx) {
 
   const body = await readJson(request);
   const mode = String(body.mode || "client").trim().toLowerCase();
-  const code = normalizeLoginCode(body.code);
+  const code = normalizeRequestedLoginCode(body.code, mode);
   if (!code || !["admin", "operator", "client"].includes(mode)) {
     return response(request, { ok: false, message: "접속 정보를 확인해주세요." }, 400);
   }

@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { adminRateConfiguration, teamActionAccess, teamActionPayload } from "./super-admin-api.mjs";
+import {
+  adminRateConfiguration,
+  normalizeAgencyCode,
+  teamActionAccess,
+  teamActionPayload,
+} from "./super-admin-api.mjs";
+
+test("new advertiser and operation-team codes keep the six-character minimum", () => {
+  assert.equal(normalizeAgencyCode("abc12"), "");
+  assert.equal(normalizeAgencyCode("abc123"), "abc123");
+});
 
 test("admin rate configuration cannot be disabled by invalid environment values", () => {
   assert.deepEqual(adminRateConfiguration({

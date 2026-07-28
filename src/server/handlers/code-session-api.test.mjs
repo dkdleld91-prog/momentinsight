@@ -7,6 +7,7 @@ import {
   loginRateKeys,
   loginRequestAllowed,
   normalizeLoginCode,
+  normalizeRequestedLoginCode,
   ownerCredentialConfigured,
   ownerCredentialMatches,
   sessionActivityState,
@@ -37,6 +38,15 @@ test("login codes reject whitespace, control characters and oversized values", (
   assert.equal(normalizeLoginCode("mml93-a%"), "");
   assert.equal(normalizeLoginCode("mml93-a_"), "");
   assert.equal(normalizeLoginCode("a".repeat(129)), "");
+});
+
+test("legacy five-character candidates are limited to active advertiser lookup", () => {
+  assert.equal(normalizeRequestedLoginCode("abc12", "client"), "abc12");
+  assert.equal(normalizeRequestedLoginCode("abc12", "operator"), "");
+  assert.equal(normalizeRequestedLoginCode("abc12", "admin"), "");
+  assert.equal(normalizeRequestedLoginCode("abcd", "client"), "");
+  assert.equal(normalizeRequestedLoginCode("abcdef", "operator"), "abcdef");
+  assert.equal(normalizeLoginCode("abc12"), "");
 });
 
 test("owner login fails closed in production without a separate credential", () => {

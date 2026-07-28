@@ -6121,6 +6121,419 @@
       line-height: 1.45;
     }
 
+    #mi-admin .mi-operation-input {
+      --mi-operation-soft: #f5f7fb;
+      --mi-operation-line: rgba(6, 26, 58, 0.1);
+      --mi-operation-shadow: 0 18px 46px rgba(6, 26, 58, 0.065);
+    }
+
+    #mi-admin .mi-operation-input .mi-head {
+      align-items: center;
+      margin-bottom: 24px;
+      border: 0;
+      padding: 4px 2px 0;
+      background: transparent;
+      box-shadow: none;
+    }
+
+    #mi-admin .mi-operation-input .mi-head h1 {
+      margin-bottom: 7px;
+      font-size: 31px;
+      letter-spacing: -0.035em;
+    }
+
+    #mi-admin .mi-operation-input .mi-head p {
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-operation-grid,
+    #mi-admin .mi-operation-summary-grid {
+      display: grid;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    #mi-admin .mi-operation-grid {
+      grid-template-columns: minmax(0, 1.58fr) minmax(260px, 0.62fr);
+    }
+
+    #mi-admin .mi-operation-summary-grid {
+      grid-template-columns: minmax(0, 1.32fr) minmax(280px, 0.68fr);
+    }
+
+    #mi-admin .mi-operation-card {
+      min-width: 0;
+      border: 1px solid var(--mi-operation-line);
+      border-radius: 18px;
+      padding: 26px;
+      background: #fff;
+      box-shadow: var(--mi-operation-shadow);
+    }
+
+    #mi-admin .mi-operation-card.is-soft {
+      background: linear-gradient(180deg, #f9fbfe 0%, #f5f7fb 100%);
+      box-shadow: none;
+    }
+
+    #mi-admin .mi-operation-section-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 22px;
+    }
+
+    #mi-admin .mi-operation-section-head > div {
+      min-width: 0;
+    }
+
+    #mi-admin .mi-operation-eyebrow {
+      display: block;
+      margin-bottom: 7px;
+      color: #778298;
+      font-size: 11px;
+      font-weight: 950;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #mi-admin .mi-operation-section-head h2,
+    #mi-admin .mi-operation-section-head h3 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.025em;
+    }
+
+    #mi-admin .mi-operation-section-head p {
+      margin-top: 7px;
+      max-width: 600px;
+      color: #6f7b90;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    #mi-admin .mi-operation-step-number {
+      display: grid;
+      flex: 0 0 38px;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 12px;
+      color: var(--mi-navy);
+      background: var(--mi-operation-soft);
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-operation-input .mi-tool {
+      gap: 16px;
+    }
+
+    #mi-admin .mi-operation-input .mi-field {
+      gap: 7px;
+      color: #536077;
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-operation-input .mi-input,
+    #mi-admin .mi-operation-input .mi-textarea {
+      border-color: rgba(6, 26, 58, 0.12);
+      border-radius: 10px;
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-upload.is-compact {
+      gap: 12px;
+      border: 0;
+      padding: 0;
+      background: transparent;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-upload-head {
+      display: none;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-quick-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 14px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 14px;
+      padding: 14px;
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-file-summary {
+      min-height: 58px;
+      padding: 2px 4px;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-file-summary strong {
+      margin-top: 4px;
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-operation-source-actions {
+      display: grid;
+      grid-template-columns: minmax(126px, auto) minmax(96px, auto);
+      gap: 8px;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-quick-row .mi-button,
+    #mi-admin .mi-operation-input .mi-source-quick-row .mi-source-picker {
+      min-height: 46px;
+      border-radius: 10px;
+      padding: 0 15px;
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-operation-input .mi-code-status {
+      min-height: 42px;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: #677389;
+      background: var(--mi-operation-soft);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-operation-input .mi-source-library-row {
+      border-radius: 12px;
+      box-shadow: none;
+    }
+
+    #mi-admin .mi-operation-guardrails {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: start;
+      gap: 12px 18px;
+      border-top: 1px solid rgba(6, 26, 58, 0.08);
+      padding-top: 18px;
+    }
+
+    #mi-admin .mi-operation-guardrails > strong {
+      padding-top: 8px;
+      color: var(--mi-navy);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-operation-input .mi-guardrail-strip {
+      gap: 6px;
+      margin: 0;
+    }
+
+    #mi-admin .mi-operation-input .mi-guardrail-chip {
+      min-height: 30px;
+      border: 0;
+      padding: 0 10px;
+      color: #5f6b80;
+      background: #f3f6fa;
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-operation-settings,
+    #mi-admin .mi-operation-advanced {
+      border: 1px solid rgba(6, 26, 58, 0.09);
+      border-radius: 14px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    #mi-admin .mi-operation-settings summary,
+    #mi-admin .mi-operation-advanced summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 54px;
+      padding: 0 16px;
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 950;
+      cursor: pointer;
+      list-style: none;
+    }
+
+    #mi-admin .mi-operation-settings summary::-webkit-details-marker,
+    #mi-admin .mi-operation-advanced summary::-webkit-details-marker {
+      display: none;
+    }
+
+    #mi-admin .mi-operation-settings summary::after,
+    #mi-admin .mi-operation-advanced summary::after {
+      content: "+";
+      color: #8792a6;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    #mi-admin .mi-operation-settings[open] summary::after,
+    #mi-admin .mi-operation-advanced[open] summary::after {
+      content: "−";
+    }
+
+    #mi-admin .mi-operation-settings summary span,
+    #mi-admin .mi-operation-advanced summary span {
+      margin-left: auto;
+      color: #7a8699;
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-operation-settings-body {
+      border-top: 1px solid rgba(6, 26, 58, 0.08);
+      padding: 16px;
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-operation-command {
+      display: grid;
+      grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+      gap: 10px;
+    }
+
+    #mi-admin .mi-operation-command .mi-button {
+      width: 100%;
+      min-height: 48px;
+      border-radius: 10px;
+    }
+
+    #mi-admin .mi-operation-progress {
+      display: grid;
+      gap: 4px;
+      margin-top: 4px;
+    }
+
+    #mi-admin .mi-operation-progress-item {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border-bottom: 1px solid rgba(6, 26, 58, 0.08);
+      padding: 16px 0;
+    }
+
+    #mi-admin .mi-operation-progress-item:last-child {
+      border-bottom: 0;
+    }
+
+    #mi-admin .mi-operation-progress-item b {
+      display: grid;
+      width: 30px;
+      height: 30px;
+      place-items: center;
+      border-radius: 9px;
+      color: #fff;
+      background: var(--mi-navy);
+      font-size: 10px;
+      letter-spacing: 0.05em;
+    }
+
+    #mi-admin .mi-operation-progress-item strong,
+    #mi-admin .mi-operation-progress-item span {
+      display: block;
+    }
+
+    #mi-admin .mi-operation-progress-item strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-operation-progress-item span {
+      margin-top: 4px;
+      color: #717d91;
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-operation-result .mi-row,
+    #mi-admin .mi-operation-checklist .mi-row,
+    #mi-admin .mi-operation-csv-result .mi-row {
+      min-height: 52px;
+      border-color: rgba(6, 26, 58, 0.08);
+      padding: 12px 0;
+      background: transparent;
+    }
+
+    #mi-admin .mi-operation-result .mi-row:first-child {
+      border-top: 0;
+    }
+
+    #mi-admin .mi-operation-result .mi-row span,
+    #mi-admin .mi-operation-checklist .mi-row span,
+    #mi-admin .mi-operation-csv-result .mi-row span {
+      color: #7a8698;
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-operation-result .mi-row strong,
+    #mi-admin .mi-operation-checklist .mi-row strong,
+    #mi-admin .mi-operation-csv-result .mi-row strong {
+      color: var(--mi-navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-operation-checklist {
+      display: grid;
+    }
+
+    #mi-admin .mi-operation-checklist .mi-row {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      align-items: start;
+      gap: 14px;
+    }
+
+    #mi-admin .mi-operation-checklist .mi-row strong {
+      line-height: 1.45;
+      text-align: left;
+    }
+
+    #mi-admin .mi-operation-advanced {
+      margin-bottom: 4px;
+      border-radius: 18px;
+      background: #f8fafc;
+      box-shadow: none;
+    }
+
+    #mi-admin .mi-operation-advanced summary {
+      min-height: 66px;
+      padding: 0 22px;
+      font-size: 14px;
+    }
+
+    #mi-admin .mi-operation-advanced-body {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(270px, 0.75fr);
+      gap: 18px;
+      border-top: 1px solid rgba(6, 26, 58, 0.08);
+      padding: 22px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-operation-advanced-panel {
+      min-width: 0;
+    }
+
+    #mi-admin .mi-operation-advanced-panel h3 {
+      margin-bottom: 6px;
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-operation-advanced-panel > p {
+      margin-bottom: 14px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-operation-advanced-panel .mi-button {
+      width: 100%;
+      margin-top: 8px;
+      border-radius: 10px;
+    }
+
     @media (max-width: 1220px) {
       #mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row {
         grid-template-columns: 1fr;
@@ -6199,6 +6612,16 @@
 
       #mi-admin .mi-main {
         padding: 16px;
+      }
+
+      #mi-admin .mi-operation-grid,
+      #mi-admin .mi-operation-summary-grid,
+      #mi-admin .mi-operation-advanced-body {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-operation-input .mi-head {
+        display: flex;
       }
 
       #mi-admin .mi-login-panel,
@@ -6495,6 +6918,58 @@
       #mi-admin h1,
       #mi-admin .mi-login h1 {
         font-size: 25px;
+      }
+
+      #mi-admin .mi-operation-input .mi-head {
+        align-items: flex-start;
+        padding-top: 2px;
+      }
+
+      #mi-admin .mi-operation-input .mi-head h1 {
+        font-size: 27px;
+      }
+
+      #mi-admin .mi-operation-card {
+        border-radius: 15px;
+        padding: 18px;
+      }
+
+      #mi-admin .mi-operation-section-head {
+        margin-bottom: 18px;
+      }
+
+      #mi-admin .mi-operation-input .mi-source-quick-row,
+      #mi-admin .mi-operation-source-actions,
+      #mi-admin .mi-operation-guardrails,
+      #mi-admin .mi-operation-command,
+      #mi-admin .mi-operation-checklist .mi-row {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-operation-source-actions {
+        width: 100%;
+      }
+
+      #mi-admin .mi-operation-guardrails {
+        gap: 8px;
+      }
+
+      #mi-admin .mi-operation-guardrails > strong {
+        padding-top: 0;
+      }
+
+      #mi-admin .mi-operation-settings summary span,
+      #mi-admin .mi-operation-advanced summary span {
+        display: none;
+      }
+
+      #mi-admin .mi-operation-advanced summary,
+      #mi-admin .mi-operation-advanced-body {
+        padding: 18px;
+      }
+
+      #mi-admin .mi-operation-checklist .mi-row {
+        gap: 4px;
       }
 
       #mi-admin .mi-ops-home-head {
@@ -7131,28 +7606,29 @@
           </div>
         </section>
 
-        <section class="mi-view" data-mi-admin-view="excel" id="mi-admin-excel">
+        <section class="mi-view mi-operation-input" data-mi-admin-view="excel" id="mi-admin-excel">
           <header class="mi-head">
             <div>
               <span class="mi-kicker">운영 입력</span>
               <h1>운영 데이터를 입력합니다.</h1>
-              <p>업로드, 검수, 공개 반영 순서로 처리합니다.</p>
+              <p>원본 준비부터 광고주 공개까지 세 단계로 처리합니다.</p>
             </div>
             <span class="mi-badge">수동 운영</span>
           </header>
 
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <div class="mi-card-head">
+          <div class="mi-operation-grid">
+            <article class="mi-operation-card">
+              <div class="mi-operation-section-head">
                 <div>
-                  <h2>운영 원본 관리</h2>
+                  <span class="mi-operation-eyebrow">Step 01 · 원본 준비</span>
+                  <h2>운영 원본</h2>
                   <p>운영팀은 네이버·쿠팡 일별값만 넣고, 월간 합계와 ROAS는 자동 계산합니다.</p>
                 </div>
-                <span class="mi-badge warn">간편 운영</span>
+                <span class="mi-operation-step-number">01</span>
               </div>
 
               <div class="mi-tool">
-                <label class="mi-field">운영 시트 또는 엑셀 원본명
+                <label class="mi-field">원본 이름
                   <input class="mi-input" data-admin-sheet-url value="모먼트인사이트_운영시트_템플릿.xlsx" aria-label="운영 시트 또는 엑셀 원본명" />
                 </label>
                 <div class="mi-source-upload is-compact" data-admin-source-upload>
@@ -7169,35 +7645,45 @@
                       <strong data-admin-source-file-name>업로드 파일 없음</strong>
                       <small data-admin-source-file-meta>브라우저 임시 보관 · 정식 운영 시 서버 저장</small>
                     </div>
-                    <a class="mi-button is-ghost" href="/downloads/moment-insight-operation-sheet-template.xlsx" download aria-label="새 운영팀은 이 파일을 먼저 내려받고 연결 광고주 1곳 기준으로 작성합니다.">기본 양식 다운로드</a>
-                    <label class="mi-source-picker">
-                      <input type="file" data-admin-source-file accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
-                      파일 선택
-                    </label>
+                    <div class="mi-operation-source-actions">
+                      <a class="mi-button is-ghost" href="/downloads/moment-insight-operation-sheet-template.xlsx" download aria-label="새 운영팀은 이 파일을 먼저 내려받고 연결 광고주 1곳 기준으로 작성합니다.">기본 양식 다운로드</a>
+                      <label class="mi-source-picker">
+                        <input type="file" data-admin-source-file accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg" />
+                        파일 선택
+                      </label>
+                    </div>
                   </div>
                   <div class="mi-source-library" data-admin-source-file-list></div>
                   <div class="mi-code-status" data-admin-source-file-status aria-live="polite">현재 파일은 브라우저 임시 보관입니다. 정식 운영에서는 서버 저장소에 업로드합니다.</div>
                   <span hidden>다른 기기나 브라우저에서는 확인할 수 없습니다</span>
                 </div>
-                <div class="mi-guardrail-strip" aria-label="공개 검수 기준">
-                  <span class="mi-guardrail-chip" data-admin-guardrail="naverDaily">네이버 일별</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="coupangDaily">쿠팡 일별</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="monthly">월간 자동</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="source">데이터 출처 고정</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="publish">검수 후 공개</span>
-                  <span class="mi-guardrail-chip" data-admin-guardrail="memo">내부 메모 보호</span>
+                <div class="mi-operation-guardrails">
+                  <strong>검수 기준</strong>
+                  <div class="mi-guardrail-strip" aria-label="공개 검수 기준">
+                    <span class="mi-guardrail-chip" data-admin-guardrail="naverDaily">네이버 일별</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="coupangDaily">쿠팡 일별</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="monthly">월간 자동</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="source">데이터 출처 고정</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="publish">검수 후 공개</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="memo">내부 메모 보호</span>
+                  </div>
                 </div>
-                <div class="mi-form-row">
-                  <label class="mi-field">연결 광고주
-                    <input class="mi-input" data-admin-sheet-client value="운영팀에 연결된 광고주 1명 자동 적용" aria-label="연결 광고주" readonly />
-                  </label>
-                  <label class="mi-field">공개 기준
-                    <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
-                  </label>
-                </div>
-                <div class="mi-form-row mi-excel-action-row">
-                  <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 상태 확인</button>
-                  <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료 데이터 공개 반영</button>
+                <details class="mi-operation-settings">
+                  <summary>공개 설정 <span>연결 광고주 · 승인 기준</span></summary>
+                  <div class="mi-operation-settings-body">
+                    <div class="mi-form-row">
+                      <label class="mi-field">연결 광고주
+                        <input class="mi-input" data-admin-sheet-client value="운영팀에 연결된 광고주 1명 자동 적용" aria-label="연결 광고주" readonly />
+                      </label>
+                      <label class="mi-field">공개 기준
+                        <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
+                      </label>
+                    </div>
+                  </div>
+                </details>
+                <div class="mi-operation-command">
+                  <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 검수</button>
+                  <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료값 공개</button>
                 </div>
                 <div class="mi-code-status" data-admin-sheet-status aria-live="polite">입력값 확인 전입니다. 상태 확인을 먼저 눌러주세요.</div>
               </div>
@@ -7218,67 +7704,87 @@
               </div>
             </article>
 
-            <aside class="mi-card mi-card-pad">
-              <h3>운영팀 입력 흐름</h3>
-              <p>엑셀은 원천 입력만 관리하고, 보고서는 웹에서 PPTX로 생성합니다.</p>
-              <div class="mi-sheet-tabs">
-                <div class="mi-sheet-tab is-ok"><strong>네이버_일별입력</strong><span>광고비·노출·클릭·전환율·전체 구매/매출</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>쿠팡_일별입력</strong><span>광고비·노출·클릭·전환율·전체 구매/매출</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>일정표</strong><span>운영팀 로드맵 작성</span></div>
-                <div class="mi-sheet-tab is-ok"><strong>인사이트_액션플랜</strong><span>운영팀 다음 액션 작성</span></div>
-                <div class="mi-sheet-tab is-auto"><strong>월간_매출입력</strong><span>일별값 자동 합산</span></div>
-                <div class="mi-sheet-tab is-auto"><strong>PPTX 보고서</strong><span>웹에서 디자인 자동 배치</span></div>
+            <aside class="mi-operation-card is-soft">
+              <div class="mi-operation-section-head">
+                <div>
+                  <span class="mi-operation-eyebrow">Workflow</span>
+                  <h3>진행 상태</h3>
+                  <p>현재 처리 순서만 확인합니다.</p>
+                </div>
+              </div>
+              <div class="mi-operation-progress">
+                <div class="mi-operation-progress-item" aria-label="네이버_일별입력 · 쿠팡_일별입력">
+                  <b>01</b>
+                  <div><strong>원본 입력</strong><span>네이버·쿠팡 일별값<br />일정·액션 플랜</span></div>
+                </div>
+                <div class="mi-operation-progress-item" aria-label="월간_매출입력">
+                  <b>02</b>
+                  <div><strong>자동 계산</strong><span>월간 합계 · ROAS<br />핵심 성과 미리보기</span></div>
+                </div>
+                <div class="mi-operation-progress-item">
+                  <b>03</b>
+                  <div><strong>검수 후 공개</strong><span>승인값만 광고주 반영<br />PPTX 보고서 자동 배치</span></div>
+                </div>
               </div>
             </aside>
           </div>
 
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <div class="mi-card-head">
+          <div class="mi-operation-summary-grid">
+            <article class="mi-operation-card">
+              <div class="mi-operation-section-head">
                 <div>
-                  <h2>계산 미리보기</h2>
-                  <p>일별 입력값이 월간 공개값으로 합산되는 흐름을 확인합니다.</p>
+                  <span class="mi-operation-eyebrow">Step 02 · 검수</span>
+                  <h2>핵심 결과</h2>
+                  <p>월간 합계와 채널별 성과를 공개 전에 확인합니다.</p>
                 </div>
-                <span class="mi-badge">Preview</span>
+                <span class="mi-operation-step-number">02</span>
               </div>
-              <div class="mi-table" data-admin-channel-result>
+              <div class="mi-table mi-operation-result" data-admin-channel-result>
                 <div class="mi-row"><span>계산 대기</span><strong>입력값 상태 확인을 눌러주세요</strong></div>
               </div>
             </article>
 
-            <aside class="mi-card mi-card-pad">
-              <h3>공개 전 체크</h3>
-              <div class="mi-table">
-                <div class="mi-row"><span>원본 파일</span><strong>업로드 파일명과 작성일 확인</strong></div>
-                <div class="mi-row"><span>광고주 범위</span><strong>연결 광고주 1명 기준 분리</strong></div>
-                <div class="mi-row"><span>내부 메모</span><strong>광고주 화면 미노출</strong></div>
-                <div class="mi-row"><span>이상 수치</span><strong>전월 대비 급등락은 공개 전 재확인</strong></div>
-                <div class="mi-row"><span>공개 승인</span><strong>승인값만 반영</strong></div>
-                <div class="mi-row"><span>수정 이력</span><strong>공개 반영 시간 기록</strong></div>
+            <aside class="mi-operation-card is-soft">
+              <div class="mi-operation-section-head">
+                <div>
+                  <span class="mi-operation-eyebrow">Step 03 · 공개</span>
+                  <h3>공개 전 확인</h3>
+                  <p>세 항목만 최종 확인합니다.</p>
+                </div>
+                <span class="mi-operation-step-number">03</span>
+              </div>
+              <div class="mi-table mi-operation-checklist">
+                <div class="mi-row"><span>원본·범위</span><strong>파일명과 연결 광고주 확인</strong></div>
+                <div class="mi-row"><span>수치·메모</span><strong>급등락 재확인 · 내부 메모 비공개</strong></div>
+                <div class="mi-row"><span>승인·이력</span><strong>승인값만 반영 · 공개 시간 기록</strong></div>
               </div>
             </aside>
           </div>
 
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <h2>엑셀 붙여넣기</h2>
-              <p style="margin-bottom:14px;">간단 계산이 필요할 때만 사용합니다. 정식 운영은 기본 양식 업로드 기준입니다.</p>
-              <div class="mi-tool">
-                <textarea class="mi-textarea" data-admin-excel-input>광고비,광고노출수,광고클릭수,광고전환율,전체구매수,전체매출
+          <details class="mi-operation-advanced">
+            <summary>보조 입력 <span>CSV 붙여넣기 · 간단 계산</span></summary>
+            <div class="mi-operation-advanced-body">
+              <article class="mi-operation-advanced-panel">
+                <h3>CSV 간단 계산</h3>
+                <p>임시 계산이 필요할 때만 사용합니다. 정식 운영은 기본 양식 업로드 기준입니다.</p>
+                <div class="mi-tool">
+                  <textarea class="mi-textarea" data-admin-excel-input>광고비,광고노출수,광고클릭수,광고전환율,전체구매수,전체매출
 7200000,890000,36600,4.8,1080,32800000</textarea>
-                <button class="mi-button" type="button" data-admin-excel-calc>CSV 수치 계산</button>
-                <button class="mi-button" type="button" data-admin-excel-publish>CSV 계산 결과를 공개 데이터에 반영</button>
-                <div class="mi-note">DB 저장과 변경 이력은 서버 운영 기준으로 남깁니다.</div>
-              </div>
-            </article>
+                  <button class="mi-button is-ghost" type="button" data-admin-excel-calc>CSV 수치 계산</button>
+                  <button class="mi-button" type="button" data-admin-excel-publish>계산 결과 공개 반영</button>
+                  <div class="mi-note">DB 저장과 변경 이력은 서버 운영 기준으로 남깁니다.</div>
+                </div>
+              </article>
 
-            <aside class="mi-card mi-card-pad">
-              <h3>CSV 계산 결과</h3>
-              <div class="mi-table" data-admin-excel-result>
-                <div class="mi-row"><span>계산 대기</span><strong>버튼을 눌러주세요</strong></div>
-              </div>
-            </aside>
-          </div>
+              <aside class="mi-operation-advanced-panel">
+                <h3>계산 결과</h3>
+                <p>계산 전에는 공개 데이터가 바뀌지 않습니다.</p>
+                <div class="mi-table mi-operation-csv-result" data-admin-excel-result>
+                  <div class="mi-row"><span>계산 대기</span><strong>버튼을 눌러주세요</strong></div>
+                </div>
+              </aside>
+            </div>
+          </details>
         </section>
 
         <section class="mi-view" data-mi-admin-view="reports" id="mi-admin-reports">

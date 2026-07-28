@@ -950,6 +950,9 @@ const checks = {
       && fn.includes('var statusNode = card ? card.querySelector("[data-rank-status]") : null;')
       && fn.includes("setStatus(statusNode")
       && !fn.includes("setStatus(rankStatus")),
+  rankTrackingShareImageTwoRowHistory: [adminSource, clientSource].every((source) => /mi-rank-export-sheet \.mi-rank-day-grid \{[\s\S]*?display: grid;[\s\S]*?grid-template-columns: repeat\(15, minmax\(0, 1fr\)\);[\s\S]*?overflow: visible;/.test(source)
+    && /mi-rank-export-sheet \.mi-rank-day-card:nth-child\(15n\) \{[\s\S]*?border-right: 0;/.test(source)
+    && /mi-rank-export-sheet \.mi-rank-day-card:nth-child\(n \+ 16\) \{[\s\S]*?border-top: 1px solid #e1e8f1;/.test(source)),
   rankTrackingTypographyReduced: [adminSource, clientSource].every((source) => /mi-rank-ops-row \{[\s\S]*?font-size: 11px;/.test(source)
     && /mi-rank-keyword-name \{[\s\S]*?font-size: 13px;/.test(source)
     && /mi-rank-keyword-volume \{[\s\S]*?font-size: 11px;/.test(source)

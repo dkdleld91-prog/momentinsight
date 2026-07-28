@@ -3591,7 +3591,22 @@
     }
 
     #mi-admin .mi-rank-export-sheet .mi-rank-day-grid {
+      display: grid;
+      grid-template-columns: repeat(15, minmax(0, 1fr));
       overflow: visible;
+    }
+
+    #mi-admin .mi-rank-export-sheet .mi-rank-day-card {
+      min-width: 0;
+      padding: 9px 6px;
+    }
+
+    #mi-admin .mi-rank-export-sheet .mi-rank-day-card:nth-child(15n) {
+      border-right: 0;
+    }
+
+    #mi-admin .mi-rank-export-sheet .mi-rank-day-card:nth-child(n + 16) {
+      border-top: 1px solid #e1e8f1;
     }
 
     #mi-admin .mi-rank-group-combo {

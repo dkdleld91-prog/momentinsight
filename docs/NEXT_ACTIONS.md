@@ -11,6 +11,8 @@
 
 ## 현재 작업
 
+- N 상품 30일 순위 다운로드 이미지는 운영팀·광고주 모두 30개 일별 칸을 `1~15번째 / 16~30번째` 두 줄로 표시하도록 로컬 보완했다. 이미지 전용 CSS만 변경해 일반 화면·순위 계산·추적 수집·저장·AM/PM·대표값은 유지한다. 격리 브라우저 `15+15`·동일 84px·가로 넘침 0, 새 기준선, 역할 parity·5상태·보호 잠금 self-test·전체 `check:release`가 통과했다. 현재 배포 지시가 없으므로 다음 액션은 대표님의 배포 승인이다.
+
 - 총관리자 대행사 연결의 생성 카드에서 `선택 01`·`필수 02` 배지를 제거하고 활성 계정 요약을 `운영팀 N팀`·`광고주 N곳` 2행으로 압축했다. 상세 계정과 권한 해제는 `전체보기`에 유지한다. 새 기준선 `ownerAccountOverviewIsAggregateOnly`, 역할 5상태·양 역할 parity·보호 잠금·CSP·전체 `check:release`가 로컬·Vercel에서 통과했다. 코드 `e29339f`·Production `dpl_8he7h77pd7Zct8k4h92JsSdxPdRD`, 운영 릴리스 `e29339f8a0b1`·서울 `icn1`·Supabase ready·양 역할 HTML 200과 배포 화면 마커를 확인했으므로 다음 액션은 대표님의 실계정 집계 수 확인이다.
 
 - 대행사 연결 화면은 계정 발급·연결 관리만 담당하고, 공개 성과·일정 입력은 `공개 관리`에서 담당하도록 역할을 분리했다. 공개 데이터 저장 훅과 기존 데이터는 유지하고 중복 현황·내부 기술 설명만 제거했다. 새 기준선 `agencyConnectionViewKeepsOnlyAccountManagement`와 `publicDataControlsBelongToPublishView`, 역할 5상태·양 역할 parity·보호 잠금·전체 `check:release`가 로컬·Vercel에서 통과했다. 코드 `72e1576`·Production `dpl_3CwNgQnXgkJMBNS5K9zWLD3hbZWs`, 운영 릴리스 `72e157695c52`·서울 `icn1`·Supabase ready·양 역할 HTML 200과 배포 화면 마커를 확인했으므로 다음 액션은 대표님의 실계정 화면 확인이다.

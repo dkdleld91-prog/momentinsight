@@ -6501,6 +6501,11 @@
 
     #mi-admin .mi-operation-checklist {
       display: grid;
+      gap: 0;
+      overflow: hidden;
+      border: 1px solid rgba(6, 26, 58, 0.08);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.82);
     }
 
     #mi-admin .mi-operation-checklist .mi-row {
@@ -6508,9 +6513,16 @@
       grid-template-columns: auto minmax(0, 1fr);
       align-items: center;
       gap: 14px;
-      border-radius: 12px;
-      padding: 16px 18px;
-      background: rgba(255, 255, 255, 0.76);
+      min-height: 66px;
+      border: 0;
+      border-bottom: 1px solid rgba(6, 26, 58, 0.07);
+      border-radius: 0;
+      padding: 13px 16px;
+      background: transparent;
+    }
+
+    #mi-admin .mi-operation-checklist .mi-row:last-child {
+      border-bottom: 0;
     }
 
     #mi-admin .mi-operation-checklist .mi-row span {
@@ -6577,25 +6589,22 @@
     }
 
     @media (min-width: 901px) {
-      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft,
-      #mi-admin .mi-operation-summary-grid > .mi-operation-card.is-soft {
+      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft {
         display: flex;
         flex-direction: column;
       }
 
-      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft .mi-operation-progress,
-      #mi-admin .mi-operation-summary-grid > .mi-operation-card.is-soft .mi-operation-checklist {
+      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft .mi-operation-progress {
         flex: 1;
-      }
-
-      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft .mi-operation-progress,
-      #mi-admin .mi-operation-summary-grid > .mi-operation-card.is-soft .mi-operation-checklist {
         grid-template-rows: repeat(3, minmax(0, 1fr));
       }
 
-      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft .mi-operation-progress-item,
-      #mi-admin .mi-operation-summary-grid > .mi-operation-card.is-soft .mi-operation-checklist .mi-row {
+      #mi-admin .mi-operation-grid > .mi-operation-card.is-soft .mi-operation-progress-item {
         align-content: center;
+      }
+
+      #mi-admin .mi-operation-summary-grid > .mi-operation-card.is-soft {
+        align-self: start;
       }
     }
 
@@ -6627,18 +6636,23 @@
 
       #mi-admin .mi-operation-checklist {
         grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 10px;
+        gap: 0;
       }
 
       #mi-admin .mi-operation-checklist .mi-row {
         grid-template-columns: 1fr;
         align-content: start;
         gap: 6px;
-        min-height: 104px;
-        border: 1px solid rgba(6, 26, 58, 0.08);
-        border-radius: 12px;
-        padding: 16px;
-        background: #fff;
+        min-height: 94px;
+        border: 0;
+        border-right: 1px solid rgba(6, 26, 58, 0.07);
+        border-radius: 0;
+        padding: 15px 16px;
+        background: transparent;
+      }
+
+      #mi-admin .mi-operation-checklist .mi-row:last-child {
+        border-right: 0;
       }
     }
 

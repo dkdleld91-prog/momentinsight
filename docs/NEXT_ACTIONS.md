@@ -11,7 +11,7 @@
 
 ## 현재 작업
 
-- 대행사 연결 화면은 계정 발급·연결 관리만 담당하고, 공개 성과·일정 입력은 `공개 관리`에서 담당하도록 역할을 분리한다. 공개 데이터 저장 훅과 기존 데이터는 유지하고 중복 현황·내부 기술 설명만 제거했다. 새 기준선 `agencyConnectionViewKeepsOnlyAccountManagement`와 `publicDataControlsBelongToPublishView`, 역할 5상태·양 역할 parity·보호 잠금·전체 `check:release`가 통과했다. 다음 액션은 승인된 코드 커밋·Production 배포 후 운영 별칭의 두 화면과 `/health`·`/ready`를 확인하는 것이다.
+- 대행사 연결 화면은 계정 발급·연결 관리만 담당하고, 공개 성과·일정 입력은 `공개 관리`에서 담당하도록 역할을 분리했다. 공개 데이터 저장 훅과 기존 데이터는 유지하고 중복 현황·내부 기술 설명만 제거했다. 새 기준선 `agencyConnectionViewKeepsOnlyAccountManagement`와 `publicDataControlsBelongToPublishView`, 역할 5상태·양 역할 parity·보호 잠금·전체 `check:release`가 로컬·Vercel에서 통과했다. 코드 `72e1576`·Production `dpl_3CwNgQnXgkJMBNS5K9zWLD3hbZWs`, 운영 릴리스 `72e157695c52`·서울 `icn1`·Supabase ready·양 역할 HTML 200과 배포 화면 마커를 확인했으므로 다음 액션은 대표님의 실계정 화면 확인이다.
 
 - 이후 로그인 필수 화면을 수정할 때는 접근 불가능한 링크만 전달하지 않는다. 배포 전에는 실데이터를 쓰지 않는 로그인 없는 격리 목업 또는 역할명이 표시된 직접 확인 가능한 캡처를 제공하고, 사용자 접근 여부를 확인한 뒤 검수 상태를 보고한다. 접근 수단이 없으면 육안 검수 미완료로 남기며 Production 인증 우회나 운영 코드 노출은 하지 않는다.
 

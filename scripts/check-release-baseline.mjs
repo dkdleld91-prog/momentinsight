@@ -232,6 +232,19 @@ const checks = {
     && ownerCreateResponsiveStyle.includes("grid-template-columns: 1fr;")
     && ownerCreateResponsiveStyle.includes("grid-column: auto;")
     && ownerCreateResponsiveStyle.includes("grid-row: auto;"),
+  ownerAgencyConnectionUiIsOwnerOnly: adminSource.includes('root.classList.toggle("is-owner-agency-mode", ownerMode)')
+    && adminSource.includes("mi-owner-account-layout")
+    && adminSource.includes("mi-owner-flow-grid")
+    && adminSource.includes("계정과 연결 관계를 관리합니다.")
+    && adminSource.includes("운영팀 연결은 선택입니다.")
+    && adminSource.includes('data-owner-client-title')
+    && adminSource.includes("mi-owner-security")
+    && adminSource.includes('#mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create]')
+    && adminSource.includes("grid-column: 1 / -1;")
+    && adminSource.includes('ownerMode ? "광고주 생성" : "광고주 바로 생성"')
+    && adminSource.includes('ownerMode ? "6자리 이상 직접 입력" : "광고주 코드 직접 입력"')
+    && !clientSource.includes("is-owner-agency-mode")
+    && !clientSource.includes("mi-owner-flow-grid"),
   ownerClientCodeRecoveryExists: superAdminServer.includes("광고주 코드 재활성화에 실패했습니다.")
     && superAdminServer.includes('action: "client.reactivated_by_owner"')
     && superAdminServer.includes("reactivated: true"),

@@ -5291,6 +5291,280 @@
       font-weight: 950;
     }
 
+    #mi-admin .mi-owner-create-grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-account-layout {
+      grid-template-columns: minmax(0, 1.48fr) minmax(300px, 0.62fr);
+      gap: 18px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-command-card {
+      border-color: rgba(6, 26, 58, 0.14);
+      background: linear-gradient(155deg, #ffffff 0%, #f7faff 100%);
+      box-shadow: 0 18px 48px rgba(6, 26, 58, 0.08);
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-account-card {
+      align-self: start;
+      border-color: rgba(6, 26, 58, 0.12);
+      background: #fff;
+    }
+
+    #mi-admin .mi-owner-flow {
+      display: grid;
+      gap: 14px;
+      overflow: hidden;
+      border-radius: 10px;
+      padding: 17px;
+      color: #fff;
+      background:
+        radial-gradient(circle at 92% 10%, rgba(98, 168, 255, 0.2), transparent 34%),
+        linear-gradient(135deg, #061a3a 0%, #0a2d5d 100%);
+      box-shadow: 0 16px 32px rgba(6, 26, 58, 0.13);
+    }
+
+    #mi-admin .mi-owner-flow-head {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    #mi-admin .mi-owner-flow-head strong {
+      color: #fff;
+      font-size: 15px;
+      font-weight: 950;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-owner-flow-head span {
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 11px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-owner-flow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    #mi-admin .mi-owner-flow-step {
+      display: grid;
+      grid-template-columns: 30px minmax(0, 1fr);
+      align-items: center;
+      gap: 9px;
+      min-height: 66px;
+      border: 1px solid rgba(255, 255, 255, 0.13);
+      border-radius: 8px;
+      padding: 10px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    #mi-admin .mi-owner-flow-step > span {
+      display: inline-flex;
+      width: 30px;
+      height: 30px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      color: #061a3a;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-owner-flow-step div {
+      display: grid;
+      gap: 3px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-owner-flow-step strong {
+      color: #fff;
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-owner-flow-step small {
+      color: rgba(255, 255, 255, 0.62);
+      font-size: 10px;
+      font-weight: 750;
+      line-height: 1.35;
+    }
+
+    #mi-admin .mi-owner-security {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid rgba(23, 125, 88, 0.14);
+      border-radius: 8px;
+      padding: 11px 13px;
+      color: var(--mi-navy);
+      background: rgba(235, 248, 242, 0.64);
+    }
+
+    #mi-admin .mi-owner-security-mark {
+      width: 9px;
+      height: 9px;
+      flex: 0 0 auto;
+      border-radius: 999px;
+      background: var(--mi-green);
+      box-shadow: 0 0 0 5px rgba(23, 125, 88, 0.09);
+    }
+
+    #mi-admin .mi-owner-security-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-owner-security-copy strong {
+      font-size: 12px;
+      font-weight: 950;
+    }
+
+    #mi-admin .mi-owner-security-copy small {
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    #mi-admin .mi-owner-security .mi-status-pill {
+      margin-left: auto;
+      white-space: nowrap;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-create-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      align-items: stretch;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-create-tool {
+      align-content: start;
+      border-color: rgba(6, 26, 58, 0.1);
+      border-radius: 10px;
+      padding: 17px;
+      box-shadow: none;
+    }
+
+    #mi-admin .mi-owner-create-heading {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    #mi-admin .mi-owner-step-badge {
+      display: inline-flex;
+      min-width: 58px;
+      min-height: 26px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 999px;
+      padding: 0 9px;
+      color: #24405f;
+      background: #eaf0f8;
+      font-size: 10px;
+      font-weight: 950;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-owner-create-heading > div {
+      display: grid;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-owner-create-heading p {
+      margin: 0;
+      color: var(--mi-muted);
+      font-size: 11px;
+      font-weight: 750;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-owner-field-label {
+      color: #52627a;
+      font-size: 10px;
+      font-weight: 950;
+      line-height: 1;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        "team-code-label team-name-label"
+        "team-code team-name"
+        "team-action team-action";
+      align-items: center;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-areas:
+        "team-link-label team-link-label"
+        "team-link team-link"
+        "client-code-label client-name-label"
+        "client-code client-name"
+        "client-action client-action";
+      align-items: center;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-team-code-label { grid-area: team-code-label; }
+    #mi-admin.is-owner-agency-mode .mi-owner-team-name-label { grid-area: team-name-label; }
+    #mi-admin.is-owner-agency-mode .mi-owner-team-link-label { grid-area: team-link-label; }
+    #mi-admin.is-owner-agency-mode .mi-owner-client-code-label { grid-area: client-code-label; }
+    #mi-admin.is-owner-agency-mode .mi-owner-client-name-label { grid-area: client-name-label; }
+    #mi-admin.is-owner-agency-mode [data-owner-team-code] { grid-area: team-code; }
+    #mi-admin.is-owner-agency-mode [data-owner-team-name] { grid-area: team-name; }
+    #mi-admin.is-owner-agency-mode [data-team-code-for-client] { grid-area: team-link; }
+    #mi-admin.is-owner-agency-mode [data-team-client-agency-code] { grid-area: client-code; }
+    #mi-admin.is-owner-agency-mode [data-team-client-name] { grid-area: client-name; }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-owner-create-action {
+      grid-column: auto;
+      grid-row: auto;
+      min-height: 44px;
+      margin-top: 2px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-owner-team-create],
+    #mi-admin.is-owner-agency-mode .mi-owner-create-row [data-team-client-create] {
+      grid-column: 1 / -1;
+      grid-row: auto;
+    }
+
+    #mi-admin .mi-owner-card-note {
+      margin-top: auto;
+      border-top: 1px solid rgba(6, 26, 58, 0.08);
+      padding-top: 11px;
+      color: var(--mi-muted);
+      font-size: 10px;
+      font-weight: 750;
+      line-height: 1.45;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-result {
+      min-height: 42px;
+      border-color: rgba(6, 26, 58, 0.09);
+      border-radius: 8px;
+      padding: 11px 13px 11px 36px;
+      color: #52627a;
+      background: #f7f9fc;
+      font-size: 11px;
+    }
+
+    #mi-admin.is-owner-agency-mode .mi-owner-result:before {
+      left: 14px;
+      width: 9px;
+      height: 9px;
+      border: 2px solid #7f8da3;
+      background: transparent;
+    }
+
     #mi-admin .mi-account-list {
       max-height: 520px;
       overflow: auto;
@@ -6657,6 +6931,10 @@
     }
 
     @media (max-width: 1220px) {
+      #mi-admin.is-owner-agency-mode .mi-owner-account-layout {
+        grid-template-columns: 1fr;
+      }
+
       #mi-admin .mi-form-row.mi-form-row-3.mi-owner-create-row {
         grid-template-columns: 1fr;
       }
@@ -6664,6 +6942,11 @@
       #mi-admin .mi-owner-create-row .mi-owner-create-action {
         grid-column: auto;
         grid-row: auto;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row,
+      #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
 
@@ -7026,6 +7309,39 @@
     }
 
     @media (max-width: 520px) {
+      #mi-admin.is-owner-agency-mode .mi-owner-create-grid,
+      #mi-admin .mi-owner-flow-grid {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-owner-flow-head {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-team-card .mi-owner-create-row {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "team-code-label"
+          "team-code"
+          "team-name-label"
+          "team-name"
+          "team-action";
+      }
+
+      #mi-admin.is-owner-agency-mode .mi-owner-client-card .mi-owner-create-row {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "team-link-label"
+          "team-link"
+          "client-code-label"
+          "client-code"
+          "client-name-label"
+          "client-name"
+          "client-action";
+      }
+
       #mi-admin .mi-login,
       #mi-admin .mi-main {
         padding: 14px;
@@ -7544,58 +7860,101 @@
         </section>
 
         <section class="mi-view" data-mi-admin-view="agency-code" id="mi-admin-agency-code">
-          <header class="mi-head">
+          <header class="mi-head mi-agency-code-head">
             <div>
-              <span class="mi-kicker">대행사 코드</span>
-              <h1>대행사 코드를 관리합니다.</h1>
-              <p>공개 데이터를 저장하면 같은 코드의 광고주 화면에 반영됩니다.</p>
+              <span class="mi-kicker" data-agency-code-kicker>대행사 코드</span>
+              <h1 data-agency-code-title>대행사 코드를 관리합니다.</h1>
+              <p data-agency-code-desc>공개 데이터를 저장하면 같은 코드의 광고주 화면에 반영됩니다.</p>
             </div>
-            <span class="mi-badge">연동 관리</span>
+            <span class="mi-badge" data-agency-code-badge>연동 관리</span>
           </header>
 
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
+          <div class="mi-split mi-owner-account-layout">
+            <article class="mi-card mi-card-pad mi-owner-command-card">
               <div class="mi-card-head">
                 <div>
-                  <h2 data-owner-panel-title>운영팀·광고주 코드 바로 생성</h2>
+                  <h2 data-owner-panel-title>운영팀·광고주 코드 생성</h2>
                   <p data-owner-panel-desc>인증된 총관리자만 코드를 만들고 활성 계정 권한을 해제할 수 있습니다.</p>
                 </div>
                 <span class="mi-badge" data-owner-panel-badge>Owner</span>
               </div>
               <div class="mi-owner-tools">
+                <div class="mi-owner-flow" data-owner-only>
+                  <div class="mi-owner-flow-head">
+                    <strong>계정 연결 순서</strong>
+                    <span>운영팀 생성은 필요한 경우에만 진행합니다.</span>
+                  </div>
+                  <div class="mi-owner-flow-grid">
+                    <div class="mi-owner-flow-step">
+                      <span>01</span>
+                      <div><strong>운영팀 생성</strong><small>별도 담당자가 필요할 때</small></div>
+                    </div>
+                    <div class="mi-owner-flow-step">
+                      <span>02</span>
+                      <div><strong>광고주 발급</strong><small>운영팀 연결 또는 총관리자 직속</small></div>
+                    </div>
+                    <div class="mi-owner-flow-step">
+                      <span>03</span>
+                      <div><strong>연결 확인</strong><small>활성 계정에서 최종 상태 확인</small></div>
+                    </div>
+                  </div>
+                </div>
                 <div class="mi-owner-hint" data-owner-mode-hint>
                   <strong>권한 기준</strong>
                   <span>총관리자는 운영팀과 광고주 코드를 관리하고, 운영팀은 연결된 광고주 1개만 생성합니다.</span>
                 </div>
-                <div class="mi-owner-tool" data-owner-only>
-                  <h3>권한 비밀값</h3>
-                  <div class="mi-form-row">
-                    <input class="mi-input" data-owner-secret-code type="password" autocomplete="off" placeholder="권한 비밀값 입력" aria-label="권한 비밀값" />
-                    <input class="mi-input" data-owner-root-code value="서버 보안 세션" readonly aria-label="메인 운영자 보안 상태" />
+                <div class="mi-owner-security" data-owner-only>
+                  <span class="mi-owner-security-mark" aria-hidden="true"></span>
+                  <div class="mi-owner-security-copy">
+                    <strong>총관리자 보안 세션 연결</strong>
+                    <small>계정 발급과 권한 변경 요청은 서버에서 다시 검증합니다.</small>
+                  </div>
+                  <span class="mi-status-pill">보호됨</span>
+                  <input data-owner-secret-code type="hidden" autocomplete="off" />
+                  <input data-owner-root-code type="hidden" value="서버 보안 세션" />
+                </div>
+                <div class="mi-owner-create-grid">
+                  <div class="mi-owner-tool mi-owner-create-tool mi-owner-team-card" data-owner-only>
+                    <div class="mi-owner-create-heading">
+                      <span class="mi-owner-step-badge">선택 01</span>
+                      <div>
+                        <h3>운영팀 생성</h3>
+                        <p>운영 담당자가 별도 계정으로 관리해야 할 때만 생성합니다.</p>
+                      </div>
+                    </div>
+                    <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
+                      <span class="mi-owner-field-label mi-owner-team-code-label" data-owner-only>운영팀 코드</span>
+                      <input class="mi-input" data-owner-team-code placeholder="6자리 이상 직접 입력" aria-label="운영팀 코드" />
+                      <span class="mi-owner-field-label mi-owner-team-name-label" data-owner-only>운영팀명</span>
+                      <input class="mi-input" data-owner-team-name placeholder="예: 모먼트 운영 1팀" aria-label="운영팀명" />
+                      <button class="mi-button mi-owner-create-action" type="button" data-owner-team-create>운영팀 생성</button>
+                    </div>
+                    <p class="mi-owner-card-note">운영팀이 필요 없다면 오른쪽 광고주 카드에서 운영팀 코드를 비워 직접 발급합니다.</p>
+                  </div>
+                  <div class="mi-owner-tool mi-owner-create-tool mi-owner-client-card">
+                    <div class="mi-owner-create-heading">
+                      <span class="mi-owner-step-badge" data-owner-only>필수 02</span>
+                      <div>
+                        <h3 data-owner-client-title>광고주 코드 생성</h3>
+                        <p data-owner-client-desc data-owner-only>운영팀에 연결하거나 총관리자 직속으로 광고주를 발급합니다.</p>
+                      </div>
+                    </div>
+                    <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
+                      <span class="mi-owner-field-label mi-owner-team-link-label" data-owner-only>연결 운영팀 · 선택</span>
+                      <input class="mi-input" data-team-code-for-client placeholder="비우면 총관리자 직속 발급" aria-label="광고주 발급용 운영팀 코드" />
+                      <span class="mi-owner-field-label mi-owner-client-code-label" data-owner-only>광고주 코드</span>
+                      <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 직접 입력" aria-label="광고주 코드" autocomplete="off" autocapitalize="none" spellcheck="false" />
+                      <span class="mi-owner-field-label mi-owner-client-name-label" data-owner-only>광고주명</span>
+                      <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
+                      <button class="mi-button mi-owner-create-action" type="button" data-team-client-create>광고주 바로 생성</button>
+                    </div>
                   </div>
                 </div>
-                <div class="mi-owner-tool mi-owner-create-tool" data-owner-only>
-                  <h3>운영팀 코드 생성</h3>
-                  <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
-                    <input class="mi-input" data-owner-team-code placeholder="운영팀 코드" aria-label="운영팀 코드" />
-                    <input class="mi-input" data-owner-team-name placeholder="운영팀명 선택 입력" aria-label="운영팀명" />
-                    <button class="mi-button mi-owner-create-action" type="button" data-owner-team-create>운영팀 바로 생성</button>
-                  </div>
-                </div>
-                <div class="mi-owner-tool mi-owner-create-tool">
-                  <h3>광고주 코드 생성</h3>
-                  <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
-                    <input class="mi-input" data-team-code-for-client placeholder="선택 연결 운영팀 코드 · 비우면 총관리자 직접 발급" aria-label="광고주 발급용 운영팀 코드" />
-                    <input class="mi-input" data-team-client-agency-code placeholder="광고주 코드 직접 입력" aria-label="광고주 코드" autocomplete="off" autocapitalize="none" spellcheck="false" />
-                    <input class="mi-input" data-team-client-name placeholder="광고주명 선택 입력" aria-label="광고주명" />
-                    <button class="mi-button mi-owner-create-action" type="button" data-team-client-create>광고주 바로 생성</button>
-                  </div>
-                </div>
-                <div class="mi-code-status" data-owner-code-status aria-live="polite">운영팀 코드를 만들고, 그 운영팀 코드로 광고주 코드를 1개 연결합니다.</div>
+                <div class="mi-code-status mi-owner-result" data-owner-code-status aria-live="polite">입력 후 처리 결과가 여기에 표시됩니다.</div>
               </div>
             </article>
 
-            <aside class="mi-card mi-card-pad">
+            <aside class="mi-card mi-card-pad mi-owner-account-card">
               <div class="mi-card-head">
                 <div>
                   <h3 data-owner-list-title>활성 계정</h3>
@@ -9215,31 +9574,58 @@
         var title = root.querySelector("[data-owner-panel-title]");
         var desc = root.querySelector("[data-owner-panel-desc]");
         var badge = root.querySelector("[data-owner-panel-badge]");
+        var agencyKicker = root.querySelector("[data-agency-code-kicker]");
+        var agencyTitle = root.querySelector("[data-agency-code-title]");
+        var agencyDesc = root.querySelector("[data-agency-code-desc]");
+        var agencyBadge = root.querySelector("[data-agency-code-badge]");
         var listTitle = root.querySelector("[data-owner-list-title]");
         var listDesc = root.querySelector("[data-owner-list-desc]");
         var refresh = root.querySelector("[data-owner-code-refresh]");
         var listOpen = root.querySelector("[data-owner-list-open]");
         var teamForClientInput = root.querySelector("[data-team-code-for-client]");
+        var clientCodeInput = root.querySelector("[data-team-client-agency-code]");
+        var clientNameInput = root.querySelector("[data-team-client-name]");
+        var clientTitle = root.querySelector("[data-owner-client-title]");
+        var clientDesc = root.querySelector("[data-owner-client-desc]");
+        var clientCreateButton = root.querySelector("[data-team-client-create]");
         var modeTitle = root.querySelector("[data-admin-mode-title]");
         var modeDesc = root.querySelector("[data-admin-mode-desc]");
         var modeBadge = root.querySelector("[data-admin-mode-badge]");
         var ownerHint = root.querySelector("[data-owner-mode-hint] span");
         var teamHasClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
 
+        root.classList.toggle("is-owner-agency-mode", ownerMode);
         root.querySelectorAll("[data-owner-only]").forEach(function (node) {
           node.style.display = ownerMode ? "" : "none";
           node.setAttribute("aria-hidden", ownerMode ? "false" : "true");
         });
 
-        if (title) title.textContent = ownerMode ? "운영팀·광고주 코드 바로 생성" : "광고주 코드 생성";
+        if (agencyKicker) agencyKicker.textContent = ownerMode ? "총관리자 · 계정 연결" : "대행사 코드";
+        if (agencyTitle) agencyTitle.textContent = ownerMode ? "계정과 연결 관계를 관리합니다." : "대행사 코드를 관리합니다.";
+        if (agencyDesc) {
+          agencyDesc.textContent = ownerMode
+            ? "운영팀 생성부터 광고주 연결과 활성 상태 확인까지 한 화면에서 처리합니다."
+            : "공개 데이터를 저장하면 같은 코드의 광고주 화면에 반영됩니다.";
+        }
+        if (agencyBadge) agencyBadge.textContent = ownerMode ? "Owner 전용" : "연동 관리";
+        if (title) title.textContent = ownerMode ? "계정 발급" : "광고주 코드 생성";
         if (desc) {
           desc.textContent = ownerMode
-            ? "총관리자는 운영팀 코드와 광고주 코드를 직접 만들고 계정별 순위 추적을 관리합니다."
+            ? "필요한 계정만 순서대로 생성하고 연결 상태를 확인합니다."
             : (teamHasClient
               ? "연결된 광고주 1개의 데이터와 순위 추적을 관리합니다."
               : "광고주 연결 전에도 조회 도구와 두 30일 순위 추적을 운영팀 범위에서 사용하고, 필요할 때 광고주 1개를 연결합니다.");
         }
-        if (badge) badge.textContent = ownerMode ? "Owner" : "Operator";
+        if (badge) badge.textContent = ownerMode ? "총관리자 전용" : "Operator";
+        if (clientTitle) clientTitle.textContent = ownerMode ? "광고주 생성·연결" : "광고주 코드 생성";
+        if (clientDesc) {
+          clientDesc.textContent = ownerMode
+            ? "운영팀에 연결하거나 총관리자 직속으로 광고주를 발급합니다."
+            : "";
+        }
+        if (clientCodeInput) clientCodeInput.placeholder = ownerMode ? "6자리 이상 직접 입력" : "광고주 코드 직접 입력";
+        if (clientNameInput) clientNameInput.placeholder = ownerMode ? "예: 모먼트 브랜드" : "광고주명 선택 입력";
+        if (clientCreateButton) clientCreateButton.textContent = ownerMode ? "광고주 생성" : "광고주 바로 생성";
         if (modeTitle) modeTitle.textContent = ownerMode ? "총관리자 모드" : "운영팀 모드";
         if (modeDesc) {
           modeDesc.textContent = ownerMode
@@ -9251,15 +9637,15 @@
         if (modeBadge) modeBadge.textContent = ownerMode ? "Owner" : (teamHasClient ? "Operator" : "Operator · 단독");
         if (ownerHint) {
           ownerHint.textContent = ownerMode
-            ? "총관리자는 운영팀 없이 광고주를 직접 발급할 수 있습니다. 운영팀 코드 칸을 비우면 총관리자 직접 발급으로 저장됩니다."
+            ? "운영팀 연결은 선택입니다. 광고주 발급 시 운영팀 코드 칸을 비우면 총관리자 직속으로 저장됩니다."
             : (teamHasClient
               ? "운영팀은 연결된 광고주 1개의 보고서와 30일 순위 추적을 관리할 수 있습니다."
               : "광고주 연결 전에도 조회 도구와 두 30일 순위 추적을 사용할 수 있으며, 보고서·공개 데이터는 광고주 연결 후 활성화됩니다.");
         }
-        if (listTitle) listTitle.textContent = ownerMode ? "활성 계정" : "연결 상태";
+        if (listTitle) listTitle.textContent = ownerMode ? "연결 현황" : "연결 상태";
         if (listDesc) {
           listDesc.textContent = ownerMode
-            ? "인증된 총관리자 세션에서만 조회와 권한 해제가 가능합니다."
+            ? "운영팀과 광고주 상태를 확인하고 필요할 때 전체 관계를 엽니다."
             : "현재 운영팀에 연결된 광고주 상태입니다.";
         }
         if (refresh) refresh.style.display = ownerMode ? "" : "none";

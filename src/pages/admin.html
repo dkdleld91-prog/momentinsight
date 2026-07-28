@@ -5535,21 +5535,6 @@
       gap: 8px;
     }
 
-    #mi-admin .mi-owner-step-badge {
-      display: inline-flex;
-      min-width: 48px;
-      min-height: 22px;
-      align-items: center;
-      justify-content: center;
-      border-radius: 999px;
-      padding: 0 7px;
-      color: #24405f;
-      background: #eef3f8;
-      font-size: 9px;
-      font-weight: 900;
-      white-space: nowrap;
-    }
-
     #mi-admin .mi-owner-create-heading > div {
       display: grid;
       gap: 2px;
@@ -8078,7 +8063,6 @@
                 <div class="mi-owner-create-grid">
                   <div class="mi-owner-tool mi-owner-create-tool mi-owner-team-card" data-owner-only>
                     <div class="mi-owner-create-heading">
-                      <span class="mi-owner-step-badge">선택 01</span>
                       <div>
                         <h3>운영팀 생성</h3>
                         <p>별도 담당자 계정이 필요할 때만 생성</p>
@@ -8095,7 +8079,6 @@
                   </div>
                   <div class="mi-owner-tool mi-owner-create-tool mi-owner-client-card">
                     <div class="mi-owner-create-heading">
-                      <span class="mi-owner-step-badge" data-owner-only>필수 02</span>
                       <div>
                         <h3 data-owner-client-title>광고주 코드 생성</h3>
                         <p data-owner-client-desc data-owner-only>운영팀 연결 또는 총관리자 직속 발급</p>
@@ -8120,7 +8103,7 @@
               <div class="mi-card-head">
                 <div>
                   <h3 data-owner-list-title>활성 계정</h3>
-                  <p data-owner-list-desc>인증된 총관리자 세션에서만 조회와 권한 해제가 가능합니다.</p>
+                  <p data-owner-list-desc>현재 운영 중인 운영팀과 광고주 수를 확인합니다.</p>
                 </div>
                 <div class="mi-card-actions">
                   <button class="mi-button is-ghost mi-button-small" type="button" data-owner-list-open>전체보기</button>
@@ -8128,8 +8111,8 @@
                 </div>
               </div>
               <div class="mi-table mi-account-list mi-account-summary" data-owner-code-list>
-                <div class="mi-row"><span>현재 운영 상태</span><strong>보안 세션 연결</strong></div>
-                <div class="mi-row"><span>제한</span><strong>광고주 코드당 순위추적 50개</strong></div>
+                <div class="mi-row"><span>운영팀</span><strong>0팀 운영 중</strong></div>
+                <div class="mi-row"><span>광고주</span><strong>0곳 운영 중</strong></div>
               </div>
             </aside>
           </div>
@@ -9886,7 +9869,6 @@
         ownerCodeSnapshot = payload || null;
         var list = root.querySelector("[data-owner-code-list]");
         if (!list) return;
-        var ownerCode = payload && payload.ownerAgencyCode ? payload.ownerAgencyCode : "보안 세션";
         if (payload && payload.ownerAgencyCode) {
           primaryAgencyCode = String(payload.ownerAgencyCode).trim().toLowerCase();
           var publicCodeInput = root.querySelector("[data-admin-code]");
@@ -9908,39 +9890,11 @@
         var activeClients = activeOwnerClients(payload);
         var rows = [];
 
-        rows.push('<div class="mi-row"><span>메인 운영자</span><strong>' + escapeHtml(ownerCode) + '</strong></div>');
         if (payload && payload.schemaPending) {
           rows.push('<div class="mi-row"><span>DB 상태</span><strong>운영팀 마이그레이션 적용 필요</strong></div>');
         }
-        rows.push('<div class="mi-row"><span>운영팀</span><strong>' + activeTeams.length + '개 활성</strong></div>');
-        rows.push('<div class="mi-row"><span>광고주</span><strong>' + activeClients.length + '개 활성</strong></div>');
-        if (!activeTeams.length) {
-          rows.push('<div class="mi-row"><span>1번 운영팀</span><strong>빈칸 · 광고주는 직접 발급 가능</strong></div>');
-        }
-        if (payload && payload.health) {
-          var health = payload.health;
-          rows.push('<div class="mi-row"><span>운영 상태</span><strong>추적 대기 ' +
-            escapeHtml(String((health.dueTrackers && health.dueTrackers.count) || 0)) + '건 · 실패 기록 ' +
-            escapeHtml(String((health.failedTrackers && health.failedTrackers.count) || 0)) + '건</strong></div>');
-          rows.push('<div class="mi-row"><span>보고서/원본</span><strong>공개 보고서 ' +
-            escapeHtml(String((health.publicReports && health.publicReports.count) || 0)) + '건 · 원천 파일 ' +
-            escapeHtml(String((health.sourceFiles && health.sourceFiles.count) || 0)) + '건</strong></div>');
-        }
-
-        activeTeams.slice(0, 2).forEach(function (team, index) {
-          var client = team.client || null;
-          var clientText = client ? ((client.name || client.businessName || "광고주") + " 연결") : "광고주 미연결";
-          rows.push('<div class="mi-row mi-account-row"><div class="mi-row-main"><span>' + (index + 1) + '번 운영팀</span><strong>' +
-            escapeHtml(team.teamName || "운영팀") + ' · ' + escapeHtml(team.teamCode || "-") +
-            '</strong><small>' + escapeHtml(clientText) + '</small></div><div class="mi-row-action"><span class="mi-status-pill">활성</span></div></div>');
-        });
-
-        if (activeTeams.length > 2 || activeClients.length > 0) {
-          rows.push('<div class="mi-row"><span>전체 목록</span><strong>전체보기에서 권한 해제와 연결 상태 확인</strong></div>');
-        }
-
-        rows.push('<div class="mi-row"><span>다음 운영팀 코드</span><strong>' + escapeHtml(payload && payload.nextTeamCode ? payload.nextTeamCode : "조회 후 표시") + '</strong></div>');
-        rows.push('<div class="mi-row"><span>광고주 코드 발급</span><strong>자동 제안 없이 직접 입력</strong></div>');
+        rows.push('<div class="mi-row"><span>운영팀</span><strong>' + activeTeams.length + '팀 운영 중</strong></div>');
+        rows.push('<div class="mi-row"><span>광고주</span><strong>' + activeClients.length + '곳 운영 중</strong></div>');
         list.innerHTML = rows.join("");
         renderOwnerFullAccountView(payload);
         syncOwnerCodeDefaults(payload);

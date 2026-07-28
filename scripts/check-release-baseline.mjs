@@ -57,6 +57,11 @@ const adminSourceUploadSource = functionBody(adminSource, "function handleSource
 const adminLoginHandlerSource = functionBody(adminSource, 'if (loginButton) {\n        loginButton.addEventListener("click"', "async function restoreAdminLogin(");
 const adminAccountRequestSource = functionBody(adminSource, "async function refreshOperationTeamPanel() {", "function reportTypeLabel(");
 const adminAccountActionSource = functionBody(adminSource, 'var ownerCreateButton = root.querySelector("[data-owner-team-create]");', 'var codeSaveButton = root.querySelector("[data-admin-code-save]");');
+const ownerCodeListRenderSource = functionBody(
+  adminSource,
+  "function renderOwnerCodeList(payload) {",
+  "function renderOperationTeamCodePanel(payload) {",
+);
 const clientReportDownloadSource = functionBody(clientSource, "async function openReportFile(", "function renderReports(");
 const adminSourceDownloadSource = functionBody(adminSource, "async function downloadSourceFile() {", "async function uploadSourceFileToServer(");
 const adminPptxDownloadSource = functionBody(adminSource, "async function generateSalesPptxReport(", "var initial = (window.location.hash");
@@ -205,6 +210,17 @@ const checks = {
     && !adminAgencyConnectionViewSource.includes("현재 연결 상태")
     && !adminAgencyConnectionViewSource.includes("권한 관리 구조")
     && !adminAgencyConnectionViewSource.includes("공개/비공개 기준"),
+  ownerAccountOverviewIsAggregateOnly: !adminAgencyConnectionViewSource.includes("mi-owner-step-badge")
+    && !adminAgencyConnectionViewSource.includes("선택 01")
+    && !adminAgencyConnectionViewSource.includes("필수 02")
+    && ownerCodeListRenderSource.includes("'팀 운영 중")
+    && ownerCodeListRenderSource.includes("'곳 운영 중")
+    && !ownerCodeListRenderSource.includes("activeTeams.slice")
+    && !ownerCodeListRenderSource.includes("번 운영팀")
+    && !ownerCodeListRenderSource.includes("보고서/원본")
+    && adminSource.includes("data-owner-list-open")
+    && adminSource.includes("data-owner-revoke-team")
+    && adminSource.includes("data-owner-revoke-client"),
   publicDataControlsBelongToPublishView: adminPublishViewSource.includes("공개 데이터 설정")
     && adminPublishViewSource.includes("data-admin-code")
     && adminPublishViewSource.includes("data-admin-client")

@@ -158,6 +158,28 @@ test("advertiser codes are never suggested or generated from an empty request", 
   assert.match(adminSource, /data-team-client-agency-code[^>]*placeholder="광고주 코드 직접 입력"[^>]*autocomplete="off"/);
 });
 
+test("operation-team codes are never suggested or generated from an empty request", async () => {
+  const serverSource = await readFile(new URL("./super-admin-api.mjs", import.meta.url), "utf8");
+  const adminSource = await readFile(new URL("../../pages/admin.html", import.meta.url), "utf8");
+  const createStart = serverSource.indexOf("async function createTeam(request");
+  const createEnd = serverSource.indexOf("async function revokeClient", createStart);
+  const defaultsStart = adminSource.indexOf("function syncOwnerCodeDefaults");
+  const defaultsEnd = adminSource.indexOf("function activeOwnerClients", defaultsStart);
+
+  for (const index of [createStart, createEnd, defaultsStart, defaultsEnd]) {
+    assert.notEqual(index, -1);
+  }
+
+  const createBlock = serverSource.slice(createStart, createEnd);
+  const defaultsBlock = adminSource.slice(defaultsStart, defaultsEnd);
+
+  assert.match(createBlock, /if \(!teamCode\) return json\([^;]*생성할 운영팀 코드를 직접 입력해주세요\./);
+  assert.doesNotMatch(serverSource, /function nextTeamCode\(/);
+  assert.doesNotMatch(serverSource, /nextTeamCode:/);
+  assert.doesNotMatch(defaultsBlock, /teamCreateInput|nextTeamCode/);
+  assert.match(adminSource, /data-owner-team-code[^>]*placeholder="6자리 이상 직접 입력"[^>]*autocomplete="off"/);
+});
+
 test("admin team requests do not serialize raw team codes", async () => {
   const source = await readFile(new URL("../../pages/admin.html", import.meta.url), "utf8");
   const start = source.indexOf("async function requestTeamCodes");

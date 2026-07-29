@@ -192,15 +192,6 @@ function teamPayload(row) {
   };
 }
 
-function nextTeamCode(rows) {
-  const max = (rows || []).reduce((latest, row) => {
-    const match = String(row.team_code || "").toLowerCase().match(/^mml93-t(\d+)$/);
-    if (!match) return latest;
-    return Math.max(latest, Number(match[1]) || 0);
-  }, 0);
-  return `mml93-t${String(Math.max(1, max + 1)).padStart(2, "0")}`;
-}
-
 function isMissingTeamSchema(error) {
   return /operation_team_codes|issued_by_team_code|disconnected_at|schema cache|does not exist/i.test(error?.message || "");
 }
@@ -350,7 +341,6 @@ async function listClients(request, ctx) {
         schemaPending: true,
         message: "운영팀 코드 DB 마이그레이션 적용 전입니다. 기존 광고주 코드는 조회됩니다.",
         ownerAgencyCode: primaryAgencyCode(),
-        nextTeamCode: "mml93-t01",
         teams: [],
         clients: (clientsResult.data || []).map(clientPayload),
       });
@@ -362,7 +352,6 @@ async function listClients(request, ctx) {
     ok: true,
     schemaPending: Boolean(clientsResult.schemaPending),
     ownerAgencyCode: primaryAgencyCode(),
-    nextTeamCode: nextTeamCode(teamsResult.data || []),
     health: await loadOwnerHealth(ctx),
     teams: (teamsResult.data || []).map((team) => ({
       ...team,
@@ -451,17 +440,8 @@ async function createTeam(request, ctx, body) {
   const teamName = String(body.teamName || body.team_name || body.name || "").trim();
   const teamCode = normalizeAgencyCode(body.teamCode || body.team_code || body.code);
   if (!teamName) return json(request, { ok: false, message: "운영팀명을 입력해주세요." }, 400);
-
-  let code = teamCode;
-  if (!code) {
-    const list = await ctx.supabaseAdmin
-      .from("operation_team_codes")
-      .select("team_code")
-      .eq("owner_agency_code", primaryAgencyCode())
-      .limit(100);
-    if (list.error) return json(request, { ok: false, message: "다음 운영팀 코드 계산에 실패했습니다.", detail: list.error.message }, 500);
-    code = nextTeamCode(list.data || []);
-  }
+  if (!teamCode) return json(request, { ok: false, message: "생성할 운영팀 코드를 직접 입력해주세요." }, 400);
+  const code = teamCode;
 
   const existing = await ctx.supabaseAdmin
     .from("operation_team_codes")

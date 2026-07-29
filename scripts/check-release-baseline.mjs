@@ -258,6 +258,11 @@ const checks = {
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(adminSource)
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
+  ownerTeamCodeManualOnly: adminSource.includes('data-owner-team-code placeholder="6자리 이상 직접 입력" aria-label="운영팀 코드" autocomplete="off"')
+    && !adminSource.includes("teamCreateInput.value = nextTeamCode")
+    && superAdminServer.includes("생성할 운영팀 코드를 직접 입력해주세요.")
+    && !superAdminServer.includes("function nextTeamCode(")
+    && !superAdminServer.includes("nextTeamCode:"),
   teamClientCreateStillExists: adminSource.includes('action: "create-client-for-team"'),
   ownerCreateActionsSharePremiumGrid: (adminSource.match(/class="mi-form-row mi-form-row-3 mi-owner-create-row"/g) || []).length === 2
     && (adminSource.match(/class="mi-button mi-owner-create-action" type="button" data-owner-team-create/g) || []).length === 1

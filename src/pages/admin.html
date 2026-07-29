@@ -8085,7 +8085,7 @@
                     </div>
                     <div class="mi-form-row mi-form-row-3 mi-owner-create-row">
                       <span class="mi-owner-field-label mi-owner-team-code-label" data-owner-only>운영팀 코드</span>
-                      <input class="mi-input" data-owner-team-code placeholder="6자리 이상 직접 입력" aria-label="운영팀 코드" />
+                      <input class="mi-input" data-owner-team-code placeholder="6자리 이상 직접 입력" aria-label="운영팀 코드" autocomplete="off" autocapitalize="none" spellcheck="false" />
                       <span class="mi-owner-field-label mi-owner-team-name-label" data-owner-only>운영팀명</span>
                       <input class="mi-input" data-owner-team-name placeholder="예: 모먼트 운영 1팀" aria-label="운영팀명" />
                       <button class="mi-button mi-owner-create-action" type="button" data-owner-team-create>운영팀 생성</button>
@@ -9778,14 +9778,8 @@
         }
       }
 
-      function syncOwnerCodeDefaults(payload) {
-        var teamCreateInput = root.querySelector("[data-owner-team-code]");
+      function syncOwnerCodeDefaults() {
         var teamForClientInput = root.querySelector("[data-team-code-for-client]");
-        var nextTeamCode = payload && payload.nextTeamCode ? payload.nextTeamCode : "";
-
-        if (teamCreateInput && !String(teamCreateInput.value || "").trim()) {
-          teamCreateInput.value = nextTeamCode;
-        }
         if (teamForClientInput) {
           if (canManageOwnerCodes()) {
             if (String(teamForClientInput.value || "").trim() && !ownerTeamIsActive(teamForClientInput.value)) {

@@ -26,6 +26,9 @@
       --mi-orange: #a75f16;
       --mi-orange-bg: #fff4e6;
       --mi-shadow: 0 16px 38px rgba(6, 26, 58, 0.07);
+      --navy: var(--mi-navy);
+      --muted: var(--mi-muted);
+      --line: var(--mi-line);
       min-height: 100vh;
       color: var(--mi-ink);
       background: var(--mi-bg);
@@ -7858,12 +7861,47 @@
     }
 
     #mi-admin .mi-work-day {
+      position: relative;
       min-height: 118px;
       padding: 10px;
+      overflow: hidden;
       border-right: 1px solid #edf1f6;
       border-bottom: 1px solid #edf1f6;
       background: #fff;
+      cursor: pointer;
       transition: background-color .16s ease, box-shadow .16s ease;
+    }
+
+    #mi-admin .mi-work-day::after {
+      content: "+";
+      position: absolute;
+      right: 9px;
+      bottom: 7px;
+      display: grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border: 1px solid #dce5f0;
+      border-radius: 8px;
+      color: #58708f;
+      background: rgba(255, 255, 255, .9);
+      box-shadow: 0 6px 14px rgba(13, 39, 77, .06);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(3px);
+      transition: opacity .16s ease, transform .16s ease;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-day:hover {
+      background: #f8fbff;
+      box-shadow: inset 0 0 0 1px rgba(22, 79, 150, .12);
+    }
+
+    #mi-admin .mi-work-day:hover::after {
+      opacity: 1;
+      transform: translateY(0);
     }
 
     #mi-admin .mi-work-day:nth-child(7n) {
@@ -7885,6 +7923,8 @@
     }
 
     #mi-admin .mi-work-day-head {
+      position: relative;
+      z-index: 1;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -7909,6 +7949,8 @@
     }
 
     #mi-admin .mi-work-day-items {
+      position: relative;
+      z-index: 1;
       display: grid;
       gap: 5px;
     }
@@ -8078,18 +8120,39 @@
       display: grid;
       place-items: center;
       padding: 20px;
-      background: rgba(8, 20, 42, .46);
-      backdrop-filter: blur(5px);
+      background: rgba(7, 18, 38, .52);
+      backdrop-filter: blur(8px);
     }
 
     #mi-admin .mi-work-dialog {
-      width: min(680px, 100%);
+      width: min(720px, 100%);
       max-height: calc(100vh - 40px);
       overflow: auto;
-      border: 1px solid rgba(255,255,255,.55);
-      border-radius: 22px;
+      border: 1px solid rgba(218, 227, 239, .92);
+      border-radius: 24px;
       background: #fff;
-      box-shadow: 0 32px 90px rgba(6, 19, 42, .28);
+      box-shadow: 0 36px 100px rgba(6, 19, 42, .32);
+      scrollbar-width: thin;
+      scrollbar-color: #cbd6e5 transparent;
+    }
+
+    #mi-admin .mi-work-editor-dialog {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: hidden;
+    }
+
+    #mi-admin .mi-work-editor-dialog > form {
+      display: grid;
+      min-height: 0;
+      grid-template-rows: minmax(0, 1fr) auto;
+      overflow: hidden;
+    }
+
+    #mi-admin .mi-work-editor-dialog .mi-work-form {
+      overflow: auto;
+      scrollbar-width: thin;
+      scrollbar-color: #cbd6e5 transparent;
     }
 
     #mi-admin .mi-work-move-dialog {
@@ -8158,33 +8221,69 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 18px 22px;
+      padding: 17px 22px;
     }
 
     #mi-admin .mi-work-dialog-head {
       border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    }
+
+    #mi-admin .mi-work-dialog-title {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-work-dialog-eyebrow {
+      color: #75839a;
+      font-size: 10px;
+      font-weight: 850;
+      letter-spacing: .08em;
     }
 
     #mi-admin .mi-work-dialog-head h2 {
       margin: 0;
-      font-size: 21px;
+      color: var(--navy);
+      font-size: 22px;
+      letter-spacing: -.025em;
+    }
+
+    #mi-admin .mi-work-dialog-title p {
+      margin: 2px 0 0;
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.45;
+    }
+
+    #mi-admin .mi-work-dialog-head .mi-work-icon-button {
+      flex: 0 0 auto;
+      border-color: #e2e8f1;
+      background: #f8fafc;
+      transition: border-color .16s ease, background .16s ease, transform .16s ease;
+    }
+
+    #mi-admin .mi-work-dialog-head .mi-work-icon-button:hover {
+      border-color: #cbd6e5;
+      background: #fff;
+      transform: translateY(-1px);
     }
 
     #mi-admin .mi-work-form {
       display: grid;
-      gap: 16px;
-      padding: 20px 22px 8px;
+      gap: 14px;
+      padding: 17px 22px 12px;
     }
 
     #mi-admin .mi-work-form-grid {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      gap: 11px 12px;
     }
 
     #mi-admin .mi-work-field {
       display: grid;
-      gap: 7px;
+      gap: 6px;
       min-width: 0;
     }
 
@@ -8194,12 +8293,69 @@
 
     #mi-admin .mi-work-field > span {
       color: #617089;
-      font-size: 11px;
-      font-weight: 800;
+      font-size: 10.5px;
+      font-weight: 850;
+      letter-spacing: .01em;
+    }
+
+    #mi-admin .mi-work-dialog .mi-input,
+    #mi-admin .mi-work-dialog .mi-textarea,
+    #mi-admin .mi-work-dialog .mi-select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid #d9e3ef;
+      border-radius: 12px;
+      color: var(--navy);
+      background-color: #fbfdff;
+      outline: none;
+      box-shadow: 0 1px 0 rgba(13, 39, 77, .02);
+      font-family: inherit;
+      font-size: 13px;
+      transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+
+    #mi-admin .mi-work-dialog .mi-input,
+    #mi-admin .mi-work-dialog .mi-select {
+      min-height: 43px;
+      padding: 0 13px;
+    }
+
+    #mi-admin .mi-work-dialog .mi-select {
+      appearance: none;
+      padding-right: 38px;
+      background-image:
+        linear-gradient(45deg, transparent 50%, #708096 50%),
+        linear-gradient(135deg, #708096 50%, transparent 50%);
+      background-position:
+        calc(100% - 18px) 18px,
+        calc(100% - 13px) 18px;
+      background-repeat: no-repeat;
+      background-size: 5px 5px, 5px 5px;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-work-dialog .mi-textarea {
+      min-height: 80px;
+      padding: 12px 13px;
+      line-height: 1.55;
+    }
+
+    #mi-admin .mi-work-dialog .mi-input:hover,
+    #mi-admin .mi-work-dialog .mi-textarea:hover,
+    #mi-admin .mi-work-dialog .mi-select:hover {
+      border-color: #c4d1e1;
+      background-color: #fff;
+    }
+
+    #mi-admin .mi-work-dialog .mi-input:focus,
+    #mi-admin .mi-work-dialog .mi-textarea:focus,
+    #mi-admin .mi-work-dialog .mi-select:focus {
+      border-color: rgba(15, 54, 105, .52);
+      background-color: #fff;
+      box-shadow: 0 0 0 3px rgba(15, 54, 105, .09);
     }
 
     #mi-admin .mi-work-field textarea {
-      min-height: 84px;
       resize: vertical;
     }
 
@@ -8208,10 +8364,18 @@
       align-items: center;
       justify-content: space-between;
       gap: 14px;
-      padding: 14px 15px;
-      border: 1px solid #dce5f0;
-      border-radius: 15px;
-      background: #f8fbff;
+      padding: 13px 15px;
+      border: 1px solid #d8e3ef;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #f8fbff 0%, #f4f8fd 100%);
+      cursor: pointer;
+      transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+    }
+
+    #mi-admin .mi-work-public-toggle:hover {
+      border-color: #c5d3e3;
+      background: #f7faff;
+      box-shadow: 0 8px 20px rgba(13, 39, 77, .05);
     }
 
     #mi-admin .mi-work-public-toggle strong,
@@ -8230,10 +8394,62 @@
       font-size: 11px;
     }
 
-    #mi-admin .mi-work-public-toggle input {
-      width: 19px;
-      height: 19px;
-      accent-color: #0c7654;
+    #mi-admin .mi-work-switch {
+      position: relative;
+      flex: 0 0 auto;
+      display: inline-flex;
+      width: 44px;
+      height: 25px;
+    }
+
+    #mi-admin .mi-work-switch input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #mi-admin .mi-work-switch i {
+      position: absolute;
+      inset: 0;
+      border: 1px solid #cbd6e4;
+      border-radius: 999px;
+      background: #dfe6ef;
+      transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+    }
+
+    #mi-admin .mi-work-switch i::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 17px;
+      height: 17px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 2px 6px rgba(8, 27, 56, .22);
+      transition: transform .18s ease;
+    }
+
+    #mi-admin .mi-work-switch input:checked + i {
+      border-color: #0c7654;
+      background: #0c7654;
+      box-shadow: 0 0 0 3px rgba(12, 118, 84, .09);
+    }
+
+    #mi-admin .mi-work-switch input:checked + i::after {
+      transform: translateX(19px);
+    }
+
+    #mi-admin .mi-work-switch input:focus-visible + i {
+      outline: 3px solid rgba(15, 54, 105, .14);
+      outline-offset: 2px;
+    }
+
+    #mi-admin .mi-work-switch input:disabled + i {
+      cursor: not-allowed;
+      opacity: .58;
     }
 
     #mi-admin .mi-work-public-fields[hidden] {
@@ -8252,11 +8468,40 @@
 
     #mi-admin .mi-work-dialog-actions {
       border-top: 1px solid var(--line);
+      background: rgba(251, 253, 255, .96);
+      box-shadow: 0 -10px 28px rgba(13, 39, 77, .025);
     }
 
     #mi-admin .mi-work-dialog-actions > div {
       display: flex;
       gap: 8px;
+      margin-left: auto;
+    }
+
+    #mi-admin .mi-work-dialog-actions .mi-link-button {
+      min-height: 42px;
+      padding: 0 17px;
+      border-radius: 11px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-dialog-actions .mi-link-button.is-primary {
+      min-width: 92px;
+      border-color: var(--navy);
+      color: #fff;
+      background: var(--navy);
+      box-shadow: 0 8px 18px rgba(6, 26, 58, .14);
+    }
+
+    #mi-admin .mi-work-dialog-actions .mi-link-button.is-primary:hover {
+      border-color: #123462;
+      background: #123462;
+      transform: translateY(-1px);
+    }
+
+    #mi-admin [data-work-delete][hidden] {
+      display: none !important;
     }
 
     @media (max-width: 1080px) {
@@ -8296,6 +8541,24 @@
 
       #mi-admin .mi-work-form-grid {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-modal {
+        padding: 10px;
+      }
+
+      #mi-admin .mi-work-dialog {
+        max-height: calc(100vh - 20px);
+        border-radius: 20px;
+      }
+
+      #mi-admin .mi-work-dialog-head,
+      #mi-admin .mi-work-dialog-actions {
+        padding: 16px;
+      }
+
+      #mi-admin .mi-work-form {
+        padding: 18px 16px 12px;
       }
 
       #mi-admin .mi-work-move-dates {
@@ -8529,9 +8792,13 @@
           <div class="mi-work-status" data-work-status>업무 일정을 불러올 준비가 되었습니다.</div>
 
           <div class="mi-work-modal" data-work-modal hidden>
-            <div class="mi-work-dialog" role="dialog" aria-modal="true" aria-labelledby="mi-work-dialog-title">
+            <div class="mi-work-dialog mi-work-editor-dialog" role="dialog" aria-modal="true" aria-labelledby="mi-work-dialog-title">
               <div class="mi-work-dialog-head">
-                <div><span class="mi-kicker">Work item</span><h2 id="mi-work-dialog-title" data-work-dialog-title>업무 등록</h2></div>
+                <div class="mi-work-dialog-title">
+                  <span class="mi-work-dialog-eyebrow">WORK SCHEDULE</span>
+                  <h2 id="mi-work-dialog-title" data-work-dialog-title>업무 등록</h2>
+                  <p>필요한 정보만 입력하면 일정과 가까운 업무에 함께 반영됩니다.</p>
+                </div>
                 <button class="mi-work-icon-button" type="button" data-work-close aria-label="닫기">×</button>
               </div>
               <form data-work-form>
@@ -8577,7 +8844,7 @@
 
                   <label class="mi-work-public-toggle">
                     <span><strong>광고주에게 일정 공개</strong><small data-work-public-hint>체크한 일정만 광고주 화면에 표시합니다.</small></span>
-                    <input type="checkbox" data-work-public />
+                    <span class="mi-work-switch"><input type="checkbox" data-work-public /><i aria-hidden="true"></i></span>
                   </label>
 
                   <div class="mi-work-public-fields" data-work-public-fields hidden>
@@ -8586,7 +8853,7 @@
                   </div>
                 </div>
                 <div class="mi-work-dialog-actions">
-                  <button class="mi-link-button" type="button" data-work-delete hidden>삭제</button>
+                  <button class="mi-link-button is-danger" type="button" data-work-delete hidden>삭제</button>
                   <div>
                     <button class="mi-link-button" type="button" data-work-close>취소</button>
                     <button class="mi-link-button is-primary" type="submit" data-work-save>저장</button>
@@ -10439,7 +10706,7 @@
           var dayItems = workItems.filter(function (item) { return workDateKey(item.startsAt) === key; })
             .sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
           html.push('<div class="mi-work-day' + (inMonth ? "" : " is-muted") + (key === today ? " is-today" : "") +
-            '" data-work-drop-date="' + key + '">' +
+            '" data-work-drop-date="' + key + '" data-work-cell-date="' + key + '">' +
             '<div class="mi-work-day-head"><button type="button" data-work-date="' + key + '" aria-label="' + key + ' 업무 등록">' +
             date.getDate() + '</button>' + (dayItems.length ? '<span class="mi-work-visibility">' + dayItems.length + '</span>' : "") + '</div>' +
             '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
@@ -10761,6 +11028,12 @@
           if (Date.now() < workIgnoreClickUntil) return;
           var item = workItems.find(function (candidate) { return candidate.id === edit.getAttribute("data-work-edit"); });
           if (item) openWorkDialog(item, "");
+          return;
+        }
+        var dateCell = event.target.closest("[data-work-cell-date]");
+        if (dateCell) {
+          if (Date.now() < workIgnoreClickUntil) return;
+          openWorkDialog(null, dateCell.getAttribute("data-work-cell-date"));
           return;
         }
         var close = event.target.closest("[data-work-close]");

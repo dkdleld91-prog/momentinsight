@@ -1103,6 +1103,11 @@ const checks = {
     && adminSource.includes("일정 변경을 저장하지 못해 원래 날짜로 되돌렸습니다.")
     && adminSource.includes("event.pointerType === \"mouse\"")
     && adminSource.includes("320);"),
+  workOperationCalendarCellCreatesAndDialogIsPremium: adminSource.includes('data-work-cell-date="')
+    && adminSource.includes('event.target.closest("[data-work-cell-date]")')
+    && adminSource.includes("mi-work-dialog-eyebrow")
+    && adminSource.includes("mi-work-switch")
+    && adminSource.includes("필요한 정보만 입력하면 일정과 가까운 업무에 함께 반영됩니다."),
   workOperationViewIsStrictlyScoped: adminSource.includes("#mi-admin .mi-view:not(.is-active)")
     && adminSource.includes("display: none !important;")
     && adminSource.includes("#mi-admin .mi-work-shell.is-active")

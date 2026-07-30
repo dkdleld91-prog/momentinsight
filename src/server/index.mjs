@@ -23,6 +23,7 @@ const handlerLoaders = {
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
   naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
   reportCenter: () => import("./handlers/report-center.mjs"),
+  workItems: () => import("./handlers/work-items.mjs"),
   superAdminApi: () => import("./handlers/super-admin-api.mjs"),
 };
 
@@ -135,6 +136,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/report-center") {
       return dispatch("reportCenter", request);
+    }
+
+    if (url.pathname === "/api/work-items") {
+      return dispatch("workItems", request);
     }
 
     if (url.pathname === "/api/integration-status") {

@@ -138,6 +138,9 @@ const superAdminServer = read("src/server/handlers/super-admin-api.mjs");
 const ownerToolServer = read("src/server/handlers/owner-tool-api.mjs");
 const adminApiServer = read("src/server/handlers/admin-api.mjs");
 const reportCenterServer = read("src/server/handlers/report-center.mjs");
+const workItemsServer = read("src/server/handlers/work-items.mjs");
+const workItemsTests = read("src/server/handlers/work-items.test.mjs");
+const workItemsMigration = read("supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
 const keywordServer = read("src/server/handlers/naver-keyword.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
@@ -181,11 +184,12 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 13,
-  adminMenuHasCore: ["home", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 14,
+  adminMenuHasCore: ["home", "work", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-admin-screen="home">운영 홈</a>',
+    'data-mi-admin-screen="work">업무 운영</a>',
     'data-mi-admin-screen="client-preview">광고주 미리보기</a>',
     'data-mi-admin-screen="agency-code">대행사 연결</a>',
     'data-mi-admin-screen="excel">운영 입력</a>',
@@ -1058,6 +1062,28 @@ const checks = {
     && reportCenterServer.includes("x-mi-agency-code")
     && reportCenterServer.includes("x-mi-team-code")
     && reportCenterServer.includes("x-mi-super-admin-code"),
+  workOperationEndpointReady: serverIndex.includes('url.pathname === "/api/work-items"')
+    && serverIndex.includes('workItems: () => import("./handlers/work-items.mjs")')
+    && serverIndex.includes('dispatch("workItems", request)')
+    && workItemsServer.includes('withSupabase({ auth: "none" }')
+    && workItemsServer.includes('request.headers.get("x-mi-session-role")')
+    && workItemsServer.includes("roleCanMutateWorkItems")
+    && workItemsServer.includes("clientWorkItemPayload"),
+  workOperationIsPrivateByDefault: workItemsMigration.includes("alter column visibility set default 'internal'")
+    && workItemsMigration.includes("operation_team_id uuid references public.operation_team_codes")
+    && workItemsMigration.includes("idx_schedule_items_operation_team_start")
+    && workItemsServer.includes("requestedVisible ? VISIBLE : INTERNAL")
+    && workItemsServer.includes("광고주 연결 후 공개할 수 있습니다.")
+    && workItemsTests.includes("account-only team cannot publish a work item")
+    && workItemsTests.includes("client payload excludes internal and tenant fields"),
+  workOperationRoleUiReady: adminSource.includes('data-mi-admin-screen="work">업무 운영</a>')
+    && adminSource.includes('data-mi-admin-view="work"')
+    && adminSource.includes("광고주에게 일정 공개")
+    && adminSource.includes("내부 메모 · 광고주 비공개")
+    && adminSource.includes("loadWorkItems")
+    && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")
+    && clientSource.includes("loadClientWorkItems")
+    && clientSource.includes("내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다."),
   reportCenterScopesByCode: reportCenterServer.includes("findActiveClientByAgencyCode")
     && reportCenterServer.includes("findActiveClientByTeamCode")
     && reportCenterServer.includes(".eq(\"owner_agency_code\", primaryAgencyCode())")

@@ -20,6 +20,7 @@ const ENV = {
 };
 
 const CORE_FEATURE_PATHS = [
+  "/api/work-items",
   "/api/naver-keyword",
   "/api/naver-product-seo-audit",
   "/api/naver-shopping-rank",

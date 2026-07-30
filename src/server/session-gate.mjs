@@ -33,6 +33,7 @@ const TEAM_ACCOUNT_ONLY_RANK_PATHS = new Set([
   "/api/naver-place-rank-trackers",
 ]);
 const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
+  "/api/work-items",
   "/api/naver-keyword",
   "/api/naver-product-seo-audit",
   "/api/naver-shopping-rank",

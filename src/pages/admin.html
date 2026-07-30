@@ -7714,6 +7714,502 @@
         display: none;
       }
     }
+    #mi-admin .mi-work-shell {
+      display: grid;
+      gap: 18px;
+    }
+
+    #mi-admin .mi-work-head {
+      align-items: end;
+    }
+
+    #mi-admin .mi-work-head-actions {
+      display: flex;
+      align-items: end;
+      justify-content: flex-end;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-work-owner-scope {
+      display: grid;
+      gap: 6px;
+      min-width: 240px;
+    }
+
+    #mi-admin .mi-work-owner-scope span {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-work-summary article {
+      min-height: 104px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(14, 32, 66, .045);
+    }
+
+    #mi-admin .mi-work-summary span,
+    #mi-admin .mi-work-summary small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    #mi-admin .mi-work-summary strong {
+      display: block;
+      margin: 9px 0 5px;
+      color: var(--navy);
+      font-size: 26px;
+      line-height: 1;
+    }
+
+    #mi-admin .mi-work-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(300px, .72fr);
+      gap: 16px;
+      align-items: stretch;
+    }
+
+    #mi-admin .mi-work-calendar-card,
+    #mi-admin .mi-work-agenda-card {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: #fff;
+      box-shadow: 0 14px 38px rgba(14, 32, 66, .05);
+    }
+
+    #mi-admin .mi-work-calendar-card {
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    #mi-admin .mi-work-calendar-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #mi-admin .mi-work-month-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-work-month-nav strong {
+      min-width: 110px;
+      color: var(--navy);
+      font-size: 18px;
+      text-align: center;
+    }
+
+    #mi-admin .mi-work-icon-button {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--navy);
+      cursor: pointer;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-weekdays,
+    #mi-admin .mi-work-calendar {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(84px, 1fr));
+    }
+
+    #mi-admin .mi-work-weekdays {
+      background: #f8fafc;
+      border-bottom: 1px solid var(--line);
+    }
+
+    #mi-admin .mi-work-weekdays span {
+      padding: 11px 8px;
+      color: #8792a7;
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+    }
+
+    #mi-admin .mi-work-day {
+      min-height: 118px;
+      padding: 10px;
+      border-right: 1px solid #edf1f6;
+      border-bottom: 1px solid #edf1f6;
+      background: #fff;
+    }
+
+    #mi-admin .mi-work-day:nth-child(7n) {
+      border-right: 0;
+    }
+
+    #mi-admin .mi-work-day.is-muted {
+      background: #fbfcfe;
+    }
+
+    #mi-admin .mi-work-day.is-today {
+      background: #f7fbff;
+      box-shadow: inset 0 0 0 1px rgba(22, 79, 150, .18);
+    }
+
+    #mi-admin .mi-work-day-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+    }
+
+    #mi-admin .mi-work-day-head button {
+      border: 0;
+      background: transparent;
+      color: #4e5c72;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-day.is-today .mi-work-day-head button {
+      width: 26px;
+      height: 26px;
+      border-radius: 9px;
+      background: var(--navy);
+      color: #fff;
+    }
+
+    #mi-admin .mi-work-day-items {
+      display: grid;
+      gap: 5px;
+    }
+
+    #mi-admin .mi-work-day-item {
+      width: 100%;
+      padding: 6px 8px;
+      overflow: hidden;
+      border: 1px solid #dce5f0;
+      border-radius: 9px;
+      background: #f7faff;
+      color: #223553;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 750;
+      line-height: 1.25;
+      text-align: left;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-day-item[data-status="done"] {
+      border-color: #d7eadf;
+      background: #f3faf6;
+      color: #357052;
+    }
+
+    #mi-admin .mi-work-day-item[data-public="true"]::before {
+      content: "";
+      display: inline-block;
+      width: 5px;
+      height: 5px;
+      margin-right: 5px;
+      border-radius: 50%;
+      background: #16a36a;
+      vertical-align: 1px;
+    }
+
+    #mi-admin .mi-work-agenda-card {
+      padding: 20px;
+    }
+
+    #mi-admin .mi-work-agenda-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    #mi-admin .mi-work-agenda-head h2 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    #mi-admin .mi-work-agenda {
+      display: grid;
+      gap: 18px;
+    }
+
+    #mi-admin .mi-work-agenda-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-work-agenda-group > strong {
+      color: #8a95a8;
+      font-size: 11px;
+      letter-spacing: .05em;
+      text-transform: uppercase;
+    }
+
+    #mi-admin .mi-work-agenda-empty {
+      padding: 13px 14px;
+      border: 1px dashed #dbe3ee;
+      border-radius: 13px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-work-agenda-item {
+      display: grid;
+      grid-template-columns: 9px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+      padding: 12px;
+      border: 1px solid #e3e9f2;
+      border-radius: 14px;
+      background: #fbfcfe;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-work-agenda-item > i {
+      width: 7px;
+      height: 7px;
+      margin-top: 5px;
+      border-radius: 50%;
+      background: #7183a0;
+    }
+
+    #mi-admin .mi-work-agenda-item[data-priority="high"] > i {
+      background: #d9685e;
+    }
+
+    #mi-admin .mi-work-agenda-item strong,
+    #mi-admin .mi-work-agenda-item span {
+      display: block;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-work-agenda-item strong {
+      overflow: hidden;
+      color: var(--navy);
+      font-size: 13px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-agenda-item span {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-work-visibility {
+      padding: 4px 7px;
+      border-radius: 999px;
+      background: #eef2f7;
+      color: #6b7890;
+      font-size: 9px;
+      font-style: normal;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-visibility.is-public {
+      background: #e9f7ef;
+      color: #24754f;
+    }
+
+    #mi-admin .mi-work-status {
+      min-height: 22px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-work-modal[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-modal {
+      position: fixed;
+      z-index: 110;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+      background: rgba(8, 20, 42, .46);
+      backdrop-filter: blur(5px);
+    }
+
+    #mi-admin .mi-work-dialog {
+      width: min(680px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      border: 1px solid rgba(255,255,255,.55);
+      border-radius: 22px;
+      background: #fff;
+      box-shadow: 0 32px 90px rgba(6, 19, 42, .28);
+    }
+
+    #mi-admin .mi-work-dialog-head,
+    #mi-admin .mi-work-dialog-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 18px 22px;
+    }
+
+    #mi-admin .mi-work-dialog-head {
+      border-bottom: 1px solid var(--line);
+    }
+
+    #mi-admin .mi-work-dialog-head h2 {
+      margin: 0;
+      font-size: 21px;
+    }
+
+    #mi-admin .mi-work-form {
+      display: grid;
+      gap: 16px;
+      padding: 20px 22px 8px;
+    }
+
+    #mi-admin .mi-work-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-work-field {
+      display: grid;
+      gap: 7px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-work-field.is-full {
+      grid-column: 1 / -1;
+    }
+
+    #mi-admin .mi-work-field > span {
+      color: #617089;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-field textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+
+    #mi-admin .mi-work-public-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 15px;
+      border: 1px solid #dce5f0;
+      border-radius: 15px;
+      background: #f8fbff;
+    }
+
+    #mi-admin .mi-work-public-toggle strong,
+    #mi-admin .mi-work-public-toggle small {
+      display: block;
+    }
+
+    #mi-admin .mi-work-public-toggle strong {
+      color: var(--navy);
+      font-size: 13px;
+    }
+
+    #mi-admin .mi-work-public-toggle small {
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-work-public-toggle input {
+      width: 19px;
+      height: 19px;
+      accent-color: #0c7654;
+    }
+
+    #mi-admin .mi-work-public-fields[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-public-fields {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      padding: 15px;
+      border: 1px solid #d8e9df;
+      border-radius: 15px;
+      background: #f6fbf8;
+    }
+
+    #mi-admin .mi-work-dialog-actions {
+      border-top: 1px solid var(--line);
+    }
+
+    #mi-admin .mi-work-dialog-actions > div {
+      display: flex;
+      gap: 8px;
+    }
+
+    @media (max-width: 1080px) {
+      #mi-admin .mi-work-layout {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-agenda {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      #mi-admin .mi-work-head-actions,
+      #mi-admin .mi-work-head-actions .mi-link-button,
+      #mi-admin .mi-work-owner-scope {
+        width: 100%;
+      }
+
+      #mi-admin .mi-work-summary {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-calendar-card {
+        overflow-x: auto;
+      }
+
+      #mi-admin .mi-work-calendar-head,
+      #mi-admin .mi-work-weekdays,
+      #mi-admin .mi-work-calendar {
+        min-width: 700px;
+      }
+
+      #mi-admin .mi-work-agenda {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -7763,6 +8259,7 @@
         <div class="mi-nav-group">
           <p class="mi-nav-title">운영</p>
           <a class="is-active" href="#mi-admin-home" data-mi-admin-screen="home">운영 홈</a>
+          <a href="#mi-admin-work" data-mi-admin-screen="work">업무 운영</a>
           <a href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">광고주 미리보기</a>
           <a href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">대행사 연결</a>
           <a href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력</a>
@@ -7880,6 +8377,125 @@
               <a class="mi-link-button" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">미리보기</a>
             </div>
           </aside>
+        </section>
+
+        <section class="mi-view mi-work-shell" data-mi-admin-view="work" id="mi-admin-work">
+          <header class="mi-head mi-work-head">
+            <div>
+              <span class="mi-kicker">업무 운영</span>
+              <h1>일정과 실행 업무를 한곳에서 관리합니다.</h1>
+              <p>내부 업무가 기본이며, 선택한 일정만 광고주에게 공개됩니다.</p>
+            </div>
+            <div class="mi-work-head-actions">
+              <label class="mi-work-owner-scope" data-work-owner-scope hidden>
+                <span>광고주 범위 · 비우면 총관리자 내부 업무</span>
+                <input class="mi-input" data-work-owner-client-code list="mi-work-owner-clients" placeholder="광고주 코드 입력" autocomplete="off" />
+                <datalist id="mi-work-owner-clients" data-work-owner-client-options></datalist>
+              </label>
+              <button class="mi-link-button" type="button" data-work-today>오늘</button>
+              <button class="mi-link-button is-primary" type="button" data-work-create>업무 등록</button>
+            </div>
+          </header>
+
+          <div class="mi-work-summary" aria-label="업무 현황 요약">
+            <article><span>오늘 업무</span><strong data-work-summary-today>0</strong><small>오늘 시작하는 업무</small></article>
+            <article><span>진행 중</span><strong data-work-summary-progress>0</strong><small>완료 전 실행 업무</small></article>
+            <article><span>광고주 공개</span><strong data-work-summary-public>0</strong><small>선택 공개된 일정</small></article>
+          </div>
+
+          <div class="mi-work-layout">
+            <article class="mi-work-calendar-card">
+              <div class="mi-work-calendar-head">
+                <div class="mi-work-month-nav">
+                  <button class="mi-work-icon-button" type="button" data-work-month-prev aria-label="이전 달">‹</button>
+                  <strong data-work-month-label>이번 달</strong>
+                  <button class="mi-work-icon-button" type="button" data-work-month-next aria-label="다음 달">›</button>
+                </div>
+                <span class="mi-badge">월간 캘린더</span>
+              </div>
+              <div class="mi-work-weekdays" aria-hidden="true">
+                <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
+              </div>
+              <div class="mi-work-calendar" data-work-calendar aria-label="월간 업무 일정"></div>
+            </article>
+
+            <aside class="mi-work-agenda-card">
+              <div class="mi-work-agenda-head">
+                <div><span class="mi-kicker">Agenda</span><h2>가까운 업무</h2></div>
+                <span class="mi-badge" data-work-count>0개</span>
+              </div>
+              <div class="mi-work-agenda" data-work-agenda></div>
+            </aside>
+          </div>
+          <div class="mi-work-status" data-work-status>업무 일정을 불러올 준비가 되었습니다.</div>
+
+          <div class="mi-work-modal" data-work-modal hidden>
+            <div class="mi-work-dialog" role="dialog" aria-modal="true" aria-labelledby="mi-work-dialog-title">
+              <div class="mi-work-dialog-head">
+                <div><span class="mi-kicker">Work item</span><h2 id="mi-work-dialog-title" data-work-dialog-title>업무 등록</h2></div>
+                <button class="mi-work-icon-button" type="button" data-work-close aria-label="닫기">×</button>
+              </div>
+              <form data-work-form>
+                <div class="mi-work-form">
+                  <input type="hidden" data-work-id />
+                  <div class="mi-work-form-grid">
+                    <label class="mi-work-field is-full"><span>업무 제목</span><input class="mi-input" data-work-title maxlength="120" required placeholder="예: 7월 월간 보고서 최종 검수" /></label>
+                    <label class="mi-work-field"><span>업무 유형</span>
+                      <select class="mi-select" data-work-type required>
+                        <option value="ad_setup">광고 세팅</option>
+                        <option value="content_upload">콘텐츠 업로드</option>
+                        <option value="distribution">배포</option>
+                        <option value="review">리뷰 작업</option>
+                        <option value="shooting">촬영</option>
+                        <option value="promotion">프로모션</option>
+                        <option value="report_due">보고서</option>
+                        <option value="meeting">미팅</option>
+                        <option value="creative">소재 제작</option>
+                        <option value="keyword">키워드 작업</option>
+                      </select>
+                    </label>
+                    <label class="mi-work-field"><span>상태</span>
+                      <select class="mi-select" data-work-state required>
+                        <option value="planned">예정</option>
+                        <option value="in_progress">진행 중</option>
+                        <option value="done">완료</option>
+                        <option value="paused">보류</option>
+                        <option value="needs_check">확인 필요</option>
+                      </select>
+                    </label>
+                    <label class="mi-work-field"><span>시작</span><input class="mi-input" type="datetime-local" data-work-start required /></label>
+                    <label class="mi-work-field"><span>종료</span><input class="mi-input" type="datetime-local" data-work-end /></label>
+                    <label class="mi-work-field"><span>담당자</span><input class="mi-input" data-work-assignee maxlength="60" placeholder="담당자명" /></label>
+                    <label class="mi-work-field"><span>우선순위</span>
+                      <select class="mi-select" data-work-priority>
+                        <option value="high">높음</option>
+                        <option value="medium" selected>보통</option>
+                        <option value="low">낮음</option>
+                      </select>
+                    </label>
+                    <label class="mi-work-field is-full"><span>내부 메모 · 광고주 비공개</span><textarea class="mi-textarea" data-work-internal maxlength="4000" placeholder="운영팀만 확인할 실행 기준과 메모"></textarea></label>
+                  </div>
+
+                  <label class="mi-work-public-toggle">
+                    <span><strong>광고주에게 일정 공개</strong><small data-work-public-hint>체크한 일정만 광고주 화면에 표시합니다.</small></span>
+                    <input type="checkbox" data-work-public />
+                  </label>
+
+                  <div class="mi-work-public-fields" data-work-public-fields hidden>
+                    <label class="mi-work-field"><span>광고주 공개 제목</span><input class="mi-input" data-work-public-title maxlength="120" placeholder="광고주에게 보일 제목" /></label>
+                    <label class="mi-work-field"><span>광고주 공개 안내</span><textarea class="mi-textarea" data-work-public-comment maxlength="1000" placeholder="광고주가 알아야 할 내용만 간단히 작성"></textarea></label>
+                  </div>
+                </div>
+                <div class="mi-work-dialog-actions">
+                  <button class="mi-link-button" type="button" data-work-delete hidden>삭제</button>
+                  <div>
+                    <button class="mi-link-button" type="button" data-work-close>취소</button>
+                    <button class="mi-link-button is-primary" type="submit" data-work-save>저장</button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
         </section>
 
         <section class="mi-view" data-mi-admin-view="client-preview" id="mi-admin-client-preview">
@@ -9403,6 +10019,424 @@
         if (!response.ok && payload.ok !== false) payload.ok = false;
         return payload;
       }
+
+      var workItems = [];
+      var workCanPublish = false;
+      var workRequestGeneration = 0;
+      var workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+      function getWorkItemsApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/work-items";
+        return "http://127.0.0.1:8790/api/work-items";
+      }
+
+      function workOwnerTargetCode() {
+        if (secureSession.role !== "owner") return "";
+        var input = root.querySelector("[data-work-owner-client-code]");
+        return normalizeStorageCode(input ? input.value : "");
+      }
+
+      function workRequestHeaders(contentType) {
+        var headers = new Headers();
+        if (contentType) headers.set("content-type", contentType);
+        var targetCode = workOwnerTargetCode();
+        if (secureSession.role === "owner" && targetCode) headers.set("x-mi-agency-code", targetCode);
+        return headers;
+      }
+
+      function setWorkStatus(message, state) {
+        var node = root.querySelector("[data-work-status]");
+        if (!node) return;
+        node.textContent = message || "";
+        node.classList.toggle("is-ok", state === "ok");
+        node.classList.toggle("is-warn", state === "warn");
+      }
+
+      function workStatusLabel(value) {
+        return {
+          planned: "예정",
+          in_progress: "진행 중",
+          done: "완료",
+          paused: "보류",
+          needs_check: "확인 필요"
+        }[value] || "예정";
+      }
+
+      function workTypeLabel(value) {
+        return {
+          ad_setup: "광고 세팅",
+          content_upload: "콘텐츠 업로드",
+          distribution: "배포",
+          review: "리뷰 작업",
+          shooting: "촬영",
+          promotion: "프로모션",
+          report_due: "보고서",
+          meeting: "미팅",
+          creative: "소재 제작",
+          keyword: "키워드 작업"
+        }[value] || "업무";
+      }
+
+      function workDateKey(value) {
+        var date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        return [
+          date.getFullYear(),
+          String(date.getMonth() + 1).padStart(2, "0"),
+          String(date.getDate()).padStart(2, "0")
+        ].join("-");
+      }
+
+      function workDateFromKey(key) {
+        var parts = String(key || "").split("-").map(Number);
+        return new Date(parts[0], (parts[1] || 1) - 1, parts[2] || 1);
+      }
+
+      function workLocalInput(value) {
+        var date = value ? new Date(value) : new Date();
+        if (Number.isNaN(date.getTime())) date = new Date();
+        var pad = function (number) { return String(number).padStart(2, "0"); };
+        return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate()) +
+          "T" + pad(date.getHours()) + ":" + pad(date.getMinutes());
+      }
+
+      function workTimeLabel(value) {
+        var date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        return new Intl.DateTimeFormat("ko-KR", {
+          month: "numeric",
+          day: "numeric",
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(date);
+      }
+
+      function syncWorkOwnerScope() {
+        var wrap = root.querySelector("[data-work-owner-scope]");
+        if (wrap) wrap.hidden = secureSession.role !== "owner";
+        var options = root.querySelector("[data-work-owner-client-options]");
+        if (!options) return;
+        var clients = ownerCodeSnapshot && Array.isArray(ownerCodeSnapshot.clients) ? ownerCodeSnapshot.clients : [];
+        options.innerHTML = clients.map(function (client) {
+          var code = normalizeStorageCode(client && (client.agencyCode || client.agency_code));
+          var name = String(client && (client.name || client.businessName || client.business_name) || "광고주");
+          return code ? '<option value="' + escapeHtml(code) + '">' + escapeHtml(name) + '</option>' : "";
+        }).join("");
+      }
+
+      function resetWorkOperation() {
+        workRequestGeneration += 1;
+        workItems = [];
+        workCanPublish = false;
+        workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        var ownerInput = root.querySelector("[data-work-owner-client-code]");
+        if (ownerInput) ownerInput.value = "";
+        closeWorkDialog();
+        syncWorkOwnerScope();
+        renderWorkOperation();
+        setWorkStatus("업무 일정을 불러올 준비가 되었습니다.", "");
+      }
+
+      function renderWorkSummary() {
+        var today = workDateKey(new Date());
+        var todayCount = workItems.filter(function (item) { return workDateKey(item.startsAt) === today; }).length;
+        var progressCount = workItems.filter(function (item) {
+          return item.status === "planned" || item.status === "in_progress" || item.status === "needs_check";
+        }).length;
+        var publicCount = workItems.filter(function (item) { return item.visibility === "client_visible"; }).length;
+        var todayNode = root.querySelector("[data-work-summary-today]");
+        var progressNode = root.querySelector("[data-work-summary-progress]");
+        var publicNode = root.querySelector("[data-work-summary-public]");
+        if (todayNode) todayNode.textContent = String(todayCount);
+        if (progressNode) progressNode.textContent = String(progressCount);
+        if (publicNode) publicNode.textContent = String(publicCount);
+      }
+
+      function renderWorkCalendar() {
+        var calendar = root.querySelector("[data-work-calendar]");
+        var label = root.querySelector("[data-work-month-label]");
+        if (!calendar) return;
+        if (label) label.textContent = workMonthCursor.getFullYear() + "년 " + (workMonthCursor.getMonth() + 1) + "월";
+        var gridStart = new Date(workMonthCursor.getFullYear(), workMonthCursor.getMonth(), 1 - workMonthCursor.getDay());
+        var today = workDateKey(new Date());
+        var html = [];
+        for (var index = 0; index < 42; index += 1) {
+          var date = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + index);
+          var key = workDateKey(date);
+          var inMonth = date.getMonth() === workMonthCursor.getMonth();
+          var dayItems = workItems.filter(function (item) { return workDateKey(item.startsAt) === key; })
+            .sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
+          html.push('<div class="mi-work-day' + (inMonth ? "" : " is-muted") + (key === today ? " is-today" : "") + '">' +
+            '<div class="mi-work-day-head"><button type="button" data-work-date="' + key + '" aria-label="' + key + ' 업무 등록">' +
+            date.getDate() + '</button>' + (dayItems.length ? '<span class="mi-work-visibility">' + dayItems.length + '</span>' : "") + '</div>' +
+            '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
+              return '<button type="button" class="mi-work-day-item" data-work-edit="' + escapeHtml(item.id) +
+                '" data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") + '">' +
+                escapeHtml(item.title) + '</button>';
+            }).join("") + (dayItems.length > 3 ? '<span class="mi-work-visibility">+' + (dayItems.length - 3) + '</span>' : "") +
+            '</div></div>');
+        }
+        calendar.innerHTML = html.join("");
+      }
+
+      function renderWorkAgendaGroup(title, items) {
+        var content = items.length ? items.map(function (item) {
+          return '<button type="button" class="mi-work-agenda-item" data-work-edit="' + escapeHtml(item.id) +
+            '" data-priority="' + escapeHtml(item.priority || "medium") + '"><i aria-hidden="true"></i><span><strong>' +
+            escapeHtml(item.title) + '</strong><span>' + escapeHtml(workTimeLabel(item.startsAt)) + ' · ' +
+            escapeHtml(workStatusLabel(item.status)) + '</span></span><em class="mi-work-visibility' +
+            (item.visibility === "client_visible" ? " is-public" : "") + '">' +
+            (item.visibility === "client_visible" ? "광고주 공개" : "내부") + '</em></button>';
+        }).join("") : '<div class="mi-work-agenda-empty">등록된 업무가 없습니다.</div>';
+        return '<section class="mi-work-agenda-group"><strong>' + escapeHtml(title) + '</strong>' + content + '</section>';
+      }
+
+      function renderWorkAgenda() {
+        var agenda = root.querySelector("[data-work-agenda]");
+        var count = root.querySelector("[data-work-count]");
+        if (!agenda) return;
+        var todayDate = new Date();
+        todayDate.setHours(0, 0, 0, 0);
+        var tomorrowDate = new Date(todayDate);
+        tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+        var nextDate = new Date(tomorrowDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+        var todayKey = workDateKey(todayDate);
+        var tomorrowKey = workDateKey(tomorrowDate);
+        var sorted = workItems.slice().sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
+        var todayItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === todayKey; });
+        var tomorrowItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === tomorrowKey; });
+        var nextItems = sorted.filter(function (item) { return new Date(item.startsAt) >= nextDate; }).slice(0, 6);
+        agenda.innerHTML = renderWorkAgendaGroup("Today", todayItems) +
+          renderWorkAgendaGroup("Tomorrow", tomorrowItems) +
+          renderWorkAgendaGroup("Next", nextItems);
+        if (count) count.textContent = workItems.length + "개";
+      }
+
+      function renderWorkOperation() {
+        syncWorkOwnerScope();
+        renderWorkSummary();
+        renderWorkCalendar();
+        renderWorkAgenda();
+      }
+
+      async function requestWorkItems(method, body) {
+        var response = await miFetch(getWorkItemsApiUrl(), {
+          method: method,
+          cache: "no-store",
+          headers: workRequestHeaders(body ? "application/json" : ""),
+          body: body ? JSON.stringify(body) : undefined,
+          timeoutMs: 20000
+        });
+        var payload = await readApiPayload(response, "업무 운영 응답을 확인할 수 없습니다.");
+        if (!response.ok || !payload || payload.ok === false) {
+          throw new Error(payload && payload.message ? payload.message : "업무 운영 요청에 실패했습니다.");
+        }
+        return payload;
+      }
+
+      async function loadWorkItems() {
+        if (!secureSession.role || root.classList.contains("is-locked")) return;
+        var session = captureAdminSession();
+        var requestId = ++workRequestGeneration;
+        setWorkStatus("업무 일정을 불러오는 중입니다.", "");
+        try {
+          var payload = await requestWorkItems("GET");
+          if (requestId !== workRequestGeneration || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          workItems = Array.isArray(payload.items) ? payload.items : [];
+          workCanPublish = payload.canPublish === true;
+          renderWorkOperation();
+          setWorkStatus(workItems.length ? "저장된 업무 " + workItems.length + "개를 불러왔습니다." : "등록된 업무가 없습니다. 첫 업무를 추가해보세요.", "ok");
+        } catch (error) {
+          if (requestId !== workRequestGeneration || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          workItems = [];
+          workCanPublish = false;
+          renderWorkOperation();
+          setWorkStatus(error.message || "업무 일정을 불러오지 못했습니다.", "warn");
+        }
+      }
+
+      function syncWorkPublicFields() {
+        var toggle = root.querySelector("[data-work-public]");
+        var fields = root.querySelector("[data-work-public-fields]");
+        var hint = root.querySelector("[data-work-public-hint]");
+        if (!toggle || !fields) return;
+        toggle.disabled = !workCanPublish;
+        if (!workCanPublish) toggle.checked = false;
+        fields.hidden = !toggle.checked;
+        if (hint) hint.textContent = workCanPublish
+          ? "체크한 일정만 광고주 화면에 표시합니다."
+          : "광고주 연결 후 선택 공개할 수 있습니다.";
+      }
+
+      function openWorkDialog(item, dateKey) {
+        var modal = root.querySelector("[data-work-modal]");
+        var form = root.querySelector("[data-work-form]");
+        if (!modal || !form) return;
+        form.reset();
+        var start = dateKey ? workDateFromKey(dateKey) : new Date();
+        if (!dateKey) start.setMinutes(Math.ceil(start.getMinutes() / 30) * 30, 0, 0);
+        else start.setHours(9, 0, 0, 0);
+        var end = new Date(start);
+        end.setHours(end.getHours() + 1);
+        var setValue = function (selector, value) {
+          var node = root.querySelector(selector);
+          if (node) node.value = value == null ? "" : value;
+        };
+        setValue("[data-work-id]", item && item.id || "");
+        setValue("[data-work-title]", item && item.title || "");
+        setValue("[data-work-type]", item && item.scheduleType || "ad_setup");
+        setValue("[data-work-state]", item && item.status || "planned");
+        setValue("[data-work-priority]", item && item.priority || "medium");
+        setValue("[data-work-start]", workLocalInput(item && item.startsAt || start));
+        setValue("[data-work-end]", item && item.endsAt ? workLocalInput(item.endsAt) : workLocalInput(end));
+        setValue("[data-work-assignee]", item && item.assigneeName || "");
+        setValue("[data-work-internal]", item && item.internalNote || "");
+        setValue("[data-work-public-title]", item && item.publicTitle || "");
+        setValue("[data-work-public-comment]", item && item.publicComment || "");
+        var toggle = root.querySelector("[data-work-public]");
+        if (toggle) toggle.checked = Boolean(item && item.visibility === "client_visible" && workCanPublish);
+        var title = root.querySelector("[data-work-dialog-title]");
+        var remove = root.querySelector("[data-work-delete]");
+        if (title) title.textContent = item ? "업무 수정" : "업무 등록";
+        if (remove) remove.hidden = !item;
+        syncWorkPublicFields();
+        modal.hidden = false;
+        window.requestAnimationFrame(function () {
+          var titleInput = root.querySelector("[data-work-title]");
+          if (titleInput) titleInput.focus();
+        });
+      }
+
+      function closeWorkDialog() {
+        var modal = root.querySelector("[data-work-modal]");
+        if (modal) modal.hidden = true;
+      }
+
+      function workFormPayload() {
+        var value = function (selector) {
+          var node = root.querySelector(selector);
+          return node ? node.value : "";
+        };
+        var publicToggle = root.querySelector("[data-work-public]");
+        return {
+          id: value("[data-work-id]"),
+          title: value("[data-work-title]"),
+          scheduleType: value("[data-work-type]"),
+          status: value("[data-work-state]"),
+          priority: value("[data-work-priority]"),
+          startsAt: value("[data-work-start]"),
+          endsAt: value("[data-work-end]"),
+          assigneeName: value("[data-work-assignee]"),
+          internalNote: value("[data-work-internal]"),
+          isClientVisible: Boolean(publicToggle && publicToggle.checked),
+          publicTitle: value("[data-work-public-title]"),
+          publicComment: value("[data-work-public-comment]")
+        };
+      }
+
+      root.addEventListener("click", function (event) {
+        var create = event.target.closest("[data-work-create]");
+        if (create) {
+          openWorkDialog(null, "");
+          return;
+        }
+        var today = event.target.closest("[data-work-today]");
+        if (today) {
+          workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+          renderWorkOperation();
+          return;
+        }
+        var previous = event.target.closest("[data-work-month-prev]");
+        var next = event.target.closest("[data-work-month-next]");
+        if (previous || next) {
+          workMonthCursor = new Date(workMonthCursor.getFullYear(), workMonthCursor.getMonth() + (next ? 1 : -1), 1);
+          renderWorkOperation();
+          return;
+        }
+        var dateButton = event.target.closest("[data-work-date]");
+        if (dateButton) {
+          openWorkDialog(null, dateButton.getAttribute("data-work-date"));
+          return;
+        }
+        var edit = event.target.closest("[data-work-edit]");
+        if (edit) {
+          var item = workItems.find(function (candidate) { return candidate.id === edit.getAttribute("data-work-edit"); });
+          if (item) openWorkDialog(item, "");
+          return;
+        }
+        var close = event.target.closest("[data-work-close]");
+        if (close) {
+          closeWorkDialog();
+          return;
+        }
+        var modal = event.target.closest("[data-work-modal]");
+        if (modal && event.target === modal) closeWorkDialog();
+      });
+
+      var workPublicToggle = root.querySelector("[data-work-public]");
+      if (workPublicToggle) {
+        workPublicToggle.addEventListener("change", function () {
+          if (workPublicToggle.checked) {
+            var title = root.querySelector("[data-work-title]");
+            var publicTitle = root.querySelector("[data-work-public-title]");
+            if (publicTitle && !publicTitle.value.trim()) publicTitle.value = title ? title.value.trim() : "";
+          }
+          syncWorkPublicFields();
+        });
+      }
+
+      var workForm = root.querySelector("[data-work-form]");
+      if (workForm) {
+        workForm.addEventListener("submit", async function (event) {
+          event.preventDefault();
+          var payload = workFormPayload();
+          var save = root.querySelector("[data-work-save]");
+          if (save) save.disabled = true;
+          setWorkStatus(payload.id ? "업무를 수정하는 중입니다." : "업무를 저장하는 중입니다.", "");
+          try {
+            await requestWorkItems(payload.id ? "PATCH" : "POST", payload);
+            closeWorkDialog();
+            await loadWorkItems();
+          } catch (error) {
+            setWorkStatus(error.message || "업무를 저장하지 못했습니다.", "warn");
+          } finally {
+            if (save) save.disabled = false;
+          }
+        });
+      }
+
+      var workDelete = root.querySelector("[data-work-delete]");
+      if (workDelete) {
+        workDelete.addEventListener("click", async function () {
+          var id = (root.querySelector("[data-work-id]") || {}).value || "";
+          if (!id || !window.confirm("이 업무를 삭제할까요?")) return;
+          workDelete.disabled = true;
+          try {
+            await requestWorkItems("DELETE", { id: id });
+            closeWorkDialog();
+            await loadWorkItems();
+          } catch (error) {
+            setWorkStatus(error.message || "업무를 삭제하지 못했습니다.", "warn");
+          } finally {
+            workDelete.disabled = false;
+          }
+        });
+      }
+
+      var workOwnerClientInput = root.querySelector("[data-work-owner-client-code]");
+      if (workOwnerClientInput) {
+        workOwnerClientInput.addEventListener("change", function () {
+          workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+          loadWorkItems();
+        });
+      }
+
+      window.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeWorkDialog();
+      });
 
       var ownerToolScreen = "";
       var ownerToolAmounts = {};
@@ -10969,6 +12003,7 @@
         syncOwnerAccessFields();
         applyState(readState());
         renderSourceFile();
+        resetWorkOperation();
 
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
@@ -11010,6 +12045,7 @@
         root.classList.remove("is-account-only");
         ownerCodeSnapshot = null;
         renderOwnerFullAccountView(null);
+        resetWorkOperation();
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
@@ -11168,6 +12204,7 @@
           });
         }
         if (target === "home" && secureSession.role) refreshOperationHomeReportStatus();
+        if (target === "work" && secureSession.role) loadWorkItems();
       }
 
       root.addEventListener("click", function (event) {

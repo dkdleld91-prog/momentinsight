@@ -21,6 +21,8 @@ const files = {
   productSeoAudit: "src/server/handlers/naver-product-seo-audit.mjs",
   productTrackers: "src/server/handlers/naver-rank-trackers.mjs",
   clientApi: "src/server/handlers/client-api.mjs",
+  workItems: "src/server/handlers/work-items.mjs",
+  workItemsMigration: "supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql",
   vercel: "vercel.json",
 };
 
@@ -45,6 +47,8 @@ const placeCron = fs.readFileSync(files.placeCron, "utf8");
 const productSeoAudit = fs.readFileSync(files.productSeoAudit, "utf8");
 const productTrackers = fs.readFileSync(files.productTrackers, "utf8");
 const clientApi = fs.readFileSync(files.clientApi, "utf8");
+const workItems = fs.readFileSync(files.workItems, "utf8");
+const workItemsMigration = fs.readFileSync(files.workItemsMigration, "utf8");
 const vercel = JSON.parse(fs.readFileSync(files.vercel, "utf8"));
 const checks = [];
 
@@ -165,6 +169,34 @@ check(
   packageJson.scripts?.["check:role-state-regression"] === "node scripts/check-role-state-regression.mjs"
     && String(packageJson.scripts?.["check:quality"] || "").includes("npm run check:role-state-regression"),
   files.packageJson,
+);
+check(
+  "work operations are session-scoped, account-only capable and client-safe",
+  hasAll(serverIndex, [
+    /workItems: \(\) => import\("\.\/handlers\/work-items\.mjs"\)/,
+    /url\.pathname === "\/api\/work-items"/,
+    /dispatch\("workItems", request\)/,
+  ]) && teamAccountOnlyPathsBlock.includes('"/api/work-items"')
+    && hasAll(workItems, [
+      /x-mi-session-role/,
+      /roleCanMutateWorkItems/,
+      /applyAccessScope/,
+      /operation_team_id/,
+      /eq\("visibility", VISIBLE\)/,
+      /clientWorkItemPayload/,
+      /internalNote: row\.internal_note/,
+      /work_item_created/,
+      /work_item_updated/,
+      /work_item_deleted/,
+    ])
+    && hasAll(workItemsMigration, [
+      /alter column client_id drop not null/,
+      /operation_team_id uuid references public\.operation_team_codes/,
+      /alter column visibility set default 'internal'/,
+      /idx_schedule_items_operation_team_start/,
+      /idx_schedule_items_client_visibility_start/,
+    ]),
+  `${files.serverIndex}, ${files.sessionGate}, ${files.workItems}, ${files.workItemsMigration}`,
 );
 check(
   "all routed requests use the shared runtime boundary",

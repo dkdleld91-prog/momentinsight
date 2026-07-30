@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-07-30 · 업무 운영 화면 격리·광고주 코드 비열거
+
+- 원인: 공통 `.mi-view`는 비활성 화면을 숨기지만 뒤쪽의 `.mi-work-shell { display:grid }`가 같은 업무 화면에 다시 display를 부여했다. 총관리자 업무 범위 입력은 `ownerCodeSnapshot.clients` 전체를 HTML `datalist`로 직렬화해 클릭만으로 코드 목록이 보였다.
+- 화면 수정: `.mi-view:not(.is-active)`를 비활성 화면의 최종 숨김 계약으로 고정하고 업무 grid는 `.mi-work-shell.is-active`에서만 사용한다. `대행사 연결`·`키워드 조회`·`업무 운영` 해시를 각각 로드한 브라우저 검수에서 표시 화면은 각각 해당 화면 1개뿐이고 display는 `block`·`block`·`grid`다.
+- 코드 보호: 업무 범위 입력의 `datalist`, `list` 연결, 전체 광고주 코드 렌더링을 제거했다. 입력은 `광고주 코드 직접 입력`, `autocomplete=new-password`이며 다른 메뉴로 이동하면 입력값·불러온 업무 범위를 폐기한다. 업무 API는 기존처럼 입력된 단일 코드를 서버에서 활성 광고주와 대조하고 응답에는 광고주 ID·이름만 사용하며 코드 목록은 포함하지 않는다.
+- 자동 검증: 새 기준선 `workOperationViewIsStrictlyScoped`, `workOperationOwnerCodeIsManualAndNonEnumerating`, 역할 5상태, 보호 잠금 21함수·23파일·11마이그레이션, 서버 계약 29/29, API·서버 234/234, 플레이스 수집기 51/51, Production 인증 18/18, 공개 빌드 9파일·인라인 스크립트 6개·CSP 해시 4개와 전체 `npm run check:release` 통과.
+- 비변경 범위: `client.html`, Supabase 스키마·운영 데이터·RLS, 업무 API 권한 범위, 순위 수집·계산·저장·크론, 보호 잠금 해시는 변경하지 않았다.
+
 ## 2026-07-30 · 업무 운영 워크플로 1차 로컬 검증
 
 - 권한·공개 계약: 업무는 기본 비공개이며 광고주 미연결 운영팀은 내부 업무만 생성한다. 공개 전환에는 광고주 범위가 필요하고 광고주 응답은 공개 제목·일정·상태·공개 안내만 포함하며 내부 메모·광고주 ID·운영팀 ID·담당자는 제외한다.

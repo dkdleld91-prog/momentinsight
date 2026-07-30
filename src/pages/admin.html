@@ -319,6 +319,10 @@
       display: none;
     }
 
+    #mi-admin .mi-view:not(.is-active) {
+      display: none !important;
+    }
+
     #mi-admin .mi-view.is-active {
       display: block;
     }
@@ -7714,7 +7718,7 @@
         display: none;
       }
     }
-    #mi-admin .mi-work-shell {
+    #mi-admin .mi-work-shell.is-active {
       display: grid;
       gap: 18px;
     }
@@ -8389,8 +8393,7 @@
             <div class="mi-work-head-actions">
               <label class="mi-work-owner-scope" data-work-owner-scope hidden>
                 <span>광고주 범위 · 비우면 총관리자 내부 업무</span>
-                <input class="mi-input" data-work-owner-client-code list="mi-work-owner-clients" placeholder="광고주 코드 입력" autocomplete="off" />
-                <datalist id="mi-work-owner-clients" data-work-owner-client-options></datalist>
+                <input class="mi-input" data-work-owner-client-code placeholder="광고주 코드 직접 입력" autocomplete="new-password" autocapitalize="none" spellcheck="false" />
               </label>
               <button class="mi-link-button" type="button" data-work-today>오늘</button>
               <button class="mi-link-button is-primary" type="button" data-work-create>업무 등록</button>
@@ -10116,14 +10119,17 @@
       function syncWorkOwnerScope() {
         var wrap = root.querySelector("[data-work-owner-scope]");
         if (wrap) wrap.hidden = secureSession.role !== "owner";
-        var options = root.querySelector("[data-work-owner-client-options]");
-        if (!options) return;
-        var clients = ownerCodeSnapshot && Array.isArray(ownerCodeSnapshot.clients) ? ownerCodeSnapshot.clients : [];
-        options.innerHTML = clients.map(function (client) {
-          var code = normalizeStorageCode(client && (client.agencyCode || client.agency_code));
-          var name = String(client && (client.name || client.businessName || client.business_name) || "광고주");
-          return code ? '<option value="' + escapeHtml(code) + '">' + escapeHtml(name) + '</option>' : "";
-        }).join("");
+      }
+
+      function deactivateWorkOperation() {
+        workRequestGeneration += 1;
+        workItems = [];
+        workCanPublish = false;
+        var ownerInput = root.querySelector("[data-work-owner-client-code]");
+        if (ownerInput) ownerInput.value = "";
+        closeWorkDialog();
+        renderWorkOperation();
+        setWorkStatus("업무 운영 화면에서 일정을 불러옵니다.", "");
       }
 
       function resetWorkOperation() {
@@ -12196,6 +12202,7 @@
         links.forEach(function (link) {
           link.classList.toggle("is-active", link.getAttribute("data-mi-admin-screen") === target);
         });
+        if (target !== "work") deactivateWorkOperation();
         if (shouldPushHash) {
           var nextHash = "#mi-admin-" + target;
           if (window.location.hash !== nextHash) window.location.hash = nextHash;

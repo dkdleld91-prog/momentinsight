@@ -173,6 +173,16 @@ const adminAgencyConnectionViewSource = functionBody(
   '<section class="mi-view" data-mi-admin-view="agency-code"',
   '<section class="mi-view" data-mi-admin-view="active-accounts"',
 );
+const adminWorkViewSource = functionBody(
+  adminSource,
+  '<section class="mi-view mi-work-shell" data-mi-admin-view="work"',
+  '<section class="mi-view" data-mi-admin-view="client-preview"',
+);
+const adminWorkScopeSource = functionBody(
+  adminSource,
+  "function syncWorkOwnerScope() {",
+  "function resetWorkOperation() {",
+);
 const adminPublishViewSource = functionBody(
   adminSource,
   '<section class="mi-view" data-mi-admin-view="publish"',
@@ -1084,6 +1094,18 @@ const checks = {
     && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")
     && clientSource.includes("loadClientWorkItems")
     && clientSource.includes("내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다."),
+  workOperationViewIsStrictlyScoped: adminSource.includes("#mi-admin .mi-view:not(.is-active)")
+    && adminSource.includes("display: none !important;")
+    && adminSource.includes("#mi-admin .mi-work-shell.is-active")
+    && !adminSource.includes("#mi-admin .mi-work-shell {\n      display: grid;")
+    && adminSource.includes('if (target !== "work") deactivateWorkOperation();'),
+  workOperationOwnerCodeIsManualAndNonEnumerating: adminWorkViewSource.includes("광고주 코드 직접 입력")
+    && adminWorkViewSource.includes('autocomplete="new-password"')
+    && !adminWorkViewSource.includes("<datalist")
+    && !adminWorkViewSource.includes("list=\"mi-work-owner-clients\"")
+    && !adminWorkViewSource.includes("data-work-owner-client-options")
+    && !adminWorkScopeSource.includes("ownerCodeSnapshot")
+    && !adminWorkScopeSource.includes(".clients"),
   reportCenterScopesByCode: reportCenterServer.includes("findActiveClientByAgencyCode")
     && reportCenterServer.includes("findActiveClientByTeamCode")
     && reportCenterServer.includes(".eq(\"owner_agency_code\", primaryAgencyCode())")

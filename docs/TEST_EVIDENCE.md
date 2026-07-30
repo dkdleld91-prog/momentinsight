@@ -7,6 +7,7 @@
 - 결함 보완: 공통 버튼 CSS가 `hidden`을 덮어 신규 등록창에도 삭제가 보이던 상태를 `[data-work-delete][hidden]`으로 강제 차단했다. 삭제는 수정할 업무가 있을 때만 표시한다.
 - 브라우저 검수: 1280px 팝업과 390×700 모바일 팝업에서 입력 행열·선택 UI·공개 스위치·고정 저장 영역·가로 넘침을 확인했다. 빈 셀 `2026-07-08` 클릭 전 팝업 비노출, 클릭 후 팝업 노출과 시작값 `2026-07-08T09:00`, 신규 삭제 버튼 비노출을 확인했다.
 - 자동 검증: 새 기준선 `workOperationCalendarCellCreatesAndDialogIsPremium`, 역할 5상태, 보호 잠금 21함수·23파일·11마이그레이션, 서버 계약 29/29, 전체 API·서버 235/235, 플레이스 51/51, Production 인증 18/18, 공개 빌드 9파일·인라인 6개·CSP 해시 4개와 전체 `npm run check:quality`가 통과했다. `client.html`, 업무 API·DB·운영 데이터와 순위 기능은 변경하지 않았다.
+- Production 증거: 코드 `1bf6859`, Vercel `dpl_7tQpFm3W5RKY7UvYbLpxrCyJqEqz`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `1bf68593e3af`·서울 `icn1`·Supabase ready, `/admin`·`/client`는 200, 비인증 `/api/work-items`는 401이다. 관리자 HTML에는 날짜 셀·팝업·스위치·삭제 숨김 마커가 있고 광고주 HTML에는 셀 등록 기능 없이 공개 일정 읽기 계약만 있다.
 
 ## 2026-07-30 · 업무 일정 드래그 이동·저장 확인
 

@@ -11,7 +11,7 @@
 
 ## 현재 작업
 
-- 업무 등록 팝업·날짜 칸 전체 클릭 개선은 로컬 구현과 1280px·390×700 시각 검수, 전체 `check:quality`·Production 인증을 통과했고 대표님의 배포 승인을 받았다. 기능 커밋·push·Vercel Production 배포 후 `/health`·`/ready`, 관리자·광고주 HTML, 관리자 배포본의 `data-work-cell-date`·프리미엄 팝업 마커와 비인증 업무 API 401을 확인한다.
+- 업무 등록 팝업·날짜 칸 전체 클릭 개선은 코드 `1bf6859`·Production `dpl_7tQpFm3W5RKY7UvYbLpxrCyJqEqz`로 운영 반영했다. `/health`·`/ready` 릴리스 `1bf68593e3af`·서울 `icn1`·Supabase ready, 관리자·광고주 HTML 200, 관리자 배포본의 날짜 셀·프리미엄 팝업·공개 스위치·신규 삭제 숨김 마커와 비인증 업무 API 401을 확인했다.
 - 운영 확인은 총관리자 또는 운영팀 세션에서 빈 날짜 칸을 눌렀을 때 선택 날짜 09:00 등록창이 열리는지, 일정 카드 클릭은 수정창·드래그는 이동 팝업으로 유지되는지만 확인한다. 검수용 업무를 임의 저장하거나 기존 운영 데이터를 변경하지 않는다.
 
 - 업무 일정 드래그 이동은 코드 `d1e08f3`·Production `dpl_HQ6xoQJua3Cg5B46CvhM5d1RakuV`로 운영 반영했다. `/health`·`/ready` 릴리스 `d1e08f3607db`·서울 `icn1`·Supabase ready, 관리자·광고주 HTML 200, 배포 관리자 파일의 드래그·확인 팝업 마커와 비인증 업무 API 401을 확인했다.

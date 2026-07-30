@@ -7813,6 +7813,12 @@
       gap: 8px;
     }
 
+    #mi-admin .mi-work-calendar-tools {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
     #mi-admin .mi-work-month-nav strong {
       min-width: 110px;
       color: var(--navy);
@@ -7857,6 +7863,7 @@
       border-right: 1px solid #edf1f6;
       border-bottom: 1px solid #edf1f6;
       background: #fff;
+      transition: background-color .16s ease, box-shadow .16s ease;
     }
 
     #mi-admin .mi-work-day:nth-child(7n) {
@@ -7870,6 +7877,11 @@
     #mi-admin .mi-work-day.is-today {
       background: #f7fbff;
       box-shadow: inset 0 0 0 1px rgba(22, 79, 150, .18);
+    }
+
+    #mi-admin .mi-work-day.is-drop-target {
+      background: #f2f7ff;
+      box-shadow: inset 0 0 0 2px rgba(22, 79, 150, .42);
     }
 
     #mi-admin .mi-work-day-head {
@@ -7909,13 +7921,25 @@
       border-radius: 9px;
       background: #f7faff;
       color: #223553;
-      cursor: pointer;
+      cursor: grab;
       font-size: 10px;
       font-weight: 750;
       line-height: 1.25;
       text-align: left;
       text-overflow: ellipsis;
+      touch-action: none;
+      transition: opacity .16s ease, transform .16s ease, box-shadow .16s ease;
       white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-day-item:active {
+      cursor: grabbing;
+    }
+
+    #mi-admin .mi-work-day-item.is-dragging {
+      opacity: .48;
+      transform: scale(.98);
+      box-shadow: 0 10px 20px rgba(13, 39, 77, .12);
     }
 
     #mi-admin .mi-work-day-item[data-status="done"] {
@@ -8068,6 +8092,66 @@
       box-shadow: 0 32px 90px rgba(6, 19, 42, .28);
     }
 
+    #mi-admin .mi-work-move-dialog {
+      width: min(460px, 100%);
+    }
+
+    #mi-admin .mi-work-move-body {
+      display: grid;
+      gap: 14px;
+      padding: 20px 22px;
+    }
+
+    #mi-admin .mi-work-move-body > p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    #mi-admin .mi-work-move-dates {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: center;
+      padding: 14px;
+      border: 1px solid #dce5f0;
+      border-radius: 15px;
+      background: #f8fbff;
+    }
+
+    #mi-admin .mi-work-move-date {
+      display: grid;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-work-move-date span {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-move-date strong {
+      overflow: hidden;
+      color: var(--navy);
+      font-size: 13px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-move-arrow {
+      color: #7d8ba1;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-drag-note {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
     #mi-admin .mi-work-dialog-head,
     #mi-admin .mi-work-dialog-actions {
       display: flex;
@@ -8212,6 +8296,15 @@
 
       #mi-admin .mi-work-form-grid {
         grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-move-dates {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-move-arrow {
+        transform: rotate(90deg);
+        text-align: center;
       }
     }
   </style>
@@ -8414,7 +8507,10 @@
                   <strong data-work-month-label>이번 달</strong>
                   <button class="mi-work-icon-button" type="button" data-work-month-next aria-label="다음 달">›</button>
                 </div>
-                <span class="mi-badge">월간 캘린더</span>
+                <div class="mi-work-calendar-tools">
+                  <span class="mi-work-drag-note">업무를 길게 눌러 날짜 이동</span>
+                  <span class="mi-badge">월간 캘린더</span>
+                </div>
               </div>
               <div class="mi-work-weekdays" aria-hidden="true">
                 <span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>
@@ -8497,6 +8593,30 @@
                   </div>
                 </div>
               </form>
+            </div>
+          </div>
+
+          <div class="mi-work-modal" data-work-move-modal hidden>
+            <div class="mi-work-dialog mi-work-move-dialog" role="alertdialog" aria-modal="true" aria-labelledby="mi-work-move-title" aria-describedby="mi-work-move-description">
+              <div class="mi-work-dialog-head">
+                <div><span class="mi-kicker">Schedule change</span><h2 id="mi-work-move-title">일정을 변경할까요?</h2></div>
+                <button class="mi-work-icon-button" type="button" data-work-move-cancel aria-label="닫기">×</button>
+              </div>
+              <div class="mi-work-move-body">
+                <p id="mi-work-move-description"><strong data-work-move-item>선택 업무</strong>의 날짜를 아래와 같이 변경합니다.</p>
+                <div class="mi-work-move-dates" aria-label="일정 변경 전후">
+                  <div class="mi-work-move-date"><span>기존 일정</span><strong data-work-move-from>-</strong></div>
+                  <span class="mi-work-move-arrow" aria-hidden="true">→</span>
+                  <div class="mi-work-move-date"><span>변경 일정</span><strong data-work-move-to>-</strong></div>
+                </div>
+              </div>
+              <div class="mi-work-dialog-actions">
+                <span class="mi-work-drag-note">확인 후에만 저장됩니다.</span>
+                <div>
+                  <button class="mi-link-button" type="button" data-work-move-cancel>취소</button>
+                  <button class="mi-link-button is-primary" type="button" data-work-move-confirm>일정 변경</button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -10027,6 +10147,11 @@
       var workCanPublish = false;
       var workRequestGeneration = 0;
       var workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      var workDraggingId = "";
+      var workPointerDrag = null;
+      var workPointerTimer = 0;
+      var workMovePending = null;
+      var workIgnoreClickUntil = 0;
 
       function getWorkItemsApiUrl() {
         var host = window.location && window.location.hostname;
@@ -10116,6 +10241,141 @@
         }).format(date);
       }
 
+      function workMoveDateLabel(value) {
+        var date = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        return new Intl.DateTimeFormat("ko-KR", {
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+          weekday: "short",
+          hour: "2-digit",
+          minute: "2-digit"
+        }).format(date);
+      }
+
+      function workShiftDateTime(value, targetDateKey) {
+        var source = new Date(value);
+        var target = workDateFromKey(targetDateKey);
+        if (Number.isNaN(source.getTime()) || Number.isNaN(target.getTime())) return "";
+        target.setHours(source.getHours(), source.getMinutes(), source.getSeconds(), source.getMilliseconds());
+        return target.toISOString();
+      }
+
+      function workItemPayload(item, overrides) {
+        var next = Object.assign({}, item || {}, overrides || {});
+        return {
+          id: next.id || "",
+          title: next.title || "",
+          scheduleType: next.scheduleType || "ad_setup",
+          status: next.status || "planned",
+          priority: next.priority || "medium",
+          startsAt: next.startsAt || "",
+          endsAt: next.endsAt || "",
+          assigneeName: next.assigneeName || "",
+          internalNote: next.internalNote || "",
+          isAllDay: Boolean(next.isAllDay),
+          isClientVisible: next.visibility === "client_visible",
+          publicTitle: next.publicTitle || "",
+          publicComment: next.publicComment || ""
+        };
+      }
+
+      function clearWorkDragState() {
+        window.clearTimeout(workPointerTimer);
+        workPointerTimer = 0;
+        workDraggingId = "";
+        workPointerDrag = null;
+        root.querySelectorAll(".mi-work-day.is-drop-target").forEach(function (day) {
+          day.classList.remove("is-drop-target");
+        });
+        root.querySelectorAll(".mi-work-day-item.is-dragging").forEach(function (item) {
+          item.classList.remove("is-dragging");
+        });
+      }
+
+      function setWorkDropTarget(day) {
+        root.querySelectorAll(".mi-work-day.is-drop-target").forEach(function (candidate) {
+          candidate.classList.toggle("is-drop-target", candidate === day);
+        });
+      }
+
+      function closeWorkMoveDialog(restore, message) {
+        var pending = workMovePending;
+        if (restore && pending) {
+          var item = workItems.find(function (candidate) { return candidate.id === pending.itemId; });
+          if (item) {
+            item.startsAt = pending.originalStart;
+            item.endsAt = pending.originalEnd;
+          }
+        }
+        workMovePending = null;
+        var modal = root.querySelector("[data-work-move-modal]");
+        if (modal) modal.hidden = true;
+        if (restore) renderWorkOperation();
+        if (message) setWorkStatus(message, "");
+      }
+
+      function openWorkMoveConfirmation(itemId, targetDateKey) {
+        var item = workItems.find(function (candidate) { return candidate.id === itemId; });
+        if (!item || !targetDateKey || workDateKey(item.startsAt) === targetDateKey) return;
+        if (workMovePending) closeWorkMoveDialog(true, "");
+        var nextStart = workShiftDateTime(item.startsAt, targetDateKey);
+        if (!nextStart) return;
+        var originalStartTime = new Date(item.startsAt).getTime();
+        var nextStartTime = new Date(nextStart).getTime();
+        var nextEnd = item.endsAt
+          ? new Date(new Date(item.endsAt).getTime() + (nextStartTime - originalStartTime)).toISOString()
+          : "";
+        workMovePending = {
+          itemId: item.id,
+          originalStart: item.startsAt,
+          originalEnd: item.endsAt || "",
+          nextStart: nextStart,
+          nextEnd: nextEnd
+        };
+        item.startsAt = nextStart;
+        item.endsAt = nextEnd;
+        renderWorkOperation();
+        var modal = root.querySelector("[data-work-move-modal]");
+        var itemNode = root.querySelector("[data-work-move-item]");
+        var fromNode = root.querySelector("[data-work-move-from]");
+        var toNode = root.querySelector("[data-work-move-to]");
+        if (itemNode) itemNode.textContent = item.title;
+        if (fromNode) fromNode.textContent = workMoveDateLabel(workMovePending.originalStart);
+        if (toNode) toNode.textContent = workMoveDateLabel(workMovePending.nextStart);
+        if (modal) modal.hidden = false;
+        setWorkStatus("변경할 날짜를 확인해주세요.", "");
+        window.requestAnimationFrame(function () {
+          var confirm = root.querySelector("[data-work-move-confirm]");
+          if (confirm) confirm.focus();
+        });
+      }
+
+      async function confirmWorkMove() {
+        if (!workMovePending) return;
+        var pending = Object.assign({}, workMovePending);
+        var item = workItems.find(function (candidate) { return candidate.id === pending.itemId; });
+        var confirm = root.querySelector("[data-work-move-confirm]");
+        if (!item) {
+          closeWorkMoveDialog(true, "이동할 업무를 다시 확인해주세요.");
+          return;
+        }
+        if (confirm) confirm.disabled = true;
+        setWorkStatus("변경한 일정을 저장하는 중입니다.", "");
+        try {
+          await requestWorkItems("PATCH", workItemPayload(item));
+          closeWorkMoveDialog(false, "");
+          await loadWorkItems();
+        } catch (error) {
+          workMovePending = pending;
+          closeWorkMoveDialog(true, "");
+          setWorkStatus(error.message || "일정 변경을 저장하지 못해 원래 날짜로 되돌렸습니다.", "warn");
+        } finally {
+          if (confirm) confirm.disabled = false;
+        }
+      }
+
       function syncWorkOwnerScope() {
         var wrap = root.querySelector("[data-work-owner-scope]");
         if (wrap) wrap.hidden = secureSession.role !== "owner";
@@ -10125,6 +10385,8 @@
         workRequestGeneration += 1;
         workItems = [];
         workCanPublish = false;
+        clearWorkDragState();
+        closeWorkMoveDialog(false, "");
         var ownerInput = root.querySelector("[data-work-owner-client-code]");
         if (ownerInput) ownerInput.value = "";
         closeWorkDialog();
@@ -10137,6 +10399,8 @@
         workItems = [];
         workCanPublish = false;
         workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        clearWorkDragState();
+        closeWorkMoveDialog(false, "");
         var ownerInput = root.querySelector("[data-work-owner-client-code]");
         if (ownerInput) ownerInput.value = "";
         closeWorkDialog();
@@ -10174,11 +10438,13 @@
           var inMonth = date.getMonth() === workMonthCursor.getMonth();
           var dayItems = workItems.filter(function (item) { return workDateKey(item.startsAt) === key; })
             .sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
-          html.push('<div class="mi-work-day' + (inMonth ? "" : " is-muted") + (key === today ? " is-today" : "") + '">' +
+          html.push('<div class="mi-work-day' + (inMonth ? "" : " is-muted") + (key === today ? " is-today" : "") +
+            '" data-work-drop-date="' + key + '">' +
             '<div class="mi-work-day-head"><button type="button" data-work-date="' + key + '" aria-label="' + key + ' 업무 등록">' +
             date.getDate() + '</button>' + (dayItems.length ? '<span class="mi-work-visibility">' + dayItems.length + '</span>' : "") + '</div>' +
             '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
-              return '<button type="button" class="mi-work-day-item" data-work-edit="' + escapeHtml(item.id) +
+              return '<button type="button" class="mi-work-day-item" draggable="true" data-work-edit="' + escapeHtml(item.id) +
+                '" data-work-drag-id="' + escapeHtml(item.id) +
                 '" data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") + '">' +
                 escapeHtml(item.title) + '</button>';
             }).join("") + (dayItems.length > 3 ? '<span class="mi-work-visibility">+' + (dayItems.length - 3) + '</span>' : "") +
@@ -10343,7 +10609,130 @@
         };
       }
 
+      function workDropDayFromPoint(clientX, clientY) {
+        var node = document.elementFromPoint(clientX, clientY);
+        return node && node.closest ? node.closest("[data-work-drop-date]") : null;
+      }
+
+      var workCalendar = root.querySelector("[data-work-calendar]");
+      if (workCalendar) {
+        workCalendar.addEventListener("dragstart", function (event) {
+          var item = event.target.closest("[data-work-drag-id]");
+          if (!item) return;
+          workDraggingId = item.getAttribute("data-work-drag-id") || "";
+          item.classList.add("is-dragging");
+          if (event.dataTransfer) {
+            event.dataTransfer.effectAllowed = "move";
+            event.dataTransfer.setData("text/plain", workDraggingId);
+          }
+        });
+
+        workCalendar.addEventListener("dragover", function (event) {
+          if (!workDraggingId) return;
+          var day = event.target.closest("[data-work-drop-date]");
+          if (!day) return;
+          event.preventDefault();
+          if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+          setWorkDropTarget(day);
+        });
+
+        workCalendar.addEventListener("drop", function (event) {
+          if (!workDraggingId) return;
+          var day = event.target.closest("[data-work-drop-date]");
+          if (!day) return;
+          event.preventDefault();
+          var itemId = workDraggingId;
+          var targetDate = day.getAttribute("data-work-drop-date") || "";
+          workIgnoreClickUntil = Date.now() + 500;
+          clearWorkDragState();
+          openWorkMoveConfirmation(itemId, targetDate);
+        });
+
+        workCalendar.addEventListener("dragend", function () {
+          clearWorkDragState();
+        });
+
+        workCalendar.addEventListener("pointerdown", function (event) {
+          if (event.pointerType === "mouse") return;
+          var item = event.target.closest("[data-work-drag-id]");
+          if (!item) return;
+          window.clearTimeout(workPointerTimer);
+          workPointerDrag = {
+            itemId: item.getAttribute("data-work-drag-id") || "",
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            active: false,
+            targetDate: ""
+          };
+          workPointerTimer = window.setTimeout(function () {
+            if (!workPointerDrag || workPointerDrag.pointerId !== event.pointerId) return;
+            workPointerDrag.active = true;
+            workDraggingId = workPointerDrag.itemId;
+            item.classList.add("is-dragging");
+            var day = workDropDayFromPoint(event.clientX, event.clientY);
+            if (day) {
+              workPointerDrag.targetDate = day.getAttribute("data-work-drop-date") || "";
+              setWorkDropTarget(day);
+            }
+          }, 320);
+        });
+      }
+
+      window.addEventListener("pointermove", function (event) {
+        if (!workPointerDrag || workPointerDrag.pointerId !== event.pointerId) return;
+        if (!workPointerDrag.active) {
+          var moved = Math.hypot(event.clientX - workPointerDrag.startX, event.clientY - workPointerDrag.startY);
+          if (moved > 8) {
+            window.clearTimeout(workPointerTimer);
+            workPointerTimer = 0;
+            workPointerDrag = null;
+          }
+          return;
+        }
+        event.preventDefault();
+        var day = workDropDayFromPoint(event.clientX, event.clientY);
+        if (!day) return;
+        workPointerDrag.targetDate = day.getAttribute("data-work-drop-date") || "";
+        setWorkDropTarget(day);
+      }, { passive: false });
+
+      window.addEventListener("pointerup", function (event) {
+        if (!workPointerDrag || workPointerDrag.pointerId !== event.pointerId) return;
+        var drag = Object.assign({}, workPointerDrag);
+        window.clearTimeout(workPointerTimer);
+        workPointerTimer = 0;
+        if (!drag.active) {
+          workPointerDrag = null;
+          return;
+        }
+        event.preventDefault();
+        workIgnoreClickUntil = Date.now() + 500;
+        clearWorkDragState();
+        if (drag.targetDate) openWorkMoveConfirmation(drag.itemId, drag.targetDate);
+      });
+
+      window.addEventListener("pointercancel", function (event) {
+        if (!workPointerDrag || workPointerDrag.pointerId !== event.pointerId) return;
+        clearWorkDragState();
+      });
+
       root.addEventListener("click", function (event) {
+        var moveConfirm = event.target.closest("[data-work-move-confirm]");
+        if (moveConfirm) {
+          confirmWorkMove();
+          return;
+        }
+        var moveCancel = event.target.closest("[data-work-move-cancel]");
+        if (moveCancel) {
+          closeWorkMoveDialog(true, "일정 변경을 취소했습니다.");
+          return;
+        }
+        var moveModal = event.target.closest("[data-work-move-modal]");
+        if (moveModal && event.target === moveModal) {
+          closeWorkMoveDialog(true, "일정 변경을 취소했습니다.");
+          return;
+        }
         var create = event.target.closest("[data-work-create]");
         if (create) {
           openWorkDialog(null, "");
@@ -10369,6 +10758,7 @@
         }
         var edit = event.target.closest("[data-work-edit]");
         if (edit) {
+          if (Date.now() < workIgnoreClickUntil) return;
           var item = workItems.find(function (candidate) { return candidate.id === edit.getAttribute("data-work-edit"); });
           if (item) openWorkDialog(item, "");
           return;
@@ -10441,7 +10831,9 @@
       }
 
       window.addEventListener("keydown", function (event) {
-        if (event.key === "Escape") closeWorkDialog();
+        if (event.key !== "Escape") return;
+        if (workMovePending) closeWorkMoveDialog(true, "일정 변경을 취소했습니다.");
+        else closeWorkDialog();
       });
 
       var ownerToolScreen = "";

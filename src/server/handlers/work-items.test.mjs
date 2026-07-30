@@ -55,6 +55,22 @@ test("published work item keeps public copy separate from internal note", () => 
   assert.equal(result.value.internal_note, "CTR 낮으면 B안으로 복귀");
 });
 
+test("dragged work item accepts the moved start and end range", () => {
+  const result = normalizeWorkItemInput({
+    title: "월간 보고서 검수",
+    scheduleType: "report_due",
+    status: "in_progress",
+    priority: "high",
+    startsAt: "2026-08-03T09:00:00+09:00",
+    endsAt: "2026-08-03T10:30:00+09:00",
+  }, { canPublish: false });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.starts_at, "2026-08-03T00:00:00.000Z");
+  assert.equal(result.value.ends_at, "2026-08-03T01:30:00.000Z");
+  assert.equal(new Date(result.value.ends_at).getTime() - new Date(result.value.starts_at).getTime(), 90 * 60 * 1000);
+});
+
 test("client payload excludes internal and tenant fields", () => {
   const payload = clientWorkItemPayload({
     id: "task-1",

@@ -1094,6 +1094,15 @@ const checks = {
     && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")
     && clientSource.includes("loadClientWorkItems")
     && clientSource.includes("내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다."),
+  workOperationDragMoveRequiresConfirmation: adminSource.includes('draggable="true" data-work-edit=')
+    && adminSource.includes('data-work-drop-date="')
+    && adminSource.includes("openWorkMoveConfirmation")
+    && adminSource.includes("workShiftDateTime")
+    && adminSource.includes("data-work-move-confirm")
+    && adminSource.includes("확인 후에만 저장됩니다.")
+    && adminSource.includes("일정 변경을 저장하지 못해 원래 날짜로 되돌렸습니다.")
+    && adminSource.includes("event.pointerType === \"mouse\"")
+    && adminSource.includes("320);"),
   workOperationViewIsStrictlyScoped: adminSource.includes("#mi-admin .mi-view:not(.is-active)")
     && adminSource.includes("display: none !important;")
     && adminSource.includes("#mi-admin .mi-work-shell.is-active")

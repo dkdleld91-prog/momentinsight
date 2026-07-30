@@ -1108,6 +1108,14 @@ const checks = {
     && adminSource.includes("mi-work-dialog-eyebrow")
     && adminSource.includes("mi-work-switch")
     && adminSource.includes("필요한 정보만 입력하면 일정과 가까운 업무에 함께 반영됩니다."),
+  workOperationExecutionSummaryAndQuickComplete: adminSource.includes('data-work-summary-filter="today"')
+    && adminSource.includes('data-work-summary-filter="overdue"')
+    && adminSource.includes('data-work-summary-filter="needs_check"')
+    && adminSource.includes("workItemMatchesFilter")
+    && adminSource.includes("data-work-quick-done")
+    && adminSource.includes('workItemPayload(item, { status: "done" })')
+    && adminSource.includes("data-work-advanced")
+    && adminSource.includes("상세 설정 · 필요할 때만 입력"),
   workOperationViewIsStrictlyScoped: adminSource.includes("#mi-admin .mi-view:not(.is-active)")
     && adminSource.includes("display: none !important;")
     && adminSource.includes("#mi-admin .mi-work-shell.is-active")

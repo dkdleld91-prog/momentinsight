@@ -71,6 +71,26 @@ test("dragged work item accepts the moved start and end range", () => {
   assert.equal(new Date(result.value.ends_at).getTime() - new Date(result.value.starts_at).getTime(), 90 * 60 * 1000);
 });
 
+test("quick completion accepts done without changing the work schedule", () => {
+  const result = normalizeWorkItemInput({
+    title: "월간 보고서 검수",
+    scheduleType: "report_due",
+    status: "done",
+    priority: "high",
+    startsAt: "2026-08-03T09:00:00+09:00",
+    endsAt: "2026-08-03T10:30:00+09:00",
+    internalNote: "공개 전 수치 확인",
+  }, { canPublish: false });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.status, "done");
+  assert.equal(result.value.schedule_type, "report_due");
+  assert.equal(result.value.priority, "high");
+  assert.equal(result.value.internal_note, "공개 전 수치 확인");
+  assert.equal(result.value.starts_at, "2026-08-03T00:00:00.000Z");
+  assert.equal(result.value.ends_at, "2026-08-03T01:30:00.000Z");
+});
+
 test("client payload excludes internal and tenant fields", () => {
   const payload = clientWorkItemPayload({
     id: "task-1",

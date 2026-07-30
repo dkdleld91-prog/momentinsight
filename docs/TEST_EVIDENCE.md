@@ -6,6 +6,7 @@
 - 저장 안전: 별도 `일정을 변경할까요?` 팝업에서 기존·변경 일시를 비교한다. `일정 변경` 확인 전에는 PATCH를 호출하지 않으며, 취소·ESC·바깥 클릭·저장 실패는 낙관적 이동을 원래 시작·종료 일시로 되돌린다. 확인 시 기존 시각·업무 길이·종일 여부·상태·우선순위·메모·공개값을 보존한 전체 업무 payload를 기존 권한 범위의 `/api/work-items`에 저장한다.
 - 권한·비변경 범위: 수정 가능 역할은 기존과 동일한 총관리자·운영팀이며 광고주는 공개 일정 읽기만 유지한다. `client.html`, DB·마이그레이션·RLS, 보호된 키워드 조회·SEO·N 상품 순위·N 30일 순위·N 플레이스 30일 순위는 변경하지 않았다.
 - 자동 검증: 이동된 시작·종료 90분 범위 단위검사를 포함한 업무 6/6, 역할 5상태, 새 기준선 `workOperationDragMoveRequiresConfirmation`, 서버 문법, 보호 잠금 21함수·23파일·11마이그레이션, 공개 빌드 9파일·인라인 6개·CSP 해시 4개가 통과했다.
+- 전체·Production 검증: Vercel 빌드에서 전체 API·서버 235/235, 플레이스 51/51, 서버 계약 29/29, Production 인증 18/18과 전체 `check:release`가 통과했다. 코드 `d1e08f3`, Production `dpl_HQ6xoQJua3Cg5B46CvhM5d1RakuV`, 운영 별칭 `https://insight.momentlabs.co.kr`에 반영했다. `/health`·`/ready`는 릴리스 `d1e08f3607db`·서울 `icn1`·Supabase ready, `/admin`·`/client`는 200, 비인증 `/api/work-items`는 401이다. 관리자 HTML에는 드래그·날짜 대상·확인 팝업 마커가 있고 광고주 HTML에는 이동 기능 없이 공개 일정 읽기 계약만 있다.
 
 ## 2026-07-30 · 업무 운영 화면 격리·광고주 코드 비열거
 

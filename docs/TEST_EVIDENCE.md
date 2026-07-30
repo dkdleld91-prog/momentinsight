@@ -7,7 +7,7 @@
 - 코드 보호: 업무 범위 입력의 `datalist`, `list` 연결, 전체 광고주 코드 렌더링을 제거했다. 입력은 `광고주 코드 직접 입력`, `autocomplete=new-password`이며 다른 메뉴로 이동하면 입력값·불러온 업무 범위를 폐기한다. 업무 API는 기존처럼 입력된 단일 코드를 서버에서 활성 광고주와 대조하고 응답에는 광고주 ID·이름만 사용하며 코드 목록은 포함하지 않는다.
 - 자동 검증: 새 기준선 `workOperationViewIsStrictlyScoped`, `workOperationOwnerCodeIsManualAndNonEnumerating`, 역할 5상태, 보호 잠금 21함수·23파일·11마이그레이션, 서버 계약 29/29, API·서버 234/234, 플레이스 수집기 51/51, Production 인증 18/18, 공개 빌드 9파일·인라인 스크립트 6개·CSP 해시 4개와 전체 `npm run check:release` 통과.
 - 비변경 범위: `client.html`, Supabase 스키마·운영 데이터·RLS, 업무 API 권한 범위, 순위 수집·계산·저장·크론, 보호 잠금 해시는 변경하지 않았다.
-- Production 증거: 코드 `0e8a4b0`, 배포 `dpl_61KjLZdC4zrTK8PYkmhFSEQk2SkW`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `0e8a4b07c116`·서울 `icn1`·Supabase ready, `/admin`·`/client`는 200, 비인증 `/api/work-items`는 401이다. 운영 브라우저 해시 전환에서도 `대행사 연결`·`키워드 조회`·`업무 운영`은 각각 해당 화면 1개만 표시되고 코드 추천 목록·list 연결은 모두 0건이다.
+- Production 증거: 기능 코드 `0e8a4b0`, 배포 증거 `f9be8ca`, 최종 배포 `dpl_9qB4m8GJrsEfUPSKWRt6PVLkxcaY`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `f9be8cadf997`·서울 `icn1`·Supabase ready, `/admin`·`/client`는 200, 비인증 `/api/work-items`는 401이다. 운영 브라우저 해시 전환에서도 `대행사 연결`·`키워드 조회`·`업무 운영`은 각각 해당 화면 1개만 표시되고 코드 추천 목록·list 연결은 모두 0건이다.
 
 ## 2026-07-30 · 업무 운영 워크플로 1차 로컬 검증
 

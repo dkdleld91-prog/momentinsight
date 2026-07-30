@@ -431,6 +431,7 @@ function verifiedCatalogSnapshot(overrides = {}) {
       trackingRankSource: "related_catalog",
       relatedCatalogProductId: "57907660073",
       relatedCatalogRank: 16,
+      relatedCatalogRelationBasis: "keyword_brand_category",
       rankPolicy: "organic_only",
       adExcluded: true,
     },
@@ -479,6 +480,36 @@ test("only a prior matched organic snapshot can supply the continuity catalog id
       },
     }),
   ], "12649811979"), "");
+});
+
+test("standalone seller-product evidence invalidates a previously stored catalog id", () => {
+  const snapshots = [
+    verifiedCatalogSnapshot({
+      checked_at: new Date(Date.now() - 1000).toISOString(),
+      item: {
+        trackingRankSource: "related_catalog",
+        relatedCatalogProductId: "59031763223",
+        relatedCatalogRank: 3,
+        relationBasis: "prior_verified_catalog_id",
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+    verifiedCatalogSnapshot({
+      checked_at: new Date(Date.now() - 2000).toISOString(),
+      item: {
+        trackingRankSource: "exact_product",
+        productType: "2",
+        relatedCatalogProductId: "59031763223",
+        relatedCatalogRank: 21,
+        relatedCatalogRelationBasis: "keyword_brand_category",
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+  ];
+
+  assert.equal(verifiedRelatedCatalogIdFromSnapshots(snapshots, "12149720593"), "");
 });
 
 test("a tracker reuses the exact prior catalog id when the seller product is outside 300", async () => {
@@ -808,6 +839,47 @@ test("shopping lookup compares the exact seller product and verified catalog in 
       "57907660073",
       "98765432101",
     ]);
+  });
+});
+
+test("shopping lookup ignores a stored catalog when the exact item is an unmatched single product", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[2] = shoppingResultItem(2, {
+    productId: "59031763223",
+    link: "https://search.shopping.naver.com/catalog/59031763223",
+    title: "한일의료기 프리볼트 전기 온열 찜질기 원적외선 찜질팩",
+    mallName: "네이버",
+    brand: "한일의료기",
+    maker: "한일의료기",
+    category2: "냉온/찜질용품",
+    productType: "1",
+  });
+  items[75] = shoppingResultItem(75, {
+    productId: "89694231298",
+    link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+    title: "일신한일의료기 온열찜질기 허리찜질팩 원적외선 전기 어깨 복부 배 M",
+    mallName: "소노팜스토어",
+    brand: "한일의료기",
+    maker: "한일의료기",
+    category2: "냉온/찜질용품",
+    productType: "2",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(VALID_ENV, {
+      keyword: "온열찜질기",
+      targetProductId: "12149720593",
+      verifiedRelatedCatalogId: "59031763223",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 76);
+    assert.equal(result.exactProductRank, 76);
+    assert.equal(result.relatedCatalogRank, null);
+    assert.equal(result.trackingRankSource, "exact_product");
+    assert.equal(result.verifiedRelatedCatalogId, null);
+    assert.equal(result.relatedCatalogContinuityUsed, false);
+    assert.deepEqual(result.productExposureItems.map((item) => item.productId), ["89694231298"]);
   });
 });
 

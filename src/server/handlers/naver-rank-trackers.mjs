@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
+  classifyNaverProductType,
   extractProductId,
   findShoppingRank,
   hasShoppingRankConfig,
@@ -689,6 +690,9 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
       relatedCatalogRank: result.relatedCatalogRank || null,
       relatedCatalogProductId: result.relatedCatalogProductId || null,
       relatedCatalogTitle: result.relatedCatalogTitle || null,
+      relatedCatalogRelationBasis: result.relatedCatalogRelationBasis || null,
+      exactProductType: result.exactProductType || null,
+      exactProductKind: result.exactProductKind || null,
       rankSelectionBasis: result.rankSelectionBasis,
     } : {}),
   };
@@ -811,6 +815,7 @@ export function selectRepresentativeTrackingRank(result = {}) {
     ? relatedCatalog
     : (safeExactItem || safeResultItem || null);
   const excludedInSelection = exposureItems.length - organicExposureItems.length;
+  const exactProductTypeInfo = classifyNaverProductType(safeExactItem?.productType);
 
   return {
     ...result,
@@ -831,6 +836,9 @@ export function selectRepresentativeTrackingRank(result = {}) {
     relatedCatalogRank,
     relatedCatalogProductId: relatedCatalog?.productId || null,
     relatedCatalogTitle: relatedCatalog?.title || null,
+    relatedCatalogRelationBasis: relatedCatalog?.relationBasis || null,
+    exactProductType: exactProductTypeInfo.productType || null,
+    exactProductKind: exactProductTypeInfo.kind || null,
     item: safeResultItem || safeExactItem || relatedCatalog || null,
     exactItem: safeExactItem || null,
     representativeItem,
@@ -856,20 +864,44 @@ export function representativeTrackingRankMessage(result = {}) {
 export function verifiedRelatedCatalogIdFromSnapshots(snapshots = [], trackerProductId = "") {
   const exactProductId = normalizeText(trackerProductId);
   const allowedSources = new Set(["related_catalog", "exact_product"]);
+  const allowedRelationBases = new Set([
+    "metadata_catalog_id",
+    "model_brand_category",
+    "keyword_brand_category",
+  ]);
   const orderedSnapshots = [...(Array.isArray(snapshots) ? snapshots : [])]
     .sort((left, right) => (
       (Date.parse(String(right?.checked_at || "")) || 0)
       - (Date.parse(String(left?.checked_at || "")) || 0)
     ));
 
+  const explicitlyUnmatchedCatalogIds = new Set();
   for (const snapshot of orderedSnapshots) {
     const item = snapshot?.item;
     const relatedCatalogId = normalizeText(item?.relatedCatalogProductId);
+    const exactType = classifyNaverProductType(
+      item?.exactProductType
+      || (item?.trackingRankSource === "exact_product" ? item?.productType : ""),
+    );
+    if (relatedCatalogId && exactType.kind === "single") {
+      explicitlyUnmatchedCatalogIds.add(relatedCatalogId);
+    }
+  }
+
+  for (const snapshot of orderedSnapshots) {
+    const item = snapshot?.item;
+    const relatedCatalogId = normalizeText(item?.relatedCatalogProductId);
+    const relationBasis = normalizeText(
+      item?.relatedCatalogRelationBasis
+      || (item?.trackingRankSource === "related_catalog" ? item?.relationBasis : ""),
+    );
     if (snapshot?.matched !== true
       || !item
       || item.rankPolicy !== "organic_only"
       || item.adExcluded !== true
       || !allowedSources.has(item.trackingRankSource)
+      || !allowedRelationBases.has(relationBasis)
+      || explicitlyUnmatchedCatalogIds.has(relatedCatalogId)
       || !positiveRank(item.relatedCatalogRank)
       || !/^[0-9]{5,}$/.test(relatedCatalogId)
       || relatedCatalogId === exactProductId) continue;

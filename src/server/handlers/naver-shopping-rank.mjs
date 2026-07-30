@@ -861,7 +861,10 @@ function relatedCatalogRelationBasis(keyword, referenceItem, candidateItem) {
 
 function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
   const matchedType = classifyNaverProductType(matchedItem?.productType);
-  if (!matchedItem || matchedType.isPriceCompareCatalog) return [];
+  // Naver product types 2/5/8/11 are explicitly not connected to a price
+  // comparison catalog. Brand/category/keyword similarity must never create a
+  // catalog relationship for those standalone seller products.
+  if (!matchedItem || !matchedType.isMatchedSingle) return [];
 
   return (organicItems || [])
     .map((entry) => {
@@ -1064,14 +1067,17 @@ async function findRank(env, {
     }
   }
 
-  const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(organicItems, continuityCatalogId);
+  const matchedProductType = classifyNaverProductType(matchedResult?.item?.productType);
+  const relatedCatalogEligible = !matchedResult || matchedProductType.isMatchedSingle;
+  const effectiveContinuityCatalogId = relatedCatalogEligible ? continuityCatalogId : "";
+  const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(organicItems, effectiveContinuityCatalogId);
   if (matchedResult || continuityCatalogItem) {
     const complete = organicCheckedCount >= limit || sourceExhausted;
     const sellerItems = matchedResult ? sellerItemsFromOrganic(organicItems, matchedResult.item, target) : [];
     const discoveredExposureItems = matchedResult
       ? productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword)
       : [];
-    const productExposureItems = continuityCatalogId
+    const productExposureItems = effectiveContinuityCatalogId
       ? [
         ...discoveredExposureItems.filter((item) => item?.isExactTarget),
         ...(continuityCatalogItem ? [continuityCatalogItem] : []),
@@ -1102,7 +1108,7 @@ async function findRank(env, {
       webPagePositionReason: "광고를 제외한 오가닉 순서를 40개 보기 기준 페이지와 페이지 내 순위로 표시합니다.",
       matchType: matchedResult?.matchType || "product_id",
       matchEvidence: matchedResult?.matchEvidence || "prior_verified_catalog_id",
-      matchedProductId: matchedResult?.matchedProductId || continuityCatalogId,
+      matchedProductId: matchedResult?.matchedProductId || effectiveContinuityCatalogId,
       exactProductRank: exactItem?.rank || null,
       relatedCatalogRank: representative.relatedCatalog?.rank || null,
       representativeProductId: representativeItem.productId || null,
@@ -1123,9 +1129,9 @@ async function findRank(env, {
       excludedAdCount,
       targetProductId: target.productId,
       targetProductIds: target.productIds,
-      targetCatalogId: target.catalogId || continuityCatalogId,
-      targetCatalogIds: uniqueValues([...target.catalogIds, continuityCatalogId]),
-      verifiedRelatedCatalogId: continuityCatalogId || null,
+      targetCatalogId: target.catalogId || effectiveContinuityCatalogId,
+      targetCatalogIds: uniqueValues([...target.catalogIds, effectiveContinuityCatalogId]),
+      verifiedRelatedCatalogId: effectiveContinuityCatalogId || null,
       relatedCatalogContinuityUsed: Boolean(continuityCatalogItem),
       targetMode: target.targetMode,
       targetModeLabel: target.targetModeLabel,

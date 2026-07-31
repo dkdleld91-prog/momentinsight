@@ -69,6 +69,17 @@ function status(env, label, names, required = true, valid = null) {
 }
 
 const env = mergeEnv();
+const vercelBuildMode = process.argv.includes("--vercel-build");
+if (vercelBuildMode && env.VERCEL_ENV !== "production") {
+  console.log(JSON.stringify({
+    ok: true,
+    skipped: true,
+    reason: "vercel_non_production_build",
+    vercelEnv: String(env.VERCEL_ENV || "local"),
+    checkedAt: new Date().toISOString(),
+  }, null, 2));
+  process.exit(0);
+}
 const strictNaver = process.argv.includes("--naver") ||
   process.argv.includes("--production") ||
   env.MI_REQUIRE_NAVER_ENV === "true" ||
@@ -96,6 +107,8 @@ const checks = [
   )),
   status(env, "Naver legacy OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], false),
   status(env, "Naver legacy OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], false),
+  status(env, "Naver shopping rank provider URL", ["NAVER_SHOPPING_RANK_API_URL"], productionMode),
+  status(env, "Naver shopping rank provider key", ["NAVER_SHOPPING_RANK_API_KEY"], productionMode),
   status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),
   status(env, "Naver Place rank provider key", ["NAVER_PLACE_RANK_API_KEY"], false),
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),
@@ -134,6 +147,7 @@ const missingRequired = checks.filter((check) => check.required && !check.valid)
 
 console.log(JSON.stringify({
   ok: missingRequired.length === 0,
+  vercelBuildMode,
   strictNaver,
   productionMode,
   checkedAt: new Date().toISOString(),

@@ -15857,10 +15857,29 @@
         var rankAutoSyncLastAt = 0;
         var rankRequestGeneration = 0;
         var rankActiveScopeKey = null;
+        var rankSourceReady = false;
+        var rankSourceConfigured = false;
         card.setAttribute("data-rank-filter-text", "");
         card.setAttribute("data-rank-filter-mode", "all");
         card.setAttribute("data-rank-filter-group", "");
         card.setAttribute("data-rank-collapsed-groups", "");
+
+        function rankSourceUnavailableMessage() {
+          return "N 상품 순위 수집원 미연결입니다. 마지막 정상 순위와 30일 기록은 그대로 표시합니다.";
+        }
+
+        function rankPayloadHasSourceError(payload) {
+          var errorCode = String(payload && payload.errorCode || "").toUpperCase();
+          return errorCode === "SHOPPING_RANK_SOURCE_NOT_CONFIGURED" || errorCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE";
+        }
+
+        function applyRankSourceState(payload) {
+          if (payload && typeof payload.rankSourceReady === "boolean") rankSourceReady = payload.rankSourceReady;
+          if (payload && typeof payload.configured === "boolean") rankSourceConfigured = payload.configured;
+          if (rankPayloadHasSourceError(payload)) rankSourceReady = false;
+          card.setAttribute("data-rank-source-ready", rankSourceReady ? "true" : "false");
+          card.setAttribute("data-rank-source-configured", rankSourceConfigured ? "true" : "false");
+        }
 
         async function requestRankTrackers(method, body, expectedScope) {
           var requestScope = expectedScope || verifiedRankTrackerScope();
@@ -15933,6 +15952,10 @@
 
         async function syncDueRankTrackersIfNeeded(silent, scope, generation) {
           if (!scope || !rankRequestIsCurrent(scope, generation)) return false;
+          if (rankSourceReady !== true) {
+            if (!silent) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
+            return false;
+          }
           var due = dueRankTrackers(rankTrackers);
           var now = Date.now();
           if (!due.length || rankAutoSyncingDue || now - rankAutoSyncLastAt < 60000) return;
@@ -15945,6 +15968,7 @@
               action: "sync-due",
               limit: "2"
             }, scope);
+            applyRankSourceState(payload);
             if (!rankRequestIsCurrent(scope, generation)) return false;
             if (!payload || payload.ok !== true) {
               renderRankHistory(rankHistory, rankTrackers);
@@ -15954,6 +15978,7 @@
             var checked = Number(payload && payload.summary && payload.summary.checked || 0);
             if (checked > 0) {
               var refreshed = await requestRankTrackers("GET", null, scope);
+              applyRankSourceState(refreshed);
               if (!rankRequestIsCurrent(scope, generation)) return false;
               if (!completeRankTrackerPayload(refreshed, scope)) {
                 renderRankHistory(rankHistory, rankTrackers);
@@ -15990,6 +16015,7 @@
           }
           try {
             var payload = await requestRankTrackers("GET", null, scope);
+            applyRankSourceState(payload);
             if (!rankRequestIsCurrent(scope, generation)) return false;
             if (!completeRankTrackerPayload(payload, scope)) {
               if (!rankTrackers.length && scopedRankTrackerPayload(payload, scope) && payload.trackers.length) {
@@ -16008,12 +16034,15 @@
             renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
+              if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
+              else setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
+            if (rankSourceReady !== true) return true;
             await syncDueRankTrackersIfNeeded(silent, scope, generation);
             return true;
           } catch (error) {
             if (rankRequestIsCurrent(scope, generation)) {
+              applyRankSourceState({ rankSourceReady: false });
               renderRankHistory(rankHistory, rankTrackers);
               if (!silent) setStatus(rankStatus, "순위 추적 서버 연결 실패로 마지막 정상 순위와 이력을 유지합니다.", "is-warn");
             }
@@ -16022,6 +16051,10 @@
         }
 
         async function refreshAllRankTrackers(refreshAllButton) {
+          if (rankSourceReady !== true) {
+            setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
+            return;
+          }
           var targets = rankTrackers.filter(function (tracker) {
             return tracker && tracker.id && tracker.status !== "paused" && tracker.status !== "completed";
           });
@@ -16035,6 +16068,7 @@
           var successCount = 0;
           var failCount = 0;
           var failedTargets = [];
+          var sourceUnavailableDuringBatch = false;
           try {
             if (!await waitForRankAutoSyncBeforeManual()) {
               setStatus(rankStatus, "자동 갱신이 진행 중입니다. 완료 후 전체 갱신을 다시 눌러주세요.", "is-warn");
@@ -16045,7 +16079,7 @@
             var workerCount = Math.min(2, targets.length);
             setStatus(rankStatus, "전체 순위 갱신을 시작합니다.", "");
             async function refreshWorker() {
-              while (nextIndex < targets.length) {
+              while (nextIndex < targets.length && rankSourceReady === true) {
                 var targetIndex = nextIndex;
                 nextIndex += 1;
                 try {
@@ -16053,23 +16087,30 @@
                     action: "check",
                     trackerId: targets[targetIndex].id
                   });
+                  applyRankSourceState(payload);
+                  if (rankPayloadHasSourceError(payload)) sourceUnavailableDuringBatch = true;
                   if (payload && payload.ok && payload.tracker) successCount += 1;
                   else {
                     failCount += 1;
-                    failedTargets.push(targets[targetIndex]);
+                    failedTargets.push({
+                      tracker: targets[targetIndex],
+                      retryable: Boolean(payload && payload.retryable === true),
+                      errorCode: String(payload && payload.errorCode || "")
+                    });
                   }
                 } catch (error) {
                   failCount += 1;
-                  failedTargets.push(targets[targetIndex]);
+                  failedTargets.push({ tracker: targets[targetIndex], retryable: false, errorCode: "request_failed" });
                 }
                 completedCount += 1;
                 setStatus(rankStatus, "전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length, "");
               }
             }
             await Promise.all(Array.from({ length: workerCount }, function () { return refreshWorker(); }));
+            if (completedCount < targets.length) failCount += targets.length - completedCount;
             await loadRankTrackers(true);
-            var unresolvedTargets = failedTargets.filter(function (target) {
-              var refreshedTracker = rankTrackers.find(function (tracker) { return tracker.id === target.id; });
+            var unresolvedTargets = failedTargets.filter(function (failure) {
+              var refreshedTracker = rankTrackers.find(function (tracker) { return tracker.id === failure.tracker.id; });
               var checkedAt = refreshedTracker && refreshedTracker.lastCheckedAt
                 ? new Date(refreshedTracker.lastCheckedAt).getTime()
                 : 0;
@@ -16080,15 +16121,17 @@
               }
               return !recovered;
             });
-            if (unresolvedTargets.length) {
-              setStatus(rankStatus, "응답을 확인하지 못한 " + unresolvedTargets.length + "개를 순차 재시도합니다.", "");
+            var retryTargets = unresolvedTargets.filter(function (failure) { return failure.retryable === true; });
+            if (rankSourceReady === true && retryTargets.length) {
+              setStatus(rankStatus, "일시 오류 " + retryTargets.length + "개를 한 번만 순차 재시도합니다.", "");
               await new Promise(function (resolve) { setTimeout(resolve, 1000); });
-              for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1) {
+              for (var retryIndex = 0; retryIndex < retryTargets.length; retryIndex += 1) {
                 try {
                   var retryPayload = await requestRankTrackers("POST", {
                     action: "check",
-                    trackerId: unresolvedTargets[retryIndex].id
+                    trackerId: retryTargets[retryIndex].tracker.id
                   });
+                  applyRankSourceState(retryPayload);
                   if (retryPayload && retryPayload.ok && retryPayload.tracker) {
                     successCount += 1;
                     failCount = Math.max(0, failCount - 1);
@@ -16099,7 +16142,9 @@
               }
               await loadRankTrackers(true);
             }
-            setStatus(rankStatus, failCount
+            if (sourceUnavailableDuringBatch || rankSourceReady !== true) {
+              setStatus(rankStatus, "N 상품 순위 수집원 미연결 · 성공 " + successCount + "개, 갱신 보류 " + failCount + "개. 마지막 정상 순위와 30일 기록을 표시합니다.", "is-warn");
+            } else setStatus(rankStatus, failCount
               ? "전체 갱신 완료: 성공 " + successCount + "개, 재시도 예정 " + failCount + "개"
               : "전체 순위 갱신이 완료되었습니다. " + successCount + "개", failCount ? "is-warn" : "is-ok");
           } catch (error) {

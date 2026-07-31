@@ -46,9 +46,9 @@ test("integration status separates migrated API Hub calls from the terminating s
       datalabProvider: "hub",
     });
     assert.equal(body.integrations.keywordTrendAndRatios.source, "naver_api_hub_datalab");
-    assert.equal(body.integrations.shoppingReferenceAndRank.source, "naver_developers_shopping_search");
+    assert.equal(body.integrations.shoppingReferenceAndRank.source, "unavailable_no_official_replacement");
     assert.equal(body.integrations.shoppingReferenceAndRank.ready, false);
-    assert.equal(body.integrations.shoppingReferenceAndRank.configured, true);
+    assert.equal(body.integrations.shoppingReferenceAndRank.configured, false);
     assert.equal(body.integrations.shoppingReferenceAndRank.lifecycle, "ended_2026-07-31_no_official_replacement");
 
     process.env.NAVER_SHOPPING_RANK_API_URL = "https://collector.example/rank";

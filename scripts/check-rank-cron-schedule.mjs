@@ -61,6 +61,8 @@ assert.match(workflow, /safe\.drained !== \(safe\.remaining === 0\)/, "Product w
 assert.match(workflow, /safe\.checked === 0 && !safe\.drained/, "Product workflow must reject a zero-progress non-drained batch");
 assert.match(workflow, /!safe\.configured/, "Product workflow must fail when the rank provider is unavailable");
 assert.match(workflow, /const itemFailureResponse = response\.status === 502/, "Product workflow must parse bounded item failures before rejecting the transport");
+assert.match(workflow, /payloadCode === "NAVER_RANK_CRON_ITEM_FAILURE"/, "Product workflow must accept only the typed item-failure response");
+assert.match(workflow, /payloadCode === "NAVER_RANK_PROVIDER_NOT_CONFIGURED"/, "Product workflow must recognize the typed provider configuration failure");
 assert.match(workflow, /totals\.failed > 0/, "Product workflow must report tracker failures after draining the remaining queue");
 assert.match(workflow, /drained the queue with/, "Product workflow must surface a degraded drained run as failed");
 

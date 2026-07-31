@@ -151,6 +151,7 @@ const securityServer = read("src/server/security.mjs");
 const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
+const packageConfig = JSON.parse(read("package.json"));
 const vercelConfig = JSON.parse(read("vercel.json"));
 const protectedFeatureLock = JSON.parse(read("scripts/protected-rank-features.lock.json"));
 const rankCronWorkflow = read(".github/workflows/naver-rank-cron.yml");
@@ -1060,8 +1061,17 @@ const checks = {
     && !staticBuildScript.includes('path.join(outputDir, "02_아임웹_적용코드")')
     && !staticBuildScript.includes("path.join(outputDir, fileName)")
     && !staticBuildScript.includes('"/all.html"'),
+  productionBuildRunsRuntimeEnvGate: vercelConfig.buildCommand === "npm run check:vercel-env && npm run check:release"
+    && packageConfig.scripts?.["check:vercel-env"] === "node scripts/check-runtime-env.mjs --vercel-build"
+    && packageConfig.scripts?.["check:release"] === "npm run check:quality && npm run check:production-auth"
+    && runtimeEnvCheck.includes('const vercelBuildMode = process.argv.includes("--vercel-build")')
+    && runtimeEnvCheck.includes('vercelBuildMode && env.VERCEL_ENV !== "production"')
+    && runtimeEnvCheck.includes('reason: "vercel_non_production_build"'),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && rankCronServer.includes("Unauthorized cron request")
+    && rankCronServer.includes('NAVER_RANK_PROVIDER_NOT_CONFIGURED = "NAVER_RANK_PROVIDER_NOT_CONFIGURED"')
+    && rankCronServer.includes("productRankCronProviderConfigured")
+    && rankCronServer.includes("claimed: 0")
     && cronAuthServer.includes("CRON_SECRET")
     && cronAuthServer.includes("MI_RANK_CRON_SECRET")
     && cronAuthServer.includes("safeEqual"),
@@ -1279,6 +1289,8 @@ const checks = {
     && rankCronWorkflow.includes("requestTimeoutMs")
     && rankCronWorkflow.includes("payload.ok !== true")
     && rankCronWorkflow.includes("const itemFailureResponse = response.status === 502")
+    && rankCronWorkflow.includes('payloadCode === "NAVER_RANK_CRON_ITEM_FAILURE"')
+    && rankCronWorkflow.includes('payloadCode === "NAVER_RANK_PROVIDER_NOT_CONFIGURED"')
     && rankCronWorkflow.includes("totals.failed > 0")
     && rankCronWorkflow.includes("drained the queue with")
     && rankCronWorkflow.includes("MI_RANK_CRON_SECRET")
@@ -1299,6 +1311,8 @@ const checks = {
     && rankProcessingLeaseMigration.includes("add column if not exists processing_until")
     && rankProcessingLeaseMigration.includes("idx_naver_rank_trackers_due_processing"),
   rankCronReportsPartialFailures: rankCronServer.includes("summary.checked > 0 && summary.failed > 0")
+    && rankCronServer.includes('NAVER_RANK_CRON_ITEM_FAILURE = "NAVER_RANK_CRON_ITEM_FAILURE"')
+    && rankCronServer.includes("safeProductRankCronSummary")
     && rankCronServer.includes("일부 네이버 상품 순위 자동 갱신이 실패했습니다.")
     && rankCronServer.includes("}, 502)"),
   rankTrackerDueSelfHeal: rankServer.includes("syncDueTrackers")
@@ -1396,8 +1410,14 @@ const checks = {
     && source.includes('"전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length')
     && !source.includes("안전 동시 갱신 2개")
     && source.includes("Boolean(refreshedTracker) && checkedAt >= batchStartedAt - 1000")
-    && source.includes("응답을 확인하지 못한 ")
-    && source.includes("for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1)")
+    && source.includes("rankSourceReady !== true")
+    && source.includes("payload.retryable === true")
+    && source.includes("retryTargets.length")
+    && source.includes("일시 오류 ")
+    && source.includes("for (var retryIndex = 0; retryIndex < retryTargets.length; retryIndex += 1)")
+    && source.includes("sourceUnavailableDuringBatch")
+    && !source.includes("응답을 확인하지 못한 ")
+    && !source.includes("for (var retryIndex = 0; retryIndex < unresolvedTargets.length; retryIndex += 1)")
     && source.includes("재시도 예정")
     && !source.includes("for (var i = 0; i < targets.length")),
   rankRefreshAppliesBySessionScopeSiteWide: [adminFullRankRefreshSource, clientFullRankRefreshSource, adminFullPlaceRefreshSource, clientFullPlaceRefreshSource]
@@ -1439,6 +1459,8 @@ const checks = {
     && superAdminServer.includes("총관리자 비밀값이 서버에 설정되지 않았습니다.")
     && !superAdminServer.includes("process.env.MI_SUPER_ADMIN_CODE || primaryAgencyCode()"),
   productionEnvRequiresCronAndOwnerSecrets: runtimeEnvCheck.includes('const productionMode = process.argv.includes("--production")')
+    && runtimeEnvCheck.includes('status(env, "Naver shopping rank provider URL", ["NAVER_SHOPPING_RANK_API_URL"], productionMode)')
+    && runtimeEnvCheck.includes('status(env, "Naver shopping rank provider key", ["NAVER_SHOPPING_RANK_API_KEY"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Rank tracker GitHub cron secret", ["MI_RANK_CRON_SECRET"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Vercel Cron authorization secret", ["CRON_SECRET"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode,')

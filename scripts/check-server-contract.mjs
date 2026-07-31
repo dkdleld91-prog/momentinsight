@@ -390,8 +390,9 @@ check(
   `${files.vercel}, ${files.sessionAdapter}`,
 );
 check(
-  "Vercel release requires quality and production authentication gates",
-  vercel.buildCommand === "npm run check:release"
+  "Vercel production build requires environment, quality and authentication gates",
+  vercel.buildCommand === "npm run check:vercel-env && npm run check:release"
+    && packageJson.scripts?.["check:vercel-env"] === "node scripts/check-runtime-env.mjs --vercel-build"
     && packageJson.scripts?.["check:production-auth"] === "node scripts/check-production-auth.mjs"
     && String(packageJson.scripts?.["check:release"] || "").includes("npm run check:quality")
     && String(packageJson.scripts?.["check:release"] || "").includes("npm run check:production-auth"),

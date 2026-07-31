@@ -98,11 +98,19 @@ jobs:
             if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
               throw new Error("rank cron returned an invalid payload");
             }
+            const payloadCode = typeof payload.code === "string" ? payload.code : "";
+            const providerNotConfiguredResponse = response.status === 503
+              && payload.ok === false
+              && payloadCode === "NAVER_RANK_PROVIDER_NOT_CONFIGURED";
             const itemFailureResponse = response.status === 502
               && payload.ok === false
+              && payloadCode === "NAVER_RANK_CRON_ITEM_FAILURE"
               && payload.summary
               && typeof payload.summary === "object"
               && !Array.isArray(payload.summary);
+            if (providerNotConfiguredResponse) {
+              throw new Error("rank cron provider is not configured");
+            }
             if (!response.ok && !itemFailureResponse) {
               throw new Error(`rank cron returned HTTP ${response.status}`);
             }

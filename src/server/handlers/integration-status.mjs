@@ -1,6 +1,5 @@
 import { protectedJson } from "../security.mjs";
 import {
-  hasLegacyNaverApiConfig,
   hasNaverApiHubConfig,
   hasNaverMigratedApiConfig,
   isNaverApiHubCutoverReady,
@@ -49,7 +48,6 @@ export default {
     const hubCutoverReady = isNaverApiHubCutoverReady(naverApi);
     const migratedDatalabReady = hasNaverMigratedApiConfig(naverApi, "datalab");
     const migratedSearchReady = hasNaverMigratedApiConfig(naverApi, "search");
-    const legacyShoppingReady = hasLegacyNaverApiConfig(naverApi, "search");
     const shoppingCollectorReady = hasAny([
       "NAVER_SHOPPING_RANK_API_URL",
     ]) && hasAny([
@@ -115,10 +113,10 @@ export default {
         },
         shoppingReferenceAndRank: {
           ready: shoppingCollectorReady,
-          configured: shoppingCollectorReady || legacyShoppingReady,
+          configured: shoppingCollectorReady,
           source: shoppingCollectorReady
             ? "verified_naver_shopping_results_collector"
-            : "naver_developers_shopping_search",
+            : "unavailable_no_official_replacement",
           lifecycle: shoppingCollectorReady
             ? "server_collector"
             : "ended_2026-07-31_no_official_replacement",

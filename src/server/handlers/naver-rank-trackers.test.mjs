@@ -15,16 +15,49 @@ import {
 } from "./naver-rank-trackers.mjs";
 import {
   findShoppingRank,
+  hasShoppingRankConfig,
   shoppingProviderPageCache,
+  shoppingRankSourceStatus,
   trustedCollectorPage,
 } from "./naver-shopping-rank.mjs";
 
 const TRACKERS = "naver_rank_trackers";
 const SNAPSHOTS = "naver_rank_snapshots";
-const VALID_ENV = {
+const LEGACY_ENV = {
   openapiClientId: "test-client-id",
   openapiClientSecret: "test-client-secret",
 };
+const COLLECTOR_ENV = {
+  providerUrl: "https://collector.example/rank",
+  providerKey: "collector-key",
+};
+
+async function withoutShoppingCollector(callback) {
+  const previousUrl = process.env.NAVER_SHOPPING_RANK_API_URL;
+  const previousKey = process.env.NAVER_SHOPPING_RANK_API_KEY;
+  delete process.env.NAVER_SHOPPING_RANK_API_URL;
+  delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+  try {
+    return await callback();
+  } finally {
+    if (previousUrl === undefined) delete process.env.NAVER_SHOPPING_RANK_API_URL;
+    else process.env.NAVER_SHOPPING_RANK_API_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+    else process.env.NAVER_SHOPPING_RANK_API_KEY = previousKey;
+  }
+}
+
+test("product-rank readiness accepts only the verified collector pair", () => {
+  assert.equal(hasShoppingRankConfig(LEGACY_ENV), false);
+  assert.equal(hasShoppingRankConfig({ providerUrl: COLLECTOR_ENV.providerUrl }), false);
+  assert.equal(hasShoppingRankConfig(COLLECTOR_ENV), true);
+  assert.deepEqual(shoppingRankSourceStatus(LEGACY_ENV), {
+    rankSourceReady: false,
+    configured: false,
+    errorCode: "SHOPPING_RANK_SOURCE_NOT_CONFIGURED",
+    retryable: false,
+  });
+});
 
 test("trusted product-rank headers override conflicting body scope", () => {
   const request = new Request("https://example.com/api/naver-rank-trackers?agencyCode=mml93-a98", {
@@ -79,7 +112,7 @@ test("an account-only team lists an isolated product-rank scope without a client
       },
     },
   };
-  const response = await handleRankTrackersRequest(request, ctx);
+  const response = await withoutShoppingCollector(() => handleRankTrackersRequest(request, ctx));
   const body = await response.json();
   assert.equal(response.status, 200);
   assert.equal(body.scopeAgencyCode, teamCode);
@@ -87,6 +120,10 @@ test("an account-only team lists an isolated product-rank scope without a client
   assert.equal(body.scopeMode, "team-account");
   assert.equal(body.returnedCount, 0);
   assert.equal(body.complete, true);
+  assert.equal(body.rankSourceReady, false);
+  assert.equal(body.configured, false);
+  assert.equal(body.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
+  assert.equal(body.retryable, false);
 });
 
 function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {
@@ -140,14 +177,57 @@ test("an account-only team reaches every product-rank action without advertiser 
       },
     },
   };
-  const syncResponse = await handleRankTrackersRequest(productTeamAccountRequest("POST", {
+  const syncResponse = await withoutShoppingCollector(() => handleRankTrackersRequest(productTeamAccountRequest("POST", {
     action: "sync-due",
     limit: 1,
-  }), emptyDueContext);
+  }), emptyDueContext));
   const syncBody = await syncResponse.json();
-  assert.equal(syncResponse.status, 200);
-  assert.equal(syncBody.ok, true);
+  assert.equal(syncResponse.status, 503);
+  assert.equal(syncBody.ok, false);
+  assert.equal(syncBody.configured, false);
+  assert.equal(syncBody.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
+  assert.equal(syncBody.retryable, false);
   assert.equal(syncBody.summary.checked, 0);
+});
+
+test("manual product refresh does not claim or update a row without the collector", async () => {
+  const teamCode = "mml93-t01";
+  const tracker = trackerRow({ agency_code: teamCode });
+  let updateCalled = false;
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          in() { return query; },
+          update() {
+            updateCalled = true;
+            return query;
+          },
+          async maybeSingle() {
+            return { data: tracker, error: null };
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", { action: "check", trackerId: tracker.id }, teamCode),
+    ctx,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(body.ok, false);
+  assert.equal(body.rankSourceReady, false);
+  assert.equal(body.configured, false);
+  assert.equal(body.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
+  assert.equal(body.retryable, false);
+  assert.equal(updateCalled, false);
 });
 
 function trackerRow(values = {}) {
@@ -527,7 +607,7 @@ test("a tracker reuses the exact prior catalog id when the seller product is out
   let lookupOptions = null;
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async (_env, options) => {
       lookupOptions = options;
       return {
@@ -566,7 +646,7 @@ test("a complete miss clears the current rank only after exact product and verif
   const { ctx, state } = testContext(tracker, [verifiedCatalogSnapshot()]);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async (_env, options) => {
       assert.equal(options.verifiedRelatedCatalogId, "57907660073");
       return {
@@ -607,6 +687,10 @@ test("missing shopping API config preserves the last good rank and schedules a f
 
   assert.equal(result.ok, false);
   assert.equal(result.error, "shopping_api_not_configured");
+  assert.equal(result.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
+  assert.equal(result.retryable, false);
+  assert.equal(result.rankSourceReady, false);
+  assert.equal(result.configured, false);
   assert.equal(lookupCalled, false);
   assert.equal(state.tables[SNAPSHOTS].length, 0);
   assertPreserved(tracker, current);
@@ -628,7 +712,7 @@ test("shopping lookup exceptions preserve history and use exponential retry back
   const startedAt = Date.now();
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => {
       throw new Error("naver lookup timeout");
     },
@@ -651,7 +735,7 @@ test("a removed legacy shopping endpoint preserves history and waits for the nex
   const { ctx, state } = testContext(tracker);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => {
       throw new Error("Invalid search api (존재하지 않는 검색 api 입니다.)");
     },
@@ -762,7 +846,7 @@ test("a valid not-found response still records a checked snapshot", async () => 
   const { ctx, state } = testContext(tracker);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => ({
       matched: false,
       rank: null,
@@ -790,7 +874,7 @@ test("an empty product provider response preserves the last confirmed rank", asy
   const { ctx, state } = testContext(tracker);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => ({}),
   });
 
@@ -897,7 +981,7 @@ test("shopping lookup finds a prior verified catalog by exact id when the seller
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -939,7 +1023,7 @@ test("shopping lookup compares the exact seller product and verified catalog in 
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -982,7 +1066,7 @@ test("shopping lookup ignores a stored catalog when the exact item is an unmatch
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "온열찜질기",
       targetProductId: "12149720593",
       verifiedRelatedCatalogId: "59031763223",
@@ -1022,7 +1106,7 @@ test("shopping lookup does not claim a complete window when a later provider pag
   };
 
   try {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -1053,7 +1137,7 @@ test("shopping lookup never substitutes a title-similar catalog for the verified
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       targetMallName: "라이브오랄스",
@@ -1081,7 +1165,7 @@ test("shopping lookup excludes an ad even when it carries the verified catalog i
   ];
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -1102,7 +1186,7 @@ test("the real shopping lookup rejects an empty 2xx payload", async () => {
   });
   try {
     await assert.rejects(
-      findShoppingRank(VALID_ENV, {
+      findShoppingRank(LEGACY_ENV, {
         keyword: "테스트 상품",
         targetProductId: "1234567890",
         maxRank: 300,
@@ -1121,7 +1205,7 @@ test("a short shopping page with more advertised results remains incomplete", as
     headers: { "content-type": "application/json" },
   });
   try {
-    const result = await findShoppingRank(VALID_ENV, {
+    const result = await findShoppingRank(LEGACY_ENV, {
       keyword: "테스트 상품",
       targetProductId: "1234567890",
       maxRank: 300,
@@ -1139,7 +1223,7 @@ test("an incomplete product miss preserves rank and schedules retry", async () =
   const { ctx, state } = testContext(tracker);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => ({
       matched: false,
       checkedCount: 62,
@@ -1162,7 +1246,7 @@ test("a fully exhausted short product result is a valid not-found check", async 
   const { ctx, state } = testContext(tracker);
 
   const result = await runTrackerCheck(ctx, tracker, {
-    env: VALID_ENV,
+    env: COLLECTOR_ENV,
     findShoppingRank: async () => ({
       matched: false,
       checkedCount: 50,
@@ -1186,7 +1270,7 @@ test("a stale product-rank lease cannot insert a snapshot", async () => {
 
   await assert.rejects(
     runTrackerCheck(ctx, tracker, {
-      env: VALID_ENV,
+      env: COLLECTOR_ENV,
       leaseStartedAt: "2026-07-16T00:05:00.000Z",
       findShoppingRank: async () => ({
         matched: true,
@@ -1210,7 +1294,7 @@ test("pausing a product tracker invalidates an in-flight lease before snapshot",
 
   await assert.rejects(
     runTrackerCheck(ctx, tracker, {
-      env: VALID_ENV,
+      env: COLLECTOR_ENV,
       leaseStartedAt,
       findShoppingRank: async () => {
         state.tables[TRACKERS][0].status = "paused";
@@ -1254,6 +1338,50 @@ test("missing product-rank lease columns fail closed", async () => {
   );
 });
 
+test("a missing collector circuit-breaks the due queue without claiming or updating rows", async () => {
+  let queryCount = 0;
+  let updateCalled = false;
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        queryCount += 1;
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          lte() { return query; },
+          or() { return query; },
+          in() { return query; },
+          update() {
+            updateCalled = true;
+            return query;
+          },
+          then(resolve, reject) {
+            return Promise.resolve({ data: null, error: null, count: 25 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const summary = await runDueTrackers(ctx, { env: LEGACY_ENV, limit: 25 });
+
+  assert.equal(summary.configured, false);
+  assert.equal(summary.rankSourceReady, false);
+  assert.equal(summary.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
+  assert.equal(summary.retryable, false);
+  assert.equal(summary.checked, 0);
+  assert.equal(summary.succeeded, 0);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.remaining, 25);
+  assert.equal(summary.remainingCount, 25);
+  assert.equal(summary.drained, false);
+  assert.deepEqual(summary.results, []);
+  assert.equal(queryCount, 1);
+  assert.equal(updateCalled, false);
+});
+
 test("an empty product-rank due queue reports drained", async () => {
   let queryCount = 0;
   const chain = (result) => ({
@@ -1277,7 +1405,7 @@ test("an empty product-rank due queue reports drained", async () => {
     },
   };
 
-  const summary = await runDueTrackers(ctx, { limit: 1 });
+  const summary = await runDueTrackers(ctx, { env: COLLECTOR_ENV, limit: 1 });
   assert.equal(summary.checked, 0);
   assert.equal(summary.remaining, 0);
   assert.equal(summary.drained, true);
@@ -1317,13 +1445,14 @@ test("product due refresh stays global for cron and accepts any advertiser scope
   }
 
   const siteWide = scopeContext();
-  const globalSummary = await runDueTrackers(siteWide.ctx, { limit: 1 });
+  const globalSummary = await runDueTrackers(siteWide.ctx, { env: COLLECTOR_ENV, limit: 1 });
   assert.equal(globalSummary.drained, true);
   assert.deepEqual(siteWide.scopes, []);
 
   const advertiser = scopeContext();
   const scopedSummary = await runDueTrackers(advertiser.ctx, {
     agencyCode: "agency-b02",
+    env: COLLECTOR_ENV,
     limit: 1,
   });
   assert.equal(scopedSummary.drained, true);

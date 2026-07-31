@@ -7,6 +7,7 @@ const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000)
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const SHOPPING_PROVIDER_CACHE_TTL_MS = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_TTL_MS || 12 * 60_000);
 const SHOPPING_PROVIDER_CACHE_MAX = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_MAX || 256);
+const SHOPPING_RANK_SOURCE_NOT_CONFIGURED = "SHOPPING_RANK_SOURCE_NOT_CONFIGURED";
 const rankRateBucket = new Map();
 const shoppingProviderPageCache = new Map();
 const DEFAULT_KEYWORD_ALIAS_MAP = {
@@ -27,11 +28,20 @@ function config() {
   };
 }
 
-function hasOpenapiConfig(env) {
-  return Boolean(
-    (env?.providerUrl && env?.providerKey)
-    || (env?.openapiClientId && env?.openapiClientSecret)
-  );
+function hasShoppingRankConfig(env) {
+  return Boolean(env?.providerUrl && env?.providerKey);
+}
+
+function shoppingRankSourceStatus(env) {
+  const configured = hasShoppingRankConfig(env);
+  return {
+    rankSourceReady: configured,
+    configured,
+    ...(!configured ? {
+      errorCode: SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
+      retryable: false,
+    } : {}),
+  };
 }
 
 function json(request, body, status = 200) {
@@ -1347,7 +1357,9 @@ export {
   sellerItemsFromOrganic,
   classifyNaverProductType,
   findRank as findShoppingRank,
-  hasOpenapiConfig as hasShoppingRankConfig,
+  hasShoppingRankConfig,
+  shoppingRankSourceStatus,
+  SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
   trustedCollectorPage,
   shoppingProviderPageCache,
   normalizeText,
@@ -1371,10 +1383,12 @@ export default {
     }
 
     const env = config();
-    if (!hasOpenapiConfig(env)) {
+    const sourceStatus = shoppingRankSourceStatus(env);
+    if (!sourceStatus.configured) {
       return json(request, {
         ok: false,
-        code: "NAVER_OPENAPI_NOT_CONFIGURED",
+        code: SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
+        ...sourceStatus,
         message: "네이버 쇼핑 순위 수집원이 아직 연결되지 않았습니다.",
         sourceStatus: {
           shoppingRank: { status: "not_configured", label: "네이버 쇼핑 순위 수집원 연결 필요" },
@@ -1409,6 +1423,7 @@ export default {
 
       return json(request, {
         ok: true,
+        ...sourceStatus,
         source: result.source || "naver_developers_shopping_search",
         rankEvidence: result.rankEvidence || "",
         sourceStatus: {
@@ -1430,6 +1445,9 @@ export default {
       return json(request, {
         ok: false,
         code: "SHOPPING_RANK_LOOKUP_FAILED",
+        errorCode: "SHOPPING_RANK_LOOKUP_FAILED",
+        retryable: true,
+        ...sourceStatus,
         message: "네이버 순위 조회 중 오류가 발생했습니다.",
       }, 500);
     }

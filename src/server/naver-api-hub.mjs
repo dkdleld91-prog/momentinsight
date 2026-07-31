@@ -1,6 +1,18 @@
 const LEGACY_BASE_URL = "https://openapi.naver.com";
 const API_HUB_BASE_URL = "https://naverapihub.apigw.ntruss.com";
 const VALID_MODES = new Set(["auto", "legacy", "hub"]);
+const API_HUB_SEARCH_RESOURCES = new Set([
+  "adult",
+  "blog",
+  "cafearticle",
+  "encyc",
+  "errata",
+  "image",
+  "kin",
+  "local",
+  "news",
+  "webkr",
+]);
 
 function text(value) {
   return String(value || "").trim();
@@ -54,6 +66,13 @@ export function hasNaverMigratedApiConfig(config, kind = "search") {
   return resolveNaverApiTransport(config, kind) !== "not-configured";
 }
 
+export function isNaverApiHubCutoverReady(config) {
+  return config?.mode === "hub"
+    && hasNaverApiHubConfig(config)
+    && resolveNaverApiTransport(config, "search") === "hub"
+    && resolveNaverApiTransport(config, "datalab") === "hub";
+}
+
 function requestHeaders(config, kind) {
   const provider = resolveNaverApiTransport(config, kind);
   if (provider === "hub") {
@@ -83,8 +102,20 @@ function requestHeaders(config, kind) {
 
 export function naverSearchRequest(config, resource, params = new URLSearchParams()) {
   const { provider, headers } = requestHeaders(config, "search");
+  const normalizedResource = text(resource).toLowerCase();
+  if (!normalizedResource) {
+    const error = new Error("naver_search_resource_required");
+    error.code = "NAVER_SEARCH_RESOURCE_REQUIRED";
+    throw error;
+  }
+  if (provider === "hub" && !API_HUB_SEARCH_RESOURCES.has(normalizedResource)) {
+    const error = new Error(`naver_api_hub_search_resource_unsupported:${normalizedResource}`);
+    error.code = "NAVER_API_HUB_UNSUPPORTED_RESOURCE";
+    error.resource = normalizedResource;
+    throw error;
+  }
   const query = params instanceof URLSearchParams ? params.toString() : new URLSearchParams(params).toString();
-  const path = provider === "hub" ? `/search/v1/${resource}` : `/v1/search/${resource}.json`;
+  const path = provider === "hub" ? `/search/v1/${normalizedResource}` : `/v1/search/${normalizedResource}.json`;
   return {
     provider,
     url: `${provider === "hub" ? API_HUB_BASE_URL : LEGACY_BASE_URL}${path}${query ? `?${query}` : ""}`,
@@ -135,7 +166,7 @@ export function naverApiFailureDisposition(status) {
   if (code === 401 || code === 403) return "credentials_or_permission";
   if (code === 404 || code === 410) return "endpoint_removed";
   if (code === 429) return "rate_limited";
-  if (code >= 500) return "temporary_provider_failure";
+  if (code === 408 || code === 425 || code >= 500) return "temporary_provider_failure";
   return "request_rejected";
 }
 

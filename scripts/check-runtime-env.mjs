@@ -1,5 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import {
+  isNaverApiHubCutoverReady,
+  naverApiProviderConfig,
+} from "../src/server/naver-api-hub.mjs";
 
 function loadEnv(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -80,11 +84,18 @@ const checks = [
   status(env, "Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], strictNaver),
   status(env, "Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], strictNaver),
   status(env, "Naver SearchAd customer", ["NAVER_SEARCHAD_CUSTOMER_ID"], strictNaver),
-  status(env, "Naver migrated DataLab provider", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID", "NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], strictNaver, (merged) => hasMigratedNaverPair(merged, "datalab")),
-  status(env, "Naver API Hub client", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID"], false),
-  status(env, "Naver API Hub secret", ["NAVER_API_HUB_CLIENT_SECRET", "NAVER_API_HUB_API_KEY"], false),
-  status(env, "Naver OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], strictNaver),
-  status(env, "Naver OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], strictNaver),
+  status(env, "Naver migrated DataLab provider", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID", "NAVER_DATALAB_CLIENT_ID", "NAVER_OPENAPI_CLIENT_ID"], strictNaver, (merged) => (
+    strictNaver
+      ? isNaverApiHubCutoverReady(naverApiProviderConfig(merged))
+      : hasMigratedNaverPair(merged, "datalab")
+  )),
+  status(env, "Naver API Hub client", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID"], strictNaver),
+  status(env, "Naver API Hub secret", ["NAVER_API_HUB_CLIENT_SECRET", "NAVER_API_HUB_API_KEY"], strictNaver),
+  status(env, "Naver API Hub mode", ["NAVER_API_HUB_MODE"], strictNaver, (merged) => (
+    !strictNaver || isNaverApiHubCutoverReady(naverApiProviderConfig(merged))
+  )),
+  status(env, "Naver legacy OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], false),
+  status(env, "Naver legacy OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], false),
   status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),
   status(env, "Naver Place rank provider key", ["NAVER_PLACE_RANK_API_KEY"], false),
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),

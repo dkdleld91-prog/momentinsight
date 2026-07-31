@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   hasNaverApiHubConfig,
   hasNaverMigratedApiConfig,
+  isNaverApiHubCutoverReady,
   naverApiErrorMessage,
   naverApiFailureDisposition,
   naverApiProviderConfig,
@@ -63,6 +64,28 @@ test("explicit modes fail closed instead of silently mixing incomplete credentia
   assert.equal(resolveNaverApiTransport(forcedHub, "search"), "not-configured");
   assert.throws(() => naverSearchRequest(forcedHub, "blog"), { code: "NAVER_API_NOT_CONFIGURED" });
   assert.equal(resolveNaverApiTransport(forcedLegacy, "search"), "legacy");
+  assert.equal(isNaverApiHubCutoverReady(forcedHub), false);
+  assert.equal(isNaverApiHubCutoverReady(forcedLegacy), false);
+});
+
+test("explicit hub mode is the only production-ready cutover state", () => {
+  const explicitHub = naverApiProviderConfig({ ...legacyEnv, ...hubEnv, NAVER_API_HUB_MODE: "hub" });
+  const automaticHub = naverApiProviderConfig({ ...legacyEnv, ...hubEnv, NAVER_API_HUB_MODE: "auto" });
+
+  assert.equal(isNaverApiHubCutoverReady(explicitHub), true);
+  assert.equal(isNaverApiHubCutoverReady(automaticHub), false);
+});
+
+test("API Hub rejects retired or unknown Search resources before a network call", () => {
+  const config = naverApiProviderConfig({ ...hubEnv, NAVER_API_HUB_MODE: "hub" });
+
+  assert.throws(() => naverSearchRequest(config, "shop"), {
+    code: "NAVER_API_HUB_UNSUPPORTED_RESOURCE",
+  });
+  assert.throws(() => naverSearchRequest(config, ""), {
+    code: "NAVER_SEARCH_RESOURCE_REQUIRED",
+  });
+  assert.match(naverSearchRequest(config, "BLOG").url, /\/search\/v1\/blog$/);
 });
 
 test("API Hub alias key names are accepted as one complete pair", () => {
@@ -95,5 +118,7 @@ test("new API Gateway errors retain useful messages and lifecycle classification
   assert.equal(naverApiFailureDisposition(404), "endpoint_removed");
   assert.equal(naverApiFailureDisposition(410), "endpoint_removed");
   assert.equal(naverApiFailureDisposition(429), "rate_limited");
+  assert.equal(naverApiFailureDisposition(408), "temporary_provider_failure");
+  assert.equal(naverApiFailureDisposition(425), "temporary_provider_failure");
   assert.equal(naverApiFailureDisposition(503), "temporary_provider_failure");
 });

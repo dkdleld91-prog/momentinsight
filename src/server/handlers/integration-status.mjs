@@ -3,6 +3,7 @@ import {
   hasLegacyNaverApiConfig,
   hasNaverApiHubConfig,
   hasNaverMigratedApiConfig,
+  isNaverApiHubCutoverReady,
   NAVER_SHOPPING_SEARCH_LEGACY_ENDS_AT,
   naverApiProviderConfig,
   resolveNaverApiTransport,
@@ -45,6 +46,7 @@ export default {
 
     const naverApi = naverApiProviderConfig();
     const hubReady = hasNaverApiHubConfig(naverApi);
+    const hubCutoverReady = isNaverApiHubCutoverReady(naverApi);
     const migratedDatalabReady = hasNaverMigratedApiConfig(naverApi, "datalab");
     const migratedSearchReady = hasNaverMigratedApiConfig(naverApi, "search");
     const legacyShoppingReady = hasLegacyNaverApiConfig(naverApi, "search");
@@ -123,7 +125,9 @@ export default {
           endsAt: NAVER_SHOPPING_SEARCH_LEGACY_ENDS_AT,
         },
         naverApiHubMigration: {
-          ready: hubReady,
+          ready: hubCutoverReady,
+          credentialsReady: hubReady,
+          cutoverLocked: naverApi.mode === "hub",
           mode: naverApi.mode,
           searchProvider: resolveNaverApiTransport(naverApi, "search"),
           datalabProvider: resolveNaverApiTransport(naverApi, "datalab"),

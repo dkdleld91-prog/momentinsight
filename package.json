@@ -26,6 +26,7 @@
     "recovery:verify": "node scripts/recovery-checkpoint.mjs verify",
     "check:env": "node scripts/check-runtime-env.mjs",
     "check:env:naver": "node scripts/check-runtime-env.mjs --naver",
+    "check:naver-api-hub:live": "node scripts/check-naver-api-hub-live.mjs",
     "check:keyword-trend": "node scripts/check-keyword-trend-scaling.mjs",
     "check:server-contract": "node scripts/check-server-contract.mjs",
     "check:rank-cron": "node scripts/check-rank-cron-schedule.mjs",

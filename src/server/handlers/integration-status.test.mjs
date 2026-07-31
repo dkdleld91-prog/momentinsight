@@ -26,7 +26,7 @@ test("integration status separates migrated API Hub calls from the terminating s
     NAVER_OPENAPI_CLIENT_SECRET: "legacy-secret",
     NAVER_API_HUB_CLIENT_ID: "hub-id",
     NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
-    NAVER_API_HUB_MODE: "auto",
+    NAVER_API_HUB_MODE: "hub",
     MI_KEYWORD_API_ENABLED: "true",
   });
 
@@ -39,7 +39,9 @@ test("integration status separates migrated API Hub calls from the terminating s
     assert.equal(body.missingEnvCount, 2);
     assert.deepEqual(body.integrations.naverApiHubMigration, {
       ready: true,
-      mode: "auto",
+      credentialsReady: true,
+      cutoverLocked: true,
+      mode: "hub",
       searchProvider: "hub",
       datalabProvider: "hub",
     });

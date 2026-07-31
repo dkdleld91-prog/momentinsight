@@ -92,14 +92,16 @@ check(
   files.productWorkflow,
 );
 check(
-  "product cron validates timeout, HTTP, JSON, ok and failed",
+  "product cron validates responses, drains bounded failures and reports degradation",
   hasAll(productWorkflow, [
     /AbortController/,
     /requestTimeoutMs/,
-    /if \(!response\.ok\)/,
+    /const itemFailureResponse = response\.status === 502/,
+    /if \(!response\.ok && !itemFailureResponse\)/,
     /JSON\.parse\(body\)/,
     /payload\.ok !== true/,
-    /safe\.failed > 0/,
+    /totals\.failed > 0/,
+    /drained the queue with/,
   ]) && !/requestBatchWithRetry|retryable/.test(productWorkflow),
   files.productWorkflow,
 );

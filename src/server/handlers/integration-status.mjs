@@ -22,7 +22,7 @@ function check(label, names, required) {
 }
 
 function configuredCheck(label, names, required, configured) {
-  return { label, names, required, configured: Boolean(configured) };
+  return { label, envNames: names, required, configured: Boolean(configured) };
 }
 
 function requiredMissing(checks) {
@@ -48,6 +48,11 @@ export default {
     const migratedDatalabReady = hasNaverMigratedApiConfig(naverApi, "datalab");
     const migratedSearchReady = hasNaverMigratedApiConfig(naverApi, "search");
     const legacyShoppingReady = hasLegacyNaverApiConfig(naverApi, "search");
+    const shoppingCollectorReady = hasAny([
+      "NAVER_SHOPPING_RANK_API_URL",
+    ]) && hasAny([
+      "NAVER_SHOPPING_RANK_API_KEY",
+    ]);
     const searchAdChecks = [
       check("Naver SearchAd API key", ["NAVER_SEARCHAD_API_KEY"], true),
       check("Naver SearchAd secret", ["NAVER_SEARCHAD_SECRET_KEY"], true),
@@ -59,11 +64,14 @@ export default {
       true,
       migratedDatalabReady,
     );
-    const legacyShoppingCheck = configuredCheck(
-      "Naver legacy shopping search provider",
-      ["NAVER_OPENAPI_CLIENT_ID", "NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_ID", "NAVER_DATALAB_CLIENT_SECRET"],
+    const shoppingRankCheck = configuredCheck(
+      "Naver shopping rank provider",
+      [
+        "NAVER_SHOPPING_RANK_API_URL",
+        "NAVER_SHOPPING_RANK_API_KEY",
+      ],
       true,
-      legacyShoppingReady,
+      shoppingCollectorReady,
     );
     const hubChecks = [
       check("Naver API Hub client", ["NAVER_API_HUB_CLIENT_ID", "NAVER_API_HUB_API_KEY_ID"], false),
@@ -78,7 +86,7 @@ export default {
     const checks = [
       ...searchAdChecks,
       datalabProviderCheck,
-      legacyShoppingCheck,
+      shoppingRankCheck,
       ...hubChecks,
       ...placeChecks,
       keywordFeatureCheck,
@@ -104,9 +112,14 @@ export default {
           source: resolveNaverApiTransport(naverApi, "datalab") === "hub" ? "naver_api_hub_datalab" : "naver_developers_datalab",
         },
         shoppingReferenceAndRank: {
-          ready: legacyShoppingReady,
-          source: "naver_developers_shopping_search",
-          lifecycle: "ends_2026-07-31_no_official_replacement",
+          ready: shoppingCollectorReady,
+          configured: shoppingCollectorReady || legacyShoppingReady,
+          source: shoppingCollectorReady
+            ? "verified_naver_shopping_results_collector"
+            : "naver_developers_shopping_search",
+          lifecycle: shoppingCollectorReady
+            ? "server_collector"
+            : "ended_2026-07-31_no_official_replacement",
           endsAt: NAVER_SHOPPING_SEARCH_LEGACY_ENDS_AT,
         },
         naverApiHubMigration: {

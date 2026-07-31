@@ -5,7 +5,10 @@ const NAVER_SHOPPING_API_DISPLAY = 100;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
+const SHOPPING_PROVIDER_CACHE_TTL_MS = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_TTL_MS || 12 * 60_000);
+const SHOPPING_PROVIDER_CACHE_MAX = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_MAX || 256);
 const rankRateBucket = new Map();
+const shoppingProviderPageCache = new Map();
 const DEFAULT_KEYWORD_ALIAS_MAP = {
   "콘트로이친": "콘드로이친",
 };
@@ -13,15 +16,22 @@ const DEFAULT_KEYWORD_ALIAS_MAP = {
 function config() {
   const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
   const openapiClientSecret = process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "";
+  const providerUrl = process.env.NAVER_SHOPPING_RANK_API_URL || "";
+  const providerKey = process.env.NAVER_SHOPPING_RANK_API_KEY || "";
 
   return {
     openapiClientId,
     openapiClientSecret,
+    providerUrl,
+    providerKey,
   };
 }
 
 function hasOpenapiConfig(env) {
-  return Boolean(env.openapiClientId && env.openapiClientSecret);
+  return Boolean(
+    (env?.providerUrl && env?.providerKey)
+    || (env?.openapiClientId && env?.openapiClientSecret)
+  );
 }
 
 function json(request, body, status = 200) {
@@ -445,7 +455,91 @@ async function fetchStoreMetadata(targetUrl, productId, options = {}) {
   });
 }
 
+function trustedCollectorPage(payload) {
+  const source = normalizeText(payload?.source);
+  const rankEvidence = normalizeText(payload?.rankEvidence);
+  const items = Array.isArray(payload?.items) ? payload.items : null;
+  const total = Number(payload?.total);
+  if (
+    !payload
+    || typeof payload !== "object"
+    || Array.isArray(payload)
+    || payload.ok === false
+    || source !== "naver_shopping_results_collector"
+    || rankEvidence !== "naver_shopping_organic_list"
+    || !items
+    || !Number.isInteger(total)
+    || total < 0
+    || items.length > NAVER_SHOPPING_API_DISPLAY
+    || items.length > total
+    || items.some((item) => !item || typeof item !== "object" || Array.isArray(item))
+  ) {
+    throw new Error("shopping_rank_provider_untrusted_evidence");
+  }
+  return {
+    ...payload,
+    items,
+    total,
+    source,
+    rankEvidence,
+  };
+}
+
+function pruneShoppingProviderPageCache(now = Date.now()) {
+  for (const [key, entry] of shoppingProviderPageCache.entries()) {
+    if (!entry || entry.expiresAt <= now) shoppingProviderPageCache.delete(key);
+  }
+  while (shoppingProviderPageCache.size > SHOPPING_PROVIDER_CACHE_MAX) {
+    const oldestKey = shoppingProviderPageCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    shoppingProviderPageCache.delete(oldestKey);
+  }
+}
+
+async function requestExternalShoppingPage(env, keyword, start) {
+  const payload = await fetchJson(env.providerUrl, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.providerKey}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      keyword,
+      start,
+      display: NAVER_SHOPPING_API_DISPLAY,
+      sort: "sim",
+      rankPolicy: "organic_only",
+    }),
+    timeoutMs: Number(process.env.MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS || 45_000),
+  });
+  return trustedCollectorPage(payload);
+}
+
+async function fetchExternalShoppingPage(env, keyword, start) {
+  const now = Date.now();
+  pruneShoppingProviderPageCache(now);
+  const cacheKey = `${normalizeUrl(env.providerUrl)}\n${normalizeText(keyword).toLowerCase()}\n${Number(start)}`;
+  const cached = shoppingProviderPageCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.promise;
+
+  const promise = requestExternalShoppingPage(env, keyword, start)
+    .catch((error) => {
+      const current = shoppingProviderPageCache.get(cacheKey);
+      if (current?.promise === promise) shoppingProviderPageCache.delete(cacheKey);
+      throw error;
+    });
+  shoppingProviderPageCache.set(cacheKey, {
+    expiresAt: now + Math.max(1_000, SHOPPING_PROVIDER_CACHE_TTL_MS),
+    promise,
+  });
+  pruneShoppingProviderPageCache(now);
+  return promise;
+}
+
 async function fetchShoppingPage(env, keyword, start) {
+  if (env?.providerUrl && env?.providerKey) {
+    return fetchExternalShoppingPage(env, keyword, start);
+  }
   const params = new URLSearchParams({
     query: keyword,
     display: String(NAVER_SHOPPING_API_DISPLAY),
@@ -473,7 +567,12 @@ async function fetchShoppingPage(env, keyword, start) {
   ) {
     throw new Error("shopping_rank_provider_invalid_response");
   }
-  return { ...payload, total };
+  return {
+    ...payload,
+    total,
+    source: "naver_developers_shopping_search",
+    rankEvidence: "naver_shopping_official_api_order",
+  };
 }
 
 function itemProductId(item) {
@@ -1029,11 +1128,23 @@ async function findRank(env, {
   let excludedAdCount = 0;
   let matchedResult = null;
   let sourceExhausted = false;
+  let providerSource = "";
+  let rankEvidence = "";
   const topItems = [];
   const organicItems = [];
 
   for (let start = 1; start <= 1000 && organicCheckedCount < limit; start += NAVER_SHOPPING_API_DISPLAY) {
     const page = await fetchShoppingPage(env, queryKeyword, start);
+    const pageSource = normalizeText(page?.source);
+    const pageRankEvidence = normalizeText(page?.rankEvidence);
+    if (
+      (providerSource && pageSource !== providerSource)
+      || (rankEvidence && pageRankEvidence !== rankEvidence)
+    ) {
+      throw new Error("shopping_rank_provider_evidence_changed");
+    }
+    providerSource = providerSource || pageSource;
+    rankEvidence = rankEvidence || pageRankEvidence;
     const items = Array.isArray(page?.items) ? page.items : [];
     total = Number(page.total);
     const ranked = findOrganicMatchInItems(items, target, {
@@ -1119,6 +1230,8 @@ async function findRank(env, {
       rankSelectionBasis: representative.rankSelectionBasis,
       rankPolicy: "organic_only",
       adExcluded: true,
+      source: providerSource,
+      rankEvidence,
       complete,
       partial: !complete && organicCheckedCount > 0,
       stopReason: complete ? "target_found" : "api_window_incomplete",
@@ -1183,6 +1296,8 @@ async function findRank(env, {
     excludedAdCount,
     rankPolicy: "organic_only",
     adExcluded: true,
+    source: providerSource,
+    rankEvidence,
     complete,
     partial: !complete && organicCheckedCount > 0,
     stopReason: complete ? (sourceExhausted ? "source_exhausted" : "rank_limit_reached") : "api_window_incomplete",
@@ -1233,6 +1348,8 @@ export {
   classifyNaverProductType,
   findRank as findShoppingRank,
   hasOpenapiConfig as hasShoppingRankConfig,
+  trustedCollectorPage,
+  shoppingProviderPageCache,
   normalizeText,
   rankMessage as shoppingRankMessage,
   rankQueryKeyword,
@@ -1258,9 +1375,9 @@ export default {
       return json(request, {
         ok: false,
         code: "NAVER_OPENAPI_NOT_CONFIGURED",
-        message: "네이버 쇼핑 검색 API가 아직 연결되지 않았습니다.",
+        message: "네이버 쇼핑 순위 수집원이 아직 연결되지 않았습니다.",
         sourceStatus: {
-          shoppingRank: { status: "not_configured", label: "네이버 쇼핑 API 연결 필요" },
+          shoppingRank: { status: "not_configured", label: "네이버 쇼핑 순위 수집원 연결 필요" },
         },
       }, 503);
     }
@@ -1292,7 +1409,8 @@ export default {
 
       return json(request, {
         ok: true,
-        source: "naver_shopping_search_api",
+        source: result.source || "naver_developers_shopping_search",
+        rankEvidence: result.rankEvidence || "",
         sourceStatus: {
           shoppingRank: { status: result.matched ? "ok" : "not_found", label: result.matched ? "네이버쇼핑 상품 일치" : "네이버쇼핑 상품 미발견" },
         },

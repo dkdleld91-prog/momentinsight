@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   claimDueTracker,
   handleRankTrackersRequest,
+  isShoppingRankSourceUnavailable,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
   requestAgencyCode,
@@ -12,7 +13,11 @@ import {
   trackerPayload,
   verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
-import { findShoppingRank } from "./naver-shopping-rank.mjs";
+import {
+  findShoppingRank,
+  shoppingProviderPageCache,
+  trustedCollectorPage,
+} from "./naver-shopping-rank.mjs";
 
 const TRACKERS = "naver_rank_trackers";
 const SNAPSHOTS = "naver_rank_snapshots";
@@ -639,6 +644,117 @@ test("shopping lookup exceptions preserve history and use exponential retry back
   assert.equal(current.retry_count, 3);
   assert.match(current.last_message, /자동 재시도/);
   assertRetryTime(current.next_check_at, startedAt, finishedAt, 20);
+});
+
+test("a removed legacy shopping endpoint preserves history and waits for the next regular slot", async () => {
+  const tracker = trackerRow({ retry_count: 5 });
+  const { ctx, state } = testContext(tracker);
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: VALID_ENV,
+    findShoppingRank: async () => {
+      throw new Error("Invalid search api (존재하지 않는 검색 api 입니다.)");
+    },
+  });
+  const current = state.tables[TRACKERS][0];
+  const next = new Date(current.next_check_at);
+  const kstHour = (next.getUTCHours() + 9) % 24;
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "shopping_rank_source_unavailable");
+  assert.equal(isShoppingRankSourceUnavailable("Invalid search api (존재하지 않는 검색 api 입니다.)"), true);
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assertPreserved(tracker, current);
+  assert.equal(current.last_error, "shopping_rank_source_unavailable");
+  assert.equal(current.retry_count, 6);
+  assert.match(current.last_message, /마지막 정상 순위와 30일 기록은 유지/);
+  assert.ok([9, 15].includes(kstHour));
+  assert.equal(next.getUTCMinutes(), 0);
+});
+
+test("the external shopping collector requires native organic evidence", () => {
+  const trusted = trustedCollectorPage({
+    ok: true,
+    source: "naver_shopping_results_collector",
+    rankEvidence: "naver_shopping_organic_list",
+    total: 1,
+    items: [shoppingResultItem(0)],
+  });
+  assert.equal(trusted.items.length, 1);
+  assert.equal(trusted.rankEvidence, "naver_shopping_organic_list");
+
+  assert.throws(() => trustedCollectorPage({
+    ok: true,
+    source: "unverified_serp",
+    rankEvidence: "provider_array_order",
+    total: 1,
+    items: [shoppingResultItem(0)],
+  }), /shopping_rank_provider_untrusted_evidence/);
+});
+
+test("the external shopping collector can supply a complete 300-item organic window", async () => {
+  shoppingProviderPageCache.clear();
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[24] = shoppingResultItem(24, {
+    productId: "57907660073",
+    link: "https://search.shopping.naver.com/catalog/57907660073",
+    title: "라이브오랄스 음파 전동칫솔 원부",
+    productType: "1",
+  });
+  const originalFetch = globalThis.fetch;
+  const starts = [];
+  globalThis.fetch = async (input, options = {}) => {
+    if (String(input) !== "https://collector.example/rank") {
+      return new Response("", { status: 404 });
+    }
+    const body = JSON.parse(options.body || "{}");
+    starts.push(body.start);
+    const offset = Math.max(0, Number(body.start || 1) - 1);
+    return new Response(JSON.stringify({
+      ok: true,
+      source: "naver_shopping_results_collector",
+      rankEvidence: "naver_shopping_organic_list",
+      total: 300,
+      items: items.slice(offset, offset + 100),
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const result = await findShoppingRank({
+      providerUrl: "https://collector.example/rank",
+      providerKey: "collector-key",
+    }, {
+      keyword: "음파 전동칫솔",
+      targetUrl: "https://search.shopping.naver.com/catalog/57907660073",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 25);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.complete, true);
+    assert.equal(result.source, "naver_shopping_results_collector");
+    assert.equal(result.rankEvidence, "naver_shopping_organic_list");
+    assert.deepEqual(starts, [1, 101, 201]);
+
+    const second = await findShoppingRank({
+      providerUrl: "https://collector.example/rank",
+      providerKey: "collector-key",
+    }, {
+      keyword: "음파 전동칫솔",
+      targetUrl: "https://search.shopping.naver.com/catalog/99999999999",
+      maxRank: 300,
+    });
+    assert.equal(second.matched, false);
+    assert.equal(second.checkedCount, 300);
+    assert.equal(second.complete, true);
+    assert.deepEqual(starts, [1, 101, 201]);
+  } finally {
+    shoppingProviderPageCache.clear();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("a valid not-found response still records a checked snapshot", async () => {

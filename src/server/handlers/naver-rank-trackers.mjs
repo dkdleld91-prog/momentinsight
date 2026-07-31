@@ -748,6 +748,11 @@ function rankRetryAt(tracker, date = new Date()) {
   return new Date(date.getTime() + delayMinutes * 60 * 1000).toISOString();
 }
 
+export function isShoppingRankSourceUnavailable(value) {
+  const message = normalizeText(value).toLowerCase();
+  return /invalid search api|존재하지 않는 검색 api|endpoint[_ -]?removed|shopping api.{0,20}(?:ended|removed|종료)/i.test(message);
+}
+
 function canonicalTrackerProductId(tracker, result) {
   return normalizeText(
     extractProductId(tracker.product_url) ||
@@ -978,12 +983,20 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
   return data;
 }
 
-async function updateTrackerAfterFailure(ctx, tracker, attemptedAt, message, errorMessage, leaseStartedAt = "") {
+async function updateTrackerAfterFailure(
+  ctx,
+  tracker,
+  attemptedAt,
+  message,
+  errorMessage,
+  leaseStartedAt = "",
+  retryAt = "",
+) {
   const retryCount = Math.max(0, Number(tracker.retry_count || 0)) + 1;
   let query = ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .update({
-      next_check_at: rankRetryAt(tracker, new Date(attemptedAt)),
+      next_check_at: retryAt || rankRetryAt(tracker, new Date(attemptedAt)),
       last_message: message,
       last_error: compactErrorMessage(errorMessage || "lookup_failed"),
       retry_count: retryCount,
@@ -1044,17 +1057,26 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
     return { ok: true, tracker: updated, snapshot, result, message };
   } catch (error) {
     if (error?.code === "RANK_TRACKER_LEASE_LOST") throw error;
-    const message = "네이버 상품 순위 갱신에 실패해 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
     const errorMessage = error?.message || "lookup_failed";
+    const sourceUnavailable = isShoppingRankSourceUnavailable(errorMessage);
+    const message = sourceUnavailable
+      ? "네이버 공식 쇼핑 검색 종료로 검증 수집원을 전환 중입니다. 마지막 정상 순위와 30일 기록은 유지합니다."
+      : "네이버 상품 순위 갱신에 실패해 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
     const updated = await updateTrackerAfterFailure(
       ctx,
       tracker,
       checkedAt,
       message,
-      errorMessage,
-      options.leaseStartedAt || ""
+      sourceUnavailable ? "shopping_rank_source_unavailable" : errorMessage,
+      options.leaseStartedAt || "",
+      sourceUnavailable ? nextRankCheckAt(new Date(checkedAt)) : "",
     );
-    return { ok: false, tracker: updated, message, error: errorMessage };
+    return {
+      ok: false,
+      tracker: updated,
+      message,
+      error: sourceUnavailable ? "shopping_rank_source_unavailable" : errorMessage,
+    };
   }
 }
 

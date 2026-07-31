@@ -60,6 +60,9 @@ assert.match(workflow, /before the queue reported drained/, "Product workflow mu
 assert.match(workflow, /safe\.drained !== \(safe\.remaining === 0\)/, "Product workflow must cross-check queue drain state");
 assert.match(workflow, /safe\.checked === 0 && !safe\.drained/, "Product workflow must reject a zero-progress non-drained batch");
 assert.match(workflow, /!safe\.configured/, "Product workflow must fail when the rank provider is unavailable");
+assert.match(workflow, /const itemFailureResponse = response\.status === 502/, "Product workflow must parse bounded item failures before rejecting the transport");
+assert.match(workflow, /totals\.failed > 0/, "Product workflow must report tracker failures after draining the remaining queue");
+assert.match(workflow, /drained the queue with/, "Product workflow must surface a degraded drained run as failed");
 
 const placeWorkflow = fs.readFileSync(".github/workflows/naver-place-rank-cron.yml", "utf8");
 assert.match(placeWorkflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "Naver place workflow must retry the 09:00/15:00 KST slots");

@@ -13,6 +13,8 @@ test("integration status separates migrated API Hub calls from the terminating s
     "NAVER_API_HUB_CLIENT_ID",
     "NAVER_API_HUB_CLIENT_SECRET",
     "NAVER_API_HUB_MODE",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
     "MI_KEYWORD_API_ENABLED",
   ];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
@@ -33,7 +35,8 @@ test("integration status separates migrated API Hub calls from the terminating s
     const body = await response.json();
 
     assert.equal(response.status, 200);
-    assert.equal(body.ok, true);
+    assert.equal(body.ok, false);
+    assert.equal(body.missingEnvCount, 2);
     assert.deepEqual(body.integrations.naverApiHubMigration, {
       ready: true,
       mode: "auto",
@@ -42,7 +45,20 @@ test("integration status separates migrated API Hub calls from the terminating s
     });
     assert.equal(body.integrations.keywordTrendAndRatios.source, "naver_api_hub_datalab");
     assert.equal(body.integrations.shoppingReferenceAndRank.source, "naver_developers_shopping_search");
-    assert.equal(body.integrations.shoppingReferenceAndRank.lifecycle, "ends_2026-07-31_no_official_replacement");
+    assert.equal(body.integrations.shoppingReferenceAndRank.ready, false);
+    assert.equal(body.integrations.shoppingReferenceAndRank.configured, true);
+    assert.equal(body.integrations.shoppingReferenceAndRank.lifecycle, "ended_2026-07-31_no_official_replacement");
+
+    process.env.NAVER_SHOPPING_RANK_API_URL = "https://collector.example/rank";
+    process.env.NAVER_SHOPPING_RANK_API_KEY = "collector-key";
+    const collectorResponse = await handler.fetch(new Request("http://localhost/api/integration-status"));
+    const collectorBody = await collectorResponse.json();
+    assert.equal(collectorBody.integrations.shoppingReferenceAndRank.ready, true);
+    assert.equal(collectorBody.integrations.shoppingReferenceAndRank.configured, true);
+    assert.equal(collectorBody.integrations.shoppingReferenceAndRank.source, "verified_naver_shopping_results_collector");
+    assert.equal(collectorBody.integrations.shoppingReferenceAndRank.lifecycle, "server_collector");
+    assert.equal(collectorBody.ok, true);
+    assert.equal(collectorBody.missingEnvCount, 0);
   } finally {
     Object.entries(previous).forEach(([name, value]) => {
       if (value === undefined) delete process.env[name];

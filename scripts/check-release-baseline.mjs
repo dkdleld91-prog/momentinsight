@@ -1113,7 +1113,11 @@ const checks = {
     && adminSource.includes('data-work-summary-filter="needs_check"')
     && adminSource.includes("workItemMatchesFilter")
     && adminSource.includes("data-work-quick-done")
-    && adminSource.includes('workItemPayload(item, { status: "done" })')
+    && adminSource.includes("toggleWorkItemCompletion")
+    && adminSource.includes('item.status === "done" ? "planned" : "done"')
+    && adminSource.includes("완료 해제")
+    && adminSource.includes('aria-pressed="')
+    && !adminSource.includes('(done ? " disabled" : "")')
     && adminSource.includes("data-work-advanced")
     && adminSource.includes("상세 설정 · 필요할 때만 입력"),
   workOperationViewIsStrictlyScoped: adminSource.includes("#mi-admin .mi-view:not(.is-active)")

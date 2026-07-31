@@ -8163,7 +8163,12 @@
       border-color: #cde5d8;
       color: #267451;
       background: #edf8f2;
-      cursor: default;
+    }
+
+    #mi-admin .mi-work-quick-done[data-status="done"]:hover {
+      border-color: #b7c4d4;
+      color: #526176;
+      background: #f7f9fc;
     }
 
     #mi-admin .mi-work-visibility {
@@ -10898,8 +10903,8 @@
             (item.visibility === "client_visible" ? " is-public" : "") + '">' +
             (item.visibility === "client_visible" ? "광고주 공개" : "내부") + '</em><button type="button" class="mi-work-quick-done" data-work-quick-done="' +
             escapeHtml(item.id) + '" data-status="' + escapeHtml(item.status) + '" aria-label="' +
-            (done ? "완료된 업무" : escapeHtml(item.title) + " 완료 처리") + '" title="' + (done ? "완료" : "완료 처리") + '"' +
-            (done ? " disabled" : "") + '>✓</button></div>';
+            (done ? escapeHtml(item.title) + " 완료 해제" : escapeHtml(item.title) + " 완료 처리") + '" title="' +
+            (done ? "완료 해제" : "완료 처리") + '" aria-pressed="' + (done ? "true" : "false") + '">✓</button></div>';
         }).join("") : '<div class="mi-work-agenda-empty">등록된 업무가 없습니다.</div>';
         return '<section class="mi-work-agenda-group"><strong>' + escapeHtml(title) + '</strong>' + content + '</section>';
       }
@@ -10961,16 +10966,18 @@
         return payload;
       }
 
-      async function completeWorkItem(itemId, button) {
+      async function toggleWorkItemCompletion(itemId, button) {
         var item = workItems.find(function (candidate) { return candidate.id === itemId; });
-        if (!item || item.status === "done") return;
+        if (!item) return;
+        var nextStatus = item.status === "done" ? "planned" : "done";
         if (button) button.disabled = true;
-        setWorkStatus("업무를 완료 처리하는 중입니다.", "");
+        setWorkStatus(nextStatus === "done" ? "업무를 완료 처리하는 중입니다." : "업무 완료를 해제하는 중입니다.", "");
         try {
-          await requestWorkItems("PATCH", workItemPayload(item, { status: "done" }));
+          await requestWorkItems("PATCH", workItemPayload(item, { status: nextStatus }));
           await loadWorkItems();
+          setWorkStatus(nextStatus === "done" ? "업무를 완료 처리했습니다." : "업무 완료를 해제하고 예정 상태로 되돌렸습니다.", "ok");
         } catch (error) {
-          setWorkStatus(error.message || "완료 상태를 저장하지 못했습니다.", "warn");
+          setWorkStatus(error.message || "완료 상태 변경을 저장하지 못했습니다.", "warn");
           if (button) button.disabled = false;
         }
       }
@@ -11203,7 +11210,7 @@
         }
         var quickDone = event.target.closest("[data-work-quick-done]");
         if (quickDone) {
-          completeWorkItem(quickDone.getAttribute("data-work-quick-done") || "", quickDone);
+          toggleWorkItemCompletion(quickDone.getAttribute("data-work-quick-done") || "", quickDone);
           return;
         }
         var summaryFilter = event.target.closest("[data-work-summary-filter]");

@@ -39,11 +39,11 @@ jobs:
       - name: Install matching Playwright Chromium
         run: npx --no-install playwright install chromium
 
-      - name: Verify live readiness and five-item canary
+      - name: Verify headed live readiness and five-item canary
         shell: bash
         env:
           NAVER_SHOPPING_PROVIDER_MODE: playwright
-          NAVER_SHOPPING_PROVIDER_HEADLESS: "true"
+          NAVER_SHOPPING_PROVIDER_HEADLESS: "false"
           NAVER_SHOPPING_PROVIDER_CANARY_KEYWORD: "온열찜질기"
           NAVER_SHOPPING_PROVIDER_CANARY_LIMIT: "5"
           NAVER_SHOPPING_PROVIDER_TIMEOUT_MS: "90000"

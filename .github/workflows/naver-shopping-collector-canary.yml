@@ -87,7 +87,12 @@ jobs:
             return normalized || "unknown";
           };
           const report = (status, reason, count) => {
-            console.log(JSON.stringify({ status, reason: safeReason(reason), count }));
+            const safe = safeReason(reason);
+            console.log(JSON.stringify({ status, reason: safe, count }));
+            if (status === "failed") {
+              const annotation = safe.replace(/%/gu, "%25").replace(/\r/gu, "%0D").replace(/\n/gu, "%0A");
+              console.log(`::error title=N Shopping Canary::${annotation}`);
+            }
           };
 
           try {

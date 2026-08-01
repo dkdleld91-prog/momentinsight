@@ -1,4 +1,4 @@
-const PROBE_KEY_SHA256 = "aacc13b5929f5fc3d72838caade3128dc04e36af5f152ea25958a85cb06ae190";
+const PROBE_KEY_SHA256 = String(process.env.MI_EDGE_PROBE_KEY_SHA256 || "").trim().toLowerCase();
 const KEYWORD = "온열찜질기";
 const STATE_MARKER = 'naver.search.ext.newshopping["shopping"]._INITIAL_STATE=';
 
@@ -61,7 +61,8 @@ function flattenSlotData(page) {
 
 export default async function handler(request) {
   if (request.method !== "POST") return json({ ok: false, code: "METHOD_NOT_ALLOWED" }, 405);
-  if (await sha256(request.headers.get("x-mi-probe-key") || "") !== PROBE_KEY_SHA256) {
+  if (!/^[a-f0-9]{64}$/.test(PROBE_KEY_SHA256)
+    || await sha256(request.headers.get("x-mi-probe-key") || "") !== PROBE_KEY_SHA256) {
     return json({ ok: false, code: "UNAUTHORIZED" }, 401);
   }
 

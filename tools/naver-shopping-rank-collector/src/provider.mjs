@@ -10,10 +10,14 @@ import {
 const PROVIDER_NOT_READY = "provider_not_ready";
 const NAVER_SHOPPING_HOST = "search.shopping.naver.com";
 const NAVER_SHOPPING_PAGE_SIZE = 40;
+const NAVER_SHOPPING_MAX_PAGES = 8;
+const NAVER_SHOPPING_FRONTEND_PATH = "/api/search/all";
 const NEXT_DATA_ROW_SOURCE = "next_data_composite_v1";
 
 const DEADLINE_GUARD_MS = 3_000;
 const READINESS_RETRY_MS = 60_000;
+const PROVIDER_BLOCK_COOLDOWN_MS = 15 * 60_000;
+const PROVIDER_SCHEMA_COOLDOWN_MS = 30 * 60_000;
 const BLOCK_TEXT_PATTERNS = [
   ["naver_captcha_detected", /캡챠|captcha|자동입력\s*방지|로봇이\s*아닙니다/i],
   ["naver_access_blocked", /비정상적인\s*접근|이용이\s*제한|access\s*denied|temporarily\s*blocked/i],
@@ -90,6 +94,14 @@ export function buildNaverShoppingSearchUrl(keyword, pageIndex = 1) {
     throw new ProviderError("provider_url_not_allowed");
   }
   return url.toString();
+}
+
+export function buildNaverShoppingFrontendUrl(keyword, pageIndex = 1) {
+  const pageUrl = new URL(buildNaverShoppingSearchUrl(keyword, pageIndex));
+  const safePage = boundedInteger(pageIndex, 0, 1, NAVER_SHOPPING_MAX_PAGES);
+  if (safePage !== Number(pageIndex)) throw new ProviderError("provider_page_out_of_range");
+  pageUrl.pathname = NAVER_SHOPPING_FRONTEND_PATH;
+  return pageUrl.toString();
 }
 
 function parseLoosePayload(raw) {
@@ -399,6 +411,71 @@ export function parseNaverNextDataPage(payload, {
   };
 }
 
+/**
+ * Parse the first-party partial-search response used by the current Shopping
+ * frontend. Paid and benefit inventories live in separate response fields;
+ * only `shoppingResult.products` is accepted as organic rank evidence.
+ */
+export function parseNaverFrontendPage(payload, {
+  pageIndex = 1,
+  pageSize = NAVER_SHOPPING_PAGE_SIZE,
+  keyword = "",
+} = {}) {
+  let data = payload;
+  if (typeof payload === "string") {
+    try {
+      data = JSON.parse(payload);
+    } catch {
+      throw new ProviderError("naver_frontend_invalid_json");
+    }
+  }
+  if (!isRecord(data)) throw new ProviderError("naver_frontend_schema_drift", "root");
+  const root = data;
+  if (!isRecord(root.shoppingResult)) {
+    throw new ProviderError("naver_frontend_schema_drift", "shoppingResult");
+  }
+  const shoppingResult = root.shoppingResult;
+  if (!Array.isArray(shoppingResult.products)) {
+    throw new ProviderError("naver_frontend_schema_drift", "shoppingResult.products");
+  }
+  if (!Number.isSafeInteger(shoppingResult.total) || shoppingResult.total < 0) {
+    throw new ProviderError("naver_frontend_schema_drift", "shoppingResult.total");
+  }
+  const expectedPage = boundedInteger(pageIndex, 0, 1, NAVER_SHOPPING_MAX_PAGES);
+  if (expectedPage !== Number(pageIndex) || Number(pageSize) !== NAVER_SHOPPING_PAGE_SIZE) {
+    throw new ProviderError("naver_frontend_schema_drift", "request.page");
+  }
+
+  try {
+    return parseNaverNextDataPage({
+      props: {
+        pageProps: {
+          searchParam: {
+            sort: "rel",
+            pagingIndex: expectedPage,
+            pagingSize: NAVER_SHOPPING_PAGE_SIZE,
+            viewType: "list",
+            productSet: "total",
+            query: normalizeKeyword(keyword),
+          },
+          compositeList: {
+            total: shoppingResult.total,
+            list: shoppingResult.products.map((item) => ({ type: "product", item })),
+          },
+        },
+      },
+    }, { pageIndex: expectedPage, pageSize: NAVER_SHOPPING_PAGE_SIZE, keyword });
+  } catch (error) {
+    if (error instanceof ProviderError && (
+      error.code === "naver_next_data_schema_drift"
+      || error.code === "naver_next_data_rank_drift"
+    )) {
+      throw new ProviderError("naver_frontend_schema_drift", error.detail || error.code);
+    }
+    throw error;
+  }
+}
+
 function explicitAdRow(raw, values) {
   const adFields = [
     "isAdProduct",
@@ -600,13 +677,7 @@ export function marketTotalFromTexts(texts = []) {
   return null;
 }
 
-export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }) {
-  const response = await page.goto(url, {
-    waitUntil: "domcontentloaded",
-    timeout: timeoutMs,
-  });
-  const status = Number(response?.status?.() || 0);
-
+async function readNaverPageSnapshot(page, timeoutMs) {
   await page.waitForFunction(() => {
     const nextData = document.getElementById("__NEXT_DATA__");
     const text = String(document.body?.innerText || "");
@@ -621,22 +692,140 @@ export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }
       url: String(location.href || ""),
     };
   });
+  return snapshot;
+}
+
+async function collectNaverSsrPage({ page, url, pageIndex, timeoutMs, response = null, snapshot = null }) {
+  const navigationResponse = response || await page.goto(url, {
+    waitUntil: "domcontentloaded",
+    timeout: timeoutMs,
+  });
+  const status = Number(navigationResponse?.status?.() || 0);
+  const pageSnapshot = snapshot || await readNaverPageSnapshot(page, timeoutMs);
   // Preserve typed HTTP/auth/CAPTCHA failures even when blocked pages omit
   // __NEXT_DATA__. Schema parsing runs only after the navigation itself is
   // proven to be a valid Naver Shopping response.
-  classifyNaverPage({ status, ...snapshot, rowCount: 0 });
+  classifyNaverPage({ status, ...pageSnapshot, rowCount: 0 });
   const keyword = new URL(url).searchParams.get("query") || "";
-  const parsed = parseNaverNextDataPage(snapshot.nextDataText, {
+  const parsed = parseNaverNextDataPage(pageSnapshot.nextDataText, {
     pageIndex,
     pageSize: NAVER_SHOPPING_PAGE_SIZE,
     keyword,
   });
-  const classified = classifyNaverPage({ status, ...snapshot, rowCount: parsed.rows.length });
+  const classified = classifyNaverPage({ status, ...pageSnapshot, rowCount: parsed.rows.length });
   return {
-    ...snapshot,
+    ...pageSnapshot,
     ...classified,
     ...parsed,
     sourceExhausted: parsed.sourceExhausted || classified.sourceExhausted,
+  };
+}
+
+export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }) {
+  const keyword = new URL(url).searchParams.get("query") || "";
+  const frontendUrl = new URL(buildNaverShoppingFrontendUrl(keyword, pageIndex));
+  let initialResponse = null;
+  let initialSnapshot = null;
+
+  // The partial-search endpoint is a first-party browser contract. Establish
+  // the page/session once so fetch uses the same origin, cookies, and captcha
+  // runtime as the actual Shopping frontend.
+  if (pageIndex === 1) {
+    initialResponse = await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: timeoutMs,
+    });
+    initialSnapshot = await readNaverPageSnapshot(page, timeoutMs);
+    classifyNaverPage({
+      status: Number(initialResponse?.status?.() || 0),
+      ...initialSnapshot,
+      rowCount: 0,
+    });
+  }
+
+  const frontendResult = await page.evaluate(async ({ requestPath, timeout }) => {
+    const token = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value = "") => {
+        if (settled) return;
+        settled = true;
+        resolve(typeof value === "string" ? value : "");
+      };
+      const timer = setTimeout(() => finish(""), 650);
+      try {
+        if (typeof window.ncaptcha?.f !== "function") {
+          clearTimeout(timer);
+          finish("");
+          return;
+        }
+        window.ncaptcha.f((value) => {
+          clearTimeout(timer);
+          finish(value);
+        });
+      } catch {
+        clearTimeout(timer);
+        finish("");
+      }
+    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    try {
+      const headers = {
+        accept: "application/json, text/plain, */*",
+        logic: "PART",
+      };
+      if (token) headers["x-wtm-ncaptcha-token"] = token;
+      const response = await fetch(requestPath, {
+        method: "GET",
+        credentials: "include",
+        headers,
+        signal: controller.signal,
+      });
+      const bodyText = await response.text();
+      return {
+        status: response.status,
+        url: response.url,
+        contentType: response.headers.get("content-type") || "",
+        bodyText,
+      };
+    } finally {
+      clearTimeout(timer);
+    }
+  }, {
+    requestPath: `${frontendUrl.pathname}${frontendUrl.search}`,
+    timeout: timeoutMs,
+  });
+
+  const frontendStatus = Number(frontendResult?.status || 0);
+  if (frontendStatus === 404 || frontendStatus === 405) {
+    return collectNaverSsrPage({
+      page,
+      url,
+      pageIndex,
+      timeoutMs,
+      response: initialResponse,
+      snapshot: initialSnapshot,
+    });
+  }
+  classifyNaverPage({
+    status: frontendStatus,
+    url: frontendResult?.url || frontendUrl.toString(),
+    bodyText: frontendResult?.bodyText || "",
+    rowCount: 0,
+  });
+  if (!/application\/json/i.test(String(frontendResult?.contentType || ""))) {
+    throw new ProviderError("naver_frontend_schema_drift", "content-type");
+  }
+  const parsed = parseNaverFrontendPage(frontendResult.bodyText, {
+    pageIndex,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    keyword,
+  });
+  return {
+    title: "",
+    bodyText: "",
+    url: frontendResult?.url || frontendUrl.toString(),
+    ...parsed,
   };
 }
 
@@ -650,6 +839,18 @@ function providerConfig(env = process.env) {
     cacheTtlMs: boundedInteger(env.NAVER_SHOPPING_PROVIDER_CACHE_TTL_MS, 12 * 60_000, 10_000, 30 * 60_000),
     cacheMax: boundedInteger(env.NAVER_SHOPPING_PROVIDER_CACHE_MAX, 64, 1, 500),
     readinessTtlMs: boundedInteger(env.NAVER_SHOPPING_PROVIDER_READINESS_TTL_MS, 30 * 60_000, 60_000, 24 * 60 * 60_000),
+    blockCooldownMs: boundedInteger(
+      env.NAVER_SHOPPING_PROVIDER_BLOCK_COOLDOWN_MS,
+      PROVIDER_BLOCK_COOLDOWN_MS,
+      60_000,
+      24 * 60 * 60_000,
+    ),
+    schemaCooldownMs: boundedInteger(
+      env.NAVER_SHOPPING_PROVIDER_SCHEMA_COOLDOWN_MS,
+      PROVIDER_SCHEMA_COOLDOWN_MS,
+      60_000,
+      24 * 60 * 60_000,
+    ),
     canaryKeyword: normalizeKeyword(env.NAVER_SHOPPING_PROVIDER_CANARY_KEYWORD || "온열찜질기"),
     canaryLimit: boundedInteger(env.NAVER_SHOPPING_PROVIDER_CANARY_LIMIT, 5, 1, 40),
   };
@@ -684,6 +885,7 @@ export function createPlaywrightProvider(options = {}) {
   let verificationPromise = null;
   let verifiedAt = 0;
   let lastAttemptAt = 0;
+  let cooldownUntil = 0;
   let readinessReason = config.canaryKeyword ? "startup_canary_pending" : "canary_keyword_missing";
   const queue = [];
   const cache = new Map();
@@ -790,7 +992,10 @@ export function createPlaywrightProvider(options = {}) {
       let marketTotal = null;
       let marketTotalVerified = true;
       let sourceExhausted = false;
-      const pageLimit = Math.ceil(request.limit / NAVER_SHOPPING_PAGE_SIZE) + 2;
+      const pageLimit = Math.min(
+        NAVER_SHOPPING_MAX_PAGES,
+        Math.ceil(request.limit / NAVER_SHOPPING_PAGE_SIZE) + 2,
+      );
 
       for (let pageIndex = 1; pageIndex <= pageLimit && state.items.length < request.limit && !sourceExhausted; pageIndex += 1) {
         const url = buildNaverShoppingSearchUrl(request.keyword, pageIndex);
@@ -859,6 +1064,9 @@ export function createPlaywrightProvider(options = {}) {
 
   async function collectAtomic(request, { forceFresh = false } = {}) {
     const cacheKey = requestCacheKey(request);
+    if (cooldownUntil > now()) {
+      throw new ProviderError("provider_cooldown_active", readinessReason);
+    }
     if (!forceFresh) {
       const cached = cachedWindow(request);
       if (cached) return cached;
@@ -868,7 +1076,6 @@ export function createPlaywrightProvider(options = {}) {
         return cachedWindow(request) || deepClone(result);
       }
     }
-
     const promise = enqueue(() => collectLive(request), deadlineMs(request));
     inFlight.set(cacheKey, { promise });
     try {
@@ -887,6 +1094,22 @@ export function createPlaywrightProvider(options = {}) {
   function markFailure(error) {
     verifiedAt = 0;
     readinessReason = error?.code || error?.message || "startup_canary_failed";
+    const code = String(error?.code || "");
+    if (
+      code === "naver_http_418"
+      || code === "naver_http_429"
+      || code === "naver_captcha_detected"
+      || code === "naver_access_blocked"
+    ) {
+      cooldownUntil = Math.max(cooldownUntil, now() + config.blockCooldownMs);
+    } else if (
+      code === "naver_frontend_schema_drift"
+      || code === "naver_next_data_schema_drift"
+      || code === "naver_next_data_rank_drift"
+      || code === "naver_selector_drift"
+    ) {
+      cooldownUntil = Math.max(cooldownUntil, now() + config.schemaCooldownMs);
+    }
   }
 
   function isRequestLocalFailure(error) {
@@ -900,6 +1123,7 @@ export function createPlaywrightProvider(options = {}) {
       readinessReason = "canary_keyword_missing";
       return false;
     }
+    if (cooldownUntil > now()) return false;
     if (!force && verificationPromise) return verificationPromise;
     if (!force && lastAttemptAt && now() - lastAttemptAt < READINESS_RETRY_MS) return verifiedAt > 0;
     lastAttemptAt = now();
@@ -932,6 +1156,7 @@ export function createPlaywrightProvider(options = {}) {
 
   function scheduleVerification() {
     if (verificationPromise || closed || !config.canaryKeyword) return;
+    if (cooldownUntil > now()) return;
     if (lastAttemptAt && now() - lastAttemptAt < READINESS_RETRY_MS) return;
     queueMicrotask(() => verifyReadiness().catch(() => {}));
   }
@@ -950,6 +1175,7 @@ export function createPlaywrightProvider(options = {}) {
         configured: Boolean(config.canaryKeyword) && !closed,
         verified: verifiedAt > 0,
         reason: verifiedAt > 0 ? "" : readinessReason,
+        cooldownUntil: cooldownUntil > now() ? new Date(cooldownUntil).toISOString() : "",
         busy: active > 0,
         queueDepth: queue.length,
       };
@@ -958,10 +1184,11 @@ export function createPlaywrightProvider(options = {}) {
       try {
         const result = await collectAtomic(request);
         verifiedAt = now();
+        cooldownUntil = 0;
         readinessReason = "";
         return result;
       } catch (error) {
-        if (!isRequestLocalFailure(error)) markFailure(error);
+        if (!isRequestLocalFailure(error) && error?.code !== "provider_cooldown_active") markFailure(error);
         throw error;
       }
     },

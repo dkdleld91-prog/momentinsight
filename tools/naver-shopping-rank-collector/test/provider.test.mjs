@@ -5,11 +5,13 @@ import { SCHEMA_VERSION } from "../src/contract.mjs";
 import {
   ProviderError,
   appendNormalizedPage,
+  buildNaverShoppingFrontendUrl,
   buildNaverShoppingSearchUrl,
   classifyNaverPage,
   createPlaywrightProvider,
   defaultCollectPage,
   marketTotalFromTexts,
+  parseNaverFrontendPage,
   parseNaverNextDataPage,
 } from "../src/provider.mjs";
 
@@ -122,6 +124,17 @@ function nextDataFixture({ pageIndex = 1, total, entries, keyword = "온열찜�
   };
 }
 
+function frontendFixture({ total, products, adProducts = [], superSavingProducts = [] }) {
+  return {
+    shoppingResult: {
+      total,
+      products: products.map((entry) => entry.item),
+    },
+    searchAdResult: { products: adProducts },
+    superSavingProducts,
+  };
+}
+
 function fakeBrowserFactory(stats = {}) {
   return async (launchOptions) => {
     stats.launchOptions = launchOptions;
@@ -176,6 +189,46 @@ test("builds only the allowlisted N Shopping relevance-list URL", () => {
   assert.equal(url.searchParams.get("sort"), "rel");
   assert.equal(url.searchParams.get("pagingIndex"), "3");
   assert.equal(url.searchParams.get("pagingSize"), "40");
+});
+
+test("builds the allowlisted same-origin partial-search URL for pages 1..8 only", () => {
+  const url = new URL(buildNaverShoppingFrontendUrl("온열 찜질기", 8));
+  assert.equal(url.origin, "https://search.shopping.naver.com");
+  assert.equal(url.pathname, "/api/search/all");
+  assert.equal(url.searchParams.get("pagingIndex"), "8");
+  assert.equal(url.searchParams.get("pagingSize"), "40");
+  assert.throws(
+    () => buildNaverShoppingFrontendUrl("온열 찜질기", 9),
+    (error) => error instanceof ProviderError && error.code === "provider_page_out_of_range",
+  );
+});
+
+test("accepts only shoppingResult.products and ignores separate ad and super-saving inventories", () => {
+  const parsed = parseNaverFrontendPage(frontendFixture({
+    total: 2,
+    products: [nextDataProduct(1), nextDataProduct(2)],
+    adProducts: [{ collection: "product", rank: 1, adId: "paid-1" }],
+    superSavingProducts: [{ collection: "product", rank: 1, id: "99999999999" }],
+  }), { pageIndex: 1, keyword: "온열찜질기" });
+
+  assert.equal(parsed.marketTotal, 2);
+  assert.deepEqual(parsed.rows.map((row) => row.sourceRank), [1, 2]);
+  assert.deepEqual(parsed.rows.map((row) => row.productId), ["91000000001", "91000000002"]);
+  assert.equal(parsed.rows.some((row) => row.isAd), false);
+});
+
+test("fails closed when the frontend schema or an absolute organic rank drifts", () => {
+  assert.throws(
+    () => parseNaverFrontendPage({ shoppingResult: { total: 1 } }, { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError && error.code === "naver_frontend_schema_drift",
+  );
+  assert.throws(
+    () => parseNaverFrontendPage(frontendFixture({
+      total: 2,
+      products: [nextDataProduct(1), nextDataProduct(3)],
+    }), { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError && error.code === "naver_frontend_schema_drift",
+  );
 });
 
 test("parses __NEXT_DATA__ in document order and excludes explicit adId rows", () => {
@@ -327,6 +380,26 @@ test("builds an exact contiguous 1..300 organic window from eight strict pages",
   );
 });
 
+test("builds an exact contiguous 1..300 window from eight frontend partial responses", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  for (let pageIndex = 1; pageIndex <= 8; pageIndex += 1) {
+    const startRank = ((pageIndex - 1) * 40) + 1;
+    const page = parseNaverFrontendPage(frontendFixture({
+      total: 10_000,
+      products: Array.from({ length: 40 }, (_, index) => nextDataProduct(startRank + index)),
+      adProducts: [nextDataAd(pageIndex).item],
+      superSavingProducts: [{ id: String(99000010000 + pageIndex) }],
+    }), { pageIndex, keyword: "온열찜질기" });
+    appendNormalizedPage(state, page, { pageIndex, limit: 300 });
+  }
+
+  assert.equal(state.items.length, 300);
+  assert.deepEqual(
+    state.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+});
+
 test("fails closed when __NEXT_DATA__ schema, page parameters, or ranks drift", () => {
   const missingList = nextDataFixture({ total: 1, entries: [nextDataProduct(1)] });
   delete missingList.props.pageProps.compositeList.list;
@@ -361,8 +434,8 @@ test("rejects malformed __NEXT_DATA__ JSON instead of using a loose DOM fallback
   );
 });
 
-test("default page collection uses only the strict __NEXT_DATA__ contract", async () => {
-  const fixture = nextDataFixture({ total: 1, entries: [nextDataProduct(1)] });
+test("default page collection uses the first-party PART contract with cookies and captcha header support", async () => {
+  const fixture = frontendFixture({ total: 1, products: [nextDataProduct(1)] });
   const stats = {};
   const url = buildNaverShoppingSearchUrl("온열찜질기", 1);
   const page = {
@@ -373,13 +446,23 @@ test("default page collection uses only the strict __NEXT_DATA__ contract", asyn
     async waitForFunction(callback) {
       stats.waitSource = String(callback);
     },
-    async evaluate(callback) {
-      stats.evaluateSource = String(callback);
+    async evaluate(callback, argument) {
+      if (!argument) {
+        stats.snapshotSource = String(callback);
+        return {
+          nextDataText: "",
+          bodyText: "네이버 쇼핑 검색 결과",
+          title: "온열찜질기 : 네이버 가격비교",
+          url,
+        };
+      }
+      stats.frontendSource = String(callback);
+      stats.frontendArgument = argument;
       return {
-        nextDataText: JSON.stringify(fixture),
-        bodyText: "네이버 쇼핑 검색 결과",
-        title: "온열찜질기 : 네이버 가격비교",
-        url,
+        status: 200,
+        url: `https://search.shopping.naver.com${argument.requestPath}`,
+        contentType: "application/json; charset=utf-8",
+        bodyText: JSON.stringify(fixture),
       };
     },
   };
@@ -387,10 +470,45 @@ test("default page collection uses only the strict __NEXT_DATA__ contract", asyn
   const result = await defaultCollectPage({ page, url, pageIndex: 1, timeoutMs: 1_000 });
   assert.equal(stats.gotoUrl, url);
   assert.match(stats.waitSource, /__NEXT_DATA__/u);
-  assert.doesNotMatch(stats.evaluateSource, /data-shp-contents-dtl/u);
+  assert.equal(new URL(stats.frontendArgument.requestPath, url).pathname, "/api/search/all");
+  assert.match(stats.frontendSource, /credentials:\s*"include"/u);
+  assert.match(stats.frontendSource, /logic:\s*"PART"/u);
+  assert.match(stats.frontendSource, /x-wtm-ncaptcha-token/u);
+  assert.match(stats.frontendSource, /window\.ncaptcha\?\.f/u);
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].sourceRank, 1);
   assert.equal(result.rows[0].productType, 2);
+});
+
+test("falls back to strict SSR only when the partial-search route is unsupported", async () => {
+  const fixture = nextDataFixture({ total: 1, entries: [nextDataProduct(1)] });
+  const url = buildNaverShoppingSearchUrl("온열찜질기", 1);
+  let evaluateCalls = 0;
+  const page = {
+    async goto() { return { status: () => 200 }; },
+    async waitForFunction() {},
+    async evaluate(_callback, argument) {
+      evaluateCalls += 1;
+      if (!argument) {
+        return {
+          nextDataText: JSON.stringify(fixture),
+          bodyText: "네이버 쇼핑 검색 결과",
+          title: "온열찜질기 : 네이버 가격비교",
+          url,
+        };
+      }
+      return {
+        status: 404,
+        url: `https://search.shopping.naver.com${argument.requestPath}`,
+        contentType: "text/html",
+        bodyText: "not found",
+      };
+    },
+  };
+
+  const result = await defaultCollectPage({ page, url, pageIndex: 1, timeoutMs: 1_000 });
+  assert.equal(evaluateCalls, 2);
+  assert.equal(result.rows[0].sourceRank, 1);
 });
 
 test("default page collection preserves a typed 418 before parsing missing __NEXT_DATA__", async () => {
@@ -579,6 +697,58 @@ test("invalidates a prior readiness proof immediately after a runtime source fai
   const status = await provider.status();
   assert.equal(status.verified, false);
   assert.equal(status.reason, "naver_http_418");
+  await provider.close();
+});
+
+test("does not immediately retry 418 or schema drift while its typed cooldown is active", async () => {
+  let current = Date.parse("2026-08-01T00:00:00.000Z");
+  let mode = "ok";
+  let calls = 0;
+  const provider = createFixtureProvider({
+    now: () => current,
+    config: { blockCooldownMs: 2_000, schemaCooldownMs: 4_000 },
+    collectPage: async () => {
+      calls += 1;
+      if (mode === "blocked") throw new ProviderError("naver_http_418");
+      if (mode === "schema") throw new ProviderError("naver_frontend_schema_drift");
+      return { rows: [rawProduct(calls)], marketTotal: 100, sourceExhausted: false };
+    },
+  });
+
+  await provider.collect(rankRequest("준비", 1, current));
+  mode = "blocked";
+  await assert.rejects(
+    provider.collect(rankRequest("차단", 1, current)),
+    (error) => error instanceof ProviderError && error.code === "naver_http_418",
+  );
+  const callsAfterBlock = calls;
+  await assert.rejects(
+    provider.collect(rankRequest("즉시재시도금지", 1, current)),
+    (error) => error instanceof ProviderError
+      && error.code === "provider_cooldown_active"
+      && error.detail === "naver_http_418",
+  );
+  assert.equal(calls, callsAfterBlock);
+
+  current += 2_001;
+  mode = "schema";
+  await assert.rejects(
+    provider.collect(rankRequest("스키마", 1, current)),
+    (error) => error instanceof ProviderError && error.code === "naver_frontend_schema_drift",
+  );
+  const callsAfterSchema = calls;
+  await assert.rejects(
+    provider.collect(rankRequest("스키마즉시재시도금지", 1, current)),
+    (error) => error instanceof ProviderError
+      && error.code === "provider_cooldown_active"
+      && error.detail === "naver_frontend_schema_drift",
+  );
+  assert.equal(calls, callsAfterSchema);
+
+  current += 4_001;
+  mode = "ok";
+  const recovered = await provider.collect(rankRequest("회복", 1, current));
+  assert.equal(recovered.checkedCount, 1);
   await provider.close();
 });
 

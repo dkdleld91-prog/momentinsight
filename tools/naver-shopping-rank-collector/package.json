@@ -1,0 +1,17 @@
+{
+  "name": "moment-naver-shopping-rank-collector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "check": "node --check src/app.mjs && node --check src/contract.mjs && node --check src/provider.mjs && node --check src/server.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.61.1"
+  }
+}

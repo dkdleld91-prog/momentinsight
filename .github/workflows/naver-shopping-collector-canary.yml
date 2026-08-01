@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   verify-live-collector:
-    runs-on: macos-15
+    runs-on: windows-2025
     timeout-minutes: 15
     defaults:
       run:
@@ -37,7 +37,7 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Install matching Playwright Chromium
-        run: npx --no-install playwright install --with-deps chromium
+        run: npx --no-install playwright install chromium
 
       - name: Verify live readiness and five-item canary
         shell: bash

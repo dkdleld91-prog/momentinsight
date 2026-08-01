@@ -235,7 +235,8 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     const requestedMonths = ((endParts[0] - startParts[0]) * 12) + endParts[1] - startParts[1];
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY-ID"], "hub-id");
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY"], "hub-secret");
-    assert.ok(requestedMonths >= 36 && requestedMonths <= 37);
+    // The interval is inclusive: a 35-month index difference contains 36 monthly buckets.
+    assert.ok(requestedMonths >= 35 && requestedMonths <= 37);
     assert.equal(body.chartData.series.length, 36);
     assert.equal(body.chartData.seriesPeriods.length, 36);
     assert.equal(shoppingCall.headers["X-Naver-Client-Id"], "legacy-shopping-id");

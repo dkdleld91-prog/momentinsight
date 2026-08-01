@@ -872,7 +872,7 @@ async function defaultBrowserFactory({ headless, channel }) {
 
 export function createPlaywrightProvider(options = {}) {
   const config = { ...providerConfig(options.env || process.env), ...(options.config || {}) };
-  if (config.browserChannel !== "chromium") {
+  if (!["chromium", "chrome"].includes(config.browserChannel)) {
     throw new ProviderError("provider_browser_channel_not_allowed");
   }
   const now = options.now || (() => Date.now());
@@ -988,6 +988,14 @@ export function createPlaywrightProvider(options = {}) {
         colorScheme: "light",
       });
       const page = await context.newPage();
+      await page.goto("https://www.naver.com/", {
+        waitUntil: "domcontentloaded",
+        timeout: remainingMs(endAt),
+      });
+      await page.goto(`https://m.search.naver.com/search.naver?where=m&query=${encodeURIComponent(request.keyword)}`, {
+        waitUntil: "domcontentloaded",
+        timeout: remainingMs(endAt),
+      });
       const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
       let marketTotal = null;
       let marketTotalVerified = true;

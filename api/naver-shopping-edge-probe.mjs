@@ -4,7 +4,7 @@ const STATE_MARKER = 'naver.search.ext.newshopping["shopping"]._INITIAL_STATE=';
 
 export const config = {
   runtime: "edge",
-  regions: ["hnd1"],
+  regions: ["icn1"],
 };
 
 function json(payload, status = 200) {

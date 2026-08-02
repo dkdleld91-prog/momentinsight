@@ -22,7 +22,7 @@ const COLLECTOR_DIRECTORY = path.resolve(
 );
 const PLAYWRIGHT_MODULE = path.join(COLLECTOR_DIRECTORY, "node_modules/playwright/index.mjs");
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
-const SEARCH_URL = "https://msearch.shopping.naver.com/search/all?query=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0&origQuery=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0&productSet=total&sort=rel&viewType=list&pagingIndex=1&pagingSize=40";
+const SEARCH_URL = "https://search.shopping.naver.com/search/all?query=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0";
 const BLOCK_PATTERN = /캡챠|captcha|자동입력\s*방지|로봇이\s*아닙니다|비정상적인\s*접근|이용이\s*제한|access\s*denied/i;
 
 function bootstrapError(code) {
@@ -76,6 +76,7 @@ async function prepareDedicatedProfile() {
 }
 
 async function verifiedShoppingPage(page) {
+  if (!page || page.isClosed()) return false;
   let current;
   try {
     current = new URL(page.url());
@@ -84,15 +85,27 @@ async function verifiedShoppingPage(page) {
   }
   if (
     current.protocol !== "https:"
-    || current.hostname !== "msearch.shopping.naver.com"
+    || !["search.shopping.naver.com", "msearch.shopping.naver.com"].includes(current.hostname)
     || current.pathname !== "/search/all"
   ) return false;
   const snapshot = await page.evaluate(() => ({
     hasNextData: Boolean(document.getElementById("__NEXT_DATA__")?.textContent),
+    productLinkCount: Array.from(document.querySelectorAll("a[href]"))
+      .filter((anchor) => /(?:\/products\/|\/catalog\/)/u.test(String(anchor.getAttribute("href") || "")))
+      .length,
     bodyText: String(document.body?.innerText || "").slice(0, 20_000),
-  })).catch(() => ({ hasNextData: false, bodyText: "" }));
-  if (BLOCK_PATTERN.test(snapshot.bodyText)) throw bootstrapError("naver_access_challenge_detected");
-  return snapshot.hasNextData === true;
+  })).catch(() => ({ hasNextData: false, productLinkCount: 0, bodyText: "" }));
+  // A challenge may be solved only by the user in this visible dedicated
+  // window. Keep waiting instead of closing the exact window they must use.
+  if (BLOCK_PATTERN.test(snapshot.bodyText)) return false;
+  return snapshot.hasNextData === true || snapshot.productLinkCount >= 5;
+}
+
+async function findVerifiedShoppingPage(context) {
+  for (const candidate of context.pages()) {
+    if (await verifiedShoppingPage(candidate)) return candidate;
+  }
+  return null;
 }
 
 async function loadChromium() {
@@ -117,7 +130,7 @@ async function main() {
       colorScheme: "light",
     });
     const existingPages = context.pages();
-    const page = existingPages[0] || await context.newPage();
+    let page = existingPages[0] || await context.newPage();
     for (const extraPage of existingPages.slice(1)) await extraPage.close().catch(() => {});
     await page.goto(SEARCH_URL, { waitUntil: "domcontentloaded", timeout: 45_000 });
 
@@ -126,7 +139,8 @@ async function main() {
 
     const deadline = Date.now() + LOGIN_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      if (await verifiedShoppingPage(page)) {
+      const verifiedPage = await findVerifiedShoppingPage(context);
+      if (verifiedPage) {
         const marker = {
           schema: NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
           authenticatedAt: new Date().toISOString(),
@@ -139,7 +153,13 @@ async function main() {
         console.log("naver_shopping_profile_authenticated");
         return;
       }
-      await page.waitForTimeout(1_000);
+      if (page.isClosed()) {
+        page = context.pages().find((candidate) => !candidate.isClosed()) || await context.newPage();
+        if (page.url() === "about:blank") {
+          await page.goto(SEARCH_URL, { waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
     }
     throw bootstrapError("naver_login_timeout");
   } finally {

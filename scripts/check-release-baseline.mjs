@@ -242,8 +242,8 @@ const checks = {
     'data-mi-admin-screen="reports">보고서 관리</a>',
     'data-mi-admin-screen="publish">공개 관리</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
-    'data-mi-admin-screen="keyword">키워드 조회</a>',
-    'data-mi-admin-screen="seo-check">SEO 확인</a>',
+    'data-mi-admin-screen="keyword">키워드 조회 (개발중)</a>',
+    'data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-admin-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
@@ -364,8 +364,8 @@ const checks = {
     'data-mi-screen="schedule">일정표</a>',
     'data-mi-screen="agency-code">대행사 연결</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
-    'data-mi-screen="keyword-tool">키워드 조회</a>',
-    'data-mi-screen="seo-check">SEO 확인</a>',
+    'data-mi-screen="keyword-tool">키워드 조회 (개발중)</a>',
+    'data-mi-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
@@ -484,8 +484,11 @@ const checks = {
     "loginButton.disabled = false;",
     "return;",
   ]),
-  homeDevelopmentNoticeVisible: homeSource.includes("핵심 마케팅 도구를 운영 중입니다.")
-    && homeSource.includes("현재 안정성이 확인된 다섯 가지 기능을 바로 사용할 수 있습니다.")
+  homeDevelopmentNoticeVisible: homeSource.includes("8월 서비스 운영 안내")
+    && homeSource.includes("네이버 API 환경 변경으로 일부 조회가 평소보다 다소 지연될 수 있습니다.")
+    && homeSource.includes("매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다.")
+    && homeSource.includes('data-status="(개발중)"')
+    && homeSource.includes('data-status="09:00 · 15:00"')
     && homeSource.includes("data-mi-dev-banner")
     && homeSource.includes("mi-dev-banner-head")
     && homeSource.includes("mi-dev-banner-contact")
@@ -970,6 +973,8 @@ const checks = {
     && placeRankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
+    && source.includes('>키워드 조회 (개발중)</a>')
+    && source.includes('>SEO 확인 (개발중)</a>')
     && source.includes('>N 상품 순위 (개발중)</a>')
     && source.includes('<span class="mi-badge">조회</span>')
     && !source.includes(">순위 1회 조회<")

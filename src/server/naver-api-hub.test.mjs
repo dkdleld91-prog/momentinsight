@@ -101,14 +101,16 @@ test("API Hub alias key names are accepted as one complete pair", () => {
   assert.equal(request.headers["X-NCP-APIGW-API-KEY"], "alias-secret");
 });
 
-test("missing or invalid mode keeps production on legacy until the cutover is explicit", () => {
+test("missing or invalid mode fails closed instead of silently falling back to legacy", () => {
   const missing = naverApiProviderConfig({ ...legacyEnv, ...hubEnv });
   const invalid = naverApiProviderConfig({ ...legacyEnv, ...hubEnv, NAVER_API_HUB_MODE: "unexpected" });
 
-  assert.equal(missing.mode, "legacy");
-  assert.equal(invalid.mode, "legacy");
-  assert.equal(resolveNaverApiTransport(missing, "search"), "legacy");
-  assert.equal(resolveNaverApiTransport(invalid, "datalab"), "legacy");
+  assert.equal(missing.mode, "not-configured");
+  assert.equal(invalid.mode, "not-configured");
+  assert.equal(resolveNaverApiTransport(missing, "search"), "not-configured");
+  assert.equal(resolveNaverApiTransport(invalid, "datalab"), "not-configured");
+  assert.throws(() => naverSearchRequest(missing, "blog"), { code: "NAVER_API_NOT_CONFIGURED" });
+  assert.throws(() => naverDatalabRequest(invalid, "search-trend"), { code: "NAVER_API_NOT_CONFIGURED" });
 });
 
 test("new API Gateway errors retain useful messages and lifecycle classification", () => {

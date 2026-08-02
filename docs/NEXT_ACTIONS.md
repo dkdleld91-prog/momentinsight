@@ -11,9 +11,13 @@
 
 ## 현재 작업
 
-- N 상품 30일 전체 갱신 장애의 로컬 안전 수정은 완료했지만 실제 순위 수집 복구는 미완료다. Production에는 `NAVER_SHOPPING_RANK_API_URL`·`NAVER_SHOPPING_RANK_API_KEY`가 없고 NAVER API Hub에도 종료된 쇼핑 상품검색의 대체 API가 없으므로, 다음 필수 단계는 정확한 N쇼핑 오가닉 300 결과를 제공하는 서버 수집원을 대표님 승인 아래 확정하는 것이다. 그 전에는 legacy 키를 준비 완료로 오인하지 않고 단건·전체·cron을 DB 변경 없이 차단하며 마지막 정상 순위와 이력만 보존한다.
-- 수집원은 `naver_shopping_results_collector`·`naver_shopping_organic_list` 근거, 100개 단위 페이지, 광고 제외, 정확 상품 ID와 검증된 원부 ID를 제공해야 한다. 연결 뒤 `1개 실상품 300개 → mml93-a01 25/25 → 사이트 전체 71개 → 오전/오후 cron 2회 → 실계정 운영팀·광고주 화면` 순서로 검증하고 모두 통과한 뒤에만 push·Production 배포한다. 통합검색·쇼핑 인사이트·판매자 Commerce API·유사 상품명을 N쇼핑 순위로 대체하지 않는다.
-- 외부 수집 서비스 가입·환경값 등록·결제·자동 유료 전환은 현재 승인되지 않았으며 실행하지 않는다. 무료 canary라도 별도 사용자 승인을 받은 뒤 카드 없이 1개 키워드만 검증하고, 300개 완전 목록·광고 제외·정확 상품/원부가 증명되지 않으면 운영에 연결하지 않는다. 로컬 수정은 API·서버 251/251, 플레이스 51/51, 역할·보호 잠금·전체 `check:release`까지 통과했지만 실수집 25/25 증거가 없으므로 완료나 배포로 보고하지 않는다.
+- 종료 쇼핑 검색 API와 NAVER API Hub를 상품 오가닉 순위에 연결하지 않는다. Hub에는 전체 쇼핑 순위를 제공하는 공식 endpoint가 없으며 Search·Search Trend·Shopping Insight·Commerce API 값을 순위로 바꾸지 않는다.
+- 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 연속 상위 50위에서 exact ID를 즉시 확인하고, 전용 Mac은 독립 persistent 브라우저 프로필의 사용자 로그인 세션으로 정확히 300개를 수집해 서명 제출한다.
+- Mac 워커는 HMAC·유효시간·1회용 nonce·lease·원자 DB 반영을 강제한다. 299개 이하, 광고·중복·순위 공백, 인증 만료, collection 충돌은 새 순위나 snapshot을 만들지 않고 마지막 정상 순위와 30일 이력을 보존한다.
+- 오전 9시·오후 3시에 로컬 워커가 먼저 처리하고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 새 51~300위 수집은 멈추지만 서버 상위 50위 경로와 기존값 보존은 계속된다.
+- 다음 검증 순서는 `전용 프로필 로그인 확인 → 실제 키워드 300개 수집 → 최근 pw-*·checked_count=300 snapshot 확인 → 광고 제외·연속 순번·exact/원부 일치 → 실패 보존 → 전체 활성 tracker → 09시/15시 창과 후속 재시도 → 총관리자·운영팀·광고주 동일 값 → Production 배포`다.
+- 유료 외부 수집기, 카드 등록, 자동 결제는 사용하지 않는다. 코드·모의·계약 테스트만으로 실수집이나 배포 완료를 보고하지 않으며, 최근 `pw-*` 300위 snapshot이 확인될 때까지 실수집·Production 반영은 대기 상태다.
+- 기존 tracker, snapshot, 감사 로그, 마이그레이션, 운영 문서는 실제 300위 전환과 rollback 검증 전 삭제하지 않는다. 재생성 가능한 산출물과 실행 불가능한 과거 원격 쇼핑 서비스 잔재만 별도 검증 후 정리한다.
 
 - NAVER API Hub는 공식 실키와 `NAVER_API_HUB_MODE=hub`로 고정됐고 Search·Search Trend·Shopping Insight 3종 실호출이 모두 HTTP 200이다. 배포 전 검사는 Hub 키 쌍과 명시적 hub 모드를 필수로 강제하며, 종료된 `shop` 등 미지원 검색 리소스는 네트워크 호출 전에 차단한다. 일시 오류만 1회 제한 재시도하고 401/403·잘못된 요청은 재시도하지 않는다.
 - 위 Hub 고정 코드는 `6d70f56`, 상품 순위 이력 보호 코드는 `b6466a3`으로 GitHub `main`과 Vercel Production `dpl_99XvbXnx3qnk94Xs9R5P4NPrEtLe`에 반영했다. 운영 릴리스 `6d70f56364a7`·서울 `icn1`·health/ready 200, 관리자·광고주 검증 빌드 일치, 보호 API 401, 배포 후 공식 Hub 3종 HTTP 200을 확인했다.

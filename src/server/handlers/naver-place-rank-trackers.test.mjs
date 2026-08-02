@@ -484,7 +484,7 @@ async function withOfficialProvider(fetchImpl, callback) {
   process.env.NAVER_OPENAPI_CLIENT_SECRET = "official-test-secret";
   delete process.env.NAVER_API_HUB_CLIENT_ID;
   delete process.env.NAVER_API_HUB_CLIENT_SECRET;
-  delete process.env.NAVER_API_HUB_MODE;
+  process.env.NAVER_API_HUB_MODE = "legacy";
   globalThis.fetch = fetchImpl;
   try {
     return await callback();

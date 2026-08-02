@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import app from "./index.mjs";
+import {
+  LOCAL_WORKER_BODY_MAX_BYTES,
+  LOCAL_WORKER_ENDPOINT_PATH,
+} from "./naver-shopping/local-worker-contract.mjs";
 
 test("health is a lightweight liveness response with runtime trace headers", async () => {
   const response = await app.fetch(new Request("https://insight.momentlabs.co.kr/health", {
@@ -18,5 +22,15 @@ test("readiness route returns method not allowed instead of falling through", as
     method: "POST",
   }));
   assert.equal(response.status, 405);
+  assert.equal((await response.json()).ok, false);
+});
+
+test("local shopping worker is bounded to 2 MiB before handler authentication", async () => {
+  const response = await app.fetch(new Request(`https://insight.momentlabs.co.kr${LOCAL_WORKER_ENDPOINT_PATH}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: new Uint8Array(LOCAL_WORKER_BODY_MAX_BYTES + 1),
+  }));
+  assert.equal(response.status, 413);
   assert.equal((await response.json()).ok, false);
 });

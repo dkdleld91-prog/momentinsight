@@ -46,12 +46,14 @@
 ├── scripts/
 ├── supabase/
 ├── tools/naver-place-rank-collector/
+├── tools/naver-shopping-rank-collector/
 ├── src/
     ├── pages/
     │   ├── home.html
     │   ├── admin.html
     │   └── client.html
     └── server/
+        └── naver-shopping/
 └── vercel.json
 ```
 

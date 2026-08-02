@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
+import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -149,6 +151,19 @@ const cronAuthServer = read("src/server/cron-auth.mjs");
 const serverIndex = read("src/server/index.mjs");
 const securityServer = read("src/server/security.mjs");
 const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
+const shoppingCollectorLiveCheck = read("scripts/check-naver-shopping-collector-live.mjs");
+const shoppingRankSourceStatus = read("src/server/naver-shopping/source-status.mjs");
+const shoppingProviderRuntime = read("src/server/naver-shopping/provider-runtime.mjs");
+const shoppingCollectorContract = read("tools/naver-shopping-rank-collector/src/contract.mjs");
+const shoppingCollectorPackage = JSON.parse(read("tools/naver-shopping-rank-collector/package.json"));
+const shoppingCollectorPackageLock = JSON.parse(read("tools/naver-shopping-rank-collector/package-lock.json"));
+const shoppingLocalWorker = read("scripts/naver-shopping-local-worker.mjs");
+const shoppingLocalWorkerWrapper = read("scripts/run-naver-shopping-local-worker.sh");
+const shoppingLocalWorkerPlist = read("scripts/co.kr.momentinsight.naver-shopping-local-worker.plist.template");
+const shoppingLocalWorkerAuth = read("src/server/local-worker-auth.mjs");
+const shoppingLocalWorkerHandler = read("src/server/handlers/naver-shopping-local-worker.mjs");
+const shoppingLocalWorkerContract = read("src/server/naver-shopping/local-worker-contract.mjs");
+const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_naver_shopping_local_worker.sql");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
 const packageConfig = JSON.parse(read("package.json"));
@@ -166,6 +181,16 @@ const rankProcessingLeaseMigration = read("supabase/migrations/20260629025402_na
 const rankTrackerGroupsMigration = read("supabase/migrations/20260701090000_naver_rank_tracker_groups.sql");
 const placeRankTrackerGroupsMigration = read("supabase/migrations/20260712090000_naver_place_rank_tracker_groups.sql");
 const fixedRankScopeMigration = read("supabase/migrations/20260712042029_fix_rank_trackers_to_300.sql");
+const shopping418Failure = shoppingCollectorFailureStatus({
+  status: 418,
+  message: "provider_collection_failed:naver_http_418",
+});
+const shopping429Failure = shoppingCollectorFailureStatus({
+  status: 429,
+  message: "provider_collection_failed:naver_http_429",
+});
+const shoppingProviderDefaults = shoppingProviderRuntimeConfig({});
+const shoppingPlaywrightVersion = String(shoppingCollectorPackage.dependencies?.playwright || "");
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
@@ -842,6 +867,16 @@ const checks = {
     && source.includes("data-rank-card"))
     && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
     && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
+  retiredShoppingSearchCannotReturn: [keywordServer, shoppingRankServer].every((source) => !source.includes("/v1/search/shop.json")
+    && !source.includes("naver_developers_shopping_search")
+    && !source.includes("naver_shopping_official_api_order"))
+    && keywordServer.includes("fetchShoppingResultsWindow")
+    && shoppingRankServer.includes('NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA = "mi.naver-shopping-organic-window.v1"')
+    && shoppingRankServer.includes("collectionId")
+    && shoppingRankServer.includes("sourceExhausted")
+    && shoppingRankServer.includes("fetchShoppingWindow")
+    && shoppingRankServer.includes('source !== "naver_shopping_results_collector"')
+    && shoppingRankServer.includes('rankEvidence !== "naver_shopping_organic_list"'),
   rankFeatureLockIsBuildOnlyAndUsageStaysOpen: ![
     serverIndex,
     adminSource,
@@ -873,6 +908,7 @@ const checks = {
       "keyword-hub-config-check",
       "keyword-hub-request",
       "keyword-hub-error-message",
+      "keyword-hub-search-request",
     ].every((id) => protectedFeatureLock.functions.some((entry) => entry.id === id))
     && [
       "seo-scoring-engine",
@@ -880,8 +916,35 @@ const checks = {
       "keyword-query-server",
       "product-organic-rank-server",
       "product-tracker-server",
+      "product-rank-cron-server",
       "place-tracker-server",
+      "place-rank-cron-server",
       "place-collector",
+      "place-collector-server",
+      "shopping-rank-source-status",
+      "shopping-rank-provider-runtime",
+      "shopping-rank-mobile-top-fallback",
+      "shopping-collector-contract",
+      "shopping-collector-provider",
+      "shopping-collector-package-manifest",
+      "shopping-collector-dependency-lock",
+      "shopping-local-worker-auth",
+      "shopping-local-worker-handler",
+      "shopping-local-worker-contract",
+      "shopping-local-worker-schedule",
+      "shopping-local-worker-runner",
+      "shopping-local-worker-wrapper",
+      "shopping-local-worker-installer",
+      "shopping-local-worker-profile-bootstrap",
+      "shopping-local-worker-launch-agent",
+      "shopping-local-worker-schema",
+      "shopping-collector-live-gate",
+      "shopping-local-worker-router",
+      "shopping-runtime-env-gate",
+      "place-collector-blueprint",
+      "product-cron-workflow",
+      "place-cron-workflow",
+      "rank-feature-lock-checker",
     ].every((id) => protectedFeatureLock.files.some((entry) => entry.id === id))
     && adminSource.includes("data-admin-keyword-search")
     && clientSource.includes("data-mi-keyword-search")
@@ -1022,6 +1085,10 @@ const checks = {
     && source.includes("[data-seo-review-count]")
     && source.includes('<script src="/seo-evaluation.js?v=seo-v13-20260726"></script>')
     && source.includes("window.MomentSeoEvaluation")),
+  seoRankBasisUsesVerifiedOrganicResult: [adminSource, clientSource].every((source) => (
+    source.includes('return "광고 제외 오가닉 순위 " + formatNumber(rankResult.rank) + "위 · " + seoRankMatchLabel(rankResult.matchType);')
+    && !source.includes('return "공식 검색 API 기준 순위 " + formatNumber(rankResult.rank)')
+  )),
   homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),
@@ -1061,12 +1128,66 @@ const checks = {
     && !staticBuildScript.includes('path.join(outputDir, "02_아임웹_적용코드")')
     && !staticBuildScript.includes("path.join(outputDir, fileName)")
     && !staticBuildScript.includes('"/all.html"'),
-  productionBuildRunsRuntimeEnvGate: vercelConfig.buildCommand === "npm run check:vercel-env && npm run check:release"
+  productionBuildRunsRuntimeEnvGate: vercelConfig.buildCommand === "npm run check:vercel-deploy"
     && packageConfig.scripts?.["check:vercel-env"] === "node scripts/check-runtime-env.mjs --vercel-build"
+    && packageConfig.scripts?.["check:vercel-deploy"] === "npm run check:vercel-env && npm run check:release && node scripts/check-naver-shopping-collector-live.mjs --vercel-build"
     && packageConfig.scripts?.["check:release"] === "npm run check:quality && npm run check:production-auth"
     && runtimeEnvCheck.includes('const vercelBuildMode = process.argv.includes("--vercel-build")')
     && runtimeEnvCheck.includes('vercelBuildMode && env.VERCEL_ENV !== "production"')
-    && runtimeEnvCheck.includes('reason: "vercel_non_production_build"'),
+    && runtimeEnvCheck.includes('reason: "vercel_non_production_build"')
+    && shoppingCollectorLiveCheck.includes('const vercelBuildMode = process.argv.includes("--vercel-build")')
+    && shoppingCollectorLiveCheck.includes('vercelBuildMode && env.VERCEL_ENV !== "production"')
+    && shoppingCollectorLiveCheck.includes('reason: "vercel_non_production_build"')
+    && shoppingCollectorLiveCheck.includes("window.checkedCount !== limit")
+    && shoppingCollectorLiveCheck.includes("collector_window_short"),
+  shoppingLocalWorkerIsSignedReplaySafeAndAtomic: shoppingLocalWorkerAuth.includes('createHmac("sha256"')
+    && shoppingLocalWorkerAuth.includes("timingSafeEqual")
+    && shoppingLocalWorkerAuth.includes("x-mi-worker-nonce")
+    && shoppingLocalWorkerContract.includes("LOCAL_WORKER_ORGANIC_LIMIT = 300")
+    && shoppingLocalWorkerContract.includes("validateStrictLocalWorkerWindow")
+    && shoppingLocalWorkerHandler.includes("mi_consume_naver_shopping_worker_nonce")
+    && shoppingLocalWorkerHandler.includes("mi_commit_naver_shopping_worker_result")
+    && shoppingLocalWorkerHandler.includes("mi_fail_naver_shopping_worker_claim")
+    && shoppingLocalWorkerMigration.includes("idx_naver_rank_snapshots_tracker_collection")
+    && shoppingLocalWorkerMigration.includes("security definer")
+    && shoppingLocalWorkerMigration.includes("to service_role"),
+  shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
+    && shopping418Failure.retryable === false
+    && shopping418Failure.retryAfterSeconds === 0
+    && shopping429Failure.status === "error"
+    && shopping429Failure.retryable === true
+    && shopping429Failure.retryAfterSeconds === 5
+    && shoppingRankSourceStatus.includes("status === 429")
+    && shoppingRankSourceStatus.includes("naver[_ -]?http[_ -]?429")
+    && shoppingRankSourceStatus.includes("http[_ -]?(?:403|418)")
+    && shoppingRankSourceStatus.includes("captcha[_ -]?detected"),
+  shoppingCollectorColdStartBudgetIsBounded: shoppingProviderDefaults.requestTimeoutMs === 90_000
+    && shoppingProviderDefaults.prewarmTimeoutMs === 75_000
+    && shoppingProviderRuntime.includes("const DEFAULT_REQUEST_TIMEOUT_MS = 90_000")
+    && shoppingProviderRuntime.includes("const DEFAULT_PREWARM_TIMEOUT_MS = 75_000")
+    && shoppingProviderRuntime.includes("runtime.prewarmTimeoutMs, 1_000, 90_000")
+    && shoppingProviderRuntime.includes('lastResult.ready || ["unavailable", "unauthorized", "misconfigured"].includes(lastResult.status)')
+    && shoppingProviderRuntime.includes("providerPrewarmCache.delete(cacheKey)"),
+  shoppingLocalWorkerLaunchIsBounded: shoppingLocalWorker.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS")
+    && shoppingLocalWorker.includes("acquireWorkerLock")
+    && shoppingLocalWorker.includes("local_worker_window_not_300")
+    && shoppingLocalWorkerWrapper.includes("MAX_ATTEMPTS=3")
+    && shoppingLocalWorkerWrapper.includes("security find-generic-password")
+    && shoppingLocalWorkerWrapper.includes("caffeinate -i -s")
+    && shoppingLocalWorkerPlist.includes("<key>StartInterval</key>")
+    && shoppingLocalWorkerPlist.includes("<integer>300</integer>")
+    && shoppingCollectorLiveCheck.includes("verifiedHybridWorkerEvidence"),
+  shoppingCollectorDependencyIsPinnedAndLocked: /^\d+\.\d+\.\d+$/u.test(shoppingPlaywrightVersion)
+    && shoppingCollectorPackageLock.lockfileVersion === 3
+    && shoppingCollectorPackageLock.packages?.[""]?.dependencies?.playwright === shoppingPlaywrightVersion,
+  shoppingCollectorProductionGateRequiresAtomic300: shoppingCollectorContract.includes("const MAX_RANK_LIMIT = 300")
+    && shoppingCollectorContract.includes("value.items.length !== value.checkedCount")
+    && shoppingCollectorContract.includes("validateItem(item, index + 1, request.limit)")
+    && shoppingCollectorContract.includes("provider_ad_item_rejected")
+    && shoppingCollectorLiveCheck.includes('argValue("limit", "300")')
+    && shoppingCollectorLiveCheck.includes("window.complete !== true")
+    && shoppingCollectorLiveCheck.includes("window.checkedCount !== limit")
+    && shoppingCollectorLiveCheck.includes("collector_window_short"),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && rankCronServer.includes("Unauthorized cron request")
     && rankCronServer.includes('NAVER_RANK_PROVIDER_NOT_CONFIGURED = "NAVER_RANK_PROVIDER_NOT_CONFIGURED"')
@@ -1277,15 +1398,16 @@ const checks = {
     && accessAuditMigration.includes("c.status = 'active'")
     && accessAuditMigration.includes("c.disconnected_at is null")
     && accessAuditMigration.includes("idx_audit_logs_action_created"),
-  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "0,5,10,15 0,6 * * *"')
+  rankCronTwiceDailyKst: rankCronWorkflow.includes('cron: "5,10,15 0,6 * * *"')
     && rankCronWorkflow.includes('cron: "37 * * * *"')
-    && rankCronWorkflow.includes("push:")
-    && rankCronWorkflow.includes("deploy backfill")
-    && rankCronWorkflow.includes("KST 09:00/15:00 rescue window")
+    && !rankCronWorkflow.includes("\n  push:")
+    && rankCronWorkflow.includes("KST 09:05/15:05 worker-first rescue window")
     && rankCronWorkflow.includes("Hourly catch-up keeps due trackers moving")
-    && rankCronWorkflow.includes("const batchSize = 5")
-    && rankCronWorkflow.includes("const maxBatches = 20")
+    && rankCronWorkflow.includes("const batchSize = 1")
+    && rankCronWorkflow.includes("const maxBatches = 100")
     && rankCronWorkflow.includes("drain 100 due trackers")
+    && rankCronWorkflow.includes("await sleep(8000)")
+    && rankCronWorkflow.includes("preserved")
     && rankCronWorkflow.includes("requestTimeoutMs")
     && rankCronWorkflow.includes("payload.ok !== true")
     && rankCronWorkflow.includes("const itemFailureResponse = response.status === 502")
@@ -1403,8 +1525,12 @@ const checks = {
     && source.includes("rankTrackerTrend")
     && source.includes("updateRankFilterPanel")
     && source.includes("키워드, 상품명, 상품번호 검색")),
-  rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes("Math.min(2, targets.length)")
+  rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes("var mobileFallback = rankSourceUsesMobileFallback()")
+    && source.includes("Math.min(mobileFallback ? 1 : 2, targets.length)")
+    && source.includes("if (mobileFallback && completedCount > 0)")
     && source.includes("Promise.all")
+    && source.includes("setTimeout(resolve, 8000)")
+    && source.includes("preservedCount")
     && source.includes("waitForRankAutoSyncBeforeManual")
     && source.includes("전체 순위 갱신을 시작합니다.")
     && source.includes('"전체 순위 갱신 중입니다. " + completedCount + "/" + targets.length')
@@ -1459,8 +1585,8 @@ const checks = {
     && superAdminServer.includes("총관리자 비밀값이 서버에 설정되지 않았습니다.")
     && !superAdminServer.includes("process.env.MI_SUPER_ADMIN_CODE || primaryAgencyCode()"),
   productionEnvRequiresCronAndOwnerSecrets: runtimeEnvCheck.includes('const productionMode = process.argv.includes("--production")')
-    && runtimeEnvCheck.includes('status(env, "Naver shopping rank provider URL", ["NAVER_SHOPPING_RANK_API_URL"], productionMode)')
-    && runtimeEnvCheck.includes('status(env, "Naver shopping rank provider key", ["NAVER_SHOPPING_RANK_API_KEY"], productionMode)')
+    && runtimeEnvCheck.includes('status(\n    env,\n    "Naver shopping rank source"')
+    && runtimeEnvCheck.includes('"NAVER_SHOPPING_RANK_MODE", "NAVER_SHOPPING_RANK_API_URL", "NAVER_SHOPPING_RANK_API_KEY"')
     && runtimeEnvCheck.includes('status(env, "Rank tracker GitHub cron secret", ["MI_RANK_CRON_SECRET"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Vercel Cron authorization secret", ["CRON_SECRET"], productionMode)')
     && runtimeEnvCheck.includes('status(env, "Super admin code", ["MI_SUPER_ADMIN_CODE"], productionMode,')

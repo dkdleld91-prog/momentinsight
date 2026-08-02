@@ -191,3 +191,67 @@ test("keeps the typed rank provider configuration response", () => {
 
   assert.equal(result, null);
 });
+
+test("preserves only bounded observable fields for a warming shopping provider", () => {
+  const response = new Response(null, { status: 503 });
+  const result = safeErrorPayload(response, JSON.stringify({
+    ok: false,
+    code: "NAVER_RANK_PROVIDER_WARMING",
+    errorCode: "private-error-code",
+    message: "raw provider message for private-keyword",
+    detail: "private runtime detail",
+    retryable: true,
+    retryAfter: 9999,
+    claimed: 0,
+    requestId: "request-safe-9012",
+    providerStatus: { status: "warming", raw: "private-provider-state" },
+    sourceStatus: { shoppingRank: { status: "warming", label: "private-label" } },
+  }));
+
+  assert.deepEqual(result, {
+    status: 503,
+    body: {
+      ok: false,
+      code: "NAVER_RANK_PROVIDER_WARMING",
+      errorCode: "NAVER_RANK_PROVIDER_WARMING",
+      message: "네이버 상품 순위 수집원을 준비하고 있어 대기열을 아직 시작하지 않았습니다.",
+      retryable: true,
+      retryAfter: 300,
+      rankSourceReady: false,
+      claimed: 0,
+      providerStatus: {
+        status: "warming",
+        retryable: true,
+        retryAfter: 300,
+      },
+      sourceStatus: { shoppingRank: { status: "warming" } },
+      requestId: "request-safe-9012",
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(result), /private|raw|detail|label/);
+});
+
+test("rejects malformed or secret-bearing provider status responses", () => {
+  const response = new Response(null, { status: 503 });
+  const malformed = safeErrorPayload(response, JSON.stringify({
+    ok: false,
+    code: "SHOPPING_RANK_PROVIDER_WARMING",
+    retryable: false,
+    retryAfter: 15,
+    sourceStatus: { shoppingRank: { status: "warming" } },
+  }));
+  assert.equal(malformed.status, 500);
+  assert.equal(malformed.body.code, "SERVER_ERROR");
+
+  const sensitive = safeErrorPayload(response, JSON.stringify({
+    ok: false,
+    code: "SHOPPING_RANK_SOURCE_UNAVAILABLE",
+    retryable: false,
+    retryAfter: 0,
+    sourceStatus: { shoppingRank: { status: "unavailable" } },
+    detail: "NAVER_SHOPPING_RANK_API_KEY=do-not-leak",
+  }));
+  assert.equal(sensitive.status, 503);
+  assert.equal(sensitive.body.code, "SERVER_CONFIGURATION_PENDING");
+  assert.doesNotMatch(JSON.stringify(sensitive), /NAVER_SHOPPING_RANK_API_KEY|do-not-leak/);
+});

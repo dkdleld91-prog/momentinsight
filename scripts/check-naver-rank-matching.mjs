@@ -25,6 +25,11 @@ import {
 const smartstoreUrl = "https://smartstore.naver.com/sample-store/products/1234567890?NaPm=ct%3Dabc%7Cci%3D999999999999999999999";
 const catalogUrl = "https://search.shopping.naver.com/catalog/9876543210?query=%EB%82%A8%EC%84%B1%20%EC%86%8D%EC%98%B7&cat_id=50000000";
 const brandProductUrl = "https://brand.naver.com/jyns/products/6567319094";
+const COLLECTOR_ENV = {
+  mode: "provider",
+  providerUrl: "https://collector.example/rank",
+  providerKey: "collector-key",
+};
 
 assert.equal(PRODUCT_RANK_TRACKER_MAX_RANK, 300);
 
@@ -47,6 +52,32 @@ assert.equal(relatedCatalogWins.item.productId, "5145848584");
 assert.equal(relatedCatalogWins.page, 1);
 assert.equal(relatedCatalogWins.position, 7);
 assert.match(representativeTrackingRankMessage(relatedCatalogWins), /관련 원부 7위.*입력 상품 48위.*30일 대표 순위/);
+
+const relatedCatalogStoresCatalogIdentity = selectRepresentativeTrackingRank({
+  matched: true,
+  productExposureItems: [
+    {
+      rank: 3,
+      productId: "91000000003",
+      catalogId: "59031763223",
+      title: "관련 원부",
+      productType: 1,
+      isRelatedCatalog: true,
+      isOrganic: true,
+    },
+    {
+      rank: 76,
+      productId: "89694231298",
+      sellerProductId: "12149720593",
+      title: "정확 상품",
+      productType: 3,
+      isExactTarget: true,
+      isOrganic: true,
+    },
+  ],
+});
+assert.equal(relatedCatalogStoresCatalogIdentity.rank, 3);
+assert.equal(relatedCatalogStoresCatalogIdentity.relatedCatalogProductId, "59031763223");
 
 const exactProductWins = selectRepresentativeTrackingRank({
   matched: true,
@@ -629,47 +660,73 @@ assert.equal(guardedLavExposureItems[0].isExactTarget, true);
 assert.equal(guardedLavExposureItems[0].rank, 3);
 
 const originalFetch = globalThis.fetch;
-globalThis.fetch = async () => new Response(JSON.stringify({
-  total: 3,
-  start: 1,
-  display: 3,
-  items: [
-    shoppingItem("9999999999", { isAdProduct: true, adId: "nad-a001-02-exact-ad" }),
+globalThis.fetch = async (input, options = {}) => {
+  assert.equal(String(input), COLLECTOR_ENV.providerUrl);
+  assert.equal(options.method, "POST");
+  assert.equal(options.headers?.authorization, `Bearer ${COLLECTOR_ENV.providerKey}`);
+  const body = JSON.parse(options.body || "{}");
+  assert.equal(body.schemaVersion, "mi.naver-shopping-organic-window.v1");
+  assert.equal(body.limit, 100);
+  assert.equal(body.sort, "relevance");
+  assert.equal(body.rankPolicy, "organic_only");
+  const organicItems = [
     shoppingItem("1111111111"),
     shoppingItem("9999999999"),
-  ],
-}), { status: 200, headers: { "content-type": "application/json" } });
+  ].map((item, index) => ({
+    ...item,
+    organicRank: index + 1,
+    isAd: false,
+    isOrganic: true,
+  }));
+  return new Response(JSON.stringify({
+    ok: true,
+    schemaVersion: "mi.naver-shopping-organic-window.v1",
+    source: "naver_shopping_results_collector",
+    rankEvidence: "naver_shopping_organic_list",
+    keyword: body.keyword,
+    collectionId: "matching-check-collection",
+    collectedAt: "2026-08-01T00:00:00.000Z",
+    complete: true,
+    partial: false,
+    sourceExhausted: true,
+    marketTotal: 3,
+    marketTotalStatus: "verified",
+    checkedCount: 2,
+    rawCount: 3,
+    excludedAdCount: 1,
+    items: organicItems,
+  }), { status: 200, headers: { "content-type": "application/json" } });
+};
 
 try {
-  const officialApiResult = await findShoppingRank({
-    openapiClientId: "test-client",
-    openapiClientSecret: "test-secret",
-  }, {
+  const collectorResult = await findShoppingRank(COLLECTOR_ENV, {
     keyword: "테스트",
     targetProductId: "9999999999",
     maxRank: 100,
   });
-  assert.equal(officialApiResult.matched, true);
-  assert.equal(officialApiResult.rank, 2);
-  assert.equal(officialApiResult.rankBasis, "naver_shopping_organic_rank");
-  assert.equal(officialApiResult.webPageVerified, false);
-  assert.equal(officialApiResult.rank, 2);
-  assert.equal(officialApiResult.page, 1);
-  assert.equal(officialApiResult.position, 2);
-  assert.equal(officialApiResult.pageSize, 40);
-  assert.equal(officialApiResult.exactProductRank, 2);
-  assert.equal(officialApiResult.trackingRankSource, "exact_product");
-  assert.equal(officialApiResult.rankPolicy, "organic_only");
-  assert.equal(officialApiResult.adExcluded, true);
-  assert.equal(officialApiResult.excludedAdCount, 1);
-  assert.equal(officialApiResult.organicCheckedCount, 2);
-  assert.equal(officialApiResult.rawCheckedCount, 3);
-  assert.equal(officialApiResult.topItems.every((item) => item.isAd === false && item.isOrganic === true), true);
-  assert.equal(officialApiResult.productExposureItems[0].page, 1);
-  assert.equal(officialApiResult.productExposureItems[0].position, 2);
-  assert.equal(officialApiResult.productExposureItems[0].isAd, false);
-  assert.equal(officialApiResult.productExposureItems[0].isOrganic, true);
-  assert.equal(officialApiResult.productExposureItems[0].exposureLabel, "상품 ID 일치");
+  assert.equal(collectorResult.matched, true);
+  assert.equal(collectorResult.rank, 2);
+  assert.equal(collectorResult.rankBasis, "naver_shopping_organic_rank");
+  assert.equal(collectorResult.webPageVerified, false);
+  assert.equal(collectorResult.rank, 2);
+  assert.equal(collectorResult.page, 1);
+  assert.equal(collectorResult.position, 2);
+  assert.equal(collectorResult.pageSize, 40);
+  assert.equal(collectorResult.exactProductRank, 2);
+  assert.equal(collectorResult.trackingRankSource, "exact_product");
+  assert.equal(collectorResult.rankPolicy, "organic_only");
+  assert.equal(collectorResult.adExcluded, true);
+  assert.equal(collectorResult.excludedAdCount, 1);
+  assert.equal(collectorResult.organicCheckedCount, 2);
+  assert.equal(collectorResult.rawCheckedCount, 3);
+  assert.equal(collectorResult.source, "naver_shopping_results_collector");
+  assert.equal(collectorResult.rankEvidence, "naver_shopping_organic_list");
+  assert.equal(collectorResult.topItems.every((item) => item.isAd === false && item.isOrganic === true), true);
+  assert.equal(collectorResult.productExposureItems[0].page, 1);
+  assert.equal(collectorResult.productExposureItems[0].position, 2);
+  assert.equal(collectorResult.productExposureItems[0].isAd, false);
+  assert.equal(collectorResult.productExposureItems[0].isOrganic, true);
+  assert.equal(collectorResult.productExposureItems[0].exposureLabel, "상품 ID 일치");
 } finally {
   globalThis.fetch = originalFetch;
 }

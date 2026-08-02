@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import {
   RANK_EVIDENCE,
@@ -8,7 +11,16 @@ import {
 } from "./contract.mjs";
 
 const PROVIDER_NOT_READY = "provider_not_ready";
-const NAVER_SHOPPING_HOST = "search.shopping.naver.com";
+export const NAVER_SHOPPING_PROFILE_OWNER_MARKER = ".moment-insight-profile-v1";
+export const NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE = "moment-insight-profile-v1";
+export const NAVER_SHOPPING_PROFILE_AUTH_MARKER = ".moment-insight-authenticated-v1";
+export const NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA = "moment-insight-authenticated-v1";
+const LEGACY_NAVER_SHOPPING_HOST = "search.shopping.naver.com";
+const LOCAL_WORKER_NAVER_SHOPPING_HOST = "msearch.shopping.naver.com";
+const ALLOWED_NAVER_SHOPPING_HOSTS = new Set([
+  LEGACY_NAVER_SHOPPING_HOST,
+  LOCAL_WORKER_NAVER_SHOPPING_HOST,
+]);
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_MAX_PAGES = 8;
 const NAVER_SHOPPING_FRONTEND_PATH = "/api/search/all";
@@ -78,11 +90,137 @@ function sha256(value) {
   return crypto.createHash("sha256").update(String(value || ""), "utf8").digest("hex");
 }
 
-export function buildNaverShoppingSearchUrl(keyword, pageIndex = 1) {
+function allowedShoppingHost(value, fallback = LEGACY_NAVER_SHOPPING_HOST) {
+  const host = normalizeString(value || fallback, 253).toLowerCase();
+  if (!ALLOWED_NAVER_SHOPPING_HOSTS.has(host)) {
+    throw new ProviderError("provider_url_not_allowed");
+  }
+  return host;
+}
+
+export function defaultNaverShoppingProfileDir(homeDirectory = os.homedir()) {
+  const home = path.resolve(String(homeDirectory || ""));
+  return path.join(
+    home,
+    "Library",
+    "Application Support",
+    "MomentInsight",
+    "NaverShoppingProfile",
+  );
+}
+
+function profileStat(filePath, missingCode) {
+  try {
+    return fs.lstatSync(filePath);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new ProviderError(missingCode);
+    throw new ProviderError("provider_profile_unreadable");
+  }
+}
+
+function privateOwner(stat) {
+  if (typeof process.getuid !== "function") return true;
+  return Number(stat?.uid) === process.getuid();
+}
+
+function readPrivateProfileMarker(profileDir, markerName, missingCode) {
+  const markerPath = path.join(profileDir, markerName);
+  const markerStat = profileStat(markerPath, missingCode);
+  if (markerStat.isSymbolicLink()) {
+    throw new ProviderError("provider_profile_symlink_not_allowed");
+  }
+  if (
+    !markerStat.isFile()
+    || !privateOwner(markerStat)
+    || markerStat.size < 1
+    || markerStat.size > 1_024
+    || (process.platform !== "win32" && (markerStat.mode & 0o077) !== 0)
+  ) {
+    throw new ProviderError("provider_profile_marker_invalid");
+  }
+  try {
+    return fs.readFileSync(markerPath, "utf8").trim();
+  } catch {
+    throw new ProviderError("provider_profile_marker_invalid");
+  }
+}
+
+export function validateNaverShoppingProfileDir(value, options = {}) {
+  const requested = String(value || "").trim();
+  if (!requested || !path.isAbsolute(requested)) {
+    throw new ProviderError("provider_profile_path_not_allowed");
+  }
+  const expected = path.resolve(String(
+    options.expectedDir || defaultNaverShoppingProfileDir(options.homeDirectory),
+  ));
+  const resolved = path.resolve(requested);
+  if (resolved !== expected) throw new ProviderError("provider_profile_path_not_allowed");
+
+  const parent = path.dirname(resolved);
+  const parentStat = profileStat(parent, "provider_profile_missing");
+  const profileStatValue = profileStat(resolved, "provider_profile_missing");
+  if (parentStat.isSymbolicLink() || profileStatValue.isSymbolicLink()) {
+    throw new ProviderError("provider_profile_symlink_not_allowed");
+  }
+  if (!parentStat.isDirectory() || !profileStatValue.isDirectory()) {
+    throw new ProviderError("provider_profile_invalid");
+  }
+  if (process.platform !== "win32") {
+    let canonicalProfile = "";
+    try {
+      canonicalProfile = fs.realpathSync(resolved);
+    } catch {
+      throw new ProviderError("provider_profile_unreadable");
+    }
+    if (canonicalProfile !== resolved) {
+      throw new ProviderError("provider_profile_symlink_not_allowed");
+    }
+  }
+  if (!privateOwner(parentStat) || !privateOwner(profileStatValue)) {
+    throw new ProviderError("provider_profile_owner_invalid");
+  }
+  if (process.platform !== "win32" && (profileStatValue.mode & 0o077) !== 0) {
+    throw new ProviderError("provider_profile_permissions_invalid");
+  }
+
+  const ownerMarkerValue = readPrivateProfileMarker(
+    resolved,
+    NAVER_SHOPPING_PROFILE_OWNER_MARKER,
+    "provider_profile_marker_missing",
+  );
+  if (ownerMarkerValue !== NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE) {
+    throw new ProviderError("provider_profile_marker_invalid");
+  }
+  const authMarkerValue = readPrivateProfileMarker(
+    resolved,
+    NAVER_SHOPPING_PROFILE_AUTH_MARKER,
+    "provider_profile_auth_missing",
+  );
+  let authMarker = null;
+  try {
+    authMarker = JSON.parse(authMarkerValue);
+  } catch {
+    throw new ProviderError("provider_profile_auth_invalid");
+  }
+  if (
+    !isRecord(authMarker)
+    || Object.keys(authMarker).sort().join(",") !== "authenticatedAt,schema"
+    || authMarker?.schema !== NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA
+    || typeof authMarker?.authenticatedAt !== "string"
+    || !Number.isFinite(Date.parse(authMarker.authenticatedAt))
+    || new Date(authMarker.authenticatedAt).toISOString() !== authMarker.authenticatedAt
+  ) {
+    throw new ProviderError("provider_profile_auth_invalid");
+  }
+  return resolved;
+}
+
+export function buildNaverShoppingSearchUrl(keyword, pageIndex = 1, options = {}) {
   const safeKeyword = normalizeKeyword(keyword);
   const safePage = boundedInteger(pageIndex, 1, 1, 100);
+  const host = allowedShoppingHost(options?.host);
   if (!safeKeyword) throw new ProviderError("invalid_keyword");
-  const url = new URL(`https://${NAVER_SHOPPING_HOST}/search/all`);
+  const url = new URL(`https://${host}/search/all`);
   url.searchParams.set("query", safeKeyword);
   url.searchParams.set("origQuery", safeKeyword);
   url.searchParams.set("productSet", "total");
@@ -90,14 +228,14 @@ export function buildNaverShoppingSearchUrl(keyword, pageIndex = 1) {
   url.searchParams.set("viewType", "list");
   url.searchParams.set("pagingIndex", String(safePage));
   url.searchParams.set("pagingSize", String(NAVER_SHOPPING_PAGE_SIZE));
-  if (url.protocol !== "https:" || url.hostname !== NAVER_SHOPPING_HOST || url.pathname !== "/search/all") {
+  if (url.protocol !== "https:" || url.hostname !== host || url.pathname !== "/search/all") {
     throw new ProviderError("provider_url_not_allowed");
   }
   return url.toString();
 }
 
-export function buildNaverShoppingFrontendUrl(keyword, pageIndex = 1) {
-  const pageUrl = new URL(buildNaverShoppingSearchUrl(keyword, pageIndex));
+export function buildNaverShoppingFrontendUrl(keyword, pageIndex = 1, options = {}) {
+  const pageUrl = new URL(buildNaverShoppingSearchUrl(keyword, pageIndex, options));
   const safePage = boundedInteger(pageIndex, 0, 1, NAVER_SHOPPING_MAX_PAGES);
   if (safePage !== Number(pageIndex)) throw new ProviderError("provider_page_out_of_range");
   pageUrl.pathname = NAVER_SHOPPING_FRONTEND_PATH;
@@ -158,7 +296,7 @@ function safeHttpUrl(value) {
   const text = normalizeString(value);
   if (!text) return "";
   try {
-    const parsed = new URL(text, `https://${NAVER_SHOPPING_HOST}`);
+    const parsed = new URL(text, `https://${LEGACY_NAVER_SHOPPING_HOST}`);
     if (!/^https?:$/.test(parsed.protocol)) return "";
     return parsed.toString();
   } catch {
@@ -639,7 +777,14 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
   return added;
 }
 
-export function classifyNaverPage({ status = 200, url = "", title = "", bodyText = "", rowCount = 0 } = {}) {
+export function classifyNaverPage({
+  status = 200,
+  url = "",
+  title = "",
+  bodyText = "",
+  rowCount = 0,
+  expectedHost = LEGACY_NAVER_SHOPPING_HOST,
+} = {}) {
   if (Number(status) === 418) throw new ProviderError("naver_http_418");
   if (Number(status) === 429) throw new ProviderError("naver_http_429");
   if (Number(status) >= 400) throw new ProviderError("naver_http_error", String(status));
@@ -652,7 +797,10 @@ export function classifyNaverPage({ status = 200, url = "", title = "", bodyText
   if (parsed.hostname === "nid.naver.com" || /\/(?:login|nidlogin)/i.test(parsed.pathname)) {
     throw new ProviderError("naver_auth_required");
   }
-  if (parsed.hostname !== NAVER_SHOPPING_HOST) throw new ProviderError("provider_navigation_not_allowed");
+  const allowedHost = allowedShoppingHost(expectedHost);
+  if (parsed.protocol !== "https:" || parsed.hostname !== allowedHost) {
+    throw new ProviderError("provider_navigation_not_allowed");
+  }
   const text = `${title}\n${bodyText}`.slice(0, 120_000);
   for (const [code, pattern] of BLOCK_TEXT_PATTERNS) {
     if (pattern.test(text)) throw new ProviderError(code);
@@ -695,7 +843,15 @@ async function readNaverPageSnapshot(page, timeoutMs) {
   return snapshot;
 }
 
-async function collectNaverSsrPage({ page, url, pageIndex, timeoutMs, response = null, snapshot = null }) {
+async function collectNaverSsrPage({
+  page,
+  url,
+  pageIndex,
+  timeoutMs,
+  expectedHost = LEGACY_NAVER_SHOPPING_HOST,
+  response = null,
+  snapshot = null,
+}) {
   const navigationResponse = response || await page.goto(url, {
     waitUntil: "domcontentloaded",
     timeout: timeoutMs,
@@ -705,14 +861,19 @@ async function collectNaverSsrPage({ page, url, pageIndex, timeoutMs, response =
   // Preserve typed HTTP/auth/CAPTCHA failures even when blocked pages omit
   // __NEXT_DATA__. Schema parsing runs only after the navigation itself is
   // proven to be a valid Naver Shopping response.
-  classifyNaverPage({ status, ...pageSnapshot, rowCount: 0 });
+  classifyNaverPage({ status, ...pageSnapshot, rowCount: 0, expectedHost });
   const keyword = new URL(url).searchParams.get("query") || "";
   const parsed = parseNaverNextDataPage(pageSnapshot.nextDataText, {
     pageIndex,
     pageSize: NAVER_SHOPPING_PAGE_SIZE,
     keyword,
   });
-  const classified = classifyNaverPage({ status, ...pageSnapshot, rowCount: parsed.rows.length });
+  const classified = classifyNaverPage({
+    status,
+    ...pageSnapshot,
+    rowCount: parsed.rows.length,
+    expectedHost,
+  });
   return {
     ...pageSnapshot,
     ...classified,
@@ -744,29 +905,16 @@ export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }
   }
 
   const frontendResult = await page.evaluate(async ({ requestPath, timeout }) => {
-    const token = await new Promise((resolve) => {
-      let settled = false;
-      const finish = (value = "") => {
-        if (settled) return;
-        settled = true;
-        resolve(typeof value === "string" ? value : "");
+    // A CAPTCHA runtime is a hard stop. Never call window.ncaptcha?.f and never
+    // send an x-wtm-ncaptcha-token header from the collector.
+    if (typeof window.ncaptcha?.f === "function") {
+      return {
+        status: 418,
+        url: String(location.href || ""),
+        contentType: "text/plain",
+        bodyText: "CAPTCHA",
       };
-      const timer = setTimeout(() => finish(""), 650);
-      try {
-        if (typeof window.ncaptcha?.f !== "function") {
-          clearTimeout(timer);
-          finish("");
-          return;
-        }
-        window.ncaptcha.f((value) => {
-          clearTimeout(timer);
-          finish(value);
-        });
-      } catch {
-        clearTimeout(timer);
-        finish("");
-      }
-    });
+    }
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
@@ -774,7 +922,6 @@ export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }
         accept: "application/json, text/plain, */*",
         logic: "PART",
       };
-      if (token) headers["x-wtm-ncaptcha-token"] = token;
       const response = await fetch(requestPath, {
         method: "GET",
         credentials: "include",
@@ -829,10 +976,36 @@ export async function defaultCollectPage({ page, url, pageIndex = 1, timeoutMs }
   };
 }
 
+async function collectAuthenticatedMsearchPage({ page, url, pageIndex = 1, timeoutMs }) {
+  const parsed = new URL(url);
+  if (
+    parsed.protocol !== "https:"
+    || parsed.hostname !== LOCAL_WORKER_NAVER_SHOPPING_HOST
+    || parsed.pathname !== "/search/all"
+  ) {
+    throw new ProviderError("provider_navigation_not_allowed");
+  }
+  return collectNaverSsrPage({
+    page,
+    url,
+    pageIndex,
+    timeoutMs,
+    expectedHost: LOCAL_WORKER_NAVER_SHOPPING_HOST,
+  });
+}
+
 function providerConfig(env = process.env) {
   return {
     headless: String(env.NAVER_SHOPPING_PROVIDER_HEADLESS || "true").toLowerCase() !== "false",
     browserChannel: normalizeString(env.NAVER_SHOPPING_PROVIDER_CHANNEL || "chromium", 40).toLowerCase(),
+    localWorkerEnabled: String(
+      env.MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED || "",
+    ).trim().toLowerCase() === "true",
+    searchHost: allowedShoppingHost(
+      env.NAVER_SHOPPING_PROVIDER_SEARCH_HOST,
+      LEGACY_NAVER_SHOPPING_HOST,
+    ),
+    userDataDir: String(env.NAVER_SHOPPING_PROVIDER_USER_DATA_DIR || "").trim().slice(0, 4_096),
     timeoutMs: boundedInteger(env.NAVER_SHOPPING_PROVIDER_TIMEOUT_MS, 90_000, 10_000, 225_000),
     pageTimeoutMs: boundedInteger(env.NAVER_SHOPPING_PROVIDER_PAGE_TIMEOUT_MS, 18_000, 3_000, 45_000),
     queueMax: boundedInteger(env.NAVER_SHOPPING_PROVIDER_QUEUE_MAX, 8, 1, 50),
@@ -870,16 +1043,58 @@ async function defaultBrowserFactory({ headless, channel }) {
   }
 }
 
+async function defaultPersistentContextFactory({ userDataDir, headless, channel, contextOptions }) {
+  let playwright;
+  try {
+    playwright = await import("playwright");
+  } catch {
+    throw new ProviderError("provider_browser_dependency_missing");
+  }
+  try {
+    return await playwright.chromium.launchPersistentContext(userDataDir, {
+      headless,
+      channel,
+      ...contextOptions,
+    });
+  } catch (error) {
+    throw new ProviderError("provider_browser_launch_failed", error?.message || "");
+  }
+}
+
 export function createPlaywrightProvider(options = {}) {
   const config = { ...providerConfig(options.env || process.env), ...(options.config || {}) };
   if (config.browserChannel !== "chromium") {
     throw new ProviderError("provider_browser_channel_not_allowed");
   }
+  config.searchHost = allowedShoppingHost(config.searchHost);
+  const injectedHarness = Boolean(
+    options.browserFactory || options.persistentContextFactory || options.collectPage,
+  );
+  if (!injectedHarness) {
+    if (!config.localWorkerEnabled) throw new ProviderError("provider_local_worker_required");
+    if (config.searchHost !== LOCAL_WORKER_NAVER_SHOPPING_HOST) {
+      throw new ProviderError("provider_local_worker_host_required");
+    }
+    if (config.headless) throw new ProviderError("provider_headful_required");
+    config.userDataDir = String(
+      config.userDataDir || defaultNaverShoppingProfileDir(),
+    ).trim();
+  }
+  if (config.searchHost === LOCAL_WORKER_NAVER_SHOPPING_HOST && !config.localWorkerEnabled) {
+    throw new ProviderError("provider_local_worker_required");
+  }
   const now = options.now || (() => Date.now());
   const browserFactory = options.browserFactory || defaultBrowserFactory;
-  const collectPage = options.collectPage || defaultCollectPage;
+  const persistentContextFactory = options.persistentContextFactory || defaultPersistentContextFactory;
+  const profileValidator = options.profileValidator || validateNaverShoppingProfileDir;
+  const collectPage = options.collectPage || (
+    config.searchHost === LOCAL_WORKER_NAVER_SHOPPING_HOST
+      ? collectAuthenticatedMsearchPage
+      : defaultCollectPage
+  );
   const autoVerify = options.autoVerify !== false;
   let browserPromise = null;
+  let persistentContextPromise = null;
   let active = 0;
   let closed = false;
   let verificationPromise = null;
@@ -931,6 +1146,53 @@ export function createPlaywrightProvider(options = {}) {
     return browser;
   }
 
+  const contextOptions = Object.freeze({
+    locale: "ko-KR",
+    timezoneId: "Asia/Seoul",
+    viewport: { width: 1440, height: 1200 },
+    colorScheme: "light",
+  });
+
+  async function ensurePersistentContext() {
+    if (closed) throw new ProviderError("provider_closed");
+    if (!persistentContextPromise) {
+      persistentContextPromise = Promise.resolve()
+        .then(() => profileValidator(config.userDataDir))
+        .then((userDataDir) => persistentContextFactory({
+          userDataDir,
+          headless: config.headless,
+          channel: config.browserChannel,
+          contextOptions,
+        }))
+        .then(async (context) => {
+          if (!context || typeof context.newPage !== "function" || typeof context.close !== "function") {
+            throw new ProviderError("provider_browser_invalid");
+          }
+          for (const existingPage of context.pages?.() || []) {
+            await existingPage?.close?.().catch(() => {});
+          }
+          const browser = context.browser?.();
+          if (typeof browser?.on === "function") {
+            browser.on("disconnected", () => {
+              persistentContextPromise = null;
+            });
+          }
+          return context;
+        })
+        .catch((error) => {
+          persistentContextPromise = null;
+          throw error;
+        });
+    }
+    const context = await persistentContextPromise;
+    const browser = context.browser?.();
+    if (typeof browser?.isConnected === "function" && !browser.isConnected()) {
+      persistentContextPromise = null;
+      return ensurePersistentContext();
+    }
+    return context;
+  }
+
   function pumpQueue() {
     if (closed || active >= 1 || !queue.length) return;
     const job = queue.shift();
@@ -978,16 +1240,18 @@ export function createPlaywrightProvider(options = {}) {
 
   async function collectLive(request) {
     const endAt = deadlineMs(request);
-    const browser = await ensureBrowser();
     let context;
+    let page;
+    let ownsContext = false;
     try {
-      context = await browser.newContext({
-        locale: "ko-KR",
-        timezoneId: "Asia/Seoul",
-        viewport: { width: 1440, height: 1200 },
-        colorScheme: "light",
-      });
-      const page = await context.newPage();
+      if (config.userDataDir) {
+        context = await ensurePersistentContext();
+      } else {
+        const browser = await ensureBrowser();
+        context = await browser.newContext(contextOptions);
+        ownsContext = true;
+      }
+      page = await context.newPage();
       const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
       let marketTotal = null;
       let marketTotalVerified = true;
@@ -998,7 +1262,9 @@ export function createPlaywrightProvider(options = {}) {
       );
 
       for (let pageIndex = 1; pageIndex <= pageLimit && state.items.length < request.limit && !sourceExhausted; pageIndex += 1) {
-        const url = buildNaverShoppingSearchUrl(request.keyword, pageIndex);
+        const url = buildNaverShoppingSearchUrl(request.keyword, pageIndex, {
+          host: config.searchHost,
+        });
         const pageResult = await collectPage({
           page,
           url,
@@ -1058,7 +1324,8 @@ export function createPlaywrightProvider(options = {}) {
       }
       throw new ProviderError("provider_browser_collection_failed", error?.message || "");
     } finally {
-      await context?.close?.().catch(() => {});
+      await page?.close?.().catch(() => {});
+      if (ownsContext) await context?.close?.().catch(() => {});
     }
   }
 
@@ -1196,6 +1463,9 @@ export function createPlaywrightProvider(options = {}) {
     async close() {
       closed = true;
       while (queue.length) queue.shift().reject(new ProviderError("provider_closed"));
+      const persistentContext = await persistentContextPromise?.catch(() => null);
+      persistentContextPromise = null;
+      await persistentContext?.close?.().catch(() => {});
       const browser = await browserPromise?.catch(() => null);
       browserPromise = null;
       await browser?.close?.().catch(() => {});
@@ -1228,7 +1498,9 @@ export function createUnconfiguredProvider(reason = "verified_provider_not_confi
 
 export function createProviderFromEnv(env = process.env) {
   const mode = String(env.NAVER_SHOPPING_PROVIDER_MODE || "not_ready").trim().toLowerCase();
-  if (mode === "playwright") return createPlaywrightProvider({ env });
+  if (mode === "playwright") {
+    return createUnconfiguredProvider("local_worker_only_provider");
+  }
   return createUnconfiguredProvider(
     mode === "not_ready"
       ? "verified_provider_not_configured"

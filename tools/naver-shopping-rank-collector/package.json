@@ -7,8 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "start": "node src/server.mjs",
-    "check": "node --check src/app.mjs && node --check src/contract.mjs && node --check src/provider.mjs && node --check src/server.mjs",
+    "check": "node --check src/contract.mjs && node --check src/provider.mjs",
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {

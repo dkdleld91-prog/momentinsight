@@ -4,6 +4,13 @@ import {
   isNaverApiHubCutoverReady,
   naverApiProviderConfig,
 } from "../src/server/naver-api-hub.mjs";
+import {
+  hasShoppingRankConfig,
+  hasShoppingRankHybridConfig,
+  hasShoppingRankProviderConfig,
+  isHybridLocalWorkerMode,
+  shoppingRankConfig,
+} from "../src/server/naver-shopping/source-status.mjs";
 
 function loadEnv(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -30,9 +37,9 @@ function loadEnv(filePath) {
 function mergeEnv() {
   const root = process.cwd();
   return {
-    ...loadEnv(path.join(root, ".env.local")),
     ...loadEnv(path.join(root, "05_네이버_API_연동", ".env.local")),
     ...loadEnv(path.join(root, "06_Supabase_연동", ".env.local")),
+    ...loadEnv(path.join(root, ".env.local")),
     ...process.env,
   };
 }
@@ -86,6 +93,8 @@ const strictNaver = process.argv.includes("--naver") ||
   env.VERCEL_ENV === "production";
 const productionMode = process.argv.includes("--production") ||
   env.VERCEL_ENV === "production";
+const shoppingRank = shoppingRankConfig(env);
+const hybridShoppingRank = isHybridLocalWorkerMode(shoppingRank);
 const checks = [
   status(env, "Supabase URL", ["SUPABASE_URL"]),
   status(env, "Supabase publishable key", ["SUPABASE_PUBLISHABLE_KEY", "SUPABASE_PUBLISHABLE_KEYS"]),
@@ -107,8 +116,33 @@ const checks = [
   )),
   status(env, "Naver legacy OpenAPI client", ["NAVER_OPENAPI_CLIENT_ID", "NAVER_DATALAB_CLIENT_ID"], false),
   status(env, "Naver legacy OpenAPI secret", ["NAVER_OPENAPI_CLIENT_SECRET", "NAVER_DATALAB_CLIENT_SECRET"], false),
-  status(env, "Naver shopping rank provider URL", ["NAVER_SHOPPING_RANK_API_URL"], productionMode),
-  status(env, "Naver shopping rank provider key", ["NAVER_SHOPPING_RANK_API_KEY"], productionMode),
+  status(
+    env,
+    "Naver shopping rank source",
+    ["NAVER_SHOPPING_RANK_MODE", "NAVER_SHOPPING_RANK_API_URL", "NAVER_SHOPPING_RANK_API_KEY"],
+    productionMode,
+    (merged) => {
+      const configured = shoppingRankConfig(merged);
+      return productionMode
+        ? (hasShoppingRankProviderConfig(configured) || hasShoppingRankHybridConfig(configured))
+        : hasShoppingRankConfig(configured);
+    },
+  ),
+  status(
+    env,
+    "Naver shopping local worker enabled",
+    ["MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED"],
+    productionMode && hybridShoppingRank,
+    (merged) => !hybridShoppingRank || String(merged.MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED || "").toLowerCase() === "true",
+  ),
+  status(
+    env,
+    "Naver shopping local worker secret",
+    ["MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET"],
+    productionMode && hybridShoppingRank,
+    (merged) => !hybridShoppingRank
+      || Buffer.byteLength(String(merged.MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET || ""), "utf8") >= 32,
+  ),
   status(env, "Naver Place rank provider URL", ["NAVER_PLACE_RANK_API_URL"], false),
   status(env, "Naver Place rank provider key", ["NAVER_PLACE_RANK_API_KEY"], false),
   status(env, "Keyword API enabled", ["MI_KEYWORD_API_ENABLED"], strictNaver, (merged) => merged.MI_KEYWORD_API_ENABLED === "true"),

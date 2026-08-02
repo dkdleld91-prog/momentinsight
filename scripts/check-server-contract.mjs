@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import vm from "node:vm";
+import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
+import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
 
 const files = {
   productWorkflow: ".github/workflows/naver-rank-cron.yml",
@@ -23,6 +25,23 @@ const files = {
   clientApi: "src/server/handlers/client-api.mjs",
   workItems: "src/server/handlers/work-items.mjs",
   workItemsMigration: "supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql",
+  shoppingRank: "src/server/handlers/naver-shopping-rank.mjs",
+  shoppingSourceStatus: "src/server/naver-shopping/source-status.mjs",
+  shoppingProviderRuntime: "src/server/naver-shopping/provider-runtime.mjs",
+  shoppingCollectorContract: "tools/naver-shopping-rank-collector/src/contract.mjs",
+  shoppingCollectorPackage: "tools/naver-shopping-rank-collector/package.json",
+  shoppingCollectorPackageLock: "tools/naver-shopping-rank-collector/package-lock.json",
+  shoppingLiveGate: "scripts/check-naver-shopping-collector-live.mjs",
+  shoppingLocalWorker: "scripts/naver-shopping-local-worker.mjs",
+  shoppingLocalWorkerWrapper: "scripts/run-naver-shopping-local-worker.sh",
+  shoppingLocalWorkerPlist: "scripts/co.kr.momentinsight.naver-shopping-local-worker.plist.template",
+  shoppingLocalWorkerAuth: "src/server/local-worker-auth.mjs",
+  shoppingLocalWorkerHandler: "src/server/handlers/naver-shopping-local-worker.mjs",
+  shoppingLocalWorkerContract: "src/server/naver-shopping/local-worker-contract.mjs",
+  shoppingLocalWorkerMigration: "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
+  naverEnvExample: "05_네이버_API_연동/.env.example",
+  adminPage: "src/pages/admin.html",
+  clientPage: "src/pages/client.html",
   vercel: "vercel.json",
 };
 
@@ -49,7 +68,34 @@ const productTrackers = fs.readFileSync(files.productTrackers, "utf8");
 const clientApi = fs.readFileSync(files.clientApi, "utf8");
 const workItems = fs.readFileSync(files.workItems, "utf8");
 const workItemsMigration = fs.readFileSync(files.workItemsMigration, "utf8");
+const shoppingRank = fs.readFileSync(files.shoppingRank, "utf8");
+const shoppingSourceStatus = fs.readFileSync(files.shoppingSourceStatus, "utf8");
+const shoppingProviderRuntime = fs.readFileSync(files.shoppingProviderRuntime, "utf8");
+const shoppingCollectorContract = fs.readFileSync(files.shoppingCollectorContract, "utf8");
+const shoppingCollectorPackage = JSON.parse(fs.readFileSync(files.shoppingCollectorPackage, "utf8"));
+const shoppingCollectorPackageLock = JSON.parse(fs.readFileSync(files.shoppingCollectorPackageLock, "utf8"));
+const shoppingLiveGate = fs.readFileSync(files.shoppingLiveGate, "utf8");
+const shoppingLocalWorker = fs.readFileSync(files.shoppingLocalWorker, "utf8");
+const shoppingLocalWorkerWrapper = fs.readFileSync(files.shoppingLocalWorkerWrapper, "utf8");
+const shoppingLocalWorkerPlist = fs.readFileSync(files.shoppingLocalWorkerPlist, "utf8");
+const shoppingLocalWorkerAuth = fs.readFileSync(files.shoppingLocalWorkerAuth, "utf8");
+const shoppingLocalWorkerHandler = fs.readFileSync(files.shoppingLocalWorkerHandler, "utf8");
+const shoppingLocalWorkerContract = fs.readFileSync(files.shoppingLocalWorkerContract, "utf8");
+const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMigration, "utf8");
+const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
+const adminPage = fs.readFileSync(files.adminPage, "utf8");
+const clientPage = fs.readFileSync(files.clientPage, "utf8");
 const vercel = JSON.parse(fs.readFileSync(files.vercel, "utf8"));
+const shopping418Failure = shoppingCollectorFailureStatus({
+  status: 418,
+  message: "provider_collection_failed:naver_http_418",
+});
+const shopping429Failure = shoppingCollectorFailureStatus({
+  status: 429,
+  message: "provider_collection_failed:naver_http_429",
+});
+const shoppingProviderDefaults = shoppingProviderRuntimeConfig({});
+const shoppingPlaywrightVersion = String(shoppingCollectorPackage.dependencies?.playwright || "");
 const checks = [];
 
 function check(name, condition, detail) {
@@ -84,11 +130,13 @@ check(
   "product cron uses repeated small batches",
   hasAll(productWorkflow, [
     /node --input-type=module <<'NODE'/,
-    /const batchSize = 5;/,
-    /const maxBatches = 20;/,
+    /const batchSize = 1;/,
+    /const maxBatches = 100;/,
     /for \(let batch = 1; batch <= maxBatches;/,
     /searchParams\.set\("limit", String\(batchSize\)\)/,
-  ]) && !/limit=100/.test(productWorkflow),
+    /await sleep\(8000\)/,
+    /preserved/,
+  ]) && !/limit=100/.test(productWorkflow) && !/\n\s*push:/.test(productWorkflow),
   files.productWorkflow,
 );
 check(
@@ -391,12 +439,116 @@ check(
 );
 check(
   "Vercel production build requires environment, quality and authentication gates",
-  vercel.buildCommand === "npm run check:vercel-env && npm run check:release"
+  vercel.buildCommand === "npm run check:vercel-deploy"
     && packageJson.scripts?.["check:vercel-env"] === "node scripts/check-runtime-env.mjs --vercel-build"
+    && packageJson.scripts?.["check:vercel-deploy"] === "npm run check:vercel-env && npm run check:release && node scripts/check-naver-shopping-collector-live.mjs --vercel-build"
     && packageJson.scripts?.["check:production-auth"] === "node scripts/check-production-auth.mjs"
     && String(packageJson.scripts?.["check:release"] || "").includes("npm run check:quality")
     && String(packageJson.scripts?.["check:release"] || "").includes("npm run check:production-auth"),
   `${files.vercel}, ${files.packageJson}`,
+);
+check(
+  "N Shopping local worker is signed, replay-safe and atomic",
+  hasAll(shoppingLocalWorkerAuth, [
+    /createHmac\("sha256"/,
+    /timingSafeEqual/,
+    /x-mi-worker-nonce/,
+  ])
+    && hasAll(shoppingLocalWorkerContract, [
+      /LOCAL_WORKER_ORGANIC_LIMIT = 300/,
+      /validateStrictLocalWorkerWindow/,
+      /localWorkerCollectionKey/,
+    ])
+    && hasAll(shoppingLocalWorkerHandler, [
+      /mi_consume_naver_shopping_worker_nonce/,
+      /mi_commit_naver_shopping_worker_result/,
+      /mi_fail_naver_shopping_worker_claim/,
+    ])
+    && hasAll(shoppingLocalWorkerMigration, [
+      /idx_naver_rank_snapshots_tracker_collection/,
+      /security definer/,
+      /to service_role/,
+    ]),
+  `${files.shoppingLocalWorkerAuth}, ${files.shoppingLocalWorkerContract}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorkerMigration}`,
+);
+check(
+  "N Shopping source classifies 418 as unavailable and 429 as retryable",
+  shopping418Failure.status === "unavailable"
+    && shopping418Failure.retryable === false
+    && shopping418Failure.retryAfterSeconds === 0
+    && shopping429Failure.status === "error"
+    && shopping429Failure.retryable === true
+    && shopping429Failure.retryAfterSeconds === 5
+    && /status === 429/.test(shoppingSourceStatus)
+    && /naver\[_ -\]\?http\[_ -\]\?429/.test(shoppingSourceStatus),
+  files.shoppingSourceStatus,
+);
+check(
+  "N Shopping provider preserves the 90-second request and 75-second cold-start budgets",
+  shoppingProviderDefaults.requestTimeoutMs === 90_000
+    && shoppingProviderDefaults.prewarmTimeoutMs === 75_000
+    && /const DEFAULT_REQUEST_TIMEOUT_MS = 90_000/.test(shoppingProviderRuntime)
+    && /const DEFAULT_PREWARM_TIMEOUT_MS = 75_000/.test(shoppingProviderRuntime)
+    && /runtime\.prewarmTimeoutMs, 1_000, 90_000/.test(shoppingProviderRuntime)
+    && /lastResult\.ready \|\| \["unavailable", "unauthorized", "misconfigured"\]\.includes\(lastResult\.status\)/.test(shoppingProviderRuntime)
+    && /providerPrewarmCache\.delete\(cacheKey\)/.test(shoppingProviderRuntime),
+  files.shoppingProviderRuntime,
+);
+check(
+  "N Shopping local launch is bounded and keeps the server rescue available",
+  hasAll(shoppingLocalWorker, [
+    /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS/,
+    /acquireWorkerLock/,
+    /local_worker_window_not_300/,
+  ])
+    && hasAll(shoppingLocalWorkerWrapper, [
+      /MAX_ATTEMPTS=3/,
+      /security find-generic-password/,
+      /caffeinate -i -s/,
+    ])
+    && hasAll(shoppingLocalWorkerPlist, [
+      /<key>StartInterval<\/key>\s*<integer>300<\/integer>/,
+      /<key>Hour<\/key>\s*<integer>9<\/integer>/,
+      /<key>Hour<\/key>\s*<integer>15<\/integer>/,
+    ])
+    && /verifiedHybridWorkerEvidence/.test(shoppingLiveGate),
+  `${files.shoppingLocalWorker}, ${files.shoppingLocalWorkerWrapper}, ${files.shoppingLocalWorkerPlist}, ${files.shoppingLiveGate}`,
+);
+check(
+  "N Shopping local engine keeps Playwright exactly pinned in its lockfile",
+  /^\d+\.\d+\.\d+$/u.test(shoppingPlaywrightVersion)
+    && shoppingCollectorPackageLock.lockfileVersion === 3
+    && shoppingCollectorPackageLock.packages?.[""]?.dependencies?.playwright === shoppingPlaywrightVersion,
+  `${files.shoppingCollectorPackage}, ${files.shoppingCollectorPackageLock}`,
+);
+check(
+  "N Shopping production gate requires one complete atomic 300-item organic window",
+  /const MAX_RANK_LIMIT = 300/.test(shoppingCollectorContract)
+    && /value\.items\.length !== value\.checkedCount/.test(shoppingCollectorContract)
+    && /validateItem\(item, index \+ 1, request\.limit\)/.test(shoppingCollectorContract)
+    && /provider_ad_item_rejected/.test(shoppingCollectorContract)
+    && /argValue\("limit", "300"\)/.test(shoppingLiveGate)
+    && /window\.complete !== true/.test(shoppingLiveGate)
+    && /window\.checkedCount !== limit/.test(shoppingLiveGate)
+    && /collector_window_short/.test(shoppingLiveGate),
+  `${files.shoppingCollectorContract}, ${files.shoppingLiveGate}`,
+);
+check(
+  "N Shopping server and local worker keep bounded collection envelopes",
+  hasAll(shoppingRank, [
+    /const SHOPPING_PROVIDER_TIMEOUT_MS = 90_000;/,
+    /MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS \|\| SHOPPING_PROVIDER_TIMEOUT_MS/,
+  ])
+    && hasAll(shoppingLiveGate, [
+      /timeoutMs = 90_000/,
+      /Date\.now\(\) \+ 90_000/,
+      /}, 90_000\);/,
+    ])
+    && /MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS=90000/.test(naverEnvExample)
+    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[^\n]*225_000/.test(shoppingLocalWorker)
+    && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(adminPage)
+    && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(clientPage),
+  `${files.shoppingRank}, ${files.shoppingLiveGate}, ${files.shoppingLocalWorker}, ${files.naverEnvExample}, ${files.adminPage}, ${files.clientPage}`,
 );
 const globalSecurityHeaders = Object.fromEntries(
   ((vercel.headers || []).find((entry) => entry.source === "/(.*)")?.headers || [])

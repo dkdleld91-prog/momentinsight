@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>co.kr.momentinsight.naver-shopping-local-worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__REPOSITORY_PATH__/scripts/run-naver-shopping-local-worker.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPOSITORY_PATH__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- Pick up newly queued manual refreshes without waiting for the next
+       09:00/15:00 slot. The worker lock and DB leases prevent overlap. -->
+  <key>StartInterval</key>
+  <integer>300</integer>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict>
+      <key>Hour</key>
+      <integer>9</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+    <dict>
+      <key>Hour</key>
+      <integer>15</integer>
+      <key>Minute</key>
+      <integer>0</integer>
+    </dict>
+  </array>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS</key>
+    <string>25</string>
+    <key>NAVER_SHOPPING_PROVIDER_SEARCH_HOST</key>
+    <string>msearch.shopping.naver.com</string>
+    <key>NAVER_SHOPPING_PROVIDER_HEADLESS</key>
+    <string>false</string>
+    <key>NAVER_SHOPPING_PROVIDER_TIMEOUT_MS</key>
+    <string>225000</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__LOG_DIRECTORY__/naver-shopping-local-worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIRECTORY__/naver-shopping-local-worker.error.log</string>
+</dict>
+</plist>

@@ -46,15 +46,18 @@ for (const [label, input, expected] of cases) {
 }
 
 const workflow = fs.readFileSync(".github/workflows/naver-rank-cron.yml", "utf8");
-assert.match(workflow, /cron: "0,5,10,15 0,6 \* \* \*"/, "GitHub Actions must retry the 09:00/15:00 KST slots");
+assert.match(workflow, /cron: "5,10,15 0,6 \* \* \*"/, "GitHub Actions must let the local worker start before rescue retries");
 assert.match(workflow, /cron: "37 \* \* \* \*"/, "GitHub Actions must keep an hourly catch-up run");
-assert.match(workflow, /KST 09:00\/15:00 rescue window/, "Workflow must document the rescue-window behavior");
+assert.match(workflow, /worker-first rescue window/, "Workflow must document the worker-first rescue behavior");
 assert.match(workflow, /Hourly catch-up keeps due trackers moving/, "Workflow must document missed-slot catch-up behavior");
-assert.match(workflow, /timeout-minutes: 90/, "Product workflow must cover twenty bounded sequential calls");
-assert.match(workflow, /const batchSize = 5;/, "Product workflow must use a bounded five-tracker request");
-assert.match(workflow, /const maxBatches = 20;/, "Product workflow must keep its explicit 100-tracker window cap");
+assert.match(workflow, /timeout-minutes: 180/, "Product workflow must cover one hundred bounded sequential calls");
+assert.match(workflow, /const batchSize = 1;/, "Product workflow must keep each request within the mobile fallback rate envelope");
+assert.match(workflow, /const maxBatches = 100;/, "Product workflow must keep its explicit 100-tracker window cap");
 assert.match(workflow, /drain 100 due trackers/, "Product workflow must document its bounded window capacity");
-assert.match(workflow, /const requestTimeoutMs = 240000;/, "Product workflow must bound each server call");
+assert.match(workflow, /await sleep\(8000\)/, "Product workflow must pace mobile fallback requests by eight seconds");
+assert.match(workflow, /preserved/, "Product workflow must account for safely preserved rows separately");
+assert.doesNotMatch(workflow, /\n\s*push:/, "Product workflow must not race a failed or incomplete production deployment");
+assert.match(workflow, /const requestTimeoutMs = 285000;/, "Product workflow must bound each server call below the function ceiling");
 assert.match(workflow, /searchParams\.set\("mode", "drain"\)/, "Product workflow must identify the bounded queue-drain caller");
 assert.match(workflow, /before the queue reported drained/, "Product workflow must fail when its cap is reached before drain confirmation");
 assert.match(workflow, /safe\.drained !== \(safe\.remaining === 0\)/, "Product workflow must cross-check queue drain state");

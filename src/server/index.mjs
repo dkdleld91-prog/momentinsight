@@ -1,6 +1,10 @@
 import { corsHeaders, protectedJson } from "./security.mjs";
 import { createHandlerResolver, executeRequest } from "./runtime.mjs";
 import { authorizeCodeSession, boundedApiRequest } from "./session-gate.mjs";
+import {
+  LOCAL_WORKER_BODY_MAX_BYTES,
+  LOCAL_WORKER_ENDPOINT_PATH,
+} from "./naver-shopping/local-worker-contract.mjs";
 
 const handlerLoaders = {
   health: () => import("./handlers/health.mjs"),
@@ -22,6 +26,7 @@ const handlerLoaders = {
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
   naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
+  naverShoppingLocalWorker: () => import("./handlers/naver-shopping-local-worker.mjs"),
   reportCenter: () => import("./handlers/report-center.mjs"),
   workItems: () => import("./handlers/work-items.mjs"),
   superAdminApi: () => import("./handlers/super-admin-api.mjs"),
@@ -114,6 +119,10 @@ async function routeRequest(request) {
       return dispatch("naverShoppingRank", request);
     }
 
+    if (url.pathname === LOCAL_WORKER_ENDPOINT_PATH) {
+      return dispatch("naverShoppingLocalWorker", request);
+    }
+
     if (url.pathname === "/api/naver-rank-trackers") {
       return dispatch("naverRankTrackers", request);
     }
@@ -162,8 +171,19 @@ async function routeRequest(request) {
 export default {
   fetch(request) {
     return executeRequest(request, async () => {
-      const bounded = await boundedApiRequest(request);
+      const requestPath = new URL(request.url).pathname;
+      const bounded = await boundedApiRequest(request, {
+        maxBytes: requestPath === LOCAL_WORKER_ENDPOINT_PATH
+          ? LOCAL_WORKER_BODY_MAX_BYTES
+          : undefined,
+      });
       if (!bounded.ok) return bounded.response;
+      // Machine worker authentication is an HMAC + one-time nonce contract,
+      // independent of browser code sessions. Its handler still uses the
+      // central request bounds and response safety wrapper.
+      if (requestPath === LOCAL_WORKER_ENDPOINT_PATH) {
+        return dispatch("naverShoppingLocalWorker", bounded.request);
+      }
       const authorized = await authorizeCodeSession(bounded.request);
       if (!authorized.ok) return authorized.response;
       return routeRequest(authorized.request);

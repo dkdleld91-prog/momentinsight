@@ -19,6 +19,9 @@ function loadEnvFile(filePath) {
   });
 }
 
+// Keep one local source of truth. Feature-folder files remain compatible fallbacks,
+// but they must never override values intentionally set in the repository root.
+loadEnvFile(path.join(process.cwd(), ".env.local"));
 loadEnvFile(path.join(process.cwd(), "05_네이버_API_연동", ".env.local"));
 loadEnvFile(path.join(process.cwd(), "06_Supabase_연동", ".env.local"));
 

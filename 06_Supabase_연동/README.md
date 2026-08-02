@@ -1,23 +1,32 @@
-# Supabase 연결 설정
+# Supabase DB·인증 연결
 
-이 폴더는 모먼트 인사이트에서 Supabase를 붙일 때 쓰는 기본 연결 설정입니다.
+Supabase는 모먼트 인사이트의 PostgreSQL DB, 인증, Storage로만 사용합니다. 운영 API는 `src/server`의 Vercel 백엔드 한 경로를 사용하며 브라우저가 Secret key로 DB를 직접 호출하지 않습니다.
 
-## 현재 입력된 값
+## 표준 경로
 
-- Supabase URL: `https://unjduaxhykcrlotprsie.supabase.co`
-- Publishable key: `.env.local`에 저장
-- Secret key: `.env.local`에 저장
+| 역할 | 경로 |
+| --- | --- |
+| 서버 API | `src/server` |
+| Vercel 공용 진입점 | `api/[...path].mjs` |
+| DB 마이그레이션 | `supabase/migrations` |
+| 선택형 데모 데이터 | `supabase/seed.sql` |
+| 환경·연결 점검 | `06_Supabase_연동/check-supabase.mjs` |
+| 관리자 API 점검 | `06_Supabase_연동/check-admin-api.mjs` |
 
-`publishable` 키는 브라우저에서 사용할 수 있는 공개용 키입니다. 다만 공개용 키라고 해서 아무 데이터나 열어도 된다는 뜻은 아닙니다. 실제 보안은 Supabase의 RLS(Row Level Security) 정책으로 강제해야 합니다.
+운영 API는 `src/server`와 Vercel 공용 진입점만 사용합니다. 배포·검증도 이 단일 경로를 기준으로 수행합니다.
 
-`secret` 키는 서버 전용 관리자 키입니다. 이 키는 RLS를 우회할 수 있으므로 아임웹 HTML, 브라우저 스크립트, 공개 저장소에 절대 넣지 않습니다.
+## 환경변수와 보안
 
-## @supabase/server 설정
+- `SUPABASE_URL`: 프로젝트 URL
+- `SUPABASE_PUBLISHABLE_KEY`: 브라우저에서 사용 가능한 공개 키
+- `SUPABASE_SECRET_KEY`: 서버 전용 비밀 키
+- `SUPABASE_JWKS_URL`: 서버 세션 검증용 JWKS
 
-프로젝트 루트에 `@supabase/server`와 `@supabase/supabase-js`를 설치했습니다.
+실제 값은 루트 `.env.local` 또는 Vercel Environment Variables에만 저장합니다. Secret key는 RLS를 우회할 수 있으므로 HTML, 브라우저 스크립트, 공개 저장소, 요청 헤더 예시에 넣지 않습니다. 서버는 로그인 세션과 역할 범위를 검증한 뒤 필요한 작업만 수행합니다.
+
+## 로컬 점검
 
 ```bash
-npm install
 npm run check:env
 npm run check:supabase
 npm run check:server
@@ -25,59 +34,7 @@ npm run check:admin-api
 npm run dev:server
 ```
 
-로컬 API 서버:
-
-```text
-http://127.0.0.1:8790
-```
-
-추가된 핸들러:
-
-```text
-GET /health
-GET /api/health
-GET /api/client/:resource
-POST /api/client/agency-code/connect
-GET /api/admin/:resource
-POST /api/admin/:resource
-PATCH /api/admin/:resource/:id
-DELETE /api/admin/:resource/:id
-POST /api/admin/storage/signed-upload
-```
-
-Supabase Edge Function:
-
-```text
-supabase/functions/moment-api/index.ts
-```
-
-배포 대상 URL:
-
-```text
-https://unjduaxhykcrlotprsie.supabase.co/functions/v1/moment-api
-```
-
-로컬 서버는 `/health`, Vercel 배포본은 `/api/health`로 상태를 확인합니다. `/api/health`의 `readiness.supabaseReady`가 `true`여야 Supabase 기반 API를 정상 운영할 수 있습니다.
-
-`/health`는 secret 없이도 상태 확인이 가능하도록 fallback 처리되어 있습니다. secret key가 들어간 상태라면 `withSupabase({ auth: "none" })` 경로에서도 서버 컨텍스트가 생성됩니다.
-
-핸들러 위치:
-
-```text
-src/server/handlers/health.mjs
-src/server/handlers/dashboard.mjs
-src/server/handlers/admin-clients.mjs
-```
-
-`dashboard.mjs`는 `withSupabase({ auth: "user" })`를 사용합니다. 사용자의 JWT가 있어야 하고, `ctx.supabase`는 RLS가 적용된 클라이언트입니다.
-
-`admin-clients.mjs`는 `withSupabase({ auth: "secret" })`를 사용합니다. `SUPABASE_SECRET_KEY`가 있어야 하고, `ctx.supabaseAdmin`은 RLS를 우회합니다. 이 키는 절대 아임웹이나 브라우저 코드에 넣으면 안 됩니다.
-
-`auth: "secret"` API는 호출자가 `Authorization: Bearer`가 아니라 `apikey` 헤더에 secret key를 보내야 합니다.
-
-```http
-apikey: sb_secret_...
-```
+로컬 API는 `http://127.0.0.1:8790`, 운영 API는 `https://insight.momentlabs.co.kr/api`입니다. 상태 확인은 `/api/health`와 `/api/ready`를 사용합니다.
 
 ## 백엔드 API 구조
 
@@ -163,43 +120,33 @@ Storage signed upload 요청 예시:
 http://127.0.0.1:8790
 ```
 
-Supabase 배포 후 URL:
+운영 API URL:
 
 ```text
-https://unjduaxhykcrlotprsie.supabase.co/functions/v1/moment-api
+https://insight.momentlabs.co.kr/api
 ```
 
 ## 지금 가능한 것
 
-- 아임웹 화면에서 Supabase 클라이언트 초기화
-- RLS가 허용한 공개/광고주 범위 데이터 조회
-- 로그인 적용 후 사용자 세션 기반 조회
-- `@supabase/server` 기반 request handler 구조
-- publishable key 유효성 확인
+- 로그인 세션과 역할 범위에 따른 운영팀·광고주 데이터 조회
+- Vercel 서버에서만 Secret key를 사용하는 관리자 작업
+- RLS가 적용된 광고주 범위 조회
+- 서버 API를 통한 데이터 입력·공개 승인·파일 업로드
 
 ## 아직 하면 안 되는 것
 
-- Secret key를 아임웹 HTML에 넣기
+- Secret key를 HTML 또는 브라우저 JavaScript에 넣기
 - RLS 없이 광고주 데이터를 브라우저에서 직접 조회하기
 - 관리자용 원천 데이터 입력을 브라우저 키만으로 처리하기
+- 운영 백엔드를 다른 런타임에 중복 배포하기
 
-관리자 입력, 공개 승인, 보고서 업로드처럼 권한이 필요한 기능은 백엔드 API 또는 Supabase Edge Function을 통해 처리하는 구조가 맞습니다.
-
-## 아임웹 연결 흐름
-
-```text
-아임웹 화면
-→ Supabase publishable key로 클라이언트 생성
-→ 로그인 세션 확인
-→ RLS가 허용한 데이터만 조회
-```
-
-관리자 권한 작업은 아래 구조가 맞습니다.
+## 표준 요청 흐름
 
 ```text
-아임웹 관리자 화면
-→ 백엔드 API / Supabase Edge Function
-→ secret key 또는 서버 세션으로 검증
+관리자·운영팀·광고주 화면
+→ Vercel API
+→ 로그인 세션·역할·광고주 범위 검증
+→ 서버 전용 Supabase 클라이언트
 → DB 저장 / 공개 승인 / 파일 업로드
 ```
 
@@ -212,7 +159,7 @@ SUPABASE_JWKS_URL=https://unjduaxhykcrlotprsie.supabase.co/auth/v1/.well-known/j
 SUPABASE_SECRET_KEY=sb_secret_...
 ```
 
-현재 `.env.local`에는 publishable key, JWKS URL, secret key가 저장되어 있습니다. `.env.local`은 로컬 전용 파일로 유지하고 공개 저장소에 올리지 않습니다.
+실제 값은 `.env.local` 또는 Vercel Environment Variables에서만 관리합니다. `.env.local`은 로컬 전용 파일로 유지하고 공개 저장소에 올리지 않습니다.
 
 ## DB 스키마 적용
 
@@ -269,7 +216,7 @@ npm run check:admin-api
 
 정상 적용 전에는 `public.clients` 테이블을 찾을 수 없다는 응답이 나올 수 있습니다. 이는 키 문제가 아니라 DB 테이블 미생성 상태입니다.
 
-## 배포 명령
+## DB 적용과 서버 배포
 
 DB 마이그레이션 적용:
 
@@ -285,40 +232,10 @@ Supabase Dashboard → SQL Editor → supabase/seed.sql 내용 실행
 
 주의: `seed.sql`은 화면 확인용 데모 데이터입니다. 실제 광고주 데이터가 들어간 뒤에는 운영 데이터와 섞이지 않게 실행하지 않습니다.
 
-Edge Function 배포:
+서버 릴리스 검사:
 
 ```bash
-npm run supabase:functions:deploy
+npm run check:release
 ```
 
-전체 배포:
-
-```bash
-npm run deploy:backend
-```
-
-배포 API 확인:
-
-```bash
-npm run check:edge-api
-```
-
-현재 Codex MCP 연결은 `read_only=false`로 바꿔두었습니다. 다만 현재 세션에 Supabase 쓰기 도구가 직접 노출되지 않으면, 위 명령 또는 Supabase SQL Editor를 통해 적용해야 합니다.
-
-## Supabase Edge Functions 참고
-
-Supabase Edge Functions에서 `auth: "publishable"`, `auth: "secret"`, `auth: "none"`를 쓰는 함수는 플랫폼 JWT 검증을 꺼야 합니다.
-
-```toml
-[functions.moment-health]
-verify_jwt = false
-
-[functions.moment-admin-clients]
-verify_jwt = false
-```
-
-이 설정은 `supabase/config.toml`에 추가해두었습니다.
-
-## 검증 결과
-
-`/auth/v1/settings` endpoint 기준으로 현재 publishable key는 HTTP 200 응답을 반환했습니다.
+Vercel Production 배포는 현재 승인과 릴리스 검사 통과 뒤에만 진행합니다. Supabase 마이그레이션과 Vercel 배포는 서로 다른 작업이므로 한 명령으로 묶지 않습니다.

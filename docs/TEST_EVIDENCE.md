@@ -1,5 +1,43 @@
 # Test Evidence
 
+> 2026-07-31 이전의 공식 쇼핑 검색 API 순번·API 배열 기록은 과거 결함과 배포를 재현하기 위한 증거다. 현재 순위 소스 검증에는 2026-08-02 hybrid 경계와 `mi.naver-shopping-organic-window.v1` 원자 수집 계약만 적용한다.
+
+## 2026-08-02 · N 쇼핑 hybrid 로컬 워커 전환·실증 대기
+
+- 공식 경계: NAVER API Hub에는 쇼핑 오가닉 전체 순위를 반환하는 endpoint가 없다. 종료된 쇼핑 검색 API, Search·Search Trend·Shopping Insight·Commerce API를 순위 대체값으로 사용하지 않는다.
+- 서버 경로: 모바일 통합검색의 명시적 SAS 상품에서 광고를 제외하고 1위부터 연속 검증된 최대 상위 50위 exact hit만 허용한다. 범위 밖 miss와 불완전 응답은 새 순위·snapshot을 만들지 않는다.
+- 300위 경로: 전용 Mac의 독립 persistent Chromium 프로필과 사용자가 직접 완료한 네이버 로그인 세션을 사용한다. 개인 Chrome 프로필·비밀번호·쿠키 서버 전송·CAPTCHA 자동 우회는 금지한다.
+- 제출 경계: HMAC 서명, 제한된 유효시간, 1회용 nonce, 활성 lease, 정확히 300개, 광고 제외, 연속 순번, 고유 stable ID를 모두 강제한다. 성공 결과는 tracker와 snapshot에 원자 반영하고 실패는 마지막 정상값과 30일 이력을 보존한다.
+- 실행 경계: 오전 9시·오후 3시에 로컬 워커가 먼저 실행되고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 서버 상위 50위와 기존값 보존은 계속되지만 새 51~300위 증거는 생성되지 않는다.
+- 비용 경계: 유료 외부 수집기·카드·자동 결제는 사용하지 않는다.
+- 미완료 증거: 최근 `collection_id=pw-*`, `checked_count=300`인 실제 snapshot, 광고 제외·연속 순번·exact/원부 일치, 전체 활성 tracker, 두 정규 실행 창, 세 역할 동일 값은 아직 확인되지 않았다. 따라서 이 변경을 실수집 정상화·배포 완료로 기록하지 않는다.
+
+## 2026-08-01 · 폐기된 원격 쇼핑 수집기 실험 이력
+
+> 아래 내용은 Render/headless 공개 수집 경로를 검토하던 당시 증거다. 현재 실행 구조는 위 2026-08-02 hybrid 로컬 워커 계약을 따른다.
+
+- 신규 경계: `tools/naver-shopping-rank-collector`를 본 Vercel API·플레이스 수집기와 분리했다. Bearer 인증과 16KB 요청 제한, `mi.naver-shopping-organic-window.v1`, 한 응답당 단일 `collectionId`·`collectedAt`, 광고 제외, 연속 오가닉 순번, 숫자형 상품·원부 ID를 강제한다. 부분·혼합 출처·증거 불일치·중복 stable ID는 2xx라도 거부한다.
+- 실행 구조: Playwright Chromium 한 개를 재사용하고 요청별 context를 폐기한다. 동시성 1의 제한 큐, 동일 키워드 single-flight, 불변 TTL cache, 호출자 deadline, 허용된 `https://search.shopping.naver.com/search/all` 경로만 사용한다. HTTP 418·429, 캡차, 인증 리다이렉트, selector drift, deadline·부분 수집은 각각 명시 오류로 분류한다.
+- 무료 하드닝 재검증: 쇼핑 Render 서비스 블록을 `region: singapore`, Playwright 공식 `channel=chromium` headless, 요청별 격리 context로 유지했다. Render의 플랫폼 health check는 `/health`로 바꾸고 실제 N 쇼핑 검증 readiness는 `/ready`에 남겼다. 공용 쿠키·세션, stealth·fingerprint 위장, 캡차 우회는 추가하지 않았다.
+- 앱 통합: 키워드 상품 참고값과 N 상품 단건·30일 추적은 같은 원자 목록만 사용한다. exact seller ID와 직접 확인한 catalog ID만 비교하고, URL query의 가짜 catalog ID·유사 상품명·광고·불완전 조기 일치는 snapshot을 만들지 않는다. 수집 실패 시 processing lease를 안전하게 풀고 마지막 정상 순위·30일 이력을 유지한다.
+- 독립 감사 회귀: 명시적 `전체 상품/검색 결과` 문구만 상품수로 인정하고, 빈 결과 페이지 외에는 소진을 추측하지 않는다. 하나의 document-order selector로 카드 순서를 유지한다. 상품수 누락·페이지별 변경·수집량 미만은 `marketTotal=null/unavailable`로만 폐기하고 완전한 순위 창과 readiness는 유지한다. 큐 대기 만료·포화는 HTTP 429 `provider_busy`로 반환하고 5분 재시도하며 전역 readiness를 내리지 않는다. 강제 canary가 포화 큐를 만나거나 구버전 502가 `provider_queue_full`을 포함해도 기존 readiness와 due queue를 유지하며, 실제 `provider_collection_failed:naver_http_418`만 첫 요청부터 회로차단까지 전달됨을 검증했다.
+- 시간 계약: 수집기·본 서버 deadline/abort·Production 300 canary는 90초, provider cold-start prewarm은 75초, 관리자·광고주 단건/SEO 조회는 120초 외곽 제한이다. 이 값과 `/health`·`/ready` 역할이 어긋나면 서버 계약 검사가 실패한다.
+- 현재 로컬 집중 검사: 쇼핑 수집기 49/49, 관련 서버 회귀 60/60, 서버 계약 36/36 통과. HTTP 418 사용 불가, 실제 Naver 429 재시도, 300개 원자 gate, Playwright 의존성과 Docker 이미지 버전 일치, canary 브랜치 격리까지 확인했다. 전체 릴리스 통과나 실수집 성공으로 확대하지 않는다.
+- 재현 명령: `npm --prefix tools/naver-shopping-rank-collector test`, `node --test src/server/handlers/naver-rank-trackers.test.mjs src/server/handlers/naver-rank-cron.test.mjs src/server/handlers/naver-shopping-rank-runtime.test.mjs src/server/naver-shopping/provider-runtime.test.mjs src/server/naver-shopping/source-status.test.mjs`, `node scripts/check-server-contract.mjs`.
+- 실 canary: 수정 후 실제 Playwright/Chromium은 정상 기동했으나 N 쇼핑 검색이 HTTP 418을 반환했다. 수집기 `/ready`는 HTTP 503, `secretConfigured=true`, `provider.configured=true`, `provider.verified=false`, `reason=naver_http_418`을 반환했다. 테스트 서버 종료 후 로컬 포트 접속 실패까지 확인했다. 앞선 사용자 브라우저 점검에서도 동일 공개 주소가 `보안 확인을 완료해 주세요` 캡차로 전환됐으며 캡차를 우회하거나 순위를 추정하지 않았다.
+- 배포 gate: Vercel Preview의 `--vercel-build` live check는 의도대로 skip되지만 Production은 실제 collector `/ready`와 요청한 300개가 정확히 일치하는 원자 목록을 통과해야 한다. `sourceExhausted`만으로 짧은 목록을 300개 canary 성공으로 인정하지 않는다. 실상품 300개·`mml93-a01` 25/25·전체 71개·09시/15시 cron은 미완료이며 수집 서비스와 Production 배포는 대기다.
+- 비용 확인: Render 계정은 Hobby $0, 결제 카드 없음, 현재 청구액 $0이고 blueprint의 쇼핑 수집 서비스도 무료 plan이다. 이는 비용 상태 증거일 뿐 서비스 생성·실수집·배포 완료 증거가 아니다.
+
+## 2026-07-31 · 종료 쇼핑 API 제거·Hub/쇼핑 수집원 경계 통합
+
+- 호출 계약: Search·Search Trend·Shopping Insight는 `NAVER_API_HUB_MODE=hub`와 NCP 인증만 사용한다. Search Ads는 별도 공식 `/keywordstool` 계약을 유지한다. 키워드 상품수·카테고리와 N 상품 단건·30일 순위는 동일한 Bearer POST 수집원과 `naver_shopping_results_collector`·`naver_shopping_organic_list` 증거만 허용한다.
+- 종료 경로 차단: `naver-keyword.mjs`와 `naver-shopping-rank.mjs`의 `/v1/search/shop.json`, 직접 legacy 쇼핑 헤더, 기존 fallback을 제거했다. 수집원이 없을 때 종료 API 호출 0건·키워드 Hub/SearchAd 부분 응답·상품 순위 DB 무변경을 자동 검증하고, 재도입 시 기준선과 보호 잠금이 실패한다.
+- 환경 일치: 로컬 서버와 런타임·Hub 실호출 검사가 모두 기능 폴더 fallback보다 루트 `.env.local`을 우선하고, 실행 프로세스 환경값을 최우선으로 사용한다. 중복 키가 생겨도 검사와 실제 서버가 서로 다른 인증값을 읽지 않도록 통일했다.
+- 정확성 회귀: 300개 완전 수집, 광고 제외, 정확 상품·검증 원부 비교, 잘못된 유사 원부 거부, 빈/짧은/증거 불일치 응답, 401·429·5xx 성격의 실패에서 기존 순위·30일 이력 보존을 검증했다. 총관리자·연결 운영팀·단독 운영팀·광고주·해제 운영팀과 양 역할 화면 계약도 통과했다.
+- 자동검사: API·서버 252/252, 플레이스 수집기 51/51, 서버 계약 29/29, Production 인증 18/18, 보호 잠금 21함수·23파일·11마이그레이션, 공개 빌드 9파일·인라인 6개·CSP 해시 4개, 전체 `npm run check:release` 통과.
+- 신규 Hub 실호출: blog HTTP 200·1건·209ms, Search Trend HTTP 200·31건·157ms, Shopping Insight age HTTP 200·12건·53ms. 모두 `hub` 모드이며 실제 키는 출력·문서·커밋하지 않았다.
+- 미완료·배포 차단: Production에 쇼핑 수집원 키 쌍이 없어 실상품 300위, `mml93-a01` 25/25, 전체 71개, cron 2회 검증은 수행하지 못했다. 자동 테스트를 실수집 성공으로 대체하지 않으며 commit·push·Production 배포하지 않는다.
+
 ## 2026-07-30 · 업무 실행 요약·즉시 완료·등록창 단순화
 
 - 화면 계약: 기존 상단 3카드를 `오늘 업무·지연 업무·확인 필요` 필터 버튼으로 전환한다. 활성 필터는 얇은 딥네이비 계층으로 표시하고 같은 버튼 또는 `전체`를 눌러 해제한다. 모바일은 설명을 숨긴 3열 압축형으로 유지한다.
@@ -374,7 +412,7 @@
 - `git diff --check`: 통과.
 - 운영 배포: 없음.
 
-> 아래 과거 기록의 `N페이지 N번째`, `광고 제외 오가닉 순위` 표현은 당시 API 배열 순번을 화면 순위로 해석한 기록이다. 현재 결정과 테스트는 위 기준이 우선한다.
+> 아래 과거 기록의 `N페이지 N번째`, `광고 제외 오가닉 순위` 표현은 당시 API 배열 순번을 화면 순위로 해석한 기록이다. 현재 순위 원천은 문서 최상단의 2026-08-02 hybrid 원자 수집 계약이며 과거 API 결과는 신규 순위 근거가 아니다.
 
 기준일: 2026-07-14
 

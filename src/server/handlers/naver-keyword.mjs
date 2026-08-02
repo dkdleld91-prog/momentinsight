@@ -7,9 +7,13 @@ import {
   naverDatalabRequest,
   resolveNaverApiTransport,
 } from "../naver-api-hub.mjs";
+import {
+  hasShoppingRankConfig,
+  shoppingRankConfig,
+} from "../naver-shopping/source-status.mjs";
+import { fetchShoppingResultsWindow } from "./naver-shopping-rank.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
-const NAVER_LEGACY_OPENAPI_BASE_URL = "https://openapi.naver.com";
 const DATALAB_HISTORY_START_DATE = "2016-01-01";
 const SHOPPING_INSIGHT_START_DATE = "2017-08-01";
 const KEYWORD_TREND_MONTHS = 36;
@@ -37,20 +41,12 @@ const keywordCache = new Map();
 const keywordRateBucket = new Map();
 
 function config() {
-  const datalabClientId = process.env.NAVER_DATALAB_CLIENT_ID || process.env.NAVER_OPENAPI_CLIENT_ID || "";
-  const datalabClientSecret = process.env.NAVER_DATALAB_CLIENT_SECRET || process.env.NAVER_OPENAPI_CLIENT_SECRET || "";
-  const openapiClientId = process.env.NAVER_OPENAPI_CLIENT_ID || process.env.NAVER_DATALAB_CLIENT_ID || "";
-  const openapiClientSecret = process.env.NAVER_OPENAPI_CLIENT_SECRET || process.env.NAVER_DATALAB_CLIENT_SECRET || "";
-
   return {
     searchAdApiKey: process.env.NAVER_SEARCHAD_API_KEY || "",
     searchAdSecretKey: process.env.NAVER_SEARCHAD_SECRET_KEY || "",
     searchAdCustomerId: process.env.NAVER_SEARCHAD_CUSTOMER_ID || "",
-    datalabClientId,
-    datalabClientSecret,
-    openapiClientId,
-    openapiClientSecret,
     naverApi: naverApiProviderConfig(),
+    shoppingResults: shoppingRankConfig(),
   };
 }
 
@@ -60,10 +56,6 @@ function hasSearchAdConfig(env) {
 
 function hasDatalabConfig(env) {
   return hasNaverMigratedApiConfig(env.naverApi, "datalab");
-}
-
-function hasOpenapiConfig(env) {
-  return Boolean(env.openapiClientId && env.openapiClientSecret);
 }
 
 function json(request, body, status = 200) {
@@ -163,7 +155,9 @@ function keywordConfigSignature(env) {
   return [
     hasSearchAdConfig(env) ? `searchad:${hashConfigPart(`${env.searchAdApiKey}:${env.searchAdCustomerId}`)}` : "no-searchad",
     hasDatalabConfig(env) ? `datalab:${datalabProvider}:${hashConfigPart(datalabClientId)}` : "no-datalab",
-    hasOpenapiConfig(env) ? "openapi" : "no-openapi",
+    hasShoppingRankConfig(env.shoppingResults)
+      ? `shopping:${hashConfigPart(`${env.shoppingResults.mode || "provider"}:${env.shoppingResults.providerUrl}:${env.shoppingResults.providerKey}`)}`
+      : "no-shopping-results",
   ].join(":");
 }
 
@@ -198,7 +192,7 @@ function setKeywordCache(key, payload) {
 
 function canCacheKeywordPayload(payload) {
   const statuses = Object.values(payload?.sourceStatus || {}).map((item) => item?.status);
-  return statuses.length > 0 && statuses.every((status) => status === "ok");
+  return statuses.length > 0 && statuses.every((status) => status === "ok" || status === "not_configured");
 }
 
 function clientRateKey(request) {
@@ -399,23 +393,6 @@ async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, s
     timeoutMs,
     retries: request.provider === "hub" ? 1 : 0,
     retryDelayMs: 350,
-  });
-}
-
-async function fetchNaverShoppingSearch(env, keyword) {
-  const params = new URLSearchParams({
-    query: keyword,
-    display: "20",
-    start: "1",
-    sort: "sim",
-  });
-
-  return fetchJson(`${NAVER_LEGACY_OPENAPI_BASE_URL}/v1/search/shop.json?${params.toString()}`, {
-    method: "GET",
-    headers: {
-      "X-Naver-Client-Id": env.openapiClientId,
-      "X-Naver-Client-Secret": env.openapiClientSecret,
-    },
   });
 }
 
@@ -856,7 +833,7 @@ export function keywordMarketIndicators({
   };
 }
 
-function buildShoppingProfile(payload) {
+export function buildShoppingProfile(payload) {
   if (!payload || typeof payload !== "object") return null;
   const items = Array.isArray(payload.items) ? payload.items : [];
   const prices = items
@@ -865,9 +842,13 @@ function buildShoppingProfile(payload) {
   const malls = [...new Set(items.map((item) => String(item.mallName || "").trim()).filter(Boolean))];
   const dominantCategory = dominantShoppingCategory(items);
   const dominantCategoryId = shoppingCategoryIdFromName(dominantCategory);
+  const totalVerified = payload.marketTotalStatus === "verified"
+    && Number.isSafeInteger(payload.marketTotal)
+    && payload.marketTotal >= 0;
 
   return {
-    total: Number(payload.total || 0),
+    total: totalVerified ? payload.marketTotal : null,
+    totalStatus: totalVerified ? "verified" : "unavailable",
     sampleCount: items.length,
     averagePrice: prices.length ? Math.round(prices.reduce((sum, price) => sum + price, 0) / prices.length) : 0,
     minPrice: prices.length ? Math.min(...prices) : 0,
@@ -875,7 +856,8 @@ function buildShoppingProfile(payload) {
     mallCount: malls.length,
     category1: dominantCategory,
     categoryId: dominantCategoryId,
-    source: "naver_shopping_search",
+    source: String(payload.source || "naver_shopping_results_collector"),
+    verifiedThroughRank: Number(payload.verifiedThroughRank || payload.checkedCount || 0),
   };
 }
 
@@ -976,14 +958,14 @@ function buildChartData(keyword, searchAd, datalabProfile, shoppingProfile) {
       volume: safeVolume,
       isUnderThreshold: hasExactMatch ? metric.isUnderThreshold : false,
       competition: comp,
-      shoppingTotal: shoppingProfile?.total || 0,
+      shoppingTotal: shoppingProfile?.total,
     }),
   };
 }
 
-function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppingProfile, shoppingError, includeProfile }) {
+export function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppingProfile, shoppingError, includeProfile }) {
   const datalabConfigured = hasDatalabConfig(env);
-  const shoppingConfigured = hasOpenapiConfig(env);
+  const shoppingConfigured = hasShoppingRankConfig(env.shoppingResults);
   const ratioReady = Boolean(datalabProfile?.month?.length && datalabProfile?.week?.length);
   const profileReady = !includeProfile || ["search_interest_profile", "shopping_keyword_profile"].includes(datalabProfile?.demographicStatus);
   const profilePartial = includeProfile && datalabProfile?.demographicStatus === "profile_partial";
@@ -1018,9 +1000,11 @@ function buildSourceStatus({ env, searchAd, datalabProfile, datalabError, shoppi
       ? { status: "not_configured", label: "쇼핑 참고 지표 연결 필요" }
       : shoppingError
         ? { status: "error", label: "쇼핑 참고 지표 확인 실패" }
-        : shoppingProfile
-          ? { status: "ok", label: "쇼핑 참고 지표 확인" }
-          : { status: "pending", label: "쇼핑 참고 지표 대기" },
+        : shoppingProfile?.totalStatus === "unavailable"
+          ? { status: "partial", label: "쇼핑 상품 표본 확인 · 상품수 확인 불가" }
+          : shoppingProfile
+            ? { status: "ok", label: "쇼핑 참고 지표 확인" }
+            : { status: "pending", label: "쇼핑 참고 지표 대기" },
   };
 }
 
@@ -1099,9 +1083,9 @@ export default {
       let shoppingProfile = null;
       let shoppingError = null;
 
-      if (hasOpenapiConfig(env)) {
+      if (hasShoppingRankConfig(env.shoppingResults)) {
         try {
-          shoppingProfile = buildShoppingProfile(await fetchNaverShoppingSearch(env, keyword));
+          shoppingProfile = buildShoppingProfile(await fetchShoppingResultsWindow(env.shoppingResults, keyword, 100));
         } catch (error) {
           shoppingError = error.message;
         }
@@ -1138,7 +1122,7 @@ export default {
           searchVolume: searchAd.hasExactMatch ? "naver_searchad_exact" : "naver_searchad_related_only",
           trend: sourceStatus.trend.status === "ok" ? "naver_datalab_relative_ratio" : sourceStatus.trend.status,
           profile: datalabProfile ? (includeProfile ? datalabProfile.demographicStatus : "trend_only") : sourceStatus.ratios.status,
-          shopping: shoppingProfile ? "naver_shopping_search" : sourceStatus.shopping.status,
+          shopping: shoppingProfile ? shoppingProfile.source : sourceStatus.shopping.status,
           migratedApiProvider: resolveNaverApiTransport(env.naverApi, "datalab"),
         },
         sourceStatus,

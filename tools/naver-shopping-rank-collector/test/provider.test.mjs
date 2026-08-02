@@ -1,18 +1,27 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { SCHEMA_VERSION } from "../src/contract.mjs";
 import {
+  NAVER_SHOPPING_PROFILE_AUTH_MARKER,
+  NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
+  NAVER_SHOPPING_PROFILE_OWNER_MARKER,
+  NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE,
   ProviderError,
   appendNormalizedPage,
   buildNaverShoppingFrontendUrl,
   buildNaverShoppingSearchUrl,
   classifyNaverPage,
   createPlaywrightProvider,
+  defaultNaverShoppingProfileDir,
   defaultCollectPage,
   marketTotalFromTexts,
   parseNaverFrontendPage,
   parseNaverNextDataPage,
+  validateNaverShoppingProfileDir,
 } from "../src/provider.mjs";
 
 function rankRequest(keyword = "온열찜질기", limit = 3, now = Date.now()) {
@@ -158,6 +167,59 @@ function fakeBrowserFactory(stats = {}) {
   };
 }
 
+function createProfileFixture(t, options = {}) {
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "mi-n-shopping-profile-"));
+  const profileDir = path.join(root, "NaverShoppingProfile");
+  fs.mkdirSync(profileDir, { mode: options.mode || 0o700 });
+  fs.chmodSync(profileDir, options.mode || 0o700);
+  if (options.ownerMarker !== false) {
+    fs.writeFileSync(
+      path.join(profileDir, NAVER_SHOPPING_PROFILE_OWNER_MARKER),
+      `${options.ownerMarkerValue || NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE}\n`,
+      { mode: 0o600 },
+    );
+  }
+  if (options.authMarker !== false) {
+    const authMarker = options.authMarkerValue || JSON.stringify({
+      schema: NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
+      authenticatedAt: "2026-08-02T00:00:00.000Z",
+    });
+    fs.writeFileSync(
+      path.join(profileDir, NAVER_SHOPPING_PROFILE_AUTH_MARKER),
+      `${authMarker}\n`,
+      { mode: 0o600 },
+    );
+  }
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return { root, profileDir };
+}
+
+function fakePersistentContextFactory(stats = {}) {
+  return async (launchOptions) => {
+    stats.launchOptions = launchOptions;
+    const browser = {
+      isConnected: () => stats.disconnected !== true,
+      on(event, callback) {
+        if (event === "disconnected") stats.onDisconnected = callback;
+      },
+    };
+    const initialPage = {
+      async close() { stats.closedInitialPages = Number(stats.closedInitialPages || 0) + 1; },
+    };
+    return {
+      browser: () => browser,
+      pages: () => [initialPage],
+      async newPage() {
+        stats.pages = Number(stats.pages || 0) + 1;
+        return {
+          async close() { stats.closedPages = Number(stats.closedPages || 0) + 1; },
+        };
+      },
+      async close() { stats.contextClosed = Number(stats.contextClosed || 0) + 1; },
+    };
+  };
+}
+
 function createFixtureProvider({ collectPage, now = () => Date.now(), config = {}, autoVerify = false, browserStats } = {}) {
   return createPlaywrightProvider({
     browserFactory: fakeBrowserFactory(browserStats),
@@ -174,6 +236,7 @@ function createFixtureProvider({ collectPage, now = () => Date.now(), config = {
       cacheMax: 20,
       readinessTtlMs: 60_000,
       headless: true,
+      userDataDir: "",
       ...config,
     },
   });
@@ -434,7 +497,7 @@ test("rejects malformed __NEXT_DATA__ JSON instead of using a loose DOM fallback
   );
 });
 
-test("default page collection uses the first-party PART contract with cookies and captcha header support", async () => {
+test("default page collection uses the first-party PART contract with cookies and no CAPTCHA bypass", async () => {
   const fixture = frontendFixture({ total: 1, products: [nextDataProduct(1)] });
   const stats = {};
   const url = buildNaverShoppingSearchUrl("온열찜질기", 1);
@@ -473,8 +536,9 @@ test("default page collection uses the first-party PART contract with cookies an
   assert.equal(new URL(stats.frontendArgument.requestPath, url).pathname, "/api/search/all");
   assert.match(stats.frontendSource, /credentials:\s*"include"/u);
   assert.match(stats.frontendSource, /logic:\s*"PART"/u);
-  assert.match(stats.frontendSource, /x-wtm-ncaptcha-token/u);
+  assert.doesNotMatch(stats.frontendSource, /["']x-wtm-ncaptcha-token["']\s*:/u);
   assert.match(stats.frontendSource, /window\.ncaptcha\?\.f/u);
+  assert.doesNotMatch(stats.frontendSource, /window\.ncaptcha\?\.f\s*\(/u);
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].sourceRank, 1);
   assert.equal(result.rows[0].productType, 2);
@@ -551,6 +615,201 @@ test("uses Playwright's official Chromium channel while keeping request contexts
   assert.equal(browserStats.pages, 2);
   await provider.close();
   assert.equal(browserStats.browserClosed, true);
+});
+
+test("accepts only a private, owned, dedicated profile with both non-secret markers", (t) => {
+  const fakeHome = path.resolve(os.tmpdir(), "mi-example-home");
+  assert.equal(
+    defaultNaverShoppingProfileDir(fakeHome),
+    path.join(fakeHome, "Library", "Application Support", "MomentInsight", "NaverShoppingProfile"),
+  );
+  assert.throws(
+    () => validateNaverShoppingProfileDir("relative/profile"),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_path_not_allowed",
+  );
+
+  const valid = createProfileFixture(t);
+  assert.equal(
+    validateNaverShoppingProfileDir(valid.profileDir, { expectedDir: valid.profileDir }),
+    valid.profileDir,
+  );
+  assert.throws(
+    () => validateNaverShoppingProfileDir(path.join(valid.root, "Google", "Chrome"), {
+      expectedDir: valid.profileDir,
+    }),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_path_not_allowed",
+  );
+
+  const missingOwner = createProfileFixture(t, { ownerMarker: false, authMarker: false });
+  assert.throws(
+    () => validateNaverShoppingProfileDir(missingOwner.profileDir, {
+      expectedDir: missingOwner.profileDir,
+    }),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_marker_missing",
+  );
+  const missingAuth = createProfileFixture(t, { authMarker: false });
+  assert.throws(
+    () => validateNaverShoppingProfileDir(missingAuth.profileDir, {
+      expectedDir: missingAuth.profileDir,
+    }),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_auth_missing",
+  );
+  const invalidAuth = createProfileFixture(t, { authMarkerValue: "{}" });
+  assert.throws(
+    () => validateNaverShoppingProfileDir(invalidAuth.profileDir, {
+      expectedDir: invalidAuth.profileDir,
+    }),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_auth_invalid",
+  );
+  const authWithUnexpectedData = createProfileFixture(t, {
+    authMarkerValue: JSON.stringify({
+      schema: NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
+      authenticatedAt: "2026-08-02T00:00:00.000Z",
+      cookie: "must-not-be-stored-here",
+    }),
+  });
+  assert.throws(
+    () => validateNaverShoppingProfileDir(authWithUnexpectedData.profileDir, {
+      expectedDir: authWithUnexpectedData.profileDir,
+    }),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_auth_invalid",
+  );
+
+  if (process.platform !== "win32") {
+    const publicProfile = createProfileFixture(t, { mode: 0o755 });
+    assert.throws(
+      () => validateNaverShoppingProfileDir(publicProfile.profileDir, {
+        expectedDir: publicProfile.profileDir,
+      }),
+      (error) => error instanceof ProviderError && error.code === "provider_profile_permissions_invalid",
+    );
+
+    const symlinkRoot = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "mi-n-shopping-symlink-"));
+    const target = path.join(symlinkRoot, "target");
+    const linkedProfile = path.join(symlinkRoot, "NaverShoppingProfile");
+    fs.mkdirSync(target, { mode: 0o700 });
+    fs.symlinkSync(target, linkedProfile, "dir");
+    t.after(() => fs.rmSync(symlinkRoot, { recursive: true, force: true }));
+    assert.throws(
+      () => validateNaverShoppingProfileDir(linkedProfile, { expectedDir: linkedProfile }),
+      (error) => error instanceof ProviderError && error.code === "provider_profile_symlink_not_allowed",
+    );
+
+    const ancestorRoot = fs.mkdtempSync(path.join(
+      fs.realpathSync(os.tmpdir()),
+      "mi-n-shopping-ancestor-symlink-",
+    ));
+    const libraryDir = path.join(ancestorRoot, "Library");
+    const realApplicationSupport = path.join(ancestorRoot, "real-application-support");
+    const realProfile = path.join(realApplicationSupport, "MomentInsight", "NaverShoppingProfile");
+    fs.mkdirSync(libraryDir, { mode: 0o700 });
+    fs.mkdirSync(realProfile, { recursive: true, mode: 0o700 });
+    fs.chmodSync(realProfile, 0o700);
+    fs.writeFileSync(
+      path.join(realProfile, NAVER_SHOPPING_PROFILE_OWNER_MARKER),
+      `${NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE}\n`,
+      { mode: 0o600 },
+    );
+    fs.writeFileSync(
+      path.join(realProfile, NAVER_SHOPPING_PROFILE_AUTH_MARKER),
+      `${JSON.stringify({
+        schema: NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
+        authenticatedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+      { mode: 0o600 },
+    );
+    const linkedApplicationSupport = path.join(libraryDir, "Application Support");
+    fs.symlinkSync(realApplicationSupport, linkedApplicationSupport, "dir");
+    const ancestorLinkedProfile = path.join(
+      linkedApplicationSupport,
+      "MomentInsight",
+      "NaverShoppingProfile",
+    );
+    t.after(() => fs.rmSync(ancestorRoot, { recursive: true, force: true }));
+    assert.throws(
+      () => validateNaverShoppingProfileDir(ancestorLinkedProfile, {
+        expectedDir: ancestorLinkedProfile,
+      }),
+      (error) => error instanceof ProviderError && error.code === "provider_profile_symlink_not_allowed",
+    );
+  }
+});
+
+test("real local-worker policy defaults to the dedicated profile and rejects unsafe overrides before launch", async () => {
+  const env = {
+    MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED: "true",
+    NAVER_SHOPPING_PROVIDER_SEARCH_HOST: "msearch.shopping.naver.com",
+    NAVER_SHOPPING_PROVIDER_HEADLESS: "false",
+    NAVER_SHOPPING_PROVIDER_CHANNEL: "chromium",
+  };
+  const defaulted = createPlaywrightProvider({ autoVerify: false, env });
+  assert.equal(defaulted.__testing.config.userDataDir, defaultNaverShoppingProfileDir());
+  await defaulted.close();
+
+  const unsafe = createPlaywrightProvider({
+    autoVerify: false,
+    env: { ...env, NAVER_SHOPPING_PROVIDER_USER_DATA_DIR: "relative/profile" },
+  });
+  await assert.rejects(
+    unsafe.collect(rankRequest("온열찜질기", 1)),
+    (error) => error instanceof ProviderError && error.code === "provider_profile_path_not_allowed",
+  );
+  await unsafe.close();
+});
+
+test("reuses one validated persistent context while closing every request page", async (t) => {
+  const { profileDir } = createProfileFixture(t);
+  const stats = {};
+  const provider = createPlaywrightProvider({
+    autoVerify: false,
+    persistentContextFactory: fakePersistentContextFactory(stats),
+    profileValidator: (value) => validateNaverShoppingProfileDir(value, { expectedDir: profileDir }),
+    collectPage: async ({ url }) => {
+      const keyword = new URL(url).searchParams.get("query");
+      return {
+        rows: [rawProduct(keyword === "첫번째" ? 301 : 302)],
+        marketTotal: 10,
+        sourceExhausted: false,
+      };
+    },
+    config: {
+      browserChannel: "chromium",
+      localWorkerEnabled: true,
+      searchHost: "msearch.shopping.naver.com",
+      headless: false,
+      userDataDir: profileDir,
+      canaryKeyword: "온열찜질기",
+      timeoutMs: 100_000,
+      pageTimeoutMs: 10_000,
+    },
+  });
+
+  await provider.collect(rankRequest("첫번째", 1));
+  await provider.collect(rankRequest("두번째", 1));
+  assert.equal(stats.launchOptions.userDataDir, profileDir);
+  assert.equal(stats.launchOptions.headless, false);
+  assert.equal(stats.launchOptions.channel, "chromium");
+  assert.deepEqual(stats.launchOptions.contextOptions, {
+    locale: "ko-KR",
+    timezoneId: "Asia/Seoul",
+    viewport: { width: 1440, height: 1200 },
+    colorScheme: "light",
+  });
+  assert.equal(stats.closedInitialPages, 1);
+  assert.equal(stats.pages, 2);
+  assert.equal(stats.closedPages, 2);
+  assert.equal(stats.contextClosed || 0, 0);
+  await provider.close();
+  assert.equal(stats.contextClosed, 1);
+});
+
+test("provider source never extracts browser credentials or performs CAPTCHA bypass", () => {
+  const source = fs.readFileSync(new URL("../src/provider.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /\.cookies\s*\(/u);
+  assert.doesNotMatch(source, /\.storageState\s*\(/u);
+  assert.doesNotMatch(source, /\.fill\s*\([^)]*password/iu);
+  assert.doesNotMatch(source, /window\.ncaptcha\?\.f\s*\(/u);
+  assert.doesNotMatch(source, /["']x-wtm-ncaptcha-token["']\s*:/u);
 });
 
 test("rejects unsupported browser channels before launching a browser", () => {

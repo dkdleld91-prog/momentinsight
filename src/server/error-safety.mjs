@@ -1,5 +1,27 @@
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const NAVER_RANK_CRON_ITEM_FAILURE = "NAVER_RANK_CRON_ITEM_FAILURE";
+const SAFE_SHOPPING_PROVIDER_FAILURES = new Map([
+  ["NAVER_RANK_PROVIDER_WARMING", {
+    status: "warming",
+    retryable: true,
+    message: "네이버 상품 순위 수집원을 준비하고 있어 대기열을 아직 시작하지 않았습니다.",
+  }],
+  ["SHOPPING_RANK_PROVIDER_WARMING", {
+    status: "warming",
+    retryable: true,
+    message: "네이버 쇼핑 순위 수집원을 준비하고 있습니다. 잠시 후 다시 시도해주세요.",
+  }],
+  ["NAVER_RANK_PROVIDER_UNAVAILABLE", {
+    status: "unavailable",
+    retryable: false,
+    message: "네이버 상품 순위 수집원의 실데이터 검증이 완료되지 않았습니다.",
+  }],
+  ["SHOPPING_RANK_SOURCE_UNAVAILABLE", {
+    status: "unavailable",
+    retryable: false,
+    message: "네이버 쇼핑 순위 수집원의 실데이터 검증이 완료되지 않았습니다.",
+  }],
+]);
 
 function nonNegativeInteger(value) {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
@@ -34,6 +56,39 @@ function safeNaverRankCronSummary(value) {
   return { now, checked, succeeded, failed, remaining, drained, configured };
 }
 
+function safeShoppingProviderFailure(response, payload) {
+  if (response.status !== 503) return null;
+  const code = String(payload?.code || payload?.errorCode || "");
+  const contract = SAFE_SHOPPING_PROVIDER_FAILURES.get(code);
+  if (!contract) return null;
+  const retryAfter = nonNegativeInteger(payload?.retryAfter);
+  const sourceStatus = payload?.sourceStatus?.shoppingRank?.status;
+  if (sourceStatus !== contract.status || payload?.retryable !== contract.retryable) return null;
+  const summary = safeNaverRankCronSummary(payload?.summary);
+  return {
+    status: 503,
+    body: {
+      ok: false,
+      code,
+      errorCode: code,
+      message: contract.message,
+      retryable: contract.retryable,
+      retryAfter: retryAfter === null ? 0 : Math.min(300, retryAfter),
+      rankSourceReady: false,
+      ...(nonNegativeInteger(payload?.claimed) !== null ? { claimed: nonNegativeInteger(payload.claimed) } : {}),
+      ...(summary ? { summary } : {}),
+      providerStatus: {
+        status: contract.status,
+        retryable: contract.retryable,
+        retryAfter: retryAfter === null ? 0 : Math.min(300, retryAfter),
+      },
+      sourceStatus: {
+        shoppingRank: { status: contract.status },
+      },
+    },
+  };
+}
+
 export function safeErrorPayload(response, text) {
   if (response.status < 500) return null;
 
@@ -42,6 +97,7 @@ export function safeErrorPayload(response, text) {
   let requestId = "";
   let expectedServerResponse = false;
   let safeRankCronFailure = null;
+  let safeProviderFailure = null;
   try {
     const payload = JSON.parse(text || "{}");
     const code = String(payload?.code || "");
@@ -53,8 +109,13 @@ export function safeErrorPayload(response, text) {
     if (response.status === 502 && code === NAVER_RANK_CRON_ITEM_FAILURE) {
       safeRankCronFailure = safeNaverRankCronSummary(payload?.summary);
     }
+    safeProviderFailure = safeShoppingProviderFailure(response, payload);
   } catch {}
 
+  if (safeProviderFailure && !sensitive) {
+    if (requestId) safeProviderFailure.body.requestId = requestId;
+    return safeProviderFailure;
+  }
   if (expectedServerResponse && !sensitive) return null;
   if (safeRankCronFailure && !sensitive) {
     return {

@@ -17,6 +17,12 @@ const projects = [
     lockfile: "tools/naver-place-rank-collector/package-lock.json",
     allowedInstallScripts: new Set(["node_modules/fsevents"]),
   },
+  {
+    name: "shopping-rank-collector",
+    manifest: "tools/naver-shopping-rank-collector/package.json",
+    lockfile: "tools/naver-shopping-rank-collector/package-lock.json",
+    allowedInstallScripts: new Set(["node_modules/fsevents"]),
+  },
 ];
 
 function readJson(relativePath) {
@@ -138,6 +144,11 @@ requireText(
 );
 requireText(
   ".github/workflows/quality.yml",
+  /npm --prefix tools\/naver-shopping-rank-collector ci --ignore-scripts/,
+  "shopping collector CI install must disable lifecycle scripts",
+);
+requireText(
+  ".github/workflows/quality.yml",
   /persist-credentials:\s*false/,
   "checkout credentials must not persist after source retrieval",
 );
@@ -171,7 +182,6 @@ requireText(
   /^USER pwuser$/m,
   "collector container must run as the non-root Playwright user",
 );
-
 const collectorDockerIgnorePath = path.join(
   root,
   "tools/naver-place-rank-collector/.dockerignore",

@@ -1,17 +1,22 @@
 # 네이버 키워드 API 연결
 
 이 폴더는 네이버 API 키 발급과 운영 환경변수 세팅을 정리하는 문서 폴더입니다.
-실제 운영 API 구현은 `src/server/handlers/naver-keyword.mjs` 하나만 사용합니다.
+공식 Hub 호출과 쇼핑 결과 수집은 각각 하나의 공용 계약으로 관리합니다.
 
 ## 운영 경로
 
 - 운영 엔드포인트: `/api/naver-keyword`
 - 운영 연결 진단: `/api/integration-status`
-- Vercel wrapper: `api/naver-keyword.mjs`
-- 실제 서버 로직: `src/server/handlers/naver-keyword.mjs`
+- Vercel 공용 진입점: `api/[...path].mjs`
+- 키워드 서버 로직: `src/server/handlers/naver-keyword.mjs`
+- 쇼핑 참고·순위 서버 로직: `src/server/handlers/naver-shopping-rank.mjs`
+- 쇼핑 수집원 상태·장애 판정: `src/server/naver-shopping/source-status.mjs`
+- 쇼핑 수집 구조 안내: `src/server/naver-shopping/README.md`
+- 쇼핑 브라우저 수집기: `tools/naver-shopping-rank-collector`
+- 서명된 300위 로컬 워커: `scripts/naver-shopping-local-worker.mjs`
 - 로컬 서버: `npm run dev:server`
 
-오래된 별도 프록시 파일은 충돌을 막기 위해 제거했습니다. 앞으로 네이버 키워드 로직은 `src/server/handlers/naver-keyword.mjs`만 수정합니다.
+로컬 개발은 루트 `.env.local`을 가장 먼저 읽고, 기능 폴더의 `.env.local`은 호환용 보조 파일로만 사용합니다. 같은 키가 중복되면 루트 값이 우선합니다.
 
 ## 발급해야 하는 키
 
@@ -29,9 +34,9 @@
 
 - `NAVER_API_HUB_CLIENT_ID`
 - `NAVER_API_HUB_CLIENT_SECRET`
-- `NAVER_API_HUB_MODE=legacy`
+- `NAVER_API_HUB_MODE=hub`
 
-Production은 Hub 실호출과 표본 비교가 끝날 때까지 `legacy`로 유지합니다. 검증 후 선택할 수 있는 `auto`는 Hub 키 두 값이 모두 있을 때만 새 주소와 새 인증 헤더를 사용하고, 하나라도 없으면 기존 Developers 호출을 유지합니다. 환경변수가 없거나 허용되지 않은 값이면 안전하게 `legacy`로 유지됩니다. 값이 일부만 등록된 상태에서 서로 다른 키를 섞어 호출하지 않습니다.
+Production은 `hub`로 고정합니다. Hub 키가 불완전하거나 모드가 다르면 배포 검사를 실패시켜 기존 Developers 경로로 조용히 되돌아가지 않습니다.
 
 새 호출 규격은 다음과 같습니다.
 
@@ -41,21 +46,35 @@ Production은 Hub 실호출과 표본 비교가 끝날 때까지 `legacy`로 유
 - 검색어 트렌드: `/search-trend/v1/search`
 - 쇼핑 인사이트: `/shopping/v1/*`
 
-### 기존 네이버 데이터랩 API
+### 네이버 쇼핑 참고·상품 순위 수집
 
-이관 검증과 비상 복귀를 위한 legacy 값입니다. 공식 유예기간 종료 전까지 검색어 트렌드와 쇼핑 인사이트의 기존 호출에 사용할 수 있습니다.
+종료된 네이버 Developers 쇼핑 검색 API는 활성 경로나 fallback으로 사용하지 않습니다. 기본 운영은 서버에서 빠르게 확인되는 상단 오가닉 범위와, 전용 Mac에서 실행되는 서명된 300위 워커를 분리한 이중 구조입니다.
 
-- `NAVER_DATALAB_CLIENT_ID`
-- `NAVER_DATALAB_CLIENT_SECRET`
+- `NAVER_SHOPPING_RANK_MODE=hybrid_local_worker`
+- `MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED=true`
+- `MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET` (32바이트 이상, Vercel과 Mac Keychain에 동일하게 저장)
+- `MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS` (기본 90초)
 
-### 네이버 Developers 쇼핑 검색
+로컬 워커는 HMAC 서명·5분 유효시간·1회용 nonce로 서버에 접속하고 다음 300위 요청 계약을 사용합니다.
 
-상품수·상품 단건·N 30일 순위에서 사용하는 legacy 쇼핑 검색용입니다. 이 API는 NAVER API Hub 이관 대상이 아니며, 2026년 7월 31일 종료되고 공식 대체 API가 없습니다. 따라서 Hub 키를 등록해도 이 기능의 데이터 소스는 자동 교체되지 않습니다.
+```json
+{
+  "schemaVersion": "mi.naver-shopping-organic-window.v1",
+  "keyword": "온열찜질기",
+  "limit": 300,
+  "sort": "relevance",
+  "rankPolicy": "organic_only",
+  "deadlineAt": "2026-08-01T06:00:00.000Z"
+}
+```
 
-- `NAVER_OPENAPI_CLIENT_ID`
-- `NAVER_OPENAPI_CLIENT_SECRET`
+응답은 반드시 `source=naver_shopping_results_collector`, `rankEvidence=naver_shopping_organic_list`, `collectionId`, `collectedAt`, `checkedCount=300`, 배열형 `items`를 포함해야 합니다. 광고·중복·순위 공백·299개 이하 응답은 전부 거부하고 마지막 정상 순위와 30일 이력을 보존합니다. 성공 결과는 tracker와 snapshot을 하나의 DB 원자 처리로 반영하며 같은 `collectionId` 재전송은 중복 저장되지 않습니다.
 
-DataLab과 OpenAPI가 같은 네이버 개발자 앱을 사용하더라도 legacy 환경변수 이름은 각각 명시해서 넣습니다. Hub 키는 별도 이름으로만 보관하며 공개 HTML·로그·문서에 실제 값을 남기지 않습니다.
+`NAVER_SHOPPING_RANK_MODE`는 생략하거나 오타를 내면 실패하도록 고정합니다. 즉시 조회 경로는 네이버 통합검색 모바일의 SAS 상품 중 1위부터 연속 확인된 최대 상위 50위까지만 exact ID를 인정합니다. 범위 밖 미발견은 `없음`으로 저장하지 않습니다. 09시·15시에는 로컬 워커가 우선 처리하고, 서명 워커 활동이 확인되지 않을 때만 서버 fallback이 기존값 보존 방식으로 실행됩니다.
+
+별도 검증된 300위 공급자가 생긴 경우에만 `provider` 모드와 URL/key 쌍을 대안으로 사용할 수 있습니다. Hub 키를 이 위치에 넣지 않습니다.
+
+NAVER API Hub의 Search, Search Trend, Shopping Insight는 키워드 통계용입니다. 종료된 쇼핑 상품검색/상품순위 API의 대체물이 아니므로 Hub 키를 상품 순위 URL/key 위치에 넣지 않습니다.
 
 ### 네이버 플레이스 순위 수집
 
@@ -101,9 +120,9 @@ curl "https://insight.momentlabs.co.kr/api/integration-status"
 curl "https://insight.momentlabs.co.kr/api/naver-keyword?keyword=냉감패드"
 ```
 
-`check:env:naver`는 네이버 SearchAd, Hub 또는 legacy DataLab, 종료 전까지 필요한 legacy 쇼핑 검색, `MI_KEYWORD_API_ENABLED=true`가 없으면 실패합니다. 운영에서는 실패를 무시하지 않고 Vercel Environment Variables를 먼저 채웁니다.
+Production 배포 검사는 네이버 SearchAd, Hub 키 쌍, `NAVER_API_HUB_MODE=hub`, 서명 워커 설정, 최근 실제 300위 snapshot, cron 비밀값과 `MI_KEYWORD_API_ENABLED=true`를 요구합니다. 운영에서는 실패를 무시하지 않습니다.
 
-안전한 Hub 전환 순서는 Production을 `legacy`로 고정 → Hub 키 등록 → `/api/integration-status`의 `naverApiHubMigration.ready=true` 확인 → Preview/로컬에서 `hub`로 검색어 트렌드·쇼핑 인사이트·blog/local 표본 비교 → 오류 0건 확인 → Production을 `auto` 또는 `hub`로 전환하는 방식입니다. Hub 콘솔의 API 선택 또는 키 권한이 빠지면 401/403이므로 즉시 키·권한을 점검하고, 존재하지 않거나 종료된 경로의 404/410을 임의 데이터로 대체하지 않습니다. 429는 호출 제한으로 분류해 재시도 간격과 사용량을 확인합니다.
+안전한 운영 검증 순서는 Hub blog/local·검색어 트렌드·쇼핑 인사이트 실호출 확인 → 서명 워커 claim/submit 확인 → 정확 상품·원부·광고 제외 300위 확인 → 중복 저장 차단·실패 시 기존값 보존 → 전체 갱신과 cron 2회 확인입니다. `/api/integration-status`는 로그인 세션에서 `naverApiHubMigration.ready=true`와 `shoppingReferenceAndRank.ready=true`를 모두 확인합니다. Hub 401/403, 호출 제한 429, 수집 실패를 임의 데이터로 대체하지 않습니다.
 
 ## 보안 기준
 

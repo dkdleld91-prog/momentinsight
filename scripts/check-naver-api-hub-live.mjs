@@ -31,8 +31,8 @@ function loadEnv(filePath) {
 function runtimeEnv() {
   const root = process.cwd();
   return {
-    ...loadEnv(path.join(root, ".env.local")),
     ...loadEnv(path.join(root, "05_네이버_API_연동", ".env.local")),
+    ...loadEnv(path.join(root, ".env.local")),
     ...process.env,
   };
 }
@@ -112,7 +112,7 @@ try {
     {
       ...period,
       timeUnit: "date",
-      keywordGroups: [{ groupName: "모먼트인사이트", keywords: ["모먼트인사이트"] }],
+      keywordGroups: [{ groupName: "온열찜질기", keywords: ["온열찜질기"] }],
     },
   ));
   checks.push(await requestJson(
@@ -141,10 +141,12 @@ try {
   process.exit(1);
 }
 
+const ok = checks.length === 3 && checks.every((item) => item.ok && item.resultCount > 0);
 console.log(JSON.stringify({
-  ok: checks.length === 3 && checks.every((item) => item.ok),
+  ok,
   mode: config.mode,
   provider: "naver_api_hub",
   checkedAt: new Date().toISOString(),
   checks,
 }, null, 2));
+if (!ok) process.exit(1);

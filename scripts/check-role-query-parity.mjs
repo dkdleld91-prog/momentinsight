@@ -119,6 +119,8 @@ const adminPlaceLoad = functionBlock(adminSource, "loadPlaceTrackers");
 const clientPlaceLoad = functionBlock(clientSource, "loadPlaceTrackers");
 const adminProductSync = functionBlock(adminSource, "syncDueRankTrackersIfNeeded");
 const clientProductSync = functionBlock(clientSource, "syncDueRankTrackersIfNeeded");
+const adminProductRefresh = functionBlock(adminSource, "refreshAllRankTrackers");
+const clientProductRefresh = functionBlock(clientSource, "refreshAllRankTrackers");
 const adminPlaceSync = functionBlock(adminSource, "syncDuePlaceTrackersIfNeeded");
 const clientPlaceSync = functionBlock(clientSource, "syncDuePlaceTrackersIfNeeded");
 const adminPlaceSnapshotMetric = functionBlock(adminSource, "placeSnapshotMetric");
@@ -309,6 +311,15 @@ const checks = {
     && !clientSource.includes("function rankAccessCode()"),
   productTrackerActionsAligned: hasActions(adminProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"])
     && hasActions(clientProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"]),
+  productHybridRefreshIsSerialAndRateBounded: [adminSource, clientSource].every((source) => includesAll(source, [
+    "function rankSourceUsesMobileFallback",
+    'rankSourceMode === "mobile_top_fallback" || rankSourceMode === "hybrid_local_worker"',
+  ])) && [adminProductRefresh, clientProductRefresh].every((block) => includesAll(block, [
+    "var mobileFallback = rankSourceUsesMobileFallback()",
+    "Math.min(mobileFallback ? 1 : 2, targets.length)",
+    "if (mobileFallback && completedCount > 0)",
+    "setTimeout(resolve, 8000)",
+  ])),
   placeTrackerActionsAligned: hasActions(adminPlaceTracking, ["create", "check", "sync-due", "group", "delete"])
     && hasActions(clientPlaceTracking, ["create", "check", "sync-due", "group", "delete"]),
   placeMetricRenderingAlignedAndNullSafe: normalizedBlock(adminSource, "placeSnapshotMetric")

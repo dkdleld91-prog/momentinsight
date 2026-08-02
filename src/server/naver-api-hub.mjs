@@ -20,7 +20,7 @@ function text(value) {
 
 function providerMode(value) {
   const mode = text(value).toLowerCase();
-  return VALID_MODES.has(mode) ? mode : "legacy";
+  return VALID_MODES.has(mode) ? mode : "not-configured";
 }
 
 export function naverApiProviderConfig(env = process.env) {
@@ -55,6 +55,7 @@ export function resolveNaverApiTransport(config, kind = "search") {
   const hubReady = hasNaverApiHubConfig(config);
   const legacyReady = hasLegacyNaverApiConfig(config, kind);
 
+  if (mode === "not-configured") return "not-configured";
   if (mode === "hub") return hubReady ? "hub" : "not-configured";
   if (mode === "legacy") return legacyReady ? "legacy" : "not-configured";
   if (hubReady) return "hub";

@@ -2,16 +2,20 @@ import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
+  hasShoppingRankConfig,
+  isShoppingRankSourceUnavailable,
+  SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
+  shoppingCollectorFailureStatus,
+  shoppingRankConfig,
+  shoppingRankSourceStatus,
+} from "../naver-shopping/source-status.mjs";
+import {
   classifyNaverProductType,
   extractProductId,
   findShoppingRank,
-  hasShoppingRankConfig,
   isAdItem,
   normalizeText,
-  SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
-  shoppingRankConfig,
   shoppingRankMessage,
-  shoppingRankSourceStatus,
 } from "./naver-shopping-rank.mjs";
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
@@ -680,12 +684,17 @@ async function listTrackers(request, ctx) {
   });
 }
 
-async function insertSnapshot(ctx, tracker, checkedAt, result, message, source = "naver_shopping_search_api") {
+export function buildProductRankSnapshotRecord(tracker, checkedAt, result, message) {
+  const source = normalizeText(result?.source) || "naver_shopping_results_collector";
   const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : {};
   const item = {
     ...safeResultItem,
     rankPolicy: "organic_only",
     adExcluded: true,
+    source,
+    rankEvidence: normalizeText(result?.rankEvidence) || "naver_shopping_organic_list",
+    collectionId: normalizeText(result?.collectionId) || null,
+    collectedAt: normalizeText(result?.collectedAt) || null,
     excludedAdCount: Number(result?.excludedAdCount || 0),
     ...(result?.trackingRankSource ? {
       trackingRankSource: result.trackingRankSource,
@@ -700,22 +709,31 @@ async function insertSnapshot(ctx, tracker, checkedAt, result, message, source =
       rankSelectionBasis: result.rankSelectionBasis,
     } : {}),
   };
+  return {
+    tracker_id: tracker.id,
+    checked_at: checkedAt,
+    collection_id: normalizeText(result?.collectionId) || null,
+    rank: result?.rank || null,
+    page: result?.page || null,
+    position: result?.position || null,
+    matched: Boolean(result?.matched),
+    checked_count: result?.checkedCount || null,
+    total: result?.total || null,
+    item,
+    top_items: sanitizeOrganicTrackingItems(result?.topItems),
+    message,
+    source,
+  };
+}
+
+async function insertSnapshot(ctx, tracker, checkedAt, result, message) {
+  const record = buildProductRankSnapshotRecord(tracker, checkedAt, result, message);
+  // collection_id is introduced by the local-worker migration. Keep the
+  // existing provider path compatible until that migration has been applied.
+  const { collection_id: _collectionId, ...legacyRecord } = record;
   const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_snapshots")
-    .insert({
-      tracker_id: tracker.id,
-      checked_at: checkedAt,
-      rank: result?.rank || null,
-      page: result?.page || null,
-      position: result?.position || null,
-      matched: Boolean(result?.matched),
-      checked_count: result?.checkedCount || null,
-      total: result?.total || null,
-      item,
-      top_items: sanitizeOrganicTrackingItems(result?.topItems),
-      message,
-      source,
-    })
+    .insert(legacyRecord)
     .select(SNAPSHOT_SELECT)
     .single();
 
@@ -750,11 +768,6 @@ function rankRetryAt(tracker, date = new Date()) {
   const retryCount = Math.max(0, Number(tracker.retry_count || 0));
   const delayMinutes = [5, 10, 20, 40, 80, 160, 320, 360][Math.min(retryCount, 7)];
   return new Date(date.getTime() + delayMinutes * 60 * 1000).toISOString();
-}
-
-export function isShoppingRankSourceUnavailable(value) {
-  const message = normalizeText(value).toLowerCase();
-  return /invalid search api|존재하지 않는 검색 api|endpoint[_ -]?removed|shopping api.{0,20}(?:ended|removed|종료)/i.test(message);
 }
 
 function canonicalTrackerProductId(tracker, result) {
@@ -843,7 +856,9 @@ export function selectRepresentativeTrackingRank(result = {}) {
     excludedAdCount: Math.max(Number(result?.excludedAdCount || 0), excludedInSelection),
     exactProductRank,
     relatedCatalogRank,
-    relatedCatalogProductId: relatedCatalog?.productId || null,
+    relatedCatalogProductId: normalizeText(relatedCatalog?.catalogId)
+      || normalizeText(relatedCatalog?.productId)
+      || null,
     relatedCatalogTitle: relatedCatalog?.title || null,
     relatedCatalogRelationBasis: relatedCatalog?.relationBasis || null,
     exactProductType: exactProductTypeInfo.productType || null,
@@ -938,10 +953,8 @@ async function loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt) {
 }
 
 function assertCompleteProductTrackingResult(result = {}) {
-  if (result.matched && positiveRank(result.rank)) return;
-
   const checkedCount = Math.max(0, Number(result.checkedCount || 0));
-  if (result.complete === true || checkedCount >= PRODUCT_RANK_TRACKER_MAX_RANK) return;
+  if (result.complete === true) return;
   if (result.partial === true || result.complete === false || checkedCount > 0) {
     throw new Error("shopping_rank_lookup_incomplete");
   }
@@ -959,9 +972,7 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
     : tracker.worst_rank;
   const lastError = compactErrorMessage(errorMessage);
 
-  let query = ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .update({
+  const updateRecord = {
       status: tracker.status || "active",
       last_checked_at: checkedAt,
       next_check_at: nextCheckAt,
@@ -977,7 +988,10 @@ async function updateTrackerAfterCheck(ctx, tracker, checkedAt, result, message,
       mall_name: tracker.mall_name || result?.exactItem?.mallName || result?.item?.mallName || null,
       product_title: tracker.product_title || result?.exactItem?.title || result?.item?.title || null,
       ...(leaseStartedAt ? { processing_started_at: null, processing_until: null } : {}),
-    })
+    };
+  let query = ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update(updateRecord)
     .eq("id", tracker.id);
 
   if (leaseStartedAt) query = query.eq("status", "active").eq("processing_started_at", leaseStartedAt);
@@ -1015,26 +1029,51 @@ async function updateTrackerAfterFailure(
   return data;
 }
 
+async function updateTrackerAfterPreservation(
+  ctx,
+  tracker,
+  message,
+  leaseStartedAt = "",
+  nextCheckAt = "",
+) {
+  let query = ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      next_check_at: nextCheckAt || nextRankCheckAt(new Date()),
+      last_message: message,
+      last_error: null,
+      retry_count: 0,
+      ...(leaseStartedAt ? { processing_started_at: null, processing_until: null } : {}),
+    })
+    .eq("id", tracker.id);
+
+  if (leaseStartedAt) query = query.eq("status", "active").eq("processing_started_at", leaseStartedAt);
+  const { data, error } = await query.select(TRACKER_SELECT).single();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function runTrackerCheck(ctx, tracker, options = {}) {
   const checkedAt = new Date().toISOString();
   const env = options.env ?? shoppingRankConfig();
   const findShoppingRankImpl = options.findShoppingRank || findShoppingRank;
 
   if (!hasShoppingRankConfig(env)) {
-    const message = "네이버 쇼핑 검색 API 연결을 확인한 뒤 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
+    const message = "N 쇼핑 순위 수집원 연결을 확인한 뒤 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
     const updated = await updateTrackerAfterFailure(
       ctx,
       tracker,
       checkedAt,
       message,
-      "shopping_api_not_configured",
+      "shopping_rank_source_not_configured",
       options.leaseStartedAt || ""
     );
     return {
       ok: false,
       tracker: updated,
       message,
-      error: "shopping_api_not_configured",
+      error: "shopping_rank_source_not_configured",
       errorCode: SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
       retryable: false,
       rankSourceReady: false,
@@ -1071,28 +1110,68 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
   } catch (error) {
     if (error?.code === "RANK_TRACKER_LEASE_LOST") throw error;
     const errorMessage = error?.message || "lookup_failed";
-    const sourceUnavailable = isShoppingRankSourceUnavailable(errorMessage);
+    const sourceFailure = shoppingCollectorFailureStatus(error);
+    const sourceUnavailable = isShoppingRankSourceUnavailable(error);
+    const coverageLimited = sourceFailure.status === "coverage_limited";
+    const sourceTerminal = sourceUnavailable
+      || sourceFailure.status === "unauthorized"
+      || sourceFailure.status === "misconfigured";
     const message = sourceUnavailable
       ? "네이버 공식 쇼핑 검색 종료로 검증 수집원을 전환 중입니다. 마지막 정상 순위와 30일 기록은 유지합니다."
+      : coverageLimited
+        ? "현재 검증 가능한 상위 순위 범위 밖입니다. 기존 정상 순위와 30일 기록을 유지하고 다음 주기에 다시 확인합니다."
+      : sourceFailure.status === "unauthorized"
+        ? "네이버 상품 순위 수집원 인증을 확인해야 합니다. 마지막 정상 순위와 30일 기록은 유지합니다."
+        : sourceFailure.status === "misconfigured"
+          ? "네이버 상품 순위 수집원 설정을 확인해야 합니다. 마지막 정상 순위와 30일 기록은 유지합니다."
       : "네이버 상품 순위 갱신에 실패해 자동 재시도합니다. 마지막 정상 순위는 유지합니다.";
-    const updated = await updateTrackerAfterFailure(
-      ctx,
-      tracker,
-      checkedAt,
-      message,
-      sourceUnavailable ? "shopping_rank_source_unavailable" : errorMessage,
-      options.leaseStartedAt || "",
-      sourceUnavailable ? nextRankCheckAt(new Date(checkedAt)) : "",
-    );
+    const errorCode = sourceUnavailable
+      ? "SHOPPING_RANK_SOURCE_UNAVAILABLE"
+      : coverageLimited
+        ? "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW"
+      : sourceFailure.status === "unauthorized"
+        ? "SHOPPING_RANK_PROVIDER_UNAUTHORIZED"
+        : sourceFailure.status === "misconfigured"
+          ? "SHOPPING_RANK_PROVIDER_MISCONFIGURED"
+          : "SHOPPING_RANK_LOOKUP_FAILED";
+    const exponentialRetryAt = rankRetryAt(tracker, new Date(checkedAt));
+    const providerRetryAt = Number(sourceFailure.retryAfterSeconds || 0) > 0
+      ? new Date(Date.parse(checkedAt) + (Number(sourceFailure.retryAfterSeconds) * 1000)).toISOString()
+      : "";
+    const retryAt = sourceTerminal || coverageLimited
+      ? nextRankCheckAt(new Date(checkedAt))
+      : (providerRetryAt && Date.parse(providerRetryAt) > Date.parse(exponentialRetryAt)
+        ? providerRetryAt
+        : exponentialRetryAt);
+    const updated = coverageLimited
+      ? await updateTrackerAfterPreservation(
+        ctx,
+        tracker,
+        message,
+        options.leaseStartedAt || "",
+        retryAt,
+      )
+      : await updateTrackerAfterFailure(
+        ctx,
+        tracker,
+        checkedAt,
+        message,
+        sourceTerminal ? errorCode.toLowerCase() : errorMessage,
+        options.leaseStartedAt || "",
+        retryAt,
+      );
     return {
       ok: false,
       tracker: updated,
       message,
-      error: sourceUnavailable ? "shopping_rank_source_unavailable" : errorMessage,
-      errorCode: sourceUnavailable ? "SHOPPING_RANK_SOURCE_UNAVAILABLE" : "SHOPPING_RANK_LOOKUP_FAILED",
-      retryable: !sourceUnavailable,
-      rankSourceReady: true,
+      error: coverageLimited ? null : (sourceTerminal ? errorCode.toLowerCase() : errorMessage),
+      errorCode,
+      retryable: !sourceTerminal && !coverageLimited,
+      retryAfter: sourceTerminal || coverageLimited ? 0 : Number(sourceFailure.retryAfterSeconds || 0),
+      rankSourceReady: !sourceTerminal,
       configured: true,
+      preserved: coverageLimited,
+      outcome: coverageLimited ? "preserved" : "failed",
     };
   }
 }
@@ -1254,7 +1333,7 @@ async function checkOne(request, ctx, body) {
     return json(request, {
       ok: false,
       ...rankSource,
-      message: "네이버 쇼핑 순위 수집원이 연결되지 않아 기존 순위와 30일 기록을 유지합니다.",
+      message: "네이버 쇼핑 순위 수집원이 준비되지 않아 기존 순위와 30일 기록을 유지합니다.",
     }, 503);
   }
 
@@ -1268,11 +1347,14 @@ async function checkOne(request, ctx, body) {
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
-    ok: checked.ok,
+    ok: checked.ok || checked.preserved === true,
     ...rankSource,
+    rankSourceReady: rankSource.rankSourceReady === true && checked.rankSourceReady !== false,
     ...(!checked.ok ? {
       errorCode: checked.errorCode || "SHOPPING_RANK_LOOKUP_FAILED",
       retryable: checked.retryable !== false,
+      retryAfter: Number(checked.retryAfter || 0),
+      preserved: checked.preserved === true,
     } : {}),
     message: checked.message,
     tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
@@ -1454,14 +1536,17 @@ async function syncDueTrackers(request, ctx, body, access) {
     agencyCode: access.agencyCode,
     limit: body.limit || process.env.MI_RANK_CRON_BATCH || 1,
   });
-  const ok = summary.configured === true && summary.failed === 0;
-  const sourceUnavailable = summary.configured !== true;
+  const sourceNotConfigured = summary.configured !== true;
+  const sourceUnavailable = summary.rankSourceReady === false;
+  const ok = !sourceUnavailable && summary.failed === 0;
   return json(request, {
     ok,
-    rankSourceReady: summary.configured === true,
+    rankSourceReady: summary.rankSourceReady === true,
     configured: summary.configured === true,
     ...(sourceUnavailable ? {
-      errorCode: SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
+      errorCode: sourceNotConfigured
+        ? SHOPPING_RANK_SOURCE_NOT_CONFIGURED
+        : (summary.errorCode || "SHOPPING_RANK_SOURCE_UNAVAILABLE"),
       retryable: false,
     } : (!ok ? {
       errorCode: "SHOPPING_RANK_LOOKUP_FAILED",
@@ -1501,7 +1586,12 @@ export async function claimDueTracker(ctx, tracker, nowIso) {
     throw error;
   }
 
-  return { claimed: Boolean(data), leaseSupported: true };
+  return {
+    claimed: Boolean(data),
+    leaseSupported: true,
+    leaseStartedAt: nowIso,
+    leaseUntil,
+  };
 }
 
 async function clearDueTrackerClaim(ctx, trackerId, leaseStartedAt) {
@@ -1579,6 +1669,8 @@ export async function runDueTrackers(ctx, options = {}) {
   if (error) throw error;
 
   const results = [];
+  const runTrackerCheckImpl = options.runTrackerCheck || runTrackerCheck;
+  let sourceFailureCode = "";
   for (const tracker of data || []) {
     // Claim rows before checking so overlapping cron calls do not refresh the same tracker.
     // Missing lease columns fail closed; readiness also verifies this schema contract.
@@ -1588,7 +1680,7 @@ export async function runDueTrackers(ctx, options = {}) {
     if (!claim.claimed) continue;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const result = await runTrackerCheck(ctx, tracker, {
+      const result = await runTrackerCheckImpl(ctx, tracker, {
         env,
         leaseStartedAt: claim.leaseSupported ? now : "",
       });
@@ -1598,6 +1690,10 @@ export async function runDueTrackers(ctx, options = {}) {
         if (!clearResult.ok) result.leaseClearError = clearResult.message;
       }
       results.push(result);
+      if (result?.rankSourceReady === false) {
+        sourceFailureCode = String(result?.errorCode || "SHOPPING_RANK_SOURCE_UNAVAILABLE");
+        break;
+      }
     } catch (error) {
       if (claim.leaseSupported) {
         // eslint-disable-next-line no-await-in-loop
@@ -1613,17 +1709,24 @@ export async function runDueTrackers(ctx, options = {}) {
   }
 
   const remaining = await countDueTrackers(ctx, now, options.agencyCode);
+  const preserved = results.filter((item) => item?.preserved === true).length;
+  const failed = results.filter((item) => !item?.ok && item?.preserved !== true).length;
 
   return {
     now,
     checked: results.length,
     succeeded: results.filter((item) => item.ok).length,
-    failed: results.filter((item) => !item.ok).length,
+    preserved,
+    failed,
     remaining,
     remainingCount: remaining,
     drained: remaining === 0,
     configured,
-    rankSourceReady: configured,
+    rankSourceReady: configured && !sourceFailureCode,
+    ...(sourceFailureCode ? {
+      errorCode: sourceFailureCode,
+      retryable: false,
+    } : {}),
     results: results.map((item) => ({
       ok: item.ok,
       trackerId: item.tracker?.id,
@@ -1631,6 +1734,8 @@ export async function runDueTrackers(ctx, options = {}) {
       rank: item.tracker?.current_rank,
       message: item.message,
       errorCode: item.errorCode,
+      preserved: item.preserved === true,
+      outcome: item.preserved === true ? "preserved" : (item.ok ? "updated" : "failed"),
       retryable: item.retryable,
     })),
   };

@@ -1,13 +1,11 @@
 name: Naver Rank Tracking
 
 on:
-  push:
-    branches:
-      - main
   schedule:
     # The server only refreshes trackers whose next_check_at is due.
-    # KST 09:00/15:00 rescue window: retry for 15 minutes so GitHub schedule delays are less likely to miss the slot.
-    - cron: "0,5,10,15 0,6 * * *"
+    # KST 09:05/15:05 worker-first rescue window: the signed local worker gets
+    # the exact slot first, then server fallback retries without racing its lease.
+    - cron: "5,10,15 0,6 * * *"
     # Hourly catch-up keeps due trackers moving even when the exact slot is delayed or skipped.
     - cron: "37 * * * *"
   workflow_dispatch:
@@ -21,7 +19,7 @@ permissions: {}
 jobs:
   refresh-ranks:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
     steps:
@@ -35,19 +33,15 @@ jobs:
       - name: Refresh due Naver rank trackers
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME:-}" = "push" ]; then
-            echo "Push-triggered deploy backfill: waiting briefly for production deployment."
-            sleep 90
-          fi
           node --input-type=module <<'NODE'
           const endpoint = new URL("https://insight.momentlabs.co.kr/api/naver-rank-cron");
           const secret = process.env.MI_RANK_CRON_SECRET;
-          // The server still checks trackers sequentially. Five rows per request reduces
-          // transport overhead while the 20-batch cap can drain 100 due trackers.
-          const batchSize = 5;
-          const maxBatches = 20;
-          const requestTimeoutMs = 240000;
-          const totals = { batches: 0, checked: 0, succeeded: 0, failed: 0 };
+          // One row every eight seconds stays within the verified mobile-window
+          // collector budget while allowing one run to drain 100 due trackers.
+          const batchSize = 1;
+          const maxBatches = 100;
+          const requestTimeoutMs = 285000;
+          const totals = { batches: 0, checked: 0, succeeded: 0, preserved: 0, failed: 0 };
 
           endpoint.searchParams.set("limit", String(batchSize));
           endpoint.searchParams.set("mode", "drain");
@@ -124,13 +118,14 @@ jobs:
             const safe = {
               checked: count(payload.summary.checked, "summary.checked"),
               succeeded: count(payload.summary.succeeded, "summary.succeeded"),
+              preserved: count(payload.summary.preserved, "summary.preserved"),
               failed: count(payload.summary.failed, "summary.failed"),
               remaining: count(payload.summary.remaining, "summary.remaining"),
               drained: flag(payload.summary.drained, "summary.drained"),
               configured: flag(payload.summary.configured, "summary.configured"),
               now: typeof payload.summary.now === "string" ? payload.summary.now : "",
             };
-            if (safe.checked !== safe.succeeded + safe.failed) {
+            if (safe.checked !== safe.succeeded + safe.preserved + safe.failed) {
               throw new Error("rank cron summary counts are inconsistent");
             }
             if (!safe.configured) {
@@ -151,6 +146,7 @@ jobs:
             totals.batches += 1;
             totals.checked += safe.checked;
             totals.succeeded += safe.succeeded;
+            totals.preserved += safe.preserved;
             totals.failed += safe.failed;
             console.log("Naver rank cron batch " + JSON.stringify({ batch, ...safe }));
 
@@ -158,7 +154,7 @@ jobs:
               drained = true;
               break;
             }
-            if (batch < maxBatches) await sleep(1000);
+            if (batch < maxBatches) await sleep(8000);
           }
 
           console.log("Naver rank cron window " + JSON.stringify({ ...totals, drained }));

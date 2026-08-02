@@ -1,0 +1,149 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  LOCAL_WORKER_ORGANIC_LIMIT,
+  localWorkerCollectionKey,
+  localWorkerRankRequest,
+  validateLocalWorkerJob,
+  validateStrictLocalWorkerWindow,
+} from "./local-worker-contract.mjs";
+
+const NOW = Date.parse("2026-08-01T06:00:00.000Z");
+const TRACKER_ONE = "123e4567-e89b-42d3-a456-426614174000";
+const TRACKER_TWO = "123e4567-e89b-42d3-a456-426614174001";
+
+function job(overrides = {}) {
+  return {
+    keyword: "온열찜질기",
+    limit: 300,
+    claims: [{
+      trackerId: TRACKER_ONE,
+      leaseStartedAt: "2026-08-01T06:00:00.000Z",
+      leaseUntil: "2026-08-01T06:12:00.000Z",
+    }],
+    ...overrides,
+  };
+}
+
+function item(index) {
+  return {
+    organicRank: index,
+    isOrganic: true,
+    isAd: false,
+    productId: String(1000000000 + index),
+    sellerProductId: String(2000000000 + index),
+    title: `온열찜질기 ${index}`,
+    link: `https://smartstore.naver.com/example/products/${2000000000 + index}`,
+    productType: "2",
+  };
+}
+
+function windowFixture(overrides = {}) {
+  const items = overrides.items || Array.from({ length: LOCAL_WORKER_ORGANIC_LIMIT }, (_, index) => item(index + 1));
+  return {
+    ok: true,
+    schemaVersion: "mi.naver-shopping-organic-window.v1",
+    keyword: "온열찜질기",
+    source: "naver_shopping_results_collector",
+    rankEvidence: "naver_shopping_organic_list",
+    collectionId: "pw-1785564000000-fixture000000000001",
+    collectedAt: "2026-08-01T06:00:00.000Z",
+    complete: true,
+    partial: false,
+    sourceExhausted: false,
+    marketTotal: null,
+    marketTotalStatus: "unavailable",
+    checkedCount: items.length,
+    rawCount: items.length,
+    excludedAdCount: 0,
+    items,
+    ...overrides,
+  };
+}
+
+test("accepts only a 300-rank canonical keyword job with unique leases", () => {
+  const normalized = validateLocalWorkerJob(job({
+    claims: [
+      job().claims[0],
+      {
+        trackerId: TRACKER_TWO,
+        leaseStartedAt: "2026-08-01T06:00:00.000Z",
+        leaseUntil: "2026-08-01T06:12:00.000Z",
+      },
+    ],
+  }));
+  assert.equal(normalized.limit, 300);
+  assert.equal(normalized.claims.length, 2);
+});
+
+test("rejects non-300 jobs, duplicate tracker claims and invalid leases", () => {
+  assert.throws(() => validateLocalWorkerJob(job({ limit: 100 })), /local_worker_job_invalid/);
+  assert.throws(() => validateLocalWorkerJob(job({ claims: [job().claims[0], job().claims[0]] })), /local_worker_lease_invalid/);
+  assert.throws(() => validateLocalWorkerJob(job({ claims: [{ ...job().claims[0], leaseUntil: "2026-08-01T05:59:00.000Z" }] })), /local_worker_lease_invalid/);
+  assert.throws(() => validateLocalWorkerJob(job(), {
+    requireActiveLease: true,
+    nowMs: Date.parse("2026-08-01T06:12:00.001Z"),
+  }), /local_worker_lease_invalid/);
+});
+
+test("builds a strict organic-only 300 request", () => {
+  assert.deepEqual(localWorkerRankRequest(job(), NOW, 90_000), {
+    schemaVersion: "mi.naver-shopping-organic-window.v1",
+    keyword: "온열찜질기",
+    limit: 300,
+    sort: "relevance",
+    rankPolicy: "organic_only",
+    deadlineAt: "2026-08-01T06:01:30.000Z",
+  });
+});
+
+test("accepts a fresh, complete and sequential 300-item organic window", () => {
+  const result = validateStrictLocalWorkerWindow(windowFixture(), {
+    keyword: "온열찜질기",
+    nowMs: NOW,
+  });
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.items[299].organicRank, 300);
+});
+
+test("rejects a source-exhausted short window even when the base collector marks it complete", () => {
+  const items = Array.from({ length: 299 }, (_, index) => item(index + 1));
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items,
+    checkedCount: 299,
+    rawCount: 299,
+    sourceExhausted: true,
+  }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_not_300/);
+});
+
+test("rejects partial, advertised, duplicate, rank-gap, keyword and stale evidence", () => {
+  const cases = [
+    windowFixture({ complete: false, partial: true }),
+    windowFixture({ items: [
+      { ...item(1), isAd: true, isOrganic: false },
+      ...Array.from({ length: 299 }, (_, index) => item(index + 2)),
+    ] }),
+    windowFixture({ items: [item(1), item(1), ...Array.from({ length: 298 }, (_, index) => item(index + 3))] }),
+    windowFixture({ items: [item(1), { ...item(2), organicRank: 3 }, ...Array.from({ length: 298 }, (_, index) => item(index + 3))] }),
+    windowFixture({ keyword: "다른 키워드" }),
+  ];
+  for (const candidate of cases) {
+    assert.throws(() => validateStrictLocalWorkerWindow(candidate, {
+      keyword: "온열찜질기",
+      nowMs: NOW,
+    }));
+  }
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    collectedAt: "2026-08-01T05:40:00.000Z",
+  }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_stale/);
+});
+
+test("creates deterministic tracker plus collection idempotency keys", () => {
+  const left = localWorkerCollectionKey(TRACKER_ONE, "pw-1785564000000-fixture000000000001");
+  const right = localWorkerCollectionKey(TRACKER_ONE, "pw-1785564000000-fixture000000000001");
+  const other = localWorkerCollectionKey(TRACKER_TWO, "pw-1785564000000-fixture000000000001");
+  assert.equal(left, right);
+  assert.notEqual(left, other);
+  assert.match(left, /^[a-f0-9]{64}$/u);
+});

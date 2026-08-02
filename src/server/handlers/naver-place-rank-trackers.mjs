@@ -1245,6 +1245,9 @@ function naverLocalItemMatchesTracker(tracker, item) {
 async function lookupNaverLocalSearchRank(config, tracker) {
   const targetName = normalizeText(tracker.place_name);
   const targetId = normalizeText(tracker.place_id);
+  const localSearchSource = resolveNaverApiTransport(config.naverApi, "search") === "hub"
+    ? "naver_api_hub_local"
+    : "naver_openapi_local";
   const [blogCount, monthlySearchCount] = await Promise.all([
     lookupNaverBlogCount(config, tracker.keyword),
     lookupMonthlySearchCount(config, tracker.keyword),
@@ -1265,7 +1268,7 @@ async function lookupNaverLocalSearchRank(config, tracker) {
       },
       topPlaces: [],
       message: "플레이스 URL에서 장소 식별값을 자동 확인하지 못했습니다.",
-      source: "naver_openapi_local",
+      source: localSearchSource,
     };
   }
 
@@ -1323,7 +1326,7 @@ async function lookupNaverLocalSearchRank(config, tracker) {
     topPlaces: items,
     officialPlaceIdOnly,
     officialLocalLimit: true,
-    source: "naver_openapi_local",
+    source: localSearchSource,
     message: matchedPlace
       ? "네이버 공식 검색 API 상위 " + items.length + "개 안에서 " + (matchedIndex + 1) + "위로 확인되었습니다."
       : officialPlaceIdOnly

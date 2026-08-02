@@ -1,11 +1,69 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import naverKeywordHandler, { keywordMarketIndicators, shoppingAgeProfile } from "./naver-keyword.mjs";
+import naverKeywordHandler, {
+  buildShoppingProfile,
+  buildSourceStatus,
+  keywordMarketIndicators,
+  shoppingAgeProfile,
+} from "./naver-keyword.mjs";
+
+function shoppingWindow(keyword, count = 100, marketTotal = count) {
+  return {
+    ok: true,
+    schemaVersion: "mi.naver-shopping-organic-window.v1",
+    source: "naver_shopping_results_collector",
+    rankEvidence: "naver_shopping_organic_list",
+    keyword,
+    collectionId: `keyword-${keyword}`,
+    collectedAt: "2026-08-01T00:00:00.000Z",
+    complete: true,
+    partial: false,
+    sourceExhausted: count < 100,
+    marketTotal,
+    marketTotalStatus: marketTotal == null ? "unavailable" : "verified",
+    checkedCount: count,
+    rawCount: count,
+    excludedAdCount: 0,
+    items: Array.from({ length: count }, (_, index) => ({
+      organicRank: index + 1,
+      isAd: false,
+      isOrganic: true,
+      productId: String(70000000000 + index),
+      title: `테스트 상품 ${index}`,
+      link: `https://smartstore.naver.com/test/products/${80000000000 + index}`,
+      category1: "생활/건강",
+      lprice: String(10000 + index),
+      mallName: `테스트몰${index}`,
+    })),
+  };
+}
 
 function agePayload(data) {
   return { results: [{ data }] };
 }
+
+test("쇼핑 전체 상품수가 없어도 오가닉 표본을 유지하고 상품수만 부분 상태로 표시한다", () => {
+  const profile = buildShoppingProfile(shoppingWindow("상품수없는키워드", 100, null));
+  const status = buildSourceStatus({
+    env: {
+      naverApi: {},
+      shoppingResults: { mode: "provider", providerUrl: "https://collector.example/rank", providerKey: "collector-key" },
+    },
+    searchAd: { hasExactMatch: true },
+    datalabProfile: null,
+    datalabError: null,
+    shoppingProfile: profile,
+    shoppingError: null,
+    includeProfile: false,
+  });
+
+  assert.equal(profile.total, null);
+  assert.equal(profile.totalStatus, "unavailable");
+  assert.equal(profile.sampleCount, 100);
+  assert.equal(status.shopping.status, "partial");
+  assert.match(status.shopping.label, /상품수 확인 불가/);
+});
 
 test("연령 비중은 비교 가능한 최신 완료 월만 사용하고 진행 중인 월은 제외한다", () => {
   const profile = shoppingAgeProfile(agePayload([
@@ -155,14 +213,15 @@ test("검색수요와 상품 등록 규모가 함께 커질 때 경쟁강도가 
   assert.ok(representative.competition.score > niche.competition.score);
 });
 
-test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지 않는다", async () => {
+test("키워드 핸들러는 Hub DataLab과 검증 쇼핑 수집기를 함께 사용하고 종료된 쇼핑 API를 호출하지 않는다", async () => {
   const names = [
     "MI_KEYWORD_API_ENABLED",
     "NAVER_SEARCHAD_API_KEY",
     "NAVER_SEARCHAD_SECRET_KEY",
     "NAVER_SEARCHAD_CUSTOMER_ID",
-    "NAVER_OPENAPI_CLIENT_ID",
-    "NAVER_OPENAPI_CLIENT_SECRET",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
+    "NAVER_SHOPPING_RANK_MODE",
     "NAVER_DATALAB_CLIENT_ID",
     "NAVER_DATALAB_CLIENT_SECRET",
     "NAVER_API_HUB_CLIENT_ID",
@@ -176,8 +235,9 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     NAVER_SEARCHAD_API_KEY: "search-ad-key",
     NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
     NAVER_SEARCHAD_CUSTOMER_ID: "123456",
-    NAVER_OPENAPI_CLIENT_ID: "legacy-shopping-id",
-    NAVER_OPENAPI_CLIENT_SECRET: "legacy-shopping-secret",
+    NAVER_SHOPPING_RANK_API_URL: "https://collector.example/naver-shopping",
+    NAVER_SHOPPING_RANK_API_KEY: "collector-key",
+    NAVER_SHOPPING_RANK_MODE: "provider",
     NAVER_API_HUB_CLIENT_ID: "hub-id",
     NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
     NAVER_API_HUB_MODE: "auto",
@@ -187,7 +247,7 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
   const calls = [];
   globalThis.fetch = async (url, options = {}) => {
     const href = String(url);
-    calls.push({ href, headers: options.headers || {}, body: options.body || "" });
+    calls.push({ href, method: options.method || "GET", headers: options.headers || {}, body: options.body || "" });
     if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
       return new Response(JSON.stringify({
         keywordList: [{
@@ -198,11 +258,8 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
         }],
       }), { status: 200 });
     }
-    if (href.startsWith("https://openapi.naver.com/v1/search/shop.json")) {
-      return new Response(JSON.stringify({
-        total: 100,
-        items: [{ category1: "생활/건강", lprice: "10000", mallName: "테스트몰" }],
-      }), { status: 200 });
+    if (href === "https://collector.example/naver-shopping") {
+      return new Response(JSON.stringify(shoppingWindow("허브전환검증", 100, 100)), { status: 200 });
     }
     if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
       return new Response(JSON.stringify({
@@ -228,18 +285,31 @@ test("키워드 핸들러는 Hub DataLab과 legacy 쇼핑 검색을 혼동하지
     assert.equal(body.ok, true);
     assert.equal(body.source.migratedApiProvider, "hub");
     const hubCall = calls.find((call) => call.href.includes("/search-trend/v1/search"));
-    const shoppingCall = calls.find((call) => call.href.includes("/v1/search/shop.json"));
+    const shoppingCall = calls.find((call) => call.href === "https://collector.example/naver-shopping");
+    const legacyShoppingCalls = calls.filter((call) => call.href.includes("/v1/search/shop.json"));
     const hubRequest = JSON.parse(hubCall.body);
+    const shoppingRequest = JSON.parse(shoppingCall.body);
     const startParts = hubRequest.startDate.split("-").map(Number);
     const endParts = hubRequest.endDate.split("-").map(Number);
     const requestedMonths = ((endParts[0] - startParts[0]) * 12) + endParts[1] - startParts[1];
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY-ID"], "hub-id");
     assert.equal(hubCall.headers["X-NCP-APIGW-API-KEY"], "hub-secret");
-    assert.ok(requestedMonths >= 36 && requestedMonths <= 37);
+    // The interval is inclusive: a 35-month index difference contains 36 monthly buckets.
+    assert.ok(requestedMonths >= 35 && requestedMonths <= 37);
     assert.equal(body.chartData.series.length, 36);
     assert.equal(body.chartData.seriesPeriods.length, 36);
-    assert.equal(shoppingCall.headers["X-Naver-Client-Id"], "legacy-shopping-id");
-    assert.equal(shoppingCall.headers["X-Naver-Client-Secret"], "legacy-shopping-secret");
+    assert.equal(shoppingCall.method, "POST");
+    assert.equal(shoppingCall.headers.authorization, "Bearer collector-key");
+    assert.equal(shoppingCall.headers["content-type"], "application/json");
+    assert.equal(shoppingRequest.keyword, "허브전환검증");
+    assert.equal(shoppingRequest.schemaVersion, "mi.naver-shopping-organic-window.v1");
+    assert.equal(shoppingRequest.limit, 100);
+    assert.equal(shoppingRequest.sort, "relevance");
+    assert.equal(shoppingRequest.rankPolicy, "organic_only");
+    assert.equal(body.source.shopping, "naver_shopping_results_collector");
+    assert.equal(body.sourceStatus.shopping.status, "ok");
+    assert.equal(body.chartData.shopping.total, 100);
+    assert.equal(legacyShoppingCalls.length, 0);
   } finally {
     globalThis.fetch = originalFetch;
     Object.entries(previous).forEach(([name, value]) => {
@@ -255,8 +325,9 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
     "NAVER_SEARCHAD_API_KEY",
     "NAVER_SEARCHAD_SECRET_KEY",
     "NAVER_SEARCHAD_CUSTOMER_ID",
-    "NAVER_OPENAPI_CLIENT_ID",
-    "NAVER_OPENAPI_CLIENT_SECRET",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
+    "NAVER_SHOPPING_RANK_MODE",
     "NAVER_DATALAB_CLIENT_ID",
     "NAVER_DATALAB_CLIENT_SECRET",
     "NAVER_API_HUB_CLIENT_ID",
@@ -270,8 +341,9 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
     NAVER_SEARCHAD_API_KEY: "search-ad-key",
     NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
     NAVER_SEARCHAD_CUSTOMER_ID: "123456",
-    NAVER_OPENAPI_CLIENT_ID: "legacy-shopping-id",
-    NAVER_OPENAPI_CLIENT_SECRET: "legacy-shopping-secret",
+    NAVER_SHOPPING_RANK_API_URL: "https://collector.example/naver-shopping-retry",
+    NAVER_SHOPPING_RANK_API_KEY: "collector-key",
+    NAVER_SHOPPING_RANK_MODE: "provider",
     NAVER_API_HUB_CLIENT_ID: "hub-id",
     NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
     NAVER_API_HUB_MODE: "hub",
@@ -279,8 +351,10 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
   delete process.env.NAVER_DATALAB_CLIENT_ID;
   delete process.env.NAVER_DATALAB_CLIENT_SECRET;
   let hubCalls = 0;
+  let collectorCalls = 0;
+  let legacyShoppingCalls = 0;
 
-  globalThis.fetch = async (url) => {
+  globalThis.fetch = async (url, options = {}) => {
     const href = String(url);
     if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
       return new Response(JSON.stringify({
@@ -292,11 +366,23 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
         }],
       }), { status: 200 });
     }
-    if (href.startsWith("https://openapi.naver.com/v1/search/shop.json")) {
-      return new Response(JSON.stringify({
-        total: 120,
-        items: [{ category1: "생활/건강", lprice: "12000", mallName: "테스트몰" }],
-      }), { status: 200 });
+    if (href.includes("/v1/search/shop.json")) {
+      legacyShoppingCalls += 1;
+      return new Response(JSON.stringify({ error: { message: "legacy shopping endpoint must not be called" } }), { status: 500 });
+    }
+    if (href === "https://collector.example/naver-shopping-retry") {
+      collectorCalls += 1;
+      assert.equal(options.method, "POST");
+      assert.equal(options.headers.authorization, "Bearer collector-key");
+      assert.equal(options.headers["content-type"], "application/json");
+      const shoppingRequest = JSON.parse(options.body);
+      assert.equal(shoppingRequest.schemaVersion, "mi.naver-shopping-organic-window.v1");
+      assert.equal(shoppingRequest.keyword, "허브일시복구검증");
+      assert.equal(shoppingRequest.limit, 100);
+      assert.equal(shoppingRequest.sort, "relevance");
+      assert.equal(shoppingRequest.rankPolicy, "organic_only");
+      assert.ok(Date.parse(shoppingRequest.deadlineAt));
+      return new Response(JSON.stringify(shoppingWindow("허브일시복구검증", 100, 120)), { status: 200 });
     }
     if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
       hubCalls += 1;
@@ -323,6 +409,79 @@ test("Hub DataLab의 일시적인 503은 한 번만 재시도하고 정상 데�
     assert.equal(body.source.migratedApiProvider, "hub");
     assert.equal(body.sourceStatus.trend.status, "ok");
     assert.equal(hubCalls, 2);
+    assert.equal(collectorCalls, 1);
+    assert.equal(legacyShoppingCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries(previous).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+});
+
+test("쇼핑 수집원이 없으면 종료 API로 우회하지 않고 지원 API 결과만 안전하게 반환한다", async () => {
+  const names = [
+    "MI_KEYWORD_API_ENABLED",
+    "NAVER_SEARCHAD_API_KEY",
+    "NAVER_SEARCHAD_SECRET_KEY",
+    "NAVER_SEARCHAD_CUSTOMER_ID",
+    "NAVER_API_HUB_CLIENT_ID",
+    "NAVER_API_HUB_CLIENT_SECRET",
+    "NAVER_API_HUB_MODE",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
+    "NAVER_SHOPPING_RANK_MODE",
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    MI_KEYWORD_API_ENABLED: "true",
+    NAVER_SEARCHAD_API_KEY: "search-ad-key",
+    NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
+    NAVER_SEARCHAD_CUSTOMER_ID: "123456",
+    NAVER_API_HUB_CLIENT_ID: "hub-id",
+    NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
+    NAVER_API_HUB_MODE: "hub",
+  });
+  delete process.env.NAVER_SHOPPING_RANK_API_URL;
+  delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+  delete process.env.NAVER_SHOPPING_RANK_MODE;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
+      return new Response(JSON.stringify({
+        keywordList: [{
+          relKeyword: "수집원미연결검증",
+          monthlyPcQcCnt: 800,
+          monthlyMobileQcCnt: 1600,
+          compIdx: "중간",
+        }],
+      }), { status: 200 });
+    }
+    if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
+      return new Response(JSON.stringify({
+        results: [{ data: [{ period: "2026-06-01", ratio: 100 }] }],
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
+  };
+
+  try {
+    const response = await naverKeywordHandler.fetch(new Request(
+      "http://127.0.0.1/api/naver-keyword?keyword=%EC%88%98%EC%A7%91%EC%9B%90%EB%AF%B8%EC%97%B0%EA%B2%B0%EA%B2%80%EC%A6%9D&profile=trend",
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.source.migratedApiProvider, "hub");
+    assert.equal(body.sourceStatus.shopping.status, "not_configured");
+    assert.equal(body.chartData.shopping, null);
+    assert.ok(calls.every((href) => !href.includes("/v1/search/shop.json")));
+    assert.ok(calls.every((href) => !href.includes("collector.example")));
   } finally {
     globalThis.fetch = originalFetch;
     Object.entries(previous).forEach(([name, value]) => {

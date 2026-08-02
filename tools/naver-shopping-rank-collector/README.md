@@ -1,60 +1,44 @@
-# Moment N Shopping Organic Rank Collector
+# Moment N Shopping Local Collection Engine
 
-This is an isolated Playwright collector for one atomic N Shopping organic-rank
-window. It fails closed whenever Naver blocks access or the full requested
-window cannot be proven.
+This package is the local collection engine used by Moment Insight's signed
+N Shopping worker. It is not a public HTTP service, a Render service, or a
+container deployment target.
 
 ## Safety contract
 
-- Node.js 20 or newer.
-- `POST /rank/naver-shopping` requires a Bearer secret.
-- Request/response `schemaVersion`: `mi.naver-shopping-organic-window.v1`.
-- One response represents one immutable collection (`collectionId`,
-  `collectedAt`) rather than stitched page calls.
-- Only `naver_shopping_results_collector` with
-  `naver_shopping_organic_list` evidence is accepted.
-- Incomplete, malformed, mixed-source, or advertisement-contaminated windows
-  are rejected. No rank is fabricated or saved from them.
-- Rank coverage and the optional market-total capability are independent.
-  `marketTotalStatus=verified` carries a proven integer total; otherwise the
-  response keeps the complete rank window with `marketTotal=null` and
-  `marketTotalStatus=unavailable` rather than inventing a product count.
-- Responses use `Cache-Control: no-store`; CORS is intentionally not enabled.
-- `/health` is process liveness. `/ready` is `200` only when the secret and a
-  configured, verified provider adapter are both present.
+- Node.js 20 or newer with the exact pinned Playwright dependency.
+- Request/response schema: `mi.naver-shopping-organic-window.v1`.
+- One immutable `collectionId` and `collectedAt` must contain the complete,
+  contiguous organic rank window.
+- Exactly 300 rows are required for the production local-worker submit path.
+- Explicit ads, duplicate identities, rank gaps, mixed evidence, stale data,
+  and partial pages fail closed without changing the stored rank or history.
+- `marketTotal` is optional and never substitutes for organic rank evidence.
+- Only the fixed dedicated profile under
+  `$HOME/Library/Application Support/MomentInsight/NaverShoppingProfile` is
+  accepted. Personal Chrome profiles and arbitrary paths are rejected.
+- The user completes Naver authentication or security confirmation directly in
+  the visible browser. The code never reads passwords, exports cookies or
+  storage state, or automates CAPTCHA solving.
 
-## Playwright provider
+## Runtime ownership
 
-Set `NAVER_SHOPPING_PROVIDER_MODE=playwright`. The provider keeps one browser,
-opens an isolated context per job, serializes collection with a bounded queue,
-and coalesces/cache-reuses the same keyword window. It constructs only the
-allow-listed `https://search.shopping.naver.com/search/all` relevance URL.
-Headless collection uses Playwright's official `chromium` channel (the current
-Chromium headless implementation) while retaining a fresh anonymous context for
-every job. It does not inject credentials, stealth patches, fingerprint
-spoofing, or challenge-bypass behavior.
+The root worker script `scripts/naver-shopping-local-worker.mjs` validates the
+profile before claiming a live job. It submits results to the application with
+HMAC, a bounded timestamp and a one-time nonce. The server commits the tracker
+and snapshot through service-role-only atomic RPCs.
 
-Before assigning `organicRank`, it removes explicit advertisements and rejects
-duplicate identities. HTTP 418/429, CAPTCHA, login redirects, selector drift,
-deadline expiry and partial coverage are typed failures.
+The server-side mobile fallback remains independent and can verify exact hits
+only inside its contiguous top window. It never turns a miss outside that
+window into a confirmed not-found result.
 
-Queue capacity and queued-caller deadline failures are request-local and do not
-invalidate an already verified provider. Live Naver/source failures still
-invalidate readiness immediately.
-
-At startup the provider runs a bounded live canary. `/ready` stays `503` until
-that canary produces a complete response that passes the same contract used by
-the application. A green process `/health` is therefore never treated as proof
-that live ranks can be collected.
-
-## Local verification
+## Verification
 
 ```bash
 npm run check
 npm test
 ```
 
-## Container
-
-The Docker image uses the matching Playwright Chromium image, runs as the
-non-root `pwuser`, and exposes port `8798`.
+A successful unit test is not live 300-rank proof. Production proof requires a
+recent `pw-*` snapshot with `checked_count=300` and the same collection ID for
+all tracker updates produced from that keyword window.

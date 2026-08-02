@@ -13,6 +13,9 @@ const files = {
   productRank: "src/server/handlers/naver-rank-trackers.mjs",
   placeRank: "src/server/handlers/naver-place-rank-trackers.mjs",
   adminApi: "src/server/handlers/admin-api.mjs",
+  localWorkerAuth: "src/server/local-worker-auth.mjs",
+  localWorkerHandler: "src/server/handlers/naver-shopping-local-worker.mjs",
+  localWorkerContract: "src/server/naver-shopping/local-worker-contract.mjs",
   migration: "supabase/migrations/20260719090000_code_session_rate_limits.sql",
 };
 
@@ -84,12 +87,24 @@ const clientPlaceRequest = functionBlock(source.clientPage, "requestPlaceTracker
 
 const checks = [
   {
-    name: "all business APIs pass through the central session and body-size gate",
-    ok: source.index.includes("const bounded = await boundedApiRequest(request)")
+    name: "browser APIs use sessions and the bounded machine worker uses HMAC plus nonce",
+    ok: source.index.includes("const bounded = await boundedApiRequest(request, {")
+      && source.index.includes("maxBytes: requestPath === LOCAL_WORKER_ENDPOINT_PATH")
+      && source.index.includes("LOCAL_WORKER_BODY_MAX_BYTES")
+      && source.index.includes('dispatch("naverShoppingLocalWorker", bounded.request)')
       && source.index.includes("const authorized = await authorizeCodeSession(bounded.request)")
       && source.index.includes("routeRequest(authorized.request)")
+      && source.index.indexOf("const bounded = await boundedApiRequest")
+        < source.index.indexOf('dispatch("naverShoppingLocalWorker", bounded.request)')
+      && source.index.indexOf('dispatch("naverShoppingLocalWorker", bounded.request)')
+        < source.index.indexOf("const authorized = await authorizeCodeSession")
+      && source.localWorkerHandler.includes("verifyLocalWorkerSignature")
+      && source.localWorkerHandler.includes("mi_consume_naver_shopping_worker_nonce")
+      && source.localWorkerAuth.includes('createHmac("sha256"')
+      && source.localWorkerAuth.includes("timingSafeEqual")
+      && source.localWorkerContract.includes("LOCAL_WORKER_BODY_MAX_BYTES")
       && source.index.includes('url.pathname === "/api/session"'),
-    file: files.index,
+    file: `${files.index}, ${files.localWorkerAuth}, ${files.localWorkerHandler}, ${files.localWorkerContract}`,
   },
   {
     name: "session authorization separates revocation from temporary validation outages",

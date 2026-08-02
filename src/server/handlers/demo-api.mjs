@@ -442,7 +442,7 @@ export default {
     const data = Object.fromEntries(entries.map(([key, result]) => [key, result.data]));
 
     if (!data.client) {
-      return json({ ok: false, message: "데모 광고주 데이터가 없습니다. npm run seed:demo를 먼저 실행하세요." }, 404);
+      return json({ ok: false, message: "데모 광고주 데이터가 없습니다. 비운영 환경에서 supabase/seed.sql 선택 적용 여부를 확인하세요." }, 404);
     }
 
     return json({

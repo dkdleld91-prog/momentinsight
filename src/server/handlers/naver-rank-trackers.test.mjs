@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   claimDueTracker,
   handleRankTrackersRequest,
-  isShoppingRankSourceUnavailable,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
   requestAgencyCode,
@@ -14,11 +13,19 @@ import {
   verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
 import {
-  findShoppingRank,
   hasShoppingRankConfig,
-  shoppingProviderPageCache,
+  isShoppingCollectorUnavailable,
+  isShoppingRankSourceUnavailable,
   shoppingRankSourceStatus,
-  trustedCollectorPage,
+} from "../naver-shopping/source-status.mjs";
+import {
+  buildRankTarget,
+  findShoppingRank,
+  findShoppingRankFromWindow,
+  isAdItem,
+  NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA,
+  shoppingProviderPageCache,
+  trustedCollectorWindow,
 } from "./naver-shopping-rank.mjs";
 
 const TRACKERS = "naver_rank_trackers";
@@ -28,6 +35,7 @@ const LEGACY_ENV = {
   openapiClientSecret: "test-client-secret",
 };
 const COLLECTOR_ENV = {
+  mode: "provider",
   providerUrl: "https://collector.example/rank",
   providerKey: "collector-key",
 };
@@ -35,8 +43,10 @@ const COLLECTOR_ENV = {
 async function withoutShoppingCollector(callback) {
   const previousUrl = process.env.NAVER_SHOPPING_RANK_API_URL;
   const previousKey = process.env.NAVER_SHOPPING_RANK_API_KEY;
+  const previousMode = process.env.NAVER_SHOPPING_RANK_MODE;
   delete process.env.NAVER_SHOPPING_RANK_API_URL;
   delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+  delete process.env.NAVER_SHOPPING_RANK_MODE;
   try {
     return await callback();
   } finally {
@@ -44,19 +54,55 @@ async function withoutShoppingCollector(callback) {
     else process.env.NAVER_SHOPPING_RANK_API_URL = previousUrl;
     if (previousKey === undefined) delete process.env.NAVER_SHOPPING_RANK_API_KEY;
     else process.env.NAVER_SHOPPING_RANK_API_KEY = previousKey;
+    if (previousMode === undefined) delete process.env.NAVER_SHOPPING_RANK_MODE;
+    else process.env.NAVER_SHOPPING_RANK_MODE = previousMode;
   }
 }
 
 test("product-rank readiness accepts only the verified collector pair", () => {
   assert.equal(hasShoppingRankConfig(LEGACY_ENV), false);
-  assert.equal(hasShoppingRankConfig({ providerUrl: COLLECTOR_ENV.providerUrl }), false);
+  assert.equal(hasShoppingRankConfig({ mode: "provider", providerUrl: COLLECTOR_ENV.providerUrl }), false);
   assert.equal(hasShoppingRankConfig(COLLECTOR_ENV), true);
   assert.deepEqual(shoppingRankSourceStatus(LEGACY_ENV), {
     rankSourceReady: false,
     configured: false,
+    mode: "",
+    coverage: "none",
+    fullCoverageReady: false,
+    preserveOnMiss: false,
+    localWorkerEnabled: false,
+    localWorkerSecretReady: false,
     errorCode: "SHOPPING_RANK_SOURCE_NOT_CONFIGURED",
     retryable: false,
   });
+});
+
+test("seller product URLs cannot be poisoned into catalog mode by query parameters", () => {
+  const target = buildRankTarget({
+    targetProductId: "12149720593",
+    targetUrl: "https://smartstore.naver.com/haedenprime/products/12149720593?catalogId=59031763223",
+  });
+  assert.equal(target.targetMode, "product");
+  assert.equal(target.catalogIds.length, 0);
+  assert.deepEqual(target.productIds, ["12149720593"]);
+});
+
+test("canonical product paths ignore conflicting product query identifiers", () => {
+  const target = buildRankTarget({
+    targetUrl: "https://smartstore.naver.com/haedenprime/products/12149720593?nvMid=59031763223&productId=77777777777",
+  });
+  assert.deepEqual(target.productIds, ["12149720593"]);
+  assert.equal(target.catalogIds.length, 0);
+  assert.equal(target.targetMode, "product");
+});
+
+test("non-Naver catalog URLs cannot poison exact catalog matching", () => {
+  const target = buildRankTarget({
+    targetProductId: "12149720593",
+    targetUrl: "https://evil.example/catalog/59031763223",
+  });
+  assert.equal(target.catalogIds.includes("59031763223"), false);
+  assert.equal(target.targetMode, "product");
 });
 
 test("trusted product-rank headers override conflicting body scope", () => {
@@ -339,6 +385,7 @@ class MockQuery {
     this.filters = [];
     this.orders = [];
     this.rowLimit = Infinity;
+    this.head = false;
   }
 
   update(values) {
@@ -368,6 +415,20 @@ class MockQuery {
     return this;
   }
 
+  in(column, values) {
+    const allowed = new Set(values);
+    this.filters.push((row) => allowed.has(row[column]));
+    return this;
+  }
+
+  or(expression) {
+    const prefix = "processing_until.is.null,processing_until.lt.";
+    if (!String(expression).startsWith(prefix)) throw new Error(`unsupported test OR filter: ${expression}`);
+    const threshold = String(expression).slice(prefix.length);
+    this.filters.push((row) => row.processing_until == null || row.processing_until < threshold);
+    return this;
+  }
+
   order(column, options = {}) {
     this.orders.push({ column, ascending: options.ascending !== false });
     return this;
@@ -378,7 +439,8 @@ class MockQuery {
     return this;
   }
 
-  select() {
+  select(_columns, options = {}) {
+    this.head = options.head === true;
     return this;
   }
 
@@ -407,6 +469,7 @@ class MockQuery {
       });
     }
     selected = selected.slice(0, this.rowLimit);
+    const selectedCount = selected.length;
 
     if (this.operation === "update") {
       this.state.updates.push({ table: this.table, values: { ...this.values } });
@@ -421,6 +484,7 @@ class MockQuery {
       selected = [inserted];
     }
 
+    if (this.head) return { data: null, error: null, count: selectedCount };
     if (single) {
       return selected.length === 1
         ? { data: selected[0], error: null }
@@ -484,16 +548,57 @@ function shoppingResultItem(index, overrides = {}) {
   };
 }
 
+function collectorWindow(keyword, rawItems, options = {}) {
+  const limit = Number(options.limit || 300);
+  const excludedAdCount = rawItems.filter((item) => isAdItem(item)).length;
+  const items = rawItems
+    .filter((item) => !isAdItem(item))
+    .slice(0, limit)
+    .map((item, index) => ({
+      ...item,
+      organicRank: index + 1,
+      isAd: false,
+      isOrganic: true,
+    }));
+  const sourceExhausted = options.sourceExhausted ?? items.length < limit;
+  const complete = options.complete ?? (items.length >= limit || sourceExhausted);
+  const marketTotalStatus = options.marketTotalStatus || "verified";
+  const marketTotal = marketTotalStatus === "unavailable"
+    ? null
+    : Number(options.marketTotal ?? rawItems.length);
+  return {
+    ok: true,
+    schemaVersion: NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA,
+    source: "naver_shopping_results_collector",
+    rankEvidence: "naver_shopping_organic_list",
+    keyword,
+    collectionId: options.collectionId || "test-collection-1",
+    collectedAt: options.collectedAt || "2026-08-01T00:00:00.000Z",
+    complete,
+    partial: !complete,
+    sourceExhausted,
+    marketTotal,
+    marketTotalStatus,
+    checkedCount: items.length,
+    rawCount: Number(options.rawCount ?? rawItems.length),
+    excludedAdCount: Number(options.excludedAdCount ?? excludedAdCount),
+    items,
+  };
+}
+
 async function withShoppingResults(items, callback) {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    assert.equal(url.hostname, "openapi.naver.com");
-    const start = Number(url.searchParams.get("start") || 1);
-    return new Response(JSON.stringify({
-      total: items.length,
-      items: items.slice(start - 1, start - 1 + 100),
-    }), {
+  shoppingProviderPageCache.clear();
+  globalThis.fetch = async (input, options = {}) => {
+    assert.equal(String(input), COLLECTOR_ENV.providerUrl);
+    assert.equal(options.method, "POST");
+    assert.equal(options.headers?.authorization, `Bearer ${COLLECTOR_ENV.providerKey}`);
+    const body = JSON.parse(options.body || "{}");
+    assert.equal(body.schemaVersion, NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA);
+    assert.equal(body.sort, "relevance");
+    assert.equal(body.rankPolicy, "organic_only");
+    assert.ok(Number(body.limit) >= 1 && Number(body.limit) <= 300);
+    return new Response(JSON.stringify(collectorWindow(body.keyword, items, { limit: body.limit })), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -501,6 +606,7 @@ async function withShoppingResults(items, callback) {
   try {
     return await callback();
   } finally {
+    shoppingProviderPageCache.clear();
     globalThis.fetch = originalFetch;
   }
 }
@@ -686,7 +792,7 @@ test("missing shopping API config preserves the last good rank and schedules a f
   const current = state.tables[TRACKERS][0];
 
   assert.equal(result.ok, false);
-  assert.equal(result.error, "shopping_api_not_configured");
+  assert.equal(result.error, "shopping_rank_source_not_configured");
   assert.equal(result.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
   assert.equal(result.retryable, false);
   assert.equal(result.rankSourceReady, false);
@@ -694,7 +800,7 @@ test("missing shopping API config preserves the last good rank and schedules a f
   assert.equal(lookupCalled, false);
   assert.equal(state.tables[SNAPSHOTS].length, 0);
   assertPreserved(tracker, current);
-  assert.equal(current.last_error, "shopping_api_not_configured");
+  assert.equal(current.last_error, "shopping_rank_source_not_configured");
   assert.equal(current.retry_count, 1);
   assert.match(current.last_message, /마지막 정상 순위는 유지/);
   assertRetryTime(current.next_check_at, startedAt, finishedAt, 5);
@@ -730,6 +836,27 @@ test("shopping lookup exceptions preserve history and use exponential retry back
   assertRetryTime(current.next_check_at, startedAt, finishedAt, 20);
 });
 
+test("collector authentication and configuration failures fail closed without fast retry", async () => {
+  for (const [failure, errorCode] of [
+    [Object.assign(new Error("provider_unauthorized"), { status: 401 }), "SHOPPING_RANK_PROVIDER_UNAUTHORIZED"],
+    [Object.assign(new Error("verified_provider_not_configured"), { status: 503 }), "SHOPPING_RANK_PROVIDER_MISCONFIGURED"],
+  ]) {
+    const tracker = trackerRow({ retry_count: 2 });
+    const { ctx, state } = testContext(tracker);
+    const result = await runTrackerCheck(ctx, tracker, {
+      env: COLLECTOR_ENV,
+      findShoppingRank: async () => { throw failure; },
+    });
+    const current = state.tables[TRACKERS][0];
+    assert.equal(result.ok, false);
+    assert.equal(result.errorCode, errorCode);
+    assert.equal(result.retryable, false);
+    assert.equal(result.rankSourceReady, false);
+    assert.equal(state.tables[SNAPSHOTS].length, 0);
+    assertPreserved(tracker, current);
+  }
+});
+
 test("a removed legacy shopping endpoint preserves history and waits for the next regular slot", async () => {
   const tracker = trackerRow({ retry_count: 5 });
   const { ctx, state } = testContext(tracker);
@@ -747,6 +874,7 @@ test("a removed legacy shopping endpoint preserves history and waits for the nex
   assert.equal(result.ok, false);
   assert.equal(result.error, "shopping_rank_source_unavailable");
   assert.equal(isShoppingRankSourceUnavailable("Invalid search api (존재하지 않는 검색 api 입니다.)"), true);
+  assert.equal(isShoppingRankSourceUnavailable("provider_not_ready"), false);
   assert.equal(state.tables[SNAPSHOTS].length, 0);
   assertPreserved(tracker, current);
   assert.equal(current.last_error, "shopping_rank_source_unavailable");
@@ -757,23 +885,211 @@ test("a removed legacy shopping endpoint preserves history and waits for the nex
 });
 
 test("the external shopping collector requires native organic evidence", () => {
-  const trusted = trustedCollectorPage({
-    ok: true,
-    source: "naver_shopping_results_collector",
-    rankEvidence: "naver_shopping_organic_list",
-    total: 1,
-    items: [shoppingResultItem(0)],
+  const trusted = trustedCollectorWindow(collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 }), {
+    keyword: "테스트 상품",
+    maxRank: 1,
   });
   assert.equal(trusted.items.length, 1);
   assert.equal(trusted.rankEvidence, "naver_shopping_organic_list");
+  assert.equal(trusted.collectionId, "test-collection-1");
 
-  assert.throws(() => trustedCollectorPage({
-    ok: true,
+  const unavailableTotal = trustedCollectorWindow(collectorWindow(
+    "테스트 상품",
+    [shoppingResultItem(0)],
+    { limit: 1, marketTotalStatus: "unavailable" },
+  ), { keyword: "테스트 상품", maxRank: 1 });
+  assert.equal(unavailableTotal.marketTotal, null);
+  assert.equal(unavailableTotal.marketTotalStatus, "unavailable");
+  assert.equal(unavailableTotal.checkedCount, 1);
+
+  assert.throws(() => trustedCollectorWindow({
+    ...collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 }),
     source: "unverified_serp",
     rankEvidence: "provider_array_order",
-    total: 1,
-    items: [shoppingResultItem(0)],
-  }), /shopping_rank_provider_untrusted_evidence/);
+  }, { keyword: "테스트 상품", maxRank: 1 }), /shopping_rank_provider_untrusted_evidence/);
+
+  const nonSequential = collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 });
+  nonSequential.items[0].organicRank = 2;
+  assert.throws(
+    () => trustedCollectorWindow(nonSequential, { keyword: "테스트 상품", maxRank: 1 }),
+    /shopping_rank_provider_untrusted_evidence/,
+  );
+
+  const contaminated = collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 });
+  contaminated.items[0].isAd = true;
+  assert.throws(
+    () => trustedCollectorWindow(contaminated, { keyword: "테스트 상품", maxRank: 1 }),
+    /shopping_rank_provider_untrusted_evidence/,
+  );
+
+  const duplicate = collectorWindow("테스트 상품", [shoppingResultItem(0), shoppingResultItem(1)], { limit: 2 });
+  duplicate.items[1].productId = duplicate.items[0].productId;
+  assert.throws(
+    () => trustedCollectorWindow(duplicate, { keyword: "테스트 상품", maxRank: 2 }),
+    /shopping_rank_provider_untrusted_evidence/,
+  );
+
+  const falselyPartial = collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 });
+  falselyPartial.complete = false;
+  falselyPartial.partial = true;
+  assert.throws(
+    () => trustedCollectorWindow(falselyPartial, { keyword: "테스트 상품", maxRank: 1 }),
+    /shopping_rank_provider_untrusted_evidence/,
+  );
+
+  const sharedCatalogId = "59031763223";
+  const catalogAndSeller = collectorWindow("테스트 상품", [
+    shoppingResultItem(0, {
+      productId: "91000000001",
+      sellerProductId: undefined,
+      catalogId: sharedCatalogId,
+      linkedCatalogId: sharedCatalogId,
+      link: "",
+      productType: "1",
+    }),
+    shoppingResultItem(1, {
+      productId: "91000000002",
+      sellerProductId: "12149720593",
+      catalogId: sharedCatalogId,
+      linkedCatalogId: sharedCatalogId,
+      link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+      productType: "3",
+    }),
+  ], { limit: 2 });
+  assert.equal(
+    trustedCollectorWindow(catalogAndSeller, { keyword: "테스트 상품", maxRank: 2 }).items.length,
+    2,
+  );
+});
+
+test("a catalog target matches only the real catalog card, never a linked seller", async () => {
+  const sharedCatalogId = "59031763223";
+  const window = collectorWindow("테스트 상품", [
+    shoppingResultItem(0, {
+      productId: "91000000001",
+      sellerProductId: "12149720593",
+      catalogId: sharedCatalogId,
+      linkedCatalogId: sharedCatalogId,
+      link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+      productType: "3",
+    }),
+    shoppingResultItem(1, {
+      productId: sharedCatalogId,
+      sellerProductId: undefined,
+      catalogId: sharedCatalogId,
+      linkedCatalogId: sharedCatalogId,
+      link: `https://search.shopping.naver.com/catalog/${sharedCatalogId}`,
+      productType: "1",
+    }),
+  ], { limit: 2 });
+  const result = await findShoppingRankFromWindow(window, {
+    keyword: "테스트 상품",
+    targetUrl: `https://search.shopping.naver.com/catalog/${sharedCatalogId}`,
+    maxRank: 2,
+    skipTargetMetadata: true,
+  });
+  assert.equal(result.matched, true);
+  assert.equal(result.rank, 2);
+  assert.equal(result.item?.productType, "1");
+});
+
+test("collector typed runtime failure remains explicit when no exact fallback target exists", async () => {
+  const originalFetch = globalThis.fetch;
+  shoppingProviderPageCache.clear();
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: false,
+    message: "provider_collection_failed",
+    detail: "naver_http_418",
+  }), {
+    status: 502,
+    headers: { "content-type": "application/json" },
+  });
+
+  try {
+    let captured;
+    await assert.rejects(
+      findShoppingRank(COLLECTOR_ENV, {
+        keyword: "수집차단검증",
+        targetProductId: "",
+        maxRank: 300,
+      }),
+      (error) => {
+        captured = error;
+        return /provider_collection_failed:naver_http_418/.test(error.message);
+      },
+    );
+    assert.equal(captured.status, 502);
+    assert.equal(isShoppingRankSourceUnavailable(captured.message), true);
+  } finally {
+    shoppingProviderPageCache.clear();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("collector queue pressure stays retryable and never opens the source circuit breaker", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const detail of ["provider_queue_full", "provider_queue_deadline_exceeded"]) {
+      shoppingProviderPageCache.clear();
+      globalThis.fetch = async () => new Response(JSON.stringify({
+        ok: false,
+        message: "provider_busy",
+        detail,
+      }), {
+        status: 429,
+        headers: { "content-type": "application/json" },
+      });
+
+      let captured;
+      await assert.rejects(
+        findShoppingRank(COLLECTOR_ENV, {
+          keyword: `수집혼잡검증-${detail}`,
+          targetProductId: "",
+          maxRank: 300,
+        }),
+        (error) => {
+          captured = error;
+          return new RegExp(`provider_busy:${detail}`).test(error.message);
+        },
+      );
+      assert.equal(captured.status, 429);
+      assert.equal(captured.code, "provider_busy");
+      assert.equal(captured.detail, detail);
+      assert.equal(isShoppingRankSourceUnavailable(captured.message), false);
+
+      const tracker = trackerRow({ retry_count: 0, keyword: `추적혼잡-${detail}` });
+      const { ctx, state } = testContext(tracker);
+      const startedAt = Date.now();
+      const result = await runTrackerCheck(ctx, tracker, { env: COLLECTOR_ENV });
+      const finishedAt = Date.now();
+      const current = state.tables[TRACKERS][0];
+
+      assert.equal(result.ok, false);
+      assert.equal(result.errorCode, "SHOPPING_RANK_LOOKUP_FAILED");
+      assert.equal(result.retryable, true);
+      assert.equal(result.rankSourceReady, true);
+      assert.equal(current.last_error, `provider_busy:${detail}`);
+      assert.equal(current.retry_count, 1);
+      assert.equal(state.tables[SNAPSHOTS].length, 0);
+      assertPreserved(tracker, current);
+      assertRetryTime(current.next_check_at, startedAt, finishedAt, 5);
+    }
+
+    assert.equal(isShoppingCollectorUnavailable({
+      status: 502,
+      message: "provider_collection_failed",
+      detail: "provider_queue_full",
+    }), false);
+    assert.equal(isShoppingRankSourceUnavailable("provider_collection_failed:provider_queue_full"), false);
+    assert.equal(isShoppingCollectorUnavailable({
+      status: 502,
+      message: "provider_collection_failed",
+      detail: "naver_http_418",
+    }), true);
+  } finally {
+    shoppingProviderPageCache.clear();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("the external shopping collector can supply a complete 300-item organic window", async () => {
@@ -786,21 +1102,14 @@ test("the external shopping collector can supply a complete 300-item organic win
     productType: "1",
   });
   const originalFetch = globalThis.fetch;
-  const starts = [];
+  const requests = [];
   globalThis.fetch = async (input, options = {}) => {
     if (String(input) !== "https://collector.example/rank") {
       return new Response("", { status: 404 });
     }
     const body = JSON.parse(options.body || "{}");
-    starts.push(body.start);
-    const offset = Math.max(0, Number(body.start || 1) - 1);
-    return new Response(JSON.stringify({
-      ok: true,
-      source: "naver_shopping_results_collector",
-      rankEvidence: "naver_shopping_organic_list",
-      total: 300,
-      items: items.slice(offset, offset + 100),
-    }), {
+    requests.push(body);
+    return new Response(JSON.stringify(collectorWindow(body.keyword, items, { limit: body.limit })), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -808,6 +1117,7 @@ test("the external shopping collector can supply a complete 300-item organic win
 
   try {
     const result = await findShoppingRank({
+      mode: "provider",
       providerUrl: "https://collector.example/rank",
       providerKey: "collector-key",
     }, {
@@ -821,9 +1131,13 @@ test("the external shopping collector can supply a complete 300-item organic win
     assert.equal(result.complete, true);
     assert.equal(result.source, "naver_shopping_results_collector");
     assert.equal(result.rankEvidence, "naver_shopping_organic_list");
-    assert.deepEqual(starts, [1, 101, 201]);
+    assert.equal(result.collectionId, "test-collection-1");
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].limit, 300);
+    assert.equal(requests[0].schemaVersion, NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA);
 
     const second = await findShoppingRank({
+      mode: "provider",
       providerUrl: "https://collector.example/rank",
       providerKey: "collector-key",
     }, {
@@ -834,7 +1148,7 @@ test("the external shopping collector can supply a complete 300-item organic win
     assert.equal(second.matched, false);
     assert.equal(second.checkedCount, 300);
     assert.equal(second.complete, true);
-    assert.deepEqual(starts, [1, 101, 201]);
+    assert.equal(requests.length, 1);
   } finally {
     shoppingProviderPageCache.clear();
     globalThis.fetch = originalFetch;
@@ -852,6 +1166,11 @@ test("a valid not-found response still records a checked snapshot", async () => 
       rank: null,
       checkedCount: 300,
       total: 300,
+      complete: true,
+      source: "naver_shopping_results_collector",
+      rankEvidence: "naver_shopping_organic_list",
+      collectionId: "test-complete-miss",
+      collectedAt: "2026-08-01T00:00:00.000Z",
       productExposureItems: [],
       topItems: [],
     }),
@@ -862,6 +1181,8 @@ test("a valid not-found response still records a checked snapshot", async () => 
   assert.equal(state.tables[SNAPSHOTS].length, 1);
   assert.equal(state.tables[SNAPSHOTS][0].matched, false);
   assert.equal(state.tables[SNAPSHOTS][0].checked_count, 300);
+  assert.equal(state.tables[SNAPSHOTS][0].source, "naver_shopping_results_collector");
+  assert.equal(state.tables[SNAPSHOTS][0].item.collectionId, "test-complete-miss");
   assert.equal(current.current_rank, null);
   assert.equal(current.check_count, tracker.check_count + 1);
   assert.notEqual(current.last_checked_at, tracker.last_checked_at);
@@ -981,7 +1302,7 @@ test("shopping lookup finds a prior verified catalog by exact id when the seller
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(LEGACY_ENV, {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -1023,7 +1344,7 @@ test("shopping lookup compares the exact seller product and verified catalog in 
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(LEGACY_ENV, {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
       keyword: "전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -1066,7 +1387,7 @@ test("shopping lookup ignores a stored catalog when the exact item is an unmatch
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(LEGACY_ENV, {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
       keyword: "온열찜질기",
       targetProductId: "12149720593",
       verifiedRelatedCatalogId: "59031763223",
@@ -1083,7 +1404,120 @@ test("shopping lookup ignores a stored catalog when the exact item is an unmatch
   });
 });
 
-test("shopping lookup does not claim a complete window when a later provider page is missing", async () => {
+test("shopping lookup never labels another linked seller as the related catalog", async () => {
+  const sharedCatalogId = "59031763223";
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[2] = shoppingResultItem(2, {
+    productId: "89694230003",
+    sellerProductId: "13000000003",
+    catalogId: sharedCatalogId,
+    linkedCatalogId: sharedCatalogId,
+    link: "https://smartstore.naver.com/other-store/products/13000000003",
+    title: "같은 원부에 연결된 다른 판매처 상품",
+    productType: "3",
+  });
+  items[75] = shoppingResultItem(75, {
+    productId: "89694231298",
+    sellerProductId: "12149720593",
+    catalogId: sharedCatalogId,
+    linkedCatalogId: sharedCatalogId,
+    link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+    title: "일신한일의료기 온열찜질기",
+    productType: "3",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
+      keyword: "온열찜질기",
+      targetProductId: "12149720593",
+      verifiedRelatedCatalogId: sharedCatalogId,
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 76);
+    assert.equal(result.exactProductRank, 76);
+    assert.equal(result.relatedCatalogRank, null);
+    assert.equal(result.trackingRankSource, "exact_product");
+    assert.equal(result.productExposureItems.some((item) => item.rank === 3), false);
+  });
+});
+
+test("shopping lookup prefers the current linked catalog over stale snapshot continuity", async () => {
+  const staleCatalogId = "59031763223";
+  const currentCatalogId = "59031769999";
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[2] = shoppingResultItem(2, {
+    productId: "91000000003",
+    sellerProductId: undefined,
+    catalogId: staleCatalogId,
+    linkedCatalogId: staleCatalogId,
+    link: "",
+    title: "과거에 잘못 연결된 다른 원부",
+    productType: "1",
+  });
+  items[75] = shoppingResultItem(75, {
+    productId: "89694231298",
+    sellerProductId: "12149720593",
+    catalogId: currentCatalogId,
+    linkedCatalogId: currentCatalogId,
+    link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+    title: "일신한일의료기 온열찜질기",
+    productType: "3",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
+      keyword: "온열찜질기",
+      targetProductId: "12149720593",
+      verifiedRelatedCatalogId: staleCatalogId,
+      maxRank: 300,
+    });
+    assert.equal(result.rank, 76);
+    assert.equal(result.relatedCatalogRank, null);
+    assert.equal(result.trackingRankSource, "exact_product");
+    assert.equal(result.targetCatalogId, currentCatalogId);
+    assert.equal(result.relatedCatalogContinuityUsed, false);
+  });
+});
+
+test("shopping lookup still selects a real current catalog above its exact seller product", async () => {
+  const sharedCatalogId = "59031763223";
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[2] = shoppingResultItem(2, {
+    productId: "91000000003",
+    sellerProductId: undefined,
+    catalogId: sharedCatalogId,
+    linkedCatalogId: sharedCatalogId,
+    link: "",
+    title: "한일의료기 온열찜질기 원부",
+    productType: "1",
+  });
+  items[75] = shoppingResultItem(75, {
+    productId: "89694231298",
+    sellerProductId: "12149720593",
+    catalogId: sharedCatalogId,
+    linkedCatalogId: sharedCatalogId,
+    link: "https://smartstore.naver.com/haedenprime/products/12149720593",
+    title: "일신한일의료기 온열찜질기",
+    productType: "3",
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
+      keyword: "온열찜질기",
+      targetProductId: "12149720593",
+      verifiedRelatedCatalogId: "59031760000",
+      maxRank: 300,
+    });
+    assert.equal(result.rank, 3);
+    assert.equal(result.exactProductRank, 76);
+    assert.equal(result.relatedCatalogRank, 3);
+    assert.equal(result.trackingRankSource, "related_catalog");
+    assert.equal(result.relatedCatalogIds[0], sharedCatalogId);
+  });
+});
+
+test("shopping lookup rejects an atomic partial window at the main trust boundary", async () => {
   const firstPage = Array.from({ length: 100 }, (_, index) => shoppingResultItem(index));
   firstPage[9] = shoppingResultItem(9, {
     productId: "98765432101",
@@ -1093,32 +1527,34 @@ test("shopping lookup does not claim a complete window when a later provider pag
     productType: "3",
   });
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (input) => {
-    const url = new URL(String(input));
-    const start = Number(url.searchParams.get("start") || 1);
-    return new Response(JSON.stringify({
-      total: 500,
-      items: start === 1 ? firstPage : [],
-    }), {
+  shoppingProviderPageCache.clear();
+  globalThis.fetch = async (input, options = {}) => {
+    assert.equal(String(input), COLLECTOR_ENV.providerUrl);
+    assert.equal(options.method, "POST");
+    const body = JSON.parse(options.body || "{}");
+    return new Response(JSON.stringify(collectorWindow(body.keyword, firstPage, {
+      limit: body.limit,
+      complete: false,
+      sourceExhausted: false,
+      marketTotal: 500,
+    })), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
   };
 
   try {
-    const result = await findShoppingRank(LEGACY_ENV, {
-      keyword: "전동칫솔",
-      targetProductId: "12649811979",
-      verifiedRelatedCatalogId: "57907660073",
-      maxRank: 300,
-    });
-    assert.equal(result.matched, true);
-    assert.equal(result.rank, 10);
-    assert.equal(result.checkedCount, 100);
-    assert.equal(result.complete, false);
-    assert.equal(result.partial, true);
-    assert.equal(result.stopReason, "api_window_incomplete");
+    await assert.rejects(
+      findShoppingRank(COLLECTOR_ENV, {
+        keyword: "전동칫솔",
+        targetProductId: "12649811979",
+        verifiedRelatedCatalogId: "57907660073",
+        maxRank: 300,
+      }),
+      /shopping_rank_provider_untrusted_evidence/,
+    );
   } finally {
+    shoppingProviderPageCache.clear();
     globalThis.fetch = originalFetch;
   }
 });
@@ -1137,7 +1573,7 @@ test("shopping lookup never substitutes a title-similar catalog for the verified
   });
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(LEGACY_ENV, {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       targetMallName: "라이브오랄스",
@@ -1165,7 +1601,7 @@ test("shopping lookup excludes an ad even when it carries the verified catalog i
   ];
 
   await withShoppingResults(items, async () => {
-    const result = await findShoppingRank(LEGACY_ENV, {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
       keyword: "음파 전동칫솔",
       targetProductId: "12649811979",
       verifiedRelatedCatalogId: "57907660073",
@@ -1178,7 +1614,7 @@ test("shopping lookup excludes an ad even when it carries the verified catalog i
   });
 });
 
-test("the real shopping lookup rejects an empty 2xx payload", async () => {
+test("the real shopping lookup rejects an empty 2xx payload without trusted collector evidence", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response("{}", {
     status: 200,
@@ -1186,34 +1622,45 @@ test("the real shopping lookup rejects an empty 2xx payload", async () => {
   });
   try {
     await assert.rejects(
-      findShoppingRank(LEGACY_ENV, {
+      findShoppingRank(COLLECTOR_ENV, {
         keyword: "테스트 상품",
         targetProductId: "1234567890",
         maxRank: 300,
       }),
-      /shopping_rank_provider_invalid_response/,
+      /shopping_rank_provider_untrusted_evidence/,
     );
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("a short shopping page with more advertised results remains incomplete", async () => {
+test("an explicitly partial atomic shopping window is rejected", async () => {
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ total: 500, items: [] }), {
+  shoppingProviderPageCache.clear();
+  globalThis.fetch = async (_input, options = {}) => {
+    const body = JSON.parse(options.body || "{}");
+    return new Response(JSON.stringify(collectorWindow(body.keyword, [], {
+      limit: body.limit,
+      complete: false,
+      sourceExhausted: false,
+      marketTotal: 500,
+      rawCount: 0,
+    })), {
     status: 200,
     headers: { "content-type": "application/json" },
-  });
-  try {
-    const result = await findShoppingRank(LEGACY_ENV, {
-      keyword: "테스트 상품",
-      targetProductId: "1234567890",
-      maxRank: 300,
     });
-    assert.equal(result.matched, false);
-    assert.equal(result.complete, false);
-    assert.equal(result.stopReason, "api_window_incomplete");
+  };
+  try {
+    await assert.rejects(
+      findShoppingRank(COLLECTOR_ENV, {
+        keyword: "테스트 상품",
+        targetProductId: "1234567890",
+        maxRank: 300,
+      }),
+      /shopping_rank_provider_untrusted_evidence/,
+    );
   } finally {
+    shoppingProviderPageCache.clear();
     globalThis.fetch = originalFetch;
   }
 });
@@ -1239,6 +1686,33 @@ test("an incomplete product miss preserves rank and schedules retry", async () =
   assert.equal(state.tables[SNAPSHOTS].length, 0);
   assertPreserved(tracker, state.tables[TRACKERS][0]);
   assert.equal(state.tables[TRACKERS][0].retry_count, 1);
+});
+
+test("an early exact match from an incomplete window never overwrites the last confirmed rank", async () => {
+  const tracker = trackerRow();
+  const { ctx, state } = testContext(tracker);
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: COLLECTOR_ENV,
+    findShoppingRank: async () => ({
+      matched: true,
+      rank: 7,
+      checkedCount: 100,
+      complete: false,
+      partial: true,
+      source: "naver_shopping_results_collector",
+      rankEvidence: "naver_shopping_organic_list",
+      collectionId: "partial-match",
+      collectedAt: "2026-08-01T00:00:00.000Z",
+      productExposureItems: [{ isExactTarget: true, isOrganic: true, isAd: false, rank: 7 }],
+      topItems: [],
+    }),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "shopping_rank_lookup_incomplete");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assertPreserved(tracker, state.tables[TRACKERS][0]);
 });
 
 test("a fully exhausted short product result is a valid not-found check", async () => {
@@ -1276,6 +1750,7 @@ test("a stale product-rank lease cannot insert a snapshot", async () => {
         matched: true,
         rank: 9,
         checkedCount: 9,
+        complete: true,
         productExposureItems: [{ isExactTarget: true, isOrganic: true, rank: 9 }],
       }),
     }),
@@ -1380,6 +1855,123 @@ test("a missing collector circuit-breaks the due queue without claiming or updat
   assert.deepEqual(summary.results, []);
   assert.equal(queryCount, 1);
   assert.equal(updateCalled, false);
+});
+
+test("a configured but unready collector stops the due queue after the first claimed tracker", async () => {
+  const first = trackerRow({ id: "tracker-1" });
+  const second = trackerRow({ id: "tracker-2", product_id: "1234567891" });
+  const { ctx, state } = testContext(first);
+  state.tables[TRACKERS].push(second);
+  let checkCalls = 0;
+
+  const summary = await runDueTrackers(ctx, {
+    env: COLLECTOR_ENV,
+    limit: 2,
+    runTrackerCheck: async (_ctx, tracker) => {
+      checkCalls += 1;
+      tracker.next_check_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      return {
+        ok: false,
+        tracker,
+        message: "수집원 준비 확인이 필요합니다.",
+        errorCode: "SHOPPING_RANK_SOURCE_UNAVAILABLE",
+        retryable: false,
+        configured: true,
+        rankSourceReady: false,
+      };
+    },
+  });
+
+  assert.equal(checkCalls, 1);
+  assert.equal(summary.configured, true);
+  assert.equal(summary.rankSourceReady, false);
+  assert.equal(summary.errorCode, "SHOPPING_RANK_SOURCE_UNAVAILABLE");
+  assert.equal(summary.retryable, false);
+  assert.equal(summary.checked, 1);
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.remaining, 1);
+  assert.equal(state.tables[TRACKERS][1].processing_started_at, undefined);
+});
+
+test("collector authentication and configuration failures stop before claiming the second tracker", async () => {
+  for (const errorCode of [
+    "SHOPPING_RANK_PROVIDER_UNAUTHORIZED",
+    "SHOPPING_RANK_PROVIDER_MISCONFIGURED",
+  ]) {
+    const first = trackerRow({ id: `tracker-first-${errorCode}` });
+    const second = trackerRow({ id: `tracker-second-${errorCode}`, product_id: "1234567891" });
+    const { ctx, state } = testContext(first);
+    state.tables[TRACKERS].push(second);
+    let checkCalls = 0;
+
+    const summary = await runDueTrackers(ctx, {
+      env: COLLECTOR_ENV,
+      limit: 2,
+      runTrackerCheck: async (_ctx, tracker) => {
+        checkCalls += 1;
+        tracker.next_check_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+        return {
+          ok: false,
+          tracker,
+          message: "수집원 설정 확인이 필요합니다.",
+          errorCode,
+          retryable: false,
+          configured: true,
+          rankSourceReady: false,
+        };
+      },
+    });
+
+    assert.equal(checkCalls, 1, errorCode);
+    assert.equal(summary.checked, 1, errorCode);
+    assert.equal(summary.failed, 1, errorCode);
+    assert.equal(summary.rankSourceReady, false, errorCode);
+    assert.equal(summary.errorCode, errorCode, errorCode);
+    assert.equal(summary.retryable, false, errorCode);
+    assert.equal(summary.remaining, 1, errorCode);
+    assert.equal(state.tables[TRACKERS][1].processing_started_at, undefined, errorCode);
+  }
+});
+
+test("coverage-limited rows are preserved and the due queue drains without failures", async () => {
+  const first = trackerRow({ id: "tracker-preserved-1", retry_count: 3, last_error: "old_error" });
+  const second = trackerRow({ id: "tracker-preserved-2", product_id: "1234567891", retry_count: 2 });
+  const { ctx, state } = testContext(first);
+  state.tables[TRACKERS].push(second);
+  let checkCalls = 0;
+
+  const summary = await runDueTrackers(ctx, {
+    env: { mode: "mobile_top_fallback", mobileTopFallbackOnly: true },
+    limit: 2,
+    runTrackerCheck: async (_ctx, tracker) => {
+      checkCalls += 1;
+      tracker.next_check_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      tracker.last_error = null;
+      tracker.retry_count = 0;
+      return {
+        ok: false,
+        tracker,
+        message: "현재 검증 범위 밖이어서 기존 순위를 유지합니다.",
+        errorCode: "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW",
+        retryable: false,
+        rankSourceReady: true,
+        configured: true,
+        preserved: true,
+        outcome: "preserved",
+      };
+    },
+  });
+
+  assert.equal(checkCalls, 2);
+  assert.equal(summary.checked, 2);
+  assert.equal(summary.succeeded, 0);
+  assert.equal(summary.preserved, 2);
+  assert.equal(summary.failed, 0);
+  assert.equal(summary.rankSourceReady, true);
+  assert.equal(summary.drained, true);
+  assert.equal(summary.remaining, 0);
+  assert.deepEqual(summary.results.map((item) => item.outcome), ["preserved", "preserved"]);
+  assert.equal(state.tables[TRACKERS].every((tracker) => tracker.retry_count === 0 && tracker.last_error === null), true);
 });
 
 test("an empty product-rank due queue reports drained", async () => {

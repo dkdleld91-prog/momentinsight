@@ -526,9 +526,11 @@ check(
     ])
     && hasAll(shoppingNativeHostInstaller, [
       /StartCalendarInterval/,
+      /<key>StartInterval<\/key>\s*<integer>600<\/integer>/,
       /resolveChromeProfileDirectory/,
       /activateChromeScheduler/,
     ])
+    && /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
       /--profile-directory=/,

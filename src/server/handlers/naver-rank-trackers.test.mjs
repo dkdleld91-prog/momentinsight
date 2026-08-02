@@ -59,6 +59,26 @@ async function withoutShoppingCollector(callback) {
   }
 }
 
+async function withShoppingHybrid(callback) {
+  const keys = [
+    "NAVER_SHOPPING_RANK_MODE",
+    "MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED",
+    "MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET",
+  ];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.NAVER_SHOPPING_RANK_MODE = "hybrid_local_worker";
+  process.env.MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED = "true";
+  process.env.MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET = "test-local-worker-secret-that-is-longer-than-32-bytes";
+  try {
+    return await callback();
+  } finally {
+    for (const key of keys) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
 test("product-rank readiness accepts only the verified collector pair", () => {
   assert.equal(hasShoppingRankConfig(LEGACY_ENV), false);
   assert.equal(hasShoppingRankConfig({ mode: "provider", providerUrl: COLLECTOR_ENV.providerUrl }), false);
@@ -234,6 +254,51 @@ test("an account-only team reaches every product-rank action without advertiser 
   assert.equal(syncBody.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
   assert.equal(syncBody.retryable, false);
   assert.equal(syncBody.summary.checked, 0);
+});
+
+test("hybrid page sync leaves due rows queued for the signed Mac worker", async () => {
+  const teamCode = "mml93-t01";
+  let updateCalled = false;
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          lte() { return query; },
+          or() { return query; },
+          in(column, values) {
+            assert.equal(column, "agency_code");
+            assert.deepEqual(values, [teamCode]);
+            return query;
+          },
+          update() {
+            updateCalled = true;
+            return query;
+          },
+          then(resolve, reject) {
+            return Promise.resolve({ data: null, error: null, count: 2 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(productTeamAccountRequest("POST", {
+    action: "sync-due",
+    limit: 2,
+  }, teamCode), ctx));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.queuedForLocalWorker, true);
+  assert.equal(body.summary.checked, 0);
+  assert.equal(body.summary.remaining, 2);
+  assert.match(body.message, /중앙 Chrome 300위 갱신 대기 2건/u);
+  assert.equal(updateCalled, false);
 });
 
 test("manual product refresh does not claim or update a row without the collector", async () => {
@@ -834,6 +899,38 @@ test("shopping lookup exceptions preserve history and use exponential retry back
   assert.equal(current.retry_count, 3);
   assert.match(current.last_message, /자동 재시도/);
   assertRetryTime(current.next_check_at, startedAt, finishedAt, 20);
+});
+
+test("manual hybrid miss queues the exact tracker for the Mac 300-rank worker", async () => {
+  const tracker = trackerRow({ retry_count: 2, last_error: "old_error" });
+  const { ctx, state } = testContext(tracker);
+  const startedAt = Date.now();
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: {
+      mode: "hybrid_local_worker",
+      localWorkerEnabled: true,
+      localWorkerSecretReady: true,
+    },
+    queueLocalWorker: true,
+    findShoppingRank: async () => {
+      throw new Error("shopping_rank_top_fallback_inconclusive");
+    },
+  });
+  const finishedAt = Date.now();
+  const current = state.tables[TRACKERS][0];
+  const queuedAt = Date.parse(current.next_check_at);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.preserved, true);
+  assert.equal(result.queuedForLocalWorker, true);
+  assert.equal(result.errorCode, "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW");
+  assert.equal(state.tables[SNAPSHOTS].length, 0);
+  assertPreserved(tracker, current);
+  assert.equal(current.last_error, null);
+  assert.equal(current.retry_count, 0);
+  assert.ok(queuedAt >= startedAt && queuedAt <= finishedAt);
+  assert.match(current.last_message, /중앙 Chrome 300위 갱신을 대기/u);
 });
 
 test("collector authentication and configuration failures fail closed without fast retry", async () => {

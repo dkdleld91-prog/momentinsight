@@ -1184,11 +1184,14 @@ const checks = {
     && shoppingNativeHostWrapper.includes("security find-generic-password")
     && shoppingNativeHostWrapper.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
     && shoppingNativeHostInstaller.includes("StartCalendarInterval")
+    && shoppingNativeHostInstaller.includes("<integer>600</integer>")
     && shoppingNativeHostInstaller.includes("resolveChromeProfileDirectory")
     && shoppingNativeHostInstaller.includes("activateChromeScheduler")
     && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
+  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
+    && shoppingChromeWorker.includes("existing.periodInMinutes"),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false
     && shopping418Failure.retryAfterSeconds === 0

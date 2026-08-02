@@ -27,11 +27,13 @@ async function configureAlarms() {
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
     ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
-    ["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 60 }],
+    ["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }],
   ];
   await Promise.all(alarmDefinitions.map(async ([name, definition]) => {
     const existing = await chrome.alarms.get(name);
-    if (!existing) await chrome.alarms.create(name, definition);
+    if (!existing || Number(existing.periodInMinutes || 0) !== Number(definition.periodInMinutes || 0)) {
+      await chrome.alarms.create(name, definition);
+    }
   }));
 }
 

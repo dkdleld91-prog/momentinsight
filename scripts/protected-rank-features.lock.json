@@ -155,7 +155,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "429d088f60d7f3b4938a36124d4b355682376c4e9912fc2130317748f14b4598"
+      "sha256": "ffc874b67c239eb4993c4a4e28d08cf824fd69493fcf971444835a95b3f49f9c"
     },
     {
       "id": "product-organic-rank-server",
@@ -397,7 +397,7 @@
     {
       "id": "shopping-chrome-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge.mjs",
-      "sha256": "d153960da87cbb41d167711ac065167936320eca90f158cc975cbcc72a70e060"
+      "sha256": "a9524e5de15ec934ece22fd6414ba30f6f6daf5108c6a08093e1ddbb8dc38e13"
     },
     {
       "id": "shopping-chrome-scheduler-wrapper",
@@ -412,7 +412,7 @@
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "aefa29035ad32d155d13319c8e7ee3d046d0f164d04457c7d31a03b418c99577"
+      "sha256": "13b1eae20bcc3c4136963d8f58c758bf713319cc1a99145edffba3d76a208f60"
     },
     {
       "id": "shopping-local-worker-session-boundary",

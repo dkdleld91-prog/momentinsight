@@ -108,6 +108,8 @@ export function buildChromeSchedulerPlist(options = {}) {
   </array>
   <key>RunAtLoad</key>
   <true/>
+  <key>StartInterval</key>
+  <integer>600</integer>
   <key>StartCalendarInterval</key>
   <array>
     <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>50</integer></dict>

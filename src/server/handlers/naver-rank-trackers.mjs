@@ -3,6 +3,7 @@ import { withSupabase } from "@supabase/server";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
 import {
   hasShoppingRankConfig,
+  isHybridLocalWorkerMode,
   isShoppingRankSourceUnavailable,
   SHOPPING_RANK_SOURCE_NOT_CONFIGURED,
   shoppingCollectorFailureStatus,
@@ -1116,10 +1117,13 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
     const sourceTerminal = sourceUnavailable
       || sourceFailure.status === "unauthorized"
       || sourceFailure.status === "misconfigured";
+    const queueLocalWorker = coverageLimited && options.queueLocalWorker === true;
     const message = sourceUnavailable
       ? "네이버 공식 쇼핑 검색 종료로 검증 수집원을 전환 중입니다. 마지막 정상 순위와 30일 기록은 유지합니다."
       : coverageLimited
-        ? "현재 검증 가능한 상위 순위 범위 밖입니다. 기존 정상 순위와 30일 기록을 유지하고 다음 주기에 다시 확인합니다."
+        ? (queueLocalWorker
+          ? "상위 즉시조회 범위 밖입니다. 기존 정상 순위를 유지하고 중앙 Chrome 300위 갱신을 대기합니다."
+          : "현재 검증 가능한 상위 순위 범위 밖입니다. 기존 정상 순위와 30일 기록을 유지하고 다음 주기에 다시 확인합니다.")
       : sourceFailure.status === "unauthorized"
         ? "네이버 상품 순위 수집원 인증을 확인해야 합니다. 마지막 정상 순위와 30일 기록은 유지합니다."
         : sourceFailure.status === "misconfigured"
@@ -1149,7 +1153,7 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
         tracker,
         message,
         options.leaseStartedAt || "",
-        retryAt,
+        queueLocalWorker ? checkedAt : retryAt,
       )
       : await updateTrackerAfterFailure(
         ctx,
@@ -1171,6 +1175,7 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
       rankSourceReady: !sourceTerminal,
       configured: true,
       preserved: coverageLimited,
+      queuedForLocalWorker: queueLocalWorker,
       outcome: coverageLimited ? "preserved" : "failed",
     };
   }
@@ -1274,12 +1279,14 @@ async function createTracker(request, ctx, body, access = {}) {
   await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);
   const checked = await runTrackerCheck(ctx, { ...data, group_name: groupName }, {
     leaseStartedAt: initialLeaseStartedAt,
+    queueLocalWorker: isHybridLocalWorkerMode(shoppingRankConfig()),
   });
   const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
-    ok: checked.ok,
+    ok: checked.ok || checked.preserved === true,
+    queuedForLocalWorker: checked.queuedForLocalWorker === true,
     message: checked.message,
     tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
@@ -1328,7 +1335,8 @@ async function checkOne(request, ctx, body) {
   if (error) throw error;
   if (!data) return json(request, { ok: false, message: "추적 항목을 찾을 수 없습니다." }, 404);
 
-  const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
+  const rankConfig = shoppingRankConfig();
+  const rankSource = shoppingRankSourceStatus(rankConfig);
   if (!rankSource.configured) {
     return json(request, {
       ok: false,
@@ -1342,7 +1350,11 @@ async function checkOne(request, ctx, body) {
     return json(request, { ok: false, message: "이미 순위 갱신이 진행 중입니다. 잠시 후 다시 시도해주세요." }, 409);
   }
   const tracker = await attachTrackerGroup(ctx, claim.tracker);
-  const checked = await runTrackerCheck(ctx, tracker, { leaseStartedAt: claim.leaseStartedAt });
+  const checked = await runTrackerCheck(ctx, tracker, {
+    env: rankConfig,
+    leaseStartedAt: claim.leaseStartedAt,
+    queueLocalWorker: isHybridLocalWorkerMode(rankConfig),
+  });
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
@@ -1355,6 +1367,7 @@ async function checkOne(request, ctx, body) {
       retryable: checked.retryable !== false,
       retryAfter: Number(checked.retryAfter || 0),
       preserved: checked.preserved === true,
+      queuedForLocalWorker: checked.queuedForLocalWorker === true,
     } : {}),
     message: checked.message,
     tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
@@ -1532,6 +1545,32 @@ async function reorderTrackers(request, ctx, body) {
 }
 
 async function syncDueTrackers(request, ctx, body, access) {
+  const rankConfig = shoppingRankConfig();
+  const rankSource = shoppingRankSourceStatus(rankConfig);
+  if (rankSource.configured && isHybridLocalWorkerMode(rankConfig)) {
+    const remaining = await countDueTrackers(ctx, new Date().toISOString(), access.agencyCode);
+    return json(request, {
+      ok: true,
+      ...rankSource,
+      queuedForLocalWorker: remaining > 0,
+      message: remaining
+        ? `중앙 Chrome 300위 갱신 대기 ${remaining}건입니다.`
+        : "갱신 대기 항목이 없습니다.",
+      summary: {
+        checked: 0,
+        succeeded: 0,
+        preserved: 0,
+        failed: 0,
+        remaining,
+        remainingCount: remaining,
+        drained: remaining === 0,
+        configured: true,
+        rankSourceReady: true,
+        queuedForLocalWorker: remaining > 0,
+        results: [],
+      },
+    });
+  }
   const summary = await runDueTrackers(ctx, {
     agencyCode: access.agencyCode,
     limit: body.limit || process.env.MI_RANK_CRON_BATCH || 1,

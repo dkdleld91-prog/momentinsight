@@ -204,6 +204,7 @@ test("normal Chrome scheduler prepares the approved profile before both KST slot
   assert.match(plist, /<integer>8<\/integer><key>Minute<\/key><integer>50<\/integer>/u);
   assert.match(plist, /<integer>14<\/integer><key>Minute<\/key><integer>50<\/integer>/u);
   assert.match(plist, /RunAtLoad/u);
+  assert.match(plist, /<key>StartInterval<\/key>\s*<integer>600<\/integer>/u);
 });
 
 test("native host wrapper uses a stable path, bounded jobs and safe local canary config", () => {
@@ -236,7 +237,9 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
-  assert.match(serviceWorker, /if \(!existing\) await chrome\.alarms\.create\(name, definition\)/u);
+  assert.match(serviceWorker, /periodInMinutes: 10/u);
+  assert.match(serviceWorker, /existing\.periodInMinutes/u);
+  assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
   assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 1_250/u);
   assert.match(serviceWorker, /await wait\(PAGE_REQUEST_INTERVAL_MS\)/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

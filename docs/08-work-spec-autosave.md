@@ -36,9 +36,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 02. 23:22:18
-- 기준 커밋: 02f29d2
-- 작업트리: M docs/08-work-spec-autosave.md /  M scripts/install-naver-shopping-chrome-bridge.mjs /  M scripts/naver-shopping-native-host.test.mjs /  M scripts/protected-rank-features.lock.json
+- 마지막 자동 저장: 2026. 08. 02. 23:35:45
+- 기준 커밋: 98254b3
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -55,7 +55,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 완료·실증 통과·배포 진행 | N 쇼핑 hybrid 즉시 exact·중앙 Chrome 300위 브리지 | 종료 API와 Hub를 순위에서 분리. 서버는 반환된 광고 제외 SAS 상품의 공식 절대 순위 exact hit만 즉시 확정하고, 빠진 슬롯은 압축하거나 미노출로 단정하지 않는다. 중앙 `동빈` Chrome 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 macOS Native Messaging으로 전달한다. 네이티브 실행 파일은 Desktop 저장소가 아닌 사용자 보호 폴더에 독립 설치한다. 고객별 설치 없이 사이트 전체 due tracker를 처리하며 HMAC 비밀값은 키체인에만 둔다 | Chrome 수동 갱신 3회 연속 `status=0`, DB `collection_id=pw-chrome-*`·`checked_count=300`·exact 16위 원자 snapshot 확인. 네이버 현재 `pageSize=49` 응답은 실제 슬롯 수 이상·최대 50과 절대 순위 증가를 검증해 광고 제외 SAS 44개·최고 exact 45위·미발견 연속 범위 9위로 처리한다. live gate `SHOPPING_RANK_HYBRID_LIVE_READY`, API·서버 364/364, 플레이스 51/51, 쇼핑 49/49, 계약 37/37, 인증 18/18, 보호 잠금 22함수/53파일/12마이그레이션과 전체 `check:release` 통과 | 로컬 canary 설정 제거 후 커밋·Production 배포. 배포 후 HMAC 차단·전체 due tracker·09시/15시와 세 역할 동일 값을 재검증 |
+| 완료·실증 통과·Production 반영 | N 쇼핑 hybrid 즉시 exact·중앙 Chrome 300위 브리지 | 종료 API와 Hub를 순위에서 분리. 서버는 반환된 광고 제외 SAS 상품의 공식 절대 순위 exact hit만 즉시 확정하고, 빠진 슬롯은 압축하거나 미노출로 단정하지 않는다. 중앙 `동빈` Chrome 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 macOS Native Messaging으로 전달한다. 네이티브 실행 파일은 Desktop 저장소가 아닌 사용자 보호 폴더에 독립 설치한다. 고객별 설치 없이 사이트 전체 due tracker를 처리하며 HMAC 비밀값은 키체인에만 둔다 | Chrome 수동 갱신 3회 연속 `status=0`, DB `collection_id=pw-chrome-*`·`checked_count=300`·exact 16위 원자 snapshot 확인. 네이버 현재 `pageSize=49` 응답은 실제 슬롯 수 이상·최대 50과 절대 순위 증가를 검증해 광고 제외 SAS 44개·최고 exact 45위·미발견 연속 범위 9위로 처리한다. live gate `SHOPPING_RANK_HYBRID_LIVE_READY`, API·서버 364/364, 플레이스 51/51, 쇼핑 49/49, 계약 37/37, 인증 18/18, 보호 잠금 22함수/53파일/12마이그레이션과 전체 `check:release` 통과 | 코드 `98254b3`, Production `momentinsight-5vefl2vyq-momentlabs.vercel.app`·운영 별칭 반영. `/health`·`/ready` 릴리스 `98254b32c54d`·서울 `icn1`, 무서명 401 및 키체인 서명 통과 후 무해한 잘못된 action 400으로 HMAC 경계 확인 |
 | 과거 전환 이력·현재 구조로 대체 | N 쇼핑 원격 원자 수집 아키텍처 실험 | 종료 API 페이지를 이어 붙이지 않고 독립 Playwright 서비스, 교체 가능한 provider, 단일 `collectionId`의 오가닉 1~300 원자 계약을 구축. 광고·중복 ID·부분/혼합 응답을 거부하고 키워드·단건·30일 추적을 같은 계약으로 통합. 당시 Render의 `/health`와 `/ready`를 분리하고 공개 headless 수집 가능성을 검토했으나 현재는 전용 Mac hybrid 구조로 대체 | 당시 로컬 집중 검사만 통과했고 공개 Chromium은 HTTP 418로 실수집에 실패. 현재 실수집 근거로 사용하지 않음 | 배포되지 않은 과거 실험 이력. 현재 배포 판단에 사용하지 않음 |
 | 과거 2026-07-31 전환 이력 | NAVER API Hub 전수 전환 감사·종료 legacy 경로 제거 | 지원 Search·Search Trend·Shopping Insight는 Hub 고정, Search Ads는 별도 공식 계약 유지. 키워드 조회와 N 상품 순위의 종료 쇼핑 검색 직접 호출·인증·fallback을 제거하고 동일 검증 수집원 계약으로 통합했다. DB tracker·30일 snapshot·감사 이력은 삭제하지 않았다 | 종료 URL 런타임 0건, API·서버 252/252, 플레이스 51/51, 계약 29/29, 인증 18/18, 역할·양 화면 parity, 잠금 21함수/23파일/11마이그레이션, 공개 빌드·CSP·전체 `check:release` 통과. Hub 실호출 blog 1건·trend 31건·age 12건 HTTP 200 | 당시 수집원 부재로 실상품 300위·25/25·전체 71개·cron 2회 미완료. 현재 판단은 위 hybrid 항목을 따름 |
 | 과거 2026-07-31 보호 이력 | N 상품 30일 전체 갱신 장애 재진단·실수집 복구 | 운영 `성공 0개·재시도 25개`와 신규 snapshot 0건을 교차 확인. 종료된 legacy 쇼핑 검색 API를 준비 완료로 잘못 판단한 문제, 영구 오류 전건 2차 재시도, cron 502가 공통 보안층에서 500으로 변환되는 문제를 분리 수정했다. 실제 오가닉 300 수집원 미연결 시 단건·전체·cron은 DB claim·순위 변경·snapshot 생성 없이 중단하고 마지막 정상값을 유지한다 | API·서버 251/251, 플레이스 51/51, 서버 계약 29/29, Production 인증 18/18, 역할 5상태·양 역할 parity·보호 잠금 21함수/23파일/11마이그레이션·공개 빌드/CSP·전체 `check:release` 통과. 당시 실상품 canary·`mml93-a01` 25/25·사이트 전체 71개·cron 2회는 미완료 | 당시 Production 수집원 URL/key 게이트 이력. 현재 판단은 위 hybrid 항목을 따름 |

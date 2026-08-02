@@ -31,7 +31,8 @@
 - 완료: 양 역할 `전체 순위 갱신`을 현재 계정 범위의 단일 `queue-refresh-all` 요청으로 전환했다. 운영 중이고 활성 lease가 없는 tracker만 현재 due로 등록하며 다른 계정·기존 순위·snapshot은 변경하지 않는다.
 - 완료: 중앙 Chrome 확장은 성공한 회차 뒤 1분 후 다음 회차를 자동 실행하고 일부 실패를 완료로 과장하지 않는다. 정규 09:00·15:00와 10분 catch-up은 유지한다.
 - 완료: 대상 검사, API·서버 386/386, 플레이스 51/51, 쇼핑 51/51, 계약 37/37, 인증 18/18, 역할 parity, 보호 잠금과 전체 `check:release`를 통과했다.
-- 배포 후 확인: 실제 계정에서 전체 갱신 1회 → 계정 전체 queue 등록 → 후속 자동 회차 → `pw-chrome-*`·300개 원자 snapshot 증가와 due 감소를 확인한다. Mac·Chrome이 꺼진 동안 51~300위 신규 수집은 불가능하다는 물리적 제약은 유지한다.
+- 배포 완료: 코드 `b70848c`, Production `dpl_FPGs2Mt6kyimepmktqvNyBcWv4tL`, 운영 별칭과 중앙 Mac 설치본을 반영했고 health/ready·서울 icn1·Supabase ready·양 역할 배포 마커·비인증 401을 확인했다.
+- 운영 확인: Chrome 제어 연결이 현재 응답하지 않아 사용자 Chrome을 강제 재시작하지 않았다. Moment 확장을 1회 재로드한 뒤 실제 계정 전체 갱신 → 계정 전체 queue 등록 → 후속 자동 회차 → `pw-chrome-*`·300개 원자 snapshot 증가와 due 감소를 확인한다. Mac·Chrome이 꺼진 동안 51~300위 신규 수집은 불가능하다는 물리적 제약은 유지한다.
 
 ### 2026-08-03 N 쇼핑 Mac 일반 Chrome 운영
 

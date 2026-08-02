@@ -67,13 +67,13 @@
       "id": "operation-product-rank-check",
       "file": "src/pages/admin.html",
       "name": "initRankCheck",
-      "sha256": "5ef19cafefaa7e2680dc6f9646ca4b0cfaca48cb09545a9d6edfa2845b684deb"
+      "sha256": "becf24f948db7000d31d48002487cdc21a5d4b2bdee89d024d91a3d8f324a2e8"
     },
     {
       "id": "advertiser-product-rank-check",
       "file": "src/pages/client.html",
       "name": "initRankCheck",
-      "sha256": "0649d8a9610ff3a90fd9965c77e03360681d5f8483dd9fea8d0dca1b91864a07"
+      "sha256": "f0603fc8f00f37e11f7e4f991b53203b10c16a476e3b82caad61aeaae38c1fde"
     },
     {
       "id": "operation-product-30-day",
@@ -316,7 +316,7 @@
     {
       "id": "shopping-local-worker-contract",
       "file": "src/server/naver-shopping/local-worker-contract.mjs",
-      "sha256": "f6414a845372f29a89febba37416559ba88fc2330e4f2e720c5de097fcddb822"
+      "sha256": "9e6600cdb058a8f712cda07d67338fe84a568af0c42949d65e3aaedf2a5eddfd"
     },
     {
       "id": "shopping-local-worker-schedule",
@@ -326,12 +326,17 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "25854158c81e9313c13ec05582fa0efe184008f58c9af4d820e8d8a318c628fc"
+      "sha256": "a02298af2ed615eb765abe5e75896c74155b82171023ae83dbf707b3051391e2"
+    },
+    {
+      "id": "shopping-rank-lookup-handler",
+      "file": "src/server/handlers/naver-shopping-rank-jobs.mjs",
+      "sha256": "683a3c729073205295081b5dc422c59bf0c043f9629c4f7c7f96dec49bfd578f"
     },
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "40231f4b045cd8ba036c0f008e81149090792e63a9f8ef312b9a9640c27e275e"
+      "sha256": "0ccae7c66948593ea92995df80de1f089823286100e1641a515acf196255ee98"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -361,7 +366,7 @@
     {
       "id": "shopping-local-worker-router",
       "file": "src/server/index.mjs",
-      "sha256": "caa7de827541bf208d636d6fb6187241ce2f6c2403c099a1aea0d014309f3943"
+      "sha256": "3c923b8f7aa6b51a265ffbffeb6458c83d3fdd3495773991dc66e55aff57aca9"
     },
     {
       "id": "shopping-runtime-env-gate",
@@ -376,12 +381,18 @@
     {
       "id": "rank-feature-lock-checker",
       "file": "scripts/check-protected-rank-features.mjs",
-      "sha256": "a7ceab5216c7817f79dd8e7f30b8bfc431a410abc32815ae65f349253e80f30f"
+      "sha256": "8f27c2835f39d6277febc2e3c5991e5227f5b603fd4c709170c5d610b1111b2c"
     },
     {
       "id": "shopping-local-worker-schema",
       "file": "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
       "sha256": "92de7a2bc3eb1cfc7c4cfab67b02369fc71ebca3d4844c4367a035569aaf2ffa",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-rank-lookup-schema",
+      "file": "supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql",
+      "sha256": "357419cd0ee7a052f8834475e4e7bcac36f819dd1bf78df9bb9b32171056a0d2",
       "rankMigration": true
     },
     {
@@ -422,7 +433,7 @@
     {
       "id": "shopping-local-worker-session-boundary",
       "file": "src/server/session-gate.mjs",
-      "sha256": "ceb940a853e77d6c90b33eb06b14cc04b85be67d51f2f39332d64589606b16bf"
+      "sha256": "3d8150bd4863829f5faf0739e1f038fc3d22f826497d11289b7c391597e15d5d"
     }
   ]
 }

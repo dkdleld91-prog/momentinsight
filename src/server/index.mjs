@@ -26,6 +26,7 @@ const handlerLoaders = {
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
   naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
+  naverShoppingRankJobs: () => import("./handlers/naver-shopping-rank-jobs.mjs"),
   naverShoppingLocalWorker: () => import("./handlers/naver-shopping-local-worker.mjs"),
   reportCenter: () => import("./handlers/report-center.mjs"),
   workItems: () => import("./handlers/work-items.mjs"),
@@ -117,6 +118,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/naver-shopping-rank") {
       return dispatch("naverShoppingRank", request);
+    }
+
+    if (url.pathname === "/api/naver-shopping-rank-jobs") {
+      return dispatch("naverShoppingRankJobs", request);
     }
 
     if (url.pathname === LOCAL_WORKER_ENDPOINT_PATH) {

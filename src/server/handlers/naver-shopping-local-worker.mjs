@@ -11,6 +11,7 @@ import { protectedJson } from "../security.mjs";
 import {
   findShoppingRankFromWindow,
   normalizeText,
+  shoppingRankMessage,
 } from "./naver-shopping-rank.mjs";
 import {
   buildProductRankSnapshotRecord,
@@ -48,6 +49,20 @@ const WORKER_TRACKER_SELECT = [
   "processing_until",
 ].join(", ");
 
+const WORKER_LOOKUP_SELECT = [
+  "id",
+  "keyword",
+  "product_url",
+  "product_id",
+  "target_catalog_id",
+  "mall_name",
+  "product_title",
+  "max_rank",
+  "status",
+  "processing_started_at",
+  "processing_until",
+].join(", ");
+
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "POST, OPTIONS",
@@ -73,6 +88,28 @@ async function consumeNonce(ctx, auth) {
   });
   if (error) throw workerError("LOCAL_WORKER_NONCE_STORE_UNAVAILABLE", 503);
   if (data !== true) throw workerError("LOCAL_WORKER_REPLAY_REJECTED", 409);
+}
+
+async function claimOneLookupJob(ctx) {
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_rank_lookup_job", {
+    p_lease_seconds: 720,
+  });
+  if (error) {
+    if (/schema cache|does not exist|mi_claim_naver_shopping_rank_lookup_job/iu.test(error.message || "")) return null;
+    throw error;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  return {
+    kind: "lookup",
+    keyword: normalizeText(row.keyword),
+    limit: LOCAL_WORKER_ORGANIC_LIMIT,
+    claims: [{
+      lookupJobId: String(row.id || "").trim().toLowerCase(),
+      leaseStartedAt: row.lease_started_at,
+      leaseUntil: row.lease_until,
+    }],
+  };
 }
 
 async function claimOneKeywordJob(ctx) {
@@ -180,6 +217,7 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     nowMs: Date.now(),
   });
   const window = validateStrictLocalWorkerWindow(rawWindow, { keyword: job.keyword });
+  if (job.kind === "lookup") return submitLookupWindow(ctx, job, window);
   const claimTrackers = await loadClaimTrackers(ctx, job);
   const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
   let committedCount = 0;
@@ -256,10 +294,85 @@ async function submitWindow(ctx, rawJob, rawWindow) {
   };
 }
 
+async function submitLookupWindow(ctx, job, window) {
+  const claim = job.claims[0];
+  const { data: lookup, error: lookupError } = await ctx.supabaseAdmin
+    .from("naver_shopping_rank_lookup_jobs")
+    .select(WORKER_LOOKUP_SELECT)
+    .eq("id", claim.lookupJobId)
+    .eq("status", "processing")
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  if (!lookup
+    || normalizedKeywordKey(lookup.keyword) !== normalizedKeywordKey(job.keyword)
+    || new Date(lookup.processing_started_at).toISOString() !== claim.leaseStartedAt) {
+    throw workerError("LOCAL_WORKER_LOOKUP_MISMATCH", 409);
+  }
+
+  const result = await findShoppingRankFromWindow(window, {
+    keyword: lookup.keyword,
+    targetProductId: lookup.product_id,
+    targetUrl: lookup.product_url,
+    targetMallName: lookup.mall_name,
+    targetProductTitle: lookup.product_title,
+    targetCatalogId: lookup.target_catalog_id,
+    maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
+    skipTargetMetadata: true,
+  });
+  if (result.complete !== true || Number(result.checkedCount) !== LOCAL_WORKER_ORGANIC_LIMIT) {
+    throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
+  }
+  const message = shoppingRankMessage(result);
+  const responsePayload = {
+    source: result.source || "naver_shopping_results_collector",
+    rankEvidence: result.rankEvidence || "",
+    checkedAt: window.collectedAt,
+    query: {
+      keyword: lookup.keyword,
+      targetUrl: lookup.product_url || "",
+      productId: lookup.product_id || "",
+      targetMallName: lookup.mall_name || "",
+      targetProductTitle: lookup.product_title || "",
+      maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
+    },
+    result,
+    message,
+  };
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_complete_naver_shopping_rank_lookup_job", {
+    p_job_id: claim.lookupJobId,
+    p_lease_started_at: claim.leaseStartedAt,
+    p_collection_id: window.collectionId,
+    p_checked_at: window.collectedAt,
+    p_result: responsePayload,
+    p_message: message,
+  });
+  if (error) throw error;
+  if (!["committed", "already_committed", "lease_lost", "collection_conflict"].includes(data)) {
+    throw workerError("LOCAL_WORKER_COMMIT_INVALID", 503);
+  }
+  return {
+    committedCount: data === "committed" ? 1 : 0,
+    alreadyCommittedCount: data === "already_committed" ? 1 : 0,
+    leaseLostCount: data === "lease_lost" ? 1 : 0,
+    collectionConflictCount: data === "collection_conflict" ? 1 : 0,
+    processedCount: 1,
+  };
+}
+
 async function failClaims(ctx, rawJob, rawErrorCode) {
   const job = validateLocalWorkerJob(rawJob);
   const errorCode = String(rawErrorCode || "local_worker_collection_failed").trim().toLowerCase();
   if (!SAFE_FAILURE_PATTERN.test(errorCode)) throw workerError("LOCAL_WORKER_FAILURE_CODE_INVALID", 400);
+  if (job.kind === "lookup") {
+    const claim = job.claims[0];
+    const { data, error } = await ctx.supabaseAdmin.rpc("mi_fail_naver_shopping_rank_lookup_job", {
+      p_job_id: claim.lookupJobId,
+      p_lease_started_at: claim.leaseStartedAt,
+      p_error: errorCode,
+    });
+    if (error) throw error;
+    return { releasedCount: data === true ? 1 : 0 };
+  }
   let releasedCount = 0;
   for (const claim of job.claims) {
     // A failure clears only the matching lease and never changes current_rank
@@ -308,7 +421,11 @@ export async function handleLocalWorkerRequest(request, ctx) {
       throw workerError("LOCAL_WORKER_JSON_INVALID", 400);
     }
     if (body.action === "claim") {
-      return json(request, { ok: true, job: await claimOneKeywordJob(ctx) });
+      const preferLookup = body.preferLookup !== false;
+      const job = preferLookup
+        ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
+        : ((await claimOneKeywordJob(ctx)) || (await claimOneLookupJob(ctx)));
+      return json(request, { ok: true, job });
     }
     if (body.action === "submit") {
       return json(request, { ok: true, ...(await submitWindow(ctx, body.job, body.window)) });

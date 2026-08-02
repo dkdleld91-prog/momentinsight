@@ -313,7 +313,9 @@ export async function runLocalShoppingWorker(options = {}) {
 
   try {
     for (let index = 0; index < maxJobs; index += 1) {
-      const claim = await action({ action: "claim" });
+      // Give interactive lookups a fast response while reserving every third
+      // claim attempt for the existing 30-day tracker queue.
+      const claim = await action({ action: "claim", preferLookup: index % 3 !== 2 });
       if (!claim.job) break;
       const job = validateLocalWorkerJob(claim.job, {
         requireActiveLease: true,

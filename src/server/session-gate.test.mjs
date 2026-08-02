@@ -63,6 +63,7 @@ test("owner, linked team and client sessions can use all five core tools", () =>
     "/api/naver-keyword",
     "/api/naver-product-seo-audit",
     "/api/naver-shopping-rank",
+    "/api/naver-shopping-rank-jobs",
     "/api/naver-rank-trackers",
     "/api/naver-place-rank-trackers",
   ];
@@ -97,6 +98,7 @@ test("an unlinked team can use isolated rank trackers without crossing advertise
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-product-seo-audit"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-shopping-rank"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/naver-shopping-rank-jobs"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/meta-ads"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword/private"), false);
   assert.equal(sessionScopeAllowsPath(claims, "/api/report-center"), false);

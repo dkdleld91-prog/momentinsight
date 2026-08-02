@@ -8779,7 +8779,7 @@
 
         <div class="mi-nav-group">
           <p class="mi-nav-title">순위 조회·추적</p>
-          <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">N 상품 순위</a>
+          <a href="#mi-admin-naver-rank" data-mi-admin-screen="naver-rank">N 상품 순위 (개발중)</a>
           <a href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>
           <a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
         </div>
@@ -9867,10 +9867,7 @@
               <input class="mi-input" data-rank-check-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
               <input class="mi-input" data-rank-check-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
               <select class="mi-input" data-rank-check-max aria-label="조회 범위">
-                <option value="100">상위 100개</option>
                 <option value="300" selected>상위 300개</option>
-                <option value="500">상위 500개</option>
-                <option value="1000">상위 1000개</option>
               </select>
               <button class="mi-button" type="button" data-rank-check-run>순위 조회</button>
             </div>
@@ -14337,6 +14334,12 @@
         return "http://127.0.0.1:8790/api/naver-shopping-rank";
       }
 
+      function getShoppingRankJobsApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/naver-shopping-rank-jobs";
+        return "http://127.0.0.1:8790/api/naver-shopping-rank-jobs";
+      }
+
       function getRankTrackerApiUrl() {
         if (window.MI_NAVER_RANK_TRACKERS_API_URL) return window.MI_NAVER_RANK_TRACKERS_API_URL;
         var host = window.location && window.location.hostname;
@@ -15797,6 +15800,43 @@
           rankKeyword.setAttribute("data-synced-keyword", "false");
         });
 
+        async function queueFullRankLookup(query, requestSession) {
+          var enqueueResponse = await miFetch(getShoppingRankJobsApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            timeoutMs: 20000,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(query)
+          });
+          var enqueuePayload = await enqueueResponse.json().catch(function () { return null; });
+          if (!enqueuePayload || !enqueueResponse.ok || enqueuePayload.ok === false || !enqueuePayload.jobId) {
+            throw new Error((enqueuePayload && enqueuePayload.message) || "300위 전체 조회 대기열을 연결하지 못했습니다.");
+          }
+          var jobId = enqueuePayload.jobId;
+          var deadline = Date.now() + 10 * 60 * 1000;
+          setStatus(rankStatus, enqueuePayload.message || "중앙 Mac에 300위 전체 조회를 요청했습니다.", "");
+          while (Date.now() < deadline) {
+            await new Promise(function (resolve) { window.setTimeout(resolve, 3000); });
+            if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return null;
+            var pollResponse = await miFetch(getShoppingRankJobsApiUrl() + "?jobId=" + encodeURIComponent(jobId), {
+              method: "GET",
+              cache: "no-store",
+              timeoutMs: 20000
+            });
+            var pollPayload = await pollResponse.json().catch(function () { return null; });
+            if (!pollPayload) throw new Error("300위 조회 상태를 확인할 수 없습니다.");
+            if (pollPayload.pending === true) {
+              setStatus(rankStatus, pollPayload.message || "중앙 Mac이 오가닉 300위를 확인하고 있습니다.", "");
+              continue;
+            }
+            if (!pollResponse.ok || pollPayload.ok === false) {
+              throw new Error(pollPayload.message || "300위 전체 조회를 완료하지 못했습니다.");
+            }
+            return pollPayload;
+          }
+          throw new Error("조회는 대기열에 유지됩니다. 중앙 Mac이 켜지면 다시 조회 버튼을 눌러 결과를 이어서 확인할 수 있습니다.");
+        }
+
         rankRun.addEventListener("click", async function () {
           var keyword = (rankKeyword.value || (linkedKeywordInput && linkedKeywordInput.value) || "").trim();
           var targetUrl = rankUrl ? rankUrl.value.trim() : "";
@@ -15825,8 +15865,16 @@
             var payload = await response.json().catch(function () { return null; });
             if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (!payload) payload = { ok: false, message: "상품 순위 응답을 확인할 수 없습니다." };
+            if (!response.ok || payload.ok === false) {
+              payload = await queueFullRankLookup({
+                keyword: keyword,
+                targetUrl: targetUrl,
+                productId: productId,
+                maxRank: 300
+              }, requestSession);
+              if (!payload || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
+            }
             payload.rankCheckMax = selectedMaxRank;
-            if (!response.ok && payload.ok !== false) payload.ok = false;
             renderRankCheckResult(rankResult, payload);
             var rank = payload.result && payload.result.rank;
             setStatus(rankStatus, payload.ok === false ? (payload.message || "상품 순위 확인이 어렵습니다.") : (rank ? (payload.message || "조회 완료: 현재 오가닉 " + formatNumber(rank) + "위입니다.") : "조회 완료: " + rankCheckRangeLabel(payload, payload.result || {}, payload.checkedCount || 0) + " 이내 없음"), rank ? "is-ok" : "is-warn");

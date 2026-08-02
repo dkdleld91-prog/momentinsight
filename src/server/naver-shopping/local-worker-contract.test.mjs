@@ -77,6 +77,28 @@ test("accepts only a 300-rank canonical keyword job with unique leases", () => {
   assert.equal(normalized.claims.length, 2);
 });
 
+test("accepts one isolated lookup claim and rejects tracker-shaped lookup claims", () => {
+  const lookup = validateLocalWorkerJob({
+    kind: "lookup",
+    keyword: "온열찜질기",
+    limit: 300,
+    claims: [{
+      lookupJobId: TRACKER_ONE,
+      leaseStartedAt: "2026-08-01T06:00:00.000Z",
+      leaseUntil: "2026-08-01T06:12:00.000Z",
+    }],
+  });
+  assert.equal(lookup.kind, "lookup");
+  assert.equal(lookup.claims[0].lookupJobId, TRACKER_ONE);
+  assert.equal(lookup.claims[0].trackerId, undefined);
+  assert.throws(() => validateLocalWorkerJob({
+    kind: "lookup",
+    keyword: "온열찜질기",
+    limit: 300,
+    claims: [job().claims[0]],
+  }), /local_worker_lease_invalid/);
+});
+
 test("rejects non-300 jobs, duplicate tracker claims and invalid leases", () => {
   assert.throws(() => validateLocalWorkerJob(job({ limit: 100 })), /local_worker_job_invalid/);
   assert.throws(() => validateLocalWorkerJob(job({ claims: [job().claims[0], job().claims[0]] })), /local_worker_lease_invalid/);

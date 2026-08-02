@@ -165,6 +165,8 @@ const shoppingLocalWorkerAuth = read("src/server/local-worker-auth.mjs");
 const shoppingLocalWorkerHandler = read("src/server/handlers/naver-shopping-local-worker.mjs");
 const shoppingLocalWorkerContract = read("src/server/naver-shopping/local-worker-contract.mjs");
 const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_naver_shopping_local_worker.sql");
+const shoppingRankLookupJobs = read("src/server/handlers/naver-shopping-rank-jobs.mjs");
+const shoppingRankLookupMigration = read("supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -243,7 +245,7 @@ const checks = {
     'data-mi-admin-screen="keyword">키워드 조회</a>',
     'data-mi-admin-screen="seo-check">SEO 확인</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
-    'data-mi-admin-screen="naver-rank">N 상품 순위</a>',
+    'data-mi-admin-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     '<p class="mi-nav-title">광고 조사</p>',
@@ -365,7 +367,7 @@ const checks = {
     'data-mi-screen="keyword-tool">키워드 조회</a>',
     'data-mi-screen="seo-check">SEO 확인</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
-    'data-mi-screen="naver-rank">N 상품 순위</a>',
+    'data-mi-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     '<p class="mi-nav-title">광고 조사</p>',
@@ -968,7 +970,7 @@ const checks = {
     && placeRankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);'),
   naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
     && source.includes(">순위 추적<")
-    && source.includes('>N 상품 순위</a>')
+    && source.includes('>N 상품 순위 (개발중)</a>')
     && source.includes('<span class="mi-badge">조회</span>')
     && !source.includes(">순위 1회 조회<")
     && !source.includes("<small>1회 조회</small>")
@@ -1160,6 +1162,17 @@ const checks = {
     && shoppingLocalWorkerMigration.includes("idx_naver_rank_snapshots_tracker_collection")
     && shoppingLocalWorkerMigration.includes("security definer")
     && shoppingLocalWorkerMigration.includes("to service_role"),
+  shoppingRankLookupQueueIsScopedAndNonBlocking: [adminSource, clientSource].every((source) =>
+    source.includes("getShoppingRankJobsApiUrl")
+      && source.includes("queueFullRankLookup")
+      && source.includes("중앙 Mac에 300위 전체 조회를 요청했습니다."))
+    && shoppingRankLookupJobs.includes("rankLookupScopeHash")
+    && shoppingRankLookupJobs.includes('.eq("scope_hash", scopeHash)')
+    && shoppingRankLookupMigration.includes("force row level security")
+    && shoppingRankLookupMigration.includes("for update skip locked")
+    && shoppingRankLookupMigration.includes("pg_advisory_xact_lock")
+    && shoppingLocalWorkerHandler.includes('body.preferLookup !== false')
+    && shoppingLocalWorker.includes("index % 3 !== 2"),
   shoppingNormalChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
   ])

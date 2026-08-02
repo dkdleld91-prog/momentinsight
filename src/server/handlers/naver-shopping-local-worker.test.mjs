@@ -133,8 +133,9 @@ function claimContext(rows, claimableIds, attemptedIds) {
   return {
     supabaseAdmin: {
       async rpc(name) {
-        assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
-        return { data: true, error: null };
+        if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+        assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+        return { data: [], error: null };
       },
       from(table) {
         assert.equal(table, "naver_rank_trackers");
@@ -261,6 +262,84 @@ test("central collector claims all due trackers without an owner, team or client
   assert.doesNotMatch(claimSource, /agency_code|admin_code|client_id|user_code/iu);
 });
 
+test("claims an interactive lookup before periodic trackers and atomically stores its 300 result", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date().toISOString();
+    const leaseUntil = new Date(Date.now() + 12 * 60_000).toISOString();
+    const lookupJob = {
+      kind: "lookup",
+      keyword: "온열찜질기",
+      limit: 300,
+      claims: [{ lookupJobId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+    };
+    const claimCtx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+          return {
+            data: [{ id: TRACKER_ID, keyword: "온열찜질기", lease_started_at: leaseStartedAt, lease_until: leaseUntil }],
+            error: null,
+          };
+        },
+        from() { throw new Error("periodic_tracker_should_not_be_claimed"); },
+      },
+    };
+    const claimResponse = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), claimCtx);
+    assert.equal(claimResponse.status, 200);
+    assert.deepEqual((await claimResponse.json()).job, lookupJob);
+
+    let completeArgs = null;
+    const submitCtx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_complete_naver_shopping_rank_lookup_job");
+          completeArgs = args;
+          return { data: "committed", error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_shopping_rank_lookup_jobs");
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() {
+              return {
+                data: {
+                  id: TRACKER_ID,
+                  keyword: "온열찜질기",
+                  product_url: "https://smartstore.naver.com/example/products/2000000011",
+                  product_id: "2000000011",
+                  target_catalog_id: null,
+                  mall_name: "예시몰",
+                  product_title: "온열찜질기 11",
+                  max_rank: 300,
+                  status: "processing",
+                  processing_started_at: leaseStartedAt,
+                  processing_until: leaseUntil,
+                },
+                error: null,
+              };
+            },
+          };
+          return query;
+        },
+      },
+    };
+    const submitResponse = await handleLocalWorkerRequest(signedRequest({
+      action: "submit",
+      job: lookupJob,
+      window: completeWindow(),
+    }), submitCtx);
+    const submitPayload = await submitResponse.json();
+    assert.equal(submitResponse.status, 200);
+    assert.equal(submitPayload.committedCount, 1);
+    assert.equal(completeArgs.p_job_id, TRACKER_ID);
+    assert.equal(completeArgs.p_result.result.rank, 11);
+    assert.equal(completeArgs.p_result.result.checkedCount, 300);
+  });
+});
+
 test("claim releases leases acquired before a later conditional update fails", async () => {
   await withWorkerEnv(async () => {
     const rows = [tracker(), tracker({ id: SECOND_TRACKER_ID })];
@@ -270,6 +349,7 @@ test("claim releases leases acquired before a later conditional update fails", a
       supabaseAdmin: {
         async rpc(name, args) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_claim_naver_shopping_rank_lookup_job") return { data: [], error: null };
           assert.equal(name, "mi_fail_naver_shopping_worker_claim");
           released.push(args.p_tracker_id);
           return { data: true, error: null };
@@ -505,4 +585,18 @@ test("migration makes nonce consumption and snapshot plus tracker commit service
   assert.match(commitBody, /collection_conflict[\s\S]+processing_started_at = null/i);
   const failureBody = sql.slice(sql.indexOf("create or replace function public.mi_fail_naver_shopping_worker_claim"));
   assert.doesNotMatch(failureBody, /current_rank\s*=/i);
+});
+
+test("lookup queue migration is isolated, deduplicated and claimed without blocking", () => {
+  const sql = fs.readFileSync(new URL("../../../supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql", import.meta.url), "utf8");
+  assert.match(sql, /enable row level security/iu);
+  assert.match(sql, /force row level security/iu);
+  assert.match(sql, /revoke all on table public\.naver_shopping_rank_lookup_jobs from public, anon, authenticated/iu);
+  assert.match(sql, /grant select, insert, update, delete[^;]+service_role/isu);
+  assert.match(sql, /unique index[^;]+scope_hash, request_hash[^;]+pending[^;]+processing/isu);
+  assert.match(sql, /pg_advisory_xact_lock/iu);
+  assert.match(sql, /for update skip locked/iu);
+  assert.match(sql, /mi_complete_naver_shopping_rank_lookup_job/iu);
+  assert.match(sql, /mi_fail_naver_shopping_rank_lookup_job/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to authenticated/iu);
 });

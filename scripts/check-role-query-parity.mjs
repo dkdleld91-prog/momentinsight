@@ -88,15 +88,17 @@ const expectedEndpoints = [
   "/api/naver-place-rank-trackers",
   "/api/naver-rank-trackers",
   "/api/naver-shopping-rank",
+  "/api/naver-shopping-rank-jobs",
 ].sort();
 
 const adminScreens = matches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = matches(clientSource, /data-mi-screen="([^"]+)"/g);
-const adminEndpoints = matches(adminSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank)/g);
-const clientEndpoints = matches(clientSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank)/g);
+const adminEndpoints = matches(adminSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank(?:-jobs)?)/g);
+const clientEndpoints = matches(clientSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank(?:-jobs)?)/g);
 const apiHelperNames = [
   "getKeywordApiUrl",
   "getShoppingRankApiUrl",
+  "getShoppingRankJobsApiUrl",
   "getRankTrackerApiUrl",
   "getPlaceRankTrackerApiUrl",
 ];
@@ -274,6 +276,7 @@ const checks = {
       '"/api/naver-keyword"',
       '"/api/naver-product-seo-audit"',
       '"/api/naver-shopping-rank"',
+      '"/api/naver-shopping-rank-jobs"',
       '"/api/naver-rank-trackers"',
       '"/api/naver-place-rank-trackers"',
       'TEAM_ACCOUNT_ONLY_RANK_PATHS.has(path)',
@@ -498,6 +501,7 @@ const checks = {
   serverRoutesConnected: [
     ["naverKeyword", "/api/naver-keyword"],
     ["naverShoppingRank", "/api/naver-shopping-rank"],
+    ["naverShoppingRankJobs", "/api/naver-shopping-rank-jobs"],
     ["naverRankTrackers", "/api/naver-rank-trackers"],
     ["naverPlaceRankTrackers", "/api/naver-place-rank-trackers"],
   ].every(([handler, endpoint]) => serverIndex.includes(`${handler}: () => import(`)

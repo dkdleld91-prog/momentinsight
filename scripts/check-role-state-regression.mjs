@@ -24,6 +24,7 @@ const CORE_FEATURE_PATHS = [
   "/api/naver-keyword",
   "/api/naver-product-seo-audit",
   "/api/naver-shopping-rank",
+  "/api/naver-shopping-rank-jobs",
   "/api/naver-rank-trackers",
   "/api/naver-place-rank-trackers",
 ];

@@ -38,6 +38,7 @@ const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
   "/api/naver-keyword",
   "/api/naver-product-seo-audit",
   "/api/naver-shopping-rank",
+  "/api/naver-shopping-rank-jobs",
   "/api/meta-ads",
   ...TEAM_ACCOUNT_ONLY_RANK_PATHS,
 ]);

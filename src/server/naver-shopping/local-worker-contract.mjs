@@ -39,28 +39,33 @@ export function validateLocalWorkerJob(payload = {}, options = {}) {
   const keyword = normalizeText(payload.keyword);
   const limit = Number(payload.limit);
   const claims = Array.isArray(payload.claims) ? payload.claims : [];
+  const kind = payload.kind === "lookup" ? "lookup" : "tracker";
   if (!keyword || limit !== LOCAL_WORKER_ORGANIC_LIMIT || claims.length < 1 || claims.length > 100) {
     throw contractError("local_worker_job_invalid");
   }
+  if (kind === "lookup" && claims.length !== 1) throw contractError("local_worker_job_invalid");
 
   const seen = new Set();
   const normalizedClaims = claims.map((claim) => {
-    const trackerId = String(claim?.trackerId || "").trim().toLowerCase();
+    const claimId = String(kind === "lookup" ? claim?.lookupJobId : claim?.trackerId || "").trim().toLowerCase();
     const leaseStartedAt = new Date(finiteTime(claim?.leaseStartedAt, "local_worker_lease_invalid")).toISOString();
     const leaseUntil = new Date(finiteTime(claim?.leaseUntil, "local_worker_lease_invalid")).toISOString();
     const leaseExpired = options.requireActiveLease === true
       && Date.parse(leaseUntil) <= Number(options.nowMs ?? Date.now());
-    if (!UUID_PATTERN.test(trackerId)
+    if (!UUID_PATTERN.test(claimId)
       || Date.parse(leaseUntil) <= Date.parse(leaseStartedAt)
       || leaseExpired
-      || seen.has(trackerId)) {
+      || seen.has(claimId)) {
       throw contractError("local_worker_lease_invalid");
     }
-    seen.add(trackerId);
-    return { trackerId, leaseStartedAt, leaseUntil };
+    seen.add(claimId);
+    return kind === "lookup"
+      ? { lookupJobId: claimId, leaseStartedAt, leaseUntil }
+      : { trackerId: claimId, leaseStartedAt, leaseUntil };
   });
 
   return {
+    ...(kind === "lookup" ? { kind } : {}),
     keyword,
     limit,
     claims: normalizedClaims,

@@ -250,6 +250,17 @@ test("claim continues to the next exact keyword group after lease contention", a
   });
 });
 
+test("central collector claims all due trackers without an owner, team or client scope", () => {
+  const source = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
+  const claimStart = source.indexOf("async function claimOneKeywordJob");
+  const claimEnd = source.indexOf("async function loadClaimTrackers");
+  const claimSource = source.slice(claimStart, claimEnd);
+  assert.ok(claimStart >= 0 && claimEnd > claimStart);
+  assert.match(claimSource, /\.eq\("status", "active"\)/u);
+  assert.match(claimSource, /\.lte\("next_check_at", nowIso\)/u);
+  assert.doesNotMatch(claimSource, /agency_code|admin_code|client_id|user_code/iu);
+});
+
 test("claim releases leases acquired before a later conditional update fails", async () => {
   await withWorkerEnv(async () => {
     const rows = [tracker(), tracker({ id: SECOND_TRACKER_ID })];

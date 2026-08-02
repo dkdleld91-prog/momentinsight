@@ -19,9 +19,15 @@ function nextKstHour(hour) {
 }
 
 async function configureAlarms() {
-  await chrome.alarms.create("rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 });
-  await chrome.alarms.create("rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 });
-  await chrome.alarms.create("rank-catch-up", { delayInMinutes: 10, periodInMinutes: 60 });
+  const alarmDefinitions = [
+    ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
+    ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
+    ["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 60 }],
+  ];
+  await Promise.all(alarmDefinitions.map(async ([name, definition]) => {
+    const existing = await chrome.alarms.get(name);
+    if (!existing) await chrome.alarms.create(name, definition);
+  }));
 }
 
 function searchUrl(keyword, pageIndex) {
@@ -119,6 +125,19 @@ async function saveStatus(status, detail = "") {
   });
 }
 
+function nativeDisconnectCode(lastErrorMessage) {
+  const message = String(lastErrorMessage || "").trim().toLowerCase();
+  if (message.includes("host not found")) return "native_host_not_found";
+  if (message.includes("host is forbidden") || message.includes("access to the specified")) {
+    return "native_host_origin_not_allowed";
+  }
+  if (message.includes("host has exited")) return "native_host_exited";
+  if (message.includes("communicating with the native messaging host")) {
+    return "native_host_communication_failed";
+  }
+  return message ? "native_host_disconnected" : "native_host_closed";
+}
+
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
   running = true;
@@ -160,9 +179,9 @@ async function runWorker(trigger = "manual") {
         }
       });
       port.onDisconnect.addListener(() => {
-        if (!settled) finish(new Error(
-          chrome.runtime.lastError ? "native_host_disconnected" : "native_host_closed",
-        ));
+        if (!settled) {
+          finish(new Error(nativeDisconnectCode(chrome.runtime.lastError?.message)));
+        }
       });
       port.postMessage({ action: "run", trigger });
     });

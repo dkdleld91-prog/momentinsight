@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -138,7 +139,33 @@ test("manifest public key produces a stable Chrome extension id", async () => {
   const manifest = await import("../tools/naver-shopping-chrome-extension/manifest.json", {
     with: { type: "json" },
   });
-  assert.match(deriveChromeExtensionId(manifest.default.key), /^[a-p]{32}$/u);
+  assert.equal(deriveChromeExtensionId(manifest.default.key), "pflggephankeefaeoaafkmggampnaefm");
+});
+
+test("native host wrapper uses a stable path, bounded jobs and safe local canary config", () => {
+  const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
+  const source = fs.readFileSync(wrapperPath, "utf8");
+  assert.match(source, /naver-shopping-native-host\.conf/u);
+  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="25"/u);
+  assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
+  assert.match(source, /naver-shopping-native-host\.log/u);
+  assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
+  const lint = spawnSync("/bin/zsh", ["-n", wrapperPath], { encoding: "utf8" });
+  assert.equal(lint.status, 0, lint.stderr);
+});
+
+test("extension translates native disconnects and never exposes raw runtime errors", () => {
+  const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
+  const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
+  const popup = fs.readFileSync(new URL("popup.js", extensionDirectory), "utf8");
+  assert.match(serviceWorker, /native_host_not_found/u);
+  assert.match(serviceWorker, /native_host_origin_not_allowed/u);
+  assert.match(serviceWorker, /native_host_exited/u);
+  assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
+  assert.match(serviceWorker, /if \(!existing\) await chrome\.alarms\.create\(name, definition\)/u);
+  assert.match(popup, /로컬 연결기를 다시 설치해 주세요/u);
+  assert.match(popup, /failureText\(status\.detail\)/u);
+  assert.match(popup, /failureText\(result\?\.code\)/u);
 });
 
 test("native host framing returns a bounded typed error for an invalid start message", () => {

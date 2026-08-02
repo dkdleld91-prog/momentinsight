@@ -7,8 +7,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildChromeSchedulerPlist,
   deriveChromeExtensionId,
   installChromeBridge,
+  resolveChromeApplicationPath,
+  resolveChromeProfileDirectory,
 } from "./install-naver-shopping-chrome-bridge.mjs";
 import {
   buildNativeWindowFromPages,
@@ -165,6 +168,7 @@ test("native host installs an independent protected runtime outside the reposito
     homeDirectory,
     keychainReady: () => true,
     disableOldAutomaticWorker: false,
+    installChromeScheduler: false,
   });
   const installedManifest = JSON.parse(fs.readFileSync(result.hostManifestPath, "utf8"));
 
@@ -178,6 +182,30 @@ test("native host installs an independent protected runtime outside the reposito
   ]);
 });
 
+test("normal Chrome scheduler prepares the approved profile before both KST slots", async (context) => {
+  const homeDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "mi-chrome-scheduler-home-"));
+  context.after(() => fs.rmSync(homeDirectory, { recursive: true, force: true }));
+  const chromeApplicationPath = path.join(homeDirectory, "Desktop", "Google Chrome.app");
+  const chromeExecutable = path.join(chromeApplicationPath, "Contents", "MacOS", "Google Chrome");
+  fs.mkdirSync(path.dirname(chromeExecutable), { recursive: true });
+  fs.writeFileSync(chromeExecutable, "#!/bin/sh\n", { mode: 0o700 });
+  const localStatePath = path.join(homeDirectory, "Library", "Application Support", "Google", "Chrome", "Local State");
+  fs.mkdirSync(path.dirname(localStatePath), { recursive: true });
+  fs.writeFileSync(localStatePath, JSON.stringify({
+    profile: { info_cache: { Default: { name: "동빈" }, "Profile 1": { name: "다른 프로필" } } },
+  }));
+
+  assert.equal(resolveChromeApplicationPath(homeDirectory), chromeApplicationPath);
+  assert.equal(resolveChromeProfileDirectory(homeDirectory), "Default");
+  const plist = buildChromeSchedulerPlist({
+    wrapperPath: "/tmp/Moment Insight/run scheduler.sh",
+    logDirectory: "/tmp/Moment Insight/logs",
+  });
+  assert.match(plist, /<integer>8<\/integer><key>Minute<\/key><integer>50<\/integer>/u);
+  assert.match(plist, /<integer>14<\/integer><key>Minute<\/key><integer>50<\/integer>/u);
+  assert.match(plist, /RunAtLoad/u);
+});
+
 test("native host wrapper uses a stable path, bounded jobs and safe local canary config", () => {
   const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
   const source = fs.readFileSync(wrapperPath, "utf8");
@@ -187,6 +215,16 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
   assertZshSyntax(wrapperPath, source);
+});
+
+test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {
+  const schedulerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-chrome-scheduler.sh");
+  const source = fs.readFileSync(schedulerPath, "utf8");
+  assert.match(source, /\/usr\/bin\/open -gj/u);
+  assert.match(source, /--profile-directory=/u);
+  assert.match(source, /chrome_ready/u);
+  assert.doesNotMatch(source, /remote-debugging|no-sandbox|user-data-dir/iu);
+  assertZshSyntax(schedulerPath, source);
 });
 
 test("extension translates native disconnects and never exposes raw runtime errors", () => {
@@ -199,6 +237,8 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
   assert.match(serviceWorker, /if \(!existing\) await chrome\.alarms\.create\(name, definition\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 1_250/u);
+  assert.match(serviceWorker, /await wait\(PAGE_REQUEST_INTERVAL_MS\)/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);
   assert.match(popup, /failureText\(status\.detail\)/u);
   assert.match(popup, /failureText\(result\?\.code\)/u);

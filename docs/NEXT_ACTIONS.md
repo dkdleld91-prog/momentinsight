@@ -11,6 +11,13 @@
 
 ## 현재 작업
 
+### 2026-08-03 N 쇼핑 Mac 일반 Chrome 운영
+
+- 완료: 동빈 Chrome 준비용 LaunchAgent를 08:50·14:50 KST로 설치하고 실제 exit 0을 확인했다.
+- 완료: 페이지 간 1.25초 간격, 네이버 보안확인·일시 차단 시 즉시 실행 중단, 실패 lease 해제와 기존 정상값 보존 회귀검사를 추가했다.
+- 사용자 확인: 사용 중인 Chrome을 강제 종료하지 않고 확장프로그램을 한 번 재로드한 뒤 다음 09:00 또는 15:00 실행에서 새 `checked_count=300` snapshot을 확인한다.
+- 배포: 로컬 중앙 Mac 기능이므로 Vercel 배포는 필수 조건이 아니다. 저장소 변경의 push·Production 배포는 대표님의 별도 승인 뒤 진행한다.
+
 - 종료 쇼핑 검색 API와 NAVER API Hub를 상품 오가닉 순위에 연결하지 않는다. Hub에는 전체 쇼핑 순위를 제공하는 공식 endpoint가 없으며 Search·Search Trend·Shopping Insight·Commerce API 값을 순위로 바꾸지 않는다.
 - 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 공식 절대 순위 exact ID를 즉시 확인하고, 응답에서 빠진 슬롯은 압축하거나 미노출로 단정하지 않는다. 사용자가 승인한 일반 `동빈` Chrome의 최소권한 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 네이티브 호스트에 전달한다.
 - Mac 워커는 HMAC·유효시간·1회용 nonce·lease·원자 DB 반영을 강제한다. 299개 이하, 광고·중복·순위 공백, 인증 만료, collection 충돌은 새 순위나 snapshot을 만들지 않고 마지막 정상 순위와 30일 이력을 보존한다.

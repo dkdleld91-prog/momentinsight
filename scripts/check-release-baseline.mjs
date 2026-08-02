@@ -169,6 +169,7 @@ const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
 const shoppingNativeHostWrapper = read("scripts/run-naver-shopping-native-host.sh");
+const shoppingChromeSchedulerWrapper = read("scripts/run-naver-shopping-chrome-scheduler.sh");
 const shoppingChromeManifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
 const shoppingChromeWorker = read("tools/naver-shopping-chrome-extension/service-worker.js");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
@@ -1181,7 +1182,13 @@ const checks = {
     && shoppingNativeHostInstaller.includes("allowed_origins")
     && shoppingNativeHostInstaller.includes("oldAutomaticBrowserWorkerDisabled: true")
     && shoppingNativeHostWrapper.includes("security find-generic-password")
-    && shoppingNativeHostWrapper.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET"),
+    && shoppingNativeHostWrapper.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
+    && shoppingNativeHostInstaller.includes("StartCalendarInterval")
+    && shoppingNativeHostInstaller.includes("resolveChromeProfileDirectory")
+    && shoppingNativeHostInstaller.includes("activateChromeScheduler")
+    && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
+    && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
+    && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false
     && shopping418Failure.retryAfterSeconds === 0

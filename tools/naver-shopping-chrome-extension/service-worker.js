@@ -2,7 +2,12 @@ const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
 const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 30_000;
+const PAGE_REQUEST_INTERVAL_MS = 1_250;
 let running = false;
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
 
 function nextKstHour(hour) {
   const now = new Date();
@@ -108,6 +113,7 @@ async function collectPages(request) {
       }
       await waitForTabComplete(tabId);
       pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
+      await wait(PAGE_REQUEST_INTERVAL_MS);
     }
     return pages;
   } finally {

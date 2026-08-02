@@ -300,6 +300,39 @@ test("never submits a short source-exhausted window and releases the lease as fa
   assert.equal(calls.some((call) => call.action === "submit"), false);
 });
 
+test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {
+  const calls = [];
+  const logs = [];
+  let collectCount = 0;
+  const provider = {
+    async collect() {
+      collectCount += 1;
+      throw new Error("naver_verification_required");
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls);
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    log: (value) => logs.push(value),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+  });
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  assert.equal(calls[1].errorCode, "naver_verification_required");
+  assert.match(logs.join("\n"), /local_worker_run_halted:naver_verification_required/u);
+});
+
 test("treats any lease-lost submit result as a failed batch and releases the claim", async () => {
   const calls = [];
   const provider = {

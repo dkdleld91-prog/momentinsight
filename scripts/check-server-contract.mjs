@@ -42,6 +42,7 @@ const files = {
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
   shoppingNativeHostInstaller: "scripts/install-naver-shopping-chrome-bridge.mjs",
+  shoppingChromeSchedulerWrapper: "scripts/run-naver-shopping-chrome-scheduler.sh",
   shoppingNativeHostWrapper: "scripts/run-naver-shopping-native-host.sh",
   shoppingChromeManifest: "tools/naver-shopping-chrome-extension/manifest.json",
   shoppingChromeWorker: "tools/naver-shopping-chrome-extension/service-worker.js",
@@ -91,6 +92,7 @@ const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMi
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
 const shoppingNativeHostInstaller = fs.readFileSync(files.shoppingNativeHostInstaller, "utf8");
+const shoppingChromeSchedulerWrapper = fs.readFileSync(files.shoppingChromeSchedulerWrapper, "utf8");
 const shoppingNativeHostWrapper = fs.readFileSync(files.shoppingNativeHostWrapper, "utf8");
 const shoppingChromeManifest = JSON.parse(fs.readFileSync(files.shoppingChromeManifest, "utf8"));
 const shoppingChromeWorker = fs.readFileSync(files.shoppingChromeWorker, "utf8");
@@ -521,8 +523,19 @@ check(
     && hasAll(shoppingNativeHostWrapper, [
       /security find-generic-password/,
       /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
-    ]),
-  `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}`,
+    ])
+    && hasAll(shoppingNativeHostInstaller, [
+      /StartCalendarInterval/,
+      /resolveChromeProfileDirectory/,
+      /activateChromeScheduler/,
+    ])
+    && hasAll(shoppingChromeSchedulerWrapper, [
+      /\/usr\/bin\/open -gj/,
+      /--profile-directory=/,
+      /chrome_ready/,
+    ])
+    && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
+  `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}, ${files.shoppingChromeSchedulerWrapper}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

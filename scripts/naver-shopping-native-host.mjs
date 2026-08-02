@@ -98,7 +98,12 @@ async function main() {
       }
     },
   });
-  const summary = await runLocalShoppingWorker({ provider });
+  const summary = await runLocalShoppingWorker({
+    provider,
+    log(event) {
+      process.stderr.write(`${safeCode(event)}\n`);
+    },
+  });
   writeMessage({ type: "summary", summary });
 }
 

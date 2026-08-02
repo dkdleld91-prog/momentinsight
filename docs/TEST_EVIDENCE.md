@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-03 N 쇼핑 일반 Chrome 자동 수집
+
+- Chrome 실화면: 동빈 프로필의 `온열찜질기` 가격비교 페이지에서 보안확인 문구 없음, `__NEXT_DATA__` 존재, 정상 검색결과 확인.
+- 운영 DB 읽기 검증: 최근 3시간 `naver_shopping_results_collector` snapshot 17건 모두 `checked_count=300`; 17개 서로 다른 tracker의 원자 저장 확인.
+- 장애 근거: 짧은 시간 연속 실행 뒤 28개 tracker가 실패해 페이지 간 1.25초 간격과 차단 시 현재 실행 중단을 적용. 실패 시 `submit` 없음·lease 해제·추가 claim 없음 회귀검사 통과.
+- 설치 검증: LaunchAgent `co.kr.momentinsight.naver-shopping-chrome-scheduler`, 08:50·14:50 KST, 승인 Chrome 경로와 `Default(동빈)` 프로필, plist `OK`, 실행 exit 0·`chrome_ready profile=Default` 확인.
+- 집중 검사: local worker·native host 25/25. 전체 릴리스 검사는 API·서버 371/371, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 22함수·54파일·12마이그레이션을 통과했다.
+- 변경 비범위: `src/pages/admin.html`, `src/pages/client.html`, Supabase 스키마·운영 이력·순위 계산·화면 렌더링 변경 없음. Production 배포 없음.
+
 > 2026-07-31 이전의 공식 쇼핑 검색 API 순번·API 배열 기록은 과거 결함과 배포를 재현하기 위한 증거다. 현재 순위 소스 검증에는 2026-08-02 hybrid 경계와 `mi.naver-shopping-organic-window.v1` 원자 수집 계약만 적용한다.
 
 ## 2026-08-02 · N 쇼핑 hybrid 로컬 워커 전환·실증 대기

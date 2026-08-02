@@ -32,6 +32,10 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_captcha_detected",
   "naver_auth_required",
   "naver_selector_drift",
+  "naver_verification_required",
+  "naver_next_data_missing",
+  "naver_page_timeout",
+  "naver_navigation_invalid",
   "provider_deadline_exceeded",
   "provider_partial_window",
   "provider_browser_collection_failed",
@@ -40,6 +44,16 @@ const SAFE_FAILURE_CODES = new Set([
   "local_worker_collection_conflict",
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
+]);
+const RUN_HALT_FAILURE_CODES = new Set([
+  "naver_http_418",
+  "naver_http_429",
+  "naver_captcha_detected",
+  "naver_auth_required",
+  "naver_verification_required",
+  "naver_next_data_missing",
+  "naver_page_timeout",
+  "naver_navigation_invalid",
 ]);
 
 function enabled(env) {
@@ -342,6 +356,7 @@ export async function runLocalShoppingWorker(options = {}) {
         summary.submitted += committedCount + alreadyCommittedCount;
         summary.failed += leaseLostCount + collectionConflictCount;
       } catch (error) {
+        const failureCode = safeFailureCode(error);
         const partial = error?.result?.partial || {};
         const partialSubmitted = Math.min(
           job.claims.length,
@@ -354,7 +369,7 @@ export async function runLocalShoppingWorker(options = {}) {
           const released = await action({
             action: "fail",
             job,
-            errorCode: safeFailureCode(error),
+            errorCode: failureCode,
           });
           const expectedReleaseMax = job.claims.length - partialSubmitted;
           const releasedCount = Number(released.releasedCount || 0);
@@ -365,6 +380,10 @@ export async function runLocalShoppingWorker(options = {}) {
         } catch (releaseError) {
           summary.releaseFailed += job.claims.length - partialSubmitted;
           log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
+        }
+        if (RUN_HALT_FAILURE_CODES.has(failureCode)) {
+          log(`local_worker_run_halted:${failureCode}`);
+          break;
         }
       }
     }

@@ -326,7 +326,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "3c64452e41ee30769b49fa193c5efe62789e54a6dcd51f889936a297b7e3a67f"
+      "sha256": "40231f4b045cd8ba036c0f008e81149090792e63a9f8ef312b9a9640c27e275e"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -382,7 +382,7 @@
     {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "0a47abe3d143e715cc23697c68e204a09c55dfd52acb3ca9abb191afe0d39512"
+      "sha256": "0ac5c599f73f3fe3941a34b2711269f6ee725b80946b9604819549e646ecfc42"
     },
     {
       "id": "shopping-chrome-native-host-core",
@@ -397,7 +397,12 @@
     {
       "id": "shopping-chrome-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge.mjs",
-      "sha256": "8d2540e1a74314deb2f7188dde9a8e75d775e83c3bc9f67b9caac09f6e0fb0d6"
+      "sha256": "d153960da87cbb41d167711ac065167936320eca90f158cc975cbcc72a70e060"
+    },
+    {
+      "id": "shopping-chrome-scheduler-wrapper",
+      "file": "scripts/run-naver-shopping-chrome-scheduler.sh",
+      "sha256": "a4d10fc62629822695bd45722b4a8c380e6447bb0f08919f07540723f5cbd262"
     },
     {
       "id": "shopping-chrome-extension-manifest",
@@ -407,7 +412,7 @@
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "6c160ba30d73f8866c68d65b4ab2247aca1701d4d613debdf54d9882844c31ee"
+      "sha256": "aefa29035ad32d155d13319c8e7ee3d046d0f164d04457c7d31a03b418c99577"
     },
     {
       "id": "shopping-local-worker-session-boundary",

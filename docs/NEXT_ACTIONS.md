@@ -12,10 +12,11 @@
 ## 현재 작업
 
 - 종료 쇼핑 검색 API와 NAVER API Hub를 상품 오가닉 순위에 연결하지 않는다. Hub에는 전체 쇼핑 순위를 제공하는 공식 endpoint가 없으며 Search·Search Trend·Shopping Insight·Commerce API 값을 순위로 바꾸지 않는다.
-- 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 연속 상위 50위에서 exact ID를 즉시 확인하고, 전용 Mac은 독립 persistent 브라우저 프로필의 사용자 로그인 세션으로 정확히 300개를 수집해 서명 제출한다.
+- 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 연속 상위 50위에서 exact ID를 즉시 확인하고, 사용자가 승인한 일반 `동빈` Chrome의 최소권한 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 네이티브 호스트에 전달한다.
 - Mac 워커는 HMAC·유효시간·1회용 nonce·lease·원자 DB 반영을 강제한다. 299개 이하, 광고·중복·순위 공백, 인증 만료, collection 충돌은 새 순위나 snapshot을 만들지 않고 마지막 정상 순위와 30일 이력을 보존한다.
+- Production 반영 후 `/api/naver-shopping-local-worker` 무서명 요청이 `SESSION_REQUIRED`가 아니라 워커 전용 서명 오류로 거부되는지 먼저 확인한다. 이는 인증 제거가 아니라 공통 로그인 세션 대신 HMAC·timestamp·nonce 인증을 적용하는 정확 경로 분리다.
 - 오전 9시·오후 3시에 로컬 워커가 먼저 처리하고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 새 51~300위 수집은 멈추지만 서버 상위 50위 경로와 기존값 보존은 계속된다.
-- 다음 검증 순서는 `전용 프로필 로그인 확인 → 실제 키워드 300개 수집 → 최근 pw-*·checked_count=300 snapshot 확인 → 광고 제외·연속 순번·exact/원부 일치 → 실패 보존 → 전체 활성 tracker → 09시/15시 창과 후속 재시도 → 총관리자·운영팀·광고주 동일 값 → Production 배포`다.
+- 다음 검증 순서는 `사용자가 chrome://extensions에서 확장 폴더 1회 로드 → 수동 지금 갱신 → 최근 pw-chrome-*·checked_count=300 snapshot 확인 → 광고 제외·연속 순번·exact/원부 일치 → 실패 보존 → 전체 활성 tracker → 09시/15시 창과 후속 재시도 → 총관리자·운영팀·광고주 동일 값 → Production 배포`다.
 - 유료 외부 수집기, 카드 등록, 자동 결제는 사용하지 않는다. 코드·모의·계약 테스트만으로 실수집이나 배포 완료를 보고하지 않으며, 최근 `pw-*` 300위 snapshot이 확인될 때까지 실수집·Production 반영은 대기 상태다.
 - 기존 tracker, snapshot, 감사 로그, 마이그레이션, 운영 문서는 실제 300위 전환과 rollback 검증 전 삭제하지 않는다. 재생성 가능한 산출물과 실행 불가능한 과거 원격 쇼핑 서비스 잔재만 별도 검증 후 정리한다.
 

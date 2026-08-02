@@ -149,6 +149,7 @@ const integrationStatusServer = read("src/server/handlers/integration-status.mjs
 const rankCronServer = read("src/server/handlers/naver-rank-cron.mjs");
 const cronAuthServer = read("src/server/cron-auth.mjs");
 const serverIndex = read("src/server/index.mjs");
+const sessionGateSource = read("src/server/session-gate.mjs");
 const securityServer = read("src/server/security.mjs");
 const runtimeEnvCheck = read("scripts/check-runtime-env.mjs");
 const shoppingCollectorLiveCheck = read("scripts/check-naver-shopping-collector-live.mjs");
@@ -164,6 +165,12 @@ const shoppingLocalWorkerAuth = read("src/server/local-worker-auth.mjs");
 const shoppingLocalWorkerHandler = read("src/server/handlers/naver-shopping-local-worker.mjs");
 const shoppingLocalWorkerContract = read("src/server/naver-shopping/local-worker-contract.mjs");
 const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_naver_shopping_local_worker.sql");
+const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
+const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
+const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
+const shoppingNativeHostWrapper = read("scripts/run-naver-shopping-native-host.sh");
+const shoppingChromeManifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
+const shoppingChromeWorker = read("tools/naver-shopping-chrome-extension/service-worker.js");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
 const packageConfig = JSON.parse(read("package.json"));
@@ -1140,7 +1147,8 @@ const checks = {
     && shoppingCollectorLiveCheck.includes('reason: "vercel_non_production_build"')
     && shoppingCollectorLiveCheck.includes("window.checkedCount !== limit")
     && shoppingCollectorLiveCheck.includes("collector_window_short"),
-  shoppingLocalWorkerIsSignedReplaySafeAndAtomic: shoppingLocalWorkerAuth.includes('createHmac("sha256"')
+  shoppingLocalWorkerIsSignedReplaySafeAndAtomic: sessionGateSource.includes('"/api/naver-shopping-local-worker"')
+    && shoppingLocalWorkerAuth.includes('createHmac("sha256"')
     && shoppingLocalWorkerAuth.includes("timingSafeEqual")
     && shoppingLocalWorkerAuth.includes("x-mi-worker-nonce")
     && shoppingLocalWorkerContract.includes("LOCAL_WORKER_ORGANIC_LIMIT = 300")
@@ -1151,6 +1159,29 @@ const checks = {
     && shoppingLocalWorkerMigration.includes("idx_naver_rank_snapshots_tracker_collection")
     && shoppingLocalWorkerMigration.includes("security definer")
     && shoppingLocalWorkerMigration.includes("to service_role"),
+  shoppingNormalChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
+    "alarms", "nativeMessaging", "scripting", "storage", "tabs",
+  ])
+    && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
+      "https://search.shopping.naver.com/*",
+    ])
+    && shoppingChromeWorker.includes('document.getElementById("__NEXT_DATA__")')
+    && shoppingChromeWorker.includes("naver_verification_required")
+    && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
+    && shoppingChromeWorker.includes("chrome.tabs.remove(tabId)")
+    && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
+    && shoppingNativeHostCore.includes("parseNaverNextDataPage")
+    && shoppingNativeHostCore.includes("appendNormalizedPage")
+    && shoppingNativeHostCore.includes("state.items.length !== REQUIRED_LIMIT")
+    && shoppingNativeHostCore.includes("validateProviderWindow")
+    && shoppingNativeHostCore.includes("pw-chrome-")
+    && shoppingNativeHost.includes("runLocalShoppingWorker")
+    && shoppingNativeHost.includes("native_host_input_invalid_json")
+    && shoppingNativeHost.includes("inputFailure")
+    && shoppingNativeHostInstaller.includes("allowed_origins")
+    && shoppingNativeHostInstaller.includes("oldAutomaticBrowserWorkerDisabled: true")
+    && shoppingNativeHostWrapper.includes("security find-generic-password")
+    && shoppingNativeHostWrapper.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET"),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false
     && shopping418Failure.retryAfterSeconds === 0

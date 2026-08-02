@@ -36,9 +36,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 02. 11:54:37
-- 기준 커밋: 4a55583
-- 작업트리: M .github/workflows/naver-rank-cron.yml /  D .github/workflows/naver-shopping-collector-canary.yml /  M .github/workflows/quality.yml /  M 00_프로젝트_폴더_가이드.md /  M 05_네이버_API_연동/.env.example /  M 05_네이버_API_연동/README.md /  M 06_Supabase_연동/README.md /  M README.md
+- 마지막 자동 저장: 2026. 08. 02. 16:58:10
+- 기준 커밋: ffe0e7a
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -55,7 +55,7 @@
 
 | 상태 | 작업 | 핵심 내용 | 검증 | 배포 |
 | --- | --- | --- | --- | --- |
-| 로컬 구조 보완 중·실수집/배포 대기 | N 쇼핑 hybrid 상위 50위·전용 Mac 300위 | 종료 API와 Hub를 순위에서 분리. 서버는 광고 제외 연속 상위 50위의 exact hit만 즉시 확정하고, 전용 Mac은 독립 persistent 프로필의 사용자 로그인 세션으로 정확히 300개를 수집해 HMAC·유효시간·1회용 nonce로 제출. 검증된 결과만 DB에 원자 반영하고 Mac-off·인증 만료·부분·광고·중복·순위 공백·충돌에서는 기존 순위와 30일 이력을 보존. 09시·15시 로컬 우선, 후속 재시도·매시 안전 실행 유지. 유료 수집기·카드·자동 결제 없음 | 코드·계약 검사는 실수집 증거가 아니다. 최근 `collection_id=pw-*`, `checked_count=300` snapshot, 광고 제외·연속 순번·exact/원부, 실패 보존, 전체 활성 tracker, 두 정규 실행 창, 세 역할 동일 값을 순서대로 실증해야 함 | 실제 `pw-*` 300위 snapshot 확인 전에는 Production 배포·운영 정상화로 기록하지 않음 |
+| 로컬 구조 보완 중·사용자 설치/실수집/배포 대기 | N 쇼핑 hybrid 상위 50위·일반 Chrome 300위 브리지 | 종료 API와 Hub를 순위에서 분리. 서버는 광고 제외 연속 상위 50위의 exact hit만 즉시 확정하고, 사용자가 승인한 일반 `동빈` Chrome 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 macOS Native Messaging으로 전달한다. 쿠키·비밀번호·방문기록 권한은 없고 HMAC 비밀값은 키체인에만 둔다. 광고·부분·중복·순위 공백·보안확인에서는 전체 실패하고 기존 순위와 30일 이력을 보존한다. 09시·15시와 매시 catch-up을 유지하며 유료 수집기·카드·자동 결제는 없다 | 네이티브 브리지 5/5, 문법·최소권한·원자 300 계약 검사 통과. 일반 Chrome 실페이지는 `온열찜질기` 페이지 1~8 각 광고 4+오가닉 40, 오가닉 1~320 연속, 상품 `12149720593` 정확 91위를 확인. 확장 프로그램 수동 로드 후 최근 `collection_id=pw-chrome-*`, `checked_count=300` snapshot과 전체 활성 tracker·두 정규 실행 창·세 역할 동일 값을 실증해야 함 | Chrome 정책상 `chrome://extensions` 자동 진입이 차단돼 사용자 1회 수동 로드 대기. 실제 `pw-chrome-*` snapshot 확인 전에는 Production 배포·운영 정상화로 기록하지 않음 |
 | 과거 전환 이력·현재 구조로 대체 | N 쇼핑 원격 원자 수집 아키텍처 실험 | 종료 API 페이지를 이어 붙이지 않고 독립 Playwright 서비스, 교체 가능한 provider, 단일 `collectionId`의 오가닉 1~300 원자 계약을 구축. 광고·중복 ID·부분/혼합 응답을 거부하고 키워드·단건·30일 추적을 같은 계약으로 통합. 당시 Render의 `/health`와 `/ready`를 분리하고 공개 headless 수집 가능성을 검토했으나 현재는 전용 Mac hybrid 구조로 대체 | 당시 로컬 집중 검사만 통과했고 공개 Chromium은 HTTP 418로 실수집에 실패. 현재 실수집 근거로 사용하지 않음 | 배포되지 않은 과거 실험 이력. 현재 배포 판단에 사용하지 않음 |
 | 과거 2026-07-31 전환 이력 | NAVER API Hub 전수 전환 감사·종료 legacy 경로 제거 | 지원 Search·Search Trend·Shopping Insight는 Hub 고정, Search Ads는 별도 공식 계약 유지. 키워드 조회와 N 상품 순위의 종료 쇼핑 검색 직접 호출·인증·fallback을 제거하고 동일 검증 수집원 계약으로 통합했다. DB tracker·30일 snapshot·감사 이력은 삭제하지 않았다 | 종료 URL 런타임 0건, API·서버 252/252, 플레이스 51/51, 계약 29/29, 인증 18/18, 역할·양 화면 parity, 잠금 21함수/23파일/11마이그레이션, 공개 빌드·CSP·전체 `check:release` 통과. Hub 실호출 blog 1건·trend 31건·age 12건 HTTP 200 | 당시 수집원 부재로 실상품 300위·25/25·전체 71개·cron 2회 미완료. 현재 판단은 위 hybrid 항목을 따름 |
 | 과거 2026-07-31 보호 이력 | N 상품 30일 전체 갱신 장애 재진단·실수집 복구 | 운영 `성공 0개·재시도 25개`와 신규 snapshot 0건을 교차 확인. 종료된 legacy 쇼핑 검색 API를 준비 완료로 잘못 판단한 문제, 영구 오류 전건 2차 재시도, cron 502가 공통 보안층에서 500으로 변환되는 문제를 분리 수정했다. 실제 오가닉 300 수집원 미연결 시 단건·전체·cron은 DB claim·순위 변경·snapshot 생성 없이 중단하고 마지막 정상값을 유지한다 | API·서버 251/251, 플레이스 51/51, 서버 계약 29/29, Production 인증 18/18, 역할 5상태·양 역할 parity·보호 잠금 21함수/23파일/11마이그레이션·공개 빌드/CSP·전체 `check:release` 통과. 당시 실상품 canary·`mml93-a01` 25/25·사이트 전체 71개·cron 2회는 미완료 | 당시 Production 수집원 URL/key 게이트 이력. 현재 판단은 위 hybrid 항목을 따름 |

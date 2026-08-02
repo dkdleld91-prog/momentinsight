@@ -27,6 +27,7 @@ const SESSION_FREE_PATHS = new Set([
   "/api/session",
   "/api/naver-rank-cron",
   "/api/naver-place-rank-cron",
+  "/api/naver-shopping-local-worker",
 ]);
 const TEAM_ACCOUNT_ONLY_RANK_PATHS = new Set([
   "/api/naver-rank-trackers",

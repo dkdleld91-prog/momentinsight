@@ -22,9 +22,9 @@
 - 검증 범위 밖: `없음`이나 새 순위를 저장하지 않습니다.
 - 이 경로만으로 300위 전체 수집 성공을 주장하지 않습니다.
 
-## 전용 Mac 300위 작업자
+## 일반 Chrome 최소권한 300위 작업자
 
-`scripts/naver-shopping-local-worker.mjs`는 전용 Mac의 독립 브라우저 프로필과 사용자가 직접 완료한 네이버 로그인 세션으로 정확히 300개를 수집합니다. 개인 Chrome 프로필을 빌리지 않으며 비밀번호·쿠키를 서버로 보내거나 CAPTCHA를 자동 우회하지 않습니다.
+`tools/naver-shopping-chrome-extension`은 사용자가 승인한 일반 Chrome 프로필에서 공개 쇼핑 검색 결과의 `__NEXT_DATA__`만 읽고 `scripts/naver-shopping-native-host.mjs`에 전달합니다. cookies·history·webRequest 권한은 없고 비밀번호·쿠키를 서버로 보내거나 CAPTCHA를 자동 우회하지 않습니다. 네이티브 호스트가 기존 `scripts/naver-shopping-local-worker.mjs`의 서명·claim·원자 제출 경계를 재사용해 정확히 300개만 반영합니다.
 
 - 워커 요청은 HMAC 서명, 제한된 유효시간, 1회용 nonce를 사용합니다.
 - nonce 재사용, 만료 서명, lease 상실, 299개 이하, 광고·중복·순위 공백, 중복 `collectionId`는 모두 거부합니다.

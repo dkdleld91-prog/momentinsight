@@ -31,7 +31,7 @@
 
 - 현재 상품 순위 원천은 종료된 쇼핑 검색 API나 NAVER API Hub가 아니라 `hybrid_local_worker` 경계다. Hub에는 전체 쇼핑 오가닉 순위를 반환하는 공식 endpoint가 없으므로 Search·Search Trend·Shopping Insight·Commerce API를 순위로 해석하지 않는다.
 - 서버는 명시적 SAS 상품의 광고 제외 연속 상위 50위 안 exact hit만 즉시 확정한다. 범위 밖 miss는 `없음`으로 저장하지 않고 마지막 정상 순위와 30일 이력을 보존한다.
-- 정확한 1~300위는 전용 Mac의 독립 persistent 브라우저 프로필과 사용자가 직접 완료한 네이버 로그인 세션에서 수집한다. 개인 Chrome 프로필, 비밀번호·쿠키 서버 전송, CAPTCHA 자동 우회는 허용하지 않는다.
+- 정확한 1~300위는 사용자가 승인한 일반 `동빈` Chrome의 최소권한 MV3 확장에서 공개 쇼핑 페이지 `__NEXT_DATA__`만 읽어 수집한다. cookies·history·webRequest 권한, 비밀번호·쿠키 서버 전송, CAPTCHA 자동 우회는 허용하지 않고 HMAC 비밀값은 macOS 키체인에만 둔다.
 - 300위 워커 응답은 하나의 `collectionId`·`collectedAt`과 연속된 오가닉 1~300위를 가져야 한다. HMAC·유효시간·1회용 nonce·lease를 통과한 결과만 DB에서 원자 반영하며 부분 응답, 혼합 출처, 순번 불연속, 중복 stable ID는 전체 폐기한다.
 - 광고 판정은 수집 문서의 명시적 `adId`와 광고 타입만 사용한다. 광고 제거 전후 개수를 계약으로 검증하고 새 스냅샷에는 `rankPolicy=organic_only`, `adExcluded=true`를 남긴다.
 - 수집기가 확정한 오가닉 순번에서 `page=ceil(rank/40)`, `position=((rank-1)%40)+1`, `pageSize=40`을 파생한다. 이는 개인화된 사용자 화면을 별도로 검증했다는 뜻이 아니므로 `webPageVerified=false`를 유지한다.
@@ -46,7 +46,7 @@
 - 광고 순위·광고 개수는 오가닉 순위와 섞지 않고 `광고상품 미연결`로 남긴다.
 - 오전 9시·오후 3시에 로컬 워커가 먼저 처리하고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 새 51~300위 증거는 만들 수 없지만 서버 상위 50위와 기존값 보존은 계속된다.
 - 유료 외부 수집기·카드·자동 결제는 사용하지 않는다.
-- 코드·계약 검사는 실상품 수집이나 운영 배포 증거가 아니다. 최근 `collection_id=pw-*`, `checked_count=300` snapshot이 확인될 때까지 300위 실수집 정상화와 Production 배포는 대기 상태로 기록한다.
+- 코드·계약 검사와 브라우저 육안 확인은 DB 반영 증거가 아니다. 최근 `collection_id=pw-chrome-*`, `checked_count=300` snapshot이 확인될 때까지 300위 실수집 정상화와 Production 배포는 대기 상태로 기록한다.
 - 과거 30일 기록은 당시 원부 순번 원본이 없으면 소급 변경하지 않고 새 갱신부터 대표 기준을 적용한다.
 - 네이버 Developers 쇼핑 검색 API는 API Hub 이관 제외 상태로 2026-07-31 종료됐다. 종료 API와 새 Hub 키는 순위 fallback으로 사용하지 않으며 수집 계약이 검증되지 않으면 마지막 정상 기록만 보존한다.
 

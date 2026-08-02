@@ -39,6 +39,12 @@ const files = {
   shoppingLocalWorkerHandler: "src/server/handlers/naver-shopping-local-worker.mjs",
   shoppingLocalWorkerContract: "src/server/naver-shopping/local-worker-contract.mjs",
   shoppingLocalWorkerMigration: "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
+  shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
+  shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
+  shoppingNativeHostInstaller: "scripts/install-naver-shopping-chrome-bridge.mjs",
+  shoppingNativeHostWrapper: "scripts/run-naver-shopping-native-host.sh",
+  shoppingChromeManifest: "tools/naver-shopping-chrome-extension/manifest.json",
+  shoppingChromeWorker: "tools/naver-shopping-chrome-extension/service-worker.js",
   naverEnvExample: "05_네이버_API_연동/.env.example",
   adminPage: "src/pages/admin.html",
   clientPage: "src/pages/client.html",
@@ -82,6 +88,12 @@ const shoppingLocalWorkerAuth = fs.readFileSync(files.shoppingLocalWorkerAuth, "
 const shoppingLocalWorkerHandler = fs.readFileSync(files.shoppingLocalWorkerHandler, "utf8");
 const shoppingLocalWorkerContract = fs.readFileSync(files.shoppingLocalWorkerContract, "utf8");
 const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMigration, "utf8");
+const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
+const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
+const shoppingNativeHostInstaller = fs.readFileSync(files.shoppingNativeHostInstaller, "utf8");
+const shoppingNativeHostWrapper = fs.readFileSync(files.shoppingNativeHostWrapper, "utf8");
+const shoppingChromeManifest = JSON.parse(fs.readFileSync(files.shoppingChromeManifest, "utf8"));
+const shoppingChromeWorker = fs.readFileSync(files.shoppingChromeWorker, "utf8");
 const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
 const adminPage = fs.readFileSync(files.adminPage, "utf8");
 const clientPage = fs.readFileSync(files.clientPage, "utf8");
@@ -449,7 +461,8 @@ check(
 );
 check(
   "N Shopping local worker is signed, replay-safe and atomic",
-  hasAll(shoppingLocalWorkerAuth, [
+  sessionFreePathsBlock.includes('"/api/naver-shopping-local-worker"')
+    && hasAll(shoppingLocalWorkerAuth, [
     /createHmac\("sha256"/,
     /timingSafeEqual/,
     /x-mi-worker-nonce/,
@@ -469,7 +482,47 @@ check(
       /security definer/,
       /to service_role/,
     ]),
-  `${files.shoppingLocalWorkerAuth}, ${files.shoppingLocalWorkerContract}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorkerMigration}`,
+  `${files.sessionGate}, ${files.shoppingLocalWorkerAuth}, ${files.shoppingLocalWorkerContract}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorkerMigration}`,
+);
+check(
+  "N Shopping normal Chrome bridge is least-privilege and preserves the signed atomic worker",
+  JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
+    "alarms", "nativeMessaging", "scripting", "storage", "tabs",
+  ])
+    && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
+      "https://search.shopping.naver.com/*",
+    ])
+    && hasAll(shoppingChromeWorker, [
+      /document\.getElementById\("__NEXT_DATA__"\)/,
+      /naver_verification_required/,
+      /request\.limit !== 300/,
+      /request\.rankPolicy !== "organic_only"/,
+      /chrome\.tabs\.remove\(tabId\)/,
+    ])
+    && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
+    && hasAll(shoppingNativeHostCore, [
+      /parseNaverNextDataPage/,
+      /appendNormalizedPage/,
+      /state\.items\.length !== REQUIRED_LIMIT/,
+      /validateProviderWindow/,
+      /pw-chrome-/,
+    ])
+    && hasAll(shoppingNativeHost, [
+      /runLocalShoppingWorker/,
+      /MAX_MESSAGE_BYTES = 24 \* 1024 \* 1024/,
+      /native_host_input_invalid_json/,
+      /inputFailure/,
+    ])
+    && hasAll(shoppingNativeHostInstaller, [
+      /allowed_origins/,
+      /chrome-extension:\/\//,
+      /oldAutomaticBrowserWorkerDisabled: true/,
+    ])
+    && hasAll(shoppingNativeHostWrapper, [
+      /security find-generic-password/,
+      /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
+    ]),
+  `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

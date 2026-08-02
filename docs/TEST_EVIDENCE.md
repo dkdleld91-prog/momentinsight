@@ -6,11 +6,14 @@
 
 - 공식 경계: NAVER API Hub에는 쇼핑 오가닉 전체 순위를 반환하는 endpoint가 없다. 종료된 쇼핑 검색 API, Search·Search Trend·Shopping Insight·Commerce API를 순위 대체값으로 사용하지 않는다.
 - 서버 경로: 모바일 통합검색의 명시적 SAS 상품에서 광고를 제외하고 1위부터 연속 검증된 최대 상위 50위 exact hit만 허용한다. 범위 밖 miss와 불완전 응답은 새 순위·snapshot을 만들지 않는다.
-- 300위 경로: 전용 Mac의 독립 persistent Chromium 프로필과 사용자가 직접 완료한 네이버 로그인 세션을 사용한다. 개인 Chrome 프로필·비밀번호·쿠키 서버 전송·CAPTCHA 자동 우회는 금지한다.
+- 300위 경로: 사용자가 승인한 일반 `동빈` Chrome에 MV3 최소권한 확장을 로드한다. 권한은 `alarms`·`nativeMessaging`·`scripting`·`storage`·`tabs`와 `https://search.shopping.naver.com/*`만 허용하며 cookies·history·webRequest·localStorage 접근, 비밀번호·쿠키 서버 전송, CAPTCHA 자동 우회를 금지한다.
 - 제출 경계: HMAC 서명, 제한된 유효시간, 1회용 nonce, 활성 lease, 정확히 300개, 광고 제외, 연속 순번, 고유 stable ID를 모두 강제한다. 성공 결과는 tracker와 snapshot에 원자 반영하고 실패는 마지막 정상값과 30일 이력을 보존한다.
 - 실행 경계: 오전 9시·오후 3시에 로컬 워커가 먼저 실행되고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 서버 상위 50위와 기존값 보존은 계속되지만 새 51~300위 증거는 생성되지 않는다.
 - 비용 경계: 유료 외부 수집기·카드·자동 결제는 사용하지 않는다.
-- 미완료 증거: 최근 `collection_id=pw-*`, `checked_count=300`인 실제 snapshot, 광고 제외·연속 순번·exact/원부 일치, 전체 활성 tracker, 두 정규 실행 창, 세 역할 동일 값은 아직 확인되지 않았다. 따라서 이 변경을 실수집 정상화·배포 완료로 기록하지 않는다.
+- 브라우저 증거: 사용자가 열어 둔 일반 Chrome에서 `온열찜질기` 페이지 1~8을 확인해 페이지마다 광고 4개+오가닉 40개, 오가닉 1~320 연속, 상품 `12149720593` 정확 91위를 확인했다. 별도 자동 Chrome의 보안확인 화면은 근거로 사용하지 않았다.
+- 로컬 브리지 증거: Native Messaging manifest를 Chrome 표준 경로에 0600으로 설치하고 확장 ID `pflggephankeefaeoaafkmggampnaefm`만 허용했다. HMAC secret은 기존 macOS 키체인에서 길이만 확인했고 출력·파일 저장하지 않았다. 네이티브 300위·불완전/순번 drift 차단·교환·고정 ID·stdio framing 5/5와 최소권한·원자 수집 계약을 통과했다.
+- 서버 배선 증거: 배포 전 운영 endpoint 무서명 POST가 `401 SESSION_REQUIRED`로 끝나 HMAC handler에 도달하지 못하는 결함을 발견했다. 정확한 워커 경로만 공통 로그인 세션 gate에서 제외하고 유사 하위 경로는 계속 잠기며, handler의 HMAC·timestamp·nonce 검증은 그대로 필수인 회귀를 추가했다. 운영 반영 후 무서명 요청이 세션 오류가 아닌 워커 서명 오류로 거부되는지 다시 확인해야 한다.
+- 미완료 증거: Chrome 정책상 `chrome://extensions` 자동 조작이 차단되어 사용자 1회 수동 로드가 남았다. 최근 `collection_id=pw-chrome-*`, `checked_count=300` 실제 snapshot, 전체 활성 tracker, 두 정규 실행 창, 세 역할 동일 값은 아직 확인되지 않았으므로 실수집 정상화·Production 배포 완료로 기록하지 않는다.
 
 ## 2026-08-01 · 폐기된 원격 쇼핑 수집기 실험 이력
 

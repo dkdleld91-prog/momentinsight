@@ -378,6 +378,41 @@
       "file": "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
       "sha256": "92de7a2bc3eb1cfc7c4cfab67b02369fc71ebca3d4844c4367a035569aaf2ffa",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-chrome-native-host",
+      "file": "scripts/naver-shopping-native-host.mjs",
+      "sha256": "0a47abe3d143e715cc23697c68e204a09c55dfd52acb3ca9abb191afe0d39512"
+    },
+    {
+      "id": "shopping-chrome-native-host-core",
+      "file": "scripts/naver-shopping-native-host-core.mjs",
+      "sha256": "8b3d9fde287867e4d9ddf02d55609aa87ffe7ecc00c7c69ad7059a9e967e42f8"
+    },
+    {
+      "id": "shopping-chrome-native-host-wrapper",
+      "file": "scripts/run-naver-shopping-native-host.sh",
+      "sha256": "6d25642d8d22cfc85f6b7b52ff1cd9ac7de97245ab5a32995af0f9528976ba11"
+    },
+    {
+      "id": "shopping-chrome-native-host-installer",
+      "file": "scripts/install-naver-shopping-chrome-bridge.mjs",
+      "sha256": "318de186164ca364aa1b3aa10d78f4a9327b83da5a54e38f5fc3e4e43099f36d"
+    },
+    {
+      "id": "shopping-chrome-extension-manifest",
+      "file": "tools/naver-shopping-chrome-extension/manifest.json",
+      "sha256": "83eeae78e909ab1ded5f7c1c463f2688e844a799ec3d2cc9f7fc5cc8318f42ea"
+    },
+    {
+      "id": "shopping-chrome-extension-worker",
+      "file": "tools/naver-shopping-chrome-extension/service-worker.js",
+      "sha256": "595e38311d2441ed858933ae4ad8e6d5f4ef2ea8fa5e518e9db69b947bdf5767"
+    },
+    {
+      "id": "shopping-local-worker-session-boundary",
+      "file": "src/server/session-gate.mjs",
+      "sha256": "ceb940a853e77d6c90b33eb06b14cc04b85be67d51f2f39332d64589606b16bf"
     }
   ]
 }

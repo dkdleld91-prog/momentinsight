@@ -37,10 +37,12 @@ function requestWithSession(path, claims, options = {}) {
   });
 }
 
-test("health, session and cron paths remain outside the code-session gate", () => {
+test("health, session, cron and signed local worker paths remain outside the code-session gate", () => {
   assert.equal(requiresCodeSession(new Request("https://example.test/api/health")), false);
   assert.equal(requiresCodeSession(new Request("https://example.test/api/session")), false);
   assert.equal(requiresCodeSession(new Request("https://example.test/api/naver-rank-cron")), false);
+  assert.equal(requiresCodeSession(new Request("https://example.test/api/naver-shopping-local-worker")), false);
+  assert.equal(requiresCodeSession(new Request("https://example.test/api/naver-shopping-local-worker/other")), true);
   assert.equal(requiresCodeSession(new Request("https://example.test/api/report-center")), true);
 });
 

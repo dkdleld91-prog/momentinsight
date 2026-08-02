@@ -2,7 +2,7 @@ const statusElement = document.getElementById("status");
 const runButton = document.getElementById("run");
 
 const FAILURE_TEXT = {
-  native_host_not_found: "로컬 연결기를 다시 설치해 주세요",
+  native_host_not_found: "Chrome을 완전히 종료한 뒤 다시 실행해 주세요",
   native_host_origin_not_allowed: "확장 프로그램 연결 권한을 다시 확인해 주세요",
   native_host_exited: "로컬 연결기가 종료되었습니다. 다시 시도해 주세요",
   native_host_communication_failed: "로컬 연결 통신을 다시 시도해 주세요",

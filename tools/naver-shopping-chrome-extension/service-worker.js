@@ -127,12 +127,20 @@ async function saveStatus(status, detail = "") {
 
 function nativeDisconnectCode(lastErrorMessage) {
   const message = String(lastErrorMessage || "").trim().toLowerCase();
-  if (message.includes("host not found")) return "native_host_not_found";
-  if (message.includes("host is forbidden") || message.includes("access to the specified")) {
+  if (message.includes("host not found") || message.includes("호스트를 찾을 수 없")) {
+    return "native_host_not_found";
+  }
+  if (message.includes("host is forbidden")
+    || message.includes("access to the specified")
+    || message.includes("호스트에 대한 액세스")
+    || message.includes("호스트가 허용되지")) {
     return "native_host_origin_not_allowed";
   }
-  if (message.includes("host has exited")) return "native_host_exited";
-  if (message.includes("communicating with the native messaging host")) {
+  if (message.includes("host has exited") || message.includes("호스트가 종료")) {
+    return "native_host_exited";
+  }
+  if (message.includes("communicating with the native messaging host")
+    || message.includes("네이티브 메시징 호스트와 통신")) {
     return "native_host_communication_failed";
   }
   return message ? "native_host_disconnected" : "native_host_closed";

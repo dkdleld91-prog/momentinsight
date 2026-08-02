@@ -159,11 +159,12 @@ test("extension translates native disconnects and never exposes raw runtime erro
   const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
   const popup = fs.readFileSync(new URL("popup.js", extensionDirectory), "utf8");
   assert.match(serviceWorker, /native_host_not_found/u);
+  assert.match(serviceWorker, /호스트를 찾을 수 없/u);
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
   assert.match(serviceWorker, /if \(!existing\) await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(popup, /로컬 연결기를 다시 설치해 주세요/u);
+  assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);
   assert.match(popup, /failureText\(status\.detail\)/u);
   assert.match(popup, /failureText\(result\?\.code\)/u);
 });

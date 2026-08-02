@@ -1,5 +1,3 @@
-import { chromium } from "playwright";
-
 import { validateProviderWindow } from "./contract.mjs";
 import { createPlaywrightProvider, ProviderError } from "./provider.mjs";
 
@@ -34,7 +32,12 @@ export function githubCloudCollectionId(window, env = process.env) {
 export function createGitHubCloudProvider(options = {}) {
   const env = options.env || process.env;
   assertGitHubHostedRunner(env);
-  const browserFactory = options.browserFactory || (async () => chromium.launch({ headless: true }));
+  const browserFactory = options.browserFactory || (async () => {
+    // GitHub installs the pinned collector dependency in its own package.
+    // Keep Vercel's server build independent from this disabled cloud canary.
+    const { chromium } = await import("playwright");
+    return chromium.launch({ headless: true });
+  });
   const provider = createPlaywrightProvider({
     autoVerify: false,
     browserFactory,
@@ -76,4 +79,3 @@ export function createGitHubCloudProvider(options = {}) {
     },
   };
 }
-

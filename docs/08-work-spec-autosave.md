@@ -404,5 +404,6 @@
 - 출처 분리: GitHub 수집 collection ID는 `gh-<run>-<attempt>-<digest>`로 남겨 기존 `pw-*` Mac 수집 이력과 구분한다. 기존 이력은 삭제·재작성하지 않고 Mac Chrome 경로는 비상용으로 유지한다.
 - 보안·실패 안전: GitHub-hosted Actions·공식 Playwright Chromium·공개 네이버 쇼핑 allowlist만 허용한다. 쿠키·비밀번호 추출, CAPTCHA 풀이·우회 코드는 없으며 첫 300개 canary가 실패하면 DB claim도 시작하지 않는다.
 - 현재 실증: 동일 headless 공개 경로의 로컬 canary와 GitHub-hosted Azure `eastus` canary가 모두 네이버 `naver_http_418`로 차단됐다. GitHub Actions run `30753247124`는 설치·브라우저 기동까지 성공하고 수집 단계에서만 실패했으며 DB claim·쓰기는 0건이다.
-- 운영 판단: GitHub 공용 IP 수집은 반복 실행 대상에서 제외하고 `MI_NAVER_SHOPPING_CLOUD_ENABLED`를 설정하지 않는다. 유료 서버·프록시·브라우저 공급자는 임의 개설하지 않으며 기존 Mac Chrome 비상 경로와 마지막 정상값을 유지한다.
+- Safari 교차검증: GitHub-hosted macOS 15 ARM의 실제 Apple SafariDriver canary run `30753696199`도 Safari 기동과 세션 생성까지 성공한 뒤 첫 검색 화면에서 `naver_access_blocked`로 중단됐다. Azure `westus` 공용 IP였으며 DB claim·쓰기는 0건이다.
+- 운영 판단: Chromium·Safari 모두 GitHub 미국 공용 IP에서 차단됐으므로 브라우저 종류가 아닌 실행 IP 제약으로 판정한다. GitHub 공용 IP 수집은 반복 실행 대상에서 제외하고 `MI_NAVER_SHOPPING_CLOUD_ENABLED`를 설정하지 않는다. 유료 서버·프록시·브라우저 공급자는 임의 개설하지 않으며 기존 Mac Chrome 비상 경로와 마지막 정상값을 유지한다.
 - 검증: 신규 계약 4/4, 전체 API·서버 368/368, 플레이스 51/51, 쇼핑 수집기 49/49, 공급망·순위 일정·보호 잠금 검사를 통과했다. 관리자·광고주 화면, Supabase 스키마·운영 데이터, 기존 순위 계산은 변경하지 않았다.

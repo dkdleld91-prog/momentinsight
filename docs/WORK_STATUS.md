@@ -407,7 +407,8 @@
 - 300개 완주 검증 후에만 기존 signed endpoint와 원자 commit RPC를 사용한다. 실패·418·CAPTCHA·부분 수집은 claim 전 중단하거나 lease만 해제하고 기존 정상값·30일 이력을 보존한다.
 - 기존 `pw-*` Mac 결과와 새 `gh-*` GitHub 결과를 구분하며, 과거 이력은 그대로 보존한다. Mac Chrome은 수동 비상 경로로 유지한다.
 - 로컬 headless와 GitHub-hosted Azure `eastus` 무저장 canary가 모두 `naver_http_418`로 차단됐다. GitHub run `30753247124`는 Chromium 설치·기동 성공 후 수집 단계에서 실패했고 DB claim·쓰기는 0건이다.
-- `MI_NAVER_SHOPPING_CLOUD_ENABLED`는 미설정 상태로 유지한다. GitHub 공용 IP 자동 수집은 운영 전환하지 않으며 유료 서버·프록시는 대표님 승인 없이 개설하지 않는다.
+- GitHub-hosted macOS 15 ARM의 실제 SafariDriver run `30753696199`도 Safari 기동·세션 생성 성공 후 첫 검색 화면에서 `naver_access_blocked`로 실패했다. Azure `westus` 공용 IP였으며 DB claim·쓰기는 0건이다.
+- Chromium과 Safari가 모두 차단돼 브라우저가 아닌 GitHub 미국 공용 IP 제약으로 확정했다. `MI_NAVER_SHOPPING_CLOUD_ENABLED`는 미설정 상태로 유지하고 유료 서버·프록시는 대표님 승인 없이 개설하지 않는다.
 - 신규 4/4, API·서버 368/368, 플레이스 51/51, 쇼핑 49/49, 공급망·일정·보호 잠금 검사를 통과했다. Production 배포는 하지 않았다.
 
 - 오가닉 카드 작업은 완료됐다. 아래 플레이스 외부 한도 작업은 별도 과제로 유지한다.

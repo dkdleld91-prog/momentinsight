@@ -36,9 +36,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 02. 23:35:45
-- 기준 커밋: 98254b3
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 02. 23:44:12
+- 기준 커밋: 9c1967f
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준
@@ -395,3 +395,13 @@
 - 데이터 복구: 오원부 `59031763223`·`58525255512`가 연결된 스냅샷 52개를 같은 조회에서 저장된 정확 상품 순위로 교정했다. 현재는 상품ID `12149720593`, 네이버 API 상품ID `89694231298`, 상품유형 `2`, 정확 상품 76위·2페이지 36위이며 잘못된 원부 연결은 0개다.
 - 배포: 코드 `fa07878`과 업무 운영 `5f73982`를 GitHub `main` 및 Vercel Production `dpl_DfTvnkrm9Fwbyuri3ie4bxm2gU15`에 반영했다. `/health`·`/ready`는 릴리스 `fa07878aef0b`, 서울 `icn1`, Supabase ready를 반환한다.
 - 운영 재검증: 새 Production 코드로 2026-07-30 17:48 KST 자동 갱신을 다시 실행했다. 300개 전체 확인, 정확 상품 76위, `trackingRankSource=exact_product`, 상품유형 `2`, 관련 원부 ID·순위 없음, 오류·재시도 0건이며 GitHub Actions `30528004934`도 성공했다.
+
+### 2026-08-02 N 쇼핑 GitHub 클라우드 자동 수집 구조
+
+- 상태: 로컬 구조·회귀검증 완료 / GitHub 실 IP canary·자동 운영·배포 미실행
+- 목표: Mac이 꺼져도 GitHub 서버가 KST 09:00·15:00에 광고 제외 오가닉 300개를 수집한다. 300개 완주 결과만 기존 signed worker 원자 저장 계약으로 반영하고 실패·보안확인·부분 수집은 마지막 정상 순위와 이력을 보존한다.
+- 구조: 무저장 수동 canary와 실제 저장 workflow를 분리했다. 실제 저장 workflow는 repository variable `MI_NAVER_SHOPPING_CLOUD_ENABLED=true`가 없으면 schedule·수동 실행 모두 skip하므로 canary 통과 전에 운영 데이터에 접근하지 않는다.
+- 출처 분리: GitHub 수집 collection ID는 `gh-<run>-<attempt>-<digest>`로 남겨 기존 `pw-*` Mac 수집 이력과 구분한다. 기존 이력은 삭제·재작성하지 않고 Mac Chrome 경로는 비상용으로 유지한다.
+- 보안·실패 안전: GitHub-hosted Actions·공식 Playwright Chromium·공개 네이버 쇼핑 allowlist만 허용한다. 쿠키·비밀번호 추출, CAPTCHA 풀이·우회 코드는 없으며 첫 300개 canary가 실패하면 DB claim도 시작하지 않는다.
+- 현재 실증: 동일 headless 공개 경로의 로컬 무저장 300개 canary는 네이버 `naver_http_418`로 차단됐고 DB 쓰기는 0건이다. GitHub IP 통과 여부는 workflow를 GitHub에 올린 뒤 수동 canary를 반복 실행해야 확정할 수 있다.
+- 검증: 신규 계약 4/4, 전체 API·서버 368/368, 플레이스 51/51, 쇼핑 수집기 49/49, 공급망·순위 일정·보호 잠금 검사를 통과했다. 관리자·광고주 화면, Supabase 스키마·운영 데이터, 기존 순위 계산은 변경하지 않았다.

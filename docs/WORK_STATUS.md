@@ -400,6 +400,15 @@
 
 ## 진행 중인 필수 작업
 
+### 2026-08-02 N 쇼핑 Mac 비의존 수집 전환
+
+- GitHub 서버용 수동 무저장 300위 canary와 KST 09:00·15:00 자동 수집 workflow를 로컬에 구현했다.
+- 자동 수집은 repository variable `MI_NAVER_SHOPPING_CLOUD_ENABLED=true` 전까지 완전히 비활성이다. canary 통과 전 secret 등록·DB claim·순위 저장·운영 배포는 진행하지 않았다.
+- 300개 완주 검증 후에만 기존 signed endpoint와 원자 commit RPC를 사용한다. 실패·418·CAPTCHA·부분 수집은 claim 전 중단하거나 lease만 해제하고 기존 정상값·30일 이력을 보존한다.
+- 기존 `pw-*` Mac 결과와 새 `gh-*` GitHub 결과를 구분하며, 과거 이력은 그대로 보존한다. Mac Chrome은 수동 비상 경로로 유지한다.
+- 로컬 headless 무저장 canary는 `naver_http_418`로 차단됐다. 실제 GitHub-hosted runner에서 반복 통과하지 않으면 자동 운영으로 전환하지 않는다.
+- 신규 4/4, API·서버 368/368, 플레이스 51/51, 쇼핑 49/49, 공급망·일정·보호 잠금 검사를 통과했다. Production 배포는 하지 않았다.
+
 - 오가닉 카드 작업은 완료됐다. 아래 플레이스 외부 한도 작업은 별도 과제로 유지한다.
 - Apify 사용 한도 해제 또는 새 유효 토큰 연결 후 동일 키워드 300개 완주 실조회
 - 조건 충족 후 Render 수집기와 Vercel Production 배포, 운영 재검증

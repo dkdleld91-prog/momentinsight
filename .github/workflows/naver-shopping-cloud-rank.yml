@@ -1,0 +1,54 @@
+name: N Shopping Cloud Rank
+
+on:
+  schedule:
+    # 09:00 and 15:00 KST. This stays disabled until the cloud canary repeatedly passes.
+    - cron: "0 0,6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: naver-rank-tracking
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  refresh-with-verified-300-window:
+    if: ${{ vars.MI_NAVER_SHOPPING_CLOUD_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: https://insight.momentlabs.co.kr/api/naver-shopping-local-worker
+      MI_NAVER_SHOPPING_LOCAL_WORKER_ALLOWED_ORIGINS: https://insight.momentlabs.co.kr
+      MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25"
+      MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET: ${{ secrets.MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET }}
+      MI_NAVER_SHOPPING_CLOUD_CANARY_KEYWORD: "온열찜질기"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Require signed worker secret
+        run: |
+          if [ "${#MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET}" -lt 32 ]; then
+            echo "::error::MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET is missing or too short."
+            exit 1
+          fi
+
+      - name: Install pinned collector dependencies
+        run: npm --prefix tools/naver-shopping-rank-collector ci --ignore-scripts
+
+      - name: Install pinned Chromium runtime
+        run: tools/naver-shopping-rank-collector/node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Verify 300 first, then atomically update due trackers
+        run: node scripts/naver-shopping-cloud-worker.mjs
+

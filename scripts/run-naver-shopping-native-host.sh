@@ -42,7 +42,10 @@ fi
 
 export MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED="true"
 export MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET="${WORKER_SECRET}"
-export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="25"
+# A strict 300-rank job opens eight Naver result pages. Keep each automatic
+# run deliberately small so the 09:00/15:00 queue drains steadily without
+# creating a short burst that triggers Naver verification.
+export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"
 unset WORKER_SECRET
 
 ENDPOINT_KIND="production"

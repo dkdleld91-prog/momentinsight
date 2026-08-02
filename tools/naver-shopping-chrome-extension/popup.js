@@ -9,6 +9,11 @@ const FAILURE_TEXT = {
   native_host_disconnected: "로컬 연결 상태를 다시 확인해 주세요",
   native_host_closed: "로컬 연결기가 닫혔습니다. 다시 시도해 주세요",
   native_host_timeout: "갱신 시간이 초과되었습니다. 자동 재시도합니다",
+  naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
+  naver_verification_cooldown: "보안확인 후 자동 갱신이 다시 이어집니다",
+  naver_captcha_detected: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
+  naver_http_418: "네이버 접근 보호로 잠시 쉬었다가 자동 재시도합니다",
+  naver_http_429: "네이버 요청 제한으로 잠시 쉬었다가 자동 재시도합니다",
 };
 
 function failureText(code) {
@@ -19,6 +24,7 @@ function statusText(status) {
   if (status?.status === "running") return "현재 오가닉 순위를 안전하게 확인하고 있습니다.";
   if (status?.status === "completed") return `${status.detail || "갱신 완료"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
   if (status?.status === "partial") return `${status.detail || "일부 항목 재시도 예정"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
+  if (status?.status === "verification") return `확인 필요 · ${failureText(status.detail)}`;
   if (status?.status === "failed") return `확인 필요 · ${failureText(status.detail)}`;
   return "자동 갱신 준비 완료";
 }

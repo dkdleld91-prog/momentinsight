@@ -1,12 +1,59 @@
 const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
-const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up", "rank-drain-follow-up"]);
+const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 30_000;
-const PAGE_REQUEST_INTERVAL_MS = 1_250;
+const PAGE_REQUEST_INTERVAL_MS = 3_500;
+const PAGE_REQUEST_JITTER_MS = 2_500;
+const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
+const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
+const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
+const NAVER_ACCESS_COOLDOWN_CODES = new Set([
+  "naver_verification_required",
+  "naver_captcha_detected",
+  "naver_http_418",
+  "naver_http_429",
+]);
 let running = false;
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function pageRequestDelay() {
+  return PAGE_REQUEST_INTERVAL_MS + Math.floor(Math.random() * (PAGE_REQUEST_JITTER_MS + 1));
+}
+
+async function verificationState() {
+  const stored = await chrome.storage.local.get([
+    VERIFICATION_BLOCKED_UNTIL_KEY,
+    VERIFICATION_TAB_ID_KEY,
+  ]);
+  return {
+    blockedUntil: Number(stored[VERIFICATION_BLOCKED_UNTIL_KEY] || 0),
+    tabId: Number(stored[VERIFICATION_TAB_ID_KEY] || 0),
+  };
+}
+
+async function surfaceVerificationTab(tabId) {
+  const current = await verificationState();
+  if (current.tabId && current.tabId !== tabId) {
+    await chrome.tabs.remove(current.tabId).catch(() => {});
+  }
+  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+  await chrome.storage.local.set({
+    [VERIFICATION_BLOCKED_UNTIL_KEY]: Date.now() + VERIFICATION_COOLDOWN_MS,
+    [VERIFICATION_TAB_ID_KEY]: tabId,
+  });
+  return tabId;
+}
+
+async function clearVerificationState() {
+  const current = await verificationState();
+  await chrome.storage.local.remove([
+    VERIFICATION_BLOCKED_UNTIL_KEY,
+    VERIFICATION_TAB_ID_KEY,
+  ]);
+  if (current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
 }
 
 function nextKstHour(hour) {
@@ -104,6 +151,7 @@ async function collectPages(request) {
   }
   const pages = [];
   let tabId = null;
+  let keepTabOpen = false;
   try {
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       const url = searchUrl(request.keyword, pageIndex);
@@ -115,11 +163,18 @@ async function collectPages(request) {
       }
       await waitForTabComplete(tabId);
       pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
-      await wait(PAGE_REQUEST_INTERVAL_MS);
+      if (pageIndex < PAGE_COUNT) await wait(pageRequestDelay());
     }
+    await clearVerificationState();
     return pages;
+  } catch (error) {
+    if (String(error?.message || "") === "naver_verification_required" && tabId != null) {
+      tabId = await surfaceVerificationTab(tabId);
+      keepTabOpen = true;
+    }
+    throw error;
   } finally {
-    if (tabId != null) await chrome.tabs.remove(tabId).catch(() => {});
+    if (tabId != null && !keepTabOpen) await chrome.tabs.remove(tabId).catch(() => {});
   }
 }
 
@@ -156,6 +211,12 @@ function nativeDisconnectCode(lastErrorMessage) {
 
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
+  const automatic = trigger !== "manual";
+  const verification = await verificationState();
+  if (automatic && verification.blockedUntil > Date.now()) {
+    await saveStatus("verification", "naver_verification_cooldown");
+    return { ok: false, code: "naver_verification_cooldown" };
+  }
   running = true;
   await saveStatus("running", trigger);
   const port = chrome.runtime.connectNative(NATIVE_HOST);
@@ -203,8 +264,13 @@ async function runWorker(trigger = "manual") {
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
-    if (Number(result.claimed || 0) > 0 && failed === 0) {
-      await chrome.alarms.create("rank-drain-follow-up", { delayInMinutes: 1 });
+    const haltedCode = String(result.haltedCode || "");
+    if (NAVER_ACCESS_COOLDOWN_CODES.has(haltedCode)) {
+      await chrome.storage.local.set({
+        [VERIFICATION_BLOCKED_UNTIL_KEY]: Date.now() + VERIFICATION_COOLDOWN_MS,
+      });
+      await saveStatus("verification", haltedCode);
+      return { ok: false, partial: submitted > 0, code: haltedCode, summary: result };
     }
     await saveStatus(failed > 0 ? "partial" : "completed", failed > 0
       ? `갱신 ${submitted}건 · 재시도 ${failed}건`

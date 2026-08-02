@@ -211,22 +211,25 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
   const source = fs.readFileSync(wrapperPath, "utf8");
   assert.match(source, /naver-shopping-native-host\.conf/u);
-  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="25"/u);
+  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"/u);
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
   assertZshSyntax(wrapperPath, source);
 });
 
-test("Chrome extension drains successful batches and reports partial failures truthfully", () => {
+test("Chrome extension drains safely and reports verification recovery truthfully", () => {
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.3");
-  assert.match(serviceWorker, /rank-drain-follow-up/u);
-  assert.match(serviceWorker, /delayInMinutes:\s*1/u);
+  assert.equal(manifest.version, "1.0.4");
+  assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
+  assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
+  assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
+  assert.match(serviceWorker, /surfaceVerificationTab/u);
+  assert.match(serviceWorker, /naver_verification_cooldown/u);
   assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
   assert.match(serviceWorker, /재시도 \$\{failed\}건/u);
   assert.match(popup, /status\?\.status === "partial"/u);
@@ -255,8 +258,10 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /periodInMinutes: 10/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 1_250/u);
-  assert.match(serviceWorker, /await wait\(PAGE_REQUEST_INTERVAL_MS\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
+  assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);
   assert.match(popup, /failureText\(status\.detail\)/u);
   assert.match(popup, /failureText\(result\?\.code\)/u);

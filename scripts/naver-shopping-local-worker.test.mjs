@@ -273,6 +273,48 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
 });
 
+test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
+  const calls = [];
+  const secondJob = {
+    ...JOB,
+    claims: [{
+      ...JOB.claims[0],
+      trackerId: "123e4567-e89b-42d3-a456-426614174001",
+    }],
+  };
+  const provider = {
+    async collect() { return completeWindow(); },
+    async close() {},
+  };
+  const completed = {
+    ok: true,
+    committedCount: 1,
+    alreadyCommittedCount: 0,
+    leaseLostCount: 0,
+    collectionConflictCount: 0,
+    processedCount: 1,
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: completed },
+    { body: { ok: true, job: secondJob } },
+    { body: completed },
+  ], calls);
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+    fetchImpl,
+    provider,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.submitted, 2);
+  assert.deepEqual(
+    calls.filter((call) => call.action === "claim").map((call) => call.preferLookup),
+    [true, false],
+  );
+});
+
 test("never submits a short source-exhausted window and releases the lease as failure", async () => {
   const calls = [];
   const provider = {
@@ -326,6 +368,7 @@ test("stops the batch after Naver requests verification and preserves all unclai
   });
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    haltedCode: "naver_verification_required",
   });
   assert.equal(collectCount, 1);
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);

@@ -1180,7 +1180,8 @@ const checks = {
     && shoppingRankLookupGrantMigration.includes("revoke all on table public.naver_shopping_rank_lookup_jobs from service_role")
     && shoppingRankLookupGrantMigration.includes("grant select, insert, update, delete on table public.naver_shopping_rank_lookup_jobs to service_role")
     && shoppingLocalWorkerHandler.includes('body.preferLookup !== false')
-    && shoppingLocalWorker.includes("index % 3 !== 2"),
+    && shoppingLocalWorker.includes("index === maxJobs - 1 || index % 3 === 2")
+    && shoppingLocalWorker.includes("preferLookup: !trackerReserved"),
   shoppingNormalChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
   ])
@@ -1213,8 +1214,12 @@ const checks = {
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
-    && shoppingChromeWorker.includes("rank-drain-follow-up")
-    && shoppingChromeWorker.includes('delayInMinutes: 1')
+    && !shoppingChromeWorker.includes("rank-drain-follow-up")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
+    && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
+    && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
+    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false

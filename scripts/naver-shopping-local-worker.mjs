@@ -314,8 +314,11 @@ export async function runLocalShoppingWorker(options = {}) {
   try {
     for (let index = 0; index < maxJobs; index += 1) {
       // Give interactive lookups a fast response while reserving every third
-      // claim attempt for the existing 30-day tracker queue.
-      const claim = await action({ action: "claim", preferLookup: index % 3 !== 2 });
+      // claim attempt for the existing 30-day tracker queue. The final slot is
+      // always tracker-first so a deliberately small run budget cannot starve
+      // scheduled history refreshes behind interactive requests.
+      const trackerReserved = index === maxJobs - 1 || index % 3 === 2;
+      const claim = await action({ action: "claim", preferLookup: !trackerReserved });
       if (!claim.job) break;
       const job = validateLocalWorkerJob(claim.job, {
         requireActiveLease: true,
@@ -384,6 +387,7 @@ export async function runLocalShoppingWorker(options = {}) {
           log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
         }
         if (RUN_HALT_FAILURE_CODES.has(failureCode)) {
+          summary.haltedCode = failureCode;
           log(`local_worker_run_halted:${failureCode}`);
           break;
         }

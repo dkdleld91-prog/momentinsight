@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { deriveChromeExtensionId } from "./install-naver-shopping-chrome-bridge.mjs";
+import {
+  deriveChromeExtensionId,
+  installChromeBridge,
+} from "./install-naver-shopping-chrome-bridge.mjs";
 import {
   buildNativeWindowFromPages,
   createChromeNativeProvider,
@@ -140,6 +144,28 @@ test("manifest public key produces a stable Chrome extension id", async () => {
     with: { type: "json" },
   });
   assert.equal(deriveChromeExtensionId(manifest.default.key), "pflggephankeefaeoaafkmggampnaefm");
+});
+
+test("native host installs an independent protected runtime outside the repository", async (context) => {
+  const homeDirectory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "mi-native-host-home-"));
+  context.after(() => fs.rmSync(homeDirectory, { recursive: true, force: true }));
+  const repositoryPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+  const result = installChromeBridge({
+    repositoryPath,
+    homeDirectory,
+    keychainReady: () => true,
+    disableOldAutomaticWorker: false,
+  });
+  const installedManifest = JSON.parse(fs.readFileSync(result.hostManifestPath, "utf8"));
+
+  assert.equal(installedManifest.path, result.wrapperPath);
+  assert.ok(result.wrapperPath.startsWith(path.join(homeDirectory, "Library", "Application Support", "MomentInsight")));
+  assert.ok(!result.wrapperPath.startsWith(repositoryPath));
+  assert.equal(fs.statSync(result.wrapperPath).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(path.join(result.runtimePath, "scripts", "naver-shopping-native-host.mjs")).mode & 0o777, 0o600);
+  assert.deepEqual(installedManifest.allowed_origins, [
+    "chrome-extension://pflggephankeefaeoaafkmggampnaefm/",
+  ]);
 });
 
 test("native host wrapper uses a stable path, bounded jobs and safe local canary config", () => {

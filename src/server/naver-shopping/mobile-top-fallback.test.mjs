@@ -66,9 +66,9 @@ function slot(sourceType, rank, overrides = {}) {
   };
 }
 
-function bffPayload(slots) {
+function bffPayload(slots, pageSize = 50) {
   return {
-    data: [{ page: 1, pageSize: 50, slots }],
+    data: [{ page: 1, pageSize, slots }],
   };
 }
 
@@ -158,10 +158,27 @@ test("does not infer coverage through a high slot rank when an intermediate rank
   assert.deepEqual(parsed.items.map((item) => item.organicRank), [1, 2]);
 });
 
+test("accepts Naver's current 49-slot response while preserving every absolute rank", () => {
+  const slots = Array.from({ length: 49 }, (_, index) => slot("SAS", index + 1));
+  const parsed = parseMobilePagedSlotPayload(bffPayload(slots, 49), { keyword: KEYWORD });
+
+  assert.equal(parsed.checkedCount, 49);
+  assert.equal(parsed.verifiedThroughRank, 49);
+  assert.deepEqual(parsed.items.map((item) => item.organicRank), Array.from({ length: 49 }, (_, index) => index + 1));
+});
+
 test("fails closed on malformed pages, missing identities, or non-increasing SAS ranks", () => {
   assert.throws(
     () => parseMobilePagedSlotPayload({ data: [{ page: 2, pageSize: 50, slots: [] }] }, { keyword: KEYWORD }),
     (error) => error instanceof MobileTopFallbackError && error.code === "shopping_mobile_top_schema_drift",
+  );
+  assert.throws(
+    () => parseMobilePagedSlotPayload(bffPayload([slot("SAS", 1)], 51), { keyword: KEYWORD }),
+    (error) => error instanceof MobileTopFallbackError && error.detail === "bff.page.1",
+  );
+  assert.throws(
+    () => parseMobilePagedSlotPayload(bffPayload([slot("SAS", 1), slot("SAS", 2)], 1), { keyword: KEYWORD }),
+    (error) => error instanceof MobileTopFallbackError && error.detail === "bff.page.1",
   );
   assert.throws(
     () => parseMobilePagedSlotPayload(bffPayload([slot("SAS", 2), slot("SAS", 1)]), { keyword: KEYWORD }),

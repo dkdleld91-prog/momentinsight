@@ -200,7 +200,7 @@
     {
       "id": "shopping-collector-live-gate",
       "file": "scripts/check-naver-shopping-collector-live.mjs",
-      "sha256": "460f468cdf65a21e91ac6d3bff9ea8b634343b9f53ccdd5484c587396ec7e155"
+      "sha256": "952ef21457288942fd2067158d0c87d0676aa4f52cc385fda3b0d2e9dda69e77"
     },
     {
       "id": "product-cron-workflow",
@@ -291,7 +291,7 @@
     {
       "id": "shopping-rank-mobile-top-fallback",
       "file": "src/server/naver-shopping/mobile-top-fallback.mjs",
-      "sha256": "908e81577c100a1b16fe655cd1f667ad60e3c7884f7f9b32b55a98f27f21449d"
+      "sha256": "c5ae3dc15f5811dff98452ba31e7a75fb3f7c6a660d26487bad7c3a1032d7599"
     },
     {
       "id": "shopping-collector-package-manifest",
@@ -397,7 +397,7 @@
     {
       "id": "shopping-chrome-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge.mjs",
-      "sha256": "318de186164ca364aa1b3aa10d78f4a9327b83da5a54e38f5fc3e4e43099f36d"
+      "sha256": "8d2540e1a74314deb2f7188dde9a8e75d775e83c3bc9f67b9caac09f6e0fb0d6"
     },
     {
       "id": "shopping-chrome-extension-manifest",

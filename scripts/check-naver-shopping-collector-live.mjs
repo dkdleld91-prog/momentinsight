@@ -136,14 +136,15 @@ async function verifiedMobileFallbackEvidence() {
     && item?.isAd === false
     && item?.isOrganic === true
   ));
+  const highestExactRank = ranks.at(-1) || 0;
   if (!increasing
     || !organicOnly
     || fallback.checkedCount !== fallback.items.length
     || fallback.checkedCount < 35
-    || Number(fallback.verifiedThroughRank || 0) < 40) {
+    || highestExactRank < 40) {
     throw new Error("mobile_top_fallback_untrusted_window");
   }
-  return { fallback, ranks, organicOnly };
+  return { fallback, ranks, organicOnly, highestExactRank };
 }
 
 async function verifiedHybridWorkerEvidence() {
@@ -186,7 +187,7 @@ async function verifiedHybridWorkerEvidence() {
 
 if (isMobileTopFallbackMode(shoppingRank)) {
   try {
-    const { fallback, ranks, organicOnly } = await verifiedMobileFallbackEvidence();
+    const { fallback, ranks, organicOnly, highestExactRank } = await verifiedMobileFallbackEvidence();
     const hybrid = isHybridLocalWorkerMode(shoppingRank);
     const workerEvidence = hybrid ? await verifiedHybridWorkerEvidence() : null;
     const evidence = {
@@ -197,6 +198,7 @@ if (isMobileTopFallbackMode(shoppingRank)) {
       rankEvidence: fallback.rankEvidence,
       checkedCount: fallback.checkedCount,
       firstRank: ranks[0],
+      highestExactRank,
       verifiedThroughRank: fallback.verifiedThroughRank,
       organicOnly,
       safeExactMatchReady: true,

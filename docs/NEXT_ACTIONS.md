@@ -12,13 +12,13 @@
 ## 현재 작업
 
 - 종료 쇼핑 검색 API와 NAVER API Hub를 상품 오가닉 순위에 연결하지 않는다. Hub에는 전체 쇼핑 순위를 제공하는 공식 endpoint가 없으며 Search·Search Trend·Shopping Insight·Commerce API 값을 순위로 바꾸지 않는다.
-- 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 연속 상위 50위에서 exact ID를 즉시 확인하고, 사용자가 승인한 일반 `동빈` Chrome의 최소권한 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 네이티브 호스트에 전달한다.
+- 현재 목표 구조는 `hybrid_local_worker`다. 서버는 광고를 제외한 명시적 SAS 상품의 공식 절대 순위 exact ID를 즉시 확인하고, 응답에서 빠진 슬롯은 압축하거나 미노출로 단정하지 않는다. 사용자가 승인한 일반 `동빈` Chrome의 최소권한 확장은 공개 쇼핑 페이지의 `__NEXT_DATA__`만 읽어 정확히 300개를 네이티브 호스트에 전달한다.
 - Mac 워커는 HMAC·유효시간·1회용 nonce·lease·원자 DB 반영을 강제한다. 299개 이하, 광고·중복·순위 공백, 인증 만료, collection 충돌은 새 순위나 snapshot을 만들지 않고 마지막 정상 순위와 30일 이력을 보존한다.
 - Production 반영 후 `/api/naver-shopping-local-worker` 무서명 요청이 `SESSION_REQUIRED`가 아니라 워커 전용 서명 오류로 거부되는지 먼저 확인한다. 이는 인증 제거가 아니라 공통 로그인 세션 대신 HMAC·timestamp·nonce 인증을 적용하는 정확 경로 분리다.
 - 오전 9시·오후 3시에 로컬 워커가 먼저 처리하고 후속 재시도와 매시 안전 실행이 남은 due tracker를 처리한다. Mac이 꺼져 있으면 새 51~300위 수집은 멈추지만 서버 상위 50위 경로와 기존값 보존은 계속된다.
-- 확장 폴더와 네이티브 브리지는 설치됐다. Chrome 본 프로세스가 manifest 설치 전부터 실행 중이라 새 호스트 목록을 읽지 않은 상태다. 다음 검증 순서는 `확장 1.0.2 새로고침 → chrome://restart로 Chrome 완전 재시작 → 수동 지금 갱신 1건 → 최근 pw-chrome-*·checked_count=300 snapshot 확인 → 광고 제외·연속 순번·exact/원부 일치 → 로컬 canary 설정 제거 → 전체 활성 tracker → 09시/15시 창과 후속 재시도 → 총관리자·운영팀·광고주 동일 값 → Production 배포`다.
+- 네이티브 브리지는 Desktop 저장소 의존을 제거하고 `$HOME/Library/Application Support/MomentInsight/NaverShoppingBridge`에 독립 설치했다. Chrome 재시작 후 수동 갱신 3회 연속 정상 종료, 최근 `pw-chrome-*`·`checked_count=300` 원자 snapshot, 광고 제외 SAS 실응답과 exact 순위를 확인했다. 다음 순서는 `로컬 canary 설정 제거 → 커밋·Production 배포 → Production HMAC 무서명 차단 → 전체 due tracker → 09시/15시 창과 후속 재시도 → 총관리자·운영팀·광고주 동일 값`이다.
 - 고객별 설치를 요구하지 않는다. 모먼트랩스 중앙 수집 장비의 단일 확장이 사이트 전체 due tracker를 처리한다. Mac·Chrome이 꺼진 동안은 서버 상위 50위 안전 경로와 마지막 정상값 보존만 유지되므로, 완전 무인 51~300위를 보장하려면 이 중앙 장비를 상시 실행해야 한다.
-- 유료 외부 수집기, 카드 등록, 자동 결제는 사용하지 않는다. 코드·모의·계약 테스트만으로 실수집이나 배포 완료를 보고하지 않으며, 최근 `pw-*` 300위 snapshot이 확인될 때까지 실수집·Production 반영은 대기 상태다.
+- 유료 외부 수집기, 카드 등록, 자동 결제는 사용하지 않는다. 코드·모의·계약 테스트가 아니라 최근 `pw-chrome-*` 300위 snapshot과 현재 네이버 SAS 실응답을 모두 확인했다. 배포 후에는 Production HMAC·전체 대기열·세 역할 값을 별도로 재검증한다.
 - 기존 tracker, snapshot, 감사 로그, 마이그레이션, 운영 문서는 실제 300위 전환과 rollback 검증 전 삭제하지 않는다. 재생성 가능한 산출물과 실행 불가능한 과거 원격 쇼핑 서비스 잔재만 별도 검증 후 정리한다.
 
 - NAVER API Hub는 공식 실키와 `NAVER_API_HUB_MODE=hub`로 고정됐고 Search·Search Trend·Shopping Insight 3종 실호출이 모두 HTTP 200이다. 배포 전 검사는 Hub 키 쌍과 명시적 hub 모드를 필수로 강제하며, 종료된 `shop` 등 미지원 검색 리소스는 네트워크 호출 전에 차단한다. 일시 오류만 1회 제한 재시도하고 401/403·잘못된 요청은 재시도하지 않는다.

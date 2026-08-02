@@ -381,7 +381,12 @@ export function parseMobilePagedSlotPayload(payload, {
   const observedRanks = new Set();
 
   for (const page of payload.data) {
-    if (!isRecord(page) || positiveInteger(page.page) !== expectedPage || Number(page.pageSize) !== BFF_PAGE_SIZE || !Array.isArray(page.slots)) {
+    const responsePageSize = positiveInteger(page?.pageSize);
+    if (!isRecord(page)
+      || positiveInteger(page.page) !== expectedPage
+      || !Array.isArray(page.slots)
+      || responsePageSize < page.slots.length
+      || responsePageSize > BFF_PAGE_SIZE) {
       failSchema(`bff.page.${expectedPage}`);
     }
     if (page.slots.length > 50) failSchema(`bff.page.${expectedPage}.slots`);

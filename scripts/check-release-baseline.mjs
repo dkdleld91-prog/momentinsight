@@ -167,6 +167,7 @@ const shoppingLocalWorkerContract = read("src/server/naver-shopping/local-worker
 const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_naver_shopping_local_worker.sql");
 const shoppingRankLookupJobs = read("src/server/handlers/naver-shopping-rank-jobs.mjs");
 const shoppingRankLookupMigration = read("supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql");
+const shoppingRankLookupGrantMigration = read("supabase/migrations/20260802164548_harden_naver_shopping_rank_lookup_jobs_grants.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1176,6 +1177,8 @@ const checks = {
     && shoppingRankLookupMigration.includes("force row level security")
     && shoppingRankLookupMigration.includes("for update skip locked")
     && shoppingRankLookupMigration.includes("pg_advisory_xact_lock")
+    && shoppingRankLookupGrantMigration.includes("revoke all on table public.naver_shopping_rank_lookup_jobs from service_role")
+    && shoppingRankLookupGrantMigration.includes("grant select, insert, update, delete on table public.naver_shopping_rank_lookup_jobs to service_role")
     && shoppingLocalWorkerHandler.includes('body.preferLookup !== false')
     && shoppingLocalWorker.includes("index % 3 !== 2"),
   shoppingNormalChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([

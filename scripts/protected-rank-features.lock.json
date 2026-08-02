@@ -396,6 +396,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-rank-lookup-grants",
+      "file": "supabase/migrations/20260802164548_harden_naver_shopping_rank_lookup_jobs_grants.sql",
+      "sha256": "2dece34ef44d881c5fb833eb89e75d308b278c23f45ddf69b71602316d5cb853",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
       "sha256": "0ac5c599f73f3fe3941a34b2711269f6ee725b80946b9604819549e646ecfc42"

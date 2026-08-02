@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import {
@@ -7,6 +8,16 @@ import {
 } from "./naver-shopping-rank-jobs.mjs";
 
 const JOB_ID = "123e4567-e89b-42d3-a456-426614174000";
+const lookupGrantMigration = fs.readFileSync(new URL(
+  "../../../supabase/migrations/20260802164548_harden_naver_shopping_rank_lookup_jobs_grants.sql",
+  import.meta.url,
+), "utf8");
+
+test("keeps the lookup queue private while granting only required service operations", () => {
+  assert.match(lookupGrantMigration, /revoke all on table public\.naver_shopping_rank_lookup_jobs from service_role;/u);
+  assert.match(lookupGrantMigration, /grant select, insert, update, delete on table public\.naver_shopping_rank_lookup_jobs to service_role;/u);
+  assert.doesNotMatch(lookupGrantMigration, /grant .*\b(?:references|trigger|truncate)\b.* to service_role/iu);
+});
 
 function sessionRequest(path = "", options = {}, agencyCode = "agency-a01") {
   const headers = new Headers(options.headers || {});

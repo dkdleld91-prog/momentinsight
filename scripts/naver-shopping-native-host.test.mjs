@@ -16,6 +16,16 @@ import {
 } from "./naver-shopping-native-host-core.mjs";
 import { SCHEMA_VERSION } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 
+function assertZshSyntax(scriptPath, source) {
+  const lint = spawnSync("/bin/zsh", ["-n", scriptPath], { encoding: "utf8" });
+  if (lint.error?.code === "ENOENT") {
+    assert.match(source, /^#!\/bin\/zsh\r?\n/u);
+    assert.doesNotMatch(source, /\r/u);
+    return;
+  }
+  assert.equal(lint.status, 0, lint.stderr);
+}
+
 const KEYWORD = "온열찜질기";
 
 function request(nowMs) {
@@ -176,8 +186,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
-  const lint = spawnSync("/bin/zsh", ["-n", wrapperPath], { encoding: "utf8" });
-  assert.equal(lint.status, 0, lint.stderr);
+  assertZshSyntax(wrapperPath, source);
 });
 
 test("extension translates native disconnects and never exposes raw runtime errors", () => {

@@ -92,6 +92,16 @@ function uuidSequence() {
   return () => `worker-nonce-${String(++count).padStart(8, "0")}`;
 }
 
+function assertZshSyntax(scriptPath, source) {
+  const lint = spawnSync("/bin/zsh", ["-n", fileURLToPath(scriptPath)], { encoding: "utf8" });
+  if (lint.error?.code === "ENOENT") {
+    assert.match(source, /^#!\/bin\/zsh\r?\n/u);
+    assert.doesNotMatch(source, /\r/u);
+    return;
+  }
+  assert.equal(lint.status, 0, lint.stderr);
+}
+
 test("stays completely off until the local worker flag is enabled", async () => {
   const summary = await runLocalShoppingWorker({ env: {}, skipLock: true });
   assert.deepEqual(summary, {
@@ -175,8 +185,7 @@ test("launch wrapper keeps catch-up retries bounded and remains valid zsh", asyn
   assert.match(source, /local_worker_profile_not_initialized/u);
   assert.doesNotMatch(source, /HAD_FAILURE/u);
   assert.doesNotMatch(source, /STATUS=0/u);
-  const lint = spawnSync("/bin/zsh", ["-n", fileURLToPath(scriptPath)], { encoding: "utf8" });
-  assert.equal(lint.status, 0, lint.stderr);
+  assertZshSyntax(scriptPath, source);
 });
 
 test("launch agent polls safely between the two fixed daily slots", async () => {
@@ -199,8 +208,7 @@ test("installer refuses to start launchd before the dedicated profile is authent
   assert.match(source, /\.moment-insight-authenticated-v1/u);
   assert.match(source, /local_worker_profile_not_initialized/u);
   assert.ok(source.indexOf("local_worker_profile_not_initialized") < source.indexOf("launchctl bootstrap"));
-  const lint = spawnSync("/bin/zsh", ["-n", fileURLToPath(installerPath)], { encoding: "utf8" });
-  assert.equal(lint.status, 0, lint.stderr);
+  assertZshSyntax(installerPath, source);
 });
 
 test("profile bootstrap uses only the dedicated local browser and never extracts credentials", async () => {

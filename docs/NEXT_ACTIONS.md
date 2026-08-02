@@ -228,8 +228,8 @@
 
 ## 다음 우선순위
 
-1. P0: 현재 로컬에만 있는 `N Shopping Cloud Canary` workflow를 승인 후 GitHub에 반영하고, GitHub-hosted runner에서 무저장 300개 canary를 최소 3회 반복한다. 3회 모두 `checkedCount=300`, 광고 제외, 순번 1..300, CAPTCHA·418 없음일 때만 worker secret과 `MI_NAVER_SHOPPING_CLOUD_ENABLED=true`를 연결한다.
-2. P0: 자동 운영 전환 후 첫 KST 09:00 또는 15:00 실행에서 `gh-*` collection, 300개 완주, due tracker 원자 저장, 실패 tracker 기존값 보존, Mac이 꺼진 상태의 다음 슬롯 재실행을 확인한다. 하나라도 실패하면 variable을 즉시 false로 내려 자동 실행을 다시 차단한다.
+1. P0 차단: GitHub-hosted Azure `eastus` canary run `30753247124`가 `naver_http_418`로 실패했다. 공용 GitHub IP 반복 실행과 `MI_NAVER_SHOPPING_CLOUD_ENABLED` 활성화는 중단한다.
+2. P0 대안 결정: Mac 비의존 300위가 계속 필요하면 한국 리전 고정 브라우저 서버 또는 검증 가능한 순위 공급자를 비용·약관·300위 정확성 기준으로 먼저 승인한다. 승인 전에는 유료 리소스를 만들지 않고 기존 Mac Chrome 비상 수집과 마지막 정상값 보존을 유지한다.
 3. P0: 2026-07-31 쇼핑 검색 API 종료 전에 실제 네이버쇼핑 화면 수집기 또는 검증 가능한 라이선스 공급자로 상품 단건·N 30일·SEO 순위 소스를 교체한다. 광고 제외·정확 상품ID·검증 원부ID·화면 순번을 독립 검증하고, 새 소스가 준비될 때까지 마지막 정상 기록을 보존하며 API 배열 순서를 화면 순위로 표기하지 않는다.
 4. P0: Search Trend·Shopping Insight·blog/local용 legacy/Hub 분리 어댑터와 오류 분류는 구현·검증했다. NCP Hub 앱·구독·별도 키를 준비하고 Production legacy 고정 상태에서 Preview hub 실호출·표본 비교 후 전환한다. Shopping Insight 카테고리 ID는 종료되는 쇼핑 검색 결과에서 분리해 명시 저장한다.
 5. 플레이스 101~300위가 사업상 필요하면 실제 네이버 오가닉 목록과 동일함을 증명하는 별도 공급자를 검토한다. Apify 배열은 진단용으로만 유지하고 `naver_pc_organic_list` 근거가 없는 순위는 운영 스냅샷에 저장하지 않는다.

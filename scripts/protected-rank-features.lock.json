@@ -200,7 +200,12 @@
     {
       "id": "shopping-collector-live-gate",
       "file": "scripts/check-naver-shopping-collector-live.mjs",
-      "sha256": "952ef21457288942fd2067158d0c87d0676aa4f52cc385fda3b0d2e9dda69e77"
+      "sha256": "b9055b394f4fe30ff3b190c2bd3b7f2e0db79dfcbdc7df83775b04a242caf221"
+    },
+    {
+      "id": "shopping-collector-live-gate-policy",
+      "file": "src/server/naver-shopping/live-gate-policy.mjs",
+      "sha256": "e6d680c0a1e8d8bd82139cfcb78c773888b8a762b5d8470571e7df6f5ca5659c"
     },
     {
       "id": "product-cron-workflow",

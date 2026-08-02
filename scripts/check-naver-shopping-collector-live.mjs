@@ -6,6 +6,7 @@ import {
   trustedCollectorWindow,
 } from "../src/server/handlers/naver-shopping-rank.mjs";
 import { collectMobileTopFallbackWindow } from "../src/server/naver-shopping/mobile-top-fallback.mjs";
+import { hybridLiveGateEvidence } from "../src/server/naver-shopping/live-gate-policy.mjs";
 import {
   isMobileTopFallbackMode,
   isHybridLocalWorkerMode,
@@ -186,14 +187,41 @@ async function verifiedHybridWorkerEvidence() {
 }
 
 if (isMobileTopFallbackMode(shoppingRank)) {
+  const hybrid = isHybridLocalWorkerMode(shoppingRank);
+  if (hybrid) {
+    try {
+      const workerEvidence = await verifiedHybridWorkerEvidence();
+      let mobileEvidence = null;
+      let mobileError = null;
+      try {
+        mobileEvidence = await verifiedMobileFallbackEvidence();
+      } catch (error) {
+        mobileError = error;
+      }
+      console.log(JSON.stringify(hybridLiveGateEvidence({
+        workerEvidence,
+        mobileEvidence,
+        mobileError,
+        latencyMs: Date.now() - startedAt,
+      }), null, 2));
+      process.exit(0);
+    } catch (error) {
+      console.error(JSON.stringify({
+        ok: false,
+        code: "SHOPPING_RANK_HYBRID_WORKER_NOT_READY",
+        message: String(error?.message || "hybrid_worker_live_check_failed"),
+        keyword,
+        latencyMs: Date.now() - startedAt,
+      }, null, 2));
+      process.exit(1);
+    }
+  }
   try {
     const { fallback, ranks, organicOnly, highestExactRank } = await verifiedMobileFallbackEvidence();
-    const hybrid = isHybridLocalWorkerMode(shoppingRank);
-    const workerEvidence = hybrid ? await verifiedHybridWorkerEvidence() : null;
     const evidence = {
-      ok: hybrid,
-      code: hybrid ? "SHOPPING_RANK_HYBRID_LIVE_READY" : "SHOPPING_RANK_FULL_300_REQUIRED",
-      mode: hybrid ? "hybrid_local_worker" : "verified_mobile_top_fallback",
+      ok: false,
+      code: "SHOPPING_RANK_FULL_300_REQUIRED",
+      mode: "verified_mobile_top_fallback",
       source: fallback.source,
       rankEvidence: fallback.rankEvidence,
       checkedCount: fallback.checkedCount,
@@ -202,17 +230,15 @@ if (isMobileTopFallbackMode(shoppingRank)) {
       verifiedThroughRank: fallback.verifiedThroughRank,
       organicOnly,
       safeExactMatchReady: true,
-      fullCoverageReady: Boolean(workerEvidence),
-      deploymentEligible: Boolean(workerEvidence),
-      workerEvidence,
+      fullCoverageReady: false,
+      deploymentEligible: false,
+      workerEvidence: null,
       missPolicy: "preserve_last_verified_rank",
       latencyMs: Date.now() - startedAt,
-      message: workerEvidence
-        ? "The exact top window and a recent atomic 300-rank worker result both passed."
-        : "The exact top-window path passed, but production still requires a verified 300-rank source.",
+      message: "The exact top-window path passed, but production still requires a verified 300-rank source.",
     };
-    (workerEvidence ? console.log : console.error)(JSON.stringify(evidence, null, 2));
-    process.exit(workerEvidence ? 0 : 1);
+    console.error(JSON.stringify(evidence, null, 2));
+    process.exit(1);
   } catch (error) {
     console.error(JSON.stringify({
       ok: false,

@@ -218,6 +218,21 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assertZshSyntax(wrapperPath, source);
 });
 
+test("Chrome extension drains successful batches and reports partial failures truthfully", () => {
+  const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
+  const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
+  const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
+
+  assert.equal(manifest.version, "1.0.3");
+  assert.match(serviceWorker, /rank-drain-follow-up/u);
+  assert.match(serviceWorker, /delayInMinutes:\s*1/u);
+  assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
+  assert.match(serviceWorker, /재시도 \$\{failed\}건/u);
+  assert.match(popup, /status\?\.status === "partial"/u);
+  assert.match(popup, /일부 갱신 완료/u);
+});
+
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {
   const schedulerPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-chrome-scheduler.sh");
   const source = fs.readFileSync(schedulerPath, "utf8");

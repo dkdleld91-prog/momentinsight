@@ -312,12 +312,15 @@ const checks = {
     && !clientSource.includes('localStorage.setItem("miRankAccessCode"')
     && !clientSource.includes('sessionStorage.setItem("miRankAccessCode"')
     && !clientSource.includes("function rankAccessCode()"),
-  productTrackerActionsAligned: hasActions(adminProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"])
-    && hasActions(clientProductTracking, ["create", "check", "sync-due", "group", "delete", "reorder"]),
-  productHybridRefreshIsSerialAndRateBounded: [adminSource, clientSource].every((source) => includesAll(source, [
+  productTrackerActionsAligned: hasActions(adminProductTracking, ["create", "check", "queue-refresh-all", "sync-due", "group", "delete", "reorder"])
+    && hasActions(clientProductTracking, ["create", "check", "queue-refresh-all", "sync-due", "group", "delete", "reorder"]),
+  productHybridRefreshIsAccountQueuedAndFallbackRemainsBounded: [adminSource, clientSource].every((source) => includesAll(source, [
     "function rankSourceUsesMobileFallback",
     'rankSourceMode === "mobile_top_fallback" || rankSourceMode === "hybrid_local_worker"',
   ])) && [adminProductRefresh, clientProductRefresh].every((block) => includesAll(block, [
+    'rankSourceMode === "hybrid_local_worker"',
+    'action: "queue-refresh-all"',
+    "완료된 순위부터 자동 반영됩니다.",
     "var mobileFallback = rankSourceUsesMobileFallback()",
     "Math.min(mobileFallback ? 1 : 2, targets.length)",
     "if (mobileFallback && completedCount > 0)",

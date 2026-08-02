@@ -18,6 +18,7 @@ function failureText(code) {
 function statusText(status) {
   if (status?.status === "running") return "현재 오가닉 순위를 안전하게 확인하고 있습니다.";
   if (status?.status === "completed") return `${status.detail || "갱신 완료"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
+  if (status?.status === "partial") return `${status.detail || "일부 항목 재시도 예정"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
   if (status?.status === "failed") return `확인 필요 · ${failureText(status.detail)}`;
   return "자동 갱신 준비 완료";
 }
@@ -38,7 +39,9 @@ runButton.addEventListener("click", async () => {
     const result = await chrome.runtime.sendMessage({ action: "run-now" });
     statusElement.textContent = result?.ok
       ? "안전 갱신을 완료했습니다."
-      : `확인 필요 · ${failureText(result?.code)}`;
+      : result?.partial
+        ? `일부 갱신 완료 · 재시도 ${Number(result?.summary?.failed || 0) + Number(result?.summary?.releaseFailed || 0)}건`
+        : `확인 필요 · ${failureText(result?.code)}`;
   } catch {
     statusElement.textContent = "확인 필요 · 로컬 연결기를 확인해 주세요";
   } finally {

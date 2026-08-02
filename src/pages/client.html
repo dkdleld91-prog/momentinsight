@@ -9046,6 +9046,20 @@
               setStatus(rankStatus, "자동 갱신이 진행 중입니다. 완료 후 전체 갱신을 다시 눌러주세요.", "is-warn");
               return;
             }
+            if (rankSourceMode === "hybrid_local_worker") {
+              var queuedPayload = await requestRankTrackers("POST", { action: "queue-refresh-all" });
+              applyRankSourceState(queuedPayload);
+              if (!queuedPayload || queuedPayload.ok !== true) {
+                setStatus(rankStatus, (queuedPayload && queuedPayload.message) || "전체 순위 자동 갱신 등록에 실패했습니다.", "is-warn");
+                return;
+              }
+              await loadRankTrackers(true);
+              var queuedSummary = queuedPayload.summary || {};
+              setStatus(rankStatus, Number(queuedSummary.total || 0) > 0
+                ? "전체 " + Number(queuedSummary.total || 0) + "개를 중앙 자동 갱신에 등록했습니다. 완료된 순위부터 자동 반영됩니다."
+                : "갱신할 운영 중 순위 추적 항목이 없습니다.", Number(queuedSummary.total || 0) > 0 ? "is-ok" : "is-warn");
+              return;
+            }
             var nextIndex = 0;
             var completedCount = 0;
             var mobileFallback = rankSourceUsesMobileFallback();

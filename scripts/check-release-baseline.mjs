@@ -1212,7 +1212,10 @@ const checks = {
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
-    && shoppingChromeWorker.includes("existing.periodInMinutes"),
+    && shoppingChromeWorker.includes("existing.periodInMinutes")
+    && shoppingChromeWorker.includes("rank-drain-follow-up")
+    && shoppingChromeWorker.includes('delayInMinutes: 1')
+    && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false
     && shopping418Failure.retryAfterSeconds === 0
@@ -1587,7 +1590,10 @@ const checks = {
     && source.includes("rankTrackerTrend")
     && source.includes("updateRankFilterPanel")
     && source.includes("키워드, 상품명, 상품번호 검색")),
-  rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes("var mobileFallback = rankSourceUsesMobileFallback()")
+  rankFullRefreshUsesSafeConcurrency: [adminFullRankRefreshSource, clientFullRankRefreshSource].every((source) => source.includes('rankSourceMode === "hybrid_local_worker"')
+    && source.includes('action: "queue-refresh-all"')
+    && source.includes("완료된 순위부터 자동 반영됩니다.")
+    && source.includes("var mobileFallback = rankSourceUsesMobileFallback()")
     && source.includes("Math.min(mobileFallback ? 1 : 2, targets.length)")
     && source.includes("if (mobileFallback && completedCount > 0)")
     && source.includes("Promise.all")

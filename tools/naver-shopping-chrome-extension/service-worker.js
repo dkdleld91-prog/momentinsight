@@ -1,5 +1,5 @@
 const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
-const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
+const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up", "rank-drain-follow-up"]);
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 30_000;
 const PAGE_REQUEST_INTERVAL_MS = 1_250;
@@ -201,8 +201,15 @@ async function runWorker(trigger = "manual") {
       });
       port.postMessage({ action: "run", trigger });
     });
-    await saveStatus("completed", `갱신 ${Number(result.submitted || 0)}건`);
-    return { ok: true, summary: result };
+    const submitted = Math.max(0, Number(result.submitted || 0));
+    const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
+    if (Number(result.claimed || 0) > 0 && failed === 0) {
+      await chrome.alarms.create("rank-drain-follow-up", { delayInMinutes: 1 });
+    }
+    await saveStatus(failed > 0 ? "partial" : "completed", failed > 0
+      ? `갱신 ${submitted}건 · 재시도 ${failed}건`
+      : `갱신 ${submitted}건`);
+    return { ok: failed === 0, partial: failed > 0, summary: result };
   } catch (error) {
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };

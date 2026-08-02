@@ -301,6 +301,67 @@ test("hybrid page sync leaves due rows queued for the signed Mac worker", async 
   assert.equal(updateCalled, false);
 });
 
+test("hybrid full refresh queues every active row only inside the current account", async () => {
+  const teamCode = "mml93-t01";
+  const updatedIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
+  const calls = [];
+  const ctx = {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, TRACKERS);
+        const call = { filters: [], update: null, head: false };
+        calls.push(call);
+        const query = {
+          select(_columns, options = {}) {
+            call.head = options.head === true;
+            return query;
+          },
+          update(values) {
+            call.update = values;
+            return query;
+          },
+          eq(column, value) {
+            call.filters.push(["eq", column, value]);
+            return query;
+          },
+          in(column, values) {
+            call.filters.push(["in", column, values]);
+            return query;
+          },
+          or(value) {
+            call.filters.push(["or", value]);
+            return query;
+          },
+          then(resolve, reject) {
+            const result = call.update
+              ? { data: updatedIds.map((id) => ({ id })), error: null }
+              : { data: null, error: null, count: 3 };
+            return Promise.resolve(result).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(productTeamAccountRequest("POST", {
+    action: "queue-refresh-all",
+  }, teamCode), ctx));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(body.summary, { total: 3, queued: 2, alreadyProcessing: 1 });
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.deepEqual(call.filters.find((filter) => filter[0] === "in"), ["in", "agency_code", [teamCode]]);
+    assert.deepEqual(call.filters.find((filter) => filter[1] === "status"), ["eq", "status", "active"]);
+  }
+  assert.match(calls[1].filters.find((filter) => filter[0] === "or")[1], /processing_until\.is\.null,processing_until\.lt\./u);
+  assert.deepEqual(Object.keys(calls[1].update).sort(), ["last_message", "next_check_at"]);
+  assert.doesNotMatch(JSON.stringify(calls[1].update), /rank|snapshot|last_error|current_rank/iu);
+});
+
 test("manual product refresh does not claim or update a row without the collector", async () => {
   const teamCode = "mml93-t01";
   const tracker = trackerRow({ agency_code: teamCode });

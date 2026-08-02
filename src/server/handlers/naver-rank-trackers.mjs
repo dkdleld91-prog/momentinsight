@@ -1600,6 +1600,56 @@ async function syncDueTrackers(request, ctx, body, access) {
   }, ok ? 200 : (sourceUnavailable ? 503 : 502));
 }
 
+async function queueRefreshAllTrackers(request, ctx, access) {
+  const rankConfig = shoppingRankConfig();
+  const rankSource = shoppingRankSourceStatus(rankConfig);
+  if (!rankSource.configured || !isHybridLocalWorkerMode(rankConfig)) {
+    return json(request, {
+      ok: false,
+      ...rankSource,
+      message: "중앙 자동 갱신 연결을 확인해주세요.",
+    }, 503);
+  }
+
+  const queuedAt = new Date().toISOString();
+  const scope = agencyCodeScope(access.agencyCode);
+  const totalResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .in("agency_code", scope);
+  if (totalResult.error) throw totalResult.error;
+
+  const queuedResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      next_check_at: queuedAt,
+      last_message: "전체 순위 갱신 대기 중입니다.",
+    })
+    .eq("status", "active")
+    .in("agency_code", scope)
+    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
+    .select("id");
+  if (queuedResult.error) throw queuedResult.error;
+
+  const total = Math.max(0, Number(totalResult.count || 0));
+  const queued = Array.isArray(queuedResult.data) ? queuedResult.data.length : 0;
+  const alreadyProcessing = Math.max(0, total - queued);
+  return json(request, {
+    ok: true,
+    ...rankSource,
+    queuedForLocalWorker: queued > 0 || alreadyProcessing > 0,
+    message: total
+      ? `현재 계정의 운영 중 순위 ${total}개를 중앙 자동 갱신에 등록했습니다.`
+      : "갱신할 운영 중 순위 추적 항목이 없습니다.",
+    summary: {
+      total,
+      queued,
+      alreadyProcessing,
+    },
+  });
+}
+
 export async function claimDueTracker(ctx, tracker, nowIso) {
   const leaseUntil = new Date(Date.parse(nowIso) + RANK_TRACKER_LEASE_MS).toISOString();
   const { data, error } = await ctx.supabaseAdmin
@@ -1810,6 +1860,7 @@ async function handlePost(request, ctx) {
 
   if (action === "create") return createTracker(request, ctx, body, access);
   if (action === "check") return checkOne(request, ctx, body);
+  if (action === "queue-refresh-all") return queueRefreshAllTrackers(request, ctx, access);
   if (action === "sync-due") return syncDueTrackers(request, ctx, body, access);
   if (action === "stop") return stopTracker(request, ctx, body);
   if (action === "delete") return deleteTracker(request, ctx, body);

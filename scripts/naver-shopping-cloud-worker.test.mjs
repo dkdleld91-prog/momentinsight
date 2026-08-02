@@ -94,6 +94,7 @@ test("accepts only a complete 300-item canary window", async () => {
 
 test("cloud workflows are manual-canary first and production-disabled by default", () => {
   const canary = fs.readFileSync(".github/workflows/naver-shopping-cloud-canary.yml", "utf8");
+  const safariCanary = fs.readFileSync(".github/workflows/naver-shopping-safari-canary.yml", "utf8");
   const production = fs.readFileSync(".github/workflows/naver-shopping-cloud-rank.yml", "utf8");
   for (const workflow of [canary, production]) {
     assert.match(workflow, /persist-credentials:\s*false/u);
@@ -107,6 +108,10 @@ test("cloud workflows are manual-canary first and production-disabled by default
   assert.match(canary, /branches:\s*\n\s*- main/u);
   assert.doesNotMatch(canary, /schedule:/u);
   assert.match(canary, /--canary-only/u);
+  assert.match(safariCanary, /runs-on: macos-15/u);
+  assert.match(safariCanary, /safaridriver --enable/u);
+  assert.match(safariCanary, /without saving/u);
+  assert.doesNotMatch(safariCanary, /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/u);
   assert.match(production, /cron: "0 0,6 \* \* \*"/u);
   assert.match(production, /vars\.MI_NAVER_SHOPPING_CLOUD_ENABLED == 'true'/u);
   assert.match(production, /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/u);

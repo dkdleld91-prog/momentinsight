@@ -1,0 +1,45 @@
+name: N Shopping Safari Canary
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/naver-shopping-safari-canary.yml"
+      - "scripts/naver-shopping-safari-canary.mjs"
+      - "tools/naver-shopping-rank-collector/src/safari-cloud.mjs"
+
+concurrency:
+  group: naver-shopping-safari-canary
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect-300-without-saving:
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      MI_NAVER_SHOPPING_CLOUD_CANARY_KEYWORD: "온열찜질기"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install pinned collector dependencies
+        run: npm --prefix tools/naver-shopping-rank-collector ci --ignore-scripts
+
+      - name: Enable Apple Safari WebDriver
+        run: sudo /usr/bin/safaridriver --enable
+
+      - name: Collect and validate 300 organic results in Safari without saving
+        run: node scripts/naver-shopping-safari-canary.mjs

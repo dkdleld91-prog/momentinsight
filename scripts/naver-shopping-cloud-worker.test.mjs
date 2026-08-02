@@ -103,6 +103,8 @@ test("cloud workflows are manual-canary first and production-disabled by default
     assert.match(workflow, /playwright install --with-deps chromium/u);
   }
   assert.match(canary, /workflow_dispatch:/u);
+  assert.match(canary, /push:/u);
+  assert.match(canary, /branches:\s*\n\s*- main/u);
   assert.doesNotMatch(canary, /schedule:/u);
   assert.match(canary, /--canary-only/u);
   assert.match(production, /cron: "0 0,6 \* \* \*"/u);

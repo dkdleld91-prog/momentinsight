@@ -2,6 +2,13 @@ name: N Shopping Cloud Canary
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/naver-shopping-cloud-canary.yml"
+      - "scripts/naver-shopping-cloud-worker.mjs"
+      - "tools/naver-shopping-rank-collector/src/github-cloud.mjs"
 
 concurrency:
   group: naver-shopping-cloud-canary
@@ -36,4 +43,3 @@ jobs:
 
       - name: Collect and validate 300 organic results without saving
         run: node scripts/naver-shopping-cloud-worker.mjs --canary-only
-

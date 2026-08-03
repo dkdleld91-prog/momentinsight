@@ -63,6 +63,37 @@ const WORKER_LOOKUP_SELECT = [
   "processing_until",
 ].join(", ");
 
+async function queueAllActiveTrackers(ctx) {
+  const queuedAt = new Date().toISOString();
+  const totalResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active");
+  if (totalResult.error) throw totalResult.error;
+
+  const queuedResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      next_check_at: queuedAt,
+      last_message: "전체 순위 갱신 대기 중입니다.",
+    })
+    .eq("status", "active")
+    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
+    .select("id", { count: "exact" });
+  if (queuedResult.error) throw queuedResult.error;
+
+  const total = Math.max(0, Number(totalResult.count || 0));
+  const queued = Math.max(0, Number(
+    queuedResult.count ?? (Array.isArray(queuedResult.data) ? queuedResult.data.length : 0),
+  ));
+  return {
+    total,
+    queued,
+    alreadyProcessing: Math.max(0, total - queued),
+    queuedAt,
+  };
+}
+
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
     methods: "POST, OPTIONS",
@@ -426,6 +457,9 @@ export async function handleLocalWorkerRequest(request, ctx) {
         ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
         : ((await claimOneKeywordJob(ctx)) || (await claimOneLookupJob(ctx)));
       return json(request, { ok: true, job });
+    }
+    if (body.action === "queue-all-active-trackers") {
+      return json(request, { ok: true, ...(await queueAllActiveTrackers(ctx)) });
     }
     if (body.action === "submit") {
       return json(request, { ok: true, ...(await submitWindow(ctx, body.job, body.window)) });

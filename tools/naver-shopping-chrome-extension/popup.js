@@ -43,8 +43,12 @@ runButton.addEventListener("click", async () => {
   statusElement.textContent = "갱신을 시작합니다.";
   try {
     const result = await chrome.runtime.sendMessage({ action: "run-now" });
+    const queuedTotal = Math.max(0, Number(result?.summary?.queuedTotal || 0));
+    const submitted = Math.max(0, Number(result?.summary?.submitted || 0));
     statusElement.textContent = result?.ok
-      ? "안전 갱신을 완료했습니다."
+      ? (queuedTotal > 0
+        ? `전체 ${queuedTotal}개 등록 · 이번 회차 ${submitted}개 갱신`
+        : "안전 갱신을 완료했습니다.")
       : result?.partial
         ? `일부 갱신 완료 · 재시도 ${Number(result?.summary?.failed || 0) + Number(result?.summary?.releaseFailed || 0)}건`
         : `확인 필요 · ${failureText(result?.code)}`;

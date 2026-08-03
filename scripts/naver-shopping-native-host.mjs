@@ -100,6 +100,7 @@ async function main() {
   });
   const summary = await runLocalShoppingWorker({
     provider,
+    queueAllTrackers: start.trigger === "manual",
     log(event) {
       process.stderr.write(`${safeCode(event)}\n`);
     },

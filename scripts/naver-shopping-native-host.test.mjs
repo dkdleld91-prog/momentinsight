@@ -222,9 +222,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
+  const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.4");
+  assert.equal(manifest.version, "1.0.5");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
@@ -234,6 +235,9 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /재시도 \$\{failed\}건/u);
   assert.match(popup, /status\?\.status === "partial"/u);
   assert.match(popup, /일부 갱신 완료/u);
+  assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger \}\)/u);
+  assert.match(nativeHost, /queueAllTrackers: start\.trigger === "manual"/u);
+  assert.match(popup, /전체 \$\{queuedTotal\}개 등록/u);
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {

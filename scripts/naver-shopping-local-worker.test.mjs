@@ -273,6 +273,52 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
 });
 
+test("one approved manual run queues every active tracker before the bounded drain", async () => {
+  const calls = [];
+  const provider = {
+    async collect() { return completeWindow(); },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, total: 71, queued: 69, alreadyProcessing: 2 } },
+    { body: { ok: true, job: JOB } },
+    { body: {
+      ok: true,
+      committedCount: 1,
+      alreadyCommittedCount: 0,
+      leaseLostCount: 0,
+      collectionConflictCount: 0,
+      processedCount: 1,
+    } },
+    { body: { ok: true, job: null } },
+  ], calls);
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    queueAllTrackers: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed",
+    claimed: 1,
+    submitted: 1,
+    failed: 0,
+    releaseFailed: 0,
+    queuedTotal: 71,
+    queued: 69,
+    alreadyProcessing: 2,
+  });
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+    "claim",
+  ]);
+});
+
 test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
   const calls = [];
   const secondJob = {

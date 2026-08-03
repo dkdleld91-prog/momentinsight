@@ -312,6 +312,12 @@ export async function runLocalShoppingWorker(options = {}) {
   };
 
   try {
+    if (options.queueAllTrackers === true) {
+      const queued = await action({ action: "queue-all-active-trackers" });
+      summary.queuedTotal = boundedResponseCount(queued.total, 100_000);
+      summary.queued = boundedResponseCount(queued.queued, 100_000);
+      summary.alreadyProcessing = boundedResponseCount(queued.alreadyProcessing, 100_000);
+    }
     for (let index = 0; index < maxJobs; index += 1) {
       // Give interactive lookups a fast response while reserving every third
       // claim attempt for the existing 30-day tracker queue. The final slot is

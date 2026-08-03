@@ -1221,6 +1221,17 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.5"
+    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
+    && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
+    && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')
+    && shoppingLocalWorkerHandler.includes('body.action === "queue-all-active-trackers"')
+    && shoppingLocalWorkerHandler.includes('.eq("status", "active")')
+    && shoppingLocalWorkerHandler.includes('processing_until.is.null,processing_until.lt.')
+    && !shoppingLocalWorkerHandler.slice(
+      shoppingLocalWorkerHandler.indexOf("async function queueAllActiveTrackers"),
+      shoppingLocalWorkerHandler.indexOf("function json"),
+    ).includes("agency_code"),
   shoppingCollectorFailureClassificationIsFailClosed: shopping418Failure.status === "unavailable"
     && shopping418Failure.retryable === false
     && shopping418Failure.retryAfterSeconds === 0

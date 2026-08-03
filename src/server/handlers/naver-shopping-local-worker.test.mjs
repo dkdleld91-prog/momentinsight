@@ -262,6 +262,72 @@ test("central collector claims all due trackers without an owner, team or client
   assert.doesNotMatch(claimSource, /agency_code|admin_code|client_id|user_code/iu);
 });
 
+test("signed manual queue registers every active tracker without exposing account scopes", async () => {
+  await withWorkerEnv(async () => {
+    const operations = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          let mode = "count";
+          const operation = { table, filters: [], update: null, selection: null };
+          operations.push(operation);
+          const query = {
+            select(columns, options) {
+              operation.selection = { columns, options };
+              return query;
+            },
+            update(values) {
+              mode = "update";
+              operation.update = values;
+              return query;
+            },
+            eq(column, value) {
+              operation.filters.push(["eq", column, value]);
+              return query;
+            },
+            or(value) {
+              operation.filters.push(["or", value]);
+              return query;
+            },
+            then(resolve, reject) {
+              const result = mode === "update"
+                ? { data: [{ id: TRACKER_ID }, { id: SECOND_TRACKER_ID }], count: 2, error: null }
+                : { data: null, count: 3, error: null };
+              return Promise.resolve(result).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "queue-all-active-trackers" }),
+      ctx,
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual({
+      total: body.total,
+      queued: body.queued,
+      alreadyProcessing: body.alreadyProcessing,
+    }, { total: 3, queued: 2, alreadyProcessing: 1 });
+    assert.equal(operations.length, 2);
+    assert.deepEqual(operations[0].filters, [["eq", "status", "active"]]);
+    assert.deepEqual(operations[1].filters[0], ["eq", "status", "active"]);
+    assert.match(operations[1].filters[1][1], /processing_until\.is\.null,processing_until\.lt\./u);
+    assert.equal(typeof operations[1].update.next_check_at, "string");
+    assert.equal(operations[1].update.last_message, "전체 순위 갱신 대기 중입니다.");
+    assert.equal(JSON.stringify(operations).includes("agency_code"), false);
+    assert.equal(Object.hasOwn(body, "trackerIds"), false);
+  });
+});
+
 test("claims an interactive lookup before periodic trackers and atomically stores its 300 result", async () => {
   await withWorkerEnv(async () => {
     const leaseStartedAt = new Date().toISOString();

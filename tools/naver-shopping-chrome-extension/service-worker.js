@@ -263,6 +263,7 @@ async function runWorker(trigger = "manual") {
       port.postMessage({ action: "run", trigger });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
+    const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
     const haltedCode = String(result.haltedCode || "");
     if (NAVER_ACCESS_COOLDOWN_CODES.has(haltedCode)) {
@@ -272,9 +273,12 @@ async function runWorker(trigger = "manual") {
       await saveStatus("verification", haltedCode);
       return { ok: false, partial: submitted > 0, code: haltedCode, summary: result };
     }
+    const completedDetail = queuedTotal > 0
+      ? `전체 ${queuedTotal}개 등록 · 이번 회차 ${submitted}개 갱신`
+      : `갱신 ${submitted}건`;
     await saveStatus(failed > 0 ? "partial" : "completed", failed > 0
-      ? `갱신 ${submitted}건 · 재시도 ${failed}건`
-      : `갱신 ${submitted}건`);
+      ? `${completedDetail} · 재시도 ${failed}건`
+      : completedDetail);
     return { ok: failed === 0, partial: failed > 0, summary: result };
   } catch (error) {
     await saveStatus("failed", String(error?.message || "worker_failed"));

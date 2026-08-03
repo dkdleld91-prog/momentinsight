@@ -6,7 +6,8 @@
 - 변경 증거: 수동 trigger만 서명된 `queue-all-active-trackers`를 먼저 호출한다. 서버는 모든 active를 계정 필터 없이 갱신하되 활성 lease는 제외하고, 총계·등록·처리 중 수만 반환하며 ID와 계정 코드는 반환하지 않는다. 신규 tracker의 즉시 due 계약도 유지한다.
 - 처리 증거: 첫 회차는 기존 최대 2건, 남은 due는 10분 catch-up, 보안확인·418·429는 1시간 휴지한다. 자동 09:00·15:00·10분 trigger는 전체 재등록을 호출하지 않는다.
 - 검증: 대상 워커·handler·native host·확장 42/42, API·서버 389/389, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 역할 5상태, 보호 잠금 22함수·58파일·14마이그레이션, 공개 빌드/CSP와 전체 `npm run check:release` 통과.
-- 미완료: 로컬 코드만 완료했다. Production과 중앙 Mac 설치본·확장 1.0.5는 배포 승인 전까지 바꾸지 않았으므로 실제 버튼 1회→전체 71 등록→신규 `pw-chrome-*` 300개 snapshot 증가는 배포 후 확인 대상이다.
+- 배포 증거: 코드 `2924d82`, Production `dpl_9zLh7gMu554Uo1tHnF7BcUtmWid9`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `2924d82801e5`·서울 `icn1`·Supabase ready이고 무서명 워커 요청은 401이다. 중앙 Mac native host·local worker 설치본 SHA-256은 저장소와 각각 일치하고 확장 소스는 1.0.5, LaunchAgent 최근 exit 0이다.
+- 미완료: Chrome 보안 정책상 `chrome://extensions`의 재로드 버튼은 자동 조작하지 않았다. 사용자가 확장을 한 번 재로드하고 수동 버튼을 직접 누른 뒤 `전체 71개 등록`과 신규 `pw-chrome-*`·`checked_count=300` snapshot 증가를 확인해야 하며, 그 전에는 전체 실갱신 완료로 판단하지 않는다.
 
 ## 2026-08-03 N 쇼핑 일반 Chrome 자동 수집
 

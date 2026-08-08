@@ -499,7 +499,8 @@ check(
       /naver_verification_required/,
       /request\.limit !== 300/,
       /request\.rankPolicy !== "organic_only"/,
-      /chrome\.tabs\.remove\(tabId\)/,
+      /chrome\.tabs\.remove\(collectionTabId\)/,
+      /clearVerificationState\(\{ closeTab: false \}\)/,
     ])
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [

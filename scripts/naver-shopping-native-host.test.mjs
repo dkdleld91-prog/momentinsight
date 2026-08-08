@@ -225,18 +225,22 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.6");
+  assert.equal(manifest.version, "1.0.7");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
   assert.match(serviceWorker, /surfaceVerificationTab/u);
   assert.match(serviceWorker, /prepareVerificationState/u);
   assert.match(serviceWorker, /inspectNaverTab/u);
-  assert.match(serviceWorker, /const verificationGate = await prepareVerificationState\(trigger, verification\)/u);
+  assert.match(serviceWorker, /clearVerificationState\(\{ closeTab: false \}\)/u);
+  assert.match(serviceWorker, /const verificationPreparation = await prepareVerificationState\(trigger, verification\)/u);
   assert.ok(
     serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
+  assert.match(serviceWorker, /collectPages\(message\.request, collectionTabId\)/u);
+  assert.match(serviceWorker, /currentTab\.url !== url \|\| currentTab\.status !== "complete"/u);
+  assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
   assert.match(serviceWorker, /naver_verification_cooldown/u);
   assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
   assert.match(serviceWorker, /재시도 \$\{failed\}건/u);

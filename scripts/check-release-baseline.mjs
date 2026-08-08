@@ -1197,7 +1197,8 @@ const checks = {
     && shoppingChromeWorker.includes('document.getElementById("__NEXT_DATA__")')
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
-    && shoppingChromeWorker.includes("chrome.tabs.remove(tabId)")
+    && shoppingChromeWorker.includes("chrome.tabs.remove(collectionTabId)")
+    && shoppingChromeWorker.includes("clearVerificationState({ closeTab: false })")
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && shoppingNativeHostCore.includes("parseNaverNextDataPage")
     && shoppingNativeHostCore.includes("appendNormalizedPage")
@@ -1229,7 +1230,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.6"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.7"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

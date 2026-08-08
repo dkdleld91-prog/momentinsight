@@ -47,13 +47,14 @@ async function surfaceVerificationTab(tabId) {
   return tabId;
 }
 
-async function clearVerificationState() {
+async function clearVerificationState({ closeTab = true } = {}) {
   const current = await verificationState();
   await chrome.storage.local.remove([
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
   ]);
-  if (current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
+  if (closeTab && current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
+  return current.tabId || null;
 }
 
 async function inspectNaverTab(tabId) {
@@ -88,23 +89,23 @@ async function prepareVerificationState(trigger, verification) {
   if (verification.tabId) {
     const tabState = await inspectNaverTab(verification.tabId);
     if (tabState.status === "resolved") {
-      await clearVerificationState();
-      return "";
+      const reusableTabId = await clearVerificationState({ closeTab: false });
+      return { code: "", reusableTabId };
     }
     if (tabState.status === "blocked" || tabState.status === "unknown") {
       if (trigger === "manual") {
         await chrome.tabs.update(verification.tabId, { active: true }).catch(() => {});
       }
       await saveStatus("verification", "naver_verification_required");
-      return "naver_verification_required";
+      return { code: "naver_verification_required", reusableTabId: null };
     }
     await chrome.storage.local.remove(VERIFICATION_TAB_ID_KEY);
   }
   if (trigger !== "manual" && verification.blockedUntil > Date.now()) {
     await saveStatus("verification", "naver_verification_cooldown");
-    return "naver_verification_cooldown";
+    return { code: "naver_verification_cooldown", reusableTabId: null };
   }
-  return "";
+  return { code: "", reusableTabId: null };
 }
 
 function nextKstHour(hour) {
@@ -196,13 +197,12 @@ async function readNextData(tabId) {
   return value.nextDataText;
 }
 
-async function collectPages(request) {
+async function collectPages(request, initialTabId = null) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
   }
   const pages = [];
-  let tabId = null;
-  let keepTabOpen = false;
+  let tabId = initialTabId;
   try {
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       const url = searchUrl(request.keyword, pageIndex);
@@ -210,22 +210,23 @@ async function collectPages(request) {
         const tab = await chrome.tabs.create({ url, active: false });
         tabId = tab.id;
       } else {
-        await chrome.tabs.update(tabId, { url, active: false });
+        const currentTab = await chrome.tabs.get(tabId);
+        if (currentTab.url !== url || currentTab.status !== "complete") {
+          await chrome.tabs.update(tabId, { url });
+        }
       }
       await waitForTabComplete(tabId);
       pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
       if (pageIndex < PAGE_COUNT) await wait(pageRequestDelay());
     }
-    await clearVerificationState();
-    return pages;
+    return { pages, tabId };
   } catch (error) {
     if (String(error?.message || "") === "naver_verification_required" && tabId != null) {
       tabId = await surfaceVerificationTab(tabId);
-      keepTabOpen = true;
+      error.keepTabOpen = true;
+      error.tabId = tabId;
     }
     throw error;
-  } finally {
-    if (tabId != null && !keepTabOpen) await chrome.tabs.remove(tabId).catch(() => {});
   }
 }
 
@@ -263,11 +264,15 @@ function nativeDisconnectCode(lastErrorMessage) {
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
   const verification = await verificationState();
-  const verificationGate = await prepareVerificationState(trigger, verification);
-  if (verificationGate) return { ok: false, code: verificationGate };
+  const verificationPreparation = await prepareVerificationState(trigger, verification);
+  if (verificationPreparation.code) {
+    return { ok: false, code: verificationPreparation.code };
+  }
   running = true;
   await saveStatus("running", trigger);
   const port = chrome.runtime.connectNative(NATIVE_HOST);
+  let collectionTabId = verificationPreparation.reusableTabId;
+  let keepCollectionTabOpen = false;
   try {
     const result = await new Promise((resolve, reject) => {
       let settled = false;
@@ -283,9 +288,18 @@ async function runWorker(trigger = "manual") {
         try {
           if (message?.type === "collect") {
             try {
-              const pages = await collectPages(message.request);
-              port.postMessage({ type: "collection", requestId: message.requestId, pages });
+              const collection = await collectPages(message.request, collectionTabId);
+              collectionTabId = collection.tabId;
+              port.postMessage({
+                type: "collection",
+                requestId: message.requestId,
+                pages: collection.pages,
+              });
             } catch (error) {
+              if (error?.keepTabOpen) {
+                collectionTabId = error.tabId || collectionTabId;
+                keepCollectionTabOpen = true;
+              }
               port.postMessage({
                 type: "collection_error",
                 requestId: message.requestId,
@@ -334,6 +348,9 @@ async function runWorker(trigger = "manual") {
   } finally {
     running = false;
     port.disconnect();
+    if (collectionTabId != null && !keepCollectionTabOpen) {
+      await chrome.tabs.remove(collectionTabId).catch(() => {});
+    }
   }
 }
 

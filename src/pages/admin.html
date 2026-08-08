@@ -4157,7 +4157,7 @@
 
     #mi-admin .mi-rank-day-slots {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr;
       gap: 0;
     }
 
@@ -4165,14 +4165,13 @@
       display: grid;
       gap: 2px;
       min-width: 0;
-      padding-right: 3px;
-      border-right: 1px solid #edf1f6;
+      padding: 0;
+      border-right: 0;
     }
 
     #mi-admin .mi-rank-day-slots span:last-child {
       border-right: 0;
-      padding-right: 0;
-      padding-left: 3px;
+      padding: 0;
     }
 
     #mi-admin .mi-rank-day-slots small {
@@ -14735,10 +14734,20 @@
         return grouped;
       }
 
-      function renderRankSlot(label, snapshot) {
+      function latestRankSnapshotForDay(day) {
+        var snapshots = [day && day.am, day && day.pm].filter(function (snapshot) {
+          return snapshot && snapshot.rank;
+        });
+        snapshots.sort(function (a, b) {
+          return new Date(b.checkedAt).getTime() - new Date(a.checkedAt).getTime();
+        });
+        return snapshots[0] || null;
+      }
+
+      function renderRankSlot(snapshot) {
         var rank = snapshot && snapshot.rank ? rankText(snapshot.rank) : "-";
         var source = rankSnapshotSourceLabel(snapshot, true);
-        var sourceLabel = source && source !== "상품" ? label + " · " + source : label;
+        var sourceLabel = source && source !== "상품" ? source : "순위";
         return '<span' + (!snapshot || !snapshot.rank ? ' class="is-empty"' : "") + '><small>' + escapeHtml(sourceLabel) + '</small><b>' + escapeHtml(rank) + '</b></span>';
       }
 
@@ -14753,7 +14762,7 @@
         return '<div class="mi-rank-day-grid">' + keys.map(function (key) {
           var day = grouped[key];
           return '<div class="mi-rank-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
-            '</strong><div class="mi-rank-day-slots">' + renderRankSlot("PM", day.pm) + renderRankSlot("AM", day.am) + '</div></div>';
+            '</strong><div class="mi-rank-day-slots">' + renderRankSlot(latestRankSnapshotForDay(day)) + '</div></div>';
         }).join("") + '</div>';
       }
 

@@ -1,5 +1,15 @@
 # Test Evidence
 
+## 2026-08-08 N상품 30일 순위 날짜별 단일 표시
+
+- 대상: `src/pages/admin.html`, `src/pages/client.html`
+- 동작: 날짜별 AM/PM 중 `checkedAt` 기준 최신 유효 순위 1개 표시, 한쪽만 수집된 날은 해당 순위 표시, 둘 다 없으면 `-`.
+- 대상 동작 검증: 양쪽 존재·AM만 존재·PM만 존재·최신값 공란 fallback·양쪽 없음, 관리자·광고주 합계 `10/10`.
+- `npm run check:baseline`: 통과, `rankTrackingDailySingleRank: true`.
+- `npm run check:rank-feature-lock:self-test`: 통과, 보호 함수 22개·보호 파일 58개·migration discovery 확인.
+- `npm run check:release`: 통과. server contract `37/37`, app tests `389/389`, place collector `51/51`, shopping collector `51/51`, production auth `18/18`, public build 9개 파일과 inline script 6개를 CSP SHA 4개로 허용.
+- Production 배포 증거는 배포 완료 후 추가합니다.
+
 ## 2026-08-03 확장 수동 갱신 사이트 전체 대기열
 
 - 원인 증거: 기존 확장 수동 실행은 `next_check_at <= now()`인 due만 claim했다. 운영 DB 읽기 전용 집계는 active 71·고유 키워드 58·due 61·미도래 10·활성 lease 0으로, 수동 버튼을 눌러도 미래 예약 10건은 대상이 아니었다.

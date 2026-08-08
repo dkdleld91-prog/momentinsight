@@ -1060,7 +1060,13 @@ const checks = {
     && /mi-rank-pill \{[\s\S]*?font-size: 10px;/.test(source)
     && /mi-rank-day-slots b \{[\s\S]*?white-space: nowrap;[\s\S]*?word-break: keep-all;/.test(source)),
   rankTrackingDailySlotAlignment: [adminSource, clientSource].every((source) => /mi-rank-day-slots small \{[\s\S]*?overflow: hidden;[\s\S]*?text-overflow: ellipsis;[\s\S]*?white-space: nowrap;/.test(source)),
-  rankTrackingDailySlotOmitsExactProductLabel: [adminSource, clientSource].every((source) => source.includes('source && source !== "상품" ? label + " · " + source : label')),
+  rankTrackingDailySingleRank: [adminSource, clientSource].every((source) => /mi-rank-day-slots \{[\s\S]*?grid-template-columns: 1fr;/.test(source)
+    && source.includes("function latestRankSnapshotForDay(day)")
+    && source.includes("return snapshots[0] || null;")
+    && source.includes('source && source !== "상품" ? source : "순위"')
+    && source.includes("renderRankSlot(latestRankSnapshotForDay(day))")
+    && !source.includes('renderRankSlot("PM", day.pm)')
+    && !source.includes('renderRankSlot("AM", day.am)')),
   rankTrackingInsightLabels: [adminSource, clientSource].every((source) => source.includes("rankTrackerAverageRank")
     && source.includes("rankTrackerChangeLabel")
     && source.includes("rankTrackerInsight")

@@ -78,18 +78,29 @@ async function queueAllActiveTrackers(ctx) {
       last_message: "전체 순위 갱신 대기 중입니다.",
     })
     .eq("status", "active")
+    .gt("next_check_at", queuedAt)
     .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
     .select("id", { count: "exact" });
   if (queuedResult.error) throw queuedResult.error;
+
+  const waitingResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .lte("next_check_at", queuedAt)
+    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`);
+  if (waitingResult.error) throw waitingResult.error;
 
   const total = Math.max(0, Number(totalResult.count || 0));
   const queued = Math.max(0, Number(
     queuedResult.count ?? (Array.isArray(queuedResult.data) ? queuedResult.data.length : 0),
   ));
+  const waiting = Math.max(0, Number(waitingResult.count || 0));
   return {
     total,
     queued,
-    alreadyProcessing: Math.max(0, total - queued),
+    alreadyQueued: Math.max(0, waiting - queued),
+    alreadyProcessing: Math.max(0, total - waiting),
     queuedAt,
   };
 }

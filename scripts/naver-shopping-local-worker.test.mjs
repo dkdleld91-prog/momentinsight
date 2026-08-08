@@ -280,7 +280,7 @@ test("one approved manual run queues every active tracker before the bounded dra
     async close() {},
   };
   const fetchImpl = authenticatedFetch([
-    { body: { ok: true, total: 71, queued: 69, alreadyProcessing: 2 } },
+    { body: { ok: true, total: 71, queued: 69, alreadyQueued: 0, alreadyProcessing: 2 } },
     { body: { ok: true, job: JOB } },
     { body: {
       ok: true,
@@ -309,6 +309,7 @@ test("one approved manual run queues every active tracker before the bounded dra
     releaseFailed: 0,
     queuedTotal: 71,
     queued: 69,
+    alreadyQueued: 0,
     alreadyProcessing: 2,
   });
   assert.deepEqual(calls.map((call) => call.action), [

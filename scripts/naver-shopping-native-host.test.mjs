@@ -211,7 +211,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
   const source = fs.readFileSync(wrapperPath, "utf8");
   assert.match(source, /naver-shopping-native-host\.conf/u);
-  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"/u);
+  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="4"/u);
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);

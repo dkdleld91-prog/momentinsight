@@ -316,6 +316,7 @@ export async function runLocalShoppingWorker(options = {}) {
       const queued = await action({ action: "queue-all-active-trackers" });
       summary.queuedTotal = boundedResponseCount(queued.total, 100_000);
       summary.queued = boundedResponseCount(queued.queued, 100_000);
+      summary.alreadyQueued = boundedResponseCount(queued.alreadyQueued, 100_000);
       summary.alreadyProcessing = boundedResponseCount(queued.alreadyProcessing, 100_000);
     }
     for (let index = 0; index < maxJobs; index += 1) {

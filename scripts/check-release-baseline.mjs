@@ -1225,7 +1225,7 @@ const checks = {
     && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
-    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"')
+    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="4"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
   shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.5"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
@@ -1233,6 +1233,8 @@ const checks = {
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')
     && shoppingLocalWorkerHandler.includes('body.action === "queue-all-active-trackers"')
     && shoppingLocalWorkerHandler.includes('.eq("status", "active")')
+    && shoppingLocalWorkerHandler.includes('.gt("next_check_at", queuedAt)')
+    && shoppingLocalWorkerHandler.includes('alreadyQueued')
     && shoppingLocalWorkerHandler.includes('processing_until.is.null,processing_until.lt.')
     && !shoppingLocalWorkerHandler.slice(
       shoppingLocalWorkerHandler.indexOf("async function queueAllActiveTrackers"),

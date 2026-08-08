@@ -301,10 +301,11 @@ test("hybrid page sync leaves due rows queued for the signed Mac worker", async 
   assert.equal(updateCalled, false);
 });
 
-test("hybrid full refresh queues every active row only inside the current account", async () => {
+test("hybrid full refresh is account-scoped and repeated clicks do not requeue due rows", async () => {
   const teamCode = "mml93-t01";
   const updatedIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
   const calls = [];
+  let updateCount = 0;
   const ctx = {
     supabaseAdmin: {
       from(table) {
@@ -332,10 +333,26 @@ test("hybrid full refresh queues every active row only inside the current accoun
             call.filters.push(["or", value]);
             return query;
           },
+          gt(column, value) {
+            call.filters.push(["gt", column, value]);
+            return query;
+          },
+          lte(column, value) {
+            call.filters.push(["lte", column, value]);
+            return query;
+          },
           then(resolve, reject) {
-            const result = call.update
-              ? { data: updatedIds.map((id) => ({ id })), error: null }
-              : { data: null, error: null, count: 3 };
+            let result;
+            if (call.update) {
+              updateCount += 1;
+              result = {
+                data: updateCount === 1 ? updatedIds.map((id) => ({ id })) : [],
+                error: null,
+              };
+            } else {
+              const isWaitingCount = call.filters.some((filter) => filter[0] === "lte");
+              result = { data: null, error: null, count: isWaitingCount ? 2 : 3 };
+            }
             return Promise.resolve(result).then(resolve, reject);
           },
         };
@@ -344,20 +361,36 @@ test("hybrid full refresh queues every active row only inside the current accoun
     },
   };
 
-  const response = await withShoppingHybrid(() => handleRankTrackersRequest(productTeamAccountRequest("POST", {
-    action: "queue-refresh-all",
-  }, teamCode), ctx));
-  const body = await response.json();
+  const [firstResponse, secondResponse] = await withShoppingHybrid(async () => {
+    const first = await handleRankTrackersRequest(productTeamAccountRequest("POST", {
+      action: "queue-refresh-all",
+    }, teamCode), ctx);
+    const second = await handleRankTrackersRequest(productTeamAccountRequest("POST", {
+      action: "queue-refresh-all",
+    }, teamCode), ctx);
+    return [first, second];
+  });
+  const firstBody = await firstResponse.json();
+  const secondBody = await secondResponse.json();
 
-  assert.equal(response.status, 200);
-  assert.equal(body.ok, true);
-  assert.deepEqual(body.summary, { total: 3, queued: 2, alreadyProcessing: 1 });
-  assert.equal(calls.length, 2);
+  assert.equal(firstResponse.status, 200);
+  assert.equal(secondResponse.status, 200);
+  assert.equal(firstBody.ok, true);
+  assert.equal(secondBody.ok, true);
+  assert.deepEqual(firstBody.summary, {
+    total: 3, queued: 2, alreadyQueued: 0, alreadyProcessing: 1,
+  });
+  assert.deepEqual(secondBody.summary, {
+    total: 3, queued: 0, alreadyQueued: 2, alreadyProcessing: 1,
+  });
+  assert.equal(calls.length, 6);
   for (const call of calls) {
     assert.deepEqual(call.filters.find((filter) => filter[0] === "in"), ["in", "agency_code", [teamCode]]);
     assert.deepEqual(call.filters.find((filter) => filter[1] === "status"), ["eq", "status", "active"]);
   }
   assert.match(calls[1].filters.find((filter) => filter[0] === "or")[1], /processing_until\.is\.null,processing_until\.lt\./u);
+  assert.equal(calls[1].filters.find((filter) => filter[0] === "gt")[1], "next_check_at");
+  assert.equal(calls[2].filters.find((filter) => filter[0] === "lte")[1], "next_check_at");
   assert.deepEqual(Object.keys(calls[1].update).sort(), ["last_message", "next_check_at"]);
   assert.doesNotMatch(JSON.stringify(calls[1].update), /rank|snapshot|last_error|current_rank/iu);
 });

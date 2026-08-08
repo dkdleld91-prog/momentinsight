@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-08 N상품 Mac 처리량·중복 대기열 검증 기준
+
+- 처리량: native host 기본 상한은 회차당 4건이며 병렬 수집 없이 기존 10분 주기·페이지 분산·보안확인 중단·1시간 쿨다운을 유지합니다.
+- 중복 방지: 첫 전체 갱신은 미래 예약 행만 due로 전환하고, 같은 계정 또는 사이트 전체의 반복 요청은 `queued=0`, `alreadyQueued` 증가로 끝나야 합니다.
+- 공정성: 이미 due인 `next_check_at`은 다시 쓰지 않으며 중앙 claim은 기존 oldest-first와 조건부 lease를 유지해야 합니다.
+- 필수 검증: handler 반복 요청, local worker, native host, release baseline, 보호 잠금 self-test와 전체 `npm run check:release`를 통과해야 완료로 판정합니다.
+- 실행 결과: 대상 96/96, 전체 앱·API 389/389, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 22함수·58파일·14마이그레이션과 self-test, 공개 빌드·CSP 검사가 모두 통과했습니다.
+- 변경 경계: 화면·DB 스키마·순위 판정·광고 제외·정확 상품/원부 판정·300개 원자 저장·기존 30일 이력은 변경하지 않았습니다.
+
 ## 2026-08-08 N상품 30일 순위 날짜별 단일 표시
 
 - 대상: `src/pages/admin.html`, `src/pages/client.html`

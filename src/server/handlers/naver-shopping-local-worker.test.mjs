@@ -265,6 +265,7 @@ test("central collector claims all due trackers without an owner, team or client
 test("signed manual queue registers every active tracker without exposing account scopes", async () => {
   await withWorkerEnv(async () => {
     const operations = [];
+    let updateCount = 0;
     const ctx = {
       supabaseAdmin: {
         async rpc(name) {
@@ -294,10 +295,24 @@ test("signed manual queue registers every active tracker without exposing accoun
               operation.filters.push(["or", value]);
               return query;
             },
+            gt(column, value) {
+              operation.filters.push(["gt", column, value]);
+              return query;
+            },
+            lte(column, value) {
+              operation.filters.push(["lte", column, value]);
+              return query;
+            },
             then(resolve, reject) {
-              const result = mode === "update"
-                ? { data: [{ id: TRACKER_ID }, { id: SECOND_TRACKER_ID }], count: 2, error: null }
-                : { data: null, count: 3, error: null };
+              let result;
+              if (mode === "update") {
+                updateCount += 1;
+                const data = updateCount === 1 ? [{ id: TRACKER_ID }, { id: SECOND_TRACKER_ID }] : [];
+                result = { data, count: data.length, error: null };
+              } else {
+                const isWaitingCount = operation.filters.some((filter) => filter[0] === "lte");
+                result = { data: null, count: isWaitingCount ? 2 : 3, error: null };
+              }
               return Promise.resolve(result).then(resolve, reject);
             },
           };
@@ -306,25 +321,41 @@ test("signed manual queue registers every active tracker without exposing accoun
       },
     };
 
-    const response = await handleLocalWorkerRequest(
+    const firstResponse = await handleLocalWorkerRequest(
       signedRequest({ action: "queue-all-active-trackers" }),
       ctx,
     );
-    const body = await response.json();
-    assert.equal(response.status, 200);
+    const secondResponse = await handleLocalWorkerRequest(
+      signedRequest({ action: "queue-all-active-trackers" }),
+      ctx,
+    );
+    const body = await firstResponse.json();
+    const repeatedBody = await secondResponse.json();
+    assert.equal(firstResponse.status, 200);
+    assert.equal(secondResponse.status, 200);
     assert.deepEqual({
       total: body.total,
       queued: body.queued,
+      alreadyQueued: body.alreadyQueued,
       alreadyProcessing: body.alreadyProcessing,
-    }, { total: 3, queued: 2, alreadyProcessing: 1 });
-    assert.equal(operations.length, 2);
+    }, { total: 3, queued: 2, alreadyQueued: 0, alreadyProcessing: 1 });
+    assert.deepEqual({
+      total: repeatedBody.total,
+      queued: repeatedBody.queued,
+      alreadyQueued: repeatedBody.alreadyQueued,
+      alreadyProcessing: repeatedBody.alreadyProcessing,
+    }, { total: 3, queued: 0, alreadyQueued: 2, alreadyProcessing: 1 });
+    assert.equal(operations.length, 6);
     assert.deepEqual(operations[0].filters, [["eq", "status", "active"]]);
     assert.deepEqual(operations[1].filters[0], ["eq", "status", "active"]);
-    assert.match(operations[1].filters[1][1], /processing_until\.is\.null,processing_until\.lt\./u);
+    assert.deepEqual(operations[1].filters[1].slice(0, 2), ["gt", "next_check_at"]);
+    assert.match(operations[1].filters[2][1], /processing_until\.is\.null,processing_until\.lt\./u);
+    assert.deepEqual(operations[2].filters[1].slice(0, 2), ["lte", "next_check_at"]);
     assert.equal(typeof operations[1].update.next_check_at, "string");
     assert.equal(operations[1].update.last_message, "전체 순위 갱신 대기 중입니다.");
     assert.equal(JSON.stringify(operations).includes("agency_code"), false);
     assert.equal(Object.hasOwn(body, "trackerIds"), false);
+    assert.equal(Object.hasOwn(repeatedBody, "trackerIds"), false);
   });
 });
 

@@ -1628,23 +1628,36 @@ async function queueRefreshAllTrackers(request, ctx, access) {
     })
     .eq("status", "active")
     .in("agency_code", scope)
+    .gt("next_check_at", queuedAt)
     .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
     .select("id");
   if (queuedResult.error) throw queuedResult.error;
 
+  const waitingResult = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "active")
+    .in("agency_code", scope)
+    .lte("next_check_at", queuedAt)
+    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`);
+  if (waitingResult.error) throw waitingResult.error;
+
   const total = Math.max(0, Number(totalResult.count || 0));
   const queued = Array.isArray(queuedResult.data) ? queuedResult.data.length : 0;
-  const alreadyProcessing = Math.max(0, total - queued);
+  const waiting = Math.max(0, Number(waitingResult.count || 0));
+  const alreadyQueued = Math.max(0, waiting - queued);
+  const alreadyProcessing = Math.max(0, total - waiting);
   return json(request, {
     ok: true,
     ...rankSource,
-    queuedForLocalWorker: queued > 0 || alreadyProcessing > 0,
+    queuedForLocalWorker: total > 0,
     message: total
       ? `현재 계정의 운영 중 순위 ${total}개를 중앙 자동 갱신에 등록했습니다.`
       : "갱신할 운영 중 순위 추적 항목이 없습니다.",
     summary: {
       total,
       queued,
+      alreadyQueued,
       alreadyProcessing,
     },
   });

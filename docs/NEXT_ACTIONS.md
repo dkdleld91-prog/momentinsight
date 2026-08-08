@@ -4,8 +4,8 @@
 
 1. 완료: 중앙 Mac 회차 상한 4건과 계정별·사이트 전체 갱신 멱등 처리를 로컬 코드에 반영했습니다.
 2. 완료: 반복 클릭 회귀검사 96/96, 보호 잠금 self-test, 전체 앱·API 389/389와 전체 `npm run check:release`를 통과했습니다.
-3. 진행 중: 사용자 승인을 받아 코드 배포와 중앙 Mac 브리지 재설치를 같은 릴리스 순서로 진행합니다.
-4. 운영 확인: 다음 10분 회차 로그의 `max_jobs=4`, 보안확인 미발생, 광고주 간 oldest-first 처리와 300개 snapshot 증가를 확인합니다.
+3. 완료: 코드 `1d7b773`을 GitHub `main`과 Production `dpl_H5Jtb4sZR3yNGV75PKAxZnwLgvYp`·운영 별칭에 반영하고 중앙 Mac 브리지를 같은 코드로 재설치했습니다. 운영 릴리스 `1d7b77338bfc`, 서울 `icn1`, Supabase ready, 설치 wrapper 해시 일치와 `max_jobs=4` 설정을 확인했습니다.
+4. 운영 관찰: 설치 후 새 native-host 작업이 아직 없어 다음 자연 회차 로그의 `max_jobs=4`, 보안확인 미발생, 광고주 간 oldest-first 처리와 신규 300개 snapshot 증가를 확인합니다. 확인 전에는 실수집 정상 완료로 보고하지 않습니다.
 
 ## 2026-08-08 N상품 30일 순위 단일 표시 후속
 

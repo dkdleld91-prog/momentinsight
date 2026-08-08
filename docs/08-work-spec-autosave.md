@@ -20,6 +20,8 @@
 - 비변경: 화면, DB 스키마, 정확 상품·광고 제외·300개 원자 수집, 마지막 정상값과 30일 이력은 변경하지 않습니다.
 - 완료 조건: 반복 요청 회귀검사, native host·worker 대상 검사, 보호 잠금 self-test와 전체 `check:release`를 통과한 뒤 별도 승인으로 Production과 중앙 Mac 설치본을 같은 릴리스로 반영합니다.
 - 검증 상태: 대상 96/96, 전체 앱·API 389/389, 플레이스·쇼핑 각 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 self-test와 전체 `npm run check:release`, `git diff --check`를 통과했으며 사용자 배포 승인을 받았습니다.
+- 배포 상태: 코드 `1d7b773`을 GitHub `main`과 Production `dpl_H5Jtb4sZR3yNGV75PKAxZnwLgvYp`·운영 별칭에 반영했습니다. 운영 릴리스 `1d7b77338bfc`, 서울 `icn1`, Supabase ready와 중앙 Mac 설치 wrapper 해시 일치·`max_jobs=4` 설정·LaunchAgent exit 0을 확인했습니다.
+- 남은 관찰: 설치 후 새 native-host 작업이 아직 없어 첫 자연 회차의 `max_jobs=4` 및 신규 `checked_count=300`은 미확인입니다. 보안확인은 자동 우회하지 않으며 실제 증거 전에는 실수집 완료로 보고하지 않습니다.
 
 ## 운영 규칙
 

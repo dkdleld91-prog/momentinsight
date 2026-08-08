@@ -4,13 +4,15 @@
 
 ## 현재 상태
 
-### 2026-08-08 N상품 Mac 안전 처리량·대기열 멱등화 검증 완료·배포 진행
+### 2026-08-08 N상품 Mac 안전 처리량·대기열 멱등화 Production 반영
 
 - Mac Chrome 수집은 병렬화하지 않고 10분 회차 상한만 2건에서 4건으로 확대하는 범위입니다.
 - 광고주별 `전체 순위 갱신`과 확장 수동 전체 갱신은 이미 대기 중인 행을 다시 갱신하지 않고, 새로 대기시킨 수·이미 대기 중인 수·처리 중 수를 분리합니다.
 - 가장 오래 기다린 `next_check_at` 우선 claim과 조건부 lease는 유지하므로 반복 클릭이 다른 광고주의 기존 대기 순서를 밀어내지 않습니다.
 - 대상 96/96, 전체 앱·API 389/389, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 self-test와 전체 `npm run check:release`, `git diff --check`를 통과했습니다.
-- 사용자 배포 승인을 받아 동일 커밋을 Production 서버에 반영한 뒤 중앙 Mac 브리지를 재설치하고 운영 상태를 확인합니다.
+- 코드 `1d7b773`을 GitHub `main`과 Production `dpl_H5Jtb4sZR3yNGV75PKAxZnwLgvYp`·운영 별칭에 반영했습니다. `/health`·`/ready`는 릴리스 `1d7b77338bfc`·서울 `icn1`·Supabase ready입니다.
+- 중앙 Mac 브리지를 같은 코드로 재설치했고 저장소와 설치 wrapper의 SHA-256 `13edcfe18410dd657a9f5e9a3a2a6b779ba7ddd0a251465477a8e1b16afddbf8` 일치, 설치값 `max_jobs=4`, LaunchAgent 등록·최근 exit 0을 확인했습니다.
+- 설치 후 스케줄러는 `Default` Chrome 준비를 계속 확인했으나 새 native-host 작업을 가져간 기록은 아직 없습니다. 따라서 첫 자연 회차의 `max_jobs=4`와 신규 `checked_count=300` 증거는 운영 관찰 대상으로 남기며, 이를 실수집 완료로 과장하지 않습니다.
 
 ### 2026-08-08 N상품 30일 순위 날짜별 단일 표시 Production 반영
 

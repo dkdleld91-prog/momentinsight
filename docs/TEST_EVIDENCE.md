@@ -8,6 +8,9 @@
 - 필수 검증: handler 반복 요청, local worker, native host, release baseline, 보호 잠금 self-test와 전체 `npm run check:release`를 통과해야 완료로 판정합니다.
 - 실행 결과: 대상 96/96, 전체 앱·API 389/389, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 22함수·58파일·14마이그레이션과 self-test, 공개 빌드·CSP 검사가 모두 통과했습니다.
 - 변경 경계: 화면·DB 스키마·순위 판정·광고 제외·정확 상품/원부 판정·300개 원자 저장·기존 30일 이력은 변경하지 않았습니다.
+- 배포 증거: 코드 `1d7b773`, Production `dpl_H5Jtb4sZR3yNGV75PKAxZnwLgvYp`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 릴리스 `1d7b77338bfc`·서울 `icn1`·Supabase ready이며 Vercel Production 빌드에서도 전체 릴리스 검사를 다시 통과했습니다.
+- Mac 설치 증거: 저장소와 설치 wrapper SHA-256은 모두 `13edcfe18410dd657a9f5e9a3a2a6b779ba7ddd0a251465477a8e1b16afddbf8`, 설치 환경은 `MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS=4`, LaunchAgent 최근 exit 0입니다.
+- 운영 관찰 경계: 설치 후 스케줄러의 `chrome_ready profile=Default`는 확인했지만 새 native-host 작업 기록이 없어 첫 자연 회차의 `max_jobs=4`와 신규 원자 300개 snapshot은 아직 미확인입니다.
 
 ## 2026-08-08 N상품 30일 순위 날짜별 단일 표시
 

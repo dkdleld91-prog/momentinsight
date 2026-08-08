@@ -8,7 +8,10 @@
 - `npm run check:baseline`: 통과, `rankTrackingDailySingleRank: true`.
 - `npm run check:rank-feature-lock:self-test`: 통과, 보호 함수 22개·보호 파일 58개·migration discovery 확인.
 - `npm run check:release`: 통과. server contract `37/37`, app tests `389/389`, place collector `51/51`, shopping collector `51/51`, production auth `18/18`, public build 9개 파일과 inline script 6개를 CSP SHA 4개로 허용.
-- Production 배포 증거는 배포 완료 후 추가합니다.
+- Production 배포: 코드 `01dd688`, 운영 릴리스 `01dd688b814b`, 서울 `icn1`, `/health`·`/ready` 200, Supabase ready.
+- 운영 산출물: `/admin`과 `/client` HTML SHA-256이 각각 로컬 검증 빌드와 일치하며 두 파일 모두 `latestRankSnapshotForDay`와 단일 `renderRankSlot` 호출을 포함하고 기존 AM/PM 렌더 호출은 없습니다.
+- 로그인 관리자 실데이터: 새로고침 후 날짜 카드 367개 모두 슬롯 1개, AM/PM 라벨 0개. 표본 `08-07 순위 68위`, `08-03 순위 121위`, `07-31 순위 101위` 확인.
+- 광고주 실데이터 육안 검수: 현재 Chrome에 광고주 접속 코드 세션이 없어 미완료. 광고주 운영 HTML 해시 일치와 동일 동작 대상 테스트는 완료했습니다.
 
 ## 2026-08-03 확장 수동 갱신 사이트 전체 대기열
 

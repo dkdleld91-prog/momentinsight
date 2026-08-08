@@ -56,6 +56,57 @@ async function clearVerificationState() {
   if (current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
 }
 
+async function inspectNaverTab(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!String(tab?.url || "").startsWith("https://search.shopping.naver.com/")) {
+      return { status: "unknown" };
+    }
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
+        return {
+          blocked: /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText),
+          nextDataReady: Boolean(document.getElementById("__NEXT_DATA__")?.textContent),
+          url: location.href,
+        };
+      },
+    });
+    const value = results?.[0]?.result || {};
+    if (value.blocked) return { status: "blocked" };
+    if (value.nextDataReady && String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
+      return { status: "resolved" };
+    }
+    return { status: "unknown" };
+  } catch {
+    return { status: "missing" };
+  }
+}
+
+async function prepareVerificationState(trigger, verification) {
+  if (verification.tabId) {
+    const tabState = await inspectNaverTab(verification.tabId);
+    if (tabState.status === "resolved") {
+      await clearVerificationState();
+      return "";
+    }
+    if (tabState.status === "blocked" || tabState.status === "unknown") {
+      if (trigger === "manual") {
+        await chrome.tabs.update(verification.tabId, { active: true }).catch(() => {});
+      }
+      await saveStatus("verification", "naver_verification_required");
+      return "naver_verification_required";
+    }
+    await chrome.storage.local.remove(VERIFICATION_TAB_ID_KEY);
+  }
+  if (trigger !== "manual" && verification.blockedUntil > Date.now()) {
+    await saveStatus("verification", "naver_verification_cooldown");
+    return "naver_verification_cooldown";
+  }
+  return "";
+}
+
 function nextKstHour(hour) {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -211,12 +262,9 @@ function nativeDisconnectCode(lastErrorMessage) {
 
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
-  const automatic = trigger !== "manual";
   const verification = await verificationState();
-  if (automatic && verification.blockedUntil > Date.now()) {
-    await saveStatus("verification", "naver_verification_cooldown");
-    return { ok: false, code: "naver_verification_cooldown" };
-  }
+  const verificationGate = await prepareVerificationState(trigger, verification);
+  if (verificationGate) return { ok: false, code: verificationGate };
   running = true;
   await saveStatus("running", trigger);
   const port = chrome.runtime.connectNative(NATIVE_HOST);

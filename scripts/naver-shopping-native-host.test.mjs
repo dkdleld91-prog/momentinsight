@@ -211,7 +211,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
   const source = fs.readFileSync(wrapperPath, "utf8");
   assert.match(source, /naver-shopping-native-host\.conf/u);
-  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="4"/u);
+  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"/u);
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
@@ -225,11 +225,18 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.5");
+  assert.equal(manifest.version, "1.0.6");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
   assert.match(serviceWorker, /surfaceVerificationTab/u);
+  assert.match(serviceWorker, /prepareVerificationState/u);
+  assert.match(serviceWorker, /inspectNaverTab/u);
+  assert.match(serviceWorker, /const verificationGate = await prepareVerificationState\(trigger, verification\)/u);
+  assert.ok(
+    serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
+      < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
+  );
   assert.match(serviceWorker, /naver_verification_cooldown/u);
   assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
   assert.match(serviceWorker, /재시도 \$\{failed\}건/u);

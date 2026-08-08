@@ -1225,9 +1225,11 @@ const checks = {
     && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
-    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="4"')
+    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"')
+    && shoppingChromeWorker.includes("prepareVerificationState")
+    && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.5"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.6"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

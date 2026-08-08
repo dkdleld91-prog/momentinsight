@@ -23,6 +23,15 @@
 - 배포 상태: 코드 `1d7b773`을 GitHub `main`과 Production `dpl_H5Jtb4sZR3yNGV75PKAxZnwLgvYp`·운영 별칭에 반영했습니다. 운영 릴리스 `1d7b77338bfc`, 서울 `icn1`, Supabase ready와 중앙 Mac 설치 wrapper 해시 일치·`max_jobs=4` 설정·LaunchAgent exit 0을 확인했습니다.
 - 남은 관찰: 설치 후 새 native-host 작업이 아직 없어 첫 자연 회차의 `max_jobs=4` 및 신규 `checked_count=300`은 미확인입니다. 보안확인은 자동 우회하지 않으며 실제 증거 전에는 실수집 완료로 보고하지 않습니다.
 
+## 2026-08-08 N상품 보안확인 반복 차단 안정화
+
+- 상태: 로컬 구현·전체 검증·중앙 Mac 브리지 설치 완료, 확장 1.0.6 재로드와 보안확인 완료 대기.
+- 원인 증거: 10:11 UTC의 `max_jobs=2` 실행에서 이미 보안확인이 발생했고, 11:19 UTC의 `max_jobs=4` 실행은 첫 작업에서 같은 보안확인을 다시 감지해 5초 안에 중단했습니다. 4건을 실제 연속 수집한 결과가 아니라 해결되지 않은 확인 탭을 한 시간 뒤 다시 요청한 구조가 반복 원인입니다.
+- 조치 범위: 회차 상한을 검증된 2건으로 복귀하고, 자동·수동 실행 전에 기존 보안확인 탭을 먼저 검사합니다. 해결 전에는 서버 job을 claim하지 않으며 사용자가 확인을 완료해 정상 `__NEXT_DATA__`가 나타나면 다음 실행에서 상태를 자동 해제합니다.
+- 비변경: 대기열 멱등화, oldest-first, 조건부 lease, 광고 제외, 정확 상품 판정, 300개 원자 저장, 마지막 정상값·30일 이력과 관리자·광고주 화면은 변경하지 않습니다.
+- 검증: 대상 native host·worker 28/28, 앱·API 389/389, 플레이스·쇼핑 각 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 22함수·58파일·14마이그레이션 self-test와 전체 `check:release`, `git diff --check`를 통과했습니다.
+- 설치: 중앙 Mac 브리지 설치본 wrapper와 저장소 SHA-256은 `58c062eca4c392f2696110bc3840417ef71237c728aa066b9f5ce49f819615fd`로 일치하며 기본 `max_jobs=2`, LaunchAgent 600초 실행을 확인했습니다. Chrome 확장은 보안상 자동 재로드하지 않습니다.
+
 ## 운영 규칙
 
 - 개발 착수 전: Git 상태, 최근 커밋, 현재 작업명세와 다음 작업을 확인하고 `npm run work:autosave`를 실행합니다.
@@ -56,9 +65,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 08. 19:58:33
-- 기준 커밋: 8defe4b
-- 작업트리: M AGENTS.md /  M docs/08-work-spec-autosave.md /  M docs/DECISIONS.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/naver-shopping-local-worker.mjs
+- 마지막 자동 저장: 2026. 08. 08. 20:22:03
+- 기준 커밋: e56ac7d
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

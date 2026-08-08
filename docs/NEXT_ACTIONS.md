@@ -1,5 +1,12 @@
 # Next Actions
 
+## 2026-08-08 N상품 보안확인 안정화
+
+1. 완료: 중앙 Mac 회차 상한을 2건으로 복귀하고 해결되지 않은 보안확인 탭을 서버 claim 전에 감지합니다.
+2. 완료: 확장·native host 대상 28/28, 보호 잠금 self-test와 전체 `check:release`를 통과하고 중앙 Mac 설치본 해시·`max_jobs=2`·LaunchAgent 600초 실행을 확인했습니다.
+3. 사용자 1회 조치: 현재 열린 네이버 보안확인을 직접 완료하고 `chrome://extensions`에서 Moment Insight N Shopping Rank를 한 번 재로드합니다.
+4. 운영 실증: 확장 1.0.6의 다음 수동/자연 실행 로그 `max_jobs=2`와 신규 `pw-chrome-*`·`checked_count=300` snapshot을 확인합니다. 이 증거 전에는 운영 실수집 정상화를 완료로 보고하지 않습니다.
+
 ## 2026-08-08 N상품 처리량·중복 대기열 후속
 
 1. 완료: 중앙 Mac 회차 상한 4건과 계정별·사이트 전체 갱신 멱등 처리를 로컬 코드에 반영했습니다.

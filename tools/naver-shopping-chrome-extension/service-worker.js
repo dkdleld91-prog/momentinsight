@@ -7,9 +7,13 @@ const PAGE_REQUEST_JITTER_MS = 2_500;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
+const MANUAL_RESUME_REQUIRED_KEY = "momentInsightRankManualResumeRequired";
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
   "naver_captcha_detected",
+]);
+const NAVER_MANUAL_RESUME_CODES = new Set([
+  "naver_network_restricted",
   "naver_http_418",
   "naver_http_429",
 ]);
@@ -27,10 +31,12 @@ async function verificationState() {
   const stored = await chrome.storage.local.get([
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
+    MANUAL_RESUME_REQUIRED_KEY,
   ]);
   return {
     blockedUntil: Number(stored[VERIFICATION_BLOCKED_UNTIL_KEY] || 0),
     tabId: Number(stored[VERIFICATION_TAB_ID_KEY] || 0),
+    manualResumeRequired: stored[MANUAL_RESUME_REQUIRED_KEY] === true,
   };
 }
 
@@ -47,11 +53,26 @@ async function surfaceVerificationTab(tabId) {
   return tabId;
 }
 
+async function surfaceNetworkRestrictionTab(tabId) {
+  const current = await verificationState();
+  if (current.tabId && current.tabId !== tabId) {
+    await chrome.tabs.remove(current.tabId).catch(() => {});
+  }
+  await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+  await chrome.storage.local.set({
+    [VERIFICATION_BLOCKED_UNTIL_KEY]: 0,
+    [VERIFICATION_TAB_ID_KEY]: tabId,
+    [MANUAL_RESUME_REQUIRED_KEY]: true,
+  });
+  return tabId;
+}
+
 async function clearVerificationState({ closeTab = true } = {}) {
   const current = await verificationState();
   await chrome.storage.local.remove([
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
+    MANUAL_RESUME_REQUIRED_KEY,
   ]);
   if (closeTab && current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
   return current.tabId || null;
@@ -68,6 +89,7 @@ async function inspectNaverTab(tabId) {
       func: () => {
         const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
         return {
+          networkRestricted: /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText),
           blocked: /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText),
           nextDataReady: Boolean(document.getElementById("__NEXT_DATA__")?.textContent),
           url: location.href,
@@ -75,6 +97,7 @@ async function inspectNaverTab(tabId) {
       },
     });
     const value = results?.[0]?.result || {};
+    if (value.networkRestricted) return { status: "network_restricted" };
     if (value.blocked) return { status: "blocked" };
     if (value.nextDataReady && String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
       return { status: "resolved" };
@@ -85,10 +108,34 @@ async function inspectNaverTab(tabId) {
   }
 }
 
+async function findResolvedNaverTab() {
+  const tabs = await chrome.tabs.query({ url: "https://search.shopping.naver.com/*" });
+  for (const tab of tabs) {
+    if (!tab?.id) continue;
+    // Existing tabs are inspected only; this never navigates or reloads Naver.
+    // eslint-disable-next-line no-await-in-loop
+    const state = await inspectNaverTab(tab.id);
+    if (state.status === "resolved") return tab.id;
+  }
+  return null;
+}
+
 async function prepareVerificationState(trigger, verification) {
   if (verification.tabId) {
     const tabState = await inspectNaverTab(verification.tabId);
+    if (tabState.status === "network_restricted") {
+      if (trigger === "manual") {
+        await chrome.tabs.update(verification.tabId, { active: true }).catch(() => {});
+      }
+      await chrome.storage.local.set({ [MANUAL_RESUME_REQUIRED_KEY]: true });
+      await saveStatus("verification", "naver_network_restricted");
+      return { code: "naver_network_restricted", reusableTabId: null };
+    }
     if (tabState.status === "resolved") {
+      if (verification.manualResumeRequired && trigger !== "manual") {
+        await saveStatus("verification", "naver_manual_resume_required");
+        return { code: "naver_manual_resume_required", reusableTabId: null };
+      }
       const reusableTabId = await clearVerificationState({ closeTab: false });
       return { code: "", reusableTabId };
     }
@@ -100,6 +147,17 @@ async function prepareVerificationState(trigger, verification) {
       return { code: "naver_verification_required", reusableTabId: null };
     }
     await chrome.storage.local.remove(VERIFICATION_TAB_ID_KEY);
+  }
+  if (verification.manualResumeRequired) {
+    if (trigger === "manual") {
+      const reusableTabId = await findResolvedNaverTab();
+      if (reusableTabId) {
+        await clearVerificationState({ closeTab: false });
+        return { code: "", reusableTabId };
+      }
+    }
+    await saveStatus("verification", "naver_manual_resume_required");
+    return { code: "naver_manual_resume_required", reusableTabId: null };
   }
   if (trigger !== "manual" && verification.blockedUntil > Date.now()) {
     await saveStatus("verification", "naver_verification_cooldown");
@@ -179,8 +237,10 @@ async function readNextData(tabId) {
     target: { tabId },
     func: () => {
       const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
+      const networkRestricted = /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText);
       const blocked = /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText);
       return {
+        networkRestricted,
         blocked,
         nextDataText: document.getElementById("__NEXT_DATA__")?.textContent || "",
         title: document.title,
@@ -189,6 +249,7 @@ async function readNextData(tabId) {
     },
   });
   const value = results?.[0]?.result || {};
+  if (value.networkRestricted) throw new Error("naver_network_restricted");
   if (value.blocked) throw new Error("naver_verification_required");
   if (!value.nextDataText) throw new Error("naver_next_data_missing");
   if (!String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
@@ -221,7 +282,11 @@ async function collectPages(request, initialTabId = null) {
     }
     return { pages, tabId };
   } catch (error) {
-    if (String(error?.message || "") === "naver_verification_required" && tabId != null) {
+    if (String(error?.message || "") === "naver_network_restricted" && tabId != null) {
+      tabId = await surfaceNetworkRestrictionTab(tabId);
+      error.keepTabOpen = true;
+      error.tabId = tabId;
+    } else if (String(error?.message || "") === "naver_verification_required" && tabId != null) {
       tabId = await surfaceVerificationTab(tabId);
       error.keepTabOpen = true;
       error.tabId = tabId;
@@ -328,6 +393,14 @@ async function runWorker(trigger = "manual") {
     const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
     const haltedCode = String(result.haltedCode || "");
+    if (NAVER_MANUAL_RESUME_CODES.has(haltedCode)) {
+      await chrome.storage.local.set({
+        [VERIFICATION_BLOCKED_UNTIL_KEY]: 0,
+        [MANUAL_RESUME_REQUIRED_KEY]: true,
+      });
+      await saveStatus("verification", haltedCode);
+      return { ok: false, partial: submitted > 0, code: haltedCode, summary: result };
+    }
     if (NAVER_ACCESS_COOLDOWN_CODES.has(haltedCode)) {
       await chrome.storage.local.set({
         [VERIFICATION_BLOCKED_UNTIL_KEY]: Date.now() + VERIFICATION_COOLDOWN_MS,

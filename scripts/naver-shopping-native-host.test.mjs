@@ -225,10 +225,14 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.7");
+  assert.equal(manifest.version, "1.0.8");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
+  assert.match(serviceWorker, /NAVER_MANUAL_RESUME_CODES/u);
+  assert.match(serviceWorker, /MANUAL_RESUME_REQUIRED_KEY/u);
+  assert.match(serviceWorker, /naver_network_restricted/u);
+  assert.match(serviceWorker, /findResolvedNaverTab/u);
   assert.match(serviceWorker, /surfaceVerificationTab/u);
   assert.match(serviceWorker, /prepareVerificationState/u);
   assert.match(serviceWorker, /inspectNaverTab/u);
@@ -245,6 +249,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
   assert.match(serviceWorker, /재시도 \$\{failed\}건/u);
   assert.match(popup, /status\?\.status === "partial"/u);
+  assert.match(popup, /확인 후 다시 시작/u);
   assert.match(popup, /일부 갱신 완료/u);
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger \}\)/u);
   assert.match(nativeHost, /queueAllTrackers: start\.trigger === "manual"/u);

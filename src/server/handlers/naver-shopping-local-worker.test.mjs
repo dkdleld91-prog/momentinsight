@@ -121,6 +121,8 @@ function resolvingQuery(result) {
     in() { return query; },
     gte() { return query; },
     lte() { return query; },
+    is() { return query; },
+    not() { return query; },
     or() { return query; },
     order() { return query; },
     limit() { return query; },
@@ -148,6 +150,8 @@ function claimContext(rows, claimableIds, attemptedIds) {
             return query;
           },
           lte() { return query; },
+          is() { return query; },
+          not() { return query; },
           or() { return query; },
           order() { return query; },
           limit() { return query; },
@@ -248,6 +252,140 @@ test("claim continues to the next exact keyword group after lease contention", a
     assert.equal(body.job.keyword, "온열찜질기");
     assert.deepEqual(body.job.claims.map((claim) => claim.trackerId), [SECOND_TRACKER_ID]);
     assert.deepEqual(attemptedIds, [TRACKER_ID, SECOND_TRACKER_ID]);
+  });
+});
+
+test("claim prioritizes a newly registered keyword before the existing due sequence", async () => {
+  await withWorkerEnv(async () => {
+    const candidateModes = [];
+    const newTracker = {
+      ...tracker({
+        id: TRACKER_ID,
+        keyword: "신규 키워드",
+        last_checked_at: null,
+        created_at: "2026-08-08T00:00:00.000Z",
+      }),
+    };
+    const existingTracker = {
+      ...tracker({
+        id: SECOND_TRACKER_ID,
+        keyword: "기존 키워드",
+        last_checked_at: "2026-08-07T00:00:00.000Z",
+        created_at: "2026-08-01T00:00:00.000Z",
+      }),
+    };
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+          return { data: [], error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          let mode = "";
+          let isUpdate = false;
+          let trackerId = "";
+          const query = {
+            select() { return query; },
+            update() { isUpdate = true; return query; },
+            eq(column, value) {
+              if (column === "id") trackerId = String(value);
+              return query;
+            },
+            lte() { return query; },
+            or() { return query; },
+            is(column) {
+              if (column === "last_checked_at") mode = "new";
+              return query;
+            },
+            not(column) {
+              if (column === "last_checked_at") mode = "existing";
+              return query;
+            },
+            order() { return query; },
+            limit() { return query; },
+            async maybeSingle() {
+              return { data: { id: trackerId }, error: null };
+            },
+            then(resolve, reject) {
+              if (!isUpdate) candidateModes.push(mode);
+              const rows = mode === "new" ? [newTracker] : [existingTracker];
+              return Promise.resolve({ data: isUpdate ? null : rows, error: null }).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), ctx);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.job.keyword, "신규 키워드");
+    assert.deepEqual(body.job.claims.map((claim) => claim.trackerId), [TRACKER_ID]);
+    assert.deepEqual(candidateModes, ["new"]);
+  });
+});
+
+test("claim returns to oldest due trackers when no uninitialized keyword remains", async () => {
+  await withWorkerEnv(async () => {
+    const candidateModes = [];
+    const existingTracker = tracker({
+      id: SECOND_TRACKER_ID,
+      keyword: "기존 키워드",
+      last_checked_at: "2026-08-07T00:00:00.000Z",
+      created_at: "2026-08-01T00:00:00.000Z",
+    });
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+          return { data: [], error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          let mode = "";
+          let isUpdate = false;
+          let trackerId = "";
+          const query = {
+            select() { return query; },
+            update() { isUpdate = true; return query; },
+            eq(column, value) {
+              if (column === "id") trackerId = String(value);
+              return query;
+            },
+            lte() { return query; },
+            or() { return query; },
+            is(column) {
+              if (column === "last_checked_at") mode = "new";
+              return query;
+            },
+            not(column) {
+              if (column === "last_checked_at") mode = "existing";
+              return query;
+            },
+            order() { return query; },
+            limit() { return query; },
+            async maybeSingle() {
+              return { data: { id: trackerId }, error: null };
+            },
+            then(resolve, reject) {
+              if (!isUpdate) candidateModes.push(mode);
+              const rows = mode === "new" ? [] : [existingTracker];
+              return Promise.resolve({ data: isUpdate ? null : rows, error: null }).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), ctx);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.job.keyword, "기존 키워드");
+    assert.deepEqual(body.job.claims.map((claim) => claim.trackerId), [SECOND_TRACKER_ID]);
+    assert.deepEqual(candidateModes, ["new", "existing"]);
   });
 });
 
@@ -459,6 +597,8 @@ test("claim releases leases acquired before a later conditional update fails", a
             update() { isUpdate = true; return query; },
             eq() { return query; },
             lte() { return query; },
+            is() { return query; },
+            not() { return query; },
             or() { return query; },
             order() { return query; },
             limit() { return query; },

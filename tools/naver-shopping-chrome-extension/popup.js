@@ -11,9 +11,11 @@ const FAILURE_TEXT = {
   native_host_timeout: "갱신 시간이 초과되었습니다. 자동 재시도합니다",
   naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
   naver_verification_cooldown: "보안확인 후 자동 갱신이 다시 이어집니다",
+  naver_network_restricted: "네이버 쇼핑 접속 제한이 해제된 뒤 수동으로 다시 시작해 주세요",
+  naver_manual_resume_required: "정상 검색 화면을 확인한 뒤 수동으로 다시 시작해 주세요",
   naver_captcha_detected: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
-  naver_http_418: "네이버 접근 보호로 잠시 쉬었다가 자동 재시도합니다",
-  naver_http_429: "네이버 요청 제한으로 잠시 쉬었다가 자동 재시도합니다",
+  naver_http_418: "네이버 접근 제한이 해제된 뒤 수동으로 다시 시작해 주세요",
+  naver_http_429: "네이버 요청 제한이 해제된 뒤 수동으로 다시 시작해 주세요",
 };
 
 function failureText(code) {
@@ -33,6 +35,7 @@ async function refreshStatus() {
   try {
     const status = await chrome.runtime.sendMessage({ action: "status" });
     statusElement.textContent = statusText(status);
+    runButton.textContent = status?.status === "verification" ? "확인 후 다시 시작" : "지금 안전 갱신";
   } catch {
     statusElement.textContent = "확인 필요 · 확장 프로그램을 다시 열어 주세요";
   }

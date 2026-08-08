@@ -36,6 +36,7 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_next_data_missing",
   "naver_page_timeout",
   "naver_navigation_invalid",
+  "naver_network_restricted",
   "provider_deadline_exceeded",
   "provider_partial_window",
   "provider_browser_collection_failed",
@@ -54,6 +55,7 @@ const RUN_HALT_FAILURE_CODES = new Set([
   "naver_next_data_missing",
   "naver_page_timeout",
   "naver_navigation_invalid",
+  "naver_network_restricted",
 ]);
 
 function enabled(env) {

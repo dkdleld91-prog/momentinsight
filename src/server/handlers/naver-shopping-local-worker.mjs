@@ -39,6 +39,8 @@ const WORKER_TRACKER_SELECT = [
   "max_rank",
   "status",
   "next_check_at",
+  "last_checked_at",
+  "created_at",
   "current_rank",
   "best_rank",
   "worst_rank",
@@ -156,16 +158,33 @@ async function claimOneLookupJob(ctx) {
 
 async function claimOneKeywordJob(ctx) {
   const nowIso = new Date().toISOString();
-  const { data, error } = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .select(WORKER_TRACKER_SELECT)
-    .eq("status", "active")
-    .lte("next_check_at", nowIso)
-    .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
-    .order("next_check_at", { ascending: true })
-    .limit(CLAIM_BATCH_MAX);
-  if (error) throw error;
-  const due = Array.isArray(data) ? data.slice(0, CLAIM_BATCH_MAX) : [];
+  const dueQuery = (uninitializedOnly) => {
+    let query = ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select(WORKER_TRACKER_SELECT)
+      .eq("status", "active")
+      .lte("next_check_at", nowIso)
+      .or(`processing_until.is.null,processing_until.lt.${nowIso}`);
+    query = uninitializedOnly
+      ? query.is("last_checked_at", null).order("created_at", { ascending: true })
+      : query.not("last_checked_at", "is", null).order("next_check_at", { ascending: true });
+    return query.limit(CLAIM_BATCH_MAX);
+  };
+
+  // A newly registered keyword has no verified result yet. Give that group one
+  // first collection before returning to the existing oldest-due sequence.
+  const initialResult = await dueQuery(true);
+  if (initialResult.error) throw initialResult.error;
+  let due = Array.isArray(initialResult.data)
+    ? initialResult.data.slice(0, CLAIM_BATCH_MAX)
+    : [];
+  if (!due.length) {
+    const existingResult = await dueQuery(false);
+    if (existingResult.error) throw existingResult.error;
+    due = Array.isArray(existingResult.data)
+      ? existingResult.data.slice(0, CLAIM_BATCH_MAX)
+      : [];
+  }
   if (!due.length) return null;
 
   const attemptedKeywordKeys = new Set();

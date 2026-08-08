@@ -423,6 +423,33 @@ test("stops the batch after Naver requests verification and preserves all unclai
   assert.match(logs.join("\n"), /local_worker_run_halted:naver_verification_required/u);
 });
 
+test("stops the batch on a Naver network restriction and preserves all unclaimed work", async () => {
+  const calls = [];
+  const logs = [];
+  const provider = {
+    async collect() { throw new Error("naver_network_restricted"); },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls);
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    log: (value) => logs.push(value),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.haltedCode, "naver_network_restricted");
+  assert.equal(summary.submitted, 0);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  assert.equal(calls[1].errorCode, "naver_network_restricted");
+  assert.match(logs.join("\n"), /local_worker_run_halted:naver_network_restricted/u);
+});
+
 test("treats any lease-lost submit result as a failed batch and releases the claim", async () => {
   const calls = [];
   const provider = {

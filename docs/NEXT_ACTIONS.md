@@ -6,7 +6,7 @@
 2. 완료: 신규·미초기화 키워드를 한 번 우선 처리한 뒤 기존 `next_check_at` 순서로 복귀하는 회귀검사를 추가했습니다.
 3. 완료: 대상 45/45, 전체 앱·API 392/392, 플레이스·쇼핑 각 51/51, Production 인증 18/18, 보호 잠금·self-test·전체 `check:release`를 통과했습니다.
 4. 완료: 중앙 Mac 브리지와 Chrome `동빈` 프로필 확장 1.0.8을 반영했습니다.
-5. 배포: 승인된 변경을 GitHub `main`과 Production 운영 별칭에 반영하고 `/health`·`/ready`·운영 릴리스를 확인합니다.
+5. 완료: 코드 `3cb3557`을 GitHub `main`과 Production `dpl_AANxSpPzQXeD5XNSm3keASq7CQg4`·운영 별칭에 반영했습니다. `/health`·`/ready`는 릴리스 `3cb355707396`, 서울 `icn1`, Supabase ready입니다.
 6. 운영 재개: 네이버 네트워크 제한이 사라진 정상 검색 탭을 담당자가 확인한 뒤 확장의 수동 재개를 한 번 누릅니다. 그 전에는 자동 재시도하지 않으며 마지막 정상 순위를 유지합니다.
 
 ## 2026-08-08 N상품 보안확인 안정화

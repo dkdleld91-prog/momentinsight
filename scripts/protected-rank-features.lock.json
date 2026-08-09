@@ -450,7 +450,7 @@
     {
       "id": "shopping-windows-native-host-launcher",
       "file": "scripts/windows/MomentInsightNaverShoppingHost.cs",
-      "sha256": "252025d6770caaa6c6f9721be54feb087a4497c51d0f0c89f3db041a43eb3602"
+      "sha256": "cbf277bab2edc7968ca4b03d3c6e63ca294b492d78df03bf6754b69a3467e51e"
     },
     {
       "id": "shopping-windows-chrome-scheduler",
@@ -460,12 +460,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "c9e49c4b20c1eb315638b29959c6a976f5baad1b3205a3ec2db0e1614eec56ec"
+      "sha256": "74653cfe51eca291ea7013c14a7d9f98142f7629dc33d5e4ba710c9d31baf16e"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "e0a78b451966b03e2705c3ca6a09b738f7fae45b668a2956079419a9d864a452"
+      "sha256": "9747d3b75bcd5bcd899ff5783e0fc2856bdd03f816676a2f4001c00224a2a01f"
     },
     {
       "id": "shopping-local-worker-session-boundary",

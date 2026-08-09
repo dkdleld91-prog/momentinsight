@@ -7,6 +7,8 @@ const INITIAL_REQUEST_DELAY_MS = 30_000;
 const INITIAL_REQUEST_JITTER_MS = 15_000;
 const PAGE_REQUEST_INTERVAL_MS = 45_000;
 const PAGE_REQUEST_JITTER_MS = 30_000;
+const NATIVE_HOST_START_TIMEOUT_MS = 30_000;
+const NATIVE_HOST_RUN_TIMEOUT_MS = 20 * 60_000;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -409,29 +411,45 @@ function nativeDisconnectCode(lastErrorMessage) {
 
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
-  const verification = await verificationState();
-  const verificationPreparation = await prepareVerificationState(trigger, verification);
-  if (verificationPreparation.code) {
-    return { ok: false, code: verificationPreparation.code };
-  }
-  const workerTrigger = verificationPreparation.recovered ? "rank-recovery" : trigger;
   running = true;
-  await saveStatus("running", workerTrigger);
-  const port = chrome.runtime.connectNative(NATIVE_HOST);
-  let collectionTabId = verificationPreparation.reusableTabId;
+  let port = null;
+  let collectionTabId = null;
   let keepCollectionTabOpen = false;
   try {
+    const verification = await verificationState();
+    const verificationPreparation = await prepareVerificationState(trigger, verification);
+    if (verificationPreparation.code) {
+      await saveStatus("verification", verificationPreparation.code);
+      return { ok: false, code: verificationPreparation.code };
+    }
+    const workerTrigger = verificationPreparation.recovered ? "rank-recovery" : trigger;
+    await saveStatus("running", workerTrigger);
+    port = chrome.runtime.connectNative(NATIVE_HOST);
+    collectionTabId = verificationPreparation.reusableTabId;
     const result = await new Promise((resolve, reject) => {
       let settled = false;
+      let receivedNativeMessage = false;
       function finish(error, value) {
         if (settled) return;
         settled = true;
-        clearTimeout(timeout);
+        clearTimeout(startTimeout);
+        clearTimeout(runTimeout);
         if (error) reject(error);
         else resolve(value);
       }
-      const timeout = setTimeout(() => finish(new Error("native_host_timeout")), 20 * 60_000);
+      const startTimeout = setTimeout(
+        () => finish(new Error("native_host_start_timeout")),
+        NATIVE_HOST_START_TIMEOUT_MS,
+      );
+      const runTimeout = setTimeout(
+        () => finish(new Error("native_host_timeout")),
+        NATIVE_HOST_RUN_TIMEOUT_MS,
+      );
       port.onMessage.addListener(async (message) => {
+        if (!receivedNativeMessage) {
+          receivedNativeMessage = true;
+          clearTimeout(startTimeout);
+        }
         try {
           if (message?.type === "collect") {
             try {
@@ -503,7 +521,7 @@ async function runWorker(trigger = "manual") {
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {
     running = false;
-    port.disconnect();
+    if (port) port.disconnect();
     if (collectionTabId != null && !keepCollectionTabOpen) {
       await chrome.tabs.remove(collectionTabId).catch(() => {});
     }
@@ -517,8 +535,13 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.action === "run-now") {
-    runWorker("manual").then(sendResponse);
-    return true;
+    if (running) {
+      sendResponse({ ok: false, code: "already_running" });
+      return false;
+    }
+    void runWorker("manual");
+    sendResponse({ ok: true, started: true });
+    return false;
   }
   if (message?.action === "status") {
     chrome.storage.local.get("momentInsightRankStatus").then((stored) => {

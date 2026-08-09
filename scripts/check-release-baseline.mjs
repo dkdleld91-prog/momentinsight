@@ -1249,8 +1249,10 @@ const checks = {
     && !/-AsPlainText|cmdkey|remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsHostInstaller)
     && shoppingWindowsHostLauncher.includes("ProtectedData.Unprotect")
     && shoppingWindowsHostLauncher.includes("DataProtectionScope.CurrentUser")
-    && shoppingWindowsHostLauncher.includes("RedirectStandardInput = false")
-    && shoppingWindowsHostLauncher.includes("RedirectStandardOutput = false")
+    && shoppingWindowsHostLauncher.includes("RedirectStandardInput = true")
+    && shoppingWindowsHostLauncher.includes("RedirectStandardOutput = true")
+    && shoppingWindowsHostLauncher.includes("Console.OpenStandardInput()")
+    && shoppingWindowsHostLauncher.includes("child.StandardOutput.BaseStream.CopyTo(output)")
     && shoppingWindowsHostLauncher.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
     && shoppingWindowsHostLauncher.includes('String.Equals(maxJobs, "1"')
     && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
@@ -1271,7 +1273,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.15"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.16"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
@@ -1291,8 +1293,10 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.15"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.16"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
+    && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
+    && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')
     && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
     && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

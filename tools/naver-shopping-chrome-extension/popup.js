@@ -8,7 +8,9 @@ const FAILURE_TEXT = {
   native_host_communication_failed: "로컬 연결 통신을 다시 시도해 주세요",
   native_host_disconnected: "로컬 연결 상태를 다시 확인해 주세요",
   native_host_closed: "로컬 연결기가 닫혔습니다. 다시 시도해 주세요",
+  native_host_start_timeout: "작업기 연결이 30초 안에 시작되지 않았습니다. 연결기를 다시 확인해 주세요",
   native_host_timeout: "갱신 시간이 초과되었습니다. 자동 재시도합니다",
+  already_running: "이미 안전 갱신이 진행 중입니다",
   naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
   naver_verification_cooldown: "보안확인 후 자동 갱신이 다시 이어집니다",
   naver_network_restricted: "네이버 쇼핑 접속 제한을 감지해 자동 재시도를 기다립니다",
@@ -52,6 +54,11 @@ runButton.addEventListener("click", async () => {
   statusElement.textContent = "갱신을 시작합니다.";
   try {
     const result = await chrome.runtime.sendMessage({ action: "run-now" });
+    if (result?.started) {
+      statusElement.textContent = "갱신 요청을 접수했습니다. 이 창은 닫아도 됩니다.";
+      window.setTimeout(refreshStatus, 1000);
+      return;
+    }
     const queuedTotal = Math.max(0, Number(result?.summary?.queuedTotal || 0));
     const submitted = Math.max(0, Number(result?.summary?.submitted || 0));
     statusElement.textContent = result?.ok

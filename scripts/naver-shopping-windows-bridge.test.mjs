@@ -32,7 +32,7 @@ test("Windows installer targets one exact Chrome profile and stable extension so
   assert.doesNotMatch(entrypoint, /WorkerSecret|LOCAL_WORKER_SECRET/u);
 });
 
-test("Windows native host uses HKCU registration, DPAPI and inherited binary stdio", () => {
+test("Windows native host uses HKCU registration, DPAPI and explicit binary stdio relay", () => {
   assert.match(installer, /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts/u);
   assert.match(installer, /allowed_origins/u);
   assert.match(installer, /chrome-extension:\/\/\$extensionId\//u);
@@ -43,9 +43,13 @@ test("Windows native host uses HKCU registration, DPAPI and inherited binary std
 
   assert.match(launcher, /ProtectedData\.Unprotect/u);
   assert.match(launcher, /DataProtectionScope\.CurrentUser/u);
-  assert.match(launcher, /RedirectStandardInput = false/u);
-  assert.match(launcher, /RedirectStandardOutput = false/u);
+  assert.match(launcher, /RedirectStandardInput = true/u);
+  assert.match(launcher, /RedirectStandardOutput = true/u);
   assert.match(launcher, /RedirectStandardError = false/u);
+  assert.match(launcher, /Console\.OpenStandardInput\(\)/u);
+  assert.match(launcher, /input\.CopyTo\(child\.StandardInput\.BaseStream\)/u);
+  assert.match(launcher, /child\.StandardOutput\.BaseStream\.CopyTo\(output\)/u);
+  assert.match(launcher, /outputRelay\.Join\(5000\)/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS"\] = maxJobs/u);
   assert.doesNotMatch(launcher, /Console\.(?:Write|WriteLine)/u);

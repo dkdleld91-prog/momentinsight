@@ -277,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.15");
+  assert.equal(manifest.version, "1.0.16");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
@@ -319,6 +319,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /const workerTrigger = verificationPreparation\.recovered \? "rank-recovery" : trigger/u);
   assert.match(serviceWorker, /if \(verification\.blockedUntil > 0\)[\s\S]{0,160}recovered: true/u);
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger: workerTrigger \}\)/u);
+  assert.match(serviceWorker, /NATIVE_HOST_START_TIMEOUT_MS = 30_000/u);
+  assert.match(serviceWorker, /native_host_start_timeout/u);
+  assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
+  assert.match(popup, /이 창은 닫아도 됩니다/u);
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
   assert.match(nativeHost, /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/u);
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);

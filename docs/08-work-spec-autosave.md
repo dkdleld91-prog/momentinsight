@@ -3,6 +3,14 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-10 N 쇼핑 Windows 수동 갱신 무한로딩 복구
+
+- 현상: Windows `동빈(개발)` 프로필에서 `지금 안전 갱신`을 누르면 확장 팝업이 계속 대기하지만 Production 작업기 요청·tracker claim은 발생하지 않는다.
+- 원인 증거: Windows에서 `MomentInsightNaverShoppingHost`와 자식 `node.exe`는 남아 있었고, 같은 시각 Supabase는 처리 중 tracker 0건·worker 요청 10분간 0건·due tracker 58건이었다. C# launcher가 자식 Node의 native messaging 표준 입출력을 명시적으로 중계하지 않아 실기에서 연결이 멈췄다.
+- 수정 범위: C# launcher에 binary stdin/stdout relay를 추가하고, 확장프로그램은 native host 첫 응답을 짧은 별도 시간으로 제한하며 수동 실행 요청을 즉시 접수 상태로 돌려 팝업이 전체 수집 시간 동안 잠기지 않게 한다.
+- 보호: 정확 상품·광고 제외·300개 원자 반영·회차 1건·네이버 제한 즉시 중단·마지막 정상값 보존·DB 스키마·관리자/광고주 화면은 변경하지 않는다.
+- 완료 조건: Windows·native host·확장 대상 검사, 보호 잠금과 전체 릴리스 검사, Windows 설치본 갱신, Production 요청/claim 또는 안전 오류의 실기 증거를 모두 확인한다.
+
 ## 2026-08-10 N 쇼핑 Windows 작업용 데스크탑 브리지
 
 - 요청: Windows 데스크탑을 순위 수집 전용으로 사용하려는데 Chrome 확장 관리에 아무것도 나타나지 않는 원인을 해결하고 자동 실행 구조를 마련한다.
@@ -87,9 +95,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 10. 01:16:38
-- 기준 커밋: 3b48585
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 10. 03:37:08
+- 기준 커밋: 45e34be
+- 작업트리: M docs/08-work-spec-autosave.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준

@@ -580,8 +580,10 @@ check(
     && hasAll(shoppingWindowsHostLauncher, [
       /ProtectedData\.Unprotect/,
       /DataProtectionScope\.CurrentUser/,
-      /RedirectStandardInput = false/,
-      /RedirectStandardOutput = false/,
+      /RedirectStandardInput = true/,
+      /RedirectStandardOutput = true/,
+      /Console\.OpenStandardInput\(\)/,
+      /child\.StandardOutput\.BaseStream\.CopyTo\(output\)/,
       /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
       /String\.Equals\(maxJobs, "1"/,
     ])
@@ -595,7 +597,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.15"
+  shoppingChromeManifest.version === "1.0.16"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading;
 
 namespace MomentInsight.NaverShopping
 {
@@ -71,8 +72,8 @@ namespace MomentInsight.NaverShopping
                 start.WorkingDirectory = runtimePath;
                 start.UseShellExecute = false;
                 start.CreateNoWindow = true;
-                start.RedirectStandardInput = false;
-                start.RedirectStandardOutput = false;
+                start.RedirectStandardInput = true;
+                start.RedirectStandardOutput = true;
                 start.RedirectStandardError = false;
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED"] = "true";
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET"] = secret;
@@ -86,7 +87,18 @@ namespace MomentInsight.NaverShopping
                     {
                         return Fail("node_start_failed");
                     }
+
+                    Thread inputRelay = new Thread(() => RelayInput(child));
+                    Thread outputRelay = new Thread(() => RelayOutput(child));
+                    inputRelay.IsBackground = true;
+                    outputRelay.IsBackground = true;
+                    inputRelay.Start();
+                    outputRelay.Start();
                     child.WaitForExit();
+                    if (!outputRelay.Join(5000))
+                    {
+                        return Fail("native_host_output_relay_timeout");
+                    }
                     return child.ExitCode;
                 }
             }
@@ -109,6 +121,46 @@ namespace MomentInsight.NaverShopping
         private static string Quote(string value)
         {
             return "\"" + value.Replace("\"", "\\\"") + "\"";
+        }
+
+        private static void RelayInput(Process child)
+        {
+            try
+            {
+                using (Stream input = Console.OpenStandardInput())
+                {
+                    input.CopyTo(child.StandardInput.BaseStream);
+                }
+                child.StandardInput.Close();
+            }
+            catch (IOException)
+            {
+                // Chrome or the child closed the native messaging pipe.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The child exited while the background relay was finishing.
+            }
+        }
+
+        private static void RelayOutput(Process child)
+        {
+            try
+            {
+                using (Stream output = Console.OpenStandardOutput())
+                {
+                    child.StandardOutput.BaseStream.CopyTo(output);
+                    output.Flush();
+                }
+            }
+            catch (IOException)
+            {
+                // Chrome disconnected; the child process will exit with the pipe.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The child exited while the background relay was finishing.
+            }
         }
 
         private static int Fail(string code)

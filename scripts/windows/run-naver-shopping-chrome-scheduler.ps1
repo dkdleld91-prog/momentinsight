@@ -23,8 +23,9 @@ try {
     if ($chromePath -notmatch '(?i)\\Google\\Chrome\\Application\\chrome\.exe$') { throw "chrome_path_invalid" }
     if ($profileDirectory -notmatch '^(Default|Profile [1-9][0-9]{0,2})$') { throw "chrome_profile_invalid" }
 
+    $profileArgument = '--profile-directory="{0}"' -f $profileDirectory
     Start-Process -FilePath $chromePath -ArgumentList @(
-        "--profile-directory=$profileDirectory",
+        $profileArgument,
         "--no-first-run",
         "--no-default-browser-check"
     ) -WindowStyle Minimized

@@ -445,7 +445,7 @@
     {
       "id": "shopping-windows-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
-      "sha256": "bb3ca7916e2e8e4b56b3172d98770a9b8b50cdb2453e9196888653c8e550819a"
+      "sha256": "b34af2def7c6dd8ac3399f32433d2e5bcbf9d4f6ceb279abf56ca9bb060bc5c4"
     },
     {
       "id": "shopping-windows-native-host-launcher",
@@ -455,7 +455,7 @@
     {
       "id": "shopping-windows-chrome-scheduler",
       "file": "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
-      "sha256": "83fc17bec53e0c846e547456b8b426e831f3d4dd9cfca452d52ef4987ce1bca5"
+      "sha256": "7e4bc33d640b6c50c5455141c37f469f409793486ff7eb04f55fd1fdb6223480"
     },
     {
       "id": "shopping-chrome-extension-manifest",

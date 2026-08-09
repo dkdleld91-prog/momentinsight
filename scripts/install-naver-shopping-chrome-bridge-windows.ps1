@@ -62,6 +62,7 @@ if ($env:OS -ne "Windows_NT") { throw "windows_only_installer" }
 if ($PSVersionTable.PSEdition -ne "Desktop") {
     throw "run_with_windows_powershell_5_1_not_pwsh"
 }
+Add-Type -AssemblyName System.Security -ErrorAction Stop
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -209,8 +210,9 @@ Register-ScheduledTask -TaskPath $taskPath -TaskName $taskName -Action $taskActi
     -Trigger @($repeatTrigger, $logonTrigger) -Principal $taskPrincipal -Settings $taskSettings -Force | Out-Null
 Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
+$profileArgument = '--profile-directory="{0}"' -f $profileDirectory
 Start-Process -FilePath $chromePath -ArgumentList @(
-    "--profile-directory=$profileDirectory",
+    $profileArgument,
     "chrome://extensions"
 )
 

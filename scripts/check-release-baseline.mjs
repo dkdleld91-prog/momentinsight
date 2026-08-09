@@ -1236,6 +1236,7 @@ const checks = {
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   shoppingWindowsChromeBridgeIsUserScopedAndWatchdogBounded: shoppingWindowsHostInstaller.includes('Read-Host "Chrome profile visible name or number"')
     && shoppingWindowsHostInstaller.includes("Google\\Chrome\\User Data\\Local State")
+    && shoppingWindowsHostInstaller.includes("Add-Type -AssemblyName System.Security -ErrorAction Stop")
     && shoppingWindowsHostInstaller.includes("HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts")
     && shoppingWindowsHostInstaller.includes("[Security.Cryptography.DataProtectionScope]::CurrentUser")
     && shoppingWindowsHostInstaller.includes("-AsSecureString")
@@ -1253,7 +1254,7 @@ const checks = {
     && shoppingWindowsHostLauncher.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
     && shoppingWindowsHostLauncher.includes('String.Equals(maxJobs, "1"')
     && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
-    && shoppingWindowsChromeScheduler.includes("--profile-directory=$profileDirectory")
+    && shoppingWindowsChromeScheduler.includes("'--profile-directory=\"{0}\"' -f $profileDirectory")
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 20, periodInMinutes: 20 }]')

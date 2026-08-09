@@ -562,6 +562,7 @@ check(
   hasAll(shoppingWindowsHostInstaller, [
     /Read-Host "Chrome profile visible name or number"/,
     /Google\\Chrome\\User Data\\Local State/,
+    /Add-Type -AssemblyName System\.Security -ErrorAction Stop/,
     /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts/,
     /allowed_origins/,
     /DataProtectionScope\]::CurrentUser/,
@@ -586,7 +587,7 @@ check(
     ])
     && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
     && hasAll(shoppingWindowsChromeScheduler, [
-      /--profile-directory=\$profileDirectory/,
+      /'--profile-directory="\{0\}"' -f \$profileDirectory/,
       /chrome_ready profile=/,
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),

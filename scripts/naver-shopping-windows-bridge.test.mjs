@@ -18,6 +18,8 @@ test("Windows installer targets one exact Chrome profile and stable extension so
   assert.match(installer, /Chrome profile visible name or number/u);
   assert.match(installer, /\$VisibleName -match '\^\[1-9\]\[0-9\]\*\$'/u);
   assert.match(installer, /\$eligibleProfiles\[\$profileIndex\]/u);
+  assert.match(installer, /Add-Type -AssemblyName System\.Security -ErrorAction Stop/u);
+  assert.match(installer, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
   assert.match(installer, /Google\\Chrome\\User Data\\Local State/u);
   assert.match(installer, /chrome_profile_not_found/u);
   assert.match(installer, /\$profileDirectory = Resolve-ProfileDirectory/u);
@@ -59,7 +61,7 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(installer, /CreateFolder\("MomentInsight"\)/u);
   assert.match(installer, /-LogonType Interactive -RunLevel Limited/u);
   assert.match(installer, /-MultipleInstances IgnoreNew/u);
-  assert.match(scheduler, /--profile-directory=\$profileDirectory/u);
+  assert.match(scheduler, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
   assert.match(scheduler, /chrome_ready profile=/u);
   assert.doesNotMatch(`${installer}\n${scheduler}`, /remote-debugging|no-sandbox|user-data-dir/iu);
 });

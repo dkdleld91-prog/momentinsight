@@ -38,10 +38,19 @@ function Resolve-ProfileDirectory {
     if (-not (Test-Path -LiteralPath $localStatePath -PathType Leaf)) { throw "chrome_local_state_missing" }
     $localState = Get-Content -LiteralPath $localStatePath -Raw -Encoding UTF8 | ConvertFrom-Json
     $profiles = $localState.profile.info_cache.psobject.Properties
-    $match = $profiles | Where-Object {
+    $eligibleProfiles = @($profiles | Where-Object {
         $_.Name -match '^(Default|Profile [1-9][0-9]{0,2})$' -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.Value.name)
+    })
+    $match = $eligibleProfiles | Where-Object {
         [string]$_.Value.name -eq $VisibleName
     } | Select-Object -First 1
+    if (-not $match -and $VisibleName -match '^[1-9][0-9]*$') {
+        $profileIndex = [int]$VisibleName - 1
+        if ($profileIndex -lt $eligibleProfiles.Count) {
+            $match = $eligibleProfiles[$profileIndex]
+        }
+    }
     if (-not $match) {
         $available = ($profiles | ForEach-Object { [string]$_.Value.name } | Where-Object { $_ }) -join ", "
         throw "chrome_profile_not_found:$VisibleName available=$available"
@@ -67,7 +76,15 @@ $nodeMajor = [int]($nodeVersion -split '\.')[0]
 if ($nodeMajor -lt 22 -or $nodeMajor -ge 25) { throw "node_version_must_be_22_to_24" }
 $chromePath = Resolve-ChromePath
 if ([string]::IsNullOrWhiteSpace($ProfileName)) {
-    $ProfileName = Read-Host "Chrome profile visible name"
+    $localState = Get-Content -LiteralPath (Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data\Local State") -Raw -Encoding UTF8 | ConvertFrom-Json
+    $profileOptions = @($localState.profile.info_cache.psobject.Properties | Where-Object {
+        $_.Name -match '^(Default|Profile [1-9][0-9]{0,2})$' -and
+        -not [string]::IsNullOrWhiteSpace([string]$_.Value.name)
+    })
+    for ($profileIndex = 0; $profileIndex -lt $profileOptions.Count; $profileIndex += 1) {
+        Write-Host ("[{0}] {1}" -f ($profileIndex + 1), [string]$profileOptions[$profileIndex].Value.name)
+    }
+    $ProfileName = Read-Host "Chrome profile visible name or number"
 }
 if ([string]::IsNullOrWhiteSpace($ProfileName)) { throw "chrome_profile_name_required" }
 $profileDirectory = Resolve-ProfileDirectory -VisibleName $ProfileName

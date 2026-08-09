@@ -15,7 +15,9 @@ test("Windows installer targets one exact Chrome profile and stable extension so
   assert.doesNotMatch(installer, /\$RepositoryPath = \(Split-Path \$PSScriptRoot/u);
   assert.match(installer, /\$RepositoryPath = Split-Path -Path \$PSScriptRoot -Parent/u);
   assert.match(installer, /\$ProfileName = ""/u);
-  assert.match(installer, /Read-Host "Chrome profile visible name"/u);
+  assert.match(installer, /Chrome profile visible name or number/u);
+  assert.match(installer, /\$VisibleName -match '\^\[1-9\]\[0-9\]\*\$'/u);
+  assert.match(installer, /\$eligibleProfiles\[\$profileIndex\]/u);
   assert.match(installer, /Google\\Chrome\\User Data\\Local State/u);
   assert.match(installer, /chrome_profile_not_found/u);
   assert.match(installer, /\$profileDirectory = Resolve-ProfileDirectory/u);

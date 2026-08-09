@@ -560,7 +560,7 @@ check(
 check(
   "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",
   hasAll(shoppingWindowsHostInstaller, [
-    /Read-Host "Chrome profile visible name"/,
+    /Read-Host "Chrome profile visible name or number"/,
     /Google\\Chrome\\User Data\\Local State/,
     /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts/,
     /allowed_origins/,

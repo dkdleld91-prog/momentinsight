@@ -1234,7 +1234,7 @@ const checks = {
     && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
-  shoppingWindowsChromeBridgeIsUserScopedAndWatchdogBounded: shoppingWindowsHostInstaller.includes('Read-Host "Chrome profile visible name"')
+  shoppingWindowsChromeBridgeIsUserScopedAndWatchdogBounded: shoppingWindowsHostInstaller.includes('Read-Host "Chrome profile visible name or number"')
     && shoppingWindowsHostInstaller.includes("Google\\Chrome\\User Data\\Local State")
     && shoppingWindowsHostInstaller.includes("HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts")
     && shoppingWindowsHostInstaller.includes("[Security.Cryptography.DataProtectionScope]::CurrentUser")

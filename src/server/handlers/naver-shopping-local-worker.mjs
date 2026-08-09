@@ -137,7 +137,7 @@ async function consumeNonce(ctx, auth) {
 
 async function claimOneLookupJob(ctx) {
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_rank_lookup_job", {
-    p_lease_seconds: 720,
+    p_lease_seconds: 1200,
   });
   if (error) {
     if (/schema cache|does not exist|mi_claim_naver_shopping_rank_lookup_job/iu.test(error.message || "")) return null;

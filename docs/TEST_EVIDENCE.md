@@ -9,7 +9,7 @@
 - 설치 증거: `동빈 (개발)`의 `Profile 3`에 확장 1.0.16을 로드했습니다. DPAPI secret 해시는 보존됐고 정상 `.exe` 출력명으로 다시 컴파일한 launcher는 `MI_EXE_TEST_RUNNING=True`, 설치 경로 파일 크기 9216 bytes로 확인됐습니다.
 - 운영 요청 증거: Windows 재가동 뒤 nonce `b4047c8b-ea3a-4c25-aa23-73c4b4918e2b`가 `2026-08-10 04:20:59 KST`에 소비됐고, 수동 실행 후에도 신규 nonce와 활성 tracker 59건 중 processing lease 1건이 확인됐습니다.
 - 후속 실패 증거: 해당 lease는 시작 정확히 4분 뒤 `local_worker_collection_failed`로 해제되고 snapshot은 증가하지 않았습니다. native exchange `240000ms`와 request deadline `225000ms`가 8페이지 45~75초 분산보다 짧은 계약 불일치였습니다.
-- 후속 수정 검증: 두 제한을 12분 lease보다 짧은 11분으로 통일하고 `native_host_response_timeout`을 명시 오류로 보존했습니다. 대상 40/40, 서버 계약 39/39, 앱·API 401/401, 플레이스·쇼핑 각 51/51, Production 인증 18/18, 보호 잠금과 전체 `npm run check:release`를 통과했습니다.
+- 후속 수정 검증: 11분 1차 보완은 기존 4분 경계를 통과했지만 실회차가 정확히 11분을 사용해 명시적 `native_host_response_timeout`으로 안전 종료됐습니다. 요청 간격은 줄이지 않고 native/deadline 18분·lease 20분으로 정렬했습니다.
 - 실수집 경계: 신규 `pw-chrome-*`·`checked_count=300` snapshot 생성 전에는 Windows 300위 수집 완료로 확대하지 않습니다. 네이버 제한·보안확인은 우회하지 않고 안전 실패와 마지막 정상값 보존을 확인합니다.
 
 ## 2026-08-10 N상품 Windows 작업용 데스크탑

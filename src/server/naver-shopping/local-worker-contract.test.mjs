@@ -120,7 +120,7 @@ test("builds a strict organic-only 300 request", () => {
   });
   assert.equal(
     localWorkerRankRequest(job(), NOW, 60 * 60_000).deadlineAt,
-    "2026-08-01T06:11:00.000Z",
+    "2026-08-01T06:18:00.000Z",
   );
 });
 

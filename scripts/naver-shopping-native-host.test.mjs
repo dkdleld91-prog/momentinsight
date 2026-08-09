@@ -325,8 +325,8 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
   assert.match(popup, /이 창은 닫아도 됩니다/u);
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
-  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 11 \* 60_000/u);
-  assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}11 \* 60_000/u);
+  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 18 \* 60_000/u);
+  assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}18 \* 60_000/u);
   assert.match(localWorker, /"native_host_response_timeout"/u);
   assert.match(nativeHost, /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/u);
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);

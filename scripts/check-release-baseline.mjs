@@ -1273,7 +1273,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.16"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.17"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
@@ -1293,7 +1293,7 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.16"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.17"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
     && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')

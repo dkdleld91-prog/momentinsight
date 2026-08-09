@@ -7,6 +7,7 @@ const INITIAL_REQUEST_DELAY_MS = 30_000;
 const INITIAL_REQUEST_JITTER_MS = 15_000;
 const PAGE_REQUEST_INTERVAL_MS = 45_000;
 const PAGE_REQUEST_JITTER_MS = 30_000;
+const CHROME_OPERATION_TIMEOUT_MS = 45_000;
 const NATIVE_HOST_START_TIMEOUT_MS = 30_000;
 const NATIVE_HOST_RUN_TIMEOUT_MS = 20 * 60_000;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
@@ -32,6 +33,20 @@ let running = false;
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withTimeout(promise, milliseconds, code) {
+  let timeout = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(code)), milliseconds);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function pageRequestDelay() {
@@ -132,7 +147,7 @@ async function inspectNaverTab(tabId) {
     if (!String(tab?.url || "").startsWith("https://search.shopping.naver.com/")) {
       return { status: "unknown" };
     }
-    const results = await chrome.scripting.executeScript({
+    const results = await withTimeout(chrome.scripting.executeScript({
       target: { tabId },
       func: () => {
         const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
@@ -145,7 +160,7 @@ async function inspectNaverTab(tabId) {
           url: location.href,
         };
       },
-    });
+    }), CHROME_OPERATION_TIMEOUT_MS, "naver_inspection_timeout");
     const value = results?.[0]?.result || {};
     if (value.networkRestricted) return { status: "network_restricted", route: value.route || "unknown" };
     if (value.blocked) return { status: "blocked", route: value.route || "unknown" };
@@ -297,7 +312,7 @@ function waitForTabComplete(tabId) {
 }
 
 async function readPriceComparePage(tabId, keyword, pageIndex) {
-  const results = await chrome.scripting.executeScript({
+  const results = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: (expectedKeyword) => {
       const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
@@ -316,7 +331,7 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
       };
     },
     args: [keyword],
-  });
+  }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_script_timeout");
   const value = results?.[0]?.result || {};
   if (value.networkRestricted) throw new Error("naver_network_restricted");
   if (value.blocked) throw new Error("naver_verification_required");
@@ -366,6 +381,7 @@ async function collectPriceComparePages(request, initialTabId = null) {
       error.keepTabOpen = true;
       error.tabId = tabId;
     }
+    if (tabId != null && !error.tabId) error.tabId = tabId;
     throw error;
   }
 }
@@ -461,8 +477,8 @@ async function runWorker(trigger = "manual") {
                 pages: collection.pages,
               });
             } catch (error) {
+              if (error?.tabId) collectionTabId = error.tabId;
               if (error?.keepTabOpen) {
-                collectionTabId = error.tabId || collectionTabId;
                 keepCollectionTabOpen = true;
               }
               port.postMessage({

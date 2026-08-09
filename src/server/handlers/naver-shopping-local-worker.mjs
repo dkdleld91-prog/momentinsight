@@ -24,7 +24,7 @@ import {
 } from "./naver-rank-trackers.mjs";
 
 // Keep one signed submit comfortably below the worker HTTP timeout and the
-// 12-minute tracker lease. Eight trackers also keeps the bulk continuity query
+// 20-minute tracker lease. Eight trackers also keeps the bulk continuity query
 // below Supabase's common 1,000-row response ceiling (8 x 120 snapshots).
 const CLAIM_BATCH_MAX = 8;
 const SNAPSHOT_HISTORY_PER_TRACKER = 120;

@@ -278,7 +278,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.16");
+  assert.equal(manifest.version, "1.0.17");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
@@ -310,6 +310,11 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /nextDataText/u);
   assert.doesNotMatch(serviceWorker, /NPLUS_SEARCH_PATH|\/ns\/search|data-shp-contents-rank/u);
   assert.match(serviceWorker, /currentTab\.url !== url \|\| currentTab\.status !== "complete"/u);
+  assert.match(serviceWorker, /CHROME_OPERATION_TIMEOUT_MS = 45_000/u);
+  assert.match(serviceWorker, /withTimeout\(chrome\.scripting\.executeScript/u);
+  assert.match(serviceWorker, /naver_page_script_timeout/u);
+  assert.match(serviceWorker, /if \(tabId != null && !error\.tabId\) error\.tabId = tabId/u);
+  assert.match(serviceWorker, /if \(error\?\.tabId\) collectionTabId = error\.tabId/u);
   assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
   assert.match(serviceWorker, /naver_verification_cooldown/u);
   assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);

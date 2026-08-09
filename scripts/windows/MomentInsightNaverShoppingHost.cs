@@ -80,6 +80,8 @@ namespace MomentInsight.NaverShopping
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL"] = apiUrl;
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_ALLOWED_ORIGINS"] = ProductionOrigin;
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS"] = maxJobs;
+                start.EnvironmentVariables["MI_NAVER_SHOPPING_WORKER_ID"] = "windows-desktop-primary";
+                start.EnvironmentVariables["MI_NAVER_SHOPPING_WORKER_ROLE"] = "primary";
 
                 using (Process child = Process.Start(start))
                 {

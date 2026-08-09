@@ -4,6 +4,15 @@
 
 ## 현재 상태
 
+### 2026-08-10 Windows 우선·Mac 대기 공용 수집 차선 v1.0.18
+
+- 외부 웹/Codex 요청은 Production의 공용 Supabase 큐와 원격 wake를 거치며, Windows 로그인·Chrome `동빈 (개발)`·확장 실행이 살아 있을 때 데스크탑이 1분 이내 가져갑니다. Git 코드나 unpacked 확장 파일 자체는 자동 설치되지 않습니다.
+- 기존 tracker별 `processing_until`은 같은 행 중복만 막았기 때문에, Windows와 Mac이 서로 다른 키워드를 동시에 조회할 수 있었습니다. 운영 DB에 전 기기 공용 20분 차선, Windows primary 3분 heartbeat, Mac standby handoff를 추가했습니다.
+- Windows가 살아 있으면 Mac은 wake를 소비하지 않고 대기합니다. Windows 신호가 3분 이상 끊기고 기존 차선 lease가 끝나면 Mac이 oldest-first 미처리 항목만 이어받습니다. 제한·418·429는 전 기기 공용 30분, CAPTCHA·보안확인은 60분 쿨다운으로 공유합니다.
+- 쿠키 상시 삭제는 적용하지 않습니다. IP 제한을 해제하지 못하고 신뢰 쿠키·세션을 잃어 오히려 새 기기 검증을 늘릴 수 있으므로 전용 프로필의 쿠키는 유지합니다. CAPTCHA 자동 풀이·VPN·우회도 사용하지 않습니다.
+- Supabase migration `naver_shopping_global_worker_lane`은 운영 적용됐고 RLS 강제, anon 조회·RPC 실행 불가, service_role 실행만 허용됨을 확인했습니다. 전체 릴리스 검사, 서버 계약 39/39, 앱·API 405/405가 통과했습니다.
+- Mac native runtime은 standby 설정으로 재설치됐습니다. Chrome 보안 정책상 `chrome://extensions` 원격 재로드는 차단됐으며, Windows도 현재 사용자 로그오프 상태이므로 양쪽 확장 1.0.18 재로드와 첫 heartbeat·원자 300개는 남은 실증 경계입니다.
+
 ### 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 
 - 원인은 Windows native host가 자식 Node의 native messaging stdin/stdout을 Chrome에 직접 중계하지 않아, 프로세스만 남고 HMAC 요청이 나오지 않던 launcher 배선 결함이었습니다.

@@ -46,6 +46,8 @@ export MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET="${WORKER_SECRET}"
 # one keyword per continuous cycle so the whole-site queue drains without a
 # parallel request burst.
 export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"
+export MI_NAVER_SHOPPING_WORKER_ID="macbook-standby"
+export MI_NAVER_SHOPPING_WORKER_ROLE="standby"
 unset WORKER_SECRET
 
 ENDPOINT_KIND="production"

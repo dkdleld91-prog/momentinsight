@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-10 Windows 우선·Mac 대기 공용 수집 조정
+
+- 요청: 외부 명령은 Windows 작업용 데스크탑이 처리하고, Windows와 Mac이 중복 조회하지 않으며, Windows 미처리 항목만 Mac이 이어받도록 구성한다. 제한을 줄이기 위한 전용 프로필 쿠키 상시 삭제의 타당성도 판단한다.
+- 원인: 기존 DB lease는 동일 tracker 중복 반영만 차단해 서로 다른 키워드의 두 기기 동시 조회는 가능했다. Git/Production 배포와 unpacked Chrome 확장 설치는 별도 경계다.
+- 구현: service-role 전용 Supabase 공용 lane, Windows primary heartbeat, Mac standby handoff, 전 기기 제한 cooldown, 확장 대기 상태 표시를 추가했다. Windows launcher와 Mac wrapper가 명시적 역할 ID를 전송한다.
+- 보호: 공용 lane 한 개, 회차당 키워드 한 개, oldest-first, 정확 상품·광고 제외·300개 원자 저장, 오류 시 마지막 정상값·30일 이력을 유지한다. 쿠키 자동 삭제·CAPTCHA 풀이·VPN·제한 우회는 금지한다.
+- 검증: 운영 migration과 RLS/권한 확인, 대상 58/58, 앱·API 405/405, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·65파일·16마이그레이션, 전체 `check:release`와 `git diff --check`를 통과했다.
+- 남은 경계: Mac native runtime은 갱신됐으나 Chrome 보안 정책으로 확장 재로드는 원격 수행할 수 없다. Windows도 로그오프 상태이므로 양쪽 1.0.18 재로드 후 primary heartbeat·standby 대기·신규 300개를 운영 확인한다.
+
 ## 2026-08-10 N 쇼핑 Windows 수동 갱신 무한로딩 복구
 
 - 현상: Windows `동빈(개발)` 프로필에서 `지금 안전 갱신`을 누르면 확장 팝업이 계속 대기하지만 Production 작업기 요청·tracker claim은 발생하지 않는다.
@@ -100,9 +109,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 10. 05:32:02
-- 기준 커밋: 9ed047c
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 10. 05:36:15
+- 기준 커밋: b2bbf67
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

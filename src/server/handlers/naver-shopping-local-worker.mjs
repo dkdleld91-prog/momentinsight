@@ -29,6 +29,8 @@ import {
 const CLAIM_BATCH_MAX = 8;
 const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
+const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
+const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 const WORKER_TRACKER_SELECT = [
   "id",
@@ -124,6 +126,75 @@ function workerError(code, status = 400) {
 
 function normalizedKeywordKey(value) {
   return normalizeText(value);
+}
+
+function workerLaneInput(body, options = {}) {
+  const workerId = String(body?.workerId || "").trim().toLowerCase();
+  const workerRole = String(body?.workerRole || "").trim().toLowerCase();
+  const laneToken = String(body?.laneToken || "").trim().toLowerCase();
+  if (!WORKER_ID_PATTERN.test(workerId) || !WORKER_LANE_TOKEN_PATTERN.test(laneToken)) {
+    throw workerError("LOCAL_WORKER_LANE_INVALID", 400);
+  }
+  if (options.requireRole === true && !["primary", "standby"].includes(workerRole)) {
+    throw workerError("LOCAL_WORKER_ROLE_INVALID", 400);
+  }
+  return {
+    workerId,
+    ...(options.requireRole === true ? { workerRole } : {}),
+    laneToken,
+  };
+}
+
+async function claimWorkerLane(ctx, body) {
+  const lane = workerLaneInput(body, { requireRole: true });
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_worker_lane", {
+    p_worker_id: lane.workerId,
+    p_worker_role: lane.workerRole,
+    p_lease_token: lane.laneToken,
+    p_lease_seconds: 1200,
+    p_primary_stale_seconds: 180,
+  });
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.granted !== "boolean") {
+    throw workerError("LOCAL_WORKER_COORDINATION_INVALID", 503);
+  }
+  return data;
+}
+
+async function touchWorkerLane(ctx, body) {
+  const lane = workerLaneInput(body);
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_touch_naver_shopping_worker_lane", {
+    p_worker_id: lane.workerId,
+    p_lease_token: lane.laneToken,
+    p_lease_seconds: 1200,
+  });
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  if (data !== true) throw workerError("LOCAL_WORKER_LANE_LOST", 409);
+}
+
+async function releaseWorkerLane(ctx, body) {
+  const lane = workerLaneInput(body);
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_release_naver_shopping_worker_lane", {
+    p_worker_id: lane.workerId,
+    p_lease_token: lane.laneToken,
+  });
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  return data === true;
+}
+
+async function blockWorkerLane(ctx, body) {
+  const lane = workerLaneInput(body);
+  const errorCode = String(body?.errorCode || "").trim().toLowerCase();
+  if (!SAFE_FAILURE_PATTERN.test(errorCode)) {
+    throw workerError("LOCAL_WORKER_FAILURE_CODE_INVALID", 400);
+  }
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_block_naver_shopping_worker_lane", {
+    p_worker_id: lane.workerId,
+    p_lease_token: lane.laneToken,
+    p_error_code: errorCode,
+  });
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  return data === true;
 }
 
 async function consumeNonce(ctx, auth) {
@@ -482,10 +553,21 @@ export async function handleLocalWorkerRequest(request, ctx) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw workerError("LOCAL_WORKER_JSON_INVALID", 400);
     }
+    if (body.action === "claim-lane") {
+      return json(request, { ok: true, ...(await claimWorkerLane(ctx, body)) });
+    }
+    if (body.action === "release-lane") {
+      return json(request, { ok: true, released: await releaseWorkerLane(ctx, body) });
+    }
+    if (body.action === "block-lane") {
+      return json(request, { ok: true, blocked: await blockWorkerLane(ctx, body) });
+    }
     if (body.action === "claim-wake") {
+      await touchWorkerLane(ctx, body);
       return json(request, { ok: true, wake: await claimShoppingWorkerWake(ctx) });
     }
     if (body.action === "claim") {
+      await touchWorkerLane(ctx, body);
       const preferLookup = body.preferLookup !== false;
       const job = preferLookup
         ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
@@ -493,6 +575,7 @@ export async function handleLocalWorkerRequest(request, ctx) {
       return json(request, { ok: true, job });
     }
     if (body.action === "queue-all-active-trackers") {
+      await touchWorkerLane(ctx, body);
       return json(request, { ok: true, ...(await queueAllActiveTrackers(ctx)) });
     }
     if (body.action === "submit") {

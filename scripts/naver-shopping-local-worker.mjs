@@ -58,6 +58,22 @@ const RUN_HALT_FAILURE_CODES = new Set([
   "naver_navigation_invalid",
   "naver_network_restricted",
 ]);
+const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
+
+function workerCoordinationIdentity(env) {
+  const fallbackDigest = crypto
+    .createHash("sha256")
+    .update(`${os.platform()}\n${os.hostname()}`, "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  const workerId = String(
+    env.MI_NAVER_SHOPPING_WORKER_ID || `local-${os.platform()}-${fallbackDigest}`,
+  ).trim().toLowerCase();
+  const workerRole = String(env.MI_NAVER_SHOPPING_WORKER_ROLE || "standby").trim().toLowerCase();
+  if (!WORKER_ID_PATTERN.test(workerId)) throw new Error("local_worker_id_invalid");
+  if (!["primary", "standby"].includes(workerRole)) throw new Error("local_worker_role_invalid");
+  return { workerId, workerRole };
+}
 
 function enabled(env) {
   return String(env.MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED || "").trim().toLowerCase() === "true";
@@ -258,6 +274,9 @@ export async function runLocalShoppingWorker(options = {}) {
     validateNaverShoppingProfileDir(userDataDir);
   }
   const endpoint = workerEndpoint(env);
+  const workerIdentity = workerCoordinationIdentity(env);
+  const laneToken = String(options.laneToken || crypto.randomUUID()).trim().toLowerCase();
+  const lanePayload = { workerId: workerIdentity.workerId, laneToken };
   const maxJobs = options.requireWakeSignal === true
     ? 1
     : boundedInteger(env.MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS, 100, 1, 500);
@@ -315,10 +334,23 @@ export async function runLocalShoppingWorker(options = {}) {
     failed: 0,
     releaseFailed: 0,
   };
+  let laneClaimed = false;
 
   try {
+    const lane = await action({
+      action: "claim-lane",
+      ...lanePayload,
+      workerRole: workerIdentity.workerRole,
+    });
+    if (lane.granted !== true) {
+      summary.status = workerIdentity.workerRole === "standby" ? "standby" : "idle";
+      summary.collectorLaneReason = String(lane.reason || "unavailable");
+      if (options.requireWakeSignal === true) summary.remoteWake = false;
+      return summary;
+    }
+    laneClaimed = true;
     if (options.requireWakeSignal === true) {
-      const wake = await action({ action: "claim-wake" });
+      const wake = await action({ action: "claim-wake", ...lanePayload });
       if (wake.wake !== true) {
         summary.status = "idle";
         summary.remoteWake = false;
@@ -327,7 +359,7 @@ export async function runLocalShoppingWorker(options = {}) {
       summary.remoteWake = true;
     }
     if (options.queueAllTrackers === true) {
-      const queued = await action({ action: "queue-all-active-trackers" });
+      const queued = await action({ action: "queue-all-active-trackers", ...lanePayload });
       summary.queuedTotal = boundedResponseCount(queued.total, 100_000);
       summary.queued = boundedResponseCount(queued.queued, 100_000);
       summary.alreadyQueued = boundedResponseCount(queued.alreadyQueued, 100_000);
@@ -339,7 +371,11 @@ export async function runLocalShoppingWorker(options = {}) {
       // always tracker-first so a deliberately small run budget cannot starve
       // scheduled history refreshes behind interactive requests.
       const trackerReserved = index === maxJobs - 1 || index % 3 === 2;
-      const claim = await action({ action: "claim", preferLookup: !trackerReserved });
+      const claim = await action({
+        action: "claim",
+        preferLookup: !trackerReserved,
+        ...lanePayload,
+      });
       if (!claim.job) break;
       const job = validateLocalWorkerJob(claim.job, {
         requireActiveLease: true,
@@ -413,6 +449,16 @@ export async function runLocalShoppingWorker(options = {}) {
           log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
         }
         if (RUN_HALT_FAILURE_CODES.has(failureCode)) {
+          try {
+            const blocked = await action({
+              action: "block-lane",
+              ...lanePayload,
+              errorCode: failureCode,
+            });
+            if (blocked.blocked === true) laneClaimed = false;
+          } catch (coordinationError) {
+            log(`local_worker_global_cooldown_failed:${safeFailureCode(coordinationError)}`);
+          }
           summary.haltedCode = failureCode;
           log(`local_worker_run_halted:${failureCode}`);
           break;
@@ -421,6 +467,13 @@ export async function runLocalShoppingWorker(options = {}) {
     }
     return summary;
   } finally {
+    if (laneClaimed) {
+      try {
+        await action({ action: "release-lane", ...lanePayload });
+      } catch (error) {
+        log(`local_worker_lane_release_failed:${safeFailureCode(error)}`);
+      }
+    }
     await provider.close?.().catch(() => {});
     await releaseLock();
   }

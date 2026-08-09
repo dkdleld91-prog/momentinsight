@@ -27,6 +27,7 @@ function failureText(code) {
 
 function statusText(status) {
   if (status?.status === "running") return "현재 오가닉 순위를 안전하게 확인하고 있습니다.";
+  if (status?.status === "standby") return status.detail || "윈도우 작업기를 지원할 준비가 되었습니다.";
   if (status?.status === "completed") return `${status.detail || "갱신 완료"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
   if (status?.status === "partial") return `${status.detail || "일부 항목 재시도 예정"} · ${new Date(status.updatedAt).toLocaleString("ko-KR")}`;
   if (status?.status === "verification" && status?.retryAt) {

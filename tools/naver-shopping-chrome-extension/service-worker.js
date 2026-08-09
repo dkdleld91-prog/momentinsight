@@ -506,7 +506,11 @@ async function runWorker(trigger = "manual") {
       port.postMessage({ action: "run", trigger: workerTrigger });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
-    if (result.status === "idle" && result.remoteWake === false) {
+    if (result.status === "standby"
+      || (result.status === "idle" && result.remoteWake === false)) {
+      if (result.status === "standby") {
+        await saveStatus("standby", "윈도우 작업기가 정상 작동 중이라 대기합니다.");
+      }
       return { ok: true, idle: true, summary: result };
     }
     const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));

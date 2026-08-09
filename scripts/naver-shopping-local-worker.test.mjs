@@ -64,10 +64,12 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED: "true",
     MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET: SECRET,
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
+    MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
+    MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
   };
 }
 
-function authenticatedFetch(responses, calls) {
+function authenticatedFetch(responses, calls, coordination = {}) {
   return async (url, options) => {
     const body = String(options.body || "");
     const request = new Request(String(url), {
@@ -80,10 +82,21 @@ function authenticatedFetch(responses, calls) {
       env: workerEnv(),
     });
     assert.equal(auth.ok, true);
-    calls.push(JSON.parse(body));
-    const payload = responses.shift();
-    assert.ok(payload, "unexpected worker API call");
-    return Response.json(payload.body, { status: payload.status || 200 });
+    const payload = JSON.parse(body);
+    if (["claim-lane", "release-lane", "block-lane"].includes(payload.action)) {
+      calls.coordination ||= [];
+      calls.coordination.push(payload);
+      const coordinationBody = payload.action === "claim-lane"
+        ? (coordination.claimLane || { ok: true, granted: true, reason: "granted" })
+        : payload.action === "release-lane"
+          ? { ok: true, released: true }
+          : { ok: true, blocked: true };
+      return Response.json(coordinationBody);
+    }
+    calls.push(payload);
+    const responseFixture = responses.shift();
+    assert.ok(responseFixture, "unexpected worker API call");
+    return Response.json(responseFixture.body, { status: responseFixture.status || 200 });
   };
 }
 
@@ -354,6 +367,35 @@ test("remote polling exits without opening Naver when no wake is pending", async
   assert.equal(collectCount, 0);
   assert.equal(closed, true);
   assert.deepEqual(calls.map((call) => call.action), ["claim-wake"]);
+});
+
+test("standby leaves the remote wake untouched while the Windows primary is online", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_WORKER_ID: "test-standby-worker",
+      MI_NAVER_SHOPPING_WORKER_ROLE: "standby",
+    },
+    fetchImpl: authenticatedFetch([], calls, {
+      claimLane: { ok: true, granted: false, reason: "primary_online" },
+    }),
+    provider: {
+      async collect() { collectCount += 1; },
+      async close() {},
+    },
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.status, "standby");
+  assert.equal(summary.collectorLaneReason, "primary_online");
+  assert.equal(summary.remoteWake, false);
+  assert.equal(collectCount, 0);
+  assert.equal(calls.length, 0);
+  assert.deepEqual(calls.coordination.map((call) => call.action), ["claim-lane"]);
 });
 
 test("one remote wake runs at most one queued job even with a larger configured budget", async () => {

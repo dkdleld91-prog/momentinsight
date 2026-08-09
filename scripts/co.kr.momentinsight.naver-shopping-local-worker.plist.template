@@ -42,6 +42,10 @@
   <dict>
     <key>MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS</key>
     <string>25</string>
+    <key>MI_NAVER_SHOPPING_WORKER_ID</key>
+    <string>macbook-standby</string>
+    <key>MI_NAVER_SHOPPING_WORKER_ROLE</key>
+    <string>standby</string>
     <key>NAVER_SHOPPING_PROVIDER_SEARCH_HOST</key>
     <string>msearch.shopping.naver.com</string>
     <key>NAVER_SHOPPING_PROVIDER_HEADLESS</key>

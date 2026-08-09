@@ -9,9 +9,15 @@ const SECRET = "test-local-worker-secret-that-is-longer-than-32-bytes";
 const ENDPOINT = "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker";
 const TRACKER_ID = "123e4567-e89b-42d3-a456-426614174000";
 const SECOND_TRACKER_ID = "123e4567-e89b-42d3-a456-426614174001";
+const WORKER_ID = "test-primary-worker";
+const LANE_TOKEN = "223e4567-e89b-42d3-a456-426614174000";
+const LANE_ACTIONS = new Set(["claim-wake", "claim", "queue-all-active-trackers"]);
 
 function signedRequest(payload) {
-  const body = JSON.stringify(payload);
+  const coordinatedPayload = LANE_ACTIONS.has(payload?.action)
+    ? { ...payload, workerId: WORKER_ID, laneToken: LANE_TOKEN }
+    : payload;
+  const body = JSON.stringify(coordinatedPayload);
   const timestamp = String(Math.trunc(Date.now() / 1000));
   const nonce = `worker-test-${crypto.randomUUID()}`;
   return new Request(ENDPOINT, {
@@ -136,6 +142,7 @@ function claimContext(rows, claimableIds, attemptedIds) {
     supabaseAdmin: {
       async rpc(name) {
         if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+        if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
         assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
         return { data: [], error: null };
       },
@@ -229,6 +236,7 @@ test("atomically claims one pending remote wake through the signed worker endpoi
         async rpc(name) {
           calls.push(name);
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_worker_wake");
           return { data: true, error: null };
         },
@@ -239,8 +247,61 @@ test("atomically claims one pending remote wake through the signed worker endpoi
     assert.deepEqual(await response.json(), { ok: true, wake: true });
     assert.deepEqual(calls, [
       "mi_consume_naver_shopping_worker_nonce",
+      "mi_touch_naver_shopping_worker_lane",
       "mi_claim_naver_shopping_worker_wake",
     ]);
+  });
+});
+
+test("primary worker claims the global lane through the service-role-only RPC", async () => {
+  await withWorkerEnv(async () => {
+    let claimArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_worker_lane");
+          claimArgs = args;
+          return {
+            data: { granted: true, reason: "granted", leaseUntil: new Date(Date.now() + 20 * 60_000).toISOString() },
+            error: null,
+          };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim-lane",
+      workerId: WORKER_ID,
+      workerRole: "primary",
+      laneToken: LANE_TOKEN,
+    }), ctx);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).granted, true);
+    assert.deepEqual(claimArgs, {
+      p_worker_id: WORKER_ID,
+      p_worker_role: "primary",
+      p_lease_token: LANE_TOKEN,
+      p_lease_seconds: 1200,
+      p_primary_stale_seconds: 180,
+    });
+  });
+});
+
+test("never claims a tracker after the global lane was lost", async () => {
+  await withWorkerEnv(async () => {
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_touch_naver_shopping_worker_lane");
+          return { data: false, error: null };
+        },
+        from() { throw new Error("tracker_claim_must_not_run"); },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), ctx);
+    assert.equal(response.status, 409);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_LANE_LOST");
   });
 });
 
@@ -301,6 +362,7 @@ test("claim prioritizes a newly registered keyword before the existing due seque
       supabaseAdmin: {
         async rpc(name) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
           return { data: [], error: null };
         },
@@ -363,6 +425,7 @@ test("claim returns to oldest due trackers when no uninitialized keyword remains
       supabaseAdmin: {
         async rpc(name) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
           return { data: [], error: null };
         },
@@ -430,7 +493,8 @@ test("signed manual queue registers every active tracker without exposing accoun
     const ctx = {
       supabaseAdmin: {
         async rpc(name) {
-          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_touch_naver_shopping_worker_lane");
           return { data: true, error: null };
         },
         from(table) {
@@ -534,6 +598,7 @@ test("claims an interactive lookup before periodic trackers and atomically store
       supabaseAdmin: {
         async rpc(name) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
           return {
             data: [{ id: TRACKER_ID, keyword: "온열찜질기", lease_started_at: leaseStartedAt, lease_until: leaseUntil }],
@@ -607,6 +672,7 @@ test("claim releases leases acquired before a later conditional update fails", a
       supabaseAdmin: {
         async rpc(name, args) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           if (name === "mi_claim_naver_shopping_rank_lookup_job") return { data: [], error: null };
           assert.equal(name, "mi_fail_naver_shopping_worker_claim");
           released.push(args.p_tracker_id);
@@ -876,5 +942,27 @@ test("remote wake migration is atomic and service-role only", () => {
   assert.match(sql, /get diagnostics claimed_count = row_count/iu);
   assert.match(sql, /grant execute on function public\.mi_request_naver_shopping_worker_wake\(text\)[\s\S]+to service_role/iu);
   assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_worker_wake\(\)[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("global worker lane makes Windows primary, Mac standby and access cooldown atomic", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /create table if not exists public\.naver_shopping_worker_coordination/iu);
+  assert.match(sql, /enable row level security/iu);
+  assert.match(sql, /force row level security/iu);
+  assert.match(sql, /revoke all on table public\.naver_shopping_worker_coordination[\s\S]+service_role/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /normalized_worker_role = 'standby'[\s\S]+primary_seen_at/iu);
+  assert.match(sql, /lease_worker_id is distinct from normalized_worker_id/iu);
+  assert.match(sql, /mi_touch_naver_shopping_worker_lane/iu);
+  assert.match(sql, /mi_release_naver_shopping_worker_lane/iu);
+  assert.match(sql, /mi_block_naver_shopping_worker_lane/iu);
+  assert.match(sql, /naver_network_restricted'\) then 1800/iu);
+  assert.match(sql, /'naver_verification_required'[\s\S]+then 3600/iu);
+  assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_worker_lane[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

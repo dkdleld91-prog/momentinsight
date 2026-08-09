@@ -326,7 +326,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "80d14ef67c018a9ede7a919780c0d61be16b4623f11862b594f851070812fc73"
+      "sha256": "6bcceab2b014769fc08ae4f4bd4a17b85ea47a4e96a628e12ff9476ed4e658fd"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -341,12 +341,12 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "aef4c007b31cc07148f93b034cbdd62532826c1ba59f8ee41d4f7a149f2e76cc"
+      "sha256": "82d7f2510e1e736fbbef25a319f7f4b136c6559705a92e63a21f0f7bf9725ed1"
     },
     {
       "id": "shopping-local-worker-wrapper",
       "file": "scripts/run-naver-shopping-local-worker.sh",
-      "sha256": "4290f27e56726a20fdad54838aed4c51b8f3ac83f7c08025b5190808f33bc8ed"
+      "sha256": "b736c6c03e93fe34115799ac8ae50dfefeebd9a5041707a4bd55c973495d3710"
     },
     {
       "id": "shopping-local-worker-profile-bootstrap",
@@ -356,7 +356,7 @@
     {
       "id": "shopping-local-worker-launch-agent",
       "file": "scripts/co.kr.momentinsight.naver-shopping-local-worker.plist.template",
-      "sha256": "d7339ba04d738d5c3dbb0b22cc89e78e1ef985a3d03dd17fd9d26ab1284be2e4"
+      "sha256": "3201a6143f613214b21cd86ab68e0f0e2d3b5b2f99de16425dbe0a9d5ca0d680"
     },
     {
       "id": "shopping-local-worker-installer",
@@ -386,7 +386,7 @@
     {
       "id": "rank-feature-lock-checker",
       "file": "scripts/check-protected-rank-features.mjs",
-      "sha256": "f63672dde622fd1f06aa8f0347a7116e08677f857a24e9f451d835fdef13c16a"
+      "sha256": "7beb3c69a05d9478148a57c15f9d20a047ec0284bda0b8c54e04cc5850b95c58"
     },
     {
       "id": "shopping-local-worker-schema",
@@ -413,6 +413,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-global-worker-lane-schema",
+      "file": "supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
+      "sha256": "e483dbb3c0904f5d8ee83105dcd89ee2630ddfee0e5e4764cd9a88cfe89d0383",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
       "sha256": "8df79364cdb589d3527f46379d5bba8e798d38076f89ea0594836768add30870"
@@ -425,7 +431,7 @@
     {
       "id": "shopping-chrome-native-host-wrapper",
       "file": "scripts/run-naver-shopping-native-host.sh",
-      "sha256": "48ed12c12e7289c597d7cb6f5ef962bbab68a342d3e6b638fec7d79b76d50c7b"
+      "sha256": "23b6d0b60d7a5d7f2da68ed90994e5a02fa70a4d9aaed436ef9c6fd6e2c83f58"
     },
     {
       "id": "shopping-chrome-native-host-installer",
@@ -450,7 +456,7 @@
     {
       "id": "shopping-windows-native-host-launcher",
       "file": "scripts/windows/MomentInsightNaverShoppingHost.cs",
-      "sha256": "cbf277bab2edc7968ca4b03d3c6e63ca294b492d78df03bf6754b69a3467e51e"
+      "sha256": "fc6dbd78e347d731d6ef07326c15c4d908073bb69a9d398b5c22077e10f9c912"
     },
     {
       "id": "shopping-windows-chrome-scheduler",
@@ -460,12 +466,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "e45521004b8bb6642bca7764158c6505b9511f5f1bb04138d25caf062ff1dd07"
+      "sha256": "c036a329ae17b3712ff258e390b8014d385074b29466379c75eaff0e20f5ebda"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "7f051bc52a399816897986ba95497c3a793c429e75549c775742c33f52e2ac72"
+      "sha256": "d33c14b3033a1cd32825e939692634a450214b2406e535a9b0ceaf93ac7a86bc"
     },
     {
       "id": "shopping-local-worker-session-boundary",

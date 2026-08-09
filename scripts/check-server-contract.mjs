@@ -41,6 +41,7 @@ const files = {
   shoppingLocalWorkerMigration: "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
   shoppingWorkerWake: "src/server/naver-shopping/worker-wake.mjs",
   shoppingWorkerWakeMigration: "supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
+  shoppingWorkerLaneMigration: "supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
@@ -97,6 +98,7 @@ const shoppingLocalWorkerContract = fs.readFileSync(files.shoppingLocalWorkerCon
 const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMigration, "utf8");
 const shoppingWorkerWake = fs.readFileSync(files.shoppingWorkerWake, "utf8");
 const shoppingWorkerWakeMigration = fs.readFileSync(files.shoppingWorkerWakeMigration, "utf8");
+const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
@@ -597,9 +599,10 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.17"
+  shoppingChromeManifest.version === "1.0.18"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
+    && /result\.status === "standby"/.test(shoppingChromeWorker)
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[\s*30 \* 60_000,\s*60 \* 60_000,\s*120 \* 60_000,\s*\]/.test(shoppingChromeWorker)
     && /CHROME_OPERATION_TIMEOUT_MS = 45_000/.test(shoppingChromeWorker)
@@ -610,7 +613,10 @@ check(
     && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)
     && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
-    && /action\(\{ action: "claim-wake" \}\)/.test(shoppingLocalWorker)
+    && /action\(\{ action: "claim-wake", \.\.\.lanePayload \}\)/.test(shoppingLocalWorker)
+    && /action: "claim-lane"/.test(shoppingLocalWorker)
+    && /action: "release-lane"/.test(shoppingLocalWorker)
+    && /action: "block-lane"/.test(shoppingLocalWorker)
     && /body\.action === "claim-wake"/.test(shoppingLocalWorkerHandler)
     && /mi_request_naver_shopping_worker_wake/.test(shoppingWorkerWake)
     && /mi_claim_naver_shopping_worker_wake/.test(shoppingWorkerWake)
@@ -618,12 +624,17 @@ check(
     && /security invoker/.test(shoppingWorkerWakeMigration)
     && !/security definer/.test(shoppingWorkerWakeMigration)
     && /consumed_at is null or consumed_at < requested_at/.test(shoppingWorkerWakeMigration)
+    && /primary_seen_at/.test(shoppingWorkerLaneMigration)
+    && /mi_claim_naver_shopping_worker_lane/.test(shoppingWorkerLaneMigration)
+    && /mi_block_naver_shopping_worker_lane/.test(shoppingWorkerLaneMigration)
+    && /security invoker/.test(shoppingWorkerLaneMigration)
+    && !/security definer/.test(shoppingWorkerLaneMigration)
     && /requestShoppingWorkerWake\(ctx, "tracker-refresh-all"\)/.test(productTrackers)
     && /requestShoppingWorkerWake\(ctx, "rank-lookup"\)/.test(shoppingRankLookupJobs)
     && [adminPage, clientPage].every((source) =>
       /queuedPayload\.remoteWakeRequested === true/.test(source)
         && /개발 프로필에 원격 실행을 요청했습니다\./.test(source)),
-  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
+  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

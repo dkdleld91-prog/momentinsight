@@ -264,6 +264,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   const source = fs.readFileSync(wrapperPath, "utf8");
   assert.match(source, /naver-shopping-native-host\.conf/u);
   assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"/u);
+  assert.match(source, /MI_NAVER_SHOPPING_WORKER_ROLE="standby"/u);
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
@@ -278,10 +279,14 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.17");
+  assert.equal(manifest.version, "1.0.18");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
+  assert.match(serviceWorker, /result\.status === "standby"/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
+  assert.match(localWorker, /action: "claim-lane"/u);
+  assert.match(localWorker, /action: "release-lane"/u);
+  assert.match(localWorker, /action: "block-lane"/u);
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);

@@ -1226,18 +1226,20 @@ const checks = {
     && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
-  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
+  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 30, periodInMinutes: 30 }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 12_000")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 6_000")
+    && shoppingChromeWorker.includes("INITIAL_REQUEST_DELAY_MS = 30_000")
+    && shoppingChromeWorker.includes("INITIAL_REQUEST_JITTER_MS = 15_000")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 45_000")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 30_000")
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.10"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.11"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

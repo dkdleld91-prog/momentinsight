@@ -3,8 +3,10 @@ const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
 const PRICE_COMPARE_SEARCH_PATH = "/search/all";
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
-const PAGE_REQUEST_INTERVAL_MS = 12_000;
-const PAGE_REQUEST_JITTER_MS = 6_000;
+const INITIAL_REQUEST_DELAY_MS = 30_000;
+const INITIAL_REQUEST_JITTER_MS = 15_000;
+const PAGE_REQUEST_INTERVAL_MS = 45_000;
+const PAGE_REQUEST_JITTER_MS = 30_000;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -26,6 +28,10 @@ function wait(milliseconds) {
 
 function pageRequestDelay() {
   return PAGE_REQUEST_INTERVAL_MS + Math.floor(Math.random() * (PAGE_REQUEST_JITTER_MS + 1));
+}
+
+function initialRequestDelay() {
+  return INITIAL_REQUEST_DELAY_MS + Math.floor(Math.random() * (INITIAL_REQUEST_JITTER_MS + 1));
 }
 
 async function verificationState() {
@@ -187,7 +193,7 @@ async function configureAlarms() {
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
     ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
-    ["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }],
+    ["rank-catch-up", { delayInMinutes: 30, periodInMinutes: 30 }],
   ];
   await Promise.all(alarmDefinitions.map(async ([name, definition]) => {
     const existing = await chrome.alarms.get(name);
@@ -275,6 +281,7 @@ async function collectPriceComparePages(request, initialTabId = null) {
   const pages = [];
   let tabId = initialTabId;
   try {
+    await wait(initialRequestDelay());
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       const url = searchUrl(request.keyword, pageIndex);
       if (tabId == null) {

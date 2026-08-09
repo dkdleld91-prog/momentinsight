@@ -536,7 +536,7 @@ check(
       /resolveChromeProfileDirectory/,
       /activateChromeScheduler/,
     ])
-    && /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/.test(shoppingChromeWorker)
+    && /\["rank-catch-up", \{ delayInMinutes: 30, periodInMinutes: 30 \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
       /--profile-directory=/,

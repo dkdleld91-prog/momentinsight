@@ -277,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.10");
+  assert.equal(manifest.version, "1.0.11");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
@@ -332,11 +332,14 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
-  assert.match(serviceWorker, /periodInMinutes: 10/u);
+  assert.match(serviceWorker, /periodInMinutes: 30/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 12_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 6_000/u);
+  assert.match(serviceWorker, /INITIAL_REQUEST_DELAY_MS = 30_000/u);
+  assert.match(serviceWorker, /INITIAL_REQUEST_JITTER_MS = 15_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 45_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 30_000/u);
+  assert.match(serviceWorker, /await wait\(initialRequestDelay\(\)\)/u);
   assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
   assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

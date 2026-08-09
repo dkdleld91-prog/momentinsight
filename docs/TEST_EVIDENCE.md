@@ -720,3 +720,11 @@
 - 전체 자동 검증: API·서버 179/179, 플레이스 수집기 51/51, 서버 계약 23/23, Production 인증 18/18, 역할 parity, 기준선 `rankFeatureLockIsBuildOnlyAndUsageStaysOpen`, 공개 빌드·CSP와 전체 `npm run check:release`가 통과했다.
 - 변경 비범위: 실제 키워드 조회·상품 순위 계산·상품/플레이스 수집·스냅샷 저장 코드와 `src/pages/admin.html`, `src/pages/client.html`, Supabase 데이터는 수정하지 않았다.
 - 운영 배포: 사용자 승인 후 코드 `6c5d10d`를 원격 `main`과 Production `https://momentinsight-htm9llc9v-momentlabs.vercel.app`·운영 별칭 `https://insight.momentlabs.co.kr`에 반영했다. 운영 `/health`와 `/ready`가 릴리스 `6c5d10d1deef`, live, Supabase ready를 반환했다.
+
+## 2026-08-09 N 쇼핑 가격비교 v1.0.11 안정화 검증
+
+- 실화면: Chrome `동빈` 프로필에서 가격비교 `/search/all`, `pagingSize=40`, `productSet=total`, `sort=rel` 정상 결과를 확인했다.
+- 실패 안전: 2026-08-09 18:32 KST 수동 실행은 2페이지에서 `naver_network_restricted`로 중단됐고 native host는 `max_jobs=1`, `exit status=0`으로 종료했다. 완전 300개가 아니므로 DB 제출·현재값 교체를 하지 않는다.
+- 요청 안정화: 첫 요청 30~45초, 페이지 간 45~75초, catch-up 30분, 순차 1개 키워드를 정적 계약과 테스트로 고정했다.
+- 자동 검증: 네이티브 호스트 12/12, API·서버 393/393, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 self-test와 전체 `npm run check:release`, `git diff --check` 통과.
+- 미완료 증거: 새 가격비교 수집의 `pw-chrome-*`·`checked_count=300`이 없어 Vercel Production 배포는 실행하지 않는다.

@@ -445,7 +445,7 @@
     {
       "id": "shopping-windows-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
-      "sha256": "f063f81b1c06cb910cb5f4f457620dbe2e5c07bfe93e7c3edc119269935e3d3b"
+      "sha256": "852a1a61f2c6aba789096f8586fb17c3fcfaf342e1469f2d712e6d1af02950bb"
     },
     {
       "id": "shopping-windows-native-host-launcher",

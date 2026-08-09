@@ -1,11 +1,14 @@
 [CmdletBinding()]
 param(
-    [string]$RepositoryPath = (Split-Path $PSScriptRoot -Parent),
+    [string]$RepositoryPath = "",
     [string]$ProfileName = "",
     [Security.SecureString]$WorkerSecret
 )
 
 $ErrorActionPreference = "Stop"
+if ([string]::IsNullOrWhiteSpace($RepositoryPath)) {
+    $RepositoryPath = Split-Path -Path $PSScriptRoot -Parent
+}
 $hostName = "co.kr.momentinsight.naver_shopping"
 $extensionId = "pflggephankeefaeoaafkmggampnaefm"
 $productionApiUrl = "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker"

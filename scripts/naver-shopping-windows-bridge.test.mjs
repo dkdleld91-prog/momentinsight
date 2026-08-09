@@ -12,6 +12,8 @@ const scheduler = fs.readFileSync(schedulerPath, "utf8");
 const entrypoint = fs.readFileSync(entrypointPath, "utf8");
 
 test("Windows installer targets one exact Chrome profile and stable extension source", () => {
+  assert.doesNotMatch(installer, /\$RepositoryPath = \(Split-Path \$PSScriptRoot/u);
+  assert.match(installer, /\$RepositoryPath = Split-Path -Path \$PSScriptRoot -Parent/u);
   assert.match(installer, /\$ProfileName = ""/u);
   assert.match(installer, /Read-Host "Chrome profile visible name"/u);
   assert.match(installer, /Google\\Chrome\\User Data\\Local State/u);

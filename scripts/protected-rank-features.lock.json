@@ -438,6 +438,26 @@
       "sha256": "a4d10fc62629822695bd45722b4a8c380e6447bb0f08919f07540723f5cbd262"
     },
     {
+      "id": "shopping-windows-installer-entrypoint",
+      "file": "INSTALL-NAVER-SHOPPING-WINDOWS.cmd",
+      "sha256": "6250c65a83f5706de2358992c313b4293f7ebce3f3b83ce53a572030115b0620"
+    },
+    {
+      "id": "shopping-windows-native-host-installer",
+      "file": "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
+      "sha256": "f063f81b1c06cb910cb5f4f457620dbe2e5c07bfe93e7c3edc119269935e3d3b"
+    },
+    {
+      "id": "shopping-windows-native-host-launcher",
+      "file": "scripts/windows/MomentInsightNaverShoppingHost.cs",
+      "sha256": "252025d6770caaa6c6f9721be54feb087a4497c51d0f0c89f3db041a43eb3602"
+    },
+    {
+      "id": "shopping-windows-chrome-scheduler",
+      "file": "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
+      "sha256": "83fc17bec53e0c846e547456b8b426e831f3d4dd9cfca452d52ef4987ce1bca5"
+    },
+    {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
       "sha256": "c9e49c4b20c1eb315638b29959c6a976f5baad1b3205a3ec2db0e1614eec56ec"

@@ -10,4 +10,6 @@
 - 네트워크 제한·418·429는 30분·60분·120분 뒤 1건만 재개하고 이후에도 120분을 상한으로 유지합니다. CAPTCHA·보안확인은 자동 우회하지 않습니다.
 - macOS 또는 Chrome이 꺼져 있으면 신규 51~300위 수집은 멈추고, 다음 실행 때 due tracker를 따라잡습니다.
 
-설치 전 `node scripts/install-naver-shopping-chrome-bridge.mjs`를 실행한 뒤 Chrome의 `확장 프로그램 관리`에서 개발자 모드로 이 디렉터리를 한 번 로드합니다.
+macOS는 `node scripts/install-naver-shopping-chrome-bridge.mjs`를 실행한 뒤 Chrome의 `확장 프로그램 관리`에서 개발자 모드로 이 디렉터리를 한 번 로드합니다.
+
+Windows는 Chrome 표시 이름이 `프로그램 개발`인 전용 프로필을 먼저 만든 뒤 저장소 루트의 `INSTALL-NAVER-SHOPPING-WINDOWS.cmd`를 해당 Windows 사용자로 관리자 실행합니다. 설치가 연 `chrome://extensions`에서 결과의 `extensionPath`를 `압축해제된 확장 프로그램`으로 한 번 로드합니다. Windows 비밀키는 현재 사용자 범위 DPAPI로 암호화하고 native host는 Chrome 공식 HKCU 등록 경로만 사용합니다.

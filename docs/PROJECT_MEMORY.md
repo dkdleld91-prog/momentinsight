@@ -50,6 +50,7 @@
 - 코드·계약 검사와 브라우저 육안 확인은 DB 반영 증거가 아니다. 최근 `collection_id=pw-chrome-*`, `checked_count=300` snapshot이 확인될 때까지 300위 실수집 정상화와 Production 배포는 대기 상태로 기록한다.
 - 과거 30일 기록은 당시 원부 순번 원본이 없으면 소급 변경하지 않고 새 갱신부터 대표 기준을 적용한다.
 - 네이버 Developers 쇼핑 검색 API는 API Hub 이관 제외 상태로 2026-07-31 종료됐다. 종료 API와 새 Hub 키는 순위 fallback으로 사용하지 않으며 수집 계약이 검증되지 않으면 마지막 정상 기록만 보존한다.
+- Windows 작업용 데스크탑은 표시 이름 `프로그램 개발`인 Chrome 프로필을 사용한다. 확장은 사용자가 한 번 압축해제 로드하고, native host는 HKCU 등록·현재 사용자 DPAPI 비밀키·로그인 사용자 전용 10분 작업 스케줄러로 연결한다. Windows 신규 `pw-chrome-*`·`checked_count=300` 실증 전에는 Mac을 대기 안전망으로 유지한다.
 
 ## 보호 기능
 

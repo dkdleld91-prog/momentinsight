@@ -45,6 +45,9 @@ const files = {
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
   shoppingNativeHostInstaller: "scripts/install-naver-shopping-chrome-bridge.mjs",
+  shoppingWindowsHostInstaller: "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
+  shoppingWindowsHostLauncher: "scripts/windows/MomentInsightNaverShoppingHost.cs",
+  shoppingWindowsChromeScheduler: "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
   shoppingChromeSchedulerWrapper: "scripts/run-naver-shopping-chrome-scheduler.sh",
   shoppingNativeHostWrapper: "scripts/run-naver-shopping-native-host.sh",
   shoppingChromeManifest: "tools/naver-shopping-chrome-extension/manifest.json",
@@ -98,6 +101,9 @@ const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "ut
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
 const shoppingNativeHostInstaller = fs.readFileSync(files.shoppingNativeHostInstaller, "utf8");
+const shoppingWindowsHostInstaller = fs.readFileSync(files.shoppingWindowsHostInstaller, "utf8");
+const shoppingWindowsHostLauncher = fs.readFileSync(files.shoppingWindowsHostLauncher, "utf8");
+const shoppingWindowsChromeScheduler = fs.readFileSync(files.shoppingWindowsChromeScheduler, "utf8");
 const shoppingChromeSchedulerWrapper = fs.readFileSync(files.shoppingChromeSchedulerWrapper, "utf8");
 const shoppingNativeHostWrapper = fs.readFileSync(files.shoppingNativeHostWrapper, "utf8");
 const shoppingChromeManifest = JSON.parse(fs.readFileSync(files.shoppingChromeManifest, "utf8"));
@@ -550,6 +556,41 @@ check(
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}, ${files.shoppingChromeSchedulerWrapper}`,
+);
+check(
+  "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",
+  hasAll(shoppingWindowsHostInstaller, [
+    /Read-Host "Chrome profile visible name"/,
+    /Google\\Chrome\\User Data\\Local State/,
+    /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts/,
+    /allowed_origins/,
+    /DataProtectionScope\]::CurrentUser/,
+    /Read-Host[\s\S]{0,120}-AsSecureString/,
+    /SetAccessRuleProtection\(\$true, \$false\)/,
+    /New-ScheduledTaskTrigger -AtLogOn/,
+    /Schedule\.Service/,
+    /CreateFolder\("MomentInsight"\)/,
+    /New-TimeSpan -Minutes 10/,
+    /-LogonType Interactive -RunLevel Limited/,
+    /tools\/naver-shopping-chrome-extension\/service-worker\.js/,
+    /chrome:\/\/extensions/,
+  ])
+    && !/-AsPlainText|cmdkey|remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsHostInstaller)
+    && hasAll(shoppingWindowsHostLauncher, [
+      /ProtectedData\.Unprotect/,
+      /DataProtectionScope\.CurrentUser/,
+      /RedirectStandardInput = false/,
+      /RedirectStandardOutput = false/,
+      /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
+      /String\.Equals\(maxJobs, "1"/,
+    ])
+    && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
+    && hasAll(shoppingWindowsChromeScheduler, [
+      /--profile-directory=\$profileDirectory/,
+      /chrome_ready profile=/,
+    ])
+    && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
+  `${files.shoppingWindowsHostInstaller}, ${files.shoppingWindowsHostLauncher}, ${files.shoppingWindowsChromeScheduler}`,
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",

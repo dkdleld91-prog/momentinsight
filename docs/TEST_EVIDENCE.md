@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-10 N상품 Windows 작업용 데스크탑
+
+- 원인: 기존 설치기와 wrapper는 macOS `/usr/bin/security`, `~/Library/Application Support`, LaunchAgent만 사용하므로 Windows Chrome에 확장이 자동 설치되지 않습니다.
+- Windows 설치 경계: 표시 이름 `프로그램 개발` 정확 매칭, 런타임 사용자 전용 ACL, HKCU Native Messaging, 고정 확장 ID, 현재 사용자 DPAPI, Windows PowerShell 5.1 컴파일 launcher, 로그인 사용자 전용 10분 watchdog입니다.
+- 바이너리 경계: Chrome과 Node 사이의 4-byte native messaging framing을 보존하도록 C# launcher가 stdin/stdout을 리다이렉트·텍스트 변환하지 않고 Node에 그대로 상속합니다. launcher stdout과 비밀키 로그는 금지합니다.
+- 자동 검증: 신규 Windows 정적 회귀 4/4, native host 12/12, API·서버 401/401, 플레이스 51/51, 쇼핑 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·64파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`를 통과했습니다.
+- 미검증 경계: 현재 실행 환경은 macOS이므로 Windows PowerShell 5.1 C# launcher 실컴파일, HKCU 레지스트리, 작업 스케줄러, Chrome 압축해제 확장 연결은 Windows 데스크탑에서 확인해야 합니다.
+- 실증 경계: Windows에서 신규 `pw-chrome-*`, `checked_count=300`, 광고 제외·정확 상품/원부 판정이 확인되기 전에는 주 작업자 전환 완료로 기록하지 않습니다.
+
 ## 2026-08-09 N상품 당일 전체 순환·복구 v1.0.15
 
 - 사용자·내부 분리: 관리자·광고주 화면의 `09:00 · 15:00` 안내와 `nextRankCheckAt` 표시는 유지하고, 내부 `rank-catch-up` 20분 회차가 사이트 전체를 멱등 등록하도록 고정했습니다.

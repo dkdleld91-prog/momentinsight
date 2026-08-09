@@ -173,6 +173,9 @@ const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_nav
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
+const shoppingWindowsHostInstaller = read("scripts/install-naver-shopping-chrome-bridge-windows.ps1");
+const shoppingWindowsHostLauncher = read("scripts/windows/MomentInsightNaverShoppingHost.cs");
+const shoppingWindowsChromeScheduler = read("scripts/windows/run-naver-shopping-chrome-scheduler.ps1");
 const shoppingNativeHostWrapper = read("scripts/run-naver-shopping-native-host.sh");
 const shoppingChromeSchedulerWrapper = read("scripts/run-naver-shopping-chrome-scheduler.sh");
 const shoppingChromeManifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
@@ -1231,6 +1234,28 @@ const checks = {
     && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
+  shoppingWindowsChromeBridgeIsUserScopedAndWatchdogBounded: shoppingWindowsHostInstaller.includes('Read-Host "Chrome profile visible name"')
+    && shoppingWindowsHostInstaller.includes("Google\\Chrome\\User Data\\Local State")
+    && shoppingWindowsHostInstaller.includes("HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts")
+    && shoppingWindowsHostInstaller.includes("[Security.Cryptography.DataProtectionScope]::CurrentUser")
+    && shoppingWindowsHostInstaller.includes("-AsSecureString")
+    && shoppingWindowsHostInstaller.includes("SetAccessRuleProtection($true, $false)")
+    && shoppingWindowsHostInstaller.includes("New-TimeSpan -Minutes 10")
+    && shoppingWindowsHostInstaller.includes('CreateFolder("MomentInsight")')
+    && shoppingWindowsHostInstaller.includes("-LogonType Interactive -RunLevel Limited")
+    && shoppingWindowsHostInstaller.includes("tools/naver-shopping-chrome-extension/service-worker.js")
+    && shoppingWindowsHostInstaller.includes("chrome://extensions")
+    && !/-AsPlainText|cmdkey|remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsHostInstaller)
+    && shoppingWindowsHostLauncher.includes("ProtectedData.Unprotect")
+    && shoppingWindowsHostLauncher.includes("DataProtectionScope.CurrentUser")
+    && shoppingWindowsHostLauncher.includes("RedirectStandardInput = false")
+    && shoppingWindowsHostLauncher.includes("RedirectStandardOutput = false")
+    && shoppingWindowsHostLauncher.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
+    && shoppingWindowsHostLauncher.includes('String.Equals(maxJobs, "1"')
+    && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
+    && shoppingWindowsChromeScheduler.includes("--profile-directory=$profileDirectory")
+    && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
+    && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 20, periodInMinutes: 20 }]')
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS\s*=\s*\[\s*30\s*\*\s*60_000,\s*60\s*\*\s*60_000,\s*120\s*\*\s*60_000,\s*\]/u.test(shoppingChromeWorker)
     && shoppingChromeWorker.includes("existing.periodInMinutes")

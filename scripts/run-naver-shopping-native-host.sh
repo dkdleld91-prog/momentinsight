@@ -42,10 +42,9 @@ fi
 
 export MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED="true"
 export MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET="${WORKER_SECRET}"
-# A strict 300-rank job opens eight Naver result pages. Keep the proven
-# conservative ceiling of two sequential jobs per 10-minute run. Queue
-# idempotency still lets every account drain fairly without request bursts.
-export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"
+# A strict 300-rank job opens eight price-comparison result pages. Process only
+# one keyword per 10-minute run so queued accounts drain without request bursts.
+export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"
 unset WORKER_SECRET
 
 ENDPOINT_KIND="production"

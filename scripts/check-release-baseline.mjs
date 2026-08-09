@@ -1002,9 +1002,9 @@ const checks = {
     && source.includes("item.link")),
   rankTrackingKeywordAllTabLinks: [adminSource, clientSource].every((source) => source.includes("rankTrackerKeywordUrl")
     && source.includes("renderRankKeywordName")
-    && source.includes("https://search.shopping.naver.com/ns/search?query=")
-    && !source.includes("https://search.shopping.naver.com/search/all?query=")
-    && source.includes("전체탭으로 열기")),
+    && source.includes("https://search.shopping.naver.com/search/all?where=all&frm=NVSCTAB&query=")
+    && !source.includes("https://search.shopping.naver.com/ns/search?query=")
+    && source.includes("가격비교로 열기")),
   rankTrackingKeywordVolumeVisible: [adminSource, clientSource].every((source) => source.includes("renderRankKeywordVolume")
     && source.includes("keywordVolumeLabel")
     && source.includes("키워드검색량")
@@ -1192,11 +1192,12 @@ const checks = {
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
       "https://search.shopping.naver.com/*",
     ])
-    && shoppingChromeWorker.includes('NPLUS_SEARCH_PATH = "/ns/search"')
-    && shoppingChromeWorker.includes("data-shp-contents-rank")
-    && shoppingChromeWorker.includes("data-shp-contents-dtl")
-    && shoppingChromeWorker.includes("data-shp-contents-grp")
-    && shoppingChromeWorker.includes("orderedCollectionRows")
+    && shoppingChromeWorker.includes('PRICE_COMPARE_SEARCH_PATH = "/search/all"')
+    && shoppingChromeWorker.includes("collectPriceComparePages")
+    && shoppingChromeWorker.includes("pagingIndex")
+    && shoppingChromeWorker.includes("productSet")
+    && shoppingChromeWorker.includes("nextDataText")
+    && !shoppingChromeWorker.includes("NPLUS_SEARCH_PATH")
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes("naver_network_restricted")
     && shoppingChromeWorker.includes("MANUAL_RESUME_REQUIRED_KEY")
@@ -1228,15 +1229,15 @@ const checks = {
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 12_000")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 6_000")
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
-    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"')
+    && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.9"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.10"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

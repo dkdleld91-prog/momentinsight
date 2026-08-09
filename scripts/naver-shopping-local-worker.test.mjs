@@ -217,8 +217,10 @@ test("profile bootstrap uses only the dedicated local browser and never extracts
   assert.match(source, /defaultNaverShoppingProfileDir\(\)/u);
   assert.match(source, /launchPersistentContext\(PROFILE_DIRECTORY/u);
   assert.match(source, /msearch\.shopping\.naver\.com/u);
-  assert.match(source, /search\.shopping\.naver\.com\/ns\/search/u);
-  assert.doesNotMatch(source, /search\.shopping\.naver\.com\/search\/all/u);
+  assert.match(source, /search\.shopping\.naver\.com\/search\/all/u);
+  assert.match(source, /productSet=total/u);
+  assert.match(source, /sort=rel/u);
+  assert.doesNotMatch(source, /search\.shopping\.naver\.com\/ns\/search/u);
   assert.match(source, /headless:\s*false/u);
   assert.match(source, /mkdir\(PROFILE_DIRECTORY, \{ recursive: true, mode: 0o700 \}\)/u);
   assert.match(source, /flag:\s*"wx"/u);

@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-09 N상품 가격비교 순위 저빈도 안정화
+
+- 기준 URL: `https://search.shopping.naver.com/search/all`, `where=all`, `productSet=total`, `sort=rel`, `viewType=list`, 페이지 1~8·40개 단위입니다. 네이버플러스 `/ns/search`는 수집과 운영 링크에서 제외했습니다.
+- 수집 계약: 동일 탭 순차 이동, 페이지 간 12~18초, 회차당 1개 키워드, 광고 제외 후 정확히 오가닉 300개가 완성된 경우만 원자 저장합니다. 정확 URL 상품 ID·판매자 ID가 다른 상품은 일치시키지 않습니다.
+- 실패 계약: 보안확인·418·429·네트워크 제한·페이지/스키마 불일치·부분 수집은 즉시 중단하고 마지막 정상값·30일 이력·대기 순서를 유지합니다. CAPTCHA 우회 코드는 없습니다.
+- 자동 검증: 앱·API 393/393, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 공개 빌드 9파일·inline script 6개·CSP SHA 4개, 보호 잠금 22함수·58파일·14마이그레이션과 self-test, 전체 `npm run check:release`, `git diff --check` 통과입니다.
+- 설치 검증: 저장소와 중앙 Mac 설치 wrapper SHA-256은 모두 `bcfb8ec9437ae67d41a70ea8fc74db295a632d16d089e8388a3fecf1d8d3738c`, 설치 기본값 `max_jobs=1`, Chrome `동빈` 프로필 확장 1.0.10 활성입니다.
+- 운영 실증 경계: 가격비교 1페이지를 직접 열자 네이버 보안확인이 반환됐습니다. 담당자 직접 완료 후 신규 `pw-chrome-*`·`checked_count=300` snapshot이 생기기 전에는 실수집 정상화와 배포 완료로 판정하지 않습니다.
+
 ## 2026-08-08 N상품 보안확인 안정화 기준
 
 - 원인 로그: `2026-08-08T10:11:13Z max_jobs=2`와 `2026-08-08T11:19:57Z max_jobs=4` 모두 첫 작업에서 `naver_verification_required`로 중단됐습니다. 4건 연속 수집 증거는 없으며 기존 보안확인 미해결 상태의 재시도입니다.

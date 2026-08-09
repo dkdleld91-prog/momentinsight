@@ -263,7 +263,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   const wrapperPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "run-naver-shopping-native-host.sh");
   const source = fs.readFileSync(wrapperPath, "utf8");
   assert.match(source, /naver-shopping-native-host\.conf/u);
-  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="2"/u);
+  assert.match(source, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"/u);
   assert.match(source, /127\\\.0\\\.0\\\.1\|localhost/u);
   assert.match(source, /naver-shopping-native-host\.log/u);
   assert.doesNotMatch(source, /WORKER_SECRET[^\n]*>>/u);
@@ -277,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.9");
+  assert.equal(manifest.version, "1.0.10");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
@@ -294,13 +294,12 @@ test("Chrome extension drains safely and reports verification recovery truthfull
     serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
-  assert.match(serviceWorker, /collectNplusRows\(message\.request, collectionTabId\)/u);
-  assert.match(serviceWorker, /NPLUS_SEARCH_PATH = "\/ns\/search"/u);
-  assert.match(serviceWorker, /data-shp-contents-rank/u);
-  assert.match(serviceWorker, /data-shp-contents-dtl/u);
-  assert.match(serviceWorker, /data-shp-contents-grp/u);
-  assert.match(serviceWorker, /orderedCollectionRows/u);
-  assert.doesNotMatch(serviceWorker, /search\.shopping\.naver\.com\/search\/all/u);
+  assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId\)/u);
+  assert.match(serviceWorker, /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/u);
+  assert.match(serviceWorker, /pagingIndex/u);
+  assert.match(serviceWorker, /productSet/u);
+  assert.match(serviceWorker, /nextDataText/u);
+  assert.doesNotMatch(serviceWorker, /NPLUS_SEARCH_PATH|\/ns\/search|data-shp-contents-rank/u);
   assert.match(serviceWorker, /currentTab\.url !== url \|\| currentTab\.status !== "complete"/u);
   assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
   assert.match(serviceWorker, /naver_verification_cooldown/u);
@@ -336,8 +335,8 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /periodInMinutes: 10/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 12_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 6_000/u);
   assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
   assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

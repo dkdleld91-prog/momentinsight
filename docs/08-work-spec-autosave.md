@@ -495,4 +495,6 @@
 - 오전 9시·오후 3시는 광고주 안내로 유지하고 내부 30분 회차가 사이트 전체 활성 추적을 멱등 등록한 뒤 oldest-first로 키워드 1개씩 계속 처리하도록 분리했다.
 - 운영 읽기 기준 활성 59건·고유 키워드 47개·due 키워드 47개·활성 lease 0건이다. 오류가 없을 때 약 23.5시간에 한 바퀴이며 동시 브라우저 수집은 사용하지 않는다.
 - 접속 제한·418·429의 2/6/12/24시간 보호 대기, CAPTCHA 비우회, 실패 시 마지막 정상값·30일 이력 보존과 회복 후 1건 재개 계약은 유지한다.
-- native host·local worker·signed handler 50/50, API·서버 397/397, 플레이스·쇼핑 각 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금·공개 빌드·CSP와 전체 `npm run check:release`, `git diff --check`를 통과했다. GitHub/Production·Mac 1.0.14 배포와 제한 해제 뒤 신규 원자 300개 실증은 이어서 기록한다.
+- native host·local worker·signed handler 50/50, API·서버 397/397, 플레이스·쇼핑 각 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금·공개 빌드·CSP와 전체 `npm run check:release`, `git diff --check`를 통과했다.
+- 코드 `49bcd6e`를 GitHub/Production에 반영하고 운영 릴리스 `49bcd6e0d896`·서울 `icn1`·Supabase ready·양 화면 200을 확인했다. Mac 런타임 14/14 파일과 `Profile 5` scheduler, 고정 확장 ID allowlist, 소스 manifest 1.0.14도 동기화했다.
+- Chrome 보안 정책상 `chrome://extensions` 원격 재로드는 차단됐다. 강제 종료나 우회 없이 사용자가 `동빈(개발)`에서 재로드를 한 번 누른 뒤 로드 버전 1.0.14와 제한 해제 후 신규 원자 300개·다음 oldest-first 재개를 확인한다.

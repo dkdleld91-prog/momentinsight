@@ -7,7 +7,9 @@
 3. 확인: 운영 읽기 기준 활성 59건·고유 키워드 47개·대기 키워드 47개이며, 오류가 없을 때 약 23.5시간에 한 바퀴입니다.
 4. 보호: 네트워크 제한·418·429의 2/6/12/24시간 대기와 CAPTCHA 비우회, 실패 시 마지막 정상값·30일 이력 보존을 유지합니다.
 5. 완료: 대상 50/50, API·서버 397/397, 플레이스·쇼핑 각 51/51, 서버 계약 38/38, Production 인증 18/18과 전체 `npm run check:release`를 통과했습니다.
-6. 배포 순서: GitHub/Production → Mac 브리지 재설치 → `동빈(개발)` 확장 1.0.14 재로드 → 제한 해제 뒤 첫 신규 `pw-chrome-*`·`checked_count=300`과 다음 순서 재개 확인입니다.
+6. 완료: 코드 `49bcd6e`를 GitHub/Production에 반영하고 운영 `/health`·`/ready` 릴리스 `49bcd6e0d896`·Supabase ready·양 화면 200을 확인했습니다. Mac 브리지 14/14 파일과 `Profile 5` scheduler도 동기화했습니다.
+7. 사용자 1회 조치: `동빈(개발)`의 `chrome://extensions`에서 Moment Insight N Shopping Rank `새로고침`을 한 번 누릅니다. 원격 재로드는 Chrome 보안 정책상 차단되며 강제 종료·우회하지 않습니다.
+8. 운영 확인: 로드 버전 1.0.14, 제한 해제 뒤 첫 신규 `pw-chrome-*`·`checked_count=300`, 이후 다음 oldest-first 작업 재개를 확인합니다.
 
 ## 2026-08-09 N상품 가격비교 순위 복구·안정화
 

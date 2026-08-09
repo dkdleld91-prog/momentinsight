@@ -6,7 +6,10 @@
 - 운영 규모: Supabase 읽기 전용 SQL에서 `status=active` 59건, 고유 키워드 47개, due 56건·47키워드, 활성 processing lease 0건을 확인했습니다.
 - 연속 처리: 회차당 `max_jobs=1`, 기존 30~45초 첫 대기와 페이지 간 45~75초 분산을 유지합니다. 전체 등록은 미래 행만 due로 전환하고 기존 due·처리 중 행을 보존하며 claim은 신규 1회 우선 뒤 oldest-first로 복귀합니다.
 - 장애 복구: 네트워크 제한·418·429 즉시 중단, 2/6/12/24시간 단계형 보호 대기, CAPTCHA 비우회, 회복 후 `rank-recovery` 1건, 실패 lease 해제와 마지막 정상 순위·30일 snapshot 보존 계약은 변경하지 않았습니다.
-- 전체 검증: native host·local worker·signed handler 50/50, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금 22함수·60파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`, `git diff --check` 통과입니다. 배포·실수집 증거는 후속 항목에 기록합니다.
+- 전체 검증: native host·local worker·signed handler 50/50, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금 22함수·60파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`, `git diff --check` 통과입니다.
+- Production: 코드 `49bcd6e`, Vercel `https://momentinsight-jx8uvfc3k-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 `release=49bcd6e0d896`, `region=icn1`, Supabase ready이고 관리자·광고주 HTML은 200입니다.
+- Mac: 설치 런타임 14/14 파일이 저장소와 byte-for-byte 일치합니다. native host는 고정 확장 ID `pflggephankeefaeoaafkmggampnaefm`만 허용하고 scheduler config는 `Profile 5`, LaunchAgent 최근 exit 0, 확장 소스 manifest는 1.0.14입니다.
+- 남은 실증: Chrome 보안 정책이 `chrome://extensions` 원격 재로드를 차단해 현재 로드 버전 1.0.14는 확인하지 못했습니다. 사용자가 `동빈(개발)`에서 재로드를 한 번 누른 뒤 제한 해제·첫 신규 `pw-chrome-*`·`checked_count=300`과 다음 oldest-first 작업 재개를 확인합니다.
 
 ## 2026-08-09 N상품 가격비교 순위 저빈도 안정화
 

@@ -415,7 +415,7 @@
     {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "2c1bae1bc91a9e1dda0e4efecc456c4a262e6fb3af45924ccdede8250b2116bc"
+      "sha256": "e46b9a56fd1ca70341d60fce9439897d2846977246787aaa3a24bd54a0f56048"
     },
     {
       "id": "shopping-chrome-native-host-core",
@@ -425,7 +425,7 @@
     {
       "id": "shopping-chrome-native-host-wrapper",
       "file": "scripts/run-naver-shopping-native-host.sh",
-      "sha256": "bcfb8ec9437ae67d41a70ea8fc74db295a632d16d089e8388a3fecf1d8d3738c"
+      "sha256": "48ed12c12e7289c597d7cb6f5ef962bbab68a342d3e6b638fec7d79b76d50c7b"
     },
     {
       "id": "shopping-chrome-native-host-installer",
@@ -440,7 +440,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "6a7e5359ca48ae426e3976cefc6a91fcad1a7a93d3c2a64526bb8cbe310f52ce"
+      "sha256": "1f612f651df49d9698e15318936cb8359b4afe3c285e31b13eaf3f54bb90bee2"
     },
     {
       "id": "shopping-chrome-extension-worker",

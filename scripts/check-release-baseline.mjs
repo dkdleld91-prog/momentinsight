@@ -1244,7 +1244,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.13"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.14"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
@@ -1264,9 +1264,10 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.13"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.14"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
-    && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
+    && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
+    && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')
     && shoppingLocalWorkerHandler.includes('body.action === "queue-all-active-trackers"')
     && shoppingLocalWorkerHandler.includes('.eq("status", "active")')

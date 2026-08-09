@@ -5,6 +5,10 @@ import { createChromeNativeProvider } from "./naver-shopping-native-host-core.mj
 
 const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 const RESPONSE_TIMEOUT_MS = 240_000;
+// 09:00/15:00 are customer-facing expectation windows. The internal catch-up
+// alarm is the continuous whole-site cycle: it idempotently makes every active
+// tracker due, then the bounded worker claims only the oldest remaining job.
+const WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"]);
 let inputBuffer = Buffer.alloc(0);
 const messageQueue = [];
 const messageWaiters = [];
@@ -100,7 +104,7 @@ async function main() {
   });
   const summary = await runLocalShoppingWorker({
     provider,
-    queueAllTrackers: start.trigger === "manual",
+    queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger),
     requireWakeSignal: start.trigger === "rank-remote",
     log(event) {
       process.stderr.write(`${safeCode(event)}\n`);

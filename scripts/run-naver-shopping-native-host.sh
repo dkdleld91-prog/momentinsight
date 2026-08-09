@@ -43,7 +43,8 @@ fi
 export MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED="true"
 export MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET="${WORKER_SECRET}"
 # A strict 300-rank job opens eight price-comparison result pages. Process only
-# one keyword per 10-minute run so queued accounts drain without request bursts.
+# one keyword per continuous cycle so the whole-site queue drains without a
+# parallel request burst.
 export MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"
 unset WORKER_SECRET
 

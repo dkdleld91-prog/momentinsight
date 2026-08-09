@@ -553,7 +553,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.13"
+  shoppingChromeManifest.version === "1.0.14"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)
@@ -562,6 +562,8 @@ check(
     && /12 \* 60 \* 60_000/.test(shoppingChromeWorker)
     && /24 \* 60 \* 60_000/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
+    && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
+    && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)
     && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
     && /action\(\{ action: "claim-wake" \}\)/.test(shoppingLocalWorker)

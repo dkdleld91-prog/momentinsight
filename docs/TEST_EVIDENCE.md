@@ -749,3 +749,10 @@
 - 보안확인 계약: CAPTCHA 풀이·쿠키 접근·로컬스토리지·요청 가로채기·브라우저 기록 접근은 사용하지 않는다. 사람이 정상 화면으로 돌리면 1분 알람이 감지해 1건만 재개한다.
 - 팝업 계약: 다음 재시도 시각과 `이후 1건 자동 재시도`를 표시하고 수동 재시작 요구 문구를 제거했다.
 - 검증: 네이티브 호스트·로컬 워커 32/32, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18, 공개 빌드·CSP, 전체 `npm run check:release`, JavaScript 문법과 `git diff --check` 통과.
+- Supabase: 마이그레이션 `20260809115100_naver_shopping_worker_remote_wake` 적용. `rls_enabled=true`, `rls_forced=true`, anon/authenticated table select=false, service_role select/insert/update=true. 두 RPC는 `security_definer=false`, anon/authenticated execute=false, service_role execute=true다.
+- 원자 신호: 트랜잭션 안에서 service_role request 후 첫 claim=true·중복 claim=false를 확인하고 롤백했다. 이후 `naver_shopping_worker_wakes` 운영 행은 0건이다.
+- 보안 advisor: 신규 wake 테이블의 `RLS enabled no policy` INFO는 사용자 정책을 의도적으로 0개로 둔 fail-closed 설계다. 이번 RPC 관련 신규 WARN은 없고 기존 `has_client_access`·`is_admin` SECURITY DEFINER WARN은 이번 변경 비범위로 유지했다.
+- Production: `dpl_R1YAvtYrTgfqHJ1jAuDFQ3GaPRDX`, `https://momentinsight-8dcpd51mh-momentlabs.vercel.app`, 운영 별칭 `https://insight.momentlabs.co.kr`. `/health`·`/ready`는 `release=062ba5935d15`, `region=icn1`, Supabase ready이며 관리자·광고주 HTML 200과 원격 실행 안내를 확인했다.
+- Mac: 설치 브리지 14개 파일이 저장소와 byte-for-byte 일치하고 native host allowlist는 고정 확장 ID 1개뿐이다. scheduler config는 `Profile 5`, 10분·08:50·14:50이다.
+- Chrome: `동빈(개발)` 확장 `1.0.13` 활성·재로드, 팝업 `접속 제한 보호 중 · 2026. 8. 9. 오후 10:56:10 이후 1건 자동 재시도`를 확인했다. `동빈(Default)`의 같은 ID는 `사용 안함`이다.
+- 제한 중 운영 쓰기: 원격 전체 갱신·네이버 새 검색·새 300위 저장은 실행하지 않았다. 현재/최고/최저 순위와 기존 30일 snapshot은 변경하지 않았다.

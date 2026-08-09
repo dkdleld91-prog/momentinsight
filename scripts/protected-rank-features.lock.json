@@ -316,7 +316,7 @@
     {
       "id": "shopping-local-worker-contract",
       "file": "src/server/naver-shopping/local-worker-contract.mjs",
-      "sha256": "9e6600cdb058a8f712cda07d67338fe84a568af0c42949d65e3aaedf2a5eddfd"
+      "sha256": "522b11e3ff9e286998dd016764725c11f68e546181fda3a751fc69e0779795a3"
     },
     {
       "id": "shopping-local-worker-schedule",
@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "8e365780df9c154b017c80f9cca118e139f5086cd7eec886483219f30af2e6e7"
+      "sha256": "63b8be60c758f7f56afac9c35aec0bf25257747816f596b4047eb6c7cdaf0a49"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -415,7 +415,7 @@
     {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "e46b9a56fd1ca70341d60fce9439897d2846977246787aaa3a24bd54a0f56048"
+      "sha256": "c36f7fc585879d547b62249ed2ac62e08aea221d65e1f19b83ed981a2b9b492e"
     },
     {
       "id": "shopping-chrome-native-host-core",

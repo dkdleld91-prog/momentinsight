@@ -696,7 +696,7 @@ check(
       /}, 90_000\);/,
     ])
     && /MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS=90000/.test(naverEnvExample)
-    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[^\n]*225_000/.test(shoppingLocalWorker)
+    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[\s\S]{0,100}11 \* 60_000/.test(shoppingLocalWorker)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(adminPage)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(clientPage),
   `${files.shoppingRank}, ${files.shoppingLiveGate}, ${files.shoppingLocalWorker}, ${files.naverEnvExample}, ${files.adminPage}, ${files.clientPage}`,

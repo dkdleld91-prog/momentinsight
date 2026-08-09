@@ -45,6 +45,7 @@ const SAFE_FAILURE_CODES = new Set([
   "local_worker_collection_conflict",
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
+  "native_host_response_timeout",
 ]);
 const RUN_HALT_FAILURE_CODES = new Set([
   "naver_http_418",
@@ -349,7 +350,12 @@ export async function runLocalShoppingWorker(options = {}) {
         const request = localWorkerRankRequest(
           job,
           options.nowMs?.() ?? Date.now(),
-          boundedInteger(env.NAVER_SHOPPING_PROVIDER_TIMEOUT_MS, 225_000, 30_000, 225_000),
+          boundedInteger(
+            env.NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,
+            11 * 60_000,
+            30_000,
+            11 * 60_000,
+          ),
         );
         const rawWindow = await provider.collect(request);
         const strictWindow = validateStrictLocalWorkerWindow(rawWindow, {

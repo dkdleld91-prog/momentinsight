@@ -10,6 +10,10 @@
 - 수정 범위: C# launcher에 binary stdin/stdout relay를 추가하고, 확장프로그램은 native host 첫 응답을 짧은 별도 시간으로 제한하며 수동 실행 요청을 즉시 접수 상태로 돌려 팝업이 전체 수집 시간 동안 잠기지 않게 한다.
 - 보호: 정확 상품·광고 제외·300개 원자 반영·회차 1건·네이버 제한 즉시 중단·마지막 정상값 보존·DB 스키마·관리자/광고주 화면은 변경하지 않는다.
 - 완료 조건: Windows·native host·확장 대상 검사, 보호 잠금과 전체 릴리스 검사, Windows 설치본 갱신, Production 요청/claim 또는 안전 오류의 실기 증거를 모두 확인한다.
+- 구현·배포: 확장 1.0.16과 Windows stdio relay를 코드 `5049602`로 GitHub `main`에 반영했고 Production `/health`·`/ready`에서 같은 릴리스·서울 `icn1`·Supabase ready를 확인했다.
+- Windows 설치: 실제 작업 프로필 `동빈 (개발)`의 내부 디렉터리 `Profile 3`에 1.0.16을 로드했다. DPAPI 운영 비밀키 해시는 설치 전후 동일하며, 정상 `.exe` 출력명으로 재컴파일한 launcher는 Windows 실기에서 `MI_EXE_TEST_RUNNING=True`였다.
+- 운영 실증: `지금 안전 갱신`은 팝업을 오래 잠그지 않고 즉시 접수 상태로 돌아왔다. Supabase에 `2026-08-10 04:20:59 KST` 이후 신규 HMAC nonce가 기록됐고 수동 실행 뒤 활성 tracker 59건 중 1건이 lease를 획득해 실제 처리를 시작했다.
+- 추가 원인·보완: 첫 실회차가 정확히 4분 뒤 `local_worker_collection_failed`로 안전 종료됐다. 8페이지 45~75초 간격보다 native host 4분 응답 제한과 request 225초 deadline이 짧았기 때문이다. 두 제한을 12분 lease 안의 11분으로 맞추고 timeout 코드를 명시적으로 보존했다.
 
 ## 2026-08-10 N 쇼핑 Windows 작업용 데스크탑 브리지
 
@@ -95,9 +99,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 10. 03:37:08
-- 기준 커밋: 45e34be
-- 작업트리: M docs/08-work-spec-autosave.md
+- 마지막 자동 저장: 2026. 08. 10. 04:34:19
+- 기준 커밋: 5049602
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-native-host.mjs /  M scripts/naver-shopping-native-host.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

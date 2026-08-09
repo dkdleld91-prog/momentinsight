@@ -4,6 +4,16 @@
 
 ## 현재 상태
 
+### 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.16
+
+- 원인은 Windows native host가 자식 Node의 native messaging stdin/stdout을 Chrome에 직접 중계하지 않아, 프로세스만 남고 HMAC 요청이 나오지 않던 launcher 배선 결함이었습니다.
+- C# launcher에 바이너리 relay를 추가하고 확장에는 30초 시작 제한과 즉시 접수 응답을 넣어 `지금 안전 갱신` 팝업이 전체 수집 동안 무한 대기하지 않도록 했습니다.
+- 코드 `5049602`는 GitHub `main`과 Production에 반영됐고 `/health`·`/ready`는 같은 릴리스·서울 `icn1`·Supabase ready입니다. 전체 `npm run check:release`, 보호 잠금, Windows 대상 검사를 통과했습니다.
+- Windows `동빈 (개발)`·`Profile 3`에 확장 1.0.16과 runtime을 설치했습니다. DPAPI 운영 키는 보존됐고 정상 `.exe` 이름으로 컴파일한 launcher의 Windows 실기 실행 상태는 `MI_EXE_TEST_RUNNING=True`입니다.
+- 재가동 후 `2026-08-10 04:20:59 KST`와 수동 실행 이후에도 신규 서명 nonce가 생성됐습니다. 전체 활성 59건 중 1건이 processing lease를 획득해 Windows 작업자가 실제 큐를 선점하는 것까지 확인했습니다.
+- 첫 실회차는 4분 고정 native host timeout 때문에 snapshot 직전 안전 실패했습니다. 8페이지의 최대 분산 시간을 수용하면서 12분 lease를 넘지 않도록 native 응답과 local request deadline을 11분으로 통일했고 전체 릴리스 검사를 다시 통과했습니다.
+- CAPTCHA·보안확인·네트워크 제한은 우회하지 않습니다. 해당 오류면 현재 건만 안전 재시도하고 마지막 정상 순위와 30일 이력을 보존합니다.
+
 ### 2026-08-10 N상품 Windows 작업용 데스크탑 브리지
 
 - Windows Chrome 확장 목록이 비어 있는 원인은 기존 설치기가 macOS Keychain·NativeMessagingHosts·LaunchAgent만 지원했기 때문입니다. 서버나 계정 오류가 아닙니다.

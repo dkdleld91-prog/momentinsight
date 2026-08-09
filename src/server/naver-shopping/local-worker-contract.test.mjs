@@ -118,6 +118,10 @@ test("builds a strict organic-only 300 request", () => {
     rankPolicy: "organic_only",
     deadlineAt: "2026-08-01T06:01:30.000Z",
   });
+  assert.equal(
+    localWorkerRankRequest(job(), NOW, 60 * 60_000).deadlineAt,
+    "2026-08-01T06:11:00.000Z",
+  );
 });
 
 test("accepts a fresh, complete and sequential 300-item organic window", () => {

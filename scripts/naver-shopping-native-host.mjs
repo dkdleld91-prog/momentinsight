@@ -4,7 +4,11 @@ import { runLocalShoppingWorker } from "./naver-shopping-local-worker.mjs";
 import { createChromeNativeProvider } from "./naver-shopping-native-host-core.mjs";
 
 const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
-const RESPONSE_TIMEOUT_MS = 240_000;
+// One exact 300-rank collection can spend up to 45 seconds before page 1,
+// then 45-75 seconds between each of the remaining seven pages. Keep the
+// native exchange below the 12-minute server lease but above that bounded
+// visible-browser schedule.
+const RESPONSE_TIMEOUT_MS = 11 * 60_000;
 // 09:00/15:00 are customer-facing expectation windows. The internal catch-up
 // alarm is the continuous whole-site cycle: it idempotently makes every active
 // tracker due, then the bounded worker claims only the oldest remaining job.

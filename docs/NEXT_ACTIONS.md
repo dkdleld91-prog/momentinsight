@@ -2,12 +2,12 @@
 
 ## 2026-08-10 N상품 Windows 작업용 데스크탑
 
-1. 원인 확정: 기존 설치본은 macOS Keychain·LaunchAgent 전용이므로 Windows Chrome 확장 목록이 비어 있는 것이 정상입니다.
-2. 구현: `프로그램 개발` 프로필 정확 매칭, Chrome 공식 HKCU Native Messaging 등록, 현재 사용자 DPAPI 비밀키, 로그인 직후·10분 간격 작업 스케줄러를 Windows 설치기 하나로 묶었습니다.
-3. 보호: 한 회차 1개, 20분 전체 순환, 30/60/120분 재시도 상한, HMAC·nonce·lease, CAPTCHA 비우회, 실패 시 정상값·30일 이력 보존은 그대로입니다.
-4. 완료: Windows 정적 계약 4/4, native host 12/12, API·서버 401/401, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·64파일·15마이그레이션과 전체 `npm run check:release`를 통과했습니다. 코드 `c22b5d6`의 GitHub·Production 반영과 운영 health/ready 검증도 완료했습니다.
-5. Windows 사용자 조치: Chrome 프로필 표시 이름을 `프로그램 개발`로 만든 뒤 저장소의 `INSTALL-NAVER-SHOPPING-WINDOWS.cmd`를 해당 사용자로 관리자 실행하고, 열린 `chrome://extensions`에서 출력된 `extensionPath`를 압축해제 확장으로 로드합니다.
-6. 운영 전환: Windows 신규 `pw-chrome-*`·`checked_count=300`을 확인한 뒤 Windows만 주 작업자로 전환하고 Mac 확장은 대기 비활성화합니다.
+1. 완료: Windows `동빈 (개발)`의 내부 `Profile 3`에 확장 1.0.16, HKCU native host, DPAPI 운영 키, 로그인 작업 스케줄러를 설치했습니다.
+2. 완료: 코드 `5049602`를 GitHub `main`과 Production에 반영했고 전체 릴리스 검사와 운영 `/health`·`/ready`를 확인했습니다.
+3. 완료: 재가동 뒤 신규 HMAC nonce와 수동 실행의 processing lease를 확인해 Windows가 실제 전체 활성 큐를 선점함을 증명했습니다.
+4. 보호: 한 회차 1개, 20분 전체 순환, 30/60/120분 재시도 상한, HMAC·nonce·lease, CAPTCHA 비우회, 실패 시 정상값·30일 이력 보존은 그대로입니다.
+5. 운영 관찰: 4분 고정 timeout을 11분으로 맞춘 설치본에서 첫 Windows 신규 `pw-chrome-*`·`checked_count=300` 저장 또는 네이버 제한에 따른 안전 실패·재시도 결과를 확인합니다. 제한 화면은 자동 입력·우회하지 않습니다.
+6. 전환 조건: Windows가 한 바퀴 안정적으로 이어 처리하는 증거가 쌓인 뒤에만 Mac 확장을 대기 비활성화합니다. 지금은 복구 경로로 유지합니다.
 
 ## 2026-08-09 N상품 당일 전체 순환·복구 v1.0.15
 

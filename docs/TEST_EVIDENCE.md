@@ -1,5 +1,17 @@
 # Test Evidence
 
+## 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.16
+
+- 장애 증거: Windows native host PID와 자식 `node.exe`는 남아 있었지만 Supabase의 최근 10분 worker 요청과 processing tracker는 모두 0이었고 due tracker는 58건이었습니다.
+- 수정 증거: launcher가 Chrome stdin을 자식 Node stdin으로, 자식 stdout을 Chrome stdout으로 binary relay합니다. 확장은 native host 첫 응답을 30초로 제한하고 수동 실행 UI에는 즉시 접수 응답을 반환합니다.
+- 자동 검증: Windows/native-host 대상 16/16, 보호 잠금 22함수·64파일·15마이그레이션과 self-test, 서버 계약 39/39, 전체 `npm run check:release`, `git diff --check`를 통과했습니다.
+- 배포 증거: 코드 `5049602`를 GitHub `main`에 푸시했고 Production `/health`·`/ready`는 릴리스 `504960286b26`, 서울 `icn1`, Supabase ready입니다.
+- 설치 증거: `동빈 (개발)`의 `Profile 3`에 확장 1.0.16을 로드했습니다. DPAPI secret 해시는 보존됐고 정상 `.exe` 출력명으로 다시 컴파일한 launcher는 `MI_EXE_TEST_RUNNING=True`, 설치 경로 파일 크기 9216 bytes로 확인됐습니다.
+- 운영 요청 증거: Windows 재가동 뒤 nonce `b4047c8b-ea3a-4c25-aa23-73c4b4918e2b`가 `2026-08-10 04:20:59 KST`에 소비됐고, 수동 실행 후에도 신규 nonce와 활성 tracker 59건 중 processing lease 1건이 확인됐습니다.
+- 후속 실패 증거: 해당 lease는 시작 정확히 4분 뒤 `local_worker_collection_failed`로 해제되고 snapshot은 증가하지 않았습니다. native exchange `240000ms`와 request deadline `225000ms`가 8페이지 45~75초 분산보다 짧은 계약 불일치였습니다.
+- 후속 수정 검증: 두 제한을 12분 lease보다 짧은 11분으로 통일하고 `native_host_response_timeout`을 명시 오류로 보존했습니다. 대상 40/40, 서버 계약 39/39, 앱·API 401/401, 플레이스·쇼핑 각 51/51, Production 인증 18/18, 보호 잠금과 전체 `npm run check:release`를 통과했습니다.
+- 실수집 경계: 신규 `pw-chrome-*`·`checked_count=300` snapshot 생성 전에는 Windows 300위 수집 완료로 확대하지 않습니다. 네이버 제한·보안확인은 우회하지 않고 안전 실패와 마지막 정상값 보존을 확인합니다.
+
 ## 2026-08-10 N상품 Windows 작업용 데스크탑
 
 - 원인: 기존 설치기와 wrapper는 macOS `/usr/bin/security`, `~/Library/Application Support`, LaunchAgent만 사용하므로 Windows Chrome에 확장이 자동 설치되지 않습니다.

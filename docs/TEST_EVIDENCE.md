@@ -8,6 +8,8 @@
 - 자동 검증: 신규 Windows 정적 회귀 4/4, native host 12/12, API·서버 401/401, 플레이스 51/51, 쇼핑 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·64파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`를 통과했습니다.
 - 미검증 경계: 현재 실행 환경은 macOS이므로 Windows PowerShell 5.1 C# launcher 실컴파일, HKCU 레지스트리, 작업 스케줄러, Chrome 압축해제 확장 연결은 Windows 데스크탑에서 확인해야 합니다.
 - 실증 경계: Windows에서 신규 `pw-chrome-*`, `checked_count=300`, 광고 제외·정확 상품/원부 판정이 확인되기 전에는 주 작업자 전환 완료로 기록하지 않습니다.
+- Production: 코드 `c22b5d6`을 GitHub `main`에 푸시했고 Vercel 커밋 상태 `success` 후 운영 별칭에 반영됐습니다. `/health`·`/ready`는 릴리스 `c22b5d65c491`·서울 `icn1`·Supabase ready이고 `/admin`·`/client`는 리다이렉트 후 200입니다.
+- 별도 CI 경계: GitHub Quality Gate는 Windows 검사 전 단계인 `npm audit` 중 `pptxgenjs -> image-size` 상류 high 권고 2건으로 중단됐습니다. 현재 `image-size <=2.0.2` 전체가 권고 범위이고 npm의 자동 제안은 `pptxgenjs 1.1.5`로의 breaking downgrade이므로 이 Windows 작업에서 임의 적용하지 않았습니다. Vercel Production 빌드의 전체 릴리스 검사는 통과했습니다.
 
 ## 2026-08-09 N상품 당일 전체 순환·복구 v1.0.15
 

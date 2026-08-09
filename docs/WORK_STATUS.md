@@ -11,7 +11,7 @@
 - 운영 워커 비밀키는 현재 Windows 사용자 범위 DPAPI로 암호화합니다. Chrome native host는 공식 HKCU 등록 경로와 고정 확장 ID allowlist를 사용하고 Node 22~24·Production URL·회차 1건만 허용합니다.
 - 로그인 사용자 전용 작업 스케줄러가 로그인 직후와 10분 간격으로 승인 프로필을 열며 `remote-debugging`·`no-sandbox`·별도 user-data-dir은 사용하지 않습니다.
 - Windows에서는 저장소 루트의 `INSTALL-NAVER-SHOPPING-WINDOWS.cmd`를 관리자 실행한 뒤, Chrome 보안 경계상 `chrome://extensions`의 압축해제 확장 로드를 한 번 직접 해야 합니다.
-- Windows 정적 계약 4/4, native host 12/12, API·서버 401/401, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·64파일·15마이그레이션과 전체 `npm run check:release`를 통과했습니다. GitHub 반영과 Windows 실설치는 후속 증거로 분리하며 Windows 신규 원자 300개 전에는 운영 전환 완료로 보고하지 않습니다.
+- Windows 정적 계약 4/4, native host 12/12, API·서버 401/401, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·64파일·15마이그레이션과 전체 `npm run check:release`를 통과했습니다. 코드 `c22b5d6`은 GitHub `main`과 Production에 반영되었고 `/health`·`/ready`는 릴리스 `c22b5d65c491`·서울 `icn1`·Supabase ready, 관리자·광고주 화면은 200을 확인했습니다. Windows 실설치·신규 원자 300개는 남은 실증 경계입니다.
 
 ### 2026-08-09 N상품 당일 전체 순환·복구 v1.0.15
 

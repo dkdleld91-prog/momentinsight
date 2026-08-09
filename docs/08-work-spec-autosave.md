@@ -506,3 +506,5 @@
 - 보존: 순차 1건, 멱등 대기열, oldest-first, HMAC·nonce·lease, CAPTCHA 비우회, 실패 시 마지막 정상값·30일 이력 보존 계약은 변경하지 않는다.
 - 완료 조건: 대상·전체 릴리스 검사, 보호 잠금 갱신, Production과 작업용 브리지 동기화, Chrome 확장 1.0.15 재로드, 신규 `pw-chrome-*`·`checked_count=300` 실증을 단계별로 확인한다.
 - 검증: native host 12/12, API·서버 397/397, 플레이스·쇼핑 각 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금 22함수·60파일·15마이그레이션과 전체 `npm run check:release`를 통과했다.
+- 배포: 코드 `16a0488`, Production `dpl_J23S2KoAt34TbC4gafyxneBdADjG`, 운영 릴리스 `16a04882ff83`·서울 `icn1`·Supabase ready·양 화면 200을 확인했다. Mac 브리지는 저장소와 14/14 파일 일치, `Profile 5`, LaunchAgent exit 0, 확장 소스 1.0.15다.
+- 남은 실증: Chrome 보안 정책상 서비스 워커 재로드는 사용자가 `동빈(개발)`의 확장 관리에서 한 번 눌러야 한다. 이후 로드 1.0.15와 첫 신규 원자 300개를 확인한다.

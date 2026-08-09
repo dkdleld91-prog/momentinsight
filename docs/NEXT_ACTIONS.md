@@ -7,7 +7,7 @@
 3. 확인: 운영 읽기 기준 활성 59건·고유 키워드 47개·대기 키워드 47개이며, 오류가 없을 때 약 15시간 40분에 한 바퀴입니다.
 4. 보호: 네트워크 제한·418·429는 30분·60분·120분 뒤 재시도하고 이후 120분 상한을 유지합니다. CAPTCHA 비우회, 실패 시 마지막 정상값·30일 이력 보존은 유지합니다.
 5. 완료: native host 12/12, API·서버 397/397, 플레이스·쇼핑 각 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금과 전체 `npm run check:release`를 통과했습니다.
-6. 배포: GitHub/Production 릴리스, 운영 `/health`·`/ready`, Mac 브리지 파일 일치와 `Profile 5` scheduler를 다시 확인합니다.
+6. 완료: 코드 `16a0488`을 GitHub `main`과 Production `dpl_J23S2KoAt34TbC4gafyxneBdADjG`에 반영했습니다. 운영 `/health`·`/ready`는 릴리스 `16a04882ff83`, 서울 `icn1`, Supabase ready이고 관리자·광고주 화면은 200입니다. Mac 브리지 14/14 파일과 `Profile 5` scheduler도 동기화했습니다.
 7. 사용자 1회 조치: `동빈(개발)`의 `chrome://extensions`에서 Moment Insight N Shopping Rank `새로고침`을 한 번 누릅니다. 원격 재로드는 Chrome 보안 정책상 차단되며 강제 종료·우회하지 않습니다.
 8. 운영 확인: 로드 버전 1.0.15, 제한 해제 뒤 첫 신규 `pw-chrome-*`·`checked_count=300`, 이후 다음 oldest-first 작업 재개를 확인합니다.
 

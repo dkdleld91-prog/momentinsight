@@ -6,7 +6,9 @@
 - 운영 규모: Supabase 읽기 전용 SQL에서 `status=active` 59건, 고유 키워드 47개, due 56건·47키워드, 활성 processing lease 0건을 확인했습니다.
 - 연속 처리: 회차당 `max_jobs=1`, 기존 30~45초 첫 대기와 페이지 간 45~75초 분산을 유지합니다. 47개 키워드는 오류가 없을 때 약 15시간 40분에 한 바퀴이며 기존 due·처리 중 행과 oldest-first 순서는 보존합니다.
 - 장애 복구: 네트워크 제한·418·429 즉시 중단, `30/60/120분` 단계형 보호 대기와 이후 120분 상한, CAPTCHA 비우회, 회복 후 `rank-recovery` 1건, 실패 lease 해제와 마지막 정상 순위·30일 snapshot 보존을 정적 계약과 회귀검사에 고정했습니다.
-- 전체 검증: native host 12/12, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금 22함수·60파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`를 통과했습니다. Production·Mac 동기화 증거는 배포 후 갱신합니다.
+- 전체 검증: native host 12/12, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18, 보호 잠금 22함수·60파일·15마이그레이션, 공개 빌드·CSP와 전체 `npm run check:release`를 통과했습니다.
+- Production: 코드 `16a0488`, 배포 `dpl_J23S2KoAt34TbC4gafyxneBdADjG`, 운영 별칭 `https://insight.momentlabs.co.kr`입니다. `/health`·`/ready`는 `release=16a04882ff83`, `region=icn1`, Supabase ready이고 관리자·광고주 화면은 리다이렉트 후 200입니다.
+- Mac: 설치 런타임 14/14 파일이 저장소와 byte-for-byte 일치합니다. native host는 고정 확장 ID `pflggephankeefaeoaafkmggampnaefm`만 허용하고 scheduler config는 `Profile 5`, LaunchAgent 최근 exit 0, 확장 소스 manifest는 1.0.15입니다.
 - 남은 실증: 서비스 워커 변경은 사용자가 `동빈(개발)`의 `chrome://extensions`에서 한 번 재로드해야 적용됩니다. 로드 버전 1.0.15, 제한 해제·첫 신규 `pw-chrome-*`·`checked_count=300`과 다음 oldest-first 작업 재개를 확인합니다.
 
 ## 2026-08-09 N상품 가격비교 순위 저빈도 안정화

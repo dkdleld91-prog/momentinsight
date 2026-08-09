@@ -12,7 +12,7 @@
 - 쿠키 상시 삭제는 적용하지 않습니다. IP 제한을 해제하지 못하고 신뢰 쿠키·세션을 잃어 오히려 새 기기 검증을 늘릴 수 있으므로 전용 프로필의 쿠키는 유지합니다. CAPTCHA 자동 풀이·VPN·우회도 사용하지 않습니다.
 - Supabase migration `naver_shopping_global_worker_lane`은 운영 적용됐고 RLS 강제, anon 조회·RPC 실행 불가, service_role 실행만 허용됨을 확인했습니다. 전체 릴리스 검사, 서버 계약 39/39, 앱·API 405/405가 통과했습니다.
 - 구현 커밋 `bb90e84`는 GitHub `main`과 Production에 반영됐고 `/health`·`/ready`는 릴리스 `bb90e846261e`·서울 `icn1`에서 200입니다. Mac native runtime은 standby 설정으로 재설치됐습니다.
-- Chrome 보안 정책상 `chrome://extensions` 원격 재로드는 차단됐으며, Windows도 현재 사용자 로그오프 상태입니다. 운영 공용 차선 행이 아직 비어 있으므로 양쪽 확장 1.0.18 재로드와 첫 heartbeat·원자 300개는 남은 실증 경계입니다.
+- Chrome 보안 정책상 `chrome://extensions` 원격 재로드는 차단됐으며, Windows도 현재 사용자 로그오프 상태입니다. Mac은 확장 1.0.18 재로드가 필요하고, Windows는 저장소가 아닌 `%LOCALAPPDATA%` 설치본이므로 로그인 후 1.0.18 설치기 재실행과 재로드가 필요합니다. 운영 공용 차선 행이 아직 비어 있으므로 첫 heartbeat·원자 300개는 남은 실증 경계입니다.
 
 ### 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 

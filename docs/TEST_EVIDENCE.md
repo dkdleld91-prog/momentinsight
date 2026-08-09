@@ -1,6 +1,6 @@
 # Test Evidence
 
-## 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.16
+## 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 
 - 장애 증거: Windows native host PID와 자식 `node.exe`는 남아 있었지만 Supabase의 최근 10분 worker 요청과 processing tracker는 모두 0이었고 due tracker는 58건이었습니다.
 - 수정 증거: launcher가 Chrome stdin을 자식 Node stdin으로, 자식 stdout을 Chrome stdout으로 binary relay합니다. 확장은 native host 첫 응답을 30초로 제한하고 수동 실행 UI에는 즉시 접수 응답을 반환합니다.
@@ -10,6 +10,10 @@
 - 운영 요청 증거: Windows 재가동 뒤 nonce `b4047c8b-ea3a-4c25-aa23-73c4b4918e2b`가 `2026-08-10 04:20:59 KST`에 소비됐고, 수동 실행 후에도 신규 nonce와 활성 tracker 59건 중 processing lease 1건이 확인됐습니다.
 - 후속 실패 증거: 해당 lease는 시작 정확히 4분 뒤 `local_worker_collection_failed`로 해제되고 snapshot은 증가하지 않았습니다. native exchange `240000ms`와 request deadline `225000ms`가 8페이지 45~75초 분산보다 짧은 계약 불일치였습니다.
 - 후속 수정 검증: 11분 1차 보완은 기존 4분 경계를 통과했지만 실회차가 정확히 11분을 사용해 명시적 `native_host_response_timeout`으로 안전 종료됐습니다. 요청 간격은 줄이지 않고 native/deadline 18분·lease 20분으로 정렬했습니다.
+- 18분 실증: `프로폴리스` tracker `6a650814-432b-4f7b-b838-0885069c05d0`는 `2026-08-10 05:01:58 KST`에 1,200초 lease를 얻어 4분·11분을 통과하고 `05:20:00 KST`에 `native_host_response_timeout`으로 안전 종료됐습니다. 신규 snapshot은 0건이며 기존 11위·48회 이력은 유지됐습니다.
+- 1.0.17 수정 증거: Chrome `executeScript`를 페이지마다 45초로 제한하고 모든 수집 오류에 tab ID를 전파해 보안확인 외의 걸린 탭을 정리합니다. 대상 104/104, 서버 계약 39/39, 보호 잠금과 self-test, 전체 `npm run check:release`가 통과했습니다.
+- 1.0.17 배포·설치 증거: 코드 `9ed047c`가 GitHub `main`과 Production `/health`·`/ready` 릴리스 `9ed047cdac47`에 반영됐고, Windows PowerShell은 `MI_EXTENSION_UPDATE_OK release=9ed047c version=1.0.17 script_timeout=45s`를 출력했습니다.
+- 재개 경계: 설치 직후 Windows 사용자 세션 로그오프로 Chrome이 닫혀 마지막 nonce는 `2026-08-10 05:25:16 KST`입니다. 운영 읽기는 활성 59건·due 59건·processing 0건이며, 사용자 로그인과 Chrome 재실행 후 1.0.17의 첫 typed failure 또는 300개 snapshot을 확인해야 합니다.
 - 실수집 경계: 신규 `pw-chrome-*`·`checked_count=300` snapshot 생성 전에는 Windows 300위 수집 완료로 확대하지 않습니다. 네이버 제한·보안확인은 우회하지 않고 안전 실패와 마지막 정상값 보존을 확인합니다.
 
 ## 2026-08-10 N상품 Windows 작업용 데스크탑

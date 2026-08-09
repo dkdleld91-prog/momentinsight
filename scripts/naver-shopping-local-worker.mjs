@@ -257,7 +257,9 @@ export async function runLocalShoppingWorker(options = {}) {
     validateNaverShoppingProfileDir(userDataDir);
   }
   const endpoint = workerEndpoint(env);
-  const maxJobs = boundedInteger(env.MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS, 100, 1, 500);
+  const maxJobs = options.requireWakeSignal === true
+    ? 1
+    : boundedInteger(env.MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS, 100, 1, 500);
   const lockPath = String(env.MI_NAVER_SHOPPING_LOCAL_WORKER_LOCK_PATH || `${os.tmpdir()}/moment-insight-n-shopping-worker.lock`);
   const releaseLock = options.skipLock ? async () => {} : await acquireWorkerLock(lockPath, {
     staleMs: boundedInteger(
@@ -314,6 +316,15 @@ export async function runLocalShoppingWorker(options = {}) {
   };
 
   try {
+    if (options.requireWakeSignal === true) {
+      const wake = await action({ action: "claim-wake" });
+      if (wake.wake !== true) {
+        summary.status = "idle";
+        summary.remoteWake = false;
+        return summary;
+      }
+      summary.remoteWake = true;
+    }
     if (options.queueAllTrackers === true) {
       const queued = await action({ action: "queue-all-active-trackers" });
       summary.queuedTotal = boundedResponseCount(queued.total, 100_000);

@@ -16148,7 +16148,9 @@
               await loadRankTrackers(true);
               var queuedSummary = queuedPayload.summary || {};
               setStatus(rankStatus, Number(queuedSummary.total || 0) > 0
-                ? "전체 " + Number(queuedSummary.total || 0) + "개를 중앙 자동 갱신에 등록했습니다. 완료된 순위부터 자동 반영됩니다."
+                ? (queuedPayload.remoteWakeRequested === true
+                  ? "전체 " + Number(queuedSummary.total || 0) + "개를 등록하고 개발 프로필에 원격 실행을 요청했습니다. 첫 작업은 약 1분 내 시작되며 나머지는 안전 간격으로 반영됩니다."
+                  : "전체 " + Number(queuedSummary.total || 0) + "개를 중앙 자동 갱신에 등록했습니다. 완료된 순위부터 자동 반영됩니다.")
                 : "갱신할 운영 중 순위 추적 항목이 없습니다.", Number(queuedSummary.total || 0) > 0 ? "is-ok" : "is-warn");
               return;
             }

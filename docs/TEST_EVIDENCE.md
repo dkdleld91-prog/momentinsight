@@ -731,3 +731,12 @@
 - 배포: 코드 `c29b381`을 GitHub `main`과 Production `dpl_DottuAAAw2adGYwBTC1xAvK1xxps`에 반영했다. 운영 별칭은 `https://insight.momentlabs.co.kr`, `/health`·`/ready`는 릴리스 `c29b3812dd8f`, 서울 `icn1`, Supabase ready다.
 - Mac 동기화: Production 반영 뒤 브리지를 재설치했다. 설치된 네이티브 호스트 wrapper SHA-256은 저장소와 일치하고 한 회차 `max_jobs=1`, 확장 프로그램 소스 버전 `1.0.11`, 08:50·14:50 KST 사전 기동 스케줄을 유지한다.
 - 운영 한계: 2026-08-09 19:50 KST 확인 시 열린 가격비교 탭은 네이버 네트워크 제한 상태다. 이 외부 제한은 배포 성공과 별개이며 제한 중 새 300개 수집을 주장하지 않는다. 부분 데이터는 저장하지 않고 마지막 정상값을 유지한다.
+
+## 2026-08-09 동빈 → 개발 프로필 원격 갱신 v1.0.12
+
+- 집중 회귀: 원격 신호 없음 시 네이버 미접속, 신호 1회당 최대 1작업, signed `claim-wake`, 300위 조회 wake, 계정 범위 전체 갱신 wake, RLS·service-role 전용 마이그레이션을 포함해 109/109 통과.
+- 전체 회귀: API·서버 397/397, 플레이스 수집기 51/51, 쇼핑 수집기 51/51 통과.
+- 계약: 서버 계약 38/38, Production 인증 18/18, 역할 5상태·관리자/광고주 parity, 보호 잠금 22함수·60파일·15마이그레이션 통과.
+- 공개 빌드: 관리자·광고주 변경 스크립트의 CSP SHA-256을 갱신하고 9파일·인라인 6개·고유 해시 4개·비밀 서명 0건으로 통과.
+- 최종 검증: `npm run check:release`와 `git diff --check` 통과.
+- 운영 쓰기 없음: Supabase 마이그레이션·운영 데이터·GitHub push·Vercel Production·Mac 브리지/확장 `1.0.12` 설치는 승인 전이라 실행하지 않았다.

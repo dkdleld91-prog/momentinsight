@@ -221,6 +221,29 @@ test("rejects signed invalid UTF-8 after authenticating the exact raw bytes", as
   });
 });
 
+test("atomically claims one pending remote wake through the signed worker endpoint", async () => {
+  await withWorkerEnv(async () => {
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_worker_wake");
+          return { data: true, error: null };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({ action: "claim-wake" }), ctx);
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, wake: true });
+    assert.deepEqual(calls, [
+      "mi_consume_naver_shopping_worker_nonce",
+      "mi_claim_naver_shopping_worker_wake",
+    ]);
+  });
+});
+
 test("claim keeps whitespace-distinct keywords in separate collection jobs", async () => {
   await withWorkerEnv(async () => {
     const attemptedIds = [];
@@ -836,4 +859,22 @@ test("lookup queue migration is isolated, deduplicated and claimed without block
   assert.match(sql, /mi_complete_naver_shopping_rank_lookup_job/iu);
   assert.match(sql, /mi_fail_naver_shopping_rank_lookup_job/iu);
   assert.doesNotMatch(sql, /grant[^;]+to authenticated/iu);
+});
+
+test("remote wake migration is atomic and service-role only", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /enable row level security/iu);
+  assert.match(sql, /force row level security/iu);
+  assert.match(sql, /revoke all on table public\.naver_shopping_worker_wakes from public, anon, authenticated, service_role/iu);
+  assert.match(sql, /grant select, insert, update on table public\.naver_shopping_worker_wakes to service_role/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /consumed_at is null or consumed_at < requested_at/iu);
+  assert.match(sql, /get diagnostics claimed_count = row_count/iu);
+  assert.match(sql, /grant execute on function public\.mi_request_naver_shopping_worker_wake\(text\)[\s\S]+to service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_worker_wake\(\)[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

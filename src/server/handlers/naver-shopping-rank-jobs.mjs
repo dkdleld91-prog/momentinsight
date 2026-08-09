@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 
 import { corsHeaders, protectedJson } from "../security.mjs";
+import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import {
   extractProductId,
   normalizeText,
@@ -137,9 +138,11 @@ async function enqueue(request, ctx) {
   }
   const jobId = String(data?.id || "").trim().toLowerCase();
   if (!UUID_PATTERN.test(jobId)) throw new Error("rank_lookup_enqueue_invalid");
+  const remoteWakeRequested = await requestShoppingWorkerWake(ctx, "rank-lookup");
   return json(request, {
     ok: true,
     pending: true,
+    remoteWakeRequested,
     jobId,
     status: String(data?.status || "pending"),
     deduplicated: data?.deduplicated === true,

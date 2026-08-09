@@ -79,8 +79,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 09. 20:18:47
-- 기준 커밋: 293dfc8
+- 마지막 자동 저장: 2026. 08. 09. 20:25:41
+- 기준 커밋: b2119b9
 - 작업트리: clean
 <!-- autosave:end -->
 
@@ -473,3 +473,12 @@
 - 검증: 네이티브 호스트 12/12, API·서버 393/393, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 22함수·58파일·14마이그레이션, 전체 `npm run check:release`, `git diff --check`를 통과했다. Production gate에서 공식 상단 실응답과 최근 원자 `checkedCount=300` 증거를 함께 확인했다.
 - 배포: 코드 `c29b381`을 GitHub `main`과 Vercel Production `dpl_DottuAAAw2adGYwBTC1xAvK1xxps`·운영 별칭에 반영했다. 운영 `/health`·`/ready`는 릴리스 `c29b3812dd8f`, 서울 `icn1`, Supabase ready다. Production 반영 뒤 Mac 브리지를 동일 코드로 재설치했다.
 - 운영 한계: 현재 네이버 가격비교 탭은 네트워크 접속 제한 상태다. 제한 중에는 재호출·부분 저장을 하지 않으며 기존 정상 순위와 30일 이력을 유지한다. 제한 해제 후 다음 순차 수집을 운영 관찰한다.
+
+### 2026-08-09 동빈 → 개발 프로필 원격 갱신
+
+- 상태: 구현·전체 릴리스 검증 완료 / Production 반영 승인 대기.
+- 동빈 프로필의 N 상품 갱신·300위 조회가 서버 단일 wake를 만들고 `Profile 5`가 1분 주기로 신호를 확인한다.
+- 신호가 있을 때만 최대 1건을 실행하며 남은 작업은 기존 30분 catch-up과 고정 일정으로 처리한다. 신호가 없으면 네이버를 열지 않는다.
+- Supabase RLS·service-role 전용 RPC, signed worker `claim-wake`, 확장 `1.0.12`, 관리자·광고주 안내와 CSP·보호 잠금을 함께 갱신했다.
+- `npm run check:release`, API·서버 397/397, 플레이스 51/51, 쇼핑 51/51, 서버 계약 38/38, Production 인증 18/18 통과.
+- Supabase 적용·Production 배포·Mac 브리지/확장 재설치·운영 실클릭은 승인 후 진행한다.

@@ -39,6 +39,9 @@ const files = {
   shoppingLocalWorkerHandler: "src/server/handlers/naver-shopping-local-worker.mjs",
   shoppingLocalWorkerContract: "src/server/naver-shopping/local-worker-contract.mjs",
   shoppingLocalWorkerMigration: "supabase/migrations/20260801125959_naver_shopping_local_worker.sql",
+  shoppingWorkerWake: "src/server/naver-shopping/worker-wake.mjs",
+  shoppingWorkerWakeMigration: "supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
+  shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
   shoppingNativeHostInstaller: "scripts/install-naver-shopping-chrome-bridge.mjs",
@@ -89,6 +92,9 @@ const shoppingLocalWorkerAuth = fs.readFileSync(files.shoppingLocalWorkerAuth, "
 const shoppingLocalWorkerHandler = fs.readFileSync(files.shoppingLocalWorkerHandler, "utf8");
 const shoppingLocalWorkerContract = fs.readFileSync(files.shoppingLocalWorkerContract, "utf8");
 const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMigration, "utf8");
+const shoppingWorkerWake = fs.readFileSync(files.shoppingWorkerWake, "utf8");
+const shoppingWorkerWakeMigration = fs.readFileSync(files.shoppingWorkerWakeMigration, "utf8");
+const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
 const shoppingNativeHostInstaller = fs.readFileSync(files.shoppingNativeHostInstaller, "utf8");
@@ -544,6 +550,28 @@ check(
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}, ${files.shoppingChromeSchedulerWrapper}`,
+);
+check(
+  "N Shopping website wakes the development Chrome profile within one minute and runs one job",
+  shoppingChromeManifest.version === "1.0.12"
+    && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
+    && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
+    && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
+    && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
+    && /action\(\{ action: "claim-wake" \}\)/.test(shoppingLocalWorker)
+    && /body\.action === "claim-wake"/.test(shoppingLocalWorkerHandler)
+    && /mi_request_naver_shopping_worker_wake/.test(shoppingWorkerWake)
+    && /mi_claim_naver_shopping_worker_wake/.test(shoppingWorkerWake)
+    && /force row level security/.test(shoppingWorkerWakeMigration)
+    && /security invoker/.test(shoppingWorkerWakeMigration)
+    && !/security definer/.test(shoppingWorkerWakeMigration)
+    && /consumed_at is null or consumed_at < requested_at/.test(shoppingWorkerWakeMigration)
+    && /requestShoppingWorkerWake\(ctx, "tracker-refresh-all"\)/.test(productTrackers)
+    && /requestShoppingWorkerWake\(ctx, "rank-lookup"\)/.test(shoppingRankLookupJobs)
+    && [adminPage, clientPage].every((source) =>
+      /queuedPayload\.remoteWakeRequested === true/.test(source)
+        && /개발 프로필에 원격 실행을 요청했습니다\./.test(source)),
+  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

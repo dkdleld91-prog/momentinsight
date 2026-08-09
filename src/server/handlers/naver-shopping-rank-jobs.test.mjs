@@ -40,15 +40,20 @@ test("derives a one-way lookup scope only from trusted session headers", () => {
 
 test("enqueues one exact 300 lookup without storing a raw account code", async () => {
   let rpcArgs = null;
+  let wakeArgs = null;
   const ctx = {
     supabaseAdmin: {
       async rpc(name, args) {
-        assert.equal(name, "mi_enqueue_naver_shopping_rank_lookup_job");
-        rpcArgs = args;
-        return {
-          data: { id: JOB_ID, status: "pending", deduplicated: false, expiresAt: "2026-08-03T01:30:00.000Z" },
-          error: null,
-        };
+        if (name === "mi_enqueue_naver_shopping_rank_lookup_job") {
+          rpcArgs = args;
+          return {
+            data: { id: JOB_ID, status: "pending", deduplicated: false, expiresAt: "2026-08-03T01:30:00.000Z" },
+            error: null,
+          };
+        }
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeArgs = args;
+        return { data: true, error: null };
       },
     },
   };
@@ -65,9 +70,11 @@ test("enqueues one exact 300 lookup without storing a raw account code", async (
   assert.equal(response.status, 202);
   assert.equal(payload.jobId, JOB_ID);
   assert.equal(payload.pending, true);
+  assert.equal(payload.remoteWakeRequested, true);
   assert.equal(rpcArgs.p_product_id, "12149720593");
   assert.match(rpcArgs.p_scope_hash, /^[0-9a-f]{64}$/u);
   assert.doesNotMatch(JSON.stringify(rpcArgs), /agency-a01/u);
+  assert.deepEqual(wakeArgs, { p_source: "rank-lookup" });
 });
 
 test("poll returns a completed result only inside the same hashed scope", async () => {

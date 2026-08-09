@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const LOCK_PATH = "scripts/protected-rank-features.lock.json";
-const RANK_MIGRATION_PATTERN = /naver_(?:place_)?rank_(?:trackers|snapshots)|naver_shopping_rank_lookup_jobs|claim_due_naver_(?:place_)?rank_tracker/i;
+const RANK_MIGRATION_PATTERN = /naver_(?:place_)?rank_(?:trackers|snapshots)|naver_shopping_(?:rank_lookup_jobs|worker_(?:remote_)?wake)|claim_due_naver_(?:place_)?rank_tracker/i;
 
 function read(file) {
   return fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");

@@ -10,6 +10,7 @@ import {
   shoppingRankConfig,
   shoppingRankSourceStatus,
 } from "../naver-shopping/source-status.mjs";
+import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import {
   classifyNaverProductType,
   extractProductId,
@@ -1281,12 +1282,16 @@ async function createTracker(request, ctx, body, access = {}) {
     leaseStartedAt: initialLeaseStartedAt,
     queueLocalWorker: isHybridLocalWorkerMode(shoppingRankConfig()),
   });
+  const remoteWakeRequested = checked.queuedForLocalWorker === true
+    ? await requestShoppingWorkerWake(ctx, "tracker-create")
+    : false;
   const checkedTracker = await attachTrackerGroup(ctx, { ...checked.tracker, group_name: groupName });
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
   return json(request, {
     ok: checked.ok || checked.preserved === true,
     queuedForLocalWorker: checked.queuedForLocalWorker === true,
+    remoteWakeRequested,
     message: checked.message,
     tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
   }, 201);
@@ -1355,6 +1360,9 @@ async function checkOne(request, ctx, body) {
     leaseStartedAt: claim.leaseStartedAt,
     queueLocalWorker: isHybridLocalWorkerMode(rankConfig),
   });
+  const remoteWakeRequested = checked.queuedForLocalWorker === true
+    ? await requestShoppingWorkerWake(ctx, "tracker-check")
+    : false;
   const checkedTracker = await attachTrackerGroup(ctx, checked.tracker);
   const snapshots = await loadSnapshots(ctx, [checked.tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
   const keywordVolumes = await loadKeywordVolumes([checked.tracker.keyword]);
@@ -1368,6 +1376,7 @@ async function checkOne(request, ctx, body) {
       retryAfter: Number(checked.retryAfter || 0),
       preserved: checked.preserved === true,
       queuedForLocalWorker: checked.queuedForLocalWorker === true,
+      remoteWakeRequested,
     } : {}),
     message: checked.message,
     tracker: trackerPayload(checkedTracker, snapshots.get(checked.tracker.id) || [], keywordVolumes.get(normalizeKeywordCompare(checked.tracker.keyword))),
@@ -1647,10 +1656,14 @@ async function queueRefreshAllTrackers(request, ctx, access) {
   const waiting = Math.max(0, Number(waitingResult.count || 0));
   const alreadyQueued = Math.max(0, waiting - queued);
   const alreadyProcessing = Math.max(0, total - waiting);
+  const remoteWakeRequested = total > 0
+    ? await requestShoppingWorkerWake(ctx, "tracker-refresh-all")
+    : false;
   return json(request, {
     ok: true,
     ...rankSource,
     queuedForLocalWorker: total > 0,
+    remoteWakeRequested,
     message: total
       ? `현재 계정의 운영 중 순위 ${total}개를 중앙 자동 갱신에 등록했습니다.`
       : "갱신할 운영 중 순위 추적 항목이 없습니다.",

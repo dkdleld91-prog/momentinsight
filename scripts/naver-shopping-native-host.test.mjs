@@ -277,7 +277,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.11");
+  assert.equal(manifest.version, "1.0.12");
+  assert.match(serviceWorker, /"rank-remote"/u);
+  assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
+  assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
@@ -310,6 +313,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(popup, /일부 갱신 완료/u);
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger \}\)/u);
   assert.match(nativeHost, /queueAllTrackers: start\.trigger === "manual"/u);
+  assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
   assert.match(popup, /전체 \$\{queuedTotal\}개 등록/u);
 });
 

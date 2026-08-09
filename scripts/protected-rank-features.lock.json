@@ -79,13 +79,13 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "ca4cc57292f36c355b4ddb1ef06aa58fe6cd260d4418bf463d8088453f4387b6"
+      "sha256": "80f1e68e44dede65840fa6742024adccc5b14b18036157117b549fe6ef249311"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "a7ff92c1273c26d497d0d1a581aab82319411df9f599dbb3bf8b7a049df58957"
+      "sha256": "e2fc78e2ff1cfce6c91104e8d18dbdb3588099eabb81c603eee8ca31891176eb"
     },
     {
       "id": "operation-place-30-day",
@@ -155,7 +155,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "252bbb3e45529c5ec0a4d87c142753e755b6b061040fd7eeb2f0b36527639929"
+      "sha256": "9270c95cf0e233bfdea0e6b36c5ca0d10b482326464a71476f5772c86e142e44"
     },
     {
       "id": "product-organic-rank-server",
@@ -326,17 +326,22 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "69ad6d8eaeb9f4f025af700ecbf47d034f3ee04ac17a55e2cbd99fe214549a9d"
+      "sha256": "9df57f12c961a8e21447f4ab6bcde79b990f2e3dc58210beb4e3f2752a606484"
+    },
+    {
+      "id": "shopping-worker-wake-server",
+      "file": "src/server/naver-shopping/worker-wake.mjs",
+      "sha256": "fd6d5faa02712aef691e4a11a05ea9937750eafb7aa52946dbea705da5c71229"
     },
     {
       "id": "shopping-rank-lookup-handler",
       "file": "src/server/handlers/naver-shopping-rank-jobs.mjs",
-      "sha256": "683a3c729073205295081b5dc422c59bf0c043f9629c4f7c7f96dec49bfd578f"
+      "sha256": "fbefd189e0c23dee84b37017d862c028c4b6ddf27b24fd0c2e3f1283628284d5"
     },
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "da5bdff404db14c0f4f7494e127069e021630b1bb8c3ecaab51ad38a9152035d"
+      "sha256": "8e365780df9c154b017c80f9cca118e139f5086cd7eec886483219f30af2e6e7"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -381,7 +386,7 @@
     {
       "id": "rank-feature-lock-checker",
       "file": "scripts/check-protected-rank-features.mjs",
-      "sha256": "8f27c2835f39d6277febc2e3c5991e5227f5b603fd4c709170c5d610b1111b2c"
+      "sha256": "f63672dde622fd1f06aa8f0347a7116e08677f857a24e9f451d835fdef13c16a"
     },
     {
       "id": "shopping-local-worker-schema",
@@ -402,9 +407,15 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-worker-remote-wake-schema",
+      "file": "supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
+      "sha256": "7507e2f9e389e50e57b73edd4140883db9ab7cb496459edf964e153fc6d1c068",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "0766301b41fc4331b7303b6ab86742c771fc8f17ff6c772086b6248c8706e825"
+      "sha256": "2c1bae1bc91a9e1dda0e4efecc456c4a262e6fb3af45924ccdede8250b2116bc"
     },
     {
       "id": "shopping-chrome-native-host-core",
@@ -429,12 +440,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "5ce45478df3062481165f58bcae3948358d05bdd577d30ac804f4dd54ff4445b"
+      "sha256": "f7886fd8d170b328076905fe76ff9c9fef3166702635ac8e3ef931a234caac1d"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "fe2e83cc8cdb844931e68ce200745fa991371324489582073d1833ae08b768e5"
+      "sha256": "9d58cff11ffd63ff0daaf4d6e2c6c04628d8043a3237563b5d57a4902c395b78"
     },
     {
       "id": "shopping-local-worker-session-boundary",

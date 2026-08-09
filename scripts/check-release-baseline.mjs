@@ -168,6 +168,8 @@ const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_na
 const shoppingRankLookupJobs = read("src/server/handlers/naver-shopping-rank-jobs.mjs");
 const shoppingRankLookupMigration = read("supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql");
 const shoppingRankLookupGrantMigration = read("supabase/migrations/20260802164548_harden_naver_shopping_rank_lookup_jobs_grants.sql");
+const shoppingWorkerWake = read("src/server/naver-shopping/worker-wake.mjs");
+const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1239,7 +1241,27 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.11"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.12"
+    && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
+    && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
+    && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
+    && shoppingLocalWorker.includes('options.requireWakeSignal === true')
+    && shoppingLocalWorker.includes('const wake = await action({ action: "claim-wake" })')
+    && shoppingLocalWorkerHandler.includes('body.action === "claim-wake"')
+    && shoppingLocalWorkerHandler.includes('claimShoppingWorkerWake(ctx)')
+    && shoppingWorkerWake.includes('mi_request_naver_shopping_worker_wake')
+    && shoppingWorkerWake.includes('mi_claim_naver_shopping_worker_wake')
+    && shoppingWorkerWakeMigration.includes('force row level security')
+    && shoppingWorkerWakeMigration.includes('security invoker')
+    && !shoppingWorkerWakeMigration.includes('security definer')
+    && shoppingWorkerWakeMigration.includes('consumed_at is null or consumed_at < requested_at')
+    && shoppingWorkerWakeMigration.includes('to service_role')
+    && shoppingRankLookupJobs.includes('requestShoppingWorkerWake(ctx, "rank-lookup")')
+    && rankServer.includes('requestShoppingWorkerWake(ctx, "tracker-refresh-all")')
+    && [adminSource, clientSource].every((source) =>
+      source.includes('queuedPayload.remoteWakeRequested === true')
+        && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.12"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

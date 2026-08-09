@@ -7,6 +7,7 @@ import {
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "../naver-shopping/local-worker-contract.mjs";
+import { claimShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import { protectedJson } from "../security.mjs";
 import {
   findShoppingRankFromWindow,
@@ -480,6 +481,9 @@ export async function handleLocalWorkerRequest(request, ctx) {
     }
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw workerError("LOCAL_WORKER_JSON_INVALID", 400);
+    }
+    if (body.action === "claim-wake") {
+      return json(request, { ok: true, wake: await claimShoppingWorkerWake(ctx) });
     }
     if (body.action === "claim") {
       const preferLookup = body.preferLookup !== false;

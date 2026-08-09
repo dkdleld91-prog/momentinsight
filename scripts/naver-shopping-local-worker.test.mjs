@@ -324,6 +324,77 @@ test("one approved manual run queues every active tracker before the bounded dra
   ]);
 });
 
+test("remote polling exits without opening Naver when no wake is pending", async () => {
+  const calls = [];
+  let collectCount = 0;
+  let closed = false;
+  const provider = {
+    async collect() { collectCount += 1; },
+    async close() { closed = true; },
+  };
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: false } },
+    ], calls),
+    provider,
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "idle",
+    claimed: 0,
+    submitted: 0,
+    failed: 0,
+    releaseFailed: 0,
+    remoteWake: false,
+  });
+  assert.equal(collectCount, 0);
+  assert.equal(closed, true);
+  assert.deepEqual(calls.map((call) => call.action), ["claim-wake"]);
+});
+
+test("one remote wake runs at most one queued job even with a larger configured budget", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const provider = {
+    async collect() { collectCount += 1; return completeWindow(); },
+    async close() {},
+  };
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, wake: true } },
+      { body: { ok: true, job: JOB } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+      } },
+    ], calls),
+    provider,
+    requireWakeSignal: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed",
+    claimed: 1,
+    submitted: 1,
+    failed: 0,
+    releaseFailed: 0,
+    remoteWake: true,
+  });
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim-wake", "claim", "submit"]);
+});
+
 test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
   const calls = [];
   const secondJob = {

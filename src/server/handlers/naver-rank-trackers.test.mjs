@@ -305,9 +305,15 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
   const teamCode = "mml93-t01";
   const updatedIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
   const calls = [];
+  const wakeSources = [];
   let updateCount = 0;
   const ctx = {
     supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeSources.push(args.p_source);
+        return { data: true, error: null };
+      },
       from(table) {
         assert.equal(table, TRACKERS);
         const call = { filters: [], update: null, head: false };
@@ -377,6 +383,8 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
   assert.equal(secondResponse.status, 200);
   assert.equal(firstBody.ok, true);
   assert.equal(secondBody.ok, true);
+  assert.equal(firstBody.remoteWakeRequested, true);
+  assert.equal(secondBody.remoteWakeRequested, true);
   assert.deepEqual(firstBody.summary, {
     total: 3, queued: 2, alreadyQueued: 0, alreadyProcessing: 1,
   });
@@ -384,6 +392,7 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
     total: 3, queued: 0, alreadyQueued: 2, alreadyProcessing: 1,
   });
   assert.equal(calls.length, 6);
+  assert.deepEqual(wakeSources, ["tracker-refresh-all", "tracker-refresh-all"]);
   for (const call of calls) {
     assert.deepEqual(call.filters.find((filter) => filter[0] === "in"), ["in", "agency_code", [teamCode]]);
     assert.deepEqual(call.filters.find((filter) => filter[1] === "status"), ["eq", "status", "active"]);

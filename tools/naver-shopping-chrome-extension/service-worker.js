@@ -1,5 +1,5 @@
 const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
-const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
+const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up", "rank-remote"]);
 const PRICE_COMPARE_SEARCH_PATH = "/search/all";
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
@@ -194,6 +194,7 @@ async function configureAlarms() {
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
     ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
     ["rank-catch-up", { delayInMinutes: 30, periodInMinutes: 30 }],
+    ["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }],
   ];
   await Promise.all(alarmDefinitions.map(async ([name, definition]) => {
     const existing = await chrome.alarms.get(name);
@@ -410,6 +411,9 @@ async function runWorker(trigger = "manual") {
       port.postMessage({ action: "run", trigger });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
+    if (result.status === "idle" && result.remoteWake === false) {
+      return { ok: true, idle: true, summary: result };
+    }
     const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
     const haltedCode = String(result.haltedCode || "");

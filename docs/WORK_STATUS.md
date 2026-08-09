@@ -563,3 +563,10 @@
 - Production gate는 최근 광고 제외 오가닉 300개 원자 수집 증거와 공식 상단 실응답을 확인해 통과했다. 코드 `c29b381`을 GitHub `main`과 Vercel Production `dpl_DottuAAAw2adGYwBTC1xAvK1xxps`·운영 별칭에 반영했다.
 - 운영 `/health`·`/ready`는 릴리스 `c29b3812dd8f`, 서울 `icn1`, Supabase ready를 반환했다. Production 반영 뒤 Mac 브리지를 재설치해 소스·네이티브 호스트·스케줄러를 동기화했다.
 - 현재 열린 가격비교 탭의 네이버 네트워크 제한은 별도 외부 상태다. 제한 중에는 자동 재시도와 부분 저장을 하지 않으며 마지막 정상 순위와 30일 이력을 유지한다.
+
+## 2026-08-09 N 쇼핑 중앙 Chrome 개발 프로필 전환
+
+- 중앙 수집 전용 Chrome 프로필을 기존 `동빈(Default)`에서 `동빈(개발)`의 내부 디렉터리 `Profile 5`로 전환했다.
+- Mac 브리지와 `co.kr.momentinsight.naver-shopping-chrome-scheduler`를 다시 설치해 10분 준비 실행과 08:50·14:50 Chrome 준비가 `Profile 5`를 열도록 맞췄다.
+- `동빈(개발)` 프로필에 `Moment Insight N Shopping Rank` 1.0.11을 압축해제 확장으로 로드·활성화·툴바 고정하고 팝업의 `자동 갱신 준비 완료`를 확인했다. 수동 `지금 안전 갱신`은 실행하지 않았다.
+- 중복 수집 방지를 위해 기존 `동빈(Default)` 프로필의 같은 확장은 한 번 비활성화해야 한다. Chrome 내부 보안 화면은 자동 제어가 차단돼 해당 비활성화 완료 증거는 아직 없다.

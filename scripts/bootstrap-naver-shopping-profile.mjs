@@ -22,7 +22,7 @@ const COLLECTOR_DIRECTORY = path.resolve(
 );
 const PLAYWRIGHT_MODULE = path.join(COLLECTOR_DIRECTORY, "node_modules/playwright/index.mjs");
 const LOGIN_TIMEOUT_MS = 15 * 60_000;
-const SEARCH_URL = "https://search.shopping.naver.com/search/all?query=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0";
+const SEARCH_URL = "https://search.shopping.naver.com/ns/search?query=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0";
 const BLOCK_PATTERN = /캡챠|captcha|자동입력\s*방지|로봇이\s*아닙니다|비정상적인\s*접근|이용이\s*제한|access\s*denied/i;
 
 function bootstrapError(code) {
@@ -86,7 +86,7 @@ async function verifiedShoppingPage(page) {
   if (
     current.protocol !== "https:"
     || !["search.shopping.naver.com", "msearch.shopping.naver.com"].includes(current.hostname)
-    || current.pathname !== "/search/all"
+    || current.pathname !== "/ns/search"
   ) return false;
   const snapshot = await page.evaluate(() => ({
     hasNextData: Boolean(document.getElementById("__NEXT_DATA__")?.textContent),

@@ -7576,7 +7576,7 @@
         var term = String(keyword || "").trim();
         if (!term) return "";
         var encoded = encodeURIComponent(term);
-        return "https://search.shopping.naver.com/search/all?query=" + encoded + "&origQuery=" + encoded + "&productSet=total&sort=rel&viewType=list";
+        return "https://search.shopping.naver.com/ns/search?query=" + encoded;
       }
 
       function renderRankKeywordName(keyword) {

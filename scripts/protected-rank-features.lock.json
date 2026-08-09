@@ -346,7 +346,7 @@
     {
       "id": "shopping-local-worker-profile-bootstrap",
       "file": "scripts/bootstrap-naver-shopping-profile.mjs",
-      "sha256": "2663bfc1dc72a6cac3464abf6602bda8f311bac1dd6af47a68f82932b0d0708a"
+      "sha256": "2afb5b3fbdd1c59b7a9d916d25f7e3dbd960cb8e22b5c08b631ba1965ea09ee0"
     },
     {
       "id": "shopping-local-worker-launch-agent",

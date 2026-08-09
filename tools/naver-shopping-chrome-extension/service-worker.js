@@ -13,10 +13,9 @@ const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
 const MANUAL_RESUME_REQUIRED_KEY = "momentInsightRankManualResumeRequired";
 const NETWORK_RETRY_COUNT_KEY = "momentInsightRankNetworkRetryCount";
 const NETWORK_RESTRICTION_RETRY_DELAYS_MS = [
-  2 * 60 * 60_000,
-  6 * 60 * 60_000,
-  12 * 60 * 60_000,
-  24 * 60 * 60_000,
+  30 * 60_000,
+  60 * 60_000,
+  120 * 60_000,
 ];
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
@@ -246,7 +245,7 @@ async function configureAlarms() {
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
     ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
-    ["rank-catch-up", { delayInMinutes: 30, periodInMinutes: 30 }],
+    ["rank-catch-up", { delayInMinutes: 20, periodInMinutes: 20 }],
     ["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }],
   ];
   await Promise.all(alarmDefinitions.map(async ([name, definition]) => {

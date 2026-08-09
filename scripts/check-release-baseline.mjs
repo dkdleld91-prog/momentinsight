@@ -1231,7 +1231,8 @@ const checks = {
     && shoppingChromeSchedulerWrapper.includes("/usr/bin/open -gj")
     && shoppingChromeSchedulerWrapper.includes("--profile-directory=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
-  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 30, periodInMinutes: 30 }]')
+  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 20, periodInMinutes: 20 }]')
+    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS\s*=\s*\[\s*30\s*\*\s*60_000,\s*60\s*\*\s*60_000,\s*120\s*\*\s*60_000,\s*\]/u.test(shoppingChromeWorker)
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
     && shoppingChromeWorker.includes("INITIAL_REQUEST_DELAY_MS = 30_000")
@@ -1244,7 +1245,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.14"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.15"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
@@ -1264,7 +1265,7 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.14"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.15"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
     && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')

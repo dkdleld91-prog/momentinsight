@@ -542,7 +542,7 @@ check(
       /resolveChromeProfileDirectory/,
       /activateChromeScheduler/,
     ])
-    && /\["rank-catch-up", \{ delayInMinutes: 30, periodInMinutes: 30 \}\]/.test(shoppingChromeWorker)
+    && /\["rank-catch-up", \{ delayInMinutes: 20, periodInMinutes: 20 \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
       /--profile-directory=/,
@@ -553,14 +553,11 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.14"
+  shoppingChromeManifest.version === "1.0.15"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)
-    && /2 \* 60 \* 60_000/.test(shoppingChromeWorker)
-    && /6 \* 60 \* 60_000/.test(shoppingChromeWorker)
-    && /12 \* 60 \* 60_000/.test(shoppingChromeWorker)
-    && /24 \* 60 \* 60_000/.test(shoppingChromeWorker)
+    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[\s*30 \* 60_000,\s*60 \* 60_000,\s*120 \* 60_000,\s*\]/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)

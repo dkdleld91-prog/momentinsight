@@ -277,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.14");
+  assert.equal(manifest.version, "1.0.15");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
@@ -288,10 +288,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /MANUAL_RESUME_REQUIRED_KEY/u);
   assert.match(serviceWorker, /NETWORK_RETRY_COUNT_KEY/u);
   assert.match(serviceWorker, /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[/u);
-  assert.match(serviceWorker, /2 \* 60 \* 60_000/u);
-  assert.match(serviceWorker, /6 \* 60 \* 60_000/u);
-  assert.match(serviceWorker, /12 \* 60 \* 60_000/u);
-  assert.match(serviceWorker, /24 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[\s*30 \* 60_000,\s*60 \* 60_000,\s*120 \* 60_000,\s*\]/u);
   assert.match(serviceWorker, /scheduleNetworkRestrictionRetry/u);
   assert.match(serviceWorker, /preserveNetworkRetryCount: true/u);
   assert.match(serviceWorker, /naver_network_restricted/u);
@@ -350,7 +347,7 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
-  assert.match(serviceWorker, /periodInMinutes: 30/u);
+  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 20, periodInMinutes: 20 \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
   assert.match(serviceWorker, /INITIAL_REQUEST_DELAY_MS = 30_000/u);

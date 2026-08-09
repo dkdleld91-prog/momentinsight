@@ -727,4 +727,7 @@
 - 실패 안전: 2026-08-09 18:32 KST 수동 실행은 2페이지에서 `naver_network_restricted`로 중단됐고 native host는 `max_jobs=1`, `exit status=0`으로 종료했다. 완전 300개가 아니므로 DB 제출·현재값 교체를 하지 않는다.
 - 요청 안정화: 첫 요청 30~45초, 페이지 간 45~75초, catch-up 30분, 순차 1개 키워드를 정적 계약과 테스트로 고정했다.
 - 자동 검증: 네이티브 호스트 12/12, API·서버 393/393, 플레이스 51/51, 쇼핑 51/51, 서버 계약 37/37, Production 인증 18/18, 보호 잠금 self-test와 전체 `npm run check:release`, `git diff --check` 통과.
-- 미완료 증거: 새 가격비교 수집의 `pw-chrome-*`·`checked_count=300`이 없어 Vercel Production 배포는 실행하지 않는다.
+- Production gate: 공식 상단 실응답 `checkedCount=44`, 광고 제외·정확 매칭 가능 상태와 최근 원자 수집 `checkedCount=300`, `source=naver_shopping_results_collector`를 함께 확인해 `SHOPPING_RANK_HYBRID_LIVE_READY`·`deploymentEligible=true`로 통과했다.
+- 배포: 코드 `c29b381`을 GitHub `main`과 Production `dpl_DottuAAAw2adGYwBTC1xAvK1xxps`에 반영했다. 운영 별칭은 `https://insight.momentlabs.co.kr`, `/health`·`/ready`는 릴리스 `c29b3812dd8f`, 서울 `icn1`, Supabase ready다.
+- Mac 동기화: Production 반영 뒤 브리지를 재설치했다. 설치된 네이티브 호스트 wrapper SHA-256은 저장소와 일치하고 한 회차 `max_jobs=1`, 확장 프로그램 소스 버전 `1.0.11`, 08:50·14:50 KST 사전 기동 스케줄을 유지한다.
+- 운영 한계: 2026-08-09 19:50 KST 확인 시 열린 가격비교 탭은 네이버 네트워크 제한 상태다. 이 외부 제한은 배포 성공과 별개이며 제한 중 새 300개 수집을 주장하지 않는다. 부분 데이터는 저장하지 않고 마지막 정상값을 유지한다.

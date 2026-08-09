@@ -12,7 +12,8 @@
 - native host 12/12, 쇼핑 수집기 51/51, 앱·API 393/393, 플레이스 51/51, 서버 계약 37/37, Production 인증 18/18, Vercel 빌드와 `git diff --check`를 통과했습니다.
 - 사용자 배포 승인 후 변경된 수집기 4개 파일의 검증 해시만 보호 잠금에 반영했습니다. 잠금 self-test와 전체 `npm run check:release`는 보호 잠금 22함수·58파일·14마이그레이션, 앱·API 393/393, 플레이스·쇼핑 각 51/51, Production 인증 18/18로 통과했습니다.
 - 코드 `777dd91`을 GitHub `main`과 Production `dpl_44Ar7hu3M1GK8Gu7squaiWNmMo2c`·운영 별칭에 반영했습니다. `/health`·`/ready`는 릴리스 `777dd919387f`, 서울 `icn1`, Supabase ready입니다. 중앙 Mac 브리지 재설치와 핵심 파일 해시 일치를 확인했습니다.
-- 후속 배포에서는 관리자·광고주의 키워드 외부 링크와 전용 수집 프로필 부트스트랩도 `/ns/search`로 통일했습니다. 구 `/search/all` 재유입을 기준선·부트스트랩 테스트·보호 잠금으로 차단하며 CSP 해시도 새 역할 화면에 맞췄습니다.
+- 후속 배포 준비에서는 관리자·광고주의 키워드 외부 링크와 전용 수집 프로필 부트스트랩도 `/ns/search`로 통일했습니다. 구 `/search/all` 재유입을 기준선·부트스트랩 테스트·보호 잠금으로 차단하며 CSP 해시도 새 역할 화면에 맞췄습니다.
+- 후속 코드 `1ff79e3`은 GitHub `main`에 반영했지만 Production 빌드 `dpl_EfqCzrA2DjxB7K8U9DseKfqhhRFb`은 `hybrid_worker_recent_300_proof_missing` 안전 게이트가 차단했습니다. 운영 별칭은 정상 릴리스 `777dd919387f`를 유지합니다. 현재 열린 `/ns/search` 보안확인을 담당자가 완료한 뒤 신규 300개 원자 증거를 생성하고 같은 커밋을 다시 배포합니다.
 - Chrome `Default` 프로필의 확장 경로는 새 1.0.9 소스를 가리키지만 실행 중인 unpacked 확장의 코드 재로드 여부는 파일 확인만으로 확정할 수 없습니다. 담당자가 `chrome://extensions`에서 Moment Insight N Shopping Rank를 한 번 재로드한 뒤 신규 `/ns/search` 300개 원자 snapshot을 확인하기 전에는 새 경로 운영 실수집까지 완료됐다고 과장하지 않습니다.
 
 ### 2026-08-08 N상품 네트워크 제한 수동 해제·신규 키워드 우선 처리 Production 반영

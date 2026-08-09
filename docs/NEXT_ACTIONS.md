@@ -8,7 +8,8 @@
 4. 완료: 사용자 승인 후 보호 잠금 대상 4개 파일의 검증 해시만 갱신하고 self-test·전체 `npm run check:release`·최종 diff를 통과했습니다.
 5. 완료: 코드 `777dd91`, Production `dpl_44Ar7hu3M1GK8Gu7squaiWNmMo2c`, 운영 릴리스 `777dd919387f`와 중앙 Mac 브리지 재설치를 반영했습니다.
 6. 완료: 관리자·광고주 키워드 링크와 전용 프로필 부트스트랩까지 `/ns/search`로 통일하고 구 `/search/all` 회귀 차단, CSP, 보호 잠금 검사를 추가했습니다.
-7. 사용자 1회 조치: 현재 열린 네이버 보안확인을 직접 완료합니다. 이후 새 `/ns/search` 기반 신규 `pw-chrome-*`·`checked_count=300` snapshot을 운영에서 확인합니다.
+7. 사용자 1회 조치: 현재 열린 네이버 보안확인을 직접 완료합니다. CAPTCHA는 자동 우회하지 않습니다.
+8. 완료 조건: 새 `/ns/search` 기반 신규 `pw-chrome-*`·`checked_count=300` snapshot을 확인한 뒤, 안전 게이트를 통과시켜 코드 `1ff79e3`을 Production에 재배포합니다. 그 전에는 운영 별칭의 정상 릴리스 `777dd919387f`를 유지합니다.
 
 ## 2026-08-08 N상품 네트워크 제한·신규 키워드 우선 처리
 

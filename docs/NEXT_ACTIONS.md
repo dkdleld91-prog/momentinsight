@@ -6,7 +6,7 @@
 2. 완료: Windows는 primary heartbeat, Mac은 standby로 고정했습니다. Windows 신호가 3분 이상 없고 기존 lease가 끝난 경우에만 Mac이 oldest-first 미처리 작업을 이어받습니다.
 3. 완료: 네이버 제한 신호를 공용 쿨다운으로 기록하고 마지막 정상 순위·30일 이력·대기 순서를 보존합니다. 쿠키 상시 삭제, CAPTCHA 풀이, VPN·제한 우회는 하지 않습니다.
 4. 완료: 운영 Supabase migration, RLS·함수 권한 검증, Mac native runtime 재설치, 전체 `npm run check:release`를 통과했습니다.
-5. 배포 순서: 코드 커밋·GitHub·Production 반영 후 Mac/Windows 확장 1.0.18을 각각 한 번 재로드합니다. 구버전은 공용 차선 정보가 없어 새 서버에서 fail-closed합니다.
+5. 완료: 구현 커밋 `bb90e84`를 GitHub `main`과 Production 릴리스 `bb90e846261e`에 반영했고 Mac native runtime을 standby로 재설치했습니다. `/health`·`/ready`는 서울 `icn1`에서 200입니다.
 6. 사용자 1회 조치: Windows 사용자 로그인 후 Chrome `동빈 (개발)`을 열고 `chrome://extensions`에서 Moment Insight N Shopping Rank의 새로고침을 한 번 누릅니다.
 7. 운영 확인: `windows-desktop-primary` heartbeat, Mac `primary_online` 대기, 공용 lease 한 개, 신규 `pw-chrome-*`·`checked_count=300`을 순서대로 확인합니다.
 

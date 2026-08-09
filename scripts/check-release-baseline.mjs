@@ -1206,7 +1206,10 @@ const checks = {
     && shoppingChromeWorker.includes("findResolvedNaverTab")
     && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
     && shoppingChromeWorker.includes("chrome.tabs.remove(collectionTabId)")
-    && shoppingChromeWorker.includes("clearVerificationState({ closeTab: false })")
+    && shoppingChromeWorker.includes("preserveNetworkRetryCount: true")
+    && shoppingChromeWorker.includes("NETWORK_RESTRICTION_RETRY_DELAYS_MS")
+    && shoppingChromeWorker.includes("scheduleNetworkRestrictionRetry")
+    && shoppingChromeWorker.includes('"rank-recovery"')
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && shoppingNativeHostCore.includes("parseNaverNextDataPage")
     && shoppingNativeHostCore.includes("buildNativeWindowFromRows")
@@ -1241,7 +1244,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.12"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.13"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
@@ -1261,8 +1264,8 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.12"
-    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.13"
+    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')
     && shoppingLocalWorkerHandler.includes('body.action === "queue-all-active-trackers"')

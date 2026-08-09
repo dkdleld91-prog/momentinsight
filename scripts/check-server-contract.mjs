@@ -510,7 +510,7 @@ check(
       /request\.limit !== 300/,
       /request\.rankPolicy !== "organic_only"/,
       /chrome\.tabs\.remove\(collectionTabId\)/,
-      /clearVerificationState\(\{ closeTab: false \}\)/,
+      /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/,
     ])
     && !/NPLUS_SEARCH_PATH|\/ns\/search|\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
@@ -553,9 +553,15 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.12"
+  shoppingChromeManifest.version === "1.0.13"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
+    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)
+    && /2 \* 60 \* 60_000/.test(shoppingChromeWorker)
+    && /6 \* 60 \* 60_000/.test(shoppingChromeWorker)
+    && /12 \* 60 \* 60_000/.test(shoppingChromeWorker)
+    && /24 \* 60 \* 60_000/.test(shoppingChromeWorker)
+    && /trigger: workerTrigger/.test(shoppingChromeWorker)
     && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
     && /action\(\{ action: "claim-wake" \}\)/.test(shoppingLocalWorker)

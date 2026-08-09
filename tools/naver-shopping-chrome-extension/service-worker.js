@@ -11,6 +11,13 @@ const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
 const MANUAL_RESUME_REQUIRED_KEY = "momentInsightRankManualResumeRequired";
+const NETWORK_RETRY_COUNT_KEY = "momentInsightRankNetworkRetryCount";
+const NETWORK_RESTRICTION_RETRY_DELAYS_MS = [
+  2 * 60 * 60_000,
+  6 * 60 * 60_000,
+  12 * 60 * 60_000,
+  24 * 60 * 60_000,
+];
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
   "naver_captcha_detected",
@@ -39,11 +46,46 @@ async function verificationState() {
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
     MANUAL_RESUME_REQUIRED_KEY,
+    NETWORK_RETRY_COUNT_KEY,
   ]);
   return {
     blockedUntil: Number(stored[VERIFICATION_BLOCKED_UNTIL_KEY] || 0),
     tabId: Number(stored[VERIFICATION_TAB_ID_KEY] || 0),
     manualResumeRequired: stored[MANUAL_RESUME_REQUIRED_KEY] === true,
+    networkRetryCount: Math.max(0, Number(stored[NETWORK_RETRY_COUNT_KEY] || 0)),
+  };
+}
+
+function networkRestrictionRetryDelay(attempt) {
+  const index = Math.min(
+    NETWORK_RESTRICTION_RETRY_DELAYS_MS.length - 1,
+    Math.max(0, Number(attempt || 1) - 1),
+  );
+  return NETWORK_RESTRICTION_RETRY_DELAYS_MS[index];
+}
+
+async function scheduleNetworkRestrictionRetry({ tabId = 0 } = {}) {
+  const current = await verificationState();
+  const resolvedTabId = Number(tabId || current.tabId || 0);
+  if (current.manualResumeRequired && current.blockedUntil > Date.now()) {
+    if (resolvedTabId && resolvedTabId !== current.tabId) {
+      await chrome.storage.local.set({ [VERIFICATION_TAB_ID_KEY]: resolvedTabId });
+    }
+    return { ...current, tabId: resolvedTabId || current.tabId };
+  }
+  const networkRetryCount = current.networkRetryCount + 1;
+  const blockedUntil = Date.now() + networkRestrictionRetryDelay(networkRetryCount);
+  await chrome.storage.local.set({
+    [VERIFICATION_BLOCKED_UNTIL_KEY]: blockedUntil,
+    [MANUAL_RESUME_REQUIRED_KEY]: true,
+    [NETWORK_RETRY_COUNT_KEY]: networkRetryCount,
+    ...(resolvedTabId ? { [VERIFICATION_TAB_ID_KEY]: resolvedTabId } : {}),
+  });
+  return {
+    blockedUntil,
+    tabId: resolvedTabId,
+    manualResumeRequired: true,
+    networkRetryCount,
   };
 }
 
@@ -66,21 +108,19 @@ async function surfaceNetworkRestrictionTab(tabId) {
     await chrome.tabs.remove(current.tabId).catch(() => {});
   }
   await chrome.tabs.update(tabId, { active: true }).catch(() => {});
-  await chrome.storage.local.set({
-    [VERIFICATION_BLOCKED_UNTIL_KEY]: 0,
-    [VERIFICATION_TAB_ID_KEY]: tabId,
-    [MANUAL_RESUME_REQUIRED_KEY]: true,
-  });
+  await scheduleNetworkRestrictionRetry({ tabId });
   return tabId;
 }
 
-async function clearVerificationState({ closeTab = true } = {}) {
+async function clearVerificationState({ closeTab = true, preserveNetworkRetryCount = false } = {}) {
   const current = await verificationState();
-  await chrome.storage.local.remove([
+  const keys = [
     VERIFICATION_BLOCKED_UNTIL_KEY,
     VERIFICATION_TAB_ID_KEY,
     MANUAL_RESUME_REQUIRED_KEY,
-  ]);
+  ];
+  if (!preserveNetworkRetryCount) keys.push(NETWORK_RETRY_COUNT_KEY);
+  await chrome.storage.local.remove(keys);
   if (closeTab && current.tabId) await chrome.tabs.remove(current.tabId).catch(() => {});
   return current.tabId || null;
 }
@@ -136,17 +176,21 @@ async function prepareVerificationState(trigger, verification) {
       if (trigger === "manual") {
         await chrome.tabs.update(verification.tabId, { active: true }).catch(() => {});
       }
-      await chrome.storage.local.set({ [MANUAL_RESUME_REQUIRED_KEY]: true });
-      await saveStatus("verification", "naver_network_restricted");
-      return { code: "naver_network_restricted", reusableTabId: null };
+      if (verification.manualResumeRequired && verification.blockedUntil > 0
+        && verification.blockedUntil <= Date.now()) {
+        await clearVerificationState({ closeTab: true, preserveNetworkRetryCount: true });
+        return { code: "", reusableTabId: null, recovered: true };
+      }
+      const retry = await scheduleNetworkRestrictionRetry({ tabId: verification.tabId });
+      await saveNetworkRestrictionStatus(retry);
+      return { code: "naver_network_retry_wait", reusableTabId: null };
     }
     if (tabState.status === "resolved") {
-      if (verification.manualResumeRequired && trigger !== "manual") {
-        await saveStatus("verification", "naver_manual_resume_required");
-        return { code: "naver_manual_resume_required", reusableTabId: null };
-      }
-      const reusableTabId = await clearVerificationState({ closeTab: false });
-      return { code: "", reusableTabId };
+      const reusableTabId = await clearVerificationState({
+        closeTab: false,
+        preserveNetworkRetryCount: true,
+      });
+      return { code: "", reusableTabId, recovered: true };
     }
     if (tabState.status === "blocked" || tabState.status === "unknown") {
       if (trigger === "manual") {
@@ -161,16 +205,25 @@ async function prepareVerificationState(trigger, verification) {
     if (trigger === "manual") {
       const reusableTabId = await findResolvedNaverTab();
       if (reusableTabId) {
-        await clearVerificationState({ closeTab: false });
-        return { code: "", reusableTabId };
+        await clearVerificationState({ closeTab: false, preserveNetworkRetryCount: true });
+        return { code: "", reusableTabId, recovered: true };
       }
     }
-    await saveStatus("verification", "naver_manual_resume_required");
-    return { code: "naver_manual_resume_required", reusableTabId: null };
+    if (verification.blockedUntil > 0 && verification.blockedUntil <= Date.now()) {
+      await clearVerificationState({ closeTab: true, preserveNetworkRetryCount: true });
+      return { code: "", reusableTabId: null, recovered: true };
+    }
+    const retry = await scheduleNetworkRestrictionRetry();
+    await saveNetworkRestrictionStatus(retry);
+    return { code: "naver_network_retry_wait", reusableTabId: null };
   }
-  if (trigger !== "manual" && verification.blockedUntil > Date.now()) {
+  if (verification.blockedUntil > Date.now()) {
     await saveStatus("verification", "naver_verification_cooldown");
     return { code: "naver_verification_cooldown", reusableTabId: null };
+  }
+  if (verification.blockedUntil > 0) {
+    await clearVerificationState({ closeTab: true, preserveNetworkRetryCount: true });
+    return { code: "", reusableTabId: null, recovered: true };
   }
   return { code: "", reusableTabId: null };
 }
@@ -316,13 +369,21 @@ async function collectPriceComparePages(request, initialTabId = null) {
   }
 }
 
-async function saveStatus(status, detail = "") {
+async function saveStatus(status, detail = "", metadata = {}) {
   await chrome.storage.local.set({
     momentInsightRankStatus: {
       status,
       detail,
       updatedAt: new Date().toISOString(),
+      ...metadata,
     },
+  });
+}
+
+async function saveNetworkRestrictionStatus(retry) {
+  await saveStatus("verification", "naver_network_retry_wait", {
+    retryAt: new Date(retry.blockedUntil).toISOString(),
+    retryAttempt: retry.networkRetryCount,
   });
 }
 
@@ -354,8 +415,9 @@ async function runWorker(trigger = "manual") {
   if (verificationPreparation.code) {
     return { ok: false, code: verificationPreparation.code };
   }
+  const workerTrigger = verificationPreparation.recovered ? "rank-recovery" : trigger;
   running = true;
-  await saveStatus("running", trigger);
+  await saveStatus("running", workerTrigger);
   const port = chrome.runtime.connectNative(NATIVE_HOST);
   let collectionTabId = verificationPreparation.reusableTabId;
   let keepCollectionTabOpen = false;
@@ -408,7 +470,7 @@ async function runWorker(trigger = "manual") {
           finish(new Error(nativeDisconnectCode(chrome.runtime.lastError?.message)));
         }
       });
-      port.postMessage({ action: "run", trigger });
+      port.postMessage({ action: "run", trigger: workerTrigger });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
     if (result.status === "idle" && result.remoteWake === false) {
@@ -418,11 +480,8 @@ async function runWorker(trigger = "manual") {
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
     const haltedCode = String(result.haltedCode || "");
     if (NAVER_MANUAL_RESUME_CODES.has(haltedCode)) {
-      await chrome.storage.local.set({
-        [VERIFICATION_BLOCKED_UNTIL_KEY]: 0,
-        [MANUAL_RESUME_REQUIRED_KEY]: true,
-      });
-      await saveStatus("verification", haltedCode);
+      const retry = await scheduleNetworkRestrictionRetry({ tabId: collectionTabId || 0 });
+      await saveNetworkRestrictionStatus(retry);
       return { ok: false, partial: submitted > 0, code: haltedCode, summary: result };
     }
     if (NAVER_ACCESS_COOLDOWN_CODES.has(haltedCode)) {
@@ -435,6 +494,7 @@ async function runWorker(trigger = "manual") {
     const completedDetail = queuedTotal > 0
       ? `전체 ${queuedTotal}개 등록 · 이번 회차 ${submitted}개 갱신`
       : `갱신 ${submitted}건`;
+    await chrome.storage.local.remove(NETWORK_RETRY_COUNT_KEY);
     await saveStatus(failed > 0 ? "partial" : "completed", failed > 0
       ? `${completedDetail} · 재시도 ${failed}건`
       : completedDetail);

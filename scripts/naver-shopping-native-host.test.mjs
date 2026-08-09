@@ -277,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.12");
+  assert.equal(manifest.version, "1.0.13");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
@@ -286,12 +286,20 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
   assert.match(serviceWorker, /NAVER_MANUAL_RESUME_CODES/u);
   assert.match(serviceWorker, /MANUAL_RESUME_REQUIRED_KEY/u);
+  assert.match(serviceWorker, /NETWORK_RETRY_COUNT_KEY/u);
+  assert.match(serviceWorker, /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[/u);
+  assert.match(serviceWorker, /2 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /6 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /12 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /24 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /scheduleNetworkRestrictionRetry/u);
+  assert.match(serviceWorker, /preserveNetworkRetryCount: true/u);
   assert.match(serviceWorker, /naver_network_restricted/u);
   assert.match(serviceWorker, /findResolvedNaverTab/u);
   assert.match(serviceWorker, /surfaceVerificationTab/u);
   assert.match(serviceWorker, /prepareVerificationState/u);
   assert.match(serviceWorker, /inspectNaverTab/u);
-  assert.match(serviceWorker, /clearVerificationState\(\{ closeTab: false \}\)/u);
+  assert.match(serviceWorker, /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/u);
   assert.match(serviceWorker, /const verificationPreparation = await prepareVerificationState\(trigger, verification\)/u);
   assert.ok(
     serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
@@ -311,10 +319,15 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(popup, /status\?\.status === "partial"/u);
   assert.match(popup, /확인 후 다시 시작/u);
   assert.match(popup, /일부 갱신 완료/u);
-  assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger \}\)/u);
+  assert.match(serviceWorker, /const workerTrigger = verificationPreparation\.recovered \? "rank-recovery" : trigger/u);
+  assert.match(serviceWorker, /if \(verification\.blockedUntil > 0\)[\s\S]{0,160}recovered: true/u);
+  assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger: workerTrigger \}\)/u);
   assert.match(nativeHost, /queueAllTrackers: start\.trigger === "manual"/u);
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
   assert.match(popup, /전체 \$\{queuedTotal\}개 등록/u);
+  assert.match(popup, /retryAt/u);
+  assert.match(popup, /이후 1건 자동 재시도/u);
+  assert.doesNotMatch(popup, /접속 제한이 해제된 뒤 수동으로 다시 시작/u);
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {

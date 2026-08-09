@@ -17,6 +17,8 @@ const PAGE_SIZE = 40;
 const MAX_PAGES = 8;
 const REQUIRED_LIMIT = 300;
 const PAGE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
+const ROWS_MAX_BYTES = 2 * 1024 * 1024;
+const ROWS_MAX_COUNT = 500;
 
 function pagePayload(page) {
   if (!page || typeof page !== "object" || Array.isArray(page)) {
@@ -113,6 +115,53 @@ export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
   }, request);
 }
 
+export function buildNativeWindowFromRows(rawRequest, rawRows, options = {}) {
+  const nowMs = Number(options.nowMs ?? Date.now());
+  const request = validateRankRequest(rawRequest, { nowMs });
+  if (request.limit !== REQUIRED_LIMIT) throw new ProviderError("native_host_limit_invalid");
+  if (!Array.isArray(rawRows)
+    || rawRows.length < REQUIRED_LIMIT
+    || rawRows.length > ROWS_MAX_COUNT
+    || Buffer.byteLength(JSON.stringify(rawRows), "utf8") > ROWS_MAX_BYTES) {
+    throw new ProviderError("native_host_rows_invalid");
+  }
+  const rows = rawRows.map((row, index) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new ProviderError("native_host_rows_invalid", `row:${index}`);
+    }
+    return row;
+  });
+  const state = {
+    items: [],
+    rawCount: 0,
+    excludedAdCount: 0,
+    identities: new Set(),
+  };
+  appendNormalizedPage(state, { rows }, { pageIndex: 1, limit: request.limit });
+  if (state.items.length !== REQUIRED_LIMIT) {
+    throw new ProviderError("provider_partial_window", `${state.items.length}/${REQUIRED_LIMIT}`);
+  }
+  const collectedAt = new Date(nowMs).toISOString();
+  return validateProviderWindow({
+    ok: true,
+    schemaVersion: SCHEMA_VERSION,
+    keyword: request.keyword,
+    source: SOURCE,
+    rankEvidence: RANK_EVIDENCE,
+    collectionId: `pw-chrome-${nowMs}-${identityDigest(state.items)}`,
+    collectedAt,
+    complete: true,
+    partial: false,
+    sourceExhausted: false,
+    marketTotal: null,
+    marketTotalStatus: "unavailable",
+    checkedCount: state.items.length,
+    rawCount: state.rawCount,
+    excludedAdCount: state.excludedAdCount,
+    items: state.items,
+  }, request);
+}
+
 export function createChromeNativeProvider(options = {}) {
   if (typeof options.exchange !== "function") {
     throw new ProviderError("native_host_exchange_missing");
@@ -125,6 +174,11 @@ export function createChromeNativeProvider(options = {}) {
       });
       if (!response || response.type !== "collection") {
         throw new ProviderError("native_host_collection_invalid");
+      }
+      if (Array.isArray(response.rows)) {
+        return buildNativeWindowFromRows(request, response.rows, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+        });
       }
       return buildNativeWindowFromPages(request, response.pages, {
         nowMs: options.nowMs?.() ?? Date.now(),

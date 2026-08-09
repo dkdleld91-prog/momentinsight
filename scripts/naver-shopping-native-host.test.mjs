@@ -15,6 +15,7 @@ import {
 } from "./install-naver-shopping-chrome-bridge.mjs";
 import {
   buildNativeWindowFromPages,
+  buildNativeWindowFromRows,
   createChromeNativeProvider,
 } from "./naver-shopping-native-host-core.mjs";
 import { SCHEMA_VERSION } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
@@ -100,6 +101,45 @@ function page(pageIndex, options = {}) {
   };
 }
 
+function nplusRows() {
+  const rows = [];
+  let organicRank = 0;
+  for (let rawRank = 1; organicRank < 300; rawRank += 1) {
+    const isAd = rawRank % 21 === 0;
+    if (isAd) {
+      rows.push({
+        extractionKey: `nplus:${rawRank}:ad-${rawRank}`,
+        rawRank,
+        isAd: true,
+        payload: { adId: `nad-${rawRank}`, contentType: "SA_prod" },
+      });
+      continue;
+    }
+    organicRank += 1;
+    const sellerProductId = String(14000000000 + organicRank);
+    const catalogId = organicRank % 3 === 0 ? String(51000000000 + organicRank) : "";
+    rows.push({
+      extractionKey: `nplus:${rawRank}:organic-${organicRank}`,
+      rawRank,
+      isAd: false,
+      title: `네이버플러스 테스트 상품 ${organicRank}`,
+      mallName: "테스트몰",
+      links: [`https://smartstore.naver.com/example/products/${sellerProductId}`],
+      payload: {
+        productName: `네이버플러스 테스트 상품 ${organicRank}`,
+        nvMid: String(91000000000 + organicRank),
+        channelProductNo: sellerProductId,
+        catalogId,
+        linkedCatalogId: catalogId,
+        productType: catalogId ? 3 : 2,
+        mallName: "테스트몰",
+        lowPrice: String(10000 + organicRank),
+      },
+    });
+  }
+  return rows;
+}
+
 test("builds one strict 300-rank window from the normal Chrome profile pages", () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const result = buildNativeWindowFromPages(
@@ -112,6 +152,18 @@ test("builds one strict 300-rank window from the normal Chrome profile pages", (
   assert.equal(result.excludedAdCount, 32);
   assert.equal(result.items[90].organicRank, 91);
   assert.equal(result.items[90].sellerProductId, "12149720593");
+  assert.match(result.collectionId, /^pw-chrome-/u);
+});
+
+test("builds one strict 300-rank window from the Naver Plus virtual list", () => {
+  const nowMs = Date.parse("2026-08-09T03:00:00.000Z");
+  const result = buildNativeWindowFromRows(request(nowMs), nplusRows(), { nowMs });
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.rawCount, 314);
+  assert.equal(result.excludedAdCount, 14);
+  assert.equal(result.items[89].organicRank, 90);
+  assert.equal(result.items[89].sellerProductId, "14000000090");
+  assert.equal(result.items[89].catalogId, "51000000090");
   assert.match(result.collectionId, /^pw-chrome-/u);
 });
 
@@ -225,7 +277,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.8");
+  assert.equal(manifest.version, "1.0.9");
   assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
   assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
   assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
@@ -242,7 +294,13 @@ test("Chrome extension drains safely and reports verification recovery truthfull
     serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
-  assert.match(serviceWorker, /collectPages\(message\.request, collectionTabId\)/u);
+  assert.match(serviceWorker, /collectNplusRows\(message\.request, collectionTabId\)/u);
+  assert.match(serviceWorker, /NPLUS_SEARCH_PATH = "\/ns\/search"/u);
+  assert.match(serviceWorker, /data-shp-contents-rank/u);
+  assert.match(serviceWorker, /data-shp-contents-dtl/u);
+  assert.match(serviceWorker, /data-shp-contents-grp/u);
+  assert.match(serviceWorker, /orderedCollectionRows/u);
+  assert.doesNotMatch(serviceWorker, /search\.shopping\.naver\.com\/search\/all/u);
   assert.match(serviceWorker, /currentTab\.url !== url \|\| currentTab\.status !== "complete"/u);
   assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
   assert.match(serviceWorker, /naver_verification_cooldown/u);

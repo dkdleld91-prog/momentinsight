@@ -71,7 +71,9 @@ function numericId(value) {
 }
 
 function parsePositiveNumber(value) {
-  const parsed = Number(String(value ?? "").replace(/[^0-9.]/g, ""));
+  const text = String(value ?? "").replace(/[^0-9.]/g, "");
+  if (!text) return undefined;
+  const parsed = Number(text);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
@@ -243,6 +245,7 @@ export function buildNaverShoppingFrontendUrl(keyword, pageIndex = 1, options = 
 }
 
 function parseLoosePayload(raw) {
+  if (isRecord(raw) || Array.isArray(raw)) return raw;
   const text = String(raw || "").trim().slice(0, 32_768);
   if (!text) return {};
   const decoded = text

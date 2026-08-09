@@ -1,9 +1,12 @@
 const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
 const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up"]);
-const PAGE_COUNT = 8;
-const PAGE_TIMEOUT_MS = 30_000;
+const NPLUS_SEARCH_PATH = "/ns/search";
+const COLLECTION_TIMEOUT_MS = 120_000;
 const PAGE_REQUEST_INTERVAL_MS = 3_500;
 const PAGE_REQUEST_JITTER_MS = 2_500;
+const VIRTUAL_SCROLL_STEP_PX = 1_600;
+const VIRTUAL_SCROLL_SETTLE_MS = 350;
+const MAX_STABLE_LOAD_ROUNDS = 3;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -91,18 +94,20 @@ async function inspectNaverTab(tabId) {
         return {
           networkRestricted: /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText),
           blocked: /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText),
-          nextDataReady: Boolean(document.getElementById("__NEXT_DATA__")?.textContent),
+          nplusReady: location.pathname === "/ns/search"
+            && Boolean(document.querySelector('a[class*="basicProductCard_link__"][data-shp-contents-rank]')),
+          route: location.pathname === "/ns/search" ? "nplus" : "legacy",
           url: location.href,
         };
       },
     });
     const value = results?.[0]?.result || {};
-    if (value.networkRestricted) return { status: "network_restricted" };
-    if (value.blocked) return { status: "blocked" };
-    if (value.nextDataReady && String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
-      return { status: "resolved" };
+    if (value.networkRestricted) return { status: "network_restricted", route: value.route || "unknown" };
+    if (value.blocked) return { status: "blocked", route: value.route || "unknown" };
+    if (value.nplusReady && String(value.url || "").startsWith("https://search.shopping.naver.com/ns/search")) {
+      return { status: "resolved", route: "nplus" };
     }
-    return { status: "unknown" };
+    return { status: "unknown", route: value.route || "unknown" };
   } catch {
     return { status: "missing" };
   }
@@ -123,6 +128,10 @@ async function findResolvedNaverTab() {
 async function prepareVerificationState(trigger, verification) {
   if (verification.tabId) {
     const tabState = await inspectNaverTab(verification.tabId);
+    if (tabState.route === "legacy") {
+      await clearVerificationState({ closeTab: true });
+      return { code: "", reusableTabId: await findResolvedNaverTab() };
+    }
     if (tabState.status === "network_restricted") {
       if (trigger === "manual") {
         await chrome.tabs.update(verification.tabId, { active: true }).catch(() => {});
@@ -194,16 +203,9 @@ async function configureAlarms() {
   }));
 }
 
-function searchUrl(keyword, pageIndex) {
-  const url = new URL("https://search.shopping.naver.com/search/all");
-  url.searchParams.set("where", "all");
-  url.searchParams.set("frm", "NVSCTAB");
+function searchUrl(keyword) {
+  const url = new URL(`https://search.shopping.naver.com${NPLUS_SEARCH_PATH}`);
   url.searchParams.set("query", keyword);
-  url.searchParams.set("pagingIndex", String(pageIndex));
-  url.searchParams.set("pagingSize", "40");
-  url.searchParams.set("productSet", "total");
-  url.searchParams.set("sort", "rel");
-  url.searchParams.set("viewType", "list");
   return url.toString();
 }
 
@@ -220,7 +222,7 @@ function waitForTabComplete(tabId) {
     }
     const timeout = setTimeout(() => {
       finish(new Error("naver_page_timeout"));
-    }, PAGE_TIMEOUT_MS);
+    }, COLLECTION_TIMEOUT_MS);
     function listener(updatedId, changeInfo, tab) {
       if (updatedId !== tabId || changeInfo.status !== "complete") return;
       finish(null, tab);
@@ -232,55 +234,163 @@ function waitForTabComplete(tabId) {
   });
 }
 
-async function readNextData(tabId) {
+async function readNplusViewport(tabId, keyword) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => {
+    func: (expectedKeyword) => {
       const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
       const networkRestricted = /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText);
       const blocked = /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText);
+      const url = new URL(location.href);
+      const rows = [];
+      const cards = Array.from(document.querySelectorAll('li[class*="compositeCardContainer_composite_card_container__"]'));
+      for (const card of cards) {
+        const anchor = card.querySelector('a[class*="basicProductCard_link__"][data-shp-contents-rank]');
+        if (!anchor) continue;
+        const rawRank = Number(anchor.getAttribute("data-shp-contents-rank"));
+        if (!Number.isInteger(rawRank) || rawRank < 1) continue;
+        const detailText = anchor.getAttribute("data-shp-contents-dtl") || "[]";
+        let detail = {};
+        try {
+          const pairs = JSON.parse(detailText);
+          if (Array.isArray(pairs)) {
+            detail = Object.fromEntries(pairs
+              .filter((pair) => pair && typeof pair.key === "string")
+              .map((pair) => [pair.key, pair.value]));
+          }
+        } catch {
+          detail = {};
+        }
+        const href = String(anchor.href || "");
+        const contentGroup = String(anchor.getAttribute("data-shp-contents-grp") || "").toLowerCase();
+        const contentType = String(anchor.getAttribute("data-shp-contents-type") || "");
+        const explicitAdvertisement = Boolean(card.querySelector('[class*="advertisementTooltipButton_link__"]'));
+        const isAd = contentGroup === "ad"
+          || href.startsWith("https://ader.naver.com/")
+          || explicitAdvertisement;
+        const sellerProductId = String(detail.chnl_prod_no || href.match(/\/products\/([0-9]{5,})/iu)?.[1] || "");
+        const productId = String(detail.nv_mid || anchor.getAttribute("data-shp-contents-id") || "");
+        const catalogId = String(detail.ctlg_nv_mid || "");
+        const title = String(detail.prod_nm
+          || card.querySelector('[class*="productCardTitle_product_card_title__"]')?.textContent
+          || "").trim();
+        const mallName = String(card.querySelector('[class*="mallLink_mall_name__"]')?.textContent || "").trim();
+        const image = String(card.querySelector("img[src]")?.src || "");
+        const lowPrice = String(detail.price || card.querySelector('[class*="priceTag_price__"]')?.textContent || "").replace(/[^0-9]/gu, "");
+        const actionUid = String(anchor.getAttribute("data-shp-action-uid") || "");
+        const extractionKey = `nplus:${rawRank}:${actionUid || productId || sellerProductId || contentType}`;
+        rows.push({
+          extractionKey,
+          rawRank,
+          isAd,
+          title,
+          mallName,
+          image,
+          links: href ? [href] : [],
+          payload: {
+            productName: title,
+            nvMid: productId,
+            channelProductNo: sellerProductId,
+            catalogId,
+            linkedCatalogId: catalogId,
+            productType: catalogId ? 3 : 2,
+            mallName,
+            imageUrl: image,
+            lowPrice,
+            contentType,
+          },
+        });
+      }
       return {
         networkRestricted,
         blocked,
-        nextDataText: document.getElementById("__NEXT_DATA__")?.textContent || "",
+        rows,
+        keyword: url.searchParams.get("query") || "",
+        path: url.pathname,
+        scrollY: window.scrollY,
+        viewportHeight: window.innerHeight,
+        scrollHeight: document.documentElement.scrollHeight,
         title: document.title,
-        url: location.href,
+        url: url.toString(),
       };
     },
+    args: [keyword],
   });
   const value = results?.[0]?.result || {};
   if (value.networkRestricted) throw new Error("naver_network_restricted");
   if (value.blocked) throw new Error("naver_verification_required");
-  if (!value.nextDataText) throw new Error("naver_next_data_missing");
-  if (!String(value.url || "").startsWith("https://search.shopping.naver.com/")) {
+  if (value.path !== NPLUS_SEARCH_PATH || String(value.keyword || "").trim() !== String(keyword || "").trim()) {
     throw new Error("naver_navigation_invalid");
   }
-  return value.nextDataText;
+  if (!Array.isArray(value.rows)) throw new Error("naver_nplus_schema_drift");
+  return value;
 }
 
-async function collectPages(request, initialTabId = null) {
+async function scrollNplusTab(tabId, y) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: (nextY) => window.scrollTo(0, nextY),
+    args: [y],
+  });
+}
+
+function orderedCollectionRows(rowMap) {
+  const rows = [...rowMap.values()].sort((left, right) => left.rawRank - right.rawRank);
+  let organicCount = 0;
+  const bounded = [];
+  for (const row of rows) {
+    bounded.push(row);
+    if (!row.isAd) organicCount += 1;
+    if (organicCount === 300) break;
+  }
+  return { rows: bounded, organicCount };
+}
+
+async function collectNplusRows(request, initialTabId = null) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
   }
-  const pages = [];
+  const rowMap = new Map();
   let tabId = initialTabId;
   try {
-    for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
-      const url = searchUrl(request.keyword, pageIndex);
-      if (tabId == null) {
-        const tab = await chrome.tabs.create({ url, active: false });
-        tabId = tab.id;
-      } else {
-        const currentTab = await chrome.tabs.get(tabId);
-        if (currentTab.url !== url || currentTab.status !== "complete") {
-          await chrome.tabs.update(tabId, { url });
-        }
+    const url = searchUrl(request.keyword);
+    if (tabId == null) {
+      const tab = await chrome.tabs.create({ url, active: false });
+      tabId = tab.id;
+    } else {
+      const currentTab = await chrome.tabs.get(tabId);
+      if (currentTab.url !== url || currentTab.status !== "complete") {
+        await chrome.tabs.update(tabId, { url });
       }
-      await waitForTabComplete(tabId);
-      pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
-      if (pageIndex < PAGE_COUNT) await wait(pageRequestDelay());
     }
-    return { pages, tabId };
+    await waitForTabComplete(tabId);
+    await scrollNplusTab(tabId, 0);
+    let stableLoadRounds = 0;
+    let previousScrollHeight = 0;
+    const deadlineAt = Math.min(Date.parse(request.deadlineAt || "") || Number.POSITIVE_INFINITY, Date.now() + COLLECTION_TIMEOUT_MS);
+    while (Date.now() < deadlineAt) {
+      const viewport = await readNplusViewport(tabId, request.keyword);
+      for (const row of viewport.rows) rowMap.set(row.extractionKey, row);
+      const ordered = orderedCollectionRows(rowMap);
+      if (ordered.organicCount === 300) return { rows: ordered.rows, tabId };
+
+      const nearBottom = viewport.scrollY + viewport.viewportHeight >= viewport.scrollHeight - VIRTUAL_SCROLL_STEP_PX;
+      const nextY = Math.min(viewport.scrollY + VIRTUAL_SCROLL_STEP_PX, Math.max(0, viewport.scrollHeight - 500));
+      await scrollNplusTab(tabId, nextY);
+      if (nearBottom) {
+        await wait(pageRequestDelay());
+        const afterLoad = await readNplusViewport(tabId, request.keyword);
+        for (const row of afterLoad.rows) rowMap.set(row.extractionKey, row);
+        if (afterLoad.scrollHeight <= previousScrollHeight) stableLoadRounds += 1;
+        else stableLoadRounds = 0;
+        previousScrollHeight = Math.max(previousScrollHeight, afterLoad.scrollHeight);
+        if (stableLoadRounds >= MAX_STABLE_LOAD_ROUNDS) break;
+      } else {
+        await wait(VIRTUAL_SCROLL_SETTLE_MS);
+      }
+    }
+    const partial = orderedCollectionRows(rowMap);
+    throw new Error(`provider_partial_window:${partial.organicCount}/300`);
   } catch (error) {
     if (String(error?.message || "") === "naver_network_restricted" && tabId != null) {
       tabId = await surfaceNetworkRestrictionTab(tabId);
@@ -353,12 +463,12 @@ async function runWorker(trigger = "manual") {
         try {
           if (message?.type === "collect") {
             try {
-              const collection = await collectPages(message.request, collectionTabId);
+              const collection = await collectNplusRows(message.request, collectionTabId);
               collectionTabId = collection.tabId;
               port.postMessage({
                 type: "collection",
                 requestId: message.requestId,
-                pages: collection.pages,
+                rows: collection.rows,
               });
             } catch (error) {
               if (error?.keepTabOpen) {

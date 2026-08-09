@@ -1194,7 +1194,11 @@ const checks = {
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
       "https://search.shopping.naver.com/*",
     ])
-    && shoppingChromeWorker.includes('document.getElementById("__NEXT_DATA__")')
+    && shoppingChromeWorker.includes('NPLUS_SEARCH_PATH = "/ns/search"')
+    && shoppingChromeWorker.includes("data-shp-contents-rank")
+    && shoppingChromeWorker.includes("data-shp-contents-dtl")
+    && shoppingChromeWorker.includes("data-shp-contents-grp")
+    && shoppingChromeWorker.includes("orderedCollectionRows")
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes("naver_network_restricted")
     && shoppingChromeWorker.includes("MANUAL_RESUME_REQUIRED_KEY")
@@ -1204,6 +1208,7 @@ const checks = {
     && shoppingChromeWorker.includes("clearVerificationState({ closeTab: false })")
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && shoppingNativeHostCore.includes("parseNaverNextDataPage")
+    && shoppingNativeHostCore.includes("buildNativeWindowFromRows")
     && shoppingNativeHostCore.includes("appendNormalizedPage")
     && shoppingNativeHostCore.includes("state.items.length !== REQUIRED_LIMIT")
     && shoppingNativeHostCore.includes("validateProviderWindow")
@@ -1233,7 +1238,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.8"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.9"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingNativeHost.includes('queueAllTrackers: start.trigger === "manual"')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers" })')

@@ -79,9 +79,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 08. 23:11:18
-- 기준 커밋: 3cb3557
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 09. 11:54:10
+- 기준 커밋: 91e4d93
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

@@ -495,7 +495,11 @@ check(
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
-      /document\.getElementById\("__NEXT_DATA__"\)/,
+      /NPLUS_SEARCH_PATH = "\/ns\/search"/,
+      /data-shp-contents-rank/,
+      /data-shp-contents-dtl/,
+      /data-shp-contents-grp/,
+      /orderedCollectionRows/,
       /naver_verification_required/,
       /request\.limit !== 300/,
       /request\.rankPolicy !== "organic_only"/,
@@ -505,6 +509,7 @@ check(
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
       /parseNaverNextDataPage/,
+      /buildNativeWindowFromRows/,
       /appendNormalizedPage/,
       /state\.items\.length !== REQUIRED_LIMIT/,
       /validateProviderWindow/,

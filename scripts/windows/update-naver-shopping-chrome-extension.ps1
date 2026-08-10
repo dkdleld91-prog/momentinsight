@@ -74,11 +74,15 @@ try {
             (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherSourcePath).Hash)
     $launcherNeedsCompile = $launcherMissing -or $launcherSourceChanged
     if ($launcherNeedsCompile) {
-        Add-Type -Path $stagedLauncherSource -OutputAssembly $stagedLauncher -OutputType WindowsApplication -ReferencedAssemblies @(
-            "System.dll",
-            "System.Core.dll",
-            "System.Security.dll"
-        ) -PassThru | Out-Null
+        $compilerPath = Join-Path $env:SystemRoot "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+        if (-not (Test-Path -LiteralPath $compilerPath -PathType Leaf)) {
+            $compilerPath = Join-Path $env:SystemRoot "Microsoft.NET\Framework\v4.0.30319\csc.exe"
+        }
+        if (-not (Test-Path -LiteralPath $compilerPath -PathType Leaf)) { throw "windows_csharp_compiler_missing" }
+        & $compilerPath /nologo /target:winexe "/out:$stagedLauncher" `
+            /reference:System.dll /reference:System.Core.dll /reference:System.Security.dll `
+            $stagedLauncherSource
+        if ($LASTEXITCODE -ne 0) { throw "native_host_launcher_compile_failed" }
         if (-not (Test-Path -LiteralPath $stagedLauncher -PathType Leaf)) { throw "native_host_launcher_compile_failed" }
     }
 

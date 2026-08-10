@@ -277,9 +277,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
+  const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.25");
+  assert.equal(manifest.version, "1.0.26");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -345,6 +346,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /CHROME_OPERATION_TIMEOUT_MS = 45_000/u);
   assert.match(serviceWorker, /withTimeout\(chrome\.scripting\.executeScript/u);
   assert.match(serviceWorker, /naver_page_script_timeout/u);
+  assert.match(serviceWorker, /canonicalCollectionErrorCode/u);
+  assert.match(serviceWorker, /return "naver_selector_drift"/u);
+  assert.match(serviceWorker, /return "provider_browser_collection_failed"/u);
+  assert.match(serviceWorker, /type: "collection_error",[\s\S]{0,120}code: canonicalCollectionErrorCode\(error\)/u);
   assert.match(serviceWorker, /if \(tabId != null && !error\.tabId\) error\.tabId = tabId/u);
   assert.match(serviceWorker, /if \(error\?\.tabId\) collectionTabId = error\.tabId/u);
   assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
@@ -365,13 +370,14 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
   assert.match(popup, /30~45초 안전 대기 후 가격비교 탭이 열립니다/u);
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
-  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 18 \* 60_000/u);
+  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 29 \* 60_000/u);
   assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
   assert.match(nativeHost, /readyAck = await nextMessage\(30_000\)/u);
   assert.match(nativeHost, /native_host_ready_ack_invalid/u);
   assert.match(serviceWorker, /message\?\.type === "ready"/u);
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
-  assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}18 \* 60_000/u);
+  assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}29 \* 60_000/u);
+  assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 \* 60_000/u);
   assert.match(localWorker, /"native_host_response_timeout"/u);
   assert.match(nativeHost, /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/u);
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);

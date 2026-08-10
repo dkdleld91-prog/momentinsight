@@ -606,7 +606,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.25"
+  shoppingChromeManifest.version === "1.0.26"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -727,7 +727,7 @@ check(
       /}, 90_000\);/,
     ])
     && /MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS=90000/.test(naverEnvExample)
-    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[\s\S]{0,100}18 \* 60_000/.test(shoppingLocalWorker)
+    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[\s\S]{0,100}29 \* 60_000/.test(shoppingLocalWorker)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(adminPage)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(clientPage),
   `${files.shoppingRank}, ${files.shoppingLiveGate}, ${files.shoppingLocalWorker}, ${files.naverEnvExample}, ${files.adminPage}, ${files.clientPage}`,

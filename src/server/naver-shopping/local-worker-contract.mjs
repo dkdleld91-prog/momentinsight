@@ -11,7 +11,7 @@ export const LOCAL_WORKER_BODY_MAX_BYTES = 2 * 1024 * 1024;
 export const LOCAL_WORKER_ENDPOINT_PATH = "/api/naver-shopping-local-worker";
 const DEFAULT_MAX_WINDOW_AGE_MS = 15 * 60_000;
 const DEFAULT_FUTURE_TOLERANCE_MS = 60_000;
-const LOCAL_WORKER_REQUEST_TIMEOUT_MS = 18 * 60_000;
+const LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 * 60_000;
 const COLLECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,159}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 

@@ -17,12 +17,16 @@ $extensionPath = Join-Path $runtimePath "tools\naver-shopping-chrome-extension"
 $nativeConfigPath = Join-Path $runtimePath "windows-native-host.conf"
 $launcherSourcePath = Join-Path $runtimePath "scripts\windows\MomentInsightNaverShoppingHost.cs"
 $nativeHostScriptPath = Join-Path $runtimePath "scripts\naver-shopping-native-host.mjs"
+$localWorkerScriptPath = Join-Path $runtimePath "scripts\naver-shopping-local-worker.mjs"
+$localWorkerContractPath = Join-Path $runtimePath "src\server\naver-shopping\local-worker-contract.mjs"
 $launcherPath = Join-Path $runtimePath "MomentInsightNaverShoppingHost.exe"
 $taskPath = "\MomentInsight\"
 $taskName = "NaverShoppingChrome"
 $sourceBase = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-chrome-extension"
 $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/MomentInsightNaverShoppingHost.cs"
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
+$localWorkerScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-local-worker.mjs"
+$localWorkerContractUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/local-worker-contract.mjs"
 $files = @(
     "README.md",
     "icon16.png",
@@ -56,11 +60,19 @@ try {
     if (-not $launcherSourceBytes -or $launcherSourceBytes.Length -eq 0) { throw "launcher_download_empty" }
     $nativeHostScriptBytes = $client.DownloadData($nativeHostScriptUrl)
     if (-not $nativeHostScriptBytes -or $nativeHostScriptBytes.Length -eq 0) { throw "native_host_script_download_empty" }
+    $localWorkerScriptBytes = $client.DownloadData($localWorkerScriptUrl)
+    if (-not $localWorkerScriptBytes -or $localWorkerScriptBytes.Length -eq 0) { throw "local_worker_script_download_empty" }
+    $localWorkerContractBytes = $client.DownloadData($localWorkerContractUrl)
+    if (-not $localWorkerContractBytes -or $localWorkerContractBytes.Length -eq 0) { throw "local_worker_contract_download_empty" }
     $stagedLauncherSource = Join-Path $stagingPath "MomentInsightNaverShoppingHost.cs"
     $stagedNativeHostScript = Join-Path $stagingPath "naver-shopping-native-host.mjs"
+    $stagedLocalWorkerScript = Join-Path $stagingPath "naver-shopping-local-worker.mjs"
+    $stagedLocalWorkerContract = Join-Path $stagingPath "local-worker-contract.mjs"
     $stagedLauncher = Join-Path $stagingPath "MomentInsightNaverShoppingHost.exe"
     [IO.File]::WriteAllBytes($stagedLauncherSource, $launcherSourceBytes)
     [IO.File]::WriteAllBytes($stagedNativeHostScript, $nativeHostScriptBytes)
+    [IO.File]::WriteAllBytes($stagedLocalWorkerScript, $localWorkerScriptBytes)
+    [IO.File]::WriteAllBytes($stagedLocalWorkerContract, $localWorkerContractBytes)
 
     $manifestPath = Join-Path $stagingPath "manifest.json"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -72,6 +84,10 @@ try {
     }
     & $nodePath --check $stagedNativeHostScript
     if ($LASTEXITCODE -ne 0) { throw "native_host_javascript_invalid" }
+    & $nodePath --check $stagedLocalWorkerScript
+    if ($LASTEXITCODE -ne 0) { throw "local_worker_javascript_invalid" }
+    & $nodePath --check $stagedLocalWorkerContract
+    if ($LASTEXITCODE -ne 0) { throw "local_worker_contract_javascript_invalid" }
     $launcherMissing = -not (Test-Path -LiteralPath $launcherPath -PathType Leaf)
     $launcherSourceChanged = -not (Test-Path -LiteralPath $launcherSourcePath -PathType Leaf) -or
         ((Get-FileHash -Algorithm SHA256 -LiteralPath $stagedLauncherSource).Hash -ne
@@ -108,13 +124,17 @@ try {
         Copy-Item -LiteralPath $stagedLauncher -Destination $launcherPath -Force
     }
     Copy-Item -LiteralPath $stagedNativeHostScript -Destination $nativeHostScriptPath -Force
+    Copy-Item -LiteralPath $stagedLocalWorkerScript -Destination $localWorkerScriptPath -Force
+    Copy-Item -LiteralPath $stagedLocalWorkerContract -Destination $localWorkerContractPath -Force
     Start-Sleep -Seconds 3
     Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
     $launcherHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherPath).Hash.ToLowerInvariant()
     $nativeHostHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostScriptPath).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=3 launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash"
+    $localWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerScriptPath).Hash.ToLowerInvariant()
+    $localWorkerContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerContractPath).Hash.ToLowerInvariant()
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=4 launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

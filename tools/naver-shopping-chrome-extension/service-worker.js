@@ -32,7 +32,36 @@ const NAVER_MANUAL_RESUME_CODES = new Set([
   "naver_http_418",
   "naver_http_429",
 ]);
+const SAFE_COLLECTION_ERROR_CODES = new Set([
+  "naver_http_418",
+  "naver_http_429",
+  "naver_captcha_detected",
+  "naver_auth_required",
+  "naver_selector_drift",
+  "naver_verification_required",
+  "naver_next_data_missing",
+  "naver_page_timeout",
+  "naver_navigation_invalid",
+  "naver_network_restricted",
+]);
 let running = false;
+
+function canonicalCollectionErrorCode(error) {
+  const code = String(error?.message || error || "").trim().toLowerCase();
+  if (SAFE_COLLECTION_ERROR_CODES.has(code)) return code;
+  if ([
+    "naver_home_search_missing",
+    "naver_home_search_button_missing",
+    "naver_price_compare_link_missing",
+  ].includes(code)) return "naver_selector_drift";
+  if (code.startsWith("naver_") && code.endsWith("_timeout")) return "naver_page_timeout";
+  if (code.startsWith("naver_") && (
+    code.endsWith("_navigation_failed")
+    || code === "naver_home_search_failed"
+    || code === "naver_page_contract_invalid"
+  )) return "naver_navigation_invalid";
+  return "provider_browser_collection_failed";
+}
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -626,7 +655,7 @@ async function runWorker(trigger = "manual") {
               port.postMessage({
                 type: "collection_error",
                 requestId: message.requestId,
-                code: String(error?.message || "collection_failed"),
+                code: canonicalCollectionErrorCode(error),
               });
             }
             return;

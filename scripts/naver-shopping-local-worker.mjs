@@ -388,9 +388,9 @@ export async function runLocalShoppingWorker(options = {}) {
           options.nowMs?.() ?? Date.now(),
           boundedInteger(
             env.NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,
-            18 * 60_000,
+            29 * 60_000,
             30_000,
-            18 * 60_000,
+            29 * 60_000,
           ),
         );
         const rawWindow = await provider.collect(request);

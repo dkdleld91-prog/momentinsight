@@ -506,15 +506,19 @@ check(
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
     ])
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
+      "https://www.naver.com/*",
+      "https://search.naver.com/*",
       "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
-      /function searchUrl/,
-      /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/,
-      /url\.searchParams\.set\("frm", "NVSCTAB"\)/,
-      /PAGE_REQUEST_INTERVAL_MS = 3_500/,
-      /PAGE_REQUEST_JITTER_MS = 2_500/,
+      /function naverSearchUrl/,
+      /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/,
+      /네이버 가격비교 더보기/,
+      /naver_price_compare_target_missing/,
+      /naver_pagination_target_missing/,
+      /PAGE_REQUEST_INTERVAL_MS = 25_000/,
+      /PAGE_REQUEST_JITTER_MS = 15_000/,
       /collectPages/,
       /pagingIndex/,
       /productSet/,
@@ -605,7 +609,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.39"
+  shoppingChromeManifest.version === "1.0.40"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -616,7 +620,7 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /trigger \}\)/.test(shoppingChromeWorker)
-    && /chrome\.tabs\.create\(\{ url, active: false \}\)/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url: "https:\/\/www\.naver\.com\/", active: false \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)

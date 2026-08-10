@@ -271,7 +271,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assertZshSyntax(wrapperPath, source);
 });
 
-test("Chrome extension restores the proven direct 300-rank engine with current coordination", () => {
+test("Chrome extension uses the normal Naver search to price-comparison path with safe pacing", () => {
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
@@ -280,10 +280,19 @@ test("Chrome extension restores the proven direct 300-rank engine with current c
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.39");
-  assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.equal(manifest.version, "1.0.40");
+  assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
+  assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
+  assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
+  assert.match(serviceWorker, /"https:\/\/www\.naver\.com\/"/u);
+  assert.match(serviceWorker, /네이버 가격비교 더보기/u);
+  assert.match(serviceWorker, /url\.hostname !== "search\.shopping\.naver\.com"/u);
+  assert.match(serviceWorker, /naver_price_compare_target_missing/u);
+  assert.match(serviceWorker, /naver_pagination_target_missing/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
+  assert.match(serviceWorker, /SEARCH_DWELL_INTERVAL_MS = 12_000/u);
+  assert.match(serviceWorker, /SEARCH_DWELL_JITTER_MS = 8_000/u);
   assert.match(serviceWorker, /request\.limit !== 300/u);
   assert.match(serviceWorker, /request\.rankPolicy !== "organic_only"/u);
   assert.match(serviceWorker, /message\?\.type === "ready"/u);
@@ -342,8 +351,8 @@ test("Chrome extension restores the proven direct 300-rank engine with current c
   assert.match(serviceWorker, /function priceCompareSearchUrl/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
   assert.match(serviceWorker, /url\.searchParams\.set\("frm", "NVSCTAB"\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
   assert.match(serviceWorker, /PAGE_READY_STABILITY_MS = 500/u);
   assert.match(serviceWorker, /urlMatches && dataMatches && value\.nextDataText/u);
   assert.match(serviceWorker, /normalizedNaverQueryKeyword/u);
@@ -439,8 +448,8 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
   assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
   assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

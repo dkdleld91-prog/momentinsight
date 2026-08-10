@@ -822,3 +822,7 @@
 - Mac: 설치 브리지 14개 파일이 저장소와 byte-for-byte 일치하고 native host allowlist는 고정 확장 ID 1개뿐이다. scheduler config는 `Profile 5`, 10분·08:50·14:50이다.
 - Chrome: `동빈(개발)` 확장 `1.0.13` 활성·재로드, 팝업 `접속 제한 보호 중 · 2026. 8. 9. 오후 10:56:10 이후 1건 자동 재시도`를 확인했다. `동빈(Default)`의 같은 ID는 `사용 안함`이다.
 - 제한 중 운영 쓰기: 원격 전체 갱신·네이버 새 검색·새 300위 저장은 실행하지 않았다. 현재/최고/최저 순위와 기존 30일 snapshot은 변경하지 않았다.
+## 2026-08-10 Windows native host 시작 확인 v1.0.21
+
+- 실기 증거: 확장 LevelDB에 `rank-remote`와 `native_host_start_timeout`이 1분 간격으로 반복됐고, HKCU native messaging 등록·manifest·launcher exe는 모두 존재했습니다. 40초 뒤 관련 프로세스 0건은 확장이 시간 초과 후 연결을 종료한 결과와 일치합니다.
+- 회귀: native host·Windows bridge 대상 17/17, 서버 계약 39/39, baseline 및 보호 잠금이 통과했습니다.

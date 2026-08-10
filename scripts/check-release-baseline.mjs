@@ -1274,11 +1274,12 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.20"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.21"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingChromeWorker.includes('result.status === "standby"')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
+    && shoppingNativeHost.includes('writeMessage({ type: "ready" })')
     && shoppingLocalWorker.includes('options.requireWakeSignal === true')
     && shoppingLocalWorker.includes('const wake = await action({ action: "claim-wake", ...lanePayload })')
     && shoppingLocalWorker.includes('action: "claim-lane"')
@@ -1303,7 +1304,7 @@ const checks = {
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.20"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.21"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
     && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')

@@ -10,6 +10,7 @@ const PAGE_REQUEST_JITTER_MS = 30_000;
 const CHROME_OPERATION_TIMEOUT_MS = 45_000;
 const NATIVE_HOST_START_TIMEOUT_MS = 30_000;
 const NATIVE_HOST_RUN_TIMEOUT_MS = 20 * 60_000;
+const STALE_RUNNING_STATUS_MS = 2 * 60_000;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -433,6 +434,24 @@ function nativeDisconnectCode(lastErrorMessage) {
   return message ? "native_host_disconnected" : "native_host_closed";
 }
 
+async function currentStatus() {
+  const stored = await chrome.storage.local.get("momentInsightRankStatus");
+  const status = stored.momentInsightRankStatus || { status: "ready", detail: "" };
+  const updatedAt = Date.parse(String(status.updatedAt || ""));
+  if (status.status === "running"
+    && !running
+    && (!Number.isFinite(updatedAt) || Date.now() - updatedAt >= STALE_RUNNING_STATUS_MS)) {
+    const interrupted = {
+      status: "failed",
+      detail: "native_host_interrupted",
+      updatedAt: new Date().toISOString(),
+    };
+    await chrome.storage.local.set({ momentInsightRankStatus: interrupted });
+    return interrupted;
+  }
+  return status;
+}
+
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
   running = true;
@@ -574,9 +593,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return false;
   }
   if (message?.action === "status") {
-    chrome.storage.local.get("momentInsightRankStatus").then((stored) => {
-      sendResponse(stored.momentInsightRankStatus || { status: "ready", detail: "" });
-    });
+    currentStatus().then(sendResponse);
     return true;
   }
   return false;

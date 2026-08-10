@@ -56,6 +56,10 @@ test("Windows native host uses HKCU registration, DPAPI and explicit binary stdi
   assert.match(launcher, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS"\] = maxJobs/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_WORKER_ID"\] = "windows-desktop-primary"/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_WORKER_ROLE"\] = "primary"/u);
+  assert.match(launcher, /SingleInstanceMutexName/u);
+  assert.match(launcher, /native_host_already_running/u);
+  assert.match(launcher, /child\.WaitForExit\(5000\)/u);
+  assert.match(launcher, /child\.Kill\(\)/u);
   assert.doesNotMatch(launcher, /Console\.(?:Write|WriteLine)/u);
 });
 

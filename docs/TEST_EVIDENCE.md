@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-10 Windows 중복·고아 수집기 자동 복구 v1.0.20
+
+- 실기 원인 증거: 가격비교 탭 없이 4분 이상 남은 회차에서 `MomentInsightNaverShoppingHost.exe`와 `naver-shopping-native-host.mjs` Node가 중복 실행됐고, 종료 직후 1분 알람이 신규 한 쌍을 다시 만들었습니다. 단순 팝업 로딩이 아니라 서비스 워커 재시작과 OS 프로세스 수명 경계 문제입니다.
+- 복구 증거: Windows PowerShell에서 대상 native host·Node만 강제 종료한 뒤 `MI_STUCK_WORKER_RESET`을 확인했습니다. 순위 snapshot이나 Chrome 프로필 데이터는 삭제하지 않았습니다.
+- 코드 증거: launcher의 named mutex가 동시 native host를 차단하고, Chrome stdin EOF 후 자식이 5초 안에 끝나지 않으면 종료합니다. 확장은 실행 객체가 없는 2분 초과 `running` 저장 상태를 `native_host_interrupted`로 교체합니다.
+- 회귀 증거: JavaScript 문법, Windows/native-host 대상 17/17, 보호 잠금 22함수·66파일·17마이그레이션, baseline, 서버 계약 39/39, 앱·API 407/407, 플레이스·쇼핑 각 51/51, Production 인증 18/18, `git diff --check`와 전체 `npm run check:release`가 통과했습니다.
+
 ## 2026-08-10 수동 갱신 가시성 v1.0.19
 
 - 코드 증거: manual trigger만 `activateTab: true`를 전달하고, 자동·원격 trigger는 false를 유지합니다. 네이버 제한·보안확인 경로의 `surfaceNetworkRestrictionTab`·`surfaceVerificationTab`은 항상 탭을 활성화합니다.

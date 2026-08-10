@@ -9,6 +9,8 @@ const FAILURE_TEXT = {
   native_host_disconnected: "로컬 연결 상태를 다시 확인해 주세요",
   native_host_closed: "로컬 연결기가 닫혔습니다. 다시 시도해 주세요",
   native_host_start_timeout: "작업기 연결이 30초 안에 시작되지 않았습니다. 연결기를 다시 확인해 주세요",
+  native_host_already_running: "이전 작업을 정리한 뒤 1분 안에 자동 재시도합니다",
+  native_host_interrupted: "중단된 작업을 정리했습니다. 다시 시작해 주세요",
   native_host_timeout: "갱신 시간이 초과되었습니다. 자동 재시도합니다",
   already_running: "이미 안전 갱신이 진행 중입니다",
   naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",

@@ -12,6 +12,7 @@ namespace MomentInsight.NaverShopping
         private const string ProductionApiUrl = "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker";
         private const string ProductionOrigin = "https://insight.momentlabs.co.kr";
         private const string EntropyLabel = "co.kr.momentinsight.naver-shopping-local-worker.v1";
+        private const string SingleInstanceMutexName = "Local\\MomentInsightNaverShoppingNativeHost";
 
         [STAThread]
         private static int Main(string[] args)
@@ -19,8 +20,16 @@ namespace MomentInsight.NaverShopping
             byte[] protectedSecret = null;
             byte[] secretBytes = null;
             string secret = null;
+            Mutex singleInstance = null;
+            bool ownsSingleInstance = false;
             try
             {
+                singleInstance = new Mutex(true, SingleInstanceMutexName, out ownsSingleInstance);
+                if (!ownsSingleInstance)
+                {
+                    return Fail("native_host_already_running");
+                }
+
                 string runtimePath = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(
                     Path.DirectorySeparatorChar,
                     Path.AltDirectorySeparatorChar
@@ -117,6 +126,12 @@ namespace MomentInsight.NaverShopping
                 secret = null;
                 if (secretBytes != null) Array.Clear(secretBytes, 0, secretBytes.Length);
                 if (protectedSecret != null) Array.Clear(protectedSecret, 0, protectedSecret.Length);
+                if (ownsSingleInstance)
+                {
+                    try { singleInstance.ReleaseMutex(); }
+                    catch (ApplicationException) { }
+                }
+                if (singleInstance != null) singleInstance.Dispose();
             }
         }
 
@@ -142,6 +157,20 @@ namespace MomentInsight.NaverShopping
             catch (ObjectDisposedException)
             {
                 // The child exited while the background relay was finishing.
+            }
+            finally
+            {
+                try { child.StandardInput.Close(); }
+                catch (InvalidOperationException) { }
+                catch (ObjectDisposedException) { }
+
+                try
+                {
+                    // EOF means Chrome disconnected. Do not leave a hidden Node
+                    // worker holding the lane or local lock indefinitely.
+                    if (!child.HasExited && !child.WaitForExit(5000)) child.Kill();
+                }
+                catch (InvalidOperationException) { }
             }
         }
 

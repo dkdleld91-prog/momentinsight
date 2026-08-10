@@ -599,7 +599,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.19"
+  shoppingChromeManifest.version === "1.0.20"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /result\.status === "standby"/.test(shoppingChromeWorker)

@@ -72,7 +72,8 @@ try {
     $launcherSourceChanged = -not (Test-Path -LiteralPath $launcherSourcePath -PathType Leaf) -or
         ((Get-FileHash -Algorithm SHA256 -LiteralPath $stagedLauncherSource).Hash -ne
             (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherSourcePath).Hash)
-    if ($launcherMissing) {
+    $launcherNeedsCompile = $launcherMissing -or $launcherSourceChanged
+    if ($launcherNeedsCompile) {
         Add-Type -Path $stagedLauncherSource -OutputAssembly $stagedLauncher -OutputType WindowsApplication -ReferencedAssemblies @(
             "System.dll",
             "System.Core.dll",
@@ -95,7 +96,7 @@ try {
         New-Item -ItemType Directory -Path (Split-Path $launcherSourcePath -Parent) -Force | Out-Null
         Copy-Item -LiteralPath $stagedLauncherSource -Destination $launcherSourcePath -Force
     }
-    if ($launcherMissing) {
+    if ($launcherNeedsCompile) {
         Copy-Item -LiteralPath $stagedLauncher -Destination $launcherPath -Force
     }
     Copy-Item -LiteralPath $stagedNativeHostScript -Destination $nativeHostScriptPath -Force
@@ -105,7 +106,7 @@ try {
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
     $launcherHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherPath).Hash.ToLowerInvariant()
     $nativeHostHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostScriptPath).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=3 launcher_recompiled=$launcherMissing launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash"
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=3 launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

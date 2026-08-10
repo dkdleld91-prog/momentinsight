@@ -101,6 +101,7 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /naver-shopping-native-host\.mjs/u);
   assert.match(updater, /\$launcherMissing/u);
   assert.match(updater, /\$launcherSourceChanged/u);
+  assert.match(updater, /\$launcherNeedsCompile = \$launcherMissing -or \$launcherSourceChanged/u);
   assert.match(updater, /launcher_recompiled=/u);
   assert.match(updater, /launcher_source_updated=/u);
   assert.match(updater, /launcher_sha256/u);

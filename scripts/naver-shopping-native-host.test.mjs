@@ -280,7 +280,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.26");
+  assert.equal(manifest.version, "1.0.27");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -326,6 +326,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /NPLUS_SEARCH_PATH = "\/ns\/search"/u);
   assert.match(serviceWorker, /enterPriceCompareNormally/u);
   assert.match(serviceWorker, /naver_price_compare_link_missing/u);
+  assert.match(serviceWorker, /getAttribute\("aria-label"\)/u);
+  assert.match(serviceWorker, /rect\.left >= inputRect\.right - 8/u);
+  assert.match(serviceWorker, /await new Promise\(\(resolve\) => setTimeout\(resolve, 150\)\)/u);
+  assert.match(serviceWorker, /button && !button\.disabled\) button\.click\(\)/u);
   assert.match(serviceWorker, /location\.assign\(anchor\.href\)/u);
   assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/u);
   assert.ok(

@@ -396,7 +396,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
 
   const searchResults = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
-    func: (expectedKeyword) => {
+    func: async (expectedKeyword) => {
       const input = document.querySelector('input[placeholder*="상품명"]')
         || document.querySelector('input[aria-label*="검색어"]');
       if (!input) return { ok: false, code: "naver_home_search_missing" };
@@ -406,13 +406,27 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
       input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: expectedKeyword }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
       const form = input.closest("form");
-      const button = form?.querySelector('button[type="submit"]')
-        || Array.from(document.querySelectorAll("button")).find((item) => item.textContent?.trim() === "검색");
-      if (!button) return { ok: false, code: "naver_home_search_button_missing" };
-      setTimeout(() => {
-        if (form?.requestSubmit) form.requestSubmit(button);
-        else button.click();
-      }, 0);
+      const inputRect = input.getBoundingClientRect();
+      const searchButtons = Array.from(document.querySelectorAll("button, input[type=submit]"));
+      const labelOf = (item) => [
+        item.getAttribute("aria-label"),
+        item.getAttribute("title"),
+        item.getAttribute("name"),
+        item.textContent,
+      ].filter(Boolean).join(" ");
+      const button = form?.querySelector('button[type="submit"], input[type="submit"]')
+        || searchButtons.find((item) => /검색/u.test(labelOf(item)))
+        || searchButtons
+          .filter((item) => {
+            const rect = item.getBoundingClientRect();
+            const verticallyAligned = rect.bottom >= inputRect.top && rect.top <= inputRect.bottom;
+            return verticallyAligned && rect.left >= inputRect.right - 8 && rect.left <= inputRect.right + 120;
+          })
+          .sort((left, right) => left.getBoundingClientRect().left - right.getBoundingClientRect().left)[0];
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (button && !button.disabled) button.click();
+      else if (form?.requestSubmit) form.requestSubmit();
+      else return { ok: false, code: "naver_home_search_button_missing" };
       return { ok: true };
     },
     args: [keyword],

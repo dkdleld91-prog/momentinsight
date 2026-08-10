@@ -74,6 +74,7 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(installer, /-MultipleInstances IgnoreNew/u);
   assert.match(scheduler, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
   assert.match(scheduler, /chrome_ready profile=/u);
+  assert.match(scheduler, /chrome_profile_missing/u);
   assert.doesNotMatch(`${installer}\n${scheduler}`, /remote-debugging|no-sandbox|user-data-dir/iu);
 });
 
@@ -94,6 +95,13 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /--check \(Join-Path \$stagingPath \$scriptName\)/u);
   assert.match(updater, /extension_javascript_invalid/u);
   assert.match(updater, /extension_version_mismatch/u);
+  assert.match(updater, /Secure Preferences/u);
+  assert.match(updater, /loaded_extension_path_missing/u);
+  assert.match(updater, /loaded_extension_path_outside_user_profile/u);
+  assert.match(updater, /loaded_extension_version_mismatch/u);
+  assert.match(updater, /loaded_extension_hash_mismatch/u);
+  assert.match(updater, /loaded_extension_synced=true/u);
+  assert.match(updater, /chrome_profile_missing/u);
   assert.match(updater, /"icon16\.png"/u);
   assert.match(updater, /"icon128\.png"/u);
   assert.match(updater, /MomentInsightNaverShoppingHost\.cs/u);

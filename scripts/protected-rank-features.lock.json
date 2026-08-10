@@ -473,7 +473,7 @@
     {
       "id": "shopping-windows-chrome-scheduler",
       "file": "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
-      "sha256": "7e4bc33d640b6c50c5455141c37f469f409793486ff7eb04f55fd1fdb6223480"
+      "sha256": "ab109648788313195755710d4377d6fad120828b4cdff1e0a453efbfb8b069bf"
     },
     {
       "id": "shopping-chrome-extension-manifest",

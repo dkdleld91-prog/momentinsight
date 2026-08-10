@@ -22,6 +22,8 @@ try {
     if (-not (Test-Path -LiteralPath $chromePath -PathType Leaf)) { throw "chrome_missing" }
     if ($chromePath -notmatch '(?i)\\Google\\Chrome\\Application\\chrome\.exe$') { throw "chrome_path_invalid" }
     if ($profileDirectory -notmatch '^(Default|Profile [1-9][0-9]{0,2})$') { throw "chrome_profile_invalid" }
+    $profilePath = Join-Path $env:LOCALAPPDATA "Google\Chrome\User Data\$profileDirectory"
+    if (-not (Test-Path -LiteralPath $profilePath -PathType Container)) { throw "chrome_profile_missing" }
 
     $profileArgument = '--profile-directory="{0}"' -f $profileDirectory
     Start-Process -FilePath $chromePath -ArgumentList @(

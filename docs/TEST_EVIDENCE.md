@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-10 Windows 실제 확장 경로 검증
+
+- 실기 원인 증거: Chrome 사용자 데이터에는 `Profile 2/3/5/7`만 있지만 watchdog 설정은 `Profile 8`이었습니다. 고정 확장 ID는 `Profile 3`의 Secure Preferences에서 `C:\Users\user\Desktop\momentinsightextension`, manifest 1.0.27을 가리켰고, 업데이터가 갱신한 runtime manifest는 1.0.32였습니다.
+- 재발 방지 증거: 업데이터는 존재하는 설정 프로필과 manifest key가 일치하는 실로드 경로만 허용하고, runtime·실로드 폴더를 함께 교체한 뒤 버전·SHA-256이 같아야 `loaded_extension_synced=true`를 출력합니다. watchdog은 없는 프로필을 `chrome_profile_missing`으로 차단합니다.
+- 자동 검증: Windows 대상 5/5, 앱·API 409/409, 쇼핑 52/52, 플레이스 51/51, 보호 잠금 22함수·67파일·18마이그레이션, Production 인증 18/18과 전체 `npm run check:release`, `git diff --check`를 통과했습니다.
+- 실증 경계: Windows `Profile 3`에 설치 후 신규 `checked_count=300` snapshot 확인 전에는 정상화·Production 완료로 보고하지 않습니다.
+
 ## 2026-08-10 N쇼핑 정상 가격비교 진입 v1.0.24
 
 - 실브라우저 증거: 네이버+ 스토어 홈의 `상품명 또는 브랜드 입력` 검색창에서 `복부찜질기`를 검색하면 `/ns/search?query=...`로 이동했고, 화면의 `네이버 가격비교 검색에서 더보기` 링크는 `/search/all?query=...`를 만들었습니다. 해당 링크로 이동한 가격비교 화면은 접속 제한 없이 정상 표시됐습니다.

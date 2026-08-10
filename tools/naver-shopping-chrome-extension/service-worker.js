@@ -52,6 +52,8 @@ const SAFE_COLLECTION_ERROR_CODES = new Set([
   "naver_navigation_url_page_mismatch",
   "naver_navigation_data_query_mismatch",
   "naver_navigation_data_page_mismatch",
+  "naver_page_read_state_unstable",
+  "naver_page_navigation_result_missing",
   "naver_network_restricted",
 ]);
 let running = false;
@@ -425,7 +427,7 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
   if (lastValue.dataPageIndex && Number(lastValue.dataPageIndex) !== Number(pageIndex)) {
     throw new Error("naver_navigation_data_page_mismatch");
   }
-  throw new Error("naver_navigation_invalid");
+  throw new Error("naver_page_read_state_unstable");
 }
 
 async function enterPriceCompareNormally(tabId, keyword, activateTab) {
@@ -544,13 +546,21 @@ async function navigatePriceComparePage(tabId, keyword, pageIndex) {
       url.searchParams.set("productSet", "total");
       url.searchParams.set("sort", "rel");
       url.searchParams.set("viewType", "list");
-      setTimeout(() => location.assign(url.toString()), 0);
-      return { ok: true };
+      return { ok: true, targetUrl: url.toString() };
     },
     args: [keyword, pageIndex, normalizedNaverQueryKeyword(keyword)],
   }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_navigation_timeout");
   const result = results?.[0]?.result || {};
-  if (!result.ok) throw new Error(result.code || "naver_navigation_invalid");
+  if (!result.ok) throw new Error(result.code || "naver_page_navigation_result_missing");
+  if (!result.targetUrl) throw new Error("naver_page_navigation_result_missing");
+  const targetUrl = new URL(result.targetUrl);
+  if (targetUrl.hostname !== "search.shopping.naver.com"
+    || targetUrl.pathname !== PRICE_COMPARE_SEARCH_PATH
+    || normalizedNaverQueryKeyword(targetUrl.searchParams.get("query")) !== normalizedNaverQueryKeyword(keyword)
+    || Number(targetUrl.searchParams.get("pagingIndex") || 1) !== Number(pageIndex)) {
+    throw new Error("naver_navigation_url_page_mismatch");
+  }
+  await chrome.tabs.update(tabId, { url: targetUrl.toString() });
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"

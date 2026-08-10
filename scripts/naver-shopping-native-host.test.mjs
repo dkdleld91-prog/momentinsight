@@ -280,7 +280,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.32");
+  assert.equal(manifest.version, "1.0.33");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -336,11 +336,18 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /args: \[keyword, pageIndex, normalizedNaverQueryKeyword\(keyword\)\]/u);
   assert.match(serviceWorker, /url\.searchParams\.set\("query", expectedKeyword\)/u);
   assert.match(serviceWorker, /naver_navigation_data_page_mismatch/u);
+  assert.match(serviceWorker, /naver_page_read_state_unstable/u);
+  assert.match(serviceWorker, /naver_page_navigation_result_missing/u);
   assert.match(serviceWorker, /naver_price_compare_navigation_failed/u);
   assert.match(localWorker, /naver_navigation_data_page_mismatch/u);
+  assert.match(localWorker, /naver_page_read_state_unstable/u);
+  assert.match(localWorker, /naver_page_navigation_result_missing/u);
   assert.match(localWorker, /naver_price_compare_navigation_failed/u);
   assert.match(serviceWorker, /await wait\(200\)/u);
   assert.match(serviceWorker, /location\.assign\(anchor\.href\)/u);
+  assert.match(serviceWorker, /return \{ ok: true, targetUrl: url\.toString\(\) \}/u);
+  assert.match(serviceWorker, /await chrome\.tabs\.update\(tabId, \{ url: targetUrl\.toString\(\) \}\)/u);
+  assert.doesNotMatch(serviceWorker, /location\.assign\(url\.toString\(\)\)/u);
   assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/u);
   assert.ok(
     serviceWorker.indexOf("await enterPriceCompareNormally(tabId, request.keyword, activateTab)")

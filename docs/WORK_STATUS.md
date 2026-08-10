@@ -4,6 +4,12 @@
 
 ## 현재 상태
 
+### 2026-08-10 페이지 이동 결과 경쟁 제거 v1.0.33
+
+- 실제 `Profile 3` 로드 경로까지 1.0.32로 맞춘 실회차도 약 80초 뒤 `naver_navigation_invalid`로 안전 종료돼 설치 불일치와 별개의 페이지 이동 오류를 확정했습니다.
+- 2~8페이지의 페이지 내부 `setTimeout(location.assign)`은 `executeScript` 결과가 Chrome에 반환되기 전에 문서를 닫을 수 있습니다. 이제 페이지에서는 검증된 다음 URL만 반환하고 확장이 `chrome.tabs.update`로 같은 탭을 이동해 결과 유실 경쟁을 제거합니다.
+- 마지막 읽기 상태와 이동 결과 유실은 각각 `naver_page_read_state_unstable`, `naver_page_navigation_result_missing`으로 보존합니다. 신규 원자 300개 실증 전에는 정상화로 기록하지 않습니다.
+
 ### 2026-08-10 Windows 실제 프로필·확장 경로 고정
 
 - 실기 점검에서 스케줄러 설정은 존재하지 않는 `Profile 8`이었고, 실제 `동빈 (개발)` 확장은 `Profile 3`의 `C:\Users\user\Desktop\momentinsightextension`에 1.0.27로 남아 있었습니다. 기존 업데이터 성공 문구는 별도 runtime 폴더 1.0.32만 검증해 실제 Chrome 확장을 갱신하지 못했습니다.

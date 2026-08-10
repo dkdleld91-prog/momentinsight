@@ -45,6 +45,8 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_navigation_url_page_mismatch",
   "naver_navigation_data_query_mismatch",
   "naver_navigation_data_page_mismatch",
+  "naver_page_read_state_unstable",
+  "naver_page_navigation_result_missing",
   "naver_network_restricted",
   "provider_deadline_exceeded",
   "provider_partial_window",
@@ -74,6 +76,8 @@ const RUN_HALT_FAILURE_CODES = new Set([
   "naver_navigation_url_page_mismatch",
   "naver_navigation_data_query_mismatch",
   "naver_navigation_data_page_mismatch",
+  "naver_page_read_state_unstable",
+  "naver_page_navigation_result_missing",
   "naver_network_restricted",
 ]);
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;

@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-10 페이지 이동 결과 경쟁 제거 v1.0.33
+
+- 실기 증거: `Profile 3` 실로드 manifest와 runtime manifest가 모두 1.0.32이고 서비스 워커 SHA-256도 일치한 상태에서 Windows primary가 `자외선차단마스크`를 단독 claim했으나 80초 뒤 snapshot 없이 `naver_navigation_invalid`로 종료됐습니다.
+- 구현 증거: 2~8페이지는 페이지 문서가 `location.assign`을 예약하는 대신 검증된 target URL을 반환하고, 확장 컨텍스트가 URL의 host·path·검색어·page index를 재검증한 뒤 `chrome.tabs.update`로 이동합니다. 결과 유실과 읽기 상태 불안정은 서로 다른 안전 코드로 보존합니다.
+- 보호 증거: 최초 홈→N플러스 검색→가격비교 링크의 정상 진입, 45~75초 페이지 간격, 광고 제외, 원자 300개, 실패 시 마지막 정상값 보존은 변경하지 않습니다.
+- 실증 경계: Windows 1.0.33 설치와 신규 `checked_count=300` snapshot 전에는 정상화·Production 완료로 보고하지 않습니다.
+
 ## 2026-08-10 Windows 실제 확장 경로 검증
 
 - 실기 원인 증거: Chrome 사용자 데이터에는 `Profile 2/3/5/7`만 있지만 watchdog 설정은 `Profile 8`이었습니다. 고정 확장 ID는 `Profile 3`의 Secure Preferences에서 `C:\Users\user\Desktop\momentinsightextension`, manifest 1.0.27을 가리켰고, 업데이터가 갱신한 runtime manifest는 1.0.32였습니다.

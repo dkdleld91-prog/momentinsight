@@ -81,11 +81,11 @@ namespace MomentInsight.NaverShopping
                 start.WorkingDirectory = runtimePath;
                 start.UseShellExecute = false;
                 start.CreateNoWindow = true;
-                // Let Node inherit Chrome's native-messaging pipes directly.
-                // The launcher only protects the decrypted secret and holds the
-                // single-instance mutex while the child is alive.
+                // Node inherits Chrome's input pipe directly. Its output is
+                // relayed explicitly because a Windows GUI child does not
+                // reliably inherit the native-messaging output handle.
                 start.RedirectStandardInput = false;
-                start.RedirectStandardOutput = false;
+                start.RedirectStandardOutput = true;
                 start.RedirectStandardError = false;
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED"] = "true";
                 start.EnvironmentVariables["MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET"] = secret;
@@ -102,7 +102,14 @@ namespace MomentInsight.NaverShopping
                         return Fail("node_start_failed");
                     }
 
+                    Thread outputRelay = new Thread(() => RelayOutput(child));
+                    outputRelay.IsBackground = true;
+                    outputRelay.Start();
                     child.WaitForExit();
+                    if (!outputRelay.Join(5000))
+                    {
+                        return Fail("native_host_output_relay_timeout");
+                    }
                     return child.ExitCode;
                 }
             }
@@ -131,6 +138,26 @@ namespace MomentInsight.NaverShopping
         private static string Quote(string value)
         {
             return "\"" + value.Replace("\"", "\\\"") + "\"";
+        }
+
+        private static void RelayOutput(Process child)
+        {
+            try
+            {
+                using (Stream output = Console.OpenStandardOutput())
+                {
+                    child.StandardOutput.BaseStream.CopyTo(output);
+                    output.Flush();
+                }
+            }
+            catch (IOException)
+            {
+                // Chrome disconnected; the child exits when its input pipe closes.
+            }
+            catch (ObjectDisposedException)
+            {
+                // The child exited while the output relay was finishing.
+            }
         }
 
         private static int Fail(string code)

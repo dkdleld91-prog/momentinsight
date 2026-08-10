@@ -583,12 +583,14 @@ check(
       /ProtectedData\.Unprotect/,
       /DataProtectionScope\.CurrentUser/,
       /RedirectStandardInput = false/,
-      /RedirectStandardOutput = false/,
+      /RedirectStandardOutput = true/,
+      /child\.StandardOutput\.BaseStream\.CopyTo\(output\)/,
+      /outputRelay\.Join\(5000\)/,
       /child\.WaitForExit\(\)/,
       /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
       /String\.Equals\(maxJobs, "1"/,
     ])
-    && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream|StandardOutput\.BaseStream/u.test(shoppingWindowsHostLauncher)
+    && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream/u.test(shoppingWindowsHostLauncher)
     && hasAll(shoppingWindowsChromeScheduler, [
       /'--profile-directory="\{0\}"' -f \$profileDirectory/,
       /chrome_ready profile=/,

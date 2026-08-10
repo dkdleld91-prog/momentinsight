@@ -43,6 +43,11 @@ const SAFE_COLLECTION_ERROR_CODES = new Set([
   "naver_next_data_missing",
   "naver_page_timeout",
   "naver_navigation_invalid",
+  "naver_navigation_path_mismatch",
+  "naver_navigation_url_query_mismatch",
+  "naver_navigation_url_page_mismatch",
+  "naver_navigation_data_query_mismatch",
+  "naver_navigation_data_page_mismatch",
   "naver_network_restricted",
 ]);
 let running = false;
@@ -399,6 +404,23 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
     await wait(200);
   }
   if (!lastValue.nextDataText) throw new Error("naver_next_data_missing");
+  const expectedKeyword = normalizedKeyword(keyword);
+  if (lastValue.path !== PRICE_COMPARE_SEARCH_PATH) {
+    throw new Error("naver_navigation_path_mismatch");
+  }
+  if (normalizedKeyword(lastValue.urlKeyword) !== expectedKeyword) {
+    throw new Error("naver_navigation_url_query_mismatch");
+  }
+  if (Number(lastValue.urlPageIndex) !== Number(pageIndex)) {
+    throw new Error("naver_navigation_url_page_mismatch");
+  }
+  if (lastValue.dataKeyword
+    && normalizedNaverQueryKeyword(lastValue.dataKeyword) !== normalizedNaverQueryKeyword(expectedKeyword)) {
+    throw new Error("naver_navigation_data_query_mismatch");
+  }
+  if (lastValue.dataPageIndex && Number(lastValue.dataPageIndex) !== Number(pageIndex)) {
+    throw new Error("naver_navigation_data_page_mismatch");
+  }
   throw new Error("naver_navigation_invalid");
 }
 

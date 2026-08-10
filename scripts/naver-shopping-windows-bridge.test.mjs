@@ -99,8 +99,10 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /Add-Type -Path \$stagedLauncherSource/u);
   assert.match(updater, /native_host_launcher_compile_failed/u);
   assert.match(updater, /naver-shopping-native-host\.mjs/u);
-  assert.match(updater, /\$launcherChanged/u);
+  assert.match(updater, /\$launcherMissing/u);
+  assert.match(updater, /\$launcherSourceChanged/u);
   assert.match(updater, /launcher_recompiled=/u);
+  assert.match(updater, /launcher_source_updated=/u);
   assert.match(updater, /launcher_sha256/u);
   assert.ok(
     updater.indexOf("extension_javascript_invalid") < updater.indexOf("Get-Process chrome"),

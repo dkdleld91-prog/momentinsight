@@ -91,6 +91,8 @@ async function main() {
   const start = await nextMessage(60_000);
   if (start?.action !== "run") throw new Error("native_host_start_invalid");
   writeMessage({ type: "ready" });
+  const readyAck = await nextMessage(30_000);
+  if (readyAck?.action !== "ready_ack") throw new Error("native_host_ready_ack_invalid");
   const provider = createChromeNativeProvider({
     async exchange(message) {
       const requestId = crypto.randomUUID();

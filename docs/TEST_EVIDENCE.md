@@ -826,3 +826,9 @@
 
 - 실기 증거: 확장 LevelDB에 `rank-remote`와 `native_host_start_timeout`이 1분 간격으로 반복됐고, HKCU native messaging 등록·manifest·launcher exe는 모두 존재했습니다. 40초 뒤 관련 프로세스 0건은 확장이 시간 초과 후 연결을 종료한 결과와 일치합니다.
 - 회귀: native host·Windows bridge 대상 17/17, 서버 계약 39/39, baseline 및 보호 잠금이 통과했습니다.
+
+## 2026-08-10 Windows native host 양방향 준비 확인 v1.0.22
+
+- 실기 증거: Windows worker가 `볼캡` 작업을 18분 임대했지만 새 가격비교 탭 없이 `native_host_response_timeout`으로 해제됐습니다. DB snapshot은 추가되지 않았고 기존 정상값이 유지됐습니다.
+- 수정: native host `ready`와 확장 `ready_ack`를 한 쌍으로 검증한 뒤에만 signed worker claim을 시작합니다.
+- 회귀: native host·Windows bridge 17/17, 서버 계약 39/39, API·서버 407/407, 플레이스 51/51, 쇼핑 51/51, Production 인증 18/18, 보호 잠금 22함수·66파일·17마이그레이션 및 전체 `npm run check:release` 통과.

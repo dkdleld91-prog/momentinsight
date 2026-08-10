@@ -494,6 +494,10 @@ async function runWorker(trigger = "manual") {
           clearTimeout(startTimeout);
         }
         try {
+          if (message?.type === "ready") {
+            port.postMessage({ action: "ready_ack" });
+            return;
+          }
           if (message?.type === "collect") {
             try {
               const collection = await collectPriceComparePages(message.request, collectionTabId, {

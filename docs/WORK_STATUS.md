@@ -660,3 +660,9 @@
 
 - Windows 실기에서 `rank-remote → native_host_start_timeout`이 1분마다 반복되고 launcher 등록·manifest·exe는 정상임을 확인했습니다. native host가 서버 작업을 조회하는 동안 첫 메시지가 없어 확장이 30초 뒤 정상 프로세스를 끊는 것이 원인이었습니다.
 - native host는 실행 요청을 검증한 즉시 `ready`를 응답합니다. Windows 안전 업데이터는 확장·launcher뿐 아니라 `naver-shopping-native-host.mjs`도 원자적으로 내려받아 문법 검사 후 교체하고 SHA-256을 출력합니다.
+
+### 2026-08-10 Windows native host 양방향 준비 확인 v1.0.22
+
+- Windows 첫 실수집은 작업 임대 후 `native_host_response_timeout`으로 실패했고, 부분 결과는 저장하지 않은 채 마지막 정상 순위를 유지했습니다.
+- `ready` 직후 확장이 `ready_ack`를 회신해야 서버 작업을 청구하도록 양방향 준비 확인을 추가했습니다. 첫 메시지만 전달되고 후속 수집 메시지가 누락되는 상태를 30초 안에 실패 처리합니다.
+- 대상 회귀 17/17, 서버 계약 39/39, 보호 잠금 self-test, 전체 `npm run check:release`와 `git diff --check`를 통과했습니다.

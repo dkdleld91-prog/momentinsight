@@ -279,7 +279,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.21");
+  assert.equal(manifest.version, "1.0.22");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "standby"/u);
@@ -343,6 +343,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
   assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 18 \* 60_000/u);
   assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
+  assert.match(nativeHost, /readyAck = await nextMessage\(30_000\)/u);
+  assert.match(nativeHost, /native_host_ready_ack_invalid/u);
+  assert.match(serviceWorker, /message\?\.type === "ready"/u);
+  assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
   assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}18 \* 60_000/u);
   assert.match(localWorker, /"native_host_response_timeout"/u);
   assert.match(nativeHost, /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/u);

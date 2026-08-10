@@ -7,6 +7,7 @@
 - 코드 증거: launcher의 named mutex가 동시 native host를 차단하고, Chrome stdin EOF 후 자식이 5초 안에 끝나지 않으면 종료합니다. 확장은 실행 객체가 없는 2분 초과 `running` 저장 상태를 `native_host_interrupted`로 교체합니다.
 - 설치 증거: Windows 안전 업데이터가 새 C# launcher를 staging에서 먼저 컴파일한 뒤 확장·launcher를 함께 교체하도록 회귀검사에 고정했습니다. DPAPI 운영 키 파일은 대상에 포함하지 않습니다.
 - 회귀 증거: JavaScript 문법, Windows/native-host 대상 17/17, 보호 잠금 22함수·66파일·17마이그레이션, baseline, 서버 계약 39/39, 앱·API 407/407, 플레이스·쇼핑 각 51/51, Production 인증 18/18, `git diff --check`와 전체 `npm run check:release`가 통과했습니다.
+- 배포·실기 증거: `0419439`·`48016f7`을 GitHub `main`에 푸시했고 Vercel Production `/health`·`/ready`는 릴리스 `48016f734b96`, 서울 `icn1`, Supabase ready입니다. Windows 업데이터가 Chrome을 재시작한 뒤 확장 카드가 1.0.20으로 표시됐습니다.
 
 ## 2026-08-10 수동 갱신 가시성 v1.0.19
 

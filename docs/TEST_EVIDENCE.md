@@ -7,7 +7,8 @@
 - 보호 증거: 제한 중 자동 동기화와 중복 요청을 보내지 않고, `checkedCount=300` 원자 반영과 실패 시 기존 정상 순위·30일 기록 보존 계약은 유지합니다.
 - 아이콘 증거: 확장 manifest 1.0.23이 16/32/48/128px PNG와 action 아이콘을 선언하며, 팝업도 동일 48px 심볼을 사용합니다. Windows 설치기와 UTF-8 안전 업데이터에 네 파일을 포함했습니다.
 - 회귀 증거: N상품 handler 55/55, 앱·API 408/408, Windows/native-host 대상 17/17, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 공개 빌드·CSP, 보호 잠금과 전체 `npm run check:release`, `git diff --check`가 통과했습니다.
-- 배포 경계: Production과 Windows 설치본 반영을 진행합니다.
+- 배포 증거: 코드 `8b80c0d`·`e4089ac`은 GitHub `main`에 반영됐습니다. Vercel 배포 `dpl_9E6xGwSCx1Wi6o15bt7Dat3hiqYT`은 모든 코드 검사 통과 후 `hybrid_worker_recent_300_proof_missing`에서 차단됐습니다.
+- 운영 증거: 최신 정상 `pw-chrome-*` 300개는 `2026-08-09 04:55:15 UTC`로 확인 시점 기준 26.7시간 전입니다. 공용 제한은 `2026-08-10 07:40:15 UTC`에 해제됐지만 Windows 화면에 네이버 이미지 보안확인이 표시되어 신규 정상 증거 생성 전에는 안전문을 우회하지 않습니다.
 
 ## 2026-08-10 Windows 중복·고아 수집기 자동 복구 v1.0.20
 

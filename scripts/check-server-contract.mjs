@@ -501,7 +501,7 @@ check(
   `${files.sessionGate}, ${files.shoppingLocalWorkerAuth}, ${files.shoppingLocalWorkerContract}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorkerMigration}`,
 );
 check(
-  "N Shopping normal Chrome bridge is least-privilege and preserves the signed atomic worker",
+  "N Shopping verified direct Chrome bridge is least-privilege and preserves the signed atomic worker",
   JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
     ])
@@ -510,14 +510,12 @@ check(
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
-      /NAVER_SHOPPING_HOME_URL = "https:\/\/shopping\.naver\.com\/ns\/home"/,
-      /NPLUS_SEARCH_PATH = "\/ns\/search"/,
       /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/,
-      /enterPriceCompareNormally/,
-      /naver_price_compare_link_missing/,
-      /targetUrl: anchor\.href/,
-      /url: normalSearchTarget\.toString\(\)/,
-      /url: priceCompareTarget\.toString\(\)/,
+      /function priceCompareSearchUrl/,
+      /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/,
+      /url\.searchParams\.set\("frm", "NVSCTAB"\)/,
+      /PAGE_REQUEST_INTERVAL_MS = 3_500/,
+      /PAGE_REQUEST_JITTER_MS = 2_500/,
       /collectPriceComparePages/,
       /pagingIndex/,
       /productSet/,
@@ -528,7 +526,7 @@ check(
       /chrome\.tabs\.remove\(collectionTabId\)/,
       /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/,
     ])
-    && !/NVSCTAB|\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
+    && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
       /parseNaverNextDataPage/,
       /buildNativeWindowFromRows/,
@@ -608,7 +606,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.37"
+  shoppingChromeManifest.version === "1.0.38"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -624,7 +622,7 @@ check(
     && /if \(error\?\.tabId\) collectionTabId = error\.tabId/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
     && /activateTab: trigger === "manual"/.test(shoppingChromeWorker)
-    && /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url: targetUrl, active: activateTab \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)

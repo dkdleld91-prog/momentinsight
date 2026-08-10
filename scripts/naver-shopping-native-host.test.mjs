@@ -280,7 +280,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.37");
+  assert.equal(manifest.version, "1.0.38");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -322,14 +322,11 @@ test("Chrome extension drains safely and reports verification recovery truthfull
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
   assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId, \{[\s\S]+activateTab: trigger === "manual"/u);
-  assert.match(serviceWorker, /NAVER_SHOPPING_HOME_URL = "https:\/\/shopping\.naver\.com\/ns\/home"/u);
-  assert.match(serviceWorker, /NPLUS_SEARCH_PATH = "\/ns\/search"/u);
-  assert.match(serviceWorker, /enterPriceCompareNormally/u);
-  assert.match(serviceWorker, /naver_price_compare_link_missing/u);
-  assert.match(serviceWorker, /getAttribute\("aria-label"\)/u);
-  assert.match(serviceWorker, /rect\.left >= inputRect\.right - 8/u);
-  assert.match(serviceWorker, /await new Promise\(\(resolve\) => setTimeout\(resolve, 150\)\)/u);
-  assert.match(serviceWorker, /targetUrl = new URL\("https:\/\/search\.shopping\.naver\.com\/ns\/search"\)/u);
+  assert.match(serviceWorker, /function priceCompareSearchUrl/u);
+  assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("frm", "NVSCTAB"\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
   assert.match(serviceWorker, /PAGE_READY_STABILITY_MS = 500/u);
   assert.match(serviceWorker, /urlMatches && dataMatches && value\.nextDataText/u);
   assert.match(serviceWorker, /normalizedNaverQueryKeyword/u);
@@ -338,43 +335,27 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /naver_navigation_data_page_mismatch/u);
   assert.match(serviceWorker, /naver_page_read_state_unstable/u);
   assert.match(serviceWorker, /naver_page_navigation_result_missing/u);
-  assert.match(serviceWorker, /naver_home_search_target_invalid/u);
-  assert.match(serviceWorker, /naver_price_compare_target_invalid/u);
-  assert.match(serviceWorker, /naver_price_compare_navigation_failed/u);
   assert.match(localWorker, /naver_navigation_data_page_mismatch/u);
   assert.match(localWorker, /naver_page_read_state_unstable/u);
   assert.match(localWorker, /naver_page_navigation_result_missing/u);
   assert.match(localWorker, /naver_home_search_target_invalid/u);
   assert.match(localWorker, /naver_price_compare_target_invalid/u);
   assert.match(localWorker, /naver_price_compare_navigation_failed/u);
-  assert.match(serviceWorker, /await wait\(200\)/u);
-  assert.match(serviceWorker, /return \{ ok: true, targetUrl: anchor\.href \}/u);
-  assert.match(serviceWorker, /setTimeout\(\(\) => \{[\s\S]+button\.click\(\)/u);
-  assert.match(serviceWorker, /setTimeout\(\(\) => anchor\.click\(\), 0\)/u);
-  assert.match(serviceWorker, /if \(!await tabUrlMatchesWithin\(tabId, normalSearchMatches\)\)/u);
-  assert.match(serviceWorker, /if \(!await tabUrlMatchesWithin\(tabId, priceCompareMatches\)\)/u);
-  assert.match(serviceWorker, /return \{ ok: true, targetUrl: url\.toString\(\) \}/u);
-  assert.match(serviceWorker, /await updateTab\(tabId, \{ url: targetUrl\.toString\(\) \}, "naver_page_navigation_failed"\)/u);
+  assert.match(serviceWorker, /const targetUrl = priceCompareSearchUrl\(request\.keyword, pageIndex\)/u);
+  assert.match(serviceWorker, /url: targetUrl/u);
+  assert.match(serviceWorker, /await waitForTabComplete\(tabId\)/u);
   assert.match(serviceWorker, /async function executePageScript/u);
   assert.match(serviceWorker, /await wait\(200\)/u);
   assert.match(serviceWorker, /naver_page_script_failed/u);
   assert.doesNotMatch(serviceWorker, /location\.assign\(url\.toString\(\)\)/u);
-  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/u);
-  assert.ok(
-    serviceWorker.indexOf("await enterPriceCompareNormally(tabId, request.keyword, activateTab)")
-      < serviceWorker.indexOf("for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1)"),
-  );
-  assert.ok(
-    serviceWorker.indexOf("url.pathname === NPLUS_SEARCH_PATH")
-      < serviceWorker.indexOf("targetUrl: anchor.href"),
-  );
+  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: targetUrl, active: activateTab \}\)/u);
   assert.match(serviceWorker, /surfaceVerificationTab/u);
   assert.match(serviceWorker, /surfaceNetworkRestrictionTab/u);
   assert.match(serviceWorker, /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/u);
   assert.match(serviceWorker, /pagingIndex/u);
   assert.match(serviceWorker, /productSet/u);
   assert.match(serviceWorker, /nextDataText/u);
-  assert.doesNotMatch(serviceWorker, /NVSCTAB|data-shp-contents-rank/u);
+  assert.doesNotMatch(serviceWorker, /data-shp-contents-rank/u);
   assert.match(serviceWorker, /CHROME_OPERATION_TIMEOUT_MS = 45_000/u);
   assert.match(serviceWorker, /withTimeout\(chrome\.scripting\.executeScript/u);
   assert.match(serviceWorker, /naver_page_script_failed/u);
@@ -441,11 +422,8 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 20, periodInMinutes: 20 \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /INITIAL_REQUEST_DELAY_MS = 30_000/u);
-  assert.match(serviceWorker, /INITIAL_REQUEST_JITTER_MS = 15_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 45_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 30_000/u);
-  assert.match(serviceWorker, /await wait\(initialRequestDelay\(\)\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
   assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
   assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

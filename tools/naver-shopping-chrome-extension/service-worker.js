@@ -4,12 +4,10 @@ const NAVER_SHOPPING_HOME_URL = "https://shopping.naver.com/ns/home";
 const NPLUS_SEARCH_PATH = "/ns/search";
 const PRICE_COMPARE_SEARCH_PATH = "/search/all";
 const PAGE_COUNT = 8;
-const PAGE_TIMEOUT_MS = 45_000;
+const PAGE_TIMEOUT_MS = 30_000;
 const PAGE_READY_STABILITY_MS = 500;
-const INITIAL_REQUEST_DELAY_MS = 30_000;
-const INITIAL_REQUEST_JITTER_MS = 15_000;
-const PAGE_REQUEST_INTERVAL_MS = 45_000;
-const PAGE_REQUEST_JITTER_MS = 30_000;
+const PAGE_REQUEST_INTERVAL_MS = 3_500;
+const PAGE_REQUEST_JITTER_MS = 2_500;
 const CHROME_OPERATION_TIMEOUT_MS = 45_000;
 const NATIVE_HOST_START_TIMEOUT_MS = 30_000;
 const NATIVE_HOST_RUN_TIMEOUT_MS = 30 * 60_000;
@@ -144,8 +142,17 @@ function pageRequestDelay() {
   return PAGE_REQUEST_INTERVAL_MS + Math.floor(Math.random() * (PAGE_REQUEST_JITTER_MS + 1));
 }
 
-function initialRequestDelay() {
-  return INITIAL_REQUEST_DELAY_MS + Math.floor(Math.random() * (INITIAL_REQUEST_JITTER_MS + 1));
+function priceCompareSearchUrl(keyword, pageIndex) {
+  const url = new URL("https://search.shopping.naver.com/search/all");
+  url.searchParams.set("where", "all");
+  url.searchParams.set("frm", "NVSCTAB");
+  url.searchParams.set("query", keyword);
+  url.searchParams.set("pagingIndex", String(pageIndex));
+  url.searchParams.set("pagingSize", "40");
+  url.searchParams.set("productSet", "total");
+  url.searchParams.set("sort", "rel");
+  url.searchParams.set("viewType", "list");
+  return url.toString();
 }
 
 async function verificationState() {
@@ -661,13 +668,26 @@ async function collectPriceComparePages(request, initialTabId = null, options = 
   const pages = [];
   let tabId = initialTabId;
   try {
-    if (tabId == null) {
-      const tab = await chrome.tabs.create({ url: NAVER_SHOPPING_HOME_URL, active: activateTab });
-      tabId = tab.id;
-    }
-    await enterPriceCompareNormally(tabId, request.keyword, activateTab);
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
-      if (pageIndex > 1) await navigatePriceComparePage(tabId, request.keyword, pageIndex);
+      const targetUrl = priceCompareSearchUrl(request.keyword, pageIndex);
+      if (tabId == null) {
+        const tab = await chrome.tabs.create({ url: targetUrl, active: activateTab });
+        tabId = tab.id;
+      } else {
+        await updateTab(tabId, {
+          url: targetUrl,
+          ...(activateTab ? { active: true } : {}),
+        }, "naver_page_navigation_failed");
+      }
+      await waitForTabUrl(tabId, (rawUrl) => {
+        const url = new URL(rawUrl);
+        return url.hostname === "search.shopping.naver.com"
+          && url.pathname === PRICE_COMPARE_SEARCH_PATH
+          && normalizedNaverQueryKeyword(url.searchParams.get("query"))
+            === normalizedNaverQueryKeyword(request.keyword)
+          && Number(url.searchParams.get("pagingIndex") || 1) === pageIndex;
+      }, "naver_page_navigation_failed");
+      await waitForTabComplete(tabId);
       pages.push({
         pageIndex,
         nextDataText: await readPriceComparePage(tabId, request.keyword, pageIndex),

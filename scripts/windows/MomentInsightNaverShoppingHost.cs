@@ -161,8 +161,8 @@ namespace MomentInsight.NaverShopping
             finally
             {
                 try { child.StandardInput.Close(); }
-                catch (InvalidOperationException ignored) { GC.KeepAlive(ignored); }
                 catch (ObjectDisposedException ignored) { GC.KeepAlive(ignored); }
+                catch (InvalidOperationException ignored) { GC.KeepAlive(ignored); }
 
                 try
                 {

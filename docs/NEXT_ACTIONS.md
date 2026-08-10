@@ -10,6 +10,7 @@
 6. 완료: Windows `동빈 (개발)`에 1.0.18을 설치·재로드하고 DPAPI 운영 키·primary 설정·launcher 실행을 확인했습니다.
 7. 완료: lane timestamp 충돌을 수정하고 운영 `windows-desktop-primary` heartbeat와 idle lease 해제를 확인했습니다.
 8. 운영 확인: Mac `primary_online` 대기와 신규 `pw-chrome-*`·`checked_count=300`을 순서대로 확인합니다.
+9. 관찰: 첫 Windows 실회차는 18분 typed timeout으로 안전 종료·5분 재시도됐습니다. 같은 timeout이 반복되는 경우에만 페이지별 진행 계측을 추가하고 시간 경계를 조정합니다.
 
 ## 2026-08-10 N상품 Windows 작업용 데스크탑
 

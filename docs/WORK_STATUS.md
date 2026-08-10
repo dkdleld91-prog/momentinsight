@@ -14,6 +14,7 @@
 - 구현 커밋 `bb90e84`는 GitHub `main`과 Production에 반영됐고 `/health`·`/ready`는 릴리스 `bb90e846261e`·서울 `icn1`에서 200입니다. Mac native runtime은 standby 설정으로 재설치됐습니다.
 - Windows `동빈 (개발)`에 1.0.18 runtime·확장을 설치하고 Chrome 재시작 뒤 버전 표시를 확인했습니다. DPAPI 운영 키와 `primary` 역할도 보존됐습니다.
 - 첫 heartbeat를 막은 원인은 lane RPC의 PL/pgSQL 변수 `current_time`이 PostgreSQL 동명 키워드로 해석된 것이며, repair migration에서 `v_now`로 교체했습니다. 운영에서 `windows-desktop-primary` heartbeat와 lease 정상 해제를 확인했습니다. 신규 원자 `checked_count=300` 실수집은 계속 증거를 확인합니다.
+- 첫 실수집은 Windows가 tracker 1건을 단독 선점했지만 18분 경계에서 `native_host_response_timeout`으로 안전 종료됐습니다. 기존 snapshot은 변경되지 않았고 tracker lease와 공용 lane은 즉시 해제됐으며 5분 후 자동 재시도 상태입니다.
 
 ### 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 

@@ -12,6 +12,7 @@
 - 검증: 운영 migration과 RLS/권한 확인, 대상 58/58, 앱·API 405/405, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·65파일·16마이그레이션, 전체 `check:release`와 `git diff --check`를 통과했다.
 - 실기 보완: Windows `동빈 (개발)`에 1.0.18 설치·재로드를 완료했다. lane RPC의 `current_time` 키워드 충돌은 repair migration에서 `v_now`로 수정했고 운영 `windows-desktop-primary` heartbeat와 idle lease 해제를 확인했다.
 - 남은 경계: Mac `primary_online` 대기와 신규 `pw-chrome-*`·`checked_count=300`을 운영 확인한다.
+- 첫 실회차: Windows가 tracker 1건을 단독 claim했으나 18분 `native_host_response_timeout`으로 안전 종료했다. 기존 snapshot 보존, tracker/lane 해제, 5분 자동 재시도를 확인했으며 반복 여부를 본 뒤 시간 경계 변경을 판단한다.
 
 ## 2026-08-10 N 쇼핑 Windows 수동 갱신 무한로딩 복구
 

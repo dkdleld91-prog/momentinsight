@@ -9,7 +9,7 @@
 - 설치 증거: Windows PowerShell이 `MI_UPDATE_OK version=1.0.18 primary=True exe=True`를 출력했고 Chrome 재시작 뒤 `Moment Insight N Shopping Rank 1.0.18` 표시를 확인했습니다. DPAPI 운영 키는 보존됐습니다.
 - 장애·수정 증거: 운영 RPC probe가 `current_time`의 `timetz`/`timestamptz` 충돌을 재현했습니다. `fix_naver_shopping_worker_lane_timestamp` migration 적용 뒤 `windows-desktop-primary`가 `2026-08-10 10:09:16 KST` heartbeat를 기록하고 idle 회차 lease를 정상 해제했습니다.
 - 실수집 경계: 주 작업기 연결은 증명됐지만 신규 `pw-chrome-*`·`checked_count=300` snapshot은 별도로 확인합니다. 이 전에는 신규 300위 수집 완료로 확대하지 않습니다.
-- 안전 실패 증거: `2026-08-10 10:12 KST` Windows 단독 회차는 tracker 1건을 claim했고 `10:30 KST` `native_host_response_timeout`으로 lease를 해제했습니다. 신규 snapshot·공용 block code는 없고 마지막 정상값을 보존한 채 `10:35 KST` 자동 재시도로 전환됐습니다.
+- 안전 실패·원격 재개 증거: `2026-08-10 10:12 KST` Windows 단독 회차는 tracker 1건을 claim했고 `10:30 KST` `native_host_response_timeout`으로 lease를 해제했습니다. 신규 snapshot·공용 block code 없이 마지막 정상값을 보존했고, `10:42:59 KST` Codex wake는 1분 안에 소비되어 Windows primary가 lane과 tracker 1건을 다시 claim했습니다.
 
 ## 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 

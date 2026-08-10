@@ -14613,7 +14613,7 @@
         var latestText = latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-";
         var nextText = workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기");
         var summaryText = workerCoolingDown
-          ? "네이버 요청 안전 중단 · 기존 정상 순위와 30일 기록 보존"
+          ? "네이버 요청 일시정지 · 기존 정상 순위와 30일 기록 보존"
           : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인";
         var nextNote = workerCoolingDown ? "이후 대기 1건 자동 재시도" : "매일 09:00 · 15:00";
         return '<div class="mi-rank-auto-center">' +
@@ -15953,7 +15953,7 @@
           var status = rankWorkerStatusFromCard(card);
           var retryAt = status.retryAt ? new Date(status.retryAt).getTime() : 0;
           if (status.state !== "cooldown" || !Number.isFinite(retryAt) || retryAt <= Date.now()) return "";
-          return "네이버 쇼핑 접속 제한으로 안전 중단했습니다. " + formatRankShortAt(status.retryAt) + " 이후 대기 중인 1건부터 자동 재시도하며, 기존 정상 순위와 30일 기록은 유지합니다.";
+          return "네이버 쇼핑 접속 제한으로 일시정지했습니다. " + formatRankShortAt(status.retryAt) + " 이후 대기 중인 1건부터 자동 재시도하며, 기존 정상 순위와 30일 기록은 유지합니다.";
         }
 
         function applyRankSourceState(payload) {

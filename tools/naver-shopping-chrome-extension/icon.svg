@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title">
+  <title id="title">Moment Insight</title>
+  <defs>
+    <linearGradient id="background" x1="20" y1="12" x2="108" y2="116" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06172e"/>
+      <stop offset="1" stop-color="#0d2d4d"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="120" height="120" rx="30" fill="url(#background)"/>
+  <rect x="7" y="7" width="114" height="114" rx="27" fill="none" stroke="#ffffff" stroke-opacity=".1" stroke-width="2"/>
+  <path d="M28 92V38L64 74L100 38V92" fill="none" stroke="#f8fbff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M64 74L100 38V92" fill="none" stroke="#32c48d" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

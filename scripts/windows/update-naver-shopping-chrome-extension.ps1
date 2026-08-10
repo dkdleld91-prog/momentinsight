@@ -25,6 +25,10 @@ $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentins
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
 $files = @(
     "README.md",
+    "icon16.png",
+    "icon32.png",
+    "icon48.png",
+    "icon128.png",
     "manifest.json",
     "popup.css",
     "popup.html",

@@ -1,6 +1,8 @@
 :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif; }
 body { margin: 0; width: 310px; color: #091d3a; background: #f7f9fc; }
 main { padding: 22px; }
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { display: block; border-radius: 12px; box-shadow: 0 6px 18px rgba(8, 31, 64, .18); }
 .eyebrow { margin: 0 0 8px; color: #17805f; font-size: 10px; font-weight: 800; letter-spacing: .14em; }
 h1 { margin: 0; font-size: 21px; letter-spacing: -.04em; }
 .status { min-height: 40px; margin: 15px 0; padding: 11px 12px; border: 1px solid #dce4ef; border-radius: 12px; background: #fff; color: #58677f; font-size: 12px; line-height: 1.5; }

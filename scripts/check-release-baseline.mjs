@@ -1275,7 +1275,9 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.22"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.23"
+    && shoppingChromeManifest.icons?.[16] === "icon16.png"
+    && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
     && shoppingChromeWorker.includes('result.status === "standby"')
@@ -1310,9 +1312,9 @@ const checks = {
       source.includes('queuedPayload.remoteWakeRequested === true')
         && source.includes('개발 프로필에 원격 실행을 요청했습니다.')
         && source.includes('data-rank-worker-state')
-        && source.includes('네이버 쇼핑 접속 제한으로 안전 중단했습니다.')
+        && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.22"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.23"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
     && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')

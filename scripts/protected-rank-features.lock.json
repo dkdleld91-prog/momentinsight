@@ -79,13 +79,13 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "e19ee0bde1307f157dd9de8f701e8fcb7ace838d64c6e5b18ef889ade6d9ca3e"
+      "sha256": "79f333661e9e32514ccda1c43b9f16baf11014277f189b996d6fb89ee3ec469d"
     },
     {
       "id": "advertiser-product-30-day",
       "file": "src/pages/client.html",
       "name": "initRankTracking",
-      "sha256": "3f67db0ff02f6a85c8cab168f33e55b2195ccf5f53c4ee41cea9df0fcd2e3a77"
+      "sha256": "977bc1c531632842784fbfadbbf47a5ceb258360f18ca5df20331eb6c41b3a4e"
     },
     {
       "id": "operation-place-30-day",
@@ -457,7 +457,7 @@
     {
       "id": "shopping-windows-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
-      "sha256": "b34af2def7c6dd8ac3399f32433d2e5bcbf9d4f6ceb279abf56ca9bb060bc5c4"
+      "sha256": "e1d28dcdcd6788f8428badf1b62f04cb708a70869fcce064e8aca213ba785ead"
     },
     {
       "id": "shopping-windows-native-host-launcher",
@@ -472,7 +472,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "31a4b85697a5a92fed319d0d6c41a7344b9e719f4e0e5aa54e7483f77eceb63e"
+      "sha256": "cf7a859e0626e6f73a225c7be6dd4b2962d730205611c95e58c8343b7698ac01"
     },
     {
       "id": "shopping-chrome-extension-worker",

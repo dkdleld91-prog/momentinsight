@@ -26,6 +26,7 @@ test("Windows installer targets one exact Chrome profile and stable extension so
   assert.match(installer, /chrome_profile_not_found/u);
   assert.match(installer, /\$profileDirectory = Resolve-ProfileDirectory/u);
   assert.match(installer, /tools\/naver-shopping-chrome-extension\/service-worker\.js/u);
+  assert.match(installer, /tools\/naver-shopping-chrome-extension\/icon128\.png/u);
   assert.match(installer, /chrome:\/\/extensions/u);
   assert.match(installer, /extensionPath = \(Join-Path \$runtimePath/u);
   assert.doesNotMatch(installer, /return "Default"/u);
@@ -93,6 +94,8 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /--check \(Join-Path \$stagingPath \$scriptName\)/u);
   assert.match(updater, /extension_javascript_invalid/u);
   assert.match(updater, /extension_version_mismatch/u);
+  assert.match(updater, /"icon16\.png"/u);
+  assert.match(updater, /"icon128\.png"/u);
   assert.match(updater, /MomentInsightNaverShoppingHost\.cs/u);
   assert.match(updater, /naver-shopping-native-host\.mjs/u);
   assert.match(updater, /\$launcherMissing/u);

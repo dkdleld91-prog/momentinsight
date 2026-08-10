@@ -114,6 +114,7 @@ const RUN_HALT_FAILURE_CODES = new Set([
   "naver_network_restricted",
 ]);
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
+const INTERNAL_FAILURE_CODE_PATTERN = /^(?:local_worker|native_host|provider|naver)_[a-z0-9_:-]{2,79}$/u;
 
 function workerCoordinationIdentity(env) {
   const fallbackDigest = crypto
@@ -168,8 +169,12 @@ function workerEndpoint(env) {
 }
 
 function safeFailureCode(error) {
-  const code = String(error?.code || error?.message || "").trim().toLowerCase();
-  if (!SAFE_FAILURE_CODES.has(code)) return "local_worker_collection_failed";
+  const code = String(error?.result?.code || error?.code || error?.message || "")
+    .trim()
+    .toLowerCase();
+  if (!SAFE_FAILURE_CODES.has(code) && !INTERNAL_FAILURE_CODE_PATTERN.test(code)) {
+    return "local_worker_collection_failed";
+  }
   if (!SAFE_DETAIL_FAILURE_CODES.has(code)) return code;
   const detail = String(error?.detail || "")
     .trim()

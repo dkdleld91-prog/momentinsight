@@ -536,6 +536,32 @@ test("preserves a bounded native parser failure detail for production diagnosis"
   );
 });
 
+test("preserves a bounded internal failure code instead of hiding the live cause", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("local_worker_commit_invalid");
+      error.code = "local_worker_commit_invalid";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+  await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(calls[1].errorCode, "local_worker_commit_invalid");
+});
+
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {
   const calls = [];
   const logs = [];

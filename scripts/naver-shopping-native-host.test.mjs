@@ -280,7 +280,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.35");
+  assert.equal(manifest.version, "1.0.36");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",

@@ -95,6 +95,11 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /--check \(Join-Path \$stagingPath \$scriptName\)/u);
   assert.match(updater, /extension_javascript_invalid/u);
   assert.match(updater, /extension_version_mismatch/u);
+  assert.match(updater, /MomentInsightNaverShoppingHost\.cs/u);
+  assert.match(updater, /Add-Type -Path \$stagedLauncherSource/u);
+  assert.match(updater, /native_host_launcher_compile_failed/u);
+  assert.match(updater, /naver-shopping-native-host\.mjs/u);
+  assert.match(updater, /launcher_sha256/u);
   assert.ok(
     updater.indexOf("extension_javascript_invalid") < updater.indexOf("Get-Process chrome"),
     "validation must finish before Chrome is restarted",

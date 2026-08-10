@@ -5,7 +5,7 @@
 1. 완료: 멈춘 Windows native host·Node 프로세스를 순위 데이터나 Chrome 프로필 삭제 없이 정리했습니다.
 2. 완료: 단일 실행 mutex, Chrome 연결 종료 후 5초 자식 종료, 2분 초과 허위 진행 상태 복구를 확장 1.0.20에 구현했습니다.
 3. 완료: 전체 `npm run check:release`와 보호 잠금·Windows 대상 회귀를 통과했습니다.
-4. 배포·설치 확인: 코드 커밋·GitHub·Production 반영 뒤 Windows runtime과 확장을 1.0.20으로 교체하고, 신규 회차가 native host 1개만 사용하며 30~45초 뒤 가격비교 탭을 여는지 확인합니다.
+4. 배포·설치 확인: DPAPI 운영 키를 보존하는 안전 업데이터로 Windows runtime과 확장을 1.0.20으로 교체하고, 신규 회차가 native host 1개만 사용하며 30~45초 뒤 가격비교 탭을 여는지 확인합니다.
 
 ## 2026-08-10 수동 갱신 가시성
 

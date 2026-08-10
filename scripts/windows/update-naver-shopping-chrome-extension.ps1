@@ -15,9 +15,12 @@ if ($env:OS -ne "Windows_NT") { throw "windows_only_updater" }
 $runtimePath = Join-Path $env:LOCALAPPDATA "MomentInsight\NaverShoppingBridge"
 $extensionPath = Join-Path $runtimePath "tools\naver-shopping-chrome-extension"
 $nativeConfigPath = Join-Path $runtimePath "windows-native-host.conf"
+$launcherSourcePath = Join-Path $runtimePath "scripts\windows\MomentInsightNaverShoppingHost.cs"
+$launcherPath = Join-Path $runtimePath "MomentInsightNaverShoppingHost.exe"
 $taskPath = "\MomentInsight\"
 $taskName = "NaverShoppingChrome"
 $sourceBase = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-chrome-extension"
+$launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/MomentInsightNaverShoppingHost.cs"
 $files = @(
     "README.md",
     "manifest.json",
@@ -43,6 +46,11 @@ try {
         if (-not $bytes -or $bytes.Length -eq 0) { throw "extension_download_empty:$file" }
         [IO.File]::WriteAllBytes((Join-Path $stagingPath $file), $bytes)
     }
+    $launcherSourceBytes = $client.DownloadData($launcherSourceUrl)
+    if (-not $launcherSourceBytes -or $launcherSourceBytes.Length -eq 0) { throw "launcher_download_empty" }
+    $stagedLauncherSource = Join-Path $stagingPath "MomentInsightNaverShoppingHost.cs"
+    $stagedLauncher = Join-Path $stagingPath "MomentInsightNaverShoppingHost.exe"
+    [IO.File]::WriteAllBytes($stagedLauncherSource, $launcherSourceBytes)
 
     $manifestPath = Join-Path $stagingPath "manifest.json"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -52,16 +60,32 @@ try {
         & $nodePath --check (Join-Path $stagingPath $scriptName)
         if ($LASTEXITCODE -ne 0) { throw "extension_javascript_invalid:$scriptName" }
     }
+    Add-Type -Path $stagedLauncherSource -OutputAssembly $stagedLauncher -OutputType WindowsApplication -ReferencedAssemblies @(
+        "System.dll",
+        "System.Core.dll",
+        "System.Security.dll"
+    ) -PassThru | Out-Null
+    if (-not (Test-Path -LiteralPath $stagedLauncher -PathType Leaf)) { throw "native_host_launcher_compile_failed" }
 
     Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -eq "MomentInsightNaverShoppingHost.exe" -or
+        ($_.Name -eq "node.exe" -and $_.CommandLine -like "*naver-shopping-native-host.mjs*")
+    } | ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
     foreach ($file in $files) {
         Copy-Item -LiteralPath (Join-Path $stagingPath $file) -Destination (Join-Path $extensionPath $file) -Force
     }
+    New-Item -ItemType Directory -Path (Split-Path $launcherSourcePath -Parent) -Force | Out-Null
+    Copy-Item -LiteralPath $stagedLauncherSource -Destination $launcherSourcePath -Force
+    Copy-Item -LiteralPath $stagedLauncher -Destination $launcherPath -Force
     Start-Sleep -Seconds 3
     Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=2 service_worker_sha256=$serviceWorkerHash"
+    $launcherHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherPath).Hash.ToLowerInvariant()
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=2 service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

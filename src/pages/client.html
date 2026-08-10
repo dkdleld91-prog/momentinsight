@@ -7493,10 +7493,21 @@
         return "";
       }
 
-      function rankTrackerOpsSummary(trackers, latestRankResolver) {
+      function rankWorkerStatusFromCard(card) {
+        if (!card) return { state: "unknown", retryAt: "", blockCode: "" };
+        return {
+          state: card.getAttribute("data-rank-worker-state") || "unknown",
+          retryAt: card.getAttribute("data-rank-worker-retry-at") || "",
+          blockCode: card.getAttribute("data-rank-worker-block-code") || ""
+        };
+      }
+
+      function rankTrackerOpsSummary(trackers, latestRankResolver, workerStatus) {
         var list = trackers || [];
         var resolveLatestRank = latestRankResolver || rankTrackerLatestRank;
         var now = Date.now();
+        var retryAt = workerStatus && workerStatus.retryAt ? new Date(workerStatus.retryAt).getTime() : 0;
+        var workerCoolingDown = workerStatus && workerStatus.state === "cooldown" && Number.isFinite(retryAt) && retryAt > now;
         var active = list.filter(function (tracker) { return tracker.status !== "paused" && tracker.status !== "completed"; }).length;
         var due = list.filter(function (tracker) {
           var next = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
@@ -7516,17 +7527,20 @@
           if (!value || !Number.isFinite(value)) return next;
           return !next || value < next ? value : next;
         }, 0);
-        var statusLabel = errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기"));
-        var statusClass = errors ? " is-error" : (due ? " is-warn" : " is-ok");
+        var statusLabel = workerCoolingDown ? "접속 제한" : (errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기")));
+        var statusClass = workerCoolingDown ? " is-warn" : (errors ? " is-error" : (due ? " is-warn" : " is-ok"));
         var latestText = latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-";
-        var nextText = nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기";
-        var summaryText = active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인";
+        var nextText = workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기");
+        var summaryText = workerCoolingDown
+          ? "네이버 요청 안전 중단 · 기존 정상 순위와 30일 기록 보존"
+          : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인";
+        var nextNote = workerCoolingDown ? "이후 대기 1건 자동 재시도" : "매일 09:00 · 15:00";
         return '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
           '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
           '<div class="mi-rank-auto-metrics">' +
           '<div class="mi-rank-auto-metric"><span>최근 갱신</span><strong>' + escapeHtml(latestText) + '</strong><small>수동/자동</small></div>' +
-          '<div class="mi-rank-auto-metric' + (due ? " is-warn" : " is-ok") + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>매일 09:00 · 15:00</small></div>' +
+          '<div class="mi-rank-auto-metric' + (workerCoolingDown || due ? " is-warn" : " is-ok") + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
           '<div class="mi-rank-auto-metric' + (errors ? " is-error" : " is-ok") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>광고주 코드 기준</small></div>' +
           '</div></div>';
       }
@@ -8346,6 +8360,7 @@
       function renderRankHistory(node, trackers) {
         if (!node) return;
         var card = node.closest("[data-rank-card]");
+        var workerStatus = rankWorkerStatusFromCard(card);
         var filterText = card ? card.getAttribute("data-rank-filter-text") || "" : "";
         var filterMode = card ? card.getAttribute("data-rank-filter-mode") || "all" : "all";
         var filterGroup = card ? card.getAttribute("data-rank-filter-group") || "" : "";
@@ -8361,12 +8376,12 @@
         });
         updateRankFilterPanel(node, trackers.length, filteredTrackers.length, filterMode, filterGroup);
         if (!filteredTrackers.length) {
-          node.innerHTML = rankTrackerOpsSummary(trackers) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
+          node.innerHTML = rankTrackerOpsSummary(trackers, null, workerStatus) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-state">조건에 맞는 순위 추적 항목이 없습니다. 검색어 또는 상태 필터를 조정해주세요.</div>';
           return;
         }
         var collapsed = rankCollapsedGroupSet(card);
         var selectedSet = pruneRankSelected(card, trackers);
-        node.innerHTML = rankTrackerOpsSummary(trackers) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-group-list">' + groupRankTrackers(filteredTrackers).map(function (group) {
+        node.innerHTML = rankTrackerOpsSummary(trackers, null, workerStatus) + renderRankBulkBar(card, trackers) + '<div class="mi-rank-group-list">' + groupRankTrackers(filteredTrackers).map(function (group) {
           var collapsedClass = collapsed.has(group.name) ? " is-collapsed" : "";
           var best = group.items.reduce(function (acc, tracker) {
             var rank = Number(tracker.currentRank || 0);
@@ -8839,6 +8854,9 @@
         card.setAttribute("data-rank-filter-mode", "all");
         card.setAttribute("data-rank-filter-group", "");
         card.setAttribute("data-rank-collapsed-groups", "");
+        card.setAttribute("data-rank-worker-state", "unknown");
+        card.setAttribute("data-rank-worker-retry-at", "");
+        card.setAttribute("data-rank-worker-block-code", "");
 
         function rankSourceUnavailableMessage() {
           return "N 상품 순위 수집원 미연결입니다. 마지막 정상 순위와 30일 기록은 그대로 표시합니다.";
@@ -8849,10 +8867,22 @@
           return errorCode === "SHOPPING_RANK_SOURCE_NOT_CONFIGURED" || errorCode === "SHOPPING_RANK_SOURCE_UNAVAILABLE";
         }
 
+        function rankWorkerCooldownMessage() {
+          var status = rankWorkerStatusFromCard(card);
+          var retryAt = status.retryAt ? new Date(status.retryAt).getTime() : 0;
+          if (status.state !== "cooldown" || !Number.isFinite(retryAt) || retryAt <= Date.now()) return "";
+          return "네이버 쇼핑 접속 제한으로 안전 중단했습니다. " + formatRankShortAt(status.retryAt) + " 이후 대기 중인 1건부터 자동 재시도하며, 기존 정상 순위와 30일 기록은 유지합니다.";
+        }
+
         function applyRankSourceState(payload) {
           if (payload && typeof payload.rankSourceReady === "boolean") rankSourceReady = payload.rankSourceReady;
           if (payload && typeof payload.mode === "string") rankSourceMode = payload.mode;
           if (payload && typeof payload.configured === "boolean") rankSourceConfigured = payload.configured;
+          if (payload && payload.workerStatus && typeof payload.workerStatus.state === "string") {
+            card.setAttribute("data-rank-worker-state", payload.workerStatus.state);
+            card.setAttribute("data-rank-worker-retry-at", payload.workerStatus.retryAt || "");
+            card.setAttribute("data-rank-worker-block-code", payload.workerStatus.blockCode || "");
+          }
           if (rankPayloadHasSourceError(payload)) rankSourceReady = false;
           card.setAttribute("data-rank-source-ready", rankSourceReady ? "true" : "false");
           card.setAttribute("data-rank-source-configured", rankSourceConfigured ? "true" : "false");
@@ -8936,6 +8966,12 @@
             if (!silent) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
             return false;
           }
+          var cooldownMessage = rankWorkerCooldownMessage();
+          if (cooldownMessage) {
+            renderRankHistory(rankHistory, rankTrackers);
+            if (!silent) setStatus(rankStatus, cooldownMessage, "is-warn");
+            return false;
+          }
           var due = dueRankTrackers(rankTrackers);
           var now = Date.now();
           if (!due.length || rankAutoSyncingDue || now - rankAutoSyncLastAt < 60000) return;
@@ -9014,7 +9050,9 @@
             renderRankResult(rankResult, { ok: true, trackers: rankTrackers, message: payload.message });
             renderRankHistory(rankHistory, rankTrackers);
             if (!silent) {
-              if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
+              var cooldownMessage = rankWorkerCooldownMessage();
+              if (cooldownMessage) setStatus(rankStatus, cooldownMessage, "is-warn");
+              else if (rankSourceReady !== true) setStatus(rankStatus, rankSourceUnavailableMessage(), "is-warn");
               else setStatus(rankStatus, rankTrackers.length ? "등록된 오가닉 순위 추적을 불러왔습니다." : "키워드와 상품 URL을 입력하면 최근 30일 대표 순위를 표시합니다.", rankTrackers.length ? "is-ok" : "");
             }
             if (rankSourceReady !== true) return true;
@@ -9064,11 +9102,12 @@
               }
               await loadRankTrackers(true);
               var queuedSummary = queuedPayload.summary || {};
-              setStatus(rankStatus, Number(queuedSummary.total || 0) > 0
+              var cooldownMessage = rankWorkerCooldownMessage();
+              setStatus(rankStatus, cooldownMessage || (Number(queuedSummary.total || 0) > 0
                 ? (queuedPayload.remoteWakeRequested === true
                   ? "전체 " + Number(queuedSummary.total || 0) + "개를 등록하고 개발 프로필에 원격 실행을 요청했습니다. 첫 작업은 약 1분 내 시작되며 나머지는 안전 간격으로 반영됩니다."
                   : "전체 " + Number(queuedSummary.total || 0) + "개를 중앙 자동 갱신에 등록했습니다. 완료된 순위부터 자동 반영됩니다.")
-                : "갱신할 운영 중 순위 추적 항목이 없습니다.", Number(queuedSummary.total || 0) > 0 ? "is-ok" : "is-warn");
+                : "갱신할 운영 중 순위 추적 항목이 없습니다."), cooldownMessage ? "is-warn" : (Number(queuedSummary.total || 0) > 0 ? "is-ok" : "is-warn"));
               return;
             }
             var nextIndex = 0;

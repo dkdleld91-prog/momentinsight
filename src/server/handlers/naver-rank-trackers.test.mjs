@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   claimDueTracker,
   handleRankTrackersRequest,
+  loadShoppingWorkerStatus,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
   requestAgencyCode,
@@ -95,6 +96,43 @@ test("product-rank readiness accepts only the verified collector pair", () => {
     errorCode: "SHOPPING_RANK_SOURCE_NOT_CONFIGURED",
     retryable: false,
   });
+});
+
+test("product-rank status exposes a safe cooldown without worker identity", async () => {
+  const status = await loadShoppingWorkerStatus({
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, "naver_shopping_worker_coordination");
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          async maybeSingle() {
+            return {
+              data: {
+                lane_key: "global",
+                primary_seen_at: "2026-08-10T07:00:00.000Z",
+                lease_until: null,
+                cooldown_until: "2026-08-10T08:00:00.000Z",
+                last_block_code: "naver_network_restricted",
+                updated_at: "2026-08-10T07:30:00.000Z",
+              },
+              error: null,
+            };
+          },
+        };
+        return query;
+      },
+    },
+  }, Date.parse("2026-08-10T07:30:00.000Z"));
+
+  assert.deepEqual(status, {
+    state: "cooldown",
+    retryAt: "2026-08-10T08:00:00.000Z",
+    blockCode: "naver_network_restricted",
+    preservesLastGood: true,
+  });
+  assert.equal("primaryWorkerId" in status, false);
+  assert.equal("leaseWorkerId" in status, false);
 });
 
 test("seller product URLs cannot be poisoned into catalog mode by query parameters", () => {
@@ -190,6 +228,7 @@ test("an account-only team lists an isolated product-rank scope without a client
   assert.equal(body.configured, false);
   assert.equal(body.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
   assert.equal(body.retryable, false);
+  assert.deepEqual(body.workerStatus, { state: "unknown" });
 });
 
 function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {

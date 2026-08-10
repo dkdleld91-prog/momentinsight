@@ -1304,9 +1304,14 @@ const checks = {
     && !shoppingWorkerLaneMigration.includes('security definer')
     && shoppingRankLookupJobs.includes('requestShoppingWorkerWake(ctx, "rank-lookup")')
     && rankServer.includes('requestShoppingWorkerWake(ctx, "tracker-refresh-all")')
+    && rankServer.includes('loadShoppingWorkerStatus')
+    && rankServer.includes('"naver_shopping_worker_coordination"')
     && [adminSource, clientSource].every((source) =>
       source.includes('queuedPayload.remoteWakeRequested === true')
-        && source.includes('개발 프로필에 원격 실행을 요청했습니다.')),
+        && source.includes('개발 프로필에 원격 실행을 요청했습니다.')
+        && source.includes('data-rank-worker-state')
+        && source.includes('네이버 쇼핑 접속 제한으로 안전 중단했습니다.')
+        && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
   shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.22"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")

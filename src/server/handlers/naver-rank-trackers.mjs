@@ -32,6 +32,14 @@ const SNAPSHOT_QUERY_CONCURRENCY = 4;
 const TRACKER_LIST_MAX = 500;
 const TRACKER_LIST_QUERY_LIMIT = TRACKER_LIST_MAX + 1;
 const DEFAULT_RANK_GROUP = "기본 그룹";
+const SHOPPING_WORKER_BLOCK_CODES = new Set([
+  "naver_network_restricted",
+  "naver_http_418",
+  "naver_http_429",
+  "naver_captcha_detected",
+  "naver_auth_required",
+  "naver_verification_required",
+]);
 const keywordVolumeCache = new Map();
 
 const TRACKER_SELECT = [
@@ -649,6 +657,43 @@ async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
   return { ok: true, groupName: normalizedGroupName };
 }
 
+export async function loadShoppingWorkerStatus(ctx, now = Date.now()) {
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("naver_shopping_worker_coordination")
+      .select("lane_key, primary_seen_at, lease_until, cooldown_until, last_block_code, updated_at")
+      .eq("lane_key", "global")
+      .maybeSingle();
+    if (error || !data) return { state: "unknown" };
+
+    const currentTime = Number(now) || Date.now();
+    const cooldownTime = Date.parse(data.cooldown_until || "");
+    const leaseTime = Date.parse(data.lease_until || "");
+    const primarySeenTime = Date.parse(data.primary_seen_at || "");
+    const blockCode = SHOPPING_WORKER_BLOCK_CODES.has(normalizeText(data.last_block_code).toLowerCase())
+      ? normalizeText(data.last_block_code).toLowerCase()
+      : "";
+
+    if (Number.isFinite(cooldownTime) && cooldownTime > currentTime) {
+      return {
+        state: "cooldown",
+        retryAt: new Date(cooldownTime).toISOString(),
+        blockCode,
+        preservesLastGood: true,
+      };
+    }
+    if (Number.isFinite(leaseTime) && leaseTime > currentTime) {
+      return { state: "running", preservesLastGood: true };
+    }
+    if (Number.isFinite(primarySeenTime) && primarySeenTime > currentTime - 5 * 60_000) {
+      return { state: "ready", preservesLastGood: true };
+    }
+    return { state: "standby", preservesLastGood: true };
+  } catch {
+    return { state: "unknown" };
+  }
+}
+
 async function listTrackers(request, ctx) {
   const access = await requireRankAccess(request, ctx, {}, { read: true });
   if (!access.ok) return access.response;
@@ -671,6 +716,7 @@ async function listTrackers(request, ctx) {
   const snapshots = await loadSnapshots(ctx, rows.map((row) => row.id));
   const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
   const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
+  const workerStatus = await loadShoppingWorkerStatus(ctx);
   return json(request, {
     ok: true,
     ...rankSource,
@@ -682,6 +728,7 @@ async function listTrackers(request, ctx) {
     totalCount: count,
     hasMore,
     complete: !hasMore && rows.length === count,
+    workerStatus,
     trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [], keywordVolumes.get(normalizeKeywordCompare(row.keyword)))),
   });
 }

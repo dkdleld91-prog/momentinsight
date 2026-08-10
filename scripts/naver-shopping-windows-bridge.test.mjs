@@ -5,10 +5,12 @@ import test from "node:test";
 const installerPath = new URL("./install-naver-shopping-chrome-bridge-windows.ps1", import.meta.url);
 const launcherPath = new URL("./windows/MomentInsightNaverShoppingHost.cs", import.meta.url);
 const schedulerPath = new URL("./windows/run-naver-shopping-chrome-scheduler.ps1", import.meta.url);
+const updaterPath = new URL("./windows/update-naver-shopping-chrome-extension.ps1", import.meta.url);
 const entrypointPath = new URL("../INSTALL-NAVER-SHOPPING-WINDOWS.cmd", import.meta.url);
 const installer = fs.readFileSync(installerPath, "utf8");
 const launcher = fs.readFileSync(launcherPath, "utf8");
 const scheduler = fs.readFileSync(schedulerPath, "utf8");
+const updater = fs.readFileSync(updaterPath, "utf8");
 const entrypoint = fs.readFileSync(entrypointPath, "utf8");
 
 test("Windows installer targets one exact Chrome profile and stable extension source", () => {
@@ -80,4 +82,18 @@ test("Windows runtime stays production-only and one-job bounded", () => {
   assert.match(launcher, /String\.Equals\(maxJobs, "1"/u);
   assert.match(installer, /SetAccessRuleProtection\(\$true, \$false\)/u);
   assert.match(installer, /FileSystemRights\]::FullControl/u);
+});
+
+test("Windows extension updater preserves UTF-8 bytes and validates before restart", () => {
+  assert.match(updater, /DownloadData/u);
+  assert.match(updater, /\[IO\.File\]::WriteAllBytes/u);
+  assert.doesNotMatch(updater, /DownloadString|WriteAllText/u);
+  assert.match(updater, /--check \(Join-Path \$stagingPath \$scriptName\)/u);
+  assert.match(updater, /extension_javascript_invalid/u);
+  assert.match(updater, /extension_version_mismatch/u);
+  assert.ok(
+    updater.indexOf("extension_javascript_invalid") < updater.indexOf("Get-Process chrome"),
+    "validation must finish before Chrome is restarted",
+  );
+  assert.match(updater, /MI_EXTENSION_UPDATE_OK/u);
 });

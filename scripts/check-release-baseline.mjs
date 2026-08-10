@@ -1199,26 +1199,19 @@ const checks = {
       "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
-    && shoppingChromeWorker.includes('PRICE_COMPARE_SEARCH_PATH = "/search/all"')
-    && shoppingChromeWorker.includes("function priceCompareSearchUrl")
+    && shoppingChromeWorker.includes("function searchUrl")
     && shoppingChromeWorker.includes('new URL("https://search.shopping.naver.com/search/all")')
     && shoppingChromeWorker.includes('url.searchParams.set("frm", "NVSCTAB")')
     && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
     && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
-    && shoppingChromeWorker.includes("collectPriceComparePages")
+    && shoppingChromeWorker.includes("collectPages")
     && shoppingChromeWorker.includes("pagingIndex")
     && shoppingChromeWorker.includes("productSet")
     && shoppingChromeWorker.includes("nextDataText")
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes("naver_network_restricted")
-    && shoppingChromeWorker.includes("MANUAL_RESUME_REQUIRED_KEY")
-    && shoppingChromeWorker.includes("findResolvedNaverTab")
     && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
-    && shoppingChromeWorker.includes("chrome.tabs.remove(collectionTabId)")
-    && shoppingChromeWorker.includes("preserveNetworkRetryCount: true")
-    && shoppingChromeWorker.includes("NETWORK_RESTRICTION_RETRY_DELAYS_MS")
-    && shoppingChromeWorker.includes("scheduleNetworkRestrictionRetry")
-    && shoppingChromeWorker.includes('"rank-recovery"')
+    && shoppingChromeWorker.includes("chrome.tabs.remove(tabId)")
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && shoppingNativeHostCore.includes("parseNaverNextDataPage")
     && shoppingNativeHostCore.includes("buildNativeWindowFromRows")
@@ -1266,8 +1259,7 @@ const checks = {
     && shoppingWindowsChromeScheduler.includes("'--profile-directory=\"{0}\"' -f $profileDirectory")
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
-  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 20, periodInMinutes: 20 }]')
-    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS\s*=\s*\[\s*30\s*\*\s*60_000,\s*60\s*\*\s*60_000,\s*120\s*\*\s*60_000,\s*\]/u.test(shoppingChromeWorker)
+  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
     && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
@@ -1275,10 +1267,8 @@ const checks = {
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
-    && shoppingChromeWorker.includes("prepareVerificationState")
-    && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.38"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.39"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1317,13 +1307,11 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.38"
-    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
-    && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
-    && shoppingChromeWorker.includes("NATIVE_HOST_RUN_TIMEOUT_MS = 30 * 60_000")
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.39"
+    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
+    && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
     && rankServer.includes("MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35")
-    && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')
     && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
     && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers", ...lanePayload })')

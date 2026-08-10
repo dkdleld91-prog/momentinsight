@@ -510,21 +510,20 @@ check(
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
-      /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/,
-      /function priceCompareSearchUrl/,
+      /function searchUrl/,
       /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/,
       /url\.searchParams\.set\("frm", "NVSCTAB"\)/,
       /PAGE_REQUEST_INTERVAL_MS = 3_500/,
       /PAGE_REQUEST_JITTER_MS = 2_500/,
-      /collectPriceComparePages/,
+      /collectPages/,
       /pagingIndex/,
       /productSet/,
       /nextDataText/,
       /naver_verification_required/,
       /request\.limit !== 300/,
       /request\.rankPolicy !== "organic_only"/,
-      /chrome\.tabs\.remove\(collectionTabId\)/,
-      /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/,
+      /chrome\.tabs\.remove\(tabId\)/,
+      /naver_network_restricted/,
     ])
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
@@ -556,7 +555,7 @@ check(
       /resolveChromeProfileDirectory/,
       /activateChromeScheduler/,
     ])
-    && /\["rank-catch-up", \{ delayInMinutes: 20, periodInMinutes: 20 \}\]/.test(shoppingChromeWorker)
+    && /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
       /--profile-directory=/,
@@ -606,23 +605,18 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.38"
+  shoppingChromeManifest.version === "1.0.39"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /result\.status === "standby"/.test(shoppingChromeWorker)
-    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS/.test(shoppingChromeWorker)
-    && /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[\s*30 \* 60_000,\s*60 \* 60_000,\s*120 \* 60_000,\s*\]/.test(shoppingChromeWorker)
-    && /CHROME_OPERATION_TIMEOUT_MS = 45_000/.test(shoppingChromeWorker)
-    && /NATIVE_HOST_RUN_TIMEOUT_MS = 30 \* 60_000/.test(shoppingChromeWorker)
+    && /naver_network_restricted/.test(shoppingChromeWorker)
+    && /native_host_timeout"\)\), 30 \* 60_000/.test(shoppingChromeWorker)
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
-    && /naver_page_script_failed/.test(shoppingChromeWorker)
-    && /if \(error\?\.tabId\) collectionTabId = error\.tabId/.test(shoppingChromeWorker)
-    && /trigger: workerTrigger/.test(shoppingChromeWorker)
-    && /activateTab: trigger === "manual"/.test(shoppingChromeWorker)
-    && /chrome\.tabs\.create\(\{ url: targetUrl, active: activateTab \}\)/.test(shoppingChromeWorker)
+    && /trigger \}\)/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url, active: false \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)

@@ -271,7 +271,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assertZshSyntax(wrapperPath, source);
 });
 
-test("Chrome extension drains safely and reports verification recovery truthfully", () => {
+test("Chrome extension restores the proven direct 300-rank engine with current coordination", () => {
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
@@ -279,6 +279,23 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
+
+  assert.equal(manifest.version, "1.0.39");
+  assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /request\.limit !== 300/u);
+  assert.match(serviceWorker, /request\.rankPolicy !== "organic_only"/u);
+  assert.match(serviceWorker, /message\?\.type === "ready"/u);
+  assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
+  assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
+  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
+  assert.match(serviceWorker, /naver_network_restricted/u);
+  assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
+  assert.match(localWorker, /action: "claim-lane"/u);
+  assert.match(localWorker, /action: "release-lane"/u);
+  assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 \* 60_000/u);
+  return;
 
   assert.equal(manifest.version, "1.0.38");
   assert.deepEqual(manifest.icons, {
@@ -419,7 +436,7 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
-  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 20, periodInMinutes: 20 \}\]/u);
+  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
   assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);

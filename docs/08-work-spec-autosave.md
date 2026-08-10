@@ -9,6 +9,7 @@
 - 구현: manual trigger만 수집 탭을 활성화하고 자동·원격 trigger는 백그라운드로 유지한다. 제한·보안확인 탭은 모든 trigger에서 항상 활성화한다.
 - 안내: 수동 실행 접수 뒤 30~45초 안전 대기 후 가격비교 탭이 열린다고 팝업에 표시한다.
 - 배포·설치: 코드 `d90c66b`와 Production 릴리스 `d90c66b41ecb`를 확인했고, Windows `동빈 (개발)` 설치본을 1.0.19로 갱신한 뒤 Chrome 재기동과 실행 프로세스를 확인했다.
+- 설치 장애·복구: 첫 원격 파일 교체가 `DownloadString`으로 한국어 바이트를 손상해 Windows 설치본 `service-worker.js`가 문법 오류로 시작되지 않았다. 전용 업데이터를 원본 바이트 다운로드·staging 버전 및 JavaScript 문법검사·검증 후 Chrome 재기동 순서로 고정했다.
 
 ## 2026-08-10 Windows 우선·Mac 대기 공용 수집 조정
 

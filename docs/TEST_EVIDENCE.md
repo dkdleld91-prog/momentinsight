@@ -5,6 +5,8 @@
 - 코드 증거: manual trigger만 `activateTab: true`를 전달하고, 자동·원격 trigger는 false를 유지합니다. 네이버 제한·보안확인 경로의 `surfaceNetworkRestrictionTab`·`surfaceVerificationTab`은 항상 탭을 활성화합니다.
 - UX 증거: 팝업은 `30~45초 안전 대기 후 가격비교 탭이 열립니다`라고 안내합니다. native host 대상 12/12, 서버 계약 39/39, baseline과 `git diff --check`를 통과했습니다.
 - 배포·설치 증거: 코드 `d90c66b`가 GitHub `main`과 Production `/health`·`/ready` 릴리스 `d90c66b41ecb`에 반영됐습니다. Windows `동빈 (개발)` 설치 경로를 1.0.19로 교체하고 Chrome을 재기동했으며 PowerShell에서 `MI_UI_UPDATE_OK version=1.0.19`, `MI_VERIFY version=1.0.19 chrome=13`을 확인했습니다.
+- 설치 장애 증거: 첫 원격 교체가 GitHub 원문을 `DownloadString`으로 읽어 한국어 바이트를 손상했고, Windows Node 24 `--check`에서 설치된 `service-worker.js`의 `Invalid regular expression flags`를 재현했습니다. 서비스 워커가 시작되지 않아 팝업이 `상태 확인 중`에 고정된 직접 원인입니다.
+- 재발 방지: Windows 전용 업데이터는 `DownloadData`와 `WriteAllBytes`만 사용하고 staging의 manifest 버전·`service-worker.js`·`popup.js` 문법을 모두 검증한 뒤에만 Chrome을 재시작합니다. 정적 회귀 5/5와 native host 포함 대상 17/17을 통과했습니다.
 
 ## 2026-08-10 Windows 우선·Mac 대기 공용 차선 v1.0.18
 

@@ -523,15 +523,22 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
 async function navigatePriceComparePage(tabId, keyword, pageIndex) {
   const results = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
-    func: (expectedKeyword, expectedPage) => {
+    func: (expectedKeyword, expectedPage, expectedNormalizedKeyword) => {
       const url = new URL(location.href);
+      const currentNormalizedKeyword = String(url.searchParams.get("query") || "")
+        .trim()
+        .normalize("NFC")
+        .replace(/\s+/g, "");
       if (url.hostname !== "search.shopping.naver.com"
         || url.pathname !== "/search/all"
-        || String(url.searchParams.get("query") || "").trim() !== String(expectedKeyword || "").trim()) {
-        return { ok: false, code: "naver_navigation_invalid" };
+        || currentNormalizedKeyword !== expectedNormalizedKeyword) {
+        return { ok: false, code: "naver_navigation_url_query_mismatch" };
       }
       url.searchParams.delete("frm");
       url.searchParams.delete("where");
+      // Naver may visually normalize spacing after page 1. Restore the exact
+      // requested keyword before moving to the next normal result page.
+      url.searchParams.set("query", expectedKeyword);
       url.searchParams.set("pagingIndex", String(expectedPage));
       url.searchParams.set("pagingSize", "40");
       url.searchParams.set("productSet", "total");
@@ -540,7 +547,7 @@ async function navigatePriceComparePage(tabId, keyword, pageIndex) {
       setTimeout(() => location.assign(url.toString()), 0);
       return { ok: true };
     },
-    args: [keyword, pageIndex],
+    args: [keyword, pageIndex, normalizedNaverQueryKeyword(keyword)],
   }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_navigation_timeout");
   const result = results?.[0]?.result || {};
   if (!result.ok) throw new Error(result.code || "naver_navigation_invalid");

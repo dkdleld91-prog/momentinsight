@@ -1196,14 +1196,20 @@ const checks = {
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
   ])
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
+      "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
+    && shoppingChromeWorker.includes('NAVER_SHOPPING_HOME_URL = "https://shopping.naver.com/ns/home"')
+    && shoppingChromeWorker.includes('NPLUS_SEARCH_PATH = "/ns/search"')
     && shoppingChromeWorker.includes('PRICE_COMPARE_SEARCH_PATH = "/search/all"')
+    && shoppingChromeWorker.includes("enterPriceCompareNormally")
+    && shoppingChromeWorker.includes("naver_price_compare_link_missing")
+    && shoppingChromeWorker.includes("location.assign(anchor.href)")
     && shoppingChromeWorker.includes("collectPriceComparePages")
     && shoppingChromeWorker.includes("pagingIndex")
     && shoppingChromeWorker.includes("productSet")
     && shoppingChromeWorker.includes("nextDataText")
-    && !shoppingChromeWorker.includes("NPLUS_SEARCH_PATH")
+    && !shoppingChromeWorker.includes("NVSCTAB")
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes("naver_network_restricted")
     && shoppingChromeWorker.includes("MANUAL_RESUME_REQUIRED_KEY")
@@ -1275,7 +1281,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.23"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.24"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1314,7 +1320,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.23"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.24"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
     && shoppingChromeWorker.includes('sendResponse({ ok: true, started: true })')

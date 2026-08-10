@@ -279,7 +279,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.23");
+  assert.equal(manifest.version, "1.0.24");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -320,15 +320,27 @@ test("Chrome extension drains safely and reports verification recovery truthfull
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
   assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId, \{[\s\S]+activateTab: trigger === "manual"/u);
-  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: activateTab \}\)/u);
+  assert.match(serviceWorker, /NAVER_SHOPPING_HOME_URL = "https:\/\/shopping\.naver\.com\/ns\/home"/u);
+  assert.match(serviceWorker, /NPLUS_SEARCH_PATH = "\/ns\/search"/u);
+  assert.match(serviceWorker, /enterPriceCompareNormally/u);
+  assert.match(serviceWorker, /naver_price_compare_link_missing/u);
+  assert.match(serviceWorker, /location\.assign\(anchor\.href\)/u);
+  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/u);
+  assert.ok(
+    serviceWorker.indexOf("await enterPriceCompareNormally(tabId, request.keyword, activateTab)")
+      < serviceWorker.indexOf("for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1)"),
+  );
+  assert.ok(
+    serviceWorker.indexOf("url.pathname === NPLUS_SEARCH_PATH")
+      < serviceWorker.indexOf("location.assign(anchor.href)"),
+  );
   assert.match(serviceWorker, /surfaceVerificationTab/u);
   assert.match(serviceWorker, /surfaceNetworkRestrictionTab/u);
   assert.match(serviceWorker, /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/u);
   assert.match(serviceWorker, /pagingIndex/u);
   assert.match(serviceWorker, /productSet/u);
   assert.match(serviceWorker, /nextDataText/u);
-  assert.doesNotMatch(serviceWorker, /NPLUS_SEARCH_PATH|\/ns\/search|data-shp-contents-rank/u);
-  assert.match(serviceWorker, /currentTab\.url !== url \|\| currentTab\.status !== "complete"/u);
+  assert.doesNotMatch(serviceWorker, /NVSCTAB|data-shp-contents-rank/u);
   assert.match(serviceWorker, /CHROME_OPERATION_TIMEOUT_MS = 45_000/u);
   assert.match(serviceWorker, /withTimeout\(chrome\.scripting\.executeScript/u);
   assert.match(serviceWorker, /naver_page_script_timeout/u);

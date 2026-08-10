@@ -504,12 +504,18 @@ check(
   "N Shopping normal Chrome bridge is least-privilege and preserves the signed atomic worker",
   JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
-  ])
+    ])
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
+      "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
+      /NAVER_SHOPPING_HOME_URL = "https:\/\/shopping\.naver\.com\/ns\/home"/,
+      /NPLUS_SEARCH_PATH = "\/ns\/search"/,
       /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/,
+      /enterPriceCompareNormally/,
+      /naver_price_compare_link_missing/,
+      /location\.assign\(anchor\.href\)/,
       /collectPriceComparePages/,
       /pagingIndex/,
       /productSet/,
@@ -520,7 +526,7 @@ check(
       /chrome\.tabs\.remove\(collectionTabId\)/,
       /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/,
     ])
-    && !/NPLUS_SEARCH_PATH|\/ns\/search|\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
+    && !/NVSCTAB|\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
       /parseNaverNextDataPage/,
       /buildNativeWindowFromRows/,
@@ -600,7 +606,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.23"
+  shoppingChromeManifest.version === "1.0.24"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -613,7 +619,7 @@ check(
     && /if \(error\?\.tabId\) collectionTabId = error\.tabId/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
     && /activateTab: trigger === "manual"/.test(shoppingChromeWorker)
-    && /chrome\.tabs\.create\(\{ url, active: activateTab \}\)/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url: NAVER_SHOPPING_HOME_URL, active: activateTab \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)

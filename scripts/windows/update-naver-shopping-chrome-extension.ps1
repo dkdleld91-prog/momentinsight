@@ -21,6 +21,7 @@ $launcherSourcePath = Join-Path $runtimePath "scripts\windows\MomentInsightNaver
 $nativeHostScriptPath = Join-Path $runtimePath "scripts\naver-shopping-native-host.mjs"
 $localWorkerScriptPath = Join-Path $runtimePath "scripts\naver-shopping-local-worker.mjs"
 $localWorkerContractPath = Join-Path $runtimePath "src\server\naver-shopping\local-worker-contract.mjs"
+$schedulerScriptPath = Join-Path $runtimePath "scripts\windows\run-naver-shopping-chrome-scheduler.ps1"
 $launcherPath = Join-Path $runtimePath "MomentInsightNaverShoppingHost.exe"
 $taskPath = "\MomentInsight\"
 $taskName = "NaverShoppingChrome"
@@ -30,6 +31,7 @@ $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentins
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
 $localWorkerScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-local-worker.mjs"
 $localWorkerContractUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/local-worker-contract.mjs"
+$schedulerScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/run-naver-shopping-chrome-scheduler.ps1"
 $files = @(
     "README.md",
     "icon16.png",
@@ -117,15 +119,19 @@ try {
     if (-not $localWorkerScriptBytes -or $localWorkerScriptBytes.Length -eq 0) { throw "local_worker_script_download_empty" }
     $localWorkerContractBytes = $client.DownloadData($localWorkerContractUrl)
     if (-not $localWorkerContractBytes -or $localWorkerContractBytes.Length -eq 0) { throw "local_worker_contract_download_empty" }
+    $schedulerScriptBytes = $client.DownloadData($schedulerScriptUrl)
+    if (-not $schedulerScriptBytes -or $schedulerScriptBytes.Length -eq 0) { throw "scheduler_script_download_empty" }
     $stagedLauncherSource = Join-Path $stagingPath "MomentInsightNaverShoppingHost.cs"
     $stagedNativeHostScript = Join-Path $stagingPath "naver-shopping-native-host.mjs"
     $stagedLocalWorkerScript = Join-Path $stagingPath "naver-shopping-local-worker.mjs"
     $stagedLocalWorkerContract = Join-Path $stagingPath "local-worker-contract.mjs"
+    $stagedSchedulerScript = Join-Path $stagingPath "run-naver-shopping-chrome-scheduler.ps1"
     $stagedLauncher = Join-Path $stagingPath "MomentInsightNaverShoppingHost.exe"
     [IO.File]::WriteAllBytes($stagedLauncherSource, $launcherSourceBytes)
     [IO.File]::WriteAllBytes($stagedNativeHostScript, $nativeHostScriptBytes)
     [IO.File]::WriteAllBytes($stagedLocalWorkerScript, $localWorkerScriptBytes)
     [IO.File]::WriteAllBytes($stagedLocalWorkerContract, $localWorkerContractBytes)
+    [IO.File]::WriteAllBytes($stagedSchedulerScript, $schedulerScriptBytes)
 
     $manifestPath = Join-Path $stagingPath "manifest.json"
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -141,6 +147,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "local_worker_javascript_invalid" }
     & $nodePath --check $stagedLocalWorkerContract
     if ($LASTEXITCODE -ne 0) { throw "local_worker_contract_javascript_invalid" }
+    $schedulerTokens = $null
+    $schedulerErrors = $null
+    $null = [Management.Automation.Language.Parser]::ParseFile(
+        $stagedSchedulerScript,
+        [ref]$schedulerTokens,
+        [ref]$schedulerErrors
+    )
+    if ($schedulerErrors.Count -ne 0) { throw "scheduler_script_invalid" }
     $launcherMissing = -not (Test-Path -LiteralPath $launcherPath -PathType Leaf)
     $launcherSourceChanged = -not (Test-Path -LiteralPath $launcherSourcePath -PathType Leaf) -or
         ((Get-FileHash -Algorithm SHA256 -LiteralPath $stagedLauncherSource).Hash -ne
@@ -183,6 +197,7 @@ try {
     Copy-Item -LiteralPath $stagedNativeHostScript -Destination $nativeHostScriptPath -Force
     Copy-Item -LiteralPath $stagedLocalWorkerScript -Destination $localWorkerScriptPath -Force
     Copy-Item -LiteralPath $stagedLocalWorkerContract -Destination $localWorkerContractPath -Force
+    Copy-Item -LiteralPath $stagedSchedulerScript -Destination $schedulerScriptPath -Force
     Start-Sleep -Seconds 3
     Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
@@ -193,7 +208,8 @@ try {
     $nativeHostHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostScriptPath).Hash.ToLowerInvariant()
     $localWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerScriptPath).Hash.ToLowerInvariant()
     $localWorkerContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerContractPath).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=4 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash"
+    $schedulerScriptHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $schedulerScriptPath).Hash.ToLowerInvariant()
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=4 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

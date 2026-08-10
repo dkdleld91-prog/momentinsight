@@ -112,6 +112,10 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /local-worker-contract\.mjs/u);
   assert.match(updater, /local_worker_contract_javascript_invalid/u);
   assert.match(updater, /local_worker_contract_sha256/u);
+  assert.match(updater, /run-naver-shopping-chrome-scheduler\.ps1/u);
+  assert.match(updater, /Management\.Automation\.Language\.Parser/u);
+  assert.match(updater, /scheduler_script_invalid/u);
+  assert.match(updater, /scheduler_script_sha256/u);
   assert.match(updater, /\$launcherMissing/u);
   assert.match(updater, /\$launcherSourceChanged/u);
   assert.match(updater, /\$launcherNeedsCompile = \$launcherMissing -or \$launcherSourceChanged/u);

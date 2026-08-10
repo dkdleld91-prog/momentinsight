@@ -54,6 +54,10 @@ const SAFE_COLLECTION_ERROR_CODES = new Set([
   "naver_navigation_data_page_mismatch",
   "naver_page_read_state_unstable",
   "naver_page_navigation_result_missing",
+  "naver_home_search_result_missing",
+  "naver_home_search_target_invalid",
+  "naver_price_compare_result_missing",
+  "naver_price_compare_target_invalid",
   "naver_network_restricted",
 ]);
 let running = false;
@@ -469,15 +473,25 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
           })
           .sort((left, right) => left.getBoundingClientRect().left - right.getBoundingClientRect().left)[0];
       await new Promise((resolve) => setTimeout(resolve, 150));
-      if (button && !button.disabled) button.click();
-      else if (form?.requestSubmit) form.requestSubmit();
-      else return { ok: false, code: "naver_home_search_button_missing" };
-      return { ok: true };
+      if ((!button || button.disabled) && !form?.requestSubmit) {
+        return { ok: false, code: "naver_home_search_button_missing" };
+      }
+      const targetUrl = new URL("https://search.shopping.naver.com/ns/search");
+      targetUrl.searchParams.set("query", expectedKeyword);
+      return { ok: true, targetUrl: targetUrl.toString() };
     },
     args: [keyword],
   }), CHROME_OPERATION_TIMEOUT_MS, "naver_home_search_timeout");
   const searchResult = searchResults?.[0]?.result || {};
-  if (!searchResult.ok) throw new Error(searchResult.code || "naver_home_search_failed");
+  if (!searchResult.ok) throw new Error(searchResult.code || "naver_home_search_result_missing");
+  if (!searchResult.targetUrl) throw new Error("naver_home_search_result_missing");
+  const normalSearchTarget = new URL(searchResult.targetUrl);
+  if (normalSearchTarget.hostname !== "search.shopping.naver.com"
+    || normalSearchTarget.pathname !== NPLUS_SEARCH_PATH
+    || normalizedKeyword(normalSearchTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
+    throw new Error("naver_home_search_target_invalid");
+  }
+  await chrome.tabs.update(tabId, { url: normalSearchTarget.toString() });
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"
@@ -504,15 +518,22 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
         }
       });
       if (!anchor) return { ok: false, code: "naver_price_compare_link_missing" };
-      setTimeout(() => location.assign(anchor.href), 0);
-      return { ok: true };
+      return { ok: true, targetUrl: anchor.href };
     },
     args: [keyword],
   }), CHROME_OPERATION_TIMEOUT_MS, "naver_price_compare_link_timeout");
   const priceCompareResult = priceCompareResults?.[0]?.result || {};
   if (!priceCompareResult.ok) {
-    throw new Error(priceCompareResult.code || "naver_price_compare_navigation_failed");
+    throw new Error(priceCompareResult.code || "naver_price_compare_result_missing");
   }
+  if (!priceCompareResult.targetUrl) throw new Error("naver_price_compare_result_missing");
+  const priceCompareTarget = new URL(priceCompareResult.targetUrl);
+  if (priceCompareTarget.hostname !== "search.shopping.naver.com"
+    || priceCompareTarget.pathname !== PRICE_COMPARE_SEARCH_PATH
+    || normalizedKeyword(priceCompareTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
+    throw new Error("naver_price_compare_target_invalid");
+  }
+  await chrome.tabs.update(tabId, { url: priceCompareTarget.toString() });
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"

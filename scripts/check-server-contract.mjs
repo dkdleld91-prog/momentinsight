@@ -515,7 +515,9 @@ check(
       /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/,
       /enterPriceCompareNormally/,
       /naver_price_compare_link_missing/,
-      /location\.assign\(anchor\.href\)/,
+      /targetUrl: anchor\.href/,
+      /url: normalSearchTarget\.toString\(\)/,
+      /url: priceCompareTarget\.toString\(\)/,
       /collectPriceComparePages/,
       /pagingIndex/,
       /productSet/,
@@ -606,7 +608,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.33"
+  shoppingChromeManifest.version === "1.0.34"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)

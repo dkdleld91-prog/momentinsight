@@ -462,7 +462,7 @@
     {
       "id": "shopping-windows-native-host-launcher",
       "file": "scripts/windows/MomentInsightNaverShoppingHost.cs",
-      "sha256": "45802e5d8ac82c4548f5bd39d5d6f1cf7fbfe9810a9a6bfbdbb58a2388cb2c03"
+      "sha256": "f45a4ea384151a99c960a40d1aa3f4bc815806a6010b839c9827b9242632a671"
     },
     {
       "id": "shopping-windows-chrome-scheduler",

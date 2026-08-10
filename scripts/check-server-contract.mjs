@@ -582,14 +582,13 @@ check(
     && hasAll(shoppingWindowsHostLauncher, [
       /ProtectedData\.Unprotect/,
       /DataProtectionScope\.CurrentUser/,
-      /RedirectStandardInput = true/,
-      /RedirectStandardOutput = true/,
-      /Console\.OpenStandardInput\(\)/,
-      /child\.StandardOutput\.BaseStream\.CopyTo\(output\)/,
+      /RedirectStandardInput = false/,
+      /RedirectStandardOutput = false/,
+      /child\.WaitForExit\(\)/,
       /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
       /String\.Equals\(maxJobs, "1"/,
     ])
-    && !/Console\.(?:Write|WriteLine)/u.test(shoppingWindowsHostLauncher)
+    && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream|StandardOutput\.BaseStream/u.test(shoppingWindowsHostLauncher)
     && hasAll(shoppingWindowsChromeScheduler, [
       /'--profile-directory="\{0\}"' -f \$profileDirectory/,
       /chrome_ready profile=/,

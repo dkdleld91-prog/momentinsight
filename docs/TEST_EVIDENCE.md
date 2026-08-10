@@ -4,6 +4,7 @@
 
 - 코드 증거: manual trigger만 `activateTab: true`를 전달하고, 자동·원격 trigger는 false를 유지합니다. 네이버 제한·보안확인 경로의 `surfaceNetworkRestrictionTab`·`surfaceVerificationTab`은 항상 탭을 활성화합니다.
 - UX 증거: 팝업은 `30~45초 안전 대기 후 가격비교 탭이 열립니다`라고 안내합니다. native host 대상 12/12, 서버 계약 39/39, baseline과 `git diff --check`를 통과했습니다.
+- 배포·설치 증거: 코드 `d90c66b`가 GitHub `main`과 Production `/health`·`/ready` 릴리스 `d90c66b41ecb`에 반영됐습니다. Windows `동빈 (개발)` 설치 경로를 1.0.19로 교체하고 Chrome을 재기동했으며 PowerShell에서 `MI_UI_UPDATE_OK version=1.0.19`, `MI_VERIFY version=1.0.19 chrome=13`을 확인했습니다.
 
 ## 2026-08-10 Windows 우선·Mac 대기 공용 차선 v1.0.18
 

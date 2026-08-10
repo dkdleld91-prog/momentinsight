@@ -129,7 +129,7 @@ namespace MomentInsight.NaverShopping
                 if (ownsSingleInstance)
                 {
                     try { singleInstance.ReleaseMutex(); }
-                    catch (ApplicationException ignored) { }
+                    catch (ApplicationException ignored) { GC.KeepAlive(ignored); }
                 }
                 if (singleInstance != null) singleInstance.Dispose();
             }
@@ -161,8 +161,8 @@ namespace MomentInsight.NaverShopping
             finally
             {
                 try { child.StandardInput.Close(); }
-                catch (InvalidOperationException ignored) { }
-                catch (ObjectDisposedException ignored) { }
+                catch (InvalidOperationException ignored) { GC.KeepAlive(ignored); }
+                catch (ObjectDisposedException ignored) { GC.KeepAlive(ignored); }
 
                 try
                 {
@@ -170,7 +170,7 @@ namespace MomentInsight.NaverShopping
                     // worker holding the lane or local lock indefinitely.
                     if (!child.HasExited && !child.WaitForExit(5000)) child.Kill();
                 }
-                catch (InvalidOperationException ignored) { }
+                catch (InvalidOperationException ignored) { GC.KeepAlive(ignored); }
             }
         }
 

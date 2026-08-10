@@ -1190,7 +1190,7 @@ const checks = {
     && shoppingRankLookupGrantMigration.includes("revoke all on table public.naver_shopping_rank_lookup_jobs from service_role")
     && shoppingRankLookupGrantMigration.includes("grant select, insert, update, delete on table public.naver_shopping_rank_lookup_jobs to service_role")
     && shoppingLocalWorkerHandler.includes('body.preferLookup !== false')
-    && shoppingLocalWorker.includes("index === maxJobs - 1 || index % 3 === 2")
+    && shoppingLocalWorker.includes("maxJobs > 1 && (index === maxJobs - 1 || index % 3 === 2)")
     && shoppingLocalWorker.includes("preferLookup: !trackerReserved"),
   shoppingNormalChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
@@ -1205,8 +1205,9 @@ const checks = {
     && shoppingChromeWorker.includes("enterPriceCompareNormally")
     && shoppingChromeWorker.includes("naver_price_compare_link_missing")
     && shoppingChromeWorker.includes("targetUrl: anchor.href")
-    && shoppingChromeWorker.includes("url: normalSearchTarget.toString()")
-    && shoppingChromeWorker.includes("url: priceCompareTarget.toString()")
+    && shoppingChromeWorker.includes("setTimeout(() => anchor.click(), 0)")
+    && shoppingChromeWorker.includes("tabUrlMatchesWithin(tabId, normalSearchMatches)")
+    && shoppingChromeWorker.includes("tabUrlMatchesWithin(tabId, priceCompareMatches)")
     && shoppingChromeWorker.includes("collectPriceComparePages")
     && shoppingChromeWorker.includes("pagingIndex")
     && shoppingChromeWorker.includes("productSet")
@@ -1283,7 +1284,7 @@ const checks = {
     && shoppingChromeWorker.includes("prepareVerificationState")
     && shoppingChromeWorker.includes("inspectNaverTab")
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.36"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.37"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1322,7 +1323,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.36"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.37"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger: workerTrigger })')
     && shoppingChromeWorker.includes("NATIVE_HOST_START_TIMEOUT_MS = 30_000")
     && shoppingChromeWorker.includes("NATIVE_HOST_RUN_TIMEOUT_MS = 30 * 60_000")

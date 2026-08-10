@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "1d95c126ac73db8e1083ecbc9ba9a4fd258c4507c0f5b08b9945cb64a2064366"
+      "sha256": "73d6ba86359ea59dd30b56ed46ce096490fe84a072638669a5c9d017fb08483b"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -478,12 +478,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "7a48be9ac634debcc5a8d769b19fb70329c0aedd6e9535d7a65f7825a2df2a42"
+      "sha256": "2d874af717453f33499f3c77f6f001ea03105a0f1aa9cace14d67634fce522c3"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "574b1989840ada3d69324c3f99ec7909f09e55826cec8af4362f327790b71e91"
+      "sha256": "0d7ebbc986920bce23764fc613aeaac3cfd5818aceb9abd2a714544095732664"
     },
     {
       "id": "shopping-local-worker-session-boundary",

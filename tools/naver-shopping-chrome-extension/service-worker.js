@@ -380,6 +380,18 @@ async function waitForTabUrl(tabId, predicate, code) {
   throw new Error(code);
 }
 
+async function tabUrlMatchesWithin(tabId, predicate, timeoutMs = 10_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    const tab = await chrome.tabs.get(tabId);
+    if (predicate(String(tab?.url || ""))) return true;
+    // eslint-disable-next-line no-await-in-loop
+    await wait(250);
+  }
+  return false;
+}
+
 async function waitForTabComplete(tabId) {
   const deadline = Date.now() + PAGE_TIMEOUT_MS;
   let completeSince = 0;
@@ -513,6 +525,12 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
       }
       const targetUrl = new URL("https://search.shopping.naver.com/ns/search");
       targetUrl.searchParams.set("query", expectedKeyword);
+      // Return the inspected destination before navigation destroys this page's
+      // execution context, then use the real N Shopping search action.
+      setTimeout(() => {
+        if (button && !button.disabled) button.click();
+        else form.requestSubmit();
+      }, 0);
       return { ok: true, targetUrl: targetUrl.toString() };
     },
     args: [keyword],
@@ -526,13 +544,17 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
     || normalizedKeyword(normalSearchTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
     throw new Error("naver_home_search_target_invalid");
   }
-  await updateTab(tabId, { url: normalSearchTarget.toString() }, "naver_normal_search_navigation_failed");
-  await waitForTabUrl(tabId, (rawUrl) => {
+  const normalSearchMatches = (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"
       && url.pathname === NPLUS_SEARCH_PATH
-      && String(url.searchParams.get("query") || "").trim() === String(keyword || "").trim();
-  }, "naver_normal_search_navigation_failed");
+      && normalizedNaverQueryKeyword(url.searchParams.get("query"))
+        === normalizedNaverQueryKeyword(keyword);
+  };
+  if (!await tabUrlMatchesWithin(tabId, normalSearchMatches)) {
+    await updateTab(tabId, { url: normalSearchTarget.toString() }, "naver_normal_search_navigation_failed");
+  }
+  await waitForTabUrl(tabId, normalSearchMatches, "naver_normal_search_navigation_failed");
   await waitForTabComplete(tabId);
   const normalSearchState = await inspectNaverTab(tabId);
   if (normalSearchState.status === "network_restricted") throw new Error("naver_network_restricted");
@@ -553,6 +575,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
         }
       });
       if (!anchor) return { ok: false, code: "naver_price_compare_link_missing" };
+      setTimeout(() => anchor.click(), 0);
       return { ok: true, targetUrl: anchor.href };
     },
     args: [keyword],
@@ -568,13 +591,17 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
     || normalizedKeyword(priceCompareTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
     throw new Error("naver_price_compare_target_invalid");
   }
-  await updateTab(tabId, { url: priceCompareTarget.toString() }, "naver_price_compare_navigation_failed");
-  await waitForTabUrl(tabId, (rawUrl) => {
+  const priceCompareMatches = (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"
       && url.pathname === PRICE_COMPARE_SEARCH_PATH
-      && String(url.searchParams.get("query") || "").trim() === String(keyword || "").trim();
-  }, "naver_price_compare_navigation_failed");
+      && normalizedNaverQueryKeyword(url.searchParams.get("query"))
+        === normalizedNaverQueryKeyword(keyword);
+  };
+  if (!await tabUrlMatchesWithin(tabId, priceCompareMatches)) {
+    await updateTab(tabId, { url: priceCompareTarget.toString() }, "naver_price_compare_navigation_failed");
+  }
+  await waitForTabUrl(tabId, priceCompareMatches, "naver_price_compare_navigation_failed");
   await waitForTabComplete(tabId);
 }
 

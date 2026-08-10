@@ -436,9 +436,9 @@ export async function runLocalShoppingWorker(options = {}) {
     for (let index = 0; index < maxJobs; index += 1) {
       // Give interactive lookups a fast response while reserving every third
       // claim attempt for the existing 30-day tracker queue. The final slot is
-      // always tracker-first so a deliberately small run budget cannot starve
-      // scheduled history refreshes behind interactive requests.
-      const trackerReserved = index === maxJobs - 1 || index % 3 === 2;
+      // tracker-first when the run has more than one slot. A one-job remote
+      // wake stays lookup-first so an explicit rank check cannot be starved.
+      const trackerReserved = maxJobs > 1 && (index === maxJobs - 1 || index % 3 === 2);
       const claim = await action({
         action: "claim",
         preferLookup: !trackerReserved,

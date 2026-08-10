@@ -435,6 +435,7 @@ test("one remote wake runs at most one queued job even with a larger configured 
   });
   assert.equal(collectCount, 1);
   assert.deepEqual(calls.map((call) => call.action), ["claim-wake", "claim", "submit"]);
+  assert.equal(calls.find((call) => call.action === "claim")?.preferLookup, true);
 });
 
 test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {

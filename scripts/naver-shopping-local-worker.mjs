@@ -55,12 +55,36 @@ const SAFE_FAILURE_CODES = new Set([
   "provider_deadline_exceeded",
   "provider_partial_window",
   "provider_browser_collection_failed",
+  "naver_next_data_invalid_json",
+  "naver_next_data_schema_drift",
+  "naver_next_data_rank_drift",
+  "provider_duplicate_identity",
+  "provider_row_invalid",
+  "provider_row_title_missing",
+  "provider_row_identity_missing",
+  "native_host_page_invalid",
+  "native_host_limit_invalid",
+  "native_host_pages_incomplete",
+  "native_host_pages_out_of_order",
+  "native_host_rows_invalid",
+  "native_host_collection_invalid",
   "local_worker_window_not_300",
   "local_worker_lease_lost",
   "local_worker_collection_conflict",
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
   "native_host_response_timeout",
+]);
+const SAFE_DETAIL_FAILURE_CODES = new Set([
+  "naver_next_data_schema_drift",
+  "naver_next_data_rank_drift",
+  "provider_duplicate_identity",
+  "provider_partial_window",
+  "provider_row_invalid",
+  "provider_row_title_missing",
+  "provider_row_identity_missing",
+  "native_host_page_invalid",
+  "native_host_pages_out_of_order",
 ]);
 const RUN_HALT_FAILURE_CODES = new Set([
   "naver_http_418",
@@ -144,7 +168,15 @@ function workerEndpoint(env) {
 
 function safeFailureCode(error) {
   const code = String(error?.code || error?.message || "").trim().toLowerCase();
-  return SAFE_FAILURE_CODES.has(code) ? code : "local_worker_collection_failed";
+  if (!SAFE_FAILURE_CODES.has(code)) return "local_worker_collection_failed";
+  if (!SAFE_DETAIL_FAILURE_CODES.has(code)) return code;
+  const detail = String(error?.detail || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_:-]+/gu, "_")
+    .replace(/^_+|_+$/gu, "")
+    .slice(0, Math.max(0, 79 - code.length));
+  return detail ? `${code}:${detail}`.slice(0, 80) : code;
 }
 
 async function signedWorkerAction(endpoint, secret, payload, options = {}) {

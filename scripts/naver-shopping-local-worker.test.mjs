@@ -506,6 +506,36 @@ test("never submits a short source-exhausted window and releases the lease as fa
   assert.equal(calls.some((call) => call.action === "submit"), false);
 });
 
+test("preserves a bounded native parser failure detail for production diagnosis", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("naver_next_data_schema_drift");
+      error.code = "naver_next_data_schema_drift";
+      error.detail = "props.pageProps.searchParam.query";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+  await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(
+    calls[1].errorCode,
+    "naver_next_data_schema_drift:props_pageprops_searchparam_query",
+  );
+});
+
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {
   const calls = [];
   const logs = [];

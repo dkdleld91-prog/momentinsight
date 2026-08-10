@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "dfaede059977b028cf5fb62ab61811cdeb7c1ef1cc51e45f58b6820b18baba82"
+      "sha256": "f6f7296b7a1b40bf1396e4f7e08f739d3bdb6b6cad73fe7aef905a41d05e1e60"
     },
     {
       "id": "shopping-local-worker-wrapper",

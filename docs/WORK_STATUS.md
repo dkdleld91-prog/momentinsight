@@ -4,6 +4,14 @@
 
 ## 현재 상태
 
+### 2026-08-10 N쇼핑 안전 수집 시간 경계 정렬 v1.0.25
+
+- Windows `동빈 (개발)`에 1.0.24 정상 진입 경로를 설치했고 Chrome `Profile 3`, scheduler, primary heartbeat, 공용 lane 단독 선점을 확인했습니다. 접속 제한·CAPTCHA·공용 cooldown은 발생하지 않았습니다.
+- 첫 실회차는 `러닝모자` 3개를 한 키워드 수집으로 묶어 시작했지만, 30~45초 초기 대기와 페이지별 45~75초 안전 간격을 유지한 상태에서 기존 native host·tracker·공용 lane의 20분 경계를 모두 사용해 원자 snapshot 직전에 안전 종료됐습니다. 기존 순위와 이력은 변경되지 않았습니다.
+- 확장 실행 제한은 30분, tracker와 공용 lane 및 단건 lookup 임대는 35분으로 정렬했습니다. 처리량 1개·oldest-first·광고 제외·원자 `checkedCount=300`·실패 시 마지막 정상값 보존은 그대로 유지합니다.
+- Supabase migration `extend_naver_shopping_worker_collection_lease`를 Production에 적용했고 세 함수 모두 기본 2,100초, anon/authenticated 실행 불가, service_role 전용임을 재검증했습니다.
+- 대상 35/35, 앱·API 409/409, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·67파일·18마이그레이션과 전체 `npm run check:release`가 통과했습니다. GitHub·Windows 1.0.25·신규 원자 300개·Production 안전문 검증을 이어갑니다.
+
 ### 2026-08-10 N쇼핑 정상 가격비교 진입 v1.0.24
 
 - 실브라우저에서 `shopping.naver.com/ns/home → 키워드 검색 → /ns/search → 네이버 가격비교 검색에서 더보기 → /search/all?query=...` 흐름은 접속 제한 없이 열렸습니다.

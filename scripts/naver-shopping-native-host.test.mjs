@@ -279,7 +279,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.24");
+  assert.equal(manifest.version, "1.0.25");
   assert.deepEqual(manifest.icons, {
     16: "icon16.png",
     32: "icon32.png",
@@ -292,6 +292,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
     assert.ok(fs.statSync(path.join(extensionDirectory, iconName)).size > 0);
   }
   assert.match(serviceWorker, /"rank-remote"/u);
+  assert.match(serviceWorker, /NATIVE_HOST_RUN_TIMEOUT_MS = 30 \* 60_000/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "standby"/u);
   assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);

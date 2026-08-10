@@ -23,7 +23,11 @@ import {
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
-const RANK_TRACKER_LEASE_MS = Number(process.env.MI_RANK_TRACKER_LEASE_MS || 1000 * 60 * 20);
+const MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35;
+const configuredRankTrackerLeaseMs = Number(process.env.MI_RANK_TRACKER_LEASE_MS || MIN_RANK_TRACKER_LEASE_MS);
+const RANK_TRACKER_LEASE_MS = Number.isFinite(configuredRankTrackerLeaseMs)
+  ? Math.max(MIN_RANK_TRACKER_LEASE_MS, configuredRankTrackerLeaseMs)
+  : MIN_RANK_TRACKER_LEASE_MS;
 const PRODUCT_RANK_HISTORY_DAYS = 30;
 const PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS = 120;
 const SNAPSHOT_QUERY_PAGE_SIZE = 1000;

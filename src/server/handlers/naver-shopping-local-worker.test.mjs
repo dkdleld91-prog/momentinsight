@@ -281,7 +281,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_worker_id: WORKER_ID,
       p_worker_role: "primary",
       p_lease_token: LANE_TOKEN,
-      p_lease_seconds: 1200,
+      p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
     });
   });
@@ -979,4 +979,20 @@ test("global worker lane timestamp repair avoids the PostgreSQL current_time key
   assert.match(sql, /mi_block_naver_shopping_worker_lane/iu);
   assert.match(sql, /security invoker/iu);
   assert.doesNotMatch(sql, /security definer/iu);
+});
+
+test("collection lease migration keeps safe pacing below the atomic submit boundary", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260810093810_extend_naver_shopping_worker_collection_lease.sql",
+    import.meta.url,
+  ), "utf8");
+  const laneSql = sql.slice(0, sql.indexOf("create or replace function public.mi_claim_naver_shopping_rank_lookup_job"));
+  assert.match(laneSql, /p_lease_seconds integer default 2100/iu);
+  assert.match(laneSql, /least\(2100, coalesce\(p_lease_seconds, 2100\)\)/iu);
+  assert.match(laneSql, /security invoker/iu);
+  assert.doesNotMatch(laneSql, /security definer/iu);
+  assert.match(sql, /p_lease_seconds < 60 or p_lease_seconds > 2100/iu);
+  assert.match(sql, /for update skip locked/iu);
+  assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_rank_lookup_job\(integer\)[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

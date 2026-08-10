@@ -24,9 +24,10 @@ import {
 } from "./naver-rank-trackers.mjs";
 
 // Keep one signed submit comfortably below the worker HTTP timeout and the
-// 20-minute tracker lease. Eight trackers also keeps the bulk continuity query
+// 35-minute collection lease. Eight trackers also keeps the bulk continuity query
 // below Supabase's common 1,000-row response ceiling (8 x 120 snapshots).
 const CLAIM_BATCH_MAX = 8;
+const WORKER_COLLECTION_LEASE_SECONDS = 35 * 60;
 const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -151,7 +152,7 @@ async function claimWorkerLane(ctx, body) {
     p_worker_id: lane.workerId,
     p_worker_role: lane.workerRole,
     p_lease_token: lane.laneToken,
-    p_lease_seconds: 1200,
+    p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
     p_primary_stale_seconds: 180,
   });
   if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
@@ -166,7 +167,7 @@ async function touchWorkerLane(ctx, body) {
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_touch_naver_shopping_worker_lane", {
     p_worker_id: lane.workerId,
     p_lease_token: lane.laneToken,
-    p_lease_seconds: 1200,
+    p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
   });
   if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   if (data !== true) throw workerError("LOCAL_WORKER_LANE_LOST", 409);
@@ -208,7 +209,7 @@ async function consumeNonce(ctx, auth) {
 
 async function claimOneLookupJob(ctx) {
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_rank_lookup_job", {
-    p_lease_seconds: 1200,
+    p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
   });
   if (error) {
     if (/schema cache|does not exist|mi_claim_naver_shopping_rank_lookup_job/iu.test(error.message || "")) return null;

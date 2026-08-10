@@ -68,12 +68,18 @@ try {
     }
     & $nodePath --check $stagedNativeHostScript
     if ($LASTEXITCODE -ne 0) { throw "native_host_javascript_invalid" }
-    Add-Type -Path $stagedLauncherSource -OutputAssembly $stagedLauncher -OutputType WindowsApplication -ReferencedAssemblies @(
-        "System.dll",
-        "System.Core.dll",
-        "System.Security.dll"
-    ) -PassThru | Out-Null
-    if (-not (Test-Path -LiteralPath $stagedLauncher -PathType Leaf)) { throw "native_host_launcher_compile_failed" }
+    $launcherChanged = -not (Test-Path -LiteralPath $launcherSourcePath -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $launcherPath -PathType Leaf) -or
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath $stagedLauncherSource).Hash -ne
+            (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherSourcePath).Hash)
+    if ($launcherChanged) {
+        Add-Type -Path $stagedLauncherSource -OutputAssembly $stagedLauncher -OutputType WindowsApplication -ReferencedAssemblies @(
+            "System.dll",
+            "System.Core.dll",
+            "System.Security.dll"
+        ) -PassThru | Out-Null
+        if (-not (Test-Path -LiteralPath $stagedLauncher -PathType Leaf)) { throw "native_host_launcher_compile_failed" }
+    }
 
     Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
     Get-CimInstance Win32_Process | Where-Object {
@@ -85,17 +91,19 @@ try {
     foreach ($file in $files) {
         Copy-Item -LiteralPath (Join-Path $stagingPath $file) -Destination (Join-Path $extensionPath $file) -Force
     }
-    New-Item -ItemType Directory -Path (Split-Path $launcherSourcePath -Parent) -Force | Out-Null
-    Copy-Item -LiteralPath $stagedLauncherSource -Destination $launcherSourcePath -Force
+    if ($launcherChanged) {
+        New-Item -ItemType Directory -Path (Split-Path $launcherSourcePath -Parent) -Force | Out-Null
+        Copy-Item -LiteralPath $stagedLauncherSource -Destination $launcherSourcePath -Force
+        Copy-Item -LiteralPath $stagedLauncher -Destination $launcherPath -Force
+    }
     Copy-Item -LiteralPath $stagedNativeHostScript -Destination $nativeHostScriptPath -Force
-    Copy-Item -LiteralPath $stagedLauncher -Destination $launcherPath -Force
     Start-Sleep -Seconds 3
     Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
 
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
     $launcherHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $launcherPath).Hash.ToLowerInvariant()
     $nativeHostHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostScriptPath).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=3 service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash"
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=3 launcher_recompiled=$launcherChanged service_worker_sha256=$serviceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

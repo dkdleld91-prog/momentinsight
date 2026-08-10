@@ -68,6 +68,14 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function normalizedKeyword(value) {
+  return String(value || "").trim().normalize("NFC").replace(/\s+/g, " ");
+}
+
+function normalizedNaverQueryKeyword(value) {
+  return normalizedKeyword(value).replace(/\s+/g, "");
+}
+
 async function withTimeout(promise, milliseconds, code) {
   let timeout = null;
   try {
@@ -377,11 +385,12 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
     lastValue = value;
     if (value.networkRestricted) throw new Error("naver_network_restricted");
     if (value.blocked) throw new Error("naver_verification_required");
-    const expectedKeyword = String(keyword || "").trim();
+    const expectedKeyword = normalizedKeyword(keyword);
     const urlMatches = value.path === PRICE_COMPARE_SEARCH_PATH
-      && String(value.urlKeyword || "").trim() === expectedKeyword
+      && normalizedKeyword(value.urlKeyword) === expectedKeyword
       && Number(value.urlPageIndex) === Number(pageIndex);
-    const dataMatches = (!value.dataKeyword || String(value.dataKeyword).trim() === expectedKeyword)
+    const dataMatches = (!value.dataKeyword
+        || normalizedNaverQueryKeyword(value.dataKeyword) === normalizedNaverQueryKeyword(expectedKeyword))
       && (!value.dataPageIndex || Number(value.dataPageIndex) === Number(pageIndex));
     if (urlMatches && dataMatches && value.nextDataText) return value.nextDataText;
     // The URL can change before Chrome replaces the previous document. Poll the

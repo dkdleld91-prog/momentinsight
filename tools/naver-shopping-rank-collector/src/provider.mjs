@@ -57,6 +57,10 @@ function normalizeKeyword(value) {
   return String(value || "").trim().normalize("NFC").replace(/\s+/g, " ");
 }
 
+function normalizeNaverQueryKeyword(value) {
+  return normalizeKeyword(value).replace(/\s+/g, "");
+}
+
 function normalizeString(value, max = 2_048) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 }
@@ -421,7 +425,8 @@ export function parseNaverNextDataPage(payload, {
   if (searchParam.viewType !== "list") throw nextDataSchemaError("searchParam.viewType");
   if (searchParam.productSet !== "total") throw nextDataSchemaError("searchParam.productSet");
   const expectedKeyword = normalizeKeyword(keyword);
-  if (expectedKeyword && normalizeKeyword(searchParam.query) !== expectedKeyword) {
+  if (expectedKeyword
+    && normalizeNaverQueryKeyword(searchParam.query) !== normalizeNaverQueryKeyword(expectedKeyword)) {
     throw nextDataSchemaError("searchParam.query");
   }
 

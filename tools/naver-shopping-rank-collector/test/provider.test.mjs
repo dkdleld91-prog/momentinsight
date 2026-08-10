@@ -322,6 +322,24 @@ test("parses __NEXT_DATA__ in document order and excludes explicit adId rows", (
   assert.equal(parsed.rows[1].lprice, 10001);
 });
 
+test("accepts Naver's internal spacing normalization only for the submitted query", () => {
+  const parsed = parseNaverNextDataPage(nextDataFixture({
+    total: 1,
+    keyword: "자외선 차단 마스크",
+    entries: [nextDataProduct(1)],
+  }), { pageIndex: 1, keyword: "자외선차단마스크" });
+  assert.equal(parsed.rows[0].sourceRank, 1);
+
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 1,
+      keyword: "자외선 차단 크림",
+      entries: [nextDataProduct(1)],
+    }), { pageIndex: 1, keyword: "자외선차단마스크" }),
+    (error) => error instanceof ProviderError && error.code === "naver_next_data_schema_drift",
+  );
+});
+
 test("maps explicit parentCatalogId and product shape without treating parentId as a catalog", () => {
   const parsed = parseNaverNextDataPage(nextDataFixture({
     total: 2,

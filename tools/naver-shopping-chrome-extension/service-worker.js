@@ -5,6 +5,7 @@ const NPLUS_SEARCH_PATH = "/ns/search";
 const PRICE_COMPARE_SEARCH_PATH = "/search/all";
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
+const PAGE_READY_STABILITY_MS = 500;
 const INITIAL_REQUEST_DELAY_MS = 30_000;
 const INITIAL_REQUEST_JITTER_MS = 15_000;
 const PAGE_REQUEST_INTERVAL_MS = 45_000;
@@ -321,68 +322,75 @@ async function waitForTabUrl(tabId, predicate, code) {
   throw new Error(code);
 }
 
-function waitForTabComplete(tabId) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    function finish(error, tab) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      chrome.tabs.onUpdated.removeListener(listener);
-      if (error) reject(error);
-      else resolve(tab);
+async function waitForTabComplete(tabId) {
+  const deadline = Date.now() + PAGE_TIMEOUT_MS;
+  let completeSince = 0;
+  while (Date.now() < deadline) {
+    // Chrome can expose a new URL while the previous document still reports complete.
+    // Require a short stable complete state before reading the new page's DOM.
+    // eslint-disable-next-line no-await-in-loop
+    const tab = await chrome.tabs.get(tabId);
+    if (tab.status === "complete") {
+      if (!completeSince) completeSince = Date.now();
+      if (Date.now() - completeSince >= PAGE_READY_STABILITY_MS) return tab;
+    } else {
+      completeSince = 0;
     }
-    const timeout = setTimeout(() => {
-      finish(new Error("naver_page_timeout"));
-    }, PAGE_TIMEOUT_MS);
-    function listener(updatedId, changeInfo, tab) {
-      if (updatedId !== tabId || changeInfo.status !== "complete") return;
-      finish(null, tab);
-    }
-    chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === "complete") finish(null, tab);
-    }).catch((error) => finish(error));
-  });
+    // eslint-disable-next-line no-await-in-loop
+    await wait(100);
+  }
+  throw new Error("naver_page_timeout");
 }
 
 async function readPriceComparePage(tabId, keyword, pageIndex) {
-  const results = await withTimeout(chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => {
-      const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
-      const networkRestricted = /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText);
-      const blocked = /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText);
-      const url = new URL(location.href);
-      const nextDataText = document.getElementById("__NEXT_DATA__")?.textContent || "";
-      let searchParam = {};
-      try {
-        searchParam = JSON.parse(nextDataText)?.props?.pageProps?.searchParam || {};
-      } catch {
-        searchParam = {};
-      }
-      return {
-        networkRestricted,
-        blocked,
-        nextDataText,
-        keyword: searchParam.query || url.searchParams.get("query") || "",
-        path: url.pathname,
-        pageIndex: Number(searchParam.pagingIndex || url.searchParams.get("pagingIndex") || 1),
-        title: document.title,
-        url: url.toString(),
-      };
-    },
-  }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_script_timeout");
-  const value = results?.[0]?.result || {};
-  if (value.networkRestricted) throw new Error("naver_network_restricted");
-  if (value.blocked) throw new Error("naver_verification_required");
-  if (value.path !== PRICE_COMPARE_SEARCH_PATH
-    || String(value.keyword || "").trim() !== String(keyword || "").trim()
-    || Number(value.pageIndex) !== Number(pageIndex)) {
-    throw new Error("naver_navigation_invalid");
+  const deadline = Date.now() + PAGE_TIMEOUT_MS;
+  let lastValue = {};
+  while (Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    const results = await withTimeout(chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
+        const networkRestricted = /쇼핑 서비스 접속이 일시적으로 제한|해당 네트워크의 접속을 일시적으로 제한|네트워크의 접속을 일시적으로 제한/iu.test(bodyText);
+        const blocked = /보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText);
+        const url = new URL(location.href);
+        const nextDataText = document.getElementById("__NEXT_DATA__")?.textContent || "";
+        let searchParam = {};
+        try {
+          searchParam = JSON.parse(nextDataText)?.props?.pageProps?.searchParam || {};
+        } catch {
+          searchParam = {};
+        }
+        return {
+          networkRestricted,
+          blocked,
+          nextDataText,
+          urlKeyword: url.searchParams.get("query") || "",
+          dataKeyword: searchParam.query || "",
+          path: url.pathname,
+          urlPageIndex: Number(url.searchParams.get("pagingIndex") || 1),
+          dataPageIndex: Number(searchParam.pagingIndex || 0),
+        };
+      },
+    }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_script_timeout");
+    const value = results?.[0]?.result || {};
+    lastValue = value;
+    if (value.networkRestricted) throw new Error("naver_network_restricted");
+    if (value.blocked) throw new Error("naver_verification_required");
+    const expectedKeyword = String(keyword || "").trim();
+    const urlMatches = value.path === PRICE_COMPARE_SEARCH_PATH
+      && String(value.urlKeyword || "").trim() === expectedKeyword
+      && Number(value.urlPageIndex) === Number(pageIndex);
+    const dataMatches = (!value.dataKeyword || String(value.dataKeyword).trim() === expectedKeyword)
+      && (!value.dataPageIndex || Number(value.dataPageIndex) === Number(pageIndex));
+    if (urlMatches && dataMatches && value.nextDataText) return value.nextDataText;
+    // The URL can change before Chrome replaces the previous document. Poll the
+    // local DOM only; this does not issue another Naver network request.
+    // eslint-disable-next-line no-await-in-loop
+    await wait(200);
   }
-  if (!value.nextDataText) throw new Error("naver_next_data_missing");
-  return value.nextDataText;
+  if (!lastValue.nextDataText) throw new Error("naver_next_data_missing");
+  throw new Error("naver_navigation_invalid");
 }
 
 async function enterPriceCompareNormally(tabId, keyword, activateTab) {

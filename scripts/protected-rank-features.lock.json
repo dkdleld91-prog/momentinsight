@@ -478,12 +478,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "10ab5dea6d45d3bfd5743295618978f470b25934d8298bbf56ec4c133a67ac10"
+      "sha256": "5f6a2aad455749256e5bc7035a708abd0f7e82627e950acdee589c3a5d9614ee"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "a3fe54ec56988e24f81505036787271e38cbedeaa8ae77291389f5d75cac2283"
+      "sha256": "2099c34ed5f16b1a46f9b9cb731939efa3c43fb5076ee8f0ad09f0334b5b41a5"
     },
     {
       "id": "shopping-local-worker-session-boundary",

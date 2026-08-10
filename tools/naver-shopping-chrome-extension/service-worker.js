@@ -53,6 +53,7 @@ const SAFE_COLLECTION_ERROR_CODES = new Set([
   "naver_navigation_data_query_mismatch",
   "naver_navigation_data_page_mismatch",
   "naver_page_read_state_unstable",
+  "naver_page_script_failed",
   "naver_page_navigation_result_missing",
   "naver_home_search_result_missing",
   "naver_home_search_target_invalid",
@@ -102,6 +103,40 @@ async function withTimeout(promise, milliseconds, code) {
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
+  }
+}
+
+async function executePageScript(injection, failureCode) {
+  const deadline = Date.now() + PAGE_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      // Chrome can briefly invalidate an execution context while a completed
+      // Naver document finishes replacing its previous renderer. Retrying this
+      // local DOM read does not send another request to Naver.
+      // eslint-disable-next-line no-await-in-loop
+      return await withTimeout(
+        chrome.scripting.executeScript(injection),
+        CHROME_OPERATION_TIMEOUT_MS,
+        failureCode,
+      );
+    } catch (error) {
+      if (String(error?.message || "") === failureCode) throw error;
+      // eslint-disable-next-line no-await-in-loop
+      await wait(200);
+    }
+  }
+  throw new Error(failureCode);
+}
+
+async function updateTab(tabId, updateProperties, failureCode) {
+  try {
+    return await withTimeout(
+      chrome.tabs.update(tabId, updateProperties),
+      CHROME_OPERATION_TIMEOUT_MS,
+      failureCode,
+    );
+  } catch {
+    throw new Error(failureCode);
   }
 }
 
@@ -370,7 +405,7 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
   let lastValue = {};
   while (Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
-    const results = await withTimeout(chrome.scripting.executeScript({
+    const results = await executePageScript({
       target: { tabId },
       func: () => {
         const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
@@ -395,7 +430,7 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
           dataPageIndex: Number(searchParam.pagingIndex || 0),
         };
       },
-    }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_script_timeout");
+    }, "naver_page_script_failed");
     const value = results?.[0]?.result || {};
     lastValue = value;
     if (value.networkRestricted) throw new Error("naver_network_restricted");
@@ -443,7 +478,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
   await waitForTabComplete(tabId);
   await wait(initialRequestDelay());
 
-  const searchResults = await withTimeout(chrome.scripting.executeScript({
+  const searchResults = await executePageScript({
     target: { tabId },
     func: async (expectedKeyword) => {
       const input = document.querySelector('input[placeholder*="상품명"]')
@@ -481,7 +516,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
       return { ok: true, targetUrl: targetUrl.toString() };
     },
     args: [keyword],
-  }), CHROME_OPERATION_TIMEOUT_MS, "naver_home_search_timeout");
+  }, "naver_home_search_timeout");
   const searchResult = searchResults?.[0]?.result || {};
   if (!searchResult.ok) throw new Error(searchResult.code || "naver_home_search_result_missing");
   if (!searchResult.targetUrl) throw new Error("naver_home_search_result_missing");
@@ -491,7 +526,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
     || normalizedKeyword(normalSearchTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
     throw new Error("naver_home_search_target_invalid");
   }
-  await chrome.tabs.update(tabId, { url: normalSearchTarget.toString() });
+  await updateTab(tabId, { url: normalSearchTarget.toString() }, "naver_normal_search_navigation_failed");
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"
@@ -503,7 +538,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
   if (normalSearchState.status === "network_restricted") throw new Error("naver_network_restricted");
   if (normalSearchState.status === "blocked") throw new Error("naver_verification_required");
 
-  const priceCompareResults = await withTimeout(chrome.scripting.executeScript({
+  const priceCompareResults = await executePageScript({
     target: { tabId },
     func: (expectedKeyword) => {
       const anchor = Array.from(document.querySelectorAll("a[href]")).find((item) => {
@@ -521,7 +556,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
       return { ok: true, targetUrl: anchor.href };
     },
     args: [keyword],
-  }), CHROME_OPERATION_TIMEOUT_MS, "naver_price_compare_link_timeout");
+  }, "naver_price_compare_link_timeout");
   const priceCompareResult = priceCompareResults?.[0]?.result || {};
   if (!priceCompareResult.ok) {
     throw new Error(priceCompareResult.code || "naver_price_compare_result_missing");
@@ -533,7 +568,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
     || normalizedKeyword(priceCompareTarget.searchParams.get("query")) !== normalizedKeyword(keyword)) {
     throw new Error("naver_price_compare_target_invalid");
   }
-  await chrome.tabs.update(tabId, { url: priceCompareTarget.toString() });
+  await updateTab(tabId, { url: priceCompareTarget.toString() }, "naver_price_compare_navigation_failed");
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"
@@ -544,7 +579,7 @@ async function enterPriceCompareNormally(tabId, keyword, activateTab) {
 }
 
 async function navigatePriceComparePage(tabId, keyword, pageIndex) {
-  const results = await withTimeout(chrome.scripting.executeScript({
+  const results = await executePageScript({
     target: { tabId },
     func: (expectedKeyword, expectedPage, expectedNormalizedKeyword) => {
       const url = new URL(location.href);
@@ -570,7 +605,7 @@ async function navigatePriceComparePage(tabId, keyword, pageIndex) {
       return { ok: true, targetUrl: url.toString() };
     },
     args: [keyword, pageIndex, normalizedNaverQueryKeyword(keyword)],
-  }), CHROME_OPERATION_TIMEOUT_MS, "naver_page_navigation_timeout");
+  }, "naver_page_navigation_timeout");
   const result = results?.[0]?.result || {};
   if (!result.ok) throw new Error(result.code || "naver_page_navigation_result_missing");
   if (!result.targetUrl) throw new Error("naver_page_navigation_result_missing");
@@ -581,7 +616,7 @@ async function navigatePriceComparePage(tabId, keyword, pageIndex) {
     || Number(targetUrl.searchParams.get("pagingIndex") || 1) !== Number(pageIndex)) {
     throw new Error("naver_navigation_url_page_mismatch");
   }
-  await chrome.tabs.update(tabId, { url: targetUrl.toString() });
+  await updateTab(tabId, { url: targetUrl.toString() }, "naver_page_navigation_failed");
   await waitForTabUrl(tabId, (rawUrl) => {
     const url = new URL(rawUrl);
     return url.hostname === "search.shopping.naver.com"

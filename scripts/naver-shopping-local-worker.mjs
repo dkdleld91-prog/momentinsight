@@ -46,6 +46,7 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_navigation_data_query_mismatch",
   "naver_navigation_data_page_mismatch",
   "naver_page_read_state_unstable",
+  "naver_page_script_failed",
   "naver_page_navigation_result_missing",
   "naver_home_search_result_missing",
   "naver_home_search_target_invalid",

@@ -608,7 +608,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.34"
+  shoppingChromeManifest.version === "1.0.35"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -620,7 +620,7 @@ check(
     && /NATIVE_HOST_RUN_TIMEOUT_MS = 30 \* 60_000/.test(shoppingChromeWorker)
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
-    && /naver_page_script_timeout/.test(shoppingChromeWorker)
+    && /naver_page_script_failed/.test(shoppingChromeWorker)
     && /if \(error\?\.tabId\) collectionTabId = error\.tabId/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
     && /activateTab: trigger === "manual"/.test(shoppingChromeWorker)

@@ -966,3 +966,17 @@ test("global worker lane makes Windows primary, Mac standby and access cooldown 
   assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_worker_lane[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });
+
+test("global worker lane timestamp repair avoids the PostgreSQL current_time keyword", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260810011000_fix_naver_shopping_worker_lane_timestamp.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /v_now timestamptz := clock_timestamp\(\)/iu);
+  assert.doesNotMatch(sql, /\bcurrent_time\b/iu);
+  assert.match(sql, /mi_claim_naver_shopping_worker_lane/iu);
+  assert.match(sql, /mi_touch_naver_shopping_worker_lane/iu);
+  assert.match(sql, /mi_block_naver_shopping_worker_lane/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+});

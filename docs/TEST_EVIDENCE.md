@@ -6,8 +6,9 @@
 - 구현 증거: 운영 Supabase에 `naver_shopping_worker_coordination`과 claim/touch/release/block RPC를 적용했습니다. Windows `primary_seen_at` 3분, 공용 lease 1,200초, network/418/429 1,800초, verification/CAPTCHA 3,600초입니다.
 - 권한 증거: 운영 SQL에서 RLS·force RLS가 모두 true, anon table select와 claim RPC execute는 false, service_role execute는 true입니다. 보안 advisor의 신규 항목은 접근 정책이 없는 service-role 전용 RLS 테이블이라는 INFO이며 외부 권한은 없습니다.
 - 회귀 증거: standby는 primary online 응답에서 wake·tracker claim·브라우저 수집을 0회 수행하고, lane lost 시 서버가 tracker claim 전 409로 차단합니다. 서버 계약 39/39, 앱·API 405/405, 플레이스·쇼핑 각 51/51, Production 인증 18/18과 전체 `npm run check:release`가 통과했습니다.
-- 설치 증거: Mac native runtime은 `macbook-standby`·`standby` 역할로 재설치됐습니다. Chrome 내부 페이지 원격 조작은 브라우저 보안 정책이 차단해 Mac 확장 1.0.18 재로드는 사용자 1회 조치로 남겼습니다. Windows `%LOCALAPPDATA%` 설치본은 로그오프 상태여서 1.0.18 설치기 재실행·재로드 전까지 구버전 fail-closed 상태입니다.
-- 실수집 경계: Windows가 로그오프 상태이므로 primary heartbeat와 신규 원자 300개는 아직 없습니다. 이 증거 전에는 데스크탑 주 작업자 전환 완료로 보고하지 않습니다.
+- 설치 증거: Windows PowerShell이 `MI_UPDATE_OK version=1.0.18 primary=True exe=True`를 출력했고 Chrome 재시작 뒤 `Moment Insight N Shopping Rank 1.0.18` 표시를 확인했습니다. DPAPI 운영 키는 보존됐습니다.
+- 장애·수정 증거: 운영 RPC probe가 `current_time`의 `timetz`/`timestamptz` 충돌을 재현했습니다. `fix_naver_shopping_worker_lane_timestamp` migration 적용 뒤 `windows-desktop-primary`가 `2026-08-10 10:09:16 KST` heartbeat를 기록하고 idle 회차 lease를 정상 해제했습니다.
+- 실수집 경계: 주 작업기 연결은 증명됐지만 신규 `pw-chrome-*`·`checked_count=300` snapshot은 별도로 확인합니다. 이 전에는 신규 300위 수집 완료로 확대하지 않습니다.
 
 ## 2026-08-10 Windows 수동 갱신 무한로딩 복구 v1.0.17
 

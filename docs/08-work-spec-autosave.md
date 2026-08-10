@@ -10,7 +10,8 @@
 - 구현: service-role 전용 Supabase 공용 lane, Windows primary heartbeat, Mac standby handoff, 전 기기 제한 cooldown, 확장 대기 상태 표시를 추가했다. Windows launcher와 Mac wrapper가 명시적 역할 ID를 전송한다.
 - 보호: 공용 lane 한 개, 회차당 키워드 한 개, oldest-first, 정확 상품·광고 제외·300개 원자 저장, 오류 시 마지막 정상값·30일 이력을 유지한다. 쿠키 자동 삭제·CAPTCHA 풀이·VPN·제한 우회는 금지한다.
 - 검증: 운영 migration과 RLS/권한 확인, 대상 58/58, 앱·API 405/405, 플레이스·쇼핑 각 51/51, 서버 계약 39/39, Production 인증 18/18, 보호 잠금 22함수·65파일·16마이그레이션, 전체 `check:release`와 `git diff --check`를 통과했다.
-- 남은 경계: Mac native runtime은 갱신됐으나 Chrome 보안 정책으로 확장 재로드는 원격 수행할 수 없다. Windows는 로그오프 상태이며 `%LOCALAPPDATA%` 설치본이 자동 갱신되지 않으므로, 로그인 후 1.0.18 설치기 재실행·양쪽 확장 재로드를 거쳐 primary heartbeat·standby 대기·신규 300개를 운영 확인한다.
+- 실기 보완: Windows `동빈 (개발)`에 1.0.18 설치·재로드를 완료했다. lane RPC의 `current_time` 키워드 충돌은 repair migration에서 `v_now`로 수정했고 운영 `windows-desktop-primary` heartbeat와 idle lease 해제를 확인했다.
+- 남은 경계: Mac `primary_online` 대기와 신규 `pw-chrome-*`·`checked_count=300`을 운영 확인한다.
 
 ## 2026-08-10 N 쇼핑 Windows 수동 갱신 무한로딩 복구
 
@@ -109,8 +110,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 10. 05:36:15
-- 기준 커밋: b2bbf67
+- 마지막 자동 저장: 2026. 08. 10. 10:07:20
+- 기준 커밋: b651aa9
 - 작업트리: clean
 <!-- autosave:end -->
 

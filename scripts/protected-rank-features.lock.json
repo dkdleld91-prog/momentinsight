@@ -419,6 +419,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-global-worker-lane-timestamp-repair",
+      "file": "supabase/migrations/20260810011000_fix_naver_shopping_worker_lane_timestamp.sql",
+      "sha256": "e9920ec1711fdf870be44df9e50d22eb9477e24da3abb870d876d2ef7f29b50d",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
       "sha256": "8df79364cdb589d3527f46379d5bba8e798d38076f89ea0594836768add30870"

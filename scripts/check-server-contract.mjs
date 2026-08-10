@@ -599,7 +599,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.18"
+  shoppingChromeManifest.version === "1.0.19"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /result\.status === "standby"/.test(shoppingChromeWorker)
@@ -609,6 +609,8 @@ check(
     && /naver_page_script_timeout/.test(shoppingChromeWorker)
     && /if \(error\?\.tabId\) collectionTabId = error\.tabId/.test(shoppingChromeWorker)
     && /trigger: workerTrigger/.test(shoppingChromeWorker)
+    && /activateTab: trigger === "manual"/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url, active: activateTab \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)
     && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)

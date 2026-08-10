@@ -56,7 +56,7 @@ runButton.addEventListener("click", async () => {
   try {
     const result = await chrome.runtime.sendMessage({ action: "run-now" });
     if (result?.started) {
-      statusElement.textContent = "갱신 요청을 접수했습니다. 이 창은 닫아도 됩니다.";
+      statusElement.textContent = "갱신 요청을 접수했습니다. 30~45초 안전 대기 후 가격비교 탭이 열립니다.";
       window.setTimeout(refreshStatus, 1000);
       return;
     }

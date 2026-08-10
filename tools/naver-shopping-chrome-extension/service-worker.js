@@ -344,23 +344,31 @@ async function readPriceComparePage(tabId, keyword, pageIndex) {
   return value.nextDataText;
 }
 
-async function collectPriceComparePages(request, initialTabId = null) {
+async function collectPriceComparePages(request, initialTabId = null, options = {}) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
   }
+  const activateTab = options.activateTab === true;
   const pages = [];
   let tabId = initialTabId;
   try {
+    if (activateTab && tabId != null) {
+      await chrome.tabs.update(tabId, { active: true }).catch(() => {});
+    }
     await wait(initialRequestDelay());
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       const url = searchUrl(request.keyword, pageIndex);
       if (tabId == null) {
-        const tab = await chrome.tabs.create({ url, active: false });
+        const tab = await chrome.tabs.create({ url, active: activateTab });
         tabId = tab.id;
       } else {
         const currentTab = await chrome.tabs.get(tabId);
-        if (currentTab.url !== url || currentTab.status !== "complete") {
-          await chrome.tabs.update(tabId, { url });
+        const update = {
+          ...(currentTab.url !== url || currentTab.status !== "complete" ? { url } : {}),
+          ...(activateTab ? { active: true } : {}),
+        };
+        if (Object.keys(update).length) {
+          await chrome.tabs.update(tabId, update);
         }
       }
       await waitForTabComplete(tabId);
@@ -469,7 +477,9 @@ async function runWorker(trigger = "manual") {
         try {
           if (message?.type === "collect") {
             try {
-              const collection = await collectPriceComparePages(message.request, collectionTabId);
+              const collection = await collectPriceComparePages(message.request, collectionTabId, {
+                activateTab: trigger === "manual",
+              });
               collectionTabId = collection.tabId;
               port.postMessage({
                 type: "collection",

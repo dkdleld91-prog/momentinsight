@@ -1,5 +1,10 @@
 # Test Evidence
 
+## 2026-08-10 수동 갱신 가시성 v1.0.19
+
+- 코드 증거: manual trigger만 `activateTab: true`를 전달하고, 자동·원격 trigger는 false를 유지합니다. 네이버 제한·보안확인 경로의 `surfaceNetworkRestrictionTab`·`surfaceVerificationTab`은 항상 탭을 활성화합니다.
+- UX 증거: 팝업은 `30~45초 안전 대기 후 가격비교 탭이 열립니다`라고 안내합니다. native host 대상 12/12, 서버 계약 39/39, baseline과 `git diff --check`를 통과했습니다.
+
 ## 2026-08-10 Windows 우선·Mac 대기 공용 차선 v1.0.18
 
 - 원인 증거: tracker 행의 조건부 lease는 같은 행 중복 저장을 막지만, Mac과 Windows가 각기 다른 due 키워드를 동시에 claim할 수 있었습니다.

@@ -279,7 +279,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.18");
+  assert.equal(manifest.version, "1.0.19");
   assert.match(serviceWorker, /"rank-remote"/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /result\.status === "standby"/u);
@@ -308,7 +308,10 @@ test("Chrome extension drains safely and reports verification recovery truthfull
     serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
       < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
   );
-  assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId\)/u);
+  assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId, \{[\s\S]+activateTab: trigger === "manual"/u);
+  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: activateTab \}\)/u);
+  assert.match(serviceWorker, /surfaceVerificationTab/u);
+  assert.match(serviceWorker, /surfaceNetworkRestrictionTab/u);
   assert.match(serviceWorker, /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/u);
   assert.match(serviceWorker, /pagingIndex/u);
   assert.match(serviceWorker, /productSet/u);
@@ -333,7 +336,7 @@ test("Chrome extension drains safely and reports verification recovery truthfull
   assert.match(serviceWorker, /NATIVE_HOST_START_TIMEOUT_MS = 30_000/u);
   assert.match(serviceWorker, /native_host_start_timeout/u);
   assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
-  assert.match(popup, /이 창은 닫아도 됩니다/u);
+  assert.match(popup, /30~45초 안전 대기 후 가격비교 탭이 열립니다/u);
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
   assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 18 \* 60_000/u);
   assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}18 \* 60_000/u);

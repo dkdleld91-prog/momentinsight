@@ -191,6 +191,8 @@ const shoppingNativeHostWrapper = read("scripts/run-naver-shopping-native-host.s
 const shoppingChromeSchedulerWrapper = read("scripts/run-naver-shopping-chrome-scheduler.sh");
 const shoppingChromeManifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
 const shoppingChromeWorker = read("tools/naver-shopping-chrome-extension/service-worker.js");
+const shoppingChromePopup = read("tools/naver-shopping-chrome-extension/popup.js");
+const shoppingChromePopupHtml = read("tools/naver-shopping-chrome-extension/popup.html");
 const rankUnlimitedMigration = read("supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql");
 const accessAuditMigration = read("supabase/migrations/20260628152000_harden_access_and_audit_logs.sql");
 const packageConfig = JSON.parse(read("package.json"));
@@ -1377,12 +1379,19 @@ const checks = {
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
     && shoppingNativeHost.includes("registerProgressSink(sink)")
-    && shoppingChromeWorker.includes('chrome.runtime.getURL("popup.html")')
-    && shoppingChromeWorker.includes("crypto.randomUUID()")
-    && shoppingChromeWorker.includes("autoDiscardable: false")
-    && shoppingChromeWorker.includes("CONTROLLER_RESUME_TIMEOUT_MS = 15_000")
-    && shoppingChromeWorker.includes("current.frozen === true")
-    && shoppingChromeWorker.includes("changeInfo.frozen === false")
+    && shoppingChromeWorker.includes("async function requestWorkerRun(trigger)")
+    && shoppingChromeWorker.includes("void runWorker(trigger)")
+    && shoppingChromeWorker.includes("chrome.runtime.connectNative(NATIVE_HOST)")
+    && shoppingChromeWorker.includes("WORKER_KEEPALIVE_INTERVAL_MS = 20_000")
+    && shoppingChromeWorker.includes("function startWorkerKeepAlive()")
+    && shoppingChromeWorker.includes("const timer = setInterval(heartbeat, WORKER_KEEPALIVE_INTERVAL_MS)")
+    && shoppingChromeWorker.includes("return () => clearInterval(timer)")
+    && shoppingChromeWorker.includes("if (stopKeepAlive) stopKeepAlive()")
+    && shoppingChromeWorker.includes("async function removeLegacyControllerTabs()")
+    && shoppingChromeWorker.includes("void removeLegacyControllerTabs()")
+    && !shoppingChromePopupHtml.includes('<script src="service-worker.js"></script>')
+    && shoppingChromePopup.includes('chrome.runtime.sendMessage({ action: "run-now" })')
+    && shoppingChromePopupHtml.includes('<button id="run" type="button">지금 안전 갱신</button>')
     && shoppingChromeWorker.includes("automaticVerificationCooldownActive(trigger)")
     && shoppingChromeWorker.includes("verification.blockedUntil > Date.now()")
     && shoppingChromeWorker.includes("selectPendingTrigger(currentTrigger, candidateTrigger)")
@@ -1391,10 +1400,7 @@ const checks = {
     && shoppingChromeWorker.includes("PENDING_TRIGGER_HANDOFF_MS = 6_000")
     && shoppingChromeWorker.includes('result.status === "control_plane_failed"')
     && shoppingChromeWorker.includes('result.status !== "completed"')
-    && shoppingChromeWorker.includes('chrome.windows.update(controller.windowId, { state: "normal" })')
     && shoppingWindowsChromeScheduler.includes("chrome_already_running profile=")
-    && shoppingChromeWorker.includes('action: "controller-run"')
-    && shoppingChromeWorker.includes("if (!EXTENSION_PAGE_CONTEXT)")
     && shoppingChromeWorker.includes('saveStatus("standby", "다음 갱신 요청 대기 중")')
     && shoppingChromeWorker.includes("RUNNING_STATUS_STALE_MS = 20 * 60_000")
     && shoppingChromeWorker.includes("typedCollectionError(error, collectionStageCode)")

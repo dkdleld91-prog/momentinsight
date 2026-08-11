@@ -56,6 +56,8 @@ const files = {
   shoppingNativeHostWrapper: "scripts/run-naver-shopping-native-host.sh",
   shoppingChromeManifest: "tools/naver-shopping-chrome-extension/manifest.json",
   shoppingChromeWorker: "tools/naver-shopping-chrome-extension/service-worker.js",
+  shoppingChromePopup: "tools/naver-shopping-chrome-extension/popup.js",
+  shoppingChromePopupHtml: "tools/naver-shopping-chrome-extension/popup.html",
   naverEnvExample: "05_네이버_API_연동/.env.example",
   adminPage: "src/pages/admin.html",
   clientPage: "src/pages/client.html",
@@ -116,6 +118,8 @@ const shoppingChromeSchedulerWrapper = fs.readFileSync(files.shoppingChromeSched
 const shoppingNativeHostWrapper = fs.readFileSync(files.shoppingNativeHostWrapper, "utf8");
 const shoppingChromeManifest = JSON.parse(fs.readFileSync(files.shoppingChromeManifest, "utf8"));
 const shoppingChromeWorker = fs.readFileSync(files.shoppingChromeWorker, "utf8");
+const shoppingChromePopup = fs.readFileSync(files.shoppingChromePopup, "utf8");
+const shoppingChromePopupHtml = fs.readFileSync(files.shoppingChromePopupHtml, "utf8");
 const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
 const adminPage = fs.readFileSync(files.adminPage, "utf8");
 const clientPage = fs.readFileSync(files.clientPage, "utf8");
@@ -680,13 +684,18 @@ check(
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
-    && /chrome\.runtime\.getURL\("popup\.html"\)/.test(shoppingChromeWorker)
-    && /crypto\.randomUUID\(\)/.test(shoppingChromeWorker)
-    && /autoDiscardable: false/.test(shoppingChromeWorker)
-    && /CONTROLLER_RESUME_TIMEOUT_MS = 15_000/.test(shoppingChromeWorker)
-    && /current\.frozen === true/.test(shoppingChromeWorker)
-    && /changeInfo\.frozen === false/.test(shoppingChromeWorker)
-    && /active: true,\s*pinned: true,\s*autoDiscardable: false/.test(shoppingChromeWorker)
+    && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)
+    && /chrome\.runtime\.connectNative\(NATIVE_HOST\)/.test(shoppingChromeWorker)
+    && /WORKER_KEEPALIVE_INTERVAL_MS = 20_000/.test(shoppingChromeWorker)
+    && /function startWorkerKeepAlive\(\)/.test(shoppingChromeWorker)
+    && /const timer = setInterval\(heartbeat, WORKER_KEEPALIVE_INTERVAL_MS\)/.test(shoppingChromeWorker)
+    && /return \(\) => clearInterval\(timer\)/.test(shoppingChromeWorker)
+    && /if \(stopKeepAlive\) stopKeepAlive\(\)/.test(shoppingChromeWorker)
+    && /async function removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
+    && /void removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
+    && !/<script src="service-worker\.js"><\/script>/.test(shoppingChromePopupHtml)
+    && /chrome\.runtime\.sendMessage\(\{ action: "run-now" \}\)/.test(shoppingChromePopup)
+    && /<button id="run" type="button">지금 안전 갱신<\/button>/.test(shoppingChromePopupHtml)
     && /automaticVerificationCooldownActive\(trigger\)/.test(shoppingChromeWorker)
     && /selectPendingTrigger\(currentTrigger, candidateTrigger\)/.test(shoppingChromeWorker)
     && /candidate === "rank-remote"/.test(shoppingChromeWorker)
@@ -695,10 +704,7 @@ check(
     && /result\.status === "control_plane_failed"/.test(shoppingChromeWorker)
     && /result\.status !== "completed"/.test(shoppingChromeWorker)
     && /verification\.blockedUntil > Date\.now\(\)/.test(shoppingChromeWorker)
-    && /chrome\.windows\.update\(controller\.windowId, \{ state: "normal" \}\)/.test(shoppingChromeWorker)
     && /chrome_already_running profile=/.test(shoppingWindowsChromeScheduler)
-    && /action: "controller-run"/.test(shoppingChromeWorker)
-    && /if \(!EXTENSION_PAGE_CONTEXT\)/.test(shoppingChromeWorker)
     && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)
     && /RANK_LOOKUP_WORKER_STALLED/.test(shoppingRankLookupJobs)
     && /pending: false/.test(shoppingRankLookupJobs)
@@ -744,7 +750,7 @@ check(
     && [adminPage, clientPage].every((source) =>
       /queuedPayload\.remoteWakeRequested === true/.test(source)
         && /개발 프로필에 원격 실행을 요청했습니다\./.test(source)),
-  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingRankLookupLeasePrecisionMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
+  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingRankLookupLeasePrecisionMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingChromePopup}, ${files.shoppingChromePopupHtml}, ${files.adminPage}, ${files.clientPage}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

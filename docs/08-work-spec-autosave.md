@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-12 N쇼핑 백그라운드 수집 화면 계약
+
+- 일반 순위 수집은 사용자 화면을 전환하지 않는다. 네이버 1~8페이지는 `active:false`로 열고 완료 후 닫으며, 보안확인·접속 제한이 감지된 네이버 탭만 일반 창으로 복원·표시한다.
+- 흰 화면의 원인은 수집 웹이 아니라 전체 탭으로 열린 내부 `popup.html?controller=1`이었다. 확장 업데이트 시 기존 controller 탭을 찾아 제거하고 새 controller 탭은 만들지 않는다.
+- native 연결은 Manifest V3 service worker가 직접 소유한다. 열린 `connectNative` 포트와 작업 중 20초 간격의 유한 extension API heartbeat로 실행 수명을 보호하고, terminal `finally`에서 heartbeat·포트를 반드시 해제한다.
+- 실행 중 신호의 단일 우선순위 coalesce, 6초 native handoff, 직접 가격비교 8페이지, 3.5~6초 pacing, 광고 제외 원자 300개, typed 제한, last-good, global lane·lease 계약은 유지한다.
+- toolbar popup은 `popup.html`과 `popup.js`만 사용하며 `지금 안전 갱신` 버튼과 상태 안내를 유지한다. popup 화면을 작업 controller로 재사용하지 않는다.
+- 과거 5~7분 `processing`은 controller 도입 당시 숨김 탭 동결을 최우선 가설로 보완했지만 `frozen` 직접 관측은 없었고, 이후 lease 정밀도와 deadline 불일치가 별도로 확정됐다. 이번 변경은 정적 검사만으로 정상화를 보고하지 않고 Windows 실로드 해시·원자 300개·lane/lease 해제를 다시 확인한다.
+
 ## 2026-08-12 N플레이스 30일 기록 표시 계약
 
 - 일별 순위 카드의 리뷰값은 해당 snapshot의 정확 대상 `place` 직접 필드만 사용한다. 검색결과 후보 전체 합계인 nested `place.metrics`를 대상 업체 수치처럼 표시하지 않는다.
@@ -246,9 +255,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 02:03:03
-- 기준 커밋: cee8c39
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-role-query-parity.mjs /  M src/pages/admin.html /  M src/pages/client.html
+- 마지막 자동 저장: 2026. 08. 12. 02:11:40
+- 기준 커밋: 7d44468
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

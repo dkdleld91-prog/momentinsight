@@ -345,57 +345,60 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
   assert.match(nativeHost, /const readyAck = await nextMessage\(30_000\)/u);
   assert.match(nativeHost, /native_host_ready_ack_invalid/u);
-  assert.match(serviceWorker, /chrome\.runtime\.getURL\("popup\.html"\)/u);
-  assert.match(serviceWorker, /crypto\.randomUUID\(\)/u);
-  assert.match(serviceWorker, /autoDiscardable: false/u);
-  assert.match(serviceWorker, /pinned: true/u);
-  assert.match(serviceWorker, /controller\.discarded/u);
-  assert.match(serviceWorker, /action: "controller-run"/u);
-  assert.match(serviceWorker, /CONTROLLER_RESUME_TIMEOUT_MS = 15_000/u);
-  assert.match(serviceWorker, /current\.frozen === true/u);
-  assert.match(serviceWorker, /changeInfo\.frozen === false/u);
-  assert.match(serviceWorker, /await waitForControllerResumed\(controller\.id\)/u);
-  assert.match(serviceWorker, /active: true,\s*pinned: true,\s*autoDiscardable: false/u);
   assert.match(serviceWorker, /async function automaticVerificationCooldownActive\(trigger\)/u);
   assert.match(serviceWorker, /return verification\.blockedUntil > Date\.now\(\)/u);
-  assert.match(serviceWorker, /chrome\.windows\.update\(controller\.windowId, \{ state: "normal" \}\)/u);
   assert.match(serviceWorker, /return \{ ok: false, started: false, code: "naver_verification_cooldown" \}/u);
-  assert.match(serviceWorker, /if \(!EXTENSION_PAGE_CONTEXT\)/u);
-  assert.match(serviceWorker, /requestControllerRun\("manual"\)\.then\(sendResponse\)/u);
   assert.match(serviceWorker, /saveStatus\("standby", "다음 갱신 요청 대기 중"\)/u);
   assert.match(serviceWorker, /RUNNING_STATUS_STALE_MS = 20 \* 60_000/u);
   assert.match(serviceWorker, /updatedAt \+ RUNNING_STATUS_STALE_MS <= Date\.now\(\)/u);
   assert.match(serviceWorker, /saveStatus\("failed", "native_host_interrupted"\)/u);
   assert.match(serviceWorker, /return \{ ok: false, started: false, code: "already_running" \}/u);
-  assert.match(serviceWorker, /response\.queued === true[\s\S]{0,600}started: true,[\s\S]{0,120}queued: true/u);
+  assert.match(serviceWorker, /if \(running\)[\s\S]{0,500}if \(pending\.queued\)[\s\S]{0,300}started: true,[\s\S]{0,120}queued: true/u);
   assert.match(serviceWorker, /return \{ ok: false, code: "native_host_already_running", summary: result \}/u);
   assert.doesNotMatch(serviceWorker, /onAlarm\.addListener\(\(alarm\) => \{\s*if \(RUN_ALARMS\.has\(alarm\.name\)\) runWorker/u);
-  assert.ok(
-    popupHtml.indexOf('<script src="service-worker.js"></script>')
-      < popupHtml.indexOf('<script src="popup.js"></script>'),
+  assert.deepEqual(
+    Array.from(popupHtml.matchAll(/<script\s+src="([^"]+)"/gu), (match) => match[1]),
+    ["popup.js"],
   );
-  assert.match(popup, /controllerPage/u);
-  assert.match(popup, /runButton\.hidden = true/u);
+  assert.match(popupHtml, /<button id="run" type="button">지금 안전 갱신<\/button>/u);
+  assert.match(popup, /document\.getElementById\("run"\)/u);
+  assert.match(popup, /chrome\.runtime\.sendMessage\(\{ action: "run-now" \}\)/u);
+  assert.match(popup, /백그라운드에서 오가닉 순위를 확인합니다/u);
+  assert.doesNotMatch(popup, /가격비교 탭이 열립니다/u);
+  assert.doesNotMatch(popup, /controllerPage|runButton\.hidden/u);
+  assert.match(serviceWorker, /function requestWorkerRun\(trigger\)/u);
+  assert.match(serviceWorker, /if \(running\)[\s\S]{0,700}void runWorker\(trigger\)/u);
+  assert.match(serviceWorker, /chrome\.alarms\.onAlarm\.addListener\([\s\S]{0,180}requestWorkerRun\(alarm\.name\)/u);
+  assert.match(serviceWorker, /message\?\.action === "run-now"[\s\S]{0,180}requestWorkerRun\("manual"\)\.then\(sendResponse\)/u);
+  assert.match(serviceWorker, /function removeLegacyControllerTabs\(/u);
+  assert.doesNotMatch(serviceWorker, /ensureControllerTab|prepareControllerForDispatch|waitForControllerResumed|controller-run/u);
+  assert.doesNotMatch(serviceWorker, /changeInfo\.frozen|autoDiscardable:\s*false/u);
+  assert.doesNotMatch(serviceWorker, /chrome\.tabs\.create\(\{[\s\S]{0,160}popup\.html/u);
+  const verificationSurfaceStart = serviceWorker.indexOf("async function surfaceVerificationTab(tabId)");
+  const verificationSurfaceEnd = serviceWorker.indexOf("\nasync function ", verificationSurfaceStart + 1);
+  assert.ok(verificationSurfaceStart >= 0 && verificationSurfaceEnd > verificationSurfaceStart);
+  const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
+  assert.match(verificationSurfaceSource, /chrome\.windows\.update\(tab\.windowId, \{ state: "normal", focused: true \}\)/u);
+  assert.match(verificationSurfaceSource, /chrome\.tabs\.update\(tabId, \{ active: true \}\)/u);
+  const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
+  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true/u);
+  assert.doesNotMatch(nonVerificationSurfaceSource, /chrome\.windows\.update/u);
   const runWorkerSource = serviceWorker.slice(
     serviceWorker.indexOf('async function runWorker(trigger = "manual", options = {})'),
-    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
+    serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", serviceWorker.indexOf('async function runWorker(trigger = "manual", options = {})')),
   );
   assert.ok(runWorkerSource.indexOf("running = true") < runWorkerSource.indexOf("await verificationState()"));
-  const controllerDispatchSource = serviceWorker.slice(
-    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+  const workerRequestSource = serviceWorker.slice(
+    serviceWorker.indexOf("function requestWorkerRun(trigger)"),
     serviceWorker.indexOf("function searchUrl"),
   );
   assert.ok(
-    controllerDispatchSource.indexOf("await automaticVerificationCooldownActive(trigger)")
-      < controllerDispatchSource.indexOf("await ensureControllerTab()"),
-  );
-  assert.ok(
-    controllerDispatchSource.indexOf("await prepareControllerForDispatch(controller)")
-      < controllerDispatchSource.indexOf("chrome.runtime.sendMessage"),
+    workerRequestSource.indexOf("automaticVerificationCooldownActive(trigger)")
+      < workerRequestSource.indexOf("void runWorker(trigger)"),
   );
 });
 
-test("controller coalesces one highest-priority finite trigger behind an active run", () => {
+test("background worker coalesces one highest-priority finite trigger behind an active run", () => {
   const serviceWorker = fs.readFileSync(
     new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
     "utf8",
@@ -445,17 +448,25 @@ test("controller coalesces one highest-priority finite trigger behind an active 
   assert.equal(triggerQueue.takePendingTrigger(), "manual");
   assert.equal(triggerQueue.takePendingTrigger(), null);
 
-  const controllerSource = serviceWorker.slice(
-    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
-    serviceWorker.indexOf("if (!EXTENSION_PAGE_CONTEXT)"),
+  const requestStart = serviceWorker.indexOf("function requestWorkerRun(trigger)");
+  const requestEnd = serviceWorker.indexOf("function searchUrl", requestStart);
+  assert.ok(requestStart >= 0 && requestEnd > requestStart);
+  const requestSource = serviceWorker.slice(
+    requestStart,
+    requestEnd,
   );
-  assert.match(controllerSource, /alreadyRunning\s*\? queuePendingTrigger\(trigger\)/u);
-  assert.match(controllerSource, /queued: pending\.queued/u);
-  assert.match(controllerSource, /pendingTrigger: pending\.pendingTrigger/u);
+  assert.match(requestSource, /if \(running\) \{[\s\S]{0,120}const pending = queuePendingTrigger\(trigger\)/u);
+  assert.match(requestSource, /if \(pending\.queued\)[\s\S]{0,220}queued: true/u);
+  assert.match(requestSource, /pendingTrigger: String\(pending\.pendingTrigger/u);
+  assert.match(requestSource, /void runWorker\(trigger\)/u);
+  assert.doesNotMatch(requestSource, /chrome\.runtime\.sendMessage|ensureControllerTab|controller-run/u);
 
+  const workerStart = serviceWorker.indexOf('async function runWorker(trigger = "manual"');
+  const workerEnd = serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", workerStart);
+  assert.ok(workerStart >= 0 && workerEnd > workerStart);
   const workerSource = serviceWorker.slice(
-    serviceWorker.indexOf('async function runWorker(trigger = "manual"'),
-    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
+    workerStart,
+    workerEnd,
   );
   assert.match(workerSource, /options\.respectVerificationCooldown === true/u);
   assert.match(
@@ -591,35 +602,98 @@ test("page-eight status and verification cleanup failures still emit collection_
   assert.equal(runtime.clearAttempts(), 1);
 });
 
-test("Chrome controller resumes a frozen tab before dispatch without hiding active verification", () => {
+test("Chrome worker removes legacy controller tabs and only surfaces Naver verification", () => {
   const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
   const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
   const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", extensionDirectory), "utf8"));
   const verificationGuardSource = serviceWorker.slice(
     serviceWorker.indexOf("async function automaticVerificationCooldownActive(trigger)"),
-    serviceWorker.indexOf("function waitForControllerResumed"),
+    serviceWorker.indexOf("async function requestWorkerRun(trigger)"),
   );
-  const resumeSource = serviceWorker.slice(
-    serviceWorker.indexOf("function waitForControllerResumed"),
-    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+  const cleanupSource = serviceWorker.slice(
+    serviceWorker.indexOf("function isLegacyControllerTab(tab)"),
+    serviceWorker.indexOf("async function automaticVerificationCooldownActive(trigger)"),
   );
-  const dispatchSource = serviceWorker.slice(
-    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+  const requestSource = serviceWorker.slice(
+    serviceWorker.indexOf("async function requestWorkerRun(trigger)"),
     serviceWorker.indexOf("function searchUrl"),
   );
+  const verificationSurfaceStart = serviceWorker.indexOf("async function surfaceVerificationTab(tabId)");
+  const verificationSurfaceEnd = serviceWorker.indexOf("\nasync function ", verificationSurfaceStart + 1);
+  const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
+  const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
   assert.equal(manifest.version, "1.1.1");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
-  assert.match(resumeSource, /CONTROLLER_RESUME_TIMEOUT_MS/u);
-  assert.match(resumeSource, /changeInfo\.frozen === false/u);
-  assert.match(resumeSource, /active: true,\s*pinned: true,\s*autoDiscardable: false/u);
-  assert.ok(resumeSource.indexOf("chrome.tabs.update(controller.id") < resumeSource.indexOf("waitForControllerResumed(controller.id)"));
-  assert.ok(dispatchSource.indexOf("automaticVerificationCooldownActive(trigger)") < dispatchSource.indexOf("ensureControllerTab()"));
-  assert.ok(dispatchSource.indexOf("prepareControllerForDispatch(controller)") < dispatchSource.indexOf("chrome.runtime.sendMessage"));
-  assert.doesNotMatch(dispatchSource, /chrome\.tabs\.reload/u);
-  assert.match(serviceWorker, /chrome\.alarms\.onAlarm\.addListener\([\s\S]{0,180}requestControllerRun\(alarm\.name\)/u);
+  assert.match(cleanupSource, /url\.searchParams\.get\("controller"\) === "1"/u);
+  assert.match(cleanupSource, /chrome\.tabs\.query\(\{\}\)/u);
+  assert.match(cleanupSource, /chrome\.tabs\.remove\(tabId\)/u);
+  assert.doesNotMatch(cleanupSource, /chrome\.tabs\.(?:create|update|reload)|chrome\.windows\.update|frozen|pinned|autoDiscardable/u);
+  assert.ok(requestSource.indexOf("automaticVerificationCooldownActive(trigger)") < requestSource.indexOf("void runWorker(trigger)"));
+  assert.doesNotMatch(requestSource, /chrome\.runtime\.sendMessage|chrome\.tabs\.|chrome\.windows\.|controller-run/u);
+  assert.match(verificationSurfaceSource, /chrome\.windows\.update\(tab\.windowId, \{ state: "normal", focused: true \}\)/u);
+  assert.match(verificationSurfaceSource, /chrome\.tabs\.update\(tabId, \{ active: true \}\)/u);
+  assert.doesNotMatch(nonVerificationSurfaceSource, /active:\s*true|chrome\.windows\.update/u);
+  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: false \}\)/u);
+  assert.match(serviceWorker, /chrome\.tabs\.update\(tabId, \{ url, active: false \}\)/u);
+  assert.doesNotMatch(serviceWorker, /CONTROLLER_RESUME_TIMEOUT_MS|ensureControllerTab|prepareControllerForDispatch|waitForControllerResumed|changeInfo\.frozen|autoDiscardable:\s*false|controller-run/u);
+  assert.match(serviceWorker, /chrome\.alarms\.onAlarm\.addListener\([\s\S]{0,180}requestWorkerRun\(alarm\.name\)/u);
+});
+
+test("direct worker keepalive starts immediately, repeats every 20 seconds and stops finitely", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const keepAliveConstant = serviceWorker.match(/const WORKER_KEEPALIVE_INTERVAL_MS = 20_000;/u)?.[0] || "";
+  const keepAliveStart = serviceWorker.indexOf("function startWorkerKeepAlive()");
+  const keepAliveEnd = serviceWorker.indexOf("async function runWorker", keepAliveStart);
+  assert.equal(keepAliveConstant, "const WORKER_KEEPALIVE_INTERVAL_MS = 20_000;");
+  assert.ok(keepAliveStart >= 0 && keepAliveEnd > keepAliveStart);
+
+  let heartbeatCount = 0;
+  const scheduled = [];
+  const cleared = [];
+  const startWorkerKeepAlive = runInNewContext(`
+    ${keepAliveConstant}
+    ${serviceWorker.slice(keepAliveStart, keepAliveEnd)}
+    startWorkerKeepAlive;
+  `, {
+    chrome: {
+      runtime: {
+        getPlatformInfo() {
+          heartbeatCount += 1;
+          return Promise.resolve({ os: "win" });
+        },
+      },
+    },
+    setInterval(callback, milliseconds) {
+      const timer = { callback, milliseconds };
+      scheduled.push(timer);
+      return timer;
+    },
+    clearInterval(timer) {
+      cleared.push(timer);
+    },
+  });
+
+  const stop = startWorkerKeepAlive();
+  assert.equal(heartbeatCount, 1);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].milliseconds, 20_000);
+  scheduled[0].callback();
+  assert.equal(heartbeatCount, 2);
+  stop();
+  assert.deepEqual(cleared, [scheduled[0]]);
+
+  const workerStart = serviceWorker.indexOf('async function runWorker(trigger = "manual"');
+  const workerEnd = serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", workerStart);
+  const workerSource = serviceWorker.slice(workerStart, workerEnd);
+  assert.ok(workerSource.indexOf("chrome.runtime.connectNative") < workerSource.indexOf("startWorkerKeepAlive()"));
+  assert.match(workerSource, /if \(stopKeepAlive\) stopKeepAlive\(\)/u);
+  assert.ok(workerSource.indexOf("stopKeepAlive()") < workerSource.indexOf("port.disconnect()"));
 });
 
 test("extension preserves typed collection errors and maps raw Chrome errors to their stage", () => {

@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-12 N쇼핑 백그라운드 작업기 회귀
+
+- 확장 popup은 `popup.js`만 로드하고 `지금 안전 갱신`/`run-now` 계약을 유지하며, 서비스 워커가 `popup.html?controller=1` 가시 탭을 새로 만들지 않음을 잠급니다.
+- direct worker 요청은 실행 중 `manual > catch-up > 09/15 > remote` 단일 신호 병합을 유지하고, idle이면 native worker를 직접 시작합니다. 20초 keepalive는 즉시 시작·주기 실행·terminal 정리를 VM으로 검증합니다.
+- 일반 수집의 `active:true` 사용을 금지하고, 보안확인 표시 함수에서만 네이버 탭과 창을 활성화하도록 분리합니다. 구형 controller 탭은 update/startup에서 유한 삭제합니다.
+- 직접 8페이지·3.5~6초 pacing·페이지 스트리밍·원자 300개·native input-close·6초 handoff·typed error 회귀를 함께 유지합니다.
+- Windows 설치본의 실제 SHA, 흰 controller 탭 0개, 단건 원자 300개와 lane·lease 해제는 배포 후 별도 운영 증거로 기록합니다.
+
 ## 2026-08-12 N플레이스 일별 카드 진실성 회귀
 
 - 운영 snapshot 대조로 대상 직접 리뷰 232·3,594와 기존 검색결과 집계 65,108·264,467의 차이를 확인했습니다. 새 renderer는 direct `snapshot.place`만 읽고 aggregate-only fixture는 `null`로 거부합니다.

@@ -4,7 +4,7 @@ const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
 const PAGE_SCRIPT_TIMEOUT_MS = 15_000;
 const COLLECTION_TIMEOUT_MS = 12 * 60_000;
-const CONTROLLER_RESUME_TIMEOUT_MS = 15_000;
+const WORKER_KEEPALIVE_INTERVAL_MS = 20_000;
 const RUNNING_STATUS_STALE_MS = 20 * 60_000;
 const PAGE_REQUEST_INTERVAL_MS = 3_500;
 const PAGE_REQUEST_JITTER_MS = 2_500;
@@ -25,15 +25,7 @@ const RUN_TRIGGER_PRIORITY = Object.freeze({
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
-const EXTENSION_PAGE_CONTEXT = typeof document !== "undefined";
-const CONTROLLER_PAGE_BASE_URL = new URL(chrome.runtime.getURL("popup.html"));
-const CONTROLLER_PAGE_LOCATION = EXTENSION_PAGE_CONTEXT ? new URL(globalThis.location.href) : null;
-const IS_CONTROLLER_PAGE = EXTENSION_PAGE_CONTEXT
-  && CONTROLLER_PAGE_LOCATION.searchParams.get("controller") === "1"
-  && Boolean(CONTROLLER_PAGE_LOCATION.searchParams.get("token"));
-const CONTROLLER_TOKEN = IS_CONTROLLER_PAGE
-  ? String(CONTROLLER_PAGE_LOCATION.searchParams.get("token") || "")
-  : "";
+const LEGACY_CONTROLLER_PAGE_URL = new URL(chrome.runtime.getURL("popup.html"));
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
   "naver_captcha_detected",
@@ -55,7 +47,6 @@ function selectPendingTrigger(currentTrigger, candidateTrigger) {
 
 let running = false;
 let pendingTrigger = null;
-let controllerPromise = null;
 let runtimeIdentityPromise = null;
 
 function queuePendingTrigger(trigger) {
@@ -136,6 +127,10 @@ async function surfaceVerificationTab(tabId) {
   if (current.tabId && current.tabId !== tabId) {
     await chrome.tabs.remove(current.tabId).catch(() => {});
   }
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (Number.isInteger(tab?.windowId)) {
+    await chrome.windows.update(tab.windowId, { state: "normal", focused: true }).catch(() => {});
+  }
   await chrome.tabs.update(tabId, { active: true }).catch(() => {});
   await chrome.storage.local.set({
     [VERIFICATION_BLOCKED_UNTIL_KEY]: Date.now() + VERIFICATION_COOLDOWN_MS,
@@ -196,47 +191,25 @@ async function configureAlarms(requestedCadence = null) {
   }));
 }
 
-async function ensureControllerTab() {
-  if (controllerPromise) return controllerPromise;
-  controllerPromise = (async () => {
-    const tabs = await chrome.tabs.query({});
-    let controller = tabs.find((tab) => {
-      try {
-        const url = new URL(tab.pendingUrl || tab.url || "");
-        return url.protocol === CONTROLLER_PAGE_BASE_URL.protocol
-          && url.host === CONTROLLER_PAGE_BASE_URL.host
-          && url.pathname === CONTROLLER_PAGE_BASE_URL.pathname
-          && url.searchParams.get("controller") === "1"
-          && Boolean(url.searchParams.get("token"));
-      } catch {
-        return false;
-      }
-    }) || null;
-    if (!controller) {
-      const controllerUrl = new URL(CONTROLLER_PAGE_BASE_URL.toString());
-      controllerUrl.searchParams.set("controller", "1");
-      controllerUrl.searchParams.set("token", crypto.randomUUID());
-      controller = await chrome.tabs.create({
-        url: controllerUrl.toString(),
-        active: false,
-        pinned: true,
-      });
-    } else if (controller.discarded) {
-      await chrome.tabs.reload(controller.id);
-      controller = { ...controller, status: "loading" };
-    }
-    if (controller.status !== "complete") await waitForTabComplete(controller.id);
-    await chrome.tabs.update(controller.id, {
-      pinned: true,
-      autoDiscardable: false,
-    });
-    return controller;
-  })();
+function isLegacyControllerTab(tab) {
   try {
-    return await controllerPromise;
-  } finally {
-    controllerPromise = null;
+    const url = new URL(tab?.pendingUrl || tab?.url || "");
+    return url.protocol === LEGACY_CONTROLLER_PAGE_URL.protocol
+      && url.host === LEGACY_CONTROLLER_PAGE_URL.host
+      && url.pathname === LEGACY_CONTROLLER_PAGE_URL.pathname
+      && url.searchParams.get("controller") === "1";
+  } catch {
+    return false;
   }
+}
+
+async function removeLegacyControllerTabs() {
+  const tabs = await chrome.tabs.query({});
+  const controllerIds = tabs
+    .filter(isLegacyControllerTab)
+    .map((tab) => tab.id)
+    .filter(Number.isInteger);
+  await Promise.all(controllerIds.map((tabId) => chrome.tabs.remove(tabId).catch(() => {})));
 }
 
 async function automaticVerificationCooldownActive(trigger) {
@@ -245,94 +218,30 @@ async function automaticVerificationCooldownActive(trigger) {
   return verification.blockedUntil > Date.now();
 }
 
-function waitForControllerResumed(tabId) {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    function finish(error, tab) {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      chrome.tabs.onUpdated.removeListener(listener);
-      if (error) reject(error);
-      else resolve(tab);
-    }
-    const timeout = setTimeout(() => {
-      finish(new Error("rank_controller_resume_timeout"));
-    }, CONTROLLER_RESUME_TIMEOUT_MS);
-    function listener(updatedId, changeInfo, tab) {
-      if (updatedId !== tabId) return;
-      if (changeInfo.frozen === false || tab?.frozen !== true) finish(null, tab);
-    }
-    chrome.tabs.onUpdated.addListener(listener);
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.frozen !== true) finish(null, tab);
-    }).catch((error) => finish(error));
-  });
-}
-
-async function prepareControllerForDispatch(controller) {
-  const platform = await chrome.runtime.getPlatformInfo();
-  if (platform.os === "win") {
-    await chrome.windows.update(controller.windowId, { state: "normal" });
-  }
-  const current = await chrome.tabs.get(controller.id);
-  const wasFrozen = current.frozen === true;
-  let activated = await chrome.tabs.update(controller.id, {
-    active: true,
-    pinned: true,
-    autoDiscardable: false,
-  });
-  if (!activated) activated = await chrome.tabs.get(controller.id);
-  if (wasFrozen || activated?.frozen === true) {
-    activated = await waitForControllerResumed(controller.id);
-  }
-  if (activated.status !== "complete") activated = await waitForTabComplete(controller.id);
-  return activated;
-}
-
-async function requestControllerRun(trigger) {
+async function requestWorkerRun(trigger) {
   if (await automaticVerificationCooldownActive(trigger)) {
     await saveStatus("verification", "naver_verification_cooldown");
     return { ok: false, started: false, code: "naver_verification_cooldown" };
   }
-  let controller = await ensureControllerTab();
-  controller = await prepareControllerForDispatch(controller);
-  const controllerToken = String(new URL(controller.pendingUrl || controller.url).searchParams.get("token") || "");
-  if (!controllerToken) throw new Error("rank_controller_token_missing");
-  let lastError = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        action: "controller-run",
-        target: controllerToken,
-        trigger,
-      });
-      if (response?.accepted === true) {
-        if (response.alreadyRunning === true) {
-          if (response.queued === true) {
-            // The popup treats `started` as an accepted asynchronous request.
-            // Keep it out of the false "completed" branch while the controller
-            // runs this one coalesced trigger immediately after the active job.
-            return {
-              ok: true,
-              started: true,
-              queued: true,
-              pendingTrigger: String(response.pendingTrigger || ""),
-            };
-          }
-          return { ok: false, started: false, code: "already_running" };
-        }
-        return {
-          ok: true,
-          started: response.started === true,
-        };
-      }
-    } catch (error) {
-      lastError = error;
+  if (running) {
+    const pending = queuePendingTrigger(trigger);
+    if (pending.queued) {
+      // The popup treats `started` as an accepted asynchronous request. Keep
+      // the coalesced follow-up out of its false "completed" branch.
+      return {
+        ok: true,
+        started: true,
+        queued: true,
+        pendingTrigger: String(pending.pendingTrigger || ""),
+      };
     }
-    await wait(250);
+    return { ok: false, started: false, code: "already_running" };
   }
-  throw lastError || new Error("rank_controller_unavailable");
+  // connectNative() keeps an MV3 service worker alive while its native port is
+  // open. The finite extension-API heartbeat below adds a second bounded guard
+  // without creating any visible controller tab.
+  void runWorker(trigger);
+  return { ok: true, started: true };
 }
 
 function searchUrl(keyword, pageIndex) {
@@ -485,9 +394,9 @@ async function saveStatus(status, detail = "") {
   });
 }
 
-async function saveControllerFailure() {
+async function saveWorkerFailure() {
   try {
-    await saveStatus("failed", "rank_controller_unavailable");
+    await saveStatus("failed", "rank_worker_unavailable");
   } catch {
     // Chrome storage is the final user-visible reporting channel.
   }
@@ -531,10 +440,20 @@ function nativeDisconnectCode(lastErrorMessage) {
   return message ? "native_host_disconnected" : "native_host_closed";
 }
 
+function startWorkerKeepAlive() {
+  const heartbeat = () => {
+    void chrome.runtime.getPlatformInfo().catch(() => {});
+  };
+  heartbeat();
+  const timer = setInterval(heartbeat, WORKER_KEEPALIVE_INTERVAL_MS);
+  return () => clearInterval(timer);
+}
+
 async function runWorker(trigger = "manual", options = {}) {
   if (running) return { ok: false, code: "already_running" };
   running = true;
   let port = null;
+  let stopKeepAlive = null;
   try {
     const automatic = trigger !== "manual" || options.respectVerificationCooldown === true;
     const verification = await verificationState();
@@ -545,6 +464,7 @@ async function runWorker(trigger = "manual", options = {}) {
     await saveStatus("running", trigger);
     if (options.waitForNativeHandoff === true) await wait(PENDING_TRIGGER_HANDOFF_MS);
     port = chrome.runtime.connectNative(NATIVE_HOST);
+    stopKeepAlive = startWorkerKeepAlive();
     const runtimeIdentity = await extensionRuntimeIdentity();
     const result = await new Promise((resolve, reject) => {
       let settled = false;
@@ -650,13 +570,14 @@ async function runWorker(trigger = "manual", options = {}) {
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {
+    if (stopKeepAlive) stopKeepAlive();
     if (port) port.disconnect();
     const nextTrigger = takePendingTrigger();
     running = false;
     if (nextTrigger) {
-      // Reserve the controller synchronously, report the queued run as active,
-      // then give the previous native host one finite, bounded interval to
-      // release its Windows mutex before the next connection.
+      // Reserve the direct worker synchronously, report the queued run as
+      // active, then give the previous native host one finite, bounded interval
+      // to release its Windows mutex before the next connection.
       void runWorker(nextTrigger, {
         respectVerificationCooldown: true,
         waitForNativeHandoff: true,
@@ -665,54 +586,33 @@ async function runWorker(trigger = "manual", options = {}) {
   }
 }
 
-if (IS_CONTROLLER_PAGE) {
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.action !== "controller-run" || message?.target !== CONTROLLER_TOKEN) return false;
-    const trigger = String(message.trigger || "manual");
-    const alreadyRunning = running;
-    const pending = alreadyRunning
-      ? queuePendingTrigger(trigger)
-      : { queued: false, pendingTrigger: null };
-    if (!alreadyRunning) void runWorker(trigger);
-    sendResponse({
-      accepted: true,
-      started: !alreadyRunning,
-      alreadyRunning,
-      queued: pending.queued,
-      pendingTrigger: pending.pendingTrigger,
-    });
-    return false;
-  });
-}
-
-if (!EXTENSION_PAGE_CONTEXT) {
-  chrome.runtime.onInstalled.addListener(() => {
-    void configureAlarms();
-    void ensureControllerTab().catch(() => saveControllerFailure());
-  });
-  chrome.runtime.onStartup.addListener(() => {
-    void configureAlarms();
-    void ensureControllerTab().catch(() => saveControllerFailure());
-  });
-  chrome.alarms.onAlarm.addListener((alarm) => {
-    if (RUN_ALARMS.has(alarm.name)) {
-      void requestControllerRun(alarm.name).catch(() => saveControllerFailure());
-    }
-  });
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.action === "run-now") {
-      requestControllerRun("manual").then(sendResponse).catch((error) => {
-        sendResponse({ ok: false, code: String(error?.message || "rank_controller_unavailable") });
-      });
-      return true;
-    }
-    if (message?.action === "status") {
-      loadVisibleStatus().then(sendResponse).catch(() => {
-        sendResponse({ status: "failed", detail: "rank_controller_unavailable" });
-      });
-      return true;
-    }
-    return false;
-  });
+chrome.runtime.onInstalled.addListener(() => {
   void configureAlarms();
-}
+  void removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+});
+chrome.runtime.onStartup.addListener(() => {
+  void configureAlarms();
+  void removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+});
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (RUN_ALARMS.has(alarm.name)) {
+    void requestWorkerRun(alarm.name).catch(() => saveWorkerFailure());
+  }
+});
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.action === "run-now") {
+    requestWorkerRun("manual").then(sendResponse).catch((error) => {
+      sendResponse({ ok: false, code: String(error?.message || "rank_worker_unavailable") });
+    });
+    return true;
+  }
+  if (message?.action === "status") {
+    loadVisibleStatus().then(sendResponse).catch(() => {
+      sendResponse({ status: "failed", detail: "rank_worker_unavailable" });
+    });
+    return true;
+  }
+  return false;
+});
+void configureAlarms();
+void removeLegacyControllerTabs().catch(() => saveWorkerFailure());

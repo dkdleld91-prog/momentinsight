@@ -1,6 +1,5 @@
 const statusElement = document.getElementById("status");
 const runButton = document.getElementById("run");
-const controllerPage = new URL(window.location.href).searchParams.get("controller") === "1";
 
 const FAILURE_TEXT = {
   native_host_not_found: "Chrome을 완전히 종료한 뒤 다시 실행해 주세요",
@@ -14,6 +13,7 @@ const FAILURE_TEXT = {
   native_host_interrupted: "중단된 작업을 정리했습니다. 다시 시작해 주세요",
   native_host_timeout: "갱신 시간이 초과되었습니다. 자동 재시도합니다",
   rank_controller_unavailable: "순위 작업 탭을 다시 연결하지 못했습니다. Chrome을 다시 실행해 주세요",
+  rank_worker_unavailable: "순위 작업기를 다시 연결하지 못했습니다. Chrome을 다시 실행해 주세요",
   local_worker_disabled: "순위 작업기가 비활성화되어 있습니다. 설치 상태를 확인해 주세요",
   already_running: "이미 안전 갱신이 진행 중입니다",
   naver_verification_required: "열린 네이버 보안확인을 완료한 뒤 다시 눌러 주세요",
@@ -61,7 +61,7 @@ runButton.addEventListener("click", async () => {
   try {
     const result = await chrome.runtime.sendMessage({ action: "run-now" });
     if (result?.started) {
-      statusElement.textContent = "갱신 요청을 접수했습니다. 30~45초 안전 대기 후 가격비교 탭이 열립니다.";
+      statusElement.textContent = "갱신 요청을 접수했습니다. 백그라운드에서 오가닉 순위를 확인합니다.";
       window.setTimeout(refreshStatus, 1000);
       return;
     }
@@ -82,8 +82,3 @@ runButton.addEventListener("click", async () => {
 });
 
 refreshStatus();
-if (controllerPage) {
-  document.title = "Moment Insight 순위 작업기";
-  runButton.hidden = true;
-  window.setInterval(refreshStatus, 5_000);
-}

@@ -2,6 +2,8 @@ const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
 const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up", "rank-remote"]);
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
+const PAGE_SCRIPT_TIMEOUT_MS = 15_000;
+const COLLECTION_TIMEOUT_MS = 12 * 60_000;
 const SEARCH_DWELL_INTERVAL_MS = 12_000;
 const SEARCH_DWELL_JITTER_MS = 8_000;
 const PAGE_REQUEST_INTERVAL_MS = 25_000;
@@ -20,6 +22,13 @@ let running = false;
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function withTimeout(promise, milliseconds, code) {
+  return Promise.race([
+    promise,
+    wait(milliseconds).then(() => { throw new Error(code); }),
+  ]);
 }
 
 function pageRequestDelay() {
@@ -132,7 +141,7 @@ function waitForTabComplete(tabId) {
 }
 
 async function readNextData(tabId) {
-  const results = await chrome.scripting.executeScript({
+  const results = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
     func: () => {
       const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
@@ -146,7 +155,7 @@ async function readNextData(tabId) {
         url: location.href,
       };
     },
-  });
+  }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
   const value = results?.[0]?.result || {};
   if (value.restricted) throw new Error("naver_network_restricted");
   if (value.blocked) throw new Error("naver_verification_required");
@@ -158,7 +167,7 @@ async function readNextData(tabId) {
 }
 
 async function readPriceCompareEntry(tabId, keyword) {
-  const results = await chrome.scripting.executeScript({
+  const results = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
     args: [normalizedKeyword(keyword)],
     func: (expectedKeyword) => {
@@ -183,7 +192,7 @@ async function readPriceCompareEntry(tabId, keyword) {
       }
       return { error: "naver_price_compare_target_missing" };
     },
-  });
+  }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
   const value = results?.[0]?.result || {};
   if (value.error) throw new Error(value.error);
   if (!value.url) throw new Error("naver_price_compare_target_missing");
@@ -205,7 +214,7 @@ async function waitForPriceCompareEntry(tabId, keyword) {
 }
 
 async function readNextPageTarget(tabId, keyword, pageIndex) {
-  const results = await chrome.scripting.executeScript({
+  const results = await withTimeout(chrome.scripting.executeScript({
     target: { tabId },
     args: [normalizedKeyword(keyword), pageIndex],
     func: (expectedKeyword, expectedPage) => {
@@ -244,7 +253,7 @@ async function readNextPageTarget(tabId, keyword, pageIndex) {
       }
       return { error: "naver_pagination_target_missing" };
     },
-  });
+  }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
   const value = results?.[0]?.result || {};
   if (value.error) throw new Error(value.error);
   if (!value.url) throw new Error("naver_pagination_target_missing");
@@ -261,23 +270,33 @@ async function collectPages(request) {
     throw new Error("native_request_invalid");
   }
   const pages = [];
+  const deadline = Date.now() + COLLECTION_TIMEOUT_MS;
+  const assertWithinDeadline = () => {
+    if (Date.now() >= deadline) throw new Error("provider_deadline_exceeded");
+  };
   let tabId = null;
   let keepTabOpen = false;
   try {
     const tab = await chrome.tabs.create({ url: "https://www.naver.com/", active: false });
     tabId = tab.id;
+    assertWithinDeadline();
     await waitForTabComplete(tabId);
     await wait(searchDwellDelay());
+    assertWithinDeadline();
     await navigateTab(tabId, naverSearchUrl(request.keyword));
     const priceCompareEntry = await waitForPriceCompareEntry(tabId, request.keyword);
     await wait(searchDwellDelay());
+    assertWithinDeadline();
     await navigateTab(tabId, priceCompareEntry);
 
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
+      assertWithinDeadline();
       pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
+      await saveStatus("running", `page ${pageIndex}/${PAGE_COUNT}`);
       if (pageIndex < PAGE_COUNT) {
         const nextPageTarget = await readNextPageTarget(tabId, request.keyword, pageIndex + 1);
         await wait(pageRequestDelay());
+        assertWithinDeadline();
         await navigateTab(tabId, nextPageTarget);
       }
     }

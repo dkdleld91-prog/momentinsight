@@ -280,7 +280,7 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.40");
+  assert.equal(manifest.version, "1.0.41");
   assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
   assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
   assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
@@ -292,6 +292,10 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
   assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
   assert.match(serviceWorker, /SEARCH_DWELL_INTERVAL_MS = 12_000/u);
+  assert.match(serviceWorker, /PAGE_SCRIPT_TIMEOUT_MS = 15_000/u);
+  assert.match(serviceWorker, /COLLECTION_TIMEOUT_MS = 12 \* 60_000/u);
+  assert.match(serviceWorker, /naver_page_script_timeout/u);
+  assert.match(serviceWorker, /provider_deadline_exceeded/u);
   assert.match(serviceWorker, /SEARCH_DWELL_JITTER_MS = 8_000/u);
   assert.match(serviceWorker, /request\.limit !== 300/u);
   assert.match(serviceWorker, /request\.rankPolicy !== "organic_only"/u);

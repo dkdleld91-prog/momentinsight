@@ -1273,7 +1273,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.40"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.41"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1312,7 +1312,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.40"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.41"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

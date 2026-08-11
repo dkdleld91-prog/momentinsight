@@ -4,6 +4,12 @@
 
 ## 현재 상태
 
+### 2026-08-11 N쇼핑 실패·복구 원장과 무한반복 금지 계약
+
+- `docs/08-work-spec-autosave.md` 최상단에 Windows 수집 실패 원인, 각 복구 조치, v1.0.48 `남자팬티` 원자 300개 운영 증거를 하나의 영구 원장으로 통합했습니다.
+- 동일 단계·오류 2회 연속이면 추가 실기와 전체 순환을 중단하고 원인 확정·무외부 재현·단독 canary부터 다시 시작합니다. 이는 운영·개발 절차이며 자동 차단이 구현됐다고 과장하지 않습니다.
+- 성공 판정은 원자 `checkedCount=300`, lane·lease 해제, 중복 pending 없음, 설치 바이트 일치, 릴리스 검사와 문서 증거가 모두 갖춰진 경우로 고정했습니다. 런타임·API·DB는 이번 문서 작업에서 변경하지 않습니다.
+
 ### 2026-08-11 native 요청 deadline 계약 정렬 v1.0.48
 
 - Windows v1.0.47 `남자팬티` canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 `processing` 시작 45.452초 뒤 snapshot 없이 `pending`으로 복귀했습니다. 직접 8페이지 수집 뒤 native core가 요청을 검증할 때, 로컬 작업기의 29분 deadline이 collector의 최대 15분 계약을 넘겨 `invalid_request:deadlineAt`이 발생하고 안전 코드 경계에서 `local_worker_collection_failed`로 축약된 것이 확정 원인입니다.

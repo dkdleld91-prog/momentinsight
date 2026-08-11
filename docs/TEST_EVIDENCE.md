@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-11 N쇼핑 무한반복 금지 문서 계약
+
+- 실패 원장에는 native relay·설치 바이트 손상, controller 동결·watchdog 재최소화·중복 host, 불안정한 검색 경로, lookup lease 정밀도 불일치, 29분/15분 deadline 불일치, 네이버 보호 신호를 각각 원인과 복구 조치로 기록했습니다.
+- 복구 증거는 기능 commit `674f088e3304`, Windows 1.0.48, canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f`, collection `pw-chrome-1786433529434-26068a983fc715bd46ce`, 오가닉 300개·광고 45개 제외·100위, 증거 commit `20e6cd982cdf`, Production deployment `dpl_H11fdEb6Ao63VzQKYXWNuvv6Le2X`로 고정했습니다.
+- 문서 계약은 동일 실패 2회 후 추가 요청 중단, `남자팬티` 단독 canary, 자동 fallback 금지, 설치 파일 해시 확인, partial·제한 결과 미반영, Windows/Mac 단일 lane, 유한 timeout·lease·polling, 원자 300개 이후에만 전체 순환 재개를 요구합니다.
+- 이번 변경은 문서·운영 절차만 고정하며 런타임 자동 circuit breaker가 새로 구현됐다고 주장하지 않습니다.
+
 ## 2026-08-11 native 요청 deadline 계약 정렬 v1.0.48
 
 - 실기 증거: lookup `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 `2026-08-11 07:12:24.365+00`부터 `07:13:09.817+00`까지 45.452초 처리된 뒤 `attempts=1`, `error_code=local_worker_collection_failed`, 결과·collection 없이 pending으로 복귀했다.

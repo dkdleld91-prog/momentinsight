@@ -3,6 +3,37 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-11 N쇼핑 실패 이력·복구 증거·무한반복 금지 영구 계약
+
+이 항목은 임시 장애 메모가 아니라 N쇼핑 순위 수집의 영구 작업 기준이다. 아래 보호 기준은 새로운 Windows 원자 300개 실증과 대표 승인 없이 삭제하거나 완화하지 않는다.
+
+### 실패 이력
+
+- native messaging 표준 입출력 중계 누락과 손상된 Windows 확장 설치본 때문에 팝업이 `상태 확인 중`·`갱신 진행 중`에 머물고 실제 작업 claim이 시작되지 않았다. launcher binary relay와 원본 바이트 staging·문법검사·실로드 해시 검증으로 복구했다.
+- MV3 숨김 controller 동결, 10분 watchdog의 Chrome 재최소화, 중복 native host가 실행을 끊거나 `processing`을 고립시켰다. 실행 전 controller 활성·동결 해제, 실행 중 재로드 금지, 동일 Chrome 재호출 차단, 단일 controller/native 잠금과 유한 lease로 복구했다.
+- 홈 → N플러스 스토어 → 검색 → 가격비교 더보기 경로는 검색어만 입력하고 종료하거나 페이지 이동 결과 경쟁·스키마 변화로 반복 실패했다. 검증됐던 v1.0.5 방식의 `/search/all` 1~8페이지 직접 경로와 페이지 간 3.5~6초 대기로 복원했다.
+- lookup lease의 DB 마이크로초와 JavaScript 밀리초 정밀도 차이로 실패 RPC가 `releasedCount=0`이 되어 작업이 `processing`에 남았다. 신규 lease 밀리초 정렬, 기존 lease fallback, 해제 건수 fail-closed 검증으로 복구했다.
+- Windows v1.0.47은 로컬 요청 deadline 29분이 collector 최대 15분 계약을 위반해 `invalid_request:deadlineAt`이 발생했지만 `local_worker_collection_failed`로 축약되어 같은 작업이 재대기했다. v1.0.48에서 기본값과 override 상한을 14분으로 고정했다.
+- 네이버 보안확인·CAPTCHA·418·429·접속 제한은 장애가 아니라 즉시 중단해야 하는 보호 신호다. 자동 우회·쿠키 상시 삭제·VPN·요청 연타는 금지하며 마지막 정상 순위와 30일 이력을 보존한다.
+
+### 복구 완료 증거
+
+- 기능 commit `674f088e3304`, Windows 확장 1.0.48에서 승인된 단독 canary `남자팬티` 작업 `c70da9f9-15c5-450a-aa0b-515d63f4e69f`가 완료됐다.
+- collection `pw-chrome-1786433529434-26068a983fc715bd46ce`는 `naver_shopping_results_collector`·`naver_shopping_organic_list`, `checkedCount=300`, `complete=true`, `partial=false`, `organic_only`, `adExcluded=true`를 모두 만족했다. 광고 45개를 제외한 정확 상품 `12491798995`의 순위는 100위였고 global lane과 processing lease가 정상 해제됐다.
+- 증거 문서 commit `20e6cd982cdf`와 Production deployment `dpl_H11fdEb6Ao63VzQKYXWNuvv6Le2X` 반영 뒤 `/health`·`/ready`, 관리자·광고주 화면, 비인증 API 차단을 확인했다.
+
+### 무한반복 금지 운영·개발 규칙
+
+1. `processing`, 팝업 진행 표시, 페이지 이동 시도만으로 성공을 보고하지 않는다. 성공은 같은 Windows 설치본에서 원자 `checkedCount=300`과 lane·lease 해제를 함께 확인한 경우뿐이다.
+2. 같은 단계 또는 같은 오류 코드가 실기에서 2회 연속 발생하면 추가 canary와 전체 순환을 즉시 중단한다. 새 요청을 보내기 전에 로그·DB 상태·설치 바이트를 대조해 하나의 원인을 확정하고, 무외부 재현 또는 대상 회귀를 먼저 만든다. 이 항목은 운영 절차이며 자동 차단 기능으로 과장하지 않는다.
+3. 변경 후 첫 실기는 정확 상품이 300위 안에 있음이 확인된 `남자팬티` 한 건, `maxJobs=1`만 사용한다. 정상적으로 순위 이탈할 수 있는 광고주 키워드는 복구 canary로 사용하지 않는다.
+4. 첫 canary가 실패하면 같은 회차에서 다른 경로로 자동 fallback하거나 전체 키워드를 시도하지 않는다. 원인을 수정하고 Windows 설치 버전·서비스 워커 해시를 다시 확인한 뒤 단독 canary부터 재개한다.
+5. manifest 버전 표시만으로 설치 완료를 판단하지 않는다. Git commit, Production release, Windows 실제 로드 경로의 파일 버전·해시가 일치해야 하며, 신규 원자 300개 전에는 전체 순환을 정상화로 기록하지 않는다.
+6. 300개 미만·partial·보안확인·접속 제한·일반 오류 결과는 순위와 이력에 반영하지 않는다. 마지막 정상값을 유지하고 오류는 typed code로 남긴다. 일반 `local_worker_collection_failed`가 나오면 재시도보다 원인 진단을 우선한다.
+7. Windows primary와 Mac standby는 global lane 하나를 공유한다. 동일 작업·동일 키워드 동시 요청, 수동 갱신과 자동 순환의 중복 claim, 고아 controller/native host를 허용하지 않는다.
+8. 모든 실행은 유한해야 한다. job expiry·processing lease·native 응답·웹 polling 상한 뒤에는 terminal 또는 명시적 maintenance 상태로 끝나고, lane·lease·native 연결을 해제해야 한다. 같은 상태의 무기한 표시나 재호출은 실패로 판정한다.
+9. 정상화 완료 조건은 `단독 canary 원자 300개 -> lane·lease 해제 -> 중복 pending 없음 -> 전체 릴리스 검사 -> 실패·복구 증거 문서화 -> 승인된 전체 순환 재개` 순서다. 어느 한 단계라도 없으면 완료 보고와 확대 배포를 금지한다.
+
 ## 2026-08-11 native 요청 deadline 계약 정렬 v1.0.48
 
 - 원인: Windows v1.0.47 `남자팬티` canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 8페이지 직접 수집 시간과 일치하는 45.452초 뒤 실패했다. 로컬 작업기가 요청 만료를 29분 뒤로 생성했지만 공유 collector 계약은 현재 시각보다 15분을 초과한 만료를 `invalid_request:deadlineAt`으로 거부했고, 이 비공개 계약 오류가 `local_worker_collection_failed`로 축약됐다.
@@ -164,8 +195,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 16:34:04
-- 기준 커밋: 674f088
+- 마지막 자동 저장: 2026. 08. 11. 17:31:52
+- 기준 커밋: 20e6cd9
 - 작업트리: M docs/08-work-spec-autosave.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 

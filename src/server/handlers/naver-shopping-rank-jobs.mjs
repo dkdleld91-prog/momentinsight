@@ -20,6 +20,7 @@ const JOB_SELECT = [
   "message",
   "error_code",
   "expires_at",
+  "processing_until",
 ].join(", ");
 
 function json(request, body, status = 200) {
@@ -40,6 +41,11 @@ function bounded(value, maximum) {
 function numericId(value) {
   const id = String(value || "").trim();
   return NUMERIC_ID_PATTERN.test(id) ? id : "";
+}
+
+function timestampElapsed(value, now = Date.now()) {
+  const timestamp = Date.parse(String(value || ""));
+  return Number.isFinite(timestamp) && timestamp <= now;
 }
 
 export function rankLookupScopeHash(request) {
@@ -195,6 +201,26 @@ async function poll(request, ctx) {
       message: data.status === "expired"
         ? "조회 대기 시간이 지나 종료되었습니다. 중앙 Mac 연결 후 다시 시도해주세요."
         : "300위 전체 조회를 완료하지 못했습니다. 잠시 후 다시 시도해주세요.",
+    }, 503);
+  }
+  if (["pending", "processing"].includes(data.status) && timestampElapsed(data.expires_at)) {
+    return json(request, {
+      ok: false,
+      pending: false,
+      jobId,
+      status: "expired",
+      code: "RANK_LOOKUP_EXPIRED",
+      message: "조회 대기 시간이 지나 종료되었습니다. 작업용 데스크탑 연결 상태를 확인한 뒤 다시 시도해주세요.",
+    }, 503);
+  }
+  if (data.status === "processing" && timestampElapsed(data.processing_until)) {
+    return json(request, {
+      ok: false,
+      pending: false,
+      jobId,
+      status: "failed",
+      code: "RANK_LOOKUP_WORKER_STALLED",
+      message: "순위 조회 작업의 응답 시간이 지나 종료되었습니다. 작업용 데스크탑 상태를 확인한 뒤 다시 시도해주세요.",
     }, 503);
   }
   return json(request, {

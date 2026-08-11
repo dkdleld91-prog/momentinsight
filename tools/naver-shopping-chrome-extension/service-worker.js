@@ -4,6 +4,7 @@ const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
 const PAGE_SCRIPT_TIMEOUT_MS = 15_000;
 const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+const RUNNING_STATUS_STALE_MS = 20 * 60_000;
 const SEARCH_DWELL_INTERVAL_MS = 12_000;
 const SEARCH_DWELL_JITTER_MS = 8_000;
 const PAGE_REQUEST_INTERVAL_MS = 25_000;
@@ -11,6 +12,15 @@ const PAGE_REQUEST_JITTER_MS = 15_000;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
+const EXTENSION_PAGE_CONTEXT = typeof document !== "undefined";
+const CONTROLLER_PAGE_BASE_URL = new URL(chrome.runtime.getURL("popup.html"));
+const CONTROLLER_PAGE_LOCATION = EXTENSION_PAGE_CONTEXT ? new URL(globalThis.location.href) : null;
+const IS_CONTROLLER_PAGE = EXTENSION_PAGE_CONTEXT
+  && CONTROLLER_PAGE_LOCATION.searchParams.get("controller") === "1"
+  && Boolean(CONTROLLER_PAGE_LOCATION.searchParams.get("token"));
+const CONTROLLER_TOKEN = IS_CONTROLLER_PAGE
+  ? String(CONTROLLER_PAGE_LOCATION.searchParams.get("token") || "")
+  : "";
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
   "naver_captcha_detected",
@@ -19,6 +29,7 @@ const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_network_restricted",
 ]);
 let running = false;
+let controllerPromise = null;
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -99,6 +110,82 @@ async function configureAlarms() {
       await chrome.alarms.create(name, definition);
     }
   }));
+}
+
+async function ensureControllerTab() {
+  if (controllerPromise) return controllerPromise;
+  controllerPromise = (async () => {
+    const tabs = await chrome.tabs.query({});
+    let controller = tabs.find((tab) => {
+      try {
+        const url = new URL(tab.pendingUrl || tab.url || "");
+        return url.protocol === CONTROLLER_PAGE_BASE_URL.protocol
+          && url.host === CONTROLLER_PAGE_BASE_URL.host
+          && url.pathname === CONTROLLER_PAGE_BASE_URL.pathname
+          && url.searchParams.get("controller") === "1"
+          && Boolean(url.searchParams.get("token"));
+      } catch {
+        return false;
+      }
+    }) || null;
+    if (!controller) {
+      const controllerUrl = new URL(CONTROLLER_PAGE_BASE_URL.toString());
+      controllerUrl.searchParams.set("controller", "1");
+      controllerUrl.searchParams.set("token", crypto.randomUUID());
+      controller = await chrome.tabs.create({
+        url: controllerUrl.toString(),
+        active: false,
+        pinned: true,
+      });
+    } else if (controller.discarded) {
+      await chrome.tabs.reload(controller.id);
+      controller = { ...controller, status: "loading" };
+    }
+    if (controller.status !== "complete") await waitForTabComplete(controller.id);
+    await chrome.tabs.update(controller.id, {
+      pinned: true,
+      autoDiscardable: false,
+    });
+    return controller;
+  })();
+  try {
+    return await controllerPromise;
+  } finally {
+    controllerPromise = null;
+  }
+}
+
+async function requestControllerRun(trigger) {
+  const controller = await ensureControllerTab();
+  const controllerToken = String(new URL(controller.pendingUrl || controller.url).searchParams.get("token") || "");
+  if (!controllerToken) throw new Error("rank_controller_token_missing");
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (attempt > 0) {
+      await chrome.tabs.reload(controller.id);
+      await waitForTabComplete(controller.id);
+    }
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: "controller-run",
+        target: controllerToken,
+        trigger,
+      });
+      if (response?.accepted === true) {
+        if (response.alreadyRunning === true) {
+          return { ok: false, started: false, code: "already_running" };
+        }
+        return {
+          ok: true,
+          started: response.started === true,
+        };
+      }
+    } catch (error) {
+      lastError = error;
+    }
+    await wait(250);
+  }
+  throw lastError || new Error("rank_controller_unavailable");
 }
 
 function naverSearchUrl(keyword) {
@@ -326,6 +413,31 @@ async function saveStatus(status, detail = "") {
   });
 }
 
+async function saveControllerFailure() {
+  try {
+    await saveStatus("failed", "rank_controller_unavailable");
+  } catch {
+    // Chrome storage is the final user-visible reporting channel.
+  }
+}
+
+async function loadVisibleStatus() {
+  const stored = await chrome.storage.local.get("momentInsightRankStatus");
+  const status = stored.momentInsightRankStatus || { status: "ready", detail: "" };
+  const updatedAt = Date.parse(String(status.updatedAt || ""));
+  if (status.status === "running"
+    && Number.isFinite(updatedAt)
+    && updatedAt + RUNNING_STATUS_STALE_MS <= Date.now()) {
+    await saveStatus("failed", "native_host_interrupted");
+    return {
+      status: "failed",
+      detail: "native_host_interrupted",
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  return status;
+}
+
 function nativeDisconnectCode(lastErrorMessage) {
   const message = String(lastErrorMessage || "").trim().toLowerCase();
   if (message.includes("host not found") || message.includes("호스트를 찾을 수 없")) {
@@ -349,16 +461,17 @@ function nativeDisconnectCode(lastErrorMessage) {
 
 async function runWorker(trigger = "manual") {
   if (running) return { ok: false, code: "already_running" };
-  const automatic = trigger !== "manual";
-  const verification = await verificationState();
-  if (automatic && verification.blockedUntil > Date.now()) {
-    await saveStatus("verification", "naver_verification_cooldown");
-    return { ok: false, code: "naver_verification_cooldown" };
-  }
   running = true;
-  await saveStatus("running", trigger);
-  const port = chrome.runtime.connectNative(NATIVE_HOST);
+  let port = null;
   try {
+    const automatic = trigger !== "manual";
+    const verification = await verificationState();
+    if (automatic && verification.blockedUntil > Date.now()) {
+      await saveStatus("verification", "naver_verification_cooldown");
+      return { ok: false, code: "naver_verification_cooldown" };
+    }
+    await saveStatus("running", trigger);
+    port = chrome.runtime.connectNative(NATIVE_HOST);
     const result = await new Promise((resolve, reject) => {
       let settled = false;
       function finish(error, value) {
@@ -407,7 +520,16 @@ async function runWorker(trigger = "manual") {
       port.postMessage({ action: "run", trigger });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
+    if (result.status === "already_running") {
+      await saveStatus("standby", "기존 작업 종료 대기 중");
+      return { ok: false, code: "native_host_already_running", summary: result };
+    }
+    if (result.status === "disabled") {
+      await saveStatus("failed", "local_worker_disabled");
+      return { ok: false, code: "local_worker_disabled", summary: result };
+    }
     if (result.status === "standby" || (result.status === "idle" && result.remoteWake === false)) {
+      await saveStatus("standby", "다음 갱신 요청 대기 중");
       return { ok: true, idle: true, summary: result };
     }
     const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));
@@ -432,26 +554,52 @@ async function runWorker(trigger = "manual") {
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {
     running = false;
-    port.disconnect();
+    if (port) port.disconnect();
   }
 }
 
-chrome.runtime.onInstalled.addListener(() => configureAlarms());
-chrome.runtime.onStartup.addListener(() => configureAlarms());
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (RUN_ALARMS.has(alarm.name)) runWorker(alarm.name);
-});
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.action === "run-now") {
-    runWorker("manual").then(sendResponse);
-    return true;
-  }
-  if (message?.action === "status") {
-    chrome.storage.local.get("momentInsightRankStatus").then((stored) => {
-      sendResponse(stored.momentInsightRankStatus || { status: "ready", detail: "" });
+if (IS_CONTROLLER_PAGE) {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.action !== "controller-run" || message?.target !== CONTROLLER_TOKEN) return false;
+    const alreadyRunning = running;
+    if (!alreadyRunning) void runWorker(String(message.trigger || "manual"));
+    sendResponse({
+      accepted: true,
+      started: !alreadyRunning,
+      alreadyRunning,
     });
-    return true;
-  }
-  return false;
-});
-configureAlarms();
+    return false;
+  });
+}
+
+if (!EXTENSION_PAGE_CONTEXT) {
+  chrome.runtime.onInstalled.addListener(() => {
+    void configureAlarms();
+    void ensureControllerTab().catch(() => saveControllerFailure());
+  });
+  chrome.runtime.onStartup.addListener(() => {
+    void configureAlarms();
+    void ensureControllerTab().catch(() => saveControllerFailure());
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (RUN_ALARMS.has(alarm.name)) {
+      void requestControllerRun(alarm.name).catch(() => saveControllerFailure());
+    }
+  });
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.action === "run-now") {
+      requestControllerRun("manual").then(sendResponse).catch((error) => {
+        sendResponse({ ok: false, code: String(error?.message || "rank_controller_unavailable") });
+      });
+      return true;
+    }
+    if (message?.action === "status") {
+      loadVisibleStatus().then(sendResponse).catch(() => {
+        sendResponse({ status: "failed", detail: "rank_controller_unavailable" });
+      });
+      return true;
+    }
+    return false;
+  });
+  void configureAlarms();
+}

@@ -120,3 +120,68 @@ test("rejects a job request without a verified session scope before database acc
   assert.equal(response.status, 403);
   assert.equal((await response.json()).code, "RANK_LOOKUP_SCOPE_REQUIRED");
 });
+
+function pollingContext(data, selectedColumns = []) {
+  const query = {
+    select(columns) { selectedColumns.push(columns); return query; },
+    eq() { return query; },
+    async maybeSingle() { return { data, error: null }; },
+  };
+  return {
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, "naver_shopping_rank_lookup_jobs");
+        return query;
+      },
+    },
+  };
+}
+
+test("poll terminates a pending job after its expiry instead of polling forever", async () => {
+  const selectedColumns = [];
+  const response = await handleShoppingRankJobsRequest(sessionRequest(`?jobId=${JOB_ID}`), pollingContext({
+    id: JOB_ID,
+    status: "pending",
+    result: null,
+    expires_at: "2000-01-01T00:00:00.000Z",
+    processing_until: null,
+  }, selectedColumns));
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.pending, false);
+  assert.equal(payload.status, "expired");
+  assert.equal(payload.code, "RANK_LOOKUP_EXPIRED");
+  assert.match(selectedColumns[0], /processing_until/u);
+});
+
+test("poll terminates a processing job after its worker lease instead of polling forever", async () => {
+  const response = await handleShoppingRankJobsRequest(sessionRequest(`?jobId=${JOB_ID}`), pollingContext({
+    id: JOB_ID,
+    status: "processing",
+    result: null,
+    expires_at: "2099-01-01T00:00:00.000Z",
+    processing_until: "2000-01-01T00:00:00.000Z",
+  }));
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.pending, false);
+  assert.equal(payload.status, "failed");
+  assert.equal(payload.code, "RANK_LOOKUP_WORKER_STALLED");
+});
+
+test("poll keeps an active processing lease pending", async () => {
+  const response = await handleShoppingRankJobsRequest(sessionRequest(`?jobId=${JOB_ID}`), pollingContext({
+    id: JOB_ID,
+    status: "processing",
+    result: null,
+    expires_at: "2099-01-01T00:00:00.000Z",
+    processing_until: "2099-01-01T00:00:00.000Z",
+  }));
+  const payload = await response.json();
+
+  assert.equal(response.status, 202);
+  assert.equal(payload.pending, true);
+  assert.equal(payload.status, "processing");
+});

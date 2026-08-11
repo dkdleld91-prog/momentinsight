@@ -609,7 +609,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.42"
+  shoppingChromeManifest.version === "1.0.43"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -620,6 +620,14 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /trigger \}\)/.test(shoppingChromeWorker)
+    && /chrome\.runtime\.getURL\("popup\.html"\)/.test(shoppingChromeWorker)
+    && /crypto\.randomUUID\(\)/.test(shoppingChromeWorker)
+    && /autoDiscardable: false/.test(shoppingChromeWorker)
+    && /action: "controller-run"/.test(shoppingChromeWorker)
+    && /if \(!EXTENSION_PAGE_CONTEXT\)/.test(shoppingChromeWorker)
+    && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)
+    && /RANK_LOOKUP_WORKER_STALLED/.test(shoppingRankLookupJobs)
+    && /pending: false/.test(shoppingRankLookupJobs)
     && /chrome\.tabs\.create\(\{ url: "https:\/\/www\.naver\.com\/", active: false \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)

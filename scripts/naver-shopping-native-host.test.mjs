@@ -274,13 +274,14 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
 test("Chrome extension uses the normal Naver search to price-comparison path with safe pacing", () => {
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
+  const popupHtml = fs.readFileSync(path.join(extensionDirectory, "popup.html"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.42");
+  assert.equal(manifest.version, "1.0.43");
   assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
   assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
   assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
@@ -308,111 +309,6 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.match(localWorker, /action: "claim-lane"/u);
   assert.match(localWorker, /action: "release-lane"/u);
   assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 \* 60_000/u);
-  return;
-
-  assert.equal(manifest.version, "1.0.38");
-  assert.deepEqual(manifest.icons, {
-    16: "icon16.png",
-    32: "icon32.png",
-    48: "icon48.png",
-    128: "icon128.png",
-  });
-  assert.equal(manifest.action.default_icon[16], "icon16.png");
-  assert.equal(manifest.action.default_icon[32], "icon32.png");
-  for (const iconName of Object.values(manifest.icons)) {
-    assert.ok(fs.statSync(path.join(extensionDirectory, iconName)).size > 0);
-  }
-  assert.match(serviceWorker, /"rank-remote"/u);
-  assert.match(serviceWorker, /NATIVE_HOST_RUN_TIMEOUT_MS = 30 \* 60_000/u);
-  assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
-  assert.match(serviceWorker, /result\.status === "standby"/u);
-  assert.match(serviceWorker, /result\.status === "idle" && result\.remoteWake === false/u);
-  assert.match(localWorker, /action: "claim-lane"/u);
-  assert.match(localWorker, /action: "release-lane"/u);
-  assert.match(localWorker, /action: "block-lane"/u);
-  assert.doesNotMatch(serviceWorker, /rank-drain-follow-up/u);
-  assert.match(serviceWorker, /VERIFICATION_COOLDOWN_MS = 60 \* 60_000/u);
-  assert.match(serviceWorker, /NAVER_ACCESS_COOLDOWN_CODES/u);
-  assert.match(serviceWorker, /NAVER_MANUAL_RESUME_CODES/u);
-  assert.match(serviceWorker, /MANUAL_RESUME_REQUIRED_KEY/u);
-  assert.match(serviceWorker, /NETWORK_RETRY_COUNT_KEY/u);
-  assert.match(serviceWorker, /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[/u);
-  assert.match(serviceWorker, /NETWORK_RESTRICTION_RETRY_DELAYS_MS = \[\s*30 \* 60_000,\s*60 \* 60_000,\s*120 \* 60_000,\s*\]/u);
-  assert.match(serviceWorker, /scheduleNetworkRestrictionRetry/u);
-  assert.match(serviceWorker, /preserveNetworkRetryCount: true/u);
-  assert.match(serviceWorker, /naver_network_restricted/u);
-  assert.match(serviceWorker, /findResolvedNaverTab/u);
-  assert.match(serviceWorker, /surfaceVerificationTab/u);
-  assert.match(serviceWorker, /prepareVerificationState/u);
-  assert.match(serviceWorker, /inspectNaverTab/u);
-  assert.match(serviceWorker, /closeTab: false,[\s\S]{0,100}preserveNetworkRetryCount: true/u);
-  assert.match(serviceWorker, /const verificationPreparation = await prepareVerificationState\(trigger, verification\)/u);
-  assert.ok(
-    serviceWorker.indexOf("await prepareVerificationState(trigger, verification)")
-      < serviceWorker.indexOf("chrome.runtime.connectNative(NATIVE_HOST)"),
-  );
-  assert.match(serviceWorker, /collectPriceComparePages\(message\.request, collectionTabId, \{[\s\S]+activateTab: trigger === "manual"/u);
-  assert.match(serviceWorker, /function priceCompareSearchUrl/u);
-  assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
-  assert.match(serviceWorker, /url\.searchParams\.set\("frm", "NVSCTAB"\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
-  assert.match(serviceWorker, /PAGE_READY_STABILITY_MS = 500/u);
-  assert.match(serviceWorker, /urlMatches && dataMatches && value\.nextDataText/u);
-  assert.match(serviceWorker, /normalizedNaverQueryKeyword/u);
-  assert.match(serviceWorker, /args: \[keyword, pageIndex, normalizedNaverQueryKeyword\(keyword\)\]/u);
-  assert.match(serviceWorker, /url\.searchParams\.set\("query", expectedKeyword\)/u);
-  assert.match(serviceWorker, /naver_navigation_data_page_mismatch/u);
-  assert.match(serviceWorker, /naver_page_read_state_unstable/u);
-  assert.match(serviceWorker, /naver_page_navigation_result_missing/u);
-  assert.match(localWorker, /naver_navigation_data_page_mismatch/u);
-  assert.match(localWorker, /naver_page_read_state_unstable/u);
-  assert.match(localWorker, /naver_page_navigation_result_missing/u);
-  assert.match(localWorker, /naver_home_search_target_invalid/u);
-  assert.match(localWorker, /naver_price_compare_target_invalid/u);
-  assert.match(localWorker, /naver_price_compare_navigation_failed/u);
-  assert.match(serviceWorker, /const targetUrl = priceCompareSearchUrl\(request\.keyword, pageIndex\)/u);
-  assert.match(serviceWorker, /url: targetUrl/u);
-  assert.match(serviceWorker, /await waitForTabComplete\(tabId\)/u);
-  assert.match(serviceWorker, /async function executePageScript/u);
-  assert.match(serviceWorker, /await wait\(200\)/u);
-  assert.match(serviceWorker, /naver_page_script_failed/u);
-  assert.doesNotMatch(serviceWorker, /location\.assign\(url\.toString\(\)\)/u);
-  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url: targetUrl, active: activateTab \}\)/u);
-  assert.match(serviceWorker, /surfaceVerificationTab/u);
-  assert.match(serviceWorker, /surfaceNetworkRestrictionTab/u);
-  assert.match(serviceWorker, /PRICE_COMPARE_SEARCH_PATH = "\/search\/all"/u);
-  assert.match(serviceWorker, /pagingIndex/u);
-  assert.match(serviceWorker, /productSet/u);
-  assert.match(serviceWorker, /nextDataText/u);
-  assert.doesNotMatch(serviceWorker, /data-shp-contents-rank/u);
-  assert.match(serviceWorker, /CHROME_OPERATION_TIMEOUT_MS = 45_000/u);
-  assert.match(serviceWorker, /withTimeout\(chrome\.scripting\.executeScript/u);
-  assert.match(serviceWorker, /naver_page_script_failed/u);
-  assert.match(serviceWorker, /canonicalCollectionErrorCode/u);
-  assert.match(serviceWorker, /return "naver_selector_drift"/u);
-  assert.match(serviceWorker, /return "provider_browser_collection_failed"/u);
-  assert.match(serviceWorker, /type: "collection_error",[\s\S]{0,120}code: canonicalCollectionErrorCode\(error\)/u);
-  assert.match(serviceWorker, /if \(tabId != null && !error\.tabId\) error\.tabId = tabId/u);
-  assert.match(serviceWorker, /if \(error\?\.tabId\) collectionTabId = error\.tabId/u);
-  assert.match(serviceWorker, /if \(collectionTabId != null && !keepCollectionTabOpen\)/u);
-  assert.match(serviceWorker, /naver_verification_cooldown/u);
-  assert.match(serviceWorker, /failed > 0 \? "partial" : "completed"/u);
-  assert.match(serviceWorker, /재시도 \$\{failed\}건/u);
-  assert.match(popup, /status\?\.status === "partial"/u);
-  assert.match(popup, /확인 후 다시 시작/u);
-  assert.match(popup, /일부 갱신 완료/u);
-  assert.match(serviceWorker, /const workerTrigger = verificationPreparation\.recovered \? "rank-recovery" : trigger/u);
-  assert.match(serviceWorker, /if \(verification\.blockedUntil > 0\)[\s\S]{0,160}recovered: true/u);
-  assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger: workerTrigger \}\)/u);
-  assert.match(serviceWorker, /NATIVE_HOST_START_TIMEOUT_MS = 30_000/u);
-  assert.match(serviceWorker, /native_host_start_timeout/u);
-  assert.match(serviceWorker, /STALE_RUNNING_STATUS_MS = 2 \* 60_000/u);
-  assert.match(serviceWorker, /native_host_interrupted/u);
-  assert.match(popup, /중단된 작업을 정리했습니다/u);
-  assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
-  assert.match(popup, /30~45초 안전 대기 후 가격비교 탭이 열립니다/u);
-  assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
   assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 14 \* 60_000/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
   assert.match(serviceWorker, /type: "collection_complete"/u);
@@ -420,19 +316,34 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.match(nativeHost, /response\?\.type === "collection_complete"/u);
   assert.match(nativeHost, /native_host_input_closed/u);
   assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
-  assert.match(nativeHost, /readyAck = await nextMessage\(30_000\)/u);
+  assert.match(nativeHost, /const readyAck = await nextMessage\(30_000\)/u);
   assert.match(nativeHost, /native_host_ready_ack_invalid/u);
-  assert.match(serviceWorker, /message\?\.type === "ready"/u);
-  assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
-  assert.match(localWorker, /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,[\s\S]{0,120}29 \* 60_000/u);
-  assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 \* 60_000/u);
-  assert.match(localWorker, /"native_host_response_timeout"/u);
-  assert.match(nativeHost, /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/u);
-  assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
-  assert.match(popup, /전체 \$\{queuedTotal\}개 등록/u);
-  assert.match(popup, /retryAt/u);
-  assert.match(popup, /이후 1건 자동 재시도/u);
-  assert.doesNotMatch(popup, /접속 제한이 해제된 뒤 수동으로 다시 시작/u);
+  assert.match(serviceWorker, /chrome\.runtime\.getURL\("popup\.html"\)/u);
+  assert.match(serviceWorker, /crypto\.randomUUID\(\)/u);
+  assert.match(serviceWorker, /autoDiscardable: false/u);
+  assert.match(serviceWorker, /pinned: true/u);
+  assert.match(serviceWorker, /controller\.discarded/u);
+  assert.match(serviceWorker, /action: "controller-run"/u);
+  assert.match(serviceWorker, /if \(!EXTENSION_PAGE_CONTEXT\)/u);
+  assert.match(serviceWorker, /requestControllerRun\("manual"\)\.then\(sendResponse\)/u);
+  assert.match(serviceWorker, /saveStatus\("standby", "다음 갱신 요청 대기 중"\)/u);
+  assert.match(serviceWorker, /RUNNING_STATUS_STALE_MS = 20 \* 60_000/u);
+  assert.match(serviceWorker, /updatedAt \+ RUNNING_STATUS_STALE_MS <= Date\.now\(\)/u);
+  assert.match(serviceWorker, /saveStatus\("failed", "native_host_interrupted"\)/u);
+  assert.match(serviceWorker, /return \{ ok: false, started: false, code: "already_running" \}/u);
+  assert.match(serviceWorker, /return \{ ok: false, code: "native_host_already_running", summary: result \}/u);
+  assert.doesNotMatch(serviceWorker, /onAlarm\.addListener\(\(alarm\) => \{\s*if \(RUN_ALARMS\.has\(alarm\.name\)\) runWorker/u);
+  assert.ok(
+    popupHtml.indexOf('<script src="service-worker.js"></script>')
+      < popupHtml.indexOf('<script src="popup.js"></script>'),
+  );
+  assert.match(popup, /controllerPage/u);
+  assert.match(popup, /runButton\.hidden = true/u);
+  const runWorkerSource = serviceWorker.slice(
+    serviceWorker.indexOf('async function runWorker(trigger = "manual")'),
+    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
+  );
+  assert.ok(runWorkerSource.indexOf("running = true") < runWorkerSource.indexOf("await verificationState()"));
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {

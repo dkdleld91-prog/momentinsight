@@ -336,7 +336,7 @@
     {
       "id": "shopping-rank-lookup-handler",
       "file": "src/server/handlers/naver-shopping-rank-jobs.mjs",
-      "sha256": "fbefd189e0c23dee84b37017d862c028c4b6ddf27b24fd0c2e3f1283628284d5"
+      "sha256": "87caf4d3739aad39f431cf29c482bacee0403a8b46d337936c99b2ace80c807e"
     },
     {
       "id": "shopping-local-worker-runner",
@@ -478,12 +478,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "eceaf24139b6e726faa035e7bbf426569dc69abbf2abfc388e21f741ab0e7e94"
+      "sha256": "1486b179df3694380d7ff682318cc68e6468585a1bf0ce825ba9bb19a44a9838"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "c34f3c6d7cf4fac4bd00a8dd02ef4aba6d161e9b8b433073c48cbc4725c4b6d1"
+      "sha256": "e08acbdf7899c311b59ee2b92e48727721517291bb204a9e9fd86b151cc8ae96"
     },
     {
       "id": "shopping-local-worker-session-boundary",

@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-11 Windows 장시간 수집 컨트롤러·유한 폴링 v1.0.43
+
+- 원인 경계: 1.0.42에서 페이지별 스트리밍과 native stdin 종료 처리를 적용한 뒤에도 단독 job이 7분 이상 `processing`에 남았습니다. 같은 작업을 다시 갱신하지 않고 해당 job을 `manual_stop_architecture_review`로 안전 종료했으며 신규 snapshot은 만들지 않았습니다.
+- 구현 증거: 고정 확장 페이지가 native host와 8페이지 작업을 소유하고, 서비스 워커는 알람·수동 요청을 토큰 지정 메시지로 전달합니다. 동시 생성 잠금, `pinned`, `autoDiscardable:false`, 폐기 탭 재로드, 동기 실행 잠금과 모든 native 연결의 `finally` 정리를 검증합니다.
+- 무한대기 방지 증거: rank job poll은 `expires_at` 또는 `processing_until` 경과 시 HTTP 503, `pending:false`, typed terminal code를 반환합니다. 확장 저장 상태는 마지막 진행 갱신 뒤 20분이 지나면 `native_host_interrupted`로 종료합니다. 만료 pending·만료 processing·활성 processing 회귀 3건을 포함해 handler 8/8이 통과했습니다.
+- 테스트 증거: 실행되지 않던 구형 v1.0.38 assertion 블록을 제거하고 v1.0.43 컨트롤러·1.0.42에서 도입한 페이지 스트리밍·native input-close 검증을 활성화했습니다. native-host 13/13, 서버 계약 39/39, 앱/API 415/415, 플레이스 51/51, 쇼핑 52/52, 보호 잠금 self-test와 전체 `npm run check:release`, `git diff --check`가 통과했습니다.
+- 실증 경계: Windows 설치·`남자팬티` 오가닉 300개 완료 전에는 정상 가동 또는 Production 배포로 보고하지 않습니다.
+
 ## 2026-08-10 초기 검색 경로 결과 경쟁 제거 v1.0.34
 
 - 실기 증거: Windows `Profile 3`의 실로드·runtime 1.0.33 및 서비스 워커 해시 일치 후에도 `골프마스크` 단독 회차가 약 79초 뒤 snapshot 없이 일반 이동 오류로 안전 종료됐습니다. 이는 검색어만 입력되고 검색 전환 없이 닫히던 화면과 같은 초기 경계입니다.

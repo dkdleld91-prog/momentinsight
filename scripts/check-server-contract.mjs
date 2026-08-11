@@ -606,6 +606,7 @@ check(
       /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/,
       /String\.Equals\(maxJobs, "1"/,
     ])
+    && !/NAVER_SHOPPING_PROVIDER_TIMEOUT_MS/u.test(shoppingWindowsHostLauncher)
     && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream/u.test(shoppingWindowsHostLauncher)
     && hasAll(shoppingWindowsChromeScheduler, [
       /'--profile-directory="\{0\}"' -f \$profileDirectory/,
@@ -616,7 +617,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.47"
+  shoppingChromeManifest.version === "1.0.48"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -755,10 +756,11 @@ check(
       /}, 90_000\);/,
     ])
     && /MI_NAVER_SHOPPING_PROVIDER_TIMEOUT_MS=90000/.test(naverEnvExample)
-    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[\s\S]{0,100}29 \* 60_000/.test(shoppingLocalWorker)
+    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS[\s\S]{0,100}14 \* 60_000/.test(shoppingLocalWorker)
+    && /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 \* 60_000/.test(shoppingLocalWorkerContract)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(adminPage)
     && /getShoppingRankApiUrl\(\)[\s\S]{0,180}timeoutMs:\s*120000/.test(clientPage),
-  `${files.shoppingRank}, ${files.shoppingLiveGate}, ${files.shoppingLocalWorker}, ${files.naverEnvExample}, ${files.adminPage}, ${files.clientPage}`,
+  `${files.shoppingRank}, ${files.shoppingLiveGate}, ${files.shoppingLocalWorker}, ${files.shoppingLocalWorkerContract}, ${files.naverEnvExample}, ${files.adminPage}, ${files.clientPage}`,
 );
 const globalSecurityHeaders = Object.fromEntries(
   ((vercel.headers || []).find((entry) => entry.source === "/(.*)")?.headers || [])

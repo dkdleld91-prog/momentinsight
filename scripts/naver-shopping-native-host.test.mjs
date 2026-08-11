@@ -282,7 +282,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.47");
+  assert.equal(manifest.version, "1.0.48");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -322,7 +322,11 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
   assert.match(localWorker, /action: "claim-lane"/u);
   assert.match(localWorker, /action: "release-lane"/u);
-  assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 29 \* 60_000/u);
+  assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 \* 60_000/u);
+  assert.match(
+    localWorker,
+    /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,\s*14 \* 60_000,\s*30_000,\s*14 \* 60_000/u,
+  );
   assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 14 \* 60_000/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
   assert.match(serviceWorker, /type: "collection_complete"/u);
@@ -500,7 +504,7 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
     serviceWorker.indexOf("function searchUrl"),
   );
 
-  assert.equal(manifest.version, "1.0.47");
+  assert.equal(manifest.version, "1.0.48");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);

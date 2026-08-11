@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-11 native 요청 deadline 계약 정렬 v1.0.48
+
+- 실기 증거: lookup `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 `2026-08-11 07:12:24.365+00`부터 `07:13:09.817+00`까지 45.452초 처리된 뒤 `attempts=1`, `error_code=local_worker_collection_failed`, 결과·collection 없이 pending으로 복귀했다.
+- 무외부 재현: 같은 시작 시각에서 기존 `localWorkerRankRequest`가 만든 deadline은 `07:41:24.365+00`이고 45.452초 뒤에도 1,694,548ms 앞이었다. 공유 collector의 최대 15분 계약으로 검증하면 정확히 `invalid_request`, detail `deadlineAt`이 발생함을 Naver 요청·DB 쓰기 없이 재현했다.
+- 수정 회귀: Windows launcher가 timeout 환경값을 주지 않는 상태, 기본 deadline 14분, 60분 override의 14분 clamp, 생성 45초 뒤 실제 `validateRankRequest` 통과를 검증한다. 서버·release 정적 gate도 runner와 contract의 동일 14분 상한을 요구한다.
+- 통과: 대상 55/55, server contract 39/39, release baseline, 보호 잠금 22함수·68파일·19마이그레이션과 self-test, 전체 `npm run check:release`, `git diff --check`가 통과했다.
+- 운영 경계: 커밋·배포·DB 쓰기는 수행하지 않았다. Windows 1.0.48 설치와 신규 원자 `checkedCount=300` 확인 전에는 운영 정상화 증거가 아니다.
+
 ## 2026-08-11 Chrome 수집 단계 진단·5일 전 직접 경로 복원 v1.0.47
 
 - 재현 경계: `남자팬티` 단독 작업은 claim 후 273.358초에 fail RPC를 보냈지만 저장된 오류는 일반 `local_worker_collection_failed`여서 Chrome 원문 오류가 발생한 실제 단계를 구분할 수 없었습니다.

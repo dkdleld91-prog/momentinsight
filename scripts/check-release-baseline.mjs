@@ -1172,6 +1172,8 @@ const checks = {
     && shoppingLocalWorkerAuth.includes("timingSafeEqual")
     && shoppingLocalWorkerAuth.includes("x-mi-worker-nonce")
     && shoppingLocalWorkerContract.includes("LOCAL_WORKER_ORGANIC_LIMIT = 300")
+    && shoppingLocalWorkerContract.includes("LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 * 60_000")
+    && /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,\s*14 \* 60_000,\s*30_000,\s*14 \* 60_000/u.test(shoppingLocalWorker)
     && shoppingLocalWorkerContract.includes("validateStrictLocalWorkerWindow")
     && shoppingLocalWorkerHandler.includes("mi_consume_naver_shopping_worker_nonce")
     && shoppingLocalWorkerHandler.includes("mi_commit_naver_shopping_worker_result")
@@ -1275,6 +1277,7 @@ const checks = {
     && shoppingWindowsHostLauncher.includes("child.WaitForExit()")
     && shoppingWindowsHostLauncher.includes("MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET")
     && shoppingWindowsHostLauncher.includes('String.Equals(maxJobs, "1"')
+    && !shoppingWindowsHostLauncher.includes("NAVER_SHOPPING_PROVIDER_TIMEOUT_MS")
     && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream/u.test(shoppingWindowsHostLauncher)
     && shoppingWindowsChromeScheduler.includes("'--profile-directory=\"{0}\"' -f $profileDirectory")
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
@@ -1288,7 +1291,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.47"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.48"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1348,7 +1351,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.47"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.48"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

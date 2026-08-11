@@ -8,6 +8,7 @@ import {
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "./local-worker-contract.mjs";
+import { validateRankRequest } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 const NOW = Date.parse("2026-08-01T06:00:00.000Z");
 const TRACKER_ONE = "123e4567-e89b-42d3-a456-426614174000";
@@ -120,8 +121,19 @@ test("builds a strict organic-only 300 request", () => {
   });
   assert.equal(
     localWorkerRankRequest(job(), NOW, 60 * 60_000).deadlineAt,
-    "2026-08-01T06:29:00.000Z",
+    "2026-08-01T06:14:00.000Z",
   );
+});
+
+test("keeps the default and oversized override below the collector deadline contract", () => {
+  const defaultRequest = localWorkerRankRequest(job(), NOW);
+  const oversizedRequest = localWorkerRankRequest(job(), NOW, 60 * 60_000);
+
+  assert.equal(defaultRequest.deadlineAt, "2026-08-01T06:14:00.000Z");
+  assert.equal(oversizedRequest.deadlineAt, defaultRequest.deadlineAt);
+  assert.doesNotThrow(() => validateRankRequest(defaultRequest, {
+    nowMs: NOW + 45_000,
+  }));
 });
 
 test("accepts a fresh, complete and sequential 300-item organic window", () => {

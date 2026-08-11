@@ -10,7 +10,7 @@
 ### 실패 이력
 
 - native messaging 표준 입출력 중계 누락과 손상된 Windows 확장 설치본 때문에 팝업이 `상태 확인 중`·`갱신 진행 중`에 머물고 실제 작업 claim이 시작되지 않았다. launcher binary relay와 원본 바이트 staging·문법검사·실로드 해시 검증으로 복구했다.
-- MV3 숨김 controller 동결, 10분 watchdog의 Chrome 재최소화, 중복 native host가 실행을 끊거나 `processing`을 고립시켰다. 실행 전 controller 활성·동결 해제, 실행 중 재로드 금지, 동일 Chrome 재호출 차단, 단일 controller/native 잠금과 유한 lease로 복구했다.
+- 정확한 5분 중단 경계에는 같은 timeout이 없어 MV3 숨김 controller 동결을 최우선 가설로 두고 예방 보강했지만, 실기 `frozen` 직접 관측 전에는 확정 원인으로 기록하지 않는다. 별도로 확인된 10분 watchdog의 Chrome 재최소화와 중복 native host는 실행을 끊거나 `processing`을 고립시켰다. 실행 전 controller 활성·동결 해제, 실행 중 재로드 금지, 동일 Chrome 재호출 차단, 단일 controller/native 잠금과 유한 lease로 복구했다.
 - 홈 → N플러스 스토어 → 검색 → 가격비교 더보기 경로는 검색어만 입력하고 종료하거나 페이지 이동 결과 경쟁·스키마 변화로 반복 실패했다. 검증됐던 v1.0.5 방식의 `/search/all` 1~8페이지 직접 경로와 페이지 간 3.5~6초 대기로 복원했다.
 - lookup lease의 DB 마이크로초와 JavaScript 밀리초 정밀도 차이로 실패 RPC가 `releasedCount=0`이 되어 작업이 `processing`에 남았다. 신규 lease 밀리초 정렬, 기존 lease fallback, 해제 건수 fail-closed 검증으로 복구했다.
 - Windows v1.0.47은 로컬 요청 deadline 29분이 collector 최대 15분 계약을 위반해 `invalid_request:deadlineAt`이 발생했지만 `local_worker_collection_failed`로 축약되어 같은 작업이 재대기했다. v1.0.48에서 기본값과 override 상한을 14분으로 고정했다.

@@ -10,7 +10,8 @@
 - 가시 controller 탭 구조를 제거하고 service worker가 native port를 직접 소유하도록 정리했습니다. 작업 중에는 20초 간격 extension API heartbeat를 사용하고 terminal에서 heartbeat와 port를 유한 해제합니다.
 - 업데이트·시작 시 남아 있는 구형 controller 탭을 자동 제거합니다. 일반 1~8페이지는 계속 `active:false`이며 보안확인·접속 제한 때만 해당 네이버 창을 정상 상태로 복원하고 앞으로 표시합니다.
 - toolbar popup의 `지금 안전 갱신` 버튼·상태 확인은 유지합니다. v1.1.1 runtime version, 직접 경로·pacing, trigger coalesce, 광고 제외 원자 300개, last-good, global lane·lease는 변경하지 않습니다.
-- 로컬 회귀와 전체 release gate 뒤 Production·Windows 설치본을 반영하고, 실로드 SHA와 단건 원자 300개·lane/lease 해제를 확인하기 전에는 운영 완료로 판정하지 않습니다.
+- 운영 반영 완료: commit `ecb9a99aab1b`, Vercel Production `dpl_FgYypGyHJH93jiiP5MZBjSyxX5Xu`가 운영 별칭에 반영됐고 `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다. Windows `동빈 (개발)` 설치본은 `MI_EXTENSION_UPDATE_OK`, `loaded_extension_synced=true`, service worker SHA `975238a7488e16c207040f82cb74284d52184b6e38ee261db6ba5e46a040c8c4`, runtime fingerprint `fd95e1bd7cf9ede4c13ec25fa65195345e0b37a4ed3f5cc38586c293412c6a60`을 확인했습니다.
+- 실기에서 toolbar popup 버튼을 1회 눌러 수집하는 동안 기존 확장 관리 화면이 그대로 유지되고 네이버 탭은 백그라운드에서 열렸다가 닫혔으며 흰 controller 탭은 다시 생성되지 않았습니다. collection `pw-chrome-1786470467501-e0fc34d1aad12f964b44`는 정확 상품 `12491798995`를 광고 45개 제외 오가닉 300개에서 93위로 완료했고, circuit closed와 run·probe·global lane·tracker lease 전부 해제를 확인했습니다.
 
 ### 2026-08-12 N플레이스 30일 지표 진실성·순위 카드 정리
 

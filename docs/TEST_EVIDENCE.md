@@ -6,7 +6,9 @@
 - direct worker 요청은 실행 중 `manual > catch-up > 09/15 > remote` 단일 신호 병합을 유지하고, idle이면 native worker를 직접 시작합니다. 20초 keepalive는 즉시 시작·주기 실행·terminal 정리를 VM으로 검증합니다.
 - 일반 수집의 `active:true` 사용을 금지하고, 보안확인 표시 함수에서만 네이버 탭과 창을 활성화하도록 분리합니다. 구형 controller 탭은 update/startup에서 유한 삭제합니다.
 - 직접 8페이지·3.5~6초 pacing·페이지 스트리밍·원자 300개·native input-close·6초 handoff·typed error 회귀를 함께 유지합니다.
-- Windows 설치본의 실제 SHA, 흰 controller 탭 0개, 단건 원자 300개와 lane·lease 해제는 배포 후 별도 운영 증거로 기록합니다.
+- 전체 `check:release`는 앱/API 449, Place 51, Shopping 52, Production 인증 18/18과 Vercel build·CSP·보호 잠금을 통과했습니다. Production release `ecb9a99aab1b`의 `/health`·`/ready`, admin/client 200, 비인증 rank job 401을 확인했습니다.
+- Windows updater는 `MI_EXTENSION_UPDATE_OK`, `loaded_extension_synced=true`, service worker SHA `975238a7488e16c207040f82cb74284d52184b6e38ee261db6ba5e46a040c8c4`를 반환했습니다. 새 runtime fingerprint `fd95e1bd7cf9ede4c13ec25fa65195345e0b37a4ed3f5cc38586c293412c6a60`으로 page 1/8 진입부터 terminal까지 화면 전환 없이 수집했고, popup 버튼도 그대로 표시됐습니다.
+- 실기 collection `pw-chrome-1786470467501-e0fc34d1aad12f964b44`는 source `naver_shopping_results_collector`, evidence `naver_shopping_organic_list`, `checkedCount=300`, `organic_only`, `adExcluded=true`, 광고 45개 제외, 정확 상품 `12491798995` 93위로 완료했습니다. 이후 circuit closed, run·probe·global lane·tracker lease 해제와 격리 없음까지 확인했습니다.
 
 ## 2026-08-12 N플레이스 일별 카드 진실성 회귀
 

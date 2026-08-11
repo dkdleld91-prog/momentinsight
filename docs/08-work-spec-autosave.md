@@ -11,6 +11,7 @@
 - 실행 중 신호의 단일 우선순위 coalesce, 6초 native handoff, 직접 가격비교 8페이지, 3.5~6초 pacing, 광고 제외 원자 300개, typed 제한, last-good, global lane·lease 계약은 유지한다.
 - toolbar popup은 `popup.html`과 `popup.js`만 사용하며 `지금 안전 갱신` 버튼과 상태 안내를 유지한다. popup 화면을 작업 controller로 재사용하지 않는다.
 - 과거 5~7분 `processing`은 controller 도입 당시 숨김 탭 동결을 최우선 가설로 보완했지만 `frozen` 직접 관측은 없었고, 이후 lease 정밀도와 deadline 불일치가 별도로 확정됐다. 이번 변경은 정적 검사만으로 정상화를 보고하지 않고 Windows 실로드 해시·원자 300개·lane/lease 해제를 다시 확인한다.
+- 완료 증거: Production release `ecb9a99aab1b`, Windows service worker SHA `975238a7488e16c207040f82cb74284d52184b6e38ee261db6ba5e46a040c8c4`, runtime fingerprint `fd95e1bd7cf9ede4c13ec25fa65195345e0b37a4ed3f5cc38586c293412c6a60`을 확인했다. popup 버튼 1회 실행 동안 사용자 화면은 확장 관리 페이지에 유지됐고 백그라운드 collection `pw-chrome-1786470467501-e0fc34d1aad12f964b44`가 광고 제외 오가닉 300개·정확 상품 93위로 원자 완료된 뒤 모든 lane·lease가 해제됐다.
 
 ## 2026-08-12 N플레이스 30일 기록 표시 계약
 

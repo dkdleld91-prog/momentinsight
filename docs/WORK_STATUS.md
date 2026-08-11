@@ -11,10 +11,10 @@
 - 실행 중 도착한 신호는 `manual > rank-catch-up > 09/15 > rank-remote` 순위로 하나만 합칩니다. Node는 terminal frame을 flush한 뒤 입력을 닫고, Windows launcher는 child 종료 직후 output relay join 전에 mutex를 해제하며, 다음 회차는 6초의 유한 handoff 뒤 한 번만 실행합니다. remote는 대기 신호를 만들거나 catch-up을 덮지 않습니다.
 - 정상 closed 순환의 `provider_duplicate_identity:<page>:<row>`는 안전한 base code만 보존하고 해당 tracker group만 격리합니다. URL·키워드·상세 row는 DB·로그로 전달하지 않으며 다음 키워드는 계속 처리합니다. 단, half-open 단독 canary 실패는 검증 실패이므로 circuit을 다시 open합니다. 네트워크·보안 제한의 전역 중단은 유지합니다.
 - 신규 후보는 오래된 due보다 먼저 선택하고 `created_at,id`, 기존 due는 `next_check_at,created_at,id`로 결정적 순서를 고정했습니다. 이후 aging·lookup·광고주 round-robin 계약은 유지합니다.
-- runtime은 1.1.1로 분리했습니다. 기능 commit `35853810dfab`, 운영 migration `20260811120243_naver_shopping_queue_continuity`, Windows fingerprint `ed2e0692fb1d98d2f0eea26fa73e8eb1ecd5921f1dd2b8a82de10b1f214b926c`를 확인했습니다. 최종 Production은 commit `f49d93d061eb`, deployment `dpl_DeJghmAKeVPUSMZprGF6vUyjv7hp`이며 `/health`·`/ready`가 같은 release로 정상입니다.
+- runtime은 1.1.1로 분리했습니다. 기능 commit `35853810dfab`, 운영 migration `20260811120243_naver_shopping_queue_continuity`, Windows fingerprint `ed2e0692fb1d98d2f0eea26fa73e8eb1ecd5921f1dd2b8a82de10b1f214b926c`를 확인했습니다. 검증된 기능 Production은 commit `f49d93d061eb`, deployment `dpl_DeJghmAKeVPUSMZprGF6vUyjv7hp`이며 해당 배포 시점 `/health`·`/ready`가 같은 release로 정상입니다.
 - `control_plane_failed`, 모든 `idle`, 알 수 없는 summary를 0건 완료로 표시하지 않습니다. idle은 대기, 제어면·알 수 없는 상태는 실패로 유한 종료합니다.
 - 운영 연속 증거: 21:18 신규 `강아지사료`가 첫 슬롯에 선점됐고 `provider_duplicate_identity`로 snapshot 없이 tracker만 24시간 격리됐으며 circuit은 closed를 유지했습니다. 21:25 `남자팬티` canary collection `pw-chrome-1786451158772-13372ef3800e1ee373a8`은 오가닉 300개·광고 45개 제외·100위로 완료됐습니다. 21:28 다음 자동 catch-up은 기존 `치아미백제`를 선택해 collection `pw-chrome-1786451344481-f10f7157eb70e146d1e1`, 오가닉 300개·광고 44개 제외·46위로 완료했습니다. 각 terminal 뒤 circuit closed, probe·run·global lane·tracker lease 해제를 확인했습니다.
-- 관리자 canary 버튼이 렌더된 tracker ID를 operations panel에 저장하고도 상위 card에서 읽던 UI 결함을 수정하고 회귀 잠금했습니다. 중간 배포 2건은 보호 함수 잠금과 CSP hash 검사가 각각 차단해 운영 alias가 이전 정상 버전을 유지했고, 잠금 승인·CSP 동기화 뒤 최종 배포만 READY가 됐습니다.
+- 관리자 canary 버튼이 렌더된 tracker ID를 operations panel에 저장하고도 상위 card에서 읽던 UI 결함을 수정하고 회귀 잠금했습니다. 기능 배포 후보 2건은 보호 함수 잠금과 CSP hash 검사가 각각 차단해 운영 alias가 이전 정상 버전을 유지했고, 잠금 승인·CSP 동기화 뒤 기능 배포 `f49d93d061eb`가 READY가 됐습니다.
 
 ### 2026-08-11 준비작업 1번 대기·5차 보류
 

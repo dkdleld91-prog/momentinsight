@@ -508,19 +508,23 @@ check(
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
     ])
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
-      "https://www.naver.com/*",
-      "https://search.naver.com/*",
-      "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
     && hasAll(shoppingChromeWorker, [
-      /function naverSearchUrl/,
-      /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/,
-      /네이버 가격비교 더보기/,
-      /naver_price_compare_target_missing/,
-      /naver_pagination_target_missing/,
-      /PAGE_REQUEST_INTERVAL_MS = 25_000/,
-      /PAGE_REQUEST_JITTER_MS = 15_000/,
+      /function searchUrl\(keyword, pageIndex\)/,
+      /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/,
+      /searchParams\.set\("where", "all"\)/,
+      /searchParams\.set\("frm", "NVSCTAB"\)/,
+      /searchParams\.set\("pagingSize", "40"\)/,
+      /searchParams\.set\("productSet", "total"\)/,
+      /searchParams\.set\("sort", "rel"\)/,
+      /searchParams\.set\("viewType", "list"\)/,
+      /PAGE_REQUEST_INTERVAL_MS = 3_500/,
+      /PAGE_REQUEST_JITTER_MS = 2_500/,
+      /async function saveCollectionProgress\(pageIndex\)/,
+      /async function clearCompletedCollectionVerificationState\(\)/,
+      /await saveCollectionProgress\(pageIndex\)/,
+      /await clearCompletedCollectionVerificationState\(\)/,
       /collectPages/,
       /pagingIndex/,
       /productSet/,
@@ -531,6 +535,7 @@ check(
       /chrome\.tabs\.remove\(tabId\)/,
       /naver_network_restricted/,
     ])
+    && !/www\.naver\.com|search\.naver\.com|네이버 가격비교 더보기|SEARCH_DWELL|readPriceCompareEntry|readNextPageTarget/u.test(shoppingChromeWorker)
     && !/\bcookies\b|localStorage|webRequest|browsingData|history/iu.test(shoppingChromeWorker)
     && hasAll(shoppingNativeHostCore, [
       /parseNaverNextDataPage/,
@@ -611,13 +616,15 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.46"
+  shoppingChromeManifest.version === "1.0.47"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
     && /result\.status === "idle" && result\.remoteWake === false/.test(shoppingChromeWorker)
     && /result\.status === "standby"/.test(shoppingChromeWorker)
     && /naver_network_restricted/.test(shoppingChromeWorker)
+    && /typedCollectionError\(error, collectionStageCode\)/.test(shoppingChromeWorker)
+    && /collectionStageCode = "naver_page_navigation_failed"/.test(shoppingChromeWorker)
     && /native_host_timeout"\)\), 30 \* 60_000/.test(shoppingChromeWorker)
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
@@ -638,7 +645,7 @@ check(
     && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)
     && /RANK_LOOKUP_WORKER_STALLED/.test(shoppingRankLookupJobs)
     && /pending: false/.test(shoppingRankLookupJobs)
-    && /chrome\.tabs\.create\(\{ url: "https:\/\/www\.naver\.com\/", active: false \}\)/.test(shoppingChromeWorker)
+    && /chrome\.tabs\.create\(\{ url, active: false \}\)/.test(shoppingChromeWorker)
     && /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/.test(shoppingNativeHost)
     && /writeMessage\(\{ type: "ready" \}\)/.test(shoppingNativeHost)
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)

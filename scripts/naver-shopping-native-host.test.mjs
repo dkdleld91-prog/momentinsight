@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 
 import {
   buildChromeSchedulerPlist,
@@ -271,7 +272,7 @@ test("native host wrapper uses a stable path, bounded jobs and safe local canary
   assertZshSyntax(wrapperPath, source);
 });
 
-test("Chrome extension uses the normal Naver search to price-comparison path with safe pacing", () => {
+test("Chrome extension restores the direct eight-page price-comparison route with legacy pacing", () => {
   const extensionDirectory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "tools", "naver-shopping-chrome-extension");
   const serviceWorker = fs.readFileSync(path.join(extensionDirectory, "service-worker.js"), "utf8");
   const popupHtml = fs.readFileSync(path.join(extensionDirectory, "popup.html"), "utf8");
@@ -281,23 +282,36 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.46");
-  assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
-  assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
-  assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
-  assert.match(serviceWorker, /"https:\/\/www\.naver\.com\/"/u);
-  assert.match(serviceWorker, /네이버 가격비교 더보기/u);
-  assert.match(serviceWorker, /url\.hostname !== "search\.shopping\.naver\.com"/u);
-  assert.match(serviceWorker, /naver_price_compare_target_missing/u);
-  assert.match(serviceWorker, /naver_pagination_target_missing/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
-  assert.match(serviceWorker, /SEARCH_DWELL_INTERVAL_MS = 12_000/u);
+  assert.equal(manifest.version, "1.0.47");
+  assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
+  assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
+  assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("where", "all"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("frm", "NVSCTAB"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("pagingSize", "40"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("productSet", "total"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("sort", "rel"\)/u);
+  assert.match(serviceWorker, /url\.searchParams\.set\("viewType", "list"\)/u);
+  assert.match(serviceWorker, /PAGE_COUNT = 8/u);
+  assert.match(serviceWorker, /for \(let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex \+= 1\)/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
+  assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: false \}\)/u);
+  assert.match(serviceWorker, /chrome\.tabs\.update\(tabId, \{ url, active: false \}\)/u);
+  assert.doesNotMatch(serviceWorker, /www\.naver\.com|search\.naver\.com|네이버 가격비교 더보기|SEARCH_DWELL/u);
+  assert.doesNotMatch(serviceWorker, /readPriceCompareEntry|waitForPriceCompareEntry|readNextPageTarget|naverSearchUrl/u);
   assert.match(serviceWorker, /PAGE_SCRIPT_TIMEOUT_MS = 15_000/u);
   assert.match(serviceWorker, /COLLECTION_TIMEOUT_MS = 12 \* 60_000/u);
   assert.match(serviceWorker, /naver_page_script_timeout/u);
   assert.match(serviceWorker, /provider_deadline_exceeded/u);
-  assert.match(serviceWorker, /SEARCH_DWELL_JITTER_MS = 8_000/u);
+  assert.match(serviceWorker, /typedCollectionError\(error, collectionStageCode\)/u);
+  assert.match(serviceWorker, /collectionStageCode = "naver_page_navigation_failed"/u);
+  assert.match(serviceWorker, /collectionStageCode = "naver_page_script_failed"/u);
+  assert.match(serviceWorker, /async function saveCollectionProgress\(pageIndex\)/u);
+  assert.match(serviceWorker, /async function clearCompletedCollectionVerificationState\(\)/u);
+  assert.match(serviceWorker, /await saveCollectionProgress\(pageIndex\)/u);
+  assert.match(serviceWorker, /await clearCompletedCollectionVerificationState\(\)/u);
+  assert.match(serviceWorker, /keepTabOpen = true;[\s\S]{0,180}surfaceVerificationTab\(tabId\)[\s\S]{0,220}throw typedError/u);
   assert.match(serviceWorker, /request\.limit !== 300/u);
   assert.match(serviceWorker, /request\.rankPolicy !== "organic_only"/u);
   assert.match(serviceWorker, /message\?\.type === "ready"/u);
@@ -355,7 +369,7 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.ok(runWorkerSource.indexOf("running = true") < runWorkerSource.indexOf("await verificationState()"));
   const controllerDispatchSource = serviceWorker.slice(
     serviceWorker.indexOf("async function requestControllerRun(trigger)"),
-    serviceWorker.indexOf("function naverSearchUrl"),
+    serviceWorker.indexOf("function searchUrl"),
   );
   assert.ok(
     controllerDispatchSource.indexOf("await automaticVerificationCooldownActive(trigger)")
@@ -365,6 +379,108 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
     controllerDispatchSource.indexOf("await prepareControllerForDispatch(controller)")
       < controllerDispatchSource.indexOf("chrome.runtime.sendMessage"),
   );
+});
+
+test("direct shopping route builds the exact 남자팬티 page URL and 3.5-6 second delay", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const constants = serviceWorker.slice(
+    serviceWorker.indexOf("const PAGE_REQUEST_INTERVAL_MS"),
+    serviceWorker.indexOf("const VERIFICATION_COOLDOWN_MS"),
+  );
+  const delay = serviceWorker.slice(
+    serviceWorker.indexOf("function pageRequestDelay()"),
+    serviceWorker.indexOf("async function verificationState()"),
+  );
+  const route = serviceWorker.slice(
+    serviceWorker.indexOf("function searchUrl(keyword, pageIndex)"),
+    serviceWorker.indexOf("function waitForTabComplete(tabId)"),
+  );
+  const source = `${constants}\n${delay}\n${route}\n({ searchUrl, pageRequestDelay });`;
+  const minimum = runInNewContext(source, {
+    URL,
+    Math: { floor: Math.floor, random: () => 0 },
+  });
+  const maximum = runInNewContext(source, {
+    URL,
+    Math: { floor: Math.floor, random: () => 0.999999 },
+  });
+
+  assert.equal(
+    minimum.searchUrl("남자팬티", 8),
+    "https://search.shopping.naver.com/search/all?where=all&frm=NVSCTAB&query=%EB%82%A8%EC%9E%90%ED%8C%AC%ED%8B%B0&pagingIndex=8&pagingSize=40&productSet=total&sort=rel&viewType=list",
+  );
+  assert.equal(minimum.pageRequestDelay(), 3_500);
+  assert.equal(maximum.pageRequestDelay(), 6_000);
+});
+
+test("page-eight status and verification cleanup failures still emit collection_complete", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const bestEffortStart = serviceWorker.indexOf("async function saveCollectionProgress(pageIndex)");
+  const collectStart = serviceWorker.indexOf("async function collectPages(request, onPage = null)");
+  const collectEnd = serviceWorker.indexOf("async function saveStatus(status, detail = \"\")", collectStart);
+  const handlerStart = serviceWorker.indexOf('if (message?.type === "collect") {');
+  const handlerEnd = serviceWorker.indexOf('if (message?.type === "summary")', handlerStart);
+  assert.ok(bestEffortStart >= 0 && collectStart > bestEffortStart && collectEnd > collectStart);
+  assert.ok(handlerStart >= 0 && handlerEnd > handlerStart);
+
+  const runtime = runInNewContext(`
+    const PAGE_COUNT = 8;
+    const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+    const statusAttempts = [];
+    let clearAttempts = 0;
+    async function wait() {}
+    function pageRequestDelay() { return 3_500; }
+    function searchUrl(keyword, pageIndex) { return \`https://search.shopping.naver.com/search/all?query=\${keyword}&pagingIndex=\${pageIndex}\`; }
+    async function waitForTabComplete() {}
+    let readCount = 0;
+    async function readNextData() { readCount += 1; return \`page-\${readCount}\`; }
+    async function saveStatus(_status, detail) {
+      statusAttempts.push(detail);
+      if (detail === "page 8/8") throw new Error("storage_write_failed");
+    }
+    async function clearVerificationState() {
+      clearAttempts += 1;
+      throw new Error("storage_cleanup_failed");
+    }
+    function typedCollectionError(_error, fallbackCode) { return new Error(fallbackCode); }
+    async function surfaceVerificationTab(tabId) { return tabId; }
+    ${serviceWorker.slice(bestEffortStart, collectEnd)}
+    async function handleCollect(message, port) {
+      ${serviceWorker.slice(handlerStart, handlerEnd)}
+    }
+    ({ handleCollect, statusAttempts, clearAttempts: () => clearAttempts });
+  `, {
+    chrome: {
+      tabs: {
+        create: async () => ({ id: 41 }),
+        update: async () => ({ id: 41 }),
+        remove: async () => {},
+      },
+    },
+  });
+  const messages = [];
+  await runtime.handleCollect({
+    type: "collect",
+    requestId: "request-1",
+    request: { keyword: "남자팬티", limit: 300, rankPolicy: "organic_only" },
+  }, {
+    postMessage: (message) => messages.push(message),
+  });
+
+  assert.deepEqual(Array.from(messages, (message) => message.type), [
+    ...Array(8).fill("collection_page"),
+    "collection_complete",
+  ]);
+  assert.deepEqual(Array.from(messages.slice(0, 8), (message) => message.page.pageIndex), [1, 2, 3, 4, 5, 6, 7, 8]);
+  assert.equal(messages.some((message) => message.type === "collection_error"), false);
+  assert.equal(runtime.statusAttempts.includes("page 8/8"), true);
+  assert.equal(runtime.clearAttempts(), 1);
 });
 
 test("Chrome controller resumes a frozen tab before dispatch without hiding active verification", () => {
@@ -381,10 +497,10 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
   );
   const dispatchSource = serviceWorker.slice(
     serviceWorker.indexOf("async function requestControllerRun(trigger)"),
-    serviceWorker.indexOf("function naverSearchUrl"),
+    serviceWorker.indexOf("function searchUrl"),
   );
 
-  assert.equal(manifest.version, "1.0.46");
+  assert.equal(manifest.version, "1.0.47");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -396,6 +512,37 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
   assert.ok(dispatchSource.indexOf("prepareControllerForDispatch(controller)") < dispatchSource.indexOf("chrome.runtime.sendMessage"));
   assert.doesNotMatch(dispatchSource, /chrome\.tabs\.reload/u);
   assert.match(serviceWorker, /chrome\.alarms\.onAlarm\.addListener\([\s\S]{0,180}requestControllerRun\(alarm\.name\)/u);
+});
+
+test("extension preserves typed collection errors and maps raw Chrome errors to their stage", () => {
+  const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
+  const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
+  const helperStart = serviceWorker.indexOf("const TYPED_COLLECTION_ERROR_PATTERN");
+  const helperEnd = serviceWorker.indexOf("function wait(milliseconds)", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const typedCollectionError = runInNewContext(
+    `${serviceWorker.slice(helperStart, helperEnd)}\ntypedCollectionError;`,
+  );
+
+  for (const code of [
+    "naver_network_restricted",
+    "provider_deadline_exceeded",
+    "native_host_pages_incomplete",
+  ]) {
+    assert.equal(typedCollectionError(new Error(code), "naver_page_script_failed").message, code);
+  }
+  const codeOnlyError = new Error("Could not establish connection. Receiving end does not exist.");
+  codeOnlyError.code = "native_host_communication_failed";
+  assert.equal(
+    typedCollectionError(codeOnlyError, "naver_page_script_failed").message,
+    "native_host_communication_failed",
+  );
+  const rawError = typedCollectionError(
+    new Error("Could not establish connection. Receiving end does not exist."),
+    "naver_page_navigation_failed",
+  );
+  assert.equal(rawError.message, "naver_page_navigation_failed");
+  assert.doesNotMatch(rawError.message, /could not establish connection/iu);
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {
@@ -420,8 +567,8 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 25_000/u);
-  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 15_000/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
+  assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
   assert.match(serviceWorker, /await wait\(pageRequestDelay\(\)\)/u);
   assert.match(popup, /naver_verification_required/u);
   assert.match(popup, /Chrome을 완전히 종료한 뒤 다시 실행해 주세요/u);

@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-11 Chrome 수집 단계 진단·5일 전 직접 경로 복원 v1.0.47
+
+- 재현 경계: `남자팬티` 단독 작업은 claim 후 273.358초에 fail RPC를 보냈지만 저장된 오류는 일반 `local_worker_collection_failed`여서 Chrome 원문 오류가 발생한 실제 단계를 구분할 수 없었습니다.
+- 구현 증거: 실제 오류 정규화 함수를 Node VM에서 실행해 기존 typed 코드 보존과 원문 비노출을 검증했습니다. 라이브 수집은 v1.0.5와 같은 `/search/all` 1~8페이지 직접 URL만 생성하며 홈·일반검색·가격비교 더보기 코드는 제거했습니다.
+- 경로 회귀: `남자팬티` 8페이지 URL의 `where=all`, `frm=NVSCTAB`, `pagingIndex=8`, `pagingSize=40`, `productSet=total`, `sort=rel`, `viewType=list`와 3.5~6초 대기 양 끝값을 런타임으로 검증합니다.
+- 완료 회귀: 8페이지의 진행 상태 저장과 완료 후 확인 상태 정리를 동시에 실패시킨 VM 실행에서도 `collection_page` 8개 뒤 `collection_complete`가 발생하고 `collection_error`가 없음을 검증합니다.
+- 검사 증거: 서비스 워커 문법, native-host 17/17, server contract 39/39, release baseline, 보호 잠금 22함수·68파일·19마이그레이션과 self-test, 앱·API 422/422, 플레이스 51/51, 쇼핑 52/52, Production 인증 18/18, 전체 `npm run check:release`, `git diff --check`가 통과했습니다.
+- 운영 경계: controller·스트리밍·접속 제한 감지·공용 차선·원자 300개·lease 정밀도는 유지합니다. 설치·배포·운영 쓰기는 수행하지 않았으며 Windows 설치 후 `남자팬티` 단독 원자 300개 전에는 정상화로 판정하지 않습니다.
+
 ## 2026-08-11 N쇼핑 lookup lease 정밀도 회귀
 
 - 재현 증거: 작업 `f4bf2076-43e8-4178-aa18-37e40333a993`은 DB lease `2026-08-11 05:08:24.333392+00`로 처리됐고, 서버 계약은 이를 `2026-08-11T05:08:24.333Z`로 직렬화합니다. 기존 완료·실패 RPC의 정확 비교는 이 값을 다른 lease로 판정해 결과와 오류를 모두 저장하지 못했습니다.

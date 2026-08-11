@@ -6,10 +6,8 @@ const PAGE_SCRIPT_TIMEOUT_MS = 15_000;
 const COLLECTION_TIMEOUT_MS = 12 * 60_000;
 const CONTROLLER_RESUME_TIMEOUT_MS = 15_000;
 const RUNNING_STATUS_STALE_MS = 20 * 60_000;
-const SEARCH_DWELL_INTERVAL_MS = 12_000;
-const SEARCH_DWELL_JITTER_MS = 8_000;
-const PAGE_REQUEST_INTERVAL_MS = 25_000;
-const PAGE_REQUEST_JITTER_MS = 15_000;
+const PAGE_REQUEST_INTERVAL_MS = 3_500;
+const PAGE_REQUEST_JITTER_MS = 2_500;
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -29,8 +27,20 @@ const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_http_429",
   "naver_network_restricted",
 ]);
+const TYPED_COLLECTION_ERROR_PATTERN = /^(?:naver|provider|native_host)_[a-z0-9_:-]{2,79}$/u;
 let running = false;
 let controllerPromise = null;
+
+function typedCollectionError(error, fallbackCode) {
+  for (const value of [error?.code, error?.message]) {
+    const code = String(value || "").trim().toLowerCase();
+    if (TYPED_COLLECTION_ERROR_PATTERN.test(code)) return new Error(code);
+  }
+  const fallback = String(fallbackCode || "").trim().toLowerCase();
+  return new Error(TYPED_COLLECTION_ERROR_PATTERN.test(fallback)
+    ? fallback
+    : "provider_browser_collection_failed");
+}
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -45,10 +55,6 @@ function withTimeout(promise, milliseconds, code) {
 
 function pageRequestDelay() {
   return PAGE_REQUEST_INTERVAL_MS + Math.floor(Math.random() * (PAGE_REQUEST_JITTER_MS + 1));
-}
-
-function searchDwellDelay() {
-  return SEARCH_DWELL_INTERVAL_MS + Math.floor(Math.random() * (SEARCH_DWELL_JITTER_MS + 1));
 }
 
 async function verificationState() {
@@ -241,18 +247,17 @@ async function requestControllerRun(trigger) {
   throw lastError || new Error("rank_controller_unavailable");
 }
 
-function naverSearchUrl(keyword) {
-  const url = new URL("https://search.naver.com/search.naver");
-  url.searchParams.set("where", "nexearch");
-  url.searchParams.set("sm", "top_hty");
-  url.searchParams.set("fbm", "0");
-  url.searchParams.set("ie", "utf8");
+function searchUrl(keyword, pageIndex) {
+  const url = new URL("https://search.shopping.naver.com/search/all");
+  url.searchParams.set("where", "all");
+  url.searchParams.set("frm", "NVSCTAB");
   url.searchParams.set("query", keyword);
+  url.searchParams.set("pagingIndex", String(pageIndex));
+  url.searchParams.set("pagingSize", "40");
+  url.searchParams.set("productSet", "total");
+  url.searchParams.set("sort", "rel");
+  url.searchParams.set("viewType", "list");
   return url.toString();
-}
-
-function normalizedKeyword(value) {
-  return String(value || "").normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
 }
 
 function waitForTabComplete(tabId) {
@@ -306,103 +311,20 @@ async function readNextData(tabId) {
   return value.nextDataText;
 }
 
-async function readPriceCompareEntry(tabId, keyword) {
-  const results = await withTimeout(chrome.scripting.executeScript({
-    target: { tabId },
-    args: [normalizedKeyword(keyword)],
-    func: (expectedKeyword) => {
-      const bodyText = String(document.body?.innerText || "").slice(0, 20_000);
-      if (/보안 확인|자동입력 방지|비정상적인 접근|captcha|로봇이 아닙니다/iu.test(bodyText)) {
-        return { error: "naver_verification_required" };
-      }
-      for (const anchor of document.querySelectorAll("a[href]")) {
-        if (!String(anchor.innerText || "").includes("네이버 가격비교 더보기")) continue;
-        try {
-          const url = new URL(anchor.href, location.href);
-          const actualKeyword = String(url.searchParams.get("query") || "")
-            .normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
-          if (url.protocol !== "https:"
-            || url.hostname !== "search.shopping.naver.com"
-            || url.pathname !== "/search/all"
-            || actualKeyword !== expectedKeyword) continue;
-          return { url: url.toString() };
-        } catch {
-          continue;
-        }
-      }
-      return { error: "naver_price_compare_target_missing" };
-    },
-  }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
-  const value = results?.[0]?.result || {};
-  if (value.error) throw new Error(value.error);
-  if (!value.url) throw new Error("naver_price_compare_target_missing");
-  return value.url;
-}
-
-async function waitForPriceCompareEntry(tabId, keyword) {
-  let lastError = null;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      return await readPriceCompareEntry(tabId, keyword);
-    } catch (error) {
-      lastError = error;
-      if (String(error?.message || "") !== "naver_price_compare_target_missing") throw error;
-      await wait(500);
-    }
+async function saveCollectionProgress(pageIndex) {
+  try {
+    await saveStatus("running", `page ${pageIndex}/${PAGE_COUNT}`);
+  } catch {
+    // UI status storage is best-effort after the page was delivered.
   }
-  throw lastError || new Error("naver_price_compare_target_missing");
 }
 
-async function readNextPageTarget(tabId, keyword, pageIndex) {
-  const results = await withTimeout(chrome.scripting.executeScript({
-    target: { tabId },
-    args: [normalizedKeyword(keyword), pageIndex],
-    func: (expectedKeyword, expectedPage) => {
-      for (const anchor of document.querySelectorAll("a[href]")) {
-        try {
-          const url = new URL(anchor.href, location.href);
-          const actualKeyword = String(url.searchParams.get("query") || "")
-            .normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
-          if (url.protocol !== "https:"
-            || url.hostname !== "search.shopping.naver.com"
-            || url.pathname !== "/search/all"
-            || actualKeyword !== expectedKeyword
-            || Number(url.searchParams.get("pagingIndex") || 1) !== expectedPage) continue;
-          return { url: url.toString() };
-        } catch {
-          continue;
-        }
-      }
-      try {
-        const current = new URL(location.href);
-        const currentKeyword = String(current.searchParams.get("query") || "")
-          .normalize("NFKC").replace(/\s+/gu, " ").trim().toLowerCase();
-        if (current.protocol === "https:"
-          && current.hostname === "search.shopping.naver.com"
-          && current.pathname === "/search/all"
-          && currentKeyword === expectedKeyword) {
-          current.searchParams.set("pagingIndex", String(expectedPage));
-          current.searchParams.set("pagingSize", "40");
-          current.searchParams.set("productSet", "total");
-          current.searchParams.set("sort", "rel");
-          current.searchParams.set("viewType", "list");
-          return { url: current.toString() };
-        }
-      } catch {
-        // The current page is validated again by readNextData after navigation.
-      }
-      return { error: "naver_pagination_target_missing" };
-    },
-  }), PAGE_SCRIPT_TIMEOUT_MS, "naver_page_script_timeout");
-  const value = results?.[0]?.result || {};
-  if (value.error) throw new Error(value.error);
-  if (!value.url) throw new Error("naver_pagination_target_missing");
-  return value.url;
-}
-
-async function navigateTab(tabId, url) {
-  await chrome.tabs.update(tabId, { url, active: false });
-  await waitForTabComplete(tabId);
+async function clearCompletedCollectionVerificationState() {
+  try {
+    await clearVerificationState();
+  } catch {
+    // UI verification cleanup must not discard a complete streamed window.
+  }
 }
 
 async function collectPages(request, onPage = null) {
@@ -416,41 +338,50 @@ async function collectPages(request, onPage = null) {
   };
   let tabId = null;
   let keepTabOpen = false;
+  let collectionStageCode = "naver_page_navigation_failed";
   try {
-    const tab = await chrome.tabs.create({ url: "https://www.naver.com/", active: false });
-    tabId = tab.id;
-    assertWithinDeadline();
-    await waitForTabComplete(tabId);
-    await wait(searchDwellDelay());
-    assertWithinDeadline();
-    await navigateTab(tabId, naverSearchUrl(request.keyword));
-    const priceCompareEntry = await waitForPriceCompareEntry(tabId, request.keyword);
-    await wait(searchDwellDelay());
-    assertWithinDeadline();
-    await navigateTab(tabId, priceCompareEntry);
-
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       assertWithinDeadline();
+      collectionStageCode = "naver_page_navigation_failed";
+      const url = searchUrl(request.keyword, pageIndex);
+      if (tabId == null) {
+        const tab = await chrome.tabs.create({ url, active: false });
+        tabId = tab.id;
+      } else {
+        await chrome.tabs.update(tabId, { url, active: false });
+      }
+      await waitForTabComplete(tabId);
+      collectionStageCode = "naver_page_script_failed";
       const page = { pageIndex, nextDataText: await readNextData(tabId) };
-      if (typeof onPage === "function") await onPage(page);
+      if (typeof onPage === "function") {
+        collectionStageCode = "native_host_page_delivery_failed";
+        await onPage(page);
+      }
       else pages.push(page);
-      await saveStatus("running", `page ${pageIndex}/${PAGE_COUNT}`);
+      collectionStageCode = "provider_browser_collection_failed";
+      await saveCollectionProgress(pageIndex);
       if (pageIndex < PAGE_COUNT) {
-        const nextPageTarget = await readNextPageTarget(tabId, request.keyword, pageIndex + 1);
+        collectionStageCode = "naver_page_navigation_failed";
         await wait(pageRequestDelay());
         assertWithinDeadline();
-        await navigateTab(tabId, nextPageTarget);
       }
     }
-    await clearVerificationState();
+    collectionStageCode = "provider_browser_collection_failed";
+    await clearCompletedCollectionVerificationState();
     return pages;
   } catch (error) {
-    if (["naver_verification_required", "naver_network_restricted"].includes(String(error?.message || ""))
+    const typedError = typedCollectionError(error, collectionStageCode);
+    if (["naver_verification_required", "naver_network_restricted"].includes(typedError.message)
       && tabId != null) {
-      tabId = await surfaceVerificationTab(tabId);
       keepTabOpen = true;
+      try {
+        tabId = await surfaceVerificationTab(tabId);
+      } catch {
+        // Preserve the original access code even if Chrome cannot persist the
+        // local UI marker. The global worker lane still applies its cooldown.
+      }
     }
-    throw error;
+    throw typedError;
   } finally {
     if (tabId != null && !keepTabOpen) await chrome.tabs.remove(tabId).catch(() => {});
   }

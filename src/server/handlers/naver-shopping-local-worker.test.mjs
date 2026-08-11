@@ -121,6 +121,17 @@ function completeWindow() {
   };
 }
 
+function microsecondLeaseFixture() {
+  const startedSecond = new Date(Date.now() - 60_000).toISOString().slice(0, 19);
+  const untilSecond = new Date(Date.now() + 35 * 60_000).toISOString().slice(0, 19);
+  return {
+    databaseLeaseStartedAt: `${startedSecond}.333392Z`,
+    databaseLeaseUntil: `${untilSecond}.333392Z`,
+    normalizedLeaseStartedAt: `${startedSecond}.333Z`,
+    normalizedLeaseUntil: `${untilSecond}.333Z`,
+  };
+}
+
 function resolvingQuery(result) {
   const query = {
     select() { return query; },
@@ -587,8 +598,12 @@ test("signed manual queue registers every active tracker without exposing accoun
 
 test("claims an interactive lookup before periodic trackers and atomically stores its 300 result", async () => {
   await withWorkerEnv(async () => {
-    const databaseLeaseStartedAt = "2026-08-11T05:08:24.333392Z";
-    const databaseLeaseUntil = "2026-08-11T05:43:24.333392Z";
+    const {
+      databaseLeaseStartedAt,
+      databaseLeaseUntil,
+      normalizedLeaseStartedAt,
+      normalizedLeaseUntil,
+    } = microsecondLeaseFixture();
     const rawLookupJob = {
       kind: "lookup",
       keyword: "온열찜질기",
@@ -623,8 +638,8 @@ test("claims an interactive lookup before periodic trackers and atomically store
     const claimedPayload = await claimResponse.json();
     assert.deepEqual(claimedPayload.job, rawLookupJob);
     const lookupJob = validateLocalWorkerJob(claimedPayload.job);
-    assert.equal(lookupJob.claims[0].leaseStartedAt, "2026-08-11T05:08:24.333Z");
-    assert.equal(lookupJob.claims[0].leaseUntil, "2026-08-11T05:43:24.333Z");
+    assert.equal(lookupJob.claims[0].leaseStartedAt, normalizedLeaseStartedAt);
+    assert.equal(lookupJob.claims[0].leaseUntil, normalizedLeaseUntil);
 
     let completeArgs = null;
     const submitCtx = {
@@ -672,7 +687,7 @@ test("claims an interactive lookup before periodic trackers and atomically store
     assert.equal(submitResponse.status, 200);
     assert.equal(submitPayload.committedCount, 1);
     assert.equal(completeArgs.p_job_id, TRACKER_ID);
-    assert.equal(completeArgs.p_lease_started_at, "2026-08-11T05:08:24.333Z");
+    assert.equal(completeArgs.p_lease_started_at, normalizedLeaseStartedAt);
     assert.equal(completeArgs.p_result.result.rank, 11);
     assert.equal(completeArgs.p_result.result.checkedCount, 300);
   });
@@ -680,8 +695,11 @@ test("claims an interactive lookup before periodic trackers and atomically store
 
 test("normalizes a microsecond lookup claim before the failure RPC round trip", async () => {
   await withWorkerEnv(async () => {
-    const databaseLeaseStartedAt = "2026-08-11T05:08:24.333392Z";
-    const databaseLeaseUntil = "2026-08-11T05:43:24.333392Z";
+    const {
+      databaseLeaseStartedAt,
+      databaseLeaseUntil,
+      normalizedLeaseStartedAt,
+    } = microsecondLeaseFixture();
     const claimCtx = {
       supabaseAdmin: {
         async rpc(name) {
@@ -704,7 +722,7 @@ test("normalizes a microsecond lookup claim before the failure RPC round trip", 
     const claimResponse = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), claimCtx);
     assert.equal(claimResponse.status, 200);
     const job = validateLocalWorkerJob((await claimResponse.json()).job);
-    assert.equal(job.claims[0].leaseStartedAt, "2026-08-11T05:08:24.333Z");
+    assert.equal(job.claims[0].leaseStartedAt, normalizedLeaseStartedAt);
 
     let failArgs = null;
     const failCtx = {
@@ -725,7 +743,7 @@ test("normalizes a microsecond lookup claim before the failure RPC round trip", 
     assert.equal(failResponse.status, 200);
     assert.equal((await failResponse.json()).releasedCount, 1);
     assert.equal(failArgs.p_job_id, TRACKER_ID);
-    assert.equal(failArgs.p_lease_started_at, "2026-08-11T05:08:24.333Z");
+    assert.equal(failArgs.p_lease_started_at, normalizedLeaseStartedAt);
   });
 });
 

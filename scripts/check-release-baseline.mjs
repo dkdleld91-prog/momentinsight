@@ -1201,19 +1201,23 @@ const checks = {
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
   ])
     && JSON.stringify(shoppingChromeManifest.host_permissions) === JSON.stringify([
-      "https://www.naver.com/*",
-      "https://search.naver.com/*",
-      "https://shopping.naver.com/*",
       "https://search.shopping.naver.com/*",
     ])
-    && shoppingChromeWorker.includes("function naverSearchUrl")
-    && shoppingChromeWorker.includes('new URL("https://search.naver.com/search.naver")')
-    && shoppingChromeWorker.includes('"https://www.naver.com/"')
-    && shoppingChromeWorker.includes("네이버 가격비교 더보기")
-    && shoppingChromeWorker.includes("naver_price_compare_target_missing")
-    && shoppingChromeWorker.includes("naver_pagination_target_missing")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 25_000")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 15_000")
+    && shoppingChromeWorker.includes("function searchUrl(keyword, pageIndex)")
+    && shoppingChromeWorker.includes('new URL("https://search.shopping.naver.com/search/all")')
+    && shoppingChromeWorker.includes('searchParams.set("where", "all")')
+    && shoppingChromeWorker.includes('searchParams.set("frm", "NVSCTAB")')
+    && shoppingChromeWorker.includes('searchParams.set("pagingSize", "40")')
+    && shoppingChromeWorker.includes('searchParams.set("productSet", "total")')
+    && shoppingChromeWorker.includes('searchParams.set("sort", "rel")')
+    && shoppingChromeWorker.includes('searchParams.set("viewType", "list")')
+    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
+    && shoppingChromeWorker.includes("async function saveCollectionProgress(pageIndex)")
+    && shoppingChromeWorker.includes("async function clearCompletedCollectionVerificationState()")
+    && shoppingChromeWorker.includes("await saveCollectionProgress(pageIndex)")
+    && shoppingChromeWorker.includes("await clearCompletedCollectionVerificationState()")
+    && !/www\.naver\.com|search\.naver\.com|네이버 가격비교 더보기|SEARCH_DWELL|readPriceCompareEntry|readNextPageTarget/u.test(shoppingChromeWorker)
     && shoppingChromeWorker.includes("collectPages")
     && shoppingChromeWorker.includes("pagingIndex")
     && shoppingChromeWorker.includes("productSet")
@@ -1278,13 +1282,13 @@ const checks = {
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 25_000")
-    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 15_000")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
+    && shoppingChromeWorker.includes("PAGE_REQUEST_JITTER_MS = 2_500")
     && shoppingChromeWorker.includes("VERIFICATION_COOLDOWN_MS = 60 * 60_000")
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.46"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.47"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1308,6 +1312,8 @@ const checks = {
     && shoppingChromeWorker.includes("if (!EXTENSION_PAGE_CONTEXT)")
     && shoppingChromeWorker.includes('saveStatus("standby", "다음 갱신 요청 대기 중")')
     && shoppingChromeWorker.includes("RUNNING_STATUS_STALE_MS = 20 * 60_000")
+    && shoppingChromeWorker.includes("typedCollectionError(error, collectionStageCode)")
+    && shoppingChromeWorker.includes('collectionStageCode = "naver_page_navigation_failed"')
     && shoppingLocalWorker.includes('options.requireWakeSignal === true')
     && shoppingLocalWorker.includes('const wake = await action({ action: "claim-wake", ...lanePayload })')
     && shoppingLocalWorker.includes('action: "claim-lane"')
@@ -1342,7 +1348,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.46"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.47"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

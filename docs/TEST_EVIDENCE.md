@@ -5,7 +5,8 @@
 - `/api/owner/tool`은 익명·team·잘못된 owner identity를 403으로 거절하고 정확한 `mml93-a01` owner에만 동적 개발 nav group과 두 owner view를 반환합니다.
 - 공개 admin/client source의 실제 markup에는 `owner-development`, `owner-utility`, `data-rank-worker-operations`가 없고, `N 30일 순위` view slice에도 운영 패널이 없습니다. 인증 후 검증된 payload만 nav와 view를 삽입하며 로그아웃 때 모두 제거합니다.
 - root 기반 canary target·제어 위임, owner deep-link, restored team의 forged hash 정규화, 기존 VAT 계산 계약을 회귀로 고정했습니다.
-- 집중 회귀 71/71, role-state, baseline, role-query parity, 보호 잠금, Vercel public build와 `git diff --check`가 통과했습니다. Production 실제 화면·응답 검증은 배포 뒤 별도 증거로 확정합니다.
+- 집중 회귀 71/71, role-state, baseline, role-query parity, 보호 잠금, Vercel public build와 `git diff --check`가 통과했습니다.
+- Production commit `6a1076899183`·deployment `dpl_HUQadoTJ3qTP1DFxVnKfiNEvQfGb`는 READY이며 `/health`·`/ready`가 같은 release·Supabase ready를 반환했습니다. 실제 `mml93-a01` owner 화면에서 개발 그룹 1개, owner view 2개, `aria-current=page`, 표시된 운영 패널과 오가닉 300개 증거, N30 내부 패널 0개, 가로 넘침 0을 확인했습니다. 초기 빈 패널은 실패가 아니라 계정 범위·운영 상태 API 로딩 구간이었고 약 10초 내 정상 지표 646자가 표시됐습니다.
 
 ## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1 로컬 증거
 

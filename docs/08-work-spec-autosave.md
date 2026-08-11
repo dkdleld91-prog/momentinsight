@@ -12,6 +12,8 @@
 - 공정성: 신규·미검증은 첫 슬롯, 신규 동률은 `created_at,id`, 기존 due는 `next_check_at,created_at,id`로 고정한다. 그 뒤 lookup/new/due aging과 광고주 round-robin을 유지한다.
 - 불변: baseline 10분, 동시 실행 1개, 직접 `/search/all` 1~8페이지와 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, 300위 밖 정상 완료, last-good 보존, Windows primary·Mac standby global lane은 변경하지 않는다.
 - 완료 기준: runtime 1.1.1의 DB·Production·Windows 바이트 일치, `남자팬티` 원자 300개, 다음 자동 키워드 전환, circuit closed와 lane·lease 해제를 실제 증거로 확인한다. 단일 성공을 24시간 완주 증거로 과장하지 않는다.
+- 운영 완료 증거: 신규 `강아지사료`는 첫 슬롯에서 선점되어 `provider_duplicate_identity`로 해당 tracker만 격리됐고, `남자팬티`는 collection `pw-chrome-1786451158772-13372ef3800e1ee373a8`/오가닉 300개/광고 45개 제외/100위로 완료됐다. 다음 10분 catch-up은 기존 `치아미백제`를 자동 선택해 collection `pw-chrome-1786451344481-f10f7157eb70e146d1e1`/오가닉 300개/광고 44개 제외/46위로 완료했다. 모든 terminal 뒤 circuit closed와 probe·run·lane·tracker lease 해제를 확인했다.
+- 배포 실패 원장: 관리자 canary 대상 ID가 operations panel에 렌더됐지만 click handler가 상위 card에서 읽어 실행하지 못한 UI 경계를 수정했다. 중간 배포는 보호 함수 잠금과 CSP hash gate가 각각 차단했으며 Production은 이전 정상본을 유지했다. 승인된 잠금·CSP 동기화 뒤 commit `f49d93d061eb`/deployment `dpl_DeJghmAKeVPUSMZprGF6vUyjv7hp`만 READY로 승격했다.
 
 ## 2026-08-11 사용자 실행 순서: 준비작업 1번
 

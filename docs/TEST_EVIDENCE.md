@@ -7,6 +7,15 @@
 - 서버 후보 조회는 신규 `created_at,id`, due `next_check_at,created_at,id` 순서를 고정했습니다. 신규 우선 DB 함수는 row lock·aging·광고주 round-robin·service_role 전용 권한을 유지합니다.
 - 대상 회귀 145/145, server contract 41/41, release baseline과 운영 DB의 rollback parser 검증이 통과했습니다. 보호 잠금·전체 release·배포·Windows 실기는 아래 완료 증거가 추가되기 전까지 미완료입니다.
 
+## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1 운영 증거
+
+- DB migration `20260811120243_naver_shopping_queue_continuity`, Windows 1.1.1/fingerprint `ed2e0692fb1d98d2f0eea26fa73e8eb1ecd5921f1dd2b8a82de10b1f214b926c`, Production commit `f49d93d061eb`/deployment `dpl_DeJghmAKeVPUSMZprGF6vUyjv7hp`를 확인했습니다. `/health`와 `/ready`는 release `f49d93d061eb` 및 Supabase ready를 반환했습니다.
+- 신규 우선: 21:18 KST 미검증 `강아지사료`를 첫 슬롯에서 claim했습니다. `provider_duplicate_identity` terminal은 신규 snapshot 없이 last-good를 보존하고 해당 tracker만 24시간 격리했으며 circuit closed와 global/tracker lease 해제를 유지했습니다.
+- 단독 canary: `남자팬티`/product `12491798995` collection `pw-chrome-1786451158772-13372ef3800e1ee373a8`은 source `naver_shopping_results_collector`, checkedCount 300, 광고 45개 제외, 100위로 원자 완료했습니다. circuit closed, probe/run/lane/tracker lease가 모두 해제됐습니다.
+- 자동 인계: 다음 10분 catch-up은 기존 due `치아미백제`를 자동 claim했습니다. collection `pw-chrome-1786451344481-f10f7157eb70e146d1e1`은 checkedCount 300, 광고 44개 제외, 46위로 완료됐고 success streak 2, circuit closed, 모든 lease 해제를 확인했습니다.
+- 관리자 canary target이 operations panel에 렌더되지만 click handler가 card에서 읽던 결함을 수정했고 release baseline에 정확한 DOM 계약을 추가했습니다. 첫 배포는 보호 잠금, 두 번째는 CSP hash가 각각 fail-closed로 차단됐으며 운영 alias는 바뀌지 않았습니다. 잠금·CSP 동기화 후 Vercel 전체 배포 검사가 통과한 최종 배포만 Production READY가 됐습니다.
+- 위 증거는 `신규 우선 → 개별 실패 격리 → canary 성공 → 기존 자동 인계`의 복구 완료 증거입니다. 전체 tracker의 24시간 완주는 아직 측정하지 않았으며 `준비작업 1번`에서 별도 감사합니다.
+
 ## 2026-08-11 개발 폴더·실행 문서 정리
 
 - `git status --ignored`, `git clean -nd/-ndX`, 생성물 패턴, 0바이트 파일, 용량을 읽기 전용으로 감사했습니다. 삭제 가능한 실제 잔재는 재생성되는 `dist` 1개뿐이었고 `npm run clean:workspace`로 제거했습니다.

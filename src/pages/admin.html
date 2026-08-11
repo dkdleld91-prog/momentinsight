@@ -10058,10 +10058,6 @@
               </div>
               <span class="mi-badge">관리자 확인용</span>
             </div>
-            <section class="mi-rank-worker-operations" data-rank-worker-operations hidden aria-label="N 쇼핑 순위 수집 운영 상태">
-              <div data-rank-worker-operations-content></div>
-              <p class="mi-rank-worker-control-status" data-rank-worker-control-status aria-live="polite"></p>
-            </section>
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
               <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
@@ -11499,6 +11495,7 @@
       });
 
       var ownerToolScreen = "";
+      var ownerToolScreens = [];
       var ownerToolAmounts = {};
       var ownerToolGeneration = 0;
       var ownerToolTimer = 0;
@@ -11508,8 +11505,9 @@
         window.clearTimeout(ownerToolTimer);
         ownerToolTimer = 0;
         ownerToolScreen = "";
+        ownerToolScreens = [];
         ownerToolAmounts = {};
-        root.querySelectorAll("[data-owner-tool-menu-root], [data-owner-tool-view-root], [data-owner-tool-style-root]").forEach(function (node) {
+        document.querySelectorAll("[data-owner-tool-menu-root], [data-owner-tool-view-root], [data-owner-tool-style-root]").forEach(function (node) {
           node.remove();
         });
       }
@@ -11634,24 +11632,32 @@
         var tool = payload && payload.tool ? payload.tool : null;
         if (!payload.ok || !tool || !/^owner-[a-z-]{1,40}$/.test(String(tool.screen || ""))) return false;
         if (typeof tool.menuHtml !== "string" || typeof tool.viewHtml !== "string" || typeof tool.styleText !== "string") return false;
-        if (tool.menuHtml.length > 1000 || tool.viewHtml.length > 12000 || tool.styleText.length > 20000) return false;
+        if (tool.menuHtml.length > 2400 || tool.viewHtml.length > 22000 || tool.styleText.length > 30000) return false;
 
         var menuTemplate = document.createElement("template");
         menuTemplate.innerHTML = tool.menuHtml.trim();
-        var menu = menuTemplate.content.firstElementChild;
+        var menuGroup = menuTemplate.content.firstElementChild;
         var viewTemplate = document.createElement("template");
         viewTemplate.innerHTML = tool.viewHtml.trim();
-        var view = viewTemplate.content.firstElementChild;
-        if (!menu || menu.tagName !== "A" || menu.getAttribute("data-mi-admin-screen") !== tool.screen) return false;
-        if (!view || view.tagName !== "SECTION" || view.getAttribute("data-mi-admin-view") !== tool.screen) return false;
-        if (!view.querySelector("[data-owner-tool-input]") || !view.querySelector("[data-owner-tool-reset]") || !view.querySelector("[data-owner-tool-status]")) return false;
+        var viewGroup = viewTemplate.content.firstElementChild;
+        if (!menuGroup || menuGroup.tagName !== "DIV" || !menuGroup.classList.contains("mi-nav-group")) return false;
+        if (!viewGroup || viewGroup.tagName !== "DIV") return false;
+        var menus = Array.from(menuGroup.querySelectorAll(":scope > [data-mi-admin-screen]"));
+        var views = Array.from(viewGroup.querySelectorAll(":scope > section[data-mi-admin-view]"));
+        var screens = menus.map(function (menu) { return menu.getAttribute("data-mi-admin-screen") || ""; });
+        if (!screens.length || screens[0] !== tool.screen || screens.some(function (screen) { return !/^owner-[a-z-]{1,40}$/.test(screen); })) return false;
+        if (views.length !== screens.length || views.some(function (view, index) { return view.getAttribute("data-mi-admin-view") !== screens[index]; })) return false;
+        var utilityView = views.find(function (view) { return view.getAttribute("data-mi-admin-view") === "owner-utility"; });
+        var developmentView = views.find(function (view) { return view.getAttribute("data-mi-admin-view") === "owner-development"; });
+        if (!utilityView || !utilityView.querySelector("[data-owner-tool-input]") || !utilityView.querySelector("[data-owner-tool-reset]") || !utilityView.querySelector("[data-owner-tool-status]")) return false;
+        if (!developmentView || !developmentView.querySelector("[data-rank-worker-operations]") || !developmentView.querySelector("[data-rank-worker-operations-content]")) return false;
 
-        var navGroup = root.querySelector(".mi-nav-group");
+        var nav = root.querySelector(".mi-nav");
         var wrap = root.querySelector(".mi-wrap");
-        if (!navGroup || !wrap || requestGeneration !== ownerToolGeneration || secureSession.role !== "owner") return false;
+        if (!nav || !wrap || requestGeneration !== ownerToolGeneration || secureSession.role !== "owner") return false;
 
-        menu.setAttribute("data-owner-tool-menu-root", "");
-        view.setAttribute("data-owner-tool-view-root", "");
+        menuGroup.setAttribute("data-owner-tool-menu-root", "");
+        views.forEach(function (view) { view.setAttribute("data-owner-tool-view-root", ""); });
         var style = document.createElement("style");
         style.setAttribute("data-owner-tool-style-root", "");
         style.textContent = tool.styleText;
@@ -11659,15 +11665,19 @@
         if (secureSession.role !== "owner") return false;
         var generation = ownerToolGeneration;
         document.head.appendChild(style);
-        navGroup.appendChild(menu);
-        wrap.appendChild(view);
+        nav.appendChild(menuGroup);
+        views.forEach(function (view) { wrap.appendChild(view); });
         ownerToolScreen = tool.screen;
-        bindOwnerTool(view, generation);
-        await calculateOwnerTool(view, "0", generation).catch(function (error) {
+        ownerToolScreens = screens.slice();
+        bindOwnerTool(utilityView, generation);
+        await calculateOwnerTool(utilityView, "0", generation).catch(function (error) {
           if (generation === ownerToolGeneration) {
-            setOwnerToolStatus(view.querySelector("[data-owner-tool-status]"), error.message || "계산 연결을 확인해주세요.", "warn");
+            setOwnerToolStatus(utilityView.querySelector("[data-owner-tool-status]"), error.message || "계산 연결을 확인해주세요.", "warn");
           }
         });
+        window.dispatchEvent(new CustomEvent("mi:rank-owner-tool-mounted"));
+        var requestedOwnerScreen = (window.location.hash || "").replace("#mi-admin-", "");
+        if (ownerToolScreens.indexOf(requestedOwnerScreen) >= 0) setScreen(requestedOwnerScreen, false);
         return true;
       }
 
@@ -13237,8 +13247,9 @@
 
       function setScreen(name, shouldPushHash) {
         var target = name || "home";
+        var rejectedOwnerTarget = /^owner-/.test(target) && (secureSession.role !== "owner" || ownerToolScreens.indexOf(target) < 0);
         if (target === "active-accounts" && !canManageOwnerCodes()) target = "agency-code";
-        if (target === ownerToolScreen && secureSession.role !== "owner") target = "agency-code";
+        if (rejectedOwnerTarget) target = secureSession.role === "team" ? "agency-code" : "home";
         var views = root.querySelectorAll("[data-mi-admin-view]");
         var links = root.querySelectorAll("[data-mi-admin-screen]");
         var found = false;
@@ -13254,8 +13265,15 @@
           });
         }
         links.forEach(function (link) {
-          link.classList.toggle("is-active", link.getAttribute("data-mi-admin-screen") === target);
+          var active = link.getAttribute("data-mi-admin-screen") === target;
+          link.classList.toggle("is-active", active);
+          if (active) link.setAttribute("aria-current", "page");
+          else link.removeAttribute("aria-current");
         });
+        var hasOwnerHashWithoutOwner = secureSession.role === "team" && /^#mi-admin-owner-/.test(window.location.hash || "");
+        if ((rejectedOwnerTarget || hasOwnerHashWithoutOwner) && secureSession.role && !shouldPushHash && window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-admin-" + target);
+        }
         if (target !== "work") deactivateWorkOperation();
         if (shouldPushHash) {
           var nextHash = "#mi-admin-" + target;
@@ -14751,6 +14769,21 @@
         return formatRankShortAt(value);
       }
 
+      function rankWorkerFailureLabel(code) {
+        var normalized = String(code || "");
+        if (!normalized) return "없음";
+        if (normalized === "provider_duplicate_identity") return "상품 식별 중복";
+        if (normalized === "naver_network_restricted") return "네이버 접속 제한";
+        if (normalized === "naver_verification_required") return "보안 확인 필요";
+        if (normalized === "shopping_rank_source_unavailable") return "수집원 응답 불가";
+        if (normalized === "local_worker_collection_failed") return "수집 작업 실패";
+        return normalized;
+      }
+
+      function rankWorkerMetric(label, value, detail) {
+        return '<div class="mi-rank-worker-metric"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong><small>' + escapeHtml(detail) + '</small></div>';
+      }
+
       function rankWorkerOperationsState(circuit, lane) {
         var state = String(circuit && circuit.state || "closed");
         var leaseUntil = lane && lane.leaseUntil ? new Date(lane.leaseUntil).getTime() : 0;
@@ -14773,8 +14806,13 @@
         return canary && canary.id ? String(canary.id) : "";
       }
 
+      function rankWorkerOperationsPanel() {
+        if (secureSession.role !== "owner") return null;
+        return root.querySelector("[data-rank-worker-operations]");
+      }
+
       function renderRankWorkerOperations(card, operations, trackers, scopeMode) {
-        var panel = card && card.querySelector("[data-rank-worker-operations]");
+        var panel = rankWorkerOperationsPanel();
         var content = panel && panel.querySelector("[data-rank-worker-operations-content]");
         if (!panel || !content) return;
         if (scopeMode !== "owner" || !operations) {
@@ -14827,18 +14865,25 @@
         var canaryDisabled = controls.canRunCanary === true && canaryTrackerId ? "" : " disabled";
         var candidateDisabled = controls.canActivateCandidate === true ? "" : " disabled";
         var baselineDisabled = controls.canReturnBaseline === true ? "" : " disabled";
+        var failureCode = String(failure.code || "");
+        var executionMetrics =
+          rankWorkerMetric("현재 단계", progressText, "작업 " + String(progress.jobKind || "-") + " · 시작 " + rankWorkerOperationsTime(progress.jobStartedAt)) +
+          rankWorkerMetric("대기열", String(Number(queue.pendingCount || 0)) + "건", "신규/조회 " + String(Number(queue.lookupPendingCount || 0)) + " · 추적 " + String(Number(queue.trackerPendingCount || 0)) + " · 처리 " + String(Number(queue.processingCount || 0))) +
+          rankWorkerMetric("마지막 정상 증거", atomicProof, rankWorkerOperationsTime(success.at) + " · 광고 " + String(Number(success.excludedAdCount || 0)) + "개 제외 · " + (success.collectionId ? String(success.collectionId).slice(0, 12) : "ID 대기")) +
+          rankWorkerMetric("실행 계약", runtimeText, runtime.fingerprint ? String(runtime.fingerprint).slice(0, 16) : "지문 대기");
+        var infrastructureMetrics =
+          rankWorkerMetric("주 작업기 신호", rankWorkerOperationsTime(lane.primarySeenAt), String(lane.primaryWorkerId || "Windows 신호 대기")) +
+          rankWorkerMetric("전역 레인", lane.leaseUntil && new Date(lane.leaseUntil).getTime() > Date.now() ? "사용 중" : "해제", String(lane.leaseWorkerId || "작업기 없음") + " · 만료 " + rankWorkerOperationsTime(lane.leaseUntil)) +
+          rankWorkerMetric("안전 간격", cadenceText, "안정 " + String(Number(cadence.stableHours || 0)) + "시간 · 연속 성공 " + String(Number(cadence.successStreak || 0)) + "회") +
+          rankWorkerMetric("공정 큐 순환", "긴급 연속 " + String(Number(scheduler.urgentStreak || 0)) + "회", "최근 대행사 " + String(scheduler.lastAgencyCode || "-") + " · 최장 " + rankWorkerOperationsTime(queue.oldestPendingAt));
+        var safetyMetrics =
+          rankWorkerMetric("마지막 실패", rankWorkerFailureLabel(failureCode), rankWorkerOperationsTime(failure.at) + " · 반복 " + String(Number(circuit.failureStreak || 0)) + "회" + (failureCode ? " · " + failureCode : "")) +
+          rankWorkerMetric("회로 원인", String(circuit.reason || "정상"), "시작 " + rankWorkerOperationsTime(circuit.openedAt) + " · 서명 " + (circuit.failureSignature ? String(circuit.failureSignature).slice(0, 16) : "없음"));
         content.innerHTML = '<div class="mi-rank-worker-head"><div><strong>N 쇼핑 수집 운영센터</strong><small>총관리자 전용 · Windows 주 작업기 / Mac 대기 작업기 단일 레인</small></div><span class="mi-rank-worker-state' + state.className + '">' + escapeHtml(state.label) + '</span></div>' +
-          '<div class="mi-rank-worker-metrics">' +
-          '<div class="mi-rank-worker-metric"><span>현재 단계</span><strong>' + escapeHtml(progressText) + '</strong><small>작업 ' + escapeHtml(progress.jobKind || "-") + ' · 시작 ' + escapeHtml(rankWorkerOperationsTime(progress.jobStartedAt)) + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>대기열</span><strong>' + escapeHtml(String(Number(queue.pendingCount || 0)) + "건") + '</strong><small>신규/조회 ' + escapeHtml(String(Number(queue.lookupPendingCount || 0))) + ' · 추적 ' + escapeHtml(String(Number(queue.trackerPendingCount || 0))) + ' · 처리 ' + escapeHtml(String(Number(queue.processingCount || 0))) + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>마지막 정상 증거</span><strong>' + escapeHtml(atomicProof) + '</strong><small>' + escapeHtml(rankWorkerOperationsTime(success.at)) + ' · 광고 ' + escapeHtml(String(Number(success.excludedAdCount || 0))) + '개 제외 · ' + escapeHtml(success.collectionId ? String(success.collectionId).slice(0, 12) : "ID 대기") + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>실행 계약</span><strong>' + escapeHtml(runtimeText) + '</strong><small>' + escapeHtml(runtime.fingerprint ? String(runtime.fingerprint).slice(0, 16) : "지문 대기") + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>주 작업기 신호</span><strong>' + escapeHtml(rankWorkerOperationsTime(lane.primarySeenAt)) + '</strong><small>' + escapeHtml(lane.primaryWorkerId || "Windows 신호 대기") + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>전역 레인</span><strong>' + escapeHtml(lane.leaseUntil && new Date(lane.leaseUntil).getTime() > Date.now() ? "사용 중" : "해제") + '</strong><small>' + escapeHtml(lane.leaseWorkerId || "작업기 없음") + ' · 만료 ' + escapeHtml(rankWorkerOperationsTime(lane.leaseUntil)) + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>안전 간격</span><strong>' + escapeHtml(cadenceText) + '</strong><small>안정 ' + escapeHtml(String(Number(cadence.stableHours || 0))) + '시간 · 연속 성공 ' + escapeHtml(String(Number(cadence.successStreak || 0))) + '회</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>마지막 실패</span><strong>' + escapeHtml(failure.code || "없음") + '</strong><small>' + escapeHtml(rankWorkerOperationsTime(failure.at)) + ' · 반복 ' + escapeHtml(String(Number(circuit.failureStreak || 0))) + '회</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>회로 원인</span><strong>' + escapeHtml(circuit.reason || "정상") + '</strong><small>시작 ' + escapeHtml(rankWorkerOperationsTime(circuit.openedAt)) + ' · 서명 ' + escapeHtml(circuit.failureSignature ? String(circuit.failureSignature).slice(0, 16) : "없음") + '</small></div>' +
-          '<div class="mi-rank-worker-metric"><span>공정 큐 순환</span><strong>긴급 연속 ' + escapeHtml(String(Number(scheduler.urgentStreak || 0))) + '회</strong><small>최근 대행사 ' + escapeHtml(scheduler.lastAgencyCode || "-") + ' · 최장 ' + escapeHtml(rankWorkerOperationsTime(queue.oldestPendingAt)) + '</small></div>' +
+          '<div class="mi-rank-worker-sections">' +
+          '<section class="mi-rank-worker-section"><div class="mi-rank-worker-section-head"><span>01</span><strong>실시간 실행</strong></div><div class="mi-rank-worker-metrics">' + executionMetrics + '</div></section>' +
+          '<section class="mi-rank-worker-section"><div class="mi-rank-worker-section-head"><span>02</span><strong>장비 · 스케줄</strong></div><div class="mi-rank-worker-metrics">' + infrastructureMetrics + '</div></section>' +
+          '<section class="mi-rank-worker-section is-safety"><div class="mi-rank-worker-section-head"><span>03</span><strong>안전 · 복구</strong></div><div class="mi-rank-worker-metrics">' + safetyMetrics + '</div></section>' +
           '</div>' + alertHtml +
           '<div class="mi-rank-worker-actions">' +
           '<button class="mi-button is-danger" type="button" data-rank-worker-stop' + stopDisabled + '>긴급 안전 정지</button>' +
@@ -16296,7 +16341,7 @@
           var confirmMessage = "";
           if (action === "worker-stop") confirmMessage = "자동 순위 수집을 안전 정지할까요? 마지막 정상 순위와 기록은 보존됩니다.";
           if (action === "worker-canary") {
-            var operationsPanel = card.querySelector("[data-rank-worker-operations]");
+            var operationsPanel = rankWorkerOperationsPanel();
             body.trackerId = operationsPanel ? operationsPanel.getAttribute("data-rank-canary-tracker-id") || "" : "";
             if (!body.trackerId) {
               setStatus(rankStatus, "남자팬티 고정 검증 항목을 확인할 수 없습니다.", "is-warn");
@@ -16312,7 +16357,7 @@
           }
           if (confirmMessage && !window.confirm(confirmMessage)) return;
 
-          var panel = card.querySelector("[data-rank-worker-operations]");
+          var panel = rankWorkerOperationsPanel();
           var controlStatus = panel && panel.querySelector("[data-rank-worker-control-status]");
           var wasDisabled = button.disabled;
           button.disabled = true;
@@ -16337,13 +16382,18 @@
           }
         }
 
-        card.addEventListener("click", function (event) {
+        root.addEventListener("click", function (event) {
           var button = event.target.closest("[data-rank-worker-stop], [data-rank-worker-canary], [data-rank-worker-candidate], [data-rank-worker-baseline]");
-          if (!button || !card.contains(button)) return;
+          var panel = rankWorkerOperationsPanel();
+          if (!button || !panel || !panel.contains(button)) return;
           if (button.hasAttribute("data-rank-worker-stop")) return runRankWorkerControl(button, "worker-stop", "");
           if (button.hasAttribute("data-rank-worker-canary")) return runRankWorkerControl(button, "worker-canary", "");
           if (button.hasAttribute("data-rank-worker-candidate")) return runRankWorkerControl(button, "worker-cadence", "candidate");
           return runRankWorkerControl(button, "worker-cadence", "baseline");
+        });
+
+        window.addEventListener("mi:rank-owner-tool-mounted", function () {
+          renderRankWorkerOperations(card, rankWorkerOperations, rankTrackers, rankScopeMode);
         });
 
         function activateRankTrackerScope() {

@@ -115,7 +115,23 @@ for (const state of ROLE_STATES) {
     activityCheck: async () => true,
   });
   assert.equal(teamAdmin.ok, state.teamAdminAllowed, `${state.id} runtime team administration`);
+
+  const ownerToolAllowed = state.id === "owner";
+  assert.equal(roleAllowsPath(state.claims.role, "/api/owner/tool"), ownerToolAllowed, `${state.id} owner tool role`);
+  const ownerTool = await authorizeCodeSession(requestWithSession("/api/owner/tool", state.claims), ENV, {
+    activityCheck: async () => true,
+  });
+  assert.equal(ownerTool.ok, ownerToolAllowed, `${state.id} runtime owner tool`);
+  if (ownerToolAllowed) {
+    assert.equal(ownerTool.request.headers.get("x-mi-session-role"), "owner", "owner tool trusted role");
+    assert.equal(ownerTool.request.headers.get("x-mi-owner-agency-code"), "mml93-a01", "owner tool exact primary identity");
+  }
 }
+
+const wrongOwnerClaims = createSessionClaims({ role: "owner", accountLabel: "mml93-a02", agencyCode: "mml93-a02" });
+const wrongOwner = await authorizeCodeSession(requestWithSession("/api/owner/tool", wrongOwnerClaims), ENV);
+assert.equal(wrongOwner.ok, false, "non-primary owner identity must fail");
+assert.equal(wrongOwner.response.status, 401, "non-primary owner status");
 
 const accountOnly = ROLE_STATES.find((state) => state.id === "account-only-team").claims;
 for (const path of ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers"]) {
@@ -146,6 +162,7 @@ assert.equal((await revoked.response.json()).code, "SESSION_REVOKED", "revoked t
 
 const adminSource = fs.readFileSync(new URL("../src/pages/admin.html", import.meta.url), "utf8");
 const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.meta.url), "utf8");
+const ownerToolSource = fs.readFileSync(new URL("../src/server/handlers/owner-tool-api.mjs", import.meta.url), "utf8");
 const operationalDocs = [
   "../docs/WORK_STATUS.md",
   "../docs/NEXT_ACTIONS.md",
@@ -184,6 +201,61 @@ for (const screen of [
   assert.equal(clientSource.includes(`data-mi-view="${screen}"`), true, `client screen: ${screen}`);
 }
 
+const staticOwnerDevelopmentMarkup = /<(?:a|div|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-(?:development|utility)"/u;
+const staticWorkerOperationsPanel = /<(?:div|section)\b[^>]*data-rank-worker-operations(?:\s|>|=)/u;
+assert.equal(staticOwnerDevelopmentMarkup.test(adminSource), false, "admin source must not statically disclose owner development DOM");
+assert.equal(staticOwnerDevelopmentMarkup.test(clientSource), false, "client source must not disclose owner development DOM");
+assert.equal(staticWorkerOperationsPanel.test(adminSource), false, "admin source must not statically disclose worker operations panel");
+assert.equal(staticWorkerOperationsPanel.test(clientSource), false, "client source must not disclose worker operations panel");
+
+for (const marker of [
+  'data-mi-admin-screen="owner-development"',
+  'data-mi-admin-view="owner-development"',
+  'data-mi-admin-screen="owner-utility"',
+  'data-mi-admin-view="owner-utility"',
+  "data-rank-worker-operations",
+  "mi-nav-group",
+]) {
+  assert.equal(ownerToolSource.includes(marker), true, `server-delivered owner tool marker: ${marker}`);
+}
+assert.match(ownerToolSource, /개발\s+(?:&lt;\/?&gt;|<\/?\s*>)/u, "owner development group label");
+assert.equal(ownerToolSource.includes('request.headers.get("x-mi-session-role") === "owner"'), true, "owner tool exact role check");
+assert.equal(ownerToolSource.includes('request.headers.get("x-mi-owner-agency-code") === PRIMARY_AGENCY_CODE'), true, "owner tool primary identity check");
+const ownerLoaderStart = adminSource.indexOf("async function loadOwnerTool() {");
+const ownerLoaderEnd = adminSource.indexOf("function applySecureSession(", ownerLoaderStart);
+assert.equal(ownerLoaderStart >= 0 && ownerLoaderEnd > ownerLoaderStart, true, "owner tool loader boundaries");
+const ownerToolLoader = adminSource.slice(ownerLoaderStart, ownerLoaderEnd);
+assert.equal(ownerToolLoader.includes("menuGroup"), true, "dynamic owner menu group");
+assert.equal(ownerToolLoader.includes('querySelectorAll(":scope > section[data-mi-admin-view]")'), true, "dynamic owner views");
+assert.equal(ownerToolLoader.includes('getAttribute("data-mi-admin-view") === "owner-development"'), true, "dynamic owner development validation");
+assert.match(ownerToolLoader, /nav\.appendChild\(menuGroup\)/u, "dynamic owner menu mount");
+assert.match(ownerToolLoader, /wrap\.appendChild\(view\)/u, "dynamic owner view mount");
+assert.equal(ownerToolLoader.includes('CustomEvent("mi:rank-owner-tool-mounted")'), true, "dynamic owner operations mount signal");
+assert.equal(adminSource.includes('document.querySelectorAll("[data-owner-tool-menu-root], [data-owner-tool-view-root], [data-owner-tool-style-root]")'), true, "owner logout removes menu views and head style");
+
+const naverTrackingStart = adminSource.indexOf('<section class="mi-view" data-mi-admin-view="naver-rank-tracking"');
+const naverTrackingEnd = adminSource.indexOf('<section class="mi-view" data-mi-admin-view="naver-place-rank-tracking"', naverTrackingStart);
+assert.equal(naverTrackingStart >= 0 && naverTrackingEnd > naverTrackingStart, true, "N 30-day view boundaries");
+const naverTrackingView = adminSource.slice(naverTrackingStart, naverTrackingEnd);
+assert.equal(staticWorkerOperationsPanel.test(naverTrackingView), false, "N 30-day view must not contain worker operations panel");
+assert.equal(naverTrackingView.includes("N 쇼핑 수집 운영센터"), false, "N 30-day view must stay separate from development operations");
+
+const routerStart = adminSource.indexOf("function setScreen(");
+const routerEnd = adminSource.indexOf('root.addEventListener("click"', routerStart);
+assert.equal(routerStart >= 0 && routerEnd > routerStart, true, "admin screen router boundaries");
+const adminScreenRouter = adminSource.slice(routerStart, routerEnd);
+assert.equal(adminSource.includes("owner-development") && adminSource.includes("owner-utility"), true, "owner screen identifiers");
+assert.equal(adminScreenRouter.includes("/^owner-/"), true, "owner hash namespace guard");
+assert.equal(adminScreenRouter.includes("/^#mi-admin-owner-/"), true, "restored team owner hash guard");
+assert.equal(adminScreenRouter.includes('secureSession.role !== "owner"'), true, "forged owner hash role guard");
+assert.equal(adminScreenRouter.includes('"agency-code"') && adminScreenRouter.includes('"home"'), true, "forged owner hash fallback");
+assert.equal(adminScreenRouter.includes("window.history.replaceState"), true, "forged owner hash canonical replacement");
+
+assert.match(adminSource, /root\.querySelector\(\s*['"][^'"]*\[data-rank-worker-operations\][^'"]*['"]\s*\)/u, "global worker operations lookup");
+assert.equal(adminSource.includes("rankWorkerOperationsPanel()"), true, "global worker operations helper use");
+assert.equal(adminSource.includes('card.querySelector("[data-rank-worker-operations]")'), false, "worker operations must not depend on N 30-day card");
+assert.equal(clientSource.includes("data-rank-worker-operations"), false, "client worker operations selector isolation");
+
 console.log(JSON.stringify({
   ok: true,
   checkedStates: [...ROLE_STATES.map((state) => state.id), "revoked-team"],
@@ -192,6 +264,9 @@ console.log(JSON.stringify({
     "report-scope",
     "team-administration",
     "forged-header-replacement",
+    "owner-development-dom-isolation",
+    "owner-development-hash-fallback",
+    "owner-tool-primary-identity",
     "account-only-ui-copy",
     "client-core-screens",
   ],

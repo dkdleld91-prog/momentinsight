@@ -497,9 +497,12 @@ const checks = {
     && ownerToolDiscardIndex > ownerToolFetchIndex
     && includesAll(adminOwnerToolLoad, [
       "requestGeneration !== ownerToolGeneration",
-      'menu.tagName !== "A"',
-      'view.tagName !== "SECTION"',
-      'view.querySelector("[data-owner-tool-input]")',
+      'menuGroup.tagName !== "DIV"',
+      'viewGroup.tagName !== "DIV"',
+      'view.getAttribute("data-mi-admin-view") !== screens[index]',
+      'utilityView.querySelector("[data-owner-tool-input]")',
+      'developmentView.querySelector("[data-rank-worker-operations]")',
+      "nav.appendChild(menuGroup)",
     ]),
   serverRoutesConnected: [
     ["naverKeyword", "/api/naver-keyword"],

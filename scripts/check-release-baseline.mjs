@@ -59,6 +59,7 @@ const adminSourceUploadSource = functionBody(adminSource, "function handleSource
 const adminLoginHandlerSource = functionBody(adminSource, 'if (loginButton) {\n        loginButton.addEventListener("click"', "async function restoreAdminLogin(");
 const adminAccountRequestSource = functionBody(adminSource, "async function refreshOperationTeamPanel() {", "function reportTypeLabel(");
 const adminAccountActionSource = functionBody(adminSource, 'var ownerCreateButton = root.querySelector("[data-owner-team-create]");', 'var codeSaveButton = root.querySelector("[data-admin-code-save]");');
+const adminOwnerToolLoaderSource = functionBody(adminSource, "async function loadOwnerTool() {", "function applySecureSession(");
 const ownerCodeListRenderSource = functionBody(
   adminSource,
   "function renderOwnerCodeList(payload) {",
@@ -72,6 +73,8 @@ const adminMetaLookupSource = functionBody(adminSource, "async function fetchMet
 const clientRankCheckLookupSource = functionBody(clientSource, "function initRankCheck(", "function initRankTracking(");
 const adminRankCheckLookupSource = functionBody(adminSource, "function initRankCheck(", "function initRankTracking(");
 const adminRankTrackingSource = functionBody(adminSource, "function initRankTracking(", "function initSeoCheck(");
+const adminScreenRouterSource = functionBody(adminSource, "function setScreen(", 'root.addEventListener("click"');
+const adminWorkerOperationsLookupSource = functionBody(adminSource, "function rankWorkerOperationsPanel(", "function renderRankWorkerOperations(");
 const clientRankTrackingSource = functionBody(clientSource, "function initRankTracking(", "function initPlaceRankTracking(");
 const adminFullRankRefreshSource = functionBody(adminSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
 const clientFullRankRefreshSource = functionBody(clientSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
@@ -234,6 +237,13 @@ const adminPublishViewSource = functionBody(
   '<section class="mi-view" data-mi-admin-view="publish"',
   '<a class="mi-kakao-floating"',
 );
+const adminNaverRankTrackingViewSource = functionBody(
+  adminSource,
+  '<section class="mi-view" data-mi-admin-view="naver-rank-tracking"',
+  '<section class="mi-view" data-mi-admin-view="naver-place-rank-tracking"',
+);
+const staticOwnerDevelopmentMarkup = /<(?:a|div|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-(?:development|utility)"/u;
+const staticWorkerOperationsPanel = /<(?:div|section)\b[^>]*data-rank-worker-operations(?:\s|>|=)/u;
 
 const checks = {
   pageSourcesMovedOutOfImwebBundle: exists("src/pages/admin.html")
@@ -317,6 +327,33 @@ const checks = {
     && adminSource.includes('navigator.clipboard.writeText')
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(adminSource)
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
+  ownerDevelopmentIsServerDeliveredOnly: ownerToolServer.includes('data-mi-admin-screen="owner-development"')
+    && ownerToolServer.includes('data-mi-admin-view="owner-development"')
+    && ownerToolServer.includes('data-mi-admin-screen="owner-utility"')
+    && ownerToolServer.includes('data-mi-admin-view="owner-utility"')
+    && ownerToolServer.includes("mi-nav-group")
+    && /개발\s+(?:&lt;\/?&gt;|<\/?\s*>)/u.test(ownerToolServer)
+    && ownerToolServer.includes("data-rank-worker-operations")
+    && !staticOwnerDevelopmentMarkup.test(adminSource)
+    && !staticOwnerDevelopmentMarkup.test(clientSource)
+    && !staticWorkerOperationsPanel.test(adminSource)
+    && !staticWorkerOperationsPanel.test(clientSource),
+  ownerDevelopmentDynamicMountContract: ownerToolServer.includes('screen: "owner-development"')
+    && adminOwnerToolLoaderSource.includes("menuGroup")
+    && adminOwnerToolLoaderSource.includes('querySelectorAll(":scope > section[data-mi-admin-view]")')
+    && adminOwnerToolLoaderSource.includes('getAttribute("data-mi-admin-view") === "owner-development"')
+    && /nav\.appendChild\(menuGroup\)/u.test(adminOwnerToolLoaderSource)
+    && /wrap\.appendChild\(view\)/u.test(adminOwnerToolLoaderSource)
+    && adminOwnerToolLoaderSource.includes('CustomEvent("mi:rank-owner-tool-mounted")')
+    && adminSource.includes('document.querySelectorAll("[data-owner-tool-menu-root], [data-owner-tool-view-root], [data-owner-tool-style-root]")'),
+  ownerDevelopmentHashFailsClosedForNonOwner: adminSource.includes("owner-development")
+    && adminSource.includes("owner-utility")
+    && adminScreenRouterSource.includes("/^owner-/")
+    && adminScreenRouterSource.includes("/^#mi-admin-owner-/")
+    && adminScreenRouterSource.includes('secureSession.role !== "owner"')
+    && adminScreenRouterSource.includes("window.history.replaceState")
+    && adminScreenRouterSource.includes('"agency-code"')
+    && adminScreenRouterSource.includes('"home"'),
   ownerDirectClientCreate: adminSource.includes('action: "create-client"') && adminSource.includes("비우면 총관리자 직접 발급"),
   ownerTeamCodeManualOnly: adminSource.includes('data-owner-team-code placeholder="6자리 이상 직접 입력" aria-label="운영팀 코드" autocomplete="off"')
     && !adminSource.includes("teamCreateInput.value = nextTeamCode")
@@ -1582,8 +1619,16 @@ const checks = {
     && !read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url")
     && adminSource.includes("상품ID·판매자 일치")
     && clientSource.includes("상품ID·판매자 일치"),
-  naverRankWorkerCanaryReadsRenderedOperationsTarget: adminSource.includes('var operationsPanel = card.querySelector("[data-rank-worker-operations]");')
-    && adminSource.includes('body.trackerId = operationsPanel ? operationsPanel.getAttribute("data-rank-canary-tracker-id") || "" : "";')
+  naverRankWorkerOperationsSeparatedFromTracking: adminNaverRankTrackingViewSource.length > 0
+    && !staticWorkerOperationsPanel.test(adminNaverRankTrackingViewSource)
+    && !adminNaverRankTrackingViewSource.includes("N 쇼핑 수집 운영센터"),
+  naverRankWorkerCanaryReadsRenderedOperationsTarget: /root\.querySelector\(\s*['"][^'"]*\[data-rank-worker-operations\][^'"]*['"]\s*\)/u.test(adminWorkerOperationsLookupSource)
+    && adminWorkerOperationsLookupSource.includes('secureSession.role !== "owner"')
+    && adminRankTrackingSource.includes("rankWorkerOperationsPanel()")
+    && adminRankTrackingSource.includes('body.trackerId = operationsPanel ? operationsPanel.getAttribute("data-rank-canary-tracker-id") || "" : "";')
+    && adminRankTrackingSource.includes("[data-rank-worker-stop], [data-rank-worker-canary], [data-rank-worker-candidate], [data-rank-worker-baseline]")
+    && adminRankTrackingSource.includes('root.addEventListener("click"')
+    && !adminRankTrackingSource.includes('card.querySelector("[data-rank-worker-operations]")')
     && !adminSource.includes('body.trackerId = card.getAttribute("data-rank-canary-tracker-id") || "";'),
   naverRankPremiumExposureCards: [adminSource, clientSource].every((source) => source.includes("renderProductExposureCards")
     && source.includes("mi-rank-exposure-board")

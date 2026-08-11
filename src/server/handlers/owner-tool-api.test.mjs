@@ -39,13 +39,31 @@ test("tool content is disclosed only to the exact primary owner identity", async
   const payload = await owner.json();
   assert.equal(owner.status, 200);
   assert.equal(payload.ok, true);
-  assert.equal(payload.tool.screen, "owner-utility");
+  assert.equal(payload.tool.screen, "owner-development");
+  assert.match(payload.tool.menuHtml, /^<div class="mi-nav-group/);
+  assert.match(payload.tool.menuHtml, /개발 &lt;\/&gt;/);
+  assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-development"/);
+  assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-utility"/);
   assert.match(payload.tool.menuHtml, /부가세 계산기/);
+  assert.match(payload.tool.viewHtml, /^<div class="mi-owner-tool-views"/);
+  assert.ok(payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-development"') < payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-utility"'));
+  assert.match(payload.tool.viewHtml, /data-rank-worker-operations/);
+  assert.equal((payload.tool.viewHtml.match(/data-rank-worker-operations(?:\s|=)/g) || []).length, 1);
+  assert.match(payload.tool.viewHtml, /N 쇼핑 수집 운영/);
+  assert.match(payload.tool.viewHtml, /mml93-a01 전용/);
+  assert.match(payload.tool.viewHtml, /한 번에 한 키워드/);
+  assert.match(payload.tool.viewHtml, /오가닉 300개 검증/);
+  assert.match(payload.tool.viewHtml, /마지막 정상 기록 보존/);
   assert.match(payload.tool.viewHtml, /data-owner-tool-input/);
   assert.match(payload.tool.viewHtml, /부가세 포함 금액/);
   assert.match(payload.tool.viewHtml, /최종 합계금액을 입력/);
   assert.doesNotMatch(payload.tool.viewHtml, /미포함 금액을 입력/);
   assert.match(payload.tool.styleText, /mi-vat-layout/);
+  assert.match(payload.tool.styleText, /mi-owner-development-hero/);
+  assert.match(payload.tool.styleText, /mi-owner-development-principles/);
+  for (const html of [payload.tool.menuHtml, payload.tool.viewHtml]) {
+    assert.doesNotMatch(html, /<script|<iframe|<object|\son[a-z]+\s*=/i);
+  }
 });
 
 test("calculation endpoint rejects non-owner, wrong media and invalid amounts", async () => {
@@ -84,4 +102,15 @@ test("public page sources contain no owner-only tax markup, styles or calculatio
   assert.match(sources[0], /loadOwnerTool/);
   assert.match(sources[0], /JSON\.stringify\(\{ action: "calculate", total:/);
   assert.doesNotMatch(sources[0], /JSON\.stringify\(\{ action: "calculate", supply:/);
+});
+
+test("owner development navigation and view are not present in public static markup", () => {
+  const sources = ["src/pages/admin.html", "src/pages/client.html"].map((file) => fs.readFileSync(file, "utf8"));
+  for (const source of sources) {
+    const staticMarkup = source.slice(0, source.indexOf("<script src=\"/seo-evaluation.js"));
+    assert.doesNotMatch(staticMarkup, /mi-admin-owner-development/);
+    assert.doesNotMatch(staticMarkup, /data-owner-development-nav/);
+    assert.doesNotMatch(staticMarkup, /data-mi-admin-screen="owner-development"/);
+    assert.doesNotMatch(staticMarkup, /data-mi-admin-view="owner-development"/);
+  }
 });

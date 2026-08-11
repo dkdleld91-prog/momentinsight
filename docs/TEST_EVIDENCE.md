@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-11 총관리자 전용 개발 운영센터 로컬 증거
+
+- `/api/owner/tool`은 익명·team·잘못된 owner identity를 403으로 거절하고 정확한 `mml93-a01` owner에만 동적 개발 nav group과 두 owner view를 반환합니다.
+- 공개 admin/client source의 실제 markup에는 `owner-development`, `owner-utility`, `data-rank-worker-operations`가 없고, `N 30일 순위` view slice에도 운영 패널이 없습니다. 인증 후 검증된 payload만 nav와 view를 삽입하며 로그아웃 때 모두 제거합니다.
+- root 기반 canary target·제어 위임, owner deep-link, restored team의 forged hash 정규화, 기존 VAT 계산 계약을 회귀로 고정했습니다.
+- 집중 회귀 71/71, role-state, baseline, role-query parity, 보호 잠금, Vercel public build와 `git diff --check`가 통과했습니다. Production 실제 화면·응답 검증은 배포 뒤 별도 증거로 확정합니다.
+
 ## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1 로컬 증거
 
 - controller VM 회귀는 실행 중 catch-up 두 건을 한 건으로 합치고 remote가 이를 덮지 않으며, 현재 회차 종료 뒤 단 한 번 인계되는 것을 검증합니다. Node terminal frame flush·입력 종료, Windows child 종료 뒤 relay join 전 mutex 해제, 6초 handoff, 수동 요청의 보안확인 cooldown 재검사, `control_plane_failed`·idle·알 수 없는 summary의 false-complete 차단도 고정합니다.

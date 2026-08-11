@@ -2993,14 +2993,17 @@
 
     #mi-clean .mi-place-day-grid {
       display: flex;
-      gap: 6px;
+      gap: 8px;
       overflow-x: auto;
       overflow-y: hidden;
-      padding: 8px 10px 10px;
+      padding: 12px 12px 14px;
       border-top: 1px solid #e8eef6;
-      background: linear-gradient(180deg, #f8fafc 0%, #fbfcfe 100%);
+      background:
+        radial-gradient(circle at top left, rgba(29, 99, 216, 0.06), transparent 32%),
+        linear-gradient(180deg, #f7f9fc 0%, #fbfcfe 100%);
       scrollbar-width: thin;
       scrollbar-color: #cbd6e4 transparent;
+      scroll-snap-type: x proximity;
     }
 
     #mi-clean .mi-place-day-grid::-webkit-scrollbar {
@@ -3012,75 +3015,228 @@
       background: #cbd6e4;
     }
 
+    #mi-clean .mi-place-day-grid:focus-visible {
+      outline: 3px solid rgba(29, 99, 216, 0.42);
+      outline-offset: -3px;
+    }
+
     #mi-clean .mi-place-day-card {
-      flex: 0 0 var(--mi-place-day-width, 140px);
-      min-height: 108px;
-      padding: 10px 11px;
-      border: 1px solid #e6ecf4;
-      border-radius: 10px;
+      position: relative;
+      display: grid;
+      flex: 0 0 var(--mi-place-day-width, 156px);
+      min-height: 158px;
+      align-content: start;
+      gap: 9px;
+      overflow: hidden;
+      padding: 12px;
+      border: 1px solid #dfe7f1;
+      border-radius: 16px;
       color: var(--mi-navy);
-      background: #fff;
-      box-shadow: 0 3px 10px rgba(11, 35, 70, 0.025);
+      background: linear-gradient(160deg, #ffffff 0%, #f9fbfe 100%);
+      box-shadow: 0 9px 24px rgba(11, 35, 70, 0.06);
+      scroll-snap-align: start;
     }
 
-    #mi-clean .mi-place-day-card strong {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 10px;
-      font-weight: 780;
-      letter-spacing: 0;
+    #mi-clean .mi-place-day-card::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 3px;
+      background: linear-gradient(90deg, #0b2346, #2d6ac5);
     }
 
-    #mi-clean .mi-place-day-card.is-sat strong {
+    #mi-clean .mi-place-day-card.is-latest {
+      border-color: #173b67;
+      color: #ffffff;
+      background:
+        radial-gradient(circle at 92% 8%, rgba(85, 151, 240, 0.28), transparent 36%),
+        linear-gradient(145deg, #071d38 0%, #12375f 100%);
+      box-shadow: 0 14px 30px rgba(7, 29, 56, 0.2);
+    }
+
+    #mi-clean .mi-place-day-head,
+    #mi-clean .mi-place-day-rank-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    #mi-clean .mi-place-day-head time {
+      color: #172b4d;
+      font-size: 10.5px;
+      font-weight: 850;
+      letter-spacing: -0.01em;
+    }
+
+    #mi-clean .mi-place-day-card.is-sat .mi-place-day-head time {
       color: #1d63d8;
     }
 
-    #mi-clean .mi-place-day-card.is-sun strong {
+    #mi-clean .mi-place-day-card.is-sun .mi-place-day-head time {
       color: #d92323;
     }
 
-    #mi-clean .mi-place-day-rank {
-      display: block;
-      margin-bottom: 8px;
-      color: var(--mi-navy);
-      font-size: 17px;
+    #mi-clean .mi-place-day-badge {
+      display: inline-flex;
+      min-height: 20px;
+      align-items: center;
+      border: 1px solid #d9e3ef;
+      border-radius: 999px;
+      padding: 2px 7px;
+      color: #52627a;
+      background: #f8fafc;
+      font-size: 8.5px;
       font-weight: 900;
-      line-height: 1;
       white-space: nowrap;
     }
 
-    #mi-clean .mi-place-day-metrics {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 5px 9px;
+    #mi-clean .mi-place-day-badge.is-found {
+      border-color: #bfe7d0;
+      color: #087f45;
+      background: #effaf4;
     }
 
-    #mi-clean .mi-place-day-metrics span {
+    #mi-clean .mi-place-day-badge.is-partial {
+      border-color: #fed7aa;
+      color: #b45309;
+      background: #fff8ec;
+    }
+
+    #mi-clean .mi-place-day-badge.is-out {
+      border-color: #d7e0eb;
+      color: #52627a;
+      background: #f4f7fb;
+    }
+
+    #mi-clean .mi-place-day-rank {
+      display: inline-flex;
+      align-items: baseline;
+      color: var(--mi-navy);
+      font-size: 27px;
+      font-weight: 950;
+      line-height: 1;
+      letter-spacing: -0.035em;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-place-day-rank-row small {
+      color: #5f6f84;
+      font-size: 8.5px;
+      font-weight: 850;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-place-day-trend {
+      display: inline-flex;
+      width: max-content;
+      max-width: 100%;
+      min-height: 22px;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      color: #4d5f77;
+      background: #eef3f8;
+      font-size: 9px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-place-day-trend.is-up {
+      color: #087f45;
+      background: #eaf8f0;
+    }
+
+    #mi-clean .mi-place-day-trend.is-down {
+      color: #b45309;
+      background: #fff4e5;
+    }
+
+    #mi-clean .mi-place-day-trend.is-new {
+      color: #1d5fbf;
+      background: #edf4ff;
+    }
+
+    #mi-clean .mi-place-day-reviews {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #e6ecf4;
+    }
+
+    #mi-clean .mi-place-day-reviews span {
       display: grid;
       min-width: 0;
-      gap: 1px;
+      gap: 2px;
       color: var(--mi-muted);
       font-weight: 700;
       white-space: nowrap;
     }
 
-    #mi-clean .mi-place-day-metrics em {
-      color: #7b8798;
-      font-size: 8.5px;
+    #mi-clean .mi-place-day-reviews em {
+      color: #5f6f84;
+      font-size: 8px;
       font-style: normal;
     }
 
-    #mi-clean .mi-place-day-metrics b {
-      color: #536174;
+    #mi-clean .mi-place-day-reviews b {
+      color: #33465f;
       overflow: hidden;
-      font-size: 9.5px;
-      font-weight: 800;
+      font-size: 10.5px;
+      font-weight: 900;
       text-align: left;
       text-overflow: ellipsis;
     }
 
+    #mi-clean .mi-place-day-evidence {
+      color: #5f6f84;
+      overflow: hidden;
+      font-size: 8.5px;
+      font-weight: 750;
+      line-height: 1.35;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-head time,
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-rank,
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-reviews b {
+      color: #ffffff;
+    }
+
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-rank-row small,
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-reviews em,
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-evidence {
+      color: #bdcce0;
+    }
+
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-reviews {
+      border-top-color: rgba(255, 255, 255, 0.15);
+    }
+
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-badge,
+    #mi-clean .mi-place-day-card.is-latest .mi-place-day-trend {
+      border-color: rgba(255, 255, 255, 0.18);
+      color: #eef5ff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    #mi-clean .mi-rank-export-sheet .mi-place-day-grid {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      overflow: visible;
+      scroll-snap-type: none;
+      scrollbar-width: none;
+    }
+
+    #mi-clean .mi-rank-export-sheet .mi-place-day-card {
+      width: auto;
+      min-width: 0;
+    }
+
     #mi-clean .mi-place-rank-item {
-      --mi-place-day-width: 140px;
+      --mi-place-day-width: 156px;
       border-color: #e1e8f1;
       border-radius: 16px;
       box-shadow: 0 8px 24px rgba(11, 35, 70, 0.035);
@@ -4841,8 +4997,8 @@
       }
 
       #mi-clean .mi-place-day-card {
-        min-height: 104px;
-        padding: 9px;
+        min-height: 150px;
+        padding: 11px;
       }
 
       #mi-clean .mi-rank-group-combo {
@@ -7738,22 +7894,52 @@
         return '<a class="mi-rank-product-title" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</a>';
       }
 
-      function placeSnapshotMetric(snapshot, keys, fallback) {
-        var metrics = Object.assign({}, snapshot || {}, (snapshot && snapshot.place) || {}, (snapshot && snapshot.place && snapshot.place.metrics) || {});
+      function placeSnapshotTargetMetric(snapshot, keys) {
+        var place = snapshot && snapshot.place && typeof snapshot.place === "object" ? snapshot.place : {};
         for (var index = 0; index < keys.length; index += 1) {
-          var raw = metrics[keys[index]];
+          var raw = place[keys[index]];
           if (raw === undefined || raw === null || String(raw).trim() === "") continue;
           var number = Number(String(raw === undefined || raw === null ? "" : raw).replace(/[^\d.-]/g, ""));
           if (Number.isFinite(number) && number >= 0) return Math.round(number);
         }
-        if (fallback === undefined || fallback === null || String(fallback).trim() === "") return null;
-        var fallbackNumber = Number(fallback);
-        return Number.isFinite(fallbackNumber) && fallbackNumber >= 0 ? Math.round(fallbackNumber) : null;
+        return null;
       }
 
-      function renderPlaceDayMetric(label, value, suffix) {
-        var text = value === null || value === undefined ? "-" : formatNumber(value) + suffix;
-        return '<span><em>' + escapeHtml(label) + '</em><b>' + escapeHtml(text) + '</b></span>';
+      function placeDaySnapshotState(snapshot, previousSnapshot) {
+        var rank = rankTrackerRankValue(snapshot && snapshot.rank);
+        var previousRank = rankTrackerRankValue(previousSnapshot && previousSnapshot.rank);
+        var checkedCount = Math.max(0, Number(snapshot && snapshot.checkedCount || 0));
+        var requestedMaxRank = Math.max(1, Number(snapshot && snapshot.requestedMaxRank || 300));
+        var completeOutside = !rank && checkedCount >= requestedMaxRank;
+        var partial = !rank && checkedCount > 0 && checkedCount < requestedMaxRank;
+        var difference = rank && previousRank ? previousRank - rank : 0;
+        var trendLabel = rank
+          ? (previousSnapshot ? "직전 순위 미확인" : "비교 기록 없음")
+          : "순위 미확인";
+        var trendClass = "is-muted";
+        if (rank && previousRank) {
+          trendLabel = difference > 0
+            ? formatNumber(difference) + "위 상승"
+            : difference < 0
+              ? formatNumber(Math.abs(difference)) + "위 하락"
+              : "순위 유지";
+          trendClass = difference > 0 ? "is-up" : (difference < 0 ? "is-down" : "is-steady");
+        }
+        return {
+          rank: rank,
+          rankLabel: rank ? rankText(rank) : "-",
+          badgeLabel: rank ? "노출 확인" : (completeOutside ? "범위 밖" : (partial ? "부분 확인" : "확인 대기")),
+          badgeClass: rank ? "is-found" : (completeOutside ? "is-out" : (partial ? "is-partial" : "is-waiting")),
+          trendLabel: trendLabel,
+          trendClass: trendClass,
+          evidenceLabel: rank
+            ? "네이버 지도 오가닉"
+            : completeOutside
+              ? "오가닉 상위 " + formatNumber(requestedMaxRank) + "위 밖"
+              : partial
+                ? "오가닉 " + formatNumber(checkedCount) + "개까지 확인"
+                : "다음 자동 확인 대기"
+        };
       }
 
       function groupPlaceSnapshotsByDay(snapshots) {
@@ -7778,22 +7964,22 @@
         if (!keys.length) {
           return '<div class="mi-rank-state">첫 플레이스 순위 확인 후 이 장소만의 일별 기록판이 생성됩니다.</div>';
         }
-        return '<div class="mi-place-day-grid">' + keys.map(function (key) {
+        return '<div class="mi-place-day-grid" role="list" aria-label="최근 30일 플레이스 순위" tabindex="0">' + keys.map(function (key, index) {
           var day = grouped[key];
           var snapshot = day.snapshot || {};
-          var rank = snapshot.rank ? rankText(snapshot.rank) : "-";
-          var blogCount = placeSnapshotMetric(snapshot, ["blogCount", "blog_count", "blogReviewCount", "blog_review_count"], null);
-          var visitReviewCount = placeSnapshotMetric(snapshot, ["visitReviewCount", "visit_review_count", "visitorReviewCount", "visitor_review_count", "reviewCount", "review_count"], null);
-          var monthlySearchCount = placeSnapshotMetric(snapshot, ["monthlySearchCount", "monthly_search_count", "keywordVolume", "keyword_volume"], null);
-          var businessCount = placeSnapshotMetric(snapshot, ["businessCount", "business_count", "placeCount", "place_count"], snapshot.total);
-          return '<div class="mi-place-day-card' + rankDayClass(day.date) + '"><strong>' + escapeHtml(rankDayLabel(day.date)) +
-            '</strong><b class="mi-place-day-rank">' + escapeHtml(rank) +
-            '</b><div class="mi-place-day-metrics">' +
-            renderPlaceDayMetric("블로그", blogCount, "개") +
-            renderPlaceDayMetric("방문", visitReviewCount, "개") +
-            renderPlaceDayMetric("월검색", monthlySearchCount, "회") +
-            renderPlaceDayMetric("업체", businessCount, "개") +
-            '</div></div>';
+          var previousSnapshot = keys[index + 1] ? grouped[keys[index + 1]].snapshot : null;
+          var state = placeDaySnapshotState(snapshot, previousSnapshot);
+          var blogReviewCount = placeSnapshotTargetMetric(snapshot, ["blogReviewCount", "blog_review_count", "blogCafeReviewCount", "blog_cafe_review_count"]);
+          var visitorReviewCount = placeSnapshotTargetMetric(snapshot, ["visitorReviewCount", "visitor_review_count", "visitReviewCount", "visit_review_count"]);
+          var dateLabel = rankDayLabel(day.date);
+          var dateValue = key;
+          return '<article class="mi-place-day-card' + rankDayClass(day.date) + (index === 0 ? " is-latest" : "") + '" role="listitem" aria-label="' + escapeHtml(dateLabel + " " + state.rankLabel + " " + state.trendLabel) + '">' +
+            '<div class="mi-place-day-head"><time datetime="' + escapeHtml(dateValue) + '">' + escapeHtml(dateLabel) + '</time><span class="mi-place-day-badge ' + escapeHtml(state.badgeClass) + '">' + escapeHtml(state.badgeLabel) + '</span></div>' +
+            '<div class="mi-place-day-rank-row"><b class="mi-place-day-rank">' + escapeHtml(state.rankLabel) + '</b><small>네이버 지도</small></div>' +
+            '<span class="mi-place-day-trend ' + escapeHtml(state.trendClass) + '">' + escapeHtml(state.trendLabel) + '</span>' +
+            '<div class="mi-place-day-reviews"><span><em>방문자 리뷰</em><b>' + escapeHtml(visitorReviewCount === null ? "-" : formatNumber(visitorReviewCount)) + '</b></span>' +
+            '<span><em>블로그 리뷰</em><b>' + escapeHtml(blogReviewCount === null ? "-" : formatNumber(blogReviewCount)) + '</b></span></div>' +
+            '<small class="mi-place-day-evidence">' + escapeHtml(state.evidenceLabel) + '</small></article>';
         }).join("") + '</div>';
       }
 

@@ -76,6 +76,10 @@ const adminRankTrackingSource = functionBody(adminSource, "function initRankTrac
 const adminScreenRouterSource = functionBody(adminSource, "function setScreen(", 'root.addEventListener("click"');
 const adminWorkerOperationsLookupSource = functionBody(adminSource, "function rankWorkerOperationsPanel(", "function renderRankWorkerOperations(");
 const clientRankTrackingSource = functionBody(clientSource, "function initRankTracking(", "function initPlaceRankTracking(");
+const adminPlaceDailyBoardSource = functionBody(adminSource, "function renderPlaceTrackerDailyBoard(", "function placeTrackerActionNote(");
+const clientPlaceDailyBoardSource = functionBody(clientSource, "function renderPlaceTrackerDailyBoard(", "function placeTrackerActionNote(");
+const adminPlaceTargetMetricSource = functionBody(adminSource, "function placeSnapshotTargetMetric(", "function placeDaySnapshotState(");
+const clientPlaceTargetMetricSource = functionBody(clientSource, "function placeSnapshotTargetMetric(", "function placeDaySnapshotState(");
 const adminFullRankRefreshSource = functionBody(adminSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
 const clientFullRankRefreshSource = functionBody(clientSource, "async function refreshAllRankTrackers(", "function syncKeywordFromMain(");
 const adminFullPlaceRefreshSource = functionBody(adminSource, "async function refreshAllPlaceTrackers(", "function placeRankExportFileName(");
@@ -634,24 +638,46 @@ const checks = {
     && fixedRankScopeMigration.includes("check (max_rank = 300)")
     && fixedRankScopeMigration.includes("update public.naver_rank_trackers")
     && fixedRankScopeMigration.includes("update public.naver_place_rank_trackers"),
-  placeRankDailyMetricBoard: [adminSource, clientSource].every((source) => source.includes("mi-place-day-card")
-    && source.includes("groupPlaceSnapshotsByDay")
-    && source.includes('fallback === undefined || fallback === null || String(fallback).trim() === ""')
-    && source.includes('renderPlaceDayMetric("블로그"')
-    && source.includes('renderPlaceDayMetric("방문"')
-    && source.includes('renderPlaceDayMetric("월검색"')
-    && source.includes('renderPlaceDayMetric("업체"'))
+  placeRankTruthfulDailyBoard: [adminPlaceDailyBoardSource, clientPlaceDailyBoardSource].every((source) =>
+    [
+      "mi-place-day-card",
+      "groupPlaceSnapshotsByDay",
+      'role="list"',
+      'role="listitem"',
+      'tabindex="0"',
+      "placeDaySnapshotState",
+      "방문자 리뷰",
+      "블로그 리뷰",
+      "mi-place-day-evidence",
+    ].every((marker) => source.includes(marker))
+      && ![
+        "monthlySearchCount",
+        "businessCount",
+        'renderPlaceDayMetric("월검색"',
+        'renderPlaceDayMetric("업체"',
+      ].some((marker) => source.includes(marker))
+    )
+    && [adminPlaceTargetMetricSource, clientPlaceTargetMetricSource].every((metricSource) =>
+      metricSource.includes("snapshot.place") && !metricSource.includes("place.metrics")
+    )
     && placeRankServer.includes("mergeDefinedPlaceMetrics")
     && placeRankServer.includes("aggregateCompleteTopPlaceMetrics")
     && placeRankServer.includes('"blogReviewCount", "blog_review_count"')
     && placeRankServer.includes('scope: "organic_search_results"'),
-  placeRankPremiumCompactCards: [adminSource, clientSource].every((source) => source.includes("--mi-place-day-width: 140px")
-    && source.includes("flex: 0 0 var(--mi-place-day-width, 140px)")
+  placeRankPremiumCompactCards: [adminSource, clientSource].every((source) => source.includes("--mi-place-day-width: 156px")
+    && source.includes("flex: 0 0 var(--mi-place-day-width, 156px)")
     && source.includes("grid-template-columns: repeat(2, minmax(0, 1fr));")
+    && source.includes(".mi-place-day-card.is-latest")
+    && source.includes(".mi-place-day-trend.is-up")
+    && source.includes(".mi-place-day-reviews")
+    && /mi-rank-export-sheet \.mi-place-day-grid \{[\s\S]*?grid-template-columns: repeat\(6, minmax\(0, 1fr\)\);[\s\S]*?overflow: visible;[\s\S]*?scroll-snap-type: none;/.test(source)
+    && /mi-rank-export-sheet \.mi-place-day-card \{[\s\S]*?min-width: 0;/.test(source)
     && source.includes(".mi-place-rank-item .mi-rank-row-actions .mi-rank-pill:first-child")
-    && source.includes("--mi-place-day-width: 140px")),
+    && source.includes("scroll-snap-type: x proximity")),
   placeRankPartialResultsStayTruthful: [adminSource, clientSource].every((source) => source.includes("개 확인 · 이후 미검증")
-    && source.includes('var rank = snapshot.rank ? rankText(snapshot.rank) : "-";')
+    && source.includes('rankLabel: rank ? rankText(rank) : "-"')
+    && source.includes('partial ? "부분 확인"')
+    && source.includes('"오가닉 " + formatNumber(checkedCount) + "개까지 확인"')
     && !source.includes('? formatNumber(checkedCount) + "개 확인"')
     && source.includes("function placeTrackerLatestRank")
     && source.includes("function placeTrackerPreviousRank")

@@ -125,10 +125,31 @@ const adminProductRefresh = functionBlock(adminSource, "refreshAllRankTrackers")
 const clientProductRefresh = functionBlock(clientSource, "refreshAllRankTrackers");
 const adminPlaceSync = functionBlock(adminSource, "syncDuePlaceTrackersIfNeeded");
 const clientPlaceSync = functionBlock(clientSource, "syncDuePlaceTrackersIfNeeded");
-const adminPlaceSnapshotMetric = functionBlock(adminSource, "placeSnapshotMetric");
-const clientPlaceSnapshotMetric = functionBlock(clientSource, "placeSnapshotMetric");
+const adminPlaceSnapshotTargetMetric = functionBlock(adminSource, "placeSnapshotTargetMetric");
+const clientPlaceSnapshotTargetMetric = functionBlock(clientSource, "placeSnapshotTargetMetric");
+const adminPlaceDaySnapshotState = functionBlock(adminSource, "placeDaySnapshotState");
+const clientPlaceDaySnapshotState = functionBlock(clientSource, "placeDaySnapshotState");
 const adminPlaceDailyBoard = functionBlock(adminSource, "renderPlaceTrackerDailyBoard");
 const clientPlaceDailyBoard = functionBlock(clientSource, "renderPlaceTrackerDailyBoard");
+const adminPlaceSnapshotTargetMetricFn = Function(`return (${adminPlaceSnapshotTargetMetric});`)();
+const clientPlaceSnapshotTargetMetricFn = Function(`return (${clientPlaceSnapshotTargetMetric});`)();
+const placeTargetMetricFixture = {
+  place: {
+    blogReviewCount: 232,
+    visitorReviewCount: 3594,
+    metrics: {
+      blogCount: 65108,
+      visitReviewCount: 264467,
+      monthlySearchCount: 51720,
+      businessCount: 100,
+    },
+  },
+};
+const placeAggregateOnlyFixture = {
+  place: {
+    metrics: { blogCount: 65108, visitReviewCount: 264467 },
+  },
+};
 const adminCompleteTrackerPayload = functionBlock(adminSource, "completeRankTrackerPayload");
 const clientCompleteTrackerPayload = functionBlock(clientSource, "completeRankTrackerPayload");
 const adminScopedTrackerPayload = functionBlock(adminSource, "scopedRankTrackerPayload");
@@ -328,20 +349,47 @@ const checks = {
   ])),
   placeTrackerActionsAligned: hasActions(adminPlaceTracking, ["create", "check", "sync-due", "group", "delete"])
     && hasActions(clientPlaceTracking, ["create", "check", "sync-due", "group", "delete"]),
-  placeMetricRenderingAlignedAndNullSafe: normalizedBlock(adminSource, "placeSnapshotMetric")
-    === normalizedBlock(clientSource, "placeSnapshotMetric")
+  placeReviewRenderingAlignedAndTargetScoped: normalizedBlock(adminSource, "placeSnapshotTargetMetric")
+    === normalizedBlock(clientSource, "placeSnapshotTargetMetric")
+    && normalizedBlock(adminSource, "placeDaySnapshotState")
+      === normalizedBlock(clientSource, "placeDaySnapshotState")
     && normalizedBlock(adminSource, "renderPlaceTrackerDailyBoard")
       === normalizedBlock(clientSource, "renderPlaceTrackerDailyBoard")
-    && [adminPlaceSnapshotMetric, clientPlaceSnapshotMetric].every((block) => includesAll(block, [
-      'fallback === undefined || fallback === null || String(fallback).trim() === ""',
+    && [adminPlaceSnapshotTargetMetric, clientPlaceSnapshotTargetMetric].every((block) => includesAll(block, [
+      'var place = snapshot && snapshot.place && typeof snapshot.place === "object" ? snapshot.place : {}',
       "return null",
     ]))
+    && ![adminPlaceSnapshotTargetMetric, clientPlaceSnapshotTargetMetric].some((block) => block.includes("place.metrics"))
+    && [adminPlaceSnapshotTargetMetricFn, clientPlaceSnapshotTargetMetricFn].every((metricFn) =>
+      metricFn(placeTargetMetricFixture, ["blogReviewCount"]) === 232
+      && metricFn(placeTargetMetricFixture, ["visitorReviewCount"]) === 3594
+      && metricFn(placeAggregateOnlyFixture, ["blogReviewCount", "blogCount"]) === null
+      && metricFn(placeAggregateOnlyFixture, ["visitorReviewCount", "visitReviewCount"]) === null
+    )
+    && [adminPlaceDaySnapshotState, clientPlaceDaySnapshotState].every((block) => includesAll(block, [
+      'badgeLabel: rank ? "노출 확인"',
+      'previousSnapshot ? "직전 순위 미확인" : "비교 기록 없음"',
+      '"위 상승"',
+      '"위 하락"',
+      '"오가닉 상위 "',
+    ]) && !block.includes("첫 순위 기록"))
     && [adminPlaceDailyBoard, clientPlaceDailyBoard].every((block) => includesAll(block, [
-      'renderPlaceDayMetric("블로그"',
-      'renderPlaceDayMetric("방문"',
+      'role="list"',
+      'role="listitem"',
+      'tabindex="0"',
+      'placeSnapshotTargetMetric(snapshot, ["blogReviewCount"',
+      'placeSnapshotTargetMetric(snapshot, ["visitorReviewCount"',
+      '방문자 리뷰',
+      '블로그 리뷰',
+      'mi-place-day-evidence',
+    ]))
+    && ![adminPlaceDailyBoard, clientPlaceDailyBoard].some((block) => [
       'renderPlaceDayMetric("월검색"',
       'renderPlaceDayMetric("업체"',
-    ])),
+      "monthlySearchCount",
+      "businessCount",
+      "place.metrics",
+    ].some((marker) => block.includes(marker))),
   trackingAuthRefreshConnected: (adminSource.match(/mi:rank-auth-ready/g) || []).length >= 2
     && (clientSource.match(/mi:rank-auth-ready/g) || []).length >= 2,
   ownerRankDefaultScopeProtected: includesAll(adminSource, [

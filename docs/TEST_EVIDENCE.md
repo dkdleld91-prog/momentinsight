@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-12 N플레이스 일별 카드 진실성 회귀
+
+- 운영 snapshot 대조로 대상 직접 리뷰 232·3,594와 기존 검색결과 집계 65,108·264,467의 차이를 확인했습니다. 새 renderer는 direct `snapshot.place`만 읽고 aggregate-only fixture는 `null`로 거부합니다.
+- 관리자·광고주 renderer와 상태 계산을 정규화 비교하며 `월검색`·`업체`·nested `place.metrics`가 일별 카드에 다시 들어오지 않도록 잠갔습니다.
+- 직전 기록이 미확인인 경우 `첫 순위 기록`으로 오표시하지 않고 `직전 순위 미확인` 또는 `비교 기록 없음`으로 표시합니다.
+- 화면 목록은 keyboard focus를 지원하고 최신 기록을 navy로 강조합니다. 이미지 내보내기는 6열·overflow 해제 계약으로 30일 전체를 포함합니다.
+- `check:release`, 역할 parity, baseline, 보호 잠금, CSP public build와 `git diff --check`를 배포 전 필수 gate로 유지합니다.
+
 ## 2026-08-11 총관리자 전용 개발 운영센터 로컬 증거
 
 - `/api/owner/tool`은 익명·team·잘못된 owner identity를 403으로 거절하고 정확한 `mml93-a01` owner에만 동적 개발 nav group과 두 owner view를 반환합니다.

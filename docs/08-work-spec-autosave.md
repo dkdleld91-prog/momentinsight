@@ -8,7 +8,7 @@
 - 원인: Windows v1.0.47 `남자팬티` canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 8페이지 직접 수집 시간과 일치하는 45.452초 뒤 실패했다. 로컬 작업기가 요청 만료를 29분 뒤로 생성했지만 공유 collector 계약은 현재 시각보다 15분을 초과한 만료를 `invalid_request:deadlineAt`으로 거부했고, 이 비공개 계약 오류가 `local_worker_collection_failed`로 축약됐다.
 - 구현: 로컬 요청 deadline 기본값과 모든 환경 override 상한을 14분으로 고정해 collector의 15분 상한 아래 1분 여유를 둔다. 기존 bounded 설정 방식대로 과대 override는 14분으로 clamp하며 Windows launcher는 별도 timeout 환경값을 주지 않는다.
 - 회귀: 기본 요청과 60분 override가 모두 정확히 14분으로 수렴하고, 생성 45초 뒤 공유 `validateRankRequest`가 통과하는 실행 회귀를 추가했다. 확장 릴리스는 1.0.48로 구분하고 runner·contract·manifest 보호 해시와 release gate를 동기화했다.
-- 보호: direct 1~8페이지·3.5~6초 pacing·controller·페이지 streaming·접속 제한 감지·광고 제외 원자 300개·실패 시 마지막 정상값과 이력 보존은 변경하지 않는다. 커밋·배포·DB 쓰기는 수행하지 않으며 Windows 1.0.48 설치 후 신규 원자 `checkedCount=300` 실증 전에는 정상화로 기록하지 않는다.
+- 보호: direct 1~8페이지·3.5~6초 pacing·controller·페이지 streaming·접속 제한 감지·광고 제외 원자 300개·실패 시 마지막 정상값과 이력 보존은 변경하지 않는다. commit `674f088e3304`와 Windows 1.0.48 설치 후 동일 `남자팬티` canary가 광고 45개를 제외한 오가닉 300개 원자 gate를 통과하고 100위로 저장됐으며, 완료 뒤 lane과 처리 lease도 정상 해제됐다.
 
 ## 2026-08-11 Chrome 수집 단계 진단·5일 전 직접 경로 복원 v1.0.47
 
@@ -164,9 +164,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 16:18:46
-- 기준 커밋: adfdba7
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 11. 16:34:04
+- 기준 커밋: 674f088
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준

@@ -9,7 +9,7 @@
 - Windows v1.0.47 `남자팬티` canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f`는 `processing` 시작 45.452초 뒤 snapshot 없이 `pending`으로 복귀했습니다. 직접 8페이지 수집 뒤 native core가 요청을 검증할 때, 로컬 작업기의 29분 deadline이 collector의 최대 15분 계약을 넘겨 `invalid_request:deadlineAt`이 발생하고 안전 코드 경계에서 `local_worker_collection_failed`로 축약된 것이 확정 원인입니다.
 - 로컬 요청 deadline 기본값과 환경 override 상한을 모두 14분으로 clamp했습니다. Windows launcher는 override를 주지 않으며, 14분 요청은 생성 45초 뒤 실제 collector 계약 검증을 통과합니다. 확장·설치 릴리스는 1.0.48로 구분했습니다.
 - 대상 회귀 55/55, server contract 39/39, 보호 잠금 및 self-test, 전체 `npm run check:release`가 통과했습니다. direct 1~8페이지·controller·streaming·접속 제한 감지·광고 제외 원자 300개와 마지막 정상값 보존은 유지합니다.
-- 커밋·배포·DB 쓰기는 수행하지 않았습니다. Windows 1.0.48 설치와 `남자팬티` 신규 원자 `checkedCount=300` 운영 증거 전에는 정상화로 판정하지 않습니다.
+- commit `674f088e3304`를 Production deployment `dpl_Fzs2WQk68yYDBcXAwthVGbaNr27b`에 반영하고 Windows `동빈 (개발)` 프로필에 1.0.48을 설치했습니다. 동일 canary `c70da9f9-15c5-450a-aa0b-515d63f4e69f` 재시도는 `completed`, `pw-chrome-*`, `checkedCount=300`, `complete=true`, `partial=false`, `organic_only`, `adExcluded=true`를 모두 통과했습니다. 정확 상품 `12491798995`는 광고 45개 제외 후 100위(3페이지 20번째)였고 lane·processing lease가 정상 해제되어 운영 정상화로 판정합니다.
 
 ### 2026-08-11 Chrome 수집 단계 진단·5일 전 직접 경로 복원 v1.0.47
 

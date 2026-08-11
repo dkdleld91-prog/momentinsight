@@ -2129,9 +2129,15 @@ async function countDueTrackers(ctx, now, agencyCode = "") {
   return Math.max(0, Number(remainingResult.count || 0));
 }
 
+function shoppingWorkerControlAccepted(action, result) {
+  if (result?.accepted !== true) return false;
+  if (action === "worker-canary" || action === "worker-cadence") return result?.activated === true;
+  return true;
+}
+
 function shoppingWorkerControlMessage(action, result, mode = "") {
   const reason = normalizeWorkerText(result?.reason, 100).toLowerCase();
-  const rejected = result?.ok === false || result?.activated === false || result?.accepted === false;
+  const rejected = !shoppingWorkerControlAccepted(action, result);
   if (rejected && reason === "not_eligible") return "24시간 안정 운영, 현재 실행 버전·해시, 오가닉 300개 연속 성공 6회가 모두 확인된 뒤 후보 간격을 적용할 수 있습니다.";
   if (rejected && reason === "probe_active") return "이미 1건 안전 검증이 진행 중이며 추가 검증은 시작하지 않았습니다.";
   if (rejected && reason === "busy") return "현재 작업 레인이 사용 중이어서 1건 검증을 시작하지 않았습니다.";
@@ -2179,7 +2185,8 @@ export async function controlShoppingWorker(request, ctx, body, access) {
   const { data, error } = await ctx.supabaseAdmin.rpc(rpcName, args);
   if (error) throw error;
   const result = normalizeWorkerRpcObject(data);
-  const rejected = result.ok === false || result.activated === false || result.accepted === false;
+  const accepted = shoppingWorkerControlAccepted(action, result);
+  const rejected = !accepted;
   const remoteWakeRequested = action === "worker-canary" && !rejected
     ? await requestShoppingWorkerWake(ctx, "control-plane-canary")
     : false;
@@ -2193,7 +2200,7 @@ export async function controlShoppingWorker(request, ctx, body, access) {
       mode: normalizeWorkerText(workerValue(result, "mode", "cadence_mode", "cadenceMode"), 20),
       minutes: normalizeWorkerInteger(workerValue(result, "minutes", "cadence_minutes", "cadenceMinutes")),
       reason: normalizeWorkerText(result.reason, 100),
-      activated: result.activated !== false && result.accepted !== false && result.ok !== false,
+      activated: accepted,
     },
   }, rejected ? 409 : 200);
 }

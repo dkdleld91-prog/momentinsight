@@ -302,7 +302,7 @@ test("shopping worker controls are owner-only and use fixed RPC contracts", asyn
         rpcCalls += 1;
         assert.equal(name, "mi_stop_naver_shopping_worker");
         assert.deepEqual(args, { p_reason: "manual_stop" });
-        return { data: { ok: true, circuit_state: "open" }, error: null };
+        return { data: { accepted: true, circuit_state: "open" }, error: null };
       },
     },
   };
@@ -332,7 +332,7 @@ test("owner canary and cadence controls fail closed on invalid or ineligible req
       async rpc(name, args) {
         calls.push([name, args]);
         if (name === "mi_request_naver_shopping_worker_probe") {
-          return { data: { accepted: true, circuit_state: "half_open" }, error: null };
+          return { data: { accepted: true, activated: true, circuit_state: "half_open" }, error: null };
         }
         if (name === "mi_request_naver_shopping_worker_wake") {
           assert.deepEqual(args, { p_source: "control-plane-canary" });
@@ -382,6 +382,32 @@ test("a repeated canary rejection never sends another remote wake or reports suc
   assert.equal(body.remoteWakeRequested, false);
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0], "mi_request_naver_shopping_worker_probe");
+});
+
+test("malformed worker control RPC results fail closed without a remote wake", async () => {
+  const malformedResults = [null, {}, { accepted: null }, { accepted: true }];
+  for (const malformed of malformedResults) {
+    const calls = [];
+    const response = await controlShoppingWorker(
+      new Request("https://example.com/api/naver-rank-trackers", { method: "POST" }),
+      {
+        supabaseAdmin: {
+          async rpc(name) {
+            calls.push(name);
+            return { data: malformed, error: null };
+          },
+        },
+      },
+      { action: "worker-canary", trackerId: "10000000-0000-4000-8000-000000000001" },
+      { owner: true, agencyCode: "mml93-a01" },
+    );
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.ok, false);
+    assert.equal(body.result.activated, false);
+    assert.equal(body.remoteWakeRequested, false);
+    assert.deepEqual(calls, ["mi_request_naver_shopping_worker_probe"]);
+  }
 });
 
 test("owner operations UI exists only on the admin surface while clients keep the safe summary", async () => {

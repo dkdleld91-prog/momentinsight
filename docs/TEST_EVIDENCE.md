@@ -2,12 +2,12 @@
 
 ## 2026-08-11 N쇼핑 운영 제어면 v1.1.0 로컬 게이트
 
-- 워커·서버 핸들러 59/59, native/Windows bridge 22/22, 순위 API·운영 UI 65/65, server contract 40/40, release baseline, 보호 잠금 22함수·69파일·20마이그레이션, `git diff --check`를 통과했습니다.
+- 워커·서버 핸들러 59/59, native/Windows bridge 22/22, 순위 API·운영 UI 66/66, server contract 40/40, release baseline, 보호 잠금 22함수·69파일·20마이그레이션, 전체 `check:release`(앱/API 444, 플레이스 51, 쇼핑 52, Production 인증 18), `git diff --check`를 통과했습니다.
 - 회귀는 구버전 runtime 사전 차단, nonzero fingerprint, page 진행, exact atomic300, 같은 시스템 실패 2회 차단, 보안 cooldown, tracker 30분/24시간 격리, urgent 2건 상한·aging·광고주 round-robin, canary 1건, candidate 증거 gate, 실패 시 baseline 10분 복귀를 포함합니다.
 - 직접 수집 경로·3.5~6초 pacing·광고 제외·마지막 정상값 보존은 변경하지 않았습니다.
 - 운영 DB 증거: migration 이력 `20260811095137`, 함수 12/12, 모두 security invoker, PUBLIC·anon·authenticated execute=false, service_role=true, coordination RLS/force RLS=true, anon table select=false, tracker quarantine column=true를 확인했습니다. 작업 상태는 closed·baseline 10분·lane 없음·processing 0·candidate=false입니다.
 - Supabase security advisor의 coordination 항목은 service-role 전용 RLS 테이블에 정책이 없다는 INFO이며 직접 권한 검증으로 외부 접근 차단을 확인했습니다. 기존 별도 함수·테이블 advisor 항목은 이번 순위 제어면 범위에서 변경하지 않습니다.
-- 아직 Production·Windows 설치·실 canary는 수행 증거가 없으므로 이 문단은 실수집 성공 증거가 아닙니다.
+- Production commit `2d16b3d425e8`/deployment `dpl_35bXeh7eJiwZA7n9NyaFhFQD1SiV`의 health·ready 200과 Windows 1.1.0 설치 성공 마커를 확인했습니다. 실 canary는 `남자팬티`/seller product `12491798995`, collection `pw-chrome-1786444926878-415c0336e1c6a0df873c`, rank 100, page 3/position 20, checkedCount 300, 광고 제외 45, source `naver_shopping_results_collector`, organic-only, exact-product, atomic gate true입니다. 완료 뒤 circuit closed, lane·processing 0, probe 해제를 확인했습니다.
 
 ## 2026-08-11 N쇼핑 무한반복 금지 문서 계약
 

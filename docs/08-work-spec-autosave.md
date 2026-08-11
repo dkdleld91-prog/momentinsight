@@ -13,6 +13,7 @@
 - 5차 안전 승격: baseline 10분은 유지한다. 서로 다른 고유 버전·해시, 음성 회귀, Windows `남자팬티` 단독 원자 300개, lane·lease 해제, 중복 0, 24시간·원자 성공 6회 이상 증거가 모두 있어야 candidate cadence를 활성화할 수 있다. 실패 canary는 자동 재시도하지 않는다.
 - 불변 계약: 검증된 `/search/all` 1~8페이지 직접 경로, 페이지 간 3.5~6초, 광고 제외 `checkedCount=300`, last-good 보존, Windows primary·Mac standby 단일 global lane은 변경하지 않는다.
 - 배포 완료 판정: migration 적용·RLS/권한 advisor·전체 release 검사·Windows 실제 설치본 version/fingerprint·단독 canary 원자 300개·Production health/ready가 모두 증명된 범위만 완료로 기록한다. 24시간 안정성 증거 전에는 속도 승격을 완료로 보고하지 않는다.
+- 운영 증거: commit `2d16b3d425e8`, deployment `dpl_35bXeh7eJiwZA7n9NyaFhFQD1SiV`, Windows version `1.1.0`/fingerprint `d29f8b9e89b762eeee17bbe574ca66e9e7c14b02947acbca2bd0af26991871c4`를 확인했다. `남자팬티` 단독 canary collection `pw-chrome-1786444926878-415c0336e1c6a0df873c`는 seller product `12491798995`, checkedCount 300, 광고 45개 제외, exact-product 100위, atomic gate true였고 완료 뒤 circuit closed·lane/processing/probe 해제를 확인했다. candidate 8분은 아직 비활성이며 baseline 10분을 유지한다.
 
 ## 2026-08-11 N쇼핑 실패 이력·복구 증거·무한반복 금지 영구 계약
 
@@ -206,9 +207,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 18:52:36
-- 기준 커밋: db9cf7c
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-local-worker.test.mjs
+- 마지막 자동 저장: 2026. 08. 11. 19:44:09
+- 기준 커밋: 2d16b3d
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준

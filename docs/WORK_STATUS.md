@@ -9,7 +9,9 @@
 - 로컬 구현 완료: 동일 시스템 단계·오류 2회 circuit open, 보안 오류 즉시 cooldown, 유한 lease/CAS, page n/8·runtime fingerprint·원자 300 증거, lookup/new/due 공정 큐·aging·광고주 round-robin, tracker 격리, 총관리자 운영센터, baseline 10분→candidate 8분 안전 gate를 구현했습니다.
 - 후보 간격은 자동 활성화하지 않습니다. exact runtime `1.1.0`, nonzero SHA-256, 원자 300개, 24시간 안정 구간과 성공 6회가 모두 있어야 하며, 모든 실패는 baseline 10분과 안정성 집계 초기화로 복귀합니다.
 - 운영 Supabase migration `20260811095137_naver_shopping_worker_control_plane` 적용과 실제 SQL 파싱이 완료됐습니다. 12개 RPC는 모두 invoker, PUBLIC·anon·authenticated 실행 차단, service_role 전용, coordination RLS·force RLS, tracker 격리 컬럼을 확인했습니다. 초기 상태는 circuit closed·baseline 10분·lane/lease 0입니다.
-- 남은 증거는 Production, Windows 1.1.0 설치, `남자팬티` 단독 원자 300개 canary입니다. 이 세 항목 전에는 운영 완료 또는 정상화를 보고하지 않습니다.
+- 운영 반영 완료: commit `2d16b3d425e8`, Production deployment `dpl_35bXeh7eJiwZA7n9NyaFhFQD1SiV`, `/health`·`/ready` 200을 확인했습니다. Windows `동빈 (개발)`에는 `MI_EXTENSION_UPDATE_OK`, version `1.1.0`, runtime fingerprint `d29f8b9e89b762eeee17bbe574ca66e9e7c14b02947acbca2bd0af26991871c4`, loaded extension 동기화를 확인했습니다.
+- 설치 직후 일반 순환 1건이 `checkedCount=300`으로 성공한 뒤, `남자팬티` tracker `0aa6f887-496a-4ec6-bb28-f323a30f96d3` canary를 1회만 실행했습니다. collection `pw-chrome-1786444926878-415c0336e1c6a0df873c`는 정확 상품 `12491798995`, 오가닉 300개, 광고 45개 제외, 100위(3페이지 20번째), `atomic_ok=true`였고 circuit closed·lane/processing lease 해제를 확인했습니다.
+- 1~4차는 운영 검증까지 완료했습니다. 5차의 candidate 8분은 아직 활성화하지 않으며 baseline 10분으로 24시간·성공 6회 증거를 쌓은 뒤 별도 판단합니다.
 - 폴더 정리는 프로젝트가 지정한 recoverable 생성물 `dist`, `.vercel/output`, `.DS_Store`만 삭제했고 소스·환경설정·사용자 파일과 `node_modules`는 보존했습니다.
 
 ### 2026-08-11 N쇼핑 실패·복구 원장과 무한반복 금지 계약

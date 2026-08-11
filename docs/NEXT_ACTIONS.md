@@ -4,9 +4,9 @@
 
 1. 완료: 1~5차 로컬 구현과 대상 회귀·서버 계약·baseline·보호 잠금을 통과합니다.
 2. 완료: 운영 Supabase migration `20260811095137`을 한 번 적용하고 12개 SQL 함수·RLS·권한·advisor를 확인했습니다.
-3. 진행: GitHub/Production 반영 후 `/health`·`/ready`·관리자/광고주 화면·비인증 401을 검증합니다.
-4. 대기: Windows `동빈 (개발)` 실로드 확장과 native/local runtime을 1.1.0 및 동일 fingerprint로 교체합니다.
-5. 대기: `남자팬티` 상품 `12491798995` canary 한 건만 실행해 원자 300개·광고 제외·lane/lease 해제·중복 0을 확인합니다. 실패하면 자동 재시도 없이 circuit을 유지합니다.
+3. 완료: GitHub/Production commit `2d16b3d425e8` 반영과 `/health`·`/ready` 200을 확인했습니다.
+4. 완료: Windows `동빈 (개발)` 실로드 확장과 native/local runtime을 1.1.0 및 동일 fingerprint로 교체했습니다.
+5. 완료: `남자팬티` 상품 `12491798995` canary 한 건만 실행해 원자 300개·광고 45개 제외·100위·lane/lease/probe 해제를 확인했습니다.
 6. 대기: baseline 10분으로 24시간·성공 6회 증거가 쌓인 뒤에만 candidate 8분 A/B 승격을 별도로 판단합니다.
 
 ## 2026-08-10 N쇼핑 정상 가격비교 진입 v1.0.24

@@ -73,6 +73,21 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(installer, /-LogonType Interactive -RunLevel Limited/u);
   assert.match(installer, /-MultipleInstances IgnoreNew/u);
   assert.match(scheduler, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
+  assert.match(scheduler, /Get-CimInstance Win32_Process -Filter "Name = 'chrome\.exe'"/u);
+  assert.match(scheduler, /\(\?=\\s\|\$\)/u);
+  assert.match(scheduler, /chrome_process_check_failed/u);
+  assert.match(scheduler, /chrome_process_metadata_unavailable/u);
+  assert.match(scheduler, /GetCurrentProcess\(\)\.SessionId/u);
+  assert.match(scheduler, /StringComparison\]::OrdinalIgnoreCase/u);
+  assert.match(scheduler, /chrome_already_running profile=/u);
+  assert.match(
+    scheduler,
+    /\$commandLine -match \$profileArgumentPattern[\s\S]*if \(\$profileChromeRunning\) \{\s*Write-SafeLog "chrome_already_running profile=\$profileDirectory"\s*exit 0\s*\}\s*Start-Process -FilePath \$chromePath/u,
+  );
+  assert.ok(
+    scheduler.indexOf("chrome_already_running") < scheduler.indexOf("Start-Process -FilePath $chromePath"),
+    "an already running work profile must not be minimized again",
+  );
   assert.match(scheduler, /chrome_ready profile=/u);
   assert.match(scheduler, /chrome_profile_missing/u);
   assert.doesNotMatch(`${installer}\n${scheduler}`, /remote-debugging|no-sandbox|user-data-dir/iu);

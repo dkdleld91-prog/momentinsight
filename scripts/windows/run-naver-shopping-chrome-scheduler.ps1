@@ -26,6 +26,28 @@ try {
     if (-not (Test-Path -LiteralPath $profilePath -PathType Container)) { throw "chrome_profile_missing" }
 
     $profileArgument = '--profile-directory="{0}"' -f $profileDirectory
+    $escapedProfileDirectory = [regex]::Escape($profileDirectory)
+    $profileArgumentPattern = '(?i)(?:^|\s)--profile-directory=(?:"{0}"|{0})(?=\s|$)' -f $escapedProfileDirectory
+    $processQueryErrors = @()
+    $chromeProcesses = @(Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'" `
+        -ErrorAction SilentlyContinue -ErrorVariable processQueryErrors)
+    if ($processQueryErrors.Count -gt 0) { throw "chrome_process_check_failed" }
+    $currentSessionId = [Diagnostics.Process]::GetCurrentProcess().SessionId
+    $sessionChromeProcesses = @($chromeProcesses | Where-Object { [int]$_.SessionId -eq $currentSessionId })
+    if (@($sessionChromeProcesses | Where-Object {
+        [string]::IsNullOrWhiteSpace([string]$_.ExecutablePath) -or
+            [string]::IsNullOrWhiteSpace([string]$_.CommandLine)
+    }).Count -gt 0) { throw "chrome_process_metadata_unavailable" }
+    $profileChromeRunning = @($sessionChromeProcesses | Where-Object {
+        $executablePath = [IO.Path]::GetFullPath([string]$_.ExecutablePath)
+        $commandLine = [string]$_.CommandLine
+        [string]::Equals($executablePath, $chromePath, [StringComparison]::OrdinalIgnoreCase) -and
+            $commandLine -match $profileArgumentPattern
+    }).Count -gt 0
+    if ($profileChromeRunning) {
+        Write-SafeLog "chrome_already_running profile=$profileDirectory"
+        exit 0
+    }
     Start-Process -FilePath $chromePath -ArgumentList @(
         $profileArgument,
         "--no-first-run",

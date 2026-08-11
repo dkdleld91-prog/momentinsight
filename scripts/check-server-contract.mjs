@@ -609,7 +609,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.44"
+  shoppingChromeManifest.version === "1.0.45"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -630,6 +630,7 @@ check(
     && /automaticVerificationCooldownActive\(trigger\)/.test(shoppingChromeWorker)
     && /verification\.blockedUntil > Date\.now\(\)/.test(shoppingChromeWorker)
     && /chrome\.windows\.update\(controller\.windowId, \{ state: "normal" \}\)/.test(shoppingChromeWorker)
+    && /chrome_already_running profile=/.test(shoppingWindowsChromeScheduler)
     && /action: "controller-run"/.test(shoppingChromeWorker)
     && /if \(!EXTENSION_PAGE_CONTEXT\)/.test(shoppingChromeWorker)
     && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)

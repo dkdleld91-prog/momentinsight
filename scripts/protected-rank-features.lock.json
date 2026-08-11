@@ -473,12 +473,12 @@
     {
       "id": "shopping-windows-chrome-scheduler",
       "file": "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
-      "sha256": "ab109648788313195755710d4377d6fad120828b4cdff1e0a453efbfb8b069bf"
+      "sha256": "5b2afed8f272fa355b86addb4895e5e19b36b048c921ced6f49eff7ccc9a2632"
     },
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "f5ffd8491adcef71dd4b96d83fe0667feae2679df0ca0fb4c909b532d8b32aef"
+      "sha256": "aaedd104bb4768b0c7fe26a59d5d28fb626305615f5fc55bbf21188a0dceeaec"
     },
     {
       "id": "shopping-chrome-extension-worker",

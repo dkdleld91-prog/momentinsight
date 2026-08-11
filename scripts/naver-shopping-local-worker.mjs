@@ -514,7 +514,7 @@ export async function runLocalShoppingWorker(options = {}) {
           });
           const expectedReleaseMax = job.claims.length - partialSubmitted;
           const releasedCount = Number(released.releasedCount || 0);
-          if (!Number.isSafeInteger(releasedCount) || releasedCount < 0 || releasedCount > expectedReleaseMax) {
+          if (!Number.isSafeInteger(releasedCount) || releasedCount !== expectedReleaseMax) {
             summary.releaseFailed += expectedReleaseMax;
             log("local_worker_failure_release_invalid");
           }

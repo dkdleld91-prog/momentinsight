@@ -168,6 +168,7 @@ const shoppingLocalWorkerMigration = read("supabase/migrations/20260801125959_na
 const shoppingRankLookupJobs = read("src/server/handlers/naver-shopping-rank-jobs.mjs");
 const shoppingRankLookupMigration = read("supabase/migrations/20260802161731_naver_shopping_rank_lookup_jobs.sql");
 const shoppingRankLookupGrantMigration = read("supabase/migrations/20260802164548_harden_naver_shopping_rank_lookup_jobs_grants.sql");
+const shoppingRankLookupLeasePrecisionMigration = read("supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql");
 const shoppingWorkerWake = read("src/server/naver-shopping/worker-wake.mjs");
 const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql");
 const shoppingWorkerLaneMigration = read("supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql");
@@ -1326,6 +1327,11 @@ const checks = {
     && shoppingWorkerLaneMigration.includes('mi_block_naver_shopping_worker_lane')
     && shoppingWorkerLaneMigration.includes('security invoker')
     && !shoppingWorkerLaneMigration.includes('security definer')
+    && shoppingRankLookupLeasePrecisionMigration.includes("date_trunc('milliseconds', clock_timestamp())")
+    && shoppingRankLookupLeasePrecisionMigration.includes('processing_started_at = v_lease_started_at')
+    && shoppingRankLookupLeasePrecisionMigration.includes("date_trunc('milliseconds', v_job.processing_started_at)")
+    && shoppingRankLookupLeasePrecisionMigration.includes("date_trunc('milliseconds', processing_started_at)")
+    && shoppingRankLookupLeasePrecisionMigration.includes('to service_role')
     && shoppingRankLookupJobs.includes('requestShoppingWorkerWake(ctx, "rank-lookup")')
     && rankServer.includes('requestShoppingWorkerWake(ctx, "tracker-refresh-all")')
     && rankServer.includes('loadShoppingWorkerStatus')

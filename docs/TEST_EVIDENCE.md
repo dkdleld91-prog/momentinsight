@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-11 N쇼핑 lookup lease 정밀도 회귀
+
+- 재현 증거: 작업 `f4bf2076-43e8-4178-aa18-37e40333a993`은 DB lease `2026-08-11 05:08:24.333392+00`로 처리됐고, 서버 계약은 이를 `2026-08-11T05:08:24.333Z`로 직렬화합니다. 기존 완료·실패 RPC의 정확 비교는 이 값을 다른 lease로 판정해 결과와 오류를 모두 저장하지 못했습니다.
+- 수정 검증: claim 시각 밀리초 정렬, 기존 마이크로초 lease의 완료·실패 fallback, `FOR UPDATE SKIP LOCKED`, 완료 행 잠금, service-role 전용 권한을 회귀로 고정했습니다.
+- 통과: lookup·local worker 집중 회귀 49/49, 앱·API 419/419, 플레이스 51/51, 쇼핑 52/52, server contract 39/39, Production 인증 18/18, baseline, 보호 잠금 22함수·68파일·19마이그레이션과 self-test, 전체 `npm run check:release`, `git diff --check`.
+- 운영 증거: Supabase 적용 및 같은 단독 작업의 terminal 결과 확인 대기. 원자 `checkedCount=300` 전에는 정상 수집으로 판정하지 않습니다.
+
 ## 2026-08-11 Windows 10분 watchdog 재최소화 차단 v1.0.46
 
 - 1.0.44가 실행 직전 컨트롤러를 복원해도 스케줄러가 10분마다 같은 Chrome을 `Minimized`로 재호출하는 충돌을 확인했습니다.

@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 import { signLocalWorkerRequest } from "../local-worker-auth.mjs";
+import { validateLocalWorkerJob } from "../naver-shopping/local-worker-contract.mjs";
 import { handleLocalWorkerRequest } from "./naver-shopping-local-worker.mjs";
 
 const SECRET = "test-local-worker-secret-that-is-longer-than-32-bytes";
@@ -586,13 +587,17 @@ test("signed manual queue registers every active tracker without exposing accoun
 
 test("claims an interactive lookup before periodic trackers and atomically stores its 300 result", async () => {
   await withWorkerEnv(async () => {
-    const leaseStartedAt = new Date().toISOString();
-    const leaseUntil = new Date(Date.now() + 12 * 60_000).toISOString();
-    const lookupJob = {
+    const databaseLeaseStartedAt = "2026-08-11T05:08:24.333392Z";
+    const databaseLeaseUntil = "2026-08-11T05:43:24.333392Z";
+    const rawLookupJob = {
       kind: "lookup",
       keyword: "온열찜질기",
       limit: 300,
-      claims: [{ lookupJobId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+      claims: [{
+        lookupJobId: TRACKER_ID,
+        leaseStartedAt: databaseLeaseStartedAt,
+        leaseUntil: databaseLeaseUntil,
+      }],
     };
     const claimCtx = {
       supabaseAdmin: {
@@ -601,7 +606,12 @@ test("claims an interactive lookup before periodic trackers and atomically store
           if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
           return {
-            data: [{ id: TRACKER_ID, keyword: "온열찜질기", lease_started_at: leaseStartedAt, lease_until: leaseUntil }],
+            data: [{
+              id: TRACKER_ID,
+              keyword: "온열찜질기",
+              lease_started_at: databaseLeaseStartedAt,
+              lease_until: databaseLeaseUntil,
+            }],
             error: null,
           };
         },
@@ -610,7 +620,11 @@ test("claims an interactive lookup before periodic trackers and atomically store
     };
     const claimResponse = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), claimCtx);
     assert.equal(claimResponse.status, 200);
-    assert.deepEqual((await claimResponse.json()).job, lookupJob);
+    const claimedPayload = await claimResponse.json();
+    assert.deepEqual(claimedPayload.job, rawLookupJob);
+    const lookupJob = validateLocalWorkerJob(claimedPayload.job);
+    assert.equal(lookupJob.claims[0].leaseStartedAt, "2026-08-11T05:08:24.333Z");
+    assert.equal(lookupJob.claims[0].leaseUntil, "2026-08-11T05:43:24.333Z");
 
     let completeArgs = null;
     const submitCtx = {
@@ -638,8 +652,8 @@ test("claims an interactive lookup before periodic trackers and atomically store
                   product_title: "온열찜질기 11",
                   max_rank: 300,
                   status: "processing",
-                  processing_started_at: leaseStartedAt,
-                  processing_until: leaseUntil,
+                  processing_started_at: databaseLeaseStartedAt,
+                  processing_until: databaseLeaseUntil,
                 },
                 error: null,
               };
@@ -658,8 +672,60 @@ test("claims an interactive lookup before periodic trackers and atomically store
     assert.equal(submitResponse.status, 200);
     assert.equal(submitPayload.committedCount, 1);
     assert.equal(completeArgs.p_job_id, TRACKER_ID);
+    assert.equal(completeArgs.p_lease_started_at, "2026-08-11T05:08:24.333Z");
     assert.equal(completeArgs.p_result.result.rank, 11);
     assert.equal(completeArgs.p_result.result.checkedCount, 300);
+  });
+});
+
+test("normalizes a microsecond lookup claim before the failure RPC round trip", async () => {
+  await withWorkerEnv(async () => {
+    const databaseLeaseStartedAt = "2026-08-11T05:08:24.333392Z";
+    const databaseLeaseUntil = "2026-08-11T05:43:24.333392Z";
+    const claimCtx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+          return {
+            data: [{
+              id: TRACKER_ID,
+              keyword: "온열찜질기",
+              lease_started_at: databaseLeaseStartedAt,
+              lease_until: databaseLeaseUntil,
+            }],
+            error: null,
+          };
+        },
+        from() { throw new Error("periodic_tracker_should_not_be_claimed"); },
+      },
+    };
+    const claimResponse = await handleLocalWorkerRequest(signedRequest({ action: "claim" }), claimCtx);
+    assert.equal(claimResponse.status, 200);
+    const job = validateLocalWorkerJob((await claimResponse.json()).job);
+    assert.equal(job.claims[0].leaseStartedAt, "2026-08-11T05:08:24.333Z");
+
+    let failArgs = null;
+    const failCtx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_fail_naver_shopping_rank_lookup_job");
+          failArgs = args;
+          return { data: true, error: null };
+        },
+      },
+    };
+    const failResponse = await handleLocalWorkerRequest(signedRequest({
+      action: "fail",
+      job,
+      errorCode: "provider_partial_window:299_300",
+    }), failCtx);
+    assert.equal(failResponse.status, 200);
+    assert.equal((await failResponse.json()).releasedCount, 1);
+    assert.equal(failArgs.p_job_id, TRACKER_ID);
+    assert.equal(failArgs.p_lease_started_at, "2026-08-11T05:08:24.333Z");
   });
 });
 
@@ -994,5 +1060,24 @@ test("collection lease migration keeps safe pacing below the atomic submit bound
   assert.match(sql, /p_lease_seconds < 60 or p_lease_seconds > 2100/iu);
   assert.match(sql, /for update skip locked/iu);
   assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_rank_lookup_job\(integer\)[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("lookup claim lease precision survives the JavaScript millisecond round trip", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /v_lease_started_at timestamptz := date_trunc\('milliseconds', clock_timestamp\(\)\)/iu);
+  assert.match(sql, /processing_started_at = v_lease_started_at/iu);
+  assert.match(sql, /processing_until = v_lease_started_at \+ make_interval\(secs => p_lease_seconds\)/iu);
+  assert.match(sql, /updated_at = v_lease_started_at/iu);
+  assert.match(sql, /for update skip locked/iu);
+  assert.match(sql, /v_job\.processing_started_at is distinct from p_lease_started_at[\s\S]+date_trunc\('milliseconds', v_job\.processing_started_at\)[\s\S]+date_trunc\('milliseconds', p_lease_started_at\)/iu);
+  assert.match(sql, /processing_started_at = p_lease_started_at[\s\S]+or date_trunc\('milliseconds', processing_started_at\)[\s\S]+= date_trunc\('milliseconds', p_lease_started_at\)/iu);
+  assert.match(sql, /select \* into v_job[\s\S]+for update/iu);
+  assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_rank_lookup_job\(integer\)[\s\S]+to service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_complete_naver_shopping_rank_lookup_job[\s\S]+to service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_fail_naver_shopping_rank_lookup_job[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

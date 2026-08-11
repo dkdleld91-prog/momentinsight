@@ -42,6 +42,7 @@ const files = {
   shoppingWorkerWake: "src/server/naver-shopping/worker-wake.mjs",
   shoppingWorkerWakeMigration: "supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
   shoppingWorkerLaneMigration: "supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
+  shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
@@ -99,6 +100,7 @@ const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMi
 const shoppingWorkerWake = fs.readFileSync(files.shoppingWorkerWake, "utf8");
 const shoppingWorkerWakeMigration = fs.readFileSync(files.shoppingWorkerWakeMigration, "utf8");
 const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigration, "utf8");
+const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
@@ -660,12 +662,17 @@ check(
     && /mi_block_naver_shopping_worker_lane/.test(shoppingWorkerLaneMigration)
     && /security invoker/.test(shoppingWorkerLaneMigration)
     && !/security definer/.test(shoppingWorkerLaneMigration)
+    && /date_trunc\('milliseconds', clock_timestamp\(\)\)/.test(shoppingRankLookupLeasePrecisionMigration)
+    && /processing_started_at = v_lease_started_at/.test(shoppingRankLookupLeasePrecisionMigration)
+    && /date_trunc\('milliseconds', v_job\.processing_started_at\)/.test(shoppingRankLookupLeasePrecisionMigration)
+    && /date_trunc\('milliseconds', processing_started_at\)/.test(shoppingRankLookupLeasePrecisionMigration)
+    && /to service_role/.test(shoppingRankLookupLeasePrecisionMigration)
     && /requestShoppingWorkerWake\(ctx, "tracker-refresh-all"\)/.test(productTrackers)
     && /requestShoppingWorkerWake\(ctx, "rank-lookup"\)/.test(shoppingRankLookupJobs)
     && [adminPage, clientPage].every((source) =>
       /queuedPayload\.remoteWakeRequested === true/.test(source)
         && /개발 프로필에 원격 실행을 요청했습니다\./.test(source)),
-  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
+  `${files.productTrackers}, ${files.shoppingRankLookupJobs}, ${files.shoppingWorkerWake}, ${files.shoppingWorkerWakeMigration}, ${files.shoppingWorkerLaneMigration}, ${files.shoppingRankLookupLeasePrecisionMigration}, ${files.shoppingLocalWorkerHandler}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHost}, ${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.adminPage}, ${files.clientPage}`,
 );
 check(
   "N Shopping source classifies 418 as unavailable and 429 as retryable",

@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "6d50e2ba816ecc8f84a9ece6343e1bd49d68380b764be53b49b4927342243d30"
+      "sha256": "1dca5f07b998c75be5dd5228598b1ff33832f71a09d2bfa919b1ca1d1d3f730e"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -428,6 +428,12 @@
       "id": "shopping-collection-lease-extension",
       "file": "supabase/migrations/20260810093810_extend_naver_shopping_worker_collection_lease.sql",
       "sha256": "096b1b538d930b0ace45997738eb39de1a3e21cd51c7fcbd876f23065099dbfc",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-rank-lookup-lease-precision",
+      "file": "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
+      "sha256": "86b8c0bd9e06905046daa90eeb0614eb0ff94d13c5d1e3ebf69a9a6425d25666",
       "rankMigration": true
     },
     {

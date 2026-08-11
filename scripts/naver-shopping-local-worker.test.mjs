@@ -507,6 +507,34 @@ test("never submits a short source-exhausted window and releases the lease as fa
   assert.equal(calls.some((call) => call.action === "submit"), false);
 });
 
+test("fails closed when the failure RPC releases fewer claims than requested", async () => {
+  const calls = [];
+  const logs = [];
+  const provider = {
+    async collect() { return completeWindow(299); },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 0 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider,
+    log: (value) => logs.push(value),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
+  assert.match(logs.join("\n"), /local_worker_failure_release_invalid/u);
+});
+
 test("preserves a bounded native parser failure detail for production diagnosis", async () => {
   const calls = [];
   const provider = {

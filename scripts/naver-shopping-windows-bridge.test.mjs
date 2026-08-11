@@ -74,7 +74,6 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(installer, /-MultipleInstances IgnoreNew/u);
   assert.match(scheduler, /'--profile-directory="\{0\}"' -f \$profileDirectory/u);
   assert.match(scheduler, /Get-CimInstance Win32_Process -Filter "Name = 'chrome\.exe'"/u);
-  assert.match(scheduler, /\(\?=\\s\|\$\)/u);
   assert.match(scheduler, /chrome_process_check_failed/u);
   assert.match(scheduler, /chrome_process_metadata_unavailable/u);
   assert.match(scheduler, /GetCurrentProcess\(\)\.SessionId/u);
@@ -82,7 +81,7 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(scheduler, /chrome_already_running profile=/u);
   assert.match(
     scheduler,
-    /\$commandLine -match \$profileArgumentPattern[\s\S]*if \(\$profileChromeRunning\) \{\s*Write-SafeLog "chrome_already_running profile=\$profileDirectory"\s*exit 0\s*\}\s*Start-Process -FilePath \$chromePath/u,
+    /if \(\$processQueryErrors\.Count -gt 0\) \{ throw "chrome_process_check_failed" \}\s*\$currentSessionId = \[Diagnostics\.Process\]::GetCurrentProcess\(\)\.SessionId\s*\$sessionChromeProcesses = @\(\$chromeProcesses \| Where-Object \{ \[int\]\$_\.SessionId -eq \$currentSessionId \}\)\s*if \(@\(\$sessionChromeProcesses \| Where-Object \{\s*\[string\]::IsNullOrWhiteSpace\(\[string\]\$_\.ExecutablePath\)\s*\}\)\.Count -gt 0\) \{ throw "chrome_process_metadata_unavailable" \}\s*\$workChromeRunning = @\(\$sessionChromeProcesses \| Where-Object \{\s*\$executablePath = \[IO\.Path\]::GetFullPath\(\[string\]\$_\.ExecutablePath\)\s*\[string\]::Equals\(\$executablePath, \$chromePath, \[StringComparison\]::OrdinalIgnoreCase\)\s*\}\)\.Count -gt 0\s*if \(\$workChromeRunning\) \{\s*Write-SafeLog "chrome_already_running profile=\$profileDirectory"\s*exit 0\s*\}\s*\$profileArgument = '--profile-directory="\{0\}"' -f \$profileDirectory\s*Start-Process -FilePath \$chromePath/u,
   );
   assert.ok(
     scheduler.indexOf("chrome_already_running") < scheduler.indexOf("Start-Process -FilePath $chromePath"),

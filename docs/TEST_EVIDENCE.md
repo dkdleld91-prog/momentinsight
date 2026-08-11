@@ -1,9 +1,9 @@
 # Test Evidence
 
-## 2026-08-11 Windows 10분 watchdog 재최소화 차단 v1.0.45
+## 2026-08-11 Windows 10분 watchdog 재최소화 차단 v1.0.46
 
 - 1.0.44가 실행 직전 컨트롤러를 복원해도 스케줄러가 10분마다 같은 Chrome을 `Minimized`로 재호출하는 충돌을 확인했습니다.
-- 동일 작업 프로필 프로세스가 있으면 watchdog가 재시작하지 않도록 차단하고, Windows bridge 회귀에서 시작 순서와 바이패스 금지를 같이 검증합니다.
+- 현재 사용자 세션의 정식 Chrome 프로세스가 있으면 watchdog가 재시작하지 않도록 차단하고, Windows bridge 회귀에서 시작 순서와 바이패스 금지를 같이 검증합니다.
 
 ## 2026-08-11 Windows 숨김 컨트롤러 동결 해제 v1.0.44
 

@@ -3,10 +3,10 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
-## 2026-08-11 Windows 10분 watchdog 재최소화 차단 v1.0.45
+## 2026-08-11 Windows 10분 watchdog 재최소화 차단 v1.0.46
 
 - 원인: 동결 복원 후에도 10분 watchdog가 이미 실행 중인 동일 Chrome 프로필을 `Minimized`로 다시 호출해 컨트롤러를 재은닉할 수 있는 경계를 확인했다.
-- 구현: 정확한 `--profile-directory` Chrome 프로세스가 이미 있으면 watchdog는 `chrome_already_running`을 남기고 종료하며, Chrome이 없을 때만 시작한다.
+- 구현: 전용 작업 사용자 세션에 같은 경로의 정식 Chrome이 이미 있으면 watchdog는 `chrome_already_running`을 남기고 종료하며, Chrome이 없을 때만 정확한 작업 프로필로 시작한다.
 - 보호: 프로필 식별·CAPTCHA 안전 대기·광고 제외 원자 300개·실패 시 마지막 정상 순위 보존은 유지한다.
 
 ## 2026-08-11 Windows 숨김 컨트롤러 동결 해제 v1.0.44

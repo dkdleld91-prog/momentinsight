@@ -281,7 +281,7 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.45");
+  assert.equal(manifest.version, "1.0.46");
   assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
   assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
   assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
@@ -384,7 +384,7 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
     serviceWorker.indexOf("function naverSearchUrl"),
   );
 
-  assert.equal(manifest.version, "1.0.45");
+  assert.equal(manifest.version, "1.0.46");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);

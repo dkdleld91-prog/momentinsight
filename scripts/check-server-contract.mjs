@@ -609,7 +609,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.43"
+  shoppingChromeManifest.version === "1.0.44"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -623,6 +623,13 @@ check(
     && /chrome\.runtime\.getURL\("popup\.html"\)/.test(shoppingChromeWorker)
     && /crypto\.randomUUID\(\)/.test(shoppingChromeWorker)
     && /autoDiscardable: false/.test(shoppingChromeWorker)
+    && /CONTROLLER_RESUME_TIMEOUT_MS = 15_000/.test(shoppingChromeWorker)
+    && /current\.frozen === true/.test(shoppingChromeWorker)
+    && /changeInfo\.frozen === false/.test(shoppingChromeWorker)
+    && /active: true,\s*pinned: true,\s*autoDiscardable: false/.test(shoppingChromeWorker)
+    && /automaticVerificationCooldownActive\(trigger\)/.test(shoppingChromeWorker)
+    && /verification\.blockedUntil > Date\.now\(\)/.test(shoppingChromeWorker)
+    && /chrome\.windows\.update\(controller\.windowId, \{ state: "normal" \}\)/.test(shoppingChromeWorker)
     && /action: "controller-run"/.test(shoppingChromeWorker)
     && /if \(!EXTENSION_PAGE_CONTEXT\)/.test(shoppingChromeWorker)
     && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)

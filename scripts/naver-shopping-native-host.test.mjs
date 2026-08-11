@@ -281,7 +281,7 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.43");
+  assert.equal(manifest.version, "1.0.44");
   assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
   assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
   assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
@@ -324,6 +324,15 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.match(serviceWorker, /pinned: true/u);
   assert.match(serviceWorker, /controller\.discarded/u);
   assert.match(serviceWorker, /action: "controller-run"/u);
+  assert.match(serviceWorker, /CONTROLLER_RESUME_TIMEOUT_MS = 15_000/u);
+  assert.match(serviceWorker, /current\.frozen === true/u);
+  assert.match(serviceWorker, /changeInfo\.frozen === false/u);
+  assert.match(serviceWorker, /await waitForControllerResumed\(controller\.id\)/u);
+  assert.match(serviceWorker, /active: true,\s*pinned: true,\s*autoDiscardable: false/u);
+  assert.match(serviceWorker, /async function automaticVerificationCooldownActive\(trigger\)/u);
+  assert.match(serviceWorker, /return verification\.blockedUntil > Date\.now\(\)/u);
+  assert.match(serviceWorker, /chrome\.windows\.update\(controller\.windowId, \{ state: "normal" \}\)/u);
+  assert.match(serviceWorker, /return \{ ok: false, started: false, code: "naver_verification_cooldown" \}/u);
   assert.match(serviceWorker, /if \(!EXTENSION_PAGE_CONTEXT\)/u);
   assert.match(serviceWorker, /requestControllerRun\("manual"\)\.then\(sendResponse\)/u);
   assert.match(serviceWorker, /saveStatus\("standby", "다음 갱신 요청 대기 중"\)/u);
@@ -344,6 +353,49 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
     serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
   );
   assert.ok(runWorkerSource.indexOf("running = true") < runWorkerSource.indexOf("await verificationState()"));
+  const controllerDispatchSource = serviceWorker.slice(
+    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+    serviceWorker.indexOf("function naverSearchUrl"),
+  );
+  assert.ok(
+    controllerDispatchSource.indexOf("await automaticVerificationCooldownActive(trigger)")
+      < controllerDispatchSource.indexOf("await ensureControllerTab()"),
+  );
+  assert.ok(
+    controllerDispatchSource.indexOf("await prepareControllerForDispatch(controller)")
+      < controllerDispatchSource.indexOf("chrome.runtime.sendMessage"),
+  );
+});
+
+test("Chrome controller resumes a frozen tab before dispatch without hiding active verification", () => {
+  const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
+  const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
+  const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", extensionDirectory), "utf8"));
+  const verificationGuardSource = serviceWorker.slice(
+    serviceWorker.indexOf("async function automaticVerificationCooldownActive(trigger)"),
+    serviceWorker.indexOf("function waitForControllerResumed"),
+  );
+  const resumeSource = serviceWorker.slice(
+    serviceWorker.indexOf("function waitForControllerResumed"),
+    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+  );
+  const dispatchSource = serviceWorker.slice(
+    serviceWorker.indexOf("async function requestControllerRun(trigger)"),
+    serviceWorker.indexOf("function naverSearchUrl"),
+  );
+
+  assert.equal(manifest.version, "1.0.44");
+  assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
+  assert.match(verificationGuardSource, /await verificationState\(\)/u);
+  assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
+  assert.match(resumeSource, /CONTROLLER_RESUME_TIMEOUT_MS/u);
+  assert.match(resumeSource, /changeInfo\.frozen === false/u);
+  assert.match(resumeSource, /active: true,\s*pinned: true,\s*autoDiscardable: false/u);
+  assert.ok(resumeSource.indexOf("chrome.tabs.update(controller.id") < resumeSource.indexOf("waitForControllerResumed(controller.id)"));
+  assert.ok(dispatchSource.indexOf("automaticVerificationCooldownActive(trigger)") < dispatchSource.indexOf("ensureControllerTab()"));
+  assert.ok(dispatchSource.indexOf("prepareControllerForDispatch(controller)") < dispatchSource.indexOf("chrome.runtime.sendMessage"));
+  assert.doesNotMatch(dispatchSource, /chrome\.tabs\.reload/u);
+  assert.match(serviceWorker, /chrome\.alarms\.onAlarm\.addListener\([\s\S]{0,180}requestControllerRun\(alarm\.name\)/u);
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {

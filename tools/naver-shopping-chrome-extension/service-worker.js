@@ -4,6 +4,7 @@ const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
 const PAGE_SCRIPT_TIMEOUT_MS = 15_000;
 const COLLECTION_TIMEOUT_MS = 12 * 60_000;
+const CONTROLLER_RESUME_TIMEOUT_MS = 15_000;
 const RUNNING_STATUS_STALE_MS = 20 * 60_000;
 const SEARCH_DWELL_INTERVAL_MS = 12_000;
 const SEARCH_DWELL_JITTER_MS = 8_000;
@@ -155,16 +156,68 @@ async function ensureControllerTab() {
   }
 }
 
+async function automaticVerificationCooldownActive(trigger) {
+  if (trigger === "manual") return false;
+  const verification = await verificationState();
+  return verification.blockedUntil > Date.now();
+}
+
+function waitForControllerResumed(tabId) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    function finish(error, tab) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      chrome.tabs.onUpdated.removeListener(listener);
+      if (error) reject(error);
+      else resolve(tab);
+    }
+    const timeout = setTimeout(() => {
+      finish(new Error("rank_controller_resume_timeout"));
+    }, CONTROLLER_RESUME_TIMEOUT_MS);
+    function listener(updatedId, changeInfo, tab) {
+      if (updatedId !== tabId) return;
+      if (changeInfo.frozen === false || tab?.frozen !== true) finish(null, tab);
+    }
+    chrome.tabs.onUpdated.addListener(listener);
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.frozen !== true) finish(null, tab);
+    }).catch((error) => finish(error));
+  });
+}
+
+async function prepareControllerForDispatch(controller) {
+  const platform = await chrome.runtime.getPlatformInfo();
+  if (platform.os === "win") {
+    await chrome.windows.update(controller.windowId, { state: "normal" });
+  }
+  const current = await chrome.tabs.get(controller.id);
+  const wasFrozen = current.frozen === true;
+  let activated = await chrome.tabs.update(controller.id, {
+    active: true,
+    pinned: true,
+    autoDiscardable: false,
+  });
+  if (!activated) activated = await chrome.tabs.get(controller.id);
+  if (wasFrozen || activated?.frozen === true) {
+    activated = await waitForControllerResumed(controller.id);
+  }
+  if (activated.status !== "complete") activated = await waitForTabComplete(controller.id);
+  return activated;
+}
+
 async function requestControllerRun(trigger) {
-  const controller = await ensureControllerTab();
+  if (await automaticVerificationCooldownActive(trigger)) {
+    await saveStatus("verification", "naver_verification_cooldown");
+    return { ok: false, started: false, code: "naver_verification_cooldown" };
+  }
+  let controller = await ensureControllerTab();
+  controller = await prepareControllerForDispatch(controller);
   const controllerToken = String(new URL(controller.pendingUrl || controller.url).searchParams.get("token") || "");
   if (!controllerToken) throw new Error("rank_controller_token_missing");
   let lastError = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (attempt > 0) {
-      await chrome.tabs.reload(controller.id);
-      await waitForTabComplete(controller.id);
-    }
     try {
       const response = await chrome.runtime.sendMessage({
         action: "controller-run",

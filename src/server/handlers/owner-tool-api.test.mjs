@@ -61,6 +61,7 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.styleText, /mi-vat-layout/);
   assert.match(payload.tool.styleText, /mi-owner-development-hero/);
   assert.match(payload.tool.styleText, /mi-owner-development-principles/);
+  assert.match(payload.tool.styleText, /@media\(max-width:900px\).*mi-owner-development-nav.*mi-nav-title\{display:none\}/s);
   for (const html of [payload.tool.menuHtml, payload.tool.viewHtml]) {
     assert.doesNotMatch(html, /<script|<iframe|<object|\son[a-z]+\s*=/i);
   }

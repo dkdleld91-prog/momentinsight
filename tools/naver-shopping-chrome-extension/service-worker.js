@@ -8,6 +8,9 @@ const CONTROLLER_RESUME_TIMEOUT_MS = 15_000;
 const RUNNING_STATUS_STALE_MS = 20 * 60_000;
 const PAGE_REQUEST_INTERVAL_MS = 3_500;
 const PAGE_REQUEST_JITTER_MS = 2_500;
+const BASELINE_CADENCE_MINUTES = 10;
+const CANDIDATE_CADENCE_MINUTES = 8;
+const CADENCE_MINUTES_KEY = "momentInsightRankCadenceMinutes";
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -30,6 +33,27 @@ const NAVER_ACCESS_COOLDOWN_CODES = new Set([
 const TYPED_COLLECTION_ERROR_PATTERN = /^(?:naver|provider|native_host)_[a-z0-9_:-]{2,79}$/u;
 let running = false;
 let controllerPromise = null;
+let runtimeIdentityPromise = null;
+
+function bytesToHex(bytes) {
+  return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+async function extensionRuntimeIdentity() {
+  if (!runtimeIdentityPromise) {
+    runtimeIdentityPromise = (async () => {
+      const runtimeVersion = String(chrome.runtime.getManifest().version || "");
+      const response = await fetch(chrome.runtime.getURL("service-worker.js"), { cache: "no-store" });
+      if (!response.ok) throw new Error("extension_runtime_identity_unavailable");
+      const serviceWorkerSha256 = bytesToHex(await crypto.subtle.digest(
+        "SHA-256",
+        await response.arrayBuffer(),
+      ));
+      return { runtimeVersion, serviceWorkerSha256 };
+    })();
+  }
+  return runtimeIdentityPromise;
+}
 
 function typedCollectionError(error, fallbackCode) {
   for (const value of [error?.code, error?.message]) {
@@ -104,11 +128,25 @@ function nextKstHour(hour) {
   return when;
 }
 
-async function configureAlarms() {
+async function safeCadenceMinutes(requested = null) {
+  let value = requested;
+  if (value == null) {
+    const stored = await chrome.storage.local.get(CADENCE_MINUTES_KEY);
+    value = stored[CADENCE_MINUTES_KEY];
+  }
+  const cadence = Number(value);
+  return cadence === CANDIDATE_CADENCE_MINUTES ? cadence : BASELINE_CADENCE_MINUTES;
+}
+
+async function configureAlarms(requestedCadence = null) {
+  const cadenceMinutes = await safeCadenceMinutes(requestedCadence);
+  if (requestedCadence != null) {
+    await chrome.storage.local.set({ [CADENCE_MINUTES_KEY]: cadenceMinutes });
+  }
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
     ["rank-1500", { when: nextKstHour(15), periodInMinutes: 1440 }],
-    ["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }],
+    ["rank-catch-up", { delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes }],
     ["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }],
   ];
   await Promise.all(alarmDefinitions.map(async ([name, definition]) => {
@@ -456,6 +494,7 @@ async function runWorker(trigger = "manual") {
     }
     await saveStatus("running", trigger);
     port = chrome.runtime.connectNative(NATIVE_HOST);
+    const runtimeIdentity = await extensionRuntimeIdentity();
     const result = await new Promise((resolve, reject) => {
       let settled = false;
       function finish(error, value) {
@@ -501,9 +540,12 @@ async function runWorker(trigger = "manual") {
           finish(new Error(nativeDisconnectCode(chrome.runtime.lastError?.message)));
         }
       });
-      port.postMessage({ action: "run", trigger });
+      port.postMessage({ action: "run", trigger, ...runtimeIdentity });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
+    if (Number.isFinite(Number(result.cadenceMinutes))) {
+      await configureAlarms(Number(result.cadenceMinutes)).catch(() => {});
+    }
     if (result.status === "already_running") {
       await saveStatus("standby", "기존 작업 종료 대기 중");
       return { ok: false, code: "native_host_already_running", summary: result };

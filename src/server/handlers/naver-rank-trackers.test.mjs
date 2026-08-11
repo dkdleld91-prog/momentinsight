@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
   claimDueTracker,
+  controlShoppingWorker,
   handleRankTrackersRequest,
+  loadShoppingWorkerOperations,
   loadShoppingWorkerStatus,
   loadSnapshots as loadProductSnapshots,
   requestAccessCode,
@@ -135,6 +138,275 @@ test("product-rank status exposes a safe cooldown without worker identity", asyn
   assert.equal("leaseWorkerId" in status, false);
 });
 
+test("product-rank status reduces an open circuit to a safe client summary", async () => {
+  const status = await loadShoppingWorkerStatus({
+    supabaseAdmin: {
+      from(table) {
+        assert.equal(table, "naver_shopping_worker_coordination");
+        const query = {
+          select() { return query; },
+          eq() { return query; },
+          async maybeSingle() {
+            return {
+              data: {
+                lane_key: "global",
+                circuit_state: "open",
+                circuit_reason: "internal_failure_signature",
+                primary_worker_id: "windows-primary-secret",
+                lease_worker_id: "worker-secret",
+                cooldown_until: "2099-08-10T08:00:00.000Z",
+              },
+              error: null,
+            };
+          },
+        };
+        return query;
+      },
+    },
+  });
+
+  assert.deepEqual(status, { state: "stopped", preservesLastGood: true });
+  assert.equal("circuitReason" in status, false);
+  assert.equal("primaryWorkerId" in status, false);
+  assert.equal("leaseWorkerId" in status, false);
+});
+
+test("owner operations normalize control-plane evidence and derive release gates", async () => {
+  const canaryTrackerId = "10000000-0000-4000-8000-000000000001";
+  const operations = await loadShoppingWorkerOperations({
+    supabaseAdmin: {
+      async rpc(name) {
+        assert.equal(name, "mi_get_naver_shopping_worker_operations");
+        return {
+          data: {
+            circuit_state: "closed",
+            primary_worker_id: "windows-primary",
+            primary_seen_at: "2026-08-10T08:59:00.000Z",
+            pending_count: 5,
+            lookup_pending_count: 2,
+            tracker_pending_count: 3,
+            oldest_pending_at: "2026-08-10T08:40:00.000Z",
+            runtime_version: "1.0.48",
+            runtime_fingerprint: "sha256:test",
+            current_stage: "collecting",
+            current_page: 3,
+            current_job_kind: "tracker",
+            current_job_started_at: "2026-08-10T08:58:00.000Z",
+            last_success_at: "2026-08-10T08:50:00.000Z",
+            last_collection_id: "collection-1",
+            last_checked_count: 300,
+            last_excluded_ad_count: 42,
+            last_duration_ms: 190000,
+            last_source: "naver_shopping_results_collector",
+            cadence_mode: "baseline",
+            cadence_minutes: 10,
+            stability_started_at: "2026-08-09T08:00:00.000Z",
+            success_streak: 7,
+            canary_tracker_id: canaryTrackerId,
+          },
+          error: null,
+        };
+      },
+    },
+  }, Date.parse("2026-08-10T09:00:00.000Z"));
+
+  assert.equal(operations.available, true);
+  assert.equal(operations.queue.pendingCount, 5);
+  assert.equal(operations.progress.page, 3);
+  assert.equal(operations.progress.totalPages, 8);
+  assert.equal(operations.lastSuccess.checkedCount, 300);
+  assert.equal(operations.cadence.candidateEligible, false);
+  assert.equal(operations.controls.canActivateCandidate, false);
+  assert.equal(operations.controls.canRunCanary, true);
+  assert.equal(operations.controls.canaryTrackerId, canaryTrackerId);
+  assert.deepEqual(operations.alerts.map((alert) => alert.code).sort(), ["queue_delayed", "runtime_mismatch"]);
+});
+
+test("worker operations stay unavailable instead of breaking the owner tracker list", async () => {
+  const operations = await loadShoppingWorkerOperations({
+    supabaseAdmin: {
+      async rpc() {
+        return { data: null, error: new Error("function unavailable") };
+      },
+    },
+  });
+  assert.equal(operations.available, false);
+  assert.equal(operations.controls.canStop, false);
+  assert.equal(operations.alerts[0].code, "operations_unavailable");
+});
+
+test("candidate cadence unlocks only with current runtime hash and atomic proof", async () => {
+  const operations = await loadShoppingWorkerOperations({
+    supabaseAdmin: {
+      async rpc() {
+        return {
+          data: {
+            circuit_state: "closed",
+            runtime_version: "1.1.0",
+            runtime_fingerprint: "a".repeat(64),
+            last_checked_count: 300,
+            last_source: "naver_shopping_results_collector",
+            stability_started_at: "2026-08-09T08:00:00.000Z",
+            success_streak: 6,
+            candidate_eligible: true,
+            cadence_mode: "baseline",
+            cadence_minutes: 10,
+          },
+          error: null,
+        };
+      },
+    },
+  }, Date.parse("2026-08-10T09:00:00.000Z"));
+  assert.equal(operations.cadence.candidateEligible, true);
+  assert.equal(operations.controls.canActivateCandidate, true);
+});
+
+test("candidate cadence fails closed when database eligibility is missing or malformed", async () => {
+  for (const candidateEligibility of [undefined, "true", 1, null]) {
+    const operations = await loadShoppingWorkerOperations({
+      supabaseAdmin: {
+        async rpc() {
+          return {
+            data: {
+              circuit_state: "closed",
+              runtime_version: "1.1.0",
+              runtime_fingerprint: "b".repeat(64),
+              last_checked_count: 300,
+              last_source: "naver_shopping_results_collector",
+              stability_started_at: "2026-08-09T08:00:00.000Z",
+              success_streak: 9,
+              candidate_eligible: candidateEligibility,
+              cadence_mode: "baseline",
+              cadence_minutes: 10,
+            },
+            error: null,
+          };
+        },
+      },
+    }, Date.parse("2026-08-10T09:00:00.000Z"));
+    assert.equal(operations.cadence.candidateEligible, false);
+    assert.equal(operations.controls.canActivateCandidate, false);
+  }
+});
+
+test("shopping worker controls are owner-only and use fixed RPC contracts", async () => {
+  const request = new Request("https://example.com/api/naver-rank-trackers", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  let rpcCalls = 0;
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        rpcCalls += 1;
+        assert.equal(name, "mi_stop_naver_shopping_worker");
+        assert.deepEqual(args, { p_reason: "manual_stop" });
+        return { data: { ok: true, circuit_state: "open" }, error: null };
+      },
+    },
+  };
+
+  const denied = await controlShoppingWorker(request, ctx, { action: "worker-stop" }, {
+    owner: false,
+    agencyCode: "mml93-t01",
+  });
+  assert.equal(denied.status, 403);
+  assert.equal(rpcCalls, 0);
+
+  const allowed = await controlShoppingWorker(request, ctx, { action: "worker-stop", reason: "untrusted" }, {
+    owner: true,
+    agencyCode: "mml93-a01",
+  });
+  assert.equal(allowed.status, 200);
+  assert.equal(rpcCalls, 1);
+  assert.equal((await allowed.json()).result.state, "open");
+});
+
+test("owner canary and cadence controls fail closed on invalid or ineligible requests", async () => {
+  const request = new Request("https://example.com/api/naver-rank-trackers", { method: "POST" });
+  const canaryTrackerId = "10000000-0000-4000-8000-000000000001";
+  const calls = [];
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        calls.push([name, args]);
+        if (name === "mi_request_naver_shopping_worker_probe") {
+          return { data: { accepted: true, circuit_state: "half_open" }, error: null };
+        }
+        if (name === "mi_request_naver_shopping_worker_wake") {
+          assert.deepEqual(args, { p_source: "control-plane-canary" });
+          return { data: true, error: null };
+        }
+        return { data: { activated: false, reason: "not_eligible", cadence_mode: "baseline", cadence_minutes: 10 }, error: null };
+      },
+    },
+  };
+  const access = { owner: true, agencyCode: "mml93-a01" };
+
+  const invalid = await controlShoppingWorker(request, ctx, { action: "worker-canary", trackerId: "not-a-uuid" }, access);
+  assert.equal(invalid.status, 400);
+  assert.equal(calls.length, 0);
+
+  const canary = await controlShoppingWorker(request, ctx, { action: "worker-canary", trackerId: canaryTrackerId }, access);
+  assert.equal(canary.status, 200);
+  assert.deepEqual(calls[0], ["mi_request_naver_shopping_worker_probe", { p_tracker_id: canaryTrackerId }]);
+  assert.deepEqual(calls[1], ["mi_request_naver_shopping_worker_wake", { p_source: "control-plane-canary" }]);
+  assert.equal((await canary.json()).remoteWakeRequested, true);
+
+  const candidate = await controlShoppingWorker(request, ctx, { action: "worker-cadence", mode: "candidate" }, access);
+  assert.equal(candidate.status, 409);
+  assert.deepEqual(calls[2], ["mi_set_naver_shopping_worker_cadence", { p_mode: "candidate" }]);
+  assert.match((await candidate.json()).message, /24시간/u);
+});
+
+test("a repeated canary rejection never sends another remote wake or reports success", async () => {
+  const calls = [];
+  const response = await controlShoppingWorker(
+    new Request("https://example.com/api/naver-rank-trackers", { method: "POST" }),
+    {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          calls.push([name, args]);
+          return { data: { accepted: false, reason: "probe_active", state: "half_open" }, error: null };
+        },
+      },
+    },
+    { action: "worker-canary", trackerId: "10000000-0000-4000-8000-000000000001" },
+    { owner: true, agencyCode: "mml93-a01" },
+  );
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(body.ok, false);
+  assert.match(body.message, /추가 검증은 시작하지 않았습니다/u);
+  assert.equal(body.remoteWakeRequested, false);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], "mi_request_naver_shopping_worker_probe");
+});
+
+test("owner operations UI exists only on the admin surface while clients keep the safe summary", async () => {
+  const [adminSource, clientSource] = await Promise.all([
+    readFile(new URL("../../pages/admin.html", import.meta.url), "utf8"),
+    readFile(new URL("../../pages/client.html", import.meta.url), "utf8"),
+  ]);
+  for (const marker of [
+    "data-rank-worker-operations",
+    "N 쇼핑 수집 운영센터",
+    "data-rank-worker-stop",
+    "data-rank-worker-canary",
+    "data-rank-worker-candidate",
+    "data-rank-worker-baseline",
+    "workerOperations",
+  ]) {
+    assert.match(adminSource, new RegExp(marker), `admin owner operations marker: ${marker}`);
+    assert.doesNotMatch(clientSource, new RegExp(marker), `client must not expose owner operations marker: ${marker}`);
+  }
+  for (const safeMarker of ["안전 정지", "1건 검증", "기존 정상 순위와 30일 기록 보존"]) {
+    assert.match(adminSource, new RegExp(safeMarker));
+    assert.match(clientSource, new RegExp(safeMarker));
+  }
+});
+
 test("seller product URLs cannot be poisoned into catalog mode by query parameters", () => {
   const target = buildRankTarget({
     targetProductId: "12149720593",
@@ -229,6 +501,60 @@ test("an account-only team lists an isolated product-rank scope without a client
   assert.equal(body.errorCode, "SHOPPING_RANK_SOURCE_NOT_CONFIGURED");
   assert.equal(body.retryable, false);
   assert.deepEqual(body.workerStatus, { state: "unknown" });
+  assert.equal("workerOperations" in body, false);
+});
+
+test("only a primary owner list receives worker operations", async () => {
+  const previousAdminCode = process.env.MI_RANK_ADMIN_CODE;
+  process.env.MI_RANK_ADMIN_CODE = "owner-test-code";
+  try {
+    const request = new Request("https://example.com/api/naver-rank-trackers", {
+      headers: {
+        "x-demo-admin-code": "owner-test-code",
+        "x-mi-agency-code": "mml93-a01",
+      },
+    });
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          assert.equal(name, "mi_get_naver_shopping_worker_operations");
+          return { data: { circuit_state: "closed", cadence_mode: "baseline", cadence_minutes: 10 }, error: null };
+        },
+        from(table) {
+          if (table === "naver_shopping_worker_coordination") {
+            const query = {
+              select() { return query; },
+              eq() { return query; },
+              async maybeSingle() {
+                return { data: { lane_key: "global", circuit_state: "closed" }, error: null };
+              },
+            };
+            return query;
+          }
+          assert.equal(table, TRACKERS);
+          const query = {
+            select() { return query; },
+            in() { return query; },
+            order() { return query; },
+            limit() { return query; },
+            then(resolve, reject) {
+              return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    };
+    const response = await withoutShoppingCollector(() => handleRankTrackersRequest(request, ctx));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.scopeMode, "owner");
+    assert.equal(body.workerOperations.available, true);
+    assert.equal(body.workerOperations.circuit.state, "closed");
+  } finally {
+    if (previousAdminCode === undefined) delete process.env.MI_RANK_ADMIN_CODE;
+    else process.env.MI_RANK_ADMIN_CODE = previousAdminCode;
+  }
 });
 
 function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {

@@ -12,12 +12,28 @@ const TRACKER_ID = "123e4567-e89b-42d3-a456-426614174000";
 const SECOND_TRACKER_ID = "123e4567-e89b-42d3-a456-426614174001";
 const WORKER_ID = "test-primary-worker";
 const LANE_TOKEN = "223e4567-e89b-42d3-a456-426614174000";
-const LANE_ACTIONS = new Set(["claim-wake", "claim", "queue-all-active-trackers"]);
+const RUN_ID = "323e4567-e89b-42d3-a456-426614174000";
+const RUNTIME_FINGERPRINT = "a".repeat(64);
+const LANE_ACTIONS = new Set([
+  "claim-wake",
+  "claim",
+  "queue-all-active-trackers",
+  "submit",
+  "fail",
+]);
 
 function signedRequest(payload) {
-  const coordinatedPayload = LANE_ACTIONS.has(payload?.action)
+  let coordinatedPayload = LANE_ACTIONS.has(payload?.action)
     ? { ...payload, workerId: WORKER_ID, laneToken: LANE_TOKEN }
     : payload;
+  if (payload?.action === "claim-lane" || LANE_ACTIONS.has(payload?.action)) {
+    coordinatedPayload = {
+      ...coordinatedPayload,
+      runId: coordinatedPayload.runId || RUN_ID,
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.0",
+      runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
+    };
+  }
   const body = JSON.stringify(coordinatedPayload);
   const timestamp = String(Math.trunc(Date.now() / 1000));
   const nonce = `worker-test-${crypto.randomUUID()}`;
@@ -272,12 +288,18 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       supabaseAdmin: {
         async rpc(name, args) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
-          assert.equal(name, "mi_claim_naver_shopping_worker_lane");
-          claimArgs = args;
-          return {
-            data: { granted: true, reason: "granted", leaseUntil: new Date(Date.now() + 20 * 60_000).toISOString() },
-            error: null,
-          };
+          if (name === "mi_claim_naver_shopping_worker_lane") {
+            claimArgs = args;
+            return {
+              data: { granted: true, reason: "granted", leaseUntil: new Date(Date.now() + 20 * 60_000).toISOString() },
+              error: null,
+            };
+          }
+          assert.equal(name, "mi_report_naver_shopping_worker_progress");
+          assert.equal(args.p_runtime_version, "1.1.0");
+          assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
+          assert.equal(args.p_stage, "claiming");
+          return { data: true, error: null };
         },
       },
     };
@@ -296,6 +318,159 @@ test("primary worker claims the global lane through the service-role-only RPC", 
       p_lease_seconds: 35 * 60,
       p_primary_stale_seconds: 180,
     });
+  });
+});
+
+test("rejects stale worker runtime before it can claim the global lane", async () => {
+  await withWorkerEnv(async () => {
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          throw new Error("stale_runtime_must_not_claim_lane");
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim-lane",
+      workerId: WORKER_ID,
+      workerRole: "primary",
+      laneToken: LANE_TOKEN,
+      runtimeVersion: "1.0.48",
+    }), ctx);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_RUNTIME_IDENTITY_INVALID");
+    assert.deepEqual(calls, ["mi_consume_naver_shopping_worker_nonce"]);
+  });
+});
+
+test("rejects stale runtime on an already-issued lane before claiming work", async () => {
+  await withWorkerEnv(async () => {
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          throw new Error("stale_runtime_must_not_touch_or_claim");
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim",
+      runtimeVersion: "1.0.48",
+    }), ctx);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_RUNTIME_IDENTITY_INVALID");
+    assert.deepEqual(calls, ["mi_consume_naver_shopping_worker_nonce"]);
+  });
+});
+
+test("records signed progress and atomic 300 success evidence against the active lane", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    const job = {
+      keyword: "온열찜질기",
+      limit: 300,
+      claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+    };
+    const rpcCalls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          rpcCalls.push([name, args]);
+          if (name === "mi_report_naver_shopping_worker_progress") return { data: true, error: null };
+          assert.equal(name, "mi_record_naver_shopping_worker_success");
+          return {
+            data: { recorded: true, circuitState: "closed", successStreak: 7, cadenceEligible: false },
+            error: null,
+          };
+        },
+      },
+    };
+    const identity = {
+      workerId: WORKER_ID,
+      laneToken: LANE_TOKEN,
+      runId: RUN_ID,
+      runtimeVersion: "1.1.0",
+      runtimeFingerprint: RUNTIME_FINGERPRINT,
+    };
+    const progressResponse = await handleLocalWorkerRequest(signedRequest({
+      action: "progress",
+      ...identity,
+      stage: "collecting",
+      page: 4,
+      jobKind: "tracker",
+      trackerId: TRACKER_ID,
+    }), ctx);
+    assert.equal(progressResponse.status, 200);
+    const successResponse = await handleLocalWorkerRequest(signedRequest({
+      action: "record-success",
+      ...identity,
+      job,
+      collectionId: "pw-chrome-atomic300-control-plane",
+      checkedCount: 300,
+      excludedAdCount: 12,
+      durationMs: 123_456,
+      source: "naver_shopping_results_collector",
+    }), ctx);
+    assert.equal(successResponse.status, 200);
+    assert.equal((await successResponse.json()).recorded, true);
+    assert.equal(rpcCalls[0][1].p_stage, "collecting");
+    assert.equal(rpcCalls[0][1].p_page, 4);
+    assert.equal(rpcCalls[1][1].p_checked_count, 300);
+    assert.equal(rpcCalls[1][1].p_tracker_id, TRACKER_ID);
+    assert.equal(rpcCalls[1][1].p_source, "naver_shopping_results_collector");
+  });
+});
+
+test("records typed tracker failures without changing rank data in the HTTP handler", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    let failureArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_record_naver_shopping_worker_failure");
+          failureArgs = args;
+          return {
+            data: {
+              recorded: true,
+              circuitState: "closed",
+              failureStreak: 2,
+              quarantinedUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+            },
+            error: null,
+          };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "record-failure",
+      workerId: WORKER_ID,
+      laneToken: LANE_TOKEN,
+      runId: RUN_ID,
+      runtimeVersion: "1.1.0",
+      runtimeFingerprint: RUNTIME_FINGERPRINT,
+      job: {
+        keyword: "온열찜질기",
+        limit: 300,
+        claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+      },
+      errorCode: "local_worker_tracker_mismatch",
+      scope: "tracker",
+    }), ctx);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).failureStreak, 2);
+    assert.equal(failureArgs.p_scope, "tracker");
+    assert.equal(failureArgs.p_tracker_id, TRACKER_ID);
+    assert.equal(Object.hasOwn(failureArgs, "current_rank"), false);
   });
 });
 
@@ -487,7 +662,85 @@ test("claim returns to oldest due trackers when no uninitialized keyword remains
   });
 });
 
-test("central collector claims all due trackers without an owner, team or client scope", () => {
+test("fair scheduler forces an aged due advertiser after at most two urgent turns", async () => {
+  await withWorkerEnv(async () => {
+    const newTracker = tracker({
+      id: TRACKER_ID,
+      agency_code: "agency-a",
+      keyword: "신규 키워드",
+      last_checked_at: null,
+      created_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+      next_check_at: new Date(Date.now() - 10 * 60_000).toISOString(),
+    });
+    const dueTracker = tracker({
+      id: SECOND_TRACKER_ID,
+      agency_code: "agency-b",
+      keyword: "기존 키워드",
+      last_checked_at: new Date(Date.now() - 24 * 60 * 60_000).toISOString(),
+      next_check_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+    });
+    let schedulerArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+          assert.equal(name, "mi_choose_naver_shopping_worker_turn");
+          schedulerArgs = args;
+          return { data: { workClass: "due", agencyCode: "agency-b", urgentStreak: 2 }, error: null };
+        },
+        from(table) {
+          let mode = "";
+          let isUpdate = false;
+          let trackerId = "";
+          const query = {
+            select() { return query; },
+            update() { isUpdate = true; return query; },
+            eq(column, value) {
+              if (column === "id") trackerId = String(value);
+              return query;
+            },
+            gt() { return query; },
+            lt() { return query; },
+            lte() { return query; },
+            or() { return query; },
+            is(column) { if (column === "last_checked_at") mode = "new"; return query; },
+            not(column) { if (column === "last_checked_at") mode = "due"; return query; },
+            order() { return query; },
+            limit() { return query; },
+            async maybeSingle() {
+              assert.equal(isUpdate, true);
+              return { data: { id: trackerId }, error: null };
+            },
+            then(resolve, reject) {
+              let data;
+              if (table === "naver_shopping_rank_lookup_jobs") data = [{ id: TRACKER_ID }];
+              else if (isUpdate) data = null;
+              else data = mode === "new" ? [newTracker] : [dueTracker];
+              return Promise.resolve({ data, error: null }).then(resolve, reject);
+            },
+          };
+          return query;
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim",
+      schedulerVersion: "v1",
+    }), ctx);
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.job.keyword, "기존 키워드");
+    assert.deepEqual(body.job.claims.map((claim) => claim.trackerId), [SECOND_TRACKER_ID]);
+    assert.equal(schedulerArgs.p_has_lookup, true);
+    assert.equal(schedulerArgs.p_has_new, true);
+    assert.equal(schedulerArgs.p_has_due, true);
+    assert.deepEqual(schedulerArgs.p_due_agencies, ["agency-b"]);
+    assert.equal(schedulerArgs.p_oldest_due_at, dueTracker.next_check_at);
+  });
+});
+
+test("central collector stays global while using agency only for fair queue ordering", () => {
   const source = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const claimStart = source.indexOf("async function claimOneKeywordJob");
   const claimEnd = source.indexOf("async function loadClaimTrackers");
@@ -495,7 +748,14 @@ test("central collector claims all due trackers without an owner, team or client
   assert.ok(claimStart >= 0 && claimEnd > claimStart);
   assert.match(claimSource, /\.eq\("status", "active"\)/u);
   assert.match(claimSource, /\.lte\("next_check_at", nowIso\)/u);
-  assert.doesNotMatch(claimSource, /agency_code|admin_code|client_id|user_code/iu);
+  assert.match(claimSource, /worker_quarantined_until/u);
+  assert.doesNotMatch(claimSource, /admin_code|client_id|user_code/iu);
+  const fairStart = source.indexOf("async function claimFairJob");
+  const fairSource = source.slice(source.indexOf("async function chooseFairWorkerTurn"), claimStart);
+  assert.ok(fairStart >= 0);
+  assert.match(fairSource, /mi_choose_naver_shopping_worker_turn/u);
+  assert.match(fairSource, /agency_code/u);
+  assert.match(fairSource, /if \(turn\.workClass === "none"\) return null/u);
 });
 
 test("signed manual queue registers every active tracker without exposing account scopes", async () => {
@@ -1097,5 +1357,29 @@ test("lookup claim lease precision survives the JavaScript millisecond round tri
   assert.match(sql, /grant execute on function public\.mi_claim_naver_shopping_rank_lookup_job\(integer\)[\s\S]+to service_role/iu);
   assert.match(sql, /grant execute on function public\.mi_complete_naver_shopping_rank_lookup_job[\s\S]+to service_role/iu);
   assert.match(sql, /grant execute on function public\.mi_fail_naver_shopping_rank_lookup_job[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("worker control plane is service-role-only, atomic-300 gated and circuit bounded", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /circuit_state in \('closed', 'open', 'half_open'\)/iu);
+  assert.match(sql, /mi_report_naver_shopping_worker_progress/iu);
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.0'/iu);
+  assert.match(sql, /mi_record_naver_shopping_worker_success/iu);
+  assert.match(sql, /p_collection_id[\s\S]+\^pw-chrome-/iu);
+  assert.match(sql, /p_checked_count is distinct from 300/iu);
+  assert.match(sql, /mi_record_naver_shopping_worker_failure/iu);
+  assert.match(sql, /next_streak >= 2/iu);
+  assert.match(sql, /worker_quarantined_until/iu);
+  assert.match(sql, /normalized_scope = 'tracker'[\s\S]+cadence_mode = 'baseline'[\s\S]+cadence_minutes = 10/iu);
+  assert.match(sql, /scheduler_urgent_streak >= 2/iu);
+  assert.match(sql, /p_oldest_due_at[\s\S]+interval '30 minutes'/iu);
+  assert.match(sql, /probe_incomplete/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /grant execute on function public\.mi_record_naver_shopping_worker_success[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

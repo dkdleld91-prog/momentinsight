@@ -209,7 +209,12 @@ try {
     $localWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerScriptPath).Hash.ToLowerInvariant()
     $localWorkerContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerContractPath).Hash.ToLowerInvariant()
     $schedulerScriptHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $schedulerScriptPath).Hash.ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=4 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash scheduler_script_sha256=$schedulerScriptHash"
+    $runtimeIdentity = [Text.Encoding]::UTF8.GetBytes(
+        "$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$localWorkerHash`n$localWorkerContractHash"
+    )
+    $runtimeFingerprintBytes = [Security.Cryptography.SHA256]::Create().ComputeHash($runtimeIdentity)
+    $runtimeFingerprint = ([BitConverter]::ToString($runtimeFingerprintBytes)).Replace("-", "").ToLowerInvariant()
+    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=4 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue

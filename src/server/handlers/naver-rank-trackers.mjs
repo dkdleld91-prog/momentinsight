@@ -44,6 +44,14 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_auth_required",
   "naver_verification_required",
 ]);
+const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.0";
+const SHOPPING_WORKER_TOTAL_PAGES = 8;
+const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
+  "worker-stop",
+  "worker-canary",
+  "worker-cadence",
+]);
 const keywordVolumeCache = new Map();
 
 const TRACKER_SELECT = [
@@ -114,6 +122,34 @@ function normalizeKeywordCompare(value) {
 
 function normalizeSearchAdKeyword(value) {
   return normalizeText(value || "").replace(/\s/g, "");
+}
+
+function normalizeWorkerText(value, maxLength = 160) {
+  return normalizeText(value || "").slice(0, maxLength);
+}
+
+function normalizeWorkerIso(value) {
+  const timestamp = Date.parse(value || "");
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
+}
+
+function normalizeWorkerInteger(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : fallback;
+}
+
+function normalizeWorkerRpcObject(value) {
+  const source = Array.isArray(value) ? value[0] : value;
+  if (!source || typeof source !== "object") return {};
+  if (source.operations && typeof source.operations === "object") return source.operations;
+  return source;
+}
+
+function workerValue(source, ...keys) {
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null) return source[key];
+  }
+  return null;
 }
 
 function isMissingRankLeaseColumns(error) {
@@ -663,21 +699,34 @@ async function updateTrackerGroupName(ctx, trackerId, agencyCode, groupName) {
 
 export async function loadShoppingWorkerStatus(ctx, now = Date.now()) {
   try {
-    const { data, error } = await ctx.supabaseAdmin
+    let { data, error } = await ctx.supabaseAdmin
       .from("naver_shopping_worker_coordination")
-      .select("lane_key, primary_seen_at, lease_until, cooldown_until, last_block_code, updated_at")
+      .select("lane_key, circuit_state, primary_seen_at, lease_until, cooldown_until, last_block_code, updated_at")
       .eq("lane_key", "global")
       .maybeSingle();
+    if (error && /circuit_state|schema cache|does not exist/i.test(error.message || "")) {
+      ({ data, error } = await ctx.supabaseAdmin
+        .from("naver_shopping_worker_coordination")
+        .select("lane_key, primary_seen_at, lease_until, cooldown_until, last_block_code, updated_at")
+        .eq("lane_key", "global")
+        .maybeSingle());
+    }
     if (error || !data) return { state: "unknown" };
 
     const currentTime = Number(now) || Date.now();
     const cooldownTime = Date.parse(data.cooldown_until || "");
     const leaseTime = Date.parse(data.lease_until || "");
     const primarySeenTime = Date.parse(data.primary_seen_at || "");
+    const circuitState = SHOPPING_WORKER_CIRCUIT_STATES.has(normalizeText(data.circuit_state).toLowerCase())
+      ? normalizeText(data.circuit_state).toLowerCase()
+      : "closed";
     const blockCode = SHOPPING_WORKER_BLOCK_CODES.has(normalizeText(data.last_block_code).toLowerCase())
       ? normalizeText(data.last_block_code).toLowerCase()
       : "";
 
+    if (circuitState === "open") {
+      return { state: "stopped", preservesLastGood: true };
+    }
     if (Number.isFinite(cooldownTime) && cooldownTime > currentTime) {
       return {
         state: "cooldown",
@@ -685,6 +734,9 @@ export async function loadShoppingWorkerStatus(ctx, now = Date.now()) {
         blockCode,
         preservesLastGood: true,
       };
+    }
+    if (circuitState === "half_open") {
+      return { state: "verification", preservesLastGood: true };
     }
     if (Number.isFinite(leaseTime) && leaseTime > currentTime) {
       return { state: "running", preservesLastGood: true };
@@ -695,6 +747,161 @@ export async function loadShoppingWorkerStatus(ctx, now = Date.now()) {
     return { state: "standby", preservesLastGood: true };
   } catch {
     return { state: "unknown" };
+  }
+}
+
+export async function loadShoppingWorkerOperations(ctx, now = Date.now()) {
+  const currentTime = Number(now) || Date.now();
+  try {
+    const { data, error } = await ctx.supabaseAdmin.rpc("mi_get_naver_shopping_worker_operations");
+    if (error) throw error;
+    const source = normalizeWorkerRpcObject(data);
+    const circuitStateValue = normalizeWorkerText(workerValue(source, "circuit_state", "circuitState"), 20).toLowerCase();
+    const circuitState = SHOPPING_WORKER_CIRCUIT_STATES.has(circuitStateValue) ? circuitStateValue : "closed";
+    const primarySeenAt = normalizeWorkerIso(workerValue(source, "primary_seen_at", "primarySeenAt"));
+    const leaseUntil = normalizeWorkerIso(workerValue(source, "lease_until", "leaseUntil"));
+    const cooldownUntil = normalizeWorkerIso(workerValue(source, "cooldown_until", "cooldownUntil"));
+    const oldestPendingAt = normalizeWorkerIso(workerValue(source, "oldest_pending_at", "oldestPendingAt"));
+    const jobStartedAt = normalizeWorkerIso(workerValue(source, "current_job_started_at", "currentJobStartedAt"));
+    const stabilityStartedAt = normalizeWorkerIso(workerValue(source, "stability_started_at", "stabilityStartedAt"));
+    const primarySeenTime = Date.parse(primarySeenAt || "");
+    const leaseTime = Date.parse(leaseUntil || "");
+    const cooldownTime = Date.parse(cooldownUntil || "");
+    const oldestPendingTime = Date.parse(oldestPendingAt || "");
+    const jobStartedTime = Date.parse(jobStartedAt || "");
+    const stabilityStartedTime = Date.parse(stabilityStartedAt || "");
+    const runtimeVersion = normalizeWorkerText(workerValue(source, "runtime_version", "runtimeVersion"), 40);
+    const runtimeFingerprint = normalizeWorkerText(workerValue(source, "runtime_fingerprint", "runtimeFingerprint"), 160);
+    const lastCheckedCount = normalizeWorkerInteger(workerValue(source, "last_checked_count", "lastCheckedCount"));
+    const lastSource = normalizeWorkerText(workerValue(source, "last_source", "lastSource"), 100);
+    const successStreak = normalizeWorkerInteger(workerValue(source, "success_streak", "successStreak"));
+    const stableForMs = Number.isFinite(stabilityStartedTime) ? Math.max(0, currentTime - stabilityStartedTime) : 0;
+    const rawCandidateEligible = workerValue(source, "candidate_eligible", "candidateEligible");
+    const databaseCandidateEligible = rawCandidateEligible === true;
+    const runtimeReleaseReady = runtimeVersion === SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION
+      && /^[a-f0-9]{64}$/u.test(runtimeFingerprint)
+      && runtimeFingerprint !== "0".repeat(64);
+    const candidateEligible = databaseCandidateEligible && runtimeReleaseReady && lastCheckedCount === 300
+      && lastSource === "naver_shopping_results_collector";
+    const canaryTrackerId = normalizeWorkerText(workerValue(source, "canary_tracker_id", "canaryTrackerId"), 64);
+    const activeLease = Number.isFinite(leaseTime) && leaseTime > currentTime;
+    const activeCooldown = Number.isFinite(cooldownTime) && cooldownTime > currentTime;
+    const cadenceModeValue = normalizeWorkerText(workerValue(source, "cadence_mode", "cadenceMode"), 20).toLowerCase();
+    const cadenceMode = cadenceModeValue === "candidate" ? "candidate" : "baseline";
+    const failureStreak = normalizeWorkerInteger(workerValue(source, "failure_streak", "failureStreak"));
+    const alerts = [];
+
+    if (circuitState === "open") {
+      alerts.push({ code: "circuit_open", severity: "error", message: "자동 수집 회로가 정지되어 마지막 정상 순위를 보존 중입니다." });
+    }
+    if (!primarySeenAt) {
+      alerts.push({ code: "primary_heartbeat_missing", severity: "warning", message: "Windows 주 작업기의 실행 신호가 아직 없습니다." });
+    } else if (Number.isFinite(primarySeenTime) && primarySeenTime < currentTime - 5 * 60_000) {
+      alerts.push({ code: "primary_heartbeat_stale", severity: "warning", message: "Windows 주 작업기의 최근 신호가 5분을 넘었습니다." });
+    }
+    if (normalizeWorkerText(workerValue(source, "lease_worker_id", "leaseWorkerId"), 120)
+      && Number.isFinite(leaseTime) && leaseTime <= currentTime) {
+      alerts.push({ code: "lease_expired", severity: "warning", message: "만료된 작업 레인이 남아 있어 다음 실행에서 회수해야 합니다." });
+    }
+    if (Number.isFinite(oldestPendingTime) && oldestPendingTime < currentTime - 15 * 60_000) {
+      alerts.push({ code: "queue_delayed", severity: "warning", message: "가장 오래된 대기 작업이 15분을 넘었습니다." });
+    }
+    if (failureStreak >= 2) {
+      alerts.push({ code: "repeated_failure", severity: "error", message: "동일 유형 실패가 2회 연속 확인되었습니다." });
+    }
+    if (runtimeVersion && runtimeVersion !== SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION) {
+      alerts.push({ code: "runtime_mismatch", severity: "error", message: "실행 버전이 현재 배포 버전과 일치하지 않습니다." });
+    }
+    if (Number.isFinite(jobStartedTime) && jobStartedTime < currentTime - 15 * 60_000 && activeLease) {
+      alerts.push({ code: "job_runtime_exceeded", severity: "warning", message: "현재 작업 시간이 15분을 넘었습니다." });
+    }
+
+    return {
+      available: true,
+      circuit: {
+        state: circuitState,
+        reason: normalizeWorkerText(workerValue(source, "circuit_reason", "circuitReason"), 160),
+        openedAt: normalizeWorkerIso(workerValue(source, "circuit_opened_at", "circuitOpenedAt")),
+        failureSignature: normalizeWorkerText(workerValue(source, "failure_signature", "failureSignature"), 120),
+        failureStreak,
+        probeTrackerId: normalizeWorkerText(workerValue(source, "probe_tracker_id", "probeTrackerId"), 64),
+        probeStartedAt: normalizeWorkerIso(workerValue(source, "probe_started_at", "probeStartedAt")),
+      },
+      lane: {
+        primaryWorkerId: normalizeWorkerText(workerValue(source, "primary_worker_id", "primaryWorkerId"), 120),
+        primarySeenAt,
+        leaseWorkerId: normalizeWorkerText(workerValue(source, "lease_worker_id", "leaseWorkerId"), 120),
+        leaseUntil,
+        cooldownUntil,
+        lastBlockCode: normalizeWorkerText(workerValue(source, "last_block_code", "lastBlockCode"), 80),
+      },
+      queue: {
+        pendingCount: normalizeWorkerInteger(workerValue(source, "pending_count", "pendingCount")),
+        lookupPendingCount: normalizeWorkerInteger(workerValue(source, "lookup_pending_count", "lookupPendingCount")),
+        trackerPendingCount: normalizeWorkerInteger(workerValue(source, "tracker_pending_count", "trackerPendingCount")),
+        processingCount: normalizeWorkerInteger(workerValue(source, "processing_count", "processingCount")),
+        oldestPendingAt,
+      },
+      progress: {
+        stage: normalizeWorkerText(workerValue(source, "current_stage", "currentStage"), 80),
+        page: Math.min(SHOPPING_WORKER_TOTAL_PAGES, normalizeWorkerInteger(workerValue(source, "current_page", "currentPage"))),
+        totalPages: SHOPPING_WORKER_TOTAL_PAGES,
+        jobKind: normalizeWorkerText(workerValue(source, "current_job_kind", "currentJobKind"), 40),
+        trackerId: normalizeWorkerText(workerValue(source, "current_tracker_id", "currentTrackerId"), 64),
+        jobStartedAt,
+      },
+      runtime: {
+        version: runtimeVersion,
+        expectedVersion: SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION,
+        versionMatches: Boolean(runtimeVersion && runtimeVersion === SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION),
+        fingerprint: runtimeFingerprint,
+        runId: normalizeWorkerText(workerValue(source, "run_id", "runId"), 80),
+      },
+      lastSuccess: {
+        at: normalizeWorkerIso(workerValue(source, "last_success_at", "lastSuccessAt")),
+        collectionId: normalizeWorkerText(workerValue(source, "last_collection_id", "lastCollectionId"), 100),
+        checkedCount: lastCheckedCount,
+        excludedAdCount: normalizeWorkerInteger(workerValue(source, "last_excluded_ad_count", "lastExcludedAdCount")),
+        durationMs: normalizeWorkerInteger(workerValue(source, "last_duration_ms", "lastDurationMs")),
+        source: lastSource,
+      },
+      lastFailure: {
+        at: normalizeWorkerIso(workerValue(source, "last_failure_at", "lastFailureAt")),
+        code: normalizeWorkerText(workerValue(source, "last_failure_code", "lastFailureCode"), 100),
+      },
+      scheduler: {
+        urgentStreak: normalizeWorkerInteger(workerValue(source, "scheduler_urgent_streak", "schedulerUrgentStreak")),
+        lastAgencyCode: normalizeWorkerText(workerValue(source, "scheduler_last_agency_code", "schedulerLastAgencyCode"), 80),
+      },
+      cadence: {
+        mode: cadenceMode,
+        minutes: Math.max(1, normalizeWorkerInteger(workerValue(source, "cadence_minutes", "cadenceMinutes"), 10)),
+        stabilityStartedAt,
+        stableHours: Math.floor(stableForMs / 3_600_000),
+        successStreak,
+        candidateEligible,
+      },
+      controls: {
+        canStop: circuitState !== "open" || normalizeWorkerText(workerValue(source, "circuit_reason", "circuitReason")) !== "manual_stop",
+        canRunCanary: circuitState !== "half_open" && !activeLease && !activeCooldown && Boolean(canaryTrackerId),
+        canActivateCandidate: candidateEligible && cadenceMode !== "candidate" && circuitState === "closed" && !activeLease && !activeCooldown,
+        canReturnBaseline: cadenceMode !== "baseline",
+        canaryTrackerId,
+      },
+      alerts,
+    };
+  } catch {
+    return {
+      available: false,
+      alerts: [{ code: "operations_unavailable", severity: "warning", message: "운영 제어 상태를 불러오지 못했습니다." }],
+      controls: {
+        canStop: false,
+        canRunCanary: false,
+        canActivateCandidate: false,
+        canReturnBaseline: false,
+        canaryTrackerId: "",
+      },
+    };
   }
 }
 
@@ -721,6 +928,7 @@ async function listTrackers(request, ctx) {
   const keywordVolumes = await loadKeywordVolumes(rows.map((row) => row.keyword));
   const rankSource = shoppingRankSourceStatus(shoppingRankConfig());
   const workerStatus = await loadShoppingWorkerStatus(ctx);
+  const workerOperations = access.owner ? await loadShoppingWorkerOperations(ctx) : null;
   return json(request, {
     ok: true,
     ...rankSource,
@@ -733,6 +941,7 @@ async function listTrackers(request, ctx) {
     hasMore,
     complete: !hasMore && rows.length === count,
     workerStatus,
+    ...(access.owner ? { workerOperations } : {}),
     trackers: rows.map((row) => trackerPayload(row, snapshots.get(row.id) || [], keywordVolumes.get(normalizeKeywordCompare(row.keyword)))),
   });
 }
@@ -1920,6 +2129,75 @@ async function countDueTrackers(ctx, now, agencyCode = "") {
   return Math.max(0, Number(remainingResult.count || 0));
 }
 
+function shoppingWorkerControlMessage(action, result, mode = "") {
+  const reason = normalizeWorkerText(result?.reason, 100).toLowerCase();
+  const rejected = result?.ok === false || result?.activated === false || result?.accepted === false;
+  if (rejected && reason === "not_eligible") return "24시간 안정 운영, 현재 실행 버전·해시, 오가닉 300개 연속 성공 6회가 모두 확인된 뒤 후보 간격을 적용할 수 있습니다.";
+  if (rejected && reason === "probe_active") return "이미 1건 안전 검증이 진행 중이며 추가 검증은 시작하지 않았습니다.";
+  if (rejected && reason === "busy") return "현재 작업 레인이 사용 중이어서 1건 검증을 시작하지 않았습니다.";
+  if (rejected && reason === "cooldown") return "접속 제한 안전 대기 중이어서 1건 검증을 시작하지 않았습니다.";
+  if (rejected && reason === "canary_mismatch") return "남자팬티 고정 검증 항목이 일치하지 않아 실행하지 않았습니다.";
+  if (rejected) return "운영 안전 조건을 충족하지 않아 요청을 적용하지 않았습니다.";
+  if (action === "worker-stop") return "자동 순위 수집을 안전하게 정지하고 마지막 정상 순위를 보존합니다.";
+  if (action === "worker-canary") return "남자팬티 1건 검증을 요청했습니다. 오가닉 300개 검증 성공 때만 자동 수집을 재개합니다.";
+  if (action === "worker-cadence" && mode === "baseline") return "기본 10분 안전 간격으로 복귀했습니다.";
+  if (action === "worker-cadence") return "검증된 후보 간격을 적용했습니다.";
+  return "운영 제어 요청을 처리했습니다.";
+}
+
+export async function controlShoppingWorker(request, ctx, body, access) {
+  if (!access?.owner || !isPrimaryAgencyCode(access.agencyCode)) {
+    return json(request, { ok: false, message: "순위 수집 운영 제어는 총관리자만 사용할 수 있습니다." }, 403);
+  }
+
+  const action = normalizeWorkerText(body?.action, 40).toLowerCase();
+  let rpcName = "";
+  let args = {};
+  let cadenceMode = "";
+
+  if (action === "worker-stop") {
+    rpcName = "mi_stop_naver_shopping_worker";
+    args = { p_reason: "manual_stop" };
+  } else if (action === "worker-canary") {
+    const trackerId = normalizeWorkerText(body?.trackerId || body?.tracker_id, 64).toLowerCase();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(trackerId)) {
+      return json(request, { ok: false, message: "고정 검증 추적 항목을 확인할 수 없습니다." }, 400);
+    }
+    rpcName = "mi_request_naver_shopping_worker_probe";
+    args = { p_tracker_id: trackerId };
+  } else if (action === "worker-cadence") {
+    cadenceMode = normalizeWorkerText(body?.mode, 20).toLowerCase();
+    if (!new Set(["baseline", "candidate"]).has(cadenceMode)) {
+      return json(request, { ok: false, message: "지원하지 않는 수집 간격입니다." }, 400);
+    }
+    rpcName = "mi_set_naver_shopping_worker_cadence";
+    args = { p_mode: cadenceMode };
+  } else {
+    return json(request, { ok: false, message: "지원하지 않는 운영 제어입니다." }, 400);
+  }
+
+  const { data, error } = await ctx.supabaseAdmin.rpc(rpcName, args);
+  if (error) throw error;
+  const result = normalizeWorkerRpcObject(data);
+  const rejected = result.ok === false || result.activated === false || result.accepted === false;
+  const remoteWakeRequested = action === "worker-canary" && !rejected
+    ? await requestShoppingWorkerWake(ctx, "control-plane-canary")
+    : false;
+  return json(request, {
+    ok: !rejected,
+    action,
+    message: shoppingWorkerControlMessage(action, result, cadenceMode),
+    ...(action === "worker-canary" ? { remoteWakeRequested } : {}),
+    result: {
+      state: normalizeWorkerText(workerValue(result, "state", "circuit_state", "circuitState"), 30),
+      mode: normalizeWorkerText(workerValue(result, "mode", "cadence_mode", "cadenceMode"), 20),
+      minutes: normalizeWorkerInteger(workerValue(result, "minutes", "cadence_minutes", "cadenceMinutes")),
+      reason: normalizeWorkerText(result.reason, 100),
+      activated: result.activated !== false && result.accepted !== false && result.ok !== false,
+    },
+  }, rejected ? 409 : 200);
+}
+
 async function handlePost(request, ctx) {
   const body = await request.json().catch(() => ({}));
   const action = normalizeText(body.action || "create");
@@ -1934,6 +2212,10 @@ async function handlePost(request, ctx) {
   const access = await requireRankAccess(request, ctx, body);
   if (!access.ok) return access.response;
   body.agencyCode = access.agencyCode;
+
+  if (SHOPPING_WORKER_CONTROL_ACTIONS.has(action)) {
+    return controlShoppingWorker(request, ctx, body, access);
+  }
 
   if (action === "create") return createTracker(request, ctx, body, access);
   if (action === "check") return checkOne(request, ctx, body);

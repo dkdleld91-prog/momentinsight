@@ -32,9 +32,24 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.0";
+const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
+const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
+const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const WORKER_PROGRESS_STAGES = new Set([
+  "claiming",
+  "navigating",
+  "collecting",
+  "submitting",
+  "completed",
+  "failed",
+]);
+const WORKER_JOB_KINDS = new Set(["", "lookup", "tracker"]);
+const WORKER_FAIR_CANDIDATE_MAX = 256;
 
 const WORKER_TRACKER_SELECT = [
   "id",
+  "agency_code",
   "keyword",
   "product_url",
   "product_id",
@@ -53,6 +68,7 @@ const WORKER_TRACKER_SELECT = [
   "retry_count",
   "processing_started_at",
   "processing_until",
+  "worker_quarantined_until",
 ].join(", ");
 
 const WORKER_LOOKUP_SELECT = [
@@ -146,8 +162,136 @@ function workerLaneInput(body, options = {}) {
   };
 }
 
+function optionalUuid(value, code) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (!WORKER_RUN_ID_PATTERN.test(normalized)) throw workerError(code, 400);
+  return normalized;
+}
+
+function workerControlInput(body) {
+  const lane = workerLaneInput(body);
+  const runId = optionalUuid(body?.runId, "LOCAL_WORKER_RUN_ID_INVALID");
+  if (!runId) throw workerError("LOCAL_WORKER_RUN_ID_INVALID", 400);
+  const runtimeVersion = String(body?.runtimeVersion || "").trim();
+  const runtimeFingerprint = String(body?.runtimeFingerprint || "").trim().toLowerCase();
+  if (!WORKER_RUNTIME_VERSION_PATTERN.test(runtimeVersion)
+    || runtimeVersion !== EXPECTED_WORKER_RUNTIME_VERSION
+    || !WORKER_RUNTIME_FINGERPRINT_PATTERN.test(runtimeFingerprint)) {
+    throw workerError("LOCAL_WORKER_RUNTIME_IDENTITY_INVALID", 400);
+  }
+  return { ...lane, runId, runtimeVersion, runtimeFingerprint };
+}
+
+function trackerIdFromJob(job) {
+  if (job?.kind === "lookup") return null;
+  return optionalUuid(job?.claims?.[0]?.trackerId, "LOCAL_WORKER_TRACKER_ID_INVALID");
+}
+
+async function reportWorkerProgress(ctx, body) {
+  const control = workerControlInput(body);
+  const stage = String(body?.stage || "").trim().toLowerCase();
+  const page = Number(body?.page ?? 0);
+  const jobKind = String(body?.jobKind || "").trim().toLowerCase();
+  const trackerId = optionalUuid(body?.trackerId, "LOCAL_WORKER_TRACKER_ID_INVALID");
+  if (!WORKER_PROGRESS_STAGES.has(stage)
+    || !Number.isSafeInteger(page)
+    || page < 0
+    || page > 8
+    || !WORKER_JOB_KINDS.has(jobKind)) {
+    throw workerError("LOCAL_WORKER_PROGRESS_INVALID", 400);
+  }
+  const { data, error } = await ctx.supabaseAdmin.rpc(
+    "mi_report_naver_shopping_worker_progress",
+    {
+      p_worker_id: control.workerId,
+      p_lane_token: control.laneToken,
+      p_run_id: control.runId,
+      p_stage: stage,
+      p_page: page,
+      p_job_kind: jobKind || null,
+      p_tracker_id: trackerId,
+      p_runtime_version: control.runtimeVersion,
+      p_runtime_fingerprint: control.runtimeFingerprint,
+    },
+  );
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  if (data !== true) throw workerError("LOCAL_WORKER_LANE_LOST", 409);
+  return true;
+}
+
+async function recordWorkerSuccess(ctx, body) {
+  const control = workerControlInput(body);
+  const job = validateLocalWorkerJob(body?.job);
+  const trackerId = trackerIdFromJob(job);
+  const checkedCount = Number(body?.checkedCount);
+  const excludedAdCount = Number(body?.excludedAdCount ?? 0);
+  const durationMs = Number(body?.durationMs);
+  const collectionId = String(body?.collectionId || "").trim();
+  const source = String(body?.source || "").trim().toLowerCase();
+  if (checkedCount !== LOCAL_WORKER_ORGANIC_LIMIT
+    || !Number.isSafeInteger(excludedAdCount)
+    || excludedAdCount < 0
+    || !Number.isSafeInteger(durationMs)
+    || durationMs < 0
+    || durationMs > 60 * 60_000
+    || !/^pw-chrome-/u.test(collectionId)
+    || source !== "naver_shopping_results_collector") {
+    throw workerError("LOCAL_WORKER_SUCCESS_PROOF_INVALID", 400);
+  }
+  const { data, error } = await ctx.supabaseAdmin.rpc(
+    "mi_record_naver_shopping_worker_success",
+    {
+      p_worker_id: control.workerId,
+      p_lane_token: control.laneToken,
+      p_run_id: control.runId,
+      p_tracker_id: trackerId,
+      p_collection_id: collectionId,
+      p_checked_count: checkedCount,
+      p_excluded_ad_count: excludedAdCount,
+      p_duration_ms: durationMs,
+      p_source: source,
+    },
+  );
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  if (!data || typeof data !== "object" || Array.isArray(data) || data.recorded !== true) {
+    throw workerError("LOCAL_WORKER_SUCCESS_NOT_RECORDED", 409);
+  }
+  return data;
+}
+
+async function recordWorkerFailure(ctx, body) {
+  const control = workerControlInput(body);
+  const job = validateLocalWorkerJob(body?.job);
+  const trackerId = trackerIdFromJob(job);
+  const errorCode = String(body?.errorCode || "").trim().toLowerCase();
+  const scope = String(body?.scope || "").trim().toLowerCase();
+  if (!SAFE_FAILURE_PATTERN.test(errorCode)
+    || !["system", "tracker", "security"].includes(scope)
+    || (scope === "tracker" && !trackerId)) {
+    throw workerError("LOCAL_WORKER_FAILURE_REPORT_INVALID", 400);
+  }
+  const { data, error } = await ctx.supabaseAdmin.rpc(
+    "mi_record_naver_shopping_worker_failure",
+    {
+      p_worker_id: control.workerId,
+      p_lane_token: control.laneToken,
+      p_run_id: control.runId,
+      p_error_code: errorCode,
+      p_scope: scope,
+      p_tracker_id: trackerId,
+    },
+  );
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  if (!data || typeof data !== "object" || Array.isArray(data) || data.recorded !== true) {
+    throw workerError("LOCAL_WORKER_FAILURE_NOT_RECORDED", 409);
+  }
+  return data;
+}
+
 async function claimWorkerLane(ctx, body) {
   const lane = workerLaneInput(body, { requireRole: true });
+  workerControlInput(body);
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_worker_lane", {
     p_worker_id: lane.workerId,
     p_worker_role: lane.workerRole,
@@ -158,6 +302,24 @@ async function claimWorkerLane(ctx, body) {
   if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.granted !== "boolean") {
     throw workerError("LOCAL_WORKER_COORDINATION_INVALID", 503);
+  }
+  if (data.granted === true) {
+    try {
+      await reportWorkerProgress(ctx, {
+        ...body,
+        stage: "claiming",
+        page: 0,
+        jobKind: "",
+        trackerId: null,
+      });
+    } catch (progressError) {
+      try {
+        await releaseWorkerLane(ctx, body);
+      } catch {
+        throw workerError("LOCAL_WORKER_RUNTIME_REGISTRATION_FAILED", 503);
+      }
+      throw progressError;
+    }
   }
   return data;
 }
@@ -229,6 +391,141 @@ async function claimOneLookupJob(ctx) {
   };
 }
 
+async function hasAvailableLookupJob(ctx, nowIso) {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("naver_shopping_rank_lookup_jobs")
+    .select("id")
+    .gt("expires_at", nowIso)
+    .lt("attempts", 3)
+    .or(`and(status.eq.pending,available_at.lte.${nowIso}),and(status.eq.processing,processing_until.lt.${nowIso})`)
+    .limit(1);
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function loadFairTrackerCandidates(ctx, nowIso, options = {}) {
+  const buildQuery = (mode) => {
+    let query = ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select(WORKER_TRACKER_SELECT)
+      .eq("status", "active")
+      .lte("next_check_at", nowIso)
+      .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
+      .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
+    if (options.probeTrackerId) query = query.eq("id", options.probeTrackerId);
+    query = mode === "new"
+      ? query.is("last_checked_at", null).order("created_at", { ascending: true })
+      : query.not("last_checked_at", "is", null).order("next_check_at", { ascending: true });
+    return query.limit(options.probeTrackerId ? 1 : WORKER_FAIR_CANDIDATE_MAX);
+  };
+  const [newResult, dueResult] = await Promise.all([buildQuery("new"), buildQuery("due")]);
+  if (newResult.error) throw newResult.error;
+  if (dueResult.error) throw dueResult.error;
+  return {
+    newCandidates: Array.isArray(newResult.data) ? newResult.data : [],
+    dueCandidates: Array.isArray(dueResult.data) ? dueResult.data : [],
+  };
+}
+
+async function chooseFairWorkerTurn(ctx, input) {
+  const dueAgencies = [...new Set(input.dueCandidates
+    .map((tracker) => String(tracker?.agency_code || "").trim().toLowerCase())
+    .filter(Boolean))];
+  const oldestDueAt = input.dueCandidates[0]?.next_check_at || null;
+  const { data, error } = await ctx.supabaseAdmin.rpc(
+    "mi_choose_naver_shopping_worker_turn",
+    {
+      p_has_lookup: input.hasLookup,
+      p_has_new: input.newCandidates.length > 0,
+      p_has_due: input.dueCandidates.length > 0,
+      p_due_agencies: dueAgencies,
+      p_oldest_due_at: oldestDueAt,
+    },
+  );
+  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+  const workClass = String(data?.workClass || data?.work_class || "none").trim().toLowerCase();
+  const agencyCode = String(data?.agencyCode || data?.agency_code || "").trim().toLowerCase();
+  if (!["none", "lookup", "new", "due"].includes(workClass)) {
+    throw workerError("LOCAL_WORKER_SCHEDULER_INVALID", 503);
+  }
+  return { workClass, agencyCode };
+}
+
+async function claimKeywordFromCandidates(ctx, candidates, nowIso, options = {}) {
+  const agencyCode = String(options.agencyCode || "").trim().toLowerCase();
+  const eligible = agencyCode
+    ? candidates.filter((tracker) => String(tracker?.agency_code || "").trim().toLowerCase() === agencyCode)
+    : candidates;
+  const attemptedKeywordKeys = new Set();
+  for (const seed of eligible) {
+    const keyword = normalizeText(seed.keyword);
+    const keywordKey = normalizedKeywordKey(keyword);
+    if (!keywordKey || attemptedKeywordKeys.has(keywordKey)) continue;
+    attemptedKeywordKeys.add(keywordKey);
+
+    const claims = [];
+    try {
+      for (const tracker of eligible) {
+        if (normalizedKeywordKey(tracker.keyword) !== keywordKey) continue;
+        // eslint-disable-next-line no-await-in-loop
+        const claimed = await claimDueTracker(ctx, tracker, nowIso);
+        if (!claimed.claimed) continue;
+        claims.push({
+          trackerId: tracker.id,
+          leaseStartedAt: claimed.leaseStartedAt,
+          leaseUntil: claimed.leaseUntil,
+        });
+      }
+    } catch (error) {
+      if (claims.length) {
+        try {
+          await failClaims(ctx, {
+            keyword,
+            limit: LOCAL_WORKER_ORGANIC_LIMIT,
+            claims,
+          }, "local_worker_claim_failed");
+        } catch {
+          throw workerError("LOCAL_WORKER_CLAIM_ROLLBACK_FAILED", 503);
+        }
+      }
+      throw error;
+    }
+    if (claims.length) return { keyword, limit: LOCAL_WORKER_ORGANIC_LIMIT, claims };
+  }
+  return null;
+}
+
+async function claimFairJob(ctx, body) {
+  const nowIso = new Date().toISOString();
+  const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
+  const candidates = await loadFairTrackerCandidates(ctx, nowIso, { probeTrackerId });
+  if (probeTrackerId) {
+    return claimKeywordFromCandidates(
+      ctx,
+      [...candidates.newCandidates, ...candidates.dueCandidates],
+      nowIso,
+    );
+  }
+  const hasLookup = await hasAvailableLookupJob(ctx, nowIso);
+  const turn = await chooseFairWorkerTurn(ctx, { ...candidates, hasLookup });
+  if (turn.workClass === "none") return null;
+  const claimers = {
+    lookup: () => claimOneLookupJob(ctx),
+    new: () => claimKeywordFromCandidates(ctx, candidates.newCandidates, nowIso),
+    due: () => claimKeywordFromCandidates(ctx, candidates.dueCandidates, nowIso, {
+      agencyCode: turn.agencyCode,
+    }),
+  };
+  const order = [turn.workClass, "due", "new", "lookup"]
+    .filter((value, index, values) => value !== "none" && values.indexOf(value) === index);
+  for (const workClass of order) {
+    // eslint-disable-next-line no-await-in-loop
+    const job = await claimers[workClass]();
+    if (job) return job;
+  }
+  return null;
+}
+
 async function claimOneKeywordJob(ctx) {
   const nowIso = new Date().toISOString();
   const dueQuery = (uninitializedOnly) => {
@@ -237,7 +534,8 @@ async function claimOneKeywordJob(ctx) {
       .select(WORKER_TRACKER_SELECT)
       .eq("status", "active")
       .lte("next_check_at", nowIso)
-      .or(`processing_until.is.null,processing_until.lt.${nowIso}`);
+      .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
+      .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
     query = uninitializedOnly
       ? query.is("last_checked_at", null).order("created_at", { ascending: true })
       : query.not("last_checked_at", "is", null).order("next_check_at", { ascending: true });
@@ -563,26 +861,41 @@ export async function handleLocalWorkerRequest(request, ctx) {
     if (body.action === "block-lane") {
       return json(request, { ok: true, blocked: await blockWorkerLane(ctx, body) });
     }
+    if (body.action === "progress") {
+      return json(request, { ok: true, recorded: await reportWorkerProgress(ctx, body) });
+    }
+    if (body.action === "record-success") {
+      return json(request, { ok: true, ...(await recordWorkerSuccess(ctx, body)) });
+    }
+    if (body.action === "record-failure") {
+      return json(request, { ok: true, ...(await recordWorkerFailure(ctx, body)) });
+    }
     if (body.action === "claim-wake") {
+      workerControlInput(body);
       await touchWorkerLane(ctx, body);
       return json(request, { ok: true, wake: await claimShoppingWorkerWake(ctx) });
     }
     if (body.action === "claim") {
+      workerControlInput(body);
       await touchWorkerLane(ctx, body);
-      const preferLookup = body.preferLookup !== false;
-      const job = preferLookup
-        ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
-        : ((await claimOneKeywordJob(ctx)) || (await claimOneLookupJob(ctx)));
+      const job = body.schedulerVersion === "v1"
+        ? await claimFairJob(ctx, body)
+        : body.preferLookup !== false
+          ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
+          : ((await claimOneKeywordJob(ctx)) || (await claimOneLookupJob(ctx)));
       return json(request, { ok: true, job });
     }
     if (body.action === "queue-all-active-trackers") {
+      workerControlInput(body);
       await touchWorkerLane(ctx, body);
       return json(request, { ok: true, ...(await queueAllActiveTrackers(ctx)) });
     }
     if (body.action === "submit") {
+      workerControlInput(body);
       return json(request, { ok: true, ...(await submitWindow(ctx, body.job, body.window)) });
     }
     if (body.action === "fail") {
+      workerControlInput(body);
       return json(request, { ok: true, ...(await failClaims(ctx, body.job, body.errorCode)) });
     }
     throw workerError("LOCAL_WORKER_ACTION_INVALID", 400);

@@ -42,6 +42,7 @@ const files = {
   shoppingWorkerWake: "src/server/naver-shopping/worker-wake.mjs",
   shoppingWorkerWakeMigration: "supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql",
   shoppingWorkerLaneMigration: "supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
+  shoppingWorkerControlMigration: "supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
@@ -100,6 +101,7 @@ const shoppingLocalWorkerMigration = fs.readFileSync(files.shoppingLocalWorkerMi
 const shoppingWorkerWake = fs.readFileSync(files.shoppingWorkerWake, "utf8");
 const shoppingWorkerWakeMigration = fs.readFileSync(files.shoppingWorkerWakeMigration, "utf8");
 const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigration, "utf8");
+const shoppingWorkerControlMigration = fs.readFileSync(files.shoppingWorkerControlMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
@@ -566,7 +568,9 @@ check(
       /resolveChromeProfileDirectory/,
       /activateChromeScheduler/,
     ])
-    && /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/.test(shoppingChromeWorker)
+    && /BASELINE_CADENCE_MINUTES = 10/.test(shoppingChromeWorker)
+    && /CANDIDATE_CADENCE_MINUTES = 8/.test(shoppingChromeWorker)
+    && /\["rank-catch-up", \{ delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
       /--profile-directory=/,
@@ -574,6 +578,27 @@ check(
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingChromeSchedulerWrapper),
   `${files.shoppingChromeManifest}, ${files.shoppingChromeWorker}, ${files.shoppingNativeHostCore}, ${files.shoppingNativeHost}, ${files.shoppingNativeHostInstaller}, ${files.shoppingNativeHostWrapper}, ${files.shoppingChromeSchedulerWrapper}`,
+);
+check(
+  "N Shopping worker control plane is fail-closed, fair and service-role only",
+  hasAll(shoppingWorkerControlMigration, [
+    /circuit_state in \('closed', 'open', 'half_open'\)/,
+    /mi_report_naver_shopping_worker_progress/,
+    /mi_record_naver_shopping_worker_success/,
+    /mi_record_naver_shopping_worker_failure/,
+    /mi_choose_naver_shopping_worker_turn/,
+    /probe_active/,
+    /scheduler_urgent_streak between 0 and 2/,
+    /worker_quarantined_until/,
+    /current_row\.runtime_version = '1\.1\.0'/,
+    /current_row\.last_checked_count = 300/,
+    /current_row\.last_source = 'naver_shopping_results_collector'/,
+    /force row level security/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerControlMigration),
+  files.shoppingWorkerControlMigration,
 );
 check(
   "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",
@@ -617,7 +642,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.0.48"
+  shoppingChromeManifest.version === "1.1.0"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -629,7 +654,9 @@ check(
     && /native_host_timeout"\)\), 30 \* 60_000/.test(shoppingChromeWorker)
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
-    && /trigger \}\)/.test(shoppingChromeWorker)
+    && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
+    && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
+    && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /chrome\.runtime\.getURL\("popup\.html"\)/.test(shoppingChromeWorker)
     && /crypto\.randomUUID\(\)/.test(shoppingChromeWorker)
     && /autoDiscardable: false/.test(shoppingChromeWorker)
@@ -653,6 +680,8 @@ check(
     && /port\.postMessage\(\{ action: "ready_ack" \}\)/.test(shoppingChromeWorker)
     && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)
     && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
+    && /async function runtimeIdentity\(start\)/.test(shoppingNativeHost)
+    && /registerProgressSink\(sink\)/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)
     && /action\(\{ action: "claim-wake", \.\.\.lanePayload \}\)/.test(shoppingLocalWorker)
     && /action: "claim-lane"/.test(shoppingLocalWorker)

@@ -7508,6 +7508,8 @@
         var now = Date.now();
         var retryAt = workerStatus && workerStatus.retryAt ? new Date(workerStatus.retryAt).getTime() : 0;
         var workerCoolingDown = workerStatus && workerStatus.state === "cooldown" && Number.isFinite(retryAt) && retryAt > now;
+        var workerStopped = workerStatus && workerStatus.state === "stopped";
+        var workerVerifying = workerStatus && workerStatus.state === "verification";
         var active = list.filter(function (tracker) { return tracker.status !== "paused" && tracker.status !== "completed"; }).length;
         var due = list.filter(function (tracker) {
           var next = tracker.nextCheckAt ? new Date(tracker.nextCheckAt).getTime() : 0;
@@ -7527,20 +7529,24 @@
           if (!value || !Number.isFinite(value)) return next;
           return !next || value < next ? value : next;
         }, 0);
-        var statusLabel = workerCoolingDown ? "접속 제한" : (errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기")));
-        var statusClass = workerCoolingDown ? " is-warn" : (errors ? " is-error" : (due ? " is-warn" : " is-ok"));
+        var statusLabel = workerStopped ? "안전 정지" : (workerVerifying ? "1건 검증" : (workerCoolingDown ? "접속 제한" : (errors ? "확인 필요" : (due ? "갱신 대기" : (active ? "정상 운영" : "대기")))));
+        var statusClass = workerStopped ? " is-error" : (workerVerifying || workerCoolingDown ? " is-warn" : (errors ? " is-error" : (due ? " is-warn" : " is-ok")));
         var latestText = latestAt ? formatRankShortAt(new Date(latestAt).toISOString()) : "-";
-        var nextText = workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기");
-        var summaryText = workerCoolingDown
-          ? "네이버 요청 일시정지 · 기존 정상 순위와 30일 기록 보존"
-          : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인";
-        var nextNote = workerCoolingDown ? "이후 대기 1건 자동 재시도" : "매일 09:00 · 15:00";
+        var nextText = workerStopped ? "정지" : (workerVerifying ? "검증 중" : (workerCoolingDown ? formatRankShortAt(workerStatus.retryAt) : (nextAt ? formatRankShortAt(new Date(nextAt).toISOString()) : "대기")));
+        var summaryText = workerStopped
+          ? "자동 요청 안전 정지 · 기존 정상 순위와 30일 기록 보존"
+          : (workerVerifying
+            ? "고정 1건 안전 검증 · 성공 확인 전 전체 요청 중단"
+            : (workerCoolingDown
+              ? "네이버 요청 일시정지 · 기존 정상 순위와 30일 기록 보존"
+              : active + "개 운영 · " + due + "개 대기 · " + errors + "개 확인"));
+        var nextNote = workerStopped ? "총관리자 검증 후 재개" : (workerVerifying ? "오가닉 300개 검증 중" : (workerCoolingDown ? "이후 대기 1건 자동 재시도" : "매일 09:00 · 15:00"));
         return '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
           '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
           '<div class="mi-rank-auto-metrics">' +
           '<div class="mi-rank-auto-metric"><span>최근 갱신</span><strong>' + escapeHtml(latestText) + '</strong><small>수동/자동</small></div>' +
-          '<div class="mi-rank-auto-metric' + (workerCoolingDown || due ? " is-warn" : " is-ok") + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
+          '<div class="mi-rank-auto-metric' + (workerStopped ? " is-error" : (workerVerifying || workerCoolingDown || due ? " is-warn" : " is-ok")) + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
           '<div class="mi-rank-auto-metric' + (errors ? " is-error" : " is-ok") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>광고주 코드 기준</small></div>' +
           '</div></div>';
       }
@@ -8756,7 +8762,7 @@
           }
           var jobId = enqueuePayload.jobId;
           var deadline = Date.now() + 10 * 60 * 1000;
-          setStatus(rankStatus, enqueuePayload.message || "중앙 Mac에 300위 전체 조회를 요청했습니다.", "");
+          setStatus(rankStatus, enqueuePayload.message || "순위 작업기에 300위 전체 조회를 요청했습니다.", "");
           while (Date.now() < deadline) {
             await new Promise(function (resolve) { window.setTimeout(resolve, 3000); });
             if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return null;
@@ -8768,7 +8774,7 @@
             var pollPayload = await pollResponse.json().catch(function () { return null; });
             if (!pollPayload) throw new Error("300위 조회 상태를 확인할 수 없습니다.");
             if (pollPayload.pending === true) {
-              setStatus(rankStatus, pollPayload.message || "중앙 Mac이 오가닉 300위를 확인하고 있습니다.", "");
+              setStatus(rankStatus, pollPayload.message || "순위 작업기가 오가닉 300위를 확인하고 있습니다.", "");
               continue;
             }
             if (!pollResponse.ok || pollPayload.ok === false) {

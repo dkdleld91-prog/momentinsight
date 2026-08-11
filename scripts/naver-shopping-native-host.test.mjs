@@ -282,7 +282,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.48");
+  assert.equal(manifest.version, "1.1.0");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -317,7 +317,9 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /message\?\.type === "ready"/u);
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
-  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
+  assert.match(serviceWorker, /BASELINE_CADENCE_MINUTES = 10/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_MINUTES = 8/u);
+  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes \}\]/u);
   assert.match(serviceWorker, /naver_network_restricted/u);
   assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
   assert.match(localWorker, /action: "claim-lane"/u);
@@ -328,6 +330,13 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
     /NAVER_SHOPPING_PROVIDER_TIMEOUT_MS,\s*14 \* 60_000,\s*30_000,\s*14 \* 60_000/u,
   );
   assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 14 \* 60_000/u);
+  assert.match(serviceWorker, /chrome\.runtime\.getManifest\(\)\.version/u);
+  assert.match(serviceWorker, /crypto\.subtle\.digest\(\s*"SHA-256"/u);
+  assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/u);
+  assert.match(nativeHost, /async function runtimeIdentity\(start\)/u);
+  assert.match(nativeHost, /native_host_runtime_identity_invalid/u);
+  assert.match(nativeHost, /registerProgressSink\(sink\)/u);
+  assert.match(nativeHost, /stage: "collect", page: pages\.length/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
   assert.match(serviceWorker, /type: "collection_complete"/u);
   assert.match(nativeHost, /response\?\.type === "collection_page"/u);
@@ -504,7 +513,7 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
     serviceWorker.indexOf("function searchUrl"),
   );
 
-  assert.equal(manifest.version, "1.0.48");
+  assert.equal(manifest.version, "1.1.0");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -568,7 +577,7 @@ test("extension translates native disconnects and never exposes raw runtime erro
   assert.match(serviceWorker, /native_host_origin_not_allowed/u);
   assert.match(serviceWorker, /native_host_exited/u);
   assert.match(serviceWorker, /await chrome\.alarms\.get\(name\)/u);
-  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: 10, periodInMinutes: 10 \}\]/u);
+  assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes \}\]/u);
   assert.match(serviceWorker, /existing\.periodInMinutes/u);
   assert.match(serviceWorker, /await chrome\.alarms\.create\(name, definition\)/u);
   assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
@@ -598,7 +607,12 @@ test("native host framing returns a bounded typed error for an invalid start mes
 });
 
 test("native host fails immediately when Chrome closes its input pipe", () => {
-  const body = Buffer.from(JSON.stringify({ action: "run", trigger: "rank-remote" }), "utf8");
+  const body = Buffer.from(JSON.stringify({
+    action: "run",
+    trigger: "rank-remote",
+    runtimeVersion: "1.1.0",
+    serviceWorkerSha256: "0".repeat(64),
+  }), "utf8");
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length, 0);
   const hostPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "naver-shopping-native-host.mjs");

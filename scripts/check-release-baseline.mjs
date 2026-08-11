@@ -172,6 +172,7 @@ const shoppingRankLookupLeasePrecisionMigration = read("supabase/migrations/2026
 const shoppingWorkerWake = read("src/server/naver-shopping/worker-wake.mjs");
 const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql");
 const shoppingWorkerLaneMigration = read("supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql");
+const shoppingWorkerControlMigration = read("supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1184,7 +1185,7 @@ const checks = {
   shoppingRankLookupQueueIsScopedAndNonBlocking: [adminSource, clientSource].every((source) =>
     source.includes("getShoppingRankJobsApiUrl")
       && source.includes("queueFullRankLookup")
-      && source.includes("중앙 Mac에 300위 전체 조회를 요청했습니다."))
+      && source.includes("순위 작업기에 300위 전체 조회를 요청했습니다."))
     && shoppingRankLookupJobs.includes("rankLookupScopeHash")
     && shoppingRankLookupJobs.includes('.eq("scope_hash", scopeHash)')
     && shoppingRankLookupMigration.includes("force row level security")
@@ -1196,9 +1197,13 @@ const checks = {
     && shoppingRankLookupJobs.includes('code: "RANK_LOOKUP_EXPIRED"')
     && shoppingRankLookupJobs.includes('code: "RANK_LOOKUP_WORKER_STALLED"')
     && shoppingRankLookupJobs.includes("pending: false")
-    && shoppingLocalWorkerHandler.includes('body.preferLookup !== false')
-    && shoppingLocalWorker.includes("maxJobs > 1 && (index === maxJobs - 1 || index % 3 === 2)")
-    && shoppingLocalWorker.includes("preferLookup: !trackerReserved"),
+    && shoppingLocalWorkerHandler.includes('body.schedulerVersion === "v1"')
+    && shoppingLocalWorkerHandler.includes('if (turn.workClass === "none") return null')
+    && shoppingLocalWorker.includes('schedulerVersion: "v1"')
+    && shoppingLocalWorker.includes("preferLookup: !trackerReserved")
+    && shoppingWorkerControlMigration.includes("scheduler_urgent_streak between 0 and 2")
+    && shoppingWorkerControlMigration.includes("mi_choose_naver_shopping_worker_turn")
+    && shoppingWorkerControlMigration.includes("worker_quarantined_until"),
   shoppingVerifiedDirectChromeBridgeIsLeastPrivilegeAndAtomic: JSON.stringify(shoppingChromeManifest.permissions) === JSON.stringify([
     "alarms", "nativeMessaging", "scripting", "storage", "tabs",
   ])
@@ -1282,7 +1287,9 @@ const checks = {
     && shoppingWindowsChromeScheduler.includes("'--profile-directory=\"{0}\"' -f $profileDirectory")
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
-  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: 10, periodInMinutes: 10 }]')
+  shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes("BASELINE_CADENCE_MINUTES = 10")
+    && shoppingChromeWorker.includes("CANDIDATE_CADENCE_MINUTES = 8")
+    && shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
     && shoppingChromeWorker.includes("PAGE_REQUEST_INTERVAL_MS = 3_500")
@@ -1291,7 +1298,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.48"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.0"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1301,6 +1308,11 @@ const checks = {
     && shoppingNativeHost.includes('writeMessage({ type: "ready" })')
     && shoppingNativeHost.includes('readyAck = await nextMessage(30_000)')
     && shoppingChromeWorker.includes('port.postMessage({ action: "ready_ack" })')
+    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
+    && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
+    && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
+    && shoppingNativeHost.includes("async function runtimeIdentity(start)")
+    && shoppingNativeHost.includes("registerProgressSink(sink)")
     && shoppingChromeWorker.includes('chrome.runtime.getURL("popup.html")')
     && shoppingChromeWorker.includes("crypto.randomUUID()")
     && shoppingChromeWorker.includes("autoDiscardable: false")
@@ -1351,8 +1363,8 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.48"
-    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.0"
+    && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
     && rankServer.includes("MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35")

@@ -14,6 +14,7 @@ import {
 
 const SECRET = "local-worker-test-secret-with-at-least-32-bytes";
 const NOW = Date.parse("2026-08-01T06:00:00.000Z");
+const RUNTIME_FINGERPRINT = "a".repeat(64);
 const JOB = {
   keyword: "온열찜질기",
   limit: 300,
@@ -66,6 +67,8 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.0",
+    MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
 
@@ -83,15 +86,31 @@ function authenticatedFetch(responses, calls, coordination = {}) {
     });
     assert.equal(auth.ok, true);
     const payload = JSON.parse(body);
-    if (["claim-lane", "release-lane", "block-lane"].includes(payload.action)) {
+    if ([
+      "claim-lane",
+      "release-lane",
+      "block-lane",
+      "progress",
+      "record-success",
+      "record-failure",
+    ].includes(payload.action)) {
       calls.coordination ||= [];
       calls.coordination.push(payload);
-      const coordinationBody = payload.action === "claim-lane"
+      const coordinationFixture = payload.action === "claim-lane"
         ? (coordination.claimLane || { ok: true, granted: true, reason: "granted" })
         : payload.action === "release-lane"
-          ? { ok: true, released: true }
-          : { ok: true, blocked: true };
-      return Response.json(coordinationBody);
+          ? (coordination.releaseLane || { ok: true, released: true })
+          : payload.action === "block-lane"
+            ? { ok: true, blocked: true }
+            : payload.action === "progress"
+              ? { ok: true, recorded: true }
+              : payload.action === "record-success"
+                ? (coordination.recordSuccess
+                  || { ok: true, recorded: true, circuitState: "closed", cadenceEligible: false })
+                : (coordination.recordFailure
+                  || { ok: true, recorded: true, circuitState: "closed", failureStreak: 1 });
+      const coordinationBody = coordinationFixture.body || coordinationFixture;
+      return Response.json(coordinationBody, { status: coordinationFixture.status || 200 });
     }
     calls.push(payload);
     const responseFixture = responses.shift();
@@ -185,6 +204,39 @@ test("rejects an unsafe dedicated profile before making the first signed claim",
   assert.equal(fetchCalls, 0);
 });
 
+test("rejects stale runtime identity before the first signed lane claim", async () => {
+  let fetchCalls = 0;
+  await assert.rejects(
+    runLocalShoppingWorker({
+      env: { ...workerEnv(), MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.0.48" },
+      fetchImpl: async () => { fetchCalls += 1; },
+      provider: { async collect() {}, async close() {} },
+      skipLock: true,
+    }),
+    /local_worker_runtime_identity_invalid/u,
+  );
+  assert.equal(fetchCalls, 0);
+});
+
+test("derives a content fingerprint for the direct Mac standby fallback", async () => {
+  const calls = [];
+  const env = workerEnv();
+  delete env.MI_NAVER_SHOPPING_RUNTIME_VERSION;
+  delete env.MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT;
+  const summary = await runLocalShoppingWorker({
+    env,
+    fetchImpl: authenticatedFetch([{ body: { ok: true, job: null } }], calls),
+    provider: { async collect() {}, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.status, "completed");
+  const lane = calls.coordination.find((call) => call.action === "claim-lane");
+  assert.equal(lane.runtimeVersion, "1.1.0");
+  assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
+});
+
 test("launch wrapper keeps catch-up retries bounded and remains valid zsh", async () => {
   const scriptPath = new URL("./run-naver-shopping-local-worker.sh", import.meta.url);
   const source = await fs.readFile(scriptPath, "utf8");
@@ -251,11 +303,14 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   const calls = [];
   let collectCount = 0;
   let closed = false;
+  let progressSink = null;
   const provider = {
     async collect(request) {
       collectCount += 1;
       assert.equal(request.keyword, JOB.keyword);
       assert.equal(request.limit, 300);
+      await progressSink({ stage: "collect", page: 1 });
+      await progressSink({ stage: "collect", page: 8 });
       return completeWindow();
     },
     async close() { closed = true; },
@@ -279,6 +334,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
     nowMs: () => NOW,
     randomUUID: uuidSequence(),
     skipLock: true,
+    registerProgressSink(sink) { progressSink = sink; },
   });
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 1, failed: 0, releaseFailed: 0,
@@ -288,6 +344,54 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "claim"]);
   assert.equal(calls[1].window.checkedCount, 300);
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
+  assert.equal(calls[0].schedulerVersion, "v1");
+  const coordination = calls.coordination;
+  assert.equal(coordination[0].runtimeVersion, "1.1.0");
+  assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
+  assert.deepEqual(
+    coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
+    [["navigating", 0], ["collecting", 1], ["collecting", 8], ["submitting", 8]],
+  );
+  assert.equal(coordination.filter((call) => call.action === "record-success").length, 1);
+  assert.equal(coordination.at(-1).action, "release-lane");
+});
+
+test("never fails or double-counts an atomically committed job after control-plane reporting fails", async () => {
+  const calls = [];
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: JOB } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+      } },
+    ], calls, {
+      recordSuccess: { status: 503, body: { ok: false, code: "LOCAL_WORKER_COORDINATION_UNAVAILABLE" } },
+    }),
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "control_plane_failed",
+    claimed: 1,
+    submitted: 1,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 1,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit"]);
+  assert.equal(calls.some((call) => call.action === "fail"), false);
+  assert.deepEqual(
+    calls.coordination.map((call) => call.action),
+    ["claim-lane", "progress", "progress", "record-success", "record-failure", "release-lane"],
+  );
 });
 
 test("one approved manual run queues every active tracker before the bounded drain", async () => {
@@ -398,6 +502,23 @@ test("standby leaves the remote wake untouched while the Windows primary is onli
   assert.deepEqual(calls.coordination.map((call) => call.action), ["claim-lane"]);
 });
 
+test("surfaces a failed finite lane release instead of reporting silent success", async () => {
+  const calls = [];
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: null } },
+    ], calls, { releaseLane: { ok: true, released: false } }),
+    provider: { async collect() {}, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.equal(summary.releaseFailed, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim"]);
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
 test("one remote wake runs at most one queued job even with a larger configured budget", async () => {
   const calls = [];
   let collectCount = 0;
@@ -490,7 +611,9 @@ test("never submits a short source-exhausted window and releases the lease as fa
     { body: { ok: true, job: JOB } },
     { body: { ok: true, releasedCount: 1 } },
     { body: { ok: true, job: null } },
-  ], calls);
+  ], calls, {
+    claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+  });
   const summary = await runLocalShoppingWorker({
     env: workerEnv(),
     fetchImpl,
@@ -500,9 +623,14 @@ test("never submits a short source-exhausted window and releases the lease as fa
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    status: "completed",
+    claimed: 1,
+    submitted: 0,
+    failed: 1,
+    releaseFailed: 0,
+    cadenceMinutes: 10,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
   assert.equal(calls[1].errorCode, "local_worker_window_not_300");
   assert.equal(calls.some((call) => call.action === "submit"), false);
 });
@@ -531,7 +659,7 @@ test("fails closed when the failure RPC releases fewer claims than requested", a
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
   assert.match(logs.join("\n"), /local_worker_failure_release_invalid/u);
 });
 
@@ -681,7 +809,7 @@ test("treats any lease-lost submit result as a failed batch and releases the cla
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "claim"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit"]);
 });
 
 test("treats a server collection conflict as a failed batch and releases the claim", async () => {
@@ -707,7 +835,7 @@ test("treats a server collection conflict as a failed batch and releases the cla
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail", "claim"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
   assert.equal(calls[2].errorCode, "local_worker_collection_conflict");
 });
 
@@ -758,7 +886,7 @@ test("accounts for server-reported partial commits without counting them as fail
   assert.deepEqual(summary, {
     status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail", "claim"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
 });
 
 test("makes failure-release transport errors visible in the final summary", async () => {

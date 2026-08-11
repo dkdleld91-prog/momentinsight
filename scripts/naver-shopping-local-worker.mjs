@@ -119,8 +119,66 @@ const RUN_HALT_FAILURE_CODES = new Set([
   "naver_pagination_target_missing",
   "naver_network_restricted",
 ]);
+const SECURITY_FAILURE_CODES = new Set([
+  "naver_http_418",
+  "naver_http_429",
+  "naver_captcha_detected",
+  "naver_auth_required",
+  "naver_verification_required",
+  "naver_network_restricted",
+]);
+const EXPECTED_RUNTIME_VERSION = "1.1.0";
+const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const INTERNAL_FAILURE_CODE_PATTERN = /^(?:local_worker|native_host|provider|naver)_[a-z0-9_:-]{2,79}$/u;
+
+async function runtimeIdentityInput(options, env) {
+  let identity = options.runtimeIdentity || {
+    version: env.MI_NAVER_SHOPPING_RUNTIME_VERSION,
+    fingerprint: env.MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT,
+  };
+  if (!identity.version && !identity.fingerprint) {
+    const [localWorkerSource, contractSource] = await Promise.all([
+      fs.readFile(new URL(import.meta.url)),
+      fs.readFile(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url)),
+    ]);
+    identity = {
+      version: EXPECTED_RUNTIME_VERSION,
+      fingerprint: crypto.createHash("sha256").update([
+        EXPECTED_RUNTIME_VERSION,
+        crypto.createHash("sha256").update(localWorkerSource).digest("hex"),
+        crypto.createHash("sha256").update(contractSource).digest("hex"),
+        "direct-standby",
+      ].join("\n"), "utf8").digest("hex"),
+    };
+  }
+  const version = String(identity?.version || "").trim();
+  const fingerprint = String(identity?.fingerprint || "").trim().toLowerCase();
+  if (version !== EXPECTED_RUNTIME_VERSION || !RUNTIME_FINGERPRINT_PATTERN.test(fingerprint)) {
+    throw new Error("local_worker_runtime_identity_invalid");
+  }
+  return { version, fingerprint };
+}
+
+function failureScope(job, failureCode) {
+  if (SECURITY_FAILURE_CODES.has(failureCode)) return "security";
+  if (job?.kind !== "lookup"
+    && /^(?:local_worker_tracker_|local_worker_target_)/u.test(failureCode)) return "tracker";
+  return "system";
+}
+
+function jobProgressIdentity(job) {
+  return {
+    jobKind: job?.kind === "lookup" ? "lookup" : "tracker",
+    trackerId: job?.kind === "lookup" ? null : job?.claims?.[0]?.trackerId || null,
+  };
+}
+
+function restoreBaselineCadence(summary) {
+  if (Object.hasOwn(summary, "cadenceMinutes")) summary.cadenceMinutes = 10;
+  delete summary.cadenceEligible;
+}
 
 function workerCoordinationIdentity(env) {
   const fallbackDigest = crypto
@@ -337,6 +395,9 @@ export async function runLocalShoppingWorker(options = {}) {
     log("N shopping local worker disabled");
     return { status: "disabled", claimed: 0, submitted: 0, failed: 0, releaseFailed: 0 };
   }
+  const runtimeIdentity = await runtimeIdentityInput(options, env);
+  const runId = String(options.runId || crypto.randomUUID()).trim().toLowerCase();
+  if (!UUID_PATTERN.test(runId)) throw new Error("local_worker_run_id_invalid");
   const secret = String(env.MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET || "").trim();
   if (secret.length < 32) throw new Error("local_worker_secret_missing_or_weak");
   const userDataDir = String(
@@ -350,7 +411,13 @@ export async function runLocalShoppingWorker(options = {}) {
   const endpoint = workerEndpoint(env);
   const workerIdentity = workerCoordinationIdentity(env);
   const laneToken = String(options.laneToken || crypto.randomUUID()).trim().toLowerCase();
-  const lanePayload = { workerId: workerIdentity.workerId, laneToken };
+  const lanePayload = {
+    workerId: workerIdentity.workerId,
+    laneToken,
+    runId,
+    runtimeVersion: runtimeIdentity.version,
+    runtimeFingerprint: runtimeIdentity.fingerprint,
+  };
   const maxJobs = options.requireWakeSignal === true
     ? 1
     : boundedInteger(env.MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS, 100, 1, 500);
@@ -385,6 +452,22 @@ export async function runLocalShoppingWorker(options = {}) {
         120_000,
       ),
   });
+  let progressJob = null;
+  const reportProgress = (stage, page, job = progressJob) => action({
+    action: "progress",
+    ...lanePayload,
+    stage,
+    page,
+    ...jobProgressIdentity(job),
+  });
+  options.registerProgressSink?.(async (input = {}) => {
+    if (!progressJob) throw new Error("local_worker_progress_job_missing");
+    const page = Number(input.page || 0);
+    if (input.stage !== "collect" || !Number.isSafeInteger(page) || page < 1 || page > 8) {
+      throw new Error("local_worker_progress_invalid");
+    }
+    await reportProgress("collecting", page);
+  });
   const provider = options.provider || createPlaywrightProvider({
     env: {
       ...env,
@@ -409,6 +492,8 @@ export async function runLocalShoppingWorker(options = {}) {
     releaseFailed: 0,
   };
   let laneClaimed = false;
+  let effectiveMaxJobs = maxJobs;
+  let probeTrackerId = null;
 
   try {
     const lane = await action({
@@ -423,6 +508,14 @@ export async function runLocalShoppingWorker(options = {}) {
       return summary;
     }
     laneClaimed = true;
+    probeTrackerId = String(lane.probeTrackerId || "").trim().toLowerCase() || null;
+    if (probeTrackerId && !UUID_PATTERN.test(probeTrackerId)) {
+      throw new Error("local_worker_probe_tracker_invalid");
+    }
+    if (probeTrackerId) effectiveMaxJobs = 1;
+    if ([8, 10].includes(Number(lane.cadenceMinutes))) {
+      summary.cadenceMinutes = Number(lane.cadenceMinutes);
+    }
     if (options.requireWakeSignal === true) {
       const wake = await action({ action: "claim-wake", ...lanePayload });
       if (wake.wake !== true) {
@@ -439,15 +532,17 @@ export async function runLocalShoppingWorker(options = {}) {
       summary.alreadyQueued = boundedResponseCount(queued.alreadyQueued, 100_000);
       summary.alreadyProcessing = boundedResponseCount(queued.alreadyProcessing, 100_000);
     }
-    for (let index = 0; index < maxJobs; index += 1) {
-      // Give interactive lookups a fast response while reserving every third
-      // claim attempt for the existing 30-day tracker queue. The final slot is
-      // tracker-first when the run has more than one slot. A one-job remote
-      // wake stays lookup-first so an explicit rank check cannot be starved.
-      const trackerReserved = maxJobs > 1 && (index === maxJobs - 1 || index % 3 === 2);
+    for (let index = 0; index < effectiveMaxJobs; index += 1) {
+      // The DB scheduler is the fairness authority (urgent max two, aging and
+      // agency round-robin). Keep the legacy preference hint during rollout so
+      // a previous compatible endpoint still reserves bounded tracker turns.
+      const trackerReserved = effectiveMaxJobs > 1
+        && (index === effectiveMaxJobs - 1 || index % 3 === 2);
       const claim = await action({
         action: "claim",
+        schedulerVersion: "v1",
         preferLookup: !trackerReserved,
+        probeTrackerId,
         ...lanePayload,
       });
       if (!claim.job) break;
@@ -456,7 +551,12 @@ export async function runLocalShoppingWorker(options = {}) {
         nowMs: options.nowMs?.() ?? Date.now(),
       });
       summary.claimed += job.claims.length;
+      progressJob = job;
+      const collectionStartedAt = options.nowMs?.() ?? Date.now();
+      let resultAccounted = false;
+      let controlFailureAttempted = false;
       try {
+        await reportProgress("navigating", 0, job);
         const request = localWorkerRankRequest(
           job,
           options.nowMs?.() ?? Date.now(),
@@ -472,7 +572,13 @@ export async function runLocalShoppingWorker(options = {}) {
           keyword: job.keyword,
           nowMs: options.nowMs?.() ?? Date.now(),
         });
-        const submitted = await action({ action: "submit", job, window: strictWindow });
+        await reportProgress("submitting", 8, job);
+        const submitted = await action({
+          action: "submit",
+          ...lanePayload,
+          job,
+          window: strictWindow,
+        });
         const committedCount = Number(submitted.committedCount || 0);
         const alreadyCommittedCount = Number(submitted.alreadyCommittedCount || 0);
         const leaseLostCount = Number(submitted.leaseLostCount || 0);
@@ -496,8 +602,65 @@ export async function runLocalShoppingWorker(options = {}) {
         }
         summary.submitted += committedCount + alreadyCommittedCount;
         summary.failed += leaseLostCount + collectionConflictCount;
+        resultAccounted = true;
+        if (leaseLostCount + collectionConflictCount > 0) {
+          restoreBaselineCadence(summary);
+          const failureCode = leaseLostCount > 0
+            ? "local_worker_lease_lost"
+            : "local_worker_collection_conflict";
+          controlFailureAttempted = true;
+          const failure = await action({
+            action: "record-failure",
+            ...lanePayload,
+            job,
+            errorCode: failureCode,
+            scope: "system",
+          });
+          if (failure.laneReleased === true) laneClaimed = false;
+          if (String(failure.circuitState || "").toLowerCase() === "open") {
+            log(`local_worker_run_halted:${failureCode}`);
+          } else {
+            log(`local_worker_system_failure_stopped:${failureCode}`);
+          }
+          break;
+        } else {
+          const success = await action({
+            action: "record-success",
+            ...lanePayload,
+            job,
+            collectionId: strictWindow.collectionId,
+            checkedCount: strictWindow.checkedCount,
+            excludedAdCount: strictWindow.excludedAdCount,
+            durationMs: Math.max(0, Math.trunc((options.nowMs?.() ?? Date.now()) - collectionStartedAt)),
+            source: strictWindow.source,
+          });
+          if (success.candidateEligible === true || success.cadenceEligible === true) {
+            summary.cadenceEligible = true;
+          }
+        }
       } catch (error) {
         const failureCode = safeFailureCode(error);
+        if (resultAccounted) {
+          restoreBaselineCadence(summary);
+          summary.status = "control_plane_failed";
+          summary.controlPlaneFailed = Number(summary.controlPlaneFailed || 0) + 1;
+          log(`local_worker_post_commit_control_failed:${failureCode}`);
+          if (!controlFailureAttempted && laneClaimed) {
+            try {
+              const failureReport = await action({
+                action: "record-failure",
+                ...lanePayload,
+                job,
+                errorCode: "local_worker_post_commit_control_failed",
+                scope: "system",
+              });
+              if (failureReport.laneReleased === true) laneClaimed = false;
+            } catch (coordinationError) {
+              log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
+            }
+          }
+          break;
+        }
         const partial = error?.result?.partial || {};
         const partialSubmitted = Math.min(
           job.claims.length,
@@ -506,9 +669,30 @@ export async function runLocalShoppingWorker(options = {}) {
         );
         summary.submitted += partialSubmitted;
         summary.failed += job.claims.length - partialSubmitted;
+        restoreBaselineCadence(summary);
+        if (partialSubmitted === job.claims.length) {
+          summary.status = "control_plane_failed";
+          summary.controlPlaneFailed = Number(summary.controlPlaneFailed || 0) + 1;
+          log(`local_worker_post_commit_control_failed:${failureCode}`);
+          try {
+            const failureReport = await action({
+              action: "record-failure",
+              ...lanePayload,
+              job,
+              errorCode: "local_worker_post_commit_control_failed",
+              scope: "system",
+            });
+            if (failureReport.laneReleased === true) laneClaimed = false;
+          } catch (coordinationError) {
+            log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
+          }
+          break;
+        }
+        const scope = failureScope(job, failureCode);
         try {
           const released = await action({
             action: "fail",
+            ...lanePayload,
             job,
             errorCode: failureCode,
           });
@@ -522,7 +706,26 @@ export async function runLocalShoppingWorker(options = {}) {
           summary.releaseFailed += job.claims.length - partialSubmitted;
           log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
         }
-        if (RUN_HALT_FAILURE_CODES.has(failureCode)) {
+        let failureReport = null;
+        try {
+          const failureJobs = scope === "tracker"
+            ? job.claims.slice(partialSubmitted).map((claim) => ({ ...job, claims: [claim] }))
+            : [job];
+          for (const failureJob of failureJobs) {
+            // eslint-disable-next-line no-await-in-loop
+            failureReport = await action({
+              action: "record-failure",
+              ...lanePayload,
+              job: failureJob,
+              errorCode: failureCode,
+              scope,
+            });
+            if (failureReport.laneReleased === true) laneClaimed = false;
+          }
+        } catch (coordinationError) {
+          log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
+        }
+        if (scope === "security") {
           try {
             const blocked = await action({
               action: "block-lane",
@@ -533,18 +736,34 @@ export async function runLocalShoppingWorker(options = {}) {
           } catch (coordinationError) {
             log(`local_worker_global_cooldown_failed:${safeFailureCode(coordinationError)}`);
           }
-          summary.haltedCode = failureCode;
-          log(`local_worker_run_halted:${failureCode}`);
+        }
+        if (scope !== "tracker"
+          || RUN_HALT_FAILURE_CODES.has(failureCode)
+          || String(failureReport?.circuitState || "").toLowerCase() === "open") {
+          if (RUN_HALT_FAILURE_CODES.has(failureCode)
+            || String(failureReport?.circuitState || "").toLowerCase() === "open") {
+            summary.haltedCode = failureCode;
+            log(`local_worker_run_halted:${failureCode}`);
+          } else {
+            log(`local_worker_system_failure_stopped:${failureCode}`);
+          }
           break;
         }
+      } finally {
+        progressJob = null;
       }
     }
     return summary;
   } finally {
     if (laneClaimed) {
       try {
-        await action({ action: "release-lane", ...lanePayload });
+        const released = await action({ action: "release-lane", ...lanePayload });
+        if (released.released !== true) {
+          summary.releaseFailed += 1;
+          log("local_worker_lane_release_invalid");
+        }
       } catch (error) {
+        summary.releaseFailed += 1;
         log(`local_worker_lane_release_failed:${safeFailureCode(error)}`);
       }
     }

@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-11 N쇼핑 운영 제어면 v1.1.0 로컬 게이트
+
+- 워커·서버 핸들러 59/59, native/Windows bridge 22/22, 순위 API·운영 UI 65/65, server contract 40/40, release baseline, 보호 잠금 22함수·69파일·20마이그레이션, `git diff --check`를 통과했습니다.
+- 회귀는 구버전 runtime 사전 차단, nonzero fingerprint, page 진행, exact atomic300, 같은 시스템 실패 2회 차단, 보안 cooldown, tracker 30분/24시간 격리, urgent 2건 상한·aging·광고주 round-robin, canary 1건, candidate 증거 gate, 실패 시 baseline 10분 복귀를 포함합니다.
+- 직접 수집 경로·3.5~6초 pacing·광고 제외·마지막 정상값 보존은 변경하지 않았습니다.
+- 운영 DB 증거: migration 이력 `20260811095137`, 함수 12/12, 모두 security invoker, PUBLIC·anon·authenticated execute=false, service_role=true, coordination RLS/force RLS=true, anon table select=false, tracker quarantine column=true를 확인했습니다. 작업 상태는 closed·baseline 10분·lane 없음·processing 0·candidate=false입니다.
+- Supabase security advisor의 coordination 항목은 service-role 전용 RLS 테이블에 정책이 없다는 INFO이며 직접 권한 검증으로 외부 접근 차단을 확인했습니다. 기존 별도 함수·테이블 advisor 항목은 이번 순위 제어면 범위에서 변경하지 않습니다.
+- 아직 Production·Windows 설치·실 canary는 수행 증거가 없으므로 이 문단은 실수집 성공 증거가 아닙니다.
+
 ## 2026-08-11 N쇼핑 무한반복 금지 문서 계약
 
 - 실패 원장에는 native relay·설치 바이트 손상, controller 동결 최우선 가설과 예방 보강, 확인된 watchdog 재최소화·중복 host, 불안정한 검색 경로, lookup lease 정밀도 불일치, 29분/15분 deadline 불일치, 네이버 보호 신호를 사실의 확정 수준과 함께 기록했습니다.

@@ -3,6 +3,17 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-11 N쇼핑 운영 제어면 1~5차 v1.1.0
+
+- 1차 자동 차단: 같은 시스템 단계·오류가 2회 연속이면 DB 회로를 `open`으로 전환해 추가 자동 수집을 막는다. 네이버 CAPTCHA·418·429·접속 제한은 첫 신호부터 기존 cooldown으로 즉시 중단한다.
+- 2차 유한 상태 전이: claim → collect → submit/fail → release를 lease token과 DB 원자 RPC로 확인한다. 고아 lease·무기한 polling·실패 해제 0건을 정상으로 취급하지 않는다.
+- 3차 운영 관측: 관리자에게 worker heartbeat, lane·queue, page n/8, runtime version·fingerprint, 최근 원자 300개 성공과 typed 실패를 한 화면에 제공한다. 광고주 화면에는 tenant-safe 요약만 제공한다.
+- 4차 공정 순환: lookup·신규 작업은 우선하되 연속 2건으로 제한하고, overdue aging과 광고주 round-robin으로 기존 24시간 순환의 기아를 막는다. 개별 상품 오류는 해당 tracker만 격리한다.
+- 개별 tracker 실패 격리: 첫 실패는 30분, 해당 tracker의 누적 `retry_count >= 2`이면 24시간 격리한다. 다른 광고주의 정상 작업은 계속하며, 어떤 실패든 candidate 8분은 즉시 baseline 10분으로 복귀하고 안정성 집계를 다시 시작한다.
+- 5차 안전 승격: baseline 10분은 유지한다. 서로 다른 고유 버전·해시, 음성 회귀, Windows `남자팬티` 단독 원자 300개, lane·lease 해제, 중복 0, 24시간·원자 성공 6회 이상 증거가 모두 있어야 candidate cadence를 활성화할 수 있다. 실패 canary는 자동 재시도하지 않는다.
+- 불변 계약: 검증된 `/search/all` 1~8페이지 직접 경로, 페이지 간 3.5~6초, 광고 제외 `checkedCount=300`, last-good 보존, Windows primary·Mac standby 단일 global lane은 변경하지 않는다.
+- 배포 완료 판정: migration 적용·RLS/권한 advisor·전체 release 검사·Windows 실제 설치본 version/fingerprint·단독 canary 원자 300개·Production health/ready가 모두 증명된 범위만 완료로 기록한다. 24시간 안정성 증거 전에는 속도 승격을 완료로 보고하지 않는다.
+
 ## 2026-08-11 N쇼핑 실패 이력·복구 증거·무한반복 금지 영구 계약
 
 이 항목은 임시 장애 메모가 아니라 N쇼핑 순위 수집의 영구 작업 기준이다. 아래 보호 기준은 새로운 Windows 원자 300개 실증과 대표 승인 없이 삭제하거나 완화하지 않는다.
@@ -25,7 +36,7 @@
 ### 무한반복 금지 운영·개발 규칙
 
 1. `processing`, 팝업 진행 표시, 페이지 이동 시도만으로 성공을 보고하지 않는다. 성공은 같은 Windows 설치본에서 원자 `checkedCount=300`과 lane·lease 해제를 함께 확인한 경우뿐이다.
-2. 같은 단계 또는 같은 오류 코드가 실기에서 2회 연속 발생하면 추가 canary와 전체 순환을 즉시 중단한다. 새 요청을 보내기 전에 로그·DB 상태·설치 바이트를 대조해 하나의 원인을 확정하고, 무외부 재현 또는 대상 회귀를 먼저 만든다. 이 항목은 운영 절차이며 자동 차단 기능으로 과장하지 않는다.
+2. 같은 단계 또는 같은 오류 코드가 실기에서 2회 연속 발생하면 추가 canary와 전체 순환을 즉시 중단한다. 새 요청을 보내기 전에 로그·DB 상태·설치 바이트를 대조해 하나의 원인을 확정하고, 무외부 재현 또는 대상 회귀를 먼저 만든다. v1.1.0 배포 전에는 운영 절차이고, v1.1.0 배포 후에는 DB circuit breaker가 같은 원칙을 자동 집행한다.
 3. 변경 후 첫 실기는 정확 상품이 300위 안에 있음이 확인된 `남자팬티` 한 건, `maxJobs=1`만 사용한다. 정상적으로 순위 이탈할 수 있는 광고주 키워드는 복구 canary로 사용하지 않는다.
 4. 첫 canary가 실패하면 같은 회차에서 다른 경로로 자동 fallback하거나 전체 키워드를 시도하지 않는다. 원인을 수정하고 Windows 설치 버전·서비스 워커 해시를 다시 확인한 뒤 단독 canary부터 재개한다.
 5. manifest 버전 표시만으로 설치 완료를 판단하지 않는다. Git commit, Production release, Windows 실제 로드 경로의 파일 버전·해시가 일치해야 하며, 신규 원자 300개 전에는 전체 순환을 정상화로 기록하지 않는다.
@@ -195,9 +206,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 17:31:52
-- 기준 커밋: 20e6cd9
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 11. 18:52:36
+- 기준 커밋: db9cf7c
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-local-worker.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

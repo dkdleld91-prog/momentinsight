@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import fs from "node:fs/promises";
 
 import { runLocalShoppingWorker } from "./naver-shopping-local-worker.mjs";
 import { createChromeNativeProvider } from "./naver-shopping-native-host-core.mjs";
@@ -17,6 +18,46 @@ let inputBuffer = Buffer.alloc(0);
 const messageQueue = [];
 const messageWaiters = [];
 let inputFailure = null;
+
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
+
+async function sha256File(url) {
+  return crypto.createHash("sha256").update(await fs.readFile(url)).digest("hex");
+}
+
+async function runtimeIdentity(start) {
+  const version = String(start?.runtimeVersion || "").trim();
+  const serviceWorkerSha256 = String(start?.serviceWorkerSha256 || "").trim().toLowerCase();
+  if (!VERSION_PATTERN.test(version) || !SHA256_PATTERN.test(serviceWorkerSha256)) {
+    throw new Error("native_host_runtime_identity_invalid");
+  }
+  let nativeHostSha256;
+  let localWorkerSha256;
+  let contractSha256;
+  try {
+    nativeHostSha256 = await sha256File(new URL(import.meta.url));
+    localWorkerSha256 = await sha256File(new URL("./naver-shopping-local-worker.mjs", import.meta.url));
+    contractSha256 = await sha256File(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url));
+  } catch {
+    throw new Error("native_host_runtime_identity_unavailable");
+  }
+  const fingerprint = crypto.createHash("sha256").update([
+    version,
+    serviceWorkerSha256,
+    nativeHostSha256,
+    localWorkerSha256,
+    contractSha256,
+  ].join("\n"), "utf8").digest("hex");
+  return {
+    version,
+    fingerprint,
+    serviceWorkerSha256,
+    nativeHostSha256,
+    localWorkerSha256,
+    contractSha256,
+  };
+}
 
 function safeCode(error) {
   const value = typeof error === "string" ? error : error?.code || error?.message;
@@ -102,9 +143,11 @@ function nextMessage(timeoutMs = RESPONSE_TIMEOUT_MS) {
 async function main() {
   const start = await nextMessage(60_000);
   if (start?.action !== "run") throw new Error("native_host_start_invalid");
+  const identity = await runtimeIdentity(start);
   writeMessage({ type: "ready" });
   const readyAck = await nextMessage(30_000);
   if (readyAck?.action !== "ready_ack") throw new Error("native_host_ready_ack_invalid");
+  let progressSink = null;
   const provider = createChromeNativeProvider({
     async exchange(message) {
       const requestId = crypto.randomUUID();
@@ -123,6 +166,7 @@ async function main() {
             throw new Error("native_host_pages_out_of_order");
           }
           pages.push(response.page);
+          await progressSink?.({ stage: "collect", page: pages.length });
           continue;
         }
         if (response?.type === "collection_complete") {
@@ -134,6 +178,10 @@ async function main() {
   });
   const summary = await runLocalShoppingWorker({
     provider,
+    runtimeIdentity: identity,
+    registerProgressSink(sink) {
+      progressSink = typeof sink === "function" ? sink : null;
+    },
     queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger),
     requireWakeSignal: start.trigger === "rank-remote",
     log(event) {

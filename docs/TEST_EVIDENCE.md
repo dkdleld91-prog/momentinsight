@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-11 개발 폴더·실행 문서 정리
+
+- `git status --ignored`, `git clean -nd/-ndX`, 생성물 패턴, 0바이트 파일, 용량을 읽기 전용으로 감사했습니다. 삭제 가능한 실제 잔재는 재생성되는 `dist` 1개뿐이었고 `npm run clean:workspace`로 제거했습니다.
+- `.env.local`, `.vercel/project.json`, `.vercel/.env.production.local`, 전체 소스·마이그레이션·운영 문서, root/tool `node_modules`는 개발·배포에 필요하므로 보존했습니다. 정리 후 `npm run clean:workspace:dry`는 `Workspace is already clean`입니다.
+- 현재 `NEXT_ACTIONS.md`는 `준비작업 1번`과 5차 보류만 남겼습니다. 교체된 466줄 원문은 Git commit `3980589`에 보존하고 `archive/NEXT_ACTIONS_HISTORY_THROUGH_2026-08-11.md`에는 요약 인덱스만 두어 중복 문서를 만들지 않았습니다.
+- 문서 이동 후 전체 `npm run check:release`가 통과했습니다: 보호 잠금 22함수·69파일·20마이그레이션, 앱/API 444, 플레이스 51, 쇼핑 52, Production 인증 18. 코드·DB·수집 runtime은 변경하지 않았습니다.
+
 ## 2026-08-11 N쇼핑 운영 제어면 v1.1.0 로컬 게이트
 
 - 워커·서버 핸들러 59/59, native/Windows bridge 22/22, 순위 API·운영 UI 66/66, server contract 40/40, release baseline, 보호 잠금 22함수·69파일·20마이그레이션, 전체 `check:release`(앱/API 444, 플레이스 51, 쇼핑 52, Production 인증 18), `git diff --check`를 통과했습니다.

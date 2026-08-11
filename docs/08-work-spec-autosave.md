@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-11 사용자 실행 순서: 준비작업 1번
+
+- 명칭: 기존 2차 DB 상태 머신 + 3차 관리자 운영 관제 + 4차 24시간 공정 순환 개선을 `준비작업 1번`으로 부른다.
+- 실행 조건: 2026-08-12 19:42 KST 이후 사용자가 `준비작업 1번 시작합시다`라고 직접 요청한 경우에만 시작한다. 자동 예약·자동 개발·자동 배포는 하지 않는다.
+- 실행 방식: 24시간 운영 DB·runtime·관리자 화면을 먼저 읽기 전용으로 감사하고, 기존 v1.1.0과 사용자 명세 사이의 실제 누락만 상태 머신 → 관제 화면 → 공정 순환 순서로 수정·회귀·배포·운영 검증한다.
+- 완료 기준: 모든 작업의 DB terminal 전이와 lease 해제, Chrome/PC 종료 복구, 관리자 증거 일치, 신규/lookup/due aging·광고주 round-robin·실패 격리, 300위 밖 정상 완료를 실제 증거와 테스트로 확인한다.
+- 5차 보류: baseline 10분·동시 실행 1개를 유지한다. 사용자 별도 승인 전에는 8분 candidate, 동시 실행 증가, 수집 경로·pacing 변경을 금지한다.
+- 문서 정리: 현재 실행 계획은 `NEXT_ACTIONS.md`만 사용하고, 교체된 구형 계획은 `archive/NEXT_ACTIONS_HISTORY_THROUGH_2026-08-11.md`에 보관한다.
+
 ## 2026-08-11 N쇼핑 운영 제어면 1~5차 v1.1.0
 
 - 1차 자동 차단: 같은 시스템 단계·오류가 2회 연속이면 DB 회로를 `open`으로 전환해 추가 자동 수집을 막는다. 네이버 CAPTCHA·418·429·접속 제한은 첫 신호부터 기존 cooldown으로 즉시 중단한다.
@@ -207,9 +216,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 19:44:09
-- 기준 커밋: 2d16b3d
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 11. 20:08:24
+- 기준 커밋: 3980589
+- 작업트리: M 00_프로젝트_폴더_가이드.md /  M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/README.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md / ?? docs/archive/
 <!-- autosave:end -->
 
 ## 작업 상태 기준

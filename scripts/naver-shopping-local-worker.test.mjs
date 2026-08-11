@@ -67,7 +67,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.0",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.1",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -233,7 +233,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.0");
+  assert.equal(lane.runtimeVersion, "1.1.1");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -346,7 +346,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v1");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.0");
+  assert.equal(coordination[0].runtimeVersion, "1.1.1");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -719,6 +719,75 @@ test("preserves a bounded internal failure code instead of hiding the live cause
   assert.equal(calls[1].errorCode, "local_worker_commit_invalid");
 });
 
+test("isolates duplicate provider identity to its tracker group and continues the next worker pass", async () => {
+  const calls = [];
+  const logs = [];
+  const rawDetail = "https://shopping.example/private?keyword=secret-keyword&seller=raw-identity";
+  const nextJob = {
+    ...JOB,
+    keyword: "남자팬티",
+    claims: [{
+      ...JOB.claims[0],
+      trackerId: "123e4567-e89b-42d3-a456-426614174001",
+    }],
+  };
+  let collectCount = 0;
+  const provider = {
+    async collect(request) {
+      collectCount += 1;
+      if (collectCount === 1) {
+        const error = new Error("provider_duplicate_identity");
+        error.code = `provider_duplicate_identity:${rawDetail}`;
+        error.detail = rawDetail;
+        throw error;
+      }
+      return { ...completeWindow(), keyword: request.keyword };
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: nextJob } },
+    { body: {
+      ok: true,
+      committedCount: 1,
+      alreadyCommittedCount: 0,
+      leaseLostCount: 0,
+      collectionConflictCount: 0,
+      processedCount: 1,
+    } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+    fetchImpl,
+    provider,
+    log: (value) => logs.push(value),
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0,
+  });
+  assert.equal(collectCount, 2);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
+  assert.equal(calls[1].errorCode, "provider_duplicate_identity");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.equal(failure.errorCode, "provider_duplicate_identity");
+  assert.deepEqual(failure.job.claims, JOB.claims);
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+  assert.equal(calls.coordination.filter((call) => call.action === "record-success").length, 1);
+  assert.doesNotMatch(JSON.stringify({
+    calls: [...calls],
+    coordination: calls.coordination,
+    logs,
+  }), /secret-keyword|raw-identity|shopping\.example/u);
+});
+
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {
   const calls = [];
   const logs = [];
@@ -778,6 +847,9 @@ test("stops the batch on a Naver network restriction and preserves all unclaimed
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
   assert.equal(calls[1].errorCode, "naver_network_restricted");
   assert.match(logs.join("\n"), /local_worker_run_halted:naver_network_restricted/u);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "security");
+  assert.equal(calls.coordination.filter((call) => call.action === "block-lane").length, 1);
 });
 
 test("treats any lease-lost submit result as a failed batch and releases the claim", async () => {

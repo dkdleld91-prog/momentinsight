@@ -4,6 +4,16 @@
 
 ## 현재 상태
 
+### 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1
+
+- 운영에서 Windows heartbeat·circuit·cooldown·lane은 정상이었고 active tracker 65개가 모두 claim 가능했지만, `남자팬티` canary 뒤 자동 순환이 이어지지 않았습니다.
+- 확인된 코드 원인은 1분 `rank-remote`와 10분 `rank-catch-up`이 겹칠 때 실행 중 요청을 `already_running`으로 버리며, 전체 tracker를 due로 만드는 유일한 catch-up 신호도 유실될 수 있는 경계입니다. 동일 시각의 실제 알람 선후는 과거 로그에 없어 추정으로 확정하지 않습니다.
+- 실행 중 도착한 신호는 `manual > rank-catch-up > 09/15 > rank-remote` 순위로 하나만 합칩니다. Node는 terminal frame을 flush한 뒤 입력을 닫고, Windows launcher는 child 종료 직후 output relay join 전에 mutex를 해제하며, 다음 회차는 6초의 유한 handoff 뒤 한 번만 실행합니다. remote는 대기 신호를 만들거나 catch-up을 덮지 않습니다.
+- 정상 closed 순환의 `provider_duplicate_identity:<page>:<row>`는 안전한 base code만 보존하고 해당 tracker group만 격리합니다. URL·키워드·상세 row는 DB·로그로 전달하지 않으며 다음 키워드는 계속 처리합니다. 단, half-open 단독 canary 실패는 검증 실패이므로 circuit을 다시 open합니다. 네트워크·보안 제한의 전역 중단은 유지합니다.
+- 신규 후보는 오래된 due보다 먼저 선택하고 `created_at,id`, 기존 due는 `next_check_at,created_at,id`로 결정적 순서를 고정했습니다. 이후 aging·lookup·광고주 round-robin 계약은 유지합니다.
+- runtime은 1.1.1로 분리했습니다. 로컬 검사와 DB parser 검증은 통과했으며, Production·Windows 설치와 원자 300개·후속 자동 전환 실증 전에는 운영 정상화로 기록하지 않습니다.
+- `control_plane_failed`, 모든 `idle`, 알 수 없는 summary를 0건 완료로 표시하지 않습니다. idle은 대기, 제어면·알 수 없는 상태는 실패로 유한 종료합니다.
+
 ### 2026-08-11 준비작업 1번 대기·5차 보류
 
 - 사용자 명칭을 고정했습니다. `준비작업 1번`은 기존 2차 DB 상태 머신, 3차 관리자 운영 관제, 4차 공정 순환의 **24시간 운영 감사와 누락 보완 작업**입니다.

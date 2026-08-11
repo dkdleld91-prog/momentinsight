@@ -82,13 +82,15 @@ const SAFE_FAILURE_CODES = new Set([
 const SAFE_DETAIL_FAILURE_CODES = new Set([
   "naver_next_data_schema_drift",
   "naver_next_data_rank_drift",
-  "provider_duplicate_identity",
   "provider_partial_window",
   "provider_row_invalid",
   "provider_row_title_missing",
   "provider_row_identity_missing",
   "native_host_page_invalid",
   "native_host_pages_out_of_order",
+]);
+const TRACKER_ISOLATED_FAILURE_CODES = new Set([
+  "provider_duplicate_identity",
 ]);
 const RUN_HALT_FAILURE_CODES = new Set([
   "naver_http_418",
@@ -127,7 +129,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.0";
+const EXPECTED_RUNTIME_VERSION = "1.1.1";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -162,9 +164,11 @@ async function runtimeIdentityInput(options, env) {
 }
 
 function failureScope(job, failureCode) {
-  if (SECURITY_FAILURE_CODES.has(failureCode)) return "security";
+  const baseCode = String(failureCode || "").split(":", 1)[0];
+  if (SECURITY_FAILURE_CODES.has(baseCode)) return "security";
   if (job?.kind !== "lookup"
-    && /^(?:local_worker_tracker_|local_worker_target_)/u.test(failureCode)) return "tracker";
+    && (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)
+      || /^(?:local_worker_tracker_|local_worker_target_)/u.test(baseCode))) return "tracker";
   return "system";
 }
 
@@ -236,6 +240,8 @@ function safeFailureCode(error) {
   const code = String(error?.result?.code || error?.code || error?.message || "")
     .trim()
     .toLowerCase();
+  const baseCode = code.split(":", 1)[0];
+  if (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)) return baseCode;
   if (!SAFE_FAILURE_CODES.has(code) && !INTERNAL_FAILURE_CODE_PATTERN.test(code)) {
     return "local_worker_collection_failed";
   }

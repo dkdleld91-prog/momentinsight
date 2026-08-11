@@ -11,6 +11,17 @@ const PAGE_REQUEST_JITTER_MS = 2_500;
 const BASELINE_CADENCE_MINUTES = 10;
 const CANDIDATE_CADENCE_MINUTES = 8;
 const CADENCE_MINUTES_KEY = "momentInsightRankCadenceMinutes";
+// The Node host flushes its terminal frame and closes input; the Windows
+// launcher then releases its mutex immediately after child exit. Keep one
+// finite scheduling gap before opening the coalesced follow-up connection.
+const PENDING_TRIGGER_HANDOFF_MS = 6_000;
+const RUN_TRIGGER_PRIORITY = Object.freeze({
+  "rank-remote": 0,
+  "rank-0900": 1,
+  "rank-1500": 1,
+  "rank-catch-up": 2,
+  manual: 3,
+});
 const VERIFICATION_COOLDOWN_MS = 60 * 60_000;
 const VERIFICATION_BLOCKED_UNTIL_KEY = "momentInsightRankBlockedUntil";
 const VERIFICATION_TAB_ID_KEY = "momentInsightRankVerificationTabId";
@@ -31,9 +42,37 @@ const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_network_restricted",
 ]);
 const TYPED_COLLECTION_ERROR_PATTERN = /^(?:naver|provider|native_host)_[a-z0-9_:-]{2,79}$/u;
+
+function selectPendingTrigger(currentTrigger, candidateTrigger) {
+  const current = String(currentTrigger || "").trim();
+  const candidate = String(candidateTrigger || "").trim();
+  const currentKnown = Object.hasOwn(RUN_TRIGGER_PRIORITY, current);
+  const candidateKnown = Object.hasOwn(RUN_TRIGGER_PRIORITY, candidate);
+  if (!candidateKnown || candidate === "rank-remote") return currentKnown ? current : null;
+  if (!currentKnown) return candidate;
+  return RUN_TRIGGER_PRIORITY[candidate] > RUN_TRIGGER_PRIORITY[current] ? candidate : current;
+}
+
 let running = false;
+let pendingTrigger = null;
 let controllerPromise = null;
 let runtimeIdentityPromise = null;
+
+function queuePendingTrigger(trigger) {
+  const candidate = String(trigger || "").trim();
+  const queueable = candidate !== "rank-remote" && Object.hasOwn(RUN_TRIGGER_PRIORITY, candidate);
+  pendingTrigger = selectPendingTrigger(pendingTrigger, candidate);
+  return {
+    queued: queueable && pendingTrigger !== null,
+    pendingTrigger,
+  };
+}
+
+function takePendingTrigger() {
+  const trigger = pendingTrigger;
+  pendingTrigger = null;
+  return trigger;
+}
 
 function bytesToHex(bytes) {
   return [...new Uint8Array(bytes)].map((value) => value.toString(16).padStart(2, "0")).join("");
@@ -270,6 +309,17 @@ async function requestControllerRun(trigger) {
       });
       if (response?.accepted === true) {
         if (response.alreadyRunning === true) {
+          if (response.queued === true) {
+            // The popup treats `started` as an accepted asynchronous request.
+            // Keep it out of the false "completed" branch while the controller
+            // runs this one coalesced trigger immediately after the active job.
+            return {
+              ok: true,
+              started: true,
+              queued: true,
+              pendingTrigger: String(response.pendingTrigger || ""),
+            };
+          }
           return { ok: false, started: false, code: "already_running" };
         }
         return {
@@ -481,18 +531,19 @@ function nativeDisconnectCode(lastErrorMessage) {
   return message ? "native_host_disconnected" : "native_host_closed";
 }
 
-async function runWorker(trigger = "manual") {
+async function runWorker(trigger = "manual", options = {}) {
   if (running) return { ok: false, code: "already_running" };
   running = true;
   let port = null;
   try {
-    const automatic = trigger !== "manual";
+    const automatic = trigger !== "manual" || options.respectVerificationCooldown === true;
     const verification = await verificationState();
     if (automatic && verification.blockedUntil > Date.now()) {
       await saveStatus("verification", "naver_verification_cooldown");
       return { ok: false, code: "naver_verification_cooldown" };
     }
     await saveStatus("running", trigger);
+    if (options.waitForNativeHandoff === true) await wait(PENDING_TRIGGER_HANDOFF_MS);
     port = chrome.runtime.connectNative(NATIVE_HOST);
     const runtimeIdentity = await extensionRuntimeIdentity();
     const result = await new Promise((resolve, reject) => {
@@ -554,11 +605,25 @@ async function runWorker(trigger = "manual") {
       await saveStatus("failed", "local_worker_disabled");
       return { ok: false, code: "local_worker_disabled", summary: result };
     }
-    if (result.status === "standby" || (result.status === "idle" && result.remoteWake === false)) {
+    if (result.status === "standby" || result.status === "idle") {
       await saveStatus("standby", "다음 갱신 요청 대기 중");
       return { ok: true, idle: true, summary: result };
     }
+    if (result.status === "control_plane_failed") {
+      await saveStatus("failed", "local_worker_control_plane_failed");
+      return {
+        ok: false,
+        partial: submitted > 0,
+        code: "local_worker_control_plane_failed",
+        summary: result,
+      };
+    }
+    if (result.status !== "completed") {
+      await saveStatus("failed", "local_worker_summary_invalid");
+      return { ok: false, code: "local_worker_summary_invalid", summary: result };
+    }
     const queuedTotal = Math.max(0, Number(result.queuedTotal || 0));
+    const claimed = Math.max(0, Number(result.claimed || 0));
     const failed = Math.max(0, Number(result.failed || 0) + Number(result.releaseFailed || 0));
     const haltedCode = String(result.haltedCode || "");
     if (NAVER_ACCESS_COOLDOWN_CODES.has(haltedCode)) {
@@ -567,6 +632,12 @@ async function runWorker(trigger = "manual") {
       });
       await saveStatus("verification", haltedCode);
       return { ok: false, partial: submitted > 0, code: haltedCode, summary: result };
+    }
+    if (claimed === 0 && submitted === 0 && failed === 0) {
+      await saveStatus("standby", queuedTotal > 0
+        ? "격리 해제 또는 다음 처리 가능 작업 대기 중"
+        : "다음 갱신 요청 대기 중");
+      return { ok: true, idle: true, summary: result };
     }
     const completedDetail = queuedTotal > 0
       ? `전체 ${queuedTotal}개 등록 · 이번 회차 ${submitted}개 갱신`
@@ -579,20 +650,36 @@ async function runWorker(trigger = "manual") {
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {
-    running = false;
     if (port) port.disconnect();
+    const nextTrigger = takePendingTrigger();
+    running = false;
+    if (nextTrigger) {
+      // Reserve the controller synchronously, report the queued run as active,
+      // then give the previous native host one finite, bounded interval to
+      // release its Windows mutex before the next connection.
+      void runWorker(nextTrigger, {
+        respectVerificationCooldown: true,
+        waitForNativeHandoff: true,
+      });
+    }
   }
 }
 
 if (IS_CONTROLLER_PAGE) {
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.action !== "controller-run" || message?.target !== CONTROLLER_TOKEN) return false;
+    const trigger = String(message.trigger || "manual");
     const alreadyRunning = running;
-    if (!alreadyRunning) void runWorker(String(message.trigger || "manual"));
+    const pending = alreadyRunning
+      ? queuePendingTrigger(trigger)
+      : { queued: false, pendingTrigger: null };
+    if (!alreadyRunning) void runWorker(trigger);
     sendResponse({
       accepted: true,
       started: !alreadyRunning,
       alreadyRunning,
+      queued: pending.queued,
+      pendingTrigger: pending.pendingTrigger,
     });
     return false;
   });

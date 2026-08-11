@@ -32,7 +32,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.0";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.1";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -414,8 +414,15 @@ async function loadFairTrackerCandidates(ctx, nowIso, options = {}) {
       .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
     if (options.probeTrackerId) query = query.eq("id", options.probeTrackerId);
     query = mode === "new"
-      ? query.is("last_checked_at", null).order("created_at", { ascending: true })
-      : query.not("last_checked_at", "is", null).order("next_check_at", { ascending: true });
+      ? query
+        .is("last_checked_at", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+      : query
+        .not("last_checked_at", "is", null)
+        .order("next_check_at", { ascending: true })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
     return query.limit(options.probeTrackerId ? 1 : WORKER_FAIR_CANDIDATE_MAX);
   };
   const [newResult, dueResult] = await Promise.all([buildQuery("new"), buildQuery("due")]);
@@ -537,8 +544,15 @@ async function claimOneKeywordJob(ctx) {
       .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
       .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
     query = uninitializedOnly
-      ? query.is("last_checked_at", null).order("created_at", { ascending: true })
-      : query.not("last_checked_at", "is", null).order("next_check_at", { ascending: true });
+      ? query
+        .is("last_checked_at", null)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+      : query
+        .not("last_checked_at", "is", null)
+        .order("next_check_at", { ascending: true })
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true });
     return query.limit(CLAIM_BATCH_MAX);
   };
 

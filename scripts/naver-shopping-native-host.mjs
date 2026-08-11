@@ -68,12 +68,30 @@ function safeCode(error) {
     .slice(0, 80) || "native_host_failed";
 }
 
-function writeMessage(payload) {
+function encodeMessage(payload) {
   const body = Buffer.from(JSON.stringify(payload), "utf8");
   if (body.length > 1024 * 1024) throw new Error("native_host_output_too_large");
   const header = Buffer.alloc(4);
   header.writeUInt32LE(body.length, 0);
-  process.stdout.write(Buffer.concat([header, body]));
+  return Buffer.concat([header, body]);
+}
+
+function writeMessage(payload) {
+  process.stdout.write(encodeMessage(payload));
+}
+
+async function writeTerminalMessage(payload) {
+  await new Promise((resolve, reject) => {
+    process.stdout.write(encodeMessage(payload), (error) => {
+      if (error) reject(error);
+      else resolve();
+    });
+  });
+  // Chrome has the terminal frame. Close this process's inherited input handle
+  // so the Windows parent cannot remain in WaitForExit with the mutex held.
+  process.stdin.removeAllListeners();
+  process.stdin.destroy();
+  process.stdin.unref?.();
 }
 
 function deliverMessage(message) {
@@ -188,10 +206,14 @@ async function main() {
       process.stderr.write(`${safeCode(event)}\n`);
     },
   });
-  writeMessage({ type: "summary", summary });
+  await writeTerminalMessage({ type: "summary", summary });
 }
 
-main().catch((error) => {
-  writeMessage({ type: "error", code: safeCode(error) });
+main().catch(async (error) => {
+  try {
+    await writeTerminalMessage({ type: "error", code: safeCode(error) });
+  } catch {
+    // Chrome may already have closed the pipe; keep the typed non-zero exit.
+  }
   process.exitCode = 1;
 });

@@ -282,7 +282,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.0");
+  assert.equal(manifest.version, "1.1.1");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -367,6 +367,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /updatedAt \+ RUNNING_STATUS_STALE_MS <= Date\.now\(\)/u);
   assert.match(serviceWorker, /saveStatus\("failed", "native_host_interrupted"\)/u);
   assert.match(serviceWorker, /return \{ ok: false, started: false, code: "already_running" \}/u);
+  assert.match(serviceWorker, /response\.queued === true[\s\S]{0,600}started: true,[\s\S]{0,120}queued: true/u);
   assert.match(serviceWorker, /return \{ ok: false, code: "native_host_already_running", summary: result \}/u);
   assert.doesNotMatch(serviceWorker, /onAlarm\.addListener\(\(alarm\) => \{\s*if \(RUN_ALARMS\.has\(alarm\.name\)\) runWorker/u);
   assert.ok(
@@ -376,7 +377,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(popup, /controllerPage/u);
   assert.match(popup, /runButton\.hidden = true/u);
   const runWorkerSource = serviceWorker.slice(
-    serviceWorker.indexOf('async function runWorker(trigger = "manual")'),
+    serviceWorker.indexOf('async function runWorker(trigger = "manual", options = {})'),
     serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
   );
   assert.ok(runWorkerSource.indexOf("running = true") < runWorkerSource.indexOf("await verificationState()"));
@@ -391,6 +392,100 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.ok(
     controllerDispatchSource.indexOf("await prepareControllerForDispatch(controller)")
       < controllerDispatchSource.indexOf("chrome.runtime.sendMessage"),
+  );
+});
+
+test("controller coalesces one highest-priority finite trigger behind an active run", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const windowsLauncher = fs.readFileSync(
+    new URL("windows/MomentInsightNaverShoppingHost.cs", import.meta.url),
+    "utf8",
+  );
+  const priorityStart = serviceWorker.indexOf("const RUN_TRIGGER_PRIORITY");
+  const priorityEnd = serviceWorker.indexOf("const VERIFICATION_COOLDOWN_MS");
+  const selectorStart = serviceWorker.indexOf("function selectPendingTrigger");
+  const selectorEnd = serviceWorker.indexOf("let running = false;");
+  assert.ok(priorityStart >= 0 && priorityEnd > priorityStart);
+  assert.ok(selectorStart >= 0 && selectorEnd > selectorStart);
+  const selectPendingTrigger = runInNewContext(
+    `${serviceWorker.slice(priorityStart, priorityEnd)}\n${serviceWorker.slice(selectorStart, selectorEnd)}\nselectPendingTrigger;`,
+  );
+
+  assert.equal(selectPendingTrigger(null, "rank-remote"), null);
+  assert.equal(selectPendingTrigger(null, "rank-0900"), "rank-0900");
+  assert.equal(selectPendingTrigger("rank-0900", "rank-catch-up"), "rank-catch-up");
+  assert.equal(selectPendingTrigger("rank-catch-up", "rank-remote"), "rank-catch-up");
+  assert.equal(selectPendingTrigger("rank-catch-up", "manual"), "manual");
+  assert.equal(selectPendingTrigger("manual", "rank-catch-up"), "manual");
+
+  const queueStart = serviceWorker.indexOf("function queuePendingTrigger");
+  const queueEnd = serviceWorker.indexOf("function bytesToHex");
+  const triggerQueue = runInNewContext(`
+    ${serviceWorker.slice(priorityStart, priorityEnd)}
+    ${serviceWorker.slice(selectorStart, selectorEnd)}
+    let pendingTrigger = null;
+    ${serviceWorker.slice(queueStart, queueEnd)}
+    ({ queuePendingTrigger, takePendingTrigger });
+  `);
+  assert.deepEqual(
+    { ...triggerQueue.queuePendingTrigger("rank-remote") },
+    { queued: false, pendingTrigger: null },
+  );
+  assert.equal(triggerQueue.queuePendingTrigger("rank-0900").pendingTrigger, "rank-0900");
+  assert.equal(triggerQueue.queuePendingTrigger("rank-catch-up").pendingTrigger, "rank-catch-up");
+  assert.deepEqual(
+    { ...triggerQueue.queuePendingTrigger("rank-remote") },
+    { queued: false, pendingTrigger: "rank-catch-up" },
+  );
+  assert.equal(triggerQueue.queuePendingTrigger("manual").pendingTrigger, "manual");
+  assert.equal(triggerQueue.queuePendingTrigger("rank-1500").pendingTrigger, "manual");
+  assert.equal(triggerQueue.takePendingTrigger(), "manual");
+  assert.equal(triggerQueue.takePendingTrigger(), null);
+
+  const controllerSource = serviceWorker.slice(
+    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
+    serviceWorker.indexOf("if (!EXTENSION_PAGE_CONTEXT)"),
+  );
+  assert.match(controllerSource, /alreadyRunning\s*\? queuePendingTrigger\(trigger\)/u);
+  assert.match(controllerSource, /queued: pending\.queued/u);
+  assert.match(controllerSource, /pendingTrigger: pending\.pendingTrigger/u);
+
+  const workerSource = serviceWorker.slice(
+    serviceWorker.indexOf('async function runWorker(trigger = "manual"'),
+    serviceWorker.indexOf("if (IS_CONTROLLER_PAGE)"),
+  );
+  assert.match(workerSource, /options\.respectVerificationCooldown === true/u);
+  assert.match(
+    workerSource,
+    /const nextTrigger = takePendingTrigger\(\)[\s\S]{0,500}runWorker\(nextTrigger, \{[\s\S]{0,120}respectVerificationCooldown: true,[\s\S]{0,120}waitForNativeHandoff: true/u,
+  );
+  assert.equal((workerSource.match(/takePendingTrigger\(\)/gu) || []).length, 1);
+  assert.match(workerSource, /options\.waitForNativeHandoff === true\) await wait\(PENDING_TRIGGER_HANDOFF_MS\)/u);
+  assert.match(serviceWorker, /PENDING_TRIGGER_HANDOFF_MS = 6_000/u);
+  assert.match(workerSource, /result\.status === "control_plane_failed"/u);
+  assert.match(workerSource, /result\.status !== "completed"/u);
+  assert.match(workerSource, /result\.status === "standby" \|\| result\.status === "idle"/u);
+  const nativeHost = fs.readFileSync(new URL("naver-shopping-native-host.mjs", import.meta.url), "utf8");
+  assert.match(nativeHost, /await writeTerminalMessage\(\{ type: "summary", summary \}\)/u);
+  assert.match(nativeHost, /process\.stdin\.destroy\(\)/u);
+  assert.ok(
+    windowsLauncher.indexOf("child.WaitForExit();")
+      < windowsLauncher.indexOf("singleInstance.ReleaseMutex();"),
+  );
+  assert.ok(
+    windowsLauncher.indexOf("singleInstance.ReleaseMutex();")
+      < windowsLauncher.indexOf("outputRelay.Join(5000)"),
+  );
+  assert.ok(
+    workerSource.indexOf('await saveStatus("running", trigger)')
+      < workerSource.indexOf("await wait(PENDING_TRIGGER_HANDOFF_MS)"),
+  );
+  assert.ok(
+    workerSource.indexOf("await wait(PENDING_TRIGGER_HANDOFF_MS)")
+      < workerSource.indexOf("chrome.runtime.connectNative"),
   );
 });
 
@@ -513,7 +608,7 @@ test("Chrome controller resumes a frozen tab before dispatch without hiding acti
     serviceWorker.indexOf("function searchUrl"),
   );
 
-  assert.equal(manifest.version, "1.1.0");
+  assert.equal(manifest.version, "1.1.1");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -610,7 +705,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.0",
+    runtimeVersion: "1.1.1",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

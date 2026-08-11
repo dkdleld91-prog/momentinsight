@@ -52,6 +52,8 @@ test("Windows native host uses HKCU registration, DPAPI and one-way output relay
   assert.doesNotMatch(launcher, /Console\.OpenStandardInput\(\)|StandardInput\.BaseStream/u);
   assert.match(launcher, /child\.StandardOutput\.BaseStream\.CopyTo\(output\)/u);
   assert.match(launcher, /outputRelay\.Join\(5000\)/u);
+  assert.ok(launcher.indexOf("child.WaitForExit();") < launcher.indexOf("singleInstance.ReleaseMutex();"));
+  assert.ok(launcher.indexOf("singleInstance.ReleaseMutex();") < launcher.indexOf("outputRelay.Join(5000)"));
   assert.match(launcher, /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS"\] = maxJobs/u);
   assert.match(launcher, /MI_NAVER_SHOPPING_WORKER_ID"\] = "windows-desktop-primary"/u);

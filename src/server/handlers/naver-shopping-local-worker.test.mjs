@@ -30,7 +30,7 @@ function signedRequest(payload) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.0",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.1",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -296,7 +296,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.0");
+          assert.equal(args.p_runtime_version, "1.1.1");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -396,7 +396,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.0",
+      runtimeVersion: "1.1.1",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -456,7 +456,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.0",
+      runtimeVersion: "1.1.1",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -756,6 +756,8 @@ test("central collector stays global while using agency only for fair queue orde
   assert.match(fairSource, /mi_choose_naver_shopping_worker_turn/u);
   assert.match(fairSource, /agency_code/u);
   assert.match(fairSource, /if \(turn\.workClass === "none"\) return null/u);
+  assert.match(source, /is\("last_checked_at", null\)[\s\S]*order\("created_at"[\s\S]*order\("id"/u);
+  assert.match(source, /not\("last_checked_at", "is", null\)[\s\S]*order\("next_check_at"[\s\S]*order\("created_at"[\s\S]*order\("id"/u);
 });
 
 test("signed manual queue registers every active tracker without exposing account scopes", async () => {
@@ -1381,5 +1383,25 @@ test("worker control plane is service-role-only, atomic-300 gated and circuit bo
   assert.match(sql, /security invoker/iu);
   assert.doesNotMatch(sql, /security definer/iu);
   assert.match(sql, /grant execute on function public\.mi_record_naver_shopping_worker_success[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("queue continuity gives new trackers the first slot and pins runtime 1.1.1", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.1'/iu);
+  assert.match(sql, /if coalesce\(p_has_new, false\) then\s*work_class := 'new'/iu);
+  assert.match(sql, /scheduler_urgent_streak >= 2/iu);
+  assert.match(sql, /p_oldest_due_at[\s\S]+interval '30 minutes'/iu);
+  assert.match(sql, /scheduler_last_agency_code/iu);
+  assert.match(sql, /current_row\.runtime_version = '1\.1\.1'/iu);
+  assert.match(sql, /last_checked_count = 300/iu);
+  assert.match(sql, /last_source = 'naver_shopping_results_collector'/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]+from public, anon, authenticated, service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_choose_naver_shopping_worker_turn[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });

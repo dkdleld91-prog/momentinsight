@@ -173,6 +173,7 @@ const shoppingWorkerWake = read("src/server/naver-shopping/worker-wake.mjs");
 const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_naver_shopping_worker_remote_wake.sql");
 const shoppingWorkerLaneMigration = read("supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql");
 const shoppingWorkerControlMigration = read("supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql");
+const shoppingWorkerContinuityMigration = read("supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1298,11 +1299,11 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.0"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.1"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
-    && shoppingChromeWorker.includes('result.status === "idle" && result.remoteWake === false')
+    && shoppingChromeWorker.includes('result.status === "standby" || result.status === "idle"')
     && shoppingChromeWorker.includes('result.status === "standby"')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
     && shoppingNativeHost.includes('writeMessage({ type: "ready" })')
@@ -1321,6 +1322,12 @@ const checks = {
     && shoppingChromeWorker.includes("changeInfo.frozen === false")
     && shoppingChromeWorker.includes("automaticVerificationCooldownActive(trigger)")
     && shoppingChromeWorker.includes("verification.blockedUntil > Date.now()")
+    && shoppingChromeWorker.includes("selectPendingTrigger(currentTrigger, candidateTrigger)")
+    && shoppingChromeWorker.includes('candidate === "rank-remote"')
+    && shoppingChromeWorker.includes("const nextTrigger = takePendingTrigger()")
+    && shoppingChromeWorker.includes("PENDING_TRIGGER_HANDOFF_MS = 6_000")
+    && shoppingChromeWorker.includes('result.status === "control_plane_failed"')
+    && shoppingChromeWorker.includes('result.status !== "completed"')
     && shoppingChromeWorker.includes('chrome.windows.update(controller.windowId, { state: "normal" })')
     && shoppingWindowsChromeScheduler.includes("chrome_already_running profile=")
     && shoppingChromeWorker.includes('action: "controller-run"')
@@ -1334,6 +1341,8 @@ const checks = {
     && shoppingLocalWorker.includes('action: "claim-lane"')
     && shoppingLocalWorker.includes('action: "release-lane"')
     && shoppingLocalWorker.includes('action: "block-lane"')
+    && shoppingLocalWorker.includes("TRACKER_ISOLATED_FAILURE_CODES")
+    && shoppingLocalWorker.includes('"provider_duplicate_identity"')
     && shoppingLocalWorkerHandler.includes('body.action === "claim-wake"')
     && shoppingLocalWorkerHandler.includes('claimShoppingWorkerWake(ctx)')
     && shoppingWorkerWake.includes('mi_request_naver_shopping_worker_wake')
@@ -1348,6 +1357,14 @@ const checks = {
     && shoppingWorkerLaneMigration.includes('mi_block_naver_shopping_worker_lane')
     && shoppingWorkerLaneMigration.includes('security invoker')
     && !shoppingWorkerLaneMigration.includes('security definer')
+    && shoppingWorkerContinuityMigration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.1'")
+    && shoppingWorkerContinuityMigration.includes("if coalesce(p_has_new, false) then")
+    && shoppingWorkerContinuityMigration.includes("current_row.runtime_version = '1.1.1'")
+    && shoppingWorkerContinuityMigration.includes("security invoker")
+    && !shoppingWorkerContinuityMigration.includes("security definer")
+    && shoppingWorkerContinuityMigration.includes("to service_role")
+    && shoppingLocalWorkerHandler.includes('.order("created_at", { ascending: true })')
+    && shoppingLocalWorkerHandler.includes('.order("id", { ascending: true })')
     && shoppingRankLookupLeasePrecisionMigration.includes("date_trunc('milliseconds', clock_timestamp())")
     && shoppingRankLookupLeasePrecisionMigration.includes('processing_started_at = v_lease_started_at')
     && shoppingRankLookupLeasePrecisionMigration.includes("date_trunc('milliseconds', v_job.processing_started_at)")
@@ -1363,13 +1380,19 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.0"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.1"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
     && rankServer.includes("MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35")
     && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
     && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')
+    && shoppingNativeHost.includes('await writeTerminalMessage({ type: "summary", summary })')
+    && shoppingNativeHost.includes("process.stdin.destroy()")
+    && shoppingWindowsHostLauncher.indexOf("child.WaitForExit();")
+      < shoppingWindowsHostLauncher.indexOf("singleInstance.ReleaseMutex();")
+    && shoppingWindowsHostLauncher.indexOf("singleInstance.ReleaseMutex();")
+      < shoppingWindowsHostLauncher.indexOf("outputRelay.Join(5000)")
     && shoppingLocalWorker.includes('action({ action: "queue-all-active-trackers", ...lanePayload })')
     && shoppingLocalWorkerHandler.includes('body.action === "queue-all-active-trackers"')
     && shoppingLocalWorkerHandler.includes('.eq("status", "active")')

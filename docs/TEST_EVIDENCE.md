@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1 로컬 증거
+
+- controller VM 회귀는 실행 중 catch-up 두 건을 한 건으로 합치고 remote가 이를 덮지 않으며, 현재 회차 종료 뒤 단 한 번 인계되는 것을 검증합니다. Node terminal frame flush·입력 종료, Windows child 종료 뒤 relay join 전 mutex 해제, 6초 handoff, 수동 요청의 보안확인 cooldown 재검사, `control_plane_failed`·idle·알 수 없는 summary의 false-complete 차단도 고정합니다.
+- local worker 회귀는 정상 closed 순환의 `provider_duplicate_identity:3:26`을 base code로 비식별화해 tracker scope로 격리하고 maxJobs 2에서 다음 정상 job까지 처리하며, network 제한은 security scope·전역 block을 유지함을 검증합니다. half-open canary 실패의 circuit 재개방 계약은 기존 control-plane 회귀를 유지합니다.
+- 서버 후보 조회는 신규 `created_at,id`, due `next_check_at,created_at,id` 순서를 고정했습니다. 신규 우선 DB 함수는 row lock·aging·광고주 round-robin·service_role 전용 권한을 유지합니다.
+- 대상 회귀 145/145, server contract 41/41, release baseline과 운영 DB의 rollback parser 검증이 통과했습니다. 보호 잠금·전체 release·배포·Windows 실기는 아래 완료 증거가 추가되기 전까지 미완료입니다.
+
 ## 2026-08-11 개발 폴더·실행 문서 정리
 
 - `git status --ignored`, `git clean -nd/-ndX`, 생성물 패턴, 0바이트 파일, 용량을 읽기 전용으로 감사했습니다. 삭제 가능한 실제 잔재는 재생성되는 `dist` 1개뿐이었고 `npm run clean:workspace`로 제거했습니다.

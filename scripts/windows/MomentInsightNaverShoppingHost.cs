@@ -106,6 +106,14 @@ namespace MomentInsight.NaverShopping
                     outputRelay.IsBackground = true;
                     outputRelay.Start();
                     child.WaitForExit();
+                    // The Node child flushes its terminal native frame before
+                    // exit. Release the single-instance mutex now; the relay
+                    // drains the already-owned output pipe independently.
+                    if (ownsSingleInstance)
+                    {
+                        singleInstance.ReleaseMutex();
+                        ownsSingleInstance = false;
+                    }
                     if (!outputRelay.Join(5000))
                     {
                         return Fail("native_host_output_relay_timeout");

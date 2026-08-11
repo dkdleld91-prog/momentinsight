@@ -3,6 +3,16 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1
+
+- 장애: Windows worker와 DB는 정상인데 1분 remote와 10분 catch-up이 겹치면 controller가 후속 신호를 저장하지 않아 전체 순환 시작 신호가 유실될 수 있었다. `provider_duplicate_identity`도 시스템 실패로 처리되어 한 tracker의 상품 중복이 현재 전체 회차를 끝냈다.
+- 인계: 실행 중 신호는 우선순위가 가장 높은 한 건만 coalesce한다. Node terminal frame flush·입력 종료와 Windows child 종료 직후 mutex 선해제를 고정하고, 현재 회차의 `finally` 뒤 6초 유한 handoff로 한 번만 실행한다. remote는 pending을 생성·대체하지 않으며 반복 retry loop를 만들지 않는다.
+- 표시: `control_plane_failed`와 알 수 없는 summary를 완료로 바꾸지 않고 실패로 종료하며, 작업이 없는 모든 `idle`은 완료가 아니라 대기로 표시한다.
+- 격리: 정상 closed 순환에서 `provider_duplicate_identity`는 상세 suffix를 제거한 base code로 해당 tracker만 30분/누적 2회 이상 24시간 격리한다. 다른 tracker·광고주는 계속하고 security/network만 즉시 전역 cooldown·중단 대상으로 유지한다. half-open 단독 canary에서의 모든 실패는 안전 검증 실패로 circuit을 다시 open한다.
+- 공정성: 신규·미검증은 첫 슬롯, 신규 동률은 `created_at,id`, 기존 due는 `next_check_at,created_at,id`로 고정한다. 그 뒤 lookup/new/due aging과 광고주 round-robin을 유지한다.
+- 불변: baseline 10분, 동시 실행 1개, 직접 `/search/all` 1~8페이지와 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, 300위 밖 정상 완료, last-good 보존, Windows primary·Mac standby global lane은 변경하지 않는다.
+- 완료 기준: runtime 1.1.1의 DB·Production·Windows 바이트 일치, `남자팬티` 원자 300개, 다음 자동 키워드 전환, circuit closed와 lane·lease 해제를 실제 증거로 확인한다. 단일 성공을 24시간 완주 증거로 과장하지 않는다.
+
 ## 2026-08-11 사용자 실행 순서: 준비작업 1번
 
 - 명칭: 기존 2차 DB 상태 머신 + 3차 관리자 운영 관제 + 4차 24시간 공정 순환 개선을 `준비작업 1번`으로 부른다.
@@ -216,9 +226,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 11. 20:08:24
-- 기준 커밋: 3980589
-- 작업트리: M 00_프로젝트_폴더_가이드.md /  M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/README.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md / ?? docs/archive/
+- 마지막 자동 저장: 2026. 08. 11. 20:24:49
+- 기준 커밋: 3572e32
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

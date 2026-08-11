@@ -1582,6 +1582,9 @@ const checks = {
     && !read("src/server/handlers/naver-shopping-rank.mjs").includes("catalog_inferred_from_product_url")
     && adminSource.includes("상품ID·판매자 일치")
     && clientSource.includes("상품ID·판매자 일치"),
+  naverRankWorkerCanaryReadsRenderedOperationsTarget: adminSource.includes('var operationsPanel = card.querySelector("[data-rank-worker-operations]");')
+    && adminSource.includes('body.trackerId = operationsPanel ? operationsPanel.getAttribute("data-rank-canary-tracker-id") || "" : "";')
+    && !adminSource.includes('body.trackerId = card.getAttribute("data-rank-canary-tracker-id") || "";'),
   naverRankPremiumExposureCards: [adminSource, clientSource].every((source) => source.includes("renderProductExposureCards")
     && source.includes("mi-rank-exposure-board")
     && source.includes("상품 노출 결과")

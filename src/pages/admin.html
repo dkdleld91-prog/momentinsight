@@ -16296,7 +16296,8 @@
           var confirmMessage = "";
           if (action === "worker-stop") confirmMessage = "자동 순위 수집을 안전 정지할까요? 마지막 정상 순위와 기록은 보존됩니다.";
           if (action === "worker-canary") {
-            body.trackerId = card.getAttribute("data-rank-canary-tracker-id") || "";
+            var operationsPanel = card.querySelector("[data-rank-worker-operations]");
+            body.trackerId = operationsPanel ? operationsPanel.getAttribute("data-rank-canary-tracker-id") || "" : "";
             if (!body.trackerId) {
               setStatus(rankStatus, "남자팬티 고정 검증 항목을 확인할 수 없습니다.", "is-warn");
               return;

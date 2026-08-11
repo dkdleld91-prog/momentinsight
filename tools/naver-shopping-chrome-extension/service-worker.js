@@ -265,7 +265,7 @@ async function navigateTab(tabId, url) {
   await waitForTabComplete(tabId);
 }
 
-async function collectPages(request) {
+async function collectPages(request, onPage = null) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
   }
@@ -291,7 +291,9 @@ async function collectPages(request) {
 
     for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
       assertWithinDeadline();
-      pages.push({ pageIndex, nextDataText: await readNextData(tabId) });
+      const page = { pageIndex, nextDataText: await readNextData(tabId) };
+      if (typeof onPage === "function") await onPage(page);
+      else pages.push(page);
       await saveStatus("running", `page ${pageIndex}/${PAGE_COUNT}`);
       if (pageIndex < PAGE_COUNT) {
         const nextPageTarget = await readNextPageTarget(tabId, request.keyword, pageIndex + 1);
@@ -375,8 +377,10 @@ async function runWorker(trigger = "manual") {
           }
           if (message?.type === "collect") {
             try {
-              const pages = await collectPages(message.request);
-              port.postMessage({ type: "collection", requestId: message.requestId, pages });
+              await collectPages(message.request, async (page) => {
+                port.postMessage({ type: "collection_page", requestId: message.requestId, page });
+              });
+              port.postMessage({ type: "collection_complete", requestId: message.requestId });
             } catch (error) {
               port.postMessage({
                 type: "collection_error",

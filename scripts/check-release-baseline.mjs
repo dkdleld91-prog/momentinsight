@@ -1213,6 +1213,12 @@ const checks = {
     && shoppingChromeWorker.includes("pagingIndex")
     && shoppingChromeWorker.includes("productSet")
     && shoppingChromeWorker.includes("nextDataText")
+    && shoppingChromeWorker.includes('type: "collection_page"')
+    && shoppingChromeWorker.includes('type: "collection_complete"')
+    && shoppingNativeHost.includes('response?.type === "collection_page"')
+    && shoppingNativeHost.includes('response?.type === "collection_complete"')
+    && shoppingNativeHost.includes('native_host_input_closed')
+    && shoppingNativeHost.includes("RESPONSE_TIMEOUT_MS = 14 * 60_000")
     && shoppingChromeWorker.includes("naver_verification_required")
     && shoppingChromeWorker.includes("naver_network_restricted")
     && shoppingChromeWorker.includes('request.rankPolicy !== "organic_only"')
@@ -1273,7 +1279,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.41"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.0.42"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1312,7 +1318,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.41"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.0.42"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

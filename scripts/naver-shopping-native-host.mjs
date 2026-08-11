@@ -8,7 +8,7 @@ const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 // then 45-75 seconds between each of the remaining seven pages. Keep the
 // native exchange below the 35-minute server lease but above that bounded
 // visible-browser schedule.
-const RESPONSE_TIMEOUT_MS = 29 * 60_000;
+const RESPONSE_TIMEOUT_MS = 14 * 60_000;
 // 09:00/15:00 are customer-facing expectation windows. The internal catch-up
 // alarm is the continuous whole-site cycle: it idempotently makes every active
 // tracker due, then the bounded worker claims only the oldest remaining job.
@@ -64,10 +64,18 @@ process.stdin.on("data", (chunk) => {
     inputBuffer = Buffer.concat([inputBuffer, chunk]);
     consumeInput();
   } catch (error) {
-    inputFailure = error;
-    while (messageWaiters.length) messageWaiters.shift().reject(error);
+    failInput(error);
   }
 });
+
+function failInput(error) {
+  if (inputFailure) return;
+  inputFailure = error;
+  while (messageWaiters.length) messageWaiters.shift().reject(error);
+}
+
+process.stdin.on("end", () => failInput(new Error("native_host_input_closed")));
+process.stdin.on("error", () => failInput(new Error("native_host_input_failed")));
 
 function nextMessage(timeoutMs = RESPONSE_TIMEOUT_MS) {
   if (inputFailure) return Promise.reject(inputFailure);
@@ -83,6 +91,10 @@ function nextMessage(timeoutMs = RESPONSE_TIMEOUT_MS) {
       clearTimeout(timeout);
       resolve(value);
     };
+    waiter.reject = (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    };
     messageWaiters.push(waiter);
   });
 }
@@ -96,6 +108,7 @@ async function main() {
   const provider = createChromeNativeProvider({
     async exchange(message) {
       const requestId = crypto.randomUUID();
+      const pages = [];
       writeMessage({ ...message, requestId });
       for (;;) {
         const response = await nextMessage();
@@ -104,6 +117,16 @@ async function main() {
           const error = new Error(safeCode(response?.code || "native_host_collection_failed"));
           error.code = safeCode(response?.code || "native_host_collection_failed");
           throw error;
+        }
+        if (response?.type === "collection_page") {
+          if (!response.page || Number(response.page.pageIndex) !== pages.length + 1 || pages.length >= 8) {
+            throw new Error("native_host_pages_out_of_order");
+          }
+          pages.push(response.page);
+          continue;
+        }
+        if (response?.type === "collection_complete") {
+          return { type: "collection", pages };
         }
         return response;
       }

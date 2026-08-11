@@ -433,7 +433,7 @@
     {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "a8043b367d89ae940e5b80e84b85432e5fbcf972fd624cd4a241d76ba61bbd01"
+      "sha256": "ebfa60b8ad627734dc22c55ff7eb93dc37b972c0b981199c2a07700147308648"
     },
     {
       "id": "shopping-chrome-native-host-core",
@@ -478,12 +478,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "07454bdf74b2b2688bbeaf347f6d5cda9eeffcc7a07cdb596871a8ea6d2a5c95"
+      "sha256": "eceaf24139b6e726faa035e7bbf426569dc69abbf2abfc388e21f741ab0e7e94"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "4f7da7012b4b327d47d15e6c1e188c02ad7239fbda0ac6adbcc9ebfbdaecc8a1"
+      "sha256": "c34f3c6d7cf4fac4bd00a8dd02ef4aba6d161e9b8b433073c48cbc4725c4b6d1"
     },
     {
       "id": "shopping-local-worker-session-boundary",

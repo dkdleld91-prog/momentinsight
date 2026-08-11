@@ -280,7 +280,7 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.0.41");
+  assert.equal(manifest.version, "1.0.42");
   assert.ok(manifest.host_permissions.includes("https://www.naver.com/*"));
   assert.ok(manifest.host_permissions.includes("https://search.naver.com/*"));
   assert.match(serviceWorker, /new URL\("https:\/\/search\.naver\.com\/search\.naver"\)/u);
@@ -413,7 +413,12 @@ test("Chrome extension uses the normal Naver search to price-comparison path wit
   assert.match(serviceWorker, /sendResponse\(\{ ok: true, started: true \}\)/u);
   assert.match(popup, /30~45초 안전 대기 후 가격비교 탭이 열립니다/u);
   assert.match(nativeHost, /WHOLE_SITE_QUEUE_TRIGGERS = new Set\(\["manual", "rank-catch-up"\]\)/u);
-  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 29 \* 60_000/u);
+  assert.match(nativeHost, /RESPONSE_TIMEOUT_MS = 14 \* 60_000/u);
+  assert.match(serviceWorker, /type: "collection_page"/u);
+  assert.match(serviceWorker, /type: "collection_complete"/u);
+  assert.match(nativeHost, /response\?\.type === "collection_page"/u);
+  assert.match(nativeHost, /response\?\.type === "collection_complete"/u);
+  assert.match(nativeHost, /native_host_input_closed/u);
   assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
   assert.match(nativeHost, /readyAck = await nextMessage\(30_000\)/u);
   assert.match(nativeHost, /native_host_ready_ack_invalid/u);
@@ -475,5 +480,26 @@ test("native host framing returns a bounded typed error for an invalid start mes
   assert.deepEqual(JSON.parse(result.stdout.subarray(4).toString("utf8")), {
     type: "error",
     code: "native_host_start_invalid",
+  });
+});
+
+test("native host fails immediately when Chrome closes its input pipe", () => {
+  const body = Buffer.from(JSON.stringify({ action: "run", trigger: "rank-remote" }), "utf8");
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(body.length, 0);
+  const hostPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "naver-shopping-native-host.mjs");
+  const result = spawnSync(process.execPath, [hostPath], {
+    input: Buffer.concat([header, body]),
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 1);
+  const firstLength = result.stdout.readUInt32LE(0);
+  const firstEnd = 4 + firstLength;
+  assert.deepEqual(JSON.parse(result.stdout.subarray(4, firstEnd).toString("utf8")), { type: "ready" });
+  const secondLength = result.stdout.readUInt32LE(firstEnd);
+  assert.equal(firstEnd + 4 + secondLength, result.stdout.length);
+  assert.deepEqual(JSON.parse(result.stdout.subarray(firstEnd + 4).toString("utf8")), {
+    type: "error",
+    code: "native_host_input_closed",
   });
 });

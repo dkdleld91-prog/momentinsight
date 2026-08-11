@@ -79,7 +79,7 @@
       "id": "operation-product-30-day",
       "file": "src/pages/admin.html",
       "name": "initRankTracking",
-      "sha256": "47ab9c06b417de07d4f7059f6dab481007065dee7cbc3f3053e7996e5e7a6cdc"
+      "sha256": "72b58169070b65e469c228b1daa0c4d3735ba0d4b0c65a7da909d8207291fa14"
     },
     {
       "id": "advertiser-product-30-day",
@@ -155,7 +155,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "c8e0732d161dba1493ed3eba172ab4a8ebd6293fd9ec8f818363ea4ebcf2cd9e"
+      "sha256": "18358dfba3cd97eb6e7f73aa641f9cc051df625a02a0d39b76490ba7ebc12020"
     },
     {
       "id": "product-organic-rank-server",

@@ -38,7 +38,7 @@
    - Windows primary·Mac standby heartbeat, 확장 버전·Git commit·서비스 워커/native host fingerprint를 확인합니다.
    - 현재 키워드·page n/8, 신규·대기·처리·실패·격리 수, oldest wait를 한 화면에서 검수하고 누락을 보완합니다.
    - 마지막 성공의 원자 300개·광고 제외·순위·lane 해제와 마지막 실패의 단계·typed code·시도 횟수를 검증합니다.
-   - `전체 중지`, `남자팬티 1건 검증`, `자동 순환 재개`가 오작동·중복 wake 없이 동작하도록 확인합니다.
+   - `전체 중지`, `테스트 1건 검증`, `자동 순환 재개`가 오작동·중복 wake 없이 동작하도록 확인합니다. 테스트의 고정 표본은 기존 `남자팬티` tracker를 유지합니다.
 3. 24시간 공정 순환
    - 신규 첫 슬롯 우선 후 lookup/new/due 가중치·대기시간 aging·광고주 round-robin을 검증하고 기아 가능성을 보완합니다.
    - 실패 tracker만 `next_retry_at`/격리 대상으로 두고 보안 제한만 global cooldown에 적용합니다.

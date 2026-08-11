@@ -2142,10 +2142,10 @@ function shoppingWorkerControlMessage(action, result, mode = "") {
   if (rejected && reason === "probe_active") return "이미 1건 안전 검증이 진행 중이며 추가 검증은 시작하지 않았습니다.";
   if (rejected && reason === "busy") return "현재 작업 레인이 사용 중이어서 1건 검증을 시작하지 않았습니다.";
   if (rejected && reason === "cooldown") return "접속 제한 안전 대기 중이어서 1건 검증을 시작하지 않았습니다.";
-  if (rejected && reason === "canary_mismatch") return "남자팬티 고정 검증 항목이 일치하지 않아 실행하지 않았습니다.";
+  if (rejected && reason === "canary_mismatch") return "고정 테스트 항목이 일치하지 않아 실행하지 않았습니다.";
   if (rejected) return "운영 안전 조건을 충족하지 않아 요청을 적용하지 않았습니다.";
   if (action === "worker-stop") return "자동 순위 수집을 안전하게 정지하고 마지막 정상 순위를 보존합니다.";
-  if (action === "worker-canary") return "남자팬티 1건 검증을 요청했습니다. 오가닉 300개 검증 성공 때만 자동 수집을 재개합니다.";
+  if (action === "worker-canary") return "테스트 1건 검증을 요청했습니다. 오가닉 300개 검증 성공 때만 자동 수집을 재개합니다.";
   if (action === "worker-cadence" && mode === "baseline") return "기본 10분 안전 간격으로 복귀했습니다.";
   if (action === "worker-cadence") return "검증된 후보 간격을 적용했습니다.";
   return "운영 제어 요청을 처리했습니다.";

@@ -431,6 +431,8 @@ test("owner operations UI exists only on the admin surface while clients keep th
     assert.match(adminSource, new RegExp(safeMarker));
     assert.match(clientSource, new RegExp(safeMarker));
   }
+  assert.match(adminSource, />테스트 1건 검증<\/button>/);
+  assert.doesNotMatch(adminSource, />남자팬티 1건 검증<\/button>/);
 });
 
 test("seller product URLs cannot be poisoned into catalog mode by query parameters", () => {

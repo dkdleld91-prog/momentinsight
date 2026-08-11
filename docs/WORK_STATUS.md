@@ -12,6 +12,7 @@
 - 프리미엄 navy command surface를 실시간 실행, 장비·스케줄, 안전·복구 세 영역으로 정돈하고 데스크톱 4열·태블릿 2열·모바일 1열 반응형을 적용했습니다.
 - 수집 엔진·DB·확장·Windows 설치본은 변경하지 않았습니다. 광고 제외 원자 `checkedCount=300`, last-good 보존, baseline 10분·동시 실행 1개 계약을 유지합니다.
 - 운영 반영 완료: commit `6a1076899183`, Vercel Production `dpl_HUQadoTJ3qTP1DFxVnKfiNEvQfGb`가 운영 별칭에 반영됐고 `/health`·`/ready`는 같은 release, 서울 `icn1`, Supabase ready를 반환했습니다. 실제 `mml93-a01` owner 세션에서 개발 메뉴 그룹 1개·owner view 2개·운영 패널 표시와 N30 내부 운영 패널 0개·가로 넘침 0을 확인했습니다. 운영 지표는 계정 범위와 상태 조회 후 약 10초 내 표시됐으며 제어 버튼은 누르지 않았습니다.
+- 운영 화면 문구는 `남자팬티 1건 검증`에서 `테스트 1건 검증`으로 정리했습니다. 버튼·확인창·완료/거절 안내만 변경했으며 실제 고정 canary tracker와 오가닉 300개 검증 계약은 유지합니다.
 
 ### 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1
 

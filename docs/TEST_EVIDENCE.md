@@ -7,6 +7,7 @@
 - root 기반 canary target·제어 위임, owner deep-link, restored team의 forged hash 정규화, 기존 VAT 계산 계약을 회귀로 고정했습니다.
 - 집중 회귀 71/71, role-state, baseline, role-query parity, 보호 잠금, Vercel public build와 `git diff --check`가 통과했습니다.
 - Production commit `6a1076899183`·deployment `dpl_HUQadoTJ3qTP1DFxVnKfiNEvQfGb`는 READY이며 `/health`·`/ready`가 같은 release·Supabase ready를 반환했습니다. 실제 `mml93-a01` owner 화면에서 개발 그룹 1개, owner view 2개, `aria-current=page`, 표시된 운영 패널과 오가닉 300개 증거, N30 내부 패널 0개, 가로 넘침 0을 확인했습니다. 초기 빈 패널은 실패가 아니라 계정 범위·운영 상태 API 로딩 구간이었고 약 10초 내 정상 지표 646자가 표시됐습니다.
+- `테스트 1건 검증` 버튼의 정확한 렌더링과 과거 `남자팬티 1건 검증` 버튼 부재를 회귀에 추가했습니다. 집중 66/66, 보호 잠금·self-test, 전체 앱/API 448, Place 51, Shopping 52, Production 인증 18/18과 전체 `check:release`가 통과했습니다.
 
 ## 2026-08-11 N쇼핑 자동 순환 연속성 v1.1.1 로컬 증거
 

@@ -8,7 +8,7 @@
     "npm": ">=10 <12"
   },
   "scripts": {
-    "test": "node --test api/*.test.mjs src/server/*.test.mjs src/server/**/*.test.mjs scripts/naver-shopping-local-worker.test.mjs scripts/naver-shopping-cloud-worker.test.mjs scripts/naver-shopping-native-host.test.mjs scripts/naver-shopping-windows-bridge.test.mjs && npm --prefix tools/naver-place-rank-collector test && npm --prefix tools/naver-shopping-rank-collector test",
+    "test": "node --test api/*.test.mjs src/server/*.test.mjs src/server/**/*.test.mjs scripts/naver-shopping-durable-cycle-migration.test.mjs scripts/naver-shopping-local-worker.test.mjs scripts/naver-shopping-cloud-worker.test.mjs scripts/naver-shopping-native-host.test.mjs scripts/naver-shopping-windows-bridge.test.mjs && npm --prefix tools/naver-place-rank-collector test && npm --prefix tools/naver-shopping-rank-collector test",
     "check:quality": "npm run check:supply-chain && npm run check:rank-feature-lock && npm run check:role-state-regression && npm run check:baseline && npm run check:role-query-parity && npm run check:server-contract && npm run check:server && npm run check:rank-cron && npm run check:rank-matching && npm run check:keyword-trend && npm test && npm run build:vercel",
     "check:production-auth": "node scripts/check-production-auth.mjs",
     "check:release": "npm run check:quality && npm run check:production-auth",

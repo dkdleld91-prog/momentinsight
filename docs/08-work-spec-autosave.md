@@ -11,6 +11,7 @@
 - 격리·재시도 대기 tracker는 전체 cycle을 막지 않고 건너뛴다. 재시도 가능 시점이 되면 우선 복구 대상으로 다시 참여하며, 보안 제한만 기존 global cooldown을 유지한다.
 - DB cycle/cursor와 claim은 lease token·CAS·row lock으로 원자 처리한다. 동시 요청, 광고주 수 불균형, 반복 갱신, 신규 삽입, PC 종료를 포함한 다회차 회귀에서 `전체 1회 완료 전 같은 keyword group 재선택 0건`을 증명한다.
 - 운영 배포는 migration → Production 서버 순서로 적용하고, 현재 queue를 파괴하거나 순위 이력을 삭제하지 않는다. 운영에서 신규/기존 인계·중복 0·lane/lease 해제를 확인하기 전에는 정상화 완료로 기록하지 않는다.
+- 운영 초기 증거: release `074c3a25d644`·Windows `074c3a2`에서 첫 cycle의 keyword group 4개·tracker 7건이 중복 없이 진행됐고 모두 원자 300개 terminal과 lane·lease 해제를 확인했다. 신규 삽입 후 cursor 복귀와 24시간 전체 완주는 별도 관측 전이므로 완료로 확대 보고하지 않는다.
 
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 복구 계약
 

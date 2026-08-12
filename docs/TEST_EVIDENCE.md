@@ -5,7 +5,7 @@
 - 운영 읽기 전용 감사에서 worker·circuit·lane은 정상이지만 전체 갱신과 광고주 round-robin 조합으로 24시간 수집의 68.75%가 반복 초과였음을 확인했습니다.
 - 전용 migration 회귀 2/2, handler·runner·cron 통합 151/151, 전체 `npm run check:release`, 보호 잠금 22함수·71파일·22 migration, `git diff --check`를 통과했습니다.
 - resume cursor의 stale `FOUND` 무한대기, probe 동일 키워드 과다 claim, 공백이 다른 동일 키워드 mismatch를 배포 전 독립 검토에서 발견해 각각 `seed.id` 판정·exact probe ID·동일 정규화 규칙으로 수정했습니다.
-- 운영 DB migration 적용 직후 상태는 cycle `idle`, active tracker 65, 현재 격리 제외 eligible 46입니다. Production 서버 및 실제 cycle terminal 증거는 별도로 확인합니다.
+- 운영 DB migration 적용 직후 cycle `idle`, active tracker 65, 격리 제외 eligible 46을 확인했습니다. Production `074c3a25d644`와 Windows `074c3a2` 동기화 뒤 cycle `0ef2d2f0-afea-44ce-b93c-53176db07514`에서 서로 다른 keyword group 4개·tracker 7건을 claim했고, 동일 keyword의 광고주 2건은 한 collection으로 묶였습니다. 7건 모두 원자 `checkedCount=300` terminal, 마지막 광고 제외 45개, failure streak 0, circuit closed, lane·tracker lease 해제를 확인했습니다. 이 초기 연속성 증거는 24시간 전체 cycle 완주 증거를 대신하지 않습니다.
 
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 회귀
 

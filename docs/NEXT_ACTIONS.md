@@ -4,8 +4,8 @@
 
 ## 진행 중: N쇼핑 30일 영속 순환 운영 증명
 
-- DB migration 적용과 전체 release 검사는 완료했습니다.
-- Production 서버 반영 뒤 `신규 1건 → 저장된 기존 순서`, 한 cycle 내 동일 keyword 재선택 0, 오가닉 300개 원자 저장, lane·lease 해제를 확인합니다.
+- DB migration, Production `074c3a25d644`, Windows `074c3a2`, 전체 release 검사를 완료했습니다.
+- 첫 cycle의 서로 다른 keyword group 4개·tracker 7건은 재선택 없이 원자 300개 terminal과 lane·lease 해제를 확인했습니다. 실제 신규 1건 뒤 저장 cursor 복귀와 cycle 전체 중복 0은 계속 관측합니다.
 - 24시간 전체 완주율은 한 번의 성공으로 대신하지 않고 별도 관측합니다. 5차 속도 향상은 계속 보류합니다.
 
 ## 완료: 키워드 연령별 쇼핑 클릭 비중 복구

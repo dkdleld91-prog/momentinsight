@@ -9,7 +9,7 @@
 - 운영 중복을 DB에서 확인했습니다. 최근 24시간 원자 300개 80건 중 고유 키워드 그룹은 25개였고, 소형 광고주 키워드는 최대 14회 반복되는 동안 일부 활성 키워드는 24시간 이상 미갱신됐습니다.
 - DB 영속 cycle/cursor를 추가해 기존 키워드는 한 cycle에 한 번만 처리하고, 신규 키워드 1건 처리 뒤 저장 cursor로 복귀합니다. 같은 키워드는 광고주를 넘어 최대 100 tracker를 한 번의 오가닉 300개 수집으로 처리합니다.
 - 개별·전체 갱신과 GitHub hybrid cron은 순서나 `next_check_at`을 바꾸지 않고 동일 cycle을 깨우기만 합니다. 원자 300·광고 제외·last-good·동시 실행 1개·보안 제한은 유지합니다.
-- migration은 운영 DB에 적용됐고 전체 `check:release`가 통과했습니다. Production 반영 및 실제 신규→기존 인계·cycle 중복 0 검증 전에는 운영 정상화 완료로 단정하지 않습니다.
+- migration과 Production release `074c3a25d644`를 반영했고 Windows 설치본도 `MI_EXTENSION_UPDATE_OK release=074c3a2`, runtime fingerprint `9c637e5d554d…`로 동기화했습니다. 첫 cycle에서 서로 다른 keyword group 4개·tracker 7건이 재선택 없이 처리됐고 모두 오가닉 `checkedCount=300` terminal, circuit closed, lane·lease 해제를 확인했습니다. 신규→저장 cursor 인계와 24시간 전체 cycle 완주는 계속 관측하며 아직 운영 정상화 완료로 단정하지 않습니다.
 
 ### 2026-08-12 키워드 연령별 쇼핑 클릭 비중 복구
 

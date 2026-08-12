@@ -6,6 +6,8 @@
 - 실제 handler의 `남자팬티` 조회는 HTTP 200, `naver_searchad_exact`, `naver_api_hub`, 월 검색량 30,770, 검색 추이 37구간, 연관 키워드 10개, warning 0을 반환했습니다. Production 로그인 화면에서도 같은 월 검색량과 경쟁도 높음을 확인했습니다.
 - 역할 회귀는 양 역할 키워드 메뉴·실행 버튼·API endpoint를 유지하고, N 상품 단건 메뉴·view 0개와 직접 hash fallback을 검증합니다. N 30일·N 플레이스 30일 화면과 생성·갱신 경로는 유지합니다.
 - 상품순위 서버와 Windows 작업기는 SEO·자동 추적 공유 경계이므로 수정하지 않았고 보호 기능 잠금이 통과했습니다.
+- Production `dpl_EYbXYLFfekTnVP39zhG1PasR8aJm`은 READY·운영 별칭 연결 상태입니다. `/health`·`/ready`는 release `a035a87f3854`, region `icn1`, Supabase ready이고 `/home`·`/admin`·`/client` 배포 구조 검사가 통과했습니다.
+- 로그인된 총관리자 운영 화면에서 `남자팬티` 조회가 30,770회, 경쟁강도 높음, 월별·요일별 검색 추이와 연관 키워드를 렌더했습니다. `#mi-admin-naver-rank`는 `#mi-admin-home`으로 정규화됐고 두 검증 탭의 console error는 0건입니다.
 
 ## 2026-08-12 전체 품질 고도화 1차 회귀
 

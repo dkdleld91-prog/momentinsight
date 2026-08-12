@@ -10,6 +10,7 @@
 - `N 상품 순위` 단건 화면은 즉시 응답을 기대하는 광고주 목적과 Windows 작업기 대기 방식이 맞지 않으므로 관리자·광고주·모바일 메뉴와 화면에서 숨긴다. 구형 hash 직접 접근도 각 역할의 기본 화면으로 정규화한다.
 - N 상품 단건 서버 API는 SEO 확인과 30일 자동 추적이 공유하므로 제거하거나 비활성화하지 않는다. `N 30일 순위`·`N 플레이스 30일 순위`와 Windows 원자 300개 자동 수집은 그대로 유지한다.
 - 네이버가 공식 단건 상품순위 API를 제공하고 즉시성·정확성·한도를 검증한 경우에만 별도 승인 후 UI를 다시 공개한다.
+- 완료 증거: commit `a035a87f3854`, Production `dpl_EYbXYLFfekTnVP39zhG1PasR8aJm`이 운영 별칭에 반영됐고 `/health`·`/ready`는 같은 release와 Supabase ready를 반환했다. 총관리자 운영 화면에서 `남자팬티` 월 검색량 30,770회·검색 추이·연관 키워드를 실조회했고, 구형 단건 hash는 운영 홈으로 정규화되며 브라우저 콘솔 오류는 0건이었다.
 
 ## 2026-08-12 전체 품질 고도화 1차 계약
 
@@ -272,9 +273,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 10:12:13
-- 기준 커밋: a3bafb7
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-role-query-parity.mjs /  M scripts/check-role-state-regression.mjs /  M src/pages/admin.html
+- 마지막 자동 저장: 2026. 08. 12. 10:21:43
+- 기준 커밋: a035a87
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
 <!-- autosave:end -->
 
 ## 작업 상태 기준

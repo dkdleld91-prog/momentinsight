@@ -6,6 +6,8 @@
 - 공식 API 실검사는 `남자팬티`의 10개 대분류 요청이 모두 HTTP 200이고 `50000000`만 6연령대·최신 완료 월·6개월 이상 완전 데이터를 가진 단일 후보임을 확인했습니다. sparse 양수 행만 있는 잘못된 분류는 후보로 인정하지 않습니다.
 - handler 회귀는 공식 age 요청 10개 뒤 선택 payload를 재사용하고 device·gender만 추가해 총 12회인 정상 경로와, stale 6개월·후보 2개를 `category_required`로 종료하는 경로를 검증합니다. 429는 첫 배치 2회 뒤 남은 호출을 즉시 중단하고 5분 negative TTL로 다음 조회 탐색을 0회로 줄입니다. 성공 프로필도 쇼핑 표본 실패 중 30분 TTL cache를 사용하며, 기존 표본 category ID가 있으면 probe 없이 기존 age 1회 경로를 유지합니다.
 - 관리자·광고주 HTML의 `data-keyword-ratio-chart="age"`, 5개 레이블, 기존 `renderRatioChart` 계약은 변경하지 않습니다. N30 공유 parser를 이전 hash로 복원한 상태에서 키워드 handler 22/22와 관련 fallback·tracker 19/19를 통과했습니다.
+- 전체 `npm run check:release`, 보호 잠금, `git diff --check`를 통과했습니다. Production release `d2a087a54562`·deployment `dpl_4ofFYdX7xELkHXDyiw2g5g3wDRGz`는 READY이고 `/health`·`/ready` 및 Supabase ready가 일치합니다.
+- 로그인된 총관리자 화면에서 `남자팬티` 조회가 월 검색량 30,770, 성별 여성 28%·남성 72%, 연령 막대 `10대 0.5 / 20대 3.9 / 30대 18.3 / 40대 35.2 / 50대 이상 42.1%`를 렌더하고 조회 상태가 `월 검색량과 검색 비율이 확인되었습니다.`로 완료되는 것을 확인했습니다.
 
 ## 2026-08-12 키워드 공식 API·N 상품 단건 숨김 회귀
 

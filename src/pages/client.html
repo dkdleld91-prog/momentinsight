@@ -5316,13 +5316,12 @@
 
         <div class="mi-nav-group">
           <p class="mi-nav-title">키워드·SEO</p>
-          <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회 (개발중)</a>
+          <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
           <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
         </div>
 
         <div class="mi-nav-group">
           <p class="mi-nav-title">순위 조회·추적</p>
-          <a href="#mi-naver-rank" data-mi-screen="naver-rank">N 상품 순위 (개발중)</a>
           <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
           <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
         </div>
@@ -5344,9 +5343,8 @@
         <a href="#mi-sales" data-mi-screen="sales">매출</a>
         <a href="#mi-schedule" data-mi-screen="schedule">일정</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
-        <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회 (개발중)</a>
+        <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
-        <a href="#mi-naver-rank" data-mi-screen="naver-rank">N 상품 순위 (개발중)</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
         <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일</a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
@@ -5559,8 +5557,8 @@
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">마케팅 도구</span>
-              <h1>키워드를 바로 조회합니다.</h1>
-              <p>검색량과 작업 방향을 확인합니다.</p>
+              <h1>네이버 공식 데이터로 키워드를 조회합니다.</h1>
+              <p>월 검색량과 검색 추이를 확인하고, 제공되는 기기·성별·연령별 비율은 함께 표시합니다.</p>
             </div>
             <span class="mi-badge">개별 조회</span>
           </header>
@@ -5569,7 +5567,7 @@
             <div class="mi-card-head">
               <div>
                 <h2>키워드 조회</h2>
-                <p>월 검색량, 시장 지표, 연관 키워드를 봅니다.</p>
+                <p>네이버 공식 데이터 기준의 월 검색량, 검색 추이와 확인 가능한 검색 비율, 연관 키워드를 확인합니다.</p>
               </div>
               <span class="mi-period">1개 키워드</span>
             </div>
@@ -5577,7 +5575,7 @@
               <input class="mi-input" data-mi-keyword-input aria-label="키워드 입력" placeholder="키워드 1개 입력" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드 1개를 입력하고 조회를 누르면 검색량과 비율 데이터를 확인합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드 1개를 입력하면 공식 데이터 기준 검색량과 검색 비율을 확인합니다.</p>
           </article>
 
           <article class="mi-card mi-keyword-market" data-keyword-market>
@@ -5757,44 +5755,6 @@
 
             <div class="mi-meta-results" data-meta-results>
               <div class="mi-meta-empty">검색어를 입력하면 Meta 광고 조회 결과가 이곳에 표시됩니다.</div>
-            </div>
-          </article>
-        </section>
-
-        <section class="mi-view" id="mi-naver-rank" data-mi-view="naver-rank" aria-label="네이버 상품 순위 조회 화면">
-          <header class="mi-screen-head">
-            <div>
-              <span class="mi-kicker">마케팅 도구</span>
-              <h1>네이버쇼핑 상품의 현재 오가닉 순위를 확인합니다.</h1>
-              <p>상품 ID를 정확히 대조하고 원부·단일 상품 중 더 높은 순위와 페이지 위치를 표시합니다.</p>
-            </div>
-            <span class="mi-badge">조회</span>
-          </header>
-
-          <article class="mi-card mi-card-pad mi-rank-card" data-rank-check-card>
-            <div class="mi-card-head">
-              <div>
-                <span class="mi-kicker">네이버 상품 순위</span>
-                <h2>지금 기준 네이버쇼핑 오가닉 순위를 확인합니다.</h2>
-                <p>정확 상품과 관련 원부를 함께 확인하고 더 높은 노출을 대표 순위와 상품 형태로 표시합니다.</p>
-              </div>
-              <span class="mi-period">광고 제외 오가닉</span>
-            </div>
-            <div class="mi-rank-form is-check">
-              <input class="mi-input" data-rank-check-keyword aria-label="상품 순위 조회 키워드" placeholder="키워드" />
-              <input class="mi-input" data-rank-check-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
-              <input class="mi-input" data-rank-check-product-id aria-label="상품ID" placeholder="상품ID 선택 입력" />
-              <select class="mi-input" data-rank-check-max aria-label="조회 범위">
-                <option value="300" selected>상위 300개</option>
-              </select>
-              <button class="mi-button" type="button" data-rank-check-run>순위 조회</button>
-            </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-check-status aria-live="polite">키워드와 상품 URL 또는 상품ID를 입력하면 상위 300개 오가닉 순위를 조회합니다.</p>
-            <div class="mi-rank-grid">
-              <div class="mi-rank-panel" data-rank-check-result>
-                <h3>현재 순위</h3>
-                <div class="mi-rank-state">상품 정보를 입력하면 대표 순위와 페이지, 정확 상품·관련 원부 노출이 표시됩니다.</div>
-              </div>
             </div>
           </article>
         </section>
@@ -10764,6 +10724,8 @@
 
       function setScreen(name, shouldPushHash) {
         var target = name || "dashboard";
+        var rejectedProductRankTarget = target === "naver-rank";
+        if (rejectedProductRankTarget) target = "dashboard";
         var found = false;
 
         views.forEach(function (view) {
@@ -10782,6 +10744,10 @@
         links.forEach(function (link) {
           link.classList.toggle("is-active", link.getAttribute("data-mi-screen") === target);
         });
+
+        if (rejectedProductRankTarget && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-dashboard");
+        }
 
         if (shouldPushHash) {
           var nextHash = "#mi-" + target;

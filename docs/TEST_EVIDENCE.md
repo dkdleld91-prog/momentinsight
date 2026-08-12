@@ -1,5 +1,20 @@
 # Test Evidence
 
+## 2026-08-12 키워드 공식 API·N 상품 단건 숨김 회귀
+
+- `npm run check:env:naver`에서 keyword feature, SearchAd 3종, API HUB key pair·hub mode가 모두 ready입니다. API HUB live 검사는 blog 1건·Search Trend 31건·Shopping Insight age 11건을 각각 HTTP 200으로 확인했습니다.
+- 실제 handler의 `남자팬티` 조회는 HTTP 200, `naver_searchad_exact`, `naver_api_hub`, 월 검색량 30,770, 검색 추이 37구간, 연관 키워드 10개, warning 0을 반환했습니다. Production 로그인 화면에서도 같은 월 검색량과 경쟁도 높음을 확인했습니다.
+- 역할 회귀는 양 역할 키워드 메뉴·실행 버튼·API endpoint를 유지하고, N 상품 단건 메뉴·view 0개와 직접 hash fallback을 검증합니다. N 30일·N 플레이스 30일 화면과 생성·갱신 경로는 유지합니다.
+- 상품순위 서버와 Windows 작업기는 SEO·자동 추적 공유 경계이므로 수정하지 않았고 보호 기능 잠금이 통과했습니다.
+
+## 2026-08-12 전체 품질 고도화 1차 회귀
+
+- 홈 상태 스트립은 `position: fixed` 재도입을 금지하고 데스크톱 1120px shell·모바일 28px gutter, 기본 상세 `hidden`, `aria-expanded`/`aria-controls`, 닫기·1주 숨김을 baseline에 고정했습니다.
+- 보고서 보안 회귀 11건은 타 광고주 `reportId` 선차단, Storage 보상 삭제, 잘못된 메타데이터 선차단, 기존 보고서 파일 실패 시 UPDATE 0회, 후속 갱신 실패 시 새 파일 행 제거와 정리 실패 표면화를 검증합니다.
+- `check:baseline`, `check:server-contract`, server syntax, Vercel build, public CSP build와 `git diff --check`를 통과했습니다. 홈 inline script 변경으로 발견된 CSP hash 차단은 새 실제 SHA-256으로 교체하고 stale hash를 제거한 뒤 다시 통과했습니다.
+- Supabase는 읽기 전용으로 table size/RLS와 security·performance advisor를 확인했습니다. schema·정책·데이터 쓰기는 수행하지 않았습니다.
+- 독립 재검토에서 기존 보고서 rollback이 `updated_at`을 바꾸는 결함을 발견해, 기존 보고서는 파일 성공 후에만 UPDATE하도록 수정했습니다. 최종 재검토는 해당 경계와 생성 보고서 보상 처리에 배포 차단이 없다고 판정했습니다.
+
 ## 2026-08-12 N쇼핑 백그라운드 작업기 회귀
 
 - 확장 popup은 `popup.js`만 로드하고 `지금 안전 갱신`/`run-now` 계약을 유지하며, 서비스 워커가 `popup.html?controller=1` 가시 탭을 새로 만들지 않음을 잠급니다.

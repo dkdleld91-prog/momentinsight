@@ -114,6 +114,29 @@ function cleanText(value, fallback = "") {
   return String(value || fallback).trim();
 }
 
+function validUuid(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanText(value));
+}
+
+function normalizedReportDate(value, fallback = null) {
+  const text = cleanText(value, fallback || "");
+  if (!text) return { ok: true, value: null };
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return { ok: false, value: null };
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return { ok: false, value: null };
+  }
+  return { ok: true, value: text };
+}
+
 function firstRow(data) {
   return Array.isArray(data) ? data[0] : data || null;
 }
@@ -618,6 +641,177 @@ async function validateReportReferences(request, ctx, access, body) {
   return { ok: true, brandId: brandId || null, channelId: channelId || null };
 }
 
+async function validateReportForClient(request, ctx, access, reportId) {
+  if (!validUuid(reportId)) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "연결할 보고서 ID가 올바르지 않습니다." }, 400),
+    };
+  }
+
+  const { data, error } = await ctx.supabaseAdmin
+    .from("reports")
+    .select("id")
+    .eq("id", reportId)
+    .eq("client_id", access.client.id)
+    .maybeSingle();
+
+  if (error) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "연결할 보고서 확인에 실패했습니다.", detail: error.message }, 500),
+    };
+  }
+  if (!data) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "해당 광고주에 속한 보고서만 파일에 연결할 수 있습니다." }, 404),
+    };
+  }
+  return { ok: true };
+}
+
+function validateReportDates(request, body = {}) {
+  const reportDate = normalizedReportDate(
+    body.reportDate || body.report_date,
+    new Date().toISOString().slice(0, 10),
+  );
+  const periodStart = normalizedReportDate(body.periodStart || body.period_start);
+  const periodEnd = normalizedReportDate(body.periodEnd || body.period_end);
+  if (!reportDate.ok || !periodStart.ok || !periodEnd.ok) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "보고서 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 합니다." }, 400),
+    };
+  }
+  if (periodStart.value && periodEnd.value && periodEnd.value < periodStart.value) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "보고서 종료일은 시작일보다 빠를 수 없습니다." }, 400),
+    };
+  }
+  return {
+    ok: true,
+    reportDate: reportDate.value,
+    periodStart: periodStart.value,
+    periodEnd: periodEnd.value,
+  };
+}
+
+function validateLinkedReportFile(request, access, body, title, visibility) {
+  const filePayload = body.file || body.reportFile || null;
+  const hasFileInput = Boolean(
+    filePayload ||
+    body.externalUrl ||
+    body.external_url ||
+    body.storagePath ||
+    body.storage_path,
+  );
+  if (!hasFileInput) return { ok: true, fileInsert: null };
+
+  const fileType = cleanText(filePayload?.fileType || filePayload?.file_type || body.fileType || body.file_type, "link");
+  if (!FILE_TYPES.has(fileType)) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "지원하지 않는 파일 유형입니다." }, 400),
+    };
+  }
+
+  const storagePath = cleanText(
+    filePayload?.storagePath || filePayload?.storage_path || body.storagePath || body.storage_path,
+  ) || null;
+  const requestedBucket = filePayload?.bucket || filePayload?.storageBucket || filePayload?.storage_bucket || body.bucket || body.storageBucket || body.storage_bucket || REPORT_BUCKET;
+  const storageBucket = storagePath ? requestedReportBucket({ bucket: requestedBucket }) : null;
+  if (storagePath && !storageBucket) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: `보고서 파일 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400),
+    };
+  }
+  if (storagePath && !storagePath.startsWith(`clients/${access.client.id}/`)) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "보고서 파일은 해당 광고주 전용 경로만 연결할 수 있습니다." }, 400),
+    };
+  }
+
+  const requestedExternalUrl = filePayload?.externalUrl || filePayload?.external_url || body.externalUrl || body.external_url || "";
+  const requestedUrl = filePayload?.url || body.url || "";
+  const externalUrl = requestedExternalUrl ? safeExternalReportUrl(requestedExternalUrl, fileType) : null;
+  const url = requestedUrl ? safeExternalReportUrl(requestedUrl, fileType) : null;
+  if (requestedExternalUrl && !externalUrl) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "외부 보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400),
+    };
+  }
+  if (requestedUrl && !url) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400),
+    };
+  }
+  if (!storagePath && !externalUrl && !url) {
+    return {
+      ok: false,
+      response: json(request, { ok: false, message: "보고서 파일 경로 또는 검증된 HTTPS 주소가 필요합니다." }, 400),
+    };
+  }
+
+  return {
+    ok: true,
+    fileInsert: {
+      client_id: access.client.id,
+      title: cleanText(filePayload?.title || body.fileTitle || body.file_title, title),
+      file_type: fileType,
+      external_url: externalUrl,
+      url,
+      storage_bucket: storageBucket,
+      storage_path: storagePath,
+      visibility,
+    },
+  };
+}
+
+async function removeUploadedReportObject(ctx, bucket, path) {
+  try {
+    const { error } = await ctx.supabaseAdmin.storage.from(bucket).remove([path]);
+    return !error;
+  } catch {
+    return false;
+  }
+}
+
+async function removeCreatedReport(ctx, clientId, reportId) {
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("reports")
+      .delete()
+      .eq("id", reportId)
+      .eq("client_id", clientId)
+      .select("id")
+      .maybeSingle();
+    return !error && data?.id === reportId;
+  } catch {
+    return false;
+  }
+}
+
+async function removeCreatedFile(ctx, clientId, fileId) {
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("files")
+      .delete()
+      .eq("id", fileId)
+      .eq("client_id", clientId)
+      .select("id")
+      .maybeSingle();
+    return !error && data?.id === fileId;
+  } catch {
+    return false;
+  }
+}
+
 async function recordAuditLog(ctx, payload) {
   const { error } = await ctx.supabaseAdmin
     .from("audit_logs")
@@ -817,7 +1011,7 @@ async function handleSignedUpload(request, ctx, access, body) {
   }, 410);
 }
 
-async function handleDirectUpload(request, ctx, access, body) {
+export async function handleDirectUpload(request, ctx, access, body) {
   if (access.role === "client") {
     return json(request, { ok: false, message: "광고주는 보고서 파일을 업로드할 수 없습니다." }, 403);
   }
@@ -835,6 +1029,19 @@ async function handleDirectUpload(request, ctx, access, body) {
   }
 
   const scope = cleanText(body.scope, "sources") === "reports" ? "reports" : "sources";
+  const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
+  const fileType = scope === "sources"
+    ? validation.fileType
+    : (FILE_TYPES.has(cleanText(body.fileType || body.file_type))
+      ? cleanText(body.fileType || body.file_type)
+      : validation.fileType);
+  const title = cleanText(body.title, scope === "sources" ? `원천 파일 · ${filename}` : filename);
+  const reportId = cleanText(body.reportId || body.report_id) || null;
+  if (reportId) {
+    const reportScope = await validateReportForClient(request, ctx, access, reportId);
+    if (!reportScope.ok) return reportScope.response;
+  }
+
   const path = `clients/${access.client.id}/${scope}/${dateFolder()}/${Date.now()}-${filename}`;
   const contentType = validation.contentType;
 
@@ -849,15 +1056,6 @@ async function handleDirectUpload(request, ctx, access, body) {
   if (upload.error) {
     return json(request, { ok: false, message: "보고서 파일 업로드에 실패했습니다.", detail: upload.error.message }, 500);
   }
-
-  const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
-  const fileType = scope === "sources"
-    ? validation.fileType
-    : (FILE_TYPES.has(cleanText(body.fileType || body.file_type))
-      ? cleanText(body.fileType || body.file_type)
-      : validation.fileType);
-  const title = cleanText(body.title, scope === "sources" ? `원천 파일 · ${filename}` : filename);
-  const reportId = cleanText(body.reportId || body.report_id) || null;
 
   const { data: file, error: fileError } = await ctx.supabaseAdmin
     .from("files")
@@ -874,7 +1072,14 @@ async function handleDirectUpload(request, ctx, access, body) {
     .single();
 
   if (fileError) {
-    return json(request, { ok: false, message: "보고서 파일 기록에 실패했습니다.", detail: fileError.message }, 500);
+    const storageRemoved = await removeUploadedReportObject(ctx, bucket, path);
+    return json(request, {
+      ok: false,
+      message: "보고서 파일 기록에 실패했습니다.",
+      detail: fileError.message,
+      code: storageRemoved ? undefined : "STORAGE_COMPENSATION_FAILED",
+      cleanup: { storageRemoved },
+    }, 500);
   }
 
   const signed = await signFileForAccess(ctx, file);
@@ -939,7 +1144,7 @@ async function handleSignedDownload(request, ctx, access, body) {
   });
 }
 
-async function handleCreateReport(request, ctx, access, body) {
+export async function handleCreateReport(request, ctx, access, body) {
   if (access.role === "client") {
     return json(request, { ok: false, message: "광고주는 보고서를 등록할 수 없습니다." }, 403);
   }
@@ -953,7 +1158,10 @@ async function handleCreateReport(request, ctx, access, body) {
   }
 
   const visibility = body.visibility === "client_visible" ? "client_visible" : "internal";
-  const reportDate = cleanText(body.reportDate || body.report_date, new Date().toISOString().slice(0, 10));
+  const dates = validateReportDates(request, body);
+  if (!dates.ok) return dates.response;
+  const linkedFile = validateLinkedReportFile(request, access, body, title, visibility);
+  if (!linkedFile.ok) return linkedFile.response;
   const references = await validateReportReferences(request, ctx, access, body);
   if (!references.ok) return references.response;
 
@@ -962,9 +1170,9 @@ async function handleCreateReport(request, ctx, access, body) {
     brand_id: references.brandId,
     report_type: reportType,
     title,
-    report_date: reportDate,
-    period_start: body.periodStart || body.period_start || null,
-    period_end: body.periodEnd || body.period_end || null,
+    report_date: dates.reportDate,
+    period_start: dates.periodStart,
+    period_end: dates.periodEnd,
     channel_id: references.channelId,
     summary: body.summary || null,
     public_comment: body.publicComment || body.public_comment || null,
@@ -974,78 +1182,93 @@ async function handleCreateReport(request, ctx, access, body) {
 
   const existing = await ctx.supabaseAdmin
     .from("reports")
-    .select("id")
+    .select("id, client_id, brand_id, report_type, title, report_date, period_start, period_end, channel_id, summary, public_comment, internal_note, visibility, created_at, updated_at")
     .eq("client_id", access.client.id)
     .eq("report_type", reportType)
-    .eq("report_date", reportDate)
+    .eq("report_date", dates.reportDate)
     .eq("title", title)
     .maybeSingle();
 
   if (existing.error) return json(request, { ok: false, message: "기존 보고서 확인에 실패했습니다.", detail: existing.error.message }, 500);
 
-  const reportMutation = existing.data
-    ? ctx.supabaseAdmin
+  const reportSelect = "id, client_id, brand_id, report_type, title, report_date, period_start, period_end, channel_id, summary, public_comment, internal_note, visibility, created_at, updated_at";
+  const fileSelect = "id, client_id, report_id, title, file_type, url, external_url, storage_bucket, storage_path, visibility, created_at";
+  const insertLinkedFile = (reportId) => ctx.supabaseAdmin
+    .from("files")
+    .insert({ ...linkedFile.fileInsert, report_id: reportId })
+    .select(fileSelect)
+    .single();
+
+  let data = null;
+  let file = null;
+  if (existing.data && linkedFile.fileInsert) {
+    const { data: fileData, error: fileError } = await insertLinkedFile(existing.data.id);
+    if (fileError) {
+      return json(request, {
+        ok: false,
+        message: "보고서 파일 등록에 실패했습니다.",
+        detail: fileError.message,
+        report: existing.data,
+        file: null,
+        cleanup: { reportUpdateSkipped: true },
+      }, 500);
+    }
+    file = fileData;
+
+    const { data: updatedReport, error: reportError } = await ctx.supabaseAdmin
       .from("reports")
       .update(reportPayload)
       .eq("id", existing.data.id)
-    : ctx.supabaseAdmin
-      .from("reports")
-      .insert(reportPayload);
-
-  const { data, error } = await reportMutation
-    .select("id, client_id, brand_id, report_type, title, report_date, period_start, period_end, channel_id, summary, public_comment, internal_note, visibility, created_at, updated_at")
-    .single();
-
-  if (error) return json(request, { ok: false, message: "보고서 등록에 실패했습니다.", detail: error.message }, 500);
-
-  let file = null;
-  const filePayload = body.file || body.reportFile || null;
-  if (filePayload || body.externalUrl || body.external_url || body.storagePath || body.storage_path) {
-    const fileType = cleanText(filePayload?.fileType || filePayload?.file_type || body.fileType || body.file_type, "link");
-    if (!FILE_TYPES.has(fileType)) {
-      return json(request, { ok: false, message: "지원하지 않는 파일 유형입니다." }, 400);
-    }
-    const storagePath = filePayload?.storagePath || filePayload?.storage_path || body.storagePath || body.storage_path || null;
-    const requestedBucket = filePayload?.bucket || filePayload?.storageBucket || filePayload?.storage_bucket || body.bucket || body.storageBucket || body.storage_bucket || REPORT_BUCKET;
-    const storageBucket = storagePath ? requestedReportBucket({ bucket: requestedBucket }) : null;
-    if (storagePath && !storageBucket) {
-      return json(request, { ok: false, message: `보고서 파일 버킷은 ${REPORT_BUCKET}만 사용할 수 있습니다.` }, 400);
-    }
-    if (storagePath && !String(storagePath).startsWith(`clients/${access.client.id}/`)) {
-      return json(request, { ok: false, message: "보고서 파일은 해당 광고주 전용 경로만 연결할 수 있습니다." }, 400);
-    }
-
-    const fileInsert = {
-      client_id: access.client.id,
-      report_id: data.id,
-      title: cleanText(filePayload?.title || body.fileTitle || body.file_title, title),
-      file_type: fileType,
-      external_url: null,
-      url: null,
-      storage_bucket: storageBucket,
-      storage_path: storagePath,
-      visibility,
-    };
-
-    const requestedExternalUrl = filePayload?.externalUrl || filePayload?.external_url || body.externalUrl || body.external_url || "";
-    const requestedUrl = filePayload?.url || body.url || "";
-    if (requestedExternalUrl) {
-      fileInsert.external_url = safeExternalReportUrl(requestedExternalUrl, fileType);
-      if (!fileInsert.external_url) return json(request, { ok: false, message: "외부 보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400);
-    }
-    if (requestedUrl) {
-      fileInsert.url = safeExternalReportUrl(requestedUrl, fileType);
-      if (!fileInsert.url) return json(request, { ok: false, message: "보고서 주소는 검증된 HTTPS 링크만 사용할 수 있습니다." }, 400);
-    }
-
-    const { data: fileData, error: fileError } = await ctx.supabaseAdmin
-      .from("files")
-      .insert(fileInsert)
-      .select("id, client_id, report_id, title, file_type, url, external_url, storage_bucket, storage_path, visibility, created_at")
+      .eq("client_id", access.client.id)
+      .select(reportSelect)
       .single();
 
-    if (fileError) return json(request, { ok: false, message: "보고서 파일 등록에 실패했습니다.", detail: fileError.message, report: data }, 500);
-    file = fileData;
+    if (reportError) {
+      const fileRemoved = await removeCreatedFile(ctx, access.client.id, file.id);
+      return json(request, {
+        ok: false,
+        message: "보고서 등록에 실패했습니다.",
+        detail: reportError.message,
+        report: existing.data,
+        file: fileRemoved ? null : file,
+        code: fileRemoved ? undefined : "REPORT_COMPENSATION_FAILED",
+        cleanup: { fileRemoved },
+      }, 500);
+    }
+    data = updatedReport;
+  } else {
+    const reportMutation = existing.data
+      ? ctx.supabaseAdmin
+        .from("reports")
+        .update(reportPayload)
+        .eq("id", existing.data.id)
+        .eq("client_id", access.client.id)
+      : ctx.supabaseAdmin
+        .from("reports")
+        .insert(reportPayload);
+
+    const { data: mutatedReport, error: reportError } = await reportMutation
+      .select(reportSelect)
+      .single();
+
+    if (reportError) return json(request, { ok: false, message: "보고서 등록에 실패했습니다.", detail: reportError.message }, 500);
+    data = mutatedReport;
+
+    if (linkedFile.fileInsert) {
+      const { data: fileData, error: fileError } = await insertLinkedFile(data.id);
+      if (fileError) {
+        const reportRemoved = await removeCreatedReport(ctx, access.client.id, data.id);
+        return json(request, {
+          ok: false,
+          message: "보고서 파일 등록에 실패했습니다.",
+          detail: fileError.message,
+          report: reportRemoved ? null : data,
+          code: reportRemoved ? undefined : "REPORT_COMPENSATION_FAILED",
+          cleanup: { reportRemoved },
+        }, 500);
+      }
+      file = fileData;
+    }
   }
 
   const auditLogged = await recordAuditLog(ctx, {
@@ -1072,9 +1295,18 @@ async function handleCreateReport(request, ctx, access, body) {
   }, existing.data ? 200 : 201);
 }
 
-async function uploadGeneratedReportFile(ctx, access, body, input, narrative, buffer, filename) {
+export async function uploadGeneratedReportFile(ctx, access, body, input, narrative, buffer, filename) {
   const visibility = body.visibility === "internal" ? "internal" : "client_visible";
-  const reportDate = cleanText(body.reportDate || body.report_date, new Date().toISOString().slice(0, 10));
+  const reportDate = normalizedReportDate(
+    body.reportDate || body.report_date,
+    new Date().toISOString().slice(0, 10),
+  );
+  if (!reportDate.ok) {
+    return {
+      ok: false,
+      uploadError: "보고서 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.",
+    };
+  }
   const reportType = cleanText(body.reportType || body.report_type, "sales");
   const title = cleanText(body.title, `AI 매출 보고서 · ${input.reportMonth}`);
   const path = `clients/${access.client.id}/reports/${dateFolder()}/${Date.now()}-${sanitizeFilename(filename)}`;
@@ -1100,7 +1332,7 @@ async function uploadGeneratedReportFile(ctx, access, body, input, narrative, bu
       client_id: access.client.id,
       report_type: REPORT_TYPES.has(reportType) ? reportType : "sales",
       title,
-      report_date: reportDate,
+      report_date: reportDate.value,
       summary: narrative.executiveSummary || input.publicComment,
       public_comment: input.publicComment,
       internal_note: narrative.aiError ? `AI fallback: ${narrative.aiError}` : null,
@@ -1110,10 +1342,13 @@ async function uploadGeneratedReportFile(ctx, access, body, input, narrative, bu
     .single();
 
   if (reportError) {
+    const storageRemoved = await removeUploadedReportObject(ctx, REPORT_BUCKET, path);
     return {
       ok: false,
       uploadError: `보고서 기록 실패: ${reportError.message}`,
       storagePath: path,
+      code: storageRemoved ? undefined : "STORAGE_COMPENSATION_FAILED",
+      cleanup: { storageRemoved },
     };
   }
 
@@ -1132,11 +1367,17 @@ async function uploadGeneratedReportFile(ctx, access, body, input, narrative, bu
     .single();
 
   if (fileError) {
+    const [storageRemoved, reportRemoved] = await Promise.all([
+      removeUploadedReportObject(ctx, REPORT_BUCKET, path),
+      removeCreatedReport(ctx, access.client.id, report.id),
+    ]);
     return {
       ok: false,
       uploadError: `보고서 파일 기록 실패: ${fileError.message}`,
       report,
       storagePath: path,
+      code: storageRemoved && reportRemoved ? undefined : "REPORT_COMPENSATION_FAILED",
+      cleanup: { storageRemoved, reportRemoved },
     };
   }
 

@@ -47,6 +47,9 @@ function functionBody(source, startMarker, endMarker) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
+const homeDevelopmentNoticeStyleSource = functionBody(homeSource, "    #mi-home .mi-dev-banner {", "    #mi-home .mi-dev-banner.is-hidden {");
+const homeDevelopmentNoticeMarkupSource = functionBody(homeSource, '  <aside class="mi-dev-banner"', "  </aside>");
+const homeDevelopmentNoticeScriptSource = functionBody(homeSource, "    (function () {", "    })();");
 const clientLogoutSource = functionBody(clientSource, "async function logoutClient() {", "async function unlockWithCode(");
 const adminLogoutSource = functionBody(adminSource, "async function logoutAdmin() {", 'root.querySelectorAll("[data-admin-logout]")');
 const clientUnlockSource = functionBody(clientSource, "async function unlockWithCode(", "function requireCodeEntry(");
@@ -223,6 +226,10 @@ const shoppingPlaywrightVersion = String(shoppingCollectorPackage.dependencies?.
 
 const adminScreens = uniqueMatches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = uniqueMatches(clientSource, /data-mi-screen="([^"]+)"/g);
+const staticAdminProductRankMenu = /<a\b[^>]*data-mi-admin-screen="naver-rank"/u;
+const staticClientProductRankMenu = /<a\b[^>]*data-mi-screen="naver-rank"/u;
+const staticAdminProductRankView = /<section\b[^>]*data-mi-admin-view="naver-rank"/u;
+const staticClientProductRankView = /<section\b[^>]*data-mi-view="naver-rank"/u;
 const adminAgencyConnectionViewSource = functionBody(
   adminSource,
   '<section class="mi-view" data-mi-admin-view="agency-code"',
@@ -256,8 +263,9 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 14,
-  adminMenuHasCore: ["home", "work", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen)),
+  adminMenuCount: adminScreens.length === 13,
+  adminMenuHasCore: ["home", "work", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen))
+    && !adminScreens.includes("naver-rank"),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-admin-screen="home">운영 홈</a>',
@@ -268,10 +276,9 @@ const checks = {
     'data-mi-admin-screen="reports">보고서 관리</a>',
     'data-mi-admin-screen="publish">공개 관리</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
-    'data-mi-admin-screen="keyword">키워드 조회 (개발중)</a>',
+    'data-mi-admin-screen="keyword">키워드 조회</a>',
     'data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
-    'data-mi-admin-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     '<p class="mi-nav-title">광고 조사</p>',
@@ -417,10 +424,9 @@ const checks = {
     'data-mi-screen="schedule">일정표</a>',
     'data-mi-screen="agency-code">대행사 연결</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
-    'data-mi-screen="keyword-tool">키워드 조회 (개발중)</a>',
+    'data-mi-screen="keyword-tool">키워드 조회</a>',
     'data-mi-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
-    'data-mi-screen="naver-rank">N 상품 순위 (개발중)</a>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     '<p class="mi-nav-title">광고 조사</p>',
@@ -538,20 +544,27 @@ const checks = {
     "return;",
   ]),
   homeDevelopmentNoticeVisible: homeSource.includes("8월 서비스 운영 안내")
-    && homeSource.includes("네이버 API 환경 변경으로 일부 조회가 평소보다 다소 지연될 수 있습니다.")
-    && homeSource.includes("매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다.")
-    && homeSource.includes('data-status="(개발중)"')
-    && homeSource.includes('data-status="09:00 · 15:00"')
+    && homeDevelopmentNoticeMarkupSource.includes("키워드 조회는 네이버 공식 API 연결 기준으로 제공")
+    && homeDevelopmentNoticeMarkupSource.includes("매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다.")
+    && homeDevelopmentNoticeMarkupSource.includes('<span data-status="공식 API">키워드 조회</span>')
+    && homeDevelopmentNoticeMarkupSource.includes('<span class="is-development" data-status="(개발중)">SEO 확인</span>')
+    && !homeDevelopmentNoticeMarkupSource.includes("N 상품 순위")
+    && homeDevelopmentNoticeMarkupSource.includes('data-status="09:00 · 15:00"')
     && homeSource.includes("data-mi-dev-banner")
     && homeSource.includes("mi-dev-banner-head")
     && homeSource.includes("mi-dev-banner-contact")
     && homeSource.includes("카카오톡 채널")
     && homeSource.includes("채널 문의")
     && homeSource.includes("data-mi-dev-banner-close")
+    && homeSource.includes("data-mi-dev-banner-toggle")
+    && homeSource.includes('aria-expanded="false"')
+    && homeSource.includes('aria-controls="mi-home-dev-banner-details"')
+    && homeSource.includes('id="mi-home-dev-banner-details" data-mi-dev-banner-details hidden')
+    && homeSource.includes("data-mi-dev-banner-toggle-label")
     && homeSource.includes("data-mi-dev-banner-week")
     && homeSource.includes("miHomeDevBannerHiddenUntil")
     && homeSource.includes("7 * 24 * 60 * 60 * 1000")
-    && ["키워드 조회", "SEO 확인", "N 상품 순위", "N 30일 순위", "N 플레이스 30일 순위"].every((label) => homeSource.includes(label))
+    && ["키워드 조회", "SEO 확인", "N 30일 순위", "N 플레이스 30일 순위"].every((label) => homeDevelopmentNoticeMarkupSource.includes(label))
     && !["네이버 상품순위", "네이버 30일 순위", "네이버 플레이스 30일 순위"].some((label) => homeSource.includes(label)),
   homeDocumentShellAndViewport: homeSource.startsWith("<!doctype html>")
     && homeSource.includes('<html lang="ko">')
@@ -561,19 +574,29 @@ const checks = {
     && homeSource.includes("<body>")
     && homeSource.includes("</body>")
     && homeSource.trimEnd().endsWith("</html>"),
-  homePopupGeometryPreserved: orderedIncludes(homeSource, [
-    "left: clamp(20px, 5.4vw, 72px);",
-    "top: 118px;",
-    "width: min(348px, calc(100vw - 40px));",
-    "min-height: 48px;",
-    "padding: 0 14px 0 18px;",
-    "gap: 11px;",
-    "padding: 18px;",
-    "left: 14px;",
-    "right: 14px;",
-    "top: 82px;",
-    "max-height: calc(100vh - 110px);",
-  ]),
+  homeInlineDevelopmentStatusDoesNotCoverPrimaryActions: /position:\s*relative;/u.test(homeDevelopmentNoticeStyleSource)
+    && !/position:\s*fixed;/u.test(homeDevelopmentNoticeStyleSource)
+    && homeDevelopmentNoticeStyleSource.includes("width: min(1120px, calc(100% - 40px));")
+    && homeDevelopmentNoticeStyleSource.includes("margin: 18px auto 0;")
+    && orderedIncludes(homeSource, [
+      "</header>",
+      '<aside class="mi-dev-banner"',
+      '<main id="mi-home-top">',
+    ])
+    && orderedIncludes(homeSource, [
+      "@media (max-width: 640px)",
+      "#mi-home .mi-dev-banner {",
+      "width: calc(100% - 28px);",
+      "margin-top: 12px;",
+    ])
+    && homeDevelopmentNoticeMarkupSource.includes("data-mi-dev-banner-toggle")
+    && homeDevelopmentNoticeMarkupSource.includes('aria-expanded="false"')
+    && homeDevelopmentNoticeMarkupSource.includes("data-mi-dev-banner-details hidden")
+    && homeDevelopmentNoticeScriptSource.includes('toggle.setAttribute("aria-expanded", String(!expanded));')
+    && homeDevelopmentNoticeScriptSource.includes('toggleLabel.textContent = expanded ? "자세히" : "접기";')
+    && homeDevelopmentNoticeScriptSource.includes("details.hidden = expanded;")
+    && homeSource.includes('<a class="mi-button primary" href="/client">대시보드 미리보기</a>')
+    && homeSource.includes('<a class="mi-button secondary" href="#mi-home-features">기능 다시 보기</a>'),
   homePremiumHierarchyVisible: homeSource.includes("통합 마케팅 운영 플랫폼")
     && homeSource.includes("샘플 화면")
     && homeSource.includes("예시 데이터")
@@ -589,7 +612,8 @@ const checks = {
     && homeFeatureShowcaseSource.includes("예시 키워드 C")
     && homeFeatureShowcaseSource.includes("예시 상품 A")
     && homeFeatureShowcaseSource.includes("예시 매장 A")
-    && homeFeatureShowcaseSource.includes("오가닉 상품 순위")
+    && homeFeatureShowcaseSource.includes("30일 오가닉 순위 추적")
+    && homeFeatureShowcaseSource.includes("자동 300위 확인")
     && homeFeatureShowcaseSource.includes("상품 순위 추적")
     && homeFeatureShowcaseSource.includes("플레이스 순위 추적")
     && homeFeatureShowcaseSource.includes("키워드 시장 분석")
@@ -868,7 +892,8 @@ const checks = {
     && !sheetTemplateBuilder.includes("일별_매출입력")
     && !adminSource.includes("일별_매출입력")
     && !sheetTemplateBuilder.includes('client_id", "광고주명", "브랜드명"'),
-  clientToolsExist: ["keyword-tool", "related-keywords", "naver-rank", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen)),
+  clientToolsExist: ["keyword-tool", "related-keywords", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "seo-check", "agency-code"].every((screen) => clientScreens.includes(screen))
+    && !clientScreens.includes("naver-rank"),
   keywordThreeYearTrendWorks: [adminSource, clientSource].every((source) => [
     'data-keyword-range="year"',
     'data-keyword-range="threeYear"',
@@ -947,14 +972,20 @@ const checks = {
     && runtimeEnvCheck.includes('status(env, "Meta Ad Library access token", ["META_AD_LIBRARY_ACCESS_TOKEN", "META_ADS_LIBRARY_ACCESS_TOKEN"], false)')
     && integrationStatusServer.includes("Meta Ad Library access token")
     && integrationStatusServer.includes("metaAdLibrary"),
-  naverRankScreensSplit: [adminSource, clientSource].every((source) => source.includes("data-rank-check-card")
-    && source.includes("data-rank-check-run")
-    && source.includes("initRankCheck")
-    && source.includes("네이버 상품 순위")
-    && source.includes("네이버 30일 순위")
-    && source.includes("data-rank-card"))
+  naverProductRankLookupHiddenWhileThirtyDayTrackingRemains: !staticAdminProductRankMenu.test(adminSource)
+    && !staticClientProductRankMenu.test(clientSource)
+    && !staticAdminProductRankView.test(adminSource)
+    && !staticClientProductRankView.test(clientSource)
+    && [adminSource, clientSource].every((source) => source.includes('target === "naver-rank"')
+      && source.includes("rejectedProductRankTarget")
+      && source.includes("window.history.replaceState")
+      && source.includes("initRankCheck")
+      && source.includes("네이버 30일 순위")
+      && source.includes("data-rank-card"))
     && adminSource.includes('data-mi-admin-screen="naver-rank-tracking"')
-    && clientSource.includes('data-mi-screen="naver-rank-tracking"'),
+    && adminSource.includes('data-mi-admin-view="naver-rank-tracking"')
+    && clientSource.includes('data-mi-screen="naver-rank-tracking"')
+    && clientSource.includes('data-mi-view="naver-rank-tracking"'),
   retiredShoppingSearchCannotReturn: [keywordServer, shoppingRankServer].every((source) => !source.includes("/v1/search/shop.json")
     && !source.includes("naver_developers_shopping_search")
     && !source.includes("naver_shopping_official_api_order"))
@@ -1046,12 +1077,11 @@ const checks = {
     && shoppingRankServer.includes("findShoppingRank")
     && rankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);')
     && placeRankServer.includes('if (action === "create") return createTracker(request, ctx, body, access);'),
-  naverRankButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 조회<")
-    && source.includes(">순위 추적<")
-    && source.includes('>키워드 조회 (개발중)</a>')
+  releasedToolButtonLabelsClean: [adminSource, clientSource].every((source) => source.includes(">순위 추적<")
+    && source.includes('>키워드 조회</a>')
+    && !source.includes('>키워드 조회 (개발중)</a>')
     && source.includes('>SEO 확인 (개발중)</a>')
-    && source.includes('>N 상품 순위 (개발중)</a>')
-    && source.includes('<span class="mi-badge">조회</span>')
+    && !source.includes('>N 상품 순위 (개발중)</a>')
     && !source.includes(">순위 1회 조회<")
     && !source.includes("<small>1회 조회</small>")
     && !source.includes('<span class="mi-badge">1회 조회</span>')

@@ -194,12 +194,22 @@ assert.equal(
 for (const screen of [
   "keyword-tool",
   "seo-check",
-  "naver-rank",
   "naver-rank-tracking",
   "naver-place-rank-tracking",
 ]) {
   assert.equal(clientSource.includes(`data-mi-view="${screen}"`), true, `client screen: ${screen}`);
 }
+
+const staticAdminProductRankMenu = /<a\b[^>]*data-mi-admin-screen="naver-rank"/u;
+const staticClientProductRankMenu = /<a\b[^>]*data-mi-screen="naver-rank"/u;
+const staticAdminProductRankView = /<section\b[^>]*data-mi-admin-view="naver-rank"/u;
+const staticClientProductRankView = /<section\b[^>]*data-mi-view="naver-rank"/u;
+assert.equal(staticAdminProductRankMenu.test(adminSource), false, "admin product rank lookup menu hidden");
+assert.equal(staticClientProductRankMenu.test(clientSource), false, "client product rank lookup menus hidden");
+assert.equal(staticAdminProductRankView.test(adminSource), false, "admin product rank lookup view hidden");
+assert.equal(staticClientProductRankView.test(clientSource), false, "client product rank lookup view hidden");
+assert.equal(adminSource.includes('data-mi-admin-view="naver-rank-tracking"'), true, "admin product 30-day view remains");
+assert.equal(clientSource.includes('data-mi-view="naver-rank-tracking"'), true, "client product 30-day view remains");
 
 const staticOwnerDevelopmentMarkup = /<(?:a|div|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-(?:development|utility)"/u;
 const staticWorkerOperationsPanel = /<(?:div|section)\b[^>]*data-rank-worker-operations(?:\s|>|=)/u;
@@ -250,6 +260,16 @@ assert.equal(adminScreenRouter.includes("/^#mi-admin-owner-/"), true, "restored 
 assert.equal(adminScreenRouter.includes('secureSession.role !== "owner"'), true, "forged owner hash role guard");
 assert.equal(adminScreenRouter.includes('"agency-code"') && adminScreenRouter.includes('"home"'), true, "forged owner hash fallback");
 assert.equal(adminScreenRouter.includes("window.history.replaceState"), true, "forged owner hash canonical replacement");
+assert.equal(adminScreenRouter.includes('target === "naver-rank"'), true, "hidden product rank hash guard");
+assert.equal(adminScreenRouter.includes("rejectedProductRankTarget"), true, "hidden product rank hash canonical replacement");
+
+const clientRouterStart = clientSource.indexOf("function setScreen(");
+const clientRouterEnd = clientSource.indexOf('      links.forEach(function (link) {\n        link.addEventListener', clientRouterStart);
+assert.equal(clientRouterStart >= 0 && clientRouterEnd > clientRouterStart, true, "client screen router boundaries");
+const clientScreenRouter = clientSource.slice(clientRouterStart, clientRouterEnd);
+assert.equal(clientScreenRouter.includes('target === "naver-rank"'), true, "client hidden product rank hash guard");
+assert.equal(clientScreenRouter.includes('target = "dashboard"'), true, "client hidden product rank hash fallback");
+assert.equal(clientScreenRouter.includes("window.history.replaceState"), true, "client hidden product rank hash canonical replacement");
 
 assert.match(adminSource, /root\.querySelector\(\s*['"][^'"]*\[data-rank-worker-operations\][^'"]*['"]\s*\)/u, "global worker operations lookup");
 assert.equal(adminSource.includes("rankWorkerOperationsPanel()"), true, "global worker operations helper use");
@@ -268,6 +288,7 @@ console.log(JSON.stringify({
     "owner-development-hash-fallback",
     "owner-tool-primary-identity",
     "account-only-ui-copy",
+    "product-rank-lookup-hidden",
     "client-core-screens",
   ],
 }, null, 2));

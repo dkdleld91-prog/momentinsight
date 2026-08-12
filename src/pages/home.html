@@ -308,18 +308,15 @@
     }
 
     #mi-home .mi-dev-banner {
-      position: fixed;
-      left: clamp(20px, 5.4vw, 72px);
-      top: 118px;
-      z-index: 70;
-      display: grid;
-      width: min(348px, calc(100vw - 40px));
+      position: relative;
+      z-index: 10;
+      width: min(1120px, calc(100% - 40px));
+      margin: 18px auto 0;
       overflow: hidden;
       border: 1px solid rgba(6, 26, 58, 0.12);
-      border-radius: 18px;
-      background: rgba(255, 255, 255, 0.99);
-      box-shadow: 0 24px 64px rgba(6, 26, 58, 0.16);
-      backdrop-filter: blur(18px);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 12px 36px rgba(6, 26, 58, 0.08);
     }
 
     #mi-home .mi-dev-banner.is-hidden {
@@ -327,32 +324,93 @@
     }
 
     #mi-home .mi-dev-banner-head {
-      display: flex;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
       align-items: center;
-      justify-content: space-between;
-      min-height: 48px;
-      padding: 0 14px 0 18px;
-      color: #ffffff;
-      background: linear-gradient(135deg, #071a36, #123660);
+      gap: 12px;
+      min-height: 58px;
+      padding: 9px 10px 9px 16px;
+      color: var(--mi-navy);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(239, 245, 252, 0.98));
     }
 
-    #mi-home .mi-dev-banner-head span {
-      font-size: 16px;
+    #mi-home .mi-dev-banner-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #52627a;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    #mi-home .mi-dev-banner-label::before {
+      width: 7px;
+      height: 7px;
+      border-radius: 999px;
+      background: #0b7a58;
+      box-shadow: 0 0 0 4px rgba(11, 122, 88, 0.1);
+      content: "";
+    }
+
+    #mi-home .mi-dev-banner-head strong {
+      min-width: 0;
+      overflow: hidden;
+      color: var(--mi-navy);
+      font-size: 14px;
       font-weight: 950;
-      letter-spacing: 0;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-home .mi-dev-banner-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      border: 1px solid rgba(6, 26, 58, 0.12);
+      border-radius: 999px;
+      padding: 0 12px;
+      background: rgba(255, 255, 255, 0.88);
+      color: var(--mi-navy);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 900;
+      transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+    }
+
+    #mi-home .mi-dev-banner-toggle::after {
+      width: 6px;
+      height: 6px;
+      border-right: 2px solid currentColor;
+      border-bottom: 2px solid currentColor;
+      content: "";
+      transform: translateY(-2px) rotate(45deg);
+      transition: transform 0.18s ease;
+    }
+
+    #mi-home .mi-dev-banner-toggle[aria-expanded="true"]::after {
+      transform: translateY(2px) rotate(225deg);
+    }
+
+    #mi-home .mi-dev-banner-toggle:hover,
+    #mi-home .mi-dev-banner-toggle:focus-visible {
+      border-color: rgba(37, 88, 216, 0.32);
+      background: #ffffff;
+      transform: translateY(-1px);
+      outline: none;
     }
 
     #mi-home .mi-dev-banner-copy {
       display: grid;
       gap: 11px;
       min-width: 0;
-      padding: 18px;
+      border-top: 1px solid rgba(6, 26, 58, 0.08);
+      padding: 18px 20px 20px;
     }
 
-    #mi-home .mi-dev-banner-copy strong {
-      color: var(--mi-navy);
-      font-size: 18px;
-      line-height: 1.32;
+    #mi-home .mi-dev-banner-copy[hidden] {
+      display: none;
     }
 
     #mi-home .mi-dev-banner-copy p {
@@ -466,22 +524,22 @@
     #mi-home .mi-dev-banner-close {
       display: grid;
       place-items: center;
-      width: 30px;
-      height: 30px;
+      width: 34px;
+      height: 34px;
       border: 0;
       border-radius: 999px;
       background: transparent;
-      color: rgba(255, 255, 255, 0.76);
+      color: #667085;
       cursor: pointer;
-      font-size: 22px;
+      font-size: 21px;
       line-height: 1;
       transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
     }
 
     #mi-home .mi-dev-banner-close:hover,
     #mi-home .mi-dev-banner-close:focus-visible {
-      background: rgba(255, 255, 255, 0.16);
-      color: #ffffff;
+      background: rgba(6, 26, 58, 0.08);
+      color: var(--mi-navy);
       transform: translateY(-1px);
       outline: none;
     }
@@ -1440,12 +1498,44 @@
       }
 
       #mi-home .mi-dev-banner {
-        left: 14px;
-        right: 14px;
-        top: 82px;
-        width: auto;
-        max-height: calc(100vh - 110px);
-        overflow-y: auto;
+        width: calc(100% - 28px);
+        margin-top: 12px;
+      }
+
+      #mi-home .mi-dev-banner-head {
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 8px;
+        padding: 10px 8px 10px 12px;
+      }
+
+      #mi-home .mi-dev-banner-head strong {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        font-size: 13px;
+      }
+
+      #mi-home .mi-dev-banner-toggle {
+        min-height: 32px;
+        padding: 0 10px;
+      }
+
+      #mi-home .mi-dev-banner-close {
+        width: 32px;
+        height: 32px;
+      }
+
+      #mi-home .mi-dev-banner-copy {
+        padding: 16px 14px 18px;
+      }
+
+      #mi-home .mi-dev-banner-foot {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+
+      #mi-home .mi-dev-banner-kakao,
+      #mi-home .mi-dev-banner-week {
+        width: 100%;
       }
 
       #mi-home .mi-grid-3 {
@@ -1678,20 +1768,20 @@
 
   <aside class="mi-dev-banner" data-mi-dev-banner aria-label="모먼트 인사이트 개발 안내">
     <div class="mi-dev-banner-head">
-      <span>서비스 안내</span>
+      <span class="mi-dev-banner-label">서비스 안내</span>
+      <strong>8월 서비스 운영 안내</strong>
+      <button class="mi-dev-banner-toggle" type="button" data-mi-dev-banner-toggle aria-expanded="false" aria-controls="mi-home-dev-banner-details"><span data-mi-dev-banner-toggle-label>자세히</span></button>
       <button class="mi-dev-banner-close" type="button" data-mi-dev-banner-close aria-label="개발 안내 닫기">×</button>
     </div>
-    <div class="mi-dev-banner-copy">
-      <strong>8월 서비스 운영 안내</strong>
-      <p>네이버 API 환경 변경으로 일부 조회가 평소보다 다소 지연될 수 있습니다.</p>
+    <div class="mi-dev-banner-copy" id="mi-home-dev-banner-details" data-mi-dev-banner-details hidden>
+      <p>키워드 조회는 네이버 공식 API 연결 기준으로 제공하며, 순위 데이터는 정해진 주기에 안전하게 갱신합니다.</p>
       <div class="mi-dev-banner-features" aria-label="기능별 운영 상태">
-        <span class="is-development" data-status="(개발중)">키워드 조회</span>
+        <span data-status="공식 API">키워드 조회</span>
         <span class="is-development" data-status="(개발중)">SEO 확인</span>
-        <span class="is-development" data-status="(개발중)">N 상품 순위</span>
         <span data-status="09:00 · 15:00">N 30일 순위</span>
         <span data-status="09:00 · 15:00">N 플레이스 30일 순위</span>
       </div>
-      <p>개발 중으로 표시된 기능을 제외한 순위 데이터는 매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다. 안정적인 운영을 위한 조정이오니 이용에 참고 부탁드립니다.</p>
+      <p>N 30일 순위와 N 플레이스 30일 순위는 매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다.</p>
       <p class="mi-dev-banner-contact">계정 연결과 사용 문의는 <b>카카오톡 채널</b>로 남겨주시면 운영팀이 순차 안내드립니다.</p>
       <div class="mi-dev-banner-foot">
         <a class="mi-dev-banner-kakao" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 채널 문의</a>
@@ -1792,7 +1882,7 @@
                   <div class="mi-suite-card-head">
                     <div>
                       <small>Naver Shopping</small>
-                      <h3>오가닉 상품 순위</h3>
+                      <h3>30일 오가닉 순위 추적</h3>
                     </div>
                     <span class="mi-suite-chip">광고 제외</span>
                   </div>
@@ -1801,12 +1891,12 @@
                     <div>
                       <span class="mi-suite-label">예시 키워드 A · 예시 상품 A</span>
                       <strong class="mi-suite-rank-value">7위</strong>
-                      <p>원부와 정확 상품을 비교해 더 높은 오가닉 순위를 보여줍니다.</p>
+                      <p>자동 수집한 원부와 정확 상품을 비교해 최근 30일의 대표 오가닉 순위를 보여줍니다.</p>
                     </div>
                   </div>
                   <div class="mi-suite-pills">
                     <span>1페이지</span>
-                    <span>300위 확인</span>
+                    <span>자동 300위 확인</span>
                     <span>원부·상품 비교</span>
                   </div>
                 </article>
@@ -2009,11 +2099,14 @@
     (function () {
       var banner = document.querySelector("[data-mi-dev-banner]");
       var close = document.querySelector("[data-mi-dev-banner-close]");
+      var toggle = document.querySelector("[data-mi-dev-banner-toggle]");
+      var toggleLabel = document.querySelector("[data-mi-dev-banner-toggle-label]");
+      var details = document.querySelector("[data-mi-dev-banner-details]");
       var hideWeek = document.querySelector("[data-mi-dev-banner-week]");
       var storageKey = "miHomeDevBannerHiddenUntil";
       var weekMs = 7 * 24 * 60 * 60 * 1000;
 
-      if (!banner || !close || !hideWeek) {
+      if (!banner || !close || !toggle || !toggleLabel || !details || !hideWeek) {
         return;
       }
 
@@ -2028,6 +2121,13 @@
 
       close.addEventListener("click", function () {
         banner.classList.add("is-hidden");
+      });
+
+      toggle.addEventListener("click", function () {
+        var expanded = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", String(!expanded));
+        toggleLabel.textContent = expanded ? "자세히" : "접기";
+        details.hidden = expanded;
       });
 
       hideWeek.addEventListener("click", function () {

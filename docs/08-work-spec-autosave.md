@@ -3,6 +3,22 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-12 키워드 조회 공개·N 상품 단건 숨김 계약
+
+- `키워드 조회`는 네이버 검색광고 `/keywordstool`의 정확 월 검색량·연관 키워드와 NAVER API HUB Search Trend/Shopping Insight의 제공 가능한 비율만 표시한다. 확인되지 않은 성별·연령·쇼핑 참고값은 추정하지 않고 대기로 표시한다.
+- Production의 `MI_KEYWORD_API_ENABLED`, SearchAd 3종, API HUB key pair·hub mode가 모두 준비된 경우에만 정식 메뉴로 표시한다. 실호출 실패를 샘플 값으로 대체하지 않는다.
+- `N 상품 순위` 단건 화면은 즉시 응답을 기대하는 광고주 목적과 Windows 작업기 대기 방식이 맞지 않으므로 관리자·광고주·모바일 메뉴와 화면에서 숨긴다. 구형 hash 직접 접근도 각 역할의 기본 화면으로 정규화한다.
+- N 상품 단건 서버 API는 SEO 확인과 30일 자동 추적이 공유하므로 제거하거나 비활성화하지 않는다. `N 30일 순위`·`N 플레이스 30일 순위`와 Windows 원자 300개 자동 수집은 그대로 유지한다.
+- 네이버가 공식 단건 상품순위 API를 제공하고 즉시성·정확성·한도를 검증한 경우에만 별도 승인 후 UI를 다시 공개한다.
+
+## 2026-08-12 전체 품질 고도화 1차 계약
+
+- 첫 진입 운영 안내는 핵심 가치·CTA를 덮는 고정 팝업으로 표시하지 않는다. 문서 흐름 안의 premium 상태 스트립으로 표시하고, 상세 내용은 명시적 `자세히` 동작으로만 펼친다. 기존 문구·기능 상태·닫기·1주 숨김·문의 링크는 보존한다.
+- 직접 업로드에 `reportId`가 있으면 Storage·파일 DB 쓰기 전에 현재 광고주 소유를 검증한다. 타 광고주 보고서에는 어떤 쓰기도 발생하지 않는다.
+- 보고서·연결 파일·생성형 PPTX는 선검증과 보상 정리를 적용한다. 기존 보고서는 연결 파일 생성 성공 후에만 갱신하고, 후속 갱신 실패 시 이번 요청이 만든 파일 행만 제거한다. 정리 실패를 성공처럼 처리하지 않고 typed code와 cleanup 상태로 반환한다.
+- Supabase 보안 advisor의 no-policy 5건은 테이블·RPC가 service-role 전용인 deny-by-default 계약이므로 공개 정책을 추가하지 않는다. `has_client_access`와 `is_admin`은 호출자 `auth.uid()`에 묶인 boolean helper이며 현재 권한 상승 증거가 없다. 보안 함수 이동과 RLS 성능 정리는 별도 migration·권한 매트릭스 검증 뒤에만 수행한다.
+- 이번 1차 범위는 N쇼핑 수집기·DB 상태 머신·Windows runtime·순위 저장 계약을 변경하지 않는다. `준비작업 1번`과 5차 속도 향상 gate도 그대로 유지한다.
+
 ## 2026-08-12 N쇼핑 백그라운드 수집 화면 계약
 
 - 일반 순위 수집은 사용자 화면을 전환하지 않는다. 네이버 1~8페이지는 `active:false`로 열고 완료 후 닫으며, 보안확인·접속 제한이 감지된 네이버 탭만 일반 창으로 복원·표시한다.
@@ -256,9 +272,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 02:11:40
-- 기준 커밋: 7d44468
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 12. 10:12:13
+- 기준 커밋: a3bafb7
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-role-query-parity.mjs /  M scripts/check-role-state-regression.mjs /  M src/pages/admin.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준

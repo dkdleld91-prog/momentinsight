@@ -93,6 +93,10 @@ const expectedEndpoints = [
 
 const adminScreens = matches(adminSource, /data-mi-admin-screen="([^"]+)"/g);
 const clientScreens = matches(clientSource, /data-mi-screen="([^"]+)"/g);
+const staticAdminProductRankMenu = /<a\b[^>]*data-mi-admin-screen="naver-rank"/u;
+const staticClientProductRankMenu = /<a\b[^>]*data-mi-screen="naver-rank"/u;
+const staticAdminProductRankView = /<section\b[^>]*data-mi-admin-view="naver-rank"/u;
+const staticClientProductRankView = /<section\b[^>]*data-mi-view="naver-rank"/u;
 const adminEndpoints = matches(adminSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank(?:-jobs)?)/g);
 const clientEndpoints = matches(clientSource, /\/api\/naver-(?:keyword|place-rank-trackers|product-seo-audit|rank-trackers|shopping-rank(?:-jobs)?)/g);
 const apiHelperNames = [
@@ -166,6 +170,7 @@ const clientSeoRender = functionBlock(clientSource, "renderSeoEvaluation");
 const adminSeoEntry = functionBlock(adminSource, "initSeoCheck");
 const clientSeoEntry = functionBlock(clientSource, "runSeoCheck");
 const adminSetScreen = functionBlock(adminSource, "setScreen");
+const clientSetScreen = functionBlock(clientSource, "setScreen");
 const adminActivateSession = functionBlock(adminSource, "activateAdminSession");
 const adminOwnerToolLoad = functionBlock(adminSource, "loadOwnerTool");
 const ownerToolFetchIndex = adminOwnerToolLoad.indexOf("var response = await miFetch");
@@ -194,31 +199,30 @@ const checks = {
     "keyword",
     "seo-check",
     "related-keywords",
-    "naver-rank",
     "naver-rank-tracking",
     "naver-place-rank-tracking",
-  ].every((screen) => adminScreens.includes(screen)),
+  ].every((screen) => adminScreens.includes(screen))
+    && !adminScreens.includes("naver-rank"),
   clientScreensConnected: [
     "keyword-tool",
     "seo-check",
     "related-keywords",
-    "naver-rank",
     "naver-rank-tracking",
     "naver-place-rank-tracking",
-  ].every((screen) => clientScreens.includes(screen)),
+  ].every((screen) => clientScreens.includes(screen))
+    && !clientScreens.includes("naver-rank"),
   roleEndpointSetsMatch: JSON.stringify(adminEndpoints) === JSON.stringify(expectedEndpoints)
     && JSON.stringify(clientEndpoints) === JSON.stringify(expectedEndpoints),
   apiHelperBodiesAligned: apiHelperNames.every((name) => normalizedBlock(adminSource, name)
     && normalizedBlock(adminSource, name) === normalizedBlock(clientSource, name)),
   sharedRuntimeHooksMatch: includesAll(adminSource, sharedPageMarkers)
     && includesAll(clientSource, sharedPageMarkers),
-  toolSelectorsWired: includesAll(adminSource, [
+  releasedToolSelectorsWired: includesAll(adminSource, [
     "[data-admin-keyword-search]",
     "[data-seo-run]",
     "[data-seo-keyword]",
     "[data-seo-url]",
     "[data-seo-review-count]",
-    "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
     "[data-keyword-related]",
@@ -228,7 +232,6 @@ const checks = {
     "[data-seo-keyword]",
     "[data-seo-url]",
     "[data-seo-review-count]",
-    "[data-rank-check-card]",
     "[data-rank-card]",
     "[data-place-rank-card]",
     "[data-keyword-related]",
@@ -264,17 +267,15 @@ const checks = {
     && !source.includes("[data-seo-discount-state]")
     && !source.includes("[data-seo-review-point-state]")
     && !source.includes("판매자 확인")),
-  coreFiveToolsAvailableToAllRoles: [
+  releasedToolsAvailableToAllRolesAndProductLookupHidden: [
     "keyword",
     "seo-check",
-    "naver-rank",
     "naver-rank-tracking",
     "naver-place-rank-tracking",
   ].every((screen) => adminScreens.includes(screen))
     && [
       "keyword-tool",
       "seo-check",
-      "naver-rank",
       "naver-rank-tracking",
       "naver-place-rank-tracking",
     ].every((screen) => clientScreens.includes(screen))
@@ -288,10 +289,15 @@ const checks = {
     && ![
       "keyword",
       "seo-check",
-      "naver-rank",
       "naver-rank-tracking",
       "naver-place-rank-tracking",
     ].some((screen) => adminSetScreen.includes(`target === "${screen}"`))
+    && !staticAdminProductRankMenu.test(adminSource)
+    && !staticClientProductRankMenu.test(clientSource)
+    && !staticAdminProductRankView.test(adminSource)
+    && !staticClientProductRankView.test(clientSource)
+    && includesAll(adminSetScreen, ['target === "naver-rank"', "rejectedProductRankTarget", 'target = "home"', "window.history.replaceState"])
+    && includesAll(clientSetScreen, ['target === "naver-rank"', "rejectedProductRankTarget", 'target = "dashboard"', "window.history.replaceState"])
     && sessionGateSource.includes('if (role === "owner") return true;')
     && includesAll(sessionGateSource, [
       '"/api/naver-keyword"',
@@ -586,7 +592,7 @@ if (failed.length) {
 console.log(JSON.stringify({
   ok: true,
   checkedRoles: ["operation", "client", "owner"],
-  checkedTools: ["keyword", "seo", "related-keywords", "product-rank", "product-rank-30-days", "place-rank-30-days"],
+  checkedTools: ["keyword", "seo", "related-keywords", "product-rank-hidden", "product-rank-30-days", "place-rank-30-days"],
   endpoints: expectedEndpoints,
   checks,
 }, null, 2));

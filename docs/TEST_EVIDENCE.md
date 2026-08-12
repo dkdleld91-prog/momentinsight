@@ -2,10 +2,10 @@
 
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 회귀
 
-- 모바일 쇼핑 파서는 문자열·숫자형 공식 대분류 ID만 보존하고, 미허용 ID·태그 혼입·객체 값은 빈 값으로 차단하며 기존 카테고리명을 변경하지 않는 회귀를 추가했습니다.
-- 키워드 handler 실행 회귀는 카테고리명이 비어 있고 `category1Id=50000000`만 있는 표본으로 age endpoint가 호출되고, 기존 그래프 payload `[5,10,20,25,40]`과 `profileStatus.age=ok`를 반환함을 검증합니다.
-- 현재 운영과 동일한 API HUB·SearchAd 환경의 `남자팬티` 실호출은 HTTP 200, category `50000000`, age `[0.5,3.9,18.3,35.2,42.1]`, period `2026-07-01`, warning 0을 반환했습니다.
-- 관리자·광고주 HTML의 `data-keyword-ratio-chart="age"`, 5개 레이블, 기존 `renderRatioChart` 계약은 변경하지 않았습니다. 파서·handler 집중 회귀 37/37, 보호 잠금·self-test, server contract 41/41, baseline, 전체 `check:release`, public build·CSP, Production auth 18/18이 통과했습니다.
+- 첫 Production release `766d26faf8f3`은 월 검색량·추이는 표시했지만 운영 서버의 `mobile_top_fallback` 실패로 category가 비어 연령 그래프가 `조회 후 표시`에 머물렀습니다. 실패 payload는 캐시되지 않았고 재조회에서도 같아 정상화 증거로 사용하지 않습니다.
+- 공식 API 실검사는 `남자팬티`의 10개 대분류 요청이 모두 HTTP 200이고 `50000000`만 6연령대·최신 완료 월·6개월 이상 완전 데이터를 가진 단일 후보임을 확인했습니다. sparse 양수 행만 있는 잘못된 분류는 후보로 인정하지 않습니다.
+- handler 회귀는 공식 age 요청 10개 뒤 선택 payload를 재사용하고 device·gender만 추가해 총 12회인 정상 경로와, stale 6개월·후보 2개를 `category_required`로 종료하는 경로를 검증합니다. 429는 첫 배치 2회 뒤 남은 호출을 즉시 중단하고 5분 negative TTL로 다음 조회 탐색을 0회로 줄입니다. 성공 프로필도 쇼핑 표본 실패 중 30분 TTL cache를 사용하며, 기존 표본 category ID가 있으면 probe 없이 기존 age 1회 경로를 유지합니다.
+- 관리자·광고주 HTML의 `data-keyword-ratio-chart="age"`, 5개 레이블, 기존 `renderRatioChart` 계약은 변경하지 않습니다. N30 공유 parser를 이전 hash로 복원한 상태에서 키워드 handler 22/22와 관련 fallback·tracker 19/19를 통과했습니다.
 
 ## 2026-08-12 키워드 공식 API·N 상품 단건 숨김 회귀
 

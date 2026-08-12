@@ -44,6 +44,145 @@ function agePayload(data) {
   return { results: [{ data }] };
 }
 
+function latestCompletedMonthForTest(offsetMonths = 0) {
+  const end = new Date();
+  end.setDate(end.getDate() - 1);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(end).reduce((acc, item) => {
+    if (item.type !== "literal") acc[item.type] = Number(item.value);
+    return acc;
+  }, {});
+  const lastDay = new Date(Date.UTC(parts.year, parts.month, 0)).getUTCDate();
+  const latest = new Date(Date.UTC(parts.year, parts.month - 1, 1));
+  if (parts.day < lastDay) latest.setUTCMonth(latest.getUTCMonth() - 1);
+  latest.setUTCMonth(latest.getUTCMonth() - offsetMonths);
+  return latest;
+}
+
+function completeAgePayload(monthCount = 6, latestOffsetMonths = 0) {
+  const ratios = [5, 10, 20, 25, 20, 20];
+  const latest = latestCompletedMonthForTest(latestOffsetMonths);
+  return agePayload(Array.from({ length: monthCount }, (_, monthIndex) => (
+    SHOPPING_AGE_GROUPS_FOR_TEST.map((group, groupIndex) => ({
+      period: new Date(Date.UTC(
+        latest.getUTCFullYear(),
+        latest.getUTCMonth() - (monthCount - monthIndex - 1),
+        1,
+      )).toISOString().slice(0, 10),
+      group,
+      ratio: ratios[groupIndex],
+    }))
+  )).flat());
+}
+
+const SHOPPING_AGE_GROUPS_FOR_TEST = ["10", "20", "30", "40", "50", "60"];
+const SHOPPING_MAIN_CATEGORY_IDS_FOR_TEST = Array.from({ length: 10 }, (_, index) => `5000000${index}`);
+
+async function runOfficialCategoryProbeScenario({
+  keyword,
+  completeCategoryIds = [],
+  staleCategoryIds = [],
+  failingCategoryId = "",
+  shoppingCollectorFailure = false,
+}) {
+  const names = [
+    "MI_KEYWORD_API_ENABLED",
+    "NAVER_SEARCHAD_API_KEY",
+    "NAVER_SEARCHAD_SECRET_KEY",
+    "NAVER_SEARCHAD_CUSTOMER_ID",
+    "NAVER_API_HUB_CLIENT_ID",
+    "NAVER_API_HUB_CLIENT_SECRET",
+    "NAVER_API_HUB_MODE",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
+    "NAVER_SHOPPING_RANK_MODE",
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    MI_KEYWORD_API_ENABLED: "true",
+    NAVER_SEARCHAD_API_KEY: "search-ad-key",
+    NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
+    NAVER_SEARCHAD_CUSTOMER_ID: "123456",
+    NAVER_API_HUB_CLIENT_ID: "hub-id",
+    NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
+    NAVER_API_HUB_MODE: "hub",
+  });
+  if (shoppingCollectorFailure) {
+    process.env.NAVER_SHOPPING_RANK_API_URL = "https://collector.example/unavailable";
+    process.env.NAVER_SHOPPING_RANK_API_KEY = "collector-key";
+    process.env.NAVER_SHOPPING_RANK_MODE = "provider";
+  } else {
+    delete process.env.NAVER_SHOPPING_RANK_API_URL;
+    delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+    delete process.env.NAVER_SHOPPING_RANK_MODE;
+  }
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
+      return new Response(JSON.stringify({
+        keywordList: [{ relKeyword: keyword, monthlyPcQcCnt: 1000, monthlyMobileQcCnt: 2000, compIdx: "중간" }],
+      }), { status: 200 });
+    }
+    if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
+      return new Response(JSON.stringify({
+        results: [{ data: [{ period: "2026-06-01", ratio: 100 }] }],
+      }), { status: 200 });
+    }
+    if (href === "https://collector.example/unavailable") {
+      return new Response(JSON.stringify({ error: { message: "collector unavailable" } }), { status: 503 });
+    }
+    if (href.includes("/shopping/v1/category/keyword/")) {
+      const endpoint = href.split("/").at(-1);
+      const request = JSON.parse(options.body);
+      calls.push({ endpoint, category: request.category });
+      if (endpoint === "age") {
+        if (request.category === failingCategoryId) {
+          return new Response(JSON.stringify({ error: { message: "rate limited" } }), { status: 429 });
+        }
+        const payload = completeCategoryIds.includes(request.category)
+          ? completeAgePayload()
+          : staleCategoryIds.includes(request.category)
+            ? completeAgePayload(6, 1)
+            : agePayload([]);
+        return new Response(JSON.stringify(payload), { status: 200 });
+      }
+      if (endpoint === "device") {
+        return new Response(JSON.stringify(agePayload([
+          { period: "2026-06-01", group: "mo", ratio: 80 },
+          { period: "2026-06-01", group: "pc", ratio: 20 },
+        ])), { status: 200 });
+      }
+      if (endpoint === "gender") {
+        return new Response(JSON.stringify(agePayload([
+          { period: "2026-06-01", group: "f", ratio: 30 },
+          { period: "2026-06-01", group: "m", ratio: 70 },
+        ])), { status: 200 });
+      }
+    }
+    return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
+  };
+
+  try {
+    const response = await naverKeywordHandler.fetch(new Request(
+      `http://127.0.0.1/api/naver-keyword?${new URLSearchParams({ keyword }).toString()}`,
+    ));
+    return { response, body: await response.json(), calls };
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries(previous).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+}
+
 test("쇼핑 표본의 허용된 대분류 ID를 이름 매핑보다 우선하고 비허용 ID는 이름으로 복구한다", () => {
   const directIdWindow = shoppingWindow("대분류ID우선", 2, 2);
   directIdWindow.items.forEach((item) => {
@@ -140,6 +279,93 @@ test("완료된 연령 데이터가 없으면 비율을 만들어내지 않는�
   ]), "2026-07-21");
 
   assert.equal(profile, null);
+});
+
+test("쇼핑 표본 카테고리가 없으면 공식 연령 API 10개를 검증해 단일 강한 후보만 사용한다", async () => {
+  const { response, body, calls } = await runOfficialCategoryProbeScenario({
+    keyword: "공식카테고리단일검증",
+    completeCategoryIds: ["50000000"],
+  });
+  const ageCalls = calls.filter((call) => call.endpoint === "age");
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.deepEqual(ageCalls.map((call) => call.category).sort(), SHOPPING_MAIN_CATEGORY_IDS_FOR_TEST);
+  assert.equal(ageCalls.length, 10);
+  assert.equal(calls.filter((call) => call.endpoint === "device").length, 1);
+  assert.equal(calls.filter((call) => call.endpoint === "gender").length, 1);
+  assert.equal(calls.length, 12);
+  assert.equal(body.chartData.shoppingCategoryId, "50000000");
+  assert.deepEqual(body.chartData.age, [5, 10, 20, 25, 40]);
+  assert.equal(body.chartData.profileStatus.age, "ok");
+});
+
+test("최신 완료월이 빠진 과거 6개월 후보는 공식 카테고리로 선택하지 않는다", async () => {
+  const { response, body, calls } = await runOfficialCategoryProbeScenario({
+    keyword: "공식카테고리과거검증",
+    staleCategoryIds: ["50000000"],
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(calls.filter((call) => call.endpoint === "age").length, 10);
+  assert.equal(calls.some((call) => call.endpoint === "device" || call.endpoint === "gender"), false);
+  assert.equal(body.chartData.shoppingCategoryId, "");
+  assert.deepEqual(body.chartData.age, []);
+  assert.equal(body.chartData.profileStatus.age, "category_required");
+});
+
+test("공식 카테고리 후보가 두 개면 선택하지 않고 category_required로 종료한다", async () => {
+  const { response, body, calls } = await runOfficialCategoryProbeScenario({
+    keyword: "공식카테고리중복검증",
+    completeCategoryIds: ["50000000", "50000008"],
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(calls.filter((call) => call.endpoint === "age").length, 10);
+  assert.equal(calls.some((call) => call.endpoint === "device" || call.endpoint === "gender"), false);
+  assert.equal(body.chartData.shoppingCategoryId, "");
+  assert.deepEqual(body.chartData.age, []);
+  assert.equal(body.chartData.profileStatus.age, "category_required");
+});
+
+test("공식 카테고리 탐색 중 429가 발생하면 남은 분류를 호출하지 않고 안전 종료한다", async () => {
+  const keyword = `공식카테고리제한검증-${Date.now()}`;
+  const { response, body, calls } = await runOfficialCategoryProbeScenario({
+    keyword,
+    failingCategoryId: "50000001",
+  });
+  const second = await runOfficialCategoryProbeScenario({ keyword });
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(calls.filter((call) => call.endpoint === "age").length, 2);
+  assert.equal(calls.some((call) => call.endpoint === "device" || call.endpoint === "gender"), false);
+  assert.equal(body.chartData.shoppingCategoryId, "");
+  assert.deepEqual(body.chartData.age, []);
+  assert.equal(body.chartData.profileStatus.age, "category_required");
+  assert.equal(second.calls.filter((call) => call.endpoint === "age").length, 0);
+  assert.equal(second.body.chartData.profileStatus.age, "category_required");
+});
+
+test("공식 카테고리 성공 결과는 별도 TTL cache로 재사용해 쇼핑 표본 실패 중에도 반복 탐색하지 않는다", async () => {
+  const keyword = `공식카테고리캐시검증-${Date.now()}`;
+  const first = await runOfficialCategoryProbeScenario({
+    keyword,
+    completeCategoryIds: ["50000000"],
+    shoppingCollectorFailure: true,
+  });
+  const second = await runOfficialCategoryProbeScenario({ keyword, shoppingCollectorFailure: true });
+
+  assert.equal(first.response.status, 200);
+  assert.equal(second.response.status, 200);
+  assert.equal(first.calls.filter((call) => call.endpoint === "age").length, 10);
+  assert.equal(second.calls.filter((call) => call.endpoint === "age").length, 0);
+  assert.equal(second.calls.filter((call) => call.endpoint === "device").length, 1);
+  assert.equal(second.calls.filter((call) => call.endpoint === "gender").length, 1);
+  assert.equal(second.body.chartData.shoppingCategoryId, "50000000");
+  assert.deepEqual(second.body.chartData.age, [5, 10, 20, 25, 40]);
 });
 
 test("키워드 시장 지표는 검색수요·경쟁강도·판매 기회를 0부터 100 사이로 계산한다", () => {
@@ -432,6 +658,7 @@ test("쇼핑 표본의 대분류 ID로 연령 API를 호출하고 기존 연령 
 
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
+    assert.equal(calls.filter((call) => call.href.endsWith("/shopping/v1/category/keyword/age")).length, 1);
     assert.equal(ageRequest.category, "50000000");
     assert.equal(ageRequest.keyword, "연령그래프검증");
     assert.equal(body.chartData.shoppingCategoryId, "50000000");

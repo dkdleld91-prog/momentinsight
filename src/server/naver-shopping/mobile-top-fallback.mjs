@@ -25,18 +25,6 @@ const TRANSIENT_COOLDOWN_MS = 60_000;
 const RATE_WINDOW_MS = 60_000;
 const RATE_LIMIT = 8;
 const MAX_IN_FLIGHT = 2;
-const NAVER_SHOPPING_MAIN_CATEGORY_IDS = new Set([
-  "50000000",
-  "50000001",
-  "50000002",
-  "50000003",
-  "50000004",
-  "50000005",
-  "50000006",
-  "50000007",
-  "50000008",
-  "50000009",
-]);
 
 const fallbackCache = new Map();
 const networkAttempts = [];
@@ -70,11 +58,6 @@ function normalizeKeyword(value) {
 function numericId(value) {
   const text = normalizeText(value, 100);
   return /^[0-9]{5,}$/u.test(text) ? text : "";
-}
-
-function mainCategoryId(value) {
-  const id = numericId(value);
-  return NAVER_SHOPPING_MAIN_CATEGORY_IDS.has(id) ? id : "";
 }
 
 function positiveInteger(value) {
@@ -350,7 +333,6 @@ function parseSasItem(data) {
   const productType = isCatalog ? 1 : (linkedCatalogId ? 3 : 2);
   const categories = [data.lCatName, data.mCatName, data.sCatName, data.ssCatName]
     .map((value) => normalizeText(value, 200));
-  const category1Id = mainCategoryId(data.lCatId);
   const price = Number(data.discountedSalePrice ?? data.salePrice ?? 0);
   return {
     organicRank: rank,
@@ -371,7 +353,6 @@ function parseSasItem(data) {
     mallName: normalizeText(data.mallName, 200),
     brand: normalizeText(data.brandName || data.brand, 200),
     maker: normalizeText(data.makerName || data.maker, 200),
-    category1Id,
     category1: categories[0],
     category2: categories[1],
     category3: categories[2],

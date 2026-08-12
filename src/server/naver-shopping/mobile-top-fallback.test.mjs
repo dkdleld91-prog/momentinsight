@@ -127,31 +127,6 @@ test("uses sourceType as the authoritative inventory and preserves official SAS 
   assert.equal(parsed.complete, false);
 });
 
-test("preserves only allowlisted main category IDs without changing the category name contract", () => {
-  const parsed = parseMobilePagedSlotPayload(bffPayload([
-    slot("SAS", 1, { lCatId: "50000000", lCatName: "패션의류" }),
-    slot("SAS", 2, { lCatId: 50000008 }),
-    slot("SAS", 3, { lCatId: "50000999", lCatName: "기존 분류명" }),
-    slot("SAS", 4, { lCatId: "50000000<script>", lCatName: "원문 분류명" }),
-    slot("SAS", 5, { lCatId: { raw: "50000000" }, lCatName: "객체 분류명" }),
-  ]), { keyword: KEYWORD });
-
-  assert.deepEqual(parsed.items.map((item) => item.category1Id), [
-    "50000000",
-    "50000008",
-    "",
-    "",
-    "",
-  ]);
-  assert.deepEqual(parsed.items.map((item) => item.category1), [
-    "패션의류",
-    "",
-    "기존 분류명",
-    "원문 분류명",
-    "객체 분류명",
-  ]);
-});
-
 test("parses the live bootstrap date literal without evaluating JavaScript", () => {
   const html = bootstrapHtml().replace(
     "};</script>",

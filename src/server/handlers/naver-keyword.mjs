@@ -34,11 +34,16 @@ const SHOPPING_MAIN_CATEGORY_ID_SET = new Set(Object.values(SHOPPING_MAIN_CATEGO
 const SHOPPING_DEVICE_GROUPS = ["mo", "pc"];
 const SHOPPING_GENDER_GROUPS = ["f", "m"];
 const SHOPPING_AGE_GROUPS = ["10", "20", "30", "40", "50", "60"];
+const SHOPPING_CATEGORY_PROBE_MIN_COMPLETE_MONTHS = 6;
 const KEYWORD_CACHE_TTL_MS = Number(process.env.MI_KEYWORD_CACHE_TTL_MS || 1000 * 60 * 30);
 const KEYWORD_CACHE_MAX = Number(process.env.MI_KEYWORD_CACHE_MAX || 300);
+const SHOPPING_PROFILE_CACHE_TTL_MS = Math.min(KEYWORD_CACHE_TTL_MS, 1000 * 60 * 30);
+const SHOPPING_PROFILE_NEGATIVE_CACHE_TTL_MS = 1000 * 60 * 5;
 const KEYWORD_RATE_WINDOW_MS = Number(process.env.MI_KEYWORD_RATE_WINDOW_MS || 60_000);
 const KEYWORD_RATE_LIMIT = Number(process.env.MI_KEYWORD_RATE_LIMIT || 30);
 const keywordCache = new Map();
+const shoppingProfileCache = new Map();
+const shoppingProfileInflight = new Map();
 const keywordRateBucket = new Map();
 
 function config() {
@@ -188,6 +193,28 @@ function setKeywordCache(key, payload) {
   while (keywordCache.size > KEYWORD_CACHE_MAX) {
     const oldestKey = keywordCache.keys().next().value;
     keywordCache.delete(oldestKey);
+  }
+}
+
+function getShoppingProfileCache(key) {
+  const hit = shoppingProfileCache.get(key);
+  if (!hit) return null;
+  if (Date.now() >= hit.expiresAt) {
+    shoppingProfileCache.delete(key);
+    return null;
+  }
+  return { found: Boolean(hit.profile), profile: hit.profile || null };
+}
+
+function setShoppingProfileCache(key, profile, ttlMs = SHOPPING_PROFILE_CACHE_TTL_MS) {
+  if (!ttlMs || ttlMs < 1) return;
+  shoppingProfileCache.set(key, {
+    profile: profile || null,
+    expiresAt: Date.now() + ttlMs,
+  });
+  while (shoppingProfileCache.size > KEYWORD_CACHE_MAX) {
+    const oldestKey = shoppingProfileCache.keys().next().value;
+    shoppingProfileCache.delete(oldestKey);
   }
 }
 
@@ -374,7 +401,7 @@ async function fetchDatalabSearch(env, { keyword, startDate, endDate, timeUnit =
   });
 }
 
-async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, startDate, endDate, timeUnit = "month", device = "", gender = "", ages = [], timeoutMs }) {
+async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, startDate, endDate, timeUnit = "month", device = "", gender = "", ages = [], timeoutMs, retries }) {
   const body = {
     startDate,
     endDate,
@@ -392,7 +419,7 @@ async function fetchShoppingInsightKeyword(env, endpoint, { keyword, category, s
     headers: request.headers,
     body: JSON.stringify(body),
     timeoutMs,
-    retries: request.provider === "hub" ? 1 : 0,
+    retries: Number.isInteger(retries) ? retries : request.provider === "hub" ? 1 : 0,
     retryDelayMs: 350,
   });
 }
@@ -447,6 +474,20 @@ function isPartialMonthPeriod(period, endDate) {
   if (!periodParts || !endParts) return false;
   if (periodParts.year !== endParts.year || periodParts.month !== endParts.month) return false;
   return endParts.day < lastDayOfMonth(endParts.year, endParts.month);
+}
+
+function latestCompletedMonthPeriod(endDate) {
+  const parts = parsePeriodParts(endDate);
+  if (!parts) return "";
+  let { year, month } = parts;
+  if (parts.day < lastDayOfMonth(year, month)) {
+    month -= 1;
+    if (month < 1) {
+      year -= 1;
+      month = 12;
+    }
+  }
+  return `${year}-${String(month).padStart(2, "0")}-01`;
 }
 
 function formatMonthPeriod(period, isEstimated = false) {
@@ -587,6 +628,32 @@ export function shoppingAgeProfile(payload, endDate = "") {
   };
 }
 
+function shoppingAgeCoverage(payload, endDate = "") {
+  const periods = new Map();
+  const data = payload?.results?.[0]?.data || [];
+  data.forEach((item) => {
+    const period = String(item.period || "");
+    const group = String(item.group || "");
+    const ratio = Number(item.ratio);
+    if (!period || !SHOPPING_AGE_GROUPS.includes(group) || !Number.isFinite(ratio) || ratio < 0) return;
+    if (!periods.has(period)) periods.set(period, new Map());
+    periods.get(period).set(group, ratio);
+  });
+
+  const completePeriods = [...periods.entries()]
+    .filter(([period, groups]) => (
+      !isPartialMonthPeriod(period, endDate)
+      && SHOPPING_AGE_GROUPS.every((group) => groups.has(group))
+      && [...groups.values()].some((ratio) => ratio > 0)
+    ))
+    .map(([period]) => period)
+    .sort();
+  return {
+    completeMonthCount: completePeriods.length,
+    latestCompletePeriod: completePeriods.at(-1) || "",
+  };
+}
+
 function shoppingCategoryIdFromName(categoryName) {
   return SHOPPING_MAIN_CATEGORY_IDS[String(categoryName || "").trim()] || "";
 }
@@ -621,12 +688,80 @@ async function allSettledInBatches(tasks, size = 2, gapMs = 120) {
   return results;
 }
 
+async function resolveShoppingCategoryFromOfficialAge(env, keyword, { startDate, endDate }) {
+  if (resolveNaverApiTransport(env.naverApi, "datalab") !== "hub") return null;
+  const categoryIds = [...SHOPPING_MAIN_CATEGORY_ID_SET];
+  const results = [];
+  for (let index = 0; index < categoryIds.length; index += 2) {
+    const batchIds = categoryIds.slice(index, index + 2);
+    const batch = await Promise.allSettled(batchIds.map((categoryId) => (
+      fetchShoppingInsightKeyword(env, "age", {
+        keyword,
+        category: categoryId,
+        startDate,
+        endDate,
+        timeUnit: "month",
+        timeoutMs: 8000,
+        retries: 0,
+      })
+    )));
+    results.push(...batch);
+    if (batch.some((result) => result.status !== "fulfilled")) return null;
+    if (index + 2 < categoryIds.length) await delay(150);
+  }
+
+  if (results.length !== categoryIds.length) return null;
+  const expectedLatestPeriod = latestCompletedMonthPeriod(endDate);
+  const candidates = results.map((result, index) => {
+    const payload = fulfilledValue(result);
+    const coverage = shoppingAgeCoverage(payload, endDate);
+    return {
+      categoryId: categoryIds[index],
+      payload,
+      ...coverage,
+    };
+  }).filter((candidate) => (
+    candidate.latestCompletePeriod === expectedLatestPeriod
+    && candidate.completeMonthCount >= SHOPPING_CATEGORY_PROBE_MIN_COMPLETE_MONTHS
+  ));
+
+  if (candidates.length !== 1) return null;
+  return candidates[0];
+}
+
+async function resolveShoppingProfileFromOfficialAge(env, keyword, options) {
+  const cacheKey = `${keywordConfigSignature(env)}:${normalizeCompare(keyword)}`;
+  const cached = getShoppingProfileCache(cacheKey);
+  if (cached) return cached.profile;
+  if (shoppingProfileInflight.has(cacheKey)) return shoppingProfileInflight.get(cacheKey);
+
+  const promise = (async () => {
+    const resolution = await resolveShoppingCategoryFromOfficialAge(env, keyword, options);
+    if (!resolution) {
+      setShoppingProfileCache(cacheKey, null, SHOPPING_PROFILE_NEGATIVE_CACHE_TTL_MS);
+      return null;
+    }
+    const profile = {
+      categoryId: resolution.categoryId,
+      agePayload: resolution.payload,
+    };
+    setShoppingProfileCache(cacheKey, profile);
+    return profile;
+  })();
+  shoppingProfileInflight.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    shoppingProfileInflight.delete(cacheKey);
+  }
+}
+
 async function buildDatalabProfile(env, keyword, options = {}) {
   const includeProfile = options.includeProfile !== false;
   const endDate = compactDate(dateDaysAgo(1));
   const trendStartDate = compactDate(monthsAgo(KEYWORD_TREND_MONTHS));
   const ageStartDate = compactDate(monthsAgo(12));
-  const shoppingCategoryId = options.shoppingCategoryId || "";
+  let shoppingCategoryId = options.shoppingCategoryId || "";
   const shoppingStartDate = ageStartDate < SHOPPING_INSIGHT_START_DATE ? SHOPPING_INSIGHT_START_DATE : ageStartDate;
 
   const trend = await fetchDatalabSearch(env, { keyword, startDate: trendStartDate, endDate, timeUnit: "month" });
@@ -642,13 +777,23 @@ async function buildDatalabProfile(env, keyword, options = {}) {
   const profileStatus = {};
 
   if (includeProfile) {
+    let resolvedAgePayload = null;
+    if (!shoppingCategoryId) {
+      const resolution = await resolveShoppingProfileFromOfficialAge(env, keyword, {
+        startDate: shoppingStartDate,
+        endDate,
+      });
+      shoppingCategoryId = resolution?.categoryId || "";
+      resolvedAgePayload = resolution?.agePayload || null;
+    }
+
     const profileRequests = [
       () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "month", timeoutMs: 25000 }),
       () => fetchDatalabSearch(env, { keyword, startDate: DATALAB_HISTORY_START_DATE, endDate, timeUnit: "date", timeoutMs: 25000 }),
       ...(shoppingCategoryId ? [
         () => fetchShoppingInsightKeyword(env, "device", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
         () => fetchShoppingInsightKeyword(env, "gender", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
-        () => fetchShoppingInsightKeyword(env, "age", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
+        () => resolvedAgePayload || fetchShoppingInsightKeyword(env, "age", { keyword, category: shoppingCategoryId, startDate: shoppingStartDate, endDate, timeUnit: "month", timeoutMs: 15000 }),
       ] : []),
     ];
     const results = await allSettledInBatches(profileRequests, 2, 150);

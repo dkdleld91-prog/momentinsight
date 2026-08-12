@@ -6,9 +6,9 @@
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 복구 계약
 
 - 관리자·광고주의 기존 `연령별 쇼핑 클릭 비중` 5개 세로 막대그래프를 유지한다. 새 카테고리 선택창이나 임의 기본값을 추가하지 않는다.
-- 네이버 모바일 쇼핑 표본의 `lCatId`는 공식 대분류 10개만 `category1Id`로 보존하고, 미허용·오염된 값은 빈 값으로 차단한다. 기존 카테고리명 매핑은 fallback으로 유지한다.
-- 키워드 프로필은 검증된 대분류 ID로 NAVER API HUB Shopping Insight 연령 API를 호출한다. 최신 완료 월의 공식 상대 클릭값을 합계 100%로 재계산한 비중만 표시하고, 원시 클릭수로 표현하지 않는다.
-- 연령 API·카테고리가 확인되지 않으면 기존처럼 `조회 후 표시`를 유지하며, 샘플·추정 비중을 만들지 않는다. N 30일 순위·Windows 수집기·DB는 변경하지 않는다.
+- 운영 서버의 모바일 쇼핑 표본 수집이 실패해도 30일 추적 수집기를 수정하거나 우회하지 않는다. 키워드 handler 안에서만 NAVER API HUB Shopping Insight의 공식 대분류 10개를 검사한다.
+- 모든 공식 요청이 성공하고, 최신 완료 월을 포함해 6개 연령그룹이 완성된 월이 6개월 이상인 후보가 정확히 하나일 때만 그 대분류를 채택한다. 중복 후보·과거 데이터는 `category_required`, 일부 실패·429는 남은 분류 호출을 즉시 중단한다. 성공 프로필은 30분, 미확정·제한 결과는 5분 TTL과 single-flight로 재사용해 반복 탐색을 막는다.
+- 선택한 대분류의 최신 완료 월 공식 상대 클릭값만 합계 100%로 재계산해 표시한다. 연령 API·카테고리가 확인되지 않으면 기존처럼 `조회 후 표시`를 유지하며 원시 클릭수·샘플·추정 비중을 만들지 않는다. N 30일 순위·Windows 수집기·DB·공유 mobile fallback parser는 변경하지 않는다.
 
 ## 2026-08-12 30일 추적 기능 동결·복구 계약
 
@@ -286,8 +286,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 10:51:55
-- 기준 커밋: d0f5033
+- 마지막 자동 저장: 2026. 08. 12. 13:12:05
+- 기준 커밋: 766d26f
 - 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/naver-keyword.mjs /  M src/server/handlers/naver-keyword.test.mjs /  M src/server/naver-shopping/mobile-top-fallback.mjs
 <!-- autosave:end -->
 

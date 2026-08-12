@@ -531,7 +531,7 @@ export async function runLocalShoppingWorker(options = {}) {
       }
       summary.remoteWake = true;
     }
-    if (options.queueAllTrackers === true) {
+    if (options.queueAllTrackers === true || summary.remoteWake === true) {
       const queued = await action({ action: "queue-all-active-trackers", ...lanePayload });
       summary.queuedTotal = boundedResponseCount(queued.total, 100_000);
       summary.queued = boundedResponseCount(queued.queued, 100_000);
@@ -539,14 +539,13 @@ export async function runLocalShoppingWorker(options = {}) {
       summary.alreadyProcessing = boundedResponseCount(queued.alreadyProcessing, 100_000);
     }
     for (let index = 0; index < effectiveMaxJobs; index += 1) {
-      // The DB scheduler is the fairness authority (urgent max two, aging and
-      // agency round-robin). Keep the legacy preference hint during rollout so
-      // a previous compatible endpoint still reserves bounded tracker turns.
+      // The v2 DB scheduler is the sole ordering and fairness authority. The
+      // preference hint remains telemetry only; active cycles always go first.
       const trackerReserved = effectiveMaxJobs > 1
         && (index === effectiveMaxJobs - 1 || index % 3 === 2);
       const claim = await action({
         action: "claim",
-        schedulerVersion: "v1",
+        schedulerVersion: "v2",
         preferLookup: !trackerReserved,
         probeTrackerId,
         ...lanePayload,

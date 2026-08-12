@@ -155,7 +155,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "18358dfba3cd97eb6e7f73aa641f9cc051df625a02a0d39b76490ba7ebc12020"
+      "sha256": "217eac0ee1a4e90600ee019124279a1ce4660c12db08289b1dd30d22bfc8a361"
     },
     {
       "id": "product-organic-rank-server",
@@ -165,7 +165,7 @@
     {
       "id": "product-rank-cron-server",
       "file": "src/server/handlers/naver-rank-cron.mjs",
-      "sha256": "2cb8a11fe0e7a75c22e009990025e73a3c00a22ea4ac353e8f0e6b6005186c6a"
+      "sha256": "50841711043ebe71cb9f73f16b02c110e10bea54de34a66c374f322e950f0467"
     },
     {
       "id": "place-tracker-server",
@@ -210,7 +210,7 @@
     {
       "id": "product-cron-workflow",
       "file": ".github/workflows/naver-rank-cron.yml",
-      "sha256": "ada7e7a09cfaea9257933485f0b68eb330cc4a1c49936ffe16b278f8f0526f66"
+      "sha256": "2f9bc0a2c31249a0cf9b11bcf6df09b7fd745c7935860205b2cd701b8e59b495"
     },
     {
       "id": "place-cron-workflow",
@@ -326,7 +326,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "76a92fb17de0b4a3403c6cccaf8336baa8919094c9d20f2f532bf0b177a1fcfc"
+      "sha256": "792d3ce1d05ebcaa19bfb5596b599faf321c9f0b4b4bbeee246bca4de2fa7792"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "bf5ebd11826ab22ee923c6eef84c5991ed9898db12da6db075c2100770979d53"
+      "sha256": "48fc56ca2d0bcca572beb5c5c6ba0490fc2bda1516e4febdef062c950c01ecc6"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -446,6 +446,12 @@
       "id": "shopping-worker-queue-continuity",
       "file": "supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql",
       "sha256": "cca22bccd952397b439fb8ac36623d4f308f57aeb535ed81e245562f482e858a",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-durable-cycle",
+      "file": "supabase/migrations/20260812060826_naver_shopping_durable_cycle_probe.sql",
+      "sha256": "43e9cf5e5b8a36840126bbec5e70d895395039db8cb7e6a17b252a36f95ad142",
       "rankMigration": true
     },
     {

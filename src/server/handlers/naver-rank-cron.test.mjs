@@ -99,7 +99,7 @@ test("product cron uses the mobile top fallback only for the explicit mode", () 
   }
 });
 
-test("hybrid cron gives the 300-rank worker priority before bounded fallback rescue", () => {
+test("hybrid cron always defers to the durable 300-rank cycle", () => {
   const readiness = { ready: false, status: "hybrid_local_worker_ready" };
   const insideGrace = new Date("2026-08-01T00:30:00.000Z"); // 09:30 KST
   const afterGrace = new Date("2026-08-01T01:01:00.000Z"); // 10:01 KST
@@ -117,23 +117,21 @@ test("hybrid cron gives the 300-rank worker priority before bounded fallback res
     now: insideGrace,
     localWorkerActive: false,
   }), {
-    run: true,
-    mobileTopFallbackOnly: true,
-    fallbackRescue: true,
-    localWorkerInactive: true,
+    run: false,
+    mobileTopFallbackOnly: false,
+    deferredToLocalWorker: true,
   });
   assert.deepEqual(productRankCronExecutionMode(readiness, {
     now: afterGrace,
     localWorkerActive: true,
   }), {
-    run: true,
-    mobileTopFallbackOnly: true,
-    fallbackRescue: true,
-    localWorkerInactive: false,
+    run: false,
+    mobileTopFallbackOnly: false,
+    deferredToLocalWorker: true,
   });
 });
 
-test("hybrid cron suppresses fallback only after a signed worker heartbeat", async () => {
+test("hybrid worker heartbeat diagnostic remains fail closed", async () => {
   const calls = [];
   const query = {
     select(value) { calls.push(["select", value]); return this; },

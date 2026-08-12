@@ -652,8 +652,14 @@ test("an account-only team reaches every product-rank action without advertiser 
 test("hybrid page sync leaves due rows queued for the signed Mac worker", async () => {
   const teamCode = "mml93-t01";
   let updateCalled = false;
+  const wakeSources = [];
   const ctx = {
     supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeSources.push(args.p_source);
+        return { data: true, error: null };
+      },
       from(table) {
         assert.equal(table, TRACKERS);
         const query = {
@@ -688,18 +694,45 @@ test("hybrid page sync leaves due rows queued for the signed Mac worker", async 
   assert.equal(response.status, 200);
   assert.equal(body.ok, true);
   assert.equal(body.queuedForLocalWorker, true);
+  assert.equal(body.remoteWakeRequested, true);
   assert.equal(body.summary.checked, 0);
   assert.equal(body.summary.remaining, 2);
   assert.match(body.message, /중앙 Chrome 300위 갱신 대기 2건/u);
   assert.equal(updateCalled, false);
+  assert.deepEqual(wakeSources, ["tracker-sync-due"]);
 });
 
-test("hybrid full refresh is account-scoped and repeated clicks do not requeue due rows", async () => {
+test("hybrid full refresh is account-scoped, wake-only, and preserves cycle state on repeated clicks", async () => {
   const teamCode = "mml93-t01";
-  const updatedIds = ["10000000-0000-4000-8000-000000000001", "10000000-0000-4000-8000-000000000002"];
+  const now = Date.now();
+  const trackers = [
+    trackerRow({
+      id: "10000000-0000-4000-8000-000000000001",
+      agency_code: teamCode,
+      next_check_at: new Date(now + 6 * 60 * 60_000).toISOString(),
+      worker_quarantined_until: null,
+    }),
+    trackerRow({
+      id: "10000000-0000-4000-8000-000000000002",
+      agency_code: teamCode,
+      next_check_at: new Date(now - 60_000).toISOString(),
+      worker_quarantined_until: new Date(now + 12 * 60 * 60_000).toISOString(),
+    }),
+    trackerRow({
+      id: "10000000-0000-4000-8000-000000000003",
+      agency_code: teamCode,
+      next_check_at: new Date(now - 60_000).toISOString(),
+      processing_started_at: new Date(now - 60_000).toISOString(),
+      processing_until: new Date(now + 30 * 60_000).toISOString(),
+    }),
+    trackerRow({
+      id: "10000000-0000-4000-8000-000000000004",
+      agency_code: "outside-tenant",
+    }),
+  ];
+  const before = structuredClone(trackers);
   const calls = [];
   const wakeSources = [];
-  let updateCount = 0;
   const ctx = {
     supabaseAdmin: {
       async rpc(name, args) {
@@ -709,17 +742,11 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
       },
       from(table) {
         assert.equal(table, TRACKERS);
-        const call = { filters: [], update: null, head: false };
+        const call = { filters: [] };
         calls.push(call);
         const query = {
-          select(_columns, options = {}) {
-            call.head = options.head === true;
-            return query;
-          },
-          update(values) {
-            call.update = values;
-            return query;
-          },
+          select() { return query; },
+          update() { throw new Error("refresh_all_must_not_update_trackers"); },
           eq(column, value) {
             call.filters.push(["eq", column, value]);
             return query;
@@ -728,31 +755,13 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
             call.filters.push(["in", column, values]);
             return query;
           },
-          or(value) {
-            call.filters.push(["or", value]);
-            return query;
-          },
-          gt(column, value) {
-            call.filters.push(["gt", column, value]);
-            return query;
-          },
-          lte(column, value) {
-            call.filters.push(["lte", column, value]);
-            return query;
-          },
           then(resolve, reject) {
-            let result;
-            if (call.update) {
-              updateCount += 1;
-              result = {
-                data: updateCount === 1 ? updatedIds.map((id) => ({ id })) : [],
-                error: null,
-              };
-            } else {
-              const isWaitingCount = call.filters.some((filter) => filter[0] === "lte");
-              result = { data: null, error: null, count: isWaitingCount ? 2 : 3 };
-            }
-            return Promise.resolve(result).then(resolve, reject);
+            const scope = call.filters.find((filter) => filter[0] === "in")?.[2] || [];
+            const status = call.filters.find((filter) => filter[1] === "status")?.[2];
+            const data = trackers.filter((tracker) => (
+              scope.includes(tracker.agency_code) && tracker.status === status
+            ));
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
           },
         };
         return query;
@@ -779,22 +788,368 @@ test("hybrid full refresh is account-scoped and repeated clicks do not requeue d
   assert.equal(firstBody.remoteWakeRequested, true);
   assert.equal(secondBody.remoteWakeRequested, true);
   assert.deepEqual(firstBody.summary, {
-    total: 3, queued: 2, alreadyQueued: 0, alreadyProcessing: 1,
+    total: 3, queued: 0, alreadyQueued: 2, alreadyProcessing: 1,
   });
   assert.deepEqual(secondBody.summary, {
     total: 3, queued: 0, alreadyQueued: 2, alreadyProcessing: 1,
   });
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 2);
   assert.deepEqual(wakeSources, ["tracker-refresh-all", "tracker-refresh-all"]);
   for (const call of calls) {
     assert.deepEqual(call.filters.find((filter) => filter[0] === "in"), ["in", "agency_code", [teamCode]]);
     assert.deepEqual(call.filters.find((filter) => filter[1] === "status"), ["eq", "status", "active"]);
   }
-  assert.match(calls[1].filters.find((filter) => filter[0] === "or")[1], /processing_until\.is\.null,processing_until\.lt\./u);
-  assert.equal(calls[1].filters.find((filter) => filter[0] === "gt")[1], "next_check_at");
-  assert.equal(calls[2].filters.find((filter) => filter[0] === "lte")[1], "next_check_at");
-  assert.deepEqual(Object.keys(calls[1].update).sort(), ["last_message", "next_check_at"]);
-  assert.doesNotMatch(JSON.stringify(calls[1].update), /rank|snapshot|last_error|current_rank/iu);
+  assert.deepEqual(trackers, before);
+});
+
+test("wake-only full refresh keeps owner, operator, and client tenant scopes isolated", async () => {
+  const previousAdminCode = process.env.MI_RANK_ADMIN_CODE;
+  const previousLegacyCodes = process.env.MI_LEGACY_AGENCY_CODES;
+  process.env.MI_RANK_ADMIN_CODE = "owner-wake-only-code";
+  process.env.MI_LEGACY_AGENCY_CODES = "";
+  const cases = [
+    {
+      label: "owner",
+      agencyCode: "mml93-a01",
+      request: () => new Request("https://example.com/api/naver-rank-trackers", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-demo-admin-code": "owner-wake-only-code",
+          "x-mi-agency-code": "mml93-a01",
+        },
+        body: JSON.stringify({ action: "queue-refresh-all" }),
+      }),
+    },
+    {
+      label: "operator",
+      agencyCode: "mml93-t01",
+      request: () => productTeamAccountRequest("POST", { action: "queue-refresh-all" }, "mml93-t01"),
+    },
+    {
+      label: "client",
+      agencyCode: "client-a01",
+      request: () => new Request("https://example.com/api/naver-rank-trackers", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-mi-session-role": "client",
+          "x-mi-agency-code": "client-a01",
+          "x-mi-rank-access-code": "client-a01",
+        },
+        body: JSON.stringify({ action: "queue-refresh-all" }),
+      }),
+    },
+  ];
+
+  try {
+    for (const item of cases) {
+      const seenScopes = [];
+      const wakeSources = [];
+      const rows = [
+        trackerRow({ id: `${item.label}-owned`, agency_code: item.agencyCode }),
+        trackerRow({ id: `${item.label}-outside`, agency_code: "outside-tenant" }),
+      ];
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name, args) {
+            assert.equal(name, "mi_request_naver_shopping_worker_wake", item.label);
+            wakeSources.push(args.p_source);
+            return { data: true, error: null };
+          },
+          from(table) {
+            if (table === "clients") {
+              const query = {
+                select() { return query; },
+                eq() { return query; },
+                async maybeSingle() {
+                  return item.label === "client"
+                    ? { data: { id: "client-row", status: "active", disconnected_at: null }, error: null }
+                    : { data: null, error: null };
+                },
+              };
+              return query;
+            }
+            assert.equal(table, TRACKERS, item.label);
+            const query = {
+              status: "",
+              scope: [],
+              select() { return query; },
+              update() { throw new Error(`${item.label}_refresh_must_not_update`); },
+              eq(column, value) {
+                if (column === "status") query.status = value;
+                return query;
+              },
+              in(column, values) {
+                assert.equal(column, "agency_code", item.label);
+                query.scope = values;
+                seenScopes.push([...values]);
+                return query;
+              },
+              then(resolve, reject) {
+                const data = rows.filter((row) => query.scope.includes(row.agency_code) && row.status === query.status);
+                return Promise.resolve({ data, error: null }).then(resolve, reject);
+              },
+            };
+            return query;
+          },
+        },
+      };
+      const response = await withShoppingHybrid(() => handleRankTrackersRequest(item.request(), ctx));
+      const body = await response.json();
+      assert.equal(response.status, 200, item.label);
+      assert.equal(body.summary.total, 1, item.label);
+      assert.deepEqual(seenScopes, [[item.agencyCode]], item.label);
+      assert.deepEqual(wakeSources, ["tracker-refresh-all"], item.label);
+    }
+  } finally {
+    if (previousAdminCode === undefined) delete process.env.MI_RANK_ADMIN_CODE;
+    else process.env.MI_RANK_ADMIN_CODE = previousAdminCode;
+    if (previousLegacyCodes === undefined) delete process.env.MI_LEGACY_AGENCY_CODES;
+    else process.env.MI_LEGACY_AGENCY_CODES = previousLegacyCodes;
+  }
+});
+
+test("manual hybrid refresh wakes once without changing order, processing, or quarantine", async () => {
+  const teamCode = "mml93-t01";
+  const now = Date.now();
+  const tracker = trackerRow({
+    agency_code: teamCode,
+    next_check_at: new Date(now + 6 * 60 * 60_000).toISOString(),
+    processing_started_at: new Date(now - 60_000).toISOString(),
+    processing_until: new Date(now + 30 * 60_000).toISOString(),
+    worker_quarantined_until: new Date(now + 12 * 60 * 60_000).toISOString(),
+  });
+  const outside = trackerRow({ id: "outside-tracker", agency_code: "outside-tenant" });
+  const rows = [tracker, outside];
+  const before = structuredClone(rows);
+  const wakeSources = [];
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeSources.push(args.p_source);
+        return { data: true, error: null };
+      },
+      from(table) {
+        if (table === SNAPSHOTS) {
+          const query = {
+            select() { return query; },
+            in() { return query; },
+            gte() { return query; },
+            lte() { return query; },
+            order() { return query; },
+            range() { return query; },
+            then(resolve, reject) {
+              return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+            },
+          };
+          return query;
+        }
+        assert.equal(table, TRACKERS);
+        const filters = [];
+        const query = {
+          select() { return query; },
+          update() { throw new Error("manual_refresh_must_not_update_tracker"); },
+          insert() { throw new Error("manual_refresh_must_not_insert"); },
+          eq(column, value) {
+            filters.push((row) => row[column] === value);
+            return query;
+          },
+          in(column, values) {
+            const allowed = new Set(values);
+            filters.push((row) => allowed.has(row[column]));
+            return query;
+          },
+          async maybeSingle() {
+            const matched = rows.filter((row) => filters.every((filter) => filter(row)));
+            return { data: matched.length === 1 ? matched[0] : null, error: null };
+          },
+          then(resolve, reject) {
+            const data = rows.filter((row) => filters.every((filter) => filter(row)));
+            return Promise.resolve({ data, error: null }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", { action: "check", trackerId: tracker.id }, teamCode),
+    ctx,
+  ));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.preserved, true);
+  assert.equal(body.queuedForLocalWorker, true);
+  assert.equal(body.remoteWakeRequested, true);
+  assert.equal(body.errorCode, "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW");
+  assert.match(body.message, /기존 순서를 바꾸지 않고.*자동 순환/u);
+  assert.equal(body.tracker.nextCheckAt, before[0].next_check_at);
+  assert.deepEqual(wakeSources, ["tracker-check"]);
+  assert.deepEqual(rows, before);
+
+  const forbidden = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", { action: "check", trackerId: outside.id }, teamCode),
+    ctx,
+  ));
+  assert.equal(forbidden.status, 404);
+  assert.deepEqual(wakeSources, ["tracker-check"]);
+});
+
+test("hybrid create registers an unleased new-first row and wakes the scheduler once", async () => {
+  const teamCode = "mml93-t01";
+  const trackerRows = [];
+  const trackerUpdates = [];
+  const wakeSources = [];
+  const startedAt = Date.now();
+
+  function trackerQuery() {
+    const query = {
+      operation: "select",
+      values: null,
+      filters: [],
+      orders: [],
+      rowLimit: Infinity,
+      head: false,
+      select(_columns, options = {}) {
+        query.head = options.head === true;
+        return query;
+      },
+      insert(values) {
+        query.operation = "insert";
+        query.values = values;
+        return query;
+      },
+      update(values) {
+        query.operation = "update";
+        query.values = values;
+        return query;
+      },
+      eq(column, value) {
+        query.filters.push((row) => row[column] === value);
+        return query;
+      },
+      in(column, values) {
+        const allowed = new Set(values);
+        query.filters.push((row) => allowed.has(row[column]));
+        return query;
+      },
+      order(column, options = {}) {
+        query.orders.push({ column, ascending: options.ascending !== false });
+        return query;
+      },
+      limit(value) {
+        query.rowLimit = Number(value);
+        return query;
+      },
+      single() { return query.execute(true); },
+      maybeSingle() { return query.execute(true, true); },
+      then(resolve, reject) { return query.execute(false).then(resolve, reject); },
+      async execute(single, allowMissing = false) {
+        let selected = trackerRows.filter((row) => query.filters.every((filter) => filter(row)));
+        for (const { column, ascending } of [...query.orders].reverse()) {
+          selected = [...selected].sort((left, right) => {
+            const compared = left[column] === right[column] ? 0 : (left[column] > right[column] ? 1 : -1);
+            return ascending ? compared : -compared;
+          });
+        }
+        selected = selected.slice(0, query.rowLimit);
+        const selectedCount = selected.length;
+        if (query.operation === "insert") {
+          const inserted = {
+            id: "10000000-0000-4000-8000-000000000099",
+            current_rank: null,
+            best_rank: null,
+            worst_rank: null,
+            check_count: 0,
+            found_count: 0,
+            retry_count: 0,
+            sort_order: 100,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            ...query.values,
+          };
+          trackerRows.push(inserted);
+          selected = [inserted];
+        } else if (query.operation === "update") {
+          trackerUpdates.push({ ...query.values });
+          selected.forEach((row) => Object.assign(row, query.values));
+        }
+        if (query.head) return { data: null, error: null, count: selectedCount };
+        if (single) {
+          return selected.length === 1
+            ? { data: selected[0], error: null }
+            : (allowMissing ? { data: null, error: null } : { data: null, error: { message: "single row not found" } });
+        }
+        return { data: selected, error: null };
+      },
+    };
+    return query;
+  }
+
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeSources.push(args.p_source);
+        return { data: true, error: null };
+      },
+      from(table) {
+        if (table === TRACKERS) return trackerQuery();
+        if (table === "clients") {
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() { return { data: null, error: null }; },
+          };
+          return query;
+        }
+        assert.equal(table, SNAPSHOTS);
+        const query = {
+          select() { return query; },
+          in() { return query; },
+          gte() { return query; },
+          lte() { return query; },
+          order() { return query; },
+          range() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", {
+      action: "create",
+      keyword: "새 키워드",
+      productId: "1234567890",
+    }, teamCode),
+    ctx,
+  ));
+  const body = await response.json();
+  const inserted = trackerRows[0];
+
+  assert.equal(response.status, 201);
+  assert.equal(body.ok, true);
+  assert.equal(body.queuedForLocalWorker, true);
+  assert.equal(body.remoteWakeRequested, true);
+  assert.equal(body.message, "추적 등록 후 첫 순위 확인 대기");
+  assert.deepEqual(wakeSources, ["tracker-create"]);
+  assert.equal(inserted.last_checked_at, null);
+  assert.equal(inserted.processing_started_at, null);
+  assert.equal(inserted.processing_until, null);
+  assert.ok(Date.parse(inserted.next_check_at) >= startedAt);
+  assert.ok(Date.parse(inserted.next_check_at) <= Date.now());
+  assert.deepEqual(trackerUpdates, [{ group_name: "기본 그룹" }]);
+  assert.equal(body.tracker.lastCheckedAt, null);
+  assert.equal(body.tracker.nextCheckAt, inserted.next_check_at);
+  assert.equal(body.tracker.snapshots.length, 0);
 });
 
 test("manual product refresh does not claim or update a row without the collector", async () => {

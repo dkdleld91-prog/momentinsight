@@ -1486,7 +1486,9 @@ async function createTracker(request, ctx, body, access = {}) {
   }
 
   const now = new Date();
-  const initialLeaseStartedAt = now.toISOString();
+  const rankConfig = shoppingRankConfig();
+  const hybridCycleQueue = isHybridLocalWorkerMode(rankConfig) && hasShoppingRankConfig(rankConfig);
+  const initialLeaseStartedAt = hybridCycleQueue ? "" : now.toISOString();
   const clientId = await findClientId(ctx, agencyCode);
   const activeCountResult = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -1527,8 +1529,11 @@ async function createTracker(request, ctx, body, access = {}) {
       started_at: now.toISOString(),
       ends_at: addDays(now, 3650),
       next_check_at: now.toISOString(),
-      processing_started_at: initialLeaseStartedAt,
-      processing_until: new Date(now.getTime() + RANK_TRACKER_LEASE_MS).toISOString(),
+      last_checked_at: null,
+      processing_started_at: initialLeaseStartedAt || null,
+      processing_until: initialLeaseStartedAt
+        ? new Date(now.getTime() + RANK_TRACKER_LEASE_MS).toISOString()
+        : null,
       last_message: "추적 등록 후 첫 순위 확인 대기",
       sort_order: nextSortOrder,
     })
@@ -1538,9 +1543,29 @@ async function createTracker(request, ctx, body, access = {}) {
   if (error) throw error;
 
   await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);
+  if (hybridCycleQueue) {
+    // A new tracker enters the scheduler as an unverified, due row. The DB
+    // scheduler gives last_checked_at=null rows the first slot; this request
+    // must not pre-claim a lease or race that deterministic cycle selection.
+    const remoteWakeRequested = await requestShoppingWorkerWake(ctx, "tracker-create");
+    const queuedTracker = await attachTrackerGroup(ctx, { ...data, group_name: groupName });
+    const snapshots = await loadSnapshots(ctx, [queuedTracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
+    const keywordVolumes = await loadKeywordVolumes([queuedTracker.keyword]);
+    return json(request, {
+      ok: true,
+      queuedForLocalWorker: true,
+      remoteWakeRequested,
+      message: "추적 등록 후 첫 순위 확인 대기",
+      tracker: trackerPayload(
+        queuedTracker,
+        snapshots.get(queuedTracker.id) || [],
+        keywordVolumes.get(normalizeKeywordCompare(queuedTracker.keyword)),
+      ),
+    }, 201);
+  }
   const checked = await runTrackerCheck(ctx, { ...data, group_name: groupName }, {
     leaseStartedAt: initialLeaseStartedAt,
-    queueLocalWorker: isHybridLocalWorkerMode(shoppingRankConfig()),
+    queueLocalWorker: false,
   });
   const remoteWakeRequested = checked.queuedForLocalWorker === true
     ? await requestShoppingWorkerWake(ctx, "tracker-create")
@@ -1608,6 +1633,33 @@ async function checkOne(request, ctx, body) {
       ...rankSource,
       message: "네이버 쇼핑 순위 수집원이 준비되지 않아 기존 순위와 30일 기록을 유지합니다.",
     }, 503);
+  }
+
+  if (isHybridLocalWorkerMode(rankConfig)) {
+    // Manual refresh is only a wake signal for the durable 24-hour queue.
+    // Never claim this tracker or rewrite next_check_at: doing so would move a
+    // recently completed keyword ahead of older work and break cycle order.
+    const remoteWakeRequested = await requestShoppingWorkerWake(ctx, "tracker-check");
+    const tracker = await attachTrackerGroup(ctx, data);
+    const snapshots = await loadSnapshots(ctx, [tracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
+    const keywordVolumes = await loadKeywordVolumes([tracker.keyword]);
+    return json(request, {
+      ok: true,
+      ...rankSource,
+      rankSourceReady: rankSource.rankSourceReady === true,
+      errorCode: "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW",
+      retryable: false,
+      retryAfter: 0,
+      preserved: true,
+      queuedForLocalWorker: true,
+      remoteWakeRequested,
+      message: "갱신 요청을 접수했습니다. 기존 순서를 바꾸지 않고 중앙 Chrome 300위 자동 순환에서 확인합니다.",
+      tracker: trackerPayload(
+        tracker,
+        snapshots.get(tracker.id) || [],
+        keywordVolumes.get(normalizeKeywordCompare(tracker.keyword)),
+      ),
+    });
   }
 
   const claim = await claimTrackerForManualCheck(ctx, data, agencyCode);
@@ -1818,10 +1870,14 @@ async function syncDueTrackers(request, ctx, body, access) {
   const rankSource = shoppingRankSourceStatus(rankConfig);
   if (rankSource.configured && isHybridLocalWorkerMode(rankConfig)) {
     const remaining = await countDueTrackers(ctx, new Date().toISOString(), access.agencyCode);
+    const remoteWakeRequested = remaining > 0
+      ? await requestShoppingWorkerWake(ctx, "tracker-sync-due")
+      : false;
     return json(request, {
       ok: true,
       ...rankSource,
       queuedForLocalWorker: remaining > 0,
+      remoteWakeRequested,
       message: remaining
         ? `중앙 Chrome 300위 갱신 대기 ${remaining}건입니다.`
         : "갱신 대기 항목이 없습니다.",
@@ -1880,42 +1936,27 @@ async function queueRefreshAllTrackers(request, ctx, access) {
     }, 503);
   }
 
-  const queuedAt = new Date().toISOString();
   const scope = agencyCodeScope(access.agencyCode);
-  const totalResult = await ctx.supabaseAdmin
+  const { data, error } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
-    .select("id", { count: "exact", head: true })
+    .select("id, processing_until, worker_quarantined_until")
     .eq("status", "active")
     .in("agency_code", scope);
-  if (totalResult.error) throw totalResult.error;
+  if (error) throw error;
 
-  const queuedResult = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .update({
-      next_check_at: queuedAt,
-      last_message: "전체 순위 갱신 대기 중입니다.",
-    })
-    .eq("status", "active")
-    .in("agency_code", scope)
-    .gt("next_check_at", queuedAt)
-    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
-    .select("id");
-  if (queuedResult.error) throw queuedResult.error;
-
-  const waitingResult = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active")
-    .in("agency_code", scope)
-    .lte("next_check_at", queuedAt)
-    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`);
-  if (waitingResult.error) throw waitingResult.error;
-
-  const total = Math.max(0, Number(totalResult.count || 0));
-  const queued = Array.isArray(queuedResult.data) ? queuedResult.data.length : 0;
-  const waiting = Math.max(0, Number(waitingResult.count || 0));
-  const alreadyQueued = Math.max(0, waiting - queued);
-  const alreadyProcessing = Math.max(0, total - waiting);
+  // Active trackers already belong to the durable cycle. A refresh request
+  // wakes the worker once, but must not rewrite scheduling, quarantine, or
+  // processing leases. This keeps both tenant order and the global cursor
+  // unchanged even when advertisers click repeatedly.
+  const trackers = Array.isArray(data) ? data : [];
+  const nowMs = Date.now();
+  const total = trackers.length;
+  const queued = 0;
+  const alreadyProcessing = trackers.filter((tracker) => (
+    Number.isFinite(Date.parse(tracker?.processing_until || ""))
+      && Date.parse(tracker.processing_until) > nowMs
+  )).length;
+  const alreadyQueued = Math.max(0, total - alreadyProcessing);
   const remoteWakeRequested = total > 0
     ? await requestShoppingWorkerWake(ctx, "tracker-refresh-all")
     : false;

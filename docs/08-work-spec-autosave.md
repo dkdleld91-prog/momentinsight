@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-12 N쇼핑 30일 영속 순환 정상화 계약
+
+- 사용자 승인 범위는 N쇼핑 30일 자동 순환의 중복 제거와 순서 보존으로 한정한다. 수집 URL·3.5~6초 pacing·동시 실행 1개·광고 제외 원자 `checkedCount=300`·last-good·Windows primary/Mac standby 계약은 변경하지 않는다.
+- 기존 eligible 키워드는 한 cycle에서 정확히 한 번만 선택하며, 모든 eligible 키워드가 끝난 뒤에만 다음 cycle을 시작한다. 신규 키워드는 한 번만 최우선 처리한 뒤 저장된 기존 cursor 위치로 복귀한다.
+- 관리자·광고주의 개별/전체 갱신은 접수 문구와 worker wake만 수행한다. 기존 tracker의 `next_check_at`, cycle 위치, lease를 바꾸거나 특정 키워드를 선점하지 않는다.
+- 격리·재시도 대기 tracker는 전체 cycle을 막지 않고 건너뛴다. 재시도 가능 시점이 되면 우선 복구 대상으로 다시 참여하며, 보안 제한만 기존 global cooldown을 유지한다.
+- DB cycle/cursor와 claim은 lease token·CAS·row lock으로 원자 처리한다. 동시 요청, 광고주 수 불균형, 반복 갱신, 신규 삽입, PC 종료를 포함한 다회차 회귀에서 `전체 1회 완료 전 같은 keyword group 재선택 0건`을 증명한다.
+- 운영 배포는 migration → Production 서버 순서로 적용하고, 현재 queue를 파괴하거나 순위 이력을 삭제하지 않는다. 운영에서 신규/기존 인계·중복 0·lane/lease 해제를 확인하기 전에는 정상화 완료로 기록하지 않는다.
+
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 복구 계약
 
 - 관리자·광고주의 기존 `연령별 쇼핑 클릭 비중` 5개 세로 막대그래프를 유지한다. 새 카테고리 선택창이나 임의 기본값을 추가하지 않는다.
@@ -287,9 +296,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 13:12:05
-- 기준 커밋: 766d26f
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/naver-keyword.mjs /  M src/server/handlers/naver-keyword.test.mjs /  M src/server/naver-shopping/mobile-top-fallback.mjs
+- 마지막 자동 저장: 2026. 08. 12. 14:52:23
+- 기준 커밋: 416f9e8
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

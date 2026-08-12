@@ -48,8 +48,8 @@ for (const [label, input, expected] of cases) {
 const workflow = fs.readFileSync(".github/workflows/naver-rank-cron.yml", "utf8");
 assert.match(workflow, /cron: "5,10,15 0,6 \* \* \*"/, "GitHub Actions must let the local worker start before rescue retries");
 assert.match(workflow, /cron: "37 \* \* \* \*"/, "GitHub Actions must keep an hourly catch-up run");
-assert.match(workflow, /worker-first rescue window/, "Workflow must document the worker-first rescue behavior");
-assert.match(workflow, /Hourly catch-up keeps due trackers moving/, "Workflow must document missed-slot catch-up behavior");
+assert.match(workflow, /durable-cycle wake window/, "Workflow must document the durable-cycle wake behavior");
+assert.match(workflow, /Hourly catch-up wakes the same cycle/, "Workflow must document missed-slot catch-up behavior");
 assert.match(workflow, /timeout-minutes: 180/, "Product workflow must cover one hundred bounded sequential calls");
 assert.match(workflow, /const batchSize = 1;/, "Product workflow must keep each request within the mobile fallback rate envelope");
 assert.match(workflow, /const maxBatches = 100;/, "Product workflow must keep its explicit 100-tracker window cap");

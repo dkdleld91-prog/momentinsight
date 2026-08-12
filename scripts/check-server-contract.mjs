@@ -44,6 +44,7 @@ const files = {
   shoppingWorkerLaneMigration: "supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql",
   shoppingWorkerControlMigration: "supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql",
   shoppingWorkerContinuityMigration: "supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql",
+  shoppingWorkerDurableCycleMigration: "supabase/migrations/20260812060826_naver_shopping_durable_cycle_probe.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
@@ -106,6 +107,7 @@ const shoppingWorkerWakeMigration = fs.readFileSync(files.shoppingWorkerWakeMigr
 const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigration, "utf8");
 const shoppingWorkerControlMigration = fs.readFileSync(files.shoppingWorkerControlMigration, "utf8");
 const shoppingWorkerContinuityMigration = fs.readFileSync(files.shoppingWorkerContinuityMigration, "utf8");
+const shoppingWorkerDurableCycleMigration = fs.readFileSync(files.shoppingWorkerDurableCycleMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
@@ -623,9 +625,17 @@ check(
     /to service_role/,
   ])
     && !/security definer/.test(shoppingWorkerContinuityMigration)
-    && /is\("last_checked_at", null\)[\s\S]+order\("created_at"[\s\S]+order\("id"/.test(shoppingLocalWorkerHandler)
-    && /not\("last_checked_at", "is", null\)[\s\S]+order\("next_check_at"[\s\S]+order\("created_at"[\s\S]+order\("id"/.test(shoppingLocalWorkerHandler),
-  `${files.shoppingWorkerContinuityMigration}, ${files.shoppingLocalWorkerHandler}`,
+    && hasAll(shoppingWorkerDurableCycleMigration, [
+      /mi_queue_naver_shopping_cycle/,
+      /mi_claim_naver_shopping_cycle_keyword/,
+      /scheduler_cycle_resume_cursor/,
+      /order by tracker\.sort_order asc, tracker\.created_at asc, tracker\.id asc/,
+      /limit 100/,
+      /to service_role/,
+    ])
+    && /body\.schedulerVersion === "v2"/.test(shoppingLocalWorkerHandler)
+    && /LOCAL_WORKER_SCHEDULER_VERSION_STALE/.test(shoppingLocalWorkerHandler),
+  `${files.shoppingWorkerContinuityMigration}, ${files.shoppingWorkerDurableCycleMigration}, ${files.shoppingLocalWorkerHandler}`,
 );
 check(
   "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",

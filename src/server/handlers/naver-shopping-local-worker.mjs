@@ -16,17 +16,16 @@ import {
 } from "./naver-shopping-rank.mjs";
 import {
   buildProductRankSnapshotRecord,
-  claimDueTracker,
   nextRankCheckAt,
   representativeTrackingRankMessage,
   selectRepresentativeTrackingRank,
   verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
 
-// Keep one signed submit comfortably below the worker HTTP timeout and the
-// 35-minute collection lease. Eight trackers also keeps the bulk continuity query
-// below Supabase's common 1,000-row response ceiling (8 x 120 snapshots).
-const CLAIM_BATCH_MAX = 8;
+// Keep each continuity-history RPC below Supabase's common 1,000-row response
+// ceiling (8 trackers x 120 snapshots). One keyword job may still contain up to
+// the shared contract's 100 trackers and is loaded in bounded chunks below.
+const CATALOG_HISTORY_BATCH_MAX = 8;
 const WORKER_COLLECTION_LEASE_SECONDS = 35 * 60;
 const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
@@ -45,7 +44,6 @@ const WORKER_PROGRESS_STAGES = new Set([
   "failed",
 ]);
 const WORKER_JOB_KINDS = new Set(["", "lookup", "tracker"]);
-const WORKER_FAIR_CANDIDATE_MAX = 256;
 
 const WORKER_TRACKER_SELECT = [
   "id",
@@ -85,45 +83,65 @@ const WORKER_LOOKUP_SELECT = [
   "processing_until",
 ].join(", ");
 
-async function queueAllActiveTrackers(ctx) {
-  const queuedAt = new Date().toISOString();
-  const totalResult = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active");
-  if (totalResult.error) throw totalResult.error;
+function cycleValue(source, camelName, snakeName) {
+  return source?.[camelName] ?? source?.[snakeName];
+}
 
-  const queuedResult = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .update({
-      next_check_at: queuedAt,
-      last_message: "전체 순위 갱신 대기 중입니다.",
-    })
-    .eq("status", "active")
-    .gt("next_check_at", queuedAt)
-    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`)
-    .select("id", { count: "exact" });
-  if (queuedResult.error) throw queuedResult.error;
+function cycleCount(value) {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 100_000) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+  return parsed;
+}
 
-  const waitingResult = await ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "active")
-    .lte("next_check_at", queuedAt)
-    .or(`processing_until.is.null,processing_until.lt.${queuedAt}`);
-  if (waitingResult.error) throw waitingResult.error;
+function cycleTimestamp(value) {
+  const parsed = Date.parse(String(value || ""));
+  if (!Number.isFinite(parsed)) throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  return new Date(parsed).toISOString();
+}
 
-  const total = Math.max(0, Number(totalResult.count || 0));
-  const queued = Math.max(0, Number(
-    queuedResult.count ?? (Array.isArray(queuedResult.data) ? queuedResult.data.length : 0),
-  ));
-  const waiting = Math.max(0, Number(waitingResult.count || 0));
+function cycleUuid(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (!WORKER_RUN_ID_PATTERN.test(normalized)) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+  return normalized;
+}
+
+async function queueAllActiveTrackers(ctx, body) {
+  workerControlInput(body);
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_queue_naver_shopping_cycle");
+  if (error) throw workerError("LOCAL_WORKER_CYCLE_UNAVAILABLE", 503);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+
+  const status = String(data.status || "").trim().toLowerCase();
+  if (!["active", "empty"].includes(status)) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+  const cycleId = cycleUuid(cycleValue(data, "cycleId", "cycle_id"));
+  const cycleStartedAtValue = cycleValue(data, "cycleStartedAt", "cycle_started_at");
+  const cycleStartedAt = cycleStartedAtValue == null ? null : cycleTimestamp(cycleStartedAtValue);
+  const started = cycleValue(data, "started", "started") === true;
+  const total = cycleCount(cycleValue(data, "total", "total"));
+  const remaining = cycleCount(cycleValue(data, "remaining", "remaining"));
+  const processing = cycleCount(cycleValue(data, "processing", "processing"));
+  if (remaining > total || processing > total
+    || (status === "active" && (!cycleId || !cycleStartedAt || total < 1))
+    || (status === "empty" && (cycleId || cycleStartedAt || started || total !== 0
+      || remaining !== 0 || processing !== 0))) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
   return {
     total,
-    queued,
-    alreadyQueued: Math.max(0, waiting - queued),
-    alreadyProcessing: Math.max(0, total - waiting),
-    queuedAt,
+    queued: started ? remaining : 0,
+    alreadyQueued: started ? 0 : remaining,
+    alreadyProcessing: processing,
+    cycleId,
+    cycleStartedAt,
   };
 }
 
@@ -142,7 +160,7 @@ function workerError(code, status = 400) {
 }
 
 function normalizedKeywordKey(value) {
-  return normalizeText(value);
+  return normalizeText(value).replace(/\s/g, "").toLowerCase();
 }
 
 function workerLaneInput(body, options = {}) {
@@ -391,228 +409,51 @@ async function claimOneLookupJob(ctx) {
   };
 }
 
-async function hasAvailableLookupJob(ctx, nowIso) {
-  const { data, error } = await ctx.supabaseAdmin
-    .from("naver_shopping_rank_lookup_jobs")
-    .select("id")
-    .gt("expires_at", nowIso)
-    .lt("attempts", 3)
-    .or(`and(status.eq.pending,available_at.lte.${nowIso}),and(status.eq.processing,processing_until.lt.${nowIso})`)
-    .limit(1);
-  if (error) throw error;
-  return Array.isArray(data) && data.length > 0;
-}
-
-async function loadFairTrackerCandidates(ctx, nowIso, options = {}) {
-  const buildQuery = (mode) => {
-    let query = ctx.supabaseAdmin
-      .from("naver_rank_trackers")
-      .select(WORKER_TRACKER_SELECT)
-      .eq("status", "active")
-      .lte("next_check_at", nowIso)
-      .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
-      .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
-    if (options.probeTrackerId) query = query.eq("id", options.probeTrackerId);
-    query = mode === "new"
-      ? query
-        .is("last_checked_at", null)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
-      : query
-        .not("last_checked_at", "is", null)
-        .order("next_check_at", { ascending: true })
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-    return query.limit(options.probeTrackerId ? 1 : WORKER_FAIR_CANDIDATE_MAX);
-  };
-  const [newResult, dueResult] = await Promise.all([buildQuery("new"), buildQuery("due")]);
-  if (newResult.error) throw newResult.error;
-  if (dueResult.error) throw dueResult.error;
-  return {
-    newCandidates: Array.isArray(newResult.data) ? newResult.data : [],
-    dueCandidates: Array.isArray(dueResult.data) ? dueResult.data : [],
-  };
-}
-
-async function chooseFairWorkerTurn(ctx, input) {
-  const dueAgencies = [...new Set(input.dueCandidates
-    .map((tracker) => String(tracker?.agency_code || "").trim().toLowerCase())
-    .filter(Boolean))];
-  const oldestDueAt = input.dueCandidates[0]?.next_check_at || null;
-  const { data, error } = await ctx.supabaseAdmin.rpc(
-    "mi_choose_naver_shopping_worker_turn",
-    {
-      p_has_lookup: input.hasLookup,
-      p_has_new: input.newCandidates.length > 0,
-      p_has_due: input.dueCandidates.length > 0,
-      p_due_agencies: dueAgencies,
-      p_oldest_due_at: oldestDueAt,
-    },
-  );
-  if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
-  const workClass = String(data?.workClass || data?.work_class || "none").trim().toLowerCase();
-  const agencyCode = String(data?.agencyCode || data?.agency_code || "").trim().toLowerCase();
-  if (!["none", "lookup", "new", "due"].includes(workClass)) {
-    throw workerError("LOCAL_WORKER_SCHEDULER_INVALID", 503);
-  }
-  return { workClass, agencyCode };
-}
-
-async function claimKeywordFromCandidates(ctx, candidates, nowIso, options = {}) {
-  const agencyCode = String(options.agencyCode || "").trim().toLowerCase();
-  const eligible = agencyCode
-    ? candidates.filter((tracker) => String(tracker?.agency_code || "").trim().toLowerCase() === agencyCode)
-    : candidates;
-  const attemptedKeywordKeys = new Set();
-  for (const seed of eligible) {
-    const keyword = normalizeText(seed.keyword);
-    const keywordKey = normalizedKeywordKey(keyword);
-    if (!keywordKey || attemptedKeywordKeys.has(keywordKey)) continue;
-    attemptedKeywordKeys.add(keywordKey);
-
-    const claims = [];
-    try {
-      for (const tracker of eligible) {
-        if (normalizedKeywordKey(tracker.keyword) !== keywordKey) continue;
-        // eslint-disable-next-line no-await-in-loop
-        const claimed = await claimDueTracker(ctx, tracker, nowIso);
-        if (!claimed.claimed) continue;
-        claims.push({
-          trackerId: tracker.id,
-          leaseStartedAt: claimed.leaseStartedAt,
-          leaseUntil: claimed.leaseUntil,
-        });
-      }
-    } catch (error) {
-      if (claims.length) {
-        try {
-          await failClaims(ctx, {
-            keyword,
-            limit: LOCAL_WORKER_ORGANIC_LIMIT,
-            claims,
-          }, "local_worker_claim_failed");
-        } catch {
-          throw workerError("LOCAL_WORKER_CLAIM_ROLLBACK_FAILED", 503);
-        }
-      }
-      throw error;
-    }
-    if (claims.length) return { keyword, limit: LOCAL_WORKER_ORGANIC_LIMIT, claims };
-  }
-  return null;
-}
-
-async function claimFairJob(ctx, body) {
-  const nowIso = new Date().toISOString();
+async function claimCycleKeyword(ctx, body) {
+  const control = workerControlInput(body);
   const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
-  const candidates = await loadFairTrackerCandidates(ctx, nowIso, { probeTrackerId });
-  if (probeTrackerId) {
-    return claimKeywordFromCandidates(
-      ctx,
-      [...candidates.newCandidates, ...candidates.dueCandidates],
-      nowIso,
-    );
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_cycle_keyword", {
+    p_worker_id: control.workerId,
+    p_lane_token: control.laneToken,
+    p_run_id: control.runId,
+    p_probe_tracker_id: probeTrackerId,
+    p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
+  });
+  if (error) throw workerError("LOCAL_WORKER_CYCLE_UNAVAILABLE", 503);
+  if (data == null) throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  if (typeof data !== "object" || Array.isArray(data)) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
   }
-  const hasLookup = await hasAvailableLookupJob(ctx, nowIso);
-  const turn = await chooseFairWorkerTurn(ctx, { ...candidates, hasLookup });
-  if (turn.workClass === "none") return null;
-  const claimers = {
-    lookup: () => claimOneLookupJob(ctx),
-    new: () => claimKeywordFromCandidates(ctx, candidates.newCandidates, nowIso),
-    due: () => claimKeywordFromCandidates(ctx, candidates.dueCandidates, nowIso, {
-      agencyCode: turn.agencyCode,
-    }),
+
+  const status = String(data.status || "").trim().toLowerCase();
+  if (["waiting", "cycle_completed", "no_cycle"].includes(status)) {
+    return { status, job: null };
+  }
+  if (status !== "claimed") throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  const rawClaims = Array.isArray(data.claims) ? data.claims : [];
+  const cycleId = cycleUuid(cycleValue(data, "cycleId", "cycle_id"));
+  const priority = String(data.priority || "").trim().toLowerCase();
+  if ((!cycleId && priority !== "probe") || !["new", "resume", "normal", "probe"].includes(priority)
+    || rawClaims.length < 1 || rawClaims.length > 100) {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+  const job = {
+    keyword: normalizeText(data.keyword),
+    limit: LOCAL_WORKER_ORGANIC_LIMIT,
+    claims: rawClaims.map((claim) => ({
+      trackerId: cycleValue(claim, "trackerId", "tracker_id"),
+      leaseStartedAt: cycleValue(claim, "leaseStartedAt", "lease_started_at"),
+      leaseUntil: cycleValue(claim, "leaseUntil", "lease_until"),
+    })),
   };
-  const order = [turn.workClass, "due", "new", "lookup"]
-    .filter((value, index, values) => value !== "none" && values.indexOf(value) === index);
-  for (const workClass of order) {
-    // eslint-disable-next-line no-await-in-loop
-    const job = await claimers[workClass]();
-    if (job) return job;
+  try {
+    return {
+      status,
+      job: validateLocalWorkerJob(job, { requireActiveLease: true, nowMs: Date.now() }),
+    };
+  } catch {
+    throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
   }
-  return null;
-}
-
-async function claimOneKeywordJob(ctx) {
-  const nowIso = new Date().toISOString();
-  const dueQuery = (uninitializedOnly) => {
-    let query = ctx.supabaseAdmin
-      .from("naver_rank_trackers")
-      .select(WORKER_TRACKER_SELECT)
-      .eq("status", "active")
-      .lte("next_check_at", nowIso)
-      .or(`processing_until.is.null,processing_until.lt.${nowIso}`)
-      .or(`worker_quarantined_until.is.null,worker_quarantined_until.lt.${nowIso}`);
-    query = uninitializedOnly
-      ? query
-        .is("last_checked_at", null)
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true })
-      : query
-        .not("last_checked_at", "is", null)
-        .order("next_check_at", { ascending: true })
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
-    return query.limit(CLAIM_BATCH_MAX);
-  };
-
-  // A newly registered keyword has no verified result yet. Give that group one
-  // first collection before returning to the existing oldest-due sequence.
-  const initialResult = await dueQuery(true);
-  if (initialResult.error) throw initialResult.error;
-  let due = Array.isArray(initialResult.data)
-    ? initialResult.data.slice(0, CLAIM_BATCH_MAX)
-    : [];
-  if (!due.length) {
-    const existingResult = await dueQuery(false);
-    if (existingResult.error) throw existingResult.error;
-    due = Array.isArray(existingResult.data)
-      ? existingResult.data.slice(0, CLAIM_BATCH_MAX)
-      : [];
-  }
-  if (!due.length) return null;
-
-  const attemptedKeywordKeys = new Set();
-  for (const seed of due) {
-    const keyword = normalizeText(seed.keyword);
-    const keywordKey = normalizedKeywordKey(keyword);
-    if (!keywordKey || attemptedKeywordKeys.has(keywordKey)) continue;
-    attemptedKeywordKeys.add(keywordKey);
-
-    const claims = [];
-    try {
-      for (const tracker of due) {
-        if (normalizedKeywordKey(tracker.keyword) !== keywordKey) continue;
-        // Existing conditional lease update is the concurrency authority.
-        // eslint-disable-next-line no-await-in-loop
-        const claimed = await claimDueTracker(ctx, tracker, nowIso);
-        if (!claimed.claimed) continue;
-        claims.push({
-          trackerId: tracker.id,
-          leaseStartedAt: claimed.leaseStartedAt,
-          leaseUntil: claimed.leaseUntil,
-        });
-      }
-    } catch (error) {
-      // A query failure after earlier conditional updates must not strand those
-      // leases. The lease-token RPC leaves all verified rank/history fields
-      // untouched and releases only claims acquired by this request.
-      if (claims.length) {
-        try {
-          await failClaims(ctx, {
-            keyword,
-            limit: LOCAL_WORKER_ORGANIC_LIMIT,
-            claims,
-          }, "local_worker_claim_failed");
-        } catch {
-          throw workerError("LOCAL_WORKER_CLAIM_ROLLBACK_FAILED", 503);
-        }
-      }
-      throw error;
-    }
-    if (claims.length) return { keyword, limit: LOCAL_WORKER_ORGANIC_LIMIT, claims };
-  }
-  return null;
 }
 
 async function loadClaimTrackers(ctx, job) {
@@ -634,17 +475,22 @@ async function loadClaimTrackers(ctx, job) {
 
 async function loadVerifiedCatalogs(ctx, claimTrackers, checkedAt) {
   const trackerIds = claimTrackers.map(({ tracker }) => tracker.id);
-  const { data, error } = await ctx.supabaseAdmin.rpc(
-    "mi_load_naver_shopping_worker_catalog_history",
-    {
-      p_tracker_ids: trackerIds,
-      p_checked_at: checkedAt,
-      p_per_tracker_limit: SNAPSHOT_HISTORY_PER_TRACKER,
-    },
-  );
-  if (error) throw error;
+  const historyRows = [];
+  for (let offset = 0; offset < trackerIds.length; offset += CATALOG_HISTORY_BATCH_MAX) {
+    // eslint-disable-next-line no-await-in-loop
+    const { data, error } = await ctx.supabaseAdmin.rpc(
+      "mi_load_naver_shopping_worker_catalog_history",
+      {
+        p_tracker_ids: trackerIds.slice(offset, offset + CATALOG_HISTORY_BATCH_MAX),
+        p_checked_at: checkedAt,
+        p_per_tracker_limit: SNAPSHOT_HISTORY_PER_TRACKER,
+      },
+    );
+    if (error) throw error;
+    historyRows.push(...(data || []));
+  }
   const byTrackerId = new Map(trackerIds.map((trackerId) => [String(trackerId).toLowerCase(), []]));
-  for (const row of data || []) {
+  for (const row of historyRows) {
     const rows = byTrackerId.get(String(row?.tracker_id || "").toLowerCase());
     if (rows && rows.length < SNAPSHOT_HISTORY_PER_TRACKER) rows.push(row);
   }
@@ -892,17 +738,25 @@ export async function handleLocalWorkerRequest(request, ctx) {
     if (body.action === "claim") {
       workerControlInput(body);
       await touchWorkerLane(ctx, body);
-      const job = body.schedulerVersion === "v1"
-        ? await claimFairJob(ctx, body)
-        : body.preferLookup !== false
-          ? ((await claimOneLookupJob(ctx)) || (await claimOneKeywordJob(ctx)))
-          : ((await claimOneKeywordJob(ctx)) || (await claimOneLookupJob(ctx)));
+      let job;
+      if (body.schedulerVersion === "v2") {
+        const cycleTurn = await claimCycleKeyword(ctx, body);
+        const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
+        job = cycleTurn.job;
+        if (!job
+          && !probeTrackerId
+          && ["cycle_completed", "no_cycle"].includes(cycleTurn.status)) {
+          job = await claimOneLookupJob(ctx);
+        }
+      } else {
+        throw workerError("LOCAL_WORKER_SCHEDULER_VERSION_STALE", 409);
+      }
       return json(request, { ok: true, job });
     }
     if (body.action === "queue-all-active-trackers") {
       workerControlInput(body);
       await touchWorkerLane(ctx, body);
-      return json(request, { ok: true, ...(await queueAllActiveTrackers(ctx)) });
+      return json(request, { ok: true, ...(await queueAllActiveTrackers(ctx, body)) });
     }
     if (body.action === "submit") {
       workerControlInput(body);

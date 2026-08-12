@@ -2,11 +2,11 @@ name: Naver Rank Tracking
 
 on:
   schedule:
-    # The server only refreshes trackers whose next_check_at is due.
-    # KST 09:05/15:05 worker-first rescue window: the signed local worker gets
-    # the exact slot first, then server fallback retries without racing its lease.
+    # Hybrid mode never collects out of order: these slots only wake the signed
+    # Windows worker's durable DB cycle. Provider-only mode keeps its bounded drain.
+    # KST 09:05/15:05 durable-cycle wake window.
     - cron: "5,10,15 0,6 * * *"
-    # Hourly catch-up keeps due trackers moving even when the exact slot is delayed or skipped.
+    # Hourly catch-up wakes the same cycle when a browser alarm was delayed or skipped.
     - cron: "37 * * * *"
   workflow_dispatch:
 

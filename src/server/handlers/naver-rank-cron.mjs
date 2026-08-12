@@ -10,6 +10,7 @@ import {
 } from "../naver-shopping/source-status.mjs";
 import { latestLocalWorkerSlotAt } from "../naver-shopping/local-worker-schedule.mjs";
 import { prewarmShoppingRankProvider } from "../naver-shopping/provider-runtime.mjs";
+import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import { runDueTrackers } from "./naver-rank-trackers.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
@@ -90,15 +91,13 @@ export function productRankCronExecutionMode(readiness = {}, options = {}) {
     return { run: true, mobileTopFallbackOnly: false };
   }
   if (readiness.status === "hybrid_local_worker_ready") {
-    if (options.localWorkerActive === true
-      && hybridWorkerGraceActive(options.now || new Date(), options.graceMinutes)) {
-      return { run: false, mobileTopFallbackOnly: false, deferredToLocalWorker: true };
-    }
+    // The durable Chrome cycle is the sole rank authority in hybrid mode.
+    // A server-side fallback would bypass its cursor and collect the same
+    // keyword again before every eligible keyword has completed the cycle.
     return {
-      run: true,
-      mobileTopFallbackOnly: true,
-      fallbackRescue: true,
-      localWorkerInactive: options.localWorkerActive !== true,
+      run: false,
+      mobileTopFallbackOnly: false,
+      deferredToLocalWorker: true,
     };
   }
   if (readiness.status === "mobile_top_fallback_ready") {
@@ -171,17 +170,22 @@ export default {
       const drainMode = url.searchParams.get("mode") === "drain";
       const rankProvider = shoppingRankConfig();
       const providerReadiness = await productRankCronProviderReadiness(rankProvider);
-      const workerActive = providerReadiness.status === "hybrid_local_worker_ready"
-        ? await hybridWorkerRecentlyActive(ctx)
-        : false;
-      const executionMode = productRankCronExecutionMode(providerReadiness, {
-        localWorkerActive: workerActive,
-      });
+      const executionMode = productRankCronExecutionMode(providerReadiness);
       if (executionMode.deferredToLocalWorker) {
+        const remoteWakeRequested = await requestShoppingWorkerWake(ctx, "rank-cron-cycle");
+        if (!remoteWakeRequested) {
+          return json(request, {
+            ok: false,
+            code: "NAVER_RANK_WORKER_WAKE_FAILED",
+            message: "중앙 자동 순환 작업기를 깨우지 못해 순서를 보존한 채 대기합니다.",
+            claimed: 0,
+          }, 503);
+        }
         return json(request, {
           ok: true,
           deferred: true,
-          message: "300위 정밀 수집 워커의 우선 처리 시간을 보장했습니다.",
+          remoteWakeRequested: true,
+          message: "중앙 Chrome 300위 자동 순환을 깨웠으며 기존 순서를 유지합니다.",
           summary: safeProductRankCronSummary({
             now: new Date().toISOString(),
             checked: 0,

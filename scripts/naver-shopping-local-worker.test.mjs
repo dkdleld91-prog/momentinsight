@@ -299,6 +299,12 @@ test("profile bootstrap uses only the dedicated local browser and never extracts
   assert.equal(syntax.status, 0, syntax.stderr);
 });
 
+test("worker runner pins the v2 cycle scheduler without a v1 fallback", async () => {
+  const source = await fs.readFile(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
+  assert.match(source, /action: "claim",\s*\n\s*schedulerVersion: "v2"/u);
+  assert.doesNotMatch(source, /schedulerVersion: "v1"/u);
+});
+
 test("claims one canonical keyword, submits one strict 300 window and drains catch-up", async () => {
   const calls = [];
   let collectCount = 0;
@@ -344,7 +350,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "claim"]);
   assert.equal(calls[1].window.checkedCount, 300);
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
-  assert.equal(calls[0].schedulerVersion, "v1");
+  assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
   assert.equal(coordination[0].runtimeVersion, "1.1.1");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
@@ -530,6 +536,7 @@ test("one remote wake runs at most one queued job even with a larger configured 
     env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
     fetchImpl: authenticatedFetch([
       { body: { ok: true, wake: true } },
+      { body: { ok: true, total: 65, queued: 65, alreadyQueued: 0, alreadyProcessing: 0 } },
       { body: { ok: true, job: JOB } },
       { body: {
         ok: true,
@@ -553,9 +560,18 @@ test("one remote wake runs at most one queued job even with a larger configured 
     failed: 0,
     releaseFailed: 0,
     remoteWake: true,
+    queuedTotal: 65,
+    queued: 65,
+    alreadyQueued: 0,
+    alreadyProcessing: 0,
   });
   assert.equal(collectCount, 1);
-  assert.deepEqual(calls.map((call) => call.action), ["claim-wake", "claim", "submit"]);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "claim-wake",
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+  ]);
   assert.equal(calls.find((call) => call.action === "claim")?.preferLookup, true);
 });
 

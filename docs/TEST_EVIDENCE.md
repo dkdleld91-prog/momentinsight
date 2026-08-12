@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-12 N쇼핑 30일 영속 순환 회귀
+
+- 운영 읽기 전용 감사에서 worker·circuit·lane은 정상이지만 전체 갱신과 광고주 round-robin 조합으로 24시간 수집의 68.75%가 반복 초과였음을 확인했습니다.
+- 전용 migration 회귀 2/2, handler·runner·cron 통합 151/151, 전체 `npm run check:release`, 보호 잠금 22함수·71파일·22 migration, `git diff --check`를 통과했습니다.
+- resume cursor의 stale `FOUND` 무한대기, probe 동일 키워드 과다 claim, 공백이 다른 동일 키워드 mismatch를 배포 전 독립 검토에서 발견해 각각 `seed.id` 판정·exact probe ID·동일 정규화 규칙으로 수정했습니다.
+- 운영 DB migration 적용 직후 상태는 cycle `idle`, active tracker 65, 현재 격리 제외 eligible 46입니다. Production 서버 및 실제 cycle terminal 증거는 별도로 확인합니다.
+
 ## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 회귀
 
 - 첫 Production release `766d26faf8f3`은 월 검색량·추이는 표시했지만 운영 서버의 `mobile_top_fallback` 실패로 category가 비어 연령 그래프가 `조회 후 표시`에 머물렀습니다. 실패 payload는 캐시되지 않았고 재조회에서도 같아 정상화 증거로 사용하지 않습니다.

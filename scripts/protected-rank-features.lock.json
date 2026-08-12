@@ -150,7 +150,7 @@
     {
       "id": "keyword-query-server",
       "file": "src/server/handlers/naver-keyword.mjs",
-      "sha256": "fdf685f3fba6db813e539a6cfbef7367abd42dd1204c35f30e14bf4bb9741dbe"
+      "sha256": "b47b58bda2d2d7ce30e8c0aecf02399fe37ca15caf8c861fad6b3c96e0dc8cf4"
     },
     {
       "id": "product-tracker-server",
@@ -296,7 +296,7 @@
     {
       "id": "shopping-rank-mobile-top-fallback",
       "file": "src/server/naver-shopping/mobile-top-fallback.mjs",
-      "sha256": "c5ae3dc15f5811dff98452ba31e7a75fb3f7c6a660d26487bad7c3a1032d7599"
+      "sha256": "1442f316610c8eb231fc1f678bf71af282184962306865175bc4bfdde70720b9"
     },
     {
       "id": "shopping-collector-package-manifest",

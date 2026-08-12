@@ -33,6 +33,7 @@ function shoppingWindow(keyword, count = 100, marketTotal = count) {
       title: `테스트 상품 ${index}`,
       link: `https://smartstore.naver.com/test/products/${80000000000 + index}`,
       category1: "생활/건강",
+      category1Id: "50000008",
       lprice: String(10000 + index),
       mallName: `테스트몰${index}`,
     })),
@@ -42,6 +43,21 @@ function shoppingWindow(keyword, count = 100, marketTotal = count) {
 function agePayload(data) {
   return { results: [{ data }] };
 }
+
+test("쇼핑 표본의 허용된 대분류 ID를 이름 매핑보다 우선하고 비허용 ID는 이름으로 복구한다", () => {
+  const directIdWindow = shoppingWindow("대분류ID우선", 2, 2);
+  directIdWindow.items.forEach((item) => {
+    item.category1 = "생활/건강";
+    item.category1Id = "50000000";
+  });
+  const fallbackWindow = shoppingWindow("대분류이름복구", 2, 2);
+  fallbackWindow.items.forEach((item) => {
+    item.category1Id = "99999999";
+  });
+
+  assert.equal(buildShoppingProfile(directIdWindow).categoryId, "50000000");
+  assert.equal(buildShoppingProfile(fallbackWindow).categoryId, "50000008");
+});
 
 test("쇼핑 전체 상품수가 없어도 오가닉 표본을 유지하고 상품수만 부분 상태로 표시한다", () => {
   const profile = buildShoppingProfile(shoppingWindow("상품수없는키워드", 100, null));
@@ -310,6 +326,120 @@ test("키워드 핸들러는 Hub DataLab과 검증 쇼핑 수집기를 함께 �
     assert.equal(body.sourceStatus.shopping.status, "ok");
     assert.equal(body.chartData.shopping.total, 100);
     assert.equal(legacyShoppingCalls.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Object.entries(previous).forEach(([name, value]) => {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+});
+
+test("쇼핑 표본의 대분류 ID로 연령 API를 호출하고 기존 연령 그래프 데이터를 채운다", async () => {
+  const names = [
+    "MI_KEYWORD_API_ENABLED",
+    "NAVER_SEARCHAD_API_KEY",
+    "NAVER_SEARCHAD_SECRET_KEY",
+    "NAVER_SEARCHAD_CUSTOMER_ID",
+    "NAVER_SHOPPING_RANK_API_URL",
+    "NAVER_SHOPPING_RANK_API_KEY",
+    "NAVER_SHOPPING_RANK_MODE",
+    "NAVER_DATALAB_CLIENT_ID",
+    "NAVER_DATALAB_CLIENT_SECRET",
+    "NAVER_API_HUB_CLIENT_ID",
+    "NAVER_API_HUB_CLIENT_SECRET",
+    "NAVER_API_HUB_MODE",
+  ];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  const originalFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    MI_KEYWORD_API_ENABLED: "true",
+    NAVER_SEARCHAD_API_KEY: "search-ad-key",
+    NAVER_SEARCHAD_SECRET_KEY: "search-ad-secret",
+    NAVER_SEARCHAD_CUSTOMER_ID: "123456",
+    NAVER_SHOPPING_RANK_API_URL: "https://collector.example/naver-shopping-age",
+    NAVER_SHOPPING_RANK_API_KEY: "collector-key",
+    NAVER_SHOPPING_RANK_MODE: "provider",
+    NAVER_API_HUB_CLIENT_ID: "hub-id",
+    NAVER_API_HUB_CLIENT_SECRET: "hub-secret",
+    NAVER_API_HUB_MODE: "hub",
+  });
+  delete process.env.NAVER_DATALAB_CLIENT_ID;
+  delete process.env.NAVER_DATALAB_CLIENT_SECRET;
+  const calls = [];
+
+  globalThis.fetch = async (url, options = {}) => {
+    const href = String(url);
+    calls.push({ href, body: options.body || "" });
+    if (href.startsWith("https://api.searchad.naver.com/keywordstool")) {
+      return new Response(JSON.stringify({
+        keywordList: [{
+          relKeyword: "연령그래프검증",
+          monthlyPcQcCnt: 1000,
+          monthlyMobileQcCnt: 2000,
+          compIdx: "중간",
+        }],
+      }), { status: 200 });
+    }
+    if (href === "https://collector.example/naver-shopping-age") {
+      const window = shoppingWindow("연령그래프검증", 100, 100);
+      window.items.forEach((item) => {
+        item.category1 = "";
+        item.category1Id = "50000000";
+      });
+      return new Response(JSON.stringify(window), { status: 200 });
+    }
+    if (href === "https://naverapihub.apigw.ntruss.com/search-trend/v1/search") {
+      return new Response(JSON.stringify({
+        results: [{ data: [
+          { period: "2026-05-01", ratio: 80 },
+          { period: "2026-06-01", ratio: 100 },
+        ] }],
+      }), { status: 200 });
+    }
+    if (href.endsWith("/shopping/v1/category/keyword/device")) {
+      return new Response(JSON.stringify({ results: [{ data: [
+        { period: "2026-06-01", group: "mo", ratio: 80 },
+        { period: "2026-06-01", group: "pc", ratio: 20 },
+      ] }] }), { status: 200 });
+    }
+    if (href.endsWith("/shopping/v1/category/keyword/gender")) {
+      return new Response(JSON.stringify({ results: [{ data: [
+        { period: "2026-06-01", group: "f", ratio: 30 },
+        { period: "2026-06-01", group: "m", ratio: 70 },
+      ] }] }), { status: 200 });
+    }
+    if (href.endsWith("/shopping/v1/category/keyword/age")) {
+      return new Response(JSON.stringify({ results: [{ data: [
+        { period: "2026-06-01", group: "10", ratio: 5 },
+        { period: "2026-06-01", group: "20", ratio: 10 },
+        { period: "2026-06-01", group: "30", ratio: 20 },
+        { period: "2026-06-01", group: "40", ratio: 25 },
+        { period: "2026-06-01", group: "50", ratio: 20 },
+        { period: "2026-06-01", group: "60", ratio: 20 },
+      ] }] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ error: { message: "unexpected test request" } }), { status: 500 });
+  };
+
+  try {
+    const response = await naverKeywordHandler.fetch(new Request(
+      "http://127.0.0.1/api/naver-keyword?keyword=%EC%97%B0%EB%A0%B9%EA%B7%B8%EB%9E%98%ED%94%84%EA%B2%80%EC%A6%9D",
+    ));
+    const body = await response.json();
+    const ageCall = calls.find((call) => call.href.endsWith("/shopping/v1/category/keyword/age"));
+    const ageRequest = JSON.parse(ageCall.body);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(ageRequest.category, "50000000");
+    assert.equal(ageRequest.keyword, "연령그래프검증");
+    assert.equal(body.chartData.shoppingCategoryId, "50000000");
+    assert.deepEqual(body.chartData.age, [5, 10, 20, 25, 40]);
+    assert.equal(body.chartData.ageBasis, "latest_complete_month_shopping_keyword_share");
+    assert.equal(body.chartData.agePeriod, "2026-06-01");
+    assert.equal(body.chartData.profileStatus.age, "ok");
+    assert.equal(body.chartData.demographicStatus, "shopping_keyword_profile");
   } finally {
     globalThis.fetch = originalFetch;
     Object.entries(previous).forEach(([name, value]) => {

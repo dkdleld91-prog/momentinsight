@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 회귀
+
+- 모바일 쇼핑 파서는 문자열·숫자형 공식 대분류 ID만 보존하고, 미허용 ID·태그 혼입·객체 값은 빈 값으로 차단하며 기존 카테고리명을 변경하지 않는 회귀를 추가했습니다.
+- 키워드 handler 실행 회귀는 카테고리명이 비어 있고 `category1Id=50000000`만 있는 표본으로 age endpoint가 호출되고, 기존 그래프 payload `[5,10,20,25,40]`과 `profileStatus.age=ok`를 반환함을 검증합니다.
+- 현재 운영과 동일한 API HUB·SearchAd 환경의 `남자팬티` 실호출은 HTTP 200, category `50000000`, age `[0.5,3.9,18.3,35.2,42.1]`, period `2026-07-01`, warning 0을 반환했습니다.
+- 관리자·광고주 HTML의 `data-keyword-ratio-chart="age"`, 5개 레이블, 기존 `renderRatioChart` 계약은 변경하지 않았습니다. 파서·handler 집중 회귀 37/37, 보호 잠금·self-test, server contract 41/41, baseline, 전체 `check:release`, public build·CSP, Production auth 18/18이 통과했습니다.
+
 ## 2026-08-12 키워드 공식 API·N 상품 단건 숨김 회귀
 
 - `npm run check:env:naver`에서 keyword feature, SearchAd 3종, API HUB key pair·hub mode가 모두 ready입니다. API HUB live 검사는 blog 1건·Search Trend 31건·Shopping Insight age 11건을 각각 HTTP 200으로 확인했습니다.

@@ -3,6 +3,19 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-12 키워드 연령별 쇼핑 클릭 비중 복구 계약
+
+- 관리자·광고주의 기존 `연령별 쇼핑 클릭 비중` 5개 세로 막대그래프를 유지한다. 새 카테고리 선택창이나 임의 기본값을 추가하지 않는다.
+- 네이버 모바일 쇼핑 표본의 `lCatId`는 공식 대분류 10개만 `category1Id`로 보존하고, 미허용·오염된 값은 빈 값으로 차단한다. 기존 카테고리명 매핑은 fallback으로 유지한다.
+- 키워드 프로필은 검증된 대분류 ID로 NAVER API HUB Shopping Insight 연령 API를 호출한다. 최신 완료 월의 공식 상대 클릭값을 합계 100%로 재계산한 비중만 표시하고, 원시 클릭수로 표현하지 않는다.
+- 연령 API·카테고리가 확인되지 않으면 기존처럼 `조회 후 표시`를 유지하며, 샘플·추정 비중을 만들지 않는다. N 30일 순위·Windows 수집기·DB는 변경하지 않는다.
+
+## 2026-08-12 30일 추적 기능 동결·복구 계약
+
+- 사용자가 다시 명시적으로 요청하기 전까지 `N 30일 순위`, `N 플레이스 30일 순위`, Windows 작업기, 스케줄러, 순위 저장·이력·DB migration을 수정하지 않는다.
+- 배포 전 30일 기능 원본은 `checkpoint/n30-frozen-20260812-d0f5033`, 이번 정상 배포는 `checkpoint/keyword-age-click-share-production-20260812`를 불변 복구 지점으로 보존한다.
+- 회귀는 태그를 별도 worktree에서 검증한 뒤 새 recovery branch로 배포하고, 운영 DB나 30일 이력을 삭제·되돌리지 않는다. 배포 후 태그와 Production `/health`·`/ready` release를 일치시켜 저장한다.
+
 ## 2026-08-12 키워드 조회 공개·N 상품 단건 숨김 계약
 
 - `키워드 조회`는 네이버 검색광고 `/keywordstool`의 정확 월 검색량·연관 키워드와 NAVER API HUB Search Trend/Shopping Insight의 제공 가능한 비율만 표시한다. 확인되지 않은 성별·연령·쇼핑 참고값은 추정하지 않고 대기로 표시한다.
@@ -273,9 +286,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 10:21:43
-- 기준 커밋: a035a87
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md
+- 마지막 자동 저장: 2026. 08. 12. 10:51:55
+- 기준 커밋: d0f5033
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/naver-keyword.mjs /  M src/server/handlers/naver-keyword.test.mjs /  M src/server/naver-shopping/mobile-top-fallback.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

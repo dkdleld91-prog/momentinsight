@@ -30,6 +30,7 @@ const SHOPPING_MAIN_CATEGORY_IDS = {
   "생활/건강": "50000008",
   "여가/생활편의": "50000009",
 };
+const SHOPPING_MAIN_CATEGORY_ID_SET = new Set(Object.values(SHOPPING_MAIN_CATEGORY_IDS));
 const SHOPPING_DEVICE_GROUPS = ["mo", "pc"];
 const SHOPPING_GENDER_GROUPS = ["f", "m"];
 const SHOPPING_AGE_GROUPS = ["10", "20", "30", "40", "50", "60"];
@@ -590,6 +591,16 @@ function shoppingCategoryIdFromName(categoryName) {
   return SHOPPING_MAIN_CATEGORY_IDS[String(categoryName || "").trim()] || "";
 }
 
+function dominantShoppingCategoryId(items) {
+  const counts = new Map();
+  items.forEach((item) => {
+    const categoryId = String(item.category1Id || "").trim();
+    if (!SHOPPING_MAIN_CATEGORY_ID_SET.has(categoryId)) return;
+    counts.set(categoryId, (counts.get(categoryId) || 0) + 1);
+  });
+  return [...counts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] || "";
+}
+
 function dominantShoppingCategory(items) {
   const counts = new Map();
   items.forEach((item) => {
@@ -841,7 +852,7 @@ export function buildShoppingProfile(payload) {
     .filter((price) => price > 0);
   const malls = [...new Set(items.map((item) => String(item.mallName || "").trim()).filter(Boolean))];
   const dominantCategory = dominantShoppingCategory(items);
-  const dominantCategoryId = shoppingCategoryIdFromName(dominantCategory);
+  const dominantCategoryId = dominantShoppingCategoryId(items) || shoppingCategoryIdFromName(dominantCategory);
   const totalVerified = payload.marketTotalStatus === "verified"
     && Number.isSafeInteger(payload.marketTotal)
     && payload.marketTotal >= 0;

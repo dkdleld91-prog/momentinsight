@@ -4,7 +4,7 @@
 
 ## 진행 중: N쇼핑 상품 식별 중복 전역 보완·두 건 1회 복구
 
-- v1.1.2로 runtime과 실제 provider/contract fingerprint를 고정하고 DB repair/runtime migration, Production, Windows 순으로 일치시킵니다.
+- v1.1.2 실기에서 6→7페이지 overlap이 새 전체 수집 뒤에도 재현됐습니다. v1.1.3으로 전체 1회+충돌 suffix 최대 2회·총 16페이지·절대 deadline 계약을 고정하고 DB runtime migration, Production, Windows 순으로 일치시킵니다.
 - `남자 사각팬티`와 `남성 사각팬티`만 순서대로 1회 복구 검증한 뒤 기존 durable cycle cursor로 복귀하는지 확인합니다.
 - 각 항목의 합격 기준은 새 `pw-chrome-*`, 광고 제외 `checkedCount=300`, 오류·격리 해제, lane·lease 해제입니다. 실패 시 상세 typed code를 기록하고 같은 복구 요청을 반복하지 않습니다.
 - 이후 다른 duplicate 대상은 수정된 공통 규칙으로 자연 순환에서 확인하며 일괄 강제 갱신이나 격리 해제를 하지 않습니다.

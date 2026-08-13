@@ -182,6 +182,15 @@ async function main() {
     async exchange(message) {
       const requestId = crypto.randomUUID();
       const pages = [];
+      const pageStart = Number(message.pageStart ?? 1);
+      const pageEnd = Number(message.pageEnd ?? 8);
+      if (!Number.isInteger(pageStart)
+        || !Number.isInteger(pageEnd)
+        || pageStart < 1
+        || pageEnd > 8
+        || pageStart > pageEnd) {
+        throw new Error("native_host_page_range_invalid");
+      }
       writeMessage({ ...message, requestId });
       for (;;) {
         const response = await nextMessage();
@@ -192,14 +201,19 @@ async function main() {
           throw error;
         }
         if (response?.type === "collection_page") {
-          if (!response.page || Number(response.page.pageIndex) !== pages.length + 1 || pages.length >= 8) {
+          if (!response.page
+            || Number(response.page.pageIndex) !== pageStart + pages.length
+            || pages.length >= pageEnd - pageStart + 1) {
             throw new Error("native_host_pages_out_of_order");
           }
           pages.push(response.page);
-          await progressSink?.({ stage: "collect", page: pages.length });
+          await progressSink?.({ stage: "collect", page: Number(response.page.pageIndex) });
           continue;
         }
         if (response?.type === "collection_complete") {
+          if (pages.length !== pageEnd - pageStart + 1) {
+            throw new Error("native_host_pages_incomplete");
+          }
           return { type: "collection", pages };
         }
         return response;

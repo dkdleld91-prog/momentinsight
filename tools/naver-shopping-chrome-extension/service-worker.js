@@ -324,12 +324,24 @@ async function clearCompletedCollectionVerificationState() {
   }
 }
 
-async function collectPages(request, onPage = null) {
+async function collectPages(request, onPage = null, options = {}) {
   if (!request || request.limit !== 300 || request.rankPolicy !== "organic_only") {
     throw new Error("native_request_invalid");
   }
+  const pageStart = Number(options.pageStart ?? 1);
+  const pageEnd = Number(options.pageEnd ?? PAGE_COUNT);
+  if (!Number.isInteger(pageStart)
+    || !Number.isInteger(pageEnd)
+    || pageStart < 1
+    || pageEnd > PAGE_COUNT
+    || pageStart > pageEnd) {
+    throw new Error("native_request_invalid");
+  }
   const pages = [];
-  const deadline = Date.now() + COLLECTION_TIMEOUT_MS;
+  const requestDeadline = Date.parse(String(request.deadlineAt || ""));
+  if (!Number.isFinite(requestDeadline)) throw new Error("native_request_invalid");
+  if (requestDeadline <= Date.now()) throw new Error("provider_deadline_exceeded");
+  const deadline = Math.min(Date.now() + COLLECTION_TIMEOUT_MS, requestDeadline);
   const assertWithinDeadline = () => {
     if (Date.now() >= deadline) throw new Error("provider_deadline_exceeded");
   };
@@ -337,7 +349,7 @@ async function collectPages(request, onPage = null) {
   let keepTabOpen = false;
   let collectionStageCode = "naver_page_navigation_failed";
   try {
-    for (let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex += 1) {
+    for (let pageIndex = pageStart; pageIndex <= pageEnd; pageIndex += 1) {
       assertWithinDeadline();
       collectionStageCode = "naver_page_navigation_failed";
       const url = searchUrl(request.keyword, pageIndex);
@@ -348,8 +360,10 @@ async function collectPages(request, onPage = null) {
         await chrome.tabs.update(tabId, { url, active: false });
       }
       await waitForTabComplete(tabId);
+      assertWithinDeadline();
       collectionStageCode = "naver_page_script_failed";
       const page = { pageIndex, nextDataText: await readNextData(tabId) };
+      assertWithinDeadline();
       if (typeof onPage === "function") {
         collectionStageCode = "native_host_page_delivery_failed";
         await onPage(page);
@@ -357,7 +371,7 @@ async function collectPages(request, onPage = null) {
       else pages.push(page);
       collectionStageCode = "provider_browser_collection_failed";
       await saveCollectionProgress(pageIndex);
-      if (pageIndex < PAGE_COUNT) {
+      if (pageIndex < pageEnd) {
         collectionStageCode = "naver_page_navigation_failed";
         await wait(pageRequestDelay());
         assertWithinDeadline();
@@ -486,7 +500,7 @@ async function runWorker(trigger = "manual", options = {}) {
             try {
               await collectPages(message.request, async (page) => {
                 port.postMessage({ type: "collection_page", requestId: message.requestId, page });
-              });
+              }, { pageStart: message.pageStart, pageEnd: message.pageEnd });
               port.postMessage({ type: "collection_complete", requestId: message.requestId });
             } catch (error) {
               port.postMessage({

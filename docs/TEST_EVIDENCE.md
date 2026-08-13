@@ -1,12 +1,12 @@
 # Test Evidence
 
-## 2026-08-13 N쇼핑 상품 식별 중복·유한 복구 회귀
+## 2026-08-13 N쇼핑 상품 식별 중복·경계 복구 회귀
 
 - 운영 읽기 전용 감사에서 duplicate 오류 27 tracker·24 keyword group·6 agency를 확인했습니다. 두 대상은 약 43~45초 뒤 같은 base code로 종료됐고 DB cycle·lane 고립은 아니었습니다. 과거 상세는 저장되지 않아 정확한 충돌 신호는 미확정으로 남깁니다.
 - provider·collector contract·server trusted window에 같은 단일 authoritative identity 규칙을 적용했습니다. 서로 다른 seller가 공유하는 weak product ID는 허용하고 동일 seller/catalog/URL은 계속 거절합니다.
-- `page_overlap`만 전체 수집을 최대 1회 다시 수행하고 `duplicate_row`와 두 번째 overlap은 즉시 typed failure로 끝냅니다. 이후 오류에는 원시 ID·키워드 없이 page/row/kind/origin page만 남깁니다.
+- v1.1.2 운영 재검증은 전체 재수집 뒤에도 `provider_duplicate_identity:7:3:page_overlap:6`으로 종료됐습니다. v1.1.3은 전체 8페이지 1회 후 origin page~8 suffix만 최대 2회 교체하고 매번 전체 1~300을 다시 검증합니다. 최대 이동 16페이지, 원 요청 절대 deadline, 최종 typed error를 고정하며 행 skip·압축과 same-page duplicate 재시도는 금지합니다.
 - 복구 큐는 forced RLS·service-role-only, lane token/run CAS, FIFO 1회 소비, idempotent enqueue wake 1회, cursor/next_check 불변을 검사합니다. 두 tracker를 1번·2번으로 처리한 뒤 기존 cycle로 handoff하며 실패 자동 재등록은 없습니다.
-- 대상 회귀 229건, server syntax, release baseline, `git diff --check`는 통과했습니다. 전체 release·보호 잠금·DB SQL parser·Windows 실로드·운영 두 건 결과는 최종 배포 증거에서 별도로 기록합니다.
+- 경계 단위 회귀는 6→7 suffix 성공, 이동 경계 6→7 재조정, 16페이지 예산 초과, deadline 직전 추가 교환 금지, same-page duplicate 무재시도를 포함합니다. 전체 release·보호 잠금·DB SQL parser·Windows 실로드·운영 두 건 결과는 최종 배포 증거에서 별도로 기록합니다.
 
 ## 2026-08-12 N쇼핑 30일 영속 순환 회귀
 

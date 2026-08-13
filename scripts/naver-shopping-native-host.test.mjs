@@ -205,25 +205,36 @@ test("native provider exchanges only a bounded public page collection", async ()
   assert.equal(result.checkedCount, 300);
 });
 
-function overlapPages() {
+function overlapPages({ originPage = 1, collisionPage = 2 } = {}) {
   const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
-  const secondPage = JSON.parse(pages[1].nextDataText);
-  secondPage.props.pageProps.compositeList.list[4].item = productItem(1);
-  secondPage.props.pageProps.compositeList.list[4].item.rank = 41;
-  pages[1].nextDataText = JSON.stringify(secondPage);
+  const collision = JSON.parse(pages[collisionPage - 1].nextDataText);
+  collision.props.pageProps.compositeList.list[4].item = productItem(((originPage - 1) * 40) + 1);
+  collision.props.pageProps.compositeList.list[4].item.rank = ((collisionPage - 1) * 40) + 1;
+  pages[collisionPage - 1].nextDataText = JSON.stringify(collision);
   return pages;
 }
 
-test("native provider retries one full collection after transient page overlap", async () => {
+function duplicateRowPages(pageIndex = 7) {
+  const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+  const duplicate = JSON.parse(pages[pageIndex - 1].nextDataText);
+  duplicate.props.pageProps.compositeList.list[5].item = {
+    ...duplicate.props.pageProps.compositeList.list[4].item,
+    rank: ((pageIndex - 1) * 40) + 2,
+  };
+  pages[pageIndex - 1].nextDataText = JSON.stringify(duplicate);
+  return pages;
+}
+
+test("native provider repairs an early transient overlap within the 16-page budget", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  let exchanges = 0;
+  const messages = [];
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
-    async exchange() {
-      exchanges += 1;
+    async exchange(message) {
+      messages.push(message);
       return {
         type: "collection",
-        pages: exchanges === 1
+        pages: messages.length === 1
           ? overlapPages()
           : Array.from({ length: 8 }, (_, index) => page(index + 1)),
       };
@@ -231,26 +242,161 @@ test("native provider retries one full collection after transient page overlap",
   });
 
   assert.equal((await provider.collect(request(nowMs))).checkedCount, 300);
-  assert.equal(exchanges, 2);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [1, 8],
+  ]);
 });
 
-test("native provider stops after the second repeated page overlap", async () => {
+test("native provider repairs a page 6-7 overlap by recollecting only the coherent suffix", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  let exchanges = 0;
+  const messages = [];
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
-    async exchange() {
-      exchanges += 1;
-      return { type: "collection", pages: overlapPages() };
+    async exchange(message) {
+      messages.push(message);
+      if (messages.length === 1) {
+        return {
+          type: "collection",
+          pages: overlapPages({ originPage: 6, collisionPage: 7 }),
+        };
+      }
+      return {
+        type: "collection",
+        pages: Array.from({ length: 3 }, (_, index) => page(index + 6)),
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.items[239].organicRank, 240);
+  assert.equal(result.items[240].organicRank, 241);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [6, 8],
+  ]);
+});
+
+test("native provider follows one evolving overlap boundary within a finite suffix budget", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      if (messages.length === 1) {
+        return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
+      }
+      if (messages.length === 2) {
+        return {
+          type: "collection",
+          pages: overlapPages({ originPage: 7, collisionPage: 8 }).slice(5, 8),
+        };
+      }
+      return {
+        type: "collection",
+        pages: Array.from({ length: 2 }, (_, index) => page(index + 7)),
+      };
+    },
+  });
+
+  assert.equal((await provider.collect(request(nowMs))).checkedCount, 300);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [6, 8],
+    [7, 8],
+  ]);
+});
+
+test("native provider retains the last typed overlap when an evolving range exceeds 16 pages", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      if (messages.length === 1) {
+        return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
+      }
+      return {
+        type: "collection",
+        pages: overlapPages({ originPage: 1, collisionPage: 6 }).slice(5, 8),
+      };
     },
   });
 
   await assert.rejects(
     () => provider.collect(request(nowMs)),
     (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "2:4:page_overlap:1",
+      && error?.detail === "6:4:page_overlap:1",
   );
-  assert.equal(exchanges, 2);
+  assert.equal(messages.length, 2);
+});
+
+test("native provider does not start a suffix exchange near the absolute request deadline", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let clockReads = 0;
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => (clockReads++ === 0 ? nowMs : nowMs + 178_000),
+    async exchange() {
+      exchanges += 1;
+      return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+  assert.equal(exchanges, 1);
+});
+
+test("native provider bounds repeated boundary recollection without skipping a duplicate row", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      const pages = overlapPages({ originPage: 6, collisionPage: 7 });
+      return {
+        type: "collection",
+        pages: message.pageStart ? pages.slice(message.pageStart - 1, message.pageEnd) : pages,
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && error?.detail === "7:4:page_overlap:6",
+  );
+  assert.equal(messages.length, 3);
+  assert.deepEqual(messages.slice(1).map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [6, 8],
+    [6, 8],
+  ]);
+});
+
+test("native provider never retries, skips, or compresses a same-page duplicate", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      return { type: "collection", pages: duplicateRowPages(7) };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && error?.detail === "7:5:duplicate_row:7",
+  );
+  assert.equal(exchanges, 1);
 });
 
 test("manifest public key produces a stable Chrome extension id", async () => {
@@ -330,7 +476,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.2");
+  assert.equal(manifest.version, "1.1.3");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -341,7 +487,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /url\.searchParams\.set\("sort", "rel"\)/u);
   assert.match(serviceWorker, /url\.searchParams\.set\("viewType", "list"\)/u);
   assert.match(serviceWorker, /PAGE_COUNT = 8/u);
-  assert.match(serviceWorker, /for \(let pageIndex = 1; pageIndex <= PAGE_COUNT; pageIndex \+= 1\)/u);
+  assert.match(serviceWorker, /for \(let pageIndex = pageStart; pageIndex <= pageEnd; pageIndex \+= 1\)/u);
   assert.match(serviceWorker, /PAGE_REQUEST_INTERVAL_MS = 3_500/u);
   assert.match(serviceWorker, /PAGE_REQUEST_JITTER_MS = 2_500/u);
   assert.match(serviceWorker, /chrome\.tabs\.create\(\{ url, active: false \}\)/u);
@@ -391,8 +537,10 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
     /serviceWorkerSha256,[\s\S]{0,100}nativeHostSha256,[\s\S]{0,100}nativeHostCoreSha256,[\s\S]{0,100}localWorkerSha256,[\s\S]{0,100}contractSha256,[\s\S]{0,100}collectorProviderSha256,[\s\S]{0,100}collectorContractSha256,[\s\S]{0,40}\]\.join\("\\n"\)/u,
   );
   assert.match(nativeHost, /registerProgressSink\(sink\)/u);
-  assert.match(nativeHost, /stage: "collect", page: pages\.length/u);
+  assert.match(nativeHost, /stage: "collect", page: Number\(response\.page\.pageIndex\)/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
+  assert.match(serviceWorker, /pageStart: message\.pageStart, pageEnd: message\.pageEnd/u);
+  assert.match(serviceWorker, /for \(let pageIndex = pageStart; pageIndex <= pageEnd; pageIndex \+= 1\)/u);
   assert.match(serviceWorker, /type: "collection_complete"/u);
   assert.match(nativeHost, /response\?\.type === "collection_page"/u);
   assert.match(nativeHost, /response\?\.type === "collection_complete"/u);
@@ -596,7 +744,7 @@ test("page-eight status and verification cleanup failures still emit collection_
     "utf8",
   );
   const bestEffortStart = serviceWorker.indexOf("async function saveCollectionProgress(pageIndex)");
-  const collectStart = serviceWorker.indexOf("async function collectPages(request, onPage = null)");
+  const collectStart = serviceWorker.indexOf("async function collectPages(request, onPage = null, options = {})");
   const collectEnd = serviceWorker.indexOf("async function saveStatus(status, detail = \"\")", collectStart);
   const handlerStart = serviceWorker.indexOf('if (message?.type === "collect") {');
   const handlerEnd = serviceWorker.indexOf('if (message?.type === "summary")', handlerStart);
@@ -622,13 +770,15 @@ test("page-eight status and verification cleanup failures still emit collection_
       clearAttempts += 1;
       throw new Error("storage_cleanup_failed");
     }
-    function typedCollectionError(_error, fallbackCode) { return new Error(fallbackCode); }
+    function typedCollectionError(error, fallbackCode) {
+      return error?.message === "provider_deadline_exceeded" ? error : new Error(fallbackCode);
+    }
     async function surfaceVerificationTab(tabId) { return tabId; }
     ${serviceWorker.slice(bestEffortStart, collectEnd)}
     async function handleCollect(message, port) {
       ${serviceWorker.slice(handlerStart, handlerEnd)}
     }
-    ({ handleCollect, statusAttempts, clearAttempts: () => clearAttempts });
+    ({ handleCollect, statusAttempts, clearAttempts: () => clearAttempts, readCount: () => readCount });
   `, {
     chrome: {
       tabs: {
@@ -642,7 +792,12 @@ test("page-eight status and verification cleanup failures still emit collection_
   await runtime.handleCollect({
     type: "collect",
     requestId: "request-1",
-    request: { keyword: "남자팬티", limit: 300, rankPolicy: "organic_only" },
+    request: {
+      keyword: "남자팬티",
+      limit: 300,
+      rankPolicy: "organic_only",
+      deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    },
   }, {
     postMessage: (message) => messages.push(message),
   });
@@ -655,6 +810,25 @@ test("page-eight status and verification cleanup failures still emit collection_
   assert.equal(messages.some((message) => message.type === "collection_error"), false);
   assert.equal(runtime.statusAttempts.includes("page 8/8"), true);
   assert.equal(runtime.clearAttempts(), 1);
+
+  const expiredMessages = [];
+  const readsBeforeExpiredRequest = runtime.readCount();
+  await runtime.handleCollect({
+    type: "collect",
+    requestId: "request-expired",
+    request: {
+      keyword: "남자팬티",
+      limit: 300,
+      rankPolicy: "organic_only",
+      deadlineAt: new Date(Date.now() - 1).toISOString(),
+    },
+  }, {
+    postMessage: (message) => expiredMessages.push(message),
+  });
+  assert.deepEqual(Array.from(expiredMessages, (message) => [message.type, message.code]), [
+    ["collection_error", "provider_deadline_exceeded"],
+  ]);
+  assert.equal(runtime.readCount(), readsBeforeExpiredRequest);
 });
 
 test("Chrome worker removes legacy controller tabs and only surfaces Naver verification", () => {
@@ -678,7 +852,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.2");
+  assert.equal(manifest.version, "1.1.3");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -834,7 +1008,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.2",
+    runtimeVersion: "1.1.3",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

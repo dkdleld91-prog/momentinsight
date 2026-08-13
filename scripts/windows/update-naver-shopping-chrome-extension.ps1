@@ -131,6 +131,7 @@ catch {
 if ($null -eq $scheduledTask.Settings) { throw "scheduled_task_state_invalid" }
 $scheduledTaskWasEnabled = [bool]$scheduledTask.Settings.Enabled
 $scheduledTaskWasRunning = [string]$scheduledTask.State -eq "Running"
+$scheduledTaskQuiesced = $false
 $updateSucceeded = $false
 
 $stagingPath = Join-Path $runtimePath ("extension-update-" + [Guid]::NewGuid().ToString("N"))
@@ -223,6 +224,7 @@ try {
     }
 
     Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+    $scheduledTaskQuiesced = $true
     Stop-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction SilentlyContinue
     Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
     Get-CimInstance Win32_Process | Where-Object {
@@ -284,34 +286,36 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue
-    try {
-        if ($scheduledTaskWasEnabled) {
-            Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
-            if ($updateSucceeded) {
-                Start-Sleep -Seconds 3
-                $restoredTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-                if ([string]$restoredTask.State -ne "Running") {
-                    try {
-                        Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-                    }
-                    catch {
-                        # A due trigger can win the narrow enable/start race.
-                        # Once re-enabled, the next fixed trigger is a valid
-                        # restored watchdog even if the explicit start lost.
-                        $postStartTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-                        if (-not [bool]$postStartTask.Settings.Enabled) {
-                            throw
+    if ($scheduledTaskQuiesced) {
+        try {
+            if ($scheduledTaskWasEnabled) {
+                Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+                if ($updateSucceeded) {
+                    Start-Sleep -Seconds 3
+                    $restoredTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                    if ([string]$restoredTask.State -ne "Running") {
+                        try {
+                            Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                        }
+                        catch {
+                            # A due trigger can win the narrow enable/start race.
+                            # Once re-enabled, the next fixed trigger is a valid
+                            # restored watchdog even if the explicit start lost.
+                            $postStartTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                            if (-not [bool]$postStartTask.Settings.Enabled) {
+                                throw
+                            }
                         }
                     }
                 }
             }
+            else {
+                Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+            }
         }
-        else {
-            Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+        catch {
+            throw "scheduled_task_restore_failed"
         }
-    }
-    catch {
-        throw "scheduled_task_restore_failed"
     }
 }
 Write-Host $successMessage

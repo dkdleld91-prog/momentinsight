@@ -213,6 +213,7 @@ test("Windows extension updater quiesces the watchdog before process shutdown an
   assert.match(updater, /Get-ScheduledTask -TaskPath \$taskPath -TaskName \$taskName -ErrorAction Stop/u);
   assert.match(updater, /\$scheduledTaskWasEnabled = \[bool\]\$scheduledTask\.Settings\.Enabled/u);
   assert.match(updater, /\$scheduledTaskWasRunning = \[string\]\$scheduledTask\.State -eq "Running"/u);
+  assert.match(updater, /\$scheduledTaskQuiesced = \$false/u);
   assert.match(updater, /throw "scheduled_task_state_unavailable"/u);
   assert.match(updater, /throw "scheduled_task_state_invalid"/u);
 
@@ -222,6 +223,8 @@ test("Windows extension updater quiesces the watchdog before process shutdown an
   const processWaitIndex = updater.indexOf("$remainingProcesses = @(Get-UpdateTargetProcesses)");
   const runtimeCopyIndex = updater.indexOf("Copy-Item -LiteralPath (Join-Path $stagingPath $file)");
   assert.ok(disableIndex >= 0, "the updater must disable the watchdog first");
+  assert.ok(updater.indexOf("$scheduledTaskQuiesced = $true") > disableIndex,
+    "task restoration must be armed only after disable succeeds");
   assert.ok(taskStopIndex > disableIndex, "the updater must stop the disabled watchdog instance");
   assert.ok(chromeStopIndex > taskStopIndex, "Chrome shutdown must follow watchdog quiescence");
   assert.ok(processWaitIndex > chromeStopIndex, "process-zero verification must follow Chrome shutdown");
@@ -243,6 +246,7 @@ test("Windows extension updater restores enablement in finally and starts only a
   assert.ok(successGuardIndex > restoreEnableIndex, "task restart must be success-gated");
   assert.ok(restartIndex > successGuardIndex, "failed updates must not explicitly restart Chrome");
   assert.ok(successOutputIndex > restartIndex, "success must be reported only after task restoration succeeds");
+  assert.match(updater, /if \(\$scheduledTaskQuiesced\) \{/u);
   assert.match(updater, /if \(\[string\]\$restoredTask\.State -ne "Running"\)/u);
   assert.match(updater, /if \(-not \[bool\]\$postStartTask\.Settings\.Enabled\)/u);
   assert.match(updater, /throw "scheduled_task_restore_failed"/u);

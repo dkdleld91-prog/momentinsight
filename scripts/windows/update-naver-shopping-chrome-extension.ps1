@@ -296,10 +296,10 @@ finally {
                     }
                     catch {
                         # A due trigger can win the narrow enable/start race.
-                        # Enabled Ready/Running is a valid restored watchdog.
+                        # Once re-enabled, the next fixed trigger is a valid
+                        # restored watchdog even if the explicit start lost.
                         $postStartTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
-                        if (-not [bool]$postStartTask.Settings.Enabled -or
-                            [string]$postStartTask.State -notin @("Ready", "Running")) {
+                        if (-not [bool]$postStartTask.Settings.Enabled) {
                             throw
                         }
                     }

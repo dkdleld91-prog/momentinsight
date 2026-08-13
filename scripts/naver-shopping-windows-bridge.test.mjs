@@ -244,6 +244,6 @@ test("Windows extension updater restores enablement in finally and starts only a
   assert.ok(restartIndex > successGuardIndex, "failed updates must not explicitly restart Chrome");
   assert.ok(successOutputIndex > restartIndex, "success must be reported only after task restoration succeeds");
   assert.match(updater, /if \(\[string\]\$restoredTask\.State -ne "Running"\)/u);
-  assert.match(updater, /\[string\]\$postStartTask\.State -notin @\("Ready", "Running"\)/u);
+  assert.match(updater, /if \(-not \[bool\]\$postStartTask\.Settings\.Enabled\)/u);
   assert.match(updater, /throw "scheduled_task_restore_failed"/u);
 });

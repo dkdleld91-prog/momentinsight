@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-13 N쇼핑 중복 식별·유한 복구 영구 계약
+
+- 이번 조치는 두 키워드 하드코딩이 아니라 모든 N쇼핑 키워드의 provider·collector contract·server 검증에 동일하게 적용한다. 판매자 카드는 seller ID, 카탈로그 카드는 catalog ID, 그 외는 정규 URL을 authoritative identity로 사용하고 약한 product ID 단독 충돌로 정상 카드를 제거하지 않는다.
+- 동일 seller/catalog/URL과 연속 순위 안의 실제 중복은 fail-closed한다. 중복 행을 버리고 뒤 순위를 당겨 300개를 만들지 않는다.
+- `page_overlap`은 새 전체 수집을 정확히 1회만 허용한다. 두 번째 overlap과 `duplicate_row`는 즉시 종료하며 내부 retry loop나 자동 복구 큐 재등록을 만들지 않는다.
+- 운영 오류 detail은 원시 product/seller/catalog ID·URL·키워드를 저장하지 않고 page/row/kind/origin page의 제한된 문법만 허용한다. 과거 base code만 있는 실패의 세부 원인은 추정으로 확정하지 않는다.
+- 운영자가 지정한 복구 대상은 별도 service-role 복구 큐에서 배열 순서대로 각 1회 소비한다. cursor·next_check_at은 변경하지 않고 마지막 대상 뒤 기존 durable cycle을 계속한다. probe가 있으면 probe가 항상 우선한다.
+- 불변: 동시 실행 1개, 3.5~6초 pacing, 광고 제외 오가닉 `checkedCount=300`, 부분 미저장, last-good 보존, security/network 전역 중단, durable cycle당 기존 키워드 1회.
+
 ## 2026-08-12 N쇼핑 30일 영속 순환 정상화 계약
 
 - 사용자 승인 범위는 N쇼핑 30일 자동 순환의 중복 제거와 순서 보존으로 한정한다. 수집 URL·3.5~6초 pacing·동시 실행 1개·광고 제외 원자 `checkedCount=300`·last-good·Windows primary/Mac standby 계약은 변경하지 않는다.
@@ -23,7 +32,7 @@
 
 ## 2026-08-12 30일 추적 기능 동결·복구 계약
 
-- 사용자가 다시 명시적으로 요청하기 전까지 `N 30일 순위`, `N 플레이스 30일 순위`, Windows 작업기, 스케줄러, 순위 저장·이력·DB migration을 수정하지 않는다.
+- 사용자가 다시 명시적으로 요청하기 전까지 `N 30일 순위`, `N 플레이스 30일 순위`, Windows 작업기, 스케줄러, 순위 저장·이력·DB migration을 수정하지 않는다. 2026-08-13 승인된 N상품 중복 식별·두 건 유한 복구만 예외이며, 배포·검증 뒤 이 동결을 자동 복원한다.
 - 배포 전 30일 기능 원본은 `checkpoint/n30-frozen-20260812-d0f5033`, 이번 정상 배포는 `checkpoint/keyword-age-click-share-production-20260812`를 불변 복구 지점으로 보존한다.
 - 회귀는 태그를 별도 worktree에서 검증한 뒤 새 recovery branch로 배포하고, 운영 DB나 30일 이력을 삭제·되돌리지 않는다. 배포 후 태그와 Production `/health`·`/ready` release를 일치시켜 저장한다.
 
@@ -297,9 +306,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 12. 14:52:23
-- 기준 커밋: 416f9e8
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 13. 15:59:37
+- 기준 커밋: d511daa
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NAVER_SHOPPING_WINDOWS_SETUP.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M package.json /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

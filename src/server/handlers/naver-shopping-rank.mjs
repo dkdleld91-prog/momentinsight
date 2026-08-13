@@ -222,7 +222,7 @@ function extractCatalogIdsFromHtml(html) {
   return uniqueValues(candidates);
 }
 
-function canonicalUrlKey(value) {
+function canonicalUrlKey(value, options = {}) {
   const parsed = parseUrl(value);
   if (!parsed) return "";
   const host = parsed.hostname.toLowerCase().replace(/^m\./, "").replace(/^www\./, "");
@@ -231,6 +231,10 @@ function canonicalUrlKey(value) {
     .replace(/\/$/, "")
     .toLowerCase();
   if (!host || !pathName || pathName === "/") return "";
+  if (options.includeSearch === true) {
+    parsed.searchParams.sort();
+    return `${host}${pathName}${parsed.search}`;
+  }
   return `${host}${pathName}`;
 }
 
@@ -528,12 +532,21 @@ function trustedCollectorWindow(payload, options = {}) {
   let duplicateIdentity = false;
   const identityKeys = (items || []).map((item) => {
     const isCatalogResult = classifyNaverProductType(item?.productType).isPriceCompareCatalog;
-    const signals = uniqueValues([
-      numericId(item?.sellerProductId) ? `seller:${numericId(item.sellerProductId)}` : "",
-      isCatalogResult && numericId(item?.catalogId) ? `catalog:${numericId(item.catalogId)}` : "",
-      numericId(item?.productId) ? `product:${numericId(item.productId)}` : "",
-      canonicalUrlKey(item?.link) ? `url:${canonicalUrlKey(item.link)}` : "",
-    ]);
+    const sellerProductId = numericId(item?.sellerProductId);
+    const catalogId = numericId(item?.catalogId);
+    const productId = numericId(item?.productId);
+    const urlKey = canonicalUrlKey(item?.link, { includeSearch: true });
+    const signals = !isCatalogResult && sellerProductId
+      ? [`seller:${sellerProductId}`]
+      : isCatalogResult
+        ? [catalogId ? `catalog:${catalogId}` : productId ? `product:${productId}` : ""].filter(Boolean)
+        : urlKey
+          ? [`url:${urlKey}`]
+          : productId
+            ? [`product:${productId}`]
+            : catalogId
+              ? [`catalog:${catalogId}`]
+              : [];
     if (signals.some((signal) => seenIdentitySignals.has(signal))) duplicateIdentity = true;
     signals.forEach((signal) => seenIdentitySignals.add(signal));
     return signals.join("|");

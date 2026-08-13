@@ -732,19 +732,38 @@ function identityKey(item) {
   return [item.sellerProductId || "", item.catalogId || "", item.productId || "", item.link || ""].join("|");
 }
 
+function canonicalIdentityUrl(value) {
+  const url = safeHttpUrl(value);
+  if (!url) return "";
+  const parsed = new URL(url);
+  parsed.hash = "";
+  parsed.hostname = parsed.hostname.toLowerCase().replace(/^m\./u, "").replace(/^www\./u, "");
+  parsed.pathname = decodeURIComponent(parsed.pathname).replace(/\/+$/u, "").toLowerCase() || "/";
+  parsed.searchParams.sort();
+  return `${parsed.hostname}${parsed.pathname}${parsed.search}`;
+}
+
 function identitySignals(item) {
-  let canonicalUrl = "";
-  if (item.link) {
-    const parsed = new URL(item.link);
-    canonicalUrl = `${parsed.hostname.toLowerCase().replace(/^m\./u, "").replace(/^www\./u, "")}${decodeURIComponent(parsed.pathname).replace(/\/+$/u, "").toLowerCase()}`;
-  }
   const isCatalogResult = [1, 4, 7, 10].includes(Number(item.productType));
-  return [
-    item.sellerProductId ? `seller:${item.sellerProductId}` : "",
-    isCatalogResult && item.catalogId ? `catalog:${item.catalogId}` : "",
-    item.productId ? `product:${item.productId}` : "",
-    canonicalUrl ? `url:${canonicalUrl}` : "",
-  ].filter(Boolean);
+  const linkIds = idsFromUrl(item.link);
+
+  // A Naver result can reuse the weak `productId` across distinct seller
+  // cards. Prefer the card's seller/link authority so that collision alone
+  // does not turn one valid keyword into a permanent retry loop.
+  const sellerProductId = item.sellerProductId || linkIds.sellerProductId || "";
+  if (!isCatalogResult && sellerProductId) return [`seller:${sellerProductId}`];
+
+  if (isCatalogResult) {
+    const catalogId = item.catalogId || linkIds.catalogId || "";
+    if (catalogId) return [`catalog:${catalogId}`];
+    return item.productId ? [`product:${item.productId}`] : [];
+  }
+
+  const canonicalUrl = canonicalIdentityUrl(item.link);
+  if (canonicalUrl) return [`url:${canonicalUrl}`];
+  if (item.productId) return [`product:${item.productId}`];
+  if (item.catalogId) return [`catalog:${item.catalogId}`];
+  return [];
 }
 
 export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit = 300 } = {}) {
@@ -752,6 +771,10 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
     throw new ProviderError("naver_selector_drift", `page:${pageIndex}`);
   }
   const localExtractionKeys = new Set();
+  const identityOrigins = state.identityOrigins instanceof Map
+    ? state.identityOrigins
+    : new Map();
+  state.identityOrigins = identityOrigins;
   let added = 0;
   for (let index = 0; index < pageResult.rows.length && state.items.length < limit; index += 1) {
     const item = normalizeBrowserRow(pageResult.rows[index], { pageIndex, rowIndex: index });
@@ -769,10 +792,21 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
       );
     }
     const signals = identitySignals(item);
-    if (signals.some((signal) => state.identities.has(signal))) {
-      throw new ProviderError("provider_duplicate_identity", `${pageIndex}:${index}`);
+    const repeatedSignal = signals.find((signal) => state.identities.has(signal));
+    if (repeatedSignal) {
+      const origin = identityOrigins.get(repeatedSignal);
+      const collisionKind = origin?.pageIndex === pageIndex
+        ? "duplicate_row"
+        : "page_overlap";
+      throw new ProviderError(
+        "provider_duplicate_identity",
+        `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
+      );
     }
-    signals.forEach((signal) => state.identities.add(signal));
+    signals.forEach((signal) => {
+      state.identities.add(signal);
+      identityOrigins.set(signal, { pageIndex, rowIndex: index });
+    });
     const { extractionKey: _extractionKey, sourceRank: _sourceRank, ...publicItem } = item;
     state.items.push({
       ...publicItem,

@@ -863,7 +863,7 @@ test("excludes explicit advertisements before assigning contiguous organic ranks
   assert.equal(state.items[0].isAd, false, "adcr alone must not classify an organic product as an ad");
 });
 
-test("deduplicates repeated extraction of one DOM card but rejects repeated result identities", () => {
+test("deduplicates repeated extraction but rejects strong duplicate identities with collision scope", () => {
   const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
   appendNormalizedPage(state, {
     rows: [rawProduct(1), rawProduct(1)],
@@ -873,21 +873,59 @@ test("deduplicates repeated extraction of one DOM card but rejects repeated resu
 
   assert.throws(() => appendNormalizedPage(state, {
     rows: [rawProduct(1, { extractionKey: "another-real-card" })],
-  }, { pageIndex: 2, limit: 3 }), (error) => error instanceof ProviderError && error.code === "provider_duplicate_identity");
+  }, { pageIndex: 2, limit: 3 }), (error) => (
+    error instanceof ProviderError
+    && error.code === "provider_duplicate_identity"
+    && error.detail === "2:0:page_overlap:1"
+  ));
   assert.equal(state.items.length, 1, "a duplicate result must fail instead of compressing later organic ranks");
+});
 
-  const sharedProductId = rawProduct(9, {
-    extractionKey: "different-link-same-product",
-    links: ["https://smartstore.naver.com/another/products/99999999999"],
+test("keeps distinct seller cards when only their weak provider productId collides", () => {
+  const parsed = parseNaverNextDataPage(nextDataFixture({
+    total: 2,
+    entries: [
+      nextDataProduct(1),
+      nextDataProduct(2, {
+        id: "91000000001",
+        mallProductId: "12000000002",
+        mallProductUrl: "https://smartstore.naver.com/example/products/12000000002",
+        productTitle: "같은 provider productId의 별도 판매자 상품",
+      }),
+    ],
+  }), { pageIndex: 1, keyword: "온열찜질기" });
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+
+  appendNormalizedPage(state, parsed, { pageIndex: 1, limit: 2 });
+
+  assert.equal(state.items.length, 2);
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2]);
+  assert.deepEqual(state.items.map((item) => item.sellerProductId), [
+    "12000000001",
+    "12000000002",
+  ]);
+});
+
+test("still rejects an isolated duplicate seller row and does not compress organic rank", () => {
+  const first = rawProduct(31);
+  const duplicateSeller = rawProduct(32, { extractionKey: "duplicate-seller-card" });
+  duplicateSeller.payload = JSON.stringify({
+    nvMid: String(70000000032),
+    chnl_prod_no: String(80000000031),
+    productName: "동일 판매자 상품의 중복 행",
+    productType: 2,
   });
-  sharedProductId.payload = JSON.stringify({
-    nvMid: String(70000000001),
-    chnl_prod_no: "99999999999",
-    productName: "같은 상품 ID의 다른 링크",
-  });
-  assert.throws(() => appendNormalizedPage(state, {
-    rows: [sharedProductId],
-  }, { pageIndex: 2, limit: 3 }), (error) => error instanceof ProviderError && error.code === "provider_duplicate_identity");
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+
+  assert.throws(
+    () => appendNormalizedPage(state, { rows: [first, duplicateSeller] }, { pageIndex: 1, limit: 2 }),
+    (error) => (
+      error instanceof ProviderError
+      && error.code === "provider_duplicate_identity"
+      && error.detail === "1:1:duplicate_row:1"
+    ),
+  );
+  assert.equal(state.items.length, 1);
 });
 
 test("classifies 418, 429, CAPTCHA, auth redirect, and invalid navigation with typed errors", () => {

@@ -31,7 +31,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.1";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.2";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -409,6 +409,64 @@ async function claimOneLookupJob(ctx) {
   };
 }
 
+async function claimRepairPriority(ctx, body) {
+  const control = workerControlInput(body);
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_repair_priority", {
+    p_worker_id: control.workerId,
+    p_lane_token: control.laneToken,
+    p_run_id: control.runId,
+    p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
+  });
+  if (error) throw workerError("LOCAL_WORKER_REPAIR_UNAVAILABLE", 503);
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
+  }
+
+  const status = String(data.status || "").trim().toLowerCase();
+  const priority = String(data.priority || "").trim().toLowerCase();
+  const rawClaims = Array.isArray(data.claims) ? data.claims : [];
+  if (["empty", "waiting"].includes(status)) {
+    if (priority !== "repair" || rawClaims.length !== 0) {
+      throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
+    }
+    return { status, job: null };
+  }
+  if (status !== "claimed" || priority !== "repair" || rawClaims.length !== 1) {
+    throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
+  }
+
+  const requestId = String(cycleValue(data, "requestId", "request_id") || "").trim().toLowerCase();
+  const position = Number(cycleValue(data, "position", "position"));
+  if (!WORKER_RUN_ID_PATTERN.test(requestId)
+    || !Number.isSafeInteger(position)
+    || position < 1
+    || position > 10) {
+    throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
+  }
+
+  // Only the bounded lease envelope crosses into the worker job. Canonical
+  // tracker fields are loaded from naver_rank_trackers after the claim; any
+  // extra/raw tracker payload returned by the RPC is deliberately discarded.
+  const claim = rawClaims[0];
+  const job = {
+    keyword: normalizeText(data.keyword),
+    limit: LOCAL_WORKER_ORGANIC_LIMIT,
+    claims: [{
+      trackerId: cycleValue(claim, "trackerId", "tracker_id"),
+      leaseStartedAt: cycleValue(claim, "leaseStartedAt", "lease_started_at"),
+      leaseUntil: cycleValue(claim, "leaseUntil", "lease_until"),
+    }],
+  };
+  try {
+    return {
+      status,
+      job: validateLocalWorkerJob(job, { requireActiveLease: true, nowMs: Date.now() }),
+    };
+  } catch {
+    throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
+  }
+}
+
 async function claimCycleKeyword(ctx, body) {
   const control = workerControlInput(body);
   const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
@@ -740,13 +798,21 @@ export async function handleLocalWorkerRequest(request, ctx) {
       await touchWorkerLane(ctx, body);
       let job;
       if (body.schedulerVersion === "v2") {
-        const cycleTurn = await claimCycleKeyword(ctx, body);
         const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
-        job = cycleTurn.job;
-        if (!job
-          && !probeTrackerId
-          && ["cycle_completed", "no_cycle"].includes(cycleTurn.status)) {
-          job = await claimOneLookupJob(ctx);
+        if (probeTrackerId) {
+          // Circuit-breaker proof is safety-critical and must never wait behind
+          // an operator repair batch.
+          job = (await claimCycleKeyword(ctx, body)).job;
+        } else {
+          const repairTurn = await claimRepairPriority(ctx, body);
+          job = repairTurn.job;
+          if (repairTurn.status === "empty") {
+            const cycleTurn = await claimCycleKeyword(ctx, body);
+            job = cycleTurn.job;
+            if (!job && ["cycle_completed", "no_cycle"].includes(cycleTurn.status)) {
+              job = await claimOneLookupJob(ctx);
+            }
+          }
         }
       } else {
         throw workerError("LOCAL_WORKER_SCHEDULER_VERSION_STALE", 409);

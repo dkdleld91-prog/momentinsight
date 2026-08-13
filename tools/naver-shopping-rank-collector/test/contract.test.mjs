@@ -190,3 +190,37 @@ test("keeps a catalog result and a seller result linked to that catalog distinct
   assert.equal(result.items[0].catalogId, sharedCatalogId);
   assert.equal(result.items[1].linkedCatalogId, sharedCatalogId);
 });
+
+test("accepts distinct seller cards that only share a weak productId", () => {
+  const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
+  const window = validWindow();
+  window.items[1] = {
+    ...window.items[1],
+    productType: 2,
+    productId: window.items[0].productId,
+    sellerProductId: "5145848599",
+    link: "https://smartstore.naver.com/example/products/5145848599",
+  };
+  window.items[0].productType = 2;
+
+  const result = validateProviderWindow(window, request);
+  assert.equal(result.items.length, 2);
+  assert.notEqual(result.items[0].sellerProductId, result.items[1].sellerProductId);
+});
+
+test("uses one catalog authority and still rejects a repeated catalog card", () => {
+  const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
+  const distinct = validWindow();
+  distinct.items = [
+    { ...distinct.items[0], productType: 1, catalogId: "71000000001", sellerProductId: undefined },
+    { ...distinct.items[1], productType: 1, catalogId: "71000000002", productId: distinct.items[0].productId, sellerProductId: undefined },
+  ];
+  assert.equal(validateProviderWindow(distinct, request).items.length, 2);
+
+  distinct.items[1].catalogId = distinct.items[0].catalogId;
+  assertContractError(
+    () => validateProviderWindow(distinct, request),
+    "invalid_provider_response",
+    "duplicate_identity",
+  );
+});

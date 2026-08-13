@@ -242,7 +242,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.1",
+            runtime_version: "1.1.2",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -269,7 +269,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.1",
+              runtime_version: "1.1.2",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -986,7 +986,10 @@ test("manual hybrid refresh wakes once without changing order, processing, or qu
   assert.equal(body.queuedForLocalWorker, true);
   assert.equal(body.remoteWakeRequested, true);
   assert.equal(body.errorCode, "SHOPPING_RANK_OUTSIDE_VERIFIED_WINDOW");
-  assert.match(body.message, /기존 순서를 바꾸지 않고.*자동 순환/u);
+  assert.equal(
+    body.message,
+    "중앙 Chrome 자동 순환을 깨웠습니다. 기존 순서와 격리 시각을 유지하며 차례가 되면 300위까지 갱신합니다.",
+  );
   assert.equal(body.tracker.nextCheckAt, before[0].next_check_at);
   assert.deepEqual(wakeSources, ["tracker-check"]);
   assert.deepEqual(rows, before);
@@ -1871,7 +1874,7 @@ test("the external shopping collector requires native organic evidence", () => {
   );
 
   const duplicate = collectorWindow("테스트 상품", [shoppingResultItem(0), shoppingResultItem(1)], { limit: 2 });
-  duplicate.items[1].productId = duplicate.items[0].productId;
+  duplicate.items[1].link = duplicate.items[0].link;
   assert.throws(
     () => trustedCollectorWindow(duplicate, { keyword: "테스트 상품", maxRank: 2 }),
     /shopping_rank_provider_untrusted_evidence/,
@@ -1906,6 +1909,22 @@ test("the external shopping collector requires native organic evidence", () => {
   ], { limit: 2 });
   assert.equal(
     trustedCollectorWindow(catalogAndSeller, { keyword: "테스트 상품", maxRank: 2 }).items.length,
+    2,
+  );
+
+  const weakProductCollision = collectorWindow("테스트 상품", [
+    shoppingResultItem(0, {
+      sellerProductId: "80000000000",
+      link: "https://smartstore.naver.com/other-store/products/80000000000",
+    }),
+    shoppingResultItem(1, {
+      productId: "70000000000",
+      sellerProductId: "80000000001",
+      link: "https://smartstore.naver.com/other-store/products/80000000001",
+    }),
+  ], { limit: 2 });
+  assert.equal(
+    trustedCollectorWindow(weakProductCollision, { keyword: "테스트 상품", maxRank: 2 }).items.length,
     2,
   );
 });

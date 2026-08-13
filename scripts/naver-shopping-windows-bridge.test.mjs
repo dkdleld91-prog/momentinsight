@@ -123,12 +123,27 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /"icon128\.png"/u);
   assert.match(updater, /MomentInsightNaverShoppingHost\.cs/u);
   assert.match(updater, /naver-shopping-native-host\.mjs/u);
+  assert.match(updater, /naver-shopping-native-host-core\.mjs/u);
+  assert.match(updater, /native_host_core_download_empty/u);
+  assert.match(updater, /native_host_core_javascript_invalid/u);
+  assert.match(updater, /native_host_core_sha256/u);
+  assert.match(updater, /Copy-Item -LiteralPath \$stagedNativeHostCore -Destination \$nativeHostCorePath -Force/u);
   assert.match(updater, /naver-shopping-local-worker\.mjs/u);
   assert.match(updater, /local_worker_javascript_invalid/u);
   assert.match(updater, /local_worker_sha256/u);
   assert.match(updater, /local-worker-contract\.mjs/u);
   assert.match(updater, /local_worker_contract_javascript_invalid/u);
   assert.match(updater, /local_worker_contract_sha256/u);
+  assert.match(updater, /naver-shopping-rank-collector\/src\/provider\.mjs/u);
+  assert.match(updater, /collector_provider_download_empty/u);
+  assert.match(updater, /collector_provider_javascript_invalid/u);
+  assert.match(updater, /collector_provider_sha256/u);
+  assert.match(updater, /Copy-Item -LiteralPath \$stagedCollectorProvider -Destination \$collectorProviderPath -Force/u);
+  assert.match(updater, /naver-shopping-rank-collector\/src\/contract\.mjs/u);
+  assert.match(updater, /collector_contract_download_empty/u);
+  assert.match(updater, /collector_contract_javascript_invalid/u);
+  assert.match(updater, /collector_contract_sha256/u);
+  assert.match(updater, /Copy-Item -LiteralPath \$stagedCollectorContract -Destination \$collectorContractPath -Force/u);
   assert.match(updater, /runtime_fingerprint=/u);
   assert.match(updater, /Security\.Cryptography\.SHA256/u);
   assert.match(updater, /run-naver-shopping-chrome-scheduler\.ps1/u);
@@ -146,6 +161,20 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.ok(
     updater.indexOf("extension_javascript_invalid") < updater.indexOf("Get-Process chrome"),
     "validation must finish before Chrome is restarted",
+  );
+  for (const validationCode of [
+    "native_host_core_javascript_invalid",
+    "collector_provider_javascript_invalid",
+    "collector_contract_javascript_invalid",
+  ]) {
+    assert.ok(
+      updater.indexOf(validationCode) < updater.indexOf("Get-Process chrome"),
+      `${validationCode} must be checked before Chrome is restarted`,
+    );
+  }
+  assert.match(
+    updater,
+    /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerContractHash`n\$collectorProviderHash`n\$collectorContractHash/u,
   );
   assert.match(updater, /MI_EXTENSION_UPDATE_OK/u);
 });

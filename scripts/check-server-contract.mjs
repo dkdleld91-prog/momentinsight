@@ -45,12 +45,14 @@ const files = {
   shoppingWorkerControlMigration: "supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql",
   shoppingWorkerContinuityMigration: "supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql",
   shoppingWorkerDurableCycleMigration: "supabase/migrations/20260812060826_naver_shopping_durable_cycle_probe.sql",
+  shoppingWorkerRuntime112Migration: "supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
   shoppingNativeHostCore: "scripts/naver-shopping-native-host-core.mjs",
   shoppingNativeHostInstaller: "scripts/install-naver-shopping-chrome-bridge.mjs",
   shoppingWindowsHostInstaller: "scripts/install-naver-shopping-chrome-bridge-windows.ps1",
+  shoppingWindowsExtensionUpdater: "scripts/windows/update-naver-shopping-chrome-extension.ps1",
   shoppingWindowsHostLauncher: "scripts/windows/MomentInsightNaverShoppingHost.cs",
   shoppingWindowsChromeScheduler: "scripts/windows/run-naver-shopping-chrome-scheduler.ps1",
   shoppingChromeSchedulerWrapper: "scripts/run-naver-shopping-chrome-scheduler.sh",
@@ -108,12 +110,14 @@ const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigr
 const shoppingWorkerControlMigration = fs.readFileSync(files.shoppingWorkerControlMigration, "utf8");
 const shoppingWorkerContinuityMigration = fs.readFileSync(files.shoppingWorkerContinuityMigration, "utf8");
 const shoppingWorkerDurableCycleMigration = fs.readFileSync(files.shoppingWorkerDurableCycleMigration, "utf8");
+const shoppingWorkerRuntime112Migration = fs.readFileSync(files.shoppingWorkerRuntime112Migration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
 const shoppingNativeHostCore = fs.readFileSync(files.shoppingNativeHostCore, "utf8");
 const shoppingNativeHostInstaller = fs.readFileSync(files.shoppingNativeHostInstaller, "utf8");
 const shoppingWindowsHostInstaller = fs.readFileSync(files.shoppingWindowsHostInstaller, "utf8");
+const shoppingWindowsExtensionUpdater = fs.readFileSync(files.shoppingWindowsExtensionUpdater, "utf8");
 const shoppingWindowsHostLauncher = fs.readFileSync(files.shoppingWindowsHostLauncher, "utf8");
 const shoppingWindowsChromeScheduler = fs.readFileSync(files.shoppingWindowsChromeScheduler, "utf8");
 const shoppingChromeSchedulerWrapper = fs.readFileSync(files.shoppingChromeSchedulerWrapper, "utf8");
@@ -638,6 +642,23 @@ check(
   `${files.shoppingWorkerContinuityMigration}, ${files.shoppingWorkerDurableCycleMigration}, ${files.shoppingLocalWorkerHandler}`,
 );
 check(
+  "N Shopping duplicate-identity release pins runtime 1.1.2 fail-closed",
+  hasAll(shoppingWorkerRuntime112Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.2'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.2'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime112Migration),
+  files.shoppingWorkerRuntime112Migration,
+);
+check(
   "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",
   hasAll(shoppingWindowsHostInstaller, [
     /Read-Host "Chrome profile visible name or number"/,
@@ -657,6 +678,35 @@ check(
     /chrome:\/\/extensions/,
   ])
     && !/-AsPlainText|cmdkey|remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsHostInstaller)
+    && hasAll(shoppingWindowsExtensionUpdater, [
+      /naver-shopping-native-host-core\.mjs/,
+      /tools\/naver-shopping-rank-collector\/src\/provider\.mjs/,
+      /tools\/naver-shopping-rank-collector\/src\/contract\.mjs/,
+      /native_host_core_download_empty/,
+      /collector_provider_download_empty/,
+      /collector_contract_download_empty/,
+      /native_host_core_javascript_invalid/,
+      /collector_provider_javascript_invalid/,
+      /collector_contract_javascript_invalid/,
+      /Copy-Item -LiteralPath \$stagedNativeHostCore -Destination \$nativeHostCorePath -Force/,
+      /Copy-Item -LiteralPath \$stagedCollectorProvider -Destination \$collectorProviderPath -Force/,
+      /Copy-Item -LiteralPath \$stagedCollectorContract -Destination \$collectorContractPath -Force/,
+      /native_host_core_sha256=/,
+      /collector_provider_sha256=/,
+      /collector_contract_sha256=/,
+      /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerContractHash`n\$collectorProviderHash`n\$collectorContractHash/,
+    ])
+    && [
+      "native_host_core_javascript_invalid",
+      "collector_provider_javascript_invalid",
+      "collector_contract_javascript_invalid",
+    ].every((code) => shoppingWindowsExtensionUpdater.indexOf(code) >= 0
+      && shoppingWindowsExtensionUpdater.indexOf(code) < shoppingWindowsExtensionUpdater.indexOf("Get-Process chrome"))
+    && hasAll(shoppingNativeHost, [
+      /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs"/,
+      /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/provider\.mjs"/,
+      /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/contract\.mjs"/,
+    ])
     && hasAll(shoppingWindowsHostLauncher, [
       /ProtectedData\.Unprotect/,
       /DataProtectionScope\.CurrentUser/,
@@ -675,11 +725,11 @@ check(
       /chrome_ready profile=/,
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
-  `${files.shoppingWindowsHostInstaller}, ${files.shoppingWindowsHostLauncher}, ${files.shoppingWindowsChromeScheduler}`,
+  `${files.shoppingWindowsHostInstaller}, ${files.shoppingWindowsExtensionUpdater}, ${files.shoppingWindowsHostLauncher}, ${files.shoppingWindowsChromeScheduler}, ${files.shoppingNativeHost}`,
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.1"
+  shoppingChromeManifest.version === "1.1.2"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)

@@ -33,12 +33,18 @@ async function runtimeIdentity(start) {
     throw new Error("native_host_runtime_identity_invalid");
   }
   let nativeHostSha256;
+  let nativeHostCoreSha256;
   let localWorkerSha256;
   let contractSha256;
+  let collectorProviderSha256;
+  let collectorContractSha256;
   try {
     nativeHostSha256 = await sha256File(new URL(import.meta.url));
+    nativeHostCoreSha256 = await sha256File(new URL("./naver-shopping-native-host-core.mjs", import.meta.url));
     localWorkerSha256 = await sha256File(new URL("./naver-shopping-local-worker.mjs", import.meta.url));
     contractSha256 = await sha256File(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url));
+    collectorProviderSha256 = await sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs", import.meta.url));
+    collectorContractSha256 = await sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs", import.meta.url));
   } catch {
     throw new Error("native_host_runtime_identity_unavailable");
   }
@@ -46,16 +52,22 @@ async function runtimeIdentity(start) {
     version,
     serviceWorkerSha256,
     nativeHostSha256,
+    nativeHostCoreSha256,
     localWorkerSha256,
     contractSha256,
+    collectorProviderSha256,
+    collectorContractSha256,
   ].join("\n"), "utf8").digest("hex");
   return {
     version,
     fingerprint,
     serviceWorkerSha256,
     nativeHostSha256,
+    nativeHostCoreSha256,
     localWorkerSha256,
     contractSha256,
+    collectorProviderSha256,
+    collectorContractSha256,
   };
 }
 

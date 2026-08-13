@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.1";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.2";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -1653,7 +1653,7 @@ async function checkOne(request, ctx, body) {
       preserved: true,
       queuedForLocalWorker: true,
       remoteWakeRequested,
-      message: "갱신 요청을 접수했습니다. 기존 순서를 바꾸지 않고 중앙 Chrome 300위 자동 순환에서 확인합니다.",
+      message: "중앙 Chrome 자동 순환을 깨웠습니다. 기존 순서와 격리 시각을 유지하며 차례가 되면 300위까지 갱신합니다.",
       tracker: trackerPayload(
         tracker,
         snapshots.get(tracker.id) || [],

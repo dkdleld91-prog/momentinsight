@@ -184,10 +184,12 @@ const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_nav
 const shoppingWorkerLaneMigration = read("supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql");
 const shoppingWorkerControlMigration = read("supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql");
 const shoppingWorkerContinuityMigration = read("supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql");
+const shoppingWorkerRuntime112Migration = read("supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
 const shoppingWindowsHostInstaller = read("scripts/install-naver-shopping-chrome-bridge-windows.ps1");
+const shoppingWindowsExtensionUpdater = read("scripts/windows/update-naver-shopping-chrome-extension.ps1");
 const shoppingWindowsHostLauncher = read("scripts/windows/MomentInsightNaverShoppingHost.cs");
 const shoppingWindowsChromeScheduler = read("scripts/windows/run-naver-shopping-chrome-scheduler.ps1");
 const shoppingNativeHostWrapper = read("scripts/run-naver-shopping-native-host.sh");
@@ -1384,6 +1386,31 @@ const checks = {
     && shoppingWindowsChromeScheduler.includes("'--profile-directory=\"{0}\"' -f $profileDirectory")
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
+  shoppingWindowsRuntimeDependenciesAreValidatedAndFingerprinted: shoppingWindowsExtensionUpdater.includes("scripts/naver-shopping-native-host-core.mjs")
+    && shoppingWindowsExtensionUpdater.includes("tools/naver-shopping-rank-collector/src/provider.mjs")
+    && shoppingWindowsExtensionUpdater.includes("tools/naver-shopping-rank-collector/src/contract.mjs")
+    && shoppingWindowsExtensionUpdater.includes("native_host_core_download_empty")
+    && shoppingWindowsExtensionUpdater.includes("collector_provider_download_empty")
+    && shoppingWindowsExtensionUpdater.includes("collector_contract_download_empty")
+    && shoppingWindowsExtensionUpdater.includes("native_host_core_javascript_invalid")
+    && shoppingWindowsExtensionUpdater.includes("collector_provider_javascript_invalid")
+    && shoppingWindowsExtensionUpdater.includes("collector_contract_javascript_invalid")
+    && shoppingWindowsExtensionUpdater.includes("Copy-Item -LiteralPath $stagedNativeHostCore -Destination $nativeHostCorePath -Force")
+    && shoppingWindowsExtensionUpdater.includes("Copy-Item -LiteralPath $stagedCollectorProvider -Destination $collectorProviderPath -Force")
+    && shoppingWindowsExtensionUpdater.includes("Copy-Item -LiteralPath $stagedCollectorContract -Destination $collectorContractPath -Force")
+    && shoppingWindowsExtensionUpdater.includes("native_host_core_sha256=")
+    && shoppingWindowsExtensionUpdater.includes("collector_provider_sha256=")
+    && shoppingWindowsExtensionUpdater.includes("collector_contract_sha256=")
+    && shoppingWindowsExtensionUpdater.includes("$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerContractHash`n$collectorProviderHash`n$collectorContractHash")
+    && [
+      "native_host_core_javascript_invalid",
+      "collector_provider_javascript_invalid",
+      "collector_contract_javascript_invalid",
+    ].every((code) => shoppingWindowsExtensionUpdater.indexOf(code) >= 0
+      && shoppingWindowsExtensionUpdater.indexOf(code) < shoppingWindowsExtensionUpdater.indexOf("Get-Process chrome"))
+    && shoppingNativeHost.includes('sha256File(new URL("./naver-shopping-native-host-core.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs"'),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes("BASELINE_CADENCE_MINUTES = 10")
     && shoppingChromeWorker.includes("CANDIDATE_CADENCE_MINUTES = 8")
     && shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes }]')
@@ -1395,7 +1422,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.1"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.2"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1463,6 +1490,13 @@ const checks = {
     && shoppingWorkerContinuityMigration.includes("security invoker")
     && !shoppingWorkerContinuityMigration.includes("security definer")
     && shoppingWorkerContinuityMigration.includes("to service_role")
+    && shoppingWorkerRuntime112Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.2'")
+    && shoppingWorkerRuntime112Migration.includes("current_row.runtime_version = '1.1.2'")
+    && shoppingWorkerRuntime112Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime112Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime112Migration.includes("security invoker")
+    && !shoppingWorkerRuntime112Migration.includes("security definer")
+    && shoppingWorkerRuntime112Migration.includes("to service_role")
     && shoppingLocalWorkerHandler.includes('mi_claim_naver_shopping_cycle_keyword')
     && shoppingLocalWorkerHandler.includes('rawClaims.length > 100')
     && shoppingLocalWorkerHandler.includes('CATALOG_HISTORY_BATCH_MAX = 8')
@@ -1481,7 +1515,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.1"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.2"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

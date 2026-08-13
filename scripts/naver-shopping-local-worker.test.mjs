@@ -67,7 +67,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.1",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.2",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -233,7 +233,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.1");
+  assert.equal(lane.runtimeVersion, "1.1.2");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -352,7 +352,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.1");
+  assert.equal(coordination[0].runtimeVersion, "1.1.2");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -802,6 +802,34 @@ test("isolates duplicate provider identity to its tracker group and continues th
     coordination: calls.coordination,
     logs,
   }), /secret-keyword|raw-identity|shopping\.example/u);
+});
+
+test("preserves only a bounded duplicate diagnostic suffix and keeps tracker failure scope", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("provider_duplicate_identity");
+      error.code = "provider_duplicate_identity";
+      error.detail = "3:26:page_overlap:2";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+
+  await runLocalShoppingWorker({
+    env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+    randomUUID: uuidSequence(), skipLock: true,
+  });
+
+  assert.equal(calls[1].errorCode, "provider_duplicate_identity:3:26:page_overlap:2");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.errorCode, "provider_duplicate_identity:3:26:page_overlap:2");
+  assert.equal(failure.scope, "tracker");
 });
 
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {

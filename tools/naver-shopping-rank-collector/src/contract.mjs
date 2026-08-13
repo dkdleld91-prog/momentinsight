@@ -209,18 +209,23 @@ function validateItem(value, expectedRank, limit) {
 }
 
 function identitySignals(item) {
-  let canonicalUrl = "";
+  const isCatalogResult = [1, 4, 7, 10].includes(Number(item.productType));
+  if (!isCatalogResult && item.sellerProductId) return [`seller:${item.sellerProductId}`];
+  if (isCatalogResult) {
+    if (item.catalogId) return [`catalog:${item.catalogId}`];
+    return item.productId ? [`product:${item.productId}`] : [];
+  }
   if (item.link) {
     const parsed = new URL(item.link);
-    canonicalUrl = `${parsed.hostname.toLowerCase().replace(/^m\./u, "").replace(/^www\./u, "")}${decodeURIComponent(parsed.pathname).replace(/\/+$/u, "").toLowerCase()}`;
+    parsed.hash = "";
+    parsed.hostname = parsed.hostname.toLowerCase().replace(/^m\./u, "").replace(/^www\./u, "");
+    parsed.pathname = decodeURIComponent(parsed.pathname).replace(/\/+$/u, "").toLowerCase() || "/";
+    parsed.searchParams.sort();
+    return [`url:${parsed.hostname}${parsed.pathname}${parsed.search}`];
   }
-  const isCatalogResult = [1, 4, 7, 10].includes(Number(item.productType));
-  return [
-    item.sellerProductId ? `seller:${item.sellerProductId}` : "",
-    isCatalogResult && item.catalogId ? `catalog:${item.catalogId}` : "",
-    item.productId ? `product:${item.productId}` : "",
-    canonicalUrl ? `url:${canonicalUrl}` : "",
-  ].filter(Boolean);
+  if (item.productId) return [`product:${item.productId}`];
+  if (item.catalogId) return [`catalog:${item.catalogId}`];
+  return [];
 }
 
 export function validateProviderWindow(value, request) {

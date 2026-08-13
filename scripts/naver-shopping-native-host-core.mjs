@@ -168,21 +168,31 @@ export function createChromeNativeProvider(options = {}) {
   }
   return {
     async collect(request) {
-      const response = await options.exchange({
-        type: "collect",
-        request,
-      });
-      if (!response || response.type !== "collection") {
-        throw new ProviderError("native_host_collection_invalid");
-      }
-      if (Array.isArray(response.rows)) {
-        return buildNativeWindowFromRows(request, response.rows, {
-          nowMs: options.nowMs?.() ?? Date.now(),
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const response = await options.exchange({
+          type: "collect",
+          request,
         });
+        if (!response || response.type !== "collection") {
+          throw new ProviderError("native_host_collection_invalid");
+        }
+        try {
+          if (Array.isArray(response.rows)) {
+            return buildNativeWindowFromRows(request, response.rows, {
+              nowMs: options.nowMs?.() ?? Date.now(),
+            });
+          }
+          return buildNativeWindowFromPages(request, response.pages, {
+            nowMs: options.nowMs?.() ?? Date.now(),
+          });
+        } catch (error) {
+          const transientOverlap = error instanceof ProviderError
+            && error.code === "provider_duplicate_identity"
+            && /^(?:[1-8]):(?:\d+):page_overlap:(?:[1-8])$/u.test(String(error.detail || ""));
+          if (!transientOverlap || attempt >= 2) throw error;
+        }
       }
-      return buildNativeWindowFromPages(request, response.pages, {
-        nowMs: options.nowMs?.() ?? Date.now(),
-      });
+      throw new ProviderError("native_host_collection_invalid");
     },
     async close() {},
   };

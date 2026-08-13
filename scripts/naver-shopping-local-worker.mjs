@@ -129,7 +129,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.1";
+const EXPECTED_RUNTIME_VERSION = "1.1.2";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -241,7 +241,12 @@ function safeFailureCode(error) {
     .trim()
     .toLowerCase();
   const baseCode = code.split(":", 1)[0];
-  if (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)) return baseCode;
+  if (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)) {
+    const detail = String(error?.detail || "").trim().toLowerCase();
+    return /^(?:[1-8]):(?:\d{1,3}):(?:duplicate_row|page_overlap):(?:[1-8])$/u.test(detail)
+      ? `${baseCode}:${detail}`
+      : baseCode;
+  }
   if (!SAFE_FAILURE_CODES.has(code) && !INTERNAL_FAILURE_CODE_PATTERN.test(code)) {
     return "local_worker_collection_failed";
   }

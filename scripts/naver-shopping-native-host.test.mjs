@@ -205,6 +205,54 @@ test("native provider exchanges only a bounded public page collection", async ()
   assert.equal(result.checkedCount, 300);
 });
 
+function overlapPages() {
+  const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+  const secondPage = JSON.parse(pages[1].nextDataText);
+  secondPage.props.pageProps.compositeList.list[4].item = productItem(1);
+  secondPage.props.pageProps.compositeList.list[4].item.rank = 41;
+  pages[1].nextDataText = JSON.stringify(secondPage);
+  return pages;
+}
+
+test("native provider retries one full collection after transient page overlap", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      return {
+        type: "collection",
+        pages: exchanges === 1
+          ? overlapPages()
+          : Array.from({ length: 8 }, (_, index) => page(index + 1)),
+      };
+    },
+  });
+
+  assert.equal((await provider.collect(request(nowMs))).checkedCount, 300);
+  assert.equal(exchanges, 2);
+});
+
+test("native provider stops after the second repeated page overlap", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      return { type: "collection", pages: overlapPages() };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && error?.detail === "2:4:page_overlap:1",
+  );
+  assert.equal(exchanges, 2);
+});
+
 test("manifest public key produces a stable Chrome extension id", async () => {
   const manifest = await import("../tools/naver-shopping-chrome-extension/manifest.json", {
     with: { type: "json" },
@@ -282,7 +330,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.1");
+  assert.equal(manifest.version, "1.1.2");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -335,6 +383,13 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/u);
   assert.match(nativeHost, /async function runtimeIdentity\(start\)/u);
   assert.match(nativeHost, /native_host_runtime_identity_invalid/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/provider\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/contract\.mjs", import\.meta\.url\)\)/u);
+  assert.match(
+    nativeHost,
+    /serviceWorkerSha256,[\s\S]{0,100}nativeHostSha256,[\s\S]{0,100}nativeHostCoreSha256,[\s\S]{0,100}localWorkerSha256,[\s\S]{0,100}contractSha256,[\s\S]{0,100}collectorProviderSha256,[\s\S]{0,100}collectorContractSha256,[\s\S]{0,40}\]\.join\("\\n"\)/u,
+  );
   assert.match(nativeHost, /registerProgressSink\(sink\)/u);
   assert.match(nativeHost, /stage: "collect", page: pages\.length/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
@@ -623,7 +678,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.1");
+  assert.equal(manifest.version, "1.1.2");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -779,7 +834,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.1",
+    runtimeVersion: "1.1.2",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

@@ -289,7 +289,21 @@ finally {
             Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
             if ($updateSucceeded) {
                 Start-Sleep -Seconds 3
-                Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                $restoredTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                if ([string]$restoredTask.State -ne "Running") {
+                    try {
+                        Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                    }
+                    catch {
+                        # A due trigger can win the narrow enable/start race.
+                        # Enabled Ready/Running is a valid restored watchdog.
+                        $postStartTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+                        if (-not [bool]$postStartTask.Settings.Enabled -or
+                            [string]$postStartTask.State -notin @("Ready", "Running")) {
+                            throw
+                        }
+                    }
+                }
             }
         }
         else {

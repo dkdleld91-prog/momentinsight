@@ -186,6 +186,7 @@ const shoppingWorkerControlMigration = read("supabase/migrations/20260811095137_
 const shoppingWorkerContinuityMigration = read("supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql");
 const shoppingWorkerRuntime112Migration = read("supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql");
 const shoppingWorkerRuntime113Migration = read("supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql");
+const shoppingWorkerRuntime114Migration = read("supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1423,16 +1424,17 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.3"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.4"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "standby" || result.status === "idle"')
     && shoppingChromeWorker.includes('result.status === "standby"')
     && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
-    && shoppingNativeHost.includes('writeMessage({ type: "ready" })')
+    && shoppingNativeHost.includes('writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL })')
     && shoppingNativeHost.includes('readyAck = await nextMessage(30_000)')
-    && shoppingChromeWorker.includes('port.postMessage({ action: "ready_ack" })')
+    && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
+    && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
@@ -1505,6 +1507,13 @@ const checks = {
     && shoppingWorkerRuntime113Migration.includes("security invoker")
     && !shoppingWorkerRuntime113Migration.includes("security definer")
     && shoppingWorkerRuntime113Migration.includes("to service_role")
+    && shoppingWorkerRuntime114Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.4'")
+    && shoppingWorkerRuntime114Migration.includes("current_row.runtime_version = '1.1.4'")
+    && shoppingWorkerRuntime114Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime114Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime114Migration.includes("security invoker")
+    && !shoppingWorkerRuntime114Migration.includes("security definer")
+    && shoppingWorkerRuntime114Migration.includes("to service_role")
     && shoppingLocalWorkerHandler.includes('mi_claim_naver_shopping_cycle_keyword')
     && shoppingLocalWorkerHandler.includes('rawClaims.length > 100')
     && shoppingLocalWorkerHandler.includes('CATALOG_HISTORY_BATCH_MAX = 8')
@@ -1523,7 +1532,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.3"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.4"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

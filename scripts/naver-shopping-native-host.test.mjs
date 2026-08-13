@@ -15,9 +15,13 @@ import {
   resolveChromeProfileDirectory,
 } from "./install-naver-shopping-chrome-bridge.mjs";
 import {
+  COLLECTION_PROTOCOL,
   buildNativeWindowFromPages,
   buildNativeWindowFromRows,
   createChromeNativeProvider,
+  createNativePageStreamCollector,
+  resolveNativeExchangeWait,
+  validateCollectionProtocolAck,
 } from "./naver-shopping-native-host-core.mjs";
 import { SCHEMA_VERSION } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 
@@ -29,6 +33,27 @@ function assertZshSyntax(scriptPath, source) {
     return;
   }
   assert.equal(lint.status, 0, lint.stderr);
+}
+
+function nativeMessageFrame(payload) {
+  const body = Buffer.from(JSON.stringify(payload), "utf8");
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(body.length, 0);
+  return Buffer.concat([header, body]);
+}
+
+function decodeNativeMessageFrames(buffer) {
+  const messages = [];
+  let offset = 0;
+  while (offset < buffer.length) {
+    assert.ok(offset + 4 <= buffer.length);
+    const length = buffer.readUInt32LE(offset);
+    const end = offset + 4 + length;
+    assert.ok(end <= buffer.length);
+    messages.push(JSON.parse(buffer.subarray(offset + 4, end).toString("utf8")));
+    offset = end;
+  }
+  return messages;
 }
 
 const KEYWORD = "온열찜질기";
@@ -140,6 +165,94 @@ function nplusRows() {
   }
   return rows;
 }
+
+test("native page stream accepts the exact requested suffix", () => {
+  const collector = createNativePageStreamCollector({ pageStart: 6, pageEnd: 8 });
+  [6, 7, 8].forEach((pageIndex) => collector.append(page(pageIndex)));
+
+  assert.deepEqual(collector.complete().map(({ pageIndex }) => pageIndex), [6, 7, 8]);
+});
+
+test("native page stream accepts a complete compatibility window for a suffix request", () => {
+  const collector = createNativePageStreamCollector({
+    pageStart: 6,
+    pageEnd: 8,
+    allowFullCompatibility: true,
+  });
+  Array.from({ length: 8 }, (_, index) => page(index + 1))
+    .forEach((payload) => collector.append(payload));
+
+  assert.deepEqual(
+    collector.complete().map(({ pageIndex }) => pageIndex),
+    [1, 2, 3, 4, 5, 6, 7, 8],
+  );
+});
+
+test("native page stream rejects a full compatibility window after the first suffix", () => {
+  const collector = createNativePageStreamCollector({
+    pageStart: 6,
+    pageEnd: 8,
+    allowFullCompatibility: false,
+  });
+
+  assert.throws(
+    () => collector.append(page(1)),
+    (error) => error?.code === "native_host_pages_out_of_order",
+  );
+});
+
+test("native page stream rejects an invalid suffix frame order", () => {
+  const collector = createNativePageStreamCollector({ pageStart: 6, pageEnd: 8 });
+  collector.append(page(6));
+
+  assert.throws(
+    () => collector.append(page(8)),
+    (error) => error?.code === "native_host_pages_out_of_order",
+  );
+});
+
+test("native protocol handshake requires one exact range-v1 acknowledgement", () => {
+  assert.equal(COLLECTION_PROTOCOL, "range-v1");
+  assert.doesNotThrow(() => validateCollectionProtocolAck({
+    action: "ready_ack",
+    collectionProtocol: "range-v1",
+  }));
+  for (const message of [
+    { action: "ready_ack" },
+    { action: "ready_ack", collectionProtocol: "range-v0" },
+    { action: "other", collectionProtocol: "range-v1" },
+  ]) {
+    assert.throws(
+      () => validateCollectionProtocolAck(message),
+      (error) => error?.code === "native_host_ready_ack_invalid",
+    );
+  }
+});
+
+test("native exchange wait is clamped to one absolute request deadline", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  assert.deepEqual(resolveNativeExchangeWait(
+    new Date(nowMs + 5_000).toISOString(),
+    { nowMs, maximumMs: 14 * 60_000 },
+  ), {
+    timeoutMs: 5_000,
+    timeoutCode: "provider_deadline_exceeded",
+  });
+  assert.deepEqual(resolveNativeExchangeWait(
+    new Date(nowMs + (20 * 60_000)).toISOString(),
+    { nowMs, maximumMs: 14 * 60_000 },
+  ), {
+    timeoutMs: 14 * 60_000,
+    timeoutCode: "native_host_response_timeout",
+  });
+  assert.throws(
+    () => resolveNativeExchangeWait(
+      new Date(nowMs).toISOString(),
+      { nowMs, maximumMs: 14 * 60_000 },
+    ),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+});
 
 test("builds one strict 300-rank window from the normal Chrome profile pages", () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
@@ -276,6 +389,111 @@ test("native provider repairs a page 6-7 overlap by recollecting only the cohere
     [undefined, undefined],
     [6, 8],
   ]);
+});
+
+test("native provider safely accepts one full compatibility window for a suffix request", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      const compatibilityPages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+      const firstPage = JSON.parse(compatibilityPages[0].nextDataText);
+      firstPage.props.pageProps.compositeList.list[4].item.mallProductId = "15500000001";
+      firstPage.props.pageProps.compositeList.list[4].item.mallPcUrl = "https://smartstore.naver.com/example/products/15500000001";
+      compatibilityPages[0].nextDataText = JSON.stringify(firstPage);
+      return {
+        type: "collection",
+        pages: messages.length === 1
+          ? overlapPages({ originPage: 6, collisionPage: 7 })
+          : compatibilityPages,
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.items[0].sellerProductId, "15500000001");
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [6, 8],
+  ]);
+});
+
+test("native provider charges a full compatibility response once and retains its typed overlap", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && error?.detail === "7:4:page_overlap:6",
+  );
+  assert.equal(exchanges, 2);
+});
+
+test("native provider rejects a full compatibility window after the first suffix", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      const overlap = overlapPages({ originPage: 7, collisionPage: 8 });
+      return {
+        type: "collection",
+        pages: exchanges === 2 ? overlap.slice(6, 8) : overlap,
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "native_host_pages_out_of_order"
+      && error?.detail === "range:7-8",
+  );
+  assert.equal(exchanges, 3);
+});
+
+test("native provider can spend four two-page suffix attempts but never exceed 16 pages", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      const overlap = overlapPages({ originPage: 7, collisionPage: 8 });
+      return {
+        type: "collection",
+        pages: message.pageStart ? overlap.slice(6, 8) : overlap,
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_duplicate_identity"
+      && error?.detail === "8:4:page_overlap:7",
+  );
+  assert.equal(messages.length, 5);
+  assert.deepEqual(messages.slice(1).map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [7, 8],
+    [7, 8],
+    [7, 8],
+    [7, 8],
+  ]);
+  assert.deepEqual(
+    messages.slice(1).map(({ allowFullCompatibility }) => allowFullCompatibility),
+    [true, false, false, false],
+  );
 });
 
 test("native provider follows one evolving overlap boundary within a finite suffix budget", async () => {
@@ -472,11 +690,12 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const popupHtml = fs.readFileSync(path.join(extensionDirectory, "popup.html"), "utf8");
   const popup = fs.readFileSync(path.join(extensionDirectory, "popup.js"), "utf8");
   const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
+  const nativeHostCore = fs.readFileSync(new URL("./naver-shopping-native-host-core.mjs", import.meta.url), "utf8");
   const localWorker = fs.readFileSync(new URL("./naver-shopping-local-worker.mjs", import.meta.url), "utf8");
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.3");
+  assert.equal(manifest.version, "1.1.4");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -509,7 +728,8 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /request\.limit !== 300/u);
   assert.match(serviceWorker, /request\.rankPolicy !== "organic_only"/u);
   assert.match(serviceWorker, /message\?\.type === "ready"/u);
-  assert.match(serviceWorker, /port\.postMessage\(\{ action: "ready_ack" \}\)/u);
+  assert.match(serviceWorker, /COLLECTION_PROTOCOL = "range-v1"/u);
+  assert.match(serviceWorker, /port\.postMessage\(nativeReadyAcknowledgement\(message\)\)/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /BASELINE_CADENCE_MINUTES = 10/u);
   assert.match(serviceWorker, /CANDIDATE_CADENCE_MINUTES = 8/u);
@@ -529,6 +749,17 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/u);
   assert.match(nativeHost, /async function runtimeIdentity\(start\)/u);
   assert.match(nativeHost, /native_host_runtime_identity_invalid/u);
+  assert.match(nativeHost, /type: "ready", collectionProtocol: COLLECTION_PROTOCOL/u);
+  assert.match(nativeHost, /validateCollectionProtocolAck\(readyAck\)/u);
+  assert.ok(nativeHost.indexOf("validateCollectionProtocolAck(readyAck)")
+    < nativeHost.indexOf("runLocalShoppingWorker({"));
+  assert.match(nativeHost, /resolveNativeExchangeWait\(message\.request\?\.deadlineAt/u);
+  assert.match(nativeHost, /nextMessage\(wait\.timeoutMs, wait\.timeoutCode\)/u);
+  assert.match(nativeHostCore, /options\.allowFullCompatibility === true[\s\S]{0,100}requestedPageStart > 1[\s\S]{0,100}responsePageIndex === 1/u);
+  assert.match(nativeHostCore, /responsePageStart = 1;[\s\S]{0,80}responsePageEnd = MAX_PAGES/u);
+  assert.match(nativeHostCore, /BOUNDARY_RECOLLECTION_ATTEMPTS = 4/u);
+  assert.match(nativeHostCore, /PAGE_NAVIGATION_BUDGET = 16/u);
+  assert.match(nativeHost, /allowFullCompatibility: message\.allowFullCompatibility === true/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs", import\.meta\.url\)\)/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/provider\.mjs", import\.meta\.url\)\)/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/contract\.mjs", import\.meta\.url\)\)/u);
@@ -537,7 +768,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
     /serviceWorkerSha256,[\s\S]{0,100}nativeHostSha256,[\s\S]{0,100}nativeHostCoreSha256,[\s\S]{0,100}localWorkerSha256,[\s\S]{0,100}contractSha256,[\s\S]{0,100}collectorProviderSha256,[\s\S]{0,100}collectorContractSha256,[\s\S]{0,40}\]\.join\("\\n"\)/u,
   );
   assert.match(nativeHost, /registerProgressSink\(sink\)/u);
-  assert.match(nativeHost, /stage: "collect", page: Number\(response\.page\.pageIndex\)/u);
+  assert.match(nativeHost, /stage: "collect", page: page\.pageIndex/u);
   assert.match(serviceWorker, /type: "collection_page"/u);
   assert.match(serviceWorker, /pageStart: message\.pageStart, pageEnd: message\.pageEnd/u);
   assert.match(serviceWorker, /for \(let pageIndex = pageStart; pageIndex <= pageEnd; pageIndex \+= 1\)/u);
@@ -545,9 +776,9 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(nativeHost, /response\?\.type === "collection_page"/u);
   assert.match(nativeHost, /response\?\.type === "collection_complete"/u);
   assert.match(nativeHost, /native_host_input_closed/u);
-  assert.match(nativeHost, /writeMessage\(\{ type: "ready" \}\)/u);
+  assert.match(nativeHost, /writeMessage\(\{ type: "ready", collectionProtocol: COLLECTION_PROTOCOL \}\)/u);
   assert.match(nativeHost, /const readyAck = await nextMessage\(30_000\)/u);
-  assert.match(nativeHost, /native_host_ready_ack_invalid/u);
+  assert.match(nativeHostCore, /native_host_ready_ack_invalid/u);
   assert.match(serviceWorker, /async function automaticVerificationCooldownActive\(trigger\)/u);
   assert.match(serviceWorker, /return verification\.blockedUntil > Date\.now\(\)/u);
   assert.match(serviceWorker, /return \{ ok: false, started: false, code: "naver_verification_cooldown" \}/u);
@@ -598,6 +829,35 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.ok(
     workerRequestSource.indexOf("automaticVerificationCooldownActive(trigger)")
       < workerRequestSource.indexOf("void runWorker(trigger)"),
+  );
+});
+
+test("Chrome worker VM acknowledges only the exact range-v1 native protocol", () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const constantStart = serviceWorker.indexOf('const COLLECTION_PROTOCOL = "range-v1";');
+  const constantEnd = serviceWorker.indexOf("\n", constantStart);
+  const helperStart = serviceWorker.indexOf("function nativeReadyAcknowledgement(message)");
+  const helperEnd = serviceWorker.indexOf("function startWorkerKeepAlive()", helperStart);
+  assert.ok(constantStart >= 0 && constantEnd > constantStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const acknowledge = runInNewContext(
+    `${serviceWorker.slice(constantStart, constantEnd)}\n${serviceWorker.slice(helperStart, helperEnd)}\nnativeReadyAcknowledgement;`,
+  );
+
+  assert.deepEqual(
+    { ...acknowledge({ collectionProtocol: "range-v1" }) },
+    { action: "ready_ack", collectionProtocol: "range-v1" },
+  );
+  assert.throws(
+    () => acknowledge({}),
+    /native_host_collection_protocol_mismatch/u,
+  );
+  assert.throws(
+    () => acknowledge({ collectionProtocol: "range-v0" }),
+    /native_host_collection_protocol_mismatch/u,
   );
 });
 
@@ -811,6 +1071,32 @@ test("page-eight status and verification cleanup failures still emit collection_
   assert.equal(runtime.statusAttempts.includes("page 8/8"), true);
   assert.equal(runtime.clearAttempts(), 1);
 
+  const rangeMessages = [];
+  await runtime.handleCollect({
+    type: "collect",
+    requestId: "request-range-6-8",
+    pageStart: 6,
+    pageEnd: 8,
+    request: {
+      keyword: "남자팬티",
+      limit: 300,
+      rankPolicy: "organic_only",
+      deadlineAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+  }, {
+    postMessage: (message) => rangeMessages.push(message),
+  });
+  assert.deepEqual(Array.from(rangeMessages, (message) => message.type), [
+    "collection_page",
+    "collection_page",
+    "collection_page",
+    "collection_complete",
+  ]);
+  assert.deepEqual(
+    Array.from(rangeMessages.slice(0, 3), (message) => message.page.pageIndex),
+    [6, 7, 8],
+  );
+
   const expiredMessages = [];
   const readsBeforeExpiredRequest = runtime.readCount();
   await runtime.handleCollect({
@@ -852,7 +1138,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.3");
+  assert.equal(manifest.version, "1.1.4");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1004,11 +1290,32 @@ test("native host framing returns a bounded typed error for an invalid start mes
   });
 });
 
+test("native host framing rejects a stale ready acknowledgement before lane claim", () => {
+  const hostPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "naver-shopping-native-host.mjs");
+  const result = spawnSync(process.execPath, [hostPath], {
+    input: Buffer.concat([
+      nativeMessageFrame({
+        action: "run",
+        trigger: "rank-remote",
+        runtimeVersion: "1.1.4",
+        serviceWorkerSha256: "0".repeat(64),
+      }),
+      nativeMessageFrame({ action: "ready_ack" }),
+    ]),
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 1);
+  assert.deepEqual(decodeNativeMessageFrames(result.stdout), [
+    { type: "ready", collectionProtocol: "range-v1" },
+    { type: "error", code: "native_host_ready_ack_invalid" },
+  ]);
+});
+
 test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.3",
+    runtimeVersion: "1.1.4",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);
@@ -1021,7 +1328,10 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   assert.equal(result.status, 1);
   const firstLength = result.stdout.readUInt32LE(0);
   const firstEnd = 4 + firstLength;
-  assert.deepEqual(JSON.parse(result.stdout.subarray(4, firstEnd).toString("utf8")), { type: "ready" });
+  assert.deepEqual(JSON.parse(result.stdout.subarray(4, firstEnd).toString("utf8")), {
+    type: "ready",
+    collectionProtocol: "range-v1",
+  });
   const secondLength = result.stdout.readUInt32LE(firstEnd);
   assert.equal(firstEnd + 4 + secondLength, result.stdout.length);
   assert.deepEqual(JSON.parse(result.stdout.subarray(firstEnd + 4).toString("utf8")), {

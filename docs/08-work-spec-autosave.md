@@ -7,7 +7,8 @@
 
 - 이번 조치는 두 키워드 하드코딩이 아니라 모든 N쇼핑 키워드의 provider·collector contract·server 검증에 동일하게 적용한다. 판매자 카드는 seller ID, 카탈로그 카드는 catalog ID, 그 외는 정규 URL을 authoritative identity로 사용하고 약한 product ID 단독 충돌로 정상 카드를 제거하지 않는다.
 - 동일 seller/catalog/URL과 연속 순위 안의 실제 중복은 fail-closed한다. 중복 행을 버리고 뒤 순위를 당겨 300개를 만들지 않는다.
-- `page_overlap`은 새 전체 수집을 정확히 1회만 허용한다. 두 번째 overlap과 `duplicate_row`는 즉시 종료하며 내부 retry loop나 자동 복구 큐 재등록을 만들지 않는다.
+- 최초 전체 8페이지에서 `page_overlap`이 확인되면 충돌 origin page부터 8페이지까지만 다시 수집한다. suffix는 최대 4회, 실제 페이지 이동은 전체 포함 16 이하, 원 요청 절대 deadline 이내로 제한하고 매번 전체 1~300을 재검증한다. `duplicate_row`는 재시도하지 않으며 한도를 넘긴 overlap은 마지막 typed error로 종료한다.
+- native host와 실행 중 service worker는 `range-v1` capability를 claim 전에 상호 확인한다. 불일치·누락은 수집·DB claim 없이 fail-closed하며, 구 실행문맥이 suffix 요청에 전체 1~8을 반환하는 호환은 첫 suffix 한 번만 전체 window 교체로 허용한다.
 - 운영 오류 detail은 원시 product/seller/catalog ID·URL·키워드를 저장하지 않고 page/row/kind/origin page의 제한된 문법만 허용한다. 과거 base code만 있는 실패의 세부 원인은 추정으로 확정하지 않는다.
 - 운영자가 지정한 복구 대상은 별도 service-role 복구 큐에서 배열 순서대로 각 1회 소비한다. cursor·next_check_at은 변경하지 않고 마지막 대상 뒤 기존 durable cycle을 계속한다. probe가 있으면 probe가 항상 우선한다.
 - 불변: 동시 실행 1개, 3.5~6초 pacing, 광고 제외 오가닉 `checkedCount=300`, 부분 미저장, last-good 보존, security/network 전역 중단, durable cycle당 기존 키워드 1회.
@@ -306,8 +307,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 13. 16:17:59
-- 기준 커밋: 97e278c
+- 마지막 자동 저장: 2026. 08. 13. 17:09:59
+- 기준 커밋: b79bc02
 - 작업트리: clean
 <!-- autosave:end -->
 

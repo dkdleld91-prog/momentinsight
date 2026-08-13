@@ -2,7 +2,13 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
 import { runLocalShoppingWorker } from "./naver-shopping-local-worker.mjs";
-import { createChromeNativeProvider } from "./naver-shopping-native-host-core.mjs";
+import {
+  COLLECTION_PROTOCOL,
+  createChromeNativeProvider,
+  createNativePageStreamCollector,
+  resolveNativeExchangeWait,
+  validateCollectionProtocolAck,
+} from "./naver-shopping-native-host-core.mjs";
 
 const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 // One exact 300-rank collection can spend up to 45 seconds before page 1,
@@ -148,15 +154,18 @@ function failInput(error) {
 process.stdin.on("end", () => failInput(new Error("native_host_input_closed")));
 process.stdin.on("error", () => failInput(new Error("native_host_input_failed")));
 
-function nextMessage(timeoutMs = RESPONSE_TIMEOUT_MS) {
-  if (inputFailure) return Promise.reject(inputFailure);
+function nextMessage(
+  timeoutMs = RESPONSE_TIMEOUT_MS,
+  timeoutCode = "native_host_response_timeout",
+) {
   if (messageQueue.length) return Promise.resolve(messageQueue.shift());
+  if (inputFailure) return Promise.reject(inputFailure);
   return new Promise((resolve, reject) => {
     const waiter = { resolve, reject };
     const timeout = setTimeout(() => {
       const index = messageWaiters.indexOf(waiter);
       if (index >= 0) messageWaiters.splice(index, 1);
-      reject(new Error("native_host_response_timeout"));
+      reject(new Error(timeoutCode));
     }, timeoutMs);
     waiter.resolve = (value) => {
       clearTimeout(timeout);
@@ -174,26 +183,24 @@ async function main() {
   const start = await nextMessage(60_000);
   if (start?.action !== "run") throw new Error("native_host_start_invalid");
   const identity = await runtimeIdentity(start);
-  writeMessage({ type: "ready" });
+  writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL });
   const readyAck = await nextMessage(30_000);
-  if (readyAck?.action !== "ready_ack") throw new Error("native_host_ready_ack_invalid");
+  validateCollectionProtocolAck(readyAck);
   let progressSink = null;
   const provider = createChromeNativeProvider({
     async exchange(message) {
       const requestId = crypto.randomUUID();
-      const pages = [];
-      const pageStart = Number(message.pageStart ?? 1);
-      const pageEnd = Number(message.pageEnd ?? 8);
-      if (!Number.isInteger(pageStart)
-        || !Number.isInteger(pageEnd)
-        || pageStart < 1
-        || pageEnd > 8
-        || pageStart > pageEnd) {
-        throw new Error("native_host_page_range_invalid");
-      }
+      const pageCollector = createNativePageStreamCollector({
+        pageStart: message.pageStart,
+        pageEnd: message.pageEnd,
+        allowFullCompatibility: message.allowFullCompatibility === true,
+      });
       writeMessage({ ...message, requestId });
       for (;;) {
-        const response = await nextMessage();
+        const wait = resolveNativeExchangeWait(message.request?.deadlineAt, {
+          maximumMs: RESPONSE_TIMEOUT_MS,
+        });
+        const response = await nextMessage(wait.timeoutMs, wait.timeoutCode);
         if (response?.requestId !== requestId) continue;
         if (response?.type === "collection_error") {
           const error = new Error(safeCode(response?.code || "native_host_collection_failed"));
@@ -201,20 +208,12 @@ async function main() {
           throw error;
         }
         if (response?.type === "collection_page") {
-          if (!response.page
-            || Number(response.page.pageIndex) !== pageStart + pages.length
-            || pages.length >= pageEnd - pageStart + 1) {
-            throw new Error("native_host_pages_out_of_order");
-          }
-          pages.push(response.page);
-          await progressSink?.({ stage: "collect", page: Number(response.page.pageIndex) });
+          const page = pageCollector.append(response.page);
+          await progressSink?.({ stage: "collect", page: page.pageIndex });
           continue;
         }
         if (response?.type === "collection_complete") {
-          if (pages.length !== pageEnd - pageStart + 1) {
-            throw new Error("native_host_pages_incomplete");
-          }
-          return { type: "collection", pages };
+          return { type: "collection", pages: pageCollector.complete() };
         }
         return response;
       }

@@ -178,3 +178,70 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   );
   assert.match(updater, /MI_EXTENSION_UPDATE_OK/u);
 });
+
+test("Windows extension updater waits for every targeted process before copying runtime files", () => {
+  assert.match(updater, /function Get-UpdateTargetProcesses/u);
+  assert.match(updater, /\$_\.Name -eq "chrome\.exe"/u);
+  assert.match(updater, /\$_\.Name -eq "MomentInsightNaverShoppingHost\.exe"/u);
+  assert.match(updater, /\$_\.Name -eq "node\.exe"[\s\S]{0,100}naver-shopping-native-host\.mjs/u);
+  assert.match(updater, /\$processShutdownTimeoutMs = 10000/u);
+  assert.match(updater, /\$processShutdownPollMs = 250/u);
+  assert.match(updater, /\[Diagnostics\.Stopwatch\]::StartNew\(\)/u);
+  assert.match(updater, /Start-Sleep -Milliseconds \$processShutdownPollMs/u);
+
+  const chromeStopIndex = updater.indexOf("Get-Process chrome");
+  const workerStopIndex = updater.indexOf("Stop-Process -Id $_.ProcessId");
+  const waitIndex = updater.indexOf("$remainingProcesses = @(Get-UpdateTargetProcesses)");
+  const copyIndex = updater.indexOf("Copy-Item -LiteralPath (Join-Path $stagingPath $file)");
+  assert.ok(chromeStopIndex >= 0, "the updater must stop Chrome");
+  assert.ok(workerStopIndex > chromeStopIndex, "the updater must stop the native worker processes");
+  assert.ok(waitIndex > workerStopIndex, "the bounded shutdown wait must follow every stop request");
+  assert.ok(copyIndex > waitIndex, "runtime copying must wait until targeted processes exit");
+});
+
+test("Windows extension updater fails closed with a typed process shutdown timeout", () => {
+  const timeoutGuard = updater.indexOf("$shutdownWatch.ElapsedMilliseconds -ge $processShutdownTimeoutMs");
+  const typedFailure = updater.indexOf('throw "update_process_shutdown_timeout"');
+  const firstRuntimeCopy = updater.indexOf("Copy-Item -LiteralPath (Join-Path $stagingPath $file)");
+  assert.ok(timeoutGuard >= 0, "the updater must enforce a bounded shutdown deadline");
+  assert.ok(typedFailure > timeoutGuard, "the shutdown timeout must use its typed failure code");
+  assert.ok(firstRuntimeCopy > typedFailure, "a shutdown timeout must occur before any runtime copy");
+  assert.match(updater, /throw "update_process_check_failed"/u);
+});
+
+test("Windows extension updater quiesces the watchdog before process shutdown and runtime copy", () => {
+  assert.match(updater, /Get-ScheduledTask -TaskPath \$taskPath -TaskName \$taskName -ErrorAction Stop/u);
+  assert.match(updater, /\$scheduledTaskWasEnabled = \[bool\]\$scheduledTask\.Settings\.Enabled/u);
+  assert.match(updater, /\$scheduledTaskWasRunning = \[string\]\$scheduledTask\.State -eq "Running"/u);
+  assert.match(updater, /throw "scheduled_task_state_unavailable"/u);
+  assert.match(updater, /throw "scheduled_task_state_invalid"/u);
+
+  const disableIndex = updater.indexOf("Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop");
+  const taskStopIndex = updater.indexOf("Stop-ScheduledTask -TaskPath $taskPath -TaskName $taskName");
+  const chromeStopIndex = updater.indexOf("Get-Process chrome");
+  const processWaitIndex = updater.indexOf("$remainingProcesses = @(Get-UpdateTargetProcesses)");
+  const runtimeCopyIndex = updater.indexOf("Copy-Item -LiteralPath (Join-Path $stagingPath $file)");
+  assert.ok(disableIndex >= 0, "the updater must disable the watchdog first");
+  assert.ok(taskStopIndex > disableIndex, "the updater must stop the disabled watchdog instance");
+  assert.ok(chromeStopIndex > taskStopIndex, "Chrome shutdown must follow watchdog quiescence");
+  assert.ok(processWaitIndex > chromeStopIndex, "process-zero verification must follow Chrome shutdown");
+  assert.ok(runtimeCopyIndex > processWaitIndex, "runtime copying must follow watchdog and process quiescence");
+});
+
+test("Windows extension updater restores enablement in finally and starts only after success", () => {
+  const finallyIndex = updater.indexOf("finally {");
+  const successIndex = updater.indexOf("$updateSucceeded = $true");
+  const restoreEnableIndex = updater.indexOf("Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName");
+  const restoreDisableIndex = updater.lastIndexOf("Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName");
+  const successGuardIndex = updater.indexOf("if ($updateSucceeded)", restoreEnableIndex);
+  const restartIndex = updater.indexOf("Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName", successGuardIndex);
+  const successOutputIndex = updater.indexOf("Write-Host $successMessage");
+  assert.ok(successIndex >= 0, "successful validation must be recorded before restoration");
+  assert.ok(finallyIndex > successIndex, "task restoration must run from finally");
+  assert.ok(restoreEnableIndex > finallyIndex, "an originally enabled task must be re-enabled in finally");
+  assert.ok(restoreDisableIndex > finallyIndex, "an originally disabled task must remain disabled in finally");
+  assert.ok(successGuardIndex > restoreEnableIndex, "task restart must be success-gated");
+  assert.ok(restartIndex > successGuardIndex, "failed updates must not explicitly restart Chrome");
+  assert.ok(successOutputIndex > restartIndex, "success must be reported only after task restoration succeeds");
+  assert.match(updater, /throw "scheduled_task_restore_failed"/u);
+});

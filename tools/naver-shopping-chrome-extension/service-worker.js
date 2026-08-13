@@ -1,4 +1,5 @@
 const NATIVE_HOST = "co.kr.momentinsight.naver_shopping";
+const COLLECTION_PROTOCOL = "range-v1";
 const RUN_ALARMS = new Set(["rank-0900", "rank-1500", "rank-catch-up", "rank-remote"]);
 const PAGE_COUNT = 8;
 const PAGE_TIMEOUT_MS = 45_000;
@@ -454,6 +455,13 @@ function nativeDisconnectCode(lastErrorMessage) {
   return message ? "native_host_disconnected" : "native_host_closed";
 }
 
+function nativeReadyAcknowledgement(message) {
+  if (message?.collectionProtocol !== COLLECTION_PROTOCOL) {
+    throw new Error("native_host_collection_protocol_mismatch");
+  }
+  return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL };
+}
+
 function startWorkerKeepAlive() {
   const heartbeat = () => {
     void chrome.runtime.getPlatformInfo().catch(() => {});
@@ -493,7 +501,7 @@ async function runWorker(trigger = "manual", options = {}) {
       port.onMessage.addListener(async (message) => {
         try {
           if (message?.type === "ready") {
-            port.postMessage({ action: "ready_ack" });
+            port.postMessage(nativeReadyAcknowledgement(message));
             return;
           }
           if (message?.type === "collect") {

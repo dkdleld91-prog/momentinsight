@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-13 N쇼핑 v1.1.3 운영 결과·v1.1.4 회귀
+
+- v1.1.3 명시 새로고침 뒤 canary `남자팬티`는 광고 제외 오가닉 300개·50위로 완료됐습니다. 복구 요청에서 `남자 사각팬티`는 새 collection으로 17위·300개를 저장했고, `남성 사각팬티`는 suffix 2회 뒤 `provider_duplicate_identity:8:2:page_overlap:7`로 종료돼 23위 last-good을 보존했습니다.
+- 실패 항목은 자동 재큐잉되지 않았고 lane·lease가 해제됐으며 정상 durable cycle cursor는 다음 항목으로 전진했습니다. 따라서 무한루프·전체 정지는 재현되지 않았지만 두 번째 항목의 정상화 증거도 아닙니다.
+- v1.1.4 회귀는 `range-v1` ready/ack 불일치 시 claim 전 종료, suffix exact range와 구 실행문맥 full-window 호환의 1회 제한, 두 번째 full 응답 첫 프레임 거절, 최대 4회·16페이지, 절대 deadline, same-page duplicate 무재시도, 최종 전체 300개 재검증을 포함합니다.
+- 전체 release·보호 잠금·Production·DB·Windows 실로드와 남은 항목 1회 결과는 배포 뒤 별도 증거로 확정합니다.
+
 ## 2026-08-13 N쇼핑 상품 식별 중복·경계 복구 회귀
 
 - 운영 읽기 전용 감사에서 duplicate 오류 27 tracker·24 keyword group·6 agency를 확인했습니다. 두 대상은 약 43~45초 뒤 같은 base code로 종료됐고 DB cycle·lane 고립은 아니었습니다. 과거 상세는 저장되지 않아 정확한 충돌 신호는 미확정으로 남깁니다.

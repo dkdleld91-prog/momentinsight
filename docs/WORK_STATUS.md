@@ -4,6 +4,13 @@
 
 ## 현재 상태
 
+### 2026-08-13 N쇼핑 이동 경계 복구 v1.1.4 진행 중
+
+- v1.1.3 Windows 실기에서 `남자 사각팬티`는 광고 제외 오가닉 300개·17위로 정상 저장됐습니다. `남성 사각팬티`는 전체 수집과 suffix 2회 뒤에도 `provider_duplicate_identity:8:2:page_overlap:7`로 유한 종료했고 last-good 23위·이력은 보존됐습니다. 복구 큐는 재등록되지 않았고 정상 cycle cursor가 다음 키워드로 전진했습니다.
+- v1.1.4는 최초 전체 8페이지 뒤 경계 suffix를 최대 4회, 실제 이동 총 16페이지와 원 요청 절대 deadline 안에서만 수행합니다. 각 교환 뒤 전체 오가닉 1~300·강한 identity 고유성·광고 제외를 다시 검증하며 행 skip·순위 압축은 금지합니다.
+- native host와 실행 중 service worker가 `range-v1`을 상호 확인하지 못하면 DB claim 전에 fail-closed합니다. Windows updater도 scheduler와 관련 프로세스가 파일 교체 중 재실행되지 않도록 정지·복구합니다.
+- 로컬 release gate, Production·DB migration·Windows 1.1.4 동기화와 남은 대상 1회 실검증 전에는 정상화 완료로 기록하지 않습니다.
+
 ### 2026-08-13 N쇼핑 경계 일관성 복구 v1.1.3
 
 - 운영에서 `provider_duplicate_identity`가 두 요청 항목만이 아니라 24개 정규화 키워드 그룹·6개 광고주에 남아 있음을 확인했습니다. 과거 오류는 page/row 상세를 저장하지 않아 약한 상품 ID 충돌과 실제 페이지 겹침 중 어느 하나였는지 사후 단정하지 않습니다.
@@ -11,7 +18,7 @@
 - v1.1.2 운영 재검증에서 `남자 사각팬티`가 새 전체 수집 뒤에도 `provider_duplicate_identity:7:3:page_overlap:6`으로 유한 실패했습니다. 수집 중 6→7페이지 경계가 움직인 것으로 확인돼 같은 전체 수집을 더 반복하지 않습니다.
 - v1.1.3은 전체 8페이지를 1회 수집한 뒤 충돌 origin page부터 8페이지까지만 최대 2회 다시 받아 전체 1~300을 매번 재검증합니다. 총 페이지 이동은 16 이하이고 원 요청 절대 deadline을 넘기지 않습니다. 행 삭제·압축은 없으며 same-page duplicate와 최종 overlap은 typed failure로 종료해 광고 제외 오가닉 300개·last-good 계약을 유지합니다.
 - 지정된 `남자 사각팬티`, `남성 사각팬티`는 service-role 전용 1회 복구 큐에서 순서대로 처리하고, 각 claim 뒤 다음 wake 1회만 남긴 뒤 기존 durable cycle cursor로 복귀합니다. 실패해도 복구 큐에 자동 재등록하지 않습니다.
-- 로컬 구현과 회귀는 완료됐지만 DB·Production·Windows v1.1.3 반영 및 두 건 원자 300개 운영 결과는 아직 진행 중이므로 정상화 완료로 기록하지 않습니다.
+- DB·Production·Windows v1.1.3 반영과 두 건의 1회 복구는 완료했습니다. 한 건은 원자 300개로 성공했고 다른 한 건은 이동 경계가 제한 횟수 안에 안정되지 않아 last-good을 보존한 채 유한 실패했으므로 v1.1.4 보완으로 이어갑니다.
 
 ### 2026-08-12 N쇼핑 30일 영속 순환 정상화
 

@@ -29,6 +29,8 @@ $launcherPath = Join-Path $runtimePath "MomentInsightNaverShoppingHost.exe"
 $taskPath = "\MomentInsight\"
 $taskName = "NaverShoppingChrome"
 $extensionId = "pflggephankeefaeoaafkmggampnaefm"
+$processShutdownTimeoutMs = 10000
+$processShutdownPollMs = 250
 $sourceBase = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-chrome-extension"
 $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/MomentInsightNaverShoppingHost.cs"
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
@@ -83,6 +85,19 @@ function Resolve-LoadedExtensionPath {
     throw "loaded_extension_path_missing"
 }
 
+function Get-UpdateTargetProcesses {
+    try {
+        return @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+            $_.Name -eq "chrome.exe" -or
+            $_.Name -eq "MomentInsightNaverShoppingHost.exe" -or
+            ($_.Name -eq "node.exe" -and $_.CommandLine -like "*naver-shopping-native-host.mjs*")
+        })
+    }
+    catch {
+        throw "update_process_check_failed"
+    }
+}
+
 if (-not (Test-Path -LiteralPath $extensionPath -PathType Container)) { throw "extension_path_missing" }
 if (-not (Test-Path -LiteralPath $schedulerConfigPath -PathType Leaf)) { throw "scheduler_config_missing" }
 if (-not (Test-Path -LiteralPath $nativeConfigPath -PathType Leaf)) { throw "native_config_missing" }
@@ -107,6 +122,16 @@ $nativeConfig = @(Get-Content -LiteralPath $nativeConfigPath -Encoding UTF8)
 if ($nativeConfig.Count -lt 1) { throw "native_config_invalid" }
 $nodePath = [IO.Path]::GetFullPath($nativeConfig[0].Trim())
 if (-not (Test-Path -LiteralPath $nodePath -PathType Leaf)) { throw "node_path_missing" }
+try {
+    $scheduledTask = Get-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+}
+catch {
+    throw "scheduled_task_state_unavailable"
+}
+if ($null -eq $scheduledTask.Settings) { throw "scheduled_task_state_invalid" }
+$scheduledTaskWasEnabled = [bool]$scheduledTask.Settings.Enabled
+$scheduledTaskWasRunning = [string]$scheduledTask.State -eq "Running"
+$updateSucceeded = $false
 
 $stagingPath = Join-Path $runtimePath ("extension-update-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
@@ -197,6 +222,8 @@ try {
         if (-not (Test-Path -LiteralPath $stagedLauncher -PathType Leaf)) { throw "native_host_launcher_compile_failed" }
     }
 
+    Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+    Stop-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction SilentlyContinue
     Get-Process chrome -ErrorAction SilentlyContinue | Stop-Process -Force
     Get-CimInstance Win32_Process | Where-Object {
         $_.Name -eq "MomentInsightNaverShoppingHost.exe" -or
@@ -204,6 +231,16 @@ try {
     } | ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
+    $shutdownWatch = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $remainingProcesses = @(Get-UpdateTargetProcesses)
+        if ($remainingProcesses.Count -eq 0) { break }
+        if ($shutdownWatch.ElapsedMilliseconds -ge $processShutdownTimeoutMs) {
+            throw "update_process_shutdown_timeout"
+        }
+        Start-Sleep -Milliseconds $processShutdownPollMs
+    }
+    $shutdownWatch.Stop()
     foreach ($targetPath in $extensionTargets) {
         foreach ($file in $files) {
             Copy-Item -LiteralPath (Join-Path $stagingPath $file) -Destination (Join-Path $targetPath $file) -Force
@@ -226,9 +263,6 @@ try {
     Copy-Item -LiteralPath $stagedCollectorProvider -Destination $collectorProviderPath -Force
     Copy-Item -LiteralPath $stagedCollectorContract -Destination $collectorContractPath -Force
     Copy-Item -LiteralPath $stagedSchedulerScript -Destination $schedulerScriptPath -Force
-    Start-Sleep -Seconds 3
-    Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName
-
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
     $loadedServiceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $loadedExtensionPath "service-worker.js")).Hash.ToLowerInvariant()
     if ($loadedServiceWorkerHash -ne $serviceWorkerHash) { throw "loaded_extension_hash_mismatch" }
@@ -245,8 +279,25 @@ try {
     )
     $runtimeFingerprintBytes = [Security.Cryptography.SHA256]::Create().ComputeHash($runtimeIdentity)
     $runtimeFingerprint = ([BitConverter]::ToString($runtimeFingerprintBytes)).Replace("-", "").ToLowerInvariant()
-    Write-Host "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
+    $updateSucceeded = $true
+    $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        if ($scheduledTaskWasEnabled) {
+            Enable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+            if ($updateSucceeded) {
+                Start-Sleep -Seconds 3
+                Start-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop
+            }
+        }
+        else {
+            Disable-ScheduledTask -TaskPath $taskPath -TaskName $taskName -ErrorAction Stop | Out-Null
+        }
+    }
+    catch {
+        throw "scheduled_task_restore_failed"
+    }
 }
+Write-Host $successMessage

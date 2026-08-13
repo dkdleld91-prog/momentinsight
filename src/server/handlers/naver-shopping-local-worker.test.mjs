@@ -32,7 +32,7 @@ function signedRequest(payload) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.3",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.4",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -275,7 +275,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.3");
+          assert.equal(args.p_runtime_version, "1.1.4");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -375,7 +375,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.3",
+      runtimeVersion: "1.1.4",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -435,7 +435,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.3",
+      runtimeVersion: "1.1.4",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -1767,13 +1767,13 @@ test("runtime 1.1.2 is fail-closed and keeps the atomic 300 cadence gate", () =>
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });
 
-test("runtime 1.1.3 independently gates bounded coherent boundary recovery", () => {
+test("runtime 1.1.4 independently gates bounded coherent boundary recovery", () => {
   const sql = fs.readFileSync(new URL(
-    "../../../supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
+    "../../../supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql",
     import.meta.url,
   ), "utf8");
-  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.3'/iu);
-  assert.match(sql, /current_row\.runtime_version = '1\.1\.3'/iu);
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.4'/iu);
+  assert.match(sql, /current_row\.runtime_version = '1\.1\.4'/iu);
   assert.match(sql, /current_row\.last_checked_count = 300/iu);
   assert.match(sql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
   assert.match(sql, /security invoker/iu);

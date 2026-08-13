@@ -20,8 +20,37 @@ const PAGE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
-const BOUNDARY_RECOLLECTION_ATTEMPTS = 2;
+const BOUNDARY_RECOLLECTION_ATTEMPTS = 4;
 const DEADLINE_GUARD_MS = 3_000;
+export const COLLECTION_PROTOCOL = "range-v1";
+
+export function validateCollectionProtocolAck(message) {
+  if (message?.action !== "ready_ack"
+    || message?.collectionProtocol !== COLLECTION_PROTOCOL) {
+    throw new ProviderError("native_host_ready_ack_invalid");
+  }
+}
+
+export function resolveNativeExchangeWait(deadlineAt, options = {}) {
+  const nowMs = Number(options.nowMs ?? Date.now());
+  const maximumMs = Number(options.maximumMs);
+  const absoluteDeadlineMs = Date.parse(String(deadlineAt || ""));
+  if (!Number.isFinite(nowMs)
+    || !Number.isFinite(maximumMs)
+    || maximumMs <= 0
+    || !Number.isFinite(absoluteDeadlineMs)) {
+    throw new ProviderError("native_request_invalid");
+  }
+  const remainingMs = Math.floor(absoluteDeadlineMs - nowMs);
+  if (remainingMs <= 0) throw new ProviderError("provider_deadline_exceeded");
+  const deadlineBounded = remainingMs <= maximumMs;
+  return {
+    timeoutMs: Math.max(1, Math.min(maximumMs, remainingMs)),
+    timeoutCode: deadlineBounded
+      ? "provider_deadline_exceeded"
+      : "native_host_response_timeout",
+  };
+}
 
 function pagePayload(page) {
   if (!page || typeof page !== "object" || Array.isArray(page)) {
@@ -37,6 +66,56 @@ function pagePayload(page) {
     throw new ProviderError("native_host_page_invalid", `page:${String(page.pageIndex)}`);
   }
   return { pageIndex, nextDataText };
+}
+
+export function createNativePageStreamCollector(options = {}) {
+  const requestedPageStart = Number(options.pageStart ?? 1);
+  const requestedPageEnd = Number(options.pageEnd ?? MAX_PAGES);
+  if (!Number.isInteger(requestedPageStart)
+    || !Number.isInteger(requestedPageEnd)
+    || requestedPageStart < 1
+    || requestedPageEnd > MAX_PAGES
+    || requestedPageStart > requestedPageEnd) {
+    throw new ProviderError("native_host_page_range_invalid");
+  }
+
+  const pages = [];
+  let responsePageStart = null;
+  let responsePageEnd = null;
+  return {
+    append(rawPage) {
+      const responsePageIndex = Number(rawPage?.pageIndex);
+      if (pages.length === 0) {
+        if (responsePageIndex === requestedPageStart) {
+          responsePageStart = requestedPageStart;
+          responsePageEnd = requestedPageEnd;
+        } else if (options.allowFullCompatibility === true
+          && requestedPageStart > 1
+          && responsePageIndex === 1) {
+          // A previous service worker can ignore the suffix range and return
+          // one complete window. Accept only its exact 1..8 frame sequence;
+          // the provider replaces the whole old window with these eight pages.
+          responsePageStart = 1;
+          responsePageEnd = MAX_PAGES;
+        }
+      }
+      if (responsePageStart == null
+        || responsePageIndex !== responsePageStart + pages.length
+        || pages.length >= responsePageEnd - responsePageStart + 1) {
+        throw new ProviderError("native_host_pages_out_of_order");
+      }
+      const page = pagePayload(rawPage);
+      pages.push(page);
+      return page;
+    },
+    complete() {
+      if (responsePageStart == null
+        || pages.length !== responsePageEnd - responsePageStart + 1) {
+        throw new ProviderError("native_host_pages_incomplete");
+      }
+      return pages.slice();
+    },
+  };
 }
 
 function identityDigest(items) {
@@ -177,19 +256,35 @@ function overlapBoundary(error) {
   return { pageStart: originPage, pageEnd: MAX_PAGES };
 }
 
-function mergePageRange(basePages, replacementPages, { pageStart, pageEnd }) {
+function mergePageRange(basePages, replacementPages, {
+  pageStart,
+  pageEnd,
+  allowFullCompatibility = false,
+}) {
   if (!Array.isArray(basePages) || basePages.length !== MAX_PAGES || !Array.isArray(replacementPages)) {
     throw new ProviderError("native_host_pages_incomplete");
   }
   const expectedCount = pageEnd - pageStart + 1;
-  const replacements = replacementPages.map(pagePayload);
-  if (replacements.length !== expectedCount
-    || replacements.some((page, index) => page.pageIndex !== pageStart + index)) {
+  const received = replacementPages.map(pagePayload);
+  const exactRange = received.length === expectedCount
+    && received.every((page, index) => page.pageIndex === pageStart + index);
+  const fullCompatibilityWindow = pageStart > 1
+    && received.length === MAX_PAGES
+    && received.every((page, index) => page.pageIndex === index + 1);
+  if (!exactRange && !(allowFullCompatibility && fullCompatibilityWindow)) {
     throw new ProviderError("native_host_pages_out_of_order", `range:${pageStart}-${pageEnd}`);
   }
-  const merged = basePages.map(pagePayload);
-  for (const page of replacements) merged[page.pageIndex - 1] = page;
-  return merged;
+  const merged = fullCompatibilityWindow
+    ? received
+    : basePages.map(pagePayload);
+  if (!fullCompatibilityWindow) {
+    for (const page of received) merged[page.pageIndex - 1] = page;
+  }
+  return {
+    pages: merged,
+    navigatedPages: received.length,
+    fullCompatibilityWindow,
+  };
 }
 
 export function createChromeNativeProvider(options = {}) {
@@ -237,17 +332,23 @@ export function createChromeNativeProvider(options = {}) {
           || (options.nowMs?.() ?? Date.now()) + DEADLINE_GUARD_MS >= deadlineAt) {
           throw new ProviderError("provider_deadline_exceeded");
         }
-        navigatedPages += requestedPages;
         const response = await options.exchange({
           type: "collect",
           request,
           pageStart: latestOverlap.pageStart,
           pageEnd: latestOverlap.pageEnd,
+          allowFullCompatibility: attempt === 1,
         });
         if (!response || response.type !== "collection" || Array.isArray(response.rows)) {
           throw new ProviderError("native_host_collection_invalid");
         }
-        latestPages = mergePageRange(latestPages, response.pages, latestOverlap);
+        const merged = mergePageRange(latestPages, response.pages, {
+          ...latestOverlap,
+          allowFullCompatibility: attempt === 1,
+        });
+        navigatedPages += merged.navigatedPages;
+        if (navigatedPages > PAGE_NAVIGATION_BUDGET) throw latestError;
+        latestPages = merged.pages;
         try {
           return buildNativeWindowFromPages(request, latestPages, {
             nowMs: options.nowMs?.() ?? Date.now(),
@@ -255,7 +356,9 @@ export function createChromeNativeProvider(options = {}) {
         } catch (error) {
           latestError = error;
           latestOverlap = overlapBoundary(error);
-          if (!latestOverlap || attempt >= BOUNDARY_RECOLLECTION_ATTEMPTS) throw error;
+          if (merged.fullCompatibilityWindow
+            || !latestOverlap
+            || attempt >= BOUNDARY_RECOLLECTION_ATTEMPTS) throw error;
         }
       }
       throw latestError;

@@ -479,6 +479,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-worker-duplicate-quarantine-cap",
+      "file": "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
+      "sha256": "b2975f1ff308ada55305a575b68901b187ab2b79176bd321722608a3b8e57948",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
       "sha256": "614691bb67272e8672c284a9222a93a437d1d206002744df55bad3aaf09b15e6"

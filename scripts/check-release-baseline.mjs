@@ -187,6 +187,7 @@ const shoppingWorkerContinuityMigration = read("supabase/migrations/202608111136
 const shoppingWorkerRuntime112Migration = read("supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql");
 const shoppingWorkerRuntime113Migration = read("supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql");
 const shoppingWorkerRuntime114Migration = read("supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql");
+const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
 const shoppingNativeHostInstaller = read("scripts/install-naver-shopping-chrome-bridge.mjs");
@@ -1518,6 +1519,15 @@ const checks = {
     && shoppingWorkerRuntime114Migration.includes("security invoker")
     && !shoppingWorkerRuntime114Migration.includes("security definer")
     && shoppingWorkerRuntime114Migration.includes("to service_role")
+    && shoppingDuplicateQuarantineMigration.includes("mi_record_naver_shopping_worker_failure")
+    && shoppingDuplicateQuarantineMigration.includes("split_part(normalized_error, ':', 1) = 'provider_duplicate_identity'")
+    && shoppingDuplicateQuarantineMigration.includes("then v_now + interval '30 minutes'")
+    && shoppingDuplicateQuarantineMigration.includes("coalesce(retry_count, 0) >= 2 then interval '24 hours'")
+    && shoppingDuplicateQuarantineMigration.includes("worker_quarantined_until > greatest(v_now, updated_at + interval '30 minutes')")
+    && shoppingDuplicateQuarantineMigration.includes("security invoker")
+    && !shoppingDuplicateQuarantineMigration.includes("security definer")
+    && shoppingDuplicateQuarantineMigration.includes("to service_role")
+    && !/set\s+(?:sort_order|next_check_at|worker_last_cycle_id|retry_count|current_rank|last_checked_at|scheduler_cycle_cursor)/iu.test(shoppingDuplicateQuarantineMigration)
     && shoppingLocalWorkerHandler.includes('mi_claim_naver_shopping_cycle_keyword')
     && shoppingLocalWorkerHandler.includes('rawClaims.length > 100')
     && shoppingLocalWorkerHandler.includes('CATALOG_HISTORY_BATCH_MAX = 8')

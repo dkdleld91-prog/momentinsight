@@ -5,6 +5,8 @@
 
 ## 2026-08-13 N쇼핑 중복 식별·유한 복구 영구 계약
 
+- `provider_duplicate_identity`는 전체 순환을 멈추지 않는 tracker 단위 오류이며, 누적 재시도 횟수와 무관하게 격리는 30분을 넘기지 않는다. 다른 tracker 오류의 기존 30분/24시간 정책과 security/network 전역 중단은 유지한다.
+- 이미 24시간 격리된 중복 오류 tracker는 배포 시 `오류 시각+30분`까지만 단축한다. 순서·cycle cursor·`worker_last_cycle_id`·재시도 횟수·last-good·순위 이력은 변경하지 않고 원래 순서에서 재검증한다.
 - 이번 조치는 두 키워드 하드코딩이 아니라 모든 N쇼핑 키워드의 provider·collector contract·server 검증에 동일하게 적용한다. 판매자 카드는 seller ID, 카탈로그 카드는 catalog ID, 그 외는 정규 URL을 authoritative identity로 사용하고 약한 product ID 단독 충돌로 정상 카드를 제거하지 않는다.
 - 동일 seller/catalog/URL과 연속 순위 안의 실제 중복은 fail-closed한다. 중복 행을 버리고 뒤 순위를 당겨 300개를 만들지 않는다.
 - 최초 전체 8페이지에서 `page_overlap`이 확인되면 충돌 origin page부터 8페이지까지만 다시 수집한다. suffix는 최대 4회, 실제 페이지 이동은 전체 포함 16 이하, 원 요청 절대 deadline 이내로 제한하고 매번 전체 1~300을 재검증한다. `duplicate_row`는 재시도하지 않으며 한도를 넘긴 overlap은 마지막 typed error로 종료한다.
@@ -307,8 +309,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 13. 17:09:59
-- 기준 커밋: b79bc02
+- 마지막 자동 저장: 2026. 08. 13. 23:34:19
+- 기준 커밋: 52b8cb4
 - 작업트리: clean
 <!-- autosave:end -->
 

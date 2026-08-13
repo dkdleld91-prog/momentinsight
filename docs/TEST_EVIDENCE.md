@@ -1,5 +1,11 @@
 # Test Evidence
 
+## 2026-08-13 N쇼핑 중복 오류 격리 상한 회귀
+
+- 운영 활성 66건 중 24시간 미갱신 23건, 그중 중복 식별 계열 22건을 확인했습니다. 현재 격리 19건은 모두 같은 오류 계열이었고 runtime `1.1.4` heartbeat·cycle #6·circuit closed로 작업기 정지는 배제했습니다.
+- migration 회귀는 suffix가 붙은 중복 오류도 정확히 30분으로 제한하고, 다른 tracker 오류의 누적 24시간 정책은 유지함을 검증합니다. 기존 격리 복구문은 quarantine 시각 외 `sort_order`, `next_check_at`, cycle cursor/소유권, retry, current/last rank를 변경하지 못하게 잠급니다.
+- 전체 `npm run check:release`, server contract 44/44, 보호 잠금 22함수·77파일·27 migration, Production 인증 18/18과 `git diff --check`를 통과했습니다.
+
 ## 2026-08-13 N쇼핑 v1.1.3 운영 결과·v1.1.4 회귀
 
 - v1.1.3 명시 새로고침 뒤 canary `남자팬티`는 광고 제외 오가닉 300개·50위로 완료됐습니다. 복구 요청에서 `남자 사각팬티`는 새 collection으로 17위·300개를 저장했고, `남성 사각팬티`는 suffix 2회 뒤 `provider_duplicate_identity:8:2:page_overlap:7`로 종료돼 23위 last-good을 보존했습니다.

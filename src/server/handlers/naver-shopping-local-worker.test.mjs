@@ -453,6 +453,49 @@ test("records typed tracker failures without changing rank data in the HTTP hand
   });
 });
 
+test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    let failureArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_record_naver_shopping_worker_failure");
+          failureArgs = args;
+          return {
+            data: { recorded: true, circuitState: "closed", quarantined: true },
+            error: null,
+          };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "record-failure",
+      workerId: WORKER_ID,
+      laneToken: LANE_TOKEN,
+      runId: RUN_ID,
+      runtimeVersion: "1.1.4",
+      runtimeFingerprint: RUNTIME_FINGERPRINT,
+      job: {
+        keyword: "남성 사각팬티",
+        limit: 300,
+        claims: [{ trackerId: TRACKER_ID, leaseStartedAt, leaseUntil }],
+      },
+      errorCode: "provider_duplicate_identity:8:2:page_overlap:7",
+      scope: "tracker",
+    }), ctx);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).quarantined, true);
+    assert.equal(failureArgs.p_error_code, "provider_duplicate_identity:8:2:page_overlap:7");
+    assert.equal(failureArgs.p_scope, "tracker");
+    assert.equal(failureArgs.p_tracker_id, TRACKER_ID);
+    assert.equal(Object.hasOwn(failureArgs, "retry_count"), false);
+    assert.equal(Object.hasOwn(failureArgs, "current_rank"), false);
+  });
+});
+
 test("never claims a tracker after the global lane was lost", async () => {
   await withWorkerEnv(async () => {
     const ctx = {

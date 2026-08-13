@@ -48,6 +48,7 @@ const files = {
   shoppingWorkerRuntime112Migration: "supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql",
   shoppingWorkerRuntime113Migration: "supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
   shoppingWorkerRuntime114Migration: "supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql",
+  shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
   shoppingNativeHost: "scripts/naver-shopping-native-host.mjs",
@@ -115,6 +116,7 @@ const shoppingWorkerDurableCycleMigration = fs.readFileSync(files.shoppingWorker
 const shoppingWorkerRuntime112Migration = fs.readFileSync(files.shoppingWorkerRuntime112Migration, "utf8");
 const shoppingWorkerRuntime113Migration = fs.readFileSync(files.shoppingWorkerRuntime113Migration, "utf8");
 const shoppingWorkerRuntime114Migration = fs.readFileSync(files.shoppingWorkerRuntime114Migration, "utf8");
+const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
 const shoppingNativeHost = fs.readFileSync(files.shoppingNativeHost, "utf8");
@@ -678,6 +680,24 @@ check(
   ])
     && !/security definer/.test(shoppingWorkerRuntime114Migration),
   files.shoppingWorkerRuntime114Migration,
+);
+check(
+  "N Shopping duplicate identity quarantine is capped without changing durable order",
+  hasAll(shoppingDuplicateQuarantineMigration, [
+    /mi_record_naver_shopping_worker_failure/,
+    /split_part\(normalized_error, ':', 1\) = 'provider_duplicate_identity'/,
+    /then v_now \+ interval '30 minutes'/,
+    /coalesce\(retry_count, 0\) >= 2 then interval '24 hours'/,
+    /last_error, ''\)\)\) ~ '\^provider_duplicate_identity\(\?:\:\|\$\)'/,
+    /worker_quarantined_until > greatest\(v_now, updated_at \+ interval '30 minutes'\)/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingDuplicateQuarantineMigration)
+    && !/set\s+(?:sort_order|next_check_at|worker_last_cycle_id|retry_count|current_rank|last_checked_at|scheduler_cycle_cursor)/i
+      .test(shoppingDuplicateQuarantineMigration),
+  files.shoppingDuplicateQuarantineMigration,
 );
 check(
   "N Shopping Windows bridge uses an exact profile, user-scoped DPAPI and interactive watchdog",

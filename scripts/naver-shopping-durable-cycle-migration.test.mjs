@@ -6,6 +6,10 @@ const migration = readFileSync(new URL(
   '../supabase/migrations/20260812060826_naver_shopping_durable_cycle_probe.sql',
   import.meta.url,
 ), 'utf8');
+const duplicateQuarantineMigration = readFileSync(new URL(
+  '../supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql',
+  import.meta.url,
+), 'utf8');
 
 test('durable cycle RPC contract is fixed and service-role only', () => {
   for (const key of ['cycleId', 'cycleStartedAt', 'started', 'total', 'remaining', 'processing']) {
@@ -33,4 +37,44 @@ test('cycle order, one-new-then-resume and normalized keyword group are durable'
   assert.match(migration, /processing_until > v_now[\s\S]*'status', 'waiting'/i);
   assert.match(migration, /worker_quarantined_until is null or tracker\.worker_quarantined_until <= v_now/i);
   assert.doesNotMatch(migration, /next_check_at/i, 'cycle authority must not rewrite due timestamps');
+});
+
+test('duplicate identity is capped at one 30-minute quarantine while other failures keep escalation', () => {
+  const functionStart = duplicateQuarantineMigration.indexOf(
+    'create or replace function public.mi_record_naver_shopping_worker_failure',
+  );
+  const functionEnd = duplicateQuarantineMigration.indexOf('revoke all on function', functionStart);
+  const functionSql = duplicateQuarantineMigration.slice(functionStart, functionEnd);
+  assert.ok(functionStart >= 0 && functionEnd > functionStart);
+  assert.match(
+    functionSql,
+    /split_part\(normalized_error, ':', 1\) = 'provider_duplicate_identity'[\s\S]*then v_now \+ interval '30 minutes'/i,
+  );
+  assert.match(
+    functionSql,
+    /else greatest\([\s\S]*coalesce\(retry_count, 0\) >= 2 then interval '24 hours'[\s\S]*else interval '30 minutes'/i,
+  );
+  assert.match(functionSql, /security invoker/i);
+  assert.doesNotMatch(functionSql, /security definer/i);
+});
+
+test('active duplicate quarantine repair changes only its deadline and preserves queue state', () => {
+  const repairStart = duplicateQuarantineMigration.indexOf('-- Repair only the currently active');
+  const repairSql = duplicateQuarantineMigration.slice(repairStart);
+  assert.match(
+    repairSql,
+    /set worker_quarantined_until = greatest\(v_now, updated_at \+ interval '30 minutes'\)/i,
+  );
+  assert.match(
+    repairSql,
+    /lower\(trim\(coalesce\(last_error, ''\)\)\) ~ '\^provider_duplicate_identity\(\?:\:\|\$\)'/i,
+  );
+  assert.match(
+    repairSql,
+    /worker_quarantined_until > greatest\(v_now, updated_at \+ interval '30 minutes'\)/i,
+  );
+  assert.doesNotMatch(
+    repairSql,
+    /\b(?:sort_order|next_check_at|worker_last_cycle_id|retry_count|current_rank|last_checked_at|scheduler_cycle_cursor)\b/i,
+  );
 });

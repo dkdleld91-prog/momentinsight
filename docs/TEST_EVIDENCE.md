@@ -5,6 +5,7 @@
 - 운영 활성 66건 중 24시간 미갱신 23건, 그중 중복 식별 계열 22건을 확인했습니다. 현재 격리 19건은 모두 같은 오류 계열이었고 runtime `1.1.4` heartbeat·cycle #6·circuit closed로 작업기 정지는 배제했습니다.
 - migration 회귀는 suffix가 붙은 중복 오류도 정확히 30분으로 제한하고, 다른 tracker 오류의 누적 24시간 정책은 유지함을 검증합니다. 기존 격리 복구문은 quarantine 시각 외 `sort_order`, `next_check_at`, cycle cursor/소유권, retry, current/last rank를 변경하지 못하게 잠급니다.
 - 전체 `npm run check:release`, server contract 44/44, 보호 잠금 22함수·77파일·27 migration, Production 인증 18/18과 `git diff --check`를 통과했습니다.
+- Production `1c778c655d2b`·Supabase ready와 migration 적용을 확인했습니다. 활성 격리는 19→3건으로 줄었고, `침구청소기`가 신규 우선 슬롯 뒤 기존 cursor에 재진입했습니다. terminal은 `provider_duplicate_identity:4:22:duplicate_row:4`로 30분 fail-closed, last-good 45위 유지, lane·lease 해제였으므로 재진입·순서 복귀·무한루프 방지는 증명했지만 해당 키워드의 새 300개 성공 증거로 확대하지 않습니다.
 
 ## 2026-08-13 N쇼핑 v1.1.3 운영 결과·v1.1.4 회귀
 

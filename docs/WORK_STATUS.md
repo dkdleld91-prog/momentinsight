@@ -10,6 +10,7 @@
 - Windows runtime `1.1.4` heartbeat, cycle #6, circuit·cooldown·lane을 확인해 작업기 정지나 순환 무한루프가 아님을 확인했습니다. 최근 24시간 원자 300 snapshot 147건도 모두 `checkedCount=300`입니다.
 - 누적 재시도 2회부터 중복 오류를 24시간 격리하던 공통 DB 정책을 해당 오류에 한해 30분 고정으로 제한했습니다. 기존 활성 중복 격리도 오류 시각+30분까지만 단축하며 순서·cursor·cycle 소유권·retry·last-good·이력은 변경하지 않습니다.
 - 실제 결과가 300개 미만이거나 중복 경계가 제한된 재수집 안에 안정되지 않으면 계속 fail-closed하고 마지막 정상 순위를 유지합니다. 행 삭제·순위 압축으로 300개를 만들지 않습니다.
+- Production release `1c778c655d2b`와 migration `naver_shopping_duplicate_quarantine_cap`을 적용해 활성 격리가 19건에서 3건으로 줄었습니다. 신규 1건 우선 처리 뒤 과거 격리 대상 `침구청소기`가 sort 2100 순서로 재진입했고, 실제 same-page 중복은 30분 격리·45위 last-good 보존·lane/lease 해제로 유한 종료해 전체 순환은 계속됐습니다.
 
 ### 2026-08-13 N쇼핑 이동 경계 복구 v1.1.4 완료
 

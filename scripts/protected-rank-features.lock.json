@@ -469,7 +469,7 @@
     {
       "id": "shopping-worker-runtime-1-1-3",
       "file": "supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
-      "sha256": "9b8019bc0df74e84a5ba7b922aadd71377cb0fe3d59a5fc6dd0262b3992e5d02",
+      "sha256": "51226c63f3b6bd6929aba903708e8059100024219e0d77bf9e784a4ae219c474",
       "rankMigration": true
     },
     {

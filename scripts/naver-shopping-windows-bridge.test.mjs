@@ -81,17 +81,38 @@ test("Windows watchdog stays interactive, bounded and free of browser bypass fla
   assert.match(scheduler, /chrome_process_metadata_unavailable/u);
   assert.match(scheduler, /GetCurrentProcess\(\)\.SessionId/u);
   assert.match(scheduler, /StringComparison\]::OrdinalIgnoreCase/u);
-  assert.match(scheduler, /chrome_already_running profile=/u);
+  assert.match(scheduler, /chrome_profile_handoff profile=/u);
+  const sameChromeBlock = scheduler.slice(
+    scheduler.indexOf("$sameChromeRunning ="),
+    scheduler.indexOf("if ($sameChromeRunning)"),
+  );
+  assert.match(sameChromeBlock, /StringComparison\]::OrdinalIgnoreCase/u);
+  assert.doesNotMatch(sameChromeBlock, /CommandLine/u);
+  const handoffBlock = scheduler.slice(
+    scheduler.indexOf("if ($sameChromeRunning)"),
+    scheduler.indexOf('Write-SafeLog "chrome_ready'),
+  );
   assert.match(
-    scheduler,
-    /if \(\$processQueryErrors\.Count -gt 0\) \{ throw "chrome_process_check_failed" \}\s*\$currentSessionId = \[Diagnostics\.Process\]::GetCurrentProcess\(\)\.SessionId\s*\$sessionChromeProcesses = @\(\$chromeProcesses \| Where-Object \{ \[int\]\$_\.SessionId -eq \$currentSessionId \}\)\s*if \(@\(\$sessionChromeProcesses \| Where-Object \{\s*\[string\]::IsNullOrWhiteSpace\(\[string\]\$_\.ExecutablePath\)\s*\}\)\.Count -gt 0\) \{ throw "chrome_process_metadata_unavailable" \}\s*\$workChromeRunning = @\(\$sessionChromeProcesses \| Where-Object \{\s*\$executablePath = \[IO\.Path\]::GetFullPath\(\[string\]\$_\.ExecutablePath\)\s*\[string\]::Equals\(\$executablePath, \$chromePath, \[StringComparison\]::OrdinalIgnoreCase\)\s*\}\)\.Count -gt 0\s*if \(\$workChromeRunning\) \{\s*Write-SafeLog "chrome_already_running profile=\$profileDirectory"\s*exit 0\s*\}\s*\$profileArgument = '--profile-directory="\{0\}"' -f \$profileDirectory\s*Start-Process -FilePath \$chromePath/u,
+    handoffBlock,
+    /Start-Process -FilePath \$chromePath -ArgumentList @\(\s*\$profileArgument,\s*"--no-startup-window",\s*"--no-first-run",\s*"--no-default-browser-check"\s*\) -WindowStyle Hidden/u,
   );
   assert.ok(
-    scheduler.indexOf("chrome_already_running") < scheduler.indexOf("Start-Process -FilePath $chromePath"),
-    "an already running work profile must not be minimized again",
+    handoffBlock.indexOf("--no-startup-window") < handoffBlock.indexOf("chrome_profile_handoff"),
+    "the exact profile handoff must be sent before the scheduler reports success",
   );
+  assert.ok(
+    scheduler.indexOf("chrome_profile_handoff") < scheduler.lastIndexOf("Start-Process -FilePath $chromePath"),
+    "Chrome absence must keep the separate minimized startup path",
+  );
+  const coldStartBlock = scheduler.slice(scheduler.lastIndexOf("Start-Process -FilePath $chromePath"));
+  assert.match(
+    coldStartBlock,
+    /Start-Process -FilePath \$chromePath -ArgumentList @\(\s*\$profileArgument,\s*"--no-first-run",\s*"--no-default-browser-check"\s*\) -WindowStyle Minimized/u,
+  );
+  assert.doesNotMatch(coldStartBlock, /--no-startup-window/u);
   assert.match(scheduler, /chrome_ready profile=/u);
   assert.match(scheduler, /chrome_profile_missing/u);
+  assert.doesNotMatch(scheduler, /chrome_already_running/u);
   assert.doesNotMatch(`${installer}\n${scheduler}`, /remote-debugging|no-sandbox|user-data-dir/iu);
 });
 

@@ -34,15 +34,21 @@ try {
     if (@($sessionChromeProcesses | Where-Object {
         [string]::IsNullOrWhiteSpace([string]$_.ExecutablePath)
     }).Count -gt 0) { throw "chrome_process_metadata_unavailable" }
-    $workChromeRunning = @($sessionChromeProcesses | Where-Object {
+    $sameChromeRunning = @($sessionChromeProcesses | Where-Object {
         $executablePath = [IO.Path]::GetFullPath([string]$_.ExecutablePath)
         [string]::Equals($executablePath, $chromePath, [StringComparison]::OrdinalIgnoreCase)
     }).Count -gt 0
-    if ($workChromeRunning) {
-        Write-SafeLog "chrome_already_running profile=$profileDirectory"
+    $profileArgument = '--profile-directory="{0}"' -f $profileDirectory
+    if ($sameChromeRunning) {
+        Start-Process -FilePath $chromePath -ArgumentList @(
+            $profileArgument,
+            "--no-startup-window",
+            "--no-first-run",
+            "--no-default-browser-check"
+        ) -WindowStyle Hidden
+        Write-SafeLog "chrome_profile_handoff profile=$profileDirectory"
         exit 0
     }
-    $profileArgument = '--profile-directory="{0}"' -f $profileDirectory
     Start-Process -FilePath $chromePath -ArgumentList @(
         $profileArgument,
         "--no-first-run",

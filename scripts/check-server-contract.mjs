@@ -743,6 +743,9 @@ check(
     && !/Console\.(?:Write|WriteLine)|StandardInput\.BaseStream/u.test(shoppingWindowsHostLauncher)
     && hasAll(shoppingWindowsChromeScheduler, [
       /'--profile-directory="\{0\}"' -f \$profileDirectory/,
+      /\$sameChromeRunning = @\(\$sessionChromeProcesses/,
+      /if \(\$sameChromeRunning\)[\s\S]{0,300}"--no-startup-window"/,
+      /chrome_profile_handoff profile=/,
       /chrome_ready profile=/,
     ])
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
@@ -785,7 +788,8 @@ check(
     && /result\.status === "control_plane_failed"/.test(shoppingChromeWorker)
     && /result\.status !== "completed"/.test(shoppingChromeWorker)
     && /verification\.blockedUntil > Date\.now\(\)/.test(shoppingChromeWorker)
-    && /chrome_already_running profile=/.test(shoppingWindowsChromeScheduler)
+    && /chrome_profile_handoff profile=/.test(shoppingWindowsChromeScheduler)
+    && /if \(\$sameChromeRunning\)[\s\S]{0,300}"--no-startup-window"/.test(shoppingWindowsChromeScheduler)
     && /RANK_LOOKUP_EXPIRED/.test(shoppingRankLookupJobs)
     && /RANK_LOOKUP_WORKER_STALLED/.test(shoppingRankLookupJobs)
     && /pending: false/.test(shoppingRankLookupJobs)

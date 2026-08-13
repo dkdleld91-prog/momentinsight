@@ -4,12 +4,13 @@
 
 ## 현재 상태
 
-### 2026-08-13 N쇼핑 이동 경계 복구 v1.1.4 진행 중
+### 2026-08-13 N쇼핑 이동 경계 복구 v1.1.4 완료
 
 - v1.1.3 Windows 실기에서 `남자 사각팬티`는 광고 제외 오가닉 300개·17위로 정상 저장됐습니다. `남성 사각팬티`는 전체 수집과 suffix 2회 뒤에도 `provider_duplicate_identity:8:2:page_overlap:7`로 유한 종료했고 last-good 23위·이력은 보존됐습니다. 복구 큐는 재등록되지 않았고 정상 cycle cursor가 다음 키워드로 전진했습니다.
 - v1.1.4는 최초 전체 8페이지 뒤 경계 suffix를 최대 4회, 실제 이동 총 16페이지와 원 요청 절대 deadline 안에서만 수행합니다. 각 교환 뒤 전체 오가닉 1~300·강한 identity 고유성·광고 제외를 다시 검증하며 행 skip·순위 압축은 금지합니다.
 - native host와 실행 중 service worker가 `range-v1`을 상호 확인하지 못하면 DB claim 전에 fail-closed합니다. Windows updater도 scheduler와 관련 프로세스가 파일 교체 중 재실행되지 않도록 정지·복구합니다.
-- 로컬 release gate, Production·DB migration·Windows 1.1.4 동기화와 남은 대상 1회 실검증 전에는 정상화 완료로 기록하지 않습니다.
+- Production·DB·Windows runtime `1.1.4`를 동기화했고, 남은 `남성 사각팬티`만 일회성 복구 큐로 처리했습니다. 새 `pw-chrome-*` collection에서 광고 제외 오가닉 300개·17위로 저장됐고 오류·격리·retry가 해제됐습니다. 복구 항목은 `consumed/claimed_once`로 종료됐으며 정상 cycle cursor가 다음 키워드 수집로 전진했습니다.
+- 일반 Chrome이 떠 있으면 전용 프로필을 오인해 기동을 생략하던 Windows watchdog도 정확 프로필을 `--no-startup-window`로 무창 handoff하도록 보완했습니다.
 
 ### 2026-08-13 N쇼핑 경계 일관성 복구 v1.1.3
 

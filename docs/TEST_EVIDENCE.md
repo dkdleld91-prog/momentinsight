@@ -5,7 +5,8 @@
 - v1.1.3 명시 새로고침 뒤 canary `남자팬티`는 광고 제외 오가닉 300개·50위로 완료됐습니다. 복구 요청에서 `남자 사각팬티`는 새 collection으로 17위·300개를 저장했고, `남성 사각팬티`는 suffix 2회 뒤 `provider_duplicate_identity:8:2:page_overlap:7`로 종료돼 23위 last-good을 보존했습니다.
 - 실패 항목은 자동 재큐잉되지 않았고 lane·lease가 해제됐으며 정상 durable cycle cursor는 다음 항목으로 전진했습니다. 따라서 무한루프·전체 정지는 재현되지 않았지만 두 번째 항목의 정상화 증거도 아닙니다.
 - v1.1.4 회귀는 `range-v1` ready/ack 불일치 시 claim 전 종료, suffix exact range와 구 실행문맥 full-window 호환의 1회 제한, 두 번째 full 응답 첫 프레임 거절, 최대 4회·16페이지, 절대 deadline, same-page duplicate 무재시도, 최종 전체 300개 재검증을 포함합니다.
-- 전체 release·보호 잠금·Production·DB·Windows 실로드와 남은 항목 1회 결과는 배포 뒤 별도 증거로 확정합니다.
+- 전체 release·보호 잠금, Production `81a5149aa2a8`, DB runtime gate, Windows runtime `1.1.4`/fingerprint `03bd6305…`를 확인했습니다. 남은 `남성 사각팬티`는 request `8226b9ca…`에서 1회 소비됐고 collection `pw-chrome-1786631085529-7ade3dcbc4ebf989fcde`, 광고 제외 오가닉 `checkedCount=300`, 17위로 성공했습니다. 오류·격리·retry는 해제됐고 정상 cycle #6 cursor는 1500으로 전진해 다음 tracker 수집을 시작했습니다.
+- Windows watchdog의 동일 실행파일 오인 회귀는 same Chrome 실행 시 exact profile `--no-startup-window` handoff, Chrome 부재 시 최소화 실행으로 분리했고 Windows 9/9·server contract 43/43·baseline·보호 잠금을 통과했습니다.
 
 ## 2026-08-13 N쇼핑 상품 식별 중복·경계 복구 회귀
 

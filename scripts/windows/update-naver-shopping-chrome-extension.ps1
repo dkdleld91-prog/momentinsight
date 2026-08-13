@@ -133,6 +133,8 @@ $scheduledTaskWasEnabled = [bool]$scheduledTask.Settings.Enabled
 $scheduledTaskWasRunning = [string]$scheduledTask.State -eq "Running"
 $scheduledTaskQuiesced = $false
 $updateSucceeded = $false
+$updateFailure = $null
+$restoreFailure = $null
 
 $stagingPath = Join-Path $runtimePath ("extension-update-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $stagingPath -Force | Out-Null
@@ -284,6 +286,9 @@ try {
     $updateSucceeded = $true
     $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
+catch {
+    $updateFailure = $_
+}
 finally {
     Remove-Item -LiteralPath $stagingPath -Recurse -Force -ErrorAction SilentlyContinue
     if ($scheduledTaskQuiesced) {
@@ -314,8 +319,10 @@ finally {
             }
         }
         catch {
-            throw "scheduled_task_restore_failed"
+            $restoreFailure = $_
         }
     }
 }
+if ($null -ne $updateFailure) { throw $updateFailure }
+if ($null -ne $restoreFailure) { throw "scheduled_task_restore_failed" }
 Write-Host $successMessage

@@ -526,7 +526,7 @@
     {
       "id": "shopping-windows-extension-updater",
       "file": "scripts/windows/update-naver-shopping-chrome-extension.ps1",
-      "sha256": "a9ba3433165c0a2686caf49ee2ec79d2f21e8814fe7698c48369dd97b3eddc8c"
+      "sha256": "03d2196ccb8642c04626bad25399ef69b3f617ee2c917386bd398929a7ceb9a6"
     },
     {
       "id": "shopping-chrome-extension-manifest",

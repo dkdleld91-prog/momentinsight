@@ -14,6 +14,10 @@ const autoNavigationHalfOpenMigration = readFileSync(new URL(
   '../supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql',
   import.meta.url,
 ), 'utf8');
+const autoNavigationTrackerFailureRecoveryMigration = readFileSync(new URL(
+  '../supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql',
+  import.meta.url,
+), 'utf8');
 
 test('durable cycle RPC contract is fixed and service-role only', () => {
   for (const key of ['cycleId', 'cycleStartedAt', 'started', 'total', 'remaining', 'processing']) {
@@ -146,4 +150,63 @@ test('automatic half-open control functions remain service-role only', () => {
       new RegExp(`revoke all on function public\\.${signature}[\\s\\S]*?from public, anon, authenticated, service_role;[\\s\\S]*?grant execute[\\s\\S]*?to service_role;`, 'i'),
     );
   }
+});
+
+test('tracker-scoped half-open failure closes only the recovered navigation circuit', () => {
+  const functionStart = autoNavigationTrackerFailureRecoveryMigration.indexOf(
+    'create or replace function public.mi_release_naver_shopping_worker_lane',
+  );
+  const functionEnd = autoNavigationTrackerFailureRecoveryMigration.indexOf(
+    'revoke all on function public.mi_release_naver_shopping_worker_lane',
+    functionStart,
+  );
+  const functionSql = autoNavigationTrackerFailureRecoveryMigration.slice(functionStart, functionEnd);
+  assert.ok(functionStart >= 0 && functionEnd > functionStart);
+  assert.match(
+    functionSql,
+    /circuit_state = 'half_open'[\s\S]*circuit_reason = 'auto_navigation_probe'[\s\S]*current_stage = 'failed'/i,
+  );
+  for (const code of [
+    'local_worker_submit_body_too_large',
+    'provider_duplicate_identity',
+    'provider_partial_window',
+    'provider_row_invalid',
+    'provider_row_title_missing',
+    'provider_row_identity_missing',
+  ]) {
+    assert.match(functionSql, new RegExp(`'${code}'`, 'i'));
+  }
+  assert.match(
+    functionSql,
+    /when auto_navigation_recovered then 'closed'[\s\S]*when current_row\.circuit_state = 'half_open' then 'open'/i,
+  );
+  assert.match(
+    functionSql,
+    /when auto_navigation_recovered then null[\s\S]*when current_row\.circuit_state = 'half_open' then 'probe_incomplete'/i,
+  );
+  assert.doesNotMatch(
+    functionSql,
+    /last_success|update public\.naver_rank_trackers|next_check_at|worker_quarantined_until|scheduler_cycle_cursor_|worker_last_cycle_id/i,
+    'navigation recovery must not fabricate success or alter tracker order/quarantine',
+  );
+});
+
+test('one-time false-open repair is exact, control-plane only, and service-role only', () => {
+  const repairStart = autoNavigationTrackerFailureRecoveryMigration.indexOf('-- Repair only the exact live state');
+  const repairSql = autoNavigationTrackerFailureRecoveryMigration.slice(repairStart);
+  assert.match(
+    repairSql,
+    /circuit_state = 'open'[\s\S]*circuit_reason = 'probe_incomplete'[\s\S]*primary_seen_at > clock_timestamp\(\) - interval '5 minutes'[\s\S]*last_failure_at > clock_timestamp\(\) - interval '1 day'/i,
+  );
+  assert.match(repairSql, /set circuit_state = 'closed'/i);
+  assert.doesNotMatch(
+    repairSql,
+    /update public\.naver_rank_trackers|next_check_at|worker_quarantined_until|scheduler_cycle_cursor_|worker_last_cycle_id|insert into public\.naver_shopping_worker_wakes/i,
+  );
+  assert.match(autoNavigationTrackerFailureRecoveryMigration, /security invoker/i);
+  assert.doesNotMatch(autoNavigationTrackerFailureRecoveryMigration, /security definer/i);
+  assert.match(
+    autoNavigationTrackerFailureRecoveryMigration,
+    /revoke all on function public\.mi_release_naver_shopping_worker_lane\(text, uuid\)[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/i,
+  );
 });

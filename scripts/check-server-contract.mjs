@@ -54,6 +54,7 @@ const files = {
   shoppingWorkerRuntime116Migration: "supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql",
   shoppingWorkerRuntime117Migration: "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
+  shoppingAutoNavigationTrackerFailureRecoveryMigration: "supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -128,6 +129,7 @@ const shoppingSchedulerEventLedgerMigration = fs.readFileSync(files.shoppingSche
 const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRuntime116Migration, "utf8");
 const shoppingWorkerRuntime117Migration = fs.readFileSync(files.shoppingWorkerRuntime117Migration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
+const shoppingAutoNavigationTrackerFailureRecoveryMigration = fs.readFileSync(files.shoppingAutoNavigationTrackerFailureRecoveryMigration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -764,6 +766,28 @@ check(
     && !/security definer/.test(shoppingAutoNavigationHalfOpenMigration)
     && !/(?:next_check_at|scheduler_cycle_cursor_\w+)\s*=/i.test(shoppingAutoNavigationHalfOpenMigration),
   files.shoppingAutoNavigationHalfOpenMigration,
+);
+check(
+  "N Shopping tracker-scoped half-open failure releases only the recovered navigation circuit",
+  hasAll(shoppingAutoNavigationTrackerFailureRecoveryMigration, [
+    /mi_release_naver_shopping_worker_lane/,
+    /circuit_state = 'half_open'/,
+    /circuit_reason = 'auto_navigation_probe'/,
+    /current_stage = 'failed'/,
+    /provider_duplicate_identity/,
+    /provider_partial_window/,
+    /when auto_navigation_recovered then 'closed'/,
+    /when current_row\.circuit_state = 'half_open' then 'open'/,
+    /circuit_reason = 'probe_incomplete'/,
+    /primary_seen_at > clock_timestamp\(\) - interval '5 minutes'/,
+    /last_failure_at > clock_timestamp\(\) - interval '1 day'/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingAutoNavigationTrackerFailureRecoveryMigration)
+    && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/i.test(shoppingAutoNavigationTrackerFailureRecoveryMigration),
+  files.shoppingAutoNavigationTrackerFailureRecoveryMigration,
 );
 check(
   "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",

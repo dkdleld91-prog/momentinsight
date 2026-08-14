@@ -7,6 +7,8 @@
 - 미갱신은 24시간 23 tracker, 48시간 21 tracker, never-checked 1 tracker이며 현재 격리는 2건입니다. 마지막 오류 분포는 없음 37, `provider_duplicate_identity` 28, `provider_partial_window` 1입니다.
 - 최근 24시간 collection 77건·snapshot 113행·tracker 43건에서 `checkedCount != 300`은 0건입니다. 이 원자성 증거는 전체 51 group 완주·오류 정상화 증거를 대신하지 않습니다.
 - heartbeat automation `1-24`가 30분 간격으로 같은 기준을 기록합니다. 최종 합격은 24시간 후 cycle당 기존 group 1회, 신규 1회 우선 후 cursor 복귀, 전체 종료 뒤 다음 cycle, 격리 건너뛰기, 광고주별 coverage, same-cycle 중복 0, 원자 300 및 lane·lease 해제를 함께 확인해야 합니다.
+- 첫 terminal 증거인 cycle #7은 2026-08-14 10:16 KST에 완료됐습니다. 9/9 agency·51/51 group·66/66 tracker를 각각 한 번 claim했고 claim-time 동일 group 중복은 0입니다.
+- 성공 26 group은 26개 고유 collection·38 snapshot으로 저장됐고 `checkedCount != 300` 0건, collection ID 교차 재사용 0건입니다. 실패 25 group은 duplicate 24·partial-window 1이며 last-good을 유지했습니다. 이 결과는 순환 coverage·원자성은 증명하지만 전체 키워드 갱신 성공은 명백히 반증합니다.
 
 ## 2026-08-13 N쇼핑 중복 오류 격리 상한 회귀
 

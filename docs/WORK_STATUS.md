@@ -11,6 +11,8 @@
 - 활성 66 tracker/51 keyword group/9 agency 중 cycle #7 claim은 63 tracker/48 group입니다. 성공 collection 기준 같은 cycle 중복 group은 0이고 repair 대기는 0입니다.
 - 24시간 미갱신 23, 48시간 미갱신 21, never-checked 1, 격리 2입니다. 최근 24시간 77 collection·113 snapshot은 전부 `checkedCount=300`이지만 duplicate 마지막 오류 28건과 strict partial 1건이 남아 있어 정상화 완료가 아닙니다.
 - 감사 중에는 DB write·강제 wake·순서 재배치·격리 해제를 하지 않습니다. 확인된 결함만 최소 수정하고 전체 release·Production·Windows·운영 terminal을 다시 검증합니다.
+- 10:16 KST cycle #7 terminal은 6시간 50분 동안 9/9 agency·51/51 group·66/66 tracker를 claim-time 중복 0으로 모두 한 번씩 처리했습니다. 성공은 26 group/26 collection/38 snapshot이며 전부 `checkedCount=300`이고 collection 교차 재사용도 0입니다.
+- 그러나 나머지 25/51 group은 `provider_duplicate_identity` 24건과 strict `provider_partial_window` 1건으로 실패했습니다. circuit closed·processing 0·lane 해제는 확인했지만 절반 가까운 키워드가 새 순위를 저장하지 못했으므로 전체 갱신 정상화로 보고하지 않습니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

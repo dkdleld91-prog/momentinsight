@@ -309,9 +309,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 14. 12:48:54
-- 기준 커밋: 40da768
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 14. 14:01:34
+- 기준 커밋: 97455c7
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NAVER_SHOPPING_WINDOWS_SETUP.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M package.json /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

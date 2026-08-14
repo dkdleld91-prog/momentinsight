@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 import { signLocalWorkerRequest } from "../src/server/local-worker-auth.mjs";
 import {
+  LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ENDPOINT_PATH,
   localWorkerRankRequest,
   validateLocalWorkerJob,
@@ -75,8 +76,10 @@ const SAFE_FAILURE_CODES = new Set([
   "local_worker_window_not_300",
   "local_worker_lease_lost",
   "local_worker_collection_conflict",
+  "local_worker_submit_body_too_large",
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
+  "native_host_request_id_mismatch",
   "native_host_response_timeout",
 ]);
 const SAFE_DETAIL_FAILURE_CODES = new Set([
@@ -90,8 +93,12 @@ const SAFE_DETAIL_FAILURE_CODES = new Set([
   "native_host_pages_out_of_order",
 ]);
 const TRACKER_ISOLATED_FAILURE_CODES = new Set([
+  "local_worker_submit_body_too_large",
   "provider_duplicate_identity",
   "provider_partial_window",
+  "provider_row_invalid",
+  "provider_row_title_missing",
+  "provider_row_identity_missing",
 ]);
 const RUN_HALT_FAILURE_CODES = new Set([
   "naver_http_418",
@@ -130,7 +137,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.5";
+const EXPECTED_RUNTIME_VERSION = "1.1.6";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -269,6 +276,12 @@ function safeFailureCode(error) {
 
 async function signedWorkerAction(endpoint, secret, payload, options = {}) {
   const rawBody = JSON.stringify(payload);
+  if (payload?.action === "submit"
+    && Buffer.byteLength(rawBody, "utf8") > LOCAL_WORKER_BODY_MAX_BYTES) {
+    const error = new Error("local_worker_submit_body_too_large");
+    error.code = "local_worker_submit_body_too_large";
+    throw error;
+  }
   const timestamp = String(Math.trunc((options.nowMs?.() ?? Date.now()) / 1000));
   const nonce = options.randomUUID?.() || crypto.randomUUID();
   const signature = signLocalWorkerRequest(secret, {
@@ -306,7 +319,11 @@ async function signedWorkerAction(endpoint, secret, payload, options = {}) {
     throw new Error("local_worker_api_invalid_json");
   }
   if (!response.ok || result?.ok !== true) {
-    const error = new Error(String(result?.code || "local_worker_api_failed"));
+    const responseCode = response.status === 413 && payload?.action === "submit"
+      ? "local_worker_submit_body_too_large"
+      : String(result?.code || "local_worker_api_failed");
+    const error = new Error(responseCode);
+    error.code = responseCode;
     error.status = response.status;
     error.result = result;
     throw error;
@@ -678,12 +695,29 @@ export async function runLocalShoppingWorker(options = {}) {
           }
           break;
         }
-        const partial = error?.result?.partial || {};
-        const partialSubmitted = Math.min(
-          job.claims.length,
-          boundedResponseCount(partial.committedCount, job.claims.length)
-            + boundedResponseCount(partial.alreadyCommittedCount, job.claims.length),
-        );
+        const partial = error?.result?.partial;
+        const partialPresent = Boolean(partial)
+          && typeof partial === "object"
+          && !Array.isArray(partial);
+        const partialCounts = partialPresent
+          ? [
+            Number(partial.committedCount),
+            Number(partial.alreadyCommittedCount),
+            Number(partial.leaseLostCount),
+            Number(partial.collectionConflictCount),
+            Number(partial.processedCount),
+          ]
+          : [0, 0, 0, 0, 0];
+        const partialTrusted = partialCounts.every((value) => (
+          Number.isSafeInteger(value) && value >= 0 && value <= job.claims.length
+        )) && partialCounts.slice(0, 4).reduce((sum, value) => sum + value, 0) === partialCounts[4];
+        const [committedCount, alreadyCommittedCount] = partialTrusted
+          ? partialCounts
+          : [0, 0];
+        const processedCount = partialTrusted ? partialCounts[4] : 0;
+        const partialSubmitted = committedCount + alreadyCommittedCount;
+        const remainingClaims = job.claims.slice(processedCount);
+        if (partialPresent && !partialTrusted) log("local_worker_submit_partial_invalid");
         summary.submitted += partialSubmitted;
         summary.failed += job.claims.length - partialSubmitted;
         restoreBaselineCadence(summary);
@@ -706,27 +740,28 @@ export async function runLocalShoppingWorker(options = {}) {
           break;
         }
         const scope = failureScope(job, failureCode);
-        try {
-          const released = await action({
-            action: "fail",
-            ...lanePayload,
-            job,
-            errorCode: failureCode,
-          });
-          const expectedReleaseMax = job.claims.length - partialSubmitted;
-          const releasedCount = Number(released.releasedCount || 0);
-          if (!Number.isSafeInteger(releasedCount) || releasedCount !== expectedReleaseMax) {
-            summary.releaseFailed += expectedReleaseMax;
-            log("local_worker_failure_release_invalid");
+        if (remainingClaims.length > 0) {
+          try {
+            const released = await action({
+              action: "fail",
+              ...lanePayload,
+              job: { ...job, claims: remainingClaims },
+              errorCode: failureCode,
+            });
+            const releasedCount = Number(released.releasedCount || 0);
+            if (!Number.isSafeInteger(releasedCount) || releasedCount !== remainingClaims.length) {
+              summary.releaseFailed += remainingClaims.length;
+              log("local_worker_failure_release_invalid");
+            }
+          } catch (releaseError) {
+            summary.releaseFailed += remainingClaims.length;
+            log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
           }
-        } catch (releaseError) {
-          summary.releaseFailed += job.claims.length - partialSubmitted;
-          log(`local_worker_failure_release_failed:${safeFailureCode(releaseError)}`);
         }
         let failureReport = null;
         try {
           const failureJobs = scope === "tracker"
-            ? job.claims.slice(partialSubmitted).map((claim) => ({ ...job, claims: [claim] }))
+            ? remainingClaims.map((claim) => ({ ...job, claims: [claim] }))
             : [job];
           for (const failureJob of failureJobs) {
             // eslint-disable-next-line no-await-in-loop

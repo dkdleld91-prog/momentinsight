@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS,
   localWorkerAuthInput,
   localWorkerEnabled,
   signLocalWorkerRequest,
@@ -96,6 +97,9 @@ test("rejects body, method, audience, path and signature tampering", () => {
 });
 
 test("rejects stale, future and malformed timestamps", () => {
+  assert.equal(LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS, 300);
+  assert.equal(verify(signedInput({ timestamp: String(NOW_SECONDS - 300) })).ok, true);
+  assert.equal(verify(signedInput({ timestamp: String(NOW_SECONDS + 300) })).ok, true);
   assert.equal(verify(signedInput({ timestamp: String(NOW_SECONDS - 301) })).code, "LOCAL_WORKER_TIMESTAMP_EXPIRED");
   assert.equal(verify(signedInput({ timestamp: String(NOW_SECONDS + 301) })).code, "LOCAL_WORKER_TIMESTAMP_EXPIRED");
   const malformed = signedInput();

@@ -50,6 +50,8 @@ const files = {
   shoppingWorkerRuntime113Migration: "supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
   shoppingWorkerRuntime114Migration: "supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql",
   shoppingWorkerRuntime115Migration: "supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql",
+  shoppingSchedulerEventLedgerMigration: "supabase/migrations/20260814130826_naver_shopping_scheduler_event_ledger.sql",
+  shoppingWorkerRuntime116Migration: "supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -120,6 +122,8 @@ const shoppingWorkerRuntime112Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime113Migration = fs.readFileSync(files.shoppingWorkerRuntime113Migration, "utf8");
 const shoppingWorkerRuntime114Migration = fs.readFileSync(files.shoppingWorkerRuntime114Migration, "utf8");
 const shoppingWorkerRuntime115Migration = fs.readFileSync(files.shoppingWorkerRuntime115Migration, "utf8");
+const shoppingSchedulerEventLedgerMigration = fs.readFileSync(files.shoppingSchedulerEventLedgerMigration, "utf8");
+const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRuntime116Migration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -703,6 +707,40 @@ check(
   files.shoppingWorkerRuntime115Migration,
 );
 check(
+  "N Shopping hardening release pins runtime 1.1.6 fail-closed",
+  hasAll(shoppingWorkerRuntime116Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.6'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.6'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime116Migration),
+  files.shoppingWorkerRuntime116Migration,
+);
+check(
+  "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",
+  hasAll(shoppingSchedulerEventLedgerMigration, [
+    /create schema if not exists mi_internal authorization postgres/,
+    /revoke all on schema mi_internal from public, anon, authenticated, service_role/,
+    /alter table public\.naver_shopping_scheduler_events force row level security/,
+    /grant select on table public\.naver_shopping_scheduler_events\s+to service_role/,
+    /security definer/,
+    /set search_path = ''/,
+    /'new_after_start'/,
+    /'fullCycleEvidenceStartsWithNextCycle', true/,
+    /on conflict do nothing/,
+  ])
+    && !/grant execute on function (?:public|mi_internal)\.mi_audit_/i.test(shoppingSchedulerEventLedgerMigration)
+    && !/create unique index[^;]*scheduled_(?:group|tracker)/i.test(shoppingSchedulerEventLedgerMigration),
+  files.shoppingSchedulerEventLedgerMigration,
+);
+check(
   "N Shopping duplicate identity quarantine is capped without changing durable order",
   hasAll(shoppingDuplicateQuarantineMigration, [
     /mi_record_naver_shopping_worker_failure/,
@@ -794,7 +832,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.5"
+  shoppingChromeManifest.version === "1.1.6"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -967,6 +1005,30 @@ check(
       /detail\.replace\("\/", "_"\)/,
     ]),
   `${files.shoppingCollectorProvider}, ${files.shoppingCollectorContract}, ${files.shoppingRank}, ${files.shoppingLocalWorker}`,
+);
+check(
+  "N Shopping bounds submit payloads and isolates malformed rows without stalling the lane",
+  hasAll(shoppingLocalWorkerContract, [
+    /LOCAL_WORKER_BODY_MAX_BYTES = 4 \* 1024 \* 1024/,
+    /LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS \* 1000/,
+  ])
+    && hasAll(shoppingLocalWorkerAuth, [
+      /LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS = 5 \* 60/,
+    ])
+    && hasAll(shoppingLocalWorker, [
+      /"provider_row_invalid"/,
+      /"provider_row_title_missing"/,
+      /"provider_row_identity_missing"/,
+      /job\.claims\.slice\(processedCount\)/,
+      /processedCount !== job\.claims\.length/,
+    ])
+    && hasAll(shoppingNativeHostCore, [
+      /native_host_request_id_mismatch/,
+    ])
+    && hasAll(serverIndex, [
+      /LOCAL_WORKER_BODY_MAX_BYTES/,
+    ]),
+  `${files.shoppingLocalWorkerContract}, ${files.shoppingLocalWorkerAuth}, ${files.shoppingLocalWorker}, ${files.shoppingNativeHostCore}, ${files.serverIndex}`,
 );
 check(
   "N Shopping server and local worker keep bounded collection envelopes",

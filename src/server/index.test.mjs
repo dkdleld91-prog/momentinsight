@@ -25,12 +25,20 @@ test("readiness route returns method not allowed instead of falling through", as
   assert.equal((await response.json()).ok, false);
 });
 
-test("local shopping worker is bounded to 2 MiB before handler authentication", async () => {
-  const response = await app.fetch(new Request(`https://insight.momentlabs.co.kr${LOCAL_WORKER_ENDPOINT_PATH}`, {
+test("local shopping worker accepts 4 MiB and rejects the next byte before authentication", async () => {
+  assert.equal(LOCAL_WORKER_BODY_MAX_BYTES, 4 * 1024 * 1024);
+  const accepted = await app.fetch(new Request(`https://insight.momentlabs.co.kr${LOCAL_WORKER_ENDPOINT_PATH}`, {
+    method: "POST",
+    headers: { "content-type": "application/octet-stream" },
+    body: new Uint8Array(LOCAL_WORKER_BODY_MAX_BYTES),
+  }));
+  assert.notEqual(accepted.status, 413);
+
+  const rejected = await app.fetch(new Request(`https://insight.momentlabs.co.kr${LOCAL_WORKER_ENDPOINT_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/octet-stream" },
     body: new Uint8Array(LOCAL_WORKER_BODY_MAX_BYTES + 1),
   }));
-  assert.equal(response.status, 413);
-  assert.equal((await response.json()).ok, false);
+  assert.equal(rejected.status, 413);
+  assert.equal((await rejected.json()).ok, false);
 });

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import { runLocalShoppingWorker } from "./naver-shopping-local-worker.mjs";
 import {
   COLLECTION_PROTOCOL,
+  assertNativeExchangeRequestId,
   createChromeNativeProvider,
   createNativePageStreamCollector,
   resolveNativeExchangeWait,
@@ -201,7 +202,7 @@ async function main() {
           maximumMs: RESPONSE_TIMEOUT_MS,
         });
         const response = await nextMessage(wait.timeoutMs, wait.timeoutCode);
-        if (response?.requestId !== requestId) continue;
+        assertNativeExchangeRequestId(response, requestId);
         if (response?.type === "collection_error") {
           const error = new Error(safeCode(response?.code || "native_host_collection_failed"));
           error.code = safeCode(response?.code || "native_host_collection_failed");

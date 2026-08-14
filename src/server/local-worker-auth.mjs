@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 
 const WORKER_SIGNATURE_VERSION = "v1";
-const DEFAULT_MAX_CLOCK_SKEW_SECONDS = 5 * 60;
+export const LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS = 5 * 60;
 const NONCE_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/u;
 const HEX_SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
@@ -86,7 +86,7 @@ export function verifyLocalWorkerSignature(input = {}, options = {}) {
   const nowSeconds = Math.trunc(Number(options.nowSeconds ?? Date.now() / 1000));
   const maxSkewSeconds = Math.max(30, Math.min(
     15 * 60,
-    Math.trunc(Number(options.maxSkewSeconds || DEFAULT_MAX_CLOCK_SKEW_SECONDS)),
+    Math.trunc(Number(options.maxSkewSeconds || LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS)),
   ));
   const timestamp = String(input.timestamp || "").trim();
   const timestampSeconds = Number(timestamp);

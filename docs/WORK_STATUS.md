@@ -18,6 +18,11 @@
 - v1.1.5 로컬 보완은 한 SSR 페이지 안에서 네이버가 실제로 반복 노출한 같은 상품의 두 절대 순위 슬롯을 삭제·압축 없이 유지하고, 서로 다른 페이지 사이 반복은 계속 fail-closed합니다. strict partial은 해당 tracker만 실패 처리해 다른 광고주의 global circuit을 열지 않으며 `40_300` 같은 실제 확인 수를 보존합니다.
 - 전체 release는 517 core + Place 51 + Shopping 57, server contract 46/46, Production auth 18/18, 보호 잠금 22함수·78파일·28 migration으로 통과했습니다. Production release `40da76857484`, DB runtime gate, Windows runtime `1.1.5`/fingerprint `7ec0891e023d…`를 동기화했고, 자연 순환 collection `pw-chrome-1786679023142-f1d2bb80ad9ea6963f70`이 `치아미백제`를 광고 제외 오가닉 300개·51위로 완료한 뒤 circuit closed와 lane·lease 해제를 확인했습니다.
 - DB runtime 함수 3개는 모두 SECURITY INVOKER, 빈 search path, `postgres`·`service_role`만 실행 가능한 상태입니다. 다만 이는 24시간 공정 순환 완료 증거가 아니며, cross-page overlap 13 group과 5시간 29분 가동 공백 원인은 해결 완료로 보고하지 않습니다.
+- 12:57 KST 읽기 전용 관측에서 cycle #8은 8/51 group claim·cursor sort 200으로 전진했고 같은 cycle 성공 중복은 0입니다. circuit closed, cooldown·lane·processing 없음이며 cycle 성공 snapshot 7행/4 collection은 원자 300 위반 0건입니다. 미갱신 24시간 23건·48시간 21건과 duplicate 28건·partial 1건은 그대로여서 정상화 판정은 보류합니다.
+- 13:19 KST에는 cycle #8이 10/51 group까지 전진하고 stale24가 22건으로 1건 감소했습니다. `콘트로이친`은 새 원자 300 collection으로 성공했으나 `성장기칼슘`은 `local_worker_collection_failed`로 종료돼 원인 상세를 확정할 증거가 없습니다. 이후 circuit은 closed·failure streak 0·lane 해제이므로 전역 정지는 아니지만, generic failure의 원인 보존도 추가 결함으로 추적합니다.
+- v1.1.6 로컬 보완은 malformed row 3종을 해당 keyword group으로 격리하고, 서명·수집창 시계 허용을 ±5분으로 통일하며, native request ID 불일치를 즉시 종료합니다. 제출 본문은 실제 300개 최대 계약을 수용하도록 4MiB로 고정했고 부분 submit은 서버가 확인한 `processedCount` 이후 항목만 해제합니다.
+- 다음 완전 cycle부터 claim·terminal·격리·신규 우선·cursor 복귀를 append-only로 남기는 scheduler event ledger를 추가했습니다. 강제 RLS 아래 service role은 읽기만 가능하고 trigger write는 비공개 `mi_internal` SECURITY DEFINER 함수만 수행합니다. 역할 전환·동일 group 반복 claim·cycle 중 신규·성공/실패를 실제 PostgreSQL shadow transaction으로 실행하고 전체 rollback을 확인했습니다.
+- 전체 `check:release`는 core 537/537·Place 51/51·Shopping 57/57, server contract 49/49, Production auth 18/18, 보호 잠금 22함수·80파일·30 migration으로 통과했습니다. 아직 Production·DB·Windows에는 배포하지 않았으며, 장부 적용 뒤 시작되는 다음 cycle부터 24시간 증거를 새로 판정합니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

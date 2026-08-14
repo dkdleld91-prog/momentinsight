@@ -7,6 +7,7 @@ import { spawn, spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { localWorkerAuthInput, verifyLocalWorkerSignature } from "../src/server/local-worker-auth.mjs";
+import { LOCAL_WORKER_BODY_MAX_BYTES } from "../src/server/naver-shopping/local-worker-contract.mjs";
 import {
   acquireWorkerLock,
   runLocalShoppingWorker,
@@ -67,7 +68,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.5",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.6",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -233,7 +234,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.5");
+  assert.equal(lane.runtimeVersion, "1.1.6");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -352,7 +353,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.5");
+  assert.equal(coordination[0].runtimeVersion, "1.1.6");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -735,6 +736,39 @@ test("preserves a bounded internal failure code instead of hiding the live cause
   assert.equal(calls[1].errorCode, "local_worker_commit_invalid");
 });
 
+test("preserves a native request-id mismatch, skips submit and releases the lane", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("native_host_request_id_mismatch");
+      error.code = "native_host_request_id_mismatch";
+      throw error;
+    },
+    async close() {},
+  };
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: JOB } },
+      { body: { ok: true, releasedCount: 1 } },
+    ], calls),
+    provider,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  assert.equal(calls[1].errorCode, "native_host_request_id_mismatch");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "system");
+  assert.equal(failure.errorCode, "native_host_request_id_mismatch");
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
 test("isolates duplicate provider identity to its tracker group and continues the next worker pass", async () => {
   const calls = [];
   const logs = [];
@@ -859,6 +893,139 @@ test("isolates a strict partial window to one tracker instead of opening the glo
   assert.equal(failure.scope, "tracker");
   assert.equal(failure.errorCode, "provider_partial_window:40_300");
   assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("maps an upstream submit 413 to one tracker-scoped oversized-payload failure", async () => {
+  const calls = [];
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { status: 413, body: { ok: false, message: "request too large" } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail", "claim"]);
+  assert.equal(calls[2].errorCode, "local_worker_submit_body_too_large");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.equal(failure.errorCode, "local_worker_submit_body_too_large");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("rejects an oversized submit locally and isolates it before network upload", async () => {
+  const calls = [];
+  const oversizedWindow = completeWindow();
+  oversizedWindow.items[0].padding = "x".repeat(LOCAL_WORKER_BODY_MAX_BYTES);
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+
+  await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider: { async collect() { return oversizedWindow; }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
+  assert.equal(calls[1].errorCode, "local_worker_submit_body_too_large");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+});
+
+test("isolates malformed provider rows to their keyword group and continues the next keyword", async (t) => {
+  for (const errorCode of [
+    "provider_row_invalid",
+    "provider_row_title_missing",
+    "provider_row_identity_missing",
+  ]) {
+    await t.test(errorCode, async () => {
+      const calls = [];
+      const groupedJob = {
+        ...JOB,
+        claims: [
+          JOB.claims[0],
+          {
+            ...JOB.claims[0],
+            trackerId: "123e4567-e89b-42d3-a456-426614174002",
+          },
+        ],
+      };
+      const nextJob = {
+        ...JOB,
+        keyword: "남자팬티",
+        claims: [{
+          ...JOB.claims[0],
+          trackerId: "123e4567-e89b-42d3-a456-426614174003",
+        }],
+      };
+      let collectCount = 0;
+      const provider = {
+        async collect(request) {
+          collectCount += 1;
+          if (collectCount === 1) {
+            const error = new Error(errorCode);
+            error.code = errorCode;
+            error.detail = "3:26";
+            throw error;
+          }
+          return { ...completeWindow(), keyword: request.keyword };
+        },
+        async close() {},
+      };
+      const summary = await runLocalShoppingWorker({
+        env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+        fetchImpl: authenticatedFetch([
+          { body: { ok: true, job: groupedJob } },
+          { body: { ok: true, releasedCount: 2 } },
+          { body: { ok: true, job: nextJob } },
+          { body: {
+            ok: true,
+            committedCount: 1,
+            alreadyCommittedCount: 0,
+            leaseLostCount: 0,
+            collectionConflictCount: 0,
+            processedCount: 1,
+          } },
+        ], calls),
+        provider,
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+
+      assert.deepEqual(summary, {
+        status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0,
+      });
+      assert.equal(collectCount, 2);
+      assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
+      assert.equal(calls[1].errorCode, `${errorCode}:3:26`);
+      const failures = calls.coordination.filter((call) => call.action === "record-failure");
+      assert.equal(failures.length, 2);
+      assert.deepEqual(
+        failures.map((failure) => failure.job.claims[0].trackerId).sort(),
+        groupedJob.claims.map((claim) => claim.trackerId).sort(),
+      );
+      assert.ok(failures.every((failure) => failure.scope === "tracker"));
+      assert.ok(failures.every((failure) => failure.errorCode === `${errorCode}:3:26`));
+      assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+      assert.equal(calls.coordination.filter((call) => call.action === "record-success").length, 1);
+    });
+  }
 });
 
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {
@@ -1032,6 +1199,58 @@ test("accounts for server-reported partial commits without counting them as fail
     status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
+  assert.deepEqual(calls[2].job.claims, [twoClaimJob.claims[1]]);
+});
+
+test("uses processedCount to release only the unprocessed suffix after mixed partial outcomes", async () => {
+  const calls = [];
+  const threeClaimJob = {
+    ...JOB,
+    claims: [
+      JOB.claims[0],
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174001",
+      },
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174002",
+      },
+    ],
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: threeClaimJob } },
+    {
+      status: 409,
+      body: {
+        ok: false,
+        code: "LOCAL_WORKER_SUBMIT_PARTIAL",
+        partial: {
+          committedCount: 1,
+          alreadyCommittedCount: 0,
+          leaseLostCount: 1,
+          collectionConflictCount: 0,
+          processedCount: 2,
+        },
+      },
+    },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
+  assert.deepEqual(calls[2].job.claims, [threeClaimJob.claims[2]]);
 });
 
 test("makes failure-release transport errors visible in the final summary", async () => {

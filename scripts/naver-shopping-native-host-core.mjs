@@ -24,6 +24,15 @@ const BOUNDARY_RECOLLECTION_ATTEMPTS = 4;
 const DEADLINE_GUARD_MS = 3_000;
 export const COLLECTION_PROTOCOL = "range-v1";
 
+export function assertNativeExchangeRequestId(response, expectedRequestId) {
+  if (typeof expectedRequestId !== "string"
+    || !expectedRequestId
+    || response?.requestId !== expectedRequestId) {
+    throw new ProviderError("native_host_request_id_mismatch");
+  }
+  return response;
+}
+
 export function validateCollectionProtocolAck(message) {
   if (message?.action !== "ready_ack"
     || message?.collectionProtocol !== COLLECTION_PROTOCOL) {

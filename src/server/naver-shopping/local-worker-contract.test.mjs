@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS } from "../local-worker-auth.mjs";
 import {
+  LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
   localWorkerCollectionKey,
   localWorkerRankRequest,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "./local-worker-contract.mjs";
-import { validateRankRequest } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
+import {
+  RANK_EVIDENCE,
+  SCHEMA_VERSION,
+  SOURCE,
+  validateProviderWindow,
+  validateRankRequest,
+} from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 const NOW = Date.parse("2026-08-01T06:00:00.000Z");
 const TRACKER_ONE = "123e4567-e89b-42d3-a456-426614174000";
@@ -78,6 +86,78 @@ test("accepts only a 300-rank canonical keyword job with unique leases", () => {
   assert.equal(normalized.claims.length, 2);
 });
 
+test("fits a contract-valid maximum 300 window and 100 claims inside the 4 MiB server bound", () => {
+  const keyword = "용량검증";
+  const request = validateRankRequest({
+    schemaVersion: SCHEMA_VERSION,
+    keyword,
+    limit: 300,
+    sort: "relevance",
+    rankPolicy: "organic_only",
+    deadlineAt: new Date(NOW + 60_000).toISOString(),
+  }, { nowMs: NOW });
+  const exactUrl = (prefix, length) => prefix + "a".repeat(length - prefix.length);
+  const items = Array.from({ length: 300 }, (_, index) => {
+    const id = `${String(index + 1).padStart(3, "0")}${"9".repeat(77)}`;
+    return {
+      organicRank: index + 1,
+      isAd: false,
+      isOrganic: true,
+      productId: id,
+      sellerProductId: id,
+      catalogId: id,
+      linkedCatalogId: id,
+      title: "가".repeat(500),
+      link: exactUrl(`https://example.com/p/${index}?q=`, 2048),
+      image: exactUrl(`https://example.com/i/${index}?q=`, 2048),
+      mallName: "나".repeat(200),
+      brand: "다".repeat(200),
+      maker: "라".repeat(200),
+      category1: "마".repeat(200),
+      category2: "바".repeat(200),
+      category3: "사".repeat(200),
+      category4: "아".repeat(200),
+      productType: 2,
+    };
+  });
+  const window = validateProviderWindow({
+    ok: true,
+    schemaVersion: SCHEMA_VERSION,
+    keyword,
+    source: SOURCE,
+    rankEvidence: RANK_EVIDENCE,
+    collectionId: "pw-chrome-max-payload-regression",
+    collectedAt: new Date(NOW).toISOString(),
+    complete: true,
+    partial: false,
+    sourceExhausted: false,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    checkedCount: 300,
+    rawCount: 300,
+    excludedAdCount: 0,
+    items,
+  }, request);
+  const claims = Array.from({ length: 100 }, (_, index) => ({
+    trackerId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    leaseStartedAt: new Date(NOW).toISOString(),
+    leaseUntil: new Date(NOW + 12 * 60_000).toISOString(),
+  }));
+  const payload = {
+    action: "submit",
+    workerId: "windows-desktop-primary",
+    laneToken: "11111111-1111-4111-8111-111111111111",
+    runId: "22222222-2222-4222-8222-222222222222",
+    runtimeVersion: "1.1.6",
+    runtimeFingerprint: "a".repeat(64),
+    job: validateLocalWorkerJob({ keyword, limit: 300, claims }),
+    window,
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(payload), "utf8");
+  assert.ok(bytes > 2 * 1024 * 1024);
+  assert.ok(bytes <= LOCAL_WORKER_BODY_MAX_BYTES);
+});
+
 test("accepts one isolated lookup claim and rejects tracker-shaped lookup claims", () => {
   const lookup = validateLocalWorkerJob({
     kind: "lookup",
@@ -143,6 +223,19 @@ test("accepts a fresh, complete and sequential 300-item organic window", () => {
   });
   assert.equal(result.checkedCount, 300);
   assert.equal(result.items[299].organicRank, 300);
+});
+
+test("uses the signed worker 300-second clock skew for future collection evidence", () => {
+  assert.equal(LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS, 300);
+  assert.doesNotThrow(() => validateStrictLocalWorkerWindow(windowFixture({
+    collectedAt: new Date(NOW + LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000).toISOString(),
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    collectedAt: new Date(NOW + LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000 + 1).toISOString(),
+  }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_stale/);
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    collectedAt: new Date(NOW - 15 * 60_000 - 1).toISOString(),
+  }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_stale/);
 });
 
 test("keeps same-page repeated identity ranks and rejects cross-page repetition", () => {

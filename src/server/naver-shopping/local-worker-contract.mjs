@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 
+import { LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS } from "../local-worker-auth.mjs";
 import {
   NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA,
   normalizeText,
@@ -7,10 +8,10 @@ import {
 } from "../handlers/naver-shopping-rank.mjs";
 
 export const LOCAL_WORKER_ORGANIC_LIMIT = 300;
-export const LOCAL_WORKER_BODY_MAX_BYTES = 2 * 1024 * 1024;
+export const LOCAL_WORKER_BODY_MAX_BYTES = 4 * 1024 * 1024;
 export const LOCAL_WORKER_ENDPOINT_PATH = "/api/naver-shopping-local-worker";
 const DEFAULT_MAX_WINDOW_AGE_MS = 15 * 60_000;
-const DEFAULT_FUTURE_TOLERANCE_MS = 60_000;
+const DEFAULT_FUTURE_TOLERANCE_MS = LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000;
 // The shared collector contract rejects deadlines more than 15 minutes ahead.
 // Keep one minute of validation/transport headroom below that hard boundary.
 const LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 * 60_000;

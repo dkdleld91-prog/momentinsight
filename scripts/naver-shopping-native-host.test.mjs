@@ -16,6 +16,7 @@ import {
 } from "./install-naver-shopping-chrome-bridge.mjs";
 import {
   COLLECTION_PROTOCOL,
+  assertNativeExchangeRequestId,
   buildNativeWindowFromPages,
   buildNativeWindowFromRows,
   createChromeNativeProvider,
@@ -227,6 +228,26 @@ test("native protocol handshake requires one exact range-v1 acknowledgement", ()
       (error) => error?.code === "native_host_ready_ack_invalid",
     );
   }
+});
+
+test("native exchange rejects a wrong or missing request id immediately", () => {
+  const expectedRequestId = "request-current";
+  const valid = { type: "collection_complete", requestId: expectedRequestId };
+  assert.equal(assertNativeExchangeRequestId(valid, expectedRequestId), valid);
+  for (const response of [
+    { type: "collection_page", requestId: "request-stale" },
+    { type: "collection_complete" },
+    null,
+  ]) {
+    assert.throws(
+      () => assertNativeExchangeRequestId(response, expectedRequestId),
+      (error) => error?.code === "native_host_request_id_mismatch",
+    );
+  }
+
+  const nativeHost = fs.readFileSync(new URL("./naver-shopping-native-host.mjs", import.meta.url), "utf8");
+  assert.match(nativeHost, /assertNativeExchangeRequestId\(response, requestId\)/u);
+  assert.doesNotMatch(nativeHost, /response\?\.requestId !== requestId\) continue/u);
 });
 
 test("native exchange wait is clamped to one absolute request deadline", () => {
@@ -705,7 +726,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.5");
+  assert.equal(manifest.version, "1.1.6");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -1148,7 +1169,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.5");
+  assert.equal(manifest.version, "1.1.6");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1307,7 +1328,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
       nativeMessageFrame({
         action: "run",
         trigger: "rank-remote",
-        runtimeVersion: "1.1.5",
+        runtimeVersion: "1.1.6",
         serviceWorkerSha256: "0".repeat(64),
       }),
       nativeMessageFrame({ action: "ready_ack" }),
@@ -1325,7 +1346,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.5",
+    runtimeVersion: "1.1.6",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

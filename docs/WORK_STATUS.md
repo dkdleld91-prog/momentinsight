@@ -6,6 +6,8 @@
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 
+- 17:05 KST SELECT-only 회차에서 작업기 runtime은 계속 `1.1.5`, heartbeat는 10,741초 경과했고 lane·processing·cooldown은 없었습니다. cycle #8은 cursor sort 400, 활성 72 tracker/57 group 중 17 tracker/14 group만 claim된 채 정지했으므로 공정 순환 진행으로 판정하지 않습니다.
+- 활성 상태는 stale24 28, stale48 27, never-checked 7, 현재 격리 0입니다. 최근 24시간 49 collection/66 snapshot은 모두 source·광고 제외·오가닉 근거·`checkedCount=300`을 충족했지만 마지막 snapshot은 13:56 KST이며, 현 cycle ledger event가 없어 24시간 증거 수집도 재개되지 않았습니다.
 - Windows 재연결 후 실기 확인에서 확장 파일은 `1.1.6`이지만 Native Messaging 등록 키 3곳이 모두 없고, DB heartbeat/runtime은 `1.1.5`에서 멈춘 상태를 확인했습니다. 현재 직접 원인은 작업기 무한루프가 아니라 Chrome이 native host를 시작할 등록 경로가 사라진 것입니다.
 - 업데이터가 native manifest의 이름·허용 origin을 검증하고 HKCU 등록을 원자적으로 복원·재검증하도록 로컬 보완했습니다. Windows 10/10, server contract 49/49, baseline, 보호 잠금을 통과했지만 아직 새 커밋 배포·Windows 재실행·원자 300 terminal은 미검증이므로 복구 완료로 보고하지 않습니다.
 - 10:01 KST부터 30분 간격 heartbeat `1-24`를 현재 작업에 연결했습니다. 2026-08-15 10:01 KST 전에는 전체 공정 순환 완료를 판정하지 않습니다.

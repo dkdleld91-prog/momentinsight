@@ -16,7 +16,8 @@
 - 원인 매트릭스는 24시간 미갱신 23 tracker를 cross-page overlap 16, same-page duplicate 6, strict partial 1로 전부 설명합니다. 성공했지만 stale인 tracker, lease 고립, 현재 circuit/cooldown 정체는 0입니다.
 - 별도 가동률 문제로 보존된 약 24시간 signed traffic에서 5시간 29분 42초 공백 1회를 확인했습니다. 현재는 복구됐지만 장비·Windows 세션·네트워크·scheduler 중 정확 원인은 DB만으로 확정하지 않습니다. 추가 코드 감사에서는 partial 오류의 전역 circuit 오분류, 실패·cycle append-only 이력 부재, 본문 상한·부분 submit·100 tracker 경계를 P1로 분리했습니다.
 - v1.1.5 로컬 보완은 한 SSR 페이지 안에서 네이버가 실제로 반복 노출한 같은 상품의 두 절대 순위 슬롯을 삭제·압축 없이 유지하고, 서로 다른 페이지 사이 반복은 계속 fail-closed합니다. strict partial은 해당 tracker만 실패 처리해 다른 광고주의 global circuit을 열지 않으며 `40_300` 같은 실제 확인 수를 보존합니다.
-- 전체 release는 517 core + Place 51 + Shopping 57, server contract 46/46, Production auth 18/18, 보호 잠금 22함수·78파일·28 migration으로 통과했습니다. 아직 Production·DB·Windows에는 배포하지 않았고, cross-page overlap 13 group과 5시간 29분 가동 공백 원인은 해결 완료로 보고하지 않습니다.
+- 전체 release는 517 core + Place 51 + Shopping 57, server contract 46/46, Production auth 18/18, 보호 잠금 22함수·78파일·28 migration으로 통과했습니다. Production release `40da76857484`, DB runtime gate, Windows runtime `1.1.5`/fingerprint `7ec0891e023d…`를 동기화했고, 자연 순환 collection `pw-chrome-1786679023142-f1d2bb80ad9ea6963f70`이 `치아미백제`를 광고 제외 오가닉 300개·51위로 완료한 뒤 circuit closed와 lane·lease 해제를 확인했습니다.
+- DB runtime 함수 3개는 모두 SECURITY INVOKER, 빈 search path, `postgres`·`service_role`만 실행 가능한 상태입니다. 다만 이는 24시간 공정 순환 완료 증거가 아니며, cross-page overlap 13 group과 5시간 29분 가동 공백 원인은 해결 완료로 보고하지 않습니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

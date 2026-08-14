@@ -12,7 +12,9 @@
 - 10:32 KST 상호배타 원인 분류에서 stale24 23 tracker/20 group은 `page_overlap` 16/13, `duplicate_row` 6/6, `provider_partial_window` 1/1이며 기타·성공 stale·lease/circuit 정체는 0입니다. 보존된 signed traffic에는 5시간 29분 42초 공백이 있으나 당시 외부 원인은 미확정으로 남깁니다.
 - 코드 감사는 P0 없음·원자 300/CAS 유지로 판정했습니다. 다만 partial/row 오류가 system scope로 전역 circuit을 열 수 있는 경로, 인증과 수집창 시계 허용 차이, 2MiB body 상한, 비원자 Windows 교체, 잘못된 request ID 장기 대기, 동일 키워드 100 tracker 상한, 부분 submit 식별, durable cycle 운영 이력 부재를 별도 P1로 기록합니다.
 - v1.1.5 회귀는 same-page 반복 identity를 오가닉 순위 1~300 그대로 유지하고 exchange 1회로 완료하며, rank 1↔41 cross-page 반복은 collector·contract·server 세 경계 모두 거절합니다. strict partial `40/300`은 `provider_partial_window:40_300` tracker failure로 남고 global lane block 호출은 0회입니다.
-- `npm run check:release`는 core 517/517, Place 51/51, Shopping 57/57, server contract 46/46, Production auth 18/18로 통과했습니다. 보호 잠금은 22함수·78파일·28 migration이며 `git diff --check`도 통과했습니다. 이는 로컬 증거이고 Production·Windows 실기 성공 증거가 아닙니다.
+- `npm run check:release`는 core 517/517, Place 51/51, Shopping 57/57, server contract 46/46, Production auth 18/18로 통과했습니다. 보호 잠금은 22함수·78파일·28 migration이며 `git diff --check`도 통과했습니다.
+- Production `/health`·`/ready` release `40da76857484`, DB migration `naver_shopping_runtime_1_1_5`, Windows runtime `1.1.5`/fingerprint `7ec0891e023d43d7a43c8f74a9c0e359c21e7dfd1f03b054a9d0290bddf7299e`가 일치합니다. 새 collection `pw-chrome-1786679023142-f1d2bb80ad9ea6963f70`은 `치아미백제`를 source `naver_shopping_results_collector`, rank evidence `naver_shopping_organic_list`, `adExcluded=true`, `checkedCount=300`, 51위로 원자 저장했고 terminal 뒤 circuit closed·lane/lease/run 해제를 확인했습니다.
+- runtime 함수 `mi_report_naver_shopping_worker_progress`, `mi_get_naver_shopping_worker_operations`, `mi_set_naver_shopping_worker_cadence`는 모두 SECURITY INVOKER·빈 search path·`postgres/service_role` execute-only입니다. 이 배포·단일 terminal은 실기 기동 증거이며, 24시간 공정성·전체 성공률과 cross-page 오류 해결 증거로 확대하지 않습니다.
 
 ## 2026-08-13 N쇼핑 중복 오류 격리 상한 회귀
 

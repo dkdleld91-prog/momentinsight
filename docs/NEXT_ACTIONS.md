@@ -4,6 +4,7 @@
 
 ## 진행 중: N쇼핑 v1.1.6 오류 범위 축소·증거 장부·24시간 재검증
 
+- 1차 복구 업데이터는 native manifest 자체 누락을 확인하고 안전 중단했습니다. 누락 manifest까지 정확히 재생성하는 후속 업데이터를 배포한 뒤 같은 Windows에서 다시 실행해야 합니다.
 - Windows의 Chrome Native Messaging 등록 누락을 확인했습니다. 재발 방지 업데이터를 배포한 뒤 정확한 release로 1회 재실행하여 `native_host_registry_synced=true`, DB runtime `1.1.6`, 새 원자 300 terminal과 lane·lease 해제를 확인해야 합니다.
 - native host 복구 전 멈춘 시간은 24시간 공정 순환 증거에 포함하지 않습니다. 복구 terminal 이후 ledger 기준을 새로 잡아 24시간을 다시 관측합니다.
 - same-page `duplicate_row`는 네이버 SSR의 절대 순위 1~300을 그대로 보존해 정상 저장 대상으로 바꾸고, cross-page `page_overlap`은 계속 제한 재수집 뒤 fail-closed합니다. 행 삭제·순위 압축은 하지 않습니다.

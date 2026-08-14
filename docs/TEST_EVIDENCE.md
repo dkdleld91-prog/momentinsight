@@ -2,6 +2,8 @@
 
 ## 2026-08-14 준비작업 1번 시작 기준
 
+- 17:27 KST Windows 실기: exact release `1ba1efc45bbe`, expected `1.1.6` 업데이터는 `native_host_manifest_missing`으로 중단됐습니다. `$LOCALAPPDATA\MomentInsight\NaverShoppingBridge\com.momentinsight.naver_shopping.json`의 `Test-Path` 결과도 `False`여서 최초 판단을 레지스트리 단독 누락에서 manifest+등록 동시 누락으로 정정합니다.
+- 후속 회귀는 manifest 누락 감지→정확 5필드 UTF-8 재생성→name/type/path/origin 재검증→HKCU write/readback 순서를 고정합니다. Windows bridge 10/10, server contract 49/49, baseline과 `git diff --check`를 통과했으며 운영 재실행 결과는 아직 없습니다.
 - 17:05 KST SELECT-only: runtime `1.1.5`, heartbeat age 10,741초, cycle #8 active/cursor 400, lane·lease·processing·cooldown 없음입니다. 활성 72 tracker/57 group/9 agency 중 현 cycle claim은 17/14이고 한 agency의 8건은 claim 0입니다. ledger event와 ledger 기준 중복 claim 증거는 0이므로 중복 없음으로 확대 판정하지 않습니다.
 - stale24 28·stale48 27·never-checked 7·quarantine 0이며 오류 분포는 duplicate 26, partial 1, generic collection failure 1, 오류 없음 44입니다. 최근 24시간 `pw-chrome` 49 collection/66 snapshot의 checkedCount/source/adExcluded/rankEvidence 위반은 모두 0이지만 최신 snapshot은 13:56 KST로 멈췄습니다.
 - 원격 Windows 실기에서 확장 UI `1.1.6`을 재로드하고 안전 갱신을 눌러도 native host 프로세스와 새 nonce가 생기지 않았습니다. Native Messaging HKCU/HKLM/WOW6432Node 등록은 모두 없고 manifest 파일은 존재해 등록 누락을 직접 원인으로 확정했습니다. DB는 runtime `1.1.5`·stale heartbeat 상태이므로 `1.1.6` 운영 성공 증거가 아닙니다.

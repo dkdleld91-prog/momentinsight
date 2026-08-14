@@ -56,6 +56,11 @@ $files = @(
     "service-worker.js"
 )
 
+function Write-Utf8NoBom {
+    param([string]$Path, [string]$Value)
+    [IO.File]::WriteAllBytes($Path, [Text.Encoding]::UTF8.GetBytes($Value))
+}
+
 function Resolve-LoadedExtensionPath {
     param(
         [string]$ProfilePath,
@@ -104,12 +109,14 @@ function Get-UpdateTargetProcesses {
 if (-not (Test-Path -LiteralPath $extensionPath -PathType Container)) { throw "extension_path_missing" }
 if (-not (Test-Path -LiteralPath $schedulerConfigPath -PathType Leaf)) { throw "scheduler_config_missing" }
 if (-not (Test-Path -LiteralPath $nativeConfigPath -PathType Leaf)) { throw "native_config_missing" }
-if (-not (Test-Path -LiteralPath $nativeManifestPath -PathType Leaf)) { throw "native_host_manifest_missing" }
-$nativeManifest = Get-Content -LiteralPath $nativeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
-if ([string]$nativeManifest.name -ne $hostName) { throw "native_host_manifest_name_mismatch" }
 $expectedAllowedOrigin = "chrome-extension://$extensionId/"
-if (@($nativeManifest.allowed_origins) -notcontains $expectedAllowedOrigin) {
-    throw "native_host_manifest_origin_mismatch"
+$nativeManifestNeedsRepair = -not (Test-Path -LiteralPath $nativeManifestPath -PathType Leaf)
+if (-not $nativeManifestNeedsRepair) {
+    $nativeManifest = Get-Content -LiteralPath $nativeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$nativeManifest.name -ne $hostName) { throw "native_host_manifest_name_mismatch" }
+    if (@($nativeManifest.allowed_origins) -notcontains $expectedAllowedOrigin) {
+        throw "native_host_manifest_origin_mismatch"
+    }
 }
 $schedulerConfig = @(Get-Content -LiteralPath $schedulerConfigPath -Encoding UTF8)
 if ($schedulerConfig.Count -ne 2) { throw "scheduler_config_invalid" }
@@ -277,6 +284,32 @@ try {
     Copy-Item -LiteralPath $stagedCollectorProvider -Destination $collectorProviderPath -Force
     Copy-Item -LiteralPath $stagedCollectorContract -Destination $collectorContractPath -Force
     Copy-Item -LiteralPath $stagedSchedulerScript -Destination $schedulerScriptPath -Force
+    if ($nativeManifestNeedsRepair) {
+        $repairedNativeManifest = [ordered]@{
+            name = $hostName
+            description = "Moment Insight N Shopping signed Windows bridge"
+            path = $launcherPath
+            type = "stdio"
+            allowed_origins = @($expectedAllowedOrigin)
+        } | ConvertTo-Json -Depth 4
+        Write-Utf8NoBom -Path $nativeManifestPath -Value "$repairedNativeManifest`n"
+    }
+    if (-not (Test-Path -LiteralPath $nativeManifestPath -PathType Leaf)) {
+        throw "native_host_manifest_repair_failed"
+    }
+    $verifiedNativeManifest = Get-Content -LiteralPath $nativeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    if ([string]$verifiedNativeManifest.name -ne $hostName) { throw "native_host_manifest_name_mismatch" }
+    if ([string]$verifiedNativeManifest.type -ne "stdio") { throw "native_host_manifest_type_mismatch" }
+    if (@($verifiedNativeManifest.allowed_origins) -notcontains $expectedAllowedOrigin) {
+        throw "native_host_manifest_origin_mismatch"
+    }
+    if (-not [string]::Equals(
+        [IO.Path]::GetFullPath([string]$verifiedNativeManifest.path),
+        [IO.Path]::GetFullPath($launcherPath),
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "native_host_manifest_path_mismatch"
+    }
     $serviceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $extensionPath "service-worker.js")).Hash.ToLowerInvariant()
     $loadedServiceWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $loadedExtensionPath "service-worker.js")).Hash.ToLowerInvariant()
     if ($loadedServiceWorkerHash -ne $serviceWorkerHash) { throw "loaded_extension_hash_mismatch" }

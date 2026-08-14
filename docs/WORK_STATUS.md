@@ -6,6 +6,8 @@
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 
+- 17:27 KST 승인 후 Production `1ba1efc45bbe` 업데이터를 Windows에서 실행했지만 `native_host_manifest_missing`으로 fail-closed됐습니다. 재확인 결과 레지스트리뿐 아니라 `com.momentinsight.naver_shopping.json` 자체가 실제로 없었으며, runtime 파일·작업 순서에는 쓰기 변화가 없었습니다.
+- 업데이터가 누락 manifest를 고정 host name·launcher path·`stdio`·정확 extension origin으로 재생성하고 다시 검증한 뒤에만 HKCU를 등록하도록 추가 보완했습니다. Windows 10/10·server contract 49/49·baseline은 통과했으나 새 배포와 Windows terminal 전에는 복구 완료가 아닙니다.
 - 17:05 KST SELECT-only 회차에서 작업기 runtime은 계속 `1.1.5`, heartbeat는 10,741초 경과했고 lane·processing·cooldown은 없었습니다. cycle #8은 cursor sort 400, 활성 72 tracker/57 group 중 17 tracker/14 group만 claim된 채 정지했으므로 공정 순환 진행으로 판정하지 않습니다.
 - 활성 상태는 stale24 28, stale48 27, never-checked 7, 현재 격리 0입니다. 최근 24시간 49 collection/66 snapshot은 모두 source·광고 제외·오가닉 근거·`checkedCount=300`을 충족했지만 마지막 snapshot은 13:56 KST이며, 현 cycle ledger event가 없어 24시간 증거 수집도 재개되지 않았습니다.
 - Windows 재연결 후 실기 확인에서 확장 파일은 `1.1.6`이지만 Native Messaging 등록 키 3곳이 모두 없고, DB heartbeat/runtime은 `1.1.5`에서 멈춘 상태를 확인했습니다. 현재 직접 원인은 작업기 무한루프가 아니라 Chrome이 native host를 시작할 등록 경로가 사라진 것입니다.

@@ -52,6 +52,7 @@ const files = {
   shoppingWorkerRuntime115Migration: "supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql",
   shoppingSchedulerEventLedgerMigration: "supabase/migrations/20260814130826_naver_shopping_scheduler_event_ledger.sql",
   shoppingWorkerRuntime116Migration: "supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql",
+  shoppingWorkerRuntime117Migration: "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -124,6 +125,7 @@ const shoppingWorkerRuntime114Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime115Migration = fs.readFileSync(files.shoppingWorkerRuntime115Migration, "utf8");
 const shoppingSchedulerEventLedgerMigration = fs.readFileSync(files.shoppingSchedulerEventLedgerMigration, "utf8");
 const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRuntime116Migration, "utf8");
+const shoppingWorkerRuntime117Migration = fs.readFileSync(files.shoppingWorkerRuntime117Migration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -724,6 +726,23 @@ check(
   files.shoppingWorkerRuntime116Migration,
 );
 check(
+  "N Shopping complete Windows dependency release pins runtime 1.1.7 fail-closed",
+  hasAll(shoppingWorkerRuntime117Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.7'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.7'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime117Migration),
+  files.shoppingWorkerRuntime117Migration,
+);
+check(
   "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",
   hasAll(shoppingSchedulerEventLedgerMigration, [
     /create schema if not exists mi_internal authorization postgres/,
@@ -780,6 +799,12 @@ check(
     && !/-AsPlainText|cmdkey|remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsHostInstaller)
     && hasAll(shoppingWindowsExtensionUpdater, [
       /naver-shopping-native-host-core\.mjs/,
+      /src\/server\/local-worker-auth\.mjs/,
+      /src\/server\/handlers\/naver-shopping-rank\.mjs/,
+      /src\/server\/security\.mjs/,
+      /src\/server\/naver-shopping\/source-status\.mjs/,
+      /src\/server\/naver-shopping\/provider-runtime\.mjs/,
+      /src\/server\/naver-shopping\/mobile-top-fallback\.mjs/,
       /tools\/naver-shopping-rank-collector\/src\/provider\.mjs/,
       /tools\/naver-shopping-rank-collector\/src\/contract\.mjs/,
       /native_host_core_download_empty/,
@@ -803,16 +828,28 @@ check(
       /Set-Item -Path \$nativeRegistryPath -Value \$nativeManifestPath/,
       /native_host_registry_mismatch/,
       /native_host_registry_synced=true/,
-      /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerContractHash`n\$collectorProviderHash`n\$collectorContractHash/,
+      /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerAuthHash`n\$localWorkerContractHash`n\$shoppingRankHandlerHash`n\$securityHash`n\$sourceStatusHash`n\$providerRuntimeHash`n\$mobileTopFallbackHash`n\$collectorProviderHash`n\$collectorContractHash/,
     ])
     && [
       "native_host_core_javascript_invalid",
+      "local_worker_auth_javascript_invalid",
+      "shopping_rank_handler_javascript_invalid",
+      "security_runtime_javascript_invalid",
+      "source_status_javascript_invalid",
+      "provider_runtime_javascript_invalid",
+      "mobile_top_fallback_javascript_invalid",
       "collector_provider_javascript_invalid",
       "collector_contract_javascript_invalid",
     ].every((code) => shoppingWindowsExtensionUpdater.indexOf(code) >= 0
       && shoppingWindowsExtensionUpdater.indexOf(code) < shoppingWindowsExtensionUpdater.indexOf("Get-Process chrome"))
     && hasAll(shoppingNativeHost, [
       /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/local-worker-auth\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/handlers\/naver-shopping-rank\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/security\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/source-status\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/provider-runtime\.mjs"/,
+      /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/mobile-top-fallback\.mjs"/,
       /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/provider\.mjs"/,
       /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/contract\.mjs"/,
     ])
@@ -841,7 +878,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.6"
+  shoppingChromeManifest.version === "1.1.7"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)

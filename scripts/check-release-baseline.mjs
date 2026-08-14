@@ -191,6 +191,7 @@ const shoppingWorkerRuntime114Migration = read("supabase/migrations/202608130840
 const shoppingWorkerRuntime115Migration = read("supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql");
 const shoppingSchedulerEventLedgerMigration = read("supabase/migrations/20260814130826_naver_shopping_scheduler_event_ledger.sql");
 const shoppingWorkerRuntime116Migration = read("supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql");
+const shoppingWorkerRuntime117Migration = read("supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
@@ -1397,6 +1398,12 @@ const checks = {
     && shoppingWindowsChromeScheduler.includes("chrome_ready profile=")
     && !/remote-debugging|no-sandbox|user-data-dir/iu.test(shoppingWindowsChromeScheduler),
   shoppingWindowsRuntimeDependenciesAreValidatedAndFingerprinted: shoppingWindowsExtensionUpdater.includes("scripts/naver-shopping-native-host-core.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/local-worker-auth.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/handlers/naver-shopping-rank.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/security.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/naver-shopping/source-status.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/naver-shopping/provider-runtime.mjs")
+    && shoppingWindowsExtensionUpdater.includes("src/server/naver-shopping/mobile-top-fallback.mjs")
     && shoppingWindowsExtensionUpdater.includes("tools/naver-shopping-rank-collector/src/provider.mjs")
     && shoppingWindowsExtensionUpdater.includes("tools/naver-shopping-rank-collector/src/contract.mjs")
     && shoppingWindowsExtensionUpdater.includes("native_host_core_download_empty")
@@ -1420,14 +1427,26 @@ const checks = {
     && shoppingWindowsExtensionUpdater.includes("Set-Item -Path $nativeRegistryPath -Value $nativeManifestPath")
     && shoppingWindowsExtensionUpdater.includes("native_host_registry_mismatch")
     && shoppingWindowsExtensionUpdater.includes("native_host_registry_synced=true")
-    && shoppingWindowsExtensionUpdater.includes("$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerContractHash`n$collectorProviderHash`n$collectorContractHash")
+    && shoppingWindowsExtensionUpdater.includes("$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerAuthHash`n$localWorkerContractHash`n$shoppingRankHandlerHash`n$securityHash`n$sourceStatusHash`n$providerRuntimeHash`n$mobileTopFallbackHash`n$collectorProviderHash`n$collectorContractHash")
     && [
       "native_host_core_javascript_invalid",
+      "local_worker_auth_javascript_invalid",
+      "shopping_rank_handler_javascript_invalid",
+      "security_runtime_javascript_invalid",
+      "source_status_javascript_invalid",
+      "provider_runtime_javascript_invalid",
+      "mobile_top_fallback_javascript_invalid",
       "collector_provider_javascript_invalid",
       "collector_contract_javascript_invalid",
     ].every((code) => shoppingWindowsExtensionUpdater.indexOf(code) >= 0
       && shoppingWindowsExtensionUpdater.indexOf(code) < shoppingWindowsExtensionUpdater.indexOf("Get-Process chrome"))
     && shoppingNativeHost.includes('sha256File(new URL("./naver-shopping-native-host-core.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/local-worker-auth.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/handlers/naver-shopping-rank.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/security.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/naver-shopping/source-status.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/naver-shopping/provider-runtime.mjs"')
+    && shoppingNativeHost.includes('sha256File(new URL("../src/server/naver-shopping/mobile-top-fallback.mjs"')
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs"')
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs"'),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes("BASELINE_CADENCE_MINUTES = 10")
@@ -1441,7 +1460,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.6"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.7"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1546,6 +1565,13 @@ const checks = {
     && shoppingWorkerRuntime116Migration.includes("security invoker")
     && !shoppingWorkerRuntime116Migration.includes("security definer")
     && shoppingWorkerRuntime116Migration.includes("to service_role")
+    && shoppingWorkerRuntime117Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.7'")
+    && shoppingWorkerRuntime117Migration.includes("current_row.runtime_version = '1.1.7'")
+    && shoppingWorkerRuntime117Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime117Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime117Migration.includes("security invoker")
+    && !shoppingWorkerRuntime117Migration.includes("security definer")
+    && shoppingWorkerRuntime117Migration.includes("to service_role")
     && shoppingSchedulerEventLedgerMigration.includes("create schema if not exists mi_internal authorization postgres")
     && shoppingSchedulerEventLedgerMigration.includes("force row level security")
     && shoppingSchedulerEventLedgerMigration.includes("grant select on table public.naver_shopping_scheduler_events")
@@ -1590,7 +1616,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.6"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.7"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

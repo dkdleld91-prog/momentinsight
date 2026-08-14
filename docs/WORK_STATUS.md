@@ -8,9 +8,12 @@
 
 - 17:27 KST 승인 후 Production `1ba1efc45bbe` 업데이터를 Windows에서 실행했지만 `native_host_manifest_missing`으로 fail-closed됐습니다. 재확인 결과 레지스트리뿐 아니라 `com.momentinsight.naver_shopping.json` 자체가 실제로 없었으며, runtime 파일·작업 순서에는 쓰기 변화가 없었습니다.
 - 업데이터가 누락 manifest를 고정 host name·launcher path·`stdio`·정확 extension origin으로 재생성하고 다시 검증한 뒤에만 HKCU를 등록하도록 추가 보완했습니다. Windows 10/10·server contract 49/49·baseline은 통과했으나 새 배포와 Windows terminal 전에는 복구 완료가 아닙니다.
+- manifest·HKCU를 복원한 뒤에도 Chrome 연결이 즉시 종료돼 Node를 동일 native framing으로 직접 실행했습니다. `local-worker-contract.mjs`가 새 `LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS` export를 요구하지만 Windows updater가 `local-worker-auth.mjs`를 갱신하지 않아 import 단계에서 종료된 것이 두 번째 직접 원인입니다. DB claim·순서·격리에는 변화가 없었습니다.
+- v1.1.7은 전체 설치기의 실행 모듈 목록을 updater도 모두 동기화하고, native runtime fingerprint가 auth·rank handler·security·source status·provider runtime·mobile fallback까지 포함하게 합니다. 이후 새 의존 파일이 빠지면 Chrome 시작 전에 검사 또는 fingerprint 불일치로 fail-closed합니다.
+- 복구 후보 전체 검증은 core 539/539·Place 51/51·Shopping 57/57, server contract 50/50, Production auth 18/18, 보호 잠금 22함수·81파일·31 migration으로 통과했습니다. 아직 Production·DB·Windows에는 v1.1.7을 반영하지 않았으므로 운영 복구 완료로 판정하지 않습니다.
 - 17:05 KST SELECT-only 회차에서 작업기 runtime은 계속 `1.1.5`, heartbeat는 10,741초 경과했고 lane·processing·cooldown은 없었습니다. cycle #8은 cursor sort 400, 활성 72 tracker/57 group 중 17 tracker/14 group만 claim된 채 정지했으므로 공정 순환 진행으로 판정하지 않습니다.
 - 활성 상태는 stale24 28, stale48 27, never-checked 7, 현재 격리 0입니다. 최근 24시간 49 collection/66 snapshot은 모두 source·광고 제외·오가닉 근거·`checkedCount=300`을 충족했지만 마지막 snapshot은 13:56 KST이며, 현 cycle ledger event가 없어 24시간 증거 수집도 재개되지 않았습니다.
-- Windows 재연결 후 실기 확인에서 확장 파일은 `1.1.6`이지만 Native Messaging 등록 키 3곳이 모두 없고, DB heartbeat/runtime은 `1.1.5`에서 멈춘 상태를 확인했습니다. 현재 직접 원인은 작업기 무한루프가 아니라 Chrome이 native host를 시작할 등록 경로가 사라진 것입니다.
+- Windows 재연결 후 최초 실기 확인에서 확장 파일은 `1.1.6`이었지만 native manifest와 등록 경로가 모두 없었고, 이를 복구한 뒤에는 updater가 놓친 auth 모듈 때문에 native Node가 import 단계에서 종료됐습니다. DB heartbeat/runtime은 계속 `1.1.5`이며 무한루프나 queue 재선택이 원인은 아닙니다.
 - 업데이터가 native manifest의 이름·허용 origin을 검증하고 HKCU 등록을 원자적으로 복원·재검증하도록 로컬 보완했습니다. Windows 10/10, server contract 49/49, baseline, 보호 잠금을 통과했지만 아직 새 커밋 배포·Windows 재실행·원자 300 terminal은 미검증이므로 복구 완료로 보고하지 않습니다.
 - 10:01 KST부터 30분 간격 heartbeat `1-24`를 현재 작업에 연결했습니다. 2026-08-15 10:01 KST 전에는 전체 공정 순환 완료를 판정하지 않습니다.
 - 시작 시 runtime `1.1.4`, heartbeat 48초, circuit closed, cooldown·lane·processing 없음, cycle #7 active/cursor sort 3200입니다.
@@ -26,7 +29,7 @@
 - DB runtime 함수 3개는 모두 SECURITY INVOKER, 빈 search path, `postgres`·`service_role`만 실행 가능한 상태입니다. 다만 이는 24시간 공정 순환 완료 증거가 아니며, cross-page overlap 13 group과 5시간 29분 가동 공백 원인은 해결 완료로 보고하지 않습니다.
 - 12:57 KST 읽기 전용 관측에서 cycle #8은 8/51 group claim·cursor sort 200으로 전진했고 같은 cycle 성공 중복은 0입니다. circuit closed, cooldown·lane·processing 없음이며 cycle 성공 snapshot 7행/4 collection은 원자 300 위반 0건입니다. 미갱신 24시간 23건·48시간 21건과 duplicate 28건·partial 1건은 그대로여서 정상화 판정은 보류합니다.
 - 13:19 KST에는 cycle #8이 10/51 group까지 전진하고 stale24가 22건으로 1건 감소했습니다. `콘트로이친`은 새 원자 300 collection으로 성공했으나 `성장기칼슘`은 `local_worker_collection_failed`로 종료돼 원인 상세를 확정할 증거가 없습니다. 이후 circuit은 closed·failure streak 0·lane 해제이므로 전역 정지는 아니지만, generic failure의 원인 보존도 추가 결함으로 추적합니다.
-- v1.1.6 로컬 보완은 malformed row 3종을 해당 keyword group으로 격리하고, 서명·수집창 시계 허용을 ±5분으로 통일하며, native request ID 불일치를 즉시 종료합니다. 제출 본문은 실제 300개 최대 계약을 수용하도록 4MiB로 고정했고 부분 submit은 서버가 확인한 `processedCount` 이후 항목만 해제합니다.
+- v1.1.7 로컬 보완은 malformed row 3종을 해당 keyword group으로 격리하고, 서명·수집창 시계 허용을 ±5분으로 통일하며, native request ID 불일치를 즉시 종료합니다. 제출 본문은 실제 300개 최대 계약을 수용하도록 4MiB로 고정했고 부분 submit은 서버가 확인한 `processedCount` 이후 항목만 해제합니다.
 - 다음 완전 cycle부터 claim·terminal·격리·신규 우선·cursor 복귀를 append-only로 남기는 scheduler event ledger를 추가했습니다. 강제 RLS 아래 service role은 읽기만 가능하고 trigger write는 비공개 `mi_internal` SECURITY DEFINER 함수만 수행합니다. 역할 전환·동일 group 반복 claim·cycle 중 신규·성공/실패를 실제 PostgreSQL shadow transaction으로 실행하고 전체 rollback을 확인했습니다.
 - 전체 `check:release`는 core 537/537·Place 51/51·Shopping 57/57, server contract 49/49, Production auth 18/18, 보호 잠금 22함수·80파일·30 migration으로 통과했습니다. 아직 Production·DB·Windows에는 배포하지 않았으며, 장부 적용 뒤 시작되는 다음 cycle부터 24시간 증거를 새로 판정합니다.
 

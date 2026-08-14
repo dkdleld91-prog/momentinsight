@@ -126,6 +126,23 @@ test("Windows runtime stays production-only and one-job bounded", () => {
   assert.match(installer, /FileSystemRights\]::FullControl/u);
 });
 
+test("Windows updater mirrors every executable module from the full installer", () => {
+  const runtimeBlock = installer.slice(
+    installer.indexOf("$runtimeFiles = @("),
+    installer.indexOf("foreach ($relativePath in $runtimeFiles)"),
+  );
+  const executableModules = [...runtimeBlock.matchAll(/"([^"]+\.mjs)"/gu)]
+    .map((match) => match[1])
+    .filter((relativePath) => !relativePath.includes("naver-shopping-chrome-extension"));
+  assert.ok(executableModules.length >= 12);
+  for (const relativePath of executableModules) {
+    assert.ok(
+      updater.includes(relativePath),
+      `updater must synchronize installer runtime dependency: ${relativePath}`,
+    );
+  }
+});
+
 test("Windows extension updater preserves UTF-8 bytes and validates before restart", () => {
   assert.match(updater, /DownloadData/u);
   assert.match(updater, /\[IO\.File\]::WriteAllBytes/u);
@@ -152,9 +169,23 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /naver-shopping-local-worker\.mjs/u);
   assert.match(updater, /local_worker_javascript_invalid/u);
   assert.match(updater, /local_worker_sha256/u);
+  assert.match(updater, /src\/server\/local-worker-auth\.mjs/u);
+  assert.match(updater, /local_worker_auth_download_empty/u);
+  assert.match(updater, /local_worker_auth_javascript_invalid/u);
+  assert.match(updater, /local_worker_auth_sha256/u);
+  assert.match(updater, /Copy-Item -LiteralPath \$stagedLocalWorkerAuth -Destination \$localWorkerAuthPath -Force/u);
   assert.match(updater, /local-worker-contract\.mjs/u);
   assert.match(updater, /local_worker_contract_javascript_invalid/u);
   assert.match(updater, /local_worker_contract_sha256/u);
+  for (const marker of [
+    "shopping_rank_handler_sha256",
+    "security_sha256",
+    "source_status_sha256",
+    "provider_runtime_sha256",
+    "mobile_top_fallback_sha256",
+  ]) {
+    assert.match(updater, new RegExp(marker, "u"));
+  }
   assert.match(updater, /naver-shopping-rank-collector\/src\/provider\.mjs/u);
   assert.match(updater, /collector_provider_download_empty/u);
   assert.match(updater, /collector_provider_javascript_invalid/u);
@@ -185,6 +216,12 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   );
   for (const validationCode of [
     "native_host_core_javascript_invalid",
+    "local_worker_auth_javascript_invalid",
+    "shopping_rank_handler_javascript_invalid",
+    "security_runtime_javascript_invalid",
+    "source_status_javascript_invalid",
+    "provider_runtime_javascript_invalid",
+    "mobile_top_fallback_javascript_invalid",
     "collector_provider_javascript_invalid",
     "collector_contract_javascript_invalid",
   ]) {
@@ -195,7 +232,7 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   }
   assert.match(
     updater,
-    /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerContractHash`n\$collectorProviderHash`n\$collectorContractHash/u,
+    /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerAuthHash`n\$localWorkerContractHash`n\$shoppingRankHandlerHash`n\$securityHash`n\$sourceStatusHash`n\$providerRuntimeHash`n\$mobileTopFallbackHash`n\$collectorProviderHash`n\$collectorContractHash/u,
   );
   assert.match(updater, /MI_EXTENSION_UPDATE_OK/u);
 });

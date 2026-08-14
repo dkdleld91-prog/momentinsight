@@ -35,7 +35,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.6",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.7",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -278,7 +278,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.6");
+          assert.equal(args.p_runtime_version, "1.1.7");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -378,7 +378,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.6",
+      runtimeVersion: "1.1.7",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -438,7 +438,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.6",
+      runtimeVersion: "1.1.7",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -479,7 +479,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.6",
+      runtimeVersion: "1.1.7",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1837,13 +1837,13 @@ test("runtime 1.1.4 independently gates bounded coherent boundary recovery", () 
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });
 
-test("runtime 1.1.6 independently gates worker hardening and tracker-isolated failures", () => {
+test("runtime 1.1.7 independently gates worker hardening and tracker-isolated failures", () => {
   const sql = fs.readFileSync(new URL(
-    "../../../supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql",
+    "../../../supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
     import.meta.url,
   ), "utf8");
-  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.5'/iu);
-  assert.match(sql, /current_row\.runtime_version = '1\.1\.5'/iu);
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.7'/iu);
+  assert.match(sql, /current_row\.runtime_version = '1\.1\.7'/iu);
   assert.match(sql, /current_row\.last_checked_count = 300/iu);
   assert.match(sql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
   assert.match(sql, /security invoker/iu);

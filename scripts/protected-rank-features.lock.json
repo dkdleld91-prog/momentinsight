@@ -155,7 +155,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "a4679f033c14fd21268907b99e50c05a2c13fedd78bcacca2629f36e129aa56c"
+      "sha256": "64b9edc5e1b932005a0909cd3ba465a14ce7aaae36b27a4d13412881556f83df"
     },
     {
       "id": "product-organic-rank-server",
@@ -326,7 +326,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "c2d973802bd4b03c2e773cb7834782765383f794832d5425718c23f1dcc8fec2"
+      "sha256": "548ae5f516c4a97f75d750a962a9cb7847a6963511e94b25c2b195f3e1d8d788"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -341,7 +341,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "f9df8398519365c0b9d9421b8543f2207f1e61963d84776b6818510c64441398"
+      "sha256": "cd4567d7d4bf2c031d6c25bd6adfdb1c21ae9b7bcbb055e8cb46ef3105911b57"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -497,6 +497,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-worker-runtime-1-1-7",
+      "file": "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
+      "sha256": "523f26df1415b0822881afef8762277d9a3140db45ab533f9c21c7a1114dff65",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-worker-duplicate-quarantine-cap",
       "file": "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
       "sha256": "b2975f1ff308ada55305a575b68901b187ab2b79176bd321722608a3b8e57948",
@@ -505,7 +511,7 @@
     {
       "id": "shopping-chrome-native-host",
       "file": "scripts/naver-shopping-native-host.mjs",
-      "sha256": "56f15844303ca7f2f5acc8269d5f9db3fb8feb617009b306e94993750455a387"
+      "sha256": "0d5973627138bbbb7ade85eae461794d996c188ff72f11f9ac7a4fbf36b80944"
     },
     {
       "id": "shopping-chrome-native-host-core",
@@ -550,12 +556,12 @@
     {
       "id": "shopping-windows-extension-updater",
       "file": "scripts/windows/update-naver-shopping-chrome-extension.ps1",
-      "sha256": "981312e6a999d7345f4d3d8f7471319d9b25bd0b9ee6a284912f4d0635eb2827"
+      "sha256": "0df6bf0304d32ccdbb92490f58d8cccf1dc309b280d3181948033788d0791044"
     },
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "dc41a42cb1214b73fd27eb006e7c50e97ec9513fed8cd79e5e8da6f2520868c6"
+      "sha256": "54bce6b43bed3913728a1bd529cd90eaa0e17bea02cc78bb2b7f4f4cdee2525a"
     },
     {
       "id": "shopping-chrome-extension-worker",

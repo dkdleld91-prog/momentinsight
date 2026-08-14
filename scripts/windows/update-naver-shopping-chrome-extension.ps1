@@ -21,7 +21,13 @@ $launcherSourcePath = Join-Path $runtimePath "scripts\windows\MomentInsightNaver
 $nativeHostScriptPath = Join-Path $runtimePath "scripts\naver-shopping-native-host.mjs"
 $nativeHostCorePath = Join-Path $runtimePath "scripts\naver-shopping-native-host-core.mjs"
 $localWorkerScriptPath = Join-Path $runtimePath "scripts\naver-shopping-local-worker.mjs"
+$localWorkerAuthPath = Join-Path $runtimePath "src\server\local-worker-auth.mjs"
 $localWorkerContractPath = Join-Path $runtimePath "src\server\naver-shopping\local-worker-contract.mjs"
+$shoppingRankHandlerPath = Join-Path $runtimePath "src\server\handlers\naver-shopping-rank.mjs"
+$securityPath = Join-Path $runtimePath "src\server\security.mjs"
+$sourceStatusPath = Join-Path $runtimePath "src\server\naver-shopping\source-status.mjs"
+$providerRuntimePath = Join-Path $runtimePath "src\server\naver-shopping\provider-runtime.mjs"
+$mobileTopFallbackPath = Join-Path $runtimePath "src\server\naver-shopping\mobile-top-fallback.mjs"
 $collectorProviderPath = Join-Path $runtimePath "tools\naver-shopping-rank-collector\src\provider.mjs"
 $collectorContractPath = Join-Path $runtimePath "tools\naver-shopping-rank-collector\src\contract.mjs"
 $schedulerScriptPath = Join-Path $runtimePath "scripts\windows\run-naver-shopping-chrome-scheduler.ps1"
@@ -39,7 +45,13 @@ $launcherSourceUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentins
 $nativeHostScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host.mjs"
 $nativeHostCoreUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-native-host-core.mjs"
 $localWorkerScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/naver-shopping-local-worker.mjs"
+$localWorkerAuthUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/local-worker-auth.mjs"
 $localWorkerContractUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/local-worker-contract.mjs"
+$shoppingRankHandlerUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/handlers/naver-shopping-rank.mjs"
+$securityUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/security.mjs"
+$sourceStatusUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/source-status.mjs"
+$providerRuntimeUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/provider-runtime.mjs"
+$mobileTopFallbackUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/src/server/naver-shopping/mobile-top-fallback.mjs"
 $collectorProviderUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-rank-collector/src/provider.mjs"
 $collectorContractUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-rank-collector/src/contract.mjs"
 $schedulerScriptUrl = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/scripts/windows/run-naver-shopping-chrome-scheduler.ps1"
@@ -170,8 +182,20 @@ try {
     if (-not $nativeHostCoreBytes -or $nativeHostCoreBytes.Length -eq 0) { throw "native_host_core_download_empty" }
     $localWorkerScriptBytes = $client.DownloadData($localWorkerScriptUrl)
     if (-not $localWorkerScriptBytes -or $localWorkerScriptBytes.Length -eq 0) { throw "local_worker_script_download_empty" }
+    $localWorkerAuthBytes = $client.DownloadData($localWorkerAuthUrl)
+    if (-not $localWorkerAuthBytes -or $localWorkerAuthBytes.Length -eq 0) { throw "local_worker_auth_download_empty" }
     $localWorkerContractBytes = $client.DownloadData($localWorkerContractUrl)
     if (-not $localWorkerContractBytes -or $localWorkerContractBytes.Length -eq 0) { throw "local_worker_contract_download_empty" }
+    $shoppingRankHandlerBytes = $client.DownloadData($shoppingRankHandlerUrl)
+    if (-not $shoppingRankHandlerBytes -or $shoppingRankHandlerBytes.Length -eq 0) { throw "shopping_rank_handler_download_empty" }
+    $securityBytes = $client.DownloadData($securityUrl)
+    if (-not $securityBytes -or $securityBytes.Length -eq 0) { throw "security_runtime_download_empty" }
+    $sourceStatusBytes = $client.DownloadData($sourceStatusUrl)
+    if (-not $sourceStatusBytes -or $sourceStatusBytes.Length -eq 0) { throw "source_status_download_empty" }
+    $providerRuntimeBytes = $client.DownloadData($providerRuntimeUrl)
+    if (-not $providerRuntimeBytes -or $providerRuntimeBytes.Length -eq 0) { throw "provider_runtime_download_empty" }
+    $mobileTopFallbackBytes = $client.DownloadData($mobileTopFallbackUrl)
+    if (-not $mobileTopFallbackBytes -or $mobileTopFallbackBytes.Length -eq 0) { throw "mobile_top_fallback_download_empty" }
     $collectorProviderBytes = $client.DownloadData($collectorProviderUrl)
     if (-not $collectorProviderBytes -or $collectorProviderBytes.Length -eq 0) { throw "collector_provider_download_empty" }
     $collectorContractBytes = $client.DownloadData($collectorContractUrl)
@@ -182,7 +206,13 @@ try {
     $stagedNativeHostScript = Join-Path $stagingPath "naver-shopping-native-host.mjs"
     $stagedNativeHostCore = Join-Path $stagingPath "naver-shopping-native-host-core.mjs"
     $stagedLocalWorkerScript = Join-Path $stagingPath "naver-shopping-local-worker.mjs"
+    $stagedLocalWorkerAuth = Join-Path $stagingPath "local-worker-auth.mjs"
     $stagedLocalWorkerContract = Join-Path $stagingPath "local-worker-contract.mjs"
+    $stagedShoppingRankHandler = Join-Path $stagingPath "naver-shopping-rank.mjs"
+    $stagedSecurity = Join-Path $stagingPath "security.mjs"
+    $stagedSourceStatus = Join-Path $stagingPath "source-status.mjs"
+    $stagedProviderRuntime = Join-Path $stagingPath "provider-runtime.mjs"
+    $stagedMobileTopFallback = Join-Path $stagingPath "mobile-top-fallback.mjs"
     $stagedCollectorProvider = Join-Path $stagingPath "collector-provider.mjs"
     $stagedCollectorContract = Join-Path $stagingPath "collector-contract.mjs"
     $stagedSchedulerScript = Join-Path $stagingPath "run-naver-shopping-chrome-scheduler.ps1"
@@ -191,7 +221,13 @@ try {
     [IO.File]::WriteAllBytes($stagedNativeHostScript, $nativeHostScriptBytes)
     [IO.File]::WriteAllBytes($stagedNativeHostCore, $nativeHostCoreBytes)
     [IO.File]::WriteAllBytes($stagedLocalWorkerScript, $localWorkerScriptBytes)
+    [IO.File]::WriteAllBytes($stagedLocalWorkerAuth, $localWorkerAuthBytes)
     [IO.File]::WriteAllBytes($stagedLocalWorkerContract, $localWorkerContractBytes)
+    [IO.File]::WriteAllBytes($stagedShoppingRankHandler, $shoppingRankHandlerBytes)
+    [IO.File]::WriteAllBytes($stagedSecurity, $securityBytes)
+    [IO.File]::WriteAllBytes($stagedSourceStatus, $sourceStatusBytes)
+    [IO.File]::WriteAllBytes($stagedProviderRuntime, $providerRuntimeBytes)
+    [IO.File]::WriteAllBytes($stagedMobileTopFallback, $mobileTopFallbackBytes)
     [IO.File]::WriteAllBytes($stagedCollectorProvider, $collectorProviderBytes)
     [IO.File]::WriteAllBytes($stagedCollectorContract, $collectorContractBytes)
     [IO.File]::WriteAllBytes($stagedSchedulerScript, $schedulerScriptBytes)
@@ -210,8 +246,20 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "native_host_core_javascript_invalid" }
     & $nodePath --check $stagedLocalWorkerScript
     if ($LASTEXITCODE -ne 0) { throw "local_worker_javascript_invalid" }
+    & $nodePath --check $stagedLocalWorkerAuth
+    if ($LASTEXITCODE -ne 0) { throw "local_worker_auth_javascript_invalid" }
     & $nodePath --check $stagedLocalWorkerContract
     if ($LASTEXITCODE -ne 0) { throw "local_worker_contract_javascript_invalid" }
+    & $nodePath --check $stagedShoppingRankHandler
+    if ($LASTEXITCODE -ne 0) { throw "shopping_rank_handler_javascript_invalid" }
+    & $nodePath --check $stagedSecurity
+    if ($LASTEXITCODE -ne 0) { throw "security_runtime_javascript_invalid" }
+    & $nodePath --check $stagedSourceStatus
+    if ($LASTEXITCODE -ne 0) { throw "source_status_javascript_invalid" }
+    & $nodePath --check $stagedProviderRuntime
+    if ($LASTEXITCODE -ne 0) { throw "provider_runtime_javascript_invalid" }
+    & $nodePath --check $stagedMobileTopFallback
+    if ($LASTEXITCODE -ne 0) { throw "mobile_top_fallback_javascript_invalid" }
     & $nodePath --check $stagedCollectorProvider
     if ($LASTEXITCODE -ne 0) { throw "collector_provider_javascript_invalid" }
     & $nodePath --check $stagedCollectorContract
@@ -279,7 +327,13 @@ try {
     Copy-Item -LiteralPath $stagedNativeHostScript -Destination $nativeHostScriptPath -Force
     Copy-Item -LiteralPath $stagedNativeHostCore -Destination $nativeHostCorePath -Force
     Copy-Item -LiteralPath $stagedLocalWorkerScript -Destination $localWorkerScriptPath -Force
+    Copy-Item -LiteralPath $stagedLocalWorkerAuth -Destination $localWorkerAuthPath -Force
     Copy-Item -LiteralPath $stagedLocalWorkerContract -Destination $localWorkerContractPath -Force
+    Copy-Item -LiteralPath $stagedShoppingRankHandler -Destination $shoppingRankHandlerPath -Force
+    Copy-Item -LiteralPath $stagedSecurity -Destination $securityPath -Force
+    Copy-Item -LiteralPath $stagedSourceStatus -Destination $sourceStatusPath -Force
+    Copy-Item -LiteralPath $stagedProviderRuntime -Destination $providerRuntimePath -Force
+    Copy-Item -LiteralPath $stagedMobileTopFallback -Destination $mobileTopFallbackPath -Force
     New-Item -ItemType Directory -Path (Split-Path $collectorProviderPath -Parent) -Force | Out-Null
     Copy-Item -LiteralPath $stagedCollectorProvider -Destination $collectorProviderPath -Force
     Copy-Item -LiteralPath $stagedCollectorContract -Destination $collectorContractPath -Force
@@ -317,7 +371,13 @@ try {
     $nativeHostHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostScriptPath).Hash.ToLowerInvariant()
     $nativeHostCoreHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $nativeHostCorePath).Hash.ToLowerInvariant()
     $localWorkerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerScriptPath).Hash.ToLowerInvariant()
+    $localWorkerAuthHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerAuthPath).Hash.ToLowerInvariant()
     $localWorkerContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $localWorkerContractPath).Hash.ToLowerInvariant()
+    $shoppingRankHandlerHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $shoppingRankHandlerPath).Hash.ToLowerInvariant()
+    $securityHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $securityPath).Hash.ToLowerInvariant()
+    $sourceStatusHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceStatusPath).Hash.ToLowerInvariant()
+    $providerRuntimeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $providerRuntimePath).Hash.ToLowerInvariant()
+    $mobileTopFallbackHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $mobileTopFallbackPath).Hash.ToLowerInvariant()
     $collectorProviderHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collectorProviderPath).Hash.ToLowerInvariant()
     $collectorContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collectorContractPath).Hash.ToLowerInvariant()
     $schedulerScriptHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $schedulerScriptPath).Hash.ToLowerInvariant()
@@ -332,12 +392,12 @@ try {
         throw "native_host_registry_mismatch"
     }
     $runtimeIdentity = [Text.Encoding]::UTF8.GetBytes(
-        "$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerContractHash`n$collectorProviderHash`n$collectorContractHash"
+        "$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerAuthHash`n$localWorkerContractHash`n$shoppingRankHandlerHash`n$securityHash`n$sourceStatusHash`n$providerRuntimeHash`n$mobileTopFallbackHash`n$collectorProviderHash`n$collectorContractHash"
     )
     $runtimeFingerprintBytes = [Security.Cryptography.SHA256]::Create().ComputeHash($runtimeIdentity)
     $runtimeFingerprint = ([BitConverter]::ToString($runtimeFingerprintBytes)).Replace("-", "").ToLowerInvariant()
     $updateSucceeded = $true
-    $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true native_host_registry_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
+    $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=13 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true native_host_registry_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_auth_sha256=$localWorkerAuthHash local_worker_contract_sha256=$localWorkerContractHash shopping_rank_handler_sha256=$shoppingRankHandlerHash security_sha256=$securityHash source_status_sha256=$sourceStatusHash provider_runtime_sha256=$providerRuntimeHash mobile_top_fallback_sha256=$mobileTopFallbackHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
 catch {
     $updateFailure = $_

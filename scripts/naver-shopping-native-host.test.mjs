@@ -726,7 +726,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.6");
+  assert.equal(manifest.version, "1.1.7");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -792,11 +792,17 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(nativeHostCore, /PAGE_NAVIGATION_BUDGET = 16/u);
   assert.match(nativeHost, /allowFullCompatibility: message\.allowFullCompatibility === true/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/local-worker-auth\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/handlers\/naver-shopping-rank\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/security\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/source-status\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/provider-runtime\.mjs", import\.meta\.url\)\)/u);
+  assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/naver-shopping\/mobile-top-fallback\.mjs", import\.meta\.url\)\)/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/provider\.mjs", import\.meta\.url\)\)/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\.\/tools\/naver-shopping-rank-collector\/src\/contract\.mjs", import\.meta\.url\)\)/u);
   assert.match(
     nativeHost,
-    /serviceWorkerSha256,[\s\S]{0,100}nativeHostSha256,[\s\S]{0,100}nativeHostCoreSha256,[\s\S]{0,100}localWorkerSha256,[\s\S]{0,100}contractSha256,[\s\S]{0,100}collectorProviderSha256,[\s\S]{0,100}collectorContractSha256,[\s\S]{0,40}\]\.join\("\\n"\)/u,
+    /serviceWorkerSha256,[\s\S]{0,100}nativeHostSha256,[\s\S]{0,100}nativeHostCoreSha256,[\s\S]{0,100}localWorkerSha256,[\s\S]{0,100}localWorkerAuthSha256,[\s\S]{0,100}contractSha256,[\s\S]{0,100}shoppingRankHandlerSha256,[\s\S]{0,100}securitySha256,[\s\S]{0,100}sourceStatusSha256,[\s\S]{0,100}providerRuntimeSha256,[\s\S]{0,100}mobileTopFallbackSha256,[\s\S]{0,100}collectorProviderSha256,[\s\S]{0,100}collectorContractSha256,[\s\S]{0,40}\]\.join\("\\n"\)/u,
   );
   assert.match(nativeHost, /registerProgressSink\(sink\)/u);
   assert.match(nativeHost, /stage: "collect", page: page\.pageIndex/u);
@@ -1169,7 +1175,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.6");
+  assert.equal(manifest.version, "1.1.7");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1328,7 +1334,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
       nativeMessageFrame({
         action: "run",
         trigger: "rank-remote",
-        runtimeVersion: "1.1.6",
+        runtimeVersion: "1.1.7",
         serviceWorkerSha256: "0".repeat(64),
       }),
       nativeMessageFrame({ action: "ready_ack" }),
@@ -1346,7 +1352,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.6",
+    runtimeVersion: "1.1.7",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

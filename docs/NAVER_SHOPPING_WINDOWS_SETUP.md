@@ -17,7 +17,7 @@
 5. 설치가 끝나면 `프로그램 개발` 프로필의 `chrome://extensions`가 열립니다.
 6. 오른쪽 위 `개발자 모드`를 켜고 `압축해제된 확장 프로그램을 로드합니다`를 누릅니다.
 7. 설치 결과의 `extensionPath` 폴더를 선택합니다. 기본 경로는 `%LOCALAPPDATA%\MomentInsight\NaverShoppingBridge\tools\naver-shopping-chrome-extension`입니다.
-8. `Moment Insight N Shopping Rank` 버전 `1.1.6`, ID `pflggephankeefaeoaafkmggampnaefm`을 확인합니다.
+8. `Moment Insight N Shopping Rank` 버전 `1.1.7`, ID `pflggephankeefaeoaafkmggampnaefm`을 확인합니다.
 
 ## 자동 실행
 

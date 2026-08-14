@@ -42,14 +42,26 @@ async function runtimeIdentity(start) {
   let nativeHostSha256;
   let nativeHostCoreSha256;
   let localWorkerSha256;
+  let localWorkerAuthSha256;
   let contractSha256;
+  let shoppingRankHandlerSha256;
+  let securitySha256;
+  let sourceStatusSha256;
+  let providerRuntimeSha256;
+  let mobileTopFallbackSha256;
   let collectorProviderSha256;
   let collectorContractSha256;
   try {
     nativeHostSha256 = await sha256File(new URL(import.meta.url));
     nativeHostCoreSha256 = await sha256File(new URL("./naver-shopping-native-host-core.mjs", import.meta.url));
     localWorkerSha256 = await sha256File(new URL("./naver-shopping-local-worker.mjs", import.meta.url));
+    localWorkerAuthSha256 = await sha256File(new URL("../src/server/local-worker-auth.mjs", import.meta.url));
     contractSha256 = await sha256File(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url));
+    shoppingRankHandlerSha256 = await sha256File(new URL("../src/server/handlers/naver-shopping-rank.mjs", import.meta.url));
+    securitySha256 = await sha256File(new URL("../src/server/security.mjs", import.meta.url));
+    sourceStatusSha256 = await sha256File(new URL("../src/server/naver-shopping/source-status.mjs", import.meta.url));
+    providerRuntimeSha256 = await sha256File(new URL("../src/server/naver-shopping/provider-runtime.mjs", import.meta.url));
+    mobileTopFallbackSha256 = await sha256File(new URL("../src/server/naver-shopping/mobile-top-fallback.mjs", import.meta.url));
     collectorProviderSha256 = await sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs", import.meta.url));
     collectorContractSha256 = await sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs", import.meta.url));
   } catch {
@@ -61,7 +73,13 @@ async function runtimeIdentity(start) {
     nativeHostSha256,
     nativeHostCoreSha256,
     localWorkerSha256,
+    localWorkerAuthSha256,
     contractSha256,
+    shoppingRankHandlerSha256,
+    securitySha256,
+    sourceStatusSha256,
+    providerRuntimeSha256,
+    mobileTopFallbackSha256,
     collectorProviderSha256,
     collectorContractSha256,
   ].join("\n"), "utf8").digest("hex");
@@ -72,7 +90,13 @@ async function runtimeIdentity(start) {
     nativeHostSha256,
     nativeHostCoreSha256,
     localWorkerSha256,
+    localWorkerAuthSha256,
     contractSha256,
+    shoppingRankHandlerSha256,
+    securitySha256,
+    sourceStatusSha256,
+    providerRuntimeSha256,
+    mobileTopFallbackSha256,
     collectorProviderSha256,
     collectorContractSha256,
   };

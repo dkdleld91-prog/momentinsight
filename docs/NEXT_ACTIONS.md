@@ -4,16 +4,13 @@
 
 ## 진행 중: N쇼핑 v1.1.7 오류 범위 축소·증거 장부·24시간 재검증
 
-- manifest·HKCU 등록은 복구됐고 launcher·DPAPI·Node 단독 기동도 확인했습니다. 남은 직접 원인은 updater가 새 `local-worker-auth.mjs`를 복사하지 않아 contract import가 종료되는 mixed runtime입니다.
-- v1.1.7에서 full installer의 실행 모듈 전체를 updater 다운로드·syntax 검사·copy·hash/fingerprint에 포함합니다. Production과 DB runtime gate를 먼저 맞춘 뒤 Windows 관리자 updater를 정확한 release로 1회 실행해 `native_host_registry_synced=true`, DB runtime `1.1.7`, 새 원자 300 terminal과 lane·lease 해제를 확인해야 합니다.
-- native host 복구 전 멈춘 시간은 24시간 공정 순환 증거에 포함하지 않습니다. 복구 terminal 이후 ledger 기준을 새로 잡아 24시간을 다시 관측합니다.
+- Production·DB runtime gate·Windows 실행 모듈을 `1.1.7`로 동기화했고, manifest·HKCU·누락 모듈·fingerprint를 모두 검증했습니다. 복구 terminal 이후 자연 순환에서 원자 300 저장과 lane·lease 해제를 확인했습니다.
 - 복구 terminal 기준은 2026-08-14 18:17:51 KST입니다. 2026-08-15 18:17:51 KST 전에는 cycle당 1회·신규 우선 후 cursor 복귀·전체 완료 뒤 다음 cycle·격리 skip·중복 0·원자 300만 저장을 최종 합격으로 판정하지 않습니다.
 - same-page `duplicate_row`는 네이버 SSR의 절대 순위 1~300을 그대로 보존해 정상 저장 대상으로 바꾸고, cross-page `page_overlap`은 계속 제한 재수집 뒤 fail-closed합니다. 행 삭제·순위 압축은 하지 않습니다.
 - `provider_partial_window`는 tracker 단위로 격리해 한 키워드의 300 미달이 전체 광고주 circuit을 열지 않게 합니다. 실제 300 미달 키워드는 last-good을 유지하며 성공으로 표시하지 않습니다.
-- Production `40da76857484`, DB runtime 1.1.5 gate, Windows runtime `1.1.5`/fingerprint `7ec0891e023d…`를 동기화했습니다. 첫 자연 순환 terminal은 `치아미백제`를 광고 제외 오가닉 300개·51위로 저장하고 lane·lease를 해제했습니다. 2026-08-15 10:01 KST 전에는 이 단일 성공으로 24시간 정상화 완료를 판정하지 않습니다.
-- 남은 cross-page 13 group, signed traffic 5시간 29분 공백, append-only cycle/terminal 이력 부재는 별도 미해결 항목입니다.
-- 로컬 v1.1.7은 malformed row의 전역 circuit 오염, ±5분 시계 계약 불일치, native request ID 장기 대기, 2MiB 제출 상한과 부분 submit suffix 오류를 보완했고 전체 release를 통과했습니다. 다음 단계는 ledger migration → Production → runtime gate → Windows 순서의 운영 전환입니다.
-- scheduler event ledger는 다음 완전 cycle부터 claim·terminal·격리·신규 우선·cursor 복귀를 append-only로 남깁니다. ledger migration → Production → runtime gate → Windows 순으로 전환하고, 그 다음 cycle부터 24시간 증거를 다시 수집합니다.
+- scheduler event ledger와 malformed-row 범위·시계오차·request ID·4MiB 상한·부분 submit 보완은 Production에 반영됐습니다. cycle #8 완료→#9 시작, 신규 1회 우선→cursor 복귀를 장부로 확인했습니다.
+- 2026-08-15 04:40 KST cycle #9은 13/57 group·16 tracker·8/9 agency를 처리했습니다. 같은-cycle 중복 0, snapshot 7/collection 6의 원자 300 위반 0이며 circuit closed·lane/run/lease null입니다. cross-page 중복은 해당 tracker만 30분 격리하고 성공으로 표시하지 않습니다.
+- 남은 과제는 cycle #9 전체 coverage, 격리 만료 후 자연 재진입, 24시간 종료 시점의 stale·오류·광고주별 coverage 최종 판정입니다. 강제 wake·격리 해제·cursor 변경은 하지 않습니다.
 
 ## 완료: N쇼핑 중복 오류 장기 격리 해소
 

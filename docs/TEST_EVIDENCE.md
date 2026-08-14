@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-14 준비작업 1번 시작 기준
+
+- 운영 SELECT-only 기준 시각은 2026-08-14 10:01 KST입니다. runtime `1.1.4`, heartbeat 48초, circuit closed, cooldown·lane·processing 없음, cycle #7 active/cursor sort 3200을 확인했습니다.
+- 활성 66 tracker/51 keyword group/9 agency, cycle claim 63 tracker/48 group, 성공한 같은-cycle 중복 group 0, repair queued/claimed 0입니다.
+- 미갱신은 24시간 23 tracker, 48시간 21 tracker, never-checked 1 tracker이며 현재 격리는 2건입니다. 마지막 오류 분포는 없음 37, `provider_duplicate_identity` 28, `provider_partial_window` 1입니다.
+- 최근 24시간 collection 77건·snapshot 113행·tracker 43건에서 `checkedCount != 300`은 0건입니다. 이 원자성 증거는 전체 51 group 완주·오류 정상화 증거를 대신하지 않습니다.
+- heartbeat automation `1-24`가 30분 간격으로 같은 기준을 기록합니다. 최종 합격은 24시간 후 cycle당 기존 group 1회, 신규 1회 우선 후 cursor 복귀, 전체 종료 뒤 다음 cycle, 격리 건너뛰기, 광고주별 coverage, same-cycle 중복 0, 원자 300 및 lane·lease 해제를 함께 확인해야 합니다.
+
 ## 2026-08-13 N쇼핑 중복 오류 격리 상한 회귀
 
 - 운영 활성 66건 중 24시간 미갱신 23건, 그중 중복 식별 계열 22건을 확인했습니다. 현재 격리 19건은 모두 같은 오류 계열이었고 runtime `1.1.4` heartbeat·cycle #6·circuit closed로 작업기 정지는 배제했습니다.

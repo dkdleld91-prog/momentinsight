@@ -1,8 +1,16 @@
 # Work Status
 
-기준일: 2026-08-13
+기준일: 2026-08-14
 
 ## 현재 상태
+
+### 2026-08-14 준비작업 1번 24시간 감사 시작
+
+- 10:01 KST부터 30분 간격 heartbeat `1-24`를 현재 작업에 연결했습니다. 2026-08-15 10:01 KST 전에는 전체 공정 순환 완료를 판정하지 않습니다.
+- 시작 시 runtime `1.1.4`, heartbeat 48초, circuit closed, cooldown·lane·processing 없음, cycle #7 active/cursor sort 3200입니다.
+- 활성 66 tracker/51 keyword group/9 agency 중 cycle #7 claim은 63 tracker/48 group입니다. 성공 collection 기준 같은 cycle 중복 group은 0이고 repair 대기는 0입니다.
+- 24시간 미갱신 23, 48시간 미갱신 21, never-checked 1, 격리 2입니다. 최근 24시간 77 collection·113 snapshot은 전부 `checkedCount=300`이지만 duplicate 마지막 오류 28건과 strict partial 1건이 남아 있어 정상화 완료가 아닙니다.
+- 감사 중에는 DB write·강제 wake·순서 재배치·격리 해제를 하지 않습니다. 확인된 결함만 최소 수정하고 전체 release·Production·Windows·운영 terminal을 다시 검증합니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

@@ -13,6 +13,8 @@
 - 복구 후보 전체 검증은 core 539/539·Place 51/51·Shopping 57/57, server contract 50/50, Production auth 18/18, 보호 잠금 22함수·81파일·31 migration으로 통과했습니다. 아직 Production·DB·Windows에는 v1.1.7을 반영하지 않았으므로 운영 복구 완료로 판정하지 않습니다.
 - 18:19 KST Production `703bf0ca0e02`·DB runtime gate·Windows runtime `1.1.7`을 동기화했습니다. 업데이터는 `syntax=13`, 실로드 확장·native 등록·13개 실행 모듈 hash와 fingerprint `8eef01d43577…` 일치를 확인했습니다.
 - 자연 순서 작업이 새 collection `pw-chrome-1786699070869-a689fd48726f639586bb`를 광고 30개 제외·오가닉 300개로 저장했고, circuit closed·cooldown 없음·lane/run/tracker lease 해제를 확인했습니다. 복구 terminal 시각인 18:17:51 KST부터 24시간 공정 순환 관측을 다시 시작하며 아직 전체 완료로 판정하지 않습니다.
+- 18:27 KST ledger에서 cycle #8은 신규 group 1건을 먼저 원자 300으로 완료한 뒤 기존 cursor의 `resume` group 1건으로 복귀했습니다. 두 group·두 광고주 claim의 같은-cycle 중복은 0이며, resume 대상은 실제 cross-page overlap으로 fail-closed·30분 격리되고 다음 순환을 막지 않았습니다.
+- 18:30 KST cycle 도중 추가된 신규 group 1건도 `new` 우선순위로 정확히 1회 claim돼 collection `pw-chrome-1786699855696-00657d0c90fcaf93a0a1`을 광고 30개 제외·오가닉 300개로 완료했습니다. 18:31 KST lane·run·tracker lease 해제와 circuit closed를 확인했으며 다음 기존 cursor 복귀는 후속 회차에서 계속 검증합니다.
 - 17:05 KST SELECT-only 회차에서 작업기 runtime은 계속 `1.1.5`, heartbeat는 10,741초 경과했고 lane·processing·cooldown은 없었습니다. cycle #8은 cursor sort 400, 활성 72 tracker/57 group 중 17 tracker/14 group만 claim된 채 정지했으므로 공정 순환 진행으로 판정하지 않습니다.
 - 활성 상태는 stale24 28, stale48 27, never-checked 7, 현재 격리 0입니다. 최근 24시간 49 collection/66 snapshot은 모두 source·광고 제외·오가닉 근거·`checkedCount=300`을 충족했지만 마지막 snapshot은 13:56 KST이며, 현 cycle ledger event가 없어 24시간 증거 수집도 재개되지 않았습니다.
 - Windows 재연결 후 최초 실기 확인에서 확장 파일은 `1.1.6`이었지만 native manifest와 등록 경로가 모두 없었고, 이를 복구한 뒤에는 updater가 놓친 auth 모듈 때문에 native Node가 import 단계에서 종료됐습니다. DB heartbeat/runtime은 계속 `1.1.5`이며 무한루프나 queue 재선택이 원인은 아닙니다.

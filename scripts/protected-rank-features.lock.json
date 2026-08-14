@@ -503,6 +503,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-worker-auto-navigation-half-open",
+      "file": "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
+      "sha256": "d71c9dd46aca0d16878667fe5bd5d7b1ede7a36c983723f96cafed260ad767c2",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-worker-duplicate-quarantine-cap",
       "file": "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
       "sha256": "b2975f1ff308ada55305a575b68901b187ab2b79176bd321722608a3b8e57948",

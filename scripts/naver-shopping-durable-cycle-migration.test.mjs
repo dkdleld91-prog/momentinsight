@@ -10,6 +10,10 @@ const duplicateQuarantineMigration = readFileSync(new URL(
   '../supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql',
   import.meta.url,
 ), 'utf8');
+const autoNavigationHalfOpenMigration = readFileSync(new URL(
+  '../supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql',
+  import.meta.url,
+), 'utf8');
 
 test('durable cycle RPC contract is fixed and service-role only', () => {
   for (const key of ['cycleId', 'cycleStartedAt', 'started', 'total', 'remaining', 'processing']) {
@@ -77,4 +81,69 @@ test('active duplicate quarantine repair changes only its deadline and preserves
     repairSql,
     /\b(?:sort_order|next_check_at|worker_last_cycle_id|retry_count|current_rank|last_checked_at|scheduler_cycle_cursor)\b/i,
   );
+});
+
+test('navigation circuit makes one ordered automatic half-open attempt after ten minutes', () => {
+  const claimStart = autoNavigationHalfOpenMigration.indexOf(
+    'create or replace function public.mi_claim_naver_shopping_worker_lane',
+  );
+  const successStart = autoNavigationHalfOpenMigration.indexOf(
+    'create or replace function public.mi_record_naver_shopping_worker_success',
+  );
+  const claimSql = autoNavigationHalfOpenMigration.slice(claimStart, successStart);
+  assert.ok(claimStart >= 0 && successStart > claimStart);
+  assert.match(
+    claimSql,
+    /circuit_state = 'open'[\s\S]*normalized_worker_role = 'primary'[\s\S]*circuit_reason = 'navigating:naver_page_navigation_failed'[\s\S]*circuit_opened_at <= v_now - interval '10 minutes'/i,
+  );
+  assert.match(
+    claimSql,
+    /set circuit_state = 'half_open',[\s\S]*circuit_reason = 'auto_navigation_probe'[\s\S]*probe_tracker_id = null[\s\S]*failure_streak = 0/i,
+  );
+  assert.match(claimSql, /'autoRecovery', current_row\.circuit_reason = 'auto_navigation_probe'/i);
+  assert.doesNotMatch(
+    claimSql,
+    /update public\.naver_rank_trackers|next_check_at|worker_quarantined_until|scheduler_cycle_cursor_/i,
+    'automatic recovery must not alter tracker order, quarantine, or cursor',
+  );
+});
+
+test('automatic and manual half-open success proofs stay distinct and atomic', () => {
+  const successStart = autoNavigationHalfOpenMigration.indexOf(
+    'create or replace function public.mi_record_naver_shopping_worker_success',
+  );
+  const successEnd = autoNavigationHalfOpenMigration.indexOf(
+    'revoke all on function public.mi_claim_naver_shopping_worker_lane',
+    successStart,
+  );
+  const successSql = autoNavigationHalfOpenMigration.slice(successStart, successEnd);
+  assert.ok(successStart >= 0 && successEnd > successStart);
+  assert.match(
+    successSql,
+    /circuit_reason is distinct from 'auto_navigation_probe'[\s\S]*probe_tracker_id is distinct from p_tracker_id[\s\S]*'probe_mismatch'/i,
+  );
+  assert.match(
+    successSql,
+    /circuit_reason = 'auto_navigation_probe'[\s\S]*probe_tracker_id is not null or p_tracker_id is null[\s\S]*'probe_mismatch'/i,
+  );
+  assert.match(successSql, /p_checked_count is distinct from 300/i);
+  assert.match(successSql, /trim\(coalesce\(p_collection_id, ''\)\) !~ '\^pw-chrome-'/i);
+  assert.match(successSql, /set circuit_state = 'closed',[\s\S]*failure_streak = 0/i);
+});
+
+test('automatic half-open control functions remain service-role only', () => {
+  assert.equal(
+    (autoNavigationHalfOpenMigration.match(/security invoker/gi) || []).length,
+    2,
+  );
+  assert.doesNotMatch(autoNavigationHalfOpenMigration, /security definer/i);
+  for (const signature of [
+    'mi_claim_naver_shopping_worker_lane\\(text, text, uuid, integer, integer\\)',
+    'mi_record_naver_shopping_worker_success\\([\\s\\S]*?text, uuid, uuid, uuid, text, integer, integer, integer, text[\\s\\S]*?\\)',
+  ]) {
+    assert.match(
+      autoNavigationHalfOpenMigration,
+      new RegExp(`revoke all on function public\\.${signature}[\\s\\S]*?from public, anon, authenticated, service_role;[\\s\\S]*?grant execute[\\s\\S]*?to service_role;`, 'i'),
+    );
+  }
 });

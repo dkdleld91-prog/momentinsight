@@ -15,6 +15,8 @@
 - 그러나 나머지 25/51 group은 `provider_duplicate_identity` 24건과 strict `provider_partial_window` 1건으로 실패했습니다. circuit closed·processing 0·lane 해제는 확인했지만 절반 가까운 키워드가 새 순위를 저장하지 못했으므로 전체 갱신 정상화로 보고하지 않습니다.
 - 원인 매트릭스는 24시간 미갱신 23 tracker를 cross-page overlap 16, same-page duplicate 6, strict partial 1로 전부 설명합니다. 성공했지만 stale인 tracker, lease 고립, 현재 circuit/cooldown 정체는 0입니다.
 - 별도 가동률 문제로 보존된 약 24시간 signed traffic에서 5시간 29분 42초 공백 1회를 확인했습니다. 현재는 복구됐지만 장비·Windows 세션·네트워크·scheduler 중 정확 원인은 DB만으로 확정하지 않습니다. 추가 코드 감사에서는 partial 오류의 전역 circuit 오분류, 실패·cycle append-only 이력 부재, 본문 상한·부분 submit·100 tracker 경계를 P1로 분리했습니다.
+- v1.1.5 로컬 보완은 한 SSR 페이지 안에서 네이버가 실제로 반복 노출한 같은 상품의 두 절대 순위 슬롯을 삭제·압축 없이 유지하고, 서로 다른 페이지 사이 반복은 계속 fail-closed합니다. strict partial은 해당 tracker만 실패 처리해 다른 광고주의 global circuit을 열지 않으며 `40_300` 같은 실제 확인 수를 보존합니다.
+- 전체 release는 517 core + Place 51 + Shopping 57, server contract 46/46, Production auth 18/18, 보호 잠금 22함수·78파일·28 migration으로 통과했습니다. 아직 Production·DB·Windows에는 배포하지 않았고, cross-page overlap 13 group과 5시간 29분 가동 공백 원인은 해결 완료로 보고하지 않습니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

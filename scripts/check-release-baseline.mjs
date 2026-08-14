@@ -166,6 +166,7 @@ const shoppingCollectorLiveCheck = read("scripts/check-naver-shopping-collector-
 const shoppingRankSourceStatus = read("src/server/naver-shopping/source-status.mjs");
 const shoppingProviderRuntime = read("src/server/naver-shopping/provider-runtime.mjs");
 const shoppingCollectorContract = read("tools/naver-shopping-rank-collector/src/contract.mjs");
+const shoppingCollectorProvider = read("tools/naver-shopping-rank-collector/src/provider.mjs");
 const shoppingCollectorPackage = JSON.parse(read("tools/naver-shopping-rank-collector/package.json"));
 const shoppingCollectorPackageLock = JSON.parse(read("tools/naver-shopping-rank-collector/package-lock.json"));
 const shoppingLocalWorker = read("scripts/naver-shopping-local-worker.mjs");
@@ -187,6 +188,7 @@ const shoppingWorkerContinuityMigration = read("supabase/migrations/202608111136
 const shoppingWorkerRuntime112Migration = read("supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql");
 const shoppingWorkerRuntime113Migration = read("supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql");
 const shoppingWorkerRuntime114Migration = read("supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql");
+const shoppingWorkerRuntime115Migration = read("supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
@@ -1428,7 +1430,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.4"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.5"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1519,6 +1521,13 @@ const checks = {
     && shoppingWorkerRuntime114Migration.includes("security invoker")
     && !shoppingWorkerRuntime114Migration.includes("security definer")
     && shoppingWorkerRuntime114Migration.includes("to service_role")
+    && shoppingWorkerRuntime115Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.5'")
+    && shoppingWorkerRuntime115Migration.includes("current_row.runtime_version = '1.1.5'")
+    && shoppingWorkerRuntime115Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime115Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime115Migration.includes("security invoker")
+    && !shoppingWorkerRuntime115Migration.includes("security definer")
+    && shoppingWorkerRuntime115Migration.includes("to service_role")
     && shoppingDuplicateQuarantineMigration.includes("mi_record_naver_shopping_worker_failure")
     && shoppingDuplicateQuarantineMigration.includes("split_part(normalized_error, ':', 1) = 'provider_duplicate_identity'")
     && shoppingDuplicateQuarantineMigration.includes("then v_now + interval '30 minutes'")
@@ -1546,7 +1555,7 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.4"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.5"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
@@ -1609,6 +1618,14 @@ const checks = {
     && shoppingCollectorLiveCheck.includes("window.complete !== true")
     && shoppingCollectorLiveCheck.includes("window.checkedCount !== limit")
     && shoppingCollectorLiveCheck.includes("collector_window_short"),
+  shoppingCollectorSamePageRankSlotsStayAtomic: shoppingCollectorProvider.includes('if (collisionKind !== "duplicate_row")')
+    && shoppingCollectorProvider.includes('"provider_duplicate_identity"')
+    && shoppingCollectorContract.includes("const NAVER_SHOPPING_PAGE_SIZE = 40")
+    && shoppingCollectorContract.includes("const identityOrigins = new Map()")
+    && shoppingCollectorContract.includes("Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)")
+    && shoppingCollectorContract.includes("Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)")
+    && shoppingLocalWorker.includes('"provider_partial_window"')
+    && shoppingLocalWorker.includes('detail.replace("/", "_")'),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')
     && rankCronServer.includes("Unauthorized cron request")
     && rankCronServer.includes('NAVER_RANK_PROVIDER_NOT_CONFIGURED = "NAVER_RANK_PROVIDER_NOT_CONFIGURED"')

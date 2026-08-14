@@ -145,6 +145,20 @@ test("accepts a fresh, complete and sequential 300-item organic window", () => {
   assert.equal(result.items[299].organicRank, 300);
 });
 
+test("keeps same-page repeated identity ranks and rejects cross-page repetition", () => {
+  const samePageItems = Array.from({ length: 300 }, (_, index) => item(index + 1));
+  samePageItems[1] = { ...samePageItems[1], sellerProductId: samePageItems[0].sellerProductId };
+  assert.equal(validateStrictLocalWorkerWindow(windowFixture({ items: samePageItems }), {
+    keyword: "온열찜질기", nowMs: NOW,
+  }).items.length, 300);
+
+  const crossPageItems = Array.from({ length: 300 }, (_, index) => item(index + 1));
+  crossPageItems[40] = { ...crossPageItems[40], sellerProductId: crossPageItems[0].sellerProductId };
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({ items: crossPageItems }), {
+    keyword: "온열찜질기", nowMs: NOW,
+  }));
+});
+
 test("rejects a source-exhausted short window even when the base collector marks it complete", () => {
   const items = Array.from({ length: 299 }, (_, index) => item(index + 1));
   assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({

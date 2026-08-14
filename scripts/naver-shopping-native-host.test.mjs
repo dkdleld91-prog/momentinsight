@@ -598,7 +598,7 @@ test("native provider bounds repeated boundary recollection without skipping a d
   ]);
 });
 
-test("native provider never retries, skips, or compresses a same-page duplicate", async () => {
+test("native provider preserves a same-page duplicate rank slot without retrying or compressing", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   let exchanges = 0;
   const provider = createChromeNativeProvider({
@@ -609,12 +609,22 @@ test("native provider never retries, skips, or compresses a same-page duplicate"
     },
   });
 
-  await assert.rejects(
-    () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "7:5:duplicate_row:7",
-  );
+  const result = await provider.collect(request(nowMs));
+
   assert.equal(exchanges, 1);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1));
+  const repeatedRanks = result.items
+    .filter((item, index, items) => (
+      items.findIndex((candidate) => candidate.sellerProductId === item.sellerProductId) !== index
+    ))
+    .map((item) => item.organicRank);
+  assert.equal(repeatedRanks.length, 1);
+  const firstRank = result.items.find((item) => (
+    item.sellerProductId === result.items[repeatedRanks[0] - 1].sellerProductId
+  )).organicRank;
+  assert.equal(Math.ceil(firstRank / 40), Math.ceil(repeatedRanks[0] / 40));
 });
 
 test("manifest public key produces a stable Chrome extension id", async () => {
@@ -695,7 +705,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.4");
+  assert.equal(manifest.version, "1.1.5");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -1138,7 +1148,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.4");
+  assert.equal(manifest.version, "1.1.5");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1297,7 +1307,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
       nativeMessageFrame({
         action: "run",
         trigger: "rank-remote",
-        runtimeVersion: "1.1.4",
+        runtimeVersion: "1.1.5",
         serviceWorkerSha256: "0".repeat(64),
       }),
       nativeMessageFrame({ action: "ready_ack" }),
@@ -1315,7 +1325,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.4",
+    runtimeVersion: "1.1.5",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

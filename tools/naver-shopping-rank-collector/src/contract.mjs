@@ -2,6 +2,7 @@ export const SCHEMA_VERSION = "mi.naver-shopping-organic-window.v1";
 export const SOURCE = "naver_shopping_results_collector";
 export const RANK_EVIDENCE = "naver_shopping_organic_list";
 const MAX_RANK_LIMIT = 300;
+const NAVER_SHOPPING_PAGE_SIZE = 40;
 const MAX_KEYWORD_LENGTH = 100;
 const DEADLINE_GRACE_MS = 5_000;
 const MAX_DEADLINE_AHEAD_MS = 15 * 60_000;
@@ -294,13 +295,18 @@ export function validateProviderWindow(value, request) {
   }
 
   const items = value.items.map((item, index) => validateItem(item, index + 1, request.limit));
-  const seenIdentities = new Set();
+  const identityOrigins = new Map();
   for (const item of items) {
     const signals = identitySignals(item);
-    if (signals.some((signal) => seenIdentities.has(signal))) {
-      throw new ContractError("invalid_provider_response", "duplicate_identity");
+    for (const signal of signals) {
+      const originRank = identityOrigins.get(signal);
+      if (originRank != null
+        && Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
+          !== Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)) {
+        throw new ContractError("invalid_provider_response", "duplicate_identity");
+      }
+      if (originRank == null) identityOrigins.set(signal, item.organicRank);
     }
-    signals.forEach((signal) => seenIdentities.add(signal));
   }
 
   return {

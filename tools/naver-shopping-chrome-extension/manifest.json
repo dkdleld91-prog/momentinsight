@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Moment Insight N Shopping Rank",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "현재 Chrome 프로필의 네이버쇼핑 공개 검색 결과로 모먼트인사이트 오가닉 순위를 갱신합니다.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6NQNbqceqN6pDv1XufbwhE9q9DP7aU91ZWHSZ38OPT4p2j+9s5mQExPJXPI4YhAMuGNMBOw81E/QmVJlK6Ur8JoOtrfFvqWG8Av5DQgdXu2SYDTz+Zi8YhlPjZ2oHHuJb9Aj39H2BOQ5kktbkUEJXzbSaqI44+cpLEmipZrHz33CPrQ8JYlQaX8uKvPX9qbGtYcn7rmZsz4n5oRxQR9mFi69K3SwV0VR7c7+p2j2hAqMSScn0Rv9nEXG2W7d6MyI7YiYzoa/Og1Qg3lY9VWG7gGSkuOnA6Nebqbb/0p5kMvjrRG2OYFWkZlU8y/JxTSwrezwG5PQxxyphXjJKWN0NQIDAQAB",
   "permissions": [

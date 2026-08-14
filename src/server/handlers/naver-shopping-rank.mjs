@@ -528,9 +528,9 @@ function trustedCollectorWindow(payload, options = {}) {
     )
     && Boolean(normalizeText(item.title))
   ));
-  const seenIdentitySignals = new Set();
+  const identityOrigins = new Map();
   let duplicateIdentity = false;
-  const identityKeys = (items || []).map((item) => {
+  const identityKeys = (items || []).map((item, index) => {
     const isCatalogResult = classifyNaverProductType(item?.productType).isPriceCompareCatalog;
     const sellerProductId = numericId(item?.sellerProductId);
     const catalogId = numericId(item?.catalogId);
@@ -547,8 +547,14 @@ function trustedCollectorWindow(payload, options = {}) {
             : catalogId
               ? [`catalog:${catalogId}`]
               : [];
-    if (signals.some((signal) => seenIdentitySignals.has(signal))) duplicateIdentity = true;
-    signals.forEach((signal) => seenIdentitySignals.add(signal));
+    for (const signal of signals) {
+      const originRank = identityOrigins.get(signal);
+      const currentRank = index + 1;
+      if (originRank != null
+        && Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
+          !== Math.ceil(currentRank / NAVER_SHOPPING_PAGE_SIZE)) duplicateIdentity = true;
+      if (originRank == null) identityOrigins.set(signal, currentRank);
+    }
     return signals.join("|");
   }).filter(Boolean);
   const coverageComplete = checkedCount >= expectedLimit || sourceExhausted;

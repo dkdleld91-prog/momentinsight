@@ -29,6 +29,7 @@ const files = {
   shoppingSourceStatus: "src/server/naver-shopping/source-status.mjs",
   shoppingProviderRuntime: "src/server/naver-shopping/provider-runtime.mjs",
   shoppingCollectorContract: "tools/naver-shopping-rank-collector/src/contract.mjs",
+  shoppingCollectorProvider: "tools/naver-shopping-rank-collector/src/provider.mjs",
   shoppingCollectorPackage: "tools/naver-shopping-rank-collector/package.json",
   shoppingCollectorPackageLock: "tools/naver-shopping-rank-collector/package-lock.json",
   shoppingLiveGate: "scripts/check-naver-shopping-collector-live.mjs",
@@ -48,6 +49,7 @@ const files = {
   shoppingWorkerRuntime112Migration: "supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql",
   shoppingWorkerRuntime113Migration: "supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
   shoppingWorkerRuntime114Migration: "supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql",
+  shoppingWorkerRuntime115Migration: "supabase/migrations/20260814110000_naver_shopping_runtime_1_1_5.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -97,6 +99,7 @@ const shoppingRank = fs.readFileSync(files.shoppingRank, "utf8");
 const shoppingSourceStatus = fs.readFileSync(files.shoppingSourceStatus, "utf8");
 const shoppingProviderRuntime = fs.readFileSync(files.shoppingProviderRuntime, "utf8");
 const shoppingCollectorContract = fs.readFileSync(files.shoppingCollectorContract, "utf8");
+const shoppingCollectorProvider = fs.readFileSync(files.shoppingCollectorProvider, "utf8");
 const shoppingCollectorPackage = JSON.parse(fs.readFileSync(files.shoppingCollectorPackage, "utf8"));
 const shoppingCollectorPackageLock = JSON.parse(fs.readFileSync(files.shoppingCollectorPackageLock, "utf8"));
 const shoppingLiveGate = fs.readFileSync(files.shoppingLiveGate, "utf8");
@@ -116,6 +119,7 @@ const shoppingWorkerDurableCycleMigration = fs.readFileSync(files.shoppingWorker
 const shoppingWorkerRuntime112Migration = fs.readFileSync(files.shoppingWorkerRuntime112Migration, "utf8");
 const shoppingWorkerRuntime113Migration = fs.readFileSync(files.shoppingWorkerRuntime113Migration, "utf8");
 const shoppingWorkerRuntime114Migration = fs.readFileSync(files.shoppingWorkerRuntime114Migration, "utf8");
+const shoppingWorkerRuntime115Migration = fs.readFileSync(files.shoppingWorkerRuntime115Migration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -682,6 +686,23 @@ check(
   files.shoppingWorkerRuntime114Migration,
 );
 check(
+  "N Shopping same-page rank preservation release pins runtime 1.1.5 fail-closed",
+  hasAll(shoppingWorkerRuntime115Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.5'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.5'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime115Migration),
+  files.shoppingWorkerRuntime115Migration,
+);
+check(
   "N Shopping duplicate identity quarantine is capped without changing durable order",
   hasAll(shoppingDuplicateQuarantineMigration, [
     /mi_record_naver_shopping_worker_failure/,
@@ -773,7 +794,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.4"
+  shoppingChromeManifest.version === "1.1.5"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -919,6 +940,33 @@ check(
     && /window\.checkedCount !== limit/.test(shoppingLiveGate)
     && /collector_window_short/.test(shoppingLiveGate),
   `${files.shoppingCollectorContract}, ${files.shoppingLiveGate}`,
+);
+check(
+  "N Shopping keeps same-page authoritative ranks, rejects cross-page overlap, and isolates strict partials",
+  hasAll(shoppingCollectorProvider, [
+    /const collisionKind = origin\?\.pageIndex === pageIndex/,
+    /if \(collisionKind !== "duplicate_row"\)/,
+    /provider_duplicate_identity/,
+  ])
+    && hasAll(shoppingCollectorContract, [
+      /const NAVER_SHOPPING_PAGE_SIZE = 40/,
+      /const identityOrigins = new Map\(\)/,
+      /Math\.ceil\(originRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
+      /Math\.ceil\(item\.organicRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
+      /duplicate_identity/,
+    ])
+    && hasAll(shoppingRank, [
+      /const identityOrigins = new Map\(\)/,
+      /Math\.ceil\(originRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
+      /duplicateIdentity/,
+    ])
+    && hasAll(shoppingLocalWorker, [
+      /const TRACKER_ISOLATED_FAILURE_CODES = new Set/,
+      /"provider_duplicate_identity"/,
+      /"provider_partial_window"/,
+      /detail\.replace\("\/", "_"\)/,
+    ]),
+  `${files.shoppingCollectorProvider}, ${files.shoppingCollectorContract}, ${files.shoppingRank}, ${files.shoppingLocalWorker}`,
 );
 check(
   "N Shopping server and local worker keep bounded collection envelopes",

@@ -906,7 +906,7 @@ test("keeps distinct seller cards when only their weak provider productId collid
   ]);
 });
 
-test("still rejects an isolated duplicate seller row and does not compress organic rank", () => {
+test("keeps an authoritative same-page duplicate seller row without compressing organic rank", () => {
   const first = rawProduct(31);
   const duplicateSeller = rawProduct(32, { extractionKey: "duplicate-seller-card" });
   duplicateSeller.payload = JSON.stringify({
@@ -917,15 +917,10 @@ test("still rejects an isolated duplicate seller row and does not compress organ
   });
   const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
 
-  assert.throws(
-    () => appendNormalizedPage(state, { rows: [first, duplicateSeller] }, { pageIndex: 1, limit: 2 }),
-    (error) => (
-      error instanceof ProviderError
-      && error.code === "provider_duplicate_identity"
-      && error.detail === "1:1:duplicate_row:1"
-    ),
-  );
-  assert.equal(state.items.length, 1);
+  appendNormalizedPage(state, { rows: [first, duplicateSeller] }, { pageIndex: 1, limit: 2 });
+  assert.equal(state.items.length, 2);
+  assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2]);
+  assert.equal(state.items[0].sellerProductId, state.items[1].sellerProductId);
 });
 
 test("classifies 418, 429, CAPTCHA, auth redirect, and invalid navigation with typed errors", () => {

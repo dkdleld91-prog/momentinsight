@@ -98,7 +98,7 @@ test("rejects unexpected, out-of-range, stale, and malformed request fields", ()
   }
 });
 
-test("fails closed for incomplete, untrusted, advertised, and duplicate windows", () => {
+test("fails closed for incomplete, untrusted, and advertised windows", () => {
   const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
   const cases = [
     [{
@@ -114,18 +114,35 @@ test("fails closed for incomplete, untrusted, advertised, and duplicate windows"
       ...validWindow(),
       items: [{ ...validWindow().items[0], isAd: true }, validWindow().items[1]],
     }, "provider_ad_item_rejected", "items.1"],
-    [{
-      ...validWindow(),
-      items: [
-        validWindow().items[0],
-        { ...validWindow().items[1], productId: validWindow().items[0].productId },
-      ],
-    }, "invalid_provider_response", "duplicate_identity"],
   ];
 
   for (const [window, code, detail] of cases) {
     assertContractError(() => validateProviderWindow(window, request), code, detail);
   }
+});
+
+test("accepts same-page identity repetition but rejects a cross-page collision", () => {
+  const samePageRequest = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
+  const samePage = validWindow();
+  samePage.items[1] = {
+    ...samePage.items[1],
+    catalogId: samePage.items[0].catalogId,
+    productId: samePage.items[0].productId,
+  };
+  assert.equal(validateProviderWindow(samePage, samePageRequest).items.length, 2);
+
+  const crossPageRequest = validateRankRequest(rankRequest({ limit: 41 }), { nowMs: NOW_MS });
+  const crossPage = validWindow(41);
+  crossPage.items[40] = {
+    ...crossPage.items[40],
+    catalogId: crossPage.items[0].catalogId,
+    productId: crossPage.items[0].productId,
+  };
+  assertContractError(
+    () => validateProviderWindow(crossPage, crossPageRequest),
+    "invalid_provider_response",
+    "duplicate_identity",
+  );
 });
 
 test("accepts a short complete window only with proven source exhaustion", () => {
@@ -208,7 +225,7 @@ test("accepts distinct seller cards that only share a weak productId", () => {
   assert.notEqual(result.items[0].sellerProductId, result.items[1].sellerProductId);
 });
 
-test("uses one catalog authority and still rejects a repeated catalog card", () => {
+test("uses one catalog authority and permits a repeated catalog card on one source page", () => {
   const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
   const distinct = validWindow();
   distinct.items = [
@@ -218,9 +235,5 @@ test("uses one catalog authority and still rejects a repeated catalog card", () 
   assert.equal(validateProviderWindow(distinct, request).items.length, 2);
 
   distinct.items[1].catalogId = distinct.items[0].catalogId;
-  assertContractError(
-    () => validateProviderWindow(distinct, request),
-    "invalid_provider_response",
-    "duplicate_identity",
-  );
+  assert.equal(validateProviderWindow(distinct, request).items.length, 2);
 });

@@ -67,7 +67,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.4",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.5",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -233,7 +233,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.4");
+  assert.equal(lane.runtimeVersion, "1.1.5");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -352,7 +352,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.4");
+  assert.equal(coordination[0].runtimeVersion, "1.1.5");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -830,6 +830,35 @@ test("preserves only a bounded duplicate diagnostic suffix and keeps tracker fai
   const failure = calls.coordination.find((call) => call.action === "record-failure");
   assert.equal(failure.errorCode, "provider_duplicate_identity:3:26:page_overlap:2");
   assert.equal(failure.scope, "tracker");
+});
+
+test("isolates a strict partial window to one tracker instead of opening the global circuit", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("provider_partial_window");
+      error.code = "provider_partial_window";
+      error.detail = "40/300";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+    randomUUID: uuidSequence(), skipLock: true,
+  });
+
+  assert.equal(summary.failed, 1);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.equal(failure.errorCode, "provider_partial_window:40_300");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
 });
 
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {

@@ -242,7 +242,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.4",
+            runtime_version: "1.1.5",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -269,7 +269,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.4",
+              runtime_version: "1.1.5",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -1873,10 +1873,25 @@ test("the external shopping collector requires native organic evidence", () => {
     /shopping_rank_provider_untrusted_evidence/,
   );
 
-  const duplicate = collectorWindow("테스트 상품", [shoppingResultItem(0), shoppingResultItem(1)], { limit: 2 });
-  duplicate.items[1].link = duplicate.items[0].link;
+  const samePageDuplicate = collectorWindow(
+    "테스트 상품",
+    [shoppingResultItem(0), shoppingResultItem(1)],
+    { limit: 2 },
+  );
+  samePageDuplicate.items[1].link = samePageDuplicate.items[0].link;
+  assert.equal(
+    trustedCollectorWindow(samePageDuplicate, { keyword: "테스트 상품", maxRank: 2 }).items.length,
+    2,
+  );
+
+  const crossPageDuplicate = collectorWindow(
+    "테스트 상품",
+    Array.from({ length: 41 }, (_, index) => shoppingResultItem(index)),
+    { limit: 41 },
+  );
+  crossPageDuplicate.items[40].link = crossPageDuplicate.items[0].link;
   assert.throws(
-    () => trustedCollectorWindow(duplicate, { keyword: "테스트 상품", maxRank: 2 }),
+    () => trustedCollectorWindow(crossPageDuplicate, { keyword: "테스트 상품", maxRank: 41 }),
     /shopping_rank_provider_untrusted_evidence/,
   );
 

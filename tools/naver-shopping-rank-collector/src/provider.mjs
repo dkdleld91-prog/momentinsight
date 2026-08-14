@@ -798,10 +798,17 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
       const collisionKind = origin?.pageIndex === pageIndex
         ? "duplicate_row"
         : "page_overlap";
-      throw new ProviderError(
-        "provider_duplicate_identity",
-        `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
-      );
+      // `compositeList.list` is one authoritative SSR page and every organic
+      // row above already proved its absolute Naver rank. If Naver itself
+      // places the same strong identity twice on that one page, preserve both
+      // rank slots. Cross-page repetition is still rejected because pages are
+      // fetched at different times and can represent a moving boundary.
+      if (collisionKind !== "duplicate_row") {
+        throw new ProviderError(
+          "provider_duplicate_identity",
+          `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
+        );
+      }
     }
     signals.forEach((signal) => {
       state.identities.add(signal);

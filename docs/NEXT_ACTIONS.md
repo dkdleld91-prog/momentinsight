@@ -2,6 +2,13 @@
 
 기준일: 2026-08-14
 
+## 진행 중: N쇼핑 v1.1.5 오류 범위 축소·24시간 재검증
+
+- same-page `duplicate_row`는 네이버 SSR의 절대 순위 1~300을 그대로 보존해 정상 저장 대상으로 바꾸고, cross-page `page_overlap`은 계속 제한 재수집 뒤 fail-closed합니다. 행 삭제·순위 압축은 하지 않습니다.
+- `provider_partial_window`는 tracker 단위로 격리해 한 키워드의 300 미달이 전체 광고주 circuit을 열지 않게 합니다. 실제 300 미달 키워드는 last-good을 유지하며 성공으로 표시하지 않습니다.
+- 로컬 전체 release는 통과했습니다. 다음 순서는 Production 코드 반영 → DB runtime 1.1.5 gate → Windows 1.1.5 동기화 → 자연 순환 terminal 확인이며, 2026-08-15 10:01 KST 전에는 24시간 정상화 완료를 판정하지 않습니다.
+- 남은 cross-page 13 group, signed traffic 5시간 29분 공백, append-only cycle/terminal 이력 부재는 별도 미해결 항목입니다.
+
 ## 완료: N쇼핑 중복 오류 장기 격리 해소
 
 - 중복 식별 오류만 누적 24시간 격리에서 30분 고정으로 바꾸고 기존 격리를 같은 상한으로 단축합니다. 정상 순환 순서와 last-good은 유지합니다.

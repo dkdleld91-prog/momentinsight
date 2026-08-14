@@ -13,6 +13,8 @@
 - 감사 중에는 DB write·강제 wake·순서 재배치·격리 해제를 하지 않습니다. 확인된 결함만 최소 수정하고 전체 release·Production·Windows·운영 terminal을 다시 검증합니다.
 - 10:16 KST cycle #7 terminal은 6시간 50분 동안 9/9 agency·51/51 group·66/66 tracker를 claim-time 중복 0으로 모두 한 번씩 처리했습니다. 성공은 26 group/26 collection/38 snapshot이며 전부 `checkedCount=300`이고 collection 교차 재사용도 0입니다.
 - 그러나 나머지 25/51 group은 `provider_duplicate_identity` 24건과 strict `provider_partial_window` 1건으로 실패했습니다. circuit closed·processing 0·lane 해제는 확인했지만 절반 가까운 키워드가 새 순위를 저장하지 못했으므로 전체 갱신 정상화로 보고하지 않습니다.
+- 원인 매트릭스는 24시간 미갱신 23 tracker를 cross-page overlap 16, same-page duplicate 6, strict partial 1로 전부 설명합니다. 성공했지만 stale인 tracker, lease 고립, 현재 circuit/cooldown 정체는 0입니다.
+- 별도 가동률 문제로 보존된 약 24시간 signed traffic에서 5시간 29분 42초 공백 1회를 확인했습니다. 현재는 복구됐지만 장비·Windows 세션·네트워크·scheduler 중 정확 원인은 DB만으로 확정하지 않습니다. 추가 코드 감사에서는 partial 오류의 전역 circuit 오분류, 실패·cycle append-only 이력 부재, 본문 상한·부분 submit·100 tracker 경계를 P1로 분리했습니다.
 
 ### 2026-08-13 N쇼핑 장기 미갱신 병목 보완
 

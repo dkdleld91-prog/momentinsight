@@ -9,6 +9,8 @@
 - heartbeat automation `1-24`가 30분 간격으로 같은 기준을 기록합니다. 최종 합격은 24시간 후 cycle당 기존 group 1회, 신규 1회 우선 후 cursor 복귀, 전체 종료 뒤 다음 cycle, 격리 건너뛰기, 광고주별 coverage, same-cycle 중복 0, 원자 300 및 lane·lease 해제를 함께 확인해야 합니다.
 - 첫 terminal 증거인 cycle #7은 2026-08-14 10:16 KST에 완료됐습니다. 9/9 agency·51/51 group·66/66 tracker를 각각 한 번 claim했고 claim-time 동일 group 중복은 0입니다.
 - 성공 26 group은 26개 고유 collection·38 snapshot으로 저장됐고 `checkedCount != 300` 0건, collection ID 교차 재사용 0건입니다. 실패 25 group은 duplicate 24·partial-window 1이며 last-good을 유지했습니다. 이 결과는 순환 coverage·원자성은 증명하지만 전체 키워드 갱신 성공은 명백히 반증합니다.
+- 10:32 KST 상호배타 원인 분류에서 stale24 23 tracker/20 group은 `page_overlap` 16/13, `duplicate_row` 6/6, `provider_partial_window` 1/1이며 기타·성공 stale·lease/circuit 정체는 0입니다. 보존된 signed traffic에는 5시간 29분 42초 공백이 있으나 당시 외부 원인은 미확정으로 남깁니다.
+- 코드 감사는 P0 없음·원자 300/CAS 유지로 판정했습니다. 다만 partial/row 오류가 system scope로 전역 circuit을 열 수 있는 경로, 인증과 수집창 시계 허용 차이, 2MiB body 상한, 비원자 Windows 교체, 잘못된 request ID 장기 대기, 동일 키워드 100 tracker 상한, 부분 submit 식별, durable cycle 운영 이력 부재를 별도 P1로 기록합니다.
 
 ## 2026-08-13 N쇼핑 중복 오류 격리 상한 회귀
 

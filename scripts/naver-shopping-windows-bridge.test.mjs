@@ -200,6 +200,32 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
   assert.match(updater, /MI_EXTENSION_UPDATE_OK/u);
 });
 
+test("Windows extension updater restores and verifies the exact native host registration", () => {
+  assert.match(updater, /\$hostName = "com\.momentinsight\.naver_shopping"/u);
+  assert.match(updater, /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\\$hostName/u);
+  assert.match(updater, /throw "native_host_manifest_missing"/u);
+  assert.match(updater, /throw "native_host_manifest_name_mismatch"/u);
+  assert.match(updater, /chrome-extension:\/\/\$extensionId\//u);
+  assert.match(updater, /throw "native_host_manifest_origin_mismatch"/u);
+  assert.match(updater, /New-Item -Path \$nativeRegistryPath -Force/u);
+  assert.match(updater, /Set-Item -Path \$nativeRegistryPath -Value \$nativeManifestPath/u);
+  assert.match(updater, /Get-Item -LiteralPath \$nativeRegistryPath -ErrorAction Stop/u);
+  assert.match(updater, /StringComparison\]::OrdinalIgnoreCase/u);
+  assert.match(updater, /throw "native_host_registry_mismatch"/u);
+  assert.match(updater, /native_host_registry_synced=true/u);
+
+  const manifestValidationIndex = updater.indexOf('throw "native_host_manifest_origin_mismatch"');
+  const chromeStopIndex = updater.indexOf("Get-Process chrome");
+  const registryWriteIndex = updater.indexOf("New-Item -Path $nativeRegistryPath -Force");
+  const successIndex = updater.indexOf("$updateSucceeded = $true");
+  assert.ok(manifestValidationIndex >= 0 && manifestValidationIndex < chromeStopIndex,
+    "the native manifest must be validated before Chrome is stopped");
+  assert.ok(registryWriteIndex > chromeStopIndex,
+    "the native host registration must be restored while Chrome is quiesced");
+  assert.ok(registryWriteIndex < successIndex,
+    "the updater must verify native host registration before reporting success");
+});
+
 test("Windows extension updater waits for every targeted process before copying runtime files", () => {
   assert.match(updater, /function Get-UpdateTargetProcesses/u);
   assert.match(updater, /\$_\.Name -eq "chrome\.exe"/u);

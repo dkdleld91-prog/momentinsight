@@ -794,6 +794,11 @@ check(
       /native_host_core_sha256=/,
       /collector_provider_sha256=/,
       /collector_contract_sha256=/,
+      /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\\$hostName/,
+      /native_host_manifest_origin_mismatch/,
+      /Set-Item -Path \$nativeRegistryPath -Value \$nativeManifestPath/,
+      /native_host_registry_mismatch/,
+      /native_host_registry_synced=true/,
       /\$ExpectedVersion`n\$serviceWorkerHash`n\$nativeHostHash`n\$nativeHostCoreHash`n\$localWorkerHash`n\$localWorkerContractHash`n\$collectorProviderHash`n\$collectorContractHash/,
     ])
     && [

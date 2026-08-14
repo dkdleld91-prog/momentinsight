@@ -2,6 +2,8 @@
 
 ## 2026-08-14 준비작업 1번 시작 기준
 
+- 원격 Windows 실기에서 확장 UI `1.1.6`을 재로드하고 안전 갱신을 눌러도 native host 프로세스와 새 nonce가 생기지 않았습니다. Native Messaging HKCU/HKLM/WOW6432Node 등록은 모두 없고 manifest 파일은 존재해 등록 누락을 직접 원인으로 확정했습니다. DB는 runtime `1.1.5`·stale heartbeat 상태이므로 `1.1.6` 운영 성공 증거가 아닙니다.
+- 재발 방지 회귀는 manifest name/origin 검증, HKCU 등록 write/readback, typed mismatch 실패와 성공 marker를 포함합니다. Windows bridge 10/10, server contract 49/49, release baseline, rank lock/self-test와 `git diff --check`를 통과했으며 전체 release·Production·Windows 실기는 후속 게이트입니다.
 - 운영 SELECT-only 기준 시각은 2026-08-14 10:01 KST입니다. runtime `1.1.4`, heartbeat 48초, circuit closed, cooldown·lane·processing 없음, cycle #7 active/cursor sort 3200을 확인했습니다.
 - 활성 66 tracker/51 keyword group/9 agency, cycle claim 63 tracker/48 group, 성공한 같은-cycle 중복 group 0, repair queued/claimed 0입니다.
 - 미갱신은 24시간 23 tracker, 48시간 21 tracker, never-checked 1 tracker이며 현재 격리는 2건입니다. 마지막 오류 분포는 없음 37, `provider_duplicate_identity` 28, `provider_partial_window` 1입니다.

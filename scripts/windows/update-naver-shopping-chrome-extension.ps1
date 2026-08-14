@@ -28,7 +28,10 @@ $schedulerScriptPath = Join-Path $runtimePath "scripts\windows\run-naver-shoppin
 $launcherPath = Join-Path $runtimePath "MomentInsightNaverShoppingHost.exe"
 $taskPath = "\MomentInsight\"
 $taskName = "NaverShoppingChrome"
+$hostName = "com.momentinsight.naver_shopping"
 $extensionId = "pflggephankeefaeoaafkmggampnaefm"
+$nativeManifestPath = Join-Path $runtimePath "$hostName.json"
+$nativeRegistryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 $processShutdownTimeoutMs = 10000
 $processShutdownPollMs = 250
 $sourceBase = "https://raw.githubusercontent.com/dkdleld91-prog/momentinsight/$ReleaseCommit/tools/naver-shopping-chrome-extension"
@@ -101,6 +104,13 @@ function Get-UpdateTargetProcesses {
 if (-not (Test-Path -LiteralPath $extensionPath -PathType Container)) { throw "extension_path_missing" }
 if (-not (Test-Path -LiteralPath $schedulerConfigPath -PathType Leaf)) { throw "scheduler_config_missing" }
 if (-not (Test-Path -LiteralPath $nativeConfigPath -PathType Leaf)) { throw "native_config_missing" }
+if (-not (Test-Path -LiteralPath $nativeManifestPath -PathType Leaf)) { throw "native_host_manifest_missing" }
+$nativeManifest = Get-Content -LiteralPath $nativeManifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
+if ([string]$nativeManifest.name -ne $hostName) { throw "native_host_manifest_name_mismatch" }
+$expectedAllowedOrigin = "chrome-extension://$extensionId/"
+if (@($nativeManifest.allowed_origins) -notcontains $expectedAllowedOrigin) {
+    throw "native_host_manifest_origin_mismatch"
+}
 $schedulerConfig = @(Get-Content -LiteralPath $schedulerConfigPath -Encoding UTF8)
 if ($schedulerConfig.Count -ne 2) { throw "scheduler_config_invalid" }
 $profileDirectory = $schedulerConfig[1].Trim()
@@ -278,13 +288,23 @@ try {
     $collectorProviderHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collectorProviderPath).Hash.ToLowerInvariant()
     $collectorContractHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $collectorContractPath).Hash.ToLowerInvariant()
     $schedulerScriptHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $schedulerScriptPath).Hash.ToLowerInvariant()
+    New-Item -Path $nativeRegistryPath -Force | Out-Null
+    Set-Item -Path $nativeRegistryPath -Value $nativeManifestPath
+    $registeredManifestPath = [string](Get-Item -LiteralPath $nativeRegistryPath -ErrorAction Stop).GetValue("")
+    if (-not [string]::Equals(
+        [IO.Path]::GetFullPath($registeredManifestPath),
+        [IO.Path]::GetFullPath($nativeManifestPath),
+        [StringComparison]::OrdinalIgnoreCase
+    )) {
+        throw "native_host_registry_mismatch"
+    }
     $runtimeIdentity = [Text.Encoding]::UTF8.GetBytes(
         "$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerContractHash`n$collectorProviderHash`n$collectorContractHash"
     )
     $runtimeFingerprintBytes = [Security.Cryptography.SHA256]::Create().ComputeHash($runtimeIdentity)
     $runtimeFingerprint = ([BitConverter]::ToString($runtimeFingerprintBytes)).Replace("-", "").ToLowerInvariant()
     $updateSucceeded = $true
-    $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
+    $successMessage = "MI_EXTENSION_UPDATE_OK release=$ReleaseCommit version=$ExpectedVersion syntax=7 profile=$($profileDirectory.Replace(' ', '_')) loaded_extension_synced=true native_host_registry_synced=true launcher_recompiled=$launcherNeedsCompile launcher_source_updated=$launcherSourceChanged runtime_fingerprint=$runtimeFingerprint service_worker_sha256=$serviceWorkerHash loaded_service_worker_sha256=$loadedServiceWorkerHash launcher_sha256=$launcherHash native_host_sha256=$nativeHostHash native_host_core_sha256=$nativeHostCoreHash local_worker_sha256=$localWorkerHash local_worker_contract_sha256=$localWorkerContractHash collector_provider_sha256=$collectorProviderHash collector_contract_sha256=$collectorContractHash scheduler_script_sha256=$schedulerScriptHash"
 }
 catch {
     $updateFailure = $_

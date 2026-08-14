@@ -1411,6 +1411,11 @@ const checks = {
     && shoppingWindowsExtensionUpdater.includes("native_host_core_sha256=")
     && shoppingWindowsExtensionUpdater.includes("collector_provider_sha256=")
     && shoppingWindowsExtensionUpdater.includes("collector_contract_sha256=")
+    && shoppingWindowsExtensionUpdater.includes("HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\$hostName")
+    && shoppingWindowsExtensionUpdater.includes("native_host_manifest_origin_mismatch")
+    && shoppingWindowsExtensionUpdater.includes("Set-Item -Path $nativeRegistryPath -Value $nativeManifestPath")
+    && shoppingWindowsExtensionUpdater.includes("native_host_registry_mismatch")
+    && shoppingWindowsExtensionUpdater.includes("native_host_registry_synced=true")
     && shoppingWindowsExtensionUpdater.includes("$ExpectedVersion`n$serviceWorkerHash`n$nativeHostHash`n$nativeHostCoreHash`n$localWorkerHash`n$localWorkerContractHash`n$collectorProviderHash`n$collectorContractHash")
     && [
       "native_host_core_javascript_invalid",

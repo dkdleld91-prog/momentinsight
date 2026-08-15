@@ -46,6 +46,7 @@
 - 17:20 KST 다음 `normal` group은 collection `pw-chrome-1786782051055-c62e6458df42eb8b37bd`으로 원자 300 commit했고 과거 격리도 해제됐습니다. cycle #10 누적 50 distinct group/63 tracker·commit 61·fail 2·중복 0, cursor sort 2700입니다. v1.1.8 이후 snapshot 56건/45 collection의 원자 계약 위반·민감 proof 저장·failure는 0이며 pending 9건 중 eligible 8·partial 격리 1, circuit closed·processing/lane/run/lease null입니다.
 - 17:30 KST 다음 `normal` group은 tracker 3건을 collection `pw-chrome-1786782652392-e1fcbd219e84859d6b67` 한 번으로 각각 원자 300 commit해 브라우저 중복 수집이 없었습니다. cycle #10 누적 51 distinct group/66 tracker·commit 64·fail 2·중복 0, cursor sort 2800입니다. v1.1.8 이후 snapshot 59건/46 collection의 원자 계약 위반·민감 proof 저장·failure는 0이며 pending 6건 중 eligible 5·partial 격리 1, circuit closed·processing/lane/run/lease null입니다.
 - 17:40 KST 다음 `normal` group은 collection `pw-chrome-1786783252770-4d2b11c7b52361ccece5`으로 원자 300 commit했습니다. cycle #10 누적 52 distinct group/67 tracker·commit 65·fail 2·중복 0, cursor sort 3200입니다. v1.1.8 이후 snapshot 60건/47 collection의 원자 계약 위반·민감 proof 저장·failure는 0이며 pending 5건 중 eligible 4·partial 격리 1, circuit closed·processing/lane/run/lease null입니다.
+- 17:50 KST 다음 `normal` group은 collection `pw-chrome-1786783851708-ffd804f4643b88e08c9a`으로 원자 300 commit했습니다. cycle #10 누적 53 distinct group/68 tracker·commit 66·fail 2·중복 0, cursor sort 3300입니다. v1.1.8 이후 snapshot 61건/48 collection의 원자 계약 위반·민감 proof 저장·failure는 0이며 pending 4건 중 eligible 3·partial 격리 1, circuit closed·processing/lane/run/lease null입니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

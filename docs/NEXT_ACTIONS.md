@@ -4,7 +4,7 @@
 
 ## 진행 중: N쇼핑 v1.1.8 안정 중복 증명·24시간 재검증
 
-- 기능 release `68e6200ad826`, DB runtime gate와 Windows 실행 모듈을 `1.1.8`로 동기화했으며 현재 Production 문서 release는 `9816cfa3c645`입니다. Windows heartbeat fingerprint `182cc973be96…`은 기능 커밋의 로컬 재계산값과 일치하고, 첫 자연 작업은 광고 30개 제외·오가닉 300개로 완료됐습니다.
+- 기능 release `68e6200ad826`, DB runtime gate와 Windows 실행 모듈을 `1.1.8`로 동기화했습니다. 증거 문서 커밋은 자동 Production 배포로 `/health` release를 이동시킬 수 있으므로 기능 식별은 Windows fingerprint `182cc973be96…`과 기능 커밋으로 고정하며, 첫 자연 작업은 광고 30개 제외·오가닉 300개로 완료됐습니다.
 - 복구 terminal 기준은 2026-08-14 18:17:51 KST입니다. 2026-08-15 18:17:51 KST 전에는 cycle당 1회·신규 우선 후 cursor 복귀·전체 완료 뒤 다음 cycle·격리 skip·중복 0·원자 300만 저장을 최종 합격으로 판정하지 않습니다.
 - cycle #9은 10:40 KST 완료됐습니다. 시작 roster 57 group/72 tracker/9 agency 중 시작 시 격리 1 tracker를 건너뛰고 56 group/71 tracker를 각 1회 claim했으며 group 중복은 0입니다. 성공 31 group/42 snapshot/31 collection은 모두 광고 제외 `checkedCount=300`이고, 실패 25 group은 snapshot을 저장하지 않았습니다.
 - 미갱신의 직접 원인은 실패 25 group 중 23 group을 차지한 cross-page `page_overlap`입니다. `1.1.8`은 이를 행 삭제·순위 압축으로 숨기지 않고, 독립 전체 1~8페이지 두 번의 300개 절대 순위·강한 식별자 digest가 완전히 같을 때만 저장합니다. 한 슬롯이라도 다르면 기존처럼 fail-closed합니다.

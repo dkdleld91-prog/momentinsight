@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS } from "../local-worker-auth.mjs";
+import {
+  LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS,
+  signLocalWorkerRequest,
+  verifyLocalWorkerSignature,
+} from "../local-worker-auth.mjs";
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
@@ -14,6 +18,8 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  stableCollisionDigest,
+  stableWindowDigest,
   validateProviderWindow,
   validateRankRequest,
 } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
@@ -148,7 +154,7 @@ test("fits a contract-valid maximum 300 window and 100 claims inside the 4 MiB s
     workerId: "windows-desktop-primary",
     laneToken: "11111111-1111-4111-8111-111111111111",
     runId: "22222222-2222-4222-8222-222222222222",
-    runtimeVersion: "1.1.7",
+    runtimeVersion: "1.1.8",
     runtimeFingerprint: "a".repeat(64),
     job: validateLocalWorkerJob({ keyword, limit: 300, claims }),
     window,
@@ -238,7 +244,7 @@ test("uses the signed worker 300-second clock skew for future collection evidenc
   }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_stale/);
 });
 
-test("keeps same-page repeated identity ranks and rejects cross-page repetition", () => {
+test("keeps same-page repeats and accepts cross-page repeats only with exact stable proof", () => {
   const samePageItems = Array.from({ length: 300 }, (_, index) => item(index + 1));
   samePageItems[1] = { ...samePageItems[1], sellerProductId: samePageItems[0].sellerProductId };
   assert.equal(validateStrictLocalWorkerWindow(windowFixture({ items: samePageItems }), {
@@ -250,6 +256,84 @@ test("keeps same-page repeated identity ranks and rejects cross-page repetition"
   assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({ items: crossPageItems }), {
     keyword: "온열찜질기", nowMs: NOW,
   }));
+
+  const stableItems = Array.from({ length: 300 }, (_, index) => ({
+    ...item(index + 1),
+    productType: 2,
+  }));
+  stableItems[40] = { ...stableItems[40], sellerProductId: stableItems[0].sellerProductId };
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({ items: stableItems }), {
+    keyword: "온열찜질기", nowMs: NOW,
+  }));
+  const passDigest = stableWindowDigest(stableItems, { keyword: "온열찜질기" });
+  const crossPageProof = {
+    version: "stable-full-window-v1",
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["capture-pass-0001", "capture-pass-0002"],
+    passDigests: [passDigest, passDigest],
+    collisionDigest: stableCollisionDigest(stableItems),
+  };
+  assert.equal(validateStrictLocalWorkerWindow(windowFixture({
+    items: stableItems,
+    crossPageProof,
+  }), { keyword: "온열찜질기", nowMs: NOW }).items.length, 300);
+
+  for (const proofOverride of [
+    { passDigests: [passDigest, "0".repeat(64)] },
+    { collisionDigest: "0".repeat(64) },
+    { captureIds: ["capture-pass-0001", "capture-pass-0001"] },
+    { unexpected: true },
+  ]) {
+    assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+      items: stableItems,
+      crossPageProof: { ...crossPageProof, ...proofOverride },
+    }), { keyword: "온열찜질기", nowMs: NOW }));
+  }
+
+  const driftedItems = structuredClone(stableItems);
+  driftedItems[299].linkedCatalogId = "99000000001";
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items: driftedItems,
+    crossPageProof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    crossPageProof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+});
+
+test("signed submit evidence fails closed when a stable cross-page proof is tampered in transit", () => {
+  const secret = "stable-proof-hmac-secret-with-at-least-32-bytes";
+  const timestamp = String(Math.trunc(NOW / 1000));
+  const base = {
+    timestamp,
+    nonce: "stable-proof-submit-0001",
+    method: "POST",
+    audience: "https://insight.momentlabs.co.kr",
+    path: "/api/naver-shopping-local-worker",
+    body: JSON.stringify({
+      action: "submit",
+      window: { crossPageProof: { collisionDigest: "a".repeat(64) } },
+    }),
+  };
+  const signature = signLocalWorkerRequest(secret, base);
+  const tampered = {
+    ...base,
+    signature,
+    body: JSON.stringify({
+      action: "submit",
+      window: { crossPageProof: { collisionDigest: "b".repeat(64) } },
+    }),
+  };
+  assert.equal(verifyLocalWorkerSignature(tampered, {
+    nowSeconds: Number(timestamp),
+    env: {
+      MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED: "true",
+      MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET: secret,
+    },
+  }).code, "LOCAL_WORKER_SIGNATURE_INVALID");
 });
 
 test("rejects a source-exhausted short window even when the base collector marks it complete", () => {

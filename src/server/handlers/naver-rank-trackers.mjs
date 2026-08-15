@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.7";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.8";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -948,6 +948,7 @@ async function listTrackers(request, ctx) {
 
 export function buildProductRankSnapshotRecord(tracker, checkedAt, result, message) {
   const source = normalizeText(result?.source) || "naver_shopping_results_collector";
+  const crossPageProofVersion = normalizeText(result?.crossPageProofVersion);
   const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : {};
   const item = {
     ...safeResultItem,
@@ -958,6 +959,7 @@ export function buildProductRankSnapshotRecord(tracker, checkedAt, result, messa
     collectionId: normalizeText(result?.collectionId) || null,
     collectedAt: normalizeText(result?.collectedAt) || null,
     excludedAdCount: Number(result?.excludedAdCount || 0),
+    ...(crossPageProofVersion === "stable-full-window-v1" ? { crossPageProofVersion } : {}),
     ...(result?.trackingRankSource ? {
       trackingRankSource: result.trackingRankSource,
       trackingRankSourceLabel: result.trackingRankSourceLabel,

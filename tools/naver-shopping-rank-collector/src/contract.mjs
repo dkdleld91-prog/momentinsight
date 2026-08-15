@@ -1,11 +1,18 @@
+import crypto from "node:crypto";
+
 export const SCHEMA_VERSION = "mi.naver-shopping-organic-window.v1";
 export const SOURCE = "naver_shopping_results_collector";
 export const RANK_EVIDENCE = "naver_shopping_organic_list";
+export const STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1";
 const MAX_RANK_LIMIT = 300;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
+const NAVER_SHOPPING_PAGE_COUNT = 8;
+const STABLE_FULL_WINDOW_PASS_COUNT = 2;
 const MAX_KEYWORD_LENGTH = 100;
 const DEADLINE_GRACE_MS = 5_000;
 const MAX_DEADLINE_AHEAD_MS = 15 * 60_000;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const CAPTURE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 
 const REQUEST_KEYS = new Set([
   "schemaVersion",
@@ -229,6 +236,130 @@ function identitySignals(item) {
   return [];
 }
 
+function stableProofKeyword(value) {
+  if (typeof value !== "string") throw new ContractError("invalid_provider_response", "crossPageProof.keyword");
+  const keyword = value.trim().normalize("NFC").replace(/\s+/gu, " ");
+  if (!keyword || Array.from(keyword).length > MAX_KEYWORD_LENGTH) {
+    throw new ContractError("invalid_provider_response", "crossPageProof.keyword");
+  }
+  return keyword;
+}
+
+function stableWindowItems(items) {
+  if (!Array.isArray(items) || items.length !== MAX_RANK_LIMIT) {
+    throw new ContractError("invalid_provider_response", "crossPageProof.items");
+  }
+  return items.map((item, index) => validateItem(item, index + 1, MAX_RANK_LIMIT));
+}
+
+function stableRankSlot(item) {
+  const signals = identitySignals(item).sort();
+  if (!signals.length) throw new ContractError("invalid_provider_response", "crossPageProof.identity");
+  return [
+    item.organicRank,
+    signals.join("|"),
+    Number(item.productType || 0),
+    item.linkedCatalogId || "",
+  ].join("\u001f");
+}
+
+function stableCrossPageCollisions(items) {
+  const origins = new Map();
+  const collisions = [];
+  for (const item of items) {
+    for (const signal of identitySignals(item).sort()) {
+      const originRank = origins.get(signal);
+      if (originRank != null
+        && Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
+          !== Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)) {
+        collisions.push([signal, originRank, item.organicRank].join("\u001f"));
+      }
+      if (originRank == null) origins.set(signal, item.organicRank);
+    }
+  }
+  return collisions;
+}
+
+export function stableWindowDigest(items, options = {}) {
+  const normalizedItems = stableWindowItems(items);
+  const keyword = stableProofKeyword(options.keyword);
+  return crypto.createHash("sha256").update([
+    STABLE_FULL_WINDOW_PROOF_VERSION,
+    keyword,
+    String(MAX_RANK_LIMIT),
+    ...normalizedItems.map(stableRankSlot),
+  ].join("\n"), "utf8").digest("hex");
+}
+
+export function stableCollisionDigest(items) {
+  const normalizedItems = stableWindowItems(items);
+  const collisions = stableCrossPageCollisions(normalizedItems);
+  return crypto.createHash("sha256").update([
+    STABLE_FULL_WINDOW_PROOF_VERSION,
+    String(collisions.length),
+    ...collisions,
+  ].join("\n"), "utf8").digest("hex");
+}
+
+export function stableFullWindowEvidence(items, options = {}) {
+  const normalizedItems = stableWindowItems(items);
+  const collisions = stableCrossPageCollisions(normalizedItems);
+  return {
+    passDigest: stableWindowDigest(normalizedItems, options),
+    collisionDigest: stableCollisionDigest(normalizedItems),
+    collisionCount: collisions.length,
+  };
+}
+
+function validateStableFullWindowProof(value, items, keyword) {
+  if (!isRecord(value)) {
+    throw new ContractError("invalid_provider_response", "crossPageProof");
+  }
+  const allowedKeys = new Set([
+    "version",
+    "passCount",
+    "pageCount",
+    "pageSize",
+    "captureIds",
+    "passDigests",
+    "collisionDigest",
+  ]);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
+  }
+  const captureIds = Array.isArray(value.captureIds) ? value.captureIds : [];
+  const passDigests = Array.isArray(value.passDigests) ? value.passDigests : [];
+  if (value.version !== STABLE_FULL_WINDOW_PROOF_VERSION
+    || value.passCount !== STABLE_FULL_WINDOW_PASS_COUNT
+    || value.pageCount !== NAVER_SHOPPING_PAGE_COUNT
+    || value.pageSize !== NAVER_SHOPPING_PAGE_SIZE
+    || captureIds.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !captureIds.every((captureId) => typeof captureId === "string" && CAPTURE_ID_PATTERN.test(captureId))
+    || captureIds[0] === captureIds[1]
+    || passDigests.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !passDigests.every((digest) => typeof digest === "string" && SHA256_PATTERN.test(digest))
+    || typeof value.collisionDigest !== "string"
+    || !SHA256_PATTERN.test(value.collisionDigest)) {
+    throw new ContractError("invalid_provider_response", "crossPageProof");
+  }
+  const evidence = stableFullWindowEvidence(items, { keyword });
+  if (evidence.collisionCount < 1
+    || passDigests[0] !== passDigests[1]
+    || passDigests[0] !== evidence.passDigest
+    || value.collisionDigest !== evidence.collisionDigest) {
+    throw new ContractError("invalid_provider_response", "crossPageProof.mismatch");
+  }
+  return {
+    version: STABLE_FULL_WINDOW_PROOF_VERSION,
+    passCount: STABLE_FULL_WINDOW_PASS_COUNT,
+    pageCount: NAVER_SHOPPING_PAGE_COUNT,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: passDigests.slice(),
+    collisionDigest: value.collisionDigest,
+  };
+}
+
 export function validateProviderWindow(value, request) {
   if (!isRecord(value)) throw new ContractError("invalid_provider_response", "body");
   if (value.ok !== true) throw new ContractError("invalid_provider_response", "ok");
@@ -296,6 +427,7 @@ export function validateProviderWindow(value, request) {
 
   const items = value.items.map((item, index) => validateItem(item, index + 1, request.limit));
   const identityOrigins = new Map();
+  let crossPageDuplicate = false;
   for (const item of items) {
     const signals = identitySignals(item);
     for (const signal of signals) {
@@ -303,10 +435,19 @@ export function validateProviderWindow(value, request) {
       if (originRank != null
         && Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
           !== Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)) {
-        throw new ContractError("invalid_provider_response", "duplicate_identity");
+        crossPageDuplicate = true;
       }
       if (originRank == null) identityOrigins.set(signal, item.organicRank);
     }
+  }
+  let crossPageProof;
+  if (crossPageDuplicate) {
+    if (request.limit !== MAX_RANK_LIMIT || items.length !== MAX_RANK_LIMIT) {
+      throw new ContractError("invalid_provider_response", "duplicate_identity");
+    }
+    crossPageProof = validateStableFullWindowProof(value.crossPageProof, items, request.keyword);
+  } else if (value.crossPageProof !== undefined) {
+    throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
   }
 
   return {
@@ -326,5 +467,6 @@ export function validateProviderWindow(value, request) {
     rawCount: value.rawCount,
     excludedAdCount: value.excludedAdCount,
     items,
+    ...(crossPageProof ? { crossPageProof } : {}),
   };
 }

@@ -6,6 +6,9 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  STABLE_FULL_WINDOW_PROOF_VERSION,
+  stableCollisionDigest,
+  stableWindowDigest,
   validateProviderWindow,
   validateRankRequest,
 } from "../src/contract.mjs";
@@ -142,6 +145,80 @@ test("accepts same-page identity repetition but rejects a cross-page collision",
     () => validateProviderWindow(crossPage, crossPageRequest),
     "invalid_provider_response",
     "duplicate_identity",
+  );
+});
+
+test("accepts an exact 300-slot cross-page repetition only with a matching stable full-window proof", () => {
+  const request = validateRankRequest(rankRequest({ limit: 300 }), { nowMs: NOW_MS });
+  const window = validWindow(300);
+  window.items[40] = {
+    ...window.items[40],
+    productId: window.items[0].productId,
+  };
+  const passDigest = stableWindowDigest(window.items, { keyword: window.keyword });
+  window.crossPageProof = {
+    version: STABLE_FULL_WINDOW_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["capture-pass-0001", "capture-pass-0002"],
+    passDigests: [passDigest, passDigest],
+    collisionDigest: stableCollisionDigest(window.items),
+  };
+
+  const result = validateProviderWindow(window, request);
+  assert.equal(result.items.length, 300);
+  assert.equal(result.items[0].productId, result.items[40].productId);
+  assert.deepEqual(result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1));
+  assert.deepEqual(result.crossPageProof, window.crossPageProof);
+});
+
+test("fails closed for missing, forged, stale-pass, and unnecessary stable full-window proofs", () => {
+  const request = validateRankRequest(rankRequest({ limit: 300 }), { nowMs: NOW_MS });
+  const repeated = validWindow(300);
+  repeated.items[40] = { ...repeated.items[40], productId: repeated.items[0].productId };
+  const passDigest = stableWindowDigest(repeated.items, { keyword: repeated.keyword });
+  const proof = {
+    version: STABLE_FULL_WINDOW_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["capture-pass-0001", "capture-pass-0002"],
+    passDigests: [passDigest, passDigest],
+    collisionDigest: stableCollisionDigest(repeated.items),
+  };
+
+  assertContractError(
+    () => validateProviderWindow(repeated, request),
+    "invalid_provider_response",
+    "crossPageProof",
+  );
+  assertContractError(
+    () => validateProviderWindow({ ...repeated, crossPageProof: { ...proof, collisionDigest: "0".repeat(64) } }, request),
+    "invalid_provider_response",
+    "crossPageProof.mismatch",
+  );
+  assertContractError(
+    () => validateProviderWindow({
+      ...repeated,
+      crossPageProof: { ...proof, passDigests: [passDigest, "1".repeat(64)] },
+    }, request),
+    "invalid_provider_response",
+    "crossPageProof.mismatch",
+  );
+  assertContractError(
+    () => validateProviderWindow({
+      ...repeated,
+      crossPageProof: { ...proof, captureIds: ["capture-pass-0001", "capture-pass-0001"] },
+    }, request),
+    "invalid_provider_response",
+    "crossPageProof",
+  );
+  assertContractError(
+    () => validateProviderWindow({ ...validWindow(300), crossPageProof: proof }, request),
+    "invalid_provider_response",
+    "crossPageProof.unexpected",
   );
 });
 

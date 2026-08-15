@@ -1,16 +1,18 @@
 # Next Actions
 
-기준일: 2026-08-14
+기준일: 2026-08-15
 
-## 진행 중: N쇼핑 v1.1.7 오류 범위 축소·증거 장부·24시간 재검증
+## 진행 중: N쇼핑 v1.1.8 안정 중복 증명·24시간 재검증
 
-- Production·DB runtime gate·Windows 실행 모듈을 `1.1.7`로 동기화했고, manifest·HKCU·누락 모듈·fingerprint를 모두 검증했습니다. 복구 terminal 이후 자연 순환에서 원자 300 저장과 lane·lease 해제를 확인했습니다.
+- 현재 Production·DB·Windows는 검증된 `1.1.7`이며, `1.1.8`은 로컬 배포 후보입니다. 전체 `check:release`, server contract 55/55, 관련 회귀 270/270, 보호 잠금과 diff 검사를 통과했지만 아직 운영에 반영하지 않았습니다.
 - 복구 terminal 기준은 2026-08-14 18:17:51 KST입니다. 2026-08-15 18:17:51 KST 전에는 cycle당 1회·신규 우선 후 cursor 복귀·전체 완료 뒤 다음 cycle·격리 skip·중복 0·원자 300만 저장을 최종 합격으로 판정하지 않습니다.
-- same-page `duplicate_row`는 네이버 SSR의 절대 순위 1~300을 그대로 보존해 정상 저장 대상으로 바꾸고, cross-page `page_overlap`은 계속 제한 재수집 뒤 fail-closed합니다. 행 삭제·순위 압축은 하지 않습니다.
+- cycle #9은 10:40 KST 완료됐습니다. 시작 roster 57 group/72 tracker/9 agency 중 시작 시 격리 1 tracker를 건너뛰고 56 group/71 tracker를 각 1회 claim했으며 group 중복은 0입니다. 성공 31 group/42 snapshot/31 collection은 모두 광고 제외 `checkedCount=300`이고, 실패 25 group은 snapshot을 저장하지 않았습니다.
+- 미갱신의 직접 원인은 실패 25 group 중 23 group을 차지한 cross-page `page_overlap`입니다. `1.1.8`은 이를 행 삭제·순위 압축으로 숨기지 않고, 독립 전체 1~8페이지 두 번의 300개 절대 순위·강한 식별자 digest가 완전히 같을 때만 저장합니다. 한 슬롯이라도 다르면 기존처럼 fail-closed합니다.
+- 검증된 stable proof는 snapshot·ledger에 버전명만 남기며 capture ID와 digest는 저장하지 않습니다. 증명 실패는 해당 tracker만 30분 격리하고 global circuit과 다음 순환은 계속합니다.
 - `provider_partial_window`는 tracker 단위로 격리해 한 키워드의 300 미달이 전체 광고주 circuit을 열지 않게 합니다. 실제 300 미달 키워드는 last-good을 유지하며 성공으로 표시하지 않습니다.
 - scheduler event ledger와 malformed-row 범위·시계오차·request ID·4MiB 상한·부분 submit 보완은 Production에 반영됐습니다. cycle #8 완료→#9 시작, 신규 1회 우선→cursor 복귀를 장부로 확인했습니다.
-- 2026-08-15 04:40 KST cycle #9은 13/57 group·16 tracker·8/9 agency를 처리했습니다. 같은-cycle 중복 0, snapshot 7/collection 6의 원자 300 위반 0이며 circuit closed·lane/run/lease null입니다. cross-page 중복은 해당 tracker만 30분 격리하고 성공으로 표시하지 않습니다.
-- 남은 과제는 cycle #9 전체 coverage, 격리 만료 후 자연 재진입, 24시간 종료 시점의 stale·오류·광고주별 coverage 최종 판정입니다. 강제 wake·격리 해제·cursor 변경은 하지 않습니다.
+- 다음 단계는 `1.1.8` 코드 배포→세 migration 적용→Windows exact updater·확장 재로드→기존 page-overlap 대상의 자연 재진입 또는 승인된 1회 복구 증명입니다. 새 `pw-chrome-*`, atomic300, proof version 장부, lane·lease 해제를 확인하기 전에는 정상화 완료로 판정하지 않습니다.
+- 24시간 종료 시점에는 cycle당 1회·신규 우선 후 cursor 복귀·전체 완료 뒤 다음 cycle·격리 skip·중복 0·atomic300만 저장과 오류 잔존을 다시 판정합니다. 강제 wake·격리 해제·cursor 변경은 하지 않습니다.
 
 ## 완료: N쇼핑 중복 오류 장기 격리 해소
 

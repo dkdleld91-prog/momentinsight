@@ -8,6 +8,10 @@ import {
 } from "../local-worker-auth.mjs";
 import { validateLocalWorkerJob } from "../naver-shopping/local-worker-contract.mjs";
 import { handleLocalWorkerRequest } from "./naver-shopping-local-worker.mjs";
+import {
+  stableCollisionDigest,
+  stableWindowDigest,
+} from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 const SECRET = "test-local-worker-secret-that-is-longer-than-32-bytes";
 const ENDPOINT = "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker";
@@ -35,7 +39,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.7",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.8",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -278,7 +282,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.7");
+          assert.equal(args.p_runtime_version, "1.1.8");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -378,7 +382,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.7",
+      runtimeVersion: "1.1.8",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -438,7 +442,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.7",
+      runtimeVersion: "1.1.8",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -479,7 +483,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.7",
+      runtimeVersion: "1.1.8",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1450,6 +1454,64 @@ test("submits one strict 300 window at the shared signed-worker clock skew", asy
   });
 });
 
+test("persists only the verified stable proof version in the snapshot evidence", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const window = completeWindow();
+    window.items = window.items.map((item) => ({ ...item, productType: 2 }));
+    window.items[40] = {
+      ...window.items[40],
+      sellerProductId: window.items[0].sellerProductId,
+      link: window.items[0].link,
+    };
+    const passDigest = stableWindowDigest(window.items, { keyword: window.keyword });
+    window.crossPageProof = {
+      version: "stable-full-window-v1",
+      passCount: 2,
+      pageCount: 8,
+      pageSize: 40,
+      captureIds: ["capture-pass-0001", "capture-pass-0002"],
+      passDigests: [passDigest, passDigest],
+      collisionDigest: stableCollisionDigest(window.items),
+    };
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let snapshot = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          assert.equal(name, "mi_commit_naver_shopping_worker_result");
+          snapshot = args.p_snapshot;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "submit", job, window }),
+      ctx,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(snapshot.item.crossPageProofVersion, "stable-full-window-v1");
+    assert.equal("crossPageProof" in snapshot.item, false);
+    assert.equal(JSON.stringify(snapshot).includes("capture-pass-0001"), false);
+    assert.equal(JSON.stringify(snapshot).includes(passDigest), false);
+  });
+});
+
 test("submits nine same-keyword agency claims while loading catalog history in 8 plus 1 chunks", async () => {
   await withWorkerEnv(async () => {
     const rows = Array.from({ length: 9 }, (_, index) => tracker({
@@ -1837,13 +1899,13 @@ test("runtime 1.1.4 independently gates bounded coherent boundary recovery", () 
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
 });
 
-test("runtime 1.1.7 independently gates worker hardening and tracker-isolated failures", () => {
+test("runtime 1.1.8 independently gates stable full-window proof and tracker-isolated failures", () => {
   const sql = fs.readFileSync(new URL(
-    "../../../supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
+    "../../../supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql",
     import.meta.url,
   ), "utf8");
-  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.7'/iu);
-  assert.match(sql, /current_row\.runtime_version = '1\.1\.7'/iu);
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.8'/iu);
+  assert.match(sql, /current_row\.runtime_version = '1\.1\.8'/iu);
   assert.match(sql, /current_row\.last_checked_count = 300/iu);
   assert.match(sql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
   assert.match(sql, /security invoker/iu);
@@ -1851,4 +1913,34 @@ test("runtime 1.1.7 independently gates worker hardening and tracker-isolated fa
   assert.match(sql, /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]+from public, anon, authenticated, service_role/iu);
   assert.match(sql, /grant execute on function public\.mi_set_naver_shopping_worker_cadence[\s\S]+to service_role/iu);
   assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("stable proof ledger records only the verified protocol version", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /mi_internal\.mi_audit_naver_shopping_snapshot_commit/iu);
+  assert.match(sql, /snapshot\.item ->> 'crossPageProofVersion' = 'stable-full-window-v1'/iu);
+  assert.match(sql, /snapshot\.checked_count = 300/iu);
+  assert.match(sql, /security definer/iu);
+  assert.match(sql, /set search_path = ''/iu);
+  assert.match(sql, /revoke all on function mi_internal\.mi_audit_naver_shopping_snapshot_commit\(\)[\s\S]+from public, anon, authenticated, service_role/iu);
+  assert.doesNotMatch(sql, /captureIds|passDigests|collisionDigest/u);
+});
+
+test("stable proof mismatch remains tracker-scoped with an exact 30-minute retry", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /'provider_duplicate_identity',[\s\S]+?'provider_stable_window_unproven'/iu);
+  assert.match(sql, /then v_now \+ interval '30 minutes'/iu);
+  assert.match(sql, /normalized_scope = 'tracker'/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /revoke all on function public\.mi_record_naver_shopping_worker_failure[\s\S]+from public, anon, authenticated, service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_record_naver_shopping_worker_failure[\s\S]+to service_role/iu);
+  assert.match(sql, /mi_release_naver_shopping_worker_lane[\s\S]+auto_navigation_recovered[\s\S]+provider_stable_window_unproven/iu);
+  assert.match(sql, /grant execute on function public\.mi_release_naver_shopping_worker_lane[\s\S]+to service_role/iu);
 });

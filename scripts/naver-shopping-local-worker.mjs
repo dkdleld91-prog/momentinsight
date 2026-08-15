@@ -64,6 +64,7 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_next_data_schema_drift",
   "naver_next_data_rank_drift",
   "provider_duplicate_identity",
+  "provider_stable_window_unproven",
   "provider_row_invalid",
   "provider_row_title_missing",
   "provider_row_identity_missing",
@@ -95,6 +96,7 @@ const SAFE_DETAIL_FAILURE_CODES = new Set([
 const TRACKER_ISOLATED_FAILURE_CODES = new Set([
   "local_worker_submit_body_too_large",
   "provider_duplicate_identity",
+  "provider_stable_window_unproven",
   "provider_partial_window",
   "provider_row_invalid",
   "provider_row_title_missing",
@@ -137,7 +139,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.7";
+const EXPECTED_RUNTIME_VERSION = "1.1.8";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -259,6 +261,12 @@ function safeFailureCode(error) {
     const detail = String(error?.detail || "").trim().toLowerCase();
     return /^(?:[0-9]|[1-9][0-9]{1,2})\/300$/u.test(detail)
       ? `${baseCode}:${detail.replace("/", "_")}`
+      : baseCode;
+  }
+  if (baseCode === "provider_stable_window_unproven") {
+    const detail = String(error?.detail || "").trim().toLowerCase();
+    return /^(?:capture_ids|digest_mismatch|page_budget)$/u.test(detail)
+      ? `${baseCode}:${detail}`
       : baseCode;
   }
   if (!SAFE_FAILURE_CODES.has(code) && !INTERNAL_FAILURE_CODE_PATTERN.test(code)) {

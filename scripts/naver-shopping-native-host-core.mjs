@@ -4,12 +4,14 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  STABLE_FULL_WINDOW_PROOF_VERSION,
   validateProviderWindow,
   validateRankRequest,
 } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 import {
   ProviderError,
   appendNormalizedPage,
+  buildStableFullWindowProof,
   parseNaverNextDataPage,
 } from "../tools/naver-shopping-rank-collector/src/provider.mjs";
 
@@ -20,7 +22,6 @@ const PAGE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
-const BOUNDARY_RECOLLECTION_ATTEMPTS = 4;
 const DEADLINE_GUARD_MS = 3_000;
 export const COLLECTION_PROTOCOL = "range-v1";
 
@@ -137,7 +138,7 @@ function identityDigest(items) {
   return crypto.createHash("sha256").update(identity, "utf8").digest("hex").slice(0, 20);
 }
 
-export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
+function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   const nowMs = Number(options.nowMs ?? Date.now());
   const request = validateRankRequest(rawRequest, { nowMs });
   if (request.limit !== REQUIRED_LIMIT) throw new ProviderError("native_host_limit_invalid");
@@ -174,6 +175,7 @@ export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
     appendNormalizedPage(state, parsed, {
       pageIndex: page.pageIndex,
       limit: request.limit,
+      crossPageMode: options.crossPageMode || "reject",
     });
     sourceExhausted = parsed.sourceExhausted === true;
   }
@@ -186,7 +188,9 @@ export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
     marketTotalVerified = false;
   }
   const collectedAt = new Date(nowMs).toISOString();
-  return validateProviderWindow({
+  return {
+    request,
+    payload: {
     ok: true,
     schemaVersion: SCHEMA_VERSION,
     keyword: request.keyword,
@@ -203,7 +207,14 @@ export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
     rawCount: state.rawCount,
     excludedAdCount: state.excludedAdCount,
     items: state.items,
-  }, request);
+    ...(options.crossPageProof ? { crossPageProof: options.crossPageProof } : {}),
+    },
+  };
+}
+
+export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
+  const { request, payload } = nativeWindowPayloadFromPages(rawRequest, rawPages, options);
+  return validateProviderWindow(payload, request);
 }
 
 export function buildNativeWindowFromRows(rawRequest, rawRows, options = {}) {
@@ -265,37 +276,6 @@ function overlapBoundary(error) {
   return { pageStart: originPage, pageEnd: MAX_PAGES };
 }
 
-function mergePageRange(basePages, replacementPages, {
-  pageStart,
-  pageEnd,
-  allowFullCompatibility = false,
-}) {
-  if (!Array.isArray(basePages) || basePages.length !== MAX_PAGES || !Array.isArray(replacementPages)) {
-    throw new ProviderError("native_host_pages_incomplete");
-  }
-  const expectedCount = pageEnd - pageStart + 1;
-  const received = replacementPages.map(pagePayload);
-  const exactRange = received.length === expectedCount
-    && received.every((page, index) => page.pageIndex === pageStart + index);
-  const fullCompatibilityWindow = pageStart > 1
-    && received.length === MAX_PAGES
-    && received.every((page, index) => page.pageIndex === index + 1);
-  if (!exactRange && !(allowFullCompatibility && fullCompatibilityWindow)) {
-    throw new ProviderError("native_host_pages_out_of_order", `range:${pageStart}-${pageEnd}`);
-  }
-  const merged = fullCompatibilityWindow
-    ? received
-    : basePages.map(pagePayload);
-  if (!fullCompatibilityWindow) {
-    for (const page of received) merged[page.pageIndex - 1] = page;
-  }
-  return {
-    pages: merged,
-    navigatedPages: received.length,
-    fullCompatibilityWindow,
-  };
-}
-
 export function createChromeNativeProvider(options = {}) {
   if (typeof options.exchange !== "function") {
     throw new ProviderError("native_host_exchange_missing");
@@ -316,61 +296,75 @@ export function createChromeNativeProvider(options = {}) {
         });
       }
       let latestPages = response.pages;
-      let latestError;
-      let latestOverlap;
       try {
         return buildNativeWindowFromPages(request, latestPages, {
           nowMs: options.nowMs?.() ?? Date.now(),
         });
       } catch (error) {
-        latestError = error;
-        latestOverlap = overlapBoundary(error);
-        if (!latestOverlap) throw error;
+        if (!overlapBoundary(error)) throw error;
       }
 
-      // Naver can update a relevance list while pages are being traversed. If
-      // a complete pass crosses a moving boundary, replace only the affected
-      // suffix and revalidate the entire 1..300 window. No row is skipped or
-      // compressed; only a fully coherent merged window can pass. The combined
-      // navigation budget is hard-capped so recovery cannot outlive the lease.
-      for (let attempt = 1; attempt <= BOUNDARY_RECOLLECTION_ATTEMPTS; attempt += 1) {
-        const requestedPages = latestOverlap.pageEnd - latestOverlap.pageStart + 1;
-        if (navigatedPages + requestedPages > PAGE_NAVIGATION_BUDGET) throw latestError;
-        const deadlineAt = Date.parse(String(request.deadlineAt || ""));
-        if (!Number.isFinite(deadlineAt)
-          || (options.nowMs?.() ?? Date.now()) + DEADLINE_GUARD_MS >= deadlineAt) {
-          throw new ProviderError("provider_deadline_exceeded");
-        }
-        const response = await options.exchange({
-          type: "collect",
-          request,
-          pageStart: latestOverlap.pageStart,
-          pageEnd: latestOverlap.pageEnd,
-          allowFullCompatibility: attempt === 1,
-        });
-        if (!response || response.type !== "collection" || Array.isArray(response.rows)) {
-          throw new ProviderError("native_host_collection_invalid");
-        }
-        const merged = mergePageRange(latestPages, response.pages, {
-          ...latestOverlap,
-          allowFullCompatibility: attempt === 1,
-        });
-        navigatedPages += merged.navigatedPages;
-        if (navigatedPages > PAGE_NAVIGATION_BUDGET) throw latestError;
-        latestPages = merged.pages;
-        try {
-          return buildNativeWindowFromPages(request, latestPages, {
-            nowMs: options.nowMs?.() ?? Date.now(),
-          });
-        } catch (error) {
-          latestError = error;
-          latestOverlap = overlapBoundary(error);
-          if (merged.fullCompatibilityWindow
-            || !latestOverlap
-            || attempt >= BOUNDARY_RECOLLECTION_ATTEMPTS) throw error;
-        }
+      // A cross-page duplicate can be either a moving pagination boundary or
+      // a real Naver rank slot repeated across pages. Never delete or compress
+      // it. Capture one independent full 1..8 pass and accept the duplicate
+      // only when every absolute rank slot is byte-stable across both passes.
+      const deadlineAt = Date.parse(String(request.deadlineAt || ""));
+      if (!Number.isFinite(deadlineAt)
+        || (options.nowMs?.() ?? Date.now()) + DEADLINE_GUARD_MS >= deadlineAt) {
+        throw new ProviderError("provider_deadline_exceeded");
       }
-      throw latestError;
+      if (navigatedPages + MAX_PAGES > PAGE_NAVIGATION_BUDGET) {
+        throw new ProviderError("provider_stable_window_unproven", "page_budget");
+      }
+      const secondResponse = await options.exchange({
+        type: "collect",
+        request,
+        pageStart: 1,
+        pageEnd: MAX_PAGES,
+        stableProofPass: 2,
+      });
+      if (!secondResponse
+        || secondResponse.type !== "collection"
+        || Array.isArray(secondResponse.rows)
+        || !Array.isArray(secondResponse.pages)) {
+        throw new ProviderError("native_host_collection_invalid");
+      }
+      navigatedPages += secondResponse.pages.length;
+      if (navigatedPages !== PAGE_NAVIGATION_BUDGET) {
+        throw new ProviderError("provider_stable_window_unproven", "page_budget");
+      }
+
+      // If the independent pass no longer overlaps, it is already a strict
+      // coherent 300-window and needs no special proof.
+      try {
+        return buildNativeWindowFromPages(request, secondResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+        });
+      } catch (error) {
+        if (!overlapBoundary(error)) throw error;
+      }
+
+      const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {
+        nowMs: options.nowMs?.() ?? Date.now(),
+        crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+      }).payload;
+      const secondCandidate = nativeWindowPayloadFromPages(request, secondResponse.pages, {
+        nowMs: options.nowMs?.() ?? Date.now(),
+        crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+      }).payload;
+      const crossPageProof = buildStableFullWindowProof(
+        firstCandidate.items,
+        secondCandidate.items,
+        {
+          keyword: request.keyword,
+          captureIds: [response.captureId, secondResponse.captureId],
+        },
+      );
+      return buildNativeWindowFromPages(request, secondResponse.pages, {
+        nowMs: options.nowMs?.() ?? Date.now(),
+        crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+        crossPageProof,
+      });
     },
     async close() {},
   };

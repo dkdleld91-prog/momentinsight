@@ -382,195 +382,132 @@ test("native provider repairs an early transient overlap within the 16-page budg
   ]);
 });
 
-test("native provider repairs a page 6-7 overlap by recollecting only the coherent suffix", async () => {
+test("native provider repairs a transient overlap with one independent full pass", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const messages = [];
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
     async exchange(message) {
       messages.push(message);
-      if (messages.length === 1) {
-        return {
-          type: "collection",
-          pages: overlapPages({ originPage: 6, collisionPage: 7 }),
-        };
-      }
       return {
         type: "collection",
-        pages: Array.from({ length: 3 }, (_, index) => page(index + 6)),
-      };
-    },
-  });
-
-  const result = await provider.collect(request(nowMs));
-  assert.equal(result.checkedCount, 300);
-  assert.equal(result.items[239].organicRank, 240);
-  assert.equal(result.items[240].organicRank, 241);
-  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
-    [undefined, undefined],
-    [6, 8],
-  ]);
-});
-
-test("native provider safely accepts one full compatibility window for a suffix request", async () => {
-  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  const messages = [];
-  const provider = createChromeNativeProvider({
-    nowMs: () => nowMs,
-    async exchange(message) {
-      messages.push(message);
-      const compatibilityPages = Array.from({ length: 8 }, (_, index) => page(index + 1));
-      const firstPage = JSON.parse(compatibilityPages[0].nextDataText);
-      firstPage.props.pageProps.compositeList.list[4].item.mallProductId = "15500000001";
-      firstPage.props.pageProps.compositeList.list[4].item.mallPcUrl = "https://smartstore.naver.com/example/products/15500000001";
-      compatibilityPages[0].nextDataText = JSON.stringify(firstPage);
-      return {
-        type: "collection",
+        captureId: `capture-pass-${messages.length}`,
         pages: messages.length === 1
           ? overlapPages({ originPage: 6, collisionPage: 7 })
-          : compatibilityPages,
+          : Array.from({ length: 8 }, (_, index) => page(index + 1)),
       };
     },
   });
 
   const result = await provider.collect(request(nowMs));
   assert.equal(result.checkedCount, 300);
-  assert.equal(result.items[0].sellerProductId, "15500000001");
+  assert.equal(result.crossPageProof, undefined);
   assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
     [undefined, undefined],
-    [6, 8],
+    [1, 8],
   ]);
 });
 
-test("native provider charges a full compatibility response once and retains its typed overlap", async () => {
+test("native provider accepts a stable cross-page rank slot only after two identical full passes", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return {
+        type: "collection",
+        captureId: `capture-pass-${messages.length}`,
+        pages: overlapPages({ originPage: 6, collisionPage: 7 }),
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.crossPageProof?.version, "stable-full-window-v1");
+  assert.deepEqual(result.crossPageProof?.captureIds, ["capture-pass-1", "capture-pass-2"]);
+  assert.equal(result.items[200].sellerProductId, result.items[240].sellerProductId);
+  assert.deepEqual(result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1));
+  assert.deepEqual(messages.map(({ pageStart, pageEnd, stableProofPass }) => (
+    [pageStart, pageEnd, stableProofPass]
+  )), [
+    [undefined, undefined, undefined],
+    [1, 8, 2],
+  ]);
+});
+
+test("native provider rejects a one-slot drift between stable proof passes", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   let exchanges = 0;
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
     async exchange() {
       exchanges += 1;
-      return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
+      const pages = overlapPages({ originPage: 6, collisionPage: 7 });
+      if (exchanges === 2) {
+        const changed = JSON.parse(pages[1].nextDataText);
+        changed.props.pageProps.compositeList.list[10].item.mallProductId = "19999999999";
+        changed.props.pageProps.compositeList.list[10].item.mallPcUrl = "https://smartstore.naver.com/example/products/19999999999";
+        pages[1].nextDataText = JSON.stringify(changed);
+      }
+      return { type: "collection", captureId: `capture-pass-${exchanges}`, pages };
     },
   });
 
   await assert.rejects(
     () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "7:4:page_overlap:6",
+    (error) => error?.code === "provider_stable_window_unproven"
+      && error?.detail === "digest_mismatch",
   );
   assert.equal(exchanges, 2);
 });
 
-test("native provider rejects a full compatibility window after the first suffix", async () => {
+test("native provider rejects replayed capture identity and never starts a third pass", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   let exchanges = 0;
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
     async exchange() {
       exchanges += 1;
-      const overlap = overlapPages({ originPage: 7, collisionPage: 8 });
       return {
         type: "collection",
-        pages: exchanges === 2 ? overlap.slice(6, 8) : overlap,
+        captureId: "capture-replayed",
+        pages: overlapPages({ originPage: 7, collisionPage: 8 }),
       };
     },
   });
 
   await assert.rejects(
     () => provider.collect(request(nowMs)),
-    (error) => error?.code === "native_host_pages_out_of_order"
-      && error?.detail === "range:7-8",
+    (error) => error?.code === "provider_stable_window_unproven"
+      && error?.detail === "capture_ids",
   );
-  assert.equal(exchanges, 3);
+  assert.equal(exchanges, 2);
 });
 
-test("native provider can spend four two-page suffix attempts but never exceed 16 pages", async () => {
+test("native provider requires the second proof pass to contain all eight pages", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  const messages = [];
+  let exchanges = 0;
   const provider = createChromeNativeProvider({
     nowMs: () => nowMs,
-    async exchange(message) {
-      messages.push(message);
-      const overlap = overlapPages({ originPage: 7, collisionPage: 8 });
+    async exchange() {
+      exchanges += 1;
       return {
         type: "collection",
-        pages: message.pageStart ? overlap.slice(6, 8) : overlap,
+        captureId: `capture-pass-${exchanges}`,
+        pages: overlapPages({ originPage: 6, collisionPage: 7 }).slice(0, exchanges === 1 ? 8 : 7),
       };
     },
   });
 
   await assert.rejects(
     () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "8:4:page_overlap:7",
+    (error) => error?.code === "provider_stable_window_unproven"
+      && error?.detail === "page_budget",
   );
-  assert.equal(messages.length, 5);
-  assert.deepEqual(messages.slice(1).map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
-    [7, 8],
-    [7, 8],
-    [7, 8],
-    [7, 8],
-  ]);
-  assert.deepEqual(
-    messages.slice(1).map(({ allowFullCompatibility }) => allowFullCompatibility),
-    [true, false, false, false],
-  );
-});
-
-test("native provider follows one evolving overlap boundary within a finite suffix budget", async () => {
-  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  const messages = [];
-  const provider = createChromeNativeProvider({
-    nowMs: () => nowMs,
-    async exchange(message) {
-      messages.push(message);
-      if (messages.length === 1) {
-        return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
-      }
-      if (messages.length === 2) {
-        return {
-          type: "collection",
-          pages: overlapPages({ originPage: 7, collisionPage: 8 }).slice(5, 8),
-        };
-      }
-      return {
-        type: "collection",
-        pages: Array.from({ length: 2 }, (_, index) => page(index + 7)),
-      };
-    },
-  });
-
-  assert.equal((await provider.collect(request(nowMs))).checkedCount, 300);
-  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
-    [undefined, undefined],
-    [6, 8],
-    [7, 8],
-  ]);
-});
-
-test("native provider retains the last typed overlap when an evolving range exceeds 16 pages", async () => {
-  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  const messages = [];
-  const provider = createChromeNativeProvider({
-    nowMs: () => nowMs,
-    async exchange(message) {
-      messages.push(message);
-      if (messages.length === 1) {
-        return { type: "collection", pages: overlapPages({ originPage: 6, collisionPage: 7 }) };
-      }
-      return {
-        type: "collection",
-        pages: overlapPages({ originPage: 1, collisionPage: 6 }).slice(5, 8),
-      };
-    },
-  });
-
-  await assert.rejects(
-    () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "6:4:page_overlap:1",
-  );
-  assert.equal(messages.length, 2);
+  assert.equal(exchanges, 2);
 });
 
 test("native provider does not start a suffix exchange near the absolute request deadline", async () => {
@@ -590,33 +527,6 @@ test("native provider does not start a suffix exchange near the absolute request
     (error) => error?.code === "provider_deadline_exceeded",
   );
   assert.equal(exchanges, 1);
-});
-
-test("native provider bounds repeated boundary recollection without skipping a duplicate row", async () => {
-  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
-  const messages = [];
-  const provider = createChromeNativeProvider({
-    nowMs: () => nowMs,
-    async exchange(message) {
-      messages.push(message);
-      const pages = overlapPages({ originPage: 6, collisionPage: 7 });
-      return {
-        type: "collection",
-        pages: message.pageStart ? pages.slice(message.pageStart - 1, message.pageEnd) : pages,
-      };
-    },
-  });
-
-  await assert.rejects(
-    () => provider.collect(request(nowMs)),
-    (error) => error?.code === "provider_duplicate_identity"
-      && error?.detail === "7:4:page_overlap:6",
-  );
-  assert.equal(messages.length, 3);
-  assert.deepEqual(messages.slice(1).map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
-    [6, 8],
-    [6, 8],
-  ]);
 });
 
 test("native provider preserves a same-page duplicate rank slot without retrying or compressing", async () => {
@@ -726,7 +636,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.7");
+  assert.equal(manifest.version, "1.1.8");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -788,8 +698,11 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(nativeHost, /nextMessage\(wait\.timeoutMs, wait\.timeoutCode\)/u);
   assert.match(nativeHostCore, /options\.allowFullCompatibility === true[\s\S]{0,100}requestedPageStart > 1[\s\S]{0,100}responsePageIndex === 1/u);
   assert.match(nativeHostCore, /responsePageStart = 1;[\s\S]{0,80}responsePageEnd = MAX_PAGES/u);
-  assert.match(nativeHostCore, /BOUNDARY_RECOLLECTION_ATTEMPTS = 4/u);
   assert.match(nativeHostCore, /PAGE_NAVIGATION_BUDGET = 16/u);
+  assert.match(nativeHostCore, /stableProofPass: 2/u);
+  assert.match(nativeHostCore, /buildStableFullWindowProof/u);
+  assert.match(nativeHostCore, /pageStart: 1,[\s\S]{0,60}pageEnd: MAX_PAGES/u);
+  assert.match(nativeHost, /captureId: requestId/u);
   assert.match(nativeHost, /allowFullCompatibility: message\.allowFullCompatibility === true/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\/naver-shopping-native-host-core\.mjs", import\.meta\.url\)\)/u);
   assert.match(nativeHost, /sha256File\(new URL\("\.\.\/src\/server\/local-worker-auth\.mjs", import\.meta\.url\)\)/u);
@@ -1175,7 +1088,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.7");
+  assert.equal(manifest.version, "1.1.8");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1334,7 +1247,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
       nativeMessageFrame({
         action: "run",
         trigger: "rank-remote",
-        runtimeVersion: "1.1.7",
+        runtimeVersion: "1.1.8",
         serviceWorkerSha256: "0".repeat(64),
       }),
       nativeMessageFrame({ action: "ready_ack" }),
@@ -1352,7 +1265,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.7",
+    runtimeVersion: "1.1.8",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

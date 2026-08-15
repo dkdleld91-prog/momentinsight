@@ -14,10 +14,19 @@ import {
   collectMobileTopFallbackWindow,
   MOBILE_TOP_FALLBACK_SOURCE,
 } from "../naver-shopping/mobile-top-fallback.mjs";
+import {
+  stableCollisionDigest,
+  stableWindowDigest,
+} from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA = "mi.naver-shopping-organic-window.v1";
 const NAVER_SHOPPING_ORGANIC_WINDOW_MAX = 300;
+const STABLE_CROSS_PAGE_PROOF_VERSION = "stable-full-window-v1";
+const STABLE_CROSS_PAGE_PASS_COUNT = 2;
+const STABLE_CROSS_PAGE_PAGE_COUNT = 8;
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
+const STABLE_CAPTURE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const SHOPPING_PROVIDER_CACHE_TTL_MS = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_TTL_MS || 12 * 60_000);
@@ -491,6 +500,59 @@ async function fetchStoreMetadata(targetUrl, productId, options = {}) {
   });
 }
 
+function trustedStableCrossPageProof(proof, items, keyword) {
+  if (!proof || typeof proof !== "object" || Array.isArray(proof)) return null;
+  const allowedKeys = new Set([
+    "version",
+    "passCount",
+    "pageCount",
+    "pageSize",
+    "captureIds",
+    "passDigests",
+    "collisionDigest",
+  ]);
+  if (Object.keys(proof).some((key) => !allowedKeys.has(key))) return null;
+  const captureIds = Array.isArray(proof.captureIds) ? proof.captureIds : [];
+  const passDigests = Array.isArray(proof.passDigests) ? proof.passDigests : [];
+  if (proof.version !== STABLE_CROSS_PAGE_PROOF_VERSION
+    || proof.passCount !== STABLE_CROSS_PAGE_PASS_COUNT
+    || proof.pageCount !== STABLE_CROSS_PAGE_PAGE_COUNT
+    || proof.pageSize !== NAVER_SHOPPING_PAGE_SIZE
+    || captureIds.length !== STABLE_CROSS_PAGE_PASS_COUNT
+    || !captureIds.every((captureId) => (
+      typeof captureId === "string" && STABLE_CAPTURE_ID_PATTERN.test(captureId)
+    ))
+    || captureIds[0] === captureIds[1]
+    || passDigests.length !== STABLE_CROSS_PAGE_PASS_COUNT
+    || !passDigests.every((digest) => (
+      typeof digest === "string" && SHA256_HEX_PATTERN.test(digest)
+    ))
+    || typeof proof.collisionDigest !== "string"
+    || !SHA256_HEX_PATTERN.test(proof.collisionDigest)) {
+    return null;
+  }
+  try {
+    const recalculatedWindowDigest = stableWindowDigest(items, { keyword });
+    const recalculatedCollisionDigest = stableCollisionDigest(items);
+    if (passDigests[0] !== passDigests[1]
+      || passDigests[0] !== recalculatedWindowDigest
+      || proof.collisionDigest !== recalculatedCollisionDigest) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  return {
+    version: STABLE_CROSS_PAGE_PROOF_VERSION,
+    passCount: STABLE_CROSS_PAGE_PASS_COUNT,
+    pageCount: STABLE_CROSS_PAGE_PAGE_COUNT,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: passDigests.slice(),
+    collisionDigest: proof.collisionDigest,
+  };
+}
+
 function trustedCollectorWindow(payload, options = {}) {
   const expectedKeyword = normalizeText(options.keyword);
   const expectedLimit = Math.max(1, Math.min(
@@ -529,7 +591,7 @@ function trustedCollectorWindow(payload, options = {}) {
     && Boolean(normalizeText(item.title))
   ));
   const identityOrigins = new Map();
-  let duplicateIdentity = false;
+  let crossPageDuplicate = false;
   const identityKeys = (items || []).map((item, index) => {
     const isCatalogResult = classifyNaverProductType(item?.productType).isPriceCompareCatalog;
     const sellerProductId = numericId(item?.sellerProductId);
@@ -552,11 +614,20 @@ function trustedCollectorWindow(payload, options = {}) {
       const currentRank = index + 1;
       if (originRank != null
         && Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)
-          !== Math.ceil(currentRank / NAVER_SHOPPING_PAGE_SIZE)) duplicateIdentity = true;
+          !== Math.ceil(currentRank / NAVER_SHOPPING_PAGE_SIZE)) crossPageDuplicate = true;
       if (originRank == null) identityOrigins.set(signal, currentRank);
     }
     return signals.join("|");
   }).filter(Boolean);
+  const stableCrossPageProof = crossPageDuplicate
+    && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && checkedCount === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && items?.length === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    ? trustedStableCrossPageProof(payload?.crossPageProof, items, keyword)
+    : null;
+  const duplicateEvidenceValid = crossPageDuplicate
+    ? Boolean(stableCrossPageProof)
+    : payload?.crossPageProof === undefined;
   const coverageComplete = checkedCount >= expectedLimit || sourceExhausted;
   if (
     !payload
@@ -585,15 +656,16 @@ function trustedCollectorWindow(payload, options = {}) {
     || rawCount < checkedCount + excludedAdCount
     || !sequentialRanks
     || identityKeys.length !== items.length
-    || duplicateIdentity
+    || !duplicateEvidenceValid
     || !complete
     || payload?.partial !== false
     || complete !== coverageComplete
   ) {
     throw new Error("shopping_rank_provider_untrusted_evidence");
   }
+  const { crossPageProof: _untrustedCrossPageProof, ...trustedPayload } = payload;
   return {
-    ...payload,
+    ...trustedPayload,
     schemaVersion,
     keyword,
     collectionId,
@@ -609,6 +681,7 @@ function trustedCollectorWindow(payload, options = {}) {
     sourceExhausted,
     source,
     rankEvidence,
+    ...(stableCrossPageProof ? { crossPageProof: stableCrossPageProof } : {}),
   };
 }
 
@@ -1281,6 +1354,9 @@ async function findRankFromWindow(window, {
   const collectedAt = normalizeText(window.collectedAt);
   const sourceExhausted = window.sourceExhausted === true;
   const complete = window.complete === true;
+  const crossPageProofVersion = window?.crossPageProof?.version === STABLE_CROSS_PAGE_PROOF_VERSION
+    ? STABLE_CROSS_PAGE_PROOF_VERSION
+    : "";
   let organicCheckedCount = 0;
   let rawCheckedCount = Number(window.rawCount || 0);
   let excludedAdCount = Number(window.excludedAdCount || 0);
@@ -1371,6 +1447,7 @@ async function findRankFromWindow(window, {
       adExcluded: true,
       source: providerSource,
       rankEvidence,
+      ...(crossPageProofVersion ? { crossPageProofVersion } : {}),
       collectionId,
       collectedAt,
       complete,
@@ -1443,6 +1520,7 @@ async function findRankFromWindow(window, {
     adExcluded: true,
     source: providerSource,
     rankEvidence,
+    ...(crossPageProofVersion ? { crossPageProofVersion } : {}),
     collectionId,
     collectedAt,
     complete,

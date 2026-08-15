@@ -238,7 +238,11 @@ async function main() {
           continue;
         }
         if (response?.type === "collection_complete") {
-          return { type: "collection", pages: pageCollector.complete() };
+          return {
+            type: "collection",
+            pages: pageCollector.complete(),
+            captureId: requestId,
+          };
         }
         return response;
       }

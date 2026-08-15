@@ -53,6 +53,9 @@ const files = {
   shoppingSchedulerEventLedgerMigration: "supabase/migrations/20260814130826_naver_shopping_scheduler_event_ledger.sql",
   shoppingWorkerRuntime116Migration: "supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql",
   shoppingWorkerRuntime117Migration: "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
+  shoppingWorkerRuntime118Migration: "supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql",
+  shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
+  shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
   shoppingAutoNavigationTrackerFailureRecoveryMigration: "supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
@@ -128,6 +131,9 @@ const shoppingWorkerRuntime115Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingSchedulerEventLedgerMigration = fs.readFileSync(files.shoppingSchedulerEventLedgerMigration, "utf8");
 const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRuntime116Migration, "utf8");
 const shoppingWorkerRuntime117Migration = fs.readFileSync(files.shoppingWorkerRuntime117Migration, "utf8");
+const shoppingWorkerRuntime118Migration = fs.readFileSync(files.shoppingWorkerRuntime118Migration, "utf8");
+const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
+const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = fs.readFileSync(files.shoppingAutoNavigationTrackerFailureRecoveryMigration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
@@ -747,6 +753,51 @@ check(
   files.shoppingWorkerRuntime117Migration,
 );
 check(
+  "N Shopping stable full-window release pins runtime 1.1.8 fail-closed",
+  hasAll(shoppingWorkerRuntime118Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.8'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.8'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime118Migration),
+  files.shoppingWorkerRuntime118Migration,
+);
+check(
+  "N Shopping ledger stores only the verified stable proof protocol version",
+  hasAll(shoppingStableProofLedgerMigration, [
+    /mi_internal\.mi_audit_naver_shopping_snapshot_commit/,
+    /crossPageProofVersion/,
+    /stable-full-window-v1/,
+    /snapshot\.checked_count = 300/,
+    /security definer/,
+    /from public, anon, authenticated, service_role/,
+  ])
+    && !/(?:captureIds|passDigests|collisionDigest)/.test(shoppingStableProofLedgerMigration),
+  files.shoppingStableProofLedgerMigration,
+);
+check(
+  "N Shopping stable proof mismatch stays tracker-scoped with a 30-minute retry",
+  hasAll(shoppingStableProofQuarantineMigration, [
+    /provider_stable_window_unproven/,
+    /normalized_scope = 'tracker'/,
+    /then v_now \+ interval '30 minutes'/,
+    /mi_release_naver_shopping_worker_lane/,
+    /auto_navigation_recovered/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingStableProofQuarantineMigration),
+  files.shoppingStableProofQuarantineMigration,
+);
+check(
   "N Shopping navigation circuit makes one ordered automatic half-open attempt",
   hasAll(shoppingAutoNavigationHalfOpenMigration, [
     /mi_claim_naver_shopping_worker_lane/,
@@ -925,7 +976,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.7"
+  shoppingChromeManifest.version === "1.1.8"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1073,14 +1124,19 @@ check(
   `${files.shoppingCollectorContract}, ${files.shoppingLiveGate}`,
 );
 check(
-  "N Shopping keeps same-page authoritative ranks, rejects cross-page overlap, and isolates strict partials",
+  "N Shopping preserves absolute slots and accepts cross-page overlap only with two stable full-window proofs",
   hasAll(shoppingCollectorProvider, [
     /const collisionKind = origin\?\.pageIndex === pageIndex/,
-    /if \(collisionKind !== "duplicate_row"\)/,
+    /if \(collisionKind !== "duplicate_row" && !preserveStableCrossPage\)/,
     /provider_duplicate_identity/,
+    /buildStableFullWindowProof/,
+    /stableFullWindowEvidence/,
   ])
     && hasAll(shoppingCollectorContract, [
       /const NAVER_SHOPPING_PAGE_SIZE = 40/,
+      /STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1"/,
+      /stableWindowDigest/,
+      /stableCollisionDigest/,
       /const identityOrigins = new Map\(\)/,
       /Math\.ceil\(originRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
       /Math\.ceil\(item\.organicRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
@@ -1089,7 +1145,15 @@ check(
     && hasAll(shoppingRank, [
       /const identityOrigins = new Map\(\)/,
       /Math\.ceil\(originRank \/ NAVER_SHOPPING_PAGE_SIZE\)/,
-      /duplicateIdentity/,
+      /crossPageDuplicate/,
+      /trustedStableCrossPageProof/,
+      /stableWindowDigest/,
+      /stableCollisionDigest/,
+    ])
+    && hasAll(shoppingNativeHostCore, [
+      /PAGE_NAVIGATION_BUDGET = 16/,
+      /stableProofPass: 2/,
+      /buildStableFullWindowProof/,
     ])
     && hasAll(shoppingLocalWorker, [
       /const TRACKER_ISOLATED_FAILURE_CODES = new Set/,
@@ -1097,7 +1161,7 @@ check(
       /"provider_partial_window"/,
       /detail\.replace\("\/", "_"\)/,
     ]),
-  `${files.shoppingCollectorProvider}, ${files.shoppingCollectorContract}, ${files.shoppingRank}, ${files.shoppingLocalWorker}`,
+  `${files.shoppingCollectorProvider}, ${files.shoppingCollectorContract}, ${files.shoppingRank}, ${files.shoppingNativeHostCore}, ${files.shoppingLocalWorker}`,
 );
 check(
   "N Shopping bounds submit payloads and isolates malformed rows without stalling the lane",

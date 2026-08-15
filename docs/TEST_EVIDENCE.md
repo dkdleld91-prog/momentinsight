@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-15 v1.1.8 로컬 배포 후보
+
+- cycle #9 event 591~602와 완료 집계는 roster 57 group/72 tracker/9 agency, 시작 시 격리 1 tracker, 실제 claim 56 distinct group/71 tracker/9 agency, group claim event 56=distinct 56을 기록합니다. 성공 31 group/42 snapshot/31 collection은 atomic300 위반 0이며 실패 25 group은 duplicate 23·navigation 2, snapshot 0입니다. terminal은 circuit closed·processing 0·lane/run/lease null입니다.
+- stable full-window 회귀는 첫 full 1~8페이지와 독립 second full 1~8페이지의 절대 순위 1~300, 강한 identity, product type, linked catalog digest가 일치할 때만 cross-page 반복 슬롯을 그대로 승인합니다. 한 슬롯 drift·capture replay·proof 누락/위조·17번째 페이지·deadline 초과는 submit 없이 fail-closed하고 skip·dedupe·rank compression은 0입니다.
+- 서버는 HMAC submit 뒤 proof schema와 window/collision digest를 독립 재계산합니다. 성공 snapshot·ledger에는 `stable-full-window-v1` 버전만 남고 capture ID·pass digest·collision digest는 남지 않는 테스트를 통과했습니다. proof 불일치는 tracker 범위·30분 quarantine이며 half-open global circuit은 닫힌 상태를 유지합니다.
+- 관련 회귀 270/270, local/server worker 93/93, server contract 55/55, baseline, 보호 잠금 22함수·86파일·36 migration, 전체 `npm run check:release`와 `git diff --check`가 통과했습니다. 세 migration과 Production·Windows `1.1.8` 적용, 실제 page-overlap atomic300 proof는 아직 없으므로 운영 정상화 증거로 계산하지 않습니다.
+
 ## 2026-08-14 준비작업 1번 시작 기준
 
 - 17:27 KST Windows 실기: exact release `1ba1efc45bbe`, expected `1.1.6` 업데이터는 `native_host_manifest_missing`으로 중단됐습니다. `$LOCALAPPDATA\MomentInsight\NaverShoppingBridge\com.momentinsight.naver_shopping.json`의 `Test-Path` 결과도 `False`여서 최초 판단을 레지스트리 단독 누락에서 manifest+등록 동시 누락으로 정정합니다.
@@ -69,6 +76,7 @@
 - event 531~547은 08:50·09:00 KST collection `pw-chrome-1786751453116-74db6318ce6fd780d232`, `pw-chrome-1786752047985-cc4fd002419eb319f608` checkedCount 300 commit과, 08:56·09:10 KST 두 group의 page-overlap failure→30분 quarantine을 교대로 기록합니다. 두 성공은 source/evidence/adExcluded 일치·excludedAdCount 30입니다. 09:18 KST 누적 45 distinct group/58 tracker/9 agency, duplicate 0, snapshot 33/collection 24·atomic violation 0, circuit closed·processing 0·lane/run/lease null입니다.
 - event 549~562는 09:20·09:30·09:40 KST normal 3개 group이 각각 `provider_duplicate_identity:8:5:page_overlap:7`, `provider_duplicate_identity:6:22:page_overlap:5`, `provider_duplicate_identity:4:3:page_overlap:3`으로 fail-closed된 뒤 30분 quarantine된 장부이며 snapshot은 0입니다. 09:50 KST 누적 48 distinct group/61 tracker/9 agency, duplicate 0, snapshot 33/collection 24·atomic violation 0, circuit closed·processing 0·lane/run/lease null입니다.
 - event 564~589는 09:50·10:07·10:10·10:12 KST 네 `normal` group의 checkedCount 300 commit과 10:01 KST `provider_duplicate_identity:7:3:page_overlap:6` failure→30분 quarantine을 기록합니다. 10:16 KST cycle #9은 claim 53회/53 distinct group·68 tracker·9 agency로 duplicate 0이고, snapshot 39/collection 28의 source/evidence/adExcluded/checkedCount atomic violation 0, heartbeat 정상·circuit closed·processing 0·lane/run/lease null입니다.
+- event 591~602는 10:20·10:24·10:30 KST 마지막 3개 normal group의 checkedCount 300 commit과 10:40 KST cycle_completed 장부입니다. cycle #9 roster 57 group/72 tracker 중 roster_state=quarantined 1 tracker를 제외한 56 group/71 tracker·9 agency를 한 번씩 claim했고 group claim event 56=distinct 56입니다. 성공 31 group/42 snapshot/31 collection은 source/evidence/adExcluded/checkedCount atomic violation 0이며, 실패 25 group은 duplicate 23·navigation 2로 snapshot 0, terminal 뒤 circuit closed·processing 0·lane/run/lease null입니다.
 - 17:05 KST SELECT-only: runtime `1.1.5`, heartbeat age 10,741초, cycle #8 active/cursor 400, lane·lease·processing·cooldown 없음입니다. 활성 72 tracker/57 group/9 agency 중 현 cycle claim은 17/14이고 한 agency의 8건은 claim 0입니다. ledger event와 ledger 기준 중복 claim 증거는 0이므로 중복 없음으로 확대 판정하지 않습니다.
 - stale24 28·stale48 27·never-checked 7·quarantine 0이며 오류 분포는 duplicate 26, partial 1, generic collection failure 1, 오류 없음 44입니다. 최근 24시간 `pw-chrome` 49 collection/66 snapshot의 checkedCount/source/adExcluded/rankEvidence 위반은 모두 0이지만 최신 snapshot은 13:56 KST로 멈췄습니다.
 - 원격 Windows 실기에서 확장 UI `1.1.6`을 재로드하고 안전 갱신을 눌러도 새 nonce가 생기지 않았습니다. 최초에는 manifest와 Native Messaging 등록이 모두 없었고, 이를 복원한 뒤에는 host와 Node 프로세스가 잠깐 생성된 다음 위 import 오류로 종료됐습니다. DB는 runtime `1.1.5`·stale heartbeat 상태이므로 `1.1.6` 운영 성공 증거가 아닙니다.

@@ -1,8 +1,15 @@
 # Work Status
 
-기준일: 2026-08-14
+기준일: 2026-08-15
 
 ## 현재 상태
+
+### 2026-08-15 v1.1.8 안정 중복 증명 후보
+
+- cycle #9은 10:40 KST 완료됐습니다. roster 57 group/72 tracker/9 agency 중 시작 시 격리 1 tracker를 건너뛰고 56 group/71 tracker를 각 1회 claim했으며 same-cycle group 중복은 0입니다. 성공 31 group/42 snapshot/31 collection은 전부 source·오가닉 근거·광고 제외·`checkedCount=300`을 충족했고, 실패 25 group은 snapshot 0입니다.
+- 실패 25 group 중 23 group이 cross-page `page_overlap`이라 공정 순환과 별개로 실제 갱신 성공률이 낮다는 결함을 확정했습니다. `1.1.8` 후보는 독립 full 1~8페이지 두 pass가 정확히 같은 절대 순위 300 슬롯과 강한 식별자 digest를 보일 때만 반복 슬롯을 보존해 승인하며, 행 삭제·dedupe·순위 압축은 하지 않습니다.
+- 검증된 증거는 snapshot·append-only ledger에 `crossPageProofVersion=stable-full-window-v1`만 남기고 capture ID·digest는 저장하지 않습니다. proof 불일치·재생·예산 초과는 해당 tracker만 30분 격리하며 half-open에서도 global circuit을 다시 열지 않습니다.
+- 로컬 전체 `npm run check:release`는 exit 0, server contract 55/55, 관련 회귀 270/270, 보호 잠금 22함수·86파일·36 migration, `git diff --check`를 통과했습니다. Production·DB·Windows는 아직 `1.1.7`이므로 `1.1.8` 운영 복구 완료로 판정하지 않습니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 
@@ -73,6 +80,7 @@
 - 08:50·09:00 KST `normal` 2개 group은 각 collection으로 광고 30개 제외·오가닉 300개를 완료했고, 08:56·09:10 KST 사이의 다른 2개 group은 page-overlap으로 snapshot 없이 30분 격리됐습니다. 09:18 KST cycle #9은 45 distinct group/58 tracker/9 agency, 중복 0, snapshot 33/collection 24·atomic 위반 0, 격리 3·processing 0·circuit closed·lane/run/lease null입니다.
 - 09:20~09:41 KST 다음 `normal` 3개 group은 모두 page-overlap으로 snapshot 없이 30분 격리됐습니다. 직전 09:10 실패까지 포함한 연속 실패에도 각 tracker만 종료돼 cycle #9은 48 distinct group/61 tracker/9 agency로 전진했습니다. 09:50 KST 중복 0, snapshot 33/collection 24·atomic 위반 0, 격리 4·processing 0·circuit closed·lane/run/lease null입니다.
 - 09:50~10:12 KST 다음 5개 `normal` group 중 4개가 원자 300으로 완료됐고 10:01 KST page-overlap 1건만 snapshot 없이 30분 격리됐습니다. cycle #9은 53/57 distinct group·68/72 tracker·9/9 agency까지 전진했고 claim 53회=고유 group 53개로 같은-cycle 중복 0입니다. 누적 snapshot 39/collection 28·atomic 위반 0, 10:16 KST heartbeat 정상·processing 0·circuit closed·lane/run/lease null입니다.
+- 10:40 KST cycle #9이 완료됐습니다. roster 57 group/72 tracker 중 시작 당시 격리 1 tracker는 건너뛰고 56 group/71 tracker·9/9 agency를 claim했으며 claim 56회=고유 group 56개로 같은-cycle 중복 0입니다. 31 성공 group은 42 snapshot/31 collection으로 저장됐고 atomic 위반 0, 25 실패 group은 duplicate 23·navigation 2로 snapshot을 남기지 않았습니다. terminal 뒤 processing 0·circuit closed·lane/run/lease null이며, 갱신 실패를 줄이기 위한 독립 full 300 두 pass 안정성 proof를 로컬 구현·검증 중입니다.
 - 17:05 KST SELECT-only 회차에서 작업기 runtime은 계속 `1.1.5`, heartbeat는 10,741초 경과했고 lane·processing·cooldown은 없었습니다. cycle #8은 cursor sort 400, 활성 72 tracker/57 group 중 17 tracker/14 group만 claim된 채 정지했으므로 공정 순환 진행으로 판정하지 않습니다.
 - 활성 상태는 stale24 28, stale48 27, never-checked 7, 현재 격리 0입니다. 최근 24시간 49 collection/66 snapshot은 모두 source·광고 제외·오가닉 근거·`checkedCount=300`을 충족했지만 마지막 snapshot은 13:56 KST이며, 현 cycle ledger event가 없어 24시간 증거 수집도 재개되지 않았습니다.
 - Windows 재연결 후 최초 실기 확인에서 확장 파일은 `1.1.6`이었지만 native manifest와 등록 경로가 모두 없었고, 이를 복구한 뒤에는 updater가 놓친 auth 모듈 때문에 native Node가 import 단계에서 종료됐습니다. DB heartbeat/runtime은 계속 `1.1.5`이며 무한루프나 queue 재선택이 원인은 아닙니다.

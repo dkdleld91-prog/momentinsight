@@ -192,6 +192,9 @@ const shoppingWorkerRuntime115Migration = read("supabase/migrations/202608141100
 const shoppingSchedulerEventLedgerMigration = read("supabase/migrations/20260814130826_naver_shopping_scheduler_event_ledger.sql");
 const shoppingWorkerRuntime116Migration = read("supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql");
 const shoppingWorkerRuntime117Migration = read("supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql");
+const shoppingWorkerRuntime118Migration = read("supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql");
+const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
+const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = read("supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
@@ -1462,7 +1465,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.7"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.8"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1574,6 +1577,24 @@ const checks = {
     && shoppingWorkerRuntime117Migration.includes("security invoker")
     && !shoppingWorkerRuntime117Migration.includes("security definer")
     && shoppingWorkerRuntime117Migration.includes("to service_role")
+    && shoppingWorkerRuntime118Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.8'")
+    && shoppingWorkerRuntime118Migration.includes("current_row.runtime_version = '1.1.8'")
+    && shoppingWorkerRuntime118Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime118Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime118Migration.includes("security invoker")
+    && !shoppingWorkerRuntime118Migration.includes("security definer")
+    && shoppingWorkerRuntime118Migration.includes("to service_role")
+    && shoppingStableProofLedgerMigration.includes("mi_audit_naver_shopping_snapshot_commit")
+    && shoppingStableProofLedgerMigration.includes("crossPageProofVersion")
+    && shoppingStableProofLedgerMigration.includes("stable-full-window-v1")
+    && !/(?:captureIds|passDigests|collisionDigest)/u.test(shoppingStableProofLedgerMigration)
+    && shoppingStableProofQuarantineMigration.includes("provider_stable_window_unproven")
+    && shoppingStableProofQuarantineMigration.includes("then v_now + interval '30 minutes'")
+    && shoppingStableProofQuarantineMigration.includes("security invoker")
+    && !shoppingStableProofQuarantineMigration.includes("security definer")
+    && shoppingStableProofQuarantineMigration.includes("mi_release_naver_shopping_worker_lane")
+    && shoppingStableProofQuarantineMigration.includes("auto_navigation_recovered")
+    && shoppingStableProofQuarantineMigration.includes("to service_role")
     && shoppingAutoNavigationHalfOpenMigration.includes("mi_claim_naver_shopping_worker_lane")
     && shoppingAutoNavigationHalfOpenMigration.includes("normalized_worker_role = 'primary'")
     && shoppingAutoNavigationHalfOpenMigration.includes("circuit_reason = 'navigating:naver_page_navigation_failed'")
@@ -1642,7 +1663,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.7"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.8"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
@@ -1705,12 +1726,23 @@ const checks = {
     && shoppingCollectorLiveCheck.includes("window.complete !== true")
     && shoppingCollectorLiveCheck.includes("window.checkedCount !== limit")
     && shoppingCollectorLiveCheck.includes("collector_window_short"),
-  shoppingCollectorSamePageRankSlotsStayAtomic: shoppingCollectorProvider.includes('if (collisionKind !== "duplicate_row")')
+  shoppingCollectorSamePageRankSlotsStayAtomic: shoppingCollectorProvider.includes('if (collisionKind !== "duplicate_row" && !preserveStableCrossPage)')
     && shoppingCollectorProvider.includes('"provider_duplicate_identity"')
+    && shoppingCollectorProvider.includes("buildStableFullWindowProof")
+    && shoppingCollectorProvider.includes("stableFullWindowEvidence")
     && shoppingCollectorContract.includes("const NAVER_SHOPPING_PAGE_SIZE = 40")
+    && shoppingCollectorContract.includes('STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1"')
+    && shoppingCollectorContract.includes("stableWindowDigest")
+    && shoppingCollectorContract.includes("stableCollisionDigest")
     && shoppingCollectorContract.includes("const identityOrigins = new Map()")
     && shoppingCollectorContract.includes("Math.ceil(originRank / NAVER_SHOPPING_PAGE_SIZE)")
     && shoppingCollectorContract.includes("Math.ceil(item.organicRank / NAVER_SHOPPING_PAGE_SIZE)")
+    && shoppingNativeHostCore.includes("PAGE_NAVIGATION_BUDGET = 16")
+    && shoppingNativeHostCore.includes("stableProofPass: 2")
+    && shoppingNativeHostCore.includes("buildStableFullWindowProof")
+    && shoppingRankServer.includes("trustedStableCrossPageProof")
+    && shoppingRankServer.includes("stableWindowDigest")
+    && shoppingRankServer.includes("stableCollisionDigest")
     && shoppingLocalWorker.includes('"provider_partial_window"')
     && shoppingLocalWorker.includes('detail.replace("/", "_")'),
   rankCronEndpointReady: read("src/server/index.mjs").includes('url.pathname === "/api/naver-rank-cron"')

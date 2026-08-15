@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { SCHEMA_VERSION } from "../src/contract.mjs";
+import {
+  SCHEMA_VERSION,
+  STABLE_FULL_WINDOW_PROOF_VERSION,
+} from "../src/contract.mjs";
 import {
   NAVER_SHOPPING_PROFILE_AUTH_MARKER,
   NAVER_SHOPPING_PROFILE_AUTH_MARKER_SCHEMA,
@@ -12,6 +15,7 @@ import {
   NAVER_SHOPPING_PROFILE_OWNER_MARKER_VALUE,
   ProviderError,
   appendNormalizedPage,
+  buildStableFullWindowProof,
   buildNaverShoppingFrontendUrl,
   buildNaverShoppingSearchUrl,
   classifyNaverPage,
@@ -142,6 +146,40 @@ function frontendFixture({ total, products, adProducts = [], superSavingProducts
     searchAdResult: { products: adProducts },
     superSavingProducts,
   };
+}
+
+function stableOverlapItems({ driftRank = 0 } = {}) {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  for (let pageIndex = 1; pageIndex <= 8; pageIndex += 1) {
+    const startRank = ((pageIndex - 1) * 40) + 1;
+    const entries = Array.from({ length: 40 }, (_, index) => {
+      const rank = startRank + index;
+      if (rank === 41) {
+        return nextDataProduct(rank, {
+          mallProductId: "12000000001",
+          mallProductUrl: "https://smartstore.naver.com/example/products/12000000001",
+        });
+      }
+      if (rank === driftRank) {
+        return nextDataProduct(rank, {
+          mallProductId: "13999999999",
+          mallProductUrl: "https://smartstore.naver.com/example/products/13999999999",
+        });
+      }
+      return nextDataProduct(rank);
+    });
+    const page = parseNaverNextDataPage(nextDataFixture({
+      pageIndex,
+      total: 10_000,
+      entries,
+    }), { pageIndex, keyword: "온열찜질기" });
+    appendNormalizedPage(state, page, {
+      pageIndex,
+      limit: 300,
+      crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+    });
+  }
+  return state.items;
 }
 
 function fakeBrowserFactory(stats = {}) {
@@ -459,6 +497,62 @@ test("builds an exact contiguous 1..300 organic window from eight strict pages",
     state.items.map((item) => item.organicRank),
     Array.from({ length: 300 }, (_, index) => index + 1),
   );
+});
+
+test("preserves all 300 absolute rank slots and proves one stable cross-page repetition across two full passes", () => {
+  const firstItems = stableOverlapItems();
+  const secondItems = stableOverlapItems();
+  const proof = buildStableFullWindowProof(firstItems, secondItems, {
+    keyword: "온열찜질기",
+    captureIds: ["native-pass-0001", "native-pass-0002"],
+  });
+
+  assert.equal(firstItems.length, 300);
+  assert.deepEqual(firstItems.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1));
+  assert.equal(firstItems[0].sellerProductId, firstItems[40].sellerProductId);
+  assert.equal(proof.version, STABLE_FULL_WINDOW_PROOF_VERSION);
+  assert.equal(proof.passDigests[0], proof.passDigests[1]);
+  assert.match(proof.collisionDigest, /^[a-f0-9]{64}$/u);
+});
+
+test("stable cross-page proof fails closed for one changed rank slot or a replayed capture id", () => {
+  const firstItems = stableOverlapItems();
+  const changedItems = stableOverlapItems({ driftRank: 222 });
+
+  assert.throws(
+    () => buildStableFullWindowProof(firstItems, changedItems, {
+      keyword: "온열찜질기",
+      captureIds: ["native-pass-0001", "native-pass-0002"],
+    }),
+    (error) => error instanceof ProviderError
+      && error.code === "provider_stable_window_unproven"
+      && error.detail === "digest_mismatch",
+  );
+  assert.throws(
+    () => buildStableFullWindowProof(firstItems, firstItems, {
+      keyword: "온열찜질기",
+      captureIds: ["native-pass-0001", "native-pass-0001"],
+    }),
+    (error) => error instanceof ProviderError
+      && error.code === "provider_stable_window_unproven"
+      && error.detail === "capture_ids",
+  );
+});
+
+test("stable cross-page preservation requires strict absolute source ranks", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  assert.throws(
+    () => appendNormalizedPage(state, { rows: [rawProduct(1)] }, {
+      pageIndex: 1,
+      limit: 300,
+      crossPageMode: STABLE_FULL_WINDOW_PROOF_VERSION,
+    }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_rank_drift"
+      && error.detail === "1:0:absolute_rank_missing",
+  );
+  assert.equal(state.items.length, 0);
 });
 
 test("builds an exact contiguous 1..300 window from eight frontend partial responses", () => {

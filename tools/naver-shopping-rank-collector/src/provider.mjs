@@ -7,6 +7,8 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  STABLE_FULL_WINDOW_PROOF_VERSION,
+  stableFullWindowEvidence,
   validateProviderWindow,
 } from "./contract.mjs";
 
@@ -766,9 +768,17 @@ function identitySignals(item) {
   return [];
 }
 
-export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit = 300 } = {}) {
+export function appendNormalizedPage(state, pageResult, {
+  pageIndex = 1,
+  limit = 300,
+  crossPageMode = "reject",
+} = {}) {
   if (!pageResult || typeof pageResult !== "object" || !Array.isArray(pageResult.rows)) {
     throw new ProviderError("naver_selector_drift", `page:${pageIndex}`);
+  }
+  const preserveStableCrossPage = crossPageMode === STABLE_FULL_WINDOW_PROOF_VERSION;
+  if (crossPageMode !== "reject" && !preserveStableCrossPage) {
+    throw new ProviderError("provider_cross_page_mode_invalid");
   }
   const localExtractionKeys = new Set();
   const identityOrigins = state.identityOrigins instanceof Map
@@ -784,6 +794,9 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
     if (item.isAd) {
       state.excludedAdCount += 1;
       continue;
+    }
+    if (preserveStableCrossPage && item.sourceRank == null) {
+      throw new ProviderError("naver_next_data_rank_drift", `${pageIndex}:${index}:absolute_rank_missing`);
     }
     if (item.sourceRank != null && item.sourceRank !== state.items.length + 1) {
       throw new ProviderError(
@@ -803,7 +816,7 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
       // places the same strong identity twice on that one page, preserve both
       // rank slots. Cross-page repetition is still rejected because pages are
       // fetched at different times and can represent a moving boundary.
-      if (collisionKind !== "duplicate_row") {
+      if (collisionKind !== "duplicate_row" && !preserveStableCrossPage) {
         throw new ProviderError(
           "provider_duplicate_identity",
           `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
@@ -824,6 +837,43 @@ export function appendNormalizedPage(state, pageResult, { pageIndex = 1, limit =
     added += 1;
   }
   return added;
+}
+
+export function buildStableFullWindowProof(firstItems, secondItems, options = {}) {
+  const captureIds = Array.isArray(options.captureIds) ? options.captureIds : [];
+  const captureIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
+  if (captureIds.length !== 2
+    || !captureIds.every((captureId) => typeof captureId === "string" && captureIdPattern.test(captureId))
+    || captureIds[0] === captureIds[1]) {
+    throw new ProviderError("provider_stable_window_unproven", "capture_ids");
+  }
+  let first;
+  let second;
+  try {
+    first = stableFullWindowEvidence(firstItems, { keyword: options.keyword });
+    second = stableFullWindowEvidence(secondItems, { keyword: options.keyword });
+  } catch (error) {
+    throw new ProviderError(
+      "provider_stable_window_unproven",
+      String(error?.detail || error?.code || "invalid_window"),
+    );
+  }
+  if (first.collisionCount < 1
+    || second.collisionCount < 1
+    || first.passDigest !== second.passDigest
+    || first.collisionDigest !== second.collisionDigest
+    || first.collisionCount !== second.collisionCount) {
+    throw new ProviderError("provider_stable_window_unproven", "digest_mismatch");
+  }
+  return {
+    version: STABLE_FULL_WINDOW_PROOF_VERSION,
+    passCount: 2,
+    pageCount: NAVER_SHOPPING_MAX_PAGES,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: [first.passDigest, second.passDigest],
+    collisionDigest: first.collisionDigest,
+  };
 }
 
 export function classifyNaverPage({

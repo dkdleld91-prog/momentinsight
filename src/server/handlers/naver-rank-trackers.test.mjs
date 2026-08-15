@@ -31,6 +31,10 @@ import {
   shoppingProviderPageCache,
   trustedCollectorWindow,
 } from "./naver-shopping-rank.mjs";
+import {
+  stableCollisionDigest,
+  stableWindowDigest,
+} from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 const TRACKERS = "naver_rank_trackers";
 const SNAPSHOTS = "naver_rank_snapshots";
@@ -242,7 +246,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.7",
+            runtime_version: "1.1.8",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -269,7 +273,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.7",
+              runtime_version: "1.1.8",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -1894,6 +1898,66 @@ test("the external shopping collector requires native organic evidence", () => {
     () => trustedCollectorWindow(crossPageDuplicate, { keyword: "테스트 상품", maxRank: 41 }),
     /shopping_rank_provider_untrusted_evidence/,
   );
+
+  const stableCrossPageDuplicate = collectorWindow(
+    "테스트 상품",
+    Array.from({ length: 300 }, (_, index) => shoppingResultItem(index, { productType: 2 })),
+    { limit: 300 },
+  );
+  stableCrossPageDuplicate.items[40].link = stableCrossPageDuplicate.items[0].link;
+  assert.throws(() => trustedCollectorWindow(stableCrossPageDuplicate, {
+    keyword: "테스트 상품",
+    maxRank: 300,
+  }), /shopping_rank_provider_untrusted_evidence/);
+  const stablePassDigest = stableWindowDigest(stableCrossPageDuplicate.items, {
+    keyword: "테스트 상품",
+  });
+  stableCrossPageDuplicate.crossPageProof = {
+    version: "stable-full-window-v1",
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["capture-pass-0001", "capture-pass-0002"],
+    passDigests: [stablePassDigest, stablePassDigest],
+    collisionDigest: stableCollisionDigest(stableCrossPageDuplicate.items),
+  };
+  assert.equal(trustedCollectorWindow(stableCrossPageDuplicate, {
+    keyword: "테스트 상품",
+    maxRank: 300,
+  }).items.length, 300);
+
+  const invalidStableProofs = [
+    { passDigests: [stablePassDigest, "0".repeat(64)] },
+    { collisionDigest: "0".repeat(64) },
+    { captureIds: ["capture-pass-0001", "capture-pass-0001"] },
+    { unexpected: true },
+  ];
+  for (const proofOverride of invalidStableProofs) {
+    const candidate = structuredClone(stableCrossPageDuplicate);
+    candidate.crossPageProof = { ...candidate.crossPageProof, ...proofOverride };
+    assert.throws(() => trustedCollectorWindow(candidate, {
+      keyword: "테스트 상품",
+      maxRank: 300,
+    }), /shopping_rank_provider_untrusted_evidence/);
+  }
+
+  const driftedStableWindow = structuredClone(stableCrossPageDuplicate);
+  driftedStableWindow.items[299].linkedCatalogId = "99000000001";
+  assert.throws(() => trustedCollectorWindow(driftedStableWindow, {
+    keyword: "테스트 상품",
+    maxRank: 300,
+  }), /shopping_rank_provider_untrusted_evidence/);
+
+  const unexpectedProof = collectorWindow(
+    "테스트 상품",
+    Array.from({ length: 300 }, (_, index) => shoppingResultItem(index, { productType: 2 })),
+    { limit: 300 },
+  );
+  unexpectedProof.crossPageProof = stableCrossPageDuplicate.crossPageProof;
+  assert.throws(() => trustedCollectorWindow(unexpectedProof, {
+    keyword: "테스트 상품",
+    maxRank: 300,
+  }), /shopping_rank_provider_untrusted_evidence/);
 
   const falselyPartial = collectorWindow("테스트 상품", [shoppingResultItem(0)], { limit: 1 });
   falselyPartial.complete = false;

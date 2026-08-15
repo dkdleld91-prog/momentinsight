@@ -9,7 +9,10 @@
 - cycle #9은 10:40 KST 완료됐습니다. roster 57 group/72 tracker/9 agency 중 시작 시 격리 1 tracker를 건너뛰고 56 group/71 tracker를 각 1회 claim했으며 same-cycle group 중복은 0입니다. 성공 31 group/42 snapshot/31 collection은 전부 source·오가닉 근거·광고 제외·`checkedCount=300`을 충족했고, 실패 25 group은 snapshot 0입니다.
 - 실패 25 group 중 23 group이 cross-page `page_overlap`이라 공정 순환과 별개로 실제 갱신 성공률이 낮다는 결함을 확정했습니다. `1.1.8` 후보는 독립 full 1~8페이지 두 pass가 정확히 같은 절대 순위 300 슬롯과 강한 식별자 digest를 보일 때만 반복 슬롯을 보존해 승인하며, 행 삭제·dedupe·순위 압축은 하지 않습니다.
 - 검증된 증거는 snapshot·append-only ledger에 `crossPageProofVersion=stable-full-window-v1`만 남기고 capture ID·digest는 저장하지 않습니다. proof 불일치·재생·예산 초과는 해당 tracker만 30분 격리하며 half-open에서도 global circuit을 다시 열지 않습니다.
-- 로컬 전체 `npm run check:release`는 exit 0, server contract 55/55, 관련 회귀 270/270, 보호 잠금 22함수·86파일·36 migration, `git diff --check`를 통과했습니다. Production·DB·Windows는 아직 `1.1.7`이므로 `1.1.8` 운영 복구 완료로 판정하지 않습니다.
+- 로컬 전체 `npm run check:release`는 exit 0, server contract 55/55, 관련 회귀 270/270, 보호 잠금 22함수·86파일·36 migration, `git diff --check`를 통과했습니다. 이 결과를 배포 전 기준으로 고정했습니다.
+- 11:10 KST Production `68e6200ad826` ready와 세 migration 적용을 확인했습니다. 공개 worker 함수는 SECURITY INVOKER·빈 search path·postgres/service_role 전용이고, 내부 snapshot 장부 trigger만 service-role ledger 기록을 위해 SECURITY DEFINER·빈 search path·postgres 전용입니다. 새 security advisor 경고는 없습니다.
+- 11:20 KST Windows runtime `1.1.8`, fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`가 저장소 재계산값과 일치했습니다. 자연 collection `pw-chrome-1786760448382-cfebd786a0e78f00d434`은 광고 30개 제외·오가닉 300개로 commit하고 lane/run/lease를 해제했습니다. 일반 window라 stable proof version은 없으므로 cross-page 복구 성공 증거로 과장하지 않습니다.
+- 11:24 KST cycle #10은 5 distinct group을 claim해 group 중복 0, 6 agency 진입, snapshot 5/collection 3·atomic 위반 0입니다. active 72·stale24 20·stale48 18·never 1·격리 2·processing 0, circuit closed·lane/lease null이며 stable proof snapshot은 아직 0입니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

@@ -55,6 +55,9 @@
 - 로컬 회귀는 네이버 first-party `compositeList.total`이 37·130인 8페이지 fixture를 각각 실행해 `provider_partial_window:37/300`·`130/300`으로 종료하고 임의 행 추가·padding·snapshot 생성을 하지 않음을 검증했습니다. native-host 대상 37/37과 보호 잠금이 통과했습니다.
 - 19:33 KST는 `키크는쌀`의 격리 만료 20:10:47 KST 전입니다. 순서·격리·wake를 변경하지 않고 20:12 KST 단일 SELECT-only 확인을 대기합니다.
 - 20:04 KST heartbeat도 격리 만료 전이며 동일한 단일 확인 작업을 유지합니다. 운영 상태 변경은 하지 않았습니다.
+- `키크는쌀`은 격리 만료 뒤 cycle #11의 자연 cursor가 도달한 21:20:07 KST에 정확히 1회 claim됐습니다. 결과는 first-party 오가닉 35/300으로 다시 확인돼 snapshot 0·last-good 보존·24시간 격리 후 lane/lease를 해제했습니다. 기존 37/300과 소폭 변동했지만 300 미달이라는 원인은 동일하며 수집기 padding/누락 결함 증거는 없습니다.
+- 2026-08-16 01:20 KST 최종 SELECT-only 판정에서 cycle #10은 roster 57 group/72 tracker/9 agency, eligible 56 group/71 tracker 각 1회, 시작 격리 1 tracker skip, new→resume→normal, group/tracker 중복 0, 9/9 agency coverage, 다음 cycle 조기 시작 0으로 완료됐습니다. cycle #11은 첫 priority `new→resume→normal`, 51 group/64 tracker·중복 0이며 cycle #10 격리 tracker도 자연 순번에서 처리됐습니다. 24시간 기준 이후 snapshot 210건/161 collection은 checkedCount/source/evidence/policy/adExcluded 위반과 proof 민감정보 저장이 모두 0입니다.
+- 준비작업 1번의 공정 순환·신규 우선·cycle 경계·격리 skip·중복 방지·atomic300 저장 계약은 운영 증거로 충족됐습니다. 남은 stale 2건은 `provider_partial_window` 130/300·35/300으로, 정확 300 계약상 임의 순위 저장 없이 격리된 정상 fail-closed 경계입니다. runtime 1.1.8 fingerprint 일치·heartbeat 신선·circuit closed·failure streak 0·processing/lane/run/lease null입니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

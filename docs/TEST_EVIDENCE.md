@@ -51,6 +51,8 @@
 - `scripts/naver-shopping-native-host.test.mjs`의 finite-market 회귀는 first-party total 37·130에 맞춰 절대 순위 슬롯만 제공한 8페이지를 검증하고 두 경우 모두 정확한 `provider_partial_window:<count>/300`을 요구합니다. 임의 padding 없이 fail-closed하며 native-host 37/37, `git diff --check`, 보호 잠금이 통과했습니다.
 - 19:33 KST heartbeat 시점은 재시도 예정 20:10:47 KST 전이며 예약된 20:12 KST SELECT-only 조회는 대기 상태입니다. 이 회차의 DB write·wake·격리/순서/lease 변경은 0입니다.
 - 20:04 KST heartbeat도 재시도 전입니다. 예약 작업은 실행 대기 중이고 DB write·wake·격리/순서/lease 변경은 0입니다.
+- event 1167~1169는 21:20:07~21:20:47 KST `키크는쌀`의 자연 `tracker_claimed(normal) → job_failed(provider_partial_window:35_300) → quarantine_set`입니다. cycle #11에서 같은 tracker 재claim은 0, snapshot/collection 0, rank/history 불변, next quarantine은 2026-08-16 21:20:47 KST입니다. 격리 만료 직후 강제 우선하지 않고 cursor sort 600 도달 시 처리된 순서 증거입니다.
+- 2026-08-16 01:20:56 KST 최종 집계: cycle #10은 roster tracker/group/agency 72/57/9, eligible 71·quarantined 1, claim tracker/group/agency 71/56/9, priority new 1·resume 1·normal 54, group/tracker duplicate 0, commit 69·fail 2, `nextBeforeComplete=0`입니다. cycle #11은 51 group/64 tracker, commit 62·fail 2, duplicate 0, 첫 priority `[new,resume,normal]`입니다. 기준 시각 이후 snapshot 210건/161 collection의 checkedCount300/source/evidence/policy/adExcluded 위반과 proof secret leak은 모두 0입니다. active 72 중 stale/quarantine 2건은 모두 typed partial이며 never/processing 0, coordination은 runtime 1.1.8·fingerprint 일치·circuit closed·failure streak 0·lane/run/lease null입니다.
 
 ## 2026-08-14 준비작업 1번 시작 기준
 

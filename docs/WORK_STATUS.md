@@ -54,6 +54,7 @@
 - 18:50:07 KST 과거 page-overlap 잔여 tracker가 cycle #11 `normal` 순서로 자연 재진입했습니다. 새 stable-window 경계에서는 중복 오류가 재발하지 않았지만 오가닉 결과가 130/300에서 끝나 `provider_partial_window:130_300`으로 fail-closed했고 snapshot 0·last-good 보존·lease 해제 뒤 24시간 격리됐습니다. 따라서 잔여 stale 2건은 모두 큐 정체나 중복 오류가 아니라 네이버 결과창 300 미달(130/300·37/300)이며, 37/300 건의 20:10:47 KST 자연 재시도까지 원인을 계속 확인합니다.
 - 로컬 회귀는 네이버 first-party `compositeList.total`이 37·130인 8페이지 fixture를 각각 실행해 `provider_partial_window:37/300`·`130/300`으로 종료하고 임의 행 추가·padding·snapshot 생성을 하지 않음을 검증했습니다. native-host 대상 37/37과 보호 잠금이 통과했습니다.
 - 19:33 KST는 `키크는쌀`의 격리 만료 20:10:47 KST 전입니다. 순서·격리·wake를 변경하지 않고 20:12 KST 단일 SELECT-only 확인을 대기합니다.
+- 20:04 KST heartbeat도 격리 만료 전이며 동일한 단일 확인 작업을 유지합니다. 운영 상태 변경은 하지 않았습니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

@@ -50,6 +50,7 @@
 - event 1062~1065는 18:50:07~18:51:32 KST 과거 page-overlap tracker의 `group_claimed(normal) → tracker_claimed → job_failed(provider_partial_window:130_300) → quarantine_set` 순서입니다. current cycle claim은 정확히 1회, snapshot·collection은 0이고 last checked/rank/history는 유지됐습니다. terminal 뒤 circuit closed·processing/lane/run/lease null이며 24시간 격리 시각은 2026-08-16 18:51:32 KST입니다. 이는 stable overlap 처리 뒤 duplicate 오류는 재발하지 않았지만 실제 오가닉 300 슬롯을 증명하지 못해 저장을 거부한 결과입니다.
 - `scripts/naver-shopping-native-host.test.mjs`의 finite-market 회귀는 first-party total 37·130에 맞춰 절대 순위 슬롯만 제공한 8페이지를 검증하고 두 경우 모두 정확한 `provider_partial_window:<count>/300`을 요구합니다. 임의 padding 없이 fail-closed하며 native-host 37/37, `git diff --check`, 보호 잠금이 통과했습니다.
 - 19:33 KST heartbeat 시점은 재시도 예정 20:10:47 KST 전이며 예약된 20:12 KST SELECT-only 조회는 대기 상태입니다. 이 회차의 DB write·wake·격리/순서/lease 변경은 0입니다.
+- 20:04 KST heartbeat도 재시도 전입니다. 예약 작업은 실행 대기 중이고 DB write·wake·격리/순서/lease 변경은 0입니다.
 
 ## 2026-08-14 준비작업 1번 시작 기준
 

@@ -53,6 +53,7 @@
 - cycle #11 첫 claim은 `new` 1건이며 18:31:36 KST stable full-window proof로 광고 제외·오가닉 `checkedCount=300` commit에 성공해 never-checked는 1→0이 됐습니다. 18:40:07 KST에는 `resumeCursorBefore=true`인 기존 group으로 복귀해 tracker 2건을 collection 하나로 각각 원자 300 commit했습니다. cycle #11 누적 group/tracker 중복 0, failure 0이고 terminal 뒤 circuit closed·processing/lane/run/lease null입니다. 24시간 순환 계약은 충족됐지만 잔여 stale 2건(과거 page-overlap 1·실제 partial 37/300 1)의 자연 재검증은 계속합니다.
 - 18:50:07 KST 과거 page-overlap 잔여 tracker가 cycle #11 `normal` 순서로 자연 재진입했습니다. 새 stable-window 경계에서는 중복 오류가 재발하지 않았지만 오가닉 결과가 130/300에서 끝나 `provider_partial_window:130_300`으로 fail-closed했고 snapshot 0·last-good 보존·lease 해제 뒤 24시간 격리됐습니다. 따라서 잔여 stale 2건은 모두 큐 정체나 중복 오류가 아니라 네이버 결과창 300 미달(130/300·37/300)이며, 37/300 건의 20:10:47 KST 자연 재시도까지 원인을 계속 확인합니다.
 - 로컬 회귀는 네이버 first-party `compositeList.total`이 37·130인 8페이지 fixture를 각각 실행해 `provider_partial_window:37/300`·`130/300`으로 종료하고 임의 행 추가·padding·snapshot 생성을 하지 않음을 검증했습니다. native-host 대상 37/37과 보호 잠금이 통과했습니다.
+- 19:33 KST는 `키크는쌀`의 격리 만료 20:10:47 KST 전입니다. 순서·격리·wake를 변경하지 않고 20:12 KST 단일 SELECT-only 확인을 대기합니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

@@ -128,6 +128,20 @@ function page(pageIndex, options = {}) {
   };
 }
 
+function finiteMarketPages(total) {
+  return Array.from({ length: 8 }, (_, index) => {
+    const payload = page(index + 1);
+    const data = JSON.parse(payload.nextDataText);
+    const startRank = index * 40;
+    const remaining = Math.max(0, total - startRank);
+    const organicCount = Math.min(40, remaining);
+    data.props.pageProps.compositeList.total = total;
+    data.props.pageProps.compositeList.list = data.props.pageProps.compositeList.list
+      .filter(({ item }) => item.adId || (Number(item.rank) > startRank && Number(item.rank) <= startRank + organicCount));
+    return { ...payload, nextDataText: JSON.stringify(data) };
+  });
+}
+
 function nplusRows() {
   const rows = [];
   let organicRank = 0;
@@ -288,6 +302,16 @@ test("builds one strict 300-rank window from the normal Chrome profile pages", (
   assert.equal(result.items[90].organicRank, 91);
   assert.equal(result.items[90].sellerProductId, "12149720593");
   assert.match(result.collectionId, /^pw-chrome-/u);
+});
+
+test("fails closed without padding when Naver exposes fewer than 300 organic slots", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  for (const total of [37, 130]) {
+    assert.throws(
+      () => buildNativeWindowFromPages(request(nowMs), finiteMarketPages(total), { nowMs }),
+      (error) => error?.code === "provider_partial_window" && error?.detail === `${total}/300`,
+    );
+  }
 });
 
 test("builds one strict 300-rank window from the Naver Plus virtual list", () => {

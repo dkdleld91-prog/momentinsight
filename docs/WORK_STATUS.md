@@ -18,6 +18,7 @@
 - 11:45 KST cycle #10은 7/56 eligible group·10/71 tracker·8/9 agency까지 전진했고 group·tracker 중복은 계속 0입니다. commit 8건/collection 5건은 전부 원자 300·오가닉 근거·광고 제외 조건을 충족했으며 stale24는 20→19, stale48은 18→17로 감소했습니다. 마지막 11:40:53 KST 자연 작업도 atomic300으로 끝나 circuit closed·processing/lane/run/lease 0입니다.
 - Windows `1.1.8` 동기화 뒤 11:20~11:52 KST에는 5 distinct group/6 tracker가 모두 commit하고 신규 failure·same-cycle 중복은 0입니다. 362시간 stale이던 과거 page-overlap tracker도 11:50 자연 순번에서 광고 45개 제외·오가닉 300개로 복구됐습니다. 잔여 stale/never 19건은 과거 page-overlap 18·실제 300 미달 격리 1이며, eligible behind cursor는 0이라 현재 scheduler starvation 근거는 없습니다. 다만 32분·5그룹 표본이므로 전체 정상화 판정은 보류합니다.
 - 13:09 KST v1.1.8 이후 자연 작업은 14 distinct group/19 tracker 전부 commit, failure·open claim·중복 0입니다. collection 14건은 일반 10·stable proof 4이며 snapshot 19건의 atomic300/source/evidence/policy/adExcluded 위반과 proof 민감정보 저장은 0입니다. cycle #10 누적 18 group/25 tracker, commit 23·fail 2(모두 v1.1.8 전)이고 9/9 agency가 진입했습니다. 잔여 stale/never 17건은 과거 page-overlap 16·partial 1이며 모든 eligible 대기는 현재 cursor 앞에 있어 starvation 징후가 없습니다.
+- 13:12 KST SELECT-only 재확인은 cycle #10 누적 19 distinct group/26 tracker, group·tracker 중복 0, 9/9 agency 진입을 유지했습니다. v1.1.8 이후 14 group/19 tracker는 failure 0·전부 commit, stable proof는 5건으로 늘었고 snapshot 19건의 원자 계약 위반·proof 민감정보 저장은 0입니다. stale24는 16건(과거 page-overlap 15·partial 1)으로 감소했으며 pending 46건은 모두 cursor 앞(ahead 46, behind/equal 0)입니다. heartbeat·circuit·processing·lane/run/lease는 정상 해제 상태입니다.
 
 ### 2026-08-14 준비작업 1번 24시간 감사 시작
 

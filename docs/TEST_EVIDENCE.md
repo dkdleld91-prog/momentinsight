@@ -1,14 +1,16 @@
 # Test Evidence
 
-## 2026-08-15 v1.1.8 로컬 배포 후보
+## 2026-08-15 v1.1.8 운영 반영·실증
 
 - cycle #9 event 591~602와 완료 집계는 roster 57 group/72 tracker/9 agency, 시작 시 격리 1 tracker, 실제 claim 56 distinct group/71 tracker/9 agency, group claim event 56=distinct 56을 기록합니다. 성공 31 group/42 snapshot/31 collection은 atomic300 위반 0이며 실패 25 group은 duplicate 23·navigation 2, snapshot 0입니다. terminal은 circuit closed·processing 0·lane/run/lease null입니다.
 - stable full-window 회귀는 첫 full 1~8페이지와 독립 second full 1~8페이지의 절대 순위 1~300, 강한 identity, product type, linked catalog digest가 일치할 때만 cross-page 반복 슬롯을 그대로 승인합니다. 한 슬롯 drift·capture replay·proof 누락/위조·17번째 페이지·deadline 초과는 submit 없이 fail-closed하고 skip·dedupe·rank compression은 0입니다.
 - 서버는 HMAC submit 뒤 proof schema와 window/collision digest를 독립 재계산합니다. 성공 snapshot·ledger에는 `stable-full-window-v1` 버전만 남고 capture ID·pass digest·collision digest는 남지 않는 테스트를 통과했습니다. proof 불일치는 tracker 범위·30분 quarantine이며 half-open global circuit은 닫힌 상태를 유지합니다.
-- 관련 회귀 270/270, local/server worker 93/93, server contract 55/55, baseline, 보호 잠금 22함수·86파일·36 migration, 전체 `npm run check:release`와 `git diff --check`가 통과했습니다. 세 migration과 Production·Windows `1.1.8` 적용, 실제 page-overlap atomic300 proof는 아직 없으므로 운영 정상화 증거로 계산하지 않습니다.
-- Production `/health`·`/ready`는 release `68e6200ad826`·Supabase ready로 일치했고, migration 목록은 runtime/ledger/quarantine 세 건을 기록합니다. pg_proc 검증은 public 5함수 SECURITY INVOKER·빈 search path·postgres/service_role 전용, internal snapshot trigger SECURITY DEFINER·빈 search path·postgres 전용을 확인했습니다.
+- 관련 회귀 270/270, local/server worker 93/93, server contract 55/55, baseline, 보호 잠금 22함수·86파일·36 migration, 전체 `npm run check:release`와 `git diff --check`가 통과했습니다. 이 문장은 11:31 KST 실운영 proof가 생기기 전 배포 기준입니다.
+- 기능 release `68e6200ad826` 반영 뒤 현재 Production `/health`·`/ready`는 증거 문서 release `9816cfa3c645`·Supabase ready로 일치합니다. migration 목록은 runtime/ledger/quarantine 세 건을 기록하며, pg_proc 검증은 public 5함수 SECURITY INVOKER·빈 search path·postgres/service_role 전용, internal snapshot trigger SECURITY DEFINER·빈 search path·postgres 전용을 확인했습니다.
 - Windows updater 이후 DB heartbeat는 runtime `1.1.8`, fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`이며 저장소의 service worker+12 runtime 파일 재계산값과 같습니다. 첫 natural collection `pw-chrome-1786760448382-cfebd786a0e78f00d434`은 checkedCount 300·광고 30개 제외·terminal lane/lease null입니다.
-- 11:24 KST cycle #10 SELECT-only 집계는 5 claim event=5 distinct group, 6 agency, snapshot 5/collection 3, atomic violation 0입니다. active 72·stale24 20·stale48 18·never 1·quarantine 2·processing 0이며 stable proof snapshot은 0이므로 cross-page 실운영 성공은 계속 미확인으로 남깁니다.
+- 11:24 KST 당시 cycle #10 SELECT-only 집계는 5 claim event=5 distinct group, 6 agency, snapshot 5/collection 3, atomic violation 0이었습니다. active 72·stale24 20·stale48 18·never 1·quarantine 2·processing 0이며 그 시점 stable proof snapshot은 0이었습니다.
+- event 705~708은 11:30:00 KST normal group claim·tracker claim 뒤 11:31:32 KST tracker commit(300)·quarantine clear 순서입니다. collection `pw-chrome-1786761092364-8d83d6311c99da4190d7`은 checkedCount 300, source/evidence/policy 일치, adExcluded true·excludedAdCount 60, `crossPageProofVersion=stable-full-window-v1`입니다. snapshot JSON과 ledger에는 capture ID·pass digest·collision digest가 없고 terminal circuit closed·lane/run/lease null입니다.
+- 11:37:40 KST SELECT-only 재집계는 cycle #9의 eligible 56 group/71 tracker/9 agency claim 1회씩·중복 0·격리 roster 1건 claim 0을 확인했습니다. cycle #10은 6 distinct group/8 tracker·중복 0이고 신규→resume→normal 순서입니다. cycle #9~#10 commit snapshot 48/48과 감사 기준 전체 snapshot 85건/62 collection의 checkedCount/source/evidence/adExcluded/rankPolicy 위반은 0입니다. runtime `1.1.8` heartbeat 40초 이내, circuit closed, processing·expired lease·lane/run 0입니다.
 
 ## 2026-08-14 준비작업 1번 시작 기준
 

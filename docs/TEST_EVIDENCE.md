@@ -5,7 +5,8 @@
 - 고정 시각 `2026-08-18 12:00 KST`에서 `내일 오후 2시 광고주 미팅 1시간`은 8월 19일 14:00~15:00 미팅 초안, `다음 주 월요일 오전 10시 월간 보고서 최종 검수`는 8월 24일 10:00 보고서 초안으로 변환됩니다. 날짜 없는 문장은 저장 초안이 아니라 확인 필요 목록에 남습니다.
 - 초안 payload는 `planned`·`internal`만 반환하고 저장 성공 필드를 반환하지 않습니다. exact `mml93-a01` owner는 200, 다른 owner 코드와 non-owner는 403이며 handler에는 OpenAI·Claude·Anthropic 호출이나 새 DB 쓰기가 없습니다.
 - 서버 전달 HTML은 script/iframe/object/inline handler 0건이며 admin/client 정적 markup의 `owner-assistant` 메뉴·view는 0건입니다. 실제 저장 버튼은 `window.confirm` 뒤 기존 tenant-scoped `/api/work-items` POST를 정확히 한 번 호출하는 계약으로 고정했습니다.
-- 검증: owner tool 7/7, API·서버 549/549, 플레이스 51/51, 쇼핑 62/62, role-state, role-query-parity, server contract 56/56, Production 인증 18/18, release baseline, rank feature lock, Vercel build·공개 CSP 9파일/인라인 6개/고유 해시 4개, 전체 `npm run check:release`, `git diff --check` 통과. Production 실계정 UI·저장 증거는 배포 후 별도로 확인합니다.
+- 검증: owner tool 7/7, API·서버 549/549, 플레이스 51/51, 쇼핑 62/62, role-state, role-query-parity, server contract 56/56, Production 인증 18/18, release baseline, rank feature lock, Vercel build·공개 CSP 9파일/인라인 6개/고유 해시 4개, 전체 `npm run check:release`, `git diff --check` 통과.
+- 기능 commit `782e9f6a7e20` 배포 뒤 2026-08-18 18:46 KST `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다. `/admin`·`/client`는 200, 비인증 `/api/owner/tool`은 401이고 두 정적 페이지의 owner-assistant DOM은 0입니다. 이는 배포·비노출·인증 경계 증거이며, 로그인된 `mml93-a01`에서 초안과 내부 일정 1건 저장·새로고침 보존을 확인한 증거는 아닙니다.
 
 ## 2026-08-15 v1.1.8 운영 반영·실증
 

@@ -9,7 +9,7 @@
 - 정확한 `mml93-a01` 총관리자 세션에서만 서버가 `자비스 운영 비서` 메뉴·화면을 전달하도록 구현했습니다. 운영팀·광고주·로그아웃 정적 HTML에는 비서 DOM이 없으며 owner hash도 서버 payload가 없으면 기존 화면으로 복귀합니다.
 - 오늘·지연·확인 필요·다가오는 업무 브리핑은 현재 선택된 기존 일정표 범위에서 계산합니다. 자연어 일정과 회의 메모는 외부 AI 전송 없이 날짜가 확인된 문장만 내부 비공개 초안으로 만들고, 사용자가 항목별 확인창을 승인한 뒤에만 기존 `/api/work-items`로 저장합니다.
 - 별도 DB·migration·Google Calendar·비밀키를 추가하지 않았습니다. 광고주 공개는 비서가 자동 수행하지 않으며 기존 일정 편집 화면의 별도 공개 확인을 유지합니다. N상품·N플레이스 30일 기능은 변경하지 않았습니다.
-- 현재는 로컬 canary 코드와 회귀 기준까지 반영한 상태입니다. 대상 7/7, API·서버 549/549, 플레이스 51/51, 쇼핑 62/62, exact owner/non-owner 경계, 역할 상태·query parity, server contract 56/56, Production 인증 18/18, 기준선, 보호 잠금, 공개 빌드·CSP, 전체 `npm run check:release`와 `git diff --check`를 통과했습니다. Production 실계정 canary 검증 전에는 운영 완료로 기록하지 않습니다.
+- 기능 commit `782e9f6a7e20`을 Production에 반영했고 18:46 KST `/health`·`/ready` release 일치와 Supabase ready를 확인했습니다. `/admin`·`/client` 200, 비인증 `/api/owner/tool` 401, 정적 owner-assistant DOM 0도 확인했습니다. 대상 7/7, API·서버 549/549, 플레이스 51/51, 쇼핑 62/62, 역할 상태·query parity, server contract 56/56, Production 인증 18/18, 기준선, 보호 잠금, 공개 빌드·CSP, 전체 `npm run check:release`와 `git diff --check`를 통과했습니다. 다만 로그인된 `mml93-a01` 실화면에서 초안 생성·명시적 저장·새로고침 보존은 아직 확인하지 않았으므로 canary 운영 완료나 전체 배포로 기록하지 않습니다.
 
 ### 2026-08-15 v1.1.8 안정 중복 증명 운영 반영
 

@@ -387,7 +387,11 @@ check(
   hasAll(ownerTool, [
     /data-mi-admin-screen="owner-assistant"/,
     /data-mi-admin-view="owner-assistant"/,
-    /모먼트랩스 비서실 조직도/,
+    /모먼트랩스 비서실 운영실/,
+    /data-owner-assistant-office/,
+    /data-owner-assistant-agent/,
+    /자리 대기, 담당 회의, 비서실장 방문/,
+    /독립 AI 직원의 자동 실행 상태는 아닙니다/,
     /data-owner-assistant-mic/,
     /data-owner-assistant-wake/,
     /data-owner-assistant-read/,
@@ -402,6 +406,9 @@ check(
     /renderOwnerAssistantBriefing/,
     /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/,
     /new window\.SpeechSynthesisUtterance\(briefing\)/,
+    /function runOfficeScene\(\)/,
+    /ownerAssistantOfficeController\.setActive\(target === "owner-assistant" && secureSession\.role === "owner"\)/,
+    /ownerAssistantOfficeController\.destroy\(\)/,
   ]),
   `${files.ownerTool}, ${files.adminPage}`,
 );

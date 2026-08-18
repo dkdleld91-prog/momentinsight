@@ -357,8 +357,12 @@ const checks = {
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
   ownerAssistantCanaryIsPrivateAndConfirmOnly: ownerToolServer.includes('data-mi-admin-screen="owner-assistant"')
     && ownerToolServer.includes('data-mi-admin-view="owner-assistant"')
-    && ownerToolServer.includes('모먼트랩스 비서실 조직도')
+    && ownerToolServer.includes('모먼트랩스 비서실 운영실')
+    && ownerToolServer.includes('data-owner-assistant-office')
+    && (ownerToolServer.match(/data-owner-assistant-agent(?:\s|>)/g) || []).length === 6
     && ownerToolServer.includes('data-owner-assistant-role="chief"')
+    && ownerToolServer.includes('자리 대기, 담당 회의, 비서실장 방문')
+    && ownerToolServer.includes('독립 AI 직원의 자동 실행 상태는 아닙니다')
     && ownerToolServer.includes('data-owner-assistant-mic')
     && ownerToolServer.includes('data-owner-assistant-wake')
     && ownerToolServer.includes('data-owner-assistant-read')
@@ -369,6 +373,9 @@ const checks = {
     && adminSource.includes('await requestWorkItems("POST", workItemPayload(draft))')
     && adminSource.includes('window.SpeechRecognition || window.webkitSpeechRecognition')
     && adminSource.includes('new window.SpeechSynthesisUtterance(briefing)')
+    && adminSource.includes('function runOfficeScene()')
+    && adminSource.includes('ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner")')
+    && adminSource.includes('ownerAssistantOfficeController.destroy()')
     && adminSource.includes('getAttribute("data-mi-admin-view") === "owner-assistant"')
     && !/<(?:a|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-assistant"/u.test(adminSource)
     && !/<(?:a|section)\b[^>]*data-mi-(?:screen|view)="owner-assistant"/u.test(clientSource),

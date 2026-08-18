@@ -97,7 +97,9 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /마지막 정상 기록 보존/);
   assert.match(payload.tool.viewHtml, /data-owner-tool-input/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-input/);
-  assert.match(payload.tool.viewHtml, /모먼트랩스 비서실 조직도/);
+  assert.match(payload.tool.viewHtml, /모먼트랩스 비서실 운영실/);
+  assert.match(payload.tool.viewHtml, /data-owner-assistant-office/);
+  assert.equal((payload.tool.viewHtml.match(/data-owner-assistant-agent(?:\s|>)/g) || []).length, 6);
   assert.equal((payload.tool.viewHtml.match(/data-owner-assistant-role=/g) || []).length, 6);
   assert.match(payload.tool.viewHtml, /비서실장 자비스/);
   assert.match(payload.tool.viewHtml, /일정 운영 자비스/);
@@ -105,6 +107,8 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /광고 운영 자비스/);
   assert.match(payload.tool.viewHtml, /콘텐츠 자비스/);
   assert.match(payload.tool.viewHtml, /키워드 자비스/);
+  assert.match(payload.tool.viewHtml, /자리 대기, 담당 회의, 비서실장 방문/);
+  assert.match(payload.tool.viewHtml, /독립 AI 직원의 자동 실행 상태는 아닙니다/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-mic/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-wake/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-read/);
@@ -117,7 +121,10 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.styleText, /mi-owner-development-hero/);
   assert.match(payload.tool.styleText, /mi-owner-development-principles/);
   assert.match(payload.tool.styleText, /mi-owner-assistant/);
-  assert.match(payload.tool.styleText, /mi-assistant-org-chart/);
+  assert.match(payload.tool.styleText, /mi-assistant-office/);
+  assert.match(payload.tool.styleText, /@keyframes mi-assistant-walk/);
+  assert.match(payload.tool.styleText, /@keyframes mi-assistant-talk/);
+  assert.match(payload.tool.styleText, /prefers-reduced-motion:reduce/);
   assert.match(payload.tool.styleText, /mi-assistant-voice/);
   assert.match(payload.tool.styleText, /@media\(max-width:900px\).*mi-owner-development-nav.*mi-nav-title\{display:none\}/s);
   for (const html of [payload.tool.menuHtml, payload.tool.viewHtml]) {
@@ -214,4 +221,18 @@ test("owner assistant voice is explicit, bounded and torn down with the owner vi
   assert.match(admin, /window\.speechSynthesis\.cancel\(\)/);
   assert.match(permissions, /microphone=\(self\)/);
   assert.match(permissions, /camera=\(\)/);
+});
+
+test("owner assistant office animates only on the owner screen and stops when removed", () => {
+  const admin = fs.readFileSync("src/pages/admin.html", "utf8");
+  assert.match(admin, /var ownerAssistantOfficeController = null/);
+  assert.match(admin, /function runOfficeScene\(\)/);
+  assert.match(admin, /비서실장이 .*에게 이동합니다/);
+  assert.match(admin, /두 담당 조직이 공용 협의 공간으로 이동합니다/);
+  assert.match(admin, /officeReturn\(\[chief, specialist\]\)/);
+  assert.match(admin, /ownerAssistantOfficeController\.setActive\(target === "owner-assistant" && secureSession\.role === "owner"\)/);
+  assert.match(admin, /ownerAssistantOfficeController\.destroy\(\)/);
+  assert.match(admin, /window\.removeEventListener\("resize", handleOfficeResize\)/);
+  assert.match(admin, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(admin, /setInterval\(runOfficeScene/);
 });

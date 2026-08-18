@@ -11619,10 +11619,13 @@
       var ownerToolGeneration = 0;
       var ownerToolTimer = 0;
       var ownerAssistantVoiceController = null;
+      var ownerAssistantOfficeController = null;
 
       function discardOwnerTool() {
         if (ownerAssistantVoiceController && typeof ownerAssistantVoiceController.stop === "function") ownerAssistantVoiceController.stop();
         ownerAssistantVoiceController = null;
+        if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.destroy === "function") ownerAssistantOfficeController.destroy();
+        ownerAssistantOfficeController = null;
         ownerToolGeneration += 1;
         window.clearTimeout(ownerToolTimer);
         ownerToolTimer = 0;
@@ -11882,6 +11885,146 @@
             setOwnerAssistantStatus(view, button.textContent.trim().replace(/\s+/g, " ") + " 일정 명령 예시를 불러왔습니다.", "ok");
           });
         });
+
+        var office = view.querySelector("[data-owner-assistant-office]");
+        var officeState = view.querySelector("[data-owner-assistant-office-state]");
+        var officeActivity = view.querySelector("[data-owner-assistant-office-activity]");
+        var officeAgents = Array.from(view.querySelectorAll("[data-owner-assistant-agent]"));
+        if (!office || !officeState || !officeActivity || officeAgents.length !== 6) throw new Error("자비스 비서실 조직 구성을 확인할 수 없습니다.");
+        var officeTimers = [];
+        var officeActive = false;
+        var officeDestroyed = false;
+        var officeTurn = 0;
+        var officeMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+        function officeAlive() {
+          return !officeDestroyed && generation === ownerToolGeneration && secureSession.role === "owner" && view.isConnected;
+        }
+        function clearOfficeTimers() {
+          officeTimers.forEach(function (timer) { window.clearTimeout(timer); });
+          officeTimers = [];
+        }
+        function officeLater(callback, delay) {
+          var timer = window.setTimeout(function () {
+            officeTimers = officeTimers.filter(function (item) { return item !== timer; });
+            if (officeAlive() && officeActive) callback();
+          }, delay);
+          officeTimers.push(timer);
+          return timer;
+        }
+        function officeCompact() {
+          return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+        }
+        function officeHome(agent) {
+          return {
+            x: Number(agent.getAttribute(officeCompact() ? "data-mobile-x" : "data-home-x")) || 50,
+            y: Number(agent.getAttribute(officeCompact() ? "data-mobile-y" : "data-home-y")) || 50
+          };
+        }
+        function officePlace(agent, x, y, duration) {
+          if (!agent) return;
+          agent.style.setProperty("--agent-move", String(duration || 1700) + "ms");
+          agent.style.left = String(x) + "%";
+          agent.style.top = String(y) + "%";
+        }
+        function officeReset() {
+          officeAgents.forEach(function (agent) {
+            var home = officeHome(agent);
+            agent.classList.remove("is-walking", "is-talking");
+            officePlace(agent, home.x, home.y, 0);
+          });
+          officeState.textContent = "조직 연결 대기";
+          officeActivity.textContent = "화면 시각화이며 독립 AI 직원의 자동 실행 상태는 아닙니다.";
+        }
+        function officeMove(agent, x, y, duration) {
+          agent.classList.remove("is-talking");
+          agent.classList.add("is-walking");
+          officePlace(agent, x, y, duration);
+        }
+        function officeTalk(agents, message) {
+          agents.forEach(function (agent) {
+            agent.classList.remove("is-walking");
+            agent.classList.add("is-talking");
+          });
+          officeState.textContent = "담당 협의 중";
+          officeActivity.textContent = message;
+        }
+        function officeReturn(agents) {
+          agents.forEach(function (agent) {
+            var home = officeHome(agent);
+            agent.classList.remove("is-talking");
+            officeMove(agent, home.x, home.y, 1500);
+          });
+          officeState.textContent = "자리 복귀 중";
+          officeActivity.textContent = "협의를 마치고 각 담당 자리로 복귀합니다.";
+          officeLater(function () {
+            agents.forEach(function (agent) { agent.classList.remove("is-walking"); });
+            officeState.textContent = "조직 연결 대기";
+            officeActivity.textContent = "직원을 누르면 해당 담당의 일정 명령으로 연결됩니다.";
+            officeLater(runOfficeScene, 3000 + (officeTurn % 3) * 900);
+          }, 1580);
+        }
+        function runOfficeScene() {
+          if (!officeAlive() || !officeActive) return;
+          if ((officeMotionQuery && officeMotionQuery.matches) || document.hidden) {
+            officeState.textContent = officeMotionQuery && officeMotionQuery.matches ? "움직임 줄이기 적용" : "화면 대기";
+            officeLater(runOfficeScene, 2000);
+            return;
+          }
+          officeTurn += 1;
+          var chief = officeAgents[0];
+          var compact = officeCompact();
+          if (officeTurn % 3 === 0) {
+            var first = officeAgents[1 + (officeTurn % 5)];
+            var second = officeAgents[1 + ((officeTurn + 2) % 5)];
+            officeState.textContent = "담당 회의 이동 중";
+            officeActivity.textContent = "두 담당 조직이 공용 협의 공간으로 이동합니다.";
+            officeMove(first, compact ? 42 : 46, compact ? 43 : 45, 1650);
+            officeMove(second, compact ? 58 : 54, compact ? 43 : 45, 1650);
+            officeLater(function () {
+              officeTalk([first, second], "담당 간 업무 연결을 표현하는 화면 시각화입니다.");
+              officeLater(function () { officeReturn([first, second]); }, 3300);
+            }, 1720);
+            return;
+          }
+          var specialist = officeAgents[1 + ((officeTurn - 1) % 5)];
+          var specialistName = specialist.querySelector(".mi-assistant-agent-label strong");
+          officeState.textContent = "비서실장 이동 중";
+          officeActivity.textContent = "비서실장이 " + (specialistName ? specialistName.textContent : "담당 조직") + "에게 이동합니다.";
+          officeMove(chief, compact ? 43 : 45, compact ? 43 : 45, 1700);
+          officeMove(specialist, compact ? 57 : 55, compact ? 43 : 45, 1700);
+          officeLater(function () {
+            officeTalk([chief, specialist], "비서실장이 담당 업무를 연결하는 장면입니다.");
+            officeLater(function () { officeReturn([chief, specialist]); }, 3600);
+          }, 1770);
+        }
+        function setOfficeActive(nextActive) {
+          officeActive = Boolean(nextActive) && officeAlive();
+          clearOfficeTimers();
+          officeReset();
+          office.setAttribute("data-motion-state", officeActive ? "active" : "paused");
+          if (!officeActive) return;
+          if (officeMotionQuery && officeMotionQuery.matches) {
+            officeState.textContent = "움직임 줄이기 적용";
+            officeActivity.textContent = "기기 접근성 설정에 따라 조직 이동 애니메이션을 멈췄습니다.";
+            return;
+          }
+          officeLater(runOfficeScene, 900);
+        }
+        function handleOfficeResize() {
+          if (!officeAgents.some(function (agent) { return agent.classList.contains("is-walking") || agent.classList.contains("is-talking"); })) officeReset();
+        }
+        window.addEventListener("resize", handleOfficeResize);
+        ownerAssistantOfficeController = {
+          setActive: setOfficeActive,
+          stop: function () { setOfficeActive(false); },
+          destroy: function () {
+            officeDestroyed = true;
+            officeActive = false;
+            clearOfficeTimers();
+            window.removeEventListener("resize", handleOfficeResize);
+          }
+        };
+        setOfficeActive(view.classList.contains("is-active"));
         view.querySelectorAll("[data-owner-assistant-example]").forEach(function (button) {
           button.addEventListener("click", function () {
             input.value = button.getAttribute("data-owner-assistant-example") || "";
@@ -12091,7 +12234,7 @@
         var assistantView = views.find(function (view) { return view.getAttribute("data-mi-admin-view") === "owner-assistant"; });
         if (!utilityView || !utilityView.querySelector("[data-owner-tool-input]") || !utilityView.querySelector("[data-owner-tool-reset]") || !utilityView.querySelector("[data-owner-tool-status]")) return false;
         if (!developmentView || !developmentView.querySelector("[data-rank-worker-operations]") || !developmentView.querySelector("[data-rank-worker-operations-content]")) return false;
-        if (!assistantView || !assistantView.querySelector("[data-owner-assistant-organization]") || assistantView.querySelectorAll("[data-owner-assistant-role]").length !== 6 || !assistantView.querySelector("[data-owner-assistant-mic]") || !assistantView.querySelector("[data-owner-assistant-wake]") || !assistantView.querySelector("[data-owner-assistant-read]") || !assistantView.querySelector("[data-owner-assistant-input]") || !assistantView.querySelector("[data-owner-assistant-draft]") || !assistantView.querySelector("[data-owner-assistant-results]")) return false;
+        if (!assistantView || !assistantView.querySelector("[data-owner-assistant-organization]") || !assistantView.querySelector("[data-owner-assistant-office]") || assistantView.querySelectorAll("[data-owner-assistant-agent]").length !== 6 || assistantView.querySelectorAll("[data-owner-assistant-role]").length !== 6 || !assistantView.querySelector("[data-owner-assistant-mic]") || !assistantView.querySelector("[data-owner-assistant-wake]") || !assistantView.querySelector("[data-owner-assistant-read]") || !assistantView.querySelector("[data-owner-assistant-input]") || !assistantView.querySelector("[data-owner-assistant-draft]") || !assistantView.querySelector("[data-owner-assistant-results]")) return false;
 
         var nav = root.querySelector(".mi-nav");
         var wrap = root.querySelector(".mi-wrap");
@@ -13729,6 +13872,7 @@
         if (target === "home" && secureSession.role) refreshOperationHomeReportStatus();
         if (target === "work" && secureSession.role) loadWorkItems();
         if (target === "owner-assistant" && secureSession.role === "owner") loadWorkItems();
+        if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");
       }
 
       root.addEventListener("click", function (event) {

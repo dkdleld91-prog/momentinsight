@@ -2,6 +2,10 @@
 
 ## 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 
+- 원본 `dashboard/jarvis.html`을 다시 실행해 13명 캐릭터의 자리 호흡, 휴게 이동, 2~3인 회의, 대표의 직원 방문과 대화, 클릭 담당 연결을 확인했습니다. 이 동작을 데이터 없이 정적인 카드만 보여준 이전 배포는 원본 표현 충족으로 보지 않습니다.
+- 수정 후보의 실제 로컬 owner 화면에서 비서실장과 광고 담당이 협업 허브로 이동해 대화한 뒤 6명 모두 지정 좌표로 복귀했습니다. 다음 장면의 담당 2인 대화도 확인했고 보고서 담당 클릭은 입력창을 `다음 주 월요일 오전 10시 월간 보고서 최종 검수`로 채웠습니다.
+- 390×844 실제 브라우저에서 조직 운영실 299×650, 6명, 이동 상태, document scrollWidth 375로 가로 넘침 0을 확인했습니다. 화면은 모먼트 인사이트 딥네이비 조직 연결선·협업 허브·부서 좌석으로 렌더됐고 console warning/error는 0입니다.
+- 대상 owner tool 9/9, API·서버 551/551, 플레이스 51/51, 쇼핑 62/62, role-state·role-query-parity, server contract 56/56, Production 인증 18/18, release baseline, 보호 잠금, public build/CSP, 전체 `npm run check:release`, `git diff --check`가 통과했습니다. 이 문장은 로컬 후보 증거이며 Production 배포나 실제 마이크 권한 허용 증거가 아닙니다.
 - 원본 폴더는 README·사용설명서·`dashboard/jarvis.html`·`serve.py`·캐릭터/배경 이미지로 구성되어 있고, 원본 HTML에서 `업무 조직도`, `SpeechRecognition|webkitSpeechRecognition`, `speechSynthesis`, `비서실 사무실`을 확인했습니다. 이전 canary에는 이 조직·음성 DOM과 동작이 없어 전체 이식이 아니었다는 사용자 지적이 사실입니다.
 - 보완 후보는 서버 전달 exact-owner HTML에 비서실장 1명+담당 5명 조직도, 마이크·30초 호출 대기·브리핑 읽기 버튼을 포함합니다. 정적 admin/client에는 owner 전용 DOM이 없고, 로그아웃 시 recognition·TTS를 정지하며 텍스트 초안 저장은 계속 명시적 `window.confirm` 뒤 한 번만 수행합니다.
 - `Permissions-Policy`는 카메라·위치·결제·USB·화면 공유를 계속 차단하고 마이크만 same-origin 사용자 허용으로 좁혔습니다. 음성 입력은 브라우저 제공 서비스가 처리할 수 있음을 UI에 고지하고, 텍스트 일정 parser에는 외부 AI 호출을 추가하지 않았습니다.

@@ -273,21 +273,61 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-scope span{color:#718096;font-size:9px;font-weight:950;letter-spacing:.1em}
 #mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 #mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
-#mi-admin .mi-assistant-organization{gap:18px;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
-#mi-admin .mi-assistant-org-chart{display:grid;gap:14px}
-#mi-admin .mi-assistant-chief{display:grid;max-width:440px;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;margin:0 auto;border:1px solid rgba(31,111,235,.2);border-radius:17px;padding:14px 16px;background:linear-gradient(145deg,#071c36,#0d2a4b);box-shadow:0 14px 28px rgba(7,31,61,.14)}
-#mi-admin .mi-assistant-chief-icon,#mi-admin .mi-assistant-role-icon{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:rgba(255,255,255,.12);font-size:23px}
-#mi-admin .mi-assistant-chief-copy,#mi-admin .mi-assistant-role-copy{display:grid;gap:3px;min-width:0}
-#mi-admin .mi-assistant-chief-copy strong{color:#fff;font-size:14px;font-weight:950}
-#mi-admin .mi-assistant-chief-copy span{color:#bbcae0;font-size:10px;font-weight:750;line-height:1.4}
-#mi-admin .mi-assistant-org-line{width:1px;height:18px;margin:-2px auto;background:#b9c7d9}
-#mi-admin .mi-assistant-role-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
-#mi-admin .mi-assistant-role{display:grid;grid-template-columns:38px minmax(0,1fr);gap:9px;align-items:center;min-height:86px;border:1px solid #e2e9f2;border-radius:15px;padding:11px;color:inherit;background:#fbfcfe;text-align:left;cursor:pointer}
-#mi-admin .mi-assistant-role:hover{border-color:#91b7ee;background:#f5f9ff;transform:translateY(-1px)}
-#mi-admin .mi-assistant-role-icon{width:38px;height:38px;border:1px solid #e4eaf2;background:#fff;font-size:18px}
-#mi-admin .mi-assistant-role-copy strong{color:var(--mi-navy);font-size:11.5px;font-weight:950}
-#mi-admin .mi-assistant-role-copy span{color:#748195;font-size:9.5px;font-weight:750;line-height:1.35}
-#mi-admin .mi-assistant-role-copy small{color:#1e8c5d;font-size:8.5px;font-weight:950;letter-spacing:.04em}
+#mi-admin .mi-assistant-organization{gap:18px;overflow:hidden;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
+#mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(134,165,207,.24);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+#mi-admin .mi-assistant-office:before{position:absolute;inset:0;content:"";background:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:34px 34px;mask-image:linear-gradient(to bottom,transparent 0,#000 30%,#000 100%)}
+#mi-admin .mi-assistant-office:after{position:absolute;right:-10%;bottom:-38%;left:-10%;height:65%;border-radius:50% 50% 0 0;content:"";background:radial-gradient(ellipse at center,rgba(52,128,224,.13),transparent 62%);pointer-events:none}
+#mi-admin .mi-assistant-office-topline{position:absolute;z-index:7;top:14px;right:16px;left:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#a9bad1;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+#mi-admin .mi-assistant-office-topline span{display:inline-flex;align-items:center;gap:7px}
+#mi-admin .mi-assistant-office-topline span:before{width:7px;height:7px;border-radius:50%;content:"";background:#4fd3a4;box-shadow:0 0 0 4px rgba(79,211,164,.11)}
+#mi-admin .mi-assistant-office-topline strong{color:#e9f2ff;font-size:10px}
+#mi-admin .mi-assistant-office-network{position:absolute;z-index:1;inset:0;pointer-events:none}
+#mi-admin .mi-assistant-office-network span{position:absolute;display:block;background:rgba(102,163,239,.26)}
+#mi-admin .mi-assistant-office-network .is-spine{top:20%;left:50%;width:1px;height:39%}
+#mi-admin .mi-assistant-office-network .is-rail{top:59%;left:12%;width:76%;height:1px}
+#mi-admin .mi-assistant-office-network .is-flow{top:19%;left:calc(50% - 3px);width:7px;height:7px;border-radius:50%;background:#7bb7ff;box-shadow:0 0 12px #4c9dff;animation:mi-assistant-flow 3.4s ease-in-out infinite}
+@keyframes mi-assistant-flow{0%{top:20%;opacity:0}20%{opacity:1}70%{top:58%;opacity:1}100%{top:58%;opacity:0}}
+#mi-admin .mi-assistant-station{position:absolute;z-index:2;display:grid;align-content:end;min-width:0;border:1px solid rgba(142,183,232,.18);border-radius:14px;padding:10px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+#mi-admin .mi-assistant-station:before{position:absolute;top:8px;right:8px;width:18px;height:11px;border:1px solid rgba(117,180,255,.25);border-radius:3px;content:"";background:#0b1b31;box-shadow:inset 0 0 7px rgba(59,142,240,.24)}
+#mi-admin .mi-assistant-station strong{color:#eef5ff;font-size:9px;font-weight:950;letter-spacing:.04em}
+#mi-admin .mi-assistant-station small{margin-top:2px;color:#8ca2bf;font-size:7.5px;font-weight:850}
+#mi-admin .mi-assistant-station.is-chief{top:9%;left:41%;width:18%;height:15%;border-color:rgba(91,168,255,.35);background:linear-gradient(145deg,rgba(42,123,222,.2),rgba(255,255,255,.035))}
+#mi-admin .mi-assistant-station.is-schedule{top:63%;left:4%;width:16%;height:25%}
+#mi-admin .mi-assistant-station.is-report{top:63%;left:23%;width:16%;height:25%}
+#mi-admin .mi-assistant-station.is-ads{top:63%;left:42%;width:16%;height:25%}
+#mi-admin .mi-assistant-station.is-content{top:63%;left:61%;width:16%;height:25%}
+#mi-admin .mi-assistant-station.is-keyword{top:63%;left:80%;width:16%;height:25%}
+#mi-admin .mi-assistant-meeting-hub{position:absolute;z-index:2;top:39%;left:41%;display:grid;width:18%;height:14%;place-items:center;border:1px dashed rgba(135,187,249,.28);border-radius:50%;color:#8fa9c9;background:rgba(19,58,101,.28);font-size:7.5px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+#mi-admin .mi-assistant-agent{position:absolute;z-index:5;display:grid;width:94px;justify-items:center;border:0;padding:0;color:#fff;background:transparent;cursor:pointer;transform:translate(-50%,-50%);transition:left var(--agent-move,1.7s) cubic-bezier(.32,.08,.25,1),top var(--agent-move,1.7s) cubic-bezier(.32,.08,.25,1);will-change:left,top}
+#mi-admin .mi-assistant-agent:hover,#mi-admin .mi-assistant-agent:focus-visible{z-index:8;outline:0}
+#mi-admin .mi-assistant-agent:hover .mi-assistant-agent-label,#mi-admin .mi-assistant-agent:focus-visible .mi-assistant-agent-label{border-color:rgba(123,183,255,.68);background:#102f55;transform:translateY(-2px)}
+#mi-admin .mi-assistant-agent-figure{position:relative;display:block;width:42px;height:49px;filter:drop-shadow(0 7px 8px rgba(0,0,0,.28));animation:mi-assistant-breathe var(--agent-breathe,3.8s) ease-in-out infinite}
+#mi-admin .mi-assistant-agent-head{position:absolute;z-index:2;top:0;left:5px;width:32px;height:24px;border:2px solid #a9c9ee;border-radius:13px 13px 10px 10px;background:linear-gradient(150deg,#eff7ff,#9bbde6)}
+#mi-admin .mi-assistant-agent-head:before{position:absolute;top:7px;left:5px;width:18px;height:8px;border-radius:7px;content:"";background:#07182e;box-shadow:inset 0 0 8px rgba(80,175,255,.32)}
+#mi-admin .mi-assistant-agent-head:after{position:absolute;top:10px;left:10px;width:3px;height:3px;border-radius:50%;content:"";background:#7dccff;box-shadow:8px 0 #7dccff,0 0 5px #7dccff,8px 0 5px #7dccff}
+#mi-admin .mi-assistant-agent-body{position:absolute;bottom:4px;left:8px;display:grid;width:27px;height:26px;place-items:center;border:2px solid #8fb5e2;border-radius:8px 8px 11px 11px;background:linear-gradient(145deg,#dcecff,#789fce);font-size:11px}
+#mi-admin .mi-assistant-agent-leg{position:absolute;bottom:0;width:5px;height:8px;border-radius:0 0 4px 4px;background:#91b6e1;transform-origin:top}
+#mi-admin .mi-assistant-agent-leg.is-left{left:11px}#mi-admin .mi-assistant-agent-leg.is-right{right:11px}
+#mi-admin .mi-assistant-agent-label{display:grid;min-width:88px;gap:1px;margin-top:2px;border:1px solid rgba(127,170,223,.3);border-radius:9px;padding:5px 8px;background:rgba(7,27,53,.9);box-shadow:0 5px 14px rgba(0,0,0,.15);transition:.18s ease}
+#mi-admin .mi-assistant-agent-label strong{font-size:9px;font-weight:950;white-space:nowrap}
+#mi-admin .mi-assistant-agent-label small{color:#9eb4ce;font-size:7.5px;font-weight:850;white-space:nowrap}
+#mi-admin .mi-assistant-agent-bubble{position:absolute;bottom:100%;left:50%;display:none;min-width:76px;margin-bottom:7px;border:1px solid rgba(126,187,255,.45);border-radius:10px;padding:5px 7px;color:#dcecff;background:#102f55;box-shadow:0 8px 20px rgba(0,0,0,.2);font-size:8px;font-weight:900;white-space:nowrap;transform:translateX(-50%)}
+#mi-admin .mi-assistant-agent.is-walking .mi-assistant-agent-figure{animation:mi-assistant-walk .42s ease-in-out infinite}
+#mi-admin .mi-assistant-agent.is-walking .mi-assistant-agent-leg.is-left{animation:mi-assistant-leg-left .42s ease-in-out infinite}
+#mi-admin .mi-assistant-agent.is-walking .mi-assistant-agent-leg.is-right{animation:mi-assistant-leg-right .42s ease-in-out infinite}
+#mi-admin .mi-assistant-agent.is-talking .mi-assistant-agent-figure{animation:mi-assistant-talk .8s ease-in-out infinite}
+#mi-admin .mi-assistant-agent.is-talking .mi-assistant-agent-bubble{display:block;animation:mi-assistant-bubble 1.1s ease-in-out infinite}
+#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-head{border-color:#95ead0;background:linear-gradient(150deg,#e8fff8,#72c9ad)}
+#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-body{border-color:#6ac3a5;background:linear-gradient(145deg,#ccf7e8,#4caa8c)}
+@keyframes mi-assistant-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
+@keyframes mi-assistant-walk{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-3px) rotate(2deg)}75%{transform:translateY(-3px) rotate(-2deg)}}
+@keyframes mi-assistant-leg-left{0%,100%{transform:rotate(0)}50%{transform:rotate(18deg)}}
+@keyframes mi-assistant-leg-right{0%,100%{transform:rotate(0)}50%{transform:rotate(-18deg)}}
+@keyframes mi-assistant-talk{0%,100%{transform:translateY(0)}50%{transform:translateY(-1px) rotate(1deg)}}
+@keyframes mi-assistant-bubble{0%,100%{opacity:.55;transform:translateX(-50%) translateY(1px)}50%{opacity:1;transform:translateX(-50%) translateY(-2px)}}
+#mi-admin .mi-assistant-office-caption{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;color:#758399;font-size:9.5px;font-weight:800;line-height:1.55}
+#mi-admin .mi-assistant-office-caption strong{color:var(--mi-navy)}
+#mi-admin .mi-assistant-office-activity{color:#1f6feb;text-align:right}
 #mi-admin .mi-assistant-grid{display:grid;grid-template-columns:minmax(0,.8fr) minmax(420px,1.2fr);gap:16px;align-items:start}
 #mi-admin .mi-assistant-panel{display:grid;gap:15px;min-width:0;border:1px solid rgba(6,26,58,.09);border-radius:19px;padding:20px;background:#fff;box-shadow:0 13px 34px rgba(6,26,58,.055)}
 #mi-admin .mi-assistant-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -326,10 +366,9 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-unresolved{display:grid;gap:6px;border:1px solid #f3d8b5;border-radius:12px;padding:12px;background:#fff9f2}
 #mi-admin .mi-assistant-unresolved strong{color:#a55b12;font-size:11px}
 #mi-admin .mi-assistant-unresolved span{color:#8b6a47;font-size:10.5px;line-height:1.45}
-@media(max-width:1100px){#mi-admin .mi-assistant-role-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:980px){#mi-admin .mi-assistant-grid{grid-template-columns:1fr}}
-@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-chief{grid-template-columns:42px minmax(0,1fr)}#mi-admin .mi-assistant-chief .mi-badge{grid-column:1/-1;justify-self:start}#mi-admin .mi-assistant-role-grid{grid-template-columns:1fr 1fr}#mi-admin .mi-assistant-role{min-height:78px}#mi-admin .mi-assistant-voice{align-items:stretch;flex-wrap:wrap}#mi-admin .mi-assistant-voice-status{flex-basis:100%}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
-@media(max-width:430px){#mi-admin .mi-assistant-role-grid{grid-template-columns:1fr}}
+@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-office{min-height:650px}#mi-admin .mi-assistant-office-network .is-spine{top:19%;height:31%}#mi-admin .mi-assistant-office-network .is-rail{top:50%;left:25%;width:50%}#mi-admin .mi-assistant-station.is-chief{top:7%;left:24%;width:52%;height:13%}#mi-admin .mi-assistant-station.is-schedule{top:57%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-report{top:57%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-ads{top:71%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-content{top:71%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-keyword{top:85%;left:25%;width:50%;height:12%}#mi-admin .mi-assistant-meeting-hub{top:34%;left:31%;width:38%;height:12%}#mi-admin .mi-assistant-agent{width:82px}#mi-admin .mi-assistant-office-caption{flex-direction:column}#mi-admin .mi-assistant-office-activity{text-align:left}#mi-admin .mi-assistant-voice{align-items:stretch;flex-wrap:wrap}#mi-admin .mi-assistant-voice-status{flex-basis:100%}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
+@media(prefers-reduced-motion:reduce){#mi-admin .mi-assistant-agent,#mi-admin .mi-assistant-agent-figure,#mi-admin .mi-assistant-agent-leg,#mi-admin .mi-assistant-agent-bubble,#mi-admin .mi-assistant-office-network .is-flow{transition:none!important;animation:none!important}}
 `;
 
 const utilityViewHtml = String.raw`<section class="mi-view" data-mi-admin-view="owner-utility" id="mi-admin-owner-utility" aria-label="총관리자 전용 부가세 계산기">
@@ -379,18 +418,25 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <div class="mi-assistant-scope"><span>CURRENT SCOPE</span><strong data-owner-assistant-scope>총관리자 내부 일정</strong><small>광고주 범위는 업무 운영에서 선택</small></div>
   </header>
   <article class="mi-assistant-panel mi-assistant-organization" data-owner-assistant-organization>
-    <div class="mi-assistant-panel-head"><div><h2>모먼트랩스 비서실 조직도</h2><p>비서실장이 업무 성격에 맞는 담당을 연결합니다. 담당 카드를 누르면 해당 일정 명령 예시가 입력됩니다.</p></div><span class="mi-badge">mml93-a01 전용</span></div>
-    <div class="mi-assistant-org-chart">
-      <button class="mi-assistant-chief" type="button" data-owner-assistant-role="chief"><span class="mi-assistant-chief-icon" aria-hidden="true">🤖</span><span class="mi-assistant-chief-copy"><strong>비서실장 자비스</strong><span>일정 브리핑 · 업무 분류 · 담당 연결</span></span><span class="mi-badge">총괄</span></button>
-      <div class="mi-assistant-org-line" aria-hidden="true"></div>
-      <div class="mi-assistant-role-grid">
-        <button class="mi-assistant-role" type="button" data-owner-assistant-role="schedule"><span class="mi-assistant-role-icon" aria-hidden="true">📅</span><span class="mi-assistant-role-copy"><strong>일정 운영 자비스</strong><span>미팅·마감·실행 일정</span><small>일정 연동</small></span></button>
-        <button class="mi-assistant-role" type="button" data-owner-assistant-role="report"><span class="mi-assistant-role-icon" aria-hidden="true">📊</span><span class="mi-assistant-role-copy"><strong>보고서 자비스</strong><span>주간·월간·KPI 보고</span><small>일정 연동</small></span></button>
-        <button class="mi-assistant-role" type="button" data-owner-assistant-role="ads"><span class="mi-assistant-role-icon" aria-hidden="true">📣</span><span class="mi-assistant-role-copy"><strong>광고 운영 자비스</strong><span>세팅·성과 점검·액션</span><small>일정 연동</small></span></button>
-        <button class="mi-assistant-role" type="button" data-owner-assistant-role="content"><span class="mi-assistant-role-icon" aria-hidden="true">🎨</span><span class="mi-assistant-role-copy"><strong>콘텐츠 자비스</strong><span>소재·촬영·업로드</span><small>일정 연동</small></span></button>
-        <button class="mi-assistant-role" type="button" data-owner-assistant-role="keyword"><span class="mi-assistant-role-icon" aria-hidden="true">🔎</span><span class="mi-assistant-role-copy"><strong>키워드 자비스</strong><span>검색·SEO·순위 점검</span><small>일정 연동</small></span></button>
-      </div>
+    <div class="mi-assistant-panel-head"><div><h2>모먼트랩스 비서실 운영실</h2><p>비서실장 아래 5개 담당 조직이 연결됩니다. 직원을 누르면 해당 담당의 일정 명령 예시가 입력됩니다.</p></div><span class="mi-badge">mml93-a01 전용</span></div>
+    <div class="mi-assistant-office" data-owner-assistant-office aria-label="움직이는 모먼트랩스 비서실 조직도">
+      <div class="mi-assistant-office-topline"><span>MomentLabs operations office</span><strong data-owner-assistant-office-state>조직 연결 대기</strong></div>
+      <div class="mi-assistant-office-network" aria-hidden="true"><span class="is-spine"></span><span class="is-rail"></span><span class="is-flow"></span></div>
+      <div class="mi-assistant-station is-chief"><strong>비서실장</strong><small>업무 분류 · 담당 연결</small></div>
+      <div class="mi-assistant-station is-schedule"><strong>일정 운영</strong><small>미팅 · 마감 · 실행 일정</small></div>
+      <div class="mi-assistant-station is-report"><strong>보고서</strong><small>주간 · 월간 · KPI</small></div>
+      <div class="mi-assistant-station is-ads"><strong>광고 운영</strong><small>세팅 · 성과 · 액션</small></div>
+      <div class="mi-assistant-station is-content"><strong>콘텐츠</strong><small>소재 · 촬영 · 업로드</small></div>
+      <div class="mi-assistant-station is-keyword"><strong>키워드</strong><small>검색 · SEO · 순위</small></div>
+      <div class="mi-assistant-meeting-hub" aria-hidden="true">collaboration hub</div>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="chief" data-home-x="50" data-home-y="29" data-mobile-x="50" data-mobile-y="24" style="left:50%;top:29%;--agent-breathe:3.7s" aria-label="비서실장 자비스 호출"><span class="mi-assistant-agent-bubble">업무 조율 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">◆</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>비서실장 자비스</strong><small>총괄 · 담당 연결</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="schedule" data-home-x="12" data-home-y="73" data-mobile-x="25" data-mobile-y="61" style="left:12%;top:73%;--agent-breathe:4.1s" aria-label="일정 운영 자비스 호출"><span class="mi-assistant-agent-bubble">일정 확인 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📅</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>일정 운영 자비스</strong><small>미팅 · 마감</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="report" data-home-x="31" data-home-y="73" data-mobile-x="75" data-mobile-y="61" style="left:31%;top:73%;--agent-breathe:4.5s" aria-label="보고서 자비스 호출"><span class="mi-assistant-agent-bubble">보고서 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📊</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>보고서 자비스</strong><small>주간 · 월간 · KPI</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="ads" data-home-x="50" data-home-y="73" data-mobile-x="25" data-mobile-y="75" style="left:50%;top:73%;--agent-breathe:3.9s" aria-label="광고 운영 자비스 호출"><span class="mi-assistant-agent-bubble">성과 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📣</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>광고 운영 자비스</strong><small>세팅 · 성과 · 액션</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="content" data-home-x="69" data-home-y="73" data-mobile-x="75" data-mobile-y="75" style="left:69%;top:73%;--agent-breathe:4.3s" aria-label="콘텐츠 자비스 호출"><span class="mi-assistant-agent-bubble">콘텐츠 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🎨</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>콘텐츠 자비스</strong><small>소재 · 촬영 · 업로드</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="keyword" data-home-x="88" data-home-y="73" data-mobile-x="50" data-mobile-y="89" style="left:88%;top:73%;--agent-breathe:4.7s" aria-label="키워드 자비스 호출"><span class="mi-assistant-agent-bubble">키워드 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🔎</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>키워드 자비스</strong><small>검색 · SEO · 순위</small></span></button>
     </div>
+    <div class="mi-assistant-office-caption"><span><strong>움직임 안내</strong> · 자리 대기, 담당 회의, 비서실장 방문을 화면으로 표현합니다. 직원을 누르면 담당 명령으로 연결됩니다.</span><span class="mi-assistant-office-activity" data-owner-assistant-office-activity aria-live="polite">화면 시각화이며 독립 AI 직원의 자동 실행 상태는 아닙니다.</span></div>
   </article>
   <div class="mi-assistant-grid">
     <article class="mi-assistant-panel">

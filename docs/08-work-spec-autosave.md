@@ -3,6 +3,18 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-18 자비스 운영 비서 `mml93-a01` canary 계약
+
+- 1차 적용 대상은 정확한 `mml93-a01` 총관리자 세션 한 곳이다. 운영팀·광고주·로그아웃 화면에는 메뉴·화면·데이터를 숨김 DOM으로도 제공하지 않으며, 이상 없음이 확인되기 전 전체 역할로 확대하지 않는다.
+- 기존 모먼트 인사이트 일정표(`schedule_items`)를 유일한 일정 원본으로 유지한다. 별도 일정 DB나 Google Calendar 동기화는 이번 canary에 추가하지 않는다.
+- 자비스는 `오늘 브리핑`, 자연어 `일정 초안`, `회의 메모 → 업무 초안`까지만 수행한다. 초안은 사용자가 항목별로 확인하고 `일정표에 등록`을 눌러야 저장되며 자동 등록·자동 공개·자동 외부 전송은 금지한다.
+- 일정 초안은 현재 총관리자 일정표의 광고주 코드 범위를 그대로 따른다. 광고주 코드가 비어 있으면 총관리자 내부 일정, 입력되어 있으면 해당 활성 광고주 범위로 저장한다.
+- 모든 초안은 `internal` 비공개·`planned` 상태를 기본으로 한다. 광고주 공개 전환은 기존 일정 편집 화면에서 별도 확인하며, 비서가 내부 메모를 공개 코멘트로 복사하거나 임의 내용을 만들지 않는다.
+- 1차 canary는 외부 LLM에 일정·회의 메모를 전송하지 않는 결정형 파서를 사용한다. 날짜·시간이 확인되지 않는 문장은 `확인 필요`로 남기고 임의 일정을 생성하지 않는다.
+- 저장은 기존 `/api/work-items`의 세션·CSRF·tenant 검증과 감사 로그를 재사용한다. 새 테이블·migration·비밀키·파일·shell 실행 권한은 추가하지 않는다.
+- 검증은 exact owner만 payload 수신, non-owner 403, 정적 admin/client DOM 미노출, 초안만으로 DB write 0, 명시적 등록 1회당 일정 1건, 광고주 범위 보존, 모바일 반응형, 로그아웃 제거, CSP·전체 release gate를 포함한다.
+- N상품·N플레이스 30일 순환, Windows 작업기, 순위 저장·이력·원자 300 계약은 이번 기능과 분리해 변경하지 않는다.
+
 ## 2026-08-13 N쇼핑 중복 식별·유한 복구 영구 계약
 
 - `provider_duplicate_identity`는 전체 순환을 멈추지 않는 tracker 단위 오류이며, 누적 재시도 횟수와 무관하게 격리는 30분을 넘기지 않는다. 다른 tracker 오류의 기존 30분/24시간 정책과 security/network 전역 중단은 유지한다.
@@ -310,9 +322,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 15. 10:49:16
-- 기준 커밋: ab32b5d
-- 작업트리: M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-local-worker.test.mjs /  M scripts/naver-shopping-native-host-core.mjs /  M scripts/naver-shopping-native-host.mjs /  M scripts/naver-shopping-native-host.test.mjs /  M src/server/handlers/naver-rank-trackers.mjs
+- 마지막 자동 저장: 2026. 08. 18. 18:28:56
+- 기준 커밋: f7d1971
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

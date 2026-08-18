@@ -211,7 +211,7 @@ assert.equal(staticClientProductRankView.test(clientSource), false, "client prod
 assert.equal(adminSource.includes('data-mi-admin-view="naver-rank-tracking"'), true, "admin product 30-day view remains");
 assert.equal(clientSource.includes('data-mi-view="naver-rank-tracking"'), true, "client product 30-day view remains");
 
-const staticOwnerDevelopmentMarkup = /<(?:a|div|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-(?:development|utility)"/u;
+const staticOwnerDevelopmentMarkup = /<(?:a|div|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-(?:development|assistant|utility)"/u;
 const staticWorkerOperationsPanel = /<(?:div|section)\b[^>]*data-rank-worker-operations(?:\s|>|=)/u;
 assert.equal(staticOwnerDevelopmentMarkup.test(adminSource), false, "admin source must not statically disclose owner development DOM");
 assert.equal(staticOwnerDevelopmentMarkup.test(clientSource), false, "client source must not disclose owner development DOM");
@@ -221,6 +221,8 @@ assert.equal(staticWorkerOperationsPanel.test(clientSource), false, "client sour
 for (const marker of [
   'data-mi-admin-screen="owner-development"',
   'data-mi-admin-view="owner-development"',
+  'data-mi-admin-screen="owner-assistant"',
+  'data-mi-admin-view="owner-assistant"',
   'data-mi-admin-screen="owner-utility"',
   'data-mi-admin-view="owner-utility"',
   "data-rank-worker-operations",
@@ -238,6 +240,7 @@ const ownerToolLoader = adminSource.slice(ownerLoaderStart, ownerLoaderEnd);
 assert.equal(ownerToolLoader.includes("menuGroup"), true, "dynamic owner menu group");
 assert.equal(ownerToolLoader.includes('querySelectorAll(":scope > section[data-mi-admin-view]")'), true, "dynamic owner views");
 assert.equal(ownerToolLoader.includes('getAttribute("data-mi-admin-view") === "owner-development"'), true, "dynamic owner development validation");
+assert.equal(ownerToolLoader.includes('getAttribute("data-mi-admin-view") === "owner-assistant"'), true, "dynamic owner assistant validation");
 assert.match(ownerToolLoader, /nav\.appendChild\(menuGroup\)/u, "dynamic owner menu mount");
 assert.match(ownerToolLoader, /wrap\.appendChild\(view\)/u, "dynamic owner view mount");
 assert.equal(ownerToolLoader.includes('CustomEvent("mi:rank-owner-tool-mounted")'), true, "dynamic owner operations mount signal");

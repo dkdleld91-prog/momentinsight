@@ -383,6 +383,23 @@ check(
   `${files.serverIndex}, ${files.sessionGate}, ${files.ownerIdentity}, ${files.ownerTool}`,
 );
 check(
+  "owner assistant canary is exact-owner-only, deterministic, internal and confirmation-gated",
+  hasAll(ownerTool, [
+    /data-mi-admin-screen="owner-assistant"/,
+    /data-mi-admin-view="owner-assistant"/,
+    /body\?\.action === "assistant-draft"/,
+    /source: "deterministic-private-v1"/,
+    /visibility: "internal"/,
+    /날짜가 확인되는 문장만/,
+  ]) && hasAll(adminPage, [
+    /getAttribute\("data-mi-admin-view"\) === "owner-assistant"/,
+    /window\.confirm\(targetLabel \+ " 일정으로 등록할까요\?/,
+    /await requestWorkItems\("POST", workItemPayload\(draft\)\)/,
+    /renderOwnerAssistantBriefing/,
+  ]),
+  `${files.ownerTool}, ${files.adminPage}`,
+);
+check(
   "owner tool has an explicit nested Vercel function adapter",
   hasAll(ownerToolAdapter, [
     /createHandler/,

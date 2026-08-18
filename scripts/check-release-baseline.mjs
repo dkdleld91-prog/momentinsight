@@ -355,6 +355,16 @@ const checks = {
     && adminSource.includes('navigator.clipboard.writeText')
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(adminSource)
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
+  ownerAssistantCanaryIsPrivateAndConfirmOnly: ownerToolServer.includes('data-mi-admin-screen="owner-assistant"')
+    && ownerToolServer.includes('data-mi-admin-view="owner-assistant"')
+    && ownerToolServer.includes('source: "deterministic-private-v1"')
+    && ownerToolServer.includes('visibility: "internal"')
+    && ownerToolServer.includes('body?.action === "assistant-draft"')
+    && adminSource.includes('window.confirm(targetLabel + " 일정으로 등록할까요?')
+    && adminSource.includes('await requestWorkItems("POST", workItemPayload(draft))')
+    && adminSource.includes('getAttribute("data-mi-admin-view") === "owner-assistant"')
+    && !/<(?:a|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-assistant"/u.test(adminSource)
+    && !/<(?:a|section)\b[^>]*data-mi-(?:screen|view)="owner-assistant"/u.test(clientSource),
   ownerDevelopmentIsServerDeliveredOnly: ownerToolServer.includes('data-mi-admin-screen="owner-development"')
     && ownerToolServer.includes('data-mi-admin-view="owner-development"')
     && ownerToolServer.includes('data-mi-admin-screen="owner-utility"')
@@ -1812,7 +1822,7 @@ const checks = {
     && adminSource.includes("display: none !important;")
     && adminSource.includes("#mi-admin .mi-work-shell.is-active")
     && !adminSource.includes("#mi-admin .mi-work-shell {\n      display: grid;")
-    && adminSource.includes('if (target !== "work") deactivateWorkOperation();'),
+    && adminSource.includes('if (target !== "work" && target !== "owner-assistant") deactivateWorkOperation();'),
   workOperationOwnerCodeIsManualAndNonEnumerating: adminWorkViewSource.includes("광고주 코드 직접 입력")
     && adminWorkViewSource.includes('autocomplete="new-password"')
     && !adminWorkViewSource.includes("<datalist")

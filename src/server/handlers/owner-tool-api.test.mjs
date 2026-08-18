@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import app, { calculateOwnerTax } from "./owner-tool-api.mjs";
+import app, { calculateOwnerTax, parseOwnerAssistantDrafts } from "./owner-tool-api.mjs";
 
 function request(method = "GET", options = {}) {
   const headers = new Headers(options.headers || {});
@@ -27,6 +27,43 @@ test("calculation reverses a VAT-inclusive total with integer half-up rounding",
   assert.equal(calculateOwnerTax(-1), null);
 });
 
+test("owner assistant creates only dated internal schedule drafts without external AI", () => {
+  const now = new Date("2026-08-18T03:00:00.000Z");
+  const result = parseOwnerAssistantDrafts([
+    "내일 오후 2시 광고주 미팅 1시간 등록해줘",
+    "다음 주 월요일 오전 10시 월간 보고서 최종 검수",
+    "성과 자료도 정리하기",
+  ].join("\n"), { now });
+  assert.equal(result.ok, true);
+  assert.equal(result.source, "deterministic-private-v1");
+  assert.equal(result.drafts.length, 2);
+  assert.equal(result.unresolved.length, 1);
+  assert.deepEqual(result.drafts[0], {
+    title: "광고주 미팅",
+    scheduleType: "meeting",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-08-19T05:00:00.000Z",
+    endsAt: "2026-08-19T06:00:00.000Z",
+    assigneeName: "",
+    internalNote: "자비스 초안 원문: 내일 오후 2시 광고주 미팅 1시간 등록해줘",
+    isAllDay: false,
+    visibility: "internal",
+    publicTitle: "",
+    publicComment: "",
+  });
+  assert.equal(result.drafts[1].scheduleType, "report_due");
+  assert.equal(result.drafts[1].startsAt, "2026-08-24T01:00:00.000Z");
+  assert.equal(result.drafts.every((draft) => draft.visibility === "internal"), true);
+  const halfPast = parseOwnerAssistantDrafts("내일 오후 2시 30분 미팅", { now }).drafts[0];
+  assert.equal(halfPast.startsAt, "2026-08-19T05:30:00.000Z");
+  assert.equal(halfPast.endsAt, "2026-08-19T06:30:00.000Z");
+  assert.equal(parseOwnerAssistantDrafts("날짜 없는 업무", { now }).drafts.length, 0);
+  assert.equal(parseOwnerAssistantDrafts("", { now }).ok, false);
+  const source = fs.readFileSync(new URL("./owner-tool-api.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /api\.openai\.com|anthropic|claude|OPENAI_API_KEY/i);
+});
+
 test("tool content is disclosed only to the exact primary owner identity", async () => {
   const anonymous = await app.fetch(request("GET", { owner: false }));
   const team = await app.fetch(request("GET", { role: "team" }));
@@ -43,10 +80,14 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.menuHtml, /^<div class="mi-nav-group/);
   assert.match(payload.tool.menuHtml, /개발 &lt;\/&gt;/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-development"/);
+  assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-assistant"/);
+  assert.match(payload.tool.menuHtml, /자비스 운영 비서/);
+  assert.match(payload.tool.menuHtml, /CANARY/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-utility"/);
   assert.match(payload.tool.menuHtml, /부가세 계산기/);
   assert.match(payload.tool.viewHtml, /^<div class="mi-owner-tool-views"/);
-  assert.ok(payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-development"') < payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-utility"'));
+  assert.ok(payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-development"') < payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-assistant"'));
+  assert.ok(payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-assistant"') < payload.tool.viewHtml.indexOf('data-mi-admin-view="owner-utility"'));
   assert.match(payload.tool.viewHtml, /data-rank-worker-operations/);
   assert.equal((payload.tool.viewHtml.match(/data-rank-worker-operations(?:\s|=)/g) || []).length, 1);
   assert.match(payload.tool.viewHtml, /N 쇼핑 수집 운영/);
@@ -55,16 +96,41 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /오가닉 300개 검증/);
   assert.match(payload.tool.viewHtml, /마지막 정상 기록 보존/);
   assert.match(payload.tool.viewHtml, /data-owner-tool-input/);
+  assert.match(payload.tool.viewHtml, /data-owner-assistant-input/);
+  assert.match(payload.tool.viewHtml, /확인하기 전에는 저장하거나 공개하지 않습니다/);
+  assert.match(payload.tool.viewHtml, /외부 전송 없음/);
   assert.match(payload.tool.viewHtml, /부가세 포함 금액/);
   assert.match(payload.tool.viewHtml, /최종 합계금액을 입력/);
   assert.doesNotMatch(payload.tool.viewHtml, /미포함 금액을 입력/);
   assert.match(payload.tool.styleText, /mi-vat-layout/);
   assert.match(payload.tool.styleText, /mi-owner-development-hero/);
   assert.match(payload.tool.styleText, /mi-owner-development-principles/);
+  assert.match(payload.tool.styleText, /mi-owner-assistant/);
   assert.match(payload.tool.styleText, /@media\(max-width:900px\).*mi-owner-development-nav.*mi-nav-title\{display:none\}/s);
   for (const html of [payload.tool.menuHtml, payload.tool.viewHtml]) {
     assert.doesNotMatch(html, /<script|<iframe|<object|\son[a-z]+\s*=/i);
   }
+});
+
+test("assistant endpoint is exact-owner-only and returns drafts without writing schedules", async () => {
+  const body = JSON.stringify({ action: "assistant-draft", prompt: "내일 오후 2시 광고주 미팅" });
+  const blocked = await app.fetch(request("POST", {
+    ownerCode: "mml93-a02",
+    headers: { "content-type": "application/json" },
+    body,
+  }));
+  assert.equal(blocked.status, 403);
+  const response = await app.fetch(request("POST", {
+    headers: { "content-type": "application/json" },
+    body,
+  }));
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.drafts.length, 1);
+  assert.equal(payload.drafts[0].visibility, "internal");
+  assert.equal(payload.source, "deterministic-private-v1");
+  assert.equal("saved" in payload, false);
 });
 
 test("calculation endpoint rejects non-owner, wrong media and invalid amounts", async () => {
@@ -113,5 +179,8 @@ test("owner development navigation and view are not present in public static mar
     assert.doesNotMatch(staticMarkup, /data-owner-development-nav/);
     assert.doesNotMatch(staticMarkup, /data-mi-admin-screen="owner-development"/);
     assert.doesNotMatch(staticMarkup, /data-mi-admin-view="owner-development"/);
+    assert.doesNotMatch(staticMarkup, /mi-admin-owner-assistant/);
+    assert.doesNotMatch(staticMarkup, /data-mi-admin-screen="owner-assistant"/);
+    assert.doesNotMatch(staticMarkup, /data-mi-admin-view="owner-assistant"/);
   }
 });

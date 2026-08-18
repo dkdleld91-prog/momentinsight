@@ -11618,8 +11618,11 @@
       var ownerToolAmounts = {};
       var ownerToolGeneration = 0;
       var ownerToolTimer = 0;
+      var ownerAssistantVoiceController = null;
 
       function discardOwnerTool() {
+        if (ownerAssistantVoiceController && typeof ownerAssistantVoiceController.stop === "function") ownerAssistantVoiceController.stop();
+        ownerAssistantVoiceController = null;
         ownerToolGeneration += 1;
         window.clearTimeout(ownerToolTimer);
         ownerToolTimer = 0;
@@ -11858,13 +11861,171 @@
         var input = view.querySelector("[data-owner-assistant-input]");
         var draftButton = view.querySelector("[data-owner-assistant-draft]");
         var refreshButton = view.querySelector("[data-owner-assistant-refresh]");
-        if (!input || !draftButton || !refreshButton) throw new Error("자비스 비서 구성을 확인할 수 없습니다.");
+        var micButton = view.querySelector("[data-owner-assistant-mic]");
+        var wakeButton = view.querySelector("[data-owner-assistant-wake]");
+        var readButton = view.querySelector("[data-owner-assistant-read]");
+        var voiceStatus = view.querySelector("[data-owner-assistant-voice-status]");
+        if (!input || !draftButton || !refreshButton || !micButton || !wakeButton || !readButton || !voiceStatus) throw new Error("자비스 비서 구성을 확인할 수 없습니다.");
+        var roleTemplates = {
+          chief: "내일 오전 9시 모먼트랩스 운영 우선순위 점검",
+          schedule: "내일 오후 2시 광고주 미팅 1시간 등록해줘",
+          report: "다음 주 월요일 오전 10시 월간 보고서 최종 검수",
+          ads: "내일 오후 1시 광고 성과 점검 1시간",
+          content: "모레 오전 11시 콘텐츠 업로드 검수",
+          keyword: "다음 주 화요일 오전 10시 핵심 키워드 성과 점검"
+        };
+        view.querySelectorAll("[data-owner-assistant-role]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            var role = button.getAttribute("data-owner-assistant-role") || "chief";
+            input.value = roleTemplates[role] || roleTemplates.chief;
+            input.focus();
+            setOwnerAssistantStatus(view, button.textContent.trim().replace(/\s+/g, " ") + " 일정 명령 예시를 불러왔습니다.", "ok");
+          });
+        });
         view.querySelectorAll("[data-owner-assistant-example]").forEach(function (button) {
           button.addEventListener("click", function () {
             input.value = button.getAttribute("data-owner-assistant-example") || "";
             input.focus();
           });
         });
+
+        var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        var recognition = null;
+        var wakeMode = false;
+        var wakeTimer = 0;
+        var speechOwned = false;
+        var stopped = false;
+        function voiceAlive() {
+          return !stopped && generation === ownerToolGeneration && secureSession.role === "owner" && view.isConnected;
+        }
+        function setVoiceStatus(message) {
+          if (voiceStatus && voiceAlive()) voiceStatus.textContent = message;
+        }
+        function stopRecognition() {
+          wakeMode = false;
+          window.clearTimeout(wakeTimer);
+          wakeTimer = 0;
+          micButton.classList.remove("is-listening");
+          wakeButton.classList.remove("is-active");
+          if (recognition) {
+            recognition.onend = null;
+            try { recognition.stop(); } catch (error) {}
+          }
+          recognition = null;
+        }
+        function recognitionError(event) {
+          var code = event && event.error ? event.error : "unknown";
+          if (code === "not-allowed" || code === "service-not-allowed") setVoiceStatus("마이크 권한이 차단되었습니다. Chrome 주소창의 사이트 설정에서 마이크를 허용해주세요.");
+          else if (code !== "no-speech" && code !== "aborted") setVoiceStatus("음성 인식 오류: " + code);
+        }
+        function createRecognition(continuous) {
+          var instance = new SpeechRecognition();
+          instance.lang = "ko-KR";
+          instance.continuous = continuous;
+          instance.interimResults = true;
+          instance.maxAlternatives = 1;
+          return instance;
+        }
+        micButton.addEventListener("click", function () {
+          if (!SpeechRecognition) return setVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
+          stopRecognition();
+          var base = String(input.value || "").trim();
+          var heard = "";
+          recognition = createRecognition(false);
+          micButton.classList.add("is-listening");
+          setVoiceStatus("듣는 중입니다. 일정 내용을 말씀해주세요.");
+          recognition.onresult = function (event) {
+            if (!voiceAlive()) return stopRecognition();
+            heard = "";
+            for (var index = 0; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
+            input.value = (base ? base + "\n" : "") + heard.trim();
+          };
+          recognition.onerror = recognitionError;
+          recognition.onend = function () {
+            micButton.classList.remove("is-listening");
+            recognition = null;
+            if (voiceAlive()) setVoiceStatus(heard.trim() ? "음성 입력을 완료했습니다. 내용을 확인한 뒤 초안을 만들어주세요." : "음성을 인식하지 못했습니다. 다시 눌러 말씀해주세요.");
+          };
+          try { recognition.start(); } catch (error) { stopRecognition(); setVoiceStatus("마이크를 시작하지 못했습니다. 잠시 후 다시 시도해주세요."); }
+        });
+        wakeButton.addEventListener("click", function () {
+          if (!SpeechRecognition) return setVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
+          if (wakeMode) {
+            stopRecognition();
+            return setVoiceStatus("자비스 호출 대기를 종료했습니다.");
+          }
+          stopRecognition();
+          wakeMode = true;
+          wakeButton.classList.add("is-active");
+          setVoiceStatus("‘자비스’라고 부른 뒤 일정 내용을 이어서 말씀해주세요.");
+          var startWake = function () {
+            if (!voiceAlive() || !wakeMode) return;
+            recognition = createRecognition(true);
+            recognition.onresult = function (event) {
+              if (!voiceAlive()) return stopRecognition();
+              var heard = "";
+              for (var index = event.resultIndex; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
+              var match = heard.match(/자비스[\s,，.!?]*(.*)$/u);
+              if (!match) return setVoiceStatus("호출 대기 중 · 들림: " + heard.trim().slice(-32));
+              var command = String(match[1] || "").trim();
+              if (!command) return setVoiceStatus("네, 듣고 있습니다. 일정 내용을 이어서 말씀해주세요.");
+              input.value = command;
+              input.focus();
+              wakeMode = false;
+              wakeButton.classList.remove("is-active");
+              setVoiceStatus("자비스가 음성 내용을 입력했습니다. 확인 후 초안을 만들어주세요.");
+              if (recognition) try { recognition.stop(); } catch (error) {}
+            };
+            recognition.onerror = recognitionError;
+            recognition.onend = function () {
+              window.clearTimeout(wakeTimer);
+              wakeTimer = 0;
+              recognition = null;
+              if (voiceAlive() && wakeMode) {
+                wakeMode = false;
+                wakeButton.classList.remove("is-active");
+                setVoiceStatus("30초 호출 대기를 마쳤습니다. 필요하면 다시 눌러주세요.");
+              }
+            };
+            try {
+              recognition.start();
+              wakeTimer = window.setTimeout(function () {
+                if (!voiceAlive() || !wakeMode) return;
+                wakeMode = false;
+                wakeButton.classList.remove("is-active");
+                if (recognition) try { recognition.stop(); } catch (error) {}
+                setVoiceStatus("30초 호출 대기를 마쳤습니다. 필요하면 다시 눌러주세요.");
+              }, 30000);
+            } catch (error) { stopRecognition(); setVoiceStatus("호출 대기를 시작하지 못했습니다. 다시 시도해주세요."); }
+          };
+          startWake();
+        });
+        readButton.addEventListener("click", function () {
+          if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return setVoiceStatus("이 브라우저는 음성 읽기를 지원하지 않습니다.");
+          var today = view.querySelector('[data-owner-assistant-metric="today"]');
+          var overdue = view.querySelector('[data-owner-assistant-metric="overdue"]');
+          var needsCheck = view.querySelector('[data-owner-assistant-metric="needs_check"]');
+          var agendaTitles = Array.from(view.querySelectorAll("[data-owner-assistant-agenda] strong")).slice(0, 4).map(function (node) { return node.textContent.trim(); });
+          var briefing = "오늘 업무 " + (today ? today.textContent : "0") + "건, 지연 업무 " + (overdue ? overdue.textContent : "0") + "건, 확인 필요 " + (needsCheck ? needsCheck.textContent : "0") + "건입니다." + (agendaTitles.length ? " 우선 확인할 업무는 " + agendaTitles.join(", ") + "입니다." : "");
+          window.speechSynthesis.cancel();
+          var utterance = new window.SpeechSynthesisUtterance(briefing);
+          var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+          utterance.voice = voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || "") && voice.localService === true; }) || voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || ""); }) || null;
+          utterance.lang = "ko-KR";
+          utterance.rate = 1.05;
+          speechOwned = true;
+          utterance.onstart = function () { if (voiceAlive()) { readButton.classList.add("is-active"); setVoiceStatus("오늘 브리핑을 읽고 있습니다."); } };
+          utterance.onend = function () { if (voiceAlive()) { readButton.classList.remove("is-active"); setVoiceStatus("브리핑 읽기를 마쳤습니다."); } };
+          utterance.onerror = function () { if (voiceAlive()) { readButton.classList.remove("is-active"); setVoiceStatus("브리핑을 읽지 못했습니다. 브라우저 음성 설정을 확인해주세요."); } };
+          window.speechSynthesis.speak(utterance);
+        });
+        ownerAssistantVoiceController = {
+          stop: function () {
+            stopped = true;
+            stopRecognition();
+            if (speechOwned && window.speechSynthesis) window.speechSynthesis.cancel();
+          }
+        };
         refreshButton.addEventListener("click", async function () {
           refreshButton.disabled = true;
           try {
@@ -11930,7 +12091,7 @@
         var assistantView = views.find(function (view) { return view.getAttribute("data-mi-admin-view") === "owner-assistant"; });
         if (!utilityView || !utilityView.querySelector("[data-owner-tool-input]") || !utilityView.querySelector("[data-owner-tool-reset]") || !utilityView.querySelector("[data-owner-tool-status]")) return false;
         if (!developmentView || !developmentView.querySelector("[data-rank-worker-operations]") || !developmentView.querySelector("[data-rank-worker-operations-content]")) return false;
-        if (!assistantView || !assistantView.querySelector("[data-owner-assistant-input]") || !assistantView.querySelector("[data-owner-assistant-draft]") || !assistantView.querySelector("[data-owner-assistant-results]")) return false;
+        if (!assistantView || !assistantView.querySelector("[data-owner-assistant-organization]") || assistantView.querySelectorAll("[data-owner-assistant-role]").length !== 6 || !assistantView.querySelector("[data-owner-assistant-mic]") || !assistantView.querySelector("[data-owner-assistant-wake]") || !assistantView.querySelector("[data-owner-assistant-read]") || !assistantView.querySelector("[data-owner-assistant-input]") || !assistantView.querySelector("[data-owner-assistant-draft]") || !assistantView.querySelector("[data-owner-assistant-results]")) return false;
 
         var nav = root.querySelector(".mi-nav");
         var wrap = root.querySelector(".mi-wrap");

@@ -273,6 +273,21 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-scope span{color:#718096;font-size:9px;font-weight:950;letter-spacing:.1em}
 #mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 #mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
+#mi-admin .mi-assistant-organization{gap:18px;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
+#mi-admin .mi-assistant-org-chart{display:grid;gap:14px}
+#mi-admin .mi-assistant-chief{display:grid;max-width:440px;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;margin:0 auto;border:1px solid rgba(31,111,235,.2);border-radius:17px;padding:14px 16px;background:linear-gradient(145deg,#071c36,#0d2a4b);box-shadow:0 14px 28px rgba(7,31,61,.14)}
+#mi-admin .mi-assistant-chief-icon,#mi-admin .mi-assistant-role-icon{display:grid;width:48px;height:48px;place-items:center;border-radius:14px;background:rgba(255,255,255,.12);font-size:23px}
+#mi-admin .mi-assistant-chief-copy,#mi-admin .mi-assistant-role-copy{display:grid;gap:3px;min-width:0}
+#mi-admin .mi-assistant-chief-copy strong{color:#fff;font-size:14px;font-weight:950}
+#mi-admin .mi-assistant-chief-copy span{color:#bbcae0;font-size:10px;font-weight:750;line-height:1.4}
+#mi-admin .mi-assistant-org-line{width:1px;height:18px;margin:-2px auto;background:#b9c7d9}
+#mi-admin .mi-assistant-role-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:9px}
+#mi-admin .mi-assistant-role{display:grid;grid-template-columns:38px minmax(0,1fr);gap:9px;align-items:center;min-height:86px;border:1px solid #e2e9f2;border-radius:15px;padding:11px;color:inherit;background:#fbfcfe;text-align:left;cursor:pointer}
+#mi-admin .mi-assistant-role:hover{border-color:#91b7ee;background:#f5f9ff;transform:translateY(-1px)}
+#mi-admin .mi-assistant-role-icon{width:38px;height:38px;border:1px solid #e4eaf2;background:#fff;font-size:18px}
+#mi-admin .mi-assistant-role-copy strong{color:var(--mi-navy);font-size:11.5px;font-weight:950}
+#mi-admin .mi-assistant-role-copy span{color:#748195;font-size:9.5px;font-weight:750;line-height:1.35}
+#mi-admin .mi-assistant-role-copy small{color:#1e8c5d;font-size:8.5px;font-weight:950;letter-spacing:.04em}
 #mi-admin .mi-assistant-grid{display:grid;grid-template-columns:minmax(0,.8fr) minmax(420px,1.2fr);gap:16px;align-items:start}
 #mi-admin .mi-assistant-panel{display:grid;gap:15px;min-width:0;border:1px solid rgba(6,26,58,.09);border-radius:19px;padding:20px;background:#fff;box-shadow:0 13px 34px rgba(6,26,58,.055)}
 #mi-admin .mi-assistant-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -291,6 +306,11 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-chip{min-height:31px;border:1px solid #dce4ee;border-radius:999px;padding:0 11px;color:#475569;background:#fff;font-size:10px;font-weight:900;cursor:pointer}
 #mi-admin .mi-assistant-chip:hover{border-color:#91b7ee;color:#165fbf;background:#f5f9ff}
 #mi-admin .mi-assistant-input{min-height:150px;resize:vertical}
+#mi-admin .mi-assistant-voice{display:flex;align-items:center;gap:8px;border:1px solid #e3eaf3;border-radius:13px;padding:10px;background:#f8fafc}
+#mi-admin .mi-assistant-voice button{min-height:34px;border:1px solid #d6e0eb;border-radius:10px;padding:0 11px;color:#34445d;background:#fff;font-size:10px;font-weight:900;cursor:pointer}
+#mi-admin .mi-assistant-voice button.is-listening{border-color:#df5b5b;color:#b42318;background:#fff3f2;box-shadow:0 0 0 3px rgba(223,91,91,.11)}
+#mi-admin .mi-assistant-voice button.is-active{border-color:#1f6feb;color:#165fbf;background:#edf5ff}
+#mi-admin .mi-assistant-voice-status{min-width:0;flex:1;color:#66758a;font-size:10px;font-weight:800;line-height:1.4}
 #mi-admin .mi-assistant-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #mi-admin .mi-assistant-actions small{max-width:330px;color:#7a8798;font-size:10px;font-weight:750;line-height:1.45}
 #mi-admin .mi-assistant-status{min-height:20px;color:#64748b;font-size:11px;font-weight:850}
@@ -306,8 +326,10 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-unresolved{display:grid;gap:6px;border:1px solid #f3d8b5;border-radius:12px;padding:12px;background:#fff9f2}
 #mi-admin .mi-assistant-unresolved strong{color:#a55b12;font-size:11px}
 #mi-admin .mi-assistant-unresolved span{color:#8b6a47;font-size:10.5px;line-height:1.45}
+@media(max-width:1100px){#mi-admin .mi-assistant-role-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:980px){#mi-admin .mi-assistant-grid{grid-template-columns:1fr}}
-@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
+@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-chief{grid-template-columns:42px minmax(0,1fr)}#mi-admin .mi-assistant-chief .mi-badge{grid-column:1/-1;justify-self:start}#mi-admin .mi-assistant-role-grid{grid-template-columns:1fr 1fr}#mi-admin .mi-assistant-role{min-height:78px}#mi-admin .mi-assistant-voice{align-items:stretch;flex-wrap:wrap}#mi-admin .mi-assistant-voice-status{flex-basis:100%}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
+@media(max-width:430px){#mi-admin .mi-assistant-role-grid{grid-template-columns:1fr}}
 `;
 
 const utilityViewHtml = String.raw`<section class="mi-view" data-mi-admin-view="owner-utility" id="mi-admin-owner-utility" aria-label="총관리자 전용 부가세 계산기">
@@ -356,6 +378,20 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <div class="mi-assistant-hero-copy"><small>Jarvis · owner canary</small><h1>오늘의 운영을 일정으로 연결합니다.</h1><p>현재 일정표를 요약하고 자연어 일정·회의 메모를 내부 업무 초안으로 정리합니다. 확인하기 전에는 저장하거나 공개하지 않습니다.</p></div>
     <div class="mi-assistant-scope"><span>CURRENT SCOPE</span><strong data-owner-assistant-scope>총관리자 내부 일정</strong><small>광고주 범위는 업무 운영에서 선택</small></div>
   </header>
+  <article class="mi-assistant-panel mi-assistant-organization" data-owner-assistant-organization>
+    <div class="mi-assistant-panel-head"><div><h2>모먼트랩스 비서실 조직도</h2><p>비서실장이 업무 성격에 맞는 담당을 연결합니다. 담당 카드를 누르면 해당 일정 명령 예시가 입력됩니다.</p></div><span class="mi-badge">mml93-a01 전용</span></div>
+    <div class="mi-assistant-org-chart">
+      <button class="mi-assistant-chief" type="button" data-owner-assistant-role="chief"><span class="mi-assistant-chief-icon" aria-hidden="true">🤖</span><span class="mi-assistant-chief-copy"><strong>비서실장 자비스</strong><span>일정 브리핑 · 업무 분류 · 담당 연결</span></span><span class="mi-badge">총괄</span></button>
+      <div class="mi-assistant-org-line" aria-hidden="true"></div>
+      <div class="mi-assistant-role-grid">
+        <button class="mi-assistant-role" type="button" data-owner-assistant-role="schedule"><span class="mi-assistant-role-icon" aria-hidden="true">📅</span><span class="mi-assistant-role-copy"><strong>일정 운영 자비스</strong><span>미팅·마감·실행 일정</span><small>일정 연동</small></span></button>
+        <button class="mi-assistant-role" type="button" data-owner-assistant-role="report"><span class="mi-assistant-role-icon" aria-hidden="true">📊</span><span class="mi-assistant-role-copy"><strong>보고서 자비스</strong><span>주간·월간·KPI 보고</span><small>일정 연동</small></span></button>
+        <button class="mi-assistant-role" type="button" data-owner-assistant-role="ads"><span class="mi-assistant-role-icon" aria-hidden="true">📣</span><span class="mi-assistant-role-copy"><strong>광고 운영 자비스</strong><span>세팅·성과 점검·액션</span><small>일정 연동</small></span></button>
+        <button class="mi-assistant-role" type="button" data-owner-assistant-role="content"><span class="mi-assistant-role-icon" aria-hidden="true">🎨</span><span class="mi-assistant-role-copy"><strong>콘텐츠 자비스</strong><span>소재·촬영·업로드</span><small>일정 연동</small></span></button>
+        <button class="mi-assistant-role" type="button" data-owner-assistant-role="keyword"><span class="mi-assistant-role-icon" aria-hidden="true">🔎</span><span class="mi-assistant-role-copy"><strong>키워드 자비스</strong><span>검색·SEO·순위 점검</span><small>일정 연동</small></span></button>
+      </div>
+    </div>
+  </article>
   <div class="mi-assistant-grid">
     <article class="mi-assistant-panel">
       <div class="mi-assistant-panel-head"><div><h2>오늘 브리핑</h2><p>현재 선택한 일정 범위의 미완료 업무를 기준으로 계산합니다.</p></div><button class="mi-link-button" type="button" data-owner-assistant-refresh>새로고침</button></div>
@@ -365,9 +401,10 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <article class="mi-assistant-panel">
       <div class="mi-assistant-panel-head"><div><h2>일정·회의 메모 초안</h2><p>날짜가 확인되는 문장만 초안으로 만들고, 나머지는 확인 필요로 남깁니다.</p></div><span class="mi-badge">외부 전송 없음</span></div>
       <div class="mi-assistant-chips"><button class="mi-assistant-chip" type="button" data-owner-assistant-example="내일 오후 2시 광고주 미팅 1시간 등록해줘">미팅 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="다음 주 월요일 오전 10시 월간 보고서 최종 검수">보고서 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="회의 메모&#10;- 8월 21일 오후 3시 소재 시안 검토&#10;- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅">회의 메모 예시</button></div>
+      <div class="mi-assistant-voice" data-owner-assistant-voice><button type="button" data-owner-assistant-mic>🎤 말하기</button><button type="button" data-owner-assistant-wake>🎙 “자비스” 호출 30초</button><button type="button" data-owner-assistant-read>🔊 브리핑 읽기</button><span class="mi-assistant-voice-status" data-owner-assistant-voice-status aria-live="polite">마이크 버튼을 누르면 한국어 음성을 일정 문장으로 입력합니다. Chrome 음성 서비스가 음성을 처리할 수 있습니다.</span></div>
       <textarea class="mi-textarea mi-assistant-input" data-owner-assistant-input maxlength="6000" placeholder="예: 내일 오후 2시 광고주 미팅 1시간 등록해줘&#10;여러 일정은 줄을 나눠 입력할 수 있습니다."></textarea>
       <div class="mi-assistant-actions"><small>초안은 모두 내부 비공개입니다. 광고주 공개는 기존 일정 편집에서 별도로 확인합니다.</small><button class="mi-button" type="button" data-owner-assistant-draft>초안 만들기</button></div>
-      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">입력 내용은 외부 AI로 전송하지 않습니다.</div>
+      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">텍스트 일정 초안은 외부 AI로 전송하지 않습니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>
       <div class="mi-assistant-results" data-owner-assistant-results><div class="mi-assistant-empty">만든 초안을 확인한 뒤 항목별로 일정표에 등록할 수 있습니다.</div></div>
     </article>
   </div>

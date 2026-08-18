@@ -357,11 +357,18 @@ const checks = {
     && !/부가세|mi-vat|data-admin-vat|vat-calculator/i.test(clientSource),
   ownerAssistantCanaryIsPrivateAndConfirmOnly: ownerToolServer.includes('data-mi-admin-screen="owner-assistant"')
     && ownerToolServer.includes('data-mi-admin-view="owner-assistant"')
+    && ownerToolServer.includes('모먼트랩스 비서실 조직도')
+    && ownerToolServer.includes('data-owner-assistant-role="chief"')
+    && ownerToolServer.includes('data-owner-assistant-mic')
+    && ownerToolServer.includes('data-owner-assistant-wake')
+    && ownerToolServer.includes('data-owner-assistant-read')
     && ownerToolServer.includes('source: "deterministic-private-v1"')
     && ownerToolServer.includes('visibility: "internal"')
     && ownerToolServer.includes('body?.action === "assistant-draft"')
     && adminSource.includes('window.confirm(targetLabel + " 일정으로 등록할까요?')
     && adminSource.includes('await requestWorkItems("POST", workItemPayload(draft))')
+    && adminSource.includes('window.SpeechRecognition || window.webkitSpeechRecognition')
+    && adminSource.includes('new window.SpeechSynthesisUtterance(briefing)')
     && adminSource.includes('getAttribute("data-mi-admin-view") === "owner-assistant"')
     && !/<(?:a|section)\b[^>]*data-mi-admin-(?:screen|view)="owner-assistant"/u.test(adminSource)
     && !/<(?:a|section)\b[^>]*data-mi-(?:screen|view)="owner-assistant"/u.test(clientSource),

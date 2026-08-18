@@ -2,6 +2,10 @@
 
 ## 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 
+- 원본 폴더는 README·사용설명서·`dashboard/jarvis.html`·`serve.py`·캐릭터/배경 이미지로 구성되어 있고, 원본 HTML에서 `업무 조직도`, `SpeechRecognition|webkitSpeechRecognition`, `speechSynthesis`, `비서실 사무실`을 확인했습니다. 이전 canary에는 이 조직·음성 DOM과 동작이 없어 전체 이식이 아니었다는 사용자 지적이 사실입니다.
+- 보완 후보는 서버 전달 exact-owner HTML에 비서실장 1명+담당 5명 조직도, 마이크·30초 호출 대기·브리핑 읽기 버튼을 포함합니다. 정적 admin/client에는 owner 전용 DOM이 없고, 로그아웃 시 recognition·TTS를 정지하며 텍스트 초안 저장은 계속 명시적 `window.confirm` 뒤 한 번만 수행합니다.
+- `Permissions-Policy`는 카메라·위치·결제·USB·화면 공유를 계속 차단하고 마이크만 same-origin 사용자 허용으로 좁혔습니다. 음성 입력은 브라우저 제공 서비스가 처리할 수 있음을 UI에 고지하고, 텍스트 일정 parser에는 외부 AI 호출을 추가하지 않았습니다.
+- 검증은 owner assistant 8/8, API·서버 550/550, 플레이스 51/51, 쇼핑 62/62, 역할 상태·query parity, server contract 56/56, Production 인증 18/18, 공개 build/CSP 9파일·인라인 6개·고유 해시 4개, 보호 잠금 22함수·86파일·36 migration, 전체 `npm run check:release`와 `git diff --check`를 통과했습니다. localhost 실화면은 앱 Browser의 `ERR_BLOCKED_BY_CLIENT`로 열리지 않아 조직도 육안 렌더와 실제 마이크 입력은 미검증이며 Production에도 반영하지 않았습니다.
 - 고정 시각 `2026-08-18 12:00 KST`에서 `내일 오후 2시 광고주 미팅 1시간`은 8월 19일 14:00~15:00 미팅 초안, `다음 주 월요일 오전 10시 월간 보고서 최종 검수`는 8월 24일 10:00 보고서 초안으로 변환됩니다. 날짜 없는 문장은 저장 초안이 아니라 확인 필요 목록에 남습니다.
 - 초안 payload는 `planned`·`internal`만 반환하고 저장 성공 필드를 반환하지 않습니다. exact `mml93-a01` owner는 200, 다른 owner 코드와 non-owner는 403이며 handler에는 OpenAI·Claude·Anthropic 호출이나 새 DB 쓰기가 없습니다.
 - 서버 전달 HTML은 script/iframe/object/inline handler 0건이며 admin/client 정적 markup의 `owner-assistant` 메뉴·view는 0건입니다. 실제 저장 버튼은 `window.confirm` 뒤 기존 tenant-scoped `/api/work-items` POST를 정확히 한 번 호출하는 계약으로 고정했습니다.

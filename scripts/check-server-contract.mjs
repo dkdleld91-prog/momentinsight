@@ -387,6 +387,10 @@ check(
   hasAll(ownerTool, [
     /data-mi-admin-screen="owner-assistant"/,
     /data-mi-admin-view="owner-assistant"/,
+    /모먼트랩스 비서실 조직도/,
+    /data-owner-assistant-mic/,
+    /data-owner-assistant-wake/,
+    /data-owner-assistant-read/,
     /body\?\.action === "assistant-draft"/,
     /source: "deterministic-private-v1"/,
     /visibility: "internal"/,
@@ -396,6 +400,8 @@ check(
     /window\.confirm\(targetLabel \+ " 일정으로 등록할까요\?/,
     /await requestWorkItems\("POST", workItemPayload\(draft\)\)/,
     /renderOwnerAssistantBriefing/,
+    /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/,
+    /new window\.SpeechSynthesisUtterance\(briefing\)/,
   ]),
   `${files.ownerTool}, ${files.adminPage}`,
 );
@@ -1231,7 +1237,9 @@ check(
   globalSecurityHeaders["strict-transport-security"] === "max-age=31536000; includeSubDomains"
     && globalSecurityHeaders["x-frame-options"] === "DENY"
     && /frame-ancestors 'none'/.test(globalSecurityHeaders["content-security-policy"] || "")
-    && /camera=\(\)/.test(globalSecurityHeaders["permissions-policy"] || ""),
+    && /camera=\(\)/.test(globalSecurityHeaders["permissions-policy"] || "")
+    && /microphone=\(self\)/.test(globalSecurityHeaders["permissions-policy"] || "")
+    && /geolocation=\(\)/.test(globalSecurityHeaders["permissions-policy"] || ""),
   files.vercel,
 );
 

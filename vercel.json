@@ -60,11 +60,11 @@
         },
         {
           "key": "Permissions-Policy",
-          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=()"
+          "value": "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), display-capture=(), browsing-topics=()"
         },
         {
           "key": "Content-Security-Policy",
-              "value": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; frame-src 'none'; script-src 'self' 'sha256-gJs5cC3U34NwbVyEHjjEF8q+5sCzU2KKEVtZiv5D8CM=' 'sha256-8v7lLx012dYrETkx1yogYtN0+62UYnGnb6D3AqZgIDk=' 'sha256-jT2sg1b+OBrPWZOnLkpQzPHe+834N8G9nFByfDBPXz8=' 'sha256-4QZQVtB8XQVesiGPt2axrgIIfyWNFr1EBVPQBi9/m1M='; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; font-src 'self' data:; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
+              "value": "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; frame-src 'none'; script-src 'self' 'sha256-gJs5cC3U34NwbVyEHjjEF8q+5sCzU2KKEVtZiv5D8CM=' 'sha256-8v7lLx012dYrETkx1yogYtN0+62UYnGnb6D3AqZgIDk=' 'sha256-AK97pGG4B6aWYyx5h52YL6fDprvD7qOxujOqVTN/vNk=' 'sha256-4QZQVtB8XQVesiGPt2axrgIIfyWNFr1EBVPQBi9/m1M='; script-src-attr 'none'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https:; font-src 'self' data:; media-src 'self'; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests"
         }
       ]
     },

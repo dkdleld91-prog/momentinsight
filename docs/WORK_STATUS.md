@@ -9,7 +9,8 @@
 - 사용자 재검수에서 기존 조직 카드는 원본 `dashboard/jarvis.html`의 실제 움직이는 비서실을 충분히 반영하지 못한 것으로 확인했습니다. 원본의 13명 캐릭터·자리 복귀·직원 간 회의·대표 방문 동작을 다시 대조하고, 이를 모먼트 인사이트 딥네이비 운영실에 비서실장 1명과 담당 5명 조직으로 재구성했습니다.
 - exact owner 화면이 활성일 때만 비서실장 방문과 담당자 2인 회의가 유한 타이머로 순환하고, 대화 뒤 각 자리로 복귀합니다. 화면 이탈·로그아웃·payload 제거 시 타이머와 이동 상태를 해제하며 `prefers-reduced-motion`에서는 동작을 멈춥니다. 이는 독립 AI 직원의 백그라운드 실행이 아니라 조직 역할과 협업 흐름을 보여주는 화면 시각화라고 명시했습니다.
 - 로컬 실제 owner 세션 모형에서 데스크톱 이동→대화→자리 복귀, 담당자 클릭 시 해당 일정 명령 예시 연결, 390×844 모바일 6명 조직·이동·가로 넘침 0, 브라우저 console warning/error 0을 확인했습니다. 실제 마이크 권한 허용과 음성 결과는 이번 시각 검증에 포함하지 않았고 기존 미검증 상태를 유지합니다.
-- owner assistant 9/9, API·서버 551/551, 플레이스 51/51, 쇼핑 62/62, 역할 상태·query parity, server contract 56/56, Production 인증 18/18, 공개 CSP, 보호 잠금과 전체 `npm run check:release`, `git diff --check`를 통과했습니다. 현재는 배포 전 후보이며 Production 반영으로 기록하지 않습니다.
+- owner assistant 9/9, API·서버 551/551, 플레이스 51/51, 쇼핑 62/62, 역할 상태·query parity, server contract 56/56, Production 인증 18/18, 공개 CSP, 보호 잠금과 전체 `npm run check:release`, `git diff --check`를 통과했습니다. 이 검증은 아래 Production 반영 전 후보 기준입니다.
+- 기능 commit `7b7f6c5ee44a`를 Production에 반영했습니다. `/health`·`/ready` release 일치와 Supabase ready, `/admin`·`/client` 200, 비인증 `/api/owner/tool` 401, 두 정적 페이지의 owner assistant 실제 markup 0, 새 CSP hash와 `microphone=(self)`·`camera=()`를 확인했습니다. 로그인된 Production `mml93-a01`의 운영실 움직임은 아직 직접 확인하지 않았으므로 로컬 실제 렌더 증거와 구분합니다.
 - 전달받은 `/Users/sindongbin/Desktop/자비스_개발` 전체를 다시 대조한 결과, 첫 canary는 원본의 일정 브리핑·초안 일부만 옮긴 것이 맞았습니다. 누락됐던 모먼트랩스 비서실 조직도(비서실장·일정·보고서·광고·콘텐츠·키워드)와 담당 카드 라우팅, 탭 음성 입력, 30초 `자비스` 호출 대기, 브리핑 음성 읽기를 exact owner 화면에 로컬 보완했습니다.
 - 음성은 사용자가 버튼을 눌러 브라우저 권한을 허용한 경우에만 켜지며, 로그아웃·owner 도구 제거 시 인식과 읽기를 정지합니다. 호출 대기는 30초 뒤 자동 종료해 백그라운드 무한 재시작을 하지 않습니다. Chrome 음성 서비스가 오디오를 처리할 수 있다는 안내도 화면에 명시했습니다.
 - 원본의 로컬 Claude CLI 실행, 임의 파일 읽기·쓰기, shell 명령, 개인 vault, 예시 매출·앱 데이터는 다중 사용자 SaaS에 그대로 넣으면 권한·데이터 유출 위험이 있어 이식하지 않았습니다. 현재 담당 카드는 기존 일정표 명령 예시로만 연결되며 실제 독립 AI 직원 실행으로 과장하지 않습니다.

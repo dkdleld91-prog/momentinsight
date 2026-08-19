@@ -1,7 +1,7 @@
 {
   "version": 3,
   "baselineCommit": "3ba297f",
-  "policy": "키워드 조회·SEO 확인·N 상품 순위·N 30일·N 플레이스 30일 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·SEO 점검·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
+  "policy": "키워드 조회·SEO 확인·N 상품 순위·N 30일·N 플레이스 30일·총관리자 자비스 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·SEO 점검·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
   "functions": [
     {
       "id": "operation-keyword-lookup",
@@ -134,9 +134,20 @@
       "file": "src/server/naver-api-hub.mjs",
       "name": "naverSearchRequest",
       "sha256": "e6446022e1d8ae2803b463fff52202fe585773bf1ba8c10ef9ceee2b2d7c1b94"
+    },
+    {
+      "id": "owner-assistant-interaction",
+      "file": "src/pages/admin.html",
+      "name": "bindOwnerAssistant",
+      "sha256": "9482cb9d5fe1e976112b9126d4d2470d43095f057606481f3aa3a09d95892198"
     }
   ],
   "files": [
+    {
+      "id": "owner-assistant-server-surface",
+      "file": "src/server/handlers/owner-tool-api.mjs",
+      "sha256": "060e0090ddaf118290b9cca7e2e9885f1261482f8c3f44a190d86c549508ad02"
+    },
     {
       "id": "seo-scoring-engine",
       "file": "public/seo-evaluation.js",
@@ -386,7 +397,7 @@
     {
       "id": "rank-feature-lock-checker",
       "file": "scripts/check-protected-rank-features.mjs",
-      "sha256": "7beb3c69a05d9478148a57c15f9d20a047ec0284bda0b8c54e04cc5850b95c58"
+      "sha256": "940f78bba0ed80040a907c0972141b52b3a4e007516ecc07d9372c71970413ef"
     },
     {
       "id": "shopping-local-worker-schema",
@@ -536,6 +547,12 @@
       "id": "shopping-stable-proof-quarantine",
       "file": "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
       "sha256": "7872b79c6fa3d7087f238eaf0163c6e5dedb0b75a056c94c8bc3a984701194cd",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-probe-incomplete-auto-recovery",
+      "file": "supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql",
+      "sha256": "913aeb7d5f41d5f0cfa97d8c0e47ac169ebd7be8adb1584059e207fa5e1b3e84",
       "rankMigration": true
     },
     {

@@ -1,6 +1,12 @@
 # Next Actions
 
-기준일: 2026-08-18
+기준일: 2026-08-19
+
+## 진행 중: N쇼핑 `probe_incomplete` 영구정지 복구
+
+- typed navigation failure가 `probe_incomplete`·`probe_interrupted`로 바뀌어도 10분 quiet period 뒤 primary worker가 정확히 한 ordered half-open 회차를 수행하도록 로컬 보완했습니다. 반복 실패는 다시 10분 대기하며 순서·격리·wake·cursor는 변경하지 않습니다.
+- 전체 release gate 통과 뒤 기능 commit을 배포하고 migration을 적용합니다. 자연 scheduler가 circuit을 half-open→closed로 회복하고 새 `pw-chrome-*` 원자 300 terminal·lane/lease 해제·cycle cursor 전진을 보일 때만 복구 완료로 판정합니다.
+- 총관리자 자비스 완료 surface는 보호 잠금에 추가했습니다. 순위 핵심 기능과 자비스는 이후 별도 명시 승인 없이 수정하지 않습니다.
 
 ## 진행 중: `mml93-a01` 자비스 운영 비서 canary
 

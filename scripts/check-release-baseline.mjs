@@ -197,6 +197,7 @@ const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = read("supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql");
+const shoppingProbeIncompleteAutoRecoveryMigration = read("supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
@@ -1643,6 +1644,16 @@ const checks = {
     && !shoppingAutoNavigationTrackerFailureRecoveryMigration.includes("security definer")
     && shoppingAutoNavigationTrackerFailureRecoveryMigration.includes("to service_role")
     && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/iu.test(shoppingAutoNavigationTrackerFailureRecoveryMigration)
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("mi_claim_naver_shopping_worker_lane")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("'probe_incomplete'")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("'probe_interrupted'")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("= 'naver_page_navigation_failed'")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("circuit_opened_at <= v_now - interval '10 minutes'")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("circuit_reason = 'auto_navigation_probe'")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("security invoker")
+    && !shoppingProbeIncompleteAutoRecoveryMigration.includes("security definer")
+    && shoppingProbeIncompleteAutoRecoveryMigration.includes("to service_role")
+    && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/iu.test(shoppingProbeIncompleteAutoRecoveryMigration)
     && shoppingSchedulerEventLedgerMigration.includes("create schema if not exists mi_internal authorization postgres")
     && shoppingSchedulerEventLedgerMigration.includes("force row level security")
     && shoppingSchedulerEventLedgerMigration.includes("grant select on table public.naver_shopping_scheduler_events")

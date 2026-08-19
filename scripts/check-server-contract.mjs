@@ -58,6 +58,7 @@ const files = {
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
   shoppingAutoNavigationTrackerFailureRecoveryMigration: "supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql",
+  shoppingProbeIncompleteAutoRecoveryMigration: "supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -136,6 +137,7 @@ const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableP
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = fs.readFileSync(files.shoppingAutoNavigationTrackerFailureRecoveryMigration, "utf8");
+const shoppingProbeIncompleteAutoRecoveryMigration = fs.readFileSync(files.shoppingProbeIncompleteAutoRecoveryMigration, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -869,6 +871,25 @@ check(
     && !/security definer/.test(shoppingAutoNavigationTrackerFailureRecoveryMigration)
     && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/i.test(shoppingAutoNavigationTrackerFailureRecoveryMigration),
   files.shoppingAutoNavigationTrackerFailureRecoveryMigration,
+);
+check(
+  "N Shopping navigation probe terminal states retry only the typed navigation failure",
+  hasAll(shoppingProbeIncompleteAutoRecoveryMigration, [
+    /mi_claim_naver_shopping_worker_lane/,
+    /normalized_worker_role = 'primary'/,
+    /'probe_incomplete'/,
+    /'probe_interrupted'/,
+    /last_failure_code/,
+    /= 'naver_page_navigation_failed'/,
+    /circuit_opened_at <= v_now - interval '10 minutes'/,
+    /circuit_reason = 'auto_navigation_probe'/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingProbeIncompleteAutoRecoveryMigration)
+    && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/i.test(shoppingProbeIncompleteAutoRecoveryMigration),
+  files.shoppingProbeIncompleteAutoRecoveryMigration,
 );
 check(
   "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",

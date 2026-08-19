@@ -18,6 +18,10 @@ const autoNavigationTrackerFailureRecoveryMigration = readFileSync(new URL(
   '../supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql',
   import.meta.url,
 ), 'utf8');
+const probeIncompleteAutoRecoveryMigration = readFileSync(new URL(
+  '../supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql',
+  import.meta.url,
+), 'utf8');
 
 test('durable cycle RPC contract is fixed and service-role only', () => {
   for (const key of ['cycleId', 'cycleStartedAt', 'started', 'total', 'remaining', 'processing']) {
@@ -208,5 +212,31 @@ test('one-time false-open repair is exact, control-plane only, and service-role 
   assert.match(
     autoNavigationTrackerFailureRecoveryMigration,
     /revoke all on function public\.mi_release_naver_shopping_worker_lane\(text, uuid\)[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/i,
+  );
+});
+
+test('navigation probe terminal states retry only the same typed failure after ten quiet minutes', () => {
+  assert.match(
+    probeIncompleteAutoRecoveryMigration,
+    /circuit_state = 'open'[\s\S]*normalized_worker_role = 'primary'[\s\S]*circuit_reason in \([\s\S]*'navigating:naver_page_navigation_failed'[\s\S]*'probe_incomplete'[\s\S]*'probe_interrupted'[\s\S]*\)[\s\S]*last_failure_code[\s\S]*= 'naver_page_navigation_failed'[\s\S]*circuit_opened_at <= v_now - interval '10 minutes'/i,
+  );
+  assert.match(
+    probeIncompleteAutoRecoveryMigration,
+    /set circuit_state = 'half_open',[\s\S]*circuit_reason = 'auto_navigation_probe'[\s\S]*cadence_minutes = 10/i,
+  );
+  assert.match(
+    probeIncompleteAutoRecoveryMigration,
+    /and \(current_row\.lease_until is null or current_row\.lease_until <= v_now\)/i,
+  );
+  assert.doesNotMatch(
+    probeIncompleteAutoRecoveryMigration,
+    /update public\.naver_rank_trackers|next_check_at|worker_quarantined_until|scheduler_cycle_cursor_|worker_last_cycle_id|insert into public\.naver_shopping_worker_wakes/i,
+    'bounded recovery must not alter tracker order, quarantine, wake, or durable cursor',
+  );
+  assert.match(probeIncompleteAutoRecoveryMigration, /security invoker/i);
+  assert.doesNotMatch(probeIncompleteAutoRecoveryMigration, /security definer/i);
+  assert.match(
+    probeIncompleteAutoRecoveryMigration,
+    /revoke all on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/i,
   );
 });

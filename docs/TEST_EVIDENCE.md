@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 후보
+
+- 11:20 KST Production SELECT-only: primary heartbeat age 8초, runtime `1.1.8`, fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`, cycle #20 active·cursor sort 100·resume false, lane/run/current job null이지만 circuit은 `open/probe_incomplete`였습니다. `circuit_opened_at=2026-08-18 22:51:01 KST`, last failure `naver_page_navigation_failed`, 마지막 성공은 22:20:54 KST 원자 300입니다.
+- 활성 tracker 집계는 73, stale24 2, stale48 2, never 1, 현재 격리 1, processing 0, expired processing 0입니다. 마지막 정상 snapshot은 source `naver_shopping_results_collector`·오가닉 evidence/policy·광고 제외·checkedCount 300이며 실패 뒤 부분 snapshot 저장 근거는 없습니다.
+- 신규 SQL 회귀는 `probe_incomplete`·`probe_interrupted`를 무조건 열지 않고 last failure base가 navigation failure인 primary·lease 없음·10분 경과 조건을 모두 요구합니다. SQL에는 tracker/cursor/quarantine/wake/next_check 변경이 없고 SECURITY INVOKER·빈 search path·service-role-only입니다.
+- 로컬 검증: durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration, 잠금 self-test, `git diff --check` PASS. Production 적용과 다음 자연 atomic300 terminal은 아직 미확인입니다.
+
 ## 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 
 - 원본 `dashboard/jarvis.html`을 다시 실행해 13명 캐릭터의 자리 호흡, 휴게 이동, 2~3인 회의, 대표의 직원 방문과 대화, 클릭 담당 연결을 확인했습니다. 이 동작을 데이터 없이 정적인 카드만 보여준 이전 배포는 원본 표현 충족으로 보지 않습니다.

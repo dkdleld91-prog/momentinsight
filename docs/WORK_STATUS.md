@@ -1,8 +1,16 @@
 # Work Status
 
-기준일: 2026-08-18
+기준일: 2026-08-19
 
 ## 현재 상태
+
+### 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 보완
+
+- 11:20 KST 운영 SELECT-only 확인에서 Windows heartbeat는 1분 이내·runtime `1.1.8`·fingerprint 일치였지만, circuit이 2026-08-18 22:51 KST부터 `open/probe_incomplete`로 고정돼 마지막 원자 300 성공 뒤 약 12시간 순환이 중단된 결함을 확인했습니다. cycle #20 cursor·격리·lease에는 고립이 없었습니다.
+- 원인은 최초 `naver_page_navigation_failed`만 10분 뒤 자동 half-open 대상이고, 그 probe가 다시 실패해 `probe_incomplete` 또는 `probe_interrupted`로 바뀌면 이후 claim이 영구 차단되는 조건 누락입니다. 활성 73건 중 stale24 2·stale48 2·never 1·격리 1·processing/expired lease 0이며 마지막 정상 snapshot은 오가닉 `checkedCount=300`으로 보존됐습니다.
+- 새 migration은 마지막 typed failure가 정확히 `naver_page_navigation_failed`인 primary worker의 세 circuit reason만 10분 quiet period 뒤 half-open 재시도합니다. 같은 실패가 반복돼도 즉시 loop하지 않고 다시 10분 대기하며 tracker 순서·cursor·격리·wake·next_check_at을 수정하지 않습니다.
+- 완료된 총관리자 자비스는 서버 전달 surface 전체와 `bindOwnerAssistant` 상호작용 함수를 보호 잠금에 추가했습니다. 이후 변경은 대표님 명시 승인과 잠금 갱신·전체 release gate를 다시 요구합니다.
+- 로컬 durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration과 self-test, `git diff --check`를 통과했습니다. 아직 commit·Production migration·운영 재수집 전이므로 복구 완료로 기록하지 않습니다.
 
 ### 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 

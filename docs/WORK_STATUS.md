@@ -10,7 +10,10 @@
 - 원인은 최초 `naver_page_navigation_failed`만 10분 뒤 자동 half-open 대상이고, 그 probe가 다시 실패해 `probe_incomplete` 또는 `probe_interrupted`로 바뀌면 이후 claim이 영구 차단되는 조건 누락입니다. 활성 73건 중 stale24 2·stale48 2·never 1·격리 1·processing/expired lease 0이며 마지막 정상 snapshot은 오가닉 `checkedCount=300`으로 보존됐습니다.
 - 새 migration은 마지막 typed failure가 정확히 `naver_page_navigation_failed`인 primary worker의 세 circuit reason만 10분 quiet period 뒤 half-open 재시도합니다. 같은 실패가 반복돼도 즉시 loop하지 않고 다시 10분 대기하며 tracker 순서·cursor·격리·wake·next_check_at을 수정하지 않습니다.
 - 완료된 총관리자 자비스는 서버 전달 surface 전체와 `bindOwnerAssistant` 상호작용 함수를 보호 잠금에 추가했습니다. 이후 변경은 대표님 명시 승인과 잠금 갱신·전체 release gate를 다시 요구합니다.
-- 로컬 durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration과 self-test, `git diff --check`를 통과했습니다. 아직 commit·Production migration·운영 재수집 전이므로 복구 완료로 기록하지 않습니다.
+- 로컬 durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration과 self-test, 전체 `npm run check:release`, `git diff --check`를 통과했습니다. commit `426637d6b6fa`의 Production `/health`·`/ready` 일치와 Supabase ready 뒤 migration을 적용했습니다.
+- 11:26~11:27 KST 자연 scheduler가 고정 회로를 `open → half_open`으로 전환해 다음 normal tracker를 1회 처리했습니다. 해당 결과는 실제 오가닉 138개뿐이라 `provider_partial_window:138_300`으로 snapshot 0·last-good 보존·격리 후 circuit을 `closed`로 해제했습니다.
+- 11:34 KST 이어진 다음 normal tracker는 collection `pw-chrome-1787106886313-64193b6f265405015f18`로 광고 30개 제외·오가닉 `checkedCount=300`을 저장했습니다. 같은 cycle 신규 claim 2 group/2 tracker는 모두 distinct, commit 1·fail 1이며 cursor는 원래 순서로 전진하고 terminal circuit closed·lane/run/lease null입니다.
+- 운영 함수는 SECURITY INVOKER·빈 search path이고 PUBLIC/anon/authenticated execute 0·service_role만 execute입니다. migration 목록 반영도 확인했습니다. 이 결함의 복구는 완료됐지만 별도 24시간 공정 순환 검증은 기존 기준대로 계속합니다.
 
 ### 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 

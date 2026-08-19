@@ -1,11 +1,15 @@
 # Test Evidence
 
-## 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 후보
+## 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 운영 증거
 
 - 11:20 KST Production SELECT-only: primary heartbeat age 8초, runtime `1.1.8`, fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`, cycle #20 active·cursor sort 100·resume false, lane/run/current job null이지만 circuit은 `open/probe_incomplete`였습니다. `circuit_opened_at=2026-08-18 22:51:01 KST`, last failure `naver_page_navigation_failed`, 마지막 성공은 22:20:54 KST 원자 300입니다.
 - 활성 tracker 집계는 73, stale24 2, stale48 2, never 1, 현재 격리 1, processing 0, expired processing 0입니다. 마지막 정상 snapshot은 source `naver_shopping_results_collector`·오가닉 evidence/policy·광고 제외·checkedCount 300이며 실패 뒤 부분 snapshot 저장 근거는 없습니다.
 - 신규 SQL 회귀는 `probe_incomplete`·`probe_interrupted`를 무조건 열지 않고 last failure base가 navigation failure인 primary·lease 없음·10분 경과 조건을 모두 요구합니다. SQL에는 tracker/cursor/quarantine/wake/next_check 변경이 없고 SECURITY INVOKER·빈 search path·service-role-only입니다.
-- 로컬 검증: durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration, 잠금 self-test, `git diff --check` PASS. Production 적용과 다음 자연 atomic300 terminal은 아직 미확인입니다.
+- 로컬 검증: durable migration 10/10, server contract 57/57, release baseline, 보호 잠금 23함수·88파일·37 migration, 잠금 self-test, 전체 `npm run check:release`, `git diff --check` PASS. Production `426637d6b6fa` health/ready·Supabase ready와 migration 목록 반영을 확인했습니다.
+- event 4151~4154는 11:26:56 KST normal group/tracker claim 뒤 `provider_partial_window:138_300` fail-closed·snapshot 0·격리입니다. circuit은 `open/probe_incomplete → half_open/auto_navigation_probe → closed`로 복구되고 lane/run/lease를 해제했습니다.
+- event 4155~4158의 다음 normal tracker는 11:34:47 KST collection `pw-chrome-1787106886313-64193b6f265405015f18`을 commit했습니다. snapshot 1건은 checkedCount 300, source `naver_shopping_results_collector`, evidence `naver_shopping_organic_list`, policy `organic_only`, adExcluded true, excludedAdCount 30으로 위반 0입니다.
+- 복구 뒤 group claim 2=distinct 2, tracker claim 2=distinct 2, commit 1·failure 1이므로 같은-cycle 중복은 0입니다. terminal heartbeat 1.8초, circuit closed, lane/run/current job null이고 cursor가 다음 tracker로 전진했습니다.
+- 운영 함수 권한은 SECURITY INVOKER·`search_path=""`, PUBLIC/anon/authenticated execute false·service_role true입니다.
 
 ## 2026-08-18 `mml93-a01` 자비스 운영 비서 canary
 

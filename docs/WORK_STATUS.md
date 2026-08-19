@@ -4,6 +4,11 @@
 
 ## 현재 상태
 
+### 2026-08-19 N 30일 추적 명시적 동결
+
+- 대표님의 별도 수정 요청 전까지 N 상품·N 플레이스 30일의 UI, 서버, 수집기, Windows 작업기, 스케줄러와 순위 DB migration을 변경 금지로 고정했습니다.
+- 보호 목록에서 동결 정책이나 필수 함수·파일을 제거해도 self-test와 release gate가 실패하도록 검사기를 강화했습니다. 운영 사용·자연 순환은 계속되며 코드 변경만 차단합니다.
+
 ### 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 보완
 
 - 11:20 KST 운영 SELECT-only 확인에서 Windows heartbeat는 1분 이내·runtime `1.1.8`·fingerprint 일치였지만, circuit이 2026-08-18 22:51 KST부터 `open/probe_incomplete`로 고정돼 마지막 원자 300 성공 뒤 약 12시간 순환이 중단된 결함을 확인했습니다. cycle #20 cursor·격리·lease에는 고립이 없었습니다.

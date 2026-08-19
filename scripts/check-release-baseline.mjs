@@ -1045,6 +1045,10 @@ const checks = {
     rankServer,
     placeRankServer,
   ].some((source) => source.includes("check-protected-rank-features"))
+    && protectedFeatureLock.n30Freeze?.active === true
+    && protectedFeatureLock.n30Freeze?.requires === "explicit-user-request"
+    && protectedFeatureLock.n30Freeze?.scope?.includes("N 상품 30일")
+    && protectedFeatureLock.n30Freeze?.scope?.includes("N 플레이스 30일")
     && [
       "operation-keyword-lookup",
       "advertiser-keyword-lookup",

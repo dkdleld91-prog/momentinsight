@@ -1,5 +1,10 @@
 # Test Evidence
 
+## 2026-08-19 N 30일 추적 동결 후보
+
+- 동결 기준 commit은 `bb3c86c6f6f1`이며 N 상품·N 플레이스 30일 핵심 함수 4개, 핵심 파일·작업기·스케줄러와 모든 순위 migration을 hash 잠금합니다.
+- `n30Freeze.active=true`·`requires=explicit-user-request`를 release baseline에서 요구하고, 정책·필수 함수·필수 파일 제거를 잠금 self-test가 각각 차단합니다.
+
 ## 2026-08-19 N쇼핑 `probe_incomplete` 자동 복구 운영 증거
 
 - 11:20 KST Production SELECT-only: primary heartbeat age 8초, runtime `1.1.8`, fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`, cycle #20 active·cursor sort 100·resume false, lane/run/current job null이지만 circuit은 `open/probe_incomplete`였습니다. `circuit_opened_at=2026-08-18 22:51:01 KST`, last failure `naver_page_navigation_failed`, 마지막 성공은 22:20:54 KST 원자 300입니다.

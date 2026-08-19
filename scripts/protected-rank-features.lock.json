@@ -1,7 +1,13 @@
 {
   "version": 3,
-  "baselineCommit": "3ba297f",
+  "baselineCommit": "bb3c86c6f6f1",
   "policy": "키워드 조회·SEO 확인·N 상품 순위·N 30일·N 플레이스 30일·총관리자 자비스 핵심 기능 변경은 대표님의 명시적 승인, 잠금 기준 갱신, 대상 테스트와 전체 check:release 통과가 모두 필요합니다. 신규 조회·SEO 점검·추적 등록·갱신과 새로운 별도 기능 추가는 계속 허용합니다.",
+  "n30Freeze": {
+    "active": true,
+    "requires": "explicit-user-request",
+    "scope": "N 상품 30일·N 플레이스 30일 UI, 서버, 수집기, Windows 작업기, 스케줄러, 순위 DB migration",
+    "reason": "다른 기능 작업으로부터 30일 순위 추적을 격리하고 대표님의 별도 수정 요청 전까지 현재 운영 기준을 보존합니다."
+  },
   "functions": [
     {
       "id": "operation-keyword-lookup",
@@ -397,7 +403,7 @@
     {
       "id": "rank-feature-lock-checker",
       "file": "scripts/check-protected-rank-features.mjs",
-      "sha256": "940f78bba0ed80040a907c0972141b52b3a4e007516ecc07d9372c71970413ef"
+      "sha256": "b7cf8383a8daddd237d1cbc9c44e11e7ff3cc1c450063173f983f6ed2f60d9f2"
     },
     {
       "id": "shopping-local-worker-schema",

@@ -2,6 +2,10 @@
 
 기준일: 2026-08-19
 
+## 동결: N 상품·N 플레이스 30일 추적
+
+- 대표님의 별도 수정 요청 전까지 30일 추적 코드·수집기·작업기·스케줄러·DB migration을 변경하지 않습니다. 다른 기능 작업은 이 잠금을 통과해야 하며 자연 순환과 기존 기능 사용은 계속됩니다.
+
 ## 완료: N쇼핑 `probe_incomplete` 영구정지 복구
 
 - typed navigation failure가 `probe_incomplete`·`probe_interrupted`로 바뀌어도 10분 quiet period 뒤 primary worker가 정확히 한 ordered half-open 회차를 수행합니다. 반복 실패는 다시 10분 대기하며 순서·격리·wake·cursor는 변경하지 않습니다.

@@ -4,6 +4,38 @@ import path from "node:path";
 
 const LOCK_PATH = "scripts/protected-rank-features.lock.json";
 const RANK_MIGRATION_PATTERN = /naver_(?:place_)?rank_(?:trackers|snapshots)|naver_shopping_(?:rank_lookup_jobs|worker_(?:(?:remote_)?wake|coordination|lane))|claim_due_naver_(?:place_)?rank_tracker/i;
+const REQUIRED_N30_FUNCTION_IDS = [
+  "operation-product-30-day",
+  "advertiser-product-30-day",
+  "operation-place-30-day",
+  "advertiser-place-30-day",
+];
+const REQUIRED_N30_FILE_IDS = [
+  "product-tracker-server",
+  "product-organic-rank-server",
+  "product-rank-cron-server",
+  "place-tracker-server",
+  "place-rank-cron-server",
+  "place-collector",
+  "place-collector-server",
+  "product-cron-workflow",
+  "place-cron-workflow",
+  "shopping-collector-contract",
+  "shopping-collector-provider",
+  "shopping-local-worker-auth",
+  "shopping-local-worker-contract",
+  "shopping-local-worker-schedule",
+  "shopping-local-worker-handler",
+  "shopping-worker-wake-server",
+  "shopping-local-worker-runner",
+  "shopping-chrome-native-host",
+  "shopping-chrome-native-host-core",
+  "shopping-chrome-extension-manifest",
+  "shopping-chrome-extension-worker",
+  "shopping-windows-chrome-scheduler",
+  "shopping-windows-extension-updater",
+  "rank-feature-lock-checker",
+];
 
 function read(file) {
   return fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n");
@@ -91,6 +123,20 @@ function rankMigrationFiles() {
 
 function collectFailures(expected, actual, discoveredMigrations) {
   const failures = [];
+  if (expected.n30Freeze?.active !== true
+    || expected.n30Freeze?.requires !== "explicit-user-request") {
+    failures.push("N 상품·N 플레이스 30일 추적 동결 정책이 제거되거나 약화되었습니다.");
+  }
+  for (const id of REQUIRED_N30_FUNCTION_IDS) {
+    if (!expected.functions.some((entry) => entry.id === id)) {
+      failures.push(`N 30일 필수 보호 함수가 잠금에서 제거되었습니다: ${id}`);
+    }
+  }
+  for (const id of REQUIRED_N30_FILE_IDS) {
+    if (!expected.files.some((entry) => entry.id === id)) {
+      failures.push(`N 30일 필수 보호 파일이 잠금에서 제거되었습니다: ${id}`);
+    }
+  }
   for (const entry of actual.functions) {
     const expectedHash = expected.functions.find((candidate) => candidate.id === entry.id)?.sha256;
     if (expectedHash !== entry.sha256) failures.push(`${entry.id}: 보호 함수가 변경되었습니다 (${entry.file}#${entry.name})`);
@@ -142,6 +188,16 @@ if (process.argv.includes("--self-test")) {
   const migrationFailures = collectFailures(lock, current, [...discoveredMigrations, syntheticMigration].sort());
   if (!migrationFailures.some((failure) => failure.includes(syntheticMigration))) {
     selfTestErrors.push("새 순위 마이그레이션 자동 탐지를 확인하지 못했습니다.");
+  }
+  const weakenedFreeze = JSON.parse(JSON.stringify(lock));
+  weakenedFreeze.functions = weakenedFreeze.functions.filter((entry) => entry.id !== REQUIRED_N30_FUNCTION_IDS[0]);
+  weakenedFreeze.files = weakenedFreeze.files.filter((entry) => entry.id !== REQUIRED_N30_FILE_IDS[0]);
+  weakenedFreeze.n30Freeze.active = false;
+  const freezeFailures = collectFailures(weakenedFreeze, current, discoveredMigrations);
+  if (!freezeFailures.some((failure) => failure.includes("동결 정책"))
+    || !freezeFailures.some((failure) => failure.includes(REQUIRED_N30_FUNCTION_IDS[0]))
+    || !freezeFailures.some((failure) => failure.includes(REQUIRED_N30_FILE_IDS[0]))) {
+    selfTestErrors.push("N 30일 동결 정책·필수 보호 대상 제거를 차단하지 못했습니다.");
   }
   if (selfTestErrors.length) {
     console.error("Protected core feature lock self-test failed");

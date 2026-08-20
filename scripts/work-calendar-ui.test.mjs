@@ -59,6 +59,7 @@ test("date and create clicks open the personal editor while preserving existing 
     "data-work-state",
     "data-work-all-day",
     "data-work-repeat-monthly",
+    "data-work-repeat-no-end",
     "data-work-repeat-until",
     "data-work-public",
     "data-work-type",
@@ -86,12 +87,24 @@ test("date and create clicks open the personal editor while preserving existing 
   assert.match(source, /calendarId:\s*""/);
 
   assert.match(source, /repeat:\s*repeatMonthly\s*\?\s*"monthly"\s*:\s*""/);
+  assert.match(source, /repeatNoEnd:\s*repeatMonthly\s*&&\s*repeatNoEnd/);
+  assert.match(source, /repeatUntil:\s*repeatMonthly\s*&&\s*!repeatNoEnd/);
   assert.match(source, /!id\s*&&\s*repeatMonthly\s*&&\s*!workRepeatRequestId[\s\S]{0,100}crypto\.randomUUID\(\)/);
   assert.match(source, /requestId:\s*!id\s*&&\s*repeatMonthly\s*\?\s*workRepeatRequestId/);
   assert.match(source, /expectedUpdatedAt/);
   assert.match(source, /requestWorkItems\("DELETE", \{ id: id, expectedUpdatedAt: expectedUpdatedAt \}\)/);
   assert.match(source, /\.mi-work-modal\[data-work-modal\][\s\S]{0,220}justify-items:\s*end/);
   assert.match(source, /@media \(max-width: 760px\)[\s\S]*\.mi-work-editor-dialog/);
+});
+
+test("monthly editor distinguishes event duration, finite recurrence, and no planned end", () => {
+  assert.match(editorMarkup, /<strong>종료 예정 없음<\/strong>/);
+  assert.match(editorMarkup, /향후 60회[^<]*우선 생성/);
+  assert.match(editorMarkup, /data-work-repeat-fields[^>]+aria-live="polite"/);
+  assert.match(source, /function syncWorkRepeatFields\(\)[\s\S]{0,1400}noEnd\.disabled\s*=\s*Boolean\(id\)[\s\S]{0,500}until\.disabled\s*=\s*!toggle\.checked\s*\|\|\s*noEnd\.checked[\s\S]{0,300}until\.required\s*=\s*toggle\.checked\s*&&\s*!noEnd\.checked/);
+  assert.match(source, /repeatNoEndToggle\.addEventListener\("change"[\s\S]{0,400}until\.value\s*=\s*""[\s\S]{0,300}syncWorkRepeatFields\(\)/);
+  assert.match(source, /payload\.repeat\s*===\s*"monthly"\s*&&\s*!payload\.repeatNoEnd[\s\S]{0,220}!payload\.repeatUntil/);
+  assert.match(source, /data-work-end[^>]*>[\s\S]{0,140}|1회 일정 종료/);
 });
 
 test("calendar loading is date-bounded and month navigation reloads server data", () => {

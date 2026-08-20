@@ -71,6 +71,32 @@ test("monthly materialization includes the end date and handles leap-day recurre
   ]);
 });
 
+test("monthly no-end mode materializes an explicit safe 60-occurrence horizon", () => {
+  const result = buildMonthlyOccurrences({
+    startsAt: "2026-01-31T01:30:00.000Z",
+    endsAt: "2026-01-31T03:30:00.000Z",
+    repeatNoEnd: true,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.value.length, 60);
+  assert.deepEqual(result.value[0], {
+    occurrenceOn: "2026-01-31",
+    startsAt: "2026-01-31T01:30:00.000Z",
+    endsAt: "2026-01-31T03:30:00.000Z",
+  });
+  assert.deepEqual(result.value.at(-1), {
+    occurrenceOn: "2030-12-31",
+    startsAt: "2030-12-31T01:30:00.000Z",
+    endsAt: "2030-12-31T03:30:00.000Z",
+  });
+  assert.deepEqual(buildMonthlyOccurrences({
+    startsAt: "2026-01-31T01:30:00.000Z",
+    repeatNoEnd: true,
+    repeatUntil: "2027-01-31",
+  }), { ok: false, status: 400, message: "종료 예정 없음과 반복 종료일을 함께 설정할 수 없습니다." });
+});
+
 test("monthly materialization rejects invalid, unbounded, reversed, and oversized series", () => {
   assert.equal(buildMonthlyOccurrences({ startsAt: null, repeatUntil: "1970-02-01" }).ok, false);
   assert.deepEqual(

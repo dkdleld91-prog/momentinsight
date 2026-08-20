@@ -189,6 +189,77 @@ test("monthly POST materializes one atomic finite series and keeps retry identit
   harness.done();
 });
 
+test("monthly no-end POST stores intent and an exact 60-occurrence materialized horizon", async () => {
+  const seriesId = "11111111-1111-4111-8111-333333333333";
+  const saved = Array.from({ length: 60 }, (_, index) => managerRow({
+    id: `${String(index + 1).padStart(8, "0")}-1111-4111-8111-333333333333`,
+    series_id: seriesId,
+    occurrence_on: index === 59 ? "2030-12-15" : "2026-08-15",
+    recurrence_kind: "monthly",
+    recurrence_until: "2030-12-15",
+    recurrence_no_end: true,
+  }));
+  const harness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: [], error: null } },
+    { kind: "from", name: "schedule_items", result: { data: saved, error: null } },
+    { kind: "from", name: "audit_logs", result: { error: null } },
+  ]);
+  const response = await handleWorkItemsRequest(ownerRequest("POST", {
+    title: "급여 지급",
+    scheduleType: "report_due",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-01-15T09:00:00+09:00",
+    endsAt: "2026-01-15T10:00:00+09:00",
+    repeat: "monthly",
+    repeatNoEnd: true,
+    repeatUntil: "",
+    requestId: seriesId,
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.items.length, 60);
+  assert.equal(payload.item.repeatNoEnd, true);
+  assert.equal(payload.item.repeatUntil, null);
+  assert.equal(payload.item.materializedUntil, "2030-12-15");
+  const insert = harness.calls.find(([kind]) => kind === "insert");
+  assert.equal(insert[1].length, 60);
+  assert.equal(insert[1].every((row) => row.recurrence_no_end === true), true);
+  assert.equal(insert[1].every((row) => row.recurrence_until === "2030-12-15"), true);
+  harness.done();
+});
+
+test("monthly end mode rejects contradictory and non-boolean input before storage", async () => {
+  for (const repeatNoEnd of ["true", 1, null]) {
+    const harness = observingCtx();
+    const response = await handleWorkItemsRequest(ownerRequest("POST", {
+      title: "급여 지급",
+      scheduleType: "report_due",
+      startsAt: "2026-01-15T09:00:00+09:00",
+      repeat: "monthly",
+      repeatNoEnd,
+      repeatUntil: "2026-12-15",
+      requestId: "11111111-1111-4111-8111-444444444444",
+    }), harness.ctx);
+    assert.equal(response.status, 400);
+    assert.equal(harness.calls.length, 0);
+  }
+
+  const harness = observingCtx();
+  const response = await handleWorkItemsRequest(ownerRequest("POST", {
+    title: "급여 지급",
+    scheduleType: "report_due",
+    startsAt: "2026-01-15T09:00:00+09:00",
+    repeat: "monthly",
+    repeatNoEnd: true,
+    repeatUntil: "2026-12-15",
+    requestId: "11111111-1111-4111-8111-555555555555",
+  }), harness.ctx);
+  assert.equal(response.status, 400);
+  assert.equal(harness.calls.length, 0);
+});
+
 test("concurrent monthly retries resolve the unique series race as unchanged", async () => {
   const seriesId = "11111111-1111-4111-8111-222222222222";
   const existing = [managerRow({ series_id: seriesId, occurrence_on: "2026-08-15", recurrence_kind: "monthly", recurrence_until: "2026-08-15" })];

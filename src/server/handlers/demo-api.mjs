@@ -249,6 +249,7 @@ async function writePublicState(ctx, state) {
       client_id: demoClientId,
       brand_id: demoBrandId,
       title: schedule.title || scheduleTitle(state.nextSchedule, "공개 일정 확인"),
+      public_title: schedule.title || scheduleTitle(state.nextSchedule, "공개 일정 확인"),
       schedule_type: "operation",
       status: schedule.status === "진행 중" ? "in_progress" : "planned",
       starts_at: scheduleDate.toISOString(),

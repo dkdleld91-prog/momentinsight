@@ -4,6 +4,16 @@
 
 ## 현재 상태
 
+### 2026-08-20 대표실 공유 일정표·월간 반복 배포 후보
+
+- TimeTree는 기능 참고로만 사용하고 모먼트 인사이트 UI로 재구성했습니다. 대표실 하단에 `내 일정`과 연결된 일정표 목록, 색상 구분, 편집자·보기 전용 일회용 연결 코드, 42일 월간 그리드, 날짜 클릭 우측 등록 패널, 종일 일정, 매월 반복과 포함 종료일을 추가했습니다.
+- 로그인용 대행사·운영팀 코드는 공유 코드로 재사용하지 않습니다. 공유 코드는 128-bit 일회용 원문을 응답에서 한 번만 보여주고 DB에는 SHA-256 digest만 저장하며 24시간·1회 사용으로 제한합니다. 원문은 감사 로그에 남기지 않습니다.
+- 공유 일정 쓰기는 membership과 calendar를 같은 DB transaction에서 잠그는 service-role 전용 RPC로 처리합니다. viewer·해제된 구성원·다른 calendar·stale `updated_at` 요청은 fail-closed하며, 광고주는 기존 일반 일정 수정 권한을 얻지 않습니다.
+- 매월 일정은 서울 날짜 기준, 종료일 포함, 월말은 해당 달 마지막 날로 맞추고 최대 60회·5년으로 제한합니다. 동일 request ID 재시도는 중복 생성하지 않으며 일정 이동은 occurrence key와 함께 갱신합니다.
+- 공개 build는 9개 파일·인라인 6개·고유 CSP hash 4개로 통과했고 전체 `check:release`도 코어 635/635·플레이스 51/51·쇼핑 62/62·Production 인증 18/18로 통과했습니다. N상품·N플레이스 30일 보호 잠금은 23함수·88파일·37 migration 그대로입니다.
+- 운영 Supabase migration `schedule_calendar_sharing`을 적용했습니다. 기존 `schedule_items`는 2행 그대로이고 새 calendar/member/invite는 0행이며, 새 3테이블은 RLS ENABLE+FORCE, anon/authenticated DML 0, 5개 RPC는 SECURITY INVOKER·빈 search path·service-role-only입니다. advisor의 새 calendar 항목은 정책이 없는 RLS INFO(의도한 deny-by-default)와 미사용 신규 index INFO뿐이며 신규 보안 WARN은 없습니다.
+- 현재는 **DB 선적용·서버 배포 대기**입니다. Production release 일치와 로그인된 총관리자·운영팀 공유/반복 저장 E2E가 끝나기 전에는 운영 완료로 판정하지 않습니다.
+
 ### 2026-08-20 대표실 기능·디자인 정리
 
 - 대표 지시(간결·프리미엄, 중복 기능 통합)로 대표실 레이아웃을 히어로→운영실→지표 스트립→실장 명령·대화 패널→일정표의 단일 리듬(18px)으로 정리했습니다. 실장의 "오늘 브리핑" 패널과 주간 목록을 제거하고 지표 4칸을 독립 스트립으로 승격, 앞 3칸은 기존 업무 요약과 동일한 `data-work-summary-filter` 속성을 부여해 클릭 시 아래 일정표 필터·활성 표시가 기존 위임 로직으로 그대로 동작합니다(클라이언트 무변경). 일정표 쪽 중복 요약 3칸은 embed 상태에서 숨기고 상단 헤어라인으로 구획했습니다.

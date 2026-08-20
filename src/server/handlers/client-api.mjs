@@ -55,7 +55,7 @@ const resources = {
   },
   "schedule-items": {
     table: "schedule_items",
-    select: "id, client_id, brand_id, title, schedule_type, status, starts_at, ends_at, assignee_id, public_comment, visibility, created_at, updated_at",
+    select: "id, client_id, brand_id, title:public_title, schedule_type, status, starts_at, ends_at, public_comment, visibility, is_all_day, created_at, updated_at",
     order: "starts_at",
     visibleOnly: true
   },
@@ -76,6 +76,10 @@ const resources = {
     order: "period_date"
   }
 };
+
+export function clientScheduleSelectFields() {
+  return resources["schedule-items"].select;
+}
 
 function listRoutes() {
   return [

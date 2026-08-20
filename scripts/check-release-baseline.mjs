@@ -153,6 +153,11 @@ const reportCenterServer = read("src/server/handlers/report-center.mjs");
 const workItemsServer = read("src/server/handlers/work-items.mjs");
 const workItemsTests = read("src/server/handlers/work-items.test.mjs");
 const workItemsMigration = read("supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql");
+const calendarDomain = read("src/server/calendar-domain.mjs");
+const calendarHandlerTests = read("src/server/handlers/work-items-calendar.test.mjs");
+const calendarMigration = read("supabase/migrations/20260820110000_schedule_calendar_sharing.sql");
+const calendarMigrationTests = read("scripts/calendar-sharing-migration.test.mjs");
+const calendarUiTests = read("scripts/work-calendar-ui.test.mjs");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
 const keywordServer = read("src/server/handlers/naver-keyword.mjs");
 const integrationStatusServer = read("src/server/handlers/integration-status.mjs");
@@ -1821,7 +1826,8 @@ const checks = {
     && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")
     && clientSource.includes("loadClientWorkItems")
     && clientSource.includes("내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다."),
-  workOperationDragMoveRequiresConfirmation: adminSource.includes('draggable="true" data-work-edit=')
+  workOperationDragMoveRequiresConfirmation: adminSource.includes('draggable="\' + (canEdit ? "true" : "false") + \'" data-work-edit="')
+    && adminSource.includes("function workItemCanEdit(item)")
     && adminSource.includes('data-work-drop-date="')
     && adminSource.includes("openWorkMoveConfirmation")
     && adminSource.includes("workShiftDateTime")
@@ -1835,6 +1841,25 @@ const checks = {
     && adminSource.includes("mi-work-dialog-eyebrow")
     && adminSource.includes("mi-work-switch")
     && adminSource.includes("필요한 정보만 입력하면 일정과 가까운 업무에 함께 반영됩니다."),
+  workCalendarSharingAndMonthlyRecurrenceAreReleaseGated: adminSource.includes("function renderWorkCalendarRail")
+    && adminSource.includes("function workItemsQuery")
+    && adminSource.includes("payload.truncated")
+    && workItemsServer.includes('rpc("mi_insert_shared_schedule_items"')
+    && workItemsServer.includes('rpc("mi_update_shared_schedule_item"')
+    && workItemsServer.includes('rpc("mi_delete_shared_schedule_item"')
+    && workItemsServer.includes("buildMonthlyOccurrences")
+    && calendarDomain.includes("DEFAULT_MAX_OCCURRENCES = 60")
+    && calendarDomain.includes('timeZone: "Asia/Seoul"')
+    && calendarMigration.includes("force row level security")
+    && calendarMigration.includes("revoke all on table public.schedule_items from public, anon, authenticated")
+    && calendarMigration.includes("returns setof public.schedule_items")
+    && !/grant\s+(?:select|insert|update|delete)[^;]*on table public\.schedule_items to (?:public|anon|authenticated)/i.test(calendarMigration)
+    && calendarHandlerTests.includes("shared calendar delete uses the atomic editor RPC")
+    && calendarHandlerTests.includes("bounded calendar GET reports truncation")
+    && calendarMigrationTests.includes("service-role-only")
+    && calendarUiTests.includes("bounded monthly recurrence")
+    && String(packageConfig.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
+    && String(packageConfig.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
   workOperationExecutionSummaryAndQuickComplete: adminSource.includes('data-work-summary-filter="today"')
     && adminSource.includes('data-work-summary-filter="overdue"')
     && adminSource.includes('data-work-summary-filter="needs_check"')

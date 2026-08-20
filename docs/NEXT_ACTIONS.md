@@ -2,6 +2,14 @@
 
 기준일: 2026-08-20
 
+## 진행 중: 대표실 공유 일정표·월간 반복
+
+1. 완료: handler branch 80.21%와 전체 `check:release`, 역할 parity, Production auth, 공개 build/CSP, N30 보호 잠금을 모두 통과했습니다.
+2. 완료: additive calendar migration을 운영 Supabase에 적용하고 FORCE RLS, base `schedule_items` anon/authenticated 차단, RPC service-role-only 권한과 advisor를 확인했습니다.
+3. 진행: 기능 commit을 Production에 배포하고 `/health`·`/ready` release를 일치시킵니다.
+4. 대기: 로그인된 총관리자·운영팀에서 일정표 생성→편집자/보기 코드 연결→viewer 쓰기 차단→매월 15일 종료일까지 정확 생성→재시도 중복 0→수정·삭제·새로고침 보존을 검증합니다. 이 실기 전에는 정상화 완료로 쓰지 않습니다.
+5. 유지: N상품·N플레이스 30일 코드·migration·작업기·순위 이력은 이번 일정표 작업에서 수정하지 않습니다.
+
 ## 동결: N 상품·N 플레이스 30일 추적
 
 - 대표님의 별도 수정 요청 전까지 30일 추적 코드·수집기·작업기·스케줄러·DB migration을 변경하지 않습니다. 다른 기능 작업은 이 잠금을 통과해야 하며 자연 순환과 기존 기능 사용은 계속됩니다.

@@ -136,6 +136,18 @@ test("client payload excludes internal and tenant fields", () => {
   assert.equal("operationTeamId" in payload, false);
 });
 
+test("client payload never falls back to an internal title", () => {
+  const payload = clientWorkItemPayload({
+    id: "task-private-title",
+    title: "내부에서만 쓰는 제목",
+    public_title: null,
+    visibility: "client_visible",
+  });
+
+  assert.equal(payload.title, "");
+  assert.equal(JSON.stringify(payload).includes("내부에서만 쓰는 제목"), false);
+});
+
 test("only owner and operation team can mutate work items", () => {
   assert.equal(roleCanMutateWorkItems("owner"), true);
   assert.equal(roleCanMutateWorkItems("team"), true);
@@ -147,6 +159,7 @@ function assistantQueryStub(result, calls) {
     select(fields) { calls.push(["select", fields]); return stub; },
     update(patch) { calls.push(["update", patch]); return stub; },
     eq(column, value) { calls.push(["eq", column, value]); return stub; },
+    is(column, value) { calls.push(["is", column, value]); return stub; },
     or(filter) { calls.push(["or", filter]); return stub; },
     async maybeSingle() { calls.push(["maybeSingle"]); return result; },
   };
@@ -187,6 +200,9 @@ const assistantAccess = { ok: true, role: "owner", ownerAgencyCode: "mml93-a01",
 const assistantRow = {
   id: "wi-1",
   client_id: null,
+  operation_team_id: null,
+  owner_agency_code: "mml93-a01",
+  calendar_id: null,
   title: "광고주 미팅",
   schedule_type: "meeting",
   status: "planned",

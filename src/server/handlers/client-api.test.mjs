@@ -1,9 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  clientScheduleSelectFields,
   clientSelfConnectEnabled,
   handleAgencyCode
 } from "./client-api.mjs";
+
+test("client schedule selects only the public title and public fields", () => {
+  const fields = clientScheduleSelectFields();
+  assert.match(fields, /title:public_title/u);
+  assert.doesNotMatch(fields, /(?:^|,)\s*title\s*(?:,|$)/u);
+  assert.doesNotMatch(fields, /internal_note|owner_agency_code|operation_team_id/u);
+});
 
 test("client self-connect is enabled only by the exact true flag", () => {
   assert.equal(clientSelfConnectEnabled({}), false);

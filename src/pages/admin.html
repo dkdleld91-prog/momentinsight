@@ -8035,7 +8035,8 @@
         display: none;
       }
     }
-    #mi-admin .mi-work-shell.is-active {
+    #mi-admin .mi-work-shell.is-active,
+    #mi-admin .mi-work-shell.is-embedded {
       display: grid;
       gap: 18px;
     }
@@ -8113,17 +8114,150 @@
 
     #mi-admin .mi-work-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1.6fr) minmax(300px, .72fr);
+      grid-template-columns: 190px minmax(0, 1.6fr) minmax(280px, .72fr);
       gap: 16px;
       align-items: stretch;
     }
 
+    #mi-admin .mi-work-calendar-rail,
     #mi-admin .mi-work-calendar-card,
     #mi-admin .mi-work-agenda-card {
       border: 1px solid var(--line);
       border-radius: 20px;
       background: #fff;
       box-shadow: 0 14px 38px rgba(14, 32, 66, .05);
+    }
+
+    #mi-admin .mi-work-calendar-rail {
+      display: flex;
+      min-width: 0;
+      flex-direction: column;
+      gap: 16px;
+      padding: 18px 14px;
+    }
+
+    #mi-admin .mi-work-calendar-rail-head,
+    #mi-admin .mi-work-calendar-rail-section {
+      display: grid;
+      gap: 9px;
+    }
+
+    #mi-admin .mi-work-calendar-rail-head h2 {
+      margin: 0;
+      font-size: 17px;
+    }
+
+    #mi-admin .mi-work-calendar-list {
+      display: grid;
+      gap: 5px;
+    }
+
+    #mi-admin .mi-work-calendar-filter {
+      display: grid;
+      width: 100%;
+      min-height: 38px;
+      grid-template-columns: 12px minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 0 9px;
+      border: 1px solid transparent;
+      border-radius: 11px;
+      color: #53627a;
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    #mi-admin .mi-work-calendar-filter:hover,
+    #mi-admin .mi-work-calendar-filter.is-active {
+      border-color: #d8e2ee;
+      color: var(--navy);
+      background: #f6f9fd;
+    }
+
+    #mi-admin .mi-work-calendar-filter > i,
+    #mi-admin .mi-work-calendar-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--work-calendar-color, #75839a);
+    }
+
+    #mi-admin .mi-work-calendar-filter > span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-calendar-filter > small {
+      color: #8a96a8;
+      font-size: 9px;
+    }
+
+    #mi-admin .mi-work-calendar-rail-section {
+      padding-top: 14px;
+      border-top: 1px solid #e7ecf3;
+    }
+
+    #mi-admin .mi-work-calendar-rail-section > strong {
+      color: #65748b;
+      font-size: 10px;
+      letter-spacing: .04em;
+    }
+
+    #mi-admin .mi-work-calendar-inline {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 82px;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-work-calendar-inline .mi-input,
+    #mi-admin .mi-work-calendar-inline .mi-select,
+    #mi-admin .mi-work-calendar-rail .mi-select {
+      width: 100%;
+      min-width: 0;
+      min-height: 36px;
+      padding: 0 9px;
+      border: 1px solid #d9e3ef;
+      border-radius: 10px;
+      color: var(--navy);
+      background: #fbfdff;
+      font-family: inherit;
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-work-calendar-rail .mi-link-button {
+      width: 100%;
+      min-height: 36px;
+      justify-content: center;
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-work-calendar-invite-output {
+      display: grid;
+      gap: 4px;
+      padding: 9px;
+      border: 1px dashed #cbd8e7;
+      border-radius: 10px;
+      color: #5d6c82;
+      background: #f7faff;
+      font-size: 10px;
+      line-height: 1.45;
+      word-break: break-all;
+    }
+
+    #mi-admin .mi-work-calendar-invite-output[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-calendar-invite-output strong {
+      color: var(--navy);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+      letter-spacing: .04em;
     }
 
     #mi-admin .mi-work-calendar-card {
@@ -8331,6 +8465,23 @@
       vertical-align: 1px;
     }
 
+    #mi-admin .mi-work-day-item {
+      border-left: 4px solid var(--work-calendar-color, #dce5f0);
+    }
+
+    #mi-admin .mi-work-date-overflow {
+      width: fit-content;
+      padding: 2px 6px;
+      border: 0;
+      border-radius: 999px;
+      color: #536783;
+      background: #edf3fa;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 9px;
+      font-weight: 850;
+    }
+
     #mi-admin .mi-work-agenda-card {
       padding: 20px;
     }
@@ -8522,6 +8673,12 @@
       backdrop-filter: blur(8px);
     }
 
+    #mi-admin .mi-work-modal[data-work-modal] {
+      place-items: stretch;
+      justify-items: end;
+      padding: 0;
+    }
+
     #mi-admin .mi-work-dialog {
       width: min(720px, 100%);
       max-height: calc(100vh - 40px);
@@ -8536,8 +8693,12 @@
 
     #mi-admin .mi-work-editor-dialog {
       display: grid;
+      width: min(560px, 100%);
+      height: 100dvh;
+      max-height: 100dvh;
       grid-template-rows: auto minmax(0, 1fr);
       overflow: hidden;
+      border-radius: 24px 0 0 24px;
     }
 
     #mi-admin .mi-work-editor-dialog > form {
@@ -8821,6 +8982,31 @@
       box-shadow: 0 8px 20px rgba(13, 39, 77, .05);
     }
 
+    #mi-admin .mi-work-public-toggle.is-disabled {
+      cursor: not-allowed;
+      opacity: .68;
+    }
+
+    #mi-admin .mi-work-repeat-fields {
+      display: grid;
+      gap: 10px;
+      padding: 13px 15px;
+      border: 1px solid #dbe5f0;
+      border-radius: 15px;
+      background: #fbfdff;
+    }
+
+    #mi-admin .mi-work-repeat-fields[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-repeat-note {
+      margin: 0;
+      color: #69788e;
+      font-size: 10.5px;
+      line-height: 1.55;
+    }
+
     #mi-admin .mi-work-public-toggle strong,
     #mi-admin .mi-work-public-toggle small {
       display: block;
@@ -8949,7 +9135,11 @@
 
     @media (max-width: 1080px) {
       #mi-admin .mi-work-layout {
-        grid-template-columns: 1fr;
+        grid-template-columns: 190px minmax(0, 1fr);
+      }
+
+      #mi-admin .mi-work-agenda-card {
+        grid-column: 1 / -1;
       }
 
       #mi-admin .mi-work-agenda {
@@ -8987,6 +9177,15 @@
         overflow-x: auto;
       }
 
+      #mi-admin .mi-work-layout {
+        grid-template-columns: 1fr;
+      }
+
+      #mi-admin .mi-work-calendar-rail,
+      #mi-admin .mi-work-agenda-card {
+        grid-column: auto;
+      }
+
       #mi-admin .mi-work-calendar-head,
       #mi-admin .mi-work-weekdays,
       #mi-admin .mi-work-calendar {
@@ -9003,6 +9202,18 @@
 
       #mi-admin .mi-work-modal {
         padding: 10px;
+      }
+
+      #mi-admin .mi-work-modal[data-work-modal] {
+        align-items: end;
+        padding: 0;
+      }
+
+      #mi-admin .mi-work-modal[data-work-modal] .mi-work-editor-dialog {
+        width: 100%;
+        height: min(92dvh, 820px);
+        max-height: 92dvh;
+        border-radius: 22px 22px 0 0;
       }
 
       #mi-admin .mi-work-dialog {
@@ -9265,6 +9476,44 @@
           </div>
 
           <div class="mi-work-layout">
+            <aside class="mi-work-calendar-rail" aria-label="일정표 목록 및 공유">
+              <div class="mi-work-calendar-rail-head">
+                <span class="mi-kicker">Calendar list</span>
+                <h2>내 일정표</h2>
+                <div class="mi-work-calendar-list" data-work-calendar-list>
+                  <button class="mi-work-calendar-filter is-active" type="button" data-work-calendar-filter="all" aria-pressed="true"><i aria-hidden="true"></i><span>전체 일정</span><small>ALL</small></button>
+                  <button class="mi-work-calendar-filter" type="button" data-work-calendar-filter="personal" aria-pressed="false" style="--work-calendar-color:#7183a0"><i aria-hidden="true"></i><span>내 일정</span><small>개인</small></button>
+                  <div data-work-calendar-dynamic></div>
+                </div>
+              </div>
+
+              <div class="mi-work-calendar-rail-section">
+                <strong>새 일정표</strong>
+                <div class="mi-work-calendar-inline">
+                  <input class="mi-input" data-work-calendar-name maxlength="60" placeholder="예: 대행사 공유" />
+                  <select class="mi-select" data-work-calendar-color aria-label="일정표 색상"><option value="navy">네이비</option><option value="emerald" selected>에메랄드</option><option value="amber">앰버</option><option value="rose">로즈</option><option value="violet">바이올렛</option><option value="sky">스카이</option><option value="slate">슬레이트</option></select>
+                </div>
+                <button class="mi-link-button" type="button" data-work-calendar-create>일정표 만들기</button>
+              </div>
+
+              <div class="mi-work-calendar-rail-section" data-work-calendar-share-section hidden>
+                <strong>선택 일정표 공유</strong>
+                <select class="mi-select" data-work-calendar-grant aria-label="공유 권한">
+                  <option value="editor">일정 편집 가능</option>
+                  <option value="viewer">보기만 가능</option>
+                </select>
+                <button class="mi-link-button" type="button" data-work-calendar-share>일회용 연결 코드 만들기</button>
+                <div class="mi-work-calendar-invite-output" data-work-calendar-invite-code hidden aria-live="polite"></div>
+              </div>
+
+              <div class="mi-work-calendar-rail-section">
+                <strong>일정표 연결</strong>
+                <input class="mi-input" data-work-calendar-join-code maxlength="160" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="받은 연결 코드" />
+                <button class="mi-link-button" type="button" data-work-calendar-join>코드로 연결</button>
+                <button class="mi-link-button is-danger" type="button" data-work-calendar-leave hidden>선택 일정표 나가기</button>
+              </div>
+            </aside>
+
             <article class="mi-work-calendar-card">
               <div class="mi-work-calendar-head">
                 <div class="mi-work-month-nav">
@@ -9306,9 +9555,11 @@
               <form data-work-form>
                 <div class="mi-work-form">
                   <input type="hidden" data-work-id />
+                  <input type="hidden" data-work-updated-at />
                   <div class="mi-work-form-grid">
                     <label class="mi-work-field is-full"><span>업무 제목</span><input class="mi-input" data-work-title maxlength="120" required placeholder="예: 7월 월간 보고서 최종 검수" /></label>
-                    <label class="mi-work-field"><span>시작</span><input class="mi-input" type="datetime-local" data-work-start required /></label>
+                    <label class="mi-work-field is-full"><span>일정표</span><select class="mi-select" data-work-calendar-select required><option value="personal">내 일정</option></select></label>
+                    <label class="mi-work-field"><span data-work-start-label>시작</span><input class="mi-input" type="datetime-local" data-work-start required /></label>
                     <label class="mi-work-field"><span>상태</span>
                       <select class="mi-select" data-work-state required>
                         <option value="planned">예정</option>
@@ -9321,6 +9572,20 @@
                   </div>
 
                   <label class="mi-work-public-toggle">
+                    <span><strong>종일 일정</strong><small>시간 없이 날짜 기준으로 표시합니다.</small></span>
+                    <span class="mi-work-switch"><input type="checkbox" data-work-all-day /><i aria-hidden="true"></i></span>
+                  </label>
+
+                  <label class="mi-work-public-toggle">
+                    <span><strong>매월 반복</strong><small>새 일정 등록 시 종료일까지 월별 일정을 만듭니다.</small></span>
+                    <span class="mi-work-switch"><input type="checkbox" data-work-repeat-monthly /><i aria-hidden="true"></i></span>
+                  </label>
+                  <div class="mi-work-repeat-fields" data-work-repeat-fields hidden>
+                    <label class="mi-work-field"><span>반복 종료일 · 포함</span><input class="mi-input" type="date" data-work-repeat-until /></label>
+                    <p class="mi-work-repeat-note">29~31일은 해당 월의 마지막 날에 생성됩니다. 생성된 각 일정은 개별 수정·완료·삭제됩니다.</p>
+                  </div>
+
+                  <label class="mi-work-public-toggle" data-work-public-toggle-wrap>
                     <span><strong>광고주에게 일정 공개</strong><small data-work-public-hint>체크한 일정만 광고주 화면에 표시합니다.</small></span>
                     <span class="mi-work-switch"><input type="checkbox" data-work-public /><i aria-hidden="true"></i></span>
                   </label>
@@ -10887,6 +11152,11 @@
       var workMovePending = null;
       var workIgnoreClickUntil = 0;
       var workActiveFilter = "";
+      var workCalendars = [];
+      var workSelectedCalendarId = "all";
+      var workAgendaDateKey = "";
+      var workDialogReturnFocus = null;
+      var workRepeatRequestId = "";
 
       function getWorkItemsApiUrl() {
         var host = window.location && window.location.hostname;
@@ -10939,6 +11209,44 @@
           creative: "소재 제작",
           keyword: "키워드 작업"
         }[value] || "업무";
+      }
+
+      function workCalendarColor(value, fallback) {
+        var colors = { navy: "#0f3669", emerald: "#0f766e", amber: "#b7791f", rose: "#be526b", violet: "#7857a8", sky: "#2b7fa7", slate: "#64748b" };
+        if (/^#[0-9a-f]{6}$/i.test(String(value || ""))) return String(value);
+        return colors[String(value || "").toLowerCase()] || fallback || "#7183a0";
+      }
+
+      function workCalendarColorToken(value) {
+        var token = String(value || "").toLowerCase();
+        return ["navy", "emerald", "amber", "rose", "violet", "sky", "slate"].includes(token) ? token : "emerald";
+      }
+
+      function workCalendarById(calendarId) {
+        return workCalendars.find(function (calendar) { return calendar.id === calendarId; }) || null;
+      }
+
+      function workItemCalendarId(item) {
+        return item && item.calendarId || "personal";
+      }
+
+      function workItemCalendarColor(item) {
+        var calendar = workCalendarById(workItemCalendarId(item));
+        return workCalendarColor(item && item.calendar && item.calendar.color || calendar && calendar.color, workItemCalendarId(item) === "personal" ? "#7183a0" : "#0f766e");
+      }
+
+      function workCalendarCanInvite(calendar) {
+        return Boolean(calendar && (calendar.canInvite === true || calendar.isOwner === true || calendar.role === "owner"));
+      }
+
+      function workCalendarCanLeave(calendar) {
+        return Boolean(calendar && calendar.isOwner !== true && calendar.role !== "owner");
+      }
+
+      function workItemCanEdit(item) {
+        if (!item || !item.calendarId) return true;
+        var calendar = workCalendarById(item.calendarId);
+        return Boolean(calendar && (calendar.role === "owner" || calendar.role === "editor"));
       }
 
       function workDateKey(value) {
@@ -11010,6 +11318,8 @@
           assigneeName: next.assigneeName || "",
           internalNote: next.internalNote || "",
           isAllDay: Boolean(next.isAllDay),
+          calendarId: next.calendarId || null,
+          expectedUpdatedAt: next.updatedAt || "",
           isClientVisible: next.visibility === "client_visible",
           publicTitle: next.publicTitle || "",
           publicComment: next.publicComment || ""
@@ -11119,8 +11429,11 @@
       function deactivateWorkOperation() {
         workRequestGeneration += 1;
         workItems = [];
+        workCalendars = [];
         workCanPublish = false;
         workActiveFilter = "";
+        workSelectedCalendarId = "all";
+        workAgendaDateKey = "";
         clearWorkDragState();
         closeWorkMoveDialog(false, "");
         var ownerInput = root.querySelector("[data-work-owner-client-code]");
@@ -11133,8 +11446,11 @@
       function resetWorkOperation() {
         workRequestGeneration += 1;
         workItems = [];
+        workCalendars = [];
         workCanPublish = false;
         workActiveFilter = "";
+        workSelectedCalendarId = "all";
+        workAgendaDateKey = "";
         workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         clearWorkDragState();
         closeWorkMoveDialog(false, "");
@@ -11160,14 +11476,74 @@
         return true;
       }
 
+      function workItemMatchesCalendar(item) {
+        return workSelectedCalendarId === "all" || workItemCalendarId(item) === workSelectedCalendarId;
+      }
+
+      function workItemsForSelectedCalendar() {
+        return workItems.filter(workItemMatchesCalendar);
+      }
+
       function filteredWorkItems() {
-        return workItems.filter(function (item) { return workItemMatchesFilter(item, workActiveFilter); });
+        return workItemsForSelectedCalendar().filter(function (item) { return workItemMatchesFilter(item, workActiveFilter); });
+      }
+
+      function renderWorkCalendarRail() {
+        var dynamic = root.querySelector("[data-work-calendar-dynamic]");
+        var validCalendars = workCalendars.filter(function (calendar) { return calendar && calendar.id && calendar.id !== "personal"; });
+        if (workSelectedCalendarId !== "all" && workSelectedCalendarId !== "personal" && !workCalendarById(workSelectedCalendarId)) {
+          workSelectedCalendarId = "all";
+        }
+        if (dynamic) {
+          dynamic.innerHTML = validCalendars.map(function (calendar) {
+            var calendarId = escapeHtml(calendar.id);
+            var color = workCalendarColor(calendar.color, "#0f766e");
+            var role = calendar.isOwner === true || calendar.role === "owner" ? "소유" : (calendar.role === "viewer" ? "보기" : "편집");
+            return '<button class="mi-work-calendar-filter' + (workSelectedCalendarId === calendar.id ? " is-active" : "") +
+              '" type="button" data-work-calendar-filter="' + calendarId + '" aria-pressed="' + (workSelectedCalendarId === calendar.id ? "true" : "false") +
+              '" style="--work-calendar-color:' + color + '"><i aria-hidden="true"></i><span>' + escapeHtml(calendar.name || "공유 일정") +
+              '</span><small>' + role + '</small></button>';
+          }).join("");
+        }
+        root.querySelectorAll("[data-work-calendar-filter]").forEach(function (button) {
+          var active = button.getAttribute("data-work-calendar-filter") === workSelectedCalendarId;
+          button.classList.toggle("is-active", active);
+          button.setAttribute("aria-pressed", active ? "true" : "false");
+        });
+        var selected = workCalendarById(workSelectedCalendarId);
+        var shareSection = root.querySelector("[data-work-calendar-share-section]");
+        var leave = root.querySelector("[data-work-calendar-leave]");
+        if (shareSection) shareSection.hidden = !workCalendarCanInvite(selected);
+        if (leave) leave.hidden = !workCalendarCanLeave(selected);
+      }
+
+      function renderWorkCalendarSelect(selectedId) {
+        var select = root.querySelector("[data-work-calendar-select]");
+        if (!select) return;
+        var options = ['<option value="personal">내 일정</option>'];
+        workCalendars.forEach(function (calendar) {
+          if (!calendar || !calendar.id || calendar.id === "personal") return;
+          var viewer = calendar.role === "viewer" && calendar.isOwner !== true;
+          options.push('<option value="' + escapeHtml(calendar.id) + '"' + (viewer ? " disabled" : "") + '>' +
+            escapeHtml(calendar.name || "공유 일정") + (viewer ? " · 보기 전용" : "") + '</option>');
+        });
+        select.innerHTML = options.join("");
+        var desired = selectedId && (selectedId === "personal" || workCalendarById(selectedId)) ? selectedId : "personal";
+        select.value = desired;
+      }
+
+      function clearWorkCalendarInvite() {
+        var output = root.querySelector("[data-work-calendar-invite-code]");
+        if (!output) return;
+        output.hidden = true;
+        output.textContent = "";
       }
 
       function renderWorkSummary() {
-        var todayCount = workItems.filter(function (item) { return workItemMatchesFilter(item, "today"); }).length;
-        var overdueCount = workItems.filter(function (item) { return workItemMatchesFilter(item, "overdue"); }).length;
-        var needsCheckCount = workItems.filter(function (item) { return workItemMatchesFilter(item, "needs_check"); }).length;
+        var calendarItems = workItemsForSelectedCalendar();
+        var todayCount = calendarItems.filter(function (item) { return workItemMatchesFilter(item, "today"); }).length;
+        var overdueCount = calendarItems.filter(function (item) { return workItemMatchesFilter(item, "overdue"); }).length;
+        var needsCheckCount = calendarItems.filter(function (item) { return workItemMatchesFilter(item, "needs_check"); }).length;
         var todayNode = root.querySelector("[data-work-summary-today]");
         var overdueNode = root.querySelector("[data-work-summary-overdue]");
         var needsCheckNode = root.querySelector("[data-work-summary-check]");
@@ -11200,11 +11576,15 @@
             '<div class="mi-work-day-head"><button type="button" data-work-date="' + key + '" aria-label="' + key + ' 업무 등록">' +
             date.getDate() + '</button>' + (dayItems.length ? '<span class="mi-work-visibility">' + dayItems.length + '</span>' : "") + '</div>' +
             '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
-              return '<button type="button" class="mi-work-day-item" draggable="true" data-work-edit="' + escapeHtml(item.id) +
-                '" data-work-drag-id="' + escapeHtml(item.id) +
-                '" data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") + '">' +
+              var calendarColor = workItemCalendarColor(item);
+              var canEdit = workItemCanEdit(item);
+              return '<button type="button" class="mi-work-day-item" draggable="' + (canEdit ? "true" : "false") + '" data-work-edit="' + escapeHtml(item.id) +
+                '"' + (canEdit ? ' data-work-drag-id="' + escapeHtml(item.id) + '"' : "") +
+                ' data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") +
+                '" style="--work-calendar-color:' + calendarColor + '">' +
                 escapeHtml(item.title) + '</button>';
-            }).join("") + (dayItems.length > 3 ? '<span class="mi-work-visibility">+' + (dayItems.length - 3) + '</span>' : "") +
+            }).join("") + (dayItems.length > 3 ? '<button type="button" class="mi-work-date-overflow" data-work-date-overflow="' + key +
+              '" aria-label="' + key + ' 나머지 일정 보기">+' + (dayItems.length - 3) + '</button>' : "") +
             '</div></div>');
         }
         calendar.innerHTML = html.join("");
@@ -11213,15 +11593,18 @@
       function renderWorkAgendaGroup(title, items) {
         var content = items.length ? items.map(function (item) {
           var done = item.status === "done";
+          var calendar = workCalendarById(workItemCalendarId(item));
+          var visibilityLabel = item.visibility === "client_visible" ? "광고주 공개" : (calendar ? calendar.name : "내 일정");
+          var canEdit = workItemCanEdit(item);
           return '<div class="mi-work-agenda-item" data-priority="' + escapeHtml(item.priority || "medium") +
-            '" data-status="' + escapeHtml(item.status) + '"><i aria-hidden="true"></i><button type="button" class="mi-work-agenda-edit" data-work-edit="' +
+            '" data-status="' + escapeHtml(item.status) + '"><i aria-hidden="true" style="background:' + workItemCalendarColor(item) + '"></i><button type="button" class="mi-work-agenda-edit" data-work-edit="' +
             escapeHtml(item.id) + '"><strong>' + escapeHtml(item.title) + '</strong><span>' + escapeHtml(workTimeLabel(item.startsAt)) + ' · ' +
             escapeHtml(workStatusLabel(item.status)) + '</span></button><em class="mi-work-visibility' +
             (item.visibility === "client_visible" ? " is-public" : "") + '">' +
-            (item.visibility === "client_visible" ? "광고주 공개" : "내부") + '</em><button type="button" class="mi-work-quick-done" data-work-quick-done="' +
+            escapeHtml(visibilityLabel) + '</em><button type="button" class="mi-work-quick-done" data-work-quick-done="' +
             escapeHtml(item.id) + '" data-status="' + escapeHtml(item.status) + '" aria-label="' +
             (done ? escapeHtml(item.title) + " 완료 해제" : escapeHtml(item.title) + " 완료 처리") + '" title="' +
-            (done ? "완료 해제" : "완료 처리") + '" aria-pressed="' + (done ? "true" : "false") + '">✓</button></div>';
+            (done ? "완료 해제" : "완료 처리") + '" aria-pressed="' + (done ? "true" : "false") + '"' + (canEdit ? "" : " disabled") + '>✓</button></div>';
         }).join("") : '<div class="mi-work-agenda-empty">등록된 업무가 없습니다.</div>';
         return '<section class="mi-work-agenda-group"><strong>' + escapeHtml(title) + '</strong>' + content + '</section>';
       }
@@ -11242,6 +11625,15 @@
         var tomorrowKey = workDateKey(tomorrowDate);
         var sorted = filteredWorkItems().sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
         var filterLabels = { today: "오늘 업무", overdue: "지연 업무", needs_check: "확인 필요" };
+        if (workAgendaDateKey) {
+          var dateItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === workAgendaDateKey; });
+          var dateTitle = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(workDateFromKey(workAgendaDateKey));
+          agenda.innerHTML = renderWorkAgendaGroup(dateTitle, dateItems);
+          if (title) title.textContent = dateTitle + " 일정";
+          if (clear) clear.hidden = false;
+          if (count) count.textContent = dateItems.length + "개";
+          return;
+        }
         if (workActiveFilter) {
           var filterTitle = filterLabels[workActiveFilter] || "선택 업무";
           agenda.innerHTML = renderWorkAgendaGroup(filterTitle, sorted);
@@ -11263,13 +11655,27 @@
 
       function renderWorkOperation() {
         syncWorkOwnerScope();
+        renderWorkCalendarRail();
         renderWorkSummary();
         renderWorkCalendar();
         renderWorkAgenda();
       }
 
-      async function requestWorkItems(method, body) {
-        var response = await miFetch(getWorkItemsApiUrl(), {
+      function workItemsQuery() {
+        var fromDate = new Date(workMonthCursor.getFullYear(), workMonthCursor.getMonth(), 1);
+        fromDate.setDate(1 - fromDate.getDay());
+        var toDate = new Date(fromDate);
+        toDate.setDate(toDate.getDate() + 41);
+        var params = new URLSearchParams();
+        params.set("from", workDateKey(fromDate));
+        params.set("to", workDateKey(toDate));
+        params.set("limit", "300");
+        return params;
+      }
+
+      async function requestWorkItems(method, body, query) {
+        var queryString = query && query.toString ? query.toString() : "";
+        var response = await miFetch(getWorkItemsApiUrl() + (queryString ? "?" + queryString : ""), {
           method: method,
           cache: "no-store",
           headers: workRequestHeaders(body ? "application/json" : ""),
@@ -11281,6 +11687,24 @@
           throw new Error(payload && payload.message ? payload.message : "업무 운영 요청에 실패했습니다.");
         }
         return payload;
+      }
+
+      async function runWorkCalendarAction(button, body, pendingMessage, successMessage) {
+        if (button) button.disabled = true;
+        setWorkStatus(pendingMessage, "");
+        try {
+          var payload = await requestWorkItems("POST", body);
+          var calendarId = payload.calendarId || payload.calendar && (payload.calendar.id || payload.calendar.calendar_id) || "";
+          if (calendarId) workSelectedCalendarId = calendarId;
+          await loadWorkItems();
+          setWorkStatus(successMessage, "ok");
+          return payload;
+        } catch (error) {
+          setWorkStatus(error.message || "일정표 요청을 처리하지 못했습니다.", "warn");
+          return null;
+        } finally {
+          if (button) button.disabled = false;
+        }
       }
 
       async function toggleWorkItemCompletion(itemId, button) {
@@ -11305,17 +11729,23 @@
         var requestId = ++workRequestGeneration;
         setWorkStatus("업무 일정을 불러오는 중입니다.", "");
         try {
-          var payload = await requestWorkItems("GET");
+          var payload = await requestWorkItems("GET", null, workItemsQuery());
           if (requestId !== workRequestGeneration || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
           workItems = Array.isArray(payload.items) ? payload.items : [];
+          workCalendars = Array.isArray(payload.calendars) ? payload.calendars : [];
           workCanPublish = payload.canPublish === true;
           renderWorkOperation();
           renderOwnerAssistantBriefing(root.querySelector('[data-mi-admin-view="owner-assistant"]'));
-          setWorkStatus(workItems.length ? "저장된 업무 " + workItems.length + "개를 불러왔습니다." : "등록된 업무가 없습니다. 첫 업무를 추가해보세요.", "ok");
+          if (payload.truncated) {
+            setWorkStatus("이 달의 일정이 많아 최대 300개만 표시합니다. 일정표를 나누거나 기간을 이동해 확인해주세요.", "warn");
+          } else {
+            setWorkStatus(workItems.length ? "저장된 업무 " + workItems.length + "개를 불러왔습니다." : "등록된 업무가 없습니다. 첫 업무를 추가해보세요.", "ok");
+          }
           return true;
         } catch (error) {
           if (requestId !== workRequestGeneration || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
           workItems = [];
+          workCalendars = [];
           workCanPublish = false;
           renderWorkOperation();
           renderOwnerAssistantBriefing(root.querySelector('[data-mi-admin-view="owner-assistant"]'));
@@ -11327,20 +11757,63 @@
         var toggle = root.querySelector("[data-work-public]");
         var fields = root.querySelector("[data-work-public-fields]");
         var hint = root.querySelector("[data-work-public-hint]");
+        var wrap = root.querySelector("[data-work-public-toggle-wrap]");
+        var calendarSelect = root.querySelector("[data-work-calendar-select]");
         if (!toggle || !fields) return;
-        toggle.disabled = !workCanPublish;
-        if (!workCanPublish) toggle.checked = false;
+        var sharedCalendar = Boolean(calendarSelect && calendarSelect.value !== "personal");
+        toggle.disabled = sharedCalendar || !workCanPublish;
+        if (toggle.disabled) toggle.checked = false;
         fields.hidden = !toggle.checked;
-        if (hint) hint.textContent = workCanPublish
-          ? "체크한 일정만 광고주 화면에 표시합니다."
-          : "광고주 연결 후 선택 공개할 수 있습니다.";
+        if (wrap) wrap.classList.toggle("is-disabled", toggle.disabled);
+        if (hint) hint.textContent = sharedCalendar
+          ? "공유 일정표는 연결 구성원에게만 보이며 광고주 공개와 분리됩니다."
+          : (workCanPublish ? "체크한 일정만 광고주 화면에 표시합니다." : "광고주 연결 후 선택 공개할 수 있습니다.");
+      }
+
+      function syncWorkAllDayFields() {
+        var toggle = root.querySelector("[data-work-all-day]");
+        var start = root.querySelector("[data-work-start]");
+        var end = root.querySelector("[data-work-end]");
+        var label = root.querySelector("[data-work-start-label]");
+        if (!toggle || !start || !end) return;
+        var allDay = toggle.checked;
+        var startDate = String(start.value || "").slice(0, 10);
+        var endDate = String(end.value || start.value || "").slice(0, 10);
+        start.type = allDay ? "date" : "datetime-local";
+        end.type = allDay ? "date" : "datetime-local";
+        if (allDay) {
+          start.value = startDate;
+          end.value = endDate || startDate;
+        } else {
+          start.value = startDate ? startDate + "T09:00" : "";
+          end.value = endDate ? endDate + "T10:00" : "";
+        }
+        if (label) label.textContent = allDay ? "날짜" : "시작";
+      }
+
+      function syncWorkRepeatFields() {
+        var toggle = root.querySelector("[data-work-repeat-monthly]");
+        var fields = root.querySelector("[data-work-repeat-fields]");
+        var until = root.querySelector("[data-work-repeat-until]");
+        var id = (root.querySelector("[data-work-id]") || {}).value || "";
+        if (!toggle || !fields || !until) return;
+        if (id) toggle.checked = false;
+        toggle.disabled = Boolean(id);
+        fields.hidden = !toggle.checked;
+        until.required = toggle.checked;
       }
 
       function openWorkDialog(item, dateKey) {
         var modal = root.querySelector("[data-work-modal]");
         var form = root.querySelector("[data-work-form]");
         if (!modal || !form) return;
+        workDialogReturnFocus = document.activeElement;
+        workRepeatRequestId = "";
         form.reset();
+        var startInput = root.querySelector("[data-work-start]");
+        var endInput = root.querySelector("[data-work-end]");
+        if (startInput) startInput.type = item && item.isAllDay ? "date" : "datetime-local";
+        if (endInput) endInput.type = item && item.isAllDay ? "date" : "datetime-local";
         var start = dateKey ? workDateFromKey(dateKey) : new Date();
         if (!dateKey) start.setMinutes(Math.ceil(start.getMinutes() / 30) * 30, 0, 0);
         else start.setHours(9, 0, 0, 0);
@@ -11351,16 +11824,25 @@
           if (node) node.value = value == null ? "" : value;
         };
         setValue("[data-work-id]", item && item.id || "");
+        setValue("[data-work-updated-at]", item && item.updatedAt || "");
         setValue("[data-work-title]", item && item.title || "");
         setValue("[data-work-type]", item && item.scheduleType || "ad_setup");
         setValue("[data-work-state]", item && item.status || "planned");
         setValue("[data-work-priority]", item && item.priority || "medium");
-        setValue("[data-work-start]", workLocalInput(item && item.startsAt || start));
-        setValue("[data-work-end]", item && item.endsAt ? workLocalInput(item.endsAt) : workLocalInput(end));
+        setValue("[data-work-start]", item && item.isAllDay ? workDateKey(item.startsAt) : workLocalInput(item && item.startsAt || start));
+        setValue("[data-work-end]", item && item.isAllDay ? workDateKey(item.endsAt || item.startsAt) : (item && item.endsAt ? workLocalInput(item.endsAt) : workLocalInput(end)));
         setValue("[data-work-assignee]", item && item.assigneeName || "");
         setValue("[data-work-internal]", item && item.internalNote || "");
         setValue("[data-work-public-title]", item && item.publicTitle || "");
         setValue("[data-work-public-comment]", item && item.publicComment || "");
+        renderWorkCalendarSelect(item ? workItemCalendarId(item) : (workSelectedCalendarId === "all" ? "personal" : workSelectedCalendarId));
+        var calendarSelect = root.querySelector("[data-work-calendar-select]");
+        if (calendarSelect) calendarSelect.disabled = Boolean(item);
+        var allDayToggle = root.querySelector("[data-work-all-day]");
+        if (allDayToggle) allDayToggle.checked = Boolean(item && item.isAllDay);
+        var repeatToggle = root.querySelector("[data-work-repeat-monthly]");
+        if (repeatToggle) repeatToggle.checked = false;
+        setValue("[data-work-repeat-until]", "");
         var toggle = root.querySelector("[data-work-public]");
         if (toggle) toggle.checked = Boolean(item && item.visibility === "client_visible" && workCanPublish);
         var title = root.querySelector("[data-work-dialog-title]");
@@ -11369,7 +11851,18 @@
         if (title) title.textContent = item ? "업무 수정" : "업무 등록";
         if (remove) remove.hidden = !item;
         if (advanced) advanced.open = Boolean(item && (item.assigneeName || item.internalNote || (item.priority && item.priority !== "medium")));
+        var startLabel = root.querySelector("[data-work-start-label]");
+        if (startLabel) startLabel.textContent = item && item.isAllDay ? "날짜" : "시작";
+        syncWorkRepeatFields();
         syncWorkPublicFields();
+        var readOnly = Boolean(item && !workItemCanEdit(item));
+        form.querySelectorAll("input, select, textarea").forEach(function (control) { control.disabled = readOnly; });
+        if (!readOnly && calendarSelect) calendarSelect.disabled = Boolean(item);
+        if (!readOnly) syncWorkRepeatFields();
+        var save = root.querySelector("[data-work-save]");
+        if (save) save.hidden = readOnly;
+        if (remove) remove.hidden = !item || readOnly;
+        if (title && readOnly) title.textContent = "업무 보기";
         modal.hidden = false;
         window.requestAnimationFrame(function () {
           var titleInput = root.querySelector("[data-work-title]");
@@ -11380,6 +11873,8 @@
       function closeWorkDialog() {
         var modal = root.querySelector("[data-work-modal]");
         if (modal) modal.hidden = true;
+        if (workDialogReturnFocus && workDialogReturnFocus.focus && document.contains(workDialogReturnFocus)) workDialogReturnFocus.focus();
+        workDialogReturnFocus = null;
       }
 
       function workFormPayload() {
@@ -11388,8 +11883,14 @@
           return node ? node.value : "";
         };
         var publicToggle = root.querySelector("[data-work-public]");
+        var allDayToggle = root.querySelector("[data-work-all-day]");
+        var repeatToggle = root.querySelector("[data-work-repeat-monthly]");
+        var id = value("[data-work-id]");
+        var repeatMonthly = Boolean(repeatToggle && repeatToggle.checked && !id);
+        var calendarId = value("[data-work-calendar-select]");
+        if (!id && repeatMonthly && !workRepeatRequestId) workRepeatRequestId = crypto.randomUUID();
         return {
-          id: value("[data-work-id]"),
+          id: id,
           title: value("[data-work-title]"),
           scheduleType: value("[data-work-type]"),
           status: value("[data-work-state]"),
@@ -11398,6 +11899,12 @@
           endsAt: value("[data-work-end]"),
           assigneeName: value("[data-work-assignee]"),
           internalNote: value("[data-work-internal]"),
+          calendarId: calendarId === "personal" ? null : calendarId,
+          expectedUpdatedAt: value("[data-work-updated-at]"),
+          isAllDay: Boolean(allDayToggle && allDayToggle.checked),
+          repeat: repeatMonthly ? "monthly" : "",
+          repeatUntil: repeatMonthly ? value("[data-work-repeat-until]") : "",
+          requestId: !id && repeatMonthly ? workRepeatRequestId : "",
           isClientVisible: Boolean(publicToggle && publicToggle.checked),
           publicTitle: value("[data-work-public-title]"),
           publicComment: value("[data-work-public-comment]")
@@ -11533,12 +12040,93 @@
           toggleWorkItemCompletion(quickDone.getAttribute("data-work-quick-done") || "", quickDone);
           return;
         }
+        var calendarFilter = event.target.closest("[data-work-calendar-filter]");
+        if (calendarFilter) {
+          clearWorkCalendarInvite();
+          workSelectedCalendarId = calendarFilter.getAttribute("data-work-calendar-filter") || "all";
+          workAgendaDateKey = "";
+          renderWorkOperation();
+          var selectedCalendar = workCalendarById(workSelectedCalendarId);
+          setWorkStatus(selectedCalendar ? selectedCalendar.name + " 일정만 표시합니다." : (workSelectedCalendarId === "personal" ? "내 일정만 표시합니다." : "전체 일정을 표시합니다."), "");
+          return;
+        }
+        var calendarCreate = event.target.closest("[data-work-calendar-create]");
+        if (calendarCreate) {
+          clearWorkCalendarInvite();
+          var calendarName = (root.querySelector("[data-work-calendar-name]") || {}).value || "";
+          var calendarColor = (root.querySelector("[data-work-calendar-color]") || {}).value || "emerald";
+          if (!calendarName.trim()) {
+            setWorkStatus("새 일정표 이름을 입력해주세요.", "warn");
+            return;
+          }
+          runWorkCalendarAction(calendarCreate, { action: "calendar-create", name: calendarName.trim(), color: workCalendarColorToken(calendarColor) }, "새 일정표를 만드는 중입니다.", "새 일정표를 만들었습니다.").then(function (payload) {
+            if (!payload) return;
+            var nameInput = root.querySelector("[data-work-calendar-name]");
+            if (nameInput) nameInput.value = "";
+          });
+          return;
+        }
+        var calendarShare = event.target.closest("[data-work-calendar-share]");
+        if (calendarShare) {
+          var shareCalendar = workCalendarById(workSelectedCalendarId);
+          var grantRole = (root.querySelector("[data-work-calendar-grant]") || {}).value || "editor";
+          if (!workCalendarCanInvite(shareCalendar)) {
+            setWorkStatus("소유한 공유 일정표를 선택해주세요.", "warn");
+            return;
+          }
+          runWorkCalendarAction(calendarShare, { action: "calendar-invite-create", calendarId: shareCalendar.id, grantRole: grantRole }, "일회용 연결 코드를 만드는 중입니다.", "연결 코드를 만들었습니다.").then(function (payload) {
+            if (!payload) return;
+            var code = payload.code || payload.inviteCode || payload.invite && payload.invite.code || "";
+            var output = root.querySelector("[data-work-calendar-invite-code]");
+            if (output) {
+              output.hidden = !code;
+              output.innerHTML = code ? '<span>상대방에게 아래 일회용 코드를 전달하세요.</span><strong>' + escapeHtml(code) + '</strong>' : "코드를 확인하지 못했습니다.";
+            }
+          });
+          return;
+        }
+        var calendarJoin = event.target.closest("[data-work-calendar-join]");
+        if (calendarJoin) {
+          clearWorkCalendarInvite();
+          var codeInput = root.querySelector("[data-work-calendar-join-code]");
+          var joinCode = codeInput ? codeInput.value.trim() : "";
+          var knownCalendarIds = new Set(workCalendars.map(function (calendar) { return calendar.id; }));
+          if (!joinCode) {
+            setWorkStatus("받은 일회용 연결 코드를 입력해주세요.", "warn");
+            return;
+          }
+          runWorkCalendarAction(calendarJoin, { action: "calendar-invite-accept", code: joinCode }, "일정표를 연결하는 중입니다.", "공유 일정표를 연결했습니다.").then(function (payload) {
+            if (!payload) return;
+            if (codeInput) codeInput.value = "";
+            var joined = (payload.calendars || []).find(function (calendar) { return !knownCalendarIds.has(calendar.id); });
+            if (joined) {
+              workSelectedCalendarId = joined.id;
+              renderWorkOperation();
+            }
+          });
+          return;
+        }
+        var calendarLeave = event.target.closest("[data-work-calendar-leave]");
+        if (calendarLeave) {
+          clearWorkCalendarInvite();
+          var leaveCalendar = workCalendarById(workSelectedCalendarId);
+          if (!workCalendarCanLeave(leaveCalendar) || !window.confirm("이 공유 일정표 연결을 해제할까요?")) return;
+          var leavingId = leaveCalendar.id;
+          workSelectedCalendarId = "all";
+          runWorkCalendarAction(calendarLeave, { action: "calendar-leave", calendarId: leavingId }, "공유 일정표 연결을 해제하는 중입니다.", "공유 일정표 연결을 해제했습니다.");
+          return;
+        }
         var summaryFilter = event.target.closest("[data-work-summary-filter]");
         if (summaryFilter) {
           var nextFilter = summaryFilter.getAttribute("data-work-summary-filter") || "";
           var summaryLabel = (summaryFilter.querySelector("span") || {}).textContent || "선택 업무";
           workActiveFilter = workActiveFilter === nextFilter ? "" : nextFilter;
-          if (workActiveFilter === "today") workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+          workAgendaDateKey = "";
+          if (workActiveFilter === "today") {
+            workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+            loadWorkItems();
+            return;
+          }
           renderWorkOperation();
           setWorkStatus(workActiveFilter ? summaryLabel + "만 표시합니다." : "전체 업무를 표시합니다.", "");
           return;
@@ -11546,6 +12134,7 @@
         var clearFilter = event.target.closest("[data-work-filter-clear]");
         if (clearFilter) {
           workActiveFilter = "";
+          workAgendaDateKey = "";
           renderWorkOperation();
           setWorkStatus("전체 업무를 표시합니다.", "");
           return;
@@ -11558,14 +12147,22 @@
         var today = event.target.closest("[data-work-today]");
         if (today) {
           workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
-          renderWorkOperation();
+          loadWorkItems();
           return;
         }
         var previous = event.target.closest("[data-work-month-prev]");
         var next = event.target.closest("[data-work-month-next]");
         if (previous || next) {
           workMonthCursor = new Date(workMonthCursor.getFullYear(), workMonthCursor.getMonth() + (next ? 1 : -1), 1);
+          loadWorkItems();
+          return;
+        }
+        var dateOverflow = event.target.closest("[data-work-date-overflow]");
+        if (dateOverflow) {
+          workAgendaDateKey = dateOverflow.getAttribute("data-work-date-overflow") || "";
+          workActiveFilter = "";
           renderWorkOperation();
+          setWorkStatus(workAgendaDateKey + "의 모든 일정을 가까운 업무에서 표시합니다.", "");
           return;
         }
         var dateButton = event.target.closest("[data-work-date]");
@@ -11607,11 +12204,45 @@
         });
       }
 
+      var workCalendarSelect = root.querySelector("[data-work-calendar-select]");
+      if (workCalendarSelect) {
+        workCalendarSelect.addEventListener("change", function () {
+          syncWorkPublicFields();
+        });
+      }
+
+      var workAllDayToggle = root.querySelector("[data-work-all-day]");
+      if (workAllDayToggle) workAllDayToggle.addEventListener("change", syncWorkAllDayFields);
+
+      var workRepeatToggle = root.querySelector("[data-work-repeat-monthly]");
+      if (workRepeatToggle) {
+        workRepeatToggle.addEventListener("change", function () {
+          var start = root.querySelector("[data-work-start]");
+          var until = root.querySelector("[data-work-repeat-until]");
+          if (until && start) until.min = String(start.value || "").slice(0, 10);
+          syncWorkRepeatFields();
+        });
+      }
+
+      var workStartInput = root.querySelector("[data-work-start]");
+      if (workStartInput) {
+        workStartInput.addEventListener("change", function () {
+          var until = root.querySelector("[data-work-repeat-until]");
+          if (until) until.min = String(workStartInput.value || "").slice(0, 10);
+        });
+      }
+
       var workForm = root.querySelector("[data-work-form]");
       if (workForm) {
         workForm.addEventListener("submit", async function (event) {
           event.preventDefault();
           var payload = workFormPayload();
+          if (payload.repeat === "monthly" && (!payload.repeatUntil || payload.repeatUntil < String(payload.startsAt || "").slice(0, 10))) {
+            var repeatUntil = root.querySelector("[data-work-repeat-until]");
+            setWorkStatus("반복 종료일은 시작일과 같거나 이후여야 합니다.", "warn");
+            if (repeatUntil) repeatUntil.focus();
+            return;
+          }
           var save = root.querySelector("[data-work-save]");
           if (save) save.disabled = true;
           setWorkStatus(payload.id ? "업무를 수정하는 중입니다." : "업무를 저장하는 중입니다.", "");
@@ -11631,10 +12262,11 @@
       if (workDelete) {
         workDelete.addEventListener("click", async function () {
           var id = (root.querySelector("[data-work-id]") || {}).value || "";
+          var expectedUpdatedAt = (root.querySelector("[data-work-updated-at]") || {}).value || "";
           if (!id || !window.confirm("이 업무를 삭제할까요?")) return;
           workDelete.disabled = true;
           try {
-            await requestWorkItems("DELETE", { id: id });
+            await requestWorkItems("DELETE", { id: id, expectedUpdatedAt: expectedUpdatedAt });
             closeWorkDialog();
             await loadWorkItems();
           } catch (error) {
@@ -11654,6 +12286,23 @@
       }
 
       window.addEventListener("keydown", function (event) {
+        var editorModal = root.querySelector("[data-work-modal]");
+        if (event.key === "Tab" && editorModal && !editorModal.hidden) {
+          var focusable = Array.from(editorModal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+            .filter(function (node) { return node.offsetParent !== null; });
+          if (focusable.length) {
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+              event.preventDefault();
+              last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+              event.preventDefault();
+              first.focus();
+            }
+          }
+          return;
+        }
         if (event.key !== "Escape") return;
         if (workMovePending) closeWorkMoveDialog(true, "일정 변경을 취소했습니다.");
         else closeWorkDialog();

@@ -25,6 +25,11 @@ const files = {
   clientApi: "src/server/handlers/client-api.mjs",
   workItems: "src/server/handlers/work-items.mjs",
   workItemsMigration: "supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql",
+  calendarDomain: "src/server/calendar-domain.mjs",
+  calendarHandlerTests: "src/server/handlers/work-items-calendar.test.mjs",
+  calendarMigration: "supabase/migrations/20260820110000_schedule_calendar_sharing.sql",
+  calendarMigrationTests: "scripts/calendar-sharing-migration.test.mjs",
+  calendarUiTests: "scripts/work-calendar-ui.test.mjs",
   shoppingRank: "src/server/handlers/naver-shopping-rank.mjs",
   shoppingSourceStatus: "src/server/naver-shopping/source-status.mjs",
   shoppingProviderRuntime: "src/server/naver-shopping/provider-runtime.mjs",
@@ -104,6 +109,11 @@ const productTrackers = fs.readFileSync(files.productTrackers, "utf8");
 const clientApi = fs.readFileSync(files.clientApi, "utf8");
 const workItems = fs.readFileSync(files.workItems, "utf8");
 const workItemsMigration = fs.readFileSync(files.workItemsMigration, "utf8");
+const calendarDomain = fs.readFileSync(files.calendarDomain, "utf8");
+const calendarHandlerTests = fs.readFileSync(files.calendarHandlerTests, "utf8");
+const calendarMigration = fs.readFileSync(files.calendarMigration, "utf8");
+const calendarMigrationTests = fs.readFileSync(files.calendarMigrationTests, "utf8");
+const calendarUiTests = fs.readFileSync(files.calendarUiTests, "utf8");
 const shoppingRank = fs.readFileSync(files.shoppingRank, "utf8");
 const shoppingSourceStatus = fs.readFileSync(files.shoppingSourceStatus, "utf8");
 const shoppingProviderRuntime = fs.readFileSync(files.shoppingProviderRuntime, "utf8");
@@ -319,6 +329,45 @@ check(
       /idx_schedule_items_client_visibility_start/,
     ]),
   `${files.serverIndex}, ${files.sessionGate}, ${files.workItems}, ${files.workItemsMigration}`,
+);
+check(
+  "calendar sharing and monthly recurrence stay scoped, finite and service-role-only",
+  hasAll(workItems, [
+    /calendarInviteDigest/,
+    /createCalendarInviteCode/,
+    /consumeRateLimit\(request, ctx, "calendar_invite"/,
+    /calendarRoleCanEdit/,
+    /buildMonthlyOccurrences/,
+    /error\.code === "23505"/,
+    /exactOriginalScope/,
+    /workItemsDateRange/,
+  ])
+    && hasAll(calendarDomain, [
+      /randomBytesFn\(16\)/,
+      /DEFAULT_MAX_OCCURRENCES = 60/,
+      /timeZone: "Asia\/Seoul"/,
+      /Math\.min\(localStart\.day, daysInMonth/,
+    ])
+    && hasAll(calendarMigration, [
+      /create table if not exists public\.schedule_calendars/,
+      /create table if not exists public\.schedule_calendar_memberships/,
+      /create table if not exists public\.schedule_calendar_invites/,
+      /force row level security/,
+      /revoke all on table public\.schedule_items from public, anon, authenticated/,
+      /create unique index[^;]+\(series_id, occurrence_on\)/,
+      /for update/,
+      /security invoker/,
+      /grant execute on function public\.mi_accept_schedule_calendar_invite[^;]+to service_role/,
+    ])
+    && !/grant\s+(?:select|insert|update|delete)[^;]*on table public\.schedule_items to (?:public|anon|authenticated)/i.test(calendarMigration)
+    && !/update\s+public\.schedule_items\s+set\s+calendar_id/i.test(calendarMigration)
+    && calendarHandlerTests.includes("concurrent monthly retries resolve the unique series race as unchanged")
+    && calendarHandlerTests.includes("calendar invite persists only a one-use digest")
+    && calendarMigrationTests.includes("service-role-only")
+    && calendarUiTests.includes("responsive drawer with all-day and bounded monthly recurrence")
+    && String(packageJson.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
+    && String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
+  `${files.workItems}, ${files.calendarDomain}, ${files.calendarMigration}, ${files.calendarHandlerTests}, ${files.calendarMigrationTests}, ${files.calendarUiTests}`,
 );
 check(
   "all routed requests use the shared runtime boundary",

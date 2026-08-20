@@ -3,6 +3,15 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-20 대표실 공유 일정표·월간 반복 계약
+
+- TimeTree는 기능적 참고만 하며 화면을 복제하지 않는다. 대표실 하단 일정표에 개인/공유 목록, 색상, 날짜 클릭 등록 drawer, 종일, 매월 반복, 포함 종료일을 모먼트 인사이트 B2B SaaS 톤으로 제공한다.
+- 로그인용 agency/team 코드를 공유 코드로 재사용하지 않는다. 일정표별 128-bit 일회용 코드를 발급하고 원문은 한 번만 응답하며 DB·로그에는 digest만 저장한다. 만료·사용 횟수·폐기를 서버가 검증한다.
+- owner/editor만 공유 일정을 변경하고 viewer는 읽기 전용이다. browser의 principal·tenant 입력은 신뢰하지 않고 세션에서 산출하며, 모든 공유 create/update/delete는 membership revoke와 경쟁하지 않는 원자 RPC와 optimistic lock을 거친다.
+- 매월 반복은 서울 날짜, 종료일 포함, 월말 보정, 최대 60회·5년, 동일 request ID 중복 0으로 제한한다. 반복 범위가 없거나 잘못된 날짜는 저장하지 않는다.
+- base `schedule_items`를 anon/authenticated에 직접 노출하지 않고 기존 서버 API의 client-safe projection을 유지한다. 내부 제목·메모·tenant ID·초대 digest를 광고주 응답에 포함하지 않는다.
+- N상품·N플레이스 30일 추적 함수·작업기·스케줄러·DB migration·순위 이력은 수정하지 않는다. 전체 보호 잠금과 release gate를 통과해야 하며, 운영 DB 적용·Production release·로그인 E2E 전에는 완료로 보고하지 않는다.
+
 ## 2026-08-18 자비스 운영 비서 `mml93-a01` canary 계약
 
 - 원본의 조직 움직임은 단순 장식이 아니라 역할 구조 표현으로 반영한다. 모먼트 인사이트 화면에서는 비서실장 방문, 담당자 간 회의, 대화, 지정 좌석 복귀를 exact owner 화면이 활성인 동안만 유한 타이머로 표현한다.
@@ -325,9 +334,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 19. 11:58:43
-- 기준 커밋: 79eecbc
-- 작업트리: clean
+- 마지막 자동 저장: 2026. 08. 20. 18:53:31
+- 기준 커밋: f4095f3
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M package.json /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M src/pages/admin.html
 <!-- autosave:end -->
 
 ## 작업 상태 기준

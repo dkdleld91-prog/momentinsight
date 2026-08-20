@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "2356c744442d1b0cc646b28f9b70bf5cec2cc562b3b66ea88fcb4b929a7fcc9b"
+      "sha256": "9b220fcddc2de404937e70d1e8b40cf8d332ce2626f47abcb5a60afad1089a23"
     },
     {
       "id": "product-organic-rank-server",
@@ -609,7 +609,7 @@
     {
       "id": "shopping-windows-extension-updater",
       "file": "scripts/windows/update-naver-shopping-chrome-extension.ps1",
-      "sha256": "0df6bf0304d32ccdbb92490f58d8cccf1dc309b280d3181948033788d0791044"
+      "sha256": "fbd11aad98c5b4c9567e171652187186dc266c5f5c4de0ac635c6c772c19345e"
     },
     {
       "id": "shopping-chrome-extension-manifest",

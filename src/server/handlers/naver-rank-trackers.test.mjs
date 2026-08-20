@@ -1159,6 +1159,207 @@ test("hybrid create registers an unleased new-first row and wakes the scheduler 
   assert.equal(body.tracker.snapshots.length, 0);
 });
 
+test("hybrid create atomically reactivates the same normalized paused target without moving its cycle position", async () => {
+  const teamCode = "mml93-t01";
+  const pausedTarget = trackerRow({
+    id: "10000000-0000-4000-8000-000000000101",
+    agency_code: teamCode,
+    keyword: " 자외선 차단 마스크 ",
+    product_id: "13656510327",
+    product_url: "https://smartstore.naver.com/test/products/13656510327",
+    status: "paused",
+    processing_started_at: "2026-08-12T08:00:00.000Z",
+    processing_until: "2026-08-12T08:35:00.000Z",
+    next_check_at: "2026-08-11T05:52:33.000Z",
+    sort_order: 700,
+    worker_last_cycle_id: "20000000-0000-4000-8000-000000000025",
+    worker_quarantined_until: "2026-08-22T03:00:00.000Z",
+    group_name: "진단",
+  });
+  const otherPausedTarget = trackerRow({
+    id: "10000000-0000-4000-8000-000000000102",
+    agency_code: teamCode,
+    keyword: "자외선차단마스크",
+    product_id: "99999999999",
+    product_url: "https://smartstore.naver.com/test/products/99999999999",
+    status: "paused",
+  });
+  const foreignPausedTarget = trackerRow({
+    id: "10000000-0000-4000-8000-000000000103",
+    agency_code: "mml93-t02",
+    keyword: "자외선차단마스크",
+    product_id: pausedTarget.product_id,
+    product_url: pausedTarget.product_url,
+    status: "paused",
+  });
+  const trackerRows = [pausedTarget, otherPausedTarget, foreignPausedTarget];
+  const insertedValues = [];
+  const updateValues = [];
+  const wakeSources = [];
+
+  function trackerQuery() {
+    const query = {
+      operation: "select",
+      values: null,
+      filters: [],
+      orders: [],
+      rowLimit: Infinity,
+      head: false,
+      select(_columns, options = {}) {
+        query.head = options.head === true;
+        return query;
+      },
+      insert(values) {
+        query.operation = "insert";
+        query.values = values;
+        return query;
+      },
+      update(values) {
+        query.operation = "update";
+        query.values = values;
+        return query;
+      },
+      eq(column, value) {
+        query.filters.push((row) => row[column] === value);
+        return query;
+      },
+      is(column, value) {
+        query.filters.push((row) => row[column] === value);
+        return query;
+      },
+      in(column, values) {
+        const allowed = new Set(values);
+        query.filters.push((row) => allowed.has(row[column]));
+        return query;
+      },
+      order(column, options = {}) {
+        query.orders.push({ column, ascending: options.ascending !== false });
+        return query;
+      },
+      limit(value) {
+        query.rowLimit = Number(value);
+        return query;
+      },
+      single() { return query.execute(true); },
+      maybeSingle() { return query.execute(true, true); },
+      then(resolve, reject) { return query.execute(false).then(resolve, reject); },
+      async execute(single, allowMissing = false) {
+        let selected = trackerRows.filter((row) => query.filters.every((filter) => filter(row)));
+        for (const { column, ascending } of [...query.orders].reverse()) {
+          selected = [...selected].sort((left, right) => {
+            const compared = left[column] === right[column] ? 0 : (left[column] > right[column] ? 1 : -1);
+            return ascending ? compared : -compared;
+          });
+        }
+        selected = selected.slice(0, query.rowLimit);
+        const selectedCount = selected.length;
+        if (query.operation === "insert") {
+          insertedValues.push({ ...query.values });
+          const inserted = trackerRow({
+            id: "10000000-0000-4000-8000-000000000199",
+            agency_code: query.values.agency_code,
+            ...query.values,
+          });
+          trackerRows.push(inserted);
+          selected = [inserted];
+        } else if (query.operation === "update") {
+          updateValues.push({ ...query.values });
+          selected.forEach((row) => Object.assign(row, query.values));
+        }
+        if (query.head) return { data: null, error: null, count: selectedCount };
+        if (single) {
+          return selected.length === 1
+            ? { data: selected[0], error: null }
+            : (allowMissing ? { data: null, error: null } : { data: null, error: { message: "single row not found" } });
+        }
+        return { data: selected, error: null };
+      },
+    };
+    return query;
+  }
+
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_request_naver_shopping_worker_wake");
+        wakeSources.push(args.p_source);
+        return { data: true, error: null };
+      },
+      from(table) {
+        if (table === TRACKERS) return trackerQuery();
+        if (table === "clients") {
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() { return { data: null, error: null }; },
+          };
+          return query;
+        }
+        assert.equal(table, SNAPSHOTS);
+        const query = {
+          select() { return query; },
+          in() { return query; },
+          gte() { return query; },
+          lte() { return query; },
+          order() { return query; },
+          range() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", {
+      action: "create",
+      keyword: "자외선차단마스크",
+      productId: pausedTarget.product_id,
+    }, teamCode),
+    ctx,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.queuedForLocalWorker, true);
+  assert.equal(body.remoteWakeRequested, true);
+  assert.equal(body.tracker.id, pausedTarget.id);
+  assert.deepEqual(wakeSources, ["tracker-create"]);
+  assert.equal(insertedValues.length, 0);
+  assert.equal(pausedTarget.status, "active");
+  assert.equal(pausedTarget.processing_started_at, null);
+  assert.equal(pausedTarget.processing_until, null);
+  assert.equal(pausedTarget.next_check_at, "2026-08-11T05:52:33.000Z");
+  assert.equal(pausedTarget.sort_order, 700);
+  assert.equal(pausedTarget.worker_last_cycle_id, "20000000-0000-4000-8000-000000000025");
+  assert.equal(pausedTarget.worker_quarantined_until, "2026-08-22T03:00:00.000Z");
+  assert.equal(otherPausedTarget.status, "paused");
+  assert.equal(foreignPausedTarget.status, "paused");
+  assert.deepEqual(updateValues, [{
+    status: "active",
+    processing_started_at: null,
+    processing_until: null,
+  }]);
+
+  const repeatedResponse = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", {
+      action: "create",
+      keyword: "자외선 차단마스크",
+      productId: pausedTarget.product_id,
+    }, teamCode),
+    ctx,
+  ));
+  const repeatedBody = await repeatedResponse.json();
+  assert.equal(repeatedResponse.status, 200);
+  assert.equal(repeatedBody.tracker.id, pausedTarget.id);
+  assert.equal(insertedValues.length, 0);
+  assert.equal(updateValues.length, 1);
+  assert.deepEqual(wakeSources, ["tracker-create"]);
+});
+
 test("manual product refresh does not claim or update a row without the collector", async () => {
   const teamCode = "mml93-t01";
   const tracker = trackerRow({ agency_code: teamCode });

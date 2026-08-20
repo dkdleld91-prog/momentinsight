@@ -1,8 +1,15 @@
 # Work Status
 
-기준일: 2026-08-20
+기준일: 2026-08-21
 
 ## 현재 상태
+
+### 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 (배포 전)
+
+- 운영 SELECT-only 확인에서 전역 작업기는 정상 생존했습니다(runtime `1.1.8`, fingerprint 일치, circuit closed, lane·lease 해제). 실제 비활성은 과거 진단 중 수동 `paused`로 남은 `자외선차단마스크` 1건이며, 동일 대상 active 중복과 정상 snapshot은 0건입니다.
+- 재발 원인 하나는 Windows updater가 확장·최초 설치기의 canonical native-host `co.kr.momentinsight.naver_shopping`이 아닌 `com.momentinsight.naver_shopping`을 복구해 성공을 오판할 수 있던 결함입니다. canonical 이름으로 통일했고 RED 10/11→GREEN 11/11을 통과했습니다.
+- 다른 원인은 `paused`를 만드는 stop 경로는 있으나 동일 대상 재등록·재개 경로가 없어 진단 행이 영구 고아가 되는 계약입니다. 동일 tenant·정규화 keyword·상품만 기존 ID로 active 복구하고 lease만 해제하며 순서·격리·cycle 값은 보존하도록 구현했습니다. handler 70/70, 전체 release 코어 651/651·플레이스 51/51·쇼핑 62/62·Production 인증 18/18과 보호 잠금을 통과했습니다.
+- 아직 Production push, Windows updater 실기, paused 행 복구와 자연 terminal은 실행 전입니다. 이 증거 전에는 정상화·배포 완료로 보고하지 않습니다.
 
 ### 2026-08-21 매월 반복 종료 방식 Production 반영
 

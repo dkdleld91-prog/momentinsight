@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 (배포 전 증거)
+
+- 운영 SELECT-only: Windows heartbeat 정상, runtime `1.1.8`, fingerprint `182cc973…d49902`, circuit closed, cooldown 없음, lane·run·lease null입니다. 최근 24시간 snapshot 262건은 모두 광고 제외·공식 collector·오가닉 `checked_count=300`이며 위반 0입니다.
+- 비활성은 정확히 tracker `1346924b-eb83-45e3-b8bb-4432083a4142` 1건입니다. agency `alstj4492`, keyword `자외선차단마스크`, product `13656510327`, 2026-08-12 17:13 KST부터 paused, `last_checked_at` null, snapshot 0, 동일 활성 대상 0입니다.
+- updater native-host 불일치 테스트는 수정 전 11개 중 정확히 1개 실패했고, canonical `co.kr...` 1줄 수정 뒤 11/11 PASS했습니다. paused 동일 대상 재등록은 수정 전 신규 insert 응답 201로 RED였고, 수정 뒤 handler 70/70에서 기존 ID·insert 0·순서/격리/cycle 불변·wake 1회를 확인했습니다. 보호 잠금 23함수·88파일·37 migration, self-test, server contract 58/58, release baseline, 전체 `check:release` 코어 651/651·플레이스 51/51·쇼핑 62/62·Production 인증 18/18이 통과했습니다.
+- Mac에는 PowerShell runtime이 없어 위 실행은 Windows 정적 계약입니다. 실제 Windows canonical registry 복구·Production release·paused 행 terminal은 아직 증거가 없어 성공으로 기록하지 않습니다.
+
 ## 2026-08-21 매월 반복 종료 방식 Production 증거
 
 - TDD 대상 57/57, 결합 coverage 73/73 PASS입니다. `calendar-domain.mjs` line 96.95%·branch 84.95%·function 100%, `work-items.mjs` line 99.40%·branch 83.85%·function 100%입니다. 유한 종료일 필수, no-end 정확 60회, 월말·윤년, strict boolean, 모순 입력 저장 0, request ID 중복 0을 실행했습니다.

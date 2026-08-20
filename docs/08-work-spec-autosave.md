@@ -3,6 +3,14 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 계약
+
+- 이번 사용자 요청은 동결된 N쇼핑 30일 추적의 비활성 원인 수정과 정확한 기존 행 복구에 한정한 명시적 예외다. 원자 `checkedCount=300`, 광고 제외, last-good, 단일 lane, durable cycle 순서는 변경하지 않는다.
+- Chrome 확장·최초 설치기·Windows updater가 정확히 같은 native-host 이름 `co.kr.momentinsight.naver_shopping`을 사용해야 한다. updater는 실제 확장이 호출하는 HKCU 등록과 manifest를 복구·검증한 뒤에만 성공을 보고한다.
+- 과거 진단 중 남은 정확한 paused 행은 동일 대상 활성 중복이 없고 사전조건이 일치할 때 기존 ID만 active로 복구한다. 신규 행 생성, cursor·격리·`worker_last_cycle_id`·순서 임의 변경, 수동 우선 처리와 반복 wake는 금지한다.
+- 동일 대상 재등록은 영구 paused 고아를 만들지 않고 기존 행을 원자 복구해야 한다. 다른 tenant·다른 상품·정상 active 행은 변경하지 않으며, 실패 수집은 기존 격리·fail-closed 정책으로 처리한다.
+- 로컬 전체 release, 보호 잠금, Production release, Windows updater의 canonical registry 증거, 복구 행의 자연 claim·원자 300 또는 typed failure·lane/lease 해제를 확인하기 전에는 정상화로 보고하지 않는다.
+
 ## 2026-08-21 매월 반복 종료 방식 계약
 
 - 매월 반복을 켰을 때 `종료 예정 없음` 또는 `반복 종료일 · 포함`을 명시적으로 선택한다. 유한 반복은 종료일이 필수이며 시작일보다 빠른 날짜를 저장하지 않는다.
@@ -351,8 +359,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 21. 00:17:04
-- 기준 커밋: c34ea62
+- 마지막 자동 저장: 2026. 08. 21. 00:49:57
+- 기준 커밋: 746a8b7
 - 작업트리: ?? data/
 <!-- autosave:end -->
 

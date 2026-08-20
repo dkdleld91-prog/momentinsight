@@ -1444,6 +1444,52 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
   }
 }
 
+async function loadTrackerRegistrationMatches(ctx, agencyCode, keyword, productUrl, productId, mallName) {
+  const baseQuery = () => ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select(TRACKER_SELECT)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .in("status", ["active", "paused"]);
+  const queries = [baseQuery().eq("keyword", keyword).limit(100)];
+  if (productId) queries.push(baseQuery().eq("product_id", productId).limit(100));
+  if (productUrl) queries.push(baseQuery().eq("product_url", productUrl).limit(100));
+  if (!productId && !productUrl && mallName) queries.push(baseQuery().eq("mall_name", mallName).limit(100));
+
+  const results = await Promise.all(queries);
+  const error = results.find((result) => result.error)?.error;
+  if (error) throw error;
+  const normalizedKeyword = normalizeKeywordCompare(keyword);
+  const matches = new Map();
+  results.flatMap((result) => result.data || []).forEach((row) => {
+    const rowProductId = normalizeText(row.product_id) || extractProductId(row.product_url);
+    const sameTarget = (productId && rowProductId === productId)
+      || (productUrl && row.product_url === productUrl)
+      || (!productId && !productUrl && mallName && row.mall_name === mallName);
+    if (sameTarget && normalizeKeywordCompare(row.keyword) === normalizedKeyword) matches.set(row.id, row);
+  });
+  return [...matches.values()];
+}
+
+async function reactivatePausedTracker(ctx, agencyCode, tracker) {
+  let query = ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .update({
+      status: "active",
+      processing_started_at: null,
+      processing_until: null,
+    })
+    .eq("id", tracker.id)
+    .in("agency_code", agencyCodeScope(agencyCode))
+    .eq("status", "paused")
+    .eq("keyword", tracker.keyword);
+
+  if (tracker.product_id) query = query.eq("product_id", tracker.product_id);
+  else if (tracker.product_url) query = query.eq("product_url", tracker.product_url);
+  else query = query.eq("mall_name", tracker.mall_name);
+
+  return query.select(TRACKER_SELECT).maybeSingle();
+}
+
 async function createTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const keyword = normalizeText(body.keyword);
@@ -1458,24 +1504,15 @@ async function createTracker(request, ctx, body, access = {}) {
     return json(request, { ok: false, message: "상품 URL 또는 상품ID를 입력해주세요." }, 400);
   }
 
-  const existingQuery = ctx.supabaseAdmin
-    .from("naver_rank_trackers")
-    .select(TRACKER_SELECT)
-    .in("agency_code", agencyCodeScope(agencyCode))
-    .eq("keyword", keyword)
-    .eq("status", "active")
-    .limit(100);
-
-  const existing = await existingQuery;
-  if (existing.error) throw existing.error;
-  const inputProductIdFromUrl = productUrl ? extractProductId(productUrl) : "";
-  const existingData = (existing.data || []).find((row) => (
-    (productUrl && row.product_url === productUrl) ||
-    (productId && row.product_id === productId) ||
-    (productId && row.product_url && extractProductId(row.product_url) === productId) ||
-    (inputProductIdFromUrl && row.product_url && extractProductId(row.product_url) === inputProductIdFromUrl) ||
-    (!productUrl && !productId && mallName && row.mall_name === mallName)
-  ));
+  const registrationMatches = await loadTrackerRegistrationMatches(
+    ctx,
+    agencyCode,
+    keyword,
+    productUrl,
+    productId,
+    mallName,
+  );
+  const existingData = registrationMatches.find((row) => row.status === "active");
   if (existingData) {
     const existingTracker = await attachTrackerGroup(ctx, existingData);
     const snapshots = await loadSnapshots(ctx, [existingTracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
@@ -1490,6 +1527,49 @@ async function createTracker(request, ctx, body, access = {}) {
   const now = new Date();
   const rankConfig = shoppingRankConfig();
   const hybridCycleQueue = isHybridLocalWorkerMode(rankConfig) && hasShoppingRankConfig(rankConfig);
+  const pausedData = registrationMatches.find((row) => row.status === "paused");
+  if (pausedData) {
+    let { data: reactivatedData, error: reactivationError } = await reactivatePausedTracker(ctx, agencyCode, pausedData);
+    if (reactivationError && reactivationError.code !== "23505") throw reactivationError;
+    const reactivatedByRequest = Boolean(reactivatedData);
+
+    if (!reactivatedData) {
+      const racedMatches = await loadTrackerRegistrationMatches(
+        ctx,
+        agencyCode,
+        keyword,
+        productUrl,
+        productId,
+        mallName,
+      );
+      reactivatedData = racedMatches.find((row) => row.status === "active") || null;
+      if (!reactivatedData) {
+        return json(request, {
+          ok: false,
+          message: "추적 상태가 변경되어 재등록하지 않았습니다. 다시 시도해주세요.",
+        }, 409);
+      }
+    }
+
+    const reactivatedTracker = await attachTrackerGroup(ctx, reactivatedData);
+    const snapshots = await loadSnapshots(ctx, [reactivatedTracker.id], PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
+    const keywordVolumes = await loadKeywordVolumes([reactivatedTracker.keyword]);
+    const remoteWakeRequested = hybridCycleQueue && reactivatedByRequest
+      ? await requestShoppingWorkerWake(ctx, "tracker-create")
+      : false;
+    return json(request, {
+      ok: true,
+      queuedForLocalWorker: hybridCycleQueue,
+      remoteWakeRequested,
+      message: "기존 추적을 다시 시작했습니다. 기존 순서와 격리 시각을 유지하며 차례가 되면 갱신합니다.",
+      tracker: trackerPayload(
+        reactivatedTracker,
+        snapshots.get(reactivatedTracker.id) || [],
+        keywordVolumes.get(normalizeKeywordCompare(reactivatedTracker.keyword)),
+      ),
+    });
+  }
+
   const initialLeaseStartedAt = hybridCycleQueue ? "" : now.toISOString();
   const clientId = await findClientId(ctx, agencyCode);
   const activeCountResult = await ctx.supabaseAdmin

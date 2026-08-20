@@ -461,7 +461,7 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
   </article>
   <div class="mi-assistant-grid">
     <article class="mi-assistant-panel">
-      <div class="mi-assistant-panel-head"><div><h2>오늘 브리핑</h2><p>현재 선택한 일정 범위의 미완료 업무를 기준으로 계산합니다.</p></div><button class="mi-link-button" type="button" data-owner-assistant-refresh>새로고침</button></div>
+      <div class="mi-assistant-panel-head"><div><h2>오늘 브리핑</h2><p>지표는 선택한 일정 범위 기준이며, 아래 목록은 오늘 일정만 표시합니다.</p></div><button class="mi-link-button" type="button" data-owner-assistant-refresh>새로고침</button></div>
       <div class="mi-assistant-summary"><div class="mi-assistant-metric"><span>오늘 업무</span><strong data-owner-assistant-metric="today">0</strong></div><div class="mi-assistant-metric"><span>지연 업무</span><strong data-owner-assistant-metric="overdue">0</strong></div><div class="mi-assistant-metric"><span>확인 필요</span><strong data-owner-assistant-metric="needs_check">0</strong></div><div class="mi-assistant-metric"><span>다가오는 업무</span><strong data-owner-assistant-metric="next">0</strong></div></div>
       <div class="mi-assistant-agenda" data-owner-assistant-agenda><div class="mi-assistant-empty">일정표를 불러오면 우선순위를 정리합니다.</div></div>
     </article>

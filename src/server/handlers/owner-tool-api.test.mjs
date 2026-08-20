@@ -229,7 +229,7 @@ test("owner development navigation and view are not present in public static mar
   }
 });
 
-test("owner assistant voice is explicit, bounded and torn down with the owner view", () => {
+test("owner assistant standby voice is explicit, visibility-gated and torn down with the owner view", () => {
   const admin = fs.readFileSync("src/pages/admin.html", "utf8");
   const vercel = JSON.parse(fs.readFileSync("vercel.json", "utf8"));
   const permissions = vercel.headers
@@ -238,9 +238,13 @@ test("owner assistant voice is explicit, bounded and torn down with the owner vi
   assert.match(admin, /window\.SpeechRecognition \|\| window\.webkitSpeechRecognition/);
   assert.match(admin, /micButton\.addEventListener\("click"/);
   assert.match(admin, /wakeButton\.addEventListener\("click"/);
-  assert.match(admin, /wakeTimer = window\.setTimeout\(function \(\)/);
-  assert.match(admin, /}, 30000\);/);
-  assert.doesNotMatch(admin, /setTimeout\(startWake/);
+  assert.match(admin, /mi-owner-assistant-standby/);
+  assert.match(admin, /writeStandbyPreference\(true\)/);
+  assert.match(admin, /writeStandbyPreference\(false\)/);
+  assert.match(admin, /if \(document\.hidden\)/);
+  assert.match(admin, /function standbyLoop\(\)/);
+  assert.match(admin, /not-allowed/);
+  assert.doesNotMatch(admin, /}, 30000\);/);
   assert.match(admin, /ownerAssistantVoiceController\.stop\(\)/);
   assert.match(admin, /window\.speechSynthesis\.cancel\(\)/);
   assert.match(permissions, /microphone=\(self\)/);

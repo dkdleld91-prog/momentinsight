@@ -12168,61 +12168,71 @@
           };
           try { recognition.start(); } catch (error) { stopRecognition(); setVoiceStatus("마이크를 시작하지 못했습니다. 잠시 후 다시 시도해주세요."); }
         });
-        wakeButton.addEventListener("click", function () {
-          if (!SpeechRecognition) return setVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
-          if (wakeMode) {
-            stopRecognition();
-            return setVoiceStatus("실장 호출 대기를 종료했습니다.");
+        var standbyStorageKey = "mi-owner-assistant-standby";
+        function readStandbyPreference() {
+          try { return window.localStorage.getItem(standbyStorageKey) === "on"; } catch (error) { return false; }
+        }
+        function writeStandbyPreference(on) {
+          try { window.localStorage.setItem(standbyStorageKey, on ? "on" : "off"); } catch (error) {}
+        }
+        function standbyLoop() {
+          if (!voiceAlive() || !wakeMode) return;
+          if (document.hidden) {
+            wakeTimer = window.setTimeout(standbyLoop, 1200);
+            return;
           }
+          recognition = createRecognition(true);
+          var fired = false;
+          recognition.onresult = function (event) {
+            if (!voiceAlive()) return stopRecognition();
+            if (fired) return;
+            var heard = "";
+            for (var index = 0; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
+            var match = heard.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
+            if (!match) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
+            var command = String(match[1] || "").trim();
+            if (!command) return setVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
+            fired = true;
+            input.value = command;
+            input.focus();
+            setVoiceStatus("실장이 명령을 받아 바로 실행합니다.");
+            if (recognition) try { recognition.stop(); } catch (error) {}
+            window.setTimeout(function () {
+              if (voiceAlive() && !draftButton.disabled) draftButton.click();
+            }, 250);
+          };
+          recognition.onerror = function (event) {
+            recognitionError(event);
+            if (event && (event.error === "not-allowed" || event.error === "service-not-allowed")) {
+              writeStandbyPreference(false);
+              stopRecognition();
+            }
+          };
+          recognition.onend = function () {
+            recognition = null;
+            if (!voiceAlive() || !wakeMode) return;
+            wakeTimer = window.setTimeout(standbyLoop, fired ? 700 : 450);
+          };
+          try { recognition.start(); } catch (error) { wakeTimer = window.setTimeout(standbyLoop, 1500); }
+        }
+        function startStandby() {
           stopRecognition();
           wakeMode = true;
           wakeButton.classList.add("is-active");
-          setVoiceStatus("‘실장’이라고 부른 뒤 일정 내용을 이어서 말씀해주세요.");
-          var startWake = function () {
-            if (!voiceAlive() || !wakeMode) return;
-            recognition = createRecognition(true);
-            recognition.onresult = function (event) {
-              if (!voiceAlive()) return stopRecognition();
-              var heard = "";
-              for (var index = 0; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
-              var match = heard.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
-              if (!match) return setVoiceStatus("호출 대기 중 · 들림: " + heard.trim().slice(-32));
-              var command = String(match[1] || "").trim();
-              if (!command) return setVoiceStatus("네, 듣고 있습니다. 일정 내용을 이어서 말씀해주세요.");
-              input.value = command;
-              input.focus();
-              wakeMode = false;
-              wakeButton.classList.remove("is-active");
-              setVoiceStatus("실장이 명령을 받아 바로 실행합니다.");
-              if (recognition) try { recognition.stop(); } catch (error) {}
-              window.setTimeout(function () {
-                if (voiceAlive() && !draftButton.disabled) draftButton.click();
-              }, 250);
-            };
-            recognition.onerror = recognitionError;
-            recognition.onend = function () {
-              window.clearTimeout(wakeTimer);
-              wakeTimer = 0;
-              recognition = null;
-              if (voiceAlive() && wakeMode) {
-                wakeMode = false;
-                wakeButton.classList.remove("is-active");
-                setVoiceStatus("30초 호출 대기를 마쳤습니다. 필요하면 다시 눌러주세요.");
-              }
-            };
-            try {
-              recognition.start();
-              wakeTimer = window.setTimeout(function () {
-                if (!voiceAlive() || !wakeMode) return;
-                wakeMode = false;
-                wakeButton.classList.remove("is-active");
-                if (recognition) try { recognition.stop(); } catch (error) {}
-                setVoiceStatus("30초 호출 대기를 마쳤습니다. 필요하면 다시 눌러주세요.");
-              }, 30000);
-            } catch (error) { stopRecognition(); setVoiceStatus("호출 대기를 시작하지 못했습니다. 다시 시도해주세요."); }
-          };
-          startWake();
+          setVoiceStatus("상시 대기 중 — ‘실장님’이라고 부른 뒤 명령을 말씀해주세요.");
+          standbyLoop();
+        }
+        wakeButton.addEventListener("click", function () {
+          if (!SpeechRecognition) return setVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
+          if (wakeMode) {
+            writeStandbyPreference(false);
+            stopRecognition();
+            return setVoiceStatus("실장 상시 호출을 껐습니다. 버튼을 누르면 다시 켜집니다.");
+          }
+          writeStandbyPreference(true);
+          startStandby();
         });
+        if (SpeechRecognition && readStandbyPreference()) startStandby();
         readButton.addEventListener("click", function () {
           if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return setVoiceStatus("이 브라우저는 음성 읽기를 지원하지 않습니다.");
           var today = view.querySelector('[data-owner-assistant-metric="today"]');

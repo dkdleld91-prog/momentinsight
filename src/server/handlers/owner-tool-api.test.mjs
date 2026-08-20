@@ -235,7 +235,7 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.menuHtml, /개발 &lt;\/&gt;/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-development"/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-assistant"/);
-  assert.match(payload.tool.menuHtml, /실장 운영 비서/);
+  assert.match(payload.tool.menuHtml, /대표실/);
   assert.match(payload.tool.menuHtml, /CANARY/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-utility"/);
   assert.match(payload.tool.menuHtml, /부가세 계산기/);

@@ -11667,7 +11667,36 @@
       var ownerAssistantVoiceController = null;
       var ownerAssistantOfficeController = null;
 
+      function embedWorkSectionIntoExecutive() {
+        var workSection = root.querySelector('section[data-mi-admin-view="work"]');
+        var assistantView = root.querySelector('[data-owner-tool-view-root][data-mi-admin-view="owner-assistant"]');
+        var workLink = root.querySelector('a[data-mi-admin-screen="work"]');
+        if (!workSection || !assistantView || workSection.parentElement === assistantView) return;
+        var marker = document.createElement("div");
+        marker.setAttribute("data-work-static-anchor", "");
+        marker.hidden = true;
+        workSection.insertAdjacentElement("beforebegin", marker);
+        workSection.classList.remove("mi-view", "is-active");
+        workSection.classList.add("is-embedded");
+        assistantView.appendChild(workSection);
+        if (workLink) workLink.hidden = true;
+      }
+
+      function restoreWorkSectionHome() {
+        var workSection = root.querySelector('section[data-mi-admin-view="work"]');
+        var marker = root.querySelector("[data-work-static-anchor]");
+        var workLink = root.querySelector('a[data-mi-admin-screen="work"]');
+        if (workSection && workSection.classList.contains("is-embedded")) {
+          workSection.classList.remove("is-embedded");
+          workSection.classList.add("mi-view");
+          if (marker) marker.replaceWith(workSection);
+        }
+        if (marker && marker.isConnected) marker.remove();
+        if (workLink) workLink.hidden = false;
+      }
+
       function discardOwnerTool() {
+        restoreWorkSectionHome();
         if (ownerAssistantVoiceController && typeof ownerAssistantVoiceController.stop === "function") ownerAssistantVoiceController.stop();
         ownerAssistantVoiceController = null;
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.destroy === "function") ownerAssistantOfficeController.destroy();
@@ -12700,6 +12729,13 @@
         document.head.appendChild(style);
         nav.appendChild(menuGroup);
         views.forEach(function (view) { wrap.appendChild(view); });
+        var executiveMenuLink = menuGroup.querySelector("[data-mi-admin-screen='owner-assistant']");
+        var operationHomeLink = root.querySelector('a[data-mi-admin-screen="home"]');
+        if (executiveMenuLink && operationHomeLink) {
+          executiveMenuLink.setAttribute("data-owner-tool-menu-root", "");
+          operationHomeLink.insertAdjacentElement("afterend", executiveMenuLink);
+        }
+        embedWorkSectionIntoExecutive();
         ownerToolScreen = tool.screen;
         ownerToolScreens = screens.slice();
         bindOwnerTool(utilityView, generation);

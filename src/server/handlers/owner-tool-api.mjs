@@ -285,6 +285,8 @@ const developmentCss = String.raw`
 const assistantCss = String.raw`
 #mi-admin .mi-owner-assistant{display:none;gap:18px}
 #mi-admin .mi-owner-assistant.is-active{display:grid}
+#mi-admin .mi-work-shell.is-embedded{display:grid;gap:18px}
+#mi-admin .mi-work-shell.is-embedded .mi-work-head h1{font-size:20px}
 #mi-admin .mi-assistant-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;overflow:hidden;border:1px solid rgba(6,26,58,.08);border-radius:22px;padding:26px 28px;background:linear-gradient(145deg,#fff 0%,#f6f8fc 100%);box-shadow:0 16px 40px rgba(6,26,58,.06)}
 #mi-admin .mi-assistant-hero:after{position:absolute;top:0;right:0;left:0;height:2px;content:"";background:linear-gradient(90deg,transparent 4%,rgba(201,168,106,.5),transparent 96%)}
 #mi-admin .mi-assistant-hero-copy{display:grid;gap:6px}
@@ -418,7 +420,7 @@ const utilityViewHtml = String.raw`<section class="mi-view" data-mi-admin-view="
 const menuHtml = String.raw`<div class="mi-nav-group mi-owner-development-nav" data-owner-development-nav>
   <p class="mi-nav-title">개발 &lt;/&gt;</p>
   <a href="#mi-admin-owner-development" data-mi-admin-screen="owner-development"><span>N 쇼핑 수집 운영</span><small>OWNER</small></a>
-  <a href="#mi-admin-owner-assistant" data-mi-admin-screen="owner-assistant"><span>실장 운영 비서</span><small>CANARY</small></a>
+  <a href="#mi-admin-owner-assistant" data-mi-admin-screen="owner-assistant"><span>대표실</span><small>CANARY</small></a>
   <a href="#mi-admin-owner-utility" data-mi-admin-screen="owner-utility"><span>부가세 계산기</span></a>
 </div>`;
 

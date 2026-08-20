@@ -8114,9 +8114,9 @@
 
     #mi-admin .mi-work-layout {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(280px, .72fr);
+      grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
       gap: 16px;
-      align-items: stretch;
+      align-items: start;
     }
 
     #mi-admin .mi-work-calendar-card,
@@ -8142,6 +8142,7 @@
     }
 
     #mi-admin .mi-work-month-nav {
+      position: relative;
       display: flex;
       align-items: center;
       gap: 8px;
@@ -8153,11 +8154,114 @@
       gap: 10px;
     }
 
-    #mi-admin .mi-work-month-nav strong {
+    #mi-admin .mi-work-month-trigger {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
       min-width: 110px;
+      min-height: 36px;
+      border: 0;
+      border-radius: 10px;
+      padding: 0 8px;
+      background: transparent;
       color: var(--navy);
+      cursor: pointer;
       font-size: 18px;
+      font-weight: 900;
       text-align: center;
+    }
+
+    #mi-admin .mi-work-month-trigger:hover,
+    #mi-admin .mi-work-month-trigger:focus-visible,
+    #mi-admin .mi-work-month-trigger[aria-expanded="true"] {
+      background: #f1f5f9;
+      outline: none;
+    }
+
+    #mi-admin .mi-work-month-trigger small {
+      color: #7d899d;
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-work-month-picker {
+      position: absolute;
+      z-index: 12;
+      top: calc(100% + 10px);
+      left: 44px;
+      width: 276px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      background: #fff;
+      box-shadow: 0 18px 42px rgba(6, 26, 58, .16);
+    }
+
+    #mi-admin .mi-work-month-picker[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-picker-head {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) 34px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    #mi-admin .mi-work-picker-head strong {
+      color: var(--navy);
+      font-size: 15px;
+      text-align: center;
+    }
+
+    #mi-admin .mi-work-picker-head .mi-work-icon-button {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      font-size: 15px;
+    }
+
+    #mi-admin .mi-work-month-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    #mi-admin .mi-work-month-choice {
+      min-height: 38px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: #f7f9fc;
+      color: #45536a;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-month-choice:hover,
+    #mi-admin .mi-work-month-choice:focus-visible {
+      border-color: #b9c7d9;
+      background: #eef3f8;
+      outline: none;
+    }
+
+    #mi-admin .mi-work-month-choice[aria-current="date"] {
+      border-color: var(--navy);
+      background: var(--navy);
+      color: #fff;
+    }
+
+    #mi-admin .mi-work-picker-cancel {
+      width: 100%;
+      margin-top: 10px;
+      border: 0;
+      padding: 8px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
     }
 
     #mi-admin .mi-work-icon-button {
@@ -9000,7 +9104,7 @@
       display: none !important;
     }
 
-    @media (max-width: 1080px) {
+    @media (max-width: 1180px) {
       #mi-admin .mi-work-layout {
         grid-template-columns: 1fr;
       }
@@ -9346,8 +9450,19 @@
               <div class="mi-work-calendar-head">
                 <div class="mi-work-month-nav">
                   <button class="mi-work-icon-button" type="button" data-work-month-prev aria-label="이전 달">‹</button>
-                  <strong data-work-month-label>이번 달</strong>
+                  <button class="mi-work-month-trigger" type="button" data-work-month-picker-trigger aria-haspopup="dialog" aria-expanded="false" aria-controls="mi-work-month-picker">
+                    <span data-work-month-label>이번 달</span><small aria-hidden="true">⌄</small>
+                  </button>
                   <button class="mi-work-icon-button" type="button" data-work-month-next aria-label="다음 달">›</button>
+                  <div class="mi-work-month-picker" id="mi-work-month-picker" data-work-month-picker role="dialog" aria-label="이동할 월 선택" hidden>
+                    <div class="mi-work-picker-head">
+                      <button class="mi-work-icon-button" type="button" data-work-picker-year-prev aria-label="이전 연도">‹</button>
+                      <strong data-work-month-picker-year aria-live="polite"></strong>
+                      <button class="mi-work-icon-button" type="button" data-work-picker-year-next aria-label="다음 연도">›</button>
+                    </div>
+                    <div class="mi-work-month-grid" data-work-month-grid></div>
+                    <button class="mi-work-picker-cancel" type="button" data-work-picker-cancel>취소</button>
+                  </div>
                 </div>
                 <div class="mi-work-calendar-tools">
                   <span class="mi-work-drag-note">업무를 길게 눌러 날짜 이동</span>
@@ -10973,6 +11088,7 @@
       var workCanPublish = false;
       var workRequestGeneration = 0;
       var workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+      var workMonthPickerYear = workMonthCursor.getFullYear();
       var workDraggingId = "";
       var workPointerDrag = null;
       var workPointerTimer = 0;
@@ -11224,6 +11340,7 @@
         workActiveFilter = "";
         workAgendaDateKey = "";
         clearWorkDragState();
+        closeWorkMonthPicker(false);
         closeWorkMoveDialog(false, "");
         var ownerInput = root.querySelector("[data-work-owner-client-code]");
         if (ownerInput) ownerInput.value = "";
@@ -11239,7 +11356,9 @@
         workActiveFilter = "";
         workAgendaDateKey = "";
         workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        workMonthPickerYear = workMonthCursor.getFullYear();
         clearWorkDragState();
+        closeWorkMonthPicker(false);
         closeWorkMoveDialog(false, "");
         var ownerInput = root.querySelector("[data-work-owner-client-code]");
         if (ownerInput) ownerInput.value = "";
@@ -11282,6 +11401,43 @@
           button.classList.toggle("is-active", active);
           button.setAttribute("aria-pressed", active ? "true" : "false");
         });
+      }
+
+      function renderWorkMonthPicker() {
+        var grid = root.querySelector("[data-work-month-grid]");
+        var year = root.querySelector("[data-work-month-picker-year]");
+        if (!grid || !year) return;
+        year.textContent = workMonthPickerYear + "년";
+        var html = [];
+        for (var month = 0; month < 12; month += 1) {
+          var selected = workMonthPickerYear === workMonthCursor.getFullYear() && month === workMonthCursor.getMonth();
+          html.push('<button class="mi-work-month-choice" type="button" data-work-picker-month="' + month + '"' +
+            (selected ? ' aria-current="date"' : "") + '>' + (month + 1) + '월</button>');
+        }
+        grid.innerHTML = html.join("");
+      }
+
+      function openWorkMonthPicker() {
+        var picker = root.querySelector("[data-work-month-picker]");
+        var trigger = root.querySelector("[data-work-month-picker-trigger]");
+        if (!picker || !trigger) return;
+        workMonthPickerYear = workMonthCursor.getFullYear();
+        renderWorkMonthPicker();
+        picker.hidden = false;
+        trigger.setAttribute("aria-expanded", "true");
+        window.requestAnimationFrame(function () {
+          var selected = picker.querySelector('[data-work-picker-month][aria-current="date"]');
+          var first = picker.querySelector("[data-work-picker-month]");
+          if (selected || first) (selected || first).focus();
+        });
+      }
+
+      function closeWorkMonthPicker(restoreFocus) {
+        var picker = root.querySelector("[data-work-month-picker]");
+        var trigger = root.querySelector("[data-work-month-picker-trigger]");
+        if (picker) picker.hidden = true;
+        if (trigger) trigger.setAttribute("aria-expanded", "false");
+        if (restoreFocus && trigger) trigger.focus();
       }
 
       function renderWorkCalendar() {
@@ -11768,9 +11924,39 @@
           loadWorkItems();
           return;
         }
+        var monthPickerTrigger = event.target.closest("[data-work-month-picker-trigger]");
+        if (monthPickerTrigger) {
+          var monthPicker = root.querySelector("[data-work-month-picker]");
+          if (monthPicker && !monthPicker.hidden) closeWorkMonthPicker(true);
+          else openWorkMonthPicker();
+          return;
+        }
+        var previousYear = event.target.closest("[data-work-picker-year-prev]");
+        var nextYear = event.target.closest("[data-work-picker-year-next]");
+        if (previousYear || nextYear) {
+          workMonthPickerYear += nextYear ? 1 : -1;
+          renderWorkMonthPicker();
+          return;
+        }
+        var pickerMonth = event.target.closest("[data-work-picker-month]");
+        if (pickerMonth) {
+          var selectedMonth = Number(pickerMonth.getAttribute("data-work-picker-month"));
+          if (Number.isInteger(selectedMonth) && selectedMonth >= 0 && selectedMonth < 12) {
+            workMonthCursor = new Date(workMonthPickerYear, selectedMonth, 1);
+            closeWorkMonthPicker(true);
+            loadWorkItems();
+          }
+          return;
+        }
+        var pickerCancel = event.target.closest("[data-work-picker-cancel]");
+        if (pickerCancel) {
+          closeWorkMonthPicker(true);
+          return;
+        }
         var previous = event.target.closest("[data-work-month-prev]");
         var next = event.target.closest("[data-work-month-next]");
         if (previous || next) {
+          closeWorkMonthPicker(false);
           workMonthCursor = new Date(workMonthCursor.getFullYear(), workMonthCursor.getMonth() + (next ? 1 : -1), 1);
           loadWorkItems();
           return;
@@ -11809,6 +11995,18 @@
         var modal = event.target.closest("[data-work-modal]");
         if (modal && event.target === modal) closeWorkDialog();
       });
+
+      window.addEventListener("pointerdown", function (event) {
+        var picker = root.querySelector("[data-work-month-picker]");
+        var navigation = root.querySelector(".mi-work-month-nav");
+        if (picker && !picker.hidden && navigation && !navigation.contains(event.target)) closeWorkMonthPicker(false);
+      }, true);
+
+      window.addEventListener("focusin", function (event) {
+        var picker = root.querySelector("[data-work-month-picker]");
+        var navigation = root.querySelector(".mi-work-month-nav");
+        if (picker && !picker.hidden && navigation && !navigation.contains(event.target)) closeWorkMonthPicker(false);
+      }, true);
 
       var workPublicToggle = root.querySelector("[data-work-public]");
       if (workPublicToggle) {
@@ -11915,6 +12113,12 @@
           return;
         }
         if (event.key !== "Escape") return;
+        var monthPicker = root.querySelector("[data-work-month-picker]");
+        if (monthPicker && !monthPicker.hidden) {
+          event.preventDefault();
+          closeWorkMonthPicker(true);
+          return;
+        }
         if (workMovePending) closeWorkMoveDialog(true, "일정 변경을 취소했습니다.");
         else closeWorkDialog();
       });

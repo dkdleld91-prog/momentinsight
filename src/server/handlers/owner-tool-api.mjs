@@ -285,18 +285,18 @@ const developmentCss = String.raw`
 const assistantCss = String.raw`
 #mi-admin .mi-owner-assistant{display:none;gap:18px}
 #mi-admin .mi-owner-assistant.is-active{display:grid}
-#mi-admin .mi-assistant-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;overflow:hidden;border:1px solid rgba(201,168,106,.24);border-radius:22px;padding:27px 30px;background:radial-gradient(90% 130% at 86% -12%,rgba(201,168,106,.16),transparent 46%),radial-gradient(70% 110% at 8% 112%,rgba(38,99,183,.22),transparent 52%),linear-gradient(140deg,#0a1f3d 0%,#0d2748 52%,#0f2d52 100%);box-shadow:0 24px 54px rgba(6,26,58,.28),inset 0 1px 0 rgba(255,255,255,.07)}
-#mi-admin .mi-assistant-hero:after{position:absolute;top:0;right:0;left:0;height:1px;content:"";background:linear-gradient(90deg,transparent,rgba(201,168,106,.55),transparent)}
-#mi-admin .mi-assistant-hero-copy{display:grid;gap:7px}
-#mi-admin .mi-assistant-hero-copy small{color:#c9a86a;font-size:10px;font-weight:950;letter-spacing:.22em;text-transform:uppercase}
-#mi-admin .mi-assistant-hero-copy h1{margin:0;color:#f6f9fe;font-size:28px;letter-spacing:-.045em}
-#mi-admin .mi-assistant-hero-copy p{max-width:720px;margin:0;color:#a9bad3;font-size:12.5px;font-weight:750;line-height:1.6}
-#mi-admin .mi-assistant-scope{display:grid;flex:0 0 auto;gap:3px;min-width:174px;border:1px solid rgba(201,168,106,.34);border-radius:14px;padding:12px 15px;background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
-#mi-admin .mi-assistant-scope span{color:#c9a86a;font-size:9px;font-weight:950;letter-spacing:.16em;text-transform:uppercase}
-#mi-admin .mi-assistant-scope strong{overflow:hidden;color:#f2f6fc;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-#mi-admin .mi-assistant-scope small{color:#8fa3bf;font-size:9px;font-weight:750}
+#mi-admin .mi-assistant-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;overflow:hidden;border:1px solid rgba(6,26,58,.08);border-radius:22px;padding:26px 28px;background:linear-gradient(145deg,#fff 0%,#f6f8fc 100%);box-shadow:0 16px 40px rgba(6,26,58,.06)}
+#mi-admin .mi-assistant-hero:after{position:absolute;top:0;right:0;left:0;height:2px;content:"";background:linear-gradient(90deg,transparent 4%,rgba(201,168,106,.5),transparent 96%)}
+#mi-admin .mi-assistant-hero-copy{display:grid;gap:6px}
+#mi-admin .mi-assistant-hero-copy small{color:#b28c4c;font-size:10px;font-weight:950;letter-spacing:.2em;text-transform:uppercase}
+#mi-admin .mi-assistant-hero-copy h1{margin:0;color:var(--mi-navy);font-size:27px;letter-spacing:-.04em}
+#mi-admin .mi-assistant-hero-copy p{max-width:720px;margin:0;color:#64748b;font-size:12.5px;font-weight:750;line-height:1.6}
+#mi-admin .mi-assistant-scope{display:grid;flex:0 0 auto;gap:3px;min-width:174px;border:1px solid rgba(201,168,106,.3);border-radius:14px;padding:11px 14px;background:#fff}
+#mi-admin .mi-assistant-scope span{color:#b28c4c;font-size:9px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
+#mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+#mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
 #mi-admin .mi-assistant-organization{gap:18px;overflow:hidden;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
-#mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(201,168,106,.2);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),radial-gradient(120% 90% at 50% 118%,rgba(4,12,26,.6),transparent 56%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 0 0 1px rgba(10,30,58,.4),0 22px 50px rgba(6,26,58,.24)}
+#mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(134,165,207,.26);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),radial-gradient(120% 90% at 50% 118%,rgba(4,12,26,.5),transparent 56%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 18px 42px rgba(6,26,58,.16)}
 #mi-admin .mi-assistant-office:before{position:absolute;inset:0;content:"";background:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:34px 34px;mask-image:linear-gradient(to bottom,transparent 0,#000 30%,#000 100%)}
 #mi-admin .mi-assistant-office:after{position:absolute;right:-10%;bottom:-38%;left:-10%;height:65%;border-radius:50% 50% 0 0;content:"";background:radial-gradient(ellipse at center,rgba(52,128,224,.13),transparent 62%);pointer-events:none}
 #mi-admin .mi-assistant-office-topline{position:absolute;z-index:7;top:14px;right:16px;left:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#a9bad1;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
@@ -373,16 +373,16 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-chip{min-height:31px;border:1px solid #dce4ee;border-radius:999px;padding:0 11px;color:#475569;background:#fff;font-size:10px;font-weight:900;cursor:pointer}
 #mi-admin .mi-assistant-chip:hover{border-color:rgba(201,168,106,.6);color:#7a5c22;background:#fffdf6}
 #mi-admin .mi-assistant-input{min-height:150px;resize:vertical}
-#mi-admin .mi-assistant-voice{display:flex;align-items:center;gap:9px;border:1px solid rgba(201,168,106,.22);border-radius:14px;padding:11px 12px;background:radial-gradient(80% 140% at 90% -20%,rgba(201,168,106,.12),transparent 50%),linear-gradient(135deg,#0b2140 0%,#123056 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 12px 28px rgba(6,26,58,.16);transition:border-color .25s ease,box-shadow .25s ease}
-#mi-admin .mi-assistant-voice:has(button.is-active){border-color:rgba(201,168,106,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px rgba(201,168,106,.14),0 14px 32px rgba(6,26,58,.22)}
-#mi-admin .mi-assistant-voice button{min-height:34px;border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:0 13px;color:#e6edf7;background:rgba(255,255,255,.06);font-size:10px;font-weight:900;cursor:pointer;transition:border-color .2s ease,background .2s ease,color .2s ease}
-#mi-admin .mi-assistant-voice button:hover{border-color:rgba(201,168,106,.55);background:rgba(201,168,106,.1)}
-#mi-admin .mi-assistant-voice button.is-listening{border-color:#c9a86a;color:#f5e6bf;background:rgba(201,168,106,.16);animation:mi-voice-pulse 1.6s ease-out infinite}
-#mi-admin .mi-assistant-voice button.is-active{position:relative;border-color:rgba(201,168,106,.65);color:#f5e6bf;background:rgba(201,168,106,.14);animation:mi-voice-glow 2.8s ease-in-out infinite}
-#mi-admin .mi-assistant-voice button.is-active:before{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;content:"";background:#e7c886;box-shadow:0 0 8px rgba(231,200,134,.8);vertical-align:1px}
-#mi-admin .mi-assistant-voice-status{min-width:0;flex:1;color:#aebdd3;font-size:10px;font-weight:800;line-height:1.4}
-@keyframes mi-voice-pulse{0%{box-shadow:0 0 0 0 rgba(201,168,106,.4)}100%{box-shadow:0 0 0 10px rgba(201,168,106,0)}}
-@keyframes mi-voice-glow{0%,100%{box-shadow:0 0 0 0 rgba(201,168,106,.18)}50%{box-shadow:0 0 14px 2px rgba(201,168,106,.3)}}
+#mi-admin .mi-assistant-voice{display:flex;align-items:center;gap:9px;border:1px solid #e3eaf3;border-radius:14px;padding:11px 12px;background:linear-gradient(180deg,#fff 0%,#f8fafc 100%);transition:border-color .25s ease,box-shadow .25s ease}
+#mi-admin .mi-assistant-voice:has(button.is-active){border-color:rgba(201,168,106,.45);box-shadow:0 0 0 1px rgba(201,168,106,.1)}
+#mi-admin .mi-assistant-voice button{min-height:34px;border:1px solid #d9e2ec;border-radius:999px;padding:0 13px;color:#34445d;background:#fff;font-size:10px;font-weight:900;cursor:pointer;transition:border-color .2s ease,background .2s ease,color .2s ease}
+#mi-admin .mi-assistant-voice button:hover{border-color:rgba(201,168,106,.55);background:#fffdf6}
+#mi-admin .mi-assistant-voice button.is-listening{border-color:#c9a86a;color:#7a5c22;background:#fdf7ea;animation:mi-voice-pulse 1.6s ease-out infinite}
+#mi-admin .mi-assistant-voice button.is-active{position:relative;border-color:rgba(201,168,106,.6);color:#7a5c22;background:#fdf9ef}
+#mi-admin .mi-assistant-voice button.is-active:before{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;content:"";background:#c9a86a;box-shadow:0 0 6px rgba(201,168,106,.55);vertical-align:1px;animation:mi-voice-glow 2.8s ease-in-out infinite}
+#mi-admin .mi-assistant-voice-status{min-width:0;flex:1;color:#66758a;font-size:10px;font-weight:800;line-height:1.4}
+@keyframes mi-voice-pulse{0%{box-shadow:0 0 0 0 rgba(201,168,106,.32)}100%{box-shadow:0 0 0 9px rgba(201,168,106,0)}}
+@keyframes mi-voice-glow{0%,100%{opacity:.65}50%{opacity:1}}
 #mi-admin .mi-assistant-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #mi-admin .mi-assistant-actions small{max-width:330px;color:#7a8798;font-size:10px;font-weight:750;line-height:1.45}
 #mi-admin .mi-assistant-status{min-height:20px;color:#64748b;font-size:11px;font-weight:850}

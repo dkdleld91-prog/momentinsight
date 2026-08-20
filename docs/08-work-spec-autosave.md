@@ -325,9 +325,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 19. 11:53:30
-- 기준 커밋: bb3c86c
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-protected-rank-features.mjs /  M scripts/check-release-baseline.mjs /  M scripts/protected-rank-features.lock.json
+- 마지막 자동 저장: 2026. 08. 19. 11:58:43
+- 기준 커밋: 79eecbc
+- 작업트리: clean
 <!-- autosave:end -->
 
 ## 작업 상태 기준

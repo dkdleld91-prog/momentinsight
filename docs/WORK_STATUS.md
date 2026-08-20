@@ -1,8 +1,14 @@
 # Work Status
 
-기준일: 2026-08-19
+기준일: 2026-08-20
 
 ## 현재 상태
+
+### 2026-08-20 자비스 브리핑 일정 완료 처리 연결
+
+- 미커밋 상태였던 `assistant-complete` PATCH 경로를 `assistantCompleteWorkItem` 함수로 추출하고(동작 동일) 브리핑 우선 업무 목록의 각 행에 총관리자 전용 완료 버튼을 연결했습니다. 확인창 승인 뒤 `expectedUpdatedAt` 낙관적 잠금으로 완료 처리하고 기존 일정표를 새로고침하며, 처리 결과는 `work_item_completed_by_assistant` 감사 로그로 남깁니다.
+- 대상 테스트 7건을 신규 작성해 완료 성공·이미 완료 멱등·상태 불일치 409·경합 409·허용 외 키 400·필수값 400·범위 밖 404를 고정했습니다. work-items 테스트 15/15, server contract 57/57, 보호 잠금 23함수·88파일·37 migration(자비스 `bindOwnerAssistant`·`owner-tool-api.mjs` 잠금은 변경 없음), 전체 `npm run check:release`(Production 인증 18/18 포함), `git diff --check`를 통과했습니다. admin.html 인라인 스크립트 변경에 따라 vercel.json CSP script-src 해시를 교체했습니다.
+- 완료 버튼 레이아웃은 잠금 파일을 수정하지 않도록 admin.html 정적 CSS의 `has-assistant-complete` 오버라이드로 처리했습니다. N 상품·N 플레이스 30일 동결 영역은 변경하지 않았습니다. 로그인된 `mml93-a01` 실화면 검증은 기존 canary 기준대로 미완으로 유지합니다.
 
 ### 2026-08-19 N 30일 추적 명시적 동결
 

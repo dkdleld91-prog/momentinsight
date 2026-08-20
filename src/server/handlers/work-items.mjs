@@ -350,10 +350,52 @@ async function handlePost(request, ctx) {
   return json(request, { ok: true, message: "업무를 저장했습니다.", item: managerWorkItemPayload(data), auditLogged }, 201);
 }
 
+export async function assistantCompleteWorkItem(request, ctx, access, body = {}) {
+  const allowedKeys = new Set(["action", "id", "expectedUpdatedAt"]);
+  if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
+    return json(request, { ok: false, message: "비서 완료 명령의 입력 범위를 확인해주세요." }, 400);
+  }
+  const id = cleanText(body.id);
+  const expectedUpdatedAt = validIsoDate(body.expectedUpdatedAt);
+  if (!id || !expectedUpdatedAt) {
+    return json(request, { ok: false, message: "완료할 일정과 최신 상태를 확인해주세요." }, 400);
+  }
+  const existing = await scopedWorkItem(ctx, access, id);
+  if (existing.error) return json(request, { ok: false, message: "업무 범위 확인에 실패했습니다.", detail: existing.error.message }, 500);
+  if (!existing.row) return json(request, { ok: false, message: "완료할 일정을 찾을 수 없습니다." }, 404);
+  if (validIsoDate(existing.row.updated_at) !== expectedUpdatedAt) {
+    return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 말씀해주세요." }, 409);
+  }
+  if (existing.row.status === "done") {
+    const item = access.role === "client" ? clientWorkItemPayload(existing.row) : managerWorkItemPayload(existing.row);
+    return json(request, { ok: true, unchanged: true, message: "이미 완료된 일정입니다.", item });
+  }
+  let updateQuery = ctx.supabaseAdmin
+    .from("schedule_items")
+    .update({ status: "done" })
+    .eq("id", id)
+    .eq("updated_at", existing.row.updated_at);
+  updateQuery = applyAccessScope(updateQuery, access);
+  const { data, error } = await updateQuery.select(selectFields()).maybeSingle();
+  if (error) return json(request, { ok: false, message: "일정 완료 처리에 실패했습니다.", detail: error.message }, 500);
+  if (!data) return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 말씀해주세요." }, 409);
+  const auditLogged = await recordAudit(ctx, {
+    action: "work_item_completed_by_assistant",
+    targetId: data.id,
+    clientId: data.client_id,
+    metadata: { previousStatus: existing.row.status, status: data.status, source: "momentlabs_assistant" },
+  });
+  const item = access.role === "client" ? clientWorkItemPayload(data) : managerWorkItemPayload(data);
+  return json(request, { ok: true, unchanged: false, message: "일정을 완료 처리했습니다.", item, auditLogged });
+}
+
 async function handlePatch(request, ctx) {
   const body = await readBody(request);
   const access = await resolveAccess(request, ctx);
   if (!access.ok) return json(request, access, access.status);
+  if (cleanText(body.action) === "assistant-complete") {
+    return assistantCompleteWorkItem(request, ctx, access, body);
+  }
   if (!roleCanMutateWorkItems(access.role)) return json(request, { ok: false, message: "수정 권한이 없습니다." }, 403);
   const id = cleanText(body.id);
   if (!id) return json(request, { ok: false, message: "수정할 업무를 확인해주세요." }, 400);

@@ -9028,6 +9028,10 @@
         text-align: center;
       }
     }
+
+    #mi-admin .mi-assistant-agenda-item.has-assistant-complete {
+      grid-template-columns: 70px minmax(0, 1fr) auto;
+    }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -11794,6 +11798,30 @@
           var title = document.createElement("strong");
           title.textContent = item.title || "제목 없는 업무";
           row.append(time, title);
+          if (secureSession.role === "owner" && item.id && item.updatedAt) {
+            row.classList.add("has-assistant-complete");
+            var complete = document.createElement("button");
+            complete.type = "button";
+            complete.className = "mi-link-button";
+            complete.textContent = "완료";
+            complete.setAttribute("aria-label", (item.title || "제목 없는 업무") + " 완료 처리");
+            complete.addEventListener("click", async function () {
+              if (secureSession.role !== "owner" || !view.isConnected) return;
+              if (!window.confirm('"' + (item.title || "제목 없는 업무") + '" 업무를 완료 처리할까요?')) return;
+              complete.disabled = true;
+              setOwnerAssistantStatus(view, "업무를 완료 처리하는 중입니다.", "");
+              try {
+                var payload = await requestWorkItems("PATCH", { action: "assistant-complete", id: item.id, expectedUpdatedAt: item.updatedAt });
+                await loadWorkItems();
+                if (!view.isConnected) return;
+                setOwnerAssistantStatus(view, payload.unchanged ? "이미 완료된 업무였습니다." : "업무를 완료 처리했습니다.", "ok");
+              } catch (error) {
+                complete.disabled = false;
+                setOwnerAssistantStatus(view, error.message || "업무 완료 처리에 실패했습니다.", "warn");
+              }
+            });
+            row.appendChild(complete);
+          }
           agenda.appendChild(row);
         });
       }

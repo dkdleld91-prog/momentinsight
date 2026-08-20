@@ -3,46 +3,69 @@ import fs from "node:fs";
 import test from "node:test";
 
 const source = fs.readFileSync(new URL("../src/pages/admin.html", import.meta.url), "utf8");
+const workViewStart = source.indexOf('<section class="mi-view mi-work-shell"');
+const editorStart = source.indexOf('<div class="mi-work-modal" data-work-modal', workViewStart);
+const moveDialogStart = source.indexOf('<div class="mi-work-modal" data-work-move-modal', editorStart);
+const workViewMarkup = source.slice(workViewStart, editorStart);
+const editorMarkup = source.slice(editorStart, moveDialogStart);
 
-test("representative schedule exposes calendar lists and safe sharing controls", () => {
+test("representative schedule is a wide personal calendar without list or sharing controls", () => {
+  assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
+  assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(280px,\s*\.72fr\)/);
+
   for (const marker of [
+    "mi-work-calendar-rail",
     "data-work-calendar-list",
     "data-work-calendar-create",
-    "data-work-calendar-filter=\"all\"",
-    "data-work-calendar-filter=\"personal\"",
+    "data-work-calendar-filter",
+    "data-work-calendar-color",
+    "data-work-calendar-grant",
     "data-work-calendar-share",
     "data-work-calendar-invite-code",
     "data-work-calendar-join",
-    "calendar-invite-create",
-    "calendar-invite-accept",
-    "calendar-leave"
-  ]) assert.ok(source.includes(marker), `missing calendar UI contract: ${marker}`);
-
-  assert.match(source, /workSelectedCalendarId\s*=\s*"all"/);
-  assert.match(source, /item\.calendarId\s*\|\|\s*"personal"/);
-  assert.match(source, /workCalendarColor/);
-  assert.match(source, /value="navy"[\s\S]{0,500}value="slate"/);
-  assert.match(source, /payload\.invite\s*&&\s*payload\.invite\.code/);
-  assert.match(source, /calendar\.role === "owner" \|\| calendar\.role === "editor"/);
+    "data-work-calendar-leave"
+  ]) assert.equal(workViewMarkup.includes(marker), false, `personal schedule must not render: ${marker}`);
 });
 
-test("event editor is a responsive drawer with all-day and bounded monthly recurrence", () => {
+test("date and create clicks open the personal editor while preserving existing work fields", () => {
+  assert.ok(editorStart >= 0 && moveDialogStart > editorStart, "work editor markup must exist");
   for (const marker of [
-    "data-work-calendar-select",
+    "data-work-title",
+    "data-work-start",
+    "data-work-state",
     "data-work-all-day",
     "data-work-repeat-monthly",
     "data-work-repeat-until",
-    "29~31일은 해당 월의 마지막 날",
-    "각 일정은 개별 수정"
-  ]) assert.ok(source.includes(marker), `missing editor contract: ${marker}`);
+    "data-work-public",
+    "data-work-type",
+    "data-work-end",
+    "data-work-assignee",
+    "data-work-priority",
+    "data-work-internal",
+    "반복 종료일 · 포함"
+  ]) assert.ok(editorMarkup.includes(marker), `missing personal editor contract: ${marker}`);
+
+  for (const marker of [
+    "data-work-calendar-select",
+    "data-work-calendar-color",
+    "data-work-calendar-grant",
+    "data-work-calendar-share",
+    "data-work-calendar-invite-code",
+    "data-work-calendar-join",
+    "data-work-calendar-leave"
+  ]) assert.equal(editorMarkup.includes(marker), false, `personal editor must not render: ${marker}`);
+
+  assert.match(editorMarkup, /data-work-dialog-title>개인 일정 등록</);
+  assert.match(source, /var create = event\.target\.closest\("\[data-work-create\]"\);[\s\S]{0,180}openWorkDialog\(null, ""\)/);
+  assert.match(source, /var dateButton = event\.target\.closest\("\[data-work-date\]"\);[\s\S]{0,180}openWorkDialog\(null, dateButton\.getAttribute\("data-work-date"\)\)/);
+  assert.match(source, /var dateCell = event\.target\.closest\("\[data-work-cell-date\]"\);[\s\S]{0,220}openWorkDialog\(null, dateCell\.getAttribute\("data-work-cell-date"\)\)/);
+  assert.match(source, /calendarId:\s*""/);
 
   assert.match(source, /repeat:\s*repeatMonthly\s*\?\s*"monthly"\s*:\s*""/);
   assert.match(source, /!id\s*&&\s*repeatMonthly\s*&&\s*!workRepeatRequestId[\s\S]{0,100}crypto\.randomUUID\(\)/);
   assert.match(source, /requestId:\s*!id\s*&&\s*repeatMonthly\s*\?\s*workRepeatRequestId/);
   assert.match(source, /expectedUpdatedAt/);
-  assert.match(source, /calendarSelect\.disabled\s*=\s*Boolean\(item\)/);
   assert.match(source, /requestWorkItems\("DELETE", \{ id: id, expectedUpdatedAt: expectedUpdatedAt \}\)/);
-  assert.match(source, /sharedCalendar[\s\S]{0,220}toggle\.disabled/);
   assert.match(source, /\.mi-work-modal\[data-work-modal\][\s\S]{0,220}justify-items:\s*end/);
   assert.match(source, /@media \(max-width: 760px\)[\s\S]*\.mi-work-editor-dialog/);
 });

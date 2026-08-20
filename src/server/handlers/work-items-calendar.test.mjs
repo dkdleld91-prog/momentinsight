@@ -171,6 +171,28 @@ function scriptedCtx(steps) {
   };
 }
 
+function observingCtx({ tables = {}, rpcs = {} } = {}) {
+  const calls = [];
+  const tableQueues = Object.fromEntries(Object.entries(tables).map(([name, results]) => [name, [...results]]));
+  const rpcQueues = Object.fromEntries(Object.entries(rpcs).map(([name, results]) => [name, [...results]]));
+  return {
+    calls,
+    ctx: {
+      supabaseAdmin: {
+        from(table) {
+          calls.push(["from", table]);
+          const result = tableQueues[table]?.shift() || { data: null, error: null };
+          return queryBuilder({ result }, calls);
+        },
+        async rpc(name, args) {
+          calls.push(["rpc", name, args]);
+          return rpcQueues[name]?.shift() || { data: null, error: null };
+        },
+      },
+    },
+  };
+}
+
 function ownerRequest(method, body) {
   return new Request("https://insight.momentlabs.co.kr/api/work-items", {
     method,
@@ -1281,4 +1303,207 @@ test("shared DELETE recognizes a permission failure by its stable database messa
 
   assert.equal(response.status, 403);
   harness.done();
+});
+
+test("personal-only contract: GET returns only private rows without reading or exposing shared calendars", async () => {
+  const sharedCalendarId = "34343434-3434-4434-8434-343434343434";
+  const privateRow = managerRow({ id: "private-item", calendar_id: null, title: "개인 일정" });
+  const sharedRow = managerRow({ id: "shared-item", calendar_id: sharedCalendarId, title: "공유 일정" });
+  const harness = observingCtx({
+    tables: {
+      schedule_calendar_memberships: [{
+        data: [{
+          role: "editor",
+          revoked_at: null,
+          calendar: {
+            id: sharedCalendarId,
+            name: "폐쇄 대상 공유 캘린더",
+            color: "navy",
+            archived_at: null,
+          },
+        }],
+        error: null,
+      }],
+      schedule_items: [
+        { data: [privateRow], error: null },
+        { data: [sharedRow], error: null },
+      ],
+    },
+  });
+
+  const response = await handleWorkItemsRequest(ownerRequest("GET"), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.calendars, []);
+  assert.deepEqual(payload.items.map((item) => item.id), ["private-item"]);
+  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_calendar_memberships"), false);
+  assert.equal(harness.calls.some(([kind, column]) => kind === "in" && column === "calendar_id"), false);
+  assert.equal(harness.calls.filter(([kind, table]) => kind === "from" && table === "schedule_items").length, 1);
+});
+
+test("personal-only contract: sharing, list, create, join, invite, and leave actions are disabled with 404 before storage", async (t) => {
+  const calendarId = "35353535-3535-4535-8535-353535353535";
+  const actions = [
+    { action: "calendar-list" },
+    { action: "calendar-create", name: "공유 캘린더", color: "navy" },
+    { action: "calendar-invite-create", calendarId, grantRole: "editor" },
+    { action: "calendar-invite-accept", code: "DISABLED12345678901234" },
+    { action: "calendar-leave", calendarId },
+  ];
+
+  for (const body of actions) {
+    await t.test(body.action, async () => {
+      const harness = observingCtx();
+      const response = await handleWorkItemsRequest(ownerRequest("POST", body), harness.ctx);
+      const payload = await response.json();
+
+      assert.equal(response.status, 404);
+      assert.equal(payload.ok, false);
+      assert.equal(harness.calls.length, 0);
+    });
+  }
+});
+
+test("personal-only contract: supplying a shared calendar id to create an item is disabled with 404", async () => {
+  const harness = observingCtx();
+  const response = await handleWorkItemsRequest(ownerRequest("POST", {
+    title: "공유 캘린더 등록 시도",
+    scheduleType: "meeting",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-08-20T09:00:00+09:00",
+    calendarId: "36363636-3636-4636-8636-363636363636",
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.equal(payload.ok, false);
+  assert.equal(harness.calls.length, 0);
+});
+
+test("personal-only contract: finite monthly recurrence still saves privately", async () => {
+  const seriesId = "37373737-3737-4737-8737-373737373737";
+  const saved = [
+    managerRow({ id: "private-aug", series_id: seriesId, occurrence_on: "2026-08-15", recurrence_kind: "monthly", recurrence_until: "2026-10-15" }),
+    managerRow({ id: "private-sep", starts_at: "2026-09-15T00:00:00.000Z", series_id: seriesId, occurrence_on: "2026-09-15", recurrence_kind: "monthly", recurrence_until: "2026-10-15" }),
+    managerRow({ id: "private-oct", starts_at: "2026-10-15T00:00:00.000Z", series_id: seriesId, occurrence_on: "2026-10-15", recurrence_kind: "monthly", recurrence_until: "2026-10-15" }),
+  ];
+  const harness = observingCtx({
+    tables: {
+      schedule_items: [
+        { data: [], error: null },
+        { data: saved, error: null },
+      ],
+      audit_logs: [{ error: null }],
+    },
+  });
+  const response = await handleWorkItemsRequest(ownerRequest("POST", {
+    title: "급여 지급",
+    scheduleType: "report_due",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-08-15T09:00:00+09:00",
+    repeat: "monthly",
+    repeatUntil: "2026-10-15",
+    requestId: seriesId,
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.deepEqual(payload.items.map((item) => item.occurrenceOn), ["2026-08-15", "2026-09-15", "2026-10-15"]);
+  const insertedRows = harness.calls.find(([kind]) => kind === "insert")?.[1] || [];
+  assert.equal(insertedRows.length, 3);
+  assert.equal(insertedRows.every((row) => row.calendar_id === null), true);
+  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_calendar_memberships"), false);
+  assert.equal(harness.calls.some(([kind]) => kind === "rpc"), false);
+});
+
+test("personal-only contract: existing shared rows reject PATCH, DELETE, and assistant completion before any shared write", async (t) => {
+  const calendarId = "38383838-3838-4838-8838-383838383838";
+  const existing = managerRow({
+    id: "existing-shared-item",
+    calendar_id: calendarId,
+    title: "비활성화할 공유 일정",
+  });
+  const cases = [
+    {
+      name: "PATCH",
+      method: "PATCH",
+      body: {
+        id: existing.id,
+        expectedUpdatedAt: existing.updated_at,
+        title: existing.title,
+        scheduleType: existing.schedule_type,
+        status: "done",
+        priority: existing.priority,
+        startsAt: existing.starts_at,
+        endsAt: existing.ends_at,
+        calendarId,
+      },
+    },
+    {
+      name: "DELETE",
+      method: "DELETE",
+      body: { id: existing.id, expectedUpdatedAt: existing.updated_at },
+    },
+    {
+      name: "assistant-complete",
+      method: "PATCH",
+      body: { action: "assistant-complete", id: existing.id, expectedUpdatedAt: existing.updated_at },
+    },
+  ];
+
+  for (const entry of cases) {
+    await t.test(entry.name, async () => {
+      const harness = observingCtx({
+        tables: {
+          schedule_items: [{ data: existing, error: null }],
+          schedule_calendar_memberships: [{
+            data: { role: "editor", revoked_at: null, calendar: { id: calendarId, name: "기존 공유", color: "navy" } },
+            error: null,
+          }],
+          audit_logs: [{ error: null }],
+        },
+        rpcs: {
+          mi_update_shared_schedule_item: [{ data: [{ ...existing, status: "done" }], error: null }],
+          mi_delete_shared_schedule_item: [{ data: existing.id, error: null }],
+        },
+      });
+      const response = await handleWorkItemsRequest(ownerRequest(entry.method, entry.body), harness.ctx);
+      const payload = await response.json();
+
+      assert.equal(response.status, 404);
+      assert.equal(payload.ok, false);
+      assert.equal(harness.calls.filter(([kind, table]) => kind === "from" && table === "schedule_items").length, 1);
+      assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_calendar_memberships"), false);
+      assert.equal(harness.calls.some(([kind]) => ["rpc", "insert", "update", "delete"].includes(kind)), false);
+    });
+  }
+});
+
+test("personal-only contract: client-visible legacy rows with calendar_id null remain readable through their public copy", async () => {
+  const legacy = managerRow({
+    id: "legacy-client-visible",
+    client_id: "client-1",
+    calendar_id: null,
+    title: "내부 제목은 숨김",
+    public_title: "광고주 공개 일정",
+    public_comment: "공개 안내",
+    visibility: "client_visible",
+  });
+  const harness = observingCtx({
+    tables: {
+      clients: [{ data: { id: "client-1", name: "광고주", agency_code: "client-a01", status: "active" }, error: null }],
+      schedule_items: [{ data: [legacy], error: null }],
+    },
+  });
+  const response = await handleWorkItemsRequest(clientRequest("GET"), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.items.length, 1);
+  assert.equal(payload.items[0].title, "광고주 공개 일정");
+  assert.equal(JSON.stringify(payload).includes("내부 제목은 숨김"), false);
+  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_calendar_memberships"), false);
 });

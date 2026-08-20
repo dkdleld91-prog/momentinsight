@@ -9032,6 +9032,18 @@
     #mi-admin .mi-assistant-agenda-item.has-assistant-complete {
       grid-template-columns: 70px minmax(0, 1fr) auto;
     }
+
+    #mi-admin .mi-assistant-agenda-day {
+      margin-top: 8px;
+      color: #6f7d90;
+      font-size: 10.5px;
+      font-weight: 900;
+      letter-spacing: 0.01em;
+    }
+
+    #mi-admin .mi-assistant-agenda-day:first-child {
+      margin-top: 0;
+    }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -11758,6 +11770,56 @@
         return OWNER_ASSISTANT_BRIEFING_INTENT.test(String(prompt || ""));
       }
 
+      var OWNER_ASSISTANT_RANGE_LABELS = { today: "오늘", tomorrow: "내일", day_after: "모레", this_week: "이번 주", next_week: "다음 주", upcoming: "다가오는" };
+      var OWNER_ASSISTANT_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+      function parseOwnerAssistantBriefingRange(text) {
+        var value = String(text || "");
+        if (/다음\s*주/u.test(value)) return "next_week";
+        if (/이번\s*주/u.test(value)) return "this_week";
+        if (/모레/u.test(value)) return "day_after";
+        if (/내일/u.test(value)) return "tomorrow";
+        if (/다가오는|앞으로|향후/u.test(value)) return "upcoming";
+        return "today";
+      }
+
+      function ownerAssistantRangeWindow(rangeKey, now) {
+        var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        var end = new Date(start);
+        if (rangeKey === "tomorrow") { start.setDate(start.getDate() + 1); end = new Date(start); }
+        else if (rangeKey === "day_after") { start.setDate(start.getDate() + 2); end = new Date(start); }
+        else if (rangeKey === "this_week") { end.setDate(start.getDate() + (6 - ((start.getDay() + 6) % 7))); }
+        else if (rangeKey === "next_week") { start.setDate(start.getDate() + (7 - ((start.getDay() + 6) % 7))); end = new Date(start); end.setDate(start.getDate() + 6); }
+        else if (rangeKey === "upcoming") { start.setDate(start.getDate() + 1); end.setDate(end.getDate() + 7); }
+        return { startKey: workDateKey(start), endKey: workDateKey(end) };
+      }
+
+      function ownerAssistantSpokenWhen(item) {
+        var date = new Date(item.startsAt);
+        if (Number.isNaN(date.getTime())) return "";
+        var label = (date.getMonth() + 1) + "월 " + date.getDate() + "일 " + OWNER_ASSISTANT_WEEKDAYS[date.getDay()] + "요일";
+        if (!item.isAllDay) {
+          var hours = date.getHours();
+          var minutes = date.getMinutes();
+          label += " " + (hours < 12 ? "오전 " + (hours === 0 ? 12 : hours) : "오후 " + (hours === 12 ? 12 : hours - 12)) + "시";
+          if (minutes) label += " " + minutes + "분";
+        }
+        return label;
+      }
+
+      function buildOwnerAssistantBriefingSpeech(rangeKey) {
+        var label = OWNER_ASSISTANT_RANGE_LABELS[rangeKey] || "오늘";
+        var range = ownerAssistantRangeWindow(rangeKey, new Date());
+        var items = workItems.filter(function (item) {
+          if (item.status === "done") return false;
+          var key = workDateKey(item.startsAt);
+          return Boolean(key) && key >= range.startKey && key <= range.endKey;
+        }).sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 8);
+        if (!items.length) return { label: label, text: label + " 일정이 없습니다." };
+        var lines = items.map(function (item) { return ownerAssistantSpokenWhen(item) + " " + (item.title || "제목 없는 업무"); });
+        return { label: label, text: label + " 일정입니다. " + lines.join(", ") + "." };
+      }
+
       function matchOwnerAssistantCompletionTargets(query) {
         var normalizedQuery = String(query || "").replace(/\s+/g, "").toLowerCase();
         if (!normalizedQuery) return [];
@@ -11831,19 +11893,26 @@
         var agenda = view.querySelector("[data-owner-assistant-agenda]");
         if (!agenda) return;
         agenda.replaceChildren();
-        var todayAgenda = today.slice().sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 8);
-        if (!todayAgenda.length) {
-          var empty = document.createElement("div");
-          empty.className = "mi-assistant-empty";
-          empty.textContent = "오늘 일정이 없습니다.";
-          agenda.appendChild(empty);
-          return;
-        }
-        todayAgenda.forEach(function (item) {
+        var weekEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7);
+        var weekEndKey = workDateKey(weekEnd);
+        var tableItems = openItems.filter(function (item) {
+          var key = workDateKey(item.startsAt);
+          return Boolean(key) && key >= todayKey && key <= weekEndKey;
+        }).sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 10);
+        var dayGroups = {};
+        tableItems.forEach(function (item) {
+          var key = workDateKey(item.startsAt);
+          if (!dayGroups[key]) dayGroups[key] = [];
+          dayGroups[key].push(item);
+        });
+        var dayKeys = Object.keys(dayGroups).sort();
+        if (dayKeys.indexOf(todayKey) === -1) dayKeys.unshift(todayKey);
+        function appendAgendaRow(item) {
           var row = document.createElement("div");
           row.className = "mi-assistant-agenda-item";
           var time = document.createElement("time");
-          time.textContent = workTimeLabel(item.startsAt).replace(/\s+/g, " ");
+          var startsDate = new Date(item.startsAt);
+          time.textContent = item.isAllDay ? "종일" : (startsDate.getHours() < 12 ? "오전 " + (startsDate.getHours() === 0 ? 12 : startsDate.getHours()) : "오후 " + (startsDate.getHours() === 12 ? 12 : startsDate.getHours() - 12)) + "시" + (startsDate.getMinutes() ? " " + startsDate.getMinutes() + "분" : "");
           var title = document.createElement("strong");
           title.textContent = item.title || "제목 없는 업무";
           row.append(time, title);
@@ -11872,6 +11941,23 @@
             row.appendChild(complete);
           }
           agenda.appendChild(row);
+        }
+        dayKeys.forEach(function (dayKey) {
+          var headerDate = workDateFromKey(dayKey);
+          var header = document.createElement("div");
+          header.className = "mi-assistant-agenda-day";
+          var headerLabel = (headerDate.getMonth() + 1) + "월 " + headerDate.getDate() + "일 (" + OWNER_ASSISTANT_WEEKDAYS[headerDate.getDay()] + ")";
+          header.textContent = dayKey === todayKey ? "오늘 · " + headerLabel : headerLabel;
+          agenda.appendChild(header);
+          var dayItems = dayGroups[dayKey] || [];
+          if (!dayItems.length) {
+            var empty = document.createElement("div");
+            empty.className = "mi-assistant-empty";
+            empty.textContent = "일정 없음";
+            agenda.appendChild(empty);
+            return;
+          }
+          dayItems.forEach(appendAgendaRow);
         });
       }
 
@@ -12256,12 +12342,9 @@
         if (SpeechRecognition && readStandbyPreference()) startStandby();
         readButton.addEventListener("click", function () {
           if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return setVoiceStatus("이 브라우저는 음성 읽기를 지원하지 않습니다.");
-          var today = view.querySelector('[data-owner-assistant-metric="today"]');
-          var overdue = view.querySelector('[data-owner-assistant-metric="overdue"]');
-          var needsCheck = view.querySelector('[data-owner-assistant-metric="needs_check"]');
-          var upcoming = view.querySelector('[data-owner-assistant-metric="next"]');
-          var agendaTitles = Array.from(view.querySelectorAll("[data-owner-assistant-agenda] strong")).slice(0, 4).map(function (node) { return node.textContent.trim(); });
-          var briefing = "오늘 업무 " + (today ? today.textContent : "0") + "건, 지연 업무 " + (overdue ? overdue.textContent : "0") + "건, 확인 필요 " + (needsCheck ? needsCheck.textContent : "0") + "건, 다가오는 업무 " + (upcoming ? upcoming.textContent : "0") + "건입니다." + (agendaTitles.length ? " 오늘 일정은 " + agendaTitles.join(", ") + "입니다." : "");
+          var briefingRangeKey = view.getAttribute("data-owner-assistant-briefing-range") || "today";
+          view.removeAttribute("data-owner-assistant-briefing-range");
+          var briefing = buildOwnerAssistantBriefingSpeech(briefingRangeKey).text;
           window.speechSynthesis.cancel();
           var utterance = new window.SpeechSynthesisUtterance(briefing);
           var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
@@ -12294,10 +12377,12 @@
           var prompt = String(input.value || "").trim();
           if (!prompt) return setOwnerAssistantStatus(view, "일정 또는 회의 메모를 입력해주세요.", "warn");
           if (isOwnerAssistantBriefingCommand(prompt)) {
+            var briefingRange = parseOwnerAssistantBriefingRange(prompt);
             input.value = "";
             renderOwnerAssistantBriefing(view);
+            view.setAttribute("data-owner-assistant-briefing-range", briefingRange);
             readButton.click();
-            return setOwnerAssistantStatus(view, "오늘 브리핑을 읽어드립니다.", "ok");
+            return setOwnerAssistantStatus(view, (OWNER_ASSISTANT_RANGE_LABELS[briefingRange] || "오늘") + " 일정을 브리핑합니다.", "ok");
           }
           draftButton.disabled = true;
           setOwnerAssistantStatus(view, "날짜와 업무 내용을 확인하는 중입니다.", "");

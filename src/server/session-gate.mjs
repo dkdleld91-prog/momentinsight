@@ -28,6 +28,8 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-rank-cron",
   "/api/naver-place-rank-cron",
   "/api/naver-shopping-local-worker",
+  // 구글 OAuth 콜백은 구글이 세션 쿠키 없이 GET으로 호출하며, 서명된 state로 자체 검증한다.
+  "/api/google-oauth/callback",
 ]);
 const TEAM_ACCOUNT_ONLY_RANK_PATHS = new Set([
   "/api/naver-rank-trackers",

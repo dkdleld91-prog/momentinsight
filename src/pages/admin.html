@@ -13193,6 +13193,107 @@
         }).catch(function () {});
       }
 
+      async function initOwnerGoogleCalendarBanner(view, generation) {
+        var banner = view.querySelector("[data-owner-gcal-banner]");
+        var statusCopy = view.querySelector("[data-owner-gcal-status]");
+        var connectButton = view.querySelector("[data-owner-gcal-connect]");
+        var disconnectButton = view.querySelector("[data-owner-gcal-disconnect]");
+        if (!banner || !statusCopy || !connectButton || !disconnectButton) return;
+        var apiHost = window.location && window.location.hostname;
+        var apiUrl = apiHost && apiHost !== "127.0.0.1" && apiHost !== "localhost"
+          ? window.location.origin + "/api/owner/google-calendar"
+          : "http://127.0.0.1:8790/api/owner/google-calendar";
+        var pendingNotice = "";
+        try {
+          var pageUrl = new URL(window.location.href);
+          var gcalCode = pageUrl.searchParams.get("gcal");
+          if (gcalCode) {
+            pendingNotice = gcalCode === "connected"
+              ? "구글 캘린더가 연결되었습니다."
+              : gcalCode === "no-refresh-token"
+                ? "권한 화면에서 다시 시도해주세요(동의 필요)."
+                : "연결에 실패했습니다: " + gcalCode;
+            pageUrl.searchParams.delete("gcal");
+            var cleanQuery = pageUrl.searchParams.toString();
+            window.history.replaceState(null, "", pageUrl.pathname + (cleanQuery ? "?" + cleanQuery : "") + pageUrl.hash);
+          }
+        } catch (error) {}
+        function gcalSessionIsCurrent() {
+          return generation === ownerToolGeneration && secureSession.role === "owner" && view.isConnected;
+        }
+        function renderGoogleCalendarState(payload) {
+          var notice = pendingNotice;
+          pendingNotice = "";
+          if (!payload.configured) {
+            statusCopy.textContent = "관리자 환경변수 설정 대기 중(GOOGLE_OAUTH_CLIENT_ID/SECRET)";
+            connectButton.hidden = true;
+            disconnectButton.hidden = true;
+          } else if (payload.connected) {
+            statusCopy.textContent = (notice ? notice + " " : "") + "연동됨 · " + (payload.googleEmail || "구글 계정");
+            connectButton.hidden = true;
+            disconnectButton.hidden = false;
+          } else {
+            statusCopy.textContent = notice || "연결하면 내부 일정이 전용 구글 캘린더로 동기화됩니다.";
+            connectButton.hidden = false;
+            disconnectButton.hidden = true;
+          }
+          banner.hidden = false;
+        }
+        async function refreshGoogleCalendarState() {
+          var response = await miFetch(apiUrl, { method: "GET", cache: "no-store" });
+          var payload = await readApiPayload(response, "구글 캘린더 연동 상태를 확인할 수 없습니다.");
+          if (!gcalSessionIsCurrent()) return;
+          if (!response.ok || !payload.ok) throw new Error(payload.message || "구글 캘린더 연동 상태를 확인할 수 없습니다.");
+          renderGoogleCalendarState(payload);
+        }
+        connectButton.addEventListener("click", async function () {
+          if (!gcalSessionIsCurrent() || connectButton.disabled) return;
+          connectButton.disabled = true;
+          statusCopy.textContent = "구글 인증 화면으로 이동을 준비하는 중입니다.";
+          try {
+            var response = await miFetch(apiUrl, {
+              method: "POST",
+              cache: "no-store",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "auth-url" })
+            });
+            var payload = await readApiPayload(response, "구글 인증 주소를 확인할 수 없습니다.");
+            if (!gcalSessionIsCurrent()) return;
+            if (!response.ok || !payload.ok || !payload.url) throw new Error(payload.message || "구글 인증 주소를 만들지 못했습니다.");
+            window.location.href = payload.url;
+            return;
+          } catch (error) {
+            if (gcalSessionIsCurrent()) statusCopy.textContent = error.message || "구글 인증 주소를 만들지 못했습니다.";
+          } finally {
+            connectButton.disabled = false;
+          }
+        });
+        disconnectButton.addEventListener("click", async function () {
+          if (!gcalSessionIsCurrent() || disconnectButton.disabled) return;
+          if (!window.confirm("구글 캘린더 연동을 해제할까요? 이미 등록된 구글 일정은 남아 있습니다.")) return;
+          disconnectButton.disabled = true;
+          statusCopy.textContent = "구글 캘린더 연동을 해제하는 중입니다.";
+          try {
+            var response = await miFetch(apiUrl, {
+              method: "POST",
+              cache: "no-store",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "disconnect" })
+            });
+            var payload = await readApiPayload(response, "구글 연동 해제 결과를 확인할 수 없습니다.");
+            if (!gcalSessionIsCurrent()) return;
+            if (!response.ok || !payload.ok) throw new Error(payload.message || "구글 연동 해제에 실패했습니다.");
+            pendingNotice = payload.message || "구글 캘린더 연동을 해제했습니다.";
+            await refreshGoogleCalendarState();
+          } catch (error) {
+            if (gcalSessionIsCurrent()) statusCopy.textContent = error.message || "구글 연동 해제에 실패했습니다.";
+          } finally {
+            disconnectButton.disabled = false;
+          }
+        });
+        await refreshGoogleCalendarState();
+      }
+
       async function loadOwnerTool() {
         if (secureSession.role !== "owner") return false;
         var requestGeneration = ownerToolGeneration;
@@ -13250,6 +13351,7 @@
         ownerToolScreens = screens.slice();
         bindOwnerTool(utilityView, generation);
         bindOwnerAssistant(assistantView, generation);
+        initOwnerGoogleCalendarBanner(assistantView, generation).catch(function () {});
         await calculateOwnerTool(utilityView, "0", generation).catch(function (error) {
           if (generation === ownerToolGeneration) {
             setOwnerToolStatus(utilityView.querySelector("[data-owner-tool-status]"), error.message || "계산 연결을 확인해주세요.", "warn");

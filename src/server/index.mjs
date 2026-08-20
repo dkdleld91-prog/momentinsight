@@ -17,6 +17,7 @@ const handlerLoaders = {
   integrationStatus: () => import("./handlers/integration-status.mjs"),
   codeSessionApi: () => import("./handlers/code-session-api.mjs"),
   ownerToolApi: () => import("./handlers/owner-tool-api.mjs"),
+  googleCalendarApi: () => import("./handlers/google-calendar-api.mjs"),
   agencyCodeApi: () => import("./handlers/agency-code-api.mjs"),
   metaAds: () => import("./handlers/meta-ads.mjs"),
   naverKeyword: () => import("./handlers/naver-keyword.mjs"),
@@ -72,6 +73,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/owner/tool") {
       return dispatch("ownerToolApi", request);
+    }
+
+    if (url.pathname === "/api/owner/google-calendar" || url.pathname === "/api/google-oauth/callback") {
+      return dispatch("googleCalendarApi", request);
     }
 
     if (url.pathname.startsWith("/api/agency-code/") || url.pathname === "/api/agency-code-validate") {

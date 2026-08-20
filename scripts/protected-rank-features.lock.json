@@ -152,7 +152,7 @@
     {
       "id": "owner-assistant-server-surface",
       "file": "src/server/handlers/owner-tool-api.mjs",
-      "sha256": "e2eccf3d2b756ad2ebe679bbb0ed22990bde101f1e2e8ce45d1519b5dd35de59"
+      "sha256": "f4b540817fe0b6fe2082f79ac24e6052202121186857a1215e1415964f9d57bb"
     },
     {
       "id": "seo-scoring-engine",
@@ -388,7 +388,7 @@
     {
       "id": "shopping-local-worker-router",
       "file": "src/server/index.mjs",
-      "sha256": "3c923b8f7aa6b51a265ffbffeb6458c83d3fdd3495773991dc66e55aff57aca9"
+      "sha256": "3bd6028aab21725e901d571cc436181431cc622bb50084b481e16ce72e0d0926"
     },
     {
       "id": "shopping-runtime-env-gate",
@@ -624,7 +624,7 @@
     {
       "id": "shopping-local-worker-session-boundary",
       "file": "src/server/session-gate.mjs",
-      "sha256": "3d8150bd4863829f5faf0739e1f038fc3d22f826497d11289b7c391597e15d5d"
+      "sha256": "bd7a3f2a50e90aff2ee3a657401421d09b6b3812552e503d4b170cdaa8c25db1"
     }
   ]
 }

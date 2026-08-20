@@ -298,6 +298,17 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-scope span{color:#b28c4c;font-size:9px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
 #mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 #mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
+#mi-admin .mi-assistant-gcal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #e4eaf2;border-radius:14px;padding:12px 14px;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 10px 24px rgba(6,26,58,.05)}
+#mi-admin .mi-assistant-gcal-copy{display:grid;gap:2px;min-width:0}
+#mi-admin .mi-assistant-gcal-copy strong{color:var(--mi-navy);font-size:12.5px;letter-spacing:-.01em}
+#mi-admin .mi-assistant-gcal-copy small{color:#66758a;font-size:10.5px;font-weight:800;line-height:1.5}
+#mi-admin .mi-assistant-gcal-actions{display:flex;flex:0 0 auto;align-items:center;gap:8px}
+#mi-admin .mi-assistant-gcal .mi-link-button{cursor:pointer;transition:border-color .2s ease,background .2s ease,color .2s ease,box-shadow .2s ease}
+#mi-admin .mi-assistant-gcal .mi-link-button:hover{border-color:rgba(201,168,106,.55);background:#fffdf6}
+#mi-admin .mi-assistant-gcal .mi-link-button.is-primary{border-color:var(--mi-navy);color:#fff;background:var(--mi-navy);box-shadow:0 8px 18px rgba(6,26,58,.14)}
+#mi-admin .mi-assistant-gcal .mi-link-button.is-primary:hover{border-color:#b28c4c;background:#123462;box-shadow:0 8px 18px rgba(6,26,58,.14),0 0 14px rgba(201,168,106,.28)}
+#mi-admin .mi-assistant-gcal .mi-link-button:disabled{opacity:.55;cursor:default}
+@media(max-width:640px){#mi-admin .mi-assistant-gcal{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-gcal-actions .mi-link-button{flex:1}}
 #mi-admin .mi-assistant-organization{gap:18px;overflow:hidden;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
 #mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(134,165,207,.26);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),radial-gradient(120% 90% at 50% 118%,rgba(4,12,26,.5),transparent 56%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 18px 42px rgba(6,26,58,.16)}
 #mi-admin .mi-assistant-office:before{position:absolute;inset:0;content:"";background:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:34px 34px;mask-image:linear-gradient(to bottom,transparent 0,#000 30%,#000 100%)}
@@ -456,6 +467,7 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <div class="mi-assistant-hero-copy"><small>Jarvis · owner canary</small><h1>오늘의 운영을 일정으로 연결합니다.</h1><p>현재 일정표를 요약하고 자연어 일정·회의 메모를 내부 업무 초안으로 정리합니다. 확인하기 전에는 저장하거나 공개하지 않습니다.</p></div>
     <div class="mi-assistant-scope"><span>CURRENT SCOPE</span><strong data-owner-assistant-scope>총관리자 내부 일정</strong><small>광고주 범위는 업무 운영에서 선택</small></div>
   </header>
+  <div class="mi-assistant-gcal" data-owner-gcal-banner hidden><span class="mi-assistant-gcal-copy"><strong>구글 캘린더</strong><small data-owner-gcal-status>상태 확인 중…</small></span><span class="mi-assistant-gcal-actions"><button class="mi-link-button is-primary" type="button" data-owner-gcal-connect hidden>구글 캘린더 연결</button><button class="mi-link-button" type="button" data-owner-gcal-disconnect hidden>연동 해제</button></span></div>
   <article class="mi-assistant-panel mi-assistant-organization" data-owner-assistant-organization>
     <div class="mi-assistant-panel-head"><div><h2>모먼트랩스 비서실 운영실</h2><p>비서실장 아래 5개 담당 조직이 연결됩니다. 직원을 누르면 해당 담당의 일정 명령 예시가 입력됩니다.</p></div><span class="mi-badge">mml93-a01 전용</span></div>
     <div class="mi-assistant-office" data-owner-assistant-office aria-label="움직이는 모먼트랩스 비서실 조직도">

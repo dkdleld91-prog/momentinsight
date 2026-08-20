@@ -4,6 +4,7 @@ import {
   buildMonthlyOccurrences,
   seoulDateKey,
 } from "../calendar-domain.mjs";
+import { syncOwnerScheduleRows } from "./google-calendar-api.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -317,6 +318,7 @@ function selectFields() {
     "recurrence_month_day",
     "recurrence_timezone",
     "recurrence_day_policy",
+    "google_event_id",
     "created_at",
     "updated_at",
     "client:clients(id,name,business_name)",
@@ -511,6 +513,7 @@ async function handlePost(request, ctx) {
       memberRole: null,
     },
   });
+  await syncOwnerScheduleRows(ctx, process.env, access, savedRows, "upsert");
   const items = savedRows.map(managerWorkItemPayload);
   return json(request, {
     ok: true,
@@ -617,6 +620,7 @@ async function handlePatch(request, ctx) {
       status: data.status,
     },
   });
+  await syncOwnerScheduleRows(ctx, process.env, access, [data], "upsert");
   return json(request, { ok: true, message: "업무를 수정했습니다.", item: managerWorkItemPayload(data), auditLogged });
 }
 
@@ -649,6 +653,7 @@ async function handleDelete(request, ctx) {
     clientId: existing.row.client_id,
     metadata: { visibility: existing.row.visibility, status: existing.row.status },
   });
+  await syncOwnerScheduleRows(ctx, process.env, access, [existing.row], "delete");
   return json(request, { ok: true, message: "업무를 삭제했습니다.", auditLogged });
 }
 

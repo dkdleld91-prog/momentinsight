@@ -4,6 +4,13 @@
 
 ## 현재 상태
 
+### 2026-08-21 구글 캘린더 연동 1단계 (mml93-a01 전용, MI→구글)
+
+- 대표 결정(계정 한정·전용 캘린더 신설)대로 1단계를 구현했습니다. 새 핸들러 `google-calendar-api.mjs`가 owner 전용 연결 API(상태·auth-url·해제)와 무세션 OAuth 콜백(서명 state 자체 검증, `SESSION_FREE_PATHS` 등재)을 처리하고, 콜백에서 전용 "모먼트 인사이트" 캘린더를 생성해 refresh token과 함께 `owner_google_integrations`(RLS·service_role 전용, 신규 migration `20260821000000`)에 저장합니다. `schedule_items.google_event_id` 컬럼을 추가했습니다.
+- 대표 개인 일정(owner·광고주/팀 미지정·개인 캘린더)만 대상: 등록(월반복 전개 행 전부 병렬)·수정·삭제 성공 직후 서버가 구글 이벤트를 upsert/삭제하고, 완료 상태는 제목 "✓ " 접두로 반영합니다. 미연동·env 미설정이면 조용히 skip, 실패는 응답을 막지 않고 `google_calendar_sync_failed` 감사로 남깁니다. 대표실 히어로 아래 연결 배너(상태·연결·해제, `?gcal=` 결과 안내)를 추가했습니다.
+- 실측: 코어 스모크 9/9(스모크에서 종일 종료일 UTC-slice 결함 발견·수정 후 월말 롤오버 포함 재통과), 신규 테스트 14케이스(state 위조/만료, all-day 배타 종료, sync 스코프/미연동 skip, insert→id 저장, PATCH 404→재생성, delete 404 허용, 부분 실패 감사) TZ 3종 통과, work-items 16 회귀 유지 — 합 30/30. 게이트·인덱스 테스트 16/16, 보호 잠금 파일 해시 3건(owner-tool·index·session-gate) 갱신·통과, styleText 33,915/40,000, CSP 교체, 전체 `npm run check:release` exit 0(인증 18/18).
+- 활성화 전 대표 액션 3가지가 남아 있습니다: ① Supabase 대시보드에서 migration SQL 1회 실행 ② Google Cloud OAuth 클라이언트 생성 ③ Vercel env `GOOGLE_OAUTH_CLIENT_ID/SECRET` 등록. 전부 전이면 배너가 "환경변수 대기"만 표시하며 기존 기능 무영향입니다. 구글→MI 역방향(웹훅)은 2단계로 별도 진행합니다.
+
 ### 2026-08-21 대표실 달력 7:3·월 이동 Production 반영
 
 - 대표실 개인 일정표의 달력/가까운 업무를 정확한 `7fr:3fr`로 조정하고 가까운 업무 카드의 달력 높이 강제 늘어남을 제거했습니다. 1180px 이하에서는 기존처럼 1열로 전환합니다.

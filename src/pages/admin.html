@@ -12526,7 +12526,7 @@
         var tool = payload && payload.tool ? payload.tool : null;
         if (!payload.ok || !tool || !/^owner-[a-z-]{1,40}$/.test(String(tool.screen || ""))) return false;
         if (typeof tool.menuHtml !== "string" || typeof tool.viewHtml !== "string" || typeof tool.styleText !== "string") return false;
-        if (tool.menuHtml.length > 2400 || tool.viewHtml.length > 22000 || tool.styleText.length > 30000) return false;
+        if (tool.menuHtml.length > 2400 || tool.viewHtml.length > 22000 || tool.styleText.length > 40000) return false;
 
         var menuTemplate = document.createElement("template");
         menuTemplate.innerHTML = tool.menuHtml.trim();

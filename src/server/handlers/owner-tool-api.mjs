@@ -285,17 +285,18 @@ const developmentCss = String.raw`
 const assistantCss = String.raw`
 #mi-admin .mi-owner-assistant{display:none;gap:18px}
 #mi-admin .mi-owner-assistant.is-active{display:grid}
-#mi-admin .mi-assistant-hero{display:flex;align-items:center;justify-content:space-between;gap:20px;border:1px solid rgba(6,26,58,.08);border-radius:22px;padding:26px 28px;background:radial-gradient(circle at 90% 0,rgba(31,111,235,.13),transparent 38%),linear-gradient(145deg,#fff 0%,#f4f7fb 100%);box-shadow:0 18px 44px rgba(6,26,58,.08)}
-#mi-admin .mi-assistant-hero-copy{display:grid;gap:6px}
-#mi-admin .mi-assistant-hero-copy small{color:#1f6feb;font-size:10px;font-weight:950;letter-spacing:.14em;text-transform:uppercase}
-#mi-admin .mi-assistant-hero-copy h1{margin:0;color:var(--mi-navy);font-size:27px;letter-spacing:-.04em}
-#mi-admin .mi-assistant-hero-copy p{max-width:720px;margin:0;color:#64748b;font-size:12.5px;font-weight:750;line-height:1.6}
-#mi-admin .mi-assistant-scope{display:grid;flex:0 0 auto;gap:3px;min-width:174px;border:1px solid rgba(31,111,235,.16);border-radius:14px;padding:11px 14px;background:#fff}
-#mi-admin .mi-assistant-scope span{color:#718096;font-size:9px;font-weight:950;letter-spacing:.1em}
-#mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
-#mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
+#mi-admin .mi-assistant-hero{position:relative;display:flex;align-items:center;justify-content:space-between;gap:20px;overflow:hidden;border:1px solid rgba(201,168,106,.24);border-radius:22px;padding:27px 30px;background:radial-gradient(90% 130% at 86% -12%,rgba(201,168,106,.16),transparent 46%),radial-gradient(70% 110% at 8% 112%,rgba(38,99,183,.22),transparent 52%),linear-gradient(140deg,#0a1f3d 0%,#0d2748 52%,#0f2d52 100%);box-shadow:0 24px 54px rgba(6,26,58,.28),inset 0 1px 0 rgba(255,255,255,.07)}
+#mi-admin .mi-assistant-hero:after{position:absolute;top:0;right:0;left:0;height:1px;content:"";background:linear-gradient(90deg,transparent,rgba(201,168,106,.55),transparent)}
+#mi-admin .mi-assistant-hero-copy{display:grid;gap:7px}
+#mi-admin .mi-assistant-hero-copy small{color:#c9a86a;font-size:10px;font-weight:950;letter-spacing:.22em;text-transform:uppercase}
+#mi-admin .mi-assistant-hero-copy h1{margin:0;color:#f6f9fe;font-size:28px;letter-spacing:-.045em}
+#mi-admin .mi-assistant-hero-copy p{max-width:720px;margin:0;color:#a9bad3;font-size:12.5px;font-weight:750;line-height:1.6}
+#mi-admin .mi-assistant-scope{display:grid;flex:0 0 auto;gap:3px;min-width:174px;border:1px solid rgba(201,168,106,.34);border-radius:14px;padding:12px 15px;background:linear-gradient(160deg,rgba(255,255,255,.08),rgba(255,255,255,.02));box-shadow:inset 0 1px 0 rgba(255,255,255,.08)}
+#mi-admin .mi-assistant-scope span{color:#c9a86a;font-size:9px;font-weight:950;letter-spacing:.16em;text-transform:uppercase}
+#mi-admin .mi-assistant-scope strong{overflow:hidden;color:#f2f6fc;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+#mi-admin .mi-assistant-scope small{color:#8fa3bf;font-size:9px;font-weight:750}
 #mi-admin .mi-assistant-organization{gap:18px;overflow:hidden;background:radial-gradient(circle at 50% -20%,rgba(31,111,235,.1),transparent 40%),#fff}
-#mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(134,165,207,.24);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+#mi-admin .mi-assistant-office{position:relative;min-height:440px;overflow:hidden;border:1px solid rgba(201,168,106,.2);border-radius:18px;background:radial-gradient(circle at 50% 36%,rgba(42,124,232,.18),transparent 23%),radial-gradient(120% 90% at 50% 118%,rgba(4,12,26,.6),transparent 56%),linear-gradient(180deg,#071a35 0%,#0a2444 58%,#0d2c50 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),inset 0 0 0 1px rgba(10,30,58,.4),0 22px 50px rgba(6,26,58,.24)}
 #mi-admin .mi-assistant-office:before{position:absolute;inset:0;content:"";background:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:34px 34px;mask-image:linear-gradient(to bottom,transparent 0,#000 30%,#000 100%)}
 #mi-admin .mi-assistant-office:after{position:absolute;right:-10%;bottom:-38%;left:-10%;height:65%;border-radius:50% 50% 0 0;content:"";background:radial-gradient(ellipse at center,rgba(52,128,224,.13),transparent 62%);pointer-events:none}
 #mi-admin .mi-assistant-office-topline{position:absolute;z-index:7;top:14px;right:16px;left:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;color:#a9bad1;font-size:9px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
@@ -308,21 +309,23 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-office-network .is-rail{top:59%;left:12%;width:76%;height:1px}
 #mi-admin .mi-assistant-office-network .is-flow{top:19%;left:calc(50% - 3px);width:7px;height:7px;border-radius:50%;background:#7bb7ff;box-shadow:0 0 12px #4c9dff;animation:mi-assistant-flow 3.4s ease-in-out infinite}
 @keyframes mi-assistant-flow{0%{top:20%;opacity:0}20%{opacity:1}70%{top:58%;opacity:1}100%{top:58%;opacity:0}}
-#mi-admin .mi-assistant-station{position:absolute;z-index:2;display:grid;align-content:end;min-width:0;border:1px solid rgba(142,183,232,.18);border-radius:14px;padding:10px;background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+#mi-admin .mi-assistant-station{position:absolute;z-index:2;display:grid;align-content:end;min-width:0;border:1px solid rgba(163,196,238,.2);border-radius:14px;padding:10px;background:linear-gradient(150deg,rgba(20,46,84,.62),rgba(13,32,60,.4));box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 10px 24px rgba(3,10,22,.28);backdrop-filter:blur(5px)}
 #mi-admin .mi-assistant-station:before{position:absolute;top:8px;right:8px;width:18px;height:11px;border:1px solid rgba(117,180,255,.25);border-radius:3px;content:"";background:#0b1b31;box-shadow:inset 0 0 7px rgba(59,142,240,.24)}
 #mi-admin .mi-assistant-station strong{color:#eef5ff;font-size:9px;font-weight:950;letter-spacing:.04em}
 #mi-admin .mi-assistant-station small{margin-top:2px;color:#8ca2bf;font-size:7.5px;font-weight:850}
-#mi-admin .mi-assistant-station.is-chief{top:9%;left:41%;width:18%;height:15%;border-color:rgba(91,168,255,.35);background:linear-gradient(145deg,rgba(42,123,222,.2),rgba(255,255,255,.035))}
+#mi-admin .mi-assistant-station.is-chief{top:9%;left:41%;width:18%;height:15%;border-color:rgba(201,168,106,.5);background:linear-gradient(150deg,rgba(201,168,106,.2),rgba(20,46,84,.45));box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 0 22px rgba(201,168,106,.14),0 10px 24px rgba(3,10,22,.28)}
+#mi-admin .mi-assistant-station.is-chief strong{color:#f3e5c3}
 #mi-admin .mi-assistant-station.is-schedule{top:63%;left:4%;width:16%;height:25%}
 #mi-admin .mi-assistant-station.is-report{top:63%;left:23%;width:16%;height:25%}
 #mi-admin .mi-assistant-station.is-ads{top:63%;left:42%;width:16%;height:25%}
 #mi-admin .mi-assistant-station.is-content{top:63%;left:61%;width:16%;height:25%}
 #mi-admin .mi-assistant-station.is-keyword{top:63%;left:80%;width:16%;height:25%}
-#mi-admin .mi-assistant-meeting-hub{position:absolute;z-index:2;top:39%;left:41%;display:grid;width:18%;height:14%;place-items:center;border:1px dashed rgba(135,187,249,.28);border-radius:50%;color:#8fa9c9;background:rgba(19,58,101,.28);font-size:7.5px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+#mi-admin .mi-assistant-meeting-hub{position:absolute;z-index:2;top:39%;left:41%;display:grid;width:18%;height:14%;place-items:center;border:1px dashed rgba(201,168,106,.34);border-radius:50%;color:#c4ae82;background:rgba(19,58,101,.28);font-size:7.5px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
 #mi-admin .mi-assistant-agent{position:absolute;z-index:5;display:grid;width:94px;justify-items:center;border:0;padding:0;color:#fff;background:transparent;cursor:pointer;transform:translate(-50%,-50%);transition:left var(--agent-move,1.7s) cubic-bezier(.32,.08,.25,1),top var(--agent-move,1.7s) cubic-bezier(.32,.08,.25,1);will-change:left,top}
 #mi-admin .mi-assistant-agent:hover,#mi-admin .mi-assistant-agent:focus-visible{z-index:8;outline:0}
 #mi-admin .mi-assistant-agent:hover .mi-assistant-agent-label,#mi-admin .mi-assistant-agent:focus-visible .mi-assistant-agent-label{border-color:rgba(123,183,255,.68);background:#102f55;transform:translateY(-2px)}
 #mi-admin .mi-assistant-agent-figure{position:relative;display:block;width:42px;height:49px;filter:drop-shadow(0 7px 8px rgba(0,0,0,.28));animation:mi-assistant-breathe var(--agent-breathe,3.8s) ease-in-out infinite}
+#mi-admin .mi-assistant-agent-figure:after{position:absolute;bottom:-7px;left:50%;width:32px;height:8px;border-radius:50%;content:"";background:radial-gradient(ellipse at center,rgba(2,8,18,.5),transparent 68%);transform:translateX(-50%)}
 #mi-admin .mi-assistant-agent-head{position:absolute;z-index:2;top:0;left:5px;width:32px;height:24px;border:2px solid #a9c9ee;border-radius:13px 13px 10px 10px;background:linear-gradient(150deg,#eff7ff,#9bbde6)}
 #mi-admin .mi-assistant-agent-head:before{position:absolute;top:7px;left:5px;width:18px;height:8px;border-radius:7px;content:"";background:#07182e;box-shadow:inset 0 0 8px rgba(80,175,255,.32)}
 #mi-admin .mi-assistant-agent-head:after{position:absolute;top:10px;left:10px;width:3px;height:3px;border-radius:50%;content:"";background:#7dccff;box-shadow:8px 0 #7dccff,0 0 5px #7dccff,8px 0 5px #7dccff}
@@ -338,8 +341,9 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-agent.is-walking .mi-assistant-agent-leg.is-right{animation:mi-assistant-leg-right .42s ease-in-out infinite}
 #mi-admin .mi-assistant-agent.is-talking .mi-assistant-agent-figure{animation:mi-assistant-talk .8s ease-in-out infinite}
 #mi-admin .mi-assistant-agent.is-talking .mi-assistant-agent-bubble{display:block;animation:mi-assistant-bubble 1.1s ease-in-out infinite}
-#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-head{border-color:#95ead0;background:linear-gradient(150deg,#e8fff8,#72c9ad)}
-#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-body{border-color:#6ac3a5;background:linear-gradient(145deg,#ccf7e8,#4caa8c)}
+#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-head{border-color:#e2c98f;background:linear-gradient(150deg,#fff7e2,#d3ac67)}
+#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-body{border-color:#c9a86a;background:linear-gradient(145deg,#f5e3ba,#a9884f)}
+#mi-admin .mi-assistant-agent[data-owner-assistant-role="chief"] .mi-assistant-agent-label{border-color:rgba(201,168,106,.55);box-shadow:0 5px 14px rgba(0,0,0,.15),0 0 16px rgba(201,168,106,.16)}
 @keyframes mi-assistant-breathe{0%,100%{transform:translateY(0)}50%{transform:translateY(-2px)}}
 @keyframes mi-assistant-walk{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-3px) rotate(2deg)}75%{transform:translateY(-3px) rotate(-2deg)}}
 @keyframes mi-assistant-leg-left{0%,100%{transform:rotate(0)}50%{transform:rotate(18deg)}}
@@ -350,28 +354,35 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-office-caption strong{color:var(--mi-navy)}
 #mi-admin .mi-assistant-office-activity{color:#1f6feb;text-align:right}
 #mi-admin .mi-assistant-grid{display:grid;grid-template-columns:minmax(0,.8fr) minmax(420px,1.2fr);gap:16px;align-items:start}
-#mi-admin .mi-assistant-panel{display:grid;gap:15px;min-width:0;border:1px solid rgba(6,26,58,.09);border-radius:19px;padding:20px;background:#fff;box-shadow:0 13px 34px rgba(6,26,58,.055)}
+#mi-admin .mi-assistant-panel{display:grid;gap:15px;min-width:0;border:1px solid rgba(9,30,60,.1);border-radius:19px;padding:21px;background:linear-gradient(180deg,#fdfdfe 0%,#f7f9fc 100%);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 16px 38px rgba(6,26,58,.07)}
 #mi-admin .mi-assistant-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-#mi-admin .mi-assistant-panel-head h2{margin:0;color:var(--mi-navy);font-size:18px}
+#mi-admin .mi-assistant-panel-head h2{display:flex;align-items:center;gap:8px;margin:0;color:var(--mi-navy);font-size:18px;letter-spacing:-.02em}
+#mi-admin .mi-assistant-panel-head h2:before{width:4px;height:15px;border-radius:3px;content:"";background:linear-gradient(180deg,#d9bc84,#b28c4c)}
 #mi-admin .mi-assistant-panel-head p{margin:4px 0 0;color:#758197;font-size:11px;font-weight:700;line-height:1.5}
-#mi-admin .mi-assistant-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-#mi-admin .mi-assistant-metric{display:grid;gap:4px;border:1px solid #e8edf4;border-radius:13px;padding:13px;background:#f8fafc}
-#mi-admin .mi-assistant-metric span{color:#7a8799;font-size:10px;font-weight:900}
-#mi-admin .mi-assistant-metric strong{color:var(--mi-navy);font-size:24px;line-height:1}
+#mi-admin .mi-assistant-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;overflow:hidden;border:1px solid #e4eaf2;border-radius:16px;background:linear-gradient(180deg,#fff 0%,#f7f9fc 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.9)}
+#mi-admin .mi-assistant-metric{display:grid;gap:6px;border-left:1px solid #edf1f6;padding:15px 16px 14px}
+#mi-admin .mi-assistant-metric:first-child{border-left:0;background:linear-gradient(180deg,rgba(201,168,106,.09),transparent 70%)}
+#mi-admin .mi-assistant-metric span{color:#8b96a8;font-size:9px;font-weight:950;letter-spacing:.12em;text-transform:uppercase}
+#mi-admin .mi-assistant-metric strong{color:var(--mi-navy);font-size:30px;font-variant-numeric:tabular-nums;letter-spacing:-.03em;line-height:1}
 #mi-admin .mi-assistant-agenda{display:grid;gap:7px}
 #mi-admin .mi-assistant-agenda-item{display:grid;grid-template-columns:70px minmax(0,1fr);gap:10px;align-items:center;border-top:1px solid #edf1f6;padding-top:8px}
-#mi-admin .mi-assistant-agenda-item time{color:#1f6feb;font-size:10px;font-weight:950}
+#mi-admin .mi-assistant-agenda-item time{color:#1f6feb;font-size:10px;font-weight:950;font-variant-numeric:tabular-nums}
 #mi-admin .mi-assistant-agenda-item strong{overflow:hidden;color:#253858;font-size:11.5px;text-overflow:ellipsis;white-space:nowrap}
 #mi-admin .mi-assistant-empty{border:1px dashed #d8e0ea;border-radius:12px;padding:18px;color:#7b8797;background:#fbfcfe;font-size:11px;font-weight:800;text-align:center}
 #mi-admin .mi-assistant-chips{display:flex;flex-wrap:wrap;gap:7px}
 #mi-admin .mi-assistant-chip{min-height:31px;border:1px solid #dce4ee;border-radius:999px;padding:0 11px;color:#475569;background:#fff;font-size:10px;font-weight:900;cursor:pointer}
-#mi-admin .mi-assistant-chip:hover{border-color:#91b7ee;color:#165fbf;background:#f5f9ff}
+#mi-admin .mi-assistant-chip:hover{border-color:rgba(201,168,106,.6);color:#7a5c22;background:#fffdf6}
 #mi-admin .mi-assistant-input{min-height:150px;resize:vertical}
-#mi-admin .mi-assistant-voice{display:flex;align-items:center;gap:8px;border:1px solid #e3eaf3;border-radius:13px;padding:10px;background:#f8fafc}
-#mi-admin .mi-assistant-voice button{min-height:34px;border:1px solid #d6e0eb;border-radius:10px;padding:0 11px;color:#34445d;background:#fff;font-size:10px;font-weight:900;cursor:pointer}
-#mi-admin .mi-assistant-voice button.is-listening{border-color:#df5b5b;color:#b42318;background:#fff3f2;box-shadow:0 0 0 3px rgba(223,91,91,.11)}
-#mi-admin .mi-assistant-voice button.is-active{border-color:#1f6feb;color:#165fbf;background:#edf5ff}
-#mi-admin .mi-assistant-voice-status{min-width:0;flex:1;color:#66758a;font-size:10px;font-weight:800;line-height:1.4}
+#mi-admin .mi-assistant-voice{display:flex;align-items:center;gap:9px;border:1px solid rgba(201,168,106,.22);border-radius:14px;padding:11px 12px;background:radial-gradient(80% 140% at 90% -20%,rgba(201,168,106,.12),transparent 50%),linear-gradient(135deg,#0b2140 0%,#123056 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 12px 28px rgba(6,26,58,.16);transition:border-color .25s ease,box-shadow .25s ease}
+#mi-admin .mi-assistant-voice:has(button.is-active){border-color:rgba(201,168,106,.5);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 0 1px rgba(201,168,106,.14),0 14px 32px rgba(6,26,58,.22)}
+#mi-admin .mi-assistant-voice button{min-height:34px;border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:0 13px;color:#e6edf7;background:rgba(255,255,255,.06);font-size:10px;font-weight:900;cursor:pointer;transition:border-color .2s ease,background .2s ease,color .2s ease}
+#mi-admin .mi-assistant-voice button:hover{border-color:rgba(201,168,106,.55);background:rgba(201,168,106,.1)}
+#mi-admin .mi-assistant-voice button.is-listening{border-color:#c9a86a;color:#f5e6bf;background:rgba(201,168,106,.16);animation:mi-voice-pulse 1.6s ease-out infinite}
+#mi-admin .mi-assistant-voice button.is-active{position:relative;border-color:rgba(201,168,106,.65);color:#f5e6bf;background:rgba(201,168,106,.14);animation:mi-voice-glow 2.8s ease-in-out infinite}
+#mi-admin .mi-assistant-voice button.is-active:before{display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;content:"";background:#e7c886;box-shadow:0 0 8px rgba(231,200,134,.8);vertical-align:1px}
+#mi-admin .mi-assistant-voice-status{min-width:0;flex:1;color:#aebdd3;font-size:10px;font-weight:800;line-height:1.4}
+@keyframes mi-voice-pulse{0%{box-shadow:0 0 0 0 rgba(201,168,106,.4)}100%{box-shadow:0 0 0 10px rgba(201,168,106,0)}}
+@keyframes mi-voice-glow{0%,100%{box-shadow:0 0 0 0 rgba(201,168,106,.18)}50%{box-shadow:0 0 14px 2px rgba(201,168,106,.3)}}
 #mi-admin .mi-assistant-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 #mi-admin .mi-assistant-actions small{max-width:330px;color:#7a8798;font-size:10px;font-weight:750;line-height:1.45}
 #mi-admin .mi-assistant-status{min-height:20px;color:#64748b;font-size:11px;font-weight:850}
@@ -388,8 +399,8 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-unresolved strong{color:#a55b12;font-size:11px}
 #mi-admin .mi-assistant-unresolved span{color:#8b6a47;font-size:10.5px;line-height:1.45}
 @media(max-width:980px){#mi-admin .mi-assistant-grid{grid-template-columns:1fr}}
-@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-office{min-height:650px}#mi-admin .mi-assistant-office-network .is-spine{top:19%;height:31%}#mi-admin .mi-assistant-office-network .is-rail{top:50%;left:25%;width:50%}#mi-admin .mi-assistant-station.is-chief{top:7%;left:24%;width:52%;height:13%}#mi-admin .mi-assistant-station.is-schedule{top:57%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-report{top:57%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-ads{top:71%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-content{top:71%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-keyword{top:85%;left:25%;width:50%;height:12%}#mi-admin .mi-assistant-meeting-hub{top:34%;left:31%;width:38%;height:12%}#mi-admin .mi-assistant-agent{width:82px}#mi-admin .mi-assistant-office-caption{flex-direction:column}#mi-admin .mi-assistant-office-activity{text-align:left}#mi-admin .mi-assistant-voice{align-items:stretch;flex-wrap:wrap}#mi-admin .mi-assistant-voice-status{flex-basis:100%}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
-@media(prefers-reduced-motion:reduce){#mi-admin .mi-assistant-agent,#mi-admin .mi-assistant-agent-figure,#mi-admin .mi-assistant-agent-leg,#mi-admin .mi-assistant-agent-bubble,#mi-admin .mi-assistant-office-network .is-flow{transition:none!important;animation:none!important}}
+@media(max-width:640px){#mi-admin .mi-assistant-hero{align-items:flex-start;flex-direction:column;padding:21px}#mi-admin .mi-assistant-scope{width:100%}#mi-admin .mi-assistant-panel{padding:15px}#mi-admin .mi-assistant-office{min-height:650px}#mi-admin .mi-assistant-office-network .is-spine{top:19%;height:31%}#mi-admin .mi-assistant-office-network .is-rail{top:50%;left:25%;width:50%}#mi-admin .mi-assistant-station.is-chief{top:7%;left:24%;width:52%;height:13%}#mi-admin .mi-assistant-station.is-schedule{top:57%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-report{top:57%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-ads{top:71%;left:3%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-content{top:71%;left:52%;width:45%;height:12%}#mi-admin .mi-assistant-station.is-keyword{top:85%;left:25%;width:50%;height:12%}#mi-admin .mi-assistant-meeting-hub{top:34%;left:31%;width:38%;height:12%}#mi-admin .mi-assistant-agent{width:82px}#mi-admin .mi-assistant-summary{grid-template-columns:repeat(2,minmax(0,1fr))}#mi-admin .mi-assistant-metric{border-left:0;border-top:1px solid #edf1f6}#mi-admin .mi-assistant-metric:nth-child(-n+2){border-top:0}#mi-admin .mi-assistant-metric:nth-child(2n){border-left:1px solid #edf1f6}#mi-admin .mi-assistant-office-caption{flex-direction:column}#mi-admin .mi-assistant-office-activity{text-align:left}#mi-admin .mi-assistant-voice{align-items:stretch;flex-wrap:wrap}#mi-admin .mi-assistant-voice-status{flex-basis:100%}#mi-admin .mi-assistant-actions{align-items:stretch;flex-direction:column}#mi-admin .mi-assistant-actions .mi-button{width:100%}#mi-admin .mi-assistant-draft{grid-template-columns:1fr}#mi-admin .mi-assistant-draft button{width:100%}}
+@media(prefers-reduced-motion:reduce){#mi-admin .mi-assistant-agent,#mi-admin .mi-assistant-agent-figure,#mi-admin .mi-assistant-agent-leg,#mi-admin .mi-assistant-agent-bubble,#mi-admin .mi-assistant-office-network .is-flow,#mi-admin .mi-assistant-voice button{transition:none!important;animation:none!important}}
 `;
 
 const utilityViewHtml = String.raw`<section class="mi-view" data-mi-admin-view="owner-utility" id="mi-admin-owner-utility" aria-label="총관리자 전용 부가세 계산기">

@@ -3,14 +3,58 @@ import test from "node:test";
 import {
   clientScheduleSelectFields,
   clientSelfConnectEnabled,
+  handleClientApiRequest,
   handleAgencyCode
 } from "./client-api.mjs";
+
+function queryRecorder(results = {}) {
+  const calls = [];
+  const supabase = {
+    from(table) {
+      calls.push([table, "from"]);
+      const builder = {
+        select(value) { calls.push([table, "select", value]); return builder; },
+        eq(column, value) { calls.push([table, "eq", column, value]); return builder; },
+        is(column, value) { calls.push([table, "is", column, value]); return builder; },
+        order(column, options) { calls.push([table, "order", column, options]); return builder; },
+        limit(value) { calls.push([table, "limit", value]); return builder; },
+        then(resolve, reject) { return Promise.resolve(results[table] || { data: [], error: null }).then(resolve, reject); },
+      };
+      return builder;
+    },
+  };
+  return {
+    calls,
+    ctx: {
+      supabase,
+      userClaims: { sub: "00000000-0000-4000-8000-000000000001", email: "client@example.com" },
+    },
+  };
+}
+
+function clientRequest(path) {
+  return new Request(`https://insight.momentlabs.co.kr${path}`);
+}
 
 test("client schedule selects only the public title and public fields", () => {
   const fields = clientScheduleSelectFields();
   assert.match(fields, /title:public_title/u);
   assert.doesNotMatch(fields, /(?:^|,)\s*title\s*(?:,|$)/u);
   assert.doesNotMatch(fields, /internal_note|owner_agency_code|operation_team_id/u);
+});
+
+test("client schedule list and overview scope every schedule_items read to personal rows", async () => {
+  const list = queryRecorder();
+  await handleClientApiRequest(clientRequest("/api/client/schedule-items"), list.ctx);
+  assert.equal(list.calls.some(([table, method, column, value]) => (
+    table === "schedule_items" && method === "is" && column === "calendar_id" && value === null
+  )), true);
+
+  const overview = queryRecorder();
+  await handleClientApiRequest(clientRequest("/api/client/overview?client_id=client-1"), overview.ctx);
+  assert.equal(overview.calls.some(([table, method, column, value]) => (
+    table === "schedule_items" && method === "is" && column === "calendar_id" && value === null
+  )), true);
 });
 
 test("client self-connect is enabled only by the exact true flag", () => {

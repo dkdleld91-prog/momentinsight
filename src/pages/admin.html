@@ -11312,6 +11312,7 @@
           renderWorkOperation();
           renderOwnerAssistantBriefing(root.querySelector('[data-mi-admin-view="owner-assistant"]'));
           setWorkStatus(workItems.length ? "저장된 업무 " + workItems.length + "개를 불러왔습니다." : "등록된 업무가 없습니다. 첫 업무를 추가해보세요.", "ok");
+          return true;
         } catch (error) {
           if (requestId !== workRequestGeneration || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
           workItems = [];
@@ -11819,11 +11820,139 @@
         window.speechSynthesis.speak(utterance);
       }
 
+      function clearOwnerAssistantResultsPlaceholder(results) {
+        var placeholder = results.firstElementChild;
+        if (placeholder && placeholder.classList.contains("mi-assistant-empty") && results.children.length === 1) results.replaceChildren();
+      }
+
+      function readOwnerAssistantGoodMorningStore() {
+        try {
+          return {
+            flag: window.localStorage.getItem("mi-owner-assistant-goodmorning") || "on",
+            lastDate: window.localStorage.getItem("mi-owner-assistant-goodmorning-date") || ""
+          };
+        } catch (error) {
+          return { flag: "off", lastDate: "" };
+        }
+      }
+
+      function writeOwnerAssistantGoodMorningStore(key, value) {
+        try { window.localStorage.setItem(key, value); } catch (error) {}
+      }
+
+      function shouldRunOwnerAssistantGoodMorning(store, todayKey) {
+        if (!store || store.flag === "off") return false;
+        if (store.lastDate === todayKey) return false;
+        return true;
+      }
+
+      function parseOwnerAssistantScopeCommand(text) {
+        var value = String(text || "").trim();
+        if (!value) return null;
+        if (/(내부|총관리자|내\s*일정(?:으로|로)).{0,6}(바꿔|전환|변경|돌아가)/u.test(value)) return { type: "internal" };
+        var match = value.match(/^(.+?)\s*광고주\s*(?:일정)?\s*(?:으로|로)?\s*(?:바꿔|전환|변경)(?:해)?\s*(?:줘|주세요)?\s*[.!?]?$/u);
+        if (match) {
+          var query = String(match[1] || "").replace(/\s+/gu, " ").trim();
+          if (query) return { type: "client", query: query };
+        }
+        return null;
+      }
+
+      var ownerAssistantClientsCache = { at: 0, payload: null };
+
+      async function loadOwnerAssistantClients() {
+        if (ownerAssistantClientsCache.payload && Date.now() - ownerAssistantClientsCache.at < 300000) return ownerAssistantClientsCache.payload;
+        var payload = await requestOwnerCodes("GET");
+        if (payload && payload.staleSession) return null;
+        if (!payload || payload.ok !== true) return { error: (payload && payload.message) || "광고주 목록을 불러오지 못했습니다." };
+        ownerAssistantClientsCache = { at: Date.now(), payload: payload };
+        return payload;
+      }
+
+      function matchOwnerAssistantClients(payload, query) {
+        var normalizedQuery = String(query || "").replace(/\s+/g, "").toLowerCase();
+        if (!normalizedQuery) return [];
+        return activeOwnerClients(payload).filter(function (client) {
+          return [client.name, client.businessName].some(function (label) {
+            var normalized = String(label || "").replace(/\s+/g, "").toLowerCase();
+            return Boolean(normalized) && (normalized.indexOf(normalizedQuery) !== -1 || normalizedQuery.indexOf(normalized) !== -1);
+          });
+        });
+      }
+
+      async function switchOwnerAssistantScope(view, command, generation) {
+        var scopeInput = root.querySelector("[data-work-owner-client-code]");
+        if (!scopeInput) return setOwnerAssistantStatus(view, "광고주 범위 입력을 찾을 수 없습니다.", "warn");
+        var targetCode = "";
+        var targetLabel = "총관리자 내부";
+        if (command.type === "client") {
+          setOwnerAssistantStatus(view, "광고주 목록을 확인하는 중입니다…", "");
+          var payload = await loadOwnerAssistantClients();
+          if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
+          if (!payload) return;
+          if (payload.error) return setOwnerAssistantStatus(view, payload.error, "warn");
+          var matches = matchOwnerAssistantClients(payload, command.query);
+          if (!matches.length) return setOwnerAssistantStatus(view, "‘" + command.query + "’ 광고주를 찾지 못했습니다. 등록된 광고주 이름으로 말씀해주세요.", "warn");
+          if (matches.length > 1) {
+            return setOwnerAssistantStatus(view, "‘" + command.query + "’는 여러 광고주와 일치합니다: " + matches.slice(0, 3).map(function (client) { return client.name || client.businessName; }).join(", ") + ". 더 정확한 이름으로 말씀해주세요.", "warn");
+          }
+          targetCode = String(matches[0].agencyCode || "");
+          targetLabel = "광고주 " + (matches[0].name || matches[0].businessName || targetCode);
+        }
+        scopeInput.value = targetCode;
+        workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+        var loaded = await loadWorkItems();
+        if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
+        if (loaded === true) {
+          setOwnerAssistantStatus(view, targetLabel + " 일정으로 전환했습니다.", "ok");
+          speakOwnerAssistantText(targetLabel + " 일정으로 전환했습니다.");
+        } else {
+          setOwnerAssistantStatus(view, targetLabel + "로 전환했지만 일정을 불러오지 못했습니다. 새로고침 후 다시 확인해주세요.", "warn");
+        }
+      }
+
+      function renderOwnerAssistantGoodMorningCard(view, message) {
+        var results = view.querySelector("[data-owner-assistant-results]");
+        if (!results) return;
+        clearOwnerAssistantResultsPlaceholder(results);
+        var card = document.createElement("div");
+        card.className = "mi-assistant-chat";
+        var label = document.createElement("span");
+        label.className = "mi-assistant-chat-question";
+        label.textContent = "굿모닝 브리핑";
+        var body = document.createElement("p");
+        body.className = "mi-assistant-chat-reply";
+        body.textContent = message;
+        var mute = document.createElement("button");
+        mute.type = "button";
+        mute.className = "mi-link-button";
+        mute.textContent = "아침 브리핑 끄기";
+        mute.addEventListener("click", function () {
+          writeOwnerAssistantGoodMorningStore("mi-owner-assistant-goodmorning", "off");
+          mute.disabled = true;
+          setOwnerAssistantStatus(view, "아침 브리핑을 껐습니다. 다시 켜려면 말씀해주세요.", "ok");
+        });
+        card.append(label, body, mute);
+        results.prepend(card);
+        while (results.children.length > 6) results.removeChild(results.lastElementChild);
+      }
+
+      function maybeRunOwnerAssistantGoodMorning(view, generation) {
+        if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
+        var todayKey = workDateKey(new Date());
+        var store = readOwnerAssistantGoodMorningStore();
+        if (!shouldRunOwnerAssistantGoodMorning(store, todayKey)) return;
+        writeOwnerAssistantGoodMorningStore("mi-owner-assistant-goodmorning-date", todayKey);
+        var greeting = (new Date().getHours() < 12 ? "좋은 아침입니다" : "안녕하세요") + ", 대표님. " + buildOwnerAssistantBriefingSpeech("today").text;
+        renderOwnerAssistantGoodMorningCard(view, greeting);
+        speakOwnerAssistantText(greeting);
+        setOwnerAssistantStatus(view, "오늘 첫 접속 굿모닝 브리핑을 전했습니다.", "ok");
+      }
+
       function renderOwnerAssistantChatCard(view, question, reply) {
         var results = view.querySelector("[data-owner-assistant-results]");
         if (!results) return;
-        var placeholder = results.firstElementChild;
-        if (placeholder && placeholder.classList.contains("mi-assistant-empty") && results.children.length === 1) results.replaceChildren();
+        clearOwnerAssistantResultsPlaceholder(results);
         var card = document.createElement("div");
         card.className = "mi-assistant-chat";
         var q = document.createElement("span");
@@ -12390,7 +12519,7 @@
               command = String(wakeMatch[1] || "").trim();
               if (!command) return setVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
             } else {
-              var directIntent = isOwnerAssistantBriefingCommand(newFinal) || /완료(?:로|\s*처리)?\s*(?:해\s*줘|해\s*주세요|해줘|해주세요)?\s*[.!?]?$/u.test(newFinal);
+              var directIntent = isOwnerAssistantBriefingCommand(newFinal) || Boolean(parseOwnerAssistantScopeCommand(newFinal)) || /완료(?:로|\s*처리)?\s*(?:해\s*줘|해\s*주세요|해줘|해주세요)?\s*[.!?]?$/u.test(newFinal);
               if (!directIntent) return setVoiceStatus("상시 대기 중 · 들림: " + finals.trim().slice(-32));
               command = newFinal;
             }
@@ -12479,6 +12608,12 @@
             readButton.click();
             return setOwnerAssistantStatus(view, (OWNER_ASSISTANT_RANGE_LABELS[briefingRange] || "오늘") + " 일정을 브리핑합니다.", "ok");
           }
+          var scopeCommand = parseOwnerAssistantScopeCommand(prompt);
+          if (scopeCommand) {
+            input.value = "";
+            await switchOwnerAssistantScope(view, scopeCommand, generation);
+            return;
+          }
           draftButton.disabled = true;
           setOwnerAssistantStatus(view, "날짜와 업무 내용을 확인하는 중입니다.", "");
           try {
@@ -12514,7 +12649,9 @@
           }
         });
         renderOwnerAssistantBriefing(view);
-        loadWorkItems().catch(function () {});
+        loadWorkItems().then(function (loaded) {
+          if (loaded === true) maybeRunOwnerAssistantGoodMorning(view, generation);
+        }).catch(function () {});
       }
 
       async function loadOwnerTool() {

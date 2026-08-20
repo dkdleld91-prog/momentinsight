@@ -4,6 +4,14 @@
 
 ## 현재 상태
 
+### 2026-08-21 매월 반복 종료 방식 Production 반영
+
+- `매월 반복`을 켜면 `종료 예정 없음`과 `반복 종료일 · 포함`을 명확히 구분합니다. 종료 예정 없음이 꺼져 있으면 종료일이 필수이고, 켜면 종료일 입력을 비활성화·초기화합니다. 기존 반복 일정 편집에서는 반복 조건을 읽기 전용으로 보여주고 선택한 1건만 수정한다는 안내를 유지합니다.
+- 종료 예정 없음은 영구 자동 생성을 과장하지 않습니다. 현재는 서버가 서울 날짜·월말 보정으로 향후 60회를 원자 생성하고 `recurrence_no_end=true`와 실제 생성 마지막 날을 따로 보존합니다. 화면에도 `이후 회차는 현재 자동 추가되지 않습니다`를 표시합니다.
+- strict boolean·종료일 동시 입력·비반복 no-end 입력을 저장 전에 거부합니다. 운영 migration `schedule_monthly_no_end_mode` 적용 뒤 schedule 2행·기존 반복 0행·no-end 0행·일관성 위반 0을 확인했습니다.
+- 대상 57/57, 결합 73/73(`calendar-domain` line 96.95%·branch 84.95%, `work-items` line 99.40%·branch 83.85%), 전체 `check:release` 코어 636/636·플레이스 51/51·쇼핑 62/62·Production 인증 18/18을 통과했습니다.
+- 기능 commit `a086666`이 Production release `a086666f62ae`로 반영됐고 `/health`·`/ready`와 Supabase ready가 일치했습니다. 로그인된 총관리자 대표실에서 반복 OFF→ON, 유한 종료일 required, no-end ON 시 disabled/not-required·60회 한계 문구를 확인하고 저장 없이 닫았습니다.
+
 ### 2026-08-21 구글 캘린더 연동 1단계 (mml93-a01 전용, MI→구글)
 
 - 대표 결정(계정 한정·전용 캘린더 신설)대로 1단계를 구현했습니다. 새 핸들러 `google-calendar-api.mjs`가 owner 전용 연결 API(상태·auth-url·해제)와 무세션 OAuth 콜백(서명 state 자체 검증, `SESSION_FREE_PATHS` 등재)을 처리하고, 콜백에서 전용 "모먼트 인사이트" 캘린더를 생성해 refresh token과 함께 `owner_google_integrations`(RLS·service_role 전용, 신규 migration `20260821000000`)에 저장합니다. `schedule_items.google_event_id` 컬럼을 추가했습니다.

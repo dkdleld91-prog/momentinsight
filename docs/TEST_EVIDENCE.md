@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-21 매월 반복 종료 방식 Production 증거
+
+- TDD 대상 57/57, 결합 coverage 73/73 PASS입니다. `calendar-domain.mjs` line 96.95%·branch 84.95%·function 100%, `work-items.mjs` line 99.40%·branch 83.85%·function 100%입니다. 유한 종료일 필수, no-end 정확 60회, 월말·윤년, strict boolean, 모순 입력 저장 0, request ID 중복 0을 실행했습니다.
+- 전체 `npm run check:release`는 깨끗한 commit worktree에서 코어 636/636, 플레이스 51/51, 쇼핑 62/62, Production 인증 18/18로 exit 0입니다. server contract 58/58, 공개 build 9파일·인라인 6개·고유 CSP hash 4개, N30 보호 잠금 23함수·88파일·37 migration도 통과했습니다.
+- 운영 Supabase migration `schedule_monthly_no_end_mode`를 적용했습니다. `recurrence_no_end boolean not null default false`와 일관성 CHECK가 존재하고, 기존 2행·반복 0행·no-end 0행·CHECK 위반 0입니다. 이번 migration이 만든 신규 security advisor WARN은 없습니다.
+- commit `a086666` 배포 뒤 `/health`·`/ready`가 release `a086666f62ae`·Supabase ready로 일치했습니다. 로그인된 총관리자 대표실의 실제 등록 패널에서 초기 반복 영역 hidden, 월 반복 ON 뒤 종료일 enabled+required, no-end ON 뒤 종료일 disabled+not-required+빈 값과 60회 한계 문구를 확인했습니다.
+- 운영 일정을 임의 생성·수정·삭제하지 않았으므로 Production의 60행 실제 저장·새로고침 보존을 실데이터 E2E로 주장하지 않습니다. 현재 자동 연장 엔진도 없으므로 문자 그대로 무기한 생성된다고 보고하지 않습니다.
+
 ## 2026-08-21 대표실 달력 7:3·월 선택 Production 증거
 
 - UI 계약은 기존 4개에서 6개로 확장해 6/6 PASS입니다. 정확한 `7fr:3fr`, 1180px 이하 1열, 월 제목 dialog semantics, 12개월 렌더, 연도 이동, 선택 월 재조회, ESC·포커스 이탈 닫힘을 고정했습니다.

@@ -25,3 +25,7 @@ build/
 # Supabase CLI local cache
 supabase/.temp/
 .vercel
+
+# 로컬 AI 도구 산출물 (커밋 금지)
+.claude/
+data/state_store.db/

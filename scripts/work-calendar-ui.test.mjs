@@ -11,8 +11,8 @@ const editorMarkup = source.slice(editorStart, moveDialogStart);
 
 test("representative schedule is a wide personal calendar without list or sharing controls", () => {
   assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
-  assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(280px,\s*\.72fr\)/);
-  assert.match(source, /@media \(max-width: 1080px\)[\s\S]{0,180}\.mi-work-layout\s*\{\s*grid-template-columns:\s*1fr;[\s\S]{0,120}\.mi-work-agenda-card\s*\{\s*grid-column:\s*auto;/);
+  assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*7fr\)\s+minmax\(280px,\s*3fr\);[\s\S]{0,100}align-items:\s*start/);
+  assert.match(source, /@media \(max-width: 1180px\)[\s\S]{0,180}\.mi-work-layout\s*\{\s*grid-template-columns:\s*1fr;[\s\S]{0,120}\.mi-work-agenda-card\s*\{\s*grid-column:\s*auto;/);
 
   for (const marker of [
     "mi-work-calendar-rail",
@@ -26,6 +26,26 @@ test("representative schedule is a wide personal calendar without list or sharin
     "data-work-calendar-join",
     "data-work-calendar-leave"
   ]) assert.equal(workViewMarkup.includes(marker), false, `personal schedule must not render: ${marker}`);
+});
+
+test("month title opens an accessible year and month picker", () => {
+  assert.match(workViewMarkup, /<button[^>]+data-work-month-picker-trigger[^>]+aria-haspopup="dialog"[^>]+aria-expanded="false"[^>]*>\s*<span data-work-month-label>/);
+  assert.match(workViewMarkup, /data-work-month-picker[^>]+role="dialog"[^>]+aria-label="이동할 월 선택"[^>]+hidden/);
+  assert.match(workViewMarkup, /data-work-month-picker-year/);
+  assert.match(workViewMarkup, /data-work-picker-year-prev[^>]+aria-label="이전 연도"/);
+  assert.match(workViewMarkup, /data-work-picker-year-next[^>]+aria-label="다음 연도"/);
+  assert.match(workViewMarkup, /data-work-month-grid/);
+});
+
+test("month picker renders twelve months and reloads the selected calendar month", () => {
+  assert.match(source, /var workMonthPickerYear = workMonthCursor\.getFullYear\(\)/);
+  assert.match(source, /function renderWorkMonthPicker\(\)[\s\S]{0,1200}for \(var month = 0; month < 12; month \+= 1\)[\s\S]{0,500}data-work-picker-month/);
+  assert.match(source, /function openWorkMonthPicker\(\)[\s\S]{0,900}aria-expanded[\s\S]{0,500}focus\(\)/);
+  assert.match(source, /function closeWorkMonthPicker\(restoreFocus\)[\s\S]{0,700}aria-expanded[\s\S]{0,350}restoreFocus/);
+  assert.match(source, /data-work-month-picker-trigger[\s\S]{0,1000}openWorkMonthPicker\(\)/);
+  assert.match(source, /data-work-picker-year-prev[\s\S]{0,900}workMonthPickerYear \+=/);
+  assert.match(source, /data-work-picker-month[\s\S]{0,1000}workMonthCursor = new Date\(workMonthPickerYear, selectedMonth, 1\)[\s\S]{0,500}loadWorkItems\(\)/);
+  assert.match(source, /event\.key !== "Escape"[\s\S]{0,240}closeWorkMonthPicker\(true\)/);
 });
 
 test("date and create clicks open the personal editor while preserving existing work fields", () => {

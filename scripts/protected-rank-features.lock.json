@@ -145,7 +145,7 @@
       "id": "owner-assistant-interaction",
       "file": "src/pages/admin.html",
       "name": "bindOwnerAssistant",
-      "sha256": "a25eb0c3647c6025a8ccdc87166993f733b4bb95c57b16bbdce6940c6fba87d0"
+      "sha256": "098c82468f4c087d5431aa0f2bd9d0145f406ec7d34e8e3673628e10890a3c47"
     }
   ],
   "files": [

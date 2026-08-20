@@ -12197,17 +12197,20 @@
               processedFinalLength = finals.length;
               return setVoiceStatus("브리핑을 읽는 중에는 새 명령을 받지 않습니다.");
             }
+            var newFinal = finals.slice(processedFinalLength).trim();
+            if (!newFinal) {
+              var interimWake = /(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]|$)/u.test(heard);
+              return setVoiceStatus(interimWake ? "네, 듣고 있습니다. 명령을 이어서 말씀해주세요." : "상시 대기 중 · 들림: " + heard.trim().slice(-32));
+            }
+            processedFinalLength = finals.length;
             var command = "";
-            var wakeMatch = heard.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
+            var wakeMatch = finals.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
             if (wakeMatch) {
               command = String(wakeMatch[1] || "").trim();
               if (!command) return setVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
             } else {
-              var newFinal = finals.slice(processedFinalLength).trim();
-              if (!newFinal) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
-              processedFinalLength = finals.length;
               var directIntent = isOwnerAssistantBriefingCommand(newFinal) || /완료(?:로|\s*처리)?\s*(?:해\s*줘|해\s*주세요|해줘|해주세요)?\s*[.!?]?$/u.test(newFinal);
-              if (!directIntent) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
+              if (!directIntent) return setVoiceStatus("상시 대기 중 · 들림: " + finals.trim().slice(-32));
               command = newFinal;
             }
             fired = true;

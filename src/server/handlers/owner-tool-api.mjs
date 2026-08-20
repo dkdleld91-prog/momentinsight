@@ -466,12 +466,12 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
       <div class="mi-assistant-agenda" data-owner-assistant-agenda><div class="mi-assistant-empty">일정표를 불러오면 우선순위를 정리합니다.</div></div>
     </article>
     <article class="mi-assistant-panel">
-      <div class="mi-assistant-panel-head"><div><h2>일정·회의 메모 초안</h2><p>날짜가 확인되는 문장만 초안으로 만들고, 나머지는 확인 필요로 남깁니다.</p></div><span class="mi-badge">외부 전송 없음</span></div>
+      <div class="mi-assistant-panel-head"><div><h2>일정·회의 메모 초안</h2><p>날짜가 확인되는 문장만 초안으로 만들고, 나머지는 확인 필요로 남깁니다.</p></div><span class="mi-badge">대화만 외부 AI</span></div>
       <div class="mi-assistant-chips"><button class="mi-assistant-chip" type="button" data-owner-assistant-example="내일 오후 2시 광고주 미팅 1시간 등록해줘">미팅 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="다음 주 월요일 오전 10시 월간 보고서 최종 검수">보고서 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="회의 메모&#10;- 8월 21일 오후 3시 소재 시안 검토&#10;- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅">회의 메모 예시</button></div>
       <div class="mi-assistant-voice" data-owner-assistant-voice><button type="button" data-owner-assistant-mic>🎤 말하기</button><button type="button" data-owner-assistant-wake>🎙 실장 상시 호출</button><button type="button" data-owner-assistant-read>🔊 브리핑 읽기</button><span class="mi-assistant-voice-status" data-owner-assistant-voice-status aria-live="polite">마이크 버튼을 누르면 한국어 음성을 일정 문장으로 입력합니다. Chrome 음성 서비스가 음성을 처리할 수 있습니다.</span></div>
       <textarea class="mi-textarea mi-assistant-input" data-owner-assistant-input maxlength="6000" placeholder="예: 내일 오후 2시 광고주 미팅 1시간 등록해줘&#10;여러 일정은 줄을 나눠 입력할 수 있습니다."></textarea>
       <div class="mi-assistant-actions"><small>초안은 모두 내부 비공개입니다. 광고주 공개는 기존 일정 편집에서 별도로 확인합니다.</small><button class="mi-button" type="button" data-owner-assistant-draft>초안 만들기</button></div>
-      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">텍스트 일정 초안은 외부 AI로 전송하지 않습니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>
+      <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">일정 초안 해석은 서버 규칙으로 처리합니다. 실장과의 자유 대화만 Anthropic API로 전송되며 학습에 사용되지 않습니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>
       <div class="mi-assistant-results" data-owner-assistant-results><div class="mi-assistant-empty">만든 초안을 확인한 뒤 항목별로 일정표에 등록할 수 있습니다.</div></div>
     </article>
   </div>
@@ -511,6 +511,87 @@ export function calculateOwnerTax(value) {
   };
 }
 
+const ASSISTANT_CHAT_MAX_MESSAGE = 2000;
+const ASSISTANT_CHAT_MAX_HISTORY = 12;
+const ASSISTANT_CHAT_MAX_SCHEDULE = 60;
+
+function assistantChatText(value, max) {
+  return String(value ?? "").trim().slice(0, max);
+}
+
+async function defaultAssistantChatCreate(params) {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return client.messages.create(params);
+}
+
+export async function runOwnerAssistantChat(body = {}, env = process.env, createMessage = defaultAssistantChatCreate) {
+  if (!assistantChatText(env.ANTHROPIC_API_KEY, 200)) {
+    return { status: 503, result: { ok: false, code: "missing_api_key", message: "실장 대화 기능이 아직 연결되지 않았습니다. Vercel 환경변수 ANTHROPIC_API_KEY를 설정해주세요." } };
+  }
+  const message = assistantChatText(body.message, ASSISTANT_CHAT_MAX_MESSAGE);
+  if (!message) return { status: 400, result: { ok: false, message: "대화 내용을 입력해주세요." } };
+  const rawHistory = Array.isArray(body.history) ? body.history.slice(-ASSISTANT_CHAT_MAX_HISTORY) : [];
+  const history = [];
+  for (const entry of rawHistory) {
+    const role = entry?.role === "assistant" ? "assistant" : entry?.role === "user" ? "user" : "";
+    const text = assistantChatText(entry?.text, ASSISTANT_CHAT_MAX_MESSAGE);
+    if (!role || !text) return { status: 400, result: { ok: false, message: "대화 기록 형식을 확인해주세요." } };
+    history.push({ role, content: text });
+  }
+  while (history.length && history[0].role !== "user") history.shift();
+  const scheduleRows = (Array.isArray(body.schedule) ? body.schedule : [])
+    .slice(0, ASSISTANT_CHAT_MAX_SCHEDULE)
+    .map((item) => ({
+      title: assistantChatText(item?.title, 120) || "제목 없는 업무",
+      startsAt: assistantChatText(item?.startsAt, 40),
+      status: assistantChatText(item?.status, 20),
+      isAllDay: Boolean(item?.isAllDay),
+    }))
+    .filter((item) => item.startsAt);
+  const nowKst = new Date(Date.now() + 9 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 16);
+  const scheduleText = scheduleRows.length
+    ? scheduleRows.map((item) => `- ${item.startsAt}${item.isAllDay ? " 종일" : ""} [${item.status}] ${item.title}`).join("\n")
+    : "(등록된 일정 없음)";
+  const system = [
+    "당신은 마케팅 대행사 모먼트 인사이트 총관리자의 운영 비서 '실장'입니다.",
+    "한국어로 두세 문장 이내로 간결하고 실무적으로 답합니다. 음성으로 읽히므로 목록 기호 없이 자연스러운 문장으로 말합니다.",
+    `현재 한국 시간: ${nowKst}`,
+    "아래는 현재 일정표 스냅샷입니다. 이 정보와 일반 운영 상식으로만 답하고, 모르는 것은 모른다고 말합니다.",
+    scheduleText,
+    "당신은 일정을 직접 등록·완료할 수 없습니다. 요청받으면 방법을 안내합니다: 등록은 \"내일 오후 2시 ○○ 등록해줘\", 완료는 \"○○ 완료로 해줘\"라고 말하면 됩니다.",
+  ].join("\n");
+  try {
+    const responseMessage = await createMessage({
+      model: assistantChatText(env.MI_ASSISTANT_CHAT_MODEL, 60) || "claude-haiku-4-5",
+      max_tokens: 700,
+      system,
+      messages: [...history, { role: "user", content: message }],
+    });
+    const reply = (responseMessage?.content || [])
+      .filter((block) => block?.type === "text")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+    if (!reply) return { status: 502, result: { ok: false, message: "실장 응답을 받지 못했습니다. 잠시 후 다시 시도해주세요." } };
+    return {
+      status: 200,
+      result: {
+        ok: true,
+        reply: reply.slice(0, 4000),
+        usage: {
+          inputTokens: Number(responseMessage?.usage?.input_tokens || 0),
+          outputTokens: Number(responseMessage?.usage?.output_tokens || 0),
+        },
+      },
+    };
+  } catch (error) {
+    const status = Number(error?.status) || 502;
+    const message = status === 401 ? "실장 대화 API 키가 올바르지 않습니다." : status === 429 ? "실장 대화 사용량 한도에 걸렸습니다. 잠시 후 다시 시도해주세요." : "실장 대화 처리에 실패했습니다. 잠시 후 다시 시도해주세요.";
+    return { status: status >= 400 && status < 600 ? status : 502, result: { ok: false, message } };
+  }
+}
+
 export default {
   async fetch(request) {
     if (new URL(request.url).pathname !== OWNER_TOOL_PATH) {
@@ -539,6 +620,10 @@ export default {
     if (body?.action === "assistant-draft") {
       const result = parseOwnerAssistantDrafts(body.prompt);
       return response(request, result, result.ok ? 200 : 400);
+    }
+    if (body?.action === "assistant-chat") {
+      const chat = await runOwnerAssistantChat(body);
+      return response(request, chat.result, chat.status);
     }
     if (!body || body.action !== "calculate") return response(request, { ok: false, message: "요청 내용을 확인해주세요." }, 400);
     const amounts = calculateOwnerTax(body.total);

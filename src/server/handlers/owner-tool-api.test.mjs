@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import app, { calculateOwnerTax, parseAssistantCompletion, parseOwnerAssistantDrafts } from "./owner-tool-api.mjs";
+import app, { calculateOwnerTax, parseAssistantCompletion, parseOwnerAssistantDrafts, runOwnerAssistantChat } from "./owner-tool-api.mjs";
 
 function request(method = "GET", options = {}) {
   const headers = new Headers(options.headers || {});
@@ -61,7 +61,7 @@ test("owner assistant creates only dated internal schedule drafts without extern
   assert.equal(parseOwnerAssistantDrafts("날짜 없는 업무", { now }).drafts.length, 0);
   assert.equal(parseOwnerAssistantDrafts("", { now }).ok, false);
   const source = fs.readFileSync(new URL("./owner-tool-api.mjs", import.meta.url), "utf8");
-  assert.doesNotMatch(source, /api\.openai\.com|anthropic|claude|OPENAI_API_KEY/i);
+  assert.doesNotMatch(source, /api\.openai\.com|OPENAI_API_KEY/i);
 });
 
 test("assistant completion parser extracts targets from undated completion requests", () => {
@@ -84,6 +84,138 @@ test("owner assistant splits mixed input into dated drafts and completion reques
   assert.equal(result.completions[0].query, "주간 보고서");
   assert.equal(result.completions[0].source, "주간 보고서 완료 처리해줘");
   assert.equal(result.unresolved.length, 0);
+});
+
+function assistantChatFake(response) {
+  const calls = [];
+  const create = async (params) => {
+    calls.push(params);
+    if (response instanceof Error) throw response;
+    return response;
+  };
+  return { calls, create };
+}
+
+test("assistant chat returns 503 with missing_api_key before any model call", async () => {
+  const { calls, create } = assistantChatFake({});
+  const missing = await runOwnerAssistantChat({ message: "안녕하세요" }, {}, create);
+  assert.equal(missing.status, 503);
+  assert.equal(missing.result.ok, false);
+  assert.equal(missing.result.code, "missing_api_key");
+  assert.match(missing.result.message, /ANTHROPIC_API_KEY/);
+  const blankKey = await runOwnerAssistantChat({ message: "안녕하세요" }, { ANTHROPIC_API_KEY: "   " }, create);
+  assert.equal(blankKey.status, 503);
+  assert.equal(blankKey.result.code, "missing_api_key");
+  assert.equal(calls.length, 0);
+});
+
+test("assistant chat rejects blank messages without calling the model", async () => {
+  const { calls, create } = assistantChatFake({});
+  const env = { ANTHROPIC_API_KEY: "test-key" };
+  const blank = await runOwnerAssistantChat({ message: "   " }, env, create);
+  assert.equal(blank.status, 400);
+  assert.equal(blank.result.ok, false);
+  const absent = await runOwnerAssistantChat({}, env, create);
+  assert.equal(absent.status, 400);
+  assert.equal(absent.result.ok, false);
+  assert.equal(calls.length, 0);
+});
+
+test("assistant chat rejects malformed history entries without calling the model", async () => {
+  const { calls, create } = assistantChatFake({});
+  const env = { ANTHROPIC_API_KEY: "test-key" };
+  const badRole = await runOwnerAssistantChat({
+    message: "질문",
+    history: [{ role: "system", text: "지시문" }],
+  }, env, create);
+  assert.equal(badRole.status, 400);
+  assert.equal(badRole.result.ok, false);
+  const blankText = await runOwnerAssistantChat({
+    message: "질문",
+    history: [{ role: "user", text: "   " }],
+  }, env, create);
+  assert.equal(blankText.status, 400);
+  assert.equal(blankText.result.ok, false);
+  assert.equal(calls.length, 0);
+});
+
+test("assistant chat sends the schedule snapshot to the default model and maps reply and usage", async () => {
+  const { calls, create } = assistantChatFake({
+    content: [{ type: "text", text: "답" }],
+    usage: { input_tokens: 321, output_tokens: 45 },
+  });
+  const outcome = await runOwnerAssistantChat({
+    message: "오늘 우선순위 알려줘",
+    history: [
+      { role: "assistant", text: "이전 안내" },
+      { role: "user", text: "이전 질문" },
+      { role: "assistant", text: "이전 답변" },
+    ],
+    schedule: [
+      { title: "광고주 미팅", startsAt: "2026-08-21T05:00:00.000Z", status: "planned", isAllDay: false },
+      { title: "날짜 없는 항목" },
+    ],
+  }, { ANTHROPIC_API_KEY: "test-key" }, create);
+  assert.equal(outcome.status, 200);
+  assert.deepEqual(outcome.result, { ok: true, reply: "답", usage: { inputTokens: 321, outputTokens: 45 } });
+  assert.equal(calls.length, 1);
+  const params = calls[0];
+  assert.equal(params.model, "claude-haiku-4-5");
+  assert.equal(params.max_tokens, 700);
+  assert.equal(typeof params.system, "string");
+  assert.match(params.system, /광고주 미팅/);
+  assert.match(params.system, /완료로 해줘/);
+  assert.doesNotMatch(params.system, /날짜 없는 항목/);
+  assert.deepEqual(params.messages, [
+    { role: "user", content: "이전 질문" },
+    { role: "assistant", content: "이전 답변" },
+    { role: "user", content: "오늘 우선순위 알려줘" },
+  ]);
+});
+
+test("assistant chat honors the MI_ASSISTANT_CHAT_MODEL override", async () => {
+  const { calls, create } = assistantChatFake({
+    content: [{ type: "text", text: "확인했습니다" }],
+    usage: { input_tokens: 10, output_tokens: 5 },
+  });
+  const outcome = await runOwnerAssistantChat(
+    { message: "모델 확인" },
+    { ANTHROPIC_API_KEY: "test-key", MI_ASSISTANT_CHAT_MODEL: " claude-sonnet-4-5 " },
+    create,
+  );
+  assert.equal(outcome.status, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, "claude-sonnet-4-5");
+});
+
+test("assistant chat caps the schedule snapshot at 60 dated items", async () => {
+  const { calls, create } = assistantChatFake({
+    content: [{ type: "text", text: "정리했습니다" }],
+    usage: { input_tokens: 1, output_tokens: 1 },
+  });
+  const schedule = Array.from({ length: 61 }, (_, index) => ({
+    title: `업무 ${index + 1}번`,
+    startsAt: "2026-08-21T00:00:00.000Z",
+    status: "planned",
+  }));
+  await runOwnerAssistantChat({ message: "일정 요약", schedule }, { ANTHROPIC_API_KEY: "test-key" }, create);
+  assert.equal(calls.length, 1);
+  assert.equal((calls[0].system.match(/^- /gm) || []).length, 60);
+  assert.match(calls[0].system, /업무 60번/);
+  assert.doesNotMatch(calls[0].system, /업무 61번/);
+});
+
+test("assistant chat propagates provider status codes and defaults to 502", async () => {
+  const env = { ANTHROPIC_API_KEY: "test-key" };
+  const rateLimited = await runOwnerAssistantChat({ message: "안녕" }, env,
+    assistantChatFake(Object.assign(new Error("rate limited"), { status: 429 })).create);
+  assert.equal(rateLimited.status, 429);
+  assert.equal(rateLimited.result.ok, false);
+  assert.match(rateLimited.result.message, /한도/);
+  const unknown = await runOwnerAssistantChat({ message: "안녕" }, env,
+    assistantChatFake(new Error("network down")).create);
+  assert.equal(unknown.status, 502);
+  assert.equal(unknown.result.ok, false);
 });
 
 test("tool content is disclosed only to the exact primary owner identity", async () => {
@@ -135,7 +267,10 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /data-owner-assistant-wake/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-read/);
   assert.match(payload.tool.viewHtml, /확인하기 전에는 저장하거나 공개하지 않습니다/);
-  assert.match(payload.tool.viewHtml, /외부 전송 없음/);
+  assert.match(payload.tool.viewHtml, /대화만 외부 AI/);
+  assert.match(payload.tool.viewHtml, /일정 초안 해석은 서버 규칙으로 처리합니다/);
+  assert.match(payload.tool.viewHtml, /실장과의 자유 대화만 Anthropic API로 전송되며 학습에 사용되지 않습니다/);
+  assert.doesNotMatch(payload.tool.viewHtml, /외부 전송 없음/);
   assert.match(payload.tool.viewHtml, /부가세 포함 금액/);
   assert.match(payload.tool.viewHtml, /최종 합계금액을 입력/);
   assert.doesNotMatch(payload.tool.viewHtml, /미포함 금액을 입력/);

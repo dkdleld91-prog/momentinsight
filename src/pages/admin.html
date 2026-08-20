@@ -9044,6 +9044,35 @@
     #mi-admin .mi-assistant-agenda-day:first-child {
       margin-top: 0;
     }
+
+    #mi-admin .mi-assistant-chat {
+      display: grid;
+      gap: 6px;
+      border: 1px solid #dbe6f5;
+      border-radius: 14px;
+      padding: 13px 14px;
+      background: #f7faff;
+    }
+
+    #mi-admin .mi-assistant-chat-question {
+      color: #6f7d90;
+      font-size: 10.5px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-assistant-chat-question::before {
+      content: "나 · ";
+      color: #9aa7b8;
+    }
+
+    #mi-admin .mi-assistant-chat-reply {
+      margin: 0;
+      color: #253858;
+      font-size: 12.5px;
+      font-weight: 700;
+      line-height: 1.55;
+      white-space: pre-wrap;
+    }
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -11770,7 +11799,73 @@
         return OWNER_ASSISTANT_BRIEFING_INTENT.test(String(prompt || ""));
       }
 
-      var OWNER_ASSISTANT_RANGE_LABELS = { today: "오늘", tomorrow: "내일", day_after: "모레", this_week: "이번 주", next_week: "다음 주", upcoming: "다가오는" };
+      var ownerAssistantChatHistory = [];
+
+      function ownerAssistantScheduleSnapshot() {
+        return workItems
+          .filter(function (item) { return item.status !== "done" && item.startsAt; })
+          .sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); })
+          .slice(0, 60)
+          .map(function (item) { return { title: item.title || "", startsAt: item.startsAt, status: item.status || "", isAllDay: Boolean(item.isAllDay) }; });
+      }
+
+      function speakOwnerAssistantText(text) {
+        if (!window.speechSynthesis || typeof window.SpeechSynthesisUtterance !== "function") return;
+        window.speechSynthesis.cancel();
+        var utterance = new window.SpeechSynthesisUtterance(String(text || ""));
+        var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+        utterance.voice = voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || "") && voice.localService === true; }) || voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || ""); }) || null;
+        utterance.lang = "ko-KR";
+        window.speechSynthesis.speak(utterance);
+      }
+
+      function renderOwnerAssistantChatCard(view, question, reply) {
+        var results = view.querySelector("[data-owner-assistant-results]");
+        if (!results) return;
+        var placeholder = results.firstElementChild;
+        if (placeholder && placeholder.classList.contains("mi-assistant-empty") && results.children.length === 1) results.replaceChildren();
+        var card = document.createElement("div");
+        card.className = "mi-assistant-chat";
+        var q = document.createElement("span");
+        q.className = "mi-assistant-chat-question";
+        q.textContent = question;
+        var a = document.createElement("p");
+        a.className = "mi-assistant-chat-reply";
+        a.textContent = reply;
+        card.append(q, a);
+        results.prepend(card);
+        while (results.children.length > 6) results.removeChild(results.lastElementChild);
+      }
+
+      async function askOwnerAssistant(view, message, generation) {
+        setOwnerAssistantStatus(view, "실장이 생각 중입니다…", "");
+        try {
+          var response = await miFetch(getOwnerToolApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              action: "assistant-chat",
+              message: message,
+              history: ownerAssistantChatHistory.slice(-12),
+              schedule: ownerAssistantScheduleSnapshot()
+            }),
+            timeoutMs: 30000
+          });
+          var payload = await readApiPayload(response, "실장 응답을 확인할 수 없습니다.");
+          if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
+          if (!response.ok || !payload.ok) throw new Error(payload.message || "실장 응답에 실패했습니다.");
+          ownerAssistantChatHistory.push({ role: "user", text: message }, { role: "assistant", text: payload.reply });
+          while (ownerAssistantChatHistory.length > 12) ownerAssistantChatHistory.shift();
+          renderOwnerAssistantChatCard(view, message, payload.reply);
+          speakOwnerAssistantText(payload.reply);
+          setOwnerAssistantStatus(view, "실장이 답변했습니다.", "ok");
+        } catch (error) {
+          setOwnerAssistantStatus(view, error.message || "실장 대화에 실패했습니다.", "warn");
+        }
+      }
+
+      var OWNER_ASSISTANT_RANGE_LABELS ={ today: "오늘", tomorrow: "내일", day_after: "모레", this_week: "이번 주", next_week: "다음 주", upcoming: "다가오는" };
       var OWNER_ASSISTANT_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
       function parseOwnerAssistantBriefingRange(text) {
@@ -11817,7 +11912,7 @@
         }).sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 8);
         if (!items.length) return { label: label, text: label + " 일정이 없습니다." };
         var lines = items.map(function (item) { return ownerAssistantSpokenWhen(item) + " " + (item.title || "제목 없는 업무"); });
-        return { label: label, text: label + " 일정입니다. " + lines.join(", ") + "." };
+        return { label: label, text: label + " 일정은 " + lines.join(", ") + "입니다." };
       }
 
       function matchOwnerAssistantCompletionTargets(query) {
@@ -12396,8 +12491,14 @@
             var payload = await readApiPayload(response, "실장 초안 응답을 확인할 수 없습니다.");
             if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
             if (!response.ok || !payload.ok) throw new Error(payload.message || "초안을 만들지 못했습니다.");
+            var completionsArr = Array.isArray(payload.completions) ? payload.completions : [];
+            if (payload.ok && !payload.drafts.length && !completionsArr.length && payload.unresolved.length === 1 && prompt.length >= 4) {
+              input.value = "";
+              await askOwnerAssistant(view, prompt, generation);
+              return;
+            }
             renderOwnerAssistantDrafts(view, payload, generation);
-            var completionResult = await runOwnerAssistantCompletions(view, Array.isArray(payload.completions) ? payload.completions : [], generation);
+            var completionResult = await runOwnerAssistantCompletions(view, completionsArr, generation);
             if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
             var statusParts = [];
             if (payload.drafts.length) statusParts.push(payload.drafts.length + "건의 내부 일정 초안을 만들었습니다.");

@@ -81,15 +81,17 @@ test("admin schedule PATCH and DELETE include the final personal-row predicate",
     await t.test(method, async () => {
       const harness = queryRecorder();
       const expectedOperation = method === "PATCH" ? "update" : "delete";
-      await handleAdminApiRequest(adminRequest(
+      const response = await handleAdminApiRequest(adminRequest(
         method,
         "/api/admin/schedule-items/34343434-3434-4434-8434-343434343434",
         method === "PATCH" ? { title: "개인 일정만 수정" } : undefined,
       ), harness.ctx);
+      assert.equal(response.status, 404);
       assert.equal(harness.calls.some(([table, operation]) => table === "schedule_items" && operation === expectedOperation), true);
       assert.equal(harness.calls.some(([table, operation, column, value]) => (
         table === "schedule_items" && operation === "is" && column === "calendar_id" && value === null
       )), true);
+      assert.equal(harness.calls.some(([table]) => table === "audit_logs"), false);
     });
   }
 });

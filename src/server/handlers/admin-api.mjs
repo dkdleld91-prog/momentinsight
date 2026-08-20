@@ -262,6 +262,9 @@ async function handlePatch(request, ctx, config, id) {
   }
 
   const row = firstRow(data);
+  if (config.personalOnly && !row) {
+    return json({ ok: false, message: "수정할 개인 일정을 찾을 수 없습니다." }, 404);
+  }
   const audit = config.audit === false ? { logged: false } : await recordAuditLog(ctx, {
     action: `${config.table}.updated`,
     clientId: row?.client_id || body.client_id || null,
@@ -301,6 +304,9 @@ async function handleDelete(_request, ctx, config, id) {
   }
 
   const row = firstRow(data);
+  if (config.personalOnly && !row) {
+    return json({ ok: false, message: "삭제할 개인 일정을 찾을 수 없습니다." }, 404);
+  }
   const audit = config.audit === false ? { logged: false } : await recordAuditLog(ctx, {
     action: `${config.table}.deleted`,
     clientId: row?.client_id || null,

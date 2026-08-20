@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-21 대표실 달력 7:3·월 선택 Production 증거
+
+- UI 계약은 기존 4개에서 6개로 확장해 6/6 PASS입니다. 정확한 `7fr:3fr`, 1180px 이하 1열, 월 제목 dialog semantics, 12개월 렌더, 연도 이동, 선택 월 재조회, ESC·포커스 이탈 닫힘을 고정했습니다.
+- 전체 `npm run check:release`는 코어 631/631, 플레이스 51/51, 쇼핑 62/62, Production 인증 18/18로 exit 0입니다. server contract 58/58, 공개 build 9파일·인라인 6개·고유 CSP hash 4개, N30 보호 잠금 23함수·88파일·37 migration도 통과했습니다.
+- 기능 commit `a451d0a` 배포 뒤 `/health`와 `/ready`가 release `a451d0ac803f`·Supabase ready로 일치했습니다. 로그인된 총관리자 Production 화면에서 실제 너비 달력 773px/가까운 업무 331px, 비율 0.700/0.300을 측정했습니다.
+- 월 제목을 눌러 2026년 12개월 팝업을 실제 표시했고, 이전 연도로 2025년 표시→다음 연도→2026년 10월 이동→8월 복귀→ESC 뒤 `aria-expanded=false`를 확인했습니다. 마지막 상태 문구는 `저장된 업무 2개를 불러왔습니다.`이며 일정 저장·수정·삭제는 실행하지 않았습니다.
+
 ## 2026-08-20 대표실 개인 일정표 전환 Production 반영
 
 - UI·handler 대상 실행 73/73 PASS: 왼쪽 목록·색상·공유·코드 연결 UI 0, 2열 달력+agenda, 날짜/추가 클릭 개인 등록 패널, 상세 필드·광고주 공개·월간 반복 유지, 공유 action·shared ID 쓰기 0을 검증했습니다.

@@ -8978,6 +8978,19 @@
       line-height: 1.55;
     }
 
+    #mi-admin .mi-work-repeat-no-end {
+      padding: 11px 13px;
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    #mi-admin .mi-work-repeat-fields .mi-input:disabled {
+      cursor: not-allowed;
+      color: #8491a4;
+      background: #f0f3f7;
+      opacity: .78;
+    }
+
     #mi-admin .mi-work-public-toggle strong,
     #mi-admin .mi-work-public-toggle small {
       display: block;
@@ -9519,12 +9532,17 @@
                   </label>
 
                   <label class="mi-work-public-toggle">
-                    <span><strong>매월 반복</strong><small>새 일정 등록 시 종료일까지 월별 일정을 만듭니다.</small></span>
-                    <span class="mi-work-switch"><input type="checkbox" data-work-repeat-monthly /><i aria-hidden="true"></i></span>
+                    <span><strong>매월 반복</strong><small>첫 일정 날짜를 기준으로 매월 같은 날짜에 만듭니다.</small></span>
+                    <span class="mi-work-switch"><input type="checkbox" data-work-repeat-monthly aria-controls="mi-work-repeat-fields" aria-expanded="false" /><i aria-hidden="true"></i></span>
                   </label>
-                  <div class="mi-work-repeat-fields" data-work-repeat-fields hidden>
-                    <label class="mi-work-field"><span>반복 종료일 · 포함</span><input class="mi-input" type="date" data-work-repeat-until /></label>
-                    <p class="mi-work-repeat-note">29~31일은 해당 월의 마지막 날에 생성됩니다. 생성된 각 일정은 개별 수정·완료·삭제됩니다.</p>
+                  <div class="mi-work-repeat-fields" id="mi-work-repeat-fields" data-work-repeat-fields aria-live="polite" hidden>
+                    <label class="mi-work-public-toggle mi-work-repeat-no-end">
+                      <span><strong>종료 예정 없음</strong><small>종료일을 정하지 않고 향후 60회를 우선 생성합니다. 이후 회차는 현재 자동 추가되지 않습니다.</small></span>
+                      <span class="mi-work-switch"><input type="checkbox" data-work-repeat-no-end aria-describedby="mi-work-repeat-note" /><i aria-hidden="true"></i></span>
+                    </label>
+                    <label class="mi-work-field"><span>반복 종료일 · 포함</span><input class="mi-input" type="date" data-work-repeat-until aria-describedby="mi-work-repeat-note" /></label>
+                    <p class="mi-work-repeat-note" id="mi-work-repeat-note">첫 일정 날짜를 기준으로 매월 반복합니다. 29~31일은 해당 월의 마지막 날에 생성되며, 각 일정은 개별 수정·완료·삭제됩니다.</p>
+                    <p class="mi-work-repeat-note" data-work-repeat-edit-note hidden>선택한 일정 1개만 수정하며 반복 설정은 변경되지 않습니다.</p>
                   </div>
 
                   <label class="mi-work-public-toggle" data-work-public-toggle-wrap>
@@ -9549,7 +9567,7 @@
                           <option value="keyword">키워드 작업</option>
                         </select>
                       </label>
-                      <label class="mi-work-field"><span>종료</span><input class="mi-input" type="datetime-local" data-work-end /></label>
+                      <label class="mi-work-field"><span>1회 일정 종료</span><input class="mi-input" type="datetime-local" data-work-end /></label>
                       <label class="mi-work-field"><span>담당자</span><input class="mi-input" data-work-assignee maxlength="60" placeholder="담당자명" /></label>
                       <label class="mi-work-field"><span>우선순위</span>
                         <select class="mi-select" data-work-priority>
@@ -11625,11 +11643,20 @@
         if (hint) hint.textContent = workCanPublish ? "체크한 일정만 광고주 화면에 표시합니다." : "광고주 연결 후 선택 공개할 수 있습니다.";
       }
 
+      function syncWorkStartLabel() {
+        var allDayToggle = root.querySelector("[data-work-all-day]");
+        var repeatToggle = root.querySelector("[data-work-repeat-monthly]");
+        var label = root.querySelector("[data-work-start-label]");
+        if (!label) return;
+        var first = Boolean(repeatToggle && repeatToggle.checked);
+        var allDay = Boolean(allDayToggle && allDayToggle.checked);
+        label.textContent = first ? (allDay ? "첫 일정 날짜" : "첫 일정 시작") : (allDay ? "날짜" : "시작");
+      }
+
       function syncWorkAllDayFields() {
         var toggle = root.querySelector("[data-work-all-day]");
         var start = root.querySelector("[data-work-start]");
         var end = root.querySelector("[data-work-end]");
-        var label = root.querySelector("[data-work-start-label]");
         if (!toggle || !start || !end) return;
         var allDay = toggle.checked;
         var startDate = String(start.value || "").slice(0, 10);
@@ -11643,19 +11670,25 @@
           start.value = startDate ? startDate + "T09:00" : "";
           end.value = endDate ? endDate + "T10:00" : "";
         }
-        if (label) label.textContent = allDay ? "날짜" : "시작";
+        syncWorkStartLabel();
       }
 
       function syncWorkRepeatFields() {
         var toggle = root.querySelector("[data-work-repeat-monthly]");
         var fields = root.querySelector("[data-work-repeat-fields]");
+        var noEnd = root.querySelector("[data-work-repeat-no-end]");
         var until = root.querySelector("[data-work-repeat-until]");
+        var editNote = root.querySelector("[data-work-repeat-edit-note]");
         var id = (root.querySelector("[data-work-id]") || {}).value || "";
-        if (!toggle || !fields || !until) return;
-        if (id) toggle.checked = false;
+        if (!toggle || !fields || !noEnd || !until) return;
         toggle.disabled = Boolean(id);
         fields.hidden = !toggle.checked;
-        until.required = toggle.checked;
+        toggle.setAttribute("aria-expanded", String(toggle.checked));
+        noEnd.disabled = Boolean(id);
+        until.disabled = Boolean(id) || !toggle.checked || noEnd.checked;
+        until.required = !id && toggle.checked && !noEnd.checked;
+        if (editNote) editNote.hidden = !(id && toggle.checked);
+        syncWorkStartLabel();
       }
 
       function openWorkDialog(item, dateKey) {
@@ -11693,8 +11726,10 @@
         var allDayToggle = root.querySelector("[data-work-all-day]");
         if (allDayToggle) allDayToggle.checked = Boolean(item && item.isAllDay);
         var repeatToggle = root.querySelector("[data-work-repeat-monthly]");
-        if (repeatToggle) repeatToggle.checked = false;
-        setValue("[data-work-repeat-until]", "");
+        if (repeatToggle) repeatToggle.checked = Boolean(item && item.repeat === "monthly");
+        var repeatNoEndToggle = root.querySelector("[data-work-repeat-no-end]");
+        if (repeatNoEndToggle) repeatNoEndToggle.checked = Boolean(item && item.repeatNoEnd);
+        setValue("[data-work-repeat-until]", item && item.repeatUntil || "");
         var toggle = root.querySelector("[data-work-public]");
         if (toggle) toggle.checked = Boolean(item && item.visibility === "client_visible" && workCanPublish);
         var title = root.querySelector("[data-work-dialog-title]");
@@ -11703,8 +11738,7 @@
         if (title) title.textContent = item ? "업무 수정" : "개인 일정 등록";
         if (remove) remove.hidden = !item;
         if (advanced) advanced.open = Boolean(item && (item.assigneeName || item.internalNote || (item.priority && item.priority !== "medium")));
-        var startLabel = root.querySelector("[data-work-start-label]");
-        if (startLabel) startLabel.textContent = item && item.isAllDay ? "날짜" : "시작";
+        syncWorkStartLabel();
         syncWorkRepeatFields();
         syncWorkPublicFields();
         var readOnly = Boolean(item && !workItemCanEdit(item));
@@ -11736,8 +11770,10 @@
         var publicToggle = root.querySelector("[data-work-public]");
         var allDayToggle = root.querySelector("[data-work-all-day]");
         var repeatToggle = root.querySelector("[data-work-repeat-monthly]");
+        var repeatNoEndToggle = root.querySelector("[data-work-repeat-no-end]");
         var id = value("[data-work-id]");
         var repeatMonthly = Boolean(repeatToggle && repeatToggle.checked && !id);
+        var repeatNoEnd = Boolean(repeatNoEndToggle && repeatNoEndToggle.checked && repeatMonthly);
         if (!id && repeatMonthly && !workRepeatRequestId) workRepeatRequestId = crypto.randomUUID();
         return {
           id: id,
@@ -11753,7 +11789,8 @@
           expectedUpdatedAt: value("[data-work-updated-at]"),
           isAllDay: Boolean(allDayToggle && allDayToggle.checked),
           repeat: repeatMonthly ? "monthly" : "",
-          repeatUntil: repeatMonthly ? value("[data-work-repeat-until]") : "",
+          repeatNoEnd: repeatMonthly && repeatNoEnd,
+          repeatUntil: repeatMonthly && !repeatNoEnd ? value("[data-work-repeat-until]") : "",
           requestId: !id && repeatMonthly ? workRepeatRequestId : "",
           isClientVisible: Boolean(publicToggle && publicToggle.checked),
           publicTitle: value("[data-work-public-title]"),
@@ -12033,6 +12070,15 @@
         });
       }
 
+      var repeatNoEndToggle = root.querySelector("[data-work-repeat-no-end]");
+      if (repeatNoEndToggle) {
+        repeatNoEndToggle.addEventListener("change", function () {
+          var until = root.querySelector("[data-work-repeat-until]");
+          if (repeatNoEndToggle.checked && until) until.value = "";
+          syncWorkRepeatFields();
+        });
+      }
+
       var workStartInput = root.querySelector("[data-work-start]");
       if (workStartInput) {
         workStartInput.addEventListener("change", function () {
@@ -12046,7 +12092,7 @@
         workForm.addEventListener("submit", async function (event) {
           event.preventDefault();
           var payload = workFormPayload();
-          if (payload.repeat === "monthly" && (!payload.repeatUntil || payload.repeatUntil < String(payload.startsAt || "").slice(0, 10))) {
+          if (payload.repeat === "monthly" && !payload.repeatNoEnd && (!payload.repeatUntil || payload.repeatUntil < String(payload.startsAt || "").slice(0, 10))) {
             var repeatUntil = root.querySelector("[data-work-repeat-until]");
             setWorkStatus("반복 종료일은 시작일과 같거나 이후여야 합니다.", "warn");
             if (repeatUntil) repeatUntil.focus();

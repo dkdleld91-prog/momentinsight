@@ -157,6 +157,8 @@ const calendarDomain = read("src/server/calendar-domain.mjs");
 const calendarHandlerTests = read("src/server/handlers/work-items-calendar.test.mjs");
 const calendarMigration = read("supabase/migrations/20260820110000_schedule_calendar_sharing.sql");
 const calendarMigrationTests = read("scripts/calendar-sharing-migration.test.mjs");
+const calendarNoEndMigration = read("supabase/migrations/20260820152359_schedule_monthly_no_end_mode.sql");
+const calendarNoEndMigrationTests = read("scripts/schedule-monthly-no-end-migration.test.mjs");
 const calendarUiTests = read("scripts/work-calendar-ui.test.mjs");
 const clientApiServer = read("src/server/handlers/client-api.mjs");
 const keywordServer = read("src/server/handlers/naver-keyword.mjs");
@@ -1856,23 +1858,33 @@ const checks = {
     && !workItemsServer.includes("mi_update_shared_schedule_item")
     && !workItemsServer.includes("mi_delete_shared_schedule_item")
     && workItemsServer.includes("buildMonthlyOccurrences")
+    && workItemsServer.includes("recurrence_no_end")
+    && workItemsServer.includes('typeof body.repeatNoEnd !== "boolean"')
     && adminApiServer.includes("personalOnly: true")
     && adminApiServer.includes('query.is("calendar_id", null)')
     && clientApiServer.includes("personalOnly: true")
     && clientApiServer.includes('query.is("calendar_id", null)')
     && calendarDomain.includes("DEFAULT_MAX_OCCURRENCES = 60")
     && calendarDomain.includes('timeZone: "Asia/Seoul"')
+    && calendarDomain.includes("repeatNoEnd")
     && calendarMigration.includes("force row level security")
     && calendarMigration.includes("revoke all on table public.schedule_items from public, anon, authenticated")
     && calendarMigration.includes("returns setof public.schedule_items")
     && !/grant\s+(?:select|insert|update|delete)[^;]*on table public\.schedule_items to (?:public|anon|authenticated)/i.test(calendarMigration)
+    && calendarNoEndMigration.includes("recurrence_no_end boolean not null default false")
+    && calendarNoEndMigration.includes("schedule_items_recurrence_no_end_coherent")
+    && !/grant\s+(?:select|insert|update|delete)[^;]*to\s+(?:public|anon|authenticated)/i.test(calendarNoEndMigration)
     && calendarHandlerTests.includes("personal-only contract: sharing, list, create, join, invite, and leave actions are disabled")
+    && calendarHandlerTests.includes("monthly no-end POST stores intent and an exact 60-occurrence materialized horizon")
     && calendarHandlerTests.includes("existing shared rows reject PATCH, DELETE, and assistant completion")
     && calendarHandlerTests.includes("bounded calendar GET reports truncation")
     && calendarMigrationTests.includes("service-role-only")
+    && calendarNoEndMigrationTests.includes("stores explicit intent")
     && calendarUiTests.includes("wide personal calendar without list or sharing controls")
     && calendarUiTests.includes("preserving existing work fields")
+    && calendarUiTests.includes("no planned end")
     && String(packageConfig.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
+    && String(packageConfig.scripts?.test || "").includes("scripts/schedule-monthly-no-end-migration.test.mjs")
     && String(packageConfig.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
   workOperationExecutionSummaryAndQuickComplete: adminSource.includes('data-work-summary-filter="today"')
     && adminSource.includes('data-work-summary-filter="overdue"')

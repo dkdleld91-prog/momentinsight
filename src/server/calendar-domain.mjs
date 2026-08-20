@@ -130,6 +130,7 @@ export function buildMonthlyOccurrences({
   startsAt,
   endsAt = null,
   repeatUntil,
+  repeatNoEnd = false,
   maxOccurrences = DEFAULT_MAX_OCCURRENCES,
 } = {}) {
   const start = validDate(startsAt);
@@ -143,22 +144,28 @@ export function buildMonthlyOccurrences({
     if (duration < 0) return invalid("종료 일시는 시작 일시보다 빠를 수 없습니다.");
   }
 
-  if (repeatUntil === null || repeatUntil === undefined || repeatUntil === "") {
+  if (typeof repeatNoEnd !== "boolean") {
+    return invalid("반복 종료 방식을 확인해주세요.");
+  }
+  if (repeatNoEnd && repeatUntil !== null && repeatUntil !== undefined && repeatUntil !== "") {
+    return invalid("종료 예정 없음과 반복 종료일을 함께 설정할 수 없습니다.");
+  }
+  if (!repeatNoEnd && (repeatUntil === null || repeatUntil === undefined || repeatUntil === "")) {
     return invalid("반복 종료일을 입력해주세요.");
   }
-  const until = parseDateOnly(repeatUntil);
-  if (!until) return invalid("반복 종료일을 확인해주세요.");
+  const until = repeatNoEnd ? null : parseDateOnly(repeatUntil);
+  if (!repeatNoEnd && !until) return invalid("반복 종료일을 확인해주세요.");
   if (!Number.isInteger(maxOccurrences) || maxOccurrences < 1 || maxOccurrences > DEFAULT_MAX_OCCURRENCES) {
     return invalid("반복 일정 수 제한을 확인해주세요.");
   }
 
   const localStart = seoulParts(start);
   const firstOn = dateOnly(localStart.year, localStart.month, localStart.day);
-  if (until.value < firstOn) return invalid("반복 종료일은 시작일보다 빠를 수 없습니다.");
+  if (until && until.value < firstOn) return invalid("반복 종료일은 시작일보다 빠를 수 없습니다.");
 
   const fiveYearDay = Math.min(localStart.day, daysInMonth(localStart.year + 5, localStart.month));
   const latestUntil = dateOnly(localStart.year + 5, localStart.month, fiveYearDay);
-  if (until.value > latestUntil) return invalid("반복 일정은 시작일로부터 5년 이내로 설정해주세요.");
+  if (until && until.value > latestUntil) return invalid("반복 일정은 시작일로부터 5년 이내로 설정해주세요.");
 
   const occurrences = [];
   let year = localStart.year;
@@ -166,7 +173,7 @@ export function buildMonthlyOccurrences({
   while (true) {
     const day = Math.min(localStart.day, daysInMonth(year, month));
     const occurrenceOn = dateOnly(year, month, day);
-    if (occurrenceOn > until.value) break;
+    if (until && occurrenceOn > until.value) break;
 
     const occurrenceStart = seoulTimeToIso(year, month, day, localStart);
     occurrences.push({
@@ -174,6 +181,7 @@ export function buildMonthlyOccurrences({
       startsAt: occurrenceStart,
       endsAt: duration === null ? null : new Date(new Date(occurrenceStart).getTime() + duration).toISOString(),
     });
+    if (repeatNoEnd && occurrences.length === maxOccurrences) break;
     if (occurrences.length > maxOccurrences) {
       return invalid(`반복 일정은 최대 ${maxOccurrences}개까지 만들 수 있습니다.`);
     }

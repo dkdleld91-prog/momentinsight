@@ -30,7 +30,7 @@ const WORK_ITEM_WRITE_KEYS = new Set([
   "startsAt", "starts_at", "endsAt", "ends_at", "assigneeName", "assignee_name",
   "internalNote", "internal_note", "publicTitle", "public_title", "publicComment", "public_comment",
   "visibility", "isClientVisible", "is_client_visible", "isAllDay", "is_all_day",
-  "calendarId", "expectedUpdatedAt", "repeat", "repeatUntil", "requestId",
+  "calendarId", "expectedUpdatedAt", "repeat", "repeatUntil", "repeatNoEnd", "requestId",
 ]);
 
 function json(request, body, status = 200) {
@@ -179,7 +179,9 @@ function managerWorkItemPayload(row = {}) {
     seriesId: row.series_id || null,
     occurrenceOn: row.occurrence_on || null,
     repeat: row.recurrence_kind || "none",
-    repeatUntil: row.recurrence_until || null,
+    repeatNoEnd: Boolean(row.recurrence_no_end),
+    repeatUntil: row.recurrence_no_end ? null : (row.recurrence_until || null),
+    materializedUntil: row.recurrence_until || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     client: row.client || null,
@@ -311,6 +313,7 @@ function selectFields() {
     "occurrence_on",
     "recurrence_kind",
     "recurrence_until",
+    "recurrence_no_end",
     "recurrence_month_day",
     "recurrence_timezone",
     "recurrence_day_policy",
@@ -421,6 +424,16 @@ async function handlePost(request, ctx) {
   if (!normalized.ok) return json(request, normalized, normalized.status || 400);
   const repeat = cleanText(body.repeat || "none").toLowerCase();
   if (!["none", "monthly"].includes(repeat)) return json(request, { ok: false, message: "반복 설정을 확인해주세요." }, 400);
+  if (Object.hasOwn(body, "repeatNoEnd") && typeof body.repeatNoEnd !== "boolean") {
+    return json(request, { ok: false, message: "반복 종료 방식을 확인해주세요." }, 400);
+  }
+  const repeatNoEnd = repeat === "monthly" && body.repeatNoEnd === true;
+  if (repeat !== "monthly" && body.repeatNoEnd === true) {
+    return json(request, { ok: false, message: "매월 반복을 켠 뒤 종료 방식을 선택해주세요." }, 400);
+  }
+  if (repeatNoEnd && cleanText(body.repeatUntil)) {
+    return json(request, { ok: false, message: "종료 예정 없음과 반복 종료일을 함께 설정할 수 없습니다." }, 400);
+  }
   const seriesId = repeat === "monthly" ? normalizedUuid(body.requestId) : null;
   if (repeat === "monthly" && !seriesId) {
     return json(request, { ok: false, message: "반복 일정 요청을 안전하게 식별할 수 없습니다." }, 400);
@@ -444,9 +457,11 @@ async function handlePost(request, ctx) {
       startsAt: normalized.value.starts_at,
       endsAt: normalized.value.ends_at,
       repeatUntil: cleanText(body.repeatUntil),
+      repeatNoEnd,
     });
     if (!occurrences.ok) return json(request, occurrences, occurrences.status || 400);
     const monthDay = Number(occurrences.value[0].occurrenceOn.slice(-2));
+    const materializedUntil = occurrences.value.at(-1).occurrenceOn;
     rows = occurrences.value.map((occurrence) => ({
       ...baseRow,
       starts_at: occurrence.startsAt,
@@ -454,7 +469,8 @@ async function handlePost(request, ctx) {
       series_id: seriesId,
       occurrence_on: occurrence.occurrenceOn,
       recurrence_kind: "monthly",
-      recurrence_until: cleanText(body.repeatUntil),
+      recurrence_until: materializedUntil,
+      recurrence_no_end: repeatNoEnd,
       recurrence_month_day: monthDay,
       recurrence_timezone: "Asia/Seoul",
       recurrence_day_policy: "last_day",
@@ -489,6 +505,8 @@ async function handlePost(request, ctx) {
       scheduleType: first?.schedule_type,
       calendarId: null,
       recurrence: repeat,
+      repeatNoEnd,
+      materializedUntil: first?.recurrence_until || null,
       occurrenceCount: savedRows.length,
       memberRole: null,
     },
@@ -496,7 +514,11 @@ async function handlePost(request, ctx) {
   const items = savedRows.map(managerWorkItemPayload);
   return json(request, {
     ok: true,
-    message: repeat === "monthly" ? `매월 반복 일정 ${items.length}개를 저장했습니다.` : "업무를 저장했습니다.",
+    message: repeat === "monthly"
+      ? repeatNoEnd
+        ? `종료일 미정 반복 일정 ${items.length}개를 우선 저장했습니다.`
+        : `매월 반복 일정 ${items.length}개를 저장했습니다.`
+      : "업무를 저장했습니다.",
     item: items[0],
     items,
     auditLogged,

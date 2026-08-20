@@ -30,6 +30,8 @@ const files = {
   calendarHandlerTests: "src/server/handlers/work-items-calendar.test.mjs",
   calendarMigration: "supabase/migrations/20260820110000_schedule_calendar_sharing.sql",
   calendarMigrationTests: "scripts/calendar-sharing-migration.test.mjs",
+  calendarNoEndMigration: "supabase/migrations/20260820152359_schedule_monthly_no_end_mode.sql",
+  calendarNoEndMigrationTests: "scripts/schedule-monthly-no-end-migration.test.mjs",
   calendarUiTests: "scripts/work-calendar-ui.test.mjs",
   shoppingRank: "src/server/handlers/naver-shopping-rank.mjs",
   shoppingSourceStatus: "src/server/naver-shopping/source-status.mjs",
@@ -115,6 +117,8 @@ const calendarDomain = fs.readFileSync(files.calendarDomain, "utf8");
 const calendarHandlerTests = fs.readFileSync(files.calendarHandlerTests, "utf8");
 const calendarMigration = fs.readFileSync(files.calendarMigration, "utf8");
 const calendarMigrationTests = fs.readFileSync(files.calendarMigrationTests, "utf8");
+const calendarNoEndMigration = fs.readFileSync(files.calendarNoEndMigration, "utf8");
+const calendarNoEndMigrationTests = fs.readFileSync(files.calendarNoEndMigrationTests, "utf8");
 const calendarUiTests = fs.readFileSync(files.calendarUiTests, "utf8");
 const shoppingRank = fs.readFileSync(files.shoppingRank, "utf8");
 const shoppingSourceStatus = fs.readFileSync(files.shoppingSourceStatus, "utf8");
@@ -333,7 +337,7 @@ check(
   `${files.serverIndex}, ${files.sessionGate}, ${files.workItems}, ${files.workItemsMigration}`,
 );
 check(
-  "personal schedules stay scoped and finite while shared calendar runtime is disabled",
+  "personal schedules stay scoped and bounded while monthly no-end intent is explicit",
   hasAll(workItems, [
     /buildMonthlyOccurrences/,
     /error\.code === "23505"/,
@@ -342,6 +346,8 @@ check(
     /cleanText\(body\.action\)\.startsWith\("calendar-"\)/,
     /calendars:\s*\[\]/,
     /\.is\("calendar_id", null\)/,
+    /typeof body\.repeatNoEnd !== "boolean"/,
+    /recurrence_no_end/,
   ])
     && !/schedule_calendar_memberships|mi_(?:insert|update|delete)_shared_schedule/iu.test(workItems)
     && hasAll(adminApi, [
@@ -357,6 +363,7 @@ check(
       /DEFAULT_MAX_OCCURRENCES = 60/,
       /timeZone: "Asia\/Seoul"/,
       /Math\.min\(localStart\.day, daysInMonth/,
+      /repeatNoEnd/,
     ])
     && hasAll(calendarMigration, [
       /create table if not exists public\.schedule_calendars/,
@@ -371,15 +378,25 @@ check(
     ])
     && !/grant\s+(?:select|insert|update|delete)[^;]*on table public\.schedule_items to (?:public|anon|authenticated)/i.test(calendarMigration)
     && !/update\s+public\.schedule_items\s+set\s+calendar_id/i.test(calendarMigration)
+    && hasAll(calendarNoEndMigration, [
+      /add column if not exists recurrence_no_end boolean not null default false/,
+      /schedule_items_recurrence_no_end_coherent/,
+      /comment on column public\.schedule_items\.recurrence_no_end/,
+    ])
+    && !/grant\s+(?:select|insert|update|delete)[^;]*to\s+(?:public|anon|authenticated)/i.test(calendarNoEndMigration)
     && calendarHandlerTests.includes("concurrent monthly retries resolve the unique series race as unchanged")
+    && calendarHandlerTests.includes("monthly no-end POST stores intent and an exact 60-occurrence materialized horizon")
     && calendarHandlerTests.includes("personal-only contract: sharing, list, create, join, invite, and leave actions are disabled")
     && calendarHandlerTests.includes("existing shared rows reject PATCH, DELETE, and assistant completion")
     && calendarMigrationTests.includes("service-role-only")
+    && calendarNoEndMigrationTests.includes("stores explicit intent")
     && calendarUiTests.includes("wide personal calendar without list or sharing controls")
     && calendarUiTests.includes("preserving existing work fields")
+    && calendarUiTests.includes("no planned end")
     && String(packageJson.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
+    && String(packageJson.scripts?.test || "").includes("scripts/schedule-monthly-no-end-migration.test.mjs")
     && String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
-  `${files.workItems}, ${files.adminApi}, ${files.clientApi}, ${files.calendarDomain}, ${files.calendarMigration}, ${files.calendarHandlerTests}, ${files.calendarMigrationTests}, ${files.calendarUiTests}`,
+  `${files.workItems}, ${files.adminApi}, ${files.clientApi}, ${files.calendarDomain}, ${files.calendarMigration}, ${files.calendarNoEndMigration}, ${files.calendarHandlerTests}, ${files.calendarMigrationTests}, ${files.calendarNoEndMigrationTests}, ${files.calendarUiTests}`,
 );
 check(
   "all routed requests use the shared runtime boundary",

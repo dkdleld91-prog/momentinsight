@@ -101,7 +101,7 @@ test("monthly editor distinguishes event duration, finite recurrence, and no pla
   assert.match(editorMarkup, /<strong>종료 예정 없음<\/strong>/);
   assert.match(editorMarkup, /향후 60회[^<]*우선 생성/);
   assert.match(editorMarkup, /data-work-repeat-fields[^>]+aria-live="polite"/);
-  assert.match(source, /function syncWorkRepeatFields\(\)[\s\S]{0,1400}noEnd\.disabled\s*=\s*Boolean\(id\)[\s\S]{0,500}until\.disabled\s*=\s*!toggle\.checked\s*\|\|\s*noEnd\.checked[\s\S]{0,300}until\.required\s*=\s*toggle\.checked\s*&&\s*!noEnd\.checked/);
+  assert.match(source, /function syncWorkRepeatFields\(\)[\s\S]{0,1400}noEnd\.disabled\s*=\s*Boolean\(id\)[\s\S]{0,500}until\.disabled\s*=\s*Boolean\(id\)\s*\|\|\s*!toggle\.checked\s*\|\|\s*noEnd\.checked[\s\S]{0,300}until\.required\s*=\s*!id\s*&&\s*toggle\.checked\s*&&\s*!noEnd\.checked/);
   assert.match(source, /repeatNoEndToggle\.addEventListener\("change"[\s\S]{0,400}until\.value\s*=\s*""[\s\S]{0,300}syncWorkRepeatFields\(\)/);
   assert.match(source, /payload\.repeat\s*===\s*"monthly"\s*&&\s*!payload\.repeatNoEnd[\s\S]{0,220}!payload\.repeatUntil/);
   assert.match(source, /data-work-end[^>]*>[\s\S]{0,140}|1회 일정 종료/);

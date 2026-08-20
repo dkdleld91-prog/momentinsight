@@ -12,6 +12,7 @@ const editorMarkup = source.slice(editorStart, moveDialogStart);
 test("representative schedule is a wide personal calendar without list or sharing controls", () => {
   assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
   assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(280px,\s*\.72fr\)/);
+  assert.match(source, /@media \(max-width: 1080px\)[\s\S]{0,180}\.mi-work-layout\s*\{\s*grid-template-columns:\s*1fr;[\s\S]{0,120}\.mi-work-agenda-card\s*\{\s*grid-column:\s*auto;/);
 
   for (const marker of [
     "mi-work-calendar-rail",
@@ -29,6 +30,8 @@ test("representative schedule is a wide personal calendar without list or sharin
 
 test("date and create clicks open the personal editor while preserving existing work fields", () => {
   assert.ok(editorStart >= 0 && moveDialogStart > editorStart, "work editor markup must exist");
+  assert.match(workViewMarkup, /data-work-create>일정 추가<\/button>/);
+  assert.match(source, /aria-label="' \+ key \+ ' 일정 추가"/);
   for (const marker of [
     "data-work-title",
     "data-work-start",

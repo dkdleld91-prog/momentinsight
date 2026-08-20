@@ -57,7 +57,8 @@ const resources = {
     table: "schedule_items",
     select: "id, client_id, brand_id, title:public_title, schedule_type, status, starts_at, ends_at, public_comment, visibility, is_all_day, created_at, updated_at",
     order: "starts_at",
-    visibleOnly: true
+    visibleOnly: true,
+    personalOnly: true
   },
   "action-plans": {
     table: "action_plans",
@@ -107,52 +108,55 @@ function applyFilters(query, url, config, userId) {
   if (keywordId) query = query.eq("keyword_id", keywordId);
   if (config.visibleOnly) query = query.eq("visibility", "client_visible");
   if (config.clientVisibleFlag) query = query.eq("is_client_visible", true);
+  if (config.personalOnly) query = query.is("calendar_id", null);
 
   return query;
 }
 
+export async function handleClientApiRequest(request, ctx) {
+  const { url, resource } = routeParts(request, "/api/client");
+
+  if (resource === "agency-code") {
+    return handleAgencyCode(request, ctx);
+  }
+
+  if (request.method !== "GET") return methodNotAllowed(["GET"]);
+
+  if (resource === "overview") {
+    return handleOverview(request, ctx);
+  }
+
+  const config = resources[resource];
+  if (!config) return notFound(listRoutes());
+
+  const limit = parseLimit(url);
+  const userId = ctx.userClaims?.sub || ctx.userClaims?.id || null;
+
+  let query = ctx.supabase
+    .from(config.table)
+    .select(config.select);
+
+  query = applyFilters(query, url, config, userId)
+    .order(config.order, { ascending: false })
+    .limit(limit);
+
+  const { data, error } = await query;
+  if (error) {
+    return databaseError(error, `${config.table} 테이블 조회에 실패했습니다.`);
+  }
+
+  return json({
+    ok: true,
+    user: {
+      id: userId,
+      email: ctx.userClaims?.email || null
+    },
+    data
+  });
+}
+
 export default {
-  fetch: withSupabase({ auth: "user" }, async (request, ctx) => {
-    const { url, resource } = routeParts(request, "/api/client");
-
-    if (resource === "agency-code") {
-      return handleAgencyCode(request, ctx);
-    }
-
-    if (request.method !== "GET") return methodNotAllowed(["GET"]);
-
-    if (resource === "overview") {
-      return handleOverview(request, ctx);
-    }
-
-    const config = resources[resource];
-    if (!config) return notFound(listRoutes());
-
-    const limit = parseLimit(url);
-    const userId = ctx.userClaims?.sub || ctx.userClaims?.id || null;
-
-    let query = ctx.supabase
-      .from(config.table)
-      .select(config.select);
-
-    query = applyFilters(query, url, config, userId)
-      .order(config.order, { ascending: false })
-      .limit(limit);
-
-    const { data, error } = await query;
-    if (error) {
-      return databaseError(error, `${config.table} 테이블 조회에 실패했습니다.`);
-    }
-
-    return json({
-      ok: true,
-      user: {
-        id: userId,
-        email: ctx.userClaims?.email || null
-      },
-      data
-    });
-  })
+  fetch: withSupabase({ auth: "user" }, handleClientApiRequest)
 };
 
 export async function handleAgencyCode(request, ctx) {
@@ -289,6 +293,7 @@ async function handleOverview(request, ctx) {
         .from("schedule_items")
         .select(resources["schedule-items"].select)
         .eq("visibility", "client_visible")
+        .is("calendar_id", null)
     )
       .order("starts_at", { ascending: true })
       .limit(8),

@@ -1,5 +1,14 @@
 # Test Evidence
 
+## 2026-08-20 대표실 개인 일정표 전환 로컬 후보
+
+- UI·handler 대상 실행 73/73 PASS: 왼쪽 목록·색상·공유·코드 연결 UI 0, 2열 달력+agenda, 날짜/추가 클릭 개인 등록 패널, 상세 필드·광고주 공개·월간 반복 유지, 공유 action·shared ID 쓰기 0을 검증했습니다.
+- `work-items.mjs` 결합 실행은 56/56 PASS, line 99.69%·branch 83.28%·function 100%입니다. 개인 tenant 범위, 서울 날짜, 유한 월간 반복, request ID 중복 방지, optimistic lock, client-safe 공개 응답을 유지합니다.
+- 전체 `npm run check:release`는 코어 629/629, 플레이스 51/51, 쇼핑 62/62, Production 인증 18/18로 exit 0입니다. 공개 build는 9개 파일·인라인 script 6개·고유 CSP hash 4개가 일치했고 private artifact·secret signature는 0건입니다.
+- N상품·N플레이스 30일 보호 잠금은 23함수·88파일·37 migration으로 통과했습니다. 이번 변경 파일에는 순위 수집기·작업기·스케줄러·순위 migration이 없습니다.
+- 운영 Supabase SELECT-only 결과는 calendar 0, membership 0, invite 0, `calendar_id IS NOT NULL` schedule 0, 개인 schedule 2입니다. DB drop·migration rollback·일정 데이터 수정은 수행하지 않았습니다.
+- 앱 브라우저의 localhost 접근은 `ERR_BLOCKED_BY_CLIENT`로 차단되어 로컬 실화면 육안 검증을 자동검사로 대체하지 않습니다. Production 배포 뒤 로그인된 총관리자 대표실에서 레이아웃·팝업·console을 확인하기 전에는 실화면 완료로 기록하지 않습니다.
+
 ## 2026-08-20 대표실 공유 일정표 Production 반영
 
 - 도메인 실행 커버리지는 line 96.30%·branch 81.82%·function 100%입니다. 서울 날짜의 불가능한 날짜 거부, 월말 보정, 윤년, 포함 종료일, 최대 60회·5년 제한, 128-bit 초대 코드와 digest를 실행했습니다.

@@ -1,10 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  calendarPrincipal,
-  calendarRoleCanEdit,
   handleWorkItemsRequest,
-  normalizeCalendarAction,
   validIsoDate,
   workItemsDateRange,
 } from "./work-items.mjs";
@@ -24,22 +21,9 @@ test("date-only schedule inputs and list bounds use Seoul calendar days", () => 
   });
 });
 
-test("calendar principal is derived only from the trusted session scope", () => {
-  assert.deepEqual(calendarPrincipal({ role: "owner", ownerAgencyCode: "mml93-a01" }), {
-    key: "owner:mml93-a01",
-    displayName: "총관리자",
-  });
-  assert.deepEqual(calendarPrincipal({ role: "team", team: { id: "6c921a08-0eaa-43f4-a424-bdae7b93df4a", team_name: "콘텐츠팀" } }), {
-    key: "team:6c921a08-0eaa-43f4-a424-bdae7b93df4a",
-    displayName: "콘텐츠팀",
-  });
-  assert.equal(calendarPrincipal({ role: "client", client: { id: "client-1" } }), null);
-});
-
 test("bounded calendar GET reports truncation instead of silently hiding overflow", async () => {
   const rows = Array.from({ length: 201 }, (_, index) => managerRow({ id: `item-${index}` }));
   const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
     { kind: "from", name: "schedule_items", result: { data: rows, error: null } },
   ]);
   const response = await handleWorkItemsRequest(ownerRequest("GET"), harness.ctx);
@@ -48,85 +32,6 @@ test("bounded calendar GET reports truncation instead of silently hiding overflo
   assert.equal(response.status, 200);
   assert.equal(payload.items.length, 200);
   assert.equal(payload.truncated, true);
-  harness.done();
-});
-
-test("calendar edit permission excludes viewers", () => {
-  assert.equal(calendarRoleCanEdit("owner"), true);
-  assert.equal(calendarRoleCanEdit("editor"), true);
-  assert.equal(calendarRoleCanEdit("viewer"), false);
-});
-
-test("calendar action accepts only the explicit action schemas", () => {
-  assert.deepEqual(normalizeCalendarAction({ action: "calendar-create", name: "콘텐츠", color: "emerald" }), {
-    ok: true,
-    action: "calendar-create",
-    value: { name: "콘텐츠", color: "emerald" },
-  });
-  assert.equal(normalizeCalendarAction({ action: "calendar-create", name: "콘텐츠", color: "emerald", owner: "attacker" }).ok, false);
-  assert.equal(normalizeCalendarAction({ action: "calendar-invite-create", calendarId: "calendar-1", grantRole: "owner" }).ok, false);
-  assert.equal(normalizeCalendarAction({ action: "calendar-invite-accept", code: "" }).ok, false);
-  assert.equal(normalizeCalendarAction({ action: "calendar-create", name: "", color: "navy" }).ok, false);
-  assert.equal(normalizeCalendarAction({ action: "calendar-create", name: "대표", color: "neon" }).ok, false);
-  assert.equal(normalizeCalendarAction({ action: "calendar-leave", calendarId: "" }).ok, false);
-});
-
-test("calendar create returns only the safe membership projection", async () => {
-  const calendarId = "33333333-3333-4333-8333-333333333333";
-  const calendarRow = {
-    id: calendarId,
-    name: "대표 일정",
-    color: "navy",
-    owner_principal_key: "owner:mml93-a01",
-    owner_agency_code: "mml93-a01",
-    created_by_operation_team_id: null,
-    created_at: "2026-08-20T00:00:00.000Z",
-    updated_at: "2026-08-20T00:00:00.000Z",
-  };
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "mi_create_schedule_calendar", result: { data: calendarRow, error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [{ role: "owner", revoked_at: null, calendar: calendarRow }], error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-create",
-    name: "대표 일정",
-    color: "navy",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 201);
-  assert.equal(payload.calendar.id, calendarId);
-  assert.equal(payload.calendar.role, "owner");
-  assert.equal("owner_principal_key" in payload.calendar, false);
-  assert.equal("owner_agency_code" in payload.calendar, false);
-  assert.equal("created_by_operation_team_id" in payload.calendar, false);
-  harness.done();
-});
-
-test("calendar invite persists only a one-use digest and never audits the raw code", async () => {
-  const calendarId = "44444444-4444-4444-8444-444444444444";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "owner", revoked_at: null, calendar: { id: calendarId, name: "대표 일정", color: "navy" } }, error: null } },
-    { kind: "from", name: "schedule_calendar_invites", result: { data: { id: "invite-1", calendar_id: calendarId, grant_role: "editor", expires_at: "2026-08-21T00:00:00.000Z" }, error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-create",
-    calendarId,
-    grantRole: "editor",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 201);
-  assert.match(payload.invite.code, /^[A-Za-z0-9_-]{22}$/u);
-  const inserts = harness.calls.filter(([kind]) => kind === "insert").map(([, value]) => value);
-  const inviteInsert = inserts.find((value) => value?.calendar_id === calendarId);
-  const auditInsert = inserts.find((value) => value?.action === "schedule_calendar_invite_created");
-  assert.match(inviteInsert.code_digest, /^[a-f0-9]{64}$/u);
-  assert.equal("code" in inviteInsert, false);
-  assert.equal(inviteInsert.max_uses, 1);
-  assert.equal(JSON.stringify(auditInsert).includes(payload.invite.code), false);
   harness.done();
 });
 
@@ -310,114 +215,6 @@ test("concurrent monthly retries resolve the unique series race as unchanged", a
   harness.done();
 });
 
-test("viewer cannot create an event in a shared calendar", async () => {
-  const calendarId = "22222222-2222-4222-8222-222222222222";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "viewer", calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    title: "공유 일정",
-    scheduleType: "meeting",
-    status: "planned",
-    priority: "medium",
-    startsAt: "2026-08-20T09:00:00+09:00",
-    calendarId,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  assert.equal(harness.calls.filter(([kind]) => kind === "insert").length, 0);
-  harness.done();
-});
-
-test("shared calendar creation uses the atomic editor RPC instead of a table insert", async () => {
-  const calendarId = "66666666-6666-4666-8666-666666666666";
-  const saved = managerRow({ calendar_id: calendarId, operation_team_id: null });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "emerald" } }, error: null } },
-    { kind: "rpc", name: "mi_insert_shared_schedule_items", result: { data: [saved], error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    title: "공유 일정",
-    scheduleType: "meeting",
-    status: "planned",
-    priority: "medium",
-    startsAt: "2026-08-20T09:00:00+09:00",
-    calendarId,
-  }), harness.ctx);
-
-  assert.equal(response.status, 201);
-  assert.equal(harness.calls.some(([kind, name]) => kind === "rpc" && name === "mi_insert_shared_schedule_items"), true);
-  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_items"), false);
-  harness.done();
-});
-
-test("shared calendar update fails closed when membership is revoked before the atomic write", async () => {
-  const calendarId = "77777777-7777-4777-8777-777777777777";
-  const existing = managerRow({ calendar_id: calendarId, operation_team_id: null });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "emerald" } }, error: null } },
-    { kind: "rpc", name: "mi_update_shared_schedule_item", result: { data: null, error: { code: "42501", message: "calendar_edit_forbidden" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
-    id: existing.id,
-    expectedUpdatedAt: existing.updated_at,
-    title: existing.title,
-    scheduleType: existing.schedule_type,
-    status: "done",
-    priority: existing.priority,
-    startsAt: existing.starts_at,
-    endsAt: existing.ends_at,
-    calendarId,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  assert.equal(harness.calls.some(([kind, name]) => kind === "rpc" && name === "mi_update_shared_schedule_item"), true);
-  harness.done();
-});
-
-test("shared assistant completion also fails closed after membership revocation", async () => {
-  const calendarId = "88888888-8888-4888-8888-888888888888";
-  const existing = managerRow({ calendar_id: calendarId, operation_team_id: null });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "emerald" } }, error: null } },
-    { kind: "rpc", name: "mi_update_shared_schedule_item", result: { data: null, error: { code: "42501", message: "calendar_edit_forbidden" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
-    action: "assistant-complete",
-    id: existing.id,
-    expectedUpdatedAt: existing.updated_at,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  assert.equal(harness.calls.some(([kind, name]) => kind === "rpc" && name === "mi_update_shared_schedule_item"), true);
-  harness.done();
-});
-
-test("shared calendar delete uses the atomic editor RPC and optimistic timestamp", async () => {
-  const calendarId = "99999999-9999-4999-8999-999999999999";
-  const existing = managerRow({ calendar_id: calendarId, operation_team_id: null });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "emerald" } }, error: null } },
-    { kind: "rpc", name: "mi_delete_shared_schedule_item", result: { data: existing.id, error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("DELETE", {
-    id: existing.id,
-    expectedUpdatedAt: existing.updated_at,
-  }), harness.ctx);
-
-  assert.equal(response.status, 200);
-  const call = harness.calls.find(([kind, name]) => kind === "rpc" && name === "mi_delete_shared_schedule_item");
-  assert.equal(call[2].p_calendar_id, calendarId);
-  assert.equal(call[2].p_expected_updated_at, existing.updated_at);
-  assert.equal(harness.calls.some(([kind]) => kind === "delete"), false);
-  harness.done();
-});
-
 test("general PATCH uses optimistic lock and exact original tenant scope", async () => {
   const original = managerRow();
   const harness = scriptedCtx([
@@ -495,329 +292,14 @@ test("client cannot complete a public legacy schedule through the assistant acti
   harness.done();
 });
 
-test("calendar GET merges visible shared rows, de-duplicates ids, and applies the requested date window", async () => {
-  const calendarId = "12121212-1212-4212-8212-121212121212";
-  const duplicate = managerRow({
-    id: "deduped-item",
-    starts_at: "2026-08-12T00:00:00.000Z",
-    calendar_id: calendarId,
-    calendar: { id: calendarId, name: "공유 일정", color: "emerald" },
-  });
-  const harness = scriptedCtx([
-    {
-      kind: "from",
-      name: "schedule_calendar_memberships",
-      result: {
-        data: [{
-          role: "editor",
-          revoked_at: null,
-          calendar: [{
-            id: calendarId,
-            name: "공유 일정",
-            color: "emerald",
-            archived_at: null,
-            created_at: "2026-08-01T00:00:00.000Z",
-            updated_at: "2026-08-01T00:00:00.000Z",
-          }],
-        }],
-        error: null,
-      },
-    },
-    { kind: "from", name: "schedule_items", result: { data: [managerRow({ id: "legacy-later", starts_at: "2026-08-20T00:00:00.000Z" }), duplicate], error: null } },
-    { kind: "from", name: "schedule_items", result: { data: [duplicate, managerRow({ id: "shared-first", starts_at: "2026-08-02T00:00:00.000Z", calendar_id: calendarId })], error: null } },
-  ]);
-  const request = new Request("https://insight.momentlabs.co.kr/api/work-items?from=2026-08-01&to=2026-08-31&limit=2", {
-    headers: { "x-mi-session-role": "owner", "x-mi-owner-agency-code": "mml93-a01" },
-  });
-  const response = await handleWorkItemsRequest(request, harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(payload.items.map((item) => item.id), ["shared-first", "deduped-item"]);
-  assert.equal(payload.truncated, true);
-  assert.deepEqual(payload.calendars[0], {
-    id: calendarId,
-    name: "공유 일정",
-    color: "emerald",
-    role: "editor",
-    isOwner: false,
-    shared: true,
-    createdAt: "2026-08-01T00:00:00.000Z",
-    updatedAt: "2026-08-01T00:00:00.000Z",
-  });
-  assert.ok(harness.calls.some(([kind, column, value]) => kind === "in" && column === "calendar_id" && value[0] === calendarId));
-  assert.equal(harness.calls.filter(([kind]) => kind === "gte").length, 2);
-  assert.equal(harness.calls.filter(([kind]) => kind === "lt").length, 2);
-  harness.done();
-});
-
-test("calendar GET fails closed when memberships cannot be loaded", async () => {
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: null, error: { message: "membership unavailable" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("GET"), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 500);
-  assert.equal(payload.detail, "membership unavailable");
-  harness.done();
-});
-
-test("calendar GET ignores archived memberships and surfaces shared-query failures", async () => {
-  const calendarId = "31313131-3131-4131-8131-313131313131";
-  const harness = scriptedCtx([
-    {
-      kind: "from",
-      name: "schedule_calendar_memberships",
-      result: {
-        data: [
-          { role: "owner", calendar: { id: "archived", name: "보관", archived_at: "2026-08-01T00:00:00.000Z" } },
-          { role: "editor", calendar: { id: calendarId, name: "공유", color: "navy", archived_at: null } },
-        ],
-        error: null,
-      },
-    },
-    { kind: "from", name: "schedule_items", result: { data: [], error: null } },
-    { kind: "from", name: "schedule_items", result: { data: null, error: { message: "shared query failed" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("GET"), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 500);
-  assert.equal(payload.detail, "shared query failed");
-  assert.ok(harness.calls.some(([kind, column, ids]) => kind === "in" && column === "calendar_id" && ids.length === 1 && ids[0] === calendarId));
-  harness.done();
-});
-
-test("advertisers cannot use calendar connection actions", async () => {
-  const harness = scriptedCtx([
-    { kind: "from", name: "clients", result: { data: { id: "client-1", name: "광고주", agency_code: "client-a01", status: "active" }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(clientRequest("POST", {
-    action: "calendar-create",
-    name: "금지된 일정표",
-    color: "navy",
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  assert.equal(harness.calls.some(([kind]) => kind === "rpc"), false);
-  harness.done();
-});
-
-test("calendar create surfaces RPC failure without auditing", async () => {
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "mi_create_schedule_calendar", result: { data: null, error: { message: "create failed" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-create",
-    name: "대표 일정",
-    color: "navy",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 500);
-  assert.equal(payload.detail, "create failed");
-  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "audit_logs"), false);
-  harness.done();
-});
-
-test("calendar create has a safe fallback when the membership refresh is briefly empty", async () => {
-  const calendarId = "30303030-3030-4030-8030-303030303030";
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "mi_create_schedule_calendar", result: { data: [{ calendar_id: calendarId, created_at: "2026-08-20T01:00:00.000Z", updated_at: "2026-08-20T01:00:00.000Z" }], error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-create",
-    name: "방금 만든 일정",
-    color: "sky",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 201);
-  assert.deepEqual(payload.calendar, {
-    id: calendarId,
-    name: "방금 만든 일정",
-    color: "sky",
-    role: "owner",
-    isOwner: true,
-    shared: false,
-    createdAt: "2026-08-20T01:00:00.000Z",
-    updatedAt: "2026-08-20T01:00:00.000Z",
-  });
-  harness.done();
-});
-
-test("only a current calendar owner can create an invite", async () => {
-  const calendarId = "13131313-1313-4313-8313-131313131313";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", revoked_at: null, calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-create",
-    calendarId,
-    grantRole: "viewer",
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  assert.equal(harness.calls.some(([kind, table]) => kind === "from" && table === "schedule_calendar_invites"), false);
-  harness.done();
-});
-
-test("invite creation reports storage errors without returning a raw code", async () => {
-  const calendarId = "14141414-1414-4414-8414-141414141414";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "owner", revoked_at: null, calendar: { id: calendarId, name: "대표", color: "navy" } }, error: null } },
-    { kind: "from", name: "schedule_calendar_invites", result: { data: null, error: { message: "invite insert failed" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-create",
-    calendarId,
-    grantRole: "editor",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 500);
-  assert.equal(payload.detail, "invite insert failed");
-  assert.equal("invite" in payload, false);
-  harness.done();
-});
-
-test("valid one-use invite joins a shared calendar and refreshes membership", async () => {
-  const calendarId = "15151515-1515-4515-8515-151515151515";
-  const code = "ABCDEFGHIJKLMNOPQRSTUV";
-  const calendar = {
-    id: calendarId,
-    name: "파트너 일정",
-    color: "violet",
-    archived_at: null,
-    created_at: "2026-08-20T00:00:00.000Z",
-    updated_at: "2026-08-20T00:00:00.000Z",
-  };
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true, retry_after: 0 }, error: null } },
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: [{ allowed: true, retry_after: 0 }], error: null } },
-    { kind: "rpc", name: "mi_accept_schedule_calendar_invite", result: { data: { status: "joined", calendar_id: calendarId }, error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [{ role: "viewer", revoked_at: null, calendar }], error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-accept",
-    code,
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(payload.unchanged, false);
-  assert.equal(payload.calendars[0].id, calendarId);
-  const accept = harness.calls.find(([kind, name]) => kind === "rpc" && name === "mi_accept_schedule_calendar_invite");
-  assert.match(accept[2].p_code_digest, /^[a-f0-9]{64}$/u);
-  assert.equal(JSON.stringify(harness.calls).includes(code), false);
-  harness.done();
-});
-
-test("already-used membership response is idempotent", async () => {
-  const calendarId = "16161616-1616-4616-8616-161616161616";
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true }, error: null } },
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true }, error: null } },
-    { kind: "rpc", name: "mi_accept_schedule_calendar_invite", result: { data: [{ status: "already_member", calendarId }], error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-accept",
-    code: "ZYXWVUTSRQPONMLKJIHGFE",
-  }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.equal(payload.unchanged, true);
-  assert.match(payload.message, /이미 연결/);
-  harness.done();
-});
-
-test("invite acceptance rate limit returns retry-after and does not consume the invite", async () => {
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: false, retry_after: 37 }, error: null } },
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true, retry_after: 0 }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-accept",
-    code: "RATE123456789012345678",
-  }), harness.ctx);
-
-  assert.equal(response.status, 429);
-  assert.equal(response.headers.get("retry-after"), "37");
-  assert.equal(harness.calls.some(([kind, name]) => kind === "rpc" && name === "mi_accept_schedule_calendar_invite"), false);
-  harness.done();
-});
-
-test("invalid or expired invite is rejected after durable rate checks", async () => {
-  const harness = scriptedCtx([
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true }, error: null } },
-    { kind: "rpc", name: "consume_code_login_rate_limit", result: { data: { allowed: true }, error: null } },
-    { kind: "rpc", name: "mi_accept_schedule_calendar_invite", result: { data: { status: "expired" }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    action: "calendar-invite-accept",
-    code: "EXPIRED123456789012345",
-  }), harness.ctx);
-
-  assert.equal(response.status, 400);
-  harness.done();
-});
-
-test("calendar owner cannot leave their own calendar", async () => {
-  const calendarId = "17171717-1717-4717-8717-171717171717";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "owner", revoked_at: null, calendar: { id: calendarId, name: "대표", color: "navy" } }, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", { action: "calendar-leave", calendarId }), harness.ctx);
-
-  assert.equal(response.status, 409);
-  assert.equal(harness.calls.some(([kind]) => kind === "update"), false);
-  harness.done();
-});
-
-test("shared calendar leave is optimistic and refreshes the remaining calendars", async () => {
-  const calendarId = "18181818-1818-4818-8818-181818181818";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "viewer", revoked_at: null, calendar: { id: calendarId, name: "공유", color: "sky" } }, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { calendar_id: calendarId }, error: null } },
-    { kind: "from", name: "audit_logs", result: { error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", { action: "calendar-leave", calendarId }), harness.ctx);
-  const payload = await response.json();
-
-  assert.equal(response.status, 200);
-  assert.deepEqual(payload.calendars, []);
-  assert.ok(harness.calls.some(([kind, column, value]) => kind === "eq" && column === "role" && value === "viewer"));
-  harness.done();
-});
-
-test("calendar leave detects a concurrent membership change", async () => {
-  const calendarId = "19191919-1919-4919-8919-191919191919";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", revoked_at: null, calendar: { id: calendarId, name: "공유", color: "amber" } }, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: null, error: null } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", { action: "calendar-leave", calendarId }), harness.ctx);
-
-  assert.equal(response.status, 409);
-  harness.done();
-});
-
-test("POST validates calendar ids, repeat modes, and monthly request identity before writing", async () => {
+test("POST rejects shared calendar ids and validates repeat inputs before writing", async () => {
   const invalidCalendar = await handleWorkItemsRequest(ownerRequest("POST", {
     title: "일정",
     scheduleType: "meeting",
     startsAt: "2026-08-20T09:00:00+09:00",
     calendarId: "not-a-uuid",
   }), scriptedCtx([]).ctx);
-  assert.equal(invalidCalendar.status, 400);
+  assert.equal(invalidCalendar.status, 404);
 
   const invalidRepeat = await handleWorkItemsRequest(ownerRequest("POST", {
     title: "일정",
@@ -859,23 +341,6 @@ test("monthly retry returns the pre-existing finite series without inserting", a
   harness.done();
 });
 
-test("shared POST fails closed if editor membership is revoked at the atomic write", async () => {
-  const calendarId = "21212121-2121-4121-8121-212121212121";
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", revoked_at: null, calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-    { kind: "rpc", name: "mi_insert_shared_schedule_items", result: { data: null, error: { code: "42501", message: "calendar_edit_forbidden" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("POST", {
-    title: "공유 일정",
-    scheduleType: "meeting",
-    startsAt: "2026-08-20T09:00:00+09:00",
-    calendarId,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  harness.done();
-});
-
 test("recurring occurrence cannot move beyond the inclusive series end", async () => {
   const existing = managerRow({
     series_id: "23232323-2323-4323-8323-232323232323",
@@ -901,7 +366,7 @@ test("recurring occurrence cannot move beyond the inclusive series end", async (
   harness.done();
 });
 
-test("PATCH rejects moving an item to another calendar and duplicate recurrence dates", async () => {
+test("PATCH rejects shared calendar ids and duplicate recurrence dates", async () => {
   const existing = managerRow({
     series_id: "24242424-2424-4424-8424-242424242424",
     occurrence_on: "2026-08-20",
@@ -921,7 +386,7 @@ test("PATCH rejects moving an item to another calendar and duplicate recurrence 
     startsAt: existing.starts_at,
     calendarId: "25252525-2525-4525-8525-252525252525",
   }), moveHarness.ctx);
-  assert.equal(moved.status, 409);
+  assert.equal(moved.status, 404);
   moveHarness.done();
 
   const duplicateHarness = scriptedCtx([
@@ -1011,7 +476,6 @@ test("owner advertiser scope resolves its operation team and publishes only that
   const harness = scriptedCtx([
     { kind: "from", name: "clients", result: { data: client, error: null } },
     { kind: "from", name: "operation_team_codes", result: { data: team, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
     { kind: "from", name: "schedule_items", result: { data: [managerRow({ client_id: client.id, operation_team_id: team.id })], error: null } },
   ]);
   const request = new Request("https://insight.momentlabs.co.kr/api/work-items", {
@@ -1067,7 +531,6 @@ test("operation team scope supports connected and account-only teams without wid
   const connectedHarness = scriptedCtx([
     { kind: "from", name: "operation_team_codes", result: { data: connectedTeam, error: null } },
     { kind: "from", name: "clients", result: { data: client, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
     { kind: "from", name: "schedule_items", result: { data: [managerRow({ client_id: client.id, operation_team_id: connectedTeam.id })], error: null } },
   ]);
   const connected = await handleWorkItemsRequest(teamRequest("GET", "ops-1"), connectedHarness.ctx);
@@ -1080,7 +543,6 @@ test("operation team scope supports connected and account-only teams without wid
   const accountTeam = { id: "team-2", owner_agency_code: "mml93-a01", team_code: "ops-2", team_name: "계정팀", client_id: null };
   const accountHarness = scriptedCtx([
     { kind: "from", name: "operation_team_codes", result: { data: accountTeam, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: [], error: null } },
     { kind: "from", name: "schedule_items", result: { data: [managerRow({ operation_team_id: accountTeam.id })], error: null } },
   ]);
   const account = await handleWorkItemsRequest(teamRequest("GET", "ops-2"), accountHarness.ctx);
@@ -1235,7 +697,7 @@ test("team may mutate an unassigned legacy row only through its linked client sc
   harness.done();
 });
 
-test("PATCH rejects stale state and shared duplicate occurrence without audit", async () => {
+test("PATCH rejects stale state without audit", async () => {
   const staleRow = managerRow();
   const staleHarness = scriptedCtx([
     { kind: "from", name: "schedule_items", result: { data: staleRow, error: null } },
@@ -1249,60 +711,6 @@ test("PATCH rejects stale state and shared duplicate occurrence without audit", 
   }), staleHarness.ctx);
   assert.equal(stale.status, 409);
   staleHarness.done();
-
-  const calendarId = "26262626-2626-4626-8626-262626262626";
-  const shared = managerRow({ calendar_id: calendarId, series_id: "27272727-2727-4727-8727-272727272727", recurrence_until: "2026-10-20" });
-  const duplicateHarness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: shared, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-    { kind: "rpc", name: "mi_update_shared_schedule_item", result: { data: null, error: { code: "23505", message: "duplicate" } } },
-  ]);
-  const duplicate = await handleWorkItemsRequest(ownerRequest("PATCH", {
-    id: shared.id,
-    expectedUpdatedAt: shared.updated_at,
-    title: shared.title,
-    scheduleType: shared.schedule_type,
-    status: shared.status,
-    priority: shared.priority,
-    startsAt: shared.starts_at,
-    calendarId,
-  }), duplicateHarness.ctx);
-  assert.equal(duplicate.status, 409);
-  duplicateHarness.done();
-});
-
-test("shared DELETE fails closed when edit permission changes at the atomic mutation", async () => {
-  const calendarId = "28282828-2828-4828-8828-282828282828";
-  const shared = managerRow({ calendar_id: calendarId });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: shared, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-    { kind: "rpc", name: "mi_delete_shared_schedule_item", result: { data: null, error: { code: "42501", message: "calendar_edit_forbidden" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("DELETE", {
-    id: shared.id,
-    expectedUpdatedAt: shared.updated_at,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  harness.done();
-});
-
-test("shared DELETE recognizes a permission failure by its stable database message", async () => {
-  const calendarId = "32323232-3232-4232-8232-323232323232";
-  const shared = managerRow({ calendar_id: calendarId });
-  const harness = scriptedCtx([
-    { kind: "from", name: "schedule_items", result: { data: shared, error: null } },
-    { kind: "from", name: "schedule_calendar_memberships", result: { data: { role: "editor", calendar: { id: calendarId, name: "공유", color: "navy" } }, error: null } },
-    { kind: "rpc", name: "mi_delete_shared_schedule_item", result: { data: null, error: { code: "P0001", message: "calendar_edit_forbidden" } } },
-  ]);
-  const response = await handleWorkItemsRequest(ownerRequest("DELETE", {
-    id: shared.id,
-    expectedUpdatedAt: shared.updated_at,
-  }), harness.ctx);
-
-  assert.equal(response.status, 403);
-  harness.done();
 });
 
 test("personal-only contract: GET returns only private rows without reading or exposing shared calendars", async () => {

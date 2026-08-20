@@ -2,13 +2,13 @@
 
 기준일: 2026-08-20
 
-## 진행 중: 대표실 공유 일정표·월간 반복
+## 진행 중: 대표실 개인 일정표 전환
 
-1. 완료: handler branch 80.21%와 전체 `check:release`, 역할 parity, Production auth, 공개 build/CSP, N30 보호 잠금을 모두 통과했습니다.
-2. 완료: additive calendar migration을 운영 Supabase에 적용하고 FORCE RLS, base `schedule_items` anon/authenticated 차단, RPC service-role-only 권한과 advisor를 확인했습니다.
-3. 완료: 기능 commit `7506f3c`를 Production에 배포했고 `/health`·`/ready`가 release `7506f3c2fa75`, Supabase `ready`로 일치합니다.
-4. 완료: 로그인된 총관리자 대표실에서 일정표 목록·공유 코드·42일 월간 그리드·날짜 클릭 등록 패널·매월 반복 포함 종료일을 확인했고 브라우저 console 오류는 0건입니다.
-5. 대기: 운영 데이터를 임의 생성하지 않은 상태입니다. 실제 총관리자→운영팀 코드 수락, viewer 쓰기 차단, 매월 15일 생성 개수·재시도 중복 0·수정·삭제·새로고침 보존은 승인된 실데이터 검증 항목으로 남깁니다.
+1. 완료: 왼쪽 일정표 목록·색상·공유 권한·초대 코드·코드 연결 UI와 API 쓰기 경로를 비활성화하고 개인 일정 등록 패널과 월간 반복을 유지했습니다.
+2. 완료: 대상 73/73, `work-items.mjs` branch 83.28%, 전체 `check:release`, 역할 parity, Production auth, 공개 build/CSP, N30 보호 잠금을 통과했습니다.
+3. 완료: 운영 Supabase를 SELECT-only로 확인해 공유 calendar/member/invite/event 0행과 개인 일정 2행 보존을 확인했습니다. 적용된 migration·빈 공유 테이블은 삭제하지 않습니다.
+4. 다음: 기능 커밋을 Production에 배포하고 `/health`·`/ready`의 새 release와 Supabase ready를 확인합니다.
+5. 다음: 로그인된 총관리자 대표실에서 2열 달력, 공유 UI 0, 날짜/추가 클릭 등록 패널, 매월 반복·광고주 공개 유지, console 오류 0을 확인합니다. 실제 일정을 임의 생성하지 않습니다.
 6. 유지: N상품·N플레이스 30일 코드·migration·작업기·순위 이력은 이번 일정표 작업에서 수정하지 않습니다.
 
 ## 동결: N 상품·N 플레이스 30일 추적

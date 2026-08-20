@@ -22,6 +22,7 @@ const files = {
   placeCron: "src/server/handlers/naver-place-rank-cron.mjs",
   productSeoAudit: "src/server/handlers/naver-product-seo-audit.mjs",
   productTrackers: "src/server/handlers/naver-rank-trackers.mjs",
+  adminApi: "src/server/handlers/admin-api.mjs",
   clientApi: "src/server/handlers/client-api.mjs",
   workItems: "src/server/handlers/work-items.mjs",
   workItemsMigration: "supabase/migrations/20260730074106_extend_schedule_items_for_work_operations.sql",
@@ -106,6 +107,7 @@ const productCron = fs.readFileSync(files.productCron, "utf8");
 const placeCron = fs.readFileSync(files.placeCron, "utf8");
 const productSeoAudit = fs.readFileSync(files.productSeoAudit, "utf8");
 const productTrackers = fs.readFileSync(files.productTrackers, "utf8");
+const adminApi = fs.readFileSync(files.adminApi, "utf8");
 const clientApi = fs.readFileSync(files.clientApi, "utf8");
 const workItems = fs.readFileSync(files.workItems, "utf8");
 const workItemsMigration = fs.readFileSync(files.workItemsMigration, "utf8");
@@ -331,19 +333,27 @@ check(
   `${files.serverIndex}, ${files.sessionGate}, ${files.workItems}, ${files.workItemsMigration}`,
 );
 check(
-  "calendar sharing and monthly recurrence stay scoped, finite and service-role-only",
+  "personal schedules stay scoped and finite while shared calendar runtime is disabled",
   hasAll(workItems, [
-    /calendarInviteDigest/,
-    /createCalendarInviteCode/,
-    /consumeRateLimit\(request, ctx, "calendar_invite"/,
-    /calendarRoleCanEdit/,
     /buildMonthlyOccurrences/,
     /error\.code === "23505"/,
     /exactOriginalScope/,
     /workItemsDateRange/,
+    /cleanText\(body\.action\)\.startsWith\("calendar-"\)/,
+    /calendars:\s*\[\]/,
+    /\.is\("calendar_id", null\)/,
   ])
+    && !/schedule_calendar_memberships|mi_(?:insert|update|delete)_shared_schedule/iu.test(workItems)
+    && hasAll(adminApi, [
+      /personalOnly:\s*true/,
+      /query\.is\("calendar_id", null\)/,
+      /nonPersonalCalendarRequested/,
+    ])
+    && hasAll(clientApi, [
+      /personalOnly:\s*true/,
+      /query\.is\("calendar_id", null\)/,
+    ])
     && hasAll(calendarDomain, [
-      /randomBytesFn\(16\)/,
       /DEFAULT_MAX_OCCURRENCES = 60/,
       /timeZone: "Asia\/Seoul"/,
       /Math\.min\(localStart\.day, daysInMonth/,
@@ -362,12 +372,14 @@ check(
     && !/grant\s+(?:select|insert|update|delete)[^;]*on table public\.schedule_items to (?:public|anon|authenticated)/i.test(calendarMigration)
     && !/update\s+public\.schedule_items\s+set\s+calendar_id/i.test(calendarMigration)
     && calendarHandlerTests.includes("concurrent monthly retries resolve the unique series race as unchanged")
-    && calendarHandlerTests.includes("calendar invite persists only a one-use digest")
+    && calendarHandlerTests.includes("personal-only contract: sharing, list, create, join, invite, and leave actions are disabled")
+    && calendarHandlerTests.includes("existing shared rows reject PATCH, DELETE, and assistant completion")
     && calendarMigrationTests.includes("service-role-only")
-    && calendarUiTests.includes("responsive drawer with all-day and bounded monthly recurrence")
+    && calendarUiTests.includes("wide personal calendar without list or sharing controls")
+    && calendarUiTests.includes("preserving existing work fields")
     && String(packageJson.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
     && String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
-  `${files.workItems}, ${files.calendarDomain}, ${files.calendarMigration}, ${files.calendarHandlerTests}, ${files.calendarMigrationTests}, ${files.calendarUiTests}`,
+  `${files.workItems}, ${files.adminApi}, ${files.clientApi}, ${files.calendarDomain}, ${files.calendarMigration}, ${files.calendarHandlerTests}, ${files.calendarMigrationTests}, ${files.calendarUiTests}`,
 );
 check(
   "all routed requests use the shared runtime boundary",

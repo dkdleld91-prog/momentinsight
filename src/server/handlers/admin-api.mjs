@@ -62,7 +62,8 @@ const resources = {
   "schedule-items": {
     table: "schedule_items",
     select: "id, client_id, brand_id, title, schedule_type, status, starts_at, ends_at, assignee_id, public_comment, internal_note, visibility, created_at, updated_at",
-    order: "starts_at"
+    order: "starts_at",
+    personalOnly: true
   },
   "action-plans": {
     table: "action_plans",
@@ -111,8 +112,9 @@ function listRoutes() {
   ];
 }
 
-function applyFilters(query, url, id) {
+function applyFilters(query, url, id, config = {}) {
   if (id) query = query.eq("id", id);
+  if (config.personalOnly) query = query.is("calendar_id", null);
 
   const clientId = url.searchParams.get("client_id");
   const brandId = url.searchParams.get("brand_id");
@@ -131,6 +133,21 @@ function applyFilters(query, url, id) {
   if (trackerId) query = query.eq("tracker_id", trackerId);
 
   return query;
+}
+
+function nonPersonalCalendarRequested(body = {}) {
+  return ["calendarId", "calendar_id"].some((key) => (
+    Object.hasOwn(body, key)
+      && body[key] !== null
+      && body[key] !== undefined
+      && String(body[key]).trim() !== ""
+  ));
+}
+
+function normalizePersonalScheduleBody(body = {}) {
+  delete body.calendarId;
+  body.calendar_id = null;
+  return body;
 }
 
 function firstRow(data) {
@@ -162,7 +179,7 @@ async function handleGet(request, ctx, config, id) {
     .from(config.table)
     .select(config.select);
 
-  query = applyFilters(query, url, id)
+  query = applyFilters(query, url, id, config)
     .order(config.order, { ascending: config.ascending === true })
     .limit(limit);
 
@@ -178,6 +195,10 @@ async function handlePost(request, ctx, config) {
   if (config.readonly) return methodNotAllowed(["GET"]);
 
   const body = await readBody(request);
+  if (config.personalOnly && nonPersonalCalendarRequested(body)) {
+    return json({ ok: false, message: "개인 일정에는 공유 캘린더를 지정할 수 없습니다." }, 400);
+  }
+  if (config.personalOnly) normalizePersonalScheduleBody(body);
   if (config.table === "naver_rank_trackers") body.max_rank = 300;
   if (config.table === "naver_rank_trackers" && body.sort_order == null) {
     const agencyCode = String(body.agency_code || "mml93-a01").trim().toLowerCase();
@@ -224,12 +245,17 @@ async function handlePatch(request, ctx, config, id) {
   if (!id) return json({ ok: false, message: "Missing resource id" }, 400);
 
   const body = await readBody(request);
+  if (config.personalOnly && nonPersonalCalendarRequested(body)) {
+    return json({ ok: false, message: "개인 일정에는 공유 캘린더를 지정할 수 없습니다." }, 400);
+  }
+  if (config.personalOnly) normalizePersonalScheduleBody(body);
   if (config.table === "naver_rank_trackers") body.max_rank = 300;
-  const { data, error } = await ctx.supabaseAdmin
+  let updateQuery = ctx.supabaseAdmin
     .from(config.table)
     .update(body)
-    .eq("id", id)
-    .select(config.select);
+    .eq("id", id);
+  if (config.personalOnly) updateQuery = updateQuery.is("calendar_id", null);
+  const { data, error } = await updateQuery.select(config.select);
 
   if (error) {
     return databaseError(error, `${config.table} 테이블 수정에 실패했습니다.`);
@@ -263,11 +289,12 @@ async function handleDelete(_request, ctx, config, id) {
     }, 409);
   }
 
-  const { data, error } = await ctx.supabaseAdmin
+  let deleteQuery = ctx.supabaseAdmin
     .from(config.table)
     .delete()
-    .eq("id", id)
-    .select(config.select);
+    .eq("id", id);
+  if (config.personalOnly) deleteQuery = deleteQuery.is("calendar_id", null);
+  const { data, error } = await deleteQuery.select(config.select);
 
   if (error) {
     return databaseError(error, `${config.table} 테이블 삭제에 실패했습니다.`);
@@ -290,29 +317,31 @@ async function handleDelete(_request, ctx, config, id) {
   return json({ ok: true, data, auditLogged: audit.logged });
 }
 
+export async function handleAdminApiRequest(request, ctx) {
+  const { resource, id } = routeParts(request, "/api/admin");
+
+  if (resource === "overview") {
+    return handleOverview(request, ctx);
+  }
+
+  if (resource === "storage") {
+    return handleStorage(request, ctx, id);
+  }
+
+  const config = resources[resource];
+
+  if (!config) return notFound(listRoutes());
+
+  if (request.method === "GET") return handleGet(request, ctx, config, id);
+  if (request.method === "POST") return handlePost(request, ctx, config);
+  if (request.method === "PATCH") return handlePatch(request, ctx, config, id);
+  if (request.method === "DELETE") return handleDelete(request, ctx, config, id);
+
+  return methodNotAllowed(["GET", "POST", "PATCH", "DELETE"]);
+}
+
 export default {
-  fetch: withSupabase({ auth: "secret" }, async (request, ctx) => {
-    const { resource, id } = routeParts(request, "/api/admin");
-
-    if (resource === "overview") {
-      return handleOverview(request, ctx);
-    }
-
-    if (resource === "storage") {
-      return handleStorage(request, ctx, id);
-    }
-
-    const config = resources[resource];
-
-    if (!config) return notFound(listRoutes());
-
-    if (request.method === "GET") return handleGet(request, ctx, config, id);
-    if (request.method === "POST") return handlePost(request, ctx, config);
-    if (request.method === "PATCH") return handlePatch(request, ctx, config, id);
-    if (request.method === "DELETE") return handleDelete(request, ctx, config, id);
-
-    return methodNotAllowed(["GET", "POST", "PATCH", "DELETE"]);
-  })
+  fetch: withSupabase({ auth: "secret" }, handleAdminApiRequest)
 };
 
 async function handleOverview(request, ctx) {
@@ -370,6 +399,7 @@ async function handleOverview(request, ctx) {
         .from("schedule_items")
         .select(resources["schedule-items"].select)
         .eq("client_id", clientId)
+        .is("calendar_id", null)
     )
       .order("starts_at", { ascending: true })
       .limit(10),

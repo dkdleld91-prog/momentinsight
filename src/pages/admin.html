@@ -12183,15 +12183,33 @@
           }
           recognition = createRecognition(true);
           var fired = false;
+          var processedFinalLength = 0;
           recognition.onresult = function (event) {
             if (!voiceAlive()) return stopRecognition();
             if (fired) return;
             var heard = "";
-            for (var index = 0; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
-            var match = heard.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
-            if (!match) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
-            var command = String(match[1] || "").trim();
-            if (!command) return setVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
+            var finals = "";
+            for (var index = 0; index < event.results.length; index += 1) {
+              heard += event.results[index][0].transcript;
+              if (event.results[index].isFinal) finals += event.results[index][0].transcript;
+            }
+            if (window.speechSynthesis && window.speechSynthesis.speaking) {
+              processedFinalLength = finals.length;
+              return setVoiceStatus("브리핑을 읽는 중에는 새 명령을 받지 않습니다.");
+            }
+            var command = "";
+            var wakeMatch = heard.match(/(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u);
+            if (wakeMatch) {
+              command = String(wakeMatch[1] || "").trim();
+              if (!command) return setVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
+            } else {
+              var newFinal = finals.slice(processedFinalLength).trim();
+              if (!newFinal) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
+              processedFinalLength = finals.length;
+              var directIntent = isOwnerAssistantBriefingCommand(newFinal) || /완료(?:로|\s*처리)?\s*(?:해\s*줘|해\s*주세요|해줘|해주세요)?\s*[.!?]?$/u.test(newFinal);
+              if (!directIntent) return setVoiceStatus("상시 대기 중 · 들림: " + heard.trim().slice(-32));
+              command = newFinal;
+            }
             fired = true;
             input.value = command;
             input.focus();

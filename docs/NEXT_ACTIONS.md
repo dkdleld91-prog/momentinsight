@@ -7,7 +7,8 @@
 1. 완료: 운영 SELECT-only로 전역 작업기 정상 생존과 과거 진단용 paused 고아 1건을 분리했습니다. 자동 오류·격리나 cycle 정지는 현재 원인이 아닙니다.
 2. 완료: Windows updater의 잘못된 native-host 이름을 canonical `co.kr.momentinsight.naver_shopping`으로 통일하고 RED/GREEN·전체 release·보호 잠금을 통과했습니다.
 3. 완료: 동일 target 재등록 시 신규 행 없이 기존 paused ID만 안전하게 active로 복구하고 순서·격리·cycle 값을 보존하는 회귀를 추가했습니다.
-4. 남음: 최종 commit/push와 Production health/ready 확인, 실제 Windows updater의 canonical registry 증거, 정확한 paused 1건 사전조건 복구, 자연 claim terminal·atomic300·lane/lease 해제를 확인합니다. cursor·격리·wake·순서는 수동 조작하지 않습니다.
+4. 완료: commit `19756f2`·Production health/ready, 정확한 paused 1건의 status-only 복구, 자연 claim 1회·광고 제외 atomic300·오류 해제·lane/lease 해제·cursor 불변을 확인했습니다.
+5. 남음: Windows Chrome 종료 영향에 대한 사용자 시점 확인 뒤 새 updater를 실행해 canonical registry 동기화 성공을 확인합니다. 그 전에도 현재 작업기와 순환은 정상 생존 중입니다.
 
 ## 완료: 매월 반복 종료 방식
 

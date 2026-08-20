@@ -334,9 +334,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 20. 18:53:31
-- 기준 커밋: f4095f3
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M package.json /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M src/pages/admin.html
+- 마지막 자동 저장: 2026. 08. 20. 18:59:31
+- 기준 커밋: 7506f3c
+- 작업트리: M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md / ?? data/
 <!-- autosave:end -->
 
 ## 작업 상태 기준

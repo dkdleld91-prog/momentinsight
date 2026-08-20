@@ -1,14 +1,15 @@
 # Test Evidence
 
-## 2026-08-20 대표실 공유 일정표 로컬 후보
+## 2026-08-20 대표실 공유 일정표 Production 반영
 
 - 도메인 실행 커버리지는 line 96.30%·branch 81.82%·function 100%입니다. 서울 날짜의 불가능한 날짜 거부, 월말 보정, 윤년, 포함 종료일, 최대 60회·5년 제한, 128-bit 초대 코드와 digest를 실행했습니다.
 - handler 결합 회귀는 70/70 PASS이며 `work-items.mjs` coverage는 line 99.82%·branch 80.21%·function 100%입니다. 공유 생성·수정·음성 완료·삭제가 atomic RPC를 사용하고, membership 해제·viewer·광고주 완료 우회·stale timestamp·다른 tenant를 거부하며, 동일 월간 요청의 unique race는 1개 시리즈로 수렴함을 확인했습니다.
 - 목록 조회는 현재 월 그리드 42일만 요청하고 한도보다 1건 더 읽어 `truncated`를 명시합니다. 일정이 많을 때 조용히 숨기지 않고 화면에 최대 300개 표시 경고를 냅니다.
-- `npm run build:vercel`은 공개 파일 9개, 인라인 script 6개, 고유 SHA-256 4개를 모두 CSP allowlist와 일치시켰고 private artifact·secret signature 0건으로 통과했습니다. 로컬 관리자 로그인 화면은 console warning/error 0건이지만, 로그인된 일정표 실화면은 아직 운영 배포 후 검증 대상입니다.
+- `npm run build:vercel`은 공개 파일 9개, 인라인 script 6개, 고유 SHA-256 4개를 모두 CSP allowlist와 일치시켰고 private artifact·secret signature 0건으로 통과했습니다. 로그인된 Production 총관리자 일정표 실화면도 browser log 0건으로 확인했습니다.
 - 전체 `npm run check:release`는 코어 635/635, 플레이스 51/51, 쇼핑 62/62, Production 인증 18/18로 exit 0이며 release baseline·server contract 58/58·역할 parity·N30 보호 잠금/self-test·CSP를 포함합니다.
 - 운영 migration 적용 뒤 기존 schedule 2행은 유지되고 새 3테이블은 모두 0행입니다. 새 테이블 RLS는 enabled+forced, anon/authenticated의 4종 DML은 모두 false, 5개 RPC는 definer false·`search_path=""`·service-role execute true·anon/authenticated execute false입니다. 새 calendar 관련 security advisor WARN은 0이며 no-policy INFO는 service-role-only deny-by-default 계약입니다.
-- 이 기록은 DB 선적용 증거입니다. Production `/health`·`/ready`, 실제 총관리자→운영팀 연결 코드 수락, 매월 15일 생성 개수·새로고침 보존을 확인하기 전에는 배포 완료라고 보고하지 않습니다.
+- commit `7506f3c` 푸시 뒤 Production `/health`·`/ready`가 release `7506f3c2fa75`, Supabase `ready`로 일치했습니다. 총관리자 로그인 후 대표실의 일정표 목록·공유·월간 그리드·날짜 클릭 등록 패널·매월 반복 포함 종료일을 실제 DOM에서 확인했고 browser log는 0건입니다.
+- 운영 calendar/event를 임의 생성하지 않았으므로 총관리자→운영팀 연결 코드 수락, viewer 쓰기 차단, 반복 저장 개수·새로고침 보존은 아직 Production mutation E2E로 주장하지 않습니다. 해당 경계는 로컬 handler·migration 회귀로만 통과했습니다.
 
 ## 2026-08-19 N 30일 추적 동결 후보
 

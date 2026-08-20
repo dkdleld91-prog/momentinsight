@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import app, { calculateOwnerTax, parseOwnerAssistantDrafts } from "./owner-tool-api.mjs";
+import app, { calculateOwnerTax, parseAssistantCompletion, parseOwnerAssistantDrafts } from "./owner-tool-api.mjs";
 
 function request(method = "GET", options = {}) {
   const headers = new Headers(options.headers || {});
@@ -46,7 +46,7 @@ test("owner assistant creates only dated internal schedule drafts without extern
     startsAt: "2026-08-19T05:00:00.000Z",
     endsAt: "2026-08-19T06:00:00.000Z",
     assigneeName: "",
-    internalNote: "자비스 초안 원문: 내일 오후 2시 광고주 미팅 1시간 등록해줘",
+    internalNote: "실장 초안 원문: 내일 오후 2시 광고주 미팅 1시간 등록해줘",
     isAllDay: false,
     visibility: "internal",
     publicTitle: "",
@@ -62,6 +62,28 @@ test("owner assistant creates only dated internal schedule drafts without extern
   assert.equal(parseOwnerAssistantDrafts("", { now }).ok, false);
   const source = fs.readFileSync(new URL("./owner-tool-api.mjs", import.meta.url), "utf8");
   assert.doesNotMatch(source, /api\.openai\.com|anthropic|claude|OPENAI_API_KEY/i);
+});
+
+test("assistant completion parser extracts targets from undated completion requests", () => {
+  assert.equal(parseAssistantCompletion("광고주 미팅 완료로 해줘"), "광고주 미팅");
+  assert.equal(parseAssistantCompletion("주간 보고서 업무 완료 처리 해주세요"), "주간 보고서");
+  assert.equal(parseAssistantCompletion("광고 세팅 완료"), "광고 세팅");
+  assert.equal(parseAssistantCompletion("내일 회의 준비"), "");
+  assert.equal(parseAssistantCompletion("완료해줘"), "");
+});
+
+test("owner assistant splits mixed input into dated drafts and completion requests", () => {
+  const now = new Date("2026-08-18T03:00:00.000Z");
+  const result = parseOwnerAssistantDrafts([
+    "내일 오후 2시 광고주 미팅 1시간 등록해줘",
+    "주간 보고서 완료 처리해줘",
+  ].join("\n"), { now });
+  assert.equal(result.ok, true);
+  assert.equal(result.drafts.length, 1);
+  assert.equal(result.completions.length, 1);
+  assert.equal(result.completions[0].query, "주간 보고서");
+  assert.equal(result.completions[0].source, "주간 보고서 완료 처리해줘");
+  assert.equal(result.unresolved.length, 0);
 });
 
 test("tool content is disclosed only to the exact primary owner identity", async () => {
@@ -81,7 +103,7 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.menuHtml, /개발 &lt;\/&gt;/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-development"/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-assistant"/);
-  assert.match(payload.tool.menuHtml, /자비스 운영 비서/);
+  assert.match(payload.tool.menuHtml, /실장 운영 비서/);
   assert.match(payload.tool.menuHtml, /CANARY/);
   assert.match(payload.tool.menuHtml, /data-mi-admin-screen="owner-utility"/);
   assert.match(payload.tool.menuHtml, /부가세 계산기/);
@@ -101,12 +123,12 @@ test("tool content is disclosed only to the exact primary owner identity", async
   assert.match(payload.tool.viewHtml, /data-owner-assistant-office/);
   assert.equal((payload.tool.viewHtml.match(/data-owner-assistant-agent(?:\s|>)/g) || []).length, 6);
   assert.equal((payload.tool.viewHtml.match(/data-owner-assistant-role=/g) || []).length, 6);
-  assert.match(payload.tool.viewHtml, /비서실장 자비스/);
-  assert.match(payload.tool.viewHtml, /일정 운영 자비스/);
-  assert.match(payload.tool.viewHtml, /보고서 자비스/);
-  assert.match(payload.tool.viewHtml, /광고 운영 자비스/);
-  assert.match(payload.tool.viewHtml, /콘텐츠 자비스/);
-  assert.match(payload.tool.viewHtml, /키워드 자비스/);
+  assert.match(payload.tool.viewHtml, /비서실장/);
+  assert.match(payload.tool.viewHtml, /일정 운영 담당/);
+  assert.match(payload.tool.viewHtml, /보고서 담당/);
+  assert.match(payload.tool.viewHtml, /광고 운영 담당/);
+  assert.match(payload.tool.viewHtml, /콘텐츠 담당/);
+  assert.match(payload.tool.viewHtml, /키워드 담당/);
   assert.match(payload.tool.viewHtml, /자리 대기, 담당 회의, 비서실장 방문/);
   assert.match(payload.tool.viewHtml, /독립 AI 직원의 자동 실행 상태는 아닙니다/);
   assert.match(payload.tool.viewHtml, /data-owner-assistant-mic/);
@@ -149,6 +171,8 @@ test("assistant endpoint is exact-owner-only and returns drafts without writing 
   assert.equal(payload.ok, true);
   assert.equal(payload.drafts.length, 1);
   assert.equal(payload.drafts[0].visibility, "internal");
+  assert.equal(Array.isArray(payload.completions), true);
+  assert.equal(payload.completions.length, 0);
   assert.equal(payload.source, "deterministic-private-v1");
   assert.equal("saved" in payload, false);
 });

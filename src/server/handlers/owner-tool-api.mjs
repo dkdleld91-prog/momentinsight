@@ -135,12 +135,23 @@ function assistantDraft(segment, now) {
     startsAt,
     endsAt: new Date(new Date(startsAt).getTime() + durationMs).toISOString(),
     assigneeName: assignee.slice(0, 60),
-    internalNote: `자비스 초안 원문: ${segment}`.slice(0, 4000),
+    internalNote: `실장 초안 원문: ${segment}`.slice(0, 4000),
     isAllDay: !time.explicit,
     visibility: "internal",
     publicTitle: "",
     publicComment: "",
   };
+}
+
+const ASSISTANT_COMPLETION_PATTERN = /^(.+?)(?:\s*(?:일정|업무))?(?:\s*(?:은|는|을|를))?\s*완료(?:로|\s*처리)?(?:\s*(?:해\s*줘|해\s*주세요|해줘|해주세요|처리해\s*줘|처리해\s*주세요|해))?\s*[.!?]?$/u;
+
+export function parseAssistantCompletion(segment) {
+  const text = String(segment ?? "").trim();
+  if (!text || !text.includes("완료")) return "";
+  const match = text.match(ASSISTANT_COMPLETION_PATTERN);
+  const query = match ? String(match[1] || "").replace(/\s+/gu, " ").trim() : "";
+  if (!query || query.includes("완료")) return "";
+  return query.slice(0, 120);
 }
 
 export function parseOwnerAssistantDrafts(value, options = {}) {
@@ -155,17 +166,27 @@ export function parseOwnerAssistantDrafts(value, options = {}) {
     .filter(Boolean)
     .slice(0, MAX_ASSISTANT_SEGMENTS);
   const drafts = [];
+  const completions = [];
   const unresolved = [];
   for (const segment of segments) {
     const draft = assistantDraft(segment, now);
-    if (draft) drafts.push(draft);
-    else unresolved.push(segment.slice(0, 500));
+    if (draft) {
+      drafts.push(draft);
+      continue;
+    }
+    const completionQuery = parseAssistantCompletion(segment);
+    if (completionQuery) {
+      completions.push({ query: completionQuery, source: segment.slice(0, 500) });
+      continue;
+    }
+    unresolved.push(segment.slice(0, 500));
   }
   return {
     ok: true,
     source: "deterministic-private-v1",
     generatedAt: now.toISOString(),
     drafts,
+    completions,
     unresolved,
   };
 }
@@ -386,7 +407,7 @@ const utilityViewHtml = String.raw`<section class="mi-view" data-mi-admin-view="
 const menuHtml = String.raw`<div class="mi-nav-group mi-owner-development-nav" data-owner-development-nav>
   <p class="mi-nav-title">개발 &lt;/&gt;</p>
   <a href="#mi-admin-owner-development" data-mi-admin-screen="owner-development"><span>N 쇼핑 수집 운영</span><small>OWNER</small></a>
-  <a href="#mi-admin-owner-assistant" data-mi-admin-screen="owner-assistant"><span>자비스 운영 비서</span><small>CANARY</small></a>
+  <a href="#mi-admin-owner-assistant" data-mi-admin-screen="owner-assistant"><span>실장 운영 비서</span><small>CANARY</small></a>
   <a href="#mi-admin-owner-utility" data-mi-admin-screen="owner-utility"><span>부가세 계산기</span></a>
 </div>`;
 
@@ -412,7 +433,7 @@ const developmentViewHtml = String.raw`<section class="mi-view mi-owner-developm
   </div>
 </section>`;
 
-const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant" data-mi-admin-view="owner-assistant" id="mi-admin-owner-assistant" aria-label="mml93-a01 전용 자비스 운영 비서">
+const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant" data-mi-admin-view="owner-assistant" id="mi-admin-owner-assistant" aria-label="mml93-a01 전용 실장 운영 비서">
   <header class="mi-assistant-hero">
     <div class="mi-assistant-hero-copy"><small>Jarvis · owner canary</small><h1>오늘의 운영을 일정으로 연결합니다.</h1><p>현재 일정표를 요약하고 자연어 일정·회의 메모를 내부 업무 초안으로 정리합니다. 확인하기 전에는 저장하거나 공개하지 않습니다.</p></div>
     <div class="mi-assistant-scope"><span>CURRENT SCOPE</span><strong data-owner-assistant-scope>총관리자 내부 일정</strong><small>광고주 범위는 업무 운영에서 선택</small></div>
@@ -429,12 +450,12 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
       <div class="mi-assistant-station is-content"><strong>콘텐츠</strong><small>소재 · 촬영 · 업로드</small></div>
       <div class="mi-assistant-station is-keyword"><strong>키워드</strong><small>검색 · SEO · 순위</small></div>
       <div class="mi-assistant-meeting-hub" aria-hidden="true">collaboration hub</div>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="chief" data-home-x="50" data-home-y="29" data-mobile-x="50" data-mobile-y="24" style="left:50%;top:29%;--agent-breathe:3.7s" aria-label="비서실장 자비스 호출"><span class="mi-assistant-agent-bubble">업무 조율 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">◆</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>비서실장 자비스</strong><small>총괄 · 담당 연결</small></span></button>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="schedule" data-home-x="12" data-home-y="73" data-mobile-x="25" data-mobile-y="61" style="left:12%;top:73%;--agent-breathe:4.1s" aria-label="일정 운영 자비스 호출"><span class="mi-assistant-agent-bubble">일정 확인 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📅</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>일정 운영 자비스</strong><small>미팅 · 마감</small></span></button>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="report" data-home-x="31" data-home-y="73" data-mobile-x="75" data-mobile-y="61" style="left:31%;top:73%;--agent-breathe:4.5s" aria-label="보고서 자비스 호출"><span class="mi-assistant-agent-bubble">보고서 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📊</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>보고서 자비스</strong><small>주간 · 월간 · KPI</small></span></button>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="ads" data-home-x="50" data-home-y="73" data-mobile-x="25" data-mobile-y="75" style="left:50%;top:73%;--agent-breathe:3.9s" aria-label="광고 운영 자비스 호출"><span class="mi-assistant-agent-bubble">성과 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📣</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>광고 운영 자비스</strong><small>세팅 · 성과 · 액션</small></span></button>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="content" data-home-x="69" data-home-y="73" data-mobile-x="75" data-mobile-y="75" style="left:69%;top:73%;--agent-breathe:4.3s" aria-label="콘텐츠 자비스 호출"><span class="mi-assistant-agent-bubble">콘텐츠 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🎨</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>콘텐츠 자비스</strong><small>소재 · 촬영 · 업로드</small></span></button>
-      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="keyword" data-home-x="88" data-home-y="73" data-mobile-x="50" data-mobile-y="89" style="left:88%;top:73%;--agent-breathe:4.7s" aria-label="키워드 자비스 호출"><span class="mi-assistant-agent-bubble">키워드 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🔎</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>키워드 자비스</strong><small>검색 · SEO · 순위</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="chief" data-home-x="50" data-home-y="29" data-mobile-x="50" data-mobile-y="24" style="left:50%;top:29%;--agent-breathe:3.7s" aria-label="비서실장 호출"><span class="mi-assistant-agent-bubble">업무 조율 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">◆</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>비서실장</strong><small>총괄 · 담당 연결</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="schedule" data-home-x="12" data-home-y="73" data-mobile-x="25" data-mobile-y="61" style="left:12%;top:73%;--agent-breathe:4.1s" aria-label="일정 운영 담당 호출"><span class="mi-assistant-agent-bubble">일정 확인 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📅</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>일정 운영 담당</strong><small>미팅 · 마감</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="report" data-home-x="31" data-home-y="73" data-mobile-x="75" data-mobile-y="61" style="left:31%;top:73%;--agent-breathe:4.5s" aria-label="보고서 담당 호출"><span class="mi-assistant-agent-bubble">보고서 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📊</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>보고서 담당</strong><small>주간 · 월간 · KPI</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="ads" data-home-x="50" data-home-y="73" data-mobile-x="25" data-mobile-y="75" style="left:50%;top:73%;--agent-breathe:3.9s" aria-label="광고 운영 담당 호출"><span class="mi-assistant-agent-bubble">성과 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">📣</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>광고 운영 담당</strong><small>세팅 · 성과 · 액션</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="content" data-home-x="69" data-home-y="73" data-mobile-x="75" data-mobile-y="75" style="left:69%;top:73%;--agent-breathe:4.3s" aria-label="콘텐츠 담당 호출"><span class="mi-assistant-agent-bubble">콘텐츠 협의 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🎨</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>콘텐츠 담당</strong><small>소재 · 촬영 · 업로드</small></span></button>
+      <button class="mi-assistant-agent" type="button" data-owner-assistant-agent data-owner-assistant-role="keyword" data-home-x="88" data-home-y="73" data-mobile-x="50" data-mobile-y="89" style="left:88%;top:73%;--agent-breathe:4.7s" aria-label="키워드 담당 호출"><span class="mi-assistant-agent-bubble">키워드 점검 중</span><span class="mi-assistant-agent-figure" aria-hidden="true"><span class="mi-assistant-agent-head"></span><span class="mi-assistant-agent-body">🔎</span><span class="mi-assistant-agent-leg is-left"></span><span class="mi-assistant-agent-leg is-right"></span></span><span class="mi-assistant-agent-label"><strong>키워드 담당</strong><small>검색 · SEO · 순위</small></span></button>
     </div>
     <div class="mi-assistant-office-caption"><span><strong>움직임 안내</strong> · 자리 대기, 담당 회의, 비서실장 방문을 화면으로 표현합니다. 직원을 누르면 담당 명령으로 연결됩니다.</span><span class="mi-assistant-office-activity" data-owner-assistant-office-activity aria-live="polite">화면 시각화이며 독립 AI 직원의 자동 실행 상태는 아닙니다.</span></div>
   </article>
@@ -447,7 +468,7 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <article class="mi-assistant-panel">
       <div class="mi-assistant-panel-head"><div><h2>일정·회의 메모 초안</h2><p>날짜가 확인되는 문장만 초안으로 만들고, 나머지는 확인 필요로 남깁니다.</p></div><span class="mi-badge">외부 전송 없음</span></div>
       <div class="mi-assistant-chips"><button class="mi-assistant-chip" type="button" data-owner-assistant-example="내일 오후 2시 광고주 미팅 1시간 등록해줘">미팅 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="다음 주 월요일 오전 10시 월간 보고서 최종 검수">보고서 예시</button><button class="mi-assistant-chip" type="button" data-owner-assistant-example="회의 메모&#10;- 8월 21일 오후 3시 소재 시안 검토&#10;- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅">회의 메모 예시</button></div>
-      <div class="mi-assistant-voice" data-owner-assistant-voice><button type="button" data-owner-assistant-mic>🎤 말하기</button><button type="button" data-owner-assistant-wake>🎙 “자비스” 호출 30초</button><button type="button" data-owner-assistant-read>🔊 브리핑 읽기</button><span class="mi-assistant-voice-status" data-owner-assistant-voice-status aria-live="polite">마이크 버튼을 누르면 한국어 음성을 일정 문장으로 입력합니다. Chrome 음성 서비스가 음성을 처리할 수 있습니다.</span></div>
+      <div class="mi-assistant-voice" data-owner-assistant-voice><button type="button" data-owner-assistant-mic>🎤 말하기</button><button type="button" data-owner-assistant-wake>🎙 “실장” 호출 30초</button><button type="button" data-owner-assistant-read>🔊 브리핑 읽기</button><span class="mi-assistant-voice-status" data-owner-assistant-voice-status aria-live="polite">마이크 버튼을 누르면 한국어 음성을 일정 문장으로 입력합니다. Chrome 음성 서비스가 음성을 처리할 수 있습니다.</span></div>
       <textarea class="mi-textarea mi-assistant-input" data-owner-assistant-input maxlength="6000" placeholder="예: 내일 오후 2시 광고주 미팅 1시간 등록해줘&#10;여러 일정은 줄을 나눠 입력할 수 있습니다."></textarea>
       <div class="mi-assistant-actions"><small>초안은 모두 내부 비공개입니다. 광고주 공개는 기존 일정 편집에서 별도로 확인합니다.</small><button class="mi-button" type="button" data-owner-assistant-draft>초안 만들기</button></div>
       <div class="mi-assistant-status" data-owner-assistant-status aria-live="polite">텍스트 일정 초안은 외부 AI로 전송하지 않습니다. 음성 인식은 브라우저 제공 서비스를 사용합니다.</div>

@@ -145,14 +145,14 @@
       "id": "owner-assistant-interaction",
       "file": "src/pages/admin.html",
       "name": "bindOwnerAssistant",
-      "sha256": "9482cb9d5fe1e976112b9126d4d2470d43095f057606481f3aa3a09d95892198"
+      "sha256": "a9ccab2893b5745e9afc4a27daaf5648ffbda840621c43ebd277cc1d071a11aa"
     }
   ],
   "files": [
     {
       "id": "owner-assistant-server-surface",
       "file": "src/server/handlers/owner-tool-api.mjs",
-      "sha256": "060e0090ddaf118290b9cca7e2e9885f1261482f8c3f44a190d86c549508ad02"
+      "sha256": "0915dd3b562fcf327ece9e03ed78a8eb93466189443cd7e7543bdc8195d3fbc1"
     },
     {
       "id": "seo-scoring-engine",

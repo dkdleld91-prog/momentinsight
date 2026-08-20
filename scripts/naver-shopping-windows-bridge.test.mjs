@@ -6,11 +6,13 @@ const installerPath = new URL("./install-naver-shopping-chrome-bridge-windows.ps
 const launcherPath = new URL("./windows/MomentInsightNaverShoppingHost.cs", import.meta.url);
 const schedulerPath = new URL("./windows/run-naver-shopping-chrome-scheduler.ps1", import.meta.url);
 const updaterPath = new URL("./windows/update-naver-shopping-chrome-extension.ps1", import.meta.url);
+const serviceWorkerPath = new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url);
 const entrypointPath = new URL("../INSTALL-NAVER-SHOPPING-WINDOWS.cmd", import.meta.url);
 const installer = fs.readFileSync(installerPath, "utf8");
 const launcher = fs.readFileSync(launcherPath, "utf8");
 const scheduler = fs.readFileSync(schedulerPath, "utf8");
 const updater = fs.readFileSync(updaterPath, "utf8");
+const serviceWorker = fs.readFileSync(serviceWorkerPath, "utf8");
 const entrypoint = fs.readFileSync(entrypointPath, "utf8");
 
 test("Windows installer targets one exact Chrome profile and stable extension source", () => {
@@ -238,7 +240,10 @@ test("Windows extension updater preserves UTF-8 bytes and validates before resta
 });
 
 test("Windows extension updater restores and verifies the exact native host registration", () => {
-  assert.match(updater, /\$hostName = "com\.momentinsight\.naver_shopping"/u);
+  assert.match(installer, /\$hostName = "co\.kr\.momentinsight\.naver_shopping"/u);
+  assert.match(serviceWorker, /const NATIVE_HOST = "co\.kr\.momentinsight\.naver_shopping"/u);
+  assert.match(updater, /\$hostName = "co\.kr\.momentinsight\.naver_shopping"/u);
+  assert.doesNotMatch(updater, /com\.momentinsight\.naver_shopping/u);
   assert.match(updater, /HKCU:\\Software\\Google\\Chrome\\NativeMessagingHosts\\\$hostName/u);
   assert.match(updater, /\$nativeManifestNeedsRepair = -not \(Test-Path -LiteralPath \$nativeManifestPath -PathType Leaf\)/u);
   assert.match(updater, /if \(\$nativeManifestNeedsRepair\)/u);

@@ -11764,7 +11764,7 @@
         });
       }
 
-      var OWNER_ASSISTANT_BRIEFING_INTENT = /브리핑|(?:(?:오늘|다가오는|이번\s*주)\s*)?(?:일정|업무)\s*(?:을|를|이|은)?\s*(?:알려|읽어|들려|말해)/u;
+      var OWNER_ASSISTANT_BRIEFING_INTENT = /브리핑|(?:일정|업무)(?:들)?\s*(?:을|를|이|은)?\s*(?:좀|한\s*번|다시|간단히|짧게)?\s*(?:알려|읽어|들려|말해|정리해)/u;
 
       function isOwnerAssistantBriefingCommand(prompt) {
         return OWNER_ASSISTANT_BRIEFING_INTENT.test(String(prompt || ""));

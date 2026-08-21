@@ -12,6 +12,8 @@ const PAGE_REQUEST_JITTER_MS = 2_500;
 const BASELINE_CADENCE_MINUTES = 10;
 const CANDIDATE_CADENCE_MINUTES = 8;
 const CADENCE_MINUTES_KEY = "momentInsightRankCadenceMinutes";
+const CADENCE_CONFIRMED_AT_KEY = "momentInsightRankCadenceConfirmedAt";
+const CANDIDATE_CADENCE_CONFIRMATION_TTL_MS = 20 * 60_000;
 // The Node host flushes its terminal frame and closes input; the Windows
 // launcher then releases its mutex immediately after child exit. Keep one
 // finite scheduling gap before opening the coalesced follow-up connection.
@@ -165,18 +167,43 @@ function nextKstHour(hour) {
 
 async function safeCadenceMinutes(requested = null) {
   let value = requested;
+  let confirmedAt = Date.now();
   if (value == null) {
-    const stored = await chrome.storage.local.get(CADENCE_MINUTES_KEY);
+    const stored = await chrome.storage.local.get([
+      CADENCE_MINUTES_KEY,
+      CADENCE_CONFIRMED_AT_KEY,
+    ]);
     value = stored[CADENCE_MINUTES_KEY];
+    confirmedAt = Number(stored[CADENCE_CONFIRMED_AT_KEY] || 0);
   }
   const cadence = Number(value);
-  return cadence === CANDIDATE_CADENCE_MINUTES ? cadence : BASELINE_CADENCE_MINUTES;
+  const candidateRecentlyConfirmed = requested != null
+    || (confirmedAt > 0 && confirmedAt + CANDIDATE_CADENCE_CONFIRMATION_TTL_MS > Date.now());
+  return cadence === CANDIDATE_CADENCE_MINUTES && candidateRecentlyConfirmed
+    ? cadence
+    : BASELINE_CADENCE_MINUTES;
+}
+
+function cadenceFromWorkerSummary(result) {
+  const status = String(result?.status || "");
+  const failed = Math.max(0, Number(result?.failed || 0) + Number(result?.releaseFailed || 0));
+  const haltedCode = String(result?.haltedCode || "");
+  const cadenceConfirmed = status === "already_running"
+    || status === "standby"
+    || status === "idle"
+    || (status === "completed" && failed === 0 && !haltedCode);
+  return cadenceConfirmed && Number(result?.cadenceMinutes) === CANDIDATE_CADENCE_MINUTES
+    ? CANDIDATE_CADENCE_MINUTES
+    : BASELINE_CADENCE_MINUTES;
 }
 
 async function configureAlarms(requestedCadence = null) {
   const cadenceMinutes = await safeCadenceMinutes(requestedCadence);
   if (requestedCadence != null) {
-    await chrome.storage.local.set({ [CADENCE_MINUTES_KEY]: cadenceMinutes });
+    await chrome.storage.local.set({
+      [CADENCE_MINUTES_KEY]: cadenceMinutes,
+      [CADENCE_CONFIRMED_AT_KEY]: Date.now(),
+    });
   }
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
@@ -536,9 +563,7 @@ async function runWorker(trigger = "manual", options = {}) {
       port.postMessage({ action: "run", trigger, ...runtimeIdentity });
     });
     const submitted = Math.max(0, Number(result.submitted || 0));
-    if (Number.isFinite(Number(result.cadenceMinutes))) {
-      await configureAlarms(Number(result.cadenceMinutes)).catch(() => {});
-    }
+    await configureAlarms(cadenceFromWorkerSummary(result)).catch(() => {});
     if (result.status === "already_running") {
       await saveStatus("standby", "기존 작업 종료 대기 중");
       return { ok: false, code: "native_host_already_running", summary: result };
@@ -589,6 +614,7 @@ async function runWorker(trigger = "manual", options = {}) {
       : completedDetail);
     return { ok: failed === 0, partial: failed > 0, summary: result };
   } catch (error) {
+    await configureAlarms(BASELINE_CADENCE_MINUTES).catch(() => {});
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };
   } finally {

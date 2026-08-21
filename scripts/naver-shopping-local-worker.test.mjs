@@ -68,7 +68,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.8",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.9",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -116,6 +116,7 @@ function authenticatedFetch(responses, calls, coordination = {}) {
     calls.push(payload);
     const responseFixture = responses.shift();
     assert.ok(responseFixture, "unexpected worker API call");
+    if (responseFixture.error) throw responseFixture.error;
     return Response.json(responseFixture.body, { status: responseFixture.status || 200 });
   };
 }
@@ -138,7 +139,7 @@ function assertZshSyntax(scriptPath, source) {
 test("stays completely off until the local worker flag is enabled", async () => {
   const summary = await runLocalShoppingWorker({ env: {}, skipLock: true });
   assert.deepEqual(summary, {
-    status: "disabled", claimed: 0, submitted: 0, failed: 0, releaseFailed: 0,
+    status: "disabled", claimed: 0, submitted: 0, failed: 0, releaseFailed: 0, atomicSuccesses: 0,
   });
 });
 
@@ -234,7 +235,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.8");
+  assert.equal(lane.runtimeVersion, "1.1.9");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -344,8 +345,9 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
     registerProgressSink(sink) { progressSink = sink; },
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 1, failed: 0, releaseFailed: 0,
+    status: "completed", claimed: 1, submitted: 1, failed: 0, releaseFailed: 0, atomicSuccesses: 1,
   });
+  assert.equal(summary.atomicSuccesses, 1);
   assert.equal(collectCount, 1);
   assert.equal(closed, true);
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "claim"]);
@@ -353,7 +355,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.8");
+  assert.equal(coordination[0].runtimeVersion, "1.1.9");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -391,8 +393,10 @@ test("never fails or double-counts an atomically committed job after control-pla
     submitted: 1,
     failed: 0,
     releaseFailed: 0,
+    atomicSuccesses: 0,
     controlPlaneFailed: 1,
   });
+  assert.equal(summary.atomicSuccesses, 0);
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit"]);
   assert.equal(calls.some((call) => call.action === "fail"), false);
   assert.deepEqual(
@@ -435,6 +439,7 @@ test("one approved manual run queues every active tracker before the bounded dra
     submitted: 1,
     failed: 0,
     releaseFailed: 0,
+    atomicSuccesses: 1,
     queuedTotal: 71,
     queued: 69,
     alreadyQueued: 0,
@@ -473,6 +478,7 @@ test("remote polling exits without opening Naver when no wake is pending", async
     submitted: 0,
     failed: 0,
     releaseFailed: 0,
+    atomicSuccesses: 0,
     remoteWake: false,
   });
   assert.equal(collectCount, 0);
@@ -560,6 +566,7 @@ test("one remote wake runs at most one queued job even with a larger configured 
     submitted: 1,
     failed: 0,
     releaseFailed: 0,
+    atomicSuccesses: 1,
     remoteWake: true,
     queuedTotal: 65,
     queued: 65,
@@ -574,6 +581,53 @@ test("one remote wake runs at most one queued job even with a larger configured 
     "submit",
   ]);
   assert.equal(calls.find((call) => call.action === "claim")?.preferLookup, true);
+});
+
+test("an automatic circuit recovery queues trackers first and runs exactly one probe job", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "25" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, total: 74, queued: 0, alreadyQueued: 74, alreadyProcessing: 0 } },
+      { body: { ok: true, job: JOB } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+      } },
+    ], calls, {
+      claimLane: {
+        ok: true,
+        granted: true,
+        reason: "granted",
+        autoRecovery: true,
+        probeTrackerId: null,
+        cadenceMinutes: 10,
+      },
+    }),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.submitted, 1);
+  assert.equal(summary.atomicSuccesses, 1);
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+  ]);
+  assert.equal(calls.filter((call) => call.action === "claim").length, 1);
+  assert.equal(calls.find((call) => call.action === "claim")?.autoRecovery, true);
 });
 
 test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
@@ -612,6 +666,7 @@ test("a two-job safety budget still reserves one claim for 30-day trackers", asy
     skipLock: true,
   });
   assert.equal(summary.submitted, 2);
+  assert.equal(summary.atomicSuccesses, 2);
   assert.deepEqual(
     calls.filter((call) => call.action === "claim").map((call) => call.preferLookup),
     [true, false],
@@ -645,6 +700,7 @@ test("never submits a short source-exhausted window and releases the lease as fa
     submitted: 0,
     failed: 1,
     releaseFailed: 0,
+    atomicSuccesses: 0,
     cadenceMinutes: 10,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
@@ -674,7 +730,7 @@ test("fails closed when the failure RPC releases fewer claims than requested", a
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
   assert.match(logs.join("\n"), /local_worker_failure_release_invalid/u);
@@ -759,7 +815,7 @@ test("preserves a native request-id mismatch, skips submit and releases the lane
   });
 
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
   assert.equal(calls[1].errorCode, "native_host_request_id_mismatch");
@@ -820,7 +876,7 @@ test("isolates duplicate provider identity to its tracker group and continues th
   });
 
   assert.deepEqual(summary, {
-    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0, atomicSuccesses: 1,
   });
   assert.equal(collectCount, 2);
   assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
@@ -1038,7 +1094,7 @@ test("isolates malformed provider rows to their keyword group and continues the 
       });
 
       assert.deepEqual(summary, {
-        status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0,
+        status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0, atomicSuccesses: 1,
       });
       assert.equal(collectCount, 2);
       assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
@@ -1082,7 +1138,7 @@ test("stops the batch after Naver requests verification and preserves all unclai
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
     haltedCode: "naver_verification_required",
   });
   assert.equal(collectCount, 1);
@@ -1148,7 +1204,7 @@ test("treats any lease-lost submit result as a failed batch and releases the cla
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit"]);
 });
@@ -1174,7 +1230,7 @@ test("treats a server collection conflict as a failed batch and releases the cla
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
   assert.equal(calls[2].errorCode, "local_worker_collection_conflict");
@@ -1210,6 +1266,10 @@ test("accounts for server-reported partial commits without counting them as fail
           leaseLostCount: 0,
           collectionConflictCount: 0,
           processedCount: 1,
+          claimResults: [{
+            claimId: twoClaimJob.claims[0].trackerId,
+            status: "committed",
+          }],
         },
       },
     },
@@ -1225,13 +1285,13 @@ test("accounts for server-reported partial commits without counting them as fail
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0,
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
   assert.deepEqual(calls[2].job.claims, [twoClaimJob.claims[1]]);
 });
 
-test("uses processedCount to release only the unprocessed suffix after mixed partial outcomes", async () => {
+test("uses explicit claim ids instead of a processed prefix after mixed partial outcomes", async () => {
   const calls = [];
   const threeClaimJob = {
     ...JOB,
@@ -1260,6 +1320,10 @@ test("uses processedCount to release only the unprocessed suffix after mixed par
           leaseLostCount: 1,
           collectionConflictCount: 0,
           processedCount: 2,
+          claimResults: [
+            { claimId: threeClaimJob.claims[0].trackerId, status: "committed" },
+            { claimId: threeClaimJob.claims[2].trackerId, status: "lease_lost" },
+          ],
         },
       },
     },
@@ -1276,10 +1340,163 @@ test("uses processedCount to release only the unprocessed suffix after mixed par
   });
 
   assert.deepEqual(summary, {
-    status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0,
+    status: "completed", claimed: 3, submitted: 1, failed: 2, releaseFailed: 0, atomicSuccesses: 0,
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
-  assert.deepEqual(calls[2].job.claims, [threeClaimJob.claims[2]]);
+  assert.deepEqual(calls[2].job.claims, [threeClaimJob.claims[1]]);
+});
+
+test("reconciles a lost grouped-submit response and fails only exact uncommitted claim ids", async () => {
+  const calls = [];
+  const threeClaimJob = {
+    ...JOB,
+    claims: [
+      JOB.claims[0],
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174001",
+      },
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174002",
+      },
+    ],
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: threeClaimJob } },
+    { error: new TypeError("socket closed after commit") },
+    {
+      body: {
+        ok: true,
+        committedCount: 0,
+        alreadyCommittedCount: 2,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        uncommittedCount: 1,
+        processedCount: 3,
+        claimResults: [
+          { claimId: threeClaimJob.claims[0].trackerId, status: "already_committed" },
+          { claimId: threeClaimJob.claims[1].trackerId, status: "uncommitted" },
+          { claimId: threeClaimJob.claims[2].trackerId, status: "already_committed" },
+        ],
+      },
+    },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 3, submitted: 2, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
+  });
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["claim", "submit", "reconcile-submit", "fail"],
+  );
+  assert.deepEqual(calls[3].job.claims, [threeClaimJob.claims[1]]);
+});
+
+test("reconciles a gateway error body because submit may already have committed", async () => {
+  const calls = [];
+  const twoClaimJob = {
+    ...JOB,
+    claims: [
+      JOB.claims[0],
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174001",
+      },
+    ],
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: twoClaimJob } },
+    { status: 502, body: { ok: false, code: "gateway_response_lost" } },
+    {
+      body: {
+        ok: true,
+        committedCount: 0,
+        alreadyCommittedCount: 1,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        uncommittedCount: 1,
+        processedCount: 2,
+        claimResults: [
+          { claimId: twoClaimJob.claims[0].trackerId, status: "already_committed" },
+          { claimId: twoClaimJob.claims[1].trackerId, status: "uncommitted" },
+        ],
+      },
+    },
+    { body: { ok: true, releasedCount: 1 } },
+  ], calls);
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl,
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0, atomicSuccesses: 0,
+  });
+  assert.deepEqual(
+    calls.map((call) => call.action),
+    ["claim", "submit", "reconcile-submit", "fail"],
+  );
+  assert.deepEqual(calls[3].job.claims, [twoClaimJob.claims[1]]);
+});
+
+test("leaves every claim untouched when a lost submit response cannot be reconciled", async () => {
+  const calls = [];
+  const twoClaimJob = {
+    ...JOB,
+    claims: [
+      JOB.claims[0],
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174001",
+      },
+    ],
+  };
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: twoClaimJob } },
+      { error: new TypeError("submit response lost") },
+      { error: new TypeError("reconciliation unavailable") },
+    ], calls),
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "control_plane_failed",
+    claimed: 2,
+    submitted: 0,
+    failed: 0,
+    releaseFailed: 0,
+    atomicSuccesses: 0,
+    controlPlaneFailed: 1,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "reconcile-submit"]);
+  assert.equal(calls.some((call) => call.action === "fail"), false);
+  assert.equal(
+    calls.coordination.some((call) => (
+      call.action === "record-failure" && call.errorCode === "local_worker_submit_outcome_unknown"
+    )),
+    true,
+  );
 });
 
 test("makes failure-release transport errors visible in the final summary", async () => {
@@ -1304,7 +1521,7 @@ test("makes failure-release transport errors visible in the final summary", asyn
     skipLock: true,
   });
   assert.deepEqual(summary, {
-    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1,
+    status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1, atomicSuccesses: 0,
   });
   assert.match(logs.join("\n"), /local_worker_failure_release_failed/);
 });

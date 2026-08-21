@@ -660,7 +660,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.8");
+  assert.equal(manifest.version, "1.1.9");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -835,74 +835,790 @@ test("Chrome worker VM acknowledges only the exact range-v1 native protocol", ()
   );
 });
 
-test("candidate cadence is recent-summary leased and every failed summary falls back to baseline", async () => {
+test("candidate cadence requires durable post-failure atomic stability proof", async () => {
   const serviceWorker = fs.readFileSync(
     new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
     "utf8",
   );
   assert.match(serviceWorker, /CADENCE_CONFIRMED_AT_KEY/u);
   assert.match(serviceWorker, /CANDIDATE_CADENCE_CONFIRMATION_TTL_MS = 20 \* 60_000/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_RESET_PENDING_KEY/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_SUCCESS_COUNT_KEY/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_REQUIRED_SUCCESSES = 6/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_STABILITY_MS = 24 \* 60 \* 60_000/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_RESET_PENDING_ALARM/u);
   assert.match(serviceWorker, /function cadenceFromWorkerSummary\(result\)/u);
+  assert.match(serviceWorker, /function workerSummaryRequiresCadenceReset\(result\)/u);
+  assert.match(
+    serviceWorker,
+    /async function markCandidateCadenceResetPending\(runtimeIdentity = null\)/u,
+  );
+  assert.match(serviceWorker, /async function updateCandidateCadenceEvidence\(result\)/u);
+  assert.doesNotMatch(serviceWorker, /CANDIDATE_CADENCE_BLOCKED_UNTIL/u);
 
   const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
   const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
   const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
   const safeEnd = serviceWorker.indexOf("async function configureAlarms", safeStart);
-  const summaryStart = serviceWorker.indexOf("function cadenceFromWorkerSummary");
-  const summaryEnd = serviceWorker.indexOf("async function configureAlarms", summaryStart);
   assert.ok(constantsStart >= 0 && constantsEnd > constantsStart);
   assert.ok(safeStart >= 0 && safeEnd > safeStart);
-  assert.ok(summaryStart >= 0 && summaryEnd > summaryStart);
 
-  const now = Date.parse("2026-08-21T07:00:00.000Z");
+  let now = Date.parse("2026-08-21T07:00:00.000Z");
   const stored = {};
-  const helpers = runInNewContext(`
-    ${serviceWorker.slice(constantsStart, constantsEnd)}
-    ${serviceWorker.slice(safeStart, safeEnd)}
-    ${serviceWorker.slice(summaryStart, summaryEnd)}
-    ({ safeCadenceMinutes, cadenceFromWorkerSummary });
-  `, {
-    Date: { now: () => now },
-    chrome: {
-      storage: {
-        local: {
-          async get(keys) {
-            return Object.fromEntries(keys.map((key) => [key, stored[key]]));
+  const alarms = new Map();
+  const runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "a".repeat(64),
+  };
+  let failRead = false;
+  let failWrite = false;
+  let failAlarmRead = false;
+  let failAlarmCreate = false;
+  let failAlarmClear = false;
+  const createHelpers = () => runInNewContext(`
+      ${serviceWorker.slice(constantsStart, constantsEnd)}
+      ${serviceWorker.slice(safeStart, safeEnd)}
+      ({
+        safeCadenceMinutes,
+        cadenceFromWorkerSummary,
+        workerSummaryRequiresCadenceReset,
+        markCandidateCadenceResetPending,
+        updateCandidateCadenceEvidence,
+      });
+    `, {
+      Date: { now: () => now },
+      extensionRuntimeIdentity: async () => runtimeIdentity,
+      chrome: {
+        alarms: {
+          async get(name) {
+            if (failAlarmRead) throw new Error("alarm_read_failed");
+            return alarms.get(name) || null;
+          },
+          async create(name, definition) {
+            if (failAlarmCreate) throw new Error("alarm_create_failed");
+            alarms.set(name, { name, ...definition });
+          },
+          async clear(name) {
+            if (failAlarmClear) throw new Error("alarm_clear_failed");
+            return alarms.delete(name);
+          },
+        },
+        storage: {
+          local: {
+            async get(keys) {
+              if (failRead) throw new Error("storage_read_failed");
+              return Object.fromEntries(keys.map((key) => [key, stored[key]]));
+            },
+            async set(values) {
+              if (failWrite) throw new Error("storage_write_failed");
+              Object.assign(stored, values);
+            },
           },
         },
       },
-    },
-    stored,
-  });
-
+      stored,
+      alarms,
+    });
+  let helpers = createHelpers();
   stored.momentInsightRankCadenceMinutes = 8;
-  stored.momentInsightRankCadenceConfirmedAt = now - (19 * 60_000);
+  stored.momentInsightRankCadenceConfirmedAt = now;
+  stored.momentInsightRankCandidateProofRuntimeVersion = runtimeIdentity.runtimeVersion;
+  stored.momentInsightRankCandidateProofServiceWorkerSha256 = runtimeIdentity.serviceWorkerSha256;
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(), 10);
+  for (const invalid of [null, 0, "false", "true"]) {
+    stored.momentInsightRankCandidateResetPending = invalid;
+    assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  }
+  stored.momentInsightRankCandidateResetPending = false;
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  stored.momentInsightRankCandidateStabilityStartedAt = now - (24 * 60 * 60_000) - 1;
+  stored.momentInsightRankCandidateSuccessCount = 5;
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  stored.momentInsightRankCandidateSuccessCount = 6;
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
   assert.equal(await helpers.safeCadenceMinutes(), 8);
-  stored.momentInsightRankCadenceConfirmedAt = now - (21 * 60_000);
-  assert.equal(await helpers.safeCadenceMinutes(), 10);
-  delete stored.momentInsightRankCadenceConfirmedAt;
-  assert.equal(await helpers.safeCadenceMinutes(), 10);
+  helpers = createHelpers();
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  const failureSummary = {
+    status: "completed",
+    cadenceMinutes: 8,
+    atomicSuccesses: 0,
+    failed: 1,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  };
+  const successSummary = {
+    status: "completed",
+    cadenceMinutes: 8,
+    atomicSuccesses: 1,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  };
+  const idleSummary = {
+    status: "idle",
+    cadenceMinutes: 10,
+    atomicSuccesses: 0,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  };
+  assert.equal(await helpers.updateCandidateCadenceEvidence(failureSummary), false);
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, now);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 1);
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
+  }
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 6);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  now += 24 * 60 * 60_000 + 1;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), false);
   assert.equal(await helpers.safeCadenceMinutes(8), 8);
 
   for (const summary of [
-    { status: "disabled", cadenceMinutes: 8 },
-    { status: "control_plane_failed", cadenceMinutes: 8 },
-    { status: "completed", cadenceMinutes: 8, failed: 1 },
-    { status: "completed", cadenceMinutes: 8, releaseFailed: 1 },
-    { status: "unexpected", cadenceMinutes: 8 },
+    { status: "disabled", cadenceMinutes: 8, atomicSuccesses: 0 },
+    { status: "control_plane_failed", cadenceMinutes: 8, atomicSuccesses: 0 },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, failed: 1 },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, releaseFailed: 1 },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, halted: true },
+    {
+      status: "completed",
+      cadenceMinutes: 8,
+      atomicSuccesses: 0,
+      haltedCode: "provider_deadline_exceeded",
+    },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, controlPlaneFailed: 1 },
+    { status: "completed", cadenceMinutes: 8 },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: -1 },
+    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 1.5 },
+    { status: "unexpected", cadenceMinutes: 8, atomicSuccesses: 0 },
   ]) {
     assert.equal(helpers.cadenceFromWorkerSummary(summary), 10);
+    assert.equal(helpers.workerSummaryRequiresCadenceReset(summary), true);
   }
-  assert.equal(helpers.cadenceFromWorkerSummary({ status: "completed", cadenceMinutes: 8 }), 8);
-  assert.equal(helpers.cadenceFromWorkerSummary({ status: "idle", cadenceMinutes: 8 }), 8);
-  assert.equal(helpers.cadenceFromWorkerSummary({ status: "standby", cadenceMinutes: 8 }), 8);
-  assert.equal(helpers.cadenceFromWorkerSummary({ status: "already_running", cadenceMinutes: 8 }), 8);
+  for (const status of ["completed", "idle", "standby", "already_running"]) {
+    const summary = {
+      status,
+      cadenceMinutes: 8,
+      atomicSuccesses: status === "completed" ? 1 : 0,
+      failed: 0,
+      releaseFailed: 0,
+      controlPlaneFailed: 0,
+    };
+    assert.equal(helpers.cadenceFromWorkerSummary(summary), 8);
+    assert.equal(helpers.workerSummaryRequiresCadenceReset(summary), false);
+  }
+
+  failRead = true;
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  failRead = false;
+  failAlarmRead = true;
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  failAlarmRead = false;
+
+  Object.assign(stored, {
+    momentInsightRankCandidateResetPending: false,
+    momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+    momentInsightRankCandidateSuccessCount: 6,
+  });
+  alarms.clear();
+  stored.momentInsightRankCandidateResetPending = false;
+  helpers = createHelpers();
+  failWrite = true;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(failureSummary), false);
+  failWrite = false;
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  helpers = createHelpers();
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, now);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 1);
+  for (let index = 0; index < 5; index += 1) {
+    assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
+  }
+  now += 24 * 60 * 60_000 + 1;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), false);
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  await helpers.updateCandidateCadenceEvidence(failureSummary);
+  await helpers.updateCandidateCadenceEvidence(successSummary);
+  for (let index = 0; index < 5; index += 1) {
+    await helpers.updateCandidateCadenceEvidence(successSummary);
+  }
+  now += 24 * 60 * 60_000 + 1;
+  failWrite = true;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
+  failWrite = false;
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), false);
+  helpers = createHelpers();
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  await helpers.updateCandidateCadenceEvidence(failureSummary);
+  await helpers.updateCandidateCadenceEvidence(successSummary);
+  for (let index = 0; index < 5; index += 1) {
+    await helpers.updateCandidateCadenceEvidence(successSummary);
+  }
+  now += 24 * 60 * 60_000 + 1;
+  failAlarmClear = true;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
+  failAlarmClear = false;
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  helpers = createHelpers();
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), false);
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  stored.momentInsightRankCandidateResetPending = false;
+  stored.momentInsightRankCandidateStabilityStartedAt = now - (24 * 60 * 60_000) - 1;
+  stored.momentInsightRankCandidateSuccessCount = 6;
+  alarms.clear();
+  helpers = createHelpers();
+  failAlarmCreate = true;
+  assert.equal(await helpers.updateCandidateCadenceEvidence(failureSummary), false);
+  failAlarmCreate = false;
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  helpers = createHelpers();
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+
+  const evidenceStart = serviceWorker.indexOf("async function updateCandidateCadenceEvidence");
+  const evidenceEnd = serviceWorker.indexOf("function cadenceFromWorkerSummary", evidenceStart);
+  const evidenceSource = serviceWorker.slice(evidenceStart, evidenceEnd);
+  assert.match(evidenceSource, /atomicSuccesses/u);
+  assert.doesNotMatch(evidenceSource, /\b(?:claimed|submitted)\b/u);
+
+  const configureStart = serviceWorker.indexOf("async function configureAlarms");
+  const configureEnd = serviceWorker.indexOf("function isLegacyControllerTab", configureStart);
+  const configureSource = serviceWorker.slice(configureStart, configureEnd);
+  assert.match(
+    configureSource,
+    /catch \{[\s\S]{0,120}await markCandidateCadenceResetPending\(\)[\s\S]{0,120}cadenceMinutes = BASELINE_CADENCE_MINUTES/u,
+  );
 
   const workerStart = serviceWorker.indexOf('async function runWorker(trigger = "manual"');
   const workerEnd = serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", workerStart);
   const workerSource = serviceWorker.slice(workerStart, workerEnd);
+  assert.match(workerSource, /updateCandidateCadenceEvidence\(result\)/u);
   assert.match(workerSource, /configureAlarms\(cadenceFromWorkerSummary\(result\)\)/u);
-  assert.match(workerSource, /catch \(error\) \{[\s\S]{0,180}configureAlarms\(BASELINE_CADENCE_MINUTES\)/u);
+  assert.match(workerSource, /catch \(error\) \{[\s\S]{0,240}markCandidateCadenceResetPending\(\)[\s\S]{0,220}configureAlarms\(BASELINE_CADENCE_MINUTES\)/u);
+});
+
+test("worker initialization turns an interrupted native run into a durable baseline reset", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(serviceWorker, /async function initializeWorker\(\)/u);
+  assert.match(serviceWorker, /let initializationPromise/u);
+
+  const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
+  const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
+  const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
+  const safeEnd = serviceWorker.indexOf("function isLegacyControllerTab", safeStart);
+  const statusStart = serviceWorker.indexOf('async function saveStatus(status, detail = "")');
+  const statusEnd = serviceWorker.indexOf("function nativeDisconnectCode", statusStart);
+  assert.ok(constantsStart >= 0 && constantsEnd > constantsStart);
+  assert.ok(safeStart >= 0 && safeEnd > safeStart);
+  assert.ok(statusStart >= 0 && statusEnd > statusStart);
+
+  let now = Date.parse("2026-08-21T07:00:00.000Z");
+  const runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "b".repeat(64),
+  };
+  const stored = {
+    momentInsightRankStatus: {
+      status: "running",
+      detail: "rank-catch-up",
+      updatedAt: new Date(now - 1_000).toISOString(),
+    },
+    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceConfirmedAt: now,
+    momentInsightRankCandidateResetPending: false,
+    momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+    momentInsightRankCandidateSuccessCount: 6,
+    momentInsightRankCandidateProofRuntimeVersion: runtimeIdentity.runtimeVersion,
+    momentInsightRankCandidateProofServiceWorkerSha256: runtimeIdentity.serviceWorkerSha256,
+  };
+  const alarms = new Map();
+  let failRead = false;
+  class MockDate extends Date {
+    static now() { return now; }
+    constructor(...args) { super(...(args.length ? args : [now])); }
+  }
+  const helpers = runInNewContext(`
+      ${serviceWorker.slice(constantsStart, constantsEnd)}
+      ${serviceWorker.slice(safeStart, safeEnd)}
+      let initializationPromise = Promise.resolve();
+      ${serviceWorker.slice(statusStart, statusEnd)}
+      ({
+        initializeWorker,
+        startWorkerInitialization,
+        safeCadenceMinutes,
+        updateCandidateCadenceEvidence,
+      });
+    `, {
+      Date: MockDate,
+      extensionRuntimeIdentity: async () => runtimeIdentity,
+      nextKstHour: (hour) => now + hour * 60 * 60_000,
+      removeLegacyControllerTabs: async () => {},
+      chrome: {
+        alarms: {
+          async get(name) { return alarms.get(name) || null; },
+          async create(name, definition) { alarms.set(name, { name, ...definition }); },
+          async clear(name) { return alarms.delete(name); },
+        },
+        storage: {
+          local: {
+            async get(keys) {
+              if (failRead) throw new Error("storage_read_failed");
+              const requested = Array.isArray(keys) ? keys : [keys];
+              return Object.fromEntries(requested.map((key) => [key, stored[key]]));
+            },
+            async set(values) { Object.assign(stored, values); },
+          },
+        },
+      },
+    });
+
+  await helpers.startWorkerInitialization();
+  assert.equal(stored.momentInsightRankStatus.status, "failed");
+  assert.equal(stored.momentInsightRankStatus.detail, "native_host_interrupted");
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+
+  await helpers.updateCandidateCadenceEvidence({
+    status: "completed",
+    cadenceMinutes: 8,
+    atomicSuccesses: 1,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  });
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, now);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 1);
+  for (let index = 0; index < 5; index += 1) {
+    await helpers.updateCandidateCadenceEvidence({
+      status: "completed",
+      cadenceMinutes: 8,
+      atomicSuccesses: 1,
+      failed: 0,
+      releaseFailed: 0,
+      controlPlaneFailed: 0,
+    });
+  }
+  now += 24 * 60 * 60_000 + 1;
+  await helpers.updateCandidateCadenceEvidence({
+    status: "idle",
+    cadenceMinutes: 10,
+    atomicSuccesses: 0,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  });
+
+  Object.assign(stored, {
+    momentInsightRankStatus: {
+      status: "completed",
+      detail: "갱신 1건",
+      updatedAt: new Date(now).toISOString(),
+    },
+    momentInsightRankCadenceConfirmedAt: now,
+  });
+  await helpers.startWorkerInitialization();
+  assert.equal(stored.momentInsightRankStatus.status, "completed");
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8);
+
+  failRead = true;
+  await assert.rejects(helpers.initializeWorker(), /storage_read_failed/u);
+  failRead = false;
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+
+  const requestStart = serviceWorker.indexOf("async function requestWorkerRun(trigger)");
+  const requestEnd = serviceWorker.indexOf("function searchUrl", requestStart);
+  const workerStart = serviceWorker.indexOf('async function runWorker(trigger = "manual"');
+  const workerEnd = serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", workerStart);
+  const lifecycleSource = serviceWorker.slice(workerEnd);
+  assert.match(serviceWorker.slice(requestStart, requestEnd), /await initializationPromise/u);
+  assert.match(serviceWorker.slice(workerStart, workerEnd), /await initializationPromise/u);
+  assert.match(lifecycleSource, /onInstalled\.addListener\(\(\) => \{[\s\S]{0,120}startWorkerInitialization\(\)/u);
+  assert.match(lifecycleSource, /onStartup\.addListener\(\(\) => \{[\s\S]{0,120}startWorkerInitialization\(\)/u);
+  assert.match(lifecycleSource, /void startWorkerInitialization\(\)/u);
+  assert.equal((lifecycleSource.match(/void startWorkerInitialization\(\);/gu) || []).length, 3);
+  assert.doesNotMatch(lifecycleSource, /void configureAlarms\(\)/u);
+});
+
+test("stale visible running status persists the cadence reset before a second restart", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
+  const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
+  const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
+  const safeEnd = serviceWorker.indexOf("function isLegacyControllerTab", safeStart);
+  const statusStart = serviceWorker.indexOf('async function saveStatus(status, detail = "")');
+  const statusEnd = serviceWorker.indexOf("function nativeDisconnectCode", statusStart);
+  let now = Date.parse("2026-08-21T07:00:00.000Z");
+  const runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "c".repeat(64),
+  };
+  const stored = {
+    momentInsightRankStatus: {
+      status: "running",
+      detail: "page 8/8",
+      updatedAt: new Date(now - (20 * 60_000) - 1).toISOString(),
+    },
+    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceConfirmedAt: now,
+    momentInsightRankCandidateResetPending: false,
+    momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+    momentInsightRankCandidateSuccessCount: 6,
+    momentInsightRankCandidateProofRuntimeVersion: runtimeIdentity.runtimeVersion,
+    momentInsightRankCandidateProofServiceWorkerSha256: runtimeIdentity.serviceWorkerSha256,
+  };
+  const alarms = new Map();
+  class MockDate extends Date {
+    static now() { return now; }
+    constructor(...args) { super(...(args.length ? args : [now])); }
+  }
+  const createHelpers = () => runInNewContext(`
+      ${serviceWorker.slice(constantsStart, constantsEnd)}
+      ${serviceWorker.slice(safeStart, safeEnd)}
+      const RUNNING_STATUS_STALE_MS = 20 * 60_000;
+      let initializationPromise = Promise.resolve();
+      ${serviceWorker.slice(statusStart, statusEnd)}
+      ({ loadVisibleStatus, initializeWorker, safeCadenceMinutes });
+    `, {
+      Date: MockDate,
+      extensionRuntimeIdentity: async () => runtimeIdentity,
+      nextKstHour: (hour) => now + hour * 60 * 60_000,
+      removeLegacyControllerTabs: async () => {},
+      chrome: {
+        alarms: {
+          async get(name) { return alarms.get(name) || null; },
+          async create(name, definition) { alarms.set(name, { name, ...definition }); },
+          async clear(name) { return alarms.delete(name); },
+        },
+        storage: {
+          local: {
+            async get(keys) {
+              const requested = Array.isArray(keys) ? keys : [keys];
+              return Object.fromEntries(requested.map((key) => [key, stored[key]]));
+            },
+            async set(values) { Object.assign(stored, values); },
+          },
+        },
+      },
+    });
+
+  let helpers = createHelpers();
+  const visible = await helpers.loadVisibleStatus();
+  assert.equal(visible.status, "failed");
+  assert.equal(visible.detail, "native_host_interrupted");
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+
+  helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankStatus.status, "failed");
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+});
+
+test("initialization allowlist and generic failure preserve fail-closed restart evidence", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    serviceWorker,
+    /INITIALIZATION_SAFE_STATUSES = new Set\(\["completed", "standby", "ready"\]\)/u,
+  );
+  const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
+  const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
+  const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
+  const safeEnd = serviceWorker.indexOf("function isLegacyControllerTab", safeStart);
+  const statusStart = serviceWorker.indexOf('async function saveStatus(status, detail = "")');
+  const statusEnd = serviceWorker.indexOf("function nativeDisconnectCode", statusStart);
+  const now = Date.parse("2026-08-21T07:00:00.000Z");
+  const runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "d".repeat(64),
+  };
+  const stored = {};
+  const alarms = new Map();
+  class MockDate extends Date {
+    static now() { return now; }
+    constructor(...args) { super(...(args.length ? args : [now])); }
+  }
+  const createHelpers = () => runInNewContext(`
+      ${serviceWorker.slice(constantsStart, constantsEnd)}
+      ${serviceWorker.slice(safeStart, safeEnd)}
+      const RUNNING_STATUS_STALE_MS = 20 * 60_000;
+      let initializationPromise = Promise.resolve();
+      ${serviceWorker.slice(statusStart, statusEnd)}
+      ({ saveWorkerFailure, initializeWorker, safeCadenceMinutes });
+    `, {
+      Date: MockDate,
+      extensionRuntimeIdentity: async () => runtimeIdentity,
+      nextKstHour: (hour) => now + hour * 60 * 60_000,
+      removeLegacyControllerTabs: async () => {},
+      chrome: {
+        alarms: {
+          async get(name) { return alarms.get(name) || null; },
+          async create(name, definition) { alarms.set(name, { name, ...definition }); },
+          async clear(name) { return alarms.delete(name); },
+        },
+        storage: {
+          local: {
+            async get(keys) {
+              const requested = Array.isArray(keys) ? keys : [keys];
+              return Object.fromEntries(requested.map((key) => [key, stored[key]]));
+            },
+            async set(values) { Object.assign(stored, values); },
+          },
+        },
+      },
+    });
+  const seedOldProof = (status) => {
+    if (status == null) delete stored.momentInsightRankStatus;
+    else {
+      stored.momentInsightRankStatus = {
+        status,
+        detail: "",
+        updatedAt: new Date(now).toISOString(),
+      };
+    }
+    Object.assign(stored, {
+      momentInsightRankCadenceMinutes: 8,
+      momentInsightRankCadenceConfirmedAt: now,
+      momentInsightRankCandidateResetPending: false,
+      momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+      momentInsightRankCandidateSuccessCount: 6,
+      momentInsightRankCandidateProofRuntimeVersion: runtimeIdentity.runtimeVersion,
+      momentInsightRankCandidateProofServiceWorkerSha256: runtimeIdentity.serviceWorkerSha256,
+    });
+    alarms.clear();
+  };
+
+  for (const status of [null, "unknown", "failed", "partial", "verification"]) {
+    seedOldProof(status);
+    const helpers = createHelpers();
+    await helpers.initializeWorker();
+    assert.equal(stored.momentInsightRankCandidateResetPending, true, String(status));
+    assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0, String(status));
+    assert.equal(stored.momentInsightRankCandidateSuccessCount, 0, String(status));
+    assert.equal(alarms.has("rank-candidate-reset-pending"), true, String(status));
+    assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10, String(status));
+  }
+  for (const status of ["completed", "standby", "ready"]) {
+    seedOldProof(status);
+    const helpers = createHelpers();
+    await helpers.initializeWorker();
+    assert.equal(stored.momentInsightRankCandidateResetPending, false, status);
+    assert.equal(alarms.has("rank-candidate-reset-pending"), false, status);
+    assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8, status);
+  }
+
+  seedOldProof("running");
+  let helpers = createHelpers();
+  await helpers.saveWorkerFailure();
+  assert.equal(stored.momentInsightRankStatus.status, "failed");
+  assert.equal(stored.momentInsightRankStatus.detail, "rank_worker_unavailable");
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+
+  helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+});
+
+test("candidate proof is bound to the exact extension runtime identity", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY/u);
+  const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
+  const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
+  const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
+  const safeEnd = serviceWorker.indexOf("function isLegacyControllerTab", safeStart);
+  const statusStart = serviceWorker.indexOf('async function saveStatus(status, detail = "")');
+  const statusEnd = serviceWorker.indexOf("function nativeDisconnectCode", statusStart);
+  let now = Date.parse("2026-08-21T07:00:00.000Z");
+  let runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "f".repeat(64),
+  };
+  let failIdentity = false;
+  const stored = {
+    momentInsightRankStatus: {
+      status: "completed",
+      detail: "갱신 1건",
+      updatedAt: new Date(now).toISOString(),
+    },
+    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceConfirmedAt: now,
+    momentInsightRankCandidateResetPending: false,
+    momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+    momentInsightRankCandidateSuccessCount: 6,
+    momentInsightRankCandidateProofRuntimeVersion: "1.1.8",
+    momentInsightRankCandidateProofServiceWorkerSha256: "e".repeat(64),
+  };
+  const alarms = new Map();
+  class MockDate extends Date {
+    static now() { return now; }
+    constructor(...args) { super(...(args.length ? args : [now])); }
+  }
+  const createHelpers = () => runInNewContext(`
+      ${serviceWorker.slice(constantsStart, constantsEnd)}
+      ${serviceWorker.slice(safeStart, safeEnd)}
+      const RUNNING_STATUS_STALE_MS = 20 * 60_000;
+      let initializationPromise = Promise.resolve();
+      ${serviceWorker.slice(statusStart, statusEnd)}
+      ({ initializeWorker, safeCadenceMinutes, updateCandidateCadenceEvidence });
+    `, {
+      Date: MockDate,
+      extensionRuntimeIdentity: async () => {
+        if (failIdentity) throw new Error("extension_runtime_identity_unavailable");
+        return runtimeIdentity;
+      },
+      nextKstHour: (hour) => now + hour * 60 * 60_000,
+      removeLegacyControllerTabs: async () => {},
+      chrome: {
+        alarms: {
+          async get(name) { return alarms.get(name) || null; },
+          async create(name, definition) { alarms.set(name, { name, ...definition }); },
+          async clear(name) { return alarms.delete(name); },
+        },
+        storage: {
+          local: {
+            async get(keys) {
+              const requested = Array.isArray(keys) ? keys : [keys];
+              return Object.fromEntries(requested.map((key) => [key, stored[key]]));
+            },
+            async set(values) { Object.assign(stored, values); },
+          },
+        },
+      },
+    });
+
+  let helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(stored.momentInsightRankCandidateProofRuntimeVersion, "1.1.9");
+  assert.equal(
+    stored.momentInsightRankCandidateProofServiceWorkerSha256,
+    runtimeIdentity.serviceWorkerSha256,
+  );
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+
+  await helpers.updateCandidateCadenceEvidence({
+    status: "completed",
+    cadenceMinutes: 8,
+    atomicSuccesses: 1,
+    failed: 0,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  });
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, now);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 1);
+  helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, now);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 1);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
+
+  Object.assign(stored, {
+    momentInsightRankCandidateResetPending: false,
+    momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
+    momentInsightRankCandidateSuccessCount: 6,
+    momentInsightRankCandidateProofRuntimeVersion: runtimeIdentity.runtimeVersion,
+    momentInsightRankCandidateProofServiceWorkerSha256: runtimeIdentity.serviceWorkerSha256,
+    momentInsightRankCadenceConfirmedAt: now,
+  });
+  alarms.clear();
+  helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankCandidateResetPending, false);
+  assert.equal(alarms.has("rank-candidate-reset-pending"), false);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8);
+
+  runtimeIdentity = {
+    runtimeVersion: "1.1.9",
+    serviceWorkerSha256: "1".repeat(64),
+  };
+  helpers = createHelpers();
+  await helpers.initializeWorker();
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
+  assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
+  assert.equal(
+    stored.momentInsightRankCandidateProofServiceWorkerSha256,
+    runtimeIdentity.serviceWorkerSha256,
+  );
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+
+  failIdentity = true;
+  helpers = createHelpers();
+  await assert.rejects(helpers.initializeWorker(), /extension_runtime_identity_unavailable/u);
+  assert.equal(stored.momentInsightRankCandidateResetPending, true);
+  assert.equal(stored.momentInsightRankCandidateProofRuntimeVersion, "");
+  assert.equal(stored.momentInsightRankCandidateProofServiceWorkerSha256, "");
+  assert.equal(alarms.has("rank-candidate-reset-pending"), true);
+  assert.equal(await helpers.safeCadenceMinutes(8), 10);
 });
 
 test("background worker coalesces one highest-priority finite trigger behind an active run", () => {
@@ -1182,7 +1898,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.8");
+  assert.equal(manifest.version, "1.1.9");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -1341,7 +2057,7 @@ test("native host framing rejects a stale ready acknowledgement before lane clai
       nativeMessageFrame({
         action: "run",
         trigger: "rank-remote",
-        runtimeVersion: "1.1.8",
+        runtimeVersion: "1.1.9",
         serviceWorkerSha256: "0".repeat(64),
       }),
       nativeMessageFrame({ action: "ready_ack" }),
@@ -1359,7 +2075,7 @@ test("native host fails immediately when Chrome closes its input pipe", () => {
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "rank-remote",
-    runtimeVersion: "1.1.8",
+    runtimeVersion: "1.1.9",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

@@ -14,6 +14,18 @@ const CANDIDATE_CADENCE_MINUTES = 8;
 const CADENCE_MINUTES_KEY = "momentInsightRankCadenceMinutes";
 const CADENCE_CONFIRMED_AT_KEY = "momentInsightRankCadenceConfirmedAt";
 const CANDIDATE_CADENCE_CONFIRMATION_TTL_MS = 20 * 60_000;
+const CANDIDATE_CADENCE_RESET_PENDING_KEY = "momentInsightRankCandidateResetPending";
+const CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY = "momentInsightRankCandidateStabilityStartedAt";
+const CANDIDATE_CADENCE_SUCCESS_COUNT_KEY = "momentInsightRankCandidateSuccessCount";
+const CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY = "momentInsightRankCandidateProofRuntimeVersion";
+const CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY = "momentInsightRankCandidateProofServiceWorkerSha256";
+const CANDIDATE_CADENCE_REQUIRED_SUCCESSES = 6;
+const CANDIDATE_CADENCE_STABILITY_MS = 24 * 60 * 60_000;
+const CANDIDATE_CADENCE_RESET_PENDING_ALARM = "rank-candidate-reset-pending";
+const CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES = 365 * 24 * 60;
+const INITIALIZATION_SAFE_STATUSES = new Set(["completed", "standby", "ready"]);
+const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/u;
+let candidateCadenceResetPendingMemory = null;
 // The Node host flushes its terminal frame and closes input; the Windows
 // launcher then releases its mutex immediately after child exit. Keep one
 // finite scheduling gap before opening the coalesced follow-up connection.
@@ -51,6 +63,7 @@ function selectPendingTrigger(currentTrigger, candidateTrigger) {
 let running = false;
 let pendingTrigger = null;
 let runtimeIdentityPromise = null;
+let initializationPromise = Promise.resolve();
 
 function queuePendingTrigger(trigger) {
   const candidate = String(trigger || "").trim();
@@ -166,44 +179,264 @@ function nextKstHour(hour) {
 }
 
 async function safeCadenceMinutes(requested = null) {
-  let value = requested;
-  let confirmedAt = Date.now();
-  if (value == null) {
-    const stored = await chrome.storage.local.get([
+  let stored;
+  let resetPendingAlarm;
+  let runtimeIdentity;
+  try {
+    runtimeIdentity = await extensionRuntimeIdentity();
+    stored = await chrome.storage.local.get([
       CADENCE_MINUTES_KEY,
       CADENCE_CONFIRMED_AT_KEY,
+      CANDIDATE_CADENCE_RESET_PENDING_KEY,
+      CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY,
+      CANDIDATE_CADENCE_SUCCESS_COUNT_KEY,
+      CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY,
+      CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY,
     ]);
-    value = stored[CADENCE_MINUTES_KEY];
-    confirmedAt = Number(stored[CADENCE_CONFIRMED_AT_KEY] || 0);
+    resetPendingAlarm = await chrome.alarms.get(CANDIDATE_CADENCE_RESET_PENDING_ALARM);
+  } catch {
+    return BASELINE_CADENCE_MINUTES;
   }
+  const value = requested == null ? stored[CADENCE_MINUTES_KEY] : requested;
+  const confirmedAt = requested == null
+    ? Number(stored[CADENCE_CONFIRMED_AT_KEY] || 0)
+    : Date.now();
+  const stabilityStartedAt = stored[CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY];
+  const successCount = stored[CANDIDATE_CADENCE_SUCCESS_COUNT_KEY];
+  const runtimeVersion = String(runtimeIdentity?.runtimeVersion || "");
+  const serviceWorkerSha256 = String(runtimeIdentity?.serviceWorkerSha256 || "").toLowerCase();
+  const proofIdentityMatches = runtimeVersion.length > 0
+    && SHA256_HEX_PATTERN.test(serviceWorkerSha256)
+    && stored[CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY] === runtimeVersion
+    && stored[CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY] === serviceWorkerSha256;
+  const stabilityProven = proofIdentityMatches
+    && Number.isSafeInteger(stabilityStartedAt)
+    && stabilityStartedAt > 0
+    && stabilityStartedAt <= Date.now() - CANDIDATE_CADENCE_STABILITY_MS
+    && Number.isSafeInteger(successCount)
+    && successCount >= CANDIDATE_CADENCE_REQUIRED_SUCCESSES;
+  const resetPending = candidateCadenceResetPendingMemory === true
+    || stored[CANDIDATE_CADENCE_RESET_PENDING_KEY] !== false
+    || Boolean(resetPendingAlarm)
+    || !stabilityProven;
   const cadence = Number(value);
   const candidateRecentlyConfirmed = requested != null
     || (confirmedAt > 0 && confirmedAt + CANDIDATE_CADENCE_CONFIRMATION_TTL_MS > Date.now());
-  return cadence === CANDIDATE_CADENCE_MINUTES && candidateRecentlyConfirmed
+  return cadence === CANDIDATE_CADENCE_MINUTES
+      && candidateRecentlyConfirmed
+      && !resetPending
     ? cadence
     : BASELINE_CADENCE_MINUTES;
 }
 
-function cadenceFromWorkerSummary(result) {
+function workerSummaryRequiresCadenceReset(result) {
   const status = String(result?.status || "");
-  const failed = Math.max(0, Number(result?.failed || 0) + Number(result?.releaseFailed || 0));
+  const failed = Number(result?.failed || 0);
+  const releaseFailed = Number(result?.releaseFailed || 0);
+  const controlPlaneFailed = Number(result?.controlPlaneFailed || 0);
+  const atomicSuccesses = result?.atomicSuccesses;
   const haltedCode = String(result?.haltedCode || "");
-  const cadenceConfirmed = status === "already_running"
+  const terminalStatusValid = status === "already_running"
     || status === "standby"
     || status === "idle"
-    || (status === "completed" && failed === 0 && !haltedCode);
-  return cadenceConfirmed && Number(result?.cadenceMinutes) === CANDIDATE_CADENCE_MINUTES
+    || status === "completed";
+  return !terminalStatusValid
+    || !Number.isFinite(failed)
+    || !Number.isFinite(releaseFailed)
+    || !Number.isFinite(controlPlaneFailed)
+    || failed < 0
+    || releaseFailed < 0
+    || controlPlaneFailed < 0
+    || !Number.isSafeInteger(atomicSuccesses)
+    || atomicSuccesses < 0
+    || (status !== "completed" && atomicSuccesses !== 0)
+    || failed + releaseFailed > 0
+    || controlPlaneFailed > 0
+    || Boolean(result?.halted)
+    || Boolean(haltedCode);
+}
+
+function failClosedCandidateCadenceMemory() {
+  candidateCadenceResetPendingMemory = true;
+}
+
+async function markCandidateCadenceResetPending(runtimeIdentity = null) {
+  failClosedCandidateCadenceMemory();
+  let runtimeVersion = "";
+  let serviceWorkerSha256 = "";
+  try {
+    const currentIdentity = runtimeIdentity || await extensionRuntimeIdentity();
+    const candidateRuntimeVersion = String(currentIdentity?.runtimeVersion || "");
+    const candidateServiceWorkerSha256 = String(
+      currentIdentity?.serviceWorkerSha256 || "",
+    ).toLowerCase();
+    if (
+      candidateRuntimeVersion.length > 0
+      && SHA256_HEX_PATTERN.test(candidateServiceWorkerSha256)
+    ) {
+      runtimeVersion = candidateRuntimeVersion;
+      serviceWorkerSha256 = candidateServiceWorkerSha256;
+    }
+  } catch {
+    // An unavailable runtime identity invalidates, rather than reuses, proof.
+  }
+  let alarmCreated = false;
+  let storageWritten = false;
+  try {
+    await chrome.alarms.create(CANDIDATE_CADENCE_RESET_PENDING_ALARM, {
+      delayInMinutes: CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES,
+      periodInMinutes: CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES,
+    });
+    alarmCreated = true;
+  } catch {
+    // The strict storage marker remains the independent durable fallback.
+  }
+  try {
+    await chrome.storage.local.set({
+      [CANDIDATE_CADENCE_RESET_PENDING_KEY]: true,
+      [CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY]: 0,
+      [CANDIDATE_CADENCE_SUCCESS_COUNT_KEY]: 0,
+      [CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY]: runtimeVersion,
+      [CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY]: serviceWorkerSha256,
+    });
+    storageWritten = true;
+  } catch {
+    // The long-lived Chrome alarm remains across service-worker restarts.
+  }
+  return alarmCreated && storageWritten;
+}
+
+async function updateCandidateCadenceEvidence(result) {
+  if (workerSummaryRequiresCadenceReset(result)) {
+    await markCandidateCadenceResetPending();
+    return false;
+  }
+  let stored;
+  let resetPendingAlarm;
+  let runtimeIdentity;
+  try {
+    runtimeIdentity = await extensionRuntimeIdentity();
+    stored = await chrome.storage.local.get([
+      CANDIDATE_CADENCE_RESET_PENDING_KEY,
+      CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY,
+      CANDIDATE_CADENCE_SUCCESS_COUNT_KEY,
+      CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY,
+      CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY,
+    ]);
+    resetPendingAlarm = await chrome.alarms.get(CANDIDATE_CADENCE_RESET_PENDING_ALARM);
+  } catch {
+    await markCandidateCadenceResetPending();
+    return false;
+  }
+
+  const now = Date.now();
+  const storedPending = stored[CANDIDATE_CADENCE_RESET_PENDING_KEY];
+  const storedStartedAt = stored[CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY];
+  const storedSuccessCount = stored[CANDIDATE_CADENCE_SUCCESS_COUNT_KEY];
+  const runtimeVersion = String(runtimeIdentity?.runtimeVersion || "");
+  const serviceWorkerSha256 = String(runtimeIdentity?.serviceWorkerSha256 || "").toLowerCase();
+  const proofIdentityMatches = runtimeVersion.length > 0
+    && SHA256_HEX_PATTERN.test(serviceWorkerSha256)
+    && stored[CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY] === runtimeVersion
+    && stored[CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY] === serviceWorkerSha256;
+  const storedEvidenceValid = proofIdentityMatches
+    && Number.isSafeInteger(storedStartedAt)
+    && storedStartedAt > 0
+    && storedStartedAt <= now
+    && Number.isSafeInteger(storedSuccessCount)
+    && storedSuccessCount >= 0
+    && storedSuccessCount <= CANDIDATE_CADENCE_REQUIRED_SUCCESSES;
+  const storedProgressValid = storedPending === true && storedEvidenceValid;
+  const storedProofComplete = storedEvidenceValid
+    && storedStartedAt <= now - CANDIDATE_CADENCE_STABILITY_MS
+    && storedSuccessCount >= CANDIDATE_CADENCE_REQUIRED_SUCCESSES;
+
+  if (
+    storedPending === false
+    && storedProofComplete
+    && !resetPendingAlarm
+    && candidateCadenceResetPendingMemory !== true
+  ) {
+    candidateCadenceResetPendingMemory = false;
+    return true;
+  }
+
+  const atomicSuccesses = result.atomicSuccesses;
+  if (atomicSuccesses === 0) {
+    if (!storedProgressValid || !storedProofComplete) return false;
+  }
+
+  const continuingProgress = storedProgressValid;
+  const stabilityStartedAt = continuingProgress ? storedStartedAt : now;
+  const successCount = Math.min(
+    CANDIDATE_CADENCE_REQUIRED_SUCCESSES,
+    (continuingProgress ? storedSuccessCount : 0) + atomicSuccesses,
+  );
+  const stabilityProven = stabilityStartedAt <= now - CANDIDATE_CADENCE_STABILITY_MS
+    && successCount >= CANDIDATE_CADENCE_REQUIRED_SUCCESSES;
+
+  if (!stabilityProven) {
+    failClosedCandidateCadenceMemory();
+    if (!resetPendingAlarm) {
+      try {
+        await chrome.alarms.create(CANDIDATE_CADENCE_RESET_PENDING_ALARM, {
+          delayInMinutes: CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES,
+          periodInMinutes: CANDIDATE_CADENCE_RESET_PENDING_ALARM_MINUTES,
+        });
+      } catch {
+        // Storage evidence remains an independent durable fail-closed marker.
+      }
+    }
+    try {
+      await chrome.storage.local.set({
+        [CANDIDATE_CADENCE_RESET_PENDING_KEY]: true,
+        [CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY]: stabilityStartedAt,
+        [CANDIDATE_CADENCE_SUCCESS_COUNT_KEY]: successCount,
+        [CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY]: runtimeVersion,
+        [CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY]: serviceWorkerSha256,
+      });
+    } catch {
+      return false;
+    }
+    return false;
+  }
+
+  failClosedCandidateCadenceMemory();
+  try {
+    await chrome.alarms.clear(CANDIDATE_CADENCE_RESET_PENDING_ALARM);
+    await chrome.storage.local.set({
+      [CANDIDATE_CADENCE_RESET_PENDING_KEY]: false,
+      [CANDIDATE_CADENCE_STABILITY_STARTED_AT_KEY]: stabilityStartedAt,
+      [CANDIDATE_CADENCE_SUCCESS_COUNT_KEY]: successCount,
+      [CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY]: runtimeVersion,
+      [CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY]: serviceWorkerSha256,
+    });
+    candidateCadenceResetPendingMemory = false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function cadenceFromWorkerSummary(result) {
+  return !workerSummaryRequiresCadenceReset(result)
+      && Number(result?.cadenceMinutes) === CANDIDATE_CADENCE_MINUTES
     ? CANDIDATE_CADENCE_MINUTES
     : BASELINE_CADENCE_MINUTES;
 }
 
 async function configureAlarms(requestedCadence = null) {
-  const cadenceMinutes = await safeCadenceMinutes(requestedCadence);
+  let cadenceMinutes = await safeCadenceMinutes(requestedCadence);
   if (requestedCadence != null) {
-    await chrome.storage.local.set({
-      [CADENCE_MINUTES_KEY]: cadenceMinutes,
-      [CADENCE_CONFIRMED_AT_KEY]: Date.now(),
-    });
+    try {
+      await chrome.storage.local.set({
+        [CADENCE_MINUTES_KEY]: cadenceMinutes,
+        [CADENCE_CONFIRMED_AT_KEY]: Date.now(),
+      });
+    } catch {
+      await markCandidateCadenceResetPending();
+      cadenceMinutes = BASELINE_CADENCE_MINUTES;
+    }
   }
   const alarmDefinitions = [
     ["rank-0900", { when: nextKstHour(9), periodInMinutes: 1440 }],
@@ -247,6 +480,7 @@ async function automaticVerificationCooldownActive(trigger) {
 }
 
 async function requestWorkerRun(trigger) {
+  await initializationPromise;
   if (await automaticVerificationCooldownActive(trigger)) {
     await saveStatus("verification", "naver_verification_cooldown");
     return { ok: false, started: false, code: "naver_verification_cooldown" };
@@ -438,6 +672,7 @@ async function saveStatus(status, detail = "") {
 
 async function saveWorkerFailure() {
   try {
+    await markCandidateCadenceResetPending();
     await saveStatus("failed", "rank_worker_unavailable");
   } catch {
     // Chrome storage is the final user-visible reporting channel.
@@ -451,6 +686,7 @@ async function loadVisibleStatus() {
   if (status.status === "running"
     && Number.isFinite(updatedAt)
     && updatedAt + RUNNING_STATUS_STALE_MS <= Date.now()) {
+    await markCandidateCadenceResetPending();
     await saveStatus("failed", "native_host_interrupted");
     return {
       status: "failed",
@@ -459,6 +695,42 @@ async function loadVisibleStatus() {
     };
   }
   return status;
+}
+
+async function initializeWorker() {
+  try {
+    const runtimeIdentity = await extensionRuntimeIdentity();
+    const runtimeVersion = String(runtimeIdentity?.runtimeVersion || "");
+    const serviceWorkerSha256 = String(runtimeIdentity?.serviceWorkerSha256 || "").toLowerCase();
+    if (!runtimeVersion || !SHA256_HEX_PATTERN.test(serviceWorkerSha256)) {
+      throw new Error("extension_runtime_identity_unavailable");
+    }
+    const stored = await chrome.storage.local.get([
+      "momentInsightRankStatus",
+      CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY,
+      CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY,
+    ]);
+    const storedStatus = String(stored.momentInsightRankStatus?.status || "");
+    const proofIdentityMatches = stored[CANDIDATE_CADENCE_PROOF_RUNTIME_VERSION_KEY] === runtimeVersion
+      && stored[CANDIDATE_CADENCE_PROOF_SERVICE_WORKER_SHA256_KEY] === serviceWorkerSha256;
+    if (!INITIALIZATION_SAFE_STATUSES.has(storedStatus) || !proofIdentityMatches) {
+      await markCandidateCadenceResetPending(runtimeIdentity);
+    }
+    if (storedStatus === "running") {
+      await saveStatus("failed", "native_host_interrupted");
+    }
+    await configureAlarms();
+    await removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+  } catch (error) {
+    await markCandidateCadenceResetPending();
+    throw error;
+  }
+}
+
+function startWorkerInitialization() {
+  initializationPromise = initializeWorker();
+  void initializationPromise.catch(() => saveWorkerFailure());
+  return initializationPromise;
 }
 
 function nativeDisconnectCode(lastErrorMessage) {
@@ -499,6 +771,7 @@ function startWorkerKeepAlive() {
 }
 
 async function runWorker(trigger = "manual", options = {}) {
+  await initializationPromise;
   if (running) return { ok: false, code: "already_running" };
   running = true;
   let port = null;
@@ -562,6 +835,7 @@ async function runWorker(trigger = "manual", options = {}) {
       });
       port.postMessage({ action: "run", trigger, ...runtimeIdentity });
     });
+    await updateCandidateCadenceEvidence(result);
     const submitted = Math.max(0, Number(result.submitted || 0));
     await configureAlarms(cadenceFromWorkerSummary(result)).catch(() => {});
     if (result.status === "already_running") {
@@ -614,6 +888,7 @@ async function runWorker(trigger = "manual", options = {}) {
       : completedDetail);
     return { ok: failed === 0, partial: failed > 0, summary: result };
   } catch (error) {
+    await markCandidateCadenceResetPending();
     await configureAlarms(BASELINE_CADENCE_MINUTES).catch(() => {});
     await saveStatus("failed", String(error?.message || "worker_failed"));
     return { ok: false, code: String(error?.message || "worker_failed") };
@@ -635,12 +910,10 @@ async function runWorker(trigger = "manual", options = {}) {
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  void configureAlarms();
-  void removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+  void startWorkerInitialization();
 });
 chrome.runtime.onStartup.addListener(() => {
-  void configureAlarms();
-  void removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+  void startWorkerInitialization();
 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (RUN_ALARMS.has(alarm.name)) {
@@ -662,5 +935,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   return false;
 });
-void configureAlarms();
-void removeLegacyControllerTabs().catch(() => saveWorkerFailure());
+void startWorkerInitialization();

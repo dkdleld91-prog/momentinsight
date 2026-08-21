@@ -4,6 +4,15 @@
 
 ## 현재 상태
 
+### 2026-08-21 N쇼핑 오류 안정화·5차 속도 개선 배포 후보 (v1.1.9)
+
+- 사용자 승인 범위의 5차 속도 개선은 수집 병렬화가 아니라 `rank-catch-up` 주기만 baseline 10분에서 candidate 8분으로 바꾸는 안입니다. Windows `maxJobs=1`, 단일 global lane, 직접 1~8페이지, 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, durable cycle 순서는 유지합니다.
+- 운영 배포 전 SELECT-only 기준은 active 74·paused 0·processing 0·격리 3, circuit closed, lane·run·lease 해제였습니다. 최근 24시간 258 snapshot은 원자300 위반 0이고 실측 처리량은 8.75~8.77 keyword group/hour입니다. 이 값은 개선 전 기준선이며 속도 향상 결과가 아닙니다.
+- 잔여 결함을 세 갈래로 보완했습니다. 동일 정규화 keyword가 100 tracker를 넘을 때 seed 포함 100개만 한 번 수집하고 나머지는 같은 cycle의 `tracker_deferred` 장부로 남겨 다음 cycle에서 회전합니다. submit 응답 유실은 claim ID별 read-only reconcile로 이미 commit된 순위를 다시 실패 처리하지 않습니다. timeout/deadline 전역 circuit은 primary·30분 quiet·최대 2회의 ordered half-open만 허용합니다.
+- runtime `1.1.9`는 이전 runtime의 24시간/streak를 상속하지 않고 migration 및 runtime identity 변경 때 cadence10·stability null·streak0으로 초기화합니다. Chrome도 exact manifest version+service-worker SHA에 proof를 묶고, 실패·부분 실패·control-plane 오류·중단·강제종료·stale running·확장 업데이트·storage/alarm 오류에서 10분으로 fail-closed합니다. 첫 후속 원자 성공 시각부터 24시간과 성공 6회를 모두 새로 증명해야 8분 요청을 허용합니다.
+- 로컬 focused 163/163, cadence/init 87/87, server contract 61/61, release baseline 171/171과 syntax/diff 검사가 통과했습니다. 보호 잠금은 23함수·91파일·40 migration, self-test와 전체 `npm run check:release`도 exit 0입니다. 변경 범위 cadence/init branch coverage는 81.25%(117/144), 함수 11/11입니다. 전체 기존 local-worker 파일 branch는 67.56%라는 측정 한계도 남깁니다.
+- **아직 배포·8분 활성화 완료가 아닙니다.** Production/DB/Windows `1.1.9` 동기화와 첫 자연 원자300을 확인한 뒤 24시간 관측을 시작합니다. 그 전에는 8분 효과나 정상화 완료로 보고하지 않습니다.
+
 ### 2026-08-21 구글 계정 로그인 이관 카나리아 (mml93-a01)
 
 - 대표 지시(광고주 전체 이관 예정, 우선 총관리자 코드만 테스트)에 따라 계정 링킹 방식으로 구현했습니다. 데이터·권한 모델은 무변경이며 `login_identities`(google_sub↔role·code 매핑, service_role 전용, migration `20260821120000`)만 추가합니다. 기존 콜백 1개를 서명 state의 purpose(calendar/link/login)로 분기해 구글 콘솔 리디렉션 URI 추가가 필요 없고, 구버전 state는 calendar로 하위호환됩니다.

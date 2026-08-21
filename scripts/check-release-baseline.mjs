@@ -192,6 +192,7 @@ const shoppingWorkerWakeMigration = read("supabase/migrations/20260809113105_nav
 const shoppingWorkerLaneMigration = read("supabase/migrations/20260809203826_naver_shopping_global_worker_lane.sql");
 const shoppingWorkerControlMigration = read("supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql");
 const shoppingWorkerContinuityMigration = read("supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql");
+const shoppingWorkerCycleOverflowMigration = read("supabase/migrations/20260821042129_naver_shopping_cycle_keyword_overflow.sql");
 const shoppingWorkerRuntime112Migration = read("supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql");
 const shoppingWorkerRuntime113Migration = read("supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql");
 const shoppingWorkerRuntime114Migration = read("supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql");
@@ -200,11 +201,14 @@ const shoppingSchedulerEventLedgerMigration = read("supabase/migrations/20260814
 const shoppingWorkerRuntime116Migration = read("supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql");
 const shoppingWorkerRuntime117Migration = read("supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql");
 const shoppingWorkerRuntime118Migration = read("supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql");
+const shoppingWorkerRuntime119Migration = read("supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql");
 const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = read("supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql");
 const shoppingProbeIncompleteAutoRecoveryMigration = read("supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql");
+const shoppingTransientSystemRecoveryMigration = read("supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql");
+const shoppingTransientSystemRecoveryTests = read("scripts/naver-shopping-transient-system-recovery-migration.test.mjs");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
 const shoppingNativeHostCore = read("scripts/naver-shopping-native-host-core.mjs");
@@ -1501,7 +1505,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.8"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.9"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1526,7 +1530,8 @@ const checks = {
     && shoppingChromeWorker.includes("return () => clearInterval(timer)")
     && shoppingChromeWorker.includes("if (stopKeepAlive) stopKeepAlive()")
     && shoppingChromeWorker.includes("async function removeLegacyControllerTabs()")
-    && shoppingChromeWorker.includes("void removeLegacyControllerTabs()")
+    && /async function initializeWorker\(\)[\s\S]*?extensionRuntimeIdentity\(\)[\s\S]*?INITIALIZATION_SAFE_STATUSES\.has\(storedStatus\)[\s\S]*?markCandidateCadenceResetPending\(runtimeIdentity\)[\s\S]*?storedStatus === "running"[\s\S]*?saveStatus\("failed", "native_host_interrupted"\)[\s\S]*?configureAlarms\(\)[\s\S]*?await removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
+    && /async function requestWorkerRun\(trigger\)[\s\S]*?await initializationPromise/.test(shoppingChromeWorker)
     && !shoppingChromePopupHtml.includes('<script src="service-worker.js"></script>')
     && shoppingChromePopup.includes('chrome.runtime.sendMessage({ action: "run-now" })')
     && shoppingChromePopupHtml.includes('<button id="run" type="button">지금 안전 갱신</button>')
@@ -1571,6 +1576,20 @@ const checks = {
     && shoppingWorkerContinuityMigration.includes("security invoker")
     && !shoppingWorkerContinuityMigration.includes("security definer")
     && shoppingWorkerContinuityMigration.includes("to service_role")
+    && shoppingWorkerCycleOverflowMigration.includes("worker_last_cycle_deferred_at")
+    && shoppingWorkerCycleOverflowMigration.includes("case when tracker.id = seed.id then 0 else 1 end asc")
+    && shoppingWorkerCycleOverflowMigration.includes("tracker.last_checked_at asc nulls first")
+    && /limit 100\s+for update skip locked/iu.test(shoppingWorkerCycleOverflowMigration)
+    && shoppingWorkerCycleOverflowMigration.includes("worker_last_cycle_id = current_row.scheduler_cycle_id")
+    && shoppingWorkerCycleOverflowMigration.includes("'deferredCount', v_deferred_count")
+    && shoppingWorkerCycleOverflowMigration.includes("'groupSize', v_claim_count + v_deferred_count")
+    && shoppingWorkerCycleOverflowMigration.includes("'tracker_deferred'")
+    && shoppingWorkerCycleOverflowMigration.includes("idx_naver_shopping_scheduler_events_cycle_deferred_once")
+    && shoppingWorkerCycleOverflowMigration.includes("mi_audit_naver_shopping_tracker_deferred")
+    && shoppingWorkerCycleOverflowMigration.includes("security invoker")
+    && shoppingWorkerCycleOverflowMigration.includes("from public, anon, authenticated, service_role")
+    && shoppingWorkerCycleOverflowMigration.includes("to service_role")
+    && !/set\s+(?:current_rank|last_checked_at|next_check_at|last_error|retry_count)\s*=/iu.test(shoppingWorkerCycleOverflowMigration)
     && shoppingWorkerRuntime112Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.2'")
     && shoppingWorkerRuntime112Migration.includes("current_row.runtime_version = '1.1.2'")
     && shoppingWorkerRuntime112Migration.includes("last_checked_count = 300")
@@ -1620,6 +1639,19 @@ const checks = {
     && shoppingWorkerRuntime118Migration.includes("security invoker")
     && !shoppingWorkerRuntime118Migration.includes("security definer")
     && shoppingWorkerRuntime118Migration.includes("to service_role")
+    && shoppingWorkerRuntime119Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.9'")
+    && shoppingWorkerRuntime119Migration.includes("current_row.runtime_version = '1.1.9'")
+    && shoppingWorkerRuntime119Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime119Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime119Migration.includes("set cadence_mode = 'baseline',\n    cadence_minutes = 10,\n    stability_started_at = null,\n    success_streak = 0")
+    && shoppingWorkerRuntime119Migration.includes("runtime_version is distinct from trim(p_runtime_version)")
+    && shoppingWorkerRuntime119Migration.includes("runtime_fingerprint is distinct from lower(trim(p_runtime_fingerprint))")
+    && shoppingWorkerRuntime119Migration.includes("'transient_system_probe_attempts', current_row.transient_system_probe_attempts")
+    && /'candidate_eligible',[\s\S]+current_row\.circuit_state = 'closed'[\s\S]+and processing_count = 0[\s\S]+current_row\.runtime_version = '1\.1\.9'/u.test(shoppingWorkerRuntime119Migration)
+    && /for update;[\s\S]+status = 'processing' and processing_until > v_now[\s\S]+status = 'active' and processing_until > v_now[\s\S]+into processing_count;[\s\S]+eligible :=[\s\S]+and processing_count = 0/u.test(shoppingWorkerRuntime119Migration)
+    && shoppingWorkerRuntime119Migration.includes("security invoker")
+    && !shoppingWorkerRuntime119Migration.includes("security definer")
+    && shoppingWorkerRuntime119Migration.includes("to service_role")
     && shoppingStableProofLedgerMigration.includes("mi_audit_naver_shopping_snapshot_commit")
     && shoppingStableProofLedgerMigration.includes("crossPageProofVersion")
     && shoppingStableProofLedgerMigration.includes("stable-full-window-v1")
@@ -1665,6 +1697,22 @@ const checks = {
     && !shoppingProbeIncompleteAutoRecoveryMigration.includes("security definer")
     && shoppingProbeIncompleteAutoRecoveryMigration.includes("to service_role")
     && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/iu.test(shoppingProbeIncompleteAutoRecoveryMigration)
+    && shoppingTransientSystemRecoveryMigration.includes("transient_system_probe_attempts integer not null default 0")
+    && shoppingTransientSystemRecoveryMigration.includes("check (transient_system_probe_attempts between 0 and 2)")
+    && shoppingTransientSystemRecoveryMigration.includes("transient_failure_code in (")
+    && shoppingTransientSystemRecoveryMigration.includes("'native_host_response_timeout'")
+    && shoppingTransientSystemRecoveryMigration.includes("'provider_deadline_exceeded'")
+    && shoppingTransientSystemRecoveryMigration.includes("current_row.transient_system_probe_attempts < 2")
+    && shoppingTransientSystemRecoveryMigration.includes("circuit_opened_at <= v_now - interval '30 minutes'")
+    && shoppingTransientSystemRecoveryMigration.includes("circuit_reason = 'auto_transient_system_probe'")
+    && shoppingTransientSystemRecoveryMigration.includes("p_checked_count is distinct from 300")
+    && shoppingTransientSystemRecoveryMigration.includes("transient_system_recovered")
+    && shoppingTransientSystemRecoveryMigration.includes("force row level security")
+    && shoppingTransientSystemRecoveryMigration.includes("security invoker")
+    && !shoppingTransientSystemRecoveryMigration.includes("security definer")
+    && shoppingTransientSystemRecoveryMigration.includes("from public, anon, authenticated, service_role")
+    && shoppingTransientSystemRecoveryMigration.includes("to service_role")
+    && shoppingTransientSystemRecoveryTests.includes("transient recovery excludes security, network, generic and integrity failures")
     && shoppingSchedulerEventLedgerMigration.includes("create schema if not exists mi_internal authorization postgres")
     && shoppingSchedulerEventLedgerMigration.includes("force row level security")
     && shoppingSchedulerEventLedgerMigration.includes("grant select on table public.naver_shopping_scheduler_events")
@@ -1705,11 +1753,17 @@ const checks = {
     && shoppingLocalWorker.includes('"provider_row_invalid"')
     && shoppingLocalWorker.includes('"provider_row_title_missing"')
     && shoppingLocalWorker.includes('"provider_row_identity_missing"')
-    && shoppingLocalWorker.includes("job.claims.slice(processedCount)")
+    && shoppingLocalWorker.includes('action: "reconcile-submit"')
+    && shoppingLocalWorker.includes("submitClaimOutcome(partial, job")
+    && shoppingLocalWorker.includes("explicitOutcome.uncommittedClaims")
+    && !shoppingLocalWorker.includes("job.claims.slice(processedCount)")
+    && shoppingLocalWorkerHandler.includes('body.action === "reconcile-submit"')
+    && shoppingLocalWorkerHandler.includes('.from("naver_rank_snapshots")')
+    && shoppingLocalWorkerHandler.includes("claimResults")
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.8"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.9"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
@@ -1885,7 +1939,8 @@ const checks = {
     && calendarUiTests.includes("no planned end")
     && String(packageConfig.scripts?.test || "").includes("scripts/calendar-sharing-migration.test.mjs")
     && String(packageConfig.scripts?.test || "").includes("scripts/schedule-monthly-no-end-migration.test.mjs")
-    && String(packageConfig.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"),
+    && String(packageConfig.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs")
+    && String(packageConfig.scripts?.test || "").includes("scripts/naver-shopping-transient-system-recovery-migration.test.mjs"),
   workOperationExecutionSummaryAndQuickComplete: adminSource.includes('data-work-summary-filter="today"')
     && adminSource.includes('data-work-summary-filter="overdue"')
     && adminSource.includes('data-work-summary-filter="needs_check"')

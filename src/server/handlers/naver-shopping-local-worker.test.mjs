@@ -28,6 +28,7 @@ const LANE_ACTIONS = new Set([
   "claim",
   "queue-all-active-trackers",
   "submit",
+  "reconcile-submit",
   "fail",
 ]);
 
@@ -39,7 +40,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.8",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.9",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -282,7 +283,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.8");
+          assert.equal(args.p_runtime_version, "1.1.9");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -382,7 +383,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.8",
+      runtimeVersion: "1.1.9",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -442,7 +443,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.8",
+      runtimeVersion: "1.1.9",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -483,7 +484,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.8",
+      runtimeVersion: "1.1.9",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1023,6 +1024,34 @@ test("probe cycle never falls through to an unrelated lookup", async () => {
   });
 });
 
+test("automatic recovery with no eligible tracker never falls through to repair or lookup", async () => {
+  await withWorkerEnv(async () => {
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+          if (name === "mi_claim_naver_shopping_cycle_keyword") {
+            return { data: { status: "no_cycle" }, error: null };
+          }
+          throw new Error("auto_recovery_must_not_claim_repair_or_lookup");
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim",
+      schedulerVersion: "v2",
+      autoRecovery: true,
+    }), ctx);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).job, null);
+    assert.equal(calls.includes("mi_claim_naver_shopping_repair_priority"), false);
+    assert.equal(calls.includes("mi_claim_naver_shopping_rank_lookup_job"), false);
+  });
+});
+
 test("probe claims its exact tracker without opening or consuming a normal cycle", async () => {
   await withWorkerEnv(async () => {
     const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
@@ -1444,6 +1473,7 @@ test("submits one strict 300 window at the shared signed-worker clock skew", asy
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.committedCount, 1);
+    assert.deepEqual(body.claimResults, [{ claimId: row.id, status: "committed" }]);
     assert.equal(commitArgs.p_collection_id, window.collectionId);
     assert.equal(commitArgs.p_checked_at, window.collectedAt);
     assert.equal(commitArgs.p_snapshot.checked_count, 300);
@@ -1615,10 +1645,170 @@ test("bulk-loads continuity once, avoids external metadata fetches and reports p
       assert.equal(body.code, "LOCAL_WORKER_SUBMIT_PARTIAL");
       assert.equal(body.partial.committedCount, 1);
       assert.equal(body.partial.processedCount, 1);
+      assert.deepEqual(body.partial.claimResults, [{ claimId: first.id, status: "committed" }]);
       assert.equal(snapshotQueryCount, 1);
     } finally {
       globalThis.fetch = originalFetch;
     }
+  });
+});
+
+test("reconciles a lost grouped-submit response by exact claim id without rewriting ranks", async () => {
+  await withWorkerEnv(async () => {
+    const first = tracker();
+    const second = tracker({
+      id: SECOND_TRACKER_ID,
+      processing_started_at: new Date(Date.now() - 45_000).toISOString(),
+      processing_until: new Date(Date.now() + 30 * 60_000).toISOString(),
+    });
+    const third = tracker({
+      id: "123e4567-e89b-42d3-a456-426614174002",
+      processing_started_at: null,
+      processing_until: null,
+    });
+    const job = {
+      keyword: first.keyword,
+      limit: 300,
+      claims: [first, second, third].map((row) => ({
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at || first.processing_started_at,
+        leaseUntil: row.processing_until || first.processing_until,
+      })),
+    };
+    const collectionId = completeWindow().collectionId;
+    const rpcCalls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          rpcCalls.push(name);
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_snapshots") {
+            return resolvingQuery({
+              data: [
+                { tracker_id: first.id, collection_id: collectionId },
+                { tracker_id: third.id, collection_id: collectionId },
+              ],
+              error: null,
+            });
+          }
+          if (table === "naver_rank_trackers") {
+            return resolvingQuery({ data: [first, second, third], error: null });
+          }
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "reconcile-submit",
+      job,
+      collectionId,
+    }), ctx);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.claimResults, [
+      { claimId: first.id, status: "already_committed" },
+      { claimId: second.id, status: "uncommitted" },
+      { claimId: third.id, status: "already_committed" },
+    ]);
+    assert.equal(body.alreadyCommittedCount, 2);
+    assert.equal(body.uncommittedCount, 1);
+    assert.equal(body.leaseLostCount, 0);
+    assert.deepEqual(rpcCalls, ["mi_consume_naver_shopping_worker_nonce"]);
+  });
+});
+
+test("rejects an invalid reconciliation collection id before any database read", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let databaseRead = false;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from() {
+          databaseRead = true;
+          throw new Error("invalid_collection_must_not_query");
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "reconcile-submit",
+      job,
+      collectionId: "invalid",
+    }), ctx);
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_COLLECTION_ID_INVALID");
+    assert.equal(databaseRead, false);
+  });
+});
+
+test("reconciles an already-completed lookup without re-running its atomic commit", async () => {
+  await withWorkerEnv(async () => {
+    const lookupJobId = "623e4567-e89b-42d3-a456-426614174000";
+    const collectionId = completeWindow().collectionId;
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const job = {
+      kind: "lookup",
+      keyword: "온열찜질기",
+      limit: 300,
+      claims: [{
+        lookupJobId,
+        leaseStartedAt,
+        leaseUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      }],
+    };
+    const rpcCalls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          rpcCalls.push(name);
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_shopping_rank_lookup_jobs");
+          return resolvingQuery({
+            data: [{
+              id: lookupJobId,
+              status: "completed",
+              collection_id: collectionId,
+              processing_started_at: null,
+            }],
+            error: null,
+          });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "reconcile-submit",
+      job,
+      collectionId,
+    }), ctx);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.claimResults, [{ claimId: lookupJobId, status: "already_committed" }]);
+    assert.equal(body.alreadyCommittedCount, 1);
+    assert.deepEqual(rpcCalls, ["mi_consume_naver_shopping_worker_nonce"]);
   });
 });
 
@@ -1908,6 +2098,25 @@ test("runtime 1.1.8 independently gates stable full-window proof and tracker-iso
   assert.match(sql, /current_row\.runtime_version = '1\.1\.8'/iu);
   assert.match(sql, /current_row\.last_checked_count = 300/iu);
   assert.match(sql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(sql, /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]+from public, anon, authenticated, service_role/iu);
+  assert.match(sql, /grant execute on function public\.mi_set_naver_shopping_worker_cadence[\s\S]+to service_role/iu);
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test("runtime 1.1.9 independently gates the current changed worker bytes", () => {
+  const sql = fs.readFileSync(new URL(
+    "../../../supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
+    import.meta.url,
+  ), "utf8");
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.9'/iu);
+  assert.match(sql, /current_row\.runtime_version = '1\.1\.9'/iu);
+  assert.match(sql, /current_row\.last_checked_count = 300/iu);
+  assert.match(sql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
+  assert.match(sql, /'transient_system_probe_attempts', current_row\.transient_system_probe_attempts/iu);
+  assert.match(sql, /update public\.naver_shopping_worker_coordination[\s\S]+cadence_mode = 'baseline'[\s\S]+cadence_minutes = 10[\s\S]+stability_started_at = null[\s\S]+success_streak = 0[\s\S]+where lane_key = 'global'/iu);
+  assert.match(sql, /cadence_mode = case[\s\S]+runtime_version is distinct from trim\(p_runtime_version\)[\s\S]+runtime_fingerprint is distinct from lower\(trim\(p_runtime_fingerprint\)\)[\s\S]+then 'baseline'[\s\S]+stability_started_at = case[\s\S]+then null[\s\S]+success_streak = case[\s\S]+then 0/iu);
   assert.match(sql, /security invoker/iu);
   assert.doesNotMatch(sql, /security definer/iu);
   assert.match(sql, /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]+from public, anon, authenticated, service_role/iu);

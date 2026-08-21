@@ -4,6 +4,7 @@ import { localWorkerAuthInput, verifyLocalWorkerSignature } from "../local-worke
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
+  localWorkerCollectionKey,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
 } from "../naver-shopping/local-worker-contract.mjs";
@@ -31,7 +32,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.8";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.9";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -575,6 +576,7 @@ async function submitWindow(ctx, rawJob, rawWindow) {
   let leaseLostCount = 0;
   let collectionConflictCount = 0;
   let processedCount = 0;
+  const claimResults = [];
 
   try {
     for (const { claim, tracker } of claimTrackers) {
@@ -613,12 +615,16 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         p_product_title: result?.exactItem?.title || result?.item?.title || tracker.product_title || null,
       });
       if (error) throw error;
+      const status = String(data?.status || "").trim().toLowerCase();
+      if (!["committed", "already_committed", "lease_lost", "collection_conflict"].includes(status)) {
+        throw workerError("LOCAL_WORKER_COMMIT_INVALID", 503);
+      }
       processedCount += 1;
-      if (data?.status === "committed") committedCount += 1;
-      else if (data?.status === "already_committed") alreadyCommittedCount += 1;
-      else if (data?.status === "lease_lost") leaseLostCount += 1;
-      else if (data?.status === "collection_conflict") collectionConflictCount += 1;
-      else throw workerError("LOCAL_WORKER_COMMIT_INVALID", 503);
+      claimResults.push({ claimId: claim.trackerId, status });
+      if (status === "committed") committedCount += 1;
+      else if (status === "already_committed") alreadyCommittedCount += 1;
+      else if (status === "lease_lost") leaseLostCount += 1;
+      else collectionConflictCount += 1;
     }
   } catch (error) {
     const wrapped = workerError(
@@ -631,6 +637,7 @@ async function submitWindow(ctx, rawJob, rawWindow) {
       leaseLostCount,
       collectionConflictCount,
       processedCount,
+      claimResults,
     };
     throw wrapped;
   }
@@ -641,7 +648,85 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     leaseLostCount,
     collectionConflictCount,
     processedCount,
+    claimResults,
   };
+}
+
+function sameLeaseTimestamp(left, right) {
+  const leftMs = Date.parse(String(left || ""));
+  const rightMs = Date.parse(String(right || ""));
+  return Number.isFinite(leftMs) && Number.isFinite(rightMs) && leftMs === rightMs;
+}
+
+function reconciledSubmitCounts(claimResults) {
+  const count = (status) => claimResults.filter((result) => result.status === status).length;
+  return {
+    committedCount: count("committed"),
+    alreadyCommittedCount: count("already_committed"),
+    leaseLostCount: count("lease_lost"),
+    collectionConflictCount: count("collection_conflict"),
+    uncommittedCount: count("uncommitted"),
+    processedCount: claimResults.length,
+    claimResults,
+  };
+}
+
+async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
+  const job = validateLocalWorkerJob(rawJob);
+  const collectionId = String(rawCollectionId || "").trim();
+  const claimId = (claim) => (job.kind === "lookup" ? claim.lookupJobId : claim.trackerId);
+  // Reuse the shared collection-key validator without persisting or deriving a
+  // new key. Reconciliation is read-only and identifies prior terminal writes.
+  try {
+    for (const claim of job.claims) localWorkerCollectionKey(claimId(claim), collectionId);
+  } catch {
+    throw workerError("LOCAL_WORKER_COLLECTION_ID_INVALID", 400);
+  }
+
+  if (job.kind === "lookup") {
+    const claim = job.claims[0];
+    const { data, error } = await ctx.supabaseAdmin
+      .from("naver_shopping_rank_lookup_jobs")
+      .select("id, status, collection_id, processing_started_at")
+      .in("id", [claim.lookupJobId]);
+    if (error) throw error;
+    const row = (data || []).find((entry) => String(entry?.id || "").toLowerCase() === claim.lookupJobId);
+    const status = row?.status === "completed" && row?.collection_id === collectionId
+      ? "already_committed"
+      : row?.status === "processing" && sameLeaseTimestamp(row?.processing_started_at, claim.leaseStartedAt)
+        ? "uncommitted"
+        : "lease_lost";
+    return reconciledSubmitCounts([{ claimId: claim.lookupJobId, status }]);
+  }
+
+  const trackerIds = job.claims.map((claim) => claim.trackerId);
+  const { data: snapshots, error: snapshotError } = await ctx.supabaseAdmin
+    .from("naver_rank_snapshots")
+    .select("tracker_id, collection_id")
+    .in("tracker_id", trackerIds)
+    .eq("collection_id", collectionId);
+  if (snapshotError) throw snapshotError;
+  const committedIds = new Set((snapshots || []).map((row) => String(row?.tracker_id || "").toLowerCase()));
+
+  const { data: trackers, error: trackerError } = await ctx.supabaseAdmin
+    .from("naver_rank_trackers")
+    .select("id, processing_started_at")
+    .in("id", trackerIds);
+  if (trackerError) throw trackerError;
+  const trackersById = new Map((trackers || []).map((row) => [String(row?.id || "").toLowerCase(), row]));
+  const claimResults = job.claims.map((claim) => {
+    if (committedIds.has(claim.trackerId)) {
+      return { claimId: claim.trackerId, status: "already_committed" };
+    }
+    const tracker = trackersById.get(claim.trackerId);
+    return {
+      claimId: claim.trackerId,
+      status: tracker && sameLeaseTimestamp(tracker.processing_started_at, claim.leaseStartedAt)
+        ? "uncommitted"
+        : "lease_lost",
+    };
+  });
+  return reconciledSubmitCounts(claimResults);
 }
 
 async function submitLookupWindow(ctx, job, window) {
@@ -706,6 +791,10 @@ async function submitLookupWindow(ctx, job, window) {
     leaseLostCount: data === "lease_lost" ? 1 : 0,
     collectionConflictCount: data === "collection_conflict" ? 1 : 0,
     processedCount: 1,
+    claimResults: [{
+      claimId: claim.lookupJobId,
+      status: data,
+    }],
   };
 }
 
@@ -799,9 +888,13 @@ export async function handleLocalWorkerRequest(request, ctx) {
       let job;
       if (body.schedulerVersion === "v2") {
         const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
-        if (probeTrackerId) {
+        if (body.autoRecovery != null && typeof body.autoRecovery !== "boolean") {
+          throw workerError("LOCAL_WORKER_RECOVERY_FLAG_INVALID", 400);
+        }
+        const autoRecovery = body.autoRecovery === true;
+        if (probeTrackerId || autoRecovery) {
           // Circuit-breaker proof is safety-critical and must never wait behind
-          // an operator repair batch.
+          // an operator repair batch or fall through to an unrelated lookup.
           job = (await claimCycleKeyword(ctx, body)).job;
         } else {
           const repairTurn = await claimRepairPriority(ctx, body);
@@ -827,6 +920,10 @@ export async function handleLocalWorkerRequest(request, ctx) {
     if (body.action === "submit") {
       workerControlInput(body);
       return json(request, { ok: true, ...(await submitWindow(ctx, body.job, body.window)) });
+    }
+    if (body.action === "reconcile-submit") {
+      workerControlInput(body);
+      return json(request, { ok: true, ...(await reconcileSubmit(ctx, body.job, body.collectionId)) });
     }
     if (body.action === "fail") {
       workerControlInput(body);

@@ -154,7 +154,7 @@ test("fits a contract-valid maximum 300 window and 100 claims inside the 4 MiB s
     workerId: "windows-desktop-primary",
     laneToken: "11111111-1111-4111-8111-111111111111",
     runId: "22222222-2222-4222-8222-222222222222",
-    runtimeVersion: "1.1.8",
+    runtimeVersion: "1.1.9",
     runtimeFingerprint: "a".repeat(64),
     job: validateLocalWorkerJob({ keyword, limit: 300, claims }),
     window,

@@ -54,6 +54,7 @@ const files = {
   shoppingWorkerControlMigration: "supabase/migrations/20260811095137_naver_shopping_worker_control_plane.sql",
   shoppingWorkerContinuityMigration: "supabase/migrations/20260811113622_naver_shopping_queue_continuity.sql",
   shoppingWorkerDurableCycleMigration: "supabase/migrations/20260812060826_naver_shopping_durable_cycle_probe.sql",
+  shoppingWorkerCycleOverflowMigration: "supabase/migrations/20260821042129_naver_shopping_cycle_keyword_overflow.sql",
   shoppingWorkerRuntime112Migration: "supabase/migrations/20260813070000_naver_shopping_runtime_1_1_2.sql",
   shoppingWorkerRuntime113Migration: "supabase/migrations/20260813072500_naver_shopping_runtime_1_1_3.sql",
   shoppingWorkerRuntime114Migration: "supabase/migrations/20260813084000_naver_shopping_runtime_1_1_4.sql",
@@ -62,11 +63,14 @@ const files = {
   shoppingWorkerRuntime116Migration: "supabase/migrations/20260814140000_naver_shopping_runtime_1_1_6.sql",
   shoppingWorkerRuntime117Migration: "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
   shoppingWorkerRuntime118Migration: "supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql",
+  shoppingWorkerRuntime119Migration: "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
   shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
   shoppingAutoNavigationTrackerFailureRecoveryMigration: "supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql",
   shoppingProbeIncompleteAutoRecoveryMigration: "supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql",
+  shoppingTransientSystemRecoveryMigration: "supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql",
+  shoppingTransientSystemRecoveryTests: "scripts/naver-shopping-transient-system-recovery-migration.test.mjs",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
   shoppingRankLookupJobs: "src/server/handlers/naver-shopping-rank-jobs.mjs",
@@ -141,6 +145,7 @@ const shoppingWorkerLaneMigration = fs.readFileSync(files.shoppingWorkerLaneMigr
 const shoppingWorkerControlMigration = fs.readFileSync(files.shoppingWorkerControlMigration, "utf8");
 const shoppingWorkerContinuityMigration = fs.readFileSync(files.shoppingWorkerContinuityMigration, "utf8");
 const shoppingWorkerDurableCycleMigration = fs.readFileSync(files.shoppingWorkerDurableCycleMigration, "utf8");
+const shoppingWorkerCycleOverflowMigration = fs.readFileSync(files.shoppingWorkerCycleOverflowMigration, "utf8");
 const shoppingWorkerRuntime112Migration = fs.readFileSync(files.shoppingWorkerRuntime112Migration, "utf8");
 const shoppingWorkerRuntime113Migration = fs.readFileSync(files.shoppingWorkerRuntime113Migration, "utf8");
 const shoppingWorkerRuntime114Migration = fs.readFileSync(files.shoppingWorkerRuntime114Migration, "utf8");
@@ -149,11 +154,14 @@ const shoppingSchedulerEventLedgerMigration = fs.readFileSync(files.shoppingSche
 const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRuntime116Migration, "utf8");
 const shoppingWorkerRuntime117Migration = fs.readFileSync(files.shoppingWorkerRuntime117Migration, "utf8");
 const shoppingWorkerRuntime118Migration = fs.readFileSync(files.shoppingWorkerRuntime118Migration, "utf8");
+const shoppingWorkerRuntime119Migration = fs.readFileSync(files.shoppingWorkerRuntime119Migration, "utf8");
 const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = fs.readFileSync(files.shoppingAutoNavigationTrackerFailureRecoveryMigration, "utf8");
 const shoppingProbeIncompleteAutoRecoveryMigration = fs.readFileSync(files.shoppingProbeIncompleteAutoRecoveryMigration, "utf8");
+const shoppingTransientSystemRecoveryMigration = fs.readFileSync(files.shoppingTransientSystemRecoveryMigration, "utf8");
+const shoppingTransientSystemRecoveryTests = fs.readFileSync(files.shoppingTransientSystemRecoveryTests, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
 const shoppingRankLookupJobs = fs.readFileSync(files.shoppingRankLookupJobs, "utf8");
@@ -778,6 +786,28 @@ check(
   `${files.shoppingWorkerContinuityMigration}, ${files.shoppingWorkerDurableCycleMigration}, ${files.shoppingLocalWorkerHandler}`,
 );
 check(
+  "N Shopping normalized-keyword overflow stays one collection per cycle and rotates bounded coverage",
+  hasAll(shoppingWorkerCycleOverflowMigration, [
+    /worker_last_cycle_deferred_at/,
+    /case when tracker\.id = seed\.id then 0 else 1 end asc/,
+    /tracker\.last_checked_at asc nulls first/,
+    /limit 100\s+for update skip locked/,
+    /worker_last_cycle_id = current_row\.scheduler_cycle_id/,
+    /'deferredCount', v_deferred_count/,
+    /'groupSize', v_claim_count \+ v_deferred_count/,
+    /'tracker_deferred'/,
+    /idx_naver_shopping_scheduler_events_cycle_deferred_once/,
+    /mi_audit_naver_shopping_tracker_deferred/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/set\s+(?:current_rank|last_checked_at|next_check_at|last_error|retry_count)\s*=/i
+      .test(shoppingWorkerCycleOverflowMigration)
+    && /rawClaims\.length > 100/.test(shoppingLocalWorkerHandler),
+  `${files.shoppingWorkerCycleOverflowMigration}, ${files.shoppingLocalWorkerHandler}`,
+);
+check(
   "N Shopping duplicate-identity release pins runtime 1.1.2 fail-closed",
   hasAll(shoppingWorkerRuntime112Migration, [
     /mi_report_naver_shopping_worker_progress/,
@@ -880,6 +910,28 @@ check(
   files.shoppingWorkerRuntime118Migration,
 );
 check(
+  "N Shopping current worker bytes pin runtime 1.1.9 fail-closed",
+  hasAll(shoppingWorkerRuntime119Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.9'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.9'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /set cadence_mode = 'baseline',[\s\S]+cadence_minutes = 10,[\s\S]+stability_started_at = null,[\s\S]+success_streak = 0/,
+    /cadence_mode = case[\s\S]+runtime_version is distinct from trim\(p_runtime_version\)[\s\S]+runtime_fingerprint is distinct from lower\(trim\(p_runtime_fingerprint\)\)[\s\S]+then 'baseline'/,
+    /'transient_system_probe_attempts', current_row\.transient_system_probe_attempts/,
+    /'candidate_eligible',[\s\S]+current_row\.circuit_state = 'closed'[\s\S]+and processing_count = 0[\s\S]+current_row\.runtime_version = '1\.1\.9'/,
+    /for update;[\s\S]+status = 'processing' and processing_until > v_now[\s\S]+status = 'active' and processing_until > v_now[\s\S]+into processing_count;[\s\S]+eligible :=[\s\S]+and processing_count = 0/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime119Migration),
+  files.shoppingWorkerRuntime119Migration,
+);
+check(
   "N Shopping ledger stores only the verified stable proof protocol version",
   hasAll(shoppingStableProofLedgerMigration, [
     /mi_internal\.mi_audit_naver_shopping_snapshot_commit/,
@@ -968,6 +1020,27 @@ check(
     && !/security definer/.test(shoppingProbeIncompleteAutoRecoveryMigration)
     && !/(?:next_check_at|worker_quarantined_until|scheduler_cycle_cursor_\w+|worker_last_cycle_id)\s*=/i.test(shoppingProbeIncompleteAutoRecoveryMigration),
   files.shoppingProbeIncompleteAutoRecoveryMigration,
+);
+check(
+  "N Shopping transient system circuit recovery is exact, quiet and bounded",
+  hasAll(shoppingTransientSystemRecoveryMigration, [
+    /transient_system_probe_attempts integer not null default 0/,
+    /check \(transient_system_probe_attempts between 0 and 2\)/,
+    /normalized_worker_role = 'primary'/,
+    /transient_failure_code in \([\s\S]*'native_host_response_timeout'[\s\S]*'provider_deadline_exceeded'[\s\S]*\)/,
+    /current_row\.transient_system_probe_attempts < 2/,
+    /circuit_opened_at <= v_now - interval '30 minutes'/,
+    /circuit_reason = 'auto_transient_system_probe'/,
+    /p_checked_count is distinct from 300/,
+    /transient_system_recovered/,
+    /force row level security/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingTransientSystemRecoveryMigration)
+    && shoppingTransientSystemRecoveryTests.includes("transient recovery excludes security, network, generic and integrity failures")
+    && String(packageJson.scripts?.test || "").includes("scripts/naver-shopping-transient-system-recovery-migration.test.mjs"),
+  `${files.shoppingTransientSystemRecoveryMigration}, ${files.shoppingTransientSystemRecoveryTests}`,
 );
 check(
   "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",
@@ -1105,7 +1178,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.8"
+  shoppingChromeManifest.version === "1.1.9"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1128,7 +1201,8 @@ check(
     && /return \(\) => clearInterval\(timer\)/.test(shoppingChromeWorker)
     && /if \(stopKeepAlive\) stopKeepAlive\(\)/.test(shoppingChromeWorker)
     && /async function removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
-    && /void removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
+    && /async function initializeWorker\(\)[\s\S]*?extensionRuntimeIdentity\(\)[\s\S]*?INITIALIZATION_SAFE_STATUSES\.has\(storedStatus\)[\s\S]*?markCandidateCadenceResetPending\(runtimeIdentity\)[\s\S]*?storedStatus === "running"[\s\S]*?saveStatus\("failed", "native_host_interrupted"\)[\s\S]*?configureAlarms\(\)[\s\S]*?await removeLegacyControllerTabs\(\)/.test(shoppingChromeWorker)
+    && /async function requestWorkerRun\(trigger\)[\s\S]*?await initializationPromise/.test(shoppingChromeWorker)
     && !/<script src="service-worker\.js"><\/script>/.test(shoppingChromePopupHtml)
     && /chrome\.runtime\.sendMessage\(\{ action: "run-now" \}\)/.test(shoppingChromePopup)
     && /<button id="run" type="button">지금 안전 갱신<\/button>/.test(shoppingChromePopupHtml)
@@ -1305,8 +1379,16 @@ check(
       /"provider_row_invalid"/,
       /"provider_row_title_missing"/,
       /"provider_row_identity_missing"/,
-      /job\.claims\.slice\(processedCount\)/,
+      /action: "reconcile-submit"/,
+      /submitClaimOutcome\(partial, job/,
+      /explicitOutcome\.uncommittedClaims/,
       /processedCount !== job\.claims\.length/,
+    ])
+    && !/job\.claims\.slice\(processedCount\)/.test(shoppingLocalWorker)
+    && hasAll(shoppingLocalWorkerHandler, [
+      /body\.action === "reconcile-submit"/,
+      /\.from\("naver_rank_snapshots"\)/,
+      /claimResults/,
     ])
     && hasAll(shoppingNativeHostCore, [
       /native_host_request_id_mismatch/,

@@ -139,11 +139,18 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.8";
+const EXPECTED_RUNTIME_VERSION = "1.1.9";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const INTERNAL_FAILURE_CODE_PATTERN = /^(?:local_worker|native_host|provider|naver)_[a-z0-9_:-]{2,79}$/u;
+const SUBMIT_CLAIM_STATUSES = new Set([
+  "committed",
+  "already_committed",
+  "lease_lost",
+  "collection_conflict",
+  "uncommitted",
+]);
 
 async function runtimeIdentityInput(options, env) {
   let identity = options.runtimeIdentity || {
@@ -186,6 +193,61 @@ function jobProgressIdentity(job) {
   return {
     jobKind: job?.kind === "lookup" ? "lookup" : "tracker",
     trackerId: job?.kind === "lookup" ? null : job?.claims?.[0]?.trackerId || null,
+  };
+}
+
+function jobClaimId(job, claim) {
+  return String(job?.kind === "lookup" ? claim?.lookupJobId : claim?.trackerId || "")
+    .trim()
+    .toLowerCase();
+}
+
+function submitClaimOutcome(payload, job, options = {}) {
+  if (!Array.isArray(payload?.claimResults)) return null;
+  const claimsById = new Map(job.claims.map((claim) => [jobClaimId(job, claim), claim]));
+  const seen = new Set();
+  const results = [];
+  for (const rawResult of payload.claimResults) {
+    const claimId = String(rawResult?.claimId || "").trim().toLowerCase();
+    const status = String(rawResult?.status || "").trim().toLowerCase();
+    if (!claimsById.has(claimId)
+      || seen.has(claimId)
+      || !SUBMIT_CLAIM_STATUSES.has(status)
+      || (options.allowUncommitted !== true && status === "uncommitted")) {
+      return null;
+    }
+    seen.add(claimId);
+    results.push({ claimId, status });
+  }
+  if (options.requireComplete === true && seen.size !== job.claims.length) return null;
+  const count = (status) => results.filter((result) => result.status === status).length;
+  const counts = {
+    committedCount: count("committed"),
+    alreadyCommittedCount: count("already_committed"),
+    leaseLostCount: count("lease_lost"),
+    collectionConflictCount: count("collection_conflict"),
+    uncommittedCount: count("uncommitted"),
+    processedCount: results.length,
+  };
+  for (const key of [
+    "committedCount",
+    "alreadyCommittedCount",
+    "leaseLostCount",
+    "collectionConflictCount",
+    "processedCount",
+  ]) {
+    if (payload[key] != null && Number(payload[key]) !== counts[key]) return null;
+  }
+  if (payload.uncommittedCount != null && Number(payload.uncommittedCount) !== counts.uncommittedCount) {
+    return null;
+  }
+  return {
+    ...counts,
+    results,
+    uncommittedClaims: results
+      .filter((result) => result.status === "uncommitted")
+      .map((result) => claimsById.get(result.claimId)),
+    unreportedClaims: job.claims.filter((claim) => !seen.has(jobClaimId(job, claim))),
   };
 }
 
@@ -436,7 +498,14 @@ export async function runLocalShoppingWorker(options = {}) {
   const log = options.log || (() => {});
   if (!enabled(env)) {
     log("N shopping local worker disabled");
-    return { status: "disabled", claimed: 0, submitted: 0, failed: 0, releaseFailed: 0 };
+    return {
+      status: "disabled",
+      claimed: 0,
+      submitted: 0,
+      failed: 0,
+      releaseFailed: 0,
+      atomicSuccesses: 0,
+    };
   }
   const runtimeIdentity = await runtimeIdentityInput(options, env);
   const runId = String(options.runId || crypto.randomUUID()).trim().toLowerCase();
@@ -474,7 +543,14 @@ export async function runLocalShoppingWorker(options = {}) {
     ),
   });
   if (!releaseLock) {
-    return { status: "already_running", claimed: 0, submitted: 0, failed: 0, releaseFailed: 0 };
+    return {
+      status: "already_running",
+      claimed: 0,
+      submitted: 0,
+      failed: 0,
+      releaseFailed: 0,
+      atomicSuccesses: 0,
+    };
   }
 
   const action = (payload) => signedWorkerAction(endpoint, secret, payload, {
@@ -533,10 +609,12 @@ export async function runLocalShoppingWorker(options = {}) {
     submitted: 0,
     failed: 0,
     releaseFailed: 0,
+    atomicSuccesses: 0,
   };
   let laneClaimed = false;
   let effectiveMaxJobs = maxJobs;
   let probeTrackerId = null;
+  let autoRecovery = false;
 
   try {
     const lane = await action({
@@ -551,11 +629,12 @@ export async function runLocalShoppingWorker(options = {}) {
       return summary;
     }
     laneClaimed = true;
+    autoRecovery = lane.autoRecovery === true;
     probeTrackerId = String(lane.probeTrackerId || "").trim().toLowerCase() || null;
     if (probeTrackerId && !UUID_PATTERN.test(probeTrackerId)) {
       throw new Error("local_worker_probe_tracker_invalid");
     }
-    if (probeTrackerId) effectiveMaxJobs = 1;
+    if (probeTrackerId || autoRecovery) effectiveMaxJobs = 1;
     if ([8, 10].includes(Number(lane.cadenceMinutes))) {
       summary.cadenceMinutes = Number(lane.cadenceMinutes);
     }
@@ -568,7 +647,7 @@ export async function runLocalShoppingWorker(options = {}) {
       }
       summary.remoteWake = true;
     }
-    if (options.queueAllTrackers === true || summary.remoteWake === true) {
+    if (options.queueAllTrackers === true || summary.remoteWake === true || autoRecovery) {
       const queued = await action({ action: "queue-all-active-trackers", ...lanePayload });
       summary.queuedTotal = boundedResponseCount(queued.total, 100_000);
       summary.queued = boundedResponseCount(queued.queued, 100_000);
@@ -585,6 +664,7 @@ export async function runLocalShoppingWorker(options = {}) {
         schedulerVersion: "v2",
         preferLookup: !trackerReserved,
         probeTrackerId,
+        autoRecovery,
         ...lanePayload,
       });
       if (!claim.job) break;
@@ -597,6 +677,7 @@ export async function runLocalShoppingWorker(options = {}) {
       const collectionStartedAt = options.nowMs?.() ?? Date.now();
       let resultAccounted = false;
       let controlFailureAttempted = false;
+      let submitCollectionId = "";
       try {
         await reportProgress("navigating", 0, job);
         const request = localWorkerRankRequest(
@@ -615,17 +696,24 @@ export async function runLocalShoppingWorker(options = {}) {
           nowMs: options.nowMs?.() ?? Date.now(),
         });
         await reportProgress("submitting", 8, job);
+        submitCollectionId = strictWindow.collectionId;
         const submitted = await action({
           action: "submit",
           ...lanePayload,
           job,
           window: strictWindow,
         });
-        const committedCount = Number(submitted.committedCount || 0);
-        const alreadyCommittedCount = Number(submitted.alreadyCommittedCount || 0);
-        const leaseLostCount = Number(submitted.leaseLostCount || 0);
-        const collectionConflictCount = Number(submitted.collectionConflictCount || 0);
-        const processedCount = Number(submitted.processedCount || 0);
+        const explicitOutcome = submitClaimOutcome(submitted, job, { requireComplete: true });
+        if (Array.isArray(submitted.claimResults) && !explicitOutcome) {
+          throw new Error("local_worker_submit_incomplete");
+        }
+        const committedCount = explicitOutcome?.committedCount ?? Number(submitted.committedCount || 0);
+        const alreadyCommittedCount = explicitOutcome?.alreadyCommittedCount
+          ?? Number(submitted.alreadyCommittedCount || 0);
+        const leaseLostCount = explicitOutcome?.leaseLostCount ?? Number(submitted.leaseLostCount || 0);
+        const collectionConflictCount = explicitOutcome?.collectionConflictCount
+          ?? Number(submitted.collectionConflictCount || 0);
+        const processedCount = explicitOutcome?.processedCount ?? Number(submitted.processedCount || 0);
         if (
           !Number.isSafeInteger(committedCount)
           || !Number.isSafeInteger(alreadyCommittedCount)
@@ -676,6 +764,7 @@ export async function runLocalShoppingWorker(options = {}) {
             durationMs: Math.max(0, Math.trunc((options.nowMs?.() ?? Date.now()) - collectionStartedAt)),
             source: strictWindow.source,
           });
+          summary.atomicSuccesses += 1;
           if (success.candidateEligible === true || success.cadenceEligible === true) {
             summary.cadenceEligible = true;
           }
@@ -703,10 +792,61 @@ export async function runLocalShoppingWorker(options = {}) {
           }
           break;
         }
-        const partial = error?.result?.partial;
-        const partialPresent = Boolean(partial)
+        let partial = error?.result?.partial;
+        let partialPresent = Boolean(partial)
           && typeof partial === "object"
           && !Array.isArray(partial);
+        let explicitOutcome = partialPresent
+          ? submitClaimOutcome(partial, job, { allowUncommitted: false })
+          : null;
+        const partialProcessedCount = Number(partial?.processedCount || 0);
+        const transportAmbiguous = Boolean(submitCollectionId)
+          && failureCode !== "local_worker_submit_body_too_large"
+          && !partialPresent
+          && (
+            !error?.result
+            || String(error?.code || error?.message || "") === "local_worker_api_invalid_json"
+            || Number(error?.status || 0) >= 500
+          );
+        const partialIdentityAmbiguous = partialPresent
+          && Number.isSafeInteger(partialProcessedCount)
+          && partialProcessedCount > 0
+          && partialProcessedCount < job.claims.length
+          && !explicitOutcome;
+        if (transportAmbiguous || partialIdentityAmbiguous) {
+          try {
+            partial = await action({
+              action: "reconcile-submit",
+              ...lanePayload,
+              job,
+              collectionId: submitCollectionId,
+            });
+            partialPresent = true;
+            explicitOutcome = submitClaimOutcome(partial, job, {
+              allowUncommitted: true,
+              requireComplete: true,
+            });
+            if (!explicitOutcome) throw new Error("local_worker_submit_reconcile_invalid");
+          } catch (reconcileError) {
+            restoreBaselineCadence(summary);
+            summary.status = "control_plane_failed";
+            summary.controlPlaneFailed = Number(summary.controlPlaneFailed || 0) + 1;
+            log(`local_worker_submit_outcome_unknown:${safeFailureCode(reconcileError)}`);
+            try {
+              const failureReport = await action({
+                action: "record-failure",
+                ...lanePayload,
+                job,
+                errorCode: "local_worker_submit_outcome_unknown",
+                scope: "system",
+              });
+              if (failureReport.laneReleased === true) laneClaimed = false;
+            } catch (coordinationError) {
+              log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
+            }
+            break;
+          }
+        }
         const partialCounts = partialPresent
           ? [
             Number(partial.committedCount),
@@ -716,16 +856,23 @@ export async function runLocalShoppingWorker(options = {}) {
             Number(partial.processedCount),
           ]
           : [0, 0, 0, 0, 0];
-        const partialTrusted = partialCounts.every((value) => (
+        const legacyPartialTrusted = !explicitOutcome && partialCounts.every((value) => (
           Number.isSafeInteger(value) && value >= 0 && value <= job.claims.length
-        )) && partialCounts.slice(0, 4).reduce((sum, value) => sum + value, 0) === partialCounts[4];
-        const [committedCount, alreadyCommittedCount] = partialTrusted
-          ? partialCounts
-          : [0, 0];
-        const processedCount = partialTrusted ? partialCounts[4] : 0;
+        )) && partialCounts.slice(0, 4).reduce((sum, value) => sum + value, 0) === partialCounts[4]
+          && (partialCounts[4] === 0 || partialCounts[4] === job.claims.length);
+        const committedCount = explicitOutcome?.committedCount
+          ?? (legacyPartialTrusted ? partialCounts[0] : 0);
+        const alreadyCommittedCount = explicitOutcome?.alreadyCommittedCount
+          ?? (legacyPartialTrusted ? partialCounts[1] : 0);
+        const processedCount = explicitOutcome?.processedCount
+          ?? (legacyPartialTrusted ? partialCounts[4] : 0);
         const partialSubmitted = committedCount + alreadyCommittedCount;
-        const remainingClaims = job.claims.slice(processedCount);
-        if (partialPresent && !partialTrusted) log("local_worker_submit_partial_invalid");
+        const remainingClaims = explicitOutcome
+          ? [...explicitOutcome.uncommittedClaims, ...explicitOutcome.unreportedClaims]
+          : (processedCount === 0 ? job.claims : []);
+        if (partialPresent && !explicitOutcome && !legacyPartialTrusted) {
+          log("local_worker_submit_partial_invalid");
+        }
         summary.submitted += partialSubmitted;
         summary.failed += job.claims.length - partialSubmitted;
         restoreBaselineCadence(summary);

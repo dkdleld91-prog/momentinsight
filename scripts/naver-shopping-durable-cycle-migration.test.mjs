@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const migration = readFileSync(new URL(
@@ -22,6 +22,32 @@ const probeIncompleteAutoRecoveryMigration = readFileSync(new URL(
   '../supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql',
   import.meta.url,
 ), 'utf8');
+const runtime119Migration = readFileSync(new URL(
+  '../supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql',
+  import.meta.url,
+), 'utf8');
+const migrationDirectory = new URL('../supabase/migrations/', import.meta.url);
+
+function findMigrationContaining(marker) {
+  for (const file of readdirSync(migrationDirectory).filter((name) => name.endsWith('.sql')).sort()) {
+    const source = readFileSync(new URL(file, migrationDirectory), 'utf8');
+    if (source.includes(marker)) return { file, source };
+  }
+  return null;
+}
+
+const normalizedKeywordOverflowMigration = findMigrationContaining(
+  'worker_last_cycle_deferred_at',
+);
+
+function runtime119FunctionSql(name, nextName = null) {
+  const start = runtime119Migration.indexOf(`create or replace function public.${name}`);
+  const end = nextName
+    ? runtime119Migration.indexOf(`create or replace function public.${nextName}`, start + 1)
+    : runtime119Migration.indexOf('revoke all on function', start + 1);
+  assert.ok(start >= 0 && end > start, `${name} must exist in runtime 1.1.9`);
+  return runtime119Migration.slice(start, end);
+}
 
 test('durable cycle RPC contract is fixed and service-role only', () => {
   for (const key of ['cycleId', 'cycleStartedAt', 'started', 'total', 'remaining', 'processing']) {
@@ -49,6 +75,117 @@ test('cycle order, one-new-then-resume and normalized keyword group are durable'
   assert.match(migration, /processing_until > v_now[\s\S]*'status', 'waiting'/i);
   assert.match(migration, /worker_quarantined_until is null or tracker\.worker_quarantined_until <= v_now/i);
   assert.doesNotMatch(migration, /next_check_at/i, 'cycle authority must not rewrite due timestamps');
+});
+
+test('a normalized keyword over 100 trackers is collected once per cycle with bounded, rotating coverage', () => {
+  assert.ok(
+    normalizedKeywordOverflowMigration,
+    'an additive migration must repair the existing max-100 normalized-keyword boundary',
+  );
+  const sql = normalizedKeywordOverflowMigration.source;
+  assert.match(
+    normalizedKeywordOverflowMigration.file,
+    /^\d{14}_naver_shopping_cycle_keyword_overflow\.sql$/u,
+  );
+  assert.match(sql, /add column if not exists worker_last_cycle_deferred_at timestamptz/iu);
+  assert.match(
+    sql,
+    /drop constraint if exists naver_shopping_scheduler_events_deferred_tracker_check/iu,
+  );
+  assert.match(sql, /create or replace function public\.mi_claim_naver_shopping_cycle_keyword\(/iu);
+  assert.match(
+    sql,
+    /case when tracker\.id = seed\.id then 0 else 1 end asc[\s\S]*tracker\.last_checked_at asc nulls first[\s\S]*limit 100[\s\S]*for update skip locked/iu,
+    'the selected seed must stay in the bounded claim and oldest checks must rotate into later cycles',
+  );
+  assert.match(
+    sql,
+    /worker_last_cycle_id is distinct from current_row\.scheduler_cycle_id[\s\S]*worker_last_cycle_id = current_row\.scheduler_cycle_id[\s\S]*worker_last_cycle_deferred_at = v_now/iu,
+    'every overflow member must be rostered as deferred for the current cycle',
+  );
+  assert.match(sql, /'deferredCount', v_deferred_count/iu);
+  assert.match(sql, /'groupSize', v_claim_count \+ v_deferred_count/iu);
+
+  const deferredStart = sql.indexOf('deferred_group_members as');
+  const deferredEnd = sql.indexOf('select count(*)::integer', deferredStart);
+  assert.ok(deferredStart >= 0 && deferredEnd > deferredStart);
+  const deferredSql = sql.slice(deferredStart, deferredEnd);
+  assert.doesNotMatch(
+    deferredSql,
+    /(?:current_rank|last_checked_at\s*=|next_check_at\s*=|processing_started_at\s*=|processing_until\s*=|worker_last_cycle_claimed_at\s*=|worker_quarantined_until\s*=|last_message\s*=|last_error\s*=|retry_count\s*=)/iu,
+    'deferred rows preserve last-good, due order, history, error state, and leases',
+  );
+  assert.match(
+    sql,
+    /event_type[\s\S]*'tracker_deferred'[\s\S]*worker_last_cycle_deferred_at\s+is distinct from old_row\.worker_last_cycle_deferred_at/iu,
+    'deferred coverage must be explicit ledger evidence, not a fabricated claim or success',
+  );
+  assert.match(
+    sql,
+    /'cycle_rostered'[\s\S]*case[\s\S]*new_row\.created_at > current_row\.scheduler_cycle_started_at[\s\S]*then 'new_after_start'[\s\S]*else 'late_observed'[\s\S]*on conflict \(cycle_id, tracker_id\)[\s\S]*where event_type = 'cycle_rostered'[\s\S]*do nothing/iu,
+    'a deferred tracker first observed after cycle start must join the immutable cycle roster once',
+  );
+  assert.match(
+    sql,
+    /unique index[\s\S]*\(cycle_id, tracker_id\)[\s\S]*where event_type = 'tracker_deferred'/iu,
+    'one tracker can be deferred at most once per cycle',
+  );
+  const claimFunctionStart = sql.indexOf(
+    'create or replace function public.mi_claim_naver_shopping_cycle_keyword',
+  );
+  const claimFunctionEnd = sql.indexOf(
+    'revoke all on function public.mi_claim_naver_shopping_cycle_keyword',
+    claimFunctionStart,
+  );
+  assert.ok(claimFunctionStart >= 0 && claimFunctionEnd > claimFunctionStart);
+  const claimFunctionSql = sql.slice(claimFunctionStart, claimFunctionEnd);
+  assert.doesNotMatch(claimFunctionSql, /security definer/iu);
+  assert.match(claimFunctionSql, /security invoker/iu);
+  assert.match(
+    sql,
+    /revoke all on function mi_internal\.mi_audit_naver_shopping_tracker_deferred\(\)[\s\S]*from public, anon, authenticated, service_role;/iu,
+  );
+  assert.doesNotMatch(
+    sql,
+    /grant execute on function mi_internal\.mi_audit_naver_shopping_tracker_deferred/iu,
+  );
+  assert.match(
+    sql,
+    /revoke all on function public\.mi_claim_naver_shopping_cycle_keyword\(text, uuid, uuid, integer, uuid\)[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/iu,
+  );
+});
+
+test('bounded normalized-keyword selection never starves overflow members', () => {
+  const trackers = Array.from({ length: 151 }, (_, index) => ({
+    id: index + 1,
+    lastCheckedAt: index < 100 ? index + 1 : null,
+  }));
+  const selectCycle = (rows, seedId) => [...rows]
+    .sort((left, right) => {
+      const seedOrder = Number(right.id === seedId) - Number(left.id === seedId);
+      if (seedOrder) return seedOrder;
+      const leftChecked = left.lastCheckedAt ?? Number.NEGATIVE_INFINITY;
+      const rightChecked = right.lastCheckedAt ?? Number.NEGATIVE_INFINITY;
+      return leftChecked - rightChecked || left.id - right.id;
+    })
+    .slice(0, 100);
+
+  const first = selectCycle(trackers, 1);
+  assert.equal(first.length, 100);
+  assert.ok(first.some((tracker) => tracker.id === 1), 'the durable cursor seed must be included');
+  const firstIds = new Set(first.map((tracker) => tracker.id));
+  const deferred = trackers.filter((tracker) => !firstIds.has(tracker.id));
+  assert.equal(deferred.length, 51);
+
+  const nextSeed = deferred[0].id;
+  const nextCycleRows = trackers.map((tracker) => ({
+    ...tracker,
+    lastCheckedAt: firstIds.has(tracker.id) ? 10_000 + tracker.id : tracker.lastCheckedAt,
+  }));
+  const second = selectCycle(nextCycleRows, nextSeed);
+  const secondIds = new Set(second.map((tracker) => tracker.id));
+  assert.ok(deferred.every((tracker) => secondIds.has(tracker.id)));
+  assert.ok(secondIds.has(nextSeed));
 });
 
 test('duplicate identity is capped at one 30-minute quarantine while other failures keep escalation', () => {
@@ -239,4 +376,41 @@ test('navigation probe terminal states retry only the same typed failure after t
     probeIncompleteAutoRecoveryMigration,
     /revoke all on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/i,
   );
+});
+
+test('runtime 1.1.9 candidate cadence requires zero active lookup and tracker leases', () => {
+  const operationsSql = runtime119FunctionSql(
+    'mi_get_naver_shopping_worker_operations',
+    'mi_set_naver_shopping_worker_cadence',
+  );
+  const cadenceSql = runtime119FunctionSql('mi_set_naver_shopping_worker_cadence');
+  const activeLeaseCountPattern = /select \(\s*\(select count\(\*\) from public\.naver_shopping_rank_lookup_jobs\s*where status = 'processing' and processing_until > v_now\)\s*\+\s*\(select count\(\*\) from public\.naver_rank_trackers\s*where status = 'active' and processing_until > v_now\)\s*\)::integer into processing_count;/iu;
+
+  assert.match(operationsSql, activeLeaseCountPattern);
+  assert.match(
+    operationsSql,
+    /'candidate_eligible',[\s\S]*?current_row\.circuit_state = 'closed'[\s\S]*?and processing_count = 0[\s\S]*?current_row\.runtime_version = '1\.1\.9'/iu,
+  );
+  assert.match(
+    cadenceSql,
+    /where lane_key = 'global'\s*for update;[\s\S]*select \([\s\S]*?into processing_count;[\s\S]*eligible :=/iu,
+    'the coordination row lock must precede the active-lease snapshot',
+  );
+  assert.match(cadenceSql, activeLeaseCountPattern);
+  assert.match(
+    cadenceSql,
+    /eligible :=[\s\S]*?current_row\.circuit_state = 'closed'[\s\S]*?and processing_count = 0[\s\S]*?current_row\.runtime_version = '1\.1\.9'/iu,
+  );
+
+  const candidateAllowed = (lookupProcessing, trackerProcessing) => (
+    lookupProcessing + trackerProcessing === 0
+  );
+  for (const [lookupProcessing, trackerProcessing, expected] of [
+    [0, 0, true],
+    [1, 0, false],
+    [0, 1, false],
+    [1, 1, false],
+  ]) {
+    assert.equal(candidateAllowed(lookupProcessing, trackerProcessing), expected);
+  }
 });

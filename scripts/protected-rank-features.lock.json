@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "9b220fcddc2de404937e70d1e8b40cf8d332ce2626f47abcb5a60afad1089a23"
+      "sha256": "1f353ec2b6a2431da330ffa6a6aa99df91f68f436dd3e9730b6c9b0fcc9313e0"
     },
     {
       "id": "product-organic-rank-server",
@@ -343,7 +343,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "7fc464ae0588d903a4220a05660b724d5ebb8804bdd74d92691cd5412eface8a"
+      "sha256": "d0206c267ccb4ad5d4e8b59350ebe44593467b2f659faa1f69ebcf68b956a583"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -358,7 +358,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "391ea52ddf732de5bd4e241917a66538bc322d3aba9a05325feb01b7b6064aa4"
+      "sha256": "269d9a59461c4840b696e77632b3905934743065bdc87951a8d33ed74ae0e818"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -614,17 +614,35 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "bdaad4383cc0c0ce3909bb9258b18f659f1056b5cb1e635511486e626f8653a7"
+      "sha256": "8ac2dc72e3cdb2b233f0d4de426fe17e5093d4da14806a0886adea077707069d"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "f259b3bdaf218b69aefee3fbd1179aaa2473e08ecae6a87a1079c93be044a22c"
+      "sha256": "aeb9c25ea17868353c3fea55b5765929b201bd2a27d26a0d2d0788929ea90a6a"
     },
     {
       "id": "shopping-local-worker-session-boundary",
       "file": "src/server/session-gate.mjs",
       "sha256": "fd0612d56b56c72f056ea2da23a5ed2d0799c24f7a37dce150c392722b01181a"
+    },
+    {
+      "id": "shopping-worker-cycle-keyword-overflow",
+      "file": "supabase/migrations/20260821042129_naver_shopping_cycle_keyword_overflow.sql",
+      "sha256": "7f78733d2a1ba671523e23755d2acd7ad979e4022a835b3801f71e7dd7df5310",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-transient-system-half-open",
+      "file": "supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql",
+      "sha256": "224e98b623a3b88b87608e4b63dfc2ff1b7620a0b82164d411d2add78eba2027",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-9",
+      "file": "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
+      "sha256": "9e6b5969d3ce4b81d5a35d93905b04fa7ca6b1d0d6a098ea0e4c5cd1bc82f409",
+      "rankMigration": true
     }
   ]
 }

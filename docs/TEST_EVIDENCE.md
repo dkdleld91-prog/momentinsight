@@ -1,5 +1,13 @@
 # Test Evidence
 
+## 2026-08-21 N쇼핑 v1.1.9·5차 속도 개선 로컬 후보 증거
+
+- 개선 전 운영 SELECT-only: runtime `1.1.8` exact fingerprint, heartbeat 정상, circuit closed, lane·run·lease null, active 74·paused 0·processing 0·격리 3입니다. 최근 24시간 258 snapshot의 checked300/source/organic/adExcluded 위반은 0이고 group 처리시간 avg 58.11초·p50 44.95초·p90 86.90초·max 91.22초, wall 처리량 8.75~8.77 group/hour입니다.
+- TDD focused 실행은 163/163 PASS입니다. 여기에는 >100 tracker 동일 keyword의 cycle당 수집 1회·회전 deferred, submit 응답 유실 exact reconcile, transient timeout/deadline half-open 최대2회, remote no-wake probe 보존, claim-response-loss 장부 guard, runtime 1.1.9 gate와 candidate 승격 시 active processing lease 0 조건이 포함됩니다.
+- cadence/init 87/87 PASS입니다. 실패 뒤 첫 explicit atomic success부터 24시간+6회, idle 증가 0, storage/alarm read·write·create·clear 실패, 서비스워커 새 VM, 강제종료·stale running·generic failure overwrite, old 1.1.8 proof와 same-version 다른 SHA 거부를 동적으로 실행했습니다.
+- `node --check` 관련 6개, server contract 61/61, release baseline 171/171, `git diff --check`가 통과했습니다. 변경 범위 cadence/init branch-range coverage는 117/144=81.25%, 함수 11/11입니다. 기존 local-worker 전체 파일은 line 89.24%·branch 67.56%·function 89.19%라 전체 branch 80%로 과장하지 않습니다.
+- 보호 잠금 23함수·91파일·40 migration과 self-test, 전체 `npm run check:release`가 exit 0으로 통과했습니다. 이 절은 아직 로컬 배포 후보 증거이며 DB migration·Production/Windows 동기화·운영 원자300·24시간 후 8분 A/B는 미확인입니다.
+
 ## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 Production 증거
 
 - 운영 SELECT-only: Windows heartbeat 정상, runtime `1.1.8`, fingerprint `182cc973…d49902`, circuit closed, cooldown 없음, lane·run·lease null입니다. 최근 24시간 snapshot 262건은 모두 광고 제외·공식 collector·오가닉 `checked_count=300`이며 위반 0입니다.

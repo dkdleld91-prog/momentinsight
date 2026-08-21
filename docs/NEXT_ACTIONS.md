@@ -2,6 +2,14 @@
 
 기준일: 2026-08-21
 
+## 진행 중: N쇼핑 v1.1.9 안정화·5차 8분 A/B
+
+1. 완료: 보호 잠금·self-test·전체 `check:release`를 통과했습니다. 정확한 N30 변경만 커밋·push하고 `data/`와 다른 사용자 작업은 포함하지 않습니다.
+2. 운영 lane·processing 0을 SELECT-only로 확인하고 overflow→transient recovery migration을 적용한 뒤 Production health/ready를 새 SHA로 맞춥니다. runtime 1.1.9 gate는 마지막에 적용하고 Windows updater를 같은 SHA·version으로 즉시 동기화합니다.
+3. 첫 자연 `pw-chrome-*`가 광고 제외 checked300으로 저장되고 runtime/fingerprint 일치, circuit closed, cadence10, lane·lease 해제를 확인합니다. 이 첫 1.1.9 원자 성공 시각이 새 24시간 안정성 시작점입니다.
+4. 24시간과 새 atomic success 6회가 모두 충족되기 전에는 candidate8을 활성화하지 않습니다. 이후 canonical cadence RPC로 8분을 1회 켜고, 여러 자연 회차의 atomic300·중복0·순서·lane 해제와 실제 group/hour를 개선 전 8.75~8.77과 비교합니다.
+5. 어떤 실패라도 10분 복귀·새 proof 초기화를 확인합니다. 실패 시 8분 성과로 보고하지 않고 원인과 last-good 보존 여부를 기록합니다.
+
 ## 완료: N쇼핑 30일 추적 비활성 재발 방지
 
 1. 완료: 운영 SELECT-only로 전역 작업기 정상 생존과 과거 진단용 paused 고아 1건을 분리했습니다. 자동 오류·격리나 cycle 정지는 현재 원인이 아닙니다.

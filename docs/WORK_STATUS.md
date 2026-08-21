@@ -4,6 +4,12 @@
 
 ## 현재 상태
 
+### 2026-08-21 연동 완료 배지 개선(버튼 숨김 버그 수정)
+
+- 대표 지적: 연동 완료인데도 오른쪽에 "구글 계정 연결·연결 해제" 버튼이 그대로 노출. 원인 실측: admin.html의 `.mi-link-button{display:inline-flex}`가 `hidden` 속성의 기본 `display:none`을 덮어써 배너 버튼 숨김이 전 상태에서 무효였음(잠복 버그).
+- 수정: 배너 스코프 `[hidden]{display:none}` CSS 추가 + 오른쪽에 초록 알약형 "✓ 연동 완료" 배지 신설. 연동 상태에서는 로그인 배너 버튼 2종 모두 숨기고 배지만 표시(왼쪽은 이메일). 구글 로그인으로 들어온 세션은 정의상 매핑이 존재하므로 대표실 진입 즉시 같은 배지가 표시됨(별도 조치 불요).
+- 실측: 실제 소스에서 추출한 CSS·마크업으로 브라우저 computed-style 측정 — linked: badge=flex/link=none/unlink=none, unlinked: link=flex/badge=none, gcal connected: badge=flex/connect=none/disconnect=flex. owner-tool 18/18, check:release exit 0.
+
 ### 2026-08-21 구글 로그인 카나리아 실사용 성공·연동 완료 표시
 
 - 대표님이 운영 실화면에서 구글 계정 연결→로그아웃→구글 로그인 전 과정을 실사용으로 성공 확인했습니다(카나리아 실증 완료). 활성화 과정에서 확인된 사실: Supabase SQL·Vercel env 반영 후 `/api/google-login/start`가 실제 구글 동의 화면으로 302 리다이렉트되며, 진단 중 사용한 임시 코드(runOwnerGoogleDiagnostics)는 제거했습니다.
@@ -29,6 +35,7 @@
 - 로컬 TDD는 partial 재수집 신규 RED 4/4→GREEN 4/4, 집중 회귀 264/264, server contract 63/63, release baseline, 보호 잠금 23함수·93파일·42 migration과 self-test, 전체 `npm run check:release` core 694/694·place 51/51·shopping 62/62·Production auth 18/18, `git diff --check`가 통과했습니다. native core coverage는 line 90.36%·function 94.74%이며 전체 branch 80%라고 과장하지 않습니다. 독립 감사에서도 deadline·16페이지·원자300·1.1.9 migration 불변·1.1.10 proof reset·processing0·service-role-only blocker 0을 확인했습니다.
 - commit `cdcd6c2c21e6`을 GitHub `main`과 Production에 반영했고 `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다. idle·processing0에서 `native_input_closed_half_open` → `runtime_1_1_10` migration을 적용한 뒤 Windows updater가 version `1.1.10`, exact fingerprint `70b5ce8d187b4a4789f5e75b34d8dd9ff6be3a6782a82703e068de9c28a297ba`로 동기화됐습니다.
 - 첫 자연 run `d92641ae…`는 22:31:15 KST normal claim → 22:32:46 KST commit으로 끝났습니다. collection `pw-chrome-1787319166244-359a9497dd9e9af25c62`은 `checked_count=300`, 공식 collector, 광고 30개 제외, 오가닉 57위, stable-full-window 증거이며 terminal 뒤 circuit closed·processing0·lane/run/lease null입니다. cadence는 baseline 10분, 새 stability 시작은 22:32:47 KST·streak1이라 8분은 아직 활성화하지 않았습니다. 기존 partial 격리 3건의 새 재수집 경로 실회복은 자연 격리 만료 전이라 아직 미확인입니다.
+- 후속 natural/normal terminal 3회도 전부 공식 collector·광고 제외 `checked_count=300`, 같은 cycle 중복 0, circuit closed·processing/lane/run/lease null로 끝나 success streak 4가 됐습니다. 실제 claim 간격은 8분05초·2분53초·8분09초로 일정하지 않았고 마지막 회차는 `tracker-sync-due` wake와 일치했습니다. 운영 표시는 계속 baseline10·candidate false이며 ledger가 각 실행 trigger를 모두 남기지 않으므로 이 간격을 candidate8 성과로 보고하지 않습니다.
 
 ### 2026-08-21 구글 계정 로그인 이관 카나리아 (mml93-a01)
 

@@ -835,6 +835,76 @@ test("Chrome worker VM acknowledges only the exact range-v1 native protocol", ()
   );
 });
 
+test("candidate cadence is recent-summary leased and every failed summary falls back to baseline", async () => {
+  const serviceWorker = fs.readFileSync(
+    new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),
+    "utf8",
+  );
+  assert.match(serviceWorker, /CADENCE_CONFIRMED_AT_KEY/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_CONFIRMATION_TTL_MS = 20 \* 60_000/u);
+  assert.match(serviceWorker, /function cadenceFromWorkerSummary\(result\)/u);
+
+  const constantsStart = serviceWorker.indexOf("const BASELINE_CADENCE_MINUTES");
+  const constantsEnd = serviceWorker.indexOf("// The Node host", constantsStart);
+  const safeStart = serviceWorker.indexOf("async function safeCadenceMinutes");
+  const safeEnd = serviceWorker.indexOf("async function configureAlarms", safeStart);
+  const summaryStart = serviceWorker.indexOf("function cadenceFromWorkerSummary");
+  const summaryEnd = serviceWorker.indexOf("async function configureAlarms", summaryStart);
+  assert.ok(constantsStart >= 0 && constantsEnd > constantsStart);
+  assert.ok(safeStart >= 0 && safeEnd > safeStart);
+  assert.ok(summaryStart >= 0 && summaryEnd > summaryStart);
+
+  const now = Date.parse("2026-08-21T07:00:00.000Z");
+  const stored = {};
+  const helpers = runInNewContext(`
+    ${serviceWorker.slice(constantsStart, constantsEnd)}
+    ${serviceWorker.slice(safeStart, safeEnd)}
+    ${serviceWorker.slice(summaryStart, summaryEnd)}
+    ({ safeCadenceMinutes, cadenceFromWorkerSummary });
+  `, {
+    Date: { now: () => now },
+    chrome: {
+      storage: {
+        local: {
+          async get(keys) {
+            return Object.fromEntries(keys.map((key) => [key, stored[key]]));
+          },
+        },
+      },
+    },
+    stored,
+  });
+
+  stored.momentInsightRankCadenceMinutes = 8;
+  stored.momentInsightRankCadenceConfirmedAt = now - (19 * 60_000);
+  assert.equal(await helpers.safeCadenceMinutes(), 8);
+  stored.momentInsightRankCadenceConfirmedAt = now - (21 * 60_000);
+  assert.equal(await helpers.safeCadenceMinutes(), 10);
+  delete stored.momentInsightRankCadenceConfirmedAt;
+  assert.equal(await helpers.safeCadenceMinutes(), 10);
+  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  for (const summary of [
+    { status: "disabled", cadenceMinutes: 8 },
+    { status: "control_plane_failed", cadenceMinutes: 8 },
+    { status: "completed", cadenceMinutes: 8, failed: 1 },
+    { status: "completed", cadenceMinutes: 8, releaseFailed: 1 },
+    { status: "unexpected", cadenceMinutes: 8 },
+  ]) {
+    assert.equal(helpers.cadenceFromWorkerSummary(summary), 10);
+  }
+  assert.equal(helpers.cadenceFromWorkerSummary({ status: "completed", cadenceMinutes: 8 }), 8);
+  assert.equal(helpers.cadenceFromWorkerSummary({ status: "idle", cadenceMinutes: 8 }), 8);
+  assert.equal(helpers.cadenceFromWorkerSummary({ status: "standby", cadenceMinutes: 8 }), 8);
+  assert.equal(helpers.cadenceFromWorkerSummary({ status: "already_running", cadenceMinutes: 8 }), 8);
+
+  const workerStart = serviceWorker.indexOf('async function runWorker(trigger = "manual"');
+  const workerEnd = serviceWorker.indexOf("chrome.runtime.onInstalled.addListener", workerStart);
+  const workerSource = serviceWorker.slice(workerStart, workerEnd);
+  assert.match(workerSource, /configureAlarms\(cadenceFromWorkerSummary\(result\)\)/u);
+  assert.match(workerSource, /catch \(error\) \{[\s\S]{0,180}configureAlarms\(BASELINE_CADENCE_MINUTES\)/u);
+});
+
 test("background worker coalesces one highest-priority finite trigger behind an active run", () => {
   const serviceWorker = fs.readFileSync(
     new URL("../tools/naver-shopping-chrome-extension/service-worker.js", import.meta.url),

@@ -4,6 +4,12 @@
 
 ## 현재 상태
 
+### 2026-08-21 구글 로그인 카나리아 실사용 성공·연동 완료 표시
+
+- 대표님이 운영 실화면에서 구글 계정 연결→로그아웃→구글 로그인 전 과정을 실사용으로 성공 확인했습니다(카나리아 실증 완료). 활성화 과정에서 확인된 사실: Supabase SQL·Vercel env 반영 후 `/api/google-login/start`가 실제 구글 동의 화면으로 302 리다이렉트되며, 진단 중 사용한 임시 코드(runOwnerGoogleDiagnostics)는 제거했습니다.
+- 대표 요청으로 연동된 계정 표시를 개선했습니다: 로그인·캘린더 배너 모두 연동 상태에서 "✓ 연동 완료 · 이메일"을 초록 강조(is-linked)로 표시합니다. owner-tool 18/18, 보호 잠금 파일 해시 갱신, CSP 교체, 전체 `npm run check:release` exit 0(인증 18/18), `git diff --check` 통과.
+- 다음 단계 후보: 광고주·운영팀 전체 이관(링크 UI 확장+카나리아 가드 해제, 별도 승인), 구글 캘린더 활성화(테스트 모드 7일 토큰 만료 회피를 위해 개인정보처리방침 페이지 제작 후 앱 게시 필요).
+
 ### 2026-08-21 N쇼핑 오류 안정화·5차 속도 개선 운영 관측 (v1.1.9 → v1.1.10)
 
 - 사용자 승인 범위의 5차 속도 개선은 수집 병렬화가 아니라 `rank-catch-up` 주기만 baseline 10분에서 candidate 8분으로 바꾸는 안입니다. Windows `maxJobs=1`, 단일 global lane, 직접 1~8페이지, 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, durable cycle 순서는 유지합니다.
@@ -21,7 +27,8 @@
 - 추가 운영 감사에서 `native_host_input_closed` 1회는 11분 뒤 다음 keyword가 정상 처리됐지만, 같은 stage에서 2회 연속이면 기존 자동 half-open 허용 목록에 없어 회로가 수동 복구 전까지 열릴 수 있음을 확인했습니다. additive migration에서 이 정확한 오류만 primary·30분 quiet·최대 2회 복구 대상으로 추가했고 security/network 오류는 계속 제외했습니다.
 - `provider_partial_window` 3건은 원자300·last-good을 지켰지만 첫 1~8페이지 미달을 같은 실행에서 재확인하지 않아 오래된 상태가 남았습니다. runtime `1.1.10`은 첫 partial pass를 완전히 폐기하고 같은 absolute deadline·총 16페이지 한도 안에서 독립 1~8페이지를 정확히 한 번만 재수집합니다. 두 번째도 300 미달이거나 overlap이면 세 번째 시도·부분 저장 없이 typed failure로 끝납니다.
 - 로컬 TDD는 partial 재수집 신규 RED 4/4→GREEN 4/4, 집중 회귀 264/264, server contract 63/63, release baseline, 보호 잠금 23함수·93파일·42 migration과 self-test, 전체 `npm run check:release` core 694/694·place 51/51·shopping 62/62·Production auth 18/18, `git diff --check`가 통과했습니다. native core coverage는 line 90.36%·function 94.74%이며 전체 branch 80%라고 과장하지 않습니다. 독립 감사에서도 deadline·16페이지·원자300·1.1.9 migration 불변·1.1.10 proof reset·processing0·service-role-only blocker 0을 확인했습니다.
-- **현재 Production은 아직 v1.1.9이고 8분 활성화도 하지 않았습니다.** v1.1.10은 전체 `check:release`와 정확한 commit 검증 후 idle 상태에서 migration→app→Windows updater 순으로 배포합니다. 새 runtime 첫 atomic300 성공 시각부터 24시간+성공6회를 다시 시작하므로 기존 v1.1.9의 2026-08-22 19:10 후보시각은 승격 근거로 사용하지 않습니다.
+- commit `cdcd6c2c21e6`을 GitHub `main`과 Production에 반영했고 `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다. idle·processing0에서 `native_input_closed_half_open` → `runtime_1_1_10` migration을 적용한 뒤 Windows updater가 version `1.1.10`, exact fingerprint `70b5ce8d187b4a4789f5e75b34d8dd9ff6be3a6782a82703e068de9c28a297ba`로 동기화됐습니다.
+- 첫 자연 run `d92641ae…`는 22:31:15 KST normal claim → 22:32:46 KST commit으로 끝났습니다. collection `pw-chrome-1787319166244-359a9497dd9e9af25c62`은 `checked_count=300`, 공식 collector, 광고 30개 제외, 오가닉 57위, stable-full-window 증거이며 terminal 뒤 circuit closed·processing0·lane/run/lease null입니다. cadence는 baseline 10분, 새 stability 시작은 22:32:47 KST·streak1이라 8분은 아직 활성화하지 않았습니다. 기존 partial 격리 3건의 새 재수집 경로 실회복은 자연 격리 만료 전이라 아직 미확인입니다.
 
 ### 2026-08-21 구글 계정 로그인 이관 카나리아 (mml93-a01)
 

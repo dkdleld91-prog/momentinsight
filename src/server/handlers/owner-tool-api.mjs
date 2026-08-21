@@ -299,6 +299,7 @@ const assistantCss = String.raw`
 #mi-admin .mi-assistant-scope strong{overflow:hidden;color:var(--mi-navy);font-size:12px;text-overflow:ellipsis;white-space:nowrap}
 #mi-admin .mi-assistant-scope small{color:#8a96a8;font-size:9px;font-weight:750}
 #mi-admin .mi-assistant-gcal{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #e4eaf2;border-radius:14px;padding:12px 14px;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),0 10px 24px rgba(6,26,58,.05)}
+#mi-admin .mi-assistant-gcal small.is-linked{color:var(--mi-green);font-weight:900}
 #mi-admin .mi-assistant-gcal-copy{display:grid;gap:2px;min-width:0}
 #mi-admin .mi-assistant-gcal-copy strong{color:var(--mi-navy);font-size:12.5px;letter-spacing:-.01em}
 #mi-admin .mi-assistant-gcal-copy small{color:#66758a;font-size:10.5px;font-weight:800;line-height:1.5}

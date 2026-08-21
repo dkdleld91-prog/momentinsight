@@ -13242,10 +13242,12 @@
             connectButton.hidden = true;
             disconnectButton.hidden = true;
           } else if (payload.connected) {
-            statusCopy.textContent = (notice ? notice + " " : "") + "연동됨 · " + (payload.googleEmail || "구글 계정");
+            statusCopy.textContent = (notice ? notice + " " : "") + "✓ 연동 완료 · " + (payload.googleEmail || "구글 계정");
+            statusCopy.classList.add("is-linked");
             connectButton.hidden = true;
             disconnectButton.hidden = false;
           } else {
+            statusCopy.classList.remove("is-linked");
             statusCopy.textContent = notice || "연결하면 내부 일정이 전용 구글 캘린더로 동기화됩니다.";
             connectButton.hidden = false;
             disconnectButton.hidden = true;
@@ -13351,10 +13353,12 @@
             linkButton.hidden = true;
             unlinkButton.hidden = true;
           } else if (payload.linked) {
-            statusCopy.textContent = (notice ? notice + " " : "") + "연결됨 · " + (payload.googleEmail || "구글 계정");
+            statusCopy.textContent = (notice ? notice + " " : "") + "✓ 연동 완료 · " + (payload.googleEmail || "구글 계정");
+            statusCopy.classList.add("is-linked");
             linkButton.hidden = true;
             unlinkButton.hidden = false;
           } else {
+            statusCopy.classList.remove("is-linked");
             statusCopy.textContent = notice || "연결하면 총관리자 코드 대신 구글 계정으로 로그인할 수 있습니다.";
             linkButton.hidden = false;
             unlinkButton.hidden = true;

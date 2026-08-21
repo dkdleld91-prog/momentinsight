@@ -4,6 +4,13 @@
 
 ## 현재 상태
 
+### 2026-08-21 구글 계정 로그인 이관 카나리아 (mml93-a01)
+
+- 대표 지시(광고주 전체 이관 예정, 우선 총관리자 코드만 테스트)에 따라 계정 링킹 방식으로 구현했습니다. 데이터·권한 모델은 무변경이며 `login_identities`(google_sub↔role·code 매핑, service_role 전용, migration `20260821120000`)만 추가합니다. 기존 콜백 1개를 서명 state의 purpose(calendar/link/login)로 분기해 구글 콘솔 리디렉션 URI 추가가 필요 없고, 구버전 state는 calendar로 하위호환됩니다.
+- 연결은 로그인된 owner 세션에서만 가능(`/api/owner/google-login` link-url→콜백에서 id_token sub 매핑 저장 — 이메일 사칭 이관 불가), 로그인은 공개 `/api/google-login/start`(SESSION_FREE, scope openid email)→콜백에서 매핑 조회 후 기존 `createSessionClaims/sealSession/sessionCookie`로 동일 owner 세션 발급. 카나리아 가드로 owner·primary 코드 매핑만 세션을 발급하고 그 외는 not-ready 안내입니다. UI는 대표실 "구글 로그인" 배너(연결/해제/상태)와 로그인 화면 "Google 계정으로 로그인" 버튼+결과 안내를 추가했습니다.
+- 검증: 신규 테스트 13(총 27/27 — default.fetch 전체 경로로 start 302·위조 state 거부·미매핑 unlinked·role 불일치 not-ready·성공 시 mi-session 쿠키 복호화 role/agencyCode 확인·audit 기록), 게이트·인덱스 16/16, owner-tool 18/18, 예산(viewHtml 13,969/22,000·styleText 33,915/40,000), 인증 계약 18/18(`/api/auth/` 0건·magic-link 무접촉), 보호 잠금 파일 해시 3건 갱신, CSP 교체, 전체 `npm run check:release` exit 0, `git diff --check` 통과. 참고 기록: 서명 불능 state는 purpose를 읽을 수 없어 gcal=invalid 문구로 떨어짐(보안 아님·UX 메모), 콜백 OPTIONS 분기는 withSupabase 선처리로 dead code.
+- 활성화는 기존 구글 캘린더 안내의 대표 액션에 마이그레이션 SQL 1개가 추가될 뿐이며(콘솔·env 동일), 적용 전에는 로그인 버튼이 not-configured 안내만 반환합니다. 실사용 검증(연결→로그아웃→구글 로그인)은 대표님 확인 대상입니다.
+
 ### 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 Production 반영
 
 - 운영 SELECT-only 확인에서 전역 작업기는 정상 생존했습니다(runtime `1.1.8`, fingerprint 일치, circuit closed, lane·lease 해제). 실제 비활성은 과거 진단 중 수동 `paused`로 남은 `자외선차단마스크` 1건이며, 동일 대상 active 중복과 정상 snapshot은 0건입니다.

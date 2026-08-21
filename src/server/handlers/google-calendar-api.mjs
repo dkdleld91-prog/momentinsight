@@ -2,11 +2,15 @@ import { withSupabase } from "@supabase/server";
 import crypto from "node:crypto";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { seoulDateKey } from "../calendar-domain.mjs";
+import { createSessionClaims, sealSession, sessionCookie } from "../code-session.mjs";
 import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
 const OWNER_API_PATH = "/api/owner/google-calendar";
+const OWNER_LOGIN_API_PATH = "/api/owner/google-login";
+const LOGIN_START_PATH = "/api/google-login/start";
 const CALLBACK_PATH = "/api/google-oauth/callback";
+const LOGIN_SCOPE = "openid email";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
@@ -46,11 +50,12 @@ function stateSignature(payloadText, secret) {
   return crypto.createHmac("sha256", secret).update(payloadText).digest("base64url");
 }
 
-export function signOauthState(ownerCode, env = process.env, now = Date.now()) {
+export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar") {
   const config = googleOauthConfig(env);
   if (!config.clientSecret) return "";
   const payloadText = JSON.stringify({
     owner: cleanText(ownerCode).toLowerCase(),
+    p: cleanText(purpose) || "calendar",
     exp: now + STATE_TTL_MS,
     nonce: crypto.randomBytes(12).toString("base64url"),
   });
@@ -69,20 +74,21 @@ export function verifyOauthState(state, env = process.env, now = Date.now()) {
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     if (!payload.owner || Number(payload.exp) < now) return null;
+    if (!payload.p) payload.p = "calendar";
     return payload;
   } catch (error) {
     return null;
   }
 }
 
-export function buildGoogleAuthUrl(state, env = process.env) {
+export function buildGoogleAuthUrl(state, env = process.env, scope = GOOGLE_SCOPE) {
   const config = googleOauthConfig(env);
   if (!config.clientId || !state) return "";
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUrl,
     response_type: "code",
-    scope: GOOGLE_SCOPE,
+    scope,
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "false",
@@ -235,6 +241,43 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
   }
 }
 
+export function decodeGoogleIdToken(idToken) {
+  const parts = String(idToken || "").split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    const sub = cleanText(payload.sub, 128);
+    if (!sub) return null;
+    return { sub, email: cleanText(payload.email, 256).toLowerCase() || null };
+  } catch (error) {
+    return null;
+  }
+}
+
+export async function findLoginIdentity(ctx, googleSub) {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("login_identities")
+    .select("google_sub, google_email, role, code, linked_at")
+    .eq("google_sub", cleanText(googleSub, 128))
+    .maybeSingle();
+  if (error) return { identity: null, error };
+  return { identity: data || null, error: null };
+}
+
+export async function upsertLoginIdentity(ctx, identity) {
+  const { error } = await ctx.supabaseAdmin
+    .from("login_identities")
+    .upsert({
+      google_sub: cleanText(identity.googleSub, 128),
+      google_email: cleanText(identity.googleEmail, 256).toLowerCase() || null,
+      role: cleanText(identity.role, 20),
+      code: cleanText(identity.code, 128).toLowerCase(),
+      linked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "google_sub" });
+  return !error;
+}
+
 function ownerRequest(request, env = process.env) {
   return request.headers.get("x-mi-session-role") === "owner"
     && safeEqual(cleanText(request.headers.get("x-mi-owner-agency-code")).toLowerCase(), primaryAgencyCode(env));
@@ -286,11 +329,128 @@ function callbackRedirect(message) {
   return new Response(null, { status: 302, headers: { location: target, "cache-control": "no-store" } });
 }
 
+function loginRedirect(message, cookies = []) {
+  const headers = new Headers({
+    location: `/admin?glogin=${encodeURIComponent(message)}`,
+    "cache-control": "no-store",
+  });
+  for (const cookie of cookies) headers.append("set-cookie", cookie);
+  return new Response(null, { status: 302, headers });
+}
+
+async function handleOwnerLoginApi(request, ctx) {
+  if (!ownerRequest(request)) {
+    return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
+  }
+  const ownerCode = primaryAgencyCode();
+  if (request.method === "GET") {
+    const config = googleOauthConfig();
+    const { data, error } = await ctx.supabaseAdmin
+      .from("login_identities")
+      .select("google_email, linked_at")
+      .eq("role", "owner")
+      .eq("code", ownerCode)
+      .maybeSingle();
+    if (error) return json(request, { ok: false, message: "구글 로그인 연결 상태를 확인하지 못했습니다.", detail: error.message }, 500);
+    return json(request, {
+      ok: true,
+      configured: Boolean(config.clientId && config.clientSecret),
+      linked: Boolean(data),
+      googleEmail: data?.google_email || null,
+      linkedAt: data?.linked_at || null,
+    });
+  }
+  if (request.method !== "POST") return json(request, { ok: false, message: "Method not allowed" }, 405);
+  const body = await readBody(request);
+  const action = cleanText(body.action);
+  if (action === "link-url") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const url = buildGoogleAuthUrl(signOauthState(ownerCode, process.env, Date.now(), "link"), process.env, LOGIN_SCOPE);
+    if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
+    return json(request, { ok: true, url });
+  }
+  if (action === "unlink") {
+    const { error } = await ctx.supabaseAdmin
+      .from("login_identities")
+      .delete()
+      .eq("role", "owner")
+      .eq("code", ownerCode);
+    if (error) return json(request, { ok: false, message: "구글 로그인 연결 해제에 실패했습니다.", detail: error.message }, 500);
+    return json(request, { ok: true, message: "구글 로그인 연결을 해제했습니다. 기존 코드 로그인은 그대로 사용할 수 있습니다." });
+  }
+  return json(request, { ok: false, message: "지원하지 않는 요청입니다." }, 400);
+}
+
+function handleLoginStart() {
+  const config = googleOauthConfig();
+  if (!config.clientId || !config.clientSecret) return loginRedirect("not-configured");
+  const url = buildGoogleAuthUrl(signOauthState(primaryAgencyCode(), process.env, Date.now(), "login"), process.env, LOGIN_SCOPE);
+  if (!url) return loginRedirect("not-configured");
+  return new Response(null, { status: 302, headers: { location: url, "cache-control": "no-store" } });
+}
+
+async function handleLinkCallback(request, ctx, state, code) {
+  if (!safeEqual(cleanText(state.owner), primaryAgencyCode())) return loginRedirect("invalid");
+  const exchanged = await exchangeOauthCode(code, process.env);
+  if (!exchanged.ok) return loginRedirect("exchange-failed");
+  const profile = decodeGoogleIdToken(exchanged.data.id_token);
+  if (!profile) return loginRedirect("no-identity");
+  const saved = await upsertLoginIdentity(ctx, {
+    googleSub: profile.sub,
+    googleEmail: profile.email,
+    role: "owner",
+    code: state.owner,
+  });
+  if (!saved) return loginRedirect("save-failed");
+  await ctx.supabaseAdmin.from("audit_logs").insert({
+    actor_id: null,
+    client_id: null,
+    action: "google_login_linked",
+    target_table: "login_identities",
+    target_id: null,
+    metadata: sanitizeAuditMetadata({ role: "owner" }),
+  }).then(() => {}, () => {});
+  return loginRedirect("linked");
+}
+
+async function handleLoginCallback(request, ctx, code) {
+  const exchanged = await exchangeOauthCode(code, process.env);
+  if (!exchanged.ok) return loginRedirect("exchange-failed");
+  const profile = decodeGoogleIdToken(exchanged.data.id_token);
+  if (!profile) return loginRedirect("no-identity");
+  const { identity, error } = await findLoginIdentity(ctx, profile.sub);
+  if (error) return loginRedirect("lookup-failed");
+  if (!identity) return loginRedirect("unlinked");
+  if (identity.role !== "owner" || !safeEqual(cleanText(identity.code), primaryAgencyCode())) {
+    return loginRedirect("not-ready");
+  }
+  let token = "";
+  try {
+    token = sealSession(createSessionClaims({ role: "owner", agencyCode: primaryAgencyCode() }));
+  } catch (sealError) {
+    return loginRedirect("session-unavailable");
+  }
+  await ctx.supabaseAdmin.from("audit_logs").insert({
+    actor_id: null,
+    client_id: null,
+    action: "google_login_succeeded",
+    target_table: "login_identities",
+    target_id: null,
+    metadata: sanitizeAuditMetadata({ role: "owner" }),
+  }).then(() => {}, () => {});
+  return loginRedirect("success", [sessionCookie(token)]);
+}
+
 async function handleOauthCallback(request, ctx) {
   const url = new URL(request.url);
   const code = cleanText(url.searchParams.get("code"));
   const state = verifyOauthState(url.searchParams.get("state"));
   if (!code || !state) return callbackRedirect("invalid");
+  if (state.p === "link") return handleLinkCallback(request, ctx, state, code);
+  if (state.p === "login") return handleLoginCallback(request, ctx, code);
   if (!safeEqual(cleanText(state.owner), primaryAgencyCode())) return callbackRedirect("invalid");
   const exchanged = await exchangeOauthCode(code, process.env);
   if (!exchanged.ok) return callbackRedirect("exchange-failed");
@@ -329,6 +489,8 @@ export default {
     const path = new URL(request.url).pathname;
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
     if (path === OWNER_API_PATH) return handleOwnerApi(request, ctx);
+    if (path === OWNER_LOGIN_API_PATH) return handleOwnerLoginApi(request, ctx);
+    if (path === LOGIN_START_PATH && request.method === "GET") return handleLoginStart();
     if (path === CALLBACK_PATH && request.method === "GET") return handleOauthCallback(request, ctx);
     return json(request, { ok: false, message: "Not found" }, 404);
   }),

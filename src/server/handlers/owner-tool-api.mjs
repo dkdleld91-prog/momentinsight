@@ -468,6 +468,7 @@ const assistantViewHtml = String.raw`<section class="mi-view mi-owner-assistant"
     <div class="mi-assistant-scope"><span>CURRENT SCOPE</span><strong data-owner-assistant-scope>총관리자 내부 일정</strong><small>광고주 범위는 업무 운영에서 선택</small></div>
   </header>
   <div class="mi-assistant-gcal" data-owner-gcal-banner hidden><span class="mi-assistant-gcal-copy"><strong>구글 캘린더</strong><small data-owner-gcal-status>상태 확인 중…</small></span><span class="mi-assistant-gcal-actions"><button class="mi-link-button is-primary" type="button" data-owner-gcal-connect hidden>구글 캘린더 연결</button><button class="mi-link-button" type="button" data-owner-gcal-disconnect hidden>연동 해제</button></span></div>
+  <div class="mi-assistant-gcal" data-owner-glogin-banner hidden><span class="mi-assistant-gcal-copy"><strong>구글 로그인</strong><small data-owner-glogin-status>상태 확인 중…</small></span><span class="mi-assistant-gcal-actions"><button class="mi-link-button is-primary" type="button" data-owner-glogin-link hidden>구글 계정 연결</button><button class="mi-link-button" type="button" data-owner-glogin-unlink hidden>연결 해제</button></span></div>
   <article class="mi-assistant-panel mi-assistant-organization" data-owner-assistant-organization>
     <div class="mi-assistant-panel-head"><div><h2>모먼트랩스 비서실 운영실</h2><p>비서실장 아래 5개 담당 조직이 연결됩니다. 직원을 누르면 해당 담당의 일정 명령 예시가 입력됩니다.</p></div><span class="mi-badge">mml93-a01 전용</span></div>
     <div class="mi-assistant-office" data-owner-assistant-office aria-label="움직이는 모먼트랩스 비서실 조직도">

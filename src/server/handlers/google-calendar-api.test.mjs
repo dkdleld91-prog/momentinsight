@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
+import { createHmac } from "node:crypto";
 import test from "node:test";
 
-import {
+import { openSession, sessionConfiguration } from "../code-session.mjs";
+import handler, {
   buildGoogleAuthUrl,
+  decodeGoogleIdToken,
+  findLoginIdentity,
   loadOwnerGoogleIntegration,
   mapScheduleRowToGoogleEvent,
   signOauthState,
   syncOwnerScheduleRows,
+  upsertLoginIdentity,
   verifyOauthState,
 } from "./google-calendar-api.mjs";
 
@@ -437,4 +442,427 @@ test("loadOwnerGoogleIntegration lowercases the owner code and surfaces errors",
     syncContext({ integrationError: failure }).ctx, "mml93-a01",
   );
   assert.deepEqual(errored, { integration: null, error: failure });
+});
+
+// ---------------------------------------------------------------------------
+// Google login additions
+// ---------------------------------------------------------------------------
+
+const OAUTH_CALLBACK_URL = "https://insight.momentlabs.co.kr/api/google-oauth/callback";
+const LOGIN_START_URL = "https://insight.momentlabs.co.kr/api/google-login/start";
+const SUPABASE_TEST_URL = "http://supabase.test";
+const IDENTITY_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/login_identities`;
+const AUDIT_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/audit_logs`;
+const SESSION_ENV = { MI_SESSION_SECRET: "unit-test-session-secret-0123456789abcdef" };
+const LOGIN_HANDLER_ENV = {
+  ...GOOGLE_ENV,
+  SUPABASE_URL: SUPABASE_TEST_URL,
+  SUPABASE_PUBLISHABLE_KEY: "pub-test",
+  SUPABASE_PUBLISHABLE_KEYS: undefined,
+  SUPABASE_SECRET_KEY: "secret-test",
+  SUPABASE_SECRET_KEYS: undefined,
+  SUPABASE_JWKS: undefined,
+  SUPABASE_JWKS_URL: undefined,
+  MI_SESSION_SECRET: SESSION_ENV.MI_SESSION_SECRET,
+  MI_SESSION_SECRET_PREVIOUS: undefined,
+  MI_SESSION_TTL_SECONDS: undefined,
+  MI_PRIMARY_AGENCY_CODE: undefined,
+  MI_GOOGLE_OAUTH_REDIRECT: undefined,
+  NODE_ENV: undefined,
+  VERCEL_ENV: undefined,
+};
+
+function signStatePayload(payload, secret) {
+  const encoded = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
+  const signature = createHmac("sha256", secret).update(encoded).digest("base64url");
+  return `${encoded}.${signature}`;
+}
+
+function fakeIdToken(payload) {
+  const part = (value) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+  return `${part({ alg: "RS256", typ: "JWT" })}.${part(payload)}.sig`;
+}
+
+function identityContext({ identity = null, error = null } = {}) {
+  const state = { tables: [], selects: [], filters: [], upserts: [] };
+  const query = {
+    select(columns) { state.selects.push(columns); return query; },
+    eq(column, value) { state.filters.push([column, value]); return query; },
+    async maybeSingle() { return { data: identity, error }; },
+    async upsert(values, options) { state.upserts.push([values, options]); return { error }; },
+  };
+  const ctx = {
+    supabaseAdmin: {
+      from(table) { state.tables.push(table); return query; },
+    },
+  };
+  return { ctx, state };
+}
+
+async function withEnv(overrides, run) {
+  const saved = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    saved.set(key, Object.prototype.hasOwnProperty.call(process.env, key) ? process.env[key] : undefined);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+async function withGlobalFetch(fetchImpl, run) {
+  const original = globalThis.fetch;
+  globalThis.fetch = fetchImpl;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+function loginFetchRouter(routes) {
+  const calls = [];
+  const impl = async (input, init = {}) => {
+    const url = typeof input === "string" ? input : String(input.url);
+    const method = String(init.method || input?.method || "GET").toUpperCase();
+    const call = { method, url, headers: new Headers(init.headers || {}), body: init.body };
+    calls.push(call);
+    for (const [routeMethod, prefix, respond] of routes) {
+      if (routeMethod === method && url.startsWith(prefix)) {
+        return typeof respond === "function" ? respond(call) : respond;
+      }
+    }
+    throw new Error(`unexpected fetch: ${method} ${url}`);
+  };
+  return { calls, impl };
+}
+
+function restJson(rows) {
+  return new Response(JSON.stringify(rows), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+function restCreated() {
+  return new Response(null, { status: 201 });
+}
+
+function googleTokenRoute(idTokenPayload) {
+  return ["POST", TOKEN_URL, (call) => {
+    assert.match(String(call.body), /grant_type=authorization_code/);
+    assert.match(String(call.body), /client_id=cid-1/);
+    assert.match(String(call.body), /client_secret=sec-1/);
+    return new Response(JSON.stringify({ id_token: fakeIdToken(idTokenPayload) }), { status: 200 });
+  }];
+}
+
+async function callLoginHandler(url, { routes = [], env = {} } = {}) {
+  const { calls, impl } = loginFetchRouter(routes);
+  const response = await withEnv({ ...LOGIN_HANDLER_ENV, ...env }, () => (
+    withGlobalFetch(impl, () => handler.fetch(new Request(url)))
+  ));
+  return { response, calls };
+}
+
+test("oauth state purpose defaults to calendar and round-trips link and login", () => {
+  const now = 1_700_000_000_000;
+  assert.equal(verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now), GOOGLE_ENV, now).p, "calendar");
+  assert.equal(verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "link"), GOOGLE_ENV, now).p, "link");
+
+  const login = verifyOauthState(signOauthState("MML93-A01", GOOGLE_ENV, now, "login"), GOOGLE_ENV, now);
+  assert.equal(login.p, "login");
+  assert.equal(login.owner, "mml93-a01");
+  assert.equal(login.exp, now + STATE_TTL_MS);
+
+  // blank purposes fall back to calendar, and purposes are trimmed before signing
+  assert.equal(verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "   "), GOOGLE_ENV, now).p, "calendar");
+  assert.equal(verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "  link  "), GOOGLE_ENV, now).p, "link");
+});
+
+test("legacy oauth states without a purpose verify as calendar states", () => {
+  const now = 1_700_000_000_000;
+  const legacy = signStatePayload(
+    { owner: "mml93-a01", exp: now + STATE_TTL_MS, nonce: "legacy-1" },
+    GOOGLE_ENV.GOOGLE_OAUTH_CLIENT_SECRET,
+  );
+  const payload = verifyOauthState(legacy, GOOGLE_ENV, now);
+  assert.equal(payload.owner, "mml93-a01");
+  assert.equal(payload.p, "calendar");
+  assert.equal(payload.nonce, "legacy-1");
+});
+
+test("google auth url reflects a custom login scope", () => {
+  const url = buildGoogleAuthUrl("state-token", GOOGLE_ENV, "openid email");
+  const params = new URL(url).searchParams;
+  assert.equal(params.get("scope"), "openid email");
+  assert.equal(params.get("client_id"), "cid-1");
+  assert.equal(params.get("access_type"), "offline");
+  assert.equal(params.get("prompt"), "consent");
+  assert.equal(params.get("state"), "state-token");
+});
+
+test("google id token decoding extracts the sub and lowercases the email", () => {
+  assert.deepEqual(
+    decodeGoogleIdToken(fakeIdToken({ sub: "  sub-123  ", email: "  Owner@EXAMPLE.com  " })),
+    { sub: "sub-123", email: "owner@example.com" },
+  );
+  assert.deepEqual(decodeGoogleIdToken(fakeIdToken({ sub: "sub-123" })), { sub: "sub-123", email: null });
+  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "s".repeat(200) })).sub.length, 128);
+});
+
+test("google id token decoding fails closed on missing subs and malformed tokens", () => {
+  assert.equal(decodeGoogleIdToken(fakeIdToken({ email: "owner@example.com" })), null);
+  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "   " })), null);
+  assert.equal(decodeGoogleIdToken(""), null);
+  assert.equal(decodeGoogleIdToken(null), null);
+  assert.equal(decodeGoogleIdToken("one.two"), null);
+  assert.equal(decodeGoogleIdToken("a.!!!.c"), null);
+  assert.equal(decodeGoogleIdToken(`a.${Buffer.from("not json", "utf8").toString("base64url")}.c`), null);
+});
+
+test("findLoginIdentity filters login_identities by trimmed google sub and surfaces errors", async () => {
+  const row = {
+    google_sub: "sub-123",
+    google_email: "owner@example.com",
+    role: "owner",
+    code: "mml93-a01",
+    linked_at: "2026-08-01T00:00:00.000Z",
+  };
+  const found = identityContext({ identity: row });
+  assert.deepEqual(await findLoginIdentity(found.ctx, "  sub-123  "), { identity: row, error: null });
+  assert.deepEqual(found.state.tables, ["login_identities"]);
+  assert.deepEqual(found.state.selects, ["google_sub, google_email, role, code, linked_at"]);
+  assert.deepEqual(found.state.filters, [["google_sub", "sub-123"]]);
+
+  const missing = identityContext({ identity: null });
+  assert.deepEqual(await findLoginIdentity(missing.ctx, "sub-404"), { identity: null, error: null });
+
+  const failure = { message: "db down" };
+  assert.deepEqual(
+    await findLoginIdentity(identityContext({ error: failure }).ctx, "sub-123"),
+    { identity: null, error: failure },
+  );
+});
+
+test("upsertLoginIdentity normalizes fields and upserts on the google_sub conflict key", async () => {
+  const saved = identityContext();
+  const before = Date.now();
+  const ok = await upsertLoginIdentity(saved.ctx, {
+    googleSub: "  sub-123  ",
+    googleEmail: "  Owner@EXAMPLE.com  ",
+    role: " owner ",
+    code: "  MML93-A01  ",
+  });
+  assert.equal(ok, true);
+  assert.deepEqual(saved.state.tables, ["login_identities"]);
+  assert.equal(saved.state.upserts.length, 1);
+  const [values, options] = saved.state.upserts[0];
+  assert.equal(values.google_sub, "sub-123");
+  assert.equal(values.google_email, "owner@example.com");
+  assert.equal(values.role, "owner");
+  assert.equal(values.code, "mml93-a01");
+  assert.ok(Date.parse(values.linked_at) >= before);
+  assert.ok(Date.parse(values.updated_at) >= before);
+  assert.deepEqual(options, { onConflict: "google_sub" });
+
+  const blankEmail = identityContext();
+  await upsertLoginIdentity(blankEmail.ctx, {
+    googleSub: "sub-9", googleEmail: "   ", role: "owner", code: "mml93-a01",
+  });
+  assert.equal(blankEmail.state.upserts[0][0].google_email, null);
+
+  const failed = await upsertLoginIdentity(identityContext({ error: { message: "conflict" } }).ctx, {
+    googleSub: "sub-123", googleEmail: null, role: "owner", code: "mml93-a01",
+  });
+  assert.equal(failed, false);
+});
+
+test("login start endpoint redirects to google with an openid scope and login purpose", async () => {
+  const { response, calls } = await callLoginHandler(LOGIN_START_URL);
+  assert.equal(response.status, 302);
+  assert.equal(calls.length, 0);
+  const location = new URL(response.headers.get("location"));
+  assert.equal(`${location.origin}${location.pathname}`, "https://accounts.google.com/o/oauth2/v2/auth");
+  assert.equal(location.searchParams.get("scope"), "openid email");
+  const statePayload = verifyOauthState(location.searchParams.get("state"), GOOGLE_ENV);
+  assert.equal(statePayload.p, "login");
+  assert.equal(statePayload.owner, "mml93-a01");
+
+  const unconfigured = await callLoginHandler(LOGIN_START_URL, {
+    env: { GOOGLE_OAUTH_CLIENT_ID: undefined },
+  });
+  assert.equal(unconfigured.response.status, 302);
+  assert.equal(unconfigured.response.headers.get("location"), "/admin?glogin=not-configured");
+});
+
+test("oauth callback redirects forged states and wrong-owner link states without side effects", async () => {
+  const linkState = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "link");
+  const [encoded, signature] = linkState.split(".");
+  const tampered = `${encoded}.${(signature[0] === "A" ? "B" : "A") + signature.slice(1)}`;
+  const forged = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(tampered)}`);
+  assert.equal(forged.response.status, 302);
+  assert.equal(forged.response.headers.get("location"), "/admin?gcal=invalid#mi-admin-owner-assistant");
+  assert.equal(forged.calls.length, 0);
+
+  const wrongOwner = signOauthState("intruder-a01", GOOGLE_ENV, Date.now(), "link");
+  const rejected = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(wrongOwner)}`);
+  assert.equal(rejected.response.status, 302);
+  assert.equal(rejected.response.headers.get("location"), "/admin?glogin=invalid");
+  assert.equal(rejected.calls.length, 0);
+});
+
+test("login callback redirects unlinked and non-owner identities without creating a session", async () => {
+  const callbackUrl = () => {
+    const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
+    return `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`;
+  };
+  const identityRoute = (rows) => ["GET", IDENTITY_REST_URL, (call) => {
+    assert.match(call.url, /google_sub=eq\.sub-123/);
+    return restJson(rows);
+  }];
+
+  const unlinked = await callLoginHandler(callbackUrl(), {
+    routes: [googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }), identityRoute([])],
+  });
+  assert.equal(unlinked.response.status, 302);
+  assert.equal(unlinked.response.headers.get("location"), "/admin?glogin=unlinked");
+  assert.equal(unlinked.response.headers.getSetCookie().length, 0);
+  assert.deepEqual(unlinked.calls.map((call) => call.method), ["POST", "GET"]);
+
+  const teamIdentity = {
+    google_sub: "sub-123", google_email: "owner@example.com", role: "team", code: "mml93-a01", linked_at: null,
+  };
+  const notReady = await callLoginHandler(callbackUrl(), {
+    routes: [googleTokenRoute({ sub: "sub-123" }), identityRoute([teamIdentity])],
+  });
+  assert.equal(notReady.response.headers.get("location"), "/admin?glogin=not-ready");
+  assert.equal(notReady.response.headers.getSetCookie().length, 0);
+
+  const wrongCode = await callLoginHandler(callbackUrl(), {
+    routes: [
+      googleTokenRoute({ sub: "sub-123" }),
+      identityRoute([{ ...teamIdentity, role: "owner", code: "other-a01" }]),
+    ],
+  });
+  assert.equal(wrongCode.response.headers.get("location"), "/admin?glogin=not-ready");
+  assert.equal(wrongCode.response.headers.getSetCookie().length, 0);
+});
+
+test("login callback success seals an owner session cookie and records an audit log", async () => {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
+  const audits = [];
+  const { response, calls } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
+    {
+      routes: [
+        googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+        ["GET", IDENTITY_REST_URL, restJson([{
+          google_sub: "sub-123",
+          google_email: "owner@example.com",
+          role: "owner",
+          code: "mml93-a01",
+          linked_at: "2026-08-01T00:00:00.000Z",
+        }])],
+        ["POST", AUDIT_REST_URL, (call) => {
+          audits.push(JSON.parse(String(call.body)));
+          return restCreated();
+        }],
+      ],
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/admin?glogin=success");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "GET", "POST"]);
+
+  const cookies = response.headers.getSetCookie();
+  assert.equal(cookies.length, 1);
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  assert.ok(cookies[0].startsWith(`${cookieName}=v1.`));
+  assert.match(cookies[0], /HttpOnly/);
+  assert.match(cookies[0], /SameSite=Strict/);
+  const token = cookies[0].split(";")[0].slice(cookieName.length + 1);
+  const claims = openSession(token, SESSION_ENV);
+  assert.equal(claims.role, "owner");
+  assert.equal(claims.agencyCode, "mml93-a01");
+
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_succeeded");
+  assert.equal(audits[0].target_table, "login_identities");
+});
+
+test("login callback without a session secret redirects to session-unavailable", async () => {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
+  const { response, calls } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
+    {
+      env: { MI_SESSION_SECRET: undefined },
+      routes: [
+        googleTokenRoute({ sub: "sub-123" }),
+        ["GET", IDENTITY_REST_URL, restJson([{
+          google_sub: "sub-123",
+          google_email: "owner@example.com",
+          role: "owner",
+          code: "mml93-a01",
+          linked_at: null,
+        }])],
+      ],
+    },
+  );
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/admin?glogin=session-unavailable");
+  assert.equal(response.headers.getSetCookie().length, 0);
+  // the audit endpoint is never reached when sealing fails
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "GET"]);
+});
+
+test("link callback success upserts the identity keyed by google_sub before confirming", async () => {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "link");
+  const upserts = [];
+  const audits = [];
+  const { response, calls } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
+    {
+      routes: [
+        googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+        ["POST", IDENTITY_REST_URL, (call) => {
+          upserts.push({
+            url: call.url,
+            prefer: call.headers.get("prefer") || "",
+            row: JSON.parse(String(call.body)),
+          });
+          return restCreated();
+        }],
+        ["POST", AUDIT_REST_URL, (call) => {
+          audits.push(JSON.parse(String(call.body)));
+          return restCreated();
+        }],
+      ],
+    },
+  );
+
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/admin?glogin=linked");
+  assert.equal(response.headers.getSetCookie().length, 0);
+  assert.deepEqual(calls.map((call) => call.method), ["POST", "POST", "POST"]);
+
+  assert.equal(upserts.length, 1);
+  assert.match(upserts[0].url, /on_conflict=google_sub/);
+  assert.match(upserts[0].prefer, /resolution=merge-duplicates/);
+  assert.equal(upserts[0].row.google_sub, "sub-123");
+  assert.equal(upserts[0].row.google_email, "owner@example.com");
+  assert.equal(upserts[0].row.role, "owner");
+  assert.equal(upserts[0].row.code, "mml93-a01");
+
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_linked");
+  assert.equal(audits[0].target_table, "login_identities");
 });

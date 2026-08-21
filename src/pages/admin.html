@@ -157,6 +157,13 @@
       margin-top: 18px;
     }
 
+    #mi-admin .mi-login-google-note {
+      margin-top: -4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
     #mi-admin .mi-app {
       display: grid;
       grid-template-columns: 236px minmax(0, 1fr);
@@ -9300,6 +9307,8 @@
           <input class="mi-input" data-admin-login-code type="password" autocomplete="off" placeholder="운영팀 코드 입력" aria-label="운영팀 코드" />
           <button class="mi-button" type="button" data-admin-login-button data-login-mode-button>운영팀 콘솔 열기</button>
           <div class="mi-code-status" data-admin-login-status aria-live="polite">운영팀 전용 화면입니다.</div>
+          <button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>
+          <small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>
         </div>
       </aside>
     </div>
@@ -13294,6 +13303,111 @@
         await refreshGoogleCalendarState();
       }
 
+      async function initOwnerGoogleLoginBanner(view, generation) {
+        var banner = view.querySelector("[data-owner-glogin-banner]");
+        var statusCopy = view.querySelector("[data-owner-glogin-status]");
+        var linkButton = view.querySelector("[data-owner-glogin-link]");
+        var unlinkButton = view.querySelector("[data-owner-glogin-unlink]");
+        if (!banner || !statusCopy || !linkButton || !unlinkButton) return;
+        var apiHost = window.location && window.location.hostname;
+        var apiUrl = apiHost && apiHost !== "127.0.0.1" && apiHost !== "localhost"
+          ? window.location.origin + "/api/owner/google-login"
+          : "http://127.0.0.1:8790/api/owner/google-login";
+        var pendingNotice = "";
+        try {
+          var pageUrl = new URL(window.location.href);
+          var gloginCode = pageUrl.searchParams.get("glogin");
+          if (gloginCode) {
+            if (gloginCode !== "success") {
+              pendingNotice = gloginCode === "linked"
+                ? "구글 계정이 연결되었습니다. 다음부터 구글로 로그인할 수 있습니다."
+                : gloginCode === "unlinked"
+                  ? "연결되지 않은 구글 계정입니다. 먼저 기존 코드로 로그인 후 연결해주세요."
+                  : gloginCode === "not-ready"
+                    ? "이 계정은 아직 구글 로그인 대상이 아닙니다."
+                    : "구글 로그인 처리 실패: " + gloginCode;
+            }
+            pageUrl.searchParams.delete("glogin");
+            var cleanQuery = pageUrl.searchParams.toString();
+            window.history.replaceState(null, "", pageUrl.pathname + (cleanQuery ? "?" + cleanQuery : "") + pageUrl.hash);
+          }
+        } catch (error) {}
+        function gloginSessionIsCurrent() {
+          return generation === ownerToolGeneration && secureSession.role === "owner" && view.isConnected;
+        }
+        function renderGoogleLoginState(payload) {
+          var notice = pendingNotice;
+          pendingNotice = "";
+          if (!payload.configured) {
+            statusCopy.textContent = "관리자 환경변수 설정 대기 중(GOOGLE_OAUTH_CLIENT_ID/SECRET)";
+            linkButton.hidden = true;
+            unlinkButton.hidden = true;
+          } else if (payload.linked) {
+            statusCopy.textContent = (notice ? notice + " " : "") + "연결됨 · " + (payload.googleEmail || "구글 계정");
+            linkButton.hidden = true;
+            unlinkButton.hidden = false;
+          } else {
+            statusCopy.textContent = notice || "연결하면 총관리자 코드 대신 구글 계정으로 로그인할 수 있습니다.";
+            linkButton.hidden = false;
+            unlinkButton.hidden = true;
+          }
+          banner.hidden = false;
+        }
+        async function refreshGoogleLoginState() {
+          var response = await miFetch(apiUrl, { method: "GET", cache: "no-store" });
+          var payload = await readApiPayload(response, "구글 로그인 연결 상태를 확인할 수 없습니다.");
+          if (!gloginSessionIsCurrent()) return;
+          if (!response.ok || !payload.ok) throw new Error(payload.message || "구글 로그인 연결 상태를 확인할 수 없습니다.");
+          renderGoogleLoginState(payload);
+        }
+        linkButton.addEventListener("click", async function () {
+          if (!gloginSessionIsCurrent() || linkButton.disabled) return;
+          linkButton.disabled = true;
+          statusCopy.textContent = "구글 인증 화면으로 이동을 준비하는 중입니다.";
+          try {
+            var response = await miFetch(apiUrl, {
+              method: "POST",
+              cache: "no-store",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "link-url" })
+            });
+            var payload = await readApiPayload(response, "구글 인증 주소를 확인할 수 없습니다.");
+            if (!gloginSessionIsCurrent()) return;
+            if (!response.ok || !payload.ok || !payload.url) throw new Error(payload.message || "구글 인증 주소를 만들지 못했습니다.");
+            window.location.href = payload.url;
+            return;
+          } catch (error) {
+            if (gloginSessionIsCurrent()) statusCopy.textContent = error.message || "구글 인증 주소를 만들지 못했습니다.";
+          } finally {
+            linkButton.disabled = false;
+          }
+        });
+        unlinkButton.addEventListener("click", async function () {
+          if (!gloginSessionIsCurrent() || unlinkButton.disabled) return;
+          if (!window.confirm("구글 로그인 연결을 해제할까요? 기존 코드 로그인은 그대로 사용할 수 있습니다.")) return;
+          unlinkButton.disabled = true;
+          statusCopy.textContent = "구글 로그인 연결을 해제하는 중입니다.";
+          try {
+            var response = await miFetch(apiUrl, {
+              method: "POST",
+              cache: "no-store",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ action: "unlink" })
+            });
+            var payload = await readApiPayload(response, "구글 로그인 해제 결과를 확인할 수 없습니다.");
+            if (!gloginSessionIsCurrent()) return;
+            if (!response.ok || !payload.ok) throw new Error(payload.message || "구글 로그인 연결 해제에 실패했습니다.");
+            pendingNotice = payload.message || "구글 로그인 연결을 해제했습니다.";
+            await refreshGoogleLoginState();
+          } catch (error) {
+            if (gloginSessionIsCurrent()) statusCopy.textContent = error.message || "구글 로그인 연결 해제에 실패했습니다.";
+          } finally {
+            unlinkButton.disabled = false;
+          }
+        });
+        await refreshGoogleLoginState();
+      }
+
       async function loadOwnerTool() {
         if (secureSession.role !== "owner") return false;
         var requestGeneration = ownerToolGeneration;
@@ -13352,6 +13466,7 @@
         bindOwnerTool(utilityView, generation);
         bindOwnerAssistant(assistantView, generation);
         initOwnerGoogleCalendarBanner(assistantView, generation).catch(function () {});
+        initOwnerGoogleLoginBanner(assistantView, generation).catch(function () {});
         await calculateOwnerTool(utilityView, "0", generation).catch(function (error) {
           if (generation === ownerToolGeneration) {
             setOwnerToolStatus(utilityView.querySelector("[data-owner-tool-status]"), error.message || "계산 연결을 확인해주세요.", "warn");
@@ -14699,6 +14814,33 @@
       });
       setLoginMode("operator");
 
+      var googleLoginStartButton = root.querySelector("[data-google-login-start]");
+      if (googleLoginStartButton) {
+        googleLoginStartButton.addEventListener("click", function () {
+          window.location.href = "/api/google-login/start";
+        });
+      }
+
+      function consumeLoginGoogleNotice() {
+        try {
+          if (root.classList.contains("is-authed") || secureSession.role) return;
+          var pageUrl = new URL(window.location.href);
+          var gloginCode = pageUrl.searchParams.get("glogin");
+          if (!gloginCode || gloginCode === "linked" || gloginCode === "success") return;
+          var notice = gloginCode === "unlinked"
+            ? "연결되지 않은 구글 계정입니다. 먼저 기존 코드로 로그인 후 연결해주세요."
+            : gloginCode === "not-ready"
+              ? "이 계정은 아직 구글 로그인 대상이 아닙니다."
+              : gloginCode === "not-configured"
+                ? "구글 로그인이 아직 준비되지 않았습니다. 관리자 환경변수 설정 후 사용할 수 있습니다."
+                : "구글 로그인 처리 실패: " + gloginCode;
+          pageUrl.searchParams.delete("glogin");
+          var cleanQuery = pageUrl.searchParams.toString();
+          window.history.replaceState(null, "", pageUrl.pathname + (cleanQuery ? "?" + cleanQuery : "") + pageUrl.hash);
+          setStatus(loginStatus, notice, "is-warn");
+        } catch (error) {}
+      }
+
       async function synchronizeOperationTeamSession(requestGeneration, sessionScope) {
         if (secureSession.role !== "team") return null;
         var payload = await restoreSecureSession();
@@ -14987,6 +15129,8 @@
       restoreAdminLogin().catch(function () {
         if (loginButton) loginButton.disabled = false;
         setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
+      }).then(function (restored) {
+        if (restored !== true) consumeLoginGoogleNotice();
       });
 
       function syncOwnerAccessFields() {

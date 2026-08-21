@@ -75,7 +75,12 @@ async function routeRequest(request) {
       return dispatch("ownerToolApi", request);
     }
 
-    if (url.pathname === "/api/owner/google-calendar" || url.pathname === "/api/google-oauth/callback") {
+    if (
+      url.pathname === "/api/owner/google-calendar"
+      || url.pathname === "/api/owner/google-login"
+      || url.pathname === "/api/google-oauth/callback"
+      || url.pathname === "/api/google-login/start"
+    ) {
       return dispatch("googleCalendarApi", request);
     }
 

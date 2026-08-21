@@ -1,13 +1,14 @@
 # Test Evidence
 
-## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 (배포 전 증거)
+## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 Production 증거
 
 - 운영 SELECT-only: Windows heartbeat 정상, runtime `1.1.8`, fingerprint `182cc973…d49902`, circuit closed, cooldown 없음, lane·run·lease null입니다. 최근 24시간 snapshot 262건은 모두 광고 제외·공식 collector·오가닉 `checked_count=300`이며 위반 0입니다.
 - 비활성은 정확히 tracker `1346924b-eb83-45e3-b8bb-4432083a4142` 1건입니다. agency `alstj4492`, keyword `자외선차단마스크`, product `13656510327`, 2026-08-12 17:13 KST부터 paused, `last_checked_at` null, snapshot 0, 동일 활성 대상 0입니다.
 - updater native-host 불일치 테스트는 수정 전 11개 중 정확히 1개 실패했고, canonical `co.kr...` 1줄 수정 뒤 11/11 PASS했습니다. paused 동일 대상 재등록은 수정 전 신규 insert 응답 201로 RED였고, 수정 뒤 handler 70/70에서 기존 ID·insert 0·순서/격리/cycle 불변·wake 1회를 확인했습니다. 보호 잠금 23함수·88파일·37 migration, self-test, server contract 58/58, release baseline, 전체 `check:release` 코어 651/651·플레이스 51/51·쇼핑 62/62·Production 인증 18/18이 통과했습니다.
 - commit `19756f2` 배포 뒤 `/health`·`/ready`는 release `19756f21ed51`·Supabase ready로 일치했습니다. paused 행 update는 정확히 1행의 `status`만 변경했고 `next_check_at`·sort 3100·cycle/quarantine/lease 값은 그대로였습니다.
 - 운영 ledger event 6049 roster→6051 tracker_claimed(`new`)→6052 tracker_committed가 이어졌습니다. collection `pw-chrome-1787242738280-bc36ecf87170e0430f12`, checked 300, 광고 30개 제외, 공식 collector·organic evidence·adExcluded=true이며 snapshot 1개입니다. 미발견 rank null, `last_error=null`, `retry_count=0`, processing/lane/run/lease null, circuit closed, cursor sort 1700 불변을 SELECT-only로 확인했습니다.
-- Mac에는 PowerShell runtime이 없어 updater 검사는 아직 Windows 정적 계약입니다. 현재 Windows heartbeat와 수집은 정상이지만 canonical registry updater 실기 성공은 별도 증거 전까지 주장하지 않습니다.
+- Windows 관리자 PowerShell 실기에서 updater가 `MI_EXTENSION_UPDATE_OK release=981c4fe9cec58c94339042fc20f2ca17ae6990a1 version=1.1.8 loaded_extension_synced=true native_host_registry_synced=true`와 runtime fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`를 반환했습니다. Chrome 재시작 뒤 heartbeat도 동일 version/fingerprint로 이어졌습니다.
+- updater 후 event 6427~6429가 10:28:16~10:29:42 KST 자연 `normal` claim→commit을 기록했습니다. collection `pw-chrome-1787275782763-cb919aa1aeb31aeb178d`는 checkedCount 300, 광고 45개 제외, 공식 collector·organic evidence·adExcluded=true입니다. terminal 뒤 circuit closed, cooldown null, lane·run·lease/current tracker null, paused 0이며 DB·wake·cursor·격리는 조작하지 않았습니다.
 
 ## 2026-08-21 매월 반복 종료 방식 Production 증거
 

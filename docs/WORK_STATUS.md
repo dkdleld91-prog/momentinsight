@@ -11,7 +11,8 @@
 - 다른 원인은 `paused`를 만드는 stop 경로는 있으나 동일 대상 재등록·재개 경로가 없어 진단 행이 영구 고아가 되는 계약입니다. 동일 tenant·정규화 keyword·상품만 기존 ID로 active 복구하고 lease만 해제하며 순서·격리·cycle 값은 보존하도록 구현했습니다. handler 70/70, 전체 release 코어 651/651·플레이스 51/51·쇼핑 62/62·Production 인증 18/18과 보호 잠금을 통과했습니다.
 - commit `19756f2`가 Production release `19756f21ed51`로 반영됐고 `/health`·`/ready`와 Supabase ready가 일치했습니다. 정확한 paused 행은 사전조건 12개와 active 중복 0을 다시 확인한 뒤 `status`만 active로 복구했습니다. wake·cursor·격리·cycle 표시는 변경하지 않았습니다.
 - 복구 행은 01:18:15 KST cycle #25에서 자연 `new` priority로 1회 claim됐고 01:18:58 KST collection `pw-chrome-1787242738280-bc36ecf87170e0430f12`을 광고 30개 제외·오가닉 `checked_count=300`으로 원자 저장했습니다. 상품은 300위 내 미발견이라 rank null을 유지했고 오류·retry·격리는 해제됐으며 lane·lease도 null, 기존 cursor sort 1700은 불변입니다.
-- 현재 Windows 작업기는 계속 생존하지만 새 updater의 canonical registry 실기만 남았습니다. updater는 Windows Chrome을 종료하고 레지스트리·예약 작업을 갱신하므로 사용자 실행 시점 확인 전에는 완료로 기록하지 않습니다.
+- 사용자 승인 뒤 Windows 관리자 PowerShell에서 commit `981c4fe9cec58c94339042fc20f2ca17ae6990a1` updater를 실행했습니다. `MI_EXTENSION_UPDATE_OK`는 version `1.1.8`, `loaded_extension_synced=true`, `native_host_registry_synced=true`, runtime fingerprint `182cc973be96d27a56ba05b50865c57540b5aab8df321f43f22827c269d49902`를 반환했고 Chrome과 예약 작업이 정상 재시작됐습니다.
+- 업데이트 후 첫 자연 작업은 10:28:16 KST event 6427~6429 `group_claimed(normal) → tracker_claimed → tracker_committed`로 끝났습니다. collection `pw-chrome-1787275782763-cb919aa1aeb31aeb178d`는 광고 45개 제외·공식 collector·오가닉 `checked_count=300`이며 terminal 뒤 circuit closed, lane·run·lease null, paused 0을 SELECT-only로 확인했습니다.
 
 ### 2026-08-21 매월 반복 종료 방식 Production 반영
 

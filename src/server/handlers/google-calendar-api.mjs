@@ -290,11 +290,19 @@ async function handleOwnerApi(request, ctx) {
   const ownerCode = primaryAgencyCode();
   if (request.method === "GET") {
     const config = googleOauthConfig();
-    const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
-    if (error) return json(request, { ok: false, message: "구글 연동 상태를 확인하지 못했습니다.", detail: error.message }, 500);
+    let integration = null;
+    let storageReady = true;
+    try {
+      const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode);
+      if (loaded.error) storageReady = false;
+      else integration = loaded.integration;
+    } catch (error) {
+      storageReady = false;
+    }
     return json(request, {
       ok: true,
       configured: Boolean(config.clientId && config.clientSecret),
+      storageReady,
       connected: Boolean(integration),
       googleEmail: integration?.google_email || null,
       connectedAt: integration?.connected_at || null,
@@ -345,19 +353,27 @@ async function handleOwnerLoginApi(request, ctx) {
   const ownerCode = primaryAgencyCode();
   if (request.method === "GET") {
     const config = googleOauthConfig();
-    const { data, error } = await ctx.supabaseAdmin
-      .from("login_identities")
-      .select("google_email, linked_at")
-      .eq("role", "owner")
-      .eq("code", ownerCode)
-      .maybeSingle();
-    if (error) return json(request, { ok: false, message: "구글 로그인 연결 상태를 확인하지 못했습니다.", detail: error.message }, 500);
+    let identity = null;
+    let storageReady = true;
+    try {
+      const { data, error } = await ctx.supabaseAdmin
+        .from("login_identities")
+        .select("google_email, linked_at")
+        .eq("role", "owner")
+        .eq("code", ownerCode)
+        .maybeSingle();
+      if (error) storageReady = false;
+      else identity = data || null;
+    } catch (error) {
+      storageReady = false;
+    }
     return json(request, {
       ok: true,
       configured: Boolean(config.clientId && config.clientSecret),
-      linked: Boolean(data),
-      googleEmail: data?.google_email || null,
-      linkedAt: data?.linked_at || null,
+      storageReady,
+      linked: Boolean(identity),
+      googleEmail: identity?.google_email || null,
+      linkedAt: identity?.linked_at || null,
     });
   }
   if (request.method !== "POST") return json(request, { ok: false, message: "Method not allowed" }, 405);

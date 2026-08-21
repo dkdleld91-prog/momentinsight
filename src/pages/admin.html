@@ -13233,7 +13233,11 @@
         function renderGoogleCalendarState(payload) {
           var notice = pendingNotice;
           pendingNotice = "";
-          if (!payload.configured) {
+          if (payload.storageReady === false) {
+            statusCopy.textContent = "준비 1단계 남음 — Supabase에서 안내드린 SQL을 실행하면 활성화됩니다.";
+            connectButton.hidden = true;
+            disconnectButton.hidden = true;
+          } else if (!payload.configured) {
             statusCopy.textContent = "관리자 환경변수 설정 대기 중(GOOGLE_OAUTH_CLIENT_ID/SECRET)";
             connectButton.hidden = true;
             disconnectButton.hidden = true;
@@ -13338,7 +13342,11 @@
         function renderGoogleLoginState(payload) {
           var notice = pendingNotice;
           pendingNotice = "";
-          if (!payload.configured) {
+          if (payload.storageReady === false) {
+            statusCopy.textContent = "준비 1단계 남음 — Supabase에서 안내드린 SQL을 실행하면 활성화됩니다.";
+            linkButton.hidden = true;
+            unlinkButton.hidden = true;
+          } else if (!payload.configured) {
             statusCopy.textContent = "관리자 환경변수 설정 대기 중(GOOGLE_OAUTH_CLIENT_ID/SECRET)";
             linkButton.hidden = true;
             unlinkButton.hidden = true;

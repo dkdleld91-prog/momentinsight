@@ -1,12 +1,28 @@
 # Test Evidence
 
-## 2026-08-21 N쇼핑 v1.1.9·5차 속도 개선 로컬 후보 증거
+## 2026-08-21 N쇼핑 v1.1.10 partial 재수집·input-close 복구 로컬 증거
+
+- 운영 v1.1.9 cycle #27은 roster74, group claim59=distinct59, tracker claim74=distinct74, commit70, typed failure4, deferred0으로 완료됐고 같은 cycle 중복은 0입니다. 네 실패는 `native_host_input_closed` 1건과 `provider_partial_window` 92·137·30건이며 실패 snapshot은 0입니다. 뒤 cycle #28은 21:40 KST까지 group18=distinct18·tracker25=distinct25·commit25·failure0으로 진행했습니다.
+- `native_host_input_closed`는 실제 1회 사건 뒤 11분 만에 다른 tracker atomic300이 이어졌지만, 기존 자동 복구 allowlist에는 없어 연속 2회 circuit open 시 영구 정지 위험이 있었습니다. 신규 additive migration은 이 정확한 code만 기존 eligibility IF와 guarded UPDATE 두 곳에 추가하며 primary-only·30분 quiet·최대2회·service-role-only를 유지합니다. 전용 RED 6/7→GREEN 7/7, 함수 exact-delta와 security/network 제외를 확인했습니다.
+- partial-window 재수집 신규 4개는 기존 코드에서 모두 RED였고, 구현 뒤 4/4 GREEN입니다. 첫 partial pass 폐기, 독립 full 1..8 1회, 두 번째 strict300만 반환, double-partial 최신 count, partial→overlap page-budget, deadline guard, no-third를 실행했습니다. native/local/migration/handler/Windows 결합 집중 회귀는 264/264 PASS이며 native core line 90.36%·function 94.74%입니다.
+- runtime `1.1.10` additive migration은 적용 시 및 identity 변경 시 cadence10·stability null·streak0으로 초기화하고 exact1.1.10·atomic300·processing0·24시간+성공6회를 새로 요구합니다. immutable 1.1.9 migration을 1.1.10으로만 치환한 exact clone이며 기존 1.1.9 SHA는 불변입니다. 관련 240/240, Windows 11/11, server contract 63/63, release baseline, 보호 잠금 23함수·93파일·42 migration+self-test가 통과했습니다. 전체 `check:release`도 core 694/694·place 51/51·shopping 62/62·Production auth 18/18, public build 9파일·인라인 6개·고유 CSP hash 4개, diff-check PASS입니다.
+- 아직 Production 배포·Windows 1.1.10 heartbeat·partial 실회복은 확인하지 않았습니다. 전체 `check:release`, 정확 commit, idle 배포, 자연 atomic300과 lane 해제 뒤에만 운영 정상화로 판정합니다.
+
+## 2026-08-21 N쇼핑 v1.1.9·5차 속도 개선 운영 초기 증거
 
 - 개선 전 운영 SELECT-only: runtime `1.1.8` exact fingerprint, heartbeat 정상, circuit closed, lane·run·lease null, active 74·paused 0·processing 0·격리 3입니다. 최근 24시간 258 snapshot의 checked300/source/organic/adExcluded 위반은 0이고 group 처리시간 avg 58.11초·p50 44.95초·p90 86.90초·max 91.22초, wall 처리량 8.75~8.77 group/hour입니다.
 - TDD focused 실행은 163/163 PASS입니다. 여기에는 >100 tracker 동일 keyword의 cycle당 수집 1회·회전 deferred, submit 응답 유실 exact reconcile, transient timeout/deadline half-open 최대2회, remote no-wake probe 보존, claim-response-loss 장부 guard, runtime 1.1.9 gate와 candidate 승격 시 active processing lease 0 조건이 포함됩니다.
 - cadence/init 87/87 PASS입니다. 실패 뒤 첫 explicit atomic success부터 24시간+6회, idle 증가 0, storage/alarm read·write·create·clear 실패, 서비스워커 새 VM, 강제종료·stale running·generic failure overwrite, old 1.1.8 proof와 same-version 다른 SHA 거부를 동적으로 실행했습니다.
 - `node --check` 관련 6개, server contract 61/61, release baseline 171/171, `git diff --check`가 통과했습니다. 변경 범위 cadence/init branch-range coverage는 117/144=81.25%, 함수 11/11입니다. 기존 local-worker 전체 파일은 line 89.24%·branch 67.56%·function 89.19%라 전체 branch 80%로 과장하지 않습니다.
-- 보호 잠금 23함수·91파일·40 migration과 self-test, 전체 `npm run check:release`가 exit 0으로 통과했습니다. 이 절은 아직 로컬 배포 후보 증거이며 DB migration·Production/Windows 동기화·운영 원자300·24시간 후 8분 A/B는 미확인입니다.
+- 보호 잠금 23함수·91파일·40 migration과 self-test, 전체 `npm run check:release`가 정확한 commit `628e4ae0b2a9`의 깨끗한 worktree에서 exit 0으로 통과했습니다. 같은 commit이 Production `/health`·`/ready`와 Windows updater release로 일치합니다.
+- 운영 migration 목록에 `naver_shopping_cycle_keyword_overflow`, `naver_shopping_transient_system_half_open`, `naver_shopping_runtime_1_1_9`가 모두 존재합니다. runtime migration 직후 exact fingerprint `b89dcd5b…b9832`, cadence10, stability null, streak0, candidate false, circuit closed, processing0, lane/run/lease null을 확인해 1.1.8 proof 상속이 없음을 증명했습니다.
+- 기준 뒤 별도 wake 요청이 없던 첫 `normal` run `a5d6f1a1-b17c-407c-b261-1ca4b67162ba`는 event 6701 group claim → 6702 tracker claim → 6703 commit으로 종료됐습니다. collection `pw-chrome-1787291671198-58f940f60934ff318d08`, 공식 collector, organic evidence/policy, adExcluded=true, 광고 30개 제외, checkedCount 300, rank 27이며 snapshot·ledger가 일치합니다. ledger에는 알람 trigger명이 없어 trigger 종류 자체는 단정하지 않습니다. 종료 뒤 stability 14:54:31 KST·streak1·candidate false·cadence10, processing/lane/run/lease null입니다.
+- 15:00:00~15:01:28 KST run `4460c552-afb1-40d7-8463-ca1011f6e0dc`는 event 6705 group claim → 6706 tracker claim → 6707 commit으로 종료됐습니다. collection `pw-chrome-1787292087822-95262b63bfac50c24be7`은 checkedCount 300, 공식 collector·organic/adExcluded=true, 광고 30개 제외, `stable-full-window-v1`이며 민감 proof 세부값은 저장하지 않았습니다. 종료 뒤 streak2·candidate false·cadence10, circuit closed, processing/lane/run/lease null입니다.
+- 15:02:39~15:03:25 KST run `c8f01d0b-3de4-4ffa-9d3c-658d2f07d6da`는 같은 keyword group의 tracker 2개를 collection `pw-chrome-1787292205331-e8530fcbae4a3f45aa89` 하나로 각각 checked300 commit했습니다. 15:03:46~15:05:13 KST run `123bdacc-8b60-46da-8406-e433d221ea44`도 stable proof·광고45 제외·checked300으로 끝났습니다. 두 run은 시간상 겹치지 않았고 마지막 terminal 뒤 90초 동안 새 run 0건이었습니다. cycle #27 group 31=distinct31, tracker 44=distinct44, commit44, failure0, streak4이며 terminal 상태는 circuit closed·processing/lane/run/lease null입니다.
+- runtime 이후 cycle #27 최종 장부는 roster74, group claim59=distinct59, tracker claim74=distinct74, commit70, typed failure4, deferred0, cycle complete1입니다. 네 실패는 15:19 `native_host_input_closed`, 16:00 `provider_partial_window:92_300`, 18:50 `:137_300`, 18:59 `:30_300`이며 실패 tracker의 새 snapshot은 없습니다. cycle #28은 19:09 시작 뒤 21:40까지 group18=distinct18·tracker25=distinct25·commit25·failure0입니다.
+- 21:47 KST 기준 runtime 이후 snapshot 56행/46 collection은 non300·source·rankEvidence·rankPolicy·adExcluded 위반이 모두 0이고 stable proof 18행, capture/pass/collision digest 저장 0입니다. ops는 runtime/fingerprint exact, cadence10, stability 19:10:08 KST, streak18, candidate false, circuit closed, processing0, lane/run/lease null입니다. active74·paused0·quarantine3이며 partial tracker 3건은 last-good 또는 미검증 상태를 보존한 채 다음날 재시도 대기입니다.
+- 이번 v1.1.9 migration 관련 새 security advisor WARN은 없고, service-role-only RLS 테이블의 no-policy INFO와 아직 실행되지 않은 복구용 index unused INFO만 있습니다.
+- 24시간+성공6회 이후 candidate8 활성화와 실제 8분 처리량 비교는 아직 미확인입니다. 이 조건 전에는 속도 개선 완료로 판정하지 않습니다.
 
 ## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 Production 증거
 

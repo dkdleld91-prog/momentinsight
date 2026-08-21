@@ -64,12 +64,14 @@ const files = {
   shoppingWorkerRuntime117Migration: "supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql",
   shoppingWorkerRuntime118Migration: "supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql",
   shoppingWorkerRuntime119Migration: "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
+  shoppingWorkerRuntime110Migration: "supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql",
   shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
   shoppingAutoNavigationTrackerFailureRecoveryMigration: "supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql",
   shoppingProbeIncompleteAutoRecoveryMigration: "supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql",
   shoppingTransientSystemRecoveryMigration: "supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql",
+  shoppingNativeInputClosedHalfOpenMigration: "supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql",
   shoppingTransientSystemRecoveryTests: "scripts/naver-shopping-transient-system-recovery-migration.test.mjs",
   shoppingDuplicateQuarantineMigration: "supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql",
   shoppingRankLookupLeasePrecisionMigration: "supabase/migrations/20260811142000_fix_naver_shopping_lookup_lease_precision.sql",
@@ -155,12 +157,14 @@ const shoppingWorkerRuntime116Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime117Migration = fs.readFileSync(files.shoppingWorkerRuntime117Migration, "utf8");
 const shoppingWorkerRuntime118Migration = fs.readFileSync(files.shoppingWorkerRuntime118Migration, "utf8");
 const shoppingWorkerRuntime119Migration = fs.readFileSync(files.shoppingWorkerRuntime119Migration, "utf8");
+const shoppingWorkerRuntime110Migration = fs.readFileSync(files.shoppingWorkerRuntime110Migration, "utf8");
 const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = fs.readFileSync(files.shoppingAutoNavigationTrackerFailureRecoveryMigration, "utf8");
 const shoppingProbeIncompleteAutoRecoveryMigration = fs.readFileSync(files.shoppingProbeIncompleteAutoRecoveryMigration, "utf8");
 const shoppingTransientSystemRecoveryMigration = fs.readFileSync(files.shoppingTransientSystemRecoveryMigration, "utf8");
+const shoppingNativeInputClosedHalfOpenMigration = fs.readFileSync(files.shoppingNativeInputClosedHalfOpenMigration, "utf8");
 const shoppingTransientSystemRecoveryTests = fs.readFileSync(files.shoppingTransientSystemRecoveryTests, "utf8");
 const shoppingDuplicateQuarantineMigration = fs.readFileSync(files.shoppingDuplicateQuarantineMigration, "utf8");
 const shoppingRankLookupLeasePrecisionMigration = fs.readFileSync(files.shoppingRankLookupLeasePrecisionMigration, "utf8");
@@ -910,7 +914,7 @@ check(
   files.shoppingWorkerRuntime118Migration,
 );
 check(
-  "N Shopping current worker bytes pin runtime 1.1.9 fail-closed",
+  "N Shopping prior worker bytes keep runtime 1.1.9 fail-closed",
   hasAll(shoppingWorkerRuntime119Migration, [
     /mi_report_naver_shopping_worker_progress/,
     /p_runtime_version, ''\)\) <> '1\.1\.9'/,
@@ -930,6 +934,28 @@ check(
   ])
     && !/security definer/.test(shoppingWorkerRuntime119Migration),
   files.shoppingWorkerRuntime119Migration,
+);
+check(
+  "N Shopping partial-retry worker bytes pin runtime 1.1.10 fail-closed",
+  hasAll(shoppingWorkerRuntime110Migration, [
+    /mi_report_naver_shopping_worker_progress/,
+    /p_runtime_version, ''\)\) <> '1\.1\.10'/,
+    /mi_get_naver_shopping_worker_operations/,
+    /current_row\.runtime_version = '1\.1\.10'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /set cadence_mode = 'baseline',[\s\S]+cadence_minutes = 10,[\s\S]+stability_started_at = null,[\s\S]+success_streak = 0/,
+    /cadence_mode = case[\s\S]+runtime_version is distinct from trim\(p_runtime_version\)[\s\S]+runtime_fingerprint is distinct from lower\(trim\(p_runtime_fingerprint\)\)[\s\S]+then 'baseline'/,
+    /'transient_system_probe_attempts', current_row\.transient_system_probe_attempts/,
+    /'candidate_eligible',[\s\S]+current_row\.circuit_state = 'closed'[\s\S]+and processing_count = 0[\s\S]+current_row\.runtime_version = '1\.1\.10'/,
+    /for update;[\s\S]+status = 'processing' and processing_until > v_now[\s\S]+status = 'active' and processing_until > v_now[\s\S]+into processing_count;[\s\S]+eligible :=[\s\S]+and processing_count = 0/,
+    /mi_set_naver_shopping_worker_cadence/,
+    /security invoker/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && !/security definer/.test(shoppingWorkerRuntime110Migration),
+  files.shoppingWorkerRuntime110Migration,
 );
 check(
   "N Shopping ledger stores only the verified stable proof protocol version",
@@ -1041,6 +1067,23 @@ check(
     && shoppingTransientSystemRecoveryTests.includes("transient recovery excludes security, network, generic and integrity failures")
     && String(packageJson.scripts?.test || "").includes("scripts/naver-shopping-transient-system-recovery-migration.test.mjs"),
   `${files.shoppingTransientSystemRecoveryMigration}, ${files.shoppingTransientSystemRecoveryTests}`,
+);
+check(
+  "N Shopping native input-closed retry extends the exact guarded transient allowlist",
+  hasAll(shoppingNativeInputClosedHalfOpenMigration, [
+    /create or replace function public\.mi_claim_naver_shopping_worker_lane/,
+    /if current_row\.circuit_state = 'open'[\s\S]*normalized_worker_role = 'primary'[\s\S]*transient_failure_code in \(\s*'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed'\s*\)[\s\S]*current_row\.transient_system_probe_attempts < 2[\s\S]*circuit_opened_at <= v_now - interval '30 minutes'[\s\S]*update public\.naver_shopping_worker_coordination/,
+    /where lane_key = 'global'\s*and circuit_state = 'open'[\s\S]*split_part\(lower\(trim\(coalesce\(last_failure_code, ''\)\)\), ':', 1\) in \(\s*'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed'\s*\)[\s\S]*and transient_system_probe_attempts < 2[\s\S]*and circuit_opened_at <= v_now - interval '30 minutes'[\s\S]*and \(lease_until is null or lease_until <= v_now\)/,
+    /transient_system_probe_attempts = least\(2, current_row\.transient_system_probe_attempts \+ 1\)/,
+    /circuit_reason = 'auto_transient_system_probe'/,
+    /security invoker/,
+    /revoke all on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)[\s\S]*from public, anon, authenticated, service_role;/,
+    /grant execute on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)[\s\S]*to service_role;/,
+  ])
+    && (shoppingNativeInputClosedHalfOpenMigration.match(/'native_host_input_closed'/g) || []).length === 2
+    && !/security definer/.test(shoppingNativeInputClosedHalfOpenMigration)
+    && !/(?:update public\.naver_rank_trackers|next_check_at\s*=|worker_quarantined_until\s*=|scheduler_cycle_cursor_\w+\s*=|insert into public\.naver_shopping_worker_wakes)/i.test(shoppingNativeInputClosedHalfOpenMigration),
+  files.shoppingNativeInputClosedHalfOpenMigration,
 );
 check(
   "N Shopping scheduler ledger is append-only evidence and cannot block tenant writes",
@@ -1178,7 +1221,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.9"
+  shoppingChromeManifest.version === "1.1.10"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1191,6 +1234,9 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
+    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.10";/.test(shoppingLocalWorker)
+    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.10";/.test(shoppingLocalWorkerHandler)
+    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.10";/.test(productTrackers)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)

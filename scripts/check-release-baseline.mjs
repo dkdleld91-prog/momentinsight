@@ -202,12 +202,14 @@ const shoppingWorkerRuntime116Migration = read("supabase/migrations/202608141400
 const shoppingWorkerRuntime117Migration = read("supabase/migrations/20260814173500_naver_shopping_runtime_1_1_7.sql");
 const shoppingWorkerRuntime118Migration = read("supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql");
 const shoppingWorkerRuntime119Migration = read("supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql");
+const shoppingWorkerRuntime110Migration = read("supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql");
 const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
 const shoppingAutoNavigationTrackerFailureRecoveryMigration = read("supabase/migrations/20260814183217_naver_shopping_auto_navigation_tracker_failure_recovery.sql");
 const shoppingProbeIncompleteAutoRecoveryMigration = read("supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql");
 const shoppingTransientSystemRecoveryMigration = read("supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql");
+const shoppingNativeInputClosedHalfOpenMigration = read("supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql");
 const shoppingTransientSystemRecoveryTests = read("scripts/naver-shopping-transient-system-recovery-migration.test.mjs");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
@@ -1505,7 +1507,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.9"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.10"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1517,6 +1519,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.10";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.10";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.10";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -1652,6 +1657,20 @@ const checks = {
     && shoppingWorkerRuntime119Migration.includes("security invoker")
     && !shoppingWorkerRuntime119Migration.includes("security definer")
     && shoppingWorkerRuntime119Migration.includes("to service_role")
+    && shoppingWorkerRuntime110Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.10'")
+    && shoppingWorkerRuntime110Migration.includes("current_row.runtime_version = '1.1.10'")
+    && shoppingWorkerRuntime110Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime110Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime110Migration.includes("set cadence_mode = 'baseline',\n    cadence_minutes = 10,\n    stability_started_at = null,\n    success_streak = 0")
+    && shoppingWorkerRuntime110Migration.includes("runtime_version is distinct from trim(p_runtime_version)")
+    && shoppingWorkerRuntime110Migration.includes("runtime_fingerprint is distinct from lower(trim(p_runtime_fingerprint))")
+    && shoppingWorkerRuntime110Migration.includes("'transient_system_probe_attempts', current_row.transient_system_probe_attempts")
+    && /'candidate_eligible',[\s\S]+current_row\.circuit_state = 'closed'[\s\S]+and processing_count = 0[\s\S]+current_row\.runtime_version = '1\.1\.10'/u.test(shoppingWorkerRuntime110Migration)
+    && /for update;[\s\S]+status = 'processing' and processing_until > v_now[\s\S]+status = 'active' and processing_until > v_now[\s\S]+into processing_count;[\s\S]+eligible :=[\s\S]+and processing_count = 0/u.test(shoppingWorkerRuntime110Migration)
+    && shoppingWorkerRuntime110Migration.includes("security invoker")
+    && !shoppingWorkerRuntime110Migration.includes("security definer")
+    && shoppingWorkerRuntime110Migration.includes("from public, anon, authenticated, service_role")
+    && shoppingWorkerRuntime110Migration.includes("to service_role")
     && shoppingStableProofLedgerMigration.includes("mi_audit_naver_shopping_snapshot_commit")
     && shoppingStableProofLedgerMigration.includes("crossPageProofVersion")
     && shoppingStableProofLedgerMigration.includes("stable-full-window-v1")
@@ -1713,6 +1732,16 @@ const checks = {
     && shoppingTransientSystemRecoveryMigration.includes("from public, anon, authenticated, service_role")
     && shoppingTransientSystemRecoveryMigration.includes("to service_role")
     && shoppingTransientSystemRecoveryTests.includes("transient recovery excludes security, network, generic and integrity failures")
+    && /if current_row\.circuit_state = 'open'[\s\S]*normalized_worker_role = 'primary'[\s\S]*transient_failure_code in \(\s*'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed'\s*\)[\s\S]*current_row\.transient_system_probe_attempts < 2[\s\S]*circuit_opened_at <= v_now - interval '30 minutes'[\s\S]*update public\.naver_shopping_worker_coordination/u.test(shoppingNativeInputClosedHalfOpenMigration)
+    && /where lane_key = 'global'\s*and circuit_state = 'open'[\s\S]*split_part\(lower\(trim\(coalesce\(last_failure_code, ''\)\)\), ':', 1\) in \(\s*'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed'\s*\)[\s\S]*and transient_system_probe_attempts < 2[\s\S]*and circuit_opened_at <= v_now - interval '30 minutes'[\s\S]*and \(lease_until is null or lease_until <= v_now\)/u.test(shoppingNativeInputClosedHalfOpenMigration)
+    && (shoppingNativeInputClosedHalfOpenMigration.match(/'native_host_input_closed'/gu) || []).length === 2
+    && shoppingNativeInputClosedHalfOpenMigration.includes("transient_system_probe_attempts = least(2, current_row.transient_system_probe_attempts + 1)")
+    && shoppingNativeInputClosedHalfOpenMigration.includes("circuit_reason = 'auto_transient_system_probe'")
+    && shoppingNativeInputClosedHalfOpenMigration.includes("security invoker")
+    && !shoppingNativeInputClosedHalfOpenMigration.includes("security definer")
+    && shoppingNativeInputClosedHalfOpenMigration.includes("from public, anon, authenticated, service_role")
+    && shoppingNativeInputClosedHalfOpenMigration.includes("to service_role")
+    && !/(?:update public\.naver_rank_trackers|next_check_at\s*=|worker_quarantined_until\s*=|scheduler_cycle_cursor_\w+\s*=|insert into public\.naver_shopping_worker_wakes)/iu.test(shoppingNativeInputClosedHalfOpenMigration)
     && shoppingSchedulerEventLedgerMigration.includes("create schema if not exists mi_internal authorization postgres")
     && shoppingSchedulerEventLedgerMigration.includes("force row level security")
     && shoppingSchedulerEventLedgerMigration.includes("grant select on table public.naver_shopping_scheduler_events")
@@ -1763,7 +1792,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.9"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.10"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

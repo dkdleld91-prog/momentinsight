@@ -276,6 +276,10 @@ function overlapBoundary(error) {
   return { pageStart: originPage, pageEnd: MAX_PAGES };
 }
 
+function isPartialWindow(error) {
+  return error instanceof ProviderError && error.code === "provider_partial_window";
+}
+
 export function createChromeNativeProvider(options = {}) {
   if (typeof options.exchange !== "function") {
     throw new ProviderError("native_host_exchange_missing");
@@ -296,18 +300,22 @@ export function createChromeNativeProvider(options = {}) {
         });
       }
       let latestPages = response.pages;
+      let recoveryReason = "";
       try {
         return buildNativeWindowFromPages(request, latestPages, {
           nowMs: options.nowMs?.() ?? Date.now(),
         });
       } catch (error) {
-        if (!overlapBoundary(error)) throw error;
+        if (overlapBoundary(error)) recoveryReason = "stable-proof";
+        else if (isPartialWindow(error)) recoveryReason = "partial-window";
+        else throw error;
       }
 
-      // A cross-page duplicate can be either a moving pagination boundary or
-      // a real Naver rank slot repeated across pages. Never delete or compress
-      // it. Capture one independent full 1..8 pass and accept the duplicate
-      // only when every absolute rank slot is byte-stable across both passes.
+      // Discard a partial first pass instead of merging or padding it. A
+      // cross-page duplicate can be either a moving pagination boundary or a
+      // real Naver rank slot repeated across pages. In either case allow only
+      // one independent full 1..8 pass within the shared deadline and the
+      // fixed 16-page budget.
       const deadlineAt = Date.parse(String(request.deadlineAt || ""));
       if (!Number.isFinite(deadlineAt)
         || (options.nowMs?.() ?? Date.now()) + DEADLINE_GUARD_MS >= deadlineAt) {
@@ -321,7 +329,7 @@ export function createChromeNativeProvider(options = {}) {
         request,
         pageStart: 1,
         pageEnd: MAX_PAGES,
-        stableProofPass: 2,
+        ...(recoveryReason === "stable-proof" ? { stableProofPass: 2 } : {}),
       });
       if (!secondResponse
         || secondResponse.type !== "collection"
@@ -342,6 +350,11 @@ export function createChromeNativeProvider(options = {}) {
         });
       } catch (error) {
         if (!overlapBoundary(error)) throw error;
+        if (recoveryReason === "partial-window") {
+          // The discarded partial pass cannot prove a stable 300-rank window,
+          // and a third full pass would exceed the hard navigation budget.
+          throw new ProviderError("provider_stable_window_unproven", "page_budget");
+        }
       }
 
       const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {

@@ -363,6 +363,116 @@ test("native provider exchanges only a bounded public page collection", async ()
   assert.equal(result.checkedCount, 300);
 });
 
+test("native provider discards one partial pass and retries one independent full window", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const partialPages = finiteMarketPages(137).map((payload) => {
+    const data = JSON.parse(payload.nextDataText);
+    for (const row of data.props.pageProps.compositeList.list) {
+      if (row.item.adId) continue;
+      const partialId = String(Number(row.item.mallProductId) + 1_000_000_000);
+      row.item.mallProductId = partialId;
+      row.item.mallPcUrl = `https://smartstore.naver.com/example/products/${partialId}`;
+      row.item.productTitle = `discarded ${row.item.productTitle}`;
+    }
+    return { ...payload, nextDataText: JSON.stringify(data) };
+  });
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return {
+        type: "collection",
+        captureId: `capture-pass-${messages.length}`,
+        pages: messages.length === 1
+          ? partialPages
+          : Array.from({ length: 8 }, (_, index) => page(index + 1)),
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.items[0].sellerProductId, "13000000001");
+  assert.doesNotMatch(result.items[0].title, /^discarded /u);
+  assert.equal(result.crossPageProof, undefined);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [1, 8],
+  ]);
+});
+
+test("native provider reports the latest partial count after exactly one full retry", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return {
+        type: "collection",
+        captureId: `capture-pass-${messages.length}`,
+        pages: finiteMarketPages(messages.length === 1 ? 137 : 30),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_partial_window" && error?.detail === "30/300",
+  );
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+    [undefined, undefined],
+    [1, 8],
+  ]);
+});
+
+test("native provider never starts a third pass when a partial retry needs stable proof", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return {
+        type: "collection",
+        captureId: `capture-pass-${messages.length}`,
+        pages: messages.length === 1
+          ? finiteMarketPages(137)
+          : overlapPages({ originPage: 6, collisionPage: 7 }),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_stable_window_unproven"
+      && error?.detail === "page_budget",
+  );
+  assert.equal(messages.length, 2);
+});
+
+test("native provider does not retry a partial window near the absolute deadline", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let clockReads = 0;
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => (clockReads++ === 0 ? nowMs : nowMs + 178_000),
+    async exchange() {
+      exchanges += 1;
+      return { type: "collection", pages: finiteMarketPages(137) };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+  assert.equal(exchanges, 1);
+});
+
 function overlapPages({ originPage = 1, collisionPage = 2 } = {}) {
   const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
   const collision = JSON.parse(pages[collisionPage - 1].nextDataText);
@@ -660,7 +770,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.9");
+  assert.equal(manifest.version, "1.1.10");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -1898,7 +2008,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.9");
+  assert.equal(manifest.version, "1.1.10");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);

@@ -2,13 +2,15 @@
 
 기준일: 2026-08-21
 
-## 진행 중: N쇼핑 v1.1.9 안정화·5차 8분 A/B
+## 진행 중: N쇼핑 v1.1.10 안정화·5차 8분 A/B
 
-1. 완료: 보호 잠금·self-test·전체 `check:release`를 통과했습니다. 정확한 N30 변경만 커밋·push하고 `data/`와 다른 사용자 작업은 포함하지 않습니다.
-2. 운영 lane·processing 0을 SELECT-only로 확인하고 overflow→transient recovery migration을 적용한 뒤 Production health/ready를 새 SHA로 맞춥니다. runtime 1.1.9 gate는 마지막에 적용하고 Windows updater를 같은 SHA·version으로 즉시 동기화합니다.
-3. 첫 자연 `pw-chrome-*`가 광고 제외 checked300으로 저장되고 runtime/fingerprint 일치, circuit closed, cadence10, lane·lease 해제를 확인합니다. 이 첫 1.1.9 원자 성공 시각이 새 24시간 안정성 시작점입니다.
-4. 24시간과 새 atomic success 6회가 모두 충족되기 전에는 candidate8을 활성화하지 않습니다. 이후 canonical cadence RPC로 8분을 1회 켜고, 여러 자연 회차의 atomic300·중복0·순서·lane 해제와 실제 group/hour를 개선 전 8.75~8.77과 비교합니다.
-5. 어떤 실패라도 10분 복귀·새 proof 초기화를 확인합니다. 실패 시 8분 성과로 보고하지 않고 원인과 last-good 보존 여부를 기록합니다.
+1. 완료: 보호 잠금·self-test·전체 `check:release`를 통과했고 정확한 N30 변경만 commit `628e4ae0b2a9`로 push·Production 반영했습니다. `data/`와 다른 사용자 작업은 포함하지 않았습니다.
+2. 완료: 운영 lane·processing 0을 확인하고 overflow→transient recovery→runtime 1.1.9 migration을 적용했습니다. Production health/ready와 Windows updater가 같은 SHA·version이며 exact runtime fingerprint가 일치합니다.
+3. 완료: 기준 이후 별도 wake 요청이 없던 `normal` collection `pw-chrome-1787291671198-58f940f60934ff318d08`이 광고 30개 제외·checked300으로 저장됐고 circuit closed·cadence10·lane/lease 해제를 확인했습니다. ledger에는 알람 trigger명이 없으므로 trigger 종류 자체는 단정하지 않습니다. 새 24시간 안정성 시작점은 2026-08-21 14:54:31 KST입니다.
+4. 완료(로컬): `native_host_input_closed`를 정확히 30분·최대2회 bounded half-open 대상으로 추가하고, 첫 `provider_partial_window`는 첫 pass를 폐기한 뒤 같은 deadline·16페이지 한도에서 full1..8을 딱 한 번 재수집하도록 v1.1.10을 구현했습니다. double-partial/overlap은 부분 저장·세 번째 pass 없이 fail-closed합니다.
+5. 진행: 전체 `check:release`와 exact clean commit을 검증한 뒤 운영 lane·processing0에서 170000→180000 migration, app, Windows 1.1.10 updater 순으로 배포합니다. 순서·격리·wake를 수동 조작하지 않습니다.
+6. v1.1.10 첫 atomic300 성공부터 새 24시간+6회 proof를 시작합니다. 그 전에는 candidate8을 활성화하지 않으며, 충족 뒤 canonical cadence RPC로 8분을 1회 켜고 여러 자연 회차의 atomic300·중복0·순서·lane 해제와 group/hour를 개선 전 8.75~8.77과 비교합니다.
+7. 어떤 실패라도 10분 복귀·새 proof 초기화를 확인합니다. 실패 시 8분 성과로 보고하지 않고 원인과 last-good 보존 여부를 기록합니다.
 
 ## 완료: N쇼핑 30일 추적 비활성 재발 방지
 
@@ -174,12 +176,12 @@
 - CAPTCHA 풀이, 접속 제한 우회, VPN, 쿠키 상시 삭제, 요청 연타를 구현하지 않습니다.
 - 작업 도중 같은 단계·오류가 2회 연속이면 추가 실기와 전체 순환을 중단하고 원인부터 확정합니다.
 
-## 보류: 5차 속도 향상
+## 과거 기록: 5차 속도 향상 보류 해제
 
-- 사용자 지시에 따라 무기한 보류합니다.
-- baseline 10분과 한 번에 한 키워드를 유지합니다.
-- 8분 candidate 활성화, 동시 실행 증가, 수집 경로·페이지 간격 변경을 하지 않습니다.
-- 향후 사용자가 5차 재개를 명시적으로 승인하기 전에는 24~48시간 성공률이 충분해도 자동 승격하지 않습니다.
+- 과거에는 사용자 지시에 따라 무기한 보류했습니다.
+- 2026-08-21 사용자가 5번 속도 개선 실행을 명시 승인해 보류를 해제했습니다.
+- 현재도 안전 gate가 끝날 때까지 baseline 10분과 한 번에 한 키워드를 유지하며, 동시 실행·수집 경로·페이지 간격은 변경하지 않습니다.
+- 새 runtime 1.1.9의 24시간+원자 성공 6회와 idle gate를 모두 충족한 뒤에만 candidate8을 활성화합니다.
 
 ## 완료·과거 작업
 

@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "1f353ec2b6a2431da330ffa6a6aa99df91f68f436dd3e9730b6c9b0fcc9313e0"
+      "sha256": "ffcdaf5ce0e4f60b84669d001c201a41d5a9ce3c674b36f8d2e718d8ef501538"
     },
     {
       "id": "product-organic-rank-server",
@@ -343,7 +343,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "d0206c267ccb4ad5d4e8b59350ebe44593467b2f659faa1f69ebcf68b956a583"
+      "sha256": "ef6aa54bc2c116bc675cd090a60fadf467a5d185f6ff829f8327789b8ab71b83"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -358,7 +358,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "269d9a59461c4840b696e77632b3905934743065bdc87951a8d33ed74ae0e818"
+      "sha256": "305f9ec1e05636ffa3195daa3a25f2f0e6e475b415350f32721fa246afd7bb36"
     },
     {
       "id": "shopping-local-worker-wrapper",
@@ -569,7 +569,7 @@
     {
       "id": "shopping-chrome-native-host-core",
       "file": "scripts/naver-shopping-native-host-core.mjs",
-      "sha256": "f5d20038b81b10cbb23ec74e2f99e588d1c2b2c24f0fd814febc1db37fb91af5"
+      "sha256": "153013e1aa08854718649e42626a4a310b07f0701a43ae9933cc53b6e3a2297b"
     },
     {
       "id": "shopping-chrome-native-host-wrapper",
@@ -614,7 +614,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "8ac2dc72e3cdb2b233f0d4de426fe17e5093d4da14806a0886adea077707069d"
+      "sha256": "fb49ce238f73474f3ff2179a41f514ac38699a0ab5908e78e1ca73f43d8f616f"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -642,6 +642,18 @@
       "id": "shopping-worker-runtime-1-1-9",
       "file": "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
       "sha256": "9e6b5969d3ce4b81d5a35d93905b04fa7ca6b1d0d6a098ea0e4c5cd1bc82f409",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-native-input-closed-half-open",
+      "file": "supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql",
+      "sha256": "0ba7232c6819a28a64c2acd8588bd3f2a5e543e0131098309b15090182acfe4e",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-10",
+      "file": "supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql",
+      "sha256": "ceb3a61032e40c38330de84da8c0e78a4347a9832054c77673d3f8501fa5fab2",
       "rankMigration": true
     }
   ]

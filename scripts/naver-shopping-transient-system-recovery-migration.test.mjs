@@ -10,12 +10,72 @@ const migration = fs.existsSync(migrationPath)
   ? fs.readFileSync(migrationPath, "utf8")
   : "";
 
+const nativeInputRecoveryPath = new URL(
+  "../supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql",
+  import.meta.url,
+);
+const nativeInputRecovery = fs.existsSync(nativeInputRecoveryPath)
+  ? fs.readFileSync(nativeInputRecoveryPath, "utf8")
+  : "";
+
 function functionSql(name) {
   return migration.match(new RegExp(
     `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
     "iu",
   ))?.[0] || "";
 }
+
+function recoveryFunctionSql(name) {
+  return nativeInputRecovery.match(new RegExp(
+    `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
+    "iu",
+  ))?.[0] || "";
+}
+
+test("native input closure gets one exact additive bounded recovery contract", () => {
+  assert.ok(nativeInputRecovery.length > 0, "the fix must be a new additive migration");
+  const claimSql = recoveryFunctionSql("mi_claim_naver_shopping_worker_lane");
+  assert.ok(claimSql.length > 0, "the additive migration must redefine only the lane claim RPC");
+
+  const exactAllowlist = /'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed'/giu;
+  assert.equal(
+    [...claimSql.matchAll(exactAllowlist)].length,
+    2,
+    "both the eligibility IF and guarded UPDATE must use the same exact allowlist",
+  );
+  assert.match(claimSql, /normalized_worker_role = 'primary'/iu);
+  assert.match(claimSql, /current_row\.transient_system_probe_attempts < 2/iu);
+  assert.match(claimSql, /circuit_opened_at <= v_now - interval '30 minutes'/iu);
+  assert.match(
+    claimSql,
+    /transient_system_probe_attempts = least\(2, current_row\.transient_system_probe_attempts \+ 1\)/iu,
+  );
+  for (const excluded of [
+    "native_host_input_failed",
+    "naver_http_418",
+    "naver_http_429",
+    "naver_captcha_detected",
+    "naver_auth_required",
+    "naver_verification_required",
+    "naver_network_restricted",
+    "local_worker_collection_failed",
+    "provider_partial_window",
+  ]) {
+    assert.doesNotMatch(claimSql, new RegExp(excluded, "iu"));
+  }
+
+  assert.match(claimSql, /security invoker/iu);
+  assert.match(claimSql, /set search_path = ''/iu);
+  assert.match(
+    nativeInputRecovery,
+    /revoke all on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)\s+from public, anon, authenticated, service_role/iu,
+  );
+  assert.match(
+    nativeInputRecovery,
+    /grant execute on function public\.mi_claim_naver_shopping_worker_lane\(text, text, uuid, integer, integer\)\s+to service_role/iu,
+  );
+  assert.doesNotMatch(nativeInputRecovery, /(?:alter table|create index|drop index|mi_release_naver_shopping_worker_lane|mi_record_naver_shopping_worker_success)/iu);
+});
 
 test("transient system recovery is primary-only, quiet and strictly bounded", () => {
   const claimSql = functionSql("mi_claim_naver_shopping_worker_lane");

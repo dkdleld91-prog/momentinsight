@@ -39,6 +39,9 @@ function findMigrationContaining(marker) {
 const normalizedKeywordOverflowMigration = findMigrationContaining(
   'worker_last_cycle_deferred_at',
 );
+const runtime110Migration = findMigrationContaining(
+  '-- Runtime 1.1.10',
+);
 
 function runtime119FunctionSql(name, nextName = null) {
   const start = runtime119Migration.indexOf(`create or replace function public.${name}`);
@@ -413,4 +416,36 @@ test('runtime 1.1.9 candidate cadence requires zero active lookup and tracker le
   ]) {
     assert.equal(candidateAllowed(lookupProcessing, trackerProcessing), expected);
   }
+});
+
+test('runtime 1.1.10 resets proof and preserves atomic, lease-free candidate gates', () => {
+  assert.ok(runtime110Migration, 'runtime 1.1.10 needs an additive identity migration');
+  assert.equal(
+    runtime110Migration.file,
+    '20260821180000_naver_shopping_runtime_1_1_10.sql',
+  );
+  const sql = runtime110Migration.source;
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.10'/iu);
+  assert.match(
+    sql,
+    /set cadence_mode = 'baseline',\s*cadence_minutes = 10,\s*stability_started_at = null,\s*success_streak = 0/iu,
+  );
+  assert.match(
+    sql,
+    /runtime_version is distinct from trim\(p_runtime_version\)[\s\S]*runtime_fingerprint is distinct from lower\(trim\(p_runtime_fingerprint\)\)[\s\S]*then 'baseline'[\s\S]*stability_started_at = case[\s\S]*then null[\s\S]*success_streak = case[\s\S]*then 0/iu,
+  );
+  assert.match(
+    sql,
+    /'candidate_eligible',[\s\S]*current_row\.circuit_state = 'closed'[\s\S]*and processing_count = 0[\s\S]*current_row\.runtime_version = '1\.1\.10'[\s\S]*last_checked_count = 300[\s\S]*last_source = 'naver_shopping_results_collector'/iu,
+  );
+  assert.match(
+    sql,
+    /eligible :=[\s\S]*current_row\.circuit_state = 'closed'[\s\S]*and processing_count = 0[\s\S]*current_row\.runtime_version = '1\.1\.10'[\s\S]*last_checked_count = 300[\s\S]*last_source = 'naver_shopping_results_collector'/iu,
+  );
+  assert.match(sql, /security invoker/iu);
+  assert.doesNotMatch(sql, /security definer/iu);
+  assert.match(
+    sql,
+    /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/iu,
+  );
 });

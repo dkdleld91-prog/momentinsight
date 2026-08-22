@@ -667,6 +667,12 @@
       "file": "supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql",
       "sha256": "a84469089807b3cd1cafb2fe6f9e30f14d02d98354302a34ae18e0890d3dbc5d",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-candidate-exact-identity-gate",
+      "file": "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
+      "sha256": "86541200cb9eaab4ea0b84e5614e5b332f56128e23e141cca938d15a0ae7ca56",
+      "rankMigration": true
     }
   ]
 }

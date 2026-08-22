@@ -534,12 +534,22 @@ test('runtime 1.1.11 candidate cadence is exact-identity and completely idle ins
     assert.match(predicate, /current_row\.lease_until is null/iu);
     assert.match(predicate, /current_row\.run_id is null/iu);
     assert.match(predicate, /current_row\.current_stage is null/iu);
+    assert.match(predicate, /current_row\.current_page = 0/iu);
     assert.match(predicate, /current_row\.current_job_kind is null/iu);
     assert.match(predicate, /current_row\.current_tracker_id is null/iu);
     assert.match(predicate, /current_row\.current_job_started_at is null/iu);
     assert.match(predicate, /current_row\.probe_started_at is null/iu);
     assert.match(predicate, /current_row\.probe_tracker_id is null/iu);
     assert.match(predicate, /current_row\.cooldown_until is null/iu);
+    assert.match(predicate, /current_row\.primary_worker_id = 'windows-desktop-primary'/iu);
+    assert.match(predicate, /current_row\.primary_seen_at > v_now - interval '3 minutes'/iu);
+    assert.match(predicate, /current_row\.cadence_mode = 'baseline'/iu);
+    assert.match(predicate, /current_row\.cadence_minutes = 10/iu);
+    assert.match(predicate, /current_row\.stability_started_at is not null/iu);
+    assert.match(predicate, /current_row\.stability_started_at <= v_now - interval '24 hours'/iu);
+    assert.match(predicate, /current_row\.success_streak >= 6/iu);
+    assert.match(predicate, /current_row\.last_success_at is not null/iu);
+    assert.match(predicate, /current_row\.last_success_at > v_now - interval '15 minutes'/iu);
     assert.match(predicate, /current_row\.runtime_version = '1\.1\.11'/iu);
     assert.match(
       predicate,
@@ -558,6 +568,8 @@ test('runtime 1.1.11 candidate cadence is exact-identity and completely idle ins
   assert.equal([...sql.matchAll(/security invoker/giu)].length, 2);
   assert.equal([...sql.matchAll(/set search_path = ''/giu)].length, 2);
   assert.doesNotMatch(sql, /security definer/iu);
+  assert.doesNotMatch(sql, /stability_started_at\s*=/iu, 'the gate migration must not reset the live 24-hour anchor');
+  assert.doesNotMatch(sql, /success_streak\s*=/iu, 'the gate migration must not reset the live atomic-success proof');
   for (const signature of [
     'mi_get_naver_shopping_worker_operations\\(\\)',
     'mi_set_naver_shopping_worker_cadence\\(text\\)',
@@ -572,15 +584,26 @@ test('runtime 1.1.11 candidate cadence is exact-identity and completely idle ins
     );
   }
 
-  const candidateAllowed = ({ fingerprint, runId = null, leaseWorkerId = null, cooldownUntil = null }) => (
+  const candidateAllowed = ({
+    fingerprint,
+    runId = null,
+    leaseWorkerId = null,
+    cooldownUntil = null,
+    primarySeenAt = Date.now(),
+    cadenceMode = 'baseline',
+  }) => (
     fingerprint === expectedFingerprint
     && runId === null
     && leaseWorkerId === null
     && cooldownUntil === null
+    && primarySeenAt > Date.now() - 3 * 60_000
+    && cadenceMode === 'baseline'
   );
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint }), true);
   assert.equal(candidateAllowed({ fingerprint: 'f'.repeat(64) }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, runId: 'stale-run' }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, leaseWorkerId: 'stale-worker' }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cooldownUntil: 'expired-but-uncleared' }), false);
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, primarySeenAt: Date.now() - 3 * 60_000 - 1 }), false);
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cadenceMode: 'candidate' }), false);
 });

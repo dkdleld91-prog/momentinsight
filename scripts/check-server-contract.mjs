@@ -66,6 +66,7 @@ const files = {
   shoppingWorkerRuntime119Migration: "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
   shoppingWorkerRuntime110Migration: "supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql",
   shoppingWorkerRuntime111Migration: "supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql",
+  shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
   shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
@@ -161,6 +162,7 @@ const shoppingWorkerRuntime118Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime119Migration = fs.readFileSync(files.shoppingWorkerRuntime119Migration, "utf8");
 const shoppingWorkerRuntime110Migration = fs.readFileSync(files.shoppingWorkerRuntime110Migration, "utf8");
 const shoppingWorkerRuntime111Migration = fs.readFileSync(files.shoppingWorkerRuntime111Migration, "utf8");
+const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
 const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
@@ -985,6 +987,60 @@ check(
     && shoppingWorkerRuntime111Migration.replaceAll("1.1.11", "1.1.10") === shoppingWorkerRuntime110Migration
     && !/security definer/.test(shoppingWorkerRuntime111Migration),
   files.shoppingWorkerRuntime111Migration,
+);
+check(
+  "N Shopping candidate cadence requires the exact runtime identity and a completely idle lane",
+  hasAll(shoppingWorkerCandidateExactIdentityMigration, [
+    /-- Runtime 1\.1\.11 exact candidate gate/,
+    /create or replace function public\.mi_get_naver_shopping_worker_operations\(\)/,
+    /create or replace function public\.mi_set_naver_shopping_worker_cadence\(/,
+    /current_row\.circuit_state = 'closed'/,
+    /current_row\.circuit_reason is null/,
+    /processing_count = 0/,
+    /current_row\.lease_worker_id is null/,
+    /current_row\.lease_token is null/,
+    /current_row\.lease_until is null/,
+    /current_row\.run_id is null/,
+    /current_row\.current_stage is null/,
+    /current_row\.current_page = 0/,
+    /current_row\.current_job_kind is null/,
+    /current_row\.current_tracker_id is null/,
+    /current_row\.current_job_started_at is null/,
+    /current_row\.probe_started_at is null/,
+    /current_row\.probe_tracker_id is null/,
+    /current_row\.cooldown_until is null/,
+    /current_row\.primary_worker_id = 'windows-desktop-primary'/,
+    /current_row\.primary_seen_at > v_now - interval '3 minutes'/,
+    /current_row\.cadence_mode = 'baseline'/,
+    /current_row\.cadence_minutes = 10/,
+    /current_row\.stability_started_at is not null/,
+    /current_row\.stability_started_at <= v_now - interval '24 hours'/,
+    /current_row\.success_streak >= 6/,
+    /current_row\.last_success_at is not null/,
+    /current_row\.last_success_at > v_now - interval '15 minutes'/,
+    /current_row\.runtime_version = '1\.1\.11'/,
+    /current_row\.runtime_fingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00'/,
+    /current_row\.last_collection_id ~ '\^pw-chrome-'/,
+    /current_row\.last_checked_count = 300/,
+    /current_row\.last_source = 'naver_shopping_results_collector'/,
+    /where lane_key = 'global'\s+for update;[\s\S]+into processing_count;[\s\S]+eligible :=/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/set search_path = ''/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/runtime_fingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00'/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/primary_worker_id = 'windows-desktop-primary'/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/primary_seen_at > v_now - interval '3 minutes'/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cadence_mode = 'baseline'/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cadence_minutes = 10/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_success_at is not null/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_success_at > v_now - interval '15 minutes'/g) || []).length === 2
+    && !/stability_started_at\s*=/.test(shoppingWorkerCandidateExactIdentityMigration)
+    && !/success_streak\s*=/.test(shoppingWorkerCandidateExactIdentityMigration)
+    && !/security definer/.test(shoppingWorkerCandidateExactIdentityMigration),
+  files.shoppingWorkerCandidateExactIdentityMigration,
 );
 check(
   "N Shopping ledger stores only the verified stable proof protocol version",

@@ -204,6 +204,7 @@ const shoppingWorkerRuntime118Migration = read("supabase/migrations/202608150141
 const shoppingWorkerRuntime119Migration = read("supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql");
 const shoppingWorkerRuntime110Migration = read("supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql");
 const shoppingWorkerRuntime111Migration = read("supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql");
+const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
@@ -1833,6 +1834,45 @@ const checks = {
         && source.includes('data-rank-worker-state')
         && source.includes('네이버 쇼핑 접속 제한으로 일시정지했습니다.')
         && source.includes('기존 정상 순위와 30일 기록은 유지합니다.')),
+  shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.11 exact candidate gate")
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/set search_path = ''/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/runtime_fingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.circuit_state = 'closed'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.circuit_reason is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/processing_count = 0/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.lease_worker_id is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.lease_token is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.lease_until is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.run_id is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.current_stage is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.current_page = 0/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.current_job_kind is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.current_tracker_id is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.current_job_started_at is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.probe_started_at is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.probe_tracker_id is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cooldown_until is null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.primary_worker_id = 'windows-desktop-primary'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.primary_seen_at > v_now - interval '3 minutes'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cadence_mode = 'baseline'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cadence_minutes = 10/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.stability_started_at is not null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.stability_started_at <= v_now - interval '24 hours'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.success_streak >= 6/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_success_at is not null/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_success_at > v_now - interval '15 minutes'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.runtime_version = '1\.1\.11'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_collection_id ~ '\^pw-chrome-'/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_checked_count = 300/gu) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.last_source = 'naver_shopping_results_collector'/gu) || []).length === 2
+    && /where lane_key = 'global'\s*for update;[\s\S]*into processing_count;[\s\S]*eligible :=/u.test(shoppingWorkerCandidateExactIdentityMigration)
+    && shoppingWorkerCandidateExactIdentityMigration.includes("from public, anon, authenticated, service_role")
+    && shoppingWorkerCandidateExactIdentityMigration.includes("to service_role")
+    && !/stability_started_at\s*=/u.test(shoppingWorkerCandidateExactIdentityMigration)
+    && !/success_streak\s*=/u.test(shoppingWorkerCandidateExactIdentityMigration)
+    && !shoppingWorkerCandidateExactIdentityMigration.includes("security definer"),
   shoppingWorkerFailureBoundariesStayScopedAndBounded: shoppingLocalWorkerContract.includes("LOCAL_WORKER_BODY_MAX_BYTES = 4 * 1024 * 1024")
     && shoppingLocalWorkerContract.includes("LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000")
     && shoppingLocalWorkerAuth.includes("LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS = 5 * 60")

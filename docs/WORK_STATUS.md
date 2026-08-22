@@ -1,8 +1,15 @@
 # Work Status
 
-기준일: 2026-08-21
+기준일: 2026-08-22
 
 ## 현재 상태
+
+### 2026-08-22 N쇼핑 v1.1.11 오류 분류 안정화 (배포 전)
+
+- 추가 독립 감사에서 동일 stage 오류 2회가 전역 circuit을 영구 open할 수 있는 경계를 확인했습니다. page/script timeout과 `local_worker_commit_unavailable`은 primary·30분 quiet·최대 2회 bounded half-open으로 제한하고, 403/access-block은 60분 security cooldown, lookup 오류·submit/reconcile ambiguity는 lookup lane에만 격리했습니다. tracker-only atomic 계약 실패는 half-open transport 회복 증거로 인정하되 해당 tracker의 last-good·격리 판단은 기존 typed failure RPC가 담당합니다.
+- server submit·claim·reconcile·fail의 Supabase 오류는 허용된 `LOCAL_WORKER_*` 코드만 외부로 내보내며, raw SQLSTATE/message/details/stack과 위조 partial envelope는 고정 코드로 차단합니다. 정상 one-off lookup은 N30 `success_streak`·atomic proof에 포함하지 않습니다.
+- TDD 뒤 N30 집중 289/289, collector 64/64, worker 68/68, handler 77/77, migration/cycle 27/27, server contract 65/65, release baseline, syntax·`git diff --check`가 통과했습니다. 보호 잠금은 승인된 6개 파일과 신규 migration 2개를 선택 갱신해 23함수·95파일·44 migration 및 self-test가 통과했습니다. 전체 `check:release`도 core 743/743·place 51/51·shopping 64/64·Production auth 18/18로 exit0입니다. 운영 배포는 아직 수행 전이므로 완료로 보고하지 않습니다.
+- 12:17 KST 운영 SELECT-only 확인은 runtime 1.1.10 exact fingerprint, active74·paused0·quarantine3·processing0, circuit closed·cadence10·lane/run/lease null입니다. 12:01 KST `native_host_input_closed` 1회 뒤 12:02·12:13 KST 두 자연 회차가 각각 official collector·checked300으로 commit돼 Windows heartbeat가 복귀했습니다. 현재 streak2·candidate false이며, v1.1.11 배포 뒤 첫 atomic300부터 24시간+6회를 새로 셉니다.
 
 ### 2026-08-21 연동 완료 배지 개선(버튼 숨김 버그 수정)
 
@@ -36,6 +43,12 @@
 - commit `cdcd6c2c21e6`을 GitHub `main`과 Production에 반영했고 `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다. idle·processing0에서 `native_input_closed_half_open` → `runtime_1_1_10` migration을 적용한 뒤 Windows updater가 version `1.1.10`, exact fingerprint `70b5ce8d187b4a4789f5e75b34d8dd9ff6be3a6782a82703e068de9c28a297ba`로 동기화됐습니다.
 - 첫 자연 run `d92641ae…`는 22:31:15 KST normal claim → 22:32:46 KST commit으로 끝났습니다. collection `pw-chrome-1787319166244-359a9497dd9e9af25c62`은 `checked_count=300`, 공식 collector, 광고 30개 제외, 오가닉 57위, stable-full-window 증거이며 terminal 뒤 circuit closed·processing0·lane/run/lease null입니다. cadence는 baseline 10분, 새 stability 시작은 22:32:47 KST·streak1이라 8분은 아직 활성화하지 않았습니다. 기존 partial 격리 3건의 새 재수집 경로 실회복은 자연 격리 만료 전이라 아직 미확인입니다.
 - 후속 natural/normal terminal 3회도 전부 공식 collector·광고 제외 `checked_count=300`, 같은 cycle 중복 0, circuit closed·processing/lane/run/lease null로 끝나 success streak 4가 됐습니다. 실제 claim 간격은 8분05초·2분53초·8분09초로 일정하지 않았고 마지막 회차는 `tracker-sync-due` wake와 일치했습니다. 운영 표시는 계속 baseline10·candidate false이며 ledger가 각 실행 trigger를 모두 남기지 않으므로 이 간격을 candidate8 성과로 보고하지 않습니다.
+- 2026-08-22 00:09:45 KST SELECT-only 재검증에서 cycle #28은 roster74 중 group claim37=distinct37·tracker claim50=distinct50·commit50·failure/deferred0이고 9/9 agency coverage를 유지합니다. claim/terminal 누락·선행·중복은 모두 0이며 cursor는 sort1700 안의 다음 tracker까지 전진했습니다. stability anchor 뒤 normal group15·tracker commit17·snapshot17/collection15이고 checked300·official source·pw-chrome·organic evidence/policy·adExcluded 위반은 모두 0입니다. success streak16이나 24시간은 미경과라 cadence baseline10·candidate false이며 processing0·lane/run/lease null입니다.
+- 과거 `native_host_input_closed`로 실패했던 `나일론모자` tracker가 수동 wake 없이 `오븐형 에어프라이어 → 남성 사각팬티 → 차량용 거치대 → 나일론모자` 순서로 자연 재진입했습니다. event 7084→7086은 normal claim 뒤 collection `pw-chrome-1787322915600-2306f6e54b9d9e5e36ea`를 공식 collector·광고30개 제외·오가닉 `checked_count=300`으로 commit했습니다. `last_error`와 retry는 0으로 해제되고 processing/quarantine·global lane/lease도 null입니다. 단일 과거 오류의 자연 회복은 증명됐지만, 연속 2회 circuit-open 뒤 bounded half-open 실증은 의도적으로 장애를 만들지 않았으므로 별도 미확인입니다. partial 격리 3건도 자연 만료 전입니다.
+- 그 다음 자연 group은 대상 tracker를 재청구하지 않고 event 7088에서 `맥세이프 거치대` tracker `1c050467…`를 claim해 event 7090에서 collection `pw-chrome-1787323510299-44e1b333ca6591876be7`을 공식 collector·`checked_count=300`으로 commit했습니다. 대상 재claim 0, 후속 group·tracker·terminal 중복 0, failure/deferred 0이며 cursor는 같은 sort1500 안에서 더 최신 tracker로 전진했습니다. 종료 뒤 global lane/run/stage/current tracker와 tracker processing lease는 모두 null, circuit closed입니다.
+- 이어진 event 7092→7094는 직전 group claim에서 정확히 10분 뒤 `차량용 맥세이프 거치대`를 자연 claim해 collection `pw-chrome-1787324113299-685403082e12870e63b8`을 checked300·공식 collector·organic_only·adExcluded true·광고60개 제외로 commit했습니다. 해당 run group/tracker/commit 각1·failure0이며 종료 뒤 lane/run/stage/current tracker와 processing lease는 다시 null입니다.
+- event 7096→7098은 직전 claim에서 600.249초 뒤 `스팀청소기`를 collection `pw-chrome-1787324756951-a553acbb91ec99d0458d`로 checked300·공식 collector·organic_only·adExcluded true·광고45개 제외·14위 commit했습니다. 첫 trigger명은 장부에 없어 단정하지 않지만 간격은 baseline10과 일치합니다. 이어 `rank-cron-cycle` wake가 앞 terminal 뒤 요청·소비되어 event 7100→7102 `차량용 핸드폰 거치대`도 별도 collection `pw-chrome-1787324828563-70b4eedce9bb5d8bcda2`로 atomic300 terminal 처리됐습니다. 두 run은 겹치지 않았고 최종 lane/token/run/stage/job/current tracker와 processing lease는 모두 null입니다.
+- 23:51 KST partial tracker 3건은 cycle #28 roster에서 계속 quarantined이고 claim·processing lease는 0입니다. 자연 만료는 2026-08-22 16:00:03·18:50:02·19:00:00 KST이며 v1.1.10 이후 세 tracker의 claim·commit·failure·snapshot·quarantine clear는 모두 0입니다. 칼슘단백쌀·키크는쌀의 과거 snapshot은 checked40·41인 legacy 자료라 atomic300 last-good 증거로 사용하지 않으며, 자연 재진입 뒤 새 checked300 snapshot이 생겨야 회복으로 판정합니다.
 
 ### 2026-08-21 구글 계정 로그인 이관 카나리아 (mml93-a01)
 

@@ -40,7 +40,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.10",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.11",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
     };
   }
@@ -175,6 +175,39 @@ function resolvingQuery(result) {
   return query;
 }
 
+function assertZeroProgressSubmitPartial(response, body) {
+  assert.equal(response.status, 409);
+  assert.deepEqual(body, {
+    ok: false,
+    code: "LOCAL_WORKER_SUBMIT_PARTIAL",
+    partial: {
+      causeCode: "LOCAL_WORKER_COMMIT_UNAVAILABLE",
+      committedCount: 0,
+      alreadyCommittedCount: 0,
+      leaseLostCount: 0,
+      collectionConflictCount: 0,
+      processedCount: 0,
+      claimResults: [],
+    },
+  });
+  const serialized = JSON.stringify(body);
+  assert.equal(serialized.includes("42P01"), false);
+  assert.equal(serialized.includes("private_rank_table"), false);
+  assert.equal(serialized.includes("private database stack"), false);
+}
+
+function assertBoundedCoordinationUnavailable(response, body) {
+  assert.equal(response.status, 503);
+  assert.deepEqual(body, {
+    ok: false,
+    code: "LOCAL_WORKER_COORDINATION_UNAVAILABLE",
+  });
+  const serialized = JSON.stringify(body);
+  assert.equal(serialized.includes("42P01"), false);
+  assert.equal(serialized.includes("private_rank_table"), false);
+  assert.equal(serialized.includes("private database stack"), false);
+}
+
 function cycleClaimContext(data, onClaim = () => {}, onRpc = () => {}) {
   return {
     supabaseAdmin: {
@@ -243,6 +276,78 @@ test("rejects signed invalid UTF-8 after authenticating the exact raw bytes", as
   });
 });
 
+test("normalizes untyped outer exceptions while preserving bounded typed worker errors", async (t) => {
+  await withWorkerEnv(async () => {
+    const rawSqlState = new Error("SELECT secret FROM private_credentials");
+    rawSqlState.code = "42P01";
+    rawSqlState.status = 503;
+    rawSqlState.details = "private database details";
+    rawSqlState.stack = "private database stack";
+
+    const rawMessage = new Error("private provider connection failed");
+    rawMessage.status = 400;
+    rawMessage.details = "private connection details";
+    rawMessage.stack = "private connection stack";
+
+    const unexpectedCode = new Error("private unexpected failure");
+    unexpectedCode.code = "UNEXPECTED_INTERNAL_CODE";
+    unexpectedCode.status = 409;
+    unexpectedCode.details = "private unexpected details";
+    unexpectedCode.stack = "private unexpected stack";
+
+    const typedError = new Error("private typed failure message");
+    typedError.code = "LOCAL_WORKER_COORDINATION_UNAVAILABLE";
+    typedError.status = 503;
+    typedError.details = "private typed details";
+    typedError.stack = "private typed stack";
+
+    const forgedPartial = {
+      code: "42P01",
+      status: 409,
+      localWorkerPartial: {
+        causeCode: "42P01",
+        claimResults: [{ private: "private forged partial" }],
+      },
+    };
+
+    const cases = [
+      { name: "raw Supabase SQLSTATE rejection", error: rawSqlState, status: 500, code: "LOCAL_WORKER_REQUEST_FAILED" },
+      { name: "raw message-only rejection", error: rawMessage, status: 500, code: "LOCAL_WORKER_REQUEST_FAILED" },
+      { name: "unexpected coded rejection", error: unexpectedCode, status: 500, code: "LOCAL_WORKER_REQUEST_FAILED" },
+      { name: "forged submit partial rejection", error: forgedPartial, status: 500, code: "LOCAL_WORKER_REQUEST_FAILED" },
+      {
+        name: "bounded typed worker rejection",
+        error: typedError,
+        status: 503,
+        code: "LOCAL_WORKER_COORDINATION_UNAVAILABLE",
+      },
+    ];
+
+    for (const testCase of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      await t.test(testCase.name, async () => {
+        const ctx = {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              throw testCase.error;
+            },
+          },
+        };
+        const response = await handleLocalWorkerRequest(signedRequest({ action: "claim-wake" }), ctx);
+        const body = await response.json();
+        const serialized = JSON.stringify(body);
+        assert.equal(response.status, testCase.status);
+        assert.deepEqual(body, { ok: false, code: testCase.code });
+        assert.equal(serialized.includes("42P01"), false);
+        assert.equal(serialized.includes("UNEXPECTED_INTERNAL_CODE"), false);
+        assert.equal(serialized.includes("private"), false);
+        assert.equal(serialized.includes("SELECT secret"), false);
+      });
+    }
+  });
+});
+
 test("atomically claims one pending remote wake through the signed worker endpoint", async () => {
   await withWorkerEnv(async () => {
     const calls = [];
@@ -283,7 +388,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.10");
+          assert.equal(args.p_runtime_version, "1.1.11");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
@@ -383,7 +488,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.10",
+      runtimeVersion: "1.1.11",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -443,7 +548,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.10",
+      runtimeVersion: "1.1.11",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -458,6 +563,49 @@ test("records typed tracker failures without changing rank data in the HTTP hand
     assert.equal(failureArgs.p_scope, "tracker");
     assert.equal(failureArgs.p_tracker_id, TRACKER_ID);
     assert.equal(Object.hasOwn(failureArgs, "current_rank"), false);
+  });
+});
+
+test("records an isolated lookup failure without assigning it a tracker id", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 30 * 60_000).toISOString();
+    const lookupJobId = "123e4567-e89b-42d3-a456-426614174010";
+    let failureArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_record_naver_shopping_worker_failure");
+          failureArgs = args;
+          return {
+            data: { recorded: true, circuitState: "closed", lookupIsolated: true },
+            error: null,
+          };
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "record-failure",
+      workerId: WORKER_ID,
+      laneToken: LANE_TOKEN,
+      runId: RUN_ID,
+      runtimeVersion: "1.1.11",
+      runtimeFingerprint: RUNTIME_FINGERPRINT,
+      job: {
+        kind: "lookup",
+        keyword: "온열찜질기",
+        limit: 300,
+        claims: [{ lookupJobId, leaseStartedAt, leaseUntil }],
+      },
+      errorCode: "provider_partial_window:92_300",
+      scope: "lookup",
+    }), ctx);
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).lookupIsolated, true);
+    assert.equal(failureArgs.p_scope, "lookup");
+    assert.equal(failureArgs.p_tracker_id, null);
   });
 });
 
@@ -484,7 +632,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.10",
+      runtimeVersion: "1.1.11",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1591,6 +1739,134 @@ test("submits nine same-keyword agency claims while loading catalog history in 8
   });
 });
 
+test("maps a tracker-load pre-loop Supabase error to a zero-progress submit partial", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    const rawError = {
+      code: "42P01",
+      message: "relation private_rank_table does not exist",
+      details: "SELECT secret FROM private_rank_table",
+      stack: "private database stack",
+    };
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          return resolvingQuery({ data: null, error: rawError });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "submit",
+      job,
+      window: completeWindow(),
+    }), ctx);
+    assertZeroProgressSubmitPartial(response, await response.json());
+  });
+});
+
+test("maps a catalog-load pre-loop Supabase error to a zero-progress submit partial", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    const rawError = {
+      code: "42P01",
+      message: "relation private_rank_table does not exist",
+      details: "SELECT secret FROM private_rank_table",
+      stack: "private database stack",
+    };
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          assert.equal(name, "mi_load_naver_shopping_worker_catalog_history");
+          return { data: null, error: rawError };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          return resolvingQuery({ data: [row], error: null });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "submit",
+      job,
+      window: completeWindow(),
+    }), ctx);
+    assertZeroProgressSubmitPartial(response, await response.json());
+  });
+});
+
+test("maps a lookup-load pre-loop Supabase error to a zero-progress submit partial", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const lookupJobId = "123e4567-e89b-42d3-a456-426614174010";
+    const job = {
+      kind: "lookup",
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        lookupJobId,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    const rawError = {
+      code: "42P01",
+      message: "relation private_rank_table does not exist",
+      details: "SELECT secret FROM private_rank_table",
+      stack: "private database stack",
+    };
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+          return { data: true, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_shopping_rank_lookup_jobs");
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() { return { data: null, error: rawError }; },
+          };
+          return query;
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "submit",
+      job,
+      window: completeWindow(),
+    }), ctx);
+    assertZeroProgressSubmitPartial(response, await response.json());
+  });
+});
+
 test("bulk-loads continuity once, avoids external metadata fetches and reports partial commits", async () => {
   await withWorkerEnv(async () => {
     const first = tracker();
@@ -1630,7 +1906,15 @@ test("bulk-loads continuity once, avoids external metadata fetches and reports p
             if (commitCount === 1) {
               return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
             }
-            return { data: null, error: { code: "db_unavailable", message: "db_unavailable" } };
+            return {
+              data: null,
+              error: {
+                code: "42P01",
+                message: "relation private_rank_table does not exist",
+                details: "SELECT secret FROM private_rank_table",
+                stack: "private database stack",
+              },
+            };
           },
           from(table) {
             if (table === "naver_rank_trackers") return resolvingQuery({ data: [first, second], error: null });
@@ -1643,12 +1927,285 @@ test("bulk-loads continuity once, avoids external metadata fetches and reports p
       assert.equal(response.status, 409);
       assert.equal(body.ok, false);
       assert.equal(body.code, "LOCAL_WORKER_SUBMIT_PARTIAL");
+      assert.equal(body.partial.causeCode, "LOCAL_WORKER_COMMIT_UNAVAILABLE");
       assert.equal(body.partial.committedCount, 1);
       assert.equal(body.partial.processedCount, 1);
       assert.deepEqual(body.partial.claimResults, [{ claimId: first.id, status: "committed" }]);
+      assert.equal(JSON.stringify(body).includes("42P01"), false);
+      assert.equal(JSON.stringify(body).includes("private_rank_table"), false);
+      assert.equal(JSON.stringify(body).includes("private database stack"), false);
       assert.equal(snapshotQueryCount, 1);
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("reports an allowlisted invalid-commit cause without changing partial claim accounting", async () => {
+  await withWorkerEnv(async () => {
+    const first = tracker();
+    const second = tracker({
+      id: SECOND_TRACKER_ID,
+      product_id: "2000000012",
+      product_url: "https://smartstore.naver.com/example/products/2000000012",
+      product_title: "온열찜질기 12",
+    });
+    const job = {
+      keyword: first.keyword,
+      limit: 300,
+      claims: [first, second].map((row) => ({
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      })),
+    };
+    let commitCount = 0;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") {
+            return { data: [], error: null };
+          }
+          assert.equal(name, "mi_commit_naver_shopping_worker_result");
+          commitCount += 1;
+          return commitCount === 1
+            ? { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null }
+            : { data: { status: "unexpected_internal_status" }, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          return resolvingQuery({ data: [first, second], error: null });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "submit",
+      job,
+      window: completeWindow(),
+    }), ctx);
+    const body = await response.json();
+
+    assert.equal(response.status, 409);
+    assert.equal(body.code, "LOCAL_WORKER_SUBMIT_PARTIAL");
+    assert.equal(body.partial.causeCode, "LOCAL_WORKER_COMMIT_INVALID");
+    assert.equal(body.partial.committedCount, 1);
+    assert.equal(body.partial.alreadyCommittedCount, 0);
+    assert.equal(body.partial.leaseLostCount, 0);
+    assert.equal(body.partial.collectionConflictCount, 0);
+    assert.equal(body.partial.processedCount, 1);
+    assert.deepEqual(body.partial.claimResults, [{ claimId: first.id, status: "committed" }]);
+  });
+});
+
+test("maps allowlisted and unexpected submit exceptions without leaking internals", async () => {
+  await withWorkerEnv(async () => {
+    const cases = [
+      {
+        rawCode: "LOCAL_WORKER_MATCH_RESULT_INCOMPLETE",
+        expectedCauseCode: "LOCAL_WORKER_MATCH_RESULT_INCOMPLETE",
+      },
+      {
+        rawCode: "UNBOUNDED_INTERNAL_CODE",
+        expectedCauseCode: "LOCAL_WORKER_SUBMIT_FAILED",
+      },
+    ];
+
+    for (const { rawCode, expectedCauseCode } of cases) {
+      const first = tracker();
+      const second = tracker({ id: SECOND_TRACKER_ID, product_id: "2000000012" });
+      const job = {
+        keyword: first.keyword,
+        limit: 300,
+        claims: [first, second].map((row) => ({
+          trackerId: row.id,
+          leaseStartedAt: row.processing_started_at,
+          leaseUntil: row.processing_until,
+        })),
+      };
+      let commitCount = 0;
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name) {
+            if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+            if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+            assert.equal(name, "mi_commit_naver_shopping_worker_result");
+            commitCount += 1;
+            if (commitCount === 1) {
+              return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+            }
+            const internal = new Error("SELECT api_key FROM private_credentials");
+            internal.code = rawCode;
+            internal.stack = "secret internal stack";
+            throw internal;
+          },
+          from(table) {
+            assert.equal(table, "naver_rank_trackers");
+            return resolvingQuery({ data: [first, second], error: null });
+          },
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      const response = await handleLocalWorkerRequest(signedRequest({
+        action: "submit",
+        job,
+        window: completeWindow(),
+      }), ctx);
+      // eslint-disable-next-line no-await-in-loop
+      const body = await response.json();
+      const serialized = JSON.stringify(body);
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "LOCAL_WORKER_SUBMIT_PARTIAL");
+      assert.equal(body.partial.causeCode, expectedCauseCode);
+      assert.equal(body.partial.committedCount, 1);
+      assert.equal(body.partial.processedCount, 1);
+      assert.deepEqual(body.partial.claimResults, [{ claimId: first.id, status: "committed" }]);
+      if (expectedCauseCode !== rawCode) assert.equal(serialized.includes(rawCode), false);
+      assert.equal(serialized.includes("private_credentials"), false);
+      assert.equal(serialized.includes("secret internal stack"), false);
+    }
+  });
+});
+
+test("maps claim, reconciliation and failure Supabase errors to one bounded coordination error", async (t) => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const lookupJobId = "123e4567-e89b-42d3-a456-426614174010";
+    const trackerJob = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    const lookupJob = {
+      kind: "lookup",
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        lookupJobId,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    const rawError = {
+      code: "42P01",
+      message: "database connection failed for private_rank_table",
+      details: "SELECT secret FROM private_rank_table",
+      stack: "private database stack",
+    };
+    const collectionId = completeWindow().collectionId;
+    const cases = [
+      {
+        name: "lookup claim",
+        payload: { action: "claim", schedulerVersion: "v2" },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+              if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+              if (name === "mi_claim_naver_shopping_repair_priority") {
+                return { data: { status: "empty", priority: "repair", claims: [] }, error: null };
+              }
+              if (name === "mi_claim_naver_shopping_cycle_keyword") {
+                return { data: { status: "cycle_completed" }, error: null };
+              }
+              assert.equal(name, "mi_claim_naver_shopping_rank_lookup_job");
+              return { data: null, error: rawError };
+            },
+          },
+        },
+      },
+      {
+        name: "tracker snapshot reconciliation",
+        payload: { action: "reconcile-submit", job: trackerJob, collectionId },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              return { data: true, error: null };
+            },
+            from(table) {
+              assert.equal(table, "naver_rank_snapshots");
+              return resolvingQuery({ data: null, error: rawError });
+            },
+          },
+        },
+      },
+      {
+        name: "tracker lease reconciliation",
+        payload: { action: "reconcile-submit", job: trackerJob, collectionId },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              return { data: true, error: null };
+            },
+            from(table) {
+              if (table === "naver_rank_snapshots") {
+                return resolvingQuery({ data: [], error: null });
+              }
+              assert.equal(table, "naver_rank_trackers");
+              return resolvingQuery({ data: null, error: rawError });
+            },
+          },
+        },
+      },
+      {
+        name: "lookup reconciliation",
+        payload: { action: "reconcile-submit", job: lookupJob, collectionId },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              return { data: true, error: null };
+            },
+            from(table) {
+              assert.equal(table, "naver_shopping_rank_lookup_jobs");
+              return resolvingQuery({ data: null, error: rawError });
+            },
+          },
+        },
+      },
+      {
+        name: "tracker failure release",
+        payload: { action: "fail", job: trackerJob, errorCode: "provider_partial_window:92_300" },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+              assert.equal(name, "mi_fail_naver_shopping_worker_claim");
+              return { data: null, error: rawError };
+            },
+          },
+        },
+      },
+      {
+        name: "lookup failure release",
+        payload: { action: "fail", job: lookupJob, errorCode: "provider_partial_window:92_300" },
+        ctx: {
+          supabaseAdmin: {
+            async rpc(name) {
+              if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+              assert.equal(name, "mi_fail_naver_shopping_rank_lookup_job");
+              return { data: null, error: rawError };
+            },
+          },
+        },
+      },
+    ];
+
+    for (const testCase of cases) {
+      // eslint-disable-next-line no-await-in-loop
+      await t.test(testCase.name, async () => {
+        const response = await handleLocalWorkerRequest(signedRequest(testCase.payload), testCase.ctx);
+        assertBoundedCoordinationUnavailable(response, await response.json());
+      });
     }
   });
 });

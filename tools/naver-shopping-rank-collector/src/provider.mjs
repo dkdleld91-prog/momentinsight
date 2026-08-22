@@ -886,6 +886,7 @@ export function classifyNaverPage({
 } = {}) {
   if (Number(status) === 418) throw new ProviderError("naver_http_418");
   if (Number(status) === 429) throw new ProviderError("naver_http_429");
+  if (Number(status) === 403) throw new ProviderError("naver_http_403");
   if (Number(status) >= 400) throw new ProviderError("naver_http_error", String(status));
   let parsed;
   try {
@@ -1462,7 +1463,8 @@ export function createPlaywrightProvider(options = {}) {
     readinessReason = error?.code || error?.message || "startup_canary_failed";
     const code = String(error?.code || "");
     if (
-      code === "naver_http_418"
+      code === "naver_http_403"
+      || code === "naver_http_418"
       || code === "naver_http_429"
       || code === "naver_captcha_detected"
       || code === "naver_access_blocked"

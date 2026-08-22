@@ -42,6 +42,9 @@ const normalizedKeywordOverflowMigration = findMigrationContaining(
 const runtime110Migration = findMigrationContaining(
   '-- Runtime 1.1.10',
 );
+const runtime111Migration = findMigrationContaining(
+  '-- Runtime 1.1.11',
+);
 
 function runtime119FunctionSql(name, nextName = null) {
   const start = runtime119Migration.indexOf(`create or replace function public.${name}`);
@@ -448,4 +451,52 @@ test('runtime 1.1.10 resets proof and preserves atomic, lease-free candidate gat
     sql,
     /revoke all on function public\.mi_report_naver_shopping_worker_progress[\s\S]*from public, anon, authenticated, service_role;[\s\S]*grant execute[\s\S]*to service_role;/iu,
   );
+});
+
+test('runtime 1.1.11 exactly preserves the 1.1.10 atomic, processing-zero, identity-reset contract', () => {
+  assert.ok(runtime111Migration, 'runtime 1.1.11 needs an additive identity migration');
+  assert.equal(
+    runtime111Migration.file,
+    '20260821180002_naver_shopping_runtime_1_1_11.sql',
+  );
+  const sql = runtime111Migration.source;
+  assert.equal(
+    sql.replaceAll('1.1.11', '1.1.10'),
+    runtime110Migration.source,
+    '1.1.11 may change only the exact accepted runtime identity',
+  );
+  assert.match(sql, /trim\(coalesce\(p_runtime_version, ''\)\) <> '1\.1\.11'/iu);
+  assert.match(
+    sql,
+    /set cadence_mode = 'baseline',\s*cadence_minutes = 10,\s*stability_started_at = null,\s*success_streak = 0/iu,
+  );
+  assert.match(
+    sql,
+    /runtime_version is distinct from trim\(p_runtime_version\)[\s\S]*runtime_fingerprint is distinct from lower\(trim\(p_runtime_fingerprint\)\)[\s\S]*then 'baseline'[\s\S]*stability_started_at = case[\s\S]*then null[\s\S]*success_streak = case[\s\S]*then 0/iu,
+  );
+  assert.match(
+    sql,
+    /'candidate_eligible',[\s\S]*current_row\.circuit_state = 'closed'[\s\S]*and processing_count = 0[\s\S]*current_row\.runtime_version = '1\.1\.11'[\s\S]*last_collection_id ~ '\^pw-chrome-'[\s\S]*last_checked_count = 300[\s\S]*last_source = 'naver_shopping_results_collector'/iu,
+  );
+  assert.match(
+    sql,
+    /eligible :=[\s\S]*current_row\.circuit_state = 'closed'[\s\S]*and processing_count = 0[\s\S]*lease_until is null or current_row\.lease_until <= v_now[\s\S]*cooldown_until is null or current_row\.cooldown_until <= v_now[\s\S]*current_row\.runtime_version = '1\.1\.11'[\s\S]*last_collection_id ~ '\^pw-chrome-'[\s\S]*last_checked_count = 300[\s\S]*last_source = 'naver_shopping_results_collector'/iu,
+  );
+  assert.equal([...sql.matchAll(/security invoker/giu)].length, 3);
+  assert.equal([...sql.matchAll(/set search_path = ''/giu)].length, 3);
+  assert.doesNotMatch(sql, /security definer/iu);
+  for (const signature of [
+    'mi_report_naver_shopping_worker_progress\\(text, uuid, uuid, text, integer, text, uuid, text, text\\)',
+    'mi_get_naver_shopping_worker_operations\\(\\)',
+    'mi_set_naver_shopping_worker_cadence\\(text\\)',
+  ]) {
+    assert.match(
+      sql,
+      new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role`, 'iu'),
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`, 'iu'),
+    );
+  }
 });

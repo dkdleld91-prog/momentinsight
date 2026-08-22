@@ -7,9 +7,10 @@
 
 - 이번 사용자 요청은 N쇼핑 30일 순환의 잔여 자동 중단·중복 수집·부분 제출 경계를 최소 수정하고, 기존에 구현만 하고 보류했던 5차 cadence 후보를 현재 10분에서 8분으로 안전 승격하는 명시적 예외다.
 - 5차는 병렬화가 아니다. Windows `maxJobs=1`, 단일 global lane, 네이버 1~8페이지 직접 수집, 페이지당 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, 부분 미저장·last-good, durable cycle 순서와 신규 1회 우선 후 cursor 복귀를 그대로 유지한다.
-- candidate 승격은 exact runtime `1.1.9`·정확한 fingerprint·circuit closed·cooldown/lane/processing 없음·최근 `pw-chrome` 원자 300·연속 성공 6회 이상·안정 운영 24시간을 모두 충족한 뒤 canonical cadence RPC로만 수행한다. 실패 시 자동 baseline 10분 복귀와 안정 시간·연속 성공 초기화를 유지하며, gate를 우회하거나 cursor·격리·wake를 임의 조작하지 않는다.
+- candidate 승격은 현재 배포 runtime `1.1.11`·정확한 fingerprint·circuit closed·cooldown/lane/processing 없음·최근 `pw-chrome` 원자 300·연속 성공 6회 이상·안정 운영 24시간을 모두 충족한 뒤 canonical cadence RPC로만 수행한다. runtime 바이트가 바뀌면 이전 proof를 상속하지 않고 첫 새 runtime 원자 성공부터 다시 센다. 실패 시 자동 baseline 10분 복귀와 안정 시간·연속 성공 초기화를 유지하며, gate를 우회하거나 cursor·격리·wake를 임의 조작하지 않는다.
 - 2026-08-21 13:12 KST 운영 기준 실제 처리량은 시간당 8.75~8.77 keyword group, 평균 58.11초·p90 86.90초이고 원자 위반·same-cycle 중복·paused·processing은 0이었다. 안정 시작은 2026-08-20 16:03:51 KST라 24시간 전에는 `candidate_eligible=false`이며 강제 활성화하지 않는다.
 - 안정화는 같은 normalized keyword 100개 초과, 응답 단절을 동반한 부분 commit, 비-navigation system 오류의 circuit 자동 복귀, 8분 알람 중첩·재시작 stale cadence를 포함해 fail-closed·유한 복구·순서 보존으로 검증한다. 확인되지 않은 경계를 정상이라고 보고하지 않는다.
+- page timeout·native input close·commit unavailable은 exact allowlist의 primary-only·30분 quiet·최대2회 half-open만 허용한다. 403/access restriction은 security cooldown, lookup submit/reconcile 실패는 lookup lane으로 분리하며 one-off lookup을 N30 성공 proof로 세지 않는다. raw DB 오류와 임의 partial envelope는 외부 응답에 노출하지 않는다.
 - RED→GREEN 대상 회귀, 전체 release·보호 잠금, Production release, 자연 cadence 전환 뒤 여러 건의 원자 300·중복 0·lane/lease 해제와 실패 시 10분 자동 복귀 증거를 확인한 뒤에만 완료로 기록한다.
 
 ## 2026-08-21 N쇼핑 30일 추적 비활성 재발 방지 계약
@@ -368,9 +369,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 21. 14:08:36
-- 기준 커밋: 97e52d8
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NAVER_SHOPPING_WINDOWS_SETUP.md /  M package.json /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-durable-cycle-migration.test.mjs /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-local-worker.test.mjs
+- 마지막 자동 저장: 2026. 08. 22. 12:19:47
+- 기준 커밋: 5f2158a
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NAVER_SHOPPING_WINDOWS_SETUP.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-durable-cycle-migration.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

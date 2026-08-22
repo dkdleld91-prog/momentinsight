@@ -203,6 +203,7 @@ const shoppingWorkerRuntime117Migration = read("supabase/migrations/202608141735
 const shoppingWorkerRuntime118Migration = read("supabase/migrations/20260815014135_naver_shopping_runtime_1_1_8.sql");
 const shoppingWorkerRuntime119Migration = read("supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql");
 const shoppingWorkerRuntime110Migration = read("supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql");
+const shoppingWorkerRuntime111Migration = read("supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql");
 const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
@@ -210,6 +211,10 @@ const shoppingAutoNavigationTrackerFailureRecoveryMigration = read("supabase/mig
 const shoppingProbeIncompleteAutoRecoveryMigration = read("supabase/migrations/20260819022043_naver_shopping_probe_incomplete_auto_recovery.sql");
 const shoppingTransientSystemRecoveryMigration = read("supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql");
 const shoppingNativeInputClosedHalfOpenMigration = read("supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql");
+const shoppingErrorTaxonomyHardeningMigration = read("supabase/migrations/20260821180001_naver_shopping_error_taxonomy_hardening.sql");
+const shoppingErrorTaxonomyLookupBranch = shoppingErrorTaxonomyHardeningMigration.match(
+  /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/u,
+)?.[0] || "";
 const shoppingTransientSystemRecoveryTests = read("scripts/naver-shopping-transient-system-recovery-migration.test.mjs");
 const shoppingDuplicateQuarantineMigration = read("supabase/migrations/20260813144700_naver_shopping_duplicate_quarantine_cap.sql");
 const shoppingNativeHost = read("scripts/naver-shopping-native-host.mjs");
@@ -1507,7 +1512,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.10"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.11"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1519,9 +1524,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.10";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.10";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.10";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.11";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.11";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.11";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -1671,6 +1676,22 @@ const checks = {
     && !shoppingWorkerRuntime110Migration.includes("security definer")
     && shoppingWorkerRuntime110Migration.includes("from public, anon, authenticated, service_role")
     && shoppingWorkerRuntime110Migration.includes("to service_role")
+    && shoppingWorkerRuntime111Migration.replaceAll("1.1.11", "1.1.10") === shoppingWorkerRuntime110Migration
+    && shoppingWorkerRuntime111Migration.includes("trim(coalesce(p_runtime_version, '')) <> '1.1.11'")
+    && shoppingWorkerRuntime111Migration.includes("current_row.runtime_version = '1.1.11'")
+    && shoppingWorkerRuntime111Migration.includes("last_collection_id ~ '^pw-chrome-'")
+    && shoppingWorkerRuntime111Migration.includes("last_checked_count = 300")
+    && shoppingWorkerRuntime111Migration.includes("last_source = 'naver_shopping_results_collector'")
+    && shoppingWorkerRuntime111Migration.includes("set cadence_mode = 'baseline',\n    cadence_minutes = 10,\n    stability_started_at = null,\n    success_streak = 0")
+    && shoppingWorkerRuntime111Migration.includes("runtime_version is distinct from trim(p_runtime_version)")
+    && shoppingWorkerRuntime111Migration.includes("runtime_fingerprint is distinct from lower(trim(p_runtime_fingerprint))")
+    && /'candidate_eligible',[\s\S]+current_row\.circuit_state = 'closed'[\s\S]+and processing_count = 0[\s\S]+current_row\.runtime_version = '1\.1\.11'/u.test(shoppingWorkerRuntime111Migration)
+    && /for update;[\s\S]+status = 'processing' and processing_until > v_now[\s\S]+status = 'active' and processing_until > v_now[\s\S]+into processing_count;[\s\S]+eligible :=[\s\S]+and processing_count = 0/u.test(shoppingWorkerRuntime111Migration)
+    && (shoppingWorkerRuntime111Migration.match(/security invoker/gu) || []).length === 3
+    && (shoppingWorkerRuntime111Migration.match(/set search_path = ''/gu) || []).length === 3
+    && !shoppingWorkerRuntime111Migration.includes("security definer")
+    && shoppingWorkerRuntime111Migration.includes("from public, anon, authenticated, service_role")
+    && shoppingWorkerRuntime111Migration.includes("to service_role")
     && shoppingStableProofLedgerMigration.includes("mi_audit_naver_shopping_snapshot_commit")
     && shoppingStableProofLedgerMigration.includes("crossPageProofVersion")
     && shoppingStableProofLedgerMigration.includes("stable-full-window-v1")
@@ -1742,6 +1763,42 @@ const checks = {
     && shoppingNativeInputClosedHalfOpenMigration.includes("from public, anon, authenticated, service_role")
     && shoppingNativeInputClosedHalfOpenMigration.includes("to service_role")
     && !/(?:update public\.naver_rank_trackers|next_check_at\s*=|worker_quarantined_until\s*=|scheduler_cycle_cursor_\w+\s*=|insert into public\.naver_shopping_worker_wakes)/iu.test(shoppingNativeInputClosedHalfOpenMigration)
+    && /transient_failure_code in \(\s*'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed',\s*'naver_page_timeout',\s*'naver_page_script_timeout',\s*'local_worker_commit_unavailable'\s*\)/u.test(shoppingErrorTaxonomyHardeningMigration)
+    && (shoppingErrorTaxonomyHardeningMigration.match(/'naver_page_timeout'/gu) || []).length === 2
+    && (shoppingErrorTaxonomyHardeningMigration.match(/'naver_page_script_timeout'/gu) || []).length === 2
+    && (shoppingErrorTaxonomyHardeningMigration.match(/'local_worker_commit_unavailable'/gu) || []).length === 2
+    && shoppingErrorTaxonomyHardeningMigration.includes("normalized_worker_role = 'primary'")
+    && shoppingErrorTaxonomyHardeningMigration.includes("current_row.transient_system_probe_attempts < 2")
+    && shoppingErrorTaxonomyHardeningMigration.includes("circuit_opened_at <= v_now - interval '30 minutes'")
+    && /normalized_error in \(\s*'naver_captcha_detected',\s*'naver_auth_required',\s*'naver_verification_required',\s*'naver_access_blocked',\s*'naver_http_403'\s*\) then 3600/u.test(shoppingErrorTaxonomyHardeningMigration)
+    && !/transient_failure_code in \([^)]*(?:naver_access_blocked|naver_http_403)/iu.test(shoppingErrorTaxonomyHardeningMigration)
+    && shoppingErrorTaxonomyHardeningMigration.includes("normalized_scope not in ('system', 'tracker', 'security', 'lookup')")
+    && shoppingErrorTaxonomyHardeningMigration.includes("normalized_scope = 'lookup' and p_tracker_id is not null")
+    && shoppingErrorTaxonomyHardeningMigration.includes("normalized_scope <> 'lookup' or circuit_state = 'closed'")
+    && shoppingErrorTaxonomyLookupBranch.includes("lease_worker_id = null")
+    && shoppingErrorTaxonomyLookupBranch.includes("lease_token = null")
+    && shoppingErrorTaxonomyLookupBranch.includes("lease_until = null")
+    && shoppingErrorTaxonomyLookupBranch.includes("run_id = null")
+    && shoppingErrorTaxonomyLookupBranch.includes("cadence_mode = 'baseline'")
+    && shoppingErrorTaxonomyLookupBranch.includes("cadence_minutes = 10")
+    && shoppingErrorTaxonomyLookupBranch.includes("stability_started_at = null")
+    && shoppingErrorTaxonomyLookupBranch.includes("success_streak = 0")
+    && shoppingErrorTaxonomyLookupBranch.includes("'laneReleased', true")
+    && shoppingErrorTaxonomyLookupBranch.includes("'quarantined', false")
+    && !/(?:failure_signature|failure_streak|circuit_state|circuit_reason|circuit_opened_at|next_signature|next_streak|should_open)\s*=/iu.test(shoppingErrorTaxonomyLookupBranch)
+    && !/(?:update public\.naver_rank_trackers|worker_quarantined_until|next_check_at|worker_last_cycle_id|scheduler_cycle_cursor_\w+)\s*=?/iu.test(shoppingErrorTaxonomyLookupBranch)
+    && shoppingErrorTaxonomyHardeningMigration.includes("create or replace function public.mi_release_naver_shopping_worker_lane")
+    && /transient_system_recovered := current_row\.circuit_state = 'half_open'[\s\S]*split_part\(lower\(trim\(coalesce\(current_row\.last_failure_code, ''\)\)\), ':', 1\) in \([\s\S]*'local_worker_window_not_300'[\s\S]*'local_worker_match_result_incomplete'[\s\S]*\)/iu.test(shoppingErrorTaxonomyHardeningMigration)
+    && shoppingErrorTaxonomyHardeningMigration.includes("revoke all on function public.mi_release_naver_shopping_worker_lane(text, uuid)")
+    && shoppingErrorTaxonomyHardeningMigration.includes("grant execute on function public.mi_release_naver_shopping_worker_lane(text, uuid)")
+    && (shoppingErrorTaxonomyHardeningMigration.match(/security invoker/gu) || []).length === 4
+    && (shoppingErrorTaxonomyHardeningMigration.match(/set search_path = ''/gu) || []).length === 4
+    && !shoppingErrorTaxonomyHardeningMigration.includes("security definer")
+    && shoppingErrorTaxonomyHardeningMigration.includes("from public, anon, authenticated, service_role")
+    && shoppingErrorTaxonomyHardeningMigration.includes("to service_role")
+    && shoppingTransientSystemRecoveryTests.includes("two repeated lookup failures release only the lane and preserve a closed zero-streak circuit")
+    && shoppingTransientSystemRecoveryTests.includes("access blocked and HTTP 403 stay in a 60-minute security block lane, never half-open")
+    && shoppingTransientSystemRecoveryTests.includes("half-open release treats the new tracker-only failures as a recovered transport probe")
     && shoppingSchedulerEventLedgerMigration.includes("create schema if not exists mi_internal authorization postgres")
     && shoppingSchedulerEventLedgerMigration.includes("force row level security")
     && shoppingSchedulerEventLedgerMigration.includes("grant select on table public.naver_shopping_scheduler_events")
@@ -1792,7 +1849,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.10"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.11"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

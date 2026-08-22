@@ -1,16 +1,26 @@
 # Next Actions
 
-기준일: 2026-08-21
+기준일: 2026-08-22
 
-## 진행 중: N쇼핑 v1.1.10 안정화·5차 8분 A/B
+## 진행 중: N쇼핑 v1.1.11 오류 안정화·5차 8분 A/B
+
+1. 완료(로컬): page timeout·commit unavailable bounded half-open, 403/access security cooldown, lookup/submit/reconcile 격리와 raw DB 오류 정규화를 TDD로 보완했습니다. 집중 289/289·collector64/64·contract65/65·baseline·잠금 23/95/44+self-test가 통과했습니다.
+2. 완료(로컬): 전체 `check:release`가 core743·place51·shopping64·Production auth18로 exit0입니다. 보호 잠금과 self-test도 통과했습니다.
+3. 진행: 검증된 정확한 변경만 커밋·push한 뒤 Production server → taxonomy migration → runtime1.1.11 migration → Windows updater 순으로 반영합니다. `data/`, `src/pages/admin.html`, `vercel.json`은 포함하지 않습니다.
+4. 배포 직전과 직후 lane/run/processing0을 SELECT-only로 확인합니다. wake·cursor·순서·격리를 수동 조작하지 않으며, pending 자연 wake만 사용합니다.
+5. v1.1.11 첫 official·adExcluded·checked300 terminal부터 24시간+원자 성공6회를 새로 계산합니다. 그 전에는 candidate8을 켜지 않고, 조건 충족 뒤 canonical cadence RPC를 정확히 1회 호출합니다.
+6. candidate8 이후 여러 자연 회차의 atomic300·same-cycle 중복0·cursor 순서·lane 해제와 실제 group/hour를 개선 전 8.75~8.77과 비교합니다. 실패 시 baseline10 복귀·proof reset·last-good 보존만 사실대로 기록합니다.
+
+## 완료된 기반: N쇼핑 v1.1.10 partial 재수집·input-close 복구
 
 1. 완료: 보호 잠금·self-test·전체 `check:release`를 통과했고 정확한 N30 변경만 commit `628e4ae0b2a9`로 push·Production 반영했습니다. `data/`와 다른 사용자 작업은 포함하지 않았습니다.
 2. 완료: 운영 lane·processing 0을 확인하고 overflow→transient recovery→runtime 1.1.9 migration을 적용했습니다. Production health/ready와 Windows updater가 같은 SHA·version이며 exact runtime fingerprint가 일치합니다.
 3. 완료: 기준 이후 별도 wake 요청이 없던 `normal` collection `pw-chrome-1787291671198-58f940f60934ff318d08`이 광고 30개 제외·checked300으로 저장됐고 circuit closed·cadence10·lane/lease 해제를 확인했습니다. ledger에는 알람 trigger명이 없으므로 trigger 종류 자체는 단정하지 않습니다. 새 24시간 안정성 시작점은 2026-08-21 14:54:31 KST입니다.
 4. 완료(로컬): `native_host_input_closed`를 정확히 30분·최대2회 bounded half-open 대상으로 추가하고, 첫 `provider_partial_window`는 첫 pass를 폐기한 뒤 같은 deadline·16페이지 한도에서 full1..8을 딱 한 번 재수집하도록 v1.1.10을 구현했습니다. double-partial/overlap은 부분 저장·세 번째 pass 없이 fail-closed합니다.
-5. 진행: 전체 `check:release`와 exact clean commit을 검증한 뒤 운영 lane·processing0에서 170000→180000 migration, app, Windows 1.1.10 updater 순으로 배포합니다. 순서·격리·wake를 수동 조작하지 않습니다.
-6. v1.1.10 첫 atomic300 성공부터 새 24시간+6회 proof를 시작합니다. 그 전에는 candidate8을 활성화하지 않으며, 충족 뒤 canonical cadence RPC로 8분을 1회 켜고 여러 자연 회차의 atomic300·중복0·순서·lane 해제와 group/hour를 개선 전 8.75~8.77과 비교합니다.
-7. 어떤 실패라도 10분 복귀·새 proof 초기화를 확인합니다. 실패 시 8분 성과로 보고하지 않고 원인과 last-good 보존 여부를 기록합니다.
+5. 완료: exact clean commit `cdcd6c2c21e6`, Production health/ready, 170000→180000 migration, Windows 1.1.10 updater와 exact fingerprint를 확인했습니다. 첫 자연 run도 checked300·광고 제외·lane/lease 해제로 종료했습니다.
+6. 완료: 과거 `native_host_input_closed` tracker가 cycle #28의 정상 cursor 순서에서 자연 재진입해 checked300·광고 제외 commit, 오류/retry 해제, lane/lease 반환까지 완료했습니다. 연속 2회 circuit-open 뒤 half-open은 인위적으로 장애를 만들지 않아 실운영 미확인으로 남깁니다.
+7. 진행: v1.1.10 첫 atomic300 성공(2026-08-21 22:32:47 KST)부터 새 24시간+6회 proof를 관측합니다. 현재 streak16으로 성공 횟수는 충족했지만 24시간이 지나지 않아 candidate8은 활성화하지 않았습니다. 2026-08-22 00:01:52 KST 기준 경과 1.47시간·잔여 22.53시간이며 실패가 없다면 가장 빠른 판정 시각은 2026-08-22 22:32:47 KST입니다. 조건 충족 뒤 canonical cadence RPC로 8분을 1회 켜고 여러 자연 회차의 atomic300·중복0·순서·lane 해제와 group/hour를 개선 전 8.75~8.77과 비교합니다.
+8. 어떤 실패라도 10분 복귀·새 proof 초기화를 확인합니다. 실패 시 8분 성과로 보고하지 않고 원인과 last-good 보존 여부를 기록합니다.
 
 ## 완료: N쇼핑 30일 추적 비활성 재발 방지
 

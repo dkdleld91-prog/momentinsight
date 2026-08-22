@@ -29,7 +29,9 @@ const DEFAULT_ALLOWED_ORIGINS = new Set([
 ]);
 const SAFE_FAILURE_CODES = new Set([
   "naver_http_418",
+  "naver_http_403",
   "naver_http_429",
+  "naver_access_blocked",
   "naver_captcha_detected",
   "naver_auth_required",
   "naver_selector_drift",
@@ -80,6 +82,10 @@ const SAFE_FAILURE_CODES = new Set([
   "local_worker_submit_body_too_large",
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
+  "local_worker_match_result_incomplete",
+  "local_worker_commit_invalid",
+  "local_worker_commit_unavailable",
+  "local_worker_submit_failed",
   "native_host_request_id_mismatch",
   "native_host_response_timeout",
 ]);
@@ -95,6 +101,8 @@ const SAFE_DETAIL_FAILURE_CODES = new Set([
 ]);
 const TRACKER_ISOLATED_FAILURE_CODES = new Set([
   "local_worker_submit_body_too_large",
+  "local_worker_window_not_300",
+  "local_worker_match_result_incomplete",
   "provider_duplicate_identity",
   "provider_stable_window_unproven",
   "provider_partial_window",
@@ -104,7 +112,9 @@ const TRACKER_ISOLATED_FAILURE_CODES = new Set([
 ]);
 const RUN_HALT_FAILURE_CODES = new Set([
   "naver_http_418",
+  "naver_http_403",
   "naver_http_429",
+  "naver_access_blocked",
   "naver_captcha_detected",
   "naver_auth_required",
   "naver_verification_required",
@@ -133,13 +143,15 @@ const RUN_HALT_FAILURE_CODES = new Set([
 ]);
 const SECURITY_FAILURE_CODES = new Set([
   "naver_http_418",
+  "naver_http_403",
   "naver_http_429",
+  "naver_access_blocked",
   "naver_captcha_detected",
   "naver_auth_required",
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.10";
+const EXPECTED_RUNTIME_VERSION = "1.1.11";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -150,6 +162,12 @@ const SUBMIT_CLAIM_STATUSES = new Set([
   "lease_lost",
   "collection_conflict",
   "uncommitted",
+]);
+const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
+  "local_worker_match_result_incomplete",
+  "local_worker_commit_invalid",
+  "local_worker_commit_unavailable",
+  "local_worker_submit_failed",
 ]);
 
 async function runtimeIdentityInput(options, env) {
@@ -183,10 +201,19 @@ async function runtimeIdentityInput(options, env) {
 function failureScope(job, failureCode) {
   const baseCode = String(failureCode || "").split(":", 1)[0];
   if (SECURITY_FAILURE_CODES.has(baseCode)) return "security";
+  // A one-off lookup is not durable N30 cycle evidence. Every non-security
+  // failure remains lookup-scoped so it cannot advance or open the global
+  // circuit, regardless of whether the submit transport returned a body.
+  if (job?.kind === "lookup") return "lookup";
+  if (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)) return "tracker";
   if (job?.kind !== "lookup"
-    && (TRACKER_ISOLATED_FAILURE_CODES.has(baseCode)
-      || /^(?:local_worker_tracker_|local_worker_target_)/u.test(baseCode))) return "tracker";
+    && /^(?:local_worker_tracker_|local_worker_target_)/u.test(baseCode)) return "tracker";
   return "system";
+}
+
+function submitPartialCauseCode(partial, fallbackCode) {
+  const code = String(partial?.causeCode || "").trim().toLowerCase();
+  return SUBMIT_PARTIAL_CAUSE_CODES.has(code) ? code : fallbackCode;
 }
 
 function jobProgressIdentity(job) {
@@ -739,21 +766,24 @@ export async function runLocalShoppingWorker(options = {}) {
             ? "local_worker_lease_lost"
             : "local_worker_collection_conflict";
           controlFailureAttempted = true;
+          const scope = failureScope(job, failureCode);
           const failure = await action({
             action: "record-failure",
             ...lanePayload,
             job,
             errorCode: failureCode,
-            scope: "system",
+            scope,
           });
           if (failure.laneReleased === true) laneClaimed = false;
           if (String(failure.circuitState || "").toLowerCase() === "open") {
             log(`local_worker_run_halted:${failureCode}`);
+          } else if (scope === "lookup") {
+            log(`local_worker_lookup_failure_stopped:${failureCode}`);
           } else {
             log(`local_worker_system_failure_stopped:${failureCode}`);
           }
           break;
-        } else {
+        } else if (job.kind !== "lookup") {
           const success = await action({
             action: "record-success",
             ...lanePayload,
@@ -783,7 +813,7 @@ export async function runLocalShoppingWorker(options = {}) {
                 ...lanePayload,
                 job,
                 errorCode: "local_worker_post_commit_control_failed",
-                scope: "system",
+                scope: failureScope(job, "local_worker_post_commit_control_failed"),
               });
               if (failureReport.laneReleased === true) laneClaimed = false;
             } catch (coordinationError) {
@@ -838,7 +868,7 @@ export async function runLocalShoppingWorker(options = {}) {
                 ...lanePayload,
                 job,
                 errorCode: "local_worker_submit_outcome_unknown",
-                scope: "system",
+                scope: failureScope(job, "local_worker_submit_outcome_unknown"),
               });
               if (failureReport.laneReleased === true) laneClaimed = false;
             } catch (coordinationError) {
@@ -847,6 +877,7 @@ export async function runLocalShoppingWorker(options = {}) {
             break;
           }
         }
+        const effectiveFailureCode = submitPartialCauseCode(partial, failureCode);
         const partialCounts = partialPresent
           ? [
             Number(partial.committedCount),
@@ -879,14 +910,14 @@ export async function runLocalShoppingWorker(options = {}) {
         if (partialSubmitted === job.claims.length) {
           summary.status = "control_plane_failed";
           summary.controlPlaneFailed = Number(summary.controlPlaneFailed || 0) + 1;
-          log(`local_worker_post_commit_control_failed:${failureCode}`);
+          log(`local_worker_post_commit_control_failed:${effectiveFailureCode}`);
           try {
             const failureReport = await action({
               action: "record-failure",
               ...lanePayload,
               job,
               errorCode: "local_worker_post_commit_control_failed",
-              scope: "system",
+              scope: failureScope(job, "local_worker_post_commit_control_failed"),
             });
             if (failureReport.laneReleased === true) laneClaimed = false;
           } catch (coordinationError) {
@@ -894,14 +925,14 @@ export async function runLocalShoppingWorker(options = {}) {
           }
           break;
         }
-        const scope = failureScope(job, failureCode);
+        const scope = failureScope(job, effectiveFailureCode);
         if (remainingClaims.length > 0) {
           try {
             const released = await action({
               action: "fail",
               ...lanePayload,
               job: { ...job, claims: remainingClaims },
-              errorCode: failureCode,
+              errorCode: effectiveFailureCode,
             });
             const releasedCount = Number(released.releasedCount || 0);
             if (!Number.isSafeInteger(releasedCount) || releasedCount !== remainingClaims.length) {
@@ -924,7 +955,7 @@ export async function runLocalShoppingWorker(options = {}) {
               action: "record-failure",
               ...lanePayload,
               job: failureJob,
-              errorCode: failureCode,
+              errorCode: effectiveFailureCode,
               scope,
             });
             if (failureReport.laneReleased === true) laneClaimed = false;
@@ -937,7 +968,7 @@ export async function runLocalShoppingWorker(options = {}) {
             const blocked = await action({
               action: "block-lane",
               ...lanePayload,
-              errorCode: failureCode,
+              errorCode: effectiveFailureCode,
             });
             if (blocked.blocked === true) laneClaimed = false;
           } catch (coordinationError) {
@@ -945,14 +976,16 @@ export async function runLocalShoppingWorker(options = {}) {
           }
         }
         if (scope !== "tracker"
-          || RUN_HALT_FAILURE_CODES.has(failureCode)
+          || RUN_HALT_FAILURE_CODES.has(effectiveFailureCode)
           || String(failureReport?.circuitState || "").toLowerCase() === "open") {
-          if (RUN_HALT_FAILURE_CODES.has(failureCode)
+          if (RUN_HALT_FAILURE_CODES.has(effectiveFailureCode)
             || String(failureReport?.circuitState || "").toLowerCase() === "open") {
-            summary.haltedCode = failureCode;
-            log(`local_worker_run_halted:${failureCode}`);
+            summary.haltedCode = effectiveFailureCode;
+            log(`local_worker_run_halted:${effectiveFailureCode}`);
+          } else if (scope === "lookup") {
+            log(`local_worker_lookup_failure_stopped:${effectiveFailureCode}`);
           } else {
-            log(`local_worker_system_failure_stopped:${failureCode}`);
+            log(`local_worker_system_failure_stopped:${effectiveFailureCode}`);
           }
           break;
         }

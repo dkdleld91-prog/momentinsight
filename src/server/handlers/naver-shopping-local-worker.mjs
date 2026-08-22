@@ -32,10 +32,11 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.10";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.11";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const WORKER_ERROR_CODE_PATTERN = /^LOCAL_WORKER_[A-Z0-9_]+$/u;
 const WORKER_PROGRESS_STAGES = new Set([
   "claiming",
   "navigating",
@@ -45,6 +46,19 @@ const WORKER_PROGRESS_STAGES = new Set([
   "failed",
 ]);
 const WORKER_JOB_KINDS = new Set(["", "lookup", "tracker"]);
+// This bounded enum is the only submit failure detail allowed across the
+// worker trust boundary. Never copy database codes, messages, details or stacks.
+const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
+  "LOCAL_WORKER_MATCH_RESULT_INCOMPLETE",
+  "LOCAL_WORKER_COMMIT_INVALID",
+  "LOCAL_WORKER_COMMIT_UNAVAILABLE",
+]);
+const SUBMIT_PARTIAL_FALLBACK_CAUSE_CODE = "LOCAL_WORKER_SUBMIT_FAILED";
+const SUBMIT_PARTIAL_TRUST_MARKER = Symbol("local-worker-submit-partial");
+const SUBMIT_DIRECT_ERROR_CODES = new Set([
+  "LOCAL_WORKER_TRACKER_MISMATCH",
+  "LOCAL_WORKER_LOOKUP_MISMATCH",
+]);
 
 const WORKER_TRACKER_SELECT = [
   "id",
@@ -158,6 +172,24 @@ function workerError(code, status = 400) {
   error.code = code;
   error.status = status;
   return error;
+}
+
+function submitPartialCauseCode(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  return SUBMIT_PARTIAL_CAUSE_CODES.has(code)
+    ? code
+    : SUBMIT_PARTIAL_FALLBACK_CAUSE_CODE;
+}
+
+function submitPartialError(error, counts) {
+  const wrapped = workerError("LOCAL_WORKER_SUBMIT_PARTIAL", 409);
+  wrapped[SUBMIT_PARTIAL_TRUST_MARKER] = true;
+  wrapped.localWorkerPartial = {
+    causeCode: submitPartialCauseCode(error),
+    ...counts,
+    claimResults: [...counts.claimResults],
+  };
+  return wrapped;
 }
 
 function normalizedKeywordKey(value) {
@@ -286,8 +318,9 @@ async function recordWorkerFailure(ctx, body) {
   const errorCode = String(body?.errorCode || "").trim().toLowerCase();
   const scope = String(body?.scope || "").trim().toLowerCase();
   if (!SAFE_FAILURE_PATTERN.test(errorCode)
-    || !["system", "tracker", "security"].includes(scope)
-    || (scope === "tracker" && !trackerId)) {
+    || !["system", "tracker", "lookup", "security"].includes(scope)
+    || (scope === "tracker" && !trackerId)
+    || (scope === "lookup" && job.kind !== "lookup")) {
     throw workerError("LOCAL_WORKER_FAILURE_REPORT_INVALID", 400);
   }
   const { data, error } = await ctx.supabaseAdmin.rpc(
@@ -394,7 +427,7 @@ async function claimOneLookupJob(ctx) {
   });
   if (error) {
     if (/schema cache|does not exist|mi_claim_naver_shopping_rank_lookup_job/iu.test(error.message || "")) return null;
-    throw error;
+    throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   }
   const row = Array.isArray(data) ? data[0] : data;
   if (!row) return null;
@@ -521,7 +554,7 @@ async function loadClaimTrackers(ctx, job) {
     .from("naver_rank_trackers")
     .select(WORKER_TRACKER_SELECT)
     .in("id", ids);
-  if (error) throw error;
+  if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
   const byId = new Map((data || []).map((row) => [String(row.id).toLowerCase(), row]));
   return job.claims.map((claim) => {
     const tracker = byId.get(claim.trackerId);
@@ -545,7 +578,7 @@ async function loadVerifiedCatalogs(ctx, claimTrackers, checkedAt) {
         p_per_tracker_limit: SNAPSHOT_HISTORY_PER_TRACKER,
       },
     );
-    if (error) throw error;
+    if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
     historyRows.push(...(data || []));
   }
   const byTrackerId = new Map(trackerIds.map((trackerId) => [String(trackerId).toLowerCase(), []]));
@@ -568,17 +601,19 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     nowMs: Date.now(),
   });
   const window = validateStrictLocalWorkerWindow(rawWindow, { keyword: job.keyword });
-  if (job.kind === "lookup") return submitLookupWindow(ctx, job, window);
-  const claimTrackers = await loadClaimTrackers(ctx, job);
-  const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
-  let committedCount = 0;
-  let alreadyCommittedCount = 0;
-  let leaseLostCount = 0;
-  let collectionConflictCount = 0;
-  let processedCount = 0;
-  const claimResults = [];
+  const counts = {
+    committedCount: 0,
+    alreadyCommittedCount: 0,
+    leaseLostCount: 0,
+    collectionConflictCount: 0,
+    processedCount: 0,
+    claimResults: [],
+  };
 
   try {
+    if (job.kind === "lookup") return await submitLookupWindow(ctx, job, window);
+    const claimTrackers = await loadClaimTrackers(ctx, job);
+    const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
     for (const { claim, tracker } of claimTrackers) {
       const checkedAt = window.collectedAt;
       const verifiedRelatedCatalogId = verifiedCatalogs.get(String(tracker.id).toLowerCase()) || "";
@@ -614,42 +649,24 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         p_mall_name: result?.exactItem?.mallName || result?.item?.mallName || tracker.mall_name || null,
         p_product_title: result?.exactItem?.title || result?.item?.title || tracker.product_title || null,
       });
-      if (error) throw error;
+      if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
       const status = String(data?.status || "").trim().toLowerCase();
       if (!["committed", "already_committed", "lease_lost", "collection_conflict"].includes(status)) {
         throw workerError("LOCAL_WORKER_COMMIT_INVALID", 503);
       }
-      processedCount += 1;
-      claimResults.push({ claimId: claim.trackerId, status });
-      if (status === "committed") committedCount += 1;
-      else if (status === "already_committed") alreadyCommittedCount += 1;
-      else if (status === "lease_lost") leaseLostCount += 1;
-      else collectionConflictCount += 1;
+      counts.processedCount += 1;
+      counts.claimResults.push({ claimId: claim.trackerId, status });
+      if (status === "committed") counts.committedCount += 1;
+      else if (status === "already_committed") counts.alreadyCommittedCount += 1;
+      else if (status === "lease_lost") counts.leaseLostCount += 1;
+      else counts.collectionConflictCount += 1;
     }
   } catch (error) {
-    const wrapped = workerError(
-      String(error?.code || error?.message || "LOCAL_WORKER_SUBMIT_FAILED"),
-      Number(error?.status || 500),
-    );
-    wrapped.localWorkerPartial = {
-      committedCount,
-      alreadyCommittedCount,
-      leaseLostCount,
-      collectionConflictCount,
-      processedCount,
-      claimResults,
-    };
-    throw wrapped;
+    if (SUBMIT_DIRECT_ERROR_CODES.has(error?.code)) throw error;
+    throw submitPartialError(error, counts);
   }
 
-  return {
-    committedCount,
-    alreadyCommittedCount,
-    leaseLostCount,
-    collectionConflictCount,
-    processedCount,
-    claimResults,
-  };
+  return counts;
 }
 
 function sameLeaseTimestamp(left, right) {
@@ -689,7 +706,7 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
       .from("naver_shopping_rank_lookup_jobs")
       .select("id, status, collection_id, processing_started_at")
       .in("id", [claim.lookupJobId]);
-    if (error) throw error;
+    if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
     const row = (data || []).find((entry) => String(entry?.id || "").toLowerCase() === claim.lookupJobId);
     const status = row?.status === "completed" && row?.collection_id === collectionId
       ? "already_committed"
@@ -705,14 +722,14 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
     .select("tracker_id, collection_id")
     .in("tracker_id", trackerIds)
     .eq("collection_id", collectionId);
-  if (snapshotError) throw snapshotError;
+  if (snapshotError) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   const committedIds = new Set((snapshots || []).map((row) => String(row?.tracker_id || "").toLowerCase()));
 
   const { data: trackers, error: trackerError } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select("id, processing_started_at")
     .in("id", trackerIds);
-  if (trackerError) throw trackerError;
+  if (trackerError) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   const trackersById = new Map((trackers || []).map((row) => [String(row?.id || "").toLowerCase(), row]));
   const claimResults = job.claims.map((claim) => {
     if (committedIds.has(claim.trackerId)) {
@@ -737,7 +754,7 @@ async function submitLookupWindow(ctx, job, window) {
     .eq("id", claim.lookupJobId)
     .eq("status", "processing")
     .maybeSingle();
-  if (lookupError) throw lookupError;
+  if (lookupError) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
   if (!lookup
     || normalizedKeywordKey(lookup.keyword) !== normalizedKeywordKey(job.keyword)
     || new Date(lookup.processing_started_at).toISOString() !== claim.leaseStartedAt) {
@@ -781,7 +798,7 @@ async function submitLookupWindow(ctx, job, window) {
     p_result: responsePayload,
     p_message: message,
   });
-  if (error) throw error;
+  if (error) throw workerError("LOCAL_WORKER_COMMIT_UNAVAILABLE", 503);
   if (!["committed", "already_committed", "lease_lost", "collection_conflict"].includes(data)) {
     throw workerError("LOCAL_WORKER_COMMIT_INVALID", 503);
   }
@@ -809,7 +826,7 @@ async function failClaims(ctx, rawJob, rawErrorCode) {
       p_lease_started_at: claim.leaseStartedAt,
       p_error: errorCode,
     });
-    if (error) throw error;
+    if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
     return { releasedCount: data === true ? 1 : 0 };
   }
   let releasedCount = 0;
@@ -823,7 +840,7 @@ async function failClaims(ctx, rawJob, rawErrorCode) {
       p_next_check_at: new Date(Date.now() + 5 * 60_000).toISOString(),
       p_error: errorCode,
     });
-    if (error) throw error;
+    if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
     if (data === true) releasedCount += 1;
   }
   return { releasedCount };
@@ -931,14 +948,17 @@ export async function handleLocalWorkerRequest(request, ctx) {
     }
     throw workerError("LOCAL_WORKER_ACTION_INVALID", 400);
   } catch (error) {
-    if (error?.localWorkerPartial) {
+    if (error?.[SUBMIT_PARTIAL_TRUST_MARKER] === true && error?.localWorkerPartial) {
       return json(request, {
         ok: false,
         code: "LOCAL_WORKER_SUBMIT_PARTIAL",
         partial: error.localWorkerPartial,
       }, 409);
     }
-    const code = String(error?.code || error?.message || "LOCAL_WORKER_REQUEST_FAILED");
+    const code = typeof error?.code === "string" ? error.code : "";
+    if (!WORKER_ERROR_CODE_PATTERN.test(code)) {
+      return json(request, { ok: false, code: "LOCAL_WORKER_REQUEST_FAILED" }, 500);
+    }
     const status = Number(error?.status || 500);
     return json(request, { ok: false, code }, status >= 400 && status <= 599 ? status : 500);
   }

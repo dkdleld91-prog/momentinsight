@@ -18,6 +18,14 @@ const nativeInputRecovery = fs.existsSync(nativeInputRecoveryPath)
   ? fs.readFileSync(nativeInputRecoveryPath, "utf8")
   : "";
 
+const taxonomyHardeningPath = new URL(
+  "../supabase/migrations/20260821180001_naver_shopping_error_taxonomy_hardening.sql",
+  import.meta.url,
+);
+const taxonomyHardening = fs.existsSync(taxonomyHardeningPath)
+  ? fs.readFileSync(taxonomyHardeningPath, "utf8")
+  : "";
+
 function functionSql(name) {
   return migration.match(new RegExp(
     `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
@@ -31,6 +39,144 @@ function recoveryFunctionSql(name) {
     "iu",
   ))?.[0] || "";
 }
+
+function hardeningFunctionSql(name) {
+  return taxonomyHardening.match(new RegExp(
+    `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
+    "iu",
+  ))?.[0] || "";
+}
+
+test("typed transient taxonomy extends the exact bounded recovery allowlist twice", () => {
+  assert.ok(taxonomyHardening.length > 0, "the hardening must be a new additive migration");
+  const claimSql = hardeningFunctionSql("mi_claim_naver_shopping_worker_lane");
+  assert.ok(claimSql.length > 0, "the additive migration must redefine the lane claim RPC");
+
+  const exactAllowlist = /'native_host_response_timeout',\s*'provider_deadline_exceeded',\s*'native_host_input_closed',\s*'naver_page_timeout',\s*'naver_page_script_timeout',\s*'local_worker_commit_unavailable'/giu;
+  assert.equal(
+    [...claimSql.matchAll(exactAllowlist)].length,
+    2,
+    "the eligibility IF and guarded UPDATE must share one exact timeout allowlist",
+  );
+  assert.match(claimSql, /normalized_worker_role = 'primary'/iu);
+  assert.match(claimSql, /current_row\.transient_system_probe_attempts < 2/iu);
+  assert.match(claimSql, /circuit_opened_at <= v_now - interval '30 minutes'/iu);
+  assert.match(
+    claimSql,
+    /transient_system_probe_attempts = least\(2, current_row\.transient_system_probe_attempts \+ 1\)/iu,
+  );
+  assert.doesNotMatch(claimSql, /naver_access_blocked|naver_http_403/iu);
+});
+
+test("access blocked and HTTP 403 stay in a 60-minute security block lane, never half-open", () => {
+  const claimSql = hardeningFunctionSql("mi_claim_naver_shopping_worker_lane");
+  const blockSql = hardeningFunctionSql("mi_block_naver_shopping_worker_lane");
+  assert.ok(blockSql.length > 0, "the additive migration must redefine the block-lane RPC");
+  assert.match(
+    blockSql,
+    /normalized_error in \(\s*'naver_captcha_detected',\s*'naver_auth_required',\s*'naver_verification_required',\s*'naver_access_blocked',\s*'naver_http_403'\s*\) then 3600/iu,
+  );
+  assert.match(
+    blockSql,
+    /circuit_state = case when current_row\.circuit_state = 'half_open' then 'open' else current_row\.circuit_state end/iu,
+    "a normal closed circuit stays closed while an in-flight probe fails closed",
+  );
+  assert.match(blockSql, /cooldown_until = greatest\([\s\S]*v_now \+ make_interval\(secs => cooldown_seconds\)/iu);
+  assert.doesNotMatch(claimSql, /naver_access_blocked|naver_http_403/iu);
+  assert.doesNotMatch(blockSql, /auto_transient_system_probe|transient_system_probe_attempts/iu);
+});
+
+test("two repeated lookup failures release only the lane and preserve a closed zero-streak circuit", () => {
+  const failureSql = hardeningFunctionSql("mi_record_naver_shopping_worker_failure");
+  assert.ok(failureSql.length > 0, "the additive migration must redefine the failure RPC");
+  assert.match(failureSql, /normalized_scope not in \('system', 'tracker', 'security', 'lookup'\)/iu);
+  assert.match(failureSql, /normalized_scope = 'lookup' and p_tracker_id is not null/iu);
+  assert.match(
+    failureSql,
+    /normalized_scope <> 'lookup' or circuit_state = 'closed'/iu,
+    "lookup isolation may only release an ordinary closed-circuit lane",
+  );
+
+  const lookupSql = failureSql.match(
+    /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/iu,
+  )?.[0] || "";
+  assert.ok(lookupSql.length > 0, "lookup needs an explicit isolated branch before system escalation");
+  assert.match(lookupSql, /lease_worker_id = null/iu);
+  assert.match(lookupSql, /lease_token = null/iu);
+  assert.match(lookupSql, /lease_until = null/iu);
+  assert.match(lookupSql, /run_id = null/iu);
+  assert.match(lookupSql, /current_stage = null/iu);
+  assert.match(lookupSql, /current_job_kind = null/iu);
+  assert.match(lookupSql, /current_tracker_id = null/iu);
+  assert.match(lookupSql, /cadence_mode = 'baseline'/iu);
+  assert.match(lookupSql, /cadence_minutes = 10/iu);
+  assert.match(lookupSql, /stability_started_at = null/iu);
+  assert.match(lookupSql, /success_streak = 0/iu);
+  assert.match(lookupSql, /'recorded', true/iu);
+  assert.match(lookupSql, /'circuitState', current_row\.circuit_state/iu);
+  assert.match(lookupSql, /'failureStreak', current_row\.failure_streak/iu);
+  assert.match(lookupSql, /'laneReleased', true/iu);
+  assert.match(lookupSql, /'quarantined', false/iu);
+  assert.doesNotMatch(
+    lookupSql,
+    /(?:failure_signature|failure_streak|circuit_state|circuit_reason|circuit_opened_at|next_signature|next_streak|should_open)\s*=/iu,
+    "repetition must not increment or rewrite the global circuit evidence",
+  );
+  assert.doesNotMatch(
+    lookupSql,
+    /(?:update public\.naver_rank_trackers|worker_quarantined_until|next_check_at|worker_last_cycle_id|scheduler_cycle_cursor_\w+)\s*=?/iu,
+    "lookup isolation must not move durable order or quarantine a tracker",
+  );
+});
+
+test("half-open release treats the new tracker-only failures as a recovered transport probe", () => {
+  const releaseSql = hardeningFunctionSql("mi_release_naver_shopping_worker_lane");
+  assert.ok(releaseSql.length > 0, "the additive hardening must redefine the release RPC");
+  const recoveredAllowlist = /'local_worker_submit_body_too_large',\s*'local_worker_window_not_300',\s*'local_worker_match_result_incomplete',\s*'provider_duplicate_identity',\s*'provider_stable_window_unproven',\s*'provider_partial_window',\s*'provider_row_invalid',\s*'provider_row_title_missing',\s*'provider_row_identity_missing'/giu;
+  assert.equal(
+    [...releaseSql.matchAll(recoveredAllowlist)].length,
+    2,
+    "navigation and transient half-open paths must share one exact tracker-only allowlist",
+  );
+  assert.match(releaseSql, /when auto_navigation_recovered then 'closed'/iu);
+  assert.match(releaseSql, /when transient_system_recovered then 'closed'/iu);
+  assert.match(releaseSql, /when current_row\.circuit_state = 'half_open' then 'open'/iu);
+});
+
+test("taxonomy hardening preserves existing failure scopes and service-role-only RPC security", () => {
+  const failureSql = hardeningFunctionSql("mi_record_naver_shopping_worker_failure");
+  assert.match(failureSql, /if normalized_scope = 'tracker' then[\s\S]*update public\.naver_rank_trackers/iu);
+  assert.match(failureSql, /provider_duplicate_identity[\s\S]*provider_stable_window_unproven[\s\S]*interval '30 minutes'/iu);
+  assert.match(failureSql, /if normalized_scope = 'security' then[\s\S]*'laneReleased', false/iu);
+  assert.match(failureSql, /next_signature :=[\s\S]*next_streak :=[\s\S]*should_open :=/iu);
+
+  const functionNames = [...taxonomyHardening.matchAll(/create or replace function public\.(mi_[a-z0-9_]+)\(/giu)]
+    .map((match) => match[1]);
+  assert.deepEqual(functionNames, [
+    "mi_claim_naver_shopping_worker_lane",
+    "mi_block_naver_shopping_worker_lane",
+    "mi_record_naver_shopping_worker_failure",
+    "mi_release_naver_shopping_worker_lane",
+  ]);
+  assert.doesNotMatch(taxonomyHardening, /security definer/iu);
+  for (const signature of [
+    "mi_claim_naver_shopping_worker_lane\\(text, text, uuid, integer, integer\\)",
+    "mi_block_naver_shopping_worker_lane\\(text, uuid, text\\)",
+    "mi_record_naver_shopping_worker_failure\\(text, uuid, uuid, text, text, uuid\\)",
+    "mi_release_naver_shopping_worker_lane\\(text, uuid\\)",
+  ]) {
+    assert.match(
+      taxonomyHardening,
+      new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role`, "iu"),
+    );
+    assert.match(
+      taxonomyHardening,
+      new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`, "iu"),
+    );
+  }
+  assert.equal([...taxonomyHardening.matchAll(/security invoker/giu)].length, 4);
+  assert.equal([...taxonomyHardening.matchAll(/set search_path = ''/giu)].length, 4);
+});
 
 test("native input closure gets one exact additive bounded recovery contract", () => {
   assert.ok(nativeInputRecovery.length > 0, "the fix must be a new additive migration");

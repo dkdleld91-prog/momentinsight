@@ -770,7 +770,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.10");
+  assert.equal(manifest.version, "1.1.11");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2008,7 +2008,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.10");
+  assert.equal(manifest.version, "1.1.11");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2110,6 +2110,25 @@ test("extension preserves typed collection errors and maps raw Chrome errors to 
   );
   assert.equal(rawError.message, "naver_page_navigation_failed");
   assert.doesNotMatch(rawError.message, /could not establish connection/iu);
+});
+
+test("extension locally holds every explicit Naver access-denial code for one hour", () => {
+  const extensionDirectory = new URL("../tools/naver-shopping-chrome-extension/", import.meta.url);
+  const serviceWorker = fs.readFileSync(new URL("service-worker.js", extensionDirectory), "utf8");
+  const helperStart = serviceWorker.indexOf("const NAVER_ACCESS_COOLDOWN_CODES");
+  const helperEnd = serviceWorker.indexOf("const TYPED_COLLECTION_ERROR_PATTERN", helperStart);
+  assert.ok(helperStart >= 0 && helperEnd > helperStart);
+  const accessCodes = runInNewContext(
+    `${serviceWorker.slice(helperStart, helperEnd)}\nNAVER_ACCESS_COOLDOWN_CODES;`,
+  );
+  for (const code of [
+    "naver_verification_required",
+    "naver_captcha_detected",
+    "naver_http_403",
+    "naver_access_blocked",
+  ]) {
+    assert.equal(accessCodes.has(code), true, code);
+  }
 });
 
 test("Chrome scheduler opens only the approved normal profile without debug or sandbox bypass", () => {

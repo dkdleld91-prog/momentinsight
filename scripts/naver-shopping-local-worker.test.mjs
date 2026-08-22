@@ -25,6 +25,16 @@ const JOB = {
     leaseUntil: "2026-08-01T06:12:00.000Z",
   }],
 };
+const LOOKUP_JOB = {
+  kind: "lookup",
+  keyword: "온열찜질기",
+  limit: 300,
+  claims: [{
+    lookupJobId: "123e4567-e89b-42d3-a456-426614174010",
+    leaseStartedAt: "2026-08-01T06:00:00.000Z",
+    leaseUntil: "2026-08-01T06:12:00.000Z",
+  }],
+};
 
 function item(index) {
   return {
@@ -68,7 +78,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.10",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.11",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -235,7 +245,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.10");
+  assert.equal(lane.runtimeVersion, "1.1.11");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -355,7 +365,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.10");
+  assert.equal(coordination[0].runtimeVersion, "1.1.11");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -703,9 +713,327 @@ test("never submits a short source-exhausted window and releases the lease as fa
     atomicSuccesses: 0,
     cadenceMinutes: 10,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
   assert.equal(calls[1].errorCode, "local_worker_window_not_300");
   assert.equal(calls.some((call) => call.action === "submit"), false);
+});
+
+test("isolates a short strict window to its tracker and continues the next keyword", async () => {
+  const calls = [];
+  const nextJob = {
+    ...JOB,
+    keyword: "남자팬티",
+    claims: [{
+      ...JOB.claims[0],
+      trackerId: "123e4567-e89b-42d3-a456-426614174001",
+    }],
+  };
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: JOB } },
+      { body: { ok: true, releasedCount: 1 } },
+      { body: { ok: true, job: nextJob } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+      } },
+    ], calls),
+    provider: {
+      async collect(request) {
+        collectCount += 1;
+        return collectCount === 1
+          ? completeWindow(299)
+          : { ...completeWindow(), keyword: request.keyword };
+      },
+      async close() {},
+    },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0, atomicSuccesses: 1,
+  });
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.equal(failure.errorCode, "local_worker_window_not_300");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("keeps an isolated lookup-window failure out of the global circuit", async () => {
+  const calls = [];
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: LOOKUP_JOB } },
+      { body: { ok: true, releasedCount: 1 } },
+    ], calls),
+    provider: {
+      async collect() {
+        const error = new Error("provider_partial_window");
+        error.code = "provider_partial_window";
+        error.detail = "92/300";
+        throw error;
+      },
+      async close() {},
+    },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "lookup");
+  assert.equal(failure.errorCode, "provider_partial_window:92_300");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("keeps a stale lookup claim mismatch out of the 30-day global circuit", async () => {
+  const calls = [];
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: LOOKUP_JOB } },
+      {
+        status: 409,
+        body: { ok: false, code: "LOCAL_WORKER_LOOKUP_MISMATCH" },
+      },
+      { body: { ok: true, releasedCount: 1 } },
+    ], calls),
+    provider: {
+      async collect() { return completeWindow(); },
+      async close() {},
+    },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.failed, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.errorCode, "local_worker_lookup_mismatch");
+  assert.equal(failure.scope, "lookup");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("keeps lookup-only submit failures out of the 30-day global circuit", async (t) => {
+  for (const causeCode of [
+    "LOCAL_WORKER_COMMIT_INVALID",
+    "LOCAL_WORKER_COMMIT_UNAVAILABLE",
+    "LOCAL_WORKER_SUBMIT_FAILED",
+  ]) {
+    await t.test(causeCode, async () => {
+      const calls = [];
+      await runLocalShoppingWorker({
+        env: workerEnv(),
+        fetchImpl: authenticatedFetch([
+          { body: { ok: true, job: LOOKUP_JOB } },
+          {
+            status: 409,
+            body: {
+              ok: false,
+              code: "LOCAL_WORKER_SUBMIT_PARTIAL",
+              partial: {
+                causeCode,
+                committedCount: 0,
+                alreadyCommittedCount: 0,
+                leaseLostCount: 0,
+                collectionConflictCount: 0,
+                processedCount: 0,
+                claimResults: [],
+              },
+            },
+          },
+          { body: { ok: true, releasedCount: 1 } },
+        ], calls),
+        provider: {
+          async collect() { return completeWindow(); },
+          async close() {},
+        },
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+
+      const failure = calls.coordination.find((call) => call.action === "record-failure");
+      assert.equal(failure.errorCode, causeCode.toLowerCase());
+      assert.equal(failure.scope, "lookup");
+      assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+    });
+  }
+});
+
+test("keeps two repeated lookup submit-outcome ambiguities fail-closed and off the global circuit", async () => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const calls = [];
+    const summary = await runLocalShoppingWorker({
+      env: workerEnv(),
+      fetchImpl: authenticatedFetch([
+        { body: { ok: true, job: LOOKUP_JOB } },
+        { error: new TypeError("submit response lost") },
+        { error: new TypeError("reconciliation unavailable") },
+      ], calls),
+      provider: { async collect() { return completeWindow(); }, async close() {} },
+      nowMs: () => NOW,
+      randomUUID: uuidSequence(),
+      skipLock: true,
+    });
+
+    assert.equal(summary.status, "control_plane_failed");
+    assert.equal(summary.submitted, 0);
+    assert.equal(summary.failed, 0);
+    assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "reconcile-submit"]);
+    assert.equal(calls.some((call) => call.action === "fail"), false);
+    const failures = calls.coordination.filter((call) => call.action === "record-failure");
+    assert.deepEqual(failures.map((failure) => failure.scope), ["lookup"]);
+    assert.deepEqual(failures[0].job.claims, LOOKUP_JOB.claims);
+    assert.equal(failures[0].job.claims.some((claim) => "trackerId" in claim), false);
+    assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+  }
+});
+
+test("does not count two repeated exact lookup reconciliations as N30 successes or system failures", async () => {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const calls = [];
+    const summary = await runLocalShoppingWorker({
+      env: workerEnv(),
+      fetchImpl: authenticatedFetch([
+        { body: { ok: true, job: LOOKUP_JOB } },
+        { error: new TypeError("submit response lost after commit") },
+        {
+          body: {
+            ok: true,
+            committedCount: 0,
+            alreadyCommittedCount: 1,
+            leaseLostCount: 0,
+            collectionConflictCount: 0,
+            uncommittedCount: 0,
+            processedCount: 1,
+            claimResults: [{
+              claimId: LOOKUP_JOB.claims[0].lookupJobId,
+              status: "already_committed",
+            }],
+          },
+        },
+      ], calls),
+      provider: { async collect() { return completeWindow(); }, async close() {} },
+      nowMs: () => NOW,
+      randomUUID: uuidSequence(),
+      skipLock: true,
+    });
+
+    assert.equal(summary.status, "control_plane_failed");
+    assert.equal(summary.submitted, 1);
+    assert.equal(summary.failed, 0);
+    assert.equal(summary.atomicSuccesses, 0);
+    assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "reconcile-submit"]);
+    assert.equal(calls.some((call) => call.action === "fail"), false);
+    assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
+    const failures = calls.coordination.filter((call) => call.action === "record-failure");
+    assert.deepEqual(failures.map((failure) => failure.scope), ["lookup"]);
+    assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+  }
+});
+
+test("keeps every reconciled non-commit lookup outcome isolated with exact claim order", async (t) => {
+  for (const [status, expectsFail] of [
+    ["uncommitted", true],
+    ["lease_lost", false],
+    ["collection_conflict", false],
+  ]) {
+    await t.test(status, async () => {
+      const calls = [];
+      const responses = [
+        { body: { ok: true, job: LOOKUP_JOB } },
+        { error: new TypeError("submit response lost") },
+        {
+          body: {
+            ok: true,
+            committedCount: 0,
+            alreadyCommittedCount: 0,
+            leaseLostCount: status === "lease_lost" ? 1 : 0,
+            collectionConflictCount: status === "collection_conflict" ? 1 : 0,
+            uncommittedCount: status === "uncommitted" ? 1 : 0,
+            processedCount: 1,
+            claimResults: [{ claimId: LOOKUP_JOB.claims[0].lookupJobId, status }],
+          },
+        },
+      ];
+      if (expectsFail) responses.push({ body: { ok: true, releasedCount: 1 } });
+      const summary = await runLocalShoppingWorker({
+        env: workerEnv(),
+        fetchImpl: authenticatedFetch(responses, calls),
+        provider: { async collect() { return completeWindow(); }, async close() {} },
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+
+      assert.equal(summary.submitted, 0);
+      assert.equal(summary.failed, 1);
+      assert.deepEqual(
+        calls.map((call) => call.action),
+        expectsFail
+          ? ["claim", "submit", "reconcile-submit", "fail"]
+          : ["claim", "submit", "reconcile-submit"],
+      );
+      if (expectsFail) assert.deepEqual(calls.at(-1).job.claims, LOOKUP_JOB.claims);
+      const failures = calls.coordination.filter((call) => call.action === "record-failure");
+      assert.deepEqual(failures.map((failure) => failure.scope), ["lookup"]);
+      assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
+      assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+    });
+  }
+});
+
+test("does not count a successful one-off lookup as N30 proof or disturb the following tracker", async () => {
+  const calls = [];
+  const committed = {
+    body: {
+      ok: true,
+      committedCount: 1,
+      alreadyCommittedCount: 0,
+      leaseLostCount: 0,
+      collectionConflictCount: 0,
+      processedCount: 1,
+    },
+  };
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: LOOKUP_JOB } },
+      committed,
+      { body: { ok: true, job: JOB } },
+      committed,
+    ], calls),
+    provider: { async collect() { return completeWindow(); }, async close() {} },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.submitted, 2);
+  assert.equal(summary.atomicSuccesses, 1);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "claim", "submit"]);
+  assert.equal(calls[0].preferLookup, true);
+  assert.equal(calls[2].preferLookup, false);
+  assert.deepEqual(calls[1].job.claims, LOOKUP_JOB.claims);
+  assert.deepEqual(calls[3].job.claims, JOB.claims);
+  const successes = calls.coordination.filter((call) => call.action === "record-success");
+  assert.equal(successes.length, 1);
+  assert.deepEqual(successes[0].job.claims, JOB.claims);
+  assert.equal(calls.coordination.some((call) => call.action === "record-failure"), false);
 });
 
 test("fails closed when the failure RPC releases fewer claims than requested", async () => {
@@ -732,7 +1060,7 @@ test("fails closed when the failure RPC releases fewer claims than requested", a
   assert.deepEqual(summary, {
     status: "completed", claimed: 1, submitted: 0, failed: 1, releaseFailed: 1, atomicSuccesses: 0,
   });
-  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim"]);
   assert.match(logs.join("\n"), /local_worker_failure_release_invalid/u);
 });
 
@@ -1177,6 +1505,42 @@ test("stops the batch on a Naver network restriction and preserves all unclaimed
   assert.equal(calls.coordination.filter((call) => call.action === "block-lane").length, 1);
 });
 
+test("treats explicit Naver access denial and HTTP 403 as security blocks", async (t) => {
+  for (const errorCode of ["naver_access_blocked", "naver_http_403"]) {
+    await t.test(errorCode, async () => {
+      const calls = [];
+      const rawSecret = "<html>private-access-denied-body</html>";
+      const summary = await runLocalShoppingWorker({
+        env: workerEnv(),
+        fetchImpl: authenticatedFetch([
+          { body: { ok: true, job: JOB } },
+          { body: { ok: true, releasedCount: 1 } },
+        ], calls),
+        provider: {
+          async collect() {
+            const error = new Error(errorCode);
+            error.code = errorCode;
+            error.detail = rawSecret;
+            throw error;
+          },
+          async close() {},
+        },
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+
+      assert.equal(summary.haltedCode, errorCode);
+      assert.deepEqual(calls.map((call) => call.action), ["claim", "fail"]);
+      const failure = calls.coordination.find((call) => call.action === "record-failure");
+      assert.equal(failure.scope, "security");
+      assert.equal(failure.errorCode, errorCode);
+      assert.equal(calls.coordination.filter((call) => call.action === "block-lane").length, 1);
+      assert.doesNotMatch(JSON.stringify({ calls, coordination: calls.coordination }), /private-access-denied-body/u);
+    });
+  }
+});
+
 test("treats any lease-lost submit result as a failed batch and releases the claim", async () => {
   const calls = [];
   const provider = {
@@ -1289,6 +1653,69 @@ test("accounts for server-reported partial commits without counting them as fail
   });
   assert.deepEqual(calls.map((call) => call.action), ["claim", "submit", "fail"]);
   assert.deepEqual(calls[2].job.claims, [twoClaimJob.claims[1]]);
+});
+
+test("uses only bounded submit-partial cause codes for failure signatures and scope", async (t) => {
+  const cases = [
+    ["LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", "local_worker_match_result_incomplete", "tracker"],
+    ["LOCAL_WORKER_COMMIT_INVALID", "local_worker_commit_invalid", "system"],
+    ["LOCAL_WORKER_COMMIT_UNAVAILABLE", "local_worker_commit_unavailable", "system"],
+    ["LOCAL_WORKER_SUBMIT_FAILED", "local_worker_submit_failed", "system"],
+    ["raw_database_secret_sqlstate_XX999", "local_worker_submit_partial", "system"],
+  ];
+  for (const [causeCode, expectedCode, expectedScope] of cases) {
+    await t.test(causeCode, async () => {
+      const calls = [];
+      const twoClaimJob = {
+        ...JOB,
+        claims: [
+          JOB.claims[0],
+          {
+            ...JOB.claims[0],
+            trackerId: "123e4567-e89b-42d3-a456-426614174001",
+          },
+        ],
+      };
+      const responses = [
+        { body: { ok: true, job: twoClaimJob } },
+        {
+          status: 409,
+          body: {
+            ok: false,
+            code: "LOCAL_WORKER_SUBMIT_PARTIAL",
+            partial: {
+              causeCode,
+              committedCount: 1,
+              alreadyCommittedCount: 0,
+              leaseLostCount: 0,
+              collectionConflictCount: 0,
+              processedCount: 1,
+              claimResults: [{
+                claimId: twoClaimJob.claims[0].trackerId,
+                status: "committed",
+              }],
+            },
+          },
+        },
+        { body: { ok: true, releasedCount: 1 } },
+      ];
+      if (expectedScope === "tracker") responses.push({ body: { ok: true, job: null } });
+      await runLocalShoppingWorker({
+        env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+        fetchImpl: authenticatedFetch(responses, calls),
+        provider: { async collect() { return completeWindow(); }, async close() {} },
+        nowMs: () => NOW,
+        randomUUID: uuidSequence(),
+        skipLock: true,
+      });
+
+      const failure = calls.coordination.find((call) => call.action === "record-failure");
+      assert.equal(failure.errorCode, expectedCode);
+      assert.equal(failure.scope, expectedScope);
+      assert.deepEqual(calls.find((call) => call.action === "fail").job.claims, [twoClaimJob.claims[1]]);
+      assert.doesNotMatch(JSON.stringify({ calls, coordination: calls.coordination }), /raw_database_secret|xx999/iu);
+    });
+  }
 });
 
 test("uses explicit claim ids instead of a processed prefix after mixed partial outcomes", async () => {

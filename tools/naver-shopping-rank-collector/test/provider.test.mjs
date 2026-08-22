@@ -1017,10 +1017,11 @@ test("keeps an authoritative same-page duplicate seller row without compressing 
   assert.equal(state.items[0].sellerProductId, state.items[1].sellerProductId);
 });
 
-test("classifies 418, 429, CAPTCHA, auth redirect, and invalid navigation with typed errors", () => {
+test("classifies 418, 429, block text, CAPTCHA, auth redirect, and invalid navigation with typed errors", () => {
   const cases = [
     [{ status: 418, url: "https://search.shopping.naver.com/search/all" }, "naver_http_418"],
     [{ status: 429, url: "https://search.shopping.naver.com/search/all" }, "naver_http_429"],
+    [{ status: 200, url: "https://search.shopping.naver.com/search/all", bodyText: "비정상적인 접근입니다." }, "naver_access_blocked"],
     [{ status: 200, url: "https://search.shopping.naver.com/search/all", bodyText: "CAPTCHA" }, "naver_captcha_detected"],
     [{ status: 200, url: "https://nid.naver.com/nidlogin.login" }, "naver_auth_required"],
     [{ status: 200, url: "https://evil.example/search/all" }, "provider_navigation_not_allowed"],
@@ -1028,6 +1029,59 @@ test("classifies 418, 429, CAPTCHA, auth redirect, and invalid navigation with t
   for (const [input, code] of cases) {
     assert.throws(() => classifyNaverPage(input), (error) => error instanceof ProviderError && error.code === code);
   }
+});
+
+test("emits a bounded exact 403 code without exposing response HTML or detail", () => {
+  const sentinel = "RAW_403_RESPONSE_MUST_NOT_ESCAPE";
+  let caught = null;
+  try {
+    classifyNaverPage({
+      status: "403",
+      url: "https://search.shopping.naver.com/search/all",
+      title: `Forbidden ${sentinel}`,
+      bodyText: `<html><body>${sentinel}</body></html>`,
+    });
+  } catch (error) {
+    caught = error;
+  }
+
+  assert.ok(caught instanceof ProviderError);
+  assert.equal(caught.code, "naver_http_403");
+  assert.equal(caught.message, "naver_http_403");
+  assert.equal(caught.detail, "");
+  assert.doesNotMatch(`${caught.stack}\n${JSON.stringify(caught)}`, new RegExp(sentinel));
+});
+
+test("keeps the exact 403 reason bounded while provider cooldown prevents immediate replay", async () => {
+  const current = Date.parse("2026-08-01T00:00:00.000Z");
+  let calls = 0;
+  const sentinel = "RAW_403_STATUS_MUST_NOT_ESCAPE";
+  const provider = createFixtureProvider({
+    now: () => current,
+    config: { blockCooldownMs: 2_000 },
+    collectPage: async () => {
+      calls += 1;
+      return classifyNaverPage({
+        status: 403,
+        url: "https://search.shopping.naver.com/search/all",
+        bodyText: `<html>${sentinel}</html>`,
+      });
+    },
+  });
+
+  assert.equal(await provider.verifyReadiness({ force: true }), false);
+  const status = await provider.status();
+  assert.equal(status.verified, false);
+  assert.equal(status.reason, "naver_http_403");
+  assert.doesNotMatch(JSON.stringify(status), new RegExp(sentinel));
+  await assert.rejects(
+    provider.collect(rankRequest("403즉시재시도금지", 1, current)),
+    (error) => error instanceof ProviderError
+      && error.code === "provider_cooldown_active"
+      && error.detail === "naver_http_403",
+  );
+  assert.equal(calls, 1);
+  await provider.close();
 });
 
 test("proves source exhaustion only on an empty result page with no product rows", () => {

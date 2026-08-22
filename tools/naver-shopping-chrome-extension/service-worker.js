@@ -44,6 +44,8 @@ const LEGACY_CONTROLLER_PAGE_URL = new URL(chrome.runtime.getURL("popup.html"));
 const NAVER_ACCESS_COOLDOWN_CODES = new Set([
   "naver_verification_required",
   "naver_captcha_detected",
+  "naver_http_403",
+  "naver_access_blocked",
   "naver_http_418",
   "naver_http_429",
   "naver_network_restricted",

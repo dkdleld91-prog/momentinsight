@@ -9,6 +9,8 @@ import handler, {
   findLoginIdentity,
   loadOwnerGoogleIntegration,
   mapScheduleRowToGoogleEvent,
+  oauthStateNonce,
+  resolveGoogleLoginAccess,
   signOauthState,
   syncOwnerScheduleRows,
   upsertLoginIdentity,
@@ -450,9 +452,15 @@ test("loadOwnerGoogleIntegration lowercases the owner code and surfaces errors",
 
 const OAUTH_CALLBACK_URL = "https://insight.momentlabs.co.kr/api/google-oauth/callback";
 const LOGIN_START_URL = "https://insight.momentlabs.co.kr/api/google-login/start";
+const OWNER_LOGIN_API_URL = "https://insight.momentlabs.co.kr/api/owner/google-login";
+const OWNER_CALENDAR_API_URL = "https://insight.momentlabs.co.kr/api/owner/google-calendar";
 const SUPABASE_TEST_URL = "http://supabase.test";
 const IDENTITY_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/login_identities`;
 const AUDIT_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/audit_logs`;
+const TEAM_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/operation_team_codes`;
+const CLIENT_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/clients`;
+const RATE_RPC_URL = `${SUPABASE_TEST_URL}/rest/v1/rpc/consume_code_login_rate_limit`;
+const NONCE_COOKIE = "mi-goauth-nonce";
 const SESSION_ENV = { MI_SESSION_SECRET: "unit-test-session-secret-0123456789abcdef" };
 const LOGIN_HANDLER_ENV = {
   ...GOOGLE_ENV,
@@ -468,6 +476,7 @@ const LOGIN_HANDLER_ENV = {
   MI_SESSION_TTL_SECONDS: undefined,
   MI_PRIMARY_AGENCY_CODE: undefined,
   MI_GOOGLE_OAUTH_REDIRECT: undefined,
+  MI_GOOGLE_LOGIN_ROLES: undefined,
   NODE_ENV: undefined,
   VERCEL_ENV: undefined,
 };
@@ -481,6 +490,22 @@ function signStatePayload(payload, secret) {
 function fakeIdToken(payload) {
   const part = (value) => Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
   return `${part({ alg: "RS256", typ: "JWT" })}.${part(payload)}.sig`;
+}
+
+// Every fixture id_token carries the claims the verifier now demands, so a test
+// that omits one is deliberately exercising the fail-closed path.
+function idTokenClaims(overrides = {}) {
+  return {
+    aud: "cid-1",
+    iss: "https://accounts.google.com",
+    exp: Math.floor(Date.now() / 1000) + 3600,
+    email_verified: true,
+    ...overrides,
+  };
+}
+
+function validIdToken(overrides = {}) {
+  return fakeIdToken(idTokenClaims(overrides));
 }
 
 function identityContext({ identity = null, error = null } = {}) {
@@ -554,21 +579,112 @@ function restCreated() {
   return new Response(null, { status: 201 });
 }
 
+function rateRoute(allowed = true) {
+  return ["POST", RATE_RPC_URL, () => restJson([{ allowed, retry_after: allowed ? 0 : 120 }])];
+}
+
+// The per-IP OAuth throttle is infrastructure, not part of the login flow the
+// assertions below describe, so it is filtered out of the recorded call list.
+function flowCalls(calls) {
+  return calls.filter((call) => !call.url.startsWith(RATE_RPC_URL));
+}
+
+function flowMethods(calls) {
+  return flowCalls(calls).map((call) => call.method);
+}
+
+function sessionCookies(response) {
+  const name = sessionConfiguration(SESSION_ENV).cookieName;
+  return response.headers.getSetCookie().filter((cookie) => cookie.startsWith(`${name}=`));
+}
+
+function nonceCookies(response) {
+  return response.headers.getSetCookie().filter((cookie) => cookie.startsWith(`${NONCE_COOKIE}=`));
+}
+
 function googleTokenRoute(idTokenPayload) {
   return ["POST", TOKEN_URL, (call) => {
     assert.match(String(call.body), /grant_type=authorization_code/);
     assert.match(String(call.body), /client_id=cid-1/);
     assert.match(String(call.body), /client_secret=sec-1/);
-    return new Response(JSON.stringify({ id_token: fakeIdToken(idTokenPayload) }), { status: 200 });
+    return new Response(JSON.stringify({ id_token: validIdToken(idTokenPayload) }), { status: 200 });
   }];
 }
 
-async function callLoginHandler(url, { routes = [], env = {} } = {}) {
-  const { calls, impl } = loginFetchRouter(routes);
+async function callLoginHandler(url, {
+  routes = [],
+  env = {},
+  nonce = "",
+  cookie,
+  ip = "",
+  rateAllowed = true,
+  method = "GET",
+} = {}) {
+  const { calls, impl } = loginFetchRouter([rateRoute(rateAllowed), ...routes]);
+  const headers = {};
+  const cookieHeader = cookie === undefined ? (nonce ? `${NONCE_COOKIE}=${nonce}` : "") : cookie;
+  if (cookieHeader) headers.cookie = cookieHeader;
+  if (ip) headers["x-vercel-forwarded-for"] = ip;
   const response = await withEnv({ ...LOGIN_HANDLER_ENV, ...env }, () => (
-    withGlobalFetch(impl, () => handler.fetch(new Request(url)))
+    withGlobalFetch(impl, () => handler.fetch(new Request(url, { method, headers })))
   ));
   return { response, calls };
+}
+
+function loginState(owner = "mml93-a01", purpose = "login") {
+  const state = signOauthState(owner, GOOGLE_ENV, Date.now(), purpose);
+  return { state, nonce: oauthStateNonce(state), url: `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}` };
+}
+
+// Serves both login_identities reads: the lookup by google_sub, and the link
+// flow's lookup of whatever row currently holds the target (role, code).
+function identityRoute(rows, expectedSub = "sub-123", targetRows = []) {
+  return ["GET", IDENTITY_REST_URL, (call) => {
+    if (call.url.includes("role=eq.")) {
+      assert.match(call.url, /code=eq\.mml93-a01/);
+      return restJson(targetRows);
+    }
+    assert.match(call.url, new RegExp(`google_sub=eq\\.${expectedSub}`));
+    return restJson(rows);
+  }];
+}
+
+// Records every write shape the link flow could take so a test can assert that
+// the ones it must not use were never issued.
+function identityWriteSinks() {
+  const deletes = [];
+  const patches = [];
+  const upserts = [];
+  const routes = [
+    ["DELETE", IDENTITY_REST_URL, (call) => {
+      deletes.push(call.url);
+      return restJson([]);
+    }],
+    ["PATCH", IDENTITY_REST_URL, (call) => {
+      patches.push({
+        url: call.url,
+        prefer: call.headers.get("prefer") || "",
+        row: JSON.parse(String(call.body)),
+      });
+      return restJson([{ google_sub: "sub-123" }]);
+    }],
+    ["POST", IDENTITY_REST_URL, (call) => {
+      upserts.push({
+        url: call.url,
+        prefer: call.headers.get("prefer") || "",
+        row: JSON.parse(String(call.body)),
+      });
+      return restCreated();
+    }],
+  ];
+  return { deletes, patches, upserts, routes };
+}
+
+function auditRoute(sink) {
+  return ["POST", AUDIT_REST_URL, (call) => {
+    sink.push(JSON.parse(String(call.body)));
+    return restCreated();
+  }];
 }
 
 test("oauth state purpose defaults to calendar and round-trips link and login", () => {
@@ -608,23 +724,98 @@ test("google auth url reflects a custom login scope", () => {
   assert.equal(params.get("state"), "state-token");
 });
 
-test("google id token decoding extracts the sub and lowercases the email", () => {
+test("google auth url for the login purpose drops offline access and forced consent", () => {
+  const url = buildGoogleAuthUrl("state-token", GOOGLE_ENV, "openid email", "login");
+  const params = new URL(url).searchParams;
+  assert.equal(params.get("scope"), "openid email");
+  assert.equal(params.get("access_type"), null);
+  assert.equal(params.get("prompt"), "select_account");
+  assert.equal(params.get("include_granted_scopes"), "false");
+  assert.equal(params.get("state"), "state-token");
+
+  // linking and calendar keep the refresh-token grant
+  for (const purpose of ["link", "calendar"]) {
+    const other = new URL(buildGoogleAuthUrl("state-token", GOOGLE_ENV, "openid email", purpose)).searchParams;
+    assert.equal(other.get("access_type"), "offline");
+    assert.equal(other.get("prompt"), "consent");
+  }
+});
+
+test("oauthStateNonce extracts the issued nonce and fails soft on damaged states", () => {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
+  const nonce = oauthStateNonce(state);
+  assert.equal(typeof nonce, "string");
+  assert.ok(nonce.length > 0);
+  assert.equal(verifyOauthState(state, GOOGLE_ENV).nonce, nonce);
+
+  assert.equal(oauthStateNonce(""), "");
+  assert.equal(oauthStateNonce("!!!.sig"), "");
+  assert.equal(oauthStateNonce(`${Buffer.from("not json", "utf8").toString("base64url")}.sig`), "");
+});
+
+test("google id token decoding extracts the sub and lowercases the verified email", () => {
   assert.deepEqual(
-    decodeGoogleIdToken(fakeIdToken({ sub: "  sub-123  ", email: "  Owner@EXAMPLE.com  " })),
+    decodeGoogleIdToken(validIdToken({ sub: "  sub-123  ", email: "  Owner@EXAMPLE.com  " }), { env: GOOGLE_ENV }),
     { sub: "sub-123", email: "owner@example.com" },
   );
-  assert.deepEqual(decodeGoogleIdToken(fakeIdToken({ sub: "sub-123" })), { sub: "sub-123", email: null });
-  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "s".repeat(200) })).sub.length, 128);
+  assert.deepEqual(
+    decodeGoogleIdToken(validIdToken({ sub: "sub-123" }), { env: GOOGLE_ENV }),
+    { sub: "sub-123", email: null },
+  );
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "s".repeat(200) }), { env: GOOGLE_ENV }).sub.length, 128);
 });
 
 test("google id token decoding fails closed on missing subs and malformed tokens", () => {
-  assert.equal(decodeGoogleIdToken(fakeIdToken({ email: "owner@example.com" })), null);
-  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "   " })), null);
-  assert.equal(decodeGoogleIdToken(""), null);
-  assert.equal(decodeGoogleIdToken(null), null);
-  assert.equal(decodeGoogleIdToken("one.two"), null);
-  assert.equal(decodeGoogleIdToken("a.!!!.c"), null);
-  assert.equal(decodeGoogleIdToken(`a.${Buffer.from("not json", "utf8").toString("base64url")}.c`), null);
+  const options = { env: GOOGLE_ENV };
+  assert.equal(decodeGoogleIdToken(validIdToken({ email: "owner@example.com" }), options), null);
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "   " }), options), null);
+  assert.equal(decodeGoogleIdToken("", options), null);
+  assert.equal(decodeGoogleIdToken(null, options), null);
+  assert.equal(decodeGoogleIdToken("one.two", options), null);
+  assert.equal(decodeGoogleIdToken("a.!!!.c", options), null);
+  assert.equal(decodeGoogleIdToken(`a.${Buffer.from("not json", "utf8").toString("base64url")}.c`, options), null);
+});
+
+test("google id token decoding rejects foreign audiences, issuers, and expired tokens", () => {
+  const options = { env: GOOGLE_ENV };
+  const now = Math.floor(Date.now() / 1000);
+
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", aud: "attacker-client" }), options), null);
+  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "sub-1", iss: "https://accounts.google.com", exp: now + 60 }), options), null);
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", iss: "https://evil.example" }), options), null);
+  assert.equal(decodeGoogleIdToken(fakeIdToken({ sub: "sub-1", aud: "cid-1", exp: now + 60 }), options), null);
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", exp: now - 61 }), options), null);
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", exp: "soon" }), options), null);
+
+  // both accepted issuer spellings survive, and the 60s skew window is honoured
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", iss: "accounts.google.com" }), options).sub, "sub-1");
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1", exp: now - 30 }), options).sub, "sub-1");
+
+  // an unknown expected audience fails closed instead of trusting the token
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1" }), { env: {} }), null);
+  assert.equal(decodeGoogleIdToken(validIdToken({ sub: "sub-1" }), { aud: "cid-1" }).sub, "sub-1");
+});
+
+test("google id token decoding drops unverified email addresses", () => {
+  const options = { env: GOOGLE_ENV };
+  assert.equal(
+    decodeGoogleIdToken(validIdToken({ sub: "sub-1", email: "owner@example.com", email_verified: false }), options).email,
+    null,
+  );
+  assert.equal(
+    decodeGoogleIdToken(fakeIdToken({
+      sub: "sub-1",
+      aud: "cid-1",
+      iss: "https://accounts.google.com",
+      exp: Math.floor(Date.now() / 1000) + 3600,
+      email: "owner@example.com",
+    }), options).email,
+    null,
+  );
+  assert.equal(
+    decodeGoogleIdToken(validIdToken({ sub: "sub-1", email: "owner@example.com", email_verified: "true" }), options).email,
+    null,
+  );
 });
 
 test("findLoginIdentity filters login_identities by trimmed google sub and surfaces errors", async () => {
@@ -687,10 +878,12 @@ test("upsertLoginIdentity normalizes fields and upserts on the google_sub confli
 test("login start endpoint redirects to google with an openid scope and login purpose", async () => {
   const { response, calls } = await callLoginHandler(LOGIN_START_URL);
   assert.equal(response.status, 302);
-  assert.equal(calls.length, 0);
+  assert.equal(flowCalls(calls).length, 0);
   const location = new URL(response.headers.get("location"));
   assert.equal(`${location.origin}${location.pathname}`, "https://accounts.google.com/o/oauth2/v2/auth");
   assert.equal(location.searchParams.get("scope"), "openid email");
+  assert.equal(location.searchParams.get("prompt"), "select_account");
+  assert.equal(location.searchParams.get("access_type"), null);
   const statePayload = verifyOauthState(location.searchParams.get("state"), GOOGLE_ENV);
   assert.equal(statePayload.p, "login");
   assert.equal(statePayload.owner, "mml93-a01");
@@ -702,88 +895,240 @@ test("login start endpoint redirects to google with an openid scope and login pu
   assert.equal(unconfigured.response.headers.get("location"), "/admin?glogin=not-configured");
 });
 
+test("login start binds the issued state nonce to the browser with a Lax host cookie", async () => {
+  const { response } = await callLoginHandler(LOGIN_START_URL);
+  const cookies = nonceCookies(response);
+  assert.equal(cookies.length, 1);
+  const state = new URL(response.headers.get("location")).searchParams.get("state");
+  assert.equal(cookies[0].split(";")[0], `${NONCE_COOKIE}=${oauthStateNonce(state)}`);
+  assert.match(cookies[0], /HttpOnly/);
+  // Strict would be dropped by the cross-site top-level redirect back from Google
+  assert.match(cookies[0], /SameSite=Lax/);
+  assert.match(cookies[0], /Path=\//);
+  assert.match(cookies[0], /Max-Age=600/);
+  assert.doesNotMatch(cookies[0], /Secure/);
+
+  const hosted = await callLoginHandler(LOGIN_START_URL, { env: { NODE_ENV: "production" } });
+  assert.match(nonceCookies(hosted.response)[0], /Secure/);
+});
+
+test("the owner link-url and calendar auth-url responses bind the same state nonce", async () => {
+  const ownerHeaders = {
+    "content-type": "application/json",
+    "x-mi-session-role": "owner",
+    "x-mi-owner-agency-code": "mml93-a01",
+  };
+  const cases = [
+    [OWNER_LOGIN_API_URL, "link-url", "link"],
+    [OWNER_CALENDAR_API_URL, "auth-url", "calendar"],
+  ];
+  for (const [url, action, purpose] of cases) {
+    const { impl } = loginFetchRouter([]);
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(
+      new Request(url, { method: "POST", headers: ownerHeaders, body: JSON.stringify({ action }) }),
+    )));
+    const payload = await response.json();
+    assert.equal(payload.ok, true, action);
+    const state = new URL(payload.url).searchParams.get("state");
+    assert.equal(verifyOauthState(state, GOOGLE_ENV).p, purpose);
+    const cookies = response.headers.getSetCookie().filter((cookie) => cookie.startsWith(`${NONCE_COOKIE}=`));
+    assert.equal(cookies.length, 1, action);
+    assert.equal(cookies[0].split(";")[0], `${NONCE_COOKIE}=${oauthStateNonce(state)}`);
+    assert.match(cookies[0], /HttpOnly; SameSite=Lax; Max-Age=600/);
+  }
+});
+
 test("oauth callback redirects forged states and wrong-owner link states without side effects", async () => {
   const linkState = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "link");
   const [encoded, signature] = linkState.split(".");
   const tampered = `${encoded}.${(signature[0] === "A" ? "B" : "A") + signature.slice(1)}`;
-  const forged = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(tampered)}`);
+  const forged = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(tampered)}`, {
+    nonce: oauthStateNonce(linkState),
+  });
   assert.equal(forged.response.status, 302);
   assert.equal(forged.response.headers.get("location"), "/admin?gcal=invalid#mi-admin-owner-assistant");
-  assert.equal(forged.calls.length, 0);
+  assert.equal(flowCalls(forged.calls).length, 0);
 
-  const wrongOwner = signOauthState("intruder-a01", GOOGLE_ENV, Date.now(), "link");
-  const rejected = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(wrongOwner)}`);
+  const audits = [];
+  const wrongOwner = loginState("intruder-a01", "link");
+  const rejected = await callLoginHandler(wrongOwner.url, {
+    nonce: wrongOwner.nonce,
+    routes: [auditRoute(audits)],
+  });
   assert.equal(rejected.response.status, 302);
   assert.equal(rejected.response.headers.get("location"), "/admin?glogin=invalid");
-  assert.equal(rejected.calls.length, 0);
+  // no token exchange, no identity write — only the fail-closed audit trail
+  assert.deepEqual(flowMethods(rejected.calls), ["POST"]);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_failed");
+  assert.deepEqual(audits[0].metadata, { reason: "invalid-state" });
+});
+
+test("oauth callback refuses a state that is not bound to the caller's browser", async () => {
+  const audits = [];
+  const missing = await callLoginHandler(loginState().url, { routes: [auditRoute(audits)] });
+  assert.equal(missing.response.status, 302);
+  assert.equal(missing.response.headers.get("location"), "/admin?glogin=invalid");
+  assert.deepEqual(flowMethods(missing.calls), ["POST"]);
+  assert.deepEqual(audits[0].metadata, { reason: "nonce-mismatch" });
+  assert.equal(sessionCookies(missing.response).length, 0);
+
+  const wrong = await callLoginHandler(loginState().url, { nonce: "someone-elses-nonce", routes: [auditRoute(audits)] });
+  assert.equal(wrong.response.headers.get("location"), "/admin?glogin=invalid");
+  assert.deepEqual(flowMethods(wrong.calls), ["POST"]);
+  assert.deepEqual(audits[1].metadata, { reason: "nonce-mismatch" });
+
+  // a calendar-purpose state keeps the calendar redirect surface and stays silent
+  const calendar = loginState("mml93-a01", "calendar");
+  const gcal = await callLoginHandler(calendar.url, { nonce: "not-the-issued-nonce" });
+  assert.equal(gcal.response.headers.get("location"), "/admin?gcal=invalid#mi-admin-owner-assistant");
+  assert.equal(flowCalls(gcal.calls).length, 0);
+});
+
+test("oauth callback clears the browser nonce on every outcome so a state is single use", async () => {
+  const clearedCookie = /^mi-goauth-nonce=; Path=\/; HttpOnly; SameSite=Lax; Max-Age=0$/;
+  const invalid = await callLoginHandler(`${OAUTH_CALLBACK_URL}?code=auth-1&state=nonsense`);
+  assert.match(nonceCookies(invalid.response)[0], clearedCookie);
+
+  const audits = [];
+  const login = loginState();
+  const success = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123" }),
+      identityRoute([{ google_sub: "sub-123", google_email: null, role: "owner", code: "mml93-a01", linked_at: null }]),
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(success.response.headers.get("location"), "/admin?glogin=success");
+  assert.match(nonceCookies(success.response)[0], clearedCookie);
+  assert.equal(sessionCookies(success.response).length, 1);
+});
+
+test("oauth callback maps a cancelled consent screen to a purpose-aware notice", async () => {
+  const cases = [
+    ["login", "access_denied", "/admin?glogin=cancelled"],
+    ["login", "invalid_scope", "/admin?glogin=invalid"],
+    ["link", "access_denied", "/admin?glogin=cancelled"],
+    ["link", "", "/admin?glogin=invalid"],
+    ["calendar", "access_denied", "/admin?gcal=invalid#mi-admin-owner-assistant"],
+  ];
+  for (const [purpose, error, location] of cases) {
+    const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), purpose);
+    const query = `state=${encodeURIComponent(state)}${error ? `&error=${error}` : ""}`;
+    const { response, calls } = await callLoginHandler(`${OAUTH_CALLBACK_URL}?${query}`);
+    assert.equal(response.headers.get("location"), location, `${purpose}/${error}`);
+    assert.equal(flowCalls(calls).length, 0);
+  }
+
+  // an unverifiable state may still pick the redirect surface, but never authorizes anything
+  const unsigned = signStatePayload({ owner: "mml93-a01", p: "login", exp: Date.now() + STATE_TTL_MS, nonce: "x" }, "wrong-secret");
+  const cancelled = await callLoginHandler(`${OAUTH_CALLBACK_URL}?state=${encodeURIComponent(unsigned)}&error=access_denied`);
+  assert.equal(cancelled.response.headers.get("location"), "/admin?glogin=cancelled");
+  assert.equal(flowCalls(cancelled.calls).length, 0);
+});
+
+test("google oauth endpoints shed abusive per-IP traffic without touching google", async () => {
+  const start = await callLoginHandler(LOGIN_START_URL, { rateAllowed: false, ip: "203.0.113.7" });
+  assert.equal(start.response.status, 302);
+  assert.equal(start.response.headers.get("location"), "/admin?glogin=busy");
+  assert.equal(flowCalls(start.calls).length, 0);
+  assert.equal(nonceCookies(start.response).length, 0);
+
+  const login = loginState();
+  const callback = await callLoginHandler(login.url, {
+    rateAllowed: false,
+    ip: "203.0.113.7",
+    nonce: login.nonce,
+  });
+  assert.equal(callback.response.headers.get("location"), "/admin?glogin=busy");
+  assert.equal(flowCalls(callback.calls).length, 0);
+  assert.equal(sessionCookies(callback.response).length, 0);
+
+  const limiterCall = JSON.parse(String(callback.calls[0].body));
+  assert.equal(limiterCall.p_window_seconds, 900);
+  assert.equal(limiterCall.p_attempt_limit, 20);
+  assert.match(limiterCall.p_key_hash, /^[a-f0-9]{64}$/);
+  assert.notEqual(limiterCall.p_key_hash, JSON.parse(String(start.calls[0].body)).p_key_hash);
+});
+
+test("google oauth throttling degrades to a local bucket instead of blocking login", async () => {
+  const brokenLimiter = ["POST", RATE_RPC_URL, () => new Response(JSON.stringify({ message: "rpc down" }), {
+    status: 500,
+    headers: { "content-type": "application/json" },
+  })];
+  const { calls, impl } = loginFetchRouter([brokenLimiter]);
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(
+    new Request(LOGIN_START_URL, { headers: { "x-vercel-forwarded-for": "198.51.100.31" } }),
+  )));
+  assert.equal(response.status, 302);
+  assert.ok(String(response.headers.get("location")).startsWith("https://accounts.google.com/"));
+  assert.equal(nonceCookies(response).length, 1);
+  assert.equal(flowCalls(calls).length, 0);
 });
 
 test("login callback redirects unlinked and non-owner identities without creating a session", async () => {
-  const callbackUrl = () => {
-    const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
-    return `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`;
-  };
-  const identityRoute = (rows) => ["GET", IDENTITY_REST_URL, (call) => {
-    assert.match(call.url, /google_sub=eq\.sub-123/);
-    return restJson(rows);
-  }];
-
-  const unlinked = await callLoginHandler(callbackUrl(), {
-    routes: [googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }), identityRoute([])],
+  const audits = [];
+  const unlinkedState = loginState();
+  const unlinked = await callLoginHandler(unlinkedState.url, {
+    nonce: unlinkedState.nonce,
+    routes: [googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }), identityRoute([]), auditRoute(audits)],
   });
   assert.equal(unlinked.response.status, 302);
   assert.equal(unlinked.response.headers.get("location"), "/admin?glogin=unlinked");
-  assert.equal(unlinked.response.headers.getSetCookie().length, 0);
-  assert.deepEqual(unlinked.calls.map((call) => call.method), ["POST", "GET"]);
+  assert.equal(sessionCookies(unlinked.response).length, 0);
+  assert.deepEqual(flowMethods(unlinked.calls), ["POST", "GET", "POST"]);
+  assert.deepEqual(audits[0].metadata, { reason: "unlinked" });
 
   const teamIdentity = {
     google_sub: "sub-123", google_email: "owner@example.com", role: "team", code: "mml93-a01", linked_at: null,
   };
-  const notReady = await callLoginHandler(callbackUrl(), {
-    routes: [googleTokenRoute({ sub: "sub-123" }), identityRoute([teamIdentity])],
+  const notReadyState = loginState();
+  const notReady = await callLoginHandler(notReadyState.url, {
+    nonce: notReadyState.nonce,
+    routes: [googleTokenRoute({ sub: "sub-123" }), identityRoute([teamIdentity]), auditRoute(audits)],
   });
   assert.equal(notReady.response.headers.get("location"), "/admin?glogin=not-ready");
-  assert.equal(notReady.response.headers.getSetCookie().length, 0);
+  assert.equal(sessionCookies(notReady.response).length, 0);
+  assert.deepEqual(audits[1].metadata, { reason: "not-ready" });
 
-  const wrongCode = await callLoginHandler(callbackUrl(), {
+  const wrongCodeState = loginState();
+  const wrongCode = await callLoginHandler(wrongCodeState.url, {
+    nonce: wrongCodeState.nonce,
     routes: [
       googleTokenRoute({ sub: "sub-123" }),
       identityRoute([{ ...teamIdentity, role: "owner", code: "other-a01" }]),
+      auditRoute(audits),
     ],
   });
   assert.equal(wrongCode.response.headers.get("location"), "/admin?glogin=not-ready");
-  assert.equal(wrongCode.response.headers.getSetCookie().length, 0);
+  assert.equal(sessionCookies(wrongCode.response).length, 0);
 });
 
 test("login callback success seals an owner session cookie and records an audit log", async () => {
-  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
   const audits = [];
-  const { response, calls } = await callLoginHandler(
-    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
-    {
-      routes: [
-        googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
-        ["GET", IDENTITY_REST_URL, restJson([{
-          google_sub: "sub-123",
-          google_email: "owner@example.com",
-          role: "owner",
-          code: "mml93-a01",
-          linked_at: "2026-08-01T00:00:00.000Z",
-        }])],
-        ["POST", AUDIT_REST_URL, (call) => {
-          audits.push(JSON.parse(String(call.body)));
-          return restCreated();
-        }],
-      ],
-    },
-  );
+  const login = loginState();
+  const { response, calls } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+      identityRoute([{
+        google_sub: "sub-123",
+        google_email: "owner@example.com",
+        role: "owner",
+        code: "mml93-a01",
+        linked_at: "2026-08-01T00:00:00.000Z",
+      }]),
+      auditRoute(audits),
+    ],
+  });
 
   assert.equal(response.status, 302);
   assert.equal(response.headers.get("location"), "/admin?glogin=success");
   assert.equal(response.headers.get("cache-control"), "no-store");
-  assert.deepEqual(calls.map((call) => call.method), ["POST", "GET", "POST"]);
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "POST"]);
 
-  const cookies = response.headers.getSetCookie();
+  const cookies = sessionCookies(response);
   assert.equal(cookies.length, 1);
   const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
   assert.ok(cookies[0].startsWith(`${cookieName}=v1.`));
@@ -799,70 +1144,402 @@ test("login callback success seals an owner session cookie and records an audit 
   assert.equal(audits[0].target_table, "login_identities");
 });
 
-test("login callback without a session secret redirects to session-unavailable", async () => {
-  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login");
-  const { response, calls } = await callLoginHandler(
-    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
-    {
-      env: { MI_SESSION_SECRET: undefined },
-      routes: [
-        googleTokenRoute({ sub: "sub-123" }),
-        ["GET", IDENTITY_REST_URL, restJson([{
-          google_sub: "sub-123",
-          google_email: "owner@example.com",
-          role: "owner",
-          code: "mml93-a01",
-          linked_at: null,
-        }])],
-      ],
-    },
-  );
-  assert.equal(response.status, 302);
-  assert.equal(response.headers.get("location"), "/admin?glogin=session-unavailable");
-  assert.equal(response.headers.getSetCookie().length, 0);
-  // the audit endpoint is never reached when sealing fails
-  assert.deepEqual(calls.map((call) => call.method), ["POST", "GET"]);
+test("google login sessions expire on the configured code-login lifetime", async () => {
+  const login = loginState();
+  const { response } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    env: { MI_SESSION_TTL_SECONDS: "1800" },
+    routes: [
+      googleTokenRoute({ sub: "sub-123" }),
+      identityRoute([{ google_sub: "sub-123", google_email: null, role: "owner", code: "mml93-a01", linked_at: null }]),
+      ["POST", AUDIT_REST_URL, () => restCreated()],
+    ],
+  });
+
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const cookie = sessionCookies(response)[0];
+  assert.match(cookie, /Max-Age=1800/);
+  const claims = openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
+  assert.equal(claims.exp - claims.iat, 1800);
 });
 
-test("link callback success upserts the identity keyed by google_sub before confirming", async () => {
-  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "link");
-  const upserts = [];
+test("login callback without a session secret redirects to session-unavailable", async () => {
+  const login = loginState();
+  const { response, calls } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    env: { MI_SESSION_SECRET: undefined },
+    routes: [
+      googleTokenRoute({ sub: "sub-123" }),
+      identityRoute([{
+        google_sub: "sub-123",
+        google_email: "owner@example.com",
+        role: "owner",
+        code: "mml93-a01",
+        linked_at: null,
+      }]),
+    ],
+  });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/admin?glogin=session-unavailable");
+  assert.equal(sessionCookies(response).length, 0);
+  // the audit endpoint is never reached when sealing fails
+  assert.deepEqual(flowMethods(calls), ["POST", "GET"]);
+});
+
+test("login callback audits a failed token exchange and an unusable id token", async () => {
   const audits = [];
-  const { response, calls } = await callLoginHandler(
-    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}`,
-    {
-      routes: [
-        googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
-        ["POST", IDENTITY_REST_URL, (call) => {
-          upserts.push({
-            url: call.url,
-            prefer: call.headers.get("prefer") || "",
-            row: JSON.parse(String(call.body)),
-          });
-          return restCreated();
-        }],
-        ["POST", AUDIT_REST_URL, (call) => {
-          audits.push(JSON.parse(String(call.body)));
-          return restCreated();
-        }],
-      ],
-    },
+  const exchangeFailed = loginState();
+  const failed = await callLoginHandler(exchangeFailed.url, {
+    nonce: exchangeFailed.nonce,
+    routes: [
+      ["POST", TOKEN_URL, () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })],
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(failed.response.headers.get("location"), "/admin?glogin=exchange-failed");
+  assert.deepEqual(audits[0].metadata, { reason: "exchange-failed" });
+
+  const foreign = loginState();
+  const noIdentity = await callLoginHandler(foreign.url, {
+    nonce: foreign.nonce,
+    routes: [
+      ["POST", TOKEN_URL, () => new Response(
+        JSON.stringify({ id_token: validIdToken({ sub: "sub-123", aud: "attacker-client" }) }),
+        { status: 200 },
+      )],
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(noIdentity.response.headers.get("location"), "/admin?glogin=no-identity");
+  assert.deepEqual(audits[1].metadata, { reason: "no-identity" });
+  assert.deepEqual(flowMethods(noIdentity.calls), ["POST", "POST"]);
+});
+
+test("google login keeps team and client identities out until their role is enabled", async () => {
+  const audits = [];
+  const teamIdentity = {
+    google_sub: "sub-team", google_email: null, role: "team", code: "mml93-t01", linked_at: null,
+  };
+  const blocked = loginState();
+  const notReady = await callLoginHandler(blocked.url, {
+    nonce: blocked.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-team" }),
+      identityRoute([teamIdentity], "sub-team"),
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(notReady.response.headers.get("location"), "/admin?glogin=not-ready");
+  assert.equal(sessionCookies(notReady.response).length, 0);
+  // the team lookup never runs while the canary keeps google login owner-only
+  assert.deepEqual(flowMethods(notReady.calls), ["POST", "GET", "POST"]);
+  assert.deepEqual(audits[0].metadata, { reason: "not-ready" });
+});
+
+test("an enabled operation-team role logs in with the same claims code login issues", async () => {
+  const login = loginState();
+  const { response, calls } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    env: { MI_GOOGLE_LOGIN_ROLES: "owner, team" },
+    routes: [
+      googleTokenRoute({ sub: "sub-team" }),
+      identityRoute([{
+        google_sub: "sub-team", google_email: null, role: "team", code: "MML93-T01", linked_at: null,
+      }], "sub-team"),
+      ["GET", TEAM_REST_URL, (call) => {
+        assert.match(call.url, /team_code=ilike\.mml93-t01/);
+        assert.match(call.url, /status=eq\.active/);
+        return restJson([{
+          id: "team-1",
+          team_name: "운영팀",
+          team_code: "mml93-t01",
+          status: "active",
+          client_id: "client-1",
+          revoked_at: null,
+        }]);
+      }],
+      ["GET", CLIENT_REST_URL, () => restJson([{
+        id: "client-1",
+        name: "고객",
+        business_name: "고객사",
+        agency_code: "mml93-a02",
+        status: "active",
+        disconnected_at: null,
+      }])],
+      ["POST", AUDIT_REST_URL, () => restCreated()],
+    ],
+  });
+
+  assert.equal(response.headers.get("location"), "/admin?glogin=success");
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "GET", "POST"]);
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const cookie = sessionCookies(response)[0];
+  const claims = openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
+  assert.equal(claims.role, "team");
+  assert.equal(claims.teamCode, "mml93-t01");
+  assert.equal(claims.teamId, "team-1");
+  assert.equal(claims.clientId, "client-1");
+  assert.equal(claims.agencyCode, "mml93-a02");
+});
+
+test("an enabled advertiser role logs in and a revoked code is refused as inactive", async () => {
+  const login = loginState();
+  const { response, calls } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    env: { MI_GOOGLE_LOGIN_ROLES: "owner,client" },
+    routes: [
+      googleTokenRoute({ sub: "sub-client" }),
+      identityRoute([{
+        google_sub: "sub-client", google_email: null, role: "client", code: "mml93-a02", linked_at: null,
+      }], "sub-client"),
+      ["GET", CLIENT_REST_URL, (call) => {
+        assert.match(call.url, /agency_code=ilike\.mml93-a02/);
+        return restJson([{
+          id: "client-9",
+          name: "고객",
+          business_name: "고객사",
+          agency_code: "mml93-a02",
+          status: "active",
+          disconnected_at: null,
+        }]);
+      }],
+      ["POST", AUDIT_REST_URL, () => restCreated()],
+    ],
+  });
+  assert.equal(response.headers.get("location"), "/admin?glogin=success");
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const claims = openSession(sessionCookies(response)[0].split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
+  assert.equal(claims.role, "client");
+  assert.equal(claims.clientId, "client-9");
+  assert.equal(claims.agencyCode, "mml93-a02");
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "POST"]);
+
+  const audits = [];
+  const revoked = loginState();
+  const inactive = await callLoginHandler(revoked.url, {
+    nonce: revoked.nonce,
+    env: { MI_GOOGLE_LOGIN_ROLES: "owner,client" },
+    routes: [
+      googleTokenRoute({ sub: "sub-client" }),
+      identityRoute([{
+        google_sub: "sub-client", google_email: null, role: "client", code: "mml93-a02", linked_at: null,
+      }], "sub-client"),
+      ["GET", CLIENT_REST_URL, () => restJson([])],
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(inactive.response.headers.get("location"), "/admin?glogin=inactive");
+  assert.equal(sessionCookies(inactive.response).length, 0);
+  assert.deepEqual(audits[0].metadata, { reason: "inactive" });
+});
+
+test("resolveGoogleLoginAccess keeps the owner canary and reads the role allow-list", async () => {
+  const untouched = { supabaseAdmin: { from() { throw new Error("no lookup expected"); } } };
+  assert.deepEqual(
+    await resolveGoogleLoginAccess({ role: "owner", code: "MML93-A01" }, untouched, {}),
+    { ok: true, access: { role: "owner", agencyCode: "mml93-a01" } },
   );
+  assert.deepEqual(
+    await resolveGoogleLoginAccess({ role: "owner", code: "other-a01" }, untouched, {}),
+    { ok: false, reason: "not-ready" },
+  );
+  assert.deepEqual(
+    await resolveGoogleLoginAccess({ role: "team", code: "mml93-t01" }, untouched, {}),
+    { ok: false, reason: "not-ready" },
+  );
+  assert.deepEqual(
+    await resolveGoogleLoginAccess({ role: "super", code: "mml93-a01" }, untouched, { MI_GOOGLE_LOGIN_ROLES: "owner,team" }),
+    { ok: false, reason: "not-ready" },
+  );
+  assert.deepEqual(
+    await resolveGoogleLoginAccess(null, untouched, {}),
+    { ok: false, reason: "not-ready" },
+  );
+  // a blank allow-list still falls back to the owner-only canary
+  assert.deepEqual(
+    await resolveGoogleLoginAccess({ role: "owner", code: "mml93-a01" }, untouched, { MI_GOOGLE_LOGIN_ROLES: " , " }),
+    { ok: true, access: { role: "owner", agencyCode: "mml93-a01" } },
+  );
+});
+
+test("link callback inserts a first mapping through the google_sub conflict key", async () => {
+  const link = loginState("mml93-a01", "link");
+  const writes = identityWriteSinks();
+  const audits = [];
+  const { response, calls } = await callLoginHandler(link.url, {
+    nonce: link.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+      identityRoute([], "sub-123", []),
+      ...writes.routes,
+      auditRoute(audits),
+    ],
+  });
 
   assert.equal(response.status, 302);
   assert.equal(response.headers.get("location"), "/admin?glogin=linked");
-  assert.equal(response.headers.getSetCookie().length, 0);
-  assert.deepEqual(calls.map((call) => call.method), ["POST", "POST", "POST"]);
+  assert.equal(sessionCookies(response).length, 0);
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "POST", "POST"]);
 
-  assert.equal(upserts.length, 1);
-  assert.match(upserts[0].url, /on_conflict=google_sub/);
-  assert.match(upserts[0].prefer, /resolution=merge-duplicates/);
-  assert.equal(upserts[0].row.google_sub, "sub-123");
-  assert.equal(upserts[0].row.google_email, "owner@example.com");
-  assert.equal(upserts[0].row.role, "owner");
-  assert.equal(upserts[0].row.code, "mml93-a01");
+  // nothing is ever cleared: an empty target is written, not replaced
+  assert.equal(writes.deletes.length, 0);
+  assert.equal(writes.patches.length, 0);
+  assert.equal(writes.upserts.length, 1);
+  assert.match(writes.upserts[0].url, /on_conflict=google_sub/);
+  assert.match(writes.upserts[0].prefer, /resolution=merge-duplicates/);
+  assert.equal(writes.upserts[0].row.google_sub, "sub-123");
+  assert.equal(writes.upserts[0].row.google_email, "owner@example.com");
+  assert.equal(writes.upserts[0].row.role, "owner");
+  assert.equal(writes.upserts[0].row.code, "mml93-a01");
 
   assert.equal(audits.length, 1);
   assert.equal(audits[0].action, "google_login_linked");
   assert.equal(audits[0].target_table, "login_identities");
+});
+
+test("link callback moves an occupied target onto the new google account in one update", async () => {
+  const link = loginState("mml93-a01", "link");
+  const writes = identityWriteSinks();
+  const audits = [];
+  const before = Date.now();
+  const { response, calls } = await callLoginHandler(link.url, {
+    nonce: link.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+      identityRoute([], "sub-123", [{ google_sub: "sub-old", role: "owner", code: "mml93-a01" }]),
+      ...writes.routes,
+      auditRoute(audits),
+    ],
+  });
+
+  assert.equal(response.headers.get("location"), "/admin?glogin=linked");
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "PATCH", "POST"]);
+
+  // exactly one atomic statement — never a delete, never a second insert
+  assert.equal(writes.deletes.length, 0);
+  assert.equal(writes.upserts.length, 0);
+  assert.equal(writes.patches.length, 1);
+  assert.match(writes.patches[0].url, /role=eq\.owner/);
+  assert.match(writes.patches[0].url, /code=eq\.mml93-a01/);
+  assert.doesNotMatch(writes.patches[0].url, /google_sub=/);
+  assert.match(writes.patches[0].prefer, /return=representation/);
+  assert.equal(writes.patches[0].row.google_sub, "sub-123");
+  assert.equal(writes.patches[0].row.google_email, "owner@example.com");
+  assert.ok(Date.parse(writes.patches[0].row.linked_at) >= before);
+
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_linked");
+});
+
+test("a failed link move leaves the previous google mapping in place", async () => {
+  const cases = [
+    ["rejected update", () => new Response(JSON.stringify({ message: "conflict" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    })],
+    // a filter that matches nothing means the row moved underneath us
+    ["no row updated", () => restJson([])],
+  ];
+  for (const [label, patchResponse] of cases) {
+    const link = loginState("mml93-a01", "link");
+    const writes = identityWriteSinks();
+    const { response, calls } = await callLoginHandler(link.url, {
+      nonce: link.nonce,
+      routes: [
+        googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+        identityRoute([], "sub-123", [{ google_sub: "sub-old", role: "owner", code: "mml93-a01" }]),
+        ["DELETE", IDENTITY_REST_URL, (call) => {
+          writes.deletes.push(call.url);
+          return restJson([]);
+        }],
+        ["PATCH", IDENTITY_REST_URL, patchResponse],
+        ["POST", IDENTITY_REST_URL, (call) => {
+          writes.upserts.push(call.url);
+          return restCreated();
+        }],
+      ],
+    });
+
+    assert.equal(response.headers.get("location"), "/admin?glogin=save-failed", label);
+    assert.deepEqual(flowMethods(calls), ["POST", "GET", "GET", "PATCH"], label);
+    // sub-old still owns the mapping: nothing was deleted and nothing replaced it
+    assert.equal(writes.deletes.length, 0, label);
+    assert.equal(writes.upserts.length, 0, label);
+  }
+});
+
+test("link callback refuses to re-map a google account that belongs to another login", async () => {
+  const audits = [];
+  const link = loginState("mml93-a01", "link");
+  const { response, calls } = await callLoginHandler(link.url, {
+    nonce: link.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123", email: "Owner@Example.com" }),
+      identityRoute([{
+        google_sub: "sub-123", google_email: "team@example.com", role: "team", code: "mml93-t01", linked_at: null,
+      }]),
+      auditRoute(audits),
+    ],
+  });
+
+  assert.equal(response.headers.get("location"), "/admin?glogin=already-linked");
+  // exchange, lookup, audit — no delete and no upsert touch the stored mapping
+  assert.deepEqual(flowMethods(calls), ["POST", "GET", "POST"]);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_failed");
+  assert.deepEqual(audits[0].metadata, { reason: "already-linked" });
+
+  // the same google account already pointing at this owner code re-links normally
+  const owned = loginState("mml93-a01", "link");
+  const writes = identityWriteSinks();
+  const relink = await callLoginHandler(owned.url, {
+    nonce: owned.nonce,
+    routes: [
+      googleTokenRoute({ sub: "sub-123" }),
+      identityRoute([{
+        google_sub: "sub-123", google_email: null, role: "owner", code: "MML93-A01", linked_at: null,
+      }]),
+      ...writes.routes,
+      ["POST", AUDIT_REST_URL, () => restCreated()],
+    ],
+  });
+  assert.equal(relink.response.headers.get("location"), "/admin?glogin=linked");
+  // the row is already this account's, so it refreshes in place without a target lookup
+  assert.deepEqual(flowMethods(relink.calls), ["POST", "GET", "POST", "POST"]);
+  assert.equal(writes.deletes.length, 0);
+  assert.equal(writes.patches.length, 0);
+  assert.equal(writes.upserts.length, 1);
+});
+
+test("the owner unlink action records an audit trail without blocking the response", async () => {
+  const audits = [];
+  const deletes = [];
+  const { impl } = loginFetchRouter([
+    ["DELETE", IDENTITY_REST_URL, (call) => {
+      deletes.push(call.url);
+      return restJson([]);
+    }],
+    auditRoute(audits),
+  ]);
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(
+    new Request(OWNER_LOGIN_API_URL, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-mi-session-role": "owner",
+        "x-mi-owner-agency-code": "mml93-a01",
+      },
+      body: JSON.stringify({ action: "unlink" }),
+    }),
+  )));
+
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(deletes.length, 1);
+  assert.match(deletes[0], /role=eq\.owner/);
+  assert.match(deletes[0], /code=eq\.mml93-a01/);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].action, "google_login_unlinked");
+  assert.equal(audits[0].target_table, "login_identities");
+  assert.deepEqual(audits[0].metadata, { role: "owner" });
 });

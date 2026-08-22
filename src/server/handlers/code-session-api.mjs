@@ -199,7 +199,7 @@ async function clearRateLimit(ctx, key) {
   localRateBuckets.delete(key);
 }
 
-async function activeClientByCode(ctx, code) {
+export async function activeClientByCode(ctx, code) {
   let query = ctx.supabaseAdmin
     .from("clients")
     .select("id, name, business_name, agency_code, status, disconnected_at")

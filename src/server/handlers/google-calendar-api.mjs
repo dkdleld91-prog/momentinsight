@@ -2,9 +2,16 @@ import { withSupabase } from "@supabase/server";
 import crypto from "node:crypto";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { seoulDateKey } from "../calendar-domain.mjs";
-import { createSessionClaims, sealSession, sessionCookie } from "../code-session.mjs";
+import {
+  createSessionClaims,
+  parseCookies,
+  sealSession,
+  sessionConfiguration,
+  sessionCookie,
+} from "../code-session.mjs";
 import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
+import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
 
 const OWNER_API_PATH = "/api/owner/google-calendar";
 const OWNER_LOGIN_API_PATH = "/api/owner/google-login";
@@ -17,6 +24,15 @@ const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar";
 const DEDICATED_CALENDAR_SUMMARY = "모먼트 인사이트";
 const STATE_TTL_MS = 10 * 60 * 1000;
+const OAUTH_NONCE_COOKIE = "mi-goauth-nonce";
+const OAUTH_NONCE_MAX_AGE_SECONDS = 600;
+const OAUTH_RATE_WINDOW_SECONDS = 15 * 60;
+const OAUTH_RATE_ATTEMPT_LIMIT = 20;
+const GOOGLE_ID_TOKEN_ISSUERS = new Set(["accounts.google.com", "https://accounts.google.com"]);
+const GOOGLE_ID_TOKEN_SKEW_SECONDS = 60;
+const DEFAULT_GOOGLE_LOGIN_ROLES = "owner";
+const AUDIT_LOGIN_TABLE = "login_identities";
+const oauthRateBuckets = new Map();
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -32,6 +48,109 @@ function cleanText(value, max = 0) {
 
 function primaryAgencyCode(env = process.env) {
   return cleanText(env.MI_PRIMARY_AGENCY_CODE || "mml93-a01").toLowerCase();
+}
+
+function isProduction(env = process.env) {
+  return env.NODE_ENV === "production" || env.VERCEL_ENV === "production";
+}
+
+// The OAuth callback arrives as a cross-site top-level navigation from
+// accounts.google.com, which never carries SameSite=Strict cookies, so the
+// browser binding has to be Lax to be readable exactly when it is verified.
+function oauthNonceCookie(nonce, env = process.env) {
+  const parts = [
+    `${OAUTH_NONCE_COOKIE}=${cleanText(nonce, 128)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${OAUTH_NONCE_MAX_AGE_SECONDS}`,
+  ];
+  if (isProduction(env)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function clearedOauthNonceCookie(env = process.env) {
+  const parts = [`${OAUTH_NONCE_COOKIE}=`, "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=0"];
+  if (isProduction(env)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function withCookies(response, cookies = []) {
+  if (!cookies.length) return response;
+  const headers = new Headers(response.headers);
+  for (const cookie of cookies) headers.append("set-cookie", cookie);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function nonceMatches(expected, supplied) {
+  const wanted = Buffer.from(cleanText(expected, 128), "utf8");
+  const provided = Buffer.from(cleanText(supplied, 128), "utf8");
+  return wanted.length > 0 && wanted.length === provided.length && crypto.timingSafeEqual(wanted, provided);
+}
+
+function clientIp(request) {
+  const forwarded = request.headers.get("x-vercel-forwarded-for")
+    || request.headers.get("x-real-ip")
+    || request.headers.get("x-forwarded-for")
+    || "anonymous";
+  return String(forwarded).split(",")[0].trim().slice(0, 128) || "anonymous";
+}
+
+function oauthRateKey(request, endpoint) {
+  return crypto.createHash("sha256")
+    .update(`google-oauth:${endpoint}\u0000${clientIp(request)}`, "utf8")
+    .digest("hex");
+}
+
+function consumeLocalOauthRate(key, now = Date.now()) {
+  const windowMs = OAUTH_RATE_WINDOW_SECONDS * 1000;
+  const existing = oauthRateBuckets.get(key);
+  const bucket = !existing || now - existing.startedAt >= windowMs
+    ? { startedAt: now, count: 0 }
+    : existing;
+  bucket.count += 1;
+  oauthRateBuckets.set(key, bucket);
+  return bucket.count <= OAUTH_RATE_ATTEMPT_LIMIT;
+}
+
+// Google OAuth throttling is abuse mitigation, never authentication: unlike code
+// login it degrades to the per-instance bucket instead of failing closed, so a
+// limiter outage can never lock the owner out of the console.
+export async function consumeOauthRateLimit(ctx, request, endpoint) {
+  const key = oauthRateKey(request, endpoint);
+  try {
+    const result = await ctx.supabaseAdmin.rpc("consume_code_login_rate_limit", {
+      p_key_hash: key,
+      p_window_seconds: OAUTH_RATE_WINDOW_SECONDS,
+      p_attempt_limit: OAUTH_RATE_ATTEMPT_LIMIT,
+    });
+    if (!result.error) {
+      const row = Array.isArray(result.data) ? result.data[0] : result.data;
+      return row?.allowed !== false;
+    }
+  } catch (error) {
+    // fall through to the local bucket below
+  }
+  return consumeLocalOauthRate(key);
+}
+
+async function recordLoginAudit(ctx, action, metadata) {
+  try {
+    await ctx.supabaseAdmin.from("audit_logs").insert({
+      actor_id: null,
+      client_id: null,
+      action,
+      target_table: AUDIT_LOGIN_TABLE,
+      target_id: null,
+      metadata: sanitizeAuditMetadata(metadata),
+    }).then(() => {}, () => {});
+  } catch (error) {
+    // auditing never blocks or changes the login outcome
+  }
 }
 
 export function googleOauthConfig(env = process.env) {
@@ -81,16 +200,40 @@ export function verifyOauthState(state, env = process.env, now = Date.now()) {
   }
 }
 
-export function buildGoogleAuthUrl(state, env = process.env, scope = GOOGLE_SCOPE) {
+export function oauthStateNonce(state) {
+  const [encoded] = cleanText(state).split(".");
+  if (!encoded) return "";
+  try {
+    return cleanText(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")).nonce, 128);
+  } catch (error) {
+    return "";
+  }
+}
+
+// Reads the purpose out of an unverified state. The result only decides which
+// query key the browser is redirected with; it is never used for authorization.
+function unsignedStatePurpose(state) {
+  const [encoded] = cleanText(state).split(".");
+  if (!encoded) return "calendar";
+  try {
+    return cleanText(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")).p) || "calendar";
+  } catch (error) {
+    return "calendar";
+  }
+}
+
+export function buildGoogleAuthUrl(state, env = process.env, scope = GOOGLE_SCOPE, purpose = "calendar") {
   const config = googleOauthConfig(env);
   if (!config.clientId || !state) return "";
+  // Signing in needs no refresh token, so the login flow asks for an account
+  // picker instead of re-prompting for offline consent on every visit.
+  const signIn = cleanText(purpose) === "login";
   const params = new URLSearchParams({
     client_id: config.clientId,
     redirect_uri: config.redirectUrl,
     response_type: "code",
     scope,
-    access_type: "offline",
-    prompt: "consent",
+    ...(signIn ? { prompt: "select_account" } : { access_type: "offline", prompt: "consent" }),
     include_granted_scopes: "false",
     state,
   });
@@ -241,17 +384,78 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
   }
 }
 
-export function decodeGoogleIdToken(idToken) {
+// The token always arrives over TLS straight from Google's token endpoint, so
+// the signature is already covered; what still has to be proven is that the
+// token was minted for this client, by Google, and is not stale or unverified.
+export function decodeGoogleIdToken(idToken, options = {}) {
+  const env = options.env || process.env;
+  const expectedAudience = cleanText(options.aud ?? googleOauthConfig(env).clientId);
+  const nowSeconds = Math.floor(Number(options.now ?? Date.now()) / 1000);
   const parts = String(idToken || "").split(".");
   if (parts.length !== 3) return null;
   try {
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
     const sub = cleanText(payload.sub, 128);
     if (!sub) return null;
-    return { sub, email: cleanText(payload.email, 256).toLowerCase() || null };
+    if (!expectedAudience || !safeEqual(cleanText(payload.aud), expectedAudience)) return null;
+    if (!GOOGLE_ID_TOKEN_ISSUERS.has(cleanText(payload.iss))) return null;
+    const expiresAt = Number(payload.exp);
+    if (!Number.isFinite(expiresAt) || expiresAt <= nowSeconds - GOOGLE_ID_TOKEN_SKEW_SECONDS) return null;
+    const email = payload.email_verified === true
+      ? cleanText(payload.email, 256).toLowerCase() || null
+      : null;
+    return { sub, email };
   } catch (error) {
     return null;
   }
+}
+
+function googleLoginRoles(env = process.env) {
+  const configured = cleanText(env.MI_GOOGLE_LOGIN_ROLES || DEFAULT_GOOGLE_LOGIN_ROLES)
+    .toLowerCase()
+    .split(",")
+    .map((role) => role.trim())
+    .filter(Boolean);
+  return new Set(configured.length ? configured : [DEFAULT_GOOGLE_LOGIN_ROLES]);
+}
+
+// Returns the same access shape code login builds, so the session claims a
+// google login mints are indistinguishable from a code login for that account.
+export async function resolveGoogleLoginAccess(identity, ctx, env = process.env) {
+  const role = cleanText(identity?.role).toLowerCase();
+  const code = cleanText(identity?.code).toLowerCase();
+  if (!googleLoginRoles(env).has(role)) return { ok: false, reason: "not-ready" };
+
+  if (role === "owner") {
+    const ownerCode = primaryAgencyCode(env);
+    if (!safeEqual(code, ownerCode)) return { ok: false, reason: "not-ready" };
+    return { ok: true, access: { role: "owner", agencyCode: ownerCode } };
+  }
+
+  if (role === "team") {
+    const { data: team, error } = await activeTeamByCode(ctx, code);
+    if (error) return { ok: false, reason: "lookup-failed" };
+    if (!team) return { ok: false, reason: "inactive" };
+    return {
+      ok: true,
+      access: {
+        role: "team",
+        teamCode: team.team_code,
+        teamId: team.id,
+        clientId: team.client?.id || "",
+        agencyCode: team.client?.agency_code || "",
+      },
+    };
+  }
+
+  if (role === "client") {
+    const { data: client, error } = await activeClientByCode(ctx, code);
+    if (error) return { ok: false, reason: "lookup-failed" };
+    if (!client) return { ok: false, reason: "inactive" };
+    return { ok: true, access: { role: "client", clientId: client.id, agencyCode: client.agency_code } };
+  }
+
+  return { ok: false, reason: "not-ready" };
 }
 
 export async function findLoginIdentity(ctx, googleSub) {
@@ -276,6 +480,37 @@ export async function upsertLoginIdentity(ctx, identity) {
       updated_at: new Date().toISOString(),
     }, { onConflict: "google_sub" });
   return !error;
+}
+
+export async function findLinkTargetIdentity(ctx, linkTarget) {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("login_identities")
+    .select("google_sub, role, code")
+    .eq("role", linkTarget.role)
+    .eq("code", linkTarget.code)
+    .maybeSingle();
+  if (error) return { identity: null, error };
+  return { identity: data || null, error: null };
+}
+
+// Re-linking a different google account to the caller's own login target is the
+// user's authenticated intent. The move is one UPDATE rather than a delete plus
+// an insert, so a transient failure leaves the previous mapping intact instead
+// of stranding the account with no google login at all.
+export async function rebindLinkTargetIdentity(ctx, linkTarget, profile) {
+  const { data, error } = await ctx.supabaseAdmin
+    .from("login_identities")
+    .update({
+      google_sub: cleanText(profile.sub, 128),
+      google_email: cleanText(profile.email, 256).toLowerCase() || null,
+      linked_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("role", linkTarget.role)
+    .eq("code", linkTarget.code)
+    .select("google_sub");
+  if (error) return false;
+  return Array.isArray(data) && data.length === 1;
 }
 
 function ownerRequest(request, env = process.env) {
@@ -319,7 +554,7 @@ async function handleOwnerApi(request, ctx) {
     const state = signOauthState(ownerCode);
     const url = buildGoogleAuthUrl(state);
     if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
-    return json(request, { ok: true, url });
+    return withCookies(json(request, { ok: true, url }), [oauthNonceCookie(oauthStateNonce(state))]);
   }
   if (action === "disconnect") {
     const { error } = await ctx.supabaseAdmin
@@ -344,6 +579,10 @@ function loginRedirect(message, cookies = []) {
   });
   for (const cookie of cookies) headers.append("set-cookie", cookie);
   return new Response(null, { status: 302, headers });
+}
+
+function purposeRedirect(purpose, message) {
+  return purpose === "login" || purpose === "link" ? loginRedirect(message) : callbackRedirect(message);
 }
 
 async function handleOwnerLoginApi(request, ctx) {
@@ -384,9 +623,10 @@ async function handleOwnerLoginApi(request, ctx) {
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
     }
-    const url = buildGoogleAuthUrl(signOauthState(ownerCode, process.env, Date.now(), "link"), process.env, LOGIN_SCOPE);
+    const state = signOauthState(ownerCode, process.env, Date.now(), "link");
+    const url = buildGoogleAuthUrl(state, process.env, LOGIN_SCOPE, "link");
     if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
-    return json(request, { ok: true, url });
+    return withCookies(json(request, { ok: true, url }), [oauthNonceCookie(oauthStateNonce(state))]);
   }
   if (action === "unlink") {
     const { error } = await ctx.supabaseAdmin
@@ -395,6 +635,7 @@ async function handleOwnerLoginApi(request, ctx) {
       .eq("role", "owner")
       .eq("code", ownerCode);
     if (error) return json(request, { ok: false, message: "구글 로그인 연결 해제에 실패했습니다.", detail: error.message }, 500);
+    await recordLoginAudit(ctx, "google_login_unlinked", { role: "owner" });
     return json(request, { ok: true, message: "구글 로그인 연결을 해제했습니다. 기존 코드 로그인은 그대로 사용할 수 있습니다." });
   }
   return json(request, { ok: false, message: "지원하지 않는 요청입니다." }, 400);
@@ -403,68 +644,126 @@ async function handleOwnerLoginApi(request, ctx) {
 function handleLoginStart() {
   const config = googleOauthConfig();
   if (!config.clientId || !config.clientSecret) return loginRedirect("not-configured");
-  const url = buildGoogleAuthUrl(signOauthState(primaryAgencyCode(), process.env, Date.now(), "login"), process.env, LOGIN_SCOPE);
+  const state = signOauthState(primaryAgencyCode(), process.env, Date.now(), "login");
+  const url = buildGoogleAuthUrl(state, process.env, LOGIN_SCOPE, "login");
   if (!url) return loginRedirect("not-configured");
-  return new Response(null, { status: 302, headers: { location: url, "cache-control": "no-store" } });
+  return new Response(null, {
+    status: 302,
+    headers: {
+      location: url,
+      "cache-control": "no-store",
+      "set-cookie": oauthNonceCookie(oauthStateNonce(state)),
+    },
+  });
 }
 
 async function handleLinkCallback(request, ctx, state, code) {
-  if (!safeEqual(cleanText(state.owner), primaryAgencyCode())) return loginRedirect("invalid");
+  // Today the target is always the owner canary; keeping it in one object is
+  // what lets a future revision derive it from the caller's session claims.
+  const linkTarget = { role: "owner", code: primaryAgencyCode() };
+  if (!safeEqual(cleanText(state.owner), linkTarget.code)) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "invalid-state" });
+    return loginRedirect("invalid");
+  }
   const exchanged = await exchangeOauthCode(code, process.env);
-  if (!exchanged.ok) return loginRedirect("exchange-failed");
+  if (!exchanged.ok) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "exchange-failed" });
+    return loginRedirect("exchange-failed");
+  }
   const profile = decodeGoogleIdToken(exchanged.data.id_token);
-  if (!profile) return loginRedirect("no-identity");
+  if (!profile) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "no-identity" });
+    return loginRedirect("no-identity");
+  }
+  const { identity, error } = await findLoginIdentity(ctx, profile.sub);
+  if (error) return loginRedirect("lookup-failed");
+  const boundElsewhere = identity
+    && (cleanText(identity.role).toLowerCase() !== linkTarget.role
+      || cleanText(identity.code).toLowerCase() !== linkTarget.code);
+  if (boundElsewhere) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "already-linked" });
+    return loginRedirect("already-linked");
+  }
+  if (!identity) {
+    const target = await findLinkTargetIdentity(ctx, linkTarget);
+    if (target.error) return loginRedirect("lookup-failed");
+    // The target already points at another google account: move that one row
+    // instead of clearing it first, so no window exists without a mapping.
+    if (target.identity) {
+      if (!await rebindLinkTargetIdentity(ctx, linkTarget, profile)) return loginRedirect("save-failed");
+      await recordLoginAudit(ctx, "google_login_linked", { role: linkTarget.role });
+      return loginRedirect("linked");
+    }
+  }
   const saved = await upsertLoginIdentity(ctx, {
     googleSub: profile.sub,
     googleEmail: profile.email,
-    role: "owner",
-    code: state.owner,
+    role: linkTarget.role,
+    code: linkTarget.code,
   });
   if (!saved) return loginRedirect("save-failed");
-  await ctx.supabaseAdmin.from("audit_logs").insert({
-    actor_id: null,
-    client_id: null,
-    action: "google_login_linked",
-    target_table: "login_identities",
-    target_id: null,
-    metadata: sanitizeAuditMetadata({ role: "owner" }),
-  }).then(() => {}, () => {});
+  await recordLoginAudit(ctx, "google_login_linked", { role: linkTarget.role });
   return loginRedirect("linked");
 }
 
 async function handleLoginCallback(request, ctx, code) {
   const exchanged = await exchangeOauthCode(code, process.env);
-  if (!exchanged.ok) return loginRedirect("exchange-failed");
+  if (!exchanged.ok) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "exchange-failed" });
+    return loginRedirect("exchange-failed");
+  }
   const profile = decodeGoogleIdToken(exchanged.data.id_token);
-  if (!profile) return loginRedirect("no-identity");
+  if (!profile) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "no-identity" });
+    return loginRedirect("no-identity");
+  }
   const { identity, error } = await findLoginIdentity(ctx, profile.sub);
   if (error) return loginRedirect("lookup-failed");
-  if (!identity) return loginRedirect("unlinked");
-  if (identity.role !== "owner" || !safeEqual(cleanText(identity.code), primaryAgencyCode())) {
-    return loginRedirect("not-ready");
+  if (!identity) {
+    await recordLoginAudit(ctx, "google_login_failed", { reason: "unlinked" });
+    return loginRedirect("unlinked");
+  }
+  const resolved = await resolveGoogleLoginAccess(identity, ctx, process.env);
+  if (!resolved.ok) {
+    if (resolved.reason === "lookup-failed") return loginRedirect("lookup-failed");
+    await recordLoginAudit(ctx, "google_login_failed", { reason: resolved.reason });
+    return loginRedirect(resolved.reason);
   }
   let token = "";
   try {
-    token = sealSession(createSessionClaims({ role: "owner", agencyCode: primaryAgencyCode() }));
+    token = sealSession(createSessionClaims(resolved.access, {
+      ttlSeconds: sessionConfiguration(process.env).ttl,
+    }));
   } catch (sealError) {
     return loginRedirect("session-unavailable");
   }
-  await ctx.supabaseAdmin.from("audit_logs").insert({
-    actor_id: null,
-    client_id: null,
-    action: "google_login_succeeded",
-    target_table: "login_identities",
-    target_id: null,
-    metadata: sanitizeAuditMetadata({ role: "owner" }),
-  }).then(() => {}, () => {});
+  await recordLoginAudit(ctx, "google_login_succeeded", { role: resolved.access.role });
   return loginRedirect("success", [sessionCookie(token)]);
 }
 
 async function handleOauthCallback(request, ctx) {
   const url = new URL(request.url);
   const code = cleanText(url.searchParams.get("code"));
-  const state = verifyOauthState(url.searchParams.get("state"));
-  if (!code || !state) return callbackRedirect("invalid");
+  const rawState = url.searchParams.get("state");
+  const state = verifyOauthState(rawState);
+
+  if (!code) {
+    const purpose = state?.p || unsignedStatePurpose(rawState);
+    const login = purpose === "login" || purpose === "link";
+    const cancelled = login && cleanText(url.searchParams.get("error")) === "access_denied";
+    return purposeRedirect(purpose, cancelled ? "cancelled" : "invalid");
+  }
+  if (!state) return callbackRedirect("invalid");
+
+  // The signed state alone only proves this server issued it; the cookie proves
+  // the browser finishing the flow is the browser that started it.
+  if (!nonceMatches(state.nonce, parseCookies(request)[OAUTH_NONCE_COOKIE])) {
+    if (state.p === "login" || state.p === "link") {
+      await recordLoginAudit(ctx, "google_login_failed", { reason: "nonce-mismatch" });
+    }
+    return purposeRedirect(state.p, "invalid");
+  }
+
   if (state.p === "link") return handleLinkCallback(request, ctx, state, code);
   if (state.p === "login") return handleLoginCallback(request, ctx, code);
   if (!safeEqual(cleanText(state.owner), primaryAgencyCode())) return callbackRedirect("invalid");
@@ -506,8 +805,18 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
     if (path === OWNER_API_PATH) return handleOwnerApi(request, ctx);
     if (path === OWNER_LOGIN_API_PATH) return handleOwnerLoginApi(request, ctx);
-    if (path === LOGIN_START_PATH && request.method === "GET") return handleLoginStart();
-    if (path === CALLBACK_PATH && request.method === "GET") return handleOauthCallback(request, ctx);
+    if (path === LOGIN_START_PATH && request.method === "GET") {
+      if (!await consumeOauthRateLimit(ctx, request, "start")) return loginRedirect("busy");
+      return handleLoginStart();
+    }
+    if (path === CALLBACK_PATH && request.method === "GET") {
+      // Whatever the outcome, the browser binding is spent: a state is single use.
+      const cleared = [clearedOauthNonceCookie()];
+      if (!await consumeOauthRateLimit(ctx, request, "callback")) {
+        return withCookies(loginRedirect("busy"), cleared);
+      }
+      return withCookies(await handleOauthCallback(request, ctx), cleared);
+    }
     return json(request, { ok: false, message: "Not found" }, 404);
   }),
 };

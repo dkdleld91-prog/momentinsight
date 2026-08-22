@@ -29,6 +29,15 @@
 - 21:02 KST checkpoint는 streak35, anchor 경과4.723시간, snapshot44/collection34·group34·tracker/commit44·failure0입니다. 원자300·official source·pw-chrome·organic·광고제외 위반0, cycle #29 group41/41·tracker54/54·terminal54/54·run41/41, open/overlap/cursor 역행0이며 terminal 뒤 processing0·lane/run/lease/stage/probe null입니다. fixed-wall 처리량은 7.4105 group/hour로 여전히 기준선 미달입니다. 잔여 partial 2건은 신규 event/snapshot0이며 fallback 17·18번째로 대기합니다.
 - 21:09:42→21:10:26 KST 자연 run event7465→7467도 collection `pw-chrome-1787400626274-7de87eabe25409afe615`을 checked300·official source·organic-only·adExcluded=true·광고30건 제외로 commit했습니다. 같은 sort1900 안에서 created_at 순방향으로 cursor가 전진했고 cycle group/run/tracker 중복0입니다. terminal 뒤 processing·lane/run/lease/probe/cooldown null·circuit closed, streak36·baseline10·candidate false입니다. 잔여 partial 2건은 아직 claim/terminal/snapshot0이고 fallback 마지막 17·18번째입니다.
 
+### 2026-08-22 구글 로그인 1차 서버 하드닝(카나리아 범위 유지)
+
+- 배경: 전체 사용자 구글 로그인 전환 계획에 앞서 보안 감사(10항목)·전환 준비도 조사 수행. 판정: 카나리아(총관리자 1명) 범위는 안전, 전면 전환 전 서버 보강 필요.
+- 적용(서버): ① OAuth state를 브라우저에 바인딩 — `mi-goauth-nonce` 쿠키(HttpOnly·SameSite=Lax·Secure(운영)·Path=/·600초), 콜백에서 timingSafeEqual 비교 후에만 토큰 교환, 모든 콜백 결과에서 쿠키 삭제(일회성) → 로그인 CSRF 차단 ② id_token aud/iss/exp/sub 검증 + email_verified일 때만 이메일 저장 ③ 구글 로그인 세션 TTL을 코드 로그인과 동일하게(`sessionConfiguration().ttl`) ④ 연결 재매핑 보호 — 다른 계정에 이미 연결된 구글 계정은 `already-linked` 거부, 본인 코드의 구글 계정 교체는 단일 UPDATE(원자적, 실패 시 기존 매핑 유지) ⑤ `resolveGoogleLoginAccess` — 허용 역할 env `MI_GOOGLE_LOGIN_ROLES`(기본 owner), team/client는 코드 로그인과 동일한 활성 검증(`activeTeamByCode`/`activeClientByCode` 재사용)·동일 클레임, 중지 코드는 `inactive` ⑥ `/api/google-login/start`·`/api/google-oauth/callback` IP 레이트리밋 20회/15분(기존 RPC 재사용·키 접두 분리·백엔드 장애 시 메모리 폴백, 코드 로그인 fail-closed 불변) ⑦ 로그인 목적엔 `prompt=select_account`(매 로그인 동의 화면 제거), 취소/차단 시 목적별 안내(`cancelled`/`busy`/`already-linked`/`inactive`) ⑧ 감사 `google_login_unlinked`·`google_login_failed{reason}`.
+- 적용(프런트): admin.html `googleLoginNotice()` 공용 문구 매핑(로그인 화면·배너 공용), 신규 문구 4종. CSP 해시 교체.
+- 실측: google-calendar-api 48/48(27→48), code-session-api 13/13, owner-tool 18/18, `npm run check:release` exit 0(인증 18/18·보호 잠금 변경 없음·bindOwnerAssistant 해시 불변), 독립 보안 리뷰 10항목 중 결함 1건(재연결 비원자) 발견→수정 후 재검증.
+- 사용자 체감 변화: 구글 로그인 시 동의 화면 대신 계정 선택 화면, 실패 시 한국어 안내. 권한·카나리아 범위 불변. 배포 직후 10분 내 진행 중이던 구글 로그인은 state에 쿠키가 없어 1회 실패할 수 있음(재시도로 해결).
+- 남은 단계: 2차 개인정보처리방침 페이지(초안 docs/drafts, 대표 확인 칸 42개) 게시 → 구글 앱 게시(테스트 모드 해제) / 3차 광고주 화면 구글 버튼·연결 UI+사전 이메일 등록+`MI_GOOGLE_LOGIN_ROLES` 확장(대표 결정 B·C 대기).
+
 ### 2026-08-21 연동 완료 배지 개선(버튼 숨김 버그 수정)
 
 - 대표 지적: 연동 완료인데도 오른쪽에 "구글 계정 연결·연결 해제" 버튼이 그대로 노출. 원인 실측: admin.html의 `.mi-link-button{display:inline-flex}`가 `hidden` 속성의 기본 `display:none`을 덮어써 배너 버튼 숨김이 전 상태에서 무효였음(잠복 버그).

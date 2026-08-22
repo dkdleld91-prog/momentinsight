@@ -45,6 +45,9 @@ const runtime110Migration = findMigrationContaining(
 const runtime111Migration = findMigrationContaining(
   '-- Runtime 1.1.11',
 );
+const runtime111ExactCandidateGateMigration = findMigrationContaining(
+  '-- Runtime 1.1.11 exact candidate gate',
+);
 
 function runtime119FunctionSql(name, nextName = null) {
   const start = runtime119Migration.indexOf(`create or replace function public.${name}`);
@@ -499,4 +502,85 @@ test('runtime 1.1.11 exactly preserves the 1.1.10 atomic, processing-zero, ident
       new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`, 'iu'),
     );
   }
+});
+
+test('runtime 1.1.11 candidate cadence is exact-identity and completely idle inside the database lock', () => {
+  assert.ok(
+    runtime111ExactCandidateGateMigration,
+    'an additive migration must bind candidate cadence to the installed fingerprint and a fully idle lane',
+  );
+  assert.match(
+    runtime111ExactCandidateGateMigration.file,
+    /^\d{14}_naver_shopping_candidate_exact_identity_gate\.sql$/u,
+  );
+  const sql = runtime111ExactCandidateGateMigration.source;
+  const expectedFingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00';
+  const functionNames = [...sql.matchAll(/create or replace function public\.(mi_[a-z0-9_]+)\(/giu)]
+    .map((match) => match[1]);
+  assert.deepEqual(functionNames, [
+    'mi_get_naver_shopping_worker_operations',
+    'mi_set_naver_shopping_worker_cadence',
+  ]);
+
+  for (const marker of ["'candidate_eligible'", 'eligible :=']) {
+    const start = sql.indexOf(marker);
+    assert.ok(start >= 0, `${marker} candidate predicate must exist`);
+    const predicate = sql.slice(start, start + 2600);
+    assert.match(predicate, /current_row\.circuit_state = 'closed'/iu);
+    assert.match(predicate, /current_row\.circuit_reason is null/iu);
+    assert.match(predicate, /processing_count = 0/iu);
+    assert.match(predicate, /current_row\.lease_worker_id is null/iu);
+    assert.match(predicate, /current_row\.lease_token is null/iu);
+    assert.match(predicate, /current_row\.lease_until is null/iu);
+    assert.match(predicate, /current_row\.run_id is null/iu);
+    assert.match(predicate, /current_row\.current_stage is null/iu);
+    assert.match(predicate, /current_row\.current_job_kind is null/iu);
+    assert.match(predicate, /current_row\.current_tracker_id is null/iu);
+    assert.match(predicate, /current_row\.current_job_started_at is null/iu);
+    assert.match(predicate, /current_row\.probe_started_at is null/iu);
+    assert.match(predicate, /current_row\.probe_tracker_id is null/iu);
+    assert.match(predicate, /current_row\.cooldown_until is null/iu);
+    assert.match(predicate, /current_row\.runtime_version = '1\.1\.11'/iu);
+    assert.match(
+      predicate,
+      new RegExp(`current_row\\.runtime_fingerprint = '${expectedFingerprint}'`, 'iu'),
+    );
+    assert.match(predicate, /current_row\.last_collection_id ~ '\^pw-chrome-'/iu);
+    assert.match(predicate, /current_row\.last_checked_count = 300/iu);
+    assert.match(predicate, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
+  }
+
+  assert.match(
+    sql,
+    /where lane_key = 'global'\s*for update;[\s\S]*select \([\s\S]*into processing_count;[\s\S]*eligible :=/iu,
+    'candidate activation must lock coordination before checking processing leases and idle state',
+  );
+  assert.equal([...sql.matchAll(/security invoker/giu)].length, 2);
+  assert.equal([...sql.matchAll(/set search_path = ''/giu)].length, 2);
+  assert.doesNotMatch(sql, /security definer/iu);
+  for (const signature of [
+    'mi_get_naver_shopping_worker_operations\\(\\)',
+    'mi_set_naver_shopping_worker_cadence\\(text\\)',
+  ]) {
+    assert.match(
+      sql,
+      new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role`, 'iu'),
+    );
+    assert.match(
+      sql,
+      new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`, 'iu'),
+    );
+  }
+
+  const candidateAllowed = ({ fingerprint, runId = null, leaseWorkerId = null, cooldownUntil = null }) => (
+    fingerprint === expectedFingerprint
+    && runId === null
+    && leaseWorkerId === null
+    && cooldownUntil === null
+  );
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint }), true);
+  assert.equal(candidateAllowed({ fingerprint: 'f'.repeat(64) }), false);
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, runId: 'stale-run' }), false);
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, leaseWorkerId: 'stale-worker' }), false);
+  assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cooldownUntil: 'expired-but-uncleared' }), false);
 });

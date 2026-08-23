@@ -27,10 +27,11 @@ import {
   activeColumns,
   googleEventTimes,
   googleMirrorFields,
-  listOwnerWritableCalendars,
+  listOwnerCalendarCatalog,
   materializeRecurringInstances,
   runWithOptionalColumns,
   withoutDisabledColumns,
+  writableCalendarsFromCatalog,
   writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
 import { parseLimit, readBody } from "../http.mjs";
@@ -328,7 +329,9 @@ export function clientWorkItemPayload(row = {}) {
   };
 }
 
-function managerWorkItemPayload(row = {}) {
+// calendar 는 사이드바 카탈로그의 항목이다. 없으면(다른 역할·연동 전·캐시가 찬
+// 적 없음) 예전과 똑같은 값이 나오도록 모든 파생 키가 기본값으로 떨어진다.
+function managerWorkItemPayload(row = {}, calendar = null) {
   return {
     id: row.id,
     clientId: row.client_id,
@@ -359,7 +362,14 @@ function managerWorkItemPayload(row = {}) {
     googleSyncState: row.google_sync_state || null,
     googleLocation: row.google_location || null,
     googleCalendarId: row.google_calendar_id || null,
-    calendarName: row.google_calendar_name || null,
+    calendarName: calendar?.name || row.google_calendar_name || null,
+    calendarColor: calendar?.color || null,
+    calendarTextColor: calendar?.textColor || null,
+    calendarAccessRole: calendar?.accessRole || null,
+    calendarVisible: calendar ? calendar.visible !== false : true,
+    // 읽기 전용 캘린더의 일정은 MI 에서 고치거나 지울 수 없다. 카탈로그를
+    // 모르면(=calendar 가 null) 막지 않는다 — 캐시가 비었다고 편집을 막는 쪽이 더 나쁘다.
+    readOnly: calendar ? calendar.writable !== true : false,
     location: row.google_location || null,
     description: row.google_description || null,
     attendees: (Array.isArray(row.google_attendees) ? row.google_attendees : []).map((entry) => ({
@@ -590,10 +600,16 @@ async function scopedWorkItem(ctx, access, id) {
   return { row: data, error: null };
 }
 
+function includeHiddenCalendars(url) {
+  const value = cleanText(url.searchParams.get("includeHidden")).toLowerCase();
+  return value === "1" || value === "true";
+}
+
 async function handleGet(request, ctx) {
   const access = await resolveAccess(request, ctx);
   if (!access.ok) return json(request, access, access.status);
-  const limit = parseLimit(new URL(request.url), 200, 300);
+  const url = new URL(request.url);
+  const limit = parseLimit(url, 200, 300);
   const { data, error } = await runWithOptionalColumns(() => {
     const base = ctx.supabaseAdmin
       .from("schedule_items")
@@ -603,16 +619,32 @@ async function handleGet(request, ctx) {
     return applyDateRange(applyAccessScope(base.is("calendar_id", null), access), request);
   });
   if (error) return json(request, { ok: false, message: "업무 일정을 불러오지 못했습니다.", detail: error.message }, 500);
-  const rows = (data || []).filter((row) => !row.calendar_id).slice(0, limit);
-  const truncated = (data || []).length > limit;
-  const items = rows.map(access.role === "client" ? clientWorkItemPayload : managerWorkItemPayload);
+  // 목록·월간·아젠다·실장 브리핑이 모두 이 하나의 피드를 쓴다. 사이드바에서 끈
+  // 캘린더는 여기서 걸러야 어디에서도 보이지 않는다.
+  const catalog = await ownerCalendarCatalog(ctx, access);
+  const byCalendar = new Map(catalog.map((entry) => [entry.id, entry]));
+  const includeHidden = includeHiddenCalendars(url);
+  const visibleRows = (data || []).filter((row) => {
+    if (row.calendar_id) return false;
+    if (includeHidden) return true;
+    // 구글 캘린더가 없는 행과 카탈로그가 모르는 캘린더는 언제나 남긴다.
+    const entry = byCalendar.get(cleanText(row.google_calendar_id));
+    return !entry || entry.visible !== false;
+  });
+  // 자르기는 거른 뒤에 한다 — 숨긴 행이 한 페이지를 먹어치우면 안 된다.
+  const rows = visibleRows.slice(0, limit);
+  const truncated = visibleRows.length > limit;
+  const items = access.role === "client"
+    ? rows.map((row) => clientWorkItemPayload(row))
+    : rows.map((row) => managerWorkItemPayload(row, byCalendar.get(cleanText(row.google_calendar_id)) || null));
   return json(request, {
     ok: true,
     role: access.role,
     canPublish: roleCanMutateWorkItems(access.role) && Boolean(access.client),
     client: access.client ? { id: access.client.id, name: access.client.name || access.client.business_name } : null,
     calendars: [],
-    googleCalendars: await ownerGoogleCalendars(ctx, access),
+    googleCalendars: writableCalendarsFromCatalog(catalog),
+    googleCalendarCatalog: catalog,
     items,
     truncated,
   });
@@ -620,7 +652,7 @@ async function handleGet(request, ctx) {
 
 // 캐시(DB)만 읽는다. 목록 조회는 hot path 라 구글을 부르지 않는다.
 // 연동 전이거나 캐시가 비었으면 빈 배열이다.
-async function ownerGoogleCalendars(ctx, access) {
+async function ownerCalendarCatalog(ctx, access) {
   if (access.role !== "owner") return [];
   try {
     const config = googleOauthConfig(process.env);
@@ -628,9 +660,34 @@ async function ownerGoogleCalendars(ctx, access) {
     const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
     const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
     if (error || !integration) return [];
-    return await listOwnerWritableCalendars(ctx, ownerCode, integration);
+    return await listOwnerCalendarCatalog(ctx, ownerCode, integration);
   } catch (unexpected) {
     return [];
+  }
+}
+
+// 수정·삭제 직전의 읽기 전용 가드. 연동 행은 읽지 않는다 — 바로 뒤에 이어지는
+// 구글 우선 쓰기/삭제가 같은 조회를 다시 하기 때문이다. 카탈로그가 이 캘린더를
+// 모르거나(캐시가 비었거나 조회가 실패) 쓰기 가능하면 막지 않는다(fail open):
+// 캐시가 차갑다는 이유로 고칠 수 있는 일정을 막는 쪽이 훨씬 나쁘다.
+async function readOnlyCalendarBlock(ctx, access, row) {
+  if (access.role !== "owner") return null;
+  const calendarId = cleanText(row?.google_calendar_id);
+  if (!calendarId) return null;
+  try {
+    const config = googleOauthConfig(process.env);
+    if (!config.clientId || !config.clientSecret) return null;
+    const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
+    const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, null);
+    const entry = catalog.find((candidate) => candidate.id === calendarId);
+    if (!entry || entry.writable === true) return null;
+    return {
+      ok: false,
+      code: "calendar_read_only",
+      message: "읽기 전용 구글 캘린더의 일정입니다. 모먼트 인사이트에서는 수정하거나 삭제할 수 없습니다.",
+    };
+  } catch (unexpected) {
+    return null;
   }
 }
 
@@ -750,7 +807,7 @@ async function createFromGoogleEvent(request, ctx, access, options) {
       memberRole: null,
     },
   });
-  const items = savedRows.map(managerWorkItemPayload);
+  const items = savedRows.map((row) => managerWorkItemPayload(row));
   let message = "업무를 저장했습니다.";
   if (recurrenceLines.length && materializedCount) {
     message = truncated
@@ -849,7 +906,7 @@ async function handlePost(request, ctx) {
     const retry = await existingSeries(ctx, access, seriesId);
     if (retry.error) return json(request, { ok: false, message: "반복 일정 중복 여부를 확인하지 못했습니다.", detail: retry.error.message }, 500);
     if ((retry.data || []).length) {
-      const items = retry.data.map(managerWorkItemPayload);
+      const items = retry.data.map((row) => managerWorkItemPayload(row));
       return json(request, { ok: true, unchanged: true, message: "이미 저장된 반복 일정입니다.", item: items[0], items });
     }
     const occurrences = buildMonthlyOccurrences({
@@ -885,7 +942,7 @@ async function handlePost(request, ctx) {
     if (repeat === "monthly" && error.code === "23505") {
       const retry = await existingSeries(ctx, access, seriesId);
       if (!retry.error && (retry.data || []).length) {
-        const items = retry.data.map(managerWorkItemPayload);
+        const items = retry.data.map((row) => managerWorkItemPayload(row));
         return json(request, { ok: true, unchanged: true, message: "이미 저장된 반복 일정입니다.", item: items[0], items });
       }
     }
@@ -911,7 +968,7 @@ async function handlePost(request, ctx) {
     },
   });
   await syncOwnerScheduleRows(ctx, process.env, access, savedRows, "upsert");
-  const items = savedRows.map(managerWorkItemPayload);
+  const items = savedRows.map((row) => managerWorkItemPayload(row));
   return json(request, {
     ok: true,
     message: repeat === "monthly"
@@ -986,6 +1043,8 @@ async function handlePatch(request, ctx) {
   if (cleanText(body.calendarId)) {
     return json(request, { ok: false, message: "공유 일정표는 수정할 수 없습니다." }, 404);
   }
+  const readOnly = await readOnlyCalendarBlock(ctx, access, existing.row);
+  if (readOnly) return json(request, readOnly, 403);
   const normalized = normalizeWorkItemInput(body, { canPublish: Boolean(access.client) });
   if (!normalized.ok) return json(request, normalized, normalized.status || 400);
   const googleInput = normalizeGoogleEventInput(body);
@@ -1192,6 +1251,8 @@ async function handleDelete(request, ctx) {
     if (!refreshed.row) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
     row = refreshed.row;
   }
+  const readOnly = await readOnlyCalendarBlock(ctx, access, row);
+  if (readOnly) return json(request, readOnly, 403);
   // 구글이 정본이므로 구글에서 먼저 지운다. 여기서 실패하면 MI 행을 남기고
   // 실패를 그대로 알린다 — 조용히 로컬만 지우면 두 캘린더가 영구히 어긋난다.
   const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, row);

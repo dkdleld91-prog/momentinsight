@@ -44,6 +44,11 @@ export const EXTRA_CALENDAR_SCAN_LIMIT = 500;
 export const MAX_CALENDAR_CATALOG = 250;
 export const MAX_INSTANCE_PAGES = 3;
 export const MAX_INSTANCE_PAGE_SIZE = 250;
+// 한 실행이 도는 캘린더 수와 훑는 이벤트 수의 상한. 카탈로그 전체(읽기 전용
+// 공휴일·공유 캘린더 포함)를 동기화 대상에 올리기 시작했으므로, 한 번의 실행이
+// 무한정 길어지지 않도록 여기서 묶는다. 남은 몫은 다음 실행이 이어받는다.
+export const MAX_SYNC_CALENDARS = 25;
+export const MAX_FULL_SYNC_EVENTS = 2000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -75,6 +80,16 @@ export const OPTIONAL_SCHEDULE_COLUMNS = ["google_recurrence", "google_conferenc
 export const OPTIONAL_CALENDAR_SYNC_COLUMNS = [
   "calendar_summary", "calendar_access_role", "calendar_is_primary", "calendar_writable", "calendar_catalog_at",
 ];
+// 사이드바(캘린더 목록) 마이그레이션이 더한 열. 위 묶음과 다른 마이그레이션이라
+// 따로 둔다 — 둘 중 하나만 적용된 창에서도 각자 독립적으로 내려가야 한다.
+export const OPTIONAL_CALENDAR_CATALOG_COLUMNS = [
+  "calendar_background_color", "calendar_foreground_color", "calendar_selected", "calendar_visible",
+];
+
+// calendarList.accessRole 은 읽기 전용 필드이고 값은 이 다섯 중 하나다.
+// freeBusyReader / reader / writerWithoutPrivateAccess / writer / owner.
+// writerWithoutPrivateAccess 도 이벤트 읽기·쓰기 권한을 준다(비공개 일정만 못 본다).
+export const WRITABLE_ACCESS_ROLES = new Set(["owner", "writer", "writerWithoutPrivateAccess"]);
 
 const disabledColumns = new Set();
 
@@ -139,8 +154,20 @@ function syncRowFields() {
   return activeColumns(SYNC_ROW_COLUMNS).join(",");
 }
 
+// 체크를 꺼 둔 캘린더도 동기화 대상 결정에 쓰이므로 표시 여부를 함께 읽는다.
+// 열이 아직 없으면 activeColumns 가 떼어내고 호출부가 한 번 재시도한다.
 function calendarSyncFields() {
-  return activeColumns(CALENDAR_SYNC_COLUMNS).join(",");
+  return activeColumns([...CALENDAR_SYNC_COLUMNS, "calendar_visible"]).join(",");
+}
+
+// calendarList 의 backgroundColor / foregroundColor 는 "#0088aa" 꼴이다.
+// 그 밖의 값은 열 제약(^#[0-9a-fA-F]{6}$)에 걸려 저장 자체를 실패시키므로
+// 여기서 소문자 #rrggbb 로 정규화하고, 아니면 null 로 떨어뜨린다.
+export function hexColor(value) {
+  const text = cleanText(value, 20).toLowerCase();
+  if (/^#[0-9a-f]{6}$/u.test(text)) return text;
+  if (!/^#[0-9a-f]{3}$/u.test(text)) return null;
+  return `#${text.slice(1).split("").map((digit) => digit + digit).join("")}`;
 }
 
 function primaryAgencyCode(env = process.env) {
@@ -732,10 +759,12 @@ async function extraCalendarIds(ctx, code, skip) {
 export async function resolveOwnerCalendars(ctx, ownerCode, integration, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
-  const { data } = await ctx.supabaseAdmin
+  const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
     .from("owner_google_calendar_sync")
     .select(calendarSyncFields())
-    .eq("owner_agency_code", code);
+    .eq("owner_agency_code", code)
+    .then((response) => response || { data: null, error: null }, (error) => ({ data: null, error })),
+  OPTIONAL_CALENDAR_CATALOG_COLUMNS);
   const known = new Map((data || []).map((row) => [row.google_calendar_id, row]));
 
   const wanted = [];
@@ -757,10 +786,23 @@ export async function resolveOwnerCalendars(ctx, ownerCode, integration, options
   const skip = new Set(wanted.map((entry) => entry.id));
   for (const id of await extraCalendarIds(ctx, code, skip)) {
     wanted.push({ id, role: "secondary" });
+    skip.add(id);
+  }
+
+  // 카탈로그에 있는 나머지 캘린더도 함께 당긴다. 체크를 꺼 둔 캘린더까지 계속
+  // 동기화해 두어야 다시 켰을 때 곧바로 채워져 보이고(=재체크가 즉시다),
+  // 아래 상한이 그 대가로 한 실행이 길어지는 것을 막는다.
+  const rest = [...known.values()].filter((row) => cleanText(row?.google_calendar_id) && !skip.has(row.google_calendar_id));
+  for (const row of [
+    ...rest.filter((row) => row.calendar_visible !== false),
+    ...rest.filter((row) => row.calendar_visible === false),
+  ]) {
+    wanted.push({ id: row.google_calendar_id, role: "secondary" });
+    skip.add(row.google_calendar_id);
   }
 
   const calendars = [];
-  for (const entry of wanted) {
+  for (const entry of wanted.slice(0, MAX_SYNC_CALENDARS)) {
     const existing = known.get(entry.id);
     if (existing) {
       calendars.push(existing);
@@ -938,6 +980,7 @@ export async function syncOneCalendar(ctx, ownerCode, calendarRow, accessToken, 
   let pageToken = resuming ? cleanText(calendarRow.full_sync_page_token) : "";
   let nextSyncToken = "";
   let pages = 0;
+  let seen = 0;
   let partial = false;
   let fullResync = false;
   let recovered410 = false;
@@ -978,10 +1021,13 @@ export async function syncOneCalendar(ctx, ownerCode, calendarRow, accessToken, 
     if (events.length) await applyEvents(ctx, ownerCode, calendarRow, events, window, counters);
 
     pages += 1;
+    seen += events.length;
     pageToken = cleanText(result.data?.nextPageToken);
     if (result.data?.nextSyncToken) nextSyncToken = String(result.data.nextSyncToken);
     if (!pageToken) break;
-    if (pages >= maxPages || Date.now() >= deadlineAt) { partial = true; break; }
+    // 이벤트 상한도 페이지·시간 상한과 같게 다룬다: 페이지 토큰을 그대로 남겨
+    // 두고 물러나면 나머지는 다음 실행이 이어받는다.
+    if (pages >= maxPages || Date.now() >= deadlineAt || seen >= MAX_FULL_SYNC_EVENTS) { partial = true; break; }
   }
 
   const nowIso = new Date(nowMs).toISOString();
@@ -1122,8 +1168,11 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
   try {
+    // minAccessRole 을 걸지 않는다 — 공휴일·구독한 공유 캘린더처럼 읽기 전용인
+    // 것까지 전부 목록에 올려야 구글 사이드바와 같은 목록이 된다.
+    // showHidden:"false" 는 유지한다(대표님이 구글에서 숨긴 것은 여기서도 안 보인다).
     const result = await googleFetch(accessToken, "GET", "/users/me/calendarList", null, {
-      query: { minAccessRole: "writer", showHidden: "false", maxResults: String(MAX_CALENDAR_CATALOG) },
+      query: { showHidden: "false", showDeleted: "false", maxResults: String(MAX_CALENDAR_CATALOG) },
       fetchImpl,
     });
     if (!result.ok) return { ok: false, reason: `list_${result.status}`, saved: 0 };
@@ -1132,15 +1181,20 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
 
     // 이미 있는 행의 calendar_role 은 건드리지 않는다. dedicated/primary 를
     // secondary 로 덮으면 다음 동기화가 기본 캘린더를 다시 찾아 나선다.
-    let knownRoles = new Map();
+    // calendar_visible 도 함께 읽는다 — 아래에서 "이미 아는 캘린더인가"를
+    // 판정해 MI 토글을 덮어쓰지 않기 위해서다.
+    let known = new Map();
     try {
-      const { data } = await ctx.supabaseAdmin
+      const columns = ["google_calendar_id", "calendar_role", "calendar_visible"];
+      const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
         .from("owner_google_calendar_sync")
-        .select("google_calendar_id,calendar_role")
-        .eq("owner_agency_code", code);
-      knownRoles = new Map((data || []).map((row) => [row.google_calendar_id, row.calendar_role]));
+        .select(activeColumns(columns).join(","))
+        .eq("owner_agency_code", code)
+        .then((response) => response || { data: null, error: null }, (error) => ({ data: null, error })),
+      OPTIONAL_CALENDAR_CATALOG_COLUMNS);
+      known = new Map((data || []).map((row) => [row.google_calendar_id, row]));
     } catch (error) {
-      knownRoles = new Map();
+      known = new Map();
     }
 
     const nowIso = new Date().toISOString();
@@ -1149,20 +1203,30 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
       if (!item || item.deleted === true) continue;
       const id = cleanText(item.id, 1024);
       if (!id) continue;
+      const knownRow = known.get(id);
       const values = {
         owner_agency_code: code,
         google_calendar_id: id,
-        calendar_role: cleanText(knownRoles.get(id)) || "secondary",
+        calendar_role: cleanText(knownRow?.calendar_role) || "secondary",
         calendar_summary: cleanText(item.summaryOverride || item.summary, 200) || null,
         calendar_access_role: cleanText(item.accessRole, 40) || null,
         calendar_is_primary: item.primary === true,
-        calendar_writable: true,
+        calendar_writable: WRITABLE_ACCESS_ROLES.has(cleanText(item.accessRole)),
         calendar_catalog_at: nowIso,
+        calendar_background_color: hexColor(item.backgroundColor),
+        calendar_foreground_color: hexColor(item.foregroundColor),
+        calendar_selected: item.selected === true,
+        // calendar_visible 은 MI 안에서만 쓰는 토글이다. 이미 아는 캘린더면 대표님이
+        // 눌러 둔 값을 절대 덮지 않고, 처음 보는 캘린더에만 기본값을 넣는다.
+        // (구글에서 체크되어 있거나 기본 캘린더면 켜진 채로 시작한다.)
+        calendar_visible: knownRow ? knownRow.calendar_visible !== false : (item.selected === true || item.primary === true),
       };
-      const written = await runWithOptionalColumns(() => ctx.supabaseAdmin
+      // 두 마이그레이션은 따로 적용될 수 있으므로 재시도를 겹쳐 건다.
+      const written = await runWithOptionalColumns(() => runWithOptionalColumns(() => ctx.supabaseAdmin
         .from("owner_google_calendar_sync")
         .upsert(withoutDisabledColumns(values), { onConflict: "owner_agency_code,google_calendar_id" })
-        .then((response) => response || { error: null }, (error) => ({ error })), OPTIONAL_CALENDAR_SYNC_COLUMNS);
+        .then((response) => response || { error: null }, (error) => ({ error })), OPTIONAL_CALENDAR_CATALOG_COLUMNS),
+      OPTIONAL_CALENDAR_SYNC_COLUMNS);
       if (!written?.error) saved += 1;
     }
     return { ok: true, saved };
@@ -1171,21 +1235,48 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
   }
 }
 
-// DB 만 읽는다. GET /api/work-items 는 hot path 라 구글을 부르면 안 된다.
-export async function listOwnerWritableCalendars(ctx, ownerCode, integration = null) {
+// 연동 행이 가리키는 전용 캘린더만 아는 상태에서 만들어 내는 최소 항목.
+// 카탈로그를 못 읽었을 때의 안전한 바닥값이다.
+function inferredDedicatedEntry(integration) {
+  const dedicatedId = cleanText(integration?.calendar_id);
+  if (!dedicatedId) return null;
+  return {
+    id: dedicatedId,
+    name: DEDICATED_CALENDAR_SUMMARY,
+    primary: false,
+    dedicated: true,
+    accessRole: "owner",
+    writable: true,
+    visible: true,
+    selected: true,
+    color: null,
+    textColor: null,
+    group: "own",
+  };
+}
+
+// 사이드바(캘린더 목록) 전체. DB 만 읽는다 — GET /api/work-items 는 hot path 라
+// 구글을 부르면 안 된다. 읽기 전용 캘린더도 그대로 담아 내보내고, 쓰기 가능
+// 여부는 writable 로 알린다.
+export async function listOwnerCalendarCatalog(ctx, ownerCode, integration = null) {
   const code = normalizeCode(ownerCode);
   const dedicatedId = cleanText(integration?.calendar_id);
-  const inferredDedicated = dedicatedId
-    ? [{ id: dedicatedId, name: DEDICATED_CALENDAR_SUMMARY, primary: false, accessRole: "owner", dedicated: true }]
-    : [];
+  const inferred = inferredDedicatedEntry(integration);
+  const fallback = inferred ? [inferred] : [];
   try {
-    const columns = ["google_calendar_id", "calendar_role", ...OPTIONAL_CALENDAR_SYNC_COLUMNS];
-    const result = await runWithOptionalColumns(() => ctx.supabaseAdmin
+    const columns = [
+      "google_calendar_id", "calendar_role",
+      ...OPTIONAL_CALENDAR_SYNC_COLUMNS,
+      ...OPTIONAL_CALENDAR_CATALOG_COLUMNS,
+    ];
+    // 두 선택 열 묶음은 서로 다른 마이그레이션에서 온다. 한쪽만 적용된 창에서도
+    // 각각 한 번씩 재시도해 내려가도록 재시도를 겹쳐 건다.
+    const result = await runWithOptionalColumns(() => runWithOptionalColumns(() => ctx.supabaseAdmin
       .from("owner_google_calendar_sync")
       .select(activeColumns(columns).join(","))
       .eq("owner_agency_code", code)
       .then((response) => response || { data: null, error: null }, (error) => ({ data: null, error })),
-    OPTIONAL_CALENDAR_SYNC_COLUMNS);
+    OPTIONAL_CALENDAR_CATALOG_COLUMNS), OPTIONAL_CALENDAR_SYNC_COLUMNS);
     const rows = Array.isArray(result?.data) ? result.data : [];
 
     const entries = new Map();
@@ -1195,26 +1286,90 @@ export async function listOwnerWritableCalendars(ctx, ownerCode, integration = n
       const role = cleanText(row.calendar_role);
       const dedicated = Boolean(dedicatedId) && id === dedicatedId;
       const primary = row.calendar_is_primary === true || role === "primary";
-      // 카탈로그 열이 아직 없으면 writable 을 확인할 길이 없다. 그때는 우리가
-      // 역할로 알고 있는 전용/기본 캘린더만 내보낸다.
-      if (row.calendar_writable !== true && !dedicated && !primary) continue;
+      const accessRole = cleanText(row.calendar_access_role, 40) || (dedicated || primary ? "owner" : "");
       entries.set(id, {
         id,
         name: cleanText(row.calendar_summary, 200) || (dedicated ? DEDICATED_CALENDAR_SUMMARY : id),
         primary,
-        accessRole: cleanText(row.calendar_access_role, 40) || (dedicated || primary ? "owner" : "writer"),
         dedicated,
+        accessRole,
+        // 카탈로그 열이 아직 없으면 writable 을 확인할 길이 없다. 그때도 우리가
+        // 역할로 아는 전용/기본 캘린더는 쓰기 가능으로 남는다.
+        writable: row.calendar_writable === true || dedicated || primary,
+        // 열이 없거나 null 이면 보이는 쪽이 기본이다(fail open).
+        visible: row.calendar_visible !== false,
+        selected: row.calendar_selected === true,
+        color: cleanText(row.calendar_background_color, 7) || null,
+        textColor: cleanText(row.calendar_foreground_color, 7) || null,
+        // 구글 사이드바의 "내 캘린더 / 다른 캘린더" 구분과 같은 기준이다.
+        group: accessRole === "owner" || dedicated || primary ? "own" : "other",
       });
     }
-    if (dedicatedId && !entries.has(dedicatedId)) entries.set(dedicatedId, inferredDedicated[0]);
+    if (dedicatedId && !entries.has(dedicatedId) && inferred) entries.set(dedicatedId, inferred);
 
     return [...entries.values()].sort((left, right) => {
+      if (left.group !== right.group) return left.group === "own" ? -1 : 1;
+      if (left.primary !== right.primary) return left.primary ? -1 : 1;
+      if (left.dedicated !== right.dedicated) return left.dedicated ? -1 : 1;
+      return left.name.localeCompare(right.name, "ko");
+    });
+  } catch (error) {
+    return fallback;
+  }
+}
+
+// 카탈로그에서 다이얼로그용 "쓰기 가능한 캘린더" 목록을 뽑는다. 순수 함수라
+// 목록을 이미 들고 있는 호출부는 DB 를 다시 읽지 않아도 된다.
+export function writableCalendarsFromCatalog(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry?.writable)
+    .map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      primary: entry.primary === true,
+      // writable 이 참이면 최소한 writer 다. 카탈로그 열이 없어 역할을 모를 때의 바닥값.
+      accessRole: entry.accessRole || "writer",
+      dedicated: entry.dedicated === true,
+    }))
+    .sort((left, right) => {
       if (left.dedicated !== right.dedicated) return left.dedicated ? -1 : 1;
       if (left.primary !== right.primary) return left.primary ? -1 : 1;
       return left.name.localeCompare(right.name, "ko");
     });
+}
+
+// DB 만 읽는다. GET /api/work-items 는 hot path 라 구글을 부르면 안 된다.
+export async function listOwnerWritableCalendars(ctx, ownerCode, integration = null) {
+  return writableCalendarsFromCatalog(await listOwnerCalendarCatalog(ctx, ownerCode, integration));
+}
+
+// MI 사이드바 체크 상태만 바꾼다. 구글의 calendarList.selected 는 쓰기 가능한
+// 필드지만 절대 되쓰지 않는다 — MI 에서 끈 것이 대표님의 구글 화면까지
+// 바꿔서는 안 되기 때문이다. 그래서 이 함수는 구글을 전혀 부르지 않는다.
+export async function setOwnerCalendarVisibility(ctx, ownerCode, calendarId, visible) {
+  const code = normalizeCode(ownerCode);
+  const id = cleanText(calendarId, 1024);
+  if (!id) return { ok: false, reason: "not_found" };
+  const run = () => {
+    // 열이 이미 내려가 있으면 DB 를 건드리지 않고 "미지원"으로 돌아간다.
+    if (!optionalColumnEnabled("calendar_visible")) return Promise.resolve({ data: null, error: null, unsupported: true });
+    return ctx.supabaseAdmin
+      .from("owner_google_calendar_sync")
+      .update({ calendar_visible: Boolean(visible), updated_at: new Date().toISOString() })
+      .eq("owner_agency_code", code)
+      .eq("google_calendar_id", id)
+      .select("google_calendar_id")
+      .maybeSingle()
+      .then((response) => response || { data: null, error: null }, (error) => ({ data: null, error }));
+  };
+  try {
+    const result = await runWithOptionalColumns(run, OPTIONAL_CALENDAR_CATALOG_COLUMNS);
+    if (result?.unsupported || !optionalColumnEnabled("calendar_visible")) return { ok: false, reason: "unsupported" };
+    if (result?.error) return { ok: false, reason: "storage" };
+    if (!result?.data) return { ok: false, reason: "not_found" };
+    return { ok: true, updated: true };
   } catch (error) {
-    return inferredDedicated;
+    return { ok: false, reason: "storage" };
   }
 }
 

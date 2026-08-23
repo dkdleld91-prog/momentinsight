@@ -22,10 +22,12 @@ import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
 import {
   deleteRowFromGoogle,
+  listOwnerCalendarCatalog,
   listOwnerWritableCalendars,
   recordGoogleDeleteFailure,
   refreshOwnerCalendarCatalog,
   runOwnerCalendarSync,
+  setOwnerCalendarVisibility,
   syncOwnerScheduleRows,
   writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
@@ -33,11 +35,13 @@ import {
 export {
   deleteRowFromGoogle,
   googleOauthConfig,
+  listOwnerCalendarCatalog,
   listOwnerWritableCalendars,
   loadOwnerGoogleIntegration,
   mapScheduleRowToGoogleEvent,
   recordGoogleDeleteFailure,
   refreshOwnerCalendarCatalog,
+  setOwnerCalendarVisibility,
   syncOwnerScheduleRows,
   writeRowToGoogleFirst,
 };
@@ -511,6 +515,59 @@ async function handleOwnerApi(request, ctx) {
     if (token.ok) await refreshOwnerCalendarCatalog(ctx, ownerCode, token.accessToken, {});
     const calendars = await listOwnerWritableCalendars(ctx, ownerCode, loaded.integration);
     return json(request, { ok: true, calendars, refreshed: token.ok });
+  }
+  // 사이드바용 전체 캘린더 목록. "calendars" 와 달리 읽기 전용 캘린더까지 담고
+  // 색·표시 여부를 함께 돌려준다.
+  if (action === "calendar-refresh") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null, error: true }));
+    if (loaded.error || !loaded.integration) {
+      return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
+    }
+    const token = await refreshAccessToken(loaded.integration.refresh_token, process.env);
+    if (token.ok) await refreshOwnerCalendarCatalog(ctx, ownerCode, token.accessToken, {});
+    return json(request, {
+      ok: true,
+      refreshed: token.ok,
+      calendars: await listOwnerCalendarCatalog(ctx, ownerCode, loaded.integration),
+    });
+  }
+  // MI 안에서만 쓰는 표시 토글. 구글의 calendarList.selected 로는 절대 되쓰지
+  // 않으므로 이 분기는 구글을 한 번도 부르지 않는다.
+  if (action === "calendar-visibility") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const rawCalendarId = cleanText(body.calendarId);
+    if (!rawCalendarId || rawCalendarId.length > 1024) {
+      return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
+    }
+    if (typeof body.visible !== "boolean") {
+      return json(request, { ok: false, message: "표시 여부 값을 확인해주세요." }, 400);
+    }
+    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null, error: true }));
+    if (loaded.error || !loaded.integration) {
+      return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
+    }
+    const saved = await setOwnerCalendarVisibility(ctx, ownerCode, rawCalendarId, body.visible);
+    if (saved.reason === "not_found") {
+      return json(request, { ok: false, message: "해당 캘린더를 찾을 수 없습니다. 목록을 새로고침해주세요." }, 404);
+    }
+    if (saved.reason === "unsupported") {
+      return json(request, {
+        ok: false,
+        code: "calendar_catalog_missing",
+        message: "캘린더 목록 확장이 아직 적용되지 않았습니다. 데이터베이스 마이그레이션을 적용해주세요.",
+      }, 503);
+    }
+    if (!saved.ok) {
+      return json(request, { ok: false, message: "캘린더 표시 설정을 저장하지 못했습니다." }, 500);
+    }
+    return json(request, { ok: true, calendars: await listOwnerCalendarCatalog(ctx, ownerCode, loaded.integration) });
   }
   if (action === "disconnect") {
     const { error } = await ctx.supabaseAdmin

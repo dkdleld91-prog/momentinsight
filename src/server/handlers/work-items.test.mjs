@@ -1046,3 +1046,214 @@ test("a stale expectedUpdatedAt re-reads the row and still deletes through googl
   assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 1);
   assert.equal(opsFor(harness.ops, "audit_logs", "insert").length, 1);
 });
+
+// ─────────────────────────────────────────────────────────────
+// 사이드바 카탈로그: 숨긴 캘린더 제외 · 읽기 전용 캘린더 보호
+// ─────────────────────────────────────────────────────────────
+
+const HOLIDAY = "holidays@group.calendar.google.com";
+
+function catalogRows() {
+  return [
+    { google_calendar_id: DEDICATED, calendar_role: "dedicated", calendar_summary: "모먼트 인사이트", calendar_access_role: "owner", calendar_writable: true, calendar_visible: true, calendar_background_color: "#0b8043", calendar_foreground_color: "#ffffff" },
+    { google_calendar_id: HOLIDAY, calendar_role: "secondary", calendar_summary: "대한민국 공휴일", calendar_access_role: "reader", calendar_writable: false, calendar_visible: false, calendar_background_color: "#616161" },
+  ];
+}
+
+function feedRow(id, calendarId, title) {
+  return {
+    id,
+    title,
+    schedule_type: "meeting",
+    status: "planned",
+    starts_at: "2026-09-13T05:00:00.000Z",
+    is_all_day: false,
+    calendar_id: null,
+    google_calendar_id: calendarId,
+  };
+}
+
+function workGetRequest(search = "") {
+  return new Request(`https://insight.momentlabs.co.kr/api/work-items${search}`, {
+    method: "GET",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": "mml93-a01",
+    },
+  });
+}
+
+function feedCtx() {
+  return tableCtx({
+    schedule_items: [{ data: [
+      feedRow("row-1", DEDICATED, "월간 정산 미팅"),
+      feedRow("row-2", HOLIDAY, "추석"),
+      feedRow("row-3", null, "구글 없는 일정"),
+    ], error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+  });
+}
+
+test("GET drops the rows of a calendar the owner unchecked in the sidebar", async () => {
+  const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest(), feedCtx().ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(payload.items.map((item) => item.id), ["row-1", "row-3"],
+    "숨긴 캘린더의 행은 빠지고 구글 캘린더가 없는 행은 남는다");
+});
+
+test("GET with includeHidden brings the unchecked calendar back", async () => {
+  const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest("?includeHidden=1"), feedCtx().ctx));
+  const payload = await response.json();
+
+  assert.deepEqual(payload.items.map((item) => item.id), ["row-1", "row-2", "row-3"]);
+  const holiday = payload.items[1];
+  assert.equal(holiday.calendarName, "대한민국 공휴일");
+  assert.equal(holiday.calendarColor, "#616161");
+  assert.equal(holiday.calendarAccessRole, "reader");
+  assert.equal(holiday.calendarVisible, false);
+  assert.equal(holiday.readOnly, true, "읽기 전용 캘린더의 일정은 화면에서도 잠긴다");
+  assert.equal(payload.items[0].readOnly, false);
+  assert.equal(payload.items[0].calendarColor, "#0b8043");
+  assert.equal(payload.items[0].calendarTextColor, "#ffffff");
+  assert.equal(payload.items[2].readOnly, false, "카탈로그에 없는 행은 잠그지 않는다");
+  assert.equal(payload.items[2].calendarVisible, true);
+});
+
+test("GET carries the sidebar catalog next to the writable dialog list", async () => {
+  const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest(), feedCtx().ctx));
+  const payload = await response.json();
+
+  assert.deepEqual(payload.calendars, [], "옛 공유 일정표 키는 그대로 빈 배열이다");
+  assert.deepEqual(payload.googleCalendarCatalog.map((entry) => entry.id), [DEDICATED, HOLIDAY]);
+  assert.deepEqual(payload.googleCalendarCatalog.map((entry) => entry.group), ["own", "other"]);
+  assert.equal(payload.googleCalendarCatalog[1].writable, false);
+  assert.equal(payload.googleCalendarCatalog[1].visible, false);
+  assert.equal(payload.googleCalendarCatalog[1].color, "#616161");
+  assert.deepEqual(payload.googleCalendars.map((entry) => entry.id), [DEDICATED],
+    "다이얼로그에는 쓰기 가능한 캘린더만 올린다");
+  assert.deepEqual(Object.keys(payload.googleCalendars[0]).sort(),
+    ["accessRole", "dedicated", "id", "name", "primary"]);
+});
+
+function holidayRow(overrides = {}) {
+  return {
+    id: "row-2",
+    client_id: null, operation_team_id: null, owner_agency_code: "mml93-a01", calendar_id: null,
+    title: "추석", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-09-13T05:00:00.000Z", ends_at: "2026-09-13T06:00:00.000Z",
+    visibility: "internal", is_all_day: false,
+    google_calendar_id: HOLIDAY, google_event_id: "gev-holiday",
+    updated_at: "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+test("a PATCH on a read-only calendar is refused before google or the database is touched", async () => {
+  const harness = tableCtx({
+    schedule_items: [{ data: holidayRow(), error: null }],
+    owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+  });
+  const { calls, impl } = googleFetchMock({});
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("PATCH", dialogBody({
+    id: "row-2",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    conference: false,
+  })), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(payload.code, "calendar_read_only");
+  assert.match(payload.message, /읽기 전용/);
+  assert.equal(calls.length, 0, "구글을 부르지 않는다");
+  assert.equal(opsFor(harness.ops, "schedule_items", "update").length, 0, "행도 건드리지 않는다");
+});
+
+test("a DELETE on a read-only calendar is refused before google or the database is touched", async () => {
+  const harness = tableCtx({
+    schedule_items: [{ data: holidayRow(), error: null }],
+    owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+  });
+  const { calls, impl } = googleFetchMock({});
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-2",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+  }), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.equal(payload.code, "calendar_read_only");
+  assert.equal(calls.length, 0, "구글을 부르지 않는다");
+  assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "MI 행을 남긴다");
+});
+
+// 캐시가 아직 차오르지 않았다는 이유로 고칠 수 있는 일정을 막으면 안 된다.
+test("a row whose calendar the catalog does not know is still editable", async () => {
+  const row = holidayRow({ id: "row-1", google_calendar_id: DEDICATED, google_event_id: "gev-1", title: "월간 정산 미팅" });
+  const harness = tableCtx({
+    schedule_items: [
+      { data: row, error: null },
+      { data: { ...row, updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+    ],
+    owner_google_calendar_sync: [{ data: [catalogRows()[1]], error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`PATCH ${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events/gev-1`]: googleJson(200, {
+      id: "gev-1", etag: '"e2"',
+    }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("PATCH", dialogBody({
+    id: "row-1",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    conference: false,
+  })), harness.ctx));
+
+  assert.equal(response.status, 200);
+  assert.equal(opsFor(harness.ops, "schedule_items", "update").length, 1);
+});
+
+// managerWorkItemPayload 가 2번째 인자를 받게 되면서, 목록 매핑을 함수 참조로
+// 넘기면 배열 인덱스가 캘린더 자리에 꽂힌다. 첫 행 말고 나머지가 통째로
+// readOnly 로 잠기는 사고라 여기서 못박는다.
+test("a multi-row response never mistakes the list index for a calendar", async () => {
+  const rows = [
+    { id: "row-1", title: "급여 지급", starts_at: "2026-08-15T00:00:00.000Z" },
+    { id: "row-2", title: "급여 지급", starts_at: "2026-09-15T00:00:00.000Z" },
+    { id: "row-3", title: "급여 지급", starts_at: "2026-10-15T00:00:00.000Z" },
+  ];
+  const harness = tableCtx({
+    schedule_items: [
+      { data: [], error: null },
+      { data: rows, error: null },
+    ],
+    audit_logs: [{ error: null }],
+  });
+
+  const response = await handleWorkItemsRequest(workRequest("POST", {
+    title: "급여 지급",
+    scheduleType: "report_due",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-08-15T09:00:00+09:00",
+    endsAt: "2026-08-15T10:00:00+09:00",
+    repeat: "monthly",
+    repeatUntil: "2026-10-15",
+    requestId: "22222222-2222-4222-8222-222222222222",
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.items.length, 3);
+  assert.deepEqual(payload.items.map((item) => item.readOnly), [false, false, false]);
+  assert.deepEqual(payload.items.map((item) => item.calendarVisible), [true, true, true]);
+  assert.deepEqual(payload.items.map((item) => item.calendarName), [null, null, null]);
+});

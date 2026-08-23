@@ -350,3 +350,145 @@ test("overflow events open the date agenda and editor focus is restored", () => 
   assert.match(source, /workDialogReturnFocus/);
   assert.match(source, /event\.key === "Tab"/);
 });
+
+// 구글 캘린더 목록(왼쪽 레일). 표시/숨김은 서버 카탈로그를 그대로 따라가고,
+// 체크를 다시 켜면 서버가 빼두었던 행을 다시 읽어와야 화면과 브리핑이 어긋나지 않는다.
+const railRenderSource = source.slice(
+  source.indexOf("function workGcalGroupHtml(groupKey, title, entries) {"),
+  source.indexOf("function renderWorkOperation() {")
+);
+const calendarVisibilitySource = source.slice(
+  source.indexOf("async function toggleWorkCalendarVisibility(calendarId) {"),
+  source.indexOf("async function refreshWorkCalendarCatalog(button) {")
+);
+const calendarRefreshSource = source.slice(
+  source.indexOf("async function refreshWorkCalendarCatalog(button) {"),
+  source.indexOf("function syncWorkPublicFields() {")
+);
+const assistantSnapshotSource = source.slice(
+  source.indexOf("function ownerAssistantScheduleSnapshot() {"),
+  source.indexOf("function speakOwnerAssistantText(text) {")
+);
+const briefingSpeechSource = source.slice(
+  source.indexOf("function buildOwnerAssistantBriefingSpeech(rangeKey) {"),
+  source.indexOf("function matchOwnerAssistantCompletionTargets(query) {")
+);
+const briefingRenderSource = source.slice(
+  source.indexOf("function renderOwnerAssistantBriefing(view) {"),
+  source.indexOf("function bindOwnerAssistant(view, generation) {")
+);
+
+test("the google calendar rail lists every calendar without reintroducing the shared-calendar controls", () => {
+  assert.ok(railRenderSource.length > 0, "rail renderer must exist");
+
+  // 레일 골격은 업무 화면 마크업에 정적으로 있어야 한다(빈 카탈로그면 hidden).
+  assert.match(workViewMarkup, /<div class="mi-work-body" data-work-gcal-body>/);
+  assert.match(workViewMarkup, /<aside class="mi-work-gcal-rail" id="mi-work-gcal-rail" data-work-gcal-rail hidden aria-label="캘린더 목록">/);
+  assert.match(workViewMarkup, /data-work-gcal-refresh aria-label="구글 캘린더 목록 새로고침"/);
+  assert.match(workViewMarkup, /<div class="mi-work-gcal-list" data-work-gcal-list><\/div>/);
+  assert.match(workViewMarkup, /data-work-gcal-drawer aria-expanded="false" aria-controls="mi-work-gcal-rail" hidden/);
+  // 레일은 기존 7fr/3fr 레이아웃을 감싸는 바깥 그리드로만 붙는다.
+  assert.ok(workViewMarkup.indexOf('<div class="mi-work-body"') < workViewMarkup.indexOf('<div class="mi-work-layout">'));
+
+  // 행과 그룹 머리글은 레일 렌더러가 만든다.
+  assert.match(railRenderSource, /data-work-gcal-group="' \+ escapeHtml\(groupKey\)/);
+  assert.match(railRenderSource, /<span class="mi-work-gcal-chevron" aria-hidden="true">⌄<\/span>/);
+  assert.match(railRenderSource, /class="mi-work-gcal-item" role="checkbox" aria-checked="' \+ \(checked \? "true" : "false"\)/);
+  assert.match(railRenderSource, /data-work-gcal-toggle="' \+ escapeHtml\(id\)/);
+  assert.match(railRenderSource, /style="--mi-gcal-color:' \+ color/);
+  assert.match(railRenderSource, /<span class="mi-work-gcal-box" aria-hidden="true"><\/span>/);
+  assert.match(railRenderSource, /entry\.writable === false \? '<span class="mi-work-gcal-tag">읽기 전용<\/span>'/);
+  assert.match(railRenderSource, /workGcalGroupHtml\("own", "내 캘린더", own\) \+ workGcalGroupHtml\("other", "다른 캘린더", other\)/);
+  assert.match(railRenderSource, /\.sort\(function \(a, b\)[\s\S]{0,120}primary === true \? 1 : 0/);
+  assert.match(railRenderSource, /rail\.hidden = true/);
+
+  // 서버가 준 색상은 6자리 HEX 만 통과시킨다.
+  assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
+
+  // 잠긴 레이아웃 규칙과 새 바깥 그리드 CSS.
+  assert.match(source, /#mi-admin \.mi-work-body \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\);/);
+  assert.match(source, /#mi-admin \.mi-work-body\.has-gcal-rail \{\s*grid-template-columns: minmax\(0, 232px\) minmax\(0, 1fr\);/);
+  assert.match(source, /#mi-admin \.mi-work-gcal-item\[aria-checked="true"\] \.mi-work-gcal-box \{/);
+
+  // 공유 캘린더 UI 는 여전히 없다.
+  for (const marker of [
+    "mi-work-calendar-rail",
+    "data-work-calendar-list",
+    "data-work-calendar-create",
+    "data-work-calendar-filter",
+    "data-work-calendar-color",
+    "data-work-calendar-grant",
+    "data-work-calendar-share",
+    "data-work-calendar-invite-code",
+    "data-work-calendar-join",
+    "data-work-calendar-leave",
+    "data-work-calendar-select"
+  ]) {
+    assert.equal(workViewMarkup.includes(marker), false, `calendar rail must not reintroduce: ${marker}`);
+    assert.equal(editorMarkup.includes(marker), false, `personal editor must not reintroduce: ${marker}`);
+  }
+});
+
+test("hidden calendars drop out of the grid, the agenda, the counters and the 실장 브리핑", () => {
+  assert.match(source, /function workItemCalendarVisible\(item\)[\s\S]{0,320}entry\.visible !== false/);
+  assert.match(source, /function visibleWorkItems\(\)[\s\S]{0,160}workItems\.filter\(function \(item\) \{ return workItemCalendarVisible\(item\); \}\)/);
+  assert.match(source, /function filteredWorkItems\(\)[\s\S]{0,220}workItemMatchesFilter\(item, workActiveFilter\) && workItemCalendarVisible\(item\)/);
+  assert.match(source, /function renderWorkSummary\(\)[\s\S]{0,120}var summaryItems = visibleWorkItems\(\);/);
+  assert.match(source, /workCalendarCatalog = Array\.isArray\(payload\.googleCalendarCatalog\) \? payload\.googleCalendarCatalog : \[\]/);
+  assert.match(source, /function renderWorkOperation\(\)[\s\S]{0,200}renderWorkGcalRail\(\)/);
+
+  assert.match(assistantSnapshotSource, /return visibleWorkItems\(\)/);
+  assert.equal(assistantSnapshotSource.includes("return workItems"), false, "브리핑 스냅샷은 숨긴 캘린더를 읽지 않는다");
+  assert.match(briefingSpeechSource, /var items = visibleWorkItems\(\)\.filter\(/);
+  assert.match(briefingRenderSource, /var openItems = visibleWorkItems\(\)\.filter\(function \(item\) \{ return item\.status !== "done"; \}\)/);
+});
+
+test("toggling a calendar posts calendar-visibility and reloads the rows the server had filtered out", () => {
+  assert.ok(calendarVisibilitySource.length > 0, "visibility handler must exist");
+  assert.match(source, /var gcalToggle = event\.target\.closest\("\[data-work-gcal-toggle\]"\);[\s\S]{0,200}toggleWorkCalendarVisibility\(gcalToggle\.getAttribute\("data-work-gcal-toggle"\) \|\| ""\)/);
+  assert.match(source, /var gcalGroup = event\.target\.closest\("\[data-work-gcal-group\]"\);[\s\S]{0,520}setAttribute\("aria-expanded"/);
+  assert.match(source, /var gcalRefresh = event\.target\.closest\("\[data-work-gcal-refresh\]"\);[\s\S]{0,160}refreshWorkCalendarCatalog\(gcalRefresh\)/);
+  assert.match(source, /var gcalDrawer = event\.target\.closest\("\[data-work-gcal-drawer\]"\);[\s\S]{0,320}classList\.toggle\("is-gcal-open"\)/);
+
+  assert.match(calendarVisibilitySource, /secureSession\.role !== "owner" \|\| workGcalBusy\) return/);
+  assert.match(calendarVisibilitySource, /miFetch\(getOwnerGoogleCalendarApiUrl\(\)/);
+  assert.match(calendarVisibilitySource, /action: "calendar-visibility", calendarId: id, visible: nextVisible/);
+  assert.match(calendarVisibilitySource, /readApiPayload\(response/);
+  assert.match(calendarVisibilitySource, /if \(Array\.isArray\(payload\.calendars\)\) workCalendarCatalog = payload\.calendars;[\s\S]{0,220}await loadWorkItems\(\)/);
+  const revert = calendarVisibilitySource.slice(calendarVisibilitySource.indexOf("} catch (error) {"));
+  assert.match(revert, /workCalendarCatalog = previousCatalog;/);
+  assert.match(revert, /renderWorkOperation\(\)/);
+  assert.match(revert, /setWorkStatus\(error\.message \|\| "캘린더 표시 설정을 저장하지 못했습니다\.", "warn"\)/);
+
+  assert.match(calendarRefreshSource, /action: "calendar-refresh"/);
+  assert.match(calendarRefreshSource, /if \(button\) button\.disabled = true;/);
+  assert.match(calendarRefreshSource, /workCalendarCatalog = Array\.isArray\(payload\.calendars\) \? payload\.calendars : \[\][\s\S]{0,260}await loadWorkItems\(\)/);
+});
+
+test("calendar colour and read-only state reach the chips, the agenda line and the editor", () => {
+  assert.match(source, /var chipColor = workGcalColor\(item\.calendarColor\);[\s\S]{0,420}\(chipColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ chipColor \+ '"' : ""\)/);
+  assert.match(source, /var rowColor = workGcalColor\(item\.calendarColor\);[\s\S]{0,420}\(rowColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ rowColor \+ '"' : ""\)/);
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{\s*border-left: 3px solid var\(--mi-gcal-color/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] > i \{\s*background: var\(--mi-gcal-color/);
+  assert.match(source, /if \(calendarName\) parts\.push\(calendarName\)[\s\S]{0,160}if \(item\.readOnly\) parts\.push\("읽기 전용"\)/);
+
+  assert.match(editorMarkup, /data-work-gcal-readonly hidden><\/p>/);
+  assert.match(openDialogSource, /var calendarReadOnly = Boolean\(item && item\.readOnly === true\)/);
+  assert.match(openDialogSource, /noteParts\.push\("캘린더 · " \+ calendarLabel\)/);
+  assert.match(openDialogSource, /var readOnly = Boolean\(item && \(!workItemCanEdit\(item\) \|\| calendarReadOnly\)\)/);
+  assert.match(openDialogSource, /if \(save\) \{\s*save\.hidden = readOnly;\s*save\.disabled = readOnly;/);
+  assert.match(openDialogSource, /if \(remove\) \{\s*remove\.hidden = !item \|\| readOnly;\s*remove\.disabled = readOnly;/);
+});
+
+// 서버는 읽기 전용 캘린더의 행에 대해 PATCH/DELETE 를 403 calendar_read_only 로 막는다.
+// 날짜 드래그도 같은 PATCH 라, 화면이 먼저 잠그지 않으면 옮길 수 있는 것처럼 보였다가
+// 실패한다. workItemCanEdit 이 그 단일 관문이다.
+test("a read-only calendar row is not draggable because the server rejects the same PATCH", () => {
+  const canEditSource = source.slice(
+    source.indexOf("function workItemCanEdit(item) {"),
+    source.indexOf("function workDateKey(value) {")
+  );
+  assert.ok(canEditSource.length > 0, "workItemCanEdit must exist");
+  assert.match(canEditSource, /return Boolean\(item\) && item\.readOnly !== true;/);
+  assert.match(source, /var canEdit = workItemCanEdit\(item\);/);
+});

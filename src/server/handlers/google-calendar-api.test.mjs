@@ -16,6 +16,7 @@ import handler, {
   upsertLoginIdentity,
   verifyOauthState,
 } from "./google-calendar-api.mjs";
+import { resetOptionalColumns } from "./google-calendar-sync.mjs";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -1615,8 +1616,10 @@ test("the owner calendars action refreshes the catalog from google and returns t
     ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
     ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
     ["GET", CALENDAR_LIST_URL, (call) => {
-      assert.match(call.url, /minAccessRole=writer/);
+      // minAccessRole 은 더 이상 걸지 않는다 — 읽기 전용 캘린더까지 목록에 담는다.
+      assert.equal(/minAccessRole/u.test(call.url), false);
       assert.match(call.url, /showHidden=false/);
+      assert.match(call.url, /showDeleted=false/);
       return restJson({
         items: [
           { id: "dedicated@group.calendar.google.com", summary: "모먼트 인사이트", accessRole: "owner" },
@@ -1694,4 +1697,191 @@ test("a stale google token still returns the cached calendar list", async () => 
     accessRole: "owner",
     dedicated: true,
   }]);
+});
+
+// ---------------------------------------------------------------------------
+// 사이드바 캘린더 목록 (owner actions: "calendar-refresh" / "calendar-visibility")
+// ---------------------------------------------------------------------------
+
+const HOLIDAY_CALENDAR = "holidays@group.calendar.google.com";
+
+function ownerCalendarRequest(body) {
+  return new Request(OWNER_CALENDAR_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": "mml93-a01",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function catalogRestRows() {
+  return [
+    { google_calendar_id: "dedicated@group.calendar.google.com", calendar_role: "dedicated", calendar_summary: "모먼트 인사이트", calendar_access_role: "owner", calendar_writable: true, calendar_visible: true },
+    { google_calendar_id: HOLIDAY_CALENDAR, calendar_role: "secondary", calendar_summary: "대한민국 공휴일", calendar_access_role: "reader", calendar_writable: false, calendar_visible: false, calendar_background_color: "#616161" },
+  ];
+}
+
+test("calendar-refresh reloads the full calendarList and answers with the sidebar catalog", async () => {
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_LIST_URL, (call) => {
+      assert.equal(/minAccessRole/u.test(call.url), false, "읽기 전용 캘린더까지 받아야 한다");
+      return restJson({
+        items: [
+          { id: "dedicated@group.calendar.google.com", summary: "모먼트 인사이트", accessRole: "owner", selected: true },
+          { id: HOLIDAY_CALENDAR, summary: "대한민국 공휴일", accessRole: "reader", backgroundColor: "#616161" },
+        ],
+      });
+    }],
+    ["POST", CALENDAR_SYNC_REST_URL, () => restCreated()],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson(catalogRestRows())],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-refresh" }))
+  )));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.refreshed, true);
+  assert.deepEqual(payload.calendars.map((entry) => entry.id),
+    ["dedicated@group.calendar.google.com", HOLIDAY_CALENDAR]);
+  assert.equal(payload.calendars[0].group, "own");
+  assert.equal(payload.calendars[1].group, "other");
+  assert.equal(payload.calendars[1].writable, false, "읽기 전용 캘린더도 목록에 남는다");
+  assert.equal(payload.calendars[1].visible, false);
+  assert.equal(payload.calendars[1].color, "#616161");
+  assert.ok(calls.some((call) => call.url.startsWith(CALENDAR_LIST_URL)));
+});
+
+test("calendar-refresh reports 409 before touching google when nothing is connected", async () => {
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-refresh" }))
+  )));
+
+  assert.equal(response.status, 409);
+  assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0);
+});
+
+test("calendar-visibility saves the MI toggle and never calls google", async () => {
+  const patches = [];
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["PATCH", CALENDAR_SYNC_REST_URL, (call) => {
+      patches.push(JSON.parse(String(call.body)));
+      return restJson([{ google_calendar_id: HOLIDAY_CALENDAR }]);
+    }],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson(catalogRestRows())],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", calendarId: HOLIDAY_CALENDAR, visible: false }))
+  )));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.deepEqual(patches.map((entry) => entry.calendar_visible), [false]);
+  assert.equal("calendar_selected" in patches[0], false, "구글 쪽 selected 는 건드리지 않는다");
+  assert.deepEqual(payload.calendars.map((entry) => entry.id),
+    ["dedicated@group.calendar.google.com", HOLIDAY_CALENDAR]);
+  assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0, "표시 토글은 구글을 부르지 않는다");
+  assert.equal(calls.filter((call) => call.url.startsWith(TOKEN_URL)).length, 0);
+});
+
+test("calendar-visibility refuses a missing calendar id or a non-boolean flag", async () => {
+  const { calls, impl } = loginFetchRouter([]);
+
+  const missing = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", visible: true }))
+  )));
+  const oversized = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", calendarId: "가".repeat(1025), visible: true }))
+  )));
+  const badFlag = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", calendarId: HOLIDAY_CALENDAR, visible: "false" }))
+  )));
+
+  assert.equal(missing.status, 400);
+  assert.equal((await missing.json()).message, "캘린더를 선택해주세요.");
+  assert.equal(oversized.status, 400);
+  assert.equal(badFlag.status, 400);
+  assert.equal((await badFlag.json()).message, "표시 여부 값을 확인해주세요.");
+  assert.equal(calls.length, 0, "입력이 틀리면 저장소도 건드리지 않는다");
+});
+
+test("calendar-visibility reports 404 for a calendar the catalog does not hold", async () => {
+  const { impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["PATCH", CALENDAR_SYNC_REST_URL, () => restJson([])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+    handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", calendarId: "gone@group.calendar.google.com", visible: true }))
+  )));
+  const payload = await response.json();
+
+  assert.equal(response.status, 404);
+  assert.match(payload.message, /찾을 수 없습니다/);
+});
+
+test("calendar-visibility asks for the migration when the catalog columns are missing", async () => {
+  resetOptionalColumns();
+  try {
+    const { impl } = loginFetchRouter([
+      ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+      ["PATCH", CALENDAR_SYNC_REST_URL, () => new Response(
+        JSON.stringify({ code: "42703", message: "column owner_google_calendar_sync.calendar_visible does not exist" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      )],
+    ]);
+
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => (
+      handler.fetch(ownerCalendarRequest({ action: "calendar-visibility", calendarId: HOLIDAY_CALENDAR, visible: false }))
+    )));
+    const payload = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(payload.code, "calendar_catalog_missing");
+    assert.match(payload.message, /마이그레이션/);
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("the sidebar actions stay owner-only", async () => {
+  for (const action of ["calendar-refresh", "calendar-visibility"]) {
+    const request = new Request(OWNER_CALENDAR_API_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-mi-session-role": "team" },
+      body: JSON.stringify({ action, calendarId: HOLIDAY_CALENDAR, visible: true }),
+    });
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => handler.fetch(request));
+    assert.equal(response.status, 403);
+  }
+});
+
+test("the sidebar actions fail closed with the shared missing-env shape", async () => {
+  for (const body of [
+    { action: "calendar-refresh" },
+    { action: "calendar-visibility", calendarId: HOLIDAY_CALENDAR, visible: true },
+  ]) {
+    const { calls, impl } = loginFetchRouter([]);
+    const response = await withEnv({ ...LOGIN_HANDLER_ENV, GOOGLE_OAUTH_CLIENT_ID: undefined }, () => (
+      withGlobalFetch(impl, () => handler.fetch(ownerCalendarRequest(body)))
+    ));
+    const payload = await response.json();
+
+    assert.equal(response.status, 503);
+    assert.equal(payload.code, "missing_google_env");
+    assert.equal(calls.length, 0);
+  }
 });

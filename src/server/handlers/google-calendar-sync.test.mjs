@@ -12,11 +12,15 @@ import {
   validateRecurrenceLines,
 } from "../google-calendar-client.mjs";
 import {
+  MAX_FULL_SYNC_EVENTS,
+  MAX_SYNC_CALENDARS,
   eventInWindow,
   eventIsEcho,
   googleEventTimes,
   googleMirrorFields,
+  hexColor,
   inboundUpdatePatch,
+  listOwnerCalendarCatalog,
   listOwnerWritableCalendars,
   mapGoogleEventToScheduleRow,
   materializeRecurringInstances,
@@ -28,6 +32,7 @@ import {
   resetOptionalColumns,
   resolveOwnerCalendars,
   runOwnerCalendarSync,
+  setOwnerCalendarVisibility,
   syncOneCalendar,
   syncWindow,
   writeRowToGoogleFirst,
@@ -1208,7 +1213,8 @@ test("the calendar catalog stores writable calendars and never overwrites a know
   const result = await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
 
   assert.deepEqual(result, { ok: true, saved: 3 });
-  assert.deepEqual(calls[0].query, { minAccessRole: "writer", showHidden: "false", maxResults: "250" });
+  // minAccessRole 을 빼야 공휴일·구독 캘린더처럼 읽기 전용인 것까지 목록에 담긴다.
+  assert.deepEqual(calls[0].query, { showHidden: "false", showDeleted: "false", maxResults: "250" });
   const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert");
   assert.deepEqual(upserts.map((op) => op.values.google_calendar_id),
     [INTEGRATION.calendar_id, "owner@example.com", "team@group.calendar.google.com"]);
@@ -1306,4 +1312,246 @@ test("calendars already carrying MI events join the pull so a third calendar sti
     INTEGRATION.calendar_id, "owner@example.com", "third@group.calendar.google.com",
   ]);
   assert.equal(calendars.at(-1).calendar_role, "secondary");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 캘린더 목록(사이드바) 카탈로그
+// ─────────────────────────────────────────────────────────────
+
+const HOLIDAY_CALENDAR = "holidays@group.calendar.google.com";
+const TEAM_CALENDAR = "team@group.calendar.google.com";
+
+test("hex colors are normalized to lowercase #rrggbb and anything else is dropped", () => {
+  assert.equal(hexColor("#0088AA"), "#0088aa");
+  assert.equal(hexColor("#FFF"), "#ffffff");
+  assert.equal(hexColor("0088aa"), null);
+  assert.equal(hexColor("rgb(0,136,170)"), null);
+  assert.equal(hexColor(""), null);
+  assert.equal(hexColor(null), null);
+});
+
+test("the catalog stores colors and selection and derives writable from the access role", async () => {
+  const { ctx, ops } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: [], error: null } : { data: null, error: null }),
+  });
+  const { impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, {
+      items: [
+        { id: HOLIDAY_CALENDAR, summary: "대한민국 공휴일", accessRole: "reader", backgroundColor: "#0088AA", foregroundColor: "#FFF", selected: true },
+        { id: TEAM_CALENDAR, summary: "팀 일정", accessRole: "writerWithoutPrivateAccess", selected: false },
+        { id: "busy@group.calendar.google.com", summary: "약속 보기 전용", accessRole: "freeBusyReader" },
+      ],
+    }),
+  });
+
+  const result = await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+
+  assert.deepEqual(result, { ok: true, saved: 3 });
+  const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert");
+  assert.equal(upserts[0].values.calendar_writable, false, "reader 캘린더는 MI 에서 쓰지 못한다");
+  assert.equal(upserts[0].values.calendar_background_color, "#0088aa");
+  assert.equal(upserts[0].values.calendar_foreground_color, "#ffffff");
+  assert.equal(upserts[0].values.calendar_selected, true);
+  assert.equal(upserts[0].values.calendar_visible, true, "처음 보는 캘린더는 구글 체크 상태를 따라간다");
+  assert.equal(upserts[1].values.calendar_writable, true, "writerWithoutPrivateAccess 도 일정 쓰기 권한이다");
+  assert.equal(upserts[1].values.calendar_visible, false, "구글에서 꺼져 있으면 꺼진 채로 들어온다");
+  assert.equal(upserts[2].values.calendar_writable, false, "freeBusyReader 는 읽기 전용이다");
+});
+
+test("a catalog refresh never flips a calendar the owner already toggled in MI", async () => {
+  const { ctx, ops } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? {
+        data: [
+          { google_calendar_id: TEAM_CALENDAR, calendar_role: "secondary", calendar_visible: false },
+          { google_calendar_id: HOLIDAY_CALENDAR, calendar_role: "secondary", calendar_visible: true },
+        ],
+        error: null,
+      }
+      : { data: null, error: null }),
+  });
+  const { impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, {
+      items: [
+        { id: TEAM_CALENDAR, summary: "팀 일정", accessRole: "writer", selected: true },
+        { id: HOLIDAY_CALENDAR, summary: "대한민국 공휴일", accessRole: "reader", selected: false },
+        { id: "new@group.calendar.google.com", summary: "새 캘린더", accessRole: "reader", selected: false },
+      ],
+    }),
+  });
+
+  await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+
+  const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert");
+  assert.equal(upserts[0].values.calendar_visible, false, "MI 에서 끈 캘린더는 구글이 켜져 있어도 꺼진 채로 남는다");
+  assert.equal(upserts[1].values.calendar_visible, true, "MI 에서 켠 캘린더도 그대로 둔다");
+  assert.equal(upserts[2].values.calendar_visible, false, "처음 보는 캘린더에만 기본값을 넣는다");
+});
+
+test("the calendar catalog splits my calendars from the others and keeps the read-only ones", async () => {
+  const { ctx } = makeCtx({
+    owner_google_calendar_sync: {
+      data: [
+        { google_calendar_id: TEAM_CALENDAR, calendar_role: "secondary", calendar_summary: "팀 일정", calendar_access_role: "writer", calendar_writable: true, calendar_visible: true, calendar_selected: true },
+        { google_calendar_id: HOLIDAY_CALENDAR, calendar_role: "secondary", calendar_summary: "대한민국 공휴일", calendar_access_role: "reader", calendar_writable: false, calendar_visible: false, calendar_background_color: "#616161", calendar_foreground_color: "#ffffff" },
+        { google_calendar_id: "shared@group.calendar.google.com", calendar_role: "secondary", calendar_summary: "가나다 공유", calendar_access_role: "freeBusyReader", calendar_writable: false },
+        { google_calendar_id: "owner@example.com", calendar_role: "primary", calendar_summary: "내 캘린더", calendar_access_role: "owner", calendar_is_primary: true, calendar_writable: true },
+        { google_calendar_id: INTEGRATION.calendar_id, calendar_role: "dedicated", calendar_summary: "모먼트 인사이트", calendar_access_role: "owner", calendar_writable: true },
+      ],
+      error: null,
+    },
+  });
+
+  const catalog = await listOwnerCalendarCatalog(ctx, OWNER, INTEGRATION);
+
+  assert.deepEqual(catalog.map((entry) => entry.id), [
+    "owner@example.com",
+    INTEGRATION.calendar_id,
+    "shared@group.calendar.google.com",
+    HOLIDAY_CALENDAR,
+    TEAM_CALENDAR,
+  ], "내 캘린더가 먼저, 그 안에서 기본→전용→이름 순이다");
+  assert.deepEqual(catalog.map((entry) => entry.group), ["own", "own", "other", "other", "other"]);
+  const holiday = catalog.find((entry) => entry.id === HOLIDAY_CALENDAR);
+  assert.equal(holiday.writable, false, "읽기 전용 캘린더도 목록에는 남는다");
+  assert.equal(holiday.visible, false);
+  assert.equal(holiday.accessRole, "reader");
+  assert.equal(holiday.color, "#616161");
+  assert.equal(holiday.textColor, "#ffffff");
+  assert.equal(catalog[1].dedicated, true);
+  assert.equal(catalog[0].primary, true);
+  assert.equal(catalog.find((entry) => entry.id === TEAM_CALENDAR).selected, true);
+
+  // 같은 캐시에서 뽑은 다이얼로그용 목록은 예전 모양과 순서를 그대로 지킨다.
+  const writable = await listOwnerWritableCalendars(ctx, OWNER, INTEGRATION);
+  assert.deepEqual(writable.map((entry) => entry.id), [
+    INTEGRATION.calendar_id, "owner@example.com", TEAM_CALENDAR,
+  ]);
+  assert.deepEqual(Object.keys(writable[0]).sort(), ["accessRole", "dedicated", "id", "name", "primary"]);
+});
+
+test("an empty catalog still infers the dedicated calendar as a visible writable entry", async () => {
+  const { ctx } = makeCtx({ owner_google_calendar_sync: { data: [], error: null } });
+  assert.deepEqual(await listOwnerCalendarCatalog(ctx, OWNER, INTEGRATION), [{
+    id: INTEGRATION.calendar_id,
+    name: "모먼트 인사이트",
+    primary: false,
+    dedicated: true,
+    accessRole: "owner",
+    writable: true,
+    visible: true,
+    selected: true,
+    color: null,
+    textColor: null,
+    group: "own",
+  }]);
+  const broken = makeCtx({ owner_google_calendar_sync: { data: null, error: { code: "42P01", message: "relation does not exist" } } });
+  assert.deepEqual(await listOwnerCalendarCatalog(broken.ctx, OWNER, null), []);
+});
+
+test("the MI visibility toggle writes one local column and reports every outcome", async (t) => {
+  await t.test("saved", async () => {
+    const { ctx, ops } = makeCtx({
+      owner_google_calendar_sync: (op) => (op.kind === "update"
+        ? { data: { google_calendar_id: TEAM_CALENDAR }, error: null }
+        : { data: null, error: null }),
+    });
+
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, false), { ok: true, updated: true });
+    const update = opsFor(ops, "owner_google_calendar_sync", "update")[0];
+    assert.equal(update.values.calendar_visible, false);
+    assert.deepEqual(Object.keys(update.values).sort(), ["calendar_visible", "updated_at"], "구글로는 아무것도 되쓰지 않는다");
+    assert.deepEqual(update.filters, [["eq", "owner_agency_code", OWNER], ["eq", "google_calendar_id", TEAM_CALENDAR]]);
+  });
+
+  await t.test("not_found", async () => {
+    const { ctx } = makeCtx({ owner_google_calendar_sync: { data: null, error: null } });
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, "gone@group.calendar.google.com", true), { ok: false, reason: "not_found" });
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, "   ", true), { ok: false, reason: "not_found" });
+  });
+
+  await t.test("unsupported", async () => {
+    resetOptionalColumns();
+    try {
+      const { ctx, ops } = makeCtx({
+        owner_google_calendar_sync: (op) => (op.kind === "update"
+          ? { data: null, error: { code: "42703", message: "column owner_google_calendar_sync.calendar_visible does not exist" } }
+          : { data: null, error: null }),
+      });
+
+      assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, true), { ok: false, reason: "unsupported" });
+      assert.equal(opsFor(ops, "owner_google_calendar_sync", "update").length, 1, "없는 열에 다시 쓰지 않는다");
+    } finally {
+      resetOptionalColumns();
+    }
+  });
+
+  await t.test("storage", async () => {
+    const { ctx } = makeCtx({
+      owner_google_calendar_sync: (op) => (op.kind === "update"
+        ? { data: null, error: { code: "PGRST301", message: "permission denied" } }
+        : { data: null, error: null }),
+    });
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, true), { ok: false, reason: "storage" });
+  });
+});
+
+test("every catalogued calendar joins the pull, the hidden ones last", async () => {
+  const { ctx } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? {
+        data: [
+          calendarRow({ google_calendar_id: HOLIDAY_CALENDAR, calendar_role: "secondary", calendar_visible: false }),
+          calendarRow({ google_calendar_id: "a@group.calendar.google.com", calendar_role: "secondary" }),
+          calendarRow({ google_calendar_id: TEAM_CALENDAR, calendar_role: "secondary", calendar_visible: true }),
+        ],
+        error: null,
+      }
+      : { data: null, error: null }),
+    schedule_items: { data: [], error: null },
+  });
+
+  const calendars = await resolveOwnerCalendars(ctx, OWNER, INTEGRATION, {});
+
+  assert.deepEqual(calendars.map((entry) => entry.google_calendar_id), [
+    INTEGRATION.calendar_id,
+    "a@group.calendar.google.com",
+    TEAM_CALENDAR,
+    HOLIDAY_CALENDAR,
+  ], "체크를 꺼 둔 캘린더도 계속 동기화하되 순서는 뒤로 민다");
+});
+
+test("one sync run never takes on more calendars than the cap", async () => {
+  const rows = Array.from({ length: MAX_SYNC_CALENDARS + 10 }, (_, index) => calendarRow({
+    google_calendar_id: `c${String(index).padStart(2, "0")}@group.calendar.google.com`,
+    calendar_role: "secondary",
+  }));
+  const { ctx } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: rows, error: null } : { data: null, error: null }),
+    schedule_items: { data: [], error: null },
+  });
+
+  const calendars = await resolveOwnerCalendars(ctx, OWNER, INTEGRATION, {});
+
+  assert.equal(calendars.length, MAX_SYNC_CALENDARS);
+  assert.equal(calendars[0].google_calendar_id, INTEGRATION.calendar_id, "전용 캘린더는 언제나 살아남는다");
+});
+
+test("hitting the event cap parks the page token exactly like the page cap does", async () => {
+  const items = Array.from({ length: MAX_FULL_SYNC_EVENTS }, (_, index) => ({ id: `gev-${index}`, status: "confirmed" }));
+  const { ctx, ops } = makeCtx({ schedule_items: { data: [], error: null } });
+  const eventsUrl = `${CALENDAR_BASE}/calendars/primary%40example.com/events`;
+  const { calls, impl } = fetchMock({
+    [`GET ${eventsUrl}`]: jsonResponse(200, { items, nextPageToken: "pt-next" }),
+  });
+
+  const result = await syncOneCalendar(ctx, OWNER, calendarRow(), "gat-1", {
+    mode: "full", now: NOW, maxPages: 50, fetchImpl: impl,
+  });
+
+  assert.equal(result.partial, true);
+  assert.equal(calls.length, 1, "상한에 닿으면 다음 페이지를 부르지 않는다");
+  const saved = opsFor(ops, "owner_google_calendar_sync", "update").at(-1);
+  assert.equal(saved.values.full_sync_page_token, "pt-next");
+  assert.ok(!("sync_token" in saved.values), "반쯤 진행한 상태에서 토큰을 갱신하면 남은 변경을 잃는다");
 });

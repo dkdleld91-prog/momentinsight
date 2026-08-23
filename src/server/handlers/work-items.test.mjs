@@ -9,6 +9,11 @@ import {
   normalizeWorkItemInput,
   roleCanMutateWorkItems,
 } from "./work-items.mjs";
+import {
+  OPTIONAL_COLUMN_RETRY_MS,
+  resetOptionalColumns,
+  setOptionalColumnClock,
+} from "./google-calendar-sync.mjs";
 
 // 레거시 테스트는 "구글 미연동" 분기를 기준으로 쓰였다. Vercel 프로덕션 빌드는
 // GOOGLE_OAUTH_* 가 실린 채 테스트를 돌리므로, 주변 환경변수를 모듈 로드 시점에
@@ -366,13 +371,22 @@ const GOOGLE_INTEGRATION = {
   sync_status: "ok",
 };
 
+// 테이블 값은 결과 큐(배열)이거나, 매 호출을 직접 처리하는 함수다. 함수 형태는
+// "이 열을 달라고 한 질의만 실패한다" 처럼 호출 횟수를 미리 셀 수 없는 경우에 쓴다.
 function tableCtx(tables = {}) {
   const ops = [];
-  const queues = Object.fromEntries(Object.entries(tables).map(([name, list]) => [name, [...list]]));
+  const queues = Object.fromEntries(Object.entries(tables)
+    .filter(([, list]) => Array.isArray(list))
+    .map(([name, list]) => [name, [...list]]));
   const from = (table) => {
     const op = { table, kind: "select", values: null, options: null, fields: "", filters: [] };
     const settle = () => {
       ops.push(op);
+      const handler = tables[table];
+      if (typeof handler === "function") {
+        const out = handler(op);
+        return out === undefined ? { data: null, error: null } : out;
+      }
       const queue = queues[table];
       const next = queue && queue.length ? queue.shift() : undefined;
       return next === undefined ? { data: null, error: null } : next;
@@ -912,13 +926,305 @@ test("a PATCH without detail keys touches neither google nor the stored details"
 });
 
 test("an explicitly emptied detail is cleared while an absent one is not", () => {
-  const cleared = normalizeGoogleEventInput({ attendees: [], location: "", recurrence: [] });
+  const cleared = normalizeGoogleEventInput({ attendees: [], location: "", recurrence: [], colorId: "" });
   assert.deepEqual(cleared.value.provided, {
-    recurrence: true, attendees: true, location: true, description: false,
+    recurrence: true, attendees: true, location: true, description: false, colorId: true,
   });
   const untouched = normalizeGoogleEventInput({ recurrenceScope: "instance" });
   assert.deepEqual(untouched.value.provided, {
-    recurrence: false, attendees: false, location: false, description: false,
+    recurrence: false, attendees: false, location: false, description: false, colorId: false,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 일정 색(구글 event.colorId)
+//
+// 구글은 "캘린더 색"과 "일정에 지정한 색"을 따로 두고 화면은 후자를 먼저 칠한다.
+// MI 다이얼로그가 그 색을 쓰고, 목록이 두 색을 모두 실어 보낸다.
+// ─────────────────────────────────────────────────────────────
+
+test("the event color accepts the palette ids and the calendar-color default, nothing else", () => {
+  assert.equal(normalizeGoogleEventInput({ colorId: "11" }).value.colorId, "11");
+  assert.equal(normalizeGoogleEventInput({ colorId: " 5 " }).value.colorId, "5");
+  // 빈 값·없음은 모두 "캘린더 색"(기본값)이고 저장 형태는 "" 하나로 모은다.
+  assert.equal(normalizeGoogleEventInput({ colorId: "" }).value.colorId, "");
+  assert.equal(normalizeGoogleEventInput({ colorId: null }).value.colorId, "");
+  assert.equal(normalizeGoogleEventInput({}).value.colorId, "");
+
+  for (const bad of ["0", "12", "99", "red", "#d50000"]) {
+    const result = normalizeGoogleEventInput({ colorId: bad });
+    assert.equal(result.ok, false, `${bad} 은 팔레트에 없다`);
+    assert.equal(result.message, "일정 색상을 확인해주세요.");
+  }
+  assert.equal(normalizeGoogleEventInput({ colorId: 5 }).ok, false, "숫자도 문자열 id 가 아니면 막는다");
+  assert.equal(normalizeGoogleEventInput({ colorId: ["11"] }).ok, false);
+});
+
+test("a colored create sends the color to google and stores the id on the MI row", async () => {
+  const harness = tableCtx({
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: [], error: null }],
+    schedule_items: [{ data: [{ id: "row-1", google_color_id: "11" }], error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`POST ${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events`]: googleJson(200, {
+      id: "gev-1", etag: '"e1"', colorId: "11",
+    }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+    workRequest("POST", dialogBody({ colorId: "11" })), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  const body = JSON.parse(calls.find((call) => call.method === "POST" && call.url.endsWith("/events")).options.body);
+  assert.equal(body.colorId, "11", "다이얼로그가 고른 색이 구글로 나간다");
+  assert.equal(opsFor(harness.ops, "schedule_items", "insert")[0].values[0].google_color_id, "11");
+  assert.equal(payload.item.colorId, "11");
+  assert.equal(payload.item.eventColor, "#d50000", "응답은 구글 화면과 같은 토마토색을 싣는다");
+  assert.equal(payload.item.eventTextColor, "#ffffff");
+});
+
+test("a create left on the calendar color omits colorId from the google body entirely", async () => {
+  const harness = tableCtx({
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: [], error: null }],
+    schedule_items: [{ data: [{ id: "row-1" }], error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`POST ${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events`]: googleJson(200, { id: "gev-1" }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+    workRequest("POST", dialogBody({ colorId: "" })), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  const body = JSON.parse(calls.find((call) => call.method === "POST" && call.url.endsWith("/events")).options.body);
+  // 구글에서 "캘린더 색" 은 colorId 가 없는 상태 그 자체다. "" 를 실으면 거절당한다.
+  assert.equal("colorId" in body, false, "기본값은 아예 싣지 않는다");
+  assert.equal(opsFor(harness.ops, "schedule_items", "insert")[0].values[0].google_color_id, null);
+  assert.equal(payload.item.colorId, null);
+  assert.equal(payload.item.eventColor, null);
+  assert.equal(payload.item.eventTextColor, null);
+});
+
+// 코드가 먼저 배포되고 색 마이그레이션이 나중에 들어오는 창이 반드시 생긴다.
+// 그 창에서 대표님 화면이 500 이 되면 안 되고, SQL 이 들어온 뒤에는 재배포 없이
+// 스스로 색을 다시 실어야 한다.
+test("a missing google_color_id column degrades instead of 500ing and heals after the retry window", async (t) => {
+  const colorMissing = (state) => (op) => {
+    if (!state.migrated && op.fields.includes("google_color_id")) {
+      return { data: null, error: { code: "PGRST204", message: "Could not find the 'google_color_id' column of 'schedule_items' in the schema cache" } };
+    }
+    return state.result(op);
+  };
+
+  await t.test("GET", async () => {
+    resetOptionalColumns();
+    try {
+      let clock = Date.parse("2026-08-23T00:00:00.000Z");
+      setOptionalColumnClock(() => clock);
+      const state = {
+        migrated: false,
+        result: () => ({ data: [feedRow("row-1", DEDICATED, "월간 정산 미팅")], error: null }),
+      };
+      const harness = tableCtx({
+        schedule_items: colorMissing(state),
+        owner_google_integrations: [
+          { data: GOOGLE_INTEGRATION, error: null },
+          { data: GOOGLE_INTEGRATION, error: null },
+        ],
+        owner_google_calendar_sync: [
+          { data: catalogRows(), error: null },
+          { data: catalogRows(), error: null },
+        ],
+      });
+
+      const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest(), harness.ctx));
+      const payload = await response.json();
+
+      assert.equal(response.status, 200, "열이 없어도 목록은 그대로 열린다");
+      assert.equal(payload.items[0].colorId, null);
+      assert.equal(payload.items[0].eventColor, null);
+      assert.equal(payload.items[0].calendarColor, "#0b8043", "캘린더 색은 그대로 나간다");
+      const selects = opsFor(harness.ops, "schedule_items", "select");
+      assert.equal(selects.length, 2, "정확히 한 번만 재시도한다");
+      assert.equal(selects[1].fields.includes("google_color_id"), false, "없는 열을 뺀 채로 다시 읽는다");
+      assert.ok(selects[1].fields.includes("google_recurrence"), "다른 마이그레이션의 열은 계속 실린다");
+
+      // SQL 이 들어왔다. 람다는 그대로 살아 있다.
+      state.migrated = true;
+      clock += OPTIONAL_COLUMN_RETRY_MS;
+      await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest(), harness.ctx));
+      assert.ok(opsFor(harness.ops, "schedule_items", "select").at(-1).fields.includes("google_color_id"),
+        "재배포 없이 다시 색을 싣는다");
+    } finally {
+      resetOptionalColumns();
+    }
+  });
+
+  await t.test("POST", async () => {
+    resetOptionalColumns();
+    try {
+      setOptionalColumnClock(() => Date.parse("2026-08-23T00:00:00.000Z"));
+      const state = { migrated: false, result: () => ({ data: [{ id: "row-1" }], error: null }) };
+      const harness = tableCtx({
+        owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+        owner_google_calendar_sync: [{ data: [], error: null }],
+        schedule_items: colorMissing(state),
+        audit_logs: [{ error: null }],
+      });
+      const { calls, impl } = googleFetchMock({
+        [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+        [`POST ${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events`]: googleJson(200, { id: "gev-1", colorId: "11" }),
+      });
+
+      const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+        workRequest("POST", dialogBody({ colorId: "11" })), harness.ctx));
+      const payload = await response.json();
+
+      assert.equal(response.status, 201, "열이 없어도 저장은 성공한다");
+      assert.equal(JSON.parse(calls.find((call) => call.method === "POST" && call.url.endsWith("/events")).options.body).colorId, "11",
+        "구글에는 그대로 색을 남긴다 — 정본은 구글이다");
+      const inserts = opsFor(harness.ops, "schedule_items", "insert");
+      assert.equal(inserts.length, 2, "정확히 한 번만 재시도한다");
+      assert.ok("google_color_id" in inserts[0].values[0]);
+      assert.equal("google_color_id" in inserts[1].values[0], false, "없는 열은 저장문에서 빠진다");
+      assert.ok("google_location" in inserts[1].values[0], "다른 상세 열은 그대로 저장한다");
+      assert.equal(payload.item.colorId, null);
+    } finally {
+      resetOptionalColumns();
+    }
+  });
+});
+
+test("POST refuses a color outside the google palette before touching google or storage", async () => {
+  const harness = tableCtx({});
+  const response = await handleWorkItemsRequest(workRequest("POST", dialogBody({ colorId: "12" })), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.message, "일정 색상을 확인해주세요.");
+  assert.equal(harness.ops.length, 0, "저장은 물론 조회도 하지 않는다");
+});
+
+test("a colored patch reaches google, and clearing it sends null so google restores the calendar color", async (t) => {
+  const row = {
+    id: "row-1",
+    client_id: null, operation_team_id: null, owner_agency_code: "mml93-a01", calendar_id: null,
+    title: "월간 정산 미팅", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-09-13T05:00:00.000Z", ends_at: "2026-09-13T06:00:00.000Z",
+    visibility: "internal", is_all_day: false,
+    google_calendar_id: DEDICATED, google_event_id: "gev-1",
+    google_color_id: "11",
+    updated_at: "2026-09-01T00:00:00.000Z",
+  };
+  const patchUrl = `PATCH ${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events/gev-1`;
+  const patchBody = (extra) => ({
+    id: "row-1",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    title: "월간 정산 미팅",
+    scheduleType: "meeting",
+    status: "planned",
+    priority: "medium",
+    startsAt: "2026-09-13T14:00",
+    endsAt: "2026-09-13T15:00",
+    ...extra,
+  });
+
+  await t.test("고른 색으로 바꾼다", async () => {
+    const harness = tableCtx({
+      schedule_items: [
+        { data: row, error: null },
+        { data: { ...row, google_color_id: "5", updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      owner_google_calendar_sync: [{ data: [], error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { calls, impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [patchUrl]: googleJson(200, { id: "gev-1", etag: '"e2"', colorId: "5" }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+      workRequest("PATCH", patchBody({ colorId: "5" })), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(JSON.parse(calls.find((call) => call.method === "PATCH").options.body).colorId, "5");
+    assert.equal(opsFor(harness.ops, "schedule_items", "update")[0].values.google_color_id, "5");
+    assert.equal(payload.item.eventColor, "#f6bf26", "바나나");
+    assert.equal(payload.item.eventTextColor, "#1f1f1f", "밝은 색 위에는 진한 글자다");
+  });
+
+  await t.test("캘린더 색으로 되돌린다", async () => {
+    const harness = tableCtx({
+      schedule_items: [
+        { data: row, error: null },
+        { data: { ...row, google_color_id: null, updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      owner_google_calendar_sync: [{ data: [], error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { calls, impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      // 색을 지운 응답에는 colorId 가 아예 없다.
+      [patchUrl]: googleJson(200, { id: "gev-1", etag: '"e2"' }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+      workRequest("PATCH", patchBody({ colorId: "" })), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    const body = JSON.parse(calls.find((call) => call.method === "PATCH").options.body);
+    assert.ok("colorId" in body, "지우려면 필드를 실어야 한다");
+    assert.equal(body.colorId, null, "구글은 null 로만 색을 지운다");
+    assert.equal(opsFor(harness.ops, "schedule_items", "update")[0].values.google_color_id, null);
+    assert.equal(payload.item.colorId, null);
+    assert.equal(payload.item.eventColor, null);
+  });
+
+  await t.test("색을 싣지 않은 PATCH 는 색을 건드리지 않는다", async () => {
+    const harness = tableCtx({
+      schedule_items: [
+        { data: row, error: null },
+        { data: { ...row, status: "done", updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      owner_google_calendar_sync: [{ data: [], error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { calls, impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [patchUrl]: googleJson(200, { id: "gev-1", etag: '"e2"', colorId: "11" }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(
+      workRequest("PATCH", patchBody({ status: "done" })), harness.ctx));
+
+    assert.equal(response.status, 200);
+    assert.equal("colorId" in JSON.parse(calls.find((call) => call.method === "PATCH").options.body), false,
+      "드래그 이동·빠른 완료가 대표님이 고른 색을 지우면 안 된다");
+    // 구글 응답이 색을 실어 왔으니 그 값으로 미러링만 한다(값은 그대로다).
+    assert.equal(opsFor(harness.ops, "schedule_items", "update")[0].values.google_color_id, "11");
+  });
+
+  await t.test("팔레트 밖 색은 400 이고 구글도 DB 도 건드리지 않는다", async () => {
+    const harness = tableCtx({ schedule_items: [{ data: row, error: null }] });
+    const response = await withGoogleEnv(null, () => handleWorkItemsRequest(
+      workRequest("PATCH", patchBody({ colorId: "99" })), harness.ctx));
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).message, "일정 색상을 확인해주세요.");
+    assert.equal(opsFor(harness.ops, "schedule_items", "update").length, 0);
   });
 });
 
@@ -1147,6 +1453,44 @@ test("GET carries the sidebar catalog next to the writable dialog list", async (
     "다이얼로그에는 쓰기 가능한 캘린더만 올린다");
   assert.deepEqual(Object.keys(payload.googleCalendars[0]).sort(),
     ["accessRole", "dedicated", "id", "name", "primary"]);
+});
+
+// 구글 화면은 "일정에 지정한 색"을 캘린더 색보다 먼저 칠한다. 서버는 두 색을
+// 모두 실어 보내고 우선순위는 화면이 정한다 — 서버가 하나로 접으면 사이드바의
+// 캘린더 색 칩과 일정의 색이 서로 다른 근거를 갖게 된다.
+test("GET carries both the calendar color and the per-event color so the client can order them", async () => {
+  const harness = tableCtx({
+    schedule_items: [{ data: [
+      { ...feedRow("row-1", DEDICATED, "월간 정산 미팅"), google_color_id: "11" },
+      feedRow("row-2", DEDICATED, "색 없는 일정"),
+      { ...feedRow("row-3", null, "구글 없는 일정"), google_color_id: "5" },
+    ], error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+  });
+
+  const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest(), harness.ctx));
+  const payload = await response.json();
+  const byId = new Map(payload.items.map((item) => [item.id, item]));
+
+  const colored = byId.get("row-1");
+  assert.equal(colored.colorId, "11");
+  assert.equal(colored.eventColor, "#d50000", "구글 다이얼로그의 토마토와 같은 값이다");
+  assert.equal(colored.eventTextColor, "#ffffff");
+  assert.equal(colored.calendarColor, "#0b8043", "캘린더 색도 그대로 함께 나간다");
+  assert.equal(colored.calendarTextColor, "#ffffff");
+
+  const plain = byId.get("row-2");
+  assert.equal(plain.colorId, null);
+  assert.equal(plain.eventColor, null, "색을 지정하지 않은 일정은 캘린더 색을 따른다");
+  assert.equal(plain.eventTextColor, null);
+  assert.equal(plain.calendarColor, "#0b8043");
+
+  // 구글 캘린더가 없는 행도 색만 있으면 그 색을 그대로 낸다.
+  const offGoogle = byId.get("row-3");
+  assert.equal(offGoogle.eventColor, "#f6bf26");
+  assert.equal(offGoogle.eventTextColor, "#1f1f1f");
+  assert.equal(offGoogle.calendarColor, null);
 });
 
 function holidayRow(overrides = {}) {

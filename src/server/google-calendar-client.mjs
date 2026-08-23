@@ -19,7 +19,7 @@ export const MAX_RECURRENCE_LINES = 4;
 export const MAX_RECURRENCE_LINE_CHARS = 512;
 export const EVENT_TIMEZONE = "Asia/Seoul";
 // 다이얼로그가 실제로 보낸 필드만 구글로 나간다. 목록에 없으면 "건드리지 않음".
-export const DETAIL_FIELDS = ["recurrence", "attendees", "location", "description"];
+export const DETAIL_FIELDS = ["recurrence", "attendees", "location", "description", "colorId"];
 
 const RECURRENCE_PREFIX_PATTERN = /^(?:RRULE|EXRULE|RDATE|EXDATE):/iu;
 // 로컬파트/도메인에 공백·따옴표가 없고 점 있는 도메인만 통과시킨다. 구글이
@@ -357,6 +357,15 @@ export function buildGoogleEventPayload(row = {}, options = {}) {
     else if (patching) payload.description = "";
   }
 
+  // 일정 색. 구글에서 "캘린더 색"(기본값)은 colorId 가 없는 상태 그 자체다.
+  // 그래서 insert 는 값이 없으면 아예 싣지 않고, patch 는 null 을 실어야만
+  // 이미 지정된 색이 지워져 캘린더 색으로 돌아간다("" 로는 지워지지 않는다).
+  if (include.has("colorId")) {
+    const colorId = cleanText(row.google_color_id, 4);
+    if (isEventColorId(colorId)) payload.colorId = colorId;
+    else if (patching) payload.colorId = null;
+  }
+
   if (createConference && !hasExistingConference(row)) {
     payload.conferenceData = {
       createRequest: {
@@ -371,4 +380,120 @@ export function buildGoogleEventPayload(row = {}, options = {}) {
 export function clientDisplayName(client) {
   if (!client) return "";
   return cleanText(client.name || client.business_name, MAX_CLIENT_NAME_CHARS);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 구글 색상 팔레트: 레거시(API) → 모던(웹 UI)
+//
+// 여기에는 확인된 사실과 업계 관례가 섞여 있으므로 구분해 둔다.
+//
+// [사실] colors.get 은 calendar / event 두 맵을 돌려주고 각 항목은
+//   background · foreground 를 가진다. calendarList.backgroundColor 와
+//   event.colorId 가 각각 그 맵을 가리킨다.
+//   https://developers.google.com/workspace/calendar/api/v3/reference/colors
+//   https://developers.google.com/workspace/calendar/api/v3/reference/colors/get
+// [사실] 두 문서 모두 실제 16진값을 싣지 않는다(2026-08 확인). API 가 실제로
+//   돌려주는 값이 아래 legacy 열이다.
+// [관례·비문서] 구글 캘린더 웹 UI 는 그 레거시 값을 그대로 칠하지 않고
+//   현대화된 팔레트로 바꿔 그린다. 구글은 이 대응표를 문서화하지 않았다.
+//   아래 modern 열이 웹 UI 가 쓰는 값으로 널리 알려진 팔레트이며, 대표님
+//   화면(광복절 초록 ≈ Basil #0b8043, 타임딜 보라 ≈ Grape #8e24aa,
+//   MI 일정 파랑 ≈ Peacock/Blueberry)과 일치함을 확인했다.
+//
+// 저장은 언제나 구글이 준 원본(legacy)으로 하고, 화면에 낼 때만 modern 으로
+// 바꾼다. 그래야 구글이 팔레트를 또 바꿔도 표 하나만 고치면 된다.
+// ─────────────────────────────────────────────────────────────
+
+// calendarList 색(24개). id 는 colors.get 의 calendar 맵 키다.
+export const CALENDAR_COLOR_PALETTE = [
+  { id: "1", legacy: "#ac725e", modern: "#795548", name: "Cocoa" },
+  { id: "2", legacy: "#d06b64", modern: "#e67c73", name: "Flamingo" },
+  { id: "3", legacy: "#f83a22", modern: "#d50000", name: "Tomato" },
+  { id: "4", legacy: "#fa573c", modern: "#f4511e", name: "Tangerine" },
+  { id: "5", legacy: "#ff7537", modern: "#ef6c00", name: "Pumpkin" },
+  { id: "6", legacy: "#ffad46", modern: "#f09300", name: "Mango" },
+  { id: "7", legacy: "#42d692", modern: "#009688", name: "Eucalyptus" },
+  { id: "8", legacy: "#16a765", modern: "#0b8043", name: "Basil" },
+  { id: "9", legacy: "#7bd148", modern: "#7cb342", name: "Pistachio" },
+  { id: "10", legacy: "#b3dc6c", modern: "#c0ca33", name: "Avocado" },
+  { id: "11", legacy: "#fbe983", modern: "#e4c441", name: "Citron" },
+  { id: "12", legacy: "#fad165", modern: "#f6bf26", name: "Banana" },
+  { id: "13", legacy: "#92e1c0", modern: "#33b679", name: "Sage" },
+  { id: "14", legacy: "#9fe1e7", modern: "#039be5", name: "Peacock" },
+  { id: "15", legacy: "#9fc6e7", modern: "#4285f4", name: "Cobalt" },
+  { id: "16", legacy: "#4986e7", modern: "#3f51b5", name: "Blueberry" },
+  { id: "17", legacy: "#9a9cff", modern: "#7986cb", name: "Lavender" },
+  { id: "18", legacy: "#b99aff", modern: "#b39ddb", name: "Wisteria" },
+  { id: "19", legacy: "#c2c2c2", modern: "#616161", name: "Graphite" },
+  { id: "20", legacy: "#cabdbf", modern: "#a79b8e", name: "Birch" },
+  { id: "21", legacy: "#cca6ac", modern: "#ad1457", name: "Beetroot" },
+  { id: "22", legacy: "#f691b2", modern: "#d81b60", name: "Cherry Blossom" },
+  { id: "23", legacy: "#cd74e6", modern: "#8e24aa", name: "Grape" },
+  { id: "24", legacy: "#a47ae2", modern: "#9e69af", name: "Amethyst" },
+];
+
+// 일정 색(11개). 다이얼로그의 동그란 스와치가 이 순서와 이름을 그대로 쓴다.
+// nameKo 는 구글 한국어 UI 의 표기다.
+export const EVENT_COLOR_PALETTE = [
+  { id: "1", legacy: "#a4bdfc", modern: "#7986cb", name: "Lavender", nameKo: "라벤더" },
+  { id: "2", legacy: "#7ae7bf", modern: "#33b679", name: "Sage", nameKo: "세이지" },
+  { id: "3", legacy: "#dbadff", modern: "#8e24aa", name: "Grape", nameKo: "포도" },
+  { id: "4", legacy: "#ff887c", modern: "#e67c73", name: "Flamingo", nameKo: "플라밍고" },
+  { id: "5", legacy: "#fbd75b", modern: "#f6bf26", name: "Banana", nameKo: "바나나" },
+  { id: "6", legacy: "#ffb878", modern: "#f4511e", name: "Tangerine", nameKo: "탠저린" },
+  { id: "7", legacy: "#46d6db", modern: "#039be5", name: "Peacock", nameKo: "피콕" },
+  { id: "8", legacy: "#e1e1e1", modern: "#616161", name: "Graphite", nameKo: "흑연" },
+  { id: "9", legacy: "#5484ed", modern: "#3f51b5", name: "Blueberry", nameKo: "블루베리" },
+  { id: "10", legacy: "#51b749", modern: "#0b8043", name: "Basil", nameKo: "바질" },
+  { id: "11", legacy: "#dc2127", modern: "#d50000", name: "Tomato", nameKo: "토마토" },
+];
+
+// 구글 한국어 UI 가 스와치를 늘어놓는 순서(토마토부터 흑연까지).
+export const EVENT_COLOR_DISPLAY_ORDER = ["11", "4", "6", "5", "2", "10", "7", "9", "1", "3", "8"];
+
+const CALENDAR_COLOR_BY_ID = new Map(CALENDAR_COLOR_PALETTE.map((entry) => [entry.id, entry]));
+const CALENDAR_COLOR_BY_LEGACY = new Map(CALENDAR_COLOR_PALETTE.map((entry) => [entry.legacy, entry]));
+const EVENT_COLOR_BY_ID = new Map(EVENT_COLOR_PALETTE.map((entry) => [entry.id, entry]));
+
+export function normalizeHexColor(value) {
+  const text = cleanText(value, 20).toLowerCase();
+  if (/^#[0-9a-f]{6}$/u.test(text)) return text;
+  if (!/^#[0-9a-f]{3}$/u.test(text)) return "";
+  return `#${text.slice(1).split("").map((digit) => digit + digit).join("")}`;
+}
+
+export function isEventColorId(value) {
+  return EVENT_COLOR_BY_ID.has(cleanText(value, 4));
+}
+
+// 캘린더 색: colorId 를 알면 그것이 가장 정확하고, 없으면 레거시 16진으로 되짚는다.
+// 표에 없는 값(구글이 팔레트를 넓혔거나 사용자 지정)은 원본을 그대로 돌려준다 —
+// 모르는 색을 지어내는 것보다 구글이 준 값을 쓰는 편이 언제나 덜 틀린다.
+export function modernCalendarColor(backgroundColor, colorId = "") {
+  const byId = CALENDAR_COLOR_BY_ID.get(cleanText(colorId, 4));
+  if (byId) return byId.modern;
+  const hex = normalizeHexColor(backgroundColor);
+  if (!hex) return "";
+  return CALENDAR_COLOR_BY_LEGACY.get(hex)?.modern || hex;
+}
+
+export function modernEventColor(colorId) {
+  return EVENT_COLOR_BY_ID.get(cleanText(colorId, 4))?.modern || "";
+}
+
+export function eventColorName(colorId) {
+  return EVENT_COLOR_BY_ID.get(cleanText(colorId, 4))?.nameKo || "";
+}
+
+// 색 위에 얹을 글자색. 구글은 팔레트마다 고정 대비색을 쓰지만 그 표는 문서에도
+// 없고 팔레트가 넓어지면 또 어긋난다. 상대 휘도로 정하면 새 색이 와도 항상 읽힌다.
+export function readableTextColor(backgroundColor) {
+  const hex = normalizeHexColor(backgroundColor);
+  if (!hex) return "";
+  const channel = (offset) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(1) + 0.7152 * channel(3) + 0.0722 * channel(5);
+  return luminance > 0.55 ? "#1f1f1f" : "#ffffff";
 }

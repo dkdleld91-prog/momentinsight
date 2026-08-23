@@ -42,6 +42,153 @@ test("date-only schedule inputs and list bounds use Seoul calendar days", () => 
   });
 });
 
+// ─────────────────────────────────────────────────────────────
+// 타임스탬프 정밀도 회귀 (운영 사고 회귀 방지)
+//
+// PostgREST 는 timestamptz 를 마이크로초 6자리(2026-08-23T18:20:11.123456+00:00)로
+// 돌려준다. 예전 규칙은 소수점 3자리까지만 통과시켜서, 화면이 받은 updated_at 을
+// 그대로 실어 보낸 삭제·수정이 expectedUpdatedAt="" 로 떨어져 무조건 400 이 났다
+// ("삭제할 업무의 최신 상태를 확인해주세요."). 비교는 항상 ms 로 잘라 이뤄진다.
+// ─────────────────────────────────────────────────────────────
+
+const MICRO_VERSION = "2026-08-23T18:20:11.123456+00:00";
+
+test("postgrest microsecond timestamps are accepted and compared at millisecond precision", () => {
+  assert.equal(validIsoDate(MICRO_VERSION), "2026-08-23T18:20:11.123Z", "마이크로초 6자리를 받는다");
+  // 같은 순간을 가리키는 표기들은 모두 같은 값으로 정규화된다.
+  for (const form of [
+    "2026-08-23T18:20:11.123+00:00",
+    "2026-08-23T18:20:11.123Z",
+    "2026-08-23T18:20:11.123456789Z",
+  ]) {
+    assert.equal(validIsoDate(form), "2026-08-23T18:20:11.123Z", `${form} 도 같은 순간이다`);
+  }
+  assert.equal(validIsoDate("2026-08-23T18:20:11Z"), "2026-08-23T18:20:11.000Z", "소수점 없는 Z 표기도 그대로 통과한다");
+  // 상한은 그대로다. 10자리 이상과 형식이 깨진 값은 여전히 막는다.
+  assert.equal(validIsoDate("2026-08-23T18:20:11.1234567890Z"), "", "소수점 10자리는 받지 않는다");
+  assert.equal(validIsoDate("not-a-date"), "");
+  assert.equal(validIsoDate("2026-08-23T18:20:11.123456+00:00 or 1=1"), "");
+});
+
+test("DELETE no longer rejects a microsecond version it handed out itself", async () => {
+  const existing = managerRow({ updated_at: MICRO_VERSION });
+  const harness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+    { kind: "from", name: "schedule_items", result: { data: { id: existing.id }, error: null } },
+    { kind: "from", name: "audit_logs", result: { error: null } },
+  ]);
+
+  const response = await handleWorkItemsRequest(ownerRequest("DELETE", {
+    id: existing.id,
+    expectedUpdatedAt: MICRO_VERSION,
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 200, "예전에는 여기서 400 이 났다");
+  assert.equal(payload.message, "업무를 삭제했습니다.");
+  // 버전이 맞았으므로 행을 다시 읽지 않고 곧바로 지운다.
+  assert.equal(harness.calls.filter(([kind, table]) => kind === "from" && table === "schedule_items").length, 2);
+  assert.ok(harness.calls.some(([kind]) => kind === "delete"));
+});
+
+test("DELETE still rejects a broken version but never a microsecond one", async () => {
+  for (const broken of ["2026-08-23T18:20:11.1234567890Z", "not-a-date", "2026-02-30"]) {
+    const response = await handleWorkItemsRequest(ownerRequest("DELETE", {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expectedUpdatedAt: broken,
+    }), scriptedCtx([]).ctx);
+    assert.equal(response.status, 400, `${broken} 는 형식이 깨진 값이다`);
+    assert.equal((await response.json()).message, "삭제할 업무의 최신 상태를 확인해주세요.");
+  }
+});
+
+test("PATCH matches a microsecond version at the same instant and still 409s at a different one", async (t) => {
+  await t.test("같은 순간이면 통과한다", async () => {
+    const existing = managerRow({ updated_at: MICRO_VERSION });
+    const saved = { ...existing, status: "done" };
+    const harness = scriptedCtx([
+      { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+      { kind: "from", name: "schedule_items", result: { data: saved, error: null } },
+      { kind: "from", name: "audit_logs", result: { error: null } },
+    ]);
+
+    const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
+      id: existing.id,
+      expectedUpdatedAt: MICRO_VERSION,
+      title: existing.title,
+      scheduleType: existing.schedule_type,
+      status: "done",
+      priority: existing.priority,
+      startsAt: existing.starts_at,
+      endsAt: existing.ends_at,
+    }), harness.ctx);
+
+    assert.equal(response.status, 200, "예전에는 여기서 400 이 났다");
+    assert.equal((await response.json()).item.status, "done");
+    harness.done();
+  });
+
+  await t.test("마이크로초만 다른 같은 밀리초도 같은 순간이다", async () => {
+    const existing = managerRow({ updated_at: "2026-08-23T18:20:11.123999+00:00" });
+    const harness = scriptedCtx([
+      { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+      { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+      { kind: "from", name: "audit_logs", result: { error: null } },
+    ]);
+
+    const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
+      id: existing.id,
+      expectedUpdatedAt: MICRO_VERSION,
+      title: existing.title,
+      scheduleType: existing.schedule_type,
+      status: existing.status,
+      priority: existing.priority,
+      startsAt: existing.starts_at,
+      endsAt: existing.ends_at,
+    }), harness.ctx);
+
+    assert.equal(response.status, 200, "비교는 ms 로 잘라 이뤄진다");
+    harness.done();
+  });
+
+  await t.test("다른 순간이면 그대로 409 다", async () => {
+    const existing = managerRow({ updated_at: "2026-08-23T18:20:12.123456+00:00" });
+    const harness = scriptedCtx([
+      { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+    ]);
+
+    const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
+      id: existing.id,
+      expectedUpdatedAt: MICRO_VERSION,
+      title: existing.title,
+      scheduleType: existing.schedule_type,
+      status: "done",
+      priority: existing.priority,
+      startsAt: existing.starts_at,
+      endsAt: existing.ends_at,
+    }), harness.ctx);
+
+    assert.equal(response.status, 409, "낙관적 잠금은 그대로 산다");
+    assert.equal((await response.json()).message, "일정이 변경되었습니다. 새로고침 후 다시 시도해주세요.");
+    harness.done();
+  });
+
+  await t.test("형식이 깨진 값은 그대로 400 이다", async () => {
+    const response = await handleWorkItemsRequest(ownerRequest("PATCH", {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      expectedUpdatedAt: "2026-08-23T18:20:11.1234567890Z",
+      title: "급여 지급",
+      scheduleType: "report_due",
+      status: "planned",
+      priority: "medium",
+      startsAt: "2026-08-15T09:00:00+09:00",
+    }), scriptedCtx([]).ctx);
+
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).message, "수정할 업무의 최신 상태를 확인해주세요.");
+  });
+});
+
 test("bounded calendar GET reports truncation instead of silently hiding overflow", async () => {
   const rows = Array.from({ length: 201 }, (_, index) => managerRow({ id: `item-${index}` }));
   const harness = scriptedCtx([

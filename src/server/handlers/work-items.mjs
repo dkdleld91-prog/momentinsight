@@ -14,8 +14,11 @@ import {
   describeRecurrence,
   googleOauthConfig,
   isAttendeeEmail,
+  isEventColorId,
   loadOwnerGoogleIntegration,
+  modernEventColor,
   normalizeAttendeeList,
+  readableTextColor,
   validateRecurrenceLines,
 } from "../google-calendar-client.mjs";
 import {
@@ -64,7 +67,7 @@ const WORK_ITEM_WRITE_KEYS = new Set([
   "visibility", "isClientVisible", "is_client_visible", "isAllDay", "is_all_day",
   "calendarId", "expectedUpdatedAt", "repeat", "repeatUntil", "repeatNoEnd", "requestId",
   "allDay", "recurrence", "attendees", "sendUpdates", "conference",
-  "location", "description", "googleCalendarId", "recurrenceScope",
+  "location", "description", "googleCalendarId", "recurrenceScope", "colorId",
 ]);
 const MAX_GOOGLE_CALENDAR_ID = 1024;
 const SEND_UPDATES = new Set(["all", "none"]);
@@ -111,11 +114,17 @@ function primaryAgencyCode() {
 export function validIsoDate(value) {
   if (!value) return "";
   const input = String(value).trim();
-  if (!/^\d{4}-\d{2}-\d{2}(?:[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/u.test(input)
+  // 소수점 이하 자릿수는 1~9 를 모두 받는다. Postgres/PostgREST 는 마이크로초
+  // 6자리(2026-08-23T18:20:11.123456+00:00)로 돌려주는데, 예전 규칙은 3자리까지만
+  // 통과시켰다. 그래서 그 형식의 updated_at 을 그대로 실어 보낸 삭제·수정 요청은
+  // expectedUpdatedAt 이 "" 로 떨어져 무조건 400("...최신 상태를 확인해주세요.")이 났다.
+  // JS Date 는 자릿수와 무관하게 파싱해 ms 로 잘라내므로, 아래 toISOString 정규화가
+  // 정밀도 차이를 흡수한다 — 비교는 항상 ms 기준으로 이뤄진다.
+  if (!/^\d{4}-\d{2}-\d{2}(?:[Tt]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:[Zz]|[+-]\d{2}:\d{2})?)?$/u.test(input)
       || !seoulDateKey(input)) return "";
   const seoulInput = /^\d{4}-\d{2}-\d{2}$/u.test(input)
     ? `${input}T00:00:00+09:00`
-    : /^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?$/iu.test(input)
+    : /^\d{4}-\d{2}-\d{2}t\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?$/iu.test(input)
       ? `${input}+09:00`
       : input;
   const parsed = new Date(seoulInput);
@@ -231,6 +240,18 @@ export function normalizeGoogleEventInput(body = {}) {
   if (googleCalendarId.length > MAX_GOOGLE_CALENDAR_ID) {
     return { ok: false, message: "캘린더 선택 값을 확인해주세요." };
   }
+  // 일정 색은 구글 이벤트 팔레트의 id("1".."11") 뿐이다. 비어 있는 값은
+  // 다이얼로그의 "캘린더 색"(기본값)이고, 구글에서 그것은 곧 colorId 없음이다.
+  // 표에 없는 값을 그대로 저장하면 화면이 팔레트에서 못 찾아 색이 사라지므로
+  // 여기서 막는다(열 CHECK 제약과 같은 범위다).
+  const rawColorId = body.colorId;
+  if (rawColorId !== undefined && rawColorId !== null && typeof rawColorId !== "string") {
+    return { ok: false, message: "일정 색상을 확인해주세요." };
+  }
+  const colorId = cleanText(rawColorId, 4);
+  if (colorId && !isEventColorId(colorId)) {
+    return { ok: false, message: "일정 색상을 확인해주세요." };
+  }
 
   return {
     ok: true,
@@ -243,6 +264,7 @@ export function normalizeGoogleEventInput(body = {}) {
       description,
       googleCalendarId,
       recurrenceScope,
+      colorId,
       // PATCH 에서 "보내지 않은 필드" 와 "비워서 보낸 필드" 는 다르다. 앞의 것은
       // 손대지 않고, 뒤의 것만 지운다. 드래그 이동·빠른 완료처럼 상세를 싣지
       // 않는 PATCH 가 참석자·설명을 통째로 날리는 사고를 막는 경계선이다.
@@ -251,6 +273,7 @@ export function normalizeGoogleEventInput(body = {}) {
         attendees: Object.hasOwn(body, "attendees"),
         location: Object.hasOwn(body, "location"),
         description: Object.hasOwn(body, "description"),
+        colorId: Object.hasOwn(body, "colorId"),
       },
     },
   };
@@ -282,6 +305,8 @@ function googleDetailValues(googleInput, recurrenceLines, storedAttendees = null
     google_description: googleInput.description || null,
     google_attendees: attendees.length ? attendees : null,
     google_recurrence: recurrenceLines.length ? recurrenceLines : null,
+    // 빈 값은 "캘린더 색을 따른다" 는 뜻이고 저장은 null 이다.
+    google_color_id: googleInput.colorId || null,
   };
 }
 
@@ -298,6 +323,7 @@ function providedDetailValues(googleInput, storedRow) {
   if (provided.recurrence) {
     values.google_recurrence = googleInput.recurrence.length ? googleInput.recurrence : null;
   }
+  if (provided.colorId) values.google_color_id = googleInput.colorId || null;
   return { values, fields: DETAIL_FIELDS.filter((field) => provided[field]) };
 }
 
@@ -332,6 +358,10 @@ export function clientWorkItemPayload(row = {}) {
 // calendar 는 사이드바 카탈로그의 항목이다. 없으면(다른 역할·연동 전·캐시가 찬
 // 적 없음) 예전과 똑같은 값이 나오도록 모든 파생 키가 기본값으로 떨어진다.
 function managerWorkItemPayload(row = {}, calendar = null) {
+  // 일정 색은 저장해 둔 colorId 를 웹 UI 팔레트로 옮겨 낸다. 캘린더 색과 함께
+  // 실어 보내되 어느 쪽을 칠할지는 화면이 정한다 — 구글과 같은 우선순위
+  // (일정에 색이 지정돼 있으면 그 색이 캘린더 색을 이긴다)를 그대로 두기 위해서다.
+  const eventColor = modernEventColor(row.google_color_id) || null;
   return {
     id: row.id,
     clientId: row.client_id,
@@ -365,6 +395,9 @@ function managerWorkItemPayload(row = {}, calendar = null) {
     calendarName: calendar?.name || row.google_calendar_name || null,
     calendarColor: calendar?.color || null,
     calendarTextColor: calendar?.textColor || null,
+    colorId: row.google_color_id || null,
+    eventColor,
+    eventTextColor: eventColor ? readableTextColor(eventColor) : null,
     calendarAccessRole: calendar?.accessRole || null,
     calendarVisible: calendar ? calendar.visible !== false : true,
     // 화면의 잠금은 "구글이 읽기 전용이라고 확인해 준" 캘린더에만 건다.
@@ -535,6 +568,7 @@ const SELECT_COLUMNS = [
   "google_recurrence",
   "google_conference_uri",
   "google_calendar_name",
+  "google_color_id",
   "created_at",
   "updated_at",
   "client:clients(id,name,business_name)",
@@ -762,6 +796,9 @@ async function createFromGoogleEvent(request, ctx, access, options) {
     google_location: googleRow.google_location,
     google_description: googleRow.google_description,
     google_attendees: googleRow.google_attendees,
+    // 인스턴스 응답에는 colorId 가 실려 오지 않는 경우가 있다. 다이얼로그가 고른
+    // 색을 여기서 먼저 깔아 두면 googleMirrorFields 가 값을 들고 왔을 때만 덮는다.
+    google_color_id: googleRow.google_color_id,
   };
 
   let rows = [];
@@ -1202,6 +1239,7 @@ async function refreshSeriesInstances(ctx, access, options) {
     google_location: anchorRow.google_location,
     google_description: anchorRow.google_description,
     google_attendees: anchorRow.google_attendees,
+    google_color_id: anchorRow.google_color_id,
   };
 
   let count = 0;

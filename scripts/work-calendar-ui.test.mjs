@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
+import { EVENT_COLOR_PALETTE, EVENT_COLOR_DISPLAY_ORDER } from "../src/server/google-calendar-client.mjs";
+
 const source = fs.readFileSync(new URL("../src/pages/admin.html", import.meta.url), "utf8");
 const workViewStart = source.indexOf('<section class="mi-view mi-work-shell"');
 const editorStart = source.indexOf('<div class="mi-work-modal" data-work-modal', workViewStart);
@@ -467,8 +469,8 @@ test("toggling a calendar posts calendar-visibility and reloads the rows the ser
 });
 
 test("calendar colour and read-only state reach the chips, the agenda line and the editor", () => {
-  assert.match(source, /var chipColor = workGcalColor\(item\.calendarColor\);[\s\S]{0,420}\(chipColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ chipColor \+ '"' : ""\)/);
-  assert.match(source, /var rowColor = workGcalColor\(item\.calendarColor\);[\s\S]{0,420}\(rowColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ rowColor \+ '"' : ""\)/);
+  assert.match(source, /var chipColor = workItemColor\(item\);[\s\S]{0,420}\(chipColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ chipColor \+ '"' : ""\)/);
+  assert.match(source, /var rowColor = workItemColor\(item\);[\s\S]{0,420}\(rowColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ rowColor \+ '"' : ""\)/);
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{\s*border-left: 3px solid var\(--mi-gcal-color/);
   assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] > i \{\s*background: var\(--mi-gcal-color/);
   assert.match(source, /if \(calendarName\) parts\.push\(calendarName\)[\s\S]{0,160}if \(item\.readOnly\) parts\.push\("읽기 전용"\)/);
@@ -524,9 +526,9 @@ test("the agenda band sits below a full-width calendar and keeps only 오늘 and
 // 완료·공개 표시는 색 위에 그대로 남아야 한다.
 test("month chips and agenda blocks are filled with the calendar colour behind the status affordances", () => {
   assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
-  assert.match(source, /var chipText = workGcalColor\(item\.calendarTextColor\) \|\| "#ffffff";/);
+  assert.match(source, /var chipText = workItemTextColor\(item\);/);
   assert.match(source, /chipStyle = chipStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ chipText \+ '"'/);
-  assert.match(source, /var rowText = workGcalColor\(item\.calendarTextColor\) \|\| "#ffffff";/);
+  assert.match(source, /var rowText = workItemTextColor\(item\);/);
   assert.match(source, /rowStyle = rowStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ rowText \+ '"'/);
 
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
@@ -669,4 +671,121 @@ test("the dialog puts 시작 and 종료 on one compact line and marks the calend
   assert.match(editorMarkup, /<i class="mi-work-gcal-dot" data-work-google-calendar-dot aria-hidden="true"><\/i>/);
   assert.match(source, /function syncWorkGoogleCalendarDot\(\)[\s\S]{0,700}dot\.style\.setProperty\("--mi-gcal-color", color \|\| "var\(--mi-navy\)"\)/);
   assert.match(source, /#mi-admin \.mi-work-gcal-dot \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
+});
+
+// 구글이 API 로 주는 16진값(레거시)과 웹 UI 가 실제로 칠하는 값(모던)이 다르다.
+// admin.html 은 정적이라 서버 표를 import 할 수 없어 손으로 옮겨 적었다. 그 두 벌이
+// 한 글자라도 어긋나면 대표님 화면 색이 구글과 달라지므로 여기서 서버 표를 읽어 대조한다.
+const eventColorTableSource = source.slice(
+  source.indexOf("var workEventColors = ["),
+  source.indexOf("function workEventColorId(")
+);
+
+test("the dialog mirrors the server event colour palette exactly and in the google korean order", () => {
+  assert.ok(eventColorTableSource.length > 0, "admin.html must carry the mirrored event colour table");
+  assert.equal(EVENT_COLOR_PALETTE.length, 11);
+  assert.equal(EVENT_COLOR_DISPLAY_ORDER.length, 11);
+
+  const ordered = EVENT_COLOR_DISPLAY_ORDER.map((id) => {
+    const entry = EVENT_COLOR_PALETTE.find((candidate) => candidate.id === id);
+    assert.ok(entry, `서버 팔레트에 없는 colorId: ${id}`);
+    return entry;
+  });
+
+  // 구글 한국어 UI 가 늘어놓는 순서 그대로.
+  assert.deepEqual(
+    ordered.map((entry) => entry.nameKo),
+    ["토마토", "플라밍고", "탠저린", "바나나", "세이지", "바질", "피콕", "블루베리", "라벤더", "포도", "흑연"]
+  );
+
+  // 16진값·이름·순서 세 가지를 한 줄로 못 박는다.
+  let cursor = 0;
+  for (const entry of ordered) {
+    const mirrored = `{ id: "${entry.id}", hex: "${entry.modern}", name: "${entry.nameKo}" }`;
+    const at = eventColorTableSource.indexOf(mirrored, cursor);
+    assert.notEqual(at, -1, `admin.html 이 서버 표와 다릅니다. 이 줄이 이 순서로 있어야 합니다: ${mirrored}`);
+    cursor = at + mirrored.length;
+  }
+
+  // 레거시(API) 값은 화면에 그대로 나가면 안 된다 — "하나만 달라도 헷갈립니다"의 그 하나다.
+  for (const entry of EVENT_COLOR_PALETTE) {
+    assert.equal(source.includes(entry.legacy), false, `레거시 16진값이 화면으로 샜습니다: ${entry.legacy} (${entry.nameKo})`);
+  }
+});
+
+// 칠하는 순서는 구글 웹 UI 와 같다: 일정에 지정된 색 → 캘린더 색 → 중립 기본값.
+test("month chips and agenda blocks paint the event colour first, then the calendar colour, then the neutral token", () => {
+  assert.match(source, /function workItemColor\(item\) \{\s*return workGcalColor\(item && item\.eventColor\) \|\| workGcalColor\(item && item\.calendarColor\);\s*\}/);
+  assert.match(
+    source,
+    /function workItemTextColor\(item\) \{\s*if \(workGcalColor\(item && item\.eventColor\)\) return workGcalColor\(item && item\.eventTextColor\) \|\| "#ffffff";\s*return workGcalColor\(item && item\.calendarTextColor\) \|\| "#ffffff";\s*\}/
+  );
+  assert.match(source, /var chipColor = workItemColor\(item\);/);
+  assert.match(source, /var chipText = workItemTextColor\(item\);/);
+  assert.match(source, /var rowColor = workItemColor\(item\);/);
+  assert.match(source, /var rowText = workItemTextColor\(item\);/);
+
+  // 두 색 모두 6자리 HEX 관문을 지나야 style 로 나간다.
+  assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
+  // 색이 하나도 없으면 style 자체를 내보내지 않고 기존 중립 토큰이 남는다.
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] \.mi-work-agenda-edit \{[\s\S]{0,160}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+});
+
+// 색 줄은 구글처럼 "캘린더 색" 기본값 + 일정 색 11개 동그라미다.
+// 인라인 핸들러 없이(CSP script-src-attr 'none') 위임 핸들러가 선택을 받는다.
+test("the colour row offers the calendar default plus eleven event swatches without inline handlers", () => {
+  const swatchRenderSource = source.slice(
+    source.indexOf("function renderWorkEventColorSwatches() {"),
+    source.indexOf("function syncWorkGoogleMode() {")
+  );
+  assert.ok(swatchRenderSource.length > 0, "swatch renderer must exist");
+
+  assert.match(editorMarkup, /<div class="mi-work-field is-full" data-work-google-only data-work-gcal-swatch-field hidden><span>색<\/span>/);
+  assert.match(editorMarkup, /<div class="mi-work-gcal-swatches" role="group" aria-label="일정 색" data-work-gcal-swatches><\/div>/);
+
+  assert.match(swatchRenderSource, /<button type="button" class="mi-work-gcal-swatch is-default" data-work-gcal-swatch="" aria-pressed="' \+\s*\(workEventColorDraft \? "false" : "true"\)/);
+  assert.match(swatchRenderSource, /aria-label="캘린더 색" title="캘린더 색"/);
+  assert.match(swatchRenderSource, /<button type="button" class="mi-work-gcal-swatch" data-work-gcal-swatch="' \+ swatch\.id \+/);
+  assert.match(swatchRenderSource, /aria-pressed="' \+ \(selected \? "true" : "false"\) \+ '" aria-label="' \+ escapeHtml\(swatch\.name\)/);
+  assert.match(swatchRenderSource, /style="--mi-gcal-color:' \+ swatch\.hex/);
+  assert.match(swatchRenderSource, /<span class="mi-work-gcal-swatch-check" aria-hidden="true">✓<\/span>/);
+  assert.equal(/\son(?:click|change|input|submit|focus|blur|keydown|keyup)\s*=/i.test(swatchRenderSource), false, "스와치는 인라인 핸들러를 쓰지 않는다");
+
+  // 선택 표시는 aria-pressed 하나로 접근성·시각 양쪽을 만든다.
+  assert.match(source, /#mi-admin \.mi-work-gcal-swatch\[aria-pressed="true"\] \{/);
+  assert.match(source, /#mi-admin \.mi-work-gcal-swatch\[aria-pressed="true"\] \.mi-work-gcal-swatch-check \{\s*opacity: 1;/);
+  assert.match(source, /#mi-admin \.mi-work-gcal-swatch \{[\s\S]{0,320}background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
+
+  // 위임 핸들러가 선택을 받아 다시 그린다.
+  assert.match(source, /var gcalSwatch = event\.target\.closest\("\[data-work-gcal-swatch\]"\);[\s\S]{0,260}workEventColorDraft = workEventColorId\(gcalSwatch\.getAttribute\("data-work-gcal-swatch"\) \|\| ""\);[\s\S]{0,80}renderWorkEventColorSwatches\(\)/);
+  // 표에 없는 값은 전부 기본값으로 되돌린다.
+  assert.match(source, /function workEventColorId\(value\)[\s\S]{0,360}return "";\s*\}/);
+  // 읽기 전용 일정에서는 button 이라 폼 잠금에 걸리지 않으므로 따로 잠근다.
+  assert.match(openDialogSource, /root\.querySelectorAll\("\[data-work-gcal-swatch\]"\)\.forEach\(function \(control\) \{ control\.disabled = readOnly; \}\)/);
+
+  // 금지된 공유 캘린더 계약 이름을 색 줄이 되살리지 않는다.
+  for (const marker of ["data-work-calendar-color", "data-work-calendar-select"]) {
+    assert.equal(editorMarkup.includes(marker), false, `색 줄이 되살리면 안 되는 문자열: ${marker}`);
+  }
+});
+
+test("the colour choice travels as colorId and edit mode preselects the current colour", () => {
+  assert.match(formPayloadSource, /payload\.colorId = workEventColorDraft;/);
+  // 기본값은 빈 문자열로 나가고, 서버가 그때 캘린더 색을 쓴다.
+  assert.match(source, /var workEventColorDraft = "";/);
+  // 색은 캘린더 목록보다 먼저 정해야 처음 그릴 때 선택 상태가 맞는다.
+  assert.match(openDialogSource, /workEventColorDraft = workEventColorId\(item && item\.colorId\);/);
+  assert.ok(
+    openDialogSource.indexOf("workEventColorDraft = workEventColorId(item && item.colorId);") <
+      openDialogSource.indexOf("renderWorkGoogleCalendarOptions(item && item.googleCalendarId"),
+    "색 선택은 캘린더 옵션을 그리기 전에 정해진다"
+  );
+  // 캘린더를 바꾸면 기본 스와치 색도 같이 따라간다.
+  assert.match(source, /function syncWorkGoogleCalendarDot\(\)[\s\S]{0,420}renderWorkEventColorSwatches\(\)/);
+  assert.match(source, /function workDialogCalendarColor\(\)[\s\S]{0,520}return workGcalColor\(calendar\.color\)/);
+
+  // 미연동 사용자는 색 줄 자체가 없으므로 legacy 분기에는 colorId 가 나가지 않는다.
+  const legacyBranch = formPayloadSource.slice(formPayloadSource.indexOf("payload.repeat = repeatMonthly"));
+  assert.equal(legacyBranch.includes("payload.colorId"), false, "미연동 분기는 colorId 를 보내지 않는다");
 });

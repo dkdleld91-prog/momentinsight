@@ -9985,6 +9985,65 @@
       transform: translateY(-50%);
     }
 
+    /* 구글 일정 창의 색 줄. 동그란 스와치 12개(캘린더 색 + 일정 색 11개). */
+    #mi-admin .mi-work-gcal-swatches {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 9px;
+      padding: 3px 1px;
+    }
+
+    #mi-admin .mi-work-gcal-swatch {
+      display: inline-flex;
+      width: 22px;
+      height: 22px;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      border: 0;
+      border-radius: 50%;
+      background: var(--mi-gcal-color, var(--mi-navy));
+      cursor: pointer;
+      transition: box-shadow .16s ease, transform .16s ease;
+    }
+
+    #mi-admin .mi-work-gcal-swatch.is-default {
+      box-shadow: inset 0 0 0 2px #fff, 0 0 0 1px rgba(15, 54, 105, .32);
+    }
+
+    #mi-admin .mi-work-gcal-swatch:hover {
+      transform: scale(1.09);
+    }
+
+    #mi-admin .mi-work-gcal-swatch:focus-visible {
+      outline: 2px solid rgba(15, 54, 105, .58);
+      outline-offset: 2px;
+    }
+
+    #mi-admin .mi-work-gcal-swatch[aria-pressed="true"] {
+      box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(15, 54, 105, .58);
+    }
+
+    #mi-admin .mi-work-gcal-swatch:disabled {
+      cursor: default;
+      opacity: .55;
+      transform: none;
+    }
+
+    #mi-admin .mi-work-gcal-swatch-check {
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      opacity: 0;
+      text-shadow: 0 1px 1px rgba(13, 39, 77, .35);
+    }
+
+    #mi-admin .mi-work-gcal-swatch[aria-pressed="true"] .mi-work-gcal-swatch-check {
+      opacity: 1;
+    }
+
     #mi-admin .mi-work-recurrence-dialog {
       display: grid;
       width: min(420px, 100%);
@@ -10653,6 +10712,10 @@
                   <label class="mi-work-field is-full" data-work-google-only data-work-google-calendar-field hidden><span>캘린더</span>
                     <span class="mi-work-gcal-pick"><select class="mi-select" data-work-google-calendar></select><i class="mi-work-gcal-dot" data-work-google-calendar-dot aria-hidden="true"></i></span>
                   </label>
+
+                  <div class="mi-work-field is-full" data-work-google-only data-work-gcal-swatch-field hidden><span>색</span>
+                    <div class="mi-work-gcal-swatches" role="group" aria-label="일정 색" data-work-gcal-swatches></div>
+                  </div>
 
                   <p class="mi-work-repeat-note mi-work-gcal-note" data-work-gcal-readonly hidden></p>
 
@@ -12258,6 +12321,7 @@
       var workGcalAclId = "";
       var workGcalAclRules = [];
       var workAttendeeDraft = [];
+      var workEventColorDraft = "";
       var workRecurrenceSnapshotBeforeEdit = null;
       var workDialogRecurringInstance = false;
       var workRecurrenceDayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
@@ -12274,6 +12338,45 @@
       function workGcalColor(value) {
         var color = String(value == null ? "" : value).trim();
         return /^#[0-9a-fA-F]{6}$/.test(color) ? color : "";
+      }
+
+      // 구글 일정 색 11개. 16진값·한국어 이름·순서는 src/server/google-calendar-client.mjs 의
+      // EVENT_COLOR_PALETTE / EVENT_COLOR_DISPLAY_ORDER 를 그대로 옮겨 적은 것이다. 이 페이지는
+      // 정적이라 서버 모듈을 import 할 수 없으므로, 두 벌이 어긋나지 않게
+      // scripts/work-calendar-ui.test.mjs 가 서버 표를 읽어 이 배열과 대조한다.
+      // 구글이 API 로 주는 값은 레거시 팔레트이고 웹 UI 는 아래 모던 값으로 그린다.
+      var workEventColors = [
+        { id: "11", hex: "#d50000", name: "토마토" },
+        { id: "4", hex: "#e67c73", name: "플라밍고" },
+        { id: "6", hex: "#f4511e", name: "탠저린" },
+        { id: "5", hex: "#f6bf26", name: "바나나" },
+        { id: "2", hex: "#33b679", name: "세이지" },
+        { id: "10", hex: "#0b8043", name: "바질" },
+        { id: "7", hex: "#039be5", name: "피콕" },
+        { id: "9", hex: "#3f51b5", name: "블루베리" },
+        { id: "1", hex: "#7986cb", name: "라벤더" },
+        { id: "3", hex: "#8e24aa", name: "포도" },
+        { id: "8", hex: "#616161", name: "흑연" }
+      ];
+
+      // 표에 없는 값은 전부 기본값("캘린더 색")으로 되돌린다.
+      function workEventColorId(value) {
+        var id = String(value == null ? "" : value).trim();
+        for (var index = 0; index < workEventColors.length; index += 1) {
+          if (workEventColors[index].id === id) return id;
+        }
+        return "";
+      }
+
+      // 칠하는 순서: 일정에 지정된 색 → 그 일정이 속한 캘린더 색 → 중립 기본값(var(--mi-navy)).
+      // 구글 웹 UI 와 같은 우선순위다. 색이 하나도 없으면 style 자체를 내보내지 않는다.
+      function workItemColor(item) {
+        return workGcalColor(item && item.eventColor) || workGcalColor(item && item.calendarColor);
+      }
+
+      function workItemTextColor(item) {
+        if (workGcalColor(item && item.eventColor)) return workGcalColor(item && item.eventTextColor) || "#ffffff";
+        return workGcalColor(item && item.calendarTextColor) || "#ffffff";
       }
 
       function workCalendarEntry(id) {
@@ -12692,8 +12795,8 @@
             date.getDate() + '</button>' + (dayItems.length ? '<span class="mi-work-visibility">' + dayItems.length + '</span>' : "") + '</div>' +
             '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
               var canEdit = workItemCanEdit(item);
-              var chipColor = workGcalColor(item.calendarColor);
-              var chipText = workGcalColor(item.calendarTextColor) || "#ffffff";
+              var chipColor = workItemColor(item);
+              var chipText = workItemTextColor(item);
               var chipAllDay = item.isAllDay === false ? "false" : "true";
               // --mi-gcal-color 계약 문자열은 그대로 두고, 같은 style 안에 글자색만 이어 붙인다.
               var chipStyle = (chipColor ? ' data-gcal="1" style="--mi-gcal-color:' + chipColor + '"' : "");
@@ -12740,8 +12843,8 @@
           var done = item.status === "done";
           var visibilityLabel = item.visibility === "client_visible" ? "광고주 공개" : "내 일정";
           var canEdit = workItemCanEdit(item);
-          var rowColor = workGcalColor(item.calendarColor);
-          var rowText = workGcalColor(item.calendarTextColor) || "#ffffff";
+          var rowColor = workItemColor(item);
+          var rowText = workItemTextColor(item);
           // --mi-gcal-color 계약 문자열은 그대로 두고, 같은 style 안에 글자색만 이어 붙인다.
           var rowStyle = (rowColor ? ' data-gcal="1" style="--mi-gcal-color:' + rowColor + '"' : "");
           if (rowColor) rowStyle = rowStyle.slice(0, -1) + ";--mi-gcal-text:" + rowText + '"';
@@ -13565,23 +13668,48 @@
         syncWorkGoogleCalendarDot();
       }
 
+      // 다이얼로그에서 고른 캘린더의 색. 캘린더 색 점과 기본 스와치가 같은 값을 쓴다.
+      function workDialogCalendarColor() {
+        var id = String(workNodeValue("[data-work-google-calendar]") || "");
+        var entry = workCalendarEntry(id);
+        var color = workGcalColor(entry && entry.color);
+        if (color) return color;
+        for (var index = 0; index < workGoogleCalendars.length; index += 1) {
+          var calendar = workGoogleCalendars[index] || {};
+          if (String(calendar.id || "") === id) return workGcalColor(calendar.color);
+        }
+        return "";
+      }
+
       // 구글처럼 캘린더 이름 옆에 그 캘린더 색 점을 둔다. 6자리 HEX 만 style 로 나간다.
       function syncWorkGoogleCalendarDot() {
         var dot = root.querySelector("[data-work-google-calendar-dot]");
         if (!dot) return;
-        var id = String(workNodeValue("[data-work-google-calendar]") || "");
-        var entry = workCalendarEntry(id);
-        var color = workGcalColor(entry && entry.color);
-        if (!color) {
-          for (var index = 0; index < workGoogleCalendars.length; index += 1) {
-            var calendar = workGoogleCalendars[index] || {};
-            if (String(calendar.id || "") === id) {
-              color = workGcalColor(calendar.color);
-              break;
-            }
-          }
-        }
+        var color = workDialogCalendarColor();
         dot.style.setProperty("--mi-gcal-color", color || "var(--mi-navy)");
+        renderWorkEventColorSwatches();
+      }
+
+      // 구글 일정 창의 색 줄. 맨 앞은 "캘린더 색"(colorId 를 보내지 않는 기본값)이고,
+      // 그 뒤로 구글 한국어 UI 순서대로 11개 동그란 스와치가 온다. 인라인 핸들러 없이
+      // data-work-gcal-swatch 위임 핸들러가 선택을 받는다(CSP script-src-attr 'none').
+      function renderWorkEventColorSwatches() {
+        var wrap = root.querySelector("[data-work-gcal-swatches]");
+        if (!wrap) return;
+        var defaultColor = workDialogCalendarColor();
+        var html = ['<button type="button" class="mi-work-gcal-swatch is-default" data-work-gcal-swatch="" aria-pressed="' +
+          (workEventColorDraft ? "false" : "true") + '" aria-label="캘린더 색" title="캘린더 색"' +
+          (defaultColor ? ' style="--mi-gcal-color:' + defaultColor + '"' : "") +
+          '><span class="mi-work-gcal-swatch-check" aria-hidden="true">✓</span></button>'];
+        for (var index = 0; index < workEventColors.length; index += 1) {
+          var swatch = workEventColors[index];
+          var selected = workEventColorDraft === swatch.id;
+          html.push('<button type="button" class="mi-work-gcal-swatch" data-work-gcal-swatch="' + swatch.id +
+            '" aria-pressed="' + (selected ? "true" : "false") + '" aria-label="' + escapeHtml(swatch.name) +
+            '" title="' + escapeHtml(swatch.name) + '" style="--mi-gcal-color:' + swatch.hex +
+            '"><span class="mi-work-gcal-swatch-check" aria-hidden="true">✓</span></button>');
+        }
+        wrap.innerHTML = html.join("");
       }
 
       function syncWorkGoogleMode() {
@@ -13681,6 +13809,8 @@
         setWorkAttendeeError("");
         var toggle = root.querySelector("[data-work-public]");
         if (toggle) toggle.checked = Boolean(item && item.visibility === "client_visible" && workCanPublish);
+        // 색은 캘린더 목록보다 먼저 정해야 스와치가 처음 그려질 때 선택 상태가 맞는다.
+        workEventColorDraft = workEventColorId(item && item.colorId);
         syncWorkGoogleMode();
         renderWorkGoogleCalendarOptions(item && item.googleCalendarId || "");
         if (workDialogRecurringInstance) {
@@ -13723,6 +13853,8 @@
         }
         var readOnly = Boolean(item && (!workItemCanEdit(item) || calendarReadOnly));
         form.querySelectorAll("input, select, textarea").forEach(function (control) { control.disabled = readOnly; });
+        // 스와치는 button 이라 위 셀렉터에 걸리지 않는다. 읽기 전용에서는 따로 잠근다.
+        root.querySelectorAll("[data-work-gcal-swatch]").forEach(function (control) { control.disabled = readOnly; });
         if (!readOnly) syncWorkRepeatFields();
         var save = root.querySelector("[data-work-save]");
         if (save) {
@@ -13794,6 +13926,8 @@
           payload.location = value("[data-work-location]");
           payload.description = value("[data-work-description]");
           payload.googleCalendarId = value("[data-work-google-calendar]");
+          // 빈 문자열이면 서버가 일정 색을 지우고 캘린더 색을 그대로 쓴다.
+          payload.colorId = workEventColorDraft;
           if (id && workDialogRecurringInstance) payload.recurrenceScope = scopeChoice && scopeChoice.value === "all" ? "all" : "instance";
           return payload;
         }
@@ -13987,6 +14121,12 @@
           var removedInvite = gcalInviteRemove.getAttribute("data-work-gcal-invite-remove") || "";
           workGcalInviteDraft = workGcalInviteDraft.filter(function (email) { return email !== removedInvite; });
           renderWorkGcalInviteChips();
+          return;
+        }
+        var gcalSwatch = event.target.closest("[data-work-gcal-swatch]");
+        if (gcalSwatch) {
+          workEventColorDraft = workEventColorId(gcalSwatch.getAttribute("data-work-gcal-swatch") || "");
+          renderWorkEventColorSwatches();
           return;
         }
         var recurrenceCancel = event.target.closest("[data-work-recurrence-cancel]");

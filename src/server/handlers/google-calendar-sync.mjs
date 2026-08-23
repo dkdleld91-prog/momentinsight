@@ -15,9 +15,12 @@ import {
   decorateGoogleSummary,
   googleFetch,
   googleOauthConfig,
+  isEventColorId,
   loadOwnerGoogleIntegration,
+  modernCalendarColor,
   normalizeCode,
   normalizeImportedTitle,
+  readableTextColor,
   refreshAccessToken,
   undecorateGoogleSummary,
 } from "../google-calendar-client.mjs";
@@ -62,6 +65,7 @@ const SYNC_ROW_COLUMNS = [
   "google_event_id", "google_calendar_id", "google_etag", "google_updated_at",
   "google_source", "google_sync_state", "updated_at",
   "google_recurring_event_id", "google_recurrence", "google_conference_uri", "google_calendar_name",
+  "google_color_id",
 ];
 
 const CALENDAR_SYNC_COLUMNS = [
@@ -87,6 +91,14 @@ export const OPTIONAL_CALENDAR_SYNC_COLUMNS = [
 export const OPTIONAL_CALENDAR_CATALOG_COLUMNS = [
   "calendar_background_color", "calendar_foreground_color", "calendar_selected", "calendar_visible",
 ];
+// 일정별 색(google_color_id)을 더한 마이그레이션. 위 두 묶음과 또 다른
+// 마이그레이션이므로 자기 묶음으로 둔다 — 색만 아직 없는 창에서 일정 상세
+// 열까지 함께 내려가면 참석자·반복 요약이 이유 없이 사라진다.
+export const OPTIONAL_EVENT_COLOR_COLUMNS = ["google_color_id"];
+// schedule_items 질의 하나가 두 마이그레이션의 선택 열을 함께 싣는다. 그래서
+// 이 표를 기본 묶음으로 넘기고, 아래 강등 로직이 "오류가 지목한 열"의 묶음만
+// 골라 내린다. 어느 쪽이 없든 나머지 한 묶음은 그대로 살아 있다.
+export const OPTIONAL_SCHEDULE_GROUPS = [...OPTIONAL_SCHEDULE_COLUMNS, ...OPTIONAL_EVENT_COLOR_COLUMNS];
 
 // calendarList.accessRole 은 읽기 전용 필드이고 값은 이 다섯 중 하나다.
 // freeBusyReader / reader / writerWithoutPrivateAccess / writer / owner.
@@ -141,6 +153,7 @@ function registerOptionalColumnGroup(key, columns) {
 registerOptionalColumnGroup("schedule", OPTIONAL_SCHEDULE_COLUMNS);
 registerOptionalColumnGroup("calendar_sync", OPTIONAL_CALENDAR_SYNC_COLUMNS);
 registerOptionalColumnGroup("calendar_catalog", OPTIONAL_CALENDAR_CATALOG_COLUMNS);
+registerOptionalColumnGroup("event_color", OPTIONAL_EVENT_COLOR_COLUMNS);
 
 // 호출부가 내용이 같은 새 배열을 넘겨도 같은 묶음으로 봐야 타이머가 하나로
 // 유지된다. 등록된 열 이름으로 되짚고, 처음 보는 묶음이면 그 자리에서 등록한다.
@@ -197,14 +210,29 @@ export function optionalColumnEnabled(column) {
 // 이미 내려가 있는 묶음이면 false 를 돌려 재시도를 막는다 — 열을 이미 뺀 질의가
 // 같은 오류를 냈다면 원인은 다른 곳이다. 그때 타이머를 다시 감지 않는 것도
 // 의도다. 실패가 잦은 프로세스에서 재프로브가 영원히 미뤄지면 TTL 이 무의미해진다.
-export function disableOptionalColumns(error, group = OPTIONAL_SCHEDULE_COLUMNS) {
+//
+// 한 호출부가 여러 묶음을 함께 넘길 수 있으므로(schedule_items 는 일정 묶음과
+// 색 묶음을 같이 싣는다) "무엇이 없는가"를 최대한 좁혀 고른다. Postgres 42703
+// 도 PostgREST PGRST204 도 없는 열 이름을 문구에 담아 주므로, 그 이름이 있으면
+// 그 열의 묶음만 내린다. 이름이 없는 코드만 오면 아직 살아 있는 첫 묶음을
+// 고른다 — 이미 내려간 묶음을 다시 집으면 재시도가 그 자리에서 멈춘다.
+function demotionTargetKey(columns, named) {
+  if (named) return optionalGroupKeyByColumn.get(cleanText(named)) || optionalGroupKey(columns);
+  for (const column of columns) {
+    const key = optionalGroupKeyByColumn.get(cleanText(column));
+    if (key && !optionalGroupDemoted(key)) return key;
+  }
+  return optionalGroupKey(columns);
+}
+
+export function disableOptionalColumns(error, group = OPTIONAL_SCHEDULE_GROUPS) {
   if (!error) return false;
   const code = cleanText(error.code).toUpperCase();
   const columns = Array.isArray(group) ? group : [group];
   const text = `${cleanText(error.message)} ${cleanText(error.details)} ${cleanText(error.hint)}`;
-  const named = columns.some((column) => text.includes(column));
+  const named = columns.find((column) => column && text.includes(column)) || "";
   if (!named && code !== "42703" && code !== "PGRST204") return false;
-  const key = optionalGroupKey(columns);
+  const key = demotionTargetKey(columns, named);
   if (!key || optionalGroupDemoted(key)) return false;
   optionalGroupDemotedAt.set(key, optionalColumnNow());
   return true;
@@ -245,27 +273,28 @@ function noteOptionalColumnEvidence(result) {
   }
 }
 
-// run() 은 매번 열 목록과 페이로드를 다시 만들어야 한다. 첫 시도가 "없는 열"
-// 로 실패하면 그 열을 내리고 정확히 한 번만 다시 부른다.
+// run() 은 매번 열 목록과 페이로드를 다시 만들어야 한다. 시도가 "없는 열" 로
+// 실패하면 그 묶음을 내리고 다시 부른다.
+//
+// 반복은 "이번에 새 묶음을 실제로 내렸을 때" 만 이어진다. disableOptionalColumns
+// 는 이미 내려간 묶음에 false 를 돌려주므로 등록된 묶음 수만큼에서 반드시
+// 멈추고, 한 묶음만 넘긴 호출부는 예전과 똑같이 정확히 한 번만 재시도한다.
+// 두 마이그레이션의 열을 함께 싣는 질의만 두 번까지 물러난다.
 // 질의 결과가 모두 이 한 곳을 지나므로, 위의 "열이 돌아왔다" 증거 확인도 여기서 건다.
-export async function runWithOptionalColumns(run, group = OPTIONAL_SCHEDULE_COLUMNS) {
-  let first = null;
-  try {
-    first = await run();
-  } catch (error) {
-    if (!disableOptionalColumns(error, group)) throw error;
-    const retried = await run();
-    noteOptionalColumnEvidence(retried);
-    return retried;
+export async function runWithOptionalColumns(run, group = OPTIONAL_SCHEDULE_GROUPS) {
+  for (;;) {
+    let result = null;
+    try {
+      result = await run();
+    } catch (error) {
+      if (!disableOptionalColumns(error, group)) throw error;
+      continue;
+    }
+    if (!result?.error || !disableOptionalColumns(result.error, group)) {
+      noteOptionalColumnEvidence(result);
+      return result;
+    }
   }
-  if (!first?.error) {
-    noteOptionalColumnEvidence(first);
-    return first;
-  }
-  if (!disableOptionalColumns(first.error, group)) return first;
-  const retried = await run();
-  noteOptionalColumnEvidence(retried);
-  return retried;
 }
 
 function syncRowFields() {
@@ -400,6 +429,14 @@ export function googleMirrorFields(event = {}) {
   // null 로 덮으면 events.list(버전 0) 한 번에 저장해 둔 Meet 링크가 사라진다.
   const conferenceUri = conferenceUriFromEvent(event);
   if (conferenceUri) fields.google_conference_uri = conferenceUri;
+  // 일정 색도 같은 규율이다. colorId 는 색을 지정한 일정에만 실려 오므로,
+  // 키가 없는 응답을 null 로 받아쓰면 대표님이 고른 색이 매 동기화마다 지워진다.
+  // 키가 있는데 비어 있으면 그것은 "이 일정은 캘린더 색을 따른다" 는 명시적
+  // 답이므로 null 로 반영한다.
+  if (Object.hasOwn(event, "colorId")) {
+    const colorId = cleanText(event.colorId, 4);
+    fields.google_color_id = isEventColorId(colorId) ? colorId : null;
+  }
   return fields;
 }
 
@@ -1705,6 +1742,11 @@ export async function listOwnerCalendarCatalog(ctx, ownerCode, integration = nul
       const dedicated = Boolean(dedicatedId) && id === dedicatedId;
       const primary = row.calendar_is_primary === true || role === "primary";
       const accessRole = cleanText(row.calendar_access_role, 40) || (dedicated || primary ? "owner" : "");
+      // 저장해 둔 값은 구글 API 가 준 레거시 16진 그대로다(refreshOwnerCalendarCatalog
+      // 가 그대로 넣는다). 대표님이 보는 구글 웹 UI 는 그 값을 현대화된 팔레트로
+      // 바꿔 칠하므로, 화면으로 나가는 이 자리에서만 옮긴다. 표에 없는 색은
+      // 원본이 그대로 나온다 — 모르는 색을 지어내지 않는다.
+      const color = modernCalendarColor(row.calendar_background_color) || null;
       entries.set(id, {
         id,
         name: cleanText(row.calendar_summary, 200) || (dedicated ? DEDICATED_CALENDAR_SUMMARY : id),
@@ -1726,8 +1768,11 @@ export async function listOwnerCalendarCatalog(ctx, ownerCode, integration = nul
         // 열이 없거나 null 이면 보이는 쪽이 기본이다(fail open).
         visible: row.calendar_visible !== false,
         selected: row.calendar_selected === true,
-        color: cleanText(row.calendar_background_color, 7) || null,
-        textColor: cleanText(row.calendar_foreground_color, 7) || null,
+        color,
+        // 글자색도 옮긴 색 위에서 다시 정한다. 구글이 준 foreground 는 레거시
+        // 배경에 맞춘 값이라 현대 팔레트 위에서는 대비가 어긋날 수 있다.
+        // 색을 모를 때만 구글이 준 값으로 떨어진다.
+        textColor: readableTextColor(color) || cleanText(row.calendar_foreground_color, 7) || null,
         // 구글 사이드바의 "내 캘린더 / 다른 캘린더" 구분과 같은 기준이다.
         group: accessRole === "owner" || dedicated || primary ? "own" : "other",
       });

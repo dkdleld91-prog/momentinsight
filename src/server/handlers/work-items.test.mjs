@@ -229,7 +229,7 @@ test("assistant-complete marks a planned item done with optimistic lock and audi
   assert.equal(payload.unchanged, false);
   assert.equal(payload.item.status, "done");
   assert.equal(payload.auditLogged, true);
-  assert.deepEqual(harness.calls.filter(([kind]) => kind === "update"), [["update", { status: "done" }]]);
+  assert.deepEqual(harness.calls.filter(([kind]) => kind === "update"), [["update", { status: "done", google_sync_state: "pending" }]]);
   assert.ok(harness.calls.some(([kind, column, value]) => kind === "eq" && column === "updated_at" && value === assistantRow.updated_at));
   assert.equal(harness.audits.length, 1);
   assert.equal(harness.audits[0].action, "work_item_completed_by_assistant");

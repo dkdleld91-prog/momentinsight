@@ -8630,6 +8630,14 @@
       color: #24754f;
     }
 
+    #mi-admin .mi-work-badges,
+    #mi-admin .mi-work-badges > a {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+
     #mi-admin .mi-work-status {
       min-height: 22px;
       color: var(--muted);
@@ -11002,6 +11010,12 @@
         return "http://127.0.0.1:8790/api/owner/tool";
       }
 
+      function getOwnerGoogleCalendarApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/owner/google-calendar";
+        return "http://127.0.0.1:8790/api/owner/google-calendar";
+      }
+
       function getSuperAdminApiUrl() {
         if (window.MI_SUPER_ADMIN_API_URL) return window.MI_SUPER_ADMIN_API_URL;
         var host = window.location && window.location.hostname;
@@ -11498,6 +11512,14 @@
         calendar.innerHTML = html.join("");
       }
 
+      function workGoogleChip(item) {
+        if (!item || item.googleSource !== "google") return "";
+        var chip = '<em class="mi-work-visibility">구글</em>';
+        var link = String(item.googleHtmlLink || "");
+        if (!/^https:\/\//i.test(link)) return chip;
+        return '<a href="' + escapeHtml(link) + '" target="_blank" rel="noopener" data-work-google-link title="구글 캘린더에서 열기">' + chip + '</a>';
+      }
+
       function renderWorkAgendaGroup(title, items) {
         var content = items.length ? items.map(function (item) {
           var done = item.status === "done";
@@ -11506,9 +11528,9 @@
           return '<div class="mi-work-agenda-item" data-priority="' + escapeHtml(item.priority || "medium") +
             '" data-status="' + escapeHtml(item.status) + '"><i aria-hidden="true"></i><button type="button" class="mi-work-agenda-edit" data-work-edit="' +
             escapeHtml(item.id) + '"><strong>' + escapeHtml(item.title) + '</strong><span>' + escapeHtml(workTimeLabel(item.startsAt)) + ' · ' +
-            escapeHtml(workStatusLabel(item.status)) + '</span></button><em class="mi-work-visibility' +
+            escapeHtml(workStatusLabel(item.status)) + '</span></button><span class="mi-work-badges"><em class="mi-work-visibility' +
             (item.visibility === "client_visible" ? " is-public" : "") + '">' +
-            escapeHtml(visibilityLabel) + '</em><button type="button" class="mi-work-quick-done" data-work-quick-done="' +
+            escapeHtml(visibilityLabel) + '</em>' + workGoogleChip(item) + '</span><button type="button" class="mi-work-quick-done" data-work-quick-done="' +
             escapeHtml(item.id) + '" data-status="' + escapeHtml(item.status) + '" aria-label="' +
             (done ? escapeHtml(item.title) + " 완료 해제" : escapeHtml(item.title) + " 완료 처리") + '" title="' +
             (done ? "완료 해제" : "완료 처리") + '" aria-pressed="' + (done ? "true" : "false") + '"' + (canEdit ? "" : " disabled") + '>✓</button></div>';
@@ -11916,6 +11938,10 @@
       });
 
       root.addEventListener("click", function (event) {
+        if (event.target.closest("[data-work-google-link]")) {
+          event.stopPropagation();
+          return;
+        }
         var moveConfirm = event.target.closest("[data-work-move-confirm]");
         if (moveConfirm) {
           confirmWorkMove();
@@ -12185,6 +12211,9 @@
       var ownerToolTimer = 0;
       var ownerAssistantVoiceController = null;
       var ownerAssistantOfficeController = null;
+      var googleSyncInFlight = false;
+      var lastClientGoogleSyncAt = 0;
+      var ownerGoogleCalendarBannerHooks = null;
 
       function embedWorkSectionIntoExecutive() {
         var workSection = root.querySelector('section[data-mi-admin-view="work"]');
@@ -13220,12 +13249,13 @@
         var connectButton = view.querySelector("[data-owner-gcal-connect]");
         var disconnectButton = view.querySelector("[data-owner-gcal-disconnect]");
         var connectedBadge = view.querySelector("[data-owner-gcal-badge]");
+        var syncButton = view.querySelector("[data-owner-gcal-sync]");
+        var lastSyncCopy = view.querySelector("[data-owner-gcal-last]");
         if (!banner || !statusCopy || !connectButton || !disconnectButton) return;
-        var apiHost = window.location && window.location.hostname;
-        var apiUrl = apiHost && apiHost !== "127.0.0.1" && apiHost !== "localhost"
-          ? window.location.origin + "/api/owner/google-calendar"
-          : "http://127.0.0.1:8790/api/owner/google-calendar";
+        var apiUrl = getOwnerGoogleCalendarApiUrl();
         var pendingNotice = "";
+        var gcalState = { configured: false, storageReady: true, connected: false };
+        var gcalSyncing = false;
         try {
           var pageUrl = new URL(window.location.href);
           var gcalCode = pageUrl.searchParams.get("gcal");
@@ -13244,30 +13274,93 @@
           return generation === ownerToolGeneration && secureSession.role === "owner" && view.isConnected;
         }
         function renderGoogleCalendarState(payload) {
-          var notice = pendingNotice;
-          pendingNotice = "";
+          if (payload) gcalState = payload;
+          var state = gcalState || {};
+          var notice = payload ? pendingNotice : "";
+          if (payload) pendingNotice = "";
           if (connectedBadge) connectedBadge.hidden = true;
-          if (payload.storageReady === false) {
+          if (lastSyncCopy) {
+            lastSyncCopy.hidden = true;
+            lastSyncCopy.textContent = "";
+          }
+          if (syncButton) {
+            syncButton.hidden = true;
+            syncButton.disabled = false;
+            syncButton.textContent = "지금 동기화";
+          }
+          connectButton.disabled = false;
+          connectButton.textContent = "구글 캘린더 연결";
+          disconnectButton.disabled = false;
+          statusCopy.classList.remove("is-linked");
+          if (state.storageReady === false) {
             statusCopy.textContent = "준비 1단계 남음 — Supabase에서 안내드린 SQL을 실행하면 활성화됩니다.";
             connectButton.hidden = true;
             disconnectButton.hidden = true;
-          } else if (!payload.configured) {
-            statusCopy.textContent = "관리자 환경변수 설정 대기 중(GOOGLE_OAUTH_CLIENT_ID/SECRET)";
+          } else if (!state.configured) {
+            statusCopy.textContent = "구글 연동 환경변수가 아직 설정되지 않았습니다.";
             connectButton.hidden = true;
             disconnectButton.hidden = true;
-          } else if (payload.connected) {
-            statusCopy.textContent = (notice ? notice + " " : "") + (payload.googleEmail || "구글 계정");
-            statusCopy.classList.add("is-linked");
-            if (connectedBadge) connectedBadge.hidden = false;
+          } else if (state.connected) {
             connectButton.hidden = true;
             disconnectButton.hidden = false;
+            if (gcalSyncing) {
+              statusCopy.textContent = "동기화 중…";
+              connectButton.disabled = true;
+              disconnectButton.disabled = true;
+              if (syncButton) {
+                syncButton.hidden = false;
+                syncButton.disabled = true;
+              }
+            } else if (state.syncStatus === "needs_reconnect") {
+              statusCopy.textContent = "구글 연결이 만료되었습니다. 다시 연결해주세요.";
+              connectButton.hidden = false;
+              connectButton.textContent = "다시 연결";
+            } else if (state.syncStatus === "error") {
+              statusCopy.textContent = "동기화에 실패했습니다 · " + (state.syncError || "알 수 없는 이유");
+              if (syncButton) {
+                syncButton.hidden = false;
+                syncButton.textContent = "다시 시도";
+              }
+            } else {
+              statusCopy.classList.add("is-linked");
+              statusCopy.textContent = (notice ? notice + " " : "") + "연결됨 · " + (state.googleEmail || "구글 계정");
+              if (connectedBadge) connectedBadge.hidden = false;
+              if (syncButton) syncButton.hidden = false;
+            }
+            if (lastSyncCopy && !gcalSyncing) {
+              lastSyncCopy.textContent = googleSyncAgeLabel(state.lastSyncAt);
+              lastSyncCopy.hidden = false;
+            }
           } else {
-            statusCopy.classList.remove("is-linked");
-            statusCopy.textContent = notice || "연결하면 내부 일정이 전용 구글 캘린더로 동기화됩니다.";
+            statusCopy.textContent = notice || "구글 캘린더에 연결하면 일정이 양방향으로 동기화됩니다.";
             connectButton.hidden = false;
             disconnectButton.hidden = true;
           }
           banner.hidden = false;
+        }
+        function setGoogleCalendarSyncing(active) {
+          gcalSyncing = active === true;
+          renderGoogleCalendarState(null);
+        }
+        function applyGoogleSyncOutcome(result) {
+          if (!result) {
+            renderGoogleCalendarState(null);
+            return;
+          }
+          if (result.throttled !== true) {
+            if (result.needsReconnect === true) {
+              gcalState.syncStatus = "needs_reconnect";
+              gcalState.syncError = null;
+            } else if (result.error) {
+              gcalState.syncStatus = "error";
+              gcalState.syncError = String(result.error);
+            } else {
+              gcalState.syncStatus = "ok";
+              gcalState.syncError = null;
+            }
+          }
+          if (result.lastSyncAt) gcalState.lastSyncAt = result.lastSyncAt;
+          renderGoogleCalendarState(null);
         }
         async function refreshGoogleCalendarState() {
           var response = await miFetch(apiUrl, { method: "GET", cache: "no-store" });
@@ -13321,7 +13414,64 @@
             disconnectButton.disabled = false;
           }
         });
+        if (syncButton) {
+          syncButton.addEventListener("click", function () {
+            if (!gcalSessionIsCurrent() || syncButton.disabled) return;
+            maybeSyncGoogleCalendar("manual").catch(function () {});
+          });
+        }
+        ownerGoogleCalendarBannerHooks = {
+          isCurrent: gcalSessionIsCurrent,
+          setSyncing: setGoogleCalendarSyncing,
+          applyOutcome: applyGoogleSyncOutcome
+        };
         await refreshGoogleCalendarState();
+        maybeSyncGoogleCalendar("auto").catch(function () {});
+      }
+
+      function googleSyncAgeLabel(value) {
+        if (!value) return "동기화 기록 없음";
+        var stamp = Date.parse(value);
+        if (!isFinite(stamp)) return "동기화 기록 없음";
+        var elapsed = Date.now() - stamp;
+        if (elapsed < 0) elapsed = 0;
+        if (elapsed < 60000) return "마지막 동기화 방금 전";
+        if (elapsed < 3600000) return "마지막 동기화 " + Math.floor(elapsed / 60000) + "분 전";
+        return "마지막 동기화 " + Math.floor(elapsed / 3600000) + "시간 전";
+      }
+
+      async function maybeSyncGoogleCalendar(trigger) {
+        var mode = trigger === "manual" ? "manual" : "auto";
+        if (secureSession.role !== "owner" || googleSyncInFlight) return;
+        if (mode === "auto" && lastClientGoogleSyncAt && Date.now() - lastClientGoogleSyncAt < 60000) return;
+        var hooks = ownerGoogleCalendarBannerHooks;
+        function bannerIsCurrent() {
+          return !!(hooks && typeof hooks.isCurrent === "function" && hooks.isCurrent());
+        }
+        googleSyncInFlight = true;
+        lastClientGoogleSyncAt = Date.now();
+        if (bannerIsCurrent()) hooks.setSyncing(true);
+        var outcome = null;
+        try {
+          var response = await miFetch(getOwnerGoogleCalendarApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ action: "sync", trigger: mode }),
+            timeoutMs: 60000
+          });
+          var payload = await readApiPayload(response, "구글 캘린더 동기화 결과를 확인할 수 없습니다.");
+          if (!response.ok || payload.ok !== true) throw new Error(payload.message || "구글 캘린더 동기화에 실패했습니다.");
+          outcome = payload;
+        } catch (error) {
+          outcome = { ok: false, error: error.message || "구글 캘린더 동기화에 실패했습니다." };
+        }
+        googleSyncInFlight = false;
+        if (bannerIsCurrent()) {
+          hooks.setSyncing(false);
+          hooks.applyOutcome(outcome);
+        }
+        if (outcome.ok === true && outcome.throttled !== true && Number(outcome.changed) > 0) loadWorkItems();
       }
 
       async function initOwnerGoogleLoginBanner(view, generation) {
@@ -15132,8 +15282,8 @@
           });
         }
         if (target === "home" && secureSession.role) refreshOperationHomeReportStatus();
-        if (target === "work" && secureSession.role) loadWorkItems();
-        if (target === "owner-assistant" && secureSession.role === "owner") loadWorkItems();
+        if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
+        if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");
       }
 

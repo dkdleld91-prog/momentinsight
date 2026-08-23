@@ -1,7 +1,6 @@
 import { withSupabase } from "@supabase/server";
 import crypto from "node:crypto";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
-import { seoulDateKey } from "../calendar-domain.mjs";
 import {
   createSessionClaims,
   parseCookies,
@@ -9,9 +8,20 @@ import {
   sessionConfiguration,
   sessionCookie,
 } from "../code-session.mjs";
+import {
+  DEDICATED_CALENDAR_SUMMARY,
+  GOOGLE_TOKEN_URL,
+  googleFetch,
+  googleOauthConfig,
+  loadOwnerGoogleIntegration,
+  mapScheduleRowToGoogleEvent,
+} from "../google-calendar-client.mjs";
 import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
+import { runOwnerCalendarSync, syncOwnerScheduleRows } from "./google-calendar-sync.mjs";
+
+export { googleOauthConfig, loadOwnerGoogleIntegration, mapScheduleRowToGoogleEvent, syncOwnerScheduleRows };
 
 const OWNER_API_PATH = "/api/owner/google-calendar";
 const OWNER_LOGIN_API_PATH = "/api/owner/google-login";
@@ -19,10 +29,7 @@ const LOGIN_START_PATH = "/api/google-login/start";
 const CALLBACK_PATH = "/api/google-oauth/callback";
 const LOGIN_SCOPE = "openid email";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
-const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_SCOPE = "https://www.googleapis.com/auth/calendar";
-const DEDICATED_CALENDAR_SUMMARY = "모먼트 인사이트";
 const STATE_TTL_MS = 10 * 60 * 1000;
 const OAUTH_NONCE_COOKIE = "mi-goauth-nonce";
 const OAUTH_NONCE_MAX_AGE_SECONDS = 600;
@@ -32,6 +39,8 @@ const GOOGLE_ID_TOKEN_ISSUERS = new Set(["accounts.google.com", "https://account
 const GOOGLE_ID_TOKEN_SKEW_SECONDS = 60;
 const DEFAULT_GOOGLE_LOGIN_ROLES = "owner";
 const AUDIT_LOGIN_TABLE = "login_identities";
+const SYNC_AUTO_THROTTLE_SECONDS = 60;
+const SYNC_MANUAL_THROTTLE_SECONDS = 10;
 const oauthRateBuckets = new Map();
 
 function json(request, body, status = 200) {
@@ -153,14 +162,6 @@ async function recordLoginAudit(ctx, action, metadata) {
   }
 }
 
-export function googleOauthConfig(env = process.env) {
-  return {
-    clientId: cleanText(env.GOOGLE_OAUTH_CLIENT_ID),
-    clientSecret: cleanText(env.GOOGLE_OAUTH_CLIENT_SECRET),
-    redirectUrl: cleanText(env.MI_GOOGLE_OAUTH_REDIRECT || "https://insight.momentlabs.co.kr/api/google-oauth/callback"),
-  };
-}
-
 function base64UrlEncode(value) {
   return Buffer.from(value, "utf8").toString("base64url");
 }
@@ -240,46 +241,6 @@ export function buildGoogleAuthUrl(state, env = process.env, scope = GOOGLE_SCOP
   return `${GOOGLE_AUTH_URL}?${params.toString()}`;
 }
 
-export function mapScheduleRowToGoogleEvent(row = {}) {
-  const summary = cleanText(row.title, 200) || "모먼트 인사이트 일정";
-  const startsAt = cleanText(row.starts_at);
-  if (!startsAt) return null;
-  const event = {
-    summary: row.status === "done" ? `✓ ${summary}` : summary,
-    extendedProperties: { private: { miScheduleId: cleanText(row.id) } },
-  };
-  if (row.is_all_day) {
-    const startDate = cleanText(row.occurrence_on) || seoulDateKey(startsAt);
-    if (!startDate) return null;
-    const endBase = (row.ends_at ? seoulDateKey(row.ends_at) : "") || startDate;
-    const [endYear, endMonth, endDay] = endBase.split("-").map(Number);
-    const endExclusive = new Date(Date.UTC(endYear, endMonth - 1, endDay + 1)).toISOString().slice(0, 10);
-    event.start = { date: startDate };
-    event.end = { date: endExclusive };
-    return event;
-  }
-  const endsAt = cleanText(row.ends_at)
-    || new Date(new Date(startsAt).getTime() + 60 * 60 * 1000).toISOString();
-  event.start = { dateTime: startsAt, timeZone: "Asia/Seoul" };
-  event.end = { dateTime: endsAt, timeZone: "Asia/Seoul" };
-  return event;
-}
-
-async function googleFetch(accessToken, method, path, body, fetchImpl = fetch) {
-  const response = await fetchImpl(`${GOOGLE_CALENDAR_BASE}${path}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${accessToken}`,
-      ...(body ? { "content-type": "application/json" } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (response.status === 204) return { ok: true, status: 204, data: null };
-  let data = null;
-  try { data = await response.json(); } catch (error) { data = null; }
-  return { ok: response.ok, status: response.status, data };
-}
-
 async function exchangeOauthCode(code, env, fetchImpl = fetch) {
   const config = googleOauthConfig(env);
   const response = await fetchImpl(GOOGLE_TOKEN_URL, {
@@ -296,92 +257,6 @@ async function exchangeOauthCode(code, env, fetchImpl = fetch) {
   const data = await response.json().catch(() => null);
   if (!response.ok || !data) return { ok: false, status: response.status, data };
   return { ok: true, status: response.status, data };
-}
-
-async function refreshAccessToken(refreshToken, env, fetchImpl = fetch) {
-  const config = googleOauthConfig(env);
-  const response = await fetchImpl(GOOGLE_TOKEN_URL, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      refresh_token: refreshToken,
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
-      grant_type: "refresh_token",
-    }).toString(),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok || !data?.access_token) return "";
-  return String(data.access_token);
-}
-
-export async function loadOwnerGoogleIntegration(ctx, ownerCode) {
-  const { data, error } = await ctx.supabaseAdmin
-    .from("owner_google_integrations")
-    .select("owner_agency_code, refresh_token, calendar_id, google_email, connected_at")
-    .eq("owner_agency_code", cleanText(ownerCode).toLowerCase())
-    .maybeSingle();
-  if (error) return { integration: null, error };
-  return { integration: data || null, error: null };
-}
-
-function personalOwnerRows(access, rows) {
-  if (!access || access.role !== "owner" || access.client || access.team) return [];
-  return (Array.isArray(rows) ? rows : []).filter((row) => row
-    && !row.client_id && !row.operation_team_id && !row.calendar_id);
-}
-
-export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchImpl = fetch) {
-  try {
-    const targets = personalOwnerRows(access, rows);
-    if (!targets.length) return { skipped: true, reason: "scope" };
-    const config = googleOauthConfig(env);
-    if (!config.clientId || !config.clientSecret) return { skipped: true, reason: "env" };
-    const { integration, error } = await loadOwnerGoogleIntegration(ctx, access.ownerAgencyCode || primaryAgencyCode(env));
-    if (error || !integration) return { skipped: true, reason: "not-connected" };
-    const accessToken = await refreshAccessToken(integration.refresh_token, env, fetchImpl);
-    if (!accessToken) return { skipped: false, synced: 0, failed: targets.length, reason: "token" };
-    const calendarPath = `/calendars/${encodeURIComponent(integration.calendar_id)}/events`;
-    const results = await Promise.all(targets.map(async (row) => {
-      try {
-        if (mode === "delete") {
-          if (!row.google_event_id) return { ok: true, skipped: true };
-          const result = await googleFetch(accessToken, "DELETE", `${calendarPath}/${encodeURIComponent(row.google_event_id)}`, null, fetchImpl);
-          return { ok: result.ok || result.status === 404 || result.status === 410, row };
-        }
-        const event = mapScheduleRowToGoogleEvent(row);
-        if (!event) return { ok: false, row };
-        if (row.google_event_id) {
-          const result = await googleFetch(accessToken, "PATCH", `${calendarPath}/${encodeURIComponent(row.google_event_id)}`, event, fetchImpl);
-          if (result.ok) return { ok: true, row };
-          if (result.status !== 404 && result.status !== 410) return { ok: false, row };
-        }
-        const created = await googleFetch(accessToken, "POST", calendarPath, event, fetchImpl);
-        if (!created.ok || !created.data?.id) return { ok: false, row };
-        await ctx.supabaseAdmin
-          .from("schedule_items")
-          .update({ google_event_id: String(created.data.id) })
-          .eq("id", row.id);
-        return { ok: true, row };
-      } catch (rowError) {
-        return { ok: false, row };
-      }
-    }));
-    const failed = results.filter((result) => !result.ok).length;
-    if (failed > 0) {
-      await ctx.supabaseAdmin.from("audit_logs").insert({
-        actor_id: null,
-        client_id: null,
-        action: "google_calendar_sync_failed",
-        target_table: "schedule_items",
-        target_id: targets[0]?.id || null,
-        metadata: sanitizeAuditMetadata({ mode, failed, total: targets.length }),
-      }).then(() => {}, () => {});
-    }
-    return { skipped: false, synced: results.length - failed, failed };
-  } catch (error) {
-    return { skipped: false, synced: 0, failed: Array.isArray(rows) ? rows.length : 0, reason: "unexpected" };
-  }
 }
 
 // The token always arrives over TLS straight from Google's token endpoint, so
@@ -541,6 +416,9 @@ async function handleOwnerApi(request, ctx) {
       connected: Boolean(integration),
       googleEmail: integration?.google_email || null,
       connectedAt: integration?.connected_at || null,
+      syncStatus: integration?.sync_status || "ok",
+      syncError: integration?.sync_error || null,
+      lastSyncAt: integration?.last_sync_at || null,
     });
   }
   if (request.method !== "POST") return json(request, { ok: false, message: "Method not allowed" }, 405);
@@ -555,6 +433,49 @@ async function handleOwnerApi(request, ctx) {
     const url = buildGoogleAuthUrl(state);
     if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
     return withCookies(json(request, { ok: true, url }), [oauthNonceCookie(oauthStateNonce(state))]);
+  }
+  if (action === "sync") {
+    const trigger = cleanText(body.trigger) === "manual" ? "manual" : "auto";
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    // 스로틀은 서버가 강제한다. 단일 UPDATE 로 슬롯을 선점하므로 동시 요청이
+    // 겹쳐도 한 번만 통과한다. 자동 진입은 60초, 사람이 누른 버튼은 10초.
+    let claimed = null;
+    try {
+      const claim = await ctx.supabaseAdmin.rpc("mi_claim_google_sync_slot", {
+        p_owner_agency_code: ownerCode,
+        p_min_seconds: trigger === "manual" ? SYNC_MANUAL_THROTTLE_SECONDS : SYNC_AUTO_THROTTLE_SECONDS,
+      });
+      if (claim.error) return json(request, { ok: false, message: "동기화 상태를 확인하지 못했습니다." }, 500);
+      claimed = Array.isArray(claim.data) ? claim.data[0] : claim.data;
+    } catch (error) {
+      return json(request, { ok: false, message: "동기화 상태를 확인하지 못했습니다." }, 500);
+    }
+    if (!claimed) {
+      const throttledState = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null }));
+      return json(request, {
+        ok: true,
+        throttled: true,
+        changed: 0,
+        needsReconnect: throttledState.integration?.sync_status === "needs_reconnect",
+        lastSyncAt: throttledState.integration?.last_sync_at || null,
+      });
+    }
+    const result = await runOwnerCalendarSync(ctx, process.env, ownerCode, {});
+    if (result.reason === "not-connected") {
+      return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
+    }
+    return json(request, {
+      ok: result.ok !== false,
+      throttled: false,
+      needsReconnect: Boolean(result.needsReconnect),
+      changed: result.changed || 0,
+      pushed: result.pushed || 0,
+      lastSyncAt: result.lastSyncAt || null,
+      error: result.error || result.reason || null,
+    });
   }
   if (action === "disconnect") {
     const { error } = await ctx.supabaseAdmin
@@ -785,6 +706,9 @@ async function handleOauthCallback(request, ctx) {
       calendar_id: String(calendarResult.data.id),
       google_email: googleEmail,
       connected_at: new Date().toISOString(),
+      sync_status: "ok",
+      sync_error: null,
+      last_sync_attempt_at: null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "owner_agency_code" });
   if (error) return callbackRedirect("save-failed");

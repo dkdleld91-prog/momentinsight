@@ -152,7 +152,7 @@
     {
       "id": "owner-assistant-server-surface",
       "file": "src/server/handlers/owner-tool-api.mjs",
-      "sha256": "f61d1c44ed882366fd462df708c2bcae850cb9cc997ec97647d9946e670bd3ac"
+      "sha256": "a9a8654888670c16cbc80c36e318c6353ec5b454a6eba841c37f9b961888ee4d"
     },
     {
       "id": "seo-scoring-engine",

@@ -268,10 +268,7 @@ test("sync skips out-of-scope access and rows without touching the database", as
   const cases = [
     ["missing access", null, [personalRow()]],
     ["non-owner role", { role: "team" }, [personalRow()]],
-    ["owner with client scope", { role: "owner", client: { id: "client-1" } }, [personalRow()]],
-    ["owner with team scope", { role: "owner", team: { id: "team-1" } }, [personalRow()]],
-    ["client row", OWNER_ACCESS, [personalRow({ client_id: "client-1" })]],
-    ["team row", OWNER_ACCESS, [personalRow({ operation_team_id: "team-1" })]],
+    ["foreign owner row", OWNER_ACCESS, [personalRow({ owner_agency_code: "other-a01" })]],
     ["shared calendar row", OWNER_ACCESS, [personalRow({ calendar_id: "shared-cal" })]],
     ["empty rows", OWNER_ACCESS, []],
     ["non-array rows", OWNER_ACCESS, null],
@@ -322,11 +319,19 @@ test("sync inserts a new google event and stores the returned event id", async (
       assert.equal(call.options.headers["content-type"], "application/json");
       assert.deepEqual(JSON.parse(call.options.body), {
         summary: "개인 일정",
-        extendedProperties: { private: { miScheduleId: "sched-1" } },
+        extendedProperties: {
+          private: {
+            miScheduleId: "sched-1",
+            miOwnerCode: "mml93-a01",
+            miStatus: "planned",
+            miScope: "internal",
+            miVersion: "1",
+          },
+        },
         start: { dateTime: "2026-08-21T05:00:00.000Z", timeZone: "Asia/Seoul" },
         end: { dateTime: "2026-08-21T06:00:00.000Z", timeZone: "Asia/Seoul" },
       });
-      return jsonResponse(200, { id: "gev1" });
+      return jsonResponse(200, { id: "gev1", etag: '"e1"', updated: "2026-08-21T05:30:00.000Z" });
     },
   });
 
@@ -340,7 +345,13 @@ test("sync inserts a new google event and stores the returned event id", async (
     ["POST", eventsUrl],
   ]);
   assert.equal(state.scheduleUpdates.length, 1);
-  assert.deepEqual(state.scheduleUpdates[0].values, { google_event_id: "gev1" });
+  // 구글 응답을 그대로 미러링해 둬야 다음 inbound 가 자기 메아리를 알아본다.
+  const stored = state.scheduleUpdates[0].values;
+  assert.equal(stored.google_event_id, "gev1");
+  assert.equal(stored.google_calendar_id, "cal@moment");
+  assert.equal(stored.google_etag, '"e1"');
+  assert.equal(stored.google_updated_at, "2026-08-21T05:30:00.000Z");
+  assert.equal(stored.google_sync_state, "synced");
   assert.deepEqual(state.scheduleUpdates[0].filters, [["id", "sched-1"]]);
   assert.equal(state.auditInserts.length, 0);
 });
@@ -349,7 +360,9 @@ test("sync patches an existing google event without rewriting the stored id", as
   const { ctx, state } = syncContext({ integration: INTEGRATION });
   const { calls, impl } = googleFetchMock({
     [`POST ${TOKEN_URL}`]: tokenRoute(),
-    [`PATCH ${CALENDAR_BASE}/calendars/cal-1/events/gev-old`]: jsonResponse(200, { id: "gev-old" }),
+    [`PATCH ${CALENDAR_BASE}/calendars/cal-1/events/gev-old`]: jsonResponse(200, {
+      id: "gev-old", etag: '"e2"', updated: "2026-08-21T07:00:00.000Z",
+    }),
   });
 
   const result = await syncOwnerScheduleRows(
@@ -358,7 +371,9 @@ test("sync patches an existing google event without rewriting the stored id", as
 
   assert.deepEqual(result, { skipped: false, synced: 1, failed: 0 });
   assert.deepEqual(calls.map((call) => call.method), ["POST", "PATCH"]);
-  assert.equal(state.scheduleUpdates.length, 0);
+  assert.equal(state.scheduleUpdates.length, 1);
+  assert.equal(state.scheduleUpdates[0].values.google_event_id, "gev-old");
+  assert.equal(state.scheduleUpdates[0].values.google_etag, '"e2"');
   assert.equal(state.auditInserts.length, 0);
 });
 
@@ -381,8 +396,30 @@ test("sync recreates the event through POST when the stored id returns 404", asy
     ["PATCH", `${eventsUrl}/gev-stale`],
     ["POST", eventsUrl],
   ]);
-  assert.deepEqual(state.scheduleUpdates[0].values, { google_event_id: "gev-new" });
+  assert.equal(state.scheduleUpdates[0].values.google_event_id, "gev-new");
+  assert.equal(state.scheduleUpdates[0].values.google_sync_state, "synced");
   assert.deepEqual(state.scheduleUpdates[0].filters, [["id", "sched-1"]]);
+});
+
+test("owner-scoped advertiser rows now reach google with a client marker", async () => {
+  const { ctx } = syncContext({ integration: INTEGRATION });
+  const eventsUrl = `${CALENDAR_BASE}/calendars/cal-1/events`;
+  const { impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${eventsUrl}`]: (call) => {
+      const body = JSON.parse(call.options.body);
+      assert.equal(body.summary, "[모먼트커피] 개인 일정");
+      assert.equal(body.extendedProperties.private.miClientName, "모먼트커피");
+      assert.equal(body.extendedProperties.private.miScope, "client");
+      return jsonResponse(200, { id: "gev-client" });
+    },
+  });
+  const row = personalRow({ client_id: "client-1", client: { id: "client-1", name: "모먼트커피" } });
+  const result = await syncOwnerScheduleRows(
+    ctx, GOOGLE_ENV, { role: "owner", ownerAgencyCode: "MML93-A01", client: { id: "client-1" } },
+    [row], "upsert", impl,
+  );
+  assert.deepEqual(result, { skipped: false, synced: 1, failed: 0 });
 });
 
 test("delete sync removes only rows with google event ids and tolerates 404", async () => {

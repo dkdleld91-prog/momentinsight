@@ -35,6 +35,14 @@
 - event7485→7487도 21:59:43→22:01:12 KST collection `pw-chrome-1787403672031-b3e5ef45117c7b185a02`을 checked300·official source·organic-only·adExcluded=true·stable proof·광고45건 제외로 commit했습니다. cursor sort2200→2300 순방향이고 cycle #29 group47/47·tracker60/60·terminal60/60·open0으로 중복0입니다. 수집 중 22:00 KST에는 processing1·lane/run/lease 활성 상태였고 terminal 뒤에는 processing0·lane/run/lease/stage/tracker null·circuit closed·cooldown null로 정상 해제됐습니다. streak41·baseline10·candidate false이며 잔여 partial은 claim/terminal/snapshot0, 자연 순번11/12·12/12입니다.
 - event7489→7491도 22:09:43→22:11:07 KST collection `pw-chrome-1787404267275-af4bc4b30de0fc3f106e`을 checked300·official source·organic-only·adExcluded=true·stable proof·광고45건 제외로 commit했습니다. cursor sort2300→2400 순방향이고 cycle #29 group48/48·tracker61/61·terminal61/61·open0으로 중복0입니다. terminal 뒤 processing0·lane/run/lease/stage/tracker null·circuit closed·cooldown null, streak42·baseline10·candidate false입니다. 잔여 partial은 claim/terminal/snapshot0이며 자연 순번10/11·11/11입니다.
 
+### 2026-08-22 구글 캘린더 양방향 동기화 1단계(대표 전용)
+
+- 방향(대표 확정): 광고주 연결 없음, 구글 캘린더=원본, MI 디자인 유지, 구글↔MI 자동 반영. 설계 문서 docs/drafts/google-calendar-two-way-design.md.
+- 구현: 신규 `src/server/google-calendar-client.mjs`(구글 클라이언트, invalid_grant 식별) + `src/server/handlers/google-calendar-sync.mjs`(동기화 엔진: primary+전용 캘린더 증분 동기화, 윈도 −30d~+365d, singleEvents 전개, 루프 차단 3중, 구글 삭제→MI 삭제+audit, MI 수정→원래 캘린더 write-back, ✓ 접두 쓰기 전용, 광고주 스코프 `[광고주명]`). API `{action:"sync"}`(서버 스로틀 auto 60초/manual 10초), 대표실·업무 운영 진입 시 자동 동기화 + 배너 `지금 동기화`/`마지막 동기화`/재연결 안내, 아젠다 행 `구글` 칩, 실장 음성 완료 경로에 푸시 훅 추가(기존 누락 버그), eyebrow Jarvis→실장. 일일 크론 대신 "그날 첫 동기화를 full로 승격".
+- DB: `supabase/migrations/20260822120000_google_calendar_two_way.sql` — **배포 전 대시보드 실행 필수**(미실행 시 일정 목록 500). 추가만 수행·재실행 안전.
+- 실측: sync 28/28, google-calendar-api 49/49, work-items 16/16, owner-tool 18/18, check:release exit 0(인증 18/18, 잠금은 owner-tool-api 해시 1건 갱신), CSP 교체. 미검증: syncToken의 초기 timeMin 기억 여부(양쪽 안전 구현), 운영 실동작은 대표 수동 검증 8단계로 확정 예정.
+- 2단계 예정: push 웹훅(도메인 소유 확인 불필요 — 구글 안내 확인), MI 입력창 참석자/반복/Meet, 설명·위치·참석자 표시. 3단계: 구글 Tasks.
+
 ### 2026-08-22 구글 로그인 1차 서버 하드닝(카나리아 범위 유지)
 
 - 배경: 전체 사용자 구글 로그인 전환 계획에 앞서 보안 감사(10항목)·전환 준비도 조사 수행. 판정: 카나리아(총관리자 1명) 범위는 안전, 전면 전환 전 서버 보강 필요.

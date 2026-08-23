@@ -54,6 +54,12 @@ function unexpectedWorkItemInput(body = {}) {
   return Object.keys(body).find((key) => !WORK_ITEM_WRITE_KEYS.has(key)) || "";
 }
 
+// 대표가 쓴 행만 구글로 나간다. 운영팀원이 만든 일정이 대표 개인 캘린더로
+// 흘러드는 것을 막는 경계선이라 role 조건을 여기서 한 번 더 고정한다.
+function googlePendingPatch(access) {
+  return access?.role === "owner" ? { google_sync_state: "pending" } : {};
+}
+
 function normalizedUuid(value) {
   const id = cleanText(value).toLowerCase();
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(id) ? id : "";
@@ -183,6 +189,11 @@ function managerWorkItemPayload(row = {}) {
     repeatNoEnd: Boolean(row.recurrence_no_end),
     repeatUntil: row.recurrence_no_end ? null : (row.recurrence_until || null),
     materializedUntil: row.recurrence_until || null,
+    googleSource: row.google_source || "mi",
+    googleEventId: row.google_event_id || null,
+    googleHtmlLink: row.google_html_link || null,
+    googleSyncState: row.google_sync_state || null,
+    googleLocation: row.google_location || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     client: row.client || null,
@@ -319,6 +330,15 @@ function selectFields() {
     "recurrence_timezone",
     "recurrence_day_policy",
     "google_event_id",
+    "owner_agency_code",
+    "google_calendar_id",
+    "google_etag",
+    "google_updated_at",
+    "google_source",
+    "google_sync_state",
+    "google_html_link",
+    "google_recurring_event_id",
+    "google_location",
     "created_at",
     "updated_at",
     "client:clients(id,name,business_name)",
@@ -446,6 +466,9 @@ async function handlePost(request, ctx) {
     operation_team_id: access.team?.id || null,
     owner_agency_code: access.ownerAgencyCode || primaryAgencyCode(),
     calendar_id: null,
+    // 구글 push 는 저장을 막지 않는다. 저장문 자체에 pending 을 실어 두면
+    // push 가 실패해도 다음 동기화가 이 행을 자동으로 재시도한다.
+    ...googlePendingPatch(access),
   };
   let rows = [baseRow];
   if (repeat === "monthly") {
@@ -550,7 +573,7 @@ export async function assistantCompleteWorkItem(request, ctx, access, body = {})
   }
   let updateQuery = ctx.supabaseAdmin
     .from("schedule_items")
-    .update({ status: "done" })
+    .update({ status: "done", ...googlePendingPatch(access) })
     .eq("id", id);
   updateQuery = exactOriginalScope(updateQuery, existing.row);
   const { data, error } = await updateQuery.select(selectFields()).maybeSingle();
@@ -562,6 +585,7 @@ export async function assistantCompleteWorkItem(request, ctx, access, body = {})
     clientId: data.client_id,
     metadata: { previousStatus: existing.row.status, status: data.status, source: "momentlabs_assistant" },
   });
+  await syncOwnerScheduleRows(ctx, process.env, access, [data], "upsert");
   const item = access.role === "client" ? clientWorkItemPayload(data) : managerWorkItemPayload(data);
   return json(request, { ok: true, unchanged: false, message: "일정을 완료 처리했습니다.", item, auditLogged });
 }
@@ -590,7 +614,7 @@ async function handlePatch(request, ctx) {
   }
   const normalized = normalizeWorkItemInput(body, { canPublish: Boolean(access.client) });
   if (!normalized.ok) return json(request, normalized, normalized.status || 400);
-  const updateValues = { ...normalized.value };
+  const updateValues = { ...normalized.value, ...googlePendingPatch(access) };
   if (existing.row.series_id) {
     const occurrenceOn = seoulDateKey(normalized.value.starts_at);
     if (!occurrenceOn || occurrenceOn > existing.row.recurrence_until) {

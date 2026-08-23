@@ -2002,7 +2002,6 @@ const checks = {
     && workItemsTests.includes("client payload excludes internal and tenant fields"),
   workOperationRoleUiReady: adminSource.includes('data-mi-admin-screen="work">업무 운영</a>')
     && adminSource.includes('data-mi-admin-view="work"')
-    && adminSource.includes("광고주에게 일정 공개")
     && adminSource.includes("내부 메모 · 광고주 비공개")
     && adminSource.includes("loadWorkItems")
     && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")

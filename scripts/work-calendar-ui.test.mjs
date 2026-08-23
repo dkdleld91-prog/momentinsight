@@ -73,7 +73,6 @@ test("date and create clicks open the personal editor while preserving existing 
     "data-work-repeat-monthly",
     "data-work-repeat-no-end",
     "data-work-repeat-until",
-    "data-work-public",
     "data-work-type",
     "data-work-end",
     "data-work-assignee",

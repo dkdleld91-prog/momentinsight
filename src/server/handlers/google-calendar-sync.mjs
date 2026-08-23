@@ -351,6 +351,70 @@ export async function pushRowToGoogle(ctx, env, options) {
   return { ok: true, values: { ...syncedRowValues(created.data), google_calendar_id: calendarId } };
 }
 
+// 삭제는 구글 우선(Google-first)이다. MI 행을 지우기 전에 구글에서 먼저 지우고,
+// 지우지 못하면 MI 행을 남긴 채 호출자가 사용자에게 실패를 알리게 한다.
+// 예전처럼 "지우고 나서 조용히 push" 하면 구글 호출이 어떤 이유로 실패해도
+// (토큰 만료, 403, 5xx, 네트워크) 대표님 화면에서는 삭제가 성공한 것처럼 보이고
+// 구글에는 일정이 그대로 남는다. 그 침묵이 이번 사고의 원인이다.
+export async function deleteRowFromGoogle(ctx, env, access, row, fetchImpl = fetch) {
+  if (!ownerSyncableRows(access, [row]).length) return { ok: true, skipped: true, reason: "scope" };
+  if (!cleanText(row?.google_event_id)) return { ok: true, skipped: true, reason: "no-event" };
+  const config = googleOauthConfig(env);
+  if (!config.clientId || !config.clientSecret) return { ok: true, skipped: true, reason: "env" };
+  const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode(env));
+  const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
+  // 연동을 끊은 뒤라면 구글 일정이 남는 것이 이미 약속된 동작이므로 로컬 삭제를 막지 않는다.
+  if (error || !integration) return { ok: true, skipped: true, reason: "not-connected" };
+  const token = await refreshAccessToken(integration.refresh_token, env, fetchImpl);
+  if (!token.ok) {
+    if (token.reason === "invalid_grant") {
+      await markIntegrationSyncStatus(ctx, ownerCode, "needs_reconnect", "구글 재연결이 필요합니다.");
+      return { ok: false, reason: "needs_reconnect" };
+    }
+    return { ok: false, reason: "token" };
+  }
+  try {
+    const result = await pushRowToGoogle(ctx, env, {
+      integration,
+      accessToken: token.accessToken,
+      row,
+      mode: "delete",
+      fetchImpl,
+    });
+    return result.ok ? { ok: true } : { ok: false, reason: result.reason || "delete_failed" };
+  } catch (unexpected) {
+    return { ok: false, reason: "network" };
+  }
+}
+
+// 구글 삭제가 실패했을 때의 흔적. 행은 남으므로 상태를 failed 로 되돌려
+// 다음 동기화가 재시도 대상으로 잡게 하고, 감사 로그도 남긴다.
+export async function recordGoogleDeleteFailure(ctx, row, reason) {
+  await markRowSyncState(ctx, row.id, {
+    google_sync_state: "failed",
+    google_sync_error: cleanText(`delete:${reason}`, 500),
+  });
+  try {
+    await ctx.supabaseAdmin.from("audit_logs").insert({
+      actor_id: null,
+      client_id: row.client_id || null,
+      action: "google_calendar_sync_failed",
+      target_table: "schedule_items",
+      target_id: row.id || null,
+      metadata: sanitizeAuditMetadata({
+        mode: "delete",
+        reason,
+        failed: 1,
+        total: 1,
+        calendarId: cleanText(row.google_calendar_id, 200) || null,
+        eventId: cleanText(row.google_event_id, 200) || null,
+      }),
+    }).then(() => {}, () => {});
+  } catch (unexpected) {
+    // 감사 기록 실패가 응답을 바꾸지 않는다
+  }
+}
+
 async function mapWithConcurrency(items, limit, worker) {
   const results = new Array(items.length);
   let cursor = 0;

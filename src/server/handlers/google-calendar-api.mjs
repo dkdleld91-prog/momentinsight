@@ -19,9 +19,21 @@ import {
 import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
-import { runOwnerCalendarSync, syncOwnerScheduleRows } from "./google-calendar-sync.mjs";
+import {
+  deleteRowFromGoogle,
+  recordGoogleDeleteFailure,
+  runOwnerCalendarSync,
+  syncOwnerScheduleRows,
+} from "./google-calendar-sync.mjs";
 
-export { googleOauthConfig, loadOwnerGoogleIntegration, mapScheduleRowToGoogleEvent, syncOwnerScheduleRows };
+export {
+  deleteRowFromGoogle,
+  googleOauthConfig,
+  loadOwnerGoogleIntegration,
+  mapScheduleRowToGoogleEvent,
+  recordGoogleDeleteFailure,
+  syncOwnerScheduleRows,
+};
 
 const OWNER_API_PATH = "/api/owner/google-calendar";
 const OWNER_LOGIN_API_PATH = "/api/owner/google-login";

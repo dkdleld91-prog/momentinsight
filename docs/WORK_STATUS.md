@@ -41,7 +41,8 @@
 - 구현: 신규 `src/server/google-calendar-client.mjs`(구글 클라이언트, invalid_grant 식별) + `src/server/handlers/google-calendar-sync.mjs`(동기화 엔진: primary+전용 캘린더 증분 동기화, 윈도 −30d~+365d, singleEvents 전개, 루프 차단 3중, 구글 삭제→MI 삭제+audit, MI 수정→원래 캘린더 write-back, ✓ 접두 쓰기 전용, 광고주 스코프 `[광고주명]`). API `{action:"sync"}`(서버 스로틀 auto 60초/manual 10초), 대표실·업무 운영 진입 시 자동 동기화 + 배너 `지금 동기화`/`마지막 동기화`/재연결 안내, 아젠다 행 `구글` 칩, 실장 음성 완료 경로에 푸시 훅 추가(기존 누락 버그), eyebrow Jarvis→실장. 일일 크론 대신 "그날 첫 동기화를 full로 승격".
 - DB: `supabase/migrations/20260822120000_google_calendar_two_way.sql` — **배포 전 대시보드 실행 필수**(미실행 시 일정 목록 500). 추가만 수행·재실행 안전.
 - 실측: sync 28/28, google-calendar-api 49/49, work-items 16/16, owner-tool 18/18, check:release exit 0(인증 18/18, 잠금은 owner-tool-api 해시 1건 갱신), CSP 교체. 미검증: syncToken의 초기 timeMin 기억 여부(양쪽 안전 구현), 운영 실동작은 대표 수동 검증 8단계로 확정 예정.
-- 2단계 예정: push 웹훅(도메인 소유 확인 불필요 — 구글 안내 확인), MI 입력창 참석자/반복/Meet, 설명·위치·참석자 표시. 3단계: 구글 Tasks.
+- 2026-08-23 대표 실사용 결과: 양방향 등록 ✅, 구글→MI 삭제 ✅, MI→구글 삭제 ❌ → 원인: DB 삭제 후 푸시 + 모든 실패 경로가 200으로 침묵(work-items handleDelete). 수정: 구글 우선 삭제(2xx/404/410만 성공, invalid_grant→needs_reconnect), 실패 시 MI 행 보존 + 502 안내 + audit. sync 34/34, 전체 804/804, 게이트 exit 0. 실제 실패 사유는 수정 후 화면 문구로 확인 예정.
+- 2단계 예정(대표 요청 확정): MI 일정 등록 UI/UX를 구글 캘린더 등록 창과 동일 구성(제목·종일/시간·시작~종료·반복·참석자·Meet·위치·설명·캘린더 선택)으로, 서버 왕복 포함. "할 일"은 Google Tasks API(별도 권한) 단계로 분리. push 웹훅(도메인 소유 확인 불필요 — 구글 안내 확인). 3단계: 구글 Tasks.
 
 ### 2026-08-22 구글 로그인 1차 서버 하드닝(카나리아 범위 유지)
 

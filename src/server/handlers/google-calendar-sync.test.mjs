@@ -94,6 +94,12 @@ function makeCtx(tables = {}) {
       delete() { op.kind = "delete"; return query; },
       eq(column, value) { op.filters.push(["eq", column, value]); return query; },
       in(column, value) { op.filters.push(["in", column, value]); return query; },
+      is(column, value) { op.filters.push(["is", column, value]); return query; },
+      or(expression) { op.filters.push(["or", expression]); return query; },
+      gte(column, value) { op.filters.push(["gte", column, value]); return query; },
+      gt(column, value) { op.filters.push(["gt", column, value]); return query; },
+      lte(column, value) { op.filters.push(["lte", column, value]); return query; },
+      lt(column, value) { op.filters.push(["lt", column, value]); return query; },
       order() { return query; },
       limit(value) { op.limit = value; return query; },
       maybeSingle() { ops.push(op); return Promise.resolve(resolve(op)); },
@@ -668,4 +674,167 @@ test("a run without an integration reports not-connected and touches nothing", a
 
   const missingEnv = await runOwnerCalendarSync(ctx, {}, OWNER, { now: NOW, fetchImpl: impl });
   assert.equal(missingEnv.reason, "env");
+});
+
+// ─────────────────────────────────────────────────────────────
+// MI 삭제 → 구글 삭제 (운영 사고 회귀 방지)
+// ─────────────────────────────────────────────────────────────
+
+function deletableRow(overrides = {}) {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    client_id: null, operation_team_id: null, owner_agency_code: OWNER,
+    title: "지울 일정", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-08-24T06:00:00.000Z", ends_at: "2026-08-24T07:00:00.000Z",
+    visibility: "internal", is_all_day: false, calendar_id: null,
+    google_event_id: "gev-1", google_calendar_id: INTEGRATION.calendar_id,
+    google_source: "mi", google_sync_state: "synced",
+    created_at: "2026-08-20T00:00:00.000Z", updated_at: "2026-08-20T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function deleteRequest(row) {
+  return new Request("https://insight.momentlabs.co.kr/api/work-items", {
+    method: "DELETE",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": OWNER,
+    },
+    body: JSON.stringify({ id: row.id, expectedUpdatedAt: row.updated_at }),
+  });
+}
+
+function deleteCtx(row) {
+  const scheduleResults = [{ data: row, error: null }, { data: { id: row.id }, error: null }];
+  return makeCtx({
+    schedule_items: (op) => (op.kind === "select" ? scheduleResults.shift() : { data: { id: row.id }, error: null }),
+    owner_google_integrations: (op) => (op.kind === "select" ? { data: INTEGRATION, error: null } : { data: null, error: null }),
+    audit_logs: { data: null, error: null },
+  });
+}
+
+async function withStubbedFetch(impl, run) {
+  const original = globalThis.fetch;
+  const env = { id: process.env.GOOGLE_OAUTH_CLIENT_ID, secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET };
+  globalThis.fetch = impl;
+  process.env.GOOGLE_OAUTH_CLIENT_ID = "cid-1";
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "sec-1";
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+    if (env.id === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    else process.env.GOOGLE_OAUTH_CLIENT_ID = env.id;
+    if (env.secret === undefined) delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+    else process.env.GOOGLE_OAUTH_CLIENT_SECRET = env.secret;
+  }
+}
+
+test("deleting an MI-created row removes the google event before the MI row", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow();
+  const { ctx, ops } = deleteCtx(row);
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`DELETE ${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/gev-1`]: jsonResponse(204, undefined),
+  });
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(calls.at(-1).method, "DELETE");
+  // 구글 호출이 DB 삭제보다 먼저 일어나야 한다.
+  const order = ops.map((op) => `${op.table}:${op.kind}`);
+  assert.ok(order.indexOf("owner_google_integrations:select") < order.indexOf("schedule_items:delete"));
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 1);
+});
+
+test("deleting an imported row targets its original primary calendar", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow({
+    google_calendar_id: "owner@example.com", google_event_id: "gev-primary", google_source: "google",
+  });
+  const { ctx, ops } = deleteCtx(row);
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`DELETE ${CALENDAR_BASE}/calendars/owner%40example.com/events/gev-primary`]: jsonResponse(204, undefined),
+  });
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.at(-1).url, `${CALENDAR_BASE}/calendars/owner%40example.com/events/gev-primary`);
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 1);
+});
+
+test("a google delete failure keeps the MI row, reports it, and audits the failure", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow();
+  const { ctx, ops } = deleteCtx(row);
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`DELETE ${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/gev-1`]: jsonResponse(500, { error: {} }),
+  });
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(payload.ok, false);
+  assert.match(payload.message, /구글 캘린더에서 삭제하지 못했습니다/);
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 0, "구글에 남은 일정을 MI에서만 지우지 않는다");
+  const failed = opsFor(ops, "schedule_items", "update").at(-1);
+  assert.equal(failed.values.google_sync_state, "failed");
+  assert.equal(failed.values.google_sync_error, "delete:delete_500");
+  const audit = opsFor(ops, "audit_logs", "insert").at(-1).values;
+  assert.equal(audit.action, "google_calendar_sync_failed");
+  assert.equal(audit.metadata.mode, "delete");
+});
+
+test("a google event that is already gone still lets the MI row be deleted", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow();
+  const { ctx, ops } = deleteCtx(row);
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`DELETE ${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/gev-1`]: jsonResponse(404, { error: {} }),
+  });
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+
+  assert.equal(response.status, 200);
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 1);
+});
+
+test("an expired refresh token blocks the delete with a reconnect message", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow();
+  const { ctx, ops } = deleteCtx(row);
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: jsonResponse(400, { error: "invalid_grant" }),
+  });
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.match(payload.message, /다시 연결한 뒤 삭제해주세요/);
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 0);
+});
+
+test("a row that never reached google is still deleted locally without google traffic", async () => {
+  const { handleWorkItemsRequest } = await import("./work-items.mjs");
+  const row = deletableRow({ google_event_id: null, google_calendar_id: null, google_sync_state: "pending" });
+  const { ctx, ops } = deleteCtx(row);
+  const { calls, impl } = fetchMock({});
+
+  const response = await withStubbedFetch(impl, () => handleWorkItemsRequest(deleteRequest(row), ctx));
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.length, 0);
+  assert.equal(opsFor(ops, "schedule_items", "delete").length, 1);
 });

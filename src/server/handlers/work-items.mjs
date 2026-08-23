@@ -4,7 +4,11 @@ import {
   buildMonthlyOccurrences,
   seoulDateKey,
 } from "../calendar-domain.mjs";
-import { syncOwnerScheduleRows } from "./google-calendar-api.mjs";
+import {
+  deleteRowFromGoogle,
+  recordGoogleDeleteFailure,
+  syncOwnerScheduleRows,
+} from "./google-calendar-api.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -666,6 +670,16 @@ async function handleDelete(request, ctx) {
   if (validIsoDate(existing.row.updated_at) !== expectedUpdatedAt) {
     return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 시도해주세요." }, 409);
   }
+  // 구글이 정본이므로 구글에서 먼저 지운다. 여기서 실패하면 MI 행을 남기고
+  // 실패를 그대로 알린다 — 조용히 로컬만 지우면 두 캘린더가 영구히 어긋난다.
+  const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, existing.row);
+  if (!googleDelete.ok) {
+    await recordGoogleDeleteFailure(ctx, existing.row, googleDelete.reason);
+    const message = googleDelete.reason === "needs_reconnect"
+      ? "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결한 뒤 삭제해주세요."
+      : "구글 캘린더에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.";
+    return json(request, { ok: false, code: "google_delete_failed", message }, 502);
+  }
   let deleteQuery = ctx.supabaseAdmin.from("schedule_items").delete().eq("id", id);
   deleteQuery = exactOriginalScope(deleteQuery, existing.row);
   const { data, error } = await deleteQuery.select("id").maybeSingle();
@@ -675,9 +689,12 @@ async function handleDelete(request, ctx) {
     action: "work_item_deleted",
     targetId: id,
     clientId: existing.row.client_id,
-    metadata: { visibility: existing.row.visibility, status: existing.row.status },
+    metadata: {
+      visibility: existing.row.visibility,
+      status: existing.row.status,
+      googleEventDeleted: !googleDelete.skipped,
+    },
   });
-  await syncOwnerScheduleRows(ctx, process.env, access, [existing.row], "delete");
   return json(request, { ok: true, message: "업무를 삭제했습니다.", auditLogged });
 }
 

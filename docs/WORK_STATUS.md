@@ -35,6 +35,12 @@
 - event7485→7487도 21:59:43→22:01:12 KST collection `pw-chrome-1787403672031-b3e5ef45117c7b185a02`을 checked300·official source·organic-only·adExcluded=true·stable proof·광고45건 제외로 commit했습니다. cursor sort2200→2300 순방향이고 cycle #29 group47/47·tracker60/60·terminal60/60·open0으로 중복0입니다. 수집 중 22:00 KST에는 processing1·lane/run/lease 활성 상태였고 terminal 뒤에는 processing0·lane/run/lease/stage/tracker null·circuit closed·cooldown null로 정상 해제됐습니다. streak41·baseline10·candidate false이며 잔여 partial은 claim/terminal/snapshot0, 자연 순번11/12·12/12입니다.
 - event7489→7491도 22:09:43→22:11:07 KST collection `pw-chrome-1787404267275-af4bc4b30de0fc3f106e`을 checked300·official source·organic-only·adExcluded=true·stable proof·광고45건 제외로 commit했습니다. cursor sort2300→2400 순방향이고 cycle #29 group48/48·tracker61/61·terminal61/61·open0으로 중복0입니다. terminal 뒤 processing0·lane/run/lease/stage/tracker null·circuit closed·cooldown null, streak42·baseline10·candidate false입니다. 잔여 partial은 claim/terminal/snapshot0이며 자연 순번10/11·11/11입니다.
 
+### 2026-08-24 캘린더 대개편(대표 피드백 A–F)
+
+- 삭제 불가 근본원인 2건 코드로 확정: ① 선택 열 강등 캐시가 프로세스 영구(만료 없음) → SQL 적용해도 회복 불가 ② writable 판정이 강등/기본값에서 dedicated·primary로 붕괴해 본인 일정도 403. 수정: 강등 TTL 90초 자가복구 + 성공 SELECT 시 즉시 해제, 읽기 전용 차단은 확인된 reader/freeBusyReader만. 삭제 시도마다 audit `work_item_delete_attempted`(outcome·reason) 기록. 잔여(사실): 구글 삭제가 skipped면 다음 full sync 재유입 가능 — tombstone은 후속.
+- 레이아웃: 가까운 업무를 달력 아래 가로 밴드(오늘·내일만)로, 달력 전폭. 색상: 월간 칩·아젠다가 구글 캘린더 색(bg/fg) 그대로. 새 캘린더 만들기+참가자 초대(acl, 소유 캘린더만, 최대 20명, 초대 메일 발송). 반복 설정 구글식 모달. 전용 "모먼트 인사이트" 캘린더는 events.move로 기본 캘린더 통합 후 삭제(멱등, 신규 연동은 생성 안 함).
+- 실측: 전체 936/936, check:release·check:vercel-deploy(구글 env) exit 0, 신규 마이그레이션 없음.
+
 ### 2026-08-22 구글 캘린더 양방향 동기화 1단계(대표 전용)
 
 - 방향(대표 확정): 광고주 연결 없음, 구글 캘린더=원본, MI 디자인 유지, 구글↔MI 자동 반영. 설계 문서 docs/drafts/google-calendar-two-way-design.md.

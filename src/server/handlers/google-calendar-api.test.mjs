@@ -1885,3 +1885,168 @@ test("the sidebar actions fail closed with the shared missing-env shape", async 
     assert.equal(calls.length, 0);
   }
 });
+
+// ---------------------------------------------------------------------------
+// 새 캘린더 만들기 + 참가자(ACL) 관리 (owner actions: "calendar-create" / "calendar-acl")
+//
+// 일정마다 참석자를 넣는 대신 캘린더를 통째로 공유하는 경로다. 구글 문서:
+//   calendars.insert https://developers.google.com/workspace/calendar/api/v3/reference/calendars/insert
+//   acl.insert       https://developers.google.com/workspace/calendar/api/v3/reference/acl/insert
+// ---------------------------------------------------------------------------
+
+const CALENDARS_URL = `${CALENDAR_BASE}/calendars`;
+const SHARED_CALENDAR_ID = "shared@group.calendar.google.com";
+const SHARED_ACL_URL = `${CALENDAR_BASE}/calendars/${encodeURIComponent(SHARED_CALENDAR_ID)}/acl`;
+
+function ownerShareRequest(body) {
+  return new Request(OWNER_CALENDAR_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": "mml93-a01",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+// 대표님이 소유한 캘린더 한 개가 카탈로그에 있는 상태.
+function ownedCatalogRoute() {
+  return restJson([
+    {
+      google_calendar_id: SHARED_CALENDAR_ID,
+      calendar_role: "secondary",
+      calendar_summary: "쿠팡 공유",
+      calendar_access_role: "owner",
+      calendar_is_primary: false,
+      calendar_writable: true,
+    },
+  ]);
+}
+
+test("calendar-create makes a google calendar, invites everyone and caches the new entry", async () => {
+  const upserts = [];
+  const aclBodies = [];
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    // 더 긴 경로가 먼저다. POST /calendars 는 POST /calendars/{id}/acl 의 접두사다.
+    ["POST", SHARED_ACL_URL, (call) => {
+      aclBodies.push(JSON.parse(String(call.body)));
+      assert.match(call.url, /sendNotifications=true/, "구글이 초대 메일을 보내야 한다");
+      return restJson({ id: `user:${aclBodies.length}` });
+    }],
+    ["POST", CALENDARS_URL, (call) => {
+      const sent = JSON.parse(String(call.body));
+      assert.equal(sent.summary, "쿠팡 공유");
+      assert.equal(sent.timeZone, "Asia/Seoul");
+      return restJson({ id: SHARED_CALENDAR_ID, summary: "쿠팡 공유" });
+    }],
+    ["POST", CALENDAR_SYNC_REST_URL, (call) => {
+      upserts.push(JSON.parse(String(call.body)));
+      return restCreated();
+    }],
+    ["POST", AUDIT_REST_URL, () => restCreated()],
+    ["GET", CALENDAR_SYNC_REST_URL, () => ownedCatalogRoute()],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest({
+    action: "calendar-create",
+    summary: "쿠팡 공유",
+    invites: [{ email: "A@B.com", role: "writer" }, { email: "c@d.com", role: "reader" }],
+  }))));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.calendarId, SHARED_CALENDAR_ID);
+  assert.deepEqual(payload.failedInvites, []);
+  assert.deepEqual(aclBodies, [
+    { role: "writer", scope: { type: "user", value: "a@b.com" } },
+    { role: "reader", scope: { type: "user", value: "c@d.com" } },
+  ], "이메일은 소문자로 정규화되고 권한은 그대로 나간다");
+  assert.equal(upserts.length, 1);
+  assert.equal(upserts[0].calendar_access_role, "owner");
+  assert.equal(upserts[0].calendar_writable, true);
+  // 카탈로그에는 방금 만든 캘린더가 들어 있다(연동 행이 가리키는 전용 캘린더도
+  // 아직 있으면 함께 나온다 — 여기서 검증할 것은 새 캘린더의 등장이다).
+  assert.ok(payload.calendars.some((entry) => entry.id === SHARED_CALENDAR_ID));
+  assert.ok(calls.some((call) => call.url.startsWith(CALENDARS_URL)));
+});
+
+test("calendar-create refuses a bad name or a bad invite before calling google", async () => {
+  for (const body of [
+    { action: "calendar-create", summary: "   " },
+    { action: "calendar-create", summary: "공유", invites: "a@b.com" },
+  ]) {
+    const { calls, impl } = loginFetchRouter([]);
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest(body))));
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).ok, false);
+    assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0);
+  }
+
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+  ]);
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest({
+    action: "calendar-create", summary: "공유", invites: [{ email: "not-an-email" }],
+  }))));
+  const payload = await response.json();
+  assert.equal(response.status, 400);
+  assert.match(payload.message, /참가자 이메일/);
+  assert.equal(calls.filter((call) => call.url.startsWith(CALENDARS_URL)).length, 0, "캘린더를 만들기 전에 막는다");
+});
+
+test("calendar-acl lists, adds and removes participants on a calendar the owner owns", async () => {
+  const rules = [{ id: "user:a", scope: { type: "user", value: "a@b.com" }, role: "writer" }];
+  const routes = [
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_SYNC_REST_URL, () => ownedCatalogRoute()],
+    ["GET", SHARED_ACL_URL, () => restJson({ items: rules })],
+    ["POST", SHARED_ACL_URL, (call) => {
+      const sent = JSON.parse(String(call.body));
+      rules.push({ id: "user:b", scope: { type: "user", value: sent.scope.value }, role: sent.role });
+      return restJson({ id: "user:b" });
+    }],
+    ["DELETE", SHARED_ACL_URL, () => new Response(null, { status: 204 })],
+  ];
+
+  const listed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list" }))));
+  const listPayload = await listed.json();
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listPayload.rules, [{ id: "user:a", email: "a@b.com", role: "writer", scopeType: "user", editable: true }]);
+
+  const added = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "insert", email: "New@B.com", role: "reader" }))));
+  const addPayload = await added.json();
+  assert.equal(added.status, 200);
+  assert.deepEqual(addPayload.rules.map((rule) => rule.email), ["a@b.com", "new@b.com"]);
+
+  const removed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "delete", ruleId: "user:b" }))));
+  assert.equal(removed.status, 200);
+  assert.equal((await removed.json()).ok, true);
+});
+
+test("calendar-acl refuses a calendar the owner only has write access to", async () => {
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([
+      { google_calendar_id: SHARED_CALENDAR_ID, calendar_role: "secondary", calendar_summary: "남의 캘린더", calendar_access_role: "writer", calendar_writable: true },
+    ])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest({
+    action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list",
+  }))));
+  const payload = await response.json();
+
+  assert.equal(response.status, 403);
+  assert.match(payload.message, /소유한 캘린더에서만/);
+  assert.equal(calls.filter((call) => call.url.startsWith(SHARED_ACL_URL)).length, 0, "구글 ACL 은 건드리지 않는다");
+});

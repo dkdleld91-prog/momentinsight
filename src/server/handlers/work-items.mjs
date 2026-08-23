@@ -367,9 +367,12 @@ function managerWorkItemPayload(row = {}, calendar = null) {
     calendarTextColor: calendar?.textColor || null,
     calendarAccessRole: calendar?.accessRole || null,
     calendarVisible: calendar ? calendar.visible !== false : true,
-    // 읽기 전용 캘린더의 일정은 MI 에서 고치거나 지울 수 없다. 카탈로그를
-    // 모르면(=calendar 가 null) 막지 않는다 — 캐시가 비었다고 편집을 막는 쪽이 더 나쁘다.
-    readOnly: calendar ? calendar.writable !== true : false,
+    // 화면의 잠금은 "구글이 읽기 전용이라고 확인해 준" 캘린더에만 건다.
+    // readOnly 는 accessRole 이 reader/freeBusyReader 일 때만 참인 긍정 신호라,
+    // 카탈로그가 없거나(=calendar 가 null) accessRole 을 아직 모르는 캘린더는
+    // 잠기지 않는다. writable !== true 로 뒤집어 보면 accessRole 이 채워지기
+    // 전의 모든 캘린더가 화면에서 잠겨 버린다(서버 가드와 같은 함정이다).
+    readOnly: calendar?.readOnly === true,
     location: row.google_location || null,
     description: row.google_description || null,
     attendees: (Array.isArray(row.google_attendees) ? row.google_attendees : []).map((entry) => ({
@@ -596,7 +599,11 @@ async function scopedWorkItem(ctx, access, id) {
     .is("calendar_id", null)
     .maybeSingle());
   if (error || !data) return { row: null, error };
-  if (data.calendar_id || !legacyRowInAccess(data, access)) return { row: null, error: null };
+  // 옛 공유 일정표 행(calendar_id 가 있는 행)은 "어떤 쓰기도 하지 않고 404" 가
+  // 개인 전용 계약이다. 삭제 시도 감사도 쓰기이므로 호출부가 이 거절만 따로
+  // 알아볼 수 있도록 표식을 함께 돌려준다. 범위 밖(다른 테넌트) 거절과는 다르다.
+  if (data.calendar_id) return { row: null, error: null, shared: true };
+  if (!legacyRowInAccess(data, access)) return { row: null, error: null };
   return { row: data, error: null };
 }
 
@@ -667,9 +674,19 @@ async function ownerCalendarCatalog(ctx, access) {
 }
 
 // 수정·삭제 직전의 읽기 전용 가드. 연동 행은 읽지 않는다 — 바로 뒤에 이어지는
-// 구글 우선 쓰기/삭제가 같은 조회를 다시 하기 때문이다. 카탈로그가 이 캘린더를
-// 모르거나(캐시가 비었거나 조회가 실패) 쓰기 가능하면 막지 않는다(fail open):
-// 캐시가 차갑다는 이유로 고칠 수 있는 일정을 막는 쪽이 훨씬 나쁘다.
+// 구글 우선 쓰기/삭제가 같은 조회를 다시 하기 때문이다.
+//
+// 막는 조건은 단 하나, entry.readOnly === true 다. readOnly 는 구글이 알려준
+// accessRole 이 reader/freeBusyReader 일 때만 참이 되는 긍정 신호("여기에는 쓸
+// 수 없다")이므로, 확인된 읽기 전용만 잠긴다. 카탈로그가 이 캘린더를 모르거나
+// (캐시가 비었거나 조회가 실패) accessRole 을 아직 모르면 막지 않는다(fail open).
+//
+// 예전 조건인 writable !== true 는 여집합을 가정한 것이 틀렸다. writable 은
+// "여기에 써도 된다"는 별개의 긍정 신호이고 다이얼로그 목록을 채우는 데만 쓴다.
+// resolveOwnerCalendars 가 새로 만든 카탈로그 행은 calendar_writable 이 DB 기본값
+// false, calendar_access_role 이 null 이라 둘 다 "모름"인데, 여집합으로 보면
+// 그 모름이 전부 읽기 전용으로 뒤집힌다. 그래서 accessRole 백필 이전에 생긴
+// 모든 보조 캘린더의 일정이 PATCH·DELETE 에서 403 calendar_read_only 로 막혔다.
 async function readOnlyCalendarBlock(ctx, access, row) {
   if (access.role !== "owner") return null;
   const calendarId = cleanText(row?.google_calendar_id);
@@ -680,7 +697,7 @@ async function readOnlyCalendarBlock(ctx, access, row) {
     const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
     const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, null);
     const entry = catalog.find((candidate) => candidate.id === calendarId);
-    if (!entry || entry.writable === true) return null;
+    if (entry?.readOnly !== true) return null;
     return {
       ok: false,
       code: "calendar_read_only",
@@ -1237,9 +1254,49 @@ async function handleDelete(request, ctx) {
   if (!id || (suppliedUpdatedAt && !expectedUpdatedAt)) {
     return json(request, { ok: false, message: "삭제할 업무의 최신 상태를 확인해주세요." }, 400);
   }
+
+  // 여기 위쪽 거절(401·403 역할 게이트, 허용되지 않은 키 400, id 누락 및
+  // expectedUpdatedAt 형식 400)과 바로 아래 scopedWorkItem 자체의 조회 실패 500 은
+  // 시도 감사를 남기지 않는다. 아직 어떤 행도 들여다보지 못했으므로 "삭제 시도"가
+  // 아니라 요청 형태·인프라의 문제이고, 남겨 봐야 대상 없는 잡음만 쌓인다.
+  //
+  // 그 아래부터는 성공이든 실패든 요청당 정확히 한 줄을 남긴다. 모든 반환 경로가
+  // 이 헬퍼를 거쳐 나가고(받은 응답을 그대로 돌려준다) 플래그가 두 번째 기록을
+  // 막으므로 한 요청에서 두 줄이 될 수 없다. recordAudit 은 insert 를 await 하니
+  // 테이블 스텁이 던지면 예외가 여기까지 올라오는데, 감사 실패가 삭제 응답을
+  // 바꾸면 안 되므로 통째로 삼킨다.
+  let attemptAudited = false;
+  const auditAttempt = async (response, attempt) => {
+    if (attemptAudited) return response;
+    attemptAudited = true;
+    try {
+      await recordAudit(ctx, {
+        action: "work_item_delete_attempted",
+        targetId: cleanText(attempt.row?.id) || id || null,
+        clientId: attempt.row?.client_id || null,
+        // sanitizeAuditMetadata 를 그대로 통과하도록 문자열·불리언·null 만 담는다.
+        metadata: {
+          outcome: attempt.outcome,
+          reason: cleanText(attempt.reason, 60) || "unknown",
+          googleSkipped: attempt.googleSkipped === true,
+          calendarId: cleanText(attempt.row?.google_calendar_id, 200) || null,
+        },
+      });
+    } catch (unexpected) {
+      // 감사 기록 실패가 응답을 바꾸지 않는다.
+    }
+    return response;
+  };
+
   const existing = await scopedWorkItem(ctx, access, id);
   if (existing.error) return json(request, { ok: false, message: "업무 범위 확인에 실패했습니다.", detail: existing.error.message }, 500);
-  if (!existing.row) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
+  if (!existing.row) {
+    const gone = json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
+    // 공유 일정표 행만은 시도 감사도 남기지 않는다. 그 행에 대해서는 어떤
+    // 쓰기도 하지 않는 것이 개인 전용 계약이고, 감사 insert 도 쓰기다.
+    if (existing.shared) return gone;
+    return auditAttempt(gone, { outcome: "scope_miss", reason: "not_found", row: null, googleSkipped: true });
+  }
   let row = existing.row;
   // updated_at 은 구글 동기화 기록(google_synced_at 등)만 써도 무조건 트리거로
   // 올라가므로, 삭제에까지 버전 일치를 요구하면 삭제가 무작위로 막힌다.
@@ -1248,38 +1305,78 @@ async function handleDelete(request, ctx) {
   if (expectedUpdatedAt && validIsoDate(row.updated_at) !== expectedUpdatedAt) {
     const refreshed = await scopedWorkItem(ctx, access, id);
     if (refreshed.error) return json(request, { ok: false, message: "업무 범위 확인에 실패했습니다.", detail: refreshed.error.message }, 500);
-    if (!refreshed.row) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
+    if (!refreshed.row) {
+      const gone = json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
+      if (refreshed.shared) return gone;
+      return auditAttempt(gone, { outcome: "scope_miss", reason: "not_found", row: null, googleSkipped: true });
+    }
     row = refreshed.row;
   }
   const readOnly = await readOnlyCalendarBlock(ctx, access, row);
-  if (readOnly) return json(request, readOnly, 403);
+  if (readOnly) {
+    return auditAttempt(json(request, readOnly, 403),
+      { outcome: "read_only", reason: "calendar_read_only", row, googleSkipped: true });
+  }
   // 구글이 정본이므로 구글에서 먼저 지운다. 여기서 실패하면 MI 행을 남기고
   // 실패를 그대로 알린다 — 조용히 로컬만 지우면 두 캘린더가 영구히 어긋난다.
+  //
+  // 지운 행이 다음 동기화에 되살아나지 않는 보호막은 두 조각이다. (1) 이 구글
+  // 우선 순서 — 구글 이벤트를 먼저 없애고(반복 인스턴스는 status:"cancelled" 로
+  // PATCH 한다) 그 다음에야 MI 행을 지운다. (2) applyEvents 의 취소 분기 —
+  // 다음 동기화가 보는 것은 아예 없는 이벤트이거나 cancelled 이벤트뿐이고,
+  // cancelled 는 `if (!row) { counters.skipped += 1; continue; }` 로 흘려보낸다.
+  //
+  // 남은 구멍은 정확히 하나다. deleteRowFromGoogle 이 skipped:true 를 돌려줬는데
+  // (reason "scope" — 대표가 아닌 운영팀 호출 / "env" — OAuth 환경변수 없음 /
+  // "not-connected" — 연동 없음) 구글 이벤트는 그대로 살아 있는 경우다. 로컬 행만
+  // 사라졌으므로 이후 full sync 의 applyEvents 가 짝 없는 이벤트로 보고 다시
+  // 들여온다(counters.imported). 시도 감사에 googleSkipped 와 reason 을 함께 남기는
+  // 이유가 이것이다 — 되살아난 행을 나중에 이 두 값으로 역추적할 수 있어야 한다.
+  // 실제로 막으려면 삭제한 이벤트를 기억하는 tombstone 테이블(마이그레이션)이
+  // 필요하고, 그것은 이 변경의 범위 밖이다.
   const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, row);
   if (!googleDelete.ok) {
     await recordGoogleDeleteFailure(ctx, row, googleDelete.reason);
     const message = googleDelete.reason === "needs_reconnect"
       ? "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결한 뒤 삭제해주세요."
       : "구글 캘린더에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.";
-    return json(request, { ok: false, code: "google_delete_failed", message }, 502);
+    return auditAttempt(json(request, { ok: false, code: "google_delete_failed", message }, 502),
+      { outcome: "google_failed", reason: googleDelete.reason, row, googleSkipped: false });
   }
   let deleteQuery = ctx.supabaseAdmin.from("schedule_items").delete().eq("id", id);
   // 테넌트 범위는 그대로 걸되 updated_at 동등 조건은 걸지 않는다.
   deleteQuery = exactOriginalScope(deleteQuery, row, { matchVersion: false });
   const { data, error } = await deleteQuery.select("id").maybeSingle();
-  if (error) return json(request, { ok: false, message: "업무 삭제에 실패했습니다.", detail: error.message }, 500);
+  if (error) {
+    return auditAttempt(json(request, { ok: false, message: "업무 삭제에 실패했습니다.", detail: error.message }, 500),
+      { outcome: "db_failed", reason: cleanText(error.code, 40) || "storage", row, googleSkipped: Boolean(googleDelete.skipped) });
+  }
   // 0건이면 이미 사라졌거나 범위 밖이다 — 버전 충돌이 아니므로 404 로 알린다.
-  if (!data) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
-  const auditLogged = await recordAudit(ctx, {
-    action: "work_item_deleted",
-    targetId: id,
-    clientId: row.client_id,
-    metadata: {
-      visibility: row.visibility,
-      status: row.status,
-      googleEventDeleted: !googleDelete.skipped,
-    },
-  });
+  if (!data) {
+    return auditAttempt(json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404),
+      { outcome: "scope_miss", reason: "delete_no_match", row, googleSkipped: Boolean(googleDelete.skipped) });
+  }
+  // 성공도 삭제 시도다. 기존 성공 감사(work_item_deleted)는 그대로 두고 그보다
+  // 먼저 시도 줄을 남긴다 — 성공한 삭제는 감사 줄이 두 개가 된다.
+  await auditAttempt(null, { outcome: "deleted", reason: "ok", row, googleSkipped: Boolean(googleDelete.skipped) });
+  // 감사 줄(action·metadata)은 예전 그대로다. 다만 행은 이미 지워졌으므로
+  // 감사 테이블이 던진다고 삭제를 되돌릴 수는 없다 — 예외는 삼키고 결과만
+  // auditLogged 로 알린다. 시도 감사와 같은 원칙이다.
+  let auditLogged = false;
+  try {
+    auditLogged = await recordAudit(ctx, {
+      action: "work_item_deleted",
+      targetId: id,
+      clientId: row.client_id,
+      metadata: {
+        visibility: row.visibility,
+        status: row.status,
+        googleEventDeleted: !googleDelete.skipped,
+      },
+    });
+  } catch (unexpected) {
+    auditLogged = false;
+  }
   return json(request, { ok: true, message: "업무를 삭제했습니다.", auditLogged });
 }
 

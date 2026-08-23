@@ -3,11 +3,13 @@ import { seoulDateKey } from "../calendar-domain.mjs";
 import {
   DEDICATED_CALENDAR_SUMMARY,
   DONE_PREFIX,
+  EVENT_TIMEZONE,
   MAX_ATTENDEES,
   MAX_RECURRENCE_LINES,
   MAX_RECURRENCE_LINE_CHARS,
   buildGoogleEventPayload,
   cleanText,
+  isAttendeeEmail,
   clientDisplayName,
   conferenceUriFromEvent,
   decorateGoogleSummary,
@@ -90,64 +92,180 @@ export const OPTIONAL_CALENDAR_CATALOG_COLUMNS = [
 // freeBusyReader / reader / writerWithoutPrivateAccess / writer / owner.
 // writerWithoutPrivateAccess 도 이벤트 읽기·쓰기 권한을 준다(비공개 일정만 못 본다).
 export const WRITABLE_ACCESS_ROLES = new Set(["owner", "writer", "writerWithoutPrivateAccess"]);
+// "확인된 읽기 전용" 만 담는다. writable 의 여집합이 아니다 — 그것이 요점이다.
+// resolveOwnerCalendars 가 새로 만든 행은 calendar_access_role 이 null 이고
+// calendar_writable 이 열 기본값 false 라, 여집합으로 잠그면 처음 보는 캘린더의
+// 일정이 전부 403 이 된다(운영에서 "삭제가 막힌다" 로 나타난 그 사고다).
+export const READ_ONLY_ACCESS_ROLES = new Set(["reader", "freeBusyReader"]);
 
-const disabledColumns = new Set();
+// 강등은 영구가 아니라 만료된다.
+//
+// 예전 구현은 열 이름을 담는 프로세스 전역 Set 하나였고, 한 번 들어간 열은
+// 프로세스가 죽을 때까지 나오지 못했다. 마이그레이션 적용 전에 트래픽을 받은
+// Vercel 람다는 그 뒤 SQL 이 들어와도 계속 열을 뺀 채로 질의해서, 대표님
+// 화면에는 캘린더 색이 영영 없고 calendar-visibility 는 503(calendar_catalog_missing)
+// 을 계속 냈으며, 되돌리는 방법이 재배포뿐이었다. 이번 운영 사고의 근본 원인이다.
+//
+// 그래서 상태를 "묶음 -> 내려간 시각" 으로 들고, TTL 이 지나면 스스로 다시 올려
+// 다음 질의가 열을 싣게 한다. 열이 여전히 없으면 아래 강등 경로가 다시 내리며
+// 타이머만 새로 감기므로 재프로브는 TTL 당 한 번으로 묶인다(플래핑 없음).
+export const OPTIONAL_COLUMN_RETRY_MS = 90000;
 
-export function resetOptionalColumns() {
-  disabledColumns.clear();
+// 시계는 주입 가능해야 한다 — 테스트가 90초를 실제로 기다릴 수 없고, 가짜
+// 타이머는 이 파일이 쓰는 Date.now 를 전부 흔들어 부작용이 너무 크다.
+const DEFAULT_OPTIONAL_COLUMN_CLOCK = () => Date.now();
+let optionalColumnClock = DEFAULT_OPTIONAL_COLUMN_CLOCK;
+
+export function setOptionalColumnClock(clock) {
+  optionalColumnClock = typeof clock === "function" ? clock : DEFAULT_OPTIONAL_COLUMN_CLOCK;
 }
 
+function optionalColumnNow() {
+  const at = Number(optionalColumnClock());
+  return Number.isFinite(at) ? at : Date.now();
+}
+
+// 상태의 단위는 열이 아니라 "묶음"이다. 한 묶음은 한 마이그레이션에서 함께
+// 생기므로 함께 내려가고 함께 만료되어야 하고, 다른 마이그레이션에서 온 묶음의
+// 타이머는 절대 건드리면 안 된다. 한 열은 정확히 한 묶음에만 속한다.
+const optionalColumnGroups = new Map();     // groupKey -> 열 이름 배열
+const optionalGroupKeyByColumn = new Map(); // 열 이름 -> groupKey
+const optionalGroupDemotedAt = new Map();   // groupKey -> 내려간 시각(ms)
+
+function registerOptionalColumnGroup(key, columns) {
+  optionalColumnGroups.set(key, columns);
+  for (const column of columns) optionalGroupKeyByColumn.set(column, key);
+  return key;
+}
+
+registerOptionalColumnGroup("schedule", OPTIONAL_SCHEDULE_COLUMNS);
+registerOptionalColumnGroup("calendar_sync", OPTIONAL_CALENDAR_SYNC_COLUMNS);
+registerOptionalColumnGroup("calendar_catalog", OPTIONAL_CALENDAR_CATALOG_COLUMNS);
+
+// 호출부가 내용이 같은 새 배열을 넘겨도 같은 묶음으로 봐야 타이머가 하나로
+// 유지된다. 등록된 열 이름으로 되짚고, 처음 보는 묶음이면 그 자리에서 등록한다.
+function optionalGroupKey(group) {
+  const columns = (Array.isArray(group) ? group : [group]).map((column) => cleanText(column)).filter(Boolean);
+  for (const column of columns) {
+    const key = optionalGroupKeyByColumn.get(column);
+    if (key) return key;
+  }
+  if (!columns.length) return "";
+  return registerOptionalColumnGroup(`adhoc:${[...columns].sort().join(",")}`, columns);
+}
+
+// 읽는 김에 만료시킨다(lazy expiry). 타이머도 스케줄러도 필요 없고, 서버리스
+// 처럼 언제 깨어날지 모르는 실행 모델에서도 항상 옳다.
+function optionalGroupDemoted(key) {
+  if (!key) return false;
+  const at = optionalGroupDemotedAt.get(key);
+  if (at === undefined) return false;
+  if (optionalColumnNow() - at >= OPTIONAL_COLUMN_RETRY_MS) {
+    optionalGroupDemotedAt.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function demotedColumnSet() {
+  const columns = new Set();
+  for (const key of [...optionalGroupDemotedAt.keys()]) {
+    if (!optionalGroupDemoted(key)) continue;
+    for (const column of optionalColumnGroups.get(key) || []) columns.add(column);
+  }
+  return columns;
+}
+
+// 강등 상태와 주입한 시계를 모두 기본값으로 되돌린다(테스트의 finally 용).
+export function resetOptionalColumns() {
+  optionalGroupDemotedAt.clear();
+  optionalColumnClock = DEFAULT_OPTIONAL_COLUMN_CLOCK;
+}
+
+// 지금 내려가 있는 "열 이름" 의 평평한 배열. 호출부 계약은 예전과 같다.
 export function disabledOptionalColumns() {
-  return [...disabledColumns];
+  return [...demotedColumnSet()];
 }
 
 export function optionalColumnEnabled(column) {
-  return !disabledColumns.has(cleanText(column));
+  return !optionalGroupDemoted(optionalGroupKeyByColumn.get(cleanText(column)));
 }
 
 // 한 묶음의 열은 같은 마이그레이션에서 함께 생긴다. 그중 하나가 없다면 나머지도
 // 없다고 보는 편이 맞고, 열 이름을 하나씩 떼어내며 여러 번 재시도하지 않아도 된다.
+//
+// 이미 내려가 있는 묶음이면 false 를 돌려 재시도를 막는다 — 열을 이미 뺀 질의가
+// 같은 오류를 냈다면 원인은 다른 곳이다. 그때 타이머를 다시 감지 않는 것도
+// 의도다. 실패가 잦은 프로세스에서 재프로브가 영원히 미뤄지면 TTL 이 무의미해진다.
 export function disableOptionalColumns(error, group = OPTIONAL_SCHEDULE_COLUMNS) {
   if (!error) return false;
   const code = cleanText(error.code).toUpperCase();
+  const columns = Array.isArray(group) ? group : [group];
   const text = `${cleanText(error.message)} ${cleanText(error.details)} ${cleanText(error.hint)}`;
-  const named = group.some((column) => text.includes(column));
+  const named = columns.some((column) => text.includes(column));
   if (!named && code !== "42703" && code !== "PGRST204") return false;
-  const fresh = group.filter((column) => !disabledColumns.has(column));
-  for (const column of group) disabledColumns.add(column);
-  return fresh.length > 0;
+  const key = optionalGroupKey(columns);
+  if (!key || optionalGroupDemoted(key)) return false;
+  optionalGroupDemotedAt.set(key, optionalColumnNow());
+  return true;
 }
 
 export function activeColumns(columns) {
+  const demoted = demotedColumnSet();
   return (Array.isArray(columns) ? columns : String(columns).split(","))
     .map((column) => cleanText(column))
-    .filter((column) => column && !disabledColumns.has(column));
+    .filter((column) => column && !demoted.has(column));
 }
 
 export function withoutDisabledColumns(values) {
   if (Array.isArray(values)) return values.map((entry) => withoutDisabledColumns(entry));
   if (!values || typeof values !== "object") return values;
-  if (!disabledColumns.size) return values;
+  const demoted = demotedColumnSet();
+  if (!demoted.size) return values;
   const copy = {};
   for (const [key, value] of Object.entries(values)) {
-    if (disabledColumns.has(key)) continue;
+    if (demoted.has(key)) continue;
     copy[key] = value;
   }
   return copy;
 }
 
+// TTL 을 기다리지 않고 푸는 두 번째 길: 성공한 SELECT 가 그 열을 실제로 들고
+// 왔다면 마이그레이션이 들어왔다는 확실한 증거다. 한 결과 안의 행 모양은 같으니
+// 첫 객체 행 하나만 본다(묶음 3 × 열 4 = 최대 12번의 hasOwn).
+function noteOptionalColumnEvidence(result) {
+  if (!optionalGroupDemotedAt.size) return;
+  const data = result?.data;
+  const rows = Array.isArray(data) ? data : (data ? [data] : []);
+  const sample = rows.find((row) => row && typeof row === "object" && !Array.isArray(row));
+  if (!sample) return;
+  for (const key of [...optionalGroupDemotedAt.keys()]) {
+    const columns = optionalColumnGroups.get(key) || [];
+    if (columns.some((column) => Object.hasOwn(sample, column))) optionalGroupDemotedAt.delete(key);
+  }
+}
+
 // run() 은 매번 열 목록과 페이로드를 다시 만들어야 한다. 첫 시도가 "없는 열"
 // 로 실패하면 그 열을 내리고 정확히 한 번만 다시 부른다.
+// 질의 결과가 모두 이 한 곳을 지나므로, 위의 "열이 돌아왔다" 증거 확인도 여기서 건다.
 export async function runWithOptionalColumns(run, group = OPTIONAL_SCHEDULE_COLUMNS) {
   let first = null;
   try {
     first = await run();
   } catch (error) {
     if (!disableOptionalColumns(error, group)) throw error;
-    return run();
+    const retried = await run();
+    noteOptionalColumnEvidence(retried);
+    return retried;
   }
-  if (!first?.error || !disableOptionalColumns(first.error, group)) return first;
-  return run();
+  if (!first?.error) {
+    noteOptionalColumnEvidence(first);
+    return first;
+  }
+  if (!disableOptionalColumns(first.error, group)) return first;
+  const retried = await run();
+  noteOptionalColumnEvidence(retried);
+  return retried;
 }
 
 function syncRowFields() {
@@ -484,7 +602,11 @@ export async function pushRowToGoogle(ctx, env, options) {
   const ownerCode = normalizeCode(integration.owner_agency_code);
   // 원본 캘린더로 되돌려 쓴다. 이것을 전용 캘린더로 고정하면 primary 에서 온
   // 행을 지울 때 엉뚱한 캘린더에 404 를 날리고 "성공" 으로 처리하게 된다.
-  const calendarId = cleanText(row.google_calendar_id) || cleanText(integration.calendar_id);
+  // defaultCalendarId 는 그 두 개가 모두 비었을 때만 쓰는 마지막 바닥값이다
+  // (전용 캘린더를 회수한 뒤 integration.calendar_id 가 null 인 경우).
+  const calendarId = cleanText(row.google_calendar_id)
+    || cleanText(integration.calendar_id)
+    || cleanText(options.defaultCalendarId);
   if (!calendarId) return { ok: false, reason: "no_calendar" };
 
   if (mode === "delete") {
@@ -619,6 +741,16 @@ async function mapWithConcurrency(items, limit, worker) {
   return results;
 }
 
+// 전용 캘린더를 회수한 뒤에는 integration.calendar_id 가 null 이다. 그때 아직
+// 구글에 붙지 않은 행이 갈 곳은 대표님의 기본 캘린더다. 실행당 한 번만, 그것도
+// 실제로 필요할 때만 구한다 — 원래 캘린더를 가진 행만 있으면 조회 자체를 하지 않는다.
+async function defaultPushCalendarId(ctx, ownerCode, integration, rows, options = {}) {
+  if (cleanText(integration?.calendar_id)) return "";
+  const list = Array.isArray(rows) ? rows : [];
+  if (!list.some((row) => !cleanText(row?.google_calendar_id))) return "";
+  return (await resolveOwnerPrimaryCalendar(ctx, ownerCode, options)).id;
+}
+
 // MI 저장 직후의 즉시 push. 구글이 실패해도 저장을 막지 않는다 —
 // 행은 google_sync_state='pending' 으로 남아 다음 동기화가 재시도한다.
 export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchImpl = fetch) {
@@ -639,6 +771,10 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
       }
       return { skipped: false, synced: 0, failed: targets.length, reason: "token" };
     }
+    const defaultCalendarId = await defaultPushCalendarId(ctx, ownerCode, integration, targets, {
+      accessToken: token.accessToken,
+      fetchImpl,
+    });
 
     const results = await mapWithConcurrency(targets, DEFAULT_PUSH_CONCURRENCY, async (row) => {
       try {
@@ -648,6 +784,7 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
           row,
           clientName: rowClientName(row),
           mode,
+          defaultCalendarId,
           fetchImpl,
         });
         if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values, row);
@@ -700,6 +837,10 @@ export async function pushPendingRows(ctx, env, ownerCode, integration, accessTo
     const lookup = await ctx.supabaseAdmin.from("clients").select("id, name, business_name").in("id", clientIds);
     for (const client of lookup.data || []) clientsById.set(client.id, client);
   }
+  const defaultCalendarId = await defaultPushCalendarId(ctx, ownerCode, integration, rows, {
+    accessToken,
+    fetchImpl,
+  });
 
   const results = await mapWithConcurrency(rows, DEFAULT_PUSH_CONCURRENCY, async (row) => {
     try {
@@ -709,6 +850,7 @@ export async function pushPendingRows(ctx, env, ownerCode, integration, accessTo
         row,
         clientName: rowClientName(row, clientsById),
         mode: "upsert",
+        defaultCalendarId,
         fetchImpl,
       });
       if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values, row);
@@ -756,6 +898,68 @@ async function extraCalendarIds(ctx, code, skip) {
   }
 }
 
+// 저장된 카탈로그 행에서 기본 캘린더를 뽑는다. calendar_role 이 정본이고,
+// 아직 역할이 붙지 않은 행은 카탈로그가 채워 준 calendar_is_primary 로 본다.
+// (calendar_is_primary 는 선택 열이라 마이그레이션 전에는 아예 오지 않는다.)
+export function primaryCalendarFromRows(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  for (const row of list) {
+    if (cleanText(row?.google_calendar_id) && row.calendar_role === "primary") {
+      return { id: cleanText(row.google_calendar_id), name: cleanText(row.calendar_summary, 200) || "" };
+    }
+  }
+  for (const row of list) {
+    if (cleanText(row?.google_calendar_id) && row.calendar_is_primary === true) {
+      return { id: cleanText(row.google_calendar_id), name: cleanText(row.calendar_summary, 200) || "" };
+    }
+  }
+  return { id: "", name: "" };
+}
+
+// 대표님의 기본 캘린더 id 를 한 곳에서만 구한다. resolveOwnerCalendars / 전용
+// 캘린더 회수 / 다이얼로그 쓰기가 모두 이 함수를 쓴다 — 같은 호출을 세 군데에
+// 흩어 두면 셋이 서로 다른 답을 낼 수 있다.
+//
+// 캐시(카탈로그 행)가 먼저다. GET /api/work-items 와 다이얼로그 저장은 hot path 라
+// 매번 구글을 부르면 안 된다. 캐시에 없을 때만 GET /calendars/primary 로 간다.
+// 반환하는 id 는 "primary" 리터럴이 아니라 실제 id(이메일)다 — 리터럴로 두면
+// 같은 캘린더가 두 id 로 두 번 동기화되어 행이 중복된다.
+export async function resolveOwnerPrimaryCalendar(ctx, ownerCode, options = {}) {
+  const code = normalizeCode(ownerCode);
+  let rows = Array.isArray(options.rows) ? options.rows : null;
+  if (!rows) {
+    try {
+      // calendar_summary / calendar_is_primary 는 선택 열이므로 재시도를 겹쳐 건다.
+      const columns = ["google_calendar_id", "calendar_role", "calendar_summary", "calendar_is_primary"];
+      const result = await runWithOptionalColumns(() => ctx.supabaseAdmin
+        .from("owner_google_calendar_sync")
+        .select(activeColumns(columns).join(","))
+        .eq("owner_agency_code", code)
+        .then((response) => response || { data: null, error: null }, (error) => ({ data: null, error })),
+      OPTIONAL_CALENDAR_SYNC_COLUMNS);
+      rows = Array.isArray(result?.data) ? result.data : [];
+    } catch (error) {
+      rows = [];
+    }
+  }
+  const stored = primaryCalendarFromRows(rows);
+  if (stored.id) return { ...stored, source: "catalog" };
+
+  const accessToken = cleanText(options.accessToken);
+  if (!accessToken) return { id: "", name: "", source: "" };
+  try {
+    const profile = await googleFetch(accessToken, "GET", "/calendars/primary", null, {
+      fetchImpl: options.fetchImpl || fetch,
+    });
+    if (profile.ok && profile.data?.id) {
+      return { id: String(profile.data.id), name: cleanText(profile.data.summary, 200) || "", source: "google" };
+    }
+  } catch (error) {
+    // 기본 캘린더를 모르는 것은 실패가 아니다 — 호출부가 각자 물러난다.
+  }
+  return { id: "", name: "", source: "" };
+}
+
 export async function resolveOwnerCalendars(ctx, ownerCode, integration, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
@@ -771,16 +975,12 @@ export async function resolveOwnerCalendars(ctx, ownerCode, integration, options
   const dedicated = cleanText(integration.calendar_id);
   if (dedicated) wanted.push({ id: dedicated, role: "dedicated" });
 
-  let primaryId = "";
-  for (const row of known.values()) {
-    if (row.calendar_role === "primary") primaryId = row.google_calendar_id;
-  }
-  if (!primaryId && options.accessToken) {
-    // primary 는 "primary" 리터럴이 아니라 실제 id(이메일)로 고정한다.
-    // 그러지 않으면 같은 캘린더가 두 id 로 두 번 동기화되어 행이 중복된다.
-    const profile = await googleFetch(options.accessToken, "GET", "/calendars/primary", null, { fetchImpl });
-    if (profile.ok && profile.data?.id) primaryId = String(profile.data.id);
-  }
+  // 이미 읽어 둔 행을 그대로 넘겨 카탈로그 재조회를 아낀다.
+  const primaryId = (await resolveOwnerPrimaryCalendar(ctx, code, {
+    rows: [...known.values()],
+    accessToken: options.accessToken,
+    fetchImpl,
+  })).id;
   if (primaryId && primaryId !== dedicated) wanted.push({ id: primaryId, role: "primary" });
 
   const skip = new Set(wanted.map((entry) => entry.id));
@@ -1067,6 +1267,210 @@ export async function syncOneCalendar(ctx, ownerCode, calendarRow, accessToken, 
 }
 
 // ─────────────────────────────────────────────────────────────
+// 전용 캘린더 회수 (연동된 대표님은 기본 캘린더 하나만 쓴다)
+// ─────────────────────────────────────────────────────────────
+
+// 한 실행이 옮기는 이벤트 수의 상한. 넘치면 깨끗하게 멈추고 나머지는 다음
+// 실행이 이어받는다 — 동기화 예산을 이 정리 작업이 다 써 버리면 안 된다.
+export const MAX_RETIRE_MOVES = 500;
+
+// 옮긴 이벤트를 물고 있던 MI 행을 새 캘린더로 다시 가리킨다. move 응답은 목적지
+// 캘린더에서의 Event 이므로 id/etag 를 응답 값으로 정본 삼는다(구글이 id 를
+// 바꿔 줄 수도 있다). google_calendar_name 은 선택 열이라 재시도를 건다.
+async function repointMovedScheduleRows(ctx, code, dedicatedId, eventId, movedEvent, primary) {
+  const values = {
+    google_calendar_id: primary.id,
+    google_calendar_name: primary.name || null,
+    google_event_id: cleanText(movedEvent?.id, 1024) || eventId,
+    google_etag: cleanText(movedEvent?.etag, 200) || null,
+  };
+  try {
+    await runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("schedule_items")
+      .update(withoutDisabledColumns(values))
+      .eq("owner_agency_code", code)
+      .eq("google_calendar_id", dedicatedId)
+      .eq("google_event_id", eventId)
+      .then((response) => response || { error: null }, (error) => ({ error })));
+  } catch (error) {
+    // 행 갱신 실패는 아래 쓸어담기 update 와 다음 실행이 만회한다
+  }
+}
+
+async function recordRetireAudit(ctx, metadata) {
+  try {
+    await ctx.supabaseAdmin.from("audit_logs").insert({
+      actor_id: null,
+      client_id: null,
+      action: "google_calendar_dedicated_retired",
+      target_table: "owner_google_integrations",
+      target_id: null,
+      metadata: sanitizeAuditMetadata(metadata || {}),
+    }).then(() => {}, () => {});
+  } catch (error) {
+    // 감사 기록 실패는 회수 결과를 바꾸지 않는다
+  }
+}
+
+// 대표님은 내 캘린더 아래에 기본 캘린더 하나만 두고 싶어 하신다. 연동 초기에
+// 만들던 전용 "모먼트 인사이트" 캘린더를 비우고 지운다.
+//
+// 계약: 멱등이고, 절대 던지지 않으며, 절대 동기화를 실패시키지 않는다. 아무것도
+// 할 일이 없으면 { ok:true, skipped:true, reason }, 도중에 막히면
+// { ok:false, reason, ...counts } 를 돌려주고 전부 그대로 살려 둔다 — 다음 실행이
+// 같은 자리에서 이어서 시도하면 된다.
+export async function retireDedicatedCalendar(ctx, env, ownerCode, integration, accessToken, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  const token = cleanText(accessToken);
+  const dedicatedId = cleanText(integration?.calendar_id);
+  // 구글을 부르기 전에 끝나는 no-op 들이 먼저다. 이미 회수한 뒤라면 구글 트래픽이
+  // 단 한 번도 나가지 않아야 한다(멱등의 값이 여기서 나온다).
+  if (!integration || !dedicatedId) return { ok: true, skipped: true, reason: "no_dedicated" };
+  if (!token) return { ok: true, skipped: true, reason: "no_token" };
+
+  let moved = 0;
+  let skipped = 0;
+  let failed = 0;
+  try {
+    const primary = await resolveOwnerPrimaryCalendar(ctx, code, { accessToken: token, fetchImpl });
+    if (!primary.id) return { ok: true, skipped: true, reason: "no_primary" };
+    // 전용 캘린더가 곧 기본 캘린더면 옮길 곳이 없다(있을 수 없는 조합이지만
+    // 여기서 막지 않으면 자기 자신으로 move 하고 기본 캘린더를 지우게 된다).
+    if (primary.id === dedicatedId) return { ok: true, skipped: true, reason: "already_primary" };
+
+    // 여기에는 timeMin/timeMax 를 걸지 않는다. 일부러 캘린더 전체를 훑는다.
+    //
+    // 동기화 윈도우(-30일 ~ +365일)는 "MI 가 자기 테이블로 무엇을 당겨올지" 를
+    // 정하는 값이다. 마지막에 캘린더를 통째로 지우는 이 일회성 이관에는 쓸 수
+    // 없다 — 윈도우를 걸면 그 밖의 이벤트는 옮겨지지도 않은 채 캘린더와 함께
+    // 구글에서 영구히 사라진다. 하필 아무도 안 보고 있는 오래된·먼 미래의
+    // 일정만 조용히 지워지는 셈이다.
+    // "남으면 지우지 않는다" 로 막는 것도 답이 아니다. 윈도우가 걸린 목록은 그
+    // 이벤트들을 영영 보지 못하므로 회수가 끝나지 않고 전용 캘린더가 영원히 남는다.
+    //
+    // 한 실행이 길어지는 것은 아래 세 상한(MAX_RETIRE_MOVES · deadlineAt ·
+    // 페이지 예산)이 막고, 다 훑지 못한 나머지는 다음 실행이 이어받는다.
+    // 이벤트 수 상한만으로는 부족하다 — 500번의 move 는 람다 예산을 통째로 먹을
+    // 수 있으므로 시간 상한도 같이 건다. 무엇에 걸리든 결과는 같다: 깨끗하게 멈춘다.
+    const deadlineAt = options.deadlineAt || Number.POSITIVE_INFINITY;
+    let pageToken = "";
+    let capped = false;
+    let gone = false;
+    let listFailure = "";
+
+    for (let page = 0; page < DEFAULT_MAX_PAGES; page += 1) {
+      // singleEvents=false 여야 반복 일정이 마스터로 온다. 마스터는 옮길 수 있고
+      // 인스턴스 하나만 따로 옮기는 것은 불가능하다.
+      // https://developers.google.com/workspace/calendar/api/v3/reference/events/move
+      const query = {
+        singleEvents: "false",
+        showDeleted: "false",
+        maxResults: String(DEFAULT_PAGE_SIZE),
+      };
+      if (pageToken) query.pageToken = pageToken;
+      const listed = await googleFetch(token, "GET", eventsPath(dedicatedId), null, { query, fetchImpl });
+      // 캘린더가 이미 없으면 회수는 사실상 끝난 것이다. 남은 정리(행·연동)를
+      // 그대로 이어서 해야 integration.calendar_id 가 죽은 id 에 묶이지 않는다.
+      if (listed.status === 404 || listed.status === 410) { gone = true; break; }
+      if (!listed.ok) { listFailure = `list_${listed.status}`; break; }
+
+      for (const event of Array.isArray(listed.data?.items) ? listed.data.items : []) {
+        const eventId = cleanText(event?.id, 1024);
+        if (!eventId) { skipped += 1; continue; }
+        // 취소된 이벤트는 옮길 것도 남을 것도 없다. showDeleted=false 라 보통
+        // 오지도 않지만, 왔다고 회수를 영원히 막게 두지는 않는다(=세지 않는다).
+        if (eventIsCancelled(event)) continue;
+        // 반복 예외(인스턴스)는 마스터를 따라 옮겨진다. 따로 옮기려 하면 400 이다.
+        if (cleanText(event.recurringEventId)) { skipped += 1; continue; }
+        // 구글 문서: "Only `default` events can be moved; birthday, focusTime,
+        // fromGmail, outOfOffice and workingLocation events cannot be moved."
+        const eventType = cleanText(event.eventType);
+        if (eventType && eventType !== "default") { skipped += 1; continue; }
+        if (moved >= MAX_RETIRE_MOVES || Date.now() >= deadlineAt) { capped = true; break; }
+
+        const result = await googleFetch(token, "POST", `${eventsPath(dedicatedId, eventId)}/move`, null, {
+          // sendUpdates=none: 캘린더를 옮겼다고 참석자에게 메일이 가면 안 된다.
+          query: { destination: primary.id, sendUpdates: "none" },
+          fetchImpl,
+        });
+        if (!result.ok) { failed += 1; continue; }
+        moved += 1;
+        await repointMovedScheduleRows(ctx, code, dedicatedId, eventId, result.data, primary);
+      }
+
+      pageToken = cleanText(listed.data?.nextPageToken);
+      if (!pageToken || capped) break;
+    }
+
+    if (listFailure) return { ok: false, reason: listFailure, moved, skipped, failed };
+    // 하나라도 남았으면 캘린더를 지우지 않는다. 남은 일정을 들고 있는 캘린더를
+    // 지우는 것은 되돌릴 수 없는 데이터 손실이다.
+    // pageToken 이 남은 채로 페이지 예산이 끝난 경우도 "남았다" 로 센다 —
+    // 보지도 못한 페이지가 있는데 비었다고 판정하면 그 일정들이 통째로 사라진다.
+    if (!gone && (capped || Boolean(pageToken) || skipped > 0 || failed > 0)) {
+      return { ok: false, reason: "pending", moved, skipped, failed };
+    }
+
+    // 쓸어담기 update. 위의 이벤트별 update 는 google_event_id 로 정확히 짚지만,
+    // 반복 시리즈의 MI 행은 인스턴스 행이라 google_event_id 에 인스턴스 id 가,
+    // google_recurring_event_id 에 마스터 id 가 들어 있다. 마스터를 옮겨도
+    // 인스턴스 id 로는 잡히지 않으므로, 캘린더를 비운 것이 확인된 지금 한 번에
+    // 남은 행 전부를 새 캘린더로 옮긴다. 두 패스가 모두 필요한 이유가 이것이다.
+    const swept = await runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("schedule_items")
+      .update(withoutDisabledColumns({
+        google_calendar_id: primary.id,
+        google_calendar_name: primary.name || null,
+      }))
+      .eq("owner_agency_code", code)
+      .eq("google_calendar_id", dedicatedId)
+      .then((response) => response || { error: null }, (error) => ({ error })));
+    if (swept?.error) return { ok: false, reason: "sweep", moved, skipped, failed };
+
+    if (!gone) {
+      // calendars.delete 는 보조 캘린더를 지운다.
+      // DELETE https://www.googleapis.com/calendar/v3/calendars/{calendarId}
+      const removed = await googleFetch(token, "DELETE", `/calendars/${encodeURIComponent(dedicatedId)}`, null, { fetchImpl });
+      if (!removed.ok && removed.status !== 404 && removed.status !== 410) {
+        return { ok: false, reason: `delete_${removed.status}`, moved, skipped, failed };
+      }
+    }
+
+    await ctx.supabaseAdmin
+      .from("owner_google_calendar_sync")
+      .delete()
+      .eq("owner_agency_code", code)
+      .eq("google_calendar_id", dedicatedId)
+      .then(() => {}, () => {});
+
+    const cleared = await ctx.supabaseAdmin
+      .from("owner_google_integrations")
+      .update({ calendar_id: null, updated_at: new Date().toISOString() })
+      .eq("owner_agency_code", code)
+      .then((response) => response || { error: null }, (error) => ({ error }));
+    // 여기서 실패하면 연동 행은 죽은 캘린더를 가리킨 채로 남는다. 다음 실행의
+    // 목록 조회가 404 를 받아 gone 분기로 들어와 같은 자리를 다시 정리한다.
+    if (cleared?.error) return { ok: false, reason: "storage", moved, skipped, failed };
+
+    // ownerAgencyCode 는 담지 않는다 — sanitizeAuditMetadata 가 대행사 코드 키를
+    // 통째로 지우므로 담아 봐야 사라진다.
+    await recordRetireAudit(ctx, {
+      calendarId: cleanText(dedicatedId, 200),
+      primaryCalendarId: cleanText(primary.id, 200),
+      moved,
+      skipped,
+      failed,
+      alreadyGone: gone,
+    });
+    return { ok: true, retired: true, moved, skipped, failed, calendarId: dedicatedId, primaryId: primary.id };
+  } catch (error) {
+    // 어떤 예외도 동기화를 끌어내리지 않는다. 다음 실행이 다시 시도한다.
+    return { ok: false, reason: "unexpected", moved, skipped, failed };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 오케스트레이션
 // ─────────────────────────────────────────────────────────────
 
@@ -1100,12 +1504,25 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
   }
 
   const deadlineAt = Date.now() + (options.budgetMs || DEFAULT_BUDGET_MS);
-  const push = await pushPendingRows(ctx, env, code, integration, token.accessToken, {
+
+  // 전용 캘린더 회수가 push/pull 보다 먼저다. 이 실행이 만드는 카탈로그가 이미
+  // 정리된 상태를 반영해야, 방금 지운 캘린더가 같은 실행에서 다시 목록에 오르지 않는다.
+  // 실패해도 결과를 바꾸지 않는다 — 다음 실행이 같은 자리에서 이어 시도한다.
+  const retired = await retireDedicatedCalendar(ctx, env, code, integration, token.accessToken, {
+    now: nowMs,
+    deadlineAt,
+    fetchImpl,
+  });
+  // 실제로 지웠다면 이번 실행의 나머지는 calendar_id 가 비어 있는 사본으로 돈다.
+  // 그러지 않으면 resolveOwnerCalendars 가 죽은 캘린더를 다시 동기화 대상에 올린다.
+  const activeIntegration = retired.retired ? { ...integration, calendar_id: null } : integration;
+
+  const push = await pushPendingRows(ctx, env, code, activeIntegration, token.accessToken, {
     pushLimit: options.pushLimit,
     fetchImpl,
   });
 
-  const calendars = await resolveOwnerCalendars(ctx, code, integration, {
+  const calendars = await resolveOwnerCalendars(ctx, code, activeIntegration, {
     accessToken: token.accessToken,
     fetchImpl,
   });
@@ -1247,6 +1664,7 @@ function inferredDedicatedEntry(integration) {
     dedicated: true,
     accessRole: "owner",
     writable: true,
+    readOnly: false,
     visible: true,
     selected: true,
     color: null,
@@ -1293,9 +1711,18 @@ export async function listOwnerCalendarCatalog(ctx, ownerCode, integration = nul
         primary,
         dedicated,
         accessRole,
-        // 카탈로그 열이 아직 없으면 writable 을 확인할 길이 없다. 그때도 우리가
-        // 역할로 아는 전용/기본 캘린더는 쓰기 가능으로 남는다.
+        // writable 과 readOnly 는 일부러 서로의 여집합이 아니다.
+        //  · writable  = "여기에 써도 된다" 는 긍정 신호. 다이얼로그의 캘린더
+        //    선택 목록을 채우는 데만 쓴다. 모르면 false(=목록에 올리지 않는다).
+        //  · readOnly  = "여기에는 쓸 수 없다" 는 긍정 신호. 수정·삭제를 막는
+        //    데만 쓴다. 모르면 false(=막지 않는다).
+        // 둘 다 false 인 "아직 모르는 캘린더" 가 정상 상태이고, 그때는 목록에
+        // 올리지 않되 편집은 허용한다. 여집합으로 묶으면 카탈로그가 차기 전의
+        // 모든 캘린더가 잠긴다.
         writable: row.calendar_writable === true || dedicated || primary,
+        // accessRole 이 비어 있으면(마이그레이션 전·resolveOwnerCalendars 가 막
+        // 만든 행) 읽기 전용이라고 단정하지 않는다.
+        readOnly: READ_ONLY_ACCESS_ROLES.has(accessRole),
         // 열이 없거나 null 이면 보이는 쪽이 기본이다(fail open).
         visible: row.calendar_visible !== false,
         selected: row.calendar_selected === true,
@@ -1409,9 +1836,21 @@ export async function writeRowToGoogleFirst(ctx, env, access, row, options = {})
     return { ok: false, reason: "token" };
   }
 
-  const calendarId = cleanText(options.calendarId)
+  let calendarId = cleanText(options.calendarId)
     || cleanText(row.google_calendar_id)
     || cleanText(integration.calendar_id);
+  // 전용 캘린더를 회수한 뒤 integration.calendar_id 는 null 이다. 그때 MI 가 만든
+  // 일정의 기본 목적지는 대표님의 기본 캘린더다. 카탈로그 캐시가 먼저라 다이얼로그
+  // 저장(hot path)이 매번 구글을 부르지는 않는다.
+  let primaryName = "";
+  if (!calendarId) {
+    const primary = await resolveOwnerPrimaryCalendar(ctx, ownerCode, {
+      accessToken: token.accessToken,
+      fetchImpl,
+    });
+    calendarId = primary.id;
+    primaryName = primary.name;
+  }
   if (!calendarId) return { ok: false, reason: "no_calendar" };
 
   const patching = options.mode === "patch";
@@ -1459,7 +1898,7 @@ export async function writeRowToGoogleFirst(ctx, env, access, row, options = {})
     if (!result.ok || !result.data?.id) return { ok: false, reason: `google_${result.status}` };
 
     const event = result.data;
-    let calendarName = cleanText(options.calendarName, 200);
+    let calendarName = cleanText(options.calendarName, 200) || cleanText(primaryName, 200);
     if (!calendarName) {
       const catalog = await listOwnerWritableCalendars(ctx, ownerCode, integration);
       calendarName = cleanText(catalog.find((entry) => entry.id === calendarId)?.name, 200);
@@ -1522,6 +1961,204 @@ export async function materializeRecurringInstances(ctx, env, options = {}) {
     return { ok: false, reason: "network", instances };
   }
   return { ok: true, instances };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 새 캘린더 만들기 + 참가자(ACL) 관리
+//
+// 일정마다 참석자를 넣는 대신 캘린더 자체를 공유해 두고 거기에 일정을 쌓는
+// 방식이다. 공유는 구글이 정본이라 MI 에는 아무 상태도 만들지 않는다 —
+// 규칙 목록은 매번 구글에서 읽는다.
+//
+// 구글 문서:
+//   calendars.insert https://developers.google.com/workspace/calendar/api/v3/reference/calendars/insert
+//     POST /calendars, 필수 본문 필드는 summary 하나.
+//   acl.insert       https://developers.google.com/workspace/calendar/api/v3/reference/acl/insert
+//     POST /calendars/{id}/acl, 본문 { role, scope:{type,value} }, 쿼리 sendNotifications(기본 true).
+//   acl.list = GET /calendars/{id}/acl · acl.delete = DELETE /calendars/{id}/acl/{ruleId}
+// 우리 토큰 스코프(https://www.googleapis.com/auth/calendar)로 셋 다 충분하다.
+// ─────────────────────────────────────────────────────────────
+export const MAX_CALENDAR_INVITES = 20;
+// 우리가 화면에서 내주는 권한은 둘뿐이다. owner 를 남에게 주면 대표님이 캘린더
+// 통제권을 잃고, freeBusyReader/none 은 MI 에서 쓸 데가 없다.
+export const CALENDAR_SHARE_ROLES = new Set(["writer", "reader"]);
+
+export function normalizeCalendarInvites(value) {
+  const list = Array.isArray(value) ? value : [];
+  if (list.length > MAX_CALENDAR_INVITES) {
+    return { ok: false, message: `참가자는 한 번에 최대 ${MAX_CALENDAR_INVITES}명까지 초대할 수 있습니다.` };
+  }
+  const seen = new Set();
+  const invites = [];
+  for (const entry of list) {
+    const source = typeof entry === "string" ? { email: entry } : (entry || {});
+    const email = cleanText(source.email, 320).toLowerCase();
+    if (!isAttendeeEmail(email)) return { ok: false, message: "참가자 이메일 주소를 확인해주세요." };
+    const role = cleanText(source.role) || "writer";
+    if (!CALENDAR_SHARE_ROLES.has(role)) return { ok: false, message: "참가자 권한을 확인해주세요." };
+    if (seen.has(email)) continue;
+    seen.add(email);
+    invites.push({ email, role });
+  }
+  return { ok: true, invites };
+}
+
+// 연동 + 액세스 토큰을 한 번에 준비한다. 실패 사유는 호출부가 그대로 HTTP
+// 상태로 옮길 수 있도록 좁은 문자열로 돌려준다.
+async function ownerCalendarSession(ctx, env, ownerCode, fetchImpl) {
+  const config = googleOauthConfig(env);
+  if (!config.clientId || !config.clientSecret) return { ok: false, reason: "env" };
+  let integration = null;
+  try {
+    const loaded = await loadOwnerGoogleIntegration(ctx, normalizeCode(ownerCode));
+    integration = loaded.error ? null : loaded.integration;
+  } catch (unexpected) {
+    integration = null;
+  }
+  if (!integration) return { ok: false, reason: "not-connected" };
+  const token = await refreshAccessToken(integration.refresh_token, env, fetchImpl);
+  if (!token.ok) {
+    return { ok: false, reason: token.reason === "invalid_grant" ? "needs_reconnect" : "token" };
+  }
+  return { ok: true, integration, accessToken: token.accessToken };
+}
+
+// 공유를 건드리는 것은 "대표님이 소유한" 캘린더에서만 허용한다. writer 권한만
+// 있는 남의 캘린더의 참가자를 우리가 고쳐서는 안 된다.
+async function ownedCalendarEntry(ctx, ownerCode, calendarId, integration) {
+  const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, integration);
+  const entry = catalog.find((candidate) => candidate.id === calendarId);
+  return entry && entry.accessRole === "owner" ? entry : null;
+}
+
+function aclRules(data) {
+  const items = Array.isArray(data?.items) ? data.items : [];
+  return items
+    .map((item) => {
+      const scopeType = cleanText(item?.scope?.type) || "user";
+      return {
+        id: cleanText(item?.id, 200),
+        email: cleanText(item?.scope?.value, 320).toLowerCase(),
+        role: cleanText(item?.role, 40),
+        scopeType,
+        // default/domain 규칙은 특정 사람이 아니라 범위 전체다. 목록에는 보이되
+        // 화면에서 지우지 못하도록 표식만 남긴다.
+        editable: scopeType === "user" || scopeType === "group",
+      };
+    })
+    .filter((rule) => rule.id);
+}
+
+async function readOwnerCalendarAcl(accessToken, calendarId, fetchImpl) {
+  const result = await googleFetch(accessToken, "GET", `/calendars/${encodeURIComponent(calendarId)}/acl`, null, { fetchImpl });
+  if (!result.ok) return { ok: false, reason: `list_${result.status}` };
+  return { ok: true, rules: aclRules(result.data) };
+}
+
+export async function createOwnerCalendar(ctx, env, ownerCode, input = {}, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  const summary = cleanText(input.summary, 200);
+  if (!summary) return { ok: false, reason: "summary" };
+  const parsed = normalizeCalendarInvites(input.invites);
+  if (!parsed.ok) return { ok: false, reason: "invites", message: parsed.message };
+  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  if (!session.ok) return { ok: false, reason: session.reason };
+
+  const created = await googleFetch(session.accessToken, "POST", "/calendars",
+    { summary, timeZone: EVENT_TIMEZONE }, { fetchImpl });
+  if (!created.ok || !created.data?.id) return { ok: false, reason: `create_${created.status}` };
+  const calendarId = String(created.data.id);
+
+  // 캘린더는 이미 만들어졌다. 초대가 몇 건 실패해도 전체를 실패로 되돌리지
+  // 않는다 — 되돌릴 방법이 캘린더 삭제뿐이라 더 위험하다. 실패한 주소만 알린다.
+  const failedInvites = [];
+  let invited = 0;
+  for (const invite of parsed.invites) {
+    const rule = await googleFetch(session.accessToken, "POST",
+      `/calendars/${encodeURIComponent(calendarId)}/acl`,
+      { role: invite.role, scope: { type: "user", value: invite.email } },
+      { query: { sendNotifications: "true" }, fetchImpl });
+    if (rule.ok) invited += 1;
+    else failedInvites.push(invite.email);
+  }
+
+  const values = {
+    owner_agency_code: code,
+    google_calendar_id: calendarId,
+    calendar_role: "secondary",
+    calendar_summary: summary,
+    calendar_access_role: "owner",
+    calendar_is_primary: false,
+    calendar_writable: true,
+    calendar_catalog_at: new Date().toISOString(),
+    calendar_background_color: null,
+    calendar_foreground_color: null,
+    calendar_selected: true,
+    calendar_visible: true,
+  };
+  await runWithOptionalColumns(() => runWithOptionalColumns(() => ctx.supabaseAdmin
+    .from("owner_google_calendar_sync")
+    .upsert(withoutDisabledColumns(values), { onConflict: "owner_agency_code,google_calendar_id" })
+    .then((response) => response || { error: null }, (error) => ({ error })), OPTIONAL_CALENDAR_CATALOG_COLUMNS),
+  OPTIONAL_CALENDAR_SYNC_COLUMNS);
+
+  await recordSyncAudit(ctx, "google_calendar_created", null, {
+    calendarId: cleanText(calendarId, 200),
+    summary,
+    invited,
+    failed: failedInvites.length,
+  });
+  return { ok: true, calendarId, summary, invited, failedInvites };
+}
+
+export async function listOwnerCalendarAcl(ctx, env, ownerCode, calendarId, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  const id = cleanText(calendarId, 1024);
+  if (!id) return { ok: false, reason: "calendar" };
+  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  if (!session.ok) return { ok: false, reason: session.reason };
+  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
+}
+
+export async function insertOwnerCalendarAcl(ctx, env, ownerCode, calendarId, invite = {}, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  const id = cleanText(calendarId, 1024);
+  if (!id) return { ok: false, reason: "calendar" };
+  const parsed = normalizeCalendarInvites([invite]);
+  if (!parsed.ok) return { ok: false, reason: "invites", message: parsed.message };
+  if (!parsed.invites.length) return { ok: false, reason: "invites", message: "참가자 이메일 주소를 확인해주세요." };
+  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  if (!session.ok) return { ok: false, reason: session.reason };
+  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  const [entry] = parsed.invites;
+  const rule = await googleFetch(session.accessToken, "POST", `/calendars/${encodeURIComponent(id)}/acl`,
+    { role: entry.role, scope: { type: "user", value: entry.email } },
+    { query: { sendNotifications: "true" }, fetchImpl });
+  if (!rule.ok) return { ok: false, reason: `insert_${rule.status}` };
+  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
+}
+
+export async function deleteOwnerCalendarAcl(ctx, env, ownerCode, calendarId, ruleId, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  const id = cleanText(calendarId, 1024);
+  const rule = cleanText(ruleId, 200);
+  if (!id) return { ok: false, reason: "calendar" };
+  if (!rule) return { ok: false, reason: "rule" };
+  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  if (!session.ok) return { ok: false, reason: session.reason };
+  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  const removed = await googleFetch(session.accessToken, "DELETE",
+    `/calendars/${encodeURIComponent(id)}/acl/${encodeURIComponent(rule)}`, null, { fetchImpl });
+  // 이미 사라진 규칙(404/410)은 우리가 원하던 최종 상태와 같으므로 성공으로 본다.
+  if (!removed.ok && removed.status !== 404 && removed.status !== 410) {
+    return { ok: false, reason: `delete_${removed.status}` };
+  }
+  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
 }
 
 export { DONE_PREFIX, decorateGoogleSummary, normalizeImportedTitle, undecorateGoogleSummary };

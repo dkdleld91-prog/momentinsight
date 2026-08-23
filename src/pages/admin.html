@@ -8121,7 +8121,7 @@
 
     #mi-admin .mi-work-layout {
       display: grid;
-      grid-template-columns: minmax(0, 7fr) minmax(280px, 3fr);
+      grid-template-columns: minmax(0, 1fr);
       gap: 16px;
       align-items: start;
     }
@@ -8502,12 +8502,20 @@
 
     #mi-admin .mi-work-agenda {
       display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 18px;
+      align-items: start;
     }
 
     #mi-admin .mi-work-agenda-group {
       display: grid;
+      min-width: 0;
       gap: 8px;
+      align-content: start;
+    }
+
+    #mi-admin .mi-work-agenda.is-single {
+      grid-template-columns: minmax(0, 1fr);
     }
 
     #mi-admin .mi-work-agenda-group > strong {
@@ -9685,23 +9693,371 @@
       margin: 0;
     }
 
+    #mi-admin .mi-work-gcal-rail .mi-work-gcal-note {
+      padding: 8px 10px;
+      border: 1px solid #f0d7c2;
+      border-radius: 10px;
+      color: #8a4b16;
+      background: #fdf6ee;
+      font-size: 10.5px;
+      font-weight: 750;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-work-gcal-rail .mi-work-gcal-note[hidden] {
+      display: none;
+    }
+
+    /* 구글 월간 뷰처럼 캘린더 배경색으로 꽉 찬 칩. 색은 6자리 HEX 검증을 통과한 값만 들어온다. */
     #mi-admin .mi-work-day-item[data-gcal="1"] {
       border-left: 3px solid var(--mi-gcal-color, var(--mi-navy));
+      border-color: var(--mi-gcal-color, var(--mi-navy));
+      background: var(--mi-gcal-color, var(--mi-navy));
+      color: var(--mi-gcal-text, #fff);
+    }
+
+    /* 시간 지정 일정은 구글처럼 색 점 + 글자로, 종일 일정은 꽉 찬 블록으로 구분한다. */
+    #mi-admin .mi-work-day-item[data-gcal="1"][data-allday="false"] {
+      border-color: #dce5f0;
+      background: #fff;
+      color: #223553;
+    }
+
+    #mi-admin .mi-work-day-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 5px;
+      border-radius: 50%;
+      background: var(--mi-gcal-color, var(--mi-navy));
+      vertical-align: 1px;
+    }
+
+    #mi-admin .mi-work-day-item[data-gcal="1"][data-status="done"] {
+      opacity: .62;
+      text-decoration: line-through;
     }
 
     #mi-admin .mi-work-agenda-item[data-gcal="1"] > i {
       background: var(--mi-gcal-color, var(--mi-navy));
     }
 
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit {
+      padding: 9px 11px;
+      border-radius: 12px;
+      background: var(--mi-gcal-color, var(--mi-navy));
+      color: var(--mi-gcal-text, #fff);
+    }
+
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit strong,
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit span,
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit .mi-work-agenda-meta {
+      color: inherit;
+    }
+
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit span,
+    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit .mi-work-agenda-meta {
+      opacity: .85;
+    }
+
+    #mi-admin .mi-work-agenda-item[data-status="done"] {
+      opacity: .74;
+    }
+
+    #mi-admin .mi-work-agenda-item[data-status="done"] .mi-work-agenda-edit strong {
+      text-decoration: line-through;
+    }
+
+    #mi-admin .mi-work-gcal-row {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      gap: 2px;
+    }
+
+    #mi-admin .mi-work-gcal-row .mi-work-gcal-item {
+      flex: 1 1 auto;
+    }
+
+    #mi-admin .mi-work-gcal-acl {
+      flex: 0 0 auto;
+      min-width: 24px;
+      min-height: 24px;
+      padding: 0 6px;
+      border: 0;
+      border-radius: 7px;
+      color: var(--mi-muted);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    #mi-admin .mi-work-gcal-acl:hover:not(:disabled),
+    #mi-admin .mi-work-gcal-acl:focus-visible {
+      color: var(--mi-navy);
+      background: var(--mi-gold-soft);
+      outline: none;
+    }
+
+    #mi-admin .mi-work-gcal-acl:disabled {
+      cursor: progress;
+      opacity: .5;
+    }
+
+    #mi-admin .mi-work-gcal-new {
+      min-height: 32px;
+      padding: 0 10px;
+      border: 1px dashed var(--mi-line);
+      border-radius: 10px;
+      color: var(--mi-navy);
+      background: var(--mi-panel);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11.5px;
+      font-weight: 800;
+      text-align: left;
+    }
+
+    #mi-admin .mi-work-gcal-new:hover:not(:disabled) {
+      border-color: #c8d6e7;
+      background: var(--mi-gold-soft);
+    }
+
+    #mi-admin .mi-work-gcal-new:disabled {
+      cursor: not-allowed;
+      opacity: .55;
+    }
+
+    #mi-admin .mi-work-gcal-panel {
+      display: grid;
+      gap: 8px;
+      padding: 11px;
+      border: 1px solid var(--mi-line);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+
+    #mi-admin .mi-work-gcal-panel[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-gcal-panel > label {
+      display: grid;
+      gap: 4px;
+      color: #617089;
+      font-size: 10px;
+      font-weight: 850;
+    }
+
+    #mi-admin .mi-work-gcal-panel .mi-input,
+    #mi-admin .mi-work-gcal-panel .mi-select {
+      width: 100%;
+      min-width: 0;
+      min-height: 32px;
+      padding: 0 9px;
+      border: 1px solid #d9e3ef;
+      border-radius: 9px;
+      color: var(--mi-navy);
+      background-color: #fff;
+      font-family: inherit;
+      font-size: 11.5px;
+    }
+
+    #mi-admin .mi-work-gcal-panel-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+    }
+
+    #mi-admin .mi-work-gcal-panel-actions button {
+      min-height: 30px;
+      padding: 0 11px;
+      border: 1px solid var(--mi-line);
+      border-radius: 999px;
+      color: var(--mi-navy);
+      background: #fff;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-gcal-panel-actions button.is-primary {
+      border-color: var(--mi-navy);
+      color: #fff;
+      background: var(--mi-navy);
+    }
+
+    #mi-admin .mi-work-gcal-panel-actions button:disabled {
+      cursor: progress;
+      opacity: .55;
+    }
+
+    #mi-admin .mi-work-gcal-rules {
+      display: grid;
+      gap: 5px;
+    }
+
+    #mi-admin .mi-work-gcal-rule {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 7px;
+      border: 1px solid var(--mi-line);
+      border-radius: 9px;
+      background: #fff;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    #mi-admin .mi-work-gcal-rule > span {
+      overflow: hidden;
+      min-width: 0;
+      flex: 1 1 auto;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-work-gcal-rule small {
+      flex: 0 0 auto;
+      color: var(--mi-muted);
+      font-size: 9.5px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-gcal-rule button {
+      flex: 0 0 auto;
+      min-height: 22px;
+      padding: 0 7px;
+      border: 0;
+      border-radius: 7px;
+      color: #a32f2f;
+      background: #fbe9e9;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-gcal-rule button:disabled {
+      cursor: progress;
+      opacity: .55;
+    }
+
+    #mi-admin .mi-work-when-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: end;
+      gap: 8px;
+      grid-template-columns: none;
+    }
+
+    #mi-admin .mi-work-when-row > .mi-work-field {
+      min-width: 0;
+      flex: 1 1 132px;
+    }
+
+    #mi-admin .mi-work-field > span.mi-work-gcal-pick {
+      position: relative;
+      display: block;
+      color: inherit;
+      font-size: inherit;
+      font-weight: inherit;
+      letter-spacing: normal;
+    }
+
+    #mi-admin .mi-work-gcal-pick .mi-select {
+      padding-left: 32px;
+    }
+
+    #mi-admin .mi-work-gcal-dot {
+      position: absolute;
+      top: 50%;
+      left: 13px;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--mi-gcal-color, var(--mi-navy));
+      pointer-events: none;
+      transform: translateY(-50%);
+    }
+
+    #mi-admin .mi-work-recurrence-dialog {
+      display: grid;
+      width: min(420px, 100%);
+      align-content: start;
+      gap: 4px;
+    }
+
+    #mi-admin .mi-work-recurrence-dialog .mi-work-repeat-fields {
+      margin: 0 22px;
+    }
+
+    #mi-admin .mi-work-recurrence-ends-title {
+      color: #617089;
+      font-size: 10.5px;
+      font-weight: 850;
+      letter-spacing: .01em;
+    }
+
+    #mi-admin .mi-work-recurrence-every {
+      display: flex;
+      align-items: end;
+      gap: 8px;
+    }
+
+    #mi-admin .mi-work-recurrence-every > .mi-work-field:first-child {
+      flex: 0 0 92px;
+    }
+
+    #mi-admin .mi-work-recurrence-every > .mi-work-field:last-child {
+      flex: 1 1 auto;
+    }
+
+    #mi-admin .mi-work-recurrence-ends {
+      display: grid;
+      gap: 7px;
+    }
+
+    #mi-admin .mi-work-recurrence-end-row {
+      display: flex;
+      min-height: 36px;
+      align-items: center;
+      gap: 9px;
+    }
+
+    #mi-admin .mi-work-recurrence-end-row > label {
+      display: inline-flex;
+      min-width: 96px;
+      align-items: center;
+      gap: 7px;
+      color: #55657d;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-work-recurrence-end-row input[type="radio"] {
+      accent-color: #0c7654;
+    }
+
+    #mi-admin .mi-work-recurrence-end-row .mi-work-field {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    #mi-admin .mi-work-recurrence-end-row .mi-work-field > span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+
     @media (max-width: 1180px) {
-      #mi-admin .mi-work-layout {
-        grid-template-columns: 1fr;
-      }
-
-      #mi-admin .mi-work-agenda-card {
-        grid-column: auto;
-      }
-
       #mi-admin .mi-work-body.has-gcal-rail {
         grid-template-columns: minmax(0, 1fr);
       }
@@ -9726,10 +10082,6 @@
 
       #mi-admin .mi-work-body.is-gcal-open .mi-work-gcal-rail[hidden] {
         display: none;
-      }
-
-      #mi-admin .mi-work-agenda {
-        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
 
@@ -9761,14 +10113,6 @@
 
       #mi-admin .mi-work-calendar-card {
         overflow-x: auto;
-      }
-
-      #mi-admin .mi-work-layout {
-        grid-template-columns: 1fr;
-      }
-
-      #mi-admin .mi-work-agenda-card {
-        grid-column: auto;
       }
 
       #mi-admin .mi-work-calendar-head,
@@ -10070,6 +10414,38 @@
                 <button class="mi-work-gcal-refresh" type="button" data-work-gcal-refresh aria-label="구글 캘린더 목록 새로고침">새로고침</button>
               </div>
               <div class="mi-work-gcal-list" data-work-gcal-list></div>
+              <p class="mi-work-gcal-note" data-work-gcal-note hidden></p>
+              <div class="mi-work-gcal-panel" data-work-gcal-acl-panel hidden>
+                <strong data-work-gcal-acl-title>참가자 관리</strong>
+                <div class="mi-work-gcal-rules" data-work-gcal-acl-rules aria-live="polite"></div>
+                <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-acl-email maxlength="320" placeholder="name@example.com" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+                <label><span>권한</span>
+                  <select class="mi-select" data-work-gcal-acl-role>
+                    <option value="writer">편집 가능</option>
+                    <option value="reader">보기만</option>
+                  </select>
+                </label>
+                <div class="mi-work-gcal-panel-actions">
+                  <button type="button" data-work-gcal-acl-close>닫기</button>
+                  <button type="button" class="is-primary" data-work-gcal-acl-add>추가</button>
+                </div>
+              </div>
+              <button class="mi-work-gcal-new" type="button" data-work-gcal-new aria-expanded="false" aria-controls="mi-work-gcal-new-form">＋ 새 캘린더 만들기</button>
+              <div class="mi-work-gcal-panel" id="mi-work-gcal-new-form" data-work-gcal-new-form hidden>
+                <label><span>이름</span><input class="mi-input" type="text" data-work-gcal-new-name maxlength="120" placeholder="새 캘린더 이름" /></label>
+                <div class="mi-work-chips" data-work-gcal-invite-chips aria-live="polite"></div>
+                <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-invite-input maxlength="320" placeholder="이메일 입력 후 Enter" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+                <label><span>권한</span>
+                  <select class="mi-select" data-work-gcal-invite-role>
+                    <option value="writer">편집 가능</option>
+                    <option value="reader">보기만</option>
+                  </select>
+                </label>
+                <div class="mi-work-gcal-panel-actions">
+                  <button type="button" data-work-gcal-new-cancel>취소</button>
+                  <button type="button" class="is-primary" data-work-gcal-create>만들기</button>
+                </div>
+              </div>
             </aside>
 
             <div class="mi-work-layout">
@@ -10140,10 +10516,10 @@
                   </div>
 
                   <div class="mi-work-when" data-work-when>
-                    <div class="mi-work-form-grid">
+                    <div class="mi-work-form-grid mi-work-when-row">
                       <label class="mi-work-field"><span data-work-start-label>시작 날짜</span><input class="mi-input" type="date" data-work-start required /></label>
-                      <label class="mi-work-field"><span data-work-end-label>종료 날짜</span><input class="mi-input" type="date" data-work-end /></label>
                       <label class="mi-work-field" data-work-start-time-field hidden><span>시작 시간</span><input class="mi-input" type="time" data-work-start-time /></label>
+                      <label class="mi-work-field"><span data-work-end-label>종료 날짜</span><input class="mi-input" type="date" data-work-end /></label>
                       <label class="mi-work-field" data-work-end-time-field hidden><span>종료 시간</span><input class="mi-input" type="time" data-work-end-time /></label>
                     </div>
                     <div class="mi-work-when-actions">
@@ -10165,37 +10541,71 @@
                     </select>
                   </label>
 
-                  <div class="mi-work-repeat-fields" data-work-google-only data-work-recurrence-custom aria-live="polite" hidden>
-                    <div class="mi-work-form-grid">
-                      <label class="mi-work-field"><span>반복 간격</span><input class="mi-input" type="number" min="1" max="366" step="1" value="1" data-work-recurrence-interval /></label>
-                      <label class="mi-work-field"><span>반복 단위</span>
-                        <select class="mi-select" data-work-recurrence-unit>
-                          <option value="DAILY">일</option>
-                          <option value="WEEKLY" selected>주</option>
-                          <option value="MONTHLY">월</option>
-                          <option value="YEARLY">년</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div class="mi-work-weekday-picker" data-work-recurrence-days role="group" aria-label="반복 요일" hidden>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="SU" /><i>일</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="MO" /><i>월</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="TU" /><i>화</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="WE" /><i>수</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="TH" /><i>목</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="FR" /><i>금</i></label>
-                      <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="SA" /><i>토</i></label>
-                    </div>
-                    <div class="mi-work-form-grid">
-                      <label class="mi-work-field"><span>반복 종료</span>
-                        <select class="mi-select" data-work-recurrence-end>
-                          <option value="never">없음</option>
-                          <option value="until">날짜</option>
-                          <option value="count">횟수</option>
-                        </select>
-                      </label>
-                      <label class="mi-work-field" data-work-recurrence-until-field hidden><span>반복 종료일 · 포함</span><input class="mi-input" type="date" data-work-recurrence-until /></label>
-                      <label class="mi-work-field" data-work-recurrence-count-field hidden><span>반복 횟수</span><input class="mi-input" type="number" min="1" max="730" step="1" value="10" data-work-recurrence-count /></label>
+                  <div class="mi-work-modal" data-work-recurrence-modal hidden>
+                    <div class="mi-work-dialog mi-work-recurrence-dialog" role="dialog" aria-modal="true" aria-labelledby="mi-work-recurrence-title">
+                      <div class="mi-work-dialog-head">
+                        <div class="mi-work-dialog-title">
+                          <span class="mi-work-dialog-eyebrow">CUSTOM RECURRENCE</span>
+                          <h2 id="mi-work-recurrence-title">맞춤 반복</h2>
+                        </div>
+                        <button class="mi-work-icon-button" type="button" data-work-recurrence-cancel aria-label="닫기">×</button>
+                      </div>
+                      <div class="mi-work-repeat-fields" data-work-google-only data-work-recurrence-custom aria-live="polite" hidden>
+                        <div class="mi-work-recurrence-every">
+                          <label class="mi-work-field"><span>반복 주기</span><input class="mi-input" type="number" min="1" max="366" step="1" value="1" data-work-recurrence-interval /></label>
+                          <label class="mi-work-field"><span>단위</span>
+                            <select class="mi-select" data-work-recurrence-unit>
+                              <option value="DAILY">일</option>
+                              <option value="WEEKLY" selected>주</option>
+                              <option value="MONTHLY">개월</option>
+                              <option value="YEARLY">년</option>
+                            </select>
+                          </label>
+                        </div>
+                        <div class="mi-work-weekday-picker" data-work-recurrence-days role="group" aria-label="반복 요일" hidden>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="SU" /><i>일</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="MO" /><i>월</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="TU" /><i>화</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="WE" /><i>수</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="TH" /><i>목</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="FR" /><i>금</i></label>
+                          <label class="mi-work-weekday"><input type="checkbox" data-work-recurrence-day="SA" /><i>토</i></label>
+                        </div>
+                        <label class="mi-work-field" data-work-recurrence-monthly-field hidden><span>매월 기준</span>
+                          <select class="mi-select" data-work-recurrence-monthly-mode>
+                            <option value="bymonthday" data-work-recurrence-monthly-option="bymonthday">매월 N일</option>
+                            <option value="byday" data-work-recurrence-monthly-option="byday">매월 N번째 X요일</option>
+                          </select>
+                        </label>
+                        <div class="mi-work-recurrence-ends" role="radiogroup" aria-label="반복 종료">
+                          <span class="mi-work-recurrence-ends-title">종료</span>
+                          <div class="mi-work-recurrence-end-row">
+                            <label><input type="radio" name="mi-work-recurrence-end-choice" value="never" data-work-recurrence-end-choice checked /><span>없음</span></label>
+                          </div>
+                          <div class="mi-work-recurrence-end-row">
+                            <label><input type="radio" name="mi-work-recurrence-end-choice" value="until" data-work-recurrence-end-choice /><span>날짜</span></label>
+                            <label class="mi-work-field" data-work-recurrence-until-field hidden><span>반복 종료일 · 포함</span><input class="mi-input" type="date" data-work-recurrence-until /></label>
+                          </div>
+                          <div class="mi-work-recurrence-end-row">
+                            <label><input type="radio" name="mi-work-recurrence-end-choice" value="count" data-work-recurrence-end-choice /><span>다음 N회 반복</span></label>
+                            <label class="mi-work-field" data-work-recurrence-count-field hidden><span>반복 횟수</span><input class="mi-input" type="number" min="1" max="730" step="1" value="10" data-work-recurrence-count /></label>
+                          </div>
+                        </div>
+                        <label class="mi-work-field mi-work-hidden-state"><span>반복 종료</span>
+                          <select class="mi-select" data-work-recurrence-end>
+                            <option value="never">없음</option>
+                            <option value="until">날짜</option>
+                            <option value="count">횟수</option>
+                          </select>
+                        </label>
+                      </div>
+                      <div class="mi-work-dialog-actions">
+                        <span class="mi-work-drag-note">반복 규칙은 완료를 눌러야 반영됩니다.</span>
+                        <div>
+                          <button class="mi-link-button" type="button" data-work-recurrence-cancel>취소</button>
+                          <button class="mi-link-button is-primary" type="button" data-work-recurrence-done>완료</button>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -10241,7 +10651,7 @@
                   </div>
 
                   <label class="mi-work-field is-full" data-work-google-only data-work-google-calendar-field hidden><span>캘린더</span>
-                    <select class="mi-select" data-work-google-calendar></select>
+                    <span class="mi-work-gcal-pick"><select class="mi-select" data-work-google-calendar></select><i class="mi-work-gcal-dot" data-work-google-calendar-dot aria-hidden="true"></i></span>
                   </label>
 
                   <p class="mi-work-repeat-note mi-work-gcal-note" data-work-gcal-readonly hidden></p>
@@ -11844,7 +12254,11 @@
       var workCalendarCatalog = [];
       var workGcalCollapsed = { own: false, other: false };
       var workGcalBusy = false;
+      var workGcalInviteDraft = [];
+      var workGcalAclId = "";
+      var workGcalAclRules = [];
       var workAttendeeDraft = [];
+      var workRecurrenceSnapshotBeforeEdit = null;
       var workDialogRecurringInstance = false;
       var workRecurrenceDayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
       var workRecurrenceDayNames = ["일", "월", "화", "수", "목", "금", "토"];
@@ -12279,10 +12693,15 @@
             '<div class="mi-work-day-items">' + dayItems.slice(0, 3).map(function (item) {
               var canEdit = workItemCanEdit(item);
               var chipColor = workGcalColor(item.calendarColor);
+              var chipText = workGcalColor(item.calendarTextColor) || "#ffffff";
+              var chipAllDay = item.isAllDay === false ? "false" : "true";
+              // --mi-gcal-color 계약 문자열은 그대로 두고, 같은 style 안에 글자색만 이어 붙인다.
+              var chipStyle = (chipColor ? ' data-gcal="1" style="--mi-gcal-color:' + chipColor + '"' : "");
+              if (chipColor) chipStyle = chipStyle.slice(0, -1) + ";--mi-gcal-text:" + chipText + '"';
               return '<button type="button" class="mi-work-day-item" draggable="' + (canEdit ? "true" : "false") + '" data-work-edit="' + escapeHtml(item.id) +
-                '"' + (canEdit ? ' data-work-drag-id="' + escapeHtml(item.id) + '"' : "") +
-                (chipColor ? ' data-gcal="1" style="--mi-gcal-color:' + chipColor + '"' : "") +
-                ' data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") + '">' +
+                '"' + (canEdit ? ' data-work-drag-id="' + escapeHtml(item.id) + '"' : "") + chipStyle +
+                ' data-allday="' + chipAllDay + '" data-status="' + escapeHtml(item.status) + '" data-public="' + (item.visibility === "client_visible") + '">' +
+                (chipColor && chipAllDay === "false" ? '<i class="mi-work-day-dot" aria-hidden="true"></i>' : "") +
                 escapeHtml(item.title) + '</button>';
             }).join("") + (dayItems.length > 3 ? '<button type="button" class="mi-work-date-overflow" data-work-date-overflow="' + key +
               '" aria-label="' + key + ' 나머지 일정 보기">+' + (dayItems.length - 3) + '</button>' : "") +
@@ -12322,9 +12741,12 @@
           var visibilityLabel = item.visibility === "client_visible" ? "광고주 공개" : "내 일정";
           var canEdit = workItemCanEdit(item);
           var rowColor = workGcalColor(item.calendarColor);
+          var rowText = workGcalColor(item.calendarTextColor) || "#ffffff";
+          // --mi-gcal-color 계약 문자열은 그대로 두고, 같은 style 안에 글자색만 이어 붙인다.
+          var rowStyle = (rowColor ? ' data-gcal="1" style="--mi-gcal-color:' + rowColor + '"' : "");
+          if (rowColor) rowStyle = rowStyle.slice(0, -1) + ";--mi-gcal-text:" + rowText + '"';
           return '<div class="mi-work-agenda-item" data-priority="' + escapeHtml(item.priority || "medium") +
-            '" data-status="' + escapeHtml(item.status) + '"' +
-            (rowColor ? ' data-gcal="1" style="--mi-gcal-color:' + rowColor + '"' : "") +
+            '" data-status="' + escapeHtml(item.status) + '"' + rowStyle +
             '><i aria-hidden="true"></i><button type="button" class="mi-work-agenda-edit" data-work-edit="' +
             escapeHtml(item.id) + '"><strong>' + escapeHtml(item.title) + '</strong><span>' + escapeHtml(workTimeLabel(item.startsAt)) + ' · ' +
             escapeHtml(workStatusLabel(item.status)) + '</span>' + workAgendaMetaLine(item) + '</button><span class="mi-work-badges"><em class="mi-work-visibility' +
@@ -12347,8 +12769,6 @@
         todayDate.setHours(0, 0, 0, 0);
         var tomorrowDate = new Date(todayDate);
         tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-        var nextDate = new Date(tomorrowDate);
-        nextDate.setDate(nextDate.getDate() + 1);
         var todayKey = workDateKey(todayDate);
         var tomorrowKey = workDateKey(tomorrowDate);
         var sorted = filteredWorkItems().sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); });
@@ -12356,6 +12776,7 @@
         if (workAgendaDateKey) {
           var dateItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === workAgendaDateKey; });
           var dateTitle = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(workDateFromKey(workAgendaDateKey));
+          agenda.classList.add("is-single");
           agenda.innerHTML = renderWorkAgendaGroup(dateTitle, dateItems);
           if (title) title.textContent = dateTitle + " 일정";
           if (clear) clear.hidden = false;
@@ -12364,6 +12785,7 @@
         }
         if (workActiveFilter) {
           var filterTitle = filterLabels[workActiveFilter] || "선택 업무";
+          agenda.classList.add("is-single");
           agenda.innerHTML = renderWorkAgendaGroup(filterTitle, sorted);
           if (title) title.textContent = filterTitle;
           if (clear) clear.hidden = false;
@@ -12372,10 +12794,10 @@
         }
         var todayItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === todayKey; });
         var tomorrowItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === tomorrowKey; });
-        var nextItems = sorted.filter(function (item) { return new Date(item.startsAt) >= nextDate; }).slice(0, 6);
-        agenda.innerHTML = renderWorkAgendaGroup("Today", todayItems) +
-          renderWorkAgendaGroup("Tomorrow", tomorrowItems) +
-          renderWorkAgendaGroup("Next", nextItems);
+        // 달력 아래 가로 띠는 오늘·내일 두 칸만 둔다. 그 뒤 일정은 달력 자체에서 본다.
+        agenda.classList.remove("is-single");
+        agenda.innerHTML = renderWorkAgendaGroup("오늘", todayItems) +
+          renderWorkAgendaGroup("내일", tomorrowItems);
         if (title) title.textContent = "가까운 업무";
         if (clear) clear.hidden = true;
         if (count) count.textContent = sorted.length + "개";
@@ -12389,12 +12811,18 @@
           var name = String(entry && entry.name || "").trim() || id;
           var color = workGcalColor(entry && entry.color) || "var(--mi-navy)";
           var checked = !entry || entry.visible !== false;
-          return '<button type="button" class="mi-work-gcal-item" role="checkbox" aria-checked="' + (checked ? "true" : "false") +
+          // 참가자 관리는 내가 소유한 캘린더에서만 연다. 기본 캘린더는 구글이 ACL 변경을 막는다.
+          var manageable = Boolean(entry && String(entry.accessRole || "") === "owner" && entry.primary !== true);
+          return '<div class="mi-work-gcal-row">' +
+            '<button type="button" class="mi-work-gcal-item" role="checkbox" aria-checked="' + (checked ? "true" : "false") +
             '" data-work-gcal-toggle="' + escapeHtml(id) + '" title="' + escapeHtml(name) + '" style="--mi-gcal-color:' + color + '">' +
             '<span class="mi-work-gcal-box" aria-hidden="true"></span>' +
             '<span class="mi-work-gcal-name">' + escapeHtml(name) + '</span>' +
             (entry && entry.writable === false ? '<span class="mi-work-gcal-tag">읽기 전용</span>' : "") +
-            '</button>';
+            '</button>' +
+            (manageable ? '<button type="button" class="mi-work-gcal-acl" data-work-gcal-acl="' + escapeHtml(id) +
+              '" title="' + escapeHtml(name) + ' 참가자 관리" aria-label="' + escapeHtml(name) + ' 참가자 관리">＋</button>' : "") +
+            '</div>';
         }).join("");
         return '<div class="mi-work-gcal-section' + (collapsed ? " is-collapsed" : "") + '">' +
           '<button type="button" class="mi-work-gcal-group" data-work-gcal-group="' + escapeHtml(groupKey) +
@@ -12412,6 +12840,7 @@
         if (!entries.length) {
           list.innerHTML = "";
           rail.hidden = true;
+          closeWorkGcalAclPanel();
           if (drawer) {
             drawer.hidden = true;
             drawer.setAttribute("aria-expanded", "false");
@@ -12429,6 +12858,194 @@
         rail.hidden = false;
         if (drawer) drawer.hidden = false;
         if (body) body.classList.add("has-gcal-rail");
+        if (workGcalAclId && !workCalendarEntry(workGcalAclId)) closeWorkGcalAclPanel();
+        syncWorkGcalBusy();
+      }
+
+      // 캘린더 설정 저장이 막히면(예: 마이그레이션 전 503) 왜 되돌아갔는지 레일에 그대로 남긴다.
+      function setWorkGcalNote(message) {
+        var note = root.querySelector("[data-work-gcal-note]");
+        if (!note) return;
+        var text = String(message || "").trim();
+        note.textContent = text;
+        note.hidden = !text;
+      }
+
+      function syncWorkGcalBusy() {
+        var rail = root.querySelector("[data-work-gcal-rail]");
+        if (!rail) return;
+        rail.querySelectorAll("button, input, select").forEach(function (control) {
+          if (control.hasAttribute("data-work-gcal-refresh")) return;
+          control.disabled = workGcalBusy;
+        });
+      }
+
+      function renderWorkGcalInviteChips() {
+        var wrap = root.querySelector("[data-work-gcal-invite-chips]");
+        if (!wrap) return;
+        wrap.innerHTML = workGcalInviteDraft.map(function (email) {
+          return '<span class="mi-work-chip"><span>' + escapeHtml(email) + '</span>' +
+            '<button class="mi-work-chip-remove" type="button" data-work-gcal-invite-remove="' + escapeHtml(email) +
+            '" aria-label="' + escapeHtml(email) + ' 참가자 삭제">×</button></span>';
+        }).join("");
+      }
+
+      function commitWorkGcalInvite(raw) {
+        var text = String(raw || "").trim().replace(/[,;]+$/, "").trim();
+        if (!text) return true;
+        if (!workEmailPattern.test(text)) {
+          setWorkGcalNote("이메일 형식이 올바르지 않습니다: " + text);
+          return false;
+        }
+        var email = text.toLowerCase();
+        if (workGcalInviteDraft.indexOf(email) === -1) workGcalInviteDraft.push(email);
+        setWorkGcalNote("");
+        renderWorkGcalInviteChips();
+        return true;
+      }
+
+      function commitWorkGcalInviteInput() {
+        var input = root.querySelector("[data-work-gcal-invite-input]");
+        if (!input) return true;
+        var chunks = String(input.value || "").split(/[,;\s]+/).filter(Boolean);
+        var ok = true;
+        for (var index = 0; index < chunks.length; index += 1) {
+          if (!commitWorkGcalInvite(chunks[index])) ok = false;
+        }
+        if (ok) input.value = "";
+        return ok;
+      }
+
+      function setWorkGcalNewForm(open) {
+        var panel = root.querySelector("[data-work-gcal-new-form]");
+        var button = root.querySelector("[data-work-gcal-new]");
+        if (!panel) return;
+        panel.hidden = !open;
+        if (button) button.setAttribute("aria-expanded", open ? "true" : "false");
+        if (open) {
+          closeWorkGcalAclPanel();
+          var name = root.querySelector("[data-work-gcal-new-name]");
+          if (name) name.focus();
+          return;
+        }
+        workGcalInviteDraft = [];
+        setWorkValue("[data-work-gcal-new-name]", "");
+        setWorkValue("[data-work-gcal-invite-input]", "");
+        renderWorkGcalInviteChips();
+      }
+
+      function renderWorkGcalAclRules() {
+        var wrap = root.querySelector("[data-work-gcal-acl-rules]");
+        if (!wrap) return;
+        var rules = Array.isArray(workGcalAclRules) ? workGcalAclRules : [];
+        if (!rules.length) {
+          wrap.innerHTML = '<div class="mi-work-gcal-rule"><span>추가된 참가자가 없습니다.</span></div>';
+          return;
+        }
+        wrap.innerHTML = rules.map(function (rule) {
+          var email = String(rule && rule.email || "").trim() || String(rule && rule.scopeType || "");
+          var role = String(rule && rule.role || "") === "reader" ? "보기만" : "편집 가능";
+          return '<div class="mi-work-gcal-rule"><span>' + escapeHtml(email) + '</span><small>' + escapeHtml(role) +
+            '</small><button type="button" data-work-gcal-acl-remove="' + escapeHtml(String(rule && rule.id || "")) +
+            '" aria-label="' + escapeHtml(email) + ' 참가자 삭제">삭제</button></div>';
+        }).join("");
+      }
+
+      function closeWorkGcalAclPanel() {
+        var panel = root.querySelector("[data-work-gcal-acl-panel]");
+        workGcalAclId = "";
+        workGcalAclRules = [];
+        if (panel) panel.hidden = true;
+      }
+
+      function workGcalRequest(body, fallbackMessage) {
+        return miFetch(getOwnerGoogleCalendarApiUrl(), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+          timeoutMs: 30000
+        }).then(async function (response) {
+          var payload = await readApiPayload(response, fallbackMessage);
+          if (!response.ok || !payload || payload.ok !== true) throw new Error(payload && payload.message ? payload.message : fallbackMessage);
+          return payload;
+        });
+      }
+
+      async function createWorkCalendarFromForm() {
+        if (secureSession.role !== "owner" || workGcalBusy) return;
+        if (!commitWorkGcalInviteInput()) return;
+        var summary = String(workNodeValue("[data-work-gcal-new-name]") || "").trim();
+        if (!summary) {
+          setWorkGcalNote("캘린더 이름을 입력해주세요.");
+          return;
+        }
+        var role = workNodeValue("[data-work-gcal-invite-role]") === "reader" ? "reader" : "writer";
+        var invites = workGcalInviteDraft.map(function (email) { return { email: email, role: role }; });
+        workGcalBusy = true;
+        syncWorkGcalBusy();
+        setWorkGcalNote("");
+        setWorkStatus("새 캘린더를 만드는 중입니다.", "");
+        try {
+          var payload = await workGcalRequest({ action: "calendar-create", summary: summary, invites: invites }, "새 캘린더를 만들지 못했습니다.");
+          if (Array.isArray(payload.calendars)) workCalendarCatalog = payload.calendars;
+          workGcalBusy = false;
+          setWorkGcalNewForm(false);
+          renderWorkOperation();
+          await loadWorkItems();
+          var failed = Array.isArray(payload.failedInvites) ? payload.failedInvites : [];
+          if (failed.length) {
+            setWorkGcalNote("초대하지 못한 참가자: " + failed.map(function (entry) {
+              return String((entry && entry.email) || entry || "");
+            }).filter(Boolean).join(", "));
+          }
+          setWorkStatus(summary + " 캘린더를 만들었습니다.", "ok");
+        } catch (error) {
+          workGcalBusy = false;
+          syncWorkGcalBusy();
+          setWorkGcalNote(error.message || "새 캘린더를 만들지 못했습니다.");
+          setWorkStatus(error.message || "새 캘린더를 만들지 못했습니다.", "warn");
+        }
+      }
+
+      async function requestWorkCalendarAcl(op, options) {
+        var id = String((options && options.calendarId) || workGcalAclId || "");
+        if (!id || secureSession.role !== "owner" || workGcalBusy) return;
+        var body = { action: "calendar-acl", calendarId: id, op: op };
+        if (options && options.email) body.email = options.email;
+        if (options && options.role) body.role = options.role;
+        if (options && options.ruleId) body.ruleId = options.ruleId;
+        workGcalBusy = true;
+        syncWorkGcalBusy();
+        try {
+          var payload = await workGcalRequest(body, "참가자 목록을 처리하지 못했습니다.");
+          workGcalAclId = id;
+          workGcalAclRules = Array.isArray(payload.rules) ? payload.rules : [];
+          workGcalBusy = false;
+          var panel = root.querySelector("[data-work-gcal-acl-panel]");
+          var title = root.querySelector("[data-work-gcal-acl-title]");
+          var entry = workCalendarEntry(id);
+          if (title) title.textContent = (String(entry && entry.name || "").trim() || id) + " · 참가자 관리";
+          if (panel) panel.hidden = false;
+          renderWorkGcalAclRules();
+          syncWorkGcalBusy();
+          if (op !== "list") setWorkGcalNote("");
+        } catch (error) {
+          workGcalBusy = false;
+          syncWorkGcalBusy();
+          setWorkGcalNote(error.message || "참가자 목록을 처리하지 못했습니다.");
+        }
+      }
+
+      function addWorkCalendarAclEmail() {
+        var email = String(workNodeValue("[data-work-gcal-acl-email]") || "").trim().toLowerCase();
+        if (!workEmailPattern.test(email)) {
+          setWorkGcalNote("이메일 형식이 올바르지 않습니다: " + (email || "(빈 값)"));
+          return;
+        }
+        var role = workNodeValue("[data-work-gcal-acl-role]") === "reader" ? "reader" : "writer";
+        setWorkValue("[data-work-gcal-acl-email]", "");
+        requestWorkCalendarAcl("insert", { email: email, role: role });
       }
 
       function renderWorkOperation() {
@@ -12525,6 +13142,7 @@
         var label = String(entry.name || "").trim() || id;
         var nextVisible = entry.visible === false;
         var previousCatalog = workCalendarCatalog;
+        var visibilityNote = "";
         workGcalBusy = true;
         // 서버 응답 전에 먼저 화면에서 지운다. 실패하면 아래 catch 에서 되돌린다.
         workCalendarCatalog = workCalendarCatalog.map(function (candidate) {
@@ -12541,8 +13159,12 @@
             timeoutMs: 20000
           });
           var payload = await readApiPayload(response, "캘린더 표시 설정을 확인할 수 없습니다.");
-          if (!response.ok || !payload || payload.ok !== true) throw new Error(payload && payload.message ? payload.message : "캘린더 표시 설정을 저장하지 못했습니다.");
+          if (!response.ok || !payload || payload.ok !== true) {
+            visibilityNote = payload && payload.message ? String(payload.message) : "캘린더 설정 저장에는 관리자 DB 업데이트가 필요합니다.";
+            throw new Error(payload && payload.message ? payload.message : "캘린더 표시 설정을 저장하지 못했습니다.");
+          }
           if (Array.isArray(payload.calendars)) workCalendarCatalog = payload.calendars;
+          setWorkGcalNote("");
           workGcalBusy = false;
           renderWorkOperation();
           // 다시 켠 캘린더의 일정은 서버가 목록에서 빼고 있었으므로 반드시 다시 읽는다.
@@ -12552,6 +13174,8 @@
           workCalendarCatalog = previousCatalog;
           workGcalBusy = false;
           renderWorkOperation();
+          // 되돌리기만 하면 이유를 알 수 없다. 서버 사유(마이그레이션 미적용 503 포함)를 레일에 남긴다.
+          setWorkGcalNote(visibilityNote || error.message || "캘린더 설정 저장에는 관리자 DB 업데이트가 필요합니다.");
           setWorkStatus(error.message || "캘린더 표시 설정을 저장하지 못했습니다.", "warn");
         }
       }
@@ -12580,6 +13204,7 @@
         } catch (error) {
           workGcalBusy = false;
           if (button) button.disabled = false;
+          syncWorkGcalBusy();
           setWorkStatus(error.message || "구글 캘린더 목록을 새로 읽지 못했습니다.", "warn");
         }
       }
@@ -12655,6 +13280,11 @@
         if (weekly) weekly.textContent = "매주 " + dayName + "요일";
         if (monthlyDay) monthlyDay.textContent = "매월 " + date.getDate() + "일";
         if (monthlyNth) monthlyNth.textContent = "매월 " + ordinal + " " + dayName + "요일";
+        // 맞춤 반복 창의 "개월" 기준도 시작 날짜에서 다시 만든다.
+        var customByDate = root.querySelector('[data-work-recurrence-monthly-option="bymonthday"]');
+        var customByDay = root.querySelector('[data-work-recurrence-monthly-option="byday"]');
+        if (customByDate) customByDate.textContent = "매월 " + date.getDate() + "일";
+        if (customByDay) customByDay.textContent = "매월 " + ordinal + " " + dayName + "요일";
       }
 
       function syncWorkRecurrenceFields() {
@@ -12663,14 +13293,75 @@
         var days = root.querySelector("[data-work-recurrence-days]");
         var untilField = root.querySelector("[data-work-recurrence-until-field]");
         var countField = root.querySelector("[data-work-recurrence-count-field]");
+        var monthlyField = root.querySelector("[data-work-recurrence-monthly-field]");
         var unit = workNodeValue("[data-work-recurrence-unit]") || "WEEKLY";
         var endMode = workNodeValue("[data-work-recurrence-end]") || "never";
         var isCustom = preset === "custom" && workGoogleConnected() && !workDialogRecurringInstance;
         if (custom) custom.hidden = !isCustom;
         if (days) days.hidden = !isCustom || unit !== "WEEKLY";
+        if (monthlyField) monthlyField.hidden = !isCustom || unit !== "MONTHLY";
         if (untilField) untilField.hidden = !isCustom || endMode !== "until";
         if (countField) countField.hidden = !isCustom || endMode !== "count";
+        // 라디오(없음/날짜/다음 N회 반복)가 화면이고, 숨긴 select 가 그대로 상태값이다.
+        root.querySelectorAll("[data-work-recurrence-end-choice]").forEach(function (radio) {
+          radio.checked = radio.value === endMode;
+        });
         syncWorkRecurrenceLabels();
+      }
+
+      function workRecurrenceSnapshot() {
+        var days = [];
+        root.querySelectorAll("[data-work-recurrence-day]").forEach(function (box) {
+          if (box.checked) days.push(box.getAttribute("data-work-recurrence-day"));
+        });
+        return {
+          preset: workNodeValue("[data-work-recurrence-preset]"),
+          interval: workNodeValue("[data-work-recurrence-interval]"),
+          unit: workNodeValue("[data-work-recurrence-unit]"),
+          monthly: workNodeValue("[data-work-recurrence-monthly-mode]"),
+          end: workNodeValue("[data-work-recurrence-end]"),
+          until: workNodeValue("[data-work-recurrence-until]"),
+          count: workNodeValue("[data-work-recurrence-count]"),
+          days: days
+        };
+      }
+
+      function restoreWorkRecurrenceSnapshot(snapshot) {
+        if (!snapshot) return;
+        setWorkValue("[data-work-recurrence-preset]", snapshot.preset);
+        setWorkValue("[data-work-recurrence-interval]", snapshot.interval);
+        setWorkValue("[data-work-recurrence-unit]", snapshot.unit);
+        setWorkValue("[data-work-recurrence-monthly-mode]", snapshot.monthly);
+        setWorkValue("[data-work-recurrence-end]", snapshot.end);
+        setWorkValue("[data-work-recurrence-until]", snapshot.until);
+        setWorkValue("[data-work-recurrence-count]", snapshot.count);
+        root.querySelectorAll("[data-work-recurrence-day]").forEach(function (box) {
+          box.checked = snapshot.days.indexOf(box.getAttribute("data-work-recurrence-day")) !== -1;
+        });
+        syncWorkRecurrenceFields();
+      }
+
+      function openWorkRecurrenceModal() {
+        var modal = root.querySelector("[data-work-recurrence-modal]");
+        if (!modal) return;
+        workRecurrenceSnapshotBeforeEdit = workRecurrenceSnapshot();
+        syncWorkRecurrenceFields();
+        modal.hidden = false;
+        window.requestAnimationFrame(function () {
+          var interval = root.querySelector("[data-work-recurrence-interval]");
+          if (interval) interval.focus();
+        });
+      }
+
+      function closeWorkRecurrenceModal(revert) {
+        var modal = root.querySelector("[data-work-recurrence-modal]");
+        if (!modal || modal.hidden) return;
+        modal.hidden = true;
+        if (revert) restoreWorkRecurrenceSnapshot(workRecurrenceSnapshotBeforeEdit);
+        workRecurrenceSnapshotBeforeEdit = null;
+        syncWorkRecurrenceFields();
+        var preset = root.querySelector("[data-work-recurrence-preset]");
+        if (preset) preset.focus();
       }
 
       function workRecurrenceRule() {
@@ -12695,6 +13386,12 @@
           });
           if (!picked.length) picked.push(day);
           rule += ";BYDAY=" + picked.join(",");
+        }
+        // 개월 반복은 "매월 N일"(BYMONTHDAY)과 "매월 N번째 X요일"(BYDAY=<n>XX) 중 하나로 나간다.
+        if (unit === "MONTHLY") {
+          var monthlyMode = workNodeValue("[data-work-recurrence-monthly-mode]") || "bymonthday";
+          if (monthlyMode === "byday") rule += ";BYDAY=" + (Math.floor((date.getDate() - 1) / 7) + 1) + day;
+          else rule += ";BYMONTHDAY=" + date.getDate();
         }
         if (interval > 1) rule += ";INTERVAL=" + interval;
         var endMode = workNodeValue("[data-work-recurrence-end]") || "never";
@@ -12754,6 +13451,7 @@
         else {
           select.value = "custom";
           setWorkValue("[data-work-recurrence-unit]", freq || "WEEKLY");
+          setWorkValue("[data-work-recurrence-monthly-mode]", freq === "MONTHLY" && /^-?\d[A-Z]{2}$/.test(byDay) ? "byday" : "bymonthday");
           setWorkValue("[data-work-recurrence-interval]", String(interval));
           byDay.split(",").forEach(function (code) {
             var box = root.querySelector('[data-work-recurrence-day="' + String(code || "").replace(/[^A-Z]/g, "") + '"]');
@@ -12864,6 +13562,26 @@
         var target = String(selectedId || "");
         if (!target || !select.querySelector('[value="' + target.replace(/"/g, "") + '"]')) target = workDefaultGoogleCalendarId();
         select.value = target;
+        syncWorkGoogleCalendarDot();
+      }
+
+      // 구글처럼 캘린더 이름 옆에 그 캘린더 색 점을 둔다. 6자리 HEX 만 style 로 나간다.
+      function syncWorkGoogleCalendarDot() {
+        var dot = root.querySelector("[data-work-google-calendar-dot]");
+        if (!dot) return;
+        var id = String(workNodeValue("[data-work-google-calendar]") || "");
+        var entry = workCalendarEntry(id);
+        var color = workGcalColor(entry && entry.color);
+        if (!color) {
+          for (var index = 0; index < workGoogleCalendars.length; index += 1) {
+            var calendar = workGoogleCalendars[index] || {};
+            if (String(calendar.id || "") === id) {
+              color = workGcalColor(calendar.color);
+              break;
+            }
+          }
+        }
+        dot.style.setProperty("--mi-gcal-color", color || "var(--mi-navy)");
       }
 
       function syncWorkGoogleMode() {
@@ -12915,6 +13633,9 @@
         workRepeatRequestId = "";
         workDialogRecurringInstance = Boolean(item && item.isRecurringInstance);
         workAttendeeDraft = [];
+        workRecurrenceSnapshotBeforeEdit = null;
+        var recurrenceModal = root.querySelector("[data-work-recurrence-modal]");
+        if (recurrenceModal) recurrenceModal.hidden = true;
         form.reset();
         var start = dateKey ? workDateFromKey(dateKey) : new Date();
         if (!dateKey) start.setMinutes(Math.ceil(start.getMinutes() / 30) * 30, 0, 0);
@@ -13024,6 +13745,7 @@
         var modal = root.querySelector("[data-work-modal]");
         if (modal) modal.hidden = true;
         setWorkDialogStatus("", "");
+        closeWorkRecurrenceModal(false);
         if (workDialogReturnFocus && workDialogReturnFocus.focus && document.contains(workDialogReturnFocus)) workDialogReturnFocus.focus();
         workDialogReturnFocus = null;
       }
@@ -13222,6 +13944,66 @@
           gcalDrawer.setAttribute("aria-expanded", gcalOpen ? "true" : "false");
           return;
         }
+        var gcalAcl = event.target.closest("[data-work-gcal-acl]");
+        if (gcalAcl) {
+          var gcalAclTarget = gcalAcl.getAttribute("data-work-gcal-acl") || "";
+          if (workGcalAclId === gcalAclTarget) closeWorkGcalAclPanel();
+          else requestWorkCalendarAcl("list", { calendarId: gcalAclTarget });
+          return;
+        }
+        var gcalAclRemove = event.target.closest("[data-work-gcal-acl-remove]");
+        if (gcalAclRemove) {
+          requestWorkCalendarAcl("delete", { ruleId: gcalAclRemove.getAttribute("data-work-gcal-acl-remove") || "" });
+          return;
+        }
+        var gcalAclAdd = event.target.closest("[data-work-gcal-acl-add]");
+        if (gcalAclAdd) {
+          addWorkCalendarAclEmail();
+          return;
+        }
+        var gcalAclClose = event.target.closest("[data-work-gcal-acl-close]");
+        if (gcalAclClose) {
+          closeWorkGcalAclPanel();
+          return;
+        }
+        var gcalNew = event.target.closest("[data-work-gcal-new]");
+        if (gcalNew) {
+          var gcalNewPanel = root.querySelector("[data-work-gcal-new-form]");
+          setWorkGcalNewForm(Boolean(gcalNewPanel && gcalNewPanel.hidden));
+          return;
+        }
+        var gcalNewCancel = event.target.closest("[data-work-gcal-new-cancel]");
+        if (gcalNewCancel) {
+          setWorkGcalNewForm(false);
+          return;
+        }
+        var gcalCreate = event.target.closest("[data-work-gcal-create]");
+        if (gcalCreate) {
+          createWorkCalendarFromForm();
+          return;
+        }
+        var gcalInviteRemove = event.target.closest("[data-work-gcal-invite-remove]");
+        if (gcalInviteRemove) {
+          var removedInvite = gcalInviteRemove.getAttribute("data-work-gcal-invite-remove") || "";
+          workGcalInviteDraft = workGcalInviteDraft.filter(function (email) { return email !== removedInvite; });
+          renderWorkGcalInviteChips();
+          return;
+        }
+        var recurrenceCancel = event.target.closest("[data-work-recurrence-cancel]");
+        if (recurrenceCancel) {
+          closeWorkRecurrenceModal(true);
+          return;
+        }
+        var recurrenceDone = event.target.closest("[data-work-recurrence-done]");
+        if (recurrenceDone) {
+          closeWorkRecurrenceModal(false);
+          return;
+        }
+        var recurrenceOverlay = event.target.closest("[data-work-recurrence-modal]");
+        if (recurrenceOverlay && event.target === recurrenceOverlay) {
+          closeWorkRecurrenceModal(true);
+          return;
+        }
         var kindTab = event.target.closest("[data-work-kind-tab]");
         if (kindTab) return;
         var timeToggle = event.target.closest("[data-work-time-toggle]");
@@ -13398,13 +14180,70 @@
       if (workAllDayToggle) workAllDayToggle.addEventListener("change", syncWorkTimeFields);
 
       var workRecurrencePreset = root.querySelector("[data-work-recurrence-preset]");
-      if (workRecurrencePreset) workRecurrencePreset.addEventListener("change", syncWorkRecurrenceFields);
+      if (workRecurrencePreset) {
+        workRecurrencePreset.addEventListener("change", function () {
+          syncWorkRecurrenceFields();
+          if (workRecurrencePreset.value === "custom") openWorkRecurrenceModal();
+        });
+      }
 
       var workRecurrenceUnit = root.querySelector("[data-work-recurrence-unit]");
       if (workRecurrenceUnit) workRecurrenceUnit.addEventListener("change", syncWorkRecurrenceFields);
 
       var workRecurrenceEndMode = root.querySelector("[data-work-recurrence-end]");
       if (workRecurrenceEndMode) workRecurrenceEndMode.addEventListener("change", syncWorkRecurrenceFields);
+
+      var workRecurrenceMonthlyMode = root.querySelector("[data-work-recurrence-monthly-mode]");
+      if (workRecurrenceMonthlyMode) workRecurrenceMonthlyMode.addEventListener("change", syncWorkRecurrenceFields);
+
+      root.querySelectorAll("[data-work-recurrence-end-choice]").forEach(function (radio) {
+        radio.addEventListener("change", function () {
+          if (!radio.checked) return;
+          setWorkValue("[data-work-recurrence-end]", radio.value);
+          syncWorkRecurrenceFields();
+        });
+      });
+
+      var workRecurrenceModalNode = root.querySelector("[data-work-recurrence-modal]");
+      if (workRecurrenceModalNode) {
+        // 편집 폼 안에 떠 있는 창이라 Enter 가 폼 제출로 새지 않게 여기서 막는다.
+        workRecurrenceModalNode.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") {
+            // 바깥 편집 창까지 함께 닫히지 않도록 여기서 이벤트를 멈춘다.
+            event.preventDefault();
+            event.stopPropagation();
+            closeWorkRecurrenceModal(true);
+            return;
+          }
+          if (event.key !== "Enter" || (event.target && event.target.tagName === "BUTTON")) return;
+          event.preventDefault();
+          closeWorkRecurrenceModal(false);
+        });
+      }
+
+      var workGoogleCalendarSelect = root.querySelector("[data-work-google-calendar]");
+      if (workGoogleCalendarSelect) workGoogleCalendarSelect.addEventListener("change", syncWorkGoogleCalendarDot);
+
+      var workGcalInviteInput = root.querySelector("[data-work-gcal-invite-input]");
+      if (workGcalInviteInput) {
+        workGcalInviteInput.addEventListener("keydown", function (event) {
+          if (event.key !== "Enter" && event.key !== "," && event.key !== ";") return;
+          event.preventDefault();
+          commitWorkGcalInviteInput();
+        });
+        workGcalInviteInput.addEventListener("blur", function () {
+          commitWorkGcalInviteInput();
+        });
+      }
+
+      var workGcalAclEmailInput = root.querySelector("[data-work-gcal-acl-email]");
+      if (workGcalAclEmailInput) {
+        workGcalAclEmailInput.addEventListener("keydown", function (event) {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          addWorkCalendarAclEmail();
+        });
+      }
 
       var workAttendeeInput = root.querySelector("[data-work-attendee-input]");
       if (workAttendeeInput) {
@@ -13529,6 +14368,9 @@
 
       window.addEventListener("keydown", function (event) {
         var editorModal = root.querySelector("[data-work-modal]");
+        // 맞춤 반복 창이 떠 있으면 포커스는 그 안에서만 돈다.
+        var openRecurrenceModal = root.querySelector("[data-work-recurrence-modal]");
+        if (openRecurrenceModal && !openRecurrenceModal.hidden) editorModal = openRecurrenceModal;
         if (event.key === "Tab" && editorModal && !editorModal.hidden) {
           var focusable = Array.from(editorModal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
             .filter(function (node) { return node.offsetParent !== null; });

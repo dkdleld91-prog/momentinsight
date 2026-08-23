@@ -31,8 +31,9 @@ const syncHandlerSource = source.slice(
 
 test("representative schedule is a wide personal calendar without list or sharing controls", () => {
   assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
-  assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*7fr\)\s+minmax\(280px,\s*3fr\);[\s\S]{0,100}align-items:\s*start/);
-  assert.match(source, /@media \(max-width: 1180px\)[\s\S]{0,180}\.mi-work-layout\s*\{\s*grid-template-columns:\s*1fr;[\s\S]{0,120}\.mi-work-agenda-card\s*\{\s*grid-column:\s*auto;/);
+  // 달력이 한 줄을 다 쓰고, 아젠다는 그 아래 가로 띠로 내려갔다.
+  assert.match(source, /#mi-admin \.mi-work-layout\s*\{[\s\S]{0,180}grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]{0,100}align-items:\s*start/);
+  assert.match(source, /@media \(max-width: 1180px\)\s*\{\s*#mi-admin \.mi-work-body\.has-gcal-rail\s*\{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]{0,320}#mi-admin \.mi-work-gcal-rail\s*\{\s*position:\s*static;\s*display:\s*none;/);
 
   for (const marker of [
     "mi-work-calendar-rail",
@@ -491,4 +492,181 @@ test("a read-only calendar row is not draggable because the server rejects the s
   assert.ok(canEditSource.length > 0, "workItemCanEdit must exist");
   assert.match(canEditSource, /return Boolean\(item\) && item\.readOnly !== true;/);
   assert.match(source, /var canEdit = workItemCanEdit\(item\);/);
+});
+
+// 달력이 오른쪽 빈 칸 없이 한 줄을 다 쓰고, 가까운 업무는 그 아래 가로 띠로 내려간다.
+// 띠는 오늘·내일 두 칸만 두고, 그 뒤 일정은 달력 자체에서 본다.
+test("the agenda band sits below a full-width calendar and keeps only 오늘 and 내일", () => {
+  assert.match(source, /#mi-admin \.mi-work-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
+  assert.match(source, /@media \(max-width: 760px\)[\s\S]*#mi-admin \.mi-work-agenda \{\s*grid-template-columns:\s*1fr;/);
+  assert.ok(
+    workViewMarkup.indexOf('<article class="mi-work-calendar-card">') < workViewMarkup.indexOf('<aside class="mi-work-agenda-card">'),
+    "달력 카드가 아젠다 카드보다 먼저 온다"
+  );
+
+  assert.match(source, /agenda\.innerHTML = renderWorkAgendaGroup\("오늘", todayItems\) \+\s*\n\s*renderWorkAgendaGroup\("내일", tomorrowItems\);/);
+  assert.equal(source.includes('renderWorkAgendaGroup("Next"'), false, "NEXT 묶음은 남으면 안 된다");
+  assert.equal(source.includes("nextItems"), false, "NEXT 필터도 함께 사라져야 한다");
+  assert.equal(source.includes("var nextDate"), false, "NEXT 기준 날짜도 남으면 안 된다");
+  assert.equal(source.includes('renderWorkAgendaGroup("Today"'), false, "영문 라벨 상수는 남으면 안 된다");
+  assert.equal(source.includes('renderWorkAgendaGroup("Tomorrow"'), false, "영문 라벨 상수는 남으면 안 된다");
+
+  // 비어 있어도 칸이 사라지지 않고 한국어 안내가 남는다.
+  assert.match(source, /'<div class="mi-work-agenda-empty">등록된 업무가 없습니다\.<\/div>'/);
+  // 한 묶음만 그리는 경로(날짜 선택·요약 필터)는 한 칸으로 편다.
+  assert.match(source, /agenda\.classList\.add\("is-single"\)/);
+  assert.match(source, /agenda\.classList\.remove\("is-single"\)/);
+  assert.match(source, /#mi-admin \.mi-work-agenda\.is-single \{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+});
+
+// 구글 월간 뷰처럼 캘린더 배경색으로 꽉 찬 칩. 색은 6자리 HEX 만 style 로 나가고,
+// 완료·공개 표시는 색 위에 그대로 남아야 한다.
+test("month chips and agenda blocks are filled with the calendar colour behind the status affordances", () => {
+  assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
+  assert.match(source, /var chipText = workGcalColor\(item\.calendarTextColor\) \|\| "#ffffff";/);
+  assert.match(source, /chipStyle = chipStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ chipText \+ '"'/);
+  assert.match(source, /var rowText = workGcalColor\(item\.calendarTextColor\) \|\| "#ffffff";/);
+  assert.match(source, /rowStyle = rowStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ rowText \+ '"'/);
+
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] \.mi-work-agenda-edit \{[\s\S]{0,160}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\]\[data-status="done"\] \{\s*opacity: [^;]+;\s*text-decoration: line-through;/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-status="done"\] \.mi-work-agenda-edit strong \{\s*text-decoration: line-through;/);
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-public="true"\]::before/);
+
+  // 종일과 시간 지정 칩은 구글처럼 다르게 그린다(꽉 찬 블록 vs 색 점 + 글자).
+  assert.match(source, /var chipAllDay = item\.isAllDay === false \? "false" : "true";/);
+  assert.match(source, /' data-allday="' \+ chipAllDay \+ '"/);
+  assert.match(source, /chipColor && chipAllDay === "false" \? '<i class="mi-work-day-dot" aria-hidden="true"><\/i>' : ""/);
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\]\[data-allday="false"\] \{/);
+});
+
+// 체크가 조용히 되돌아가면 대표님은 이유를 알 수 없다. 마이그레이션 미적용 503 같은
+// 서버 사유를 레일 안내문에 그대로 남기고, 다음 성공에서 지운다.
+test("a failed visibility toggle explains itself in the rail note instead of silently snapping back", () => {
+  assert.match(workViewMarkup, /<p class="mi-work-gcal-note" data-work-gcal-note hidden><\/p>/);
+  assert.match(source, /function setWorkGcalNote\(message\)[\s\S]{0,320}note\.hidden = !text;/);
+  assert.match(source, /#mi-admin \.mi-work-gcal-rail \.mi-work-gcal-note\[hidden\] \{\s*display: none;/);
+
+  assert.match(calendarVisibilitySource, /visibilityNote = payload && payload\.message \? String\(payload\.message\) : "캘린더 설정 저장에는 관리자 DB 업데이트가 필요합니다\.";/);
+  assert.match(calendarVisibilitySource, /setWorkGcalNote\(""\);/);
+  const revert = calendarVisibilitySource.slice(calendarVisibilitySource.indexOf("} catch (error) {"));
+  assert.match(revert, /workCalendarCatalog = previousCatalog;/);
+  assert.match(revert, /setWorkGcalNote\(visibilityNote \|\| error\.message \|\| "캘린더 설정 저장에는 관리자 DB 업데이트가 필요합니다\."\)/);
+});
+
+// 새 캘린더 만들기와 참가자 관리는 gcal 접두사 계약만 쓴다.
+test("the rail creates calendars and manages participants through the gcal-prefixed contract", () => {
+  assert.match(workViewMarkup, /data-work-gcal-new aria-expanded="false" aria-controls="mi-work-gcal-new-form"/);
+  assert.match(workViewMarkup, /＋ 새 캘린더 만들기<\/button>/);
+  assert.match(workViewMarkup, /data-work-gcal-new-form hidden/);
+  assert.match(workViewMarkup, /data-work-gcal-new-name/);
+  assert.match(workViewMarkup, /data-work-gcal-invite-chips/);
+  assert.match(workViewMarkup, /data-work-gcal-invite-input/);
+  assert.match(workViewMarkup, /data-work-gcal-invite-role[\s\S]{0,220}<option value="writer">편집 가능<\/option>[\s\S]{0,140}<option value="reader">보기만<\/option>/);
+  assert.match(workViewMarkup, /data-work-gcal-create>만들기<\/button>/);
+  assert.match(workViewMarkup, /data-work-gcal-new-cancel>취소<\/button>/);
+
+  assert.match(source, /action: "calendar-create", summary: summary, invites: invites/);
+  assert.match(source, /function commitWorkGcalInvite\(raw\)[\s\S]{0,320}if \(!workEmailPattern\.test\(text\)\)/);
+  assert.match(source, /async function createWorkCalendarFromForm\(\)[\s\S]{0,1600}if \(Array\.isArray\(payload\.calendars\)\) workCalendarCatalog = payload\.calendars;[\s\S]{0,260}await loadWorkItems\(\)/);
+  assert.match(source, /var failed = Array\.isArray\(payload\.failedInvites\) \? payload\.failedInvites : \[\];/);
+  assert.match(source, /setWorkGcalNote\("초대하지 못한 참가자: "/);
+
+  assert.match(railRenderSource, /var manageable = Boolean\(entry && String\(entry\.accessRole \|\| ""\) === "owner" && entry\.primary !== true\);/);
+  assert.match(railRenderSource, /manageable \? '<button type="button" class="mi-work-gcal-acl" data-work-gcal-acl="' \+ escapeHtml\(id\)/);
+  assert.match(workViewMarkup, /data-work-gcal-acl-panel hidden/);
+  assert.match(workViewMarkup, /data-work-gcal-acl-rules/);
+  assert.match(workViewMarkup, /data-work-gcal-acl-email/);
+  assert.match(workViewMarkup, /data-work-gcal-acl-add>추가<\/button>/);
+  assert.match(source, /var body = \{ action: "calendar-acl", calendarId: id, op: op \};/);
+  assert.match(source, /workGcalAclRules = Array\.isArray\(payload\.rules\) \? payload\.rules : \[\];/);
+  assert.match(source, /data-work-gcal-acl-remove="' \+ escapeHtml\(String\(rule && rule\.id \|\| ""\)\)/);
+  assert.match(source, /requestWorkCalendarAcl\("list", \{ calendarId: gcalAclTarget \}\)/);
+  assert.match(source, /requestWorkCalendarAcl\("delete", \{ ruleId: gcalAclRemove\.getAttribute\("data-work-gcal-acl-remove"\) \|\| "" \}\)/);
+  assert.match(source, /function addWorkCalendarAclEmail\(\)[\s\S]{0,320}if \(!workEmailPattern\.test\(email\)\)/);
+  assert.match(source, /requestWorkCalendarAcl\("insert", \{ email: email, role: role \}\)/);
+
+  // 요청 중에는 레일 전체가 잠긴다.
+  assert.match(source, /function syncWorkGcalBusy\(\)[\s\S]{0,420}control\.disabled = workGcalBusy;/);
+  assert.match(source, /async function requestWorkCalendarAcl\(op, options\)[\s\S]{0,200}workGcalBusy\) return;/);
+  assert.match(source, /async function createWorkCalendarFromForm\(\)[\s\S]{0,120}workGcalBusy\) return;/);
+
+  for (const marker of [
+    "mi-work-calendar-rail",
+    "data-work-calendar-list",
+    "data-work-calendar-create",
+    "data-work-calendar-filter",
+    "data-work-calendar-color",
+    "data-work-calendar-grant",
+    "data-work-calendar-share",
+    "data-work-calendar-invite-code",
+    "data-work-calendar-join",
+    "data-work-calendar-leave",
+    "data-work-calendar-select"
+  ]) assert.equal(workViewMarkup.includes(marker), false, `새 캘린더 UI 가 되살리면 안 되는 문자열: ${marker}`);
+});
+
+// 맞춤 반복은 인라인 박스가 아니라 구글식 창에서 고른다.
+test("the custom recurrence editor is a modal with radio end options and a monthly nth-weekday choice", () => {
+  assert.match(editorMarkup, /<div class="mi-work-modal" data-work-recurrence-modal hidden>/);
+  assert.match(editorMarkup, /data-work-recurrence-cancel aria-label="닫기"/);
+  assert.match(editorMarkup, /data-work-recurrence-cancel>취소<\/button>/);
+  assert.match(editorMarkup, /data-work-recurrence-done>완료<\/button>/);
+  assert.ok(
+    editorMarkup.indexOf('data-work-recurrence-modal') < editorMarkup.indexOf('data-work-recurrence-custom'),
+    "맞춤 반복 상자는 창 안으로 들어간다"
+  );
+
+  assert.match(editorMarkup, /<option value="MONTHLY">개월<\/option>/);
+  assert.match(editorMarkup, /data-work-recurrence-monthly-field[^>]*hidden/);
+  assert.match(editorMarkup, /data-work-recurrence-monthly-option="bymonthday">매월 N일<\/option>/);
+  assert.match(editorMarkup, /data-work-recurrence-monthly-option="byday">매월 N번째 X요일<\/option>/);
+
+  assert.match(editorMarkup, /role="radiogroup" aria-label="반복 종료"/);
+  for (const value of ["never", "until", "count"]) {
+    assert.match(
+      editorMarkup,
+      new RegExp(`type="radio" name="mi-work-recurrence-end-choice" value="${value}" data-work-recurrence-end-choice`),
+      `종료 라디오가 없습니다: ${value}`
+    );
+  }
+  assert.match(editorMarkup, /다음 N회 반복<\/span>/);
+
+  // 라벨은 선택한 시작 날짜에서 다시 만든다.
+  assert.match(source, /if \(customByDate\) customByDate\.textContent = "매월 " \+ date\.getDate\(\) \+ "일"/);
+  assert.match(source, /if \(customByDay\) customByDay\.textContent = "매월 " \+ ordinal \+ " " \+ dayName \+ "요일"/);
+
+  // 완료는 기존 페이로드 빌더가 이미 보내는 RFC5545 줄을 그대로 만든다.
+  assert.match(source, /if \(monthlyMode === "byday"\) rule \+= ";BYDAY=" \+ \(Math\.floor\(\(date\.getDate\(\) - 1\) \/ 7\) \+ 1\) \+ day;/);
+  assert.match(source, /else rule \+= ";BYMONTHDAY=" \+ date\.getDate\(\);/);
+  assert.match(source, /setWorkValue\("\[data-work-recurrence-end\]", radio\.value\)/);
+  assert.match(source, /radio\.checked = radio\.value === endMode;/);
+  assert.match(source, /setWorkValue\("\[data-work-recurrence-monthly-mode\]", freq === "MONTHLY" && \/\^-\?\\d\[A-Z\]\{2\}\$\/\.test\(byDay\) \? "byday" : "bymonthday"\)/);
+
+  // 맞춤을 고르면 창이 열리고, 취소는 열기 전 값으로 되돌린다.
+  assert.match(source, /if \(workRecurrencePreset\.value === "custom"\) openWorkRecurrenceModal\(\)/);
+  assert.match(source, /function openWorkRecurrenceModal\(\)[\s\S]{0,300}workRecurrenceSnapshotBeforeEdit = workRecurrenceSnapshot\(\)/);
+  assert.match(source, /function closeWorkRecurrenceModal\(revert\)[\s\S]{0,260}restoreWorkRecurrenceSnapshot\(workRecurrenceSnapshotBeforeEdit\)/);
+  assert.match(source, /var recurrenceDone = event\.target\.closest\("\[data-work-recurrence-done\]"\);[\s\S]{0,120}closeWorkRecurrenceModal\(false\)/);
+  assert.match(source, /var recurrenceCancel = event\.target\.closest\("\[data-work-recurrence-cancel\]"\);[\s\S]{0,120}closeWorkRecurrenceModal\(true\)/);
+});
+
+// 날짜 줄은 구글처럼 한 줄, 캘린더 줄에는 그 캘린더 색 점을 둔다.
+test("the dialog puts 시작 and 종료 on one compact line and marks the calendar with its colour dot", () => {
+  assert.match(editorMarkup, /<div class="mi-work-form-grid mi-work-when-row">/);
+  const whenRow = editorMarkup.slice(
+    editorMarkup.indexOf('class="mi-work-form-grid mi-work-when-row"'),
+    editorMarkup.indexOf('class="mi-work-when-actions"')
+  );
+  assert.ok(whenRow.indexOf("data-work-start-time-field") < whenRow.indexOf("data-work-end-label"), "시작 시간이 종료 날짜 앞에 온다");
+  assert.ok(whenRow.indexOf("data-work-end-label") < whenRow.indexOf("data-work-end-time-field"), "종료 날짜가 종료 시간 앞에 온다");
+  assert.match(source, /#mi-admin \.mi-work-when-row \{\s*display: flex;/);
+  assert.match(editorMarkup, /<button[^>]+data-work-time-toggle[^>]+aria-expanded="false"[^>]*>시간 추가<\/button>/);
+
+  assert.match(editorMarkup, /<i class="mi-work-gcal-dot" data-work-google-calendar-dot aria-hidden="true"><\/i>/);
+  assert.match(source, /function syncWorkGoogleCalendarDot\(\)[\s\S]{0,700}dot\.style\.setProperty\("--mi-gcal-color", color \|\| "var\(--mi-navy\)"\)/);
+  assert.match(source, /#mi-admin \.mi-work-gcal-dot \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
 });

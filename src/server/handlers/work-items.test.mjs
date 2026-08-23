@@ -1044,7 +1044,11 @@ test("a stale expectedUpdatedAt re-reads the row and still deletes through googl
   assert.equal(opsFor(harness.ops, "schedule_items", "select").length, 2, "낡은 버전이면 행을 한 번만 다시 읽는다");
   assert.equal(calls.filter((call) => call.method === "DELETE").length, 1);
   assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 1);
-  assert.equal(opsFor(harness.ops, "audit_logs", "insert").length, 1);
+  // 삭제는 감사 두 줄이다. 시도(work_item_delete_attempted)를 먼저 남기고
+  // 그 다음에 기존 성공 줄(work_item_deleted)을 남긴다.
+  const audits = opsFor(harness.ops, "audit_logs", "insert");
+  assert.equal(audits.length, 2);
+  assert.deepEqual(audits.map((op) => op.values.action), ["work_item_delete_attempted", "work_item_deleted"]);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -1052,6 +1056,12 @@ test("a stale expectedUpdatedAt re-reads the row and still deletes through googl
 // ─────────────────────────────────────────────────────────────
 
 const HOLIDAY = "holidays@group.calendar.google.com";
+// resolveOwnerCalendars 가 방금 만들어 넣은 카탈로그 행의 모습 그대로다:
+// calendar_writable 은 DB 기본값 false, calendar_access_role 은 null.
+// 둘 다 "모름" 이므로 잠그면 안 되는 캘린더다.
+const UNKNOWN_CALENDAR = "team-shared@group.calendar.google.com";
+// writerWithoutPrivateAccess 는 일정 읽기·쓰기를 준다. 읽기 전용이 아니다.
+const LIMITED_WRITER = "limited@group.calendar.google.com";
 
 function catalogRows() {
   return [
@@ -1221,6 +1231,150 @@ test("a row whose calendar the catalog does not know is still editable", async (
   assert.equal(opsFor(harness.ops, "schedule_items", "update").length, 1);
 });
 
+function calendarBoundRow(calendarId, overrides = {}) {
+  return {
+    id: "row-9",
+    client_id: null, operation_team_id: null, owner_agency_code: "mml93-a01", calendar_id: null,
+    title: "팀 공유 일정", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-09-13T05:00:00.000Z", ends_at: "2026-09-13T06:00:00.000Z",
+    visibility: "internal", is_all_day: false,
+    google_calendar_id: calendarId, google_event_id: "gev-9",
+    updated_at: "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function eventUrlFor(calendarId) {
+  return `${CALENDAR_BASE}/calendars/${encodeURIComponent(calendarId)}/events/gev-9`;
+}
+
+// 프로덕션 회귀. 가드가 writable !== true 로 막던 시절에는 resolveOwnerCalendars 가
+// 만든 모든 보조 캘린더 행(calendar_writable=false, calendar_access_role=null)이
+// 읽기 전용으로 뒤집혀 수정·삭제가 통째로 403 calendar_read_only 가 됐다.
+// "삭제가 막힌다" 던 그 버그를 여기서 못박는다.
+test("a calendar the catalog knows but whose access role is unknown stays editable and deletable (regression)", async (t) => {
+  const catalog = [{ google_calendar_id: UNKNOWN_CALENDAR, calendar_role: "secondary", calendar_summary: "팀 공유" }];
+
+  await t.test("PATCH", async () => {
+    const row = calendarBoundRow(UNKNOWN_CALENDAR);
+    const harness = tableCtx({
+      schedule_items: [
+        { data: row, error: null },
+        { data: { ...row, updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+      ],
+      owner_google_calendar_sync: [{ data: catalog, error: null }],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { calls, impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`PATCH ${eventUrlFor(UNKNOWN_CALENDAR)}`]: googleJson(200, { id: "gev-9", etag: '"e2"' }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("PATCH", dialogBody({
+      id: "row-9",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+      conference: false,
+    })), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200, "accessRole 을 모르는 캘린더는 수정할 수 있어야 한다");
+    assert.equal(payload.code, undefined, "calendar_read_only 로 막히지 않는다");
+    assert.equal(calls.filter((call) => call.method === "PATCH").length, 1, "구글에도 실제로 나간다");
+    assert.equal(opsFor(harness.ops, "schedule_items", "update").length, 1);
+  });
+
+  await t.test("DELETE", async () => {
+    const row = calendarBoundRow(UNKNOWN_CALENDAR);
+    const harness = tableCtx({
+      schedule_items: [
+        { data: row, error: null },
+        { data: { id: "row-9" }, error: null },
+      ],
+      owner_google_calendar_sync: [{ data: catalog, error: null }],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }, { error: null }],
+    });
+    const { calls, impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${eventUrlFor(UNKNOWN_CALENDAR)}`]: googleJson(204, {}),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-9",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200, "accessRole 을 모르는 캘린더는 삭제할 수 있어야 한다");
+    assert.equal(payload.code, undefined, "calendar_read_only 로 막히지 않는다");
+    assert.equal(calls.filter((call) => call.method === "DELETE").length, 1, "구글에서 먼저 지운다");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 1);
+  });
+});
+
+// 잠금은 accessRole 로만 판단한다. writerWithoutPrivateAccess 는 일정 읽기·쓰기를
+// 주므로, calendar_writable 백필이 아직 닿지 않은 행이어도 편집을 막으면 안 된다.
+test("a writerWithoutPrivateAccess calendar is editable even before the writable flag is backfilled", async () => {
+  const row = calendarBoundRow(LIMITED_WRITER);
+  const harness = tableCtx({
+    schedule_items: [
+      { data: row, error: null },
+      { data: { ...row, updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+    ],
+    owner_google_calendar_sync: [{ data: [{
+      google_calendar_id: LIMITED_WRITER,
+      calendar_role: "secondary",
+      calendar_summary: "제한 쓰기 캘린더",
+      calendar_access_role: "writerWithoutPrivateAccess",
+      calendar_writable: false,
+    }], error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`PATCH ${eventUrlFor(LIMITED_WRITER)}`]: googleJson(200, { id: "gev-9", etag: '"e2"' }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("PATCH", dialogBody({
+    id: "row-9",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    conference: false,
+  })), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.code, undefined, "읽기 전용이 아니므로 막지 않는다");
+  assert.equal(calls.filter((call) => call.method === "PATCH").length, 1);
+});
+
+// 화면의 자물쇠도 같은 규칙을 쓴다: 구글이 읽기 전용이라고 확인해 준 캘린더만 잠근다.
+test("GET marks readOnly only for the calendar google confirmed as read-only", async () => {
+  const harness = tableCtx({
+    schedule_items: [{ data: [
+      feedRow("row-1", DEDICATED, "월간 정산 미팅"),
+      feedRow("row-2", HOLIDAY, "추석"),
+      feedRow("row-9", UNKNOWN_CALENDAR, "팀 공유 일정"),
+    ], error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: [
+      ...catalogRows(),
+      { google_calendar_id: UNKNOWN_CALENDAR, calendar_role: "secondary", calendar_summary: "팀 공유" },
+    ], error: null }],
+  });
+
+  const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workGetRequest("?includeHidden=1"), harness.ctx));
+  const payload = await response.json();
+  const byId = new Map(payload.items.map((item) => [item.id, item]));
+
+  assert.equal(byId.get("row-9").readOnly, false, "accessRole 을 모르는 캘린더는 화면에서도 잠그지 않는다");
+  assert.equal(byId.get("row-2").readOnly, true, "reader 캘린더만 잠근다");
+  assert.equal(byId.get("row-1").readOnly, false);
+  // 두 신호는 여집합이 아니다 — 다이얼로그 목록에는 여전히 쓰기 가능한 것만 오른다.
+  assert.deepEqual(payload.googleCalendars.map((entry) => entry.id), [DEDICATED]);
+});
+
 // managerWorkItemPayload 가 2번째 인자를 받게 되면서, 목록 매핑을 함수 참조로
 // 넘기면 배열 인덱스가 캘린더 자리에 꽂힌다. 첫 행 말고 나머지가 통째로
 // readOnly 로 잠기는 사고라 여기서 못박는다.
@@ -1256,4 +1410,190 @@ test("a multi-row response never mistakes the list index for a calendar", async 
   assert.deepEqual(payload.items.map((item) => item.readOnly), [false, false, false]);
   assert.deepEqual(payload.items.map((item) => item.calendarVisible), [true, true, true]);
   assert.deepEqual(payload.items.map((item) => item.calendarName), [null, null, null]);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 삭제 시도 감사: 성공이든 실패든 요청당 정확히 한 줄
+// ─────────────────────────────────────────────────────────────
+
+function auditRows(ops) {
+  return opsFor(ops, "audit_logs", "insert").map((op) => op.values);
+}
+
+function deleteAttempts(ops) {
+  return auditRows(ops).filter((row) => row.action === "work_item_delete_attempted");
+}
+
+test("every delete attempt writes exactly one audit row carrying its outcome", async (t) => {
+  await t.test("deleted", async () => {
+    const harness = tableCtx({
+      schedule_items: [
+        { data: deletableRow(), error: null },
+        { data: { id: "row-1" }, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }, { error: null }],
+    });
+    const { impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${DELETE_EVENT_URL}`]: googleJson(204, {}),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200, "감사가 늘어도 응답은 그대로다");
+    assert.equal(payload.ok, true);
+    assert.equal(payload.message, "업무를 삭제했습니다.");
+    // 성공한 삭제는 감사 두 줄이다. 시도가 먼저, 기존 성공 줄이 뒤다.
+    assert.deepEqual(auditRows(harness.ops).map((row) => row.action),
+      ["work_item_delete_attempted", "work_item_deleted"]);
+    const attempts = deleteAttempts(harness.ops);
+    assert.equal(attempts.length, 1);
+    assert.deepEqual(attempts[0].metadata,
+      { outcome: "deleted", reason: "ok", googleSkipped: false, calendarId: DEDICATED });
+  });
+
+  await t.test("google_failed", async () => {
+    const harness = tableCtx({
+      schedule_items: [{ data: deletableRow(), error: null }],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }, { error: null }],
+    });
+    const { impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${DELETE_EVENT_URL}`]: googleJson(500, { error: { code: 500 } }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(payload.code, "google_delete_failed");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "구글이 실패하면 MI 행을 남긴다");
+    const attempts = deleteAttempts(harness.ops);
+    assert.equal(attempts.length, 1);
+    assert.deepEqual(attempts[0].metadata,
+      { outcome: "google_failed", reason: "delete_500", googleSkipped: false, calendarId: DEDICATED });
+  });
+
+  await t.test("read_only", async () => {
+    const harness = tableCtx({
+      schedule_items: [{ data: holidayRow(), error: null }],
+      owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { calls, impl } = googleFetchMock({});
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-2",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 403);
+    assert.equal(payload.code, "calendar_read_only");
+    assert.equal(calls.length, 0, "감사를 남겨도 구글은 부르지 않는다");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "MI 행도 그대로다");
+    const attempts = deleteAttempts(harness.ops);
+    assert.equal(attempts.length, 1);
+    assert.deepEqual(attempts[0].metadata,
+      { outcome: "read_only", reason: "calendar_read_only", googleSkipped: true, calendarId: HOLIDAY });
+  });
+
+  await t.test("scope_miss", async () => {
+    // 구글에서는 지웠는데 MI 삭제가 0건 — 이미 사라졌거나 범위 밖이다.
+    const harness = tableCtx({
+      schedule_items: [
+        { data: deletableRow(), error: null },
+        { data: null, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${DELETE_EVENT_URL}`]: googleJson(204, {}),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 404);
+    assert.equal(payload.message, "삭제할 업무를 찾을 수 없습니다.");
+    const attempts = deleteAttempts(harness.ops);
+    assert.equal(attempts.length, 1);
+    assert.deepEqual(attempts[0].metadata,
+      { outcome: "scope_miss", reason: "delete_no_match", googleSkipped: false, calendarId: DEDICATED });
+  });
+
+  await t.test("db_failed", async () => {
+    // 구글 이벤트가 없는 행이라 구글은 건너뛴다(googleSkipped: true).
+    const harness = tableCtx({
+      schedule_items: [
+        { data: deletableRow({ google_event_id: null }), error: null },
+        { data: null, error: { code: "57014", message: "statement timeout" } },
+      ],
+      owner_google_calendar_sync: [{ data: catalogRows(), error: null }],
+      audit_logs: [{ error: null }],
+    });
+
+    const response = await withGoogleEnv(null, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 500);
+    assert.equal(payload.message, "업무 삭제에 실패했습니다.");
+    const attempts = deleteAttempts(harness.ops);
+    assert.equal(attempts.length, 1);
+    assert.deepEqual(attempts[0].metadata,
+      { outcome: "db_failed", reason: "57014", googleSkipped: true, calendarId: DEDICATED });
+  });
+
+  // 감사는 삭제 결과를 절대 바꾸지 않는다. 감사 테이블이 통째로 던져도
+  // 대표님 화면에는 예전과 똑같은 성공이 보여야 한다.
+  await t.test("감사 테이블이 던져도 응답은 그대로다", async () => {
+    const harness = tableCtx({
+      schedule_items: [
+        { data: deletableRow(), error: null },
+        { data: { id: "row-1" }, error: null },
+      ],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    });
+    const ctx = {
+      supabaseAdmin: {
+        ...harness.ctx.supabaseAdmin,
+        from(table) {
+          if (table === "audit_logs") throw new Error("audit table down");
+          return harness.ctx.supabaseAdmin.from(table);
+        },
+      },
+    };
+    const { impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${DELETE_EVENT_URL}`]: googleJson(204, {}),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.auditLogged, false, "감사는 실패했다고 알리되 삭제는 성공이다");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 1);
+  });
 });

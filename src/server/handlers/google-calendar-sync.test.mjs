@@ -14,6 +14,11 @@ import {
 import {
   MAX_FULL_SYNC_EVENTS,
   MAX_SYNC_CALENDARS,
+  OPTIONAL_CALENDAR_CATALOG_COLUMNS,
+  OPTIONAL_COLUMN_RETRY_MS,
+  OPTIONAL_SCHEDULE_COLUMNS,
+  disableOptionalColumns,
+  disabledOptionalColumns,
   eventInWindow,
   eventIsEcho,
   googleEventTimes,
@@ -25,13 +30,17 @@ import {
   mapGoogleEventToScheduleRow,
   materializeRecurringInstances,
   matchRowForEvent,
+  optionalColumnEnabled,
   ownerSyncableRows,
   pushPendingRows,
   pushRowToGoogle,
   refreshOwnerCalendarCatalog,
   resetOptionalColumns,
   resolveOwnerCalendars,
+  retireDedicatedCalendar,
   runOwnerCalendarSync,
+  runWithOptionalColumns,
+  setOptionalColumnClock,
   setOwnerCalendarVisibility,
   syncOneCalendar,
   syncWindow,
@@ -442,8 +451,11 @@ test("a cancelled event deletes the matched row and writes an audit trail", asyn
   assert.equal(result.deleted, 1);
   assert.equal(result.skipped, 1, "매칭되지 않는 취소는 무시한다");
   assert.deepEqual(opsFor(ops, "schedule_items", "delete")[0].filters, [["eq", "id", "row-1"]]);
-  const audit = opsFor(ops, "audit_logs", "insert")[0].values;
-  assert.equal(audit.action, "google_calendar_item_deleted");
+  // 순번이 아니라 action 으로 짚는다 — 감사 줄이 하나 늘어도 이 단언은 흔들리지 않는다.
+  const audit = opsFor(ops, "audit_logs", "insert")
+    .map((op) => op.values)
+    .find((values) => values.action === "google_calendar_item_deleted");
+  assert.ok(audit, "취소 반영은 google_calendar_item_deleted 로 남는다");
   assert.equal(audit.metadata.title, "지울 일정");
   assert.equal(audit.metadata.eventId, "gev-1");
 });
@@ -726,33 +738,43 @@ test("a stored needs_reconnect short-circuits before any google traffic", async 
   assert.equal(calls.length, 0, "400 폭풍을 만들지 않는다");
 });
 
-test("a full run pushes first, then pulls both the dedicated and primary calendars", async () => {
+// 예전에는 이 실행이 "전용 + 기본" 두 캘린더를 함께 당겼다. 이제는 전용 캘린더를
+// 먼저 비워 지우고 기본 캘린더 하나만 동기화한다 — 대표님의 내 캘린더에는 기본
+// 캘린더 하나만 남아야 한다.
+test("a full run retires the dedicated calendar first and then pulls only the primary", async () => {
   const { ctx, ops } = makeCtx({
     owner_google_integrations: (op) => (op.kind === "select" ? { data: INTEGRATION, error: null } : { data: null, error: null }),
     owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: [], error: null } : { data: null, error: null }),
     schedule_items: { data: [], error: null },
   });
   const dedicatedUrl = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events`;
+  const dedicatedCalendarUrl = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com`;
   const primaryUrl = `${CALENDAR_BASE}/calendars/owner%40example.com/events`;
   const { calls, impl } = fetchMock({
     [`POST ${TOKEN_URL}`]: tokenRoute(),
     [`GET ${CALENDAR_BASE}/calendars/primary`]: jsonResponse(200, { id: "owner@example.com" }),
-    [`GET ${dedicatedUrl}`]: jsonResponse(200, { items: [], nextSyncToken: "st-d" }),
+    [`GET ${dedicatedUrl}`]: jsonResponse(200, { items: [] }),
+    [`DELETE ${dedicatedCalendarUrl}`]: jsonResponse(204, undefined),
     [`GET ${primaryUrl}`]: jsonResponse(200, { items: [timedEvent()], nextSyncToken: "st-p" }),
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, { items: [] }),
   });
 
   const result = await runOwnerCalendarSync(ctx, GOOGLE_ENV, OWNER, { now: NOW, fetchImpl: impl });
 
   assert.equal(result.ok, true);
   assert.equal(result.changed, 1);
-  assert.deepEqual(result.calendars.map((entry) => entry.role), ["dedicated", "primary"]);
-  assert.ok(calls.some((call) => call.url === dedicatedUrl));
-  assert.ok(calls.some((call) => call.url === primaryUrl));
+  assert.deepEqual(result.calendars.map((entry) => entry.role), ["primary"], "지운 캘린더는 동기화 대상에 오르지 않는다");
+  // 회수가 push/pull 보다 먼저여야 그 뒤에 만들어지는 카탈로그가 이미 옳다.
+  const retiredAt = calls.findIndex((call) => call.method === "DELETE" && call.url === dedicatedCalendarUrl);
+  const pulledAt = calls.findIndex((call) => call.url === primaryUrl);
+  assert.ok(retiredAt >= 0, "전용 캘린더는 실제로 지워진다");
+  assert.ok(retiredAt < pulledAt, "회수가 pull 보다 먼저다");
   // primary 는 "primary" 리터럴이 아니라 실제 id 로 고정되어야 중복 동기화가 없다.
   const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert");
-  assert.deepEqual(upserts.map((op) => op.values.google_calendar_id).sort(),
-    ["dedicated@group.calendar.google.com", "owner@example.com"]);
+  assert.deepEqual(upserts.map((op) => op.values.google_calendar_id), ["owner@example.com"]);
   assert.equal(opsFor(ops, "owner_google_integrations", "update").at(-1).values.sync_status, "ok");
+  const cleared = opsFor(ops, "owner_google_integrations", "update").find((op) => "calendar_id" in op.values);
+  assert.equal(cleared.values.calendar_id, null, "연동 행은 더 이상 전용 캘린더를 가리키지 않는다");
 });
 
 test("a run without an integration reports not-connected and touches nothing", async () => {
@@ -765,6 +787,225 @@ test("a run without an integration reports not-connected and touches nothing", a
 
   const missingEnv = await runOwnerCalendarSync(ctx, {}, OWNER, { now: NOW, fetchImpl: impl });
   assert.equal(missingEnv.reason, "env");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 전용 캘린더 회수
+//
+// 연동된 대표님의 내 캘린더에는 기본 캘린더 하나만 남는다. 회수는 멱등이고,
+// 절대 던지지 않으며, 한 조각이라도 남아 있으면 캘린더를 지우지 않는다.
+// ─────────────────────────────────────────────────────────────
+
+const DEDICATED = INTEGRATION.calendar_id;
+const PRIMARY_ID = "owner@example.com";
+const DEDICATED_EVENTS_URL = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events`;
+const DEDICATED_CALENDAR_URL = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com`;
+
+// 기본 캘린더를 카탈로그 캐시에서 찾게 해 둔다 — 그래야 /calendars/primary 를
+// 부르지 않는 경로까지 그대로 확인된다.
+function retireCtx(extra = {}) {
+  return makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? {
+        data: [{ google_calendar_id: PRIMARY_ID, calendar_role: "primary", calendar_summary: "내 캘린더" }],
+        error: null,
+      }
+      : { data: null, error: null }),
+    schedule_items: { data: null, error: null },
+    owner_google_integrations: { data: null, error: null },
+    audit_logs: { data: null, error: null },
+    ...extra,
+  });
+}
+
+test("retiring the dedicated calendar moves its events to the primary and then deletes it", async () => {
+  const { ctx, ops } = retireCtx();
+  const { calls, impl } = fetchMock({
+    [`GET ${DEDICATED_EVENTS_URL}`]: jsonResponse(200, {
+      items: [timedEvent({ id: "gev-1" }), timedEvent({ id: "gev-master", recurrence: ["RRULE:FREQ=WEEKLY"] })],
+    }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-1/move`]: jsonResponse(200, { id: "gev-1", etag: '"m1"' }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-master/move`]: jsonResponse(200, { id: "gev-master", etag: '"m2"' }),
+    [`DELETE ${DEDICATED_CALENDAR_URL}`]: jsonResponse(204, undefined),
+  });
+
+  const result = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.retired, true);
+  assert.deepEqual([result.moved, result.skipped, result.failed], [2, 0, 0]);
+
+  // 마스터를 받아야 옮길 수 있으므로 singleEvents=false 다.
+  const listed = calls.find((call) => call.method === "GET" && call.url === DEDICATED_EVENTS_URL);
+  assert.equal(listed.query.singleEvents, "false");
+  // 동기화 윈도우를 걸지 않는다 — 걸면 그 밖의 이벤트가 캘린더와 함께 사라진다.
+  assert.ok(!("timeMin" in listed.query), "회수는 캘린더 전체를 훑는다");
+  assert.ok(!("timeMax" in listed.query));
+  const moves = calls.filter((call) => call.url.endsWith("/move"));
+  assert.deepEqual(moves.map((call) => call.query.destination), [PRIMARY_ID, PRIMARY_ID]);
+  assert.deepEqual(moves.map((call) => call.query.sendUpdates), ["none", "none"],
+    "캘린더를 옮겼다고 참석자에게 메일이 가서는 안 된다");
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.url === DEDICATED_CALENDAR_URL));
+
+  // 이벤트별 update 두 번 + 인스턴스 행까지 훑는 쓸어담기 update 한 번.
+  const updates = opsFor(ops, "schedule_items", "update");
+  assert.equal(updates.length, 3);
+  assert.equal(updates[0].values.google_calendar_id, PRIMARY_ID);
+  assert.equal(updates[0].values.google_calendar_name, "내 캘린더");
+  assert.equal(updates[0].values.google_etag, '"m1"');
+  assert.deepEqual(updates[0].filters, [
+    ["eq", "owner_agency_code", OWNER],
+    ["eq", "google_calendar_id", DEDICATED],
+    ["eq", "google_event_id", "gev-1"],
+  ]);
+  assert.deepEqual(updates.at(-1).filters, [
+    ["eq", "owner_agency_code", OWNER],
+    ["eq", "google_calendar_id", DEDICATED],
+  ], "반복 시리즈의 인스턴스 행은 마스터 id 로 잡히지 않으므로 마지막에 한 번 쓸어담는다");
+
+  const removed = opsFor(ops, "owner_google_calendar_sync", "delete")[0];
+  assert.deepEqual(removed.filters, [["eq", "owner_agency_code", OWNER], ["eq", "google_calendar_id", DEDICATED]]);
+  assert.equal(opsFor(ops, "owner_google_integrations", "update").at(-1).values.calendar_id, null);
+  const audit = opsFor(ops, "audit_logs", "insert")
+    .map((op) => op.values)
+    .find((values) => values.action === "google_calendar_dedicated_retired");
+  assert.ok(audit, "회수는 감사 줄을 남긴다");
+  assert.equal(audit.target_table, "owner_google_integrations");
+  assert.equal(audit.metadata.moved, 2);
+  assert.equal(audit.metadata.primaryCalendarId, PRIMARY_ID);
+});
+
+// 캘린더를 마지막에 통째로 지우므로, 옮기지 않고 남긴 이벤트는 구글에서 영구히
+// 사라진다. 동기화 윈도우(-30일 ~ +365일)를 회수에 걸면 하필 아무도 보고 있지
+// 않은 오래된·먼 미래의 일정만 조용히 지워진다. 그래서 회수는 전체를 훑는다.
+test("events far outside the sync window are still moved before the calendar is deleted", async () => {
+  const { ctx } = retireCtx();
+  const twoYearsOut = new Date(NOW + 730 * 24 * 60 * 60 * 1000).toISOString();
+  const longPast = new Date(NOW - 730 * 24 * 60 * 60 * 1000).toISOString();
+  const { calls, impl } = fetchMock({
+    [`GET ${DEDICATED_EVENTS_URL}`]: jsonResponse(200, {
+      items: [
+        timedEvent({ id: "gev-future", start: { dateTime: twoYearsOut }, end: { dateTime: twoYearsOut } }),
+        timedEvent({ id: "gev-past", start: { dateTime: longPast }, end: { dateTime: longPast } }),
+      ],
+    }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-future/move`]: jsonResponse(200, { id: "gev-future", etag: '"m1"' }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-past/move`]: jsonResponse(200, { id: "gev-past", etag: '"m2"' }),
+    [`DELETE ${DEDICATED_CALENDAR_URL}`]: jsonResponse(204, undefined),
+  });
+
+  const result = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: impl });
+
+  assert.equal(result.retired, true);
+  assert.deepEqual([result.moved, result.skipped, result.failed], [2, 0, 0]);
+  assert.deepEqual(calls.filter((call) => call.url.endsWith("/move")).map((call) => call.url), [
+    `${DEDICATED_EVENTS_URL}/gev-future/move`,
+    `${DEDICATED_EVENTS_URL}/gev-past/move`,
+  ], "윈도우 밖이라고 남겨 두면 캘린더와 함께 사라진다");
+  assert.ok(calls.some((call) => call.method === "DELETE" && call.url === DEDICATED_CALENDAR_URL));
+});
+
+test("an unmovable event keeps the dedicated calendar alive for the next run", async () => {
+  const { ctx, ops } = retireCtx();
+  const { calls, impl } = fetchMock({
+    [`GET ${DEDICATED_EVENTS_URL}`]: jsonResponse(200, {
+      items: [
+        timedEvent({ id: "gev-1" }),
+        // 구글은 birthday / focusTime / fromGmail / outOfOffice / workingLocation 을 옮겨 주지 않는다.
+        timedEvent({ id: "gev-birthday", eventType: "birthday" }),
+        // 반복 예외는 마스터를 따라간다 — 따로 옮길 수 없다.
+        timedEvent({ id: "gev-exception", recurringEventId: "gev-master" }),
+      ],
+    }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-1/move`]: jsonResponse(200, { id: "gev-1", etag: '"m1"' }),
+  });
+
+  const result = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: impl });
+
+  assert.deepEqual(result, { ok: false, reason: "pending", moved: 1, skipped: 2, failed: 0 });
+  assert.equal(calls.filter((call) => call.url.endsWith("/move")).length, 1, "옮길 수 없는 것은 시도조차 하지 않는다");
+  assert.equal(calls.some((call) => call.method === "DELETE"), false, "일정이 남은 캘린더는 절대 지우지 않는다");
+  assert.equal(opsFor(ops, "owner_google_calendar_sync", "delete").length, 0);
+  assert.equal(opsFor(ops, "owner_google_integrations", "update").length, 0, "연동은 그대로 살아 있다");
+});
+
+test("a failed move leaves the dedicated calendar and the integration untouched", async () => {
+  const { ctx, ops } = retireCtx();
+  const { calls, impl } = fetchMock({
+    [`GET ${DEDICATED_EVENTS_URL}`]: jsonResponse(200, { items: [timedEvent({ id: "gev-1" })] }),
+    [`POST ${DEDICATED_EVENTS_URL}/gev-1/move`]: jsonResponse(500, { error: {} }),
+  });
+
+  const result = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: impl });
+
+  assert.deepEqual(result, { ok: false, reason: "pending", moved: 0, skipped: 0, failed: 1 });
+  assert.equal(calls.some((call) => call.method === "DELETE"), false);
+  assert.equal(opsFor(ops, "schedule_items", "update").length, 0, "옮기지 못한 행은 원래 캘린더를 계속 가리킨다");
+  assert.equal(opsFor(ops, "owner_google_integrations", "update").length, 0);
+});
+
+test("a retirement with nothing left to do never touches google", async () => {
+  // 이미 회수를 끝낸 연동: calendar_id 가 null 이다.
+  const done = retireCtx();
+  const doneFetch = fetchMock({});
+  assert.deepEqual(
+    await retireDedicatedCalendar(done.ctx, GOOGLE_ENV, OWNER, { ...INTEGRATION, calendar_id: null }, "gat-1", { now: NOW, fetchImpl: doneFetch.impl }),
+    { ok: true, skipped: true, reason: "no_dedicated" },
+  );
+  assert.equal(doneFetch.calls.length, 0);
+  assert.equal(done.ops.length, 0, "DB 도 건드리지 않는다");
+
+  // 전용 캘린더 id 가 곧 기본 캘린더인 경우 — 자기 자신으로 옮기거나 기본
+  // 캘린더를 지우는 사고를 여기서 막는다.
+  const same = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? { data: [{ google_calendar_id: DEDICATED, calendar_role: "primary" }], error: null }
+      : { data: null, error: null }),
+  });
+  const sameFetch = fetchMock({});
+  assert.deepEqual(
+    await retireDedicatedCalendar(same.ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: sameFetch.impl }),
+    { ok: true, skipped: true, reason: "already_primary" },
+  );
+  assert.equal(sameFetch.calls.length, 0);
+});
+
+test("a second run after a successful retirement is a no-op with no google traffic", async () => {
+  const { ctx } = retireCtx();
+  const { calls, impl } = fetchMock({
+    [`GET ${DEDICATED_EVENTS_URL}`]: jsonResponse(200, { items: [] }),
+    [`DELETE ${DEDICATED_CALENDAR_URL}`]: jsonResponse(204, undefined),
+  });
+
+  const first = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { now: NOW, fetchImpl: impl });
+  assert.equal(first.retired, true);
+  const spent = calls.length;
+
+  // 회수가 끝나면 연동 행의 calendar_id 는 null 이다. 다음 실행은 그 값을 읽고
+  // 곧바로 물러난다 — 멱등의 값이 여기에 있다.
+  const second = await retireDedicatedCalendar(ctx, GOOGLE_ENV, OWNER, { ...INTEGRATION, calendar_id: null }, "gat-1", { now: NOW, fetchImpl: impl });
+  assert.deepEqual(second, { ok: true, skipped: true, reason: "no_dedicated" });
+  assert.equal(calls.length, spent, "두 번째 실행은 구글을 한 번도 부르지 않는다");
+});
+
+test("pending rows without a calendar of their own fall back to the primary once retired", async () => {
+  const retiredIntegration = { ...INTEGRATION, calendar_id: null };
+  const pending = [{ id: "row-1", title: "밀린 일정", status: "planned", starts_at: "2026-08-24T06:00:00.000Z" }];
+  const { ctx } = makeCtx({
+    schedule_items: (op) => (op.kind === "select" ? { data: pending, error: null } : { data: null, error: null }),
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? { data: [{ google_calendar_id: PRIMARY_ID, calendar_role: "primary", calendar_summary: "내 캘린더" }], error: null }
+      : { data: null, error: null }),
+  });
+  const primaryEventsUrl = `${CALENDAR_BASE}/calendars/owner%40example.com/events`;
+  const { calls, impl } = fetchMock({
+    [`POST ${primaryEventsUrl}`]: jsonResponse(200, { id: "gev-new", etag: '"e1"', updated: "2026-08-23T00:00:00.000Z" }),
+  });
+
+  const result = await pushPendingRows(ctx, GOOGLE_ENV, OWNER, retiredIntegration, "gat-1", { fetchImpl: impl });
+
+  assert.deepEqual(result, { pushed: 1, pushFailed: 0 });
+  assert.equal(calls[0].url, primaryEventsUrl, "전용 캘린더가 사라져도 갈 곳이 있다");
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -881,9 +1122,15 @@ test("a google delete failure keeps the MI row, reports it, and audits the failu
   const failed = opsFor(ops, "schedule_items", "update").at(-1);
   assert.equal(failed.values.google_sync_state, "failed");
   assert.equal(failed.values.google_sync_error, "delete:delete_500");
-  const audit = opsFor(ops, "audit_logs", "insert").at(-1).values;
-  assert.equal(audit.action, "google_calendar_sync_failed");
+  // handleDelete 는 결과별 감사보다 먼저 시도 감사(work_item_delete_attempted)를
+  // 남긴다. .at(-1) 로 마지막 줄을 집으면 그 시도 줄을 잡게 되므로 action 으로 짚는다.
+  const audits = opsFor(ops, "audit_logs", "insert").map((op) => op.values);
+  const audit = audits.find((values) => values.action === "google_calendar_sync_failed");
+  assert.ok(audit, "구글 삭제 실패는 google_calendar_sync_failed 로 남는다");
   assert.equal(audit.metadata.mode, "delete");
+  const attempted = audits.find((values) => values.action === "work_item_delete_attempted");
+  assert.ok(attempted, "삭제 시도 자체도 감사에 남는다");
+  assert.equal(attempted.metadata.outcome, "google_failed");
 });
 
 test("a google event that is already gone still lets the MI row be deleted", async () => {
@@ -1160,6 +1407,32 @@ test("a google-first write reports the failure shape the handler turns into a 50
   assert.deepEqual(missingEnv, { ok: true, skipped: true, reason: "env" });
 });
 
+test("a dialog insert falls back to the primary calendar once the dedicated one is retired", async () => {
+  // 회수를 마친 연동: calendar_id 가 null 이라 예전 코드라면 no_calendar 로 502 였다.
+  const { ctx } = makeCtx({
+    owner_google_integrations: (op) => (op.kind === "select"
+      ? { data: { ...INTEGRATION, calendar_id: null }, error: null }
+      : { data: null, error: null }),
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? { data: [{ google_calendar_id: PRIMARY_ID, calendar_role: "primary", calendar_summary: "내 캘린더" }], error: null }
+      : { data: null, error: null }),
+  });
+  const eventsUrl = `${CALENDAR_BASE}/calendars/owner%40example.com/events`;
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${eventsUrl}`]: jsonResponse(200, { id: "gev-new", etag: '"e1"', updated: "2026-09-01T00:00:00.000Z" }),
+  });
+
+  const result = await writeRowToGoogleFirst(ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow(), { mode: "insert", fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.calendarId, PRIMARY_ID);
+  assert.equal(result.values.google_calendar_id, PRIMARY_ID);
+  assert.equal(result.calendarName, "내 캘린더");
+  assert.equal(calls.some((call) => call.url === `${CALENDAR_BASE}/calendars/primary`), false,
+    "카탈로그 캐시가 답을 들고 있으면 다이얼로그 저장은 구글을 부르지 않는다");
+});
+
 test("instances are collected across pages inside the sync window without writing rows", async () => {
   const { ctx, ops } = makeCtx({});
   const instancesUrl = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/master-1/instances`;
@@ -1288,6 +1561,164 @@ test("a missing optional column retries once without it instead of surfacing a 5
     assert.equal(selects[1].fields.includes("google_recurrence"), false);
     assert.equal(selects[1].fields.includes("google_conference_uri"), false);
     assert.ok(selects[1].fields.includes("google_event_id"), "필수 열은 그대로 남는다");
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 선택 열 강등의 자가 치유 (운영 사고 회귀 방지)
+//
+// 코드가 먼저 배포되고 SQL 이 나중에 들어오는 창에서 강등된 람다는, 예전 구현
+// 에서는 SQL 이 들어온 뒤에도 프로세스가 죽을 때까지 열을 뺀 채로 살았다.
+// 아래 네 가지가 "재배포 없이 스스로 낫는다"를 못 박는다.
+// ─────────────────────────────────────────────────────────────
+
+// 이 묶음의 스텁은 "그 열을 달라고 한 질의만 실패한다" 로 마이그레이션 전/후를
+// 흉내 낸다. migrated 를 켜면 그 순간 SQL 이 들어온 것과 같다.
+function optionalColumnCtx(state) {
+  return makeCtx({
+    schedule_items: (op) => {
+      if (op.kind !== "select") return { data: null, error: null };
+      if (!state.migrated && op.fields.includes("google_recurrence")) {
+        return { data: null, error: { code: "42703", message: "column schedule_items.google_recurrence does not exist" } };
+      }
+      return { data: [], error: null };
+    },
+  });
+}
+
+const NO_GOOGLE = { fetchImpl: async () => { throw new Error("no google"); } };
+
+test("a demoted column group heals itself after the retry window, with no restart", async () => {
+  resetOptionalColumns();
+  try {
+    const state = { migrated: false };
+    const { ctx, ops } = optionalColumnCtx(state);
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    assert.deepEqual(disabledOptionalColumns().sort(), [...OPTIONAL_SCHEDULE_COLUMNS].sort(), "묶음 전체가 함께 내려간다");
+
+    // TTL 안에서는 그대로 열을 뺀 채로 나간다.
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    assert.equal(opsFor(ops, "schedule_items", "select").at(-1).fields.includes("google_recurrence"), false);
+
+    // 마이그레이션이 들어왔다. 람다는 그대로 살아 있다.
+    state.migrated = true;
+    clock += OPTIONAL_COLUMN_RETRY_MS;
+
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    const healed = opsFor(ops, "schedule_items", "select").at(-1);
+    assert.ok(healed.fields.includes("google_recurrence"), "재배포도 resetOptionalColumns 도 없이 열이 다시 실린다");
+    assert.ok(healed.fields.includes("google_calendar_name"));
+    assert.deepEqual(disabledOptionalColumns(), []);
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("the visibility toggle stops answering unsupported once the retry window elapses", async () => {
+  resetOptionalColumns();
+  try {
+    let migrated = false;
+    const { ctx, ops } = makeCtx({
+      owner_google_calendar_sync: (op) => {
+        if (op.kind !== "update") return { data: null, error: null };
+        return migrated
+          ? { data: { google_calendar_id: TEAM_CALENDAR }, error: null }
+          : { data: null, error: { code: "42703", message: "column owner_google_calendar_sync.calendar_visible does not exist" } };
+      },
+    });
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, false), { ok: false, reason: "unsupported" });
+    assert.equal(opsFor(ops, "owner_google_calendar_sync", "update").length, 1, "없는 열에 다시 쓰지 않는다");
+
+    // TTL 안에서는 DB 를 건드리지도 않고 곧바로 미지원으로 답한다.
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, false), { ok: false, reason: "unsupported" });
+    assert.equal(opsFor(ops, "owner_google_calendar_sync", "update").length, 1);
+
+    migrated = true;
+    clock += OPTIONAL_COLUMN_RETRY_MS;
+
+    assert.deepEqual(await setOwnerCalendarVisibility(ctx, OWNER, TEAM_CALENDAR, false), { ok: true, updated: true },
+      "TTL 이 지나면 미지원이라고 단정하지 않고 DB 를 실제로 다시 두드린다");
+    assert.equal(opsFor(ops, "owner_google_calendar_sync", "update").length, 2);
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("a column group still missing after the retry window re-arms instead of flapping", async () => {
+  resetOptionalColumns();
+  try {
+    const state = { migrated: false };
+    const { ctx, ops } = optionalColumnCtx(state);
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+    const selects = () => opsFor(ops, "schedule_items", "select").length;
+
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    assert.equal(selects(), 2, "첫 강등은 정확히 한 번만 재시도한다");
+
+    clock += OPTIONAL_COLUMN_RETRY_MS;
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    assert.equal(selects(), 4, "TTL 이 지나면 딱 한 번 다시 떠본다");
+
+    // 여전히 없으므로 타이머만 새로 감겼다. 이어지는 호출은 재프로브 없이
+    // 열을 뺀 질의 하나씩이다 — 매 호출마다 42703 을 다시 맞지 않는다.
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", NO_GOOGLE);
+    assert.equal(selects(), 6);
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("optional column groups expire independently of one another", async () => {
+  resetOptionalColumns();
+  try {
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+
+    assert.equal(disableOptionalColumns({ code: "42703" }, OPTIONAL_CALENDAR_CATALOG_COLUMNS), true);
+    assert.equal(optionalColumnEnabled("calendar_visible"), false);
+    assert.equal(optionalColumnEnabled("google_recurrence"), true, "다른 마이그레이션의 묶음은 함께 내려가지 않는다");
+
+    // 카탈로그 묶음이 반쯤 지났을 때 일정 묶음이 내려간다. 타이머는 각자 돈다.
+    clock += Math.floor(OPTIONAL_COLUMN_RETRY_MS / 2);
+    assert.equal(disableOptionalColumns({ code: "42703" }, OPTIONAL_SCHEDULE_COLUMNS), true);
+    assert.equal(optionalColumnEnabled("google_recurrence"), false);
+    assert.equal(optionalColumnEnabled("calendar_visible"), false, "아직 둘 다 살아 있다");
+
+    clock += Math.ceil(OPTIONAL_COLUMN_RETRY_MS / 2);
+    assert.equal(optionalColumnEnabled("calendar_visible"), true, "먼저 내려간 묶음이 먼저 만료된다");
+    assert.equal(optionalColumnEnabled("google_recurrence"), false, "나중에 내려간 묶음은 아직 만료 전이다");
+    assert.deepEqual(disabledOptionalColumns().sort(), [...OPTIONAL_SCHEDULE_COLUMNS].sort());
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("a successful select carrying the columns lifts the demotion before the timer", async () => {
+  resetOptionalColumns();
+  try {
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+    assert.equal(disableOptionalColumns({ code: "42703" }, OPTIONAL_SCHEDULE_COLUMNS), true);
+    assert.equal(optionalColumnEnabled("google_conference_uri"), false);
+
+    // 열을 실제로 들고 온 SELECT 는 마이그레이션이 들어왔다는 확실한 증거다.
+    // 값이 null 이어도 키가 있으면 열은 있는 것이다.
+    await runWithOptionalColumns(() => Promise.resolve({
+      data: [{ id: "row-1", google_recurrence: null }],
+      error: null,
+    }), OPTIONAL_SCHEDULE_COLUMNS);
+
+    assert.deepEqual(disabledOptionalColumns(), [], "TTL 을 기다리지 않고 곧바로 되올린다");
   } finally {
     resetOptionalColumns();
   }
@@ -1439,6 +1870,9 @@ test("an empty catalog still infers the dedicated calendar as a visible writable
     dedicated: true,
     accessRole: "owner",
     writable: true,
+    // writable 의 여집합이 아니다. "확인된 읽기 전용" 만 참이고, 전용 캘린더는
+    // 대표님 소유이므로 언제나 거짓이다.
+    readOnly: false,
     visible: true,
     selected: true,
     color: null,

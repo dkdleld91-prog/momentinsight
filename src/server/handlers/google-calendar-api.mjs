@@ -9,7 +9,6 @@ import {
   sessionCookie,
 } from "../code-session.mjs";
 import {
-  DEDICATED_CALENDAR_SUMMARY,
   GOOGLE_TOKEN_URL,
   googleFetch,
   googleOauthConfig,
@@ -21,7 +20,11 @@ import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
 import {
+  createOwnerCalendar,
+  deleteOwnerCalendarAcl,
   deleteRowFromGoogle,
+  insertOwnerCalendarAcl,
+  listOwnerCalendarAcl,
   listOwnerCalendarCatalog,
   listOwnerWritableCalendars,
   recordGoogleDeleteFailure,
@@ -416,6 +419,41 @@ function ownerRequest(request, env = process.env) {
     && safeEqual(cleanText(request.headers.get("x-mi-owner-agency-code")).toLowerCase(), primaryAgencyCode(env));
 }
 
+// 캘린더 생성·공유 계열의 실패 사유 하나를 HTTP 응답 하나로 옮긴다. 사유
+// 문자열은 엔진이 정하고 문구는 여기서만 정한다 — 두 곳에 흩어지면 어긋난다.
+function calendarActionFailure(request, result) {
+  const reason = cleanText(result?.reason);
+  if (reason === "env") {
+    return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+  }
+  if (reason === "not-connected") {
+    return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
+  }
+  if (reason === "needs_reconnect") {
+    return json(request, { ok: false, code: "needs_reconnect", message: "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결해주세요." }, 502);
+  }
+  if (reason === "forbidden") {
+    return json(request, { ok: false, message: "대표님이 소유한 캘린더에서만 참가자를 관리할 수 있습니다." }, 403);
+  }
+  if (reason === "summary") {
+    return json(request, { ok: false, message: "캘린더 이름을 입력해주세요." }, 400);
+  }
+  if (reason === "invites") {
+    return json(request, { ok: false, message: cleanText(result?.message) || "참가자 이메일 주소를 확인해주세요." }, 400);
+  }
+  if (reason === "calendar") {
+    return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
+  }
+  if (reason === "rule") {
+    return json(request, { ok: false, message: "삭제할 참가자를 선택해주세요." }, 400);
+  }
+  return json(request, {
+    ok: false,
+    message: "구글 캘린더가 요청을 거절했습니다. 잠시 후 다시 시도해주세요.",
+    detail: reason || null,
+  }, 502);
+}
+
 async function handleOwnerApi(request, ctx) {
   if (!ownerRequest(request)) {
     return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
@@ -569,6 +607,54 @@ async function handleOwnerApi(request, ctx) {
     }
     return json(request, { ok: true, calendars: await listOwnerCalendarCatalog(ctx, ownerCode, loaded.integration) });
   }
+  // 캘린더 자체를 만들고 사람을 초대한다. 일정마다 참석자를 넣지 않고 공유하는
+  // 방법이라, 여기서 만든 캘린더에 쌓은 일정은 초대받은 사람에게 자동으로 보인다.
+  if (action === "calendar-create") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const summary = cleanText(body.summary, 200);
+    if (!summary) return json(request, { ok: false, message: "캘린더 이름을 입력해주세요." }, 400);
+    if (body.invites !== undefined && !Array.isArray(body.invites)) {
+      return json(request, { ok: false, message: "참가자 목록 형식을 확인해주세요." }, 400);
+    }
+    const created = await createOwnerCalendar(ctx, process.env, ownerCode, { summary, invites: body.invites || [] });
+    if (!created.ok) return calendarActionFailure(request, created);
+    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null }));
+    return json(request, {
+      ok: true,
+      calendarId: created.calendarId,
+      failedInvites: created.failedInvites || [],
+      calendars: await listOwnerCalendarCatalog(ctx, ownerCode, loaded.integration || null),
+    });
+  }
+
+  if (action === "calendar-acl") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const calendarId = cleanText(body.calendarId, 1024);
+    if (!calendarId) return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
+    const op = cleanText(body.op) || "list";
+    let result = null;
+    if (op === "list") {
+      result = await listOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId);
+    } else if (op === "insert") {
+      result = await insertOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, {
+        email: body.email,
+        role: cleanText(body.role) || "writer",
+      });
+    } else if (op === "delete") {
+      result = await deleteOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, body.ruleId);
+    } else {
+      return json(request, { ok: false, message: "지원하지 않는 참가자 요청입니다." }, 400);
+    }
+    if (!result.ok) return calendarActionFailure(request, result);
+    return json(request, { ok: true, rules: result.rules || [] });
+  }
+
   if (action === "disconnect") {
     const { error } = await ctx.supabaseAdmin
       .from("owner_google_integrations")
@@ -785,8 +871,11 @@ async function handleOauthCallback(request, ctx) {
   const refreshToken = cleanText(exchanged.data.refresh_token);
   const accessToken = cleanText(exchanged.data.access_token);
   if (!refreshToken || !accessToken) return callbackRedirect("no-refresh-token");
-  const calendarResult = await googleFetch(accessToken, "POST", "/calendars", { summary: DEDICATED_CALENDAR_SUMMARY, timeZone: "Asia/Seoul" });
-  if (!calendarResult.ok || !calendarResult.data?.id) return callbackRedirect("calendar-failed");
+  // 전용 "모먼트 인사이트" 캘린더는 더 이상 만들지 않는다. 대표님은 내 캘린더
+  // 아래에 기본 캘린더 하나만 두기를 원하시고, 전용 캘린더를 만들면 그 즉시
+  // 사이드바가 둘로 갈라진다. calendar_id 를 null 로 저장해 두면 MI 는 대표님의
+  // 기본 캘린더에 쓴다(google-calendar-sync 의 기본 캘린더 폴백).
+  // 이미 전용 캘린더를 들고 있는 기존 연동은 동기화 실행이 회수한다.
   let googleEmail = null;
   const profile = await googleFetch(accessToken, "GET", "/calendars/primary", null);
   if (profile.ok && profile.data?.id && String(profile.data.id).includes("@")) googleEmail = String(profile.data.id);
@@ -795,7 +884,7 @@ async function handleOauthCallback(request, ctx) {
     .upsert({
       owner_agency_code: cleanText(state.owner),
       refresh_token: refreshToken,
-      calendar_id: String(calendarResult.data.id),
+      calendar_id: null,
       google_email: googleEmail,
       connected_at: new Date().toISOString(),
       sync_status: "ok",
@@ -810,7 +899,8 @@ async function handleOauthCallback(request, ctx) {
     action: "google_calendar_connected",
     target_table: "owner_google_integrations",
     target_id: null,
-    metadata: sanitizeAuditMetadata({ calendarSummary: DEDICATED_CALENDAR_SUMMARY }),
+    // 전용 캘린더를 만들지 않았으므로 만들었다고 주장하지 않는다.
+    metadata: sanitizeAuditMetadata({ dedicatedCalendar: false, target: "primary" }),
   }).then(() => {}, () => {});
   return callbackRedirect("connected");
 }

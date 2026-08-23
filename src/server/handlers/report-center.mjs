@@ -1,5 +1,4 @@
 import { withSupabase } from "@supabase/server";
-import pptxgen from "pptxgenjs";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
@@ -487,7 +486,8 @@ function addBulletList(slide, title, items, x, y, w, h, accent = "0B5FFF") {
   });
 }
 
-function buildSalesReportPptx(input, narrative) {
+async function buildSalesReportPptx(input, narrative) {
+  const { default: pptxgen } = await import("pptxgenjs");
   const pptx = new pptxgen();
   pptx.layout = "LAYOUT_WIDE";
   pptx.author = "Moment Insight";
@@ -935,7 +935,7 @@ function applyReportFilters(query, request) {
   return query;
 }
 
-async function handleGet(request, ctx) {
+export async function handleGet(request, ctx) {
   const access = await resolveAccess(request, ctx);
   if (!access.ok) return json(request, access, access.status);
 
@@ -1409,14 +1409,14 @@ export async function uploadGeneratedReportFile(ctx, access, body, input, narrat
   };
 }
 
-async function handleGenerateSalesPptx(request, ctx, access, body) {
+export async function handleGenerateSalesPptx(request, ctx, access, body) {
   if (access.role === "client") {
     return json(request, { ok: false, message: "광고주는 PPTX 보고서를 생성할 수 없습니다." }, 403);
   }
 
   const input = normalizeSalesReportInput(access, body);
   const narrative = await buildAiSalesNarrative(input);
-  const pptx = buildSalesReportPptx(input, narrative);
+  const pptx = await buildSalesReportPptx(input, narrative);
   const buffer = await writePptxBuffer(pptx);
   const filename = sanitizeFilename(`moment-insight-sales-${input.clientName}-${input.reportMonth}.pptx`);
   const base64 = buffer.toString("base64");

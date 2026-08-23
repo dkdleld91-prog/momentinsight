@@ -613,6 +613,80 @@ test("a failed push marks the row failed so the next sync retries it", async () 
   assert.equal(opsFor(ops, "schedule_items", "update")[0].values.google_sync_state, "failed");
 });
 
+// updated_at 을 올리는 트리거에는 조건이 없다. 값이 하나도 바뀌지 않는 기록용
+// 쓰기까지 그대로 버전을 올리면 대표님 화면의 사본이 이유 없이 낡는다.
+function alreadySyncedRow(values = {}) {
+  return {
+    id: "row-1",
+    title: "이미 밀어둔 일정",
+    status: "planned",
+    starts_at: "2026-08-24T06:00:00.000Z",
+    google_event_id: "gev-1",
+    google_calendar_id: "dedicated@group.calendar.google.com",
+    google_etag: '"e1"',
+    google_updated_at: "2026-08-23T00:00:00.000Z",
+    google_html_link: "https://calendar.google.com/event?eid=1",
+    google_sync_state: "synced",
+    google_sync_error: null,
+    ...values,
+  };
+}
+
+const PENDING_PATCH_URL = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/gev-1`;
+
+function pushOnePending(row, echo) {
+  const { ctx, ops } = makeCtx({
+    schedule_items: (op) => (op.kind === "select" ? { data: [row], error: null } : { data: null, error: null }),
+  });
+  const { calls, impl } = fetchMock({ [`PATCH ${PENDING_PATCH_URL}`]: jsonResponse(200, echo) });
+  return { ctx, ops, calls, run: () => pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { fetchImpl: impl }) };
+}
+
+test("a push whose google echo changes nothing skips the bookkeeping write", async () => {
+  const { ops, calls, run } = pushOnePending(alreadySyncedRow(), {
+    id: "gev-1",
+    etag: '"e1"',
+    updated: "2026-08-23T00:00:00.000Z",
+    htmlLink: "https://calendar.google.com/event?eid=1",
+  });
+
+  const result = await run();
+
+  assert.deepEqual(result, { pushed: 1, pushFailed: 0 }, "밀기 자체는 성공으로 센다");
+  assert.equal(calls[0].method, "PATCH", "구글로 보내는 것은 그대로다");
+  assert.deepEqual(opsFor(ops, "schedule_items", "update"), [], "updated_at 을 올릴 이유가 없다");
+});
+
+test("a push whose google echo brings a new etag still writes the bookkeeping row", async () => {
+  const { ops, run } = pushOnePending(alreadySyncedRow(), {
+    id: "gev-1",
+    etag: '"e2"',
+    updated: "2026-08-23T01:00:00.000Z",
+    htmlLink: "https://calendar.google.com/event?eid=1",
+  });
+
+  const result = await run();
+
+  assert.deepEqual(result, { pushed: 1, pushFailed: 0 });
+  const update = opsFor(ops, "schedule_items", "update")[0];
+  assert.equal(update.values.google_etag, '"e2"');
+  assert.equal(update.values.google_updated_at, "2026-08-23T01:00:00.000Z");
+});
+
+test("a row flipping from pending to synced still writes even when nothing else changed", async () => {
+  const { ops, run } = pushOnePending(alreadySyncedRow({ google_sync_state: "pending" }), {
+    id: "gev-1",
+    etag: '"e1"',
+    updated: "2026-08-23T00:00:00.000Z",
+    htmlLink: "https://calendar.google.com/event?eid=1",
+  });
+
+  const result = await run();
+
+  assert.deepEqual(result, { pushed: 1, pushFailed: 0 });
+  assert.equal(opsFor(ops, "schedule_items", "update")[0].values.google_sync_state, "synced");
+});
+
 // ─────────────────────────────────────────────────────────────
 // 오케스트레이션
 // ─────────────────────────────────────────────────────────────

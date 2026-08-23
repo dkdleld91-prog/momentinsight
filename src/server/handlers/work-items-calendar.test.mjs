@@ -119,6 +119,15 @@ function observingCtx({ tables = {}, rpcs = {} } = {}) {
   };
 }
 
+// delete() 이후 다음 from() 전까지가 그 삭제 질의에 걸린 조건이다.
+function deleteFilters(calls) {
+  const start = calls.findIndex(([kind]) => kind === "delete");
+  if (start < 0) return [];
+  const rest = calls.slice(start + 1);
+  const end = rest.findIndex(([kind]) => kind === "from");
+  return (end < 0 ? rest : rest.slice(0, end)).filter(([kind]) => kind === "eq" || kind === "is");
+}
+
 function ownerRequest(method, body) {
   return new Request("https://insight.momentlabs.co.kr/api/work-items", {
     method,
@@ -498,7 +507,10 @@ test("PATCH rejects shared calendar ids and duplicate recurrence dates", async (
   duplicateHarness.done();
 });
 
-test("DELETE validates input and rejects stale state before mutation", async () => {
+// public.set_updated_at() 는 조건 없는 BEFORE UPDATE 트리거라서 구글 동기화
+// 기록(google_synced_at)만 써도 updated_at 이 올라간다. 삭제까지 버전 일치를
+// 요구하면 대표님 화면의 낡은 값 때문에 삭제가 무작위로 막힌다.
+test("DELETE validates input but never rejects a stale version, re-reading the row instead", async () => {
   const unexpected = await handleWorkItemsRequest(ownerRequest("DELETE", {
     id: "item-1",
     expectedUpdatedAt: "2026-08-20T00:00:00.000Z",
@@ -506,17 +518,99 @@ test("DELETE validates input and rejects stale state before mutation", async () 
   }), scriptedCtx([]).ctx);
   assert.equal(unexpected.status, 400);
 
+  const missingId = await handleWorkItemsRequest(ownerRequest("DELETE", {
+    expectedUpdatedAt: "2026-08-20T00:00:00.000Z",
+  }), scriptedCtx([]).ctx);
+  assert.equal(missingId.status, 400);
+  assert.equal((await missingId.json()).message, "삭제할 업무의 최신 상태를 확인해주세요.");
+
+  // 값을 실어 보냈는데 형식이 깨진 것은 여전히 잘못된 요청이다.
+  const brokenVersion = await handleWorkItemsRequest(ownerRequest("DELETE", {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    expectedUpdatedAt: "2026-02-30",
+  }), scriptedCtx([]).ctx);
+  assert.equal(brokenVersion.status, 400);
+  assert.equal((await brokenVersion.json()).message, "삭제할 업무의 최신 상태를 확인해주세요.");
+
   const existing = managerRow();
-  const harness = scriptedCtx([
+  const fresh = managerRow({ updated_at: "2026-08-21T00:00:00.000Z" });
+  const staleHarness = scriptedCtx([
     { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+    { kind: "from", name: "schedule_items", result: { data: fresh, error: null } },
+    { kind: "from", name: "schedule_items", result: { data: { id: existing.id }, error: null } },
+    { kind: "from", name: "audit_logs", result: { error: null } },
   ]);
   const stale = await handleWorkItemsRequest(ownerRequest("DELETE", {
     id: existing.id,
     expectedUpdatedAt: "2026-08-19T00:00:00.000Z",
-  }), harness.ctx);
-  assert.equal(stale.status, 409);
-  assert.equal(harness.calls.some(([kind]) => kind === "delete"), false);
+  }), staleHarness.ctx);
+  assert.equal(stale.status, 200);
+  assert.equal((await stale.json()).message, "업무를 삭제했습니다.");
+  // 낡은 버전을 받으면 행을 한 번 다시 읽고 그 정본으로 삭제를 이어간다.
+  const deleteAt = staleHarness.calls.findIndex(([kind]) => kind === "delete");
+  const selectsBeforeDelete = staleHarness.calls
+    .slice(0, deleteAt)
+    .filter(([kind, table], index) => kind === "from" && table === "schedule_items"
+      && staleHarness.calls[index + 1]?.[0] === "select").length;
+  assert.equal(selectsBeforeDelete, 2);
+  assert.equal(staleHarness.calls.some(([kind, column]) => kind === "eq" && column === "updated_at"), false);
+  staleHarness.done();
+});
+
+test("DELETE succeeds with only an id and keeps the tenant scope without an updated_at lock", async () => {
+  const existing = managerRow({ client_id: "client-1", operation_team_id: "team-1" });
+  const harness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: existing, error: null } },
+    { kind: "from", name: "schedule_items", result: { data: { id: existing.id }, error: null } },
+    { kind: "from", name: "audit_logs", result: { error: null } },
+  ]);
+  const response = await handleWorkItemsRequest(ownerRequest("DELETE", { id: existing.id }), harness.ctx);
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).ok, true);
+  const filters = deleteFilters(harness.calls);
+  assert.deepEqual(filters.find(([kind, column]) => kind === "eq" && column === "owner_agency_code"), ["eq", "owner_agency_code", "mml93-a01"]);
+  assert.deepEqual(filters.find(([kind, column]) => kind === "eq" && column === "client_id"), ["eq", "client_id", "client-1"]);
+  assert.deepEqual(filters.find(([kind, column]) => kind === "eq" && column === "operation_team_id"), ["eq", "operation_team_id", "team-1"]);
+  assert.ok(filters.some(([kind, column]) => kind === "is" && column === "calendar_id"));
+  assert.equal(filters.some(([kind, column]) => kind === "eq" && column === "updated_at"), false);
   harness.done();
+});
+
+test("DELETE returns 404 without touching storage when the row is gone or out of scope", async () => {
+  const missingHarness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: null, error: null } },
+  ]);
+  const missing = await handleWorkItemsRequest(ownerRequest("DELETE", {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    expectedUpdatedAt: "2026-08-20T00:00:00.000Z",
+  }), missingHarness.ctx);
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).message, "삭제할 업무를 찾을 수 없습니다.");
+  assert.equal(missingHarness.calls.some(([kind]) => kind === "delete"), false);
+  missingHarness.done();
+
+  // 다른 대표 코드의 행은 범위 밖이므로 같은 404 로 닫는다.
+  const foreignHarness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: managerRow({ owner_agency_code: "other-a01" }), error: null } },
+  ]);
+  const foreign = await handleWorkItemsRequest(ownerRequest("DELETE", {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  }), foreignHarness.ctx);
+  assert.equal(foreign.status, 404);
+  assert.equal(foreignHarness.calls.some(([kind]) => kind === "delete"), false);
+  foreignHarness.done();
+
+  // 삭제가 0건이면 이미 사라진 것이다 — 버전 충돌 409 로 되돌리지 않는다.
+  const raceHarness = scriptedCtx([
+    { kind: "from", name: "schedule_items", result: { data: managerRow(), error: null } },
+    { kind: "from", name: "schedule_items", result: { data: null, error: null } },
+  ]);
+  const race = await handleWorkItemsRequest(ownerRequest("DELETE", { id: managerRow().id }), raceHarness.ctx);
+  const racePayload = await race.json();
+  assert.equal(race.status, 404);
+  assert.equal(racePayload.message, "삭제할 업무를 찾을 수 없습니다.");
+  raceHarness.done();
 });
 
 test("legacy DELETE keeps exact tenant scope and records an audit", async () => {

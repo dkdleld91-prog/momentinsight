@@ -472,12 +472,14 @@ function legacyRowInAccess(row, access) {
   return normalizeCode(row.owner_agency_code) === normalizeCode(access.ownerAgencyCode);
 }
 
-function exactOriginalScope(query, row) {
+// matchVersion:false 는 삭제 경로만 넘긴다. PATCH·비서 완료는 기본값 그대로
+// updated_at 동등 조건을 달아 낙관적 잠금을 유지한다.
+function exactOriginalScope(query, row, { matchVersion = true } = {}) {
   query = query.eq("owner_agency_code", row.owner_agency_code);
   query = query.is("calendar_id", null);
   query = row.client_id ? query.eq("client_id", row.client_id) : query.is("client_id", null);
   query = row.operation_team_id ? query.eq("operation_team_id", row.operation_team_id) : query.is("operation_team_id", null);
-  return query.eq("updated_at", row.updated_at);
+  return matchVersion ? query.eq("updated_at", row.updated_at) : query;
 }
 
 const SELECT_COLUMNS = [
@@ -1169,36 +1171,51 @@ async function handleDelete(request, ctx) {
     return json(request, { ok: false, message: "삭제 요청에 허용되지 않은 값이 포함되었습니다." }, 400);
   }
   const id = cleanText(body.id || new URL(request.url).searchParams.get("id"));
+  // expectedUpdatedAt 은 선택값이다. 다만 값을 실어 보냈는데 형식이 깨졌다면
+  // 잘못된 요청이므로 그대로 막는다.
+  const suppliedUpdatedAt = cleanText(body.expectedUpdatedAt);
   const expectedUpdatedAt = validIsoDate(body.expectedUpdatedAt);
-  if (!id || !expectedUpdatedAt) return json(request, { ok: false, message: "삭제할 업무의 최신 상태를 확인해주세요." }, 400);
+  if (!id || (suppliedUpdatedAt && !expectedUpdatedAt)) {
+    return json(request, { ok: false, message: "삭제할 업무의 최신 상태를 확인해주세요." }, 400);
+  }
   const existing = await scopedWorkItem(ctx, access, id);
   if (existing.error) return json(request, { ok: false, message: "업무 범위 확인에 실패했습니다.", detail: existing.error.message }, 500);
   if (!existing.row) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
-  if (validIsoDate(existing.row.updated_at) !== expectedUpdatedAt) {
-    return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 시도해주세요." }, 409);
+  let row = existing.row;
+  // updated_at 은 구글 동기화 기록(google_synced_at 등)만 써도 무조건 트리거로
+  // 올라가므로, 삭제에까지 버전 일치를 요구하면 삭제가 무작위로 막힌다.
+  // 대표님이 직접 확인한 삭제이고 구글이 정본이므로 낡은 버전은 치명적으로
+  // 다루지 않고 행을 한 번 다시 읽어 진행한다.
+  if (expectedUpdatedAt && validIsoDate(row.updated_at) !== expectedUpdatedAt) {
+    const refreshed = await scopedWorkItem(ctx, access, id);
+    if (refreshed.error) return json(request, { ok: false, message: "업무 범위 확인에 실패했습니다.", detail: refreshed.error.message }, 500);
+    if (!refreshed.row) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
+    row = refreshed.row;
   }
   // 구글이 정본이므로 구글에서 먼저 지운다. 여기서 실패하면 MI 행을 남기고
   // 실패를 그대로 알린다 — 조용히 로컬만 지우면 두 캘린더가 영구히 어긋난다.
-  const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, existing.row);
+  const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, row);
   if (!googleDelete.ok) {
-    await recordGoogleDeleteFailure(ctx, existing.row, googleDelete.reason);
+    await recordGoogleDeleteFailure(ctx, row, googleDelete.reason);
     const message = googleDelete.reason === "needs_reconnect"
       ? "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결한 뒤 삭제해주세요."
       : "구글 캘린더에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.";
     return json(request, { ok: false, code: "google_delete_failed", message }, 502);
   }
   let deleteQuery = ctx.supabaseAdmin.from("schedule_items").delete().eq("id", id);
-  deleteQuery = exactOriginalScope(deleteQuery, existing.row);
+  // 테넌트 범위는 그대로 걸되 updated_at 동등 조건은 걸지 않는다.
+  deleteQuery = exactOriginalScope(deleteQuery, row, { matchVersion: false });
   const { data, error } = await deleteQuery.select("id").maybeSingle();
   if (error) return json(request, { ok: false, message: "업무 삭제에 실패했습니다.", detail: error.message }, 500);
-  if (!data) return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 시도해주세요." }, 409);
+  // 0건이면 이미 사라졌거나 범위 밖이다 — 버전 충돌이 아니므로 404 로 알린다.
+  if (!data) return json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404);
   const auditLogged = await recordAudit(ctx, {
     action: "work_item_deleted",
     targetId: id,
-    clientId: existing.row.client_id,
+    clientId: row.client_id,
     metadata: {
-      visibility: existing.row.visibility,
-      status: existing.row.status,
+      visibility: row.visibility,
+      status: row.status,
       googleEventDeleted: !googleDelete.skipped,
     },
   });

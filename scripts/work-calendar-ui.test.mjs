@@ -20,6 +20,14 @@ const submitHandlerSource = source.slice(
   source.indexOf('workForm.addEventListener("submit"'),
   source.indexOf('var workDelete = root.querySelector("[data-work-delete]");')
 );
+const deleteHandlerSource = source.slice(
+  source.indexOf('var workDelete = root.querySelector("[data-work-delete]");'),
+  source.indexOf('var workOwnerClientInput = root.querySelector("[data-work-owner-client-code]");')
+);
+const syncHandlerSource = source.slice(
+  source.indexOf("async function maybeSyncGoogleCalendar(trigger) {"),
+  source.indexOf("async function initOwnerGoogleLoginBanner(view, generation) {")
+);
 
 test("representative schedule is a wide personal calendar without list or sharing controls", () => {
   assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
@@ -287,6 +295,29 @@ test("google write failure keeps the editor open so the owner can retry", () => 
   assert.match(catchBlock, /setWorkStatus\(error\.message \|\| "업무를 저장하지 못했습니다\.", "warn"\)/);
   assert.equal(catchBlock.includes("closeWorkDialog()"), false, "502 must not close the dialog");
   assert.equal(catchBlock.includes("loadWorkItems()"), false, "502 must not reload the calendar");
+});
+
+// 삭제 실패는 다이얼로그를 닫지 않고 서버 사유를 그 자리에 띄워야 한다.
+// 뒤쪽 상태줄은 오버레이에 가리므로 다이얼로그 안 상태줄이 반드시 있어야 한다.
+test("a failed delete keeps the editor open and surfaces the server message inside the dialog", () => {
+  assert.ok(deleteHandlerSource.length > 0, "delete handler must exist");
+  assert.match(deleteHandlerSource, /requestWorkItems\("DELETE", \{ id: id, expectedUpdatedAt: expectedUpdatedAt \}\)/);
+  const catchBlock = deleteHandlerSource.slice(deleteHandlerSource.indexOf("} catch (error) {"));
+  assert.match(catchBlock, /setWorkStatus\(error\.message \|\| "업무를 삭제하지 못했습니다\.", "warn"\)/);
+  assert.equal(catchBlock.includes("closeWorkDialog()"), false, "삭제 실패는 다이얼로그를 닫지 않는다");
+  assert.equal(catchBlock.includes("loadWorkItems()"), false, "삭제 실패는 목록을 다시 읽지 않는다");
+  assert.match(editorMarkup, /data-work-dialog-status[^>]*role="status"[^>]*aria-live="polite"[^>]*hidden/);
+  assert.match(source, /function setWorkDialogStatus\(message, state\)/);
+  assert.match(source, /function setWorkStatus\(message, state\)[\s\S]{0,480}if \(modal && !modal\.hidden\) setWorkDialogStatus\(message, state\)/);
+  assert.match(source, /function closeWorkDialog\(\)[\s\S]{0,200}setWorkDialogStatus\(""/);
+});
+
+// push 만 일어난 동기화도 DB 의 updated_at 을 올린다. 그때 목록을 다시 읽지 않으면
+// 화면이 낡은 updated_at 을 들고 있게 되어 삭제·수정이 서버에서 어긋난다.
+test("a push-only google sync reloads the calendar so the cached updated_at never goes stale", () => {
+  assert.ok(syncHandlerSource.length > 0, "google sync handler must exist");
+  assert.match(syncHandlerSource, /var syncTouchedRows = Number\(outcome\.changed\) > 0 \|\| Number\(outcome\.pushed\) > 0;/);
+  assert.match(syncHandlerSource, /outcome\.ok === true && outcome\.throttled !== true && syncTouchedRows\) loadWorkItems\(\)/);
 });
 
 test("agenda rows keep the title, time and google chip while gaining one compact detail line", () => {

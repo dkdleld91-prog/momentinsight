@@ -8644,6 +8644,22 @@
       font-size: 12px;
     }
 
+    /* 다이얼로그가 열리면 뒤쪽 상태줄은 오버레이에 가려진다. 저장·삭제 실패를
+       대표님이 놓치지 않도록 다이얼로그 안에도 같은 문구를 띄운다. */
+    #mi-admin .mi-work-dialog-status {
+      margin: 0 0 12px;
+      min-height: 0;
+      font-weight: 700;
+    }
+
+    #mi-admin .mi-work-dialog-status.is-warn {
+      color: #a32f2f;
+    }
+
+    #mi-admin .mi-work-dialog-status.is-ok {
+      color: #1d6b45;
+    }
+
     #mi-admin .mi-work-modal[hidden] {
       display: none;
     }
@@ -10030,6 +10046,7 @@
                   </details>
 
                 </div>
+                <div class="mi-work-status mi-work-dialog-status" data-work-dialog-status role="status" aria-live="polite" hidden></div>
                 <div class="mi-work-dialog-actions">
                   <button class="mi-link-button is-danger" type="button" data-work-delete hidden>삭제</button>
                   <div>
@@ -11610,7 +11627,20 @@
         return headers;
       }
 
+      function setWorkDialogStatus(message, state) {
+        var dialogNode = root.querySelector("[data-work-dialog-status]");
+        if (!dialogNode) return;
+        dialogNode.textContent = message || "";
+        dialogNode.hidden = !message;
+        dialogNode.classList.toggle("is-ok", Boolean(message) && state === "ok");
+        dialogNode.classList.toggle("is-warn", Boolean(message) && state === "warn");
+      }
+
       function setWorkStatus(message, state) {
+        // 다이얼로그가 열려 있으면 뒤쪽 상태줄은 오버레이에 가려 보이지 않는다.
+        // 삭제·저장 실패 사유를 대표님이 반드시 보도록 다이얼로그 안에도 함께 쓴다.
+        var modal = root.querySelector("[data-work-modal]");
+        if (modal && !modal.hidden) setWorkDialogStatus(message, state);
         var node = root.querySelector("[data-work-status]");
         if (!node) return;
         node.textContent = message || "";
@@ -12466,6 +12496,7 @@
         var form = root.querySelector("[data-work-form]");
         if (!modal || !form) return;
         workDialogReturnFocus = document.activeElement;
+        setWorkDialogStatus("", "");
         workRepeatRequestId = "";
         workDialogRecurringInstance = Boolean(item && item.isRecurringInstance);
         workAttendeeDraft = [];
@@ -12561,6 +12592,7 @@
       function closeWorkDialog() {
         var modal = root.querySelector("[data-work-modal]");
         if (modal) modal.hidden = true;
+        setWorkDialogStatus("", "");
         if (workDialogReturnFocus && workDialogReturnFocus.focus && document.contains(workDialogReturnFocus)) workDialogReturnFocus.focus();
         workDialogReturnFocus = null;
       }
@@ -13011,11 +13043,18 @@
           if (!id || !window.confirm("이 업무를 삭제할까요?")) return;
           workDelete.disabled = true;
           try {
+            // expectedUpdatedAt 은 계속 보낸다. 서버는 낡은 값을 치명적으로 다루지
+            // 않고 행을 다시 읽어 삭제를 진행한다(동기화 기록만으로도 updated_at 이
+            // 올라가기 때문이다).
             await requestWorkItems("DELETE", { id: id, expectedUpdatedAt: expectedUpdatedAt });
             closeWorkDialog();
             await loadWorkItems();
           } catch (error) {
+            // 삭제 실패는 다이얼로그를 닫지도, 목록을 다시 불러오지도 않는다.
+            // 서버가 준 사유를 그대로 띄우고 그 자리에서 재시도할 수 있게 남긴다.
             setWorkStatus(error.message || "업무를 삭제하지 못했습니다.", "warn");
+            workDelete.disabled = false;
+            workDelete.focus();
           } finally {
             workDelete.disabled = false;
           }
@@ -14326,7 +14365,11 @@
           hooks.setSyncing(false);
           hooks.applyOutcome(outcome);
         }
-        if (outcome.ok === true && outcome.throttled !== true && Number(outcome.changed) > 0) loadWorkItems();
+        // changed 는 inbound(가져오기·수정·삭제)만 센다. push 만 일어난 동기화도
+        // 행의 google_* 기록을 써서 updated_at 을 올리므로, 여기서 다시 읽지 않으면
+        // 화면이 낡은 updated_at 을 든 채로 남아 삭제·수정 요청이 어긋난다.
+        var syncTouchedRows = Number(outcome.changed) > 0 || Number(outcome.pushed) > 0;
+        if (outcome.ok === true && outcome.throttled !== true && syncTouchedRows) loadWorkItems();
       }
 
       async function initOwnerGoogleLoginBanner(view, generation) {

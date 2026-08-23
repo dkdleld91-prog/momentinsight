@@ -921,3 +921,128 @@ test("an explicitly emptied detail is cleared while an absent one is not", () =>
     recurrence: false, attendees: false, location: false, description: false,
   });
 });
+
+// ─────────────────────────────────────────────────────────────
+// 삭제: 구글 우선 경로
+// ─────────────────────────────────────────────────────────────
+
+function deletableRow(overrides = {}) {
+  return {
+    id: "row-1",
+    client_id: null, operation_team_id: null, owner_agency_code: "mml93-a01", calendar_id: null,
+    title: "월간 정산 미팅", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-09-13T05:00:00.000Z", ends_at: "2026-09-13T06:00:00.000Z",
+    visibility: "internal", is_all_day: false,
+    google_calendar_id: DEDICATED, google_event_id: "gev-1",
+    updated_at: "2026-09-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+const DELETE_EVENT_URL = `${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events/gev-1`;
+
+test("a google delete failure returns 502 and preserves the MI row", async (t) => {
+  await t.test("needs_reconnect", async () => {
+    const harness = tableCtx({
+      schedule_items: [{ data: deletableRow(), error: null }],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { impl } = googleFetchMock({ [`POST ${TOKEN_URL}`]: googleJson(400, { error: "invalid_grant" }) });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(payload.code, "google_delete_failed");
+    assert.equal(payload.message, "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결한 뒤 삭제해주세요.");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "구글이 실패하면 MI 행을 남긴다");
+  });
+
+  await t.test("generic retry", async () => {
+    const harness = tableCtx({
+      schedule_items: [{ data: deletableRow(), error: null }],
+      owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+      audit_logs: [{ error: null }],
+    });
+    const { impl } = googleFetchMock({
+      [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+      [`DELETE ${DELETE_EVENT_URL}`]: googleJson(500, { error: { code: 500 } }),
+    });
+
+    const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+      id: "row-1",
+      expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    }), harness.ctx));
+    const payload = await response.json();
+
+    assert.equal(response.status, 502);
+    assert.equal(payload.code, "google_delete_failed");
+    assert.equal(payload.message, "구글 캘린더에서 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");
+    assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "구글이 실패하면 MI 행을 남긴다");
+  });
+});
+
+// 구글에서 이미 사라진 일정은 삭제 성공과 같다. 여기서 막으면 MI 행이 영원히 남는다.
+test("a google 404 or 410 on the event delete still removes the MI row", async (t) => {
+  for (const status of [404, 410]) {
+    await t.test(`google ${status}`, async () => {
+      const harness = tableCtx({
+        schedule_items: [
+          { data: deletableRow(), error: null },
+          { data: { id: "row-1" }, error: null },
+        ],
+        owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+        audit_logs: [{ error: null }],
+      });
+      const { impl } = googleFetchMock({
+        [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+        [`DELETE ${DELETE_EVENT_URL}`]: googleJson(status, { error: { code: status } }),
+      });
+
+      const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+        id: "row-1",
+        expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+      }), harness.ctx));
+
+      assert.equal(response.status, 200);
+      const removals = opsFor(harness.ops, "schedule_items", "delete");
+      assert.equal(removals.length, 1);
+      assert.equal(removals[0].filters.some(([kind, column]) => kind === "eq" && column === "updated_at"), false);
+    });
+  }
+});
+
+// updated_at 은 google_synced_at 갱신만으로도 올라간다. 낡은 값을 들고 온
+// 삭제는 막지 않고 행을 다시 읽어 그 정본으로 구글까지 지운다.
+test("a stale expectedUpdatedAt re-reads the row and still deletes through google", async () => {
+  const harness = tableCtx({
+    schedule_items: [
+      { data: deletableRow(), error: null },
+      { data: deletableRow({ updated_at: "2026-09-02T00:00:00.000Z", google_synced_at: "2026-09-02T00:00:00.000Z" }), error: null },
+      { data: { id: "row-1" }, error: null },
+    ],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`DELETE ${DELETE_EVENT_URL}`]: googleJson(204, {}),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-1",
+    expectedUpdatedAt: "2026-08-25T00:00:00.000Z",
+  }), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(opsFor(harness.ops, "schedule_items", "select").length, 2, "낡은 버전이면 행을 한 번만 다시 읽는다");
+  assert.equal(calls.filter((call) => call.method === "DELETE").length, 1);
+  assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 1);
+  assert.equal(opsFor(harness.ops, "audit_logs", "insert").length, 1);
+});

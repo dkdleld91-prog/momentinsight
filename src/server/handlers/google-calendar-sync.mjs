@@ -387,7 +387,44 @@ export async function markIntegrationSyncStatus(ctx, ownerCode, status, errorTex
   }
 }
 
-async function markRowSyncState(ctx, rowId, values) {
+// 기록용 쓰기에만 나타나는 열. 이 목록 밖의 키가 하나라도 섞이면 실제 변경이다.
+const BOOKKEEPING_COLUMNS = [
+  "google_event_id", "google_etag", "google_updated_at", "google_html_link",
+  "google_calendar_id", "google_sync_state", "google_sync_error",
+];
+
+function sameBookkeepingValue(column, previous, next) {
+  // 선택 목록에 없던 열은 undefined 로 온다. 읽지도 않은 열을 "바뀌었다" 로
+  // 볼 이유가 없으므로 양쪽 다 null 로 맞춘 뒤 견준다.
+  const before = previous === undefined ? null : previous;
+  const after = next === undefined ? null : next;
+  if (column === "google_updated_at") {
+    // timestamptz 는 PostgREST 가 "+00:00" 으로 돌려주고 우리는 ".000Z" 로 쓴다.
+    // 같은 순간을 다른 문자열이라는 이유로 변경으로 보지 않도록 시각으로 견준다.
+    const beforeAt = new Date(cleanText(before)).getTime();
+    const afterAt = new Date(cleanText(after)).getTime();
+    if (Number.isFinite(beforeAt) && Number.isFinite(afterAt)) return beforeAt === afterAt;
+  }
+  return before === after;
+}
+
+// 값이 하나도 바뀌지 않는 "기록용" 쓰기인지 판정한다. google_synced_at 은 밀 때마다
+// 새로 만들어지므로 비교에서 뺀다. 이전 행을 모르면 판정하지 못하니 항상 쓴다.
+export function isNoopSyncBookkeeping(previousRow, values) {
+  if (!previousRow || !values || typeof values !== "object") return false;
+  for (const [column, value] of Object.entries(values)) {
+    if (column === "google_synced_at") continue;
+    if (!BOOKKEEPING_COLUMNS.includes(column)) return false;
+    if (!sameBookkeepingValue(column, previousRow[column], value)) return false;
+  }
+  return true;
+}
+
+// updated_at 을 올리는 BEFORE UPDATE 트리거는 조건이 없어서 어떤 실제 쓰기든 그대로
+// 버전을 올린다. 여기서 없애는 것은 값이 하나도 바뀌지 않는 "기록용" 쓰기뿐이며,
+// handleDelete 는 더 이상 버전 일치에 의존하지 않는다.
+async function markRowSyncState(ctx, rowId, values, previousRow = null) {
+  if (isNoopSyncBookkeeping(previousRow, values)) return;
   try {
     await runWithOptionalColumns(() => ctx.supabaseAdmin
       .from("schedule_items")
@@ -586,7 +623,7 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
           mode,
           fetchImpl,
         });
-        if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values);
+        if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values, row);
         if (!result.ok) {
           await markRowSyncState(ctx, row.id, {
             google_sync_state: "failed",
@@ -647,7 +684,7 @@ export async function pushPendingRows(ctx, env, ownerCode, integration, accessTo
         mode: "upsert",
         fetchImpl,
       });
-      if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values);
+      if (result.ok && result.values) await markRowSyncState(ctx, row.id, result.values, row);
       else if (!result.ok) {
         await markRowSyncState(ctx, row.id, {
           google_sync_state: "failed",

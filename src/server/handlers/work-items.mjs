@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { withSupabase } from "@supabase/server";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import {
@@ -5,10 +6,33 @@ import {
   seoulDateKey,
 } from "../calendar-domain.mjs";
 import {
+  DETAIL_FIELDS,
+  MAX_ATTENDEES,
+  MAX_DESCRIPTION_CHARS,
+  MAX_LOCATION_CHARS,
+  clientDisplayName,
+  describeRecurrence,
+  googleOauthConfig,
+  isAttendeeEmail,
+  loadOwnerGoogleIntegration,
+  normalizeAttendeeList,
+  validateRecurrenceLines,
+} from "../google-calendar-client.mjs";
+import {
   deleteRowFromGoogle,
   recordGoogleDeleteFailure,
   syncOwnerScheduleRows,
 } from "./google-calendar-api.mjs";
+import {
+  activeColumns,
+  googleEventTimes,
+  googleMirrorFields,
+  listOwnerWritableCalendars,
+  materializeRecurringInstances,
+  runWithOptionalColumns,
+  withoutDisabledColumns,
+  writeRowToGoogleFirst,
+} from "./google-calendar-sync.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -30,13 +54,23 @@ const VISIBLE = "client_visible";
 const INTERNAL = "internal";
 const MAX_INTERNAL_NOTE = 4000;
 const MAX_PUBLIC_COMMENT = 1000;
+// calendarId 는 옛 공유 일정표 키라 그대로 두고(핸들러가 404 로 거절한다),
+// 구글 캘린더 선택은 googleCalendarId 라는 새 키로 받는다.
 const WORK_ITEM_WRITE_KEYS = new Set([
   "id", "title", "scheduleType", "schedule_type", "status", "priority",
   "startsAt", "starts_at", "endsAt", "ends_at", "assigneeName", "assignee_name",
   "internalNote", "internal_note", "publicTitle", "public_title", "publicComment", "public_comment",
   "visibility", "isClientVisible", "is_client_visible", "isAllDay", "is_all_day",
   "calendarId", "expectedUpdatedAt", "repeat", "repeatUntil", "repeatNoEnd", "requestId",
+  "allDay", "recurrence", "attendees", "sendUpdates", "conference",
+  "location", "description", "googleCalendarId", "recurrenceScope",
 ]);
+const MAX_GOOGLE_CALENDAR_ID = 1024;
+const SEND_UPDATES = new Set(["all", "none"]);
+const RECURRENCE_SCOPES = new Set(["instance", "all"]);
+// 구글이 돌려주는 인스턴스는 하루 반복이면 1년치 400개에 가깝다. 한 번의
+// insert 로 넣을 수 있는 현실적인 상한을 두고 나머지는 다음 동기화에 맡긴다.
+const MAX_MATERIALIZED_ROWS = 400;
 
 function json(request, body, status = 200) {
   return protectedJson(request, body, status, {
@@ -149,9 +183,135 @@ export function normalizeWorkItemInput(body = {}, options = {}) {
       public_title: requestedVisible ? publicTitle : null,
       public_comment: requestedVisible && publicComment ? publicComment : null,
       visibility: requestedVisible ? VISIBLE : INTERNAL,
-      is_all_day: body.isAllDay === true || body.is_all_day === true,
+      is_all_day: body.isAllDay === true || body.is_all_day === true || body.allDay === true,
     },
   };
+}
+
+// 구글 일정 다이얼로그가 새로 보내는 값들. 전부 400 + 한국어 메시지로 막는다.
+export function normalizeGoogleEventInput(body = {}) {
+  const recurrence = validateRecurrenceLines(body.recurrence);
+  if (!recurrence.ok) return { ok: false, message: recurrence.message };
+
+  const rawAttendees = body.attendees;
+  if (rawAttendees !== undefined && rawAttendees !== null && !Array.isArray(rawAttendees)) {
+    return { ok: false, message: "참석자 목록 형식을 확인해주세요." };
+  }
+  const attendeeInput = Array.isArray(rawAttendees) ? rawAttendees : [];
+  if (attendeeInput.length > MAX_ATTENDEES) {
+    return { ok: false, message: `참석자는 최대 ${MAX_ATTENDEES}명까지 초대할 수 있습니다.` };
+  }
+  for (const entry of attendeeInput) {
+    const email = typeof entry === "string" ? entry : cleanText(entry?.email);
+    if (!isAttendeeEmail(email)) return { ok: false, message: "참석자 이메일 형식을 확인해주세요." };
+  }
+
+  if (Object.hasOwn(body, "conference") && typeof body.conference !== "boolean") {
+    return { ok: false, message: "화상 회의 설정을 확인해주세요." };
+  }
+  // 기본값은 "none" 이다. 다이얼로그는 초대 메일 여부를 항상 명시해서 보내므로,
+  // 키가 없는 요청은 드래그 이동·빠른 완료처럼 사람이 초대 메일을 의도하지 않은
+  // 경로뿐이다. 여기서 "all" 로 기울면 일정을 하루 옮길 때마다 참석자 전원에게
+  // 메일이 나간다.
+  const sendUpdates = cleanText(body.sendUpdates || "none").toLowerCase();
+  if (!SEND_UPDATES.has(sendUpdates)) return { ok: false, message: "초대 메일 발송 설정을 확인해주세요." };
+  const recurrenceScope = cleanText(body.recurrenceScope || "instance").toLowerCase();
+  if (!RECURRENCE_SCOPES.has(recurrenceScope)) return { ok: false, message: "반복 일정 수정 범위를 확인해주세요." };
+
+  const location = cleanText(body.location);
+  if (location.length > MAX_LOCATION_CHARS) {
+    return { ok: false, message: `위치는 ${MAX_LOCATION_CHARS}자까지 입력할 수 있습니다.` };
+  }
+  const description = cleanText(body.description);
+  if (description.length > MAX_DESCRIPTION_CHARS) {
+    return { ok: false, message: `설명은 ${MAX_DESCRIPTION_CHARS}자까지 입력할 수 있습니다.` };
+  }
+  const googleCalendarId = cleanText(body.googleCalendarId);
+  if (googleCalendarId.length > MAX_GOOGLE_CALENDAR_ID) {
+    return { ok: false, message: "캘린더 선택 값을 확인해주세요." };
+  }
+
+  return {
+    ok: true,
+    value: {
+      recurrence: recurrence.value,
+      attendees: normalizeAttendeeList(attendeeInput, MAX_ATTENDEES),
+      sendUpdates,
+      conference: body.conference === true,
+      location,
+      description,
+      googleCalendarId,
+      recurrenceScope,
+      // PATCH 에서 "보내지 않은 필드" 와 "비워서 보낸 필드" 는 다르다. 앞의 것은
+      // 손대지 않고, 뒤의 것만 지운다. 드래그 이동·빠른 완료처럼 상세를 싣지
+      // 않는 PATCH 가 참석자·설명을 통째로 날리는 사고를 막는 경계선이다.
+      provided: {
+        recurrence: Object.hasOwn(body, "recurrence"),
+        attendees: Object.hasOwn(body, "attendees"),
+        location: Object.hasOwn(body, "location"),
+        description: Object.hasOwn(body, "description"),
+      },
+    },
+  };
+}
+
+// PATCH 는 배열 필드를 통째로 교체한다. 다이얼로그가 기존 참석자를 그대로
+// 돌려보낸 경우 저장해 둔 responseStatus/displayName 을 다시 붙여야 RSVP 가 산다.
+function mergeStoredAttendees(attendees, storedAttendees) {
+  const stored = new Map();
+  for (const entry of Array.isArray(storedAttendees) ? storedAttendees : []) {
+    const email = cleanText(entry?.email).toLowerCase();
+    if (email) stored.set(email, entry);
+  }
+  if (!stored.size) return attendees;
+  return attendees.map((attendee) => {
+    const previous = stored.get(attendee.email);
+    if (!previous) return attendee;
+    const merged = { ...attendee };
+    if (!merged.displayName && cleanText(previous.displayName)) merged.displayName = cleanText(previous.displayName, 120);
+    if (!merged.responseStatus && cleanText(previous.responseStatus)) merged.responseStatus = cleanText(previous.responseStatus, 20);
+    return merged;
+  });
+}
+
+function googleDetailValues(googleInput, recurrenceLines, storedAttendees = null) {
+  const attendees = mergeStoredAttendees(googleInput.attendees, storedAttendees);
+  return {
+    google_location: googleInput.location || null,
+    google_description: googleInput.description || null,
+    google_attendees: attendees.length ? attendees : null,
+    google_recurrence: recurrenceLines.length ? recurrenceLines : null,
+  };
+}
+
+// PATCH 전용. 요청이 실제로 보낸 상세 필드만 골라낸다.
+function providedDetailValues(googleInput, storedRow) {
+  const provided = googleInput.provided;
+  const values = {};
+  if (provided.location) values.google_location = googleInput.location || null;
+  if (provided.description) values.google_description = googleInput.description || null;
+  if (provided.attendees) {
+    const attendees = mergeStoredAttendees(googleInput.attendees, storedRow.google_attendees);
+    values.google_attendees = attendees.length ? attendees : null;
+  }
+  if (provided.recurrence) {
+    values.google_recurrence = googleInput.recurrence.length ? googleInput.recurrence : null;
+  }
+  return { values, fields: DETAIL_FIELDS.filter((field) => provided[field]) };
+}
+
+// 미연동 시절의 repeat:"monthly" 를 구글이 이해하는 RRULE 로 옮긴다.
+export function monthlyRecurrenceLines(startsAt, repeatUntil, repeatNoEnd) {
+  const startKey = seoulDateKey(startsAt);
+  if (!startKey) return [];
+  const monthDay = Number(startKey.slice(-2));
+  if (!Number.isInteger(monthDay) || monthDay < 1 || monthDay > 31) return [];
+  let rule = `RRULE:FREQ=MONTHLY;BYMONTHDAY=${monthDay}`;
+  if (!repeatNoEnd) {
+    const untilKey = seoulDateKey(validIsoDate(repeatUntil));
+    if (untilKey) rule += `;UNTIL=${untilKey.replace(/-/gu, "")}T145959Z`;
+  }
+  return [rule];
 }
 
 export function clientWorkItemPayload(row = {}) {
@@ -198,6 +358,19 @@ function managerWorkItemPayload(row = {}) {
     googleHtmlLink: row.google_html_link || null,
     googleSyncState: row.google_sync_state || null,
     googleLocation: row.google_location || null,
+    googleCalendarId: row.google_calendar_id || null,
+    calendarName: row.google_calendar_name || null,
+    location: row.google_location || null,
+    description: row.google_description || null,
+    attendees: (Array.isArray(row.google_attendees) ? row.google_attendees : []).map((entry) => ({
+      email: cleanText(entry?.email, 320),
+      displayName: cleanText(entry?.displayName, 120) || null,
+      responseStatus: cleanText(entry?.responseStatus, 20) || null,
+    })).filter((entry) => entry.email),
+    conferenceUri: row.google_conference_uri || null,
+    recurrence: Array.isArray(row.google_recurrence) ? row.google_recurrence : [],
+    recurrenceSummary: describeRecurrence(row.google_recurrence),
+    isRecurringInstance: Boolean(row.google_recurring_event_id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     client: row.client || null,
@@ -307,47 +480,55 @@ function exactOriginalScope(query, row) {
   return query.eq("updated_at", row.updated_at);
 }
 
+const SELECT_COLUMNS = [
+  "id",
+  "client_id",
+  "operation_team_id",
+  "title",
+  "schedule_type",
+  "status",
+  "priority",
+  "starts_at",
+  "ends_at",
+  "assignee_name",
+  "internal_note",
+  "public_title",
+  "public_comment",
+  "visibility",
+  "is_all_day",
+  "calendar_id",
+  "series_id",
+  "occurrence_on",
+  "recurrence_kind",
+  "recurrence_until",
+  "recurrence_no_end",
+  "recurrence_month_day",
+  "recurrence_timezone",
+  "recurrence_day_policy",
+  "google_event_id",
+  "owner_agency_code",
+  "google_calendar_id",
+  "google_etag",
+  "google_updated_at",
+  "google_source",
+  "google_sync_state",
+  "google_html_link",
+  "google_recurring_event_id",
+  "google_location",
+  "google_description",
+  "google_attendees",
+  "google_recurrence",
+  "google_conference_uri",
+  "google_calendar_name",
+  "created_at",
+  "updated_at",
+  "client:clients(id,name,business_name)",
+  "operation_team:operation_team_codes(id,team_name)",
+];
+
+// 마이그레이션이 아직 적용되지 않은 창에서는 새 열을 빼고 다시 읽는다.
 function selectFields() {
-  return [
-    "id",
-    "client_id",
-    "operation_team_id",
-    "title",
-    "schedule_type",
-    "status",
-    "priority",
-    "starts_at",
-    "ends_at",
-    "assignee_name",
-    "internal_note",
-    "public_title",
-    "public_comment",
-    "visibility",
-    "is_all_day",
-    "calendar_id",
-    "series_id",
-    "occurrence_on",
-    "recurrence_kind",
-    "recurrence_until",
-    "recurrence_no_end",
-    "recurrence_month_day",
-    "recurrence_timezone",
-    "recurrence_day_policy",
-    "google_event_id",
-    "owner_agency_code",
-    "google_calendar_id",
-    "google_etag",
-    "google_updated_at",
-    "google_source",
-    "google_sync_state",
-    "google_html_link",
-    "google_recurring_event_id",
-    "google_location",
-    "created_at",
-    "updated_at",
-    "client:clients(id,name,business_name)",
-    "operation_team:operation_team_codes(id,team_name)",
-  ].join(",");
+  return activeColumns(SELECT_COLUMNS).join(",");
 }
 
 function applyAccessScope(query, access, { clientVisibleOnly = false } = {}) {
@@ -373,12 +554,14 @@ function applyDateRange(query, request) {
 }
 
 async function existingSeries(ctx, access, seriesId) {
-  let query = ctx.supabaseAdmin
-    .from("schedule_items")
-    .select(selectFields())
-    .eq("series_id", seriesId)
-    .order("starts_at", { ascending: true });
-  return applyAccessScope(query.is("calendar_id", null), access);
+  return runWithOptionalColumns(() => {
+    const query = ctx.supabaseAdmin
+      .from("schedule_items")
+      .select(selectFields())
+      .eq("series_id", seriesId)
+      .order("starts_at", { ascending: true });
+    return applyAccessScope(query.is("calendar_id", null), access);
+  });
 }
 
 async function recordAudit(ctx, payload) {
@@ -394,12 +577,12 @@ async function recordAudit(ctx, payload) {
 }
 
 async function scopedWorkItem(ctx, access, id) {
-  const { data, error } = await ctx.supabaseAdmin
+  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
     .from("schedule_items")
     .select(selectFields())
     .eq("id", id)
     .is("calendar_id", null)
-    .maybeSingle();
+    .maybeSingle());
   if (error || !data) return { row: null, error };
   if (data.calendar_id || !legacyRowInAccess(data, access)) return { row: null, error: null };
   return { row: data, error: null };
@@ -409,13 +592,14 @@ async function handleGet(request, ctx) {
   const access = await resolveAccess(request, ctx);
   if (!access.ok) return json(request, access, access.status);
   const limit = parseLimit(new URL(request.url), 200, 300);
-  let query = ctx.supabaseAdmin
-    .from("schedule_items")
-    .select(selectFields())
-    .order("starts_at", { ascending: true })
-    .limit(limit + 1);
-  query = applyDateRange(applyAccessScope(query.is("calendar_id", null), access), request);
-  const { data, error } = await query;
+  const { data, error } = await runWithOptionalColumns(() => {
+    const base = ctx.supabaseAdmin
+      .from("schedule_items")
+      .select(selectFields())
+      .order("starts_at", { ascending: true })
+      .limit(limit + 1);
+    return applyDateRange(applyAccessScope(base.is("calendar_id", null), access), request);
+  });
   if (error) return json(request, { ok: false, message: "업무 일정을 불러오지 못했습니다.", detail: error.message }, 500);
   const rows = (data || []).filter((row) => !row.calendar_id).slice(0, limit);
   const truncated = (data || []).length > limit;
@@ -426,9 +610,154 @@ async function handleGet(request, ctx) {
     canPublish: roleCanMutateWorkItems(access.role) && Boolean(access.client),
     client: access.client ? { id: access.client.id, name: access.client.name || access.client.business_name } : null,
     calendars: [],
+    googleCalendars: await ownerGoogleCalendars(ctx, access),
     items,
     truncated,
   });
+}
+
+// 캐시(DB)만 읽는다. 목록 조회는 hot path 라 구글을 부르지 않는다.
+// 연동 전이거나 캐시가 비었으면 빈 배열이다.
+async function ownerGoogleCalendars(ctx, access) {
+  if (access.role !== "owner") return [];
+  try {
+    const config = googleOauthConfig(process.env);
+    if (!config.clientId || !config.clientSecret) return [];
+    const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
+    const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
+    if (error || !integration) return [];
+    return await listOwnerWritableCalendars(ctx, ownerCode, integration);
+  } catch (unexpected) {
+    return [];
+  }
+}
+
+// 구글 쓰기 실패는 502 다. MI 에는 아무것도 남기지 않았음을 호출자가 신뢰할 수 있어야 한다.
+function googleWriteFailure(request, reason) {
+  if (reason === "needs_reconnect") {
+    return json(request, {
+      ok: false,
+      code: "needs_reconnect",
+      message: "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결한 뒤 저장해주세요.",
+    }, 502);
+  }
+  return json(request, {
+    ok: false,
+    code: "google_write_failed",
+    message: "구글 캘린더에 일정을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.",
+    detail: cleanText(reason, 100) || null,
+  }, 502);
+}
+
+// 구글이 준 이벤트를 MI 행으로 옮긴다. 반복이면 마스터 대신 인스턴스마다
+// 한 행씩 만든다 — MI 마스터 행은 만들지 않는다.
+function instanceRowFromEvent(instance, options) {
+  const times = googleEventTimes(instance);
+  if (!times.ok) return null;
+  const { shared, calendarId, calendarName, masterEventId, recurrenceLines, nowIso } = options;
+  return {
+    ...shared,
+    id: crypto.randomUUID(),
+    starts_at: times.startsAt,
+    ends_at: times.endsAt,
+    is_all_day: times.isAllDay,
+    google_source: "mi",
+    google_calendar_id: calendarId,
+    google_calendar_name: calendarName,
+    google_event_id: cleanText(instance.id, 1024),
+    google_sync_state: "synced",
+    google_sync_error: null,
+    google_synced_at: nowIso,
+    ...googleMirrorFields(instance),
+    google_recurring_event_id: cleanText(instance.recurringEventId, 1024) || masterEventId,
+    // 인스턴스 이벤트에는 recurrence 가 없다. 화면 요약("매월 13일")을 위해
+    // 마스터의 규칙을 사본으로 남긴다. 인스턴스 행은 마스터가 아니므로
+    // buildGoogleEventPayload 가 이 값을 구글로 되돌려 보내지 않는다.
+    google_recurrence: recurrenceLines,
+  };
+}
+
+async function createFromGoogleEvent(request, ctx, access, options) {
+  const { googleWrite, baseRow, googleRow, recurrenceLines, repeatNoEnd } = options;
+  const masterEventId = cleanText(googleWrite.event?.id, 1024);
+  const nowIso = new Date().toISOString();
+  const shared = {
+    ...baseRow,
+    google_location: googleRow.google_location,
+    google_description: googleRow.google_description,
+    google_attendees: googleRow.google_attendees,
+  };
+
+  let rows = [];
+  let truncated = false;
+  if (recurrenceLines.length) {
+    const materialized = await materializeRecurringInstances(ctx, process.env, {
+      integration: googleWrite.integration,
+      accessToken: googleWrite.accessToken,
+      calendarId: googleWrite.calendarId,
+      masterEventId,
+      ownerCode: normalizeCode(access.ownerAgencyCode),
+      baseRow,
+    });
+    const instances = (materialized.instances || []).slice(0, MAX_MATERIALIZED_ROWS);
+    truncated = (materialized.instances || []).length > instances.length;
+    for (const instance of instances) {
+      const row = instanceRowFromEvent(instance, {
+        shared,
+        calendarId: googleWrite.calendarId,
+        calendarName: googleWrite.calendarName,
+        masterEventId,
+        recurrenceLines,
+        nowIso,
+      });
+      if (row) rows.push(row);
+    }
+  }
+  const materializedCount = rows.length;
+  if (!rows.length) {
+    rows = [{ ...shared, id: googleRow.id, ...googleWrite.values, google_source: "mi" }];
+  }
+
+  // 구글에는 이미 일정이 있다. 여기서 MI 저장이 실패해도 구글을 되돌리지는
+  // 않는다 — 다음 inbound 동기화가 그 이벤트를 MI 로 들여온다.
+  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
+    .from("schedule_items")
+    .insert(withoutDisabledColumns(rows))
+    .select(selectFields())
+    .order("starts_at", { ascending: true }));
+  if (error) {
+    return json(request, { ok: false, message: "업무 저장에 실패했습니다.", detail: error.message }, 500);
+  }
+  const savedRows = (Array.isArray(data) ? data : [data].filter(Boolean))
+    .sort((left, right) => new Date(left.starts_at) - new Date(right.starts_at));
+  const first = savedRows[0];
+  const auditLogged = await recordAudit(ctx, {
+    action: recurrenceLines.length ? "work_item_series_created" : "work_item_created",
+    targetId: first?.id || null,
+    clientId: first?.client_id || null,
+    metadata: {
+      visibility: first?.visibility,
+      status: first?.status,
+      scheduleType: first?.schedule_type,
+      calendarId: null,
+      recurrence: recurrenceLines.length ? "google" : "none",
+      repeatNoEnd,
+      materializedUntil: null,
+      occurrenceCount: savedRows.length,
+      googleEventId: masterEventId || null,
+      memberRole: null,
+    },
+  });
+  const items = savedRows.map(managerWorkItemPayload);
+  let message = "업무를 저장했습니다.";
+  if (recurrenceLines.length && materializedCount) {
+    message = truncated
+      ? `반복 일정 ${items.length}개를 저장했습니다. 나머지는 다음 동기화에서 채워집니다.`
+      : `반복 일정 ${items.length}개를 저장했습니다.`;
+  } else if (recurrenceLines.length) {
+    message = "구글에 반복 일정을 만들었습니다. 개별 일정은 다음 동기화에서 채워집니다.";
+  }
+  return json(request, { ok: true, message, item: items[0], items, auditLogged }, 201);
 }
 
 async function handlePost(request, ctx) {
@@ -464,6 +793,8 @@ async function handlePost(request, ctx) {
   if (repeat === "monthly" && !seriesId) {
     return json(request, { ok: false, message: "반복 일정 요청을 안전하게 식별할 수 없습니다." }, 400);
   }
+  const googleInput = normalizeGoogleEventInput(body);
+  if (!googleInput.ok) return json(request, googleInput, googleInput.status || 400);
   const baseRow = {
     ...normalized.value,
     client_id: access.client?.id || null,
@@ -474,6 +805,43 @@ async function handlePost(request, ctx) {
     // push 가 실패해도 다음 동기화가 이 행을 자동으로 재시도한다.
     ...googlePendingPatch(access),
   };
+
+  // 연동된 대표는 Google-first 다. 구글에 먼저 쓰고 실패하면 MI 에는 아무것도
+  // 남기지 않는다. 미연동(운영팀 · 대표 미연동)은 아래 로컬 경로를 그대로 탄다.
+  let recurrenceLines = googleInput.value.recurrence;
+  if (!recurrenceLines.length && repeat === "monthly") {
+    const validated = buildMonthlyOccurrences({
+      startsAt: normalized.value.starts_at,
+      endsAt: normalized.value.ends_at,
+      repeatUntil: cleanText(body.repeatUntil),
+      repeatNoEnd,
+    });
+    if (!validated.ok) return json(request, validated, validated.status || 400);
+    recurrenceLines = monthlyRecurrenceLines(normalized.value.starts_at, body.repeatUntil, repeatNoEnd);
+  }
+  const googleRow = {
+    id: crypto.randomUUID(),
+    ...baseRow,
+    ...googleDetailValues(googleInput.value, recurrenceLines),
+  };
+  const googleWrite = await writeRowToGoogleFirst(ctx, process.env, access, googleRow, {
+    mode: "insert",
+    calendarId: googleInput.value.googleCalendarId,
+    sendUpdates: googleInput.value.sendUpdates,
+    createConference: googleInput.value.conference,
+    clientName: clientDisplayName(access.client),
+  });
+  if (!googleWrite.skipped) {
+    if (!googleWrite.ok) return googleWriteFailure(request, googleWrite.reason);
+    return createFromGoogleEvent(request, ctx, access, {
+      googleWrite,
+      baseRow,
+      googleRow,
+      recurrenceLines,
+      repeatNoEnd,
+    });
+  }
+
   let rows = [baseRow];
   if (repeat === "monthly") {
     const retry = await existingSeries(ctx, access, seriesId);
@@ -505,11 +873,11 @@ async function handlePost(request, ctx) {
       recurrence_day_policy: "last_day",
     }));
   }
-  const writeResult = await ctx.supabaseAdmin
+  const writeResult = await runWithOptionalColumns(() => ctx.supabaseAdmin
     .from("schedule_items")
-    .insert(rows)
+    .insert(withoutDisabledColumns(rows))
     .select(selectFields())
-    .order("starts_at", { ascending: true });
+    .order("starts_at", { ascending: true }));
   const { data, error } = writeResult;
   if (error) {
     if (repeat === "monthly" && error.code === "23505") {
@@ -618,7 +986,48 @@ async function handlePatch(request, ctx) {
   }
   const normalized = normalizeWorkItemInput(body, { canPublish: Boolean(access.client) });
   if (!normalized.ok) return json(request, normalized, normalized.status || 400);
+  const googleInput = normalizeGoogleEventInput(body);
+  if (!googleInput.ok) return json(request, googleInput, googleInput.status || 400);
+
+  // 반복 인스턴스는 기본값이 "이 일정만" 이다. "모든 일정" 일 때만 마스터를 고친다.
+  const editMaster = googleInput.value.recurrenceScope === "all"
+    && Boolean(cleanText(existing.row.google_recurring_event_id));
+  const masterEventId = cleanText(existing.row.google_recurring_event_id);
+  const detail = providedDetailValues(googleInput.value, existing.row);
+  const patchRow = {
+    ...existing.row,
+    ...normalized.value,
+    ...detail.values,
+    // 마스터를 고칠 때는 인스턴스의 etag 를 쓰면 412 가 나고, recurrence 도
+    // 실려야 하므로 인스턴스 표식을 지운 사본으로 페이로드를 만든다.
+    ...(editMaster ? { google_recurring_event_id: null, google_etag: null } : {}),
+  };
+  const googleWrite = await writeRowToGoogleFirst(ctx, process.env, access, patchRow, {
+    mode: "patch",
+    calendarId: cleanText(existing.row.google_calendar_id),
+    targetEventId: editMaster ? masterEventId : cleanText(existing.row.google_event_id),
+    sendUpdates: googleInput.value.sendUpdates,
+    createConference: googleInput.value.conference,
+    detailFields: detail.fields,
+    clientName: clientDisplayName(access.client),
+  });
+  if (!googleWrite.skipped && !googleWrite.ok) return googleWriteFailure(request, googleWrite.reason);
+
   const updateValues = { ...normalized.value, ...googlePendingPatch(access) };
+  if (!googleWrite.skipped) {
+    Object.assign(updateValues, detail.values, {
+      google_sync_state: "synced",
+      google_sync_error: null,
+      google_synced_at: new Date().toISOString(),
+    });
+    // 마스터를 고친 응답은 마스터의 id/etag 다. 그것을 인스턴스 행에 덮으면
+    // 이 행이 마스터를 가리키게 되므로, 인스턴스 정본은 아래 재수집에 맡긴다.
+    if (editMaster) {
+      if (googleWrite.calendarName) updateValues.google_calendar_name = googleWrite.calendarName;
+    } else {
+      Object.assign(updateValues, googleWrite.values);
+    }
+  }
   if (existing.row.series_id) {
     const occurrenceOn = seoulDateKey(normalized.value.starts_at);
     if (!occurrenceOn || occurrenceOn > existing.row.recurrence_until) {
@@ -626,12 +1035,13 @@ async function handlePatch(request, ctx) {
     }
     updateValues.occurrence_on = occurrenceOn;
   }
-  let updateQuery = ctx.supabaseAdmin
-    .from("schedule_items")
-    .update(updateValues)
-    .eq("id", id);
-  updateQuery = exactOriginalScope(updateQuery, existing.row);
-  const { data, error } = await updateQuery.select(selectFields()).maybeSingle();
+  const { data, error } = await runWithOptionalColumns(() => {
+    const query = ctx.supabaseAdmin
+      .from("schedule_items")
+      .update(withoutDisabledColumns(updateValues))
+      .eq("id", id);
+    return exactOriginalScope(query, existing.row).select(selectFields()).maybeSingle();
+  });
   if (error?.code === "23505") {
     return json(request, { ok: false, message: "같은 날짜에 이 반복 일정이 이미 있습니다." }, 409);
   }
@@ -648,8 +1058,105 @@ async function handlePatch(request, ctx) {
       status: data.status,
     },
   });
-  await syncOwnerScheduleRows(ctx, process.env, access, [data], "upsert");
-  return json(request, { ok: true, message: "업무를 수정했습니다.", item: managerWorkItemPayload(data), auditLogged });
+  if (googleWrite.skipped) {
+    await syncOwnerScheduleRows(ctx, process.env, access, [data], "upsert");
+    return json(request, { ok: true, message: "업무를 수정했습니다.", item: managerWorkItemPayload(data), auditLogged });
+  }
+  let message = "업무를 수정했습니다.";
+  if (editMaster) {
+    const refreshed = await refreshSeriesInstances(ctx, access, {
+      googleWrite,
+      masterEventId,
+      anchorRow: data,
+      recurrenceLines: patchRow.google_recurrence || existing.row.google_recurrence || [],
+    });
+    message = refreshed.count
+      ? `반복 일정 ${refreshed.count}개를 수정했습니다.`
+      : "반복 일정을 수정했습니다. 개별 일정은 다음 동기화에서 채워집니다.";
+  }
+  return json(request, { ok: true, message, item: managerWorkItemPayload(data), auditLogged });
+}
+
+// 마스터를 고친 뒤 인스턴스를 다시 받아 MI 행에 반영한다. 사라진 인스턴스는
+// 지우지 않는다 — 삭제는 inbound 동기화(status=cancelled)가 정본으로 처리한다.
+async function refreshSeriesInstances(ctx, access, options) {
+  const { googleWrite, masterEventId, anchorRow, recurrenceLines } = options;
+  const materialized = await materializeRecurringInstances(ctx, process.env, {
+    integration: googleWrite.integration,
+    accessToken: googleWrite.accessToken,
+    calendarId: googleWrite.calendarId,
+    masterEventId,
+    ownerCode: normalizeCode(access.ownerAgencyCode),
+    baseRow: anchorRow,
+  });
+  const instances = (materialized.instances || []).slice(0, MAX_MATERIALIZED_ROWS);
+  if (!instances.length) return { count: 0 };
+
+  let siblings = [];
+  try {
+    const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("schedule_items")
+      .select(selectFields())
+      .eq("owner_agency_code", anchorRow.owner_agency_code)
+      .eq("google_recurring_event_id", masterEventId)
+      .is("calendar_id", null));
+    siblings = Array.isArray(data) ? data : [];
+  } catch (error) {
+    siblings = [];
+  }
+  const byEvent = new Map(siblings.filter((row) => row.google_event_id).map((row) => [row.google_event_id, row]));
+  const nowIso = new Date().toISOString();
+  const shared = {
+    client_id: anchorRow.client_id || null,
+    operation_team_id: anchorRow.operation_team_id || null,
+    owner_agency_code: anchorRow.owner_agency_code,
+    calendar_id: null,
+    title: anchorRow.title,
+    schedule_type: anchorRow.schedule_type,
+    status: anchorRow.status,
+    priority: anchorRow.priority,
+    assignee_name: anchorRow.assignee_name,
+    internal_note: anchorRow.internal_note,
+    public_title: anchorRow.public_title,
+    public_comment: anchorRow.public_comment,
+    visibility: anchorRow.visibility,
+    is_all_day: anchorRow.is_all_day,
+    google_location: anchorRow.google_location,
+    google_description: anchorRow.google_description,
+    google_attendees: anchorRow.google_attendees,
+  };
+
+  let count = 0;
+  const inserts = [];
+  for (const instance of instances) {
+    const row = instanceRowFromEvent(instance, {
+      shared,
+      calendarId: googleWrite.calendarId,
+      calendarName: googleWrite.calendarName || anchorRow.google_calendar_name || null,
+      masterEventId,
+      recurrenceLines,
+      nowIso,
+    });
+    if (!row) continue;
+    const known = byEvent.get(row.google_event_id);
+    if (!known) {
+      inserts.push(row);
+      continue;
+    }
+    const { id: _ignoredId, ...patch } = row;
+    const applied = await runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("schedule_items")
+      .update(withoutDisabledColumns(patch))
+      .eq("id", known.id));
+    if (!applied?.error) count += 1;
+  }
+  if (inserts.length) {
+    const added = await runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("schedule_items")
+      .insert(withoutDisabledColumns(inserts)));
+    if (!added?.error) count += inserts.length;
+  }
+  return { count };
 }
 
 async function handleDelete(request, ctx) {

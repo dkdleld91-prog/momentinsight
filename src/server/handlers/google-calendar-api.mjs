@@ -15,24 +15,31 @@ import {
   googleOauthConfig,
   loadOwnerGoogleIntegration,
   mapScheduleRowToGoogleEvent,
+  refreshAccessToken,
 } from "../google-calendar-client.mjs";
 import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
 import {
   deleteRowFromGoogle,
+  listOwnerWritableCalendars,
   recordGoogleDeleteFailure,
+  refreshOwnerCalendarCatalog,
   runOwnerCalendarSync,
   syncOwnerScheduleRows,
+  writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
 
 export {
   deleteRowFromGoogle,
   googleOauthConfig,
+  listOwnerWritableCalendars,
   loadOwnerGoogleIntegration,
   mapScheduleRowToGoogleEvent,
   recordGoogleDeleteFailure,
+  refreshOwnerCalendarCatalog,
   syncOwnerScheduleRows,
+  writeRowToGoogleFirst,
 };
 
 const OWNER_API_PATH = "/api/owner/google-calendar";
@@ -488,6 +495,22 @@ async function handleOwnerApi(request, ctx) {
       lastSyncAt: result.lastSyncAt || null,
       error: result.error || result.reason || null,
     });
+  }
+  if (action === "calendars") {
+    const config = googleOauthConfig();
+    if (!config.clientId || !config.clientSecret) {
+      return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
+    }
+    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null, error: true }));
+    if (loaded.error || !loaded.integration) {
+      return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
+    }
+    // 목록 새로고침은 사용자가 명시적으로 눌렀을 때만 구글을 부른다.
+    // 실패해도 캐시에 있는 만큼은 돌려준다.
+    const token = await refreshAccessToken(loaded.integration.refresh_token, process.env);
+    if (token.ok) await refreshOwnerCalendarCatalog(ctx, ownerCode, token.accessToken, {});
+    const calendars = await listOwnerWritableCalendars(ctx, ownerCode, loaded.integration);
+    return json(request, { ok: true, calendars, refreshed: token.ok });
   }
   if (action === "disconnect") {
     const { error } = await ctx.supabaseAdmin

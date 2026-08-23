@@ -1580,3 +1580,118 @@ test("the owner unlink action records an audit trail without blocking the respon
   assert.equal(audits[0].target_table, "login_identities");
   assert.deepEqual(audits[0].metadata, { role: "owner" });
 });
+
+// ---------------------------------------------------------------------------
+// 쓰기 가능한 캘린더 목록 (owner action: "calendars")
+// ---------------------------------------------------------------------------
+
+const INTEGRATION_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/owner_google_integrations`;
+const CALENDAR_SYNC_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/owner_google_calendar_sync`;
+const CALENDAR_LIST_URL = `${CALENDAR_BASE}/users/me/calendarList`;
+const OWNER_INTEGRATION_ROW = {
+  owner_agency_code: "mml93-a01",
+  refresh_token: "rt-1",
+  calendar_id: "dedicated@group.calendar.google.com",
+  google_email: "owner@example.com",
+  connected_at: "2026-08-01T00:00:00.000Z",
+  sync_status: "ok",
+};
+
+function ownerCalendarsRequest() {
+  return new Request(OWNER_CALENDAR_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": "mml93-a01",
+    },
+    body: JSON.stringify({ action: "calendars" }),
+  });
+}
+
+test("the owner calendars action refreshes the catalog from google and returns the cached list", async () => {
+  const upserts = [];
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_LIST_URL, (call) => {
+      assert.match(call.url, /minAccessRole=writer/);
+      assert.match(call.url, /showHidden=false/);
+      return restJson({
+        items: [
+          { id: "dedicated@group.calendar.google.com", summary: "모먼트 인사이트", accessRole: "owner" },
+          { id: "owner@example.com", summary: "내 캘린더", accessRole: "owner", primary: true },
+        ],
+      });
+    }],
+    ["POST", CALENDAR_SYNC_REST_URL, (call) => {
+      upserts.push(JSON.parse(String(call.body)));
+      return restCreated();
+    }],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([
+      { google_calendar_id: "owner@example.com", calendar_role: "primary", calendar_summary: "내 캘린더", calendar_access_role: "owner", calendar_is_primary: true, calendar_writable: true },
+      { google_calendar_id: "dedicated@group.calendar.google.com", calendar_role: "dedicated", calendar_summary: "모먼트 인사이트", calendar_access_role: "owner", calendar_is_primary: false, calendar_writable: true },
+    ])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerCalendarsRequest())));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.refreshed, true);
+  assert.deepEqual(payload.calendars.map((entry) => entry.id),
+    ["dedicated@group.calendar.google.com", "owner@example.com"]);
+  assert.equal(payload.calendars[0].dedicated, true);
+  assert.equal(payload.calendars[1].primary, true);
+  assert.equal(upserts.length, 2);
+  assert.equal(upserts[0].calendar_writable, true);
+  assert.ok(calls.some((call) => call.url.startsWith(CALENDAR_LIST_URL)));
+});
+
+test("the owner calendars action reports 409 before touching google when nothing is connected", async () => {
+  const { calls, impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerCalendarsRequest())));
+  const payload = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.ok, false);
+  assert.match(payload.message, /아직 연결되지 않았습니다/);
+  assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0);
+});
+
+test("the owner calendars action fails closed with the shared missing-env shape", async () => {
+  const { calls, impl } = loginFetchRouter([]);
+  const response = await withEnv({ ...LOGIN_HANDLER_ENV, GOOGLE_OAUTH_CLIENT_ID: undefined }, () => (
+    withGlobalFetch(impl, () => handler.fetch(ownerCalendarsRequest()))
+  ));
+  const payload = await response.json();
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.code, "missing_google_env");
+  assert.equal(calls.length, 0);
+});
+
+test("a stale google token still returns the cached calendar list", async () => {
+  const { impl } = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([])],
+  ]);
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerCalendarsRequest())));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.refreshed, false);
+  assert.deepEqual(payload.calendars, [{
+    id: "dedicated@group.calendar.google.com",
+    name: "모먼트 인사이트",
+    primary: false,
+    accessRole: "owner",
+    dedicated: true,
+  }]);
+});

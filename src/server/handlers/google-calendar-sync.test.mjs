@@ -2,23 +2,35 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildGoogleEventPayload,
+  conferenceUriFromEvent,
   decorateGoogleSummary,
+  describeRecurrence,
+  normalizeAttendeeList,
   normalizeImportedTitle,
   undecorateGoogleSummary,
+  validateRecurrenceLines,
 } from "../google-calendar-client.mjs";
 import {
   eventInWindow,
   eventIsEcho,
   googleEventTimes,
+  googleMirrorFields,
   inboundUpdatePatch,
+  listOwnerWritableCalendars,
   mapGoogleEventToScheduleRow,
+  materializeRecurringInstances,
   matchRowForEvent,
   ownerSyncableRows,
   pushPendingRows,
   pushRowToGoogle,
+  refreshOwnerCalendarCatalog,
+  resetOptionalColumns,
+  resolveOwnerCalendars,
   runOwnerCalendarSync,
   syncOneCalendar,
   syncWindow,
+  writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
 
 const CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
@@ -837,4 +849,387 @@ test("a row that never reached google is still deleted locally without google tr
   assert.equal(response.status, 200);
   assert.equal(calls.length, 0);
   assert.equal(opsFor(ops, "schedule_items", "delete").length, 1);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 일정 상세 · 캘린더 목록 · Google-first 쓰기
+// ─────────────────────────────────────────────────────────────
+
+function detailRow(values = {}) {
+  return {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    owner_agency_code: OWNER,
+    client_id: null, operation_team_id: null, calendar_id: null,
+    title: "월간 정산 미팅", status: "planned",
+    starts_at: "2026-09-13T05:00:00.000Z", ends_at: "2026-09-13T06:00:00.000Z",
+    is_all_day: false,
+    google_location: "본사 회의실",
+    google_description: "정산 자료 지참",
+    google_attendees: [{ email: "A@B.com" }, { email: "a@b.com" }, { email: "c@d.com", displayName: "다라" }],
+    google_recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"],
+    ...values,
+  };
+}
+
+test("the detail payload carries recurrence, attendees, location, description and a conference request", () => {
+  const payload = buildGoogleEventPayload(detailRow(), {
+    ownerCode: OWNER, createConference: true, details: { mode: "insert" },
+  });
+
+  assert.deepEqual(payload.recurrence, ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"]);
+  assert.deepEqual(payload.attendees, [{ email: "a@b.com" }, { email: "c@d.com", displayName: "다라" }]);
+  assert.equal(payload.location, "본사 회의실");
+  assert.equal(payload.description, "정산 자료 지참");
+  assert.equal(payload.start.timeZone, "Asia/Seoul");
+  assert.equal(payload.end.timeZone, "Asia/Seoul");
+  assert.equal(payload.conferenceData.conferenceSolutionKey, undefined);
+  assert.deepEqual(payload.conferenceData.createRequest.conferenceSolutionKey, { type: "hangoutsMeet" });
+  assert.match(payload.conferenceData.createRequest.requestId, /^[0-9a-f-]{36}$/u);
+});
+
+test("all-day detail events still name the timezone and skip empty fields on insert", () => {
+  const payload = buildGoogleEventPayload(detailRow({
+    is_all_day: true, occurrence_on: "2026-09-13",
+    google_location: null, google_description: null, google_attendees: null, google_recurrence: [],
+  }), { ownerCode: OWNER, details: { mode: "insert" } });
+
+  assert.deepEqual(payload.start, { date: "2026-09-13", timeZone: "Asia/Seoul" });
+  assert.deepEqual(payload.end, { date: "2026-09-14", timeZone: "Asia/Seoul" });
+  assert.equal("location" in payload, false);
+  assert.equal("description" in payload, false);
+  assert.equal("attendees" in payload, false);
+  assert.equal("recurrence" in payload, false);
+});
+
+test("a detail patch clears emptied fields explicitly because google only replaces what it is sent", () => {
+  const payload = buildGoogleEventPayload(detailRow({
+    google_location: null, google_description: "", google_attendees: [], google_recurrence: [],
+  }), { ownerCode: OWNER, details: { mode: "patch" } });
+
+  assert.equal(payload.location, "");
+  assert.equal(payload.description, "");
+  assert.deepEqual(payload.attendees, []);
+  assert.deepEqual(payload.recurrence, []);
+});
+
+test("recurrence never rides on an instance row, so an instance edit cannot fork the series", () => {
+  const payload = buildGoogleEventPayload(detailRow({ google_recurring_event_id: "master-1" }), {
+    ownerCode: OWNER, details: { mode: "patch" },
+  });
+  assert.equal("recurrence" in payload, false);
+});
+
+test("an existing conference is never re-requested", () => {
+  const payload = buildGoogleEventPayload(detailRow({ google_conference_uri: "https://meet.google.com/abc" }), {
+    ownerCode: OWNER, createConference: true, details: { mode: "patch" },
+  });
+  assert.equal("conferenceData" in payload, false);
+});
+
+// 배경 push 가 상세를 다시 실으면 events.patch 가 배열을 통째로 갈아치워
+// 모든 참석자의 RSVP 가 초기화된다. 그래서 details 없이 나가야 한다.
+test("the background push payload carries no attendees, recurrence, location or description", async () => {
+  const { ctx } = makeCtx({
+    schedule_items: (op) => (op.kind === "select" ? { data: [detailRow({ google_sync_state: "pending" })], error: null } : { data: null, error: null }),
+    clients: { data: [], error: null },
+  });
+  let body = null;
+  const { impl } = fetchMock({
+    [`POST ${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events`]: (call) => {
+      body = JSON.parse(call.options.body);
+      return jsonResponse(200, { id: "gev-bg" });
+    },
+  });
+
+  await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { fetchImpl: impl });
+
+  assert.equal("attendees" in body, false);
+  assert.equal("recurrence" in body, false);
+  assert.equal("location" in body, false);
+  assert.equal("description" in body, false);
+  assert.equal(body.summary, "월간 정산 미팅");
+});
+
+test("recurrence summaries collapse to the presets the dialog can produce", () => {
+  assert.equal(describeRecurrence([]), "반복 안 함");
+  assert.equal(describeRecurrence(null), "반복 안 함");
+  assert.equal(describeRecurrence(["RRULE:FREQ=DAILY"]), "매일");
+  assert.equal(describeRecurrence(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE"]), "매주 월, 수");
+  assert.equal(describeRecurrence(["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR"]), "주중 매일");
+  assert.equal(describeRecurrence(["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"]), "매월 13일");
+  assert.equal(describeRecurrence(["RRULE:FREQ=YEARLY"]), "매년");
+  assert.equal(describeRecurrence(["RRULE:FREQ=MONTHLY;INTERVAL=3;BYMONTHDAY=13"]), "맞춤 반복");
+  assert.equal(describeRecurrence(["RRULE:FREQ=MONTHLY;BYDAY=2TU"]), "맞춤 반복");
+  assert.equal(describeRecurrence(["RDATE:20260913T050000Z"]), "맞춤 반복");
+});
+
+test("recurrence lines are checked for the RFC5545 prefix, a FREQ and sane limits", () => {
+  assert.deepEqual(validateRecurrenceLines(undefined), { ok: true, value: [] });
+  assert.deepEqual(validateRecurrenceLines(["RRULE:FREQ=DAILY"]), { ok: true, value: ["RRULE:FREQ=DAILY"] });
+  assert.equal(validateRecurrenceLines("RRULE:FREQ=DAILY").ok, false);
+  assert.equal(validateRecurrenceLines(["FREQ=DAILY"]).ok, false);
+  assert.equal(validateRecurrenceLines(["RRULE:BYDAY=MO"]).ok, false);
+  assert.equal(validateRecurrenceLines([`RRULE:FREQ=DAILY;X=${"a".repeat(600)}`]).ok, false);
+  assert.equal(validateRecurrenceLines(new Array(5).fill("RRULE:FREQ=DAILY")).ok, false);
+});
+
+test("mirror fields keep the conference link and drop it from no answer at all", () => {
+  const withMeet = googleMirrorFields(timedEvent({
+    hangoutLink: "https://meet.google.com/abc-defg-hij",
+    recurrence: ["RRULE:FREQ=DAILY"],
+    attendees: [{ email: "a@b.com", responseStatus: "accepted" }],
+  }));
+  assert.equal(withMeet.google_conference_uri, "https://meet.google.com/abc-defg-hij");
+  assert.deepEqual(withMeet.google_recurrence, ["RRULE:FREQ=DAILY"]);
+  assert.deepEqual(withMeet.google_attendees, [{ email: "a@b.com", responseStatus: "accepted" }]);
+
+  const entryPoints = googleMirrorFields(timedEvent({
+    conferenceData: { entryPoints: [{ entryPointType: "phone", uri: "tel:+1" }, { entryPointType: "video", uri: "https://meet.google.com/xyz" }] },
+  }));
+  assert.equal(entryPoints.google_conference_uri, "https://meet.google.com/xyz");
+
+  // 버전 0 응답에는 conferenceData 가 없고 인스턴스 응답에는 recurrence 가 없다.
+  // 없다고 null 로 덮으면 저장해 둔 링크와 반복 요약이 사라진다.
+  assert.equal("google_conference_uri" in googleMirrorFields(timedEvent()), false);
+  assert.equal("google_recurrence" in googleMirrorFields(timedEvent()), false);
+  assert.deepEqual(googleMirrorFields(timedEvent({ recurrence: [] })).google_recurrence, []);
+});
+
+const OWNER_ACCESS = { role: "owner", ownerAgencyCode: OWNER, client: null, team: null };
+
+function writeCtx(extra = {}) {
+  return makeCtx({
+    owner_google_integrations: (op) => (op.kind === "select" ? { data: INTEGRATION, error: null } : { data: null, error: null }),
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: [], error: null } : { data: null, error: null }),
+    ...extra,
+  });
+}
+
+test("a dialog insert asks for conference support and carries the invite preference", async () => {
+  const { ctx } = writeCtx();
+  const eventsUrl = `${CALENDAR_BASE}/calendars/pick%40group.calendar.google.com/events`;
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${eventsUrl}`]: jsonResponse(200, {
+      id: "gev-new", etag: '"e1"', updated: "2026-09-01T00:00:00.000Z",
+      hangoutLink: "https://meet.google.com/abc", recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"],
+    }),
+  });
+
+  const result = await writeRowToGoogleFirst(ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow(), {
+    mode: "insert",
+    calendarId: "pick@group.calendar.google.com",
+    sendUpdates: "all",
+    createConference: true,
+    fetchImpl: impl,
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.calendarId, "pick@group.calendar.google.com");
+  const insert = calls.find((call) => call.url === eventsUrl);
+  assert.deepEqual(insert.query, { conferenceDataVersion: "1", sendUpdates: "all" });
+  assert.equal(result.values.google_event_id, "gev-new");
+  assert.equal(result.values.google_calendar_id, "pick@group.calendar.google.com");
+  assert.equal(result.values.google_conference_uri, "https://meet.google.com/abc");
+  assert.equal(result.values.google_sync_state, "synced");
+});
+
+test("a dialog patch keeps conference version 0 unless this very request creates a meeting", async () => {
+  const path = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/gev-1`;
+  const plain = writeCtx();
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`PATCH ${path}`]: jsonResponse(200, { id: "gev-1", etag: '"e2"' }),
+  });
+  await writeRowToGoogleFirst(plain.ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow({ google_event_id: "gev-1" }), {
+    mode: "patch", sendUpdates: "none", fetchImpl: impl,
+  });
+  assert.deepEqual(calls.find((call) => call.method === "PATCH").query, { sendUpdates: "none" });
+
+  const meeting = writeCtx();
+  const second = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`PATCH ${path}`]: jsonResponse(200, { id: "gev-1", etag: '"e3"' }),
+  });
+  await writeRowToGoogleFirst(meeting.ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow({ google_event_id: "gev-1" }), {
+    mode: "patch", createConference: true, fetchImpl: second.impl,
+  });
+  assert.deepEqual(second.calls.find((call) => call.method === "PATCH").query, {
+    conferenceDataVersion: "1", sendUpdates: "all",
+  });
+});
+
+test("a google-first write reports the failure shape the handler turns into a 502", async () => {
+  const { ctx } = writeCtx();
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events`]: jsonResponse(403, { error: { code: 403 } }),
+  });
+  const failed = await writeRowToGoogleFirst(ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow(), { mode: "insert", fetchImpl: impl });
+  assert.deepEqual(failed, { ok: false, reason: "google_403" });
+
+  const expired = writeCtx();
+  const { impl: expiredImpl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: jsonResponse(400, { error: "invalid_grant" }),
+  });
+  const reconnect = await writeRowToGoogleFirst(expired.ctx, GOOGLE_ENV, OWNER_ACCESS, detailRow(), { mode: "insert", fetchImpl: expiredImpl });
+  assert.deepEqual(reconnect, { ok: false, reason: "needs_reconnect" });
+
+  const outOfScope = await writeRowToGoogleFirst(expired.ctx, GOOGLE_ENV, { role: "team" }, detailRow(), { mode: "insert", fetchImpl: expiredImpl });
+  assert.equal(outOfScope.skipped, true);
+  const missingEnv = await writeRowToGoogleFirst(expired.ctx, {}, OWNER_ACCESS, detailRow(), { mode: "insert", fetchImpl: expiredImpl });
+  assert.deepEqual(missingEnv, { ok: true, skipped: true, reason: "env" });
+});
+
+test("instances are collected across pages inside the sync window without writing rows", async () => {
+  const { ctx, ops } = makeCtx({});
+  const instancesUrl = `${CALENDAR_BASE}/calendars/dedicated%40group.calendar.google.com/events/master-1/instances`;
+  const { calls, impl } = fetchMock({
+    [`GET ${instancesUrl}`]: sequence(
+      jsonResponse(200, { items: [timedEvent({ id: "master-1_a", recurringEventId: "master-1" })], nextPageToken: "p2" }),
+      jsonResponse(200, {
+        items: [
+          timedEvent({ id: "master-1_b", recurringEventId: "master-1" }),
+          timedEvent({ id: "master-1_c", status: "cancelled" }),
+        ],
+      }),
+    ),
+  });
+
+  const result = await materializeRecurringInstances(ctx, GOOGLE_ENV, {
+    accessToken: "gat-1",
+    calendarId: INTEGRATION.calendar_id,
+    masterEventId: "master-1",
+    now: NOW,
+    fetchImpl: impl,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.instances.map((event) => event.id), ["master-1_a", "master-1_b"]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].query.maxResults, "250");
+  assert.equal(calls[0].query.showDeleted, "false");
+  assert.equal(calls[0].query.timeMin, syncWindow(NOW).timeMin);
+  assert.equal(calls[1].query.pageToken, "p2");
+  assert.equal(ops.length, 0, "행은 여기서 쓰지 않는다");
+});
+
+test("the calendar catalog stores writable calendars and never overwrites a known role", async () => {
+  const { ctx, ops } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? { data: [{ google_calendar_id: INTEGRATION.calendar_id, calendar_role: "dedicated" }], error: null }
+      : { data: null, error: null }),
+  });
+  const { calls, impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, {
+      items: [
+        { id: INTEGRATION.calendar_id, summary: "모먼트 인사이트", accessRole: "owner" },
+        { id: "owner@example.com", summary: "owner@example.com", summaryOverride: "내 캘린더", accessRole: "owner", primary: true },
+        { id: "team@group.calendar.google.com", summary: "팀 일정", accessRole: "writer" },
+        { id: "gone@group.calendar.google.com", summary: "지운 것", accessRole: "writer", deleted: true },
+      ],
+    }),
+  });
+
+  const result = await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+
+  assert.deepEqual(result, { ok: true, saved: 3 });
+  assert.deepEqual(calls[0].query, { minAccessRole: "writer", showHidden: "false", maxResults: "250" });
+  const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert");
+  assert.deepEqual(upserts.map((op) => op.values.google_calendar_id),
+    [INTEGRATION.calendar_id, "owner@example.com", "team@group.calendar.google.com"]);
+  assert.equal(upserts[0].values.calendar_role, "dedicated", "이미 아는 역할은 secondary 로 덮지 않는다");
+  assert.equal(upserts[1].values.calendar_role, "secondary");
+  assert.equal(upserts[1].values.calendar_summary, "내 캘린더");
+  assert.equal(upserts[1].values.calendar_is_primary, true);
+  assert.equal(upserts[2].values.calendar_writable, true);
+});
+
+test("a catalog refresh failure is swallowed so it can never fail a sync", async () => {
+  const { ctx } = makeCtx({});
+  const { impl } = fetchMock({});
+  assert.deepEqual(await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl }), {
+    ok: false, reason: "network", saved: 0,
+  });
+});
+
+test("the writable calendar list puts the dedicated calendar first, then primary, then names", async () => {
+  const { ctx } = makeCtx({
+    owner_google_calendar_sync: {
+      data: [
+        { google_calendar_id: "team@group.calendar.google.com", calendar_role: "secondary", calendar_summary: "팀 일정", calendar_access_role: "writer", calendar_is_primary: false, calendar_writable: true },
+        { google_calendar_id: "owner@example.com", calendar_role: "primary", calendar_summary: "내 캘린더", calendar_access_role: "owner", calendar_is_primary: true, calendar_writable: true },
+        { google_calendar_id: INTEGRATION.calendar_id, calendar_role: "dedicated", calendar_summary: "모먼트 인사이트", calendar_access_role: "owner", calendar_is_primary: false, calendar_writable: true },
+        { google_calendar_id: "readonly@group.calendar.google.com", calendar_role: "secondary", calendar_summary: "읽기 전용", calendar_writable: false },
+      ],
+      error: null,
+    },
+  });
+
+  const calendars = await listOwnerWritableCalendars(ctx, OWNER, INTEGRATION);
+
+  assert.deepEqual(calendars.map((entry) => entry.id), [
+    INTEGRATION.calendar_id, "owner@example.com", "team@group.calendar.google.com",
+  ]);
+  assert.equal(calendars[0].dedicated, true);
+  assert.equal(calendars[1].primary, true);
+  assert.equal(calendars[2].accessRole, "writer");
+});
+
+test("an empty catalog still offers the dedicated calendar and never calls google", async () => {
+  const { ctx } = makeCtx({ owner_google_calendar_sync: { data: [], error: null } });
+  assert.deepEqual(await listOwnerWritableCalendars(ctx, OWNER, INTEGRATION), [{
+    id: INTEGRATION.calendar_id, name: "모먼트 인사이트", primary: false, accessRole: "owner", dedicated: true,
+  }]);
+  const broken = makeCtx({ owner_google_calendar_sync: { data: null, error: { code: "42P01", message: "relation does not exist" } } });
+  assert.deepEqual(await listOwnerWritableCalendars(broken.ctx, OWNER, null), []);
+});
+
+test("a missing optional column retries once without it instead of surfacing a 500", async () => {
+  resetOptionalColumns();
+  try {
+    let attempt = 0;
+    const { ctx, ops } = makeCtx({
+      schedule_items: (op) => {
+        if (op.kind !== "select") return { data: null, error: null };
+        attempt += 1;
+        return attempt === 1
+          ? { data: null, error: { code: "42703", message: 'column schedule_items.google_recurrence does not exist' } }
+          : { data: [], error: null };
+      },
+    });
+
+    const result = await pushPendingRows(ctx, GOOGLE_ENV, OWNER, INTEGRATION, "gat-1", { fetchImpl: async () => { throw new Error("no google"); } });
+
+    assert.deepEqual(result, { pushed: 0, pushFailed: 0 });
+    const selects = opsFor(ops, "schedule_items", "select");
+    assert.equal(selects.length, 2, "정확히 한 번만 재시도한다");
+    assert.ok(selects[0].fields.includes("google_recurrence"));
+    assert.equal(selects[1].fields.includes("google_recurrence"), false);
+    assert.equal(selects[1].fields.includes("google_conference_uri"), false);
+    assert.ok(selects[1].fields.includes("google_event_id"), "필수 열은 그대로 남는다");
+  } finally {
+    resetOptionalColumns();
+  }
+});
+
+test("calendars already carrying MI events join the pull so a third calendar still syncs", async () => {
+  const { ctx } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: [], error: null } : { data: null, error: null }),
+    schedule_items: { data: [
+      { google_calendar_id: "third@group.calendar.google.com" },
+      { google_calendar_id: "third@group.calendar.google.com" },
+      { google_calendar_id: INTEGRATION.calendar_id },
+    ], error: null },
+  });
+  const { impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/calendars/primary`]: jsonResponse(200, { id: "owner@example.com" }),
+  });
+
+  const calendars = await resolveOwnerCalendars(ctx, OWNER, INTEGRATION, { accessToken: "gat-1", fetchImpl: impl });
+
+  assert.deepEqual(calendars.map((entry) => entry.google_calendar_id), [
+    INTEGRATION.calendar_id, "owner@example.com", "third@group.calendar.google.com",
+  ]);
+  assert.equal(calendars.at(-1).calendar_role, "secondary");
 });

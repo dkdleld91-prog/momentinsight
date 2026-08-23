@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { seoulDateKey } from "./calendar-domain.mjs";
 
 // 구글 캘린더 저수준 클라이언트. OAuth 핸들러(google-calendar-api.mjs)와 동기화
@@ -11,6 +12,22 @@ export const DONE_PREFIX = "✓ ";
 export const MI_PROPERTY_VERSION = "1";
 export const MAX_TITLE_CHARS = 120;
 export const MAX_CLIENT_NAME_CHARS = 60;
+export const MAX_ATTENDEES = 50;
+export const MAX_LOCATION_CHARS = 500;
+export const MAX_DESCRIPTION_CHARS = 4000;
+export const MAX_RECURRENCE_LINES = 4;
+export const MAX_RECURRENCE_LINE_CHARS = 512;
+export const EVENT_TIMEZONE = "Asia/Seoul";
+// 다이얼로그가 실제로 보낸 필드만 구글로 나간다. 목록에 없으면 "건드리지 않음".
+export const DETAIL_FIELDS = ["recurrence", "attendees", "location", "description"];
+
+const RECURRENCE_PREFIX_PATTERN = /^(?:RRULE|EXRULE|RDATE|EXDATE):/iu;
+// 로컬파트/도메인에 공백·따옴표가 없고 점 있는 도메인만 통과시킨다. 구글이
+// 거절할 주소를 우리 쪽에서 먼저 400 으로 돌려주기 위한 최소 검사다.
+const ATTENDEE_EMAIL_PATTERN = /^[^\s@"'<>,;]+@[^\s@"'<>,;.]+(?:\.[^\s@"'<>,;.]+)+$/u;
+const WEEKDAY_LABELS = { MO: "월", TU: "화", WE: "수", TH: "목", FR: "금", SA: "토", SU: "일" };
+const WEEKDAY_ORDER = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
+const WEEKDAY_ONLY = ["MO", "TU", "WE", "TH", "FR"];
 
 export function cleanText(value, max = 0) {
   const text = String(value ?? "").trim();
@@ -168,21 +185,187 @@ export function mapScheduleRowToGoogleEvent(row = {}) {
   }
   const endsAt = cleanText(row.ends_at)
     || new Date(new Date(startsAt).getTime() + 60 * 60 * 1000).toISOString();
-  event.start = { dateTime: startsAt, timeZone: "Asia/Seoul" };
-  event.end = { dateTime: endsAt, timeZone: "Asia/Seoul" };
+  event.start = { dateTime: startsAt, timeZone: EVENT_TIMEZONE };
+  event.end = { dateTime: endsAt, timeZone: EVENT_TIMEZONE };
   return event;
+}
+
+// ─────────────────────────────────────────────────────────────
+// 일정 상세(참석자 · 반복 · 화상 회의)
+// ─────────────────────────────────────────────────────────────
+
+export function isAttendeeEmail(value) {
+  const email = cleanText(value, 320).toLowerCase();
+  return Boolean(email) && ATTENDEE_EMAIL_PATTERN.test(email);
+}
+
+// 문자열 배열과 {email,...} 배열을 모두 받아 구글이 받는 최소 모양으로 줄인다.
+// responseStatus / displayName 은 값이 있을 때만 실어 RSVP 를 보존한다.
+export function normalizeAttendeeList(value, max = MAX_ATTENDEES) {
+  const list = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  const attendees = [];
+  for (const entry of list) {
+    const source = typeof entry === "string" ? { email: entry } : (entry || {});
+    const email = cleanText(source.email, 320).toLowerCase();
+    if (!isAttendeeEmail(email) || seen.has(email)) continue;
+    seen.add(email);
+    const attendee = { email };
+    const displayName = cleanText(source.displayName, 120);
+    if (displayName) attendee.displayName = displayName;
+    const responseStatus = cleanText(source.responseStatus, 20);
+    if (responseStatus) attendee.responseStatus = responseStatus;
+    attendees.push(attendee);
+    if (attendees.length >= max) break;
+  }
+  return attendees;
+}
+
+export function validateRecurrenceLines(lines) {
+  if (lines === undefined || lines === null || lines === "") return { ok: true, value: [] };
+  if (!Array.isArray(lines)) return { ok: false, message: "반복 규칙 형식을 확인해주세요." };
+  if (lines.length > MAX_RECURRENCE_LINES) {
+    return { ok: false, message: `반복 규칙은 최대 ${MAX_RECURRENCE_LINES}줄까지 저장할 수 있습니다.` };
+  }
+  const value = [];
+  for (const raw of lines) {
+    if (typeof raw !== "string") return { ok: false, message: "반복 규칙 형식을 확인해주세요." };
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.length > MAX_RECURRENCE_LINE_CHARS) {
+      return { ok: false, message: "반복 규칙이 너무 깁니다. 다시 선택해주세요." };
+    }
+    if (!RECURRENCE_PREFIX_PATTERN.test(line)) {
+      return { ok: false, message: "반복 규칙은 RRULE/EXRULE/RDATE/EXDATE 로 시작해야 합니다." };
+    }
+    if (/^RRULE:/iu.test(line) && !/FREQ=/iu.test(line)) {
+      return { ok: false, message: "반복 규칙에 반복 주기(FREQ)가 없습니다." };
+    }
+    value.push(line);
+  }
+  return { ok: true, value };
+}
+
+function rruleParts(line) {
+  const parts = new Map();
+  for (const chunk of line.slice("RRULE:".length).split(";")) {
+    const [key, ...rest] = chunk.split("=");
+    if (!key || !rest.length) continue;
+    parts.set(key.trim().toUpperCase(), rest.join("=").trim().toUpperCase());
+  }
+  return parts;
+}
+
+// 화면에 그대로 쓰는 짧은 한국어 요약. 다이얼로그가 만들 수 있는 프리셋만
+// 이름으로 부르고 나머지는 전부 "맞춤 반복" 으로 접는다.
+export function describeRecurrence(lines) {
+  const list = (Array.isArray(lines) ? lines : []).map((line) => cleanText(line)).filter(Boolean);
+  if (!list.length) return "반복 안 함";
+  if (list.length > 1) return "맞춤 반복";
+  const line = list[0];
+  if (!/^RRULE:/iu.test(line)) return "맞춤 반복";
+  const parts = rruleParts(line);
+  const interval = Number(parts.get("INTERVAL") || "1");
+  if (Number.isFinite(interval) && interval > 1) return "맞춤 반복";
+  const byDay = (parts.get("BYDAY") || "").split(",").map((value) => value.trim()).filter(Boolean);
+  const weekdayOnly = byDay.length === WEEKDAY_ONLY.length && WEEKDAY_ONLY.every((day) => byDay.includes(day));
+  const freq = parts.get("FREQ") || "";
+  if (freq === "DAILY") return byDay.length ? (weekdayOnly ? "주중 매일" : "맞춤 반복") : "매일";
+  if (freq === "WEEKLY") {
+    if (weekdayOnly) return "주중 매일";
+    if (!byDay.length) return "매주";
+    if (byDay.some((day) => !WEEKDAY_LABELS[day])) return "맞춤 반복";
+    return `매주 ${WEEKDAY_ORDER.filter((day) => byDay.includes(day)).map((day) => WEEKDAY_LABELS[day]).join(", ")}`;
+  }
+  if (freq === "MONTHLY") {
+    const monthDay = Number(parts.get("BYMONTHDAY") || "");
+    if (Number.isInteger(monthDay) && monthDay >= 1 && monthDay <= 31) return `매월 ${monthDay}일`;
+    return "맞춤 반복";
+  }
+  if (freq === "YEARLY") return "매년";
+  return "맞춤 반복";
+}
+
+export function conferenceUriFromEvent(event = {}) {
+  const hangout = cleanText(event.hangoutLink, 1000);
+  if (hangout) return hangout;
+  const entries = Array.isArray(event.conferenceData?.entryPoints) ? event.conferenceData.entryPoints : [];
+  for (const entry of entries) {
+    if (cleanText(entry?.entryPointType).toLowerCase() !== "video") continue;
+    const uri = cleanText(entry.uri, 1000);
+    if (uri) return uri;
+  }
+  return "";
+}
+
+function hasExistingConference(row = {}) {
+  return Boolean(cleanText(row.google_conference_uri));
 }
 
 // 양방향 동기화용 페이로드. 시간 매핑은 mapScheduleRowToGoogleEvent 를 그대로
 // 재사용하고 제목 장식과 부기 속성만 덧씌운다.
-export function buildGoogleEventPayload(row = {}, { ownerCode = "", clientName = "" } = {}) {
+//
+// details 가 없으면 summary / start / end / extendedProperties 만 보낸다.
+// events.patch 는 배열 필드를 "통째로 교체" 하므로, 사용자가 편집하지 않은
+// 백그라운드 push 가 attendees 를 다시 실으면 모든 참석자의 RSVP 가 초기화된다.
+// 그래서 상세 필드는 다이얼로그에서 온 명시적 쓰기(details 전달)에서만,
+// 그중에서도 details.fields 로 지목한 것만 나간다. 지목되지 않은 필드는
+// "건드리지 않음" 이고, 지목된 채로 비어 있으면 "지움"(patch 시 ""/[])이다.
+export function buildGoogleEventPayload(row = {}, options = {}) {
+  const { ownerCode = "", clientName = "", createConference = false, details = null } = options;
   const base = mapScheduleRowToGoogleEvent(row);
   if (!base) return null;
-  return {
+  const payload = {
     ...base,
     summary: cleanText(decorateGoogleSummary(row, clientName), 1024) || "모먼트 인사이트 일정",
     extendedProperties: { private: buildMiPrivateProperties(row, { ownerCode, clientName }) },
   };
+  // 종일 일정도 시간대를 명시한다. 반복 일정은 timeZone 이 없으면 구글이 거절한다.
+  payload.start = { ...payload.start, timeZone: EVENT_TIMEZONE };
+  payload.end = { ...payload.end, timeZone: EVENT_TIMEZONE };
+  if (!details) return payload;
+
+  const patching = details.mode === "patch";
+  const include = new Set(Array.isArray(details.fields) ? details.fields : DETAIL_FIELDS);
+
+  // 반복 규칙은 마스터에만 존재한다. 인스턴스 행이 recurrence 를 다시 밀면
+  // 그 인스턴스가 별도의 시리즈로 승격되어 일정이 두 배로 늘어난다.
+  if (include.has("recurrence") && !cleanText(row.google_recurring_event_id)) {
+    const recurrence = (Array.isArray(row.google_recurrence) ? row.google_recurrence : [])
+      .map((line) => cleanText(line, MAX_RECURRENCE_LINE_CHARS))
+      .filter(Boolean)
+      .slice(0, MAX_RECURRENCE_LINES);
+    if (recurrence.length) payload.recurrence = recurrence;
+    else if (patching) payload.recurrence = [];
+  }
+
+  if (include.has("attendees")) {
+    const attendees = normalizeAttendeeList(row.google_attendees, MAX_ATTENDEES);
+    if (attendees.length) payload.attendees = attendees;
+    else if (patching) payload.attendees = [];
+  }
+
+  if (include.has("location")) {
+    const location = cleanText(row.google_location, MAX_LOCATION_CHARS);
+    if (location) payload.location = location;
+    else if (patching) payload.location = "";
+  }
+
+  if (include.has("description")) {
+    const description = cleanText(row.google_description, MAX_DESCRIPTION_CHARS);
+    if (description) payload.description = description;
+    else if (patching) payload.description = "";
+  }
+
+  if (createConference && !hasExistingConference(row)) {
+    payload.conferenceData = {
+      createRequest: {
+        requestId: crypto.randomUUID(),
+        conferenceSolutionKey: { type: "hangoutsMeet" },
+      },
+    };
+  }
+  return payload;
 }
 
 export function clientDisplayName(client) {

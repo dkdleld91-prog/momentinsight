@@ -6,6 +6,27 @@ import {
   workItemsDateRange,
 } from "./work-items.mjs";
 
+// 이 스위트는 레거시/개인 캘린더 계약을 검증하므로 "구글 미연동" 분기에 고정한다.
+// Vercel 프로덕션 빌드는 GOOGLE_OAUTH_* 가 실린 채 테스트를 돌리는데, 그러면
+// 구글 우선 경로가 켜지면서 스크립트되지 않은 연동 조회가 끼어들어 여기서
+// 검증하려던 대상 자체가 바뀐다. 모듈 로드 시점에 지우고 종료 때 되돌린다.
+const PINNED_GOOGLE_ENV_KEYS = [
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "MI_GOOGLE_OAUTH_REDIRECT",
+];
+const AMBIENT_GOOGLE_ENV = {};
+for (const key of PINNED_GOOGLE_ENV_KEYS) {
+  AMBIENT_GOOGLE_ENV[key] = process.env[key];
+  delete process.env[key];
+}
+process.on("exit", () => {
+  for (const key of PINNED_GOOGLE_ENV_KEYS) {
+    if (AMBIENT_GOOGLE_ENV[key] === undefined) delete process.env[key];
+    else process.env[key] = AMBIENT_GOOGLE_ENV[key];
+  }
+});
+
 test("date-only schedule inputs and list bounds use Seoul calendar days", () => {
   assert.equal(validIsoDate("2026-08-15"), "2026-08-14T15:00:00.000Z");
   assert.equal(validIsoDate("2026-08-15T09:30"), "2026-08-15T00:30:00.000Z");
@@ -734,6 +755,43 @@ test("legacy POST returns storage errors and succeeds with a bounded internal ro
   assert.equal(payload.message, "업무를 저장했습니다.");
   assert.equal(payload.items.length, 1);
   successHarness.done();
+});
+
+// 프로덕션 빌드처럼 GOOGLE_OAUTH_* 가 켜져 있어도, 연동 행이 없으면 레거시
+// 경로가 그대로 돌아야 한다. 켜진 상태에서 늘어나는 것은 연동 조회 두 번뿐이고
+// 저장·감사 로그·201 응답은 미연동일 때와 동일하다는 것을 못 박는다.
+test("legacy POST keeps its local path when google env is present but no integration row exists", async () => {
+  const body = {
+    title: "환경변수 무관 일정",
+    scheduleType: "meeting",
+    status: "planned",
+    priority: "low",
+    startsAt: "2026-08-20T09:00:00+09:00",
+  };
+  const saved = managerRow({ priority: "low" });
+  const harness = scriptedCtx([
+    { kind: "from", name: "owner_google_integrations", result: { data: null, error: null } },
+    { kind: "from", name: "schedule_items", result: { data: [saved], error: null } },
+    { kind: "from", name: "audit_logs", result: { error: null } },
+    { kind: "from", name: "owner_google_integrations", result: { data: null, error: null } },
+  ]);
+
+  process.env.GOOGLE_OAUTH_CLIENT_ID = "cid-ambient";
+  process.env.GOOGLE_OAUTH_CLIENT_SECRET = "sec-ambient";
+  let response = null;
+  try {
+    response = await handleWorkItemsRequest(ownerRequest("POST", body), harness.ctx);
+  } finally {
+    delete process.env.GOOGLE_OAUTH_CLIENT_ID;
+    delete process.env.GOOGLE_OAUTH_CLIENT_SECRET;
+  }
+  const payload = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(payload.message, "업무를 저장했습니다.");
+  assert.equal(payload.items.length, 1);
+  assert.equal(harness.calls.filter(([kind]) => kind === "from").length, 4);
+  harness.done();
 });
 
 test("POST rejects an end time before the start without touching storage", async () => {

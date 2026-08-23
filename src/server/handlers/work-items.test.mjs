@@ -10,6 +10,27 @@ import {
   roleCanMutateWorkItems,
 } from "./work-items.mjs";
 
+// 레거시 테스트는 "구글 미연동" 분기를 기준으로 쓰였다. Vercel 프로덕션 빌드는
+// GOOGLE_OAUTH_* 가 실린 채 테스트를 돌리므로, 주변 환경변수를 모듈 로드 시점에
+// 지워 기준선을 "없음"으로 고정한다. 구글 경로를 검증하는 테스트는 아래
+// withGoogleEnv 가 직접 값을 넣었다가 이 기준선으로 되돌린다.
+const PINNED_GOOGLE_ENV_KEYS = [
+  "GOOGLE_OAUTH_CLIENT_ID",
+  "GOOGLE_OAUTH_CLIENT_SECRET",
+  "MI_GOOGLE_OAUTH_REDIRECT",
+];
+const AMBIENT_GOOGLE_ENV = {};
+for (const key of PINNED_GOOGLE_ENV_KEYS) {
+  AMBIENT_GOOGLE_ENV[key] = process.env[key];
+  delete process.env[key];
+}
+process.on("exit", () => {
+  for (const key of PINNED_GOOGLE_ENV_KEYS) {
+    if (AMBIENT_GOOGLE_ENV[key] === undefined) delete process.env[key];
+    else process.env[key] = AMBIENT_GOOGLE_ENV[key];
+  }
+});
+
 test("work items default to internal visibility", () => {
   const result = normalizeWorkItemInput({
     title: "월간 보고서 검수",

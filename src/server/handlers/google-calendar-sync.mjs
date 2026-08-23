@@ -336,6 +336,16 @@ export function ownerSyncableRows(access, rows) {
   });
 }
 
+// (C-2) 구글 우선(Google-first) 경로는 "실제로 저장된 연동"에만 켜지는 옵트인이다.
+// 연동 여부를 확인하려면 owner_google_integrations 조회가 가능해야 하는데,
+// 최소한의 ctx(조회 스텁이 없는 호출부·테스트 컨텍스트)로는 그 조회 자체가
+// 불가능하다. 그럴 때 조회를 강행하면 호출부의 다른 쿼리 흐름을 망가뜨리므로
+// 여기서 먼저 물러난다. 연동 여부를 판정하지 못한 것은 "연동 없음"과 같게 다뤄
+// 예전 로컬 저장 경로로 그대로 떨어지며, 절대 500 이나 ok:false 를 내지 않는다.
+function canLoadOwnerIntegration(ctx) {
+  return typeof ctx?.supabaseAdmin?.from === "function";
+}
+
 export function rowClientName(row = {}, clientsById = null) {
   if (row.client) return clientDisplayName(row.client);
   if (clientsById && row.client_id) return clientDisplayName(clientsById.get(row.client_id));
@@ -462,10 +472,23 @@ export async function pushRowToGoogle(ctx, env, options) {
 export async function deleteRowFromGoogle(ctx, env, access, row, fetchImpl = fetch) {
   if (!ownerSyncableRows(access, [row]).length) return { ok: true, skipped: true, reason: "scope" };
   if (!cleanText(row?.google_event_id)) return { ok: true, skipped: true, reason: "no-event" };
+  // 연동 조회가 불가능한 ctx 면 DB 를 건드리기 전에 물러난다.
+  if (!canLoadOwnerIntegration(ctx)) return { ok: true, skipped: true, reason: "no-storage" };
   const config = googleOauthConfig(env);
   if (!config.clientId || !config.clientSecret) return { ok: true, skipped: true, reason: "env" };
   const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode(env));
-  const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
+  // 조회가 터지면 예외가 그대로 올라가 삭제 응답이 500 이 된다. 연동 여부를
+  // 판정하지 못한 것뿐이므로 "연동 없음"과 같게 다뤄 로컬 삭제를 계속한다.
+  let integration = null;
+  let error = null;
+  try {
+    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode);
+    integration = loaded.integration;
+    error = loaded.error;
+  } catch (unexpected) {
+    integration = null;
+    error = unexpected;
+  }
   // 연동을 끊은 뒤라면 구글 일정이 남는 것이 이미 약속된 동작이므로 로컬 삭제를 막지 않는다.
   if (error || !integration) return { ok: true, skipped: true, reason: "not-connected" };
   const token = await refreshAccessToken(integration.refresh_token, env, fetchImpl);
@@ -538,6 +561,8 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
   try {
     const targets = ownerSyncableRows(access, rows);
     if (!targets.length) return { skipped: true, reason: "scope" };
+    // 연동 조회가 불가능한 ctx 면 DB 를 건드리기 전에 물러난다.
+    if (!canLoadOwnerIntegration(ctx)) return { skipped: true, reason: "no-storage" };
     const config = googleOauthConfig(env);
     if (!config.clientId || !config.clientSecret) return { skipped: true, reason: "env" };
     const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode(env));
@@ -1166,10 +1191,14 @@ export async function listOwnerWritableCalendars(ctx, ownerCode, integration = n
 export async function writeRowToGoogleFirst(ctx, env, access, row, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   if (!ownerSyncableRows(access, [row]).length) return { ok: true, skipped: true, reason: "scope" };
+  // 환경변수가 있어도 연동 조회를 못 하면 여기서 끝낸다. DB 접근보다 먼저다.
+  if (!canLoadOwnerIntegration(ctx)) return { ok: true, skipped: true, reason: "no-storage" };
   const config = googleOauthConfig(env);
   if (!config.clientId || !config.clientSecret) return { ok: true, skipped: true, reason: "env" };
   const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode(env));
 
+  // 조회가 터졌든(throw) 연동 행이 없든 결과는 같다 — skipped 로 물러나
+  // 호출부가 예전 로컬 저장 경로를 그대로 타게 한다. ok:false 는 내지 않는다.
   let integration = null;
   try {
     const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode);

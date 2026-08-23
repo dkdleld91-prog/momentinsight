@@ -1858,11 +1858,11 @@ test("calendar-visibility asks for the migration when the catalog columns are mi
 });
 
 test("the sidebar actions stay owner-only", async () => {
-  for (const action of ["calendar-refresh", "calendar-visibility"]) {
+  for (const action of ["calendar-refresh", "calendar-visibility", "calendar-create", "calendar-acl"]) {
     const request = new Request(OWNER_CALENDAR_API_URL, {
       method: "POST",
       headers: { "content-type": "application/json", "x-mi-session-role": "team" },
-      body: JSON.stringify({ action, calendarId: HOLIDAY_CALENDAR, visible: true }),
+      body: JSON.stringify({ action, calendarId: HOLIDAY_CALENDAR, visible: true, summary: "공유", op: "list" }),
     });
     const response = await withEnv(LOGIN_HANDLER_ENV, () => handler.fetch(request));
     assert.equal(response.status, 403);
@@ -1873,6 +1873,8 @@ test("the sidebar actions fail closed with the shared missing-env shape", async 
   for (const body of [
     { action: "calendar-refresh" },
     { action: "calendar-visibility", calendarId: HOLIDAY_CALENDAR, visible: true },
+    { action: "calendar-create", summary: "공유" },
+    { action: "calendar-acl", calendarId: HOLIDAY_CALENDAR, op: "list" },
   ]) {
     const { calls, impl } = loginFetchRouter([]);
     const response = await withEnv({ ...LOGIN_HANDLER_ENV, GOOGLE_OAUTH_CLIENT_ID: undefined }, () => (
@@ -1966,8 +1968,15 @@ test("calendar-create makes a google calendar, invites everyone and caches the n
     { role: "reader", scope: { type: "user", value: "c@d.com" } },
   ], "이메일은 소문자로 정규화되고 권한은 그대로 나간다");
   assert.equal(upserts.length, 1);
+  // 우리가 만든 캘린더이므로 소유자는 대표님이고, 그래서 쓰기 가능하고 사이드바에
+  // 바로 보여야 한다. 역할은 secondary — dedicated/primary 를 덮으면 다음 동기화가
+  // 기본 캘린더를 다시 찾아 나선다.
+  assert.equal(upserts[0].calendar_role, "secondary");
   assert.equal(upserts[0].calendar_access_role, "owner");
   assert.equal(upserts[0].calendar_writable, true);
+  assert.equal(upserts[0].calendar_visible, true);
+  assert.equal(upserts[0].calendar_is_primary, false);
+  assert.equal(upserts[0].calendar_summary, "쿠팡 공유");
   // 카탈로그에는 방금 만든 캘린더가 들어 있다(연동 행이 가리키는 전용 캘린더도
   // 아직 있으면 함께 나온다 — 여기서 검증할 것은 새 캘린더의 등장이다).
   assert.ok(payload.calendars.some((entry) => entry.id === SHARED_CALENDAR_ID));
@@ -1999,7 +2008,9 @@ test("calendar-create refuses a bad name or a bad invite before calling google",
   assert.equal(calls.filter((call) => call.url.startsWith(CALENDARS_URL)).length, 0, "캘린더를 만들기 전에 막는다");
 });
 
-test("calendar-acl lists, adds and removes participants on a calendar the owner owns", async () => {
+test("calendar-acl lists, adds and removes participants and always answers with the fresh list", async () => {
+  // 구글이 정본이라 세 갈래 모두 마지막에 다시 읽은 목록으로 답한다. 화면이
+  // insert/delete 응답만 보고 로컬 배열을 손보면 다른 기기에서 일어난 변화를 놓친다.
   const rules = [{ id: "user:a", scope: { type: "user", value: "a@b.com" }, role: "writer" }];
   const routes = [
     ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
@@ -2008,45 +2019,170 @@ test("calendar-acl lists, adds and removes participants on a calendar the owner 
     ["GET", SHARED_ACL_URL, () => restJson({ items: rules })],
     ["POST", SHARED_ACL_URL, (call) => {
       const sent = JSON.parse(String(call.body));
+      assert.match(call.url, /sendNotifications=true/, "추가된 사람에게 초대 메일이 나가야 한다");
       rules.push({ id: "user:b", scope: { type: "user", value: sent.scope.value }, role: sent.role });
-      return restJson({ id: "user:b" });
+      return restJson({ id: "user:b", role: sent.role, scope: sent.scope });
     }],
-    ["DELETE", SHARED_ACL_URL, () => new Response(null, { status: 204 })],
+    ["DELETE", SHARED_ACL_URL, (call) => {
+      // 경로 끝의 ruleId 를 실제로 빼야 "다시 읽기"가 의미를 갖는다.
+      const removed = decodeURIComponent(String(call.url).split("/acl/")[1]);
+      rules.splice(rules.findIndex((rule) => rule.id === removed), 1);
+      return new Response(null, { status: 204 });
+    }],
   ];
 
-  const listed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+  const listing = loginFetchRouter(routes);
+  const listed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(listing.impl,
     () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list" }))));
   const listPayload = await listed.json();
   assert.equal(listed.status, 200);
   assert.deepEqual(listPayload.rules, [{ id: "user:a", email: "a@b.com", role: "writer", scopeType: "user", editable: true }]);
 
-  const added = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+  const adding = loginFetchRouter(routes);
+  const added = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(adding.impl,
     () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "insert", email: "New@B.com", role: "reader" }))));
   const addPayload = await added.json();
   assert.equal(added.status, 200);
-  assert.deepEqual(addPayload.rules.map((rule) => rule.email), ["a@b.com", "new@b.com"]);
+  assert.deepEqual(addPayload.rules.map((rule) => rule.email), ["a@b.com", "new@b.com"], "추가 뒤에도 구글에서 다시 읽은 목록이다");
+  // 토큰은 요청당 한 번만 발급한다 — insert 와 뒤이은 list 가 각자 갱신하면 두 번이 된다.
+  assert.equal(adding.calls.filter((call) => call.url.startsWith(TOKEN_URL)).length, 1);
 
-  const removed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+  const removing = loginFetchRouter(routes);
+  const removed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(removing.impl,
     () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "delete", ruleId: "user:b" }))));
+  const removePayload = await removed.json();
   assert.equal(removed.status, 200);
-  assert.equal((await removed.json()).ok, true);
+  assert.deepEqual(removePayload.rules.map((rule) => rule.email), ["a@b.com"], "삭제 뒤에도 구글에서 다시 읽은 목록이다");
+  assert.equal(removing.calls.filter((call) => call.url.startsWith(TOKEN_URL)).length, 1);
 });
 
 test("calendar-acl refuses a calendar the owner only has write access to", async () => {
-  const { calls, impl } = loginFetchRouter([
+  // writer 권한만 있는 남의 캘린더다. 목록·추가·삭제 셋 다 같은 관문에 걸리고,
+  // 그 관문은 구글 캘린더 API 보다 먼저다.
+  for (const body of [
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list" },
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "insert", email: "a@b.com", role: "writer" },
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "delete", ruleId: "user:a" },
+  ]) {
+    const { calls, impl } = loginFetchRouter([
+      ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+      ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+      ["GET", CALENDAR_SYNC_REST_URL, () => restJson([
+        { google_calendar_id: SHARED_CALENDAR_ID, calendar_role: "secondary", calendar_summary: "남의 캘린더", calendar_access_role: "writer", calendar_writable: true },
+      ])],
+    ]);
+
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest(body))));
+    const payload = await response.json();
+
+    assert.equal(response.status, 403, body.op + " 도 403 이어야 한다");
+    assert.match(payload.message, /내 소유가 아닌 캘린더/);
+    assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0, body.op + ": 구글 캘린더 API 는 건드리지 않는다");
+  }
+});
+
+test("calendar-acl shows a public rule as uneditable and then refuses to delete it", async () => {
+  const routes = [
     ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
     ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
-    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([
-      { google_calendar_id: SHARED_CALENDAR_ID, calendar_role: "secondary", calendar_summary: "남의 캘린더", calendar_access_role: "writer", calendar_writable: true },
-    ])],
+    ["GET", CALENDAR_SYNC_REST_URL, () => ownedCatalogRoute()],
+    ["GET", SHARED_ACL_URL, () => restJson({
+      items: [
+        { id: "user:a", role: "writer", scope: { type: "user", value: "a@b.com" } },
+        { id: "default", role: "reader", scope: { type: "default" } },
+      ],
+    })],
+  ];
+
+  const listed = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(loginFetchRouter(routes).impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list" }))));
+  const rules = (await listed.json()).rules;
+  assert.equal(listed.status, 200);
+  // 목록에서 빼지 않는다 — 빼면 화면이 "누구나 볼 수 있음" 을 보여줄 수 없다.
+  assert.deepEqual(rules.find((rule) => rule.id === "default"), {
+    id: "default", email: null, role: "reader", scopeType: "default", editable: false,
+  });
+
+  const { calls, impl } = loginFetchRouter(routes);
+  const refused = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "delete", ruleId: "default" }))));
+  const payload = await refused.json();
+  // 400 이지 403 이 아니다. 권한이 모자란 것이 아니라 화면이 "지울 수 없음"으로
+  // 그려 놓고 지워 달라고 되돌려 온, 앞뒤가 안 맞는 요청이다.
+  assert.equal(refused.status, 400);
+  assert.match(payload.message, /지울 수 없습니다/);
+  assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE)).length, 0);
+});
+
+test("calendar-acl rejects a missing or unknown op and an unusable calendar id", async () => {
+  for (const body of [
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID },
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "purge" },
+    { action: "calendar-acl", op: "list" },
+    // "calendar-visibility" 와 같은 잣대다 — 1024자를 넘으면 자르지 않고 거절한다.
+    { action: "calendar-acl", calendarId: "a".repeat(1025), op: "list" },
+  ]) {
+    const { calls, impl } = loginFetchRouter([]);
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest(body))));
+    assert.equal(response.status, 400, `${JSON.stringify(body)} 는 400 이어야 한다`);
+    assert.equal((await response.json()).ok, false);
+    assert.equal(calls.length, 0, "형식이 틀린 요청은 저장소도 구글도 건드리지 않는다");
+  }
+});
+
+test("calendar-create refuses too many invites and a role we never hand out", async () => {
+  for (const [invites, pattern] of [
+    [Array.from({ length: 21 }, (unused, index) => `p${index}@b.com`), /최대 20명/],
+    [[{ email: "a@b.com", role: "owner" }], /권한/],
+  ]) {
+    const { calls, impl } = loginFetchRouter([]);
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl,
+      () => handler.fetch(ownerShareRequest({ action: "calendar-create", summary: "공유", invites }))));
+    const payload = await response.json();
+    assert.equal(response.status, 400);
+    assert.match(payload.message, pattern, "사유마다 다른 문구여야 대표님이 무엇을 고칠지 안다");
+    assert.equal(calls.length, 0);
+  }
+});
+
+test("the share actions report 409 before any google traffic when nothing is connected", async () => {
+  for (const body of [
+    { action: "calendar-create", summary: "공유" },
+    { action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list" },
+  ]) {
+    const { calls, impl } = loginFetchRouter([
+      ["GET", INTEGRATION_REST_URL, () => restJson([])],
+    ]);
+    const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest(body))));
+    assert.equal(response.status, 409);
+    assert.match((await response.json()).message, /연결되지 않았습니다/);
+    assert.equal(calls.filter((call) => call.url.startsWith(CALENDAR_BASE) || call.url.startsWith(TOKEN_URL)).length, 0);
+  }
+});
+
+test("google rejecting a share call comes back as a 502 carrying the status", async () => {
+  const createRejected = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["POST", CALENDARS_URL, () => new Response(JSON.stringify({ error: { message: "boom" } }), { status: 500 })],
   ]);
+  const created = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(createRejected.impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-create", summary: "공유" }))));
+  const createPayload = await created.json();
+  assert.equal(created.status, 502);
+  assert.equal(createPayload.detail, "google_500");
 
-  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(ownerShareRequest({
-    action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "list",
-  }))));
-  const payload = await response.json();
-
-  assert.equal(response.status, 403);
-  assert.match(payload.message, /소유한 캘린더에서만/);
-  assert.equal(calls.filter((call) => call.url.startsWith(SHARED_ACL_URL)).length, 0, "구글 ACL 은 건드리지 않는다");
+  const aclRejected = loginFetchRouter([
+    ["GET", INTEGRATION_REST_URL, () => restJson([OWNER_INTEGRATION_ROW])],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_SYNC_REST_URL, () => ownedCatalogRoute()],
+    ["POST", SHARED_ACL_URL, () => new Response(JSON.stringify({ error: { message: "forbidden" } }), { status: 403 })],
+  ]);
+  const added = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(aclRejected.impl,
+    () => handler.fetch(ownerShareRequest({ action: "calendar-acl", calendarId: SHARED_CALENDAR_ID, op: "insert", email: "a@b.com" }))));
+  const aclPayload = await added.json();
+  // 구글이 거절한 것은 우리 입력 잘못이 아니다 — 400 으로 내리면 화면이
+  // "주소를 고치세요" 를 띄우고 대표님은 멀쩡한 주소를 계속 고치게 된다.
+  assert.equal(added.status, 502);
+  assert.equal(aclPayload.detail, "google_403");
 });

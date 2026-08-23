@@ -12,11 +12,15 @@ import {
   validateRecurrenceLines,
 } from "../google-calendar-client.mjs";
 import {
+  CALENDAR_INVITE_ROLES,
+  MAX_CALENDAR_INVITES,
   MAX_FULL_SYNC_EVENTS,
   MAX_SYNC_CALENDARS,
   OPTIONAL_CALENDAR_CATALOG_COLUMNS,
   OPTIONAL_COLUMN_RETRY_MS,
   OPTIONAL_SCHEDULE_COLUMNS,
+  createOwnerCalendar,
+  deleteOwnerCalendarAcl,
   disableOptionalColumns,
   disabledOptionalColumns,
   eventInWindow,
@@ -25,6 +29,8 @@ import {
   googleMirrorFields,
   hexColor,
   inboundUpdatePatch,
+  insertOwnerCalendarAcl,
+  listOwnerCalendarAcl,
   listOwnerCalendarCatalog,
   listOwnerWritableCalendars,
   mapGoogleEventToScheduleRow,
@@ -1988,4 +1994,314 @@ test("hitting the event cap parks the page token exactly like the page cap does"
   const saved = opsFor(ops, "owner_google_calendar_sync", "update").at(-1);
   assert.equal(saved.values.full_sync_page_token, "pt-next");
   assert.ok(!("sync_token" in saved.values), "반쯤 진행한 상태에서 토큰을 갱신하면 남은 변경을 잃는다");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 새 캘린더 만들기 + 참가자(ACL) 관리
+//
+// 확인한 구글 문서:
+//   calendars.insert https://developers.google.com/workspace/calendar/api/v3/reference/calendars/insert
+//   acl.insert       https://developers.google.com/workspace/calendar/api/v3/reference/acl/insert
+//   acl.list = GET /calendars/{calendarId}/acl · acl.delete = DELETE /calendars/{calendarId}/acl/{ruleId}
+// ─────────────────────────────────────────────────────────────
+
+const SHARE_CALENDAR = "share@group.calendar.google.com";
+const CALENDARS_URL = `${CALENDAR_BASE}/calendars`;
+const SHARE_ACL_URL = `${CALENDARS_URL}/${encodeURIComponent(SHARE_CALENDAR)}/acl`;
+
+// 카탈로그 한 줄. accessRole 이 소유권 관문의 유일한 판정 근거다.
+function catalogRow(values = {}) {
+  return {
+    google_calendar_id: SHARE_CALENDAR,
+    calendar_role: "secondary",
+    calendar_summary: "쿠팡 공유",
+    calendar_access_role: "owner",
+    calendar_is_primary: false,
+    calendar_writable: true,
+    calendar_visible: true,
+    ...values,
+  };
+}
+
+function shareCtx({ integration = INTEGRATION, catalog = [catalogRow()] } = {}) {
+  return makeCtx({
+    owner_google_integrations: () => ({ data: integration, error: null }),
+    // 같은 테이블을 카탈로그 읽기(select)와 캐시 적재(upsert)가 함께 쓴다.
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: catalog, error: null } : { data: null, error: null }),
+    audit_logs: () => ({ data: null, error: null }),
+  });
+}
+
+test("createOwnerCalendar sends the summary with the Seoul time zone and one acl insert per invite", async () => {
+  const { ctx, ops } = shareCtx({ catalog: [] });
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${CALENDARS_URL}`]: (call) => {
+      const sent = JSON.parse(String(call.options.body));
+      // 필수 본문 필드는 summary 하나지만 timeZone 을 반드시 함께 보낸다 —
+      // 없으면 구글 계정 기본 시간대를 따라가 하루 경계가 어긋난다.
+      assert.deepEqual(sent, { summary: "쿠팡 공유", timeZone: "Asia/Seoul" });
+      return jsonResponse(200, { id: SHARE_CALENDAR, summary: "쿠팡 공유" });
+    },
+    [`POST ${SHARE_ACL_URL}`]: (call) => {
+      assert.equal(call.query.sendNotifications, "true", "초대 메일이 나가야 한다");
+      return jsonResponse(200, { id: `user:${JSON.parse(String(call.options.body)).scope.value}` });
+    },
+  });
+
+  const result = await createOwnerCalendar(ctx, GOOGLE_ENV, OWNER, {
+    summary: "  쿠팡 공유  ",
+    invites: [{ email: "A@B.com", role: "writer" }, "c@d.com", { email: "a@b.com", role: "reader" }],
+  }, { fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.calendarId, SHARE_CALENDAR);
+  assert.equal(result.summary, "쿠팡 공유", "이름은 앞뒤 공백만 털어 그대로 쓴다");
+  // 세 번째 항목은 첫 번째와 같은 주소(대소문자만 다름)라 한 건으로 접힌다.
+  assert.deepEqual(result.invited, [
+    { email: "a@b.com", role: "writer" },
+    { email: "c@d.com", role: "writer" },
+  ], "이메일은 소문자로 접히고 role 기본값은 writer 다");
+  assert.deepEqual(result.failedInvites, []);
+
+  const aclBodies = calls
+    .filter((call) => call.url === SHARE_ACL_URL)
+    .map((call) => JSON.parse(String(call.options.body)));
+  assert.deepEqual(aclBodies, [
+    { role: "writer", scope: { type: "user", value: "a@b.com" } },
+    { role: "writer", scope: { type: "user", value: "c@d.com" } },
+  ]);
+
+  const [upsert] = opsFor(ops, "owner_google_calendar_sync", "upsert");
+  assert.equal(upsert.values.calendar_role, "secondary");
+  assert.equal(upsert.values.calendar_access_role, "owner");
+  assert.equal(upsert.values.calendar_writable, true);
+  assert.equal(upsert.values.calendar_visible, true);
+  assert.equal(upsert.values.calendar_is_primary, false);
+  assert.equal(upsert.values.calendar_summary, "쿠팡 공유");
+  assert.ok(upsert.values.calendar_catalog_at, "카탈로그 시각을 남겨야 사이드바가 바로 그린다");
+  assert.equal(upsert.options.onConflict, "owner_agency_code,google_calendar_id");
+});
+
+test("createOwnerCalendar validates every input before it calls google at all", async () => {
+  const cases = [
+    [{ summary: "   " }, "summary"],
+    [{ summary: "가".repeat(201) }, "summary"],
+    [{ summary: "공유", invites: "a@b.com" }, "invites"],
+    [{ summary: "공유", invites: Array.from({ length: MAX_CALENDAR_INVITES + 1 }, (unused, index) => `p${index}@b.com`) }, "invites_max"],
+    [{ summary: "공유", invites: [{ email: "not-an-email" }] }, "invite_email"],
+    [{ summary: "공유", invites: [{ email: "a@b.com", role: "owner" }] }, "invite_role"],
+  ];
+  for (const [input, reason] of cases) {
+    const { ctx } = shareCtx();
+    // 라우트가 하나도 없는 mock 이라 어떤 fetch 든 던진다. 검증이 먼저라는 것을
+    // 이보다 강하게 말할 방법이 없다 — 토큰 발급조차 나가면 안 된다.
+    const { calls, impl } = fetchMock({});
+    const result = await createOwnerCalendar(ctx, GOOGLE_ENV, OWNER, input, { fetchImpl: impl });
+    assert.equal(result.ok, false, `${reason} 은 거절돼야 한다`);
+    assert.equal(result.reason, reason);
+    assert.equal(calls.length, 0, `${reason}: 구글을 한 번도 부르면 안 된다`);
+  }
+  // role 은 CALENDAR_INVITE_ROLES 두 개만 통과한다.
+  assert.deepEqual([...CALENDAR_INVITE_ROLES].sort(), ["reader", "writer"]);
+});
+
+test("one failing acl insert keeps the calendar and the other invites", async () => {
+  const { ctx, ops } = shareCtx({ catalog: [] });
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${CALENDARS_URL}`]: jsonResponse(200, { id: SHARE_CALENDAR }),
+    // 가운데 한 건만 구글이 거절한다.
+    [`POST ${SHARE_ACL_URL}`]: sequence(
+      jsonResponse(200, { id: "user:a" }),
+      jsonResponse(403, { error: { message: "forbidden" } }),
+      jsonResponse(200, { id: "user:c" }),
+    ),
+  });
+
+  const result = await createOwnerCalendar(ctx, GOOGLE_ENV, OWNER, {
+    summary: "공유",
+    invites: ["a@b.com", "b@b.com", "c@b.com"],
+  }, { fetchImpl: impl });
+
+  assert.equal(result.ok, true, "캘린더는 이미 만들어졌으므로 전체를 실패로 되돌리지 않는다");
+  assert.deepEqual(result.invited.map((entry) => entry.email), ["a@b.com", "c@b.com"]);
+  assert.deepEqual(result.failedInvites, [{ email: "b@b.com", role: "writer", reason: "google_403" }]);
+  assert.equal(opsFor(ops, "owner_google_calendar_sync", "upsert").length, 1, "실패한 초대가 캐시 적재를 막지 않는다");
+});
+
+test("createOwnerCalendar surfaces a google rejection as a google_<status> reason", async () => {
+  const { ctx, ops } = shareCtx({ catalog: [] });
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${CALENDARS_URL}`]: jsonResponse(403, { error: { message: "insufficient permissions" } }),
+  });
+  const result = await createOwnerCalendar(ctx, GOOGLE_ENV, OWNER, { summary: "공유" }, { fetchImpl: impl });
+  assert.deepEqual(result, { ok: false, reason: "google_403" });
+  assert.equal(opsFor(ops, "owner_google_calendar_sync", "upsert").length, 0, "안 만들어진 캘린더를 캐시에 심으면 안 된다");
+});
+
+test("listOwnerCalendarAcl keeps default-scope rules but marks them uneditable", async () => {
+  const { ctx } = shareCtx();
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`GET ${SHARE_ACL_URL}`]: jsonResponse(200, {
+      items: [
+        { id: "user:a", role: "writer", scope: { type: "user", value: "A@B.com" } },
+        { id: "default", role: "reader", scope: { type: "default" } },
+        { id: "domain:momentlabs.co.kr", role: "reader", scope: { type: "domain", value: "momentlabs.co.kr" } },
+        { id: "", role: "reader", scope: { type: "user", value: "drop@me.com" } },
+      ],
+    }),
+  });
+
+  const result = await listOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.rules, [
+    { id: "user:a", email: "a@b.com", role: "writer", scopeType: "user", editable: true },
+    // 화면이 "누구나 볼 수 있음" 을 그릴 수 있게 버리지 않고 표식만 단다.
+    { id: "default", email: null, role: "reader", scopeType: "default", editable: false },
+    { id: "domain:momentlabs.co.kr", email: "momentlabs.co.kr", role: "reader", scopeType: "domain", editable: false },
+  ], "id 없는 규칙만 버린다");
+});
+
+test("insertOwnerCalendarAcl posts the rule with sendNotifications and answers with the mapped rule", async () => {
+  const { ctx } = shareCtx();
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`POST ${SHARE_ACL_URL}`]: (call) => {
+      assert.equal(call.query.sendNotifications, "true");
+      assert.deepEqual(JSON.parse(String(call.options.body)), {
+        role: "reader",
+        scope: { type: "user", value: "new@b.com" },
+      });
+      return jsonResponse(200, { id: "user:new", role: "reader", scope: { type: "user", value: "new@b.com" } });
+    },
+  });
+
+  const result = await insertOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR,
+    { email: "New@B.com", role: "reader" }, { fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.rule, { id: "user:new", email: "new@b.com", role: "reader", scopeType: "user", editable: true });
+  assert.equal(calls.filter((call) => call.url === SHARE_ACL_URL).length, 1);
+
+  // 잘못된 주소·권한은 구글을 부르기 전에 막힌다.
+  for (const [invite, reason] of [[{ email: "nope" }, "invite_email"], [{ email: "a@b.com", role: "owner" }, "invite_role"]]) {
+    const blocked = fetchMock({});
+    const refused = await insertOwnerCalendarAcl(shareCtx().ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, invite, { fetchImpl: blocked.impl });
+    assert.equal(refused.reason, reason);
+    assert.equal(blocked.calls.length, 0);
+  }
+});
+
+test("deleteOwnerCalendarAcl refuses exactly the rules the list marks uneditable", async () => {
+  for (const [ruleId, reason] of [["", "rule"], ["   ", "rule"], ["default", "rule_locked"], ["domain:momentlabs.co.kr", "rule_locked"]]) {
+    const { calls, impl } = fetchMock({});
+    const result = await deleteOwnerCalendarAcl(shareCtx().ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, ruleId, { fetchImpl: impl });
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, reason, `${JSON.stringify(ruleId)} 는 ${reason} 이어야 한다`);
+    assert.equal(calls.length, 0, "지울 수 없다고 그려 놓은 것을 지워 주면 두 층의 말이 어긋난다");
+  }
+});
+
+test("deleteOwnerCalendarAcl treats an already-gone rule as done", async () => {
+  for (const status of [204, 404, 410]) {
+    const { ctx } = shareCtx();
+    const { impl } = fetchMock({
+      [`POST ${TOKEN_URL}`]: tokenRoute(),
+      [`DELETE ${SHARE_ACL_URL}/user%3Ab`]: jsonResponse(status, status === 204 ? undefined : { error: { message: "gone" } }),
+    });
+    const result = await deleteOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, "user:b", { fetchImpl: impl });
+    assert.equal(result.ok, true, `${status} 는 우리가 원하던 최종 상태와 같다`);
+    assert.equal(result.ruleId, "user:b");
+  }
+
+  const { ctx } = shareCtx();
+  const { impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`DELETE ${SHARE_ACL_URL}/user%3Ab`]: jsonResponse(500, { error: { message: "boom" } }),
+  });
+  const failed = await deleteOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, "user:b", { fetchImpl: impl });
+  assert.deepEqual(failed, { ok: false, reason: "google_500" });
+});
+
+test("the acl functions refuse a calendar the owner does not own without touching google", async () => {
+  // writer 권한만 있는 남의 캘린더. 여기 참가자를 우리가 고치면 캘린더 주인은
+  // 모르는 사이에 사람이 늘어난다.
+  const catalog = [catalogRow({ calendar_access_role: "reader", calendar_writable: false })];
+  const attempts = [
+    ["list", (ctx, options) => listOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, options)],
+    ["insert", (ctx, options) => insertOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { email: "a@b.com" }, options)],
+    ["delete", (ctx, options) => deleteOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, "user:a", options)],
+  ];
+  for (const [label, run] of attempts) {
+    const { ctx } = shareCtx({ catalog });
+    const { calls, impl } = fetchMock({});
+    // 호출부가 이미 발급한 토큰을 넘긴 상태 — HTTP 층이 하는 것과 같다.
+    const result = await run(ctx, { fetchImpl: impl, accessToken: "gat-1", integration: INTEGRATION });
+    assert.equal(result.ok, false, `${label} 은 막혀야 한다`);
+    assert.equal(result.reason, "forbidden");
+    assert.equal(calls.length, 0, `${label}: 관문이 구글보다 먼저다`);
+  }
+});
+
+test("a supplied access token short-circuits the refresh so one request mints it once", async () => {
+  const { ctx } = shareCtx();
+  const { calls, impl } = fetchMock({
+    // 토큰 라우트를 일부러 빼 둔다. 갱신을 시도하면 mock 이 던진다.
+    [`GET ${SHARE_ACL_URL}`]: jsonResponse(200, { items: [{ id: "user:a", role: "writer", scope: { type: "user", value: "a@b.com" } }] }),
+  });
+  const result = await listOwnerCalendarAcl(ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, {
+    fetchImpl: impl,
+    accessToken: "gat-reused",
+    integration: INTEGRATION,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].options.headers.authorization, "Bearer gat-reused");
+});
+
+test("the shared session guards answer with one narrow reason each", async () => {
+  // 환경변수가 없으면 DB 도 구글도 건드리지 않는다.
+  const noEnv = fetchMock({});
+  assert.deepEqual(
+    await listOwnerCalendarAcl(shareCtx().ctx, {}, OWNER, SHARE_CALENDAR, { fetchImpl: noEnv.impl }),
+    { ok: false, reason: "env" },
+  );
+  assert.equal(noEnv.calls.length, 0);
+
+  // 연동 조회 자체가 불가능한 최소 ctx.
+  const noStorage = fetchMock({});
+  assert.deepEqual(
+    await listOwnerCalendarAcl({ supabaseAdmin: {} }, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { fetchImpl: noStorage.impl }),
+    { ok: false, reason: "no-storage" },
+  );
+  assert.equal(noStorage.calls.length, 0);
+
+  // 연동 행이 없으면 구글을 부르기 전에 not-connected 다.
+  const notConnected = fetchMock({});
+  assert.deepEqual(
+    await listOwnerCalendarAcl(shareCtx({ integration: null }).ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { fetchImpl: notConnected.impl }),
+    { ok: false, reason: "not-connected" },
+  );
+  assert.equal(notConnected.calls.length, 0);
+
+  // 만료된 refresh token 은 연동 행에 배지를 남기고 needs_reconnect 로 올린다.
+  const expired = shareCtx();
+  const expiredFetch = fetchMock({ [`POST ${TOKEN_URL}`]: jsonResponse(400, { error: "invalid_grant" }) });
+  assert.deepEqual(
+    await listOwnerCalendarAcl(expired.ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { fetchImpl: expiredFetch.impl }),
+    { ok: false, reason: "needs_reconnect" },
+  );
+  const [flipped] = opsFor(expired.ops, "owner_google_integrations", "update");
+  assert.equal(flipped.values.sync_status, "needs_reconnect");
+
+  // 그 밖의 토큰 실패는 재연결이 아니라 일시적 오류다.
+  const shaky = fetchMock({ [`POST ${TOKEN_URL}`]: jsonResponse(500, { error: "backend_error" }) });
+  assert.deepEqual(
+    await listOwnerCalendarAcl(shareCtx().ctx, GOOGLE_ENV, OWNER, SHARE_CALENDAR, { fetchImpl: shaky.impl }),
+    { ok: false, reason: "token" },
+  );
 });

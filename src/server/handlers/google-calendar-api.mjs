@@ -20,6 +20,7 @@ import { readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 import { activeClientByCode, activeTeamByCode } from "./code-session-api.mjs";
 import {
+  MAX_CALENDAR_INVITES,
   createOwnerCalendar,
   deleteOwnerCalendarAcl,
   deleteRowFromGoogle,
@@ -433,20 +434,25 @@ function calendarActionFailure(request, result) {
     return json(request, { ok: false, code: "needs_reconnect", message: "구글 연결이 만료되었습니다. 구글 캘린더를 다시 연결해주세요." }, 502);
   }
   if (reason === "forbidden") {
-    return json(request, { ok: false, message: "대표님이 소유한 캘린더에서만 참가자를 관리할 수 있습니다." }, 403);
+    return json(request, { ok: false, message: "내 소유가 아닌 캘린더는 공유 설정을 바꿀 수 없습니다." }, 403);
   }
-  if (reason === "summary") {
-    return json(request, { ok: false, message: "캘린더 이름을 입력해주세요." }, 400);
-  }
-  if (reason === "invites") {
-    return json(request, { ok: false, message: cleanText(result?.message) || "참가자 이메일 주소를 확인해주세요." }, 400);
-  }
-  if (reason === "calendar") {
-    return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
-  }
-  if (reason === "rule") {
-    return json(request, { ok: false, message: "삭제할 참가자를 선택해주세요." }, 400);
-  }
+  // 아래는 전부 "요청이 틀렸다"(400)다. 사유를 한 단어씩 나눠 받는 이유가
+  // 이것 하나뿐이다 — 인원 초과에 "이메일을 확인해주세요" 를 띄우면 대표님은
+  // 멀쩡한 주소를 계속 고쳐 넣게 된다.
+  const badRequest = {
+    summary: "캘린더 이름을 입력해주세요(200자 이내).",
+    invites: "참가자 목록 형식을 확인해주세요.",
+    invites_max: `참가자는 한 번에 최대 ${MAX_CALENDAR_INVITES}명까지 초대할 수 있습니다.`,
+    invite_email: "참가자 이메일 주소를 확인해주세요.",
+    invite_role: "참가자 권한은 편집(writer) 또는 보기(reader)만 고를 수 있습니다.",
+    calendar: "캘린더를 선택해주세요.",
+    rule: "삭제할 참가자를 선택해주세요.",
+    // rule_locked 는 403 이 아니라 400 이다. 권한이 모자란 것이 아니라 애초에
+    // 말이 안 되는 요청이기 때문이다 — 목록이 editable:false 로 내보낸 규칙을
+    // 지워 달라고 되돌려 온 것이라, 권한을 올려 준다고 되는 일이 아니다.
+    rule_locked: "전체 공개·도메인 공유 규칙은 여기서 지울 수 없습니다. 구글 캘린더에서 직접 바꿔주세요.",
+  };
+  if (badRequest[reason]) return json(request, { ok: false, message: badRequest[reason] }, 400);
   return json(request, {
     ok: false,
     message: "구글 캘린더가 요청을 거절했습니다. 잠시 후 다시 시도해주세요.",
@@ -614,45 +620,65 @@ async function handleOwnerApi(request, ctx) {
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
     }
-    const summary = cleanText(body.summary, 200);
-    if (!summary) return json(request, { ok: false, message: "캘린더 이름을 입력해주세요." }, 400);
-    if (body.invites !== undefined && !Array.isArray(body.invites)) {
-      return json(request, { ok: false, message: "참가자 목록 형식을 확인해주세요." }, 400);
-    }
-    const created = await createOwnerCalendar(ctx, process.env, ownerCode, { summary, invites: body.invites || [] });
+    // 입력 검증은 여기서 하지 않고 엔진 한 곳에만 둔다. 두 곳에 흩어 두면
+    // "화면은 통과시켰는데 엔진이 거절" 같은 어긋남이 생기고, 엔진은 어차피
+    // 구글을 부르기 전에 전부 검사하므로 잘못된 입력은 왕복 없이 400 이 된다.
+    const created = await createOwnerCalendar(ctx, process.env, ownerCode, {
+      summary: body.summary,
+      invites: body.invites,
+    });
     if (!created.ok) return calendarActionFailure(request, created);
-    const loaded = await loadOwnerGoogleIntegration(ctx, ownerCode).catch(() => ({ integration: null }));
+    // 사이드바가 한 응답만으로 다시 그릴 수 있도록 "calendar-refresh" 와 같은
+    // 전체 카탈로그를 함께 실어 보낸다. 연동 행은 방금 엔진이 읽은 것을 재사용한다.
     return json(request, {
       ok: true,
       calendarId: created.calendarId,
       failedInvites: created.failedInvites || [],
-      calendars: await listOwnerCalendarCatalog(ctx, ownerCode, loaded.integration || null),
+      calendars: await listOwnerCalendarCatalog(ctx, ownerCode, created.integration || null),
     });
   }
 
+  // 참가자(ACL) 조회·추가·삭제. 세 갈래 모두 마지막에 구글에서 다시 읽은
+  // rules 로 답한다 — 화면이 "지금 누가 들어 있는지" 를 추측하지 않게 하려는
+  // 것이다. 추가/삭제 응답만 보고 로컬 배열을 손보면 구글에서 동시에 일어난
+  // 변화(다른 기기에서 뺀 사람)를 놓친다.
   if (action === "calendar-acl") {
     const config = googleOauthConfig();
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
     }
-    const calendarId = cleanText(body.calendarId, 1024);
-    if (!calendarId) return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
-    const op = cleanText(body.op) || "list";
+    // "calendar-visibility" 와 같은 방식으로 검사한다 — 자르지 않고 거절한다.
+    const calendarId = cleanText(body.calendarId);
+    if (!calendarId || calendarId.length > 1024) {
+      return json(request, { ok: false, message: "캘린더를 선택해주세요." }, 400);
+    }
+    // op 를 기본값으로 채우지 않는다. 오타 난 op 가 조용히 목록 조회가 되면
+    // 화면은 "지웠다" 고 믿는데 아무것도 안 지워진 상태가 된다.
+    const op = cleanText(body.op, 20);
+    if (op !== "list" && op !== "insert" && op !== "delete") {
+      return json(request, { ok: false, message: "지원하지 않는 참가자 요청입니다." }, 400);
+    }
     let result = null;
     if (op === "list") {
       result = await listOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId);
     } else if (op === "insert") {
       result = await insertOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, {
         email: body.email,
-        role: cleanText(body.role) || "writer",
+        role: body.role,
       });
-    } else if (op === "delete") {
-      result = await deleteOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, body.ruleId);
     } else {
-      return json(request, { ok: false, message: "지원하지 않는 참가자 요청입니다." }, 400);
+      result = await deleteOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, body.ruleId);
     }
     if (!result.ok) return calendarActionFailure(request, result);
-    return json(request, { ok: true, rules: result.rules || [] });
+    if (op === "list") return json(request, { ok: true, rules: result.rules || [] });
+    // 액세스 토큰은 요청당 한 번만 발급된다. 방금 엔진이 발급한 것을 그대로
+    // 넘겨야 다시 읽기가 refresh 를 한 번 더 하지 않는다.
+    const relisted = await listOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId, {
+      accessToken: result.accessToken,
+      integration: result.integration,
+    });
+    if (!relisted.ok) return calendarActionFailure(request, relisted);
+    return json(request, { ok: true, rules: relisted.rules || [] });
   }
 
   if (action === "disconnect") {

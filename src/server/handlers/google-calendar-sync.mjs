@@ -1970,32 +1970,57 @@ export async function materializeRecurringInstances(ctx, env, options = {}) {
 // 방식이다. 공유는 구글이 정본이라 MI 에는 아무 상태도 만들지 않는다 —
 // 규칙 목록은 매번 구글에서 읽는다.
 //
-// 구글 문서:
+// 확인한 구글 문서(재확인 불필요):
 //   calendars.insert https://developers.google.com/workspace/calendar/api/v3/reference/calendars/insert
-//     POST /calendars, 필수 본문 필드는 summary 하나.
+//     POST https://www.googleapis.com/calendar/v3/calendars, 필수 본문 필드는
+//     summary 하나뿐이고 응답은 Calendars 리소스(id, summary…)다.
+//     스코프는 https://www.googleapis.com/auth/calendar 면 충분하다.
 //   acl.insert       https://developers.google.com/workspace/calendar/api/v3/reference/acl/insert
-//     POST /calendars/{id}/acl, 본문 { role, scope:{type,value} }, 쿼리 sendNotifications(기본 true).
-//   acl.list = GET /calendars/{id}/acl · acl.delete = DELETE /calendars/{id}/acl/{ruleId}
-// 우리 토큰 스코프(https://www.googleapis.com/auth/calendar)로 셋 다 충분하다.
+//     POST /calendars/{calendarId}/acl, 본문 { role, scope:{ type, value } },
+//     role ∈ none|freeBusyReader|reader|writerWithoutPrivateAccess|writer|owner,
+//     scope.type ∈ default|user|group|domain, 쿼리 sendNotifications 기본값 true.
+//   acl.list   = GET    /calendars/{calendarId}/acl
+//   acl.delete = DELETE /calendars/{calendarId}/acl/{ruleId}
+//
+// 이 파일의 규칙대로 아래 네 함수는 절대 던지지 않는다. 실패는 전부 좁은
+// reason 문자열이 실린 결과 객체로 나가고, 문구는 HTTP 층에서만 정한다.
 // ─────────────────────────────────────────────────────────────
 export const MAX_CALENDAR_INVITES = 20;
-// 우리가 화면에서 내주는 권한은 둘뿐이다. owner 를 남에게 주면 대표님이 캘린더
-// 통제권을 잃고, freeBusyReader/none 은 MI 에서 쓸 데가 없다.
-export const CALENDAR_SHARE_ROLES = new Set(["writer", "reader"]);
+// 화면에서 내주는 권한은 둘뿐이다. owner 를 남에게 주면 대표님이 캘린더 통제권을
+// 잃고, freeBusyReader/none 은 MI 에서 쓸 데가 없다.
+export const CALENDAR_INVITE_ROLES = new Set(["writer", "reader"]);
 
-export function normalizeCalendarInvites(value) {
-  const list = Array.isArray(value) ? value : [];
-  if (list.length > MAX_CALENDAR_INVITES) {
-    return { ok: false, message: `참가자는 한 번에 최대 ${MAX_CALENDAR_INVITES}명까지 초대할 수 있습니다.` };
-  }
+const CALENDAR_SUMMARY_MAX = 200;
+const ACL_RULE_ID_MAX = 200;
+// 특정 사람이 아니라 "범위 전체"를 가리키는 scope 다. 목록에는 보여야 하지만
+// (화면의 "누구나 볼 수 있음") 지우게 하면 안 된다.
+const ACL_SCOPE_LOCKED = new Set(["default", "domain"]);
+
+function aclPath(calendarId, ruleId = "") {
+  const base = `/calendars/${encodeURIComponent(calendarId)}/acl`;
+  return ruleId ? `${base}/${encodeURIComponent(ruleId)}` : base;
+}
+
+// 초대 목록 검증. 실패 사유를 한 단어씩 따로 돌려준다 — 하나로 뭉치면 화면이
+// 인원 초과에도 "이메일 주소를 확인해주세요" 를 띄우게 되고, 그러면 대표님은
+// 멀쩡한 주소를 계속 고쳐 넣는다. 문구는 HTTP 층이 이 사유를 보고 정한다.
+function normalizeCalendarInvites(value) {
+  // 초대는 선택이다. 안 보내면 빈 목록이지 오류가 아니다.
+  if (value === undefined || value === null) return { ok: true, invites: [] };
+  if (!Array.isArray(value)) return { ok: false, reason: "invites" };
+  // 상한은 자르지 않고 거절한다. 조용히 자르면 초대했다고 믿은 사람이 빠진다.
+  if (value.length > MAX_CALENDAR_INVITES) return { ok: false, reason: "invites_max" };
   const seen = new Set();
   const invites = [];
-  for (const entry of list) {
+  for (const entry of value) {
+    // 문자열 하나만 온 경우도 받는다(다이얼로그가 주소만 보낼 때가 있다).
     const source = typeof entry === "string" ? { email: entry } : (entry || {});
+    // 구글이 거절할 주소는 우리 쪽에서 먼저 막는다. 소문자로 정규화한 뒤
+    // 중복을 지운다 — A@b.com 과 a@B.com 은 구글에서 같은 규칙 하나다.
     const email = cleanText(source.email, 320).toLowerCase();
-    if (!isAttendeeEmail(email)) return { ok: false, message: "참가자 이메일 주소를 확인해주세요." };
-    const role = cleanText(source.role) || "writer";
-    if (!CALENDAR_SHARE_ROLES.has(role)) return { ok: false, message: "참가자 권한을 확인해주세요." };
+    if (!isAttendeeEmail(email)) return { ok: false, reason: "invite_email" };
+    const role = cleanText(source.role, 40) || "writer";
+    if (!CALENDAR_INVITE_ROLES.has(role)) return { ok: false, reason: "invite_role" };
     if (seen.has(email)) continue;
     seen.add(email);
     invites.push({ email, role });
@@ -2003,162 +2028,234 @@ export function normalizeCalendarInvites(value) {
   return { ok: true, invites };
 }
 
-// 연동 + 액세스 토큰을 한 번에 준비한다. 실패 사유는 호출부가 그대로 HTTP
-// 상태로 옮길 수 있도록 좁은 문자열로 돌려준다.
-async function ownerCalendarSession(ctx, env, ownerCode, fetchImpl) {
+// 네 함수가 공통으로 필요한 "연동 행 + 액세스 토큰". 가드 순서는
+// writeRowToGoogleFirst 와 같게 두되, 여기서는 조용히 물러나지 않고 사유를
+// 올린다 — 이 경로는 대표님이 버튼을 누른 결과라 실패를 화면에 말해야 한다.
+async function resolveOwnerCalendarSession(ctx, env, ownerCode, options = {}) {
+  const fetchImpl = options.fetchImpl || fetch;
+  const code = normalizeCode(ownerCode);
+  // 호출부가 방금 발급한 토큰을 넘기면 그대로 쓴다. 한 요청이 insert 뒤에
+  // list 를 이어 부를 때 refresh 가 두 번 나가는 것을 막는 유일한 장치다.
+  const supplied = cleanText(options.accessToken);
+  if (supplied) {
+    return { ok: true, integration: options.integration || null, accessToken: supplied };
+  }
   const config = googleOauthConfig(env);
   if (!config.clientId || !config.clientSecret) return { ok: false, reason: "env" };
+  // 연동 조회 자체가 불가능한 ctx 면 DB 를 건드리기 전에 물러난다.
+  if (!canLoadOwnerIntegration(ctx)) return { ok: false, reason: "no-storage" };
   let integration = null;
   try {
-    const loaded = await loadOwnerGoogleIntegration(ctx, normalizeCode(ownerCode));
-    integration = loaded.error ? null : loaded.integration;
+    const loaded = await loadOwnerGoogleIntegration(ctx, code);
+    if (loaded.error || !loaded.integration) return { ok: false, reason: "not-connected" };
+    integration = loaded.integration;
   } catch (unexpected) {
-    integration = null;
+    // 조회가 터진 것과 연동 행이 없는 것은 화면에서 같은 뜻이다 — 아직 연결 안 됨.
+    return { ok: false, reason: "not-connected" };
   }
-  if (!integration) return { ok: false, reason: "not-connected" };
   const token = await refreshAccessToken(integration.refresh_token, env, fetchImpl);
   if (!token.ok) {
-    return { ok: false, reason: token.reason === "invalid_grant" ? "needs_reconnect" : "token" };
+    if (token.reason === "invalid_grant") {
+      // 만료된 refresh token 을 조용히 삼키면 "다시 연결 필요" 배지가 영영 안 뜬다.
+      await markIntegrationSyncStatus(ctx, code, "needs_reconnect", "구글 재연결이 필요합니다.");
+      return { ok: false, reason: "needs_reconnect" };
+    }
+    return { ok: false, reason: "token" };
   }
   return { ok: true, integration, accessToken: token.accessToken };
 }
 
-// 공유를 건드리는 것은 "대표님이 소유한" 캘린더에서만 허용한다. writer 권한만
-// 있는 남의 캘린더의 참가자를 우리가 고쳐서는 안 된다.
-async function ownedCalendarEntry(ctx, ownerCode, calendarId, integration) {
-  const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, integration);
-  const entry = catalog.find((candidate) => candidate.id === calendarId);
-  return entry && entry.accessRole === "owner" ? entry : null;
+// 공유 설정은 "대표님이 소유한" 캘린더에서만 만진다. writer 권한만 있는 남의
+// 캘린더의 참가자를 우리가 고치면 그 캘린더 주인 모르게 사람이 늘어난다.
+// listOwnerCalendarCatalog 는 전용/기본 캘린더 행의 accessRole 을 "owner" 로
+// 채워 주므로 카탈로그 열이 아직 없는 배포 창에서도 판정이 선다.
+async function ownsCalendar(ctx, ownerCode, calendarId, integration) {
+  try {
+    const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, integration);
+    return catalog.some((entry) => entry.id === calendarId && entry.accessRole === "owner");
+  } catch (unexpected) {
+    // 판정을 못 하면 막는다. 공유는 되돌리기 어려우므로 여기만은 fail closed.
+    return false;
+  }
 }
 
-function aclRules(data) {
+function mapAclRule(item) {
+  const scopeType = cleanText(item?.scope?.type, 20) || "user";
+  const email = cleanText(item?.scope?.value, 320).toLowerCase();
+  return {
+    id: cleanText(item?.id, ACL_RULE_ID_MAX),
+    // scope.value 는 default 규칙에 아예 없다. 빈 문자열 대신 null 로 내보내
+    // 화면이 "주소 없는 규칙"과 "주소가 빈 규칙"을 헷갈리지 않게 한다.
+    email: email || null,
+    role: cleanText(item?.role, 40),
+    scopeType,
+    // default/domain 은 목록에서 빼지 않고 표식만 단다. 빼 버리면 화면이
+    // "누구나 볼 수 있음" 을 보여줄 수 없고, 대표님은 왜 공개인지 모른 채로 둔다.
+    editable: !ACL_SCOPE_LOCKED.has(scopeType),
+  };
+}
+
+function mapAclRules(data) {
   const items = Array.isArray(data?.items) ? data.items : [];
-  return items
-    .map((item) => {
-      const scopeType = cleanText(item?.scope?.type) || "user";
-      return {
-        id: cleanText(item?.id, 200),
-        email: cleanText(item?.scope?.value, 320).toLowerCase(),
-        role: cleanText(item?.role, 40),
-        scopeType,
-        // default/domain 규칙은 특정 사람이 아니라 범위 전체다. 목록에는 보이되
-        // 화면에서 지우지 못하도록 표식만 남긴다.
-        editable: scopeType === "user" || scopeType === "group",
-      };
-    })
-    .filter((rule) => rule.id);
+  return items.map(mapAclRule).filter((rule) => rule.id);
 }
 
-async function readOwnerCalendarAcl(accessToken, calendarId, fetchImpl) {
-  const result = await googleFetch(accessToken, "GET", `/calendars/${encodeURIComponent(calendarId)}/acl`, null, { fetchImpl });
-  if (!result.ok) return { ok: false, reason: `list_${result.status}` };
-  return { ok: true, rules: aclRules(result.data) };
-}
-
-export async function createOwnerCalendar(ctx, env, ownerCode, input = {}, options = {}) {
+// (1) 새 캘린더 + 초대. 검증은 전부 구글을 부르기 전에 끝낸다.
+export async function createOwnerCalendar(ctx, env, ownerCode, { summary, invites } = {}, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
-  const summary = cleanText(input.summary, 200);
-  if (!summary) return { ok: false, reason: "summary" };
-  const parsed = normalizeCalendarInvites(input.invites);
-  if (!parsed.ok) return { ok: false, reason: "invites", message: parsed.message };
-  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  // 이름은 자르지 않고 거절한다. 자르면 대표님이 지은 이름과 구글에 남은
+  // 이름이 달라지고, 그 차이를 알 방법이 화면에 없다.
+  const name = cleanText(summary);
+  if (!name || name.length > CALENDAR_SUMMARY_MAX) return { ok: false, reason: "summary" };
+  const parsed = normalizeCalendarInvites(invites);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+
+  const session = await resolveOwnerCalendarSession(ctx, env, code, options);
   if (!session.ok) return { ok: false, reason: session.reason };
 
-  const created = await googleFetch(session.accessToken, "POST", "/calendars",
-    { summary, timeZone: EVENT_TIMEZONE }, { fetchImpl });
-  if (!created.ok || !created.data?.id) return { ok: false, reason: `create_${created.status}` };
+  // calendars.insert 의 필수 본문 필드는 summary 하나지만 timeZone 을 함께
+  // 보낸다. 안 보내면 구글 계정 기본 시간대를 따르고, MI 가 만드는 일정은
+  // 전부 EVENT_TIMEZONE 기준이라 하루 경계가 어긋난다.
+  let created = null;
+  try {
+    created = await googleFetch(session.accessToken, "POST", "/calendars",
+      { summary: name, timeZone: EVENT_TIMEZONE }, { fetchImpl });
+  } catch (unexpected) {
+    return { ok: false, reason: "network" };
+  }
+  if (!created.ok || !created.data?.id) return { ok: false, reason: `google_${created.status}` };
   const calendarId = String(created.data.id);
 
-  // 캘린더는 이미 만들어졌다. 초대가 몇 건 실패해도 전체를 실패로 되돌리지
-  // 않는다 — 되돌릴 방법이 캘린더 삭제뿐이라 더 위험하다. 실패한 주소만 알린다.
+  // (2)(3)(4) 가 먼저 거는 "대표님이 이 캘린더의 주인인가" 관문이 여기에는
+  // 없다. 방금 대표님의 토큰으로 calendars.insert 를 한 캘린더라 소유권은
+  // 구성상 보장되고, 그러므로 그 확인은 여기서 공허하다.
+  const invited = [];
   const failedInvites = [];
-  let invited = 0;
   for (const invite of parsed.invites) {
-    const rule = await googleFetch(session.accessToken, "POST",
-      `/calendars/${encodeURIComponent(calendarId)}/acl`,
-      { role: invite.role, scope: { type: "user", value: invite.email } },
-      { query: { sendNotifications: "true" }, fetchImpl });
-    if (rule.ok) invited += 1;
-    else failedInvites.push(invite.email);
+    // 초대 한 건이 실패해도 나머지를 멈추지 않고 캘린더도 되돌리지 않는다 —
+    // 되돌리는 방법이 방금 만든 캘린더의 삭제뿐이라 그쪽이 훨씬 위험하다.
+    let rule = null;
+    try {
+      rule = await googleFetch(session.accessToken, "POST", aclPath(calendarId),
+        { role: invite.role, scope: { type: "user", value: invite.email } },
+        { query: { sendNotifications: "true" }, fetchImpl });
+    } catch (unexpected) {
+      failedInvites.push({ ...invite, reason: "network" });
+      continue;
+    }
+    if (rule.ok) invited.push({ ...invite });
+    else failedInvites.push({ ...invite, reason: `google_${rule.status}` });
   }
 
+  // 방금 만든 캘린더를 카탈로그에 바로 심는다. 다음 동기화까지 기다리면
+  // 사이드바에 안 보이고, 안 보이는 캘린더는 다이얼로그에서 고를 수도 없다.
   const values = {
     owner_agency_code: code,
     google_calendar_id: calendarId,
     calendar_role: "secondary",
-    calendar_summary: summary,
+    calendar_summary: name,
+    // 우리가 만들었으므로 소유자는 대표님이고, 그래서 쓰기 가능하다.
     calendar_access_role: "owner",
     calendar_is_primary: false,
     calendar_writable: true,
-    calendar_catalog_at: new Date().toISOString(),
-    calendar_background_color: null,
-    calendar_foreground_color: null,
-    calendar_selected: true,
     calendar_visible: true,
+    calendar_catalog_at: new Date().toISOString(),
   };
-  await runWithOptionalColumns(() => runWithOptionalColumns(() => ctx.supabaseAdmin
-    .from("owner_google_calendar_sync")
-    .upsert(withoutDisabledColumns(values), { onConflict: "owner_agency_code,google_calendar_id" })
-    .then((response) => response || { error: null }, (error) => ({ error })), OPTIONAL_CALENDAR_CATALOG_COLUMNS),
-  OPTIONAL_CALENDAR_SYNC_COLUMNS);
+  try {
+    // 두 선택 열 묶음은 서로 다른 마이그레이션에서 온다. 한쪽만 적용된 창에서도
+    // 각각 한 번씩 내려가도록 refreshOwnerCalendarCatalog 와 똑같이 겹쳐 건다.
+    await runWithOptionalColumns(() => runWithOptionalColumns(() => ctx.supabaseAdmin
+      .from("owner_google_calendar_sync")
+      .upsert(withoutDisabledColumns(values), { onConflict: "owner_agency_code,google_calendar_id" })
+      .then((response) => response || { error: null }, (error) => ({ error })), OPTIONAL_CALENDAR_CATALOG_COLUMNS),
+    OPTIONAL_CALENDAR_SYNC_COLUMNS);
+  } catch (unexpected) {
+    // 캐시 적재 실패가 "캘린더는 만들어졌다" 는 사실을 뒤집지는 않는다.
+  }
 
   await recordSyncAudit(ctx, "google_calendar_created", null, {
-    calendarId: cleanText(calendarId, 200),
-    summary,
-    invited,
+    calendarId: cleanText(calendarId, ACL_RULE_ID_MAX),
+    summary: name,
+    invited: invited.length,
     failed: failedInvites.length,
   });
-  return { ok: true, calendarId, summary, invited, failedInvites };
+  return { ok: true, calendarId, summary: name, invited, failedInvites, integration: session.integration, accessToken: session.accessToken };
 }
 
+// (2) 참가자 목록. 구글이 정본이라 매번 읽는다.
 export async function listOwnerCalendarAcl(ctx, env, ownerCode, calendarId, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
   const id = cleanText(calendarId, 1024);
   if (!id) return { ok: false, reason: "calendar" };
-  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  const session = await resolveOwnerCalendarSession(ctx, env, code, options);
   if (!session.ok) return { ok: false, reason: session.reason };
-  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
-  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
+  if (!(await ownsCalendar(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  try {
+    const result = await googleFetch(session.accessToken, "GET", aclPath(id), null, { fetchImpl });
+    if (!result.ok) return { ok: false, reason: `google_${result.status}` };
+    return { ok: true, rules: mapAclRules(result.data), integration: session.integration, accessToken: session.accessToken };
+  } catch (unexpected) {
+    return { ok: false, reason: "network" };
+  }
 }
 
-export async function insertOwnerCalendarAcl(ctx, env, ownerCode, calendarId, invite = {}, options = {}) {
+// (3) 참가자 추가.
+export async function insertOwnerCalendarAcl(ctx, env, ownerCode, calendarId, { email, role } = {}, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
   const id = cleanText(calendarId, 1024);
   if (!id) return { ok: false, reason: "calendar" };
-  const parsed = normalizeCalendarInvites([invite]);
-  if (!parsed.ok) return { ok: false, reason: "invites", message: parsed.message };
-  if (!parsed.invites.length) return { ok: false, reason: "invites", message: "참가자 이메일 주소를 확인해주세요." };
-  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  // 한 건도 목록과 같은 규칙으로 검증한다 — 화면 두 곳이 다른 주소를 받아들이면
+  // 초대는 되는데 캘린더 생성은 안 되는 식으로 어긋난다.
+  const parsed = normalizeCalendarInvites([{ email, role }]);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  const [invite] = parsed.invites;
+  if (!invite) return { ok: false, reason: "invite_email" };
+
+  const session = await resolveOwnerCalendarSession(ctx, env, code, options);
   if (!session.ok) return { ok: false, reason: session.reason };
-  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
-  const [entry] = parsed.invites;
-  const rule = await googleFetch(session.accessToken, "POST", `/calendars/${encodeURIComponent(id)}/acl`,
-    { role: entry.role, scope: { type: "user", value: entry.email } },
-    { query: { sendNotifications: "true" }, fetchImpl });
-  if (!rule.ok) return { ok: false, reason: `insert_${rule.status}` };
-  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
+  if (!(await ownsCalendar(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  try {
+    // sendNotifications 는 기본값이 true 지만 명시해 둔다. 초대 메일이 나가는
+    // 것은 대표님이 의도한 동작이고, 기본값이 바뀌면 조용히 안 나가게 된다.
+    const result = await googleFetch(session.accessToken, "POST", aclPath(id),
+      { role: invite.role, scope: { type: "user", value: invite.email } },
+      { query: { sendNotifications: "true" }, fetchImpl });
+    if (!result.ok) return { ok: false, reason: `google_${result.status}` };
+    return { ok: true, rule: mapAclRule(result.data), integration: session.integration, accessToken: session.accessToken };
+  } catch (unexpected) {
+    return { ok: false, reason: "network" };
+  }
 }
 
+// (4) 참가자 삭제.
 export async function deleteOwnerCalendarAcl(ctx, env, ownerCode, calendarId, ruleId, options = {}) {
   const fetchImpl = options.fetchImpl || fetch;
   const code = normalizeCode(ownerCode);
   const id = cleanText(calendarId, 1024);
-  const rule = cleanText(ruleId, 200);
+  const rule = cleanText(ruleId, ACL_RULE_ID_MAX);
   if (!id) return { ok: false, reason: "calendar" };
   if (!rule) return { ok: false, reason: "rule" };
-  const session = await ownerCalendarSession(ctx, env, code, fetchImpl);
+  // (2) 가 editable:false 로 표시해 내보낸 그 규칙들이다. 화면이 "지울 수 없음"
+  // 으로 그린 것을 API 는 지워 준다면 두 층의 말이 어긋나므로 여기서 거절한다.
+  if (rule === "default" || rule.startsWith("domain:")) return { ok: false, reason: "rule_locked" };
+
+  const session = await resolveOwnerCalendarSession(ctx, env, code, options);
   if (!session.ok) return { ok: false, reason: session.reason };
-  if (!(await ownedCalendarEntry(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
-  const removed = await googleFetch(session.accessToken, "DELETE",
-    `/calendars/${encodeURIComponent(id)}/acl/${encodeURIComponent(rule)}`, null, { fetchImpl });
-  // 이미 사라진 규칙(404/410)은 우리가 원하던 최종 상태와 같으므로 성공으로 본다.
-  if (!removed.ok && removed.status !== 404 && removed.status !== 410) {
-    return { ok: false, reason: `delete_${removed.status}` };
+  if (!(await ownsCalendar(ctx, code, id, session.integration))) return { ok: false, reason: "forbidden" };
+  try {
+    const removed = await googleFetch(session.accessToken, "DELETE", aclPath(id, rule), null, { fetchImpl });
+    // 이미 사라진 규칙(404/410)은 우리가 원하던 최종 상태와 같으므로 성공이다.
+    // 화면에서 두 번 누른 것을 오류로 되돌려 줄 이유가 없다.
+    if (!removed.ok && removed.status !== 404 && removed.status !== 410) {
+      return { ok: false, reason: `google_${removed.status}` };
+    }
+    return { ok: true, ruleId: rule, integration: session.integration, accessToken: session.accessToken };
+  } catch (unexpected) {
+    return { ok: false, reason: "network" };
   }
-  return readOwnerCalendarAcl(session.accessToken, id, fetchImpl);
 }
 
 export { DONE_PREFIX, decorateGoogleSummary, normalizeImportedTitle, undecorateGoogleSummary };

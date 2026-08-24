@@ -112,9 +112,31 @@ function listRoutes() {
   ];
 }
 
+// 관리 API의 schedule_items 표면에는 테넌트 필터가 없어, 여기서 반환되는 행은
+// 곧 "모든 계정이 공유하는 업무 운영 목록"이 된다. 대표(owner) 개인 캘린더 행은
+// 이 목록에 절대 섞이면 안 된다.
+//
+// 현재 스키마에는 개인/운영을 가르는 열(personal_role)이 없다. 그래서 판별 기준은
+// "운영 범위가 붙어 있는가" 하나다.
+//   · client_id 또는 operation_team_id 가 있으면 → 업무 운영(공유) 행. 그대로 반환한다.
+//   · 둘 다 없으면 → 대표 개인 공간 행. 제외한다.
+// 구글에서 가져온 개인 일정은 client_id / operation_team_id / calendar_id 를 항상
+// null 로 저장하므로(google-calendar-sync.mjs 의 mapGoogleEventToScheduleRow)
+// 이 술어 하나로 전부 걸러진다.
+//
+// google_event_id · google_calendar_id 의 유무로 거르지 않는 이유:
+// 대표가 만든 행은 광고주·운영팀 범위여도 구글로 push 되면서 두 값을 갖게 된다
+// (google-calendar-sync.mjs 의 ownerSyncableRows 는 client_id 를 보지 않는다).
+// 즉 "구글 식별자가 있으면 개인 행" 이라는 술어는 운영 행까지 숨긴다.
+const OPERATIONAL_SCOPE_ONLY = "client_id.not.is.null,operation_team_id.not.is.null";
+
+function scopeToSharedOperationRows(query) {
+  return query.is("calendar_id", null).or(OPERATIONAL_SCOPE_ONLY);
+}
+
 function applyFilters(query, url, id, config = {}) {
   if (id) query = query.eq("id", id);
-  if (config.personalOnly) query = query.is("calendar_id", null);
+  if (config.personalOnly) query = scopeToSharedOperationRows(query);
 
   const clientId = url.searchParams.get("client_id");
   const brandId = url.searchParams.get("brand_id");
@@ -254,7 +276,7 @@ async function handlePatch(request, ctx, config, id) {
     .from(config.table)
     .update(body)
     .eq("id", id);
-  if (config.personalOnly) updateQuery = updateQuery.is("calendar_id", null);
+  if (config.personalOnly) updateQuery = scopeToSharedOperationRows(updateQuery);
   const { data, error } = await updateQuery.select(config.select);
 
   if (error) {
@@ -296,7 +318,7 @@ async function handleDelete(_request, ctx, config, id) {
     .from(config.table)
     .delete()
     .eq("id", id);
-  if (config.personalOnly) deleteQuery = deleteQuery.is("calendar_id", null);
+  if (config.personalOnly) deleteQuery = scopeToSharedOperationRows(deleteQuery);
   const { data, error } = await deleteQuery.select(config.select);
 
   if (error) {

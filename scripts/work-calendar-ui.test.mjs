@@ -30,6 +30,12 @@ const syncHandlerSource = source.slice(
   source.indexOf("async function maybeSyncGoogleCalendar(trigger) {"),
   source.indexOf("async function initOwnerGoogleLoginBanner(view, generation) {")
 );
+// 데스크톱(레일이 살아 있는 폭) 규칙과 좁은 폭 규칙을 갈라서 본다.
+const narrowMediaStart = source.indexOf("@media (max-width: 1180px)");
+const mobileMediaStart = source.indexOf("@media (max-width: 760px)", narrowMediaStart);
+const railContextCss = source.slice(0, narrowMediaStart);
+const narrowMediaCss = source.slice(narrowMediaStart, mobileMediaStart);
+const mobileMediaCss = source.slice(mobileMediaStart);
 
 test("representative schedule is a wide personal calendar without list or sharing controls", () => {
   assert.ok(workViewStart >= 0 && editorStart > workViewStart, "representative schedule markup must exist");
@@ -496,9 +502,11 @@ test("a read-only calendar row is not draggable because the server rejects the s
   assert.match(source, /var canEdit = workItemCanEdit\(item\);/);
 });
 
-// 달력이 오른쪽 빈 칸 없이 한 줄을 다 쓰고, 가까운 업무는 그 아래 띠로 내려간다.
-// 띠 안에서 TODAY·TOMORROW 두 묶음은 세로로 쌓이고, 카드는 묶음마다 가로로 흐르다 줄바꿈한다.
-test("the agenda band stacks TODAY over TOMORROW and wraps each section's cards into a row", () => {
+// 가까운 업무는 달력 아래 띠가 아니라 왼쪽 레일 칸, 캘린더 카드 바로 아래로 들어간다.
+// 어젠다는 서랍(.mi-work-gcal-rail)의 자식이 아니라 .mi-work-body 의 직계 자식이라
+// 서랍이 접히는 761~1180px 구간에서도 사라지지 않는다.
+// 레일은 좁으므로 TODAY·TOMORROW 묶음도, 그 안의 카드도 한 줄에 하나씩 세로로 쌓인다.
+test("the agenda sits in the left rail column under the Calendars card and stacks its cards vertically", () => {
   assert.match(source, /#mi-admin \.mi-work-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   // 두 묶음은 두 칸으로 서지 않는다 — 한 칸짜리 세로 스택이다.
   assert.match(source, /#mi-admin \.mi-work-agenda\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
@@ -507,10 +515,65 @@ test("the agenda band stacks TODAY over TOMORROW and wraps each section's cards 
     false,
     "아젠다 묶음이 두 칸으로 되돌아가면 안 된다"
   );
-  // 묶음 안에서 카드는 가로로 흐르다 넘치면 다음 줄로 접힌다. 가로 스크롤은 만들지 않는다.
+
+  // === DOM: 어젠다 카드는 .mi-work-body 의 직계 자식이다 ===
+  const bodyOpen = workViewMarkup.indexOf('<div class="mi-work-body" data-work-gcal-body>');
+  assert.ok(bodyOpen >= 0, ".mi-work-body 컨테이너가 있어야 한다");
+  const bodyMarkup = workViewMarkup.slice(bodyOpen);
+  // 월간 그리드와 어젠다 카드는 들여쓰기 깊이가 같다 = 같은 부모(.mi-work-body)의 형제다.
   assert.match(
-    source,
-    /#mi-admin \.mi-work-agenda-row \{\s*display: grid;\s*min-width: 0;\s*grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/
+    bodyMarkup,
+    /\n(\s+)<div class="mi-work-layout">[\s\S]*?\n\1<aside class="mi-work-agenda-card">/,
+    "어젠다 카드는 .mi-work-layout 과 같은 깊이의 형제여야 한다"
+  );
+  // .mi-work-layout 은 어젠다가 열리기 전에 닫힌다 = 어젠다가 월간 그리드 안에 다시 들어가면 안 된다.
+  assert.match(
+    bodyMarkup,
+    /<div class="mi-work-layout">[\s\S]*?<\/article>\s*<\/div>\s*<aside class="mi-work-agenda-card">/,
+    "어젠다 카드를 .mi-work-layout 안에 도로 넣으면 안 된다"
+  );
+  // 서랍 안에 넣으면 761~1180px 에서 통째로 사라진다 — 레일 aside 가 먼저 닫혀야 한다.
+  const railOpen = bodyMarkup.indexOf('<aside class="mi-work-gcal-rail"');
+  const railClose = bodyMarkup.indexOf("</aside>", railOpen);
+  const agendaOpen = bodyMarkup.indexOf('<aside class="mi-work-agenda-card">');
+  assert.ok(railOpen >= 0 && railClose > railOpen, "캘린더 레일 aside 가 있어야 한다");
+  assert.ok(
+    agendaOpen > railClose,
+    "어젠다 카드를 서랍(.mi-work-gcal-rail) 안에 넣으면 761~1180px 에서 사라진다"
+  );
+  assert.ok(
+    bodyMarkup.indexOf('<article class="mi-work-calendar-card">') < agendaOpen,
+    "달력 카드가 아젠다 카드보다 먼저 온다"
+  );
+
+  // === 데스크톱 배치: 레일(1행 1열) 아래 어젠다(2행 1열), 월간 그리드는 2열에서 두 행을 통째로 ===
+  assert.match(
+    railContextCss,
+    /#mi-admin \.mi-work-body\.has-gcal-rail \{\s*grid-template-columns: minmax\(0, 232px\) minmax\(0, 1fr\);\s*grid-template-rows: auto 1fr;/
+  );
+  assert.match(
+    railContextCss,
+    /#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-gcal-rail \{\s*grid-row: 1;\s*grid-column: 1;/
+  );
+  assert.match(
+    railContextCss,
+    /#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-agenda-card \{\s*grid-row: 2;\s*grid-column: 1;\s*align-self: start;/
+  );
+  assert.match(
+    railContextCss,
+    /#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-layout \{\s*grid-row: 1 \/ -1;\s*grid-column: 2;\s*align-self: start;/,
+    "월간 그리드는 두 행을 통째로 차지해 폭이 줄지 않는다"
+  );
+
+  // === 레일 안에서는 카드가 한 줄에 하나씩 세로로 쌓인다 ===
+  assert.match(
+    railContextCss,
+    /#mi-admin \.mi-work-agenda-row \{\s*display: grid;\s*min-width: 0;\s*grid-template-columns: minmax\(0, 1fr\);/
+  );
+  assert.equal(
+    /repeat\(auto-fill, minmax\(260px, 1fr\)\)/.test(railContextCss),
+    false,
+    "좁은 레일에서는 가로 auto-fill 그리드가 남으면 안 된다"
   );
   assert.equal(
     /#mi-admin \.mi-work-agenda-row \{[^}]*overflow-x:/.test(source),
@@ -518,12 +581,24 @@ test("the agenda band stacks TODAY over TOMORROW and wraps each section's cards 
     "카드 줄은 가로 스크롤이 아니라 줄바꿈으로 넘긴다"
   );
   assert.match(source, /#mi-admin \.mi-work-agenda-row > \.mi-work-agenda-item \{\s*min-width: 0;\s*max-width: 100%;/);
-  // 모바일에서는 카드가 예전처럼 세로로 쌓인다.
-  assert.match(source, /@media \(max-width: 760px\)[\s\S]*#mi-admin \.mi-work-agenda-row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
-  assert.ok(
-    workViewMarkup.indexOf('<article class="mi-work-calendar-card">') < workViewMarkup.indexOf('<aside class="mi-work-agenda-card">'),
-    "달력 카드가 아젠다 카드보다 먼저 온다"
+
+  // === 761~1180px: 서랍이 접히면 어젠다는 달력 아래 전체 폭 띠로 돌아온다(서랍 상태와 무관) ===
+  assert.match(narrowMediaCss, /#mi-admin \.mi-work-body\.has-gcal-rail \{\s*grid-template-columns: minmax\(0, 1fr\);\s*grid-template-rows: none;/);
+  assert.match(
+    narrowMediaCss,
+    /#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-gcal-rail,\s*#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-layout,\s*#mi-admin \.mi-work-body\.has-gcal-rail > \.mi-work-agenda-card \{\s*grid-row: auto;\s*grid-column: 1 \/ -1;/
   );
+  assert.equal(
+    /is-gcal-open[^{]*\.mi-work-agenda-card/.test(source),
+    false,
+    "어젠다 표시를 서랍 열림 상태에 묶으면 안 된다"
+  );
+  // 폭이 다시 넓어지는 구간에서만 카드가 가로로 흐른다.
+  assert.match(narrowMediaCss, /#mi-admin \.mi-work-agenda-row \{\s*grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/);
+
+  // === 760px 이하: 어젠다는 달력 아래 전체 폭, 카드는 세로로 쌓인다 ===
+  assert.match(mobileMediaCss, /#mi-admin \.mi-work-body > \.mi-work-agenda-card \{\s*grid-row: auto;\s*grid-column: 1 \/ -1;/);
+  assert.match(mobileMediaCss, /#mi-admin \.mi-work-agenda-row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
 
   // 라벨은 영문 TODAY/TOMORROW 이고, 카드는 라벨 아래 줄바꿈 컨테이너에 담긴다.
   assert.match(source, /agenda\.innerHTML = renderWorkAgendaGroup\("TODAY", todayItems\) \+\s*\n\s*renderWorkAgendaGroup\("TOMORROW", tomorrowItems\);/);

@@ -8500,7 +8500,7 @@
       display: none;
     }
 
-    /* TODAY 와 TOMORROW 는 세로로 쌓고, 각 묶음 안에서 카드가 가로로 흐르다 줄바꿈한다. */
+    /* TODAY 와 TOMORROW 는 세로로 쌓고, 좁은 레일에 들어가므로 카드도 한 줄에 하나씩 세로로 쌓는다. */
     #mi-admin .mi-work-agenda {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
@@ -8515,10 +8515,11 @@
       align-content: start;
     }
 
+    /* 레일 안에서는 카드가 가로로 흐르지 않는다 — 한 줄에 하나씩 세로로 쌓인다. */
     #mi-admin .mi-work-agenda-row {
       display: grid;
       min-width: 0;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      grid-template-columns: minmax(0, 1fr);
       gap: 8px;
       align-items: stretch;
     }
@@ -9508,8 +9509,30 @@
       align-items: start;
     }
 
+    /* 왼쪽 칸은 캘린더 카드(1행) 아래에 가까운 업무(2행)를 그대로 이어 붙이고,
+       월간 그리드는 오른쪽 칸에서 두 행을 통째로 차지해 폭을 잃지 않는다.
+       어젠다는 서랍(.mi-work-gcal-rail)의 자식이 아니라 .mi-work-body 의 직계 자식이라
+       레일이 접히는 폭에서도 사라지지 않는다. */
     #mi-admin .mi-work-body.has-gcal-rail {
       grid-template-columns: minmax(0, 232px) minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+    }
+
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-gcal-rail {
+      grid-row: 1;
+      grid-column: 1;
+    }
+
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-agenda-card {
+      grid-row: 2;
+      grid-column: 1;
+      align-self: start;
+    }
+
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-layout {
+      grid-row: 1 / -1;
+      grid-column: 2;
+      align-self: start;
     }
 
     #mi-admin .mi-work-gcal-rail {
@@ -10119,6 +10142,7 @@
     @media (max-width: 1180px) {
       #mi-admin .mi-work-body.has-gcal-rail {
         grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: none;
       }
 
       #mi-admin .mi-work-gcal-drawer {
@@ -10141,6 +10165,20 @@
 
       #mi-admin .mi-work-body.is-gcal-open .mi-work-gcal-rail[hidden] {
         display: none;
+      }
+
+      /* 레일이 서랍으로 접히는 폭에서는 가까운 업무가 달력 아래 전체 폭 띠로 돌아온다.
+         서랍이 열려 있든 닫혀 있든 어젠다는 그대로 보인다. */
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-gcal-rail,
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-layout,
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-agenda-card {
+        grid-row: auto;
+        grid-column: 1 / -1;
+      }
+
+      /* 띠가 다시 넓어지므로 카드도 가로로 흐르다 줄바꿈한다. */
+      #mi-admin .mi-work-agenda-row {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
       }
     }
 
@@ -10178,6 +10216,12 @@
       #mi-admin .mi-work-weekdays,
       #mi-admin .mi-work-calendar {
         min-width: 700px;
+      }
+
+      /* 모바일에서는 가까운 업무가 달력 아래 전체 폭으로 오고, 카드는 예전처럼 세로로 쌓인다. */
+      #mi-admin .mi-work-body > .mi-work-agenda-card {
+        grid-row: auto;
+        grid-column: 1 / -1;
       }
 
       #mi-admin .mi-work-agenda-row {
@@ -10536,15 +10580,15 @@
                 </div>
                 <div class="mi-work-calendar" data-work-calendar aria-label="월간 업무 일정"></div>
               </article>
-
-              <aside class="mi-work-agenda-card">
-                <div class="mi-work-agenda-head">
-                  <div><span class="mi-kicker">Agenda</span><h2 data-work-agenda-title>가까운 업무</h2></div>
-                  <div class="mi-work-agenda-tools"><button class="mi-work-filter-clear" type="button" data-work-filter-clear hidden>전체</button><span class="mi-badge" data-work-count>0개</span></div>
-                </div>
-                <div class="mi-work-agenda" data-work-agenda></div>
-              </aside>
             </div>
+
+            <aside class="mi-work-agenda-card">
+              <div class="mi-work-agenda-head">
+                <div><span class="mi-kicker">Agenda</span><h2 data-work-agenda-title>가까운 업무</h2></div>
+                <div class="mi-work-agenda-tools"><button class="mi-work-filter-clear" type="button" data-work-filter-clear hidden>전체</button><span class="mi-badge" data-work-count>0개</span></div>
+              </div>
+              <div class="mi-work-agenda" data-work-agenda></div>
+            </aside>
           </div>
           <div class="mi-work-status" data-work-status>업무 일정을 불러올 준비가 되었습니다.</div>
 

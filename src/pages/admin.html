@@ -8500,9 +8500,10 @@
       display: none;
     }
 
+    /* TODAY 와 TOMORROW 는 세로로 쌓고, 각 묶음 안에서 카드가 가로로 흐르다 줄바꿈한다. */
     #mi-admin .mi-work-agenda {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: minmax(0, 1fr);
       gap: 18px;
       align-items: start;
     }
@@ -8514,8 +8515,21 @@
       align-content: start;
     }
 
-    #mi-admin .mi-work-agenda.is-single {
-      grid-template-columns: minmax(0, 1fr);
+    #mi-admin .mi-work-agenda-row {
+      display: grid;
+      min-width: 0;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 8px;
+      align-items: stretch;
+    }
+
+    #mi-admin .mi-work-agenda-row > .mi-work-agenda-item {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    #mi-admin .mi-work-agenda-row > .mi-work-agenda-empty {
+      grid-column: 1 / -1;
     }
 
     #mi-admin .mi-work-agenda-group > strong {
@@ -8529,24 +8543,27 @@
       padding: 13px 14px;
       border: 1px dashed #dbe3ee;
       border-radius: 13px;
-      color: var(--muted);
+      color: var(--mi-muted);
       font-size: 12px;
     }
 
+    /* 카드는 색을 칠하지 않는다. 캘린더 색은 제목 앞 동그라미 하나만 가져간다. */
     #mi-admin .mi-work-agenda-item {
       display: grid;
       grid-template-columns: 9px minmax(0, 1fr) auto 32px;
       gap: 9px;
       align-items: center;
       padding: 12px;
-      border: 1px solid #e3e9f2;
+      border: 1px solid var(--mi-line);
       border-radius: 14px;
-      background: #fbfcfe;
+      background: var(--mi-panel);
+      color: var(--mi-ink);
     }
 
     #mi-admin .mi-work-agenda-item > i {
-      width: 7px;
-      height: 7px;
+      width: 9px;
+      height: 9px;
+      align-self: start;
       margin-top: 5px;
       border-radius: 50%;
       background: #7183a0;
@@ -8575,7 +8592,7 @@
 
     #mi-admin .mi-work-agenda-edit strong {
       overflow: hidden;
-      color: var(--navy);
+      color: var(--mi-ink);
       font-size: 13px;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -8583,7 +8600,7 @@
 
     #mi-admin .mi-work-agenda-edit span {
       margin-top: 4px;
-      color: var(--muted);
+      color: var(--mi-muted);
       font-size: 11px;
     }
 
@@ -9738,26 +9755,9 @@
       text-decoration: line-through;
     }
 
+    /* 아젠다에서 캘린더 색이 닿는 곳은 이 동그라미 하나뿐이다(일정 색 → 캘린더 색 → 중립 토큰). */
     #mi-admin .mi-work-agenda-item[data-gcal="1"] > i {
       background: var(--mi-gcal-color, var(--mi-navy));
-    }
-
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit {
-      padding: 9px 11px;
-      border-radius: 12px;
-      background: var(--mi-gcal-color, var(--mi-navy));
-      color: var(--mi-gcal-text, #fff);
-    }
-
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit strong,
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit span,
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit .mi-work-agenda-meta {
-      color: inherit;
-    }
-
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit span,
-    #mi-admin .mi-work-agenda-item[data-gcal="1"] .mi-work-agenda-edit .mi-work-agenda-meta {
-      opacity: .85;
     }
 
     #mi-admin .mi-work-agenda-item[data-status="done"] {
@@ -10180,8 +10180,8 @@
         min-width: 700px;
       }
 
-      #mi-admin .mi-work-agenda {
-        grid-template-columns: 1fr;
+      #mi-admin .mi-work-agenda-row {
+        grid-template-columns: minmax(0, 1fr);
       }
 
       #mi-admin .mi-work-form-grid {
@@ -12843,11 +12843,10 @@
           var done = item.status === "done";
           var visibilityLabel = item.visibility === "client_visible" ? "광고주 공개" : "내 일정";
           var canEdit = workItemCanEdit(item);
+          // 카드는 색을 칠하지 않으므로 글자색(--mi-gcal-text)은 내보내지 않는다.
+          // --mi-gcal-color 하나만 나가고, 그 색은 제목 앞 동그라미가 받는다.
           var rowColor = workItemColor(item);
-          var rowText = workItemTextColor(item);
-          // --mi-gcal-color 계약 문자열은 그대로 두고, 같은 style 안에 글자색만 이어 붙인다.
           var rowStyle = (rowColor ? ' data-gcal="1" style="--mi-gcal-color:' + rowColor + '"' : "");
-          if (rowColor) rowStyle = rowStyle.slice(0, -1) + ";--mi-gcal-text:" + rowText + '"';
           return '<div class="mi-work-agenda-item" data-priority="' + escapeHtml(item.priority || "medium") +
             '" data-status="' + escapeHtml(item.status) + '"' + rowStyle +
             '><i aria-hidden="true"></i><button type="button" class="mi-work-agenda-edit" data-work-edit="' +
@@ -12859,7 +12858,9 @@
             (done ? escapeHtml(item.title) + " 완료 해제" : escapeHtml(item.title) + " 완료 처리") + '" title="' +
             (done ? "완료 해제" : "완료 처리") + '" aria-pressed="' + (done ? "true" : "false") + '"' + (canEdit ? "" : " disabled") + '>✓</button></div>';
         }).join("") : '<div class="mi-work-agenda-empty">등록된 업무가 없습니다.</div>';
-        return '<section class="mi-work-agenda-group"><strong>' + escapeHtml(title) + '</strong>' + content + '</section>';
+        // 라벨은 위에, 카드는 그 아래 한 줄로 흐르다 넘치면 다음 줄로 접힌다(가로 스크롤 없음).
+        return '<section class="mi-work-agenda-group"><strong>' + escapeHtml(title) +
+          '</strong><div class="mi-work-agenda-row">' + content + '</div></section>';
       }
 
       function renderWorkAgenda() {
@@ -12879,7 +12880,6 @@
         if (workAgendaDateKey) {
           var dateItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === workAgendaDateKey; });
           var dateTitle = new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "short" }).format(workDateFromKey(workAgendaDateKey));
-          agenda.classList.add("is-single");
           agenda.innerHTML = renderWorkAgendaGroup(dateTitle, dateItems);
           if (title) title.textContent = dateTitle + " 일정";
           if (clear) clear.hidden = false;
@@ -12888,7 +12888,6 @@
         }
         if (workActiveFilter) {
           var filterTitle = filterLabels[workActiveFilter] || "선택 업무";
-          agenda.classList.add("is-single");
           agenda.innerHTML = renderWorkAgendaGroup(filterTitle, sorted);
           if (title) title.textContent = filterTitle;
           if (clear) clear.hidden = false;
@@ -12897,10 +12896,9 @@
         }
         var todayItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === todayKey; });
         var tomorrowItems = sorted.filter(function (item) { return workDateKey(item.startsAt) === tomorrowKey; });
-        // 달력 아래 가로 띠는 오늘·내일 두 칸만 둔다. 그 뒤 일정은 달력 자체에서 본다.
-        agenda.classList.remove("is-single");
-        agenda.innerHTML = renderWorkAgendaGroup("오늘", todayItems) +
-          renderWorkAgendaGroup("내일", tomorrowItems);
+        // 달력 아래 띠는 TODAY·TOMORROW 두 묶음만 세로로 쌓는다. 그 뒤 일정은 달력 자체에서 본다.
+        agenda.innerHTML = renderWorkAgendaGroup("TODAY", todayItems) +
+          renderWorkAgendaGroup("TOMORROW", tomorrowItems);
         if (title) title.textContent = "가까운 업무";
         if (clear) clear.hidden = true;
         if (count) count.textContent = sorted.length + "개";

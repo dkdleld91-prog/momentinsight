@@ -29,6 +29,7 @@ import {
   OPTIONAL_COLUMN_RETRY_MS,
   OPTIONAL_EVENT_COLOR_COLUMNS,
   OPTIONAL_SCHEDULE_COLUMNS,
+  colorBackfillPatch,
   createOwnerCalendar,
   deleteOwnerCalendarAcl,
   disableOptionalColumns,
@@ -519,6 +520,162 @@ test("an echo of our own write produces no database mutation at all", async () =
   assert.equal(opsFor(ops, "schedule_items", "update").length, 0);
   assert.equal(opsFor(ops, "schedule_items", "insert").length, 0);
   assert.equal(opsFor(ops, "schedule_items", "delete").length, 0);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 메아리 뒤의 색 보정
+//
+// google_color_id 열이 생기기 전에 들어온 행은, 구글에서 그 일정을 다시 건드리지
+// 않는 한 메아리 가드에 막혀 영영 색을 받지 못했다. 색 한 열만 그 가드를 비껴간다.
+// ─────────────────────────────────────────────────────────────
+
+const ECHO_EVENTS_URL = `${CALENDAR_BASE}/calendars/primary%40example.com/events`;
+
+function echoRow(values = {}) {
+  return {
+    id: "row-1", owner_agency_code: OWNER, google_event_id: "gev-1",
+    google_calendar_id: "primary@example.com",
+    google_updated_at: "2026-08-22T10:00:00.000Z",
+    google_etag: '"e1"',
+    google_color_id: null,
+    title: "구글 회의",
+    starts_at: "2026-08-24T06:00:00.000Z",
+    ...values,
+  };
+}
+
+// 실제 DB 처럼 쓴 값을 행에 반영한다 — 두 번째 실행이 같은 행을 다시 본다.
+function echoSyncCtx(row) {
+  return makeCtx({
+    schedule_items: (op) => {
+      if (op.kind === "select") {
+        return { data: op.filters.some((filter) => filter[1] === "google_event_id") ? [row] : [], error: null };
+      }
+      if (op.kind === "update") Object.assign(row, op.values);
+      return { data: null, error: null };
+    },
+  });
+}
+
+function echoSync(ctx, impl) {
+  return syncOneCalendar(ctx, OWNER, calendarRow({ sync_token: "st-0" }), "gat-1", { now: NOW, fetchImpl: impl });
+}
+
+test("the color backfill fires only on a real change and never on a missing key", () => {
+  assert.deepEqual(colorBackfillPatch(timedEvent({ colorId: "10" }), { google_color_id: null }), { google_color_id: "10" });
+  assert.deepEqual(colorBackfillPatch(timedEvent({ colorId: "10" }), {}), { google_color_id: "10" },
+    "열이 없어 안 읽힌 값은 비어 있는 것으로 본다");
+  assert.deepEqual(Object.keys(colorBackfillPatch(timedEvent({ colorId: "10" }), {})), ["google_color_id"],
+    "제목·시각·etag 는 절대 함께 실리지 않는다");
+  assert.equal(colorBackfillPatch(timedEvent({ colorId: "10" }), { google_color_id: "10" }), null, "같은 색이면 쓰지 않는다");
+  assert.equal(colorBackfillPatch(timedEvent(), { google_color_id: "10" }), null,
+    "키가 없는 응답은 색을 지웠다는 뜻이 아니다");
+  assert.deepEqual(colorBackfillPatch(timedEvent({ colorId: "" }), { google_color_id: "10" }), { google_color_id: null },
+    "키가 있는데 비어 있으면 캘린더 색을 따르라는 명시적 답이다");
+  assert.deepEqual(colorBackfillPatch(timedEvent({ colorId: "99" }), { google_color_id: "10" }), { google_color_id: null },
+    "팔레트에 없는 id 는 받아쓰지 않는다");
+  assert.equal(colorBackfillPatch(timedEvent({ colorId: "99" }), {}), null, "지울 것도 없으면 쓰지 않는다");
+});
+
+test("an echoed event backfills the per-event color onto a row that predates the column", async () => {
+  const row = echoRow();
+  const { ctx, ops } = echoSyncCtx(row);
+  const { impl } = fetchMock({
+    [`GET ${ECHO_EVENTS_URL}`]: jsonResponse(200, { items: [timedEvent({ colorId: "10", summary: "덮으면 안 되는 제목" })], nextSyncToken: "st" }),
+  });
+
+  const result = await echoSync(ctx, impl);
+
+  assert.equal(result.updated, 1, "메아리여도 색 한 열은 뒤늦게 채워진다");
+  assert.equal(result.skipped, 0);
+  const updates = opsFor(ops, "schedule_items", "update");
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].values, { google_color_id: "10" }, "색 말고는 아무것도 쓰지 않는다");
+  assert.equal(row.title, "구글 회의", "오래된 이벤트가 제목을 덮지 못한다");
+  assert.equal(row.google_updated_at, "2026-08-22T10:00:00.000Z", "버전도 그대로다 — 메아리 가드가 무너지면 안 된다");
+  assert.equal(row.google_etag, '"e1"');
+});
+
+test("a replayed color backfill writes nothing, so updated_at never churns", async () => {
+  const row = echoRow();
+  const { ctx, ops } = echoSyncCtx(row);
+  const { impl } = fetchMock({
+    [`GET ${ECHO_EVENTS_URL}`]: jsonResponse(200, { items: [timedEvent({ colorId: "10" })], nextSyncToken: "st" }),
+  });
+
+  await echoSync(ctx, impl);
+  const replay = await echoSync(ctx, impl);
+
+  assert.equal(replay.updated, 0);
+  assert.equal(replay.skipped, 1, "두 번째부터는 예전과 똑같이 건너뛴다");
+  assert.equal(opsFor(ops, "schedule_items", "update").length, 1, "같은 값을 다시 쓰지 않는다");
+});
+
+test("an echoed event never rewrites a color it already has or one it never mentioned", async () => {
+  const row = echoRow({ google_color_id: "10" });
+  const { ctx, ops } = echoSyncCtx(row);
+  const { impl } = fetchMock({
+    [`GET ${ECHO_EVENTS_URL}`]: sequence(
+      jsonResponse(200, { items: [timedEvent({ colorId: "10" })], nextSyncToken: "st" }),
+      jsonResponse(200, { items: [timedEvent()], nextSyncToken: "st" }),
+    ),
+  });
+
+  const same = await echoSync(ctx, impl);
+  const silent = await echoSync(ctx, impl);
+
+  assert.deepEqual([same.updated, same.skipped], [0, 1], "색이 그대로면 쓰지 않는다");
+  assert.deepEqual([silent.updated, silent.skipped], [0, 1], "키가 없으면 손대지 않는다");
+  assert.equal(opsFor(ops, "schedule_items", "update").length, 0);
+  assert.equal(row.google_color_id, "10", "키 없는 응답이 대표님이 고른 색을 지우지 않는다");
+});
+
+test("the color backfill degrades with its own column group and heals on the same timer", async () => {
+  resetOptionalColumns();
+  try {
+    const state = { migrated: false };
+    const row = echoRow();
+    // 열이 내려간 창에서는 그 값이 애초에 실려 오지 않는다.
+    const withoutColorColumn = (source) => {
+      const copy = { ...source };
+      delete copy.google_color_id;
+      return copy;
+    };
+    const { ctx, ops } = makeCtx({
+      schedule_items: (op) => {
+        if (op.kind === "update") { Object.assign(row, op.values); return { data: null, error: null }; }
+        if (op.kind !== "select") return { data: null, error: null };
+        if (!state.migrated && op.fields.includes("google_color_id")) {
+          return { data: null, error: { code: "42703", message: "column schedule_items.google_color_id does not exist" } };
+        }
+        if (!op.filters.some((filter) => filter[1] === "google_event_id")) return { data: [], error: null };
+        return { data: [state.migrated ? row : withoutColorColumn(row)], error: null };
+      },
+    });
+    let clock = NOW;
+    setOptionalColumnClock(() => clock);
+    const { impl } = fetchMock({
+      [`GET ${ECHO_EVENTS_URL}`]: jsonResponse(200, { items: [timedEvent({ colorId: "10" })], nextSyncToken: "st" }),
+    });
+
+    const degraded = await echoSync(ctx, impl);
+
+    assert.deepEqual([degraded.updated, degraded.skipped], [0, 1], "열이 없으면 예전과 똑같이 건너뛴다");
+    assert.equal(opsFor(ops, "schedule_items", "update").length, 0, "없는 열에 쓰려 들지 않는다");
+    assert.deepEqual(disabledOptionalColumns(), [...OPTIONAL_EVENT_COLOR_COLUMNS], "색 묶음만 내려간다");
+    assert.equal(row.google_color_id, null);
+
+    state.migrated = true;
+    clock += OPTIONAL_COLUMN_RETRY_MS;
+
+    const healed = await echoSync(ctx, impl);
+
+    assert.equal(healed.updated, 1, "재배포 없이 TTL 이 지나면 스스로 채운다");
+    assert.deepEqual(opsFor(ops, "schedule_items", "update").at(-1).values, { google_color_id: "10" });
+    assert.deepEqual(disabledOptionalColumns(), []);
+  } finally {
+    resetOptionalColumns();
+  }
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -2055,8 +2212,72 @@ test("the calendar catalog splits my calendars from the others and keeps the rea
   assert.deepEqual(Object.keys(writable[0]).sort(), ["accessRole", "dedicated", "id", "name", "primary"]);
 });
 
-test("the catalog paints the modern palette while the stored row keeps google's legacy hex", async () => {
-  // 저장은 구글 API 가 준 레거시 값 그대로다(refreshOwnerCalendarCatalog 가 그대로 넣는다).
+// 캘린더 색의 정본은 colorId(1~24)다. 레거시 16진만 보고 옮기면 표에 없거나
+// 어긋난 값이 미묘하게 다른 색으로 굳는다 — 대표님 기본 캘린더의 파랑이 그랬다.
+test("the catalog stores the color google actually paints, keyed by colorId", async () => {
+  const { ctx, ops } = makeCtx({
+    owner_google_calendar_sync: (op) => (op.kind === "select" ? { data: [], error: null } : { data: null, error: null }),
+  });
+  const { impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, {
+      items: [
+        { id: TEAM_CALENDAR, summary: "팀 일정", accessRole: "writer", colorId: "8", backgroundColor: "#16a765", foregroundColor: "#000000" },
+        { id: HOLIDAY_CALENDAR, summary: "공휴일", accessRole: "reader", colorId: "23", backgroundColor: "#123456" },
+        { id: "legacy@group.calendar.google.com", summary: "id 없음", accessRole: "reader", backgroundColor: "#9fe1e7" },
+        { id: "custom@group.calendar.google.com", summary: "사용자 지정", accessRole: "reader", backgroundColor: "#123456" },
+        { id: "nocolor@group.calendar.google.com", summary: "색 없음", accessRole: "reader" },
+      ],
+    }),
+  });
+
+  const result = await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+
+  assert.deepEqual(result, { ok: true, saved: 5 });
+  const stored = opsFor(ops, "owner_google_calendar_sync", "upsert").map((op) => op.values);
+  assert.equal(stored[0].calendar_background_color, "#0b8043", "colorId 8 은 구글이 칠하는 Basil 로 적재된다");
+  assert.equal(stored[0].calendar_foreground_color, "#ffffff", "글자색은 옮긴 색 위에서 다시 정한다");
+  assert.equal(stored[1].calendar_background_color, "#8e24aa", "레거시 16진을 몰라도 colorId 가 색을 정한다");
+  assert.equal(stored[2].calendar_background_color, "#039be5", "colorId 가 없으면 레거시 표로 되짚는다");
+  assert.equal(stored[3].calendar_background_color, "#123456", "표에도 없고 id 도 없으면 원본을 그대로 통과시킨다");
+  assert.equal(stored[4].calendar_background_color, null);
+  assert.equal(stored[4].calendar_foreground_color, null, "색을 모르면 글자색도 정하지 않는다");
+});
+
+test("a second catalog refresh over already-mapped rows never flips the color back", async () => {
+  const item = { id: TEAM_CALENDAR, summary: "팀 일정", accessRole: "writer", colorId: "8", backgroundColor: "#16a765", foregroundColor: "#000000" };
+  const table = new Map();
+  const { ctx, ops } = makeCtx({
+    owner_google_calendar_sync: (op) => {
+      if (op.kind === "upsert") table.set(op.values.google_calendar_id, { ...op.values });
+      return op.kind === "select" ? { data: [...table.values()], error: null } : { data: null, error: null };
+    },
+  });
+  const { impl } = fetchMock({
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, { items: [item] }),
+  });
+
+  await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+  await refreshOwnerCalendarCatalog(ctx, OWNER, "gat-1", { fetchImpl: impl });
+
+  const upserts = opsFor(ops, "owner_google_calendar_sync", "upsert").map((op) => op.values);
+  assert.equal(upserts.length, 2);
+  assert.equal(upserts[0].calendar_background_color, "#0b8043");
+  assert.equal(upserts[1].calendar_background_color, upserts[0].calendar_background_color,
+    "두 번째 적재가 레거시로 되돌리지 않는다");
+  assert.equal(upserts[1].calendar_foreground_color, upserts[0].calendar_foreground_color);
+  assert.equal(modernCalendarColor(upserts[0].calendar_background_color), upserts[0].calendar_background_color,
+    "옮긴 값을 다시 옮겨도 제자리다 — 모던 16진은 레거시 표의 키가 아니다");
+
+  // 화면 경로도 저장해 둔 값을 그대로 통과시킨다.
+  const catalog = await listOwnerCalendarCatalog(ctx, OWNER, null);
+  assert.equal(catalog[0].color, "#0b8043");
+  assert.equal(catalog[0].textColor, "#ffffff");
+});
+
+test("the catalog paints the modern palette for rows adopted before the colorId fix", async () => {
+  // 이 행들은 refreshOwnerCalendarCatalog 가 색을 옮기기 전에 적재된 것이라
+  // 아직 구글 API 의 레거시 값을 들고 있다. 다음 카탈로그 갱신이 저장 값을
+  // 바로잡을 때까지, 화면으로 나가는 이 자리가 옮겨서 내보낸다.
   const stored = [
     { google_calendar_id: TEAM_CALENDAR, calendar_role: "secondary", calendar_summary: "팀 일정", calendar_access_role: "writer", calendar_writable: true, calendar_background_color: "#16a765", calendar_foreground_color: "#000000" },
     { google_calendar_id: HOLIDAY_CALENDAR, calendar_role: "secondary", calendar_summary: "공휴일", calendar_access_role: "reader", calendar_background_color: "#cd74e6" },
@@ -2077,8 +2298,8 @@ test("the catalog paints the modern palette while the stored row keeps google's 
   // 레거시 배경에 맞춘 값이라 짙은 모던 초록 위에서는 읽히지 않는다.
   assert.equal(byId.get(TEAM_CALENDAR).textColor, "#ffffff", "옮긴 색 위에서 대비를 다시 계산한다");
 
-  // 저장해 둔 값 자체는 손대지 않는다 — 구글이 팔레트를 또 바꿔도 표만 고치면 된다.
-  assert.equal(stored[0].calendar_background_color, "#16a765", "행의 레거시 값은 그대로 남는다");
+  // 읽기는 행을 고치지 않는다. 저장 값의 교정은 다음 카탈로그 갱신의 몫이다.
+  assert.equal(stored[0].calendar_background_color, "#16a765", "행의 레거시 값은 읽기만으로 바뀌지 않는다");
   assert.equal(stored[1].calendar_background_color, "#cd74e6");
 });
 

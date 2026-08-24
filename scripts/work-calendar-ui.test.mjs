@@ -496,46 +496,100 @@ test("a read-only calendar row is not draggable because the server rejects the s
   assert.match(source, /var canEdit = workItemCanEdit\(item\);/);
 });
 
-// 달력이 오른쪽 빈 칸 없이 한 줄을 다 쓰고, 가까운 업무는 그 아래 가로 띠로 내려간다.
-// 띠는 오늘·내일 두 칸만 두고, 그 뒤 일정은 달력 자체에서 본다.
-test("the agenda band sits below a full-width calendar and keeps only 오늘 and 내일", () => {
+// 달력이 오른쪽 빈 칸 없이 한 줄을 다 쓰고, 가까운 업무는 그 아래 띠로 내려간다.
+// 띠 안에서 TODAY·TOMORROW 두 묶음은 세로로 쌓이고, 카드는 묶음마다 가로로 흐르다 줄바꿈한다.
+test("the agenda band stacks TODAY over TOMORROW and wraps each section's cards into a row", () => {
   assert.match(source, /#mi-admin \.mi-work-layout\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
-  assert.match(source, /#mi-admin \.mi-work-agenda\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/);
-  assert.match(source, /@media \(max-width: 760px\)[\s\S]*#mi-admin \.mi-work-agenda \{\s*grid-template-columns:\s*1fr;/);
+  // 두 묶음은 두 칸으로 서지 않는다 — 한 칸짜리 세로 스택이다.
+  assert.match(source, /#mi-admin \.mi-work-agenda\s*\{\s*display:\s*grid;\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.equal(
+    /#mi-admin \.mi-work-agenda\s*\{[^}]*repeat\(2,/.test(source),
+    false,
+    "아젠다 묶음이 두 칸으로 되돌아가면 안 된다"
+  );
+  // 묶음 안에서 카드는 가로로 흐르다 넘치면 다음 줄로 접힌다. 가로 스크롤은 만들지 않는다.
+  assert.match(
+    source,
+    /#mi-admin \.mi-work-agenda-row \{\s*display: grid;\s*min-width: 0;\s*grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/
+  );
+  assert.equal(
+    /#mi-admin \.mi-work-agenda-row \{[^}]*overflow-x:/.test(source),
+    false,
+    "카드 줄은 가로 스크롤이 아니라 줄바꿈으로 넘긴다"
+  );
+  assert.match(source, /#mi-admin \.mi-work-agenda-row > \.mi-work-agenda-item \{\s*min-width: 0;\s*max-width: 100%;/);
+  // 모바일에서는 카드가 예전처럼 세로로 쌓인다.
+  assert.match(source, /@media \(max-width: 760px\)[\s\S]*#mi-admin \.mi-work-agenda-row \{\s*grid-template-columns: minmax\(0, 1fr\);/);
   assert.ok(
     workViewMarkup.indexOf('<article class="mi-work-calendar-card">') < workViewMarkup.indexOf('<aside class="mi-work-agenda-card">'),
     "달력 카드가 아젠다 카드보다 먼저 온다"
   );
 
-  assert.match(source, /agenda\.innerHTML = renderWorkAgendaGroup\("오늘", todayItems\) \+\s*\n\s*renderWorkAgendaGroup\("내일", tomorrowItems\);/);
+  // 라벨은 영문 TODAY/TOMORROW 이고, 카드는 라벨 아래 줄바꿈 컨테이너에 담긴다.
+  assert.match(source, /agenda\.innerHTML = renderWorkAgendaGroup\("TODAY", todayItems\) \+\s*\n\s*renderWorkAgendaGroup\("TOMORROW", tomorrowItems\);/);
+  assert.match(
+    source,
+    /'<section class="mi-work-agenda-group"><strong>' \+ escapeHtml\(title\) \+\s*\n\s*'<\/strong><div class="mi-work-agenda-row">' \+ content \+ '<\/div><\/section>'/
+  );
+  // 라벨은 기존 kicker\/label 처리를 그대로 쓴다.
+  assert.match(source, /#mi-admin \.mi-work-agenda-group > strong \{[\s\S]{0,180}letter-spacing: \.05em;\s*text-transform: uppercase;/);
+  // "가까운 업무" 제목은 그대로 남는다.
+  assert.match(workViewMarkup, /<h2 data-work-agenda-title>가까운 업무<\/h2>/);
+  assert.match(source, /if \(title\) title\.textContent = "가까운 업무";/);
+
+  assert.equal(source.includes('renderWorkAgendaGroup("오늘"'), false, "한국어 오늘 라벨은 남으면 안 된다");
+  assert.equal(source.includes('renderWorkAgendaGroup("내일"'), false, "한국어 내일 라벨은 남으면 안 된다");
   assert.equal(source.includes('renderWorkAgendaGroup("Next"'), false, "NEXT 묶음은 남으면 안 된다");
   assert.equal(source.includes("nextItems"), false, "NEXT 필터도 함께 사라져야 한다");
   assert.equal(source.includes("var nextDate"), false, "NEXT 기준 날짜도 남으면 안 된다");
-  assert.equal(source.includes('renderWorkAgendaGroup("Today"'), false, "영문 라벨 상수는 남으면 안 된다");
-  assert.equal(source.includes('renderWorkAgendaGroup("Tomorrow"'), false, "영문 라벨 상수는 남으면 안 된다");
+  assert.equal(source.includes('renderWorkAgendaGroup("Today"'), false, "대소문자가 다른 라벨 상수는 남으면 안 된다");
+  assert.equal(source.includes('renderWorkAgendaGroup("Tomorrow"'), false, "대소문자가 다른 라벨 상수는 남으면 안 된다");
 
-  // 비어 있어도 칸이 사라지지 않고 한국어 안내가 남는다.
+  // 비어 있어도 칸이 사라지지 않고 한국어 안내가 한 줄을 다 쓴다.
   assert.match(source, /'<div class="mi-work-agenda-empty">등록된 업무가 없습니다\.<\/div>'/);
-  // 한 묶음만 그리는 경로(날짜 선택·요약 필터)는 한 칸으로 편다.
-  assert.match(source, /agenda\.classList\.add\("is-single"\)/);
-  assert.match(source, /agenda\.classList\.remove\("is-single"\)/);
-  assert.match(source, /#mi-admin \.mi-work-agenda\.is-single \{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-row > \.mi-work-agenda-empty \{\s*grid-column: 1 \/ -1;/);
+  // 세로 스택이 기본이라, 한 묶음만 그리는 경로를 위한 is-single 예외는 필요 없다.
+  assert.equal(source.includes("is-single"), false, "세로 스택에서 is-single 예외는 남으면 안 된다");
 });
 
-// 구글 월간 뷰처럼 캘린더 배경색으로 꽉 찬 칩. 색은 6자리 HEX 만 style 로 나가고,
+// 구글 월간 뷰처럼 캘린더 배경색으로 꽉 찬 칩은 그대로 남는다. 색은 6자리 HEX 만 style 로 나가고,
 // 완료·공개 표시는 색 위에 그대로 남아야 한다.
-test("month chips and agenda blocks are filled with the calendar colour behind the status affordances", () => {
+// 반대로 달력 아래 아젠다 카드는 색을 칠하지 않는다 — 색은 제목 앞 동그라미 하나뿐이다.
+test("month chips keep the google colour fill while agenda cards keep only the colour dot", () => {
   assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
   assert.match(source, /var chipText = workItemTextColor\(item\);/);
   assert.match(source, /chipStyle = chipStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ chipText \+ '"'/);
-  assert.match(source, /var rowText = workItemTextColor\(item\);/);
-  assert.match(source, /rowStyle = rowStyle\.slice\(0, -1\) \+ ";--mi-gcal-text:" \+ rowText \+ '"'/);
 
+  // 월간 칩 색 규칙은 이번 변경에서 손대지 않았다.
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
-  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] \.mi-work-agenda-edit \{[\s\S]{0,160}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+  assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{\s*border-left: 3px solid var\(--mi-gcal-color/);
+  assert.match(source, /#mi-admin \.mi-work-day-dot \{[\s\S]{0,180}background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
+
+  // 아젠다 카드는 중립 패널이다: 색 채움도, 글자색 계약도 없다.
+  assert.match(
+    source,
+    /#mi-admin \.mi-work-agenda-item \{[\s\S]{0,260}border: 1px solid var\(--mi-line\);\s*border-radius: 14px;\s*background: var\(--mi-panel\);\s*color: var\(--mi-ink\);/
+  );
+  assert.match(source, /#mi-admin \.mi-work-agenda-edit strong \{[\s\S]{0,120}color: var\(--mi-ink\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-edit span \{[\s\S]{0,120}color: var\(--mi-muted\);/);
+  assert.equal(
+    /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] \.mi-work-agenda-edit/.test(source),
+    false,
+    "아젠다 카드 본문을 캘린더 색으로 칠하면 안 된다"
+  );
+  assert.equal(source.includes("var rowText"), false, "칠하지 않는 카드에 글자색 계산은 남으면 안 된다");
+  assert.equal(source.includes(';--mi-gcal-text:" + rowText'), false, "아젠다 style 에 글자색을 붙이면 안 된다");
+
+  // 색이 닿는 곳은 제목 앞 동그라미 하나뿐이고, 색이 없으면 중립 토큰이 남는다.
+  assert.match(source, /'><i aria-hidden="true"><\/i><button type="button" class="mi-work-agenda-edit"/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item > i \{\s*width: 9px;\s*height: 9px;[\s\S]{0,120}border-radius: 50%;\s*background: #7183a0;/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] > i \{\s*background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
 
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\]\[data-status="done"\] \{\s*opacity: [^;]+;\s*text-decoration: line-through;/);
+  // 완료·공개 표시는 중립 카드 위에서도 그대로 남는다.
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-status="done"\] \{\s*opacity: [^;]+;/);
   assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-status="done"\] \.mi-work-agenda-edit strong \{\s*text-decoration: line-through;/);
+  assert.match(source, /\(item\.visibility === "client_visible" \? " is-public" : ""\)/);
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-public="true"\]::before/);
 
   // 종일과 시간 지정 칩은 구글처럼 다르게 그린다(꽉 찬 블록 vs 색 점 + 글자).
@@ -714,7 +768,8 @@ test("the dialog mirrors the server event colour palette exactly and in the goog
 });
 
 // 칠하는 순서는 구글 웹 UI 와 같다: 일정에 지정된 색 → 캘린더 색 → 중립 기본값.
-test("month chips and agenda blocks paint the event colour first, then the calendar colour, then the neutral token", () => {
+// 칩은 그 색으로 배경을 칠하고, 아젠다는 같은 색을 동그라미 하나에만 쓴다.
+test("month chips and the agenda dot paint the event colour first, then the calendar colour, then the neutral token", () => {
   assert.match(source, /function workItemColor\(item\) \{\s*return workGcalColor\(item && item\.eventColor\) \|\| workGcalColor\(item && item\.calendarColor\);\s*\}/);
   assert.match(
     source,
@@ -722,14 +777,18 @@ test("month chips and agenda blocks paint the event colour first, then the calen
   );
   assert.match(source, /var chipColor = workItemColor\(item\);/);
   assert.match(source, /var chipText = workItemTextColor\(item\);/);
-  assert.match(source, /var rowColor = workItemColor\(item\);/);
-  assert.match(source, /var rowText = workItemTextColor\(item\);/);
+  // 아젠다도 같은 precedence 를 쓰지만, 나가는 변수는 색 하나뿐이다.
+  assert.match(
+    source,
+    /var rowColor = workItemColor\(item\);\s*\n\s*var rowStyle = \(rowColor \? ' data-gcal="1" style="--mi-gcal-color:' \+ rowColor \+ '"' : ""\);/
+  );
+  assert.equal(source.includes("var rowText = workItemTextColor(item);"), false, "중립 카드에는 글자색 계약이 필요 없다");
 
   // 두 색 모두 6자리 HEX 관문을 지나야 style 로 나간다.
   assert.match(source, /function workGcalColor\(value\)[\s\S]{0,240}\/\^#\[0-9a-fA-F\]\{6\}\$\/\.test\(color\) \? color : ""/);
   // 색이 하나도 없으면 style 자체를 내보내지 않고 기존 중립 토큰이 남는다.
   assert.match(source, /#mi-admin \.mi-work-day-item\[data-gcal="1"\] \{[\s\S]{0,220}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
-  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] \.mi-work-agenda-edit \{[\s\S]{0,160}background: var\(--mi-gcal-color, var\(--mi-navy\)\);\s*color: var\(--mi-gcal-text, #fff\);/);
+  assert.match(source, /#mi-admin \.mi-work-agenda-item\[data-gcal="1"\] > i \{\s*background: var\(--mi-gcal-color, var\(--mi-navy\)\);/);
 });
 
 // 색 줄은 구글처럼 "캘린더 색" 기본값 + 일정 색 11개 동그라미다.

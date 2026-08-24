@@ -440,6 +440,28 @@ export function googleMirrorFields(event = {}) {
   return fields;
 }
 
+// 메아리 가드를 딱 한 열만 비껴가는 좁은 보정.
+//
+// eventIsEcho 는 "구글의 updated 가 우리가 아는 값보다 새롭지 않다" 만 본다.
+// google_color_id 열이 생기기 전에 들어온 행은 구글에서 그 일정을 다시 건드리지
+// 않는 한 영영 색을 받지 못한다 — MI 에서만 캘린더 색으로 남던 일정들이 그것이다.
+// 그래서 색만 메아리 가드 뒤에서 채운다.
+//
+// 규율은 googleMirrorFields 와 똑같다. colorId 키가 실려 있을 때만 손대고,
+// 키가 아예 없으면 "색을 지웠다" 가 아니라 "말한 적 없다" 이므로 그냥 둔다.
+// 제목·시각·etag·google_updated_at 은 절대 함께 쓰지 않는다 — 오래된 이벤트가
+// 실제 내용을 덮어쓰는 길을 여는 순간 메아리 가드가 무의미해진다.
+export function colorBackfillPatch(event = {}, row = {}) {
+  if (!Object.hasOwn(event, "colorId")) return null;
+  const colorId = cleanText(event.colorId, 4);
+  const next = isEventColorId(colorId) ? colorId : null;
+  // 열이 아직 없어 선택되지 않은 행은 undefined 로 온다. 읽지도 않은 값을
+  // "다르다" 로 볼 이유가 없으므로 양쪽 다 null 로 맞춘 뒤 견준다.
+  const current = cleanText(row?.google_color_id, 4) || null;
+  if (next === current) return null;
+  return { google_color_id: next };
+}
+
 export function mapGoogleEventToScheduleRow(event = {}, { ownerCode = "", calendarId = "" } = {}) {
   const times = googleEventTimes(event);
   if (!times.ok) return null;
@@ -573,6 +595,9 @@ export async function markIntegrationSyncStatus(ctx, ownerCode, status, errorTex
 const BOOKKEEPING_COLUMNS = [
   "google_event_id", "google_etag", "google_updated_at", "google_html_link",
   "google_calendar_id", "google_sync_state", "google_sync_error",
+  // 색 보정(colorBackfillPatch)도 기록용 쓰기다. 같은 값을 다시 써서 updated_at
+  // 을 올리면 대표님의 삭제·수정이 기대하는 버전이 이유 없이 어긋난다.
+  "google_color_id",
 ];
 
 function sameBookkeepingValue(column, previous, next) {
@@ -608,11 +633,17 @@ export function isNoopSyncBookkeeping(previousRow, values) {
 async function markRowSyncState(ctx, rowId, values, previousRow = null) {
   if (isNoopSyncBookkeeping(previousRow, values)) return;
   try {
-    await runWithOptionalColumns(() => ctx.supabaseAdmin
-      .from("schedule_items")
-      .update(withoutDisabledColumns(values))
-      .eq("id", rowId)
-      .then((result) => result || { error: null }, (error) => ({ error })));
+    await runWithOptionalColumns(() => {
+      const payload = withoutDisabledColumns(values);
+      // 선택 열만 담은 쓰기(색 보정)가 그 열의 강등으로 빈 객체가 될 수 있다.
+      // 빈 UPDATE 는 아무것도 바꾸지 않으면서 updated_at 트리거만 올리므로 보내지 않는다.
+      if (!Object.keys(payload).length) return Promise.resolve({ error: null });
+      return ctx.supabaseAdmin
+        .from("schedule_items")
+        .update(payload)
+        .eq("id", rowId)
+        .then((result) => result || { error: null }, (error) => ({ error }));
+    });
   } catch (error) {
     // 상태 기록 실패가 동기화를 막지 않는다
   }
@@ -1153,7 +1184,20 @@ async function applyEvents(ctx, ownerCode, calendarRow, events, window, counters
       continue;
     }
 
-    if (row && eventIsEcho(event, row)) { counters.skipped += 1; continue; }
+    // 메아리는 원칙적으로 버린다. 예외는 딱 하나, 열이 생기기 전에 들어와
+    // 색만 비어 있는 행이다(colorBackfillPatch 참고). 열이 아직 없으면
+    // withoutDisabledColumns 가 그 자리에서 비워 내므로 예전과 똑같이 건너뛴다.
+    if (row && eventIsEcho(event, row)) {
+      const backfill = colorBackfillPatch(event, row);
+      const values = backfill ? withoutDisabledColumns(backfill) : null;
+      if (values && Object.keys(values).length) {
+        await markRowSyncState(ctx, row.id, values, row);
+        counters.updated += 1;
+      } else {
+        counters.skipped += 1;
+      }
+      continue;
+    }
 
     if (row) {
       const built = inboundUpdatePatch(event, row);
@@ -1658,6 +1702,13 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
       const id = cleanText(item.id, 1024);
       if (!id) continue;
       const knownRow = known.get(id);
+      // 캘린더 색의 정본은 colorId(1~24)다. 레거시 16진만 보고 옮기면 표에 없는
+      // 값이나 어긋난 값이 미묘하게 다른 색으로 굳는다(대표님 기본 캘린더의
+      // 파랑이 그랬다). 그래서 옮기는 일은 화면이 아니라 적재하는 여기서 딱
+      // 한 번 한다 — colorId 가 먼저, 없으면 레거시 표, 그것도 없으면 원본 통과.
+      // 글자색도 옮긴 색 위에서 다시 정한다. 구글이 준 foregroundColor 는 레거시
+      // 배경에 맞춘 값이라 모던 팔레트 위에서는 대비가 어긋난다.
+      const background = modernCalendarColor(item.backgroundColor, item.colorId);
       const values = {
         owner_agency_code: code,
         google_calendar_id: id,
@@ -1667,8 +1718,8 @@ export async function refreshOwnerCalendarCatalog(ctx, ownerCode, accessToken, o
         calendar_is_primary: item.primary === true,
         calendar_writable: WRITABLE_ACCESS_ROLES.has(cleanText(item.accessRole)),
         calendar_catalog_at: nowIso,
-        calendar_background_color: hexColor(item.backgroundColor),
-        calendar_foreground_color: hexColor(item.foregroundColor),
+        calendar_background_color: hexColor(background),
+        calendar_foreground_color: hexColor(readableTextColor(background)),
         calendar_selected: item.selected === true,
         // calendar_visible 은 MI 안에서만 쓰는 토글이다. 이미 아는 캘린더면 대표님이
         // 눌러 둔 값을 절대 덮지 않고, 처음 보는 캘린더에만 기본값을 넣는다.
@@ -1742,10 +1793,12 @@ export async function listOwnerCalendarCatalog(ctx, ownerCode, integration = nul
       const dedicated = Boolean(dedicatedId) && id === dedicatedId;
       const primary = row.calendar_is_primary === true || role === "primary";
       const accessRole = cleanText(row.calendar_access_role, 40) || (dedicated || primary ? "owner" : "");
-      // 저장해 둔 값은 구글 API 가 준 레거시 16진 그대로다(refreshOwnerCalendarCatalog
-      // 가 그대로 넣는다). 대표님이 보는 구글 웹 UI 는 그 값을 현대화된 팔레트로
-      // 바꿔 칠하므로, 화면으로 나가는 이 자리에서만 옮긴다. 표에 없는 색은
-      // 원본이 그대로 나온다 — 모르는 색을 지어내지 않는다.
+      // 저장해 둔 값은 이제 refreshOwnerCalendarCatalog 가 colorId 로 옮겨 둔
+      // 모던 16진이다. 그래도 여기서 한 번 더 부르는 이유는, 그 이전에 적재된
+      // 행이 아직 레거시 값을 들고 있기 때문이다 — 그 행은 여기서 옮겨져 나가고
+      // 다음 카탈로그 갱신 때 저장 값 자체가 바로잡힌다. 이미 옮겨진 값에는
+      // 무해한 통과다(모던 16진은 레거시 표의 키가 아니라 원본 그대로 나온다).
+      // 표에 없는 색도 원본이 그대로 나온다 — 모르는 색을 지어내지 않는다.
       const color = modernCalendarColor(row.calendar_background_color) || null;
       entries.set(id, {
         id,

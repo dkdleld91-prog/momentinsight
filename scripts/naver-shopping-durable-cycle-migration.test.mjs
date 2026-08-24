@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -56,6 +57,9 @@ const runtime1112ExactCandidateGateMigration = findMigrationContaining(
 );
 const atomicSuccessProofHardeningMigration = findMigrationContaining(
   '-- N Shopping atomic success proof hardening',
+);
+const runtime113Candidate6Migration = findMigrationContaining(
+  '-- Runtime 1.1.13 candidate 6-minute cadence',
 );
 
 function runtime119FunctionSql(name, nextName = null) {
@@ -642,6 +646,94 @@ test('runtime 1.1.12 candidate cadence is exact-identity and completely idle ins
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cooldownUntil: 'expired-but-uncleared' }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, primarySeenAt: Date.now() - 3 * 60_000 - 1 }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cadenceMode: 'candidate' }), false);
+});
+
+test('runtime 1.1.13 candidate6 replaces the impossible 8-minute ceiling without weakening safety', () => {
+  assert.ok(
+    runtime113Candidate6Migration,
+    'an additive runtime migration must introduce the minimum cadence that can exceed 8.77 group/hour',
+  );
+  assert.match(
+    runtime113Candidate6Migration.file,
+    /^\d{14}_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence\.sql$/u,
+  );
+  const sql = runtime113Candidate6Migration.source;
+  const runtimeFiles = [
+    '../tools/naver-shopping-chrome-extension/service-worker.js',
+    './naver-shopping-native-host.mjs',
+    './naver-shopping-native-host-core.mjs',
+    './naver-shopping-local-worker.mjs',
+    '../src/server/local-worker-auth.mjs',
+    '../src/server/naver-shopping/local-worker-contract.mjs',
+    '../src/server/handlers/naver-shopping-rank.mjs',
+    '../src/server/security.mjs',
+    '../src/server/naver-shopping/source-status.mjs',
+    '../src/server/naver-shopping/provider-runtime.mjs',
+    '../src/server/naver-shopping/mobile-top-fallback.mjs',
+    '../tools/naver-shopping-rank-collector/src/provider.mjs',
+    '../tools/naver-shopping-rank-collector/src/contract.mjs',
+  ];
+  const runtimeHashes = runtimeFiles.map((file) => crypto.createHash('sha256')
+    .update(readFileSync(new URL(file, import.meta.url)))
+    .digest('hex'));
+  const expectedFingerprint = crypto.createHash('sha256')
+    .update(['1.1.13', ...runtimeHashes].join('\n'), 'utf8')
+    .digest('hex');
+  const expectedFunctions = [
+    'mi_report_naver_shopping_worker_progress',
+    'mi_get_naver_shopping_worker_operations',
+    'mi_record_naver_shopping_worker_failure',
+    'mi_record_naver_shopping_worker_success',
+    'mi_set_naver_shopping_worker_cadence',
+  ];
+  const functionNames = [...sql.matchAll(/create or replace function public\.(mi_[a-z0-9_]+)\(/giu)]
+    .map((match) => match[1]);
+  assert.deepEqual(functionNames, expectedFunctions);
+  assert.match(sql, /drop constraint if exists naver_shopping_worker_coordination_cadence_check/iu);
+  const strongestLockIndex = sql.indexOf(
+    'lock table public.naver_shopping_worker_coordination in access exclusive mode;',
+  );
+  const coordinationRowLockIndex = sql.indexOf(
+    "from public.naver_shopping_worker_coordination\n  where lane_key = 'global'\n  for update;",
+  );
+  assert.match(sql, /set local lock_timeout = '5s';/iu);
+  assert.ok(
+    strongestLockIndex >= 0 && coordinationRowLockIndex > strongestLockIndex,
+    'migration must acquire its strongest coordination table lock before the idle row lock',
+  );
+  assert.match(sql, /cadence_mode = 'candidate' and cadence_minutes = 6/iu);
+  assert.match(sql, /set cadence_mode = 'baseline',\s*cadence_minutes = 10,\s*stability_started_at = null,\s*success_streak = 0/iu);
+  assert.match(sql, /runtime_version = '1\.1\.13'/iu);
+  assert.match(sql, /set cadence_mode = 'candidate', cadence_minutes = 6/iu);
+  assert.match(sql, /'mode', 'candidate', 'minutes', 6/iu);
+  assert.equal(
+    [...sql.matchAll(new RegExp(`runtime_fingerprint = '${expectedFingerprint}'`, 'gu'))].length,
+    3,
+  );
+  assert.doesNotMatch(sql, /cadence_mode = 'candidate' and cadence_minutes = 8/iu);
+  assert.doesNotMatch(sql, /'mode', 'candidate', 'minutes', 8/iu);
+  assert.match(sql, /create table if not exists public\.naver_shopping_worker_runs/iu);
+  assert.match(sql, /run_id uuid primary key/iu);
+  assert.match(sql, /run_trigger text not null/iu);
+  assert.match(sql, /insert into public\.naver_shopping_worker_runs/iu);
+  assert.match(sql, /if normalized_stage = 'navigating' then[\s\S]+insert into public\.naver_shopping_worker_runs/iu);
+  assert.match(sql, /on conflict \(run_id\) do nothing/iu);
+  assert.match(sql, /naver_shopping_worker_run_provenance_mismatch/iu);
+  assert.match(sql, /grant select, insert on table public\.naver_shopping_worker_runs\s+to service_role/iu);
+  assert.doesNotMatch(sql, /grant (?:update|delete|all)[^;]*naver_shopping_worker_runs/iu);
+  assert.equal([...sql.matchAll(/security invoker/giu)].length, expectedFunctions.length);
+  assert.equal([...sql.matchAll(/set search_path = ''/giu)].length, expectedFunctions.length);
+  assert.doesNotMatch(sql, /security definer/iu);
+  for (const signature of [
+    'mi_report_naver_shopping_worker_progress\\(text, uuid, uuid, text, integer, text, uuid, text, text, text\\)',
+    'mi_get_naver_shopping_worker_operations\\(\\)',
+    'mi_record_naver_shopping_worker_failure\\(text, uuid, uuid, text, text, uuid\\)',
+    'mi_record_naver_shopping_worker_success\\(text, uuid, uuid, uuid, text, integer, integer, integer, text\\)',
+    'mi_set_naver_shopping_worker_cadence\\(text\\)',
+  ]) {
+    assert.match(sql, new RegExp(`revoke all on function public\\.${signature}\\s+from public, anon, authenticated, service_role`, 'iu'));
+    assert.match(sql, new RegExp(`grant execute on function public\\.${signature}\\s+to service_role`, 'iu'));
+  }
 });
 
 test('atomic success proof is ledger-backed, complete, organic and retry-idempotent', () => {

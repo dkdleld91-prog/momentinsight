@@ -246,7 +246,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.12",
+            runtime_version: "1.1.13",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -273,7 +273,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.12",
+              runtime_version: "1.1.13",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -364,10 +364,10 @@ test("owner canary and cadence controls fail closed on invalid or ineligible req
   assert.match((await candidate.json()).message, /24시간/u);
 });
 
-test("candidate cadence reports success only for the exact activated 8-minute result", async () => {
+test("candidate cadence reports success only for the exact activated 6-minute result", async () => {
   const request = new Request("https://example.com/api/naver-rank-trackers", { method: "POST" });
   const access = { owner: true, agencyCode: "mml93-a01" };
-  const exactResult = { accepted: true, activated: true, mode: "candidate", minutes: 8 };
+  const exactResult = { accepted: true, activated: true, mode: "candidate", minutes: 6 };
   const positive = await controlShoppingWorker(request, {
     supabaseAdmin: {
       async rpc(name, args) {
@@ -383,18 +383,19 @@ test("candidate cadence reports success only for the exact activated 8-minute re
   assert.deepEqual(positiveBody.result, {
     state: "",
     mode: "candidate",
-    minutes: 8,
+    minutes: 6,
     reason: "",
     activated: true,
   });
 
   const mismatchedResults = [
-    { accepted: false, activated: true, mode: "candidate", minutes: 8 },
-    { accepted: true, activated: false, mode: "candidate", minutes: 8 },
-    { accepted: true, activated: true, mode: "baseline", minutes: 8 },
+    { accepted: false, activated: true, mode: "candidate", minutes: 6 },
+    { accepted: true, activated: false, mode: "candidate", minutes: 6 },
+    { accepted: true, activated: true, mode: "baseline", minutes: 6 },
+    { accepted: true, activated: true, mode: "candidate", minutes: 8 },
     { accepted: true, activated: true, mode: "candidate", minutes: 10 },
-    { accepted: true, activated: true, cadence_mode: "candidate", cadence_minutes: 8 },
-    { accepted: true, activated: true, mode: "candidate", minutes: "8" },
+    { accepted: true, activated: true, cadence_mode: "candidate", cadence_minutes: 6 },
+    { accepted: true, activated: true, mode: "candidate", minutes: "6" },
   ];
   for (const rpcResult of mismatchedResults) {
     const response = await controlShoppingWorker(request, {

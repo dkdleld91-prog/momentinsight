@@ -151,7 +151,16 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.12";
+const EXPECTED_RUNTIME_VERSION = "1.1.13";
+const WORKER_RUN_TRIGGERS = new Set([
+  "manual",
+  "rank-catch-up",
+  "rank-0900",
+  "rank-1500",
+  "rank-remote",
+  "mac-standby",
+  "github-cloud",
+]);
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -197,6 +206,16 @@ async function runtimeIdentityInput(options, env) {
     throw new Error("local_worker_runtime_identity_invalid");
   }
   return { version, fingerprint };
+}
+
+function runTriggerInput(options, env) {
+  const trigger = String(
+    options.runTrigger ?? env.MI_NAVER_SHOPPING_RUN_TRIGGER ?? "",
+  ).trim().toLowerCase();
+  if (!WORKER_RUN_TRIGGERS.has(trigger)) {
+    throw new Error("local_worker_run_trigger_invalid");
+  }
+  return trigger;
 }
 
 function failureScope(job, failureCode) {
@@ -540,6 +559,7 @@ export async function runLocalShoppingWorker(options = {}) {
       atomicSuccesses: 0,
     };
   }
+  const runTrigger = runTriggerInput(options, env);
   const runtimeIdentity = await runtimeIdentityInput(options, env);
   const runId = String(options.runId || crypto.randomUUID()).trim().toLowerCase();
   if (!UUID_PATTERN.test(runId)) throw new Error("local_worker_run_id_invalid");
@@ -560,6 +580,7 @@ export async function runLocalShoppingWorker(options = {}) {
     workerId: workerIdentity.workerId,
     laneToken,
     runId,
+    runTrigger,
     runtimeVersion: runtimeIdentity.version,
     runtimeFingerprint: runtimeIdentity.fingerprint,
   };
@@ -668,7 +689,7 @@ export async function runLocalShoppingWorker(options = {}) {
       throw new Error("local_worker_probe_tracker_invalid");
     }
     if (probeTrackerId || autoRecovery) effectiveMaxJobs = 1;
-    if ([8, 10].includes(Number(lane.cadenceMinutes))) {
+    if ([6, 10].includes(Number(lane.cadenceMinutes))) {
       summary.cadenceMinutes = Number(lane.cadenceMinutes);
     }
     if (options.requireWakeSignal === true) {

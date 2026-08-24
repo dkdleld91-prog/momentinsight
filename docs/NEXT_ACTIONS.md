@@ -2,17 +2,17 @@
 
 기준일: 2026-08-25
 
-## 진행 중: N쇼핑 v1.1.12 partial-window 안정화·5차 8분 A/B
+## 진행 중: N쇼핑 v1.1.13 안정화·5차 6분 실측
 
-1. 완료: strict `provider_partial_window:<1..299>_300`가 서로 다른 tracker의 전역 cadence proof를 반복 초기화하던 원인을 runtime1.1.12로 격리했습니다. local/native124·server contract68·migration isolation14·전체 release core1012/place51/shopping64/auth18과 보호 잠금이 통과했습니다.
-2. 완료: commit `d655eb080d55`를 Production/DB/Windows exact fingerprint로 반영했고 첫 atomic300 anchor `2026-08-24T05:31:17.200373Z`를 확인했습니다. `c0cc…`의 94/300은 부분 snapshot 없이 tracker만 재격리하고 anchor/streak/last-good을 보존했으며 후속 resume atomic300과 lane 해제를 확인했습니다.
-3. 완료: success RPC를 current lease/run/job과 claim별 group·commit·snapshot atomic300 증거에 묶고, candidate 서버는 exact candidate/8 응답만 성공으로 인정합니다. 동일 run 다중 group P0와 A→B→A 지연 재전송 P1을 RED→GREEN했으며 전체 release core1025/place51/shopping64/auth18과 보호 lock을 통과한 commit `8d99566e4565`가 Production health/ready에 반영됐습니다.
-4. 완료: 완전 idle에서 migration `20260824141622`를 transactional 적용해 실제 SQL compile·SECURITY INVOKER·빈 search_path·service-role-only·lock 뒤 clock을 확인했습니다. 첫 자연 event9868→9870은 official atomic300으로 끝나 streak62→63 정확히 1회 증가, cycle 중복0, processing/lane/run/lease 해제를 확인했습니다.
-5. 진행: anchor+24시간인 `2026-08-25T05:31:17.200373Z` 전까지 baseline10을 유지합니다. event9899→9901·9907→9909·9911→9913·9915→9917은 official atomic300으로 끝나 streak74·closed/null·processing0·완전 idle을 유지했습니다. event9903→9905는 원자 성공이지만 동시대 remote wake라 성능 표본에서 제외하며 최근 정시 claim 간격은 599.857·600.646·599.444·599.881초입니다.
-6. 진행: cycle36 roster60그룹 중 40그룹을 claim했고 잔여20그룹/22트래커입니다. `1114…`는 `15:33:02.119249Z` 자연 만료 뒤 eligible이 됐지만 selector는 cursor 뒤 순서를 정상 처리해 target claim/terminal은 아직0입니다. `12f5…`는 `19:18:58.276397Z`, `c0cc…`는 `2026-08-25T07:29:00.724542Z`까지 격리 중입니다. 실제 fallback/다음-cycle 순번의 회복 또는 typed failure를 확인하며 wake·cursor·순서·격리·lease를 수동 조작하지 않습니다.
-7. 대기: 모든 gate가 참일 때만 하나의 service-controlled DB transaction에서 canonical `public.mi_set_naver_shopping_worker_cadence('candidate')`를 정확히 1회 호출합니다. transaction-local startedAt/raw와 같은 row lock 안의 coordination updated_at·candidate/8·processing0·완전 idle을 한 최종 resultset으로 캡처하고 외부 requestStart/responseEnd를 붙입니다. 별도 네트워크 SELECT는 timestamp race 때문에 사용하지 않으며, 응답 유실·불확실·거부 시 재호출하거나 성공으로 보고하지 않습니다. rollback도 동일 방식의 exact baseline/10 1회만 허용합니다.
-8. 대기: 전환 뒤 최소60분·post-bootstrap scheduled-compatible fully-terminal 6개를 확보하고 동시대 remote claim ID를 제외해 atomic300·same-cycle 중복0·cursor 순서·각 terminal 뒤 lane 해제와 fixed-wall group/hour를 검증합니다. activation은 setter 직후 고정 DB timestamp만 사용하며 wake attribution이 불완전하면 fail-closed합니다.
-9. 확인: maxJobs1·candidate8 정시 상한은 장기7.5 group/hour라 remote 제외 상태에서 기존 혼합 기준 `8.77` 초과는 구조적으로 불가능합니다. 5차 실험이 순수 baseline10 정시 상한6보다 빠르더라도 합의한 성공 기준상 향상으로 보고하지 않고, 8.75 미만 실측이면 baseline10으로 복귀·성공0으로 기록합니다.
+1. 완료: candidate8은 장기 상한 7.5그룹/시간이라 기존 8.75~8.77을 넘을 수 없음을 확인했고 활성화 대상에서 제외했습니다. 같은 단일 lane·maxJobs1 계약에서 가능한 최소 정수 우회안은 candidate6(이론 상한10)입니다.
+2. 완료(로컬): manifest/runtime을 1.1.13, candidate exact 응답을 6분으로 바꾸고, signed `runTrigger`를 Chrome→native→local worker→server RPC까지 전달했습니다. 실제 job이 `navigating`에 진입한 run만 별도 service-role 전용 provenance 표에 append하며 remote 무작업 poll은 기록하지 않습니다.
+3. 완료(로컬): 정확한 13파일 fingerprint는 `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`입니다. N30 집중 340/340, server contract71/71, release baseline PASS, Production auth18/18, 보호 lock 23함수·102파일·50migration 및 self-test가 통과했습니다.
+4. 확인: `npm audit --omit=dev`는 기존 `pptxgenjs@4.0.1 → image-size@1.2.1`의 high DoS 권고 2건으로 exit1입니다. N30 실행 경로의 신규 의존성은 아니며 자동 수정은 breaking downgrade라 이번 범위에서 강제 적용하지 않습니다. 이를 보안 무결점으로 보고하지 않습니다.
+5. 완료(로컬): 독립 감사의 migration lock-order P1과 provenance 보호 잠금 공백을 보완했고 재감사 P0/P1 blocker0, 전체 `check:release` core1071/place51/shopping64/auth18, 최종 diff-check를 통과했습니다. 최종 범위를 다시 확인한 뒤 N30 파일만 커밋하며 personal calendar/admin/session/vercel/data/drafts는 포함하지 않습니다.
+6. 대기: Production 앱·DB·Windows bridge를 같은 commit/runtime/fingerprint로 반영합니다. 신규 migration은 로컬 PostgreSQL compile 증거가 없으므로 완전 idle transaction 적용 성공, 함수 정의·ACL·advisor까지 확인된 경우에만 적용 성공입니다.
+7. 대기: 배포 뒤 첫 자연 `rank-catch-up` official atomic300을 새 anchor로 고정합니다. anchor+24시간·새 성공6회와 exact identity·fresh heartbeat·recent atomic300·closed/null·processing0·lane/run/lease 완전 idle 전에는 candidate setter를 호출하지 않습니다.
+8. 대기: 모든 gate가 참이고 이 목표의 시도 이력이 0회일 때만 canonical candidate setter를 정확히 1회 호출해 raw exact candidate/6과 같은 transaction의 post-state/idle을 캡처합니다. timeout·응답 유실·불확실이면 재호출0·성공0입니다.
+9. 대기: 전환 뒤 fixed-wall 120분 이상·bootstrap 제외 provenance `rank-catch-up` fully-terminal distinct group18개 이상으로 exact runtime/fingerprint/worker, run당 group1, 360초 grid, atomic300·중복0·순서·lane 해제·concurrency1을 확인합니다. signed provenance는 신뢰된 배포 워커의 운영 증거이며 침해된 signer/service-role에 대한 외부 증명은 아닙니다. 출처 누락·불일치 또는 실제 처리량 8.77 이하이면 canonical baseline10 1회 복귀·성공0입니다.
 
 ## 완료된 기반: N쇼핑 v1.1.10 partial 재수집·input-close 복구
 

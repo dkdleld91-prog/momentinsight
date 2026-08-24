@@ -36,12 +36,15 @@ function signedRequest(payload, options = {}) {
   let coordinatedPayload = LANE_ACTIONS.has(payload?.action)
     ? { ...payload, workerId: WORKER_ID, laneToken: LANE_TOKEN }
     : payload;
-  if (payload?.action === "claim-lane" || LANE_ACTIONS.has(payload?.action)) {
+  if (payload?.action === "claim-lane"
+    || LANE_ACTIONS.has(payload?.action)
+    || ["progress", "record-success", "record-failure"].includes(payload?.action)) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.12",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.13",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
+      runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
   }
   const body = JSON.stringify(coordinatedPayload);
@@ -388,8 +391,9 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.12");
+          assert.equal(args.p_runtime_version, "1.1.13");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
+          assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
           return { data: true, error: null };
         },
@@ -434,6 +438,31 @@ test("rejects stale worker runtime before it can claim the global lane", async (
     }), ctx);
     assert.equal(response.status, 400);
     assert.equal((await response.json()).code, "LOCAL_WORKER_RUNTIME_IDENTITY_INVALID");
+    assert.deepEqual(calls, ["mi_consume_naver_shopping_worker_nonce"]);
+  });
+});
+
+test("rejects an unknown signed run trigger before it can claim the global lane", async () => {
+  await withWorkerEnv(async () => {
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          throw new Error("invalid_trigger_must_not_claim_lane");
+        },
+      },
+    };
+    const response = await handleLocalWorkerRequest(signedRequest({
+      action: "claim-lane",
+      workerId: WORKER_ID,
+      workerRole: "primary",
+      laneToken: LANE_TOKEN,
+      runTrigger: "unknown-trigger",
+    }), ctx);
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_RUN_TRIGGER_INVALID");
     assert.deepEqual(calls, ["mi_consume_naver_shopping_worker_nonce"]);
   });
 });
@@ -488,7 +517,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.12",
+      runtimeVersion: "1.1.13",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -548,7 +577,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.12",
+      runtimeVersion: "1.1.13",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -590,7 +619,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.12",
+      runtimeVersion: "1.1.13",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -632,7 +661,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.12",
+      runtimeVersion: "1.1.13",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",

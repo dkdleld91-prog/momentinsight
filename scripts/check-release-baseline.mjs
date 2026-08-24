@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
 import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
 
@@ -205,6 +206,7 @@ const shoppingWorkerRuntime119Migration = read("supabase/migrations/202608211600
 const shoppingWorkerRuntime110Migration = read("supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql");
 const shoppingWorkerRuntime111Migration = read("supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql");
 const shoppingWorkerRuntime1112Migration = read("supabase/migrations/20260824042226_naver_shopping_runtime_1_1_12.sql");
+const shoppingWorkerRuntime1113Candidate6Migration = read("supabase/migrations/20260824165332_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence.sql");
 const shoppingWorkerCandidate111ExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql");
 const shoppingAtomicSuccessProofHardeningMigration = read("supabase/migrations/20260824133751_naver_shopping_atomic_success_proof_hardening.sql");
@@ -216,6 +218,24 @@ const shoppingProbeIncompleteAutoRecoveryMigration = read("supabase/migrations/2
 const shoppingTransientSystemRecoveryMigration = read("supabase/migrations/20260821153000_naver_shopping_transient_system_half_open.sql");
 const shoppingNativeInputClosedHalfOpenMigration = read("supabase/migrations/20260821170000_naver_shopping_native_input_closed_half_open.sql");
 const shoppingErrorTaxonomyHardeningMigration = read("supabase/migrations/20260821180001_naver_shopping_error_taxonomy_hardening.sql");
+const shoppingWorkerRuntime1113Fingerprint = crypto.createHash("sha256").update([
+  "1.1.13",
+  "tools/naver-shopping-chrome-extension/service-worker.js",
+  "scripts/naver-shopping-native-host.mjs",
+  "scripts/naver-shopping-native-host-core.mjs",
+  "scripts/naver-shopping-local-worker.mjs",
+  "src/server/local-worker-auth.mjs",
+  "src/server/naver-shopping/local-worker-contract.mjs",
+  "src/server/handlers/naver-shopping-rank.mjs",
+  "src/server/security.mjs",
+  "src/server/naver-shopping/source-status.mjs",
+  "src/server/naver-shopping/provider-runtime.mjs",
+  "src/server/naver-shopping/mobile-top-fallback.mjs",
+  "tools/naver-shopping-rank-collector/src/provider.mjs",
+  "tools/naver-shopping-rank-collector/src/contract.mjs",
+].map((value, index) => index === 0 ? value : crypto.createHash("sha256")
+  .update(fs.readFileSync(value))
+  .digest("hex")).join("\n"), "utf8").digest("hex");
 const shoppingErrorTaxonomyLookupBranch = shoppingErrorTaxonomyHardeningMigration.match(
   /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/u,
 )?.[0] || "";
@@ -1506,7 +1526,7 @@ const checks = {
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/provider.mjs"')
     && shoppingNativeHost.includes('sha256File(new URL("../tools/naver-shopping-rank-collector/src/contract.mjs"'),
   shoppingChromeCatchUpQueueIsBounded: shoppingChromeWorker.includes("BASELINE_CADENCE_MINUTES = 10")
-    && shoppingChromeWorker.includes("CANDIDATE_CADENCE_MINUTES = 8")
+    && shoppingChromeWorker.includes("CANDIDATE_CADENCE_MINUTES = 6")
     && shoppingChromeWorker.includes('["rank-catch-up", { delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes }]')
     && shoppingChromeWorker.includes("existing.periodInMinutes")
     && !shoppingChromeWorker.includes("rank-drain-follow-up")
@@ -1516,21 +1536,22 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.12"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.13"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
     && shoppingChromeWorker.includes('result.status === "standby" || result.status === "idle"')
     && shoppingChromeWorker.includes('result.status === "standby"')
-    && shoppingNativeHost.includes('requireWakeSignal: start.trigger === "rank-remote"')
+    && shoppingNativeHost.includes('requireWakeSignal: trigger === "rank-remote"')
+    && shoppingNativeHost.includes('runTrigger: trigger')
     && shoppingNativeHost.includes('writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL })')
     && shoppingNativeHost.includes('readyAck = await nextMessage(30_000)')
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.12";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.12";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.12";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.13";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.13";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.13";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -1854,6 +1875,27 @@ const checks = {
       "862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e",
       "6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00",
     ) === shoppingWorkerCandidate111ExactIdentityMigration,
+  shoppingCandidate6RuntimeExactIdentityAndRunProvenance:
+    shoppingWorkerRuntime1113Candidate6Migration.includes("-- Runtime 1.1.13 candidate 6-minute cadence")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("create table if not exists public.naver_shopping_worker_runs")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("run_id uuid primary key")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("run_trigger text not null")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("on conflict (run_id) do nothing")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("naver_shopping_worker_run_provenance_mismatch")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("p_run_trigger text")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("cadence_mode = 'candidate' and cadence_minutes = 6")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("'mode', 'candidate', 'minutes', 6")
+    && (shoppingWorkerRuntime1113Candidate6Migration.match(
+      new RegExp(`runtime_fingerprint = '${shoppingWorkerRuntime1113Fingerprint}'`, "gu"),
+    ) || []).length === 3
+    && shoppingWorkerRuntime1113Candidate6Migration.includes("grant select, insert on table public.naver_shopping_worker_runs")
+    && !shoppingWorkerRuntime1113Candidate6Migration.includes("security definer")
+    && !shoppingWorkerRuntime1113Candidate6Migration.includes("cadence_mode = 'candidate' and cadence_minutes = 8")
+    && shoppingLocalWorker.includes("MI_NAVER_SHOPPING_RUN_TRIGGER")
+    && shoppingLocalWorkerHandler.includes("p_run_trigger: control.runTrigger")
+    && shoppingNativeHost.includes("CHROME_RUN_TRIGGERS = new Set")
+    && shoppingNativeHost.includes("runTrigger: trigger"),
   shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.12 exact candidate gate")
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2
@@ -1922,9 +1964,9 @@ const checks = {
     && !/v_now timestamptz\s*:=/u.test(shoppingAtomicSuccessProofHardeningMigration)
     && !/grant execute on function public\.[\s\S]+to (?:public|anon|authenticated)/u.test(shoppingAtomicSuccessProofHardeningMigration)
     && !shoppingAtomicSuccessProofHardeningMigration.includes("security definer"),
-  shoppingCandidateResponseRequiresExactCandidateEightMinutes: rankServer.includes("if (result?.accepted !== true) return false;")
+  shoppingCandidateResponseRequiresExactCandidateSixMinutes: rankServer.includes("if (result?.accepted !== true) return false;")
     && rankServer.includes("if (result?.activated !== true) return false;")
-    && rankServer.includes('if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 8;')
+    && rankServer.includes('if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 6;')
     && rankServer.includes("shoppingWorkerControlAccepted(action, result, cadenceMode)")
     && rankServer.includes("rejected ? 409 : 200"),
   shoppingWorkerFailureBoundariesStayScopedAndBounded: shoppingLocalWorkerContract.includes("LOCAL_WORKER_BODY_MAX_BYTES = 4 * 1024 * 1024")
@@ -1943,13 +1985,14 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.12"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.13"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
     && rankServer.includes("MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35")
     && shoppingNativeHost.includes('WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"])')
-    && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger)')
+    && shoppingNativeHost.includes('runTrigger: trigger')
+    && shoppingNativeHost.includes('queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(trigger)')
     && shoppingNativeHost.includes('await writeTerminalMessage({ type: "summary", summary })')
     && shoppingNativeHost.includes("process.stdin.destroy()")
     && shoppingWindowsHostLauncher.indexOf("child.WaitForExit();")

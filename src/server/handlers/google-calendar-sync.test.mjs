@@ -2741,3 +2741,73 @@ test("the shared session guards answer with one narrow reason each", async () =>
     { ok: false, reason: "token" },
   );
 });
+
+// ─────────────────────────────────────────────────────────────
+// 수동 동기화는 항상 full
+//
+// 증분 목록은 syncToken 이후 "바뀐" 이벤트만 준다. 구글에서 색만 지정해 둔
+// 옛 일정은 updated 가 그대로라 증분으로는 다시 오지 않고, 하루 한 번 승격되는
+// full 때만 다시 훑린다. 그래서 "지금 동기화" 는 full 로 돌아야 그 자리에서
+// 색이 채워진다. (대표님의 "세무사 결제" 가 파란색으로 남아 있던 이유다.)
+// ─────────────────────────────────────────────────────────────
+test("a manual full run re-lists unchanged events so a legacy row gains its google_color_id", async () => {
+  const legacyRow = {
+    id: "row-legacy",
+    owner_agency_code: OWNER,
+    google_event_id: "gev-1",
+    google_calendar_id: "primary@example.com",
+    google_updated_at: "2026-08-23T00:00:00.000Z",
+    google_color_id: null,
+    google_source: "google",
+    google_sync_state: "synced",
+    title: "세무사 결제",
+    starts_at: "2026-08-24T06:00:00.000Z",
+  };
+  const { ctx, ops } = makeCtx({
+    owner_google_integrations: (op) => (op.kind === "select"
+      // 전용 캘린더는 이미 회수된 상태로 둔다 — 이 시험의 관심사가 아니다.
+      ? { data: { ...INTEGRATION, calendar_id: null }, error: null }
+      : { data: null, error: null }),
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? {
+        data: [calendarRow({
+          google_calendar_id: "primary@example.com",
+          calendar_role: "primary",
+          // 토큰이 있고 오늘 이미 full 이 돌았다 → 평소라면 증분으로 떨어진다.
+          sync_token: "st-1",
+          last_full_sync_at: new Date(NOW - 60 * 1000).toISOString(),
+        })],
+        error: null,
+      }
+      : { data: null, error: null }),
+    schedule_items: (op) => {
+      if (op.kind !== "select") return { data: null, error: null };
+      const isEventLookup = op.filters.some(([kind, column]) => kind === "in" && column === "google_event_id");
+      // push 대상 조회에는 아무것도 주지 않는다 — 이 시험은 inbound 만 본다.
+      return { data: isEventLookup ? [legacyRow] : [], error: null };
+    },
+  });
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, { items: [] }),
+    [`GET ${CALENDAR_BASE}/calendars/primary%40example.com/events`]: jsonResponse(200, {
+      items: [timedEvent({
+        id: "gev-1",
+        // 구글 쪽 updated 는 그대로다 → eventIsEcho 가 참이라 본문은 건드리지 않는다.
+        updated: "2026-08-22T00:00:00.000Z",
+        colorId: "8",
+      })],
+      nextSyncToken: "st-2",
+    }),
+  });
+
+  const result = await runOwnerCalendarSync(ctx, GOOGLE_ENV, OWNER, { now: NOW, mode: "full", fetchImpl: impl });
+
+  assert.equal(result.ok, true);
+  const listCall = calls.find((call) => call.url.endsWith("/events"));
+  assert.equal(listCall.query.syncToken, undefined, "수동 full 은 저장된 syncToken 을 쓰지 않는다");
+  assert.ok(listCall.query.timeMin && listCall.query.timeMax, "full 목록은 창(timeMin/timeMax)을 붙인다");
+
+  const update = opsFor(ops, "schedule_items", "update").at(-1);
+  assert.deepEqual(update.values, { google_color_id: "8" }, "색 한 필드만 채운다 — 제목·시간·etag 는 건드리지 않는다");
+});

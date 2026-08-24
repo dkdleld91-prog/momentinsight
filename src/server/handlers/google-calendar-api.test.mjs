@@ -2186,3 +2186,77 @@ test("google rejecting a share call comes back as a 502 carrying the status", as
   assert.equal(added.status, 502);
   assert.equal(aclPayload.detail, "google_403");
 });
+
+// ---------------------------------------------------------------------------
+// "지금 동기화"(수동) 는 항상 full 로 돈다
+//
+// 증분 목록은 바뀐 이벤트만 준다. 구글에서 색만 지정해 둔 옛 일정은 updated 가
+// 그대로라 증분으로는 다시 오지 않아 색 백필이 하루 늦는다. 사람이 버튼을 누른
+// 순간은 "지금 맞춰줘" 라는 뜻이므로 저장된 syncToken 을 무시하고 다시 훑는다.
+// ---------------------------------------------------------------------------
+
+const RPC_CLAIM_URL = `${SUPABASE_TEST_URL}/rest/v1/rpc/mi_claim_google_sync_slot`;
+const SCHEDULE_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/schedule_items`;
+const EVENTS_URL = `${CALENDAR_BASE}/calendars/primary%40example.com/events`;
+
+function syncRequest(trigger) {
+  return new Request(OWNER_CALENDAR_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-session-role": "owner",
+      "x-mi-owner-agency-code": "mml93-a01",
+    },
+    body: JSON.stringify({ action: "sync", trigger }),
+  });
+}
+
+function syncRoutes(listSpy) {
+  return [
+    ["POST", RPC_CLAIM_URL, () => restJson("2026-08-24T00:00:00.000Z")],
+    // 전용 캘린더는 이미 회수된 상태로 둔다 — 이 시험의 관심사가 아니다.
+    ["GET", INTEGRATION_REST_URL, () => restJson([{ ...OWNER_INTEGRATION_ROW, calendar_id: null }])],
+    ["PATCH", INTEGRATION_REST_URL, () => restCreated()],
+    ["POST", TOKEN_URL, () => restJson({ access_token: "gat-1" })],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([{
+      owner_agency_code: "mml93-a01",
+      google_calendar_id: "primary@example.com",
+      calendar_role: "primary",
+      // 토큰이 있고 오늘 이미 full 이 돌았다 → 평소라면 증분으로 떨어진다.
+      sync_token: "st-1",
+      last_full_sync_at: "2026-08-23T23:59:00.000Z",
+    }])],
+    ["POST", CALENDAR_SYNC_REST_URL, () => restCreated()],
+    ["PATCH", CALENDAR_SYNC_REST_URL, () => restCreated()],
+    ["GET", CALENDAR_LIST_URL, () => restJson({ items: [] })],
+    ["GET", EVENTS_URL, (call) => { listSpy.push(call.url); return restJson({ items: [], nextSyncToken: "st-2" }); }],
+    ["GET", SCHEDULE_REST_URL, () => restJson([])],
+    ["PATCH", SCHEDULE_REST_URL, () => restCreated()],
+    ["POST", AUDIT_REST_URL, () => restCreated()],
+  ];
+}
+
+test("a manual sync ignores the stored syncToken and re-lists the whole window", async () => {
+  const listed = [];
+  const { impl } = loginFetchRouter(syncRoutes(listed));
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(syncRequest("manual"))));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(listed.length, 1);
+  assert.equal(/[?&]syncToken=/.test(listed[0]), false, "수동 동기화는 증분 토큰을 쓰지 않는다");
+  assert.match(listed[0], /timeMin=/, "full 목록은 창을 붙인다");
+});
+
+test("an automatic sync still uses the stored syncToken so routine runs stay cheap", async () => {
+  const listed = [];
+  const { impl } = loginFetchRouter(syncRoutes(listed));
+
+  const response = await withEnv(LOGIN_HANDLER_ENV, () => withGlobalFetch(impl, () => handler.fetch(syncRequest("auto"))));
+
+  assert.equal(response.status, 200);
+  assert.equal(listed.length, 1);
+  assert.match(listed[0], /[?&]syncToken=st-1/, "자동 진입은 그대로 증분이다");
+});

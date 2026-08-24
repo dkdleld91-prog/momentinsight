@@ -530,7 +530,17 @@ async function handleOwnerApi(request, ctx) {
         lastSyncAt: throttledState.integration?.last_sync_at || null,
       });
     }
-    const result = await runOwnerCalendarSync(ctx, process.env, ownerCode, {});
+    // 사람이 "지금 동기화" 를 누른 경우에는 항상 full 로 돈다.
+    //
+    // 증분 목록은 syncToken 이후 "바뀐" 이벤트만 준다. 그래서 구글에서 색만
+    // 지정해 둔(=updated 가 그대로인) 옛 일정은 증분으로는 영영 다시 오지 않고,
+    // 하루 한 번 승격되는 full sync 때만 다시 훑린다. 색 백필이 배포되기 전에
+    // 오늘치 full 이 이미 돌아버리면 대표님은 내일까지 기다려야 색이 채워진다.
+    // 사람이 버튼을 누른 순간은 "지금 맞춰줘" 라는 뜻이므로 그 대기를 없앤다.
+    // 자동·진입 동기화는 그대로 증분이고 기존 24시간 승격 규칙을 따른다.
+    const result = await runOwnerCalendarSync(ctx, process.env, ownerCode, {
+      ...(trigger === "manual" ? { mode: "full" } : {}),
+    });
     if (result.reason === "not-connected") {
       return json(request, { ok: false, message: "구글 캘린더가 아직 연결되지 않았습니다." }, 409);
     }

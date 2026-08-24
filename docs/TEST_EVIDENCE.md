@@ -1,5 +1,12 @@
 # Test Evidence
 
+## 2026-08-24 N쇼핑 v1.1.12 partial-window cadence-proof 격리 체크포인트 (배포 전)
+
+- RED: strict tracker partial window에서 DB `cadenceProofPreserved` 승인과 Chrome `trackerPartialWindowFailures` 집계가 없어서 candidate proof가 초기화되는 실패를 고정했습니다. DB additive migration 부재 2건과 local/Chrome 보존 계약 실패를 실제 RED로 확인했습니다.
+- GREEN targeted: `node --test scripts/naver-shopping-local-worker.test.mjs scripts/naver-shopping-native-host.test.mjs` 124/124 PASS, local-worker/rank handler 묶음 exit0, durable+transient migration 묶음 exit0(단독 isolation 14/14), server contract 68/68, release baseline `ok:true`, `git diff --check` PASS입니다. 전체 `npm run check:release`도 core1012/1012·place51/51·shopping64/64·Production auth18/18, public build10파일·inline6·CSP hash4로 exit0입니다. 보호 lock 23함수·99파일·48 migration, self-test 및 fresh `--print-current` exact-match도 PASS입니다. 아직 운영 SQL/배포 증거는 없으므로 정상화·배포 완료로 판정하지 않습니다.
+- DB 보존 predicate는 exact `^provider_partial_window:([1-9]|[1-9][0-9]|[12][0-9]{2})_300$`, tracker scope, runtime1.1.12/fingerprint `862b3779…e8e`, Windows primary heartbeat, closed circuit/no cooldown/probe, existing atomic300 proof를 요구합니다. 실제 quarantine update 1행과 같은 run의 `job_failed` event가 필요하며, grouped tracker는 대표 claim과 같은 `claim_id`·`group_fingerprint`·worker인 경우에만 후속 per-tracker 승인을 허용합니다. 함수는 SECURITY INVOKER·빈 search_path·service-role-only이고 cursor/wake/order/last-good DML은 없습니다.
+- runtime1.1.12 migration은 1.1.11 계약에서 version만 바뀌며 적용 시 기존 anchor/streak를 fail-closed 초기화합니다. exact candidate gate는 새 fingerprint를 두 predicate에 고정하고 완전 idle·24시간·6회·최근15분 atomic success를 유지합니다. Production/DB/Windows bridge는 아직 1.1.11이며 candidate8은 비활성입니다.
+
 ## 2026-08-22 N쇼핑 v1.1.11 오류 분류·raw 경계 배포 체크포인트
 
 - RED 재현: page timeout·commit unavailable의 bounded half-open 누락, half-open release의 tracker-only terminal 불일치, lookup submit/reconcile ambiguity의 system scope, submit 전후 Supabase raw 오류와 outer catch 누출을 각각 실패 테스트로 고정했습니다.

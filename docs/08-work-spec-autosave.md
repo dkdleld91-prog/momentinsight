@@ -369,9 +369,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 22. 12:19:47
-- 기준 커밋: 5f2158a
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NAVER_SHOPPING_WINDOWS_SETUP.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-durable-cycle-migration.test.mjs
+- 마지막 자동 저장: 2026. 08. 24. 13:34:45
+- 기준 커밋: d59dcb7
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-release-baseline.mjs /  M scripts/check-server-contract.mjs /  M scripts/naver-shopping-durable-cycle-migration.test.mjs /  M scripts/naver-shopping-local-worker.mjs /  M scripts/naver-shopping-local-worker.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

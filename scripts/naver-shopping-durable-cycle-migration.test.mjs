@@ -45,8 +45,14 @@ const runtime110Migration = findMigrationContaining(
 const runtime111Migration = findMigrationContaining(
   '-- Runtime 1.1.11',
 );
+const runtime1112Migration = findMigrationContaining(
+  '-- Runtime 1.1.12 keeps',
+);
 const runtime111ExactCandidateGateMigration = findMigrationContaining(
   '-- Runtime 1.1.11 exact candidate gate',
+);
+const runtime1112ExactCandidateGateMigration = findMigrationContaining(
+  '-- Runtime 1.1.12 exact candidate gate',
 );
 
 function runtime119FunctionSql(name, nextName = null) {
@@ -504,17 +510,44 @@ test('runtime 1.1.11 exactly preserves the 1.1.10 atomic, processing-zero, ident
   }
 });
 
-test('runtime 1.1.11 candidate cadence is exact-identity and completely idle inside the database lock', () => {
+test('runtime 1.1.12 exactly preserves the 1.1.11 atomic, processing-zero, identity-reset contract', () => {
+  assert.ok(runtime1112Migration, 'runtime 1.1.12 needs an additive identity migration');
+  assert.equal(
+    runtime1112Migration.file,
+    '20260824042226_naver_shopping_runtime_1_1_12.sql',
+  );
+  assert.equal(
+    runtime1112Migration.source.replaceAll('1.1.12', '1.1.11'),
+    runtime111Migration.source,
+    '1.1.12 may change only the exact accepted runtime identity',
+  );
+});
+
+test('runtime 1.1.11 candidate gate remains the byte-identical prior contract', () => {
+  assert.ok(runtime111ExactCandidateGateMigration, 'the prior exact gate must remain present');
+  assert.ok(runtime1112ExactCandidateGateMigration, 'the current exact gate must remain present');
+  assert.equal(
+    runtime1112ExactCandidateGateMigration.source
+      .replaceAll('1.1.12', '1.1.11')
+      .replaceAll(
+        '862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e',
+        '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00',
+      ),
+    runtime111ExactCandidateGateMigration.source,
+  );
+});
+
+test('runtime 1.1.12 candidate cadence is exact-identity and completely idle inside the database lock', () => {
   assert.ok(
-    runtime111ExactCandidateGateMigration,
+    runtime1112ExactCandidateGateMigration,
     'an additive migration must bind candidate cadence to the installed fingerprint and a fully idle lane',
   );
   assert.match(
-    runtime111ExactCandidateGateMigration.file,
-    /^\d{14}_naver_shopping_candidate_exact_identity_gate\.sql$/u,
+    runtime1112ExactCandidateGateMigration.file,
+    /^\d{14}_naver_shopping_runtime_1_1_12_exact_candidate_gate\.sql$/u,
   );
-  const sql = runtime111ExactCandidateGateMigration.source;
-  const expectedFingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00';
+  const sql = runtime1112ExactCandidateGateMigration.source;
+  const expectedFingerprint = '862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e';
   const functionNames = [...sql.matchAll(/create or replace function public\.(mi_[a-z0-9_]+)\(/giu)]
     .map((match) => match[1]);
   assert.deepEqual(functionNames, [
@@ -550,7 +583,7 @@ test('runtime 1.1.11 candidate cadence is exact-identity and completely idle ins
     assert.match(predicate, /current_row\.success_streak >= 6/iu);
     assert.match(predicate, /current_row\.last_success_at is not null/iu);
     assert.match(predicate, /current_row\.last_success_at > v_now - interval '15 minutes'/iu);
-    assert.match(predicate, /current_row\.runtime_version = '1\.1\.11'/iu);
+    assert.match(predicate, /current_row\.runtime_version = '1\.1\.12'/iu);
     assert.match(
       predicate,
       new RegExp(`current_row\\.runtime_fingerprint = '${expectedFingerprint}'`, 'iu'),

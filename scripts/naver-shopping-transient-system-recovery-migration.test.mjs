@@ -25,6 +25,24 @@ const taxonomyHardeningPath = new URL(
 const taxonomyHardening = fs.existsSync(taxonomyHardeningPath)
   ? fs.readFileSync(taxonomyHardeningPath, "utf8")
   : "";
+const migrationDirectory = new URL("../supabase/migrations/", import.meta.url);
+
+function findMigrationAfter(name, predicate) {
+  for (const file of fs.readdirSync(migrationDirectory)
+    .filter((entry) => entry.endsWith(".sql") && entry > name)
+    .sort()) {
+    const source = fs.readFileSync(new URL(file, migrationDirectory), "utf8");
+    if (predicate(source)) return { file, source };
+  }
+  return null;
+}
+
+const partialWindowCadenceIsolation = findMigrationAfter(
+  "20260821180001_naver_shopping_error_taxonomy_hardening.sql",
+  (source) => source.includes(
+    "create or replace function public.mi_record_naver_shopping_worker_failure",
+  ),
+);
 
 function functionSql(name) {
   return migration.match(new RegExp(
@@ -46,6 +64,161 @@ function hardeningFunctionSql(name) {
     "iu",
   ))?.[0] || "";
 }
+
+function additiveFunctionSql(name) {
+  return partialWindowCadenceIsolation?.source.match(new RegExp(
+    `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
+    "iu",
+  ))?.[0] || "";
+}
+
+test("only an exact tracker partial window preserves the global cadence proof", () => {
+  assert.ok(
+    partialWindowCadenceIsolation,
+    "an additive migration must isolate strict tracker partial windows from the global cadence proof",
+  );
+  const failureSql = additiveFunctionSql("mi_record_naver_shopping_worker_failure");
+  assert.ok(failureSql.length > 0, "the additive migration must redefine the failure RPC");
+
+  const exactPredicate = failureSql.match(
+    /\b([a-z_][a-z0-9_]*)\s+boolean\s*:=\s*normalized_scope = 'tracker'\s*and normalized_error ~ '\^provider_partial_window:\(\[1-9\]\|\[1-9\]\[0-9\]\|\[12\]\[0-9\]\{2\}\)_300\$'/iu,
+  );
+  assert.ok(
+    exactPredicate,
+    "the preservation flag must accept only tracker-scoped provider_partial_window:1..299_300",
+  );
+  const preservationFlag = exactPredicate[1];
+  const trackerSql = failureSql.match(
+    /if normalized_scope = 'tracker' then[\s\S]*?\n  end if;/iu,
+  )?.[0] || "";
+  assert.ok(trackerSql.length > 0, "tracker failures must keep an isolated branch");
+  assert.match(
+    trackerSql,
+    new RegExp(
+      `stability_started_at = case\\s+when ${preservationFlag} then current_row\\.stability_started_at\\s+else null\\s+end`,
+      "iu",
+    ),
+  );
+  assert.match(
+    trackerSql,
+    new RegExp(
+      `success_streak = case\\s+when ${preservationFlag} then current_row\\.success_streak\\s+else 0\\s+end`,
+      "iu",
+    ),
+  );
+  assert.match(
+    trackerSql,
+    new RegExp(
+      `cadence_mode = case\\s+when ${preservationFlag} then current_row\\.cadence_mode\\s+else 'baseline'\\s+end`,
+      "iu",
+    ),
+  );
+  assert.match(
+    trackerSql,
+    new RegExp(
+      `cadence_minutes = case\\s+when ${preservationFlag} then current_row\\.cadence_minutes\\s+else 10\\s+end`,
+      "iu",
+    ),
+  );
+  assert.match(failureSql, /get diagnostics tracker_updated_count = row_count/iu);
+  assert.match(
+    failureSql,
+    new RegExp(
+      `${preservationFlag} := ${preservationFlag}\\s+and tracker_updated_count = 1`,
+      "iu",
+    ),
+  );
+  assert.match(failureSql, /current_row\.circuit_state = 'closed'/iu);
+  assert.match(failureSql, /current_row\.circuit_reason is null/iu);
+  assert.match(failureSql, /current_row\.cooldown_until is null/iu);
+  assert.match(failureSql, /current_row\.probe_tracker_id is null/iu);
+  assert.match(failureSql, /current_row\.probe_started_at is null/iu);
+  assert.match(
+    failureSql,
+    /current_row\.current_stage = 'collecting'[\s\S]*current_row\.current_stage = 'failed'[\s\S]*current_row\.last_failure_code = normalized_error[\s\S]*current_row\.last_failure_at >= current_row\.current_job_started_at/iu,
+    "a grouped failure may preserve proof across its later per-tracker acknowledgements only inside the same failed job",
+  );
+  assert.match(failureSql, /current_row\.current_page = 8/iu);
+  assert.match(failureSql, /current_row\.current_job_kind = 'tracker'/iu);
+  assert.match(
+    failureSql,
+    /from public\.naver_shopping_scheduler_events as failed_event[\s\S]*join public\.naver_shopping_scheduler_events as representative_claim[\s\S]*failed_event\.event_type = 'job_failed'[\s\S]*failed_event\.run_id = p_run_id[\s\S]*failed_event\.worker_id = current_row\.lease_worker_id[\s\S]*failed_event\.tracker_id = p_tracker_id[\s\S]*failed_event\.error_code = normalized_error[\s\S]*representative_claim\.tracker_id = current_row\.current_tracker_id[\s\S]*representative_claim\.worker_id = current_row\.lease_worker_id/iu,
+    "every preserved tracker must have a same-run terminal failure in the representative claim group",
+  );
+  assert.match(
+    failureSql,
+    /representative_claim\.claim_id = failed_event\.claim_id[\s\S]*representative_claim\.group_fingerprint = failed_event\.group_fingerprint/iu,
+  );
+  assert.match(failureSql, /current_row\.runtime_version = '1\.1\.12'/iu);
+  assert.match(failureSql, /current_row\.runtime_fingerprint = '[a-f0-9]{64}'/iu);
+  assert.match(
+    failureSql,
+    /\(current_row\.cadence_mode = 'baseline' and current_row\.cadence_minutes = 10\)[\s\S]*\(current_row\.cadence_mode = 'candidate' and current_row\.cadence_minutes = 8\)/iu,
+  );
+  assert.match(failureSql, /current_row\.stability_started_at is not null/iu);
+  assert.match(failureSql, /current_row\.success_streak >= 1/iu);
+  assert.match(failureSql, /current_row\.last_collection_id ~ '\^pw-chrome-'/iu);
+  assert.match(failureSql, /current_row\.last_checked_count = 300/iu);
+  assert.match(failureSql, /current_row\.last_source = 'naver_shopping_results_collector'/iu);
+  assert.match(
+    trackerSql,
+    new RegExp(`'cadenceProofPreserved', ${preservationFlag}`, "iu"),
+  );
+});
+
+test("partial-window cadence isolation keeps every other failure fail-closed", () => {
+  assert.ok(partialWindowCadenceIsolation, "the additive isolation migration must exist");
+  const failureSql = additiveFunctionSql("mi_record_naver_shopping_worker_failure");
+  const trackerSql = failureSql.match(
+    /if normalized_scope = 'tracker' then[\s\S]*?\n  end if;/iu,
+  )?.[0] || "";
+  const securitySql = failureSql.match(
+    /if normalized_scope = 'security' then[\s\S]*?\n  end if;/iu,
+  )?.[0] || "";
+  const lookupSql = failureSql.match(
+    /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/iu,
+  )?.[0] || "";
+  const systemSql = failureSql.slice(failureSql.indexOf("next_signature :="));
+
+  assert.match(trackerSql, /provider_duplicate_identity[\s\S]*provider_stable_window_unproven[\s\S]*interval '30 minutes'/iu);
+  assert.match(trackerSql, /when coalesce\(retry_count, 0\) >= 2 then interval '24 hours'\s+else interval '30 minutes'/iu);
+  assert.match(trackerSql, /last_failure_code = normalized_error/iu);
+  assert.match(trackerSql, /current_stage = 'failed'/iu);
+  assert.match(trackerSql, /'laneReleased', false/iu);
+  assert.match(trackerSql, /'quarantined', true/iu);
+
+  for (const branch of [securitySql, lookupSql, systemSql]) {
+    assert.match(branch, /stability_started_at = null/iu);
+    assert.match(branch, /success_streak = 0/iu);
+  }
+  assert.match(failureSql, /normalized_error !~ '\^\[a-z0-9_:-\]\{3,80\}\$'/iu);
+  assert.match(failureSql, /normalized_scope not in \('system', 'tracker', 'security', 'lookup'\)/iu);
+  assert.match(failureSql, /normalized_scope = 'tracker' and p_tracker_id is null/iu);
+  assert.doesNotMatch(
+    failureSql,
+    /(?:next_check_at|worker_last_cycle_id|scheduler_cycle_cursor_[a-z_]+|current_rank|last_checked_at|last_snapshot_id|check_count)\s*=/iu,
+    "failure isolation must not move durable order or overwrite last-good rank evidence",
+  );
+
+  assert.deepEqual(
+    [...partialWindowCadenceIsolation.source.matchAll(
+      /create or replace function public\.(mi_[a-z0-9_]+)\(/giu,
+    )].map((match) => match[1]),
+    ["mi_record_naver_shopping_worker_failure"],
+    "the additive DB fix should redefine only the failure RPC",
+  );
+  assert.match(failureSql, /security invoker/iu);
+  assert.match(failureSql, /set search_path = ''/iu);
+  assert.doesNotMatch(partialWindowCadenceIsolation.source, /security definer/iu);
+  assert.match(
+    partialWindowCadenceIsolation.source,
+    /revoke all on function public\.mi_record_naver_shopping_worker_failure\(text, uuid, uuid, text, text, uuid\)\s+from public, anon, authenticated, service_role/iu,
+  );
+  assert.match(
+    partialWindowCadenceIsolation.source,
+    /grant execute on function public\.mi_record_naver_shopping_worker_failure\(text, uuid, uuid, text, text, uuid\)\s+to service_role/iu,
+  );
+});
 
 test("typed transient taxonomy extends the exact bounded recovery allowlist twice", () => {
   assert.ok(taxonomyHardening.length > 0, "the hardening must be a new additive migration");

@@ -151,7 +151,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.11";
+const EXPECTED_RUNTIME_VERSION = "1.1.12";
 const RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
@@ -169,6 +169,7 @@ const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
   "local_worker_commit_unavailable",
   "local_worker_submit_failed",
 ]);
+const STRICT_TRACKER_PARTIAL_WINDOW_PATTERN = /^provider_partial_window:([1-9]|[1-9][0-9]|[12][0-9]{2})_300$/u;
 
 async function runtimeIdentityInput(options, env) {
   let identity = options.runtimeIdentity || {
@@ -281,6 +282,11 @@ function submitClaimOutcome(payload, job, options = {}) {
 function restoreBaselineCadence(summary) {
   if (Object.hasOwn(summary, "cadenceMinutes")) summary.cadenceMinutes = 10;
   delete summary.cadenceEligible;
+}
+
+function isStrictTrackerPartialWindowFailure(scope, failureCode) {
+  return scope === "tracker"
+    && STRICT_TRACKER_PARTIAL_WINDOW_PATTERN.test(String(failureCode || ""));
 }
 
 function workerCoordinationIdentity(env) {
@@ -906,8 +912,8 @@ export async function runLocalShoppingWorker(options = {}) {
         }
         summary.submitted += partialSubmitted;
         summary.failed += job.claims.length - partialSubmitted;
-        restoreBaselineCadence(summary);
         if (partialSubmitted === job.claims.length) {
+          restoreBaselineCadence(summary);
           summary.status = "control_plane_failed";
           summary.controlPlaneFailed = Number(summary.controlPlaneFailed || 0) + 1;
           log(`local_worker_post_commit_control_failed:${effectiveFailureCode}`);
@@ -926,6 +932,12 @@ export async function runLocalShoppingWorker(options = {}) {
           break;
         }
         const scope = failureScope(job, effectiveFailureCode);
+        const strictTrackerPartialWindow = isStrictTrackerPartialWindowFailure(
+          scope,
+          effectiveFailureCode,
+        ) && partialSubmitted === 0
+          && remainingClaims.length === job.claims.length;
+        const releaseFailedBefore = summary.releaseFailed;
         if (remainingClaims.length > 0) {
           try {
             const released = await action({
@@ -945,6 +957,7 @@ export async function runLocalShoppingWorker(options = {}) {
           }
         }
         let failureReport = null;
+        let cadenceProofPreservedClaims = 0;
         try {
           const failureJobs = scope === "tracker"
             ? remainingClaims.map((claim) => ({ ...job, claims: [claim] }))
@@ -958,10 +971,24 @@ export async function runLocalShoppingWorker(options = {}) {
               errorCode: effectiveFailureCode,
               scope,
             });
+            if (strictTrackerPartialWindow
+              && failureReport.cadenceProofPreserved === true) {
+              cadenceProofPreservedClaims += failureJob.claims.length;
+            }
             if (failureReport.laneReleased === true) laneClaimed = false;
           }
         } catch (coordinationError) {
           log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
+        }
+        const partialWindowCadencePreserved = strictTrackerPartialWindow
+          && summary.releaseFailed === releaseFailedBefore
+          && cadenceProofPreservedClaims === job.claims.length;
+        if (partialWindowCadencePreserved) {
+          summary.trackerPartialWindowFailures = Number(
+            summary.trackerPartialWindowFailures || 0,
+          ) + job.claims.length;
+        } else {
+          restoreBaselineCadence(summary);
         }
         if (scope === "security") {
           try {

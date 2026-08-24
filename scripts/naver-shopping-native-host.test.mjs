@@ -770,7 +770,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.11");
+  assert.equal(manifest.version, "1.1.12");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -1057,6 +1057,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     cadenceMinutes: 8,
     atomicSuccesses: 0,
     failed: 1,
+    trackerPartialWindowFailures: 0,
     releaseFailed: 0,
     controlPlaneFailed: 0,
   };
@@ -1065,6 +1066,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     cadenceMinutes: 8,
     atomicSuccesses: 1,
     failed: 0,
+    trackerPartialWindowFailures: 0,
     releaseFailed: 0,
     controlPlaneFailed: 0,
   };
@@ -1073,6 +1075,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     cadenceMinutes: 10,
     atomicSuccesses: 0,
     failed: 0,
+    trackerPartialWindowFailures: 0,
     releaseFailed: 0,
     controlPlaneFailed: 0,
   };
@@ -1099,6 +1102,51 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
   assert.equal(await helpers.safeCadenceMinutes(8), 8);
+
+  const trackerPartialWindowSummary = {
+    status: "completed",
+    cadenceMinutes: 8,
+    atomicSuccesses: 0,
+    failed: 1,
+    trackerPartialWindowFailures: 1,
+    releaseFailed: 0,
+    controlPlaneFailed: 0,
+  };
+  const preservedProof = {
+    resetPending: stored.momentInsightRankCandidateResetPending,
+    startedAt: stored.momentInsightRankCandidateStabilityStartedAt,
+    successCount: stored.momentInsightRankCandidateSuccessCount,
+  };
+  assert.equal(helpers.workerSummaryRequiresCadenceReset(trackerPartialWindowSummary), false);
+  assert.equal(helpers.cadenceFromWorkerSummary(trackerPartialWindowSummary), 8);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(trackerPartialWindowSummary), true);
+  assert.deepEqual({
+    resetPending: stored.momentInsightRankCandidateResetPending,
+    startedAt: stored.momentInsightRankCandidateStabilityStartedAt,
+    successCount: stored.momentInsightRankCandidateSuccessCount,
+  }, preservedProof);
+
+  for (const summary of [
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: undefined },
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: "1" },
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: -1 },
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 1.5 },
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 0 },
+    { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 2 },
+    { ...trackerPartialWindowSummary, failed: "1" },
+    { ...trackerPartialWindowSummary, failed: 2 },
+    { ...trackerPartialWindowSummary, releaseFailed: "0" },
+    { ...trackerPartialWindowSummary, releaseFailed: 1 },
+    { ...trackerPartialWindowSummary, controlPlaneFailed: "0" },
+    { ...trackerPartialWindowSummary, controlPlaneFailed: 1 },
+    { ...trackerPartialWindowSummary, atomicSuccesses: "0" },
+    { ...trackerPartialWindowSummary, halted: true },
+    { ...trackerPartialWindowSummary, haltedCode: "provider_partial_window:40_300" },
+    { ...trackerPartialWindowSummary, status: "idle" },
+  ]) {
+    assert.equal(helpers.workerSummaryRequiresCadenceReset(summary), true);
+    assert.equal(helpers.cadenceFromWorkerSummary(summary), 10);
+  }
 
   for (const summary of [
     { status: "disabled", cadenceMinutes: 8, atomicSuccesses: 0 },
@@ -1127,6 +1175,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
       cadenceMinutes: 8,
       atomicSuccesses: status === "completed" ? 1 : 0,
       failed: 0,
+      trackerPartialWindowFailures: 0,
       releaseFailed: 0,
       controlPlaneFailed: 0,
     };
@@ -2008,7 +2057,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.11");
+  assert.equal(manifest.version, "1.1.12");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);

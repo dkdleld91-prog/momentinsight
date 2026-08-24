@@ -78,7 +78,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "test-primary-worker",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.11",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.12",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
   };
 }
@@ -245,7 +245,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.11");
+  assert.equal(lane.runtimeVersion, "1.1.12");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
 
@@ -365,7 +365,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.11");
+  assert.equal(coordination[0].runtimeVersion, "1.1.12");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
     coordination.filter((call) => call.action === "progress").map((call) => [call.stage, call.page]),
@@ -1294,7 +1294,15 @@ test("isolates a strict partial window to one tracker instead of opening the glo
     { body: { ok: true, job: JOB } },
     { body: { ok: true, releasedCount: 1 } },
     { body: { ok: true, job: null } },
-  ], calls);
+  ], calls, {
+    claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+    recordFailure: {
+      ok: true,
+      recorded: true,
+      circuitState: "closed",
+      cadenceProofPreserved: true,
+    },
+  });
 
   const summary = await runLocalShoppingWorker({
     env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
@@ -1302,10 +1310,175 @@ test("isolates a strict partial window to one tracker instead of opening the glo
   });
 
   assert.equal(summary.failed, 1);
+  assert.equal(summary.trackerPartialWindowFailures, 1);
+  assert.equal(summary.cadenceMinutes, 8);
   const failure = calls.coordination.find((call) => call.action === "record-failure");
   assert.equal(failure.scope, "tracker");
   assert.equal(failure.errorCode, "provider_partial_window:40_300");
   assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+});
+
+test("does not classify a non-strict partial-window detail as cadence-preserving", async () => {
+  const calls = [];
+  const provider = {
+    async collect() {
+      const error = new Error("provider_partial_window");
+      error.code = "provider_partial_window";
+      error.detail = "300/300";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: JOB } },
+    { body: { ok: true, releasedCount: 1 } },
+    { body: { ok: true, job: null } },
+  ], calls, {
+    claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+  });
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+    randomUUID: uuidSequence(), skipLock: true,
+  });
+
+  assert.equal(summary.failed, 1);
+  assert.equal(summary.trackerPartialWindowFailures ?? 0, 0);
+  assert.equal(summary.cadenceMinutes, 10);
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.match(failure.errorCode, /^provider_partial_window:/u);
+});
+
+test("requires an explicit database acknowledgement before preserving partial-window cadence", async (t) => {
+  for (const [label, recordFailure] of [
+    ["missing acknowledgement", {
+      ok: true, recorded: true, circuitState: "closed",
+    }],
+    ["false acknowledgement", {
+      ok: true, recorded: true, circuitState: "closed", cadenceProofPreserved: false,
+    }],
+  ]) {
+    await t.test(label, async () => {
+      const calls = [];
+      const provider = {
+        async collect() {
+          const error = new Error("provider_partial_window");
+          error.code = "provider_partial_window";
+          error.detail = "40/300";
+          throw error;
+        },
+        async close() {},
+      };
+      const fetchImpl = authenticatedFetch([
+        { body: { ok: true, job: JOB } },
+        { body: { ok: true, releasedCount: 1 } },
+        { body: { ok: true, job: null } },
+      ], calls, {
+        claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+        recordFailure,
+      });
+
+      const summary = await runLocalShoppingWorker({
+        env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+        randomUUID: uuidSequence(), skipLock: true,
+      });
+
+      assert.equal(summary.failed, 1);
+      assert.equal(summary.trackerPartialWindowFailures ?? 0, 0);
+      assert.equal(summary.cadenceMinutes, 10);
+    });
+  }
+});
+
+test("preserves only the exact 1, 99 and 299-of-300 tracker boundaries", async (t) => {
+  for (const organicCount of [1, 99, 299]) {
+    await t.test(`${organicCount}/300`, async () => {
+      const calls = [];
+      const provider = {
+        async collect() {
+          const error = new Error("provider_partial_window");
+          error.code = "provider_partial_window";
+          error.detail = `${organicCount}/300`;
+          throw error;
+        },
+        async close() {},
+      };
+      const fetchImpl = authenticatedFetch([
+        { body: { ok: true, job: JOB } },
+        { body: { ok: true, releasedCount: 1 } },
+        { body: { ok: true, job: null } },
+      ], calls, {
+        claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+        recordFailure: {
+          ok: true,
+          recorded: true,
+          circuitState: "closed",
+          cadenceProofPreserved: true,
+        },
+      });
+
+      const summary = await runLocalShoppingWorker({
+        env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+        randomUUID: uuidSequence(), skipLock: true,
+      });
+
+      assert.equal(summary.failed, 1);
+      assert.equal(summary.trackerPartialWindowFailures, 1);
+      assert.equal(summary.cadenceMinutes, 8);
+      const failure = calls.coordination.find((call) => call.action === "record-failure");
+      assert.equal(failure.errorCode, `provider_partial_window:${organicCount}_300`);
+    });
+  }
+});
+
+test("preserves grouped partial cadence only after every failed claim receives DB approval", async () => {
+  const calls = [];
+  const groupedJob = {
+    ...JOB,
+    claims: [
+      JOB.claims[0],
+      {
+        ...JOB.claims[0],
+        trackerId: "123e4567-e89b-42d3-a456-426614174001",
+      },
+    ],
+  };
+  const provider = {
+    async collect() {
+      const error = new Error("provider_partial_window");
+      error.code = "provider_partial_window";
+      error.detail = "299/300";
+      throw error;
+    },
+    async close() {},
+  };
+  const fetchImpl = authenticatedFetch([
+    { body: { ok: true, job: groupedJob } },
+    { body: { ok: true, releasedCount: 2 } },
+    { body: { ok: true, job: null } },
+  ], calls, {
+    claimLane: { ok: true, granted: true, reason: "granted", cadenceMinutes: 8 },
+    recordFailure: {
+      ok: true,
+      recorded: true,
+      circuitState: "closed",
+      cadenceProofPreserved: true,
+    },
+  });
+
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(), fetchImpl, provider, nowMs: () => NOW,
+    randomUUID: uuidSequence(), skipLock: true,
+  });
+
+  assert.equal(summary.failed, 2);
+  assert.equal(summary.trackerPartialWindowFailures, 2);
+  assert.equal(summary.cadenceMinutes, 8);
+  assert.equal(
+    calls.coordination.filter((call) => call.action === "record-failure").length,
+    2,
+  );
 });
 
 test("maps an upstream submit 413 to one tracker-scoped oversized-payload failure", async () => {

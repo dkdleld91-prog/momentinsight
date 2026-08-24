@@ -233,26 +233,44 @@ async function safeCadenceMinutes(requested = null) {
 
 function workerSummaryRequiresCadenceReset(result) {
   const status = String(result?.status || "");
-  const failed = Number(result?.failed || 0);
-  const releaseFailed = Number(result?.releaseFailed || 0);
-  const controlPlaneFailed = Number(result?.controlPlaneFailed || 0);
+  const failed = result?.failed;
+  const trackerPartialWindowFailures = Object.hasOwn(
+    result || {},
+    "trackerPartialWindowFailures",
+  )
+    ? result.trackerPartialWindowFailures
+    : (failed === 0 ? 0 : undefined);
+  const releaseFailed = result?.releaseFailed;
+  const controlPlaneFailed = Object.hasOwn(result || {}, "controlPlaneFailed")
+    ? result.controlPlaneFailed
+    : 0;
   const atomicSuccesses = result?.atomicSuccesses;
   const haltedCode = String(result?.haltedCode || "");
   const terminalStatusValid = status === "already_running"
     || status === "standby"
     || status === "idle"
     || status === "completed";
+  const countersValid = Number.isSafeInteger(failed)
+    && Number.isSafeInteger(trackerPartialWindowFailures)
+    && Number.isSafeInteger(releaseFailed)
+    && Number.isSafeInteger(controlPlaneFailed)
+    && Number.isSafeInteger(atomicSuccesses)
+    && failed >= 0
+    && trackerPartialWindowFailures >= 0
+    && trackerPartialWindowFailures <= failed
+    && releaseFailed >= 0
+    && controlPlaneFailed >= 0
+    && atomicSuccesses >= 0;
+  const trackerPartialWindowOnly = status === "completed"
+    && failed > 0
+    && trackerPartialWindowFailures === failed
+    && releaseFailed === 0
+    && controlPlaneFailed === 0;
   return !terminalStatusValid
-    || !Number.isFinite(failed)
-    || !Number.isFinite(releaseFailed)
-    || !Number.isFinite(controlPlaneFailed)
-    || failed < 0
-    || releaseFailed < 0
-    || controlPlaneFailed < 0
-    || !Number.isSafeInteger(atomicSuccesses)
-    || atomicSuccesses < 0
+    || !countersValid
     || (status !== "completed" && atomicSuccesses !== 0)
-    || failed + releaseFailed > 0
+    || (failed > 0 && !trackerPartialWindowOnly)
+    || releaseFailed > 0
     || controlPlaneFailed > 0
     || Boolean(result?.halted)
     || Boolean(haltedCode);
@@ -422,7 +440,7 @@ async function updateCandidateCadenceEvidence(result) {
 
 function cadenceFromWorkerSummary(result) {
   return !workerSummaryRequiresCadenceReset(result)
-      && Number(result?.cadenceMinutes) === CANDIDATE_CADENCE_MINUTES
+      && result?.cadenceMinutes === CANDIDATE_CADENCE_MINUTES
     ? CANDIDATE_CADENCE_MINUTES
     : BASELINE_CADENCE_MINUTES;
 }

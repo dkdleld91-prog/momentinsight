@@ -66,7 +66,9 @@ const files = {
   shoppingWorkerRuntime119Migration: "supabase/migrations/20260821160000_naver_shopping_runtime_1_1_9.sql",
   shoppingWorkerRuntime110Migration: "supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql",
   shoppingWorkerRuntime111Migration: "supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql",
-  shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
+  shoppingWorkerRuntime1112Migration: "supabase/migrations/20260824042226_naver_shopping_runtime_1_1_12.sql",
+  shoppingWorkerCandidate111ExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
+  shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
   shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
@@ -162,6 +164,8 @@ const shoppingWorkerRuntime118Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime119Migration = fs.readFileSync(files.shoppingWorkerRuntime119Migration, "utf8");
 const shoppingWorkerRuntime110Migration = fs.readFileSync(files.shoppingWorkerRuntime110Migration, "utf8");
 const shoppingWorkerRuntime111Migration = fs.readFileSync(files.shoppingWorkerRuntime111Migration, "utf8");
+const shoppingWorkerRuntime1112Migration = fs.readFileSync(files.shoppingWorkerRuntime1112Migration, "utf8");
+const shoppingWorkerCandidate111ExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidate111ExactIdentityMigration, "utf8");
 const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
 const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
@@ -989,9 +993,38 @@ check(
   files.shoppingWorkerRuntime111Migration,
 );
 check(
+  "N Shopping cadence-proof isolation worker bytes pin runtime 1.1.12 fail-closed",
+  hasAll(shoppingWorkerRuntime1112Migration, [
+    /-- Runtime 1\.1\.12/,
+    /p_runtime_version, ''\)\) <> '1\.1\.12'/,
+    /current_row\.runtime_version = '1\.1\.12'/,
+    /last_collection_id ~ '\^pw-chrome-'/,
+    /last_checked_count = 300/,
+    /last_source = 'naver_shopping_results_collector'/,
+    /set cadence_mode = 'baseline',[\s\S]+cadence_minutes = 10,[\s\S]+stability_started_at = null,[\s\S]+success_streak = 0/,
+    /security invoker/,
+    /set search_path = ''/,
+    /from public, anon, authenticated, service_role/,
+    /to service_role/,
+  ])
+    && shoppingWorkerRuntime1112Migration.replaceAll("1.1.12", "1.1.11") === shoppingWorkerRuntime111Migration
+    && !/security definer/.test(shoppingWorkerRuntime1112Migration),
+  files.shoppingWorkerRuntime1112Migration,
+);
+check(
+  "N Shopping prior runtime 1.1.11 exact candidate gate remains unchanged",
+  shoppingWorkerCandidateExactIdentityMigration
+    .replaceAll("1.1.12", "1.1.11")
+    .replaceAll(
+      "862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e",
+      "6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00",
+    ) === shoppingWorkerCandidate111ExactIdentityMigration,
+  files.shoppingWorkerCandidate111ExactIdentityMigration,
+);
+check(
   "N Shopping candidate cadence requires the exact runtime identity and a completely idle lane",
   hasAll(shoppingWorkerCandidateExactIdentityMigration, [
-    /-- Runtime 1\.1\.11 exact candidate gate/,
+    /-- Runtime 1\.1\.12 exact candidate gate/,
     /create or replace function public\.mi_get_naver_shopping_worker_operations\(\)/,
     /create or replace function public\.mi_set_naver_shopping_worker_cadence\(/,
     /current_row\.circuit_state = 'closed'/,
@@ -1018,8 +1051,8 @@ check(
     /current_row\.success_streak >= 6/,
     /current_row\.last_success_at is not null/,
     /current_row\.last_success_at > v_now - interval '15 minutes'/,
-    /current_row\.runtime_version = '1\.1\.11'/,
-    /current_row\.runtime_fingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00'/,
+    /current_row\.runtime_version = '1\.1\.12'/,
+    /current_row\.runtime_fingerprint = '862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e'/,
     /current_row\.last_collection_id ~ '\^pw-chrome-'/,
     /current_row\.last_checked_count = 300/,
     /current_row\.last_source = 'naver_shopping_results_collector'/,
@@ -1030,7 +1063,7 @@ check(
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./g) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/g) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/set search_path = ''/g) || []).length === 2
-    && (shoppingWorkerCandidateExactIdentityMigration.match(/runtime_fingerprint = '6461e835e840ff873711f38a223ab1a7a06b3e2945822a92cce49e50a295cf00'/g) || []).length === 2
+    && (shoppingWorkerCandidateExactIdentityMigration.match(/runtime_fingerprint = '862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e'/g) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/primary_worker_id = 'windows-desktop-primary'/g) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/primary_seen_at > v_now - interval '3 minutes'/g) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/current_row\.cadence_mode = 'baseline'/g) || []).length === 2
@@ -1341,7 +1374,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.11"
+  shoppingChromeManifest.version === "1.1.12"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1354,9 +1387,9 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
-    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.11";/.test(shoppingLocalWorker)
-    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.11";/.test(shoppingLocalWorkerHandler)
-    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.11";/.test(productTrackers)
+    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.12";/.test(shoppingLocalWorker)
+    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.12";/.test(shoppingLocalWorkerHandler)
+    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.12";/.test(productTrackers)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)

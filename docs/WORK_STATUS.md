@@ -1,8 +1,15 @@
 # Work Status
 
-기준일: 2026-08-22
+기준일: 2026-08-24
 
 ## 현재 상태
+
+### 2026-08-24 N쇼핑 partial-window 전역 증거 격리 (로컬 GREEN, 배포 전)
+
+- 원인 확정: 정상 runtime에서도 `provider_partial_window:<1..299>_300` 한 건이 DB의 전역 `stability_started_at`·`success_streak`와 Chrome의 동일 증거를 함께 초기화해, 서로 다른 영구 short-window tracker가 순차 실패하면 candidate8이 계속 밀릴 수 있었습니다. partial 결과는 기존처럼 snapshot/rank에 저장하지 않고 해당 tracker만 자연 격리하되, exact runtime·closed circuit·정상 lane·기존 atomic300 증거와 같은 run/claim/group의 `job_failed` 장부까지 DB가 확인한 경우에만 전역 cadence proof를 보존하도록 1.1.12를 구현했습니다. grouped keyword의 두 번째 이후 tracker도 대표 claim과 같은 `claim_id`·`group_fingerprint`일 때만 승인됩니다.
+- fail-closed 경계는 유지합니다. scope 변형, 0/300·300/300, DB 승인 누락/false, release/control/halt 오류, stale/half-open/비정상 identity·lane, 장부 불일치에서는 baseline10과 proof reset을 그대로 적용합니다. runtime target은 `1.1.12`, exact fingerprint는 `862b3779b7f4c96db52005a090888d80facb653a598a5141093557cb2eef7e8e`입니다.
+- 현재 로컬 증거: 의도한 RED 뒤 local/native 124/124, handler 묶음, runtime/durable+isolation migration, server contract 68/68, release baseline `ok:true`, syntax·`git diff --check`가 GREEN입니다. 전체 `check:release`도 core1012/1012·place51/51·shopping64/64·Production auth18/18로 exit0이고, 보호 lock은 23함수·99파일·48 migration 및 self-test·fresh exact-match가 통과했습니다. 운영 SQL 구문 적용 검증과 실제 배포는 아직 남아 있어 커밋·push·Production/DB/Windows 배포를 하지 않았습니다.
+- 2026-08-24 13:11 KST 운영 SELECT-only 기준은 아직 runtime1.1.11/fingerprint `6461e835…95cf00`, heartbeat 정상, circuit closed·reason/cooldown null, processing0·lane/run/stage/tracker/probe null, baseline10·streak72·candidate false입니다. 최신 자연 성공은 13:08 KST official collector·checked300이고, 최근 실패는 2026-08-24 04:18 KST `provider_partial_window:138_300`, 현재 anchor는 `2026-08-24 04:38:25.461335 KST`입니다. 1.1.12 첫 자연 atomic300 전에는 새 anchor나 속도 향상으로 보고하지 않습니다.
 
 ### 2026-08-22 N쇼핑 v1.1.11 오류 분류 안정화 (Windows·첫 자연 회차 반영, 24시간 관측 중)
 

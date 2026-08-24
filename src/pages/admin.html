@@ -8124,6 +8124,8 @@
       grid-template-columns: minmax(0, 1fr);
       gap: 16px;
       align-items: start;
+      /* 한 칸으로 접히면 서랍(1) → 달력(2) → 가까운 업무(3) 순서로 선다. */
+      order: 2;
     }
 
     #mi-admin .mi-work-calendar-card,
@@ -8461,6 +8463,11 @@
     }
 
     #mi-admin .mi-work-agenda-card {
+      display: flex;
+      flex-direction: column;
+      order: 3;
+      min-width: 0;
+      min-height: 0;
       padding: 20px;
     }
 
@@ -8468,17 +8475,26 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      min-width: 0;
       gap: 12px;
       margin-bottom: 18px;
     }
 
+    #mi-admin .mi-work-agenda-head > div {
+      min-width: 0;
+    }
+
     #mi-admin .mi-work-agenda-head h2 {
+      overflow: hidden;
       margin: 0;
       font-size: 20px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
 
     #mi-admin .mi-work-agenda-tools {
       display: flex;
+      flex: 0 0 auto;
       align-items: center;
       gap: 7px;
     }
@@ -8504,6 +8520,8 @@
     #mi-admin .mi-work-agenda {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
+      min-width: 0;
+      min-height: 0;
       gap: 18px;
       align-items: start;
     }
@@ -8541,18 +8559,26 @@
     }
 
     #mi-admin .mi-work-agenda-empty {
+      min-width: 0;
       padding: 13px 14px;
       border: 1px dashed #dbe3ee;
       border-radius: 13px;
       color: var(--mi-muted);
       font-size: 12px;
+      word-break: keep-all;
     }
 
-    /* 카드는 색을 칠하지 않는다. 캘린더 색은 제목 앞 동그라미 하나만 가져간다. */
+    /* 카드는 색을 칠하지 않는다. 캘린더 색은 제목 앞 동그라미 하나만 가져간다.
+       좁은 레일에서 글자가 한 글자씩 끊기던 원인은 두 가지였다.
+       (1) 줄어들지 못하는 자식(min-width: auto) 이 글자 칸을 몇 px 로 짓눌렀고,
+       (2) 한글 기본값(word-break: normal) 은 음절 사이 아무 데서나 끊는다.
+       그래서 칩 줄은 basis 100% 로 제목 아래 제 줄을 쓰고, 글자 칸은 min-width: 0 으로
+       실제로 줄어들며, 낱말 경계 밖에서는 끊지 않는다. */
     #mi-admin .mi-work-agenda-item {
-      display: grid;
-      grid-template-columns: 9px minmax(0, 1fr) auto 32px;
-      gap: 9px;
+      display: flex;
+      flex-wrap: wrap;
+      min-width: 0;
+      gap: 7px 9px;
       align-items: center;
       padding: 12px;
       border: 1px solid var(--mi-line);
@@ -8564,6 +8590,8 @@
     #mi-admin .mi-work-agenda-item > i {
       width: 9px;
       height: 9px;
+      flex: 0 0 9px;
+      order: 1;
       align-self: start;
       margin-top: 5px;
       border-radius: 50%;
@@ -8574,7 +8602,10 @@
       background: #d9685e;
     }
 
+    /* basis 0 이라 아무리 긴 제목도 줄을 밀어내지 않고, 남는 폭은 전부 글자 칸이 가져간다. */
     #mi-admin .mi-work-agenda-edit {
+      flex: 1 1 0;
+      order: 2;
       min-width: 0;
       padding: 0;
       border: 0;
@@ -8583,6 +8614,10 @@
       cursor: pointer;
       font-family: inherit;
       text-align: left;
+      /* 한글은 낱말 경계에서만 끊는다 — 이게 빠지면 좁은 칸에서 한 글자씩 잘린다. */
+      word-break: keep-all;
+      /* 띄어쓰기 없는 아주 긴 토큰(URL 등)만 예외로 아무 데서나 끊어 넘침을 막는다. */
+      overflow-wrap: anywhere;
     }
 
     #mi-admin .mi-work-agenda-edit strong,
@@ -8591,22 +8626,33 @@
       min-width: 0;
     }
 
+    /* 제목은 최대 두 줄까지 보여주고 그다음은 말줄임 — 한 글자씩 끊기는 일은 없다. */
     #mi-admin .mi-work-agenda-edit strong {
+      display: -webkit-box;
       overflow: hidden;
       color: var(--mi-ink);
       font-size: 13px;
+      line-height: 1.35;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+    }
+
+    /* "8. 25. (화) 오전 12:00 · 예정" 줄은 언제나 한 줄이고, 넘치면 말줄임이다. */
+    #mi-admin .mi-work-agenda-edit span {
+      overflow: hidden;
+      margin-top: 4px;
+      color: var(--mi-muted);
+      font-size: 11px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
 
-    #mi-admin .mi-work-agenda-edit span {
-      margin-top: 4px;
-      color: var(--mi-muted);
-      font-size: 11px;
-    }
-
+    /* 완료 체크는 줄 오른쪽 끝에 서고 절대 줄어들지 않는다. */
     #mi-admin .mi-work-quick-done {
       display: grid;
+      flex: 0 0 auto;
+      order: 3;
       width: 32px;
       height: 32px;
       place-items: center;
@@ -8659,9 +8705,24 @@
     #mi-admin .mi-work-badges,
     #mi-admin .mi-work-badges > a {
       display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       align-items: center;
       min-width: 0;
+    }
+
+    /* 칩 줄은 제목 아래 제 줄(basis 100%)을 쓴다 — 줄을 넓히지 않으니 제목 폭을 빼앗지 않는다.
+       동그라미(9px) + 간격(9px) 만큼 들여써서 글자 칸과 왼쪽 선을 맞춘다. */
+    #mi-admin .mi-work-agenda-item > .mi-work-badges {
+      flex: 0 0 100%;
+      order: 4;
+      padding-left: 18px;
+    }
+
+    /* 칩 자체는 줄어들지 않는다 — 넘치면 다음 줄로 접힌다. */
+    #mi-admin .mi-work-badges > em,
+    #mi-admin .mi-work-badges > a {
+      flex: 0 0 auto;
     }
 
     #mi-admin .mi-work-status {
@@ -9491,9 +9552,11 @@
       display: none !important;
     }
 
+    /* 장소·참석자·캘린더 이름 줄도 한 줄 고정 + 말줄임이다. */
     #mi-admin .mi-work-agenda-meta {
       display: block;
       overflow: hidden;
+      min-width: 0;
       margin-top: 3px;
       color: #7c8aa0;
       font-size: 10.5px;
@@ -9509,36 +9572,69 @@
       align-items: start;
     }
 
-    /* 왼쪽 칸은 캘린더 카드(1행) 아래에 가까운 업무(2행)를 그대로 이어 붙이고,
-       월간 그리드는 오른쪽 칸에서 두 행을 통째로 차지해 폭을 잃지 않는다.
-       어젠다는 서랍(.mi-work-gcal-rail)의 자식이 아니라 .mi-work-body 의 직계 자식이라
-       레일이 접히는 폭에서도 사라지지 않는다. */
+    /* 왼쪽 칸은 캘린더 카드와 가까운 업무를 한 컨테이너에 세로로 담는다.
+       행 span(grid-row: 1 / -1) 을 쓰지 않으므로 두 카드가 겹치거나 잘리는 일이 없다.
+       어젠다는 서랍(.mi-work-gcal-rail)의 형제이지 자식이 아니라, 레일이 서랍으로
+       접히는 761~1180px 에서도 그대로 보인다. */
+    #mi-admin .mi-work-side {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 16px;
+    }
+
+    /* 구글 미연동이라 레일이 없으면 왼쪽 칸이 따로 설 이유가 없다 —
+       컨테이너를 풀어(display: contents) 달력 → 가까운 업무 순서로 한 칸에 쌓는다. */
+    #mi-admin .mi-work-body:not(.has-gcal-rail) > .mi-work-side {
+      position: static;
+      display: contents;
+      max-height: none;
+    }
+
     #mi-admin .mi-work-body.has-gcal-rail {
-      grid-template-columns: minmax(0, 232px) minmax(0, 1fr);
-      grid-template-rows: auto 1fr;
+      grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
     }
 
-    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-gcal-rail {
-      grid-row: 1;
-      grid-column: 1;
-    }
-
-    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-agenda-card {
-      grid-row: 2;
+    /* 월간 그리드를 굴려도 왼쪽 칸은 화면에 붙어 있다. 붙박이 기준 상자는
+       한 행짜리 그리드 영역이라 달력 높이만큼 그대로 따라 내려간다. */
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side {
+      position: sticky;
+      top: 18px;
       grid-column: 1;
       align-self: start;
+      max-height: calc(100vh - 36px);
     }
 
     #mi-admin .mi-work-body.has-gcal-rail > .mi-work-layout {
-      grid-row: 1 / -1;
       grid-column: 2;
       align-self: start;
     }
 
+    /* 왼쪽 칸이 화면보다 길어지면 페이지가 아니라 안쪽이 스크롤한다.
+       캘린더 카드는 화면 높이의 40% 까지만 쓰고(그 이상은 스스로 스크롤),
+       남는 높이는 전부 가까운 업무가 가져간다 — 캘린더가 많아도 어젠다가 짓눌리지 않는다. */
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-gcal-rail {
+      flex: 0 0 auto;
+      min-height: 0;
+      max-height: 40vh;
+      overflow-y: auto;
+    }
+
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-agenda-card {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+
+    /* 목록 자체가 스크롤한다(페이지 스크롤은 오른쪽 달력 몫).
+       calc 는 캘린더 카드 몫(210px)을 뺀 상한이고, 정확한 높이는 위 flex 가 맞춘다. */
+    #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-agenda-card > .mi-work-agenda {
+      overflow-y: auto;
+      max-height: calc(100vh - 36px - 210px);
+    }
+
     #mi-admin .mi-work-gcal-rail {
-      position: sticky;
-      top: 18px;
       display: grid;
+      order: 1;
       align-content: start;
       gap: 12px;
       padding: 16px;
@@ -10142,7 +10238,46 @@
     @media (max-width: 1180px) {
       #mi-admin .mi-work-body.has-gcal-rail {
         grid-template-columns: minmax(0, 1fr);
-        grid-template-rows: none;
+      }
+
+      #mi-admin .mi-work-gcal-rail {
+        position: static;
+        display: none;
+      }
+
+      /* 왼쪽 칸은 여기서 풀린다 — 붙박이도 내부 스크롤도 끄고 한 칸에 쌓는다.
+         서랍이 감추는 것은 .mi-work-gcal-rail 하나뿐이고 가까운 업무는 그 형제라
+         서랍이 열려 있든 닫혀 있든 761~1180px 에서 그대로 보인다. */
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side {
+        position: static;
+        display: contents;
+        max-height: none;
+      }
+
+      /* display: contents 로 왼쪽 칸이 풀리면 레일·가까운 업무·달력이 모두
+         .mi-work-body 의 직계 그리드 아이템이 된다. 이때 넓은 화면용
+         `grid-column: 2` 가 그대로 남아 있으면 1칸짜리 그리드에 암시적 두 번째
+         칸이 생겨, 달력이 절반으로 눌리고 가까운 업무가 그 옆에 붙는다.
+         (1100px 실측: grid-template-columns 가 446px 590px 로 잡혔다.)
+         그래서 칸 지정을 풀고 order 로 위아래 순서만 정한다 — 달력이 먼저,
+         가까운 업무가 그 아래다. */
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-layout {
+        grid-column: auto;
+        order: 1;
+      }
+
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-gcal-rail {
+        order: 0;
+      }
+
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-agenda-card {
+        grid-column: auto;
+        order: 2;
+      }
+
+      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-side > .mi-work-agenda-card > .mi-work-agenda {
+        overflow-y: visible;
+        max-height: none;
       }
 
       #mi-admin .mi-work-gcal-drawer {
@@ -10154,11 +10289,6 @@
         display: none;
       }
 
-      #mi-admin .mi-work-gcal-rail {
-        position: static;
-        display: none;
-      }
-
       #mi-admin .mi-work-body.is-gcal-open .mi-work-gcal-rail {
         display: grid;
       }
@@ -10167,12 +10297,8 @@
         display: none;
       }
 
-      /* 레일이 서랍으로 접히는 폭에서는 가까운 업무가 달력 아래 전체 폭 띠로 돌아온다.
-         서랍이 열려 있든 닫혀 있든 어젠다는 그대로 보인다. */
-      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-gcal-rail,
-      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-layout,
-      #mi-admin .mi-work-body.has-gcal-rail > .mi-work-agenda-card {
-        grid-row: auto;
+      /* 레일이 서랍으로 접히는 폭에서는 가까운 업무가 달력 아래 전체 폭 띠로 돌아온다. */
+      #mi-admin .mi-work-body .mi-work-agenda-card {
         grid-column: 1 / -1;
       }
 
@@ -10219,8 +10345,7 @@
       }
 
       /* 모바일에서는 가까운 업무가 달력 아래 전체 폭으로 오고, 카드는 예전처럼 세로로 쌓인다. */
-      #mi-admin .mi-work-body > .mi-work-agenda-card {
-        grid-row: auto;
+      #mi-admin .mi-work-body .mi-work-agenda-card {
         grid-column: 1 / -1;
       }
 
@@ -10511,45 +10636,55 @@
           </div>
 
           <div class="mi-work-body" data-work-gcal-body>
-            <aside class="mi-work-gcal-rail" id="mi-work-gcal-rail" data-work-gcal-rail hidden aria-label="캘린더 목록">
-              <div class="mi-work-gcal-head">
-                <div><span class="mi-kicker">Calendars</span><h2>캘린더</h2></div>
-                <button class="mi-work-gcal-refresh" type="button" data-work-gcal-refresh aria-label="구글 캘린더 목록 새로고침">새로고침</button>
-              </div>
-              <div class="mi-work-gcal-list" data-work-gcal-list></div>
-              <p class="mi-work-gcal-note" data-work-gcal-note hidden></p>
-              <div class="mi-work-gcal-panel" data-work-gcal-acl-panel hidden>
-                <strong data-work-gcal-acl-title>참가자 관리</strong>
-                <div class="mi-work-gcal-rules" data-work-gcal-acl-rules aria-live="polite"></div>
-                <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-acl-email maxlength="320" placeholder="name@example.com" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
-                <label><span>권한</span>
-                  <select class="mi-select" data-work-gcal-acl-role>
-                    <option value="writer">편집 가능</option>
-                    <option value="reader">보기만</option>
-                  </select>
-                </label>
-                <div class="mi-work-gcal-panel-actions">
-                  <button type="button" data-work-gcal-acl-close>닫기</button>
-                  <button type="button" class="is-primary" data-work-gcal-acl-add>추가</button>
+            <div class="mi-work-side">
+              <aside class="mi-work-gcal-rail" id="mi-work-gcal-rail" data-work-gcal-rail hidden aria-label="캘린더 목록">
+                <div class="mi-work-gcal-head">
+                  <div><span class="mi-kicker">Calendars</span><h2>캘린더</h2></div>
+                  <button class="mi-work-gcal-refresh" type="button" data-work-gcal-refresh aria-label="구글 캘린더 목록 새로고침">새로고침</button>
                 </div>
-              </div>
-              <button class="mi-work-gcal-new" type="button" data-work-gcal-new aria-expanded="false" aria-controls="mi-work-gcal-new-form">＋ 새 캘린더 만들기</button>
-              <div class="mi-work-gcal-panel" id="mi-work-gcal-new-form" data-work-gcal-new-form hidden>
-                <label><span>이름</span><input class="mi-input" type="text" data-work-gcal-new-name maxlength="120" placeholder="새 캘린더 이름" /></label>
-                <div class="mi-work-chips" data-work-gcal-invite-chips aria-live="polite"></div>
-                <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-invite-input maxlength="320" placeholder="이메일 입력 후 Enter" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
-                <label><span>권한</span>
-                  <select class="mi-select" data-work-gcal-invite-role>
-                    <option value="writer">편집 가능</option>
-                    <option value="reader">보기만</option>
-                  </select>
-                </label>
-                <div class="mi-work-gcal-panel-actions">
-                  <button type="button" data-work-gcal-new-cancel>취소</button>
-                  <button type="button" class="is-primary" data-work-gcal-create>만들기</button>
+                <div class="mi-work-gcal-list" data-work-gcal-list></div>
+                <p class="mi-work-gcal-note" data-work-gcal-note hidden></p>
+                <div class="mi-work-gcal-panel" data-work-gcal-acl-panel hidden>
+                  <strong data-work-gcal-acl-title>참가자 관리</strong>
+                  <div class="mi-work-gcal-rules" data-work-gcal-acl-rules aria-live="polite"></div>
+                  <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-acl-email maxlength="320" placeholder="name@example.com" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+                  <label><span>권한</span>
+                    <select class="mi-select" data-work-gcal-acl-role>
+                      <option value="writer">편집 가능</option>
+                      <option value="reader">보기만</option>
+                    </select>
+                  </label>
+                  <div class="mi-work-gcal-panel-actions">
+                    <button type="button" data-work-gcal-acl-close>닫기</button>
+                    <button type="button" class="is-primary" data-work-gcal-acl-add>추가</button>
+                  </div>
                 </div>
-              </div>
-            </aside>
+                <button class="mi-work-gcal-new" type="button" data-work-gcal-new aria-expanded="false" aria-controls="mi-work-gcal-new-form">＋ 새 캘린더 만들기</button>
+                <div class="mi-work-gcal-panel" id="mi-work-gcal-new-form" data-work-gcal-new-form hidden>
+                  <label><span>이름</span><input class="mi-input" type="text" data-work-gcal-new-name maxlength="120" placeholder="새 캘린더 이름" /></label>
+                  <div class="mi-work-chips" data-work-gcal-invite-chips aria-live="polite"></div>
+                  <label><span>참가자 이메일</span><input class="mi-input" type="text" data-work-gcal-invite-input maxlength="320" placeholder="이메일 입력 후 Enter" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+                  <label><span>권한</span>
+                    <select class="mi-select" data-work-gcal-invite-role>
+                      <option value="writer">편집 가능</option>
+                      <option value="reader">보기만</option>
+                    </select>
+                  </label>
+                  <div class="mi-work-gcal-panel-actions">
+                    <button type="button" data-work-gcal-new-cancel>취소</button>
+                    <button type="button" class="is-primary" data-work-gcal-create>만들기</button>
+                  </div>
+                </div>
+              </aside>
+
+              <aside class="mi-work-agenda-card">
+                <div class="mi-work-agenda-head">
+                  <div><span class="mi-kicker">Agenda</span><h2 data-work-agenda-title>가까운 업무</h2></div>
+                  <div class="mi-work-agenda-tools"><button class="mi-work-filter-clear" type="button" data-work-filter-clear hidden>전체</button><span class="mi-badge" data-work-count>0개</span></div>
+                </div>
+                <div class="mi-work-agenda" data-work-agenda></div>
+              </aside>
+            </div>
 
             <div class="mi-work-layout">
               <article class="mi-work-calendar-card">
@@ -10581,14 +10716,6 @@
                 <div class="mi-work-calendar" data-work-calendar aria-label="월간 업무 일정"></div>
               </article>
             </div>
-
-            <aside class="mi-work-agenda-card">
-              <div class="mi-work-agenda-head">
-                <div><span class="mi-kicker">Agenda</span><h2 data-work-agenda-title>가까운 업무</h2></div>
-                <div class="mi-work-agenda-tools"><button class="mi-work-filter-clear" type="button" data-work-filter-clear hidden>전체</button><span class="mi-badge" data-work-count>0개</span></div>
-              </div>
-              <div class="mi-work-agenda" data-work-agenda></div>
-            </aside>
           </div>
           <div class="mi-work-status" data-work-status>업무 일정을 불러올 준비가 되었습니다.</div>
 

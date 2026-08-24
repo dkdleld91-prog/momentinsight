@@ -414,6 +414,48 @@ test("candidate cadence reports success only for the exact activated 8-minute re
   }
 });
 
+test("baseline cadence reports success only for the exact activated 10-minute result", async () => {
+  const request = new Request("https://example.com/api/naver-rank-trackers", { method: "POST" });
+  const access = { owner: true, agencyCode: "mml93-a01" };
+  const invoke = (rpcResult) => controlShoppingWorker(request, {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_set_naver_shopping_worker_cadence");
+        assert.deepEqual(args, { p_mode: "baseline" });
+        return { data: rpcResult, error: null };
+      },
+    },
+  }, { action: "worker-cadence", mode: "baseline" }, access);
+
+  const positive = await invoke({
+    accepted: true,
+    activated: true,
+    mode: "baseline",
+    minutes: 10,
+  });
+  const positiveBody = await positive.json();
+  assert.equal(positive.status, 200);
+  assert.equal(positiveBody.ok, true);
+  assert.equal(positiveBody.result.mode, "baseline");
+  assert.equal(positiveBody.result.minutes, 10);
+  assert.equal(positiveBody.result.activated, true);
+
+  const mismatchedResults = [
+    { accepted: true, activated: true, mode: "candidate", minutes: 10 },
+    { accepted: true, activated: true, mode: "baseline", minutes: 8 },
+    { accepted: true, activated: true, cadence_mode: "baseline", cadence_minutes: 10 },
+    { accepted: true, activated: true, mode: "baseline", minutes: "10" },
+  ];
+  for (const rpcResult of mismatchedResults) {
+    const response = await invoke(rpcResult);
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.ok, false);
+    assert.match(body.message, /운영 안전 조건/u);
+    assert.equal(body.result.activated, false);
+  }
+});
+
 test("a repeated canary rejection never sends another remote wake or reports success", async () => {
   const calls = [];
   const response = await controlShoppingWorker(

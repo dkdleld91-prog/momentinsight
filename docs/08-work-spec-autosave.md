@@ -369,9 +369,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 25. 00:25:19
-- 기준 커밋: 431242a
-- 작업트리: ?? data/ / ?? docs/drafts/
+- 마지막 자동 저장: 2026. 08. 25. 00:59:47
+- 기준 커밋: e56337c
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-server-contract.mjs /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/naver-rank-trackers.mjs /  M src/server/handlers/naver-rank-trackers.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

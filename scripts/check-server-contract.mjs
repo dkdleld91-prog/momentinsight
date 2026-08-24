@@ -1113,11 +1113,12 @@ check(
   files.shoppingAtomicSuccessProofHardeningMigration,
 );
 check(
-  "N Shopping candidate response succeeds only for exact candidate mode and eight minutes",
+  "N Shopping cadence response succeeds only for the exact requested mode and minutes",
   hasAll(productTrackers, [
     /if \(result\?\.accepted !== true\) return false;/,
     /if \(result\?\.activated !== true\) return false;/,
     /if \(mode === "candidate"\) return result\?\.mode === "candidate" && result\?\.minutes === 8;/,
+    /if \(mode === "baseline"\) return result\?\.mode === "baseline" && result\?\.minutes === 10;/,
     /shoppingWorkerControlAccepted\(action, result, cadenceMode\)/,
     /rejected \? 409 : 200/,
   ]),

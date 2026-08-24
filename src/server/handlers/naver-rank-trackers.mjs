@@ -2258,6 +2258,8 @@ function shoppingWorkerControlAccepted(action, result, mode = "") {
   if (action === "worker-cadence") {
     if (result?.activated !== true) return false;
     if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 8;
+    if (mode === "baseline") return result?.mode === "baseline" && result?.minutes === 10;
+    return false;
   }
   return true;
 }

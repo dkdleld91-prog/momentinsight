@@ -11,6 +11,7 @@ const pages = {
   home: "home.html",
   admin: "admin.html",
   client: "client.html",
+  privacy: "privacy.html",
 };
 
 async function exists(filePath) {

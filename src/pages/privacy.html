@@ -1,0 +1,1183 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#061a3a" />
+<title>개인정보처리방침 | 모먼트 인사이트</title>
+<meta name="description" content="모먼트 인사이트(insight.momentlabs.co.kr)가 수집·이용하는 개인정보의 항목, 목적, 보유 기간, 위탁 및 국외이전, 정보주체의 권리와 안전성 확보 조치를 안내합니다." />
+<meta name="robots" content="index, follow" />
+<meta name="author" content="모먼트 인사이트" />
+<link rel="canonical" href="https://insight.momentlabs.co.kr/privacy" />
+<meta property="og:type" content="article" />
+<meta property="og:site_name" content="모먼트 인사이트" />
+<meta property="og:title" content="개인정보처리방침 | 모먼트 인사이트" />
+<meta property="og:description" content="모먼트 인사이트가 처리하는 개인정보의 항목과 목적, 보유 기간, 위탁·국외이전, 구글 사용자 데이터 처리 원칙을 안내합니다." />
+<meta property="og:url" content="https://insight.momentlabs.co.kr/privacy" />
+</head>
+<body>
+
+<section id="mi-privacy" class="mi-privacy-wrap">
+  <style>
+    html,
+    body {
+      min-width: 320px;
+      margin: 0;
+      background: #f4f7fb;
+    }
+
+    #mi-privacy,
+    #mi-privacy * {
+      box-sizing: border-box;
+    }
+
+    #mi-privacy {
+      --mi-bg: #f4f7fb;
+      --mi-panel: #ffffff;
+      --mi-ink: #101828;
+      --mi-muted: #667085;
+      --mi-soft: #f0f4f9;
+      --mi-line: #dce4ef;
+      --mi-navy: #061a3a;
+      --mi-navy-2: #0b2447;
+      --mi-blue: #2558d8;
+      --mi-green: #067647;
+      --mi-shadow: 0 22px 54px rgba(6, 26, 58, 0.1);
+      min-height: 100vh;
+      margin: 0;
+      color: var(--mi-ink);
+      background: var(--mi-bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      line-height: 1.55;
+    }
+
+    #mi-privacy a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    #mi-privacy .mi-shell {
+      width: min(1120px, calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    /* ── 상단바 ─────────────────────────────── */
+    #mi-privacy .mi-topbar {
+      position: sticky;
+      z-index: 20;
+      top: 0;
+      border-bottom: 1px solid rgba(217, 224, 234, 0.9);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(14px);
+    }
+
+    #mi-privacy .mi-topbar-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    #mi-privacy .mi-brand,
+    #mi-privacy .mi-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #mi-privacy .mi-brand {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--mi-navy);
+      white-space: nowrap;
+    }
+
+    #mi-privacy .mi-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 9px;
+      background: linear-gradient(145deg, #061a3a, #123866);
+      color: #fff;
+      font-size: 13px;
+      letter-spacing: 0;
+      box-shadow: 0 8px 20px rgba(6, 26, 58, 0.18);
+    }
+
+    #mi-privacy .mi-button {
+      min-height: 42px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 16px;
+      border: 1px solid var(--mi-line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+    }
+
+    #mi-privacy .mi-button:hover {
+      border-color: rgba(6, 26, 58, 0.2);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px rgba(6, 26, 58, 0.12);
+    }
+
+    #mi-privacy .mi-button:active {
+      transform: translateY(1px) scale(0.98);
+      box-shadow: inset 0 2px 6px rgba(6, 26, 58, 0.18);
+    }
+
+    #mi-privacy .mi-button:focus-visible {
+      outline: 3px solid rgba(37, 88, 216, 0.18);
+      outline-offset: 2px;
+    }
+
+    #mi-privacy .mi-button.primary {
+      border-color: var(--mi-navy);
+      background: var(--mi-navy);
+      color: #fff;
+    }
+
+    #mi-privacy .mi-button.primary:hover {
+      background: #082044;
+    }
+
+    #mi-privacy .mi-button.secondary {
+      background: transparent;
+    }
+
+    /* ── 히어로 ─────────────────────────────── */
+    #mi-privacy .mi-hero {
+      padding: 72px 0 44px;
+      background:
+        radial-gradient(circle at 78% 8%, rgba(37, 88, 216, 0.11), transparent 32%),
+        linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+    }
+
+    #mi-privacy .mi-kicker {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      margin-bottom: 16px;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: #e9eef8;
+      color: var(--mi-navy);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    #mi-privacy h1,
+    #mi-privacy h2,
+    #mi-privacy h3,
+    #mi-privacy p {
+      margin: 0;
+    }
+
+    #mi-privacy h1 {
+      max-width: 720px;
+      color: var(--mi-navy);
+      font-size: 44px;
+      line-height: 1.1;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    #mi-privacy .mi-lead {
+      max-width: 720px;
+      margin-top: 20px;
+      color: #475467;
+      font-size: 17px;
+      line-height: 1.6;
+    }
+
+    #mi-privacy .mi-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      margin-top: 22px;
+    }
+
+    #mi-privacy .mi-badge {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--mi-soft);
+      color: #344054;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+    }
+
+    /* ── 본문 ───────────────────────────────── */
+    #mi-privacy .mi-doc {
+      width: min(880px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 8px 0 72px;
+    }
+
+    #mi-privacy .mi-notice {
+      margin-bottom: 32px;
+      padding: 18px 20px;
+      border: 1px solid #f0d78a;
+      border-left: 4px solid #d9a406;
+      border-radius: 12px;
+      background: #fffaeb;
+      color: #6b4c05;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    #mi-privacy .mi-notice strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #5a3f04;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    #mi-privacy .mi-toc {
+      margin-bottom: 36px;
+      padding: 22px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.04);
+    }
+
+    #mi-privacy .mi-toc h2 {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--mi-navy);
+    }
+
+    #mi-privacy .mi-toc ol {
+      margin: 14px 0 0;
+      padding: 0;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 22px;
+      list-style: none;
+      counter-reset: mi-toc;
+    }
+
+    #mi-privacy .mi-toc li {
+      counter-increment: mi-toc;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    #mi-privacy .mi-toc li::before {
+      content: counter(mi-toc) ". ";
+      color: var(--mi-muted);
+      font-weight: 800;
+    }
+
+    #mi-privacy .mi-toc a {
+      color: #344054;
+      font-weight: 700;
+    }
+
+    #mi-privacy .mi-toc a:hover {
+      color: var(--mi-blue);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    #mi-privacy article {
+      display: grid;
+      gap: 34px;
+    }
+
+    #mi-privacy section.mi-article {
+      scroll-margin-top: 86px;
+    }
+
+    #mi-privacy .mi-article > h2 {
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--mi-line);
+      color: var(--mi-navy);
+      font-size: 22px;
+      line-height: 1.3;
+      font-weight: 850;
+    }
+
+    #mi-privacy .mi-article > h2 .mi-article-no {
+      margin-right: 8px;
+      color: var(--mi-blue);
+      font-size: 14px;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      vertical-align: 2px;
+    }
+
+    #mi-privacy .mi-article h3 {
+      margin-top: 22px;
+      color: var(--mi-ink);
+      font-size: 16px;
+      line-height: 1.4;
+      font-weight: 800;
+    }
+
+    #mi-privacy .mi-article p {
+      margin-top: 14px;
+      color: #475467;
+      font-size: 15px;
+      line-height: 1.72;
+      word-break: keep-all;
+    }
+
+    #mi-privacy .mi-article ul,
+    #mi-privacy .mi-article ol.mi-num {
+      margin: 14px 0 0;
+      padding-left: 20px;
+      color: #475467;
+      font-size: 15px;
+      line-height: 1.72;
+    }
+
+    #mi-privacy .mi-article li {
+      margin-top: 8px;
+      word-break: keep-all;
+    }
+
+    #mi-privacy .mi-article li > ul {
+      margin-top: 6px;
+    }
+
+    #mi-privacy .mi-article b,
+    #mi-privacy .mi-article strong {
+      color: var(--mi-ink);
+      font-weight: 800;
+    }
+
+    #mi-privacy .mi-callout {
+      margin-top: 18px;
+      padding: 18px 20px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.04);
+    }
+
+    #mi-privacy .mi-callout h3 {
+      margin-top: 0;
+    }
+
+    #mi-privacy .mi-callout p:first-of-type {
+      margin-top: 10px;
+    }
+
+    #mi-privacy .mi-callout.accent {
+      border-color: rgba(37, 88, 216, 0.24);
+      background: linear-gradient(180deg, #f7faff 0%, #eef3fd 100%);
+    }
+
+    #mi-privacy .mi-table-scroll {
+      margin-top: 16px;
+      overflow-x: auto;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      background: var(--mi-panel);
+      box-shadow: 0 10px 28px rgba(6, 26, 58, 0.04);
+      -webkit-overflow-scrolling: touch;
+    }
+
+    #mi-privacy table {
+      width: 100%;
+      min-width: 560px;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+
+    #mi-privacy caption {
+      padding: 14px 18px 0;
+      color: var(--mi-muted);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: left;
+    }
+
+    #mi-privacy th,
+    #mi-privacy td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--mi-line);
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.6;
+      word-break: keep-all;
+    }
+
+    #mi-privacy thead th {
+      background: var(--mi-soft);
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #mi-privacy tbody th {
+      color: var(--mi-ink);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    #mi-privacy tbody td {
+      color: #475467;
+    }
+
+    #mi-privacy tbody tr:last-child th,
+    #mi-privacy tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    #mi-privacy mark {
+      padding: 1px 6px;
+      border: 1px solid #f2ce4b;
+      border-radius: 5px;
+      background: #fff3bf;
+      color: #6b4c05;
+      font-weight: 800;
+      font-size: 0.95em;
+      white-space: nowrap;
+    }
+
+    #mi-privacy .mi-inline-link {
+      color: var(--mi-blue);
+      font-weight: 700;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    #mi-privacy .mi-effective {
+      margin-top: 40px;
+      padding: 22px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      background: var(--mi-panel);
+      color: #475467;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    #mi-privacy .mi-effective strong {
+      color: var(--mi-navy);
+    }
+
+    /* ── 하단 ───────────────────────────────── */
+    #mi-privacy .mi-footer {
+      padding: 32px 0 40px;
+      border-top: 1px solid var(--mi-line);
+      background: #ffffff;
+      color: #667085;
+      font-size: 13px;
+    }
+
+    #mi-privacy .mi-footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    #mi-privacy .mi-footer-brand {
+      display: grid;
+      gap: 4px;
+    }
+
+    #mi-privacy .mi-footer-brand strong {
+      color: var(--mi-navy);
+      font-size: 14px;
+    }
+
+    #mi-privacy .mi-footer-links {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px 18px;
+      color: #475467;
+      font-weight: 750;
+    }
+
+    #mi-privacy .mi-footer-links a:hover {
+      color: var(--mi-blue);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #mi-privacy *,
+      #mi-privacy *::before,
+      #mi-privacy *::after {
+        scroll-behavior: auto !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+
+    @media (max-width: 920px) {
+      #mi-privacy h1 {
+        font-size: 38px;
+      }
+
+      #mi-privacy .mi-toc ol {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 640px) {
+      #mi-privacy .mi-shell,
+      #mi-privacy .mi-doc {
+        width: min(100% - 28px, 1120px);
+      }
+
+      #mi-privacy .mi-topbar-inner {
+        min-height: 64px;
+        gap: 8px;
+      }
+
+      #mi-privacy .mi-topbar .mi-button {
+        min-height: 34px;
+        padding: 0 9px;
+        font-size: 11.5px;
+      }
+
+      #mi-privacy .mi-hero {
+        padding: 44px 0 32px;
+      }
+
+      #mi-privacy h1 {
+        font-size: 30px;
+      }
+
+      #mi-privacy .mi-lead {
+        font-size: 15.5px;
+      }
+
+      #mi-privacy .mi-doc {
+        padding-bottom: 56px;
+      }
+
+      #mi-privacy .mi-article > h2 {
+        font-size: 19px;
+      }
+
+      #mi-privacy .mi-article p,
+      #mi-privacy .mi-article ul,
+      #mi-privacy .mi-article ol.mi-num {
+        font-size: 14.5px;
+      }
+
+      #mi-privacy mark {
+        white-space: normal;
+      }
+
+      #mi-privacy .mi-footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
+      #mi-privacy .mi-footer-links {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 430px) {
+      #mi-privacy .mi-brand span:last-child {
+        display: none;
+      }
+    }
+  </style>
+
+  <header class="mi-topbar">
+    <div class="mi-shell mi-topbar-inner">
+      <a class="mi-brand" href="/" aria-label="모먼트인사이트 홈">
+        <span class="mi-mark">MI</span>
+        <span>Moment Insight</span>
+      </a>
+
+      <div class="mi-actions">
+        <a class="mi-button secondary" href="/client#mi-dashboard">광고주 대시보드</a>
+        <a class="mi-button primary" href="/admin">운영팀 로그인</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="mi-hero">
+      <div class="mi-shell">
+        <span class="mi-kicker">개인정보 보호</span>
+        <h1>개인정보처리방침</h1>
+        <p class="mi-lead">
+          모먼트 인사이트(이하 &ldquo;서비스&rdquo;)는 마케팅 대행사와 광고주가 광고 성과, KPI, 보고서, 일정, 키워드·순위 데이터를
+          한곳에서 관리하는 B2B 업무용 SaaS입니다. 서비스는 개인정보 보호법 등 관계 법령을 준수하며, 이용자의 개인정보를
+          어떤 목적과 방식으로 처리하고 어떻게 보호하는지 아래와 같이 안내합니다.
+        </p>
+        <div class="mi-meta">
+          <span class="mi-badge">적용 서비스 · insight.momentlabs.co.kr</span>
+          <span class="mi-badge">시행일 · 2026-08-24</span>
+          <span class="mi-badge">버전 · v1.0</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="mi-doc">
+
+      <nav class="mi-toc" aria-label="목차">
+        <h2>목차</h2>
+        <ol>
+          <li><a href="#mi-a0">총칙 및 적용 범위</a></li>
+          <li><a href="#mi-a1">개인정보의 처리 목적</a></li>
+          <li><a href="#mi-a2">처리하는 개인정보의 항목</a></li>
+          <li><a href="#mi-a3">개인정보의 처리 및 보유 기간</a></li>
+          <li><a href="#mi-a4">개인정보의 제3자 제공</a></li>
+          <li><a href="#mi-a5">처리업무의 위탁 및 국외 이전</a></li>
+          <li><a href="#mi-a6">개인정보의 파기 절차 및 방법</a></li>
+          <li><a href="#mi-a7">정보주체의 권리·의무 및 행사 방법</a></li>
+          <li><a href="#mi-a8">개인정보의 안전성 확보 조치</a></li>
+          <li><a href="#mi-a9">쿠키 등 자동수집장치의 운영 및 거부</a></li>
+          <li><a href="#mi-a10">구글 사용자 데이터의 처리</a></li>
+          <li><a href="#mi-a11">개인정보 보호책임자</a></li>
+          <li><a href="#mi-a12">권익침해 구제방법</a></li>
+          <li><a href="#mi-a13">개인정보처리방침의 변경</a></li>
+        </ol>
+      </nav>
+
+      <article>
+
+        <!-- 총칙 -->
+        <section class="mi-article" id="mi-a0">
+          <h2><span class="mi-article-no">총칙</span>적용 범위와 사업자 정보</h2>
+          <p>
+            본 방침은 (주)모먼트랩스(이하 &ldquo;회사&rdquo;)이 운영하는 모먼트 인사이트
+            웹 서비스(<b>https://insight.momentlabs.co.kr</b>) 및 그 하위 화면(광고주 대시보드, 운영팀 관리자 화면, 공개 소개 페이지)에
+            적용됩니다. 회사가 별도로 운영하는 다른 서비스나, 서비스에서 링크로 연결되는 외부 사이트(예: 카카오톡 채널)에는
+            해당 사업자의 방침이 적용됩니다.
+          </p>
+          <p>
+            서비스는 <b>기업 간 거래(B2B) 업무 도구</b>로, 마케팅 대행사와 그 광고주의 담당자가 업무 목적으로 사용합니다.
+            서비스가 다루는 정보의 대부분은 광고주의 사업 정보(브랜드명, 키워드, 상품·플레이스 정보, 성과 수치 등)이며,
+            개인정보에 해당하는 항목은 제2조에 열거한 범위로 한정됩니다.
+          </p>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>사업자 정보</caption>
+              <tbody>
+                <tr><th scope="row">상호(법인)명</th><td>(주)모먼트랩스</td></tr>
+                <tr><th scope="row">대표자</th><td>신동빈</td></tr>
+                <tr><th scope="row">사업자등록번호</th><td>239-87-03396</td></tr>
+                <tr><th scope="row">주소</th><td>인천광역시 서해구 크리스탈로 100, 708-A29호</td></tr>
+                <tr><th scope="row">대표 전화</th><td>별도 대표 전화는 운영하지 않으며, 문의는 이메일로 접수합니다.</td></tr>
+                <tr><th scope="row">대표 이메일</th><td>mml93@naver.com</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 제1조 -->
+        <section class="mi-article" id="mi-a1">
+          <h2><span class="mi-article-no">제1조</span>개인정보의 처리 목적</h2>
+          <p>회사는 다음의 목적으로만 개인정보를 처리하며, 목적이 변경되는 경우에는 개인정보 보호법 제18조에 따라 별도의 동의를 받는 등 필요한 조치를 이행합니다.</p>
+          <ol class="mi-num">
+            <li><b>서비스 접속 및 이용자 식별</b> — 대행사·운영팀·광고주에게 발급된 접속 코드로 로그인 요청을 확인하고, 역할(총관리자·운영팀·광고주)에 맞는 화면과 데이터 범위를 제공하기 위함.</li>
+            <li><b>구글 계정 로그인(선택 기능) 처리</b> — 이용자가 스스로 연결한 구글 계정을 기존 접속 코드와 연결해 두고, 다음 로그인 시 동일한 이용자임을 확인하기 위함.</li>
+            <li><b>구글 캘린더 연동(선택 기능) 처리</b> — 이용자가 연동을 요청한 경우에 한해, 서비스에 등록된 본인의 일정·업무 항목을 이용자의 구글 캘린더로 내보내기 위함.</li>
+            <li><b>서비스 제공 및 운영</b> — 광고주별 대시보드, KPI, 광고 성과, 보고서·첨부파일, 일정·업무 관리, 네이버 키워드 조회 및 순위 추적, 상품 SEO 점검 기능의 제공.</li>
+            <li><b>운영 비서(&lsquo;실장&rsquo;) 대화 기능 제공</b> — 총관리자가 입력한 질문에 대해 본인의 일정 요약을 바탕으로 답변을 생성하기 위함.</li>
+            <li><b>보안, 부정 이용 방지 및 안정적 운영</b> — 로그인 시도 제한(무차별 대입 차단), 감사 로그를 통한 변경 이력 확인, 오류 대응 및 서비스 품질 개선.</li>
+            <li><b>문의 대응 및 고지 사항 전달</b> — 이용 문의 접수와 회신, 서비스 변경·중단 등 필수 안내.</li>
+          </ol>
+        </section>
+
+        <!-- 제2조 -->
+        <section class="mi-article" id="mi-a2">
+          <h2><span class="mi-article-no">제2조</span>처리하는 개인정보의 항목</h2>
+          <p>
+            회사는 서비스 제공에 필요한 최소한의 항목만 처리합니다. 서비스는 <b>비밀번호를 사용하지 않으며</b>, 회원가입 과정에서
+            주민등록번호·계좌정보·결제정보 등 고유식별정보나 민감정보를 수집하지 않습니다.
+          </p>
+
+          <h3>1) 접속 코드 로그인 (기본)</h3>
+          <ul>
+            <li><b>필수 항목</b>: 대행사 코드 / 운영팀 코드 / 광고주 코드 등 <b>회사가 발급한 접속 코드</b>. 이메일 주소와 비밀번호는 입력하지 않습니다.</li>
+            <li><b>자동 생성 항목</b>: 로그인 성공 시 발급되는 세션 식별자(sid)와 CSRF 토큰, 세션 유효기간. 이 값들은 암호화된 세션 쿠키 안에만 담기며 서버 데이터베이스에 별도로 저장하지 않습니다.</li>
+            <li><b>운영팀 코드 관리 정보</b>: 팀 이름, 팀 코드, 발급·해지 시각.</li>
+          </ul>
+
+          <h3>2) 구글 계정 로그인 (선택 · 이용자가 직접 연결한 경우에만)</h3>
+          <ul>
+            <li><b>요청 권한 범위(scope)</b>: <b>openid</b>, <b>email</b> 두 가지뿐입니다.</li>
+            <li><b>수집 항목</b>: 구글 계정 고유 식별자(<b>sub</b>)와 구글 계정 이메일 주소.</li>
+            <li><b>이용 목적</b>: 해당 구글 계정을 기존 접속 코드·역할과 연결해 두고, 다음 로그인 시 동일인임을 확인하는 <b>본인 식별 용도로만</b> 사용합니다.</li>
+            <li><b>접근하지 않는 정보</b>: Gmail 메일 내용, 구글 드라이브 파일, 연락처, 사진, 프로필 이미지, 그 밖의 어떠한 구글 데이터에도 접근하지 않습니다.</li>
+            <li><b>이용자 통제</b>: 관리자 화면에서 언제든지 &lsquo;구글 로그인 연결 해제&rsquo;를 선택하면 저장된 연결 정보가 삭제되며, 기존 접속 코드 로그인은 그대로 사용할 수 있습니다.</li>
+          </ul>
+
+          <h3>3) 구글 캘린더 연동 (선택 · 이용자가 직접 연결한 경우에만)</h3>
+          <ul>
+            <li><b>요청 권한 범위(scope)</b>: 구글 캘린더 접근 권한(<b>https://www.googleapis.com/auth/calendar</b>).</li>
+            <li><b>수집·저장 항목</b>: 구글 OAuth <b>리프레시 토큰</b>, 서비스가 연동용으로 새로 생성한 캘린더의 식별자(캘린더 이름 &lsquo;모먼트 인사이트&rsquo;, 시간대 Asia/Seoul), 연동한 구글 계정 이메일, 연동 시각.</li>
+            <li><b>전송(쓰기) 내용</b>: 이용자 본인이 서비스에 등록한 일정·업무 항목의 <b>제목, 시작·종료 일시, 종일 여부, 완료 여부, 서비스 내부 일정 ID</b>가 위 전용 캘린더의 일정으로 생성·갱신됩니다.</li>
+            <li><b>읽는 정보</b>: 연동된 계정을 화면에 표시하기 위해 기본 캘린더의 식별자(= 구글 계정 이메일 주소) 한 가지만 조회합니다.</li>
+            <li><b>읽지 않는 정보</b>: 이용자의 기존 구글 캘린더에 들어 있는 일정 내용은 서비스로 가져오거나 열람하지 않습니다. 연동은 서비스 &rarr; 구글 방향의 내보내기입니다.</li>
+            <li><b>이용자 통제</b>: 관리자 화면에서 &lsquo;연동 해제&rsquo;를 선택하면 저장된 리프레시 토큰과 연동 정보가 삭제됩니다. 다만 이미 구글 캘린더에 생성된 일정은 구글 계정에 남아 있으므로, 필요하면 구글 캘린더에서 직접 삭제하셔야 합니다.</li>
+          </ul>
+
+          <h3>4) 서비스 이용 과정에서 입력·생성되는 정보</h3>
+          <p>다음 정보는 대부분 <b>법인·사업자의 업무 정보</b>이며, 담당자 이름 등 개인을 알아볼 수 있는 값이 포함될 수 있는 자유 입력란을 포함합니다.</p>
+          <ul>
+            <li><b>광고주·브랜드 정보</b>: 광고주명, 사업자 상호, 광고주 코드, 브랜드명, 카테고리, 주력 판매처, 공개 요약, 내부 메모.</li>
+            <li><b>키워드·순위 추적 정보</b>: 추적 키워드, 상품 URL·상품 ID·쇼핑몰명·상품명, 플레이스 URL·플레이스 ID·플레이스명, 추적 기간과 순위 이력.</li>
+            <li><b>성과·보고 정보</b>: KPI 목표와 실적, 광고 성과 수치, 대시보드 스냅샷, 보고서 제목·기간·요약·코멘트, 첨부파일 정보(파일명, 저장 경로 또는 외부 링크), 상품 SEO 점검 결과.</li>
+            <li><b>일정·업무 정보</b>: 일정 제목, 유형, 상태, 시작·종료 일시, 공개 코멘트, 내부 메모, 공개 범위, 담당자 지정 값.</li>
+            <li><b>일정 캘린더 공유 정보</b>: 공유 캘린더 이름, 참여자 식별 키와 표시 이름, 초대 코드의 <b>해시값</b>과 앞 4자리 힌트, 만료 시각(초대 코드 원문은 저장하지 않습니다).</li>
+            <li><b>문의 정보</b>: 이용 문의 시 이용자가 제공한 이름, 연락처, 문의 내용.</li>
+          </ul>
+
+          <h3>5) 자동으로 수집·생성되는 정보</h3>
+          <ul>
+            <li><b>세션 쿠키</b>: 로그인 상태 유지를 위한 암호화 쿠키 1개(제9조 참조).</li>
+            <li><b>로그인 시도 제한 기록</b>: 접속 IP 주소를 이용해 만든 <b>SHA-256 해시값</b>과 시도 횟수, 시간 창. IP 주소 원문은 이 용도로 저장하지 않습니다.</li>
+            <li><b>감사 로그(audit log)</b>: 주요 변경·연동 행위의 종류, 대상 테이블·식별자, 발생 시각과 부가 정보. 부가 정보에 포함될 수 있는 접속 코드, 토큰, 비밀값 등은 저장 전에 자동으로 마스킹됩니다.</li>
+            <li><b>서버·인프라 로그</b>: 호스팅 사업자(Vercel)가 서비스 운영·보안을 위해 생성하는 접속 기록(요청 시각, 요청 경로, 응답 상태, IP 주소, 브라우저 정보 등).</li>
+            <li><b>브라우저 로컬 저장소(localStorage)</b>: 화면 표시 설정값. 예) 안내 배너를 닫아 둔 기간(<code>miHomeDevBannerHiddenUntil</code>), 관리자 화면 표시 상태(<code>miAgencyPublicState:v2</code>), 운영 비서 관련 표시 설정(<code>mi-owner-assistant-standby</code>, <code>mi-owner-assistant-goodmorning</code>, <code>mi-owner-assistant-goodmorning-date</code>) 등. 이 값들은 이용자의 브라우저에만 저장되며 서버로 전송되지 않고, 브라우저의 사이트 데이터 삭제로 언제든 지울 수 있습니다.</li>
+          </ul>
+        </section>
+
+        <!-- 제3조 -->
+        <section class="mi-article" id="mi-a3">
+          <h2><span class="mi-article-no">제3조</span>개인정보의 처리 및 보유 기간</h2>
+          <p>
+            회사는 개인정보를 수집·이용 목적이 달성되면 지체 없이 파기합니다. 다만 관계 법령에서 보존 기간을 정한 경우에는 그 기간 동안 보관합니다.
+          </p>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>항목별 보유 기간</caption>
+              <thead>
+                <tr>
+                  <th scope="col">구분</th>
+                  <th scope="col">보유 기간</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">접속 코드 및 계정 관련 정보</th>
+                  <td>계약 종료 또는 이용 중지 시 지체 없이 파기하되, 관계 법령에 따라 보존 의무가 있는 정보는 해당 기간 동안 분리 보관 후 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">구글 로그인 연결 정보(sub, 이메일)</th>
+                  <td>이용자가 연결을 해제하는 즉시 삭제. 그 외에는 계약 종료 또는 이용 중지 시 지체 없이 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">구글 캘린더 연동 정보(리프레시 토큰 등)</th>
+                  <td>이용자가 연동을 해제하는 즉시 삭제. 그 외에는 계약 종료 또는 이용 중지 시 지체 없이 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">광고주 업무 데이터(보고서, 일정, 키워드·순위 등)</th>
+                  <td>계약 종료 또는 이용 중지 시 지체 없이 파기하되, 관계 법령에 따라 보존 의무가 있는 정보는 해당 기간 동안 분리 보관 후 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">감사 로그</th>
+                  <td>보안 점검 및 부정 이용 방지 목적으로 최대 1년 이내 보관 후 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">로그인 시도 제한 기록(IP 해시)</th>
+                  <td>제한 시간 창이 지나거나 로그인에 성공하면 삭제</td>
+                </tr>
+                <tr>
+                  <th scope="row">세션 쿠키</th>
+                  <td>로그인 후 최대 8시간(설정에 따라 5분~24시간 범위), 로그아웃 시 즉시 만료</td>
+                </tr>
+                <tr>
+                  <th scope="row">서버·인프라 접속 로그</th>
+                  <td>보안 점검 및 부정 이용 방지 목적으로 최대 1년 이내 보관 후 파기합니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">법령에 따른 보존</th>
+                  <td>통신비밀보호법에 따른 접속기록 3개월, 전자상거래법에 따른 계약 또는 청약철회 등에 관한 기록 5년, 대금결제 및 재화 등의 공급에 관한 기록 5년, 소비자의 불만 또는 분쟁처리에 관한 기록 3년 동안 각각 보존합니다.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 제4조 -->
+        <section class="mi-article" id="mi-a4">
+          <h2><span class="mi-article-no">제4조</span>개인정보의 제3자 제공</h2>
+          <p>
+            회사는 정보주체의 개인정보를 제1조에 명시한 범위 내에서만 처리하며, <b>정보주체의 동의, 법률의 특별한 규정 등
+            개인정보 보호법 제17조 및 제18조에 해당하는 경우에만</b> 제3자에게 제공합니다.
+          </p>
+          <p>
+            현재 회사는 이용자의 개인정보를 영업·마케팅 목적으로 제3자에게 판매하거나 제공하지 않습니다.
+            다만 <b>이용자가 직접 요청한 구글 캘린더 연동</b>의 경우, 이용자 본인의 구글 계정으로 일정 정보가 전송되며,
+            이는 이용자의 명시적 선택에 따른 본인 계정으로의 전송입니다. 그 밖의 외부 서비스 이용은 제5조(위탁)에 따릅니다.
+          </p>
+          <p>
+            수사기관 등이 법령에 근거한 적법한 절차로 자료 제출을 요구하는 경우에는 관계 법령에서 정한 범위 내에서 이에 응할 수 있습니다.
+          </p>
+        </section>
+
+        <!-- 제5조 -->
+        <section class="mi-article" id="mi-a5">
+          <h2><span class="mi-article-no">제5조</span>개인정보 처리업무의 위탁 및 국외 이전</h2>
+          <p>
+            회사는 원활한 서비스 제공을 위해 아래와 같이 개인정보 처리업무를 위탁하고 있습니다. 위탁계약 시 개인정보 보호법 제26조에 따라
+            처리 목적 외 이용 금지, 재위탁 제한, 안전성 확보 조치, 관리·감독 및 손해배상 등에 관한 사항을 계약서에 반영하고 있습니다.
+          </p>
+
+          <h3>1) 국내외 수탁자 현황</h3>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>수탁자와 위탁 업무</caption>
+              <thead>
+                <tr>
+                  <th scope="col">수탁자</th>
+                  <th scope="col">위탁 업무</th>
+                  <th scope="col">이전되는 항목</th>
+                  <th scope="col">보관 국가·지역</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Vercel Inc.</th>
+                  <td>웹 서비스 호스팅, 애플리케이션 실행, 콘텐츠 전송</td>
+                  <td>서비스 이용 과정에서 전송되는 요청 정보, 접속 IP·브라우저 정보 등 서버 로그</td>
+                  <td>서비스 함수 실행 리전은 <b>서울(icn1)</b>로 지정되어 있습니다. 로그·부가 인프라의 실제 보관 위치는 미국 등 수탁자 운영 지역입니다.</td>
+                </tr>
+                <tr>
+                  <th scope="row">Supabase Inc.</th>
+                  <td>데이터베이스 및 파일 저장소 운영</td>
+                  <td>제2조 2)·3)·4)의 저장 항목 전부</td>
+                  <td>미국 등 수탁자 운영 지역</td>
+                </tr>
+                <tr>
+                  <th scope="row">Google LLC</th>
+                  <td>구글 계정 로그인(OpenID Connect) 인증, 구글 캘린더 연동 처리</td>
+                  <td>구글 계정 식별자(sub)·이메일, (연동 시) 일정 제목·일시·상태</td>
+                  <td>미국 등 수탁자 운영 지역</td>
+                </tr>
+                <tr>
+                  <th scope="row">Anthropic PBC</th>
+                  <td>운영 비서(&lsquo;실장&rsquo;) 대화 응답 생성</td>
+                  <td>이용자가 입력한 질문(최대 2,000자), 직전 대화 기록(최대 12건), 본인 일정 요약(최대 60건: 제목·시작 일시·상태·종일 여부)</td>
+                  <td>미국 등 수탁자 운영 지역</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            위 수탁자 중 국외에 소재하거나 국외에서 정보를 처리하는 사업자에 대해서는 개인정보 보호법 제28조의8에 따른
+            <b>국외 이전</b>에 해당하며, 이전 방법은 <b>서비스 이용 시점에 정보통신망을 통한 전송</b>, 이전 시기는
+            <b>해당 기능을 이용하는 때</b>입니다. 각 사업자의 소재지와 보관 위치는 위 표와 같습니다.
+            국외 이전을 원하지 않는 경우 mml93@naver.com 으로 거부를 요청할 수 있으며,
+            이 경우 일부 기능 이용이 제한될 수 있습니다.
+          </p>
+
+          <h3>2) 개인정보가 이전되지 않는 외부 API 연계</h3>
+          <p>
+            서비스는 키워드 조회와 순위 추적을 위해 <b>네이버 오픈 API</b>(openapi.naver.com) 및
+            <b>네이버클라우드플랫폼 API Hub</b>(naverapihub.apigw.ntruss.com)에 요청을 보냅니다.
+            이때 전송되는 값은 <b>검색 키워드, 상품·플레이스 식별자 등 조회 조건</b>과 회사의 API 인증키이며,
+            이용자의 개인정보나 로그인 정보는 전송되지 않습니다. 따라서 이 연계는 개인정보 처리위탁에 해당하지 않습니다.
+          </p>
+        </section>
+
+        <!-- 제6조 -->
+        <section class="mi-article" id="mi-a6">
+          <h2><span class="mi-article-no">제6조</span>개인정보의 파기 절차 및 방법</h2>
+          <p>
+            회사는 보유 기간이 끝나거나 처리 목적이 달성되어 개인정보가 불필요하게 되었을 때 지체 없이 해당 개인정보를 파기합니다.
+          </p>
+          <ol class="mi-num">
+            <li><b>파기 절차</b> — 파기 사유가 발생한 개인정보를 선정하고, 개인정보 보호책임자의 승인을 받아 파기합니다. 법령에 따라 계속 보존해야 하는 정보는 별도의 저장소로 옮겨 보관 목적 외의 용도로 이용하지 않습니다.</li>
+            <li><b>파기 방법</b>
+              <ul>
+                <li>전자적 파일 형태: 데이터베이스 레코드 및 저장소 객체를 복구·재생할 수 없는 방법으로 영구 삭제합니다. 구글 로그인·캘린더 연동 정보는 이용자가 해제를 요청하는 즉시 해당 레코드를 삭제합니다.</li>
+                <li>출력물·서면 형태: 분쇄하거나 소각합니다.</li>
+              </ul>
+            </li>
+            <li><b>수탁자 보관분</b> — 위탁 관계가 종료되거나 파기 사유가 발생한 경우, 제5조의 수탁자가 보관 중인 개인정보도 지체 없이 파기 또는 반환하도록 관리·감독합니다.</li>
+          </ol>
+        </section>
+
+        <!-- 제7조 -->
+        <section class="mi-article" id="mi-a7">
+          <h2><span class="mi-article-no">제7조</span>정보주체와 법정대리인의 권리·의무 및 행사 방법</h2>
+          <p>정보주체는 회사에 대해 언제든지 다음 각 호의 권리를 행사할 수 있습니다.</p>
+          <ol class="mi-num">
+            <li>개인정보 <b>열람</b> 요구</li>
+            <li>오류 등이 있을 경우 <b>정정</b> 요구</li>
+            <li><b>삭제</b> 요구</li>
+            <li><b>처리정지</b> 요구</li>
+            <li>개인정보의 <b>전송</b> 요구(관계 법령이 정하는 범위에서)</li>
+          </ol>
+          <p>
+            권리 행사는 서면, 전자우편 등을 통해 하실 수 있으며, 회사는 지체 없이 조치합니다. 정보주체가 개인정보의 오류 등에 대한
+            정정 또는 삭제를 요구한 경우, 회사는 정정 또는 삭제를 완료할 때까지 해당 개인정보를 이용하거나 제공하지 않습니다.
+          </p>
+          <p>
+            권리 행사는 정보주체의 법정대리인이나 위임을 받은 자 등 대리인을 통해서도 가능하며, 이 경우
+            개인정보 처리 방법에 관한 고시 별지 제11호 서식에 따른 위임장을 제출하셔야 합니다.
+          </p>
+          <div class="mi-callout accent">
+            <h3>접수·처리 창구</h3>
+            <p>담당 부서: 대표 직속</p>
+            <p>이메일: mml93@naver.com &middot; 전화: 전화 상담 미운영</p>
+          </div>
+          <div class="mi-callout">
+            <h3>서비스 내에서 직접 가능한 조치</h3>
+            <ul>
+              <li><b>구글 로그인 연결 해제</b>: 관리자 화면 &rarr; 구글 로그인 연결 &rarr; &lsquo;연결 해제&rsquo;. 해제 시 저장된 구글 계정 식별자와 이메일이 삭제됩니다.</li>
+              <li><b>구글 캘린더 연동 해제</b>: 관리자 화면 &rarr; 구글 캘린더 연동 &rarr; &lsquo;연동 해제&rsquo;. 해제 시 리프레시 토큰과 연동 정보가 삭제됩니다.</li>
+              <li><b>구글 계정 쪽에서의 권한 철회</b>: 구글 계정 설정의 &lsquo;서드파티 앱 및 서비스&rsquo;(<a class="mi-inline-link" href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer">myaccount.google.com/connections</a>)에서 모먼트 인사이트의 접근 권한을 직접 철회할 수 있습니다.</li>
+              <li><b>로그아웃</b>: 세션 쿠키가 즉시 만료되고, 브라우저에 남아 있던 이전 버전의 접속 코드 저장값도 함께 삭제됩니다.</li>
+            </ul>
+          </div>
+        </section>
+
+        <!-- 제8조 -->
+        <section class="mi-article" id="mi-a8">
+          <h2><span class="mi-article-no">제8조</span>개인정보의 안전성 확보 조치</h2>
+          <p>회사는 개인정보의 안전성 확보를 위해 다음과 같은 기술적·관리적 조치를 시행하고 있습니다.</p>
+          <ul>
+            <li><b>세션 정보의 암호화</b> — 로그인 세션 정보는 AES-256-GCM 방식으로 암호화하고 인증 태그로 위·변조를 검증합니다. 세션 쿠키는 <code>HttpOnly</code>, <code>SameSite=Strict</code>, 운영 환경에서는 <code>Secure</code> 및 <code>__Host-</code> 접두어를 적용해 스크립트 접근과 교차 사이트 전송을 차단합니다.</li>
+            <li><b>전송 구간 암호화</b> — 모든 통신에 HTTPS를 사용하며, HSTS(<code>max-age=31536000; includeSubDomains</code>)와 <code>upgrade-insecure-requests</code>를 적용해 평문 전송을 방지합니다.</li>
+            <li><b>요청 위조 방지</b> — 상태를 변경하는 요청에는 세션에 결합된 CSRF 토큰(<code>x-mi-csrf</code>)을 요구하고, 허용된 출처(Origin)에서 온 요청만 처리합니다.</li>
+            <li><b>브라우저 보안 헤더</b> — 콘텐츠 보안 정책(CSP), <code>X-Frame-Options: DENY</code>, <code>X-Content-Type-Options: nosniff</code>, <code>Referrer-Policy</code>, <code>Permissions-Policy</code> 등을 적용합니다.</li>
+            <li><b>접근 권한 통제</b> — 데이터베이스 전 테이블에 행 수준 보안(RLS)을 적용하고, 구글 로그인 연결 정보와 캘린더 연동 정보 테이블은 정책 없는 강제 RLS로 설정해 <b>서버 관리 권한(service_role)에서만</b> 접근할 수 있게 했습니다. 화면별로도 총관리자·운영팀·광고주 역할에 따라 조회 범위를 분리합니다.</li>
+            <li><b>로그인 시도 제한</b> — 동일한 자격 증명과 동일한 IP에 대해 일정 시간 창(기본 15분) 안의 시도 횟수를 제한하며, 이때 IP 주소는 원문이 아닌 <b>SHA-256 해시</b>로만 사용합니다.</li>
+            <li><b>감사 로그와 민감정보 마스킹</b> — 주요 변경·연동 행위를 감사 로그에 기록하되, 접속 코드·토큰·비밀값·쿠키 등 민감한 값은 저장 전에 자동으로 제거 또는 마스킹합니다.</li>
+            <li><b>비공개 화면 보호</b> — 관리자 화면과 광고주 화면은 캐시를 저장하지 않도록(<code>no-store</code>) 하고 검색엔진 색인에서 제외(<code>noindex, nofollow</code>)합니다.</li>
+            <li><b>비밀번호 미보관</b> — 서비스는 비밀번호를 사용하지 않으므로 비밀번호를 저장하지 않으며, 총관리자 접속 코드는 해시값으로 대조합니다.</li>
+            <li><b>관리적 조치</b> — 개인정보 취급자를 최소한으로 지정하고 접근 권한을 정기적으로 점검합니다. 내부 관리계획을 수립·시행하고 있으며, 개인정보 취급자 교육은 연 1회 이상 실시합니다.</li>
+          </ul>
+        </section>
+
+        <!-- 제9조 -->
+        <section class="mi-article" id="mi-a9">
+          <h2><span class="mi-article-no">제9조</span>쿠키 등 자동수집장치의 설치·운영 및 거부</h2>
+          <p>
+            회사는 광고 목적의 추적 쿠키나 제3자 분석·광고 도구를 사용하지 않습니다. 서비스가 사용하는 쿠키와 저장소는 다음과 같습니다.
+          </p>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>사용 중인 쿠키·로컬 저장소</caption>
+              <thead>
+                <tr>
+                  <th scope="col">이름</th>
+                  <th scope="col">목적</th>
+                  <th scope="col">속성 · 유지 기간</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row"><code>__Host-mi-session</code><br />(개발 환경 <code>mi-session</code>)</th>
+                  <td>로그인 상태 유지 및 역할·권한 확인. 값은 암호화되어 있으며 서버만 해독할 수 있습니다.</td>
+                  <td>HttpOnly, SameSite=Strict, Secure, Path=/ · 기본 8시간(설정 범위 5분~24시간), 로그아웃 시 즉시 만료</td>
+                </tr>
+                <tr>
+                  <th scope="row">브라우저 로컬 저장소</th>
+                  <td>안내 배너 닫기 기간, 화면 표시 설정 등 UI 상태 보관(서버로 전송되지 않음)</td>
+                  <td>이용자가 브라우저에서 사이트 데이터를 삭제할 때까지</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            구글 로그인 과정에서 사용되는 <b>state 값</b>은 요청 주소에 담기는 서명된 일회성 문자열로,
+            변조를 막기 위한 서명과 임의값(nonce)을 포함하며 <b>10분</b>이 지나면 무효가 됩니다. 같은 임의값을 담은
+            <b>단기 보안 쿠키(mi-goauth-nonce, 최대 10분, HttpOnly)</b>가 로그인 시작 시 발급되어 요청이 같은 브라우저에서
+            시작되었는지 확인하는 용도로만 쓰이며, 구글에서 돌아오는 즉시 삭제됩니다. 별도로 저장되지 않습니다.
+          </p>
+          <p>
+            쿠키 저장을 거부하려면 웹 브라우저의 설정(예: Chrome &rarr; 설정 &rarr; 개인정보 보호 및 보안 &rarr; 쿠키)에서
+            쿠키 허용 여부를 변경하거나 저장된 쿠키를 삭제할 수 있습니다. 다만 <b>세션 쿠키를 거부하면 로그인이 유지되지 않아
+            서비스를 이용할 수 없습니다.</b>
+          </p>
+        </section>
+
+        <!-- 제10조 -->
+        <section class="mi-article" id="mi-a10">
+          <h2><span class="mi-article-no">제10조</span>구글 사용자 데이터의 처리 (Google API Services User Data Policy)</h2>
+          <p>
+            모먼트 인사이트가 구글 API를 통해 이용자 정보를 수신하고 이를 이용·전송하는 행위는
+            <b>Google API Services User Data Policy</b>(구글 API 서비스 이용자 데이터 정책)를 따르며, 여기에는
+            <b>제한적 사용 요건(Limited Use requirements)</b>이 포함됩니다.
+          </p>
+          <div class="mi-callout accent">
+            <h3>제한적 사용(Limited Use) 준수 사항</h3>
+            <ul>
+              <li>구글 API로 수신한 데이터는 <b>이용자에게 제공하는 기능을 구현하고 개선하기 위한 목적으로만</b> 사용합니다.</li>
+              <li>수신한 데이터를 <b>광고 목적으로 사용하거나 제3자에게 이전·판매하지 않습니다.</b></li>
+              <li>수신한 데이터로 <b>맞춤형 광고, 데이터 브로커, 신용평가 등 어떠한 형태의 프로파일링도 수행하지 않습니다.</b></li>
+              <li>보안 문제 대응, 법령 준수, 이용자의 명시적 동의가 있는 경우를 제외하고 <b>사람이 데이터를 열람하지 않습니다.</b></li>
+              <li>일반화·집계되지 않은 구글 사용자 데이터를 <b>인공지능·머신러닝 모델의 학습에 사용하지 않습니다.</b></li>
+            </ul>
+          </div>
+
+          <h3>1) 구글 계정 식별자와 이메일의 사용 범위</h3>
+          <p>
+            서비스가 요청하는 권한은 <b>openid</b>와 <b>email</b>뿐입니다. 이를 통해 얻는 구글 계정 고유 식별자(sub)와 이메일 주소는
+            <b>오직 로그인 시 이용자를 식별하고 기존 접속 코드와 연결하기 위한 용도로만</b> 저장·사용하며,
+            마케팅 발송, 프로파일링, 외부 제공 등 다른 용도로 사용하지 않습니다. Gmail, 드라이브, 연락처 등 다른 구글 데이터에는 접근하지 않습니다.
+          </p>
+
+          <h3>2) 구글 캘린더 데이터의 사용 범위</h3>
+          <p>
+            구글 캘린더 연동은 이용자가 직접 연결한 경우에만 활성화됩니다. 서비스는 연동 전용 캘린더를 새로 만들고,
+            이용자가 서비스에 등록한 본인의 일정 항목만 그 캘린더로 <b>내보냅니다(쓰기)</b>. 이용자의 기존 캘린더 일정을
+            읽어 오거나 분석하지 않으며, 캘린더 데이터를 광고나 모델 학습에 사용하지 않습니다.
+          </p>
+
+          <h3>3) 연동 해제 방법</h3>
+          <ol class="mi-num">
+            <li>서비스 내: 관리자 화면에서 &lsquo;구글 로그인 연결 해제&rsquo; 또는 &lsquo;구글 캘린더 연동 해제&rsquo;를 선택합니다. 해제 즉시 서비스에 저장된 연결 정보와 리프레시 토큰이 삭제됩니다.</li>
+            <li>구글 계정에서: <a class="mi-inline-link" href="https://myaccount.google.com/connections" target="_blank" rel="noopener noreferrer">myaccount.google.com/connections</a>에서 모먼트 인사이트를 선택해 접근 권한을 철회할 수 있습니다.</li>
+            <li>이미 구글 캘린더에 생성된 일정은 이용자의 구글 계정에 남으므로, 필요하면 구글 캘린더에서 직접 삭제하시기 바랍니다.</li>
+          </ol>
+          <p>
+            구글 API 서비스 이용자 데이터 정책 전문은
+            <a class="mi-inline-link" href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener noreferrer">developers.google.com/terms/api-services-user-data-policy</a>에서 확인하실 수 있습니다.
+          </p>
+        </section>
+
+        <!-- 제11조 -->
+        <section class="mi-article" id="mi-a11">
+          <h2><span class="mi-article-no">제11조</span>개인정보 보호책임자</h2>
+          <p>
+            회사는 개인정보 처리에 관한 업무를 총괄해서 책임지고, 개인정보 처리와 관련한 정보주체의 불만 처리 및 피해 구제 등을 위하여
+            아래와 같이 개인정보 보호책임자를 지정하고 있습니다.
+          </p>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>개인정보 보호책임자 및 담당 부서</caption>
+              <thead>
+                <tr>
+                  <th scope="col">구분</th>
+                  <th scope="col">개인정보 보호책임자</th>
+                  <th scope="col">개인정보 보호 담당부서</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">성명 / 부서명</th>
+                  <td>신동빈</td>
+                  <td>대표 직속</td>
+                </tr>
+                <tr>
+                  <th scope="row">직책</th>
+                  <td>대표이사 (개인정보 보호책임자 겸임)</td>
+                  <td>신동빈 · 대표이사</td>
+                </tr>
+                <tr>
+                  <th scope="row">연락처</th>
+                  <td>mml93@naver.com (전화 상담 미운영)</td>
+                  <td>mml93@naver.com (전화 상담 미운영)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            정보주체는 서비스를 이용하면서 발생한 모든 개인정보 보호 관련 문의, 불만 처리, 피해 구제 등에 관한 사항을
+            개인정보 보호책임자 및 담당부서로 문의하실 수 있습니다. 회사는 지체 없이 답변 및 처리해 드리겠습니다.
+          </p>
+        </section>
+
+        <!-- 제12조 -->
+        <section class="mi-article" id="mi-a12">
+          <h2><span class="mi-article-no">제12조</span>권익침해 구제방법</h2>
+          <p>
+            정보주체는 개인정보 침해로 인한 구제를 받기 위하여 아래 기관에 분쟁 해결이나 상담 등을 신청할 수 있습니다.
+          </p>
+          <div class="mi-table-scroll">
+            <table>
+              <caption>개인정보 침해 관련 상담·신고 기관</caption>
+              <thead>
+                <tr>
+                  <th scope="col">기관</th>
+                  <th scope="col">담당 업무</th>
+                  <th scope="col">연락처</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">개인정보 침해신고센터<br />(한국인터넷진흥원)</th>
+                  <td>개인정보 침해 사실 신고, 상담 신청</td>
+                  <td>(국번없이) 118<br /><a class="mi-inline-link" href="https://privacy.kisa.or.kr" target="_blank" rel="noopener noreferrer">privacy.kisa.or.kr</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">개인정보 분쟁조정위원회</th>
+                  <td>개인정보 분쟁조정 신청, 집단분쟁조정</td>
+                  <td>1833-6972<br /><a class="mi-inline-link" href="https://www.kopico.go.kr" target="_blank" rel="noopener noreferrer">www.kopico.go.kr</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">대검찰청 사이버수사과</th>
+                  <td>개인정보 침해 관련 범죄 신고·상담</td>
+                  <td>(국번없이) 1301<br /><a class="mi-inline-link" href="https://www.spo.go.kr" target="_blank" rel="noopener noreferrer">www.spo.go.kr</a></td>
+                </tr>
+                <tr>
+                  <th scope="row">경찰청 사이버수사국</th>
+                  <td>개인정보 침해 관련 범죄 신고·상담</td>
+                  <td>(국번없이) 182<br /><a class="mi-inline-link" href="https://ecrm.police.go.kr" target="_blank" rel="noopener noreferrer">ecrm.police.go.kr</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            또한 개인정보 보호법 제35조(개인정보의 열람), 제36조(개인정보의 정정·삭제), 제37조(개인정보의 처리정지 등)의 규정에 의한 요구에 대하여
+            공공기관의 장이 행한 처분 또는 부작위로 인하여 권리 또는 이익의 침해를 받은 자는 행정심판법이 정하는 바에 따라 행정심판을 청구할 수 있습니다.
+            (중앙행정심판위원회 &middot; 국번없이 110 &middot; <a class="mi-inline-link" href="https://www.simpan.go.kr" target="_blank" rel="noopener noreferrer">www.simpan.go.kr</a>)
+          </p>
+        </section>
+
+        <!-- 제13조 -->
+        <section class="mi-article" id="mi-a13">
+          <h2><span class="mi-article-no">제13조</span>개인정보처리방침의 변경</h2>
+          <p>
+            이 개인정보처리방침은 법령, 정부 정책 또는 서비스 내용의 변경에 따라 수정될 수 있습니다.
+            내용의 추가, 삭제 및 수정이 있을 경우 변경 사항의 시행 <b>7일 전</b>(이용자에게 불리하거나 중대한 변경인 경우 <b>30일 전</b>)부터
+            서비스 내 공지사항 또는 본 페이지를 통해 변경 사유와 내용을 공지합니다.
+          </p>
+          <ul>
+            <li>공고일자: 2026-08-24</li>
+            <li>시행일자: 2026-08-24 (이 방침은 게시한 날부터 적용합니다)</li>
+            <li>이전 버전 방침: 최초 제정으로 이전 버전이 없습니다.</li>
+          </ul>
+        </section>
+
+      </article>
+
+      <div class="mi-effective">
+        <strong>본 개인정보처리방침은 2026-08-24부터 적용됩니다.</strong><br />
+        문의: mml93@naver.com &middot; 전화 상담 미운영
+      </div>
+    </div>
+  </main>
+
+  <footer class="mi-footer">
+    <div class="mi-shell mi-footer-inner">
+      <div class="mi-footer-brand">
+        <strong>Moment Insight</strong>
+        <span>KPI, 보고서, 일정, 광고 성과를 연결하는 마케팅 운영 플랫폼</span>
+      </div>
+      <nav class="mi-footer-links" aria-label="하단 바로가기">
+        <a href="/">홈</a>
+        <a href="/client#mi-dashboard">광고주 대시보드</a>
+        <a href="/admin">운영팀 로그인</a>
+        <a href="/privacy">개인정보처리방침</a>
+        <a href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 문의</a>
+      </nav>
+    </div>
+  </footer>
+</section>
+</body>
+</html>

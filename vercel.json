@@ -118,6 +118,10 @@
     {
       "source": "/home",
       "destination": "/home.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
     }
   ]
 }

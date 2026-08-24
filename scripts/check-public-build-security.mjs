@@ -164,7 +164,7 @@ try {
   process.exit(1);
 }
 
-for (const required of ["index.html", "home.html", "admin.html", "client.html", "robots.txt", "sitemap.xml"]) {
+for (const required of ["index.html", "home.html", "admin.html", "client.html", "privacy.html", "robots.txt", "sitemap.xml"]) {
   if (!files.some((filePath) => relative(filePath) === required)) {
     failures.push(`${required}: required public artifact is missing`);
   }

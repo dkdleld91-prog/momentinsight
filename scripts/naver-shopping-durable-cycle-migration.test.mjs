@@ -54,6 +54,9 @@ const runtime111ExactCandidateGateMigration = findMigrationContaining(
 const runtime1112ExactCandidateGateMigration = findMigrationContaining(
   '-- Runtime 1.1.12 exact candidate gate',
 );
+const atomicSuccessProofHardeningMigration = findMigrationContaining(
+  '-- N Shopping atomic success proof hardening',
+);
 
 function runtime119FunctionSql(name, nextName = null) {
   const start = runtime119Migration.indexOf(`create or replace function public.${name}`);
@@ -639,4 +642,211 @@ test('runtime 1.1.12 candidate cadence is exact-identity and completely idle ins
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cooldownUntil: 'expired-but-uncleared' }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, primarySeenAt: Date.now() - 3 * 60_000 - 1 }), false);
   assert.equal(candidateAllowed({ fingerprint: expectedFingerprint, cadenceMode: 'candidate' }), false);
+});
+
+test('atomic success proof is ledger-backed, complete, organic and retry-idempotent', () => {
+  assert.ok(
+    atomicSuccessProofHardeningMigration,
+    'an additive migration must bind each atomic success to immutable group, commit, and snapshot proof',
+  );
+  assert.match(
+    atomicSuccessProofHardeningMigration.file,
+    /^\d{14}_naver_shopping_atomic_success_proof_hardening\.sql$/u,
+  );
+  const sql = atomicSuccessProofHardeningMigration.source;
+  const functionNames = [...sql.matchAll(/create or replace function public\.(mi_[a-z0-9_]+)\(/giu)]
+    .map((match) => match[1]);
+  assert.deepEqual(functionNames, [
+    'mi_record_naver_shopping_worker_success',
+    'mi_set_naver_shopping_worker_cadence',
+  ]);
+
+  const successStart = sql.indexOf(
+    'create or replace function public.mi_record_naver_shopping_worker_success',
+  );
+  const successEnd = sql.indexOf(
+    'create or replace function public.mi_set_naver_shopping_worker_cadence',
+    successStart + 1,
+  );
+  assert.ok(successStart >= 0 && successEnd > successStart);
+  const successSql = sql.slice(successStart, successEnd);
+  const successDeclaration = successSql.slice(0, successSql.indexOf('begin'));
+  assert.match(successDeclaration, /v_now timestamptz;/iu);
+  assert.doesNotMatch(successDeclaration, /v_now timestamptz\s*:=\s*clock_timestamp\(\)/iu);
+  assert.match(
+    successSql,
+    /select \* into current_row[\s\S]*where lane_key = 'global'\s*for update;\s*v_now := clock_timestamp\(\);/iu,
+    'the global row must be locked before the fresh lease/proof clock is read',
+  );
+  assert.match(
+    successSql,
+    /lease_worker_id is distinct from lower\(trim\(coalesce\(p_worker_id, ''\)\)\)[\s\S]*lease_token is distinct from p_lane_token[\s\S]*run_id is distinct from p_run_id[\s\S]*lease_until <= v_now[\s\S]*circuit_state = 'open'/iu,
+  );
+  assert.match(
+    successSql,
+    /current_row\.current_job_kind is distinct from 'tracker'[\s\S]*current_row\.current_tracker_id is distinct from p_tracker_id[\s\S]*atomic_current_job_mismatch/iu,
+    'a delayed prior-group success must not count after the live run advances to another tracker job',
+  );
+  assert.match(
+    successSql,
+    /into representative_commit_count[\s\S]*event_type = 'tracker_committed'[\s\S]*committed\.run_id = p_run_id[\s\S]*committed\.worker_id = current_row\.lease_worker_id[\s\S]*committed\.tracker_id = p_tracker_id[\s\S]*committed\.collection_id = normalized_collection_id[\s\S]*representative_commit_count <> 1/iu,
+    'the representative tracker and collection must identify exactly one commit in the live run',
+  );
+  assert.match(
+    successSql,
+    /select committed\.claim_id, committed\.group_fingerprint[\s\S]*committed\.tracker_id = p_tracker_id[\s\S]*committed\.collection_id = normalized_collection_id/iu,
+    'claim scope must be derived from the exact representative commit',
+  );
+  assert.match(
+    successSql,
+    /event_type = 'group_claimed'[\s\S]*event\.claim_id = group_claim_id[\s\S]*event\.run_id = p_run_id[\s\S]*event\.worker_id = current_row\.lease_worker_id[\s\S]*event\.group_fingerprint = expected_group_fingerprint[\s\S]*group_claim_count <> 1/iu,
+    'one and only one immutable group must identify the current claim, not the whole worker run',
+  );
+  assert.match(
+    successSql,
+    /event_type = 'job_failed'[\s\S]*failed\.claim_id = group_claim_id/iu,
+    'a failed claim can never contribute an atomic success',
+  );
+  assert.match(
+    successSql,
+    /into tracker_claim_count[\s\S]*event_type = 'tracker_claimed'[\s\S]*claimed\.claim_id = group_claim_id[\s\S]*tracker_claim_count < 1/iu,
+  );
+  assert.match(
+    successSql,
+    /event_type = 'tracker_claimed'[\s\S]*claimed\.claim_id = group_claim_id[\s\S]*event_type = 'tracker_committed'[\s\S]*committed\.claim_id = claimed\.claim_id[\s\S]*committed\.run_id = p_run_id[\s\S]*committed\.worker_id = current_row\.lease_worker_id[\s\S]*committed\.tracker_id = claimed\.tracker_id[\s\S]*committed\.collection_id = normalized_collection_id[\s\S]*committed\.checked_count = 300/iu,
+  );
+  assert.match(
+    successSql,
+    /naver_rank_snapshots as snapshot[\s\S]*snapshot\.tracker_id = claimed\.tracker_id[\s\S]*snapshot\.collection_id = normalized_collection_id[\s\S]*snapshot\.checked_count = 300[\s\S]*snapshot\.source = 'naver_shopping_results_collector'/iu,
+  );
+  assert.match(successSql, /snapshot\.matched = false[\s\S]*snapshot\.item -> 'isOrganic' = 'true'::jsonb/iu);
+  assert.match(successSql, /snapshot\.item -> 'adExcluded' = 'true'::jsonb/iu);
+  assert.match(successSql, /snapshot\.item ->> 'rankPolicy' = 'organic_only'/iu);
+  assert.match(successSql, /snapshot\.item ->> 'rankEvidence' = 'naver_shopping_organic_list'/iu);
+  assert.match(successSql, /snapshot\.item ->> 'collectionId' = normalized_collection_id/iu);
+  assert.match(
+    successSql,
+    /snapshot\.item -> 'excludedAdCount' = pg_catalog\.to_jsonb\(p_excluded_ad_count\)/iu,
+  );
+  assert.match(
+    successSql,
+    /jsonb_array_elements\(\s*case when pg_catalog\.jsonb_typeof\(snapshot\.top_items\) = 'array'[\s\S]*else '\[\]'::jsonb end\s*\)/iu,
+    'malformed top-item JSON must reject proof instead of aborting the control RPC',
+  );
+
+  const retryStart = successSql.indexOf('if current_row.last_collection_id = normalized_collection_id then');
+  const retryEnd = successSql.indexOf('end if;', retryStart);
+  assert.ok(retryStart >= 0 && retryEnd > retryStart);
+  const retryBranch = successSql.slice(retryStart, retryEnd);
+  assert.match(retryBranch, /'recorded', true/iu);
+  assert.match(retryBranch, /'alreadyRecorded', true/iu);
+  assert.doesNotMatch(
+    retryBranch,
+    /\bupdate\b|(?:success_streak|stability_started_at)\s*=/iu,
+    'a retry may read eligibility state but must not assign or update it',
+  );
+  assert.ok(
+    retryStart < successSql.indexOf('next_success_streak :='),
+    'an ambiguous response retry must return before incrementing the proof streak',
+  );
+
+  assert.match(successSql, /current_row\.circuit_reason is distinct from 'auto_navigation_probe'/iu);
+  assert.match(successSql, /current_row\.circuit_reason is distinct from 'auto_transient_system_probe'/iu);
+  assert.match(successSql, /set worker_quarantined_until = null/iu);
+  assert.match(successSql, /security invoker/iu);
+  assert.match(successSql, /set search_path = ''/iu);
+});
+
+test('candidate cadence refreshes its clock after locking and otherwise preserves the exact gate', () => {
+  assert.ok(atomicSuccessProofHardeningMigration);
+  const sql = atomicSuccessProofHardeningMigration.source;
+  const candidateStart = sql.indexOf(
+    'create or replace function public.mi_set_naver_shopping_worker_cadence',
+  );
+  const candidateEnd = sql.indexOf(
+    'revoke all on function public.mi_record_naver_shopping_worker_success',
+    candidateStart + 1,
+  );
+  assert.ok(candidateStart >= 0 && candidateEnd > candidateStart);
+  const candidateSql = sql.slice(candidateStart, candidateEnd);
+  const declaration = candidateSql.slice(0, candidateSql.indexOf('begin'));
+  assert.match(declaration, /v_now timestamptz;/iu);
+  assert.doesNotMatch(declaration, /v_now timestamptz\s*:=\s*clock_timestamp\(\)/iu);
+  assert.match(
+    candidateSql,
+    /where lane_key = 'global'\s*for update;\s*v_now := clock_timestamp\(\);\s*select \(/iu,
+  );
+  assert.doesNotMatch(candidateSql, /stability_started_at\s*=/iu);
+  assert.doesNotMatch(candidateSql, /success_streak\s*=/iu);
+  assert.match(candidateSql, /security invoker/iu);
+  assert.match(candidateSql, /set search_path = ''/iu);
+  assert.match(
+    sql,
+    /revoke all on function public\.mi_record_naver_shopping_worker_success\(text, uuid, uuid, uuid, text, integer, integer, integer, text\)\s*from public, anon, authenticated, service_role;[\s\S]*grant execute on function public\.mi_record_naver_shopping_worker_success\(text, uuid, uuid, uuid, text, integer, integer, integer, text\)\s*to service_role;/iu,
+  );
+  assert.match(
+    sql,
+    /revoke all on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s*from public, anon, authenticated, service_role;[\s\S]*grant execute on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s*to service_role;/iu,
+  );
+  assert.doesNotMatch(sql, /grant[^;]+to (?:anon|authenticated)/iu);
+});
+
+test('same-run groups each count once and both immediate and delayed retries do not count twice', () => {
+  const record = (state, proof) => {
+    if (!state.liveRun
+      || state.currentJobKind !== 'tracker'
+      || state.currentTrackerId !== proof.trackerId
+      || !state.validClaimIds.has(proof.claimId)) {
+      return { ...state, recorded: false, alreadyRecorded: false };
+    }
+    if (state.lastCollectionId === proof.collectionId) {
+      return { ...state, recorded: true, alreadyRecorded: true };
+    }
+    return {
+      ...state,
+      lastCollectionId: proof.collectionId,
+      successStreak: state.successStreak + 1,
+      stabilityStartedAt: state.stabilityStartedAt || 1,
+      recorded: true,
+      alreadyRecorded: false,
+    };
+  };
+  const initial = {
+    liveRun: true,
+    runId: 'same-worker-run',
+    currentJobKind: 'tracker',
+    currentTrackerId: 'tracker-a',
+    validClaimIds: new Set(['claim-a', 'claim-b']),
+    lastCollectionId: 'pw-chrome-prior',
+    successStreak: 5,
+    stabilityStartedAt: 123,
+  };
+  const groupA = record(initial, {
+    claimId: 'claim-a',
+    trackerId: 'tracker-a',
+    collectionId: 'pw-chrome-group-a',
+  });
+  const groupB = record({ ...groupA, currentTrackerId: 'tracker-b' }, {
+    claimId: 'claim-b',
+    trackerId: 'tracker-b',
+    collectionId: 'pw-chrome-group-b',
+  });
+  const immediateRetry = record(groupB, {
+    claimId: 'claim-b',
+    trackerId: 'tracker-b',
+    collectionId: 'pw-chrome-group-b',
+  });
+  const delayedPriorRetry = record(groupB, {
+    claimId: 'claim-a',
+    trackerId: 'tracker-a',
+    collectionId: 'pw-chrome-group-a',
+  });
+  assert.equal(groupA.runId, groupB.runId);
+  assert.equal(groupA.successStreak, 6);
+  assert.equal(groupB.successStreak, 7);
+  assert.equal(immediateRetry.successStreak, 7);
+  assert.equal(immediateRetry.stabilityStartedAt, 123);
+  assert.equal(immediateRetry.alreadyRecorded, true);
+  assert.equal(delayedPriorRetry.successStreak, 7);
+  assert.equal(delayedPriorRetry.recorded, false);
 });

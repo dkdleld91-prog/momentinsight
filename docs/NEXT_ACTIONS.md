@@ -1,15 +1,18 @@
 # Next Actions
 
-기준일: 2026-08-22
+기준일: 2026-08-24
 
-## 진행 중: N쇼핑 v1.1.11 오류 안정화·5차 8분 A/B
+## 진행 중: N쇼핑 v1.1.12 partial-window 안정화·5차 8분 A/B
 
-1. 완료(로컬): page timeout·commit unavailable bounded half-open, 403/access security cooldown, lookup/submit/reconcile 격리와 raw DB 오류 정규화를 TDD로 보완했습니다. 집중 289/289·collector64/64·contract65/65·baseline·잠금 23/95/44+self-test가 통과했습니다.
-2. 완료(로컬): 전체 `check:release`가 core743·place51·shopping64·Production auth18로 exit0입니다. 보호 잠금과 self-test도 통과했습니다.
-3. 진행: 검증된 정확한 변경만 커밋·push한 뒤 Production server → taxonomy migration → runtime1.1.11 migration → Windows updater 순으로 반영합니다. `data/`, `src/pages/admin.html`, `vercel.json`은 포함하지 않습니다.
-4. 배포 직전과 직후 lane/run/processing0을 SELECT-only로 확인합니다. wake·cursor·순서·격리를 수동 조작하지 않으며, pending 자연 wake만 사용합니다.
-5. v1.1.11 첫 official·adExcluded·checked300 terminal부터 24시간+원자 성공6회를 새로 계산합니다. 그 전에는 candidate8을 켜지 않고, 조건 충족 뒤 canonical cadence RPC를 정확히 1회 호출합니다.
-6. candidate8 이후 여러 자연 회차의 atomic300·same-cycle 중복0·cursor 순서·lane 해제와 실제 group/hour를 개선 전 8.75~8.77과 비교합니다. 실패 시 baseline10 복귀·proof reset·last-good 보존만 사실대로 기록합니다.
+1. 완료: strict `provider_partial_window:<1..299>_300`가 서로 다른 tracker의 전역 cadence proof를 반복 초기화하던 원인을 runtime1.1.12로 격리했습니다. local/native124·server contract68·migration isolation14·전체 release core1012/place51/shopping64/auth18과 보호 잠금이 통과했습니다.
+2. 완료: commit `d655eb080d55`를 Production/DB/Windows exact fingerprint로 반영했고 첫 atomic300 anchor `2026-08-24T05:31:17.200373Z`를 확인했습니다. `c0cc…`의 94/300은 부분 snapshot 없이 tracker만 재격리하고 anchor/streak/last-good을 보존했으며 후속 resume atomic300과 lane 해제를 확인했습니다.
+3. 완료(로컬): success RPC를 current lease/run/job과 claim별 group·commit·snapshot atomic300 증거에 묶고, candidate 서버는 exact candidate/8 응답만 성공으로 인정합니다. 동일 run 다중 group P0와 A→B→A 지연 재전송 P1을 RED→GREEN했으며 전체 release core1025/place51/shopping64/auth18과 보호 lock이 통과했습니다. 실제 DB compile·자연 회차는 아직 미확인입니다.
+4. 진행: 정확한 N30 파일만 commit·Production 반영한 뒤 완전 idle에서 transactional migration을 적용하고, 함수 ACL/source와 다음 자연 atomic300·streak 1회 증가·lane 해제를 검증합니다. 실패 시 baseline10·last-good 보존을 확인하고 정상화 전 성공으로 보고하지 않습니다.
+5. 진행: anchor+24시간인 `2026-08-25T05:31:17.200373Z` 전까지 baseline10을 유지합니다. 2026-08-24 23:07 KST 기준 streak60·exact identity·closed/null·processing0·완전 idle이고, `candidate_eligible=false`의 유일한 미충족은 24시간입니다.
+6. 진행: 잔여 partial `1114…`·`12f5…`는 각각 `2026-08-24T15:33:02.119249Z`·`19:18:58.276397Z` 자연 만료와 실제 cursor 순번에서 회복 또는 typed failure를 확인합니다. wake·cursor·순서·격리·lease는 수동 조작하지 않습니다.
+7. 대기: 모든 gate가 참일 때만 canonical cadence RPC를 정확히 1회 호출하고 request/response·직후 DB candidate/8을 함께 캡처합니다. 응답 유실·불확실·거부 시 재호출하거나 성공으로 보고하지 않습니다.
+8. 대기: 전환 뒤 최소 60분과 remote-wake 단독 조기 claim을 제외한 scheduled-compatible fully-terminal group 6개를 확보해 atomic300·same-cycle 중복0·cursor 순서·lane 해제와 fixed-wall group/hour를 검증합니다. 8.75 미만은 성공0, 8.75~8.77은 기준선 동등으로 기록합니다.
+9. 확인: 합의한 5차는 페이지 병렬화가 아니라 baseline10→candidate8 cadence 안전 승격입니다. 실제 속도 향상은 candidate8 전환 뒤 위 표본에서 `8.77 group/hour`를 초과할 때만 주장합니다.
 
 ## 완료된 기반: N쇼핑 v1.1.10 partial 재수집·input-close 복구
 

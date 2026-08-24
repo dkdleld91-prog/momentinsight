@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "a584bcecf6e11f86886a53cbe45e2e3d677a9ba7c23dea1a0840500f72c468da"
+      "sha256": "f9e729f52775dd590370d5c95716a1cf1de89c42f8905c5178b3242cfdf9d9f4"
     },
     {
       "id": "product-organic-rank-server",
@@ -690,6 +690,12 @@
       "id": "shopping-worker-runtime-1-1-12-exact-candidate-gate",
       "file": "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
       "sha256": "46da4b52fe4ac89eb02c4dadbb6231a4d836a503f45ddae28e2b0bd25970a994",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-atomic-success-proof-hardening",
+      "file": "supabase/migrations/20260824133751_naver_shopping_atomic_success_proof_hardening.sql",
+      "sha256": "18280b3f56296c882a2a57632343c3c1fe2f8b92146bc8c7c8cbbd70a7faf918",
       "rankMigration": true
     }
   ]

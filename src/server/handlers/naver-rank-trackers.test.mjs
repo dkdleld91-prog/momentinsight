@@ -364,6 +364,56 @@ test("owner canary and cadence controls fail closed on invalid or ineligible req
   assert.match((await candidate.json()).message, /24시간/u);
 });
 
+test("candidate cadence reports success only for the exact activated 8-minute result", async () => {
+  const request = new Request("https://example.com/api/naver-rank-trackers", { method: "POST" });
+  const access = { owner: true, agencyCode: "mml93-a01" };
+  const exactResult = { accepted: true, activated: true, mode: "candidate", minutes: 8 };
+  const positive = await controlShoppingWorker(request, {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        assert.equal(name, "mi_set_naver_shopping_worker_cadence");
+        assert.deepEqual(args, { p_mode: "candidate" });
+        return { data: exactResult, error: null };
+      },
+    },
+  }, { action: "worker-cadence", mode: "candidate" }, access);
+  const positiveBody = await positive.json();
+  assert.equal(positive.status, 200);
+  assert.equal(positiveBody.ok, true);
+  assert.deepEqual(positiveBody.result, {
+    state: "",
+    mode: "candidate",
+    minutes: 8,
+    reason: "",
+    activated: true,
+  });
+
+  const mismatchedResults = [
+    { accepted: false, activated: true, mode: "candidate", minutes: 8 },
+    { accepted: true, activated: false, mode: "candidate", minutes: 8 },
+    { accepted: true, activated: true, mode: "baseline", minutes: 8 },
+    { accepted: true, activated: true, mode: "candidate", minutes: 10 },
+    { accepted: true, activated: true, cadence_mode: "candidate", cadence_minutes: 8 },
+    { accepted: true, activated: true, mode: "candidate", minutes: "8" },
+  ];
+  for (const rpcResult of mismatchedResults) {
+    const response = await controlShoppingWorker(request, {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          assert.equal(name, "mi_set_naver_shopping_worker_cadence");
+          assert.deepEqual(args, { p_mode: "candidate" });
+          return { data: rpcResult, error: null };
+        },
+      },
+    }, { action: "worker-cadence", mode: "candidate" }, access);
+    const body = await response.json();
+    assert.equal(response.status, 409);
+    assert.equal(body.ok, false);
+    assert.match(body.message, /운영 안전 조건/u);
+    assert.equal(body.result.activated, false);
+  }
+});
+
 test("a repeated canary rejection never sends another remote wake or reports success", async () => {
   const calls = [];
   const response = await controlShoppingWorker(

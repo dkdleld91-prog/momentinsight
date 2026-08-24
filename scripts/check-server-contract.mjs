@@ -69,6 +69,7 @@ const files = {
   shoppingWorkerRuntime1112Migration: "supabase/migrations/20260824042226_naver_shopping_runtime_1_1_12.sql",
   shoppingWorkerCandidate111ExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
   shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
+  shoppingAtomicSuccessProofHardeningMigration: "supabase/migrations/20260824133751_naver_shopping_atomic_success_proof_hardening.sql",
   shoppingStableProofLedgerMigration: "supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql",
   shoppingStableProofQuarantineMigration: "supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql",
   shoppingAutoNavigationHalfOpenMigration: "supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql",
@@ -167,6 +168,7 @@ const shoppingWorkerRuntime111Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime1112Migration = fs.readFileSync(files.shoppingWorkerRuntime1112Migration, "utf8");
 const shoppingWorkerCandidate111ExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidate111ExactIdentityMigration, "utf8");
 const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
+const shoppingAtomicSuccessProofHardeningMigration = fs.readFileSync(files.shoppingAtomicSuccessProofHardeningMigration, "utf8");
 const shoppingStableProofLedgerMigration = fs.readFileSync(files.shoppingStableProofLedgerMigration, "utf8");
 const shoppingStableProofQuarantineMigration = fs.readFileSync(files.shoppingStableProofQuarantineMigration, "utf8");
 const shoppingAutoNavigationHalfOpenMigration = fs.readFileSync(files.shoppingAutoNavigationHalfOpenMigration, "utf8");
@@ -1074,6 +1076,52 @@ check(
     && !/success_streak\s*=/.test(shoppingWorkerCandidateExactIdentityMigration)
     && !/security definer/.test(shoppingWorkerCandidateExactIdentityMigration),
   files.shoppingWorkerCandidateExactIdentityMigration,
+);
+check(
+  "N Shopping atomic success proof is ledger-backed, snapshot-backed and idempotent under lock",
+  hasAll(shoppingAtomicSuccessProofHardeningMigration, [
+    /-- N Shopping atomic success proof hardening/,
+    /into representative_commit_count[\s\S]+committed\.event_type = 'tracker_committed'[\s\S]+committed\.run_id = p_run_id[\s\S]+committed\.worker_id = current_row\.lease_worker_id[\s\S]+committed\.tracker_id = p_tracker_id[\s\S]+committed\.collection_id = normalized_collection_id[\s\S]+committed\.checked_count = 300[\s\S]+committed\.details ->> 'source' = 'naver_shopping_results_collector'[\s\S]+representative_commit_count <> 1/,
+    /select committed\.claim_id, committed\.group_fingerprint\s+into group_claim_id, expected_group_fingerprint[\s\S]+committed\.event_type = 'tracker_committed'[\s\S]+committed\.run_id = p_run_id[\s\S]+committed\.worker_id = current_row\.lease_worker_id[\s\S]+committed\.tracker_id = p_tracker_id[\s\S]+committed\.collection_id = normalized_collection_id[\s\S]+committed\.checked_count = 300[\s\S]+committed\.details ->> 'source' = 'naver_shopping_results_collector'/,
+    /current_row\.current_job_kind is distinct from 'tracker'[\s\S]+current_row\.current_tracker_id is distinct from p_tracker_id[\s\S]+atomic_current_job_mismatch/,
+    /event\.claim_id = group_claim_id[\s\S]+failed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = claimed\.claim_id/,
+    /event\.event_type = 'group_claimed'[\s\S]+group_claim_count <> 1/,
+    /failed\.event_type = 'job_failed'[\s\S]+atomic_run_failed/,
+    /claimed\.event_type = 'tracker_claimed'[\s\S]+tracker_claim_count < 1/,
+    /committed\.event_type = 'tracker_committed'[\s\S]+committed_count <> tracker_claim_count/,
+    /from public\.naver_rank_snapshots as snapshot[\s\S]+snapshot\.checked_count = 300[\s\S]+snapshot\.source = 'naver_shopping_results_collector'/,
+    /snapshot\.matched = false or snapshot\.item -> 'isOrganic' = 'true'::jsonb/,
+    /snapshot\.item -> 'adExcluded' = 'true'::jsonb/,
+    /snapshot\.item ->> 'rankPolicy' = 'organic_only'/,
+    /snapshot\.item ->> 'rankEvidence' = 'naver_shopping_organic_list'/,
+    /top_item -> 'isOrganic' is distinct from 'true'::jsonb[\s\S]+top_item -> 'isAd' is distinct from 'false'::jsonb/,
+    /if current_row\.last_collection_id = normalized_collection_id then[\s\S]+'alreadyRecorded', true[\s\S]+end if;[\s\S]+next_success_streak :=/,
+    /'alreadyRecorded', false/,
+    /revoke all on function public\.mi_record_naver_shopping_worker_success\([^)]+\)\s+from public, anon, authenticated, service_role;/,
+    /grant execute on function public\.mi_record_naver_shopping_worker_success\([^)]+\)\s+to service_role;/,
+    /revoke all on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s+from public, anon, authenticated, service_role;/,
+    /grant execute on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s+to service_role;/,
+  ])
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/security invoker/g) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/set search_path = ''/g) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/v_now timestamptz;/g) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/for update;\s+v_now := clock_timestamp\(\);/g) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/grant execute on function public\./g) || []).length === 2
+    && !/v_now timestamptz\s*:=/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && !/grant execute on function public\.[\s\S]+to (?:public|anon|authenticated)/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && !/security definer/u.test(shoppingAtomicSuccessProofHardeningMigration),
+  files.shoppingAtomicSuccessProofHardeningMigration,
+);
+check(
+  "N Shopping candidate response succeeds only for exact candidate mode and eight minutes",
+  hasAll(productTrackers, [
+    /if \(result\?\.accepted !== true\) return false;/,
+    /if \(result\?\.activated !== true\) return false;/,
+    /if \(mode === "candidate"\) return result\?\.mode === "candidate" && result\?\.minutes === 8;/,
+    /shoppingWorkerControlAccepted\(action, result, cadenceMode\)/,
+    /rejected \? 409 : 200/,
+  ]),
+  files.productTrackers,
 );
 check(
   "N Shopping ledger stores only the verified stable proof protocol version",

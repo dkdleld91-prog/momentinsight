@@ -207,6 +207,7 @@ const shoppingWorkerRuntime111Migration = read("supabase/migrations/202608211800
 const shoppingWorkerRuntime1112Migration = read("supabase/migrations/20260824042226_naver_shopping_runtime_1_1_12.sql");
 const shoppingWorkerCandidate111ExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql");
+const shoppingAtomicSuccessProofHardeningMigration = read("supabase/migrations/20260824133751_naver_shopping_atomic_success_proof_hardening.sql");
 const shoppingStableProofLedgerMigration = read("supabase/migrations/20260815015239_naver_shopping_stable_proof_ledger.sql");
 const shoppingStableProofQuarantineMigration = read("supabase/migrations/20260815015618_naver_shopping_stable_proof_quarantine.sql");
 const shoppingAutoNavigationHalfOpenMigration = read("supabase/migrations/20260814182150_naver_shopping_auto_navigation_half_open.sql");
@@ -1892,6 +1893,40 @@ const checks = {
     && !/stability_started_at\s*=/u.test(shoppingWorkerCandidateExactIdentityMigration)
     && !/success_streak\s*=/u.test(shoppingWorkerCandidateExactIdentityMigration)
     && !shoppingWorkerCandidateExactIdentityMigration.includes("security definer"),
+  shoppingAtomicSuccessProofIsLedgerSnapshotLockedAndIdempotent: shoppingAtomicSuccessProofHardeningMigration.includes("-- N Shopping atomic success proof hardening")
+    && /into representative_commit_count[\s\S]+committed\.event_type = 'tracker_committed'[\s\S]+committed\.run_id = p_run_id[\s\S]+committed\.worker_id = current_row\.lease_worker_id[\s\S]+committed\.tracker_id = p_tracker_id[\s\S]+committed\.collection_id = normalized_collection_id[\s\S]+committed\.checked_count = 300[\s\S]+committed\.details ->> 'source' = 'naver_shopping_results_collector'[\s\S]+representative_commit_count <> 1/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /select committed\.claim_id, committed\.group_fingerprint\s+into group_claim_id, expected_group_fingerprint[\s\S]+committed\.event_type = 'tracker_committed'[\s\S]+committed\.run_id = p_run_id[\s\S]+committed\.worker_id = current_row\.lease_worker_id[\s\S]+committed\.tracker_id = p_tracker_id[\s\S]+committed\.collection_id = normalized_collection_id[\s\S]+committed\.checked_count = 300[\s\S]+committed\.details ->> 'source' = 'naver_shopping_results_collector'/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /current_row\.current_job_kind is distinct from 'tracker'[\s\S]+current_row\.current_tracker_id is distinct from p_tracker_id[\s\S]+atomic_current_job_mismatch/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /event\.claim_id = group_claim_id[\s\S]+failed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = group_claim_id[\s\S]+claimed\.claim_id = group_claim_id[\s\S]+committed\.claim_id = claimed\.claim_id/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /event\.event_type = 'group_claimed'[\s\S]+group_claim_count <> 1/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /failed\.event_type = 'job_failed'[\s\S]+atomic_run_failed/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /claimed\.event_type = 'tracker_claimed'[\s\S]+tracker_claim_count < 1/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /committed\.event_type = 'tracker_committed'[\s\S]+committed_count <> tracker_claim_count/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /from public\.naver_rank_snapshots as snapshot[\s\S]+snapshot\.checked_count = 300[\s\S]+snapshot\.source = 'naver_shopping_results_collector'/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /snapshot\.matched = false or snapshot\.item -> 'isOrganic' = 'true'::jsonb/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && shoppingAtomicSuccessProofHardeningMigration.includes("snapshot.item -> 'adExcluded' = 'true'::jsonb")
+    && shoppingAtomicSuccessProofHardeningMigration.includes("snapshot.item ->> 'rankPolicy' = 'organic_only'")
+    && shoppingAtomicSuccessProofHardeningMigration.includes("snapshot.item ->> 'rankEvidence' = 'naver_shopping_organic_list'")
+    && /top_item -> 'isOrganic' is distinct from 'true'::jsonb[\s\S]+top_item -> 'isAd' is distinct from 'false'::jsonb/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /if current_row\.last_collection_id = normalized_collection_id then[\s\S]+'alreadyRecorded', true[\s\S]+end if;[\s\S]+next_success_streak :=/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && shoppingAtomicSuccessProofHardeningMigration.includes("'alreadyRecorded', false")
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/security invoker/gu) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/set search_path = ''/gu) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/v_now timestamptz;/gu) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/for update;\s+v_now := clock_timestamp\(\);/gu) || []).length === 2
+    && (shoppingAtomicSuccessProofHardeningMigration.match(/grant execute on function public\./gu) || []).length === 2
+    && /revoke all on function public\.mi_record_naver_shopping_worker_success\([^)]+\)\s+from public, anon, authenticated, service_role;/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /grant execute on function public\.mi_record_naver_shopping_worker_success\([^)]+\)\s+to service_role;/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /revoke all on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s+from public, anon, authenticated, service_role;/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && /grant execute on function public\.mi_set_naver_shopping_worker_cadence\(text\)\s+to service_role;/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && !/v_now timestamptz\s*:=/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && !/grant execute on function public\.[\s\S]+to (?:public|anon|authenticated)/u.test(shoppingAtomicSuccessProofHardeningMigration)
+    && !shoppingAtomicSuccessProofHardeningMigration.includes("security definer"),
+  shoppingCandidateResponseRequiresExactCandidateEightMinutes: rankServer.includes("if (result?.accepted !== true) return false;")
+    && rankServer.includes("if (result?.activated !== true) return false;")
+    && rankServer.includes('if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 8;')
+    && rankServer.includes("shoppingWorkerControlAccepted(action, result, cadenceMode)")
+    && rankServer.includes("rejected ? 409 : 200"),
   shoppingWorkerFailureBoundariesStayScopedAndBounded: shoppingLocalWorkerContract.includes("LOCAL_WORKER_BODY_MAX_BYTES = 4 * 1024 * 1024")
     && shoppingLocalWorkerContract.includes("LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000")
     && shoppingLocalWorkerAuth.includes("LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS = 5 * 60")

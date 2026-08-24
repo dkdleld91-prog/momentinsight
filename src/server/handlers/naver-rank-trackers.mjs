@@ -2252,15 +2252,19 @@ async function countDueTrackers(ctx, now, agencyCode = "") {
   return Math.max(0, Number(remainingResult.count || 0));
 }
 
-function shoppingWorkerControlAccepted(action, result) {
+function shoppingWorkerControlAccepted(action, result, mode = "") {
   if (result?.accepted !== true) return false;
-  if (action === "worker-canary" || action === "worker-cadence") return result?.activated === true;
+  if (action === "worker-canary") return result?.activated === true;
+  if (action === "worker-cadence") {
+    if (result?.activated !== true) return false;
+    if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 8;
+  }
   return true;
 }
 
 function shoppingWorkerControlMessage(action, result, mode = "") {
   const reason = normalizeWorkerText(result?.reason, 100).toLowerCase();
-  const rejected = !shoppingWorkerControlAccepted(action, result);
+  const rejected = !shoppingWorkerControlAccepted(action, result, mode);
   if (rejected && reason === "not_eligible") return "24시간 안정 운영, 현재 실행 버전·해시, 오가닉 300개 연속 성공 6회가 모두 확인된 뒤 후보 간격을 적용할 수 있습니다.";
   if (rejected && reason === "probe_active") return "이미 1건 안전 검증이 진행 중이며 추가 검증은 시작하지 않았습니다.";
   if (rejected && reason === "busy") return "현재 작업 레인이 사용 중이어서 1건 검증을 시작하지 않았습니다.";
@@ -2308,7 +2312,7 @@ export async function controlShoppingWorker(request, ctx, body, access) {
   const { data, error } = await ctx.supabaseAdmin.rpc(rpcName, args);
   if (error) throw error;
   const result = normalizeWorkerRpcObject(data);
-  const accepted = shoppingWorkerControlAccepted(action, result);
+  const accepted = shoppingWorkerControlAccepted(action, result, cadenceMode);
   const rejected = !accepted;
   const remoteWakeRequested = action === "worker-canary" && !rejected
     ? await requestShoppingWorkerWake(ctx, "control-plane-canary")

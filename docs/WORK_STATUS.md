@@ -1,6 +1,6 @@
 # Work Status
 
-기준일: 2026-08-24
+기준일: 2026-08-25
 
 ## 현재 상태
 
@@ -20,6 +20,8 @@
 - candidate 전환의 canonical authority는 service-role/postgres-only `public.mi_set_naver_shopping_worker_cadence('candidate')`이고 `/api/naver-rank-trackers`의 owner-only `worker-cadence`는 이 함수를 호출하는 세션 어댑터입니다. 자동 관측은 owner 세션·접속 코드를 만들거나 우회하지 않고, gate 시각에 Supabase 제어 경로로 해당 함수를 포함한 SQL SELECT를 정확히 1회만 실행합니다. 호출 직전 requestStartUtc와 응답 직후 responseEndUtc·raw JSON을 남기고 별도 즉시 SELECT로 cadence/updated_at/idle을 확인합니다. timeout·응답 유실이면 DB가 이미 commit됐을 수 있으므로 재호출0, 상태 SELECT만 수행하고 raw 결과 없이 성공으로 판정하지 않습니다.
 - 세 번째 연속 정시-compatible run `6da69c92-430e-4c76-9664-ad364b9b8046`은 event9887 group →9888 tracker →9889 commit으로 종료됐고 직전 정시 event9883과 claim 간격은 `600.398초`입니다. collection `pw-chrome-1787582901664-75995b9ab8099b08287c` snapshot1은 checked300·official·collection 일치·matched=false·organic policy/evidence·adExcluded·광고30건 제외·top 위반0입니다. streak66→67, cursor sort1300→1400 순방향이고 cycle36 group33=distinct33·중복0, tracker47=distinct47·중복0·commit47·failure0입니다. `14:48:48Z` processing0·closed/null·lane/run/lease/stage/job/tracker/probe 해제·baseline10·candidate false이며 baseline 표본으로만 기록합니다.
 - `2026-08-24T14:51:17Z` read-only `mi_get_naver_shopping_worker_operations()`와 수동 candidate predicate를 대조했습니다. runtime/fingerprint exact, Windows heartbeat fresh, baseline10, streak67≥6, 최근 atomic300, circuit closed·reason/cooldown null, processing0, coordination lane/run/lease/stage/job/tracker/probe 완전 idle은 모두 true입니다. DB 함수 `candidate_eligible=false`와 수동값이 일치하며 유일한 false는 anchor age `9.333419812h < 24h`입니다. candidateAt은 그대로 `2026-08-25T05:31:17.200373Z`이고 setter 호출은0회입니다.
+- 네 번째 연속 정시-compatible run `48d02496-8e0b-4803-9f28-0fefc00d3159`은 event9891 group →9892 tracker →9893 commit으로 끝났고 직전 event9887과 claim 간격은 `599.352초`, claim→terminal은 `40.855초`입니다. wake row는 `14:22:26Z` 이후 불변입니다. collection `pw-chrome-1787583499686-c8b7912765ae46eae36f` snapshot1은 checked300·official·collection 일치·matched=false·organic policy/evidence·adExcluded·광고45건 제외·top5 위반0입니다. streak67→68, cursor sort1400→1500 strict-forward이고 cycle36 group34=distinct34·중복0, tracker48=distinct48·중복0·commit48·failure0입니다. 잔여26그룹 중 현재 collectable23·격리3이며 terminal 뒤 processing0·closed/null·lane/run/lease/stage/job/tracker/probe 해제·baseline10·candidate false입니다.
+- `2026-08-24T15:00:46Z` 독립 수동 gate 29개 중 false는 anchor24h 하나뿐입니다. anchor age는 `09:29:29`, heartbeat age14.493초, 최근 atomic success age2분26초이고 exact identity·streak68·recent atomic300·closed/null·processing0·완전 idle은 모두 true입니다. 가장 이른 candidate 시각은 그대로 `2026-08-25T05:31:17.200373Z`이며 이번 감사도 setter·wake·cursor·quarantine·lease DML 0회입니다.
 
 ### 2026-08-24 N쇼핑 partial-window 전역 증거 격리 (DB·Windows·첫 자연 atomic300 반영, 24시간 관측 중)
 

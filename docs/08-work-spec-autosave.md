@@ -3,6 +3,16 @@
 이 문서는 모먼트 인사이트 개발 작업의 기준 문서입니다.
 앞으로 새 기능을 만들거나 기존 기능을 수정할 때는 이 문서에 작업 의도, 실행 내역, 검증 결과를 남기고 개발 완료 시 체크합니다.
 
+## 2026-08-25 N쇼핑 5차 속도 향상 정정 계약
+
+- 기존 candidate 8분은 단일 global lane·`maxJobs=1`에서 장기 상한이 시간당 7.5그룹이므로, 개선 전 실측 8.75~8.77그룹/시간을 초과할 수 없다. 따라서 8분안을 속도 향상 성공으로 보고하거나 활성화하지 않는다.
+- 같은 안전 경계에서 목표를 넘을 수 있는 최소 정수 cadence는 6분(이론 상한 10그룹/시간)이다. 병렬화, 페이지 1~8 직접 수집, 3.5~6초 pacing, 광고 제외 원자 `checkedCount=300`, last-good, durable order, 격리와 단일 lane은 변경하지 않는다.
+- runtime `1.1.13`은 정확한 13파일 fingerprint `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`만 허용한다. signed worker 요청의 실행 출처를 제한된 enum으로 전달하고, 실제 작업이 `navigating`에 진입한 run만 service-role 전용 append-only provenance에 기록한다. 이는 신뢰된 서명 워커의 운영 증거이지 침해된 signer/service-role에도 위조 불가능한 외부 증명은 아니다. 성능 분자는 exact identity의 `rank-catch-up`이면서 run당 group 정확히1인 표본만 인정한다.
+- 새 runtime 배포는 baseline10·anchor null·streak0으로 초기화한다. 첫 자연 official atomic300을 새 anchor로 삼아 24시간과 새 성공 6회, exact identity, fresh heartbeat, recent atomic300, closed/null, processing0, lane/run/lease 완전 idle을 모두 충족한 뒤 canonical candidate setter를 총 1회만 호출한다.
+- candidate6 전환 뒤 고정 wall time 120분 이상, bootstrap 제외 `rank-catch-up` fully-terminal distinct group 18개 이상을 확보한다. atomic300·official·organic/adExcluded, same-cycle group/tracker 중복0, cursor 순서, open/incomplete0, overlap0, concurrency1, terminal 뒤 lane 해제를 모두 확인하고 실제 처리량이 8.77그룹/시간을 초과할 때만 향상 성공이다.
+- 실패·불확실·응답 유실·출처 누락 또는 실측 미달은 성공0이다. candidate setter를 재호출하지 않고 canonical baseline10을 최대 1회만 호출해 last-good과 제어면 해제를 확인한다. wake·cursor·order·quarantine·lease는 임의 조작하지 않는다.
+- 로컬에는 PostgreSQL container가 없어 신규 migration의 실제 compile은 증명할 수 없다. Production의 완전 idle guard에서 `lock_timeout=5s`·강한 table lock 선취득을 적용하고 transaction 전체가 성공한 뒤 함수 정의·ACL·advisor를 재검증한 경우에만 DB 적용 성공으로 기록한다. 잠금 실패는 반복하지 않고 전체 rollback으로 판정한다.
+
 ## 2026-08-21 N쇼핑 30일 안정화·5차 속도 향상 계약
 
 - 이번 사용자 요청은 N쇼핑 30일 순환의 잔여 자동 중단·중복 수집·부분 제출 경계를 최소 수정하고, 기존에 구현만 하고 보류했던 5차 cadence 후보를 현재 10분에서 8분으로 안전 승격하는 명시적 예외다.
@@ -369,9 +379,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 25. 00:59:47
-- 기준 커밋: e56337c
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/check-server-contract.mjs /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/naver-rank-trackers.mjs /  M src/server/handlers/naver-rank-trackers.test.mjs
+- 마지막 자동 저장: 2026. 08. 25. 01:51:28
+- 기준 커밋: a0f68d3
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/admin-api.mjs /  M src/server/handlers/google-calendar-api.mjs /  M src/server/handlers/google-calendar-api.test.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

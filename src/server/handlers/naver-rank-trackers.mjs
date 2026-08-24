@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.12";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.13";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -2257,7 +2257,7 @@ function shoppingWorkerControlAccepted(action, result, mode = "") {
   if (action === "worker-canary") return result?.activated === true;
   if (action === "worker-cadence") {
     if (result?.activated !== true) return false;
-    if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 8;
+    if (mode === "candidate") return result?.mode === "candidate" && result?.minutes === 6;
     if (mode === "baseline") return result?.mode === "baseline" && result?.minutes === 10;
     return false;
   }

@@ -770,7 +770,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.12");
+  assert.equal(manifest.version, "1.1.13");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -807,10 +807,11 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   assert.match(serviceWorker, /port\.postMessage\(nativeReadyAcknowledgement\(message\)\)/u);
   assert.match(serviceWorker, /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/u);
   assert.match(serviceWorker, /BASELINE_CADENCE_MINUTES = 10/u);
-  assert.match(serviceWorker, /CANDIDATE_CADENCE_MINUTES = 8/u);
+  assert.match(serviceWorker, /CANDIDATE_CADENCE_MINUTES = 6/u);
   assert.match(serviceWorker, /\["rank-catch-up", \{ delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes \}\]/u);
   assert.match(serviceWorker, /naver_network_restricted/u);
-  assert.match(nativeHost, /requireWakeSignal: start\.trigger === "rank-remote"/u);
+  assert.match(nativeHost, /requireWakeSignal: trigger === "rank-remote"/u);
+  assert.match(nativeHost, /runTrigger: trigger/u);
   assert.match(localWorker, /action: "claim-lane"/u);
   assert.match(localWorker, /action: "release-lane"/u);
   assert.match(localWorkerContract, /LOCAL_WORKER_REQUEST_TIMEOUT_MS = 14 \* 60_000/u);
@@ -1031,30 +1032,30 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
       alarms,
     });
   let helpers = createHelpers();
-  stored.momentInsightRankCadenceMinutes = 8;
+  stored.momentInsightRankCadenceMinutes = 6;
   stored.momentInsightRankCadenceConfirmedAt = now;
   stored.momentInsightRankCandidateProofRuntimeVersion = runtimeIdentity.runtimeVersion;
   stored.momentInsightRankCandidateProofServiceWorkerSha256 = runtimeIdentity.serviceWorkerSha256;
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   assert.equal(await helpers.safeCadenceMinutes(), 10);
   for (const invalid of [null, 0, "false", "true"]) {
     stored.momentInsightRankCandidateResetPending = invalid;
-    assert.equal(await helpers.safeCadenceMinutes(8), 10);
+    assert.equal(await helpers.safeCadenceMinutes(6), 10);
   }
   stored.momentInsightRankCandidateResetPending = false;
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   stored.momentInsightRankCandidateStabilityStartedAt = now - (24 * 60 * 60_000) - 1;
   stored.momentInsightRankCandidateSuccessCount = 5;
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   stored.momentInsightRankCandidateSuccessCount = 6;
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
-  assert.equal(await helpers.safeCadenceMinutes(), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
+  assert.equal(await helpers.safeCadenceMinutes(), 6);
   helpers = createHelpers();
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
 
   const failureSummary = {
     status: "completed",
-    cadenceMinutes: 8,
+    cadenceMinutes: 6,
     atomicSuccesses: 0,
     failed: 1,
     trackerPartialWindowFailures: 0,
@@ -1063,7 +1064,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   };
   const successSummary = {
     status: "completed",
-    cadenceMinutes: 8,
+    cadenceMinutes: 6,
     atomicSuccesses: 1,
     failed: 0,
     trackerPartialWindowFailures: 0,
@@ -1084,7 +1085,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
   assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
@@ -1096,16 +1097,16 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
   }
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 6);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   now += 24 * 60 * 60_000 + 1;
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
 
   const trackerPartialWindowSummary = {
     status: "completed",
-    cadenceMinutes: 8,
+    cadenceMinutes: 6,
     atomicSuccesses: 0,
     failed: 1,
     trackerPartialWindowFailures: 1,
@@ -1118,7 +1119,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     successCount: stored.momentInsightRankCandidateSuccessCount,
   };
   assert.equal(helpers.workerSummaryRequiresCadenceReset(trackerPartialWindowSummary), false);
-  assert.equal(helpers.cadenceFromWorkerSummary(trackerPartialWindowSummary), 8);
+  assert.equal(helpers.cadenceFromWorkerSummary(trackerPartialWindowSummary), 6);
   assert.equal(await helpers.updateCandidateCadenceEvidence(trackerPartialWindowSummary), true);
   assert.deepEqual({
     resetPending: stored.momentInsightRankCandidateResetPending,
@@ -1149,22 +1150,22 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   }
 
   for (const summary of [
-    { status: "disabled", cadenceMinutes: 8, atomicSuccesses: 0 },
-    { status: "control_plane_failed", cadenceMinutes: 8, atomicSuccesses: 0 },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, failed: 1 },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, releaseFailed: 1 },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, halted: true },
+    { status: "disabled", cadenceMinutes: 6, atomicSuccesses: 0 },
+    { status: "control_plane_failed", cadenceMinutes: 6, atomicSuccesses: 0 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: 0, failed: 1 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: 0, releaseFailed: 1 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: 0, halted: true },
     {
       status: "completed",
-      cadenceMinutes: 8,
+      cadenceMinutes: 6,
       atomicSuccesses: 0,
       haltedCode: "provider_deadline_exceeded",
     },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 0, controlPlaneFailed: 1 },
-    { status: "completed", cadenceMinutes: 8 },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: -1 },
-    { status: "completed", cadenceMinutes: 8, atomicSuccesses: 1.5 },
-    { status: "unexpected", cadenceMinutes: 8, atomicSuccesses: 0 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: 0, controlPlaneFailed: 1 },
+    { status: "completed", cadenceMinutes: 6 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: -1 },
+    { status: "completed", cadenceMinutes: 6, atomicSuccesses: 1.5 },
+    { status: "unexpected", cadenceMinutes: 6, atomicSuccesses: 0 },
   ]) {
     assert.equal(helpers.cadenceFromWorkerSummary(summary), 10);
     assert.equal(helpers.workerSummaryRequiresCadenceReset(summary), true);
@@ -1172,22 +1173,22 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   for (const status of ["completed", "idle", "standby", "already_running"]) {
     const summary = {
       status,
-      cadenceMinutes: 8,
+      cadenceMinutes: 6,
       atomicSuccesses: status === "completed" ? 1 : 0,
       failed: 0,
       trackerPartialWindowFailures: 0,
       releaseFailed: 0,
       controlPlaneFailed: 0,
     };
-    assert.equal(helpers.cadenceFromWorkerSummary(summary), 8);
+    assert.equal(helpers.cadenceFromWorkerSummary(summary), 6);
     assert.equal(helpers.workerSummaryRequiresCadenceReset(summary), false);
   }
 
   failRead = true;
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   failRead = false;
   failAlarmRead = true;
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   failAlarmRead = false;
 
   Object.assign(stored, {
@@ -1204,7 +1205,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   helpers = createHelpers();
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), false);
   assert.equal(await helpers.updateCandidateCadenceEvidence(successSummary), false);
   assert.equal(stored.momentInsightRankCandidateResetPending, true);
@@ -1216,7 +1217,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   now += 24 * 60 * 60_000 + 1;
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
 
   await helpers.updateCandidateCadenceEvidence(failureSummary);
   await helpers.updateCandidateCadenceEvidence(successSummary);
@@ -1230,10 +1231,10 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateResetPending, true);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
   helpers = createHelpers();
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
 
   await helpers.updateCandidateCadenceEvidence(failureSummary);
   await helpers.updateCandidateCadenceEvidence(successSummary);
@@ -1247,11 +1248,11 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateResetPending, true);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   helpers = createHelpers();
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
   assert.equal(await helpers.updateCandidateCadenceEvidence(idleSummary), true);
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
-  assert.equal(await helpers.safeCadenceMinutes(8), 8);
+  assert.equal(await helpers.safeCadenceMinutes(6), 6);
 
   stored.momentInsightRankCandidateResetPending = false;
   stored.momentInsightRankCandidateStabilityStartedAt = now - (24 * 60 * 60_000) - 1;
@@ -1265,7 +1266,7 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
   assert.equal(stored.momentInsightRankCandidateStabilityStartedAt, 0);
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
   helpers = createHelpers();
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 
   const evidenceStart = serviceWorker.indexOf("async function updateCandidateCadenceEvidence");
   const evidenceEnd = serviceWorker.indexOf("function cadenceFromWorkerSummary", evidenceStart);
@@ -1318,7 +1319,7 @@ test("worker initialization turns an interrupted native run into a durable basel
       detail: "rank-catch-up",
       updatedAt: new Date(now - 1_000).toISOString(),
     },
-    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceMinutes: 6,
     momentInsightRankCadenceConfirmedAt: now,
     momentInsightRankCandidateResetPending: false,
     momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
@@ -1375,11 +1376,11 @@ test("worker initialization turns an interrupted native run into a durable basel
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 
   await helpers.updateCandidateCadenceEvidence({
     status: "completed",
-    cadenceMinutes: 8,
+    cadenceMinutes: 6,
     atomicSuccesses: 1,
     failed: 0,
     releaseFailed: 0,
@@ -1391,7 +1392,7 @@ test("worker initialization turns an interrupted native run into a durable basel
   for (let index = 0; index < 5; index += 1) {
     await helpers.updateCandidateCadenceEvidence({
       status: "completed",
-      cadenceMinutes: 8,
+      cadenceMinutes: 6,
       atomicSuccesses: 1,
       failed: 0,
       releaseFailed: 0,
@@ -1419,7 +1420,7 @@ test("worker initialization turns an interrupted native run into a durable basel
   await helpers.startWorkerInitialization();
   assert.equal(stored.momentInsightRankStatus.status, "completed");
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
-  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 6);
 
   failRead = true;
   await assert.rejects(helpers.initializeWorker(), /storage_read_failed/u);
@@ -1463,7 +1464,7 @@ test("stale visible running status persists the cadence reset before a second re
       detail: "page 8/8",
       updatedAt: new Date(now - (20 * 60_000) - 1).toISOString(),
     },
-    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceMinutes: 6,
     momentInsightRankCadenceConfirmedAt: now,
     momentInsightRankCandidateResetPending: false,
     momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
@@ -1523,7 +1524,7 @@ test("stale visible running status persists the cadence reset before a second re
   assert.equal(stored.momentInsightRankCandidateSuccessCount, 0);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 });
 
 test("initialization allowlist and generic failure preserve fail-closed restart evidence", async () => {
@@ -1591,7 +1592,7 @@ test("initialization allowlist and generic failure preserve fail-closed restart 
       };
     }
     Object.assign(stored, {
-      momentInsightRankCadenceMinutes: 8,
+      momentInsightRankCadenceMinutes: 6,
       momentInsightRankCadenceConfirmedAt: now,
       momentInsightRankCandidateResetPending: false,
       momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
@@ -1618,7 +1619,7 @@ test("initialization allowlist and generic failure preserve fail-closed restart 
     await helpers.initializeWorker();
     assert.equal(stored.momentInsightRankCandidateResetPending, false, status);
     assert.equal(alarms.has("rank-candidate-reset-pending"), false, status);
-    assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8, status);
+    assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 6, status);
   }
 
   seedOldProof("running");
@@ -1636,7 +1637,7 @@ test("initialization allowlist and generic failure preserve fail-closed restart 
   assert.equal(stored.momentInsightRankCandidateResetPending, true);
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 });
 
 test("candidate proof is bound to the exact extension runtime identity", async () => {
@@ -1664,7 +1665,7 @@ test("candidate proof is bound to the exact extension runtime identity", async (
       detail: "갱신 1건",
       updatedAt: new Date(now).toISOString(),
     },
-    momentInsightRankCadenceMinutes: 8,
+    momentInsightRankCadenceMinutes: 6,
     momentInsightRankCadenceConfirmedAt: now,
     momentInsightRankCandidateResetPending: false,
     momentInsightRankCandidateStabilityStartedAt: now - (24 * 60 * 60_000) - 1,
@@ -1722,11 +1723,11 @@ test("candidate proof is bound to the exact extension runtime identity", async (
   );
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
   assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 10);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 
   await helpers.updateCandidateCadenceEvidence({
     status: "completed",
-    cadenceMinutes: 8,
+    cadenceMinutes: 6,
     atomicSuccesses: 1,
     failed: 0,
     releaseFailed: 0,
@@ -1753,7 +1754,7 @@ test("candidate proof is bound to the exact extension runtime identity", async (
   await helpers.initializeWorker();
   assert.equal(stored.momentInsightRankCandidateResetPending, false);
   assert.equal(alarms.has("rank-candidate-reset-pending"), false);
-  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 8);
+  assert.equal(alarms.get("rank-catch-up")?.periodInMinutes, 6);
 
   runtimeIdentity = {
     runtimeVersion: "1.1.9",
@@ -1777,7 +1778,7 @@ test("candidate proof is bound to the exact extension runtime identity", async (
   assert.equal(stored.momentInsightRankCandidateProofRuntimeVersion, "");
   assert.equal(stored.momentInsightRankCandidateProofServiceWorkerSha256, "");
   assert.equal(alarms.has("rank-candidate-reset-pending"), true);
-  assert.equal(await helpers.safeCadenceMinutes(8), 10);
+  assert.equal(await helpers.safeCadenceMinutes(6), 10);
 });
 
 test("background worker coalesces one highest-priority finite trigger behind an active run", () => {
@@ -2057,7 +2058,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.12");
+  assert.equal(manifest.version, "1.1.13");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2226,6 +2227,26 @@ test("native host framing returns a bounded typed error for an invalid start mes
     type: "error",
     code: "native_host_start_invalid",
   });
+});
+
+test("native host rejects an unknown run trigger before runtime handoff", () => {
+  const body = Buffer.from(JSON.stringify({
+    action: "run",
+    trigger: "unknown-trigger",
+    runtimeVersion: "1.1.13",
+    serviceWorkerSha256: "0".repeat(64),
+  }), "utf8");
+  const header = Buffer.alloc(4);
+  header.writeUInt32LE(body.length, 0);
+  const hostPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "naver-shopping-native-host.mjs");
+  const result = spawnSync(process.execPath, [hostPath], {
+    input: Buffer.concat([header, body]),
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 1);
+  assert.deepEqual(decodeNativeMessageFrames(result.stdout), [
+    { type: "error", code: "native_host_trigger_invalid" },
+  ]);
 });
 
 test("native host framing rejects a stale ready acknowledgement before lane claim", () => {

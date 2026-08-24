@@ -93,6 +93,7 @@ test("accepts only a complete 300-item canary window", async () => {
 });
 
 test("cloud workflows are manual-canary first and production-disabled by default", () => {
+  const cloudWorker = fs.readFileSync("scripts/naver-shopping-cloud-worker.mjs", "utf8");
   const cloudProvider = fs.readFileSync("tools/naver-shopping-rank-collector/src/github-cloud.mjs", "utf8");
   const canary = fs.readFileSync(".github/workflows/naver-shopping-cloud-canary.yml", "utf8");
   const safariCanary = fs.readFileSync(".github/workflows/naver-shopping-safari-canary.yml", "utf8");
@@ -117,6 +118,7 @@ test("cloud workflows are manual-canary first and production-disabled by default
   assert.match(production, /vars\.MI_NAVER_SHOPPING_CLOUD_ENABLED == 'true'/u);
   assert.match(production, /MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET/u);
   assert.match(production, /Verify 300 first, then atomically update due trackers/u);
+  assert.match(cloudWorker, /runTrigger:\s*["']github-cloud["']/u);
   assert.doesNotMatch(cloudProvider, /^import\s+\{\s*chromium\s*\}\s+from\s+["']playwright["']/mu);
   assert.match(cloudProvider, /await import\(["']playwright["']\)/u);
 });

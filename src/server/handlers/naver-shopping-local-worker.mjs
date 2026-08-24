@@ -32,7 +32,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.12";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.13";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -46,6 +46,15 @@ const WORKER_PROGRESS_STAGES = new Set([
   "failed",
 ]);
 const WORKER_JOB_KINDS = new Set(["", "lookup", "tracker"]);
+const WORKER_RUN_TRIGGERS = new Set([
+  "manual",
+  "rank-catch-up",
+  "rank-0900",
+  "rank-1500",
+  "rank-remote",
+  "mac-standby",
+  "github-cloud",
+]);
 // This bounded enum is the only submit failure detail allowed across the
 // worker trust boundary. Never copy database codes, messages, details or stacks.
 const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
@@ -226,12 +235,16 @@ function workerControlInput(body) {
   if (!runId) throw workerError("LOCAL_WORKER_RUN_ID_INVALID", 400);
   const runtimeVersion = String(body?.runtimeVersion || "").trim();
   const runtimeFingerprint = String(body?.runtimeFingerprint || "").trim().toLowerCase();
+  const runTrigger = String(body?.runTrigger || "").trim().toLowerCase();
   if (!WORKER_RUNTIME_VERSION_PATTERN.test(runtimeVersion)
     || runtimeVersion !== EXPECTED_WORKER_RUNTIME_VERSION
     || !WORKER_RUNTIME_FINGERPRINT_PATTERN.test(runtimeFingerprint)) {
     throw workerError("LOCAL_WORKER_RUNTIME_IDENTITY_INVALID", 400);
   }
-  return { ...lane, runId, runtimeVersion, runtimeFingerprint };
+  if (!WORKER_RUN_TRIGGERS.has(runTrigger)) {
+    throw workerError("LOCAL_WORKER_RUN_TRIGGER_INVALID", 400);
+  }
+  return { ...lane, runId, runtimeVersion, runtimeFingerprint, runTrigger };
 }
 
 function trackerIdFromJob(job) {
@@ -264,6 +277,7 @@ async function reportWorkerProgress(ctx, body) {
       p_tracker_id: trackerId,
       p_runtime_version: control.runtimeVersion,
       p_runtime_fingerprint: control.runtimeFingerprint,
+      p_run_trigger: control.runTrigger,
     },
   );
   if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);

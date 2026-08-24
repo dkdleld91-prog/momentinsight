@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import crypto from "node:crypto";
 import vm from "node:vm";
 import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
 import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
@@ -67,6 +68,7 @@ const files = {
   shoppingWorkerRuntime110Migration: "supabase/migrations/20260821180000_naver_shopping_runtime_1_1_10.sql",
   shoppingWorkerRuntime111Migration: "supabase/migrations/20260821180002_naver_shopping_runtime_1_1_11.sql",
   shoppingWorkerRuntime1112Migration: "supabase/migrations/20260824042226_naver_shopping_runtime_1_1_12.sql",
+  shoppingWorkerRuntime1113Candidate6Migration: "supabase/migrations/20260824165332_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence.sql",
   shoppingWorkerCandidate111ExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
   shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
   shoppingAtomicSuccessProofHardeningMigration: "supabase/migrations/20260824133751_naver_shopping_atomic_success_proof_hardening.sql",
@@ -166,6 +168,7 @@ const shoppingWorkerRuntime119Migration = fs.readFileSync(files.shoppingWorkerRu
 const shoppingWorkerRuntime110Migration = fs.readFileSync(files.shoppingWorkerRuntime110Migration, "utf8");
 const shoppingWorkerRuntime111Migration = fs.readFileSync(files.shoppingWorkerRuntime111Migration, "utf8");
 const shoppingWorkerRuntime1112Migration = fs.readFileSync(files.shoppingWorkerRuntime1112Migration, "utf8");
+const shoppingWorkerRuntime1113Candidate6Migration = fs.readFileSync(files.shoppingWorkerRuntime1113Candidate6Migration, "utf8");
 const shoppingWorkerCandidate111ExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidate111ExactIdentityMigration, "utf8");
 const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
 const shoppingAtomicSuccessProofHardeningMigration = fs.readFileSync(files.shoppingAtomicSuccessProofHardeningMigration, "utf8");
@@ -194,6 +197,24 @@ const shoppingChromeManifest = JSON.parse(fs.readFileSync(files.shoppingChromeMa
 const shoppingChromeWorker = fs.readFileSync(files.shoppingChromeWorker, "utf8");
 const shoppingChromePopup = fs.readFileSync(files.shoppingChromePopup, "utf8");
 const shoppingChromePopupHtml = fs.readFileSync(files.shoppingChromePopupHtml, "utf8");
+const shoppingWorkerRuntime1113Fingerprint = crypto.createHash("sha256").update([
+  "1.1.13",
+  files.shoppingChromeWorker,
+  files.shoppingNativeHost,
+  files.shoppingNativeHostCore,
+  files.shoppingLocalWorker,
+  files.shoppingLocalWorkerAuth,
+  files.shoppingLocalWorkerContract,
+  files.shoppingRank,
+  "src/server/security.mjs",
+  files.shoppingSourceStatus,
+  files.shoppingProviderRuntime,
+  "src/server/naver-shopping/mobile-top-fallback.mjs",
+  files.shoppingCollectorProvider,
+  files.shoppingCollectorContract,
+].map((value, index) => index === 0 ? value : crypto.createHash("sha256")
+  .update(fs.readFileSync(value))
+  .digest("hex")).join("\n"), "utf8").digest("hex");
 const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
 const adminPage = fs.readFileSync(files.adminPage, "utf8");
 const clientPage = fs.readFileSync(files.clientPage, "utf8");
@@ -741,7 +762,7 @@ check(
       /activateChromeScheduler/,
     ])
     && /BASELINE_CADENCE_MINUTES = 10/.test(shoppingChromeWorker)
-    && /CANDIDATE_CADENCE_MINUTES = 8/.test(shoppingChromeWorker)
+    && /CANDIDATE_CADENCE_MINUTES = 6/.test(shoppingChromeWorker)
     && /\["rank-catch-up", \{ delayInMinutes: cadenceMinutes, periodInMinutes: cadenceMinutes \}\]/.test(shoppingChromeWorker)
     && hasAll(shoppingChromeSchedulerWrapper, [
       /\/usr\/bin\/open -gj/,
@@ -1014,6 +1035,32 @@ check(
   files.shoppingWorkerRuntime1112Migration,
 );
 check(
+  "N Shopping runtime 1.1.13 candidate6 keeps exact identity, idle gate and run provenance",
+  hasAll(shoppingWorkerRuntime1113Candidate6Migration, [
+    /-- Runtime 1\.1\.13 candidate 6-minute cadence/,
+    /create table if not exists public\.naver_shopping_worker_runs/,
+    /run_id uuid primary key/,
+    /run_trigger text not null/,
+    /on conflict \(run_id\) do nothing/,
+    /naver_shopping_worker_run_provenance_mismatch/,
+    /p_runtime_version, ''\)\) <> '1\.1\.13'/,
+    /p_run_trigger text/,
+    /cadence_mode = 'candidate' and cadence_minutes = 6/,
+    /set cadence_mode = 'candidate', cadence_minutes = 6/,
+    /'mode', 'candidate', 'minutes', 6/,
+    /grant select, insert on table public\.naver_shopping_worker_runs\s+to service_role/,
+    /security invoker/,
+    /set search_path = ''/,
+  ])
+    && (shoppingWorkerRuntime1113Candidate6Migration.match(
+      new RegExp(`runtime_fingerprint = '${shoppingWorkerRuntime1113Fingerprint}'`, "g"),
+    ) || []).length === 3
+    && !/cadence_mode = 'candidate' and cadence_minutes = 8/.test(shoppingWorkerRuntime1113Candidate6Migration)
+    && !/'mode', 'candidate', 'minutes', 8/.test(shoppingWorkerRuntime1113Candidate6Migration)
+    && !/security definer/.test(shoppingWorkerRuntime1113Candidate6Migration),
+  files.shoppingWorkerRuntime1113Candidate6Migration,
+);
+check(
   "N Shopping prior runtime 1.1.11 exact candidate gate remains unchanged",
   shoppingWorkerCandidateExactIdentityMigration
     .replaceAll("1.1.12", "1.1.11")
@@ -1117,7 +1164,7 @@ check(
   hasAll(productTrackers, [
     /if \(result\?\.accepted !== true\) return false;/,
     /if \(result\?\.activated !== true\) return false;/,
-    /if \(mode === "candidate"\) return result\?\.mode === "candidate" && result\?\.minutes === 8;/,
+    /if \(mode === "candidate"\) return result\?\.mode === "candidate" && result\?\.minutes === 6;/,
     /if \(mode === "baseline"\) return result\?\.mode === "baseline" && result\?\.minutes === 10;/,
     /shoppingWorkerControlAccepted\(action, result, cadenceMode\)/,
     /rejected \? 409 : 200/,
@@ -1423,7 +1470,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.12"
+  shoppingChromeManifest.version === "1.1.13"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1436,9 +1483,9 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
-    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.12";/.test(shoppingLocalWorker)
-    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.12";/.test(shoppingLocalWorkerHandler)
-    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.12";/.test(productTrackers)
+    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.13";/.test(shoppingLocalWorker)
+    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.13";/.test(shoppingLocalWorkerHandler)
+    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.13";/.test(productTrackers)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)
@@ -1473,14 +1520,18 @@ check(
     && /readyAck = await nextMessage\(30_000\)/.test(shoppingNativeHost)
     && /port\.postMessage\(nativeReadyAcknowledgement\(message\)\)/.test(shoppingChromeWorker)
     && /return \{ action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL \}/.test(shoppingChromeWorker)
-    && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(start\.trigger\)/.test(shoppingNativeHost)
+    && /runTrigger: trigger/.test(shoppingNativeHost)
+    && /queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS\.has\(trigger\)/.test(shoppingNativeHost)
     && /await writeTerminalMessage\(\{ type: "summary", summary \}\)/.test(shoppingNativeHost)
     && /process\.stdin\.destroy\(\)/.test(shoppingNativeHost)
     && shoppingWindowsHostLauncher.indexOf("child.WaitForExit();")
       < shoppingWindowsHostLauncher.indexOf("singleInstance.ReleaseMutex();")
     && shoppingWindowsHostLauncher.indexOf("singleInstance.ReleaseMutex();")
       < shoppingWindowsHostLauncher.indexOf("outputRelay.Join(5000)")
-    && /requireWakeSignal: start\.trigger === "rank-remote"/.test(shoppingNativeHost)
+    && /requireWakeSignal: trigger === "rank-remote"/.test(shoppingNativeHost)
+    && /CHROME_RUN_TRIGGERS = new Set/.test(shoppingNativeHost)
+    && /MI_NAVER_SHOPPING_RUN_TRIGGER/.test(shoppingLocalWorker)
+    && /p_run_trigger: control\.runTrigger/.test(shoppingLocalWorkerHandler)
     && /async function runtimeIdentity\(start\)/.test(shoppingNativeHost)
     && /registerProgressSink\(sink\)/.test(shoppingNativeHost)
     && /options\.requireWakeSignal === true\s*\? 1/.test(shoppingLocalWorker)

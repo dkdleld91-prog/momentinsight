@@ -21,6 +21,13 @@ const RESPONSE_TIMEOUT_MS = 14 * 60_000;
 // alarm is the continuous whole-site cycle: it idempotently makes every active
 // tracker due, then the bounded worker claims only the oldest remaining job.
 const WHOLE_SITE_QUEUE_TRIGGERS = new Set(["manual", "rank-catch-up"]);
+const CHROME_RUN_TRIGGERS = new Set([
+  "manual",
+  "rank-catch-up",
+  "rank-0900",
+  "rank-1500",
+  "rank-remote",
+]);
 let inputBuffer = Buffer.alloc(0);
 const messageQueue = [];
 const messageWaiters = [];
@@ -109,6 +116,14 @@ function safeCode(error) {
     .toLowerCase()
     .replace(/[^a-z0-9_:-]+/gu, "_")
     .slice(0, 80) || "native_host_failed";
+}
+
+function runTrigger(start) {
+  const trigger = String(start?.trigger || "").trim().toLowerCase();
+  if (!CHROME_RUN_TRIGGERS.has(trigger)) {
+    throw new Error("native_host_trigger_invalid");
+  }
+  return trigger;
 }
 
 function encodeMessage(payload) {
@@ -207,6 +222,7 @@ function nextMessage(
 async function main() {
   const start = await nextMessage(60_000);
   if (start?.action !== "run") throw new Error("native_host_start_invalid");
+  const trigger = runTrigger(start);
   const identity = await runtimeIdentity(start);
   writeMessage({ type: "ready", collectionProtocol: COLLECTION_PROTOCOL });
   const readyAck = await nextMessage(30_000);
@@ -254,8 +270,9 @@ async function main() {
     registerProgressSink(sink) {
       progressSink = typeof sink === "function" ? sink : null;
     },
-    queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(start.trigger),
-    requireWakeSignal: start.trigger === "rank-remote",
+    runTrigger: trigger,
+    queueAllTrackers: WHOLE_SITE_QUEUE_TRIGGERS.has(trigger),
+    requireWakeSignal: trigger === "rank-remote",
     log(event) {
       process.stderr.write(`${safeCode(event)}\n`);
     },

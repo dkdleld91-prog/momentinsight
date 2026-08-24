@@ -61,6 +61,7 @@ export async function runGitHubCloudShoppingWorker(options = {}) {
       nowMs: options.nowMs,
     });
     const summary = await runLocalShoppingWorker({
+      runTrigger: "github-cloud",
       env: {
         ...env,
         MI_NAVER_SHOPPING_LOCAL_WORKER_ENABLED: "true",
@@ -100,4 +101,3 @@ if (directlyExecuted) {
       process.exitCode = 1;
     });
 }
-

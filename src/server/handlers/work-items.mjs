@@ -32,11 +32,17 @@ import {
   googleMirrorFields,
   listOwnerCalendarCatalog,
   materializeRecurringInstances,
+  optionalColumnEnabled,
   runWithOptionalColumns,
   withoutDisabledColumns,
   writableCalendarsFromCatalog,
   writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
+import {
+  PERSONAL_WORK_ITEMS_PATH,
+  personalRowKeys,
+  resolvePersonalAccess,
+} from "./personal-identity.mjs";
 import { parseLimit, readBody } from "../http.mjs";
 import { protectedJson, safeEqual } from "../security.mjs";
 
@@ -96,10 +102,41 @@ function unexpectedWorkItemInput(body = {}) {
   return Object.keys(body).find((key) => !WORK_ITEM_WRITE_KEYS.has(key)) || "";
 }
 
-// 대표가 쓴 행만 구글로 나간다. 운영팀원이 만든 일정이 대표 개인 캘린더로
-// 흘러드는 것을 막는 경계선이라 role 조건을 여기서 한 번 더 고정한다.
+// 자기 개인 공간의 행만 구글로 나간다. 운영팀원이 만든 운영 일정이 대표님
+// 구글 캘린더로 흘러드는 것을 막는 경계선이라 여기서 한 번 더 고정한다 —
+// 개인키가 있으면 그 계정 자신의 캘린더이므로 안전하고, 개인키가 없는 세션은
+// 예전 그대로 대표(owner)만 통과한다.
 function googlePendingPatch(access) {
-  return access?.role === "owner" ? { google_sync_state: "pending" } : {};
+  return access?.personalKey || access?.role === "owner" ? { google_sync_state: "pending" } : {};
+}
+
+// 운영 피드에서 개인 행을 걷어낸다. 마이그레이션이 아직 안 들어온 창에서 없는
+// 열을 걸면 대표님 업무 화면이 통째로 500 이 되므로 열이 살아 있을 때만 건다.
+// 그 창에는 개인 행 자체가 존재할 수 없어 필터가 없어도 결과가 같다.
+function excludePersonalRows(query) {
+  return optionalColumnEnabled("personal_role") ? query.is("personal_role", null) : query;
+}
+
+// 개인 경로는 두 열이 모두 살아 있을 때만 연다. 하나라도 없으면 개인 행을
+// 격리해서 저장할 방법이 없고, 그래도 열어 두면 격리 없는 쓰기가 된다.
+function personalStorageReady() {
+  return optionalColumnEnabled("personal_role") && optionalColumnEnabled("personal_code");
+}
+
+// 개인 캘린더는 자기 것이므로 광고주도 자기 공간에는 쓸 수 있다. 운영 피드의
+// 권한 판정은 예전 그대로 roleCanMutateWorkItems 하나다.
+function canMutateWorkItems(access) {
+  return Boolean(access?.personalKey) || roleCanMutateWorkItems(access?.role);
+}
+
+// 행에서 뽑아 내는 개인 술어. UPDATE·DELETE·형제 조회처럼 "이 행이 있던 그
+// 공간"을 다시 겨누는 질의가 전부 같은 규칙을 쓰게 묶어 둔다. 운영 행이면
+// personal_role IS NULL 이 되어 개인 행을 절대 함께 집지 않는다.
+function personalRowScope(query, row) {
+  if (!optionalColumnEnabled("personal_role")) return query;
+  return row?.personal_role
+    ? query.eq("personal_role", row.personal_role).eq("personal_code", row.personal_code)
+    : query.is("personal_role", null);
 }
 
 function normalizedUuid(value) {
@@ -509,6 +546,14 @@ async function resolveAccess(request, ctx) {
 
 function legacyRowInAccess(row, access) {
   if (!row || row.calendar_id) return false;
+  // 개인 행은 세 값이 전부 맞아야 "내 것" 이다. 하나라도 다르면 남의 개인
+  // 공간이고, 그때 호출부는 403 이 아니라 404 로 답한다 — 존재 여부조차
+  // 알려 주지 않는 것이 계정 간 비가시성의 최소 조건이다.
+  if (access.personalKey) {
+    return normalizeCode(row.owner_agency_code) === access.personalKey
+      && cleanText(row.personal_role) === access.personalRole
+      && normalizeCode(row.personal_code) === access.personalCode;
+  }
   if (access.role === "client") return row.client_id === access.client?.id && row.visibility === VISIBLE;
   if (access.role === "team") {
     return row.operation_team_id === access.team?.id
@@ -525,6 +570,10 @@ function exactOriginalScope(query, row, { matchVersion = true } = {}) {
   query = query.is("calendar_id", null);
   query = row.client_id ? query.eq("client_id", row.client_id) : query.is("client_id", null);
   query = row.operation_team_id ? query.eq("operation_team_id", row.operation_team_id) : query.is("operation_team_id", null);
+  // 개인 술어까지 행에서 뽑아 붙여야 UPDATE·DELETE 가 개인·운영 어느 쪽이든
+  // 그 행이 있던 공간 하나만 겨눈다. 없으면 운영 경로의 쓰기가 같은 id 를 가진
+  // 개인 행에도 닿을 수 있다.
+  query = personalRowScope(query, row);
   return matchVersion ? query.eq("updated_at", row.updated_at) : query;
 }
 
@@ -569,6 +618,8 @@ const SELECT_COLUMNS = [
   "google_conference_uri",
   "google_calendar_name",
   "google_color_id",
+  "personal_role",
+  "personal_code",
   "created_at",
   "updated_at",
   "client:clients(id,name,business_name)",
@@ -581,18 +632,30 @@ function selectFields() {
 }
 
 function applyAccessScope(query, access, { clientVisibleOnly = false } = {}) {
+  // 개인 공간은 여기서 끝난다. 세 술어는 선택 열 강등에 절대 딸려 내려가지
+  // 않는 무조건 술어다 — 재시도 한 번이 이 술어를 지우면 그 조회는 계정 전체로
+  // 넓어지고, 그 순간 개인 캘린더는 남의 일정을 보여 준다. 열이 없으면 조회가
+  // 실패하는 편이 옳다(fail closed).
+  if (access.personalKey) {
+    return query
+      .eq("personal_role", access.personalRole)
+      .eq("personal_code", access.personalCode)
+      .eq("owner_agency_code", access.personalKey);
+  }
+  // 아래는 전부 운영 피드다. 개인 행은 어느 역할에게도 보이면 안 되므로
+  // 모든 분기가 excludePersonalRows 를 지나 나간다.
   if (access.role === "client") {
-    return query.eq("client_id", access.client.id).eq("visibility", VISIBLE);
+    return excludePersonalRows(query.eq("client_id", access.client.id).eq("visibility", VISIBLE));
   }
   if (access.role === "team") {
     if (access.client) {
-      return query.or(`operation_team_id.eq.${access.team.id},and(operation_team_id.is.null,client_id.eq.${access.client.id})`);
+      return excludePersonalRows(query.or(`operation_team_id.eq.${access.team.id},and(operation_team_id.is.null,client_id.eq.${access.client.id})`));
     }
-    return query.eq("operation_team_id", access.team.id);
+    return excludePersonalRows(query.eq("operation_team_id", access.team.id));
   }
-  if (access.client) return query.eq("client_id", access.client.id);
+  if (access.client) return excludePersonalRows(query.eq("client_id", access.client.id));
   const scoped = query.eq("owner_agency_code", access.ownerAgencyCode);
-  return clientVisibleOnly ? scoped.eq("visibility", VISIBLE) : scoped;
+  return excludePersonalRows(clientVisibleOnly ? scoped.eq("visibility", VISIBLE) : scoped);
 }
 
 function applyDateRange(query, request) {
@@ -626,12 +689,20 @@ async function recordAudit(ctx, payload) {
 }
 
 async function scopedWorkItem(ctx, access, id) {
-  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
-    .from("schedule_items")
-    .select(selectFields())
-    .eq("id", id)
-    .is("calendar_id", null)
-    .maybeSingle());
+  const { data, error } = await runWithOptionalColumns(() => {
+    const query = ctx.supabaseAdmin
+      .from("schedule_items")
+      .select(selectFields())
+      .eq("id", id)
+      .is("calendar_id", null);
+    // 개인 경로는 자기 공간에 못 박고(무조건 술어), 운영 경로는 개인 행을
+    // 걷어낸다. 어느 쪽이든 남의 공간의 id 는 애초에 읽히지 않으므로
+    // 계정 간 PATCH·DELETE 는 403 이 아니라 404 로 끝난다.
+    const scoped = access.personalKey
+      ? query.eq("personal_role", access.personalRole).eq("personal_code", access.personalCode)
+      : excludePersonalRows(query);
+    return scoped.maybeSingle();
+  });
   if (error || !data) return { row: null, error };
   // 옛 공유 일정표 행(calendar_id 가 있는 행)은 "어떤 쓰기도 하지 않고 404" 가
   // 개인 전용 계약이다. 삭제 시도 감사도 쓰기이므로 호출부가 이 거절만 따로
@@ -641,13 +712,30 @@ async function scopedWorkItem(ctx, access, id) {
   return { row: data, error: null };
 }
 
+// 한 모듈이 두 입구를 지킨다. /api/work-items 는 예전 운영 피드 그대로이고,
+// /api/my/work-items 만 개인 판정으로 갈아탄다 — 운영 범위로 폴백하지 않는다.
+async function accessForRequest(request, ctx) {
+  if (new URL(request.url).pathname !== PERSONAL_WORK_ITEMS_PATH) return resolveAccess(request, ctx);
+  // 열이 없으면 개인 행을 격리해 저장할 방법이 없다. 여기서 열어 두면 격리
+  // 없는 쓰기가 되고, 그렇게 들어간 행은 나중에 주인을 되찾을 수 없다.
+  if (!personalStorageReady()) {
+    return {
+      ok: false,
+      status: 503,
+      code: "personal_calendar_not_ready",
+      message: "개인 캘린더 저장소가 아직 준비되지 않았습니다. 데이터베이스 마이그레이션을 적용해주세요.",
+    };
+  }
+  return resolvePersonalAccess(request, ctx);
+}
+
 function includeHiddenCalendars(url) {
   const value = cleanText(url.searchParams.get("includeHidden")).toLowerCase();
   return value === "1" || value === "true";
 }
 
 async function handleGet(request, ctx) {
-  const access = await resolveAccess(request, ctx);
+  const access = await accessForRequest(request, ctx);
   if (!access.ok) return json(request, access, access.status);
   const url = new URL(request.url);
   const limit = parseLimit(url, 200, 300);
@@ -675,7 +763,11 @@ async function handleGet(request, ctx) {
   // 자르기는 거른 뒤에 한다 — 숨긴 행이 한 페이지를 먹어치우면 안 된다.
   const rows = visibleRows.slice(0, limit);
   const truncated = visibleRows.length > limit;
-  const items = access.role === "client"
+  // 광고주가 자기 개인 캘린더를 볼 때는 가려진 광고주 페이로드가 아니라 관리자
+  // 페이로드를 받아야 한다. 가리는 이유는 "남이 운영하는 일정" 이기 때문인데,
+  // 개인 공간의 일정은 그 자신이 쓴 것이라 가릴 대상이 아니다.
+  const usePublicPayload = !access.personalKey && access.role === "client";
+  const items = usePublicPayload
     ? rows.map((row) => clientWorkItemPayload(row))
     : rows.map((row) => managerWorkItemPayload(row, byCalendar.get(cleanText(row.google_calendar_id)) || null));
   return json(request, {
@@ -694,14 +786,17 @@ async function handleGet(request, ctx) {
 // 캐시(DB)만 읽는다. 목록 조회는 hot path 라 구글을 부르지 않는다.
 // 연동 전이거나 캐시가 비었으면 빈 배열이다.
 async function ownerCalendarCatalog(ctx, access) {
-  if (access.role !== "owner") return [];
+  // 카탈로그의 단위는 이제 "역할" 이 아니라 "계정" 이다. 개인키가 있으면 그것이
+  // 곧 연동 키이고, 없으면 예전 그대로 대표님 운영 코드만 카탈로그를 가진다.
+  const code = access.personalKey
+    || (access.role === "owner" ? normalizeCode(access.ownerAgencyCode || primaryAgencyCode()) : "");
+  if (!code) return [];
   try {
     const config = googleOauthConfig(process.env);
     if (!config.clientId || !config.clientSecret) return [];
-    const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
-    const { integration, error } = await loadOwnerGoogleIntegration(ctx, ownerCode);
+    const { integration, error } = await loadOwnerGoogleIntegration(ctx, code);
     if (error || !integration) return [];
-    return await listOwnerCalendarCatalog(ctx, ownerCode, integration);
+    return await listOwnerCalendarCatalog(ctx, code, integration);
   } catch (unexpected) {
     return [];
   }
@@ -722,13 +817,15 @@ async function ownerCalendarCatalog(ctx, access) {
 // 그 모름이 전부 읽기 전용으로 뒤집힌다. 그래서 accessRole 백필 이전에 생긴
 // 모든 보조 캘린더의 일정이 PATCH·DELETE 에서 403 calendar_read_only 로 막혔다.
 async function readOnlyCalendarBlock(ctx, access, row) {
-  if (access.role !== "owner") return null;
+  // 카탈로그와 같은 계정 단위를 쓴다. 계정이 다르면 읽기 전용 판정도 달라진다.
+  const ownerCode = access.personalKey
+    || (access.role === "owner" ? normalizeCode(access.ownerAgencyCode || primaryAgencyCode()) : "");
+  if (!ownerCode) return null;
   const calendarId = cleanText(row?.google_calendar_id);
   if (!calendarId) return null;
   try {
     const config = googleOauthConfig(process.env);
     if (!config.clientId || !config.clientSecret) return null;
-    const ownerCode = normalizeCode(access.ownerAgencyCode || primaryAgencyCode());
     const catalog = await listOwnerCalendarCatalog(ctx, ownerCode, null);
     const entry = catalog.find((candidate) => candidate.id === calendarId);
     if (entry?.readOnly !== true) return null;
@@ -878,9 +975,9 @@ async function handlePost(request, ctx) {
   if (cleanText(body.action).startsWith("calendar-")) {
     return json(request, { ok: false, message: "공유 일정표 기능은 사용하지 않습니다." }, 404);
   }
-  const access = await resolveAccess(request, ctx);
+  const access = await accessForRequest(request, ctx);
   if (!access.ok) return json(request, access, access.status);
-  if (!roleCanMutateWorkItems(access.role)) {
+  if (!canMutateWorkItems(access)) {
     return json(request, { ok: false, message: "광고주는 공개된 일정만 확인할 수 있습니다." }, 403);
   }
   const unexpectedKey = unexpectedWorkItemInput(body);
@@ -914,6 +1011,10 @@ async function handlePost(request, ctx) {
     operation_team_id: access.team?.id || null,
     owner_agency_code: access.ownerAgencyCode || primaryAgencyCode(),
     calendar_id: null,
+    // 개인 행의 세 값(personal_role · personal_code · owner_agency_code)은 서버가
+    // 세션에서 뽑아 채운다. 요청 본문은 이 키들을 실을 수 없다 —
+    // WORK_ITEM_WRITE_KEYS 화이트리스트에 없어 그 전에 400 으로 잘린다.
+    ...(access.personalKey ? personalRowKeys(access) : {}),
     // 구글 push 는 저장을 막지 않는다. 저장문 자체에 pending 을 실어 두면
     // push 가 실패해도 다음 동기화가 이 행을 자동으로 재시도한다.
     ...googlePendingPatch(access),
@@ -1052,8 +1153,10 @@ export async function assistantCompleteWorkItem(request, ctx, access, body = {})
   if (validIsoDate(existing.row.updated_at) !== expectedUpdatedAt) {
     return json(request, { ok: false, message: "일정이 변경되었습니다. 새로고침 후 다시 말씀해주세요." }, 409);
   }
+  // handleGet 과 같은 규칙이다. 자기 개인 공간의 일정은 가릴 대상이 아니다.
+  const usePublicPayload = !access.personalKey && access.role === "client";
   if (existing.row.status === "done") {
-    const item = access.role === "client" ? clientWorkItemPayload(existing.row) : managerWorkItemPayload(existing.row);
+    const item = usePublicPayload ? clientWorkItemPayload(existing.row) : managerWorkItemPayload(existing.row);
     return json(request, { ok: true, unchanged: true, message: "이미 완료된 일정입니다.", item });
   }
   let updateQuery = ctx.supabaseAdmin
@@ -1071,15 +1174,15 @@ export async function assistantCompleteWorkItem(request, ctx, access, body = {})
     metadata: { previousStatus: existing.row.status, status: data.status, source: "momentlabs_assistant" },
   });
   await syncOwnerScheduleRows(ctx, process.env, access, [data], "upsert");
-  const item = access.role === "client" ? clientWorkItemPayload(data) : managerWorkItemPayload(data);
+  const item = usePublicPayload ? clientWorkItemPayload(data) : managerWorkItemPayload(data);
   return json(request, { ok: true, unchanged: false, message: "일정을 완료 처리했습니다.", item, auditLogged });
 }
 
 async function handlePatch(request, ctx) {
   const body = await readBody(request);
-  const access = await resolveAccess(request, ctx);
+  const access = await accessForRequest(request, ctx);
   if (!access.ok) return json(request, access, access.status);
-  if (!roleCanMutateWorkItems(access.role)) return json(request, { ok: false, message: "수정 권한이 없습니다." }, 403);
+  if (!canMutateWorkItems(access)) return json(request, { ok: false, message: "수정 권한이 없습니다." }, 403);
   if (cleanText(body.action) === "assistant-complete") {
     return assistantCompleteWorkItem(request, ctx, access, body);
   }
@@ -1211,12 +1314,14 @@ async function refreshSeriesInstances(ctx, access, options) {
 
   let siblings = [];
   try {
-    const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
+    // 형제 조회도 앵커 행과 같은 공간으로 좁힌다. 좁히지 않으면 개인 시리즈의
+    // 재수집이 같은 마스터 이벤트를 물고 있는 운영 행까지 덮어쓸 수 있다.
+    const { data } = await runWithOptionalColumns(() => personalRowScope(ctx.supabaseAdmin
       .from("schedule_items")
       .select(selectFields())
       .eq("owner_agency_code", anchorRow.owner_agency_code)
       .eq("google_recurring_event_id", masterEventId)
-      .is("calendar_id", null));
+      .is("calendar_id", null), anchorRow));
     siblings = Array.isArray(data) ? data : [];
   } catch (error) {
     siblings = [];
@@ -1227,6 +1332,10 @@ async function refreshSeriesInstances(ctx, access, options) {
     client_id: anchorRow.client_id || null,
     operation_team_id: anchorRow.operation_team_id || null,
     owner_agency_code: anchorRow.owner_agency_code,
+    // 다시 만들어 넣는 인스턴스는 앵커와 같은 공간에 남아야 한다. 이 두 값을
+    // 빼면 개인 시리즈를 고칠 때마다 인스턴스가 운영 피드로 새어 나온다.
+    personal_role: anchorRow.personal_role ?? null,
+    personal_code: anchorRow.personal_code ?? null,
     calendar_id: null,
     title: anchorRow.title,
     schedule_type: anchorRow.schedule_type,
@@ -1284,12 +1393,15 @@ async function refreshSeriesInstances(ctx, access, options) {
 async function deleteSeriesRows(request, ctx, options) {
   const { row, seriesEventId, googleDelete, auditAttempt } = options;
   const skipped = Boolean(googleDelete.skipped);
-  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
+  // 개인 술어까지 행에서 뽑아 건다. 개인 행이면 owner_agency_code 가 곧
+  // 개인키라 이미 좁혀지지만, 시리즈 삭제는 여러 행을 한 번에 날리는 유일한
+  // 경로라 술어 하나가 빠졌을 때의 피해가 가장 크다(이중 방어).
+  const { data, error } = await runWithOptionalColumns(() => personalRowScope(ctx.supabaseAdmin
     .from("schedule_items")
     .delete()
     .eq("owner_agency_code", row.owner_agency_code)
     .eq("google_recurring_event_id", seriesEventId)
-    .is("calendar_id", null)
+    .is("calendar_id", null), row)
     .select("id"));
   if (error) {
     return auditAttempt(json(request, { ok: false, message: "업무 삭제에 실패했습니다.", detail: error.message }, 500),
@@ -1323,9 +1435,9 @@ async function deleteSeriesRows(request, ctx, options) {
 
 async function handleDelete(request, ctx) {
   const body = await readBody(request);
-  const access = await resolveAccess(request, ctx);
+  const access = await accessForRequest(request, ctx);
   if (!access.ok) return json(request, access, access.status);
-  if (!roleCanMutateWorkItems(access.role)) return json(request, { ok: false, message: "삭제 권한이 없습니다." }, 403);
+  if (!canMutateWorkItems(access)) return json(request, { ok: false, message: "삭제 권한이 없습니다." }, 403);
   const allowedKeys = new Set(["id", "expectedUpdatedAt", "recurrenceScope"]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
     return json(request, { ok: false, message: "삭제 요청에 허용되지 않은 값이 포함되었습니다." }, 400);

@@ -1,6 +1,11 @@
 import { withSupabase } from "@supabase/server";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import {
+  OPTIONAL_PERSONAL_COLUMNS,
+  optionalColumnEnabled,
+  runWithOptionalColumns,
+} from "./google-calendar-sync.mjs";
+import {
   databaseError,
   json,
   methodNotAllowed,
@@ -116,13 +121,18 @@ function listRoutes() {
 // 곧 "모든 계정이 공유하는 업무 운영 목록"이 된다. 대표(owner) 개인 캘린더 행은
 // 이 목록에 절대 섞이면 안 된다.
 //
-// 현재 스키마에는 개인/운영을 가르는 열(personal_role)이 없다. 그래서 판별 기준은
-// "운영 범위가 붙어 있는가" 하나다.
+// 이제 개인/운영을 가르는 정본 신호는 personal_role 열이다. 계정마다 개인
+// 캘린더가 하나씩 생겼으므로 개인 행은 대표님 것만이 아니고, 이 표면에는
+// 테넌트 필터가 없어 열 하나가 빠지면 모든 계정의 개인 일정이 그대로 노출된다.
+// 그래서 personal_role IS NULL 이 1차 술어이고, 아래 운영 범위 술어는 그 열이
+// 아직 없는 배포 창(코드 먼저, 마이그레이션 나중)의 대비책으로 남긴다.
+//
+// 범위 술어의 판별 기준은 "운영 범위가 붙어 있는가" 하나다.
 //   · client_id 또는 operation_team_id 가 있으면 → 업무 운영(공유) 행. 그대로 반환한다.
-//   · 둘 다 없으면 → 대표 개인 공간 행. 제외한다.
+//   · 둘 다 없으면 → 개인 공간 행. 제외한다.
 // 구글에서 가져온 개인 일정은 client_id / operation_team_id / calendar_id 를 항상
 // null 로 저장하므로(google-calendar-sync.mjs 의 mapGoogleEventToScheduleRow)
-// 이 술어 하나로 전부 걸러진다.
+// 이 술어 하나로도 마이그레이션 전 창에서는 전부 걸러진다.
 //
 // google_event_id · google_calendar_id 의 유무로 거르지 않는 이유:
 // 대표가 만든 행은 광고주·운영팀 범위여도 구글로 push 되면서 두 값을 갖게 된다
@@ -131,7 +141,8 @@ function listRoutes() {
 const OPERATIONAL_SCOPE_ONLY = "client_id.not.is.null,operation_team_id.not.is.null";
 
 function scopeToSharedOperationRows(query) {
-  return query.is("calendar_id", null).or(OPERATIONAL_SCOPE_ONLY);
+  const scoped = query.is("calendar_id", null).or(OPERATIONAL_SCOPE_ONLY);
+  return optionalColumnEnabled("personal_role") ? scoped.is("personal_role", null) : scoped;
 }
 
 function applyFilters(query, url, id, config = {}) {
@@ -197,15 +208,20 @@ async function handleGet(request, ctx, config, id) {
   const { url } = routeParts(request, "/api/admin");
   const limit = parseLimit(url);
 
-  let query = ctx.supabaseAdmin
-    .from(config.table)
-    .select(config.select);
-
-  query = applyFilters(query, url, id, config)
+  // personalOnly 자원만 새 열을 술어로 쓴다. 마이그레이션 전 창에서 42703 /
+  // PGRST204 가 오면 묶음을 내리고 술어 없이 한 번 재시도한다 — 그때도
+  // OPERATIONAL_SCOPE_ONLY 가 그대로 남아 개인 행은 여전히 걸러진다.
+  // 나머지 자원은 예전 코드 경로를 글자 그대로 지나간다.
+  const runQuery = () => applyFilters(
+    ctx.supabaseAdmin.from(config.table).select(config.select),
+    url, id, config,
+  )
     .order(config.order, { ascending: config.ascending === true })
     .limit(limit);
 
-  const { data, error } = await query;
+  const { data, error } = config.personalOnly
+    ? await runWithOptionalColumns(runQuery, OPTIONAL_PERSONAL_COLUMNS)
+    : await runQuery();
   if (error) {
     return databaseError(error, `${config.table} 테이블 조회에 실패했습니다.`);
   }
@@ -272,12 +288,18 @@ async function handlePatch(request, ctx, config, id) {
   }
   if (config.personalOnly) normalizePersonalScheduleBody(body);
   if (config.table === "naver_rank_trackers") body.max_rank = 300;
-  let updateQuery = ctx.supabaseAdmin
-    .from(config.table)
-    .update(body)
-    .eq("id", id);
-  if (config.personalOnly) updateQuery = scopeToSharedOperationRows(updateQuery);
-  const { data, error } = await updateQuery.select(config.select);
+  const runUpdate = () => {
+    const updateQuery = ctx.supabaseAdmin
+      .from(config.table)
+      .update(body)
+      .eq("id", id);
+    return (config.personalOnly ? scopeToSharedOperationRows(updateQuery) : updateQuery).select(config.select);
+  };
+  // 열이 아직 없으면 술어를 내리고 한 번 재시도한다. 그 재시도도 범위 술어를
+  // 그대로 달고 나가므로 개인 행을 건드릴 수는 없다.
+  const { data, error } = config.personalOnly
+    ? await runWithOptionalColumns(runUpdate, OPTIONAL_PERSONAL_COLUMNS)
+    : await runUpdate();
 
   if (error) {
     return databaseError(error, `${config.table} 테이블 수정에 실패했습니다.`);
@@ -314,12 +336,16 @@ async function handleDelete(_request, ctx, config, id) {
     }, 409);
   }
 
-  let deleteQuery = ctx.supabaseAdmin
-    .from(config.table)
-    .delete()
-    .eq("id", id);
-  if (config.personalOnly) deleteQuery = scopeToSharedOperationRows(deleteQuery);
-  const { data, error } = await deleteQuery.select(config.select);
+  const runDelete = () => {
+    const deleteQuery = ctx.supabaseAdmin
+      .from(config.table)
+      .delete()
+      .eq("id", id);
+    return (config.personalOnly ? scopeToSharedOperationRows(deleteQuery) : deleteQuery).select(config.select);
+  };
+  const { data, error } = config.personalOnly
+    ? await runWithOptionalColumns(runDelete, OPTIONAL_PERSONAL_COLUMNS)
+    : await runDelete();
 
   if (error) {
     return databaseError(error, `${config.table} 테이블 삭제에 실패했습니다.`);
@@ -422,15 +448,23 @@ async function handleOverview(request, ctx) {
     )
       .order("report_date", { ascending: false })
       .limit(8),
-    schedule: filterBrand(
-      ctx.supabaseAdmin
-        .from("schedule_items")
-        .select(resources["schedule-items"].select)
-        .eq("client_id", clientId)
-        .is("calendar_id", null)
-    )
-      .order("starts_at", { ascending: true })
-      .limit(10),
+    // 광고주 범위 개요라 client_id 조건만으로도 개인 행은 이미 걸린다(개인 행의
+    // client_id 는 언제나 null 이다). 그래도 열이 살아 있으면 한 겹 더 건다 —
+    // 이 표면도 테넌트 필터가 없는 관리 API 이고, 유출은 한 번이면 끝이다.
+    // 열이 아직 없는 창에서는 묶음을 내리고 술어 없이 한 번 재시도한다.
+    schedule: runWithOptionalColumns(() => {
+      const base = filterBrand(
+        ctx.supabaseAdmin
+          .from("schedule_items")
+          .select(resources["schedule-items"].select)
+          .eq("client_id", clientId)
+          .is("calendar_id", null)
+      );
+      const scoped = optionalColumnEnabled("personal_role") ? base.is("personal_role", null) : base;
+      return scoped
+        .order("starts_at", { ascending: true })
+        .limit(10);
+    }, OPTIONAL_PERSONAL_COLUMNS),
     actionPlans: filterBrand(
       ctx.supabaseAdmin
         .from("action_plans")

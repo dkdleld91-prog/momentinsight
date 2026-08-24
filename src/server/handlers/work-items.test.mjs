@@ -1475,10 +1475,12 @@ test("recurrenceScope all deletes the google master and every MI row of that ser
     [`DELETE ${MASTER_EVENT_URL}`]);
   const removals = opsFor(harness.ops, "schedule_items", "delete");
   assert.equal(removals.length, 1);
+  // 운영 시리즈 삭제는 같은 시리즈의 개인 행을 P6 창 동안에도 절대 함께 쓸어서는 안 된다.
   assert.deepEqual(removals[0].filters, [
     ["eq", "owner_agency_code", "mml93-a01"],
     ["eq", "google_recurring_event_id", "master-1"],
     ["is", "calendar_id", null],
+    ["is", "personal_role", null],
   ]);
   const audits = opsFor(harness.ops, "audit_logs", "insert");
   assert.deepEqual(audits.map((op) => op.values.action), ["work_item_delete_attempted", "work_item_deleted"]);

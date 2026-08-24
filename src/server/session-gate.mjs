@@ -46,6 +46,13 @@ const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
   "/api/meta-ads",
   ...TEAM_ACCOUNT_ONLY_RANK_PATHS,
 ]);
+// 개인 캘린더 경로는 광고주 미연결 운영팀 세션에서도 열려야 한다. 개인 공간의
+// 단위는 계정 자체이고 광고주 범위와는 무관하기 때문이다.
+const ACCOUNT_ONLY_PERSONAL_PATHS = new Set([
+  "/api/my/work-items",
+  "/api/my/google-calendar",
+  "/api/my/google-login",
+]);
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
 export const SESSION_ACTIVITY_REVOKED = "revoked";
@@ -101,7 +108,8 @@ export function sessionScopeAllowsPath(claims, path) {
   if (claims?.role !== "team" || (claims.clientId && claims.agencyCode)) return true;
   return path.startsWith("/api/team/")
     || path === "/api/team-agency-codes"
-    || TEAM_ACCOUNT_ONLY_TOOL_PATHS.has(path);
+    || TEAM_ACCOUNT_ONLY_TOOL_PATHS.has(path)
+    || ACCOUNT_ONLY_PERSONAL_PATHS.has(path);
 }
 
 function mutationOriginAllowed(request) {

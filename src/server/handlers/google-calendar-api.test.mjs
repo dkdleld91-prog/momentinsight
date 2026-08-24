@@ -1344,7 +1344,10 @@ test("an enabled advertiser role logs in and a revoked code is refused as inacti
       ["POST", AUDIT_REST_URL, () => restCreated()],
     ],
   });
-  assert.equal(response.headers.get("location"), "/admin?glogin=success");
+  // 광고주는 /admin 을 열 수 없다. 목적지는 로그인 목적 state(항상 owner 로 서명된다)가
+  // 아니라 방금 확정된 계정 역할이 정한다 — 개인 캘린더 확장 이전에는 여기서 광고주가
+  // 자기 화면이 아닌 대표실 주소로 떨어졌다.
+  assert.equal(response.headers.get("location"), "/client?glogin=success");
   const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
   const claims = openSession(sessionCookies(response)[0].split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
   assert.equal(claims.role, "client");

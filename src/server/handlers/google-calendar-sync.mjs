@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { seoulDateKey } from "../calendar-domain.mjs";
 import {
@@ -39,6 +40,10 @@ import {
 export const WINDOW_PAST_DAYS = 30;
 export const WINDOW_FUTURE_DAYS = 365;
 export const FULL_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// full 승격 시각을 계정마다 흩뿌리는 폭. 계정 하나에 캘린더가 여러 개이므로
+// 같은 날 연결한 계정들이 매일 같은 시각에 일제히 full 로 승격되면 그 순간
+// 프로젝트 전체의 분당 요청 한도를 넘겨 전 계정이 함께 403 을 맞는다.
+export const FULL_SYNC_JITTER_MS = 6 * 60 * 60 * 1000;
 export const DEFAULT_MAX_PAGES = 10;
 export const DEFAULT_PAGE_SIZE = 250;
 export const DEFAULT_PUSH_LIMIT = 50;
@@ -67,6 +72,7 @@ const SYNC_ROW_COLUMNS = [
   "google_source", "google_sync_state", "updated_at",
   "google_recurring_event_id", "google_recurrence", "google_conference_uri", "google_calendar_name",
   "google_color_id",
+  "personal_role", "personal_code",
 ];
 
 const CALENDAR_SYNC_COLUMNS = [
@@ -96,10 +102,18 @@ export const OPTIONAL_CALENDAR_CATALOG_COLUMNS = [
 // 마이그레이션이므로 자기 묶음으로 둔다 — 색만 아직 없는 창에서 일정 상세
 // 열까지 함께 내려가면 참석자·반복 요약이 이유 없이 사라진다.
 export const OPTIONAL_EVENT_COLOR_COLUMNS = ["google_color_id"];
+// 개인 캘린더(personal principal key) 마이그레이션이 더한 열. 또 다른
+// 마이그레이션이므로 자기 묶음으로 둔다 — 이 두 열만 아직 없는 창에서 색이나
+// 일정 상세 열까지 함께 내려가면 아무 관계 없는 화면이 같이 망가진다.
+export const OPTIONAL_PERSONAL_COLUMNS = ["personal_role", "personal_code"];
 // schedule_items 질의 하나가 두 마이그레이션의 선택 열을 함께 싣는다. 그래서
 // 이 표를 기본 묶음으로 넘기고, 아래 강등 로직이 "오류가 지목한 열"의 묶음만
 // 골라 내린다. 어느 쪽이 없든 나머지 한 묶음은 그대로 살아 있다.
-export const OPTIONAL_SCHEDULE_GROUPS = [...OPTIONAL_SCHEDULE_COLUMNS, ...OPTIONAL_EVENT_COLOR_COLUMNS];
+export const OPTIONAL_SCHEDULE_GROUPS = [
+  ...OPTIONAL_SCHEDULE_COLUMNS,
+  ...OPTIONAL_EVENT_COLOR_COLUMNS,
+  ...OPTIONAL_PERSONAL_COLUMNS,
+];
 
 // calendarList.accessRole 은 읽기 전용 필드이고 값은 이 다섯 중 하나다.
 // freeBusyReader / reader / writerWithoutPrivateAccess / writer / owner.
@@ -155,6 +169,7 @@ registerOptionalColumnGroup("schedule", OPTIONAL_SCHEDULE_COLUMNS);
 registerOptionalColumnGroup("calendar_sync", OPTIONAL_CALENDAR_SYNC_COLUMNS);
 registerOptionalColumnGroup("calendar_catalog", OPTIONAL_CALENDAR_CATALOG_COLUMNS);
 registerOptionalColumnGroup("event_color", OPTIONAL_EVENT_COLOR_COLUMNS);
+registerOptionalColumnGroup("personal", OPTIONAL_PERSONAL_COLUMNS);
 
 // 호출부가 내용이 같은 새 배열을 넘겨도 같은 묶음으로 봐야 타이머가 하나로
 // 유지된다. 등록된 열 이름으로 되짚고, 처음 보는 묶음이면 그 자리에서 등록한다.
@@ -322,6 +337,23 @@ function primaryAgencyCode(env = process.env) {
   return normalizeCode(env.MI_PRIMARY_AGENCY_CODE || "mml93-a01");
 }
 
+// 계정별 full sync 주기. 대표님 코드만은 예전 그대로 정확히 24시간이다 —
+// 그 하나의 계정에 맞춰 잡아 둔 기존 동작·테스트를 흔들 이유가 없다.
+//
+// 나머지 계정은 24시간에 계정키에서 뽑은 고정 오프셋(0~6시간)을 더해 승격
+// 시각을 흩뿌린다. 같은 날 연결한 계정들은 last_full_sync_at 이 몇 분 안에
+// 몰려 있어서, 주기가 모두 정확히 24시간이면 다음 날 같은 순간에 전부 full 로
+// 올라간다. full 은 캘린더당 페이지를 끝까지 훑으므로 그 순간 구글 요청이
+// 계정 수만큼 곱해져 프로젝트 분당 한도를 넘기고, 그러면 그날 승격된 계정이
+// 다 함께 실패한다. 오프셋을 해시로 뽑는 이유는 재배포·재시작 뒤에도 같은
+// 계정이 같은 자리를 지켜야 승격이 흩어진 상태로 유지되기 때문이다.
+export function fullSyncIntervalMs(code, env = process.env) {
+  const key = normalizeCode(code);
+  if (!key || key === primaryAgencyCode(env)) return FULL_SYNC_INTERVAL_MS;
+  const digest = createHash("sha256").update(key).digest();
+  return FULL_SYNC_INTERVAL_MS + (digest.readUInt32BE(0) % FULL_SYNC_JITTER_MS);
+}
+
 function isUuid(value) {
   return UUID_PATTERN.test(cleanText(value).toLowerCase());
 }
@@ -463,11 +495,24 @@ export function colorBackfillPatch(event = {}, row = {}) {
   return { google_color_id: next };
 }
 
-export function mapGoogleEventToScheduleRow(event = {}, { ownerCode = "", calendarId = "" } = {}) {
+export function mapGoogleEventToScheduleRow(event = {}, {
+  ownerCode = "",
+  calendarId = "",
+  personalRole = "",
+  personalCode = "",
+} = {}) {
   const times = googleEventTimes(event);
   if (!times.ok) return null;
   const props = eventPrivateProps(event);
+  // 두 값이 모두 있을 때만 개인 표식을 단다. 하나라도 비면 키를 아예 넣지
+  // 않는다 — DB CHECK 가 두 열이 함께 차거나 함께 비기를 요구하기도 하지만,
+  // 그보다 중요한 이유는 P6 이전 대표님 inbound 행이다. 그 행들은 표식 없이
+  // 들어와야 운영 피드(personal_role IS NULL 필터)에 지금처럼 계속 보인다.
+  const personal = cleanText(personalRole) && cleanText(personalCode)
+    ? { personal_role: normalizeCode(personalRole), personal_code: normalizeCode(personalCode) }
+    : {};
   return {
+    ...personal,
     owner_agency_code: normalizeCode(ownerCode),
     client_id: null,
     operation_team_id: null,
@@ -527,13 +572,19 @@ export function inboundUpdatePatch(event = {}, row = {}) {
   return { ok: true, patch };
 }
 
-// (C-1) 대표가 만든 행이면 광고주/운영팀 범위여도 구글로 민다.
-// access.role === "owner" 조건은 유지한다 — 운영팀원이 만든 일정이 대표 개인
-// 캘린더로 흘러드는 것을 막는 유일한 방어선이다.
+// (C-1) 자기 개인 공간의 행이면 광고주/운영팀 범위여도 구글로 민다.
+//
+// 게이트는 없앤 것이 아니라 다시 맨 것이다. 예전 질문은 "대표냐" 였고 지금
+// 질문은 "자기 개인 공간이냐" 다 — 계정마다 개인 캘린더가 하나씩 생겼으니
+// 대표 여부는 더 이상 경계선이 될 수 없다. 개인키가 없는 운영팀·광고주 세션은
+// 여전히 빈 배열이다. 그것이 운영팀원이 만든 일정을 대표님 구글 캘린더로
+// 흘려보내지 않는 유일한 방어선이고, 개인키를 든 세션은 자기 키와 같은
+// owner_agency_code 행만 통과하므로 남의 공간으로 새지 않는다.
 // owner_agency_code 는 selectFields 에 없을 수 있어 있을 때만 대조한다.
 export function ownerSyncableRows(access, rows) {
-  if (!access || access.role !== "owner") return [];
-  const ownerCode = normalizeCode(access.ownerAgencyCode);
+  const personalKey = normalizeCode(access?.personalKey);
+  if (!personalKey && access?.role !== "owner") return [];
+  const ownerCode = personalKey || normalizeCode(access?.ownerAgencyCode);
   return (Array.isArray(rows) ? rows : []).filter((row) => {
     if (!row || row.calendar_id) return false;
     if (row.owner_agency_code && normalizeCode(row.owner_agency_code) !== ownerCode) return false;
@@ -889,13 +940,23 @@ export async function syncOwnerScheduleRows(ctx, env, access, rows, mode, fetchI
 export async function pushPendingRows(ctx, env, ownerCode, integration, accessToken, options = {}) {
   const limit = options.pushLimit || DEFAULT_PUSH_LIMIT;
   const fetchImpl = options.fetchImpl || fetch;
-  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
-    .from("schedule_items")
-    .select(syncRowFields())
-    .eq("owner_agency_code", normalizeCode(ownerCode))
-    .in("google_sync_state", ["pending", "failed"])
-    .order("updated_at", { ascending: true })
-    .limit(limit));
+  const personal = options.personal || null;
+  const { data, error } = await runWithOptionalColumns(() => {
+    const query = ctx.supabaseAdmin
+      .from("schedule_items")
+      .select(syncRowFields())
+      .eq("owner_agency_code", normalizeCode(ownerCode))
+      .in("google_sync_state", ["pending", "failed"])
+      .order("updated_at", { ascending: true })
+      .limit(limit);
+    // 개인 실행의 범위 술어는 선택 열 강등에 절대 딸려 내려가지 않는다.
+    // 강등이 술어까지 지우면 재시도 한 번이 조회 범위를 계정 전체로 넓히는데,
+    // 그렇게 넓어진 결과는 남의 개인 행을 이 계정의 구글 캘린더로 밀어 버린다.
+    // 열이 아직 없으면 이 질의는 그냥 실패해야 한다(fail closed).
+    return personal
+      ? query.eq("personal_role", personal.role).eq("personal_code", personal.code)
+      : query;
+  });
   if (error) return { pushed: 0, pushFailed: 0 };
   const rows = (data || []).filter((row) => row && !row.calendar_id);
   if (!rows.length) return { pushed: 0, pushFailed: 0 };
@@ -1108,7 +1169,12 @@ async function saveCalendarSyncState(ctx, calendarRow, values) {
     .then(() => {}, () => {});
 }
 
-async function loadMatchingRows(ctx, calendarId, events) {
+// 조회 자체를 이 실행의 계정으로 좁힌다. 걸러지는 행은 matchRowForEvent 가
+// 어차피 버리는 행(owner_agency_code 가 다른 행)뿐이라 동작은 그대로다 —
+// 다만 계정이 대표님 하나가 아니게 된 뒤로는, 남의 행을 메모리로 끌어올린 다음
+// 버리는 것과 애초에 읽지 않는 것의 차이가 크다. 실수 한 번의 사정거리가 다르다.
+async function loadMatchingRows(ctx, ownerCode, calendarId, events) {
+  const code = normalizeCode(ownerCode);
   const eventIds = [...new Set(events.map((event) => cleanText(event.id)).filter(Boolean))];
   const scheduleIds = [...new Set(events
     .map((event) => cleanText(eventPrivateProps(event).miScheduleId).toLowerCase())
@@ -1119,6 +1185,7 @@ async function loadMatchingRows(ctx, calendarId, events) {
     const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
       .from("schedule_items")
       .select(syncRowFields())
+      .eq("owner_agency_code", code)
       .eq("google_calendar_id", calendarId)
       .in("google_event_id", eventIds));
     for (const row of data || []) byEvent.set(row.google_event_id, row);
@@ -1127,6 +1194,7 @@ async function loadMatchingRows(ctx, calendarId, events) {
     const { data } = await runWithOptionalColumns(() => ctx.supabaseAdmin
       .from("schedule_items")
       .select(syncRowFields())
+      .eq("owner_agency_code", code)
       .in("id", scheduleIds));
     for (const row of data || []) byScheduleId.set(row.id, row);
   }
@@ -1155,9 +1223,9 @@ export function matchRowForEvent(event, maps, ownerCode) {
   return { row, via: "schedule" };
 }
 
-async function applyEvents(ctx, ownerCode, calendarRow, events, window, counters) {
+async function applyEvents(ctx, ownerCode, calendarRow, events, window, counters, personal = null) {
   const calendarId = calendarRow.google_calendar_id;
-  const maps = await loadMatchingRows(ctx, calendarId, events);
+  const maps = await loadMatchingRows(ctx, ownerCode, calendarId, events);
 
   for (const event of events) {
     const match = matchRowForEvent(event, maps, ownerCode);
@@ -1232,7 +1300,12 @@ async function applyEvents(ctx, ownerCode, calendarRow, events, window, counters
     // 이미 MI 에 있는 행은 윈도우와 무관하게 반영하지만, 새 이벤트는
     // 윈도우 밖이면 들이지 않는다. sync token 이 범위를 기억하든 말든 같은 결과가 된다.
     if (!eventInWindow(times.startsAt, window)) { counters.skipped += 1; continue; }
-    const insertRow = mapGoogleEventToScheduleRow(event, { ownerCode, calendarId });
+    const insertRow = mapGoogleEventToScheduleRow(event, {
+      ownerCode,
+      calendarId,
+      personalRole: personal?.role || "",
+      personalCode: personal?.code || "",
+    });
     if (!insertRow) { counters.skipped += 1; continue; }
     const { error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
       .from("schedule_items").insert(withoutDisabledColumns(insertRow)));
@@ -1300,7 +1373,7 @@ export async function syncOneCalendar(ctx, ownerCode, calendarRow, accessToken, 
     }
 
     const events = Array.isArray(result.data?.items) ? result.data.items : [];
-    if (events.length) await applyEvents(ctx, ownerCode, calendarRow, events, window, counters);
+    if (events.length) await applyEvents(ctx, ownerCode, calendarRow, events, window, counters, options.personal || null);
 
     pages += 1;
     seen += events.length;
@@ -1560,6 +1633,9 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
   const code = normalizeCode(ownerCode || primaryAgencyCode(env));
   const fetchImpl = options.fetchImpl || fetch;
   const nowMs = options.now || Date.now();
+  // 개인 캘린더 실행만 이 값을 싣는다({role, code}). 없으면 이 함수의 모든
+  // 질의는 예전과 글자 하나 다르지 않다 — 대표님 운영 동기화가 그 경로다.
+  const personal = options.personal || null;
   const empty = { pushed: 0, pushFailed: 0, calendars: [], changed: 0 };
 
   const config = googleOauthConfig(env);
@@ -1601,6 +1677,7 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
 
   const push = await pushPendingRows(ctx, env, code, activeIntegration, token.accessToken, {
     pushLimit: options.pushLimit,
+    personal,
     fetchImpl,
   });
 
@@ -1617,9 +1694,10 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
   // incremental 은 "변경된" 이벤트만 주므로, 시간이 흘러 윈도우 안으로 들어온
   // (그러나 변경되지 않은) 이벤트는 full sync 없이는 영원히 오지 않는다.
   const results = [];
+  const fullInterval = fullSyncIntervalMs(code, env);
   for (const calendarRow of calendars) {
     const lastFull = new Date(cleanText(calendarRow.last_full_sync_at)).getTime();
-    const stale = !Number.isFinite(lastFull) || nowMs - lastFull >= FULL_SYNC_INTERVAL_MS;
+    const stale = !Number.isFinite(lastFull) || nowMs - lastFull >= fullInterval;
     const mode = options.mode === "full" || stale ? "full" : "incremental";
     results.push(await syncOneCalendar(ctx, code, calendarRow, token.accessToken, {
       mode,
@@ -1627,6 +1705,7 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
       deadlineAt,
       maxPages: options.maxPages,
       pageSize: options.pageSize,
+      personal,
       fetchImpl,
     }));
   }

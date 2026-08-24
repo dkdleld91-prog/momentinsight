@@ -17,6 +17,9 @@
     },
     "api/owner/google-calendar.mjs": {
       "maxDuration": 60
+    },
+    "api/my/google-calendar.mjs": {
+      "maxDuration": 60
     }
   },
   "crons": [

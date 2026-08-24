@@ -78,6 +78,8 @@ async function routeRequest(request) {
     if (
       url.pathname === "/api/owner/google-calendar"
       || url.pathname === "/api/owner/google-login"
+      || url.pathname === "/api/my/google-calendar"
+      || url.pathname === "/api/my/google-login"
       || url.pathname === "/api/google-oauth/callback"
       || url.pathname === "/api/google-login/start"
     ) {
@@ -162,7 +164,7 @@ async function routeRequest(request) {
       return dispatch("reportCenter", request);
     }
 
-    if (url.pathname === "/api/work-items") {
+    if (url.pathname === "/api/work-items" || url.pathname === "/api/my/work-items") {
       return dispatch("workItems", request);
     }
 

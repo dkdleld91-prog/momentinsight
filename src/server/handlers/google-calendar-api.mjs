@@ -35,6 +35,14 @@ import {
   syncOwnerScheduleRows,
   writeRowToGoogleFirst,
 } from "./google-calendar-sync.mjs";
+import {
+  activePersonalPrincipal,
+  PERSONAL_GOOGLE_CALENDAR_PATH,
+  PERSONAL_GOOGLE_LOGIN_PATH,
+  PERSONAL_ROLES,
+  personalPrincipalKey,
+  resolvePersonalAccess,
+} from "./personal-identity.mjs";
 
 export {
   deleteRowFromGoogle,
@@ -197,11 +205,16 @@ function stateSignature(payloadText, secret) {
   return crypto.createHmac("sha256", secret).update(payloadText).digest("base64url");
 }
 
-export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar") {
+// r(계정 역할)과 owner(코드)는 서버가 세션 클레임에서만 채운다. 요청 본문·쿼리·
+// 브라우저 헤더에서 한 글자라도 받으면 아무나 남의 계정으로 서명된 state 를
+// 받아 가 그 계정에 구글을 연동할 수 있다. 서명(클라이언트 시크릿 HMAC-SHA256)이
+// 이 값들의 유일한 권위다 — 콜백에는 세션 쿠키가 오지 않기 때문이다.
+export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar", role = "owner") {
   const config = googleOauthConfig(env);
   if (!config.clientSecret) return "";
   const payloadText = JSON.stringify({
     owner: cleanText(ownerCode).toLowerCase(),
+    r: cleanText(role).toLowerCase() || "owner",
     p: cleanText(purpose) || "calendar",
     exp: now + STATE_TTL_MS,
     nonce: crypto.randomBytes(12).toString("base64url"),
@@ -222,6 +235,11 @@ export function verifyOauthState(state, env = process.env, now = Date.now()) {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
     if (!payload.owner || Number(payload.exp) < now) return null;
     if (!payload.p) payload.p = "calendar";
+    // r 이 없는 state 는 이 필드가 생기기 전에 발급된 것이다. 대표님으로 읽어야
+    // 배포 순간에 구글 화면에 가 있던 흐름이 콜백에서 끊기지 않는다. 폴백을
+    // 영구히 남겨도 비용이 없고, 모르는 역할은 여기서 끝낸다.
+    payload.r = cleanText(payload.r).toLowerCase() || "owner";
+    if (!PERSONAL_ROLES.has(payload.r)) return null;
     return payload;
   } catch (error) {
     return null;
@@ -460,11 +478,19 @@ function calendarActionFailure(request, result) {
   }, 502);
 }
 
-async function handleOwnerApi(request, ctx) {
-  if (!ownerRequest(request)) {
-    return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
-  }
-  const ownerCode = primaryAgencyCode();
+// 대표실(/api/owner/google-calendar)과 개인 공간(/api/my/google-calendar)은
+// 계정 키 하나만 다른 같은 액션 집합이다. 본문을 두 벌로 나눠 두면 문구·상태
+// 코드·검증 순서가 한쪽에서만 고쳐지는 날이 반드시 오므로 여기 한 곳에만 둔다.
+//
+// account = {
+//   key       : owner_agency_code 자리에 들어가는 계정 키(개인키)
+//   code      : OAuth state 에 실을 코드(대표님은 mml93-a01, 나머지는 uuid)
+//   role      : owner | team | client
+//   canManage : 캘린더 생성·참가자 초대 허용 여부(설계 §7.3)
+//   personal  : 동기화 엔진에 넘길 개인 좌표. 대표실 경로는 null 이다.
+// }
+async function calendarAccountApi(request, ctx, account) {
+  const ownerCode = account.key;
   if (request.method === "GET") {
     const config = googleOauthConfig();
     let integration = null;
@@ -486,6 +512,9 @@ async function handleOwnerApi(request, ctx) {
       syncStatus: integration?.sync_status || "ok",
       syncError: integration?.sync_error || null,
       lastSyncAt: integration?.last_sync_at || null,
+      // 개인 경로만 계정 역할과 캘린더 관리 권한을 함께 알린다. 대표실 응답
+      // 모양은 그대로 둬야 이미 그 모양에 맞춰진 화면이 흔들리지 않는다.
+      ...(account.personal ? { role: account.role, canManageCalendars: account.canManage } : {}),
     });
   }
   if (request.method !== "POST") return json(request, { ok: false, message: "Method not allowed" }, 405);
@@ -496,7 +525,9 @@ async function handleOwnerApi(request, ctx) {
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
     }
-    const state = signOauthState(ownerCode);
+    // state 에는 개인키가 아니라 코드만 싣는다. 콜백이 (r, owner) 로 키를 다시
+    // 조립하므로 서명 안에 접두사를 넣을 이유가 없다.
+    const state = signOauthState(account.code, process.env, Date.now(), "calendar", account.role);
     const url = buildGoogleAuthUrl(state);
     if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
     return withCookies(json(request, { ok: true, url }), [oauthNonceCookie(oauthStateNonce(state))]);
@@ -539,6 +570,7 @@ async function handleOwnerApi(request, ctx) {
     // 사람이 버튼을 누른 순간은 "지금 맞춰줘" 라는 뜻이므로 그 대기를 없앤다.
     // 자동·진입 동기화는 그대로 증분이고 기존 24시간 승격 규칙을 따른다.
     const result = await runOwnerCalendarSync(ctx, process.env, ownerCode, {
+      ...(account.personal ? { personal: account.personal } : {}),
       ...(trigger === "manual" ? { mode: "full" } : {}),
     });
     if (result.reason === "not-connected") {
@@ -626,6 +658,7 @@ async function handleOwnerApi(request, ctx) {
   // 캘린더 자체를 만들고 사람을 초대한다. 일정마다 참석자를 넣지 않고 공유하는
   // 방법이라, 여기서 만든 캘린더에 쌓은 일정은 초대받은 사람에게 자동으로 보인다.
   if (action === "calendar-create") {
+    if (!account.canManage) return calendarManageDenied(request);
     const config = googleOauthConfig();
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
@@ -668,6 +701,9 @@ async function handleOwnerApi(request, ctx) {
     if (op !== "list" && op !== "insert" && op !== "delete") {
       return json(request, { ok: false, message: "지원하지 않는 참가자 요청입니다." }, 400);
     }
+    // 목록 조회는 모두에게 열려 있다 — 지금 누가 들어 있는지 보는 것까지 막으면
+    // 광고주는 자기 캘린더가 어디까지 공유돼 있는지 확인할 길이 없다.
+    if (op !== "list" && !account.canManage) return calendarManageDenied(request);
     let result = null;
     if (op === "list") {
       result = await listOwnerCalendarAcl(ctx, process.env, ownerCode, calendarId);
@@ -702,29 +738,86 @@ async function handleOwnerApi(request, ctx) {
   return json(request, { ok: false, message: "지원하지 않는 요청입니다." }, 400);
 }
 
-function callbackRedirect(message) {
-  const target = `/admin?gcal=${encodeURIComponent(message)}#mi-admin-owner-assistant`;
+// 캘린더를 새로 만들고 사람을 초대하는 길은 우리 OAuth 클라이언트로 임의 주소에
+// 초대 메일이 나가는 경로다. 광고주가 그것을 필요로 한다는 근거가 없어 v1 정책은
+// owner·team 만 연다(설계 §7.3). 화면에서 버튼을 감추는 것만으로는 부족하다 —
+// 요청은 화면 없이도 만들 수 있으므로 서버에서 끊는다.
+function calendarManageDenied(request) {
+  return json(request, {
+    ok: false,
+    message: "광고주 계정은 캘린더 목록 조회와 표시 설정만 사용할 수 있습니다.",
+  }, 403);
+}
+
+async function handleOwnerApi(request, ctx) {
+  if (!ownerRequest(request)) {
+    return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
+  }
+  const ownerCode = primaryAgencyCode();
+  return calendarAccountApi(request, ctx, {
+    key: ownerCode,
+    code: ownerCode,
+    role: "owner",
+    canManage: true,
+    personal: null,
+  });
+}
+
+// 계정은 오직 resolvePersonalAccess 가 정한다 — 세션이 심은 헤더에서만 나오고
+// 운영 범위로 폴백하지 않는다. ownerRequest 는 여기서 쓰지 않는다(대표님 전용
+// 관문이라 운영팀·광고주 개인 공간을 통째로 막아 버린다).
+async function handlePersonalCalendarApi(request, ctx) {
+  const access = await resolvePersonalAccess(request, ctx);
+  if (!access.ok) return json(request, access, access.status);
+  return calendarAccountApi(request, ctx, {
+    key: access.personalKey,
+    code: access.personalCode,
+    role: access.personalRole,
+    canManage: access.personalRole !== "client",
+    personal: { role: access.personalRole, code: access.personalCode },
+  });
+}
+
+// 돌아갈 화면은 이 고정 표에서만 고른다. URL 파라미터로 받는 순간 구글 콜백이
+// 오픈 리다이렉트가 된다. 앵커는 대표실 비서 카드가 있는 대표님 화면에만 붙인다 —
+// 운영팀 화면에는 그 요소가 없어서 없는 곳으로 스크롤하게 된다.
+const ROLE_REDIRECTS = {
+  owner: { base: "/admin", hash: "#mi-admin-owner-assistant" },
+  team: { base: "/admin", hash: "" },
+  client: { base: "/client", hash: "" },
+};
+
+function roleRedirect(role) {
+  return ROLE_REDIRECTS[cleanText(role).toLowerCase()] || ROLE_REDIRECTS.owner;
+}
+
+function callbackRedirect(message, role = "owner") {
+  const destination = roleRedirect(role);
+  const target = `${destination.base}?gcal=${encodeURIComponent(message)}${destination.hash}`;
   return new Response(null, { status: 302, headers: { location: target, "cache-control": "no-store" } });
 }
 
-function loginRedirect(message, cookies = []) {
+function loginRedirect(message, cookies = [], role = "owner") {
   const headers = new Headers({
-    location: `/admin?glogin=${encodeURIComponent(message)}`,
+    location: `${roleRedirect(role).base}?glogin=${encodeURIComponent(message)}`,
     "cache-control": "no-store",
   });
   for (const cookie of cookies) headers.append("set-cookie", cookie);
   return new Response(null, { status: 302, headers });
 }
 
-function purposeRedirect(purpose, message) {
-  return purpose === "login" || purpose === "link" ? loginRedirect(message) : callbackRedirect(message);
+function purposeRedirect(purpose, message, role = "owner") {
+  return purpose === "login" || purpose === "link"
+    ? loginRedirect(message, [], role)
+    : callbackRedirect(message, role);
 }
 
-async function handleOwnerLoginApi(request, ctx) {
-  if (!ownerRequest(request)) {
-    return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
-  }
-  const ownerCode = primaryAgencyCode();
+// 구글 로그인 연결은 (role, 로그인코드) 한 쌍에 붙는다. 캘린더 쪽 개인키와는
+// 다른 코드 공간이라는 점이 중요하다 — 캘린더는 계정 수명을 따라가는 uuid 를
+// 쓰고(설계 §3.2), 로그인은 사람이 입력해 온 코드(team_code / agency_code /
+// mml93-a01)를 쓴다. 두 값을 뒤바꾸면 login_identities 가 아무와도 맞지 않는다.
+async function loginAccountApi(request, ctx, account) {
+  const ownerCode = account.code;
   if (request.method === "GET") {
     const config = googleOauthConfig();
     let identity = null;
@@ -733,7 +826,7 @@ async function handleOwnerLoginApi(request, ctx) {
       const { data, error } = await ctx.supabaseAdmin
         .from("login_identities")
         .select("google_email, linked_at")
-        .eq("role", "owner")
+        .eq("role", account.role)
         .eq("code", ownerCode)
         .maybeSingle();
       if (error) storageReady = false;
@@ -758,7 +851,7 @@ async function handleOwnerLoginApi(request, ctx) {
     if (!config.clientId || !config.clientSecret) {
       return json(request, { ok: false, code: "missing_google_env", message: "구글 연동 환경변수(GOOGLE_OAUTH_CLIENT_ID/SECRET)가 아직 설정되지 않았습니다." }, 503);
     }
-    const state = signOauthState(ownerCode, process.env, Date.now(), "link");
+    const state = signOauthState(ownerCode, process.env, Date.now(), "link", account.role);
     const url = buildGoogleAuthUrl(state, process.env, LOGIN_SCOPE, "link");
     if (!url) return json(request, { ok: false, message: "구글 인증 주소를 만들지 못했습니다." }, 500);
     return withCookies(json(request, { ok: true, url }), [oauthNonceCookie(oauthStateNonce(state))]);
@@ -767,13 +860,28 @@ async function handleOwnerLoginApi(request, ctx) {
     const { error } = await ctx.supabaseAdmin
       .from("login_identities")
       .delete()
-      .eq("role", "owner")
+      .eq("role", account.role)
       .eq("code", ownerCode);
     if (error) return json(request, { ok: false, message: "구글 로그인 연결 해제에 실패했습니다.", detail: error.message }, 500);
-    await recordLoginAudit(ctx, "google_login_unlinked", { role: "owner" });
+    await recordLoginAudit(ctx, "google_login_unlinked", { role: account.role });
     return json(request, { ok: true, message: "구글 로그인 연결을 해제했습니다. 기존 코드 로그인은 그대로 사용할 수 있습니다." });
   }
   return json(request, { ok: false, message: "지원하지 않는 요청입니다." }, 400);
+}
+
+async function handleOwnerLoginApi(request, ctx) {
+  if (!ownerRequest(request)) {
+    return json(request, { ok: false, message: "총관리자 전용 기능입니다." }, 403);
+  }
+  return loginAccountApi(request, ctx, { role: "owner", code: primaryAgencyCode() });
+}
+
+// 개인키(personalKey)가 아니라 loginCode 를 넘긴다. login_identities.code 는
+// 사람이 입력하는 로그인 코드 공간이라 uuid 를 넣으면 아무 행과도 맞지 않는다.
+async function handlePersonalLoginApi(request, ctx) {
+  const access = await resolvePersonalAccess(request, ctx);
+  if (!access.ok) return json(request, access, access.status);
+  return loginAccountApi(request, ctx, { role: access.personalRole, code: access.loginCode });
 }
 
 function handleLoginStart() {
@@ -792,42 +900,75 @@ function handleLoginStart() {
   });
 }
 
+// 콜백에는 세션 쿠키가 오지 않는다(구글이 크로스사이트 최상위 이동으로 부른다).
+// 그래서 state 를 발급한 뒤 10분 안에 계정이 해지·연결 해제됐을 수 있는데,
+// 여기서 다시 확인하지 않으면 이미 끊긴 운영팀·광고주가 그 창 안에서 구글 로그인
+// 연결을 완성해 버린다. 코드도 재발급 대상이라 "그 코드가 지금 살아 있는가" 는
+// 서명이 대신 답해 주지 못한다.
+async function activeLinkTarget(ctx, linkTarget) {
+  if (linkTarget.role === "owner") {
+    return safeEqual(linkTarget.code, primaryAgencyCode()) ? { ok: true } : { ok: false, reason: "invalid" };
+  }
+  if (linkTarget.role === "team") {
+    const { data, error } = await activeTeamByCode(ctx, linkTarget.code);
+    if (error) return { ok: false, reason: "lookup-failed" };
+    // ilike 조회라 대소문자만 다른 코드도 걸린다. 서명된 코드와 실제 행이
+    // 같은 문자열인지 다시 맞춰야 엉뚱한 팀에 연결이 붙지 않는다.
+    if (!data || cleanText(data.team_code).toLowerCase() !== linkTarget.code) {
+      return { ok: false, reason: "inactive" };
+    }
+    return { ok: true };
+  }
+  const { data, error } = await activeClientByCode(ctx, linkTarget.code);
+  if (error) return { ok: false, reason: "lookup-failed" };
+  if (!data) return { ok: false, reason: "inactive" };
+  return { ok: true };
+}
+
 async function handleLinkCallback(request, ctx, state, code) {
-  // Today the target is always the owner canary; keeping it in one object is
-  // what lets a future revision derive it from the caller's session claims.
-  const linkTarget = { role: "owner", code: primaryAgencyCode() };
-  if (!safeEqual(cleanText(state.owner), linkTarget.code)) {
+  // 연결 대상은 서명된 state 에서만 나온다. 본문·쿼리에서 받으면 남의 계정에
+  // 자기 구글을 붙일 수 있으므로 여기서는 state 외의 입력을 보지 않는다.
+  const linkTarget = { role: state.r || "owner", code: cleanText(state.owner).toLowerCase() };
+  const target = await activeLinkTarget(ctx, linkTarget);
+  if (!target.ok) {
+    if (target.reason === "lookup-failed") return loginRedirect("lookup-failed", [], linkTarget.role);
+    if (target.reason === "inactive") {
+      await recordLoginAudit(ctx, "google_login_failed", { reason: "inactive", role: linkTarget.role });
+      return loginRedirect("inactive", [], linkTarget.role);
+    }
     await recordLoginAudit(ctx, "google_login_failed", { reason: "invalid-state" });
-    return loginRedirect("invalid");
+    return loginRedirect("invalid", [], linkTarget.role);
   }
   const exchanged = await exchangeOauthCode(code, process.env);
   if (!exchanged.ok) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "exchange-failed" });
-    return loginRedirect("exchange-failed");
+    return loginRedirect("exchange-failed", [], linkTarget.role);
   }
   const profile = decodeGoogleIdToken(exchanged.data.id_token);
   if (!profile) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "no-identity" });
-    return loginRedirect("no-identity");
+    return loginRedirect("no-identity", [], linkTarget.role);
   }
   const { identity, error } = await findLoginIdentity(ctx, profile.sub);
-  if (error) return loginRedirect("lookup-failed");
+  if (error) return loginRedirect("lookup-failed", [], linkTarget.role);
   const boundElsewhere = identity
     && (cleanText(identity.role).toLowerCase() !== linkTarget.role
       || cleanText(identity.code).toLowerCase() !== linkTarget.code);
   if (boundElsewhere) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "already-linked" });
-    return loginRedirect("already-linked");
+    return loginRedirect("already-linked", [], linkTarget.role);
   }
   if (!identity) {
-    const target = await findLinkTargetIdentity(ctx, linkTarget);
-    if (target.error) return loginRedirect("lookup-failed");
+    const bound = await findLinkTargetIdentity(ctx, linkTarget);
+    if (bound.error) return loginRedirect("lookup-failed", [], linkTarget.role);
     // The target already points at another google account: move that one row
     // instead of clearing it first, so no window exists without a mapping.
-    if (target.identity) {
-      if (!await rebindLinkTargetIdentity(ctx, linkTarget, profile)) return loginRedirect("save-failed");
+    if (bound.identity) {
+      if (!await rebindLinkTargetIdentity(ctx, linkTarget, profile)) {
+        return loginRedirect("save-failed", [], linkTarget.role);
+      }
       await recordLoginAudit(ctx, "google_login_linked", { role: linkTarget.role });
-      return loginRedirect("linked");
+      return loginRedirect("linked", [], linkTarget.role);
     }
   }
   const saved = await upsertLoginIdentity(ctx, {
@@ -836,9 +977,9 @@ async function handleLinkCallback(request, ctx, state, code) {
     role: linkTarget.role,
     code: linkTarget.code,
   });
-  if (!saved) return loginRedirect("save-failed");
+  if (!saved) return loginRedirect("save-failed", [], linkTarget.role);
   await recordLoginAudit(ctx, "google_login_linked", { role: linkTarget.role });
-  return loginRedirect("linked");
+  return loginRedirect("linked", [], linkTarget.role);
 }
 
 async function handleLoginCallback(request, ctx, code) {
@@ -873,7 +1014,10 @@ async function handleLoginCallback(request, ctx, code) {
     return loginRedirect("session-unavailable");
   }
   await recordLoginAudit(ctx, "google_login_succeeded", { role: resolved.access.role });
-  return loginRedirect("success", [sessionCookie(token)]);
+  // 로그인 목적의 state 는 시작 시점에 누가 누를지 모르므로 owner 로 서명된다.
+  // 목적지는 그 state 가 아니라 방금 확정된 계정 역할이 정한다 — 그러지 않으면
+  // 구글로 로그인한 광고주가 자기 화면이 아닌 /admin 으로 떨어진다.
+  return loginRedirect("success", [sessionCookie(token)], resolved.access.role);
 }
 
 async function handleOauthCallback(request, ctx) {
@@ -886,7 +1030,10 @@ async function handleOauthCallback(request, ctx) {
     const purpose = state?.p || unsignedStatePurpose(rawState);
     const login = purpose === "login" || purpose === "link";
     const cancelled = login && cleanText(url.searchParams.get("error")) === "access_denied";
-    return purposeRedirect(purpose, cancelled ? "cancelled" : "invalid");
+    // 검증되지 않은 state 에서는 역할을 읽지 않는다. 목적(purpose)은 어느 쿼리
+    // 키로 돌려보낼지만 정하지만 역할은 목적지 자체를 바꾸므로, 서명이 확인된
+    // state 가 없으면 기본 목적지(/admin)로 간다.
+    return purposeRedirect(purpose, cancelled ? "cancelled" : "invalid", state?.r);
   }
   if (!state) return callbackRedirect("invalid");
 
@@ -896,17 +1043,25 @@ async function handleOauthCallback(request, ctx) {
     if (state.p === "login" || state.p === "link") {
       await recordLoginAudit(ctx, "google_login_failed", { reason: "nonce-mismatch" });
     }
-    return purposeRedirect(state.p, "invalid");
+    return purposeRedirect(state.p, "invalid", state.r);
   }
 
   if (state.p === "link") return handleLinkCallback(request, ctx, state, code);
   if (state.p === "login") return handleLoginCallback(request, ctx, code);
-  if (!safeEqual(cleanText(state.owner), primaryAgencyCode())) return callbackRedirect("invalid");
+  // 연동 대상 계정은 서명된 (r, owner) 로만 복원한다. 그리고 state 가 살아 있는
+  // 10분 사이에 해지·연결 해제된 계정이 연동을 완성하지 못하도록 지금도 활성인지
+  // 다시 확인한다 — 콜백에는 세션이 없어 이 확인이 유일한 최신 검사다.
+  const accountKey = personalPrincipalKey(state.r, state.owner);
+  if (!accountKey) return callbackRedirect("invalid", state.r);
+  const principal = await activePersonalPrincipal(ctx, accountKey);
+  if (!principal.ok) {
+    return callbackRedirect(principal.reason === "lookup-failed" ? "lookup-failed" : "invalid", state.r);
+  }
   const exchanged = await exchangeOauthCode(code, process.env);
-  if (!exchanged.ok) return callbackRedirect("exchange-failed");
+  if (!exchanged.ok) return callbackRedirect("exchange-failed", state.r);
   const refreshToken = cleanText(exchanged.data.refresh_token);
   const accessToken = cleanText(exchanged.data.access_token);
-  if (!refreshToken || !accessToken) return callbackRedirect("no-refresh-token");
+  if (!refreshToken || !accessToken) return callbackRedirect("no-refresh-token", state.r);
   // 전용 "모먼트 인사이트" 캘린더는 더 이상 만들지 않는다. 대표님은 내 캘린더
   // 아래에 기본 캘린더 하나만 두기를 원하시고, 전용 캘린더를 만들면 그 즉시
   // 사이드바가 둘로 갈라진다. calendar_id 를 null 로 저장해 두면 MI 는 대표님의
@@ -918,7 +1073,7 @@ async function handleOauthCallback(request, ctx) {
   const { error } = await ctx.supabaseAdmin
     .from("owner_google_integrations")
     .upsert({
-      owner_agency_code: cleanText(state.owner),
+      owner_agency_code: accountKey,
       refresh_token: refreshToken,
       calendar_id: null,
       google_email: googleEmail,
@@ -928,7 +1083,7 @@ async function handleOauthCallback(request, ctx) {
       last_sync_attempt_at: null,
       updated_at: new Date().toISOString(),
     }, { onConflict: "owner_agency_code" });
-  if (error) return callbackRedirect("save-failed");
+  if (error) return callbackRedirect("save-failed", state.r);
   await ctx.supabaseAdmin.from("audit_logs").insert({
     actor_id: null,
     client_id: null,
@@ -952,7 +1107,7 @@ async function handleOauthCallback(request, ctx) {
   // 페이지를 넘기며 기본 예산이 20초라, 리다이렉트를 그만큼 붙잡으면 대표님은
   // 흰 화면을 보게 된다. 화면이 살아나는 데 필요한 것은 목록(이름·색·표시 여부)
   // 뿐이고 일정은 진입 자동 동기화가 곧바로 이어 채운다.
-  const catalog = await refreshOwnerCalendarCatalog(ctx, cleanText(state.owner), accessToken)
+  const catalog = await refreshOwnerCalendarCatalog(ctx, accountKey, accessToken)
     .catch((unexpected) => ({ ok: false, reason: "threw" }));
   // 목록 갱신 실패가 연결 자체를 무르게 하지는 않는다. 연결은 이미 저장됐고
   // 다음 동기화가 같은 일을 다시 한다 — 다만 조용히 지나가지 않도록 남긴다.
@@ -966,7 +1121,7 @@ async function handleOauthCallback(request, ctx) {
       metadata: sanitizeAuditMetadata({ stage: "connect", reason: cleanText(catalog?.reason, 60) || "unknown" }),
     }).then(() => {}, () => {});
   }
-  return callbackRedirect("connected");
+  return callbackRedirect("connected", state.r);
 }
 
 export default {
@@ -975,6 +1130,8 @@ export default {
     if (request.method === "OPTIONS") return new Response(null, { status: 204 });
     if (path === OWNER_API_PATH) return handleOwnerApi(request, ctx);
     if (path === OWNER_LOGIN_API_PATH) return handleOwnerLoginApi(request, ctx);
+    if (path === PERSONAL_GOOGLE_CALENDAR_PATH) return handlePersonalCalendarApi(request, ctx);
+    if (path === PERSONAL_GOOGLE_LOGIN_PATH) return handlePersonalLoginApi(request, ctx);
     if (path === LOGIN_START_PATH && request.method === "GET") {
       if (!await consumeOauthRateLimit(ctx, request, "start")) return loginRedirect("busy");
       return handleLoginStart();

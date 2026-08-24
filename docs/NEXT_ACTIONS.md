@@ -6,9 +6,9 @@
 
 1. 완료: strict `provider_partial_window:<1..299>_300`가 서로 다른 tracker의 전역 cadence proof를 반복 초기화하던 원인을 runtime1.1.12로 격리했습니다. local/native124·server contract68·migration isolation14·전체 release core1012/place51/shopping64/auth18과 보호 잠금이 통과했습니다.
 2. 완료: commit `d655eb080d55`를 Production/DB/Windows exact fingerprint로 반영했고 첫 atomic300 anchor `2026-08-24T05:31:17.200373Z`를 확인했습니다. `c0cc…`의 94/300은 부분 snapshot 없이 tracker만 재격리하고 anchor/streak/last-good을 보존했으며 후속 resume atomic300과 lane 해제를 확인했습니다.
-3. 완료(로컬): success RPC를 current lease/run/job과 claim별 group·commit·snapshot atomic300 증거에 묶고, candidate 서버는 exact candidate/8 응답만 성공으로 인정합니다. 동일 run 다중 group P0와 A→B→A 지연 재전송 P1을 RED→GREEN했으며 전체 release core1025/place51/shopping64/auth18과 보호 lock이 통과했습니다. 실제 DB compile·자연 회차는 아직 미확인입니다.
-4. 진행: 정확한 N30 파일만 commit·Production 반영한 뒤 완전 idle에서 transactional migration을 적용하고, 함수 ACL/source와 다음 자연 atomic300·streak 1회 증가·lane 해제를 검증합니다. 실패 시 baseline10·last-good 보존을 확인하고 정상화 전 성공으로 보고하지 않습니다.
-5. 진행: anchor+24시간인 `2026-08-25T05:31:17.200373Z` 전까지 baseline10을 유지합니다. 2026-08-24 23:07 KST 기준 streak60·exact identity·closed/null·processing0·완전 idle이고, `candidate_eligible=false`의 유일한 미충족은 24시간입니다.
+3. 완료: success RPC를 current lease/run/job과 claim별 group·commit·snapshot atomic300 증거에 묶고, candidate 서버는 exact candidate/8 응답만 성공으로 인정합니다. 동일 run 다중 group P0와 A→B→A 지연 재전송 P1을 RED→GREEN했으며 전체 release core1025/place51/shopping64/auth18과 보호 lock을 통과한 commit `8d99566e4565`가 Production health/ready에 반영됐습니다.
+4. 완료: 완전 idle에서 migration `20260824141622`를 transactional 적용해 실제 SQL compile·SECURITY INVOKER·빈 search_path·service-role-only·lock 뒤 clock을 확인했습니다. 첫 자연 event9868→9870은 official atomic300으로 끝나 streak62→63 정확히 1회 증가, cycle 중복0, processing/lane/run/lease 해제를 확인했습니다.
+5. 진행: anchor+24시간인 `2026-08-25T05:31:17.200373Z` 전까지 baseline10을 유지합니다. 2026-08-24 23:19 KST 기준 streak63·exact identity·closed/null·processing0·완전 idle이고, `candidate_eligible=false`의 유일한 미충족은 24시간입니다.
 6. 진행: 잔여 partial `1114…`·`12f5…`는 각각 `2026-08-24T15:33:02.119249Z`·`19:18:58.276397Z` 자연 만료와 실제 cursor 순번에서 회복 또는 typed failure를 확인합니다. wake·cursor·순서·격리·lease는 수동 조작하지 않습니다.
 7. 대기: 모든 gate가 참일 때만 canonical cadence RPC를 정확히 1회 호출하고 request/response·직후 DB candidate/8을 함께 캡처합니다. 응답 유실·불확실·거부 시 재호출하거나 성공으로 보고하지 않습니다.
 8. 대기: 전환 뒤 최소 60분과 remote-wake 단독 조기 claim을 제외한 scheduled-compatible fully-terminal group 6개를 확보해 atomic300·same-cycle 중복0·cursor 순서·lane 해제와 fixed-wall group/hour를 검증합니다. 8.75 미만은 성공0, 8.75~8.77은 기준선 동등으로 기록합니다.

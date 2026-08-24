@@ -4,12 +4,14 @@
 
 ## 현재 상태
 
-### 2026-08-24 N쇼핑 atomic success·candidate 제어 강화 (배포 전)
+### 2026-08-24 N쇼핑 atomic success·candidate 제어 강화 (Production·DB·첫 자연 atomic300 반영, 24시간 관측 중)
 
 - 성공 streak가 scalar 입력만으로 증가하던 DB 경계와 candidate API가 exact mode/minutes를 검증하지 않던 서버 경계를 보완했습니다. 성공은 현재 live lease/run/job, 대표 commit에서 도출한 동일 claim의 group·모든 tracker claim/commit·atomic300 official organic/adExcluded snapshot이 모두 일치해야 하며, candidate 응답은 exact candidate/8일 때만 성공입니다.
 - 감사 중 동일 run 다중 group을 run 전체로 집계하던 P0와 A→B→A 지연 재전송을 중복 성공으로 셀 수 있던 P1을 각각 RED로 확인했습니다. 증거 범위를 claim별로 바꾸고 current tracker job identity를 추가해 두 경로를 fail-closed했으며, B→B 즉시 재시도는 streak를 다시 올리지 않습니다. 독립 재검토에서 남은 P0/P1 blocker는 없었습니다.
-- 최종 로컬 값은 관련 107/107+71/71, server contract70/70, 보호 lock 23함수·100파일·49 migration+self-test, 전체 release core1025/place51/shopping64/auth18, diff-check 모두 PASS입니다. 로컬 PostgreSQL 실행기가 없어 신규 SQL의 실제 compile·운영 실행은 아직 미확인이고 커밋·배포 완료로 보고하지 않습니다.
-- 23:07 KST SELECT-only 운영은 exact1.1.12/fingerprint, streak60·baseline10·candidate false, closed/null, processing0·완전 idle입니다. cycle36 group/claim/run26=distinct26·tracker/commit39=distinct39·failure0이고 최신 event9856→9858은 official checked300 terminal입니다. anchor `2026-08-24 14:31:17.200373 KST`+24시간 전이라 candidate8 호출은 0회이며 잔여 partial 2건도 자연 만료 전입니다.
+- 최종 로컬 값은 관련 107/107+71/71, server contract70/70, 보호 lock 23함수·100파일·49 migration+self-test, 전체 release core1025/place51/shopping64/auth18, diff-check 모두 PASS입니다. 정확한 11파일을 commit `8d99566e4565`로 `main`에 push했고 Production `/health`·`/ready`가 같은 release와 Supabase ready를 반환했습니다.
+- `2026-08-24T14:16:03Z` 완전 idle에서 transactional migration `20260824141622_naver_shopping_atomic_success_proof_hardening`을 적용해 실제 PostgreSQL compile을 통과했습니다. 두 함수는 SECURITY INVOKER·빈 search_path·ACL `{postgres=X/postgres,service_role=X/postgres}`이고, 실제 함수 정의의 coordination `FOR UPDATE` 위치 1351/631 뒤에 `clock_timestamp()` 위치 1365/645가 옵니다. success 함수는 current tracker job과 claim별 commit을, candidate 함수는 exact runtime/fingerprint를 포함합니다. advisor는 security16=INFO14/WARN2, performance63=INFO40/WARN23이며 신규 대상 함수 항목0·WARN 증가0입니다.
+- migration 뒤 첫 자연 run `bbe06f33-5ab5-4d7b-8584-5d8b5289d783`은 event9868 `group_claimed` →9869 `tracker_claimed` →9870 `tracker_committed`로 종료됐습니다. collection `pw-chrome-1787581100624-48e9eb37cbce49e8049c`의 snapshot1은 checked300·official collector·organic-only/evidence·adExcluded=true·광고30건 제외·top5 위반0·rank33이고, 동일 claim/run/worker/fingerprint의 group/tracker/commit 각1·failure0입니다. success streak는 배포 직전62에서 63으로 정확히 1회 증가했습니다.
+- `2026-08-24T14:19:38Z` terminal 표본은 exact1.1.12/fingerprint, heartbeat6.49초, anchor 유지, baseline10·candidate false, circuit closed·reason/cooldown null, tracker/lookup processing0·lane worker/token/lease/run/stage/job/tracker/probe null·page0입니다. active76·paused0·현재 격리3이고 cycle36 group29=distinct claim29·fingerprint 중복0, tracker42=distinct42·중복0입니다. anchor+24시간 전이라 candidate8 호출은 0회이며 잔여 partial 2건은 자연 만료·순번 관측을 계속합니다.
 
 ### 2026-08-24 N쇼핑 partial-window 전역 증거 격리 (DB·Windows·첫 자연 atomic300 반영, 24시간 관측 중)
 

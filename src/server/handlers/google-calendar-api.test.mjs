@@ -2260,3 +2260,70 @@ test("an automatic sync still uses the stored syncToken so routine runs stay che
   assert.equal(listed.length, 1);
   assert.match(listed[0], /[?&]syncToken=st-1/, "자동 진입은 그대로 증분이다");
 });
+
+// ---------------------------------------------------------------------------
+// 연결 콜백은 캘린더 목록을 그 자리에서 다시 채운다
+//
+// 연동 해제는 owner_google_integrations 행을 지우고 FK 의 on delete cascade 가
+// owner_google_calendar_sync(목록·색·표시 여부)까지 함께 지운다. 다시 연결한
+// 직후 목록이 비어 있으면 사이드바가 통째로 사라지고 칩 색이 전부 빠진다.
+// ---------------------------------------------------------------------------
+
+function calendarConnectState() {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "calendar");
+  return { nonce: oauthStateNonce(state), url: `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}` };
+}
+
+function connectRoutes(calendarListRoute, upserts = []) {
+  return [
+    ["POST", TOKEN_URL, () => restJson({ refresh_token: "rt-new", access_token: "gat-new" })],
+    ["GET", `${CALENDAR_BASE}/calendars/primary`, () => restJson({ id: "owner@example.com" })],
+    ["POST", INTEGRATION_REST_URL, () => restCreated()],
+    ["PATCH", INTEGRATION_REST_URL, () => restCreated()],
+    ["POST", AUDIT_REST_URL, () => restCreated()],
+    ["GET", CALENDAR_SYNC_REST_URL, () => restJson([])],
+    ["POST", CALENDAR_SYNC_REST_URL, (call) => { upserts.push(JSON.parse(String(call.body))); return restCreated(); }],
+    ["GET", CALENDAR_LIST_URL, calendarListRoute],
+  ];
+}
+
+test("the calendar connect callback rebuilds the catalog so the rail and colours exist on landing", async () => {
+  const upserts = [];
+  const { nonce, url } = calendarConnectState();
+  const { response, calls } = await callLoginHandler(url, {
+    nonce,
+    routes: connectRoutes(() => restJson({
+      items: [
+        { id: "owner@example.com", summary: "동빈", accessRole: "owner", primary: true, colorId: "16", backgroundColor: "#4986e7", selected: true },
+        { id: "holi@group.calendar.google.com", summary: "대한민국의 휴일", accessRole: "reader", colorId: "8", backgroundColor: "#16a765", selected: true },
+      ],
+    }), upserts),
+  });
+
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get("location"), /gcal=connected/);
+  assert.ok(calls.some((call) => call.url.startsWith(CALENDAR_LIST_URL)), "연결 직후 목록을 바로 받아온다");
+  assert.deepEqual(upserts.map((row) => row.google_calendar_id),
+    ["owner@example.com", "holi@group.calendar.google.com"]);
+  // 색은 legacy 가 아니라 웹 UI 색으로 저장된다 — 화면이 곧바로 구글과 같아진다.
+  assert.equal(upserts[0].calendar_background_color, "#3f51b5");
+  assert.equal(upserts[1].calendar_background_color, "#0b8043");
+  assert.equal(upserts[1].calendar_writable, false, "읽기 전용 캘린더는 그대로 읽기 전용이다");
+});
+
+test("a failed catalog refresh still lands the owner on a connected page", async () => {
+  const audits = [];
+  const { nonce, url } = calendarConnectState();
+  const routes = connectRoutes(() => new Response(JSON.stringify({ error: {} }), { status: 500 }));
+  // 감사 기록을 가로채 실패가 조용히 묻히지 않음을 확인한다.
+  routes.splice(routes.findIndex(([m, u]) => m === "POST" && u === AUDIT_REST_URL), 1,
+    ["POST", AUDIT_REST_URL, (call) => { audits.push(JSON.parse(String(call.body))); return restCreated(); }]);
+
+  const { response } = await callLoginHandler(url, { nonce, routes });
+
+  assert.equal(response.status, 302, "목록 갱신 실패가 연결을 무르게 하지 않는다");
+  assert.match(response.headers.get("location"), /gcal=connected/);
+  const failure = audits.flat().find((row) => row.action === "google_calendar_catalog_refresh_failed");
+  assert.ok(failure, "실패는 감사 로그에 남는다");
+  assert.equal(failure.metadata.stage, "connect");
+});

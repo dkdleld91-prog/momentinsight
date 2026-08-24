@@ -938,6 +938,34 @@ async function handleOauthCallback(request, ctx) {
     // 전용 캘린더를 만들지 않았으므로 만들었다고 주장하지 않는다.
     metadata: sanitizeAuditMetadata({ dedicatedCalendar: false, target: "primary" }),
   }).then(() => {}, () => {});
+
+  // 연동 해제는 owner_google_integrations 행을 지우고, FK 의 on delete cascade 가
+  // owner_google_calendar_sync(캘린더 목록 · 색 · 표시 여부 · 동기화 토큰)까지
+  // 함께 지운다. 그래서 재연결 직후에는 카탈로그가 비어 사이드바가 통째로
+  // 사라지고(has-gcal-rail 이 false) 일정 칩 색이 전부 빠진다. 다음 동기화가
+  // 돌기 전까지 대표님 화면이 그 상태로 남는 것이 이번 회귀다.
+  //
+  // 그래서 방금 받은 액세스 토큰으로 목록만 즉시 다시 채운다 — calendarList
+  // 한 번이라 리다이렉트를 붙잡는 시간이 사실상 없다.
+  //
+  // 일정 본문까지 당기는 full sync 는 여기서 하지 않는다. 그쪽은 캘린더 수만큼
+  // 페이지를 넘기며 기본 예산이 20초라, 리다이렉트를 그만큼 붙잡으면 대표님은
+  // 흰 화면을 보게 된다. 화면이 살아나는 데 필요한 것은 목록(이름·색·표시 여부)
+  // 뿐이고 일정은 진입 자동 동기화가 곧바로 이어 채운다.
+  const catalog = await refreshOwnerCalendarCatalog(ctx, cleanText(state.owner), accessToken)
+    .catch((unexpected) => ({ ok: false, reason: "threw" }));
+  // 목록 갱신 실패가 연결 자체를 무르게 하지는 않는다. 연결은 이미 저장됐고
+  // 다음 동기화가 같은 일을 다시 한다 — 다만 조용히 지나가지 않도록 남긴다.
+  if (!catalog?.ok) {
+    await ctx.supabaseAdmin.from("audit_logs").insert({
+      actor_id: null,
+      client_id: null,
+      action: "google_calendar_catalog_refresh_failed",
+      target_table: "owner_google_calendar_sync",
+      target_id: null,
+      metadata: sanitizeAuditMetadata({ stage: "connect", reason: cleanText(catalog?.reason, 60) || "unknown" }),
+    }).then(() => {}, () => {});
+  }
   return callbackRedirect("connected");
 }
 

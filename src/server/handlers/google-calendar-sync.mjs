@@ -22,6 +22,7 @@ import {
   normalizeImportedTitle,
   readableTextColor,
   refreshAccessToken,
+  seriesAnchorTimes,
   undecorateGoogleSummary,
 } from "../google-calendar-client.mjs";
 
@@ -1979,6 +1980,22 @@ export async function writeRowToGoogleFirst(ctx, env, access, row, options = {})
       // 를 권하지만 PATCH 는 부분 갱신이라 우리가 보내지 않은 필드를 지우지 않는다.
       const path = eventsPath(calendarId, targetEventId);
       const headers = cleanText(row.google_etag) ? { "if-match": cleanText(row.google_etag) } : {};
+      // "모든 일정" 수정은 마스터를 고친다. 마스터의 기준 날짜를 인스턴스의
+      // 날짜로 밀면 반복 전체가 끌려가므로, 마스터를 한 번 읽어 날짜는 지키고
+      // 시각·길이만 옮긴다. 읽지 못하면 start/end 를 통째로 빼서 시리즈의
+      // 시간을 건드리지 않는다.
+      if (options.preserveSeriesAnchor === true) {
+        delete payload.start;
+        delete payload.end;
+        const current = await googleFetch(token.accessToken, "GET", path, null, { fetchImpl });
+        if (current.ok && current.data) {
+          const anchored = seriesAnchorTimes(current.data, row);
+          if (anchored) {
+            payload.start = anchored.start;
+            payload.end = anchored.end;
+          }
+        }
+      }
       result = await googleFetch(token.accessToken, "PATCH", path, payload, { headers, query, fetchImpl });
       if (result.status === 412) {
         const fresh = await googleFetch(token.accessToken, "GET", path, null, { fetchImpl });

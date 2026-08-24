@@ -30,6 +30,17 @@ const syncHandlerSource = source.slice(
   source.indexOf("async function maybeSyncGoogleCalendar(trigger) {"),
   source.indexOf("async function initOwnerGoogleLoginBanner(view, generation) {")
 );
+// 반복 범위 확인창은 편집 다이얼로그 바깥의 독립 모달이다.
+const scopeModalStart = source.indexOf('<div class="mi-work-modal" data-work-scope-modal');
+const scopeModalMarkup = source.slice(scopeModalStart, source.indexOf("</section>", scopeModalStart));
+const scopeModalSource = source.slice(
+  source.indexOf("function openWorkScopeModal(mode) {"),
+  source.indexOf("function workFormPayload() {")
+);
+const scopeListenerSource = source.slice(
+  source.indexOf('var workScopeModalNode = root.querySelector("[data-work-scope-modal]");'),
+  source.indexOf('var workGoogleCalendarSelect = root.querySelector("[data-work-google-calendar]");')
+);
 // 데스크톱(레일이 살아 있는 폭) 규칙과 좁은 폭 규칙을 갈라서 본다.
 const narrowMediaStart = source.indexOf("@media (max-width: 1180px)");
 const mobileMediaStart = source.indexOf("@media (max-width: 760px)", narrowMediaStart);
@@ -122,7 +133,7 @@ test("date and create clicks open the personal editor while preserving existing 
   assert.match(formPayloadSource, /payload\.requestId = !id && repeatMonthly \? workRepeatRequestId/);
   assert.match(source, /!id\s*&&\s*repeatMonthly\s*&&\s*!workRepeatRequestId[\s\S]{0,100}crypto\.randomUUID\(\)/);
   assert.match(formPayloadSource, /expectedUpdatedAt/);
-  assert.match(source, /requestWorkItems\("DELETE", \{ id: id, expectedUpdatedAt: expectedUpdatedAt \}\)/);
+  assert.match(source, /var body = \{ id: id, expectedUpdatedAt: expectedUpdatedAt \};[\s\S]{0,200}requestWorkItems\("DELETE", body\)/);
   assert.match(source, /\.mi-work-modal\[data-work-modal\][\s\S]{0,220}justify-items:\s*end/);
   assert.match(source, /@media \(max-width: 760px\)[\s\S]*\.mi-work-editor-dialog/);
 });
@@ -186,10 +197,11 @@ test("recurrence editor covers google presets, a custom rule builder, and the le
   assert.match(source, /return raw\.replace\(\/-\/g, ""\) \+ "T145959Z"/);
   assert.match(source, /function workRecurrenceRules\(\)[\s\S]{0,200}return rule \? \[rule\] : \[\]/);
 
-  // 반복 인스턴스 수정 범위.
+  // 반복 인스턴스 수정 범위. 라디오는 다이얼로그 안이 아니라 확인창에 있다.
   assert.match(editorMarkup, /data-work-recurrence-summary/);
-  assert.match(editorMarkup, /data-work-recurrence-scope[^>]*checked[\s\S]{0,60}이 일정만/);
-  assert.match(editorMarkup, /value="all" data-work-recurrence-scope[\s\S]{0,60}모든 일정/);
+  assert.equal(editorMarkup.includes('name="mi-work-recurrence-scope"'), false, "범위 선택은 다이얼로그가 아니라 확인창에 있다");
+  assert.match(scopeModalMarkup, /data-work-recurrence-scope[^>]*checked[\s\S]{0,60}이 일정만/);
+  assert.match(scopeModalMarkup, /value="all" data-work-recurrence-scope[\s\S]{0,60}모든 일정/);
   assert.match(formPayloadSource, /payload\.recurrenceScope = scopeChoice && scopeChoice\.value === "all" \? "all" : "instance"/);
 
   // 기존 로컬 매월 반복(미연동 사용자)은 종료 예정 없음 경로까지 그대로 남는다.
@@ -310,7 +322,8 @@ test("google write failure keeps the editor open so the owner can retry", () => 
 // 뒤쪽 상태줄은 오버레이에 가리므로 다이얼로그 안 상태줄이 반드시 있어야 한다.
 test("a failed delete keeps the editor open and surfaces the server message inside the dialog", () => {
   assert.ok(deleteHandlerSource.length > 0, "delete handler must exist");
-  assert.match(deleteHandlerSource, /requestWorkItems\("DELETE", \{ id: id, expectedUpdatedAt: expectedUpdatedAt \}\)/);
+  assert.match(deleteHandlerSource, /var body = \{ id: id, expectedUpdatedAt: expectedUpdatedAt \};/);
+  assert.match(deleteHandlerSource, /await requestWorkItems\("DELETE", body\)/);
   const catchBlock = deleteHandlerSource.slice(deleteHandlerSource.indexOf("} catch (error) {"));
   assert.match(catchBlock, /setWorkStatus\(error\.message \|\| "업무를 삭제하지 못했습니다\.", "warn"\)/);
   assert.equal(catchBlock.includes("closeWorkDialog()"), false, "삭제 실패는 다이얼로그를 닫지 않는다");
@@ -319,6 +332,39 @@ test("a failed delete keeps the editor open and surfaces the server message insi
   assert.match(source, /function setWorkDialogStatus\(message, state\)/);
   assert.match(source, /function setWorkStatus\(message, state\)[\s\S]{0,480}if \(modal && !modal\.hidden\) setWorkDialogStatus\(message, state\)/);
   assert.match(source, /function closeWorkDialog\(\)[\s\S]{0,200}setWorkDialogStatus\(""/);
+});
+
+// 구글은 반복 일정을 고칠 때 "이 일정 / 모든 일정" 을 묻는다. MI 도 저장·삭제
+// 순간에 같은 것을 묻고, 확인을 누르기 전에는 아무것도 보내지 않아야 한다.
+test("a recurring row asks 이 일정만/모든 일정 before it saves or deletes", () => {
+  assert.ok(scopeModalStart > 0, "반복 범위 확인창이 있어야 한다");
+  assert.match(scopeModalMarkup, /role="alertdialog"[^>]*aria-modal="true"/);
+  assert.match(scopeModalMarkup, /data-work-scope-title>반복 일정 수정</);
+  assert.match(scopeModalMarkup, /data-work-scope-cancel[^>]*>취소</);
+  assert.match(scopeModalMarkup, /data-work-scope-confirm>확인</);
+  // 인라인 핸들러 금지(CSP). 확인창의 동작은 전부 addEventListener 로 붙는다.
+  assert.equal(/\son(?:click|change|submit)=/u.test(scopeModalMarkup), false, "인라인 이벤트 핸들러 금지");
+
+  // 제목·설명은 저장/삭제에 따라 갈린다.
+  assert.match(scopeModalSource, /title\.textContent = workScopeMode === "delete" \? "반복 일정 삭제" : "반복 일정 수정"/);
+  // 기본값은 언제나 "이 일정만" 이다 — 앞선 선택이 남지 않는다.
+  assert.match(scopeModalSource, /var instance = root\.querySelector\('\[data-work-recurrence-scope\]\[value="instance"\]'\);[\s\S]{0,80}instance\.checked = true/);
+  assert.match(scopeModalSource, /function workScopeValue\(\)[\s\S]{0,220}return choice && choice\.value === "all" \? "all" : "instance"/);
+
+  // 반복 인스턴스일 때만 창이 뜨고, 그전에는 요청이 나가지 않는다.
+  assert.match(submitHandlerSource, /if \(payload\.id && workDialogRecurringInstance && openWorkScopeModal\("save"\)\) return;/);
+  assert.match(deleteHandlerSource, /if \(workDialogRecurringInstance && openWorkScopeModal\("delete"\)\) return;/);
+  // 반복이 아니면 예전 경로 그대로다(확인 프롬프트 → 바로 삭제).
+  assert.match(deleteHandlerSource, /if \(!window\.confirm\("이 업무를 삭제할까요\?"\)\) return;[\s\S]{0,60}performWorkDelete\(\);/);
+  assert.match(deleteHandlerSource, /if \(workDialogRecurringInstance\) body\.recurrenceScope = workScopeValue\(\);/);
+
+  // 취소는 아무것도 보내지 않고 창만 닫는다. 확인만이 실제 요청으로 이어진다.
+  assert.match(scopeListenerSource, /data-work-scope-cancel[\s\S]{0,80}closeWorkScopeModal\(\);[\s\S]{0,40}return;/);
+  assert.equal(/data-work-scope-cancel[\s\S]{0,200}requestWorkItems/u.test(scopeListenerSource), false, "취소는 요청을 보내지 않는다");
+  assert.match(scopeListenerSource, /if \(mode === "delete"\) performWorkDelete\(\);[\s\S]{0,80}else if \(mode === "save"\) submitWorkForm\(\);/);
+  assert.match(scopeListenerSource, /if \(event\.key !== "Escape"\) return;[\s\S]{0,200}closeWorkScopeModal\(\)/);
+  // 확인창이 떠 있으면 포커스는 그 안에 갇힌다.
+  assert.match(source, /var openScopeModal = root\.querySelector\("\[data-work-scope-modal\]"\);[\s\S]{0,120}editorModal = openScopeModal/);
 });
 
 // push 만 일어난 동기화도 DB 의 updated_at 을 올린다. 그때 목록을 다시 읽지 않으면

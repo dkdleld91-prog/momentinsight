@@ -18,6 +18,8 @@ export const MAX_DESCRIPTION_CHARS = 4000;
 export const MAX_RECURRENCE_LINES = 4;
 export const MAX_RECURRENCE_LINE_CHARS = 512;
 export const EVENT_TIMEZONE = "Asia/Seoul";
+// 한국 표준시는 서머타임이 없다(고정 UTC+9). 시리즈 기준 시각 계산에만 쓴다.
+const SEOUL_OFFSET_MS = 9 * 60 * 60 * 1000;
 // 다이얼로그가 실제로 보낸 필드만 구글로 나간다. 목록에 없으면 "건드리지 않음".
 export const DETAIL_FIELDS = ["recurrence", "attendees", "location", "description", "colorId"];
 
@@ -375,6 +377,51 @@ export function buildGoogleEventPayload(row = {}, options = {}) {
     };
   }
   return payload;
+}
+
+// "모든 일정" 수정에서 마스터가 받을 start/end 를 정한다.
+//
+// 인스턴스 하나를 편집한 날짜를 시리즈에 그대로 밀면 반복 전체가 그 날짜로
+// 끌려간다(구글은 그렇게 하지 않는다). 그래서 마스터는 자기 날짜(시리즈 기준점)를
+// 지키고 편집에서 온 "시각과 길이"만 받는다.
+//   · 시간 일정: 마스터의 서울 날짜 + 편집한 서울 시각, 길이는 편집한 길이.
+//   · 종일 일정: 마스터의 시작 날짜에서 편집한 일수만큼.
+// 마스터의 시작을 읽지 못하면 null 이다. 그때 호출부는 start/end 를 아예 보내지
+// 않아 시리즈의 시간을 건드리지 않는다 — 잘못 미는 것보다 그대로 두는 편이 낫다.
+export function seriesAnchorTimes(masterEvent = {}, row = {}) {
+  const anchorKey = seoulDateKey(cleanText(masterEvent?.start?.dateTime))
+    || cleanText(masterEvent?.start?.date, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(anchorKey)) return null;
+  const startsAt = cleanText(row.starts_at);
+  if (!startsAt) return null;
+  const [anchorYear, anchorMonth, anchorDay] = anchorKey.split("-").map(Number);
+
+  if (row.is_all_day) {
+    const startKey = cleanText(row.occurrence_on, 10) || seoulDateKey(startsAt);
+    const endKey = (row.ends_at ? seoulDateKey(row.ends_at) : "") || startKey;
+    if (!startKey || !endKey) return null;
+    const spanDays = Math.max(0, Math.round(
+      (Date.parse(`${endKey}T00:00:00.000Z`) - Date.parse(`${startKey}T00:00:00.000Z`)) / 86400000,
+    ));
+    if (!Number.isFinite(spanDays)) return null;
+    const endExclusive = new Date(Date.UTC(anchorYear, anchorMonth - 1, anchorDay + spanDays + 1))
+      .toISOString().slice(0, 10);
+    return { start: { date: anchorKey }, end: { date: endExclusive } };
+  }
+
+  const startMs = Date.parse(startsAt);
+  if (!Number.isFinite(startMs)) return null;
+  const endMs = Date.parse(cleanText(row.ends_at) || "");
+  const durationMs = Number.isFinite(endMs) && endMs > startMs ? endMs - startMs : 60 * 60 * 1000;
+  // 한국 표준시는 서머타임이 없어 UTC+9 로 고정이다. 편집한 인스턴스의 서울
+  // 시각(HH:MM:SS)만 뽑아 마스터의 날짜에 얹는다.
+  const timeOfDay = new Date(startMs + SEOUL_OFFSET_MS).toISOString().slice(11, 19);
+  const anchorStartMs = Date.parse(`${anchorKey}T${timeOfDay}.000Z`) - SEOUL_OFFSET_MS;
+  if (!Number.isFinite(anchorStartMs)) return null;
+  return {
+    start: { dateTime: new Date(anchorStartMs).toISOString(), timeZone: EVENT_TIMEZONE },
+    end: { dateTime: new Date(anchorStartMs + durationMs).toISOString(), timeZone: EVENT_TIMEZONE },
+  };
 }
 
 export function clientDisplayName(client) {

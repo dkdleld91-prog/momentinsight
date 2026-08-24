@@ -10841,10 +10841,7 @@
 
                   <div class="mi-work-repeat-fields" data-work-google-only data-work-recurrence-scope-wrap hidden>
                     <p class="mi-work-repeat-note" data-work-recurrence-summary>반복 일정입니다.</p>
-                    <div class="mi-work-scope-choices" role="radiogroup" aria-label="반복 일정 수정 범위">
-                      <label class="mi-work-scope-choice"><input type="radio" name="mi-work-recurrence-scope" value="instance" data-work-recurrence-scope checked /><span>이 일정만</span></label>
-                      <label class="mi-work-scope-choice"><input type="radio" name="mi-work-recurrence-scope" value="all" data-work-recurrence-scope /><span>모든 일정</span></label>
-                    </div>
+                    <p class="mi-work-repeat-note">저장하거나 삭제할 때 이 일정만 바꿀지 모든 일정을 바꿀지 물어봅니다.</p>
                   </div>
 
                   <div class="mi-work-disclosure" data-work-google-only hidden>
@@ -10977,6 +10974,29 @@
                 <div>
                   <button class="mi-link-button" type="button" data-work-move-cancel>취소</button>
                   <button class="mi-link-button is-primary" type="button" data-work-move-confirm>일정 변경</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mi-work-modal" data-work-scope-modal hidden>
+            <div class="mi-work-dialog mi-work-move-dialog" role="alertdialog" aria-modal="true" aria-labelledby="mi-work-scope-title" aria-describedby="mi-work-scope-description">
+              <div class="mi-work-dialog-head">
+                <div><span class="mi-kicker">Recurring event</span><h2 id="mi-work-scope-title" data-work-scope-title>반복 일정 수정</h2></div>
+                <button class="mi-work-icon-button" type="button" data-work-scope-cancel aria-label="닫기">×</button>
+              </div>
+              <div class="mi-work-move-body">
+                <p id="mi-work-scope-description" data-work-scope-description>반복되는 일정입니다. 어디까지 적용할까요?</p>
+                <div class="mi-work-scope-choices" role="radiogroup" aria-label="반복 일정 적용 범위">
+                  <label class="mi-work-scope-choice"><input type="radio" name="mi-work-recurrence-scope" value="instance" data-work-recurrence-scope checked /><span>이 일정만</span></label>
+                  <label class="mi-work-scope-choice"><input type="radio" name="mi-work-recurrence-scope" value="all" data-work-recurrence-scope /><span>모든 일정</span></label>
+                </div>
+              </div>
+              <div class="mi-work-dialog-actions">
+                <span class="mi-work-drag-note">확인을 눌러야 반영됩니다.</span>
+                <div>
+                  <button class="mi-link-button" type="button" data-work-scope-cancel>취소</button>
+                  <button class="mi-link-button is-primary" type="button" data-work-scope-confirm>확인</button>
                 </div>
               </div>
             </div>
@@ -12495,6 +12515,8 @@
       var workEventColorDraft = "";
       var workRecurrenceSnapshotBeforeEdit = null;
       var workDialogRecurringInstance = false;
+      // "" | "save" | "delete" — 반복 범위 확인창이 무엇을 기다리는지.
+      var workScopeMode = "";
       var workRecurrenceDayCodes = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
       var workRecurrenceDayNames = ["일", "월", "화", "수", "목", "금", "토"];
       var workRecurrenceOrdinalNames = ["첫 번째", "두 번째", "세 번째", "네 번째", "다섯 번째"];
@@ -13933,6 +13955,7 @@
         workRecurrenceSnapshotBeforeEdit = null;
         var recurrenceModal = root.querySelector("[data-work-recurrence-modal]");
         if (recurrenceModal) recurrenceModal.hidden = true;
+        closeWorkScopeModal();
         form.reset();
         var start = dateKey ? workDateFromKey(dateKey) : new Date();
         if (!dateKey) start.setMinutes(Math.ceil(start.getMinutes() / 30) * 30, 0, 0);
@@ -14047,8 +14070,47 @@
         if (modal) modal.hidden = true;
         setWorkDialogStatus("", "");
         closeWorkRecurrenceModal(false);
+        closeWorkScopeModal();
         if (workDialogReturnFocus && workDialogReturnFocus.focus && document.contains(workDialogReturnFocus)) workDialogReturnFocus.focus();
         workDialogReturnFocus = null;
+      }
+
+      // 구글과 같은 순서다 — 반복 일정의 저장·삭제는 그 순간에 "이 일정만 /
+      // 모든 일정" 을 묻고, 확인을 누르기 전에는 아무것도 보내지 않는다.
+      // 반복 인스턴스가 아닌 행에서는 이 창이 뜨지 않고 예전 동작 그대로다.
+      function openWorkScopeModal(mode) {
+        var modal = root.querySelector("[data-work-scope-modal]");
+        if (!modal) return false;
+        workScopeMode = mode === "delete" ? "delete" : "save";
+        var title = root.querySelector("[data-work-scope-title]");
+        var description = root.querySelector("[data-work-scope-description]");
+        if (title) title.textContent = workScopeMode === "delete" ? "반복 일정 삭제" : "반복 일정 수정";
+        if (description) {
+          description.textContent = workScopeMode === "delete"
+            ? "반복되는 일정입니다. 어디까지 삭제할까요?"
+            : "반복되는 일정입니다. 어디까지 적용할까요?";
+        }
+        // 기본값은 언제나 "이 일정만" 이다. 앞선 선택이 남아 모든 일정을
+        // 건드리는 사고가 없어야 한다.
+        var instance = root.querySelector('[data-work-recurrence-scope][value="instance"]');
+        if (instance) instance.checked = true;
+        modal.hidden = false;
+        window.requestAnimationFrame(function () {
+          var confirmButton = root.querySelector("[data-work-scope-confirm]");
+          if (confirmButton) confirmButton.focus();
+        });
+        return true;
+      }
+
+      function closeWorkScopeModal() {
+        var modal = root.querySelector("[data-work-scope-modal]");
+        if (modal) modal.hidden = true;
+        workScopeMode = "";
+      }
+
+      function workScopeValue() {
+        var choice = root.querySelector("[data-work-recurrence-scope]:checked");
+        return choice && choice.value === "all" ? "all" : "instance";
       }
 
       function workFormPayload() {
@@ -14530,6 +14592,33 @@
         });
       }
 
+      var workScopeModalNode = root.querySelector("[data-work-scope-modal]");
+      if (workScopeModalNode) {
+        workScopeModalNode.addEventListener("click", function (event) {
+          // 오버레이 자체를 누른 것은 취소다.
+          if (event.target === workScopeModalNode) {
+            closeWorkScopeModal();
+            return;
+          }
+          if (event.target.closest("[data-work-scope-cancel]")) {
+            closeWorkScopeModal();
+            return;
+          }
+          if (!event.target.closest("[data-work-scope-confirm]")) return;
+          var mode = workScopeMode;
+          closeWorkScopeModal();
+          if (mode === "delete") performWorkDelete();
+          else if (mode === "save") submitWorkForm();
+        });
+        workScopeModalNode.addEventListener("keydown", function (event) {
+          if (event.key !== "Escape") return;
+          // 바깥 편집 창까지 함께 닫히지 않도록 여기서 이벤트를 멈춘다.
+          event.preventDefault();
+          event.stopPropagation();
+          closeWorkScopeModal();
+        });
+      }
+
       var workGoogleCalendarSelect = root.querySelector("[data-work-google-calendar]");
       if (workGoogleCalendarSelect) workGoogleCalendarSelect.addEventListener("change", syncWorkGoogleCalendarDot);
 
@@ -14623,48 +14712,71 @@
               return;
             }
           }
-          var save = root.querySelector("[data-work-save]");
-          if (save) save.disabled = true;
-          setWorkStatus(payload.id ? "업무를 수정하는 중입니다." : "업무를 저장하는 중입니다.", "");
-          try {
-            await requestWorkItems(payload.id ? "PATCH" : "POST", payload);
-            closeWorkDialog();
-            await loadWorkItems();
-          } catch (error) {
-            // 구글 쓰기 실패(502)는 다이얼로그를 닫지도, 목록을 다시 불러오지도 않고 재시도할 수 있게 남긴다.
-            var googleWriteFailed = Boolean(error && (error.status === 502 || error.code === "google_write_failed" || error.code === "needs_reconnect"));
-            setWorkStatus(error.message || "업무를 저장하지 못했습니다.", "warn");
-            if (googleWriteFailed && save) save.focus();
-          } finally {
-            if (save) save.disabled = false;
-          }
+          // 반복 인스턴스 수정은 여기서 멈추고 범위를 먼저 묻는다. 취소하면
+          // 아무것도 보내지 않고 다이얼로그가 그대로 남는다.
+          if (payload.id && workDialogRecurringInstance && openWorkScopeModal("save")) return;
+          await submitWorkForm();
         });
+      }
+
+      async function submitWorkForm() {
+        // 범위 확인창에서 고른 값까지 담기도록 페이로드를 확인 시점에 다시 만든다.
+        var payload = workFormPayload();
+        var save = root.querySelector("[data-work-save]");
+        if (save) save.disabled = true;
+        setWorkStatus(payload.id ? "업무를 수정하는 중입니다." : "업무를 저장하는 중입니다.", "");
+        try {
+          await requestWorkItems(payload.id ? "PATCH" : "POST", payload);
+          closeWorkDialog();
+          await loadWorkItems();
+        } catch (error) {
+          // 구글 쓰기 실패(502)는 다이얼로그를 닫지도, 목록을 다시 불러오지도 않고 재시도할 수 있게 남긴다.
+          var googleWriteFailed = Boolean(error && (error.status === 502 || error.code === "google_write_failed" || error.code === "needs_reconnect"));
+          setWorkStatus(error.message || "업무를 저장하지 못했습니다.", "warn");
+          if (googleWriteFailed && save) save.focus();
+        } finally {
+          if (save) save.disabled = false;
+        }
       }
 
       var workDelete = root.querySelector("[data-work-delete]");
       if (workDelete) {
-        workDelete.addEventListener("click", async function () {
+        workDelete.addEventListener("click", function () {
           var id = (root.querySelector("[data-work-id]") || {}).value || "";
-          var expectedUpdatedAt = (root.querySelector("[data-work-updated-at]") || {}).value || "";
-          if (!id || !window.confirm("이 업무를 삭제할까요?")) return;
-          workDelete.disabled = true;
-          try {
-            // expectedUpdatedAt 은 계속 보낸다. 서버는 낡은 값을 치명적으로 다루지
-            // 않고 행을 다시 읽어 삭제를 진행한다(동기화 기록만으로도 updated_at 이
-            // 올라가기 때문이다).
-            await requestWorkItems("DELETE", { id: id, expectedUpdatedAt: expectedUpdatedAt });
-            closeWorkDialog();
-            await loadWorkItems();
-          } catch (error) {
-            // 삭제 실패는 다이얼로그를 닫지도, 목록을 다시 불러오지도 않는다.
-            // 서버가 준 사유를 그대로 띄우고 그 자리에서 재시도할 수 있게 남긴다.
-            setWorkStatus(error.message || "업무를 삭제하지 못했습니다.", "warn");
-            workDelete.disabled = false;
-            workDelete.focus();
-          } finally {
-            workDelete.disabled = false;
-          }
+          if (!id) return;
+          // 반복 인스턴스는 확인창이 곧 확인 절차다 — window.confirm 을 겹쳐 묻지 않는다.
+          if (workDialogRecurringInstance && openWorkScopeModal("delete")) return;
+          if (!window.confirm("이 업무를 삭제할까요?")) return;
+          performWorkDelete();
         });
+      }
+
+      async function performWorkDelete() {
+        var id = (root.querySelector("[data-work-id]") || {}).value || "";
+        var expectedUpdatedAt = (root.querySelector("[data-work-updated-at]") || {}).value || "";
+        if (!id) return;
+        var remove = root.querySelector("[data-work-delete]");
+        if (remove) remove.disabled = true;
+        try {
+          // expectedUpdatedAt 은 계속 보낸다. 서버는 낡은 값을 치명적으로 다루지
+          // 않고 행을 다시 읽어 삭제를 진행한다(동기화 기록만으로도 updated_at 이
+          // 올라가기 때문이다).
+          var body = { id: id, expectedUpdatedAt: expectedUpdatedAt };
+          if (workDialogRecurringInstance) body.recurrenceScope = workScopeValue();
+          await requestWorkItems("DELETE", body);
+          closeWorkDialog();
+          await loadWorkItems();
+        } catch (error) {
+          // 삭제 실패는 다이얼로그를 닫지도, 목록을 다시 불러오지도 않는다.
+          // 서버가 준 사유를 그대로 띄우고 그 자리에서 재시도할 수 있게 남긴다.
+          setWorkStatus(error.message || "업무를 삭제하지 못했습니다.", "warn");
+          if (remove) {
+            remove.disabled = false;
+            remove.focus();
+          }
+        } finally {
+          if (remove) remove.disabled = false;
+        }
       }
 
       var workOwnerClientInput = root.querySelector("[data-work-owner-client-code]");
@@ -14680,6 +14792,9 @@
         // 맞춤 반복 창이 떠 있으면 포커스는 그 안에서만 돈다.
         var openRecurrenceModal = root.querySelector("[data-work-recurrence-modal]");
         if (openRecurrenceModal && !openRecurrenceModal.hidden) editorModal = openRecurrenceModal;
+        // 반복 범위 확인창이 가장 위다 — 떠 있으면 포커스는 여기 갇힌다.
+        var openScopeModal = root.querySelector("[data-work-scope-modal]");
+        if (openScopeModal && !openScopeModal.hidden) editorModal = openScopeModal;
         if (event.key === "Tab" && editorModal && !editorModal.hidden) {
           var focusable = Array.from(editorModal.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'))
             .filter(function (node) { return node.offsetParent !== null; });

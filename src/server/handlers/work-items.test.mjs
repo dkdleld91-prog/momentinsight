@@ -830,6 +830,12 @@ test("recurrenceScope all patches the master and re-collects the instances witho
   const eventsUrl = `${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events`;
   const { calls, impl } = googleFetchMock({
     [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    // 마스터는 3월에 시작한 시리즈다. "모든 일정" 수정은 이 기준 날짜를 지킨다.
+    [`GET ${eventsUrl}/master-1`]: googleJson(200, {
+      id: "master-1", etag: '"m1"',
+      start: { dateTime: "2026-03-13T02:00:00.000Z", timeZone: "Asia/Seoul" },
+      end: { dateTime: "2026-03-13T03:00:00.000Z", timeZone: "Asia/Seoul" },
+    }),
     [`PATCH ${eventsUrl}/master-1`]: googleJson(200, { id: "master-1", recurrence: ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"] }),
     [`GET ${eventsUrl}/master-1/instances`]: googleJson(200, {
       items: [
@@ -853,13 +859,80 @@ test("recurrenceScope all patches the master and re-collects the instances witho
   const patch = calls.find((call) => call.method === "PATCH");
   assert.equal(patch.url.endsWith("/events/master-1"), true, "모든 일정은 마스터를 고친다");
   assert.equal(patch.options.headers["if-match"], undefined, "인스턴스 etag 를 마스터에 쓰지 않는다");
-  assert.deepEqual(JSON.parse(patch.options.body).recurrence, ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"]);
+  const patchBody = JSON.parse(patch.options.body);
+  assert.deepEqual(patchBody.recurrence, ["RRULE:FREQ=MONTHLY;BYMONTHDAY=13"]);
+  // 시리즈 기준 날짜(3/13)는 그대로, 편집한 서울 시각(14:00)과 길이(1시간)만 옮긴다.
+  assert.equal(patchBody.start.dateTime, "2026-03-13T05:00:00.000Z");
+  assert.equal(patchBody.end.dateTime, "2026-03-13T06:00:00.000Z");
   const anchorUpdate = opsFor(harness.ops, "schedule_items", "update")[0];
   assert.equal(anchorUpdate.values.google_event_id, undefined, "마스터 id 를 인스턴스 행에 덮지 않는다");
   const inserted = opsFor(harness.ops, "schedule_items", "insert");
   assert.deepEqual(inserted[0].values.map((entry) => entry.google_event_id), ["master-1_2"]);
   assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "사라진 인스턴스는 지우지 않는다");
   assert.match(payload.message, /반복 일정/);
+});
+
+// 대표님이 확인한 사고 그대로다: 매월 반복인 "세무사 결제" 의 색을 바꿨는데
+// 9/5 만 바뀌고 10/5 는 그대로였다. "모든 일정" 은 colorId 를 마스터에 실어야
+// 하고, 다시 받은 인스턴스 행에도 그 색이 깔려야 한다.
+test("recurrenceScope all carries the event color to the master and onto every re-collected row", async () => {
+  const row = {
+    id: "row-1",
+    client_id: null, operation_team_id: null, owner_agency_code: "mml93-a01", calendar_id: null,
+    title: "세무사 결제", schedule_type: "meeting", status: "planned", priority: "medium",
+    starts_at: "2026-09-05T05:00:00.000Z", ends_at: "2026-09-05T06:00:00.000Z",
+    visibility: "internal", is_all_day: false,
+    google_calendar_id: DEDICATED, google_event_id: "master-1_1", google_recurring_event_id: "master-1",
+    google_color_id: null, google_etag: '"e1"',
+    updated_at: "2026-09-01T00:00:00.000Z",
+  };
+  const harness = tableCtx({
+    schedule_items: [
+      { data: row, error: null },
+      { data: { ...row, google_color_id: "8", updated_at: "2026-09-02T00:00:00.000Z" }, error: null },
+      { data: [{ ...row }], error: null },
+      { data: null, error: null },
+      { data: null, error: null },
+    ],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    owner_google_calendar_sync: [{ data: [], error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const eventsUrl = `${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events`;
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`GET ${eventsUrl}/master-1`]: googleJson(200, {
+      id: "master-1",
+      start: { dateTime: "2026-05-05T05:00:00.000Z" },
+      end: { dateTime: "2026-05-05T06:00:00.000Z" },
+    }),
+    [`PATCH ${eventsUrl}/master-1`]: googleJson(200, { id: "master-1", colorId: "8" }),
+    [`GET ${eventsUrl}/master-1/instances`]: googleJson(200, {
+      items: [
+        { id: "master-1_1", recurringEventId: "master-1", status: "confirmed", colorId: "8", start: { dateTime: "2026-09-05T05:00:00.000Z" }, end: { dateTime: "2026-09-05T06:00:00.000Z" } },
+        // 인스턴스 응답이 colorId 를 싣지 않아도 앵커 행의 색이 깔려야 한다.
+        { id: "master-1_2", recurringEventId: "master-1", status: "confirmed", start: { dateTime: "2026-10-05T05:00:00.000Z" }, end: { dateTime: "2026-10-05T06:00:00.000Z" } },
+      ],
+    }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("PATCH", dialogBody({
+    id: "row-1",
+    title: "세무사 결제",
+    startsAt: "2026-09-05T14:00",
+    endsAt: "2026-09-05T15:00",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    recurrenceScope: "all",
+    colorId: "8",
+    conference: false,
+  })), harness.ctx));
+
+  assert.equal(response.status, 200);
+  const patch = calls.find((call) => call.method === "PATCH");
+  assert.equal(patch.url, `${eventsUrl}/master-1`);
+  assert.equal(JSON.parse(patch.options.body).colorId, "8");
+  const inserted = opsFor(harness.ops, "schedule_items", "insert")[0].values;
+  assert.deepEqual(inserted.map((entry) => [entry.google_event_id, entry.google_color_id]), [["master-1_2", "8"]]);
 });
 
 // 드래그 이동·빠른 완료 PATCH 는 상세를 싣지 않는다. 그때 서버가 빈 값을
@@ -1355,6 +1428,127 @@ test("a stale expectedUpdatedAt re-reads the row and still deletes through googl
   const audits = opsFor(harness.ops, "audit_logs", "insert");
   assert.equal(audits.length, 2);
   assert.deepEqual(audits.map((op) => op.values.action), ["work_item_delete_attempted", "work_item_deleted"]);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 삭제 범위: 이 일정만 / 모든 일정
+// ─────────────────────────────────────────────────────────────
+
+function seriesRow(overrides = {}) {
+  return deletableRow({
+    google_event_id: "master-1_1",
+    google_recurring_event_id: "master-1",
+    google_etag: '"e1"',
+    ...overrides,
+  });
+}
+
+const MASTER_EVENT_URL = `${CALENDAR_BASE}/calendars/${encodeURIComponent(DEDICATED)}/events/master-1`;
+const INSTANCE_EVENT_URL = `${MASTER_EVENT_URL}_1`;
+
+test("recurrenceScope all deletes the google master and every MI row of that series", async () => {
+  const harness = tableCtx({
+    schedule_items: [
+      { data: seriesRow(), error: null },
+      { data: [{ id: "row-1" }, { id: "row-2" }, { id: "row-3" }], error: null },
+    ],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`DELETE ${MASTER_EVENT_URL}`]: googleJson(204, {}),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-1",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    recurrenceScope: "all",
+  }), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.match(payload.message, /반복 일정 3개/);
+  // 마스터를 DELETE 한다 — 인스턴스 취소 PATCH 가 아니다.
+  assert.deepEqual(calls.filter((call) => call.method !== "POST").map((call) => `${call.method} ${call.url}`),
+    [`DELETE ${MASTER_EVENT_URL}`]);
+  const removals = opsFor(harness.ops, "schedule_items", "delete");
+  assert.equal(removals.length, 1);
+  assert.deepEqual(removals[0].filters, [
+    ["eq", "owner_agency_code", "mml93-a01"],
+    ["eq", "google_recurring_event_id", "master-1"],
+    ["is", "calendar_id", null],
+  ]);
+  const audits = opsFor(harness.ops, "audit_logs", "insert");
+  assert.deepEqual(audits.map((op) => op.values.action), ["work_item_delete_attempted", "work_item_deleted"]);
+  assert.equal(audits[1].values.metadata.recurrenceScope, "all");
+  assert.equal(audits[1].values.metadata.removedCount, 3);
+});
+
+test("a failed master delete keeps every MI row of the series and reports the failure", async () => {
+  const harness = tableCtx({
+    schedule_items: [{ data: seriesRow(), error: null }],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`DELETE ${MASTER_EVENT_URL}`]: googleJson(500, { error: { code: 500 } }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-1",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+    recurrenceScope: "all",
+  }), harness.ctx));
+  const payload = await response.json();
+
+  assert.equal(response.status, 502);
+  assert.equal(payload.code, "google_delete_failed");
+  assert.equal(opsFor(harness.ops, "schedule_items", "delete").length, 0, "구글이 실패하면 시리즈 행을 남긴다");
+});
+
+// 기본값은 "이 일정만" 이다. 범위를 싣지 않은 삭제가 시리즈를 지우면 안 된다.
+test("a delete without a scope cancels only that occurrence", async () => {
+  const harness = tableCtx({
+    schedule_items: [
+      { data: seriesRow(), error: null },
+      { data: { id: "row-1" }, error: null },
+    ],
+    owner_google_integrations: [{ data: GOOGLE_INTEGRATION, error: null }],
+    audit_logs: [{ error: null }],
+  });
+  const { calls, impl } = googleFetchMock({
+    [`POST ${TOKEN_URL}`]: googleJson(200, { access_token: "gat-1" }),
+    [`PATCH ${INSTANCE_EVENT_URL}`]: googleJson(200, { id: "master-1_1", status: "cancelled" }),
+  });
+
+  const response = await withGoogleEnv(impl, () => handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-1",
+    expectedUpdatedAt: "2026-09-01T00:00:00.000Z",
+  }), harness.ctx));
+
+  assert.equal(response.status, 200);
+  const write = calls.find((call) => call.method === "PATCH");
+  assert.equal(write.url, INSTANCE_EVENT_URL);
+  assert.deepEqual(JSON.parse(write.options.body), { status: "cancelled" });
+  const removals = opsFor(harness.ops, "schedule_items", "delete");
+  assert.equal(removals.length, 1);
+  assert.equal(removals[0].filters.some(([kind, column]) => column === "google_recurring_event_id"), false);
+});
+
+test("an unknown delete scope is refused before google or storage is touched", async () => {
+  const harness = tableCtx({ schedule_items: [{ data: seriesRow(), error: null }] });
+  const response = await handleWorkItemsRequest(workRequest("DELETE", {
+    id: "row-1",
+    recurrenceScope: "following",
+  }), harness.ctx);
+  const payload = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.message, "반복 일정 삭제 범위를 확인해주세요.");
+  assert.equal(harness.ops.length, 0);
 });
 
 // ─────────────────────────────────────────────────────────────

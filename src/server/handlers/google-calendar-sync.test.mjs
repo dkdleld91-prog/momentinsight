@@ -17,6 +17,7 @@ import {
   normalizeHexColor,
   normalizeImportedTitle,
   readableTextColor,
+  seriesAnchorTimes,
   undecorateGoogleSummary,
   validateRecurrenceLines,
 } from "../google-calendar-client.mjs";
@@ -1416,6 +1417,36 @@ test("recurrence never rides on an instance row, so an instance edit cannot fork
     ownerCode: OWNER, details: { mode: "patch" },
   });
   assert.equal("recurrence" in payload, false);
+});
+
+// "모든 일정" 수정의 시간 규칙. 인스턴스의 날짜가 시리즈를 끌고 가면 안 된다.
+test("the series anchor keeps the master date and takes only the edited time and length", () => {
+  const master = { start: { dateTime: "2026-03-05T02:00:00.000Z" }, end: { dateTime: "2026-03-05T03:00:00.000Z" } };
+  // 9/5 인스턴스를 14:00~15:30(서울)으로 고쳤다.
+  const shifted = seriesAnchorTimes(master, {
+    starts_at: "2026-09-05T05:00:00.000Z",
+    ends_at: "2026-09-05T06:30:00.000Z",
+  });
+  assert.equal(shifted.start.dateTime, "2026-03-05T05:00:00.000Z", "마스터의 3/5 는 그대로다");
+  assert.equal(shifted.end.dateTime, "2026-03-05T06:30:00.000Z", "길이는 편집한 1시간 30분이다");
+  assert.equal(shifted.start.timeZone, "Asia/Seoul");
+});
+
+test("an all-day series anchor spans the edited number of days from the master date", () => {
+  const shifted = seriesAnchorTimes({ start: { date: "2026-03-05" } }, {
+    is_all_day: true,
+    starts_at: "2026-09-05T15:00:00.000Z",
+    ends_at: "2026-09-06T15:00:00.000Z",
+    occurrence_on: "2026-09-06",
+  });
+  assert.deepEqual(shifted.start, { date: "2026-03-05" });
+  // 9/6~9/7 은 이틀이므로 마스터는 3/5~3/6, 구글의 끝은 배타적이라 3/7 이다.
+  assert.deepEqual(shifted.end, { date: "2026-03-07" });
+});
+
+test("a master whose start cannot be read yields no anchor so the series times stay untouched", () => {
+  assert.equal(seriesAnchorTimes({}, { starts_at: "2026-09-05T05:00:00.000Z" }), null);
+  assert.equal(seriesAnchorTimes({ start: { dateTime: "2026-03-05T02:00:00.000Z" } }, {}), null);
 });
 
 test("an existing conference is never re-requested", () => {

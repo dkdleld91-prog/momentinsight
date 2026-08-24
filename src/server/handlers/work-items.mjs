@@ -1125,6 +1125,8 @@ async function handlePatch(request, ctx) {
     createConference: googleInput.value.conference,
     detailFields: detail.fields,
     clientName: clientDisplayName(access.client),
+    // 마스터를 고칠 때만 시리즈 기준 날짜를 지킨다(시각·길이만 옮긴다).
+    preserveSeriesAnchor: editMaster,
   });
   if (!googleWrite.skipped && !googleWrite.ok) return googleWriteFailure(request, googleWrite.reason);
 
@@ -1275,14 +1277,63 @@ async function refreshSeriesInstances(ctx, access, options) {
   return { count };
 }
 
+// "모든 일정" 삭제의 뒷정리. 구글 마스터 이벤트는 이미 지워졌으므로 그 시리즈의
+// MI 행을 한 번에 지운다. 범위는 대표님 개인 일정(calendar_id IS NULL)과 같은
+// 테넌트로 좁힌다 — 공유 일정표 행은 애초에 여기까지 오지 않는다.
+// 마스터가 사라진 뒤라 다음 동기화가 이 행들을 되살릴 이벤트 자체가 없다.
+async function deleteSeriesRows(request, ctx, options) {
+  const { row, seriesEventId, googleDelete, auditAttempt } = options;
+  const skipped = Boolean(googleDelete.skipped);
+  const { data, error } = await runWithOptionalColumns(() => ctx.supabaseAdmin
+    .from("schedule_items")
+    .delete()
+    .eq("owner_agency_code", row.owner_agency_code)
+    .eq("google_recurring_event_id", seriesEventId)
+    .is("calendar_id", null)
+    .select("id"));
+  if (error) {
+    return auditAttempt(json(request, { ok: false, message: "업무 삭제에 실패했습니다.", detail: error.message }, 500),
+      { outcome: "db_failed", reason: cleanText(error.code, 40) || "storage", row, googleSkipped: skipped });
+  }
+  const removed = Array.isArray(data) ? data : (data ? [data] : []);
+  if (!removed.length) {
+    return auditAttempt(json(request, { ok: false, message: "삭제할 업무를 찾을 수 없습니다." }, 404),
+      { outcome: "scope_miss", reason: "delete_no_match", row, googleSkipped: skipped });
+  }
+  await auditAttempt(null, { outcome: "deleted", reason: "series", row, googleSkipped: skipped });
+  let auditLogged = false;
+  try {
+    auditLogged = await recordAudit(ctx, {
+      action: "work_item_deleted",
+      targetId: row.id,
+      clientId: row.client_id,
+      metadata: {
+        visibility: row.visibility,
+        status: row.status,
+        googleEventDeleted: !skipped,
+        recurrenceScope: "all",
+        removedCount: removed.length,
+      },
+    });
+  } catch (unexpected) {
+    auditLogged = false;
+  }
+  return json(request, { ok: true, message: `반복 일정 ${removed.length}개를 삭제했습니다.`, auditLogged });
+}
+
 async function handleDelete(request, ctx) {
   const body = await readBody(request);
   const access = await resolveAccess(request, ctx);
   if (!access.ok) return json(request, access, access.status);
   if (!roleCanMutateWorkItems(access.role)) return json(request, { ok: false, message: "삭제 권한이 없습니다." }, 403);
-  const allowedKeys = new Set(["id", "expectedUpdatedAt"]);
+  const allowedKeys = new Set(["id", "expectedUpdatedAt", "recurrenceScope"]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) {
     return json(request, { ok: false, message: "삭제 요청에 허용되지 않은 값이 포함되었습니다." }, 400);
+  }
+  // 반복 일정 삭제 범위. 기본값은 언제나 "이 일정만" 이다.
+  const requestedScope = cleanText(body.recurrenceScope || "instance").toLowerCase();
+  if (!RECURRENCE_SCOPES.has(requestedScope)) {
+    return json(request, { ok: false, message: "반복 일정 삭제 범위를 확인해주세요." }, 400);
   }
   const id = cleanText(body.id || new URL(request.url).searchParams.get("id"));
   // expectedUpdatedAt 은 선택값이다. 다만 값을 실어 보냈는데 형식이 깨졌다면
@@ -1372,7 +1423,18 @@ async function handleDelete(request, ctx) {
   // 이유가 이것이다 — 되살아난 행을 나중에 이 두 값으로 역추적할 수 있어야 한다.
   // 실제로 막으려면 삭제한 이벤트를 기억하는 tombstone 테이블(마이그레이션)이
   // 필요하고, 그것은 이 변경의 범위 밖이다.
-  const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, row);
+  //
+  // "모든 일정" 삭제도 순서는 같다. 지우는 대상만 인스턴스가 아니라 마스터
+  // 이벤트다 — google_recurring_event_id 를 지운 사본을 넘겨 pushRowToGoogle 이
+  // 취소 PATCH 가 아닌 DELETE 를 마스터 id 로 날리게 한다. 마스터가 사라지면
+  // 그 시리즈의 인스턴스는 구글에서 전부 사라지므로, 그 다음에 같은 시리즈의
+  // MI 행을 한 번에 지운다.
+  const seriesEventId = cleanText(row.google_recurring_event_id);
+  const deleteSeries = requestedScope === "all" && Boolean(seriesEventId);
+  const deleteTarget = deleteSeries
+    ? { ...row, google_event_id: seriesEventId, google_recurring_event_id: null, google_etag: null }
+    : row;
+  const googleDelete = await deleteRowFromGoogle(ctx, process.env, access, deleteTarget);
   if (!googleDelete.ok) {
     await recordGoogleDeleteFailure(ctx, row, googleDelete.reason);
     const message = googleDelete.reason === "needs_reconnect"
@@ -1381,6 +1443,7 @@ async function handleDelete(request, ctx) {
     return auditAttempt(json(request, { ok: false, code: "google_delete_failed", message }, 502),
       { outcome: "google_failed", reason: googleDelete.reason, row, googleSkipped: false });
   }
+  if (deleteSeries) return deleteSeriesRows(request, ctx, { row, seriesEventId, googleDelete, auditAttempt });
   let deleteQuery = ctx.supabaseAdmin.from("schedule_items").delete().eq("id", id);
   // 테넌트 범위는 그대로 걸되 updated_at 동등 조건은 걸지 않는다.
   deleteQuery = exactOriginalScope(deleteQuery, row, { matchVersion: false });

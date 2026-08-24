@@ -5,11 +5,11 @@
 ## 진행 중: N쇼핑 v1.1.13 안정화·5차 6분 실측
 
 1. 완료: candidate8은 장기 상한 7.5그룹/시간이라 기존 8.75~8.77을 넘을 수 없음을 확인했고 활성화 대상에서 제외했습니다. 같은 단일 lane·maxJobs1 계약에서 가능한 최소 정수 우회안은 candidate6(이론 상한10)입니다.
-2. 완료(로컬): manifest/runtime을 1.1.13, candidate exact 응답을 6분으로 바꾸고, signed `runTrigger`를 Chrome→native→local worker→server RPC까지 전달했습니다. 실제 job이 `navigating`에 진입한 run만 별도 service-role 전용 provenance 표에 append하며 remote 무작업 poll은 기록하지 않습니다.
-3. 완료(로컬): 정확한 13파일 fingerprint는 `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`입니다. N30 집중 340/340, server contract71/71, release baseline PASS, Production auth18/18, 보호 lock 23함수·102파일·50migration 및 self-test가 통과했습니다.
+2. 완료: manifest/runtime을 1.1.13, candidate exact 응답을 6분으로 바꾸고, signed `runTrigger`를 Chrome→native→local worker→server RPC까지 전달했습니다. 실제 job이 `navigating`에 진입한 run만 별도 service-role 전용 provenance 표에 append하며 remote 무작업 poll은 기록하지 않습니다.
+3. 완료: 정확한 13파일 fingerprint는 `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`입니다. N30 집중 340/340, server contract71/71, release baseline PASS, Production auth18/18, 보호 lock 23함수·102파일·50migration 및 self-test가 통과했습니다.
 4. 확인: `npm audit --omit=dev`는 기존 `pptxgenjs@4.0.1 → image-size@1.2.1`의 high DoS 권고 2건으로 exit1입니다. N30 실행 경로의 신규 의존성은 아니며 자동 수정은 breaking downgrade라 이번 범위에서 강제 적용하지 않습니다. 이를 보안 무결점으로 보고하지 않습니다.
-5. 완료(로컬): 독립 감사의 migration lock-order P1과 provenance 보호 잠금 공백을 보완했고 재감사 P0/P1 blocker0, 전체 `check:release` core1071/place51/shopping64/auth18, 최종 diff-check를 통과했습니다. 최종 범위를 다시 확인한 뒤 N30 파일만 커밋하며 personal calendar/admin/session/vercel/data/drafts는 포함하지 않습니다.
-6. 대기: Production 앱·DB·Windows bridge를 같은 commit/runtime/fingerprint로 반영합니다. 신규 migration은 로컬 PostgreSQL compile 증거가 없으므로 완전 idle transaction 적용 성공, 함수 정의·ACL·advisor까지 확인된 경우에만 적용 성공입니다.
+5. 완료: 독립 감사의 migration lock-order P1과 provenance 보호 잠금 공백을 보완했고 재감사 P0/P1 blocker0, 전체 `check:release` core1071/place51/shopping64/auth18, 최종 diff-check를 통과했습니다. main `4fcba2a953b6`와 N30-only release `c3e809d67844`를 push했으며 data/drafts는 포함하지 않았습니다.
+6. 완료: N30-only release를 Production `dpl_C9spGKA1VA7z15Ny2A3ZCizzNgkN`에 함수11개로 반영하고 health/ready를 확인했습니다. 운영 migration의 실제 compile·ACL·RLS·advisor와 Windows 관리자 updater exit0·runtime1.1.13 exact fingerprint heartbeat까지 확인했습니다. main 전체는 Vercel 함수12개 제한 때문에 배포 불가능하므로 사용하지 않았습니다.
 7. 대기: 배포 뒤 첫 자연 `rank-catch-up` official atomic300을 새 anchor로 고정합니다. anchor+24시간·새 성공6회와 exact identity·fresh heartbeat·recent atomic300·closed/null·processing0·lane/run/lease 완전 idle 전에는 candidate setter를 호출하지 않습니다.
 8. 대기: 모든 gate가 참이고 이 목표의 시도 이력이 0회일 때만 canonical candidate setter를 정확히 1회 호출해 raw exact candidate/6과 같은 transaction의 post-state/idle을 캡처합니다. timeout·응답 유실·불확실이면 재호출0·성공0입니다.
 9. 대기: 전환 뒤 fixed-wall 120분 이상·bootstrap 제외 provenance `rank-catch-up` fully-terminal distinct group18개 이상으로 exact runtime/fingerprint/worker, run당 group1, 360초 grid, atomic300·중복0·순서·lane 해제·concurrency1을 확인합니다. signed provenance는 신뢰된 배포 워커의 운영 증거이며 침해된 signer/service-role에 대한 외부 증명은 아닙니다. 출처 누락·불일치 또는 실제 처리량 8.77 이하이면 canonical baseline10 1회 복귀·성공0입니다.

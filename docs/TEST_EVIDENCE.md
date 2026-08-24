@@ -1,6 +1,6 @@
 # Test Evidence
 
-## 2026-08-25 N쇼핑 runtime1.1.13 candidate6·run provenance (로컬, 미배포)
+## 2026-08-25 N쇼핑 runtime1.1.13 candidate6·run provenance (Production·DB·Windows 반영)
 
 - 산술 검증: 단일 global lane·maxJobs1의 장기 상한은 8분 `60/8=7.5`, 7분 `60/7=8.571…`, 6분 `60/6=10`그룹/시간입니다. 기존 실측 8.75~8.77을 초과할 수 있는 최소 정수 cadence는 6분이며, 8분을 향상 성공으로 실행하는 것은 불가능합니다.
 - runtime fingerprint는 Windows updater와 동일한 13파일 SHA-256 결합 알고리즘으로 재계산해 `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`을 얻었습니다. durable migration test와 server/release contract가 migration의 literal 3곳을 매 실행 재계산값과 대조합니다.
@@ -9,7 +9,10 @@
 - 최종 실행 결과: N30 집중 `340/340 PASS`, `check-server-contract 71/71 PASS`, `check-release-baseline PASS`, 보호 lock `23 functions / 102 files / 50 migrations PASS` 및 self-test PASS, `git diff --check PASS`입니다. 전체 `npm run check:release`도 core `1071/1071`, Place `51/51`, Shopping `64/64`, Production auth `18/18`, public build 10파일·inline 6·CSP hash 4로 exit0입니다. 이 값은 로컬 배포 후보 증거이며 Production 배포 증거는 아직 없습니다.
 - 보안 검사: 새 provenance 표는 forced RLS, PUBLIC/anon/authenticated/service_role 전체 revoke 뒤 service_role에 select/insert만 grant하고 update/delete는 grant하지 않습니다. 관련 5 RPC는 SECURITY INVOKER·빈 search_path·service-role execute only입니다. HMAC signed body라도 native/local/server/DB 각 경계에서 trigger enum을 재검증합니다. 다만 이것은 신뢰된 서명 워커의 전송 무결성이지, 침해된 signer/service-role까지 막는 독립 출처 증명은 아닙니다. 성능 SQL은 `group_claimed.run_id`를 provenance PK에 1:1 연결하고 exact runtime1.1.13/fingerprint·worker `windows-desktop-primary`·trigger `rank-catch-up`·run당 group1을 모두 만족한 표본만 분자에 포함합니다. remote/manual/cloud/missing/mismatch는 분리하고 하나라도 귀속 불명확하면 성공0입니다.
 - `npm audit --omit=dev --audit-level=high`는 `pptxgenjs@4.0.1 → image-size@1.2.1`의 infinite-loop DoS high 권고 2건으로 exit1입니다. 이는 기존 report-center lazy PPTX 의존성이며 N30 변경이 새로 추가한 경로는 아닙니다. npm 제안은 breaking downgrade라 이번 변경에 섞지 않았고 취약점 해소로 기록하지 않습니다.
-- 로컬 Supabase migration apply는 Docker/Podman 부재로 실행할 수 없었습니다. SQL 정적 계약만 통과한 상태이므로 Production 완전 idle guard 안에서 migration transaction 성공, 실제 `pg_get_functiondef`·ACL·RLS·advisor를 확인하기 전에는 SQL compile/DB 적용 성공이 아닙니다. candidate6 판정 grid는 360초이며 과거 candidate8의 480초를 재사용하지 않습니다. commit·Production/DB/Windows 배포·candidate setter는 모두 아직 0회입니다.
+- 배포 증거: main `4fcba2a953b6`, N30-only release `c3e809d67844`, Ready Preview `dpl_BaRMgAkXSuYzRkbD3N8nyxEJzQpj`(nodejs 함수11), 승격 Production `dpl_C9spGKA1VA7z15Ny2A3ZCizzNgkN`입니다. 운영 alias `/health`·`/ready`는 HTTP200·release 일치·live icn1·Supabase ready입니다. main 전체 직접 배포는 Vercel Hobby 함수12개 제한으로 거부돼 Production 성공으로 세지 않았고, 개인 일정 범위는 release에 포함하지 않았습니다.
+- 운영 migration은 완전 idle에서 1회 성공했습니다. 표의 forced RLS·service-role SELECT/INSERT only, cadence constraint baseline10/candidate6, 관련5함수의 SECURITY INVOKER·빈 search_path·service-role execute only를 실제 catalog에서 확인했습니다. advisor WARN은 security2·performance23으로 증가0·신규 대상 WARN0입니다.
+- Windows non-admin 실행은 `Disable-ScheduledTask` permission denied로 파일 교체 전 실패했습니다. 관리자 재실행은 updater SHA `fbd11aad98c5b4c9567e171652187186dc266c5f5c4de0ac635c6c772c19345e`, `N30_ELEVATED_EXIT=0`, `MI_EXTENSION_UPDATE_OK`, release `c3e809d67844`, version1.1.13, syntax13, loaded/native 동기화 true, fingerprint `cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6`를 반환했습니다.
+- `2026-08-24T17:50:12.716586Z` SELECT-only operations는 primary heartbeat `17:49:45.065149Z`, exact runtime/fingerprint, baseline10, anchor null·streak0·candidate false, closed/null, processing0·lane/run/lease/stage/job/tracker/probe null입니다. `17:50:42.686964Z` provenance는 0행이라 첫 자연 atomic300/anchor는 아직 증명되지 않았고 setter·wake·cursor·quarantine·lease 변경도 하지 않았습니다. candidate6 grid는 360초이며 과거 480초를 재사용하지 않습니다.
 
 ## 2026-08-24 N쇼핑 atomic success·candidate 제어 강화 (Production·DB·첫 자연 회차 반영)
 

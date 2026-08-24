@@ -369,8 +369,8 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 24. 23:45:55
-- 기준 커밋: 38c0fbd
+- 마지막 자동 저장: 2026. 08. 24. 23:49:22
+- 기준 커밋: cd820ae
 - 작업트리: M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md / ?? data/ / ?? docs/drafts/
 <!-- autosave:end -->
 

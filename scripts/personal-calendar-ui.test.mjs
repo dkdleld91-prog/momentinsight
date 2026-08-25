@@ -19,6 +19,7 @@ import { EVENT_COLOR_PALETTE, EVENT_COLOR_DISPLAY_ORDER } from "../src/server/go
 const sharedSource = fs.readFileSync(new URL("../public/mi-personal-calendar.js", import.meta.url), "utf8");
 const sharedStyle = fs.readFileSync(new URL("../public/mi-personal-calendar.css", import.meta.url), "utf8");
 const adminSource = fs.readFileSync(new URL("../src/pages/admin.html", import.meta.url), "utf8");
+const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.meta.url), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
 // 공유 스크립트는 로드 시점에 window 에 붙는 것 말고는 아무 것도 하지 않는다.
@@ -129,6 +130,20 @@ const adminPersonalView = slice(
   '<section class="mi-view" data-mi-admin-view="my-calendar"',
   '<section class="mi-view" data-mi-admin-view="client-preview"',
 );
+const clientLoginNoticeBlock = slice(clientSource, "function googleLoginNotice(code) {", "function consumeLoginGoogleNotice() {");
+// setScreen 안에도 links.forEach 가 있으므로 끝 기준은 클릭 위임 등록까지 붙여 잡는다.
+const clientScreenRouter = slice(
+  clientSource,
+  "function setScreen(name, shouldPushHash) {",
+  '      links.forEach(function (link) {\n        link.addEventListener("click", function (event) {',
+);
+const clientGlueBlock = slice(clientSource, "var personalCalendarController = null;", "function setScreen(name, shouldPushHash) {");
+const clientInlineScript = clientSource.slice(clientSource.indexOf("<script>\n    (function () {"));
+const clientLegacyScheduleView = slice(
+  clientSource,
+  '<section class="mi-view" id="mi-schedule" data-mi-view="schedule"',
+  '<section class="mi-view" data-mi-view="my-calendar"',
+);
 
 // ─────────────────────────────────────────────────────────────
 // 1. 공유 스크립트 자체
@@ -142,8 +157,10 @@ test("shared calendar ships as a classic public script with a mount entry point"
   assert.equal(typeof shared.markupHtml, "function");
   assert.match(shared.VERSION, /^cal-v\d+-\d{8}$/);
   // seo-evaluation.js 와 같은 방식으로 두 곳에서 참조된다(설계 §6.1).
-  assert.ok(adminSource.includes('<script src="/mi-personal-calendar.js?v=' + shared.VERSION + '"></script>'));
-  assert.ok(adminSource.includes('<link rel="stylesheet" href="/mi-personal-calendar.css?v=' + shared.VERSION + '" />'));
+  for (const page of [adminSource, clientSource]) {
+    assert.ok(page.includes('<script src="/mi-personal-calendar.js?v=' + shared.VERSION + '"></script>'));
+    assert.ok(page.includes('<link rel="stylesheet" href="/mi-personal-calendar.css?v=' + shared.VERSION + '" />'));
+  }
 });
 
 test("mount refuses to run without an injected fetch so the page keeps the auth contract", () => {
@@ -341,6 +358,101 @@ test("the existing 업무 운영 screen is untouched by this component", () => {
   assert.ok(adminSource.includes('<section class="mi-view mi-work-shell" data-mi-admin-view="work" id="mi-admin-work">'));
   assert.ok(adminSource.includes("function renderWorkOperation() {"));
   assert.ok(adminSource.includes("async function loadWorkItems() {"));
+});
+
+// ─────────────────────────────────────────────────────────────
+// 2b. client.html 글루 (P5) — 대표 결재(2026-08-25) 반영
+//     "기존 MI 공유 일정 개념은 없는 것으로 가정. 광고주 화면의 공개 일정 뷰는
+//      개인 캘린더로 대체(레거시 데이터 보존, 신규 공개 경로 없음)."
+// ─────────────────────────────────────────────────────────────
+
+test("client exposes 내 캘린더 in both navs, in place of the retired 일정표 entry", () => {
+  // 사이드바와 모바일 내비 두 곳 모두에 있어야 한다(client.html 은 메뉴가 두 벌이다).
+  const menus = [...clientSource.matchAll(/data-mi-screen="my-calendar">내 캘린더<\/a>/g)];
+  assert.equal(menus.length, 2, "사이드바와 모바일 내비 두 곳에 있어야 합니다.");
+  assert.ok(clientSource.includes('<a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>'));
+  const salesAt = clientSource.indexOf('data-mi-screen="sales">매출 현황</a>');
+  const personalAt = clientSource.indexOf('data-mi-screen="my-calendar">내 캘린더</a>');
+  const agencyAt = clientSource.indexOf('data-mi-screen="agency-code">대행사 연결</a>');
+  assert.ok(salesAt > -1 && personalAt > salesAt && agencyAt > personalAt, "메뉴 순서: 매출 현황 → 내 캘린더 → 대행사 연결");
+  assert.ok(clientSource.includes('<section class="mi-view" data-mi-view="my-calendar" id="mi-my-calendar">'));
+  assert.ok(clientSource.includes("[data-mi-personal-calendar]"));
+  // .mi-nav a / .mi-mobile-nav a 가 display:flex 라 [hidden] 만으로는 감춰지지 않는다.
+  assert.ok(clientSource.includes("#mi-clean .mi-nav a.mi-nav-personal[hidden]"));
+  assert.ok(clientSource.includes("#mi-clean .mi-mobile-nav a.mi-nav-personal[hidden]"));
+});
+
+test("client javascript selectors for the new screen use single-quoted attribute syntax", () => {
+  // 기준(check-release-baseline.mjs)이 큰따옴표 리터럴을 세므로, JS 쪽 셀렉터가
+  // 화면 개수를 흔들지 않게 작은따옴표 속성 문법을 쓴다.
+  const doubleQuoted = [...clientSource.matchAll(/data-mi-screen="my-calendar"/g)].length;
+  assert.equal(doubleQuoted, 2, "my-calendar 큰따옴표 리터럴은 두 내비의 마크업 앵커뿐이어야 합니다.");
+  assert.ok(clientSource.includes(`root.querySelectorAll("a[data-mi-screen='my-calendar']")`));
+  assert.equal(clientInlineScript.includes('data-mi-screen="my-calendar"'), false);
+});
+
+test("every registered advertiser gets the calendar — the only gate is the client session itself", () => {
+  // 대표 지시: 등록된 광고주 전원 즉시 사용. 별도 플래그·화이트리스트를 두지 않는다.
+  assert.ok(clientGlueBlock.includes('return secureClientSession.role === "client";'));
+  assert.ok(clientGlueBlock.includes("function personalCalendarEnabled()"));
+  assert.ok(clientGlueBlock.includes("function syncPersonalCalendarMenu()"));
+  assert.ok(clientGlueBlock.includes("link.hidden = !enabled;"));
+  assert.equal(/localStorage|flag|allowlist|canary/i.test(clientGlueBlock), false, "광고주 게이트를 새로 만들면 안 됩니다.");
+  assert.ok(clientScreenRouter.includes('var rejectedPersonalTarget = target === "my-calendar" && !personalCalendarEnabled();'));
+  assert.ok(clientScreenRouter.includes('if (rejectedPersonalTarget) target = "dashboard";'));
+  assert.ok(clientScreenRouter.includes("rejectedPersonalTarget)"), "거절된 개인 화면 해시는 주소창에서 정리돼야 합니다.");
+});
+
+test("client glue only mounts, unmounts and routes — the heavy code stays in public/", () => {
+  assert.ok(clientScreenRouter.includes('if (target === "my-calendar") mountPersonalCalendar();'));
+  assert.ok(clientScreenRouter.includes("else unmountPersonalCalendar();"));
+  assert.ok(clientGlueBlock.includes('apiBase: "/api/my",'));
+  assert.ok(clientGlueBlock.includes("fetch: miFetch,"));
+  assert.ok(clientGlueBlock.includes("role: secureClientSession.role"));
+  assert.ok(clientGlueBlock.includes("window.MomentPersonalCalendar.mount(host, {"));
+  assert.ok(clientSource.includes("syncPersonalCalendarMenu();"));
+  assert.ok(clientSource.includes("unmountPersonalCalendar();\n        syncPersonalCalendarMenu();"), "로그아웃에서 컴포넌트를 떼야 합니다.");
+  // 글루는 짧아야 한다. 길어지면 캘린더 코드가 다시 인라인으로 새어 들어온 것이다.
+  assert.ok(clientGlueBlock.split("\n").length < 60, `client 글루가 너무 큽니다: ${clientGlueBlock.split("\n").length}줄`);
+  assert.equal(/data-cal-[a-z-]+/.test(clientGlueBlock), false, "글루가 컴포넌트 내부 선택자를 알면 안 됩니다.");
+});
+
+test("client google callbacks land on the personal calendar screen", () => {
+  // 광고주 콜백은 /client?gcal=... · /client?glogin=... 으로 돌아온다(해시 없음).
+  assert.ok(clientGlueBlock.includes('pageUrl.searchParams.get("gcal") || pageUrl.searchParams.get("glogin")'));
+  assert.ok(clientSource.includes('if (personalCalendarNoticePending()) setScreen("my-calendar", false);'));
+});
+
+test("the client page calls /api/my only — never the owner surface or the shared work feed", () => {
+  // 개인 캘린더가 부르는 경로는 공유 스크립트 안에만 있다. 글루에는 경로가 없어야 한다.
+  assert.equal(clientGlueBlock.includes("/api/work-items"), false);
+  assert.equal(clientGlueBlock.includes("/api/owner/"), false);
+  assert.equal(clientGlueBlock.includes("/api/admin/"), false);
+  assert.equal(clientSource.includes("/api/auth/"), false);
+  assert.equal(clientSource.includes("/api/owner/"), false);
+});
+
+test("the retired 공개 일정 view keeps its markup but loses every entry path", () => {
+  // 대표 결재: 레거시 데이터·마크업은 보존하되 신규 공개 경로는 없다.
+  assert.ok(clientLegacyScheduleView.includes("운영팀이 공개한 일정과 진행 상태만"), "레거시 뷰 마크업은 남겨 둔다(데이터 보존).");
+  assert.ok(clientSource.includes("async function loadClientWorkItems("), "레거시 렌더러도 삭제하지 않는다.");
+  assert.equal(/<a\b[^>]*data-mi-screen="schedule"/u.test(clientSource), false, "옛 일정표 메뉴가 남아 있으면 안 됩니다.");
+  assert.ok(clientScreenRouter.includes('var retiredScheduleTarget = target === "schedule";'));
+  assert.ok(clientScreenRouter.includes('if (retiredScheduleTarget) target = "my-calendar";'));
+  // 옛 뷰로 가는 마지막 경로였던 setScreen 안의 지연 로드도 사라졌다.
+  assert.equal(clientScreenRouter.includes("loadClientWorkItems"), false);
+  assert.equal(clientLegacyScheduleView.includes("data-mi-personal-calendar"), false);
+});
+
+test("client login screen offers google sign-in with the same copy as admin", () => {
+  assert.ok(clientSource.includes('<button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>'));
+  assert.ok(clientSource.includes('<small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>'));
+  assert.ok(clientSource.includes('window.location.href = "/api/google-login/start";'));
+  assert.ok(clientSource.includes("if (restored !== true) consumeLoginGoogleNotice();"));
+  // 역할이 로그인 대상이 아니면 서버가 glogin=not-ready 로 되돌린다 — 문구가 준비돼 있어야 한다.
+  assert.deepEqual(labelTable(clientLoginNoticeBlock), labelTable(adminLoginNoticeBlock));
+  assert.deepEqual(labelTable(clientLoginNoticeBlock), plain(shared.LOGIN_NOTICES));
+  assert.ok(clientLoginNoticeBlock.includes("이 계정은 아직 구글 로그인 대상이 아닙니다."));
 });
 
 // ─────────────────────────────────────────────────────────────

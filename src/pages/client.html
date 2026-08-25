@@ -5,6 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
+<link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v1-20260826" />
 <section id="mi-clean" class="mi-client-wrap is-locked">
   <style>
     #mi-clean,
@@ -221,6 +222,25 @@
       box-shadow: none;
     }
 
+    #mi-clean .mi-button.is-ghost {
+      border: 1px solid var(--mi-line);
+      color: var(--mi-navy);
+      background: #fff;
+    }
+
+    #mi-clean .mi-button.is-ghost:hover {
+      color: var(--mi-navy);
+      background: #f8fafc;
+      box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
+    }
+
+    #mi-clean .mi-login-google-note {
+      margin-top: -4px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
     #mi-clean .mi-kakao-floating {
       position: fixed;
       right: 22px;
@@ -386,6 +406,14 @@
       font-size: 10.5px;
       font-weight: 900;
       letter-spacing: 0.055em;
+    }
+
+    /* 개인 캘린더 메뉴는 광고주 세션에서만 보인다. .mi-nav a 가 display:flex 라
+       [hidden] 만으로는 감춰지지 않아 이 규칙이 필요하다. 본체 스타일은
+       public/mi-personal-calendar.css 가 갖는다. */
+    #mi-clean .mi-nav a.mi-nav-personal[hidden],
+    #mi-clean .mi-mobile-nav a.mi-nav-personal[hidden] {
+      display: none;
     }
 
     #mi-clean .mi-nav a,
@@ -5293,6 +5321,8 @@
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.</div>
+          <button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>
+          <small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>
         </div>
       </aside>
     </div>
@@ -5310,7 +5340,7 @@
           <p class="mi-nav-title">운영</p>
           <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
           <a href="#mi-sales" data-mi-screen="sales">매출 현황</a>
-          <a href="#mi-schedule" data-mi-screen="schedule">일정표</a>
+          <a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>
           <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 연결</a>
         </div>
 
@@ -5341,7 +5371,7 @@
       <nav class="mi-mobile-nav" aria-label="모바일 메뉴">
         <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
         <a href="#mi-sales" data-mi-screen="sales">매출</a>
-        <a href="#mi-schedule" data-mi-screen="schedule">일정</a>
+        <a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
@@ -5551,6 +5581,12 @@
               <div class="mi-schedule-privacy">운영팀의 내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다. 공개가 필요한 일정만 운영팀이 선택해 공유합니다.</div>
             </aside>
           </div>
+        </section>
+
+        <!-- 개인 캘린더는 컨테이너 한 개만 둔다. 레일·월간 그리드·아젠다·다이얼로그는
+             public/mi-personal-calendar.js 가 그린다(설계 §6.1 D5). -->
+        <section class="mi-view" data-mi-view="my-calendar" id="mi-my-calendar">
+          <div data-mi-personal-calendar></div>
         </section>
 
         <section class="mi-view" id="mi-keyword-tool" data-mi-view="keyword-tool" aria-label="키워드 조회 화면">
@@ -6050,6 +6086,7 @@
   </a>
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
+  <script src="/mi-personal-calendar.js?v=cal-v1-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -7543,6 +7580,8 @@
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
         resetClientAsyncControls({ clearSensitiveInputs: true });
+        unmountPersonalCalendar();
+        syncPersonalCalendarMenu();
       }
 
       function formatRankCheckedAt(iso) {
@@ -10691,6 +10730,7 @@
         if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
+        syncPersonalCalendarMenu();
         if (loginCode) loginCode.value = "";
         if (connectCode) connectCode.value = "";
         updateClientAuthPanel(state.client);
@@ -10722,10 +10762,72 @@
       var views = root.querySelectorAll("[data-mi-view]");
       var links = root.querySelectorAll("[data-mi-screen]");
 
+      // ── 내 캘린더(개인 캘린더) 마운트 글루 ───────────────────
+      // 무거운 코드는 전부 public/mi-personal-calendar.js 에 있다. 여기 남는 것은
+      // "언제 붙이고 떼는가" 와 "누구에게 보이는가" 뿐이다(설계 §6.1 · §6.2).
+      // 대표 결재(2026-08-25)에 따라 등록된 광고주 계정 전체가 즉시 쓴다 — 별도 게이트 없음.
+      var personalCalendarController = null;
+
+      function personalCalendarEnabled() {
+        return secureClientSession.role === "client";
+      }
+
+      function syncPersonalCalendarMenu() {
+        var enabled = personalCalendarEnabled();
+        root.querySelectorAll("a[data-mi-screen='my-calendar']").forEach(function (link) {
+          link.hidden = !enabled;
+        });
+      }
+
+      function unmountPersonalCalendar() {
+        if (!personalCalendarController) return;
+        try {
+          personalCalendarController.destroy();
+        } catch (error) {}
+        personalCalendarController = null;
+      }
+
+      function mountPersonalCalendar() {
+        var host = root.querySelector("[data-mi-personal-calendar]");
+        if (!host || !personalCalendarEnabled()) {
+          unmountPersonalCalendar();
+          return;
+        }
+        if (personalCalendarController) {
+          personalCalendarController.refresh();
+          return;
+        }
+        if (!window.MomentPersonalCalendar || typeof window.MomentPersonalCalendar.mount !== "function") return;
+        // fetch 는 페이지 것을 그대로 넘긴다 — CSRF 토큰과 자격 헤더 삭제 규칙이
+        // miFetch 안에 남아야 check-production-auth 가 지금처럼 검사할 수 있다.
+        personalCalendarController = window.MomentPersonalCalendar.mount(host, {
+          apiBase: "/api/my",
+          fetch: miFetch,
+          role: secureClientSession.role
+        });
+      }
+
+      // 구글 콜백은 광고주 세션을 /client?gcal=... · /client?glogin=... 으로 되돌린다.
+      // 알림을 소비하는 화면이 내 캘린더이므로 그리로 보낸다.
+      function personalCalendarNoticePending() {
+        try {
+          var pageUrl = new URL(window.location.href);
+          return Boolean(pageUrl.searchParams.get("gcal") || pageUrl.searchParams.get("glogin"));
+        } catch (error) {
+          return false;
+        }
+      }
+
       function setScreen(name, shouldPushHash) {
         var target = name || "dashboard";
         var rejectedProductRankTarget = target === "naver-rank";
+        // 옛 "공개 일정" 화면은 대표 결재(2026-08-25)로 개인 캘린더에 자리를 넘겼다.
+        // 마크업과 렌더러는 그대로 두되(레거시 데이터 보존) 진입 경로만 돌린다.
+        var retiredScheduleTarget = target === "schedule";
         if (rejectedProductRankTarget) target = "dashboard";
+        if (retiredScheduleTarget) target = "my-calendar";
+        var rejectedPersonalTarget = target === "my-calendar" && !personalCalendarEnabled();
+        if (rejectedPersonalTarget) target = "dashboard";
         var found = false;
 
         views.forEach(function (view) {
@@ -10745,8 +10847,8 @@
           link.classList.toggle("is-active", link.getAttribute("data-mi-screen") === target);
         });
 
-        if (rejectedProductRankTarget && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
-          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-dashboard");
+        if ((rejectedProductRankTarget || retiredScheduleTarget || rejectedPersonalTarget) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-" + target);
         }
 
         if (shouldPushHash) {
@@ -10756,9 +10858,8 @@
             window.scrollTo({ top: 0, left: 0, behavior: "auto" });
           });
         }
-        if (target === "schedule" && secureClientSession.role === "client" && secureClientSession.scopeKey) {
-          loadClientWorkItems(clientSessionGeneration, secureClientSession.scopeKey);
-        }
+        if (target === "my-calendar") mountPersonalCalendar();
+        else unmountPersonalCalendar();
       }
 
       links.forEach(function (link) {
@@ -10826,6 +10927,42 @@
         });
       });
       setClientLoginMode("client");
+
+      var googleLoginStartButton = root.querySelector("[data-google-login-start]");
+      if (googleLoginStartButton) {
+        googleLoginStartButton.addEventListener("click", function () {
+          window.location.href = "/api/google-login/start";
+        });
+      }
+
+      function googleLoginNotice(code) {
+        var notices = {
+          unlinked: "연결되지 않은 구글 계정입니다. 먼저 기존 코드로 로그인 후 연결해주세요.",
+          "not-ready": "이 계정은 아직 구글 로그인 대상이 아닙니다.",
+          cancelled: "구글 로그인이 취소되었습니다.",
+          busy: "요청이 많아 잠시 후 다시 시도해주세요.",
+          "already-linked": "이 구글 계정은 이미 다른 계정에 연결되어 있습니다.",
+          inactive: "이 계정은 현재 사용이 중지되어 있습니다. 관리자에게 문의해주세요."
+        };
+        return Object.prototype.hasOwnProperty.call(notices, code) ? notices[code] : "";
+      }
+
+      function consumeLoginGoogleNotice() {
+        try {
+          if (root.classList.contains("is-authed") || secureClientSession.role) return;
+          var pageUrl = new URL(window.location.href);
+          var gloginCode = pageUrl.searchParams.get("glogin");
+          if (!gloginCode || gloginCode === "linked" || gloginCode === "success") return;
+          var notice = googleLoginNotice(gloginCode)
+            || (gloginCode === "not-configured"
+              ? "구글 로그인이 아직 준비되지 않았습니다. 관리자 환경변수 설정 후 사용할 수 있습니다."
+              : "구글 로그인 처리 실패: " + gloginCode);
+          pageUrl.searchParams.delete("glogin");
+          var cleanQuery = pageUrl.searchParams.toString();
+          window.history.replaceState(null, "", pageUrl.pathname + (cleanQuery ? "?" + cleanQuery : "") + pageUrl.hash);
+          setStatus(loginStatus, notice, "is-warn");
+        } catch (error) {}
+      }
 
       if (loginButton && loginCode) {
         loginButton.addEventListener("click", async function () {
@@ -10908,6 +11045,9 @@
         if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
+        syncPersonalCalendarMenu();
+        // 구글 콜백은 /client?glogin=... · /client?gcal=... 으로 돌아온다(해시 없음).
+        if (personalCalendarNoticePending()) setScreen("my-calendar", false);
         updateClientAuthPanel(state.client);
         setStatus(loginStatus, reportSyncFailed
           ? (preservedApprovedState
@@ -11884,6 +12024,8 @@
         if (initialRestoreGeneration !== clientSessionGeneration) return;
         if (loginButton) loginButton.disabled = false;
         setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
+      }).then(function (restored) {
+        if (restored !== true) consumeLoginGoogleNotice();
       });
 
       var initial = (window.location.hash || "").replace("#mi-", "");

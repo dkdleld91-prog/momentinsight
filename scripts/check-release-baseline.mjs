@@ -505,7 +505,8 @@ const checks = {
     '<p class="mi-nav-title">운영</p>',
     'data-mi-screen="dashboard">대시보드</a>',
     'data-mi-screen="sales">매출 현황</a>',
-    'data-mi-screen="schedule">일정표</a>',
+    // 대표 결재(2026-08-25): 광고주의 "공개 일정" 메뉴는 개인 캘린더가 대체한다.
+    'data-mi-screen="my-calendar">내 캘린더</a>',
     'data-mi-screen="agency-code">대행사 연결</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-screen="keyword-tool">키워드 조회</a>',
@@ -2099,13 +2100,19 @@ const checks = {
     && workItemsServer.includes("광고주 연결 후 공개할 수 있습니다.")
     && workItemsTests.includes("account-only team cannot publish a work item")
     && workItemsTests.includes("client payload excludes internal and tenant fields"),
+  // 대표 결재(2026-08-25): 광고주 화면의 "운영팀이 공개한 일정" 뷰는 개인 캘린더가 대체한다.
+  // 업무 운영(admin)은 그대로다. 광고주 쪽은 이제 메뉴·화면이 개인 캘린더여야 하고,
+  // 옛 공개 일정 뷰로 들어가는 경로가 남아 있으면 안 된다(마크업·데이터는 보존).
   workOperationRoleUiReady: adminSource.includes('data-mi-admin-screen="work">업무 운영</a>')
     && adminSource.includes('data-mi-admin-view="work"')
     && adminSource.includes("내부 메모 · 광고주 비공개")
     && adminSource.includes("loadWorkItems")
-    && clientSource.includes("운영팀이 공개한 일정과 진행 상태만")
-    && clientSource.includes("loadClientWorkItems")
-    && clientSource.includes("내부 메모와 비공개 업무는 이 화면에 전달되지 않습니다."),
+    && clientSource.includes('data-mi-screen="my-calendar">내 캘린더</a>')
+    && clientSource.includes('data-mi-view="my-calendar"')
+    && clientSource.includes("data-mi-personal-calendar")
+    && !/<a\b[^>]*data-mi-screen="schedule"/u.test(clientSource)
+    && clientSource.includes('var retiredScheduleTarget = target === "schedule";')
+    && clientSource.includes('if (retiredScheduleTarget) target = "my-calendar";'),
   workOperationDragMoveRequiresConfirmation: adminSource.includes('draggable="\' + (canEdit ? "true" : "false") + \'" data-work-edit="')
     && adminSource.includes("function workItemCanEdit(item)")
     && adminSource.includes('data-work-drop-date="')

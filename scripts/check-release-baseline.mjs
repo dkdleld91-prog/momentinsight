@@ -321,13 +321,15 @@ const checks = {
     && exists("src/pages/client.html")
     && exists("src/pages/home.html")
     && !exists("02_아임웹_적용코드"),
-  adminMenuCount: adminScreens.length === 13,
-  adminMenuHasCore: ["home", "work", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen))
+  // 14번째 화면은 운영팀 전용 "내 캘린더"(개인 캘린더, 설계 §6.2)다.
+  adminMenuCount: adminScreens.length === 14,
+  adminMenuHasCore: ["home", "work", "my-calendar", "client-preview", "agency-code", "excel", "reports", "keyword", "seo-check", "naver-rank-tracking", "naver-place-rank-tracking", "meta-ads", "publish", "related-keywords"].every((screen) => adminScreens.includes(screen))
     && !adminScreens.includes("naver-rank"),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-admin-screen="home">운영 홈</a>',
     'data-mi-admin-screen="work">업무 운영</a>',
+    'data-mi-admin-screen="my-calendar">내 캘린더</a>',
     'data-mi-admin-screen="client-preview">광고주 미리보기</a>',
     'data-mi-admin-screen="agency-code">대행사 연결</a>',
     'data-mi-admin-screen="excel">운영 입력</a>',

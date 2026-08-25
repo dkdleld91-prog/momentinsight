@@ -5,6 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
+<link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v1-20260826" />
 <section id="mi-admin" class="mi-admin-wrap is-locked">
   <style>
     #mi-admin,
@@ -335,6 +336,13 @@
 
     #mi-admin .mi-view.is-active {
       display: block;
+    }
+
+    /* 개인 캘린더 메뉴는 운영팀 세션에서만 보인다. .mi-nav a 가 display:flex 라
+       [hidden] 만으로는 감춰지지 않아 이 규칙이 필요하다. 본체 스타일은
+       public/mi-personal-calendar.css 가 갖는다. */
+    #mi-admin .mi-nav a.mi-nav-personal[hidden] {
+      display: none;
     }
 
     #mi-admin .mi-head {
@@ -10493,6 +10501,7 @@
           <p class="mi-nav-title">운영</p>
           <a class="is-active" href="#mi-admin-home" data-mi-admin-screen="home">운영 홈</a>
           <a href="#mi-admin-work" data-mi-admin-screen="work">업무 운영</a>
+          <a class="mi-nav-personal" hidden href="#mi-admin-my-calendar" data-mi-admin-screen="my-calendar">내 캘린더</a>
           <a href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">광고주 미리보기</a>
           <a href="#mi-admin-agency-code" data-mi-admin-screen="agency-code">대행사 연결</a>
           <a href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력</a>
@@ -11001,6 +11010,12 @@
               </div>
             </div>
           </div>
+        </section>
+
+        <!-- 개인 캘린더는 컨테이너 한 개만 둔다. 레일·월간 그리드·아젠다·다이얼로그는
+             public/mi-personal-calendar.js 가 그린다(설계 §6.1 D5). -->
+        <section class="mi-view" data-mi-admin-view="my-calendar" id="mi-admin-my-calendar">
+          <div data-mi-personal-calendar></div>
         </section>
 
         <section class="mi-view" data-mi-admin-view="client-preview" id="mi-admin-client-preview">
@@ -12071,6 +12086,7 @@
   </a>
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
+  <script src="/mi-personal-calendar.js?v=cal-v1-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -17693,6 +17709,7 @@
         applyState(readState());
         renderSourceFile();
         resetWorkOperation();
+        syncPersonalCalendarMenu();
 
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
@@ -17706,7 +17723,7 @@
           setStatus(ownerStatus, teamHasClient
             ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다."
             : "광고주 없이 운영팀 단독 사용이 가능합니다. 필요할 때 광고주 코드 1개를 연결하세요.", teamHasClient ? "is-warn" : "is-ok");
-          setScreen(teamHasClient ? "agency-code" : "home", !restored);
+          setScreen(personalCalendarNoticePending() ? "my-calendar" : (teamHasClient ? "agency-code" : "home"), !restored);
         } else if (session.role === "owner") {
           var ownerSessionScope = session.scopeKey;
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
@@ -17735,6 +17752,8 @@
         ownerCodeSnapshot = null;
         renderOwnerFullAccountView(null);
         resetWorkOperation();
+        unmountPersonalCalendar();
+        syncPersonalCalendarMenu();
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
@@ -17864,13 +17883,69 @@
         return true;
       }
 
+      // ── 내 캘린더(개인 캘린더) 마운트 글루 ───────────────────
+      // 무거운 코드는 전부 public/mi-personal-calendar.js 에 있다. 여기 남는 것은
+      // "언제 붙이고 떼는가" 와 "누구에게 보이는가" 뿐이다(설계 §6.1 · §6.2).
+      // P6 전까지 대표님은 대표실을 그대로 쓰므로 이 화면은 운영팀 세션 전용이다.
+      var personalCalendarController = null;
+
+      function personalCalendarEnabled() {
+        return secureSession.role === "team";
+      }
+
+      function syncPersonalCalendarMenu() {
+        var link = root.querySelector("a[data-mi-admin-screen='my-calendar']");
+        if (link) link.hidden = !personalCalendarEnabled();
+      }
+
+      function unmountPersonalCalendar() {
+        if (!personalCalendarController) return;
+        try {
+          personalCalendarController.destroy();
+        } catch (error) {}
+        personalCalendarController = null;
+      }
+
+      function mountPersonalCalendar() {
+        var host = root.querySelector("[data-mi-personal-calendar]");
+        if (!host || !personalCalendarEnabled()) {
+          unmountPersonalCalendar();
+          return;
+        }
+        if (personalCalendarController) {
+          personalCalendarController.refresh();
+          return;
+        }
+        if (!window.MomentPersonalCalendar || typeof window.MomentPersonalCalendar.mount !== "function") return;
+        // fetch 는 페이지 것을 그대로 넘긴다 — CSRF 토큰과 자격 헤더 삭제 규칙이
+        // miFetch 안에 남아야 check-production-auth 가 지금처럼 검사할 수 있다.
+        personalCalendarController = window.MomentPersonalCalendar.mount(host, {
+          apiBase: "/api/my",
+          fetch: miFetch,
+          role: secureSession.role
+        });
+      }
+
+      // 구글 콜백은 운영팀 세션을 /admin?gcal=... · /admin?glogin=... 으로 되돌린다
+      // (대표실과 달리 해시가 없다). 알림을 소비하는 화면이 내 캘린더이므로 그리로 보낸다.
+      function personalCalendarNoticePending() {
+        try {
+          var pageUrl = new URL(window.location.href);
+          return Boolean(pageUrl.searchParams.get("gcal") || pageUrl.searchParams.get("glogin"));
+        } catch (error) {
+          return false;
+        }
+      }
+
       function setScreen(name, shouldPushHash) {
         var target = name || "home";
         var rejectedProductRankTarget = target === "naver-rank";
         var rejectedOwnerTarget = /^owner-/.test(target) && (secureSession.role !== "owner" || ownerToolScreens.indexOf(target) < 0);
+        var rejectedPersonalTarget = target === "my-calendar" && !personalCalendarEnabled();
         if (rejectedProductRankTarget) target = "home";
         if (target === "active-accounts" && !canManageOwnerCodes()) target = "agency-code";
         if (rejectedOwnerTarget) target = secureSession.role === "team" ? "agency-code" : "home";
+        if (rejectedPersonalTarget) target = "home";
         var views = root.querySelectorAll("[data-mi-admin-view]");
         var links = root.querySelectorAll("[data-mi-admin-screen]");
         var found = false;
@@ -17892,10 +17967,12 @@
           else link.removeAttribute("aria-current");
         });
         var hasOwnerHashWithoutOwner = secureSession.role === "team" && /^#mi-admin-owner-/.test(window.location.hash || "");
-        if ((rejectedProductRankTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
+        if ((rejectedProductRankTarget || rejectedPersonalTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
           window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-admin-" + target);
         }
         if (target !== "work" && target !== "owner-assistant") deactivateWorkOperation();
+        if (target === "my-calendar") mountPersonalCalendar();
+        else unmountPersonalCalendar();
         if (shouldPushHash) {
           var nextHash = "#mi-admin-" + target;
           if (window.location.hash !== nextHash) window.location.hash = nextHash;

@@ -29,6 +29,7 @@ const handlerLoaders = {
   naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
   naverShoppingRankJobs: () => import("./handlers/naver-shopping-rank-jobs.mjs"),
   naverShoppingLocalWorker: () => import("./handlers/naver-shopping-local-worker.mjs"),
+  personalAssistantApi: () => import("./handlers/personal-assistant-api.mjs"),
   reportCenter: () => import("./handlers/report-center.mjs"),
   workItems: () => import("./handlers/work-items.mjs"),
   superAdminApi: () => import("./handlers/super-admin-api.mjs"),
@@ -166,6 +167,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/work-items" || url.pathname === "/api/my/work-items") {
       return dispatch("workItems", request);
+    }
+
+    if (url.pathname === "/api/my/assistant-chat") {
+      return dispatch("personalAssistantApi", request);
     }
 
     if (url.pathname === "/api/integration-status") {

@@ -47,11 +47,13 @@ const TEAM_ACCOUNT_ONLY_TOOL_PATHS = new Set([
   ...TEAM_ACCOUNT_ONLY_RANK_PATHS,
 ]);
 // 개인 캘린더 경로는 광고주 미연결 운영팀 세션에서도 열려야 한다. 개인 공간의
-// 단위는 계정 자체이고 광고주 범위와는 무관하기 때문이다.
+// 단위는 계정 자체이고 광고주 범위와는 무관하기 때문이다. 개인 일정 비서(실장)
+// 대화도 같은 개인 공간의 일부이므로 같은 계정 단위 규칙을 그대로 따른다.
 const ACCOUNT_ONLY_PERSONAL_PATHS = new Set([
   "/api/my/work-items",
   "/api/my/google-calendar",
   "/api/my/google-login",
+  "/api/my/assistant-chat",
 ]);
 
 export const SESSION_ACTIVITY_ACTIVE = "active";

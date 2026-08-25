@@ -393,7 +393,7 @@
     {
       "id": "shopping-local-worker-router",
       "file": "src/server/index.mjs",
-      "sha256": "5ea9b2d351417335a36a80936fc5d5a8f5fc621ef2dcd9854760f471d75033a7"
+      "sha256": "df235621904af58e01ea99003d2105f63b5ddbc5f048185b5429d4e9156b2460"
     },
     {
       "id": "shopping-runtime-env-gate",
@@ -629,7 +629,7 @@
     {
       "id": "shopping-local-worker-session-boundary",
       "file": "src/server/session-gate.mjs",
-      "sha256": "c252a95eee64beeee3edd889c2881ed84dbbfc7e4d452873019449dda7ad95cf"
+      "sha256": "d69cc86509fac3febf1b83390533542f58a2e06d384f57632496880f9d8c34c1"
     },
     {
       "id": "shopping-worker-cycle-keyword-overflow",

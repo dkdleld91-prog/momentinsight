@@ -38,12 +38,26 @@ function plain(value) {
 // 주석은 근거가 아니다. "여기서는 /api/owner/ 를 부르지 않는다" 같은 설명문이
 // 금지 문자열을 담고 있으므로, 경로·선택자 판정은 코드만 남기고 한다
 // (scripts/check-personal-isolation.mjs 와 같은 원칙).
+// 정규식 리터럴은 나눗셈과 같은 글자(/)로 시작한다. 값 뒤(식별자 · 숫자 · 닫는
+// 괄호)에 오는 / 만 나눗셈이고, 그 밖에는 정규식의 시작이다.
+function regexLiteralStarts(tail) {
+  const trimmed = tail.replace(/\s+$/, "");
+  if (!trimmed) return true;
+  const last = trimmed[trimmed.length - 1];
+  if (last === ")" || last === "]") return false;
+  if (!/[A-Za-z0-9_$]/.test(last)) return true;
+  // return / typeof 처럼 뒤에 값이 오는 키워드 다음은 정규식이다.
+  return /(?:^|[^A-Za-z0-9_$.])(?:return|typeof|instanceof|in|of|new|delete|void|case|do|else|yield|await)$/.test(trimmed);
+}
+
 function stripJsComments(source) {
   let output = "";
   let quote = "";
   let escaped = false;
   let lineComment = false;
   let blockComment = false;
+  let regexLiteral = false;
+  let charClass = false;
   for (let index = 0; index < source.length; index += 1) {
     const char = source[index];
     const next = source[index + 1] || "";
@@ -61,6 +75,18 @@ function stripJsComments(source) {
       }
       continue;
     }
+    // 정규식도 문자열처럼 통째로 건너뛴다. escapeHtml 의 /"/g 처럼 따옴표를 품은
+    // 정규식을 문자열 시작으로 오해하면 그 뒤의 주석이 통째로 코드로 남아,
+    // "주석은 근거가 아니다" 라는 이 헬퍼의 전제 자체가 뒤집힌다.
+    if (regexLiteral) {
+      output += char;
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (charClass) charClass = char !== "]";
+      else if (char === "[") charClass = true;
+      else if (char === "/") regexLiteral = false;
+      continue;
+    }
     if (quote) {
       output += char;
       if (escaped) escaped = false;
@@ -76,6 +102,12 @@ function stripJsComments(source) {
     if (char === "/" && next === "*") {
       blockComment = true;
       index += 1;
+      continue;
+    }
+    if (char === "/" && regexLiteralStarts(output.slice(-48))) {
+      regexLiteral = true;
+      charClass = false;
+      output += char;
       continue;
     }
     if (char === '"' || char === "'" || char === "`") quote = char;
@@ -566,6 +598,234 @@ test("date keys stay local-time and round-trip", () => {
   assert.equal(back.getFullYear(), 2026);
   assert.equal(back.getMonth(), 7);
   assert.equal(back.getDate(), 3);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 4. 실장 비서 (P6) — 팀·광고주 공용 패널, 계정별 격리
+//    대표실(owner-assistant)의 상호작용을 공유 스크립트로 옮겨 적었다.
+//    페이지(admin.html / client.html)는 손대지 않았으므로 CSP 해시도 그대로다.
+// ─────────────────────────────────────────────────────────────
+
+const ownerToolApiSource = fs.readFileSync(new URL("../src/server/handlers/owner-tool-api.mjs", import.meta.url), "utf8");
+const assistantMarkup = slice(markup, '<section class="mi-cal-assistant"', "</section>");
+const ownerRangeLabelBlock = slice(adminSource, "var OWNER_ASSISTANT_RANGE_LABELS =", "var OWNER_ASSISTANT_WEEKDAYS");
+const standbyErrorBlock = slice(sharedSource, "recognition.onerror = function (event) {", "recognition.onend = function () {");
+
+test("the assistant panel ships every data-cal-assistant hook and sits above the calendar", () => {
+  for (const marker of [
+    "data-cal-assistant",
+    "data-cal-assistant-briefing",
+    "data-cal-assistant-agenda",
+    "data-cal-assistant-input",
+    "data-cal-assistant-send",
+    "data-cal-assistant-mic",
+    "data-cal-assistant-wake",
+    "data-cal-assistant-read",
+    "data-cal-assistant-voice-status",
+    "data-cal-assistant-status",
+    "data-cal-assistant-results",
+  ]) assert.ok(assistantMarkup.includes(marker), `실장 비서 마크업에 없는 계약: ${marker}`);
+
+  // 구글 배너 아래 · 달력 위, 셸 안에 그대로 들어간다.
+  const bannerAt = markup.indexOf("data-cal-gcal-banner");
+  const assistantAt = markup.indexOf("data-cal-assistant");
+  const summaryAt = markup.indexOf('<div class="mi-cal-summary"');
+  assert.ok(bannerAt > -1 && assistantAt > bannerAt, "구글 배너 다음에 와야 합니다.");
+  assert.ok(summaryAt > assistantAt, "요약 필터(=달력)보다 위에 있어야 합니다.");
+
+  assert.ok(assistantMarkup.includes('aria-label="실장 비서"'));
+  // 상태줄 두 개(음성 · 일반)는 읽어 주는 자리다.
+  assert.equal([...assistantMarkup.matchAll(/aria-live="polite"/g)].length, 2);
+  // 상시 호출 토글은 눌린 상태를 알리고, 계정 태그가 오기 전에는 잠겨 있다.
+  assert.ok(assistantMarkup.includes('data-cal-assistant-wake aria-pressed="false" aria-label="실장 상시 호출 켜고 끄기" disabled'));
+  for (const hook of ["mic", "read"]) {
+    assert.match(assistantMarkup, new RegExp(`data-cal-assistant-${hook} aria-label="[^"]+"`), `아이콘 버튼에 이름이 없습니다: ${hook}`);
+  }
+
+  // 페이지는 여전히 컨테이너 한 개만 갖는다 — 마크업이 새어 나가면 CSP 해시가 움직인다.
+  assert.equal(adminSource.includes("data-cal-assistant"), false);
+  assert.equal(clientSource.includes("data-cal-assistant"), false);
+  assert.equal(adminSource.includes("mi-cal-assistant"), false);
+  assert.equal(clientSource.includes("mi-cal-assistant"), false);
+});
+
+test("the assistant markup carries no inline handler and binds through the unbindable helper", () => {
+  assert.equal(/\son[a-z]+\s*=/i.test(assistantMarkup), false, "실장 비서 마크업에 인라인 핸들러가 남아 있습니다.");
+  assert.equal(assistantMarkup.includes("javascript:"), false);
+  // 버튼은 mount() 안에서 on(...) 으로 묶는다. destroy() 가 같은 목록으로 되돌린다.
+  for (const hook of ["send", "mic", "wake", "read"]) {
+    assert.ok(sharedSource.includes(`on(${hook}Button, "click"`), `${hook} 버튼이 on(...) 으로 묶이지 않았습니다.`);
+  }
+  assert.ok(sharedSource.includes('on(input, "input", syncAssistantControls);'));
+});
+
+test("the assistant adds exactly one new call target: /api/my/assistant-chat", () => {
+  const targets = [...new Set([...sharedCode.matchAll(/apiUrl\("([^"]+)"\)/g)].map((entry) => entry[1]))].sort();
+  assert.deepEqual(targets, ["/assistant-chat", "/google-calendar", "/google-login", "/work-items"]);
+  // apiBase 를 그대로 물려받는다 — 그래서 /api/my 밖으로 나갈 수 없다.
+  assert.ok(sharedSource.includes('doFetch(apiUrl("/assistant-chat")'));
+  assert.equal(sharedCode.includes("/api/owner/"), false);
+  assert.equal(sharedCode.includes('"/api/work-items"'), false);
+  assert.equal(/[^A-Za-z_$.]fetch\s*\(/.test(sharedCode), false, "실장 비서도 자체 fetch 를 부르면 안 됩니다.");
+  assert.equal(sharedCode.includes("XMLHttpRequest"), false);
+  assert.equal(sharedCode.includes("window.fetch"), false);
+
+  // 대화에 실어 보내는 것은 화면에 보이는 내 행뿐이고, 히스토리는 12개로 잘린다.
+  assert.ok(sharedSource.includes("history: assistantChatHistory.slice(-12),"));
+  assert.ok(sharedSource.includes("schedule: assistantScheduleSnapshot()"));
+  assert.ok(sharedSource.includes("while (assistantChatHistory.length > 12) assistantChatHistory.shift();"));
+  assert.ok(sharedSource.includes(".slice(0, 60)"));
+  assert.ok(sharedSource.includes('return visibleItems()\n        .filter(function (item) { return item.status !== "done" && item.startsAt; })'));
+  // 실패 문구는 서버가 준 message 를 그대로 보여 준다.
+  assert.ok(sharedSource.includes('throw new Error(payload && payload.message ? payload.message : "실장 응답에 실패했습니다.");'));
+  // 대화가 꺼져 있으면(ready:false) 보내기는 막히지만 브리핑·완료는 계속 돈다.
+  assert.ok(sharedSource.includes('return setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");'));
+  assert.ok(sharedSource.includes("sendButton.disabled = !assistantChatReady && !assistantLocalIntent(text);"));
+});
+
+test("the 완료 command goes through requestWorkItems and only after a human confirms", () => {
+  assert.ok(sharedSource.includes('requestWorkItems("PATCH", { action: "assistant-complete", id: item.id, expectedUpdatedAt: item.updatedAt })'));
+  assert.ok(sharedSource.includes(`window.confirm('"' + (item.title || "제목 없는 업무") + '" 업무를 완료 처리할까요?')`));
+  assert.ok(sharedSource.includes("if (!confirmAssistantComplete(target))"));
+  assert.ok(sharedSource.includes('payload && payload.unchanged ? "이미 완료된 업무였습니다."'));
+  // 0건 · 2건 이상은 안내만 하고 아무 것도 쓰지 않는다(대표실과 같은 문장).
+  assert.ok(sharedSource.includes("’와 일치하는 미완료 업무를 찾지 못했습니다."));
+  assert.ok(sharedSource.includes("’는 여러 업무와 일치합니다: "));
+  assert.ok(sharedSource.includes(". 더 정확한 제목으로 말씀해주세요."));
+  for (const copy of ["와 일치하는 미완료 업무를 찾지 못했습니다.", "는 여러 업무와 일치합니다: ", " 업무를 완료 처리할까요?", "이미 완료된 업무였습니다."]) {
+    assert.ok(adminSource.includes(copy), `대표실과 문구가 갈렸습니다: ${copy}`);
+  }
+  // 대상은 이미 불러온 행에서만 고른다 — 새 조회가 없다.
+  assert.ok(sharedSource.includes('if (item.status === "done" || !item.id || !item.updatedAt) return false;'));
+  assert.ok(sharedSource.includes("title.indexOf(normalizedQuery) !== -1 || normalizedQuery.indexOf(title) !== -1"));
+});
+
+test("standby only fires on final recognition and turns itself off when the mic is blocked", () => {
+  assert.match(shared.ASSISTANT_WAKE_PATTERN.source, /실장\(\?:님\|아\)\?/);
+  assert.equal(shared.ASSISTANT_WAKE_PATTERN.exec(" 실장 오늘 일정 알려줘")[1], "오늘 일정 알려줘");
+  // 중간(interim) 결과로는 절대 실행하지 않는다 — 말하는 중에 완료가 먼저 나가면 되돌릴 수 없다.
+  assert.ok(sharedSource.includes("var newFinal = finals.slice(processedFinalLength).trim();"));
+  assert.ok(sharedSource.includes("if (!newFinal) {"), "중간 인식 결과에서 곧바로 빠져나오는 가드가 없습니다.");
+  assert.ok(sharedSource.includes('return setAssistantVoiceStatus("브리핑을 읽는 중에는 새 명령을 받지 않습니다.");'));
+  // 마이크가 막히면 상시 대기를 꺼 둔다(안전 기본값 = off).
+  assert.ok(standbyErrorBlock.includes('event.error === "not-allowed" || event.error === "service-not-allowed"'));
+  assert.ok(standbyErrorBlock.includes("writeStandbyPreference(false);"));
+  assert.ok(standbyErrorBlock.includes("stopRecognition();"));
+  // 호출어가 없을 때 받는 것은 브리핑·완료 문장뿐이다.
+  assert.ok(sharedSource.includes("if (!assistantLocalIntent(newFinal))"));
+  assert.ok(sharedSource.includes("return assistantBriefingIntent(text) || Boolean(parseAssistantCompletion(text));"));
+});
+
+test("the standby toggle is remembered per account, never under a shared key", () => {
+  assert.equal(shared.assistantStandbyKey("0123456789abcdef"), "mi-personal-assistant-standby:0123456789abcdef");
+  assert.equal(shared.assistantStandbyKey(""), "", "태그가 없으면 키를 만들지 않는다.");
+  assert.equal(shared.assistantStandbyKey(null), "");
+  assert.equal(
+    sharedSource.includes("mi-owner-assistant-standby"),
+    false,
+    "대표실 공용 키가 넘어오면 한 브라우저의 두 계정이 서로의 토글을 물려받습니다.",
+  );
+  assert.ok(sharedSource.includes("var key = assistantStandbyKey(assistantAccountTag);"));
+  assert.ok(sharedSource.includes("if (!key) return false;"));
+  // 시크릿 모드는 localStorage 접근 자체가 던진다 — 읽기·쓰기 모두 감싼다.
+  assert.ok(sharedSource.includes('try { return window.localStorage.getItem(key) === "on"; } catch (error) { return false; }'));
+  assert.ok(sharedSource.includes('try { window.localStorage.setItem(key, nextOn ? "on" : "off"); } catch (error) {}'));
+  // 태그가 오기 전에는 토글이 잠겨 있고 상시 대기도 켜지지 않는다.
+  assert.ok(sharedSource.includes("var enabled = Boolean(SpeechRecognition) && Boolean(assistantAccountTag);"));
+  assert.ok(sharedSource.includes("wakeButton.disabled = !enabled;"));
+  assert.ok(sharedSource.includes("if (!enabled || wakeMode) return;"));
+  // 태그는 GET /api/my/assistant-chat 한 번으로 받는다.
+  assert.ok(sharedSource.includes('assistantAccountTag = String(payload.accountTag || "");'));
+  assert.ok(sharedSource.includes("assistantChatReady = payload.ready === true;"));
+});
+
+test("speech is feature-detected so the panel degrades to text instead of throwing", () => {
+  assert.ok(sharedSource.includes("var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;"));
+  assert.ok(sharedSource.includes('return Boolean(window.speechSynthesis) && typeof window.SpeechSynthesisUtterance === "function";'));
+  assert.ok(sharedSource.includes("if (micButton) micButton.hidden = true;"));
+  assert.ok(sharedSource.includes("if (wakeButton) wakeButton.hidden = true;"));
+  assert.ok(sharedSource.includes("if (!assistantSpeechSupported() && readButton) readButton.hidden = true;"));
+  // 음성 API 는 mount() 안에서만 만진다. 로드 시점에는 window 밖에 없다
+  // (이 파일 맨 위에서 document 없는 컨텍스트로 이미 올렸다).
+  assert.ok(
+    sharedSource.indexOf("var SpeechRecognition = window.SpeechRecognition") > sharedSource.indexOf("function mount(node, options) {"),
+    "음성 감지는 mount() 안에 있어야 합니다.",
+  );
+  assert.doesNotThrow(() => vm.runInNewContext(sharedSource, { window: {} }));
+  assert.equal(typeof shared.mount, "function");
+  // destroy() 가 인식·읽기·타이머를 모두 되돌린다.
+  assert.ok(sharedSource.includes("      stopAssistant();"));
+  assert.ok(sharedSource.includes("if (assistantSpeechOwned && window.speechSynthesis) window.speechSynthesis.cancel();"));
+  assert.ok(sharedSource.includes("window.clearTimeout(wakeTimer);"));
+  assert.ok(sharedSource.includes("if (destroyed) return;"));
+});
+
+test("owner-only assistant features never crossed over into the shared panel", () => {
+  for (const forbidden of ["switchOwnerAssistantScope", "assistant-draft", "goodmorning", "mi-assistant-office", "data-owner-assistant"]) {
+    assert.equal(sharedCode.includes(forbidden), false, `대표실 전용 기능이 넘어왔습니다: ${forbidden}`);
+  }
+  // 제외 사유는 주석으로 남긴다 — "왜 없는가" 가 사라지면 다음 사람이 다시 옮겨 온다.
+  for (const noted of ["switchOwnerAssistantScope", "assistant-draft", "mi-assistant-office", "maybeRunOwnerAssistantGoodMorning"]) {
+    assert.ok(sharedSource.includes(noted), `제외 사유 주석이 없습니다: ${noted}`);
+  }
+});
+
+test("assistant range labels, weekdays and command regexes match the owner and server copies", () => {
+  assert.deepEqual(plain(shared.ASSISTANT_RANGE_LABELS), labelTable(ownerRangeLabelBlock));
+  assert.deepEqual(plain(shared.ASSISTANT_WEEKDAYS), stringArray(adminSource, "OWNER_ASSISTANT_WEEKDAYS"));
+
+  const ownerIntent = adminSource.match(/var OWNER_ASSISTANT_BRIEFING_INTENT = (\/.+\/)u;/);
+  assert.ok(ownerIntent, "admin.html 에서 브리핑 의도 정규식을 찾지 못했습니다.");
+  assert.equal(`/${shared.ASSISTANT_BRIEFING_INTENT.source}/`, ownerIntent[1]);
+
+  // 개인 빌드에는 서버 초안 파서가 없다. 완료 명령 해석이 브라우저로 내려왔으므로
+  // 원본(owner-tool-api.mjs)과 정규식이 갈리면 같은 말이 화면마다 다르게 먹힌다.
+  const serverCompletion = ownerToolApiSource.match(/const ASSISTANT_COMPLETION_PATTERN = (\/.+\/)u;/);
+  assert.ok(serverCompletion, "서버에서 완료 명령 정규식을 찾지 못했습니다.");
+  assert.equal(`/${shared.ASSISTANT_COMPLETION_PATTERN.source}/`, serverCompletion[1]);
+});
+
+test("assistant command parsing behaves like the owner and the server parser", () => {
+  assert.equal(shared.parseAssistantBriefingRange("다음 주 일정 알려줘"), "next_week");
+  assert.equal(shared.parseAssistantBriefingRange("모레"), "day_after");
+  assert.equal(shared.parseAssistantBriefingRange("내일 일정"), "tomorrow");
+  assert.equal(shared.parseAssistantBriefingRange("이번 주 일정"), "this_week");
+  assert.equal(shared.parseAssistantBriefingRange("다가오는 일정"), "upcoming");
+  assert.equal(shared.parseAssistantBriefingRange("아무 말"), "today");
+  assert.equal(shared.assistantBriefingIntent("오늘 일정 알려줘"), true);
+  assert.equal(shared.assistantBriefingIntent("브리핑"), true);
+  assert.equal(shared.assistantBriefingIntent("내일 회의 준비"), false);
+
+  assert.equal(shared.parseAssistantCompletion("광고주 미팅 완료로 해줘"), "광고주 미팅");
+  assert.equal(shared.parseAssistantCompletion("완료해줘"), "");
+  assert.equal(shared.parseAssistantCompletion("내일 회의 준비"), "");
+
+  // 브리핑 문장은 넘겨받은 행(=화면에 보이는 내 일정)에서만 만든다.
+  assert.equal(shared.buildAssistantBriefingSpeech("today", []).text, "오늘 일정이 없습니다.");
+  assert.equal(shared.buildAssistantBriefingSpeech("next_week", []).text, "다음 주 일정이 없습니다.");
+  const at = new Date();
+  at.setHours(14, 0, 0, 0);
+  const spoken = shared.buildAssistantBriefingSpeech("today", [{ title: "광고주 미팅", startsAt: at.toISOString(), status: "planned" }]);
+  assert.equal(spoken.label, "오늘");
+  assert.match(spoken.text, /^오늘 일정은 .+ 광고주 미팅입니다\.$/);
+  assert.ok(spoken.text.includes("오후 2시"));
+  // 완료된 행은 브리핑에서 빠진다.
+  assert.equal(
+    shared.buildAssistantBriefingSpeech("today", [{ title: "끝난 일", startsAt: at.toISOString(), status: "done" }]).text,
+    "오늘 일정이 없습니다.",
+  );
+});
+
+test("the assistant stylesheet stays inside the shared tokens and folds on narrow screens", () => {
+  assert.match(sharedStyleCode, /\.mi-cal-assistant\s*\{/);
+  assert.equal(/\.mi-cal-assistant[^{]*\{[^}]*#0[0-9a-f]{5}/i.test(sharedStyleCode), false, "패널은 토큰 밖의 색을 직접 쓰면 안 됩니다.");
+  for (const token of ["--mi-cal-shadow", "--mi-cal-line", "--mi-cal-accent", "--mi-cal-muted", "--mi-cal-soft"]) {
+    assert.ok(sharedStyleCode.includes(token));
+  }
+  assert.equal(sharedStyleCode.includes("#mi-admin"), false);
+  assert.equal(sharedStyleCode.includes("#mi-client"), false);
+  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*\.mi-cal-assistant-metrics\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*\.mi-cal-assistant-compose\s*\{\s*flex-direction: column;/);
 });
 
 test("this suite is wired into npm test", () => {

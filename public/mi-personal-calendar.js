@@ -209,6 +209,100 @@
     return "연결에 실패했습니다: " + code;
   }
 
+  // ── 실장 비서 ────────────────────────────────────────────
+  // 대표실 owner-assistant(src/pages/admin.html)의 상호작용을 개인 공간으로 옮겨 적었다.
+  // 아래 표·정규식은 admin.html 및 src/server/handlers/owner-tool-api.mjs 와 한 벌이어야
+  // 하므로 scripts/personal-calendar-ui.test.mjs 가 두 원본을 읽어 대조한다.
+  //
+  // 일부러 옮기지 않은 것 — 개인 공간에는 계정 경계를 넘는 개념이 없어야 하기 때문이다.
+  //   · 광고주 스코프 전환(parseOwnerAssistantScopeCommand · switchOwnerAssistantScope ·
+  //     loadOwnerAssistantClients): 다른 계정 일정으로 갈아타는 기능이라 격리 보장 자체와 충돌한다.
+  //   · 굿모닝 자동 브리핑(maybeRunOwnerAssistantGoodMorning 과 그 localStorage 플래그): v1 범위 밖.
+  //   · 일정 초안 생성(assistant-draft): 대표실 전용 도구 경로에만 있어 여기서는 부를 수 없다.
+  //   · 비서실 조직 애니메이션(mi-assistant-office · agents · runOfficeScene): 운영 시각화라 개인 화면에 없다.
+  //   · 운영 데이터를 읽는 그 어떤 것도 없다.
+  var ASSISTANT_BRIEFING_INTENT = /브리핑|(?:일정|업무)(?:들)?\s*(?:을|를|이|은)?\s*(?:좀|한\s*번|다시|간단히|짧게)?\s*(?:알려|읽어|들려|말해|정리해)/u;
+
+  // 개인 빌드에는 서버 초안 파서가 없다. 완료 명령 해석은 브라우저에서 한다.
+  // 정규식은 owner-tool-api.mjs 의 ASSISTANT_COMPLETION_PATTERN 을 그대로 옮겨 적은 것이다.
+  var ASSISTANT_COMPLETION_PATTERN = /^(.+?)(?:\s*(?:일정|업무))?(?:\s*(?:은|는|을|를))?\s*완료(?:로|\s*처리)?(?:\s*(?:해\s*줘|해\s*주세요|해줘|해주세요|처리해\s*줘|처리해\s*주세요|해))?\s*[.!?]?$/u;
+
+  // 호출어("실장"). 최종 인식 문장에서만 명령을 떼어 낸다.
+  var ASSISTANT_WAKE_PATTERN = /(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]+(.*)|$)/u;
+  var ASSISTANT_WAKE_INTERIM_PATTERN = /(?:^|[\s,，.!?])실장(?:님|아)?(?:[\s,，.!?]|$)/u;
+
+  var ASSISTANT_RANGE_LABELS = { today: "오늘", tomorrow: "내일", day_after: "모레", this_week: "이번 주", next_week: "다음 주", upcoming: "다가오는" };
+  var ASSISTANT_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+  function assistantBriefingIntent(prompt) {
+    return ASSISTANT_BRIEFING_INTENT.test(String(prompt || ""));
+  }
+
+  function parseAssistantBriefingRange(text) {
+    var text2 = String(text || "");
+    if (/다음\s*주/u.test(text2)) return "next_week";
+    if (/이번\s*주/u.test(text2)) return "this_week";
+    if (/모레/u.test(text2)) return "day_after";
+    if (/내일/u.test(text2)) return "tomorrow";
+    if (/다가오는|앞으로|향후/u.test(text2)) return "upcoming";
+    return "today";
+  }
+
+  function parseAssistantCompletion(segment) {
+    var text = String(segment == null ? "" : segment).trim();
+    if (!text || text.indexOf("완료") === -1) return "";
+    var match = text.match(ASSISTANT_COMPLETION_PATTERN);
+    var query = match ? String(match[1] || "").replace(/\s+/gu, " ").trim() : "";
+    if (!query || query.indexOf("완료") !== -1) return "";
+    return query.slice(0, 120);
+  }
+
+  // 대표실은 workDateKey 를 썼다. 여기서는 이 파일의 dateKey 를 그대로 쓴다.
+  function assistantRangeWindow(rangeKey, now) {
+    var start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var end = new Date(start);
+    if (rangeKey === "tomorrow") { start.setDate(start.getDate() + 1); end = new Date(start); }
+    else if (rangeKey === "day_after") { start.setDate(start.getDate() + 2); end = new Date(start); }
+    else if (rangeKey === "this_week") { end.setDate(start.getDate() + (6 - ((start.getDay() + 6) % 7))); }
+    else if (rangeKey === "next_week") { start.setDate(start.getDate() + (7 - ((start.getDay() + 6) % 7))); end = new Date(start); end.setDate(start.getDate() + 6); }
+    else if (rangeKey === "upcoming") { start.setDate(start.getDate() + 1); end.setDate(end.getDate() + 7); }
+    return { startKey: dateKey(start), endKey: dateKey(end) };
+  }
+
+  function assistantSpokenWhen(item) {
+    var date = new Date(item.startsAt);
+    if (isNaN(date.getTime())) return "";
+    var label = (date.getMonth() + 1) + "월 " + date.getDate() + "일 " + ASSISTANT_WEEKDAYS[date.getDay()] + "요일";
+    if (!item.isAllDay) {
+      var hours = date.getHours();
+      var minutes = date.getMinutes();
+      label += " " + (hours < 12 ? "오전 " + (hours === 0 ? 12 : hours) : "오후 " + (hours === 12 ? 12 : hours - 12)) + "시";
+      if (minutes) label += " " + minutes + "분";
+    }
+    return label;
+  }
+
+  // 브리핑 문장은 언제나 화면에 이미 있는 행에서 만든다. 새 조회를 하지 않는다.
+  function buildAssistantBriefingSpeech(rangeKey, sourceItems) {
+    var label = ASSISTANT_RANGE_LABELS[rangeKey] || "오늘";
+    var range = assistantRangeWindow(rangeKey, new Date());
+    var list = (Array.isArray(sourceItems) ? sourceItems : []).filter(function (item) {
+      if (!item || item.status === "done") return false;
+      var key = dateKey(item.startsAt);
+      return Boolean(key) && key >= range.startKey && key <= range.endKey;
+    }).sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 8);
+    if (!list.length) return { label: label, text: label + " 일정이 없습니다." };
+    var lines = list.map(function (item) { return assistantSpokenWhen(item) + " " + (item.title || "제목 없는 업무"); });
+    return { label: label, text: label + " 일정은 " + lines.join(", ") + "입니다." };
+  }
+
+  // 상시 대기 토글은 계정마다 따로 기억한다. 공용 키로 떨어지면 한 브라우저에서
+  // 번갈아 로그인한 두 계정이 서로의 토글을 물려받는다 — 그 자체가 격리 구멍이다.
+  function assistantStandbyKey(accountTag) {
+    var tag = String(accountTag == null ? "" : accountTag).trim();
+    return tag ? "mi-personal-assistant-standby:" + tag : "";
+  }
+
   // 개인 캘린더는 언제나 /api/my/* 를 부른다. 로컬 개발에서만 dev 서버 포트로 간다.
   function apiOrigin() {
     var host = window.location && window.location.hostname;
@@ -250,6 +344,35 @@
       '<button class="mi-cal-button is-primary" type="button" data-cal-gcal-connect hidden>구글 캘린더 연결</button>',
       '<button class="mi-cal-button" type="button" data-cal-gcal-disconnect hidden>연동 해제</button>',
       '</div>',
+      '</section>',
+
+      '<section class="mi-cal-assistant" data-cal-assistant aria-label="실장 비서">',
+      '<div class="mi-cal-assistant-head">',
+      '<div class="mi-cal-assistant-head-copy"><span class="mi-cal-kicker">Assistant</span><h2>실장 비서</h2>',
+      '<p>내 일정만 보고 브리핑하고 완료 처리합니다. 다른 계정의 일정은 보지 않습니다.</p></div>',
+      '<span class="mi-cal-badge">내 일정 전용</span>',
+      '</div>',
+      '<div class="mi-cal-assistant-briefing" data-cal-assistant-briefing>',
+      '<div class="mi-cal-assistant-metrics" role="group" aria-label="오늘 일정 요약">',
+      '<div class="mi-cal-assistant-metric"><span>오늘</span><strong data-cal-assistant-metric="today">0</strong></div>',
+      '<div class="mi-cal-assistant-metric"><span>지연</span><strong data-cal-assistant-metric="overdue">0</strong></div>',
+      '<div class="mi-cal-assistant-metric"><span>확인 필요</span><strong data-cal-assistant-metric="needs_check">0</strong></div>',
+      '<div class="mi-cal-assistant-metric"><span>다가오는</span><strong data-cal-assistant-metric="next">0</strong></div>',
+      '</div>',
+      '<div class="mi-cal-assistant-agenda" data-cal-assistant-agenda></div>',
+      '</div>',
+      '<div class="mi-cal-assistant-voice">',
+      '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-mic aria-label="음성으로 입력하기"><span aria-hidden="true">🎤</span><span>말하기</span></button>',
+      '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-wake aria-pressed="false" aria-label="실장 상시 호출 켜고 끄기" disabled><span aria-hidden="true">🎙</span><span>상시 호출</span></button>',
+      '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-read aria-label="브리핑 소리로 듣기"><span aria-hidden="true">🔊</span><span>브리핑 읽기</span></button>',
+      '<span class="mi-cal-assistant-voice-status" data-cal-assistant-voice-status aria-live="polite">‘실장’이라고 부른 뒤 명령을 말하거나, 아래 입력창에 그대로 적어주세요.</span>',
+      '</div>',
+      '<div class="mi-cal-assistant-compose">',
+      '<textarea class="mi-cal-input mi-cal-assistant-input" data-cal-assistant-input maxlength="2000" rows="2" aria-label="실장에게 보낼 명령" placeholder="예: 다음 주 일정 알려줘 · 광고주 미팅 완료로 해줘"></textarea>',
+      '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-send>보내기</button>',
+      '</div>',
+      '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">브리핑과 완료 처리는 내 일정에서 바로 하고, 자유 대화만 실장 AI로 전달합니다.</div>',
+      '<div class="mi-cal-assistant-results" data-cal-assistant-results><div class="mi-cal-assistant-empty">실장에게 오늘 일정을 물어보세요.</div></div>',
       '</section>',
 
       '<div class="mi-cal-summary" aria-label="내 일정 필터">',
@@ -546,6 +669,12 @@
     var syncInFlight = false;
     var lastAutoSyncAt = 0;
     var windowListeners = [];
+    var assistantChatHistory = [];
+    var assistantAccountTag = "";
+    var assistantChatReady = false;
+    var assistantBriefingRange = "today";
+    var assistantSpeechOwned = false;
+    var assistantVoice = null;
 
     node.innerHTML = markupHtml();
 
@@ -1010,6 +1139,9 @@
       renderSummary();
       renderCalendar();
       renderAgenda();
+      // 브리핑은 일정이 다시 로드될 때마다 같이 갱신된다. 별도 조회가 없으므로
+      // 화면에 보이는 행과 브리핑이 어긋날 자리가 없다.
+      renderAssistantBriefing();
     }
 
     // ── 캘린더 만들기 · 참가자 ────────────────────────────────
@@ -2720,11 +2852,537 @@
       else closeDialog();
     });
 
+    // ── 실장 비서 ────────────────────────────────────────────
+    function setAssistantStatus(message, state) {
+      var statusNode = el("[data-cal-assistant-status]");
+      if (!statusNode) return;
+      statusNode.textContent = message || "";
+      statusNode.classList.toggle("is-ok", state === "ok");
+      statusNode.classList.toggle("is-warn", state === "warn");
+    }
+
+    function setAssistantVoiceStatus(message) {
+      var voiceNode = el("[data-cal-assistant-voice-status]");
+      if (voiceNode) voiceNode.textContent = message || "";
+    }
+
+    // 대화에 딸려 보내는 일정은 화면에 보이는 내 행뿐이다.
+    function assistantScheduleSnapshot() {
+      return visibleItems()
+        .filter(function (item) { return item.status !== "done" && item.startsAt; })
+        .sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); })
+        .slice(0, 60)
+        .map(function (item) { return { title: item.title || "", startsAt: item.startsAt, status: item.status || "", isAllDay: Boolean(item.isAllDay) }; });
+    }
+
+    function assistantSpeechSupported() {
+      return Boolean(window.speechSynthesis) && typeof window.SpeechSynthesisUtterance === "function";
+    }
+
+    function speakAssistantText(text) {
+      if (!assistantSpeechSupported()) return;
+      window.speechSynthesis.cancel();
+      var utterance = new window.SpeechSynthesisUtterance(String(text || ""));
+      var voices = window.speechSynthesis.getVoices ? window.speechSynthesis.getVoices() : [];
+      utterance.voice = voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || "") && voice.localService === true; }) ||
+        voices.find(function (voice) { return /^ko(?:-|_)/i.test(voice.lang || ""); }) || null;
+      utterance.lang = "ko-KR";
+      utterance.rate = 1.05;
+      // destroy() 가 취소할지 판단하려면 "이 패널이 시킨 말인가" 를 알아야 한다.
+      assistantSpeechOwned = true;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function speakAssistantBriefing(rangeKey) {
+      var briefing = buildAssistantBriefingSpeech(rangeKey, visibleItems());
+      if (!assistantSpeechSupported()) {
+        setAssistantVoiceStatus("이 브라우저는 음성 읽기를 지원하지 않습니다. 브리핑은 위 목록에서 확인해주세요.");
+        return briefing;
+      }
+      speakAssistantText(briefing.text);
+      setAssistantVoiceStatus(briefing.label + " 브리핑을 읽고 있습니다.");
+      return briefing;
+    }
+
+    // 브리핑·완료는 서버 대화 없이도 돌아간다. 그래서 대화가 꺼져 있어도 이 둘은 막지 않는다.
+    function assistantLocalIntent(text) {
+      return assistantBriefingIntent(text) || Boolean(parseAssistantCompletion(text));
+    }
+
+    function syncAssistantControls() {
+      var sendButton = el("[data-cal-assistant-send]");
+      if (!sendButton) return;
+      var text = String(value("[data-cal-assistant-input]") || "").trim();
+      sendButton.disabled = !assistantChatReady && !assistantLocalIntent(text);
+    }
+
+    function assistantClockLabel(item) {
+      var date = new Date(item.startsAt);
+      if (isNaN(date.getTime())) return "";
+      if (item.isAllDay) return "종일";
+      var hours = date.getHours();
+      var minutes = date.getMinutes();
+      return (hours < 12 ? "오전 " + (hours === 0 ? 12 : hours) : "오후 " + (hours === 12 ? 12 : hours - 12)) + "시" +
+        (minutes ? " " + minutes + "분" : "");
+    }
+
+    function matchAssistantCompletionTargets(query) {
+      var normalizedQuery = String(query || "").replace(/\s+/g, "").toLowerCase();
+      if (!normalizedQuery) return [];
+      return items.filter(function (item) {
+        if (item.status === "done" || !item.id || !item.updatedAt) return false;
+        var title = String(item.title || "").replace(/\s+/g, "").toLowerCase();
+        return Boolean(title) && (title.indexOf(normalizedQuery) !== -1 || normalizedQuery.indexOf(title) !== -1);
+      });
+    }
+
+    // 완료 처리는 이미 있는 /api/my/work-items 헬퍼를 그대로 쓴다(새 경로를 만들지 않는다).
+    function patchAssistantComplete(item) {
+      return requestWorkItems("PATCH", { action: "assistant-complete", id: item.id, expectedUpdatedAt: item.updatedAt });
+    }
+
+    // 완료는 되돌리기 어려운 쓰기다. 음성이든 버튼이든 반드시 사람이 한 번 확인한다.
+    function confirmAssistantComplete(item) {
+      return window.confirm('"' + (item.title || "제목 없는 업무") + '" 업무를 완료 처리할까요?');
+    }
+
+    function assistantAgendaRow(item) {
+      var row = document.createElement("div");
+      row.className = "mi-cal-assistant-agenda-item";
+      var time = document.createElement("time");
+      time.textContent = assistantClockLabel(item);
+      var title = document.createElement("strong");
+      title.textContent = item.title || "제목 없는 업무";
+      row.append(time, title);
+      if (!item.id || !item.updatedAt || !canEdit(item)) return row;
+      var complete = document.createElement("button");
+      complete.type = "button";
+      complete.className = "mi-cal-assistant-complete";
+      complete.textContent = "완료";
+      complete.setAttribute("aria-label", (item.title || "제목 없는 업무") + " 완료 처리");
+      // 이 버튼은 렌더마다 새로 만들고 destroy() 의 innerHTML 비우기와 함께 사라진다.
+      // 그래서 windowListeners 에 쌓지 않는다(쌓으면 렌더 횟수만큼 목록이 늘어난다).
+      complete.addEventListener("click", async function () {
+        if (destroyed) return;
+        if (!confirmAssistantComplete(item)) return;
+        complete.disabled = true;
+        setAssistantStatus("업무를 완료 처리하는 중입니다.", "");
+        try {
+          var payload = await patchAssistantComplete(item);
+          await loadItems();
+          if (destroyed) return;
+          setAssistantStatus(payload && payload.unchanged ? "이미 완료된 업무였습니다." : "업무를 완료 처리했습니다.", "ok");
+        } catch (error) {
+          if (destroyed) return;
+          complete.disabled = false;
+          setAssistantStatus(error.message || "업무 완료 처리에 실패했습니다.", "warn");
+        }
+      });
+      row.appendChild(complete);
+      return row;
+    }
+
+    function renderAssistantBriefing() {
+      var agenda = el("[data-cal-assistant-agenda]");
+      if (!agenda) return;
+      var now = new Date();
+      var todayKey = dateKey(now);
+      var openItems = visibleItems().filter(function (item) { return item.status !== "done"; });
+      var metrics = {
+        today: openItems.filter(function (item) { return dateKey(item.startsAt) === todayKey; }).length,
+        overdue: openItems.filter(function (item) { var key = dateKey(item.startsAt); return Boolean(key) && key < todayKey; }).length,
+        needs_check: openItems.filter(function (item) { return item.status === "needs_check"; }).length,
+        next: openItems.filter(function (item) { return dateKey(item.startsAt) > todayKey; }).length
+      };
+      node.querySelectorAll("[data-cal-assistant-metric]").forEach(function (metricNode) {
+        metricNode.textContent = String(metrics[metricNode.getAttribute("data-cal-assistant-metric")] || 0);
+      });
+      agenda.innerHTML = "";
+      var weekEndKey = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
+      var tableItems = openItems.filter(function (item) {
+        var key = dateKey(item.startsAt);
+        return Boolean(key) && key >= todayKey && key <= weekEndKey;
+      }).sort(function (a, b) { return new Date(a.startsAt) - new Date(b.startsAt); }).slice(0, 10);
+      var dayGroups = {};
+      tableItems.forEach(function (item) {
+        var key = dateKey(item.startsAt);
+        if (!dayGroups[key]) dayGroups[key] = [];
+        dayGroups[key].push(item);
+      });
+      var dayKeys = Object.keys(dayGroups).sort();
+      if (dayKeys.indexOf(todayKey) === -1) dayKeys.unshift(todayKey);
+      dayKeys.forEach(function (key) {
+        var headerDate = dateFromKey(key);
+        var header = document.createElement("div");
+        header.className = "mi-cal-assistant-day";
+        var headerLabel = (headerDate.getMonth() + 1) + "월 " + headerDate.getDate() + "일 (" + ASSISTANT_WEEKDAYS[headerDate.getDay()] + ")";
+        header.textContent = key === todayKey ? "오늘 · " + headerLabel : headerLabel;
+        agenda.appendChild(header);
+        var dayItems = dayGroups[key] || [];
+        if (!dayItems.length) {
+          var empty = document.createElement("div");
+          empty.className = "mi-cal-assistant-empty";
+          empty.textContent = "일정 없음";
+          agenda.appendChild(empty);
+          return;
+        }
+        dayItems.forEach(function (item) { agenda.appendChild(assistantAgendaRow(item)); });
+      });
+    }
+
+    function renderAssistantChatCard(question, reply) {
+      var results = el("[data-cal-assistant-results]");
+      if (!results) return;
+      var placeholder = results.firstElementChild;
+      if (placeholder && placeholder.classList.contains("mi-cal-assistant-empty") && results.children.length === 1) results.innerHTML = "";
+      var card = document.createElement("div");
+      card.className = "mi-cal-assistant-chat";
+      var asked = document.createElement("span");
+      asked.className = "mi-cal-assistant-chat-question";
+      asked.textContent = question;
+      var answered = document.createElement("p");
+      answered.className = "mi-cal-assistant-chat-reply";
+      answered.textContent = reply;
+      card.append(asked, answered);
+      results.prepend(card);
+      while (results.children.length > 6) results.removeChild(results.lastElementChild);
+    }
+
+    async function runAssistantCompletion(query) {
+      var targets = matchAssistantCompletionTargets(query);
+      if (!targets.length) return setAssistantStatus("‘" + query + "’와 일치하는 미완료 업무를 찾지 못했습니다.", "warn");
+      if (targets.length > 1) {
+        return setAssistantStatus("‘" + query + "’는 여러 업무와 일치합니다: " +
+          targets.slice(0, 3).map(function (item) { return item.title; }).join(", ") +
+          ". 더 정확한 제목으로 말씀해주세요.", "warn");
+      }
+      var target = targets[0];
+      if (!confirmAssistantComplete(target)) return setAssistantStatus("‘" + (target.title || query) + "’ 완료 처리를 취소했습니다.", "warn");
+      setAssistantStatus("업무를 완료 처리하는 중입니다.", "");
+      try {
+        var payload = await patchAssistantComplete(target);
+        await loadItems();
+        if (destroyed) return;
+        var spoken = payload && payload.unchanged ? "이미 완료된 업무였습니다." : "‘" + (target.title || query) + "’ 업무를 완료 처리했습니다.";
+        setAssistantStatus(spoken, "ok");
+        speakAssistantText(spoken);
+      } catch (error) {
+        if (destroyed) return;
+        setAssistantStatus("‘" + (target.title || query) + "’ 완료 처리 실패: " + (error.message || "요청 오류"), "warn");
+      }
+    }
+
+    async function askAssistant(message) {
+      var sendButton = el("[data-cal-assistant-send]");
+      setAssistantStatus("실장이 생각 중입니다…", "");
+      if (sendButton) sendButton.disabled = true;
+      try {
+        var response = await doFetch(apiUrl("/assistant-chat"), {
+          method: "POST",
+          cache: "no-store",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            message: message,
+            history: assistantChatHistory.slice(-12),
+            schedule: assistantScheduleSnapshot()
+          }),
+          timeoutMs: 30000
+        });
+        var payload = await readPayload(response, "실장 응답을 확인할 수 없습니다.");
+        if (destroyed) return;
+        if (!response.ok || !payload || payload.ok !== true) throw new Error(payload && payload.message ? payload.message : "실장 응답에 실패했습니다.");
+        assistantChatHistory.push({ role: "user", text: message }, { role: "assistant", text: payload.reply });
+        while (assistantChatHistory.length > 12) assistantChatHistory.shift();
+        renderAssistantChatCard(message, payload.reply);
+        speakAssistantText(payload.reply);
+        setAssistantStatus("실장이 답변했습니다.", "ok");
+      } catch (error) {
+        if (destroyed) return;
+        setAssistantStatus(error.message || "실장 대화에 실패했습니다.", "warn");
+      } finally {
+        if (!destroyed) syncAssistantControls();
+      }
+    }
+
+    // 명령 라우터: 브리핑 → 완료 → 자유 대화. 앞의 둘은 이 화면 안에서 끝난다.
+    async function runAssistantPrompt(text) {
+      var prompt = String(text || "").trim();
+      if (!prompt) return setAssistantStatus("실장에게 전할 내용을 입력해주세요.", "warn");
+      if (assistantBriefingIntent(prompt)) {
+        assistantBriefingRange = parseAssistantBriefingRange(prompt);
+        setValue("[data-cal-assistant-input]", "");
+        syncAssistantControls();
+        renderAssistantBriefing();
+        speakAssistantBriefing(assistantBriefingRange);
+        return setAssistantStatus((ASSISTANT_RANGE_LABELS[assistantBriefingRange] || "오늘") + " 일정을 브리핑합니다.", "ok");
+      }
+      var completionQuery = parseAssistantCompletion(prompt);
+      if (completionQuery) {
+        setValue("[data-cal-assistant-input]", "");
+        syncAssistantControls();
+        return runAssistantCompletion(completionQuery);
+      }
+      if (!assistantChatReady) return setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");
+      setValue("[data-cal-assistant-input]", "");
+      syncAssistantControls();
+      return askAssistant(prompt);
+    }
+
+    function applyAssistantAccount() {
+      syncAssistantControls();
+      if (assistantVoice) assistantVoice.syncAccount();
+      if (!assistantChatReady) setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");
+    }
+
+    // 계정 태그는 마운트 때 한 번만 받는다. 이 값이 상시 대기 저장 키의 네임스페이스가 된다.
+    async function loadAssistantAccount() {
+      if (destroyed) return;
+      try {
+        var response = await doFetch(apiUrl("/assistant-chat"), { method: "GET", cache: "no-store", timeoutMs: 15000 });
+        var payload = await readPayload(response, "실장 비서 상태를 확인할 수 없습니다.");
+        if (destroyed) return;
+        if (!response.ok || !payload || payload.ok !== true) throw new Error(payload && payload.message ? payload.message : "실장 비서 상태를 확인할 수 없습니다.");
+        assistantAccountTag = String(payload.accountTag || "");
+        assistantChatReady = payload.ready === true;
+        applyAssistantAccount();
+      } catch (error) {
+        if (destroyed) return;
+        assistantAccountTag = "";
+        assistantChatReady = false;
+        applyAssistantAccount();
+        setAssistantStatus(error.message || "실장 비서 상태를 확인하지 못했습니다.", "warn");
+      }
+    }
+
+    function initAssistant() {
+      var input = el("[data-cal-assistant-input]");
+      var sendButton = el("[data-cal-assistant-send]");
+      var micButton = el("[data-cal-assistant-mic]");
+      var wakeButton = el("[data-cal-assistant-wake]");
+      var readButton = el("[data-cal-assistant-read]");
+      if (!input || !sendButton) return;
+
+      on(input, "input", syncAssistantControls);
+      on(sendButton, "click", function () {
+        runAssistantPrompt(String(input.value || "")).catch(function () {});
+      });
+
+      // 음성은 있으면 얹고 없으면 조용히 접는다. 없다고 해서 던지지 않는다 —
+      // 브리핑·완료·대화는 텍스트만으로 전부 동작해야 한다.
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      var recognition = null;
+      var wakeMode = false;
+      var wakeTimer = 0;
+      var stopped = false;
+
+      function voiceAlive() {
+        return !stopped && !destroyed;
+      }
+
+      function stopRecognition() {
+        wakeMode = false;
+        window.clearTimeout(wakeTimer);
+        wakeTimer = 0;
+        if (micButton) micButton.classList.remove("is-listening");
+        if (wakeButton) {
+          wakeButton.classList.remove("is-active");
+          wakeButton.setAttribute("aria-pressed", "false");
+        }
+        if (recognition) {
+          recognition.onend = null;
+          try { recognition.stop(); } catch (error) {}
+        }
+        recognition = null;
+      }
+
+      function recognitionError(event) {
+        var code = event && event.error ? event.error : "unknown";
+        if (code === "not-allowed" || code === "service-not-allowed") setAssistantVoiceStatus("마이크 권한이 차단되었습니다. 브라우저 주소창의 사이트 설정에서 마이크를 허용해주세요.");
+        else if (code !== "no-speech" && code !== "aborted") setAssistantVoiceStatus("음성 인식 오류: " + code);
+      }
+
+      function createRecognition(continuous) {
+        var instance = new SpeechRecognition();
+        instance.lang = "ko-KR";
+        instance.continuous = continuous;
+        instance.interimResults = true;
+        instance.maxAlternatives = 1;
+        return instance;
+      }
+
+      function readStandbyPreference() {
+        var key = assistantStandbyKey(assistantAccountTag);
+        if (!key) return false;
+        try { return window.localStorage.getItem(key) === "on"; } catch (error) { return false; }
+      }
+
+      function writeStandbyPreference(nextOn) {
+        var key = assistantStandbyKey(assistantAccountTag);
+        if (!key) return;
+        try { window.localStorage.setItem(key, nextOn ? "on" : "off"); } catch (error) {}
+      }
+
+      function standbyLoop() {
+        if (!voiceAlive() || !wakeMode) return;
+        if (document.hidden) {
+          wakeTimer = window.setTimeout(standbyLoop, 1200);
+          return;
+        }
+        recognition = createRecognition(true);
+        var fired = false;
+        var processedFinalLength = 0;
+        recognition.onresult = function (event) {
+          if (!voiceAlive()) return stopRecognition();
+          if (fired) return;
+          var heard = "";
+          var finals = "";
+          for (var index = 0; index < event.results.length; index += 1) {
+            heard += event.results[index][0].transcript;
+            if (event.results[index].isFinal) finals += event.results[index][0].transcript;
+          }
+          if (window.speechSynthesis && window.speechSynthesis.speaking) {
+            processedFinalLength = finals.length;
+            return setAssistantVoiceStatus("브리핑을 읽는 중에는 새 명령을 받지 않습니다.");
+          }
+          var newFinal = finals.slice(processedFinalLength).trim();
+          // 최종 인식 결과에만 반응한다. 중간 결과로 실행하면 말하는 도중에
+          // 완료 처리가 먼저 나가 버린다 — 되돌릴 수 없는 쓰기라 특히 위험하다.
+          if (!newFinal) {
+            var interimWake = ASSISTANT_WAKE_INTERIM_PATTERN.test(heard);
+            return setAssistantVoiceStatus(interimWake ? "네, 듣고 있습니다. 명령을 이어서 말씀해주세요." : "상시 대기 중 · 들림: " + heard.trim().slice(-32));
+          }
+          processedFinalLength = finals.length;
+          var command = "";
+          var wakeMatch = finals.match(ASSISTANT_WAKE_PATTERN);
+          if (wakeMatch) {
+            command = String(wakeMatch[1] || "").trim();
+            if (!command) return setAssistantVoiceStatus("네, 듣고 있습니다. 명령을 이어서 말씀해주세요.");
+          } else {
+            // 호출어가 없으면 브리핑·완료 문장만 받는다(대표실의 광고주 전환 갈래는 옮기지 않았다).
+            if (!assistantLocalIntent(newFinal)) return setAssistantVoiceStatus("상시 대기 중 · 들림: " + finals.trim().slice(-32));
+            command = newFinal;
+          }
+          fired = true;
+          input.value = command;
+          syncAssistantControls();
+          setAssistantVoiceStatus("실장이 명령을 받아 바로 실행합니다.");
+          if (recognition) try { recognition.stop(); } catch (error) {}
+          window.setTimeout(function () {
+            if (voiceAlive() && !sendButton.disabled) sendButton.click();
+          }, 250);
+        };
+        recognition.onerror = function (event) {
+          recognitionError(event);
+          if (event && (event.error === "not-allowed" || event.error === "service-not-allowed")) {
+            // 마이크가 막히면 상시 대기를 꺼 둔다. 다음 방문에 몰래 다시 켜지지 않게 하는 안전 기본값이다.
+            writeStandbyPreference(false);
+            stopRecognition();
+          }
+        };
+        recognition.onend = function () {
+          recognition = null;
+          if (!voiceAlive() || !wakeMode) return;
+          wakeTimer = window.setTimeout(standbyLoop, fired ? 700 : 450);
+        };
+        try { recognition.start(); } catch (error) { wakeTimer = window.setTimeout(standbyLoop, 1500); }
+      }
+
+      function startStandby() {
+        stopRecognition();
+        wakeMode = true;
+        if (wakeButton) {
+          wakeButton.classList.add("is-active");
+          wakeButton.setAttribute("aria-pressed", "true");
+        }
+        setAssistantVoiceStatus("상시 대기 중 — ‘실장님’이라고 부른 뒤 명령을 말씀해주세요.");
+        standbyLoop();
+      }
+
+      if (micButton) {
+        on(micButton, "click", function () {
+          if (!SpeechRecognition) return setAssistantVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
+          stopRecognition();
+          var base = String(input.value || "").trim();
+          var heard = "";
+          recognition = createRecognition(false);
+          micButton.classList.add("is-listening");
+          setAssistantVoiceStatus("듣는 중입니다. 명령을 말씀해주세요.");
+          recognition.onresult = function (event) {
+            if (!voiceAlive()) return stopRecognition();
+            heard = "";
+            for (var index = 0; index < event.results.length; index += 1) heard += event.results[index][0].transcript;
+            input.value = (base ? base + "\n" : "") + heard.trim();
+            syncAssistantControls();
+          };
+          recognition.onerror = recognitionError;
+          recognition.onend = function () {
+            micButton.classList.remove("is-listening");
+            recognition = null;
+            if (voiceAlive()) setAssistantVoiceStatus(heard.trim() ? "음성 입력을 완료했습니다. 내용을 확인한 뒤 보내주세요." : "음성을 인식하지 못했습니다. 다시 눌러 말씀해주세요.");
+          };
+          try { recognition.start(); } catch (error) { stopRecognition(); setAssistantVoiceStatus("마이크를 시작하지 못했습니다. 잠시 후 다시 시도해주세요."); }
+        });
+      }
+
+      if (wakeButton) {
+        on(wakeButton, "click", function () {
+          if (!SpeechRecognition) return setAssistantVoiceStatus("이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 이용해주세요.");
+          if (!assistantAccountTag) return setAssistantVoiceStatus("계정을 확인하는 중입니다. 잠시 후 다시 눌러주세요.");
+          if (wakeMode) {
+            writeStandbyPreference(false);
+            stopRecognition();
+            return setAssistantVoiceStatus("실장 상시 호출을 껐습니다. 버튼을 누르면 다시 켜집니다.");
+          }
+          writeStandbyPreference(true);
+          startStandby();
+        });
+      }
+
+      if (readButton) {
+        on(readButton, "click", function () {
+          speakAssistantBriefing(assistantBriefingRange);
+        });
+      }
+
+      if (!SpeechRecognition) {
+        if (micButton) micButton.hidden = true;
+        if (wakeButton) wakeButton.hidden = true;
+      }
+      if (!assistantSpeechSupported() && readButton) readButton.hidden = true;
+      if (!SpeechRecognition && !assistantSpeechSupported()) {
+        setAssistantVoiceStatus("이 브라우저는 음성 기능을 지원하지 않습니다. 아래 입력창으로 명령해주세요.");
+      }
+
+      assistantVoice = {
+        syncAccount: function () {
+          if (!wakeButton) return;
+          // 계정 태그가 오기 전에는 토글을 잠가 둔다. 공용 키로 흘러 내려가면
+          // 한 브라우저의 두 계정이 서로의 상시 대기 설정을 물려받는다.
+          var enabled = Boolean(SpeechRecognition) && Boolean(assistantAccountTag);
+          wakeButton.disabled = !enabled;
+          if (!enabled || wakeMode) return;
+          if (readStandbyPreference()) startStandby();
+        },
+        stop: function () {
+          stopped = true;
+          stopRecognition();
+        }
+      };
+    }
+
+    function stopAssistant() {
+      if (assistantVoice) assistantVoice.stop();
+      assistantVoice = null;
+      if (assistantSpeechOwned && window.speechSynthesis) window.speechSynthesis.cancel();
+      assistantSpeechOwned = false;
+    }
+
     function destroy() {
       if (destroyed) return;
       destroyed = true;
       requestGeneration += 1;
       window.clearTimeout(pointerTimer);
+      stopAssistant();
       windowListeners.forEach(function (entry) {
         entry[0].removeEventListener(entry[1], entry[2], entry[3]);
       });
@@ -2741,6 +3399,8 @@
     }
 
     consumeNoticeParams();
+    initAssistant();
+    syncAssistantControls();
     renderAll();
     loadItems().then(function () {
       if (destroyed) return;
@@ -2748,6 +3408,9 @@
     }).then(function () {
       if (destroyed) return;
       return refreshLoginBanner().catch(function () {});
+    }).then(function () {
+      if (destroyed) return;
+      return loadAssistantAccount().catch(function () {});
     }).then(function () {
       if (destroyed) return;
       maybeSync("auto").catch(function () {});
@@ -2775,6 +3438,18 @@
     ATTENDEE_LIMIT: ATTENDEE_LIMIT,
     EMAIL_PATTERN: EMAIL_PATTERN,
     LOGIN_NOTICES: LOGIN_NOTICES,
+    ASSISTANT_RANGE_LABELS: ASSISTANT_RANGE_LABELS,
+    ASSISTANT_WEEKDAYS: ASSISTANT_WEEKDAYS,
+    ASSISTANT_BRIEFING_INTENT: ASSISTANT_BRIEFING_INTENT,
+    ASSISTANT_COMPLETION_PATTERN: ASSISTANT_COMPLETION_PATTERN,
+    ASSISTANT_WAKE_PATTERN: ASSISTANT_WAKE_PATTERN,
+    assistantBriefingIntent: assistantBriefingIntent,
+    parseAssistantBriefingRange: parseAssistantBriefingRange,
+    parseAssistantCompletion: parseAssistantCompletion,
+    assistantRangeWindow: assistantRangeWindow,
+    assistantSpokenWhen: assistantSpokenWhen,
+    buildAssistantBriefingSpeech: buildAssistantBriefingSpeech,
+    assistantStandbyKey: assistantStandbyKey,
     escapeHtml: escapeHtml,
     gcalColor: gcalColor,
     eventColorId: eventColorId,

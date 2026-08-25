@@ -20,6 +20,9 @@
     },
     "api/my/google-calendar.mjs": {
       "maxDuration": 60
+    },
+    "api/my/assistant-chat.mjs": {
+      "maxDuration": 60
     }
   },
   "crons": [

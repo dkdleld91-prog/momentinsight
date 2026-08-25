@@ -14,6 +14,8 @@ const files = {
   ownerIdentity: "src/server/owner-identity.mjs",
   ownerTool: "src/server/handlers/owner-tool-api.mjs",
   ownerToolAdapter: "api/owner/tool.mjs",
+  personalAssistant: "src/server/handlers/personal-assistant-api.mjs",
+  personalAssistantAdapter: "api/my/assistant-chat.mjs",
   sessionAdapter: "api/session.mjs",
   responseAdapter: "api/_response-adapter.mjs",
   runtime: "src/server/runtime.mjs",
@@ -114,6 +116,8 @@ const teamAccountOnlyPathsBlock = sessionGate.match(/const TEAM_ACCOUNT_ONLY_TOO
 const ownerIdentity = fs.readFileSync(files.ownerIdentity, "utf8");
 const ownerTool = fs.readFileSync(files.ownerTool, "utf8");
 const ownerToolAdapter = fs.readFileSync(files.ownerToolAdapter, "utf8");
+const personalAssistant = fs.readFileSync(files.personalAssistant, "utf8");
+const personalAssistantAdapter = fs.readFileSync(files.personalAssistantAdapter, "utf8");
 const sessionAdapter = fs.readFileSync(files.sessionAdapter, "utf8");
 const responseAdapter = fs.readFileSync(files.responseAdapter, "utf8");
 const runtime = fs.readFileSync(files.runtime, "utf8");
@@ -544,6 +548,28 @@ check(
     /createHandler\("\/api\/owner\/tool"\)/,
   ]),
   files.ownerToolAdapter,
+);
+check(
+  "personal assistant chat is routed per account, rate limited and never reads schedule rows",
+  hasAll(serverIndex, [
+    /personalAssistantApi: \(\) => import\("\.\/handlers\/personal-assistant-api\.mjs"\)/,
+    /url\.pathname === "\/api\/my\/assistant-chat"/,
+    /dispatch\("personalAssistantApi", request\)/,
+  ]) && hasAll(sessionGate, [
+    /"\/api\/my\/assistant-chat"/,
+  ]) && hasAll(personalAssistant, [
+    /resolvePersonalAccess/,
+    /consume_code_login_rate_limit/,
+    /code: "rate_limited"/,
+    /code: "missing_api_key"/,
+    /claude-haiku-4-5/,
+  ]) && hasAll(personalAssistantAdapter, [
+    /createHandler/,
+    /createHandler\("\/api\/my\/assistant-chat"\)/,
+  // 개인 비서는 브라우저가 보낸 스냅샷만 본다. 서버가 일정 행을 직접 읽는 순간
+  // 다른 계정의 행이 프롬프트로 새는 경로가 생기므로 그 부재를 계약으로 못 박는다.
+  ]) && !/supabaseAdmin\.from\(|schedule_items/.test(personalAssistant),
+  `${files.serverIndex}, ${files.sessionGate}, ${files.personalAssistant}, ${files.personalAssistantAdapter}`,
 );
 check(
   "login session has a dedicated Vercel function adapter",

@@ -14,6 +14,7 @@ import path from "node:path";
 const files = {
   workItems: "src/server/handlers/work-items.mjs",
   personalIdentity: "src/server/handlers/personal-identity.mjs",
+  personalAssistant: "src/server/handlers/personal-assistant-api.mjs",
   adminApi: "src/server/handlers/admin-api.mjs",
   sessionGate: "src/server/session-gate.mjs",
   googleCalendarApi: "src/server/handlers/google-calendar-api.mjs",
@@ -188,6 +189,7 @@ function check(name, condition, detail) {
 const workItemsSource = stripComments(read(files.workItems));
 const workItemsRaw = read(files.workItems);
 const personalIdentitySource = stripComments(read(files.personalIdentity));
+const personalAssistantSource = stripComments(read(files.personalAssistant));
 const adminApiSource = stripComments(read(files.adminApi));
 const sessionGateSource = stripComments(read(files.sessionGate));
 const sessionGateRaw = read(files.sessionGate);
@@ -376,16 +378,41 @@ check(
 const personalPathsBlock = /const ACCOUNT_ONLY_PERSONAL_PATHS = new Set\(\[([^\]]*)\]/su.exec(sessionGateSource)?.[1] || "";
 const personalPaths = [...personalPathsBlock.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
 check(
-  "session-gate: exactly the three /api/my/* paths open for an advertiser-unlinked team session",
-  personalPaths.length === 3
+  "session-gate: exactly the four /api/my/* paths open for an advertiser-unlinked team session",
+  personalPaths.length === 4
     && personalPaths.every((entry) => entry.startsWith("/api/my/"))
     && includesAll(personalPaths.join(" "), [
       "/api/my/work-items",
       "/api/my/google-calendar",
       "/api/my/google-login",
+      "/api/my/assistant-chat",
     ])
     && functionBlock(sessionGateSource, "sessionScopeAllowsPath").includes("ACCOUNT_ONLY_PERSONAL_PATHS.has(path)"),
   `${files.sessionGate} ACCOUNT_ONLY_PERSONAL_PATHS (${personalPaths.length} paths)`,
+);
+
+// 실장 대화는 개인 일정을 프롬프트에 싣는 유일한 경로다. 계정 판정이
+// resolvePersonalAccess 하나로 끝나고, 일정 행을 서버가 직접 읽지 않는다는 두
+// 문장이 소스에 남아 있어야 "다른 계정의 일정이 프롬프트에 닿을 길이 없다" 가
+// 유지된다. 자격 헤더를 이 파일이 직접 읽어서도 안 된다 — session-gate 가 지운
+// 뒤 다시 심고, 그것을 읽는 곳은 personal-identity 하나여야 한다.
+const personalAssistantHandlerBlock = functionBlock(personalAssistantSource, "handlePersonalAssistantRequest");
+check(
+  "personal-assistant: the chat resolves the account through resolvePersonalAccess and never reads schedule rows",
+  includesAll(personalAssistantSource, [
+    'import { resolvePersonalAccess } from "./personal-identity.mjs";',
+  ])
+    && includesAll(personalAssistantHandlerBlock, [
+      "resolvePersonalAccess(request, ctx)",
+      "access.personalKey",
+    ])
+    && includesNone(personalAssistantSource, [
+      "supabaseAdmin.from(",
+      "schedule_items",
+      "/api/owner/",
+      "x-mi-agency-code",
+    ]),
+  `${files.personalAssistant} handlePersonalAssistantRequest`,
 );
 
 // ─────────────────────────────────────────────────────────────

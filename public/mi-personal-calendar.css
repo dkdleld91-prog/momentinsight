@@ -192,6 +192,228 @@
   flex-wrap: wrap;
 }
 
+/* ── 실장 비서 ──────────────────────────────────────────── */
+/* 대표실(admin.html)의 네이비·골드 패널을 그대로 가져오지 않는다. 이 파일은 두
+   페이지가 함께 쓰므로 색은 .mi-cal-shell 토큰으로만 낸다. */
+.mi-cal-assistant {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 14px;
+  background: var(--mi-cal-panel);
+  box-shadow: var(--mi-cal-shadow);
+}
+
+.mi-cal-assistant-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mi-cal-assistant-head-copy {
+  min-width: 0;
+}
+
+.mi-cal-assistant-briefing {
+  display: grid;
+  gap: 10px;
+}
+
+.mi-cal-assistant-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mi-cal-assistant-metric {
+  display: grid;
+  gap: 2px;
+  padding: 9px 11px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 11px;
+  background: var(--mi-cal-soft);
+}
+
+.mi-cal-assistant-metric span {
+  color: var(--mi-cal-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mi-cal-assistant-metric strong {
+  color: var(--mi-cal-accent);
+  font-size: 19px;
+  font-weight: 900;
+}
+
+.mi-cal-assistant-agenda {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.mi-cal-assistant-day {
+  margin-top: 4px;
+  color: var(--mi-cal-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.mi-cal-assistant-agenda-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 10px;
+  background: var(--mi-cal-panel);
+}
+
+.mi-cal-assistant-agenda-item time {
+  flex: 0 0 auto;
+  min-width: 62px;
+  color: var(--mi-cal-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mi-cal-assistant-agenda-item strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--mi-cal-ink);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.mi-cal-assistant-complete {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 8px;
+  background: var(--mi-cal-panel);
+  color: var(--mi-cal-ok);
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mi-cal-assistant-complete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mi-cal-assistant-empty {
+  padding: 7px 10px;
+  border: 1px dashed var(--mi-cal-line);
+  border-radius: 10px;
+  color: var(--mi-cal-muted);
+  font-size: 12px;
+}
+
+.mi-cal-assistant-voice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mi-cal-assistant-voice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 999px;
+  background: var(--mi-cal-panel);
+  color: var(--mi-cal-accent);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mi-cal-assistant-voice-button.is-active,
+.mi-cal-assistant-voice-button.is-listening {
+  border-color: var(--mi-cal-accent);
+  background: var(--mi-cal-accent);
+  color: #fff;
+}
+
+.mi-cal-assistant-voice-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mi-cal-assistant-voice-status {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: var(--mi-cal-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.mi-cal-assistant-compose {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.mi-cal-assistant-input {
+  min-height: 62px;
+  resize: vertical;
+}
+
+.mi-cal-assistant-status {
+  color: var(--mi-cal-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.mi-cal-assistant-status.is-ok {
+  color: var(--mi-cal-ok);
+  font-weight: 800;
+}
+
+.mi-cal-assistant-status.is-warn {
+  color: var(--mi-cal-warn);
+  font-weight: 800;
+}
+
+.mi-cal-assistant-results {
+  display: grid;
+  gap: 8px;
+}
+
+.mi-cal-assistant-chat {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 11px;
+  background: var(--mi-cal-soft);
+}
+
+.mi-cal-assistant-chat-question {
+  color: var(--mi-cal-muted);
+  font-size: 11px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.mi-cal-assistant-chat-reply {
+  color: var(--mi-cal-ink);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 /* ── 요약 필터 ──────────────────────────────────────────── */
 .mi-cal-summary {
   display: grid;
@@ -1354,6 +1576,10 @@
   .mi-cal-agenda {
     max-height: none;
   }
+
+  .mi-cal-assistant-agenda {
+    max-height: 260px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -1415,5 +1641,28 @@
 
   .mi-cal-move-arrow {
     text-align: center;
+  }
+
+  /* 좁은 폭에서는 지표가 2×2 로 접히고, 보내기 버튼이 입력창 아래로 내려간다. */
+  .mi-cal-assistant-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mi-cal-assistant-compose {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .mi-cal-assistant-voice-button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .mi-cal-assistant-voice-status {
+    flex: 1 1 100%;
+  }
+
+  .mi-cal-assistant-agenda-item {
+    flex-wrap: wrap;
   }
 }

@@ -1897,9 +1897,28 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-calendar {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
+}
+
+/* 일정이 없는 달 안내. 격자 위에 겹쳐 가운데 정렬하고 클릭은 통과시킨다 —
+   날짜 칸을 눌러 일정을 만드는 길을 안내가 막으면 안 된다. */
+.mi-cal-calendar-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 0 24px;
+  color: var(--mi-cal-muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.6;
+  text-align: center;
+  pointer-events: none;
 }
 
 .mi-cal-day {

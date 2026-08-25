@@ -18,7 +18,11 @@
 
   // 마크업과 CSS 가 같이 바뀌었다. 버전을 올려 두지 않으면 캐시된 옛 마크업이
   // 새 CSS 와 섞여 화면이 반쯤 무너진 상태로 뜬다.
-  var VERSION = "cal-v2-20260826";
+  var VERSION = "cal-v3-20260826";
+
+  // 일정이 하나도 없는 달은 42칸짜리 빈 흰 격자가 된다. 대표실 배치를 따르면서
+  // 캘린더가 화면 한참 아래로 내려갔기 때문에, 그 빈 격자가 "고장" 처럼 읽힌다.
+  var CALENDAR_EMPTY_NOTE = "아직 일정이 없습니다. 우측 상단 ‘일정 추가’ 또는 구글 캘린더 연결로 시작해보세요.";
 
   // ── 대표실 문구 표 ──────────────────────────────────────
   // owner-tool-api.mjs assistantViewHtml 의 문장·좌표를 그대로 옮겨 적은 것이다.
@@ -1114,6 +1118,18 @@
             '" aria-label="' + key + ' 나머지 일정 보기">+' + (dayItems.length - 3) + "</button>" : "") +
           "</div></div>");
       }
+      // 이 달에 내 일정이 하나도 없을 때만 안내를 얹는다. 판단은 pool(=필터 적용
+      // 결과)이 아니라 visibleItems() 로 한다 — 필터 때문에 비어 보이는 것을
+      // "일정이 없다" 고 말하면 거짓말이 된다. 그래서 필터 중에는 아예 띄우지 않는다.
+      var monthStartKey = dateKey(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1));
+      var monthEndKey = dateKey(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0));
+      var monthEmpty = !activeFilter && !visibleItems().some(function (item) {
+        var itemKey = dateKey(item.startsAt);
+        return Boolean(itemKey) && itemKey >= monthStartKey && itemKey <= monthEndKey;
+      });
+      // 격자 위에 겹쳐 놓고 클릭은 통과시킨다(CSS pointer-events:none). 날짜 칸을
+      // 눌러 일정을 만드는 길이 안내 때문에 막히면 안 된다.
+      if (monthEmpty) html.push('<p class="mi-cal-calendar-empty">' + escapeHtml(CALENDAR_EMPTY_NOTE) + "</p>");
       calendar.innerHTML = html.join("");
     }
 
@@ -3743,6 +3759,7 @@
     VERSION: VERSION,
     mount: mount,
     markupHtml: markupHtml,
+    CALENDAR_EMPTY_NOTE: CALENDAR_EMPTY_NOTE,
     EVENT_COLORS: EVENT_COLORS,
     STATUS_LABELS: STATUS_LABELS,
     TYPE_LABELS: TYPE_LABELS,

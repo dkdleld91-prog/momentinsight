@@ -1048,6 +1048,36 @@ test("the assistant stylesheet stays inside the shared tokens and folds on narro
   assert.match(sharedStyle, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.mi-cal-agent[\s\S]*?animation: none/);
 });
 
+test("an empty month says so instead of showing a blank 42-cell grid", () => {
+  // 대표실 배치를 따르면서 캘린더가 화면 한참 아래로 내려갔다. 일정이 없는 계정은
+  // 그 자리가 통째로 빈 흰 격자라 "고장" 처럼 읽힌다 — 한 줄 안내가 그것을 막는다.
+  assert.match(shared.CALENDAR_EMPTY_NOTE, /^아직 일정이 없습니다\./u);
+  assert.ok(shared.CALENDAR_EMPTY_NOTE.includes("일정 추가"));
+  assert.ok(shared.CALENDAR_EMPTY_NOTE.includes("구글 캘린더"));
+  // 초기 마크업에는 없다. 달을 그릴 때 그 달이 비었을 때만 붙는다.
+  assert.equal(markup.includes("mi-cal-calendar-empty"), false);
+  assert.ok(sharedSource.includes('if (monthEmpty) html.push(\'<p class="mi-cal-calendar-empty">\' + escapeHtml(CALENDAR_EMPTY_NOTE) + "</p>");'));
+
+  // 판정은 필터 결과(pool)가 아니라 visibleItems() 로 한다. 필터 때문에 비어
+  // 보이는 것을 "일정이 없다" 고 말하면 거짓말이므로 필터 중에는 아예 안 띄운다.
+  assert.ok(sharedSource.includes("var monthEmpty = !activeFilter && !visibleItems().some(function (item) {"));
+  assert.ok(sharedSource.includes("return Boolean(itemKey) && itemKey >= monthStartKey && itemKey <= monthEndKey;"));
+  assert.ok(sharedSource.includes("var monthStartKey = dateKey(new Date(monthCursor.getFullYear(), monthCursor.getMonth(), 1));"));
+  assert.ok(sharedSource.includes("var monthEndKey = dateKey(new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 0));"));
+
+  // 안내가 날짜 칸 클릭을 가리면 일정을 만들 길이 막힌다.
+  const emptyRule = slice(sharedStyleCode, ".mi-cal-calendar-empty {", "}");
+  assert.ok(emptyRule.includes("pointer-events: none;"));
+  assert.ok(emptyRule.includes("position: absolute;"));
+  assert.ok(emptyRule.includes("place-items: center;"));
+  assert.ok(emptyRule.includes("color: var(--mi-cal-muted);"), "색은 기존 muted 토큰만 쓴다.");
+  assert.equal(/#[0-9a-f]{3,6}/i.test(emptyRule), false, "토큰 밖의 색을 직접 쓰면 안 됩니다.");
+  // 겹쳐 놓으려면 격자가 기준 상자여야 한다.
+  assert.match(sharedStyleCode, /\.mi-cal-calendar\s*\{[^}]*position: relative;/u);
+  // 페이지는 여전히 이 마크업을 모른다.
+  for (const page of [adminSource, clientSource]) assert.equal(page.includes("mi-cal-calendar-empty"), false);
+});
+
 test("this suite is wired into npm test", () => {
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/personal-calendar-ui.test.mjs"));
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"));

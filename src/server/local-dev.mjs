@@ -1,7 +1,7 @@
 import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
-import { logAdapterFailure, nodeRequestId } from "../../api/error-safety.mjs";
+import { logAdapterFailure, nodeRequestId } from "../../api/_error-safety.mjs";
 
 const PORT = Number(process.env.PORT || 8790);
 

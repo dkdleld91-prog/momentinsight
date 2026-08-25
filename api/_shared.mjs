@@ -1,6 +1,6 @@
 import app from "../src/server/index.mjs";
-import { logAdapterFailure, nodeRequestId } from "./error-safety.mjs";
-import { writeWebResponse } from "./response-adapter.mjs";
+import { logAdapterFailure, nodeRequestId } from "./_error-safety.mjs";
+import { writeWebResponse } from "./_response-adapter.mjs";
 
 function requestUrl(req, pathname) {
   const protocol = String(req.headers["x-forwarded-proto"] || "https").split(",")[0].trim();

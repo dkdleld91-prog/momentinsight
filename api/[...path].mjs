@@ -1,7 +1,7 @@
 import app from "../src/server/index.mjs";
-import { logAdapterFailure, nodeRequestId } from "./error-safety.mjs";
-import { writeWebResponse } from "./response-adapter.mjs";
-export { safeErrorPayload } from "./error-safety.mjs";
+import { logAdapterFailure, nodeRequestId } from "./_error-safety.mjs";
+import { writeWebResponse } from "./_response-adapter.mjs";
+export { safeErrorPayload } from "./_error-safety.mjs";
 
 
 async function nodeRequestToWebRequest(req) {

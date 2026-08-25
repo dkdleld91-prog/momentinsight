@@ -15,7 +15,7 @@ const files = {
   ownerTool: "src/server/handlers/owner-tool-api.mjs",
   ownerToolAdapter: "api/owner/tool.mjs",
   sessionAdapter: "api/session.mjs",
-  responseAdapter: "api/response-adapter.mjs",
+  responseAdapter: "api/_response-adapter.mjs",
   runtime: "src/server/runtime.mjs",
   errorSafety: "src/server/error-safety.mjs",
   readiness: "src/server/handlers/ready.mjs",

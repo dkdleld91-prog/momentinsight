@@ -1,4 +1,4 @@
-import { safeErrorPayload } from "./error-safety.mjs";
+import { safeErrorPayload } from "./_error-safety.mjs";
 
 export async function writeWebResponse(res, response) {
   const rawBuffer = response.body ? Buffer.from(await response.arrayBuffer()) : Buffer.alloc(0);

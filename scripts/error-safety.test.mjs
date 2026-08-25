@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { safeErrorPayload } from "./[...path].mjs";
-import { nodeRequestId } from "./error-safety.mjs";
+import { safeErrorPayload } from "../api/[...path].mjs";
+import { nodeRequestId } from "../api/_error-safety.mjs";
 
 test("accepts only a safe inbound request id", () => {
   assert.equal(nodeRequestId({ headers: { "x-request-id": "request-safe-1234" } }), "request-safe-1234");

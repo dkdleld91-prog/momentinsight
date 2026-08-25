@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { writeWebResponse } from "./response-adapter.mjs";
+import { writeWebResponse } from "../api/_response-adapter.mjs";
 
 function nodeResponse() {
   const headers = new Map();

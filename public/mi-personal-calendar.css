@@ -1709,6 +1709,49 @@ button.mi-cal-metric:hover {
   color: var(--mi-cal-muted);
 }
 
+/* 구글 연결 전 레일. 대표실에는 없는 두 줄이지만, 같은 행 골격(.mi-cal-rail-item)을 써서
+   연결 전후로 레일 안의 줄 높이·정렬이 달라지지 않게 한다. */
+.mi-cal-rail-item.is-static {
+  cursor: default;
+}
+
+.mi-cal-rail-item.is-static .mi-cal-rail-box {
+  background: var(--mi-cal-color, var(--mi-cal-accent));
+}
+
+.mi-cal-rail-item.is-static .mi-cal-rail-box::after {
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 3px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: rotate(45deg);
+}
+
+.mi-cal-rail-connect {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--mi-cal-accent);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.mi-cal-rail-connect:hover:not(:disabled),
+.mi-cal-rail-connect:focus-visible {
+  background: var(--mi-cal-soft);
+  outline: none;
+}
+
 .mi-cal-rail-tag {
   flex: 0 0 auto;
   padding: 2px 5px;

@@ -18,7 +18,7 @@
 
   // 마크업과 CSS 가 같이 바뀌었다. 버전을 올려 두지 않으면 캐시된 옛 마크업이
   // 새 CSS 와 섞여 화면이 반쯤 무너진 상태로 뜬다.
-  var VERSION = "cal-v4-20260826";
+  var VERSION = "cal-v5-20260826";
 
   // 일정이 하나도 없는 달은 42칸짜리 빈 흰 격자가 된다. 대표실 배치를 따르면서
   // 캘린더가 화면 한참 아래로 내려갔기 때문에, 그 빈 격자가 "고장" 처럼 읽힌다.
@@ -37,6 +37,27 @@
   var ASSISTANT_ORG_NOTE = "비서실장 아래 5개 담당 조직이 연결됩니다. 직원을 누르면 해당 담당의 일정 명령 예시가 입력됩니다.";
   var ASSISTANT_OFFICE_IDLE_STATE = "조직 연결 대기";
   var ASSISTANT_OFFICE_IDLE_NOTE = "화면 시각화이며 독립 AI 직원의 자동 실행 상태는 아닙니다.";
+
+  // 실장 패널 머리말·초안 입력. 대표실 assistantViewHtml 의 같은 자리 문장이다.
+  // 대표실 문장에만 있는 "광고주 전환" 은 뺀다 — 개인 화면에는 계정을 넘는 전환이 없다.
+  var ASSISTANT_PANEL_TITLE = "실장 명령 · 대화";
+  var ASSISTANT_PANEL_NOTE = "등록·완료·브리핑을 말하거나 입력하세요. 날짜가 확인되는 문장만 초안으로 만들고, 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.";
+  var ASSISTANT_DRAFT_PLACEHOLDER = "예: 내일 오후 2시 광고주 미팅 1시간 등록해줘\n여러 일정은 줄을 나눠 입력할 수 있습니다.";
+  var ASSISTANT_DRAFT_BUTTON = "초안 만들기";
+  var ASSISTANT_RESULTS_EMPTY = "만든 초안을 확인한 뒤 항목별로 일정표에 등록할 수 있습니다.";
+  var ASSISTANT_DRAFT_EMPTY = "등록 가능한 일정 문장을 찾지 못했습니다.";
+
+  // 업무 운영 머리말. 대표실 admin.html <header class="mi-head mi-work-head"> 와 같은 문장이다.
+  // 광고주 범위 입력(data-work-owner-scope)은 owner 전용이라 옮기지 않는다.
+  var WORK_HEAD_KICKER = "업무 운영";
+  var WORK_HEAD_HEADLINE = "일정과 실행 업무를 한곳에서 관리합니다.";
+  var WORK_HEAD_SUB = "내부 업무 일정을 한곳에서 관리합니다.";
+
+  // 구글이 연결되지 않았을 때도 왼쪽 레일은 사라지지 않는다. 대표실과 같은 3단
+  // 배치(레일 · 달력 · 가까운 일정)를 두 상태 모두에서 지키기 위해서다.
+  var RAIL_LOCAL_NAME = "내 캘린더";
+  var RAIL_LOCAL_NOTE = "로컬";
+  var RAIL_CONNECT_LABEL = "구글 캘린더 연결";
 
   // 조직도는 이 표에서만 그린다. 손으로 6번 적으면 한 칸만 고쳐지는 날이 온다.
   var ASSISTANT_STATIONS = [
@@ -70,10 +91,12 @@
     keyword: "모레 일정 알려줘"
   };
 
+  // 대표실 assistantViewHtml 의 data-owner-assistant-example 세 칩을 글자 그대로 옮겼다.
+  // (회의 메모 칩의 &#10; 은 실제 줄바꿈이다 — 여러 줄 입력이 곧 여러 초안이 된다.)
   var ASSISTANT_EXAMPLE_CHIPS = [
-    { label: "오늘 브리핑", command: "오늘 일정 알려줘" },
-    { label: "다음 주 브리핑", command: "다음 주 일정 알려줘" },
-    { label: "완료 예시", command: "광고주 미팅 완료로 해줘" }
+    { label: "미팅 예시", command: "내일 오후 2시 광고주 미팅 1시간 등록해줘" },
+    { label: "보고서 예시", command: "다음 주 월요일 오전 10시 월간 보고서 최종 검수" },
+    { label: "회의 메모 예시", command: "회의 메모\n- 8월 21일 오후 3시 소재 시안 검토\n- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅" }
   ];
 
   // 구글 일정 색 11개. 16진값·한국어 이름·순서는 src/server/google-calendar-client.mjs 의
@@ -272,14 +295,21 @@
   // 아래 표·정규식은 admin.html 및 src/server/handlers/owner-tool-api.mjs 와 한 벌이어야
   // 하므로 scripts/personal-calendar-ui.test.mjs 가 두 원본을 읽어 대조한다.
   //
+  // 옮겨 온 것 — 대표실과 같은 화면이 되도록 v2 에서 마저 가져왔다.
+  //   · 일정 초안 생성: 원본 파서(owner-tool-api.mjs parseOwnerAssistantDrafts)는 잠긴 파일이라
+  //     고치지 않고, 같은 규칙을 이 파일 안(parseAssistantDrafts)에 옮겨 적었다. 대표실 도구
+  //     경로(/api/owner/tool)는 여기서 부를 수 없으므로 해석은 브라우저에서 끝내고, 쓰기만
+  //     이미 있는 /api/my/work-items 로 간다 — 새 서버 경로를 만들지 않는다.
+  //   · 굿모닝 자동 브리핑(maybeRunOwnerAssistantGoodMorning): 저장 키만 계정 태그로 나눴다.
+  //   · 명령 예시 칩 3개: 대표실 문자열 그대로.
+  //
   // 일부러 옮기지 않은 것 — 개인 공간에는 계정 경계를 넘는 개념이 없어야 하기 때문이다.
   //   · 광고주 스코프 전환(parseOwnerAssistantScopeCommand · switchOwnerAssistantScope ·
   //     loadOwnerAssistantClients): 다른 계정 일정으로 갈아타는 기능이라 격리 보장 자체와 충돌한다.
-  //   · 굿모닝 자동 브리핑(maybeRunOwnerAssistantGoodMorning 과 그 localStorage 플래그): v1 범위 밖.
-  //   · 일정 초안 생성(assistant-draft): 대표실 전용 도구 경로에만 있어 여기서는 부를 수 없다.
+  //   · 광고주 범위 입력(data-work-owner-scope)과 owner 표식(owner canary · mml93-a01).
   //   · 비서실 조직도: 대표실의 #mi-admin .mi-assistant-office 규칙·동작은 .mi-cal-office
   //     네임스페이스로 옮겨 적었다. 옮기지 않은 것은 owner 전용 훅(data-owner-assistant-*)과
-  //     범위 전환·초안 파서·굿모닝이다 — 계정 경계를 넘거나 여기 없는 서버 경로를 부른다.
+  //     범위 전환이다 — 계정 경계를 넘거나 여기 없는 서버 경로를 부른다.
   //   · 운영 데이터를 읽는 그 어떤 것도 없다.
   var ASSISTANT_BRIEFING_INTENT = /브리핑|(?:일정|업무)(?:들)?\s*(?:을|를|이|은)?\s*(?:좀|한\s*번|다시|간단히|짧게)?\s*(?:알려|읽어|들려|말해|정리해)/u;
 
@@ -315,6 +345,208 @@
     var query = match ? String(match[1] || "").replace(/\s+/gu, " ").trim() : "";
     if (!query || query.indexOf("완료") !== -1) return "";
     return query.slice(0, 120);
+  }
+
+  // ── 일정 초안 파서 ──────────────────────────────────────
+  // 원본은 src/server/handlers/owner-tool-api.mjs 의 parseOwnerAssistantDrafts 이며
+  // 그 파일은 잠겨 있다(고치지 않는다). 개인 화면에는 대표실 도구 경로(/api/owner/tool)가
+  // 없으므로, 같은 규칙을 브라우저로 옮겨 적고 새 서버 경로를 만들지 않는다.
+  // 두 구현이 갈리면 같은 문장이 계정마다 다른 초안이 된다 — 그래서
+  // scripts/personal-calendar-ui.test.mjs 가 원본을 불러 고정 입력 묶음으로 대조한다.
+  var DRAFT_MAX_INPUT = 6000;
+  var DRAFT_MAX_SEGMENTS = 12;
+  var DRAFT_KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+  var DRAFT_WEEKDAYS = { "월": 0, "화": 1, "수": 2, "목": 3, "금": 4, "토": 5, "일": 6 };
+
+  function draftPad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function draftKstParts(now) {
+    var shifted = new Date(now.getTime() + DRAFT_KST_OFFSET_MS);
+    return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+  }
+
+  function draftAddDays(parts, days) {
+    var next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+    return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() };
+  }
+
+  function draftValidDate(parts) {
+    var value = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+    return value.getUTCFullYear() === parts.year
+      && value.getUTCMonth() + 1 === parts.month
+      && value.getUTCDate() === parts.day;
+  }
+
+  function draftDateParts(text, now) {
+    var base = draftKstParts(now);
+    var iso = text.match(/\b(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})\b/u);
+    if (iso) {
+      var isoParts = { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]) };
+      return draftValidDate(isoParts) ? isoParts : null;
+    }
+    var korean = text.match(/\b(\d{1,2})월\s*(\d{1,2})일\b/u);
+    if (korean) {
+      var koreanParts = { year: base.year, month: Number(korean[1]), day: Number(korean[2]) };
+      return draftValidDate(koreanParts) ? koreanParts : null;
+    }
+    if (/모레/u.test(text)) return draftAddDays(base, 2);
+    if (/내일/u.test(text)) return draftAddDays(base, 1);
+    if (/오늘/u.test(text)) return base;
+    var weekday = text.match(/(?:(이번\s*주|다음\s*주)\s*)?([월화수목금토일])요일/u);
+    if (!weekday) return null;
+    var baseDate = new Date(Date.UTC(base.year, base.month - 1, base.day));
+    var baseMondayIndex = (baseDate.getUTCDay() + 6) % 7;
+    var targetIndex = DRAFT_WEEKDAYS[weekday[2]];
+    if (weekday[1]) {
+      var weekOffset = /다음/u.test(weekday[1]) ? 7 : 0;
+      return draftAddDays(base, -baseMondayIndex + weekOffset + targetIndex);
+    }
+    var distance = targetIndex - baseMondayIndex;
+    if (distance < 0) distance += 7;
+    return draftAddDays(base, distance);
+  }
+
+  function draftTimeParts(text) {
+    var clock = text.match(/(?:^|\s)([01]?\d|2[0-3]):([0-5]\d)(?=\s|$|[,.])/u);
+    if (clock) return { hour: Number(clock[1]), minute: Number(clock[2]), explicit: true };
+    var korean = text.match(/(?:(오전|오후)\s*)?(\d{1,2})시(?:\s*(\d{1,2})분)?/u);
+    if (!korean) return { hour: 9, minute: 0, explicit: false };
+    var hour = Number(korean[2]);
+    var minute = Number(korean[3] || 0);
+    if (hour > 23 || minute > 59 || (korean[1] && hour > 12)) return null;
+    if (korean[1] === "오후" && hour < 12) hour += 12;
+    if (korean[1] === "오전" && hour === 12) hour = 0;
+    return { hour: hour, minute: minute, explicit: true };
+  }
+
+  function draftIso(parts, time) {
+    return new Date(parts.year + "-" + draftPad2(parts.month) + "-" + draftPad2(parts.day) +
+      "T" + draftPad2(time.hour) + ":" + draftPad2(time.minute) + ":00+09:00").toISOString();
+  }
+
+  function draftScheduleType(text) {
+    var rules = [
+      ["meeting", /미팅|회의|통화|상담/u],
+      ["report_due", /보고서|리포트|제출/u],
+      ["shooting", /촬영/u],
+      ["creative", /소재|디자인|배너|영상\s*제작/u],
+      ["content_upload", /콘텐츠\s*업로드|게시|발행/u],
+      ["distribution", /배포|블로그|카페/u],
+      ["review", /리뷰/u],
+      ["promotion", /프로모션|행사|할인/u],
+      ["keyword", /키워드|SEO|검색/u],
+      ["ad_setup", /광고|캠페인|세팅/u]
+    ];
+    for (var index = 0; index < rules.length; index += 1) {
+      if (rules[index][1].test(text)) return rules[index][0];
+    }
+    return "ad_setup";
+  }
+
+  function draftTitle(text) {
+    var cleaned = String(text || "")
+      .replace(/^(?:[-*•]|\d+[.)])\s*/u, "")
+      .replace(/\b20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}\b|\b\d{1,2}월\s*\d{1,2}일\b/gu, " ")
+      .replace(/(?:이번\s*주|다음\s*주)?\s*[월화수목금토일]요일|오늘|내일|모레/gu, " ")
+      .replace(/(?:오전|오후)?\s*\d{1,2}시(?!간)(?:\s*\d{1,2}분)?|(?:^|\s)(?:[01]?\d|2[0-3]):[0-5]\d(?=\s|$|[,.])/gu, " ")
+      .replace(/\d{1,2}시간|\d{1,3}분/gu, " ")
+      .replace(/(?:담당|담당자)\s*[:：]\s*[^,|/]{1,60}/gu, " ")
+      .replace(/^회의\s*메모\s*[:：-]?/u, "")
+      .replace(/(?:일정(?:에)?\s*)?(?:등록|추가)(?:해\s*줘|해주세요|해줘|해요)?[.!?]?$/u, "")
+      .replace(/\s+/gu, " ")
+      .trim();
+    return cleaned.slice(0, 120);
+  }
+
+  function draftFromSegment(segment, now) {
+    var date = draftDateParts(segment, now);
+    var time = draftTimeParts(segment);
+    if (!date || !time) return null;
+    var startsAt = draftIso(date, time);
+    var hoursMatch = segment.match(/(\d{1,2})시간/u);
+    var durationHours = Math.min(12, Math.max(0, Number((hoursMatch && hoursMatch[1]) || 0)));
+    var minutesMatch = segment.match(/(?:소요\s*(\d{1,3})분|(\d{1,3})분\s*동안)/u);
+    var minutesValue = 0;
+    if (minutesMatch) {
+      for (var index = 1; index < minutesMatch.length; index += 1) {
+        if (minutesMatch[index]) { minutesValue = Number(minutesMatch[index]); break; }
+      }
+    }
+    var durationMinutes = Math.min(720, Math.max(0, minutesValue));
+    var durationMs = (durationHours * 60 + durationMinutes || 60) * 60 * 1000;
+    var title = draftTitle(segment);
+    if (!title) return null;
+    var assigneeMatch = segment.match(/(?:담당|담당자)\s*[:：]\s*([^,|/]{1,60})/u);
+    var assignee = assigneeMatch && assigneeMatch[1] ? String(assigneeMatch[1]).trim() : "";
+    return {
+      title: title,
+      scheduleType: draftScheduleType(segment),
+      status: "planned",
+      priority: /긴급|최우선|중요/u.test(segment) ? "high" : "medium",
+      startsAt: startsAt,
+      endsAt: new Date(new Date(startsAt).getTime() + durationMs).toISOString(),
+      assigneeName: assignee.slice(0, 60),
+      internalNote: ("실장 초안 원문: " + segment).slice(0, 4000),
+      isAllDay: !time.explicit,
+      visibility: "internal",
+      publicTitle: "",
+      publicComment: ""
+    };
+  }
+
+  function parseAssistantDrafts(value, options) {
+    var settings = options || {};
+    var prompt = String(value == null ? "" : value).trim();
+    if (!prompt || prompt.length > DRAFT_MAX_INPUT) {
+      return { ok: false, message: prompt ? "입력은 6,000자 이하로 작성해주세요." : "일정 또는 회의 메모를 입력해주세요." };
+    }
+    // 원본은 `options.now instanceof Date` 를 쓴다. 여기서는 같은 판정을 realm 을 타지 않는
+    // 형태로 적는다 — 드리프트 테스트가 이 파일을 vm 으로 올려 다른 realm 의 Date 를 넘기므로,
+    // instanceof 면 그 시각이 조용히 무시되고 두 구현이 다른 날짜를 뱉는다.
+    var candidate = settings.now;
+    var usable = Object.prototype.toString.call(candidate) === "[object Date]" && !isNaN(candidate.getTime());
+    var now = usable ? candidate : new Date();
+    var segments = prompt
+      .split(/\n+|(?<=[.!?])\s+(?=(?:오늘|내일|모레|이번\s*주|다음\s*주|20\d{2}[-/.]|\d{1,2}월))/u)
+      .map(function (item) { return item.trim(); })
+      .filter(Boolean)
+      .slice(0, DRAFT_MAX_SEGMENTS);
+    var drafts = [];
+    var completions = [];
+    var unresolved = [];
+    segments.forEach(function (segment) {
+      var draft = draftFromSegment(segment, now);
+      if (draft) { drafts.push(draft); return; }
+      var completionQuery = parseAssistantCompletion(segment);
+      if (completionQuery) { completions.push({ query: completionQuery, source: segment.slice(0, 500) }); return; }
+      unresolved.push(segment.slice(0, 500));
+    });
+    return {
+      ok: true,
+      source: "deterministic-private-v1",
+      generatedAt: now.toISOString(),
+      drafts: drafts,
+      completions: completions,
+      unresolved: unresolved
+    };
+  }
+
+  // ── 굿모닝 브리핑 ───────────────────────────────────────
+  // 대표실 admin.html 의 readOwnerAssistantGoodMorningStore / shouldRun… 을 옮겼다.
+  // 다른 점은 저장 키뿐이다: 한 브라우저에서 계정을 번갈아 쓰면 공용 키가 서로의
+  // 아침 인사를 물려받으므로, 상시 호출 토글과 같이 계정 태그로 네임스페이스를 나눈다.
+  function goodMorningKeys(accountTag) {
+    var tag = String(accountTag == null ? "" : accountTag).trim();
+    if (!tag) return null;
+    return { flag: "mi-personal-assistant-goodmorning:" + tag, date: "mi-personal-assistant-goodmorning-date:" + tag };
+  }
+
+  function shouldRunGoodMorning(store, todayKey) {
+    if (!store || store.flag === "off") return false;
+    if (store.lastDate === todayKey) return false;
+    return true;
   }
 
   // 대표실은 workDateKey 를 썼다. 여기서는 이 파일의 dateKey 를 그대로 쓴다.
@@ -448,7 +680,7 @@
       '<div class="mi-cal-assistant-grid">',
       '<article class="mi-cal-panel-card mi-cal-assistant" data-cal-assistant aria-label="실장 비서">',
       '<div class="mi-cal-panel-head">',
-      '<div><h2>실장 명령 · 대화</h2><p>브리핑·완료를 말하거나 입력하세요. 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.</p></div>',
+      '<div><h2>' + escapeHtml(ASSISTANT_PANEL_TITLE) + '</h2><p>' + escapeHtml(ASSISTANT_PANEL_NOTE) + '</p></div>',
       '<div class="mi-cal-panel-tools"><button class="mi-cal-link-button" type="button" data-cal-assistant-refresh>새로고침</button><span class="mi-cal-badge">대화만 외부 AI</span></div>',
       '</div>',
       '<div class="mi-cal-assistant-chips">',
@@ -463,14 +695,16 @@
       '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-read aria-label="브리핑 소리로 듣기"><span aria-hidden="true">🔊</span><span>브리핑 읽기</span></button>',
       '<span class="mi-cal-assistant-voice-status" data-cal-assistant-voice-status aria-live="polite">‘실장’이라고 부른 뒤 명령을 말하거나, 아래 입력창에 그대로 적어주세요.</span>',
       '</div>',
-      '<textarea class="mi-cal-input mi-cal-assistant-input" data-cal-assistant-input maxlength="2000" rows="2" aria-label="실장에게 보낼 명령" placeholder="예: 다음 주 일정 알려줘 · 광고주 미팅 완료로 해줘"></textarea>',
-      // 대표실은 이 자리에 "초안은 모두 내부 비공개" 를 적는다. 개인 화면에는
-      // 초안 경로가 없으므로, 대신 이 화면의 유일한 약속(내 계정 일정만 본다)을 적는다.
-      // 아래 상태줄과 같은 문장을 두 번 쓰지 않는다 — 같은 말이 두 줄이면 둘 다 안 읽힌다.
-      '<div class="mi-cal-assistant-actions"><small>내 계정 일정만 보고 처리합니다. 다른 계정의 일정은 보지 않습니다.</small>',
-      '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-send>보내기</button></div>',
-      '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">브리핑과 완료 처리는 내 일정에서 바로 하고, 자유 대화만 실장 AI로 전달합니다.</div>',
-      '<div class="mi-cal-assistant-results" data-cal-assistant-results><div class="mi-cal-assistant-empty">실장에게 오늘 일정을 물어보세요.</div></div>',
+      // 대표실과 같은 한 칸 입력이다. 이 입력 하나가 초안·브리핑·완료·대화를 모두 받는다.
+      '<textarea class="mi-cal-input mi-cal-assistant-input" data-cal-assistant-input maxlength="6000" rows="2" aria-label="실장에게 보낼 명령" placeholder="' +
+        escapeHtml(ASSISTANT_DRAFT_PLACEHOLDER) + '"></textarea>',
+      // 대표실은 이 자리에 "초안은 모두 내부 비공개" 를 적는다. 개인 화면에는 광고주 공개
+      // 개념이 없으므로, 대신 이 화면의 유일한 약속(내 계정 일정만 본다)을 적는다.
+      '<div class="mi-cal-assistant-actions"><small>초안은 모두 내 계정 안에서만 만들어집니다. 다른 계정의 일정은 보지 않습니다.</small>',
+      '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-draft>' + escapeHtml(ASSISTANT_DRAFT_BUTTON) + '</button></div>',
+      '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">일정 초안 해석은 이 화면의 규칙으로 처리합니다. 실장과의 자유 대화만 실장 AI로 전달되며 학습에 사용되지 않습니다.</div>',
+      '<div class="mi-cal-assistant-results" data-cal-assistant-results><div class="mi-cal-assistant-empty">' +
+        escapeHtml(ASSISTANT_RESULTS_EMPTY) + '</div></div>',
       '<div class="mi-cal-assistant-briefing" data-cal-assistant-briefing><div class="mi-cal-assistant-agenda" data-cal-assistant-agenda></div></div>',
       '</article>',
       '</div>',
@@ -479,9 +713,9 @@
       '<section class="mi-cal-work">',
       '<div class="mi-cal-work-head">',
       '<div class="mi-cal-work-head-copy">',
-      '<span class="mi-cal-kicker">MY CALENDAR</span>',
-      '<h1>내 캘린더</h1>',
-      '<p>나만 보는 일정 공간입니다. 구글 캘린더를 연결하면 양방향으로 동기화됩니다.</p>',
+      '<span class="mi-cal-kicker">' + escapeHtml(WORK_HEAD_KICKER) + '</span>',
+      '<h1>' + escapeHtml(WORK_HEAD_HEADLINE) + '</h1>',
+      '<p>' + escapeHtml(WORK_HEAD_SUB) + '</p>',
       '</div>',
       '<div class="mi-cal-work-head-actions">',
       '<button class="mi-cal-drawer" type="button" data-cal-rail-drawer aria-expanded="false" aria-controls="mi-cal-rail" hidden>캘린더</button>',
@@ -1244,6 +1478,25 @@
         escapeHtml(title) + '</button><div class="mi-cal-rail-rows">' + rows + "</div></div>";
     }
 
+    // 연결 전 레일. 대표실과 같은 그룹 머리("내 캘린더") 아래에 이 화면이 실제로
+    // 그리고 있는 로컬 일정 한 줄과, 조용한 연결 안내 한 줄만 둔다.
+    function railLocalGroupHtml() {
+      return '<div class="mi-cal-rail-section">' +
+        '<button type="button" class="mi-cal-rail-group" data-cal-rail-group="own" aria-expanded="true">' +
+        '<span class="mi-cal-rail-chevron" aria-hidden="true">⌄</span>내 캘린더</button>' +
+        '<div class="mi-cal-rail-rows">' +
+        '<div class="mi-cal-rail-row">' +
+        '<span class="mi-cal-rail-item is-static" data-cal-rail-static>' +
+        '<span class="mi-cal-rail-box" aria-hidden="true"></span>' +
+        '<span class="mi-cal-rail-name">' + escapeHtml(RAIL_LOCAL_NAME) + '</span>' +
+        '<span class="mi-cal-rail-tag">' + escapeHtml(RAIL_LOCAL_NOTE) + '</span>' +
+        '</span></div>' +
+        '<div class="mi-cal-rail-row">' +
+        '<button type="button" class="mi-cal-rail-connect" data-cal-rail-connect>＋ ' + escapeHtml(RAIL_CONNECT_LABEL) + '</button>' +
+        '</div>' +
+        '</div></div>';
+    }
+
     function renderRail() {
       var body = el("[data-cal-body]");
       var rail = el("[data-cal-rail]");
@@ -1252,18 +1505,21 @@
       var newButton = el("[data-cal-rail-new]");
       if (!rail || !list) return;
       var entries = Array.isArray(calendarCatalog) ? calendarCatalog : [];
+      // 구글이 연결되지 않아도 레일은 접지 않는다. 접으면 데스크톱에서 달력이 전체 폭으로
+      // 퍼지고 가까운 일정이 아래로 떨어져, 연결 전후로 화면 구조가 통째로 달라진다.
+      // 대표실은 두 상태 모두 3단(레일 · 달력 · 가까운 일정)이므로 여기도 그렇게 둔다.
       if (!entries.length) {
-        list.innerHTML = "";
-        rail.hidden = true;
+        list.innerHTML = railLocalGroupHtml();
+        rail.hidden = false;
         closeAclPanel();
-        if (drawer) {
-          drawer.hidden = true;
-          drawer.setAttribute("aria-expanded", "false");
-        }
+        if (drawer) drawer.hidden = false;
         if (body) {
-          body.classList.remove("has-rail");
+          body.classList.add("has-rail");
           body.classList.remove("is-rail-open");
         }
+        if (newButton) newButton.hidden = true;
+        setNewCalendarForm(false);
+        syncRailBusy();
         return;
       }
       var own = entries.filter(function (entry) { return !entry || entry.group !== "other"; })
@@ -2643,6 +2899,9 @@
       if (gloginLink) { startLoginLink(gloginLink); return; }
       var gloginUnlink = event.target.closest("[data-cal-glogin-unlink]");
       if (gloginUnlink) { unlinkLogin(gloginUnlink); return; }
+      // 레일 안의 연결 안내도 위 배너의 연결 버튼과 같은 길로 간다(새 경로를 만들지 않는다).
+      var railConnect = event.target.closest("[data-cal-rail-connect]");
+      if (railConnect) { startCalendarAuth(railConnect); return; }
       var gcalConnect = event.target.closest("[data-cal-gcal-connect]");
       if (gcalConnect) { startCalendarAuth(gcalConnect); return; }
       var gcalDisconnect = event.target.closest("[data-cal-gcal-disconnect]");
@@ -3059,13 +3318,15 @@
       return briefing;
     }
 
-    // 브리핑·완료는 서버 대화 없이도 돌아간다. 그래서 대화가 꺼져 있어도 이 둘은 막지 않는다.
+    // 브리핑·완료·초안은 서버 대화 없이도 돌아간다. 그래서 대화가 꺼져 있어도 막지 않는다.
     function assistantLocalIntent(text) {
-      return assistantBriefingIntent(text) || Boolean(parseAssistantCompletion(text));
+      if (assistantBriefingIntent(text) || parseAssistantCompletion(text)) return true;
+      var parsed = parseAssistantDrafts(text);
+      return parsed.ok === true && (parsed.drafts.length > 0 || parsed.completions.length > 0);
     }
 
     function syncAssistantControls() {
-      var sendButton = el("[data-cal-assistant-send]");
+      var sendButton = el("[data-cal-assistant-draft]");
       if (!sendButton) return;
       var text = String(value("[data-cal-assistant-input]") || "").trim();
       sendButton.disabled = !assistantChatReady && !assistantLocalIntent(text);
@@ -3198,32 +3459,8 @@
       while (results.children.length > 6) results.removeChild(results.lastElementChild);
     }
 
-    async function runAssistantCompletion(query) {
-      var targets = matchAssistantCompletionTargets(query);
-      if (!targets.length) return setAssistantStatus("‘" + query + "’와 일치하는 미완료 업무를 찾지 못했습니다.", "warn");
-      if (targets.length > 1) {
-        return setAssistantStatus("‘" + query + "’는 여러 업무와 일치합니다: " +
-          targets.slice(0, 3).map(function (item) { return item.title; }).join(", ") +
-          ". 더 정확한 제목으로 말씀해주세요.", "warn");
-      }
-      var target = targets[0];
-      if (!confirmAssistantComplete(target)) return setAssistantStatus("‘" + (target.title || query) + "’ 완료 처리를 취소했습니다.", "warn");
-      setAssistantStatus("업무를 완료 처리하는 중입니다.", "");
-      try {
-        var payload = await patchAssistantComplete(target);
-        await loadItems();
-        if (destroyed) return;
-        var spoken = payload && payload.unchanged ? "이미 완료된 업무였습니다." : "‘" + (target.title || query) + "’ 업무를 완료 처리했습니다.";
-        setAssistantStatus(spoken, "ok");
-        speakAssistantText(spoken);
-      } catch (error) {
-        if (destroyed) return;
-        setAssistantStatus("‘" + (target.title || query) + "’ 완료 처리 실패: " + (error.message || "요청 오류"), "warn");
-      }
-    }
-
     async function askAssistant(message) {
-      var sendButton = el("[data-cal-assistant-send]");
+      var sendButton = el("[data-cal-assistant-draft]");
       setAssistantStatus("실장이 생각 중입니다…", "");
       if (sendButton) sendButton.disabled = true;
       try {
@@ -3254,10 +3491,118 @@
       }
     }
 
-    // 명령 라우터: 브리핑 → 완료 → 자유 대화. 앞의 둘은 이 화면 안에서 끝난다.
+    // 여러 완료 명령을 한 번에 처리한다. 대표실 runOwnerAssistantCompletions 과 같은 순서·문구다.
+    async function runAssistantCompletions(completions) {
+      var done = 0;
+      var notes = [];
+      var list = Array.isArray(completions) ? completions : [];
+      for (var index = 0; index < list.length; index += 1) {
+        if (destroyed) break;
+        var query = list[index] && list[index].query ? String(list[index].query) : "";
+        var targets = matchAssistantCompletionTargets(query);
+        if (!targets.length) { notes.push("‘" + query + "’와 일치하는 미완료 업무를 찾지 못했습니다."); continue; }
+        if (targets.length > 1) {
+          notes.push("‘" + query + "’는 여러 업무와 일치합니다: " +
+            targets.slice(0, 3).map(function (item) { return item.title; }).join(", ") + ". 더 정확한 제목으로 말씀해주세요.");
+          continue;
+        }
+        var target = targets[0];
+        if (!confirmAssistantComplete(target)) { notes.push("‘" + (target.title || query) + "’ 완료 처리를 취소했습니다."); continue; }
+        try {
+          var payload = await patchAssistantComplete(target);
+          done += 1;
+          if (payload && payload.unchanged) notes.push("‘" + target.title + "’는 이미 완료된 업무였습니다.");
+        } catch (error) {
+          notes.push("‘" + target.title + "’ 완료 처리 실패: " + (error.message || "요청 오류"));
+        }
+      }
+      if (done > 0) await loadItems().catch(function () {});
+      return { done: done, notes: notes };
+    }
+
+    // 초안 카드. 대표실 renderOwnerAssistantDrafts 를 옮긴 것이며, 등록은 사람이 카드마다
+    // 한 번 더 눌러야 일어난다(파서가 저절로 쓰기를 하지 않는다).
+    function renderAssistantDrafts(payload) {
+      var results = el("[data-cal-assistant-results]");
+      if (!results) return;
+      results.replaceChildren();
+      var drafts = Array.isArray(payload.drafts) ? payload.drafts : [];
+      var unresolved = Array.isArray(payload.unresolved) ? payload.unresolved : [];
+      if (!drafts.length && !unresolved.length) {
+        var empty = document.createElement("div");
+        empty.className = "mi-cal-assistant-empty";
+        empty.textContent = ASSISTANT_DRAFT_EMPTY;
+        results.appendChild(empty);
+      }
+      drafts.forEach(function (draft) {
+        var card = document.createElement("div");
+        card.className = "mi-cal-assistant-draft";
+        var copy = document.createElement("div");
+        copy.className = "mi-cal-assistant-draft-copy";
+        var title = document.createElement("strong");
+        title.textContent = draft.title || "일정 초안";
+        var meta = document.createElement("span");
+        meta.textContent = timeLabel(draft.startsAt) + " · " + typeLabel(draft.scheduleType) + " · 내 일정";
+        copy.append(title, meta);
+        var save = document.createElement("button");
+        save.type = "button";
+        save.className = "mi-cal-link-button is-primary";
+        save.textContent = "일정표에 등록";
+        save.addEventListener("click", async function () {
+          if (destroyed) return;
+          if (!window.confirm("내 일정으로 등록할까요?\n\n" + (draft.title || "일정 초안"))) return;
+          save.disabled = true;
+          setAssistantStatus("내 일정표에 등록하는 중입니다.", "");
+          try {
+            await requestWorkItems("POST", draftItemPayload(draft));
+            if (destroyed) return;
+            card.classList.add("is-saved");
+            save.textContent = "등록 완료";
+            setAssistantStatus("확인한 초안을 내 일정으로 등록했습니다.", "ok");
+            await loadItems();
+          } catch (error) {
+            save.disabled = false;
+            setAssistantStatus(error.message || "일정 등록에 실패했습니다.", "warn");
+          }
+        });
+        card.append(copy, save);
+        results.appendChild(card);
+      });
+      if (unresolved.length) {
+        var box = document.createElement("div");
+        box.className = "mi-cal-assistant-unresolved";
+        var heading = document.createElement("strong");
+        heading.textContent = "날짜 확인 필요 " + unresolved.length + "건";
+        box.appendChild(heading);
+        unresolved.forEach(function (line) {
+          var row = document.createElement("span");
+          row.textContent = line;
+          box.appendChild(row);
+        });
+        results.appendChild(box);
+      }
+    }
+
+    // 초안은 대표실 표(visibility·publicTitle 등)를 그대로 갖고 있다. 개인 화면의
+    // 쓰기 경로는 그 중 이 화면이 실제로 쓰는 칸만 보낸다 — 여분을 흘리지 않는다.
+    function draftItemPayload(draft) {
+      return {
+        title: draft.title,
+        scheduleType: draft.scheduleType,
+        status: draft.status,
+        priority: draft.priority,
+        startsAt: draft.startsAt,
+        endsAt: draft.endsAt,
+        isAllDay: draft.isAllDay === true,
+        internalNote: draft.internalNote
+      };
+    }
+
+    // 명령 라우터: 브리핑 → 초안·완료 → 자유 대화. 대표실 draftButton 핸들러와 같은 순서다.
+    // 다른 점은 스코프 전환 단계가 통째로 없다는 것뿐이다(계정을 넘는 전환이 없다).
     async function runAssistantPrompt(text) {
       var prompt = String(text || "").trim();
-      if (!prompt) return setAssistantStatus("실장에게 전할 내용을 입력해주세요.", "warn");
+      if (!prompt) return setAssistantStatus("일정 또는 회의 메모를 입력해주세요.", "warn");
       if (assistantBriefingIntent(prompt)) {
         assistantBriefingRange = parseAssistantBriefingRange(prompt);
         setValue("[data-cal-assistant-input]", "");
@@ -3266,16 +3611,88 @@
         speakAssistantBriefing(assistantBriefingRange);
         return setAssistantStatus((ASSISTANT_RANGE_LABELS[assistantBriefingRange] || "오늘") + " 일정을 브리핑합니다.", "ok");
       }
-      var completionQuery = parseAssistantCompletion(prompt);
-      if (completionQuery) {
+      var parsed = parseAssistantDrafts(prompt);
+      if (!parsed.ok) return setAssistantStatus(parsed.message || "초안을 만들지 못했습니다.", "warn");
+      // 날짜가 하나도 안 잡힌 한 문장은 명령이 아니라 말이다 — 대표실처럼 대화로 넘긴다.
+      if (!parsed.drafts.length && !parsed.completions.length && parsed.unresolved.length === 1 && prompt.length >= 4) {
+        if (!assistantChatReady) return setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");
         setValue("[data-cal-assistant-input]", "");
         syncAssistantControls();
-        return runAssistantCompletion(completionQuery);
+        return askAssistant(prompt);
       }
-      if (!assistantChatReady) return setAssistantStatus("실장 대화 기능이 아직 연결되지 않았습니다.", "warn");
       setValue("[data-cal-assistant-input]", "");
       syncAssistantControls();
-      return askAssistant(prompt);
+      renderAssistantDrafts(parsed);
+      var completionResult = await runAssistantCompletions(parsed.completions);
+      if (destroyed) return;
+      var statusParts = [];
+      if (parsed.drafts.length) statusParts.push(parsed.drafts.length + "건의 내 일정 초안을 만들었습니다.");
+      if (completionResult.done) statusParts.push("업무 " + completionResult.done + "건을 완료 처리했습니다.");
+      statusParts = statusParts.concat(completionResult.notes);
+      if (parsed.unresolved.length) statusParts.push("날짜 확인 필요 " + parsed.unresolved.length + "건이 있습니다.");
+      if (!statusParts.length) statusParts.push(ASSISTANT_DRAFT_EMPTY);
+      setAssistantStatus(statusParts.join(" "), parsed.drafts.length || completionResult.done ? "ok" : "warn");
+    }
+
+    // ── 굿모닝 브리핑 ─────────────────────────────────────
+    // 계정마다 오늘 첫 접속 한 번만. 저장이 막힌 브라우저(시크릿·정책)에서는
+    // 읽기가 실패하므로 조용히 끈 것으로 본다 — 매 접속마다 다시 인사하지 않는다.
+    function readGoodMorningStore() {
+      var keys = goodMorningKeys(assistantAccountTag);
+      if (!keys) return { flag: "off", lastDate: "" };
+      try {
+        return {
+          flag: window.localStorage.getItem(keys.flag) || "on",
+          lastDate: window.localStorage.getItem(keys.date) || ""
+        };
+      } catch (error) {
+        return { flag: "off", lastDate: "" };
+      }
+    }
+
+    function writeGoodMorningStore(key, value) {
+      try { window.localStorage.setItem(key, value); } catch (error) {}
+    }
+
+    function renderGoodMorningCard(message) {
+      var results = el("[data-cal-assistant-results]");
+      if (!results) return;
+      var placeholder = results.firstElementChild;
+      if (placeholder && placeholder.classList.contains("mi-cal-assistant-empty") && results.children.length === 1) results.replaceChildren();
+      var card = document.createElement("div");
+      card.className = "mi-cal-assistant-chat";
+      var label = document.createElement("span");
+      label.className = "mi-cal-assistant-chat-question";
+      label.textContent = "굿모닝 브리핑";
+      var body = document.createElement("p");
+      body.className = "mi-cal-assistant-chat-reply";
+      body.textContent = message;
+      var mute = document.createElement("button");
+      mute.type = "button";
+      mute.className = "mi-cal-link-button";
+      mute.textContent = "아침 브리핑 끄기";
+      mute.addEventListener("click", function () {
+        var keys = goodMorningKeys(assistantAccountTag);
+        if (keys) writeGoodMorningStore(keys.flag, "off");
+        mute.disabled = true;
+        setAssistantStatus("아침 브리핑을 껐습니다. 다시 켜려면 말씀해주세요.", "ok");
+      });
+      card.append(label, body, mute);
+      results.prepend(card);
+      while (results.children.length > 6) results.removeChild(results.lastElementChild);
+    }
+
+    function maybeRunGoodMorning() {
+      if (destroyed) return;
+      var keys = goodMorningKeys(assistantAccountTag);
+      if (!keys) return;
+      var todayKey = dateKey(new Date());
+      if (!shouldRunGoodMorning(readGoodMorningStore(), todayKey)) return;
+      writeGoodMorningStore(keys.date, todayKey);
+      var greeting = (new Date().getHours() < 12 ? "좋은 아침입니다" : "안녕하세요") + ". " + buildAssistantBriefingSpeech("today", visibleItems()).text;
+      renderGoodMorningCard(greeting);
+      speakAssistantText(greeting);
+      setAssistantStatus("오늘 첫 접속 굿모닝 브리핑을 전했습니다.", "ok");
     }
 
     function applyAssistantAccount() {
@@ -3306,7 +3723,7 @@
 
     function initAssistant() {
       var input = el("[data-cal-assistant-input]");
-      var sendButton = el("[data-cal-assistant-send]");
+      var sendButton = el("[data-cal-assistant-draft]");
       var micButton = el("[data-cal-assistant-mic]");
       var wakeButton = el("[data-cal-assistant-wake]");
       var readButton = el("[data-cal-assistant-read]");
@@ -3743,6 +4160,9 @@
       return loadAssistantAccount().catch(function () {});
     }).then(function () {
       if (destroyed) return;
+      // 굿모닝은 일정과 계정 태그가 모두 온 뒤에 한 번만 돈다. 태그가 없으면
+      // 저장 키를 만들 수 없으므로 maybeRunGoodMorning 안에서 조용히 그만둔다.
+      maybeRunGoodMorning();
       maybeSync("auto").catch(function () {});
     }).catch(function () {});
 
@@ -3783,6 +4203,21 @@
     ASSISTANT_AGENTS: ASSISTANT_AGENTS,
     ASSISTANT_ROLE_COMMANDS: ASSISTANT_ROLE_COMMANDS,
     ASSISTANT_EXAMPLE_CHIPS: ASSISTANT_EXAMPLE_CHIPS,
+    ASSISTANT_PANEL_TITLE: ASSISTANT_PANEL_TITLE,
+    ASSISTANT_PANEL_NOTE: ASSISTANT_PANEL_NOTE,
+    ASSISTANT_DRAFT_PLACEHOLDER: ASSISTANT_DRAFT_PLACEHOLDER,
+    ASSISTANT_DRAFT_BUTTON: ASSISTANT_DRAFT_BUTTON,
+    ASSISTANT_RESULTS_EMPTY: ASSISTANT_RESULTS_EMPTY,
+    ASSISTANT_DRAFT_EMPTY: ASSISTANT_DRAFT_EMPTY,
+    WORK_HEAD_KICKER: WORK_HEAD_KICKER,
+    WORK_HEAD_HEADLINE: WORK_HEAD_HEADLINE,
+    WORK_HEAD_SUB: WORK_HEAD_SUB,
+    RAIL_LOCAL_NAME: RAIL_LOCAL_NAME,
+    RAIL_LOCAL_NOTE: RAIL_LOCAL_NOTE,
+    RAIL_CONNECT_LABEL: RAIL_CONNECT_LABEL,
+    parseAssistantDrafts: parseAssistantDrafts,
+    goodMorningKeys: goodMorningKeys,
+    shouldRunGoodMorning: shouldRunGoodMorning,
     ASSISTANT_RANGE_LABELS: ASSISTANT_RANGE_LABELS,
     ASSISTANT_WEEKDAYS: ASSISTANT_WEEKDAYS,
     ASSISTANT_BRIEFING_INTENT: ASSISTANT_BRIEFING_INTENT,

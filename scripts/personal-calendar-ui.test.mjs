@@ -123,6 +123,9 @@ function stripCssComments(source) {
 const sharedCode = stripJsComments(sharedSource);
 const sharedStyleCode = stripCssComments(sharedStyle);
 
+// 초안 파서 비교의 기준 시각. 두 구현에 같은 값을 넘겨야 "내일·다음 주" 가 같은 날이 된다.
+const DRAFT_FIXTURE_NOW = new Date("2026-08-25T01:00:00Z");
+
 function slice(source, startMarker, endMarker) {
   const start = source.indexOf(startMarker);
   assert.notEqual(start, -1, `기준 문자열을 찾지 못했습니다: ${startMarker}`);
@@ -663,7 +666,7 @@ test("the assistant panel ships every data-cal-assistant hook and sits above the
     "data-cal-assistant-briefing",
     "data-cal-assistant-agenda",
     "data-cal-assistant-input",
-    "data-cal-assistant-send",
+    "data-cal-assistant-draft",
     "data-cal-assistant-mic",
     "data-cal-assistant-wake",
     "data-cal-assistant-read",
@@ -765,7 +768,7 @@ test("standby only fires on final recognition and turns itself off when the mic 
   assert.ok(standbyErrorBlock.includes("stopRecognition();"));
   // 호출어가 없을 때 받는 것은 브리핑·완료 문장뿐이다.
   assert.ok(sharedSource.includes("if (!assistantLocalIntent(newFinal))"));
-  assert.ok(sharedSource.includes("return assistantBriefingIntent(text) || Boolean(parseAssistantCompletion(text));"));
+  assert.ok(sharedSource.includes("if (assistantBriefingIntent(text) || parseAssistantCompletion(text)) return true;"));
 });
 
 test("the standby toggle is remembered per account, never under a shared key", () => {
@@ -813,24 +816,26 @@ test("speech is feature-detected so the panel degrades to text instead of throwi
 });
 
 test("owner-only assistant features never crossed over into the shared panel", () => {
-  // 디자인은 대표실을 그대로 옮겼지만 owner 전용 기능·표식은 하나도 넘어오지 않는다.
+  // 디자인·기능은 대표실을 그대로 옮겼지만 owner 전용 경로·표식은 하나도 넘어오지 않는다.
   // 조직도는 .mi-cal-office 네임스페이스로 다시 썼으므로 원본 선택자는 여전히 금지어다.
-  for (const forbidden of ["switchOwnerAssistantScope", "assistant-draft", "goodmorning", "mi-assistant-office", "data-owner-assistant"]) {
+  // (초안·굿모닝은 v2 에서 옮겨 왔다 — 다만 대표실 서버 경로가 아니라 이 파일 안에서 돈다.)
+  for (const forbidden of ["switchOwnerAssistantScope", "loadOwnerAssistantClients", "mi-assistant-office", "data-owner-assistant", "/api/owner/"]) {
     assert.equal(sharedCode.includes(forbidden), false, `대표실 전용 기능이 넘어왔습니다: ${forbidden}`);
   }
   // 제외 사유는 주석으로 남긴다 — "왜 없는가" 가 사라지면 다음 사람이 다시 옮겨 온다.
-  for (const noted of ["switchOwnerAssistantScope", "assistant-draft", "mi-assistant-office", "maybeRunOwnerAssistantGoodMorning"]) {
+  for (const noted of ["switchOwnerAssistantScope", "mi-assistant-office", "data-work-owner-scope"]) {
     assert.ok(sharedSource.includes(noted), `제외 사유 주석이 없습니다: ${noted}`);
   }
   // 화면에 찍히는 문구에도 owner 표식이 없어야 한다. 광고주·운영팀이 보는 화면에
   // "owner canary" 나 "mml93-a01 전용" 이 보이면 그 자체가 남의 계정 정보다.
-  for (const leak of ["owner canary", "CANARY", "mml93-a01", "총관리자 전용", "광고주 범위", "총관리자 내부 일정"]) {
+  for (const leak of ["owner canary", "CANARY", "mml93-a01", "총관리자 전용", "광고주 범위", "총관리자 내부 일정", "광고주 전환"]) {
     assert.equal(markup.includes(leak), false, `owner 전용 문구가 화면에 남았습니다: ${leak}`);
   }
-  // 범위 전환·초안 등록은 마크업에도 자리가 없다.
-  for (const hook of ["data-cal-scope-switch", "data-cal-assistant-draft", "data-cal-owner"]) {
+  // 범위 전환은 마크업에도 자리가 없다. 초안 버튼은 이제 있어야 한다.
+  for (const hook of ["data-cal-scope-switch", "data-cal-owner", "data-work-owner-client-code"]) {
     assert.equal(markup.includes(hook), false, `대표실 전용 훅이 넘어왔습니다: ${hook}`);
   }
+  assert.ok(markup.includes("data-cal-assistant-draft"), "초안 만들기 버튼이 없습니다.");
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -942,10 +947,14 @@ test("clicking a 담당 loads a command this account can actually run", () => {
     assert.ok(runnable, `담당 명령 예시가 실제로 동작하지 않습니다: ${role} · ${command}`);
     assert.equal(command.includes("등록"), false, `등록형 예시는 개인 화면에서 아무 일도 하지 않습니다: ${role}`);
   }
+  // 칩은 이제 대표실과 같은 등록형 문장이다. 눌러서 도는지는 초안 파서로 확인한다.
   for (const chip of plain(shared.ASSISTANT_EXAMPLE_CHIPS)) {
-    const runnable = shared.assistantBriefingIntent(chip.command) || Boolean(shared.parseAssistantCompletion(chip.command));
+    const parsed = shared.parseAssistantDrafts(chip.command, { now: DRAFT_FIXTURE_NOW });
+    const runnable = shared.assistantBriefingIntent(chip.command)
+      || Boolean(shared.parseAssistantCompletion(chip.command))
+      || (parsed.ok === true && parsed.drafts.length > 0);
     assert.ok(runnable, `칩 예시가 실제로 동작하지 않습니다: ${chip.command}`);
-    assert.ok(markup.includes(`data-cal-assistant-example="${chip.command}"`));
+    assert.ok(markup.includes(`data-cal-assistant-example="${shared.escapeHtml(chip.command)}"`));
   }
   assert.equal([...markup.matchAll(/data-cal-assistant-example="/g)].length, 3);
   // 조직도·칩·새로고침은 전부 on(...) 으로 묶여 destroy() 가 되돌린다.
@@ -1397,6 +1406,189 @@ test("the calendar block folds at the same breakpoints as the work section", () 
   // 900px: 캘린더 머리말이 대표실 .mi-head 처럼 한 칸으로 접힌다.
   assert.match(sharedStyleCode, /@media \(max-width: 900px\)[\s\S]{0,200}\.mi-cal-work-head\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/u);
   assert.match(adminStyleCode, /@media \(max-width: 900px\)[\s\S]*?#mi-admin \.mi-head,[\s\S]*?grid-template-columns: 1fr;/u);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 7. 대표실 전체 이식(v2) — 초안 파서 · 예시 칩 · 굿모닝 · 머리말 · 레일
+//    대표님 피드백: "개인 화면은 대표실 전체여야 한다".
+//    파서 원본(owner-tool-api.mjs parseOwnerAssistantDrafts)은 잠긴 파일이라 고치지 않고
+//    브라우저로 옮겨 적었다. 사본이라는 사실을 여기서 고정 입력 묶음으로 붙든다.
+// ─────────────────────────────────────────────────────────────
+
+// 같은 문장이 계정마다 다른 초안이 되면 안 된다. 날짜 표기·시간 표기·복수 줄·
+// 완료 명령·미해석·경계값(잘못된 날짜, 25시, 6000자 초과)을 모두 태운다.
+const DRAFT_PARITY_FIXTURES = [
+  "내일 오후 2시 광고주 미팅 1시간 등록해줘",
+  "다음 주 월요일 오전 10시 월간 보고서 최종 검수",
+  "회의 메모\n- 8월 21일 오후 3시 소재 시안 검토\n- 다음 주 금요일 오전 11시 광고주 결과 보고 미팅",
+  "오늘 09:30 키워드 순위 점검 소요 45분",
+  "모레 촬영 준비",
+  "2026-09-03 14:00 프로모션 준비 담당: 김실장",
+  "이번 주 수요일 오후 5시 콘텐츠 업로드 검수 2시간",
+  "광고주 미팅 완료로 해줘",
+  "내일 오전 11시 배너 디자인 리뷰. 다음 주 화요일 오후 4시 블로그 배포 점검",
+  "긴급 오늘 오후 6시 광고 세팅 30분 동안",
+  "그냥 인사만 해볼게요",
+  "",
+  "   ",
+  "x".repeat(6001),
+  "13월 45일 오후 2시 잘못된 날짜",
+  "내일 25시 회의",
+  "다음 주 금요일 등록해줘",
+  "- 8월 30일 리뷰 정리\n- 8월 31일 오후 1시 상담 통화 1시간\n일정 아닌 문장",
+  "오늘 일정 알려줘",
+  "2026/12/31 23:59 연말 마감 제출",
+  "내일 오후 2시 미팅\n내일 오후 3시 미팅\n내일 오후 4시 미팅\n내일 오후 5시 미팅",
+  "1) 오늘 오전 8시 조회\n2) 내일 오후 9시 30분 야근 점검",
+];
+
+test("the ported draft parser returns byte-identical results to parseOwnerAssistantDrafts", async () => {
+  const { parseOwnerAssistantDrafts } = await import("../src/server/handlers/owner-tool-api.mjs");
+  let identical = 0;
+  for (const input of DRAFT_PARITY_FIXTURES) {
+    const owner = plain(parseOwnerAssistantDrafts(input, { now: DRAFT_FIXTURE_NOW }));
+    const ported = plain(shared.parseAssistantDrafts(input, { now: DRAFT_FIXTURE_NOW }));
+    assert.deepEqual(ported, owner, `초안 파서가 갈렸습니다: ${JSON.stringify(input.slice(0, 40))}`);
+    identical += 1;
+  }
+  assert.equal(identical, DRAFT_PARITY_FIXTURES.length);
+  // 기준 시각을 넘기지 않으면 두 구현 모두 "지금" 으로 떨어진다(같은 규칙이어야 한다).
+  assert.equal(shared.parseAssistantDrafts("").ok, false);
+  assert.equal(shared.parseAssistantDrafts("").message, "일정 또는 회의 메모를 입력해주세요.");
+  assert.equal(shared.parseAssistantDrafts("x".repeat(6001)).message, "입력은 6,000자 이하로 작성해주세요.");
+  assert.equal(shared.parseAssistantDrafts("내일 오후 2시 미팅", { now: DRAFT_FIXTURE_NOW }).source, "deterministic-private-v1");
+  // 12칸 상한도 원본과 같다.
+  const many = shared.parseAssistantDrafts(Array.from({ length: 20 }, (_, index) => `내일 오후 ${(index % 9) + 1}시 회의${index}`).join("\n"), { now: DRAFT_FIXTURE_NOW });
+  assert.equal(many.drafts.length + many.completions.length + many.unresolved.length, 12);
+  // 원본 파일은 잠겨 있다 — 이 작업에서 손대지 않았음을 함께 못 박는다.
+  assert.ok(ownerToolApiSource.includes("export function parseOwnerAssistantDrafts(value, options = {}) {"));
+});
+
+test("the example chips are the 대표실 chips, string for string", async () => {
+  const ownerChips = [...ownerToolApiSource.matchAll(/data-owner-assistant-example="([^"]*)">([^<]*)</g)]
+    .map((entry) => ({ command: entry[1].replace(/&#10;/g, "\n"), label: entry[2] }));
+  assert.equal(ownerChips.length, 3, "대표실 예시 칩이 3개가 아닙니다.");
+  assert.deepEqual(plain(shared.ASSISTANT_EXAMPLE_CHIPS), ownerChips);
+  // 세 칩 모두 눌렀을 때 대표실과 똑같이 동작해야 한다. 기대값은 손으로 적지 않고
+  // 원본 파서에서 그대로 받는다 — 원본이 바뀌면 이 테스트가 같이 따라간다.
+  const { parseOwnerAssistantDrafts } = await import("../src/server/handlers/owner-tool-api.mjs");
+  for (const chip of ownerChips) {
+    const owner = plain(parseOwnerAssistantDrafts(chip.command, { now: DRAFT_FIXTURE_NOW }));
+    assert.deepEqual(plain(shared.parseAssistantDrafts(chip.command, { now: DRAFT_FIXTURE_NOW })), owner, `칩 결과가 갈렸습니다: ${chip.label}`);
+    assert.ok(owner.drafts.length >= 1, `칩이 초안을 하나도 만들지 못합니다: ${chip.label}`);
+  }
+});
+
+test("the draft input, button and panel copy match the 대표실 assistant panel", () => {
+  const ownerPanel = slice(ownerToolApiSource, '<div class="mi-assistant-panel-head"><div><h2>실장 명령 · 대화', "</article>");
+  assert.equal(shared.ASSISTANT_PANEL_TITLE, "실장 명령 · 대화");
+  assert.ok(ownerPanel.includes(shared.ASSISTANT_PANEL_TITLE));
+  // 대표실 문장에서 계정을 넘는 "광고주 전환" 만 뺀 나머지가 같아야 한다.
+  assert.ok(ownerPanel.includes("등록·완료·브리핑·광고주 전환을 말하거나 입력하세요."));
+  assert.equal(shared.ASSISTANT_PANEL_NOTE.startsWith("등록·완료·브리핑을 말하거나 입력하세요."), true);
+  const tail = "날짜가 확인되는 문장만 초안으로 만들고, 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.";
+  assert.ok(ownerPanel.includes(tail), "대표실 안내문이 바뀌었습니다.");
+  assert.ok(shared.ASSISTANT_PANEL_NOTE.endsWith(tail), "안내문 뒷부분이 대표실과 갈렸습니다.");
+  // 입력창 placeholder 와 버튼 이름은 글자 그대로.
+  assert.ok(ownerPanel.includes(shared.ASSISTANT_DRAFT_PLACEHOLDER.replace(/\n/g, "&#10;")));
+  assert.equal(shared.ASSISTANT_DRAFT_BUTTON, "초안 만들기");
+  assert.ok(ownerPanel.includes(">초안 만들기</button>"));
+  assert.ok(ownerPanel.includes(shared.ASSISTANT_RESULTS_EMPTY));
+  assert.ok(adminSource.includes(shared.ASSISTANT_DRAFT_EMPTY), "‘등록 가능한…’ 문구가 대표실과 갈렸습니다.");
+  // 입력 한 칸이 초안·브리핑·완료·대화를 모두 받는다(대표실도 한 칸이다).
+  assert.ok(markup.includes('maxlength="6000"'));
+  assert.equal([...markup.matchAll(/data-cal-assistant-input/g)].length, 1);
+  // 초안 등록은 이미 있는 개인 경로로만 간다 — 대표실 도구 경로를 부르지 않는다.
+  assert.ok(sharedCode.includes('requestWorkItems("POST", draftItemPayload(draft))'));
+  assert.equal(sharedCode.includes("/api/owner/tool"), false);
+  // 사람이 카드마다 한 번 더 확인해야 쓴다.
+  assert.ok(sharedSource.includes('window.confirm("내 일정으로 등록할까요?'));
+  assert.ok(adminSource.includes('window.confirm(targetLabel + " 일정으로 등록할까요?'));
+});
+
+test("the good-morning briefing mirrors the owner behaviour with per-account keys", () => {
+  // 판정 규칙은 대표실 shouldRunOwnerAssistantGoodMorning 과 같다.
+  assert.equal(shared.shouldRunGoodMorning({ flag: "on", lastDate: "" }, "2026-08-25"), true);
+  assert.equal(shared.shouldRunGoodMorning({ flag: "on", lastDate: "2026-08-25" }, "2026-08-25"), false);
+  assert.equal(shared.shouldRunGoodMorning({ flag: "off", lastDate: "" }, "2026-08-25"), false);
+  assert.equal(shared.shouldRunGoodMorning(null, "2026-08-25"), false);
+  assert.ok(adminSource.includes('if (!store || store.flag === "off") return false;'));
+  assert.ok(adminSource.includes("if (store.lastDate === todayKey) return false;"));
+  assert.ok(sharedSource.includes('if (!store || store.flag === "off") return false;'));
+  assert.ok(sharedSource.includes("if (store.lastDate === todayKey) return false;"));
+
+  // 저장 키는 계정마다 다르다. 공용 키로 떨어지면 한 브라우저에서 번갈아 로그인한
+  // 두 계정이 서로의 아침 인사를 물려받는다 — 그 자체가 격리 구멍이다.
+  assert.equal(shared.goodMorningKeys(""), null);
+  assert.equal(shared.goodMorningKeys(null), null);
+  assert.equal(shared.goodMorningKeys("   "), null);
+  const keys = plain(shared.goodMorningKeys("team-a1"));
+  assert.deepEqual(keys, {
+    flag: "mi-personal-assistant-goodmorning:team-a1",
+    date: "mi-personal-assistant-goodmorning-date:team-a1",
+  });
+  assert.notDeepEqual(plain(shared.goodMorningKeys("team-b2")), keys);
+  // 대표실은 계정이 하나라 공용 키를 쓴다 — 그 키가 이 파일로 넘어오면 안 된다.
+  assert.ok(adminSource.includes('"mi-owner-assistant-goodmorning"'));
+  assert.equal(sharedCode.includes("mi-owner-assistant-goodmorning"), false);
+
+  // 저장이 막힌 브라우저에서도 던지지 않는다(읽기·쓰기 모두 try 로 감싼다).
+  assert.ok(sharedSource.includes("try { window.localStorage.setItem(key, value); } catch (error) {}"));
+  assert.ok(sharedSource.includes('return { flag: "off", lastDate: "" };'));
+  // 문구·끄기 버튼은 대표실 그대로. 읽어 주기는 되면 하고 안 되면 넘어간다.
+  for (const copy of ["굿모닝 브리핑", "아침 브리핑 끄기", "아침 브리핑을 껐습니다. 다시 켜려면 말씀해주세요.", "오늘 첫 접속 굿모닝 브리핑을 전했습니다."]) {
+    assert.ok(adminSource.includes(copy), `대표실과 문구가 갈렸습니다: ${copy}`);
+    assert.ok(sharedSource.includes(copy), `굿모닝 문구가 갈렸습니다: ${copy}`);
+  }
+  assert.ok(sharedSource.includes('(new Date().getHours() < 12 ? "좋은 아침입니다" : "안녕하세요")'));
+  assert.ok(adminSource.includes('(new Date().getHours() < 12 ? "좋은 아침입니다" : "안녕하세요")'));
+  // 일정과 계정 태그가 모두 온 뒤에 한 번만 돈다.
+  assert.ok(sharedCode.includes("maybeRunGoodMorning();"));
+  assert.equal([...sharedCode.matchAll(/maybeRunGoodMorning\(\);/g)].length, 1);
+});
+
+test("the calendar section header is the 대표실 업무 운영 header minus the owner-only scope field", () => {
+  const ownerHead = slice(adminSource, '<header class="mi-head mi-work-head">', "</header>");
+  assert.ok(ownerHead.includes(`<span class="mi-kicker">${shared.WORK_HEAD_KICKER}</span>`));
+  assert.ok(ownerHead.includes(`<h1>${shared.WORK_HEAD_HEADLINE}</h1>`));
+  assert.ok(ownerHead.includes(`<p>${shared.WORK_HEAD_SUB}</p>`));
+  const calHead = slice(markup, '<div class="mi-cal-work-head">', "</div></div>");
+  assert.ok(calHead.includes(shared.WORK_HEAD_KICKER));
+  assert.ok(calHead.includes(shared.WORK_HEAD_HEADLINE));
+  assert.ok(calHead.includes(shared.WORK_HEAD_SUB));
+  assert.equal(markup.includes("MY CALENDAR"), false, "옛 개인 전용 머리말이 남아 있습니다.");
+  // 오늘·일정 추가는 그대로, 광고주 범위 입력은 넘어오지 않는다(owner 전용).
+  for (const label of [">오늘<", ">일정 추가<"]) {
+    assert.ok(ownerHead.includes(label), `대표실 버튼이 사라졌습니다: ${label}`);
+    assert.ok(markup.includes(label), `머리말 버튼이 갈렸습니다: ${label}`);
+  }
+  assert.ok(ownerHead.includes("data-work-owner-scope"), "대표실 광고주 범위 입력이 사라졌습니다(기준이 바뀌었습니다).");
+  assert.equal(markup.includes("광고주 코드 직접 입력"), false);
+  assert.equal(markup.includes("data-work-owner-scope"), false);
+});
+
+test("the rail stays on screen when google is not connected, in both states", () => {
+  // 연결 전에도 레일을 접지 않는다. 접으면 데스크톱 배치가 연결 전후로 통째로 달라진다.
+  assert.ok(sharedCode.includes("list.innerHTML = railLocalGroupHtml();"));
+  assert.ok(sharedCode.includes('body.classList.add("has-rail");'));
+  // 옛 동작(레일 숨김 + has-rail 제거)이 남아 있으면 안 된다.
+  assert.equal(sharedCode.includes('body.classList.remove("has-rail")'), false, "빈 목록에서 레일을 접는 길이 남아 있습니다.");
+  assert.equal(sharedCode.includes("rail.hidden = true;"), false, "빈 목록에서 레일을 숨기는 길이 남아 있습니다.");
+  // 연결 전 레일에는 이 화면이 실제로 그리는 로컬 일정 한 줄과 연결 안내 한 줄만 있다.
+  assert.ok(sharedCode.includes('escapeHtml(RAIL_LOCAL_NAME)'));
+  assert.equal(shared.RAIL_LOCAL_NAME, "내 캘린더");
+  assert.equal(shared.RAIL_LOCAL_NOTE, "로컬");
+  assert.equal(shared.RAIL_CONNECT_LABEL, "구글 캘린더 연결");
+  assert.ok(adminSource.includes("구글 캘린더 연결"), "대표실과 연결 문구가 갈렸습니다.");
+  // 연결 안내는 이미 있는 연결 경로로만 간다 — 새 경로를 만들지 않는다.
+  assert.ok(sharedCode.includes('event.target.closest("[data-cal-rail-connect]")'));
+  assert.ok(sharedCode.includes("startCalendarAuth(railConnect)"));
+  // 그룹 머리는 두 상태 모두 대표실과 같은 "내 캘린더" 다.
+  assert.ok(sharedCode.includes('railGroupHtml("own", "내 캘린더", own)'));
+  assert.ok(adminSource.includes('workGcalGroupHtml("own", "내 캘린더", own)'));
+  // 정적 줄은 버튼이 아니다(누를 것이 없는 줄을 누르게 두지 않는다).
+  assert.ok(sharedCode.includes('<span class="mi-cal-rail-item is-static" data-cal-rail-static>'));
+  assert.match(sharedStyleCode, /\.mi-cal-rail-item\.is-static\s*\{[^}]*cursor: default;/u);
 });
 
 test("this suite is wired into npm test", () => {

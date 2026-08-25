@@ -379,9 +379,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 25. 13:52:44
-- 기준 커밋: 5ab90fe
-- 작업트리: ?? data/ / ?? docs/drafts/
+- 마지막 자동 저장: 2026. 08. 25. 15:19:48
+- 기준 커밋: d385993
+- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/naver-shopping-cadence-transition-sql.test.mjs / ?? data/ / ?? docs/drafts/ / ?? scripts/naver-shopping-cadence-transition-sql.mjs
 <!-- autosave:end -->
 
 ## 작업 상태 기준

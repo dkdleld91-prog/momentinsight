@@ -379,9 +379,9 @@
 ## 오토세이브 상태
 
 <!-- autosave:start -->
-- 마지막 자동 저장: 2026. 08. 25. 01:51:28
-- 기준 커밋: a0f68d3
-- 작업트리: M docs/08-work-spec-autosave.md /  M docs/NEXT_ACTIONS.md /  M docs/TEST_EVIDENCE.md /  M docs/WORK_STATUS.md /  M scripts/protected-rank-features.lock.json /  M src/server/handlers/admin-api.mjs /  M src/server/handlers/google-calendar-api.mjs /  M src/server/handlers/google-calendar-api.test.mjs
+- 마지막 자동 저장: 2026. 08. 25. 13:52:44
+- 기준 커밋: 5ab90fe
+- 작업트리: ?? data/ / ?? docs/drafts/
 <!-- autosave:end -->
 
 ## 작업 상태 기준

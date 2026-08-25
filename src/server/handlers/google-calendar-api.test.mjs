@@ -2227,7 +2227,12 @@ function syncRoutes(listSpy) {
       calendar_role: "primary",
       // 토큰이 있고 오늘 이미 full 이 돌았다 → 평소라면 증분으로 떨어진다.
       sync_token: "st-1",
-      last_full_sync_at: "2026-08-23T23:59:00.000Z",
+      // 절대 시각을 박아 두면 실제 시계가 그 시각 + 24시간을 넘긴 순간부터 이
+      // 시험이 full 로 떨어진다 — Vercel 빌드가 06:20 UTC 에 그렇게 깨졌다.
+      // 상대 시각이면 어느 시각·어느 표준시에서 돌려도 "오늘 이미 full 이 돌았다"
+      // 는 전제가 그대로 성립한다. 라우트 클로저 안에서 계산해야 fixture 를 만든
+      // 시각이 아니라 실행하는 그 순간을 기준으로 잡힌다.
+      last_full_sync_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     }])],
     ["POST", CALENDAR_SYNC_REST_URL, () => restCreated()],
     ["PATCH", CALENDAR_SYNC_REST_URL, () => restCreated()],

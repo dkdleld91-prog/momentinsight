@@ -354,6 +354,23 @@ export function fullSyncIntervalMs(code, env = process.env) {
   return FULL_SYNC_INTERVAL_MS + (digest.readUInt32BE(0) % FULL_SYNC_JITTER_MS);
 }
 
+// full 승격 판정 그 자체. runOwnerCalendarSync 의 루프에서 여기로 끄집어낸
+// 이유는 판정이 함수 안에 묻혀 있으면 시험이 그 판정을 직접 겨눌 수 없기
+// 때문이다. 겨눌 수 없으면 남는 것은 실행 전체를 돌려 놓고 결과만 보는 시험뿐인데,
+// 그런 시험은 고정 시각을 박아 둔 fixture 와 실제 시계의 차이로 판정이 뒤집히므로
+// "시계가 특정 시각을 지나야만 깨지는 시험" 이 된다. 실제로 Vercel 빌드에서
+// 그렇게 깨졌다 — 로컬 17:11 UTC 에는 통과하고, 다음 날 06:20 UTC 빌드에서
+// 같은 fixture 가 full 로 떨어졌다.
+//
+// nowMs 가 이 함수의 유일한 시간 입력이다. 주변 시계를 읽지 않으므로 같은 인자면
+// 어느 시각·어느 표준시에서 불러도 같은 답이 나온다.
+export function shouldPromoteFullSync(lastFullSyncAt, nowMs, code, env = process.env) {
+  const lastFull = new Date(cleanText(lastFullSyncAt)).getTime();
+  // 값이 없거나 읽히지 않으면 full 이 한 번도 돈 적 없다고 본다 → 이번에 올린다.
+  if (!Number.isFinite(lastFull)) return true;
+  return nowMs - lastFull >= fullSyncIntervalMs(code, env);
+}
+
 function isUuid(value) {
   return UUID_PATTERN.test(cleanText(value).toLowerCase());
 }
@@ -1694,10 +1711,10 @@ export async function runOwnerCalendarSync(ctx, env, ownerCode, options = {}) {
   // incremental 은 "변경된" 이벤트만 주므로, 시간이 흘러 윈도우 안으로 들어온
   // (그러나 변경되지 않은) 이벤트는 full sync 없이는 영원히 오지 않는다.
   const results = [];
-  const fullInterval = fullSyncIntervalMs(code, env);
   for (const calendarRow of calendars) {
-    const lastFull = new Date(cleanText(calendarRow.last_full_sync_at)).getTime();
-    const stale = !Number.isFinite(lastFull) || nowMs - lastFull >= fullInterval;
+    // 판정은 shouldPromoteFullSync 하나에만 산다. 여기서 다시 계산하지 않아야
+    // 시험이 겨누는 판정과 운영이 쓰는 판정이 영원히 같은 것으로 남는다.
+    const stale = shouldPromoteFullSync(calendarRow.last_full_sync_at, nowMs, code, env);
     const mode = options.mode === "full" || stale ? "full" : "incremental";
     results.push(await syncOneCalendar(ctx, code, calendarRow, token.accessToken, {
       mode,

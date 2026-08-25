@@ -23,6 +23,8 @@ import {
 } from "../google-calendar-client.mjs";
 import {
   CALENDAR_INVITE_ROLES,
+  FULL_SYNC_INTERVAL_MS,
+  FULL_SYNC_JITTER_MS,
   MAX_CALENDAR_INVITES,
   MAX_FULL_SYNC_EVENTS,
   MAX_SYNC_CALENDARS,
@@ -37,6 +39,7 @@ import {
   disabledOptionalColumns,
   eventInWindow,
   eventIsEcho,
+  fullSyncIntervalMs,
   googleEventTimes,
   googleMirrorFields,
   hexColor,
@@ -60,6 +63,7 @@ import {
   runWithOptionalColumns,
   setOptionalColumnClock,
   setOwnerCalendarVisibility,
+  shouldPromoteFullSync,
   syncOneCalendar,
   syncWindow,
   writeRowToGoogleFirst,
@@ -2841,4 +2845,135 @@ test("a manual full run re-lists unchanged events so a legacy row gains its goog
 
   const update = opsFor(ops, "schedule_items", "update").at(-1);
   assert.deepEqual(update.values, { google_color_id: "8" }, "색 한 필드만 채운다 — 제목·시간·etag 는 건드리지 않는다");
+});
+
+// ─────────────────────────────────────────────────────────────
+// full 승격 판정 — 시계에서 떼어 놓는다
+//
+// 이 판정을 실행 전체로만 겨눌 수 있던 시절, 고정 시각(2026-08-23T23:59Z)을 박아
+// 둔 fixture 하나가 실제 시계가 그 시각 + 24시간을 넘긴 순간부터 깨졌다. 로컬
+// 17:11 UTC 에는 통과하고 다음 날 06:20 UTC Vercel 빌드에서 full 로 떨어진 것이
+// 그 결과다 — 코드가 아니라 달력이 시험을 깬 것이다.
+//
+// 그래서 여기서는 now 를 전부 못 박고, 하루 중 어느 시각에 돌려도 같은 답이
+// 나오는지를 판정 함수에 직접 묻는다. Date.now() 도 TZ 도 이 블록에 들어오지 않는다.
+// ─────────────────────────────────────────────────────────────
+
+const TEAM_CODE = "11111111-1111-4111-8111-111111111111";
+const TEAM_KEY = `team:${TEAM_CODE}`;
+const CLIENT_KEY = "client:33333333-3333-4333-8333-333333333333";
+const PROMOTION_KEYS = [OWNER, TEAM_KEY, CLIENT_KEY];
+// 자정 직후·아침·자정 직전. 하루 중 어느 자리인지가 판정을 흔들면 안 된다.
+// 06:20 은 실제로 빌드를 깨뜨린 그 시각이라 일부러 남겨 둔다.
+const PROMOTION_TIMES = [
+  "2026-08-24T00:10:00.000Z",
+  "2026-08-24T06:20:00.000Z",
+  "2026-08-24T23:50:00.000Z",
+];
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+test("the owner's full-sync interval stays exactly 24 hours with no jitter", () => {
+  assert.equal(fullSyncIntervalMs(OWNER, {}), FULL_SYNC_INTERVAL_MS, "대표님 코드에는 오프셋이 붙지 않는다");
+  // 운영 환경이 같은 코드를 명시적으로 심어도 답이 달라지면 안 된다.
+  assert.equal(fullSyncIntervalMs(OWNER, { MI_PRIMARY_AGENCY_CODE: OWNER }), FULL_SYNC_INTERVAL_MS);
+});
+
+test("the promotion rule is pure: the same arguments always give the same answer", () => {
+  const lastFull = "2026-08-23T00:00:00.000Z";
+  const now = Date.parse("2026-08-24T06:20:00.000Z");
+  for (const key of PROMOTION_KEYS) {
+    assert.equal(
+      shouldPromoteFullSync(lastFull, now, key, {}),
+      shouldPromoteFullSync(lastFull, now, key, {}),
+      `${key}: 같은 인자에는 같은 답이다`,
+    );
+    assert.equal(fullSyncIntervalMs(key, {}), fullSyncIntervalMs(key, {}), `${key}: 주기도 호출마다 흔들리지 않는다`);
+  }
+  // 읽을 수 없는 값은 "한 번도 full 이 돈 적 없다" 로 본다 → 이번에 올린다.
+  for (const missing of [null, undefined, "", "어제쯤"]) {
+    assert.equal(shouldPromoteFullSync(missing, now, OWNER, {}), true, `${String(missing)} 은 승격 쪽이다`);
+  }
+});
+
+test("promotion follows elapsed time only, never the time of day", () => {
+  for (const key of PROMOTION_KEYS) {
+    // 시간을 손으로 박지 않고 그 계정의 주기에서 뽑는다 — jitter 상수가 움직여도
+    // 이 시험은 그대로 성립한다.
+    const interval = fullSyncIntervalMs(key, {});
+    for (const iso of PROMOTION_TIMES) {
+      const now = Date.parse(iso);
+      const at = (elapsed) => new Date(now - elapsed).toISOString();
+      assert.equal(shouldPromoteFullSync(at(interval - ONE_HOUR_MS), now, key, {}), false, `${key} @ ${iso}: 창 안이면 증분`);
+      assert.equal(shouldPromoteFullSync(at(interval), now, key, {}), true, `${key} @ ${iso}: 경계는 승격 쪽이다`);
+      assert.equal(shouldPromoteFullSync(at(interval + ONE_HOUR_MS), now, key, {}), true, `${key} @ ${iso}: 창 밖이면 full`);
+      // 정확히 24시간이 지난 자리: 대표님만 올라가고 오프셋이 붙은 계정은 아직 버틴다.
+      assert.equal(
+        shouldPromoteFullSync(at(FULL_SYNC_INTERVAL_MS), now, key, {}),
+        key === OWNER,
+        `${key} @ ${iso}: 24시간 경과는 대표님만 승격이다`,
+      );
+    }
+  }
+});
+
+test("non-owner keys sit at a fixed offset inside the jitter band and never share a slot", () => {
+  const team = fullSyncIntervalMs(TEAM_KEY, {});
+  const client = fullSyncIntervalMs(CLIENT_KEY, {});
+  for (const [key, interval] of [[TEAM_KEY, team], [CLIENT_KEY, client]]) {
+    assert.ok(interval > FULL_SYNC_INTERVAL_MS, `${key}: 24시간보다 뒤로 밀린다`);
+    assert.ok(interval < FULL_SYNC_INTERVAL_MS + FULL_SYNC_JITTER_MS, `${key}: 그래도 흩뿌리는 폭 안에 있다`);
+  }
+  assert.notEqual(team, client, "서로 다른 계정은 서로 다른 자리를 잡는다");
+});
+
+const PROMOTION_EVENTS_URL = `${CALENDAR_BASE}/calendars/primary%40example.com/events`;
+
+// 실행 전체로 판정을 확인하는 하네스. now 는 언제나 못 박아 넣는다.
+async function promotionRun(code, lastFullSyncAt, now, options = {}) {
+  const { ctx } = makeCtx({
+    owner_google_integrations: (op) => (op.kind === "select"
+      // 전용 캘린더는 이미 회수된 상태로 둔다 — 이 시험의 관심사가 아니다.
+      ? { data: { ...INTEGRATION, owner_agency_code: code, calendar_id: null }, error: null }
+      : { data: null, error: null }),
+    owner_google_calendar_sync: (op) => (op.kind === "select"
+      ? {
+        data: [calendarRow({ owner_agency_code: code, sync_token: "st-1", last_full_sync_at: lastFullSyncAt })],
+        error: null,
+      }
+      : { data: null, error: null }),
+    schedule_items: { data: [], error: null },
+  });
+  const { calls, impl } = fetchMock({
+    [`POST ${TOKEN_URL}`]: tokenRoute(),
+    [`GET ${CALENDAR_BASE}/users/me/calendarList`]: jsonResponse(200, { items: [] }),
+    [`GET ${PROMOTION_EVENTS_URL}`]: jsonResponse(200, { items: [], nextSyncToken: "st-2" }),
+  });
+  const result = await runOwnerCalendarSync(ctx, GOOGLE_ENV, code, { now, fetchImpl: impl, ...options });
+  return { result, listed: calls.find((call) => call.url === PROMOTION_EVENTS_URL) };
+}
+
+test("an injected clock alone decides an automatic run: incremental inside the window, full past it", async () => {
+  const now = Date.parse("2026-08-24T06:20:00.000Z");
+
+  // 대표님 코드 — 정확히 24시간짜리 창.
+  const ownerInterval = fullSyncIntervalMs(OWNER, {});
+  const ownerCheap = await promotionRun(OWNER, new Date(now - (ownerInterval - ONE_HOUR_MS)).toISOString(), now);
+  assert.equal(ownerCheap.result.ok, true);
+  assert.equal(ownerCheap.listed.query.syncToken, "st-1", "창 안의 자동 진입은 그대로 증분이다");
+  assert.ok(!("timeMin" in ownerCheap.listed.query), "증분에는 창을 붙이지 않는다");
+
+  const ownerStale = await promotionRun(OWNER, new Date(now - (ownerInterval + ONE_HOUR_MS)).toISOString(), now);
+  assert.equal(ownerStale.listed.query.syncToken, undefined, "창 밖이면 저장된 토큰을 버린다");
+  assert.ok(ownerStale.listed.query.timeMin, "full 목록은 창(timeMin)을 붙인다");
+
+  // 운영팀 개인 캘린더 — 24시간이 꼬박 지나도 자기 오프셋만큼은 아직 창 안이다.
+  const personal = { role: "team", code: TEAM_CODE };
+  const teamInterval = fullSyncIntervalMs(TEAM_KEY, {});
+  const teamCheap = await promotionRun(TEAM_KEY, new Date(now - FULL_SYNC_INTERVAL_MS).toISOString(), now, { personal });
+  assert.equal(teamCheap.result.ok, true);
+  assert.equal(teamCheap.listed.query.syncToken, "st-1", "오프셋만큼은 증분으로 버틴다");
+
+  const teamStale = await promotionRun(TEAM_KEY, new Date(now - (teamInterval + ONE_HOUR_MS)).toISOString(), now, { personal });
+  assert.equal(teamStale.listed.query.syncToken, undefined, "자기 창을 넘기면 그때 full 로 올라간다");
+  assert.ok(teamStale.listed.query.timeMin);
 });

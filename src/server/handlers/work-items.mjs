@@ -775,6 +775,10 @@ async function handleGet(request, ctx) {
     role: access.role,
     canPublish: roleCanMutateWorkItems(access.role) && Boolean(access.client),
     client: access.client ? { id: access.client.id, name: access.client.name || access.client.business_name } : null,
+    // 개인 화면의 CURRENT SCOPE 카드에만 쓰는 표시용 이름. 세션이 정한 내
+    // 계정에서만 나오고, 범위 판정에는 절대 쓰지 않는다. 운영 경로
+    // (/api/work-items)에서는 언제나 빈 문자열이다.
+    accountLabel: access.personalKey ? (access.personalLabel || "") : "",
     calendars: [],
     googleCalendars: writableCalendarsFromCatalog(catalog),
     googleCalendarCatalog: catalog,

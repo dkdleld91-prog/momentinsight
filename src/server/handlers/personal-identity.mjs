@@ -150,7 +150,7 @@ export async function activePersonalPrincipal(ctx, key, env = process.env) {
   return { ok: true, role: "client", code: data.id, loginCode: normalizeCode(data.agency_code), client: data };
 }
 
-function personalAccess(role, code, loginCode) {
+function personalAccess(role, code, loginCode, label) {
   const personalKey = personalPrincipalKey(role, code);
   if (!personalKey) {
     return { ok: false, status: 403, message: "개인 캘린더 계정을 확인할 수 없습니다." };
@@ -162,6 +162,10 @@ function personalAccess(role, code, loginCode) {
     personalCode: normalizeCode(code),
     personalKey,
     loginCode: normalizeCode(loginCode),
+    // 화면에 찍기만 하는 이름이다. 범위 판정·조회 술어·DB 쓰기 어디에도 쓰지
+    // 않는다. normalizeCode 를 태우지 않는 이유는 식별자가 아니라 표시 문자열
+    // 이기 때문이다 — 소문자로 눌러 버리면 사람이 읽는 이름이 망가진다.
+    personalLabel: cleanText(label, 80),
     // 개인 공간에는 운영 범위가 없다. 두 값이 null 이어야 광고주 공개(publish)
     // 경로가 열리지 않고, 개인 행은 운영 조회 술어에도 걸리지 않는다.
     client: null,
@@ -187,7 +191,7 @@ export async function resolvePersonalAccess(request, ctx, env = process.env) {
     }
     // 대표님이 고른 광고주(x-mi-agency-code)는 개인키 계산에 쓰지 않는다.
     // 대표실은 언제나 대표님 개인 공간 하나뿐이다.
-    return personalAccess("owner", primary, primary);
+    return personalAccess("owner", primary, primary, "총관리자 내부 일정");
   }
 
   if (role === "team") {
@@ -199,7 +203,7 @@ export async function resolvePersonalAccess(request, ctx, env = process.env) {
     const { data, error } = await activeTeamByCode(ctx, teamCode);
     if (error) return { ok: false, status: 500, message: "운영팀 범위 확인에 실패했습니다." };
     if (!data) return { ok: false, status: 404, message: "활성 운영팀을 찾을 수 없습니다." };
-    return personalAccess("team", data.id, data.team_code);
+    return personalAccess("team", data.id, data.team_code, data.team_name || data.team_code);
   }
 
   const agencyCode = normalizeCode(request.headers.get("x-mi-agency-code"));
@@ -210,7 +214,7 @@ export async function resolvePersonalAccess(request, ctx, env = process.env) {
   const { data, error } = await activeClientByCode(ctx, agencyCode);
   if (error) return { ok: false, status: 500, message: "광고주 범위 확인에 실패했습니다." };
   if (!data) return { ok: false, status: 404, message: "활성 광고주를 찾을 수 없습니다." };
-  return personalAccess("client", data.id, data.agency_code);
+  return personalAccess("client", data.id, data.agency_code, data.name || data.business_name || data.agency_code);
 }
 
 // 개인 행에 서버가 채우는 세 값. 요청 본문에서는 절대 받지 않는다.

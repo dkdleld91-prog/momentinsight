@@ -319,7 +319,8 @@ test("shared stylesheet stays page-agnostic", () => {
   assert.match(sharedStyleCode, /\.mi-cal-shell\s*\{/);
   // 좁은 폭에서 레일이 서랍으로 접히고 그리드가 한 줄이 된다(대표님 캘린더와 같은 반응형).
   assert.match(sharedStyle, /@media \(max-width: 1180px\)[\s\S]{0,400}\.mi-cal-body\.has-rail\s*\{\s*grid-template-columns: minmax\(0, 1fr\);/);
-  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]{0,900}\.mi-cal-summary\s*\{\s*grid-template-columns: minmax\(0, 1fr\);/);
+  // 지표 요약은 대표실의 640px 규칙과 같게 2열로 접힌다(한 줄이 아니다).
+  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*?\.mi-cal-summary\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
   // TODAY·TOMORROW 띠는 레일과 함께 넓은 화면에서 붙어 따라온다.
   assert.match(sharedStyle, /\.mi-cal-side\s*\{[\s\S]{0,160}position: sticky;/);
 });
@@ -607,9 +608,54 @@ test("date keys stay local-time and round-trip", () => {
 // ─────────────────────────────────────────────────────────────
 
 const ownerToolApiSource = fs.readFileSync(new URL("../src/server/handlers/owner-tool-api.mjs", import.meta.url), "utf8");
-const assistantMarkup = slice(markup, '<section class="mi-cal-assistant"', "</section>");
+const assistantMarkup = slice(markup, '<article class="mi-cal-panel-card mi-cal-assistant"', "</article>");
 const ownerRangeLabelBlock = slice(adminSource, "var OWNER_ASSISTANT_RANGE_LABELS =", "var OWNER_ASSISTANT_WEEKDAYS");
 const standbyErrorBlock = slice(sharedSource, "recognition.onerror = function (event) {", "recognition.onend = function () {");
+
+// 대표실 원본(owner-tool-api.mjs)에서 옮겨 적은 문구·좌표를 다시 뽑아 온다.
+// 개인 화면은 대표실 디자인의 사본이므로, 원본이 바뀌면 사본이 조용히 갈라진다.
+// 아래 블록이 그 갈라짐을 테스트 실패로 드러내는 유일한 장치다.
+const ownerAssistantView = slice(ownerToolApiSource, "const assistantViewHtml = String.raw`", "const viewHtml = String.raw`");
+const ownerAssistantCss = slice(ownerToolApiSource, "const assistantCss = String.raw`", "const utilityViewHtml = String.raw`");
+
+function ownerMatch(pattern, label) {
+  const found = ownerAssistantView.match(pattern);
+  assert.ok(found, `대표실 원본에서 ${label} 을(를) 찾지 못했습니다.`);
+  return found;
+}
+
+const ownerHero = ownerMatch(
+  /<div class="mi-assistant-hero-copy"><small>([^<]*)<\/small><h1>([^<]*)<\/h1><p>([^<]*)<\/p><\/div>/u,
+  "히어로",
+);
+const ownerScopeTitle = ownerMatch(/<div class="mi-assistant-scope"><span>([^<]*)<\/span>/u, "스코프 카드")[1];
+const ownerOrgHead = ownerMatch(
+  /<div class="mi-assistant-panel-head"><div><h2>([^<]*)<\/h2><p>([^<]*)<\/p><\/div>/u,
+  "조직 카드 머리말",
+);
+const ownerOfficeIdleState = ownerMatch(/<strong data-owner-assistant-office-state>([^<]*)<\/strong>/u, "조직도 대기 문구")[1];
+const ownerOfficeIdleNote = ownerMatch(
+  /<span class="mi-assistant-office-activity"[^>]*>([^<]*)<\/span>/u,
+  "조직도 안내 문구",
+)[1];
+const ownerStations = [...ownerAssistantView.matchAll(
+  /<div class="mi-assistant-station is-([a-z]+)"><strong>([^<]*)<\/strong><small>([^<]*)<\/small><\/div>/gu,
+)].map((entry) => ({ role: entry[1], name: entry[2], desc: entry[3] }));
+const ownerAgents = [...ownerAssistantView.matchAll(
+  /data-owner-assistant-role="([a-z]+)" data-home-x="(\d+)" data-home-y="(\d+)" data-mobile-x="(\d+)" data-mobile-y="(\d+)"[^>]*--agent-breathe:([0-9.]+s)"[^>]*aria-label="([^"]*)"><span class="mi-assistant-agent-bubble">([^<]*)<\/span>[\s\S]*?<span class="mi-assistant-agent-body">([^<]*)<\/span>[\s\S]*?<span class="mi-assistant-agent-label"><strong>([^<]*)<\/strong><small>([^<]*)<\/small>/gu,
+)].map((entry) => ({
+  role: entry[1],
+  homeX: entry[2],
+  homeY: entry[3],
+  mobileX: entry[4],
+  mobileY: entry[5],
+  breathe: entry[6],
+  aria: entry[7],
+  bubble: entry[8],
+  body: entry[9],
+  name: entry[10],
+  desc: entry[11],
+}));
 
 test("the assistant panel ships every data-cal-assistant hook and sits above the calendar", () => {
   for (const marker of [
@@ -626,12 +672,18 @@ test("the assistant panel ships every data-cal-assistant hook and sits above the
     "data-cal-assistant-results",
   ]) assert.ok(assistantMarkup.includes(marker), `실장 비서 마크업에 없는 계약: ${marker}`);
 
-  // 구글 배너 아래 · 달력 위, 셸 안에 그대로 들어간다.
+  // 대표실과 같은 차례다: 히어로 → 구글 배너 → 조직 카드 → 지표 요약 →
+  // 실장 패널 → (대표실이 업무 화면을 끼워 넣듯) 캘린더.
+  const heroAt = markup.indexOf('<header class="mi-cal-hero">');
   const bannerAt = markup.indexOf("data-cal-gcal-banner");
-  const assistantAt = markup.indexOf("data-cal-assistant");
+  const loginBannerAt = markup.indexOf("data-cal-glogin-banner");
+  const orgAt = markup.indexOf("data-cal-org");
   const summaryAt = markup.indexOf('<div class="mi-cal-summary"');
-  assert.ok(bannerAt > -1 && assistantAt > bannerAt, "구글 배너 다음에 와야 합니다.");
-  assert.ok(summaryAt > assistantAt, "요약 필터(=달력)보다 위에 있어야 합니다.");
+  const assistantAt = markup.indexOf('<article class="mi-cal-panel-card mi-cal-assistant"');
+  const workAt = markup.indexOf('<section class="mi-cal-work">');
+  const order = [heroAt, bannerAt, loginBannerAt, orgAt, summaryAt, assistantAt, workAt];
+  assert.equal(order.some((at) => at < 0), false, `순서 기준을 찾지 못했습니다: ${order.join(",")}`);
+  assert.deepEqual([...order].sort((a, b) => a - b), order, `대표실과 배치 순서가 다릅니다: ${order.join(",")}`);
 
   assert.ok(assistantMarkup.includes('aria-label="실장 비서"'));
   // 상태줄 두 개(음성 · 일반)는 읽어 주는 자리다.
@@ -761,6 +813,8 @@ test("speech is feature-detected so the panel degrades to text instead of throwi
 });
 
 test("owner-only assistant features never crossed over into the shared panel", () => {
+  // 디자인은 대표실을 그대로 옮겼지만 owner 전용 기능·표식은 하나도 넘어오지 않는다.
+  // 조직도는 .mi-cal-office 네임스페이스로 다시 썼으므로 원본 선택자는 여전히 금지어다.
   for (const forbidden of ["switchOwnerAssistantScope", "assistant-draft", "goodmorning", "mi-assistant-office", "data-owner-assistant"]) {
     assert.equal(sharedCode.includes(forbidden), false, `대표실 전용 기능이 넘어왔습니다: ${forbidden}`);
   }
@@ -768,6 +822,168 @@ test("owner-only assistant features never crossed over into the shared panel", (
   for (const noted of ["switchOwnerAssistantScope", "assistant-draft", "mi-assistant-office", "maybeRunOwnerAssistantGoodMorning"]) {
     assert.ok(sharedSource.includes(noted), `제외 사유 주석이 없습니다: ${noted}`);
   }
+  // 화면에 찍히는 문구에도 owner 표식이 없어야 한다. 광고주·운영팀이 보는 화면에
+  // "owner canary" 나 "mml93-a01 전용" 이 보이면 그 자체가 남의 계정 정보다.
+  for (const leak of ["owner canary", "CANARY", "mml93-a01", "총관리자 전용", "광고주 범위", "총관리자 내부 일정"]) {
+    assert.equal(markup.includes(leak), false, `owner 전용 문구가 화면에 남았습니다: ${leak}`);
+  }
+  // 범위 전환·초안 등록은 마크업에도 자리가 없다.
+  for (const hook of ["data-cal-scope-switch", "data-cal-assistant-draft", "data-cal-owner"]) {
+    assert.equal(markup.includes(hook), false, `대표실 전용 훅이 넘어왔습니다: ${hook}`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// 4-1. 대표실 디자인 드리프트 — 원본(owner-tool-api.mjs)과 대조
+//      개인 화면은 대표실의 사본이다. 사본이라는 사실을 테스트가 붙들지 않으면
+//      대표실을 고친 다음 사람이 이 화면이 갈라진 것을 알아차릴 방법이 없다.
+// ─────────────────────────────────────────────────────────────
+
+test("hero copy is the 대표실 hero minus the owner canary marker", () => {
+  const heroMarkup = slice(markup, '<header class="mi-cal-hero">', "</header>");
+  // 아이브로우: 대표실은 "실장 · owner canary" 다. 개인 화면은 그 앞머리만 쓴다.
+  assert.equal(shared.ASSISTANT_HERO_EYEBROW, "실장");
+  assert.ok(ownerHero[1].startsWith(shared.ASSISTANT_HERO_EYEBROW), `대표실 아이브로우가 바뀌었습니다: ${ownerHero[1]}`);
+  assert.equal(ownerHero[1].includes("owner canary"), true, "대표실이 canary 표식을 버렸다면 이 사본도 다시 봐야 합니다.");
+  assert.ok(heroMarkup.includes(`<small>${shared.ASSISTANT_HERO_EYEBROW}</small>`));
+
+  // 헤드라인은 글자 하나까지 같다.
+  assert.equal(shared.ASSISTANT_HERO_HEADLINE, ownerHero[2]);
+  assert.ok(heroMarkup.includes(`<h1>${ownerHero[2]}</h1>`));
+
+  // 부연 문구는 뒷문장만 원본과 같다. 앞문장은 일부러 다르다 — 개인 화면에는
+  // 자연어 초안(assistant-draft) 경로가 없어서 "초안으로 정리합니다" 가 거짓말이 된다.
+  const ownerTail = ownerHero[3].slice(ownerHero[3].indexOf("확인하기 전에는"));
+  assert.ok(ownerTail.startsWith("확인하기 전에는"), `대표실 부연 문구 구조가 바뀌었습니다: ${ownerHero[3]}`);
+  assert.ok(shared.ASSISTANT_HERO_SUB.endsWith(ownerTail), "대표실과 안전 문구가 갈렸습니다.");
+  assert.equal(shared.ASSISTANT_HERO_SUB.includes("초안"), false, "개인 화면에는 초안 경로가 없습니다.");
+});
+
+test("the scope card prints this account's own name and nothing else", () => {
+  const heroMarkup = slice(markup, '<header class="mi-cal-hero">', "</header>");
+  assert.equal(shared.ASSISTANT_SCOPE_TITLE, ownerScopeTitle);
+  assert.ok(heroMarkup.includes(`<span>${ownerScopeTitle}</span>`));
+  assert.ok(heroMarkup.includes(`<strong data-cal-scope>${shared.ASSISTANT_SCOPE_FALLBACK}</strong>`));
+  // 대표실의 "광고주 범위는 업무 운영에서 선택" 은 owner 전용이라 옮기지 않는다.
+  assert.ok(ownerAssistantView.includes("광고주 범위는 업무 운영에서 선택"));
+  assert.equal(heroMarkup.includes("광고주 범위"), false);
+  assert.ok(heroMarkup.includes(shared.ASSISTANT_SCOPE_NOTE));
+
+  // 이름은 서버가 세션 계정에서 정해 준 값만 쓴다. 화면이 계정을 추측하면 격리 구멍이다.
+  assert.ok(sharedSource.includes('if (typeof state.accountLabel === "string" && state.accountLabel) setScopeLabel(state.accountLabel);'));
+  assert.ok(sharedCode.includes("function setScopeLabel("));
+  const scopeSetter = slice(sharedCode, "function setScopeLabel(", "\n    }");
+  assert.ok(scopeSetter.includes("textContent"), "이름은 textContent 로만 찍는다.");
+  assert.equal(scopeSetter.includes("innerHTML"), false);
+  // 서버가 그 필드를 실제로 실어 보낸다(운영 피드에서는 언제나 빈 문자열).
+  const workItemsSource = fs.readFileSync(new URL("../src/server/handlers/work-items.mjs", import.meta.url), "utf8");
+  assert.ok(workItemsSource.includes('accountLabel: access.personalKey ? (access.personalLabel || "") : "",'));
+});
+
+test("the 비서실 운영실 organization card matches the owner roster station for station", () => {
+  assert.equal(shared.ASSISTANT_ORG_TITLE, ownerOrgHead[1]);
+  assert.equal(shared.ASSISTANT_ORG_NOTE, ownerOrgHead[2]);
+  assert.ok(markup.includes(`<h2>${ownerOrgHead[1]}</h2><p>${ownerOrgHead[2]}</p>`));
+
+  assert.equal(ownerStations.length, 6, "대표실 스테이션이 6개가 아닙니다.");
+  // 필드 이름은 이 파일의 것(title/note)이고 값만 대표실에서 온다.
+  assert.deepEqual(
+    plain(shared.ASSISTANT_STATIONS).map((entry) => ({ role: entry.role, name: entry.title, desc: entry.note })),
+    ownerStations,
+  );
+  for (const station of ownerStations) {
+    assert.ok(
+      markup.includes(`<div class="mi-cal-station is-${station.role}"><strong>${station.name}</strong><small>${station.desc}</small></div>`),
+      `스테이션 마크업이 갈렸습니다: ${station.role}`,
+    );
+  }
+
+  assert.equal(ownerAgents.length, 6, "대표실 담당 직원이 6명이 아닙니다.");
+  assert.deepEqual(
+    plain(shared.ASSISTANT_AGENTS).map((entry) => ({
+      role: entry.role,
+      homeX: String(entry.homeX),
+      homeY: String(entry.homeY),
+      mobileX: String(entry.mobileX),
+      mobileY: String(entry.mobileY),
+      breathe: entry.breathe,
+      aria: entry.label,
+      bubble: entry.bubble,
+      body: entry.body,
+      name: entry.title,
+      desc: entry.note,
+    })),
+    ownerAgents,
+  );
+  for (const agent of ownerAgents) {
+    assert.ok(
+      markup.includes(`data-cal-agent-role="${agent.role}" data-home-x="${agent.homeX}" data-home-y="${agent.homeY}" data-mobile-x="${agent.mobileX}" data-mobile-y="${agent.mobileY}" style="left:${agent.homeX}%;top:${agent.homeY}%;--agent-breathe:${agent.breathe}" aria-label="${agent.aria}"`),
+      `담당 직원 좌표·이름이 갈렸습니다: ${agent.role}`,
+    );
+  }
+  assert.equal([...markup.matchAll(/data-cal-agent-role="/g)].length, 6);
+
+  // 대기 문구도 같다. 조직도가 "무엇을 표현하는 그림인지" 를 말해 주는 문장이다.
+  assert.equal(shared.ASSISTANT_OFFICE_IDLE_STATE, ownerOfficeIdleState);
+  assert.equal(shared.ASSISTANT_OFFICE_IDLE_NOTE, ownerOfficeIdleNote);
+  assert.ok(markup.includes(`<strong data-cal-office-state>${ownerOfficeIdleState}</strong>`));
+  assert.ok(markup.includes(ownerOfficeIdleNote));
+  assert.ok(markup.includes("collaboration hub"));
+  assert.ok(markup.includes("MomentLabs operations office"));
+});
+
+test("clicking a 담당 loads a command this account can actually run", () => {
+  const roles = ownerAgents.map((agent) => agent.role);
+  assert.deepEqual(Object.keys(plain(shared.ASSISTANT_ROLE_COMMANDS)).sort(), [...roles].sort());
+  // 대표실의 roleTemplates 는 등록형 문장이다. 개인 화면에는 자연어 등록 경로가
+  // 없으므로(초안 파서는 대표실 전용) 눌러도 도는 브리핑·완료 문장만 넣는다.
+  for (const [role, command] of Object.entries(plain(shared.ASSISTANT_ROLE_COMMANDS))) {
+    const runnable = shared.assistantBriefingIntent(command) || Boolean(shared.parseAssistantCompletion(command));
+    assert.ok(runnable, `담당 명령 예시가 실제로 동작하지 않습니다: ${role} · ${command}`);
+    assert.equal(command.includes("등록"), false, `등록형 예시는 개인 화면에서 아무 일도 하지 않습니다: ${role}`);
+  }
+  for (const chip of plain(shared.ASSISTANT_EXAMPLE_CHIPS)) {
+    const runnable = shared.assistantBriefingIntent(chip.command) || Boolean(shared.parseAssistantCompletion(chip.command));
+    assert.ok(runnable, `칩 예시가 실제로 동작하지 않습니다: ${chip.command}`);
+    assert.ok(markup.includes(`data-cal-assistant-example="${chip.command}"`));
+  }
+  assert.equal([...markup.matchAll(/data-cal-assistant-example="/g)].length, 3);
+  // 조직도·칩·새로고침은 전부 on(...) 으로 묶여 destroy() 가 되돌린다.
+  for (const bound of ['"[data-cal-agent]"', '"[data-cal-assistant-example]"', "[data-cal-assistant-refresh]"]) {
+    assert.ok(sharedCode.includes(bound), `묶여야 할 훅을 찾지 못했습니다: ${bound}`);
+  }
+  assert.ok(sharedCode.includes('on(window, "resize"'), "조직도 리사이즈 감시가 on(...) 밖에 있습니다.");
+});
+
+test("the ported stylesheet keeps the 대표실 geometry, value for value", () => {
+  // 대표실 CSS 의 숫자가 바뀌면 이 사본은 조용히 다른 화면이 된다. 눈에 띄는
+  // 골격 값 몇 개를 원본에서 그대로 뽑아 대조한다(선택자만 네임스페이스가 다르다).
+  const pairs = [
+    [/\.mi-assistant-hero\{[^}]*border-radius:(\d+px)/u, /\.mi-cal-hero\s*\{[^}]*border-radius:\s*([0-9]+px)/u, "히어로 모서리"],
+    [/\.mi-assistant-office\{[^}]*min-height:(\d+px)/u, /\.mi-cal-office\s*\{[^}]*min-height:\s*([0-9]+px)/u, "조직도 높이"],
+    [/\.mi-assistant-agent\{[^}]*width:(\d+px)/u, /\.mi-cal-agent\s*\{[^}]*width:\s*([0-9]+px)/u, "직원 폭"],
+    [/\.mi-assistant-panel\{[^}]*border-radius:(\d+px)/u, /\.mi-cal-panel-card\s*\{[^}]*border-radius:\s*([0-9]+px)/u, "패널 모서리"],
+    [/\.mi-assistant-metric\{[^}]*padding:([^;]+);/u, /\.mi-cal-metric\s*\{[^}]*padding:\s*([^;]+);/u, "지표 여백"],
+    [/\.mi-assistant-agenda-item\{[^}]*grid-template-columns:([^;]+);/u, /\.mi-cal-assistant-agenda-item\s*\{[^}]*grid-template-columns:\s*([^;]+);/u, "일정표 칸"],
+  ];
+  for (const [ownerPattern, sharedPattern, label] of pairs) {
+    const ownerValue = ownerAssistantCss.match(ownerPattern);
+    assert.ok(ownerValue, `대표실 CSS 에서 ${label} 값을 찾지 못했습니다.`);
+    const sharedValue = sharedStyleCode.match(sharedPattern);
+    assert.ok(sharedValue, `공유 CSS 에서 ${label} 값을 찾지 못했습니다.`);
+    assert.equal(
+      sharedValue[1].replace(/\s+/g, " ").trim(),
+      ownerValue[1].replace(/,\s*/g, ", ").replace(/\s+/g, " ").trim(),
+      `${label} 이 대표실과 갈렸습니다.`,
+    );
+  }
+  // 어두운 조직도 팔레트는 대표실 그대로다(토큰으로 흐려 놓으면 다른 화면이 된다).
+  for (const literal of ["#071a35", "#0a2444", "#0d2c50", "#102f55"]) {
+    assert.ok(ownerAssistantCss.includes(literal), `대표실 팔레트가 바뀌었습니다: ${literal}`);
+    assert.ok(sharedStyleCode.includes(literal), `조직도 팔레트가 갈렸습니다: ${literal}`);
+  }
+  // 다만 그 어두운 색은 .mi-cal-assistant* 규칙 밖에만 산다(공용 토큰 규칙 유지).
+  assert.equal(/\.mi-cal-assistant[^{]*\{[^}]*#0[0-9a-f]{5}/i.test(sharedStyleCode), false);
 });
 
 test("assistant range labels, weekdays and command regexes match the owner and server copies", () => {
@@ -824,8 +1040,12 @@ test("the assistant stylesheet stays inside the shared tokens and folds on narro
   }
   assert.equal(sharedStyleCode.includes("#mi-admin"), false);
   assert.equal(sharedStyleCode.includes("#mi-client"), false);
-  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*\.mi-cal-assistant-metrics\s*\{\s*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*\.mi-cal-assistant-compose\s*\{\s*flex-direction: column;/);
+  // 지표는 이제 대표실처럼 패널 밖 요약 줄이다(.mi-cal-assistant-metrics 는 사라졌다).
+  assert.equal(sharedStyleCode.includes(".mi-cal-assistant-metrics"), false);
+  assert.match(sharedStyle, /@media \(max-width: 1180px\)[\s\S]*?\.mi-cal-assistant-grid\s*\{\s*grid-template-columns: 1fr;/);
+  assert.match(sharedStyle, /@media \(max-width: 760px\)[\s\S]*\.mi-cal-assistant-actions\s*\{\s*[\s\S]{0,60}flex-direction: column;/);
+  // 조직도 애니메이션은 접근성 설정에서 완전히 멈춘다(대표실 425행과 같은 계약).
+  assert.match(sharedStyle, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.mi-cal-agent[\s\S]*?animation: none/);
 });
 
 test("this suite is wired into npm test", () => {

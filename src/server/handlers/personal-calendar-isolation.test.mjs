@@ -1263,3 +1263,143 @@ test("[Fail-closed] 개인 열이 강등되면 개인 경로는 503 이고 운�
     resetOptionalColumns();
   }
 });
+
+// ─────────────────────────────────────────────────────────────
+// Label — CURRENT SCOPE 카드에 찍히는 이름
+//
+// accountLabel 은 화면에 찍기만 하는 표시용 문자열이다. 범위 판정에 쓰이지
+// 않는다는 것은 위 N1~N4 가 이미 행 집합으로 고정하므로, 여기서는 딱 하나만
+// 묻는다: "누구의 이름이 실려 나가는가". 답은 언제나 "세션이 정한 내 계정"
+// 이어야 하고, 요청이 실어 보낸 값은 그 답을 한 글자도 바꾸지 못해야 한다.
+// ─────────────────────────────────────────────────────────────
+const TEAM_A_NAME = teamRow(TEAM_A).team_name;
+const TEAM_B_NAME = teamRow(TEAM_B).team_name;
+const CLIENT_A_NAME = clientRow(CLIENT_A).name;
+const CLIENT_B_NAME = clientRow(CLIENT_B).name;
+const OWNER_LABEL = "총관리자 내부 일정";
+// 모든 계정 이름이 한 스텁 안에 함께 있는 상태여야 "고를 수 있었는데 내 것만
+// 골랐다" 가 증명된다. 이름 하나만 넣어 두면 아무것도 증명하지 못한다.
+const EVERY_ACCOUNT_NAME = [TEAM_A_NAME, TEAM_B_NAME, CLIENT_A_NAME, CLIENT_B_NAME, OWNER_LABEL];
+
+function labelHarness() {
+  return tableCtx({
+    operation_team_codes: rowsTable([
+      // 운영 피드(/api/work-items)의 팀 조회는 owner_agency_code 까지 맞춰야
+      // 행을 찾는다. 같은 픽스처로 두 입구를 다 통과시키기 위한 값이다.
+      teamRow(TEAM_A, { owner_agency_code: OWNER_CODE }),
+      teamRow(TEAM_B, { owner_agency_code: OWNER_CODE }),
+    ]),
+    clients: rowsTable([clientRow(CLIENT_A), clientRow(CLIENT_B)]),
+    schedule_items: rowsTable(EVERY_ACCOUNT_ROWS),
+  });
+}
+
+async function accountLabelFor({ path = PERSONAL_WORK_ITEMS_PATH, ...options } = {}) {
+  const harness = labelHarness();
+  const response = await handleWorkItemsRequest(miRequest(path, options), harness.ctx);
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  return payload.accountLabel;
+}
+
+// 내 이름이 맞다는 것만으로는 부족하다. 나머지 계정 이름이 한 글자도 섞이지
+// 않았다는 것까지 봐야 "남의 이름이 실릴 길이 없다" 가 된다.
+function assertOnlyMyName(label, mine) {
+  assert.equal(label, mine);
+  for (const other of EVERY_ACCOUNT_NAME) {
+    if (other === mine) continue;
+    assert.equal(label.includes(other), false, `남의 계정 이름이 섞였습니다: ${other}`);
+  }
+}
+
+test("[Label] 운영팀 개인 피드의 accountLabel 은 그 팀 이름 하나뿐이다", async () => {
+  resetOptionalColumns();
+  assertOnlyMyName(await accountLabelFor({ session: "teamA" }), TEAM_A_NAME);
+  // 같은 스텁에서 세션만 바꾸면 이름도 따라 바뀐다 — 상수가 아니라 계정이다.
+  assertOnlyMyName(await accountLabelFor({ session: "teamB" }), TEAM_B_NAME);
+  resetOptionalColumns();
+});
+
+test("[Label] 광고주 개인 피드의 accountLabel 은 그 광고주 이름이다", async () => {
+  resetOptionalColumns();
+  assertOnlyMyName(await accountLabelFor({ session: "clientA" }), CLIENT_A_NAME);
+  assertOnlyMyName(await accountLabelFor({ session: "clientB" }), CLIENT_B_NAME);
+  resetOptionalColumns();
+});
+
+test("[Label] 대표님 개인 피드의 accountLabel 은 대표실 고정 문구다", async () => {
+  resetOptionalColumns();
+  // 대표님이 광고주를 골라 둔 세션이어도 개인 공간은 대표실 하나뿐이므로
+  // 그 광고주 이름이 나와서는 안 된다(개인키 계산과 같은 이유다).
+  assertOnlyMyName(
+    await accountLabelFor({ session: "owner", headers: { "x-mi-agency-code": CLIENT_A.agencyCode } }),
+    OWNER_LABEL,
+  );
+  resetOptionalColumns();
+});
+
+test("[Label] 운영 피드(/api/work-items)는 accountLabel 을 언제나 빈 문자열로 돌려준다", async () => {
+  resetOptionalColumns();
+  // 운영 피드는 계정이 아니라 테넌트 범위로 도는 표면이다. 여기에 이름이
+  // 실리면 남의 계정 이름이 새는 창이 생기므로 역할과 무관하게 "" 여야 한다.
+  for (const session of ["owner", "teamA", "clientA"]) {
+    assert.equal(await accountLabelFor({ path: "/api/work-items", session }), "");
+  }
+  resetOptionalColumns();
+});
+
+test("[Label] accountLabel 은 요청에서 받지 않는다 — 쿼리·헤더·본문 어느 쪽도 못 바꾼다", async (t) => {
+  await t.test("쿼리", async () => {
+    resetOptionalColumns();
+    const query = `?accountLabel=${encodeURIComponent(TEAM_B_NAME)}&personalLabel=${encodeURIComponent(OWNER_LABEL)}`;
+    assertOnlyMyName(
+      await accountLabelFor({ path: `${PERSONAL_WORK_ITEMS_PATH}${query}`, session: "teamA" }),
+      TEAM_A_NAME,
+    );
+    resetOptionalColumns();
+  });
+
+  await t.test("헤더", async () => {
+    resetOptionalColumns();
+    // 헤더 값은 latin-1 만 담을 수 있어 한글 이름은 인코딩해 싣는다. 디코딩해
+    // 쓰는 곳이 생겨도 바로 걸리도록 ASCII 표식을 하나 함께 넣는다.
+    const forgedMark = "FORGED-ACCOUNT-LABEL";
+    // session-gate 가 지우고 다시 심는 헤더 밖의 이름은 읽는 곳이 아예 없다.
+    // 여기서는 게이트를 건너뛰고 핸들러를 직접 불러 더 센 형태로 못 박는다.
+    const label = await accountLabelFor({
+      session: "teamA",
+      headers: {
+        "x-mi-account-label": forgedMark,
+        "x-mi-personal-label": encodeURIComponent(TEAM_B_NAME),
+        "x-mi-team-name": encodeURIComponent(CLIENT_A_NAME),
+      },
+    });
+
+    assertOnlyMyName(label, TEAM_A_NAME);
+    assert.equal(label.includes(forgedMark), false, "요청 헤더의 이름이 응답에 실렸습니다");
+    resetOptionalColumns();
+  });
+
+  await t.test("본문", async () => {
+    resetOptionalColumns();
+    const harness = labelHarness();
+    const blocked = await handleWorkItemsRequest(
+      personalRequest({
+        method: "POST",
+        session: "teamA",
+        body: { ...personalDialogBody(), accountLabel: TEAM_B_NAME },
+      }),
+      harness.ctx,
+    );
+    const payload = await blocked.json();
+
+    // 화이트리스트 밖의 키라 저장소를 건드리기 전에 잘린다(N17 과 같은 문).
+    assert.equal(blocked.status, 400);
+    assert.match(payload.message, /허용되지 않은 값/u);
+    assert.equal(harness.ops.some((op) => op.table === "schedule_items"), false);
+
+    // 그리고 그 뒤의 조회도 여전히 내 이름이다.
+    assertOnlyMyName(await accountLabelFor({ session: "teamA" }), TEAM_A_NAME);
+    resetOptionalColumns();
+  });
+});

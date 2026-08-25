@@ -16,7 +16,61 @@
 (function () {
   "use strict";
 
-  var VERSION = "cal-v1-20260826";
+  // 마크업과 CSS 가 같이 바뀌었다. 버전을 올려 두지 않으면 캐시된 옛 마크업이
+  // 새 CSS 와 섞여 화면이 반쯤 무너진 상태로 뜬다.
+  var VERSION = "cal-v2-20260826";
+
+  // ── 대표실 문구 표 ──────────────────────────────────────
+  // owner-tool-api.mjs assistantViewHtml 의 문장·좌표를 그대로 옮겨 적은 것이다.
+  // 화면마다 문구가 갈리면 같은 기능을 계정마다 다르게 설명하게 된다.
+  var ASSISTANT_HERO_EYEBROW = "실장";
+  var ASSISTANT_HERO_HEADLINE = "오늘의 운영을 일정으로 연결합니다.";
+  var ASSISTANT_HERO_SUB = "현재 일정표를 요약하고 브리핑·완료를 바로 처리합니다. 확인하기 전에는 저장하거나 공개하지 않습니다.";
+  var ASSISTANT_SCOPE_TITLE = "CURRENT SCOPE";
+  var ASSISTANT_SCOPE_FALLBACK = "내 일정";
+  var ASSISTANT_SCOPE_NOTE = "내 계정 일정만 표시합니다";
+  var ASSISTANT_ORG_TITLE = "모먼트랩스 비서실 운영실";
+  var ASSISTANT_ORG_NOTE = "비서실장 아래 5개 담당 조직이 연결됩니다. 직원을 누르면 해당 담당의 일정 명령 예시가 입력됩니다.";
+  var ASSISTANT_OFFICE_IDLE_STATE = "조직 연결 대기";
+  var ASSISTANT_OFFICE_IDLE_NOTE = "화면 시각화이며 독립 AI 직원의 자동 실행 상태는 아닙니다.";
+
+  // 조직도는 이 표에서만 그린다. 손으로 6번 적으면 한 칸만 고쳐지는 날이 온다.
+  var ASSISTANT_STATIONS = [
+    { role: "chief", title: "비서실장", note: "업무 분류 · 담당 연결" },
+    { role: "schedule", title: "일정 운영", note: "미팅 · 마감 · 실행 일정" },
+    { role: "report", title: "보고서", note: "주간 · 월간 · KPI" },
+    { role: "ads", title: "광고 운영", note: "세팅 · 성과 · 액션" },
+    { role: "content", title: "콘텐츠", note: "소재 · 촬영 · 업로드" },
+    { role: "keyword", title: "키워드", note: "검색 · SEO · 순위" }
+  ];
+
+  // 좌표(%)·호흡 주기는 대표실 값 그대로다. 자리 복귀 계산이 이 값을 읽으므로
+  // 마크업의 style 과 data-home-*/data-mobile-* 은 언제나 같은 값이어야 한다.
+  var ASSISTANT_AGENTS = [
+    { role: "chief", homeX: 50, homeY: 29, mobileX: 50, mobileY: 24, breathe: "3.7s", bubble: "업무 조율 중", body: "◆", title: "비서실장", note: "총괄 · 담당 연결", label: "비서실장 호출" },
+    { role: "schedule", homeX: 12, homeY: 73, mobileX: 25, mobileY: 61, breathe: "4.1s", bubble: "일정 확인 중", body: "📅", title: "일정 운영 담당", note: "미팅 · 마감", label: "일정 운영 담당 호출" },
+    { role: "report", homeX: 31, homeY: 73, mobileX: 75, mobileY: 61, breathe: "4.5s", bubble: "보고서 협의 중", body: "📊", title: "보고서 담당", note: "주간 · 월간 · KPI", label: "보고서 담당 호출" },
+    { role: "ads", homeX: 50, homeY: 73, mobileX: 25, mobileY: 75, breathe: "3.9s", bubble: "성과 점검 중", body: "📣", title: "광고 운영 담당", note: "세팅 · 성과 · 액션", label: "광고 운영 담당 호출" },
+    { role: "content", homeX: 69, homeY: 73, mobileX: 75, mobileY: 75, breathe: "4.3s", bubble: "콘텐츠 협의 중", body: "🎨", title: "콘텐츠 담당", note: "소재 · 촬영 · 업로드", label: "콘텐츠 담당 호출" },
+    { role: "keyword", homeX: 88, homeY: 73, mobileX: 50, mobileY: 89, breathe: "4.7s", bubble: "키워드 점검 중", body: "🔎", title: "키워드 담당", note: "검색 · SEO · 순위", label: "키워드 담당 호출" }
+  ];
+
+  // 대표실 roleTemplates 는 자연어 "등록" 문장이다. 개인 화면에는 초안 등록 경로가
+  // 없어 그대로 옮기면 눌러도 아무 일이 없는 버튼이 된다. 실제로 도는 브리핑 명령만 둔다.
+  var ASSISTANT_ROLE_COMMANDS = {
+    chief: "오늘 일정 브리핑해줘",
+    schedule: "내일 일정 알려줘",
+    report: "이번 주 일정 알려줘",
+    ads: "다음 주 일정 알려줘",
+    content: "다가오는 일정 알려줘",
+    keyword: "모레 일정 알려줘"
+  };
+
+  var ASSISTANT_EXAMPLE_CHIPS = [
+    { label: "오늘 브리핑", command: "오늘 일정 알려줘" },
+    { label: "다음 주 브리핑", command: "다음 주 일정 알려줘" },
+    { label: "완료 예시", command: "광고주 미팅 완료로 해줘" }
+  ];
 
   // 구글 일정 색 11개. 16진값·한국어 이름·순서는 src/server/google-calendar-client.mjs 의
   // EVENT_COLOR_PALETTE / EVENT_COLOR_DISPLAY_ORDER 와 admin.html 의 workEventColors 를
@@ -219,7 +273,9 @@
   //     loadOwnerAssistantClients): 다른 계정 일정으로 갈아타는 기능이라 격리 보장 자체와 충돌한다.
   //   · 굿모닝 자동 브리핑(maybeRunOwnerAssistantGoodMorning 과 그 localStorage 플래그): v1 범위 밖.
   //   · 일정 초안 생성(assistant-draft): 대표실 전용 도구 경로에만 있어 여기서는 부를 수 없다.
-  //   · 비서실 조직 애니메이션(mi-assistant-office · agents · runOfficeScene): 운영 시각화라 개인 화면에 없다.
+  //   · 비서실 조직도: 대표실의 #mi-admin .mi-assistant-office 규칙·동작은 .mi-cal-office
+  //     네임스페이스로 옮겨 적었다. 옮기지 않은 것은 owner 전용 훅(data-owner-assistant-*)과
+  //     범위 전환·초안 파서·굿모닝이다 — 계정 경계를 넘거나 여기 없는 서버 경로를 부른다.
   //   · 운영 데이터를 읽는 그 어떤 것도 없다.
   var ASSISTANT_BRIEFING_INTENT = /브리핑|(?:일정|업무)(?:들)?\s*(?:을|를|이|은)?\s*(?:좀|한\s*번|다시|간단히|짧게)?\s*(?:알려|읽어|들려|말해|정리해)/u;
 
@@ -313,28 +369,16 @@
   function markupHtml() {
     return [
       '<div class="mi-cal-shell">',
-      '<header class="mi-cal-head">',
-      '<div class="mi-cal-head-copy">',
-      '<span class="mi-cal-kicker">MY CALENDAR</span>',
-      '<h1>내 캘린더</h1>',
-      '<p>나만 보는 일정 공간입니다. 구글 캘린더를 연결하면 양방향으로 동기화됩니다.</p>',
-      '</div>',
-      '<div class="mi-cal-head-actions">',
-      '<button class="mi-cal-drawer" type="button" data-cal-rail-drawer aria-expanded="false" aria-controls="mi-cal-rail" hidden>캘린더</button>',
-      '<button class="mi-cal-button" type="button" data-cal-today>오늘</button>',
-      '<button class="mi-cal-button is-primary" type="button" data-cal-create>일정 추가</button>',
-      '</div>',
+      // 1) 히어로 — 대표실과 같은 자리에 같은 문장. 이름 칸(data-cal-scope)만 계정별로 다르다.
+      '<header class="mi-cal-hero">',
+      '<div class="mi-cal-hero-copy"><small>' + escapeHtml(ASSISTANT_HERO_EYEBROW) + '</small><h1>' + escapeHtml(ASSISTANT_HERO_HEADLINE) + '</h1>',
+      '<p>' + escapeHtml(ASSISTANT_HERO_SUB) + '</p></div>',
+      '<div class="mi-cal-hero-scope"><span>' + escapeHtml(ASSISTANT_SCOPE_TITLE) + '</span>',
+      '<strong data-cal-scope>' + escapeHtml(ASSISTANT_SCOPE_FALLBACK) + '</strong>',
+      '<small>' + escapeHtml(ASSISTANT_SCOPE_NOTE) + '</small></div>',
       '</header>',
 
-      '<section class="mi-cal-banner" data-cal-glogin-banner hidden aria-label="구글 로그인 연결">',
-      '<div class="mi-cal-banner-copy"><strong>구글 로그인</strong><span data-cal-glogin-status>연결 상태를 확인하는 중입니다.</span></div>',
-      '<div class="mi-cal-banner-actions">',
-      '<span class="mi-cal-badge" data-cal-glogin-badge hidden>연결됨</span>',
-      '<button class="mi-cal-button" type="button" data-cal-glogin-link hidden>구글 계정 연결</button>',
-      '<button class="mi-cal-button" type="button" data-cal-glogin-unlink hidden>연결 해제</button>',
-      '</div>',
-      '</section>',
-
+      // 2) 구글 배너 2개 — 훅은 그대로 두고 순서만 대표실과 맞췄다(캘린더 → 로그인).
       '<section class="mi-cal-banner" data-cal-gcal-banner hidden aria-label="구글 캘린더 연동">',
       '<div class="mi-cal-banner-copy"><strong>구글 캘린더</strong><span data-cal-gcal-status>연동 상태를 확인하는 중입니다.</span>',
       '<small data-cal-gcal-last hidden></small></div>',
@@ -346,20 +390,68 @@
       '</div>',
       '</section>',
 
-      '<section class="mi-cal-assistant" data-cal-assistant aria-label="실장 비서">',
-      '<div class="mi-cal-assistant-head">',
-      '<div class="mi-cal-assistant-head-copy"><span class="mi-cal-kicker">Assistant</span><h2>실장 비서</h2>',
-      '<p>내 일정만 보고 브리핑하고 완료 처리합니다. 다른 계정의 일정은 보지 않습니다.</p></div>',
-      '<span class="mi-cal-badge">내 일정 전용</span>',
+      '<section class="mi-cal-banner" data-cal-glogin-banner hidden aria-label="구글 로그인 연결">',
+      '<div class="mi-cal-banner-copy"><strong>구글 로그인</strong><span data-cal-glogin-status>연결 상태를 확인하는 중입니다.</span></div>',
+      '<div class="mi-cal-banner-actions">',
+      '<span class="mi-cal-badge" data-cal-glogin-badge hidden>연결됨</span>',
+      '<button class="mi-cal-button" type="button" data-cal-glogin-link hidden>구글 계정 연결</button>',
+      '<button class="mi-cal-button" type="button" data-cal-glogin-unlink hidden>연결 해제</button>',
       '</div>',
-      '<div class="mi-cal-assistant-briefing" data-cal-assistant-briefing>',
-      '<div class="mi-cal-assistant-metrics" role="group" aria-label="오늘 일정 요약">',
-      '<div class="mi-cal-assistant-metric"><span>오늘</span><strong data-cal-assistant-metric="today">0</strong></div>',
-      '<div class="mi-cal-assistant-metric"><span>지연</span><strong data-cal-assistant-metric="overdue">0</strong></div>',
-      '<div class="mi-cal-assistant-metric"><span>확인 필요</span><strong data-cal-assistant-metric="needs_check">0</strong></div>',
-      '<div class="mi-cal-assistant-metric"><span>다가오는</span><strong data-cal-assistant-metric="next">0</strong></div>',
+      '</section>',
+
+      // 3) 비서실 운영실 조직도. 스테이션·직원은 위 표에서만 만든다.
+      '<article class="mi-cal-panel-card mi-cal-org" data-cal-org>',
+      '<div class="mi-cal-panel-head"><div><h2>' + escapeHtml(ASSISTANT_ORG_TITLE) + '</h2>',
+      '<p>' + escapeHtml(ASSISTANT_ORG_NOTE) + '</p></div><span class="mi-cal-badge">내 일정 전용</span></div>',
+      '<div class="mi-cal-office" data-cal-office aria-label="움직이는 모먼트랩스 비서실 조직도">',
+      '<div class="mi-cal-office-topline"><span>MomentLabs operations office</span>',
+      '<strong data-cal-office-state>' + escapeHtml(ASSISTANT_OFFICE_IDLE_STATE) + '</strong></div>',
+      '<div class="mi-cal-office-network" aria-hidden="true"><span class="is-spine"></span><span class="is-rail"></span><span class="is-flow"></span></div>',
+      ASSISTANT_STATIONS.map(function (station) {
+        return '<div class="mi-cal-station is-' + station.role + '"><strong>' + escapeHtml(station.title) +
+          '</strong><small>' + escapeHtml(station.note) + '</small></div>';
+      }).join(""),
+      '<div class="mi-cal-meeting-hub" aria-hidden="true">collaboration hub</div>',
+      ASSISTANT_AGENTS.map(function (agent) {
+        return '<button class="mi-cal-agent" type="button" data-cal-agent data-cal-agent-role="' + agent.role + '"' +
+          ' data-home-x="' + agent.homeX + '" data-home-y="' + agent.homeY + '"' +
+          ' data-mobile-x="' + agent.mobileX + '" data-mobile-y="' + agent.mobileY + '"' +
+          ' style="left:' + agent.homeX + '%;top:' + agent.homeY + '%;--agent-breathe:' + agent.breathe + '"' +
+          ' aria-label="' + escapeHtml(agent.label) + '">' +
+          '<span class="mi-cal-agent-bubble">' + escapeHtml(agent.bubble) + '</span>' +
+          '<span class="mi-cal-agent-figure" aria-hidden="true"><span class="mi-cal-agent-head"></span>' +
+          '<span class="mi-cal-agent-body">' + escapeHtml(agent.body) + '</span>' +
+          '<span class="mi-cal-agent-leg is-left"></span><span class="mi-cal-agent-leg is-right"></span></span>' +
+          '<span class="mi-cal-agent-label"><strong>' + escapeHtml(agent.title) + '</strong>' +
+          '<small>' + escapeHtml(agent.note) + '</small></span></button>';
+      }).join(""),
       '</div>',
-      '<div class="mi-cal-assistant-agenda" data-cal-assistant-agenda></div>',
+      '<div class="mi-cal-office-caption">',
+      '<span><strong>움직임 안내</strong> · 자리 대기, 담당 회의, 비서실장 방문을 화면으로 표현합니다. 직원을 누르면 담당 명령으로 연결됩니다.</span>',
+      '<span class="mi-cal-office-activity" data-cal-office-activity aria-live="polite">' + escapeHtml(ASSISTANT_OFFICE_IDLE_NOTE) + '</span>',
+      '</div>',
+      '</article>',
+
+      // 4) 지표 4칸. 이 숫자를 쓰는 곳은 renderSummary() 하나뿐이다.
+      '<div class="mi-cal-summary" role="group" aria-label="오늘 지표 요약">',
+      '<button class="mi-cal-metric" type="button" data-cal-summary-filter="today" aria-pressed="false"><span>오늘 업무</span><strong data-cal-summary-today>0</strong></button>',
+      '<button class="mi-cal-metric" type="button" data-cal-summary-filter="overdue" aria-pressed="false"><span>지연 업무</span><strong data-cal-summary-overdue>0</strong></button>',
+      '<button class="mi-cal-metric" type="button" data-cal-summary-filter="needs_check" aria-pressed="false"><span>확인 필요</span><strong data-cal-summary-check>0</strong></button>',
+      '<div class="mi-cal-metric is-static"><span>다가오는 업무</span><strong data-cal-summary-next>0</strong></div>',
+      '</div>',
+
+      // 5) 실장 명령 · 대화.
+      '<div class="mi-cal-assistant-grid">',
+      '<article class="mi-cal-panel-card mi-cal-assistant" data-cal-assistant aria-label="실장 비서">',
+      '<div class="mi-cal-panel-head">',
+      '<div><h2>실장 명령 · 대화</h2><p>브리핑·완료를 말하거나 입력하세요. 위 지표를 누르면 아래 일정표가 해당 업무만 표시합니다.</p></div>',
+      '<div class="mi-cal-panel-tools"><button class="mi-cal-link-button" type="button" data-cal-assistant-refresh>새로고침</button><span class="mi-cal-badge">대화만 외부 AI</span></div>',
+      '</div>',
+      '<div class="mi-cal-assistant-chips">',
+      ASSISTANT_EXAMPLE_CHIPS.map(function (chip) {
+        return '<button class="mi-cal-assistant-chip" type="button" data-cal-assistant-example="' +
+          escapeHtml(chip.command) + '">' + escapeHtml(chip.label) + '</button>';
+      }).join(""),
       '</div>',
       '<div class="mi-cal-assistant-voice">',
       '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-mic aria-label="음성으로 입력하기"><span aria-hidden="true">🎤</span><span>말하기</span></button>',
@@ -367,18 +459,31 @@
       '<button class="mi-cal-assistant-voice-button" type="button" data-cal-assistant-read aria-label="브리핑 소리로 듣기"><span aria-hidden="true">🔊</span><span>브리핑 읽기</span></button>',
       '<span class="mi-cal-assistant-voice-status" data-cal-assistant-voice-status aria-live="polite">‘실장’이라고 부른 뒤 명령을 말하거나, 아래 입력창에 그대로 적어주세요.</span>',
       '</div>',
-      '<div class="mi-cal-assistant-compose">',
       '<textarea class="mi-cal-input mi-cal-assistant-input" data-cal-assistant-input maxlength="2000" rows="2" aria-label="실장에게 보낼 명령" placeholder="예: 다음 주 일정 알려줘 · 광고주 미팅 완료로 해줘"></textarea>',
-      '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-send>보내기</button>',
-      '</div>',
+      // 대표실은 이 자리에 "초안은 모두 내부 비공개" 를 적는다. 개인 화면에는
+      // 초안 경로가 없으므로, 대신 이 화면의 유일한 약속(내 계정 일정만 본다)을 적는다.
+      // 아래 상태줄과 같은 문장을 두 번 쓰지 않는다 — 같은 말이 두 줄이면 둘 다 안 읽힌다.
+      '<div class="mi-cal-assistant-actions"><small>내 계정 일정만 보고 처리합니다. 다른 계정의 일정은 보지 않습니다.</small>',
+      '<button class="mi-cal-button is-primary" type="button" data-cal-assistant-send>보내기</button></div>',
       '<div class="mi-cal-assistant-status" data-cal-assistant-status aria-live="polite">브리핑과 완료 처리는 내 일정에서 바로 하고, 자유 대화만 실장 AI로 전달합니다.</div>',
       '<div class="mi-cal-assistant-results" data-cal-assistant-results><div class="mi-cal-assistant-empty">실장에게 오늘 일정을 물어보세요.</div></div>',
-      '</section>',
+      '<div class="mi-cal-assistant-briefing" data-cal-assistant-briefing><div class="mi-cal-assistant-agenda" data-cal-assistant-agenda></div></div>',
+      '</article>',
+      '</div>',
 
-      '<div class="mi-cal-summary" aria-label="내 일정 필터">',
-      '<button class="mi-cal-summary-button" type="button" data-cal-summary-filter="today" aria-pressed="false"><span>오늘 일정</span><strong data-cal-summary-today>0</strong><small>오늘 처리할 일정</small></button>',
-      '<button class="mi-cal-summary-button" type="button" data-cal-summary-filter="overdue" aria-pressed="false"><span>지연 일정</span><strong data-cal-summary-overdue>0</strong><small>기한이 지난 미완료 일정</small></button>',
-      '<button class="mi-cal-summary-button" type="button" data-cal-summary-filter="needs_check" aria-pressed="false"><span>확인 필요</span><strong data-cal-summary-check>0</strong><small>검토가 필요한 일정</small></button>',
+      // 6) 캘린더. 옛 mi-cal-head 의 버튼 3개가 여기로 옮겨 왔다(훅 이름은 그대로다).
+      '<section class="mi-cal-work">',
+      '<div class="mi-cal-work-head">',
+      '<div class="mi-cal-work-head-copy">',
+      '<span class="mi-cal-kicker">MY CALENDAR</span>',
+      '<h1>내 캘린더</h1>',
+      '<p>나만 보는 일정 공간입니다. 구글 캘린더를 연결하면 양방향으로 동기화됩니다.</p>',
+      '</div>',
+      '<div class="mi-cal-work-head-actions">',
+      '<button class="mi-cal-drawer" type="button" data-cal-rail-drawer aria-expanded="false" aria-controls="mi-cal-rail" hidden>캘린더</button>',
+      '<button class="mi-cal-button" type="button" data-cal-today>오늘</button>',
+      '<button class="mi-cal-button is-primary" type="button" data-cal-create>일정 추가</button>',
+      '</div>',
       '</div>',
 
       '<div class="mi-cal-body" data-cal-body>',
@@ -440,6 +545,7 @@
       '</article>',
       '</div>',
       '</div>',
+      '</section>',
 
       '<div class="mi-cal-status" data-cal-status>내 일정을 불러올 준비가 되었습니다.</div>',
 
@@ -675,12 +781,21 @@
     var assistantBriefingRange = "today";
     var assistantSpeechOwned = false;
     var assistantVoice = null;
+    // 조직도 타이머는 mount 범위에 둔다. destroy() 가 같은 배열을 비워야
+    // 화면이 사라진 뒤에도 도는 setTimeout 이 남지 않는다.
+    var officeDestroyed = false;
+    var officeTimers = [];
 
     node.innerHTML = markupHtml();
 
     function on(target, type, handler, options2) {
       target.addEventListener(type, handler, options2);
       windowListeners.push([target, type, handler, options2]);
+    }
+
+    function clearOfficeTimers() {
+      officeTimers.forEach(function (timer) { window.clearTimeout(timer); });
+      officeTimers = [];
     }
 
     function el(selector) {
@@ -860,6 +975,20 @@
       return params;
     }
 
+    // 이름은 서버가 세션 계정에서 정해 준 값만 쓴다 — 화면이 계정을 추측하면
+    // 그 자체가 격리 구멍이다. 그래서 표시용 문자열도 textContent 로만 넣는다.
+    function setScopeLabel(text) {
+      var scopeNode = el("[data-cal-scope]");
+      if (!scopeNode) return;
+      var label = String(text == null ? "" : text);
+      scopeNode.textContent = label || ASSISTANT_SCOPE_FALLBACK;
+    }
+
+    function applyScopeLabel(state) {
+      if (!state) return;
+      if (typeof state.accountLabel === "string" && state.accountLabel) setScopeLabel(state.accountLabel);
+    }
+
     async function loadItems() {
       if (destroyed) return false;
       var generation = ++requestGeneration;
@@ -868,6 +997,7 @@
         var payload = await requestWorkItems("GET", null, itemsQuery());
         if (destroyed || generation !== requestGeneration) return false;
         items = Array.isArray(payload.items) ? payload.items : [];
+        applyScopeLabel(payload);
         googleCalendars = Array.isArray(payload.googleCalendars) ? payload.googleCalendars : [];
         calendarCatalog = Array.isArray(payload.googleCalendarCatalog) ? payload.googleCalendarCatalog : [];
         syncGoogleMode();
@@ -888,14 +1018,23 @@
     }
 
     // ── 렌더 ────────────────────────────────────────────────
+    // 지표 4칸의 숫자는 이 함수만 쓴다. 세는 곳이 둘이면 같은 지표가 화면에서
+    // 서로 다른 숫자로 보이는 날이 반드시 온다.
     function renderSummary() {
       var summaryItems = visibleItems();
       var todayNode = el("[data-cal-summary-today]");
       var overdueNode = el("[data-cal-summary-overdue]");
       var checkNode = el("[data-cal-summary-check]");
+      var nextNode = el("[data-cal-summary-next]");
+      var todayKey = dateKey(new Date());
       if (todayNode) todayNode.textContent = String(summaryItems.filter(function (item) { return matchesFilter(item, "today"); }).length);
       if (overdueNode) overdueNode.textContent = String(summaryItems.filter(function (item) { return matchesFilter(item, "overdue"); }).length);
       if (checkNode) checkNode.textContent = String(summaryItems.filter(function (item) { return matchesFilter(item, "needs_check"); }).length);
+      if (nextNode) {
+        nextNode.textContent = String(summaryItems.filter(function (item) {
+          return needsAction(item) && dateKey(item.startsAt) > todayKey;
+        }).length);
+      }
       node.querySelectorAll("[data-cal-summary-filter]").forEach(function (button) {
         var active = button.getAttribute("data-cal-summary-filter") === activeFilter;
         button.classList.toggle("is-active", active);
@@ -2979,24 +3118,19 @@
         }
       });
       row.appendChild(complete);
+      // 3열 그리드(시간 · 제목 · 완료)는 이 클래스가 붙은 줄에만 적용된다.
+      row.classList.add("has-complete");
       return row;
     }
 
+    // 숫자는 renderSummary() 한 곳에서만 쓴다(위 지표 4칸). 여기서 다시 세면
+    // 같은 지표가 두 줄에서 다른 숫자로 보일 수 있다. 이 함수는 주간 일정표만 그린다.
     function renderAssistantBriefing() {
       var agenda = el("[data-cal-assistant-agenda]");
       if (!agenda) return;
       var now = new Date();
       var todayKey = dateKey(now);
       var openItems = visibleItems().filter(function (item) { return item.status !== "done"; });
-      var metrics = {
-        today: openItems.filter(function (item) { return dateKey(item.startsAt) === todayKey; }).length,
-        overdue: openItems.filter(function (item) { var key = dateKey(item.startsAt); return Boolean(key) && key < todayKey; }).length,
-        needs_check: openItems.filter(function (item) { return item.status === "needs_check"; }).length,
-        next: openItems.filter(function (item) { return dateKey(item.startsAt) > todayKey; }).length
-      };
-      node.querySelectorAll("[data-cal-assistant-metric]").forEach(function (metricNode) {
-        metricNode.textContent = String(metrics[metricNode.getAttribute("data-cal-assistant-metric")] || 0);
-      });
       agenda.innerHTML = "";
       var weekEndKey = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7));
       var tableItems = openItems.filter(function (item) {
@@ -3166,6 +3300,25 @@
       on(sendButton, "click", function () {
         runAssistantPrompt(String(input.value || "")).catch(function () {});
       });
+
+      // 예시 칩은 입력만 채운다. 보내기는 사람이 한 번 더 눌러야 한다.
+      node.querySelectorAll("[data-cal-assistant-example]").forEach(function (chip) {
+        on(chip, "click", function () {
+          if (destroyed) return;
+          input.value = chip.getAttribute("data-cal-assistant-example") || "";
+          input.focus();
+          syncAssistantControls();
+        });
+      });
+
+      // 새로고침은 이미 있는 로더를 다시 부른다. 새 경로를 만들지 않는다.
+      var refreshButton = el("[data-cal-assistant-refresh]");
+      if (refreshButton) {
+        on(refreshButton, "click", function () {
+          if (destroyed) return;
+          loadItems().catch(function () {});
+        });
+      }
 
       // 음성은 있으면 얹고 없으면 조용히 접는다. 없다고 해서 던지지 않는다 —
       // 브리핑·완료·대화는 텍스트만으로 전부 동작해야 한다.
@@ -3370,6 +3523,162 @@
       };
     }
 
+    // ── 비서실 운영실 조직도 ────────────────────────────────
+    // 대표실 bindOwnerAssistant 의 조직도 동작을 그대로 옮겨 적었다. 생존 판정만
+    // 이 컴포넌트 것으로 바꿨다 — 여기엔 대표실의 세대 번호도 세션 역할도 없다.
+    function initOffice() {
+      var input = el("[data-cal-assistant-input]");
+      var office = el("[data-cal-office]");
+      var officeState = el("[data-cal-office-state]");
+      var officeActivity = el("[data-cal-office-activity]");
+      var officeAgents = Array.prototype.slice.call(node.querySelectorAll("[data-cal-agent]"));
+      // 마크업은 이 파일이 그리니 어긋날 자리는 없다. 그래도 못 찾으면 조용히 접는다 —
+      // 조직도는 시각화라 없다고 해서 캘린더까지 막을 이유가 없다.
+      if (!office || !officeState || !officeActivity || officeAgents.length !== 6) return;
+      var officeActive = false;
+      var officeTurn = 0;
+      var officeMotionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
+
+      function officeAlive() {
+        return !officeDestroyed && !destroyed && node.isConnected;
+      }
+      function officeLater(callback, delay) {
+        var timer = window.setTimeout(function () {
+          officeTimers = officeTimers.filter(function (item) { return item !== timer; });
+          if (officeAlive() && officeActive) callback();
+        }, delay);
+        officeTimers.push(timer);
+        return timer;
+      }
+      function officeCompact() {
+        return window.matchMedia && window.matchMedia("(max-width: 640px)").matches;
+      }
+      function officeHome(agent) {
+        return {
+          x: Number(agent.getAttribute(officeCompact() ? "data-mobile-x" : "data-home-x")) || 50,
+          y: Number(agent.getAttribute(officeCompact() ? "data-mobile-y" : "data-home-y")) || 50
+        };
+      }
+      function officePlace(agent, x, y, duration) {
+        if (!agent) return;
+        agent.style.setProperty("--agent-move", String(duration || 1700) + "ms");
+        agent.style.left = String(x) + "%";
+        agent.style.top = String(y) + "%";
+      }
+      function officeReset() {
+        officeAgents.forEach(function (agent) {
+          var home = officeHome(agent);
+          agent.classList.remove("is-walking", "is-talking");
+          officePlace(agent, home.x, home.y, 0);
+        });
+        officeState.textContent = ASSISTANT_OFFICE_IDLE_STATE;
+        officeActivity.textContent = ASSISTANT_OFFICE_IDLE_NOTE;
+      }
+      function officeMove(agent, x, y, duration) {
+        agent.classList.remove("is-talking");
+        agent.classList.add("is-walking");
+        officePlace(agent, x, y, duration);
+      }
+      function officeTalk(agents, message) {
+        agents.forEach(function (agent) {
+          agent.classList.remove("is-walking");
+          agent.classList.add("is-talking");
+        });
+        officeState.textContent = "담당 협의 중";
+        officeActivity.textContent = message;
+      }
+      function officeReturn(agents) {
+        agents.forEach(function (agent) {
+          var home = officeHome(agent);
+          agent.classList.remove("is-talking");
+          officeMove(agent, home.x, home.y, 1500);
+        });
+        officeState.textContent = "자리 복귀 중";
+        officeActivity.textContent = "협의를 마치고 각 담당 자리로 복귀합니다.";
+        officeLater(function () {
+          agents.forEach(function (agent) { agent.classList.remove("is-walking"); });
+          officeState.textContent = ASSISTANT_OFFICE_IDLE_STATE;
+          officeActivity.textContent = "직원을 누르면 해당 담당의 일정 명령으로 연결됩니다.";
+          officeLater(runOfficeScene, 3000 + (officeTurn % 3) * 900);
+        }, 1580);
+      }
+      function runOfficeScene() {
+        if (!officeAlive() || !officeActive) return;
+        // 탭이 숨거나 움직임 줄이기가 켜져 있으면 자리만 지킨다. 보이지 않는
+        // 화면에서 애니메이션을 돌리는 것은 배터리만 태우는 일이다.
+        if ((officeMotionQuery && officeMotionQuery.matches) || document.hidden) {
+          officeState.textContent = officeMotionQuery && officeMotionQuery.matches ? "움직임 줄이기 적용" : "화면 대기";
+          officeLater(runOfficeScene, 2000);
+          return;
+        }
+        officeTurn += 1;
+        var chief = officeAgents[0];
+        var compact = officeCompact();
+        if (officeTurn % 3 === 0) {
+          var first = officeAgents[1 + (officeTurn % 5)];
+          var second = officeAgents[1 + ((officeTurn + 2) % 5)];
+          officeState.textContent = "담당 회의 이동 중";
+          officeActivity.textContent = "두 담당 조직이 공용 협의 공간으로 이동합니다.";
+          officeMove(first, compact ? 42 : 46, compact ? 43 : 45, 1650);
+          officeMove(second, compact ? 58 : 54, compact ? 43 : 45, 1650);
+          officeLater(function () {
+            officeTalk([first, second], "담당 간 업무 연결을 표현하는 화면 시각화입니다.");
+            officeLater(function () { officeReturn([first, second]); }, 3300);
+          }, 1720);
+          return;
+        }
+        var specialist = officeAgents[1 + ((officeTurn - 1) % 5)];
+        var specialistName = specialist.querySelector(".mi-cal-agent-label strong");
+        officeState.textContent = "비서실장 이동 중";
+        officeActivity.textContent = "비서실장이 " + (specialistName ? specialistName.textContent : "담당 조직") + "에게 이동합니다.";
+        officeMove(chief, compact ? 43 : 45, compact ? 43 : 45, 1700);
+        officeMove(specialist, compact ? 57 : 55, compact ? 43 : 45, 1700);
+        officeLater(function () {
+          officeTalk([chief, specialist], "비서실장이 담당 업무를 연결하는 장면입니다.");
+          officeLater(function () { officeReturn([chief, specialist]); }, 3600);
+        }, 1770);
+      }
+      function setOfficeActive(nextActive) {
+        officeActive = Boolean(nextActive) && officeAlive();
+        clearOfficeTimers();
+        officeReset();
+        office.setAttribute("data-motion-state", officeActive ? "active" : "paused");
+        if (!officeActive) return;
+        if (officeMotionQuery && officeMotionQuery.matches) {
+          officeState.textContent = "움직임 줄이기 적용";
+          officeActivity.textContent = "기기 접근성 설정에 따라 조직 이동 애니메이션을 멈췄습니다.";
+          return;
+        }
+        officeLater(runOfficeScene, 900);
+      }
+      // 폭이 바뀌면 자리 좌표(모바일/데스크톱)가 통째로 달라진다. 걷거나 회의
+      // 중인 장면만 건드리지 않고, 대기 중일 때만 새 좌표로 다시 세운다.
+      function handleOfficeResize() {
+        if (!officeAlive()) return;
+        if (!officeAgents.some(function (agent) { return agent.classList.contains("is-walking") || agent.classList.contains("is-talking"); })) officeReset();
+      }
+      on(window, "resize", handleOfficeResize);
+
+      // 직원을 누르면 그 담당의 명령 예시가 입력창에 들어간다. 등록형이 아니라
+      // 이 화면에서 실제로 도는 브리핑 명령이다(ASSISTANT_ROLE_COMMANDS).
+      officeAgents.forEach(function (agent) {
+        on(agent, "click", function () {
+          if (destroyed) return;
+          var agentRole = agent.getAttribute("data-cal-agent-role") || "chief";
+          var labelNode = agent.querySelector(".mi-cal-agent-label strong");
+          var label = labelNode ? String(labelNode.textContent || "").trim().replace(/\s+/g, " ") : "담당";
+          if (input) {
+            input.value = ASSISTANT_ROLE_COMMANDS[agentRole] || ASSISTANT_ROLE_COMMANDS.chief;
+            input.focus();
+            syncAssistantControls();
+          }
+          setAssistantStatus(label + " 일정 명령 예시를 불러왔습니다.", "ok");
+        });
+      });
+
+      setOfficeActive(true);
+    }
+
     function stopAssistant() {
       if (assistantVoice) assistantVoice.stop();
       assistantVoice = null;
@@ -3380,6 +3689,10 @@
     function destroy() {
       if (destroyed) return;
       destroyed = true;
+      // 조직도는 자기 타이머로 스스로를 다시 부른다. 여기서 끊지 않으면
+      // 화면이 사라진 뒤에도 계속 돌면서 없는 노드를 만진다.
+      officeDestroyed = true;
+      clearOfficeTimers();
       requestGeneration += 1;
       window.clearTimeout(pointerTimer);
       stopAssistant();
@@ -3400,6 +3713,7 @@
 
     consumeNoticeParams();
     initAssistant();
+    initOffice();
     syncAssistantControls();
     renderAll();
     loadItems().then(function () {
@@ -3438,6 +3752,20 @@
     ATTENDEE_LIMIT: ATTENDEE_LIMIT,
     EMAIL_PATTERN: EMAIL_PATTERN,
     LOGIN_NOTICES: LOGIN_NOTICES,
+    ASSISTANT_HERO_EYEBROW: ASSISTANT_HERO_EYEBROW,
+    ASSISTANT_HERO_HEADLINE: ASSISTANT_HERO_HEADLINE,
+    ASSISTANT_HERO_SUB: ASSISTANT_HERO_SUB,
+    ASSISTANT_SCOPE_TITLE: ASSISTANT_SCOPE_TITLE,
+    ASSISTANT_SCOPE_FALLBACK: ASSISTANT_SCOPE_FALLBACK,
+    ASSISTANT_SCOPE_NOTE: ASSISTANT_SCOPE_NOTE,
+    ASSISTANT_ORG_TITLE: ASSISTANT_ORG_TITLE,
+    ASSISTANT_ORG_NOTE: ASSISTANT_ORG_NOTE,
+    ASSISTANT_OFFICE_IDLE_STATE: ASSISTANT_OFFICE_IDLE_STATE,
+    ASSISTANT_OFFICE_IDLE_NOTE: ASSISTANT_OFFICE_IDLE_NOTE,
+    ASSISTANT_STATIONS: ASSISTANT_STATIONS,
+    ASSISTANT_AGENTS: ASSISTANT_AGENTS,
+    ASSISTANT_ROLE_COMMANDS: ASSISTANT_ROLE_COMMANDS,
+    ASSISTANT_EXAMPLE_CHIPS: ASSISTANT_EXAMPLE_CHIPS,
     ASSISTANT_RANGE_LABELS: ASSISTANT_RANGE_LABELS,
     ASSISTANT_WEEKDAYS: ASSISTANT_WEEKDAYS,
     ASSISTANT_BRIEFING_INTENT: ASSISTANT_BRIEFING_INTENT,

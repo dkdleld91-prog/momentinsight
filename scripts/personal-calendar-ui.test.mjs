@@ -1078,6 +1078,327 @@ test("an empty month says so instead of showing a blank 42-cell grid", () => {
   for (const page of [adminSource, clientSource]) assert.equal(page.includes("mi-cal-calendar-empty"), false);
 });
 
+// ─────────────────────────────────────────────────────────────
+// 6. 캘린더 블록 드리프트 — admin.html 업무 운영 화면과 값 대조
+//    대표님 피드백("캘린더 UI/UX가 다릅니다") 이후, 달력·레일·아젠다는
+//    #mi-admin .mi-work-* 규칙을 값 그대로 옮긴 사본이다. 대표실 쪽 숫자가
+//    바뀌면 이 사본은 조용히 다른 화면이 되므로 여기서 한 줄씩 못 박는다.
+// ─────────────────────────────────────────────────────────────
+
+const adminStyleCode = stripCssComments(
+  [...adminSource.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map((entry) => entry[1]).join("\n"),
+);
+
+// 규칙 본문을 선언 순서대로 모은다. @media 안의 규칙도 같은 방식으로 잡히므로
+// 반응형 값은 이 함수가 아니라 원문 정규식으로 따로 확인한다(아래 별도 테스트).
+function ruleBodies(css, selector) {
+  const bodies = [];
+  const pattern = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = pattern.exec(css))) {
+    const selectors = match[1]
+      .split(",")
+      .map((entry) => entry.replace(/#mi-admin\s+/g, "").replace(/\s+/g, " ").trim());
+    if (selectors.includes(selector)) bodies.push(match[2]);
+  }
+  return bodies;
+}
+
+// 같은 특이도의 규칙이 여러 번 나오면 마지막 선언이 이긴다. 캐스케이드와 같게 읽는다.
+function declaration(css, selector, property) {
+  const bodies = ruleBodies(css, selector);
+  assert.ok(bodies.length, `규칙을 찾지 못했습니다: ${selector}`);
+  const pattern = new RegExp(`(?:^|;)\\s*${property.replace(/-/g, "\\-")}\\s*:\\s*([^;]+)`, "g");
+  let value = null;
+  for (const body of bodies) {
+    let found;
+    while ((found = pattern.exec(body))) value = found[1];
+    pattern.lastIndex = 0;
+  }
+  assert.notEqual(value, null, `${selector} 에서 ${property} 를 찾지 못했습니다.`);
+  return value;
+}
+
+// 두 파일은 같은 색을 어떤 곳은 토큰으로, 어떤 곳은 16진값으로 적는다. 적는 방식이
+// 아니라 "칠해지는 값"이 같은지 보아야 하므로 양쪽 토큰을 모두 실제 값으로 푼다.
+// (토큰 정의 자체가 어긋나면 아래 CALENDAR_BLOCK_TOKENS 테스트가 잡는다.)
+const CSS_TOKEN_VALUES = [
+  [/var\(--mi-gold-soft\)|var\(--mi-cal-soft\)/g, "#eef2f7"],
+  [/var\(--mi-green-bg\)|var\(--mi-cal-ok-bg\)/g, "#eaf7f1"],
+  [/var\(--mi-green\)|var\(--mi-cal-ok\)/g, "#13795b"],
+  [/var\(--mi-shadow\)|var\(--mi-cal-shadow\)/g, "0 16px 38px rgba(6, 26, 58, 0.07)"],
+  [/var\(--mi-navy\)|var\(--navy\)|var\(--mi-cal-accent\)/g, "#061a3a"],
+  [/var\(--mi-line\)|var\(--line\)|var\(--mi-cal-line\)/g, "#dfe5ef"],
+  [/var\(--mi-muted\)|var\(--muted\)|var\(--mi-cal-muted\)/g, "#667085"],
+  [/var\(--mi-panel\)|var\(--mi-cal-panel\)/g, "#ffffff"],
+  [/var\(--mi-ink\)|var\(--mi-cal-ink\)/g, "#111827"],
+];
+
+// 표기 흔들림(.16s / 0.16s, #fff / #ffffff, 대소문자, 공백)도 없앤다.
+function normalizeCssValue(value) {
+  let text = String(value).replace(/--mi-gcal-/g, "--mi-cal-");
+  for (const [pattern, literal] of CSS_TOKEN_VALUES) text = text.replace(pattern, literal);
+  return text
+    .replace(/(^|[\s(,])\.(\d)/g, "$10.$2")
+    .replace(/#([0-9a-f])([0-9a-f])([0-9a-f])\b/gi, "#$1$1$2$2$3$3")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+// [대표실 선택자, 공유 선택자, 확인할 속성들]
+const CALENDAR_BLOCK_MIRROR = [
+  // 머리줄(‹ 2026년 8월 › · 안내 · 월간 캘린더 배지)
+  [".mi-work-calendar-head", ".mi-cal-calendar-head", ["gap", "padding", "border-bottom"]],
+  [".mi-work-month-nav", ".mi-cal-month-nav", ["gap"]],
+  [".mi-work-calendar-tools", ".mi-cal-calendar-tools", ["gap"]],
+  [".mi-work-month-trigger", ".mi-cal-month-trigger", ["min-width", "min-height", "border-radius", "padding", "font-size", "font-weight"]],
+  [".mi-work-icon-button", ".mi-cal-icon-button", ["width", "height", "border", "border-radius", "font-size", "font-weight"]],
+  [".mi-work-month-picker", ".mi-cal-month-picker", ["top", "left", "width", "border-radius", "padding", "box-shadow"]],
+  [".mi-work-picker-head", ".mi-cal-picker-head", ["grid-template-columns", "gap", "margin-bottom"]],
+  [".mi-work-month-grid", ".mi-cal-month-grid", ["grid-template-columns", "gap"]],
+  [".mi-work-month-choice", ".mi-cal-month-choice", ["min-height", "border-radius", "background", "color", "font-size", "font-weight"]],
+  [".mi-work-picker-cancel", ".mi-cal-picker-cancel", ["width", "margin-top", "padding", "font-size", "font-weight"]],
+  [".mi-work-drag-note", ".mi-cal-drag-note", ["color", "font-size", "font-weight"]],
+  // 카드 골격
+  [".mi-work-calendar-card", ".mi-cal-calendar-card", ["border-radius", "box-shadow", "background", "overflow"]],
+  [".mi-work-agenda-card", ".mi-cal-agenda-card", ["border-radius", "box-shadow", "padding", "order"]],
+  [".mi-work-body.has-gcal-rail", ".mi-cal-body.has-rail", ["grid-template-columns"]],
+  [".mi-work-side", ".mi-cal-side", ["display", "flex-direction", "gap"]],
+  [".mi-work-layout", ".mi-cal-layout", ["grid-template-columns", "gap", "order"]],
+  // 월간 격자
+  [".mi-work-weekdays", ".mi-cal-weekdays", ["grid-template-columns", "background", "border-bottom"]],
+  [".mi-work-weekdays span", ".mi-cal-weekdays span", ["padding", "color", "font-size", "font-weight", "text-align"]],
+  [".mi-work-calendar", ".mi-cal-calendar", ["grid-template-columns"]],
+  [".mi-work-day", ".mi-cal-day", ["min-height", "padding", "border-right", "border-bottom", "background", "cursor"]],
+  [".mi-work-day::after", ".mi-cal-day::after", ["content", "width", "height", "border-radius", "color", "font-size"]],
+  [".mi-work-day.is-today", ".mi-cal-day.is-today", ["background", "box-shadow"]],
+  [".mi-work-day.is-muted", ".mi-cal-day.is-muted", ["background"]],
+  [".mi-work-day.is-drop-target", ".mi-cal-day.is-drop-target", ["background", "box-shadow"]],
+  [".mi-work-day-head", ".mi-cal-day-head", ["margin-bottom"]],
+  [".mi-work-day-head button", ".mi-cal-day-head button", ["color", "font-size", "font-weight"]],
+  [".mi-work-day.is-today .mi-work-day-head button", ".mi-cal-day.is-today .mi-cal-day-head button", ["width", "height", "border-radius", "background"]],
+  [".mi-work-day-items", ".mi-cal-day-items", ["gap"]],
+  // 칩 — 종일은 캘린더 색으로 칠하고, 시간 일정은 흰 칩 + 색 점이다.
+  [".mi-work-day-item", ".mi-cal-day-item", ["padding", "border", "border-radius", "background", "color", "font-size", "font-weight", "line-height", "border-left", "cursor"]],
+  ['.mi-work-day-item[data-status="done"]', '.mi-cal-day-item[data-status="done"]', ["border-color", "background", "color"]],
+  ['.mi-work-day-item[data-gcal="1"]', '.mi-cal-day-item[data-gcal="1"]', ["border-left", "border-color", "background", "color"]],
+  ['.mi-work-day-item[data-gcal="1"][data-allday="false"]', '.mi-cal-day-item[data-gcal="1"][data-allday="false"]', ["border-color", "background", "color"]],
+  ['.mi-work-day-item[data-gcal="1"][data-status="done"]', '.mi-cal-day-item[data-gcal="1"][data-status="done"]', ["opacity", "text-decoration"]],
+  [".mi-work-day-dot", ".mi-cal-day-dot", ["width", "height", "margin-right", "border-radius", "background", "vertical-align"]],
+  [".mi-work-date-overflow", ".mi-cal-date-overflow", ["width", "padding", "border-radius", "color", "background", "font-size", "font-weight"]],
+  // 아젠다
+  [".mi-work-agenda-head", ".mi-cal-agenda-head", ["gap", "margin-bottom"]],
+  [".mi-work-agenda-head h2", ".mi-cal-agenda-head h2", ["margin", "font-size"]],
+  [".mi-work-agenda-tools", ".mi-cal-agenda-tools", ["gap"]],
+  [".mi-work-agenda", ".mi-cal-agenda", ["grid-template-columns", "gap"]],
+  [".mi-work-agenda-group", ".mi-cal-agenda-group", ["gap"]],
+  [".mi-work-agenda-row", ".mi-cal-agenda-row", ["grid-template-columns", "gap"]],
+  [".mi-work-agenda-group > strong", ".mi-cal-agenda-group > strong", ["color", "font-size", "letter-spacing", "text-transform"]],
+  [".mi-work-agenda-empty", ".mi-cal-agenda-empty", ["padding", "border", "border-radius", "color", "font-size"]],
+  [".mi-work-agenda-item", ".mi-cal-agenda-item", ["gap", "padding", "border", "border-radius", "background", "color"]],
+  [".mi-work-agenda-item > i", ".mi-cal-agenda-item > i", ["width", "height", "order", "margin-top", "border-radius", "background"]],
+  [".mi-work-agenda-edit", ".mi-cal-agenda-edit", ["flex", "order", "padding", "text-align"]],
+  [".mi-work-agenda-edit strong", ".mi-cal-agenda-edit strong", ["color", "font-size", "line-height", "-webkit-line-clamp"]],
+  [".mi-work-agenda-edit span", ".mi-cal-agenda-edit span", ["margin-top", "color", "font-size"]],
+  [".mi-work-agenda-meta", ".mi-cal-agenda-meta", ["margin-top", "color", "font-size", "font-weight"]],
+  [".mi-work-quick-done", ".mi-cal-quick-done", ["width", "height", "order", "border", "border-radius", "color", "background", "font-size", "font-weight"]],
+  ['.mi-work-quick-done[data-status="done"]', '.mi-cal-quick-done[data-status="done"]', ["border-color", "color", "background"]],
+  [".mi-work-badges", ".mi-cal-badges", ["gap"]],
+  [".mi-work-agenda-item > .mi-work-badges", ".mi-cal-agenda-item > .mi-cal-badges", ["flex", "order", "padding-left"]],
+  // 레일(Calendars 카드)
+  [".mi-work-gcal-rail", ".mi-cal-rail", ["gap", "padding", "border", "border-radius", "background", "box-shadow"]],
+  [".mi-work-gcal-head", ".mi-cal-rail-head", ["align-items", "gap"]],
+  [".mi-work-gcal-head h2", ".mi-cal-rail-head h2", ["margin", "color", "font-size"]],
+  [".mi-work-gcal-refresh", ".mi-cal-rail-refresh", ["min-height", "padding", "border-radius", "color", "font-size", "font-weight"]],
+  [".mi-work-gcal-list", ".mi-cal-rail-list", ["gap"]],
+  [".mi-work-gcal-section", ".mi-cal-rail-section", ["gap"]],
+  [".mi-work-gcal-group", ".mi-cal-rail-group", ["gap", "padding", "border-radius", "color", "font-size", "font-weight", "letter-spacing"]],
+  [".mi-work-gcal-rows", ".mi-cal-rail-rows", ["gap"]],
+  [".mi-work-gcal-row", ".mi-cal-rail-row", ["gap"]],
+  [".mi-work-gcal-item", ".mi-cal-rail-item", ["gap", "padding", "border-radius", "color", "font-size", "font-weight"]],
+  [".mi-work-gcal-box", ".mi-cal-rail-box", ["width", "height", "border", "border-radius", "background"]],
+  [".mi-work-gcal-tag", ".mi-cal-rail-tag", ["padding", "border-radius", "color", "background", "font-size", "font-weight"]],
+  [".mi-work-gcal-acl", ".mi-cal-rail-acl", ["min-width", "min-height", "padding", "border-radius", "color", "font-size", "font-weight"]],
+  [".mi-work-gcal-new", ".mi-cal-rail-new", ["min-height", "padding", "border", "border-radius", "color", "font-size", "font-weight", "text-align"]],
+  [".mi-work-gcal-drawer", ".mi-cal-drawer", ["min-height", "padding", "border", "border-radius", "color", "font-size", "font-weight"]],
+  // 머리말 알약(Calendars · Agenda · MY CALENDAR)
+  [".mi-kicker", ".mi-cal-kicker", ["min-height", "padding", "border-radius", "font-size", "font-weight", "margin-bottom", "background", "color"]],
+];
+
+test("the shared tokens still resolve to the admin values the mirror table assumes", () => {
+  // 위 CSS_TOKEN_VALUES 는 토큰이 이 값이라는 전제 위에 서 있다. 전제가 무너지면
+  // 값 비교가 통째로 거짓이 되므로, 두 파일의 토큰 정의를 직접 확인한다.
+  const adminTokens = slice(adminStyleCode, "#mi-admin {", "}");
+  const sharedTokens = slice(sharedStyleCode, ".mi-cal-shell {", "}");
+  const expected = [
+    ["--mi-navy", "--mi-cal-accent", "#061a3a"],
+    ["--mi-line", "--mi-cal-line", "#dfe5ef"],
+    ["--mi-muted", "--mi-cal-muted", "#667085"],
+    ["--mi-ink", "--mi-cal-ink", "#111827"],
+    ["--mi-gold-soft", "--mi-cal-soft", "#eef2f7"],
+    ["--mi-green", "--mi-cal-ok", "#13795b"],
+    ["--mi-green-bg", "--mi-cal-ok-bg", "#eaf7f1"],
+  ];
+  for (const [adminToken, sharedToken, literal] of expected) {
+    const adminMatch = adminTokens.match(new RegExp(`${adminToken}:\\s*([^;]+);`));
+    assert.ok(adminMatch, `admin.html 에서 ${adminToken} 정의를 찾지 못했습니다.`);
+    assert.equal(normalizeCssValue(adminMatch[1]), literal, `${adminToken} 값이 바뀌었습니다.`);
+    const sharedMatch = sharedTokens.match(new RegExp(`${sharedToken}:\\s*([^;]+);`));
+    assert.ok(sharedMatch, `공유 CSS 에서 ${sharedToken} 정의를 찾지 못했습니다.`);
+    // 공유 토큰은 페이지 토큰을 먼저 쓰고, 없으면 같은 16진값으로 떨어진다.
+    assert.ok(
+      sharedMatch[1].includes(literal) || sharedMatch[1].includes(adminToken),
+      `${sharedToken} 이 ${literal} 로 떨어지지 않습니다: ${sharedMatch[1]}`,
+    );
+  }
+  assert.equal(normalizeCssValue(slice(adminStyleCode, "--mi-shadow:", ";").replace("--mi-shadow:", "")), "0 16px 38px rgba(6, 26, 58, 0.07)");
+  assert.equal(normalizeCssValue(slice(sharedStyleCode, "--mi-cal-shadow:", ";").replace("--mi-cal-shadow:", "")), "0 16px 38px rgba(6, 26, 58, 0.07)");
+});
+
+test("the calendar block copies admin.html's work-section values, declaration for declaration", () => {
+  for (const [adminSelector, sharedSelector, properties] of CALENDAR_BLOCK_MIRROR) {
+    for (const property of properties) {
+      const adminValue = normalizeCssValue(declaration(adminStyleCode, adminSelector, property));
+      const sharedValue = normalizeCssValue(declaration(sharedStyleCode, sharedSelector, property));
+      assert.equal(
+        sharedValue,
+        adminValue,
+        `${sharedSelector} 의 ${property} 가 대표실(${adminSelector})과 갈렸습니다: ${sharedValue} ≠ ${adminValue}`,
+      );
+    }
+  }
+});
+
+test("the count bubble and the agenda tag both carry the .mi-work-visibility pill values", () => {
+  // 대표실은 .mi-work-visibility 하나로 날짜 칸의 개수 방울과 아젠다 꼬리표를 모두 그린다.
+  // 공유 스크립트는 이름만 둘로 나뉘므로, 두 이름 모두 같은 값을 가져야 한다.
+  for (const property of ["padding", "border-radius", "background", "color", "font-size", "font-weight", "white-space"]) {
+    const adminValue = normalizeCssValue(declaration(adminStyleCode, ".mi-work-visibility", property));
+    for (const sharedSelector of [".mi-cal-chip-count", ".mi-cal-tag"]) {
+      assert.equal(
+        normalizeCssValue(declaration(sharedStyleCode, sharedSelector, property)),
+        adminValue,
+        `${sharedSelector} 의 ${property} 가 .mi-work-visibility 와 갈렸습니다.`,
+      );
+    }
+  }
+  // 캘린더 블록 안의 배지는 대표실 .mi-badge(초록 알약)와 같아야 한다.
+  for (const property of ["min-height", "padding", "font-size", "font-weight"]) {
+    assert.equal(
+      normalizeCssValue(declaration(sharedStyleCode, ".mi-cal-agenda-tools .mi-cal-badge", property)),
+      normalizeCssValue(declaration(adminStyleCode, ".mi-badge", property)),
+      `아젠다 배지의 ${property} 가 .mi-badge 와 갈렸습니다.`,
+    );
+  }
+  for (const property of ["color", "background"]) {
+    assert.equal(
+      normalizeCssValue(declaration(sharedStyleCode, ".mi-cal-agenda-tools .mi-cal-badge", property)),
+      normalizeCssValue(declaration(adminStyleCode, ".mi-badge", property)),
+      `아젠다 배지의 ${property} 가 .mi-badge 와 갈렸습니다.`,
+    );
+  }
+  // 대표실 캘린더 블록 안에서 button 은 font: inherit 로 줄 높이를 물려받는다.
+  // 공유 CSS 에는 그 전역이 없으므로 :where() 로 특이도 0 짜리 사본을 둔다.
+  assert.match(adminStyleCode, /#mi-admin button,\s*#mi-admin input,\s*#mi-admin textarea\s*\{\s*font: inherit;/u);
+  assert.match(sharedStyleCode, /:where\(\.mi-cal-work\) button,[\s\S]{0,160}\{\s*font: inherit;/u);
+});
+
+test("the calendar block keeps the admin markup structure, label for label", () => {
+  // 마크업 구조: 대표실 업무 화면의 캘린더 블록과 같은 순서·같은 자리다.
+  const workBlock = slice(adminSource, '<div class="mi-work-body" data-work-gcal-body>', '<div class="mi-work-status"');
+  const calBlock = slice(markup, '<div class="mi-cal-body" data-cal-body>', '<div class="mi-cal-status"');
+  const structure = [
+    ["mi-work-side", "mi-cal-side"],
+    ["mi-work-gcal-rail", "mi-cal-rail"],
+    ["mi-work-gcal-head", "mi-cal-rail-head"],
+    ["mi-work-gcal-refresh", "mi-cal-rail-refresh"],
+    ["mi-work-gcal-list", "mi-cal-rail-list"],
+    ["mi-work-gcal-new", "mi-cal-rail-new"],
+    ["mi-work-agenda-card", "mi-cal-agenda-card"],
+    ["mi-work-agenda-head", "mi-cal-agenda-head"],
+    ["mi-work-agenda-tools", "mi-cal-agenda-tools"],
+    ["mi-work-layout", "mi-cal-layout"],
+    ["mi-work-calendar-card", "mi-cal-calendar-card"],
+    ["mi-work-calendar-head", "mi-cal-calendar-head"],
+    ["mi-work-month-nav", "mi-cal-month-nav"],
+    ["mi-work-month-trigger", "mi-cal-month-trigger"],
+    ["mi-work-month-picker", "mi-cal-month-picker"],
+    ["mi-work-picker-head", "mi-cal-picker-head"],
+    ["mi-work-month-grid", "mi-cal-month-grid"],
+    ["mi-work-picker-cancel", "mi-cal-picker-cancel"],
+    ["mi-work-calendar-tools", "mi-cal-calendar-tools"],
+    ["mi-work-drag-note", "mi-cal-drag-note"],
+    ["mi-work-weekdays", "mi-cal-weekdays"],
+  ];
+  let workCursor = 0;
+  let calCursor = 0;
+  for (const [workClass, calClass] of structure) {
+    const workAt = workBlock.indexOf(workClass, workCursor);
+    const calAt = calBlock.indexOf(calClass, calCursor);
+    assert.notEqual(workAt, -1, `admin.html 캘린더 블록에서 ${workClass} 를 찾지 못했습니다.`);
+    assert.notEqual(calAt, -1, `공유 마크업에서 ${calClass} 가 대표실과 다른 자리에 있습니다: ${calClass}`);
+    workCursor = workAt + workClass.length;
+    calCursor = calAt + calClass.length;
+  }
+
+  // 눈에 보이는 글자. 요일 머리·그룹 이름·읽기 전용 꼬리표·월간 캘린더 배지는 그대로다.
+  for (const label of ["<span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span>", "월간 캘린더", "＋ 새 캘린더 만들기", "새로고침", "Calendars", "Agenda"]) {
+    assert.ok(adminSource.includes(label), `admin.html 에서 문구가 사라졌습니다: ${label}`);
+    assert.ok(markup.includes(label), `공유 마크업과 문구가 갈렸습니다: ${label}`);
+  }
+  for (const label of ["내 캘린더", "다른 캘린더", "읽기 전용", "TODAY", "TOMORROW"]) {
+    assert.ok(adminSource.includes(label), `admin.html 에서 문구가 사라졌습니다: ${label}`);
+    assert.ok(sharedSource.includes(label), `공유 스크립트와 문구가 갈렸습니다: ${label}`);
+  }
+  // 넘침 줄은 대표실과 같은 "+N" 이고, 세 개까지 보인 뒤에만 붙는다.
+  for (const source of [adminSource, sharedSource]) {
+    assert.ok(source.includes("dayItems.slice(0, 3)"), "칩은 세 개까지만 보인다는 규칙이 갈렸습니다.");
+    assert.ok(source.includes('">+\' + (dayItems.length - 3)') || source.includes('">+" + (dayItems.length - 3)'), "넘침 줄 표기가 갈렸습니다.");
+  }
+  // 길게 눌러 옮기는 손잡이(draggable + touch-action)도 같은 자리에 있다.
+  assert.ok(sharedSource.includes('draggable="\' + (editable ? "true" : "false") + \'"'));
+  assert.ok(adminSource.includes('draggable="\' + (canEdit ? "true" : "false") + \'"'));
+  assert.match(sharedStyleCode, /\.mi-cal-day-item\s*\{[^}]*touch-action: none;/u);
+  assert.match(adminStyleCode, /\.mi-work-day-item\s*\{[^}]*touch-action: none;/u);
+});
+
+test("the calendar block folds at the same breakpoints as the work section", () => {
+  // 1180px: 레일이 서랍으로 접히고 달력(1) → 가까운 일정(2) 순서로 선다.
+  const adminNarrow = slice(adminStyleCode, "@media (max-width: 1180px)", "@media (max-width: 760px)");
+  const sharedNarrow = slice(sharedStyleCode, "@media (max-width: 1180px)", "@media (max-width: 900px)");
+  for (const [adminRule, sharedRule] of [
+    [".mi-work-body.has-gcal-rail {", ".mi-cal-body.has-rail {"],
+    [".mi-work-gcal-rail {", ".mi-cal-rail {"],
+    [".mi-work-gcal-drawer {", ".mi-cal-drawer {"],
+  ]) {
+    assert.ok(adminNarrow.includes(adminRule), `대표실 1180px 규칙이 사라졌습니다: ${adminRule}`);
+    assert.ok(sharedNarrow.includes(sharedRule), `1180px 규칙이 갈렸습니다: ${sharedRule}`);
+  }
+  assert.match(sharedNarrow, /\.mi-cal-body\.has-rail > \.mi-cal-side\s*\{[^}]*display: contents;/u);
+  assert.match(adminNarrow, /\.mi-work-body\.has-gcal-rail > \.mi-work-side\s*\{[^}]*display: contents;/u);
+  assert.match(sharedNarrow, /\.mi-cal-body\.has-rail > \.mi-cal-layout\s*\{[^}]*order: 1;/u);
+  assert.match(sharedNarrow, /\.mi-cal-agenda-card\s*\{[^}]*order: 2;/u);
+  assert.match(sharedNarrow, /\.mi-cal-agenda-row\s*\{\s*grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/u);
+  assert.match(adminNarrow, /\.mi-work-agenda-row\s*\{\s*grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/u);
+
+  // 760px: 달력은 카드 안에서만 가로로 밀리고 칸 높이는 그대로다(대표실과 같다).
+  const adminMobile = adminStyleCode.slice(adminStyleCode.indexOf("@media (max-width: 760px)"));
+  const sharedMobile = sharedStyleCode.slice(sharedStyleCode.indexOf("@media (max-width: 760px)"));
+  assert.match(adminMobile, /\.mi-work-calendar-card\s*\{\s*overflow-x: auto;/u);
+  assert.match(sharedMobile, /\.mi-cal-calendar-card\s*\{\s*overflow-x: auto;/u);
+  assert.match(adminMobile, /\.mi-work-calendar-head,[\s\S]{0,80}\{\s*min-width: 700px;/u);
+  assert.match(sharedMobile, /\.mi-cal-calendar-head,[\s\S]{0,80}\{\s*min-width: 700px;/u);
+  assert.match(sharedMobile, /\.mi-cal-agenda-row\s*\{\s*grid-template-columns: minmax\(0, 1fr\);/u);
+  // 좁은 화면이라고 칸을 줄이지 않는다 — 줄이면 대표실과 다른 달력이 된다.
+  assert.equal(/\.mi-cal-day\s*\{[^}]*min-height:/u.test(sharedMobile), false, "모바일에서 날짜 칸 높이를 따로 줄이면 안 됩니다.");
+  assert.equal(/\.mi-cal-calendar,\s*\.mi-cal-weekdays\s*\{[^}]*gap:/u.test(sharedMobile), false, "격자 사이 여백은 대표실처럼 0 이어야 합니다.");
+
+  // 900px: 캘린더 머리말이 대표실 .mi-head 처럼 한 칸으로 접힌다.
+  assert.match(sharedStyleCode, /@media \(max-width: 900px\)[\s\S]{0,200}\.mi-cal-work-head\s*\{\s*display: grid;\s*grid-template-columns: 1fr;/u);
+  assert.match(adminStyleCode, /@media \(max-width: 900px\)[\s\S]*?#mi-admin \.mi-head,[\s\S]*?grid-template-columns: 1fr;/u);
+});
+
 test("this suite is wired into npm test", () => {
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/personal-calendar-ui.test.mjs"));
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"));

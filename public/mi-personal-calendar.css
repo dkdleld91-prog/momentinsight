@@ -3099,6 +3099,16 @@ button.mi-cal-metric:hover {
     display: grid;
     grid-template-columns: 1fr;
   }
+
+  /* iOS 사파리는 글자가 16px 미만인 입력칸에 포커스가 가면 화면을 통째로
+     확대한다. 일정 다이얼로그는 입력칸이 전부라 확대되면 그대로 쓰기 어려워
+     진다. viewport 의 maximum-scale 로 막는 것은 접근성 위반이므로, 모바일
+     폭에서만 글자를 16px 로 올려 확대할 이유 자체를 없앤다. */
+  .mi-cal-input,
+  .mi-cal-select,
+  .mi-cal-textarea {
+    font-size: 16px;
+  }
 }
 
 @media (max-width: 760px) {

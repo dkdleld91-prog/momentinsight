@@ -566,6 +566,15 @@
         padding-bottom: 56px;
       }
 
+      /* 표는 `min-width: 560px` 이라 .mi-table-scroll 안에서만 옆으로 밀려야
+         한다. 그런데 .mi-article 은 그리드 아이템이고 그리드 아이템의 기본값
+         `min-width: auto` 는 속 내용(=표 560px)보다 좁아지기를 거부한다.
+         그래서 스크롤 상자가 있어도 문서가 통째로 가로로 넘쳤다. 0 으로
+         풀어 주면 표만 제 상자 안에서 밀린다. */
+      #mi-privacy .mi-article {
+        min-width: 0;
+      }
+
       #mi-privacy .mi-article > h2 {
         font-size: 19px;
       }

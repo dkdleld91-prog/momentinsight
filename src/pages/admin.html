@@ -1,4 +1,5 @@
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>모먼트인사이트 관리자 대시보드</title>
 <meta name="description" content="모먼트인사이트 관리자 전용 데이터 대시보드입니다." />
 <meta name="robots" content="noindex, nofollow" />
@@ -7571,6 +7572,10 @@
         justify-content: flex-start;
       }
 
+      /* .is-tracking 은 위의 `.mi-rank-form { grid-template-columns: 1fr }`
+         보다 특이도가 높다. 여기서 같이 눕히지 않으면 150px+320px+104px 고정
+         칸이 모바일에서도 남아 문서가 통째로 가로로 넘친다(N 30일 순위 화면). */
+      #mi-admin .mi-rank-form.is-tracking,
       #mi-admin .mi-place-rank-card .mi-rank-form.is-tracking,
       #mi-admin .mi-rank-grid {
         grid-template-columns: minmax(0, 1fr);
@@ -7735,6 +7740,31 @@
       #mi-admin.is-owner-agency-mode .mi-owner-create-tool {
         grid-template-columns: 1fr;
         gap: 11px;
+      }
+
+      /* iOS 사파리는 글자가 16px 미만인 입력칸에 포커스가 가면 화면을 통째로
+         확대한다. viewport 에 maximum-scale 을 박아 확대를 막는 것은 손가락
+         확대까지 빼앗는 접근성 위반이므로, 모바일 폭에서만 글자를 16px 로
+         올려 확대가 일어날 이유 자체를 없앤다.
+         미디어 쿼리는 특이도를 올려 주지 않는다. 그래서 데스크톱에서 작은
+         글자를 지정한 선택자를 하나하나 같은 모양으로 다시 적어야 이긴다. */
+      #mi-admin .mi-input,
+      #mi-admin .mi-textarea,
+      #mi-admin .mi-select,
+      #mi-admin .mi-rank-select,
+      #mi-admin select.mi-input,
+      #mi-admin .mi-rank-filterbar .mi-input,
+      #mi-admin .mi-rank-bulk-actions .mi-input,
+      #mi-admin .mi-operation-input .mi-field .mi-input,
+      #mi-admin.is-owner-agency-mode .mi-owner-create-row .mi-input,
+      /* 내 캘린더는 공유 CSS(mi-personal-calendar.css)에서 오지만, 이 페이지의
+         `#mi-admin input { font: inherit }` 가 아이디 특이도로 그 규칙을 이겨
+         라벨(.mi-cal-field, 11px)을 물려받는다. 그래서 여기서 아이디를 달아
+         한 번 더 못박는다. */
+      #mi-admin .mi-cal-input,
+      #mi-admin .mi-cal-select,
+      #mi-admin .mi-cal-textarea {
+        font-size: 16px;
       }
 
     }
@@ -10450,6 +10480,23 @@
       font-weight: 700;
       line-height: 1.55;
       white-space: pre-wrap;
+    }
+
+    /* iOS 사파리는 글자가 16px 미만인 입력칸에 포커스가 가면 화면을 통째로
+       확대한다. viewport 에 maximum-scale 을 박아 확대를 막는 것은 손가락
+       확대까지 빼앗는 접근성 위반이므로, 모바일 폭에서만 글자를 16px 로
+       올려 확대가 일어날 이유 자체를 없앤다.
+       업무 운영 묶음의 작은 글자 규칙은 이 <style> 안(위쪽)에 있고 미디어
+       쿼리는 특이도를 올려 주지 않는다. 그래서 같은 선택자를 그 규칙보다
+       뒤에서 다시 적어야 순서로 이긴다 — 앞쪽 묶음에 적으면 지고 만다. */
+    @media (max-width: 900px) {
+      #mi-admin .mi-work-dialog .mi-input,
+      #mi-admin .mi-work-dialog .mi-textarea,
+      #mi-admin .mi-work-dialog .mi-select,
+      #mi-admin .mi-work-gcal-panel .mi-input,
+      #mi-admin .mi-work-gcal-panel .mi-select {
+        font-size: 16px;
+      }
     }
   </style>
 

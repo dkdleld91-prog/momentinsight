@@ -1,4 +1,5 @@
 <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>모먼트인사이트 광고주 대시보드</title>
 <meta name="description" content="모먼트인사이트 광고주 전용 데이터 대시보드입니다." />
 <meta name="robots" content="noindex, nofollow" />
@@ -4891,6 +4892,10 @@
         justify-content: flex-start;
       }
 
+      /* .is-tracking 은 위의 `.mi-rank-form { grid-template-columns: 1fr }`
+         보다 특이도가 높다. 여기서 같이 눕히지 않으면 150px+320px+104px 고정
+         칸이 모바일에서도 남아 문서가 통째로 가로로 넘친다(N 30일 순위 화면). */
+      #mi-clean .mi-rank-form.is-tracking,
       #mi-clean .mi-place-rank-card .mi-rank-form.is-tracking,
       #mi-clean .mi-rank-grid {
         grid-template-columns: minmax(0, 1fr);
@@ -5058,6 +5063,29 @@
 
       #mi-clean .mi-seo-panel.is-wide {
         grid-column: auto;
+      }
+
+      /* iOS 사파리는 글자가 16px 미만인 입력칸에 포커스가 가면 화면을 통째로
+         확대한다. viewport 에 maximum-scale 을 박아 확대를 막는 것은 손가락
+         확대까지 빼앗는 접근성 위반이므로, 모바일 폭에서만 글자를 16px 로
+         올려 확대가 일어날 이유 자체를 없앤다.
+         미디어 쿼리는 특이도를 올려 주지 않는다. 그래서 데스크톱에서 작은
+         글자를 지정한 선택자를 하나하나 같은 모양으로 다시 적어야 이긴다. */
+      #mi-clean .mi-input,
+      #mi-clean .mi-textarea,
+      #mi-clean .mi-select,
+      #mi-clean .mi-rank-select,
+      #mi-clean select.mi-input,
+      #mi-clean .mi-rank-filterbar .mi-input,
+      #mi-clean .mi-rank-bulk-actions .mi-input,
+      /* 내 캘린더는 공유 CSS(mi-personal-calendar.css)에서 오지만, 이 페이지의
+         `#mi-clean input { font: inherit }` 가 아이디 특이도로 그 규칙을 이겨
+         라벨(.mi-cal-field, 11px)을 물려받는다. 그래서 여기서 아이디를 달아
+         한 번 더 못박는다. */
+      #mi-clean .mi-cal-input,
+      #mi-clean .mi-cal-select,
+      #mi-clean .mi-cal-textarea {
+        font-size: 16px;
       }
     }
 

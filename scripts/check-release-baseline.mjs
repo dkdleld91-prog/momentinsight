@@ -48,6 +48,8 @@ function functionBody(source, startMarker, endMarker) {
 const adminSource = read("src/pages/admin.html");
 const clientSource = read("src/pages/client.html");
 const homeSource = read("src/pages/home.html");
+const privacySource = read("src/pages/privacy.html");
+const personalCalendarStyleSource = read("public/mi-personal-calendar.css");
 const homeDevelopmentNoticeStyleSource = functionBody(homeSource, "    #mi-home .mi-dev-banner {", "    #mi-home .mi-dev-banner.is-hidden {");
 const homeDevelopmentNoticeMarkupSource = functionBody(homeSource, '  <aside class="mi-dev-banner"', "  </aside>");
 const homeDevelopmentNoticeScriptSource = functionBody(homeSource, "    (function () {", "    })();");
@@ -102,6 +104,27 @@ const ownerCreateResponsiveStyle = functionBody(
   "@media (max-width: 1220px) {",
   "@media (max-width: 900px) {",
 );
+// 모바일(≤900px) 규칙 묶음. admin.html 은 900px 묶음이 두 개라 앞쪽(대시보드 본문)과
+// 맨 뒤(업무 다이얼로그·구글 패널)를 따로 자른다. 못 찾으면 빈 문자열이 되어 검사가 막힌다.
+const adminMobileStyle = functionBody(adminSource, "@media (max-width: 900px) {", "@media (max-width: 720px) {");
+const adminWorkDialogMobileStyle = functionBody(
+  adminSource.slice(adminSource.lastIndexOf("@media (max-width: 900px) {")),
+  "@media (max-width: 900px) {",
+  "</style>",
+);
+const clientMobileStyle = functionBody(clientSource, "@media (max-width: 900px) {", "@media (max-width: 520px) {");
+const personalCalendarMobileStyle = functionBody(
+  personalCalendarStyleSource,
+  "@media (max-width: 900px) {",
+  "@media (max-width: 760px) {",
+);
+// 개인정보처리방침의 모바일(≤640px) 묶음. 표(min-width:560px)가 .mi-table-scroll
+// 안에서만 밀리게 하려면 그리드 아이템인 .mi-article 의 min-width:auto 를 풀어야 한다.
+const privacyMobileStyle = functionBody(privacySource, "@media (max-width: 640px) {", "@media (max-width: 430px) {");
+// 네 페이지가 실제로 선언한 viewport 태그 원문. 주석에 적힌 maximum-scale 설명글이
+// 검사에 섞이지 않도록, 전체 파일이 아니라 태그 한 줄만 뽑아 본다.
+const dashboardViewportMetas = [adminSource, clientSource, homeSource, privacySource]
+  .map((source) => (source.match(/<meta name="viewport"[^>]*>/u) || [""])[0]);
 const homeFeatureShowcaseSource = functionBody(
   homeSource,
   "<!-- mi-feature-showcase:start -->",
@@ -659,6 +682,57 @@ const checks = {
     && homeSource.includes("<body>")
     && homeSource.includes("</body>")
     && homeSource.trimEnd().endsWith("</html>"),
+  // 뷰포트 선언이 없으면 모바일 사파리가 980px 데스크톱 폭으로 그리고 페이지를 축소한다.
+  // 네 페이지 모두 같은 한 줄을 갖고, 손가락 확대를 막는 값은 어디에도 없어야 한다.
+  dashboardPagesDeclareMobileViewport: [adminSource, clientSource, homeSource, privacySource]
+    .every((source) => source.includes('<meta name="viewport" content="width=device-width, initial-scale=1" />'))
+    // 대시보드 두 장은 charset 바로 다음 줄에 둔다 — 선언이 늦으면 첫 레이아웃을 놓친다.
+    && adminSource.includes('<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />')
+    && clientSource.includes('<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />')
+    && dashboardViewportMetas.length === 4
+    && dashboardViewportMetas.every((meta) => meta.includes("width=device-width")
+      && !meta.includes("maximum-scale")
+      && !meta.includes("user-scalable=no")),
+  // ≤900px 에서 고정 폭 칸을 눕히고(가로 넘침), 입력칸 글자를 16px 로 올린다(iOS 확대).
+  dashboardMobileLayoutAndInputGuards: adminMobileStyle.includes("#mi-admin .mi-rank-form.is-tracking,")
+    && adminMobileStyle.includes("#mi-admin .mi-rank-grid {")
+    && clientMobileStyle.includes("#mi-clean .mi-rank-form.is-tracking,")
+    && clientMobileStyle.includes("#mi-clean .mi-rank-grid {")
+    // `#mi-admin input { font: inherit }` 가 아이디 특이도로 공유 CSS 를 이기므로,
+    // 페이지 쪽에서도 아이디를 달아 캘린더 입력칸을 다시 16px 로 못박아야 한다.
+    && orderedIncludes(adminMobileStyle, [
+      "#mi-admin .mi-cal-input,",
+      "#mi-admin .mi-cal-select,",
+      "#mi-admin .mi-cal-textarea {",
+      "font-size: 16px;",
+    ])
+    && orderedIncludes(clientMobileStyle, [
+      "#mi-clean .mi-cal-input,",
+      "#mi-clean .mi-cal-select,",
+      "#mi-clean .mi-cal-textarea {",
+      "font-size: 16px;",
+    ])
+    && orderedIncludes(adminWorkDialogMobileStyle, [
+      "#mi-admin .mi-work-dialog .mi-input,",
+      "#mi-admin .mi-work-dialog .mi-textarea,",
+      "#mi-admin .mi-work-gcal-panel .mi-select {",
+      "font-size: 16px;",
+    ])
+    && orderedIncludes(personalCalendarMobileStyle, [
+      ".mi-cal-input,",
+      ".mi-cal-select,",
+      ".mi-cal-textarea {",
+      "font-size: 16px;",
+    ])
+    // 표는 스크롤 상자 안에서만 밀려야 한다. .mi-article 은 그리드 아이템이라
+    // 기본값 min-width:auto 가 표(560px)보다 좁아지기를 거부해, 상자가 있어도
+    // 문서가 통째로 가로로 넘쳤다(375px 에서 scrollWidth 576).
+    && orderedIncludes(privacyMobileStyle, [
+      "#mi-privacy .mi-article {",
+      "min-width: 0;",
+    ])
+    && privacySource.includes("min-width: 560px;")
+    && privacySource.includes("overflow-x: auto;"),
   homeInlineDevelopmentStatusDoesNotCoverPrimaryActions: /position:\s*relative;/u.test(homeDevelopmentNoticeStyleSource)
     && !/position:\s*fixed;/u.test(homeDevelopmentNoticeStyleSource)
     && homeDevelopmentNoticeStyleSource.includes("width: min(1120px, calc(100% - 40px));")

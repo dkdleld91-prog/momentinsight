@@ -1412,6 +1412,60 @@ test("the calendar block folds at the same breakpoints as the work section", () 
   assert.match(adminStyleCode, /@media \(max-width: 900px\)[\s\S]*?#mi-admin \.mi-head,[\s\S]*?grid-template-columns: 1fr;/u);
 });
 
+// 두 대시보드가 실제로 선언한 viewport 태그. 파일 전체를 훑으면 CSS 주석에 적어 둔
+// "maximum-scale 로 막지 않는다" 라는 설명글이 걸리므로, 태그 한 줄만 뽑아 본다.
+function viewportMeta(source) {
+  const found = source.match(/<meta name="viewport"[^>]*>/u);
+  assert.ok(found, "viewport 메타 태그가 없습니다.");
+  return found[0];
+}
+
+test("both dashboard pages declare the mobile viewport without disabling pinch zoom", () => {
+  // 이 한 줄이 없으면 모바일 사파리가 980px 데스크톱 폭으로 그린 뒤 페이지를 축소한다.
+  // charset 바로 다음 줄이어야 첫 레이아웃 계산에 늦지 않는다.
+  for (const source of [adminSource, clientSource]) {
+    assert.ok(source.includes('<meta charset="utf-8" />\n<meta name="viewport" content="width=device-width, initial-scale=1" />'));
+    const meta = viewportMeta(source);
+    assert.ok(meta.includes("width=device-width"));
+    assert.ok(meta.includes("initial-scale=1"));
+    // 손가락 확대를 빼앗는 값은 접근성 위반이다. iOS 확대는 아래 16px 규칙으로 막는다.
+    assert.equal(meta.includes("maximum-scale"), false, "maximum-scale 로 확대를 막으면 안 됩니다.");
+    assert.equal(meta.includes("user-scalable=no"), false, "user-scalable=no 로 확대를 막으면 안 됩니다.");
+  }
+});
+
+test("the shared stylesheet raises calendar inputs to 16px on narrow screens", () => {
+  // iOS 사파리는 16px 미만 입력칸에 포커스가 가면 화면을 통째로 확대한다.
+  // 파일 전체 substring 이 아니라 ≤900px 묶음만 잘라서 본다 — 데스크톱 규칙이
+  // 우연히 16px 이라고 해서 모바일 계약이 지켜지는 것은 아니기 때문이다.
+  const mobileBlock = slice(sharedStyleCode, "@media (max-width: 900px)", "@media (max-width: 760px)");
+  assert.match(mobileBlock, /\.mi-cal-input,\s*\.mi-cal-select,\s*\.mi-cal-textarea\s*\{\s*font-size: 16px;\s*\}/u);
+  // 데스크톱 쪽 원래 크기는 그대로다 — 모바일 폭에서만 올린다.
+  const desktopBlock = sharedStyleCode.slice(0, sharedStyleCode.indexOf("@media (max-width: 1180px)"));
+  assert.equal(/\.mi-cal-input,\s*\.mi-cal-select,\s*\.mi-cal-textarea\s*\{[^}]*font-size: 16px;/u.test(desktopBlock), false);
+});
+
+test("both dashboard pages re-declare the 16px calendar inputs under their own id", () => {
+  // 공유 클래스 규칙(.mi-cal-input)만으로는 진다. 두 페이지 모두 `#mi-admin input {
+  // font: inherit }` / `#mi-clean input { font: inherit }` 를 갖고 있어, 아이디
+  // 특이도가 클래스 규칙을 이기고 입력칸이 라벨(.mi-cal-field, 11px)을 물려받는다.
+  // 그래서 페이지 쪽 ≤900px 묶음에서 아이디를 달아 한 번 더 못박아야 한다.
+  for (const [source, root, endMarker] of [
+    [adminSource, "mi-admin", "@media (max-width: 720px)"],
+    [clientSource, "mi-clean", "@media (max-width: 520px)"],
+  ]) {
+    assert.ok(/#mi-(?:admin|clean) input\b[^}]*font: inherit;/u.test(source), `${root} 의 font: inherit 전제가 사라졌습니다.`);
+    const mobileBlock = slice(stripCssComments(source), "@media (max-width: 900px)", endMarker);
+    const pattern = new RegExp(`#${root} \\.mi-cal-input,\\s*#${root} \\.mi-cal-select,\\s*#${root} \\.mi-cal-textarea\\s*\\{\\s*font-size: 16px;`, "u");
+    assert.match(mobileBlock, pattern);
+  }
+
+  // 업무 다이얼로그·구글 패널도 같은 이유로 마지막 <style> 끝에서 다시 적힌다.
+  const dialogBlock = stripCssComments(adminSource.slice(adminSource.lastIndexOf("@media (max-width: 900px) {")));
+  assert.match(dialogBlock, /#mi-admin \.mi-work-dialog \.mi-textarea,/u);
+  assert.match(dialogBlock, /#mi-admin \.mi-work-gcal-panel \.mi-select\s*\{\s*font-size: 16px;/u);
+});
+
 // ─────────────────────────────────────────────────────────────
 // 7. 대표실 전체 이식(v2) — 초안 파서 · 예시 칩 · 굿모닝 · 머리말 · 레일
 //    대표님 피드백: "개인 화면은 대표실 전체여야 한다".

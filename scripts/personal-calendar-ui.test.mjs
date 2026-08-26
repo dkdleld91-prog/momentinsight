@@ -340,7 +340,8 @@ test("admin exposes 내 캘린더 as the 14th screen, right after 업무 운영"
   assert.ok(workAt > -1 && personalAt > workAt && previewAt > personalAt, "메뉴 순서: 업무 운영 → 내 캘린더 → 광고주 미리보기");
   assert.ok(adminSource.includes('<section class="mi-view" data-mi-admin-view="my-calendar" id="mi-admin-my-calendar">'));
   // .mi-nav a 가 display:flex 라 [hidden] 만으로는 감춰지지 않는다.
-  assert.ok(adminSource.includes("#mi-admin .mi-nav a.mi-nav-personal[hidden]"));
+  // (내 캘린더·업무 운영 두 링크가 서로 자리를 바꾸므로 규칙도 링크 전체로 넓혔다.)
+  assert.ok(adminSource.includes("#mi-admin .mi-nav a[hidden]"));
   const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
   assert.equal(screens.length, 14);
   assert.ok(screens.includes("my-calendar"));
@@ -1133,6 +1134,7 @@ function declaration(css, selector, property) {
 // (토큰 정의 자체가 어긋나면 아래 CALENDAR_BLOCK_TOKENS 테스트가 잡는다.)
 const CSS_TOKEN_VALUES = [
   [/var\(--mi-gold-soft\)|var\(--mi-cal-soft\)/g, "#eef2f7"],
+  [/var\(--mi-cal-gold-ink\)/g, "#b28c4c"],
   [/var\(--mi-green-bg\)|var\(--mi-cal-ok-bg\)/g, "#eaf7f1"],
   [/var\(--mi-green\)|var\(--mi-cal-ok\)/g, "#13795b"],
   [/var\(--mi-shadow\)|var\(--mi-cal-shadow\)/g, "0 16px 38px rgba(6, 26, 58, 0.07)"],
@@ -1148,8 +1150,10 @@ function normalizeCssValue(value) {
   let text = String(value).replace(/--mi-gcal-/g, "--mi-cal-");
   for (const [pattern, literal] of CSS_TOKEN_VALUES) text = text.replace(pattern, literal);
   return text
-    .replace(/(^|[\s(,])\.(\d)/g, "$10.$2")
+    .replace(/(^|[\s(,\-])\.(\d)/g, "$10.$2")
     .replace(/#([0-9a-f])([0-9a-f])([0-9a-f])\b/gi, "#$1$1$2$2$3$3")
+    // 대표실 CSS 는 압축돼 있어 쉼표 뒤 공백이 없다. 값이 아니라 표기 차이이므로 지운다.
+    .replace(/\s*,\s*/g, ",")
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
@@ -1261,8 +1265,8 @@ test("the shared tokens still resolve to the admin values the mirror table assum
       `${sharedToken} 이 ${literal} 로 떨어지지 않습니다: ${sharedMatch[1]}`,
     );
   }
-  assert.equal(normalizeCssValue(slice(adminStyleCode, "--mi-shadow:", ";").replace("--mi-shadow:", "")), "0 16px 38px rgba(6, 26, 58, 0.07)");
-  assert.equal(normalizeCssValue(slice(sharedStyleCode, "--mi-cal-shadow:", ";").replace("--mi-cal-shadow:", "")), "0 16px 38px rgba(6, 26, 58, 0.07)");
+  assert.equal(normalizeCssValue(slice(adminStyleCode, "--mi-shadow:", ";").replace("--mi-shadow:", "")), "0 16px 38px rgba(6,26,58,0.07)");
+  assert.equal(normalizeCssValue(slice(sharedStyleCode, "--mi-cal-shadow:", ";").replace("--mi-cal-shadow:", "")), "0 16px 38px rgba(6,26,58,0.07)");
 });
 
 test("the calendar block copies admin.html's work-section values, declaration for declaration", () => {
@@ -1589,6 +1593,80 @@ test("the rail stays on screen when google is not connected, in both states", ()
   // 정적 줄은 버튼이 아니다(누를 것이 없는 줄을 누르게 두지 않는다).
   assert.ok(sharedCode.includes('<span class="mi-cal-rail-item is-static" data-cal-rail-static>'));
   assert.match(sharedStyleCode, /\.mi-cal-rail-item\.is-static\s*\{[^}]*cursor: default;/u);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 8. 운영팀 메뉴 교체 · 구글 배너 한 벌
+// ─────────────────────────────────────────────────────────────
+
+test("the 업무 운영 menu is hidden for team sessions and its hash routes to 내 캘린더", () => {
+  // 마크업은 그대로 둔다 — check-release-baseline 이 소스의 링크 문자열을 센다.
+  assert.ok(adminSource.includes('<a href="#mi-admin-work" data-mi-admin-screen="work">업무 운영</a>'));
+  const screens = [...new Set([...adminSource.matchAll(/data-mi-admin-screen="([^"]+)"/g)].map((entry) => entry[1]))];
+  assert.equal(screens.length, 14, "메뉴 taxonomy 는 그대로여야 합니다.");
+  assert.ok(screens.includes("work"));
+
+  // 감추는 일만 JS 가 한다. 판정은 역할 하나뿐이다.
+  assert.ok(adminSource.includes("function workScreenEnabled() {"));
+  assert.ok(adminSource.includes('return secureSession.role !== "team";'));
+  assert.ok(adminSource.includes("if (workLink && !isWorkSectionEmbedded()) workLink.hidden = !workScreenEnabled();"));
+  assert.ok(adminSource.includes("syncWorkMenu();"), "개인 캘린더 메뉴 동기화가 업무 운영 메뉴도 같이 맞춰야 합니다.");
+  // 대표실이 실장 화면에 끼워 넣으며 감춘 상태를 되돌리지 않는다.
+  assert.ok(adminSource.includes("if (workLink) workLink.hidden = !workScreenEnabled();"));
+  assert.equal(adminSource.includes("if (workLink) workLink.hidden = false;"), false, "복구 경로가 운영팀 세션에서 메뉴를 되살립니다.");
+  // #mi-admin-work 로 직접 들어와도 운영팀은 내 캘린더로 간다(광고주 은퇴 화면과 같은 방식).
+  assert.ok(adminScreenRouter.includes('var rejectedWorkTarget = target === "work" && Boolean(secureSession.role) && !workScreenEnabled();'));
+  assert.ok(adminScreenRouter.includes('if (rejectedWorkTarget) target = "my-calendar";'));
+  assert.ok(adminScreenRouter.includes("rejectedWorkTarget ||"), "거절된 업무 운영 해시는 주소창에서 정리돼야 합니다.");
+  // 대표실(owner)은 그대로다 — 역할 판정이 team 하나만 본다.
+  assert.equal(adminSource.includes('workScreenEnabled() { return secureSession.role === "owner"'), false);
+  // .mi-nav a 가 display:flex 라 [hidden] 만으로는 감춰지지 않는다.
+  assert.ok(adminSource.includes("#mi-admin .mi-nav a[hidden]"));
+});
+
+test("the google banners are one system with the 대표실 banner rows", () => {
+  // 배너 골격·글자·버튼 등급을 대표실 .mi-assistant-gcal 값과 한 줄씩 대조한다.
+  const pairs = [
+    [ownerAssistantCss, ".mi-assistant-gcal", ".mi-cal-banner", ["display", "align-items", "justify-content", "gap", "border", "border-radius", "padding", "background", "box-shadow"]],
+    [ownerAssistantCss, ".mi-assistant-gcal-copy", ".mi-cal-banner-copy", ["display", "gap", "min-width"]],
+    [ownerAssistantCss, ".mi-assistant-gcal-copy strong", ".mi-cal-banner-copy strong", ["color", "font-size", "letter-spacing"]],
+    [ownerAssistantCss, ".mi-assistant-gcal-copy small", ".mi-cal-banner-copy small", ["color", "font-size", "font-weight", "line-height"]],
+    [ownerAssistantCss, ".mi-assistant-gcal-actions", ".mi-cal-banner-actions", ["display", "flex", "align-items", "gap"]],
+    [ownerAssistantCss, ".mi-assistant-gcal .mi-link-button.is-primary", ".mi-cal-banner .mi-cal-link-button.is-primary", ["border-color", "color", "background", "box-shadow"]],
+    [ownerAssistantCss, ".mi-assistant-gcal .mi-link-button:hover", ".mi-cal-banner .mi-cal-link-button:hover", ["border-color", "background"]],
+    [ownerAssistantCss, ".mi-assistant-gcal .mi-link-button:disabled", ".mi-cal-banner .mi-cal-link-button:disabled", ["opacity", "cursor"]],
+    [ownerAssistantCss, ".mi-glogin-badge", ".mi-cal-banner .mi-cal-badge", ["display", "align-items", "min-height", "border", "border-radius", "padding", "color", "background", "font-size", "font-weight", "white-space"]],
+    // 배너 버튼은 대표실 .mi-link-button 알약 그대로다(38px .mi-cal-button 이 아니다).
+    [adminStyleCode, ".mi-link-button", ".mi-cal-link-button", ["display", "min-height", "align-items", "justify-content", "border", "border-radius", "padding", "color", "background", "font-size", "font-weight", "text-decoration"]],
+  ];
+  for (const [ownerCss, ownerSelector, sharedSelector, properties] of pairs) {
+    for (const property of properties) {
+      assert.equal(
+        normalizeCssValue(declaration(sharedStyleCode, sharedSelector, property)),
+        normalizeCssValue(declaration(ownerCss, ownerSelector, property)),
+        `${sharedSelector} 의 ${property} 가 대표실(${ownerSelector})과 갈렸습니다.`,
+      );
+    }
+  }
+
+  // 마크업: 배지 → 주 연결(is-primary) → 보조 버튼 순서와 문구가 대표실과 같다.
+  const ownerGcal = slice(ownerToolApiSource, '<div class="mi-assistant-gcal" data-owner-gcal-banner', "</div>");
+  const calGcal = slice(markup, '<section class="mi-cal-banner" data-cal-gcal-banner', "</section>");
+  assert.ok(ownerGcal.includes(">✓ 연동 완료</span>"));
+  assert.equal(shared.BANNER_LINKED_BADGE, "✓ 연동 완료");
+  assert.ok(ownerGcal.includes(">상태 확인 중…</small>"));
+  assert.equal(shared.BANNER_STATUS_PENDING, "상태 확인 중…");
+  assert.equal(calGcal.includes("연결됨"), false, "옛 배지 문구가 남아 있습니다.");
+  for (const banner of [calGcal, slice(markup, '<section class="mi-cal-banner" data-cal-glogin-banner', "</section>")]) {
+    assert.equal(banner.includes('class="mi-cal-button'), false, "배너 버튼은 .mi-cal-link-button 이어야 합니다.");
+    assert.equal([...banner.matchAll(/mi-cal-link-button is-primary/g)].length, 1, "주 연결 버튼 하나만 is-primary 여야 합니다.");
+    assert.ok(banner.indexOf("mi-cal-badge") < banner.indexOf("is-primary"), "배지 → 주 버튼 순서가 대표실과 다릅니다.");
+  }
+  // 대표실 순서: 연결 → 지금 동기화 → 연동 해제.
+  assert.ok(ownerGcal.indexOf("data-owner-gcal-connect") < ownerGcal.indexOf("data-owner-gcal-sync"));
+  assert.ok(ownerGcal.indexOf("data-owner-gcal-sync") < ownerGcal.indexOf("data-owner-gcal-disconnect"));
+  assert.ok(calGcal.indexOf("data-cal-gcal-connect") < calGcal.indexOf("data-cal-gcal-sync"));
+  assert.ok(calGcal.indexOf("data-cal-gcal-sync") < calGcal.indexOf("data-cal-gcal-disconnect"));
 });
 
 test("this suite is wired into npm test", () => {

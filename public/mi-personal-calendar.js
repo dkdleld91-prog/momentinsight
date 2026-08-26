@@ -18,7 +18,7 @@
 
   // 마크업과 CSS 가 같이 바뀌었다. 버전을 올려 두지 않으면 캐시된 옛 마크업이
   // 새 CSS 와 섞여 화면이 반쯤 무너진 상태로 뜬다.
-  var VERSION = "cal-v5-20260826";
+  var VERSION = "cal-v6-20260826";
 
   // 일정이 하나도 없는 달은 42칸짜리 빈 흰 격자가 된다. 대표실 배치를 따르면서
   // 캘린더가 화면 한참 아래로 내려갔기 때문에, 그 빈 격자가 "고장" 처럼 읽힌다.
@@ -58,6 +58,10 @@
   var RAIL_LOCAL_NAME = "내 캘린더";
   var RAIL_LOCAL_NOTE = "로컬";
   var RAIL_CONNECT_LABEL = "구글 캘린더 연결";
+
+  // 구글 배너 문구. 대표실 .mi-assistant-gcal 줄의 같은 자리 문장이다.
+  var BANNER_STATUS_PENDING = "상태 확인 중…";
+  var BANNER_LINKED_BADGE = "✓ 연동 완료";
 
   // 조직도는 이 표에서만 그린다. 손으로 6번 적으면 한 칸만 고쳐지는 날이 온다.
   var ASSISTANT_STATIONS = [
@@ -614,24 +618,26 @@
       '<small>' + escapeHtml(ASSISTANT_SCOPE_NOTE) + '</small></div>',
       '</header>',
 
-      // 2) 구글 배너 2개 — 훅은 그대로 두고 순서만 대표실과 맞췄다(캘린더 → 로그인).
+      // 2) 구글 배너 2개. 대표실 .mi-assistant-gcal 줄과 같은 한 벌이다 —
+      //    순서(배지 → 주 연결 → 보조 버튼), 버튼 등급(.mi-cal-link-button, 주 버튼만
+      //    is-primary), 배지 문구까지 그대로다. 훅 이름만 이 파일의 것이다.
       '<section class="mi-cal-banner" data-cal-gcal-banner hidden aria-label="구글 캘린더 연동">',
-      '<div class="mi-cal-banner-copy"><strong>구글 캘린더</strong><span data-cal-gcal-status>연동 상태를 확인하는 중입니다.</span>',
+      '<div class="mi-cal-banner-copy"><strong>구글 캘린더</strong><small data-cal-gcal-status>' + escapeHtml(BANNER_STATUS_PENDING) + '</small>',
       '<small data-cal-gcal-last hidden></small></div>',
       '<div class="mi-cal-banner-actions">',
-      '<span class="mi-cal-badge" data-cal-gcal-badge hidden>연결됨</span>',
-      '<button class="mi-cal-button" type="button" data-cal-gcal-sync hidden>지금 동기화</button>',
-      '<button class="mi-cal-button is-primary" type="button" data-cal-gcal-connect hidden>구글 캘린더 연결</button>',
-      '<button class="mi-cal-button" type="button" data-cal-gcal-disconnect hidden>연동 해제</button>',
+      '<span class="mi-cal-badge" data-cal-gcal-badge hidden>' + escapeHtml(BANNER_LINKED_BADGE) + '</span>',
+      '<button class="mi-cal-link-button is-primary" type="button" data-cal-gcal-connect hidden>구글 캘린더 연결</button>',
+      '<button class="mi-cal-link-button" type="button" data-cal-gcal-sync hidden>지금 동기화</button>',
+      '<button class="mi-cal-link-button" type="button" data-cal-gcal-disconnect hidden>연동 해제</button>',
       '</div>',
       '</section>',
 
       '<section class="mi-cal-banner" data-cal-glogin-banner hidden aria-label="구글 로그인 연결">',
-      '<div class="mi-cal-banner-copy"><strong>구글 로그인</strong><span data-cal-glogin-status>연결 상태를 확인하는 중입니다.</span></div>',
+      '<div class="mi-cal-banner-copy"><strong>구글 로그인</strong><small data-cal-glogin-status>' + escapeHtml(BANNER_STATUS_PENDING) + '</small></div>',
       '<div class="mi-cal-banner-actions">',
-      '<span class="mi-cal-badge" data-cal-glogin-badge hidden>연결됨</span>',
-      '<button class="mi-cal-button" type="button" data-cal-glogin-link hidden>구글 계정 연결</button>',
-      '<button class="mi-cal-button" type="button" data-cal-glogin-unlink hidden>연결 해제</button>',
+      '<span class="mi-cal-badge" data-cal-glogin-badge hidden>' + escapeHtml(BANNER_LINKED_BADGE) + '</span>',
+      '<button class="mi-cal-link-button is-primary" type="button" data-cal-glogin-link hidden>구글 계정 연결</button>',
+      '<button class="mi-cal-link-button" type="button" data-cal-glogin-unlink hidden>연결 해제</button>',
       '</div>',
       '</section>',
 
@@ -4215,6 +4221,8 @@
     RAIL_LOCAL_NAME: RAIL_LOCAL_NAME,
     RAIL_LOCAL_NOTE: RAIL_LOCAL_NOTE,
     RAIL_CONNECT_LABEL: RAIL_CONNECT_LABEL,
+    BANNER_STATUS_PENDING: BANNER_STATUS_PENDING,
+    BANNER_LINKED_BADGE: BANNER_LINKED_BADGE,
     parseAssistantDrafts: parseAssistantDrafts,
     goodMorningKeys: goodMorningKeys,
     shouldRunGoodMorning: shouldRunGoodMorning,

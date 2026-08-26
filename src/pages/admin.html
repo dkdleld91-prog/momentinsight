@@ -5,7 +5,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
-<link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v5-20260826" />
+<link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v6-20260826" />
 <section id="mi-admin" class="mi-admin-wrap is-locked">
   <style>
     #mi-admin,
@@ -338,10 +338,12 @@
       display: block;
     }
 
-    /* 개인 캘린더 메뉴는 운영팀 세션에서만 보인다. .mi-nav a 가 display:flex 라
-       [hidden] 만으로는 감춰지지 않아 이 규칙이 필요하다. 본체 스타일은
+    /* 개인 캘린더 메뉴는 운영팀 세션에서만 보이고, 업무 운영 메뉴는 그 반대다
+       (운영팀에서는 내 캘린더가 업무 운영을 대신한다). .mi-nav a 가 display:flex 라
+       [hidden] 만으로는 감춰지지 않아 이 규칙이 필요하다. 마크업은 두 링크 모두
+       HTML 에 그대로 남는다 — 감추는 일만 JS 가 한다. 본체 스타일은
        public/mi-personal-calendar.css 가 갖는다. */
-    #mi-admin .mi-nav a.mi-nav-personal[hidden] {
+    #mi-admin .mi-nav a[hidden] {
       display: none;
     }
 
@@ -12086,7 +12088,7 @@
   </a>
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
-  <script src="/mi-personal-calendar.js?v=cal-v5-20260826"></script>
+  <script src="/mi-personal-calendar.js?v=cal-v6-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -14849,6 +14851,25 @@
       var lastClientGoogleSyncAt = 0;
       var ownerGoogleCalendarBannerHooks = null;
 
+      // 운영팀 세션에서는 내 캘린더가 업무 운영을 대신한다. 대표실(owner)은 그대로다.
+      // 마크업은 건드리지 않고 감추기만 한다 — check-release-baseline 은 소스의
+      // 링크 문자열을 세므로 JS 로 감추는 방식이어야 메뉴 taxonomy 가 유지된다.
+      function workScreenEnabled() {
+        return secureSession.role !== "team";
+      }
+
+      function isWorkSectionEmbedded() {
+        var workSection = root.querySelector('section[data-mi-admin-view="work"]');
+        return Boolean(workSection && workSection.classList.contains("is-embedded"));
+      }
+
+      // 대표실은 업무 운영 화면을 실장 화면 안으로 옮기면서 이 링크를 이미 감춘다
+      // (embedWorkSectionIntoExecutive). 그 상태를 여기서 되돌리지 않는다.
+      function syncWorkMenu() {
+        var workLink = root.querySelector('a[data-mi-admin-screen="work"]');
+        if (workLink && !isWorkSectionEmbedded()) workLink.hidden = !workScreenEnabled();
+      }
+
       function embedWorkSectionIntoExecutive() {
         var workSection = root.querySelector('section[data-mi-admin-view="work"]');
         var assistantView = root.querySelector('[data-owner-tool-view-root][data-mi-admin-view="owner-assistant"]');
@@ -14874,7 +14895,8 @@
           if (marker) marker.replaceWith(workSection);
         }
         if (marker && marker.isConnected) marker.remove();
-        if (workLink) workLink.hidden = false;
+        // 대표실 화면에서 빠져나와도 운영팀 세션에서는 계속 감춘 채로 둔다.
+        if (workLink) workLink.hidden = !workScreenEnabled();
       }
 
       function discardOwnerTool() {
@@ -17896,6 +17918,7 @@
       function syncPersonalCalendarMenu() {
         var link = root.querySelector("a[data-mi-admin-screen='my-calendar']");
         if (link) link.hidden = !personalCalendarEnabled();
+        syncWorkMenu();
       }
 
       function unmountPersonalCalendar() {
@@ -17942,10 +17965,14 @@
         var rejectedProductRankTarget = target === "naver-rank";
         var rejectedOwnerTarget = /^owner-/.test(target) && (secureSession.role !== "owner" || ownerToolScreens.indexOf(target) < 0);
         var rejectedPersonalTarget = target === "my-calendar" && !personalCalendarEnabled();
+        // #mi-admin-work 로 직접 들어와도 운영팀 세션은 내 캘린더로 보낸다
+        // (광고주 화면의 은퇴한 공개 일정 화면과 같은 방식이다).
+        var rejectedWorkTarget = target === "work" && Boolean(secureSession.role) && !workScreenEnabled();
         if (rejectedProductRankTarget) target = "home";
         if (target === "active-accounts" && !canManageOwnerCodes()) target = "agency-code";
         if (rejectedOwnerTarget) target = secureSession.role === "team" ? "agency-code" : "home";
         if (rejectedPersonalTarget) target = "home";
+        if (rejectedWorkTarget) target = "my-calendar";
         var views = root.querySelectorAll("[data-mi-admin-view]");
         var links = root.querySelectorAll("[data-mi-admin-screen]");
         var found = false;
@@ -17967,7 +17994,7 @@
           else link.removeAttribute("aria-current");
         });
         var hasOwnerHashWithoutOwner = secureSession.role === "team" && /^#mi-admin-owner-/.test(window.location.hash || "");
-        if ((rejectedProductRankTarget || rejectedPersonalTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
+        if ((rejectedProductRankTarget || rejectedPersonalTarget || rejectedWorkTarget || ((rejectedOwnerTarget || hasOwnerHashWithoutOwner) && secureSession.role)) && !shouldPushHash && /^https?:$/i.test(window.location.protocol) && window.location.hash) {
           window.history.replaceState(null, "", window.location.pathname + window.location.search + "#mi-admin-" + target);
         }
         if (target !== "work" && target !== "owner-assistant") deactivateWorkOperation();

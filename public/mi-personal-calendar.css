@@ -174,8 +174,7 @@
   font-weight: 750;
 }
 
-.mi-cal-button,
-.mi-cal-link-button {
+.mi-cal-button {
   min-height: 38px;
   padding: 0 14px;
   border: 1px solid var(--mi-cal-line);
@@ -185,6 +184,25 @@
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
+}
+
+/* #mi-admin .mi-link-button 값 그대로. 구글 배너·다이얼로그·초안 카드가 대표실과
+   같은 알약을 쓴다(배너 안의 색·그림자는 아래 .mi-cal-banner 규칙이 얹는다). */
+.mi-cal-link-button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--mi-cal-line);
+  border-radius: 8px;
+  padding: 0 12px;
+  color: var(--mi-cal-accent);
+  background: #fff;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .mi-cal-button.is-primary,
@@ -286,8 +304,6 @@
   letter-spacing: -0.01em;
 }
 
-/* 계정 주소가 길어도 배너를 밀지 않게 span 만 강제 줄바꿈을 남긴다. */
-.mi-cal-banner-copy span,
 .mi-cal-banner-copy small {
   color: #66758a;
   font-size: 10.5px;
@@ -295,7 +311,10 @@
   line-height: 1.5;
 }
 
-.mi-cal-banner-copy span {
+/* 대표실에는 없는 한 줄. 상태줄에 구글 계정 주소가 그대로 들어가므로, 긴 주소가
+   배너를 옆으로 밀지 않게 강제 줄바꿈만 남긴다(글자 크기·색은 위 규칙 그대로다). */
+.mi-cal-banner-copy [data-cal-gcal-status],
+.mi-cal-banner-copy [data-cal-glogin-status] {
   overflow-wrap: anywhere;
 }
 

@@ -954,6 +954,42 @@
       text-align: right;
     }
 
+    /* 서버에 등록된 값이 없을 때 쓰는 공통 빈 상태 표기. 수치 자리보다 작고 흐리게 */
+    #mi-clean .is-empty[data-mi-public],
+    #mi-clean .mi-row strong.is-empty,
+    #mi-clean .mi-metric strong.is-empty,
+    #mi-clean .mi-judgement-item span.is-empty,
+    #mi-clean .mi-action-chip strong.is-empty,
+    #mi-clean .mi-channel-detail.is-empty p {
+      min-width: 0;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+      letter-spacing: -0.01em;
+      white-space: normal;
+      word-break: keep-all;
+    }
+
+    #mi-clean .mi-summary-box strong.is-empty,
+    #mi-clean .mi-summary strong.is-empty,
+    #mi-clean .mi-summary p.is-empty,
+    #mi-clean .mi-action-chip strong.is-empty,
+    #mi-clean .mi-judgement-item span.is-empty {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+    }
+
+    #mi-clean .mi-channel-detail.is-empty {
+      display: grid;
+      align-content: center;
+      min-height: 96px;
+      border-style: dashed;
+      text-align: center;
+    }
+
     #mi-clean .mi-total-panel {
       margin-bottom: 16px;
     }
@@ -5416,7 +5452,7 @@
           <header class="mi-screen-head">
             <div>
               <span class="mi-kicker">광고주 홈</span>
-              <h1><span data-mi-public="client">브랜드 A</span> 대시보드</h1>
+              <h1><span data-mi-public="client">연결 광고주</span> 대시보드</h1>
               <p>성과와 다음 할 일만 확인합니다.</p>
             </div>
             <span class="mi-period" data-mi-update-state>업데이트 완료</span>
@@ -5425,23 +5461,23 @@
           <div class="mi-hero">
             <article class="mi-summary" data-mi-summary-card>
               <span class="mi-kicker">현재 요약</span>
-              <h2 data-mi-summary-ready>현재 매출은 <span data-mi-public="sales">4,180만원</span>입니다.</h2>
-              <h2 data-mi-summary-empty hidden>성과 데이터 공개를 준비하고 있습니다.</h2>
-              <p data-mi-public="comment">다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</p>
+              <h2 data-mi-summary-ready hidden>현재 매출은 <span class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span>입니다.</h2>
+              <h2 data-mi-summary-empty>성과 데이터 공개를 준비하고 있습니다.</h2>
+              <p class="is-empty" data-mi-public="comment">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</p>
               <div class="mi-summary-row" aria-label="핵심 대시보드">
-                <div class="mi-summary-box"><span>현재 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
-                <div class="mi-summary-box"><span>광고 효율</span><strong data-mi-public="roas">581%</strong></div>
-                <div class="mi-summary-box"><span>목표 달성률</span><strong data-mi-public="achievement">116%</strong></div>
+                <div class="mi-summary-box"><span>현재 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-summary-box"><span>광고 효율</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-summary-box"><span>목표 달성률</span><strong class="is-empty" data-mi-public="achievement">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
               </div>
               <div class="mi-action-strip" aria-label="광고주 핵심 결론">
-                <div class="mi-action-chip"><span>오늘 결론</span><strong data-mi-action-primary>매출 흐름은 유지, 검색 키워드 보강 우선</strong></div>
-                <div class="mi-action-chip"><span>다음 행동</span><strong data-mi-action-next>고효율 키워드 중심으로 예산 재배치</strong></div>
+                <div class="mi-action-chip"><span>오늘 결론</span><strong class="is-empty" data-mi-action-primary>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-action-chip"><span>다음 행동</span><strong class="is-empty" data-mi-action-next>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
                 <div class="mi-action-chip"><span>업데이트 기준</span><strong>확인 완료 데이터만 표시</strong></div>
               </div>
-              <div class="mi-code-status is-ok" data-mi-reliability aria-live="polite"><span data-mi-reliability-label>데이터 신뢰도: 운영팀 검수 완료</span>&nbsp;· 마지막 업데이트&nbsp;<span data-mi-public="updatedAt">2026.06.19</span>&nbsp;· 공개 승인된 값만 표시</div>
+              <div class="mi-code-status is-warn" data-mi-reliability aria-live="polite"><span data-mi-reliability-label>데이터 상태: 공개 데이터 연결 대기</span>&nbsp;· 마지막 업데이트&nbsp;<span class="is-empty" data-mi-public="updatedAt">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span>&nbsp;· 공개 승인된 값만 표시</div>
               <div class="mi-judgement" aria-label="현재 성과 판단">
-                <div class="mi-judgement-item"><strong>현재 판단</strong><span data-mi-action-impact>ROAS와 매출은 양호하고, 검색 키워드 보강이 다음 우선순위입니다.</span></div>
-                <div class="mi-judgement-item"><strong>광고주 확인 필요</strong><span data-mi-client-request>프로모션 가능 기간을 확인해주세요.</span></div>
+                <div class="mi-judgement-item"><strong>현재 판단</strong><span class="is-empty" data-mi-action-impact>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span></div>
+                <div class="mi-judgement-item"><strong>광고주 확인 필요</strong><span class="is-empty" data-mi-client-request>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span></div>
               </div>
             </article>
 
@@ -5451,14 +5487,14 @@
                   <h3>합산 성과 현황</h3>
                   <p>공개 채널 성과 합산입니다.</p>
                 </div>
-                <span class="mi-badge" data-mi-performance-state>공개용</span>
+                <span class="mi-badge warn" data-mi-performance-state>데이터 대기</span>
               </div>
               <div class="mi-table">
-                <div class="mi-row"><span>광고비</span><strong data-mi-public="adSpend">720만원</strong></div>
-                <div class="mi-row"><span>구매수</span><strong data-mi-public="orders">1,248건</strong></div>
-                <div class="mi-row"><span>다음 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
-                <div class="mi-row"><span>업데이트</span><strong data-mi-public="updatedAt">2026.06.19</strong></div>
-                <div class="mi-row"><span>데이터 출처</span><strong data-mi-performance-source>운영팀 입력 · 검수 완료</strong></div>
+                <div class="mi-row"><span>광고비</span><strong class="is-empty" data-mi-public="adSpend">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>구매수</span><strong class="is-empty" data-mi-public="orders">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>다음 일정</span><strong class="is-empty" data-mi-public="nextSchedule">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>업데이트</span><strong class="is-empty" data-mi-public="updatedAt">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>데이터 출처</span><strong data-mi-performance-source>운영팀 공개 입력 전</strong></div>
                 <div class="mi-row"><span>공개 범위</span><strong>광고주 승인 데이터만 노출</strong></div>
                 <div class="mi-row"><span>확인 기준</span><strong>공개 승인된 성과만 합산</strong></div>
               </div>
@@ -5475,10 +5511,10 @@
                 <span class="mi-badge">Insight</span>
               </div>
               <div class="mi-table">
-                <div class="mi-row"><span>좋은 점</span><strong data-mi-insight-good>네이버 검색 기반 매출 흐름 양호</strong></div>
-                <div class="mi-row"><span>주의할 점</span><strong data-mi-insight-watch>쿠팡 성과는 공개 집계 기준으로 확인 필요</strong></div>
-                <div class="mi-row"><span>다음 액션</span><strong data-mi-action-primary>검색 상위 키워드 중심 예산 재배치</strong></div>
-                <div class="mi-row"><span>확인 요청</span><strong data-mi-client-request>프로모션 가능 기간을 확인해주세요.</strong></div>
+                <div class="mi-row"><span>좋은 점</span><strong class="is-empty" data-mi-insight-good>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>주의할 점</span><strong class="is-empty" data-mi-insight-watch>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>다음 액션</span><strong class="is-empty" data-mi-action-primary>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>확인 요청</span><strong class="is-empty" data-mi-client-request>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
               </div>
             </article>
 
@@ -5495,10 +5531,8 @@
                 <strong>운영팀 검수 후 보고서함 공개</strong>
               </div>
               <div class="mi-report-list" data-mi-report-list>
-                <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
-                <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함 · 운영팀 공개 파일 대기</span></div><b class="mi-report-state warn">준비 중</b></div>
-                <div class="mi-report-item"><div><strong>매출 보고서</strong><span>일별 입력값 기반 월간 자동 합산</span></div><b class="mi-report-state">자동 계산</b></div>
-                <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">2026.06.19</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
+                <div class="mi-report-item"><div><strong>공개 보고서 없음</strong><span>운영팀이 검수 후 공개한 보고서가 아직 없습니다.</span></div><b class="mi-report-state warn">대기</b></div>
+                <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span class="is-empty" data-mi-public="updatedAt">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span> · 공개 파일 대기</span></div><b class="mi-report-state warn">확인 필요</b></div>
               </div>
             </aside>
           </div>
@@ -5513,10 +5547,10 @@
                 <span class="mi-badge">합산</span>
               </div>
               <div class="mi-table">
-                <div class="mi-row"><span>합산 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
-                <div class="mi-row"><span>합산 광고비</span><strong data-mi-public="adSpend">720만원</strong></div>
-                <div class="mi-row"><span>합산 ROAS</span><strong data-mi-public="roas">581%</strong></div>
-                <div class="mi-row"><span>합산 구매수</span><strong data-mi-public="orders">1,248건</strong></div>
+                <div class="mi-row"><span>합산 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>합산 광고비</span><strong class="is-empty" data-mi-public="adSpend">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>합산 ROAS</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>합산 구매수</span><strong class="is-empty" data-mi-public="orders">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
               </div>
             </article>
 
@@ -5539,12 +5573,12 @@
           </header>
 
           <div class="mi-data-grid">
-            <article class="mi-card mi-metric"><span>이번 달 누적 매출</span><strong data-mi-public="sales">4,180만원</strong><small>확인 완료 데이터 기준</small></article>
-            <article class="mi-card mi-metric"><span>광고 효율</span><strong data-mi-public="roas">581%</strong><small>담당자 검수 기준</small></article>
-            <article class="mi-card mi-metric"><span>이번 달 상태</span><strong data-mi-public="status">목표 초과</strong><small>이번 달 성과 판단</small></article>
-            <article class="mi-card mi-metric"><span>광고비 사용액</span><strong data-mi-public="adSpend">720만원</strong><small>이번 달 공개 예산 기준</small></article>
-            <article class="mi-card mi-metric"><span>구매 수량</span><strong data-mi-public="orders">1,248건</strong><small>현재 집계 기준</small></article>
-            <article class="mi-card mi-metric"><span>목표 달성률</span><strong data-mi-public="achievement">116%</strong><small>월간 목표 대비</small></article>
+            <article class="mi-card mi-metric"><span>이번 달 누적 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>확인 완료 데이터 기준</small></article>
+            <article class="mi-card mi-metric"><span>광고 효율</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>담당자 검수 기준</small></article>
+            <article class="mi-card mi-metric"><span>이번 달 상태</span><strong class="is-empty" data-mi-public="status">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>이번 달 성과 판단</small></article>
+            <article class="mi-card mi-metric"><span>광고비 사용액</span><strong class="is-empty" data-mi-public="adSpend">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>이번 달 공개 예산 기준</small></article>
+            <article class="mi-card mi-metric"><span>구매 수량</span><strong class="is-empty" data-mi-public="orders">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>현재 집계 기준</small></article>
+            <article class="mi-card mi-metric"><span>목표 달성률</span><strong class="is-empty" data-mi-public="achievement">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>월간 목표 대비</small></article>
           </div>
 
           <article class="mi-card mi-card-pad mi-total-panel">
@@ -5556,11 +5590,11 @@
               <span class="mi-badge">네이버+쿠팡</span>
             </div>
             <div class="mi-table">
-              <div class="mi-row"><span>합산 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
-              <div class="mi-row"><span>합산 광고비</span><strong data-mi-public="adSpend">720만원</strong></div>
-              <div class="mi-row"><span>합산 ROAS</span><strong data-mi-public="roas">581%</strong></div>
-              <div class="mi-row"><span>합산 구매수</span><strong data-mi-public="orders">1,248건</strong></div>
-              <div class="mi-row"><span>상태 / 업데이트</span><strong><span data-mi-public="status">목표 초과</span> · <span data-mi-public="updatedAt">2026.06.19</span></strong></div>
+              <div class="mi-row"><span>합산 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+              <div class="mi-row"><span>합산 광고비</span><strong class="is-empty" data-mi-public="adSpend">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+              <div class="mi-row"><span>합산 ROAS</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+              <div class="mi-row"><span>합산 구매수</span><strong class="is-empty" data-mi-public="orders">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+              <div class="mi-row"><span>상태 / 업데이트</span><strong><span class="is-empty" data-mi-public="status">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span> · <span class="is-empty" data-mi-public="updatedAt">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</span></strong></div>
             </div>
           </article>
 
@@ -5573,7 +5607,7 @@
 
             <aside class="mi-card mi-card-pad">
               <h3>공개 코멘트</h3>
-              <p data-mi-public="comment">다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</p>
+              <p class="is-empty" data-mi-public="comment">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</p>
             </aside>
           </div>
         </section>
@@ -6096,11 +6130,11 @@
             <aside class="mi-card mi-card-pad">
               <h3>연결된 브랜드 데이터</h3>
               <div class="mi-table">
-                <div class="mi-row"><span>광고주</span><strong data-mi-public="client">브랜드 A</strong></div>
+                <div class="mi-row"><span>광고주</span><strong data-mi-public="client">연결 광고주</strong></div>
                 <div class="mi-row"><span>대행사</span><strong data-mi-public="agencyName">모먼트 인사이트 운영팀</strong></div>
                 <div class="mi-row"><span>연동 상태</span><strong data-mi-public="connectionStatus">연동 대기</strong></div>
-                <div class="mi-row"><span>현재 매출</span><strong data-mi-public="sales">4,180만원</strong></div>
-                <div class="mi-row"><span>다음 일정</span><strong data-mi-public="nextSchedule">6/21 소재 교체</strong></div>
+                <div class="mi-row"><span>현재 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-row"><span>다음 일정</span><strong class="is-empty" data-mi-public="nextSchedule">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
               </div>
             </aside>
           </div>
@@ -6123,48 +6157,53 @@
 
       var storageKey = "miAgencyPublicState:v2";
       var selectedCodeKey = "miAgencySelectedCode";
+      // 화면에 보이는 수치는 전부 서버(/api/client/public-state)에서만 온다.
+      // defaultState 는 형태만 잡아주는 빈 골격이며 어떤 수치도 지어내지 않는다.
+      var EMPTY_METRIC_TEXT = "아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다";
+      var PUBLIC_METRIC_KEYS = ["sales", "roas", "adSpend", "orders", "achievement", "status", "nextSchedule", "updatedAt", "comment"];
+      var PUBLIC_IDENTITY_KEYS = { client: true, agencyName: true, connectionStatus: true };
       var defaultState = {
         code: "",
-        client: "브랜드 A",
+        client: "연결 광고주",
         agencyName: "모먼트 인사이트 운영팀",
         connectionStatus: "연동 대기",
         reportCenterSynced: false,
-        sales: "4,180만원",
-        roas: "581%",
-        adSpend: "720만원",
-        orders: "1,248건",
-        achievement: "116%",
-        status: "목표 초과",
-        nextSchedule: "6/21 소재 교체",
-        updatedAt: "2026.06.19",
-        comment: "검색 기반 매출 흐름은 양호하며, 다음 주에는 고효율 키워드 중심으로 예산을 재배치합니다.",
-        primaryAction: "검색 상위 키워드 중심 예산 재배치",
-        nextAction: "고효율 키워드 중심으로 예산 재배치",
-        actionImpact: "ROAS와 매출은 양호하고, 검색 키워드 보강이 다음 우선순위입니다.",
-        clientRequest: "프로모션 가능 기간을 확인해주세요.",
-        goodPoint: "네이버 검색 기반 매출 흐름 양호",
-        watchPoint: "쿠팡 성과는 공개 집계 기준으로 확인 필요",
-        reports: [
-          { title: "2026년 6월 월간 보고서", type: "monthly", date: "2026-06-30", summary: "일별 매출 입력값을 월간으로 합산해 성과 흐름을 정리합니다.", comment: "다음 달 실행 방향은 운영팀 액션 플랜에 맞춰 공개합니다." }
-        ],
-        actions: [
-          { title: "검색 상위 키워드 중심 예산 재배치", status: "planned", priority: "high", description: "전환 기여도가 높은 네이버 검색 키워드에 예산을 우선 배치합니다.", expectedImpact: "ROAS 유지와 구매 수량 증가를 기대합니다.", clientRequest: "프로모션 가능 기간을 확인해주세요." }
-        ],
-        channels: [
-          { name: "네이버", summary: "검색광고 효율 양호", sales: "1,860만원", roas: "581%" },
-          { name: "쿠팡", summary: "구매 전환 안정", sales: "1,420만원", roas: "642%" },
-          { name: "메타", summary: "소재 교체 예정", sales: "900만원", roas: "410%" }
-        ],
-        channelDetails: [
-          { name: "네이버", type: "검색광고", sales: "1,860만원", adSpend: "320만원", roas: "581%", orders: "642건", ctr: "3.8%", cvr: "4.9%", cpa: "3,365원", cpc: "165원", summary: "검색광고 효율 양호. 제목/본문 SEO 키워드 보강 우선." },
-          { name: "쿠팡", type: "상품광고", sales: "1,420만원", adSpend: "221만원", roas: "642%", orders: "438건", ctr: "4.5%", cvr: "4.7%", cpa: "2,728원", cpc: "128원", summary: "구매 전환 안정. 상품명과 검색어 필드 보강 유지." }
-        ],
-        schedules: [
-          { date: "6/21", title: "메타 소재 교체", detail: "기존 소재 피로도 반영", status: "진행 중" },
-          { date: "6/24", title: "월간 보고서 공개", detail: "운영팀 검수 후 보고서함 공개", status: "예정" },
-          { date: "6/27", title: "쿠팡 키워드 보강", detail: "상품명과 검색어 반영", status: "예정" }
-        ]
+        sales: "",
+        roas: "",
+        adSpend: "",
+        orders: "",
+        achievement: "",
+        status: "",
+        nextSchedule: "",
+        updatedAt: "",
+        comment: "",
+        primaryAction: "",
+        nextAction: "",
+        actionImpact: "",
+        clientRequest: "",
+        goodPoint: "",
+        watchPoint: "",
+        reports: [],
+        actions: [],
+        channels: [],
+        channelDetails: [],
+        schedules: []
       };
+
+      function isEmptyMetricValue(value) {
+        var text = value === null || value === undefined ? "" : String(value).trim();
+        return !text || text === "입력 전" || text === "입력 대기" || text === "-";
+      }
+
+      function serverScalar(value) {
+        if (value === null || value === undefined) return "";
+        if (typeof value === "object") return "";
+        return String(value).trim();
+      }
+
+      function serverList(value) {
+        return Array.isArray(value) ? value : [];
+      }
 
       var keywordSamples = {};
 
@@ -6203,6 +6242,7 @@
       var clientWorkItems = [];
       var clientWorkItemsLoaded = false;
       var clientWorkItemsRequest = 0;
+      var clientPublicStateRequest = 0;
 
       function selectedAgencyCode() {
         return storedClientAuthCode();
@@ -6321,6 +6361,7 @@
           window.sessionStorage.removeItem(selectedCodeKey);
           window.sessionStorage.removeItem("miRankAccessCode");
         } catch (error) {}
+        clientPublicStateRequest += 1;
         resetClientWorkItems();
       }
 
@@ -6328,24 +6369,24 @@
         return enrichState({
           code: normalizeCode(code || selectedAgencyCode()),
           client: "연결 광고주",
-          agencyName: "연결 운영팀",
+          agencyName: defaultState.agencyName,
           connectionStatus: "연동 완료",
           reportCenterSynced: true,
-          sales: "입력 전",
-          roas: "입력 전",
-          adSpend: "입력 전",
-          orders: "입력 전",
-          achievement: "입력 전",
-          status: "입력 대기",
-          nextSchedule: "입력 전",
-          updatedAt: "입력 전",
-          comment: "운영팀이 공개 데이터를 입력하면 이 화면에 반영됩니다.",
-          primaryAction: "운영팀 공개 데이터 입력 대기",
-          nextAction: "공개 데이터 입력 대기",
-          actionImpact: "공개된 운영 데이터가 아직 없습니다.",
-          clientRequest: "담당 운영팀에 공개 데이터 입력을 요청해주세요.",
-          goodPoint: "입력 대기",
-          watchPoint: "입력 대기",
+          sales: "",
+          roas: "",
+          adSpend: "",
+          orders: "",
+          achievement: "",
+          status: "",
+          nextSchedule: "",
+          updatedAt: "",
+          comment: "",
+          primaryAction: "",
+          nextAction: "",
+          actionImpact: "",
+          clientRequest: "",
+          goodPoint: "",
+          watchPoint: "",
           reports: [],
           actions: [],
           channels: [],
@@ -6417,6 +6458,12 @@
         return "http://127.0.0.1:8790/api/session";
       }
 
+      function getClientPublicStateApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/public-state";
+        return "http://127.0.0.1:8790/api/client/public-state";
+      }
+
       function miFetch(url, options) {
         options = options || {};
         var timeoutMs = Number(options.timeoutMs || 20000);
@@ -6478,30 +6525,67 @@
         });
       }
 
-      async function fetchDemoState() {
-        var publicStateUrl = window.MI_PUBLIC_STATE_API_URL || "";
-        if (!publicStateUrl) throw new Error("공개 데이터 API가 설정되지 않았습니다.");
-        var response = await miFetch(publicStateUrl, { method: "GET", cache: "no-store" });
+      // 세션 쿠키 기준으로 서버가 광고주를 판별한다. 쿼리 파라미터는 보내지 않는다.
+      async function fetchServerPublicState() {
+        var response = await miFetch(getClientPublicStateApiUrl(), { method: "GET", cache: "no-store" });
         var payload = await response.json().catch(function () {
           return null;
         });
-        if (!response.ok || !payload || payload.ok === false || !payload.publicState) {
-          throw new Error((payload && payload.message) || "브랜드 데이터 응답이 올바르지 않습니다.");
+        if (!payload || typeof payload !== "object") throw new Error("공개 데이터 응답을 확인할 수 없습니다.");
+        if (!response.ok || payload.ok !== true) {
+          throw new Error(String(payload.message || payload.code || "공개 데이터 응답이 올바르지 않습니다."));
         }
-        return enrichState(payload.publicState);
+        if (!payload.publicState || typeof payload.publicState !== "object") {
+          throw new Error("공개 데이터 응답 형식을 확인할 수 없습니다.");
+        }
+        return payload;
       }
 
-      async function syncDemoState(statusNode) {
+      // 서버 응답만으로 상태를 만든다. null/빈 값은 빈 문자열로 남겨 EMPTY_METRIC_TEXT 가 대신 그려지게 한다.
+      function stateFromServerPayload(payload, sessionScope) {
+        var publicState = (payload && payload.publicState) || {};
+        var access = (payload && payload.access) || {};
+        var scope = normalizeCode(sessionScope || publicState.code || access.agencyCode || selectedAgencyCode());
+        var next = blankPublicState(scope);
+        next.code = scope;
+        PUBLIC_METRIC_KEYS.forEach(function (key) {
+          next[key] = serverScalar(publicState[key]);
+        });
+        next.client = serverScalar(publicState.client) || serverScalar(access.clientName) || defaultState.client;
+        next.agencyName = serverScalar(publicState.agencyName) || defaultState.agencyName;
+        next.connectionStatus = serverScalar(publicState.connectionStatus) || "연동 완료";
+        next.reports = serverList(publicState.reports);
+        next.actions = serverList(publicState.actions);
+        next.schedules = serverList(publicState.schedules);
+        next.channels = serverList(publicState.channels);
+        next.channelDetails = serverList(publicState.channelDetails);
+        next.keywords = serverList(publicState.keywords);
+        next.reportCenterSynced = Array.isArray(publicState.reports);
+        next.approvedSessionScope = scope;
+        next.approvedStateAt = new Date().toISOString();
+        return enrichState(next);
+      }
+
+      // 서버 응답이 곧 진실이다. localStorage 캐시는 응답이 오는 즉시 통째로 교체된다.
+      async function syncPublicState(generation, sessionScope, identity) {
+        var normalized = normalizeCode(sessionScope || selectedAgencyCode());
+        if (!normalized) return null;
+        var requestId = ++clientPublicStateRequest;
+        var payload;
         try {
-          var nextState = await fetchDemoState();
-          writeState(nextState);
-          applyState(nextState);
-          setStatus(statusNode, "브랜드 데이터 동기화 완료: " + nextState.client, "is-ok");
-          return nextState;
+          payload = await fetchServerPublicState();
         } catch (error) {
-          setStatus(statusNode, "저장된 브랜드 데이터로 표시합니다.", "is-warn");
-          return readState();
+          // 실패했다고 데모 수치로 되돌아가지 않는다. 호출부가 경고 문구를 띄운다.
+          return null;
         }
+        // 세대 가드: 이전 세션의 늦은 응답이 새 세션 화면을 칠하지 못하게 막는다.
+        if (requestId !== clientPublicStateRequest || !clientSessionIsCurrent(generation, normalized)) return null;
+        var nextState = stateFromServerPayload(payload, normalized);
+        if (identity && identity.client && nextState.client === defaultState.client) nextState.client = identity.client;
+        if (identity && identity.agencyName && nextState.agencyName === defaultState.agencyName) nextState.agencyName = identity.agencyName;
+        writeState(nextState);
+        applyState(nextState);
+        return nextState;
       }
 
       function normalizeCode(value) {
@@ -10376,8 +10460,7 @@
       function applyState(state) {
         state = enrichState(state);
         var emptyState = ["sales", "roas", "adSpend", "orders", "achievement"].every(function (key) {
-          var value = String(state[key] || "").trim();
-          return !value || value === "입력 전" || value === "-";
+          return isEmptyMetricValue(state[key]);
         });
         var summaryCard = root.querySelector("[data-mi-summary-card]");
         var summaryReady = root.querySelector("[data-mi-summary-ready]");
@@ -10414,9 +10497,19 @@
           var key = node.getAttribute("data-mi-public");
           if (key === "code") {
             node.textContent = state.connectionStatus || "연동 완료";
-          } else if (state[key]) {
-            node.textContent = state[key];
+            node.classList.remove("is-empty");
+            return;
           }
+          var value = serverScalar(state[key]);
+          if (PUBLIC_IDENTITY_KEYS[key]) {
+            // 광고주명·대행사명·연동 상태는 수치가 아니므로 빈 값이면 마크업 기본 라벨을 유지한다.
+            if (value) node.textContent = value;
+            node.classList.remove("is-empty");
+            return;
+          }
+          var empty = isEmptyMetricValue(value);
+          node.textContent = empty ? EMPTY_METRIC_TEXT : value;
+          node.classList.toggle("is-empty", empty);
         });
 
         setText("[data-mi-action-primary]", state.primaryAction);
@@ -10425,7 +10518,9 @@
         setText("[data-mi-client-request]", state.clientRequest);
         setText("[data-mi-insight-good]", state.goodPoint);
         setText("[data-mi-insight-watch]", state.watchPoint);
-        renderChannelDetails(state.channelDetails || buildChannelDetails(state.channels || defaultState.channels));
+        renderChannelDetails(state.channelDetails && state.channelDetails.length
+          ? state.channelDetails
+          : buildChannelDetails(state.channels));
         renderReports(state.reports, state.updatedAt, state.reportCenterSynced);
         if (!clientWorkItemsLoaded) renderSchedules([]);
         if (keywordInput && state.keywords && state.keywords.length && state.keywords[0].keyword) {
@@ -10434,14 +10529,15 @@
       }
 
       function setText(selector, value) {
-        if (!value) return;
+        var empty = isEmptyMetricValue(value);
         root.querySelectorAll(selector).forEach(function (node) {
-          node.textContent = value;
+          node.textContent = empty ? EMPTY_METRIC_TEXT : String(value);
+          node.classList.toggle("is-empty", empty);
         });
       }
 
       function buildChannelDetails(channels) {
-        return (channels || defaultState.channels).filter(function (item) {
+        return (channels || []).filter(function (item) {
           return item.name === "네이버" || item.name === "쿠팡";
         }).map(function (item) {
           return {
@@ -10461,9 +10557,9 @@
       }
 
       function renderChannelDetails(details) {
-        var html = (details || defaultState.channelDetails).map(function (item) {
+        var html = (details || []).map(function (item) {
           return '<article class="mi-channel-detail"><div class="mi-channel-detail-head"><div><strong>' +
-            escapeHtml(item.name) + '</strong><span>' + escapeHtml(item.type || "채널") + '</span></div><span class="mi-badge">' +
+            escapeHtml(item.name || "채널") + '</strong><span>' + escapeHtml(item.type || "채널") + '</span></div><span class="mi-badge">' +
             escapeHtml(item.roas || "-") + '</span></div><div class="mi-channel-stats">' +
             '<div class="mi-channel-stat"><span>매출</span><b>' + escapeHtml(item.sales || "-") + '</b></div>' +
             '<div class="mi-channel-stat"><span>광고비</span><b>' + escapeHtml(item.adSpend || "-") + '</b></div>' +
@@ -10471,6 +10567,9 @@
             '<div class="mi-channel-stat"><span>CTR / CVR</span><b>' + escapeHtml(item.ctr || "-") + ' · ' + escapeHtml(item.cvr || "-") + '</b></div>' +
             '</div><p>' + escapeHtml(item.summary || "공개 요약 필요") + '</p></article>';
         }).join("");
+        if (!html) {
+          html = '<article class="mi-channel-detail is-empty"><p>' + escapeHtml(EMPTY_METRIC_TEXT) + '</p></article>';
+        }
         root.querySelectorAll("[data-mi-channel-detail-list]").forEach(function (list) {
           list.innerHTML = html;
         });
@@ -10587,7 +10686,7 @@
         var requestSession = captureClientSession();
         if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
         var state = enrichState(readState());
-        var reports = state.reports && state.reports.length ? state.reports : (state.reportCenterSynced ? [] : defaultState.reports);
+        var reports = state.reports && state.reports.length ? state.reports : [];
         var report = reports[index] || reports[0];
         if (!report) return;
         if (report.fileUrl || report.fileId) {
@@ -10621,12 +10720,13 @@
       function renderReports(reports, updatedAt, reportCenterSynced) {
         var list = root.querySelector("[data-mi-report-list]");
         if (!list) return;
-        var syncedEmpty = Array.isArray(reports) && !reports.length && reportCenterSynced;
-        var items = reports && reports.length ? reports : (syncedEmpty ? [] : defaultState.reports);
+        // reportCenterSynced 여부와 무관하게, 실제로 공개된 보고서가 없으면 데모 목록 대신 빈 상태를 보여준다.
+        var items = Array.isArray(reports) && reports.length ? reports : [];
+        var updatedMarkup = renderUpdatedAtMarkup(updatedAt);
         if (!items.length) {
           list.innerHTML = '<div class="mi-report-item"><div><strong>공개 보고서 없음</strong><span>운영팀이 검수 후 공개한 보고서가 아직 없습니다.</span></div><b class="mi-report-state warn">대기</b></div>' +
-            '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
-            escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 공개 파일 대기</span></div><b class="mi-report-state warn">확인 필요</b></div>';
+            '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span>' +
+            updatedMarkup + ' · 공개 파일 대기</span></div><b class="mi-report-state warn">확인 필요</b></div>';
           return;
         }
         list.innerHTML = items.map(function (item, index) {
@@ -10640,8 +10740,14 @@
             '</strong><span>' + escapeHtml(reportTypeLabel(item.type)) + ' · ' + escapeHtml(item.date || "날짜 확인 중") +
             ' · ' + escapeHtml(fallbackCopy) + '</span></div>' + action + '</div>';
         }).join("") +
-          '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-mi-public="updatedAt">' +
-          escapeHtml(updatedAt || defaultState.updatedAt) + '</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>';
+          '<div class="mi-report-item"><div><strong>업데이트 기준</strong><span>' +
+          updatedMarkup + ' · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>';
+      }
+
+      function renderUpdatedAtMarkup(updatedAt) {
+        var empty = isEmptyMetricValue(updatedAt);
+        return '<span class="' + (empty ? "is-empty" : "") + '" data-mi-public="updatedAt">' +
+          escapeHtml(empty ? EMPTY_METRIC_TEXT : String(updatedAt)) + '</span>';
       }
 
       root.addEventListener("click", function (event) {
@@ -10734,6 +10840,22 @@
         state.agencyName = client.agencyName || client.teamName || "모먼트 인사이트 운영팀";
         state.connectionStatus = "연동 완료";
         if (client.publicSummary) state.publicComment = client.publicSummary;
+        // 1단계 첫 페인트: 비권위 캐시(있으면) → 없으면 정직한 빈 상태
+        applyState(lastApprovedState
+          ? Object.assign({}, lastApprovedState, { code: sessionScope, client: state.client })
+          : state);
+        // 2단계: 서버 진실이 도착하는 즉시 캐시와 화면을 통째로 교체한다.
+        var publicStateSyncFailed = false;
+        var serverPublicState = await syncPublicState(requestGeneration, sessionScope, {
+          client: state.client,
+          agencyName: state.agencyName
+        });
+        if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
+        if (serverPublicState) {
+          state = serverPublicState;
+        } else {
+          publicStateSyncFailed = true;
+        }
         var reportSyncFailed = false;
         var preservedApprovedState = false;
         try {
@@ -10765,12 +10887,14 @@
         updateClientAuthPanel(state.client);
         setStatus(
           statusNode,
-          reportSyncFailed
-            ? (preservedApprovedState
-              ? "연결은 확인됐고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
-              : "연결은 확인됐지만 승인 데이터를 불러오지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
-            : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다.",
-          reportSyncFailed ? "is-warn" : "is-ok"
+          publicStateSyncFailed
+            ? "서버에서 공개 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+            : (reportSyncFailed
+              ? (preservedApprovedState
+                ? "연결은 확인됐고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
+                : "연결은 확인됐지만 승인 데이터를 불러오지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
+              : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다."),
+          (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok"
         );
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
@@ -11052,7 +11176,24 @@
         var lastApprovedState = readLastApprovedPublicState(sessionScope);
         var state = blankPublicState(sessionScope);
         state.client = payload.client.name || payload.client.businessName || state.client;
+        state.agencyName = payload.client.agencyName || payload.client.teamName || state.agencyName;
         state.code = sessionScope;
+        // 1단계 첫 페인트: 비권위 캐시(있으면) → 없으면 정직한 빈 상태
+        applyState(lastApprovedState
+          ? Object.assign({}, lastApprovedState, { code: sessionScope, client: state.client })
+          : state);
+        // 2단계: 서버 진실이 도착하는 즉시 캐시와 화면을 통째로 교체한다.
+        var publicStateSyncFailed = false;
+        var serverPublicState = await syncPublicState(requestGeneration, sessionScope, {
+          client: state.client,
+          agencyName: state.agencyName
+        });
+        if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
+        if (serverPublicState) {
+          state = serverPublicState;
+        } else {
+          publicStateSyncFailed = true;
+        }
         var reportSyncFailed = false;
         var preservedApprovedState = false;
         try {
@@ -11078,11 +11219,13 @@
         // 구글 콜백은 /client?glogin=... · /client?gcal=... 으로 돌아온다(해시 없음).
         if (personalCalendarNoticePending()) setScreen("my-calendar", false);
         updateClientAuthPanel(state.client);
-        setStatus(loginStatus, reportSyncFailed
-          ? (preservedApprovedState
-            ? "광고주 보안 세션을 복원했고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
-            : "광고주 보안 세션은 복원했지만 승인 데이터 연결을 확인하지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
-          : "광고주 보안 세션이 복원되었습니다.", reportSyncFailed ? "is-warn" : "is-ok");
+        setStatus(loginStatus, publicStateSyncFailed
+          ? "서버에서 공개 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
+          : (reportSyncFailed
+            ? (preservedApprovedState
+              ? "광고주 보안 세션을 복원했고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
+              : "광고주 보안 세션은 복원했지만 승인 데이터 연결을 확인하지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
+            : "광고주 보안 세션이 복원되었습니다."), (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok");
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         loginButton.disabled = false;
         return true;

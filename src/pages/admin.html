@@ -916,10 +916,6 @@
       line-height: 1.35;
     }
 
-    #mi-admin .mi-hidden-channel-data {
-      display: none;
-    }
-
     #mi-admin .mi-trust-grid {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -6925,6 +6921,31 @@
       gap: 16px;
     }
 
+    #mi-admin .mi-channel-input-group {
+      display: grid;
+      gap: 10px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 14px;
+      padding: 14px;
+      background: var(--mi-grey-50);
+    }
+
+    #mi-admin .mi-channel-input-group h3 {
+      margin: 0;
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 950;
+      letter-spacing: -0.01em;
+    }
+
+    #mi-admin .mi-channel-input-group .mi-input {
+      background: #fff;
+    }
+
+    #mi-admin .mi-channel-input-group .mi-note {
+      margin: 2px 0 0;
+    }
+
     #mi-admin .mi-operation-input .mi-field {
       gap: 7px;
       color: #536077;
@@ -11087,7 +11108,7 @@
             <header class="mi-screen-head">
               <div>
                 <span class="mi-kicker">광고주 홈</span>
-                <h1><span data-admin-public="client">브랜드 A</span> 대시보드</h1>
+                <h1><span data-admin-public="client">입력 전</span> 대시보드</h1>
                 <p>성과, 일정, 다음 액션만 간결하게 봅니다.</p>
               </div>
               <span class="mi-period">공개 데이터</span>
@@ -11096,17 +11117,17 @@
             <div class="mi-hero">
               <article class="mi-summary">
                 <span class="mi-kicker">현재 요약</span>
-                <h2>현재 매출은 <span data-admin-public="sales">4,180만원</span>입니다.</h2>
-                <p data-admin-public="comment">다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.</p>
+                <h2>현재 매출은 <span data-admin-public="sales">입력 전</span>입니다.</h2>
+                <p data-admin-public="comment">입력 전</p>
                 <div class="mi-summary-row" aria-label="핵심 대시보드">
-                  <div class="mi-summary-box"><span>현재 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
-                  <div class="mi-summary-box"><span>광고 효율</span><strong data-admin-public="roas">581%</strong></div>
-                  <div class="mi-summary-box"><span>목표 달성률</span><strong data-admin-public="achievement">116%</strong></div>
+                  <div class="mi-summary-box"><span>현재 매출</span><strong data-admin-public="sales">입력 전</strong></div>
+                  <div class="mi-summary-box"><span>광고 효율</span><strong data-admin-public="roas">입력 전</strong></div>
+                  <div class="mi-summary-box"><span>목표 달성률</span><strong data-admin-public="achievement">입력 전</strong></div>
                 </div>
                 <div class="mi-action-strip" aria-label="광고주 핵심 결론">
                   <div class="mi-action-chip"><span>오늘 결론</span><strong>매출 흐름은 유지, 쿠팡 키워드만 보강</strong></div>
                   <div class="mi-action-chip"><span>다음 행동</span><strong>메타 소재 방향 확인 후 교체 진행</strong></div>
-                  <div class="mi-action-chip"><span>공개 기준</span><strong>관리자 검수 완료 데이터만 표시</strong></div>
+                  <div class="mi-action-chip"><span>공개 기준</span><strong>공개 반영한 데이터가 즉시 표시</strong></div>
                 </div>
                 <div class="mi-judgement" aria-label="현재 성과 판단">
                   <div class="mi-judgement-item"><strong>현재 판단: 목표보다 빠르게 성장 중</strong><span>ROAS와 매출은 양호하고, 다음 병목은 쿠팡 키워드 확장입니다.</span></div>
@@ -11123,10 +11144,10 @@
                   <span class="mi-badge">공개용</span>
                 </div>
                 <div class="mi-table">
-                  <div class="mi-row"><span>광고비</span><strong data-admin-public="adSpend">720만원</strong></div>
-                  <div class="mi-row"><span>구매수</span><strong data-admin-public="orders">1,248건</strong></div>
-                  <div class="mi-row"><span>다음 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
-                  <div class="mi-row"><span>업데이트</span><strong data-admin-public="updatedAt">2026.06.19</strong></div>
+                  <div class="mi-row"><span>광고비</span><strong data-admin-public="adSpend">입력 전</strong></div>
+                  <div class="mi-row"><span>구매수</span><strong data-admin-public="orders">입력 전</strong></div>
+                  <div class="mi-row"><span>다음 일정</span><strong data-admin-public="nextSchedule">입력 전</strong></div>
+                  <div class="mi-row"><span>업데이트</span><strong data-admin-public="updatedAt">입력 전</strong></div>
                 </div>
               </aside>
             </div>
@@ -11160,7 +11181,7 @@
                   <div class="mi-report-item"><div><strong>월간 보고서</strong><span>2026년 6월 · 수치 확인 중</span></div><b class="mi-report-state warn">준비 중</b></div>
                   <div class="mi-report-item"><div><strong>KPI 요약</strong><span>목표 달성률과 채널별 성과 포함</span></div><b class="mi-report-state">공개 가능</b></div>
                   <div class="mi-report-item"><div><strong>매출 보고서</strong><span>일별 입력값 기반 월간 자동 합산</span></div><b class="mi-report-state">자동 계산</b></div>
-                  <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-admin-public="updatedAt">2026.06.19</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
+                  <div class="mi-report-item"><div><strong>업데이트 기준</strong><span><span data-admin-public="updatedAt">입력 전</span> · 담당팀 확인 완료</span></div><b class="mi-report-state">확인됨</b></div>
                 </div>
               </aside>
             </div>
@@ -11175,10 +11196,10 @@
                   <span class="mi-badge">합산</span>
                 </div>
                 <div class="mi-table">
-                  <div class="mi-row"><span>합산 매출</span><strong data-admin-public="sales">4,180만원</strong></div>
-                  <div class="mi-row"><span>합산 광고비</span><strong data-admin-public="adSpend">720만원</strong></div>
-                  <div class="mi-row"><span>합산 ROAS</span><strong data-admin-public="roas">581%</strong></div>
-                  <div class="mi-row"><span>합산 구매수</span><strong data-admin-public="orders">1,248건</strong></div>
+                  <div class="mi-row"><span>합산 매출</span><strong data-admin-public="sales">입력 전</strong></div>
+                  <div class="mi-row"><span>합산 광고비</span><strong data-admin-public="adSpend">입력 전</strong></div>
+                  <div class="mi-row"><span>합산 ROAS</span><strong data-admin-public="roas">입력 전</strong></div>
+                  <div class="mi-row"><span>합산 구매수</span><strong data-admin-public="orders">입력 전</strong></div>
                 </div>
               </article>
 
@@ -11198,7 +11219,7 @@
               <aside class="mi-card mi-card-pad">
                 <h3>다음 일정</h3>
                 <div class="mi-table">
-                  <div class="mi-row"><span>가장 가까운 일정</span><strong data-admin-public="nextSchedule">6/21 소재 교체</strong></div>
+                  <div class="mi-row"><span>가장 가까운 일정</span><strong data-admin-public="nextSchedule">입력 전</strong></div>
                   <div class="mi-row"><span>광고주 확인</span><strong>신규 소재 방향 확인</strong></div>
                   <div class="mi-row"><span>보고서 공개</span><strong>보고서함 다운로드 방식</strong></div>
                 </div>
@@ -11429,6 +11450,61 @@
                   <div class="mi-code-status" data-admin-source-file-status aria-live="polite">현재 파일은 브라우저 임시 보관입니다. 정식 운영에서는 서버 저장소에 업로드합니다.</div>
                   <span hidden>다른 기기나 브라우저에서는 확인할 수 없습니다</span>
                 </div>
+                <div class="mi-channel-input-group">
+                  <h3>네이버 입력값</h3>
+                  <div class="mi-form-row">
+                    <label class="mi-field">매출
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="naver.sales" aria-label="네이버 매출" />
+                    </label>
+                    <label class="mi-field">광고비
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="naver.spend" aria-label="네이버 광고비" />
+                    </label>
+                  </div>
+                  <div class="mi-form-row">
+                    <label class="mi-field">노출수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="naver.impressions" aria-label="네이버 노출수" />
+                    </label>
+                    <label class="mi-field">클릭수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="naver.clicks" aria-label="네이버 클릭수" />
+                    </label>
+                  </div>
+                  <div class="mi-form-row">
+                    <label class="mi-field">전환율(%)
+                      <input class="mi-input" type="number" inputmode="numeric" step="0.1" placeholder="0" data-admin-channel="naver.conversionRate" aria-label="네이버 전환율(%)" />
+                    </label>
+                    <label class="mi-field">구매수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="naver.orders" aria-label="네이버 구매수" />
+                    </label>
+                  </div>
+                </div>
+                <div class="mi-channel-input-group">
+                  <h3>쿠팡 입력값</h3>
+                  <div class="mi-form-row">
+                    <label class="mi-field">매출
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="coupang.sales" aria-label="쿠팡 매출" />
+                    </label>
+                    <label class="mi-field">광고비
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="coupang.spend" aria-label="쿠팡 광고비" />
+                    </label>
+                  </div>
+                  <div class="mi-form-row">
+                    <label class="mi-field">노출수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="coupang.impressions" aria-label="쿠팡 노출수" />
+                    </label>
+                    <label class="mi-field">클릭수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="coupang.clicks" aria-label="쿠팡 클릭수" />
+                    </label>
+                  </div>
+                  <div class="mi-form-row">
+                    <label class="mi-field">전환율(%)
+                      <input class="mi-input" type="number" inputmode="numeric" step="0.1" placeholder="0" data-admin-channel="coupang.conversionRate" aria-label="쿠팡 전환율(%)" />
+                    </label>
+                    <label class="mi-field">구매수
+                      <input class="mi-input" type="number" inputmode="numeric" placeholder="0" data-admin-channel="coupang.orders" aria-label="쿠팡 구매수" />
+                    </label>
+                  </div>
+                  <p class="mi-note">운영팀이 직접 입력한 값만 계산·공개됩니다.</p>
+                </div>
                 <div class="mi-operation-guardrails">
                   <strong>검수 기준</strong>
                   <div class="mi-guardrail-strip" aria-label="공개 검수 기준">
@@ -11436,44 +11512,30 @@
                     <span class="mi-guardrail-chip" data-admin-guardrail="coupangDaily">쿠팡 일별</span>
                     <span class="mi-guardrail-chip" data-admin-guardrail="monthly">월간 자동</span>
                     <span class="mi-guardrail-chip" data-admin-guardrail="source">데이터 출처 고정</span>
-                    <span class="mi-guardrail-chip" data-admin-guardrail="publish">검수 후 공개</span>
+                    <span class="mi-guardrail-chip" data-admin-guardrail="publish">생성 즉시 공개</span>
                     <span class="mi-guardrail-chip" data-admin-guardrail="memo">내부 메모 보호</span>
                   </div>
                 </div>
                 <details class="mi-operation-settings">
-                  <summary>공개 설정 <span>연결 광고주 · 승인 기준</span></summary>
+                  <summary>공개 설정 <span>연결 광고주 · 공개 기준</span></summary>
                   <div class="mi-operation-settings-body">
                     <div class="mi-form-row">
                       <label class="mi-field">연결 광고주
                         <input class="mi-input" data-admin-sheet-client value="운영팀에 연결된 광고주 1명 자동 적용" aria-label="연결 광고주" readonly />
                       </label>
                       <label class="mi-field">공개 기준
-                        <input class="mi-input" data-admin-sheet-rule value="관리자컨펌=승인 / 광고주공유여부=Y" aria-label="공개 기준" />
+                        <input class="mi-input" data-admin-sheet-rule value="공개 반영 즉시 광고주 화면 반영" aria-label="공개 기준" />
                       </label>
                     </div>
                   </div>
                 </details>
                 <div class="mi-operation-command">
                   <button class="mi-button is-ghost" type="button" data-admin-sheet-check>입력값 검수</button>
-                  <button class="mi-button" type="button" data-admin-sheet-sync>검수 완료값 공개</button>
+                  <button class="mi-button" type="button" data-admin-sheet-sync>입력값 공개 반영</button>
                 </div>
                 <div class="mi-code-status" data-admin-sheet-status aria-live="polite">입력값 확인 전입니다. 상태 확인을 먼저 눌러주세요.</div>
               </div>
 
-              <div class="mi-hidden-channel-data" aria-hidden="true">
-                <input data-admin-channel="naver.sales" value="18600000" />
-                <input data-admin-channel="naver.spend" value="3200000" />
-                <input data-admin-channel="naver.impressions" value="510000" />
-                <input data-admin-channel="naver.clicks" value="19400" />
-                <input data-admin-channel="naver.conversionRate" value="4.9" />
-                <input data-admin-channel="naver.orders" value="642" />
-                <input data-admin-channel="coupang.sales" value="14200000" />
-                <input data-admin-channel="coupang.spend" value="2210000" />
-                <input data-admin-channel="coupang.impressions" value="380000" />
-                <input data-admin-channel="coupang.clicks" value="17200" />
-                <input data-admin-channel="coupang.conversionRate" value="4.7" />
-                <input data-admin-channel="coupang.orders" value="438" />
-              </div>
             </article>
 
             <aside class="mi-operation-card is-soft">
@@ -11495,7 +11557,7 @@
                 </div>
                 <div class="mi-operation-progress-item">
                   <b>03</b>
-                  <div><strong>검수 후 공개</strong><span>승인값만 광고주 반영<br />PPTX 보고서 자동 배치</span></div>
+                  <div><strong>공개 반영</strong><span>반영 즉시 광고주 화면 표시<br />보고서함에도 바로 반영</span></div>
                 </div>
               </div>
             </aside>
@@ -11528,7 +11590,7 @@
               <div class="mi-table mi-operation-checklist">
                 <div class="mi-row"><span>원본·범위</span><strong>파일명과 연결 광고주 확인</strong></div>
                 <div class="mi-row"><span>수치·메모</span><strong>급등락 재확인 · 내부 메모 비공개</strong></div>
-                <div class="mi-row"><span>승인·이력</span><strong>승인값만 반영 · 공개 시간 기록</strong></div>
+                <div class="mi-row"><span>공개·이력</span><strong>반영 즉시 공개 · 공개 반영 시각 기록</strong></div>
               </div>
             </aside>
           </div>
@@ -11540,8 +11602,8 @@
                 <h3>CSV 간단 계산</h3>
                 <p>임시 계산이 필요할 때만 사용합니다. 정식 운영은 기본 양식 업로드 기준입니다.</p>
                 <div class="mi-tool">
-                  <textarea class="mi-textarea" data-admin-excel-input>광고비,광고노출수,광고클릭수,광고전환율,전체구매수,전체매출
-7200000,890000,36600,4.8,1080,32800000</textarea>
+                  <textarea class="mi-textarea" data-admin-excel-input placeholder="광고비,광고노출수,광고클릭수,광고전환율,전체구매수,전체매출&#10;운영값을 이 순서대로 한 줄에 붙여넣으세요">광고비,광고노출수,광고클릭수,광고전환율,전체구매수,전체매출
+</textarea>
                   <button class="mi-button is-ghost" type="button" data-admin-excel-calc>CSV 수치 계산</button>
                   <button class="mi-button" type="button" data-admin-excel-publish>계산 결과 공개 반영</button>
                   <div class="mi-note">DB 저장과 변경 이력은 서버 운영 기준으로 남깁니다.</div>
@@ -11564,7 +11626,7 @@
             <div>
               <span class="mi-kicker">보고서 관리</span>
               <h1>보고서 관리</h1>
-              <p>검수한 보고서만 광고주에게 공개합니다.</p>
+              <p>보고서는 생성 즉시 광고주에게 공개됩니다.</p>
             </div>
             <span class="mi-badge warn">운영팀 전용</span>
           </header>
@@ -11585,10 +11647,10 @@
                   <b>검수형</b>
                 </div>
                 <div class="mi-report-metrics">
-                  <div class="mi-report-metric"><span>매출</span><strong data-admin-public="sales">4,180만원</strong><small>공개값</small></div>
-                  <div class="mi-report-metric"><span>광고비</span><strong data-admin-public="adSpend">720만원</strong><small>검수값</small></div>
-                  <div class="mi-report-metric"><span>ROAS</span><strong data-admin-public="roas">581%</strong><small>대표 지표</small></div>
-                  <div class="mi-report-metric"><span>구매수</span><strong data-admin-public="orders">1,248건</strong><small>성과 요약</small></div>
+                  <div class="mi-report-metric"><span>매출</span><strong data-admin-public="sales">입력 전</strong><small>공개값</small></div>
+                  <div class="mi-report-metric"><span>광고비</span><strong data-admin-public="adSpend">입력 전</strong><small>검수값</small></div>
+                  <div class="mi-report-metric"><span>ROAS</span><strong data-admin-public="roas">입력 전</strong><small>대표 지표</small></div>
+                  <div class="mi-report-metric"><span>구매수</span><strong data-admin-public="orders">입력 전</strong><small>성과 요약</small></div>
                 </div>
               </div>
               <div class="mi-downloads">
@@ -12145,32 +12207,24 @@
       var storageKey = "miAgencyPublicState:v2";
       var sourceFileStorageKey = "miAdminSourceFile:v1";
       var primaryAgencyCode = "owner-session";
+      // 공개 관리 입력값은 이제 서버 광고주 행에 그대로 저장된다. 여기에 예시
+      // 숫자를 남겨두면 운영자가 저장을 누르는 순간 그 숫자가 실제 공개 데이터가
+      // 되므로, 기본값에는 어떤 수치도 두지 않는다.
       var defaultState = {
         code: primaryAgencyCode,
-        client: "브랜드 A",
-        sales: "4,180만원",
-        roas: "581%",
-        adSpend: "720만원",
-        orders: "1,248건",
-        achievement: "116%",
-        status: "목표 초과",
-        nextSchedule: "6/21 소재 교체",
-        updatedAt: "2026.06.19",
-        comment: "다음 주에는 메타 소재 교체와 쿠팡 키워드 보강을 우선 진행하겠습니다.",
-        channels: [
-          { name: "네이버", summary: "검색광고 효율 양호", sales: "1,860만원", roas: "581%" },
-          { name: "쿠팡", summary: "구매 전환 안정", sales: "1,420만원", roas: "642%" },
-          { name: "메타", summary: "소재 교체 예정", sales: "900만원", roas: "410%" }
-        ],
-        channelDetails: [
-          { name: "네이버", type: "검색광고", sales: "1,860만원", adSpend: "320만원", roas: "581%", orders: "642건", ctr: "3.8%", cvr: "4.9%", cpa: "3,365원", cpc: "165원", summary: "검색광고 효율 양호. 제목/본문 SEO 키워드 보강 우선." },
-          { name: "쿠팡", type: "상품광고", sales: "1,420만원", adSpend: "221만원", roas: "642%", orders: "438건", ctr: "4.5%", cvr: "4.7%", cpa: "2,728원", cpc: "128원", summary: "구매 전환 안정. 상품명과 검색어 필드 보강 유지." }
-        ],
-        schedules: [
-          { date: "6/21", title: "메타 소재 교체", detail: "기존 소재 피로도 반영", status: "진행 중" },
-          { date: "6/24", title: "월간 보고서 공개", detail: "운영팀 검수 후 보고서함 공개", status: "예정" },
-          { date: "6/27", title: "쿠팡 키워드 보강", detail: "상품명과 검색어 반영", status: "예정" }
-        ]
+        client: "",
+        sales: "",
+        roas: "",
+        adSpend: "",
+        orders: "",
+        achievement: "",
+        status: "",
+        nextSchedule: "",
+        updatedAt: "",
+        comment: "",
+        channels: [],
+        channelDetails: [],
+        schedules: []
       };
 
       function normalizeLegacyState(state) {
@@ -16838,7 +16892,13 @@
         return readApiPayload(response, "보고서 서버 등록 응답을 확인할 수 없습니다.");
       }
 
-      async function persistDemoState(state, statusNode, okMessage) {
+      function getClientPublicStateApiUrl() {
+        return getDemoApiBaseUrl() + "/api/client/public-state";
+      }
+
+      // 공개 수치는 세션이 가리키는 광고주 행에 저장된다. miFetch 가 CSRF 토큰을
+      // 붙이고 서버 전용 자격 헤더를 지우므로 여기서 raw fetch 를 쓰면 안 된다.
+      async function persistPublicState(state, statusNode, okMessage) {
         if (!window.fetch) {
           setStatus(statusNode, "저장 완료: 온라인 반영 확인이 필요합니다.", "is-warn");
           return false;
@@ -16848,11 +16908,16 @@
           return false;
         }
         try {
-          var response = await fetch(getDemoApiBaseUrl() + "/api/demo/public-state", {
+          var publishHeaders = { "content-type": "application/json" };
+          if (canManageOwnerCodes()) {
+            var targetAgencyCode = ownerTargetAgencyCode();
+            if (!targetAgencyCode) throw new Error("총관리자는 대상 광고주 코드를 먼저 확인해주세요.");
+            publishHeaders["x-mi-agency-code"] = targetAgencyCode;
+          }
+          var response = await miFetch(getClientPublicStateApiUrl(), {
             method: "POST",
-            headers: {
-              "content-type": "application/json"
-            },
+            cache: "no-store",
+            headers: publishHeaders,
             body: JSON.stringify({
               publicState: state
             })
@@ -16954,7 +17019,12 @@
 
       function renderChannelDetails(container, details) {
         if (!container) return;
-        container.innerHTML = (details || defaultState.channelDetails).map(function (item) {
+        var rows = details || defaultState.channelDetails;
+        if (!rows.length) {
+          container.innerHTML = '<div class="mi-note">아직 등록된 수치가 없습니다 — 입력값을 공개 반영하면 표시됩니다.</div>';
+          return;
+        }
+        container.innerHTML = rows.map(function (item) {
           return '<article class="mi-channel-detail"><div class="mi-channel-detail-head"><div><strong>' +
             escapeHtml(item.name) + '</strong><span>' + escapeHtml(item.type || "채널") + '</span></div><span class="mi-badge">' +
             escapeHtml(item.roas || "-") + '</span></div><div class="mi-channel-stats">' +
@@ -16974,7 +17044,12 @@
 
         var scheduleList = root.querySelector("[data-admin-preview-schedules]");
         if (scheduleList) {
-          scheduleList.innerHTML = (state.schedules || defaultState.schedules).map(function (item) {
+          var scheduleRows = state.schedules || defaultState.schedules;
+          if (!scheduleRows.length) {
+            scheduleList.innerHTML = '<div class="mi-note">아직 등록된 공개 일정이 없습니다 — 일정을 공개하면 표시됩니다.</div>';
+            return;
+          }
+          scheduleList.innerHTML = scheduleRows.map(function (item) {
             var badgeClass = item.status === "진행 중" || item.status === "확인 필요" ? " warn" : "";
             return '<div class="mi-schedule-item"><div class="mi-date">' + escapeHtml(item.date) + '</div><div><strong>' +
               escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.detail) + '</span></div><span class="mi-badge' +
@@ -17298,7 +17373,7 @@
             ok: hasSourceFile,
             message: hasSourceFile ? "보관 파일 기준으로 데이터 출처를 고정합니다." : "원본 파일을 먼저 선택하면 데이터 출처를 고정할 수 있습니다."
           },
-          publish: { ok: true, message: "검수 완료 후 광고주 공개 데이터로 반영됩니다." },
+          publish: { ok: true, message: "공개 반영 시 즉시 광고주 화면에 반영됩니다." },
           memo: { ok: true, message: "내부 메모는 광고주 화면에 노출되지 않습니다." }
         };
         setAdminGuardrails(checks);
@@ -17309,41 +17384,17 @@
         return { ok: okCount === total, okCount: okCount, total: total, hasSourceFile: hasSourceFile };
       }
 
+      function hasChannelInputValues() {
+        var inputs = root.querySelectorAll("[data-admin-channel]");
+        for (var index = 0; index < inputs.length; index += 1) {
+          if (String(inputs[index].value || "").trim() !== "") return true;
+        }
+        return false;
+      }
+
       function readChannelInput(channel, key) {
         var input = root.querySelector('[data-admin-channel="' + channel + "." + key + '"]');
         return parseNumber(input ? input.value : 0);
-      }
-
-      function setChannelInput(channel, key, value) {
-        var input = root.querySelector('[data-admin-channel="' + channel + "." + key + '"]');
-        if (input) input.value = String(value);
-      }
-
-      function loadSheetDemoData() {
-        var sheetValues = {
-          naver: {
-            sales: 18600000,
-            spend: 3200000,
-            impressions: 510000,
-            clicks: 19400,
-            conversionRate: 4.9,
-            orders: 642
-          },
-          coupang: {
-            sales: 14200000,
-            spend: 2210000,
-            impressions: 380000,
-            clicks: 17200,
-            conversionRate: 4.7,
-            orders: 438
-          }
-        };
-        Object.keys(sheetValues).forEach(function (channel) {
-          Object.keys(sheetValues[channel]).forEach(function (key) {
-            setChannelInput(channel, key, sheetValues[channel][key]);
-          });
-        });
-        return buildChannelCalc();
       }
 
       function calcChannel(channel, label) {
@@ -17403,8 +17454,11 @@
         state.roas = formatNumber(calc.total.roas) + "%";
         state.adSpend = formatMoney(calc.total.spend);
         state.orders = formatNumber(calc.total.orders) + "건";
-        state.achievement = Math.min(160, Math.round((calc.total.roas / 500) * 100)) + "%";
-        state.status = calc.total.roas >= 500 ? "목표 초과" : (calc.total.roas >= 400 ? "목표 근접" : "개선 필요");
+        // 달성률과 목표 상태는 등록된 목표(kpi_targets)가 있어야 계산할 수 있다.
+        // 고정된 ROAS 500% 를 목표로 가정해 만들어내면 없는 목표를 공개하게 되므로,
+        // 목표가 들어오기 전까지는 값을 비워 두고 화면이 빈 상태를 그리게 한다.
+        state.achievement = "";
+        state.status = "";
         state.updatedAt = new Date().toISOString().slice(0, 10).replace(/-/g, ".");
         state.comment = "채널 합산 ROAS " + formatNumber(calc.total.roas) + "% 기준으로 다음 실행 우선순위를 조정하겠습니다.";
         state.channels = [
@@ -18392,7 +18446,7 @@
           applyState(nextState);
           window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
           setStatus(codeStatus, "로컬 저장 완료: 공개 데이터에 반영 중입니다.", "");
-          await persistDemoState(nextState, codeStatus, "저장 완료: 광고주 화면에도 공개 데이터가 반영되었습니다.");
+          await persistPublicState(nextState, codeStatus, "저장 완료: 광고주 화면에도 공개 데이터가 반영되었습니다.");
         });
       }
 
@@ -18406,7 +18460,7 @@
           writeState(state);
           applyState(state);
           setStatus(publicStatus, "공개 코멘트 로컬 저장 완료: 공개 데이터에 반영 중입니다.", "");
-          await persistDemoState(state, publicStatus, "공개 코멘트가 저장되고 광고주 화면에도 반영되었습니다.");
+          await persistPublicState(state, publicStatus, "공개 코멘트가 저장되고 광고주 화면에도 반영되었습니다.");
         });
       }
 
@@ -18431,7 +18485,7 @@
           renderChannelCalc(lastChannelCalc);
           var state = publishChannelCalc(lastChannelCalc);
           setStatus(channelStatus, "계산값 로컬 반영 완료: 공개 데이터에 저장 중입니다.", "");
-          await persistDemoState(state, channelStatus, "공개 반영 완료: " + state.client + " 광고주 화면에 계산값이 연결되었습니다.");
+          await persistPublicState(state, channelStatus, "공개 반영 완료: " + state.client + " 광고주 화면에 계산값이 연결되었습니다.");
         });
       }
 
@@ -18467,11 +18521,11 @@
       });
       if (sheetCheckButton) {
         sheetCheckButton.addEventListener("click", function () {
-          lastChannelCalc = loadSheetDemoData();
+          lastChannelCalc = buildChannelCalc();
           renderChannelCalc(lastChannelCalc);
           var checkResult = checkAdminSheetInputs();
           if (checkResult.ok) {
-            setStatus(sheetStatus, "입력값 상태 확인 완료: " + checkResult.total + "개 기준이 모두 정상입니다. 검수 완료 후 공개 반영할 수 있습니다.", "is-ok");
+            setStatus(sheetStatus, "입력값 상태 확인 완료: " + checkResult.total + "개 기준이 모두 정상입니다. 지금 공개 반영하면 즉시 광고주 화면에 표시됩니다.", "is-ok");
           } else {
             setStatus(sheetStatus, "입력값 상태 확인 완료: " + checkResult.okCount + "/" + checkResult.total + "개 정상입니다. 원본 파일을 보관하면 데이터 출처와 보고서 근거까지 완료됩니다.", "is-warn");
           }
@@ -18480,14 +18534,20 @@
 
       if (sheetSyncButton) {
         sheetSyncButton.addEventListener("click", async function () {
-          lastChannelCalc = loadSheetDemoData();
+          // 빈 입력을 그대로 반영하면 0원·0건이 실제 공개 수치가 된다.
+          // 운영팀이 한 칸이라도 채우기 전에는 저장을 막는다.
+          if (!hasChannelInputValues()) {
+            setStatus(sheetStatus, "공개 반영 전입니다. 네이버 또는 쿠팡 입력값을 먼저 채워주세요.", "is-warn");
+            return;
+          }
+          lastChannelCalc = buildChannelCalc();
           renderChannelCalc(lastChannelCalc);
           var state = publishChannelCalc(lastChannelCalc);
           state.comment = "운영 입력값 기준 채널 합산 ROAS " + formatNumber(lastChannelCalc.total.roas) + "%입니다. 다음 실행은 쿠팡 키워드 보강과 네이버 SEO 문구 정리입니다.";
           writeState(state);
           applyState(state);
-          setStatus(sheetStatus, "검수 완료 데이터 로컬 반영 완료: 공개 데이터에 저장 중입니다.", "");
-          await persistDemoState(state, sheetStatus, "공개 반영 완료: " + state.client + " 광고주 화면과 운영팀 미리보기에 계산값이 연결되었습니다.");
+          setStatus(sheetStatus, "입력값 로컬 반영 완료: 공개 데이터에 저장 중입니다.", "");
+          await persistPublicState(state, sheetStatus, "공개 반영 완료: " + state.client + " 광고주 화면과 운영팀 미리보기에 계산값이 연결되었습니다.");
         });
       }
 
@@ -18499,7 +18559,15 @@
       if (excelButton && excelInput && excelResult) {
         excelButton.addEventListener("click", function () {
           var rows = excelInput.value.trim().split(/\n+/);
-          var data = (rows[1] || rows[0] || "").split(",").map(function (item) {
+          // 머리글만 남아 있으면 숫자가 한 칸도 없다. 그 상태를 0 으로 계산하면
+          // 붙여넣은 적 없는 수치가 공개될 수 있으므로 계산 자체를 하지 않는다.
+          var valueRow = rows.filter(function (row) { return /[0-9]/.test(row); })[0] || "";
+          if (!valueRow) {
+            lastExcelCalc = null;
+            excelResult.innerHTML = '<div class="mi-row"><span>계산 대기</span><strong>운영값 한 줄을 머리글 아래에 붙여넣어주세요</strong></div>';
+            return;
+          }
+          var data = valueRow.split(",").map(function (item) {
             return parseNumber(item);
           });
           var spend = data[0] || 0;
@@ -18529,6 +18597,14 @@
       if (excelPublishButton) {
         excelPublishButton.addEventListener("click", async function () {
           if (!lastExcelCalc && excelButton) excelButton.click();
+          // 붙여넣은 값이 없으면 0 이 그대로 공개 수치가 된다. 계산 결과가
+          // 없는 상태에서는 공개 반영을 하지 않는다.
+          if (!lastExcelCalc) {
+            if (excelResult) {
+              excelResult.innerHTML = '<div class="mi-row"><span>공개 반영 전</span><strong>운영값을 붙여넣고 CSV 수치 계산을 먼저 눌러주세요</strong></div>';
+            }
+            return;
+          }
           var state = readState();
           state.sales = lastExcelCalc ? lastExcelCalc.sales : state.sales;
           state.roas = lastExcelCalc ? lastExcelCalc.roas : state.roas;
@@ -18540,7 +18616,7 @@
           if (excelResult) {
             excelResult.innerHTML += '<div class="mi-row"><span>공개 반영</span><strong>광고주 화면 데이터 업데이트 완료</strong></div>';
           }
-          await persistDemoState(state, null, "CSV 계산 결과가 광고주 화면에도 반영되었습니다.");
+          await persistPublicState(state, null, "CSV 계산 결과가 광고주 화면에도 반영되었습니다.");
         });
       }
 

@@ -366,8 +366,11 @@ const checks = {
     'data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
     '<p class="mi-nav-title">광고 조사</p>',
     'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
+  // 보고서는 생성 시점에 visibility=client_visible 로 저장된다. 승인 단계는
+  // 코드에 존재한 적이 없으므로, 화면 문구도 그 사실만 말해야 한다.
   ]) && adminSource.includes('<h1>보고서 관리</h1>')
-    && adminSource.includes("검수한 보고서만 광고주에게 공개합니다."),
+    && adminSource.includes("보고서는 생성 즉시 광고주에게 공개됩니다.")
+    && !adminSource.includes("검수한 보고서만 광고주에게 공개합니다."),
   operationTeamNotLockedToAgencyCode: !adminSource.includes("setOperationTeamNavigation") && !adminSource.includes('target !== "agency-code"'),
   agencyConnectionViewKeepsOnlyAccountManagement: adminAgencyConnectionViewSource.includes("data-owner-team-create")
     && adminAgencyConnectionViewSource.includes("data-team-client-create")
@@ -982,7 +985,7 @@ const checks = {
     && adminSource.includes("PPTX 생성 · 보고서함 기록 완료")
     && adminSource.includes("운영팀-광고주 연결이 필요합니다."),
   reportPolicyAligned: adminSource.includes("<h1>보고서 관리</h1>")
-    && adminSource.includes("검수한 보고서만 광고주에게 공개합니다.")
+    && adminSource.includes("보고서는 생성 즉시 광고주에게 공개됩니다.")
     && adminSource.includes("공개 처리된 파일만 광고주 노출")
     && clientSource.includes("보고서함 다운로드 방식")
     && sheetTemplateBuilder.includes("운영팀 검수 후 보고서함 공개")
@@ -998,7 +1001,7 @@ const checks = {
     && adminSource.includes("운영 원본 파일")
     && adminSource.includes("현재 파일은 브라우저 임시 보관입니다"),
   adminOperatingGuardrailsVisible: adminSource.includes("데이터 출처 고정")
-    && adminSource.includes("검수 후 공개")
+    && adminSource.includes("생성 즉시 공개")
     && adminSource.includes('data-admin-guardrail="naverDaily"')
     && adminSource.includes('data-admin-guardrail="coupangDaily"')
     && adminSource.includes("#mi-admin .mi-guardrail-chip.is-ok")

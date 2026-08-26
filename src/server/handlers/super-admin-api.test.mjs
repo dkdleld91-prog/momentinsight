@@ -198,7 +198,7 @@ test("admin team requests do not serialize raw team codes", async () => {
   assert.doesNotMatch(source, /requestTeamCodes\("POST",\s*currentOperationTeam\.teamCode/);
 
   const publishStart = source.indexOf("async function publishReportCenterRecord");
-  const publishEnd = source.indexOf("async function persistDemoState", publishStart);
+  const publishEnd = source.indexOf("function getClientPublicStateApiUrl", publishStart);
   assert.notEqual(publishStart, -1);
   assert.notEqual(publishEnd, -1);
   assert.doesNotMatch(source.slice(publishStart, publishEnd), /["']x-mi-team-code["']/);

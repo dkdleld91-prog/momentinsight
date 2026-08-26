@@ -385,7 +385,9 @@ test("admin glue only mounts, unmounts and routes — the heavy code stays in pu
 test("team google callbacks land on the personal calendar screen", () => {
   // 팀 콜백은 /admin?gcal=... · /admin?glogin=... 으로 돌아온다(해시 없음).
   assert.ok(adminGlueBlock.includes('pageUrl.searchParams.get("gcal") || pageUrl.searchParams.get("glogin")'));
-  assert.ok(adminSource.includes('setScreen(personalCalendarNoticePending() ? "my-calendar" : (teamHasClient ? "agency-code" : "home"), !restored);'));
+  // 3단계에서 운영팀 착지 화면은 "지금 상황" 운영 홈으로 바뀌었다. 구글 콜백만
+  // 예외로 내 캘린더를 연다는 규칙은 그대로다.
+  assert.ok(adminSource.includes('setScreen(personalCalendarNoticePending() ? "my-calendar" : "home", !restored);'));
 });
 
 test("the existing 업무 운영 screen is untouched by this component", () => {

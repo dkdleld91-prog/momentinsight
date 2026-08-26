@@ -405,7 +405,7 @@
 
     #mi-admin .mi-mode-strip {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-columns: minmax(0, 1fr) minmax(0, auto) auto;
       gap: 16px;
       align-items: center;
       margin-bottom: 18px;
@@ -429,6 +429,49 @@
       color: var(--mi-muted);
       font-size: 13px;
       line-height: 1.45;
+    }
+
+    /* 대상 광고주는 화면마다 따로 고르지 않는다. 상단 띠에 하나만 두고
+       공개 관리 · 대표실 업무 범위 · 순위 화면이 같은 값을 읽는다. */
+    #mi-admin .mi-target-picker {
+      display: grid;
+      min-width: 0;
+      gap: var(--mi-space-1, 4px);
+      align-content: center;
+    }
+
+    #mi-admin .mi-target-picker > span {
+      display: block;
+      margin-top: 0;
+      color: var(--mi-muted);
+      font-size: var(--mi-font-label, 11px);
+      font-weight: 850;
+      letter-spacing: 0;
+    }
+
+    #mi-admin .mi-target-picker select,
+    #mi-admin .mi-target-picker input {
+      min-width: 0;
+      max-width: 280px;
+      font-size: var(--mi-font-body-lg, 13px);
+    }
+
+    #mi-admin .mi-target-picker[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-target-echo {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: var(--mi-space-2, 8px);
+      border: 1px solid var(--mi-line);
+      border-radius: var(--mi-radius-pill, 999px);
+      padding: 4px 10px;
+      color: var(--mi-navy);
+      background: var(--mi-grey-50, #f8fafc);
+      font-size: var(--mi-font-label, 11px);
+      font-weight: 850;
     }
 
     #mi-admin .mi-mode-pill {
@@ -1202,7 +1245,7 @@
 
     #mi-admin .mi-ops-status-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(212px, 1fr));
       gap: 14px;
     }
 
@@ -10612,6 +10655,13 @@
             <strong data-admin-mode-title>관리자 권한 확인 중</strong>
             <span data-admin-mode-desc>접속 코드에 맞는 운영 권한을 제공합니다.</span>
           </div>
+          <label class="mi-target-picker" data-mi-target-picker hidden>
+            <span>대상 광고주 · 모든 화면 공통</span>
+            <select class="mi-input" data-mi-target-select aria-label="대상 광고주 선택">
+              <option value="">대상 확인 중</option>
+            </select>
+            <input class="mi-input" data-mi-target-manual placeholder="광고주 코드 직접 입력" aria-label="광고주 코드 직접 입력" autocomplete="off" autocapitalize="none" spellcheck="false" hidden />
+          </label>
           <b class="mi-mode-pill" data-admin-mode-badge>Admin</b>
         </div>
 
@@ -10628,12 +10678,17 @@
             </div>
           </header>
 
-          <section class="mi-ops-status-board" aria-label="이번 달 운영 현황">
+          <section class="mi-ops-status-board" aria-label="지금 상황">
             <div class="mi-ops-status-head">
-              <strong>이번 달 운영 현황</strong>
+              <strong>지금 상황</strong>
               <span data-ops-home-period>기준 월 확인 중</span>
             </div>
             <div class="mi-ops-status-grid">
+              <a class="mi-ops-status-card" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code" data-ops-home-client-card>
+                <div><span>담당 광고주</span><b data-ops-home-client-state data-state="idle">확인 중</b></div>
+                <strong data-ops-home-client-title>광고주 연결 확인 중</strong>
+                <small data-ops-home-client-detail>보안 세션이 확인한 연결 상태 기준</small>
+              </a>
               <a class="mi-ops-status-card" href="#mi-admin-excel" data-mi-admin-screen="excel">
                 <div><span>매출 입력</span><b data-ops-home-sales-state data-state="idle">확인 중</b></div>
                 <strong data-ops-home-sales-title>매출 상태 확인 중</strong>
@@ -10643,6 +10698,16 @@
                 <div><span>보고서 제출</span><b data-ops-home-report-state data-state="idle">로그인 후</b></div>
                 <strong data-ops-home-report-title>보고서 상태 확인 대기</strong>
                 <small data-ops-home-report-detail>서버 보고서함의 이번 달 기록 기준</small>
+              </a>
+              <a class="mi-ops-status-card" href="#mi-admin-my-calendar" data-ops-home-schedule-card>
+                <div><span>오늘 일정</span><b data-ops-home-schedule-state data-state="idle">확인 중</b></div>
+                <strong data-ops-home-schedule-title>오늘 일정 확인 중</strong>
+                <small data-ops-home-schedule-detail>내 캘린더의 오늘 일정 기준</small>
+              </a>
+              <a class="mi-ops-status-card" href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking" data-ops-home-rank-card>
+                <div><span>순위 급변</span><b data-ops-home-rank-state data-state="idle">확인 중</b></div>
+                <strong data-ops-home-rank-title>순위 신호 확인 중</strong>
+                <small data-ops-home-rank-detail>등록된 30일 추적의 전회 대비 변동 기준</small>
               </a>
             </div>
           </section>
@@ -11941,6 +12006,7 @@
               <span class="mi-kicker">네이버 30일 순위</span>
               <h1>네이버쇼핑 대표 오가닉 순위를 30일 기록합니다.</h1>
               <p>정확 상품과 관련 원부 중 숫자가 더 낮은 쪽을 높은 순위로 보고 매일 오전 9시와 오후 3시에 기록합니다. 광고 제외 40개 보기 기준의 페이지와 페이지 내 순위도 함께 표시합니다.</p>
+              <span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span>
             </div>
             <span class="mi-badge">관리자 확인용</span>
           </header>
@@ -11995,6 +12061,7 @@
               <span class="mi-kicker">순위 추적</span>
               <h1>네이버 플레이스 30일 순위</h1>
               <p>핵심 키워드의 30일 순위 흐름을 관리합니다.</p>
+              <span class="mi-target-echo" data-mi-target-echo>대상 광고주 확인 중</span>
             </div>
             <span class="mi-badge">운영 관리</span>
           </header>
@@ -14902,6 +14969,8 @@
       var workOwnerClientInput = root.querySelector("[data-work-owner-client-code]");
       if (workOwnerClientInput) {
         workOwnerClientInput.addEventListener("change", function () {
+          // 대표실에서 범위를 직접 고쳐도 대상 광고주는 하나로 남는다.
+          applyGlobalAdvertiserTarget(workOwnerClientInput.value, { force: true, reloadWork: false });
           workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
           loadWorkItems();
         });
@@ -15235,6 +15304,7 @@
           targetLabel = "광고주 " + (matches[0].name || matches[0].businessName || targetCode);
         }
         scopeInput.value = targetCode;
+        applyGlobalAdvertiserTarget(targetCode, { force: true, reloadWork: false });
         workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
         var loaded = await loadWorkItems();
         if (generation !== ownerToolGeneration || secureSession.role !== "owner" || !view.isConnected) return;
@@ -16746,6 +16816,8 @@
         list.innerHTML = rows.join("");
         renderOwnerFullAccountView(payload);
         syncOwnerCodeDefaults(payload);
+        renderGlobalAdvertiserPicker();
+        renderGlobalAdvertiserEcho();
       }
 
       function renderOperationTeamCodePanel(payload) {
@@ -17533,6 +17605,19 @@
       }
 
       var operationHomeReportRequest = 0;
+      var operationHomeScheduleRequest = 0;
+      var operationHomeRankRequest = 0;
+
+      function getMyWorkItemsApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/my/work-items";
+        return "http://127.0.0.1:8790/api/my/work-items";
+      }
+
+      function operationHomeTodayKey() {
+        var now = new Date();
+        return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0") + "-" + String(now.getDate()).padStart(2, "0");
+      }
 
       function operationHomeMonthWindow() {
         var now = new Date();
@@ -17648,6 +17733,153 @@
         }
       }
 
+      // ── 지금 상황 카드 ──────────────────────────────────────
+      // 운영팀이 로그인하면 처음 보는 화면이 이 요약이다. 여기에 새로 만든
+      // 수치는 하나도 없다 — 보안 세션이 이미 알려준 연결 상태, 이미 있는
+      // /api/my/work-items · 순위 추적 조회, 그리고 이미 있는 하락 감지
+      // 판정(rankTrackerTrend · placeTrackerTrend)만 다시 읽어 적는다.
+      function renderOperationHomeClientStatus() {
+        var scheduleCard = root.querySelector("[data-ops-home-schedule-card]");
+        if (scheduleCard) {
+          // 오늘 일정 카드가 여는 화면은 역할마다 다르다. 마크업에 화면 이름을 박아 두면
+          // 화면 목록 세는 기준(check-release-baseline.mjs)이 흔들리므로 여기서만 채운다.
+          var scheduleScreen = secureSession.role === "owner" ? "owner-assistant" : "my-calendar";
+          scheduleCard.setAttribute("data-mi-admin-screen", scheduleScreen);
+          scheduleCard.setAttribute("href", "#mi-admin-" + scheduleScreen);
+        }
+        if (!secureSession.role) {
+          setOperationHomeStatus("client", "idle", "로그인 후", "광고주 연결 확인 대기", "로그인하면 담당 광고주를 확인합니다.");
+          return;
+        }
+        if (secureSession.role === "owner") {
+          var ownerTarget = ownerTargetAgencyCode();
+          setOperationHomeStatus(
+            "client",
+            ownerTarget ? "done" : "idle",
+            ownerTarget ? "대상 선택됨" : "대상 선택",
+            ownerTarget || "대상 광고주 선택 전",
+            "총관리자는 상단 대상 광고주 선택으로 범위를 바꿉니다."
+          );
+          return;
+        }
+        var client = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+        if (!client) {
+          setOperationHomeStatus("client", "warn", "미연결", "연결된 광고주 없음", "운영팀 단독 모드입니다. 대행사 연결에서 코드 1개를 연결하세요.");
+          return;
+        }
+        setOperationHomeStatus(
+          "client",
+          "done",
+          "연결 완료",
+          client.name || client.businessName || "연결 광고주",
+          "광고주 코드 " + (client.agencyCode || client.id || "-")
+        );
+      }
+
+      async function refreshOperationHomeScheduleStatus() {
+        var requestId = ++operationHomeScheduleRequest;
+        var session = captureAdminSession();
+        if (!session.role) {
+          setOperationHomeStatus("schedule", "idle", "로그인 후", "오늘 일정 확인 대기", "로그인하면 오늘 일정을 확인합니다.");
+          return;
+        }
+        if (session.role !== "team") {
+          setOperationHomeStatus("schedule", "idle", "대표실", "대표실에서 확인", "총관리자 일정은 대표실 업무 일정에서 확인합니다.");
+          return;
+        }
+        setOperationHomeStatus("schedule", "idle", "확인 중", "오늘 일정 확인 중", "내 캘린더 일정을 불러오고 있습니다.");
+        try {
+          var today = operationHomeTodayKey();
+          var endpoint = new URL(getMyWorkItemsApiUrl(), window.location.origin);
+          endpoint.searchParams.set("from", today);
+          endpoint.searchParams.set("to", today);
+          var response = await miFetch(endpoint.toString(), { method: "GET", cache: "no-store" });
+          var payload = await readApiPayload(response, "오늘 일정 조회 응답을 확인할 수 없습니다.");
+          if (requestId !== operationHomeScheduleRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          if (!payload.ok) throw new Error(payload.message || "오늘 일정 조회에 실패했습니다.");
+          var items = Array.isArray(payload.items) ? payload.items : [];
+          var remaining = items.filter(workItemNeedsAction).length;
+          if (!items.length) {
+            setOperationHomeStatus("schedule", "done", "비어 있음", "오늘 일정 0건", today + " 기준 등록된 일정이 없습니다.");
+            return;
+          }
+          setOperationHomeStatus(
+            "schedule",
+            remaining ? "warn" : "done",
+            remaining ? "진행 중" : "완료",
+            "오늘 일정 " + items.length + "건",
+            remaining ? "남은 일정 " + remaining + "건 · " + today + " 기준" : today + " 기준 모두 처리했습니다."
+          );
+        } catch (error) {
+          if (requestId !== operationHomeScheduleRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          setOperationHomeStatus("schedule", "error", "조회 실패", "오늘 일정 연결 실패", "서버 연결 후 운영 홈을 다시 열어주세요.");
+        }
+      }
+
+      async function refreshOperationHomeRankSignal() {
+        var requestId = ++operationHomeRankRequest;
+        var session = captureAdminSession();
+        if (!session.role) {
+          setOperationHomeStatus("rank", "idle", "로그인 후", "순위 신호 확인 대기", "로그인하면 30일 추적 변동을 확인합니다.");
+          return;
+        }
+        var scope = verifiedRankTrackerScope();
+        if (!scope) {
+          setOperationHomeStatus("rank", "idle", "범위 확인", "순위 조회 범위 확인 전", "대상 광고주를 확인하면 순위 변동을 읽습니다.");
+          return;
+        }
+        setOperationHomeStatus("rank", "idle", "확인 중", "순위 신호 확인 중", "등록된 30일 추적을 불러오고 있습니다.");
+        try {
+          var headers = canManageOwnerCodes() ? { "x-mi-agency-code": scope.agencyCode } : {};
+          var query = "?" + new URLSearchParams({ limit: "500" }).toString();
+          var payloads = await Promise.all([
+            miFetch(getRankTrackerApiUrl() + query, { method: "GET", cache: "no-store", headers: headers })
+              .then(function (response) { return response.json(); })
+              .catch(function () { return null; }),
+            miFetch(getPlaceRankTrackerApiUrl() + query, { method: "GET", cache: "no-store", headers: headers })
+              .then(function (response) { return response.json(); })
+              .catch(function () { return null; })
+          ]);
+          if (requestId !== operationHomeRankRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          var productPayload = payloads[0];
+          var placePayload = payloads[1];
+          if ((!productPayload || productPayload.ok === false) && (!placePayload || placePayload.ok === false)) {
+            throw new Error("순위 추적 조회에 실패했습니다.");
+          }
+          var productList = productPayload && Array.isArray(productPayload.trackers) ? productPayload.trackers : [];
+          var placeList = placePayload && Array.isArray(placePayload.trackers) ? placePayload.trackers : [];
+          var tracked = productList.length + placeList.length;
+          if (!tracked) {
+            setOperationHomeStatus("rank", "idle", "추적 전", "등록된 30일 추적 없음", "N 30일 순위에서 추적을 먼저 등록해주세요.");
+            return;
+          }
+          var droppedProduct = productList.filter(function (tracker) { return rankTrackerTrend(tracker) === "dropped"; }).length;
+          var droppedPlace = placeList.filter(function (tracker) { return placeTrackerTrend(tracker) === "dropped"; }).length;
+          var dropped = droppedProduct + droppedPlace;
+          if (!dropped) {
+            setOperationHomeStatus("rank", "done", "이상 없음", "하락 감지 0건", "추적 " + tracked + "건 · 전회 대비 하락 없음");
+            return;
+          }
+          setOperationHomeStatus(
+            "rank",
+            "warn",
+            "하락 감지",
+            "하락 감지 " + dropped + "건",
+            "상품 " + droppedProduct + "건 · 플레이스 " + droppedPlace + "건 / 추적 " + tracked + "건"
+          );
+        } catch (error) {
+          if (requestId !== operationHomeRankRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          setOperationHomeStatus("rank", "error", "조회 실패", "순위 신호 연결 실패", "서버 연결 후 운영 홈을 다시 열어주세요.");
+        }
+      }
+
+      function refreshOperationHomeStatus() {
+        renderOperationHomeClientStatus();
+        refreshOperationHomeReportStatus();
+        refreshOperationHomeScheduleStatus();
+        refreshOperationHomeRankSignal();
+      }
+
       function applyState(state) {
         root.querySelectorAll("[data-admin-public]").forEach(function (node) {
           var key = node.getAttribute("data-admin-public");
@@ -17692,6 +17924,7 @@
         if (publicCommentInput) publicCommentInput.value = state.comment;
         renderClientPreview(state);
         renderOperationHomeSalesStatus(state);
+        renderOperationHomeClientStatus();
       }
 
       var currentState = readState();
@@ -17795,6 +18028,7 @@
         root.classList.toggle("is-account-only", !currentOperationTeam.client);
         syncOwnerAccessFields();
         renderOperationTeamCodePanel({ team: currentOperationTeam });
+        restoreGlobalAdvertiserTarget();
         applyState(readState());
         renderSourceFile();
 
@@ -17803,7 +18037,7 @@
           await refreshSourceFileFromServer(requestGeneration, nextScope);
         }
         if (!adminSessionIsCurrent(requestGeneration, "team", nextScope)) return null;
-        refreshOperationHomeReportStatus();
+        refreshOperationHomeStatus();
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return payload;
@@ -17837,6 +18071,7 @@
 
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
+          restoreGlobalAdvertiserTarget();
           var teamSessionScope = session.teamId || session.scopeKey;
           var teamHasClient = Boolean(currentOperationTeam && currentOperationTeam.client);
           if (teamHasClient) await refreshSourceFileFromServer(requestGeneration, teamSessionScope);
@@ -17847,7 +18082,9 @@
           setStatus(ownerStatus, teamHasClient
             ? "이미 연결된 광고주가 있습니다. 추가 광고주 생성은 제한됩니다."
             : "광고주 없이 운영팀 단독 사용이 가능합니다. 필요할 때 광고주 코드 1개를 연결하세요.", teamHasClient ? "is-warn" : "is-ok");
-          setScreen(personalCalendarNoticePending() ? "my-calendar" : (teamHasClient ? "agency-code" : "home"), !restored);
+          // 운영팀도 "지금 상황"에서 시작한다. 연결 여부와 상관없이 운영 홈 요약이
+          // 첫 화면이고, 광고주 연결이 필요하면 그 요약 카드가 대행사 연결로 보낸다.
+          setScreen(personalCalendarNoticePending() ? "my-calendar" : "home", !restored);
         } else if (session.role === "owner") {
           var ownerSessionScope = session.scopeKey;
           setStatus(loginStatus, restored ? "총관리자 보안 세션이 복원되었습니다." : "총관리자 콘솔이 열렸습니다.", "is-ok");
@@ -17860,8 +18097,15 @@
           }
           await loadOwnerCodes(true);
           if (!adminSessionIsCurrent(requestGeneration, "owner", ownerSessionScope)) return false;
+          restoreGlobalAdvertiserTarget();
+          // 대표님은 운영 홈이 아니라 대표실에서 시작한다. 운영 홈은 메뉴에 그대로 남는다.
+          // 해시로 특정 화면을 직접 열고 들어온 경우에는 그 화면을 그대로 둔다.
+          var ownerLandingHash = (window.location.hash || "").replace("#mi-admin-", "");
+          if (!ownerLandingHash && ownerToolScreens.indexOf("owner-assistant") >= 0) {
+            setScreen("owner-assistant", !restored);
+          }
         }
-        refreshOperationHomeReportStatus();
+        refreshOperationHomeStatus();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -17880,6 +18124,7 @@
         syncPersonalCalendarMenu();
         root.classList.add("is-locked");
         root.classList.remove("is-authed");
+        syncGlobalAdvertiserTargetFromPublicCode();
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         updateAdminAuthPanel("");
         if (loginInput) loginInput.value = "";
@@ -18109,7 +18354,7 @@
             window.scrollTo({ top: 0, left: 0, behavior: "auto" });
           });
         }
-        if (target === "home" && secureSession.role) refreshOperationHomeReportStatus();
+        if (target === "home" && secureSession.role) refreshOperationHomeStatus();
         if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");
@@ -18395,13 +18640,202 @@
         }
       });
 
+      // ── 전역 대상 광고주 ────────────────────────────────────
+      // 대상 광고주는 화면마다 따로 고르지 않는다. 상단 띠의 선택 하나가
+      // 세 소비자를 동시에 움직인다.
+      //   1) 공개 관리 [data-admin-code]  → currentPublicCode() · readState() · rankAgencyCode()
+      //   2) 대표실 업무 범위 [data-work-owner-client-code] → workOwnerTargetCode()
+      //   3) 순위 화면 → verifiedRankTrackerScope() 를 다시 읽도록 mi:rank-scope-changed 발행
+      // 잠긴 코드(bindOwnerAssistant · initRankTracking · initPlaceRankTracking)는 건드리지 않고,
+      // 그것들이 이미 읽는 입력값과 이벤트만 바깥에서 채운다.
+      var GLOBAL_ADVERTISER_MANUAL_VALUE = "__manual__";
+      var globalAdvertiserTarget = "";
+
+      function globalAdvertiserStorageKey() {
+        return "mi-global-advertiser-target:" + (normalizeStorageCode(secureSession.scopeKey) || "session");
+      }
+
+      function readStoredGlobalAdvertiserTarget() {
+        try {
+          return normalizeStorageCode(window.sessionStorage.getItem(globalAdvertiserStorageKey()) || "");
+        } catch (error) {
+          return "";
+        }
+      }
+
+      function writeGlobalAdvertiserTarget(code) {
+        try {
+          if (code) window.sessionStorage.setItem(globalAdvertiserStorageKey(), code);
+          else window.sessionStorage.removeItem(globalAdvertiserStorageKey());
+        } catch (error) {}
+      }
+
+      function globalAdvertiserOptions() {
+        if (secureSession.role === "owner") {
+          var options = [{ value: "", label: "총관리자 내부 · " + (normalizeStorageCode(primaryAgencyCode) || "owner") }];
+          activeOwnerClients(ownerCodeSnapshot).forEach(function (client) {
+            var code = normalizeStorageCode(client && client.agencyCode);
+            if (!code || code === normalizeStorageCode(primaryAgencyCode)) return;
+            options.push({ value: code, label: (client.name || client.businessName || "광고주") + " · " + code });
+          });
+          return options;
+        }
+        if (secureSession.role === "team") {
+          var linked = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+          if (!linked) return [{ value: "", label: "연결된 광고주 없음" }];
+          var linkedCode = teamAdvertiserTargetCode();
+          return [{ value: linkedCode, label: (linked.name || linked.businessName || "연결 광고주") + " · " + (linkedCode || "-") }];
+        }
+        return [];
+      }
+
+      // 운영팀 대상은 서버 세션이 정한다. 화면은 그 값을 보여 주기만 한다.
+      function teamAdvertiserTargetCode() {
+        var linked = currentOperationTeam && currentOperationTeam.client ? currentOperationTeam.client : null;
+        if (!linked) return "";
+        return normalizeStorageCode(linked.agencyCode || linked.id);
+      }
+
+      function globalAdvertiserTargetLabel() {
+        if (!secureSession.role) return "로그인 후 확인";
+        var current = normalizeStorageCode(globalAdvertiserTarget);
+        var match = globalAdvertiserOptions().filter(function (option) { return option.value === current; })[0];
+        if (match) return match.label;
+        return current || "선택 전";
+      }
+
+      function renderGlobalAdvertiserEcho() {
+        var label = globalAdvertiserTargetLabel();
+        root.querySelectorAll("[data-mi-target-echo]").forEach(function (node) {
+          node.textContent = "대상 광고주 · " + label;
+        });
+      }
+
+      function renderGlobalAdvertiserPicker() {
+        var picker = root.querySelector("[data-mi-target-picker]");
+        var select = root.querySelector("[data-mi-target-select]");
+        var manual = root.querySelector("[data-mi-target-manual]");
+        if (!picker || !select) return;
+        var role = secureSession.role;
+        var visible = (role === "owner" || role === "team") && !root.classList.contains("is-locked");
+        picker.hidden = !visible;
+        if (!visible) {
+          if (manual) manual.hidden = true;
+          return;
+        }
+        var options = globalAdvertiserOptions();
+        var current = normalizeStorageCode(globalAdvertiserTarget);
+        var known = options.some(function (option) { return option.value === current; });
+        var manualMode = role === "owner" && Boolean(current) && !known;
+        var html = options.map(function (option) {
+          return '<option value="' + escapeHtml(option.value) + '">' + escapeHtml(option.label) + "</option>";
+        });
+        if (role === "owner") html.push('<option value="' + GLOBAL_ADVERTISER_MANUAL_VALUE + '">코드 직접 입력</option>');
+        select.innerHTML = html.join("");
+        select.value = manualMode ? GLOBAL_ADVERTISER_MANUAL_VALUE : (known ? current : "");
+        select.disabled = role !== "owner";
+        if (manual) {
+          manual.hidden = !manualMode;
+          if (manualMode && normalizeStorageCode(manual.value) !== current) manual.value = current;
+        }
+      }
+
+      function applyGlobalAdvertiserTarget(rawCode, options) {
+        var settings = options || {};
+        var code = normalizeStorageCode(rawCode);
+        if (code === GLOBAL_ADVERTISER_MANUAL_VALUE) return;
+        globalAdvertiserTarget = code;
+        writeGlobalAdvertiserTarget(code);
+
+        var publicCodeChanged = false;
+        if (secureSession.role === "owner") {
+          var publicCodeInput = root.querySelector("[data-admin-code]");
+          if (publicCodeInput) {
+            var nextPublicCode = code || normalizeStorageCode(primaryAgencyCode);
+            if (normalizeStorageCode(publicCodeInput.value) !== nextPublicCode) {
+              publicCodeInput.value = nextPublicCode;
+              publicCodeChanged = true;
+            }
+          }
+          var workScopeInput = root.querySelector("[data-work-owner-client-code]");
+          if (workScopeInput) {
+            var nextWorkCode = (!code || code === normalizeStorageCode(primaryAgencyCode)) ? "" : code;
+            if (normalizeStorageCode(workScopeInput.value) !== nextWorkCode) {
+              workScopeInput.value = nextWorkCode;
+              if (settings.reloadWork !== false) {
+                workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+                loadWorkItems();
+              }
+            }
+          }
+        }
+
+        renderGlobalAdvertiserPicker();
+        renderGlobalAdvertiserEcho();
+        if (settings.silent) return;
+        if (publicCodeChanged || settings.force) {
+          applyState(readState());
+          window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+        }
+        refreshOperationHomeStatus();
+      }
+
+      function syncGlobalAdvertiserTargetFromPublicCode() {
+        if (secureSession.role === "owner") {
+          var input = root.querySelector("[data-admin-code]");
+          var code = input ? normalizeStorageCode(input.value) : "";
+          if (isOwnerScopePlaceholder(code) || code === normalizeStorageCode(primaryAgencyCode)) code = "";
+          globalAdvertiserTarget = code;
+        } else if (secureSession.role === "team") {
+          globalAdvertiserTarget = teamAdvertiserTargetCode();
+        } else {
+          globalAdvertiserTarget = "";
+        }
+        writeGlobalAdvertiserTarget(globalAdvertiserTarget);
+        renderGlobalAdvertiserPicker();
+        renderGlobalAdvertiserEcho();
+      }
+
+      function restoreGlobalAdvertiserTarget() {
+        if (secureSession.role === "owner") {
+          var stored = readStoredGlobalAdvertiserTarget();
+          if (stored) {
+            applyGlobalAdvertiserTarget(stored, { force: true, reloadWork: false });
+            return;
+          }
+        }
+        syncGlobalAdvertiserTargetFromPublicCode();
+      }
+
+      var globalTargetSelect = root.querySelector("[data-mi-target-select]");
+      var globalTargetManual = root.querySelector("[data-mi-target-manual]");
+      if (globalTargetSelect) {
+        globalTargetSelect.addEventListener("change", function () {
+          if (globalTargetSelect.value === GLOBAL_ADVERTISER_MANUAL_VALUE) {
+            if (globalTargetManual) {
+              globalTargetManual.hidden = false;
+              globalTargetManual.focus();
+            }
+            return;
+          }
+          if (globalTargetManual) globalTargetManual.hidden = true;
+          applyGlobalAdvertiserTarget(globalTargetSelect.value, { force: true });
+        });
+      }
+      if (globalTargetManual) {
+        globalTargetManual.addEventListener("change", function () {
+          applyGlobalAdvertiserTarget(globalTargetManual.value, { force: true });
+        });
+      }
+
       var codeSaveButton = root.querySelector("[data-admin-code-save]");
       var codeStatus = root.querySelector("[data-admin-code-status]");
       var rankScopeInput = root.querySelector("[data-admin-code]");
       if (rankScopeInput) {
         rankScopeInput.addEventListener("change", function () {
+          syncGlobalAdvertiserTargetFromPublicCode();
           window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
-          refreshOperationHomeReportStatus();
+          refreshOperationHomeStatus();
         });
       }
       if (codeSaveButton) {

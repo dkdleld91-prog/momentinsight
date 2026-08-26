@@ -970,6 +970,33 @@ const checks = {
     && adminSource.indexOf('class="mi-ops-quick-grid"') < adminSource.indexOf('class="mi-ops-flow-card"')
     && adminSource.indexOf('class="mi-ops-flow-card"') < adminSource.indexOf('class="mi-ops-check-card"')
     && adminSource.includes("grid-template-columns: repeat(2, minmax(0, 1fr));"),
+  // 3단계: 역할마다 "지금 상황"에서 시작하고, 대상 광고주는 한 번만 고른다.
+  adminOwnerLandsInExecutiveRoom: adminSource.includes('if (!ownerLandingHash && ownerToolScreens.indexOf("owner-assistant") >= 0) {')
+    && adminSource.includes('setScreen("owner-assistant", !restored);')
+    && adminSource.includes('data-mi-admin-screen="home">운영 홈</a>'),
+  adminTeamLandsOnStatusSummaryHome: adminSource.includes('setScreen(personalCalendarNoticePending() ? "my-calendar" : "home", !restored);')
+    && !adminSource.includes('teamHasClient ? "agency-code" : "home"')
+    && adminSource.includes("<strong>지금 상황</strong>")
+    && ["client", "sales", "report", "schedule", "rank"].every((hook) => adminSource.includes(`data-ops-home-${hook}-state`))
+    && adminSource.includes("function renderOperationHomeClientStatus")
+    && adminSource.includes("function refreshOperationHomeScheduleStatus")
+    && adminSource.includes("function refreshOperationHomeRankSignal")
+    && adminSource.includes('rankTrackerTrend(tracker) === "dropped"')
+    && adminSource.includes('placeTrackerTrend(tracker) === "dropped"')
+    && adminSource.includes('return window.location.origin + "/api/my/work-items";')
+    && adminSource.includes('class="mi-ops-quick-grid" data-admin-home-truthful-state'),
+  adminGlobalAdvertiserTargetIsSingleSource: adminSource.includes("data-mi-target-picker")
+    && adminSource.includes("data-mi-target-select")
+    && adminSource.includes("data-mi-target-manual")
+    && adminSource.includes('var GLOBAL_ADVERTISER_MANUAL_VALUE = "__manual__";')
+    && adminSource.includes("function applyGlobalAdvertiserTarget(rawCode, options)")
+    && adminSource.includes("publicCodeInput.value = nextPublicCode;")
+    && adminSource.includes("workScopeInput.value = nextWorkCode;")
+    && adminSource.includes("activeOwnerClients(ownerCodeSnapshot)")
+    && adminSource.includes('"mi-global-advertiser-target:" + (normalizeStorageCode(secureSession.scopeKey) || "session")')
+    && adminSource.includes("applyGlobalAdvertiserTarget(workOwnerClientInput.value, { force: true, reloadWork: false });")
+    && adminSource.includes('<span class="mi-target-echo" data-mi-target-echo>')
+    && !clientSource.includes("data-mi-target-picker"),
   clientReportCenterSync: clientSource.includes("getReportCenterApiUrl")
     && clientSource.includes("syncReportCenterReports")
     && clientSource.includes("restoreClientSession")

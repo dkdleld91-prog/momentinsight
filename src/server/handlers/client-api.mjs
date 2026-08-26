@@ -183,13 +183,85 @@ function latestChannelRows(rows) {
   return Array.from(seen.values());
 }
 
+// KPI 목표는 한 행에 여러 지표가 같이 들어 있어서, 화면에 띄울 지표를 하나만
+// 고른다. 순서는 매출 -> 광고비 -> 구매수 이고 값이 들어 있는 첫 지표를 쓴다.
+const KPI_METRICS = [
+  { metric: "revenue", label: "매출", targetColumn: "target_revenue", actualColumn: "actual_revenue", snapshotColumn: "sales" },
+  { metric: "ad_spend", label: "광고비", targetColumn: "target_ad_spend", actualColumn: "actual_ad_spend", snapshotColumn: "ad_spend" },
+  { metric: "orders", label: "구매수", targetColumn: "target_orders", actualColumn: "actual_orders", snapshotColumn: "orders" }
+];
+
+function progressRateOf(actual, targetValue) {
+  return Math.round((actual / targetValue) * 1000) / 10;
+}
+
+// 목표는 kpi_targets 에서, 진행률은 kpi_results -> dashboard_snapshots 순서로만
+// 가져온다. 실적 행이 없으면 진행률은 null 로 남기고 목표만 돌려준다. 어느
+// 경우에도 없는 숫자를 만들어 채우지 않는다(그 순간 화면이 거짓이 된다).
+export function computeKpiProgress(target, result, snapshot) {
+  if (!target) return null;
+
+  const chosen = KPI_METRICS.find((entry) => {
+    const value = numberOrNull(target[entry.targetColumn]);
+    return value !== null && value > 0;
+  });
+  if (!chosen) return null;
+
+  const targetValue = numberOrNull(target[chosen.targetColumn]);
+  let actualValue = null;
+  let progressRate = null;
+  let source = null;
+
+  // 실적 행은 이 목표를 가리킬 때만 인정한다. 다른 달 목표의 실적을 붙이면
+  // 진행률이 통째로 다른 기간 숫자가 된다.
+  const matched = result && result.kpi_target_id === target.id ? result : null;
+  if (matched) {
+    const actual = numberOrNull(matched[chosen.actualColumn]);
+    const savedRate = numberOrNull(matched.achievement_rate);
+    if (savedRate !== null) {
+      progressRate = savedRate;
+      actualValue = actual;
+      source = "kpi_results_rate";
+    } else if (actual !== null) {
+      actualValue = actual;
+      progressRate = progressRateOf(actual, targetValue);
+      source = "kpi_results";
+    }
+  }
+
+  if (source === null) {
+    const fallback = snapshot ? numberOrNull(snapshot[chosen.snapshotColumn]) : null;
+    if (fallback !== null) {
+      actualValue = fallback;
+      progressRate = progressRateOf(fallback, targetValue);
+      source = "dashboard_snapshot";
+    }
+  }
+
+  return {
+    periodMonth: String(target.period_month ?? "").slice(0, 7) || null,
+    metric: chosen.metric,
+    metricLabel: chosen.label,
+    targetValue,
+    actualValue,
+    progressRate,
+    source
+  };
+}
+
 // 서버 행이 없는 값은 null 로 남긴다. 화면이 빈 상태 문구를 그리게 하는 것이
 // 목적이고, 여기서 대체 숫자를 채우면 그 순간 데이터가 거짓이 된다.
 function buildClientPublicState(client, data) {
   const snapshot = (data.dashboard || [])[0] || null;
   const scheduleRows = data.schedule || [];
   const nextSchedule = scheduleRows[0] || null;
-  const achievement = snapshot ? numberOrNull(snapshot.achievement_rate) : null;
+  const kpi = computeKpiProgress((data.kpiTarget || [])[0] || null, (data.kpiResult || [])[0] || null, snapshot);
+  // 달성률은 KPI 진행률이 있으면 그걸 쓰고, 없으면 예전처럼 스냅샷 값을 쓴다.
+  // 둘 다 없으면 null 로 남겨 화면이 빈 상태를 그리게 한다.
+  const kpiRate = kpi ? numberOrNull(kpi.progressRate) : null;
+  const achievement = kpiRate !== null
+    ? kpiRate
+    : (snapshot ? numberOrNull(snapshot.achievement_rate) : null);
 
   return {
     code: String(client.agency_code || "").toUpperCase(),
@@ -202,6 +274,7 @@ function buildClientPublicState(client, data) {
     orders: snapshot ? countText(snapshot.orders) : null,
     achievement: percentText(achievement),
     status: achievement === null ? null : (achievement >= 100 ? "목표 초과" : "진행 중"),
+    kpi,
     nextSchedule: nextSchedule && cleanText(nextSchedule.title)
       ? [shortDate(nextSchedule.starts_at), cleanText(nextSchedule.title)].filter(Boolean).join(" ")
       : null,
@@ -326,7 +399,21 @@ export async function readClientPublicState(request, ctx) {
       .eq("client_id", clientId)
       .eq("is_active", true)
       .order("created_at", { ascending: false })
-      .limit(10)
+      .limit(10),
+    // KPI 목표·실적도 세션이 가리키는 광고주 행만 읽는다. 다른 광고주의 목표가
+    // 섞이면 진행률이 그대로 남의 숫자가 된다.
+    kpiTarget: ctx.supabaseAdmin
+      .from("kpi_targets")
+      .select("id, client_id, brand_id, period_month, target_revenue, target_ad_spend, target_orders")
+      .eq("client_id", clientId)
+      .order("period_month", { ascending: false })
+      .limit(1),
+    kpiResult: ctx.supabaseAdmin
+      .from("kpi_results")
+      .select("id, kpi_target_id, client_id, actual_revenue, actual_ad_spend, actual_orders, achievement_rate, updated_at")
+      .eq("client_id", clientId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
   };
 
   const entries = await Promise.all(
@@ -406,19 +493,24 @@ function snapshotPatchFrom(input) {
 // 쓰기는 기존 (client_id, period) 행을 찾아 갱신하거나 없을 때만 새로 넣는다.
 // dashboard_snapshots 의 유일 제약이 brand_id 를 포함하고 brand_id 는 NULL 을
 // 허용해서, upsert 로는 같은 달 행이 계속 늘어나기 때문이다. 삭제는 하지 않는다.
-export async function writeClientPublicState(request, ctx) {
+export async function writeClientPublicState(request, ctx, prereadBody) {
   const access = await resolveSessionClient(request, ctx);
   if (!access.ok) {
     const { ok, status, ...payload } = access;
     return json({ ok: false, ...payload }, status);
   }
 
-  let body;
-  try {
-    body = await readBody(request);
-  } catch {
-    return json({ ok: false, code: "INVALID_BODY", message: "요청 본문을 읽을 수 없습니다." }, 400);
+  // 본문은 호출부에서 한 번만 읽어 넘겨준다. 넘어오지 않으면(예전 호출부) 직접
+  // 읽는다. Request 본문은 한 번만 읽을 수 있어서 두 번 읽으면 안 된다.
+  let body = prereadBody;
+  if (body === undefined) {
+    try {
+      body = await readBody(request);
+    } catch {
+      return json({ ok: false, code: "INVALID_BODY", message: "요청 본문을 읽을 수 없습니다." }, 400);
+    }
   }
+  if (!body || typeof body !== "object") body = {};
 
   const input = body.publicState || body.state || {};
   const patch = snapshotPatchFrom(input);
@@ -472,6 +564,82 @@ export async function writeClientPublicState(request, ctx) {
   });
 }
 
+// KPI 목표 저장. 새 /api 경로를 만들지 않고 public-state POST 안에서
+// action 으로만 갈라진다. 대상 광고주는 여기서도 세션 코드로만 정한다.
+export async function writeClientKpiTarget(request, ctx, body = {}) {
+  const access = await resolveSessionClient(request, ctx);
+  if (!access.ok) {
+    const { ok, status, ...payload } = access;
+    return json({ ok: false, ...payload }, status);
+  }
+
+  const input = body.kpiTarget || body.kpi_target || {};
+  const requestedMetric = String(input.metric ?? "").trim() || "revenue";
+  const chosen = KPI_METRICS.find((entry) => entry.metric === requestedMetric);
+  if (!chosen) {
+    return json({
+      ok: false,
+      code: "KPI_TARGET_INVALID",
+      message: "목표 지표는 매출·광고비·구매수 중에서 선택해주세요."
+    }, 400);
+  }
+
+  const parsed = parseNumericInput(input.targetValue ?? input.target_value);
+  if (parsed === undefined || !Number.isFinite(parsed) || parsed <= 0) {
+    return json({ ok: false, code: "KPI_TARGET_INVALID", message: "목표값을 숫자로 입력해주세요." }, 400);
+  }
+  // target_orders 는 정수 칼럼이라 소수점이 들어오면 저장 자체가 실패한다.
+  const targetValue = chosen.metric === "orders" ? Math.round(parsed) : parsed;
+
+  const clientId = access.client.id;
+  const period = monthPeriodFrom(input.periodMonth ?? input.period_month ?? input.period);
+
+  // kpi_targets 의 유일 제약도 brand_id 를 포함하는데 brand_id 가 NULL 을 허용해서
+  // upsert 로는 같은 달 행이 계속 늘어난다. 그래서 기존 행을 찾아 갱신한다.
+  const { data: existing, error: findError } = await ctx.supabaseAdmin
+    .from("kpi_targets")
+    .select("id")
+    .eq("client_id", clientId)
+    .eq("period_month", period)
+    .is("brand_id", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (findError) {
+    return databaseError(findError, "KPI 목표 저장 전 기존 행 확인에 실패했습니다.");
+  }
+
+  const write = existing?.id
+    ? ctx.supabaseAdmin
+      .from("kpi_targets")
+      .update({ [chosen.targetColumn]: targetValue, updated_at: new Date().toISOString() })
+      .eq("id", existing.id)
+      .select("id, period_month, updated_at")
+      .maybeSingle()
+    : ctx.supabaseAdmin
+      .from("kpi_targets")
+      .insert({ client_id: clientId, period_month: period, [chosen.targetColumn]: targetValue })
+      .select("id, period_month, updated_at")
+      .maybeSingle();
+
+  const { error: writeError } = await write;
+  if (writeError) {
+    return databaseError(writeError, "KPI 목표 저장에 실패했습니다.");
+  }
+
+  return json({
+    ok: true,
+    message: "KPI 목표가 저장되었습니다.",
+    saved: {
+      clientId,
+      periodMonth: period.slice(0, 7),
+      metric: chosen.metric,
+      targetValue
+    }
+  });
+}
+
 export async function handleClientPublicStateRequest(request, ctx) {
   if (carriesExternalSupabaseCredential(request)) {
     return json({
@@ -496,7 +664,18 @@ export async function handleClientPublicStateRequest(request, ctx) {
       message: "광고주 계정은 공개 데이터를 저장할 수 없습니다."
     }, 403);
   }
-  return writeClientPublicState(request, ctx);
+
+  // 본문은 여기서 한 번만 읽는다. action 으로만 갈라지고 경로는 그대로 하나다.
+  let body;
+  try {
+    body = await readBody(request);
+  } catch {
+    return json({ ok: false, code: "INVALID_BODY", message: "요청 본문을 읽을 수 없습니다." }, 400);
+  }
+  if (!body || typeof body !== "object") body = {};
+
+  if (body.action === "save-kpi-target") return writeClientKpiTarget(request, ctx, body);
+  return writeClientPublicState(request, ctx, body);
 }
 
 export function clientSelfConnectEnabled(env = process.env) {

@@ -780,6 +780,17 @@
       line-height: 1.15;
     }
 
+    /* 목표 달성률 타일의 KPI 목표 보조줄. 같은 박스의 라벨 톤을 그대로 쓰고 값이 없으면 hidden 으로 사라진다 */
+    #mi-clean .mi-summary-box small[data-mi-public-kpi]:not([hidden]) {
+      display: block;
+      margin-top: 6px;
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 12px;
+      font-weight: 700;
+      line-height: 1.45;
+      word-break: keep-all;
+    }
+
     #mi-clean .mi-action-strip {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -5514,7 +5525,7 @@
               <div class="mi-summary-row" aria-label="핵심 대시보드">
                 <div class="mi-summary-box"><span>현재 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
                 <div class="mi-summary-box"><span>광고 효율</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
-                <div class="mi-summary-box"><span>목표 달성률</span><strong class="is-empty" data-mi-public="achievement">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
+                <div class="mi-summary-box"><span>목표 달성률</span><strong class="is-empty" data-mi-public="achievement">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small data-mi-public-kpi hidden></small></div>
               </div>
               <div class="mi-action-strip" aria-label="광고주 핵심 결론">
                 <div class="mi-action-chip"><span>오늘 결론</span><strong class="is-empty" data-mi-action-primary>아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong></div>
@@ -6208,6 +6219,8 @@
         adSpend: "",
         orders: "",
         achievement: "",
+        // 서버가 계산한 KPI 목표/실적 묶음. 없으면 null 이며 어떤 수치도 지어내지 않는다.
+        kpi: null,
         status: "",
         nextSchedule: "",
         updatedAt: "",
@@ -6412,6 +6425,8 @@
           adSpend: "",
           orders: "",
           achievement: "",
+          // 캐시 첫 페인트에서도 안전하도록 KPI 자리는 null 로 비워 둔다.
+          kpi: null,
           status: "",
           nextSchedule: "",
           updatedAt: "",
@@ -6595,6 +6610,8 @@
         next.channels = serverList(publicState.channels);
         next.channelDetails = serverList(publicState.channelDetails);
         next.keywords = serverList(publicState.keywords);
+        // 목표 달성률은 서버가 계산해 내려준다. 객체가 아니면 그냥 null 로 두고 화면은 빈 상태를 유지한다.
+        next.kpi = publicState.kpi && typeof publicState.kpi === "object" ? publicState.kpi : null;
         next.reportCenterSynced = Array.isArray(publicState.reports);
         next.approvedSessionScope = scope;
         next.approvedStateAt = new Date().toISOString();
@@ -10492,6 +10509,35 @@
         return payload;
       }
 
+      // 서버가 준 KPI 숫자만 그대로 읽는다. 비었거나 숫자가 아니면 null 로 돌려 지어내지 않는다.
+      function publicKpiNumber(value) {
+        if (value === null || value === undefined || value === "") return null;
+        var parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+
+      // 목표 달성률 타일 보조줄: 서버가 계산한 목표/실적을 옮겨 적는다.
+      // 목표가 없으면 줄 자체를 숨겨 기존 빈 상태 문구만 남기고, 실적이 없으면 0 대신 "집계 전"이라고 쓴다.
+      function renderPublicKpiLine(state) {
+        var node = root.querySelector("[data-mi-public-kpi]");
+        if (!node) return;
+        var kpi = state && state.kpi && typeof state.kpi === "object" ? state.kpi : null;
+        var target = kpi ? publicKpiNumber(kpi.targetValue) : null;
+        if (!kpi || target === null) {
+          node.textContent = "";
+          node.hidden = true;
+          return;
+        }
+        var actual = publicKpiNumber(kpi.actualValue);
+        var progress = publicKpiNumber(kpi.progressRate);
+        var head = [serverScalar(kpi.periodMonth), serverScalar(kpi.metricLabel)].filter(function (part) {
+          return !!part;
+        }).join(" ");
+        var actualText = actual === null || progress === null ? "집계 전" : formatNumber(actual);
+        node.textContent = (head ? head + " " : "") + "목표 " + formatNumber(target) + " · 실적 " + actualText;
+        node.hidden = false;
+      }
+
       function applyState(state) {
         state = enrichState(state);
         var emptyState = ["sales", "roas", "adSpend", "orders", "achievement"].every(function (key) {
@@ -10546,6 +10592,7 @@
           node.textContent = empty ? EMPTY_METRIC_TEXT : value;
           node.classList.toggle("is-empty", empty);
         });
+        renderPublicKpiLine(state);
 
         setText("[data-mi-action-primary]", state.primaryAction);
         setText("[data-mi-action-next]", state.nextAction);

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import {
+import handler, {
   adminRateConfiguration,
+  auditActionLabel,
+  auditLogQueryOptions,
   normalizeAgencyCode,
   teamActionAccess,
   teamActionPayload,
@@ -228,4 +230,237 @@ test("operation team sessions resynchronize after advertiser link changes", asyn
   assert.match(disconnectBlock, /synchronizeOperationTeamSession/);
   assert.match(source, /운영팀 단독 모드가 열렸습니다/);
   assert.match(source, /광고주 없이 운영팀 단독 사용이 가능합니다/);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 운영 이력(GET ?view=audit-logs) 하니스
+//
+// 핸들러가 withSupabase 로 감싸여 있어 ctx 를 직접 주입할 수 없다. 그래서
+// google-calendar-api.test.mjs 와 같은 방식으로 가짜 SUPABASE_URL 을 넣고
+// globalThis.fetch 를 가로채, PostgREST 로 나가는 질의문 자체를 확인한다.
+// 요청 URL 은 localhost 라 isLocalRequest 가 참이 되고 코드 관리 속도 제한을
+// 타지 않는다.
+// ─────────────────────────────────────────────────────────────
+const SUPER_ADMIN_TEST_CODE = "server-only-super-secret";
+const OWNER_AGENCY_TEST_CODE = "mml93-a01";
+const SUPABASE_TEST_URL = "http://supabase.test";
+const AUDIT_REST_URL = `${SUPABASE_TEST_URL}/rest/v1/audit_logs`;
+const SUPER_ADMIN_API_URL = "http://localhost:8784/api/super-admin/agency-codes";
+const AUDIT_HANDLER_ENV = {
+  SUPABASE_URL: SUPABASE_TEST_URL,
+  SUPABASE_PUBLISHABLE_KEY: "pub-test",
+  SUPABASE_PUBLISHABLE_KEYS: undefined,
+  SUPABASE_SECRET_KEY: "secret-test",
+  SUPABASE_SECRET_KEYS: undefined,
+  MI_SUPER_ADMIN_CODE: SUPER_ADMIN_TEST_CODE,
+  MI_PRIMARY_AGENCY_CODE: OWNER_AGENCY_TEST_CODE,
+  NODE_ENV: undefined,
+  VERCEL_ENV: undefined,
+};
+
+async function withEnv(overrides, run) {
+  const saved = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    saved.set(key, Object.prototype.hasOwnProperty.call(process.env, key) ? process.env[key] : undefined);
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+async function withGlobalFetch(fetchImpl, run) {
+  const original = globalThis.fetch;
+  globalThis.fetch = fetchImpl;
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+function auditRestStub(rows) {
+  const queries = [];
+  const impl = async (input) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    if (!rawUrl.startsWith(AUDIT_REST_URL)) throw new Error(`unexpected fetch: ${rawUrl}`);
+    queries.push(new URL(rawUrl));
+    return Response.json(rows);
+  };
+  return { queries, impl };
+}
+
+function auditRow(action, createdAt, overrides = {}) {
+  return {
+    action,
+    target_table: "clients",
+    metadata: { source: "super-admin-api" },
+    created_at: createdAt,
+    ...overrides,
+  };
+}
+
+function auditLogRequest(query, headers = {
+  "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+  "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+}) {
+  return new Request(`${SUPER_ADMIN_API_URL}?${query}`, { headers });
+}
+
+test("운영 이력 동작 이름은 아는 값·동적 접미사만 우리말로 바꾼다", () => {
+  assert.equal(auditActionLabel("client.created_by_owner"), "광고주 생성(총관리자)");
+  assert.equal(auditActionLabel("work_item_completed_by_assistant"), "실장 비서 일정 완료");
+  assert.equal(auditActionLabel("reports.updated"), "reports 수정");
+  assert.equal(auditActionLabel("files.created"), "files 생성");
+  assert.equal(auditActionLabel("schedule_items.deleted"), "schedule_items 삭제");
+  assert.equal(auditActionLabel("something.unknown"), null);
+  assert.equal(auditActionLabel("totally_unknown_action"), null);
+  assert.equal(auditActionLabel(""), null);
+  assert.equal(auditActionLabel(undefined), null);
+  // 프로토타입 속성이 이름으로 새어 나오면 안 된다.
+  assert.equal(auditActionLabel("constructor"), null);
+});
+
+test("운영 이력 질의 옵션은 개수를 묶고 이상한 값은 버린다", () => {
+  const base = `${SUPER_ADMIN_API_URL}?view=audit-logs`;
+  assert.deepEqual(auditLogQueryOptions(new URL(base)), { action: null, limit: 50, before: null });
+  assert.equal(auditLogQueryOptions(new URL(`${base}&limit=500`)).limit, 50);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&limit=0`)).limit, 50);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&limit=-3`)).limit, 1);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&limit=abc`)).limit, 50);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&limit=20`)).limit, 20);
+
+  assert.equal(auditLogQueryOptions(new URL(`${base}&action=Client.Created`)).action, null);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&action=client'--`)).action, null);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&action=${"a".repeat(65)}`)).action, null);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&action=client.created_by_owner`)).action, "client.created_by_owner");
+
+  assert.equal(auditLogQueryOptions(new URL(`${base}&before=yesterday`)).before, null);
+  assert.equal(auditLogQueryOptions(new URL(`${base}&before=2026-08-26T00:00:00.000Z`)).before, "2026-08-26T00:00:00.000Z");
+
+  assert.deepEqual(auditLogQueryOptions(new URL(`${base}&limit=10&action=work_item_updated&before=2026-08-26T00:00:00.000Z`)), {
+    action: "work_item_updated",
+    limit: 10,
+    before: "2026-08-26T00:00:00.000Z",
+  });
+});
+
+test("총관리자 운영 이력 조회는 네 개 열만 최신순 그대로 돌려준다", async () => {
+  const rows = [
+    auditRow("client.created_by_owner", "2026-08-26T03:00:00.000Z", {
+      actor_id: "actor-1",
+      client_id: "client-1",
+      target_id: "client-1",
+    }),
+    auditRow("work_item_updated", "2026-08-26T02:00:00.000Z", { target_table: "work_items", metadata: null }),
+    auditRow("client.created_by_owner", "2026-08-26T01:00:00.000Z"),
+  ];
+  const stub = auditRestStub(rows);
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs&limit=10")),
+  ));
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.view, "audit-logs");
+
+  assert.equal(payload.auditLogs.length, 3);
+  assert.deepEqual(Object.keys(payload.auditLogs[0]), ["action", "actionLabel", "targetTable", "metadata", "createdAt"]);
+  assert.deepEqual(payload.auditLogs.map((row) => row.createdAt), [
+    "2026-08-26T03:00:00.000Z",
+    "2026-08-26T02:00:00.000Z",
+    "2026-08-26T01:00:00.000Z",
+  ]);
+  assert.equal(payload.auditLogs[0].actionLabel, "광고주 생성(총관리자)");
+  assert.equal(payload.auditLogs[1].actionLabel, "일정 수정");
+  assert.equal(payload.auditLogs[1].targetTable, "work_items");
+  assert.deepEqual(payload.auditLogs[1].metadata, {});
+
+  // 응답 어디에도 식별자 열이 붙어 나오면 안 된다.
+  const serialized = JSON.stringify(payload);
+  assert.doesNotMatch(serialized, /actor_id|actorId|targetId|target_id/);
+  assert.doesNotMatch(serialized, /"clientId"/);
+
+  assert.deepEqual(payload.actionOptions, [
+    { value: "client.created_by_owner", label: "광고주 생성(총관리자)" },
+    { value: "work_item_updated", label: "일정 수정" },
+  ]);
+  assert.equal(payload.nextBefore, null);
+
+  assert.equal(stub.queries.length, 1);
+  const query = stub.queries[0];
+  assert.equal(query.pathname, "/rest/v1/audit_logs");
+  assert.equal(query.searchParams.get("select"), "action,target_table,metadata,created_at");
+  assert.equal(query.searchParams.get("order"), "created_at.desc");
+  assert.equal(query.searchParams.get("limit"), "10");
+  assert.equal(query.searchParams.get("action"), null);
+  assert.equal(query.searchParams.get("created_at"), null);
+});
+
+test("운영 이력이 요청 개수만큼 차면 다음 조회 기준을 함께 내려준다", async () => {
+  const rows = [
+    auditRow("operation_team.created", "2026-08-26T05:00:00.000Z", { target_table: "operation_team_codes" }),
+    auditRow("operation_team.created", "2026-08-26T04:00:00.000Z", { target_table: "operation_team_codes" }),
+  ];
+  const stub = auditRestStub(rows);
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs&limit=2&action=operation_team.created&before=2026-08-27T00:00:00.000Z")),
+  ));
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.nextBefore, "2026-08-26T04:00:00.000Z");
+  assert.deepEqual(payload.actionOptions, [{ value: "operation_team.created", label: "운영팀 생성" }]);
+
+  const query = stub.queries[0];
+  assert.equal(query.searchParams.get("select"), "action,target_table,metadata,created_at");
+  assert.equal(query.searchParams.get("limit"), "2");
+  assert.equal(query.searchParams.get("action"), "eq.operation_team.created");
+  assert.equal(query.searchParams.get("created_at"), "lt.2026-08-27T00:00:00.000Z");
+});
+
+test("운영 이력은 총관리자 코드가 어긋나면 조회 전에 막힌다", async () => {
+  const stub = auditRestStub([]);
+
+  const missingCode = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs", { "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE })),
+  ));
+  assert.equal(missingCode.status, 401);
+
+  const wrongCode = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs", {
+      "x-mi-super-admin-code": "wrong-super-admin-code",
+      "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+    })),
+  ));
+  assert.equal(wrongCode.status, 401);
+
+  const wrongOwner = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs", {
+      "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+      "x-mi-owner-agency-code": "mml93-a09",
+    })),
+  ));
+  assert.equal(wrongOwner.status, 403);
+
+  const teamSession = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(auditLogRequest("view=audit-logs", { "x-mi-team-code": "mml93-t01" })),
+  ));
+  assert.equal(teamSession.status, 401);
+
+  // 거절된 요청은 audit_logs 를 한 번도 건드리지 않는다.
+  assert.equal(stub.queries.length, 0);
 });

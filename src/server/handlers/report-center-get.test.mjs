@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import { handleGenerateSalesPptx, handleGet } from "./report-center.mjs";
+import { fileURLToPath } from "node:url";
+import {
+  fallbackSalesNarrative,
+  handleGenerateSalesPptx,
+  handleGet,
+  normalizeSalesReportInput,
+  reportDocKind,
+} from "./report-center.mjs";
 
 // Keep the listing/PPTX paths hermetic: no super-admin owner branch, no OpenAI network call.
 delete process.env.MI_SUPER_ADMIN_CODE;
@@ -221,4 +229,178 @@ test("PPTX generation still works via the lazy pptxgenjs import", async () => {
   assert.ok(decoded.length > 0, "decoded PPTX buffer must be non-empty");
   // Real .pptx files are ZIP archives — verify the local-file-header signature.
   assert.deepEqual([...decoded.subarray(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+});
+
+// --- 문서 종류(매출 / 월간 요약) 선택 -------------------------------------
+
+const HANDLER_SOURCE = readFileSync(
+  fileURLToPath(new URL("./report-center.mjs", import.meta.url)),
+  "utf8",
+);
+
+const SALES_ACCESS = {
+  role: "team",
+  client: { id: CLIENT_ID, name: "테스트 광고주" },
+  team: null,
+};
+
+const TREND_DATA = [
+  { month: "2026-06", sales: "1,200만원", roas: "480%" },
+  { month: "2026-07", sales: "1,350만원", roas: "510%" },
+  { month: "2026-08", sales: "1,510만원", roas: "545%" },
+  { month: "2026-09", sales: "1,600만원", roas: "560%" },
+];
+
+function pptxBody(extra = {}) {
+  return {
+    action: "generate-sales-pptx",
+    saveToReportCenter: false,
+    clientName: "테스트",
+    reportMonth: "2026-08",
+    ...extra,
+  };
+}
+
+function noDbCtx() {
+  return {
+    supabaseAdmin: {
+      from() { throw new Error("saveToReportCenter:false must not touch the database"); },
+      storage: {
+        from() { throw new Error("saveToReportCenter:false must not touch Storage"); },
+      },
+    },
+  };
+}
+
+function pptxRequest() {
+  return new Request("https://insight.momentlabs.co.kr/api/report-center", { method: "POST" });
+}
+
+test("reportDocKind resolves known kinds and defaults to sales", () => {
+  assert.equal(reportDocKind("sales").reportType, "sales");
+  assert.equal(reportDocKind("sales").windowMonths, 1);
+  assert.equal(reportDocKind("monthly").reportType, "monthly");
+  assert.equal(reportDocKind("monthly").label, "월간 요약 보고서");
+  assert.equal(reportDocKind("monthly").filenameSlug, "monthly");
+  assert.equal(reportDocKind("monthly").windowMonths, 3);
+  assert.notEqual(reportDocKind("monthly").systemPrompt, reportDocKind("sales").systemPrompt);
+  assert.notEqual(reportDocKind("monthly").deckTitle, reportDocKind("sales").deckTitle);
+
+  // 알 수 없는 값/빈 값은 매출 보고서로 되돌린다.
+  for (const value of ["kpi", "", null, undefined, 42, {}]) {
+    assert.equal(reportDocKind(value).reportType, "sales", `${String(value)} must fall back to sales`);
+  }
+});
+
+test("normalizeSalesReportInput carries the doc kind and slices the trend window", () => {
+  const monthly = normalizeSalesReportInput(SALES_ACCESS, {
+    reportKind: "monthly",
+    reportData: { clientName: "테스트", reportMonth: "2026-08", monthlyTrend: TREND_DATA },
+  });
+  assert.equal(monthly.docKind, "monthly");
+  assert.equal(monthly.docLabel, "월간 요약 보고서");
+  assert.equal(monthly.periodWindow, "최근 3개월");
+  assert.equal(monthly.trend.length, 3);
+  assert.deepEqual(monthly.trend[0], { month: "2026-06", sales: "1,200만원", roas: "480%" });
+
+  // 기본(매출) 종류는 1개월 창만 남긴다.
+  const sales = normalizeSalesReportInput(SALES_ACCESS, {
+    reportData: { clientName: "테스트", reportMonth: "2026-08", monthlyTrend: TREND_DATA },
+  });
+  assert.equal(sales.docKind, "sales");
+  assert.equal(sales.docLabel, "매출 보고서");
+  assert.equal(sales.periodWindow, "최근 1개월");
+  assert.equal(sales.trend.length, 1);
+
+  // months / trend 별칭도 동일하게 인식한다.
+  assert.equal(
+    normalizeSalesReportInput(SALES_ACCESS, { reportKind: "monthly", reportData: { months: TREND_DATA } }).trend.length,
+    3,
+  );
+  assert.equal(
+    normalizeSalesReportInput(SALES_ACCESS, { report_kind: "monthly", reportData: { trend: TREND_DATA } }).trend.length,
+    3,
+  );
+
+  // 배열이 아닌 흐름 데이터는 빈 배열로 정리한다.
+  for (const bad of [{ monthlyTrend: "2026-06" }, { monthlyTrend: null }, {}]) {
+    const input = normalizeSalesReportInput(SALES_ACCESS, { reportKind: "monthly", reportData: bad });
+    assert.deepEqual(input.trend, []);
+  }
+});
+
+test("fallbackSalesNarrative headline carries the doc label", () => {
+  const monthly = normalizeSalesReportInput(SALES_ACCESS, {
+    documentKind: "monthly",
+    reportData: { clientName: "테스트", reportMonth: "2026-08" },
+  });
+  const narrative = fallbackSalesNarrative(monthly, "openai_not_configured");
+  assert.equal(narrative.headline, "테스트 2026-08 월간 요약 보고서");
+  assert.equal(narrative.source, "openai_not_configured");
+
+  const sales = normalizeSalesReportInput(SALES_ACCESS, {
+    reportData: { clientName: "테스트", reportMonth: "2026-08" },
+  });
+  assert.equal(fallbackSalesNarrative(sales).headline, "테스트 2026-08 매출 보고서");
+});
+
+test("generate-sales-pptx builds both doc kinds on the fallback narrative path", async () => {
+  assert.equal(process.env.OPENAI_API_KEY, undefined, "OpenAI must stay unconfigured for the fallback path");
+
+  const salesResponse = await handleGenerateSalesPptx(pptxRequest(), noDbCtx(), SALES_ACCESS, pptxBody());
+  assert.equal(salesResponse.status, 201);
+  const sales = await salesResponse.json();
+  assert.equal(sales.reportKind, "sales");
+  assert.equal(sales.ai.kind, "sales");
+  assert.equal(sales.ai.source, "openai_not_configured");
+  assert.equal(sales.filename, "moment-insight-sales-테스트-2026-08.pptx");
+
+  const monthlyResponse = await handleGenerateSalesPptx(
+    pptxRequest(),
+    noDbCtx(),
+    SALES_ACCESS,
+    pptxBody({ reportKind: "monthly", reportData: { clientName: "테스트", reportMonth: "2026-08", monthlyTrend: TREND_DATA } }),
+  );
+  assert.equal(monthlyResponse.status, 201);
+  const monthly = await monthlyResponse.json();
+  assert.equal(monthly.reportKind, "monthly");
+  assert.equal(monthly.ai.kind, "monthly");
+  assert.equal(monthly.ai.source, "openai_not_configured");
+  assert.equal(monthly.filename, "moment-insight-monthly-테스트-2026-08.pptx");
+  assert.notEqual(monthly.filename, sales.filename, "filename slug must differ per doc kind");
+  assert.match(monthly.ai.headline, /월간 요약 보고서$/);
+
+  // 두 종류 모두 실제 PPTX(ZIP) 바이트를 만들어야 한다.
+  for (const payload of [sales, monthly]) {
+    const decoded = Buffer.from(payload.contentBase64, "base64");
+    assert.deepEqual([...decoded.subarray(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+  }
+});
+
+test("generate-sales-pptx keeps the client-role 403 guard ahead of any doc kind", async () => {
+  const access = { role: "client", client: { id: CLIENT_ID, name: "테스트" }, team: null };
+  for (const kind of ["monthly", "sales", undefined]) {
+    const response = await handleGenerateSalesPptx(
+      pptxRequest(),
+      noDbCtx(),
+      access,
+      pptxBody({ reportKind: kind }),
+    );
+    assert.equal(response.status, 403, `role client must be refused for kind ${String(kind)}`);
+    const body = await response.json();
+    assert.equal(body.ok, false);
+    assert.equal(body.reportKind, undefined, "403 must not leak generation fields");
+  }
+});
+
+test("pptxgenjs is never imported at report-center.mjs module top level", () => {
+  // 과거 프로덕션 장애: 무거운 ESM 의존성을 최상위에서 import하면 모듈 로드가 깨진다.
+  const occurrences = HANDLER_SOURCE.match(/pptxgenjs/g) || [];
+  assert.equal(occurrences.length, 1, "pptxgenjs must appear exactly once, at its use site");
+  assert.match(HANDLER_SOURCE, /await import\(\s*["']pptxgenjs["']\s*\)/);
+  assert.doesNotMatch(
+    HANDLER_SOURCE,
+    /^\s*import\b[^;]*["']pptxgenjs["']/m,
+    "no top-level import of pptxgenjs is allowed",
+  );
 });

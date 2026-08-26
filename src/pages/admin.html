@@ -6160,6 +6160,12 @@
       background: var(--mi-grey-50);
     }
 
+    /* 5단계 §1: 운영 이력의 빈 줄도 활성 계정 빈 칸과 같은 점선 표기를 쓴다. */
+    #mi-admin .mi-row.is-empty {
+      border-style: dashed;
+      background: var(--mi-grey-50);
+    }
+
     #mi-admin .mi-account-slot.is-unlinked {
       background: #fcfcfd;
     }
@@ -11533,6 +11539,34 @@
             </article>
           </div>
         </section>
+
+        <!-- 5단계 §1: 운영 이력은 총관리자만 읽는 기록이라 별도 화면을 만들지 않고
+             대행사 연결 화면의 활성 계정 전체보기 바로 아래 구역으로 둔다.
+             읽기 전용이라 삭제·수정 조작은 하나도 두지 않는다. -->
+        <section class="mi-owner-account-full" data-mi-admin-section="operation-history" id="mi-admin-operation-history" data-owner-only aria-label="운영 이력">
+          <article class="mi-card mi-card-pad">
+            <div class="mi-card-head">
+              <div>
+                <h2>운영 이력</h2>
+                <p>총관리자만 조회할 수 있는 읽기 전용 기록입니다.</p>
+              </div>
+              <span class="mi-badge">읽기 전용</span>
+            </div>
+            <div class="mi-tool">
+              <div class="mi-form-row">
+                <select class="mi-input" data-ops-history-filter aria-label="운영 이력 작업 종류">
+                  <option value="">전체 작업</option>
+                </select>
+                <button class="mi-button is-ghost" type="button" data-ops-history-refresh>운영 이력 새로고침</button>
+              </div>
+              <div class="mi-table" data-ops-history-list>
+                <div class="mi-row is-empty"><span>운영 이력</span><strong>조회 전입니다.</strong></div>
+              </div>
+              <button class="mi-button is-ghost" type="button" data-ops-history-more hidden>더 보기</button>
+              <div class="mi-code-status" data-ops-history-status aria-live="polite">조회 전입니다.</div>
+            </div>
+          </article>
+        </section>
         </section>
 
         <section class="mi-view mi-operation-input" data-mi-admin-view="excel" id="mi-admin-excel">
@@ -11789,6 +11823,12 @@
               <div class="mi-downloads">
                 <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>PPTX · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
                 <button class="mi-download" type="button" data-admin-download data-report-type="kpi"><span><b>KPI 보고서</b><small>PPTX · 내부 검토 후 공개용으로 정리</small></span><i>↓</i></button>
+                <!-- 5단계 §3: AI PPTX 버튼은 그대로 두고 문서 종류만 옆에서 고른다.
+                     서버는 같은 generate-sales-pptx 동작에 reportKind 만 더 받는다. -->
+                <select class="mi-input" data-admin-ai-report-kind aria-label="AI 보고서 유형">
+                  <option value="sales">매출 보고서</option>
+                  <option value="monthly">월간 요약 보고서</option>
+                </select>
                 <button class="mi-download" type="button" data-admin-ai-pptx><span><b>AI 매출 PPTX</b><small>운영팀 작성값을 보고서 디자인에 자동 배치</small></span><i>✨</i></button>
               </div>
             </article>
@@ -12306,6 +12346,32 @@
               <textarea class="mi-textarea" data-admin-schedules placeholder="날짜,제목,상세,상태"></textarea>
               <button class="mi-button" type="button" data-admin-code-save>공개 데이터 저장</button>
               <div class="mi-code-status" data-admin-code-status aria-live="polite">저장 전입니다.</div>
+            </div>
+          </article>
+
+          <!-- 5단계 §2: KPI 목표는 공개 데이터 설정과 같은 광고주 기준으로 저장한다.
+               새 /api 경로를 만들지 않고 기존 공개 관리 저장 경로에 동작만 하나 더 얹는다. -->
+          <article class="mi-card mi-card-pad">
+            <div class="mi-card-head">
+              <div>
+                <h2>KPI 목표</h2>
+                <p>목표를 저장하면 광고주 화면의 달성률이 이 목표를 기준으로 계산됩니다.</p>
+              </div>
+              <span class="mi-badge">목표 관리</span>
+            </div>
+            <div class="mi-tool">
+              <div class="mi-form-row mi-form-row-3">
+                <select class="mi-input" data-admin-kpi-metric aria-label="KPI 지표">
+                  <option value="revenue">매출</option>
+                  <option value="ad_spend">광고비</option>
+                  <option value="orders">구매수</option>
+                </select>
+                <input class="mi-input" data-admin-kpi-period placeholder="목표 기간 (YYYY-MM)" aria-label="목표 기간" />
+                <input class="mi-input" data-admin-kpi-target placeholder="목표값" aria-label="목표값" />
+              </div>
+              <button class="mi-button" type="button" data-admin-kpi-save>KPI 목표 저장</button>
+              <div class="mi-code-status" data-admin-kpi-status aria-live="polite">저장 전입니다.</div>
+              <div class="mi-code-status" data-admin-kpi-progress>등록된 KPI 목표가 없습니다.</div>
             </div>
           </article>
 
@@ -18426,6 +18492,9 @@
           });
         }
         if (target === "home" && secureSession.role) refreshOperationHomeStatus();
+        // 5단계: 운영 이력과 KPI 목표는 화면을 열었을 때만 늦게 부른다(상시 조회 아님).
+        if (target === "agency-code" && secureSession.role === "owner") maybeLoadOperationHistory();
+        if (target === "publish" && secureSession.role) maybeLoadAdminKpiTarget();
         if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");
@@ -18698,6 +18767,198 @@
         ownerListBackButton.addEventListener("click", function () {
           var summary = root.querySelector("#mi-admin-active-accounts-summary");
           if (summary) summary.scrollIntoView({ block: "start", behavior: "auto" });
+        });
+      }
+
+      // 5단계 §1: 운영 이력(읽기 전용). 화면을 연 세션에서 한 번만 자동 조회하고,
+      // 그 뒤로는 새로고침·필터·더 보기 버튼으로만 다시 부른다.
+      var operationHistoryLoadedGeneration = -1;
+      var operationHistoryNextBefore = "";
+
+      // 5단계 §1: 운영 이력 조회. requestOwnerCodes 와 같은 총관리자 가드·낡은 세션
+      // 가드를 그대로 쓰되 쿼리스트링만 붙인 GET 이라 기존 호출부는 건드리지 않는다.
+      // 총관리자·대행사 코드 헤더는 서버 세션 게이트가 붙이므로 여기서 넣지 않는다.
+      // 위치가 계정 요청 묶음(refreshOperationTeamPanel ~ reportTypeLabel) 밖인 이유:
+      // 그 묶음은 낡은 세션 가드 호출 수를 정확히 세는 출시 기준선의 감시 대상이라,
+      // 새 함수를 그 안에 두면 보안 불변식 검사가 깨진다.
+      async function requestOwnerAuditLogs(query) {
+        if (secureSession.role !== "owner") return { ok: false, message: "총관리자 보안 세션이 필요합니다." };
+        var session = captureAdminSession();
+        var params = new URLSearchParams(query || {});
+        try {
+          var response = await miFetch(getSuperAdminApiUrl() + "?" + params.toString(), {
+            method: "GET",
+            cache: "no-store"
+          });
+          var payload = await readApiPayload(response, "운영 이력 응답을 확인할 수 없습니다.");
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          return payload;
+        } catch (error) {
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          throw error;
+        }
+      }
+
+      function operationHistoryTimeLabel(value) {
+        if (!value) return "시간 확인 필요";
+        try {
+          return new Date(value).toLocaleString("ko-KR", {
+            timeZone: "Asia/Seoul",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        } catch (error) {
+          return "시간 확인 필요";
+        }
+      }
+
+      // metadata 는 서버가 이미 걸러 보낸 값이다. 여기서는 앞 3개만 한 줄로 줄인다.
+      function operationHistoryMetadataSummary(metadata) {
+        if (!metadata || typeof metadata !== "object") return "";
+        var parts = [];
+        Object.keys(metadata).forEach(function (key) {
+          if (parts.length >= 3) return;
+          var raw = metadata[key];
+          if (raw === null || raw === undefined) return;
+          var text = typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+          if (!text) return;
+          if (text.length > 40) text = text.slice(0, 40) + "…";
+          parts.push(key + ": " + text);
+        });
+        return parts.join(" · ");
+      }
+
+      function operationHistoryRow(entry) {
+        var row = document.createElement("div");
+        row.className = "mi-row mi-account-row";
+        var main = document.createElement("div");
+        main.className = "mi-row-main";
+        var title = document.createElement("strong");
+        // 서버가 한글 이름(actionLabel)을 못 붙인 기록은 원본 action 문자열을 그대로
+        // 보여준다. 브라우저에서 한글 이름을 지어내면 없는 기록을 만든 셈이 된다.
+        title.textContent = entry.actionLabel || entry.action || "작업 이름 없음";
+        main.appendChild(title);
+        var detail = document.createElement("small");
+        detail.textContent = [entry.targetTable || "대상 테이블 없음", operationHistoryMetadataSummary(entry.metadata)]
+          .filter(Boolean)
+          .join(" · ");
+        main.appendChild(detail);
+        row.appendChild(main);
+        var when = document.createElement("span");
+        when.textContent = operationHistoryTimeLabel(entry.createdAt);
+        row.appendChild(when);
+        return row;
+      }
+
+      function renderOperationHistoryList(entries, append) {
+        var list = root.querySelector("[data-ops-history-list]");
+        if (!list) return;
+        if (!append) list.innerHTML = "";
+        var rows = Array.isArray(entries) ? entries : [];
+        if (!rows.length && !list.children.length) {
+          var empty = document.createElement("div");
+          empty.className = "mi-row is-empty";
+          var emptyLabel = document.createElement("span");
+          emptyLabel.textContent = "운영 이력";
+          var emptyValue = document.createElement("strong");
+          emptyValue.textContent = "기록된 운영 이력이 없습니다.";
+          empty.appendChild(emptyLabel);
+          empty.appendChild(emptyValue);
+          list.appendChild(empty);
+          return;
+        }
+        rows.forEach(function (entry) {
+          list.appendChild(operationHistoryRow(entry));
+        });
+      }
+
+      // 필터 선택지는 이번 응답에 담긴 종류만 내려오므로, 지우지 않고 더하기만 한다.
+      function renderOperationHistoryFilter(options) {
+        var select = root.querySelector("[data-ops-history-filter]");
+        if (!select) return;
+        var known = {};
+        Array.prototype.forEach.call(select.options, function (node) {
+          known[node.value] = true;
+        });
+        (Array.isArray(options) ? options : []).forEach(function (option) {
+          var value = String((option && option.value) || "");
+          if (!value || known[value]) return;
+          known[value] = true;
+          var node = document.createElement("option");
+          node.value = value;
+          node.textContent = String((option && option.label) || value);
+          select.appendChild(node);
+        });
+      }
+
+      async function loadOperationHistory(options) {
+        var settings = options || {};
+        var statusNode = root.querySelector("[data-ops-history-status]");
+        var moreButton = root.querySelector("[data-ops-history-more]");
+        var filterSelect = root.querySelector("[data-ops-history-filter]");
+        if (!canManageOwnerCodes()) {
+          setStatus(statusNode, "운영 이력은 총관리자 보안 세션에서만 조회할 수 있습니다.", "is-warn");
+          return false;
+        }
+        var query = { view: "audit-logs", limit: "50" };
+        var action = filterSelect ? String(filterSelect.value || "").trim() : "";
+        if (action) query.action = action;
+        if (settings.before) query.before = String(settings.before);
+        setStatus(statusNode, "운영 이력을 조회 중입니다.", "");
+        try {
+          var payload = await requestOwnerAuditLogs(query);
+          if (payload.staleSession) return false;
+          if (!canManageOwnerCodes() || root.classList.contains("is-locked")) return false;
+          if (!payload.ok) {
+            setStatus(statusNode, payload.message || "운영 이력을 불러오지 못했습니다.", "is-warn");
+            return false;
+          }
+          var entries = Array.isArray(payload.auditLogs) ? payload.auditLogs : [];
+          renderOperationHistoryFilter(payload.actionOptions);
+          renderOperationHistoryList(entries, Boolean(settings.before));
+          operationHistoryNextBefore = payload.nextBefore ? String(payload.nextBefore) : "";
+          if (moreButton) moreButton.hidden = !operationHistoryNextBefore;
+          setStatus(
+            statusNode,
+            entries.length ? "운영 이력 " + entries.length + "건을 불러왔습니다." : "기록된 운영 이력이 없습니다.",
+            "is-ok"
+          );
+          return true;
+        } catch (error) {
+          if (!canManageOwnerCodes()) return false;
+          setStatus(statusNode, error.message || "운영 이력을 불러오지 못했습니다.", "is-warn");
+          return false;
+        }
+      }
+
+      function maybeLoadOperationHistory() {
+        if (!canManageOwnerCodes()) return;
+        if (operationHistoryLoadedGeneration === adminSessionGeneration) return;
+        operationHistoryLoadedGeneration = adminSessionGeneration;
+        loadOperationHistory({});
+      }
+
+      var opsHistoryRefreshButton = root.querySelector("[data-ops-history-refresh]");
+      if (opsHistoryRefreshButton) {
+        opsHistoryRefreshButton.addEventListener("click", function () {
+          loadOperationHistory({});
+        });
+      }
+
+      var opsHistoryFilterSelect = root.querySelector("[data-ops-history-filter]");
+      if (opsHistoryFilterSelect) {
+        opsHistoryFilterSelect.addEventListener("change", function () {
+          loadOperationHistory({});
+        });
+      }
+
+      var opsHistoryMoreButton = root.querySelector("[data-ops-history-more]");
+      if (opsHistoryMoreButton) {
+        opsHistoryMoreButton.addEventListener("click", function () {
+          if (!operationHistoryNextBefore) return;
+          loadOperationHistory({ before: operationHistoryNextBefore });
         });
       }
 
@@ -19003,6 +19264,161 @@
           applyState(state);
           setStatus(publicStatus, "공개 코멘트 로컬 저장 완료: 공개 데이터에 반영 중입니다.", "");
           await persistPublicState(state, publicStatus, "공개 코멘트가 저장되고 광고주 화면에도 반영되었습니다.");
+        });
+      }
+
+      // 5단계 §2: KPI 목표 편집기. 저장·조회 모두 공개 관리와 같은 경로를 쓰고,
+      // 총관리자일 때 대상 광고주 헤더를 붙이는 규칙도 persistPublicState 와 같다.
+      var adminKpiLoadedGeneration = -1;
+
+      function adminKpiMetricLabel(metric) {
+        var labels = { revenue: "매출", ad_spend: "광고비", orders: "구매수" };
+        return labels[String(metric || "")] || "";
+      }
+
+      function adminKpiCurrentPeriod() {
+        var now = new Date();
+        return now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+      }
+
+      function publicStateRequestHeaders() {
+        var headers = {};
+        if (canManageOwnerCodes()) {
+          var targetAgencyCode = ownerTargetAgencyCode();
+          if (!targetAgencyCode) throw new Error("총관리자는 대상 광고주 코드를 먼저 확인해주세요.");
+          headers["x-mi-agency-code"] = targetAgencyCode;
+        }
+        return headers;
+      }
+
+      async function requestPublicStateSnapshot() {
+        var session = captureAdminSession();
+        var headers = publicStateRequestHeaders();
+        try {
+          var response = await miFetch(getClientPublicStateApiUrl(), {
+            method: "GET",
+            cache: "no-store",
+            headers: headers
+          });
+          var payload = await readApiPayload(response, "공개 데이터 조회 응답을 확인할 수 없습니다.");
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          return payload;
+        } catch (error) {
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return staleAdminSessionPayload();
+          throw error;
+        }
+      }
+
+      // 진행률은 서버가 계산해 준 값만 그린다. 실적 행이 없으면 "실적 집계 전"으로
+      // 남기고, 여기서 숫자를 만들어 채우지 않는다(그 순간 화면이 거짓이 된다).
+      function renderAdminKpiProgress(kpi) {
+        var node = root.querySelector("[data-admin-kpi-progress]");
+        if (!node) return;
+        if (!kpi || !kpi.periodMonth) {
+          node.textContent = "등록된 KPI 목표가 없습니다.";
+          return;
+        }
+        var label = kpi.metricLabel || adminKpiMetricLabel(kpi.metric) || String(kpi.metric || "");
+        var target = Number(kpi.targetValue);
+        var hasTarget = kpi.targetValue !== null && kpi.targetValue !== undefined && kpi.targetValue !== "" && isFinite(target);
+        var head = [String(kpi.periodMonth), label, "목표", hasTarget ? formatNumber(target) : "목표값 확인 필요"]
+          .filter(Boolean)
+          .join(" ");
+        var rate = kpi.progressRate === null || kpi.progressRate === undefined ? null : Number(kpi.progressRate);
+        if (rate === null || !isFinite(rate)) {
+          node.textContent = head + " · 실적 집계 전";
+          return;
+        }
+        node.textContent = head + " · 달성 " + (Math.round(rate * 10) / 10) + "%";
+      }
+
+      function prefillAdminKpiInputs(kpi) {
+        var metricSelect = root.querySelector("[data-admin-kpi-metric]");
+        var periodInput = root.querySelector("[data-admin-kpi-period]");
+        var targetInput = root.querySelector("[data-admin-kpi-target]");
+        if (periodInput && !periodInput.value) periodInput.value = (kpi && kpi.periodMonth) || adminKpiCurrentPeriod();
+        if (!kpi) return;
+        if (metricSelect && kpi.metric) metricSelect.value = kpi.metric;
+        if (targetInput && !targetInput.value && kpi.targetValue !== null && kpi.targetValue !== undefined) {
+          targetInput.value = String(kpi.targetValue);
+        }
+      }
+
+      async function loadAdminKpiTarget(silent) {
+        var statusNode = root.querySelector("[data-admin-kpi-status]");
+        if (!secureSession.role) return false;
+        try {
+          var payload = await requestPublicStateSnapshot();
+          if (payload.staleSession) return false;
+          if (!payload.ok) {
+            if (!silent) setStatus(statusNode, payload.message || "KPI 목표를 확인하지 못했습니다.", "is-warn");
+            return false;
+          }
+          var kpi = payload.publicState ? payload.publicState.kpi : null;
+          renderAdminKpiProgress(kpi);
+          prefillAdminKpiInputs(kpi);
+          return true;
+        } catch (error) {
+          if (!silent) setStatus(statusNode, error.message || "KPI 목표를 확인하지 못했습니다.", "is-warn");
+          return false;
+        }
+      }
+
+      function maybeLoadAdminKpiTarget() {
+        if (!secureSession.role) return;
+        if (adminKpiLoadedGeneration === adminSessionGeneration) return;
+        adminKpiLoadedGeneration = adminSessionGeneration;
+        loadAdminKpiTarget(true);
+      }
+
+      async function saveAdminKpiTarget() {
+        var statusNode = root.querySelector("[data-admin-kpi-status]");
+        var metricSelect = root.querySelector("[data-admin-kpi-metric]");
+        var periodInput = root.querySelector("[data-admin-kpi-period]");
+        var targetInput = root.querySelector("[data-admin-kpi-target]");
+        if (!secureSession.role) {
+          setStatus(statusNode, "보안 세션 확인 후 KPI 목표를 저장할 수 있습니다.", "is-warn");
+          return false;
+        }
+        var session = captureAdminSession();
+        setStatus(statusNode, "KPI 목표를 저장 중입니다.", "");
+        try {
+          var headers = publicStateRequestHeaders();
+          headers["content-type"] = "application/json";
+          var response = await miFetch(getClientPublicStateApiUrl(), {
+            method: "POST",
+            cache: "no-store",
+            headers: headers,
+            body: JSON.stringify({
+              action: "save-kpi-target",
+              kpiTarget: {
+                periodMonth: periodInput ? String(periodInput.value || "").trim() : "",
+                metric: metricSelect ? String(metricSelect.value || "") : "revenue",
+                targetValue: targetInput ? String(targetInput.value || "").trim() : ""
+              }
+            })
+          });
+          var payload = await readApiPayload(response, "KPI 목표 저장 응답을 확인할 수 없습니다.");
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return false;
+          if (!payload.ok) {
+            setStatus(statusNode, payload.message || "KPI 목표 저장에 실패했습니다.", "is-warn");
+            return false;
+          }
+          setStatus(statusNode, payload.message || "KPI 목표가 저장되었습니다.", "is-ok");
+          await loadAdminKpiTarget(true);
+          return true;
+        } catch (error) {
+          if (!adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return false;
+          setStatus(statusNode, error.message || "KPI 목표 저장에 실패했습니다.", "is-warn");
+          return false;
+        }
+      }
+
+      var adminKpiSaveButton = root.querySelector("[data-admin-kpi-save]");
+      if (adminKpiSaveButton) {
+        prefillAdminKpiInputs(null);
+        adminKpiSaveButton.addEventListener("click", function () {
+          saveAdminKpiTarget();
         });
       }
 
@@ -24063,7 +24479,8 @@
         }, 1000);
       }
 
-      async function generateSalesPptxReport(state, type, requestSession) {
+      // 5단계 §3: kind 는 뒤에 붙는 선택 인자라 기존 3-인자 호출부는 그대로 "sales" 로 남는다.
+      async function generateSalesPptxReport(state, type, requestSession, kind) {
         if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return { ok: false, staleSession: true };
         var teamReady = Boolean(secureSession.role === "team" && currentOperationTeam && currentOperationTeam.id);
         var hasLinkedClient = Boolean(currentOperationTeam && (currentOperationTeam.client || currentOperationTeam.clientId));
@@ -24071,6 +24488,7 @@
         var body = {
           action: "generate-sales-pptx",
           reportType: type || "sales",
+          reportKind: kind === "monthly" ? "monthly" : "sales",
           title: reportTypeLabel(type || "sales") + " · " + (state.updatedAt || new Date().toISOString().slice(0, 10)),
           visibility: "client_visible",
           reportData: state
@@ -24142,10 +24560,13 @@
           if (!adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
           var original = button.innerHTML;
           var state = readState();
+          // 5단계 §3: 문서 종류 선택값이 보고서 유형(reportType·title)과 생성 방식을 함께 정한다.
+          var kindSelect = root.querySelector("[data-admin-ai-report-kind]");
+          var reportKind = kindSelect && kindSelect.value === "monthly" ? "monthly" : "sales";
           button.disabled = true;
           button.innerHTML = "<span><b>AI PPTX 생성 중</b><small>데이터 분석과 디자인 보고서를 생성합니다.</small></span><i>…</i>";
           try {
-            var payload = await generateSalesPptxReport(state, "sales", requestSession);
+            var payload = await generateSalesPptxReport(state, reportKind, requestSession, reportKind);
             if (payload.staleSession || !adminSessionIsCurrent(requestSession.generation, requestSession.role, requestSession.scopeKey)) return;
             if (payload.stored && payload.stored.ok) {
               button.innerHTML = "<span><b>PPTX 생성 · 보고서함 기록 완료</b><small>광고주 공개 다운로드 목록에 반영</small></span><i>✓</i>";

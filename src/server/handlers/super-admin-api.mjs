@@ -32,6 +32,82 @@ export function normalizeAgencyCode(value) {
   return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{5,127}$/.test(code) ? code : "";
 }
 
+// ─────────────────────────────────────────────────────────────
+// 운영 이력(audit_logs) 읽기 전용 조회
+//
+// /api/admin/audit-logs 는 apikey 로 SUPABASE_SECRET_KEY 를 요구해서 브라우저
+// 총관리자 세션으로는 부를 수 없다. 그래서 이미 총관리자 코드로 잠겨 있는 이
+// 핸들러에 GET ?view=audit-logs 를 얹는다. 노출 열은 네 개(action,
+// target_table, metadata, created_at)뿐이고 actor_id / client_id / target_id
+// 같은 식별자는 응답에 담지 않는다.
+// ─────────────────────────────────────────────────────────────
+const AUDIT_ACTION_LABELS = new Map([
+  ["client.created_by_owner", "광고주 생성(총관리자)"],
+  ["client.created_by_team", "광고주 생성(운영팀)"],
+  ["client.reactivated_by_owner", "광고주 재활성화"],
+  ["client.revoked", "광고주 연결 해제"],
+  ["operation_team.created", "운영팀 생성"],
+  ["operation_team.reactivated", "운영팀 재활성화"],
+  ["operation_team.revoked", "운영팀 권한 해제"],
+  ["operation_team.client_disconnected", "운영팀 광고주 연결 해제"],
+  ["google_calendar_connected", "구글 캘린더 연결"],
+  ["google_calendar_sync_failed", "구글 캘린더 동기화 실패"],
+  ["google_calendar_catalog_refresh_failed", "구글 캘린더 목록 새로고침 실패"],
+  ["google_calendar_dedicated_retired", "전용 구글 캘린더 정리"],
+  ["meta_research.item_created", "메타 소재 저장"],
+  ["meta_research.item_deleted", "메타 소재 삭제"],
+  ["report_center.ai_pptx_created", "AI 보고서 생성"],
+  ["work_item_updated", "일정 수정"],
+  ["work_item_deleted", "일정 삭제"],
+  ["work_item_delete_attempted", "일정 삭제 시도"],
+  ["work_item_completed_by_assistant", "실장 비서 일정 완료"],
+]);
+
+// admin-api 는 `<table>.created|.updated|.deleted` 를 동적으로 찍는다. 표 이름은
+// 그대로 두고 뒷말만 우리말로 바꾼다.
+const AUDIT_ACTION_SUFFIX_LABELS = new Map([
+  ["created", "생성"],
+  ["updated", "수정"],
+  ["deleted", "삭제"],
+]);
+
+const AUDIT_ACTION_PATTERN = /^[a-z][a-z0-9_.]{0,63}$/;
+const AUDIT_LOG_MAX_LIMIT = 50;
+const AUDIT_LOG_SELECT = "action, target_table, metadata, created_at";
+
+export function auditActionLabel(action) {
+  const key = String(action || "").trim();
+  if (!key) return null;
+
+  const known = AUDIT_ACTION_LABELS.get(key);
+  if (known) return known;
+
+  const separator = key.lastIndexOf(".");
+  if (separator > 0 && separator < key.length - 1) {
+    const table = key.slice(0, separator);
+    const suffix = AUDIT_ACTION_SUFFIX_LABELS.get(key.slice(separator + 1));
+    if (table && suffix) return `${table} ${suffix}`;
+  }
+
+  // 모르는 동작은 화면에서 원문 그대로 보여준다.
+  return null;
+}
+
+export function auditLogQueryOptions(url) {
+  const params = url instanceof URL ? url.searchParams : new URL(String(url)).searchParams;
+
+  const requestedLimit = Math.trunc(Number(params.get("limit")) || AUDIT_LOG_MAX_LIMIT);
+  const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : AUDIT_LOG_MAX_LIMIT, 1), AUDIT_LOG_MAX_LIMIT);
+
+  const rawAction = params.get("action") || "";
+  const action = AUDIT_ACTION_PATTERN.test(rawAction) ? rawAction : null;
+
+  const rawBefore = params.get("before") || "";
+  const before = rawBefore && !Number.isNaN(Date.parse(rawBefore)) ? rawBefore : null;
+
+  return { action, limit, before };
+}
+
 function clientRateKey(request) {
   const forwarded = request.headers.get("x-forwarded-for") || "";
   return forwarded.split(",")[0].trim() || request.headers.get("x-real-ip") || "anonymous";
@@ -358,6 +434,49 @@ async function listClients(request, ctx) {
       clients: (clientsResult.data || []).find((client) => client.id === team.client_id) || null,
     })).map(teamPayload),
     clients: (clientsResult.data || []).map(clientPayload),
+  });
+}
+
+async function listAuditLogs(request, ctx, url) {
+  const { action, limit, before } = auditLogQueryOptions(url);
+
+  let query = ctx.supabaseAdmin
+    .from("audit_logs")
+    .select(AUDIT_LOG_SELECT)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (action) query = query.eq("action", action);
+  if (before) query = query.lt("created_at", before);
+
+  const { data, error } = await query;
+  if (error) {
+    return json(request, { ok: false, message: "운영 이력 조회에 실패했습니다.", detail: error.message }, 500);
+  }
+
+  const rows = (data || []).map((row) => ({
+    action: row.action,
+    actionLabel: auditActionLabel(row.action),
+    targetTable: row.target_table || null,
+    // metadata 는 기록 시점에 sanitizeAuditMetadata 로 걸러진 값이라 그대로 쓴다.
+    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
+    createdAt: row.created_at,
+  }));
+
+  // 화면 필터용 선택지는 이번에 내려간 기록에서만 뽑아 중복을 지운다.
+  const options = new Map();
+  for (const row of rows) {
+    if (!row.action || options.has(row.action)) continue;
+    options.set(row.action, { value: row.action, label: row.actionLabel || row.action });
+  }
+  const actionOptions = [...options.values()].sort((left, right) => left.label.localeCompare(right.label, "ko"));
+
+  return json(request, {
+    ok: true,
+    view: "audit-logs",
+    auditLogs: rows,
+    actionOptions,
+    // 정확히 limit 만큼 찼을 때만 다음 쪽이 있을 수 있다고 본다.
+    nextBefore: rows.length === limit ? rows[rows.length - 1].createdAt : null,
   });
 }
 
@@ -832,6 +951,8 @@ export default {
     if (request.method === "GET") {
       const ownerAuth = ownerActionAuthorized(request, body);
       if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
+      // 총관리자 확인을 통과한 뒤에만 운영 이력을 연다(운영팀·광고주는 여기까지 못 온다).
+      if (url.searchParams.get("view") === "audit-logs") return listAuditLogs(request, ctx, url);
       return listClients(request, ctx);
     }
     if (request.method === "POST") {

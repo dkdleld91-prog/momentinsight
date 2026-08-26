@@ -288,8 +288,43 @@ function reportRows(value, fallback = []) {
   return Array.isArray(value) ? value.filter(Boolean) : fallback;
 }
 
-function normalizeSalesReportInput(access, body) {
+// AI PPTX 문서 종류. 데이터 창(windowMonths), 프롬프트, 저장 report_type만 바꾸고
+// 슬라이드 레이아웃과 액션(generate-sales-pptx)은 그대로 공유한다.
+const REPORT_DOC_KINDS = {
+  sales: {
+    reportType: "sales",
+    label: "매출 보고서",
+    filenameSlug: "sales",
+    systemPrompt: "너는 마케팅 대행사 월간 매출 보고서를 작성하는 B2B SaaS 분석가다. 광고주에게 공개 가능한 문장만 쓰고 내부 API, 비밀값, 추측성 과장은 언급하지 않는다.",
+    task: "월간 매출 보고서 PPT에 들어갈 요약과 액션 플랜을 한국어로 작성",
+    deckTitle: "채널별 성과 요약",
+    windowMonths: 1,
+  },
+  monthly: {
+    reportType: "monthly",
+    label: "월간 요약 보고서",
+    filenameSlug: "monthly",
+    systemPrompt: "너는 마케팅 대행사 월간 운영 요약 보고서를 작성하는 B2B SaaS 분석가다. 한 달 동안의 흐름과 다음 달 실행 계획을 광고주에게 공개 가능한 문장으로만 쓰고, 내부 API·비밀값·추측성 과장은 언급하지 않는다.",
+    task: "월간 운영 요약 보고서 PPT에 들어갈 한 달 흐름 요약, 채널별 변화, 다음 달 실행 계획을 한국어로 작성",
+    deckTitle: "월간 채널 흐름 요약",
+    windowMonths: 3,
+  },
+};
+
+export function reportDocKind(value) {
+  const key = cleanText(value).toLowerCase();
+  return REPORT_DOC_KINDS[key] || REPORT_DOC_KINDS.sales;
+}
+
+export function normalizeSalesReportInput(access, body) {
   const data = body.reportData || body.report_data || body.data || body;
+  const kind = reportDocKind(body.reportKind || body.report_kind || body.documentKind);
+  const trendRows = data.monthlyTrend || data.months || data.trend;
+  const trend = (Array.isArray(trendRows) ? trendRows : []).map((item) => ({
+    month: limitText(item?.month, 18, "-"),
+    sales: displayValue(item?.sales),
+    roas: displayValue(item?.roas),
+  })).slice(0, kind.windowMonths);
   const channels = reportRows(data.channels, []).map((item) => ({
     name: limitText(item?.name, 30, "채널"),
     summary: limitText(item?.summary, 90, "성과 요약 필요"),
@@ -304,6 +339,10 @@ function normalizeSalesReportInput(access, body) {
   })).slice(0, 5);
 
   return {
+    docKind: kind.reportType,
+    docLabel: kind.label,
+    periodWindow: `최근 ${kind.windowMonths}개월`,
+    trend,
     clientName: limitText(data.clientName || data.client || access.client.name || access.client.business_name, 56, "광고주"),
     reportMonth: limitText(data.reportMonth || data.month || data.updatedAt || new Date().toISOString().slice(0, 7), 24),
     sales: displayValue(data.sales || data.monthlySales || data.totalSales, "0원"),
@@ -322,13 +361,13 @@ function normalizeSalesReportInput(access, body) {
   };
 }
 
-function fallbackSalesNarrative(input, reason = "fallback") {
+export function fallbackSalesNarrative(input, reason = "fallback") {
   const channels = input.channels.length
     ? input.channels.map((item) => `${item.name}: ${item.summary}`).slice(0, 3)
     : ["채널별 성과 입력 후 요약이 더 선명해집니다."];
   return {
     source: reason,
-    headline: `${input.clientName} ${input.reportMonth} 매출 보고서`,
+    headline: `${input.clientName} ${input.reportMonth} ${input.docLabel || "매출 보고서"}`,
     executiveSummary: `${input.sales} 매출과 ${input.roas} ROAS를 기준으로 현재 성과를 점검합니다.`,
     keyChanges: [
       `목표 달성률은 ${input.achievement} 기준으로 확인됩니다.`,
@@ -365,6 +404,9 @@ async function buildAiSalesNarrative(input) {
   const apiKey = cleanText(process.env.OPENAI_API_KEY);
   if (!apiKey) return fallbackSalesNarrative(input, "openai_not_configured");
 
+  // 문서 종류별 시스템 프롬프트/작업 지시만 갈아끼우고 스키마·모델·폴백은 동일하게 유지한다.
+  const kind = reportDocKind(input.docKind);
+
   const schema = {
     type: "object",
     additionalProperties: false,
@@ -391,12 +433,12 @@ async function buildAiSalesNarrative(input) {
         input: [
           {
             role: "system",
-            content: "너는 마케팅 대행사 월간 매출 보고서를 작성하는 B2B SaaS 분석가다. 광고주에게 공개 가능한 문장만 쓰고 내부 API, 비밀값, 추측성 과장은 언급하지 않는다.",
+            content: kind.systemPrompt,
           },
           {
             role: "user",
             content: JSON.stringify({
-              task: "월간 매출 보고서 PPT에 들어갈 요약과 액션 플랜을 한국어로 작성",
+              task: kind.task,
               input,
             }),
           },
@@ -526,8 +568,14 @@ async function buildSalesReportPptx(input, narrative) {
 
   slide = pptx.addSlide();
   slide.background = { color: "FFFFFF" };
-  addPptText(slide, "채널별 성과 요약", 0.72, 0.55, 5, 0.46, { fontSize: 24, bold: true, color: navy });
+  addPptText(slide, reportDocKind(input.docKind).deckTitle, 0.72, 0.55, 5, 0.46, { fontSize: 24, bold: true, color: navy });
   addPptText(slide, "매출과 ROAS를 기준으로 채널별 우선순위를 정리합니다.", 0.75, 1.08, 6, 0.28, { fontSize: 11.5, color: gray });
+  // 월간 종류처럼 2개월 이상 흐름이 들어온 경우에만 부제 아래 한 줄로 덧붙인다.
+  const trendRows = Array.isArray(input.trend) ? input.trend : [];
+  if (trendRows.length >= 2) {
+    const trendLine = trendRows.map((item) => `${item.month} ${item.sales} · ROAS ${item.roas}`).join(" | ");
+    addPptText(slide, `월별 흐름: ${trendLine}`, 0.75, 1.38, 11.8, 0.24, { fontSize: 10.3, color: gray, max: 150 });
+  }
   const channelItems = input.channels.length ? input.channels : [{ name: "채널", summary: "운영팀 입력 후 성과가 표시됩니다.", sales: input.sales, roas: input.roas }];
   channelItems.slice(0, 4).forEach((item, index) => {
     const x = 0.72 + (index % 2) * 6.05;
@@ -1307,7 +1355,9 @@ export async function uploadGeneratedReportFile(ctx, access, body, input, narrat
       uploadError: "보고서 날짜는 YYYY-MM-DD 형식의 실제 날짜여야 합니다.",
     };
   }
-  const reportType = cleanText(body.reportType || body.report_type, "sales");
+  // 명시된 reportType이 우선, 없으면 문서 종류의 기본 report_type을 저장한다.
+  const kind = reportDocKind(input?.docKind);
+  const reportType = cleanText(body.reportType || body.report_type, kind.reportType);
   const title = cleanText(body.title, `AI 매출 보고서 · ${input.reportMonth}`);
   const path = `clients/${access.client.id}/reports/${dateFolder()}/${Date.now()}-${sanitizeFilename(filename)}`;
 
@@ -1330,7 +1380,7 @@ export async function uploadGeneratedReportFile(ctx, access, body, input, narrat
     .from("reports")
     .insert({
       client_id: access.client.id,
-      report_type: REPORT_TYPES.has(reportType) ? reportType : "sales",
+      report_type: REPORT_TYPES.has(reportType) ? reportType : kind.reportType,
       title,
       report_date: reportDate.value,
       summary: narrative.executiveSummary || input.publicComment,
@@ -1418,7 +1468,8 @@ export async function handleGenerateSalesPptx(request, ctx, access, body) {
   const narrative = await buildAiSalesNarrative(input);
   const pptx = await buildSalesReportPptx(input, narrative);
   const buffer = await writePptxBuffer(pptx);
-  const filename = sanitizeFilename(`moment-insight-sales-${input.clientName}-${input.reportMonth}.pptx`);
+  const kind = reportDocKind(input.docKind);
+  const filename = sanitizeFilename(`moment-insight-${kind.filenameSlug}-${input.clientName}-${input.reportMonth}.pptx`);
   const base64 = buffer.toString("base64");
 
   let stored = null;
@@ -1429,10 +1480,12 @@ export async function handleGenerateSalesPptx(request, ctx, access, body) {
   return json(request, {
     ok: true,
     filename,
+    reportKind: input.docKind,
     mimeType: PPTX_MIME,
     contentBase64: base64,
     size: buffer.length,
     ai: {
+      kind: input.docKind,
       source: narrative.source,
       error: narrative.aiError || null,
       headline: narrative.headline,

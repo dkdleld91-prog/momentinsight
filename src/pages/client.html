@@ -6196,6 +6196,7 @@
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v6-20260826"></script>
+  <script src="/mi-google-nudge.js?v=gnudge-v1-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -10978,6 +10979,7 @@
               : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다."),
           (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok"
         );
+        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -11195,6 +11197,25 @@
         });
       }
 
+      // ── 구글 로그인 연동 안내 팝업 글루 ─────────────────────
+      // 판정(연결 여부)과 화면은 전부 public/mi-google-nudge.js 가 갖는다.
+      // 여기 남는 것은 "언제 부르는가" 와 "어느 계정인가" 뿐이다.
+      // 이미 연결된 계정은 서버 응답의 linked 로 걸러지므로 별도 예외가 없다.
+      function googleNudgeAccountTag() {
+        return secureClientSession.clientId || secureClientSession.scopeKey || "";
+      }
+
+      function maybeShowGoogleNudge() {
+        if (!window.MomentGoogleNudge || typeof window.MomentGoogleNudge.maybeShow !== "function") return;
+        // 착지 페인트를 막지 않는다 — 결과를 기다리지 않고, 조회가 실패하면 팝업도 없다.
+        window.MomentGoogleNudge.maybeShow({
+          apiBase: "/api/my",
+          fetch: miFetch,
+          role: secureClientSession.role,
+          accountTag: googleNudgeAccountTag()
+        });
+      }
+
       function googleLoginNotice(code) {
         var notices = {
           unlinked: "연결되지 않은 구글 계정입니다. 먼저 기존 코드로 로그인 후 연결해주세요.",
@@ -11333,6 +11354,7 @@
               ? "광고주 보안 세션을 복원했고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
               : "광고주 보안 세션은 복원했지만 승인 데이터 연결을 확인하지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
             : "광고주 보안 세션이 복원되었습니다."), (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok");
+        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         loginButton.disabled = false;
         return true;

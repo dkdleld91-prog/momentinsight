@@ -12400,6 +12400,7 @@
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v6-20260826"></script>
+  <script src="/mi-google-nudge.js?v=gnudge-v1-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -18126,6 +18127,25 @@
         });
       }
 
+      // ── 구글 로그인 연동 안내 팝업 글루 ─────────────────────
+      // 판정(연결 여부)과 화면은 전부 public/mi-google-nudge.js 가 갖는다.
+      // 여기 남는 것은 "언제 부르는가" 와 "어느 계정인가" 뿐이다.
+      // 이미 연결된 계정은 서버 응답의 linked 로 걸러지므로 대표님 예외는 없다.
+      function googleNudgeAccountTag() {
+        return secureSession.teamId || secureSession.clientId || secureSession.scopeKey || "";
+      }
+
+      function maybeShowGoogleNudge() {
+        if (!window.MomentGoogleNudge || typeof window.MomentGoogleNudge.maybeShow !== "function") return;
+        // 착지 페인트를 막지 않는다 — 결과를 기다리지 않고, 조회가 실패하면 팝업도 없다.
+        window.MomentGoogleNudge.maybeShow({
+          apiBase: "/api/my",
+          fetch: miFetch,
+          role: secureSession.role,
+          accountTag: googleNudgeAccountTag()
+        });
+      }
+
       function consumeLoginGoogleNotice() {
         try {
           if (root.classList.contains("is-authed") || secureSession.role) return;
@@ -18240,6 +18260,7 @@
           }
         }
         refreshOperationHomeStatus();
+        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }

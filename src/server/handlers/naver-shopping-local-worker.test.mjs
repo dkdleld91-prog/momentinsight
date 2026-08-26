@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.14",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.15",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -540,7 +540,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.14");
+          assert.equal(args.p_runtime_version, "1.1.15");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -666,7 +666,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.14",
+      runtimeVersion: "1.1.15",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -726,7 +726,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.14",
+      runtimeVersion: "1.1.15",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -768,7 +768,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.14",
+      runtimeVersion: "1.1.15",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -810,7 +810,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.14",
+      runtimeVersion: "1.1.15",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",

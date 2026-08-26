@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "59a3929adbf432c21d12fb48cd3a6f8a2f225b592caf9d81c25ae507b066c0a7"
+      "sha256": "49542bb8e2472e09184b9e893fdce03ed16ebc7e908f42af01cf177babf1367a"
     },
     {
       "id": "product-organic-rank-server",
@@ -343,7 +343,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "38e61cd38053720e15312cdbcb73f4cf88dc7fc8d00c5971136039d847b174a9"
+      "sha256": "5673ccbbac924e5218e0c37e67d256443352138eca45f6649f87d896478bc977"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -358,7 +358,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "44e59041a08de9dede68c4cade43368161e566f161bb12f5d48e5044493d24bf"
+      "sha256": "6596962f13615be1078f2dcfe348d92cc4ff427b86d4865a7159c089261c7784"
     },
     {
       "id": "shopping-cloud-worker",
@@ -574,7 +574,7 @@
     {
       "id": "shopping-chrome-native-host-core",
       "file": "scripts/naver-shopping-native-host-core.mjs",
-      "sha256": "b1c377a9435b201ea57e42e44c5bfcba612d50c2ad5e7b97c95baeb808b88cca"
+      "sha256": "07c0b4b7603d9ab4ab466d0f5316cf5d69c257fb6b10ee35c418ad8feede7a85"
     },
     {
       "id": "shopping-chrome-native-host-wrapper",
@@ -619,7 +619,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "0447390aae3a3b6c5c46a037ee8dac427557c77e10bafb468622cf59ee709421"
+      "sha256": "adbb33fa10dc74b98a94846562883499d0f0c66592f0d18e3dfed3b443928752"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -713,6 +713,12 @@
       "id": "shopping-worker-runtime-1-1-14-stable-finite-window-v1",
       "file": "supabase/migrations/20260826035440_naver_shopping_stable_finite_window_v1.sql",
       "sha256": "81c65c911f5ba8808b42cf5bde5c3cf01e98a8c5f158897d0c72bfe35f04b8c8",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-15-stable-finite-third-pass",
+      "file": "supabase/migrations/20260826083450_naver_shopping_runtime_1_1_15_stable_finite_third_pass.sql",
+      "sha256": "80a003471eba2a63932a73e20c6f500a90d7ce2a8af74d74cbb3e9147aa12192",
       "rankMigration": true
     }
   ]

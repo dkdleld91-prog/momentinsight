@@ -125,7 +125,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "windows-desktop-primary",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.14",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.15",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
     MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-catch-up",
   };
@@ -306,7 +306,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.14");
+  assert.equal(lane.runtimeVersion, "1.1.15");
   assert.equal(lane.runTrigger, "rank-catch-up");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
@@ -427,7 +427,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.14");
+  assert.equal(coordination[0].runtimeVersion, "1.1.15");
   assert.equal(coordination[0].runTrigger, "rank-catch-up");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
@@ -475,7 +475,7 @@ test("submits one stable finite canary without recording an atomic300 success", 
   assert.deepEqual(finiteModes, [true]);
   assert.equal(calls.coordination[0].runTrigger, "rank-catch-up");
   assert.equal(calls.coordination[0].workerId, "windows-desktop-primary");
-  assert.equal(calls.coordination[0].runtimeVersion, "1.1.14");
+  assert.equal(calls.coordination[0].runtimeVersion, "1.1.15");
   assert.equal(calls.coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
   assert.equal(calls.coordination.at(-1).action, "release-lane");

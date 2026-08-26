@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.14";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.15";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",

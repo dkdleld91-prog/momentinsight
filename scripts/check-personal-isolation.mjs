@@ -428,7 +428,7 @@ check(
     && recheckedAt > rebuiltKeyAt
     && integrationWriteAt > recheckedAt
     && oauthCallbackBlock.includes('if (state.p === "link") return handleLinkCallback(request, ctx, state, code);')
-    && oauthCallbackBlock.includes('if (state.p === "login") return handleLoginCallback(request, ctx, code);'),
+    && oauthCallbackBlock.includes('if (state.p === "login") return handleLoginCallback(request, ctx, code, state);'),
   `${files.googleCalendarApi} handleOauthCallback`,
 );
 

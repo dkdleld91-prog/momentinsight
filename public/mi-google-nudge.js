@@ -23,6 +23,7 @@
  *
  * 저장 키는 계정마다 나뉜다. 한 브라우저에서 두 계정을 번갈아 쓰면 공용 키가
  * 서로의 "나중에 하기"를 물려받기 때문이다(실장 비서 상시 대기 토글과 같은 이유).
+ * 해제 표식의 값은 그 해제를 누른 로그인(scopeKey)이다 — 다음 로그인에서는 어긋난다.
  */
 (function () {
   "use strict";
@@ -68,17 +69,17 @@
     return DISMISS_PREFIX + scope + ":" + tag;
   }
 
-  function isDismissed(key) {
+  function isDismissed(key, mark) {
     try {
-      return window.sessionStorage.getItem(key) === "1";
+      return window.sessionStorage.getItem(key) === (mark || "1");
     } catch (error) {
       return false;
     }
   }
 
-  function markDismissed(key) {
+  function markDismissed(key, mark) {
     try {
-      window.sessionStorage.setItem(key, "1");
+      window.sessionStorage.setItem(key, mark || "1");
     } catch (error) {}
   }
 
@@ -221,7 +222,7 @@
     }
   }
 
-  function render(config, key) {
+  function render(config, key, mark) {
     ensureStyle();
     var parts = buildOverlay();
     var previousFocus = document.activeElement;
@@ -230,7 +231,7 @@
     function close() {
       if (closed) return;
       closed = true;
-      markDismissed(key);
+      markDismissed(key, mark);
       document.removeEventListener("keydown", onKeyDown, true);
       if (parts.overlay.parentNode) parts.overlay.parentNode.removeChild(parts.overlay);
       if (previousFocus && typeof previousFocus.focus === "function") {
@@ -311,7 +312,11 @@
       setResult("no-account");
       return false;
     }
-    if (isDismissed(key)) {
+    // 해제는 "이 로그인" 안에서만 산다. 값에 로그인 식별자를 적어 두면 로그아웃 뒤
+    // 다시 들어온 로그인(코드·구글 모두 새 sid → 새 scopeKey)에서는 값이 어긋나 다시 뜬다.
+    // 새로고침·세션 복원은 같은 봉인 쿠키를 다시 여는 것이라 값이 같아 조용하다.
+    var mark = normalizeTag(config.loginTag) || "1";
+    if (isDismissed(key, mark)) {
       setResult("already-dismissed");
       return false;
     }
@@ -342,7 +347,7 @@
         setResult("already-open");
         return false;
       }
-      render({ fetch: doFetch, apiBase: apiBase }, key);
+      render({ fetch: doFetch, apiBase: apiBase }, key, mark);
       setResult("shown");
       return true;
     } catch (error) {

@@ -5,6 +5,7 @@ import {
   createSessionClaims,
   csrfMatches,
   publicSession,
+  reissueSessionOptions,
   sealSession,
   sessionConfiguration,
   sessionCookie,
@@ -458,14 +459,17 @@ async function currentSession(request, ctx) {
       if (!config.valid) {
         return response(request, { ok: false, message: "보안 세션 설정을 확인할 수 없습니다." }, 503);
       }
+      // 자동 로그인 세션은 운영팀 스코프가 바뀌어도 원래 만료 시각을 그대로 이어받는다.
+      // 기본 TTL 로 다시 발급하면 30일 세션이 조용히 하루로 줄어든다.
+      const reissue = reissueSessionOptions(claims);
       responseClaims = createSessionClaims({
         role: "team",
         teamCode: active.team.team_code,
         teamId: active.team.id,
         clientId: nextClientId,
         agencyCode: nextAgencyCode,
-      }, { ttlSeconds: config.ttl });
-      cookies.push(sessionCookie(sealSession(responseClaims)));
+      }, reissue);
+      cookies.push(sessionCookie(sealSession(responseClaims), process.env, { maxAge: reissue.ttlSeconds }));
     }
   }
   return response(request, {

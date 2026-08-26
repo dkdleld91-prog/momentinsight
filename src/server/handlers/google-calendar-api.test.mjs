@@ -2335,3 +2335,103 @@ test("a failed catalog refresh still lands the owner on a connected page", async
   assert.ok(failure, "실패는 감사 로그에 남는다");
   assert.equal(failure.metadata.stage, "connect");
 });
+
+// ── 자동 로그인(30일) ────────────────────────────────────────
+// persist 는 시작 쿼리 → 서명된 state(k) → 봉인된 클레임(pst) 으로만 흐른다.
+// 아래 네 개는 그 사슬의 각 마디를 실제 왕복으로 태워 확인한다.
+
+const PERSIST_SECONDS = 2_592_000;
+const OWNER_IDENTITY_ROW = {
+  google_sub: "sub-123",
+  google_email: "owner@example.com",
+  role: "owner",
+  code: "mml93-a01",
+  linked_at: "2026-08-01T00:00:00.000Z",
+};
+
+function loginCallbackRoutes() {
+  return [
+    googleTokenRoute({ sub: "sub-123" }),
+    identityRoute([OWNER_IDENTITY_ROW]),
+    ["POST", AUDIT_REST_URL, () => restCreated()],
+  ];
+}
+
+function sessionClaimsFrom(response) {
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const cookie = sessionCookies(response)[0];
+  assert.ok(cookie, "세션 쿠키가 없습니다.");
+  return { cookie, claims: openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV) };
+}
+
+test("자동 로그인 체크는 서명된 state 를 타고 30일 세션으로 돌아온다", async () => {
+  const start = await callLoginHandler(`${LOGIN_START_URL}?persist=1`);
+  const rawState = new URL(start.response.headers.get("location")).searchParams.get("state");
+  assert.equal(verifyOauthState(rawState, GOOGLE_ENV).k, 1);
+
+  const { response } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(rawState)}`,
+    { nonce: oauthStateNonce(rawState), routes: loginCallbackRoutes() },
+  );
+
+  assert.equal(response.headers.get("location"), "/admin?glogin=success");
+  const { cookie, claims } = sessionClaimsFrom(response);
+  assert.match(cookie, /Max-Age=2592000/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /SameSite=Strict/);
+  assert.equal(claims.exp - claims.iat, PERSIST_SECONDS);
+  assert.equal(claims.pst, 1);
+});
+
+test("자동 로그인을 체크하지 않으면 지금 그대로다", async () => {
+  const start = await callLoginHandler(LOGIN_START_URL);
+  const rawState = new URL(start.response.headers.get("location")).searchParams.get("state");
+  assert.equal(verifyOauthState(rawState, GOOGLE_ENV).k, 0);
+
+  const { response } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(rawState)}`,
+    { nonce: oauthStateNonce(rawState), routes: loginCallbackRoutes() },
+  );
+
+  const { cookie, claims } = sessionClaimsFrom(response);
+  assert.match(cookie, new RegExp(`Max-Age=${sessionConfiguration(SESSION_ENV).ttl}`));
+  assert.equal(claims.pst, undefined);
+});
+
+test("자동 로그인 표식은 서명된 1 하나뿐이다", async () => {
+  // 값 비교는 이 파일의 관례대로 cleanText(공백 제거) 뒤에 이뤄지므로 "1 " 는 1 로 읽힌다.
+  // 그 밖의 어떤 값도 비지속이다.
+  for (const query of ["", "?persist=0", "?persist=yes", "?persist=true", "?persist=01", "?persist="]) {
+    const { response } = await callLoginHandler(`${LOGIN_START_URL}${query}`);
+    const rawState = new URL(response.headers.get("location")).searchParams.get("state");
+    assert.equal(verifyOauthState(rawState, GOOGLE_ENV).k, 0, `표식이 새어 들어왔습니다: "${query}"`);
+  }
+});
+
+test("콜백은 쿼리의 persist 를 읽지 않는다", async () => {
+  // 변조 무력화의 직접 증거. persist 없이 서명된 state 에 쿼리만 덧붙여도 소용없다.
+  const login = loginState();
+  const { response } = await callLoginHandler(`${login.url}&persist=1`, {
+    nonce: login.nonce,
+    routes: loginCallbackRoutes(),
+  });
+
+  const { cookie, claims } = sessionClaimsFrom(response);
+  assert.match(cookie, new RegExp(`Max-Age=${sessionConfiguration(SESSION_ENV).ttl}`));
+  assert.equal(claims.pst, undefined);
+});
+
+test("서명이 깨진 자동 로그인 state 는 세션을 만들지 않는다", async () => {
+  const signed = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login", "owner", true);
+  const [encoded, signature] = signed.split(".");
+  const flipped = `${encoded.slice(0, -1)}${encoded.slice(-1) === "A" ? "B" : "A"}.${signature}`;
+
+  const { response } = await callLoginHandler(
+    `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(flipped)}`,
+    { nonce: oauthStateNonce(flipped), routes: loginCallbackRoutes() },
+  );
+
+  assert.equal(response.status, 302);
+  assert.match(response.headers.get("location"), /invalid/);
+  assert.equal(sessionCookies(response).length, 0);
+});

@@ -9,6 +9,9 @@ import {
 const SESSION_VERSION = "v1";
 const SESSION_AAD = Buffer.from("moment-insight-code-session:v1", "utf8");
 const DEFAULT_SESSION_SECONDS = 60 * 60 * 8;
+// "자동 로그인"으로 만든 세션만 이 수명을 쓴다. 새 환경변수를 만들지 않는다 —
+// 런타임 환경 게이트(scripts/check-runtime-env.mjs)가 잠겨 있어 검증해 주지 못한다.
+export const PERSISTENT_SESSION_SECONDS = 60 * 60 * 24 * 30;
 const MIN_SECRET_BYTES = 32;
 const PROD_COOKIE = "__Host-mi-session";
 const DEV_COOKIE = "mi-session";
@@ -73,6 +76,7 @@ export function sessionConfiguration(env = process.env) {
 export function createSessionClaims(input, options = {}) {
   const now = Number(options.now || Date.now());
   const ttlSeconds = Number(options.ttlSeconds || DEFAULT_SESSION_SECONDS);
+  const persist = options.persist === true;
   const role = String(input?.role || "");
   if (!VALID_ROLES.has(role)) throw new Error("invalid_session_role");
 
@@ -87,6 +91,7 @@ export function createSessionClaims(input, options = {}) {
     clientId: String(input.clientId || "").slice(0, 128),
     iat: Math.floor(now / 1000),
     exp: Math.floor(now / 1000) + ttlSeconds,
+    ...(persist ? { pst: 1 } : {}),
   };
 }
 
@@ -108,7 +113,8 @@ function validClaims(value, now = Date.now()) {
   if (!Number.isFinite(value.iat) || !Number.isFinite(value.exp)) return null;
   const nowSeconds = Math.floor(now / 1000);
   if (value.iat > nowSeconds + 60 || value.exp <= nowSeconds) return null;
-  if (!value.sid || !value.csrf || value.exp - value.iat > 60 * 60 * 24) return null;
+  const maxLifetime = value.pst === 1 ? PERSISTENT_SESSION_SECONDS : 60 * 60 * 24;
+  if (!value.sid || !value.csrf || value.exp - value.iat > maxLifetime) return null;
   return value;
 }
 
@@ -161,14 +167,18 @@ export function sessionFromRequest(request, env = process.env, options = {}) {
   return openSession(token, env, options);
 }
 
-export function sessionCookie(token, env = process.env) {
+export function sessionCookie(token, env = process.env, options = {}) {
   const config = sessionConfiguration(env);
+  const requested = Number(options.maxAge);
+  const maxAge = Number.isFinite(requested) && requested > 0
+    ? Math.min(PERSISTENT_SESSION_SECONDS, Math.floor(requested))
+    : config.ttl;
   const parts = [
     `${config.cookieName}=${token}`,
     "Path=/",
     "HttpOnly",
     "SameSite=Strict",
-    `Max-Age=${config.ttl}`,
+    `Max-Age=${maxAge}`,
     "Priority=High",
   ];
   if (config.production) parts.push("Secure");
@@ -186,6 +196,17 @@ export function csrfMatches(claims, supplied) {
   const expected = Buffer.from(String(claims?.csrf || ""), "utf8");
   const actual = Buffer.from(String(supplied || ""), "utf8");
   return expected.length > 0 && expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+
+// 클레임 exp 와 쿠키 Max-Age 가 어긋나지 않도록 숫자는 여기서만 나온다.
+export function sessionLifetimeSeconds(persist, env = process.env) {
+  return persist === true ? PERSISTENT_SESSION_SECONDS : sessionConfiguration(env).ttl;
+}
+
+// 세션을 다시 발급할 때 자동 로그인의 원래 만료 시각을 그대로 물려준다(연장 아님).
+export function reissueSessionOptions(claims, env = process.env, now = Date.now()) {
+  if (claims?.pst !== 1) return { ttlSeconds: sessionConfiguration(env).ttl };
+  return { ttlSeconds: Math.max(60, claims.exp - Math.floor(now / 1000)), persist: true };
 }
 
 export function publicSession(claims) {

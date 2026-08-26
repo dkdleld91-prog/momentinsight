@@ -5,8 +5,8 @@ import {
   createSessionClaims,
   parseCookies,
   sealSession,
-  sessionConfiguration,
   sessionCookie,
+  sessionLifetimeSeconds,
 } from "../code-session.mjs";
 import {
   GOOGLE_TOKEN_URL,
@@ -209,7 +209,7 @@ function stateSignature(payloadText, secret) {
 // 브라우저 헤더에서 한 글자라도 받으면 아무나 남의 계정으로 서명된 state 를
 // 받아 가 그 계정에 구글을 연동할 수 있다. 서명(클라이언트 시크릿 HMAC-SHA256)이
 // 이 값들의 유일한 권위다 — 콜백에는 세션 쿠키가 오지 않기 때문이다.
-export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar", role = "owner") {
+export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar", role = "owner", persist = false) {
   const config = googleOauthConfig(env);
   if (!config.clientSecret) return "";
   const payloadText = JSON.stringify({
@@ -218,6 +218,7 @@ export function signOauthState(ownerCode, env = process.env, now = Date.now(), p
     p: cleanText(purpose) || "calendar",
     exp: now + STATE_TTL_MS,
     nonce: crypto.randomBytes(12).toString("base64url"),
+    ...(persist === true ? { k: 1 } : {}),
   });
   const encoded = base64UrlEncode(payloadText);
   return `${encoded}.${stateSignature(encoded, config.clientSecret)}`;
@@ -240,6 +241,8 @@ export function verifyOauthState(state, env = process.env, now = Date.now()) {
     // 영구히 남겨도 비용이 없고, 모르는 역할은 여기서 끝낸다.
     payload.r = cleanText(payload.r).toLowerCase() || "owner";
     if (!PERSONAL_ROLES.has(payload.r)) return null;
+    // 자동 로그인 표식은 서명된 1 만 인정한다. 없거나 다른 값이면 전부 비지속이다.
+    payload.k = payload.k === 1 ? 1 : 0;
     return payload;
   } catch (error) {
     return null;
@@ -884,10 +887,12 @@ async function handlePersonalLoginApi(request, ctx) {
   return loginAccountApi(request, ctx, { role: access.personalRole, code: access.loginCode });
 }
 
-function handleLoginStart() {
+function handleLoginStart(request) {
   const config = googleOauthConfig();
   if (!config.clientId || !config.clientSecret) return loginRedirect("not-configured");
-  const state = signOauthState(primaryAgencyCode(), process.env, Date.now(), "login");
+  // 자동 로그인 선택은 쿼리 한 글자로만 들어오고, 이 서버가 서명한 state 안에서만 살아남는다.
+  const persist = cleanText(new URL(request.url).searchParams.get("persist")) === "1";
+  const state = signOauthState(primaryAgencyCode(), process.env, Date.now(), "login", "owner", persist);
   const url = buildGoogleAuthUrl(state, process.env, LOGIN_SCOPE, "login");
   if (!url) return loginRedirect("not-configured");
   return new Response(null, {
@@ -982,7 +987,7 @@ async function handleLinkCallback(request, ctx, state, code) {
   return loginRedirect("linked", [], linkTarget.role);
 }
 
-async function handleLoginCallback(request, ctx, code) {
+async function handleLoginCallback(request, ctx, code, state) {
   const exchanged = await exchangeOauthCode(code, process.env);
   if (!exchanged.ok) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "exchange-failed" });
@@ -1005,11 +1010,11 @@ async function handleLoginCallback(request, ctx, code) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: resolved.reason });
     return loginRedirect(resolved.reason);
   }
+  const persist = state?.k === 1;
+  const lifetime = sessionLifetimeSeconds(persist);
   let token = "";
   try {
-    token = sealSession(createSessionClaims(resolved.access, {
-      ttlSeconds: sessionConfiguration(process.env).ttl,
-    }));
+    token = sealSession(createSessionClaims(resolved.access, { ttlSeconds: lifetime, persist }));
   } catch (sealError) {
     return loginRedirect("session-unavailable");
   }
@@ -1017,7 +1022,7 @@ async function handleLoginCallback(request, ctx, code) {
   // 로그인 목적의 state 는 시작 시점에 누가 누를지 모르므로 owner 로 서명된다.
   // 목적지는 그 state 가 아니라 방금 확정된 계정 역할이 정한다 — 그러지 않으면
   // 구글로 로그인한 광고주가 자기 화면이 아닌 /admin 으로 떨어진다.
-  return loginRedirect("success", [sessionCookie(token)], resolved.access.role);
+  return loginRedirect("success", [sessionCookie(token, process.env, { maxAge: lifetime })], resolved.access.role);
 }
 
 async function handleOauthCallback(request, ctx) {
@@ -1047,7 +1052,7 @@ async function handleOauthCallback(request, ctx) {
   }
 
   if (state.p === "link") return handleLinkCallback(request, ctx, state, code);
-  if (state.p === "login") return handleLoginCallback(request, ctx, code);
+  if (state.p === "login") return handleLoginCallback(request, ctx, code, state);
   // 연동 대상 계정은 서명된 (r, owner) 로만 복원한다. 그리고 state 가 살아 있는
   // 10분 사이에 해지·연결 해제된 계정이 연동을 완성하지 못하도록 지금도 활성인지
   // 다시 확인한다 — 콜백에는 세션이 없어 이 확인이 유일한 최신 검사다.
@@ -1134,7 +1139,7 @@ export default {
     if (path === PERSONAL_GOOGLE_LOGIN_PATH) return handlePersonalLoginApi(request, ctx);
     if (path === LOGIN_START_PATH && request.method === "GET") {
       if (!await consumeOauthRateLimit(ctx, request, "start")) return loginRedirect("busy");
-      return handleLoginStart();
+      return handleLoginStart(request);
     }
     if (path === CALLBACK_PATH && request.method === "GET") {
       // Whatever the outcome, the browser binding is spent: a state is single use.

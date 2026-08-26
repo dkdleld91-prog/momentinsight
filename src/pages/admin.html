@@ -167,6 +167,24 @@
       text-align: center;
     }
 
+    #mi-admin .mi-login-persist {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    #mi-admin .mi-login-persist input {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: var(--mi-navy-2);
+    }
+
     #mi-admin .mi-app {
       display: grid;
       grid-template-columns: 236px minmax(0, 1fr);
@@ -10669,6 +10687,7 @@
           <div class="mi-code-status" data-admin-login-status aria-live="polite">운영팀 전용 화면입니다.</div>
           <button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>
           <small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>
+          <label class="mi-login-persist"><input type="checkbox" data-google-login-persist />자동 로그인 · 이 기기에서 30일 유지</label>
         </div>
       </aside>
     </div>
@@ -12400,7 +12419,7 @@
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v6-20260826"></script>
-  <script src="/mi-google-nudge.js?v=gnudge-v2-20260826"></script>
+  <script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-admin");
@@ -18121,8 +18140,14 @@
       setLoginMode("operator");
 
       var googleLoginStartButton = root.querySelector("[data-google-login-start]");
+      var googleLoginPersist = root.querySelector("[data-google-login-persist]");
       if (googleLoginStartButton) {
         googleLoginStartButton.addEventListener("click", function () {
+          // 목적지는 두 개의 고정 주소 중 하나다 — 주소를 문자열로 잇지 않는다.
+          if (googleLoginPersist && googleLoginPersist.checked === true) {
+            window.location.href = "/api/google-login/start?persist=1";
+            return;
+          }
           window.location.href = "/api/google-login/start";
         });
       }
@@ -18144,7 +18169,8 @@
           apiBase: "/api/my",
           fetch: miFetch,
           role: secureSession.role,
-          accountTag: googleNudgeAccountTag()
+          accountTag: googleNudgeAccountTag(),
+          loginTag: secureSession.scopeKey
         });
         if (window.MomentGoogleNudge && typeof window.MomentGoogleNudge.drain === "function") {
           window.MomentGoogleNudge.drain();

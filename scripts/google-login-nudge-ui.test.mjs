@@ -23,7 +23,7 @@ const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.
 const vercelConfig = fs.readFileSync(new URL("../vercel.json", import.meta.url), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 
-const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v2-20260826"></script>';
+const SCRIPT_TAG = '<script src="/mi-google-nudge.js?v=gnudge-v3-20260826"></script>';
 const ROOT_ATTRIBUTE = "data-mi-google-nudge";
 
 const LINKED_PAYLOAD = { ok: true, configured: true, storageReady: true, linked: true, googleEmail: "a@b.c" };
@@ -132,9 +132,9 @@ function createRealm({ preloadQueue = null, session = new Map(), payload = UNLIN
   }
 
   // 페이지 글루와 똑같은 모양의 호출. admin.html · client.html 에서 옮겨 적었다.
-  function glue(role, accountTag) {
+  function glue(role, accountTag, loginTag = "") {
     const queue = window.MomentGoogleNudgeQueue || (window.MomentGoogleNudgeQueue = []);
-    queue.push({ apiBase: "/api/my", fetch: miFetch, role, accountTag });
+    queue.push({ apiBase: "/api/my", fetch: miFetch, role, accountTag, loginTag });
     if (window.MomentGoogleNudge && typeof window.MomentGoogleNudge.drain === "function") window.MomentGoogleNudge.drain();
   }
 
@@ -288,27 +288,55 @@ test("닫으면 그 로그인 세션 동안만 사라지고, 이미 닫은 계�
   const session = new Map();
   const first = createRealm({ session });
   first.load();
-  first.glue("team", "team-01");
+  first.glue("team", "team-01", "login-a");
   await first.settle();
   const [secondary] = first.dom.findByClass("mi-google-nudge-secondary");
   secondary.click();
   assert.equal(first.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`), null);
+  // 키는 계정 단위 그대로이고, 값이 "이 로그인" 식별자다.
+  assert.equal(session.get("mi-google-nudge-dismissed:team:team-01"), "login-a");
+
+  // 같은 로그인 안의 새로고침·세션 복원은 조회조차 하지 않는다(세션 중 스팸 없음).
+  const again = createRealm({ session });
+  again.load();
+  again.glue("team", "team-01", "login-a");
+  await again.settle();
+  assert.equal(again.calls.length, 0);
+  assert.equal(again.window.MomentGoogleNudge.lastResult, "already-dismissed");
+
+  // 로그아웃 뒤 재로그인(구글 착지 포함)은 새 scopeKey 를 들고 온다 — 다시 뜬다.
+  const relogin = createRealm({ session });
+  relogin.load();
+  relogin.glue("team", "team-01", "login-b");
+  await relogin.settle();
+  assert.ok(relogin.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`));
+  assert.equal(relogin.calls.length, 1);
+  assert.equal(relogin.window.MomentGoogleNudge.lastResult, "shown");
+
+  // 새 로그인 세션(빈 저장소)에서도 다시 뜬다.
+  const fresh = createRealm();
+  fresh.load();
+  fresh.glue("team", "team-01", "login-c");
+  await fresh.settle();
+  assert.ok(fresh.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`));
+});
+
+test("로그인 표식이 없으면 예전처럼 그 탭 안에서만 조용하다", async () => {
+  const session = new Map();
+  const first = createRealm({ session });
+  first.load();
+  first.glue("team", "team-01");
+  await first.settle();
+  const [secondary] = first.dom.findByClass("mi-google-nudge-secondary");
+  secondary.click();
   assert.equal(session.get("mi-google-nudge-dismissed:team:team-01"), "1");
 
-  // 같은 세션 저장소를 물려받은 다음 렌더는 조회조차 하지 않는다.
   const again = createRealm({ session });
   again.load();
   again.glue("team", "team-01");
   await again.settle();
   assert.equal(again.calls.length, 0);
   assert.equal(again.window.MomentGoogleNudge.lastResult, "already-dismissed");
-
-  // 새 로그인 세션(빈 저장소)에서는 다시 뜬다.
-  const fresh = createRealm();
-  fresh.load();
-  fresh.glue("team", "team-01");
-  await fresh.settle();
-  assert.ok(fresh.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`));
 });
 
 test("회귀: 페이지 글루가 공유 스크립트보다 먼저 돌아도 뜬다", async () => {
@@ -376,6 +404,9 @@ test("두 페이지가 순서에 기대지 않는 큐 글루로 부른다", () =
   // 광고주: 코드 로그인과 세션 복원 두 곳 모두.
   assert.equal((clientSource.match(/maybeShowGoogleNudge\(\);/g) || []).length, 2);
   assert.ok(clientSource.includes('return secureClientSession.clientId || secureClientSession.scopeKey || "";'));
+  // 해제 표식이 "이 로그인" 안에서만 살도록 로그인 식별자를 같이 넘긴다.
+  assert.ok(adminSource.includes("loginTag: secureSession.scopeKey"));
+  assert.ok(clientSource.includes("loginTag: secureClientSession.scopeKey"));
 });
 
 test("팝업 마크업은 공유 스크립트 안에만 있다", () => {

@@ -10,6 +10,8 @@
  * (예: .mi-cal-metric 의 border:0 → border-left 순서가 바뀌면 칸 구분선이 사라진다).
  * 키프레임 이름은 호스트 페이지와 겹치지 않도록 mi-cal-* 로만 짓는다.
  */
+@import url("./mi-tokens.css");
+
 .mi-cal-shell {
   --mi-cal-bg: var(--mi-bg, #f4f6fa);
   --mi-cal-panel: var(--mi-panel, #ffffff);
@@ -98,8 +100,8 @@
   border: 1px solid rgba(6, 26, 58, 0.08);
   border-radius: 22px;
   padding: 26px 28px;
-  background: linear-gradient(145deg, #fff 0%, #f6f8fc 100%);
-  box-shadow: 0 16px 40px rgba(6, 26, 58, 0.06);
+  background: linear-gradient(145deg, #fff 0%, var(--mi-grey-50) 100%);
+  box-shadow: var(--mi-cal-shadow);
 }
 
 .mi-cal-hero::after {
@@ -240,8 +242,8 @@
 
 .mi-cal-dialog-head .mi-cal-icon-button {
   flex: 0 0 auto;
-  border-color: #e2e8f1;
-  background: #f8fafc;
+  border-color: var(--mi-line);
+  background: var(--mi-grey-50);
   transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
 }
 
@@ -388,7 +390,7 @@
   border: 1px solid rgba(9, 30, 60, 0.1);
   border-radius: 19px;
   padding: 21px;
-  background: linear-gradient(180deg, #fdfdfe 0%, #f7f9fc 100%);
+  background: linear-gradient(180deg, #fdfdfe 0%, var(--mi-grey-50) 100%);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 16px 38px rgba(6, 26, 58, 0.07);
 }
 
@@ -973,7 +975,7 @@
   overflow: hidden;
   border: 1px solid #e4eaf2;
   border-radius: 16px;
-  background: linear-gradient(180deg, #fff 0%, #f7f9fc 100%);
+  background: linear-gradient(180deg, #fff 0%, var(--mi-grey-50) 100%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
@@ -982,7 +984,7 @@
   display: grid;
   gap: 6px;
   border: 0;
-  border-left: 1px solid #edf1f6;
+  border-left: 1px solid var(--mi-gold-soft);
   border-radius: 0;
   margin: 0;
   padding: 15px 16px 14px;
@@ -1067,7 +1069,7 @@ button.mi-cal-metric:hover {
   grid-template-columns: 70px minmax(0, 1fr);
   gap: 10px;
   align-items: center;
-  border-top: 1px solid #edf1f6;
+  border-top: 1px solid var(--mi-gold-soft);
   padding-top: 8px;
 }
 
@@ -1114,7 +1116,7 @@ button.mi-cal-metric:hover {
   border-radius: 12px;
   padding: 18px;
   color: #7b8797;
-  background: #fbfcfe;
+  background: var(--mi-grey-50);
   font-size: 11px;
   font-weight: 800;
   text-align: center;
@@ -1128,7 +1130,7 @@ button.mi-cal-metric:hover {
 
 .mi-cal-assistant-chip {
   min-height: 31px;
-  border: 1px solid #dce4ee;
+  border: 1px solid var(--mi-line);
   border-radius: 999px;
   padding: 0 11px;
   color: #475569;
@@ -1157,7 +1159,7 @@ button.mi-cal-metric:hover {
   border: 1px solid #e3eaf3;
   border-radius: 14px;
   padding: 11px 12px;
-  background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+  background: linear-gradient(180deg, #fff 0%, var(--mi-grey-50) 100%);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 
@@ -1293,7 +1295,7 @@ button.mi-cal-metric:hover {
   border: 1px solid #dbe6f5;
   border-radius: 14px;
   padding: 13px 14px;
-  background: #f7faff;
+  background: var(--mi-grey-50);
 }
 
 .mi-cal-assistant-chat-question {
@@ -1324,7 +1326,7 @@ button.mi-cal-metric:hover {
   border: 1px solid #e4eaf2;
   border-radius: 14px;
   padding: 13px 14px;
-  background: #fbfcfe;
+  background: var(--mi-grey-50);
 }
 
 .mi-cal-assistant-draft-copy {
@@ -1367,7 +1369,7 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-assistant-unresolved strong {
-  color: #a55b12;
+  color: var(--mi-warn);
   font-size: 11px;
 }
 
@@ -1399,7 +1401,7 @@ button.mi-cal-metric:hover {
   border: 1px solid rgba(223, 229, 239, 0.9);
   border-radius: 8px;
   padding: 18px;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  background: linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
   box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
 }
 
@@ -1593,7 +1595,7 @@ button.mi-cal-metric:hover {
 .mi-cal-filter-clear {
   min-height: 28px;
   padding: 0 9px;
-  border: 1px solid #dce5f0;
+  border: 1px solid var(--mi-line);
   border-radius: 999px;
   color: #586a84;
   background: #fff;
@@ -2208,13 +2210,13 @@ button.mi-cal-metric:hover {
 .mi-cal-quick-done[data-status="done"] {
   border-color: #cde5d8;
   color: #267451;
-  background: #edf8f2;
+  background: var(--mi-green-bg);
 }
 
 .mi-cal-quick-done[data-status="done"]:hover {
   border-color: #b7c4d4;
   color: #526176;
-  background: #f7f9fc;
+  background: var(--mi-grey-50);
 }
 
 .mi-cal-agenda-item[data-status="done"] {
@@ -2270,7 +2272,7 @@ button.mi-cal-metric:hover {
 .mi-cal-month-trigger:hover,
 .mi-cal-month-trigger:focus-visible,
 .mi-cal-month-trigger[aria-expanded="true"] {
-  background: #f1f5f9;
+  background: var(--mi-gold-soft);
   outline: none;
 }
 
@@ -2323,7 +2325,7 @@ button.mi-cal-metric:hover {
   min-height: 38px;
   border: 1px solid transparent;
   border-radius: 10px;
-  background: #f7f9fc;
+  background: var(--mi-grey-50);
   color: #45536a;
   cursor: pointer;
   font-family: inherit;
@@ -2334,7 +2336,7 @@ button.mi-cal-metric:hover {
 .mi-cal-month-choice:hover,
 .mi-cal-month-choice:focus-visible {
   border-color: #b9c7d9;
-  background: #eef3f8;
+  background: var(--mi-gold-soft);
   outline: none;
 }
 
@@ -2370,7 +2372,7 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-weekdays {
-  background: #f8fafc;
+  background: var(--mi-grey-50);
   border-bottom: 1px solid var(--mi-cal-line);
 }
 
@@ -2411,8 +2413,8 @@ button.mi-cal-metric:hover {
   min-height: 118px;
   padding: 10px;
   overflow: hidden;
-  border-right: 1px solid #edf1f6;
-  border-bottom: 1px solid #edf1f6;
+  border-right: 1px solid var(--mi-gold-soft);
+  border-bottom: 1px solid var(--mi-gold-soft);
   background: #fff;
   cursor: pointer;
   transition: background-color 0.16s ease, box-shadow 0.16s ease;
@@ -2427,7 +2429,7 @@ button.mi-cal-metric:hover {
   width: 22px;
   height: 22px;
   place-items: center;
-  border: 1px solid #dce5f0;
+  border: 1px solid var(--mi-line);
   border-radius: 8px;
   color: #58708f;
   background: rgba(255, 255, 255, 0.9);
@@ -2441,7 +2443,7 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-day:hover {
-  background: #f8fbff;
+  background: var(--mi-grey-50);
   box-shadow: inset 0 0 0 1px rgba(22, 79, 150, 0.12);
 }
 
@@ -2455,11 +2457,11 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-day.is-muted {
-  background: #fbfcfe;
+  background: var(--mi-grey-50);
 }
 
 .mi-cal-day.is-today {
-  background: #f7fbff;
+  background: var(--mi-grey-50);
   box-shadow: inset 0 0 0 1px rgba(22, 79, 150, 0.18);
 }
 
@@ -2506,9 +2508,9 @@ button.mi-cal-metric:hover {
   width: 100%;
   padding: 6px 8px;
   overflow: hidden;
-  border: 1px solid #dce5f0;
+  border: 1px solid var(--mi-line);
   border-radius: 9px;
-  background: #f7faff;
+  background: var(--mi-grey-50);
   color: #223553;
   cursor: grab;
   font-family: inherit;
@@ -2541,7 +2543,7 @@ button.mi-cal-metric:hover {
 /* 대표실과 같은 자리에서 왼쪽 굵은 띠를 얹는다. 순서가 바뀌면 done·gcal 규칙이
    덮어써야 할 색을 도로 회색으로 되돌린다. */
 .mi-cal-day-item {
-  border-left: 4px solid #dce5f0;
+  border-left: 4px solid var(--mi-line);
 }
 
 .mi-cal-day-item[data-gcal="1"] {
@@ -2552,7 +2554,7 @@ button.mi-cal-metric:hover {
 }
 
 .mi-cal-day-item[data-gcal="1"][data-allday="false"] {
-  border-color: #dce5f0;
+  border-color: var(--mi-line);
   background: #fff;
   color: #223553;
 }
@@ -2578,7 +2580,7 @@ button.mi-cal-metric:hover {
   border: 0;
   border-radius: 999px;
   color: #536783;
-  background: #edf3fa;
+  background: var(--mi-gold-soft);
   cursor: pointer;
   font-family: inherit;
   font-size: 9px;
@@ -3143,7 +3145,7 @@ button.mi-cal-metric:hover {
 
   .mi-cal-metric {
     border-left: 0;
-    border-top: 1px solid #edf1f6;
+    border-top: 1px solid var(--mi-gold-soft);
   }
 
   .mi-cal-metric:nth-child(-n + 2) {
@@ -3151,7 +3153,7 @@ button.mi-cal-metric:hover {
   }
 
   .mi-cal-metric:nth-child(2n) {
-    border-left: 1px solid #edf1f6;
+    border-left: 1px solid var(--mi-gold-soft);
   }
 
   .mi-cal-hero {

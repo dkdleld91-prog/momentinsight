@@ -1,0 +1,72 @@
+/*!
+ * 모먼트 인사이트 · 공통 디자인 토큰 (UI 고도화 1단계)
+ *
+ * 세 갈래로 흩어져 있던 값(admin.html·client.html 인라인 CSS, home.html 인라인 CSS,
+ * mi-personal-calendar.css)의 단일 출처다. 같은 이름의 토큰이 페이지 안에도 있으면
+ * 그 페이지 정의가 이긴다(스코프 선택자가 :root 보다 구체적이라서). 그러므로
+ * "값이 갈린" 페이지 정의는 지워 이 파일로 떨어지게 하고, 값이 같은 정의만 남긴다.
+ *
+ * 남겨 둔 페이지 정의(#mi-admin / #mi-clean / .mi-cal-shell)는 대표실 패리티
+ * 드리프트 테스트(scripts/personal-calendar-ui.test.mjs)가 그 자리에서 리터럴을
+ * 읽어 확인하는 값들이다. 값은 이 파일과 같으며, 정의 자체를 옮기는 일은 2단계로 미뤘다.
+ *
+ * CSP: 외부 파일이므로 style-src 'self' 로 로드된다(해시 불필요).
+ */
+:root {
+  /* ── 색 · 네이비 ─────────────────────────────────────────── */
+  --mi-navy: #061a3a;
+  --mi-navy-2: #0b2346;
+
+  /* ── 색 · 상태 ───────────────────────────────────────────── */
+  --mi-green: #13795b;
+  --mi-green-bg: #eaf7f1;
+  --mi-warn: #a75f16;
+  --mi-warn-bg: #fff4e6;
+  --mi-danger: #b42318;
+  --mi-blue: #2558d8;
+
+  /* 기존 이름 유지용 별칭. 페이지가 --mi-orange 로 부르던 값이 곧 warn 이다. */
+  --mi-orange: var(--mi-warn);
+  --mi-orange-bg: var(--mi-warn-bg);
+
+  /* ── 색 · 회색 계단 ──────────────────────────────────────── */
+  --mi-ink: #111827;
+  --mi-muted: #667085;
+  --mi-line: #dfe5ef;
+  --mi-bg: #f4f6fa;
+  --mi-panel: #ffffff;
+  --mi-grey-50: #f8fafc;
+  --mi-gold: #e9eef6;
+  --mi-gold-soft: #eef2f7;
+
+  /* ── 간격 · 4의 배수 ─────────────────────────────────────── */
+  --mi-space-1: 4px;
+  --mi-space-2: 8px;
+  --mi-space-3: 12px;
+  --mi-space-4: 16px;
+  --mi-space-5: 20px;
+  --mi-space-6: 24px;
+
+  /* ── 모서리 ─────────────────────────────────────────────── */
+  --mi-radius: 8px;
+  --mi-radius-pill: 999px;
+
+  /* ── 그림자 · 하나만 쓴다 ───────────────────────────────── */
+  --mi-shadow: 0 16px 38px rgba(6, 26, 58, 0.07);
+
+  /* ── 글자 ───────────────────────────────────────────────── */
+  --mi-font-label: 11px;
+  --mi-font-body: 12px;
+  --mi-font-body-lg: 13px;
+  --mi-font-h4: 15px;
+  --mi-font-h3: 18px;
+  --mi-font-h2: 22px;
+  --mi-font-h1: 28px;
+  --mi-weight-regular: 400;
+  --mi-weight-bold: 700;
+  --mi-weight-black: 900;
+
+  /* ── 버튼 높이 ──────────────────────────────────────────── */
+  --mi-button-primary-h: 44px;
+  --mi-button-secondary-h: 34px;
+}

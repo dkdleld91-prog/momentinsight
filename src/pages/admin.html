@@ -6,6 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
 <meta http-equiv="Pragma" content="no-cache" />
 <meta http-equiv="Expires" content="0" />
+<link rel="stylesheet" href="/mi-tokens.css?v=tokens-v1-20260826" />
 <link rel="stylesheet" href="/mi-personal-calendar.css?v=cal-v6-20260826" />
 <section id="mi-admin" class="mi-admin-wrap is-locked">
   <style>
@@ -98,7 +99,7 @@
     #mi-admin .mi-login-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -178,7 +179,7 @@
       height: 100vh;
       overflow-y: auto;
       border-right: 1px solid rgba(213, 221, 233, 0.92);
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       padding: 22px 16px;
       box-shadow: 12px 0 32px rgba(6, 26, 58, 0.035);
     }
@@ -236,7 +237,7 @@
       gap: 6px;
       min-height: 43px;
       border: 1px solid transparent;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 0 12px;
       color: var(--mi-muted);
       font-size: 14px;
@@ -256,7 +257,7 @@
     #mi-admin .mi-nav a.is-active {
       color: var(--mi-navy);
       border-color: rgba(6, 26, 58, 0.06);
-      background: linear-gradient(90deg, #edf3fa 0%, #f4f7fb 100%);
+      background: linear-gradient(90deg, var(--mi-gold-soft) 0%, #f4f7fb 100%);
       box-shadow: inset 3px 0 0 var(--mi-navy), 0 8px 18px rgba(6, 26, 58, 0.045);
     }
 
@@ -273,7 +274,7 @@
       border: 1px solid rgba(223, 229, 239, 0.92);
       border-radius: 12px;
       padding: 12px;
-      background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 10px 24px rgba(6, 26, 58, 0.045);
     }
 
@@ -357,7 +358,7 @@
       border: 1px solid rgba(223, 229, 239, 0.9);
       border-radius: 8px;
       padding: 18px;
-      background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+      background: linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 12px 30px rgba(6, 26, 58, 0.045);
     }
 
@@ -500,7 +501,7 @@
     #mi-admin .mi-card {
       border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: var(--mi-shadow);
     }
 
@@ -518,7 +519,7 @@
 
     #mi-admin .mi-card-head p {
       max-width: 560px;
-      color: #667085;
+      color: var(--mi-muted);
       font-size: 13px;
       line-height: 1.45;
     }
@@ -736,7 +737,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 13px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-readiness-item strong,
@@ -772,7 +773,7 @@
       border-radius: 999px;
       padding: 0 12px;
       color: var(--mi-navy);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 12px;
       font-weight: 900;
       white-space: nowrap;
@@ -821,7 +822,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 14px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-step-card b {
@@ -867,7 +868,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 11px 70px 11px 12px;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-sheet-tab::after {
@@ -893,7 +894,7 @@
     #mi-admin .mi-sheet-tab.is-auto::after {
       content: "자동";
       color: var(--mi-muted);
-      background: #eef3f8;
+      background: var(--mi-gold-soft);
     }
 
     #mi-admin .mi-sheet-tab strong,
@@ -930,7 +931,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 13px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-trust-item strong {
@@ -962,7 +963,7 @@
       padding: 30px;
       background:
         radial-gradient(circle at 92% 10%, rgba(41, 83, 156, 0.11), transparent 34%),
-        linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+        linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 20px 50px rgba(6, 26, 58, 0.06);
     }
 
@@ -1024,7 +1025,7 @@
     #mi-admin .mi-ops-quick-card:hover {
       transform: translateY(-2px);
       border-color: rgba(15, 39, 73, 0.24);
-      box-shadow: 0 16px 32px rgba(6, 26, 58, 0.075);
+      box-shadow: var(--mi-shadow);
     }
 
     #mi-admin .mi-ops-quick-card:focus-visible {
@@ -1040,7 +1041,7 @@
       justify-content: center;
       border-radius: 999px;
       color: #52637d;
-      background: #edf1f7;
+      background: var(--mi-gold-soft);
       font-size: 10px;
       font-weight: 950;
       letter-spacing: 0.05em;
@@ -1089,7 +1090,7 @@
       color: #fff;
       background:
         radial-gradient(circle at 88% 12%, rgba(111, 148, 211, 0.25), transparent 34%),
-        linear-gradient(145deg, #071d40 0%, #061630 100%);
+        linear-gradient(145deg, var(--mi-navy) 0%, #061630 100%);
     }
 
     #mi-admin .mi-ops-flow-card h2,
@@ -1212,10 +1213,10 @@
     #mi-admin .mi-ops-status-card {
       min-width: 0;
       min-height: 116px;
-      border: 1px solid #e2e8f1;
+      border: 1px solid var(--mi-line);
       border-radius: 14px;
       padding: 18px 19px;
-      background: #f8fafd;
+      background: var(--mi-grey-50);
       transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
     }
 
@@ -1661,7 +1662,7 @@
     #mi-admin .mi-channel-stat {
       border-radius: 8px;
       padding: 10px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-channel-stat span,
@@ -1710,7 +1711,7 @@
 
     #mi-admin .mi-keyword-main p {
       font-size: 13px;
-      font-weight: 650;
+      font-weight: 700;
       line-height: 1.45;
     }
 
@@ -1718,7 +1719,7 @@
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 14px;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-profile-grid {
@@ -1759,7 +1760,7 @@
       overflow: hidden;
       border: 1px solid #dbe3ee;
       border-radius: 8px;
-      background: #eef3f9;
+      background: var(--mi-gold-soft);
     }
 
     #mi-admin .mi-profile-segment {
@@ -1803,7 +1804,7 @@
       border: 1px dashed #d9dee7;
       border-radius: 8px;
       color: var(--mi-muted);
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
       font-size: 12px;
       font-weight: 850;
     }
@@ -1834,8 +1835,8 @@
       gap: 8px;
       padding: 12px;
       border: 1px solid var(--mi-line);
-      border-radius: 10px;
-      background: #f8fafc;
+      border-radius: 8px;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-seo-confirm-head {
@@ -1869,7 +1870,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       color: var(--mi-muted);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 12px;
       font-weight: 800;
       line-height: 1.55;
@@ -1906,7 +1907,7 @@
       border-radius: 999px;
       background:
         radial-gradient(circle at center, #fff 0 58%, transparent 59%),
-        conic-gradient(#061a3a calc(var(--score) * 1%), #e8eef6 0);
+        conic-gradient(var(--mi-navy) calc(var(--score) * 1%), #e8eef6 0);
     }
 
     #mi-admin .mi-seo-score-ring strong {
@@ -1956,7 +1957,7 @@
       grid-template-columns: 86px minmax(0, 1fr);
       gap: 8px;
       align-items: center;
-      border-top: 1px solid #edf1f6;
+      border-top: 1px solid var(--mi-gold-soft);
       padding-top: 8px;
       color: var(--mi-navy);
       font-size: 12px;
@@ -2007,10 +2008,10 @@
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 10px;
       align-items: start;
-      border: 1px solid #edf1f6;
+      border: 1px solid var(--mi-gold-soft);
       border-radius: 8px;
       padding: 11px 12px;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-seo-check strong,
@@ -2029,7 +2030,7 @@
       border: 1px solid #dbe5f2;
       border-radius: 999px;
       color: #5d6b82;
-      background: #f5f8fc;
+      background: var(--mi-grey-50);
       font-size: 9px;
       font-weight: 900;
       vertical-align: middle;
@@ -2065,9 +2066,9 @@
 
     #mi-admin .mi-meta-brief div,
     #mi-admin .mi-meta-empty {
-      border: 1px solid #e2e8f0;
+      border: 1px solid var(--mi-line);
       border-radius: 8px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       padding: 14px;
     }
 
@@ -2096,11 +2097,11 @@
       display: grid;
       gap: 12px;
       min-height: 260px;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 8px;
       background: #fff;
       padding: 16px;
-      box-shadow: 0 14px 32px rgba(8, 28, 56, 0.07);
+      box-shadow: var(--mi-shadow);
     }
 
     #mi-admin .mi-meta-ad-top {
@@ -2145,7 +2146,7 @@
       display: grid;
       gap: 4px;
       min-height: 42px;
-      border-top: 1px solid #eef3f8;
+      border-top: 1px solid var(--mi-gold-soft);
       padding-top: 10px;
     }
 
@@ -2177,7 +2178,7 @@
       place-items: center;
       border: 1px solid #e5edf6;
       border-radius: 8px;
-      background: linear-gradient(135deg, #061a3a, #12345f);
+      background: linear-gradient(135deg, var(--mi-navy), #12345f);
       color: #fff;
       font-size: 13px;
       font-weight: 900;
@@ -2223,7 +2224,7 @@
       display: grid;
       gap: 12px;
       min-height: 210px;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 8px;
       background: #fff;
       padding: 16px;
@@ -2265,7 +2266,7 @@
 
     #mi-admin .mi-meta-delete {
       border-color: #ffd8d8;
-      color: #b42318;
+      color: var(--mi-danger);
       background: #fff7f7;
     }
 
@@ -2282,7 +2283,7 @@
       justify-content: center;
       border-radius: 999px;
       color: #fff;
-      background: #061a3a;
+      background: var(--mi-navy);
       font-size: 12px;
       font-weight: 950;
     }
@@ -2308,10 +2309,10 @@
       height: 110px;
       place-items: center;
       overflow: hidden;
-      border: 1px solid #edf1f6;
+      border: 1px solid var(--mi-gold-soft);
       border-radius: 8px;
       color: var(--mi-muted);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 12px;
       font-weight: 850;
       text-align: center;
@@ -2351,7 +2352,7 @@
       display: inline-flex;
       min-height: 28px;
       align-items: center;
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 5px 9px;
       color: var(--mi-navy);
@@ -2389,7 +2390,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       color: var(--mi-navy);
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
       font-size: 13px;
       font-weight: 900;
       white-space: nowrap;
@@ -2437,10 +2438,10 @@
       align-content: space-between;
       min-height: 116px;
       border: 1px solid #10294f;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 15px 16px;
       color: #fff;
-      background: linear-gradient(135deg, #071d3d 0%, #0f315f 100%);
+      background: linear-gradient(135deg, var(--mi-navy) 0%, #0f315f 100%);
       box-shadow: 0 16px 34px rgba(8, 29, 61, 0.12);
     }
 
@@ -2488,15 +2489,15 @@
       gap: 0;
       overflow: hidden;
       border: 1px solid #e2e9f2;
-      border-radius: 10px;
+      border-radius: 8px;
       background: #fff;
     }
 
     #mi-admin .mi-rank-kpi {
       min-height: 116px;
-      border-right: 1px solid #edf2f7;
+      border-right: 1px solid var(--mi-gold-soft);
       padding: 15px 16px;
-      background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -2555,7 +2556,7 @@
       border-radius: 999px;
       padding: 3px 8px;
       color: #51617a;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
       font-size: 10px;
       font-style: normal;
       font-weight: 850;
@@ -2570,7 +2571,7 @@
       border: 1px dashed var(--mi-line);
       border-radius: 8px;
       color: var(--mi-muted);
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
       text-align: center;
       font-size: 12px;
       font-weight: 850;
@@ -2601,7 +2602,7 @@
       gap: 0;
       overflow: hidden;
       border: 1px solid #e2e9f2;
-      border-radius: 10px;
+      border-radius: 8px;
       background: #fff;
     }
 
@@ -2610,16 +2611,16 @@
       grid-template-columns: 72px 104px minmax(220px, 1fr) 120px 96px;
       gap: 10px;
       padding: 12px 14px;
-      border-bottom: 1px solid #edf1f6;
+      border-bottom: 1px solid var(--mi-gold-soft);
       align-items: center;
       color: var(--mi-navy);
       font-size: 12px;
-      font-weight: 760;
+      font-weight: 700;
     }
 
     #mi-admin .mi-rank-table div:first-child {
       color: var(--mi-muted);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       font-weight: 900;
       min-height: 38px;
@@ -2648,7 +2649,7 @@
       border: 1px solid #d9e4f2;
       border-radius: 999px;
       padding: 3px 8px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: #f4f7fb;
       font-size: 11px;
       font-weight: 900;
@@ -2669,7 +2670,7 @@
       gap: 12px;
       padding: 14px 16px;
       border-bottom: 1px solid #e5ebf2;
-      background: linear-gradient(135deg, #ffffff 0%, #f7faff 100%);
+      background: linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
     }
 
     #mi-admin .mi-rank-exposure-identity,
@@ -2687,7 +2688,7 @@
     }
 
     #mi-admin .mi-rank-exposure-identity strong {
-      color: #071a38;
+      color: var(--mi-navy);
       font-size: 15px;
       font-weight: 950;
     }
@@ -2706,7 +2707,7 @@
       height: 22px;
       align-items: center;
       justify-content: center;
-      border-radius: 7px;
+      border-radius: 8px;
       border: 1px solid rgba(3, 199, 90, 0.18);
       color: #057a3b;
       background: linear-gradient(135deg, #e9fbf1, #dff7e9);
@@ -2748,7 +2749,7 @@
     }
 
     #mi-admin .mi-rank-exposure-item.is-exact {
-      background: linear-gradient(90deg, #f6f9fd 0%, #ffffff 72%);
+      background: linear-gradient(90deg, var(--mi-grey-50) 0%, #ffffff 72%);
       box-shadow: inset 3px 0 0 #0b2f5b;
     }
 
@@ -2763,7 +2764,7 @@
       border: 1px solid #e4eaf1;
       border-radius: 12px;
       color: #8fa1b8;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
       font-size: 18px;
       font-weight: 950;
     }
@@ -2780,7 +2781,7 @@
       top: 6px;
       left: 6px;
       z-index: 1;
-      border-radius: 7px;
+      border-radius: 8px;
       padding: 4px 6px;
       color: #fff;
       background: #0b2f5b;
@@ -2810,7 +2811,7 @@
       border-radius: 999px;
       padding: 3px 6px;
       color: #52627a;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 9.5px;
       font-weight: 900;
     }
@@ -2861,11 +2862,11 @@
 
     #mi-admin .mi-rank-exposure-action {
       display: inline-flex;
-      min-height: 32px;
+      min-height: 34px;
       align-items: center;
       justify-content: center;
       border: 1px solid #ccd8e7;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 0 10px;
       color: #0b2f5b;
       background: #fff;
@@ -2883,7 +2884,7 @@
       margin: 0;
       padding: 10px 16px;
       color: #64748b;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       line-height: 1.55;
     }
@@ -2906,7 +2907,7 @@
     #mi-admin .mi-rank-actions button {
       min-height: 30px;
       padding: 6px 10px;
-      border-radius: 7px;
+      border-radius: 8px;
       font-size: 11px;
     }
 
@@ -2931,7 +2932,7 @@
       border: 1px solid #dbe4ef;
       border-radius: 8px;
       padding: 10px 12px;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-rank-auto-head {
@@ -2976,7 +2977,7 @@
 
     #mi-admin .mi-rank-auto-status.is-error {
       border-color: #fecaca;
-      color: #b42318;
+      color: var(--mi-danger);
       background: #fff1f1;
     }
 
@@ -2989,7 +2990,7 @@
     #mi-admin .mi-rank-auto-metric {
       min-height: 56px;
       border: 1px solid #e3eaf3;
-      border-radius: 7px;
+      border-radius: 8px;
       padding: 8px 10px;
       background: #ffffff;
     }
@@ -3015,7 +3016,7 @@
 
     #mi-admin .mi-rank-auto-metric.is-ok {
       border-color: #cfe8d9;
-      background: #f7fcf9;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-rank-auto-metric.is-warn {
@@ -3035,7 +3036,7 @@
       border: 1px solid #cedbea;
       border-radius: 14px;
       padding: 14px;
-      background: linear-gradient(145deg, #071f3d 0%, #102f54 100%);
+      background: linear-gradient(145deg, var(--mi-navy) 0%, #102f54 100%);
       color: #ffffff;
       box-shadow: 0 16px 38px rgba(7, 31, 61, 0.16);
     }
@@ -3105,7 +3106,7 @@
     #mi-admin .mi-rank-worker-metric {
       min-height: 68px;
       border: 1px solid rgba(255, 255, 255, .12);
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 9px 10px;
       background: rgba(255, 255, 255, .055);
     }
@@ -3136,7 +3137,7 @@
 
     #mi-admin .mi-rank-worker-alert {
       border-left: 3px solid #fbbf24;
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 7px 9px;
       color: #ffedd5;
       background: rgba(245, 158, 11, .12);
@@ -3158,7 +3159,7 @@
     #mi-admin .mi-rank-worker-actions .mi-button {
       min-height: 34px;
       border-color: rgba(255, 255, 255, .22);
-      color: #071f3d;
+      color: var(--mi-navy);
       background: #ffffff;
       font-size: 11px;
     }
@@ -3185,10 +3186,10 @@
 
     #mi-admin .mi-rank-ops-card {
       min-height: 72px;
-      border: 1px solid #dde5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 11px 12px;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-rank-ops-card span,
@@ -3246,7 +3247,7 @@
       border: 1px solid #d6e1ee;
       border-radius: 14px;
       padding: 4px 5px 4px 6px;
-      background: linear-gradient(135deg, #ffffff 0%, #f6f9fd 100%);
+      background: linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 8px 18px rgba(15, 35, 70, 0.045);
     }
 
@@ -3254,9 +3255,9 @@
       min-height: 28px;
       display: inline-flex;
       align-items: center;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 0 9px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: #eaf2fb;
       font-size: 10.5px;
       font-weight: 900;
@@ -3267,23 +3268,23 @@
     #mi-admin .mi-rank-group-filter .mi-input {
       min-height: 32px;
       border: 0;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 6px 28px 6px 10px;
       background: transparent;
-      color: #071f3d;
+      color: var(--mi-navy);
       font-weight: 850;
       box-shadow: none;
     }
 
     #mi-admin .mi-rank-group-filter.is-filtered {
       border-color: #a7b8cc;
-      background: linear-gradient(135deg, #f9fbfe 0%, #edf4fb 100%);
+      background: linear-gradient(135deg, var(--mi-grey-50) 0%, #edf4fb 100%);
       box-shadow: 0 12px 28px rgba(11, 35, 70, 0.1);
     }
 
     #mi-admin .mi-rank-group-filter.is-filtered span {
       color: #ffffff;
-      background: #0b2346;
+      background: var(--mi-navy-2);
     }
 
     #mi-admin .mi-rank-filter-actions {
@@ -3295,7 +3296,7 @@
 
     #mi-admin .mi-rank-filter-button {
       min-height: 36px;
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 7px 11px;
       color: #5f6f86;
@@ -3316,9 +3317,9 @@
     }
 
     #mi-admin .mi-rank-filter-button.is-active {
-      border-color: #0b2346;
+      border-color: var(--mi-navy-2);
       color: #fff;
-      background: #0b2346;
+      background: var(--mi-navy-2);
     }
 
     #mi-admin .mi-rank-refresh-all {
@@ -3326,7 +3327,7 @@
       border: 1px solid #d7e2ef;
       border-radius: 999px;
       padding: 7px 13px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: linear-gradient(135deg, #ffffff 0%, #f4f8fd 100%);
       font-size: 11px;
       font-weight: 950;
@@ -3355,7 +3356,7 @@
       border: 1px solid #d7e2ef;
       border-radius: 999px;
       padding: 7px 13px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: linear-gradient(135deg, #ffffff 0%, #f4f8fd 100%);
       font-size: 11px;
       font-weight: 950;
@@ -3368,7 +3369,7 @@
     #mi-admin .mi-rank-share-image:hover,
     #mi-admin .mi-rank-share-image:focus-visible {
       border-color: #aebfd3;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: linear-gradient(135deg, #ffffff 0%, #eef4fb 100%);
       box-shadow: 0 12px 24px rgba(15, 35, 70, 0.1);
       transform: translateY(-1px);
@@ -3386,11 +3387,11 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 7px 11px;
       color: var(--mi-muted);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       font-weight: 900;
       white-space: nowrap;
@@ -3398,7 +3399,7 @@
 
     #mi-admin .mi-rank-filter-help {
       margin: -2px 0 12px;
-      color: #667085;
+      color: var(--mi-muted);
       font-size: 11px;
       font-weight: 800;
       line-height: 1.45;
@@ -3415,7 +3416,7 @@
       border: 1px solid #d9e3f0;
       border-radius: 18px;
       background: #ffffff;
-      box-shadow: 0 14px 36px rgba(15, 35, 70, 0.06);
+      box-shadow: var(--mi-shadow);
     }
 
     #mi-admin .mi-rank-group-section::before {
@@ -3436,7 +3437,7 @@
       border-bottom: 1px solid #e4ebf4;
       padding: 15px 18px 14px 20px;
       color: var(--mi-navy);
-      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
       font: inherit;
       text-align: left;
       cursor: pointer;
@@ -3448,14 +3449,14 @@
       gap: 8px;
       align-items: center;
       font-size: 15px;
-      font-weight: 880;
+      font-weight: 900;
     }
 
     #mi-admin .mi-rank-group-meta {
       color: #596981;
       font-size: 11px;
       font-weight: 850;
-      border: 1px solid #dce6f2;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 4px 9px;
       background: #ffffff;
@@ -3467,7 +3468,7 @@
       font-size: 11px;
       font-weight: 850;
       text-align: center;
-      border: 1px solid #dce6f2;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 6px 10px;
       background: #fff;
@@ -3477,7 +3478,7 @@
       display: grid;
       gap: 10px;
       padding: 14px;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-rank-group-items .mi-rank-tracker-card {
@@ -3490,7 +3491,7 @@
     }
 
     #mi-admin .mi-rank-group-edit {
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 4px 8px;
       color: #52627a;
@@ -3501,8 +3502,8 @@
     }
 
     #mi-admin .mi-rank-group-edit:hover {
-      border-color: #0b2346;
-      color: #0b2346;
+      border-color: var(--mi-navy-2);
+      color: var(--mi-navy-2);
       transform: translateY(-1px);
     }
 
@@ -3513,9 +3514,9 @@
       align-items: center;
       margin-bottom: 12px;
       padding: 12px 14px;
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 16px;
-      background: linear-gradient(135deg, #ffffff 0%, #f7fafd 100%);
+      background: linear-gradient(135deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 10px 26px rgba(15, 35, 70, 0.045);
     }
 
@@ -3540,7 +3541,7 @@
       width: 7px;
       height: 7px;
       border-radius: 999px;
-      background: #0b2346;
+      background: var(--mi-navy-2);
       box-shadow: 0 0 0 4px rgba(11, 35, 70, 0.08);
     }
 
@@ -3554,7 +3555,7 @@
       flex-basis: 100%;
       color: #7b8798;
       font-size: 10.5px;
-      font-weight: 820;
+      font-weight: 900;
       line-height: 1.35;
     }
 
@@ -3568,13 +3569,13 @@
 
     #mi-admin .mi-rank-bulk-actions .mi-input {
       min-height: 36px;
-      border-radius: 10px;
+      border-radius: 8px;
       font-size: 11px;
     }
 
     #mi-admin .mi-rank-bulk-actions button {
-      min-height: 36px;
-      border-radius: 10px;
+      min-height: 34px;
+      border-radius: 8px;
       padding: 0 11px;
       font-size: 10.5px;
       font-weight: 900;
@@ -3590,8 +3591,8 @@
     #mi-admin .mi-rank-bulk-actions [data-rank-bulk-clear]:hover,
     #mi-admin .mi-rank-bulk-actions [data-rank-bulk-clear]:focus-visible {
       border-color: #cbd7e7;
-      color: #0b2346;
-      background: #f8fafc;
+      color: var(--mi-navy-2);
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-rank-export-stage {
@@ -3607,8 +3608,8 @@
     #mi-admin .mi-rank-export-root,
     #mi-admin .mi-rank-export-sheet {
       width: 1320px;
-      background: #f7f9fc;
-      color: #071b3a;
+      background: var(--mi-grey-50);
+      color: var(--mi-navy);
     }
 
     #mi-admin .mi-rank-export-sheet {
@@ -3626,20 +3627,20 @@
       border-radius: 18px;
       padding: 18px 20px;
       background: linear-gradient(135deg, #ffffff 0%, #f3f7fb 100%);
-      box-shadow: 0 18px 42px rgba(11, 35, 70, 0.08);
+      box-shadow: var(--mi-shadow);
     }
 
     #mi-admin .mi-rank-export-header small {
       display: inline-flex;
       margin-bottom: 7px;
-      color: #0f7a58;
+      color: var(--mi-green);
       font-size: 12px;
       font-weight: 900;
     }
 
     #mi-admin .mi-rank-export-header h2 {
       margin: 0;
-      color: #071b3a;
+      color: var(--mi-navy);
       font-size: 26px;
       font-weight: 950;
       letter-spacing: -0.02em;
@@ -3710,7 +3711,7 @@
       border: 1px solid rgba(11, 35, 70, 0.13);
       border-radius: 18px;
       padding: 16px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: rgba(255, 255, 255, 0.96);
       box-shadow: 0 24px 60px rgba(11, 35, 70, 0.18);
       backdrop-filter: blur(18px);
@@ -3748,7 +3749,7 @@
       border: 1px solid #d7e2ef;
       border-radius: 999px;
       padding: 0 12px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: #fff;
       font-size: 11px;
       font-weight: 900;
@@ -3758,9 +3759,9 @@
     }
 
     #mi-admin .mi-rank-download-ready a {
-      border-color: #0b2346;
+      border-color: var(--mi-navy-2);
       color: #fff;
-      background: #0b2346;
+      background: var(--mi-navy-2);
     }
 
     #mi-admin .mi-rank-download-ready a:hover,
@@ -3824,7 +3825,7 @@
     }
 
     #mi-admin .mi-rank-group-menu-toggle:hover {
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: #e4edf8;
       transform: translateY(-1px);
     }
@@ -3876,9 +3877,9 @@
       width: 100%;
       min-height: 34px;
       border: 1px solid transparent;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 0 10px;
-      color: #0b2346;
+      color: var(--mi-navy-2);
       background: #fff;
       text-align: left;
       font-size: 12px;
@@ -3889,17 +3890,17 @@
 
     #mi-admin .mi-rank-group-option:hover {
       border-color: #dbe5f2;
-      color: #0b2346;
-      background: #f5f8fc;
+      color: var(--mi-navy-2);
+      background: var(--mi-grey-50);
       transform: translateX(2px);
     }
 
     #mi-admin .mi-rank-group-empty {
       display: block;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 10px 12px;
       color: #66748a;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       font-weight: 850;
     }
@@ -3919,13 +3920,13 @@
       width: 15px;
       height: 15px;
       margin: 0;
-      accent-color: #0b2346;
+      accent-color: var(--mi-navy-2);
     }
 
     #mi-admin .mi-rank-tracker-card {
       overflow-x: hidden;
       overflow-y: hidden;
-      border: 1px solid #dde5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 14px;
       background: #fff;
       box-shadow: 0 6px 18px rgba(15, 35, 70, 0.025);
@@ -3983,12 +3984,12 @@
       flex-wrap: wrap;
       gap: 5px;
       align-items: center;
-      border-bottom: 1px solid #edf2f7;
+      border-bottom: 1px solid var(--mi-gold-soft);
       padding: 8px 12px 10px;
       color: #66748a;
-      background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+      background: linear-gradient(180deg, var(--mi-grey-50) 0%, #ffffff 100%);
       font-size: 11px;
-      font-weight: 650;
+      font-weight: 700;
     }
 
     #mi-admin .mi-rank-ops-row span {
@@ -4010,7 +4011,7 @@
 
     #mi-admin .mi-rank-ops-row .is-error {
       border-color: #fecaca;
-      color: #b42318;
+      color: var(--mi-danger);
       background: rgba(255, 241, 241, 0.74);
     }
 
@@ -4028,7 +4029,7 @@
 
     #mi-admin .mi-rank-ops-row .mi-rank-insight-pill.is-error {
       border-color: #fecaca;
-      color: #b42318;
+      color: var(--mi-danger);
       background: rgba(255, 241, 241, 0.74);
     }
 
@@ -4053,7 +4054,7 @@
 
     #mi-admin .mi-rank-ops-row .mi-rank-action-note.is-error {
       border-color: #fecaca;
-      color: #b42318;
+      color: var(--mi-danger);
       background: rgba(255, 241, 241, 0.74);
     }
 
@@ -4084,7 +4085,7 @@
     #mi-admin .mi-rank-tracker-title span {
       color: var(--mi-muted);
       font-size: 12px;
-      font-weight: 650;
+      font-weight: 700;
     }
 
     #mi-admin .mi-rank-tracker-meta,
@@ -4117,7 +4118,7 @@
       border: 1px solid #d9e2ee;
       border-radius: 8px;
       color: #6b778c;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
       cursor: grab;
       font-size: 16px;
       font-weight: 800;
@@ -4130,7 +4131,7 @@
     #mi-admin .mi-rank-drag-handle:hover {
       border-color: #b8c6d8;
       color: var(--mi-navy);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
       transform: translateY(-1px);
     }
@@ -4172,7 +4173,7 @@
     #mi-admin .mi-rank-keyword-volume {
       color: #4f5f78;
       font-size: 10.5px;
-      font-weight: 650;
+      font-weight: 700;
     }
 
     #mi-admin .mi-rank-keyword-volume.is-muted {
@@ -4182,7 +4183,7 @@
     #mi-admin .mi-rank-product-info {
       color: var(--mi-navy);
       font-size: 10.5px;
-      font-weight: 650;
+      font-weight: 700;
     }
 
     #mi-admin .mi-rank-product-title {
@@ -4208,9 +4209,9 @@
     #mi-admin .mi-rank-row-actions .mi-link-button {
       min-height: 25px;
       padding: 0 6px;
-      border-radius: 7px;
+      border-radius: 8px;
       font-size: 9.8px;
-      font-weight: 760;
+      font-weight: 700;
       cursor: pointer;
       transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease, color 0.14s ease;
       will-change: transform;
@@ -4218,7 +4219,7 @@
 
     #mi-admin .mi-rank-row-actions .mi-link-button:hover {
       border-color: #b8c6d8;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
       transform: translateY(-1px);
     }
@@ -4242,7 +4243,7 @@
 
     #mi-admin .mi-link-button.is-danger {
       border-color: #f3caca;
-      color: #b42318;
+      color: var(--mi-danger);
       background: #fff7f7;
     }
 
@@ -4254,9 +4255,9 @@
     }
 
     #mi-admin .mi-link-button.is-danger.is-confirming {
-      border-color: #b42318;
+      border-color: var(--mi-danger);
       color: #fff;
-      background: #b42318;
+      background: var(--mi-danger);
       box-shadow: 0 10px 22px rgba(180, 35, 24, 0.18);
     }
 
@@ -4276,9 +4277,9 @@
       border-radius: 999px;
       padding: 4px 6px;
       color: var(--mi-navy);
-      background: #fbfdff;
+      background: var(--mi-grey-50);
       font-size: 9.8px;
-      font-weight: 780;
+      font-weight: 700;
       line-height: 1;
       word-break: keep-all;
       white-space: nowrap;
@@ -4307,7 +4308,7 @@
       flex: 0 0 108px;
       min-height: 78px;
       padding: 9px 8px;
-      border-right: 1px solid #edf1f6;
+      border-right: 1px solid var(--mi-gold-soft);
       color: var(--mi-navy);
       background: #fff;
     }
@@ -4353,7 +4354,7 @@
       overflow: hidden;
       color: var(--mi-muted);
       font-size: 10px;
-      font-weight: 650;
+      font-weight: 700;
       letter-spacing: -0.01em;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -4385,7 +4386,7 @@
       border-top: 1px solid #e8eef6;
       background:
         radial-gradient(circle at top left, rgba(29, 99, 216, 0.06), transparent 32%),
-        linear-gradient(180deg, #f7f9fc 0%, #fbfcfe 100%);
+        linear-gradient(180deg, var(--mi-grey-50) 0%, var(--mi-grey-50) 100%);
       scrollbar-width: thin;
       scrollbar-color: #cbd6e4 transparent;
       scroll-snap-type: x proximity;
@@ -4414,10 +4415,10 @@
       gap: 9px;
       overflow: hidden;
       padding: 12px;
-      border: 1px solid #dfe7f1;
+      border: 1px solid var(--mi-line);
       border-radius: 16px;
       color: var(--mi-navy);
-      background: linear-gradient(160deg, #ffffff 0%, #f9fbfe 100%);
+      background: linear-gradient(160deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 9px 24px rgba(11, 35, 70, 0.06);
       scroll-snap-align: start;
     }
@@ -4427,7 +4428,7 @@
       position: absolute;
       inset: 0 0 auto;
       height: 3px;
-      background: linear-gradient(90deg, #0b2346, #2d6ac5);
+      background: linear-gradient(90deg, var(--mi-navy-2), #2d6ac5);
     }
 
     #mi-admin .mi-place-day-card.is-latest {
@@ -4435,7 +4436,7 @@
       color: #ffffff;
       background:
         radial-gradient(circle at 92% 8%, rgba(85, 151, 240, 0.28), transparent 36%),
-        linear-gradient(145deg, #071d38 0%, #12375f 100%);
+        linear-gradient(145deg, var(--mi-navy) 0%, #12375f 100%);
       box-shadow: 0 14px 30px rgba(7, 29, 56, 0.2);
     }
 
@@ -4470,7 +4471,7 @@
       border-radius: 999px;
       padding: 2px 7px;
       color: #52627a;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 8.5px;
       font-weight: 900;
       white-space: nowrap;
@@ -4521,7 +4522,7 @@
       border-radius: 999px;
       padding: 3px 8px;
       color: #4d5f77;
-      background: #eef3f8;
+      background: var(--mi-gold-soft);
       font-size: 9px;
       font-weight: 900;
       white-space: nowrap;
@@ -4529,12 +4530,12 @@
 
     #mi-admin .mi-place-day-trend.is-up {
       color: #087f45;
-      background: #eaf8f0;
+      background: var(--mi-green-bg);
     }
 
     #mi-admin .mi-place-day-trend.is-down {
       color: #b45309;
-      background: #fff4e5;
+      background: var(--mi-warn-bg);
     }
 
     #mi-admin .mi-place-day-trend.is-new {
@@ -4644,9 +4645,9 @@
     }
 
     #mi-admin .mi-place-rank-item .mi-rank-row-actions .mi-rank-pill:first-child {
-      border-color: #0b2346;
+      border-color: var(--mi-navy-2);
       color: #fff;
-      background: #0b2346;
+      background: var(--mi-navy-2);
       box-shadow: 0 5px 14px rgba(11, 35, 70, 0.12);
     }
 
@@ -4771,7 +4772,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 14px;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-market-related h3 {
@@ -4869,8 +4870,8 @@
 
     #mi-admin .mi-keyword-market {
       padding: 18px;
-      background: linear-gradient(145deg, #ffffff 0%, #f8faff 100%);
-      box-shadow: 0 16px 40px rgba(6, 26, 58, 0.07);
+      background: linear-gradient(145deg, #ffffff 0%, var(--mi-grey-50) 100%);
+      box-shadow: var(--mi-shadow);
     }
 
     #mi-admin .mi-market-head {
@@ -4900,7 +4901,7 @@
 
     #mi-admin .mi-market-eyebrow .mi-kicker {
       margin: 0;
-      color: #2558d8;
+      color: var(--mi-blue);
       background: #edf3ff;
       letter-spacing: 0.08em;
     }
@@ -4910,11 +4911,11 @@
       display: inline-flex;
       min-height: 28px;
       align-items: center;
-      border: 1px solid #dce5f2;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       padding: 0 9px;
       color: #52627a;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       font-style: normal;
       font-weight: 900;
@@ -4975,7 +4976,7 @@
 
     #mi-admin .mi-market-bar-label span,
     #mi-admin .mi-market-bar-label strong {
-      color: #667085;
+      color: var(--mi-muted);
       font-size: 12px;
       font-weight: 900;
     }
@@ -4997,7 +4998,7 @@
       width: var(--mi-market-score, 0%);
       height: 100%;
       border-radius: inherit;
-      background: linear-gradient(90deg, #2558d8, #4d79e8);
+      background: linear-gradient(90deg, var(--mi-blue), #4d79e8);
       transition: width 0.35s ease;
     }
 
@@ -5165,7 +5166,7 @@
       place-items: center;
       min-height: 86px;
       border: 1px dashed var(--mi-line);
-      border-radius: 10px;
+      border-radius: 8px;
       color: var(--mi-muted);
       background: rgba(255, 255, 255, 0.82);
       font-size: 12px;
@@ -5418,7 +5419,7 @@
       bottom: calc(34px + var(--ratio-height, 20%) + 10px);
       transform: translateX(-50%) translateY(8px);
       min-width: 126px;
-      border-radius: 6px;
+      border-radius: 8px;
       padding: 9px 11px;
       color: #fff;
       background: rgba(20, 20, 20, 0.9);
@@ -5482,7 +5483,7 @@
       border: 1px dashed #d9dee7;
       border-radius: 8px;
       color: var(--mi-muted);
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
       font-size: 13px;
       font-weight: 800;
       text-align: center;
@@ -5521,7 +5522,7 @@
       border-radius: 8px;
       padding: 12px;
       color: var(--mi-ink);
-      background: #fbfdff;
+      background: var(--mi-grey-50);
       outline: none;
       transition: border-color 0.14s ease, box-shadow 0.14s ease, background 0.14s ease;
     }
@@ -5573,7 +5574,7 @@
       border: 1px solid var(--mi-line);
       border-radius: 8px;
       padding: 14px;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-owner-tool h3 {
@@ -5588,7 +5589,7 @@
       overflow: hidden;
       border-color: rgba(6, 26, 58, 0.12);
       padding: 16px;
-      background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+      background: linear-gradient(145deg, #ffffff 0%, var(--mi-grey-50) 100%);
       box-shadow: 0 10px 28px rgba(6, 26, 58, 0.045);
     }
 
@@ -5604,7 +5605,7 @@
 
     #mi-admin .mi-owner-create-row .mi-input,
     #mi-admin .mi-owner-create-row .mi-owner-create-action {
-      min-height: 46px;
+      min-height: 44px;
     }
 
     #mi-admin .mi-owner-create-row .mi-input {
@@ -5615,12 +5616,12 @@
     #mi-admin .mi-owner-create-row .mi-owner-create-action {
       grid-column: 2;
       grid-row: 2;
-      background: linear-gradient(135deg, #061a3a 0%, #0b2b59 100%);
+      background: linear-gradient(135deg, var(--mi-navy) 0%, #0b2b59 100%);
       box-shadow: 0 8px 18px rgba(6, 26, 58, 0.12);
     }
 
     #mi-admin .mi-owner-create-row .mi-owner-create-action:not(:disabled):hover {
-      background: linear-gradient(135deg, #082044 0%, #103665 100%);
+      background: linear-gradient(135deg, var(--mi-navy-2) 0%, #103665 100%);
       box-shadow: 0 12px 24px rgba(6, 26, 58, 0.17);
     }
 
@@ -5731,7 +5732,7 @@
       border-radius: 8px;
       padding: 10px 12px;
       color: #fff;
-      background: linear-gradient(135deg, #071b3a 0%, #0b2b55 100%);
+      background: linear-gradient(135deg, var(--mi-navy) 0%, #0b2b55 100%);
       box-shadow: 0 8px 20px rgba(6, 26, 58, 0.1);
     }
 
@@ -5778,8 +5779,8 @@
       height: 24px;
       align-items: center;
       justify-content: center;
-      border-radius: 7px;
-      color: #061a3a;
+      border-radius: 8px;
+      color: var(--mi-navy);
       background: rgba(255, 255, 255, 0.94);
       font-size: 9px;
       font-weight: 900;
@@ -5806,7 +5807,7 @@
       gap: 8px;
       padding: 8px 10px;
       border-color: rgba(6, 26, 58, 0.07);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 11px;
       line-height: 1.4;
     }
@@ -5973,7 +5974,7 @@
       border-radius: 8px;
       padding: 8px 11px 8px 32px;
       color: #52627a;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
       font-size: 10px;
     }
 
@@ -6016,7 +6017,7 @@
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 8px;
       padding: 14px 16px;
-      background: #f8fbff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-account-root-line span {
@@ -6086,7 +6087,7 @@
 
     #mi-admin .mi-account-slot.is-empty {
       border-style: dashed;
-      background: #fbfcfd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-account-slot.is-unlinked {
@@ -6129,14 +6130,14 @@
       border-radius: 999px;
       padding: 0 9px;
       color: var(--mi-green);
-      background: #edf8f2;
+      background: var(--mi-green-bg);
       font-size: 12px;
       font-weight: 950;
     }
 
     #mi-admin .mi-status-pill.is-muted {
-      color: #667085;
-      background: #f1f5f9;
+      color: var(--mi-muted);
+      background: var(--mi-gold-soft);
     }
 
     #mi-admin .mi-status-pill.is-warn {
@@ -6170,7 +6171,7 @@
     }
 
     #mi-admin .mi-button:hover {
-      background: #082044;
+      background: var(--mi-navy-2);
       box-shadow: 0 10px 24px rgba(6, 26, 58, 0.16);
       transform: translateY(-1px);
     }
@@ -6205,7 +6206,7 @@
       border: 1px solid rgba(6, 26, 58, 0.12);
       border-radius: 999px;
       background: #fee500;
-      color: #111827;
+      color: var(--mi-ink);
       box-shadow: 0 18px 42px rgba(6, 26, 58, 0.18);
       text-decoration: none;
       transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
@@ -6236,7 +6237,7 @@
       width: 26px;
       height: 19px;
       border-radius: 50%;
-      background: #111827;
+      background: var(--mi-ink);
     }
 
     #mi-admin .mi-kakao-icon::after {
@@ -6246,7 +6247,7 @@
       top: 20px;
       width: 9px;
       height: 8px;
-      background: #111827;
+      background: var(--mi-ink);
       clip-path: polygon(0 0, 100% 0, 18% 100%);
       transform: rotate(13deg);
     }
@@ -6259,7 +6260,7 @@
     }
 
     #mi-admin .mi-kakao-floating b {
-      color: #111827;
+      color: var(--mi-ink);
       font-size: 14px;
       line-height: 1.2;
     }
@@ -6272,7 +6273,7 @@
 
     #mi-admin .mi-button.is-ghost:hover {
       color: var(--mi-navy);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       box-shadow: 0 8px 18px rgba(6, 26, 58, 0.08);
     }
 
@@ -6294,7 +6295,7 @@
       border: 1px solid #e4e9f1;
       border-radius: 8px;
       padding: 9px 11px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       line-height: 1.45;
       font-weight: 800;
     }
@@ -6324,14 +6325,14 @@
       border: 1px solid rgba(6, 26, 58, 0.12);
       border-radius: 8px;
       padding: 14px;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-source-upload.is-compact {
       gap: 9px;
       border-color: rgba(6, 26, 58, 0.1);
       padding: 12px;
-      background: linear-gradient(180deg, #fff, #f9fbff);
+      background: linear-gradient(180deg, #fff, var(--mi-grey-50));
     }
 
     #mi-admin .mi-source-upload-head {
@@ -6458,7 +6459,7 @@
       border: 1px solid rgba(6, 26, 58, 0.12);
       border-radius: 8px;
       padding: 13px 14px;
-      background: #f6f9fd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-template-download span,
@@ -6542,7 +6543,7 @@
     }
 
     #mi-admin .mi-source-picker:hover {
-      background: #082044;
+      background: var(--mi-navy-2);
       box-shadow: 0 10px 24px rgba(6, 26, 58, 0.14);
       transform: translateY(-1px);
     }
@@ -6626,7 +6627,7 @@
 
     #mi-admin .mi-download:hover {
       border-color: rgba(6, 26, 58, 0.22);
-      background: #f8fbff;
+      background: var(--mi-grey-50);
       box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
       transform: translateY(-1px);
     }
@@ -6688,7 +6689,7 @@
       border-radius: 999px;
       padding: 0 11px;
       color: var(--mi-navy);
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       font-size: 12px;
       font-weight: 900;
     }
@@ -6760,7 +6761,7 @@
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 8px;
       padding: 11px 12px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-report-metric span,
@@ -6794,7 +6795,7 @@
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 8px;
       padding: 11px 12px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-report-publish-note span,
@@ -6865,7 +6866,7 @@
     }
 
     #mi-admin .mi-operation-card.is-soft {
-      background: linear-gradient(180deg, #f9fbfe 0%, #f5f7fb 100%);
+      background: linear-gradient(180deg, var(--mi-grey-50) 0%, var(--mi-grey-50) 100%);
       box-shadow: none;
     }
 
@@ -6933,8 +6934,8 @@
     #mi-admin .mi-operation-input .mi-input,
     #mi-admin .mi-operation-input .mi-textarea {
       border-color: rgba(6, 26, 58, 0.12);
-      border-radius: 10px;
-      background: #fbfcfe;
+      border-radius: 8px;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-operation-input .mi-source-upload.is-compact {
@@ -6955,7 +6956,7 @@
       border: 1px solid rgba(6, 26, 58, 0.1);
       border-radius: 14px;
       padding: 14px;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-operation-input .mi-source-file-summary {
@@ -6977,7 +6978,7 @@
     #mi-admin .mi-operation-input .mi-source-quick-row .mi-button,
     #mi-admin .mi-operation-input .mi-source-quick-row .mi-source-picker {
       min-height: 46px;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 0 15px;
       font-size: 12px;
     }
@@ -6985,7 +6986,7 @@
     #mi-admin .mi-operation-input .mi-code-status {
       min-height: 42px;
       border: 0;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 10px 12px;
       color: #677389;
       background: var(--mi-operation-soft);
@@ -7078,7 +7079,7 @@
     #mi-admin .mi-operation-settings-body {
       border-top: 1px solid rgba(6, 26, 58, 0.08);
       padding: 16px;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-operation-command {
@@ -7090,7 +7091,7 @@
     #mi-admin .mi-operation-command .mi-button {
       width: 100%;
       min-height: 48px;
-      border-radius: 10px;
+      border-radius: 8px;
     }
 
     #mi-admin .mi-operation-progress {
@@ -7117,7 +7118,7 @@
       width: 30px;
       height: 30px;
       place-items: center;
-      border-radius: 9px;
+      border-radius: 8px;
       color: #fff;
       background: var(--mi-navy);
       font-size: 10px;
@@ -7160,7 +7161,7 @@
       min-height: 58px;
       border-radius: 12px;
       padding: 14px 20px;
-      background: linear-gradient(90deg, #ffffff 0%, #fbfcfe 100%);
+      background: linear-gradient(90deg, #ffffff 0%, var(--mi-grey-50) 100%);
     }
 
     #mi-admin .mi-operation-result .mi-row:first-child {
@@ -7224,7 +7225,7 @@
       border-radius: 999px;
       padding: 6px 9px;
       color: #66738a;
-      background: #edf2f8;
+      background: var(--mi-gold-soft);
       font-size: 10px;
       letter-spacing: -0.01em;
       white-space: nowrap;
@@ -7242,7 +7243,7 @@
     #mi-admin .mi-operation-advanced {
       margin-bottom: 4px;
       border-radius: 18px;
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       box-shadow: none;
     }
 
@@ -7279,7 +7280,7 @@
     #mi-admin .mi-operation-advanced-panel .mi-button {
       width: 100%;
       margin-top: 8px;
-      border-radius: 10px;
+      border-radius: 8px;
     }
 
     @media (min-width: 901px) {
@@ -7433,7 +7434,7 @@
         min-height: 38px;
         border: 1px solid rgba(223, 229, 239, 0.86);
         padding: 0 12px;
-        background: #f8fafc;
+        background: var(--mi-grey-50);
         font-size: 13px;
         white-space: nowrap;
       }
@@ -7607,7 +7608,7 @@
       #mi-admin .mi-rank-exposure-media {
         width: 72px;
         height: 72px;
-        border-radius: 10px;
+        border-radius: 8px;
       }
 
       #mi-admin .mi-rank-exposure-title {
@@ -8139,7 +8140,7 @@
 
     #mi-admin .mi-work-summary-button.is-active {
       border-color: rgba(15, 54, 105, .34);
-      background: #f7faff;
+      background: var(--mi-grey-50);
       box-shadow: inset 0 0 0 1px rgba(15, 54, 105, .08), 0 12px 30px rgba(14, 32, 66, .07);
     }
 
@@ -8224,7 +8225,7 @@
     #mi-admin .mi-work-month-trigger:hover,
     #mi-admin .mi-work-month-trigger:focus-visible,
     #mi-admin .mi-work-month-trigger[aria-expanded="true"] {
-      background: #f1f5f9;
+      background: var(--mi-gold-soft);
       outline: none;
     }
 
@@ -8281,7 +8282,7 @@
       min-height: 38px;
       border: 1px solid transparent;
       border-radius: 10px;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
       color: #45536a;
       cursor: pointer;
       font-size: 13px;
@@ -8291,7 +8292,7 @@
     #mi-admin .mi-work-month-choice:hover,
     #mi-admin .mi-work-month-choice:focus-visible {
       border-color: #b9c7d9;
-      background: #eef3f8;
+      background: var(--mi-gold-soft);
       outline: none;
     }
 
@@ -8332,7 +8333,7 @@
     }
 
     #mi-admin .mi-work-weekdays {
-      background: #f8fafc;
+      background: var(--mi-grey-50);
       border-bottom: 1px solid var(--line);
     }
 
@@ -8349,8 +8350,8 @@
       min-height: 118px;
       padding: 10px;
       overflow: hidden;
-      border-right: 1px solid #edf1f6;
-      border-bottom: 1px solid #edf1f6;
+      border-right: 1px solid var(--mi-gold-soft);
+      border-bottom: 1px solid var(--mi-gold-soft);
       background: #fff;
       cursor: pointer;
       transition: background-color .16s ease, box-shadow .16s ease;
@@ -8365,7 +8366,7 @@
       width: 22px;
       height: 22px;
       place-items: center;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 8px;
       color: #58708f;
       background: rgba(255, 255, 255, .9);
@@ -8379,7 +8380,7 @@
     }
 
     #mi-admin .mi-work-day:hover {
-      background: #f8fbff;
+      background: var(--mi-grey-50);
       box-shadow: inset 0 0 0 1px rgba(22, 79, 150, .12);
     }
 
@@ -8393,11 +8394,11 @@
     }
 
     #mi-admin .mi-work-day.is-muted {
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-day.is-today {
-      background: #f7fbff;
+      background: var(--mi-grey-50);
       box-shadow: inset 0 0 0 1px rgba(22, 79, 150, .18);
     }
 
@@ -8443,9 +8444,9 @@
       width: 100%;
       padding: 6px 8px;
       overflow: hidden;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 9px;
-      background: #f7faff;
+      background: var(--mi-grey-50);
       color: #223553;
       cursor: grab;
       font-size: 10px;
@@ -8486,7 +8487,7 @@
     }
 
     #mi-admin .mi-work-day-item {
-      border-left: 4px solid #dce5f0;
+      border-left: 4px solid var(--mi-line);
     }
 
     #mi-admin .mi-work-date-overflow {
@@ -8495,7 +8496,7 @@
       border: 0;
       border-radius: 999px;
       color: #536783;
-      background: #edf3fa;
+      background: var(--mi-gold-soft);
       cursor: pointer;
       font-family: inherit;
       font-size: 9px;
@@ -8542,7 +8543,7 @@
     #mi-admin .mi-work-filter-clear {
       min-height: 28px;
       padding: 0 9px;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
       color: #586a84;
       background: #fff;
@@ -8717,19 +8718,19 @@
     #mi-admin .mi-work-quick-done[data-status="done"] {
       border-color: #cde5d8;
       color: #267451;
-      background: #edf8f2;
+      background: var(--mi-green-bg);
     }
 
     #mi-admin .mi-work-quick-done[data-status="done"]:hover {
       border-color: #b7c4d4;
       color: #526176;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-visibility {
       padding: 4px 7px;
       border-radius: 999px;
-      background: #eef2f7;
+      background: var(--mi-gold-soft);
       color: #6b7890;
       font-size: 9px;
       font-style: normal;
@@ -8738,7 +8739,7 @@
     }
 
     #mi-admin .mi-work-visibility.is-public {
-      background: #e9f7ef;
+      background: var(--mi-green-bg);
       color: #24754f;
     }
 
@@ -8866,9 +8867,9 @@
       gap: 10px;
       align-items: center;
       padding: 14px;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 15px;
-      background: #f8fbff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-move-date {
@@ -8914,7 +8915,7 @@
 
     #mi-admin .mi-work-dialog-head {
       border-bottom: 1px solid var(--line);
-      background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-grey-50) 100%);
     }
 
     #mi-admin .mi-work-dialog-title {
@@ -8946,8 +8947,8 @@
 
     #mi-admin .mi-work-dialog-head .mi-work-icon-button {
       flex: 0 0 auto;
-      border-color: #e2e8f1;
-      background: #f8fafc;
+      border-color: var(--mi-line);
+      background: var(--mi-grey-50);
       transition: border-color .16s ease, background .16s ease, transform .16s ease;
     }
 
@@ -8994,7 +8995,7 @@
       border: 1px solid #d9e3ef;
       border-radius: 12px;
       color: var(--navy);
-      background-color: #fbfdff;
+      background-color: var(--mi-grey-50);
       outline: none;
       box-shadow: 0 1px 0 rgba(13, 39, 77, .02);
       font-family: inherit;
@@ -9049,9 +9050,9 @@
 
     #mi-admin .mi-work-advanced {
       overflow: hidden;
-      border: 1px solid #e0e7f0;
+      border: 1px solid var(--mi-line);
       border-radius: 15px;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-advanced > summary {
@@ -9081,7 +9082,7 @@
 
     #mi-admin .mi-work-advanced[open] > summary {
       border-bottom: 1px solid #e3e9f2;
-      background: #f7f9fc;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-advanced[open] > summary::after {
@@ -9100,14 +9101,14 @@
       padding: 13px 15px;
       border: 1px solid #d8e3ef;
       border-radius: 16px;
-      background: linear-gradient(135deg, #f8fbff 0%, #f4f8fd 100%);
+      background: linear-gradient(135deg, var(--mi-grey-50) 0%, #f4f8fd 100%);
       cursor: pointer;
       transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
     }
 
     #mi-admin .mi-work-public-toggle:hover {
       border-color: #c5d3e3;
-      background: #f7faff;
+      background: var(--mi-grey-50);
       box-shadow: 0 8px 20px rgba(13, 39, 77, .05);
     }
 
@@ -9122,7 +9123,7 @@
       padding: 13px 15px;
       border: 1px solid #dbe5f0;
       border-radius: 15px;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-repeat-fields[hidden] {
@@ -9145,7 +9146,7 @@
     #mi-admin .mi-work-repeat-fields .mi-input:disabled {
       cursor: not-allowed;
       color: #8491a4;
-      background: #f0f3f7;
+      background: var(--mi-gold-soft);
       opacity: .78;
     }
 
@@ -9186,7 +9187,7 @@
       inset: 0;
       border: 1px solid #cbd6e4;
       border-radius: 999px;
-      background: #dfe6ef;
+      background: var(--mi-line);
       transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
     }
 
@@ -9204,8 +9205,8 @@
     }
 
     #mi-admin .mi-work-switch input:checked + i {
-      border-color: #0c7654;
-      background: #0c7654;
+      border-color: var(--mi-green);
+      background: var(--mi-green);
       box-shadow: 0 0 0 3px rgba(12, 118, 84, .09);
     }
 
@@ -9284,7 +9285,7 @@
       min-height: 52px;
       padding: 0 4px;
       border: 0;
-      border-bottom: 1px solid #dce5f0;
+      border-bottom: 1px solid var(--mi-line);
       border-radius: 0;
       background-color: transparent;
       box-shadow: none;
@@ -9315,9 +9316,9 @@
     #mi-admin .mi-work-kind-tabs {
       display: inline-flex;
       padding: 3px;
-      border: 1px solid #dce5f0;
+      border: 1px solid var(--mi-line);
       border-radius: 999px;
-      background: #f5f8fc;
+      background: var(--mi-grey-50);
       gap: 2px;
     }
 
@@ -9417,9 +9418,9 @@
     }
 
     #mi-admin .mi-work-weekday input:checked + i {
-      border-color: #0c7654;
+      border-color: var(--mi-green);
       color: #fff;
-      background: #0c7654;
+      background: var(--mi-green);
     }
 
     #mi-admin .mi-work-weekday input:focus-visible + i {
@@ -9449,7 +9450,7 @@
     }
 
     #mi-admin .mi-work-scope-choice input {
-      accent-color: #0c7654;
+      accent-color: var(--mi-green);
     }
 
     #mi-admin .mi-work-disclosure {
@@ -9470,7 +9471,7 @@
       border: 1px dashed #d5e0ee;
       border-radius: 14px;
       color: #52637d;
-      background: #fbfcfe;
+      background: var(--mi-grey-50);
       cursor: pointer;
       font-family: inherit;
       font-size: 12.5px;
@@ -9482,7 +9483,7 @@
     #mi-admin .mi-work-disclosure-row:hover {
       border-color: #b9c9de;
       color: var(--navy);
-      background: #f6f9fd;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-disclosure-row i {
@@ -9504,7 +9505,7 @@
       padding: 13px 15px;
       border: 1px solid #dbe5f0;
       border-radius: 15px;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-disclosure-body[hidden] {
@@ -9551,7 +9552,7 @@
       border: 0;
       border-radius: 50%;
       color: #6d7d94;
-      background: #eef3f9;
+      background: var(--mi-gold-soft);
       cursor: pointer;
       font-family: inherit;
       font-size: 12px;
@@ -9579,7 +9580,7 @@
     }
 
     #mi-admin .mi-work-conference-link a {
-      color: #0c7654;
+      color: var(--mi-green);
     }
 
     #mi-admin [data-work-google-only][hidden],
@@ -9894,7 +9895,7 @@
 
     /* 시간 지정 일정은 구글처럼 색 점 + 글자로, 종일 일정은 꽉 찬 블록으로 구분한다. */
     #mi-admin .mi-work-day-item[data-gcal="1"][data-allday="false"] {
-      border-color: #dce5f0;
+      border-color: var(--mi-line);
       background: #fff;
       color: #223553;
     }
@@ -9996,7 +9997,7 @@
       padding: 11px;
       border: 1px solid var(--mi-line);
       border-radius: 12px;
-      background: #fbfdff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-work-gcal-panel[hidden] {
@@ -10259,7 +10260,7 @@
     }
 
     #mi-admin .mi-work-recurrence-end-row input[type="radio"] {
-      accent-color: #0c7654;
+      accent-color: var(--mi-green);
     }
 
     #mi-admin .mi-work-recurrence-end-row .mi-work-field {
@@ -10459,7 +10460,7 @@
       border: 1px solid #dbe6f5;
       border-radius: 14px;
       padding: 13px 14px;
-      background: #f7faff;
+      background: var(--mi-grey-50);
     }
 
     #mi-admin .mi-assistant-chat-question {

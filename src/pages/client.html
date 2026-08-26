@@ -6196,7 +6196,7 @@
 
   <script src="/seo-evaluation.js?v=seo-v13-20260726"></script>
   <script src="/mi-personal-calendar.js?v=cal-v6-20260826"></script>
-  <script src="/mi-google-nudge.js?v=gnudge-v1-20260826"></script>
+  <script src="/mi-google-nudge.js?v=gnudge-v2-20260826"></script>
   <script>
     (function () {
       var root = document.getElementById("mi-clean");
@@ -11205,15 +11205,20 @@
         return secureClientSession.clientId || secureClientSession.scopeKey || "";
       }
 
+      // 실행 순서에 기대지 않는다. 공유 스크립트가 아직 안 왔어도 요청을 큐에 남기면
+      // 그 파일이 로드되는 순간 스스로 비운다(2026-08-26 운영 검증 회귀).
       function maybeShowGoogleNudge() {
-        if (!window.MomentGoogleNudge || typeof window.MomentGoogleNudge.maybeShow !== "function") return;
+        var queue = window.MomentGoogleNudgeQueue || (window.MomentGoogleNudgeQueue = []);
         // 착지 페인트를 막지 않는다 — 결과를 기다리지 않고, 조회가 실패하면 팝업도 없다.
-        window.MomentGoogleNudge.maybeShow({
+        queue.push({
           apiBase: "/api/my",
           fetch: miFetch,
           role: secureClientSession.role,
           accountTag: googleNudgeAccountTag()
         });
+        if (window.MomentGoogleNudge && typeof window.MomentGoogleNudge.drain === "function") {
+          window.MomentGoogleNudge.drain();
+        }
       }
 
       function googleLoginNotice(code) {

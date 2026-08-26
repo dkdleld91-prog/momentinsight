@@ -410,6 +410,29 @@
       letter-spacing: 0.055em;
     }
 
+    /* 실험실(개발 중) 그룹: 기본은 접혀 있고, 해당 화면으로 이동하면 열린다. */
+    #mi-clean .mi-nav-lab-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+      border: 0;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    #mi-clean .mi-nav-lab-items {
+      display: grid;
+      gap: 4px;
+    }
+
+    #mi-clean .mi-nav-lab:not(.is-open) .mi-nav-lab-items {
+      display: none;
+    }
+
     /* 개인 캘린더 메뉴는 광고주 세션에서만 보인다. .mi-nav a 가 display:flex 라
        [hidden] 만으로는 감춰지지 않아 이 규칙이 필요하다. 본체 스타일은
        public/mi-personal-calendar.css 가 갖는다. */
@@ -707,6 +730,26 @@
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
       margin-top: 24px;
+    }
+
+    /* 중복 지표 대신 원본 화면으로 보내는 한 줄 링크(4단계 §2). */
+    #mi-clean .mi-screen-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      margin-top: 24px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 10px;
+      padding: 0 14px;
+      color: var(--mi-navy);
+      background: var(--mi-grey-50);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #mi-clean .mi-screen-link:hover {
+      border-color: rgba(6, 26, 58, 0.2);
     }
 
     #mi-clean .mi-summary-box {
@@ -5412,7 +5455,6 @@
         <div class="mi-nav-group">
           <p class="mi-nav-title">키워드·SEO</p>
           <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
-          <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
         </div>
 
         <div class="mi-nav-group">
@@ -5421,9 +5463,14 @@
           <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
         </div>
 
-        <div class="mi-nav-group">
-          <p class="mi-nav-title">광고 조사</p>
-          <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
+        <!-- 개발 중 화면은 상시 메뉴에서 내려 접힌 그룹으로 모은다(4단계 §3).
+             링크 마크업은 그대로라 화면 자체는 계속 열 수 있다. -->
+        <div class="mi-nav-group mi-nav-lab" data-mi-nav-lab>
+          <button class="mi-nav-title mi-nav-lab-toggle" type="button" data-mi-nav-lab-toggle aria-expanded="false" aria-controls="mi-client-nav-lab">실험실 · 개발 중<span aria-hidden="true">▾</span></button>
+          <div class="mi-nav-lab-items" id="mi-client-nav-lab">
+            <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
+            <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
+          </div>
         </div>
       </nav>
 
@@ -5439,9 +5486,9 @@
         <a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
-        <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
         <a href="#mi-naver-rank-tracking" data-mi-screen="naver-rank-tracking">N 30일 순위</a>
         <a href="#mi-naver-place-rank-tracking" data-mi-screen="naver-place-rank-tracking">N 플레이스 30일</a>
+        <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
       </nav>
     </aside>
@@ -5572,14 +5619,9 @@
             <span class="mi-badge">공개됨</span>
           </header>
 
-          <div class="mi-data-grid">
-            <article class="mi-card mi-metric"><span>이번 달 누적 매출</span><strong class="is-empty" data-mi-public="sales">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>확인 완료 데이터 기준</small></article>
-            <article class="mi-card mi-metric"><span>광고 효율</span><strong class="is-empty" data-mi-public="roas">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>담당자 검수 기준</small></article>
-            <article class="mi-card mi-metric"><span>이번 달 상태</span><strong class="is-empty" data-mi-public="status">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>이번 달 성과 판단</small></article>
-            <article class="mi-card mi-metric"><span>광고비 사용액</span><strong class="is-empty" data-mi-public="adSpend">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>이번 달 공개 예산 기준</small></article>
-            <article class="mi-card mi-metric"><span>구매 수량</span><strong class="is-empty" data-mi-public="orders">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>현재 집계 기준</small></article>
-            <article class="mi-card mi-metric"><span>목표 달성률</span><strong class="is-empty" data-mi-public="achievement">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</strong><small>월간 목표 대비</small></article>
-          </div>
+          <!-- 4단계 §2: 매출·효율·목표 달성률과 공개 코멘트는 대시보드가 원본이다.
+               같은 값을 여기서 다시 그리지 않고 원본 화면으로 보낸다. -->
+          <a class="mi-screen-link" href="#mi-dashboard" data-mi-screen="dashboard">핵심 지표 요약과 공개 코멘트는 대시보드에서 확인합니다 →</a>
 
           <article class="mi-card mi-card-pad mi-total-panel">
             <div class="mi-card-head">
@@ -5598,18 +5640,11 @@
             </div>
           </article>
 
-          <div class="mi-split">
-            <article class="mi-card mi-card-pad">
-              <h2>네이버 / 쿠팡 별도 성과</h2>
-              <p>상세 리포트는 별도 자료로 제공되며, 이 화면에는 핵심 결과를 요약해 제공합니다.</p>
-              <div class="mi-channel-detail-grid" data-mi-channel-detail-list></div>
-            </article>
-
-            <aside class="mi-card mi-card-pad">
-              <h3>공개 코멘트</h3>
-              <p class="is-empty" data-mi-public="comment">아직 등록된 수치가 없습니다 — 운영팀이 입력하면 표시됩니다</p>
-            </aside>
-          </div>
+          <article class="mi-card mi-card-pad">
+            <h2>네이버 / 쿠팡 별도 성과</h2>
+            <p>상세 리포트는 별도 자료로 제공되며, 이 화면에는 핵심 결과를 요약해 제공합니다.</p>
+            <div class="mi-channel-detail-grid" data-mi-channel-detail-list></div>
+          </article>
         </section>
 
         <section class="mi-view" id="mi-schedule" data-mi-view="schedule" aria-label="일정표 화면">
@@ -11013,6 +11048,31 @@
         }
         if (target === "my-calendar") mountPersonalCalendar();
         else unmountPersonalCalendar();
+        openNavLabForScreen(target);
+      }
+
+      // 4단계 §3: 접힌 "실험실 · 개발 중" 그룹은 그 안의 화면을 열면 같이 펼쳐진다.
+      function openNavLabForScreen(target) {
+        var navLab = root.querySelector("[data-mi-nav-lab]");
+        if (!navLab) return;
+        var owned = Array.prototype.some.call(navLab.querySelectorAll("[data-mi-screen]"), function (link) {
+          return link.getAttribute("data-mi-screen") === target;
+        });
+        if (!owned) return;
+        navLab.classList.add("is-open");
+        var toggle = navLab.querySelector("[data-mi-nav-lab-toggle]");
+        if (toggle) toggle.setAttribute("aria-expanded", "true");
+      }
+
+      var navLabToggleButton = root.querySelector("[data-mi-nav-lab-toggle]");
+      if (navLabToggleButton) {
+        navLabToggleButton.addEventListener("click", function () {
+          var navLab = navLabToggleButton.closest("[data-mi-nav-lab]");
+          if (!navLab) return;
+          var open = !navLab.classList.contains("is-open");
+          navLab.classList.toggle("is-open", open);
+          navLabToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
+        });
       }
 
       links.forEach(function (link) {

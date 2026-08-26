@@ -230,6 +230,29 @@
       letter-spacing: 0.055em;
     }
 
+    /* 실험실(개발 중) 그룹: 기본은 접혀 있고, 해당 화면으로 이동하면 열린다. */
+    #mi-admin .mi-nav-lab-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+      border: 0;
+      background: none;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+    }
+
+    #mi-admin .mi-nav-lab-items {
+      display: grid;
+      gap: 4px;
+    }
+
+    #mi-admin .mi-nav-lab:not(.is-open) .mi-nav-lab-items {
+      display: none;
+    }
+
     #mi-admin .mi-nav a {
       display: flex;
       align-items: center;
@@ -6047,6 +6070,14 @@
       gap: 14px;
     }
 
+    /* 대행사 연결 화면 안의 "활성 계정 전체보기" 구역(4단계 §1). */
+    #mi-admin .mi-owner-account-full {
+      display: grid;
+      gap: 14px;
+      margin-top: 18px;
+      scroll-margin-top: 18px;
+    }
+
     #mi-admin .mi-account-root-line {
       display: flex;
       align-items: center;
@@ -6790,6 +6821,25 @@
       white-space: nowrap;
     }
 
+    /* 중복 공개값 대신 원본 화면으로 보내는 한 줄 링크(4단계 §4). */
+    #mi-admin .mi-report-command-link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 38px;
+      border: 1px solid rgba(6, 26, 58, 0.1);
+      border-radius: 8px;
+      padding: 0 12px;
+      color: var(--mi-navy);
+      background: var(--mi-grey-50);
+      font-size: 12.5px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    #mi-admin .mi-report-command-link:hover {
+      border-color: rgba(6, 26, 58, 0.2);
+    }
+
     #mi-admin .mi-report-metrics {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -7491,6 +7541,21 @@
       #mi-admin .mi-nav-title,
       #mi-admin .mi-nav small {
         display: none;
+      }
+
+      /* 가로 스크롤 메뉴에서는 접기 UI 없이 항상 펼쳐 둔다. */
+      #mi-admin .mi-nav-lab {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 8px;
+        margin-top: 0;
+      }
+
+      #mi-admin .mi-nav-lab-items,
+      #mi-admin .mi-nav-lab:not(.is-open) .mi-nav-lab-items {
+        display: flex;
+        flex: 0 0 auto;
+        gap: 8px;
       }
 
       #mi-admin .mi-nav a {
@@ -10626,7 +10691,6 @@
         <div class="mi-nav-group">
           <p class="mi-nav-title">키워드·SEO</p>
           <a href="#mi-admin-keyword" data-mi-admin-screen="keyword">키워드 조회</a>
-          <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>
         </div>
 
         <div class="mi-nav-group">
@@ -10635,9 +10699,14 @@
           <a href="#mi-admin-naver-place-rank-tracking" data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>
         </div>
 
-        <div class="mi-nav-group">
-          <p class="mi-nav-title">광고 조사</p>
-          <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
+        <!-- 개발 중 화면은 상시 메뉴에서 내려 접힌 그룹으로 모은다(4단계 §3).
+             링크 마크업은 그대로라 화면 자체는 계속 열 수 있다. -->
+        <div class="mi-nav-group mi-nav-lab" data-mi-nav-lab>
+          <button class="mi-nav-title mi-nav-lab-toggle" type="button" data-mi-nav-lab-toggle aria-expanded="false" aria-controls="mi-admin-nav-lab">실험실 · 개발 중<span aria-hidden="true">▾</span></button>
+          <div class="mi-nav-lab-items" id="mi-admin-nav-lab">
+            <a href="#mi-admin-seo-check" data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>
+            <a href="#mi-admin-meta-ads" data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
+          </div>
         </div>
       </nav>
 
@@ -11386,7 +11455,7 @@
               </div>
             </article>
 
-            <aside class="mi-card mi-card-pad mi-owner-account-card">
+            <aside class="mi-card mi-card-pad mi-owner-account-card" id="mi-admin-active-accounts-summary">
               <div class="mi-card-head">
                 <div>
                   <h3 data-owner-list-title>활성 계정</h3>
@@ -11403,16 +11472,17 @@
               </div>
             </aside>
           </div>
-        </section>
 
-        <section class="mi-view" data-mi-admin-view="active-accounts" id="mi-admin-active-accounts">
+        <!-- 4단계 §1: 활성 계정 전체보기는 별도 화면이 아니라 대행사 연결 화면의
+             한 구역이다. 화면 전환 없이 같은 자리에서 요약 → 전체를 잇는다. -->
+        <section class="mi-owner-account-full" data-mi-admin-section="active-accounts" id="mi-admin-active-accounts" data-owner-only aria-label="활성 계정 전체보기">
           <header class="mi-head">
             <div>
               <span class="mi-kicker">활성 계정 전체보기</span>
               <h1>운영팀과 광고주 연결 상태를 번호별로 관리합니다.</h1>
               <p>인증된 총관리자만 전체 계정을 조회하고 권한을 해제할 수 있습니다.</p>
             </div>
-            <button class="mi-button is-ghost" type="button" data-owner-list-back>대행사 코드로 돌아가기</button>
+            <button class="mi-button is-ghost" type="button" data-owner-list-back>계정 요약으로</button>
           </header>
 
           <div class="mi-account-board">
@@ -11462,6 +11532,7 @@
               </div>
             </article>
           </div>
+        </section>
         </section>
 
         <section class="mi-view mi-operation-input" data-mi-admin-view="excel" id="mi-admin-excel">
@@ -11707,16 +11778,13 @@
                 <div class="mi-report-command-head">
                   <div>
                     <span>보고서 입력 요약</span>
-                    <strong>핵심 수치와 공개 상태만 빠르게 확인합니다.</strong>
+                    <strong>공개 수치는 공개 관리 화면 한 곳에서만 관리합니다.</strong>
                   </div>
                   <b>검수형</b>
                 </div>
-                <div class="mi-report-metrics">
-                  <div class="mi-report-metric"><span>매출</span><strong data-admin-public="sales">입력 전</strong><small>공개값</small></div>
-                  <div class="mi-report-metric"><span>광고비</span><strong data-admin-public="adSpend">입력 전</strong><small>검수값</small></div>
-                  <div class="mi-report-metric"><span>ROAS</span><strong data-admin-public="roas">입력 전</strong><small>대표 지표</small></div>
-                  <div class="mi-report-metric"><span>구매수</span><strong data-admin-public="orders">입력 전</strong><small>성과 요약</small></div>
-                </div>
+                <!-- 4단계 §4: 같은 공개값을 읽기 전용으로 다시 그리지 않고
+                     원본 편집 화면(공개 관리)으로 보낸다. -->
+                <a class="mi-report-command-link" href="#mi-admin-publish" data-mi-admin-screen="publish">공개 관리에서 매출 · 광고비 · ROAS · 구매수 확인 →</a>
               </div>
               <div class="mi-downloads">
                 <button class="mi-download" type="button" data-admin-download data-report-type="monthly"><span><b>월간 보고서</b><small>PPTX · 2026년 6월 · 검수 후 광고주 공개</small></span><i>↓</i></button>
@@ -18316,7 +18384,10 @@
         // (광고주 화면의 은퇴한 공개 일정 화면과 같은 방식이다).
         var rejectedWorkTarget = target === "work" && Boolean(secureSession.role) && !workScreenEnabled();
         if (rejectedProductRankTarget) target = "home";
-        if (target === "active-accounts" && !canManageOwnerCodes()) target = "agency-code";
+        // 4단계 §1: 활성 계정은 대행사 연결 화면의 한 구역이 되었다.
+        // 예전 해시(#mi-admin-active-accounts)로 들어와도 같은 화면으로 보낸다.
+        var activeAccountsAnchor = target === "active-accounts";
+        if (activeAccountsAnchor) target = "agency-code";
         if (rejectedOwnerTarget) target = secureSession.role === "team" ? "agency-code" : "home";
         if (rejectedPersonalTarget) target = "home";
         if (rejectedWorkTarget) target = "my-calendar";
@@ -18358,6 +18429,41 @@
         if (target === "work" && secureSession.role) { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (target === "owner-assistant" && secureSession.role === "owner") { loadWorkItems(); maybeSyncGoogleCalendar("auto").catch(function () {}); }
         if (ownerAssistantOfficeController && typeof ownerAssistantOfficeController.setActive === "function") ownerAssistantOfficeController.setActive(target === "owner-assistant" && secureSession.role === "owner");
+        openNavLabForScreen(target);
+        if (activeAccountsAnchor) scrollToActiveAccounts();
+      }
+
+      // 4단계 §3: 접힌 "실험실 · 개발 중" 그룹은 그 안의 화면을 열면 같이 펼쳐진다.
+      function openNavLabForScreen(target) {
+        var navLab = root.querySelector("[data-mi-nav-lab]");
+        if (!navLab) return;
+        var owned = Array.prototype.some.call(navLab.querySelectorAll("[data-mi-admin-screen]"), function (link) {
+          return link.getAttribute("data-mi-admin-screen") === target;
+        });
+        if (!owned) return;
+        navLab.classList.add("is-open");
+        var toggle = navLab.querySelector("[data-mi-nav-lab-toggle]");
+        if (toggle) toggle.setAttribute("aria-expanded", "true");
+      }
+
+      // 4단계 §1: 활성 계정 전체보기는 화면 전환이 아니라 같은 화면 안 이동이다.
+      function scrollToActiveAccounts() {
+        var section = root.querySelector('[data-mi-admin-section="active-accounts"]');
+        if (!section) return;
+        window.requestAnimationFrame(function () {
+          section.scrollIntoView({ block: "start", behavior: "auto" });
+        });
+      }
+
+      var navLabToggleButton = root.querySelector("[data-mi-nav-lab-toggle]");
+      if (navLabToggleButton) {
+        navLabToggleButton.addEventListener("click", function () {
+          var navLab = navLabToggleButton.closest("[data-mi-nav-lab]");
+          if (!navLab) return;
+          var open = !navLab.classList.contains("is-open");
+          navLab.classList.toggle("is-open", open);
+          navLabToggleButton.setAttribute("aria-expanded", open ? "true" : "false");
+        });
       }
 
       root.addEventListener("click", function (event) {
@@ -18581,7 +18687,8 @@
             setStatus(ownerStatus, "활성 계정 전체보기는 인증된 총관리자 세션에서만 가능합니다.", "is-warn");
             return;
           }
-          setScreen("active-accounts", true);
+          // 4단계 §1: 화면을 바꾸지 않고 같은 화면의 전체보기 구역으로 내려간다.
+          scrollToActiveAccounts();
           loadOwnerCodes(false);
         });
       }
@@ -18589,7 +18696,8 @@
       var ownerListBackButton = root.querySelector("[data-owner-list-back]");
       if (ownerListBackButton) {
         ownerListBackButton.addEventListener("click", function () {
-          setScreen("agency-code", true);
+          var summary = root.querySelector("#mi-admin-active-accounts-summary");
+          if (summary) summary.scrollIntoView({ block: "start", behavior: "auto" });
         });
       }
 

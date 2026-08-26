@@ -314,7 +314,9 @@ const staticClientProductRankView = /<section\b[^>]*data-mi-view="naver-rank"/u;
 const adminAgencyConnectionViewSource = functionBody(
   adminSource,
   '<section class="mi-view" data-mi-admin-view="agency-code"',
-  '<section class="mi-view" data-mi-admin-view="active-accounts"',
+  // UI 고도화 4단계 §1: 활성 계정 전체보기가 대행사 연결 화면 안으로 들어와
+  // 더 이상 독립 mi-view 가 아니다. 다음 화면(운영 입력)을 경계로 쓴다.
+  '<section class="mi-view mi-operation-input" data-mi-admin-view="excel"',
 );
 const adminWorkViewSource = functionBody(
   adminSource,
@@ -360,11 +362,14 @@ const checks = {
     'data-mi-admin-screen="publish">공개 관리</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-admin-screen="keyword">키워드 조회</a>',
-    'data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-admin-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-admin-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
-    '<p class="mi-nav-title">광고 조사</p>',
+    // UI 고도화 4단계 §3: 개발 중 화면(SEO 확인 · 메타 광고 조사)은 상시 메뉴에서
+    // 내려와 맨 아래 접힌 "실험실 · 개발 중" 그룹으로 모인다. 링크는 그대로 남는다.
+    '<div class="mi-nav-group mi-nav-lab" data-mi-nav-lab>',
+    '실험실 · 개발 중',
+    'data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>',
     'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
   // 보고서는 생성 시점에 visibility=client_visible 로 저장된다. 승인 단계는
   // 코드에 존재한 적이 없으므로, 화면 문구도 그 사실만 말해야 한다.
@@ -517,7 +522,10 @@ const checks = {
   teamCannotTakeOverExistingClientCode: superAdminServer.includes("사용할 수 없는 광고주 코드입니다. 다른 코드를 발급해주세요.")
     && !superAdminServer.includes('action: "client.reactivated_by_team"')
     && !superAdminServer.includes("Reissued by operation team"),
-  ownerActiveAccountsFullView: adminSource.includes('data-mi-admin-view="active-accounts"')
+  // UI 고도화 4단계 §1: 전체보기는 별도 화면이 아니라 대행사 연결 화면의 한 구역이다.
+  ownerActiveAccountsFullView: adminSource.includes('data-mi-admin-section="active-accounts"')
+    && !adminSource.includes('data-mi-admin-view="active-accounts"')
+    && adminAgencyConnectionViewSource.includes('data-mi-admin-section="active-accounts"')
     && adminSource.includes("data-owner-team-full-list")
     && adminSource.includes("data-owner-client-full-list")
     && adminSource.includes("data-owner-list-open"),
@@ -536,11 +544,13 @@ const checks = {
     'data-mi-screen="agency-code">대행사 연결</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-screen="keyword-tool">키워드 조회</a>',
-    'data-mi-screen="seo-check">SEO 확인 (개발중)</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
     'data-mi-screen="naver-rank-tracking">N 30일 순위</a>',
     'data-mi-screen="naver-place-rank-tracking">N 플레이스 30일 순위</a>',
-    '<p class="mi-nav-title">광고 조사</p>',
+    // UI 고도화 4단계 §3: 광고주 화면도 같은 규칙으로 개발 중 화면을 아래로 모은다.
+    '<div class="mi-nav-group mi-nav-lab" data-mi-nav-lab>',
+    '실험실 · 개발 중',
+    'data-mi-screen="seo-check">SEO 확인 (개발중)</a>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
   ]),
   roleSidebarsSharePremiumShell: adminSource.includes('data-mi-shell="premium-sidebar"')

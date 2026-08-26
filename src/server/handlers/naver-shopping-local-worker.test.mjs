@@ -9,6 +9,8 @@ import {
 import { validateLocalWorkerJob } from "../naver-shopping/local-worker-contract.mjs";
 import { handleLocalWorkerRequest } from "./naver-shopping-local-worker.mjs";
 import {
+  STABLE_FINITE_WINDOW_PROOF_VERSION,
+  stableFiniteWindowDigest,
   stableCollisionDigest,
   stableWindowDigest,
 } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
@@ -23,6 +25,11 @@ const RUN_ID = "323e4567-e89b-42d3-a456-426614174000";
 const CYCLE_ID = "423e4567-e89b-42d3-a456-426614174000";
 const REPAIR_REQUEST_ID = "523e4567-e89b-42d3-a456-426614174000";
 const RUNTIME_FINGERPRINT = "a".repeat(64);
+const FINITE_CLAIM_ID = "623e4567-e89b-42d3-a456-426614174099";
+const FINITE_CANARY_TRACKER_ID = "c0ccded2-9bf7-488e-af8d-00898c0a1ff8";
+const FINITE_CANARY_KEYWORD = "아이쉘 차량용 거치대";
+const FINITE_CANARY_SELLER_PRODUCT_ID = "13327339525";
+const FINITE_CANARY_PARENT_CATALOG_ID = "59776958987";
 const LANE_ACTIONS = new Set([
   "claim-wake",
   "claim",
@@ -42,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.13",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.14",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -147,6 +154,148 @@ function completeWindow() {
     rawCount: 300,
     excludedAdCount: 0,
     items,
+  };
+}
+
+function stableFiniteParentWindow(options = {}) {
+  const items = Array.from({ length: 93 }, (_, index) => ({
+    ...organicItem(index + 1),
+    title: `아이쉘 차량용 거치대 ${index + 1}`,
+    image: "https://shopping-phinf.pstatic.net/main/shared-thumbnail.jpg",
+    productType: 2,
+  }));
+  items[8] = {
+    ...items[8],
+    productId: FINITE_CANARY_PARENT_CATALOG_ID,
+    sellerProductId: "",
+    catalogId: FINITE_CANARY_PARENT_CATALOG_ID,
+    linkedCatalogId: "",
+    catalogSellerProductIds: [options.relatedSellerProductId || FINITE_CANARY_SELLER_PRODUCT_ID],
+    title: "아이쉘 차량용 거치대",
+    image: "https://shopping-phinf.pstatic.net/main/shared-thumbnail.jpg",
+    mallName: "네이버",
+    productType: 1,
+  };
+  if (options.competingInferredCatalog === true) {
+    items[0] = {
+      ...items[0],
+      productId: "11111111111",
+      sellerProductId: "",
+      catalogId: "11111111111",
+      catalogSellerProductIds: ["99999999999"],
+      title: "아이쉘 차량용 거치대 X1000",
+      mallName: "네이버",
+      brand: "아이쉘",
+      category1: "생활/건강",
+      category2: "자동차용품",
+      productType: 1,
+    };
+    items[9] = {
+      ...items[9],
+      productId: FINITE_CANARY_SELLER_PRODUCT_ID,
+      sellerProductId: FINITE_CANARY_SELLER_PRODUCT_ID,
+      catalogId: "",
+      title: "아이쉘 차량용 거치대 X1000",
+      link: `https://smartstore.naver.com/ishell/products/${FINITE_CANARY_SELLER_PRODUCT_ID}`,
+      mallName: "아이쉘",
+      brand: "아이쉘",
+      category1: "생활/건강",
+      category2: "자동차용품",
+      productType: 3,
+    };
+  }
+  const digest = stableFiniteWindowDigest(items, {
+    keyword: FINITE_CANARY_KEYWORD,
+    marketTotal: items.length,
+  });
+  return {
+    ...completeWindow(),
+    keyword: FINITE_CANARY_KEYWORD,
+    collectionId: `pw-${Date.now()}-finite-parent-test`,
+    sourceExhausted: true,
+    marketTotal: items.length,
+    marketTotalStatus: "verified",
+    checkedCount: items.length,
+    rawCount: items.length,
+    items,
+    finiteWindowProof: {
+      version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      passCount: 2,
+      pageCount: 8,
+      pageSize: 40,
+      captureIds: ["finite-capture-0001", "finite-capture-0002"],
+      passDigests: [digest, digest],
+      marketTotal: items.length,
+      checkedCount: items.length,
+    },
+  };
+}
+
+function exactFiniteReconciliationSnapshot(row, window) {
+  return {
+    tracker_id: row.id,
+    collection_id: window.collectionId,
+    checked_count: window.checkedCount,
+    source: window.source,
+    matched: true,
+    rank: 9,
+    total: window.checkedCount,
+    top_items: [{ isOrganic: true, isAd: false }],
+    item: {
+      title: FINITE_CANARY_KEYWORD,
+      image: "https://shopping-phinf.pstatic.net/main/shared-thumbnail.jpg",
+      finiteWindowProofVersion: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      sourceExhausted: true,
+      finiteMarketTotal: window.checkedCount,
+      atomicSuccessEligible: false,
+      trackingRankSource: "related_catalog",
+      relatedCatalogProductId: FINITE_CANARY_PARENT_CATALOG_ID,
+      relatedCatalogRelationBasis: "catalog_seller_product_id",
+      catalogId: FINITE_CANARY_PARENT_CATALOG_ID,
+      catalogSellerProductIds: [FINITE_CANARY_SELLER_PRODUCT_ID],
+      rankPolicy: "organic_only",
+      adExcluded: true,
+      rankEvidence: "naver_shopping_organic_list",
+      collectionId: window.collectionId,
+      isOrganic: true,
+      isAd: false,
+    },
+  };
+}
+
+function exactFiniteReconciliationLedger(job, window, overrides = {}) {
+  return {
+    event_type: "finite_window_committed",
+    claim_id: FINITE_CLAIM_ID,
+    run_id: RUN_ID,
+    worker_id: WORKER_ID,
+    tracker_id: FINITE_CANARY_TRACKER_ID,
+    lease_started_at: job.claims[0].leaseStartedAt,
+    collection_id: window.collectionId,
+    checked_count: window.checkedCount,
+    details: {
+      source: "naver_shopping_results_collector",
+      finiteWindowProofVersion: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      sourceExhausted: true,
+      marketTotal: window.checkedCount,
+      matched: true,
+      rank: 9,
+      relationBasis: "catalog_seller_product_id",
+      atomicSuccessEligible: false,
+    },
+    ...overrides,
+  };
+}
+
+function exactFiniteReconciliationClaim(job, overrides = {}) {
+  return {
+    event_type: "tracker_claimed",
+    claim_id: FINITE_CLAIM_ID,
+    run_id: RUN_ID,
+    worker_id: WORKER_ID,
+    tracker_id: FINITE_CANARY_TRACKER_ID,
+    lease_started_at: job.claims[0].leaseStartedAt,
+    ...overrides,
   };
 }
 
@@ -391,7 +540,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.13");
+          assert.equal(args.p_runtime_version, "1.1.14");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -517,7 +666,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.13",
+      runtimeVersion: "1.1.14",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -577,7 +726,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.13",
+      runtimeVersion: "1.1.14",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -619,7 +768,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.13",
+      runtimeVersion: "1.1.14",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -661,7 +810,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.13",
+      runtimeVersion: "1.1.14",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1661,6 +1810,166 @@ test("submits one strict 300 window at the shared signed-worker clock skew", asy
   });
 });
 
+test("commits the isolated stable finite canary only through an exact catalog seller-product relationship", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker({
+      id: FINITE_CANARY_TRACKER_ID,
+      keyword: FINITE_CANARY_KEYWORD,
+      product_id: FINITE_CANARY_SELLER_PRODUCT_ID,
+      product_url: `https://smartstore.naver.com/ishell/products/${FINITE_CANARY_SELLER_PRODUCT_ID}`,
+      product_title: FINITE_CANARY_KEYWORD,
+    });
+    const window = stableFiniteParentWindow();
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let finiteCommitArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          assert.equal(name, "mi_commit_naver_shopping_finite_worker_result");
+          finiteCommitArgs = args;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "submit", job, window }),
+      ctx,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.committedCount, 1);
+    assert.equal(body.finiteCommittedCount, 1);
+    assert.equal(finiteCommitArgs.p_tracker_id, FINITE_CANARY_TRACKER_ID);
+    assert.equal(finiteCommitArgs.p_snapshot.checked_count, 93);
+    assert.equal(finiteCommitArgs.p_snapshot.rank, 9);
+    assert.equal(finiteCommitArgs.p_snapshot.item.finiteWindowProofVersion, STABLE_FINITE_WINDOW_PROOF_VERSION);
+    assert.equal(finiteCommitArgs.p_snapshot.item.trackingRankSource, "related_catalog");
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogProductId, FINITE_CANARY_PARENT_CATALOG_ID);
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogRelationBasis, "catalog_seller_product_id");
+    assert.equal(JSON.stringify(finiteCommitArgs.p_snapshot).includes("finite-capture-0001"), false);
+    assert.equal(JSON.stringify(finiteCommitArgs.p_snapshot).includes(window.finiteWindowProof.passDigests[0]), false);
+  });
+});
+
+test("prefers the exact catalog seller-product parent at rank 9 over an unrelated rank 1 model inference", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker({
+      id: FINITE_CANARY_TRACKER_ID,
+      keyword: FINITE_CANARY_KEYWORD,
+      product_id: FINITE_CANARY_SELLER_PRODUCT_ID,
+      product_url: `https://smartstore.naver.com/ishell/products/${FINITE_CANARY_SELLER_PRODUCT_ID}`,
+      product_title: FINITE_CANARY_KEYWORD,
+    });
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let finiteCommitArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          assert.equal(name, "mi_commit_naver_shopping_finite_worker_result");
+          finiteCommitArgs = args;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({
+        action: "submit",
+        job,
+        window: stableFiniteParentWindow({ competingInferredCatalog: true }),
+      }),
+      ctx,
+    );
+
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).finiteCommittedCount, 1);
+    assert.equal(finiteCommitArgs.p_snapshot.rank, 9);
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogProductId, FINITE_CANARY_PARENT_CATALOG_ID);
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogRelationBasis, "catalog_seller_product_id");
+  });
+});
+
+test("rejects a same-title same-thumbnail catalog when the exact seller-product relationship id differs", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker({
+      id: FINITE_CANARY_TRACKER_ID,
+      keyword: FINITE_CANARY_KEYWORD,
+      product_id: FINITE_CANARY_SELLER_PRODUCT_ID,
+      product_url: `https://smartstore.naver.com/ishell/products/${FINITE_CANARY_SELLER_PRODUCT_ID}`,
+      product_title: FINITE_CANARY_KEYWORD,
+    });
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let commitCalled = false;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          commitCalled = true;
+          return { data: null, error: null };
+        },
+        from(table) {
+          assert.equal(table, "naver_rank_trackers");
+          return resolvingQuery({ data: [row], error: null });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({
+        action: "submit",
+        job,
+        window: stableFiniteParentWindow({ relatedSellerProductId: "99999999999" }),
+      }),
+      ctx,
+    );
+
+    assert.equal(response.status, 422);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_FINITE_MATCH_INVALID");
+    assert.equal(commitCalled, false);
+  });
+});
+
 test("persists only the verified stable proof version in the snapshot evidence", async () => {
   await withWorkerEnv(async () => {
     const row = tracker();
@@ -2305,6 +2614,109 @@ test("reconciles a lost grouped-submit response by exact claim id without rewrit
     assert.equal(body.uncommittedCount, 1);
     assert.equal(body.leaseLostCount, 0);
     assert.deepEqual(rpcCalls, ["mi_consume_naver_shopping_worker_nonce"]);
+  });
+});
+
+test("reconciles finite count only from an exact snapshot plus its exact scheduler ledger", async (t) => {
+  await withWorkerEnv(async () => {
+    const row = tracker({
+      id: FINITE_CANARY_TRACKER_ID,
+      keyword: FINITE_CANARY_KEYWORD,
+      product_id: FINITE_CANARY_SELLER_PRODUCT_ID,
+      processing_started_at: null,
+      processing_until: null,
+    });
+    const job = {
+      keyword: FINITE_CANARY_KEYWORD,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: new Date(Date.now() - 60_000).toISOString(),
+        leaseUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      }],
+    };
+    const window = {
+      ...stableFiniteParentWindow(),
+      collectionId: `pw-chrome-${Date.now()}-finite-reconcile-test`,
+    };
+    const exactLedger = exactFiniteReconciliationLedger(job, window);
+    const exactClaim = exactFiniteReconciliationClaim(job);
+    const exactSnapshot = exactFiniteReconciliationSnapshot(row, window);
+    for (const scenario of [
+      { name: "snapshot only", ledger: [], expectedFiniteCount: 0 },
+      {
+        name: "legacy finite-looking snapshot is not the full shape",
+        snapshot: {
+          ...exactSnapshot,
+          item: { ...exactSnapshot.item, rankPolicy: undefined },
+        },
+        ledger: [exactClaim, exactLedger],
+        expectedFiniteCount: 0,
+      },
+      {
+        name: "atomic ledger is not finite",
+        ledger: [exactClaim, { ...exactLedger, event_type: "tracker_committed", checked_count: 300 }],
+        expectedFiniteCount: 0,
+      },
+      {
+        name: "different run is not the same claim",
+        ledger: [exactClaim, { ...exactLedger, run_id: "723e4567-e89b-42d3-a456-426614174099" }],
+        expectedFiniteCount: 0,
+      },
+      {
+        name: "different claim id is not the same claim",
+        ledger: [
+          exactClaim,
+          { ...exactLedger, claim_id: "823e4567-e89b-42d3-a456-426614174099" },
+        ],
+        expectedFiniteCount: 0,
+      },
+      { name: "exact finite ledger", ledger: [exactClaim, exactLedger], expectedFiniteCount: 1 },
+    ]) {
+      await t.test(scenario.name, async () => {
+        let schedulerLedgerReads = 0;
+        const ctx = {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              return { data: true, error: null };
+            },
+            from(table) {
+              if (table === "naver_rank_snapshots") {
+                return resolvingQuery({
+                  data: [scenario.snapshot || exactSnapshot],
+                  error: null,
+                });
+              }
+              if (table === "naver_shopping_scheduler_events") {
+                schedulerLedgerReads += 1;
+                return resolvingQuery({ data: scenario.ledger, error: null });
+              }
+              if (table === "naver_rank_trackers") {
+                return resolvingQuery({ data: [row], error: null });
+              }
+              throw new Error(`unexpected table ${table}`);
+            },
+          },
+        };
+
+        const response = await handleLocalWorkerRequest(signedRequest({
+          action: "reconcile-submit",
+          job,
+          collectionId: window.collectionId,
+        }), ctx);
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.alreadyCommittedCount, 1);
+        assert.equal(body.finiteCommittedCount, scenario.expectedFiniteCount);
+        assert.equal(schedulerLedgerReads, 1);
+        assert.deepEqual(body.claimResults, [{
+          claimId: FINITE_CANARY_TRACKER_ID,
+          status: "already_committed",
+        }]);
+      });
+    }
   });
 });
 

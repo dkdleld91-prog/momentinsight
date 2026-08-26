@@ -6,10 +6,15 @@ import {
   normalizeText,
   trustedCollectorWindow,
 } from "../handlers/naver-shopping-rank.mjs";
+import { STABLE_FINITE_WINDOW_PROOF_VERSION } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 export const LOCAL_WORKER_ORGANIC_LIMIT = 300;
 export const LOCAL_WORKER_BODY_MAX_BYTES = 4 * 1024 * 1024;
 export const LOCAL_WORKER_ENDPOINT_PATH = "/api/naver-shopping-local-worker";
+export const STABLE_FINITE_CANARY_TRACKER_ID = "c0ccded2-9bf7-488e-af8d-00898c0a1ff8";
+export const STABLE_FINITE_CANARY_KEYWORD = "아이쉘 차량용 거치대";
+export const STABLE_FINITE_CANARY_SELLER_PRODUCT_ID = "13327339525";
+export const STABLE_FINITE_CANARY_PARENT_CATALOG_ID = "59776958987";
 const DEFAULT_MAX_WINDOW_AGE_MS = 15 * 60_000;
 const DEFAULT_FUTURE_TOLERANCE_MS = LOCAL_WORKER_MAX_CLOCK_SKEW_SECONDS * 1000;
 // The shared collector contract rejects deadlines more than 15 minutes ahead.
@@ -83,10 +88,19 @@ export function validateStrictLocalWorkerWindow(payload, options = {}) {
     keyword,
     maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
   });
+  const exactWindow = trusted.checkedCount === LOCAL_WORKER_ORGANIC_LIMIT
+    && trusted.items.length === LOCAL_WORKER_ORGANIC_LIMIT;
+  const stableFiniteWindow = options.allowStableFinite === true
+    && trusted.finiteWindowProof?.version === STABLE_FINITE_WINDOW_PROOF_VERSION
+    && trusted.checkedCount > 0
+    && trusted.checkedCount < LOCAL_WORKER_ORGANIC_LIMIT
+    && trusted.items.length === trusted.checkedCount
+    && trusted.sourceExhausted === true
+    && trusted.marketTotalStatus === "verified"
+    && trusted.marketTotal === trusted.checkedCount;
   if (
     trusted.schemaVersion !== NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA
-    || trusted.checkedCount !== LOCAL_WORKER_ORGANIC_LIMIT
-    || trusted.items.length !== LOCAL_WORKER_ORGANIC_LIMIT
+    || (!exactWindow && !stableFiniteWindow)
     || trusted.complete !== true
     || trusted.partial !== false
   ) {
@@ -109,6 +123,15 @@ export function validateStrictLocalWorkerWindow(payload, options = {}) {
     throw contractError("local_worker_window_stale");
   }
   return trusted;
+}
+
+export function isStableFiniteCanaryJob(job = {}) {
+  return job?.kind !== "lookup"
+    && normalizeText(job?.keyword) === STABLE_FINITE_CANARY_KEYWORD
+    && Array.isArray(job?.claims)
+    && job.claims.length === 1
+    && String(job.claims[0]?.trackerId || "").trim().toLowerCase()
+      === STABLE_FINITE_CANARY_TRACKER_ID;
 }
 
 export function localWorkerCollectionKey(trackerId, collectionId) {

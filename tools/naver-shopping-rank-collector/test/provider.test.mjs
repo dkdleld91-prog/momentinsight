@@ -382,7 +382,12 @@ test("maps explicit parentCatalogId and product shape without treating parentId 
   const parsed = parseNaverNextDataPage(nextDataFixture({
     total: 2,
     entries: [
-      nextDataCatalog(1),
+      nextDataCatalog(1, {
+        lowMallList: [
+          { nvMid: "59848607355", mallPid: "l927221885229" },
+          { nvMid: "90871849857", mallPid: "13327339525" },
+        ],
+      }),
       nextDataProduct(2, {
         parentCatalogId: "71000000002",
         stdCatalogMatchType: "2",
@@ -392,8 +397,9 @@ test("maps explicit parentCatalogId and product shape without treating parentId 
   const [catalog, matchedSingle] = parsed.rows;
 
   assert.equal(catalog.productId, "91000000001");
-  assert.equal(catalog.catalogId, "71000000001");
+  assert.equal(catalog.catalogId, "91000000001");
   assert.equal(catalog.linkedCatalogId, "71000000001");
+  assert.deepEqual(catalog.catalogSellerProductIds, ["13327339525"]);
   assert.equal(catalog.productType, 1);
   assert.equal(catalog.sellerProductId, undefined);
 
@@ -471,7 +477,8 @@ test("keeps a catalog card and its linked seller card as two distinct organic re
 
   assert.equal(state.items.length, 2);
   assert.deepEqual(state.items.map((item) => item.organicRank), [1, 2]);
-  assert.equal(state.items[0].catalogId, sharedCatalogId);
+  assert.equal(state.items[0].catalogId, "91000000001");
+  assert.equal(state.items[0].linkedCatalogId, sharedCatalogId);
   assert.equal(state.items[1].linkedCatalogId, sharedCatalogId);
 });
 

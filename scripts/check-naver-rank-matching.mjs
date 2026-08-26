@@ -178,6 +178,43 @@ const trackingKeepsOrganicBehindAd = selectRepresentativeTrackingRank({
 assert.equal(trackingKeepsOrganicBehindAd.rank, 10);
 assert.equal(trackingKeepsOrganicBehindAd.trackingRankSource, "exact_product");
 assert.equal(trackingKeepsOrganicBehindAd.relatedCatalogRank, null);
+
+const foldedCatalogTarget = buildRankTarget({ targetProductId: "13327339525" });
+const foldedCatalogExposure = productExposureItemsFromOrganic([
+  {
+    rank: 9,
+    isOrganic: true,
+    item: {
+      productId: "59776958987",
+      catalogId: "59776958987",
+      productType: 1,
+      title: "아이쉘 차량용 거치대 원부",
+      catalogSellerProductIds: ["13327339525"],
+    },
+  },
+], null, foldedCatalogTarget, "아이쉘 차량용 거치대");
+assert.equal(foldedCatalogExposure.length, 1);
+assert.equal(foldedCatalogExposure[0].isRelatedCatalog, true);
+assert.equal(foldedCatalogExposure[0].catalogId, "59776958987");
+assert.equal(foldedCatalogExposure[0].relationBasis, "catalog_seller_product_id");
+
+const similarCatalogWithoutExactSellerId = productExposureItemsFromOrganic([
+  {
+    rank: 1,
+    isOrganic: true,
+    item: {
+      productId: "59776958987",
+      catalogId: "59776958987",
+      productType: 1,
+      title: "아이쉘 차량용 거치대 원부",
+      brand: "아이쉘",
+      category1: "생활/건강",
+      category2: "차량용휴대폰용품",
+      catalogSellerProductIds: ["99999999999"],
+    },
+  },
+], null, foldedCatalogTarget, "아이쉘 차량용 거치대");
+assert.deepEqual(similarCatalogWithoutExactSellerId, []);
 assert.equal(trackingKeepsOrganicBehindAd.excludedAdCount, 1);
 
 assert.equal(extractProductId(smartstoreUrl), "1234567890");

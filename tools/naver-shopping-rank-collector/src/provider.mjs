@@ -388,6 +388,23 @@ function nextDataOptionalString(value, detail, max = 500) {
   return result;
 }
 
+function nextDataCatalogSellerProductIds(value, detail) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 100) throw nextDataSchemaError(detail);
+  const ids = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const offer = nextDataRecord(value[index], `${detail}.${index}`);
+    const mallProductId = nextDataOptionalString(
+      offer.mallPid,
+      `${detail}.${index}.mallPid`,
+      200,
+    );
+    const id = numericId(mallProductId);
+    if (id && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
 /**
  * Parse the current Naver Shopping SSR contract without guessing through the DOM.
  * `compositeList.list` is already in rendered document order. Ads carry `adId`,
@@ -506,10 +523,15 @@ export function parseNaverNextDataPage(payload, {
       throw nextDataSchemaError(`${entryDetail}.item.mallProductId`);
     }
     const sellerProductId = numericMallProductId || linkIds.sellerProductId || "";
-    const catalogId = catalogResult ? (parentCatalogId || productId) : parentCatalogId;
+    // For a Naver model card `item.id` is the public /catalog/{id} identity.
+    // `parentCatalogId` is an internal grouping id and must not replace it.
+    const catalogId = catalogResult ? productId : parentCatalogId;
     const linkedCatalogId = parentCatalogId && parentCatalogId !== productId
       ? parentCatalogId
       : "";
+    const catalogSellerProductIds = catalogResult
+      ? nextDataCatalogSellerProductIds(item.lowMallList, `${entryDetail}.item.lowMallList`)
+      : [];
     // The public handler already understands Naver Search API product types:
     // 1 = price-comparison catalog, 2 = unmatched seller item,
     // 3 = seller item explicitly linked to a parent catalog.
@@ -525,6 +547,7 @@ export function parseNaverNextDataPage(payload, {
       sellerProductId,
       catalogId,
       linkedCatalogId,
+      ...(catalogSellerProductIds.length ? { catalogSellerProductIds } : {}),
       productType,
       title,
       link,

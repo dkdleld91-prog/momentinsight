@@ -24,7 +24,10 @@ import {
   resolveNativeExchangeWait,
   validateCollectionProtocolAck,
 } from "./naver-shopping-native-host-core.mjs";
-import { SCHEMA_VERSION } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
+import {
+  SCHEMA_VERSION,
+  STABLE_FINITE_WINDOW_PROOF_VERSION,
+} from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 
 function assertZshSyntax(scriptPath, source) {
   const lint = spawnSync("/bin/zsh", ["-n", scriptPath], { encoding: "utf8" });
@@ -429,6 +432,92 @@ test("native provider reports the latest partial count after exactly one full re
   ]);
 });
 
+test("native provider accepts one stable finite market only after two independent identical captures", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      return {
+        type: "collection",
+        captureId: `finite-capture-${messages.length}`,
+        pages: finiteMarketPages(93),
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+
+  assert.equal(result.checkedCount, 93);
+  assert.equal(result.marketTotal, 93);
+  assert.equal(result.marketTotalStatus, "verified");
+  assert.equal(result.sourceExhausted, true);
+  assert.equal(result.finiteWindowProof?.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+  assert.deepEqual(result.finiteWindowProof?.captureIds, ["finite-capture-1", "finite-capture-2"]);
+  assert.equal(result.finiteWindowProof?.passDigests[0], result.finiteWindowProof?.passDigests[1]);
+  assert.equal(messages.length, 2);
+});
+
+test("native provider keeps a stable finite market typed as partial unless the caller allowlists it", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange() {
+      exchanges += 1;
+      return {
+        type: "collection",
+        captureId: `non-canary-finite-${exchanges}`,
+        pages: finiteMarketPages(93),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_partial_window" && error?.detail === "93/300",
+  );
+  assert.equal(exchanges, 2);
+});
+
+test("native finite proof rejects replayed captures and exact relationship-id drift", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  for (const drift of ["capture", "relationship"]) {
+    let exchanges = 0;
+    const provider = createChromeNativeProvider({
+      nowMs: () => nowMs,
+      async exchange() {
+        exchanges += 1;
+        const pages = finiteMarketPages(93);
+        const data = JSON.parse(pages[0].nextDataText);
+        const row = data.props.pageProps.compositeList.list.find((entry) => !entry.item.adId);
+        row.item.id = "59776958987";
+        row.item.parentCatalogId = "";
+        row.item.mallId = "naver_model";
+        row.item.mallProductId = "";
+        row.item.stdCatalogMatchType = "1";
+        row.item.mallPcUrl = "https://search.shopping.naver.com/catalog/59776958987";
+        row.item.lowMallList = [{ mallPid: exchanges === 2 && drift === "relationship"
+          ? "99999999999"
+          : "13327339525" }];
+        pages[0].nextDataText = JSON.stringify(data);
+        return {
+          type: "collection",
+          captureId: drift === "capture" ? "finite-capture-replayed" : `finite-capture-${exchanges}`,
+          pages,
+        };
+      },
+    });
+
+    await assert.rejects(
+      () => provider.collect(request(nowMs), { allowStableFinite: true }),
+      (error) => error?.code === "provider_stable_finite_window_unproven",
+    );
+    assert.equal(exchanges, 2);
+  }
+});
+
 test("native provider never starts a third pass when a partial retry needs stable proof", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const messages = [];
@@ -770,7 +859,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.13");
+  assert.equal(manifest.version, "1.1.14");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -1127,6 +1216,20 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     successCount: stored.momentInsightRankCandidateSuccessCount,
   }, preservedProof);
 
+  const trackerFiniteWindowSummary = {
+    ...trackerPartialWindowSummary,
+    trackerPartialWindowFailures: 0,
+    trackerFiniteWindowFailures: 1,
+  };
+  assert.equal(helpers.workerSummaryRequiresCadenceReset(trackerFiniteWindowSummary), false);
+  assert.equal(helpers.cadenceFromWorkerSummary(trackerFiniteWindowSummary), 6);
+  assert.equal(await helpers.updateCandidateCadenceEvidence(trackerFiniteWindowSummary), true);
+  assert.deepEqual({
+    resetPending: stored.momentInsightRankCandidateResetPending,
+    startedAt: stored.momentInsightRankCandidateStabilityStartedAt,
+    successCount: stored.momentInsightRankCandidateSuccessCount,
+  }, preservedProof);
+
   for (const summary of [
     { ...trackerPartialWindowSummary, trackerPartialWindowFailures: undefined },
     { ...trackerPartialWindowSummary, trackerPartialWindowFailures: "1" },
@@ -1134,6 +1237,12 @@ test("candidate cadence requires durable post-failure atomic stability proof", a
     { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 1.5 },
     { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 0 },
     { ...trackerPartialWindowSummary, trackerPartialWindowFailures: 2 },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: undefined },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: "1" },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: -1 },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: 1.5 },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: 0 },
+    { ...trackerFiniteWindowSummary, trackerFiniteWindowFailures: 2 },
     { ...trackerPartialWindowSummary, failed: "1" },
     { ...trackerPartialWindowSummary, failed: 2 },
     { ...trackerPartialWindowSummary, releaseFailed: "0" },
@@ -2058,7 +2167,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.13");
+  assert.equal(manifest.version, "1.1.14");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2233,7 +2342,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.13",
+    runtimeVersion: "1.1.14",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

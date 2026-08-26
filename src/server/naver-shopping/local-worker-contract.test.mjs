@@ -9,6 +9,9 @@ import {
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
+  STABLE_FINITE_CANARY_KEYWORD,
+  STABLE_FINITE_CANARY_TRACKER_ID,
+  isStableFiniteCanaryJob,
   localWorkerCollectionKey,
   localWorkerRankRequest,
   validateLocalWorkerJob,
@@ -18,6 +21,8 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  STABLE_FINITE_WINDOW_PROOF_VERSION,
+  stableFiniteWindowDigest,
   stableCollisionDigest,
   stableWindowDigest,
   validateProviderWindow,
@@ -344,6 +349,64 @@ test("rejects a source-exhausted short window even when the base collector marks
     rawCount: 299,
     sourceExhausted: true,
   }), { keyword: "온열찜질기", nowMs: NOW }), /local_worker_window_not_300/);
+});
+
+test("accepts a stable finite window only for the exact isolated canary job", () => {
+  const finiteItems = Array.from({ length: 93 }, (_, index) => ({
+    ...item(index + 1),
+    productType: 2,
+  }));
+  const digest = stableFiniteWindowDigest(finiteItems, {
+    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    marketTotal: 93,
+  });
+  const finiteWindow = windowFixture({
+    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    items: finiteItems,
+    checkedCount: 93,
+    rawCount: 93,
+    sourceExhausted: true,
+    marketTotal: 93,
+    marketTotalStatus: "verified",
+    finiteWindowProof: {
+      version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      passCount: 2,
+      pageCount: 8,
+      pageSize: 40,
+      captureIds: ["finite-capture-0001", "finite-capture-0002"],
+      passDigests: [digest, digest],
+      marketTotal: 93,
+      checkedCount: 93,
+    },
+  });
+  const canaryJob = job({
+    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    claims: [{
+      trackerId: STABLE_FINITE_CANARY_TRACKER_ID,
+      leaseStartedAt: "2026-08-01T06:00:00.000Z",
+      leaseUntil: "2026-08-01T06:12:00.000Z",
+    }],
+  });
+
+  assert.equal(isStableFiniteCanaryJob(validateLocalWorkerJob(canaryJob)), true);
+  assert.equal(validateStrictLocalWorkerWindow(finiteWindow, {
+    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    nowMs: NOW,
+    allowStableFinite: true,
+  }).checkedCount, 93);
+  assert.throws(() => validateStrictLocalWorkerWindow(finiteWindow, {
+    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    nowMs: NOW,
+  }), /local_worker_window_not_300/);
+  assert.equal(isStableFiniteCanaryJob(validateLocalWorkerJob({
+    ...canaryJob,
+    claims: [{ ...canaryJob.claims[0], trackerId: TRACKER_ONE }],
+  })), false);
+  assert.equal(isStableFiniteCanaryJob(validateLocalWorkerJob({
+    ...canaryJob,
+    kind: "lookup",
+    claims: [{ ...canaryJob.claims[0], lookupJobId: STABLE_FINITE_CANARY_TRACKER_ID }],
+  })), false);
 });
 
 test("rejects partial, advertised, duplicate, rank-gap, keyword and stale evidence", () => {

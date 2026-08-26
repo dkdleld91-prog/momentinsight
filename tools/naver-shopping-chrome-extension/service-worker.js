@@ -234,12 +234,18 @@ async function safeCadenceMinutes(requested = null) {
 function workerSummaryRequiresCadenceReset(result) {
   const status = String(result?.status || "");
   const failed = result?.failed;
-  const trackerPartialWindowFailures = Object.hasOwn(
-    result || {},
-    "trackerPartialWindowFailures",
-  )
+  const hasTrackerPartialWindowFailures = Object.hasOwn(
+    result || {}, "trackerPartialWindowFailures",
+  );
+  const hasTrackerFiniteWindowFailures = Object.hasOwn(
+    result || {}, "trackerFiniteWindowFailures",
+  );
+  const trackerPartialWindowFailures = hasTrackerPartialWindowFailures
     ? result.trackerPartialWindowFailures
-    : (failed === 0 ? 0 : undefined);
+    : (failed === 0 || hasTrackerFiniteWindowFailures ? 0 : undefined);
+  const trackerFiniteWindowFailures = hasTrackerFiniteWindowFailures
+    ? result.trackerFiniteWindowFailures
+    : (failed === 0 || hasTrackerPartialWindowFailures ? 0 : undefined);
   const releaseFailed = result?.releaseFailed;
   const controlPlaneFailed = Object.hasOwn(result || {}, "controlPlaneFailed")
     ? result.controlPlaneFailed
@@ -252,24 +258,26 @@ function workerSummaryRequiresCadenceReset(result) {
     || status === "completed";
   const countersValid = Number.isSafeInteger(failed)
     && Number.isSafeInteger(trackerPartialWindowFailures)
+    && Number.isSafeInteger(trackerFiniteWindowFailures)
     && Number.isSafeInteger(releaseFailed)
     && Number.isSafeInteger(controlPlaneFailed)
     && Number.isSafeInteger(atomicSuccesses)
     && failed >= 0
     && trackerPartialWindowFailures >= 0
-    && trackerPartialWindowFailures <= failed
+    && trackerFiniteWindowFailures >= 0
+    && trackerPartialWindowFailures + trackerFiniteWindowFailures <= failed
     && releaseFailed >= 0
     && controlPlaneFailed >= 0
     && atomicSuccesses >= 0;
-  const trackerPartialWindowOnly = status === "completed"
+  const trackerCadenceNeutralOnly = status === "completed"
     && failed > 0
-    && trackerPartialWindowFailures === failed
+    && trackerPartialWindowFailures + trackerFiniteWindowFailures === failed
     && releaseFailed === 0
     && controlPlaneFailed === 0;
   return !terminalStatusValid
     || !countersValid
     || (status !== "completed" && atomicSuccesses !== 0)
-    || (failed > 0 && !trackerPartialWindowOnly)
+    || (failed > 0 && !trackerCadenceNeutralOnly)
     || releaseFailed > 0
     || controlPlaneFailed > 0
     || Boolean(result?.halted)

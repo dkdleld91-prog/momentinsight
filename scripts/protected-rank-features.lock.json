@@ -172,12 +172,12 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "a7177f096b3eb26a75f5f88373b3fc83cd92b4e6270a568bdee68d49c60a7c62"
+      "sha256": "59a3929adbf432c21d12fb48cd3a6f8a2f225b592caf9d81c25ae507b066c0a7"
     },
     {
       "id": "product-organic-rank-server",
       "file": "src/server/handlers/naver-shopping-rank.mjs",
-      "sha256": "9937187bf2c157970b225b2199a15005559c763c939d1864dc9078e62fda55c2"
+      "sha256": "b2f8f2fa80ec4baa7a391865da4057e33a9af93b0464fd8ef779604aeaa16f68"
     },
     {
       "id": "product-rank-cron-server",
@@ -207,12 +207,12 @@
     {
       "id": "shopping-collector-contract",
       "file": "tools/naver-shopping-rank-collector/src/contract.mjs",
-      "sha256": "89fdd8a506886096b9565a3ec6f358c59566ad188bfca0d90889a2e70224e895"
+      "sha256": "55eca47dbf19240b4d221bdcc2033b07507d2199923c0ac04e1fa04b59f43925"
     },
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "8b1dd9b647821b20b7f334a4fd8090972b4d627e226983d93a7f215b05c5d56c"
+      "sha256": "aed6cddb160115e08c62829f35de9ab271ca62d5397aa241fea439fa9a99c1ec"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -333,7 +333,7 @@
     {
       "id": "shopping-local-worker-contract",
       "file": "src/server/naver-shopping/local-worker-contract.mjs",
-      "sha256": "04c1dbb3249ca10d942618b4663f2c5258221b337605033aecb5ee849322bfdb"
+      "sha256": "b5471d965da3f74fbcea41386c10f8df5ab3b562a76a8e96f635ffb99ede90a0"
     },
     {
       "id": "shopping-local-worker-schedule",
@@ -343,7 +343,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "4fea048904e7cf611da49f4de2cfd91ac89e8343c97170ab10cc586eb41d262e"
+      "sha256": "38e61cd38053720e15312cdbcb73f4cf88dc7fc8d00c5971136039d847b174a9"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -358,7 +358,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "a70543ad8a9b45a405a950cab9ec74e734d0165ba6fca62573fb07ae8b7d69e1"
+      "sha256": "44e59041a08de9dede68c4cade43368161e566f161bb12f5d48e5044493d24bf"
     },
     {
       "id": "shopping-cloud-worker",
@@ -574,7 +574,7 @@
     {
       "id": "shopping-chrome-native-host-core",
       "file": "scripts/naver-shopping-native-host-core.mjs",
-      "sha256": "153013e1aa08854718649e42626a4a310b07f0701a43ae9933cc53b6e3a2297b"
+      "sha256": "b1c377a9435b201ea57e42e44c5bfcba612d50c2ad5e7b97c95baeb808b88cca"
     },
     {
       "id": "shopping-chrome-native-host-wrapper",
@@ -619,12 +619,12 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "cc31fddf557294e8504d72f75909160ef3f29b56c14ffec8c77072bfad38610e"
+      "sha256": "0447390aae3a3b6c5c46a037ee8dac427557c77e10bafb468622cf59ee709421"
     },
     {
       "id": "shopping-chrome-extension-worker",
       "file": "tools/naver-shopping-chrome-extension/service-worker.js",
-      "sha256": "ffc84031a09408aaeba77249e8628ddc421902ed3d68086d0eb2b69628a424b0"
+      "sha256": "2477d7a6250fe09dfc4b2ceb9b91182108ce0cc9da1fad2f1cc3c98618a87422"
     },
     {
       "id": "shopping-local-worker-session-boundary",
@@ -707,6 +707,12 @@
       "id": "shopping-worker-runtime-1-1-13-candidate-6-minute-cadence",
       "file": "supabase/migrations/20260824165332_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence.sql",
       "sha256": "3045111a6e7543c47456c8eeef00cf46a06800ce4435c8f338a3762c150db054",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-14-stable-finite-window-v1",
+      "file": "supabase/migrations/20260826035440_naver_shopping_stable_finite_window_v1.sql",
+      "sha256": "81c65c911f5ba8808b42cf5bde5c3cf01e98a8c5f158897d0c72bfe35f04b8c8",
       "rankMigration": true
     }
   ]

@@ -15,6 +15,8 @@ import {
   MOBILE_TOP_FALLBACK_SOURCE,
 } from "../naver-shopping/mobile-top-fallback.mjs";
 import {
+  STABLE_FINITE_WINDOW_PROOF_VERSION,
+  stableFiniteWindowDigest,
   stableCollisionDigest,
   stableWindowDigest,
 } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
@@ -27,6 +29,7 @@ const STABLE_CROSS_PAGE_PASS_COUNT = 2;
 const STABLE_CROSS_PAGE_PAGE_COUNT = 8;
 const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
 const STABLE_CAPTURE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
+const MAX_CATALOG_SELLER_PRODUCT_IDS = 100;
 const RANK_RATE_WINDOW_MS = Number(process.env.MI_RANK_RATE_WINDOW_MS || 60_000);
 const RANK_RATE_LIMIT = Number(process.env.MI_RANK_RATE_LIMIT || 20);
 const SHOPPING_PROVIDER_CACHE_TTL_MS = Number(process.env.MI_NAVER_SHOPPING_PROVIDER_CACHE_TTL_MS || 12 * 60_000);
@@ -79,6 +82,12 @@ function uniqueValues(values) {
 function numericId(value) {
   const text = String(value || "").trim();
   return /^[0-9]{5,}$/.test(text) ? text : "";
+}
+
+function catalogSellerProductIds(item) {
+  if (!Array.isArray(item?.catalogSellerProductIds)
+    || item.catalogSellerProductIds.length > MAX_CATALOG_SELLER_PRODUCT_IDS) return [];
+  return uniqueValues(item.catalogSellerProductIds.map(numericId).filter(Boolean));
 }
 
 function isTrustedNaverShoppingProductHost(value) {
@@ -553,6 +562,54 @@ function trustedStableCrossPageProof(proof, items, keyword) {
   };
 }
 
+function trustedStableFiniteWindowProof(proof, items, keyword, marketTotal) {
+  if (!proof || typeof proof !== "object" || Array.isArray(proof)) return null;
+  const allowedKeys = new Set([
+    "version",
+    "passCount",
+    "pageCount",
+    "pageSize",
+    "captureIds",
+    "passDigests",
+    "marketTotal",
+    "checkedCount",
+  ]);
+  if (Object.keys(proof).some((key) => !allowedKeys.has(key))) return null;
+  const captureIds = Array.isArray(proof.captureIds) ? proof.captureIds : [];
+  const passDigests = Array.isArray(proof.passDigests) ? proof.passDigests : [];
+  if (proof.version !== STABLE_FINITE_WINDOW_PROOF_VERSION
+    || proof.passCount !== STABLE_CROSS_PAGE_PASS_COUNT
+    || proof.pageCount !== STABLE_CROSS_PAGE_PAGE_COUNT
+    || proof.pageSize !== NAVER_SHOPPING_PAGE_SIZE
+    || captureIds.length !== STABLE_CROSS_PAGE_PASS_COUNT
+    || !captureIds.every((captureId) => (
+      typeof captureId === "string" && STABLE_CAPTURE_ID_PATTERN.test(captureId)
+    ))
+    || captureIds[0] === captureIds[1]
+    || passDigests.length !== STABLE_CROSS_PAGE_PASS_COUNT
+    || !passDigests.every((digest) => (
+      typeof digest === "string" && SHA256_HEX_PATTERN.test(digest)
+    ))
+    || proof.marketTotal !== marketTotal
+    || proof.checkedCount !== items.length) return null;
+  try {
+    const digest = stableFiniteWindowDigest(items, { keyword, marketTotal });
+    if (passDigests[0] !== passDigests[1] || passDigests[0] !== digest) return null;
+  } catch {
+    return null;
+  }
+  return {
+    version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+    passCount: STABLE_CROSS_PAGE_PASS_COUNT,
+    pageCount: STABLE_CROSS_PAGE_PAGE_COUNT,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: passDigests.slice(),
+    marketTotal,
+    checkedCount: items.length,
+  };
+}
+
 function trustedCollectorWindow(payload, options = {}) {
   const expectedKeyword = normalizeText(options.keyword);
   const expectedLimit = Math.max(1, Math.min(
@@ -589,6 +646,13 @@ function trustedCollectorWindow(payload, options = {}) {
       || safeProductUrl(item.link)
     )
     && Boolean(normalizeText(item.title))
+    && (item.catalogSellerProductIds === undefined || (
+      classifyNaverProductType(item.productType).isPriceCompareCatalog
+      && Array.isArray(item.catalogSellerProductIds)
+      && item.catalogSellerProductIds.length <= MAX_CATALOG_SELLER_PRODUCT_IDS
+      && item.catalogSellerProductIds.length === new Set(item.catalogSellerProductIds).size
+      && item.catalogSellerProductIds.every((id) => typeof id === "string" && /^[0-9]{5,80}$/u.test(id))
+    ))
   ));
   const identityOrigins = new Map();
   let crossPageDuplicate = false;
@@ -628,6 +692,18 @@ function trustedCollectorWindow(payload, options = {}) {
   const duplicateEvidenceValid = crossPageDuplicate
     ? Boolean(stableCrossPageProof)
     : payload?.crossPageProof === undefined;
+  const stableFiniteWindowProof = !crossPageDuplicate
+    && expectedLimit === NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && checkedCount > 0
+    && checkedCount < NAVER_SHOPPING_ORGANIC_WINDOW_MAX
+    && sourceExhausted
+    && marketTotalStatus === "verified"
+    && marketTotal === checkedCount
+    && items?.length === checkedCount
+    ? trustedStableFiniteWindowProof(payload?.finiteWindowProof, items, keyword, marketTotal)
+    : null;
+  const finiteEvidenceValid = payload?.finiteWindowProof === undefined
+    || Boolean(stableFiniteWindowProof);
   const coverageComplete = checkedCount >= expectedLimit || sourceExhausted;
   if (
     !payload
@@ -657,13 +733,18 @@ function trustedCollectorWindow(payload, options = {}) {
     || !sequentialRanks
     || identityKeys.length !== items.length
     || !duplicateEvidenceValid
+    || !finiteEvidenceValid
     || !complete
     || payload?.partial !== false
     || complete !== coverageComplete
   ) {
     throw new Error("shopping_rank_provider_untrusted_evidence");
   }
-  const { crossPageProof: _untrustedCrossPageProof, ...trustedPayload } = payload;
+  const {
+    crossPageProof: _untrustedCrossPageProof,
+    finiteWindowProof: _untrustedFiniteWindowProof,
+    ...trustedPayload
+  } = payload;
   return {
     ...trustedPayload,
     schemaVersion,
@@ -682,6 +763,7 @@ function trustedCollectorWindow(payload, options = {}) {
     source,
     rankEvidence,
     ...(stableCrossPageProof ? { crossPageProof: stableCrossPageProof } : {}),
+    ...(stableFiniteWindowProof ? { finiteWindowProof: stableFiniteWindowProof } : {}),
   };
 }
 
@@ -780,6 +862,7 @@ function itemCatalogIds(item) {
   const productType = classifyNaverProductType(item?.productType);
   return uniqueValues([
     numericId(item?.catalogId),
+    numericId(item?.linkedCatalogId),
     ...catalogIdCandidates(item?.link),
     ...(productType.isPriceCompareCatalog ? [item?.productId] : []),
   ]);
@@ -1047,6 +1130,7 @@ function serializeItem(item, rank) {
     sellerProductId: numericId(item?.sellerProductId) || extractProductId(item?.link),
     catalogId: numericId(item?.catalogId) || itemCatalogIds(item)[0] || "",
     linkedCatalogId: numericId(item?.linkedCatalogId) || "",
+    catalogSellerProductIds: catalogSellerProductIds(item),
     title: stripTags(item?.title),
     link: item?.link || "",
     image: item?.image || "",
@@ -1196,10 +1280,39 @@ function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
     });
 }
 
+function directlyRelatedCatalogItemsFromOrganic(organicItems, target) {
+  if (target?.targetMode === "catalog") return [];
+  const targetProductIds = new Set((target?.productIds || []).map(numericId).filter(Boolean));
+  if (!targetProductIds.size) return [];
+  return (organicItems || [])
+    .filter((entry) => entry?.isOrganic !== false && !isAdItem(entry?.item))
+    .filter((entry) => classifyNaverProductType(entry?.item?.productType).isPriceCompareCatalog)
+    .filter((entry) => catalogSellerProductIds(entry.item).some((id) => targetProductIds.has(id)))
+    .sort((left, right) => Number(left?.rank || 0) - Number(right?.rank || 0))
+    .slice(0, 1)
+    .map((entry) => ({
+      ...serializeItem(entry.item, entry.rank),
+      isExactTarget: false,
+      isRelatedCatalog: true,
+      exposureType: "related_catalog",
+      exposureLabel: "관련 원부",
+      relationBasis: "catalog_seller_product_id",
+    }));
+}
+
 function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyword) {
-  const relatedCatalogItems = target?.targetMode === "catalog"
+  const directCatalogItems = directlyRelatedCatalogItemsFromOrganic(organicItems, target);
+  // An exact first-party seller-product relation is authoritative. Never let
+  // a lower-ranked title/model inference from another product displace it.
+  const inferredCatalogItems = directCatalogItems.length > 0 || target?.targetMode === "catalog"
     ? []
     : relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword);
+  const relatedCatalogItems = [...directCatalogItems, ...inferredCatalogItems]
+    .filter((item, index, items) => items.findIndex((candidate) => (
+      candidate.catalogId === item.catalogId && candidate.rank === item.rank
+    )) === index)
+    .sort((left, right) => Number(left?.rank || 0) - Number(right?.rank || 0))
+    .slice(0, 1);
   const exactEntry = (organicItems || []).find((entry) => (
     entry?.isOrganic !== false
     && !isAdItem(entry?.item)
@@ -1357,6 +1470,9 @@ async function findRankFromWindow(window, {
   const crossPageProofVersion = window?.crossPageProof?.version === STABLE_CROSS_PAGE_PROOF_VERSION
     ? STABLE_CROSS_PAGE_PROOF_VERSION
     : "";
+  const finiteWindowProofVersion = window?.finiteWindowProof?.version === STABLE_FINITE_WINDOW_PROOF_VERSION
+    ? STABLE_FINITE_WINDOW_PROOF_VERSION
+    : "";
   let organicCheckedCount = 0;
   let rawCheckedCount = Number(window.rawCount || 0);
   let excludedAdCount = Number(window.excludedAdCount || 0);
@@ -1391,18 +1507,24 @@ async function findRankFromWindow(window, {
 
   const matchedProductType = classifyNaverProductType(matchedResult?.item?.productType);
   const currentLinkedCatalogId = numericId(matchedResult?.item?.linkedCatalogId);
+  const currentExposureItems = productExposureItemsFromOrganic(
+    organicItems,
+    matchedResult?.item || null,
+    target,
+    queryKeyword,
+  );
+  const currentRelatedCatalogItem = currentExposureItems.find((item) => item?.isRelatedCatalog) || null;
   // Current collector evidence is authoritative. A seller item with an explicit
   // parent catalog must never inherit a different catalog from an older snapshot.
   // The current parent is evaluated by relatedCatalogItemsFromOrganic instead.
-  const relatedCatalogEligible = !matchedResult
-    || (matchedProductType.isMatchedSingle && !currentLinkedCatalogId);
+  const relatedCatalogEligible = !currentRelatedCatalogItem && (
+    !matchedResult || (matchedProductType.isMatchedSingle && !currentLinkedCatalogId)
+  );
   const effectiveContinuityCatalogId = relatedCatalogEligible ? continuityCatalogId : "";
   const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(organicItems, effectiveContinuityCatalogId);
-  if (matchedResult || continuityCatalogItem) {
+  if (matchedResult || currentRelatedCatalogItem || continuityCatalogItem) {
     const sellerItems = matchedResult ? sellerItemsFromOrganic(organicItems, matchedResult.item, target) : [];
-    const discoveredExposureItems = matchedResult
-      ? productExposureItemsFromOrganic(organicItems, matchedResult.item, target, queryKeyword)
-      : [];
+    const discoveredExposureItems = currentExposureItems;
     const productExposureItems = effectiveContinuityCatalogId
       ? [
         ...discoveredExposureItems.filter((item) => item?.isExactTarget),
@@ -1413,7 +1535,7 @@ async function findRankFromWindow(window, {
     const exactItem = representative.exactItem
       || (matchedResult ? serializeItem(matchedResult.item, matchedResult.rank) : null);
     const representativeItem = representative.representativeItem || exactItem || continuityCatalogItem;
-    const matchedReferenceItem = matchedResult?.item || continuityCatalogItem;
+    const matchedReferenceItem = matchedResult?.item || currentRelatedCatalogItem || continuityCatalogItem;
     const relatedCatalogIds = productExposureItems
       .filter((item) => item.isRelatedCatalog)
       .map((item) => item.catalogId || item.productId);
@@ -1433,8 +1555,10 @@ async function findRankFromWindow(window, {
       },
       webPagePositionReason: "광고를 제외한 오가닉 순서를 40개 보기 기준 페이지와 페이지 내 순위로 표시합니다.",
       matchType: matchedResult?.matchType || "product_id",
-      matchEvidence: matchedResult?.matchEvidence || "prior_verified_catalog_id",
-      matchedProductId: matchedResult?.matchedProductId || effectiveContinuityCatalogId,
+      matchEvidence: matchedResult?.matchEvidence
+        || currentRelatedCatalogItem?.relationBasis
+        || "prior_verified_catalog_id",
+      matchedProductId: matchedResult?.matchedProductId || target.productId || effectiveContinuityCatalogId,
       exactProductRank: exactItem?.rank || null,
       relatedCatalogRank: representative.relatedCatalog?.rank || null,
       representativeProductId: representativeItem.productId || null,
@@ -1448,9 +1572,11 @@ async function findRankFromWindow(window, {
       source: providerSource,
       rankEvidence,
       ...(crossPageProofVersion ? { crossPageProofVersion } : {}),
+      ...(finiteWindowProofVersion ? { finiteWindowProofVersion } : {}),
       collectionId,
       collectedAt,
       complete,
+      sourceExhausted,
       partial: !complete && organicCheckedCount > 0,
       stopReason: complete ? "target_found" : "collector_window_incomplete",
       total,
@@ -1462,8 +1588,16 @@ async function findRankFromWindow(window, {
       excludedAdCount,
       targetProductId: target.productId,
       targetProductIds: target.productIds,
-      targetCatalogId: target.catalogId || currentLinkedCatalogId || effectiveContinuityCatalogId,
-      targetCatalogIds: uniqueValues([...target.catalogIds, currentLinkedCatalogId, effectiveContinuityCatalogId]),
+      targetCatalogId: target.catalogId
+        || currentRelatedCatalogItem?.catalogId
+        || currentLinkedCatalogId
+        || effectiveContinuityCatalogId,
+      targetCatalogIds: uniqueValues([
+        ...target.catalogIds,
+        currentRelatedCatalogItem?.catalogId,
+        currentLinkedCatalogId,
+        effectiveContinuityCatalogId,
+      ]),
       verifiedRelatedCatalogId: effectiveContinuityCatalogId || null,
       relatedCatalogContinuityUsed: Boolean(continuityCatalogItem),
       targetMode: target.targetMode,
@@ -1521,9 +1655,11 @@ async function findRankFromWindow(window, {
     source: providerSource,
     rankEvidence,
     ...(crossPageProofVersion ? { crossPageProofVersion } : {}),
+    ...(finiteWindowProofVersion ? { finiteWindowProofVersion } : {}),
     collectionId,
     collectedAt,
     complete,
+    sourceExhausted,
     partial: !complete && organicCheckedCount > 0,
     stopReason: complete ? (sourceExhausted ? "source_exhausted" : "rank_limit_reached") : "collector_window_incomplete",
     targetProductId: target.productId,
@@ -1632,6 +1768,7 @@ export {
   isAdItem,
   matchTargetItem,
   relatedCatalogItemsFromOrganic,
+  directlyRelatedCatalogItemsFromOrganic,
   productExposureItemsFromOrganic,
   verifiedRelatedCatalogItemFromOrganic,
   selectRepresentativeExposure,

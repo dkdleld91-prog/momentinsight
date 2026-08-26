@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import crypto from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 
@@ -658,27 +657,10 @@ test('runtime 1.1.13 candidate6 replaces the impossible 8-minute ceiling without
     /^\d{14}_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence\.sql$/u,
   );
   const sql = runtime113Candidate6Migration.source;
-  const runtimeFiles = [
-    '../tools/naver-shopping-chrome-extension/service-worker.js',
-    './naver-shopping-native-host.mjs',
-    './naver-shopping-native-host-core.mjs',
-    './naver-shopping-local-worker.mjs',
-    '../src/server/local-worker-auth.mjs',
-    '../src/server/naver-shopping/local-worker-contract.mjs',
-    '../src/server/handlers/naver-shopping-rank.mjs',
-    '../src/server/security.mjs',
-    '../src/server/naver-shopping/source-status.mjs',
-    '../src/server/naver-shopping/provider-runtime.mjs',
-    '../src/server/naver-shopping/mobile-top-fallback.mjs',
-    '../tools/naver-shopping-rank-collector/src/provider.mjs',
-    '../tools/naver-shopping-rank-collector/src/contract.mjs',
-  ];
-  const runtimeHashes = runtimeFiles.map((file) => crypto.createHash('sha256')
-    .update(readFileSync(new URL(file, import.meta.url)))
-    .digest('hex'));
-  const expectedFingerprint = crypto.createHash('sha256')
-    .update(['1.1.13', ...runtimeHashes].join('\n'), 'utf8')
-    .digest('hex');
+  // Runtime migrations are immutable release evidence. The 1.1.13 assertion
+  // must stay pinned to the bytes that were deployed with that migration,
+  // even after the current worker advances to a later runtime.
+  const expectedFingerprint = 'cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6';
   const expectedFunctions = [
     'mi_report_naver_shopping_worker_progress',
     'mi_get_naver_shopping_worker_operations',

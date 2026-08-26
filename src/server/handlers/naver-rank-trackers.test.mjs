@@ -13,6 +13,7 @@ import {
   requestAgencyCode,
   runDueTrackers,
   runTrackerCheck,
+  selectRepresentativeTrackingRank,
   trackerPayload,
   verifiedRelatedCatalogIdFromSnapshots,
 } from "./naver-rank-trackers.mjs";
@@ -246,7 +247,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.13",
+            runtime_version: "1.1.14",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -273,7 +274,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.13",
+              runtime_version: "1.1.14",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -2552,6 +2553,32 @@ test("a failed create or manual check can serialize a tracker without a snapshot
   assert.equal(payload.currentRank, 27);
 });
 
+test("tracker payload keeps the parent-catalog source beside the current rank", () => {
+  const tracker = trackerRow({ current_rank: 9, best_rank: 9 });
+  const payload = trackerPayload(tracker, [{
+    id: "snapshot-related-catalog",
+    tracker_id: tracker.id,
+    checked_at: new Date().toISOString(),
+    rank: 9,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: {
+      trackingRankSource: "related_catalog",
+      trackingRankSourceLabel: "관련 원부 기준",
+      relatedCatalogProductId: "59776958987",
+      relatedCatalogRelationBasis: "catalog_seller_product_id",
+    },
+    message: "관련 원부 9위",
+    source: "naver_shopping_results_collector",
+    created_at: new Date().toISOString(),
+  }]);
+
+  assert.equal(payload.currentRank, 9);
+  assert.equal(payload.currentRankSource, "related_catalog");
+  assert.equal(payload.currentRankSourceLabel, "관련 원부 기준");
+});
+
 test("product rank history keeps up to 120 snapshots from the most recent 30 days", () => {
   const now = Date.now();
   const recent = Array.from({ length: 121 }, (_, index) => ({
@@ -2659,6 +2686,40 @@ test("shopping lookup finds a prior verified catalog by exact id when the seller
     assert.equal(result.productExposureItems.length, 1);
     assert.equal(result.productExposureItems[0].productId, "57907660073");
     assert.equal(result.productExposureItems[0].relationBasis, "prior_verified_catalog_id");
+  });
+});
+
+test("shopping lookup bootstraps a folded parent catalog from its exact seller-product id", async () => {
+  const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
+  items[8] = shoppingResultItem(8, {
+    productId: "59776958987",
+    catalogId: "59776958987",
+    link: "https://search.shopping.naver.com/catalog/59776958987",
+    title: "아이쉘 차량용 거치대 원부",
+    mallName: "네이버",
+    brand: "아이쉘",
+    category2: "차량용휴대폰용품",
+    productType: "1",
+    catalogSellerProductIds: ["13327339525"],
+  });
+
+  await withShoppingResults(items, async () => {
+    const result = await findShoppingRank(COLLECTOR_ENV, {
+      keyword: "아이쉘 차량용 거치대",
+      targetProductId: "13327339525",
+      maxRank: 300,
+    });
+    assert.equal(result.matched, true);
+    assert.equal(result.rank, 9);
+    assert.equal(result.exactProductRank, null);
+    assert.equal(result.relatedCatalogRank, 9);
+    assert.equal(result.trackingRankSource, "related_catalog");
+    assert.equal(result.trackingRankSourceLabel, "원부 기준");
+    const tracking = selectRepresentativeTrackingRank(result);
+    assert.equal(tracking.relatedCatalogProductId, "59776958987");
+    assert.equal(tracking.relatedCatalogRelationBasis, "catalog_seller_product_id");
+    assert.equal(tracking.trackingRankSource, "related_catalog");
+    assert.equal(tracking.trackingRankSourceLabel, "관련 원부 기준");
   });
 });
 

@@ -4,9 +4,9 @@ const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 
 export const N30_TARGET_WORKER_ID = "windows-desktop-primary";
-export const N30_TARGET_RUNTIME_VERSION = "1.1.13";
+export const N30_TARGET_RUNTIME_VERSION = "1.1.14";
 export const N30_TARGET_RUNTIME_FINGERPRINT =
-  "cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6";
+  "13e801cf18adaea7352d7c78bbe067f969e3fef5e756528335443d3122b2d405";
 
 function requireUtcTimestamp(value, fieldName) {
   if (typeof value !== "string" || !ISO_UTC_PATTERN.test(value) || !Number.isFinite(Date.parse(value))) {
@@ -203,6 +203,142 @@ claim_facts as (
     ) as distinct_commit_tracker_count,
     (
       select count(*)::integer
+      from public.naver_shopping_scheduler_events fw, params p
+      where fw.event_type = 'finite_window_committed'
+        and fw.claim_id = rg.claim_id
+        and fw.run_id = rg.run_id
+        and fw.occurred_at <= p.observed_at
+    ) as finite_commit_count,
+    (
+      select count(distinct fw.tracker_id)::integer
+      from public.naver_shopping_scheduler_events fw, params p
+      where fw.event_type = 'finite_window_committed'
+        and fw.claim_id = rg.claim_id
+        and fw.run_id = rg.run_id
+        and fw.occurred_at <= p.observed_at
+    ) as distinct_finite_commit_tracker_count,
+    (
+      select count(*)::integer
+      from public.naver_shopping_scheduler_events fw, params p
+      where fw.event_type = 'finite_window_committed'
+        and fw.claim_id = rg.claim_id
+        and fw.run_id = rg.run_id
+        and fw.occurred_at <= p.observed_at
+        and (
+          rg.run_trigger is distinct from 'rank-catch-up'
+          or fw.worker_id is distinct from p.worker_id
+          or fw.group_fingerprint is distinct from rg.group_fingerprint
+          or fw.cycle_id is distinct from rg.cycle_id
+          or fw.priority is distinct from rg.priority
+          or fw.priority is null
+          or fw.priority not in ('new', 'resume', 'normal')
+          or fw.occurred_at < rg.claim_at
+          or fw.collection_id is null
+          or fw.collection_id !~ '^pw-chrome-'
+          or fw.checked_count is null
+          or fw.checked_count not between 1 and 299
+          or rg.group_details -> 'memberCount' is distinct from pg_catalog.to_jsonb(1)
+          or fw.details ->> 'source' is distinct from 'naver_shopping_results_collector'
+          or fw.details ->> 'finiteWindowProofVersion' is distinct from 'stable-finite-window-v1'
+          or fw.details -> 'sourceExhausted' is distinct from 'true'::jsonb
+          or fw.details -> 'marketTotal' is distinct from pg_catalog.to_jsonb(fw.checked_count)
+          or fw.details -> 'matched' is distinct from 'true'::jsonb
+          or fw.details ->> 'relationBasis' is distinct from 'catalog_seller_product_id'
+          or fw.details -> 'atomicSuccessEligible' is distinct from 'false'::jsonb
+          or (
+            select count(*)
+            from public.naver_shopping_scheduler_events tc
+            where tc.event_type = 'tracker_claimed'
+              and tc.claim_id = fw.claim_id
+              and tc.run_id = fw.run_id
+              and tc.group_fingerprint = fw.group_fingerprint
+              and tc.tracker_id = fw.tracker_id
+              and tc.worker_id = p.worker_id
+              and tc.cycle_id is not distinct from fw.cycle_id
+              and tc.priority is not distinct from fw.priority
+              and tc.lease_started_at = fw.lease_started_at
+              and tc.event_id > rg.group_event_id
+              and tc.event_id < fw.event_id
+              and tc.occurred_at >= rg.claim_at
+              and tc.occurred_at <= fw.occurred_at
+          ) <> 1
+          or (
+            select count(*)
+            from public.naver_shopping_scheduler_events tc
+            where tc.event_type = 'tracker_claimed'
+              and tc.claim_id = fw.claim_id
+              and tc.run_id = fw.run_id
+              and tc.occurred_at <= fw.occurred_at
+          ) <> 1
+          or (
+            select count(*)
+            from public.naver_rank_snapshots s
+            join public.naver_shopping_finite_window_targets target
+              on target.tracker_id = s.tracker_id
+             and target.enabled = true
+             and target.proof_version = 'stable-finite-window-v1'
+             and target.runtime_version = p.runtime_version
+             and target.runtime_fingerprint = p.runtime_fingerprint
+            join public.naver_rank_trackers tracker
+              on tracker.id = s.tracker_id
+             and tracker.status = 'active'
+             and tracker.product_id = target.seller_product_id
+             and pg_catalog.regexp_replace(
+               pg_catalog.lower(pg_catalog.btrim(tracker.keyword)), '\\s+', '', 'g'
+             ) = target.normalized_keyword
+            where s.tracker_id = fw.tracker_id
+              and s.collection_id = fw.collection_id
+              and s.checked_at = fw.occurred_at
+              and s.checked_count = fw.checked_count
+              and s.checked_count between 1 and 299
+              and s.source = 'naver_shopping_results_collector'
+              and s.matched = true
+              and s.rank between 1 and s.checked_count
+              and s.total = s.checked_count
+              and fw.details -> 'rank' = pg_catalog.to_jsonb(s.rank)
+              and pg_catalog.jsonb_typeof(s.item) = 'object'
+              and s.item ->> 'finiteWindowProofVersion' = 'stable-finite-window-v1'
+              and s.item -> 'sourceExhausted' = 'true'::jsonb
+              and s.item -> 'finiteMarketTotal' = pg_catalog.to_jsonb(s.checked_count)
+              and s.item -> 'atomicSuccessEligible' = 'false'::jsonb
+              and s.item ->> 'trackingRankSource' = 'related_catalog'
+              and s.item ->> 'relatedCatalogRelationBasis' = 'catalog_seller_product_id'
+              and s.item ->> 'relatedCatalogProductId' = target.parent_catalog_id
+              and s.item ->> 'catalogId' = target.parent_catalog_id
+              and pg_catalog.jsonb_typeof(s.item -> 'catalogSellerProductIds') = 'array'
+              and pg_catalog.jsonb_array_length(s.item -> 'catalogSellerProductIds') between 1 and 100
+              and exists (
+                select 1
+                from pg_catalog.jsonb_array_elements_text(
+                  s.item -> 'catalogSellerProductIds'
+                ) seller_id(seller_id)
+                where seller_id.seller_id = target.seller_product_id
+              )
+              and not exists (
+                select 1
+                from pg_catalog.jsonb_array_elements_text(
+                  s.item -> 'catalogSellerProductIds'
+                ) seller_id(seller_id)
+                where seller_id.seller_id !~ '^[0-9]{5,80}$'
+              )
+              and s.item ->> 'rankPolicy' = 'organic_only'
+              and s.item -> 'adExcluded' = 'true'::jsonb
+              and s.item ->> 'rankEvidence' = 'naver_shopping_organic_list'
+              and s.item ->> 'collectionId' = fw.collection_id
+              and s.item -> 'isOrganic' = 'true'::jsonb
+              and s.item -> 'isAd' = 'false'::jsonb
+              and pg_catalog.jsonb_typeof(s.top_items) = 'array'
+              and not exists (
+                select 1
+                from pg_catalog.jsonb_array_elements(s.top_items) top_item
+                where top_item -> 'isOrganic' is distinct from 'true'::jsonb
+                   or top_item -> 'isAd' is distinct from 'false'::jsonb
+              )
+          ) <> 1
+        )
+    ) as finite_invalid_terminal_count,
+    (
+      select count(*)::integer
       from public.naver_shopping_scheduler_events cm, params p
       where cm.event_type = 'tracker_committed'
         and cm.claim_id = rg.claim_id
@@ -272,6 +408,113 @@ claim_facts as (
         and fl.run_id = rg.run_id
         and fl.occurred_at <= p.observed_at
     ) as failure_count,
+    (
+      select count(*)::integer
+      from public.naver_shopping_scheduler_events nf, params p
+      where nf.event_type = 'job_failed'
+        and nf.claim_id = rg.claim_id
+        and nf.run_id = rg.run_id
+        and nf.occurred_at <= p.observed_at
+        and nf.error_code in (
+          'provider_stable_finite_window_unproven',
+          'local_worker_finite_match_invalid'
+        )
+        and rg.run_trigger = 'rank-catch-up'
+        and nf.worker_id = p.worker_id
+        and nf.group_fingerprint = rg.group_fingerprint
+        and nf.cycle_id is not distinct from rg.cycle_id
+        and nf.priority is not distinct from rg.priority
+        and nf.priority in ('new', 'resume', 'normal')
+        and rg.group_details -> 'memberCount' = pg_catalog.to_jsonb(1)
+        and nf.event_id > rg.group_event_id
+        and nf.occurred_at >= rg.claim_at
+        and exists (
+          select 1
+          from public.naver_shopping_finite_window_targets target
+          join public.naver_rank_trackers tracker
+            on tracker.id = target.tracker_id
+           and tracker.status = 'active'
+           and tracker.product_id = target.seller_product_id
+           and pg_catalog.regexp_replace(
+             pg_catalog.lower(pg_catalog.btrim(tracker.keyword)), '\\s+', '', 'g'
+           ) = target.normalized_keyword
+          where target.tracker_id = nf.tracker_id
+            and target.enabled = true
+            and target.proof_version = 'stable-finite-window-v1'
+            and target.runtime_version = p.runtime_version
+            and target.runtime_fingerprint = p.runtime_fingerprint
+        )
+        and (
+          select count(*)
+          from public.naver_shopping_scheduler_events tc
+          where tc.event_type = 'tracker_claimed'
+            and tc.claim_id = nf.claim_id
+            and tc.run_id = nf.run_id
+            and tc.group_fingerprint = nf.group_fingerprint
+            and tc.tracker_id = nf.tracker_id
+            and tc.worker_id = nf.worker_id
+            and tc.priority is not distinct from nf.priority
+            and tc.lease_started_at = nf.lease_started_at
+            and tc.event_id > rg.group_event_id
+            and tc.event_id < nf.event_id
+            and tc.occurred_at >= rg.claim_at
+            and tc.occurred_at <= nf.occurred_at
+        ) = 1
+        and (
+          select count(*)
+          from public.naver_shopping_scheduler_events tc
+          where tc.event_type = 'tracker_claimed'
+            and tc.claim_id = nf.claim_id
+            and tc.run_id = nf.run_id
+            and tc.occurred_at <= nf.occurred_at
+        ) = 1
+        and (
+          select count(*)
+          from public.naver_shopping_scheduler_events duplicate_failure
+          where duplicate_failure.event_type = 'job_failed'
+            and duplicate_failure.claim_id = nf.claim_id
+            and duplicate_failure.run_id = nf.run_id
+            and duplicate_failure.occurred_at <= p.observed_at
+        ) = 1
+        and not exists (
+          select 1
+          from public.naver_shopping_scheduler_events competing_terminal
+          where competing_terminal.claim_id = nf.claim_id
+            and competing_terminal.run_id = nf.run_id
+            and competing_terminal.tracker_id = nf.tracker_id
+            and competing_terminal.event_type in (
+              'tracker_committed', 'finite_window_committed'
+            )
+            and competing_terminal.occurred_at <= p.observed_at
+        )
+        and (
+          select count(*)
+          from public.naver_shopping_scheduler_events q
+          where q.event_type = 'quarantine_set'
+            and q.claim_id = nf.claim_id
+            and q.run_id = nf.run_id
+            and q.worker_id = nf.worker_id
+            and q.tracker_id = nf.tracker_id
+            and q.cycle_id is not distinct from nf.cycle_id
+            and q.group_fingerprint = nf.group_fingerprint
+            and q.priority is not distinct from nf.priority
+            and q.error_code = nf.error_code
+            and q.event_id > nf.event_id
+            and q.occurred_at >= nf.occurred_at
+            and q.occurred_at <= p.observed_at
+            and q.quarantine_until >= nf.occurred_at + interval '30 minutes'
+            and q.quarantine_until <= q.occurred_at + interval '30 minutes'
+        ) = 1
+        and (
+          select count(*)
+          from public.naver_shopping_scheduler_events q
+          where q.event_type = 'quarantine_set'
+            and q.claim_id = nf.claim_id
+            and q.run_id = nf.run_id
+            and q.tracker_id = nf.tracker_id
+            and q.occurred_at <= p.observed_at
+        ) = 1
+    ) as finite_neutral_failure_count,
     (
       select count(*)::integer
       from public.naver_shopping_scheduler_events cm, params p
@@ -351,7 +594,7 @@ claim_facts as (
       from public.naver_shopping_scheduler_events te, params p
       where te.claim_id = rg.claim_id
         and te.run_id = rg.run_id
-        and te.event_type in ('tracker_committed', 'job_failed')
+        and te.event_type in ('tracker_committed', 'finite_window_committed', 'job_failed')
         and te.occurred_at <= p.observed_at
     ) as terminal_at
   from run_group rg
@@ -385,6 +628,7 @@ catchup_ordered as (
       and tracker_claim_identity_or_order_violation_count = 0
       and commit_count = tracker_claim_count
       and commit_count = distinct_commit_tracker_count
+      and finite_commit_count = 0
       and commit_membership_mismatch_count = 0
       and event_order_violation_count = 0
       and collection_count = 1
@@ -400,22 +644,35 @@ catchup_ordered as (
 catchup_classified as (
   select
     co.*,
+    count(*) filter (where co.fully_terminal_atomic)
+      over (order by co.claim_at, co.claim_id) as atomic_sequence_no,
     round(
       extract(epoch from (
-        co.claim_at - min(co.claim_at) over ()
+        co.claim_at - min(co.claim_at) filter (where co.fully_terminal_atomic) over ()
       ))::numeric / p.cadence_seconds
     )::integer as slot_number,
-    case when co.previous_claim_at is null then null else
-      round(extract(epoch from (co.claim_at - co.previous_claim_at)))::integer
+    case when previous_atomic.claim_at is null then null else
+      round(extract(epoch from (co.claim_at - previous_atomic.claim_at)))::integer
     end as gap_seconds
   from catchup_ordered co
   cross join params p
+  left join lateral (
+    select previous.claim_at
+    from catchup_ordered previous
+    where previous.fully_terminal_atomic
+      and row(previous.claim_at, previous.claim_id)
+        < row(co.claim_at, co.claim_id)
+    order by previous.claim_at desc, previous.claim_id desc
+    limit 1
+  ) previous_atomic on true
 ),
 performance as (
   select
     count(*)::integer as catch_up_run_count,
     count(*) filter (where fully_terminal_atomic)::integer as valid_atomic_groups,
-    count(*) filter (where fully_terminal_atomic and sequence_no > 1)::integer as post_bootstrap_groups,
+    count(*) filter (
+      where fully_terminal_atomic and atomic_sequence_no > 1
+    )::integer as post_bootstrap_groups,
     count(*) filter (where group_count <> 1)::integer as groups_per_run_violation,
     count(*) filter (where tracker_claim_count < 1)::integer as missing_tracker_claim_count,
     count(*) filter (
@@ -428,15 +685,22 @@ performance as (
       as commit_membership_mismatch_count,
     coalesce(sum(event_order_violation_count), 0)::integer
       as event_order_violation_count,
-    count(*) filter (where failure_count > 0)::integer as failed_claim_count,
+    count(*) filter (
+      where failure_count - finite_neutral_failure_count > 0
+    )::integer as failed_claim_count,
     count(*) filter (
       where terminal_at is null
          or tracker_claim_count < 1
-         or commit_count + failure_count <> tracker_claim_count
+         or (
+           finite_commit_count = 0
+           and finite_neutral_failure_count = 0
+           and commit_count + failure_count <> tracker_claim_count
+         )
     )::integer as open_or_incomplete_count,
     coalesce(sum(atomic_invalid_commit_count), 0)::integer as atomic_invalid_commit_count,
     count(*) filter (
-      where gap_seconds is not null
+      where fully_terminal_atomic
+        and gap_seconds is not null
         and abs(
           gap_seconds
           - greatest(round(gap_seconds::numeric / p.cadence_seconds)::integer, 1)
@@ -453,6 +717,7 @@ slot_audit as (
   from (
     select slot_number, count(*)::integer as slot_count
     from catchup_classified
+    where fully_terminal_atomic
     group by slot_number
     having count(*) > 1
   ) collisions
@@ -588,24 +853,34 @@ global_integrity as (
     count(*) filter (
       where tracker_claim_count <> distinct_tracker_claim_count
          or commit_count <> distinct_commit_tracker_count
+         or finite_commit_count <> distinct_finite_commit_tracker_count
     )::integer as all_tracker_or_commit_duplicate_count,
     coalesce(sum(tracker_claim_identity_or_order_violation_count), 0)::integer
       as all_tracker_claim_identity_or_order_violation_count,
     coalesce(sum(commit_membership_mismatch_count), 0)::integer
       as all_commit_membership_mismatch_count,
-    count(*) filter (where collection_count <> 1)::integer
+    count(*) filter (
+      where commit_count > 0
+        and collection_count <> 1
+    )::integer
       as all_collection_count_violation,
-    count(*) filter (where failure_count > 0)::integer
+    count(*) filter (
+      where failure_count - finite_neutral_failure_count > 0
+    )::integer
       as all_failure_count,
     count(*) filter (
       where terminal_at is null
          or tracker_claim_count < 1
-         or commit_count + failure_count <> tracker_claim_count
+         or commit_count + finite_commit_count + failure_count <> tracker_claim_count
     )::integer as all_open_or_incomplete_count,
     coalesce(sum(event_order_violation_count), 0)::integer
       as all_event_order_violation_count,
     coalesce(sum(atomic_invalid_commit_count), 0)::integer
-      as all_atomic_invalid_commit_count
+      as all_atomic_invalid_commit_count,
+    coalesce(sum(finite_invalid_terminal_count), 0)::integer
+      as all_finite_invalid_terminal_count,
+    coalesce(sum(finite_neutral_failure_count), 0)::integer
+      as all_finite_neutral_failure_count
   from claim_facts
 ),
 control_plane as (
@@ -683,6 +958,7 @@ verdict as (
       and gi.all_open_or_incomplete_count = 0
       and gi.all_event_order_violation_count = 0
       and gi.all_atomic_invalid_commit_count = 0
+      and gi.all_finite_invalid_terminal_count = 0
       and cp.cadence_mode = 'candidate'
       and cp.cadence_minutes = 6
       and cp.runtime_version = p.runtime_version

@@ -18,7 +18,57 @@ const validOptions = {
   runtimeFingerprint: N30_TARGET_RUNTIME_FINGERPRINT,
 };
 
+function classifyTerminalFixture({
+  trackerClaimCount = 1,
+  atomicCommitCount = 0,
+  finiteCommitCount = 0,
+  finiteNeutralFailureCount = 0,
+  finiteInvalidTerminalCount = 0,
+  failureCount = 0,
+}) {
+  const blockingFailureCount = failureCount - finiteNeutralFailureCount;
+  const globallyComplete = trackerClaimCount > 0
+    && atomicCommitCount + finiteCommitCount + failureCount === trackerClaimCount
+    && blockingFailureCount === 0
+    && finiteInvalidTerminalCount === 0;
+  const fullyTerminalAtomic = trackerClaimCount > 0
+    && atomicCommitCount === trackerClaimCount
+    && finiteCommitCount === 0
+    && failureCount === 0;
+  return {
+    globallyComplete,
+    fullyTerminalAtomic,
+    throughputContribution: Number(fullyTerminalAtomic),
+    collectionCountContribution: Number(atomicCommitCount > 0),
+  };
+}
+
+function isExactFiniteNeutralFailureFixture(fixture) {
+  return fixture.runTrigger === "rank-catch-up"
+    && fixture.workerId === N30_TARGET_WORKER_ID
+    && fixture.runtimeVersion === N30_TARGET_RUNTIME_VERSION
+    && fixture.runtimeFingerprint === N30_TARGET_RUNTIME_FINGERPRINT
+    && [
+      "provider_stable_finite_window_unproven",
+      "local_worker_finite_match_invalid",
+    ].includes(fixture.errorCode)
+    && fixture.targetMatched === true
+    && fixture.groupMemberCount === 1
+    && fixture.trackerClaimCount === 1
+    && fixture.failureCount === 1
+    && fixture.quarantineCount === 1
+    && fixture.quarantineDurationValid === true
+    && fixture.groupBeforeClaim === true
+    && fixture.claimBeforeFailure === true
+    && fixture.failureBeforeQuarantine === true;
+}
+
 test("builds one fixed-wall read-only candidate audit with the full integrity contract", () => {
+  assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.14");
+  assert.equal(
+    N30_TARGET_RUNTIME_FINGERPRINT,
+    "13e801cf18adaea7352d7c78bbe067f969e3fef5e756528335443d3122b2d405",
+  );
   const sql = buildN30CandidatePerformanceAuditSql(validOptions);
 
   assert.match(sql, /^begin read only;/i);
@@ -96,6 +146,178 @@ test("supports the baseline cadence while keeping the same query contract", () =
   assert.match(sql, /n30_candidate_performance_audit_v1/);
 });
 
+test("treats an exact finite terminal as global completion but never atomic performance", () => {
+  const finiteTerminalFixture = {
+    eventType: "finite_window_committed",
+    checkedCount: 137,
+    source: "naver_shopping_results_collector",
+    proofVersion: "stable-finite-window-v1",
+    sourceExhausted: true,
+    matched: true,
+    rank: 1,
+    marketTotal: 137,
+    relationBasis: "catalog_seller_product_id",
+    atomicSuccessEligible: false,
+  };
+  const sql = buildN30CandidatePerformanceAuditSql(validOptions);
+
+  assert.equal(finiteTerminalFixture.eventType, "finite_window_committed");
+  assert.ok(finiteTerminalFixture.checkedCount > 0 && finiteTerminalFixture.checkedCount < 300);
+  assert.deepEqual(classifyTerminalFixture({ finiteCommitCount: 1 }), {
+    globallyComplete: true,
+    fullyTerminalAtomic: false,
+    throughputContribution: 0,
+    collectionCountContribution: 0,
+  });
+  assert.match(sql, /as finite_commit_count/);
+  assert.match(sql, /as distinct_finite_commit_tracker_count/);
+  assert.match(sql, /as finite_invalid_terminal_count/);
+  assert.match(
+    sql,
+    /te\.event_type in \('tracker_committed', 'finite_window_committed', 'job_failed'\)/,
+  );
+  assert.match(
+    sql,
+    /commit_count \+ finite_commit_count \+ failure_count <> tracker_claim_count/,
+  );
+  assert.match(sql, /finite_commit_count = 0[\s\S]+as fully_terminal_atomic/);
+  assert.match(
+    sql,
+    /count\(\*\) filter \(\s*where fully_terminal_atomic and atomic_sequence_no > 1\s*\)/,
+  );
+  assert.match(sql, /where fully_terminal_atomic\s+group by slot_number/);
+  assert.match(sql, /where commit_count > 0\s+and collection_count <> 1/);
+
+  assert.match(sql, /fw\.event_type = 'finite_window_committed'/);
+  assert.match(sql, /fw\.checked_count not between 1 and 299/);
+  assert.match(sql, /fw\.details ->> 'finiteWindowProofVersion' is distinct from 'stable-finite-window-v1'/);
+  assert.match(sql, /fw\.details -> 'sourceExhausted' is distinct from 'true'::jsonb/);
+  assert.match(sql, /fw\.details -> 'marketTotal' is distinct from pg_catalog\.to_jsonb\(fw\.checked_count\)/);
+  assert.match(sql, /fw\.details -> 'matched' is distinct from 'true'::jsonb/);
+  assert.match(sql, /fw\.details ->> 'relationBasis' is distinct from 'catalog_seller_product_id'/);
+  assert.match(sql, /fw\.details -> 'atomicSuccessEligible' is distinct from 'false'::jsonb/);
+  assert.match(sql, /s\.checked_count = fw\.checked_count/);
+  assert.match(sql, /s\.item ->> 'finiteWindowProofVersion' = 'stable-finite-window-v1'/);
+  assert.match(sql, /s\.item ->> 'relatedCatalogRelationBasis' = 'catalog_seller_product_id'/);
+  assert.match(sql, /s\.item -> 'adExcluded' = 'true'::jsonb/);
+  assert.match(sql, /s\.item -> 'isOrganic' = 'true'::jsonb/);
+  assert.match(sql, /s\.item -> 'isAd' = 'false'::jsonb/);
+  assert.match(sql, /target\.runtime_version = p\.runtime_version/);
+  assert.match(sql, /target\.runtime_fingerprint = p\.runtime_fingerprint/);
+});
+
+test("fails closed for malformed or duplicate finite terminal fixtures", () => {
+  const fixtures = [
+    {
+      name: "malformed finite proof",
+      finiteTerminalCount: 1,
+      distinctFiniteTrackerCount: 1,
+      finiteInvalidTerminalCount: 1,
+      expectedComplete: false,
+    },
+    {
+      name: "duplicate finite terminal",
+      finiteTerminalCount: 2,
+      distinctFiniteTrackerCount: 1,
+      finiteInvalidTerminalCount: 0,
+      expectedComplete: false,
+    },
+  ];
+  const sql = buildN30CandidatePerformanceAuditSql(validOptions);
+
+  for (const fixture of fixtures) {
+    assert.equal(fixture.expectedComplete, false, fixture.name);
+  }
+  assert.equal(classifyTerminalFixture({
+    finiteCommitCount: fixtures[0].finiteTerminalCount,
+    finiteInvalidTerminalCount: fixtures[0].finiteInvalidTerminalCount,
+  }).globallyComplete, false);
+  assert.equal(classifyTerminalFixture({
+    finiteCommitCount: fixtures[1].finiteTerminalCount,
+    finiteInvalidTerminalCount: fixtures[1].finiteInvalidTerminalCount,
+  }).globallyComplete, false);
+  assert.match(
+    sql,
+    /finite_commit_count <> distinct_finite_commit_tracker_count/,
+  );
+  assert.match(sql, /coalesce\(sum\(finite_invalid_terminal_count\), 0\)::integer/);
+  assert.doesNotMatch(sql, /perf\.finite_invalid_terminal_count/);
+  assert.match(sql, /gi\.all_finite_invalid_terminal_count = 0/);
+});
+
+test("accepts only an exact finite canary failure as global neutral completion", () => {
+  const exactNeutralFixture = {
+    runTrigger: "rank-catch-up",
+    workerId: N30_TARGET_WORKER_ID,
+    runtimeVersion: N30_TARGET_RUNTIME_VERSION,
+    runtimeFingerprint: N30_TARGET_RUNTIME_FINGERPRINT,
+    errorCode: "provider_stable_finite_window_unproven",
+    targetMatched: true,
+    groupMemberCount: 1,
+    trackerClaimCount: 1,
+    failureCount: 1,
+    quarantineCount: 1,
+    quarantineDurationValid: true,
+    groupBeforeClaim: true,
+    claimBeforeFailure: true,
+    failureBeforeQuarantine: true,
+  };
+  const malformedFixtures = [
+    { ...exactNeutralFixture, runTrigger: "rank-0900" },
+    { ...exactNeutralFixture, workerId: "mac-standby" },
+    { ...exactNeutralFixture, errorCode: "provider_partial_window:137_300" },
+    { ...exactNeutralFixture, failureCount: 2 },
+    { ...exactNeutralFixture, quarantineCount: 0 },
+    { ...exactNeutralFixture, quarantineCount: 2 },
+    { ...exactNeutralFixture, quarantineDurationValid: false },
+  ];
+  const sql = buildN30CandidatePerformanceAuditSql(validOptions);
+
+  assert.equal(isExactFiniteNeutralFailureFixture(exactNeutralFixture), true);
+  assert.deepEqual(classifyTerminalFixture({
+    failureCount: 1,
+    finiteNeutralFailureCount: Number(isExactFiniteNeutralFailureFixture(exactNeutralFixture)),
+  }), {
+    globallyComplete: true,
+    fullyTerminalAtomic: false,
+    throughputContribution: 0,
+    collectionCountContribution: 0,
+  });
+  for (const fixture of malformedFixtures) {
+    assert.equal(isExactFiniteNeutralFailureFixture(fixture), false);
+    assert.equal(classifyTerminalFixture({
+      failureCount: fixture.failureCount,
+      finiteNeutralFailureCount: Number(isExactFiniteNeutralFailureFixture(fixture)),
+    }).globallyComplete, false);
+  }
+
+  assert.match(sql, /as finite_neutral_failure_count/);
+  assert.match(
+    sql,
+    /nf\.error_code in \(\s*'provider_stable_finite_window_unproven',\s*'local_worker_finite_match_invalid'\s*\)/,
+  );
+  assert.match(sql, /rg\.run_trigger = 'rank-catch-up'/);
+  assert.match(sql, /target\.runtime_version = p\.runtime_version/);
+  assert.match(sql, /target\.runtime_fingerprint = p\.runtime_fingerprint/);
+  assert.match(sql, /q\.event_type = 'quarantine_set'/);
+  assert.match(sql, /q\.event_id > nf\.event_id/);
+  assert.match(
+    sql,
+    /q\.quarantine_until >= nf\.occurred_at \+ interval '30 minutes'/,
+  );
+  assert.match(
+    sql,
+    /q\.quarantine_until <= q\.occurred_at \+ interval '30 minutes'/,
+  );
+  assert.match(
+    sql,
+    /q\.event_type = 'quarantine_set'[\s\S]*q\.claim_id = nf\.claim_id[\s\S]*q\.run_id = nf\.run_id[\s\S]*q\.tracker_id = nf\.tracker_id[\s\S]*q\.occurred_at <= p\.observed_at[\s\S]*\) = 1/,
+  );
+  assert.match(sql, /failure_count - finite_neutral_failure_count > 0/);
+  assert.match(sql, /as all_finite_neutral_failure_count/);
+  assert.doesNotMatch(sql, /fully_terminal_atomic[\s\S]{0,500}finite_neutral_failure_count/);
+});
+
 test("rejects mutable, reversed, or malformed audit inputs", () => {
   assert.throws(
     () => buildN30CandidatePerformanceAuditSql({ ...validOptions, observedAt: validOptions.activationAt }),
@@ -122,7 +344,7 @@ test("rejects mutable, reversed, or malformed audit inputs", () => {
     /workerId must equal the pinned target/,
   );
   assert.throws(
-    () => buildN30CandidatePerformanceAuditSql({ ...validOptions, runtimeVersion: "1.1.14" }),
+    () => buildN30CandidatePerformanceAuditSql({ ...validOptions, runtimeVersion: "1.1.13" }),
     /runtimeVersion must equal the pinned target/,
   );
   assert.throws(

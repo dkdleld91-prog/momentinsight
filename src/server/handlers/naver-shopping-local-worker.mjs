@@ -4,6 +4,10 @@ import { localWorkerAuthInput, verifyLocalWorkerSignature } from "../local-worke
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
+  STABLE_FINITE_CANARY_PARENT_CATALOG_ID,
+  STABLE_FINITE_CANARY_SELLER_PRODUCT_ID,
+  STABLE_FINITE_CANARY_TRACKER_ID,
+  isStableFiniteCanaryJob,
   localWorkerCollectionKey,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
@@ -32,7 +36,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.13";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.14";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -65,6 +69,7 @@ const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
 const SUBMIT_PARTIAL_FALLBACK_CAUSE_CODE = "LOCAL_WORKER_SUBMIT_FAILED";
 const SUBMIT_PARTIAL_TRUST_MARKER = Symbol("local-worker-submit-partial");
 const SUBMIT_DIRECT_ERROR_CODES = new Set([
+  "LOCAL_WORKER_FINITE_MATCH_INVALID",
   "LOCAL_WORKER_TRACKER_MISMATCH",
   "LOCAL_WORKER_LOOKUP_MISMATCH",
 ]);
@@ -614,7 +619,12 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     requireActiveLease: true,
     nowMs: Date.now(),
   });
-  const window = validateStrictLocalWorkerWindow(rawWindow, { keyword: job.keyword });
+  const finiteCanaryJob = isStableFiniteCanaryJob(job);
+  const window = validateStrictLocalWorkerWindow(rawWindow, {
+    keyword: job.keyword,
+    allowStableFinite: finiteCanaryJob,
+  });
+  const finiteWindow = window.finiteWindowProof?.version === "stable-finite-window-v1";
   const counts = {
     committedCount: 0,
     alreadyCommittedCount: 0,
@@ -629,6 +639,12 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     const claimTrackers = await loadClaimTrackers(ctx, job);
     const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
     for (const { claim, tracker } of claimTrackers) {
+      if (finiteWindow && (
+        tracker.id !== STABLE_FINITE_CANARY_TRACKER_ID
+        || String(tracker.product_id || "").trim() !== STABLE_FINITE_CANARY_SELLER_PRODUCT_ID
+      )) {
+        throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
+      }
       const checkedAt = window.collectedAt;
       const verifiedRelatedCatalogId = verifiedCatalogs.get(String(tracker.id).toLowerCase()) || "";
       // The worker already supplied a fresh trusted 300-item window and the DB
@@ -646,13 +662,31 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         skipTargetMetadata: true,
       });
       const result = selectRepresentativeTrackingRank(lookup);
-      if (result.complete !== true || Number(result.checkedCount) !== LOCAL_WORKER_ORGANIC_LIMIT) {
+      if (result.complete !== true || Number(result.checkedCount) !== window.checkedCount) {
         throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
+      }
+      if (finiteWindow && (
+        result.matched !== true
+        || Number(result.rank) < 1
+        || Number(result.rank) > window.checkedCount
+        || result.sourceExhausted !== true
+        || result.finiteWindowProofVersion !== "stable-finite-window-v1"
+        || result.trackingRankSource !== "related_catalog"
+        || result.relatedCatalogRelationBasis !== "catalog_seller_product_id"
+        || String(result.relatedCatalogProductId || "") !== STABLE_FINITE_CANARY_PARENT_CATALOG_ID
+        || String(result?.item?.catalogId || result?.item?.productId || "")
+          !== STABLE_FINITE_CANARY_PARENT_CATALOG_ID
+        || !Array.isArray(result?.item?.catalogSellerProductIds)
+        || !result.item.catalogSellerProductIds.includes(STABLE_FINITE_CANARY_SELLER_PRODUCT_ID)
+      )) {
+        throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }
       const message = representativeTrackingRankMessage(result);
       const snapshot = buildProductRankSnapshotRecord(tracker, checkedAt, result, message);
       // eslint-disable-next-line no-await-in-loop
-      const { data, error } = await ctx.supabaseAdmin.rpc("mi_commit_naver_shopping_worker_result", {
+      const { data, error } = await ctx.supabaseAdmin.rpc(finiteWindow
+        ? "mi_commit_naver_shopping_finite_worker_result"
+        : "mi_commit_naver_shopping_worker_result", {
         p_tracker_id: tracker.id,
         p_lease_started_at: claim.leaseStartedAt,
         p_collection_id: window.collectionId,
@@ -680,7 +714,12 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     throw submitPartialError(error, counts);
   }
 
-  return counts;
+  return finiteWindow
+    ? {
+      ...counts,
+      finiteCommittedCount: counts.committedCount + counts.alreadyCommittedCount,
+    }
+    : counts;
 }
 
 function sameLeaseTimestamp(left, right) {
@@ -702,7 +741,87 @@ function reconciledSubmitCounts(claimResults) {
   };
 }
 
-async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
+function isExactFiniteCanarySnapshot(row) {
+  const checkedCount = row?.checked_count;
+  const rank = row?.rank;
+  const total = row?.total;
+  const item = row?.item;
+  const sellerProductIds = item?.catalogSellerProductIds;
+  return Number.isSafeInteger(checkedCount)
+    && checkedCount >= 1
+    && checkedCount < LOCAL_WORKER_ORGANIC_LIMIT
+    && String(row?.tracker_id || "").toLowerCase() === STABLE_FINITE_CANARY_TRACKER_ID
+    && /^pw-chrome-/u.test(String(row?.collection_id || ""))
+    && row?.source === "naver_shopping_results_collector"
+    && row?.matched === true
+    && Number.isSafeInteger(rank)
+    && rank >= 1
+    && rank <= checkedCount
+    && total === checkedCount
+    && Array.isArray(row?.top_items)
+    && row.top_items.every((topItem) => topItem?.isOrganic === true && topItem?.isAd === false)
+    && item
+    && typeof item === "object"
+    && !Array.isArray(item)
+    && item.finiteWindowProofVersion === "stable-finite-window-v1"
+    && item.sourceExhausted === true
+    && Number.isSafeInteger(item.finiteMarketTotal)
+    && item.finiteMarketTotal === checkedCount
+    && item.atomicSuccessEligible === false
+    && item.trackingRankSource === "related_catalog"
+    && String(item.relatedCatalogProductId || "") === STABLE_FINITE_CANARY_PARENT_CATALOG_ID
+    && item.relatedCatalogRelationBasis === "catalog_seller_product_id"
+    && String(item.catalogId || "") === STABLE_FINITE_CANARY_PARENT_CATALOG_ID
+    && Array.isArray(sellerProductIds)
+    && sellerProductIds.length >= 1
+    && sellerProductIds.length <= 100
+    && sellerProductIds.every((sellerId) => /^[0-9]{5,80}$/u.test(String(sellerId || "")))
+    && sellerProductIds.includes(STABLE_FINITE_CANARY_SELLER_PRODUCT_ID)
+    && item.rankPolicy === "organic_only"
+    && item.adExcluded === true
+    && item.rankEvidence === "naver_shopping_organic_list"
+    && item.collectionId === row.collection_id
+    && item.isOrganic === true
+    && item.isAd === false;
+}
+
+function isExactTrackerClaimLedger(row, context) {
+  return row?.event_type === "tracker_claimed"
+    && WORKER_RUN_ID_PATTERN.test(String(row?.claim_id || ""))
+    && String(row?.run_id || "").toLowerCase() === context.runId
+    && String(row?.worker_id || "").toLowerCase() === context.workerId
+    && String(row?.tracker_id || "").toLowerCase() === context.claim.trackerId
+    && sameLeaseTimestamp(row?.lease_started_at, context.claim.leaseStartedAt);
+}
+
+function isExactFiniteCommitLedger(row, context) {
+  const checkedCount = row?.checked_count;
+  const rank = row?.details?.rank;
+  return row?.event_type === "finite_window_committed"
+    && String(row?.claim_id || "").toLowerCase()
+      === String(context.claimLedger.claim_id || "").toLowerCase()
+    && String(row?.run_id || "").toLowerCase() === context.runId
+    && String(row?.worker_id || "").toLowerCase() === context.workerId
+    && String(row?.tracker_id || "").toLowerCase() === context.claim.trackerId
+    && row?.collection_id === context.collectionId
+    && sameLeaseTimestamp(row?.lease_started_at, context.claim.leaseStartedAt)
+    && Number.isSafeInteger(checkedCount)
+    && checkedCount === context.snapshot.checked_count
+    && row?.details?.source === "naver_shopping_results_collector"
+    && row?.details?.finiteWindowProofVersion === "stable-finite-window-v1"
+    && row?.details?.sourceExhausted === true
+    && Number.isSafeInteger(row?.details?.marketTotal)
+    && row.details.marketTotal === checkedCount
+    && row?.details?.matched === true
+    && Number.isSafeInteger(rank)
+    && rank === context.snapshot.rank
+    && rank >= 1
+    && rank <= checkedCount
+    && row?.details?.relationBasis === "catalog_seller_product_id"
+    && row?.details?.atomicSuccessEligible === false;
+}
+
+async function reconcileSubmit(ctx, rawJob, rawCollectionId, control = {}) {
   const job = validateLocalWorkerJob(rawJob);
   const collectionId = String(rawCollectionId || "").trim();
   const claimId = (claim) => (job.kind === "lookup" ? claim.lookupJobId : claim.trackerId);
@@ -733,11 +852,25 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
   const trackerIds = job.claims.map((claim) => claim.trackerId);
   const { data: snapshots, error: snapshotError } = await ctx.supabaseAdmin
     .from("naver_rank_snapshots")
-    .select("tracker_id, collection_id")
+    .select("tracker_id, collection_id, checked_count, total, rank, matched, source, item, top_items")
     .in("tracker_id", trackerIds)
     .eq("collection_id", collectionId);
   if (snapshotError) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   const committedIds = new Set((snapshots || []).map((row) => String(row?.tracker_id || "").toLowerCase()));
+  const exactFiniteSnapshots = new Map((snapshots || [])
+    .filter(isExactFiniteCanarySnapshot)
+    .map((row) => [String(row?.tracker_id || "").toLowerCase(), row]));
+  let schedulerLedgers = [];
+  if (isStableFiniteCanaryJob(job)) {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("naver_shopping_scheduler_events")
+      .select("event_type, claim_id, run_id, worker_id, tracker_id, lease_started_at, collection_id, checked_count, details")
+      .in("event_type", ["tracker_claimed", "finite_window_committed"])
+      .in("tracker_id", trackerIds)
+      .eq("run_id", control.runId);
+    if (error) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
+    schedulerLedgers = data || [];
+  }
 
   const { data: trackers, error: trackerError } = await ctx.supabaseAdmin
     .from("naver_rank_trackers")
@@ -757,7 +890,31 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId) {
         : "lease_lost",
     };
   });
-  return reconciledSubmitCounts(claimResults);
+  const counts = reconciledSubmitCounts(claimResults);
+  if (!isStableFiniteCanaryJob(job)) return counts;
+  const finiteCommittedCount = claimResults.filter((result) => {
+    if (result.status !== "already_committed") return false;
+    const snapshot = exactFiniteSnapshots.get(result.claimId);
+    if (!snapshot) return false;
+    const claim = job.claims.find((candidate) => candidate.trackerId === result.claimId);
+    if (!claim) return false;
+    const ledgerContext = {
+      runId: String(control.runId || "").toLowerCase(),
+      workerId: String(control.workerId || "").toLowerCase(),
+      claim,
+      collectionId,
+      snapshot,
+    };
+    const claimLedgers = schedulerLedgers.filter((ledger) => (
+      isExactTrackerClaimLedger(ledger, ledgerContext)
+    ));
+    if (claimLedgers.length !== 1) return false;
+    return schedulerLedgers.filter((ledger) => isExactFiniteCommitLedger(ledger, {
+      ...ledgerContext,
+      claimLedger: claimLedgers[0],
+    })).length === 1;
+  }).length;
+  return { ...counts, finiteCommittedCount };
 }
 
 async function submitLookupWindow(ctx, job, window) {
@@ -953,8 +1110,11 @@ export async function handleLocalWorkerRequest(request, ctx) {
       return json(request, { ok: true, ...(await submitWindow(ctx, body.job, body.window)) });
     }
     if (body.action === "reconcile-submit") {
-      workerControlInput(body);
-      return json(request, { ok: true, ...(await reconcileSubmit(ctx, body.job, body.collectionId)) });
+      const control = workerControlInput(body);
+      return json(request, {
+        ok: true,
+        ...(await reconcileSubmit(ctx, body.job, body.collectionId, control)),
+      });
     }
     if (body.action === "fail") {
       workerControlInput(body);

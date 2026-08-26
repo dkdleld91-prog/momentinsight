@@ -4,7 +4,9 @@ import {
   RANK_EVIDENCE,
   SCHEMA_VERSION,
   SOURCE,
+  STABLE_FINITE_WINDOW_PROOF_VERSION,
   STABLE_FULL_WINDOW_PROOF_VERSION,
+  stableFiniteWindowDigest,
   validateProviderWindow,
   validateRankRequest,
 } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
@@ -180,8 +182,18 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     sourceExhausted = parsed.sourceExhausted === true;
   }
 
-  if (state.items.length !== REQUIRED_LIMIT) {
+  const finiteCandidate = state.items.length > 0
+    && state.items.length < REQUIRED_LIMIT
+    && options.allowStableFiniteCandidate === true;
+  if (state.items.length !== REQUIRED_LIMIT && !finiteCandidate) {
     throw new ProviderError("provider_partial_window", `${state.items.length}/${REQUIRED_LIMIT}`);
+  }
+  if (finiteCandidate && (
+    sourceExhausted !== true
+    || marketTotalVerified !== true
+    || marketTotal !== state.items.length
+  )) {
+    throw new ProviderError("provider_stable_finite_window_unproven", "coverage");
   }
   if (marketTotal != null && marketTotal < state.items.length) {
     marketTotal = null;
@@ -208,6 +220,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     excludedAdCount: state.excludedAdCount,
     items: state.items,
     ...(options.crossPageProof ? { crossPageProof: options.crossPageProof } : {}),
+    ...(options.finiteWindowProof ? { finiteWindowProof: options.finiteWindowProof } : {}),
     },
   };
 }
@@ -280,12 +293,65 @@ function isPartialWindow(error) {
   return error instanceof ProviderError && error.code === "provider_partial_window";
 }
 
+function buildStableFiniteWindowProof(firstPayload, secondPayload, captureIds, keyword) {
+  if (!Array.isArray(captureIds)
+    || captureIds.length !== 2
+    || typeof captureIds[0] !== "string"
+    || typeof captureIds[1] !== "string"
+    || !captureIds[0]
+    || captureIds[0] === captureIds[1]) {
+    throw new ProviderError("provider_stable_finite_window_unproven", "capture_ids");
+  }
+  for (const payload of [firstPayload, secondPayload]) {
+    if (payload?.sourceExhausted !== true
+      || payload?.marketTotalStatus !== "verified"
+      || !Number.isInteger(payload?.checkedCount)
+      || payload.checkedCount < 1
+      || payload.checkedCount >= REQUIRED_LIMIT
+      || payload.marketTotal !== payload.checkedCount
+      || payload.items?.length !== payload.checkedCount) {
+      throw new ProviderError("provider_stable_finite_window_unproven", "coverage");
+    }
+  }
+  if (firstPayload.checkedCount !== secondPayload.checkedCount
+    || firstPayload.marketTotal !== secondPayload.marketTotal) {
+    throw new ProviderError("provider_stable_finite_window_unproven", "count_mismatch");
+  }
+  let firstDigest;
+  let secondDigest;
+  try {
+    firstDigest = stableFiniteWindowDigest(firstPayload.items, {
+      keyword,
+      marketTotal: firstPayload.marketTotal,
+    });
+    secondDigest = stableFiniteWindowDigest(secondPayload.items, {
+      keyword,
+      marketTotal: secondPayload.marketTotal,
+    });
+  } catch {
+    throw new ProviderError("provider_stable_finite_window_unproven", "digest_invalid");
+  }
+  if (firstDigest !== secondDigest) {
+    throw new ProviderError("provider_stable_finite_window_unproven", "digest_mismatch");
+  }
+  return {
+    version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+    passCount: 2,
+    pageCount: MAX_PAGES,
+    pageSize: PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: [firstDigest, secondDigest],
+    marketTotal: secondPayload.marketTotal,
+    checkedCount: secondPayload.checkedCount,
+  };
+}
+
 export function createChromeNativeProvider(options = {}) {
   if (typeof options.exchange !== "function") {
     throw new ProviderError("native_host_exchange_missing");
   }
   return {
-    async collect(request) {
+    async collect(request, collectOptions = {}) {
       let navigatedPages = MAX_PAGES;
       const response = await options.exchange({
         type: "collect",
@@ -344,17 +410,53 @@ export function createChromeNativeProvider(options = {}) {
 
       // If the independent pass no longer overlaps, it is already a strict
       // coherent 300-window and needs no special proof.
+      let secondFailure = null;
       try {
         return buildNativeWindowFromPages(request, secondResponse.pages, {
           nowMs: options.nowMs?.() ?? Date.now(),
         });
       } catch (error) {
-        if (!overlapBoundary(error)) throw error;
+        secondFailure = error;
+        if (!overlapBoundary(error) && !isPartialWindow(error)) throw error;
         if (recoveryReason === "partial-window") {
-          // The discarded partial pass cannot prove a stable 300-rank window,
-          // and a third full pass would exceed the hard navigation budget.
-          throw new ProviderError("provider_stable_window_unproven", "page_budget");
+          if (!isPartialWindow(error)) {
+            // A partial pass followed by an overlap cannot prove either a
+            // coherent full window or one stable finite market.
+            throw new ProviderError("provider_stable_window_unproven", "page_budget");
+          }
+        } else if (isPartialWindow(error)) {
+          throw error;
         }
+      }
+
+      if (recoveryReason === "partial-window" && isPartialWindow(secondFailure)) {
+        if (collectOptions.allowStableFinite !== true) throw secondFailure;
+        const firstFinite = nativeWindowPayloadFromPages(request, latestPages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          allowStableFiniteCandidate: true,
+        }).payload;
+        const secondFinite = nativeWindowPayloadFromPages(request, secondResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          allowStableFiniteCandidate: true,
+        }).payload;
+        // A different finite count is still the latest ordinary partial
+        // failure; it does not become a stable-finite proof failure. Preserve
+        // the established typed error and its latest observed count.
+        if (firstFinite.checkedCount !== secondFinite.checkedCount
+          || firstFinite.marketTotal !== secondFinite.marketTotal) {
+          throw secondFailure;
+        }
+        const finiteWindowProof = buildStableFiniteWindowProof(
+          firstFinite,
+          secondFinite,
+          [response.captureId, secondResponse.captureId],
+          request.keyword,
+        );
+        return buildNativeWindowFromPages(request, secondResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          allowStableFiniteCandidate: true,
+          finiteWindowProof,
+        });
       }
 
       const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {

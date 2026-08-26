@@ -237,6 +237,31 @@ test("accepts a short complete window only with proven source exhaustion", () =>
   assert.equal(result.checkedCount, 1);
 });
 
+test("preserves only bounded numeric seller-product ids proven inside a catalog card", () => {
+  const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
+  const window = validWindow();
+  window.items[0] = {
+    ...window.items[0],
+    productType: 1,
+    catalogId: window.items[0].productId,
+    catalogSellerProductIds: ["13327339525", "13327339525", "90871849857"],
+  };
+  const result = validateProviderWindow(window, request);
+
+  assert.deepEqual(result.items[0].catalogSellerProductIds, ["13327339525", "90871849857"]);
+  assertContractError(
+    () => validateProviderWindow({
+      ...window,
+      items: [{
+        ...window.items[0],
+        catalogSellerProductIds: ["13327339525", "not-a-product-id"],
+      }, window.items[1]],
+    }, request),
+    "invalid_provider_response",
+    "items.1.catalogSellerProductIds",
+  );
+});
+
 test("keeps a complete rank window when the optional market total is unavailable", () => {
   const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
   const result = validateProviderWindow({

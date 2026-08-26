@@ -4,11 +4,13 @@ export const SCHEMA_VERSION = "mi.naver-shopping-organic-window.v1";
 export const SOURCE = "naver_shopping_results_collector";
 export const RANK_EVIDENCE = "naver_shopping_organic_list";
 export const STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1";
+export const STABLE_FINITE_WINDOW_PROOF_VERSION = "stable-finite-window-v1";
 const MAX_RANK_LIMIT = 300;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_PAGE_COUNT = 8;
 const STABLE_FULL_WINDOW_PASS_COUNT = 2;
 const MAX_KEYWORD_LENGTH = 100;
+const MAX_CATALOG_SELLER_PRODUCT_IDS = 100;
 const DEADLINE_GRACE_MS = 5_000;
 const MAX_DEADLINE_AHEAD_MS = 15 * 60_000;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
@@ -209,6 +211,22 @@ function validateItem(value, expectedRank, limit) {
     }
     item.productType = value.productType;
   }
+  if (value.catalogSellerProductIds != null) {
+    const field = `items.${expectedRank}.catalogSellerProductIds`;
+    if (!Array.isArray(value.catalogSellerProductIds)
+      || value.catalogSellerProductIds.length > MAX_CATALOG_SELLER_PRODUCT_IDS
+      || ![1, 4, 7, 10].includes(Number(item.productType))) {
+      throw new ContractError("invalid_provider_response", field);
+    }
+    const ids = [];
+    for (const rawId of value.catalogSellerProductIds) {
+      if (typeof rawId !== "string" || !/^[0-9]{5,80}$/u.test(rawId)) {
+        throw new ContractError("invalid_provider_response", field);
+      }
+      if (!ids.includes(rawId)) ids.push(rawId);
+    }
+    if (ids.length) item.catalogSellerProductIds = ids;
+  }
   for (const field of ["lprice", "hprice"]) {
     const normalized = numericValue(value[field], `items.${expectedRank}.${field}`);
     if (normalized !== undefined) item[field] = normalized;
@@ -248,6 +266,13 @@ function stableProofKeyword(value) {
 function stableWindowItems(items) {
   if (!Array.isArray(items) || items.length !== MAX_RANK_LIMIT) {
     throw new ContractError("invalid_provider_response", "crossPageProof.items");
+  }
+  return items.map((item, index) => validateItem(item, index + 1, MAX_RANK_LIMIT));
+}
+
+function stableFiniteWindowItems(items) {
+  if (!Array.isArray(items) || items.length < 1 || items.length >= MAX_RANK_LIMIT) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof.items");
   }
   return items.map((item, index) => validateItem(item, index + 1, MAX_RANK_LIMIT));
 }
@@ -298,6 +323,38 @@ export function stableCollisionDigest(items) {
     STABLE_FULL_WINDOW_PROOF_VERSION,
     String(collisions.length),
     ...collisions,
+  ].join("\n"), "utf8").digest("hex");
+}
+
+function stableFiniteRankSlot(item) {
+  const signals = identitySignals(item).sort();
+  if (!signals.length) throw new ContractError("invalid_provider_response", "finiteWindowProof.identity");
+  return [
+    item.organicRank,
+    signals.join("|"),
+    Number(item.productType || 0),
+    item.productId || "",
+    item.sellerProductId || "",
+    item.catalogId || "",
+    item.linkedCatalogId || "",
+    ...(Array.isArray(item.catalogSellerProductIds)
+      ? item.catalogSellerProductIds.slice().sort()
+      : []),
+  ].join("\u001f");
+}
+
+export function stableFiniteWindowDigest(items, options = {}) {
+  const normalizedItems = stableFiniteWindowItems(items);
+  const keyword = stableProofKeyword(options.keyword);
+  const marketTotal = Number(options.marketTotal);
+  if (!Number.isInteger(marketTotal) || marketTotal !== normalizedItems.length) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof.marketTotal");
+  }
+  return crypto.createHash("sha256").update([
+    STABLE_FINITE_WINDOW_PROOF_VERSION,
+    keyword,
+    String(marketTotal),
+    ...normalizedItems.map(stableFiniteRankSlot),
   ].join("\n"), "utf8").digest("hex");
 }
 
@@ -357,6 +414,54 @@ function validateStableFullWindowProof(value, items, keyword) {
     captureIds: captureIds.slice(),
     passDigests: passDigests.slice(),
     collisionDigest: value.collisionDigest,
+  };
+}
+
+function validateStableFiniteWindowProof(value, items, keyword, marketTotal) {
+  if (!isRecord(value)) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof");
+  }
+  const allowedKeys = new Set([
+    "version",
+    "passCount",
+    "pageCount",
+    "pageSize",
+    "captureIds",
+    "passDigests",
+    "marketTotal",
+    "checkedCount",
+  ]);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof.unexpected");
+  }
+  const captureIds = Array.isArray(value.captureIds) ? value.captureIds : [];
+  const passDigests = Array.isArray(value.passDigests) ? value.passDigests : [];
+  if (value.version !== STABLE_FINITE_WINDOW_PROOF_VERSION
+    || value.passCount !== STABLE_FULL_WINDOW_PASS_COUNT
+    || value.pageCount !== NAVER_SHOPPING_PAGE_COUNT
+    || value.pageSize !== NAVER_SHOPPING_PAGE_SIZE
+    || captureIds.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !captureIds.every((captureId) => typeof captureId === "string" && CAPTURE_ID_PATTERN.test(captureId))
+    || captureIds[0] === captureIds[1]
+    || passDigests.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !passDigests.every((digest) => typeof digest === "string" && SHA256_PATTERN.test(digest))
+    || value.marketTotal !== marketTotal
+    || value.checkedCount !== items.length) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof");
+  }
+  const digest = stableFiniteWindowDigest(items, { keyword, marketTotal });
+  if (passDigests[0] !== passDigests[1] || passDigests[0] !== digest) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof.mismatch");
+  }
+  return {
+    version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+    passCount: STABLE_FULL_WINDOW_PASS_COUNT,
+    pageCount: NAVER_SHOPPING_PAGE_COUNT,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: passDigests.slice(),
+    marketTotal,
+    checkedCount: items.length,
   };
 }
 
@@ -449,6 +554,23 @@ export function validateProviderWindow(value, request) {
   } else if (value.crossPageProof !== undefined) {
     throw new ContractError("invalid_provider_response", "crossPageProof.unexpected");
   }
+  let finiteWindowProof;
+  if (value.checkedCount < request.limit && value.finiteWindowProof !== undefined) {
+    if (value.sourceExhausted !== true
+      || marketTotalStatus !== "verified"
+      || marketTotal !== value.checkedCount
+      || crossPageDuplicate) {
+      throw new ContractError("invalid_provider_response", "finiteWindowProof.coverage");
+    }
+    finiteWindowProof = validateStableFiniteWindowProof(
+      value.finiteWindowProof,
+      items,
+      request.keyword,
+      marketTotal,
+    );
+  } else if (value.finiteWindowProof !== undefined) {
+    throw new ContractError("invalid_provider_response", "finiteWindowProof.unexpected");
+  }
 
   return {
     ok: true,
@@ -468,5 +590,6 @@ export function validateProviderWindow(value, request) {
     excludedAdCount: value.excludedAdCount,
     items,
     ...(crossPageProof ? { crossPageProof } : {}),
+    ...(finiteWindowProof ? { finiteWindowProof } : {}),
   };
 }

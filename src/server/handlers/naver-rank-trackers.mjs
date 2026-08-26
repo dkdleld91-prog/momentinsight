@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.13";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.14";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -949,6 +949,7 @@ async function listTrackers(request, ctx) {
 export function buildProductRankSnapshotRecord(tracker, checkedAt, result, message) {
   const source = normalizeText(result?.source) || "naver_shopping_results_collector";
   const crossPageProofVersion = normalizeText(result?.crossPageProofVersion);
+  const finiteWindowProofVersion = normalizeText(result?.finiteWindowProofVersion);
   const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : {};
   const item = {
     ...safeResultItem,
@@ -960,6 +961,12 @@ export function buildProductRankSnapshotRecord(tracker, checkedAt, result, messa
     collectedAt: normalizeText(result?.collectedAt) || null,
     excludedAdCount: Number(result?.excludedAdCount || 0),
     ...(crossPageProofVersion === "stable-full-window-v1" ? { crossPageProofVersion } : {}),
+    ...(finiteWindowProofVersion === "stable-finite-window-v1" ? {
+      finiteWindowProofVersion,
+      sourceExhausted: result?.sourceExhausted === true,
+      finiteMarketTotal: Number(result?.total || 0),
+      atomicSuccessEligible: false,
+    } : {}),
     ...(result?.trackingRankSource ? {
       trackingRankSource: result.trackingRankSource,
       trackingRankSourceLabel: result.trackingRankSourceLabel,
@@ -1154,6 +1161,7 @@ export function verifiedRelatedCatalogIdFromSnapshots(snapshots = [], trackerPro
   const allowedSources = new Set(["related_catalog", "exact_product"]);
   const allowedRelationBases = new Set([
     "metadata_catalog_id",
+    "catalog_seller_product_id",
     "model_brand_category",
     "keyword_brand_category",
   ]);

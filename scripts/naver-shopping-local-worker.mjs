@@ -7,6 +7,7 @@ import { signLocalWorkerRequest } from "../src/server/local-worker-auth.mjs";
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ENDPOINT_PATH,
+  isStableFiniteCanaryJob,
   localWorkerRankRequest,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
@@ -67,6 +68,7 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_next_data_rank_drift",
   "provider_duplicate_identity",
   "provider_stable_window_unproven",
+  "provider_stable_finite_window_unproven",
   "provider_row_invalid",
   "provider_row_title_missing",
   "provider_row_identity_missing",
@@ -83,6 +85,7 @@ const SAFE_FAILURE_CODES = new Set([
   "local_worker_submit_incomplete",
   "local_worker_submit_partial",
   "local_worker_match_result_incomplete",
+  "local_worker_finite_match_invalid",
   "local_worker_commit_invalid",
   "local_worker_commit_unavailable",
   "local_worker_submit_failed",
@@ -105,6 +108,8 @@ const TRACKER_ISOLATED_FAILURE_CODES = new Set([
   "local_worker_match_result_incomplete",
   "provider_duplicate_identity",
   "provider_stable_window_unproven",
+  "provider_stable_finite_window_unproven",
+  "local_worker_finite_match_invalid",
   "provider_partial_window",
   "provider_row_invalid",
   "provider_row_title_missing",
@@ -151,7 +156,9 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.13";
+const EXPECTED_RUNTIME_VERSION = "1.1.14";
+const STABLE_FINITE_RUN_TRIGGER = "rank-catch-up";
+const STABLE_FINITE_WORKER_ID = "windows-desktop-primary";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -179,6 +186,10 @@ const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
   "local_worker_submit_failed",
 ]);
 const STRICT_TRACKER_PARTIAL_WINDOW_PATTERN = /^provider_partial_window:([1-9]|[1-9][0-9]|[12][0-9]{2})_300$/u;
+const FINITE_CANARY_CADENCE_NEUTRAL_FAILURE_CODES = new Set([
+  "provider_stable_finite_window_unproven",
+  "local_worker_finite_match_invalid",
+]);
 
 async function runtimeIdentityInput(options, env) {
   let identity = options.runtimeIdentity || {
@@ -216,6 +227,14 @@ function runTriggerInput(options, env) {
     throw new Error("local_worker_run_trigger_invalid");
   }
   return trigger;
+}
+
+function stableFinitePrecollectionAllowed(job, context) {
+  return isStableFiniteCanaryJob(job)
+    && context.runTrigger === STABLE_FINITE_RUN_TRIGGER
+    && context.workerId === STABLE_FINITE_WORKER_ID
+    && context.runtimeVersion === EXPECTED_RUNTIME_VERSION
+    && RUNTIME_FINGERPRINT_PATTERN.test(context.runtimeFingerprint);
 }
 
 function failureScope(job, failureCode) {
@@ -306,6 +325,14 @@ function restoreBaselineCadence(summary) {
 function isStrictTrackerPartialWindowFailure(scope, failureCode) {
   return scope === "tracker"
     && STRICT_TRACKER_PARTIAL_WINDOW_PATTERN.test(String(failureCode || ""));
+}
+
+function isCadenceNeutralTrackerFailure(job, scope, failureCode) {
+  if (isStrictTrackerPartialWindowFailure(scope, failureCode)) return true;
+  const baseCode = String(failureCode || "").split(":", 1)[0];
+  return scope === "tracker"
+    && isStableFiniteCanaryJob(job)
+    && FINITE_CANARY_CADENCE_NEUTRAL_FAILURE_CODES.has(baseCode);
 }
 
 function workerCoordinationIdentity(env) {
@@ -732,8 +759,19 @@ export async function runLocalShoppingWorker(options = {}) {
       let resultAccounted = false;
       let controlFailureAttempted = false;
       let submitCollectionId = "";
+      let finiteWindow = false;
       try {
         await reportProgress("navigating", 0, job);
+        // claim-lane synchronously registers this exact runtime identity before
+        // the first job claim. The server releases the lane and rejects the
+        // action when the finalized fingerprint is not in its 1.1.14 allowlist,
+        // so reaching collection preserves that registration-before-claim gate.
+        const finiteCanaryJob = stableFinitePrecollectionAllowed(job, {
+          runTrigger,
+          workerId: workerIdentity.workerId,
+          runtimeVersion: runtimeIdentity.version,
+          runtimeFingerprint: runtimeIdentity.fingerprint,
+        });
         const request = localWorkerRankRequest(
           job,
           options.nowMs?.() ?? Date.now(),
@@ -744,11 +782,15 @@ export async function runLocalShoppingWorker(options = {}) {
             14 * 60_000,
           ),
         );
-        const rawWindow = await provider.collect(request);
+        const rawWindow = await provider.collect(request, {
+          allowStableFinite: finiteCanaryJob,
+        });
         const strictWindow = validateStrictLocalWorkerWindow(rawWindow, {
           keyword: job.keyword,
           nowMs: options.nowMs?.() ?? Date.now(),
+          allowStableFinite: finiteCanaryJob,
         });
+        finiteWindow = strictWindow.finiteWindowProof?.version === "stable-finite-window-v1";
         await reportProgress("submitting", 8, job);
         submitCollectionId = strictWindow.collectionId;
         const submitted = await action({
@@ -768,6 +810,7 @@ export async function runLocalShoppingWorker(options = {}) {
         const collectionConflictCount = explicitOutcome?.collectionConflictCount
           ?? Number(submitted.collectionConflictCount || 0);
         const processedCount = explicitOutcome?.processedCount ?? Number(submitted.processedCount || 0);
+        const finiteCommittedCount = Number(submitted.finiteCommittedCount || 0);
         if (
           !Number.isSafeInteger(committedCount)
           || !Number.isSafeInteger(alreadyCommittedCount)
@@ -779,8 +822,13 @@ export async function runLocalShoppingWorker(options = {}) {
           || leaseLostCount < 0
           || collectionConflictCount < 0
           || processedCount < 0
+          || !Number.isSafeInteger(finiteCommittedCount)
+          || finiteCommittedCount < 0
           || processedCount !== job.claims.length
           || committedCount + alreadyCommittedCount + leaseLostCount + collectionConflictCount !== job.claims.length
+          || (finiteWindow
+            ? finiteCommittedCount !== committedCount + alreadyCommittedCount
+            : finiteCommittedCount !== 0)
         ) {
           throw new Error("local_worker_submit_incomplete");
         }
@@ -810,6 +858,9 @@ export async function runLocalShoppingWorker(options = {}) {
             log(`local_worker_system_failure_stopped:${failureCode}`);
           }
           break;
+        } else if (finiteWindow) {
+          summary.finiteWindowCommits = Number(summary.finiteWindowCommits || 0)
+            + finiteCommittedCount;
         } else if (job.kind !== "lookup") {
           const success = await action({
             action: "record-success",
@@ -933,6 +984,18 @@ export async function runLocalShoppingWorker(options = {}) {
         }
         summary.submitted += partialSubmitted;
         summary.failed += job.claims.length - partialSubmitted;
+        const reconciledFiniteCommittedCount = Number(partial?.finiteCommittedCount || 0);
+        if (partialSubmitted === job.claims.length
+          && finiteWindow
+          && explicitOutcome
+          && Number.isSafeInteger(reconciledFiniteCommittedCount)
+          && reconciledFiniteCommittedCount === partialSubmitted
+          && explicitOutcome.uncommittedClaims.length === 0
+          && explicitOutcome.unreportedClaims.length === 0) {
+          summary.finiteWindowCommits = Number(summary.finiteWindowCommits || 0)
+            + partialSubmitted;
+          continue;
+        }
         if (partialSubmitted === job.claims.length) {
           restoreBaselineCadence(summary);
           summary.status = "control_plane_failed";
@@ -953,7 +1016,8 @@ export async function runLocalShoppingWorker(options = {}) {
           break;
         }
         const scope = failureScope(job, effectiveFailureCode);
-        const strictTrackerPartialWindow = isStrictTrackerPartialWindowFailure(
+        const cadenceNeutralTrackerFailure = isCadenceNeutralTrackerFailure(
+          job,
           scope,
           effectiveFailureCode,
         ) && partialSubmitted === 0
@@ -992,7 +1056,7 @@ export async function runLocalShoppingWorker(options = {}) {
               errorCode: effectiveFailureCode,
               scope,
             });
-            if (strictTrackerPartialWindow
+            if (cadenceNeutralTrackerFailure
               && failureReport.cadenceProofPreserved === true) {
               cadenceProofPreservedClaims += failureJob.claims.length;
             }
@@ -1001,13 +1065,19 @@ export async function runLocalShoppingWorker(options = {}) {
         } catch (coordinationError) {
           log(`local_worker_failure_record_failed:${safeFailureCode(coordinationError)}`);
         }
-        const partialWindowCadencePreserved = strictTrackerPartialWindow
+        const trackerCadencePreserved = cadenceNeutralTrackerFailure
           && summary.releaseFailed === releaseFailedBefore
           && cadenceProofPreservedClaims === job.claims.length;
-        if (partialWindowCadencePreserved) {
-          summary.trackerPartialWindowFailures = Number(
-            summary.trackerPartialWindowFailures || 0,
-          ) + job.claims.length;
+        if (trackerCadencePreserved) {
+          if (isStrictTrackerPartialWindowFailure(scope, effectiveFailureCode)) {
+            summary.trackerPartialWindowFailures = Number(
+              summary.trackerPartialWindowFailures || 0,
+            ) + job.claims.length;
+          } else {
+            summary.trackerFiniteWindowFailures = Number(
+              summary.trackerFiniteWindowFailures || 0,
+            ) + job.claims.length;
+          }
         } else {
           restoreBaselineCadence(summary);
         }

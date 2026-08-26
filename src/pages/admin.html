@@ -18253,6 +18253,12 @@
         renderSourceFile();
         resetWorkOperation();
         syncPersonalCalendarMenu();
+        // 넛지는 "새 세션이 적용되고 화면이 열린 직후" 여기서 한 번 평가한다.
+        // 아래 역할별 분기에는 await 와 adminSessionIsCurrent 게이트가 있어서, 이미 착지한
+        // 뒤에도 함수 마지막 줄까지 가지 못하는 경로가 있다(화면 안 로그아웃 → 코드 재로그인).
+        // 그때 평가가 통째로 건너뛰어져 직전 로그인의 판정이 그대로 남았다 —
+        // 새 로그인인데도 팝업이 다시 뜨지 않은 2026-08-26 운영 측정 회귀다.
+        maybeShowGoogleNudge();
 
         if (session.role === "team") {
           renderOperationTeamCodePanel({ team: currentOperationTeam });
@@ -18291,7 +18297,6 @@
           }
         }
         refreshOperationHomeStatus();
-        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }

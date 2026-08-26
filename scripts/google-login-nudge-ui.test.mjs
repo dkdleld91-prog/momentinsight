@@ -143,7 +143,7 @@ function createRealm({ preloadQueue = null, session = new Map(), payload = UNLIN
   const settle = async (turns = 30) => {
     for (let index = 0; index < turns; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   };
-  return { dom, window, calls, load, glue, settle, session };
+  return { dom, window, calls, load, glue, settle, session, miFetch };
 }
 
 function inlineScripts(html) {
@@ -162,6 +162,44 @@ function functionBlock(source, header) {
   assert.ok(to > from, `함수의 끝을 찾지 못했습니다: ${header}`);
   return source.slice(from, to);
 }
+
+// 위치 판정은 주석에 적힌 낱말이 아니라 실제 코드 줄로만 한다.
+function codeOnly(block) {
+  return block.split("\n").filter((line) => !/^\s*\/\//.test(line)).join("\n");
+}
+
+// 페이지 인라인 글루를 원문 그대로 떼어 와 한 realm 안에서 돌린다 — 옮겨 적지 않는다.
+// (functionBlock 은 닫는 줄을 잘라내므로 다시 붙여 온전한 함수로 만든다.)
+function mountPageGlue(realm, page) {
+  const sandbox = { window: realm.window, miFetch: realm.miFetch, console };
+  sandbox[page.sessionVar] = { csrfToken: "", role: "", scopeKey: "", clientId: "", teamId: "" };
+  vm.createContext(sandbox);
+  const source = [page.applyHeader, "function googleNudgeAccountTag() {", "function maybeShowGoogleNudge() {"]
+    .map((header) => `${functionBlock(page.source, header)}\n      }`)
+    .join("\n");
+  vm.runInContext(source, sandbox);
+  return sandbox;
+}
+
+const ADMIN_GLUE = {
+  label: "admin.html",
+  source: adminSource,
+  sessionVar: "secureSession",
+  applyHeader: "function applySecureSession(payload) {",
+  applyName: "applySecureSession",
+  key: "mi-google-nudge-dismissed:team:team-01",
+  login: (scopeKey) => ({ session: { role: "team", scopeKey, teamId: "team-01", csrfToken: `csrf-${scopeKey}` } }),
+};
+
+const CLIENT_GLUE = {
+  label: "client.html",
+  source: clientSource,
+  sessionVar: "secureClientSession",
+  applyHeader: "function applyClientSession(payload) {",
+  applyName: "applyClientSession",
+  key: "mi-google-nudge-dismissed:client:client-02",
+  login: (scopeKey) => ({ session: { role: "client", scopeKey, clientId: "client-02", csrfToken: `csrf-${scopeKey}` } }),
+};
 
 // ── 1. 문구와 강조 ───────────────────────────────────────────
 
@@ -407,6 +445,74 @@ test("두 페이지가 순서에 기대지 않는 큐 글루로 부른다", () =
   // 해제 표식이 "이 로그인" 안에서만 살도록 로그인 식별자를 같이 넘긴다.
   assert.ok(adminSource.includes("loginTag: secureSession.scopeKey"));
   assert.ok(clientSource.includes("loginTag: secureClientSession.scopeKey"));
+});
+
+test("회귀: 새로고침 없는 화면 안 재로그인에서 다시 뜬다", async () => {
+  // 2026-08-26 운영 측정(운영팀 test1-a01, 관리자 화면):
+  //  · 팝업 → "나중에 하기" → 새로고침 = 다시 뜨지 않음(정상).
+  //  · 화면 안 로그아웃(문서 교체 없음) → 같은 문서에서 코드 재로그인 = 다시 뜨지 않음(결함).
+  //    그 시점 GET /api/session 의 scopeKey 는 새 값이었으므로 해제 표식과 어긋나야 했다.
+  // 아래는 그 경로를 페이지 글루 원문으로 재현한다 — realm 을 다시 만들지 않는다(= 새로고침 없음).
+  for (const page of [ADMIN_GLUE, CLIENT_GLUE]) {
+    const realm = createRealm();
+    realm.load();
+    const glue = mountPageGlue(realm, page);
+
+    // 로그인 A 착지 → 팝업 → "나중에 하기"
+    glue[page.applyName](page.login("scope-login-a"));
+    glue.maybeShowGoogleNudge();
+    await realm.settle();
+    assert.equal(realm.window.MomentGoogleNudge.lastResult, "shown", `${page.label}: 첫 로그인에서 뜨지 않았습니다.`);
+    const [later] = realm.dom.findByClass("mi-google-nudge-secondary");
+    later.click();
+    assert.equal(realm.session.get(page.key), "scope-login-a");
+    assert.equal(realm.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`), null);
+
+    // 같은 문서에서 로그아웃(세션 비움) → 코드로 다시 로그인(새 sid → 새 scopeKey)
+    glue[page.applyName]({});
+    assert.equal(glue[page.sessionVar].scopeKey, "", `${page.label}: 로그아웃이 세션을 비우지 않았습니다.`);
+    glue[page.applyName](page.login("scope-login-b"));
+    glue.maybeShowGoogleNudge();
+    await realm.settle();
+    assert.ok(
+      realm.dom.document.querySelector(`[${ROOT_ATTRIBUTE}]`),
+      `${page.label}: 새 로그인인데 팝업이 다시 뜨지 않았습니다.`,
+    );
+    assert.equal(realm.window.MomentGoogleNudge.lastResult, "shown");
+    // 로그인마다 정확히 한 번씩만 조회한다.
+    assert.equal(realm.calls.filter((entry) => entry.method === "GET").length, 2, `${page.label}: 조회 횟수가 다릅니다.`);
+    // 이전 로그인의 해제 표식은 그대로 남아 있고, 값이 어긋나 다시 뜬 것이다.
+    assert.equal(realm.session.get(page.key), "scope-login-a");
+  }
+});
+
+test("회귀: 넛지 호출이 세션 적용 직후에 있고 착지 게이트 뒤로 밀리지 않는다", () => {
+  // 위 재로그인이 조용했던 이유는 컴포넌트가 아니라 호출 위치였다. 운영팀 화면의 유일한
+  // 호출이 activateAdminSession 맨 끝에 있어서, 중간의 await 와 adminSessionIsCurrent
+  // 게이트가 한 번이라도 걸리면(화면 안 로그아웃은 closeSecureSession 의 finally 에서
+  // 세대를 한 번 더 올린다) 이미 착지한 뒤에도 평가가 통째로 건너뛰어졌고,
+  // lastResult 에는 직전 판정("already-dismissed")이 그대로 남았다.
+  const activate = codeOnly(functionBlock(adminSource, "async function activateAdminSession(payload, restored, requestGeneration) {"));
+  const applied = activate.indexOf("applySecureSession(payload);");
+  const authed = activate.indexOf('root.classList.add("is-authed");');
+  const nudge = activate.indexOf("maybeShowGoogleNudge();");
+  assert.ok(applied >= 0 && nudge > applied, "새 세션을 적용하기 전에 부르면 옛 로그인으로 판정합니다.");
+  assert.ok(authed >= 0 && nudge > authed, "착지 전환 뒤에 불러야 로그인 화면 위에 뜨지 않습니다.");
+  assert.ok(activate.indexOf("if (!adminSessionIsCurrent(") > nudge, "게이트가 넛지 평가를 건너뛸 수 있습니다.");
+  assert.ok(activate.indexOf("await ") > nudge, "await 뒤로 밀리면 재로그인에서 평가가 사라질 수 있습니다.");
+
+  // 광고주 화면도 같은 규칙 — 착지 전환과 넛지 사이에 게이트도 await 도 없다.
+  for (const header of ["async function unlockWithCode(code, statusNode) {", "async function restoreClientLogin() {"]) {
+    const block = codeOnly(functionBlock(clientSource, header));
+    const clientAuthed = block.indexOf('root.classList.add("is-authed");');
+    const clientNudge = block.indexOf("maybeShowGoogleNudge();");
+    assert.ok(block.indexOf("applyClientSession(payload)") >= 0, `${header}: 세션 적용을 찾지 못했습니다.`);
+    assert.ok(block.indexOf("applyClientSession(payload)") < clientNudge, `${header}: 세션 적용 뒤에 불러야 합니다.`);
+    assert.ok(clientAuthed >= 0 && clientNudge > clientAuthed, `${header}: 착지 전환 뒤에 불러야 합니다.`);
+    const between = block.slice(clientAuthed, clientNudge);
+    assert.equal(between.includes("clientSessionIsCurrent"), false, `${header}: 게이트가 사이에 있습니다.`);
+    assert.equal(between.includes("await "), false, `${header}: await 가 사이에 있습니다.`);
+  }
 });
 
 test("팝업 마크업은 공유 스크립트 안에만 있다", () => {

@@ -10984,6 +10984,9 @@
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         syncPersonalCalendarMenu();
+        // 새 세션이 적용되고 화면이 열린 직후에 평가한다 — 뒤쪽에 붙는 코드가
+        // 이 호출을 건너뛰게 만들 수 없다(화면 안 로그아웃 → 재로그인 회귀).
+        maybeShowGoogleNudge();
         if (loginCode) loginCode.value = "";
         if (connectCode) connectCode.value = "";
         updateClientAuthPanel(state.client);
@@ -10998,7 +11001,6 @@
               : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다."),
           (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok"
         );
-        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -11375,6 +11377,9 @@
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         syncPersonalCalendarMenu();
+        // 새 세션이 적용되고 화면이 열린 직후에 평가한다 — 뒤쪽에 붙는 코드가
+        // 이 호출을 건너뛰게 만들 수 없다(화면 안 로그아웃 → 재로그인 회귀).
+        maybeShowGoogleNudge();
         // 구글 콜백은 /client?glogin=... · /client?gcal=... 으로 돌아온다(해시 없음).
         if (personalCalendarNoticePending()) setScreen("my-calendar", false);
         updateClientAuthPanel(state.client);
@@ -11385,7 +11390,6 @@
               ? "광고주 보안 세션을 복원했고 서버 점검 중이라 마지막 승인 데이터를 유지합니다."
               : "광고주 보안 세션은 복원했지만 승인 데이터 연결을 확인하지 못했습니다. 새 빈 상태는 저장하지 않았습니다.")
             : "광고주 보안 세션이 복원되었습니다."), (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok");
-        maybeShowGoogleNudge();
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         loginButton.disabled = false;
         return true;

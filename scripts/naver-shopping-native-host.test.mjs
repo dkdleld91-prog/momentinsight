@@ -145,6 +145,18 @@ function finiteMarketPages(total) {
   });
 }
 
+function finiteMarketStrongIdentityVariant(total, variant) {
+  const pages = finiteMarketPages(total);
+  const data = JSON.parse(pages[0].nextDataText);
+  const row = data.props.pageProps.compositeList.list.find((entry) => !entry.item.adId);
+  const sellerProductId = String(23000000000 + variant);
+  row.item.id = String(83000000000 + variant);
+  row.item.mallProductId = sellerProductId;
+  row.item.mallPcUrl = `https://smartstore.naver.com/example/products/${sellerProductId}`;
+  pages[0].nextDataText = JSON.stringify(data);
+  return pages;
+}
+
 function nplusRows() {
   const rows = [];
   let organicRank = 0;
@@ -459,6 +471,162 @@ test("native provider accepts one stable finite market only after two independen
   assert.equal(messages.length, 2);
 });
 
+test("native provider uses a bounded third canary capture to prove A,B,A or A,B,B", async (t) => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  for (const scenario of [
+    { name: "A,B,A", variants: [1, 2, 1], proofCaptures: [1, 3] },
+    { name: "A,B,B", variants: [1, 2, 2], proofCaptures: [2, 3] },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const messages = [];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 3, "stable-finite arbitration must never start a fourth capture");
+          return {
+            type: "collection",
+            captureId: `finite-capture-${messages.length}`,
+            pages: finiteMarketStrongIdentityVariant(
+              93,
+              scenario.variants[messages.length - 1],
+            ),
+          };
+        },
+      });
+
+      const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+
+      assert.equal(result.checkedCount, 93);
+      assert.equal(result.finiteWindowProof?.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+      assert.equal(result.finiteWindowProof?.passCount, 2);
+      assert.deepEqual(
+        result.finiteWindowProof?.captureIds,
+        scenario.proofCaptures.map((index) => `finite-capture-${index}`),
+      );
+      assert.equal(result.finiteWindowProof?.passDigests.length, 2);
+      assert.equal(result.finiteWindowProof?.passDigests[0], result.finiteWindowProof?.passDigests[1]);
+      assert.equal(messages.length, 3);
+      assert.deepEqual(messages.slice(1).map(({ pageStart, pageEnd }) => [pageStart, pageEnd]), [
+        [1, 8],
+        [1, 8],
+      ]);
+    });
+  }
+});
+
+test("native provider uses the third exact-canary capture when one of the first two passes overlaps", async (t) => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  for (const scenario of [
+    { name: "overlap,A,A", sequence: ["overlap", "A", "A"], proofCaptures: [2, 3] },
+    { name: "A,overlap,A", sequence: ["A", "overlap", "A"], proofCaptures: [1, 3] },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const messages = [];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 3, "stable-finite arbitration must never start a fourth capture");
+          const pass = scenario.sequence[messages.length - 1];
+          return {
+            type: "collection",
+            captureId: `finite-capture-${messages.length}`,
+            pages: pass === "overlap"
+              ? overlapPages({ originPage: 6, collisionPage: 7 })
+              : finiteMarketStrongIdentityVariant(93, 1),
+          };
+        },
+      });
+
+      const result = await provider.collect(request(nowMs), { allowStableFinite: true });
+
+      assert.equal(result.checkedCount, 93);
+      assert.equal(result.finiteWindowProof?.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+      assert.equal(result.finiteWindowProof?.passCount, 2);
+      assert.deepEqual(
+        result.finiteWindowProof?.captureIds,
+        scenario.proofCaptures.map((index) => `finite-capture-${index}`),
+      );
+      assert.equal(messages.length, 3);
+    });
+  }
+});
+
+test("native provider rejects A,B,C after exactly three canary captures even when titles and thumbnails match", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 3, "stable-finite arbitration must never start a fourth capture");
+      return {
+        type: "collection",
+        captureId: `finite-capture-${messages.length}`,
+        pages: finiteMarketStrongIdentityVariant(93, messages.length),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs), { allowStableFinite: true }),
+    (error) => error?.code === "provider_stable_finite_window_unproven",
+  );
+  assert.equal(messages.length, 3);
+});
+
+test("native provider requires all three canary capture ids to be pairwise distinct", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const messages = [];
+  const variants = [1, 2, 2];
+  const captureIds = ["finite-capture-1", "finite-capture-2", "finite-capture-1"];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 3, "stable-finite arbitration must never start a fourth capture");
+      return {
+        type: "collection",
+        captureId: captureIds[messages.length - 1],
+        pages: finiteMarketStrongIdentityVariant(93, variants[messages.length - 1]),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs), { allowStableFinite: true }),
+    (error) => error?.code === "provider_stable_finite_window_unproven",
+  );
+  assert.equal(messages.length, 3);
+});
+
+test("native provider fails closed when the third canary capture cannot start before the deadline guard", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let clock = nowMs;
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => clock,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "deadline guard must prevent the third capture");
+      const response = {
+        type: "collection",
+        captureId: `finite-capture-${messages.length}`,
+        pages: finiteMarketStrongIdentityVariant(93, messages.length),
+      };
+      if (messages.length === 2) clock = nowMs + 178_000;
+      return response;
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs), { allowStableFinite: true }),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+  assert.equal(messages.length, 2);
+});
+
 test("native provider keeps a stable finite market typed as partial unless the caller allowlists it", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   let exchanges = 0;
@@ -481,7 +649,7 @@ test("native provider keeps a stable finite market typed as partial unless the c
   assert.equal(exchanges, 2);
 });
 
-test("native finite proof rejects replayed captures and exact relationship-id drift", async () => {
+test("native finite proof rejects replayed captures and three-way exact relationship-id drift", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   for (const drift of ["capture", "relationship"]) {
     let exchanges = 0;
@@ -498,8 +666,8 @@ test("native finite proof rejects replayed captures and exact relationship-id dr
         row.item.mallProductId = "";
         row.item.stdCatalogMatchType = "1";
         row.item.mallPcUrl = "https://search.shopping.naver.com/catalog/59776958987";
-        row.item.lowMallList = [{ mallPid: exchanges === 2 && drift === "relationship"
-          ? "99999999999"
+        row.item.lowMallList = [{ mallPid: drift === "relationship"
+          ? ["13327339525", "99999999999", "88888888888"][exchanges - 1]
           : "13327339525" }];
         pages[0].nextDataText = JSON.stringify(data);
         return {
@@ -514,7 +682,7 @@ test("native finite proof rejects replayed captures and exact relationship-id dr
       () => provider.collect(request(nowMs), { allowStableFinite: true }),
       (error) => error?.code === "provider_stable_finite_window_unproven",
     );
-    assert.equal(exchanges, 2);
+    assert.equal(exchanges, drift === "capture" ? 2 : 3);
   }
 });
 
@@ -859,7 +1027,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.14");
+  assert.equal(manifest.version, "1.1.15");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2167,7 +2335,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.14");
+  assert.equal(manifest.version, "1.1.15");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2342,7 +2510,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.14",
+    runtimeVersion: "1.1.15",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

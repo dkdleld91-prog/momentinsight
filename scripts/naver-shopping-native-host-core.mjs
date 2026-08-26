@@ -24,6 +24,7 @@ const PAGE_TEXT_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
+const STABLE_FINITE_PAGE_NAVIGATION_BUDGET = 24;
 const DEADLINE_GUARD_MS = 3_000;
 export const COLLECTION_PROTOCOL = "range-v1";
 
@@ -346,6 +347,68 @@ function buildStableFiniteWindowProof(firstPayload, secondPayload, captureIds, k
   };
 }
 
+function stableFiniteCandidate(request, pages, options = {}) {
+  try {
+    const payload = nativeWindowPayloadFromPages(request, pages, {
+      nowMs: options.nowMs,
+      allowStableFiniteCandidate: true,
+    }).payload;
+    return payload.checkedCount < REQUIRED_LIMIT ? payload : null;
+  } catch (error) {
+    if (overlapBoundary(error)
+      || isPartialWindow(error)
+      || (error instanceof ProviderError
+        && error.code === "provider_stable_finite_window_unproven")) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function assertDistinctFiniteCaptureIds(captureIds) {
+  if (!Array.isArray(captureIds)
+    || captureIds.length < 2
+    || captureIds.some((captureId) => typeof captureId !== "string" || !captureId)
+    || new Set(captureIds).size !== captureIds.length) {
+    throw new ProviderError("provider_stable_finite_window_unproven", "capture_ids");
+  }
+}
+
+function findStableFinitePair(candidates, captureIds, keyword) {
+  assertDistinctFiniteCaptureIds(captureIds);
+  const pairs = [[0, 1], [0, 2], [1, 2]];
+  for (const [firstIndex, secondIndex] of pairs) {
+    const firstPayload = candidates[firstIndex];
+    const secondPayload = candidates[secondIndex];
+    if (!firstPayload || !secondPayload) continue;
+    try {
+      return {
+        payloadIndex: secondIndex,
+        proof: buildStableFiniteWindowProof(
+          firstPayload,
+          secondPayload,
+          [captureIds[firstIndex], captureIds[secondIndex]],
+          keyword,
+        ),
+      };
+    } catch (error) {
+      if (!(error instanceof ProviderError)
+        || error.code !== "provider_stable_finite_window_unproven"
+        || !["count_mismatch", "digest_mismatch"].includes(error.detail)) {
+        throw error;
+      }
+    }
+  }
+  return null;
+}
+
+function assertCollectionDeadline(request, nowMs) {
+  const deadlineAt = Date.parse(String(request.deadlineAt || ""));
+  if (!Number.isFinite(deadlineAt) || nowMs + DEADLINE_GUARD_MS >= deadlineAt) {
+    throw new ProviderError("provider_deadline_exceeded");
+  }
+}
+
 export function createChromeNativeProvider(options = {}) {
   if (typeof options.exchange !== "function") {
     throw new ProviderError("native_host_exchange_missing");
@@ -382,11 +445,7 @@ export function createChromeNativeProvider(options = {}) {
       // real Naver rank slot repeated across pages. In either case allow only
       // one independent full 1..8 pass within the shared deadline and the
       // fixed 16-page budget.
-      const deadlineAt = Date.parse(String(request.deadlineAt || ""));
-      if (!Number.isFinite(deadlineAt)
-        || (options.nowMs?.() ?? Date.now()) + DEADLINE_GUARD_MS >= deadlineAt) {
-        throw new ProviderError("provider_deadline_exceeded");
-      }
+      assertCollectionDeadline(request, options.nowMs?.() ?? Date.now());
       if (navigatedPages + MAX_PAGES > PAGE_NAVIGATION_BUDGET) {
         throw new ProviderError("provider_stable_window_unproven", "page_budget");
       }
@@ -422,41 +481,82 @@ export function createChromeNativeProvider(options = {}) {
           if (!isPartialWindow(error)) {
             // A partial pass followed by an overlap cannot prove either a
             // coherent full window or one stable finite market.
-            throw new ProviderError("provider_stable_window_unproven", "page_budget");
+            if (collectOptions.allowStableFinite !== true) {
+              throw new ProviderError("provider_stable_window_unproven", "page_budget");
+            }
           }
-        } else if (isPartialWindow(error)) {
+        } else if (isPartialWindow(error) && collectOptions.allowStableFinite !== true) {
           throw error;
         }
       }
 
-      if (recoveryReason === "partial-window" && isPartialWindow(secondFailure)) {
-        if (collectOptions.allowStableFinite !== true) throw secondFailure;
-        const firstFinite = nativeWindowPayloadFromPages(request, latestPages, {
-          nowMs: options.nowMs?.() ?? Date.now(),
-          allowStableFiniteCandidate: true,
-        }).payload;
-        const secondFinite = nativeWindowPayloadFromPages(request, secondResponse.pages, {
-          nowMs: options.nowMs?.() ?? Date.now(),
-          allowStableFiniteCandidate: true,
-        }).payload;
-        // A different finite count is still the latest ordinary partial
-        // failure; it does not become a stable-finite proof failure. Preserve
-        // the established typed error and its latest observed count.
-        if (firstFinite.checkedCount !== secondFinite.checkedCount
-          || firstFinite.marketTotal !== secondFinite.marketTotal) {
-          throw secondFailure;
-        }
-        const finiteWindowProof = buildStableFiniteWindowProof(
-          firstFinite,
-          secondFinite,
-          [response.captureId, secondResponse.captureId],
+      const finiteArbitration = collectOptions.allowStableFinite === true
+        && (recoveryReason === "partial-window" || isPartialWindow(secondFailure));
+      if (finiteArbitration) {
+        const passResponses = [response, secondResponse];
+        const candidates = passResponses.map((passResponse) => stableFiniteCandidate(
+          request,
+          passResponse.pages,
+          { nowMs: options.nowMs?.() ?? Date.now() },
+        ));
+        let stablePair = findStableFinitePair(
+          candidates,
+          passResponses.map(({ captureId }) => captureId),
           request.keyword,
         );
-        return buildNativeWindowFromPages(request, secondResponse.pages, {
+        if (stablePair) {
+          return buildNativeWindowFromPages(request, passResponses[stablePair.payloadIndex].pages, {
+            nowMs: options.nowMs?.() ?? Date.now(),
+            allowStableFiniteCandidate: true,
+            finiteWindowProof: stablePair.proof,
+          });
+        }
+
+        // The exact allowlisted canary gets one final independent 1..8 pass.
+        // This is a fixed 24-page ceiling, not a retry loop. A result is used
+        // only when two passes match by rank slot and strong relationship IDs;
+        // titles, images, and thumbnails are never arbitration signals.
+        assertCollectionDeadline(request, options.nowMs?.() ?? Date.now());
+        if (navigatedPages + MAX_PAGES > STABLE_FINITE_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_finite_window_unproven", "page_budget");
+        }
+        const thirdResponse = await options.exchange({
+          type: "collect",
+          request,
+          pageStart: 1,
+          pageEnd: MAX_PAGES,
+        });
+        if (!thirdResponse
+          || thirdResponse.type !== "collection"
+          || Array.isArray(thirdResponse.rows)
+          || !Array.isArray(thirdResponse.pages)) {
+          throw new ProviderError("native_host_collection_invalid");
+        }
+        navigatedPages += thirdResponse.pages.length;
+        if (navigatedPages !== STABLE_FINITE_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_finite_window_unproven", "page_budget");
+        }
+        passResponses.push(thirdResponse);
+        candidates.push(stableFiniteCandidate(request, thirdResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+        }));
+        stablePair = findStableFinitePair(
+          candidates,
+          passResponses.map(({ captureId }) => captureId),
+          request.keyword,
+        );
+        if (!stablePair) {
+          throw new ProviderError("provider_stable_finite_window_unproven", "three_passes");
+        }
+        return buildNativeWindowFromPages(request, passResponses[stablePair.payloadIndex].pages, {
           nowMs: options.nowMs?.() ?? Date.now(),
           allowStableFiniteCandidate: true,
-          finiteWindowProof,
+          finiteWindowProof: stablePair.proof,
         });
+      }
+
+      if (recoveryReason === "partial-window" && isPartialWindow(secondFailure)) {
+        throw secondFailure;
       }
 
       const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {

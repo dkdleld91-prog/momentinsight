@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -13,27 +12,8 @@ const migrationNames = fs.readdirSync(migrationDirectory)
 assert.equal(migrationNames.length, 1, "stable finite-window migration must be unique");
 const migrationName = migrationNames[0];
 const migration = fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8");
-const runtimeFiles = [
-  "tools/naver-shopping-chrome-extension/service-worker.js",
-  "scripts/naver-shopping-native-host.mjs",
-  "scripts/naver-shopping-native-host-core.mjs",
-  "scripts/naver-shopping-local-worker.mjs",
-  "src/server/local-worker-auth.mjs",
-  "src/server/naver-shopping/local-worker-contract.mjs",
-  "src/server/handlers/naver-shopping-rank.mjs",
-  "src/server/security.mjs",
-  "src/server/naver-shopping/source-status.mjs",
-  "src/server/naver-shopping/provider-runtime.mjs",
-  "src/server/naver-shopping/mobile-top-fallback.mjs",
-  "tools/naver-shopping-rank-collector/src/provider.mjs",
-  "tools/naver-shopping-rank-collector/src/contract.mjs",
-];
-const runtimeFingerprint = crypto.createHash("sha256").update([
-  "1.1.14",
-  ...runtimeFiles.map((name) => crypto.createHash("sha256")
-    .update(fs.readFileSync(path.join(repositoryRoot, name)))
-    .digest("hex")),
-].join("\n"), "utf8").digest("hex");
+const RELEASED_RUNTIME_FINGERPRINT =
+  "13e801cf18adaea7352d7c78bbe067f969e3fef5e756528335443d3122b2d405";
 
 function requireAll(source, patterns) {
   for (const pattern of patterns) assert.match(source, pattern);
@@ -90,8 +70,8 @@ test("finite target registry is immutable to API roles and service-role read-onl
   );
   assert.equal(
     allowlistedFingerprint,
-    runtimeFingerprint,
-    "migration allowlist must match the exact Windows 1.1.14 runtime bytes",
+    RELEASED_RUNTIME_FINGERPRINT,
+    "immutable migration must retain the released Windows 1.1.14 fingerprint",
   );
   assert.doesNotMatch(
     migration,

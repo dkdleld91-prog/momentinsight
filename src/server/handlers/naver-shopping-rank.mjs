@@ -1189,97 +1189,6 @@ function mallNameKey(value) {
     .replace(/[^\p{L}\p{N}]+/gu, "");
 }
 
-function itemCategoryParts(item) {
-  return [item?.category1, item?.category2, item?.category3, item?.category4]
-    .map((value) => mallNameKey(value))
-    .filter(Boolean);
-}
-
-function itemIdentityKeys(item) {
-  return uniqueValues([item?.brand, item?.maker, item?.mallName]
-    .map((value) => mallNameKey(value))
-    .filter((value) => value && value !== "네이버"));
-}
-
-function keywordEvidence(keyword, ...items) {
-  const compactKeyword = mallNameKey(keyword);
-  if (!compactKeyword) return false;
-  return items.every((item) => mallNameKey(item?.title).includes(compactKeyword));
-}
-
-function categoriesAlign(referenceItem, candidateItem) {
-  const reference = itemCategoryParts(referenceItem);
-  const candidate = itemCategoryParts(candidateItem);
-  if (reference.length < 2 || candidate.length < 2) return false;
-  return reference[0] === candidate[0] && reference[1] === candidate[1];
-}
-
-function identitiesAlign(referenceItem, candidateItem) {
-  const reference = itemIdentityKeys(referenceItem);
-  const candidate = itemIdentityKeys(candidateItem);
-  if (!reference.length || !candidate.length) return false;
-  return reference.some((value) => candidate.includes(value));
-}
-
-function modelIdentityTokens(item) {
-  const title = stripTags(item?.title).normalize("NFKC").toUpperCase();
-  const candidates = title.match(/[A-Z0-9]+(?:[-_/][A-Z0-9]+)*/g) || [];
-  return uniqueValues(candidates
-    .map((value) => value.replace(/[^A-Z0-9]/g, ""))
-    .filter((value) => value.length >= 5 && /[A-Z]/.test(value) && /[0-9]/.test(value)));
-}
-
-function modelIdentifiersAlign(referenceItem, candidateItem) {
-  const reference = modelIdentityTokens(referenceItem);
-  const candidate = modelIdentityTokens(candidateItem);
-  if (!reference.length || !candidate.length) return false;
-  return reference.some((value) => candidate.includes(value));
-}
-
-function relatedCatalogRelationBasis(keyword, referenceItem, candidateItem) {
-  if (modelIdentifiersAlign(referenceItem, candidateItem)) return "model_brand_category";
-  if (keywordEvidence(keyword, referenceItem, candidateItem)) return "keyword_brand_category";
-  return "";
-}
-
-function relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword) {
-  const matchedType = classifyNaverProductType(matchedItem?.productType);
-  const explicitLinkedCatalogId = numericId(matchedItem?.linkedCatalogId);
-  // Naver product types 2/5/8/11 are explicitly not connected to a price
-  // comparison catalog. Brand/category/keyword similarity must never create a
-  // catalog relationship for those standalone seller products.
-  if (!matchedItem || (!matchedType.isMatchedSingle && !explicitLinkedCatalogId)) return [];
-
-  return (organicItems || [])
-    .map((entry) => {
-      if (entry?.isOrganic === false || isAdItem(entry?.item)) return false;
-      const candidateType = classifyNaverProductType(entry?.item?.productType);
-      if (!candidateType.isPriceCompareCatalog) return null;
-      const candidateCatalogIds = itemCatalogIds(entry.item);
-      if (explicitLinkedCatalogId) {
-        return candidateCatalogIds.includes(explicitLinkedCatalogId)
-          ? { entry, relationBasis: "metadata_catalog_id" }
-          : null;
-      }
-      if (!identitiesAlign(matchedItem, entry.item) || !categoriesAlign(matchedItem, entry.item)) return null;
-      const relationBasis = relatedCatalogRelationBasis(keyword, matchedItem, entry.item);
-      return relationBasis ? { entry, relationBasis } : null;
-    })
-    .filter(Boolean)
-    .sort((a, b) => Number(a.entry?.rank || 0) - Number(b.entry?.rank || 0))
-    .slice(0, 1)
-    .map(({ entry, relationBasis }) => {
-      return {
-        ...serializeItem(entry.item, entry.rank),
-        isExactTarget: false,
-        isRelatedCatalog: true,
-        exposureType: "related_catalog",
-        exposureLabel: "관련 원부",
-        relationBasis,
-      };
-    });
-}
-
 function directlyRelatedCatalogItemsFromOrganic(organicItems, target) {
   if (target?.targetMode === "catalog") return [];
   const targetProductIds = new Set((target?.productIds || []).map(numericId).filter(Boolean));
@@ -1300,14 +1209,12 @@ function directlyRelatedCatalogItemsFromOrganic(organicItems, target) {
     }));
 }
 
-function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyword) {
+function productExposureItemsFromOrganic(organicItems, _matchedItem, target) {
   const directCatalogItems = directlyRelatedCatalogItemsFromOrganic(organicItems, target);
-  // An exact first-party seller-product relation is authoritative. Never let
-  // a lower-ranked title/model inference from another product displace it.
-  const inferredCatalogItems = directCatalogItems.length > 0 || target?.targetMode === "catalog"
-    ? []
-    : relatedCatalogItemsFromOrganic(organicItems, matchedItem, keyword);
-  const relatedCatalogItems = [...directCatalogItems, ...inferredCatalogItems]
+  // Seller -> parent-catalog ranking is trusted only when the collector returns
+  // the exact seller product id in catalogSellerProductIds. Similar metadata is
+  // display-only evidence and must never create a related_catalog rank.
+  const relatedCatalogItems = directCatalogItems
     .filter((item, index, items) => items.findIndex((candidate) => (
       candidate.catalogId === item.catalogId && candidate.rank === item.rank
     )) === index)
@@ -1337,9 +1244,14 @@ function productExposureItemsFromOrganic(organicItems, matchedItem, target, keyw
     .sort((a, b) => Number(a.rank || 0) - Number(b.rank || 0));
 }
 
-function verifiedRelatedCatalogItemFromOrganic(organicItems, verifiedRelatedCatalogId) {
+function verifiedRelatedCatalogItemFromOrganic(
+  organicItems,
+  verifiedRelatedCatalogId,
+  targetProductId = "",
+) {
   const catalogId = numericId(verifiedRelatedCatalogId);
-  if (!catalogId) return null;
+  const sellerProductId = numericId(targetProductId);
+  if (!catalogId || !sellerProductId || catalogId === sellerProductId) return null;
   const catalogTarget = buildRankTarget({ targetCatalogId: catalogId });
   const matchedEntry = (organicItems || []).find((entry) => (
     entry?.isOrganic !== false
@@ -1348,6 +1260,11 @@ function verifiedRelatedCatalogItemFromOrganic(organicItems, verifiedRelatedCata
     && matchTargetItem(entry.item, catalogTarget).matched
   ));
   if (!matchedEntry) return null;
+  const currentSellerIds = catalogSellerProductIds(matchedEntry.item);
+  // A prior direct snapshot may select which catalog id to inspect, but it may
+  // not manufacture current relationship evidence. The current collector row
+  // must still carry the exact seller product id.
+  if (!currentSellerIds.includes(sellerProductId)) return null;
 
   return {
     ...serializeItem(matchedEntry.item, matchedEntry.rank),
@@ -1355,7 +1272,8 @@ function verifiedRelatedCatalogItemFromOrganic(organicItems, verifiedRelatedCata
     isRelatedCatalog: true,
     exposureType: "related_catalog",
     exposureLabel: "관련 원부",
-    relationBasis: "prior_verified_catalog_id",
+    relationBasis: "catalog_seller_product_id",
+    relationEvidenceSource: "prior_direct_catalog_seller_product_id",
   };
 }
 
@@ -1511,17 +1429,21 @@ async function findRankFromWindow(window, {
     organicItems,
     matchedResult?.item || null,
     target,
-    queryKeyword,
   );
   const currentRelatedCatalogItem = currentExposureItems.find((item) => item?.isRelatedCatalog) || null;
   // Current collector evidence is authoritative. A seller item with an explicit
   // parent catalog must never inherit a different catalog from an older snapshot.
-  // The current parent is evaluated by relatedCatalogItemsFromOrganic instead.
+  // The current parent is evaluated only from the exact seller-id list on the
+  // catalog item. Similar metadata can never create or replace that relation.
   const relatedCatalogEligible = !currentRelatedCatalogItem && (
     !matchedResult || (matchedProductType.isMatchedSingle && !currentLinkedCatalogId)
   );
   const effectiveContinuityCatalogId = relatedCatalogEligible ? continuityCatalogId : "";
-  const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(organicItems, effectiveContinuityCatalogId);
+  const continuityCatalogItem = verifiedRelatedCatalogItemFromOrganic(
+    organicItems,
+    effectiveContinuityCatalogId,
+    target.productIds[0],
+  );
   if (matchedResult || currentRelatedCatalogItem || continuityCatalogItem) {
     const sellerItems = matchedResult ? sellerItemsFromOrganic(organicItems, matchedResult.item, target) : [];
     const discoveredExposureItems = currentExposureItems;
@@ -1557,6 +1479,7 @@ async function findRankFromWindow(window, {
       matchType: matchedResult?.matchType || "product_id",
       matchEvidence: matchedResult?.matchEvidence
         || currentRelatedCatalogItem?.relationBasis
+        || continuityCatalogItem?.relationBasis
         || "prior_verified_catalog_id",
       matchedProductId: matchedResult?.matchedProductId || target.productId || effectiveContinuityCatalogId,
       exactProductRank: exactItem?.rank || null,
@@ -1767,7 +1690,6 @@ export {
   findOrganicMatchInItems,
   isAdItem,
   matchTargetItem,
-  relatedCatalogItemsFromOrganic,
   directlyRelatedCatalogItemsFromOrganic,
   productExposureItemsFromOrganic,
   verifiedRelatedCatalogItemFromOrganic,

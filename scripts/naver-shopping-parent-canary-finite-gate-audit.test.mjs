@@ -46,10 +46,10 @@ test("pins the exact parent canary identity and runtime contract", () => {
     },
   });
   assert.equal(N30_PARENT_CANARY_WORKER_ID, "windows-desktop-primary");
-  assert.equal(N30_PARENT_CANARY_RUNTIME_VERSION, "1.1.15");
+  assert.equal(N30_PARENT_CANARY_RUNTIME_VERSION, "1.1.16");
   assert.equal(
     N30_PARENT_CANARY_RUNTIME_FINGERPRINT,
-    "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c",
+    "570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f",
   );
 });
 
@@ -151,10 +151,19 @@ test("selects the first terminal across all terminal types before classifying it
 test("validates the full group, claim, and terminal lease tuple", () => {
   const sql = buildN30ParentCanaryFiniteGateAuditSql({ observedAt });
 
+  assert.match(sql, /claim_lease_started_at is not null/u);
+  assert.match(sql, /claim_lease_until is not null/u);
+  assert.match(sql, /group_lease_started_at is not null/u);
+  assert.match(sql, /group_lease_until is not null/u);
   assert.match(sql, /group_lease_started_at is not distinct from claim_lease_started_at/u);
   assert.match(sql, /group_lease_until is not distinct from claim_lease_until/u);
+  assert.match(sql, /claim_lease_started_at <= group_at/u);
+  assert.match(sql, /claim_at < claim_lease_until/u);
+  assert.match(sql, /terminal_lease_started_at is not null/u);
+  assert.match(sql, /terminal_lease_until is not null/u);
   assert.match(sql, /terminal_lease_started_at is not distinct from claim_lease_started_at/u);
   assert.match(sql, /terminal_lease_until is not distinct from claim_lease_until/u);
+  assert.match(sql, /terminal_at < terminal_lease_until/u);
 });
 
 test("accepts only an exact finite parent snapshot as success", () => {
@@ -249,12 +258,36 @@ test("accepts only the two exact finite failures from immutable first-terminal e
     /event\.details -> 'previousUntil'\s+is not distinct from pg_catalog\.to_jsonb\(terminal\.gate_at\)/u,
   );
 
-  const typedFailure = sqlSlice(
-    sql,
-    "terminal_type = 'job_failed'",
-    ") as typed_failure_integrity",
-  );
-  assert.doesNotMatch(typedFailure, /target_(?:current_rank|last_checked_at|check_count|found_count|retry_count|last_error|quarantined_until)/u);
+  assert.match(sql, /target_current_rank is not distinct from pre_gate_current_rank/u);
+  assert.match(sql, /target_last_checked_at is not distinct from pre_gate_last_checked_at/u);
+  assert.match(sql, /target_check_count is not distinct from pre_gate_check_count/u);
+  assert.match(sql, /target_found_count is not distinct from pre_gate_found_count/u);
+  assert.match(sql, /target_retry_count is not distinct from pre_gate_retry_count \+ 1/u);
+  assert.match(sql, /target_last_error is not distinct from terminal_error_code/u);
+  assert.match(sql, /target_quarantined_until is not distinct from quarantine_until/u);
+});
+
+test("attests current tracker state when unsuperseded and preserves delayed first-terminal audit", () => {
+  const sql = buildN30ParentCanaryFiniteGateAuditSql({ observedAt });
+
+  assert.match(sql, /subsequent_terminal_count/u);
+  assert.match(sql, /event\.event_id > terminal\.terminal_event_id/u);
+  assert.match(sql, /event\.tracker_id = terminal\.tracker_id/u);
+  assert.match(sql, /event\.event_type in \('tracker_committed', 'finite_window_committed', 'job_failed'\)/u);
+  assert.match(sql, /target_current_rank is not distinct from terminal_snapshot_rank/u);
+  assert.match(sql, /target_last_checked_at is not distinct from terminal_at/u);
+  assert.match(sql, /target_check_count is not distinct from pre_gate_check_count \+ 1/u);
+  assert.match(sql, /target_found_count is not distinct from pre_gate_found_count \+ 1/u);
+  assert.match(sql, /target_retry_count = 0/u);
+  assert.match(sql, /target_last_error is null/u);
+  assert.match(sql, /target_quarantined_until is not distinct from gate_at/u);
+  assert.match(sql, /current_tracker_state_attested/u);
+  assert.match(sql, /tracker_state_superseded/u);
+  assert.match(sql, /first_terminal_materialization_integrity/u);
+  assert.match(sql, /subsequent_terminal_count > 0/u);
+  assert.match(sql, /first_terminal_materialization_integrity is not true/u);
+  assert.match(sql, /'currentTrackerStateAttested', current_tracker_state_attested/u);
+  assert.match(sql, /'trackerStateSuperseded', tracker_state_superseded/u);
 });
 
 test("fails closed on SQL NULL invariants and never overstates unproved evidence", () => {

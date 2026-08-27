@@ -3,9 +3,9 @@ import { pathToFileURL } from "node:url";
 const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 
 export const N30_PARENT_CANARY_WORKER_ID = "windows-desktop-primary";
-export const N30_PARENT_CANARY_RUNTIME_VERSION = "1.1.15";
+export const N30_PARENT_CANARY_RUNTIME_VERSION = "1.1.16";
 export const N30_PARENT_CANARY_RUNTIME_FINGERPRINT =
-  "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c";
+  "570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f";
 export const N30_PARENT_CANARY = Object.freeze({
   trackerId: "c0ccded2-9bf7-488e-af8d-00898c0a1ff8",
   normalizedKeyword: "아이쉘차량용거치대",
@@ -274,9 +274,11 @@ evidence as (
     terminal_counts.finite_commit_count,
     terminal_counts.tracker_commit_count,
     terminal_counts.job_failure_count,
+    subsequent_terminals.subsequent_terminal_count,
     snapshots.snapshot_before_gate_count,
     snapshots.snapshot_through_terminal_count,
     snapshots.valid_finite_snapshot_count,
+    snapshots.terminal_snapshot_rank,
     quarantine.claim_quarantine_count,
     quarantine.matching_quarantine_count,
     quarantine.quarantine_event_id,
@@ -352,6 +354,18 @@ evidence as (
       and event.claim_id = terminal.claim_id
       and event.occurred_at <= terminal.observed_at
   ) terminal_counts on true
+  left join lateral (
+    select count(*)::integer as subsequent_terminal_count
+    from public.naver_shopping_scheduler_events event
+    where event.event_type in ('tracker_committed', 'finite_window_committed', 'job_failed')
+      and event.tracker_id = terminal.tracker_id
+      and event.event_id > terminal.terminal_event_id
+      and event.occurred_at >= terminal.terminal_at
+      and event.occurred_at <= terminal.observed_at
+      and event.claim_id is not null
+      and event.run_id is not null
+      and event.worker_id is not null
+  ) subsequent_terminals on true
   left join lateral (
     select
       count(*) filter (
@@ -437,7 +451,13 @@ evidence as (
             where top_item -> 'isOrganic' is distinct from 'true'::jsonb
                or top_item -> 'isAd' is distinct from 'false'::jsonb
           )
-      )::integer as valid_finite_snapshot_count
+      )::integer as valid_finite_snapshot_count,
+      min(snapshot.rank) filter (
+        where terminal.terminal_type = 'finite_window_committed'
+          and snapshot.checked_at = terminal.terminal_at
+          and snapshot.collection_id = terminal.terminal_collection_id
+          and snapshot.checked_count = terminal.terminal_checked_count
+      )::integer as terminal_snapshot_rank
     from public.naver_rank_snapshots snapshot
     where snapshot.tracker_id = terminal.tracker_id
   ) snapshots on true
@@ -521,8 +541,15 @@ invariants as (
       and group_cycle_number is not distinct from claim_cycle_number
       and group_fingerprint is not distinct from claim_group_fingerprint
       and group_priority is not distinct from claim_priority
+      and claim_lease_started_at is not null
+      and claim_lease_until is not null
+      and group_lease_started_at is not null
+      and group_lease_until is not null
       and group_lease_started_at is not distinct from claim_lease_started_at
       and group_lease_until is not distinct from claim_lease_until
+      and claim_lease_started_at < claim_lease_until
+      and claim_lease_started_at <= group_at
+      and claim_at < claim_lease_until
       and group_details -> 'memberCount' is not distinct from pg_catalog.to_jsonb(1)
       and exact_claim_count = 1
       and claim_id_tracker_claim_count = 1
@@ -545,8 +572,13 @@ invariants as (
       and terminal_cycle_number is not distinct from claim_cycle_number
       and terminal_group_fingerprint is not distinct from claim_group_fingerprint
       and terminal_priority is not distinct from claim_priority
+      and terminal_lease_started_at is not null
+      and terminal_lease_until is not null
       and terminal_lease_started_at is not distinct from claim_lease_started_at
       and terminal_lease_until is not distinct from claim_lease_until
+      and terminal_lease_started_at < terminal_lease_until
+      and terminal_lease_started_at <= terminal_at
+      and terminal_at < terminal_lease_until
     ) as terminal_integrity,
     (
       terminal_type = 'finite_window_committed'
@@ -603,9 +635,49 @@ invariants as (
     ) as full_idle
   from evidence
 ),
-classified as (
+tracker_state as (
   select
     invariants.*,
+    (subsequent_terminal_count > 0) as tracker_state_superseded,
+    case
+      when subsequent_terminal_count > 0 then false
+      when finite_success_integrity is true then (
+        target_current_rank is not distinct from terminal_snapshot_rank
+        and target_last_checked_at is not distinct from terminal_at
+        and target_check_count is not distinct from pre_gate_check_count + 1
+        and target_found_count is not distinct from pre_gate_found_count + 1
+        and target_retry_count = 0
+        and target_last_error is null
+        and target_quarantined_until is not distinct from gate_at
+      )
+      when typed_failure_integrity is true then (
+        target_current_rank is not distinct from pre_gate_current_rank
+        and target_last_checked_at is not distinct from pre_gate_last_checked_at
+        and target_check_count is not distinct from pre_gate_check_count
+        and target_found_count is not distinct from pre_gate_found_count
+        and target_retry_count is not distinct from pre_gate_retry_count + 1
+        and target_last_error is not distinct from terminal_error_code
+        and target_quarantined_until is not distinct from quarantine_until
+      )
+      else false
+    end as current_tracker_state_attested
+  from invariants
+),
+materialized_invariants as (
+  select
+    tracker_state.*,
+    case
+      when terminal_type in ('finite_window_committed', 'job_failed') then (
+        tracker_state_superseded is true
+        or current_tracker_state_attested is true
+      )
+      else false
+    end as first_terminal_materialization_integrity
+  from tracker_state
+),
+classified as (
+  select
+    materialized_invariants.*,
     case
       when observed_at < gate_at then 'gate_not_reached'
       when exact_target_count <> 1 or control_integrity is not true then 'integrity_failure'
@@ -620,12 +692,13 @@ classified as (
       when terminal_type = 'job_failed' and typed_failure_integrity is not true
         then 'integrity_failure'
       when terminal_type = 'tracker_committed' then 'integrity_failure'
+      when first_terminal_materialization_integrity is not true then 'integrity_failure'
       when full_idle is not true then 'awaiting_post_idle'
       when terminal_type = 'finite_window_committed' then 'success'
       when terminal_type = 'job_failed' then 'typed_failure'
       else 'integrity_failure'
     end as finite_state
-  from invariants
+  from materialized_invariants
 )
 select (pg_catalog.jsonb_build_object(
   'marker', 'n30_parent_canary_finite_gate_audit_v1',
@@ -664,7 +737,9 @@ select (pg_catalog.jsonb_build_object(
   'claimIdDistinctTrackerCount', claim_id_distinct_tracker_count,
   'claimIdDistinctRunCount', claim_id_distinct_run_count,
   'terminalCount', terminal_count,
-  'matchingQuarantineCount', matching_quarantine_count
+  'matchingQuarantineCount', matching_quarantine_count,
+  'subsequentTerminalCount', subsequent_terminal_count,
+  'terminalSnapshotRank', terminal_snapshot_rank
 )
   || pg_catalog.jsonb_build_object(
   'targetCurrentRank', target_current_rank,
@@ -678,6 +753,9 @@ select (pg_catalog.jsonb_build_object(
   'terminalIntegrity', terminal_integrity,
   'finiteSuccessIntegrity', finite_success_integrity,
   'typedFailureIntegrity', typed_failure_integrity,
+  'currentTrackerStateAttested', current_tracker_state_attested,
+  'trackerStateSuperseded', tracker_state_superseded,
+  'firstTerminalMaterializationIntegrity', first_terminal_materialization_integrity,
   'laneIdle', lane_idle,
   'controlIntegrity', control_integrity,
   'stabilityStartedAt', stability_started_at,

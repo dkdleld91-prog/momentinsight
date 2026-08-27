@@ -36,7 +36,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.15";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.16";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -661,9 +661,27 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         maxRank: LOCAL_WORKER_ORGANIC_LIMIT,
         skipTargetMetadata: true,
       });
-      const result = selectRepresentativeTrackingRank(lookup);
+      const result = selectRepresentativeTrackingRank(lookup, tracker.product_id);
       if (result.complete !== true || Number(result.checkedCount) !== window.checkedCount) {
         throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
+      }
+      const relatedCatalogId = String(result.relatedCatalogProductId || "").trim();
+      const selectedCatalogId = String(result?.item?.catalogId || result?.item?.productId || "").trim();
+      const exactDirectCatalogRelationship = result.trackingRankSource === "related_catalog"
+        && result.relatedCatalogRelationBasis === "catalog_seller_product_id"
+        && relatedCatalogId
+        && relatedCatalogId !== String(tracker.product_id || "").trim()
+        && selectedCatalogId === relatedCatalogId
+        && Array.isArray(result?.item?.catalogSellerProductIds)
+        && result.item.catalogSellerProductIds.map(String).includes(String(tracker.product_id || "").trim());
+      if (result.trackingRankSource === "related_catalog" && !exactDirectCatalogRelationship) {
+        throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
+      }
+      const exactParentRelationship = exactDirectCatalogRelationship
+        && String(tracker.product_id || "").trim() === STABLE_FINITE_CANARY_SELLER_PRODUCT_ID
+        && relatedCatalogId === STABLE_FINITE_CANARY_PARENT_CATALOG_ID;
+      if (finiteCanaryJob && result.trackingRankSource === "related_catalog" && !exactParentRelationship) {
+        throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }
       if (finiteWindow && (
         result.matched !== true
@@ -671,13 +689,7 @@ async function submitWindow(ctx, rawJob, rawWindow) {
         || Number(result.rank) > window.checkedCount
         || result.sourceExhausted !== true
         || result.finiteWindowProofVersion !== "stable-finite-window-v1"
-        || result.trackingRankSource !== "related_catalog"
-        || result.relatedCatalogRelationBasis !== "catalog_seller_product_id"
-        || String(result.relatedCatalogProductId || "") !== STABLE_FINITE_CANARY_PARENT_CATALOG_ID
-        || String(result?.item?.catalogId || result?.item?.productId || "")
-          !== STABLE_FINITE_CANARY_PARENT_CATALOG_ID
-        || !Array.isArray(result?.item?.catalogSellerProductIds)
-        || !result.item.catalogSellerProductIds.includes(STABLE_FINITE_CANARY_SELLER_PRODUCT_ID)
+        || !exactParentRelationship
       )) {
         throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }

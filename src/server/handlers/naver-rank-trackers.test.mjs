@@ -240,14 +240,14 @@ test("worker operations stay unavailable instead of breaking the owner tracker l
   assert.equal(operations.alerts[0].code, "operations_unavailable");
 });
 
-test("candidate cadence unlocks only with current runtime hash and atomic proof", async () => {
+test("candidate readiness remains informational while activation stays canonical-only", async () => {
   const operations = await loadShoppingWorkerOperations({
     supabaseAdmin: {
       async rpc() {
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.15",
+            runtime_version: "1.1.16",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -263,7 +263,7 @@ test("candidate cadence unlocks only with current runtime hash and atomic proof"
     },
   }, Date.parse("2026-08-10T09:00:00.000Z"));
   assert.equal(operations.cadence.candidateEligible, true);
-  assert.equal(operations.controls.canActivateCandidate, true);
+  assert.equal(operations.controls.canActivateCandidate, false);
 });
 
 test("candidate cadence fails closed when database eligibility is missing or malformed", async () => {
@@ -274,7 +274,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.15",
+              runtime_version: "1.1.16",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -361,59 +361,38 @@ test("owner canary and cadence controls fail closed on invalid or ineligible req
 
   const candidate = await controlShoppingWorker(request, ctx, { action: "worker-cadence", mode: "candidate" }, access);
   assert.equal(candidate.status, 409);
-  assert.deepEqual(calls[2], ["mi_set_naver_shopping_worker_cadence", { p_mode: "candidate" }]);
-  assert.match((await candidate.json()).message, /24시간/u);
+  assert.equal(calls.length, 2);
+  const candidateBody = await candidate.json();
+  assert.equal(candidateBody.ok, false);
+  assert.equal(candidateBody.result.reason, "canonical_transition_required");
+  assert.equal(candidateBody.result.activated, false);
+  assert.match(candidateBody.message, /검증 전용 전환 절차/u);
 });
 
-test("candidate cadence reports success only for the exact activated 6-minute result", async () => {
+test("owner API never invokes the candidate cadence RPC directly", async () => {
   const request = new Request("https://example.com/api/naver-rank-trackers", { method: "POST" });
   const access = { owner: true, agencyCode: "mml93-a01" };
-  const exactResult = { accepted: true, activated: true, mode: "candidate", minutes: 6 };
-  const positive = await controlShoppingWorker(request, {
+  let rpcCalls = 0;
+  const response = await controlShoppingWorker(request, {
     supabaseAdmin: {
-      async rpc(name, args) {
-        assert.equal(name, "mi_set_naver_shopping_worker_cadence");
-        assert.deepEqual(args, { p_mode: "candidate" });
-        return { data: exactResult, error: null };
+      async rpc() {
+        rpcCalls += 1;
+        return { data: { accepted: true, activated: true, mode: "candidate", minutes: 6 }, error: null };
       },
     },
   }, { action: "worker-cadence", mode: "candidate" }, access);
-  const positiveBody = await positive.json();
-  assert.equal(positive.status, 200);
-  assert.equal(positiveBody.ok, true);
-  assert.deepEqual(positiveBody.result, {
+  const body = await response.json();
+  assert.equal(response.status, 409);
+  assert.equal(rpcCalls, 0);
+  assert.equal(body.ok, false);
+  assert.deepEqual(body.result, {
     state: "",
-    mode: "candidate",
-    minutes: 6,
-    reason: "",
-    activated: true,
+    mode: "",
+    minutes: null,
+    reason: "canonical_transition_required",
+    activated: false,
   });
-
-  const mismatchedResults = [
-    { accepted: false, activated: true, mode: "candidate", minutes: 6 },
-    { accepted: true, activated: false, mode: "candidate", minutes: 6 },
-    { accepted: true, activated: true, mode: "baseline", minutes: 6 },
-    { accepted: true, activated: true, mode: "candidate", minutes: 8 },
-    { accepted: true, activated: true, mode: "candidate", minutes: 10 },
-    { accepted: true, activated: true, cadence_mode: "candidate", cadence_minutes: 6 },
-    { accepted: true, activated: true, mode: "candidate", minutes: "6" },
-  ];
-  for (const rpcResult of mismatchedResults) {
-    const response = await controlShoppingWorker(request, {
-      supabaseAdmin: {
-        async rpc(name, args) {
-          assert.equal(name, "mi_set_naver_shopping_worker_cadence");
-          assert.deepEqual(args, { p_mode: "candidate" });
-          return { data: rpcResult, error: null };
-        },
-      },
-    }, { action: "worker-cadence", mode: "candidate" }, access);
-    const body = await response.json();
-    assert.equal(response.status, 409);
-    assert.equal(body.ok, false);
-    assert.match(body.message, /운영 안전 조건/u);
-    assert.equal(body.result.activated, false);
-  }
+  assert.match(body.message, /검증 전용 전환 절차/u);
 });
 
 test("baseline cadence reports success only for the exact activated 10-minute result", async () => {
@@ -529,6 +508,8 @@ test("owner operations UI exists only on the admin surface while clients keep th
     assert.match(adminSource, new RegExp(safeMarker));
     assert.match(clientSource, new RegExp(safeMarker));
   }
+  assert.match(adminSource, /candidateDisabled\s*=\s*controls\.canActivateCandidate\s*===\s*true\s*\?\s*""\s*:\s*" disabled"/);
+  assert.match(adminSource, /data-rank-worker-candidate['"]\s*\+\s*candidateDisabled/);
   assert.match(adminSource, />테스트 1건 검증<\/button>/);
   assert.doesNotMatch(adminSource, />남자팬티 1건 검증<\/button>/);
 });
@@ -1840,7 +1821,9 @@ function verifiedCatalogSnapshot(overrides = {}) {
       trackingRankSource: "related_catalog",
       relatedCatalogProductId: "57907660073",
       relatedCatalogRank: 16,
-      relatedCatalogRelationBasis: "keyword_brand_category",
+      relatedCatalogRelationBasis: "catalog_seller_product_id",
+      catalogId: "57907660073",
+      catalogSellerProductIds: ["12649811979"],
       rankPolicy: "organic_only",
       adExcluded: true,
     },
@@ -1889,6 +1872,56 @@ test("only a prior matched organic snapshot can supply the continuity catalog id
       },
     }),
   ], "12649811979"), "");
+});
+
+test("inferred or wrong-seller parent snapshots never seed continuity", () => {
+  const snapshots = [
+    verifiedCatalogSnapshot({
+      id: "model-inferred",
+      item: {
+        trackingRankSource: "related_catalog",
+        relatedCatalogProductId: "59776958987",
+        relatedCatalogRank: 1,
+        relatedCatalogRelationBasis: "model_brand_category",
+        catalogId: "59776958987",
+        catalogSellerProductIds: ["12649811979"],
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+    verifiedCatalogSnapshot({
+      id: "wrong-seller-direct",
+      item: {
+        trackingRankSource: "related_catalog",
+        relatedCatalogProductId: "59776958987",
+        relatedCatalogRank: 2,
+        relatedCatalogRelationBasis: "catalog_seller_product_id",
+        catalogId: "59776958987",
+        catalogSellerProductIds: ["99999999999"],
+        rankPolicy: "organic_only",
+        adExcluded: true,
+      },
+    }),
+  ];
+
+  assert.equal(verifiedRelatedCatalogIdFromSnapshots(snapshots, "12649811979"), "");
+});
+
+test("a direct seller list cannot bless a mismatched related catalog id", () => {
+  const snapshot = verifiedCatalogSnapshot({
+    item: {
+      trackingRankSource: "related_catalog",
+      relatedCatalogProductId: "59776958987",
+      relatedCatalogRank: 2,
+      relatedCatalogRelationBasis: "catalog_seller_product_id",
+      catalogId: "58888888888",
+      catalogSellerProductIds: ["12649811979"],
+      rankPolicy: "organic_only",
+      adExcluded: true,
+    },
+  });
+
+  assert.equal(verifiedRelatedCatalogIdFromSnapshots([snapshot], "12649811979"), "");
 });
 
 test("standalone seller-product evidence invalidates a previously stored catalog id", () => {
@@ -1946,10 +1979,12 @@ test("a tracker reuses the exact prior catalog id when the seller product is out
         productExposureItems: [{
           rank: 15,
           productId: "57907660073",
+          catalogId: "57907660073",
+          catalogSellerProductIds: [tracker.product_id],
           title: "라이브오랄스 오라원 회전법 음파전동칫솔",
           isRelatedCatalog: true,
           isOrganic: true,
-          relationBasis: "prior_verified_catalog_id",
+          relationBasis: "catalog_seller_product_id",
         }],
         topItems: [],
       };
@@ -2554,7 +2589,7 @@ test("a failed create or manual check can serialize a tracker without a snapshot
 });
 
 test("tracker payload keeps the parent-catalog source beside the current rank", () => {
-  const tracker = trackerRow({ current_rank: 9, best_rank: 9 });
+  const tracker = trackerRow({ current_rank: 1, best_rank: 1, worst_rank: 1 });
   const payload = trackerPayload(tracker, [{
     id: "snapshot-related-catalog",
     tracker_id: tracker.id,
@@ -2568,6 +2603,8 @@ test("tracker payload keeps the parent-catalog source beside the current rank", 
       trackingRankSourceLabel: "관련 원부 기준",
       relatedCatalogProductId: "59776958987",
       relatedCatalogRelationBasis: "catalog_seller_product_id",
+      catalogId: "59776958987",
+      catalogSellerProductIds: [tracker.product_id],
     },
     message: "관련 원부 9위",
     source: "naver_shopping_results_collector",
@@ -2577,6 +2614,150 @@ test("tracker payload keeps the parent-catalog source beside the current rank", 
   assert.equal(payload.currentRank, 9);
   assert.equal(payload.currentRankSource, "related_catalog");
   assert.equal(payload.currentRankSourceLabel, "관련 원부 기준");
+  assert.equal(payload.bestRank, 9);
+  assert.equal(payload.worstRank, 9);
+});
+
+test("tracker payload presents an exact catalog target as a parent rank in current and history views", () => {
+  const tracker = trackerRow({
+    product_id: "59776958987",
+    product_url: "https://search.shopping.naver.com/catalog/59776958987",
+    current_rank: 9,
+    best_rank: 9,
+    worst_rank: 9,
+  });
+  const payload = trackerPayload(tracker, [{
+    id: "snapshot-exact-catalog",
+    tracker_id: tracker.id,
+    checked_at: new Date().toISOString(),
+    rank: 9,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: {
+      productId: tracker.product_id,
+      catalogId: tracker.product_id,
+      isExactTarget: true,
+      isRelatedCatalog: false,
+      exposureType: "exact_catalog",
+      trackingRankSource: "exact_product",
+      trackingRankSourceLabel: "정확 상품 기준",
+      rankPolicy: "organic_only",
+      adExcluded: true,
+    },
+    message: "조회 원부 9위",
+    source: "naver_shopping_results_collector",
+  }]);
+
+  assert.equal(payload.currentRank, 9);
+  assert.equal(payload.currentRankSource, "related_catalog");
+  assert.equal(payload.currentRankSourceLabel, "원부 기준");
+  assert.equal(payload.snapshots[0].item.trackingRankSource, "related_catalog");
+  assert.equal(payload.snapshots[0].item.trackingRankSourceLabel, "원부 기준");
+  assert.equal(payload.snapshots[0].item.exposureType, "exact_catalog");
+});
+
+test("tracker payload never promotes an exact-catalog-shaped item without the exact tracker id", () => {
+  const checkedAt = new Date().toISOString();
+  const item = {
+    productId: "59776958987",
+    catalogId: "59776958987",
+    isExactTarget: true,
+    isRelatedCatalog: false,
+    exposureType: "exact_catalog",
+    trackingRankSource: "exact_product",
+    trackingRankSourceLabel: "정확 상품 기준",
+    rankPolicy: "organic_only",
+    adExcluded: true,
+  };
+  const snapshot = {
+    id: "snapshot-spoofed-exact-catalog",
+    tracker_id: "tracker-exact-catalog",
+    checked_at: checkedAt,
+    rank: 9,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item,
+    message: "조회 원부 9위",
+    source: "naver_shopping_results_collector",
+  };
+
+  const mismatched = trackerPayload(trackerRow({
+    id: snapshot.tracker_id,
+    product_id: "13327339525",
+  }), [snapshot]);
+  assert.equal(mismatched.currentRankSource, "exact_product");
+  assert.equal(mismatched.currentRankSourceLabel, "정확 상품 기준");
+  assert.equal(mismatched.snapshots[0].item.trackingRankSource, "exact_product");
+
+  const missing = trackerPayload(trackerRow({
+    id: snapshot.tracker_id,
+    product_id: "",
+  }), [snapshot]);
+  assert.equal(missing.currentRankSource, "exact_product");
+  assert.equal(missing.currentRankSourceLabel, "정확 상품 기준");
+  assert.equal(missing.snapshots[0].item.trackingRankSource, "exact_product");
+});
+
+test("tracker payload hides inferred parent history and falls back to the last direct-id rank", () => {
+  const tracker = trackerRow({ current_rank: 1, best_rank: 1, product_id: "13327339525" });
+  const now = Date.now();
+  const inferred = {
+    id: "snapshot-inferred-parent",
+    tracker_id: tracker.id,
+    checked_at: new Date(now).toISOString(),
+    rank: 1,
+    matched: true,
+    checked_count: 300,
+    total: 300,
+    item: {
+      trackingRankSource: "related_catalog",
+      trackingRankSourceLabel: "관련 원부 기준",
+      relatedCatalogProductId: "59776958987",
+      relatedCatalogRank: 1,
+      relatedCatalogRelationBasis: "model_brand_category",
+      catalogId: "59776958987",
+      catalogSellerProductIds: ["99999999999"],
+      rankPolicy: "organic_only",
+      adExcluded: true,
+    },
+    source: "naver_shopping_results_collector",
+    message: "추론 원부 1위",
+  };
+  const direct = {
+    ...inferred,
+    id: "snapshot-direct-parent",
+    checked_at: new Date(now - 60_000).toISOString(),
+    rank: 9,
+    item: {
+      ...inferred.item,
+      relatedCatalogRank: 9,
+      relatedCatalogRelationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: [tracker.product_id],
+    },
+    message: "직접 ID 원부 9위",
+  };
+
+  const payload = trackerPayload(tracker, [inferred, direct]);
+  assert.equal(payload.currentRank, 9);
+  assert.equal(payload.currentRankSource, "related_catalog");
+  assert.equal(payload.currentRankSourceLabel, "관련 원부 기준");
+  assert.equal(payload.bestRank, 9);
+  assert.equal(payload.worstRank, 9);
+  assert.equal(payload.lastCheckedAt, direct.checked_at);
+  assert.equal(payload.lastMessage, "직접 ID 원부 9위");
+  assert.deepEqual(payload.snapshots.map((snapshot) => snapshot.id), ["snapshot-direct-parent"]);
+
+  const untrustedOnly = trackerPayload(tracker, [inferred]);
+  assert.equal(untrustedOnly.currentRank, null);
+  assert.equal(untrustedOnly.currentRankSource, "");
+  assert.equal(untrustedOnly.currentRankSourceLabel, "");
+  assert.equal(untrustedOnly.bestRank, null);
+  assert.equal(untrustedOnly.worstRank, null);
+  assert.equal(untrustedOnly.lastCheckedAt, null);
+  assert.equal(untrustedOnly.lastMessage, null);
+  assert.deepEqual(untrustedOnly.snapshots, []);
 });
 
 test("product rank history keeps up to 120 snapshots from the most recent 30 days", () => {
@@ -2655,7 +2836,7 @@ test("product snapshot pagination fails instead of returning a silently incomple
   );
 });
 
-test("shopping lookup finds a prior verified catalog by exact id when the seller product is absent", async () => {
+test("a prior catalog id alone cannot reconstruct a current parent relationship", async () => {
   const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
   items[14] = shoppingResultItem(14, {
     productId: "57907660073",
@@ -2675,17 +2856,13 @@ test("shopping lookup finds a prior verified catalog by exact id when the seller
       verifiedRelatedCatalogId: "57907660073",
       maxRank: 300,
     });
-    assert.equal(result.matched, true);
-    assert.equal(result.rank, 15);
-    assert.equal(result.exactProductRank, null);
-    assert.equal(result.relatedCatalogRank, 15);
-    assert.equal(result.trackingRankSource, "related_catalog");
-    assert.equal(result.matchEvidence, "prior_verified_catalog_id");
-    assert.equal(result.relatedCatalogContinuityUsed, true);
+    assert.equal(result.matched, false);
+    assert.equal(result.rank, null);
+    assert.equal(result.trackingRankSource, undefined);
+    assert.equal(result.relatedCatalogContinuityUsed, false);
     assert.equal(result.checkedCount, 300);
-    assert.equal(result.productExposureItems.length, 1);
-    assert.equal(result.productExposureItems[0].productId, "57907660073");
-    assert.equal(result.productExposureItems[0].relationBasis, "prior_verified_catalog_id");
+    assert.equal(result.targetCatalogId, "57907660073");
+    assert.equal(result.productExposureItems, undefined);
   });
 });
 
@@ -2727,12 +2904,14 @@ test("shopping lookup compares the exact seller product and verified catalog in 
   const items = Array.from({ length: 300 }, (_, index) => shoppingResultItem(index));
   items[23] = shoppingResultItem(23, {
     productId: "57907660073",
+    catalogId: "57907660073",
     link: "https://search.shopping.naver.com/catalog/57907660073",
     title: "라이브오랄스 오라원 회전법 음파전동칫솔",
     mallName: "네이버",
     brand: "라이브오랄스",
     category2: "구강청정기기",
     productType: "1",
+    catalogSellerProductIds: ["12649811979"],
   });
   items[167] = shoppingResultItem(167, {
     productId: "98765432101",
@@ -2892,6 +3071,7 @@ test("shopping lookup still selects a real current catalog above its exact selle
     link: "",
     title: "한일의료기 온열찜질기 원부",
     productType: "1",
+    catalogSellerProductIds: ["12149720593"],
   });
   items[75] = shoppingResultItem(75, {
     productId: "89694231298",

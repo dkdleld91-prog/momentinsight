@@ -83,7 +83,7 @@ function buildCandidateAtomicProofSql() {
       and group_claimed.occurred_at
         between exact_run.started_at - interval '5 seconds' and expected_last_success_at
       and exact_run.worker_id = '${N30_TARGET_WORKER_ID}'
-      and exact_run.run_trigger in ('rank-catch-up', 'rank-remote', 'rank-0900', 'rank-1500')
+      and exact_run.run_trigger = 'rank-catch-up'
       and exact_run.runtime_version = '${N30_TARGET_RUNTIME_VERSION}'
       and exact_run.runtime_fingerprint = '${N30_TARGET_RUNTIME_FINGERPRINT}'
       and (

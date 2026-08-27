@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -16,35 +15,10 @@ const migration = migrationName
   ? fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8")
   : "";
 
-const runtimeFiles = [
-  "tools/naver-shopping-chrome-extension/service-worker.js",
-  "scripts/naver-shopping-native-host.mjs",
-  "scripts/naver-shopping-native-host-core.mjs",
-  "scripts/naver-shopping-local-worker.mjs",
-  "src/server/local-worker-auth.mjs",
-  "src/server/naver-shopping/local-worker-contract.mjs",
-  "src/server/handlers/naver-shopping-rank.mjs",
-  "src/server/security.mjs",
-  "src/server/naver-shopping/source-status.mjs",
-  "src/server/naver-shopping/provider-runtime.mjs",
-  "src/server/naver-shopping/mobile-top-fallback.mjs",
-  "tools/naver-shopping-rank-collector/src/provider.mjs",
-  "tools/naver-shopping-rank-collector/src/contract.mjs",
-];
-
-function runtimeFixture(version) {
-  return Object.freeze({
-    version,
-    fingerprint: crypto.createHash("sha256").update([
-      version,
-      ...runtimeFiles.map((name) => crypto.createHash("sha256")
-        .update(fs.readFileSync(path.join(repositoryRoot, name)))
-        .digest("hex")),
-    ].join("\n"), "utf8").digest("hex"),
-  });
-}
-
-const expectedRuntime = runtimeFixture("1.1.15");
+const expectedRuntime = Object.freeze({
+  version: "1.1.15",
+  fingerprint: "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c",
+});
 
 function requireMigration() {
   assert.equal(migrationNames.length, 1, "one later runtime 1.1.15 migration is required");

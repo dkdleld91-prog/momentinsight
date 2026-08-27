@@ -428,6 +428,26 @@ export function parseMobilePagedSlotPayload(payload, {
     }
   }
 
+  // The mobile BFF exposes the seller -> catalog relationship only on the
+  // seller row (`catalogMatchingId`). Reconstruct the catalog seller list from
+  // those exact identifiers so the shared ranker never needs title, image,
+  // brand, model, category, or keyword similarity.
+  const sellerIdsByCatalogId = new Map();
+  for (const item of items) {
+    if (!item.linkedCatalogId) continue;
+    const sellerIds = Array.isArray(item.sellerProductIds) && item.sellerProductIds.length
+      ? item.sellerProductIds
+      : [item.sellerProductId].filter(Boolean);
+    if (!sellerIds.length) continue;
+    const current = sellerIdsByCatalogId.get(item.linkedCatalogId) || new Set();
+    for (const sellerId of sellerIds) current.add(sellerId);
+    sellerIdsByCatalogId.set(item.linkedCatalogId, current);
+  }
+  for (const item of items) {
+    if (!item.catalogId) continue;
+    item.catalogSellerProductIds = [...(sellerIdsByCatalogId.get(item.catalogId) || [])].sort();
+  }
+
   if (!items.length || items.length > VERIFIED_SLOT_LIMIT) failSchema("sas.coverage");
   // `rank` is the position Naver assigned across every slot inventory.  A high
   // rank by itself does not prove the positions below it were all returned.

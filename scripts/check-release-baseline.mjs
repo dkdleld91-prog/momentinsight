@@ -232,6 +232,8 @@ const shoppingWorkerRuntime1112Migration = read("supabase/migrations/20260824042
 const shoppingWorkerRuntime1113Candidate6Migration = read("supabase/migrations/20260824165332_naver_shopping_runtime_1_1_13_candidate_6_minute_cadence.sql");
 const shoppingStableFiniteWindowMigration = read("supabase/migrations/20260826035440_naver_shopping_stable_finite_window_v1.sql");
 const shoppingStableFiniteWindowRuntime1115Migration = read("supabase/migrations/20260826083450_naver_shopping_runtime_1_1_15_stable_finite_third_pass.sql");
+const shoppingExactParentRelationGuardMigration = read("supabase/migrations/20260827050000_naver_shopping_exact_parent_relation_guard.sql");
+const shoppingStableFiniteWindowRuntime1116Migration = read("supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
 const shoppingWorkerCandidate111ExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql");
@@ -248,8 +250,10 @@ const shoppingWorkerRuntime1113Fingerprint =
   "cde647ea615e807730cd39b5e10efb4fff5805d4b7181afc0db97315995f98f6";
 const shoppingWorkerRuntime1114Fingerprint =
   "13e801cf18adaea7352d7c78bbe067f969e3fef5e756528335443d3122b2d405";
-const shoppingWorkerRuntime1115Fingerprint = crypto.createHash("sha256").update([
-  "1.1.15",
+const shoppingWorkerRuntime1115Fingerprint =
+  "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c";
+const shoppingWorkerRuntime1116Fingerprint = crypto.createHash("sha256").update([
+  "1.1.16",
   "tools/naver-shopping-chrome-extension/service-worker.js",
   "scripts/naver-shopping-native-host.mjs",
   "scripts/naver-shopping-native-host-core.mjs",
@@ -1660,7 +1664,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.15"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.16"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1673,9 +1677,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.15";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.15";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.15";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.16";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.16";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.16";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -2020,7 +2024,7 @@ const checks = {
     && shoppingLocalWorkerHandler.includes("p_run_trigger: control.runTrigger")
     && shoppingNativeHost.includes("CHROME_RUN_TRIGGERS = new Set")
     && shoppingNativeHost.includes("runTrigger: trigger"),
-  shoppingRuntime1115FiniteParentProofExactIdentity:
+  shoppingRuntime1116ExactParentProofExactIdentity:
     shoppingStableFiniteWindowMigration.includes("stable-finite-window-v1")
     && shoppingStableFiniteWindowMigration.includes("c0ccded2-9bf7-488e-af8d-00898c0a1ff8")
     && shoppingStableFiniteWindowMigration.includes("13327339525")
@@ -2037,11 +2041,23 @@ const checks = {
     && shoppingStableFiniteWindowRuntime1115Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
     && shoppingStableFiniteWindowRuntime1115Migration.includes("security invoker")
     && shoppingStableFiniteWindowRuntime1115Migration.includes("set search_path = ''")
-    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.15";')
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1115Fingerprint)
+    && shoppingExactParentRelationGuardMigration.includes("mi_guard_naver_shopping_exact_parent_snapshot")
+    && shoppingExactParentRelationGuardMigration.includes("catalog_seller_product_id")
+    && shoppingExactParentRelationGuardMigration.includes("catalogSellerProductIds")
+    && shoppingExactParentRelationGuardMigration.includes("naver_shopping_exact_parent_relation_guard")
+    && shoppingExactParentRelationGuardMigration.includes("security invoker")
+    && shoppingExactParentRelationGuardMigration.includes("set search_path = ''")
+    && shoppingStableFiniteWindowRuntime1116Migration.includes("target.runtime_version is distinct from '1.1.15'")
+    && shoppingStableFiniteWindowRuntime1116Migration.includes(shoppingWorkerRuntime1115Fingerprint)
+    && shoppingStableFiniteWindowRuntime1116Migration.includes("set runtime_version = '1.1.16'")
+    && shoppingStableFiniteWindowRuntime1116Migration.includes(shoppingWorkerRuntime1116Fingerprint)
+    && shoppingStableFiniteWindowRuntime1116Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
+    && shoppingStableFiniteWindowRuntime1116Migration.includes("security invoker")
+    && shoppingStableFiniteWindowRuntime1116Migration.includes("set search_path = ''")
+    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.16";')
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1116Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
-    && shoppingWorkerRuntime1115Fingerprint
-      === "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c",
+    && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
   shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.12 exact candidate gate")
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2
@@ -2131,7 +2147,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.15"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.16"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")
@@ -2460,7 +2476,10 @@ const checks = {
     && rankServer.includes("function selectRepresentativeTrackingRank")
     && rankServer.includes('rankSelectionBasis: "best_of_exact_product_and_related_catalog"')
     && rankServer.includes('trackingRankSource: result.trackingRankSource')
-    && rankServer.includes("const result = selectRepresentativeTrackingRank(lookupResult)")
+    && rankServer.includes("const result = selectRepresentativeTrackingRank(lookupResult, tracker.product_id)")
+    && rankServer.includes("hasDirectCatalogSellerEvidence")
+    && rankServer.includes('=== "catalog_seller_product_id"')
+    && rankServer.includes("catalogSellerProductIds.includes(exactProductId)")
     && rankServer.includes("representativeTrackingRankMessage(result)"),
   naverRankTrackingExcludesAds: [adminSource, clientSource].every((source) => source.includes("광고 제외")
     && source.includes("오가닉 순위"))

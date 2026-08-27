@@ -36,9 +36,18 @@ assert.equal(PRODUCT_RANK_TRACKER_MAX_RANK, 300);
 const relatedCatalogWins = selectRepresentativeTrackingRank({
   matched: true,
   rank: 48,
+  targetProductId: "5145848584",
   item: { productId: "5145848584", title: "정확 상품" },
   productExposureItems: [
-    { rank: 7, productId: "56704991367", title: "관련 원부", isRelatedCatalog: true },
+    {
+      rank: 7,
+      productId: "56704991367",
+      catalogId: "56704991367",
+      title: "관련 원부",
+      isRelatedCatalog: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["5145848584"],
+    },
     { rank: 48, productId: "5145848584", title: "정확 상품", isExactTarget: true },
   ],
 });
@@ -55,6 +64,7 @@ assert.match(representativeTrackingRankMessage(relatedCatalogWins), /관련 원�
 
 const relatedCatalogStoresCatalogIdentity = selectRepresentativeTrackingRank({
   matched: true,
+  targetProductId: "12149720593",
   productExposureItems: [
     {
       rank: 3,
@@ -64,6 +74,8 @@ const relatedCatalogStoresCatalogIdentity = selectRepresentativeTrackingRank({
       productType: 1,
       isRelatedCatalog: true,
       isOrganic: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["12149720593"],
     },
     {
       rank: 76,
@@ -82,8 +94,17 @@ assert.equal(relatedCatalogStoresCatalogIdentity.relatedCatalogProductId, "59031
 const exactProductWins = selectRepresentativeTrackingRank({
   matched: true,
   rank: 5,
+  targetProductId: "5145848584",
   productExposureItems: [
-    { rank: 12, productId: "56704991367", title: "관련 원부", isRelatedCatalog: true },
+    {
+      rank: 12,
+      productId: "56704991367",
+      catalogId: "56704991367",
+      title: "관련 원부",
+      isRelatedCatalog: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["5145848584"],
+    },
     { rank: 5, productId: "5145848584", title: "정확 상품", isExactTarget: true },
   ],
 });
@@ -113,9 +134,24 @@ assert.equal(representativeExposureRejectsAds.representativeItem.rank, 7);
 const highestRelatedCatalogWins = selectRepresentativeTrackingRank({
   matched: true,
   rank: 30,
+  targetProductId: "44444444444",
   productExposureItems: [
-    { rank: 11, productId: "11111111111", isRelatedCatalog: true },
-    { rank: 8, productId: "22222222222", isRelatedCatalog: true },
+    {
+      rank: 11,
+      productId: "11111111111",
+      catalogId: "11111111111",
+      isRelatedCatalog: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["44444444444"],
+    },
+    {
+      rank: 8,
+      productId: "22222222222",
+      catalogId: "22222222222",
+      isRelatedCatalog: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["44444444444"],
+    },
     { rank: 3, productId: "33333333333", isRelatedCatalog: false },
   ],
 });
@@ -125,8 +161,16 @@ assert.equal(highestRelatedCatalogWins.relatedCatalogProductId, "22222222222");
 const exactProductWinsTie = selectRepresentativeTrackingRank({
   matched: true,
   rank: 10,
+  targetProductId: "5145848584",
   productExposureItems: [
-    { rank: 10, productId: "56704991367", isRelatedCatalog: true },
+    {
+      rank: 10,
+      productId: "56704991367",
+      catalogId: "56704991367",
+      isRelatedCatalog: true,
+      relationBasis: "catalog_seller_product_id",
+      catalogSellerProductIds: ["5145848584"],
+    },
   ],
 });
 assert.equal(exactProductWinsTie.rank, 10);
@@ -519,6 +563,8 @@ const circulatorExactItem = {
 };
 const circulatorCatalogItem = {
   productId: "53687717527",
+  catalogId: "53687717527",
+  catalogSellerProductIds: ["11687310806"],
   link: "https://search.shopping.naver.com/catalog/53687717527",
   title: "파세코 PCF-MSF1100 화이트",
   mallName: "네이버",
@@ -539,7 +585,7 @@ assert.equal(circulatorExposureItems[0].rank, 8);
 assert.equal(circulatorExposureItems[0].productId, "53687717527");
 assert.equal(circulatorExposureItems[0].productKind, "catalog");
 assert.equal(circulatorExposureItems[0].productKindLabel, "원부형");
-assert.equal(circulatorExposureItems[0].relationBasis, "model_brand_category");
+assert.equal(circulatorExposureItems[0].relationBasis, "catalog_seller_product_id");
 assert.equal(circulatorExposureItems[1].rank, 59);
 assert.equal(circulatorExposureItems[1].sellerProductId, "11687310806");
 
@@ -549,6 +595,8 @@ const unrelatedCirculatorCatalogIsRejected = productExposureItemsFromOrganic([
     item: {
       ...circulatorCatalogItem,
       productId: "54327455316",
+      catalogId: "54327455316",
+      catalogSellerProductIds: ["99999999999"],
       link: "https://search.shopping.naver.com/catalog/54327455316",
       title: "파세코 PCF-MSF11000 화이트",
     },
@@ -563,6 +611,8 @@ assert.equal(unrelatedCirculatorCatalogIsRejected[0].rank, 2);
 const exactLavMatch = findOrganicMatchInItems([
   {
     productId: "56704991367",
+    catalogId: "56704991367",
+    catalogSellerProductIds: ["5145848584"],
     link: "https://search.shopping.naver.com/catalog/56704991367",
     title: "라이브오랄스 퓨어다이아 셀프 치아미백제 2주분 10g, 1개",
     mallName: "네이버",

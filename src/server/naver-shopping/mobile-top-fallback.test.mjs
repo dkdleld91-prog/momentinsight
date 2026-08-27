@@ -284,6 +284,48 @@ test("accepts a found exact product and chooses its higher verified related cata
   resetMobileTopFallbackStateForTests();
 });
 
+test("never promotes a title-similar catalog without the exact seller-to-catalog id", async () => {
+  resetMobileTopFallbackStateForTests();
+  const catalogId = "77777777777";
+  const targetProductId = "33333333333";
+  const payload = bffPayload([
+    slot("SAS", 1, {
+      cardType: "CATALOG_CARD",
+      nvMid: catalogId,
+      channelProductId: null,
+      originalMallProductId: null,
+      catalogMatchingId: null,
+      productUrl: { pcUrl: `https://search.shopping.naver.com/catalog/${catalogId}` },
+      productName: "같은 제목과 썸네일의 다른 원부",
+    }),
+    slot("SAS", 2),
+    slot("SAS", 3, {
+      channelProductId: targetProductId,
+      originalMallProductId: "22222222222",
+      catalogMatchingId: "88888888888",
+      productUrl: { pcUrl: `https://smartstore.naver.com/example/products/${targetProductId}` },
+      productName: "같은 제목과 썸네일의 다른 원부",
+    }),
+  ]);
+
+  const result = await findShoppingRank({ mobileTopFallbackOnly: true }, {
+    keyword: KEYWORD,
+    targetProductId,
+    maxRank: 300,
+    mobileTopFallbackOptions: {
+      fetchImpl: fallbackFetch(payload),
+      now: () => Date.parse("2026-08-01T00:00:00.000Z"),
+    },
+  });
+
+  assert.equal(result.matched, true);
+  assert.equal(result.rank, 3);
+  assert.equal(result.exactProductRank, 3);
+  assert.equal(result.relatedCatalogRank, null);
+  assert.equal(result.trackingRankSource, "exact_product");
+  resetMobileTopFallbackStateForTests();
+});
+
 test("matches either channel or original mall product ID without conflating them", async () => {
   resetMobileTopFallbackStateForTests();
   const channelProductId = "33333333333";

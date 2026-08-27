@@ -45,7 +45,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.15";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.16";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -393,15 +393,65 @@ function clampMaxRank() {
   return PRODUCT_RANK_TRACKER_MAX_RANK;
 }
 
+function hasDirectCatalogSellerEvidence(item, trackerProductId = "", options = {}) {
+  const exactProductId = normalizeText(trackerProductId);
+  const selectedCatalogId = normalizeText(item?.catalogId) || normalizeText(item?.productId);
+  const relatedCatalogId = normalizeText(item?.relatedCatalogProductId)
+    || (options.allowImplicitRelatedId === true && item?.isRelatedCatalog ? selectedCatalogId : "");
+  const catalogSellerProductIds = Array.isArray(item?.catalogSellerProductIds)
+    ? item.catalogSellerProductIds.map((value) => normalizeText(value)).filter(Boolean)
+    : [];
+  return Boolean(
+    exactProductId
+    && relatedCatalogId
+    && relatedCatalogId !== exactProductId
+    && selectedCatalogId === relatedCatalogId
+    && normalizeText(item?.relatedCatalogRelationBasis || item?.relationBasis)
+      === "catalog_seller_product_id"
+    && catalogSellerProductIds.includes(exactProductId)
+  );
+}
+
+function trustedProductRankSnapshot(snapshot, trackerProductId = "") {
+  const item = snapshot?.item;
+  if (!item || item.trackingRankSource !== "related_catalog") return true;
+  return hasDirectCatalogSellerEvidence(item, trackerProductId);
+}
+
+function displayProductRankItem(item, trackerProductId = "") {
+  if (!item || typeof item !== "object" || Array.isArray(item)) return item || null;
+  const exactTrackerProductId = normalizeText(trackerProductId);
+  const selectedCatalogId = normalizeText(item.catalogId) || normalizeText(item.productId);
+  if (exactTrackerProductId
+    && selectedCatalogId === exactTrackerProductId
+    && item.isExactTarget === true
+    && item.exposureType === "exact_catalog") {
+    return {
+      ...item,
+      trackingRankSource: "related_catalog",
+      trackingRankSourceLabel: "원부 기준",
+    };
+  }
+  return item;
+}
+
 export function trackerPayload(row, snapshots = [], keywordVolume = null) {
   const historyCutoff = Date.now() - PRODUCT_RANK_HISTORY_DAYS * 24 * 60 * 60 * 1000;
-  const recentSnapshots = (snapshots || [])
+  const rawRecentSnapshots = (snapshots || [])
     .filter((snapshot) => {
       const checkedAt = new Date(snapshot?.checked_at || snapshot?.checkedAt || 0).getTime();
       return Number.isFinite(checkedAt) && checkedAt >= historyCutoff;
-    })
+    });
+  const recentSnapshots = rawRecentSnapshots
+    .filter((snapshot) => trustedProductRankSnapshot(snapshot, row.product_id))
     .slice(0, PRODUCT_RANK_HISTORY_MAX_SNAPSHOTS);
-  const latestTrackingItem = recentSnapshots[0]?.item || {};
+  const latestRawSnapshotRejected = Boolean(
+    rawRecentSnapshots[0]
+    && !trustedProductRankSnapshot(rawRecentSnapshots[0], row.product_id)
+  );
+  const latestTrackingItem = displayProductRankItem(recentSnapshots[0]?.item, row.product_id) || {};
+  const trustedRanks = recentSnapshots.map((snapshot) => positiveRank(snapshot?.rank)).filter(Boolean);
+  const hasTrustedSnapshot = recentSnapshots.length > 0;
   return {
     id: row.id,
     keyword: row.keyword,
@@ -417,28 +467,34 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
     status: row.status,
     startedAt: row.started_at,
     endsAt: row.ends_at,
-    lastCheckedAt: row.last_checked_at,
+    lastCheckedAt: hasTrustedSnapshot
+      ? (recentSnapshots[0]?.checked_at || recentSnapshots[0]?.checkedAt || null)
+      : (latestRawSnapshotRejected ? null : row.last_checked_at),
     nextCheckAt: row.next_check_at,
-    currentRank: row.current_rank,
+    currentRank: hasTrustedSnapshot
+      ? positiveRank(recentSnapshots[0]?.rank)
+      : (latestRawSnapshotRejected ? null : row.current_rank),
     currentRankSource: latestTrackingItem.trackingRankSource || "",
     currentRankSourceLabel: latestTrackingItem.trackingRankSourceLabel || "",
     exactProductRank: latestTrackingItem.exactProductRank || null,
     relatedCatalogRank: latestTrackingItem.relatedCatalogRank || null,
-    bestRank: row.best_rank,
-    worstRank: row.worst_rank,
+    bestRank: trustedRanks.length ? Math.min(...trustedRanks) : null,
+    worstRank: trustedRanks.length ? Math.max(...trustedRanks) : null,
     checkCount: row.check_count,
     foundCount: row.found_count,
-    lastMessage: row.last_message,
+    lastMessage: hasTrustedSnapshot
+      ? (recentSnapshots[0]?.message || null)
+      : (latestRawSnapshotRejected ? null : row.last_message),
     lastError: row.last_error || null,
     retryCount: Number(row.retry_count || 0),
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    snapshots: recentSnapshots.map(snapshotPayload),
+    snapshots: recentSnapshots.map((snapshot) => snapshotPayload(snapshot, row.product_id)),
   };
 }
 
-function snapshotPayload(row) {
+function snapshotPayload(row, trackerProductId = "") {
   return {
     id: row.id,
     trackerId: row.tracker_id,
@@ -449,7 +505,7 @@ function snapshotPayload(row) {
     matched: row.matched,
     checkedCount: row.checked_count,
     total: row.total,
-    item: row.item || null,
+    item: displayProductRankItem(row.item, trackerProductId),
     message: row.message,
     source: row.source,
     createdAt: row.created_at,
@@ -884,7 +940,10 @@ export async function loadShoppingWorkerOperations(ctx, now = Date.now()) {
       controls: {
         canStop: circuitState !== "open" || normalizeWorkerText(workerValue(source, "circuit_reason", "circuitReason")) !== "manual_stop",
         canRunCanary: circuitState !== "half_open" && !activeLease && !activeCooldown && Boolean(canaryTrackerId),
-        canActivateCandidate: candidateEligible && cadenceMode !== "candidate" && circuitState === "closed" && !activeLease && !activeCooldown,
+        // Candidate activation is intentionally reserved for the audited
+        // serializable transition generator. The owner API only exposes the
+        // baseline rollback path and must never become a second dispatcher.
+        canActivateCandidate: false,
         canReturnBaseline: cadenceMode !== "baseline",
         canaryTrackerId,
       },
@@ -1070,7 +1129,8 @@ function sanitizeOrganicTrackingItems(items) {
   return (Array.isArray(items) ? items : []).filter(isOrganicTrackingItem);
 }
 
-export function selectRepresentativeTrackingRank(result = {}) {
+export function selectRepresentativeTrackingRank(result = {}, trackerProductId = "") {
+  const exactTargetProductId = normalizeText(trackerProductId) || normalizeText(result?.targetProductId);
   const exposureItems = Array.isArray(result?.productExposureItems) ? result.productExposureItems : [];
   const organicExposureItems = sanitizeOrganicTrackingItems(exposureItems);
   const exactExposure = organicExposureItems
@@ -1079,7 +1139,11 @@ export function selectRepresentativeTrackingRank(result = {}) {
     .filter((item) => item.rank)
     .sort((a, b) => a.rank - b.rank)[0] || null;
   const relatedCatalog = organicExposureItems
-    .filter((item) => item?.isRelatedCatalog)
+    .filter((item) => item?.isRelatedCatalog && hasDirectCatalogSellerEvidence(
+      item,
+      exactTargetProductId,
+      { allowImplicitRelatedId: true },
+    ))
     .map((item) => ({ ...item, rank: positiveRank(item?.rank) }))
     .filter((item) => item.rank)
     .sort((a, b) => a.rank - b.rank)[0] || null;
@@ -1096,8 +1160,13 @@ export function selectRepresentativeTrackingRank(result = {}) {
       ? positiveRank(result?.exactProductRank)
         || (result?.matched && result?.trackingRankSource !== "related_catalog" ? positiveRank(result.rank) : null)
       : null);
+  const directResultCatalog = hasDirectCatalogSellerEvidence(
+    result?.item,
+    exactTargetProductId,
+    { allowImplicitRelatedId: true },
+  );
   const relatedCatalogRank = relatedCatalog?.rank
-    || (!relatedExposurePresent ? positiveRank(result?.relatedCatalogRank) : null);
+    || (!relatedExposurePresent && directResultCatalog ? positiveRank(result?.relatedCatalogRank) : null);
   const useRelatedCatalog = Boolean(relatedCatalogRank && (!exactProductRank || relatedCatalogRank < exactProductRank));
   const selectedRank = useRelatedCatalog ? relatedCatalogRank : exactProductRank;
   const trackingRankSource = selectedRank
@@ -1158,13 +1227,6 @@ export function representativeTrackingRankMessage(result = {}) {
 
 export function verifiedRelatedCatalogIdFromSnapshots(snapshots = [], trackerProductId = "") {
   const exactProductId = normalizeText(trackerProductId);
-  const allowedSources = new Set(["related_catalog", "exact_product"]);
-  const allowedRelationBases = new Set([
-    "metadata_catalog_id",
-    "catalog_seller_product_id",
-    "model_brand_category",
-    "keyword_brand_category",
-  ]);
   const orderedSnapshots = [...(Array.isArray(snapshots) ? snapshots : [])]
     .sort((left, right) => (
       (Date.parse(String(right?.checked_at || "")) || 0)
@@ -1187,16 +1249,12 @@ export function verifiedRelatedCatalogIdFromSnapshots(snapshots = [], trackerPro
   for (const snapshot of orderedSnapshots) {
     const item = snapshot?.item;
     const relatedCatalogId = normalizeText(item?.relatedCatalogProductId);
-    const relationBasis = normalizeText(
-      item?.relatedCatalogRelationBasis
-      || (item?.trackingRankSource === "related_catalog" ? item?.relationBasis : ""),
-    );
     if (snapshot?.matched !== true
       || !item
       || item.rankPolicy !== "organic_only"
       || item.adExcluded !== true
-      || !allowedSources.has(item.trackingRankSource)
-      || !allowedRelationBases.has(relationBasis)
+      || item.trackingRankSource !== "related_catalog"
+      || !hasDirectCatalogSellerEvidence(item, exactProductId)
       || explicitlyUnmatchedCatalogIds.has(relatedCatalogId)
       || !positiveRank(item.relatedCatalogRank)
       || !/^[0-9]{5,}$/.test(relatedCatalogId)
@@ -1364,7 +1422,7 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
       verifiedRelatedCatalogId,
       maxRank: PRODUCT_RANK_TRACKER_MAX_RANK,
     });
-    const result = selectRepresentativeTrackingRank(lookupResult);
+    const result = selectRepresentativeTrackingRank(lookupResult, tracker.product_id);
     assertCompleteProductTrackingResult(result);
     const message = representativeTrackingRankMessage(result);
     await assertRankLeaseOwnership(ctx, tracker.id, options.leaseStartedAt || "");
@@ -2312,6 +2370,20 @@ export async function controlShoppingWorker(request, ctx, body, access) {
     cadenceMode = normalizeWorkerText(body?.mode, 20).toLowerCase();
     if (!new Set(["baseline", "candidate"]).has(cadenceMode)) {
       return json(request, { ok: false, message: "지원하지 않는 수집 간격입니다." }, 400);
+    }
+    if (cadenceMode === "candidate") {
+      return json(request, {
+        ok: false,
+        action,
+        message: "후보 6분 간격은 원부 검증과 연속 안정성 증거를 고정하는 검증 전용 전환 절차에서만 적용할 수 있습니다.",
+        result: {
+          state: "",
+          mode: "",
+          minutes: null,
+          reason: "canonical_transition_required",
+          activated: false,
+        },
+      }, 409);
     }
     rpcName = "mi_set_naver_shopping_worker_cadence";
     args = { p_mode: cadenceMode };

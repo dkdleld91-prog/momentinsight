@@ -181,7 +181,9 @@ test("builds the one-shot candidate6 transaction with exact identity and full po
   assert.match(sql, /(?:from|join) public\.naver_shopping_worker_runs/iu);
   assert.match(sql, /from public\.naver_shopping_scheduler_events/iu);
   assert.match(sql, /from public\.naver_rank_snapshots/iu);
-  assert.match(sql, /run_trigger in \('rank-catch-up', 'rank-remote', 'rank-0900', 'rank-1500'\)/iu);
+  assert.match(sql, /exact_run\.run_trigger\s*=\s*'rank-catch-up'/iu);
+  assert.doesNotMatch(sql, /exact_run\.run_trigger\s+in\s*\(/iu);
+  assert.doesNotMatch(sql, /exact_run\.run_trigger\s*=\s*'(?:rank-remote|rank-0900|rank-1500)'/iu);
   assert.match(sql, /group_claimed\.occurred_at\s+between exact_run\.started_at - interval '5 seconds' and expected_last_success_at/iu);
   assert.match(sql, /snapshot\.checked_count = 300/iu);
   assert.match(sql, /snapshot\.source = 'naver_shopping_results_collector'/iu);

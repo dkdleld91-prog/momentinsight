@@ -1725,6 +1725,82 @@ test("the google banners are one system with the 대표실 banner rows", () => {
   assert.ok(calGcal.indexOf("data-cal-gcal-sync") < calGcal.indexOf("data-cal-gcal-disconnect"));
 });
 
+// ─────────────────────────────────────────────────────────────
+// 9. 구글 검수 대기 안내 (임시)
+//    OAuth 앱은 게시됐지만 검수(verification)가 끝나지 않아, 캘린더 민감 범위
+//    동의 앞에 "확인하지 않은 앱" 경고가 한 번 뜬다. [고급] 을 펼치면 계속 갈 수
+//    있다는 사실을 모르면 여기서 멈추므로, 연결 CTA 옆에만 한 줄을 붙였다.
+//    검수 승인 뒤에는 상수·마크업·CSS 와 함께 이 블록도 지운다.
+// ─────────────────────────────────────────────────────────────
+
+const VERIFY_NOTE_COPY =
+  "구글 승인 심사 중입니다. 연결 중 '확인하지 않은 앱' 경고가 보이면 [고급] → [insight.momentlabs.co.kr(안전하지 않음)으로 이동]을 눌러 계속하세요.";
+
+test("the unverified-app note sits with every connect CTA and only in the unconnected state", () => {
+  // 문구는 공유 상수 한 줄에서만 나온다 — 두 자리가 조용히 갈리지 않는다.
+  assert.equal(shared.GOOGLE_VERIFY_NOTE, VERIFY_NOTE_COPY);
+  assert.equal([...sharedCode.matchAll(/escapeHtml\(GOOGLE_VERIFY_NOTE\)/g)].length, 2, "안내문이 붙는 자리는 배너·레일 둘뿐입니다.");
+  assert.equal([...sharedCode.matchAll(/구글 승인 심사 중입니다/g)].length, 1, "문구 리터럴은 상수 한 줄뿐이어야 합니다.");
+
+  // 1) 구글 캘린더 배너 — 연결 CTA 와 같은 배너 안에 있고, 기본값은 hidden 이다.
+  const calGcalBanner = slice(markup, '<section class="mi-cal-banner" data-cal-gcal-banner', "</section>");
+  assert.ok(calGcalBanner.includes('<small class="mi-cal-verify-note" data-cal-verify-note="gcal-banner" hidden>'));
+  assert.ok(calGcalBanner.includes(VERIFY_NOTE_COPY), "배너 안내문이 지정 문구와 갈렸습니다.");
+  assert.ok(calGcalBanner.includes("data-cal-gcal-connect"));
+  // 구글 로그인 배너에는 붙지 않는다 — 민감 범위 동의는 캘린더 연결에만 있다.
+  const calGloginBanner = slice(markup, '<section class="mi-cal-banner" data-cal-glogin-banner', "</section>");
+  assert.equal(calGloginBanner.includes("mi-cal-verify-note"), false);
+
+  // 2) 표시 조건은 연결 CTA 자신의 조건 그대로다. 별도 판정을 두면 연결이 끝난
+  //    계정에도 경고 안내가 남는 날이 온다.
+  assert.ok(sharedCode.includes(`var verifyNote = el('[data-cal-verify-note="gcal-banner"]');`));
+  assert.ok(sharedCode.includes("if (verifyNote) verifyNote.hidden = connectButton.hidden;"));
+  assert.equal(
+    /verifyNote\.hidden = (?!connectButton\.hidden)/.test(sharedCode),
+    false,
+    "안내문 표시 조건이 연결 CTA 와 갈렸습니다.",
+  );
+  // 흐름·핸들러는 손대지 않았다 — 연결은 여전히 startCalendarAuth 하나로만 간다.
+  assert.equal([...sharedCode.matchAll(/startCalendarAuth\(/g)].length, 3);
+
+  // 3) 연결 전 레일 — railLocalGroupHtml 은 카탈로그가 빌 때만 그려진다.
+  const railLocalGroup = slice(sharedCode, "function railLocalGroupHtml() {", "function renderRail() {");
+  assert.ok(railLocalGroup.includes('<p class="mi-cal-verify-note" data-cal-verify-note="rail">'));
+  assert.ok(railLocalGroup.includes("escapeHtml(GOOGLE_VERIFY_NOTE)"));
+  assert.ok(
+    railLocalGroup.indexOf("data-cal-rail-connect") < railLocalGroup.indexOf('data-cal-verify-note="rail"'),
+    "레일 안내문은 연결 CTA 아래에 와야 합니다.",
+  );
+  assert.ok(sharedCode.includes("list.innerHTML = railLocalGroupHtml();"));
+  // 연결된 레일(railGroupHtml)에는 안내문도 연결 CTA 도 없다.
+  const railGroup = slice(sharedCode, "function railGroupHtml(", "function railLocalGroupHtml() {");
+  assert.equal(railGroup.includes("mi-cal-verify-note"), false);
+  assert.equal(railGroup.includes("data-cal-rail-connect"), false);
+
+  // 4) 스타일은 기존 muted 토큰만 쓴다(새 색을 만들지 않는다).
+  assert.equal(declaration(sharedStyleCode, ".mi-cal-verify-note", "color").trim(), "var(--mi-cal-muted)");
+  assert.equal(declaration(sharedStyleCode, ".mi-cal-verify-note", "font-size").trim(), "12px");
+  assert.match(sharedStyleCode, /--mi-cal-muted:\s*var\(--mi-muted/u);
+  // 배너 안에서는 .mi-cal-banner-copy small 이 더 구체적이라 같은 목록에 함께 적는다.
+  assert.ok(sharedStyleCode.includes(".mi-cal-banner-copy .mi-cal-verify-note"));
+  // 대표실 패리티 대상인 배너 본문 규칙은 건드리지 않았다.
+  assert.equal(declaration(sharedStyleCode, ".mi-cal-banner-copy small", "font-size").trim(), "10.5px");
+});
+
+test("both dashboard pages get the note through the shared component, at the bumped asset version", () => {
+  for (const page of [adminSource, clientSource]) {
+    assert.ok(page.includes("data-mi-personal-calendar"), "페이지가 공유 컴포넌트를 걸고 있어야 합니다.");
+    assert.ok(page.includes('<script src="/mi-personal-calendar.js?v=' + shared.VERSION + '"></script>'));
+    assert.ok(page.includes('<link rel="stylesheet" href="/mi-personal-calendar.css?v=' + shared.VERSION + '" />'));
+    // 문구가 페이지로 복제되면 두 화면이 갈린다 — 안내문은 공유 컴포넌트에만 있다.
+    assert.equal(page.includes("구글 승인 심사 중입니다"), false);
+    assert.equal(page.includes("mi-cal-verify-note"), false);
+    assert.equal(page.includes("cal-v6-20260826"), false, "옛 캐시 버전이 남아 있습니다.");
+  }
+  // 마크업·CSS 가 함께 바뀌었으므로 캐시 깨기 버전이 올라가 있어야 한다.
+  assert.equal(shared.VERSION, "cal-v7-20260827");
+});
+
 test("this suite is wired into npm test", () => {
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/personal-calendar-ui.test.mjs"));
   assert.ok(String(packageJson.scripts?.test || "").includes("scripts/work-calendar-ui.test.mjs"));

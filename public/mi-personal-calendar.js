@@ -18,7 +18,7 @@
 
   // 마크업과 CSS 가 같이 바뀌었다. 버전을 올려 두지 않으면 캐시된 옛 마크업이
   // 새 CSS 와 섞여 화면이 반쯤 무너진 상태로 뜬다.
-  var VERSION = "cal-v6-20260826";
+  var VERSION = "cal-v7-20260827";
 
   // 일정이 하나도 없는 달은 42칸짜리 빈 흰 격자가 된다. 대표실 배치를 따르면서
   // 캘린더가 화면 한참 아래로 내려갔기 때문에, 그 빈 격자가 "고장" 처럼 읽힌다.
@@ -62,6 +62,13 @@
   // 구글 배너 문구. 대표실 .mi-assistant-gcal 줄의 같은 자리 문장이다.
   var BANNER_STATUS_PENDING = "상태 확인 중…";
   var BANNER_LINKED_BADGE = "✓ 연동 완료";
+
+  // 구글 OAuth 앱이 게시는 됐지만 아직 검수(verification)를 통과하지 못했다.
+  // 그래서 캘린더 민감 범위 동의 화면 앞에 "확인하지 않은 앱" 경고가 한 번 뜨고,
+  // 그 화면에서 [고급] 을 펼치면 계속 진행할 수 있다는 사실을 모르면 여기서 멈춘다.
+  // 검수 승인 뒤에는 이 상수를 참조하는 두 자리(배너 · 레일)를 함께 지운다.
+  // 연결된 계정에는 필요 없는 안내이므로, 연결 CTA 가 보이는 자리에만 같이 보인다.
+  var GOOGLE_VERIFY_NOTE = "구글 승인 심사 중입니다. 연결 중 '확인하지 않은 앱' 경고가 보이면 [고급] → [insight.momentlabs.co.kr(안전하지 않음)으로 이동]을 눌러 계속하세요.";
 
   // 조직도는 이 표에서만 그린다. 손으로 6번 적으면 한 칸만 고쳐지는 날이 온다.
   var ASSISTANT_STATIONS = [
@@ -623,7 +630,9 @@
       //    is-primary), 배지 문구까지 그대로다. 훅 이름만 이 파일의 것이다.
       '<section class="mi-cal-banner" data-cal-gcal-banner hidden aria-label="구글 캘린더 연동">',
       '<div class="mi-cal-banner-copy"><strong>구글 캘린더</strong><small data-cal-gcal-status>' + escapeHtml(BANNER_STATUS_PENDING) + '</small>',
-      '<small data-cal-gcal-last hidden></small></div>',
+      '<small data-cal-gcal-last hidden></small>',
+      // 연결 CTA 와 같은 조건으로만 보이는 검수 안내(renderCalendarBanner 가 맞춘다).
+      '<small class="mi-cal-verify-note" data-cal-verify-note="gcal-banner" hidden>' + escapeHtml(GOOGLE_VERIFY_NOTE) + '</small></div>',
       '<div class="mi-cal-banner-actions">',
       '<span class="mi-cal-badge" data-cal-gcal-badge hidden>' + escapeHtml(BANNER_LINKED_BADGE) + '</span>',
       '<button class="mi-cal-link-button is-primary" type="button" data-cal-gcal-connect hidden>구글 캘린더 연결</button>',
@@ -1500,6 +1509,9 @@
         '<div class="mi-cal-rail-row">' +
         '<button type="button" class="mi-cal-rail-connect" data-cal-rail-connect>＋ ' + escapeHtml(RAIL_CONNECT_LABEL) + '</button>' +
         '</div>' +
+        // 이 함수는 연결 전(카탈로그가 빈 상태)에만 불린다. 그래서 검수 안내도
+        // 연결 CTA 와 정확히 같은 조건으로 나타났다 사라진다.
+        '<p class="mi-cal-verify-note" data-cal-verify-note="rail">' + escapeHtml(GOOGLE_VERIFY_NOTE) + '</p>' +
         '</div></div>';
     }
 
@@ -1804,6 +1816,7 @@
       var badge = el("[data-cal-gcal-badge]");
       var syncButton = el("[data-cal-gcal-sync]");
       var lastSyncCopy = el("[data-cal-gcal-last]");
+      var verifyNote = el('[data-cal-verify-note="gcal-banner"]');
       if (!banner || !statusCopy || !connectButton || !disconnectButton) return;
       var notice = payload ? gcalPendingNotice : "";
       if (payload) gcalPendingNotice = "";
@@ -1866,6 +1879,9 @@
         connectButton.hidden = false;
         disconnectButton.hidden = true;
       }
+      // 검수 안내는 연결 CTA 자신의 표시 조건을 그대로 따라간다. 별도 판정을 두면
+      // 연결이 끝난 계정에도 경고 안내가 남는 날이 온다.
+      if (verifyNote) verifyNote.hidden = connectButton.hidden;
       banner.hidden = false;
     }
 
@@ -4223,6 +4239,7 @@
     RAIL_CONNECT_LABEL: RAIL_CONNECT_LABEL,
     BANNER_STATUS_PENDING: BANNER_STATUS_PENDING,
     BANNER_LINKED_BADGE: BANNER_LINKED_BADGE,
+    GOOGLE_VERIFY_NOTE: GOOGLE_VERIFY_NOTE,
     parseAssistantDrafts: parseAssistantDrafts,
     goodMorningKeys: goodMorningKeys,
     shouldRunGoodMorning: shouldRunGoodMorning,

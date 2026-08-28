@@ -6173,6 +6173,19 @@
       flex-wrap: wrap;
     }
 
+    #mi-admin .mi-account-slot-quota {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--mi-muted);
+      font-weight: 800;
+    }
+
+    #mi-admin .mi-account-slot-quota .mi-quota-input {
+      width: 88px;
+      text-align: right;
+    }
+
     #mi-admin .mi-account-slot.is-empty {
       border-style: dashed;
       background: var(--mi-grey-50);
@@ -16870,6 +16883,18 @@
           escapeHtml(label) + '</span><strong>비어 있음</strong><small>' + escapeHtml(detail) + '</small></div></div>';
       }
 
+      function ownerQuotaControl(code, limit) {
+        var target = String(code || "");
+        if (!target) return "";
+        var value = (limit === null || limit === undefined) ? "" : String(limit);
+        return '<label class="mi-account-slot-quota"><span>키워드 한도</span>' +
+          '<input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="1000" step="1" ' +
+          'placeholder="기본 50" aria-label="키워드 등록 한도" value="' + escapeHtml(value) +
+          '" data-owner-quota-input="' + escapeHtml(target) + '" /></label>' +
+          '<button class="mi-button mi-button-small" type="button" data-owner-quota-save="' +
+          escapeHtml(target) + '">한도 저장</button>';
+      }
+
       function renderOwnerFullAccountView(payload) {
         var teamList = root.querySelector("[data-owner-team-full-list]");
         var clientList = root.querySelector("[data-owner-client-full-list]");
@@ -16909,7 +16934,11 @@
               return '<div class="mi-account-slot' + linkedClass + '"><span class="mi-account-slot-number">' + (index + 1) +
                 '번 운영팀</span><div class="mi-account-slot-main"><span>총관리자 ' + escapeHtml(ownerCode) + ' 아래 연결</span><strong>운영팀: ' +
                 escapeHtml(team.teamName || "운영팀") + ' · ' + escapeHtml(team.teamCode || "-") +
-                '</strong><small>광고주: ' + escapeHtml(clientText) + '</small></div><div class="mi-account-slot-actions">' + status +
+                '</strong><small>광고주: ' + escapeHtml(clientText) + '</small></div><div class="mi-account-slot-actions">' +
+                ownerQuotaControl(
+                  client ? (client.agencyCode || "") : (team.teamCode || ""),
+                  client ? client.rankKeywordLimit : team.rankKeywordLimit,
+                ) + status +
                 '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
                 escapeHtml(team.teamCode || "") + '">권한 해제</button></div></div>';
             }).join("");
@@ -16931,6 +16960,7 @@
                 '번 직접</span><div class="mi-account-slot-main"><span>총관리자 직접 발급</span><strong>광고주: ' +
                 escapeHtml(client.name || client.businessName || "광고주") + ' · ' + escapeHtml(client.agencyCode || "-") +
                 '</strong><small>' + escapeHtml(ownerClientIssuedText(client)) + '</small></div><div class="mi-account-slot-actions"><span class="mi-status-pill">활성</span>' +
+                (isOwnerClient ? '' : ownerQuotaControl(client.agencyCode || "", client.rankKeywordLimit)) +
                 action + '</div></div>';
             }).join("");
           }
@@ -19264,6 +19294,43 @@
           refreshOperationHomeStatus();
         });
       }
+      // 키워드 한도 저장 핸들러는 총관리자 계정 조작 묶음(ownerCreateButton ~ codeSaveButton)
+      // 밖에 둔다. 그 묶음은 출시 기준선이 낡은 세션 가드 호출 수를 정확히 세는 구역이라
+      // 새 핸들러가 들어가면 보안 불변식 검사가 깨진다. requestOwnerAuditLogs 와 같은 이유다.
+      root.addEventListener("click", async function (event) {
+        var button = event.target && event.target.closest ? event.target.closest("[data-owner-quota-save]") : null;
+        if (!button) return;
+        if (!button.closest("[data-owner-team-full-list], [data-owner-client-full-list]")) return;
+        if (!canManageOwnerCodes()) return;
+        var targetCode = button.getAttribute("data-owner-quota-save") || "";
+        var slot = button.closest(".mi-account-slot");
+        var input = slot ? slot.querySelector("[data-owner-quota-input]") : null;
+        var raw = input ? String(input.value || "").trim() : "";
+        var actionSession = captureAdminSession();
+        if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+        button.disabled = true;
+        setStatus(ownerStatus, targetCode + " 키워드 한도를 저장 중입니다.", "");
+        try {
+          var payload = await requestOwnerCodes("POST", {
+            action: "set-rank-keyword-limit",
+            agencyCode: targetCode,
+            rankKeywordLimit: raw === "" ? null : raw
+          });
+          if (payload.staleSession) return;
+          if (!payload.ok) throw new Error(payload.message || "키워드 한도 저장에 실패했습니다.");
+          await loadOwnerCodes(true);
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+          setStatus(ownerStatus, payload.message || "키워드 한도를 저장했습니다.", "is-ok");
+        } catch (error) {
+          if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
+          setStatus(ownerStatus, error.message || "키워드 한도 저장에 실패했습니다.", "is-warn");
+        } finally {
+          if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
+            button.disabled = false;
+          }
+        }
+      });
+
       if (codeSaveButton) {
         codeSaveButton.addEventListener("click", async function () {
           var savedState = readState();

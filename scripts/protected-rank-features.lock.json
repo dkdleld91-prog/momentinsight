@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "fb0efbec6e43cb6f31514697146e65b8eb6da4223dfe3835f65356622269845b"
+      "sha256": "a6eeec16f1ccee58d5f4bafa99d76b8dad4ca8d3e713b89848501b69bbcd8a44"
     },
     {
       "id": "product-organic-rank-server",
@@ -187,7 +187,7 @@
     {
       "id": "place-tracker-server",
       "file": "src/server/handlers/naver-place-rank-trackers.mjs",
-      "sha256": "cd3e3b1f6da55a50980a3d365e4aa28374eb83783ec11603fb434da9ed427cf1"
+      "sha256": "404b6c06fb043ef420c84b8219e80778af5cc2c0da6cff1a56ec2f0718021c9a"
     },
     {
       "id": "place-rank-cron-server",
@@ -262,6 +262,12 @@
       "id": "owner-product-rank-unlimited",
       "file": "supabase/migrations/20260626074000_primary_rank_tracker_unlimited.sql",
       "sha256": "6ec5315a1a808c164a8e44fa3f4cb7e98f2203c264e1b9e94861a30d0c796753",
+      "rankMigration": true
+    },
+    {
+      "id": "account-rank-keyword-limit",
+      "file": "supabase/migrations/20260828210000_account_rank_keyword_limit.sql",
+      "sha256": "9f76e597003bdc1b41332749615c021896ecf76cbbb6b8724a4b1419ae9e828e",
       "rankMigration": true
     },
     {

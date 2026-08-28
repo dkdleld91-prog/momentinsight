@@ -12,6 +12,13 @@ import {
 } from "../naver-shopping/source-status.mjs";
 import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import {
+  DEFAULT_RANK_KEYWORD_LIMIT,
+  RANK_KEYWORD_LIMIT_CODE,
+  isRankKeywordLimitDbError,
+  rankKeywordLimitMessage,
+  resolveRankKeywordLimit,
+} from "../rank-keyword-limit.mjs";
+import {
   classifyNaverProductType,
   extractProductId,
   findShoppingRank,
@@ -1596,6 +1603,17 @@ async function createTracker(request, ctx, body, access = {}) {
   const pausedData = registrationMatches.find((row) => row.status === "paused");
   if (pausedData) {
     let { data: reactivatedData, error: reactivationError } = await reactivatePausedTracker(ctx, agencyCode, pausedData);
+    if (isRankKeywordLimitDbError(reactivationError)) {
+      // DB 최후 방어선(trg_naver_rank_tracker_limit)이 막은 경우다. 일시중지 추적을
+      // 다시 켜는 것도 활성 1건이 늘어나므로 등록 실패와 같은 안내를 보여준다.
+      const reachedLimit = (await resolveRankKeywordLimit(ctx, agencyCode)).limit;
+      return json(request, {
+        ok: false,
+        code: RANK_KEYWORD_LIMIT_CODE,
+        message: rankKeywordLimitMessage(reachedLimit, "product"),
+        limit: reachedLimit,
+      }, 403);
+    }
     if (reactivationError && reactivationError.code !== "23505") throw reactivationError;
     const reactivatedByRequest = Boolean(reactivatedData);
 
@@ -1645,11 +1663,17 @@ async function createTracker(request, ctx, body, access = {}) {
     .eq("status", "active");
   if (activeCountResult.error) throw activeCountResult.error;
   const unlimitedOwner = Boolean(access.admin && isPrimaryAgencyCode(agencyCode));
-  if (!unlimitedOwner && Number(activeCountResult.count || 0) >= 50) {
+  // 총관리자가 계정별로 지정한 한도를 읽는다. 컬럼이 없는 DB(마이그레이션 적용 전)
+  // 에서는 기본값 50 으로 떨어져 오늘과 같은 동작을 유지한다.
+  const keywordLimit = unlimitedOwner
+    ? DEFAULT_RANK_KEYWORD_LIMIT
+    : (await resolveRankKeywordLimit(ctx, agencyCode)).limit;
+  if (!unlimitedOwner && Number(activeCountResult.count || 0) >= keywordLimit) {
     return json(request, {
       ok: false,
-      message: "순위 추적은 광고주 코드당 최대 50개까지만 등록할 수 있습니다.",
-      limit: 50,
+      code: RANK_KEYWORD_LIMIT_CODE,
+      message: rankKeywordLimitMessage(keywordLimit, "product"),
+      limit: keywordLimit,
       count: activeCountResult.count || 0,
     }, 403);
   }
@@ -1688,6 +1712,15 @@ async function createTracker(request, ctx, body, access = {}) {
     .select(TRACKER_SELECT)
     .single();
 
+  if (isRankKeywordLimitDbError(error)) {
+    return json(request, {
+      ok: false,
+      code: RANK_KEYWORD_LIMIT_CODE,
+      message: rankKeywordLimitMessage(keywordLimit, "product"),
+      limit: keywordLimit,
+      count: Number(activeCountResult.count || 0),
+    }, 403);
+  }
   if (error) throw error;
 
   await updateTrackerGroupName(ctx, data.id, agencyCode, groupName);

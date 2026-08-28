@@ -269,3 +269,66 @@ test("admin.html 에 새 색상 리터럴이 늘지 않았다", () => {
   const added = [...current].filter((value) => !head.has(value));
   assert.deepEqual(added, [], `새 색상 리터럴이 추가됨: ${added.join(", ")}`);
 });
+
+// ─────────────────────────────────────────────────────────────
+// 계정별 키워드 등록 한도(총관리자 콘솔)
+// ─────────────────────────────────────────────────────────────
+const ownerFullAccountSource = adminBlock(
+  "function renderOwnerFullAccountView(payload) {",
+  "function renderOwnerCodeList(payload) {",
+);
+const ownerQuotaControlSource = adminBlock(
+  "function ownerQuotaControl(code, limit) {",
+  "function renderOwnerFullAccountView(payload) {",
+);
+const ownerQuotaActionSource = adminBlock(
+  '"[data-owner-quota-save]"',
+  "if (codeSaveButton) {",
+);
+
+test("활성 계정 전체보기의 두 목록 모두에 키워드 한도 입력칸이 붙는다", () => {
+  assert.ok(ownerQuotaControlSource.includes("data-owner-quota-input"));
+  assert.ok(ownerQuotaControlSource.includes("data-owner-quota-save"));
+  // 값은 언제나 escapeHtml 을 거쳐 마크업으로 들어간다.
+  assert.ok(ownerQuotaControlSource.includes('escapeHtml(target) + \'">한도 저장</button>'));
+  assert.ok(ownerQuotaControlSource.includes('data-owner-quota-input="\' + escapeHtml(target)'));
+  assert.ok(ownerQuotaControlSource.includes("escapeHtml(value)"));
+  // 지정하지 않은 계정은 빈 칸에 "기본 50" 안내만 보인다.
+  assert.ok(ownerQuotaControlSource.includes('placeholder="기본 50"'));
+  // 서버 상수 MAX_RANK_KEYWORD_LIMIT 과 같은 숫자를 입력칸에도 건다.
+  assert.ok(ownerQuotaControlSource.includes('max="1000"'));
+
+  // 운영팀 슬롯: 광고주가 붙어 있으면 광고주 코드, 아니면 운영팀 코드가 한도 단위다.
+  assert.ok(ownerFullAccountSource.includes("client ? (client.agencyCode || \"\") : (team.teamCode || \"\")"));
+  assert.ok(ownerFullAccountSource.includes("client ? client.rankKeywordLimit : team.rankKeywordLimit"));
+  // 직접 광고주 슬롯: 총관리자 자신의 보호 행에는 입력칸을 달지 않는다.
+  assert.ok(ownerFullAccountSource.includes("(isOwnerClient ? '' : ownerQuotaControl(client.agencyCode || \"\", client.rankKeywordLimit))"));
+  assert.equal((ownerFullAccountSource.match(/ownerQuotaControl\(/g) || []).length, 2);
+});
+
+test("한도 저장은 새 API 경로 없이 기존 총관리자 코드 요청을 그대로 쓴다", () => {
+  assert.ok(ownerQuotaActionSource.includes('action: "set-rank-keyword-limit"'));
+  assert.ok(ownerQuotaActionSource.includes('requestOwnerCodes("POST"'));
+  assert.ok(ownerQuotaActionSource.includes("canManageOwnerCodes()"));
+  assert.ok(ownerQuotaActionSource.includes("if (payload.staleSession) return;"));
+  assert.ok(ownerQuotaActionSource.includes("loadOwnerCodes(true)"));
+  // 새 /api 진입점을 만들지 않는다(Vercel 함수 12개 한도).
+  assert.ok(!ownerQuotaActionSource.includes("miFetch("));
+  // 빈 칸은 "기본값으로 되돌린다"는 뜻이라 null 로 보낸다.
+  assert.ok(ownerQuotaActionSource.includes('rankKeywordLimit: raw === "" ? null : raw'));
+});
+
+test("한도 저장 핸들러는 세션 가드 호출 수를 세는 묶음 밖에 둔다", () => {
+  // adminAccountActionSource(ownerCreateButton ~ codeSaveButton) 안에 들어가면
+  // 출시 기준선의 정확한 개수 검사가 깨진다.
+  assert.ok(
+    adminSource.indexOf('"[data-owner-quota-save]"') >
+      adminSource.indexOf('var codeSaveButton = root.querySelector("[data-admin-code-save]");'),
+  );
+});
+
+test("키워드 한도 조작은 광고주 화면으로 새어 나가지 않는다", () => {
+  assert.ok(!clientSource.includes("data-owner-quota-save"));
+  assert.ok(!clientSource.includes("data-owner-quota-input"));
+  assert.ok(!clientSource.includes("set-rank-keyword-limit"));
+});

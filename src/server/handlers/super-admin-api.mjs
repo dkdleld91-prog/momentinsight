@@ -1,6 +1,11 @@
 import { withSupabase } from "@supabase/server";
 import { sanitizeAuditMetadata } from "../audit-security.mjs";
 import { corsHeaders, isLocalRequest, protectedJson, safeEqual } from "../security.mjs";
+import {
+  DEFAULT_RANK_KEYWORD_LIMIT,
+  isMissingRankKeywordLimitSchema,
+  parseRankKeywordLimitInput,
+} from "../rank-keyword-limit.mjs";
 
 function boundedInteger(value, fallback, minimum, maximum) {
   if (value === undefined || value === null || String(value).trim() === "") return fallback;
@@ -50,6 +55,8 @@ const AUDIT_ACTION_LABELS = new Map([
   ["operation_team.reactivated", "운영팀 재활성화"],
   ["operation_team.revoked", "운영팀 권한 해제"],
   ["operation_team.client_disconnected", "운영팀 광고주 연결 해제"],
+  ["client.rank_keyword_limit_updated", "광고주 키워드 한도 변경"],
+  ["team.rank_keyword_limit_updated", "운영팀 키워드 한도 변경"],
   ["google_calendar_connected", "구글 캘린더 연결"],
   ["google_calendar_sync_failed", "구글 캘린더 동기화 실패"],
   ["google_calendar_catalog_refresh_failed", "구글 캘린더 목록 새로고침 실패"],
@@ -247,6 +254,7 @@ function clientPayload(row) {
     issuedByTeamCode: row.issued_by_team_code,
     disconnectedAt: row.disconnected_at,
     publicSummary: row.public_summary,
+    rankKeywordLimit: row.rank_keyword_limit ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -262,6 +270,7 @@ function teamPayload(row) {
     status: row.status,
     clientId: row.client_id,
     client: client ? clientPayload(client) : null,
+    rankKeywordLimit: row.rank_keyword_limit ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     revokedAt: row.revoked_at,
@@ -269,7 +278,13 @@ function teamPayload(row) {
 }
 
 function isMissingTeamSchema(error) {
-  return /operation_team_codes|issued_by_team_code|disconnected_at|schema cache|does not exist/i.test(error?.message || "");
+  return /operation_team_codes|issued_by_team_code|disconnected_at|rank_keyword_limit|schema cache|does not exist/i.test(error?.message || "");
+}
+
+// 열 사다리에서 "그 열이 아직 없다" 를 가린다. 지금까지 폴백하던 경우를 하나도
+// 좁히지 않으려고 두 판정을 함께 본다(메시지 문구 + PostgREST 오류 코드).
+function isMissingClientSchema(error) {
+  return isMissingTeamSchema(error) || isMissingRankKeywordLimitSchema(error);
 }
 
 async function recordAuditLog(ctx, payload) {
@@ -316,21 +331,56 @@ async function attachTeamClient(ctx, team) {
   return { team: { ...team, clients: client } };
 }
 
+// 키워드 한도 기능 이전부터 운영 DB 에 이미 있던 전체 열.
+const CLIENT_LEGACY_FULL_SELECT = "id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at";
+// 위에 이번 기능의 열 하나를 얹은 것.
+const CLIENT_FULL_SELECT = `${CLIENT_LEGACY_FULL_SELECT}, rank_keyword_limit`;
+// 운영팀 열조차 없던 아주 오래된 DB 를 위한 최소 열(마지막 수단).
+const CLIENT_BASE_SELECT = "id, name, business_name, agency_code, status, public_summary, created_at, updated_at";
+
 async function selectClients(ctx) {
-  const fullSelect = "id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at";
-  const baseSelect = "id, name, business_name, agency_code, status, public_summary, created_at, updated_at";
-  let result = await ctx.supabaseAdmin
+  const query = (columns) => ctx.supabaseAdmin
     .from("clients")
-    .select(fullSelect)
+    .select(columns)
     .neq("status", "archived")
+    .order("created_at", { ascending: true })
+    .limit(100);
+
+  let result = await query(CLIENT_FULL_SELECT);
+  if (!result.error || !isMissingClientSchema(result.error)) return result;
+
+  // 가운데 단이 있는 이유: 배포가 마이그레이션보다 먼저 나가면 rank_keyword_limit
+  // 하나만 없다. 이때 곧바로 최소 열로 내려가면 운영 DB 에 이미 있는
+  // issued_by_team_code / disconnected_at 까지 같이 떨어져, 총관리자 화면이
+  // 운영팀 발급 광고주를 '직접 발급' 으로 잘못 표시한다. 한 단 걸쳐서 그 열들을
+  // 지키고 한도만 null 로 비운다.
+  result = await query(CLIENT_LEGACY_FULL_SELECT);
+  if (!result.error) {
+    result.schemaPending = true;
+    return result;
+  }
+  if (!isMissingClientSchema(result.error)) return result;
+
+  result = await query(CLIENT_BASE_SELECT);
+  if (!result.error) result.schemaPending = true;
+  return result;
+}
+
+async function selectTeams(ctx) {
+  const baseSelect = "id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at";
+  const fullSelect = `${baseSelect}, rank_keyword_limit`;
+  let result = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .select(fullSelect)
+    .eq("owner_agency_code", primaryAgencyCode())
     .order("created_at", { ascending: true })
     .limit(100);
 
   if (result.error && isMissingTeamSchema(result.error)) {
     result = await ctx.supabaseAdmin
-      .from("clients")
+      .from("operation_team_codes")
       .select(baseSelect)
-      .neq("status", "archived")
+      .eq("owner_agency_code", primaryAgencyCode())
       .order("created_at", { ascending: true })
       .limit(100);
     if (!result.error) result.schemaPending = true;
@@ -403,12 +453,7 @@ async function listClients(request, ctx) {
     return json(request, { ok: false, message: "광고주 코드 목록 조회에 실패했습니다.", detail: clientsResult.error.message }, 500);
   }
 
-  const teamsResult = await ctx.supabaseAdmin
-    .from("operation_team_codes")
-    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
-    .eq("owner_agency_code", primaryAgencyCode())
-    .order("created_at", { ascending: true })
-    .limit(100);
+  const teamsResult = await selectTeams(ctx);
 
   if (teamsResult.error) {
     if (isMissingTeamSchema(teamsResult.error)) {
@@ -426,7 +471,7 @@ async function listClients(request, ctx) {
 
   return json(request, {
     ok: true,
-    schemaPending: Boolean(clientsResult.schemaPending),
+    schemaPending: Boolean(clientsResult.schemaPending || teamsResult.schemaPending),
     ownerAgencyCode: primaryAgencyCode(),
     health: await loadOwnerHealth(ctx),
     teams: (teamsResult.data || []).map((team) => ({
@@ -861,6 +906,86 @@ async function revokeTeam(request, ctx, body) {
     });
   }
 
+async function setRankKeywordLimit(request, ctx, body) {
+  const agencyCode = normalizeAgencyCode(
+    body.agencyCode || body.agency_code || body.code || body.teamCode || body.team_code,
+  );
+  if (!agencyCode) return json(request, { ok: false, message: "한도를 지정할 코드를 입력해주세요." }, 400);
+  if (agencyCode === primaryAgencyCode()) {
+    return json(request, { ok: false, message: "총관리자 코드는 한도 없이 사용합니다." }, 400);
+  }
+
+  const parsed = parseRankKeywordLimitInput(
+    body.rankKeywordLimit !== undefined ? body.rankKeywordLimit : body.rank_keyword_limit,
+  );
+  if (!parsed.ok) return json(request, { ok: false, message: parsed.message }, 400);
+
+  const savedMessage = parsed.limit === null
+    ? `키워드 한도를 기본값 ${DEFAULT_RANK_KEYWORD_LIMIT}개로 되돌렸습니다.`
+    : `키워드 한도를 ${parsed.limit}개로 저장했습니다.`;
+  const schemaPending = () => json(request, {
+    ok: false,
+    code: "RANK_KEYWORD_LIMIT_SCHEMA_PENDING",
+    schemaPending: true,
+    message: "키워드 한도 DB 마이그레이션 적용 전입니다. 마이그레이션을 적용한 뒤 다시 시도해주세요.",
+  }, 409);
+
+  const clientUpdate = await ctx.supabaseAdmin
+    .from("clients")
+    .update({ rank_keyword_limit: parsed.limit })
+    .eq("agency_code", agencyCode)
+    .select("id, name, business_name, agency_code, status, issued_by_team_code, disconnected_at, public_summary, created_at, updated_at, rank_keyword_limit")
+    .maybeSingle();
+
+  if (clientUpdate.error) {
+    if (isMissingRankKeywordLimitSchema(clientUpdate.error)) return schemaPending();
+    return json(request, { ok: false, message: "키워드 한도 저장에 실패했습니다.", detail: clientUpdate.error.message }, 500);
+  }
+
+  if (clientUpdate.data) {
+    const auditLogged = await recordAuditLog(ctx, {
+      action: "client.rank_keyword_limit_updated",
+      clientId: clientUpdate.data.id,
+      targetTable: "clients",
+      targetId: clientUpdate.data.id,
+      metadata: {
+        source: "super-admin-api",
+        agencyCode: clientUpdate.data.agency_code,
+        rankKeywordLimit: parsed.limit === null ? "default" : String(parsed.limit),
+      },
+    });
+    return json(request, { ok: true, message: savedMessage, client: clientPayload(clientUpdate.data), auditLogged });
+  }
+
+  const teamUpdate = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .update({ rank_keyword_limit: parsed.limit })
+    .eq("team_code", agencyCode)
+    .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at, rank_keyword_limit")
+    .maybeSingle();
+
+  if (teamUpdate.error) {
+    if (isMissingRankKeywordLimitSchema(teamUpdate.error)) return schemaPending();
+    return json(request, { ok: false, message: "키워드 한도 저장에 실패했습니다.", detail: teamUpdate.error.message }, 500);
+  }
+  if (!teamUpdate.data) {
+    return json(request, { ok: false, message: "등록된 광고주 코드나 운영팀 코드를 찾을 수 없습니다." }, 404);
+  }
+
+  const auditLogged = await recordAuditLog(ctx, {
+    action: "team.rank_keyword_limit_updated",
+    clientId: teamUpdate.data.client_id || null,
+    targetTable: "operation_team_codes",
+    targetId: teamUpdate.data.id,
+    metadata: {
+      source: "super-admin-api",
+      teamCode: teamUpdate.data.team_code,
+      rankKeywordLimit: parsed.limit === null ? "default" : String(parsed.limit),
+    },
+  });
+  return json(request, { ok: true, message: savedMessage, team: teamPayload({ ...teamUpdate.data, clients: null }), auditLogged });
+}
+
 async function revokeClient(request, ctx, body) {
   const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
   if (!agencyCode) return json(request, { ok: false, message: "권한 해제할 광고주 코드를 입력해주세요." }, 400);
@@ -957,12 +1082,13 @@ export default {
     }
     if (request.method === "POST") {
       const action = String(body.action || "create-team").trim();
-      if (["create-team", "create-client", "revoke-team", "revoke-client"].includes(action)) {
+      if (["create-team", "create-client", "revoke-team", "revoke-client", "set-rank-keyword-limit"].includes(action)) {
         const ownerAuth = ownerActionAuthorized(request, body);
         if (!ownerAuth.ok) return json(request, { ok: false, message: ownerAuth.message }, ownerAuth.status);
         if (action === "create-team") return createTeam(request, ctx, body);
         if (action === "create-client") return createClient(request, ctx, body);
         if (action === "revoke-team") return revokeTeam(request, ctx, body);
+        if (action === "set-rank-keyword-limit") return setRankKeywordLimit(request, ctx, body);
         return revokeClient(request, ctx, body);
       }
       if (isTeamPath && action === "validate-team") return validateTeam(request, ctx, body);

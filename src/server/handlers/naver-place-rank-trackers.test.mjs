@@ -1975,3 +1975,186 @@ test("processes multiple due place trackers up to the requested batch limit", as
     else process.env.NAVER_PLACE_RANK_API_KEY = previousProviderKey;
   }
 });
+
+// ─────────────────────────────────────────────────────────────
+// 계정별 플레이스 키워드 등록 한도
+//
+// 상품 목록과 플레이스 목록은 각각 따로 한도를 센다(오늘의 50/50 과 같은 모양).
+// 플레이스 표에는 한도 트리거가 없으므로 서버(JS)만이 막는다.
+// ─────────────────────────────────────────────────────────────
+const PLACE_QUOTA_AGENCY_CODE = "mml93-a07";
+
+function placeQuotaTrackerRows(count, agencyCode = PLACE_QUOTA_AGENCY_CODE) {
+  return Array.from({ length: count }, (_unused, index) => ({
+    id: `quota-tracker-${index + 1}`,
+    agency_code: agencyCode,
+    keyword: `한도 키워드 ${index + 1}`,
+    place_id: String(1000000000 + index),
+    place_url: `https://map.naver.com/p/entry/place/${1000000000 + index}`,
+    status: "active",
+  }));
+}
+
+async function placeQuotaCreate(ctx, agencyCode = PLACE_QUOTA_AGENCY_CODE) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(null, { status: 200, headers: { "content-type": "text/plain" } });
+  try {
+    const targetRequest = agencyCode === AGENCY_CODE
+      ? request("POST", {
+        action: "create",
+        keyword: "한도 시험 키워드",
+        placeUrl: "https://map.naver.com/p/entry/place/2222222222",
+      })
+      : clientRequest("POST", {
+        action: "create",
+        keyword: "한도 시험 키워드",
+        placeUrl: "https://map.naver.com/p/entry/place/2222222222",
+      }, { agencyCode });
+    return await payload(await handlePlaceRankTrackersRequest(targetRequest, ctx));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test("총관리자가 지정한 플레이스 한도를 다 쓰면 플레이스 전용 안내가 나간다", async () => {
+  const { ctx } = testContext(placeQuotaTrackerRows(100), {
+    clients: [{
+      id: "client-quota",
+      agency_code: PLACE_QUOTA_AGENCY_CODE,
+      status: "active",
+      disconnected_at: null,
+      rank_keyword_limit: 100,
+    }],
+  });
+  const { status, body } = await placeQuotaCreate(ctx);
+  assert.equal(status, 403);
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "PLACE_RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 100);
+  assert.equal(body.count, 100);
+  assert.ok(body.message.includes("플레이스"));
+  assert.equal(
+    body.message,
+    "플레이스 키워드 등록 한도 100개를 모두 사용했습니다. 한도 상향이 필요하시면 관리자에게 문의해주세요.",
+  );
+});
+
+test("한도를 올려 준 플레이스 계정은 옛 50 벽을 넘어 계속 등록할 수 있다", async () => {
+  const { ctx } = testContext(placeQuotaTrackerRows(60), {
+    clients: [{
+      id: "client-quota",
+      agency_code: PLACE_QUOTA_AGENCY_CODE,
+      status: "active",
+      disconnected_at: null,
+      rank_keyword_limit: 100,
+    }],
+  });
+  const { status, body } = await placeQuotaCreate(ctx);
+  // 옛 하드코딩 50 이었다면 60건째에서 403 이었다. 이제는 한도 검사를 통과해
+  // 실제 등록 경로로 넘어간다.
+  assert.equal(status, 201);
+  assert.ok(body.tracker, "한도를 통과하면 실제 추적 행이 생긴다");
+  assert.equal(body.code, undefined);
+});
+
+test("플레이스 한도 컬럼이 없는 DB 에서는 예전과 똑같이 50 에서 막힌다", async () => {
+  const { ctx } = testContext(placeQuotaTrackerRows(50), {
+    clients: [{
+      id: "client-quota",
+      agency_code: PLACE_QUOTA_AGENCY_CODE,
+      status: "active",
+      disconnected_at: null,
+    }],
+  });
+  const { status, body } = await placeQuotaCreate(ctx);
+  assert.equal(status, 403);
+  assert.equal(body.limit, 50);
+  assert.equal(body.code, "PLACE_RANK_KEYWORD_LIMIT_REACHED");
+});
+
+test("총관리자 코드의 플레이스 등록은 한도와 무관하게 계속 열려 있다", async () => {
+  const { ctx } = testContext(placeQuotaTrackerRows(500, AGENCY_CODE), {
+    clients: [{ id: "client-owner", agency_code: AGENCY_CODE, status: "active", disconnected_at: null, rank_keyword_limit: 60 }],
+  });
+  const { status, body } = await placeQuotaCreate(ctx, AGENCY_CODE);
+  // 지정된 한도(60)보다 훨씬 많은 500건이 있어도 총관리자는 막히지 않는다.
+  assert.equal(status, 201);
+  assert.equal(body.code, undefined);
+  assert.equal(body.limit, undefined);
+});
+
+// 한도를 현재 활성 개수보다 낮게 내려 잡은 계정.
+//
+// 한도는 '새로 활성이 되는 순간'에만 걸리는 문이다. 이미 활성인 12건은 그대로 돌고,
+// 새 등록만 막혀야 한다. 갱신(updateTrackerAfterCheck)은 status 를 매번 다시 써넣는데
+// 그 칼럼이 상품 표 트리거의 감시 대상이라, 서버·DB 양쪽 다 전환일 때만 세야 한다.
+function overQuotaPlaceCollectorContext(rows, clients) {
+  const base = testContext(rows, { clients });
+  base.state.quotaLookups = [];
+  return {
+    state: base.state,
+    ctx: {
+      supabaseAdmin: {
+        from(table) {
+          if (table === CLIENTS || table === "operation_team_codes") {
+            base.state.quotaLookups.push(table);
+            throw new Error(`수집 갱신 경로가 한도 표(${table})를 조회했다`);
+          }
+          return base.ctx.supabaseAdmin.from(table);
+        },
+        rpc(name, params) { return base.ctx.supabaseAdmin.rpc(name, params); },
+      },
+    },
+  };
+}
+
+const PLACE_OVER_QUOTA_CLIENT = {
+  id: "client-quota",
+  agency_code: PLACE_QUOTA_AGENCY_CODE,
+  status: "active",
+  disconnected_at: null,
+  rank_keyword_limit: 10,
+};
+
+test("한도를 내려 잡아도 이미 활성인 플레이스 추적의 수집 갱신은 그대로 성공한다", async () => {
+  const { ctx, state } = overQuotaPlaceCollectorContext(
+    placeQuotaTrackerRows(12).map((row, index) => (index === 0
+      ? { ...row, current_rank: 7, best_rank: 5, worst_rank: 19, check_count: 4, found_count: 3 }
+      : row)),
+    [PLACE_OVER_QUOTA_CLIENT],
+  );
+  const target = { ...state.tables[TRACKERS][0] };
+
+  const result = await withExternalProvider(
+    async () => new Response(JSON.stringify({
+      ok: true,
+      matched: true,
+      rank: 7,
+      checkedCount: 300,
+      total: 300,
+      complete: true,
+      place: { id: target.place_id, name: target.place_name },
+      source: "naver_map_pc_list_collector",
+      rankEvidence: "naver_pc_organic_list",
+    }), { status: 200, headers: { "content-type": "application/json" } }),
+    () => runPlaceTrackerCheck(ctx, target),
+  );
+
+  assert.equal(result.ok, true);
+  // 갱신 경로는 한도를 조회하지도 않는다. 조회했다면 위 컨텍스트가 던져서 ok 가 false 다.
+  assert.deepEqual(state.quotaLookups, []);
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+  assert.equal(state.tables[TRACKERS][0].status, "active");
+  assert.equal(state.tables[TRACKERS][0].current_rank, 7);
+  assert.equal(state.tables[TRACKERS][0].check_count, 5);
+});
+
+test("한도를 내려 잡은 같은 계정에서 새 플레이스 키워드 등록만 403 으로 막힌다", async () => {
+  const { ctx } = testContext(placeQuotaTrackerRows(12), { clients: [PLACE_OVER_QUOTA_CLIENT] });
+  const { status, body } = await placeQuotaCreate(ctx);
+  assert.equal(status, 403);
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "PLACE_RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 10);
+  assert.equal(body.count, 12);
+});

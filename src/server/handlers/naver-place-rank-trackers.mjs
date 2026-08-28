@@ -10,6 +10,12 @@ import {
   naverSearchRequest,
   resolveNaverApiTransport,
 } from "../naver-api-hub.mjs";
+import {
+  DEFAULT_RANK_KEYWORD_LIMIT,
+  PLACE_RANK_KEYWORD_LIMIT_CODE,
+  rankKeywordLimitMessage,
+  resolveRankKeywordLimit,
+} from "../rank-keyword-limit.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 const MAX_CRON_BATCH = 10;
@@ -1756,11 +1762,17 @@ async function createTracker(request, ctx, body, access = {}) {
     .eq("status", "active");
   if (activeCountResult.error) throw activeCountResult.error;
   const unlimitedOwner = Boolean(access.admin && isPrimaryAgencyCode(agencyCode));
-  if (!unlimitedOwner && Number(activeCountResult.count || 0) >= 50) {
+  // 총관리자가 계정별로 지정한 한도를 읽는다. 컬럼이 없는 DB(마이그레이션 적용 전)
+  // 에서는 기본값 50 으로 떨어져 오늘과 같은 동작을 유지한다.
+  const keywordLimit = unlimitedOwner
+    ? DEFAULT_RANK_KEYWORD_LIMIT
+    : (await resolveRankKeywordLimit(ctx, agencyCode)).limit;
+  if (!unlimitedOwner && Number(activeCountResult.count || 0) >= keywordLimit) {
     return json(request, {
       ok: false,
-      message: "플레이스 순위 추적은 광고주 코드당 최대 50개까지만 등록할 수 있습니다.",
-      limit: 50,
+      code: PLACE_RANK_KEYWORD_LIMIT_CODE,
+      message: rankKeywordLimitMessage(keywordLimit, "place"),
+      limit: keywordLimit,
       count: activeCountResult.count || 0,
     }, 403);
   }

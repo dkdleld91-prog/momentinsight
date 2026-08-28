@@ -464,3 +464,342 @@ test("운영 이력은 총관리자 코드가 어긋나면 조회 전에 막힌�
   // 거절된 요청은 audit_logs 를 한 번도 건드리지 않는다.
   assert.equal(stub.queries.length, 0);
 });
+
+// ─────────────────────────────────────────────────────────────
+// 계정별 키워드 등록 한도 설정 (총관리자 전용)
+// ─────────────────────────────────────────────────────────────
+function rankKeywordLimitStub(options = {}) {
+  const calls = [];
+  const impl = async (input, init = {}) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    const url = new URL(rawUrl);
+    const method = String(init.method || "GET").toUpperCase();
+    const bodyText = init.body ? String(init.body) : "";
+    calls.push({ pathname: url.pathname, method, searchParams: url.searchParams, body: bodyText ? JSON.parse(bodyText) : null });
+
+    if (url.pathname === "/rest/v1/audit_logs") return Response.json([], { status: 201 });
+    if (url.pathname === "/rest/v1/clients") {
+      if (options.clientError) {
+        return Response.json(options.clientError, { status: options.clientErrorStatus || 400 });
+      }
+      return Response.json(options.clientRows || []);
+    }
+    if (url.pathname === "/rest/v1/operation_team_codes") {
+      if (options.teamError) {
+        return Response.json(options.teamError, { status: options.teamErrorStatus || 400 });
+      }
+      return Response.json(options.teamRows || []);
+    }
+    throw new Error(`unexpected fetch: ${rawUrl}`);
+  };
+  return { calls, impl };
+}
+
+function rankKeywordLimitRequest(body, headers = {
+  "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+  "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+}) {
+  return new Request(SUPER_ADMIN_API_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify({ action: "set-rank-keyword-limit", ...body }),
+  });
+}
+
+async function setRankKeywordLimit(body, options = {}, headers) {
+  const stub = rankKeywordLimitStub(options);
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(rankKeywordLimitRequest(body, headers)),
+  ));
+  return { stub, response, payload: await response.json() };
+}
+
+const QUOTA_CLIENT_ROW = {
+  id: "client-quota-1",
+  name: "한도 시험 광고주",
+  business_name: "한도 시험",
+  agency_code: "mml93-c07",
+  status: "active",
+  issued_by_team_code: null,
+  disconnected_at: null,
+  public_summary: null,
+  created_at: "2026-08-01T00:00:00.000Z",
+  updated_at: "2026-08-28T00:00:00.000Z",
+  rank_keyword_limit: 200,
+};
+
+test("키워드 한도 설정은 총관리자 코드 없이는 손도 못 댄다", async () => {
+  const missingCode = await setRankKeywordLimit(
+    { agencyCode: "mml93-c07", rankKeywordLimit: 200 },
+    { clientRows: [QUOTA_CLIENT_ROW] },
+    { "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE },
+  );
+  assert.equal(missingCode.response.status, 401);
+  assert.equal(missingCode.stub.calls.length, 0);
+
+  // 총관리자 코드는 맞지만 총관리자 대행사가 아니면 여기서 끝난다.
+  const nonOwner = await setRankKeywordLimit(
+    { agencyCode: "mml93-c07", rankKeywordLimit: 200 },
+    { clientRows: [QUOTA_CLIENT_ROW] },
+    { "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE, "x-mi-owner-agency-code": "mml93-c07" },
+  );
+  assert.equal(nonOwner.response.status, 403);
+  assert.equal(nonOwner.stub.calls.length, 0);
+});
+
+test("총관리자 코드 자신에게는 한도를 매기지 않는다", async () => {
+  const result = await setRankKeywordLimit({ agencyCode: OWNER_AGENCY_TEST_CODE, rankKeywordLimit: 10 });
+  assert.equal(result.response.status, 400);
+  assert.equal(result.payload.message, "총관리자 코드는 한도 없이 사용합니다.");
+  assert.equal(result.stub.calls.length, 0);
+
+  const missingTarget = await setRankKeywordLimit({ rankKeywordLimit: 10 });
+  assert.equal(missingTarget.response.status, 400);
+  assert.equal(missingTarget.payload.message, "한도를 지정할 코드를 입력해주세요.");
+});
+
+test("범위를 벗어난 한도는 저장 전에 되돌려 보낸다", async () => {
+  for (const bad of [1001, 0, -1, "열개"]) {
+    const result = await setRankKeywordLimit({ agencyCode: "mml93-c07", rankKeywordLimit: bad });
+    assert.equal(result.response.status, 400, String(bad));
+    assert.equal(result.payload.message, "키워드 한도는 1~1000 사이 숫자로 입력해주세요.");
+    assert.equal(result.stub.calls.length, 0);
+  }
+});
+
+test("광고주 코드의 한도를 저장하면 계정 목록과 운영 이력에 함께 남는다", async () => {
+  const result = await setRankKeywordLimit(
+    { agencyCode: "mml93-c07", rankKeywordLimit: 200 },
+    { clientRows: [QUOTA_CLIENT_ROW] },
+  );
+  assert.equal(result.response.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.message, "키워드 한도를 200개로 저장했습니다.");
+  assert.equal(result.payload.client.rankKeywordLimit, 200);
+  assert.equal(result.payload.auditLogged, true);
+
+  const update = result.stub.calls.find((call) => call.pathname === "/rest/v1/clients");
+  assert.equal(update.method, "PATCH");
+  assert.deepEqual(update.body, { rank_keyword_limit: 200 });
+  assert.equal(update.searchParams.get("agency_code"), "eq.mml93-c07");
+
+  const audit = result.stub.calls.find((call) => call.pathname === "/rest/v1/audit_logs");
+  assert.equal(audit.body.action, "client.rank_keyword_limit_updated");
+  assert.equal(audit.body.target_table, "clients");
+  assert.equal(auditActionLabel("client.rank_keyword_limit_updated"), "광고주 키워드 한도 변경");
+  assert.equal(auditActionLabel("team.rank_keyword_limit_updated"), "운영팀 키워드 한도 변경");
+});
+
+test("빈 값은 기본값 50 으로 되돌리는 뜻이라 컬럼을 비운다", async () => {
+  for (const blank of ["", null]) {
+    const result = await setRankKeywordLimit(
+      { agencyCode: "mml93-c07", rankKeywordLimit: blank },
+      { clientRows: [{ ...QUOTA_CLIENT_ROW, rank_keyword_limit: null }] },
+    );
+    assert.equal(result.response.status, 200);
+    assert.equal(result.payload.message, "키워드 한도를 기본값 50개로 되돌렸습니다.");
+    assert.equal(result.payload.client.rankKeywordLimit, null);
+    const update = result.stub.calls.find((call) => call.pathname === "/rest/v1/clients");
+    assert.deepEqual(update.body, { rank_keyword_limit: null });
+  }
+});
+
+test("광고주 행이 없으면 운영팀 코드를 보고, 그것도 없으면 404 다", async () => {
+  const teamRow = {
+    id: "team-quota-1",
+    owner_agency_code: OWNER_AGENCY_TEST_CODE,
+    team_name: "운영팀",
+    team_code: "mml93-t02",
+    status: "active",
+    client_id: null,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-28T00:00:00.000Z",
+    revoked_at: null,
+    rank_keyword_limit: 300,
+  };
+  const team = await setRankKeywordLimit(
+    { teamCode: "mml93-t02", rankKeywordLimit: 300 },
+    { clientRows: [], teamRows: [teamRow] },
+  );
+  assert.equal(team.response.status, 200);
+  assert.equal(team.payload.team.rankKeywordLimit, 300);
+  assert.equal(team.payload.team.client, null);
+  const teamAudit = team.stub.calls.find((call) => call.pathname === "/rest/v1/audit_logs");
+  assert.equal(teamAudit.body.action, "team.rank_keyword_limit_updated");
+  assert.equal(teamAudit.body.target_table, "operation_team_codes");
+
+  const unknown = await setRankKeywordLimit(
+    { agencyCode: "mml93-x99", rankKeywordLimit: 100 },
+    { clientRows: [], teamRows: [] },
+  );
+  assert.equal(unknown.response.status, 404);
+  assert.equal(unknown.payload.message, "등록된 광고주 코드나 운영팀 코드를 찾을 수 없습니다.");
+});
+
+test("컬럼이 아직 없는 DB 에서는 500 이 아니라 마이그레이션 대기라고 솔직히 알린다", async () => {
+  const result = await setRankKeywordLimit(
+    { agencyCode: "mml93-c07", rankKeywordLimit: 200 },
+    {
+      clientError: { code: "PGRST204", message: "Could not find the 'rank_keyword_limit' column of 'clients' in the schema cache" },
+      clientErrorStatus: 400,
+    },
+  );
+  assert.equal(result.response.status, 409);
+  assert.equal(result.payload.schemaPending, true);
+  assert.equal(result.payload.code, "RANK_KEYWORD_LIMIT_SCHEMA_PENDING");
+  assert.equal(
+    result.payload.message,
+    "키워드 한도 DB 마이그레이션 적용 전입니다. 마이그레이션을 적용한 뒤 다시 시도해주세요.",
+  );
+});
+
+// ─────────────────────────────────────────────────────────────
+// 계정 목록(GET) 열 사다리
+//
+// 배포가 마이그레이션보다 먼저 나가면 clients.rank_keyword_limit 하나만 없다.
+// 그때 최소 열까지 한 번에 내려가면 이미 운영 DB 에 있는 issued_by_team_code /
+// disconnected_at 까지 같이 떨어져서, 총관리자 화면이 운영팀 발급 광고주를
+// '직접 발급' 으로 잘못 표시한다. 가짜 PostgREST 로 열이 없는 DB 를 흉내내
+// 사다리 세 단이 각각 무엇을 지키는지 못박는다.
+// ─────────────────────────────────────────────────────────────
+const LIST_CLIENT_ROWS = [
+  {
+    id: "client-owner-1",
+    name: "총관리자 직접 발급 광고주",
+    business_name: "직접 발급 상호",
+    agency_code: "mml93-c01",
+    status: "active",
+    issued_by_team_code: null,
+    disconnected_at: null,
+    public_summary: null,
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-28T00:00:00.000Z",
+    rank_keyword_limit: 120,
+  },
+  {
+    id: "client-team-1",
+    name: "운영팀 발급 광고주",
+    business_name: "운영팀 발급 상호",
+    agency_code: "mml93-c02",
+    status: "active",
+    issued_by_team_code: "mml93-t01",
+    disconnected_at: "2026-08-20T00:00:00.000Z",
+    public_summary: null,
+    created_at: "2026-08-02T00:00:00.000Z",
+    updated_at: "2026-08-28T00:00:00.000Z",
+    rank_keyword_limit: null,
+  },
+];
+
+// 요청한 열만 돌려주는 진짜 PostgREST 의 행동을 흉내낸다.
+function projectClientRow(row, select) {
+  const picked = {};
+  for (const column of select.split(",").map((name) => name.trim()).filter(Boolean)) {
+    if (column in row) picked[column] = row[column];
+  }
+  return picked;
+}
+
+function ownerListStub(options = {}) {
+  const missing = options.missingClientColumns || [];
+  const selects = [];
+  const impl = async (input, init = {}) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    const url = new URL(rawUrl);
+    const method = String(init.method || "GET").toUpperCase();
+
+    // 총관리자 요약 카운트는 HEAD 라 개수만 돌려주면 된다.
+    if (method === "HEAD") {
+      return new Response(null, { status: 200, headers: { "content-range": "*/0" } });
+    }
+
+    const select = url.searchParams.get("select") || "";
+    if (url.pathname === "/rest/v1/clients") {
+      selects.push(select);
+      const absent = missing.find((column) => select.includes(column));
+      if (absent) {
+        return Response.json(
+          { code: "42703", message: `column clients.${absent} does not exist`, details: null, hint: null },
+          { status: 400 },
+        );
+      }
+      return Response.json(LIST_CLIENT_ROWS.map((row) => projectClientRow(row, select)));
+    }
+    // 운영팀 목록은 늘 성공시킨다. schemaPending 이 오직 광고주 사다리에서만
+    // 올라온다는 것을 보이기 위해서다.
+    if (url.pathname === "/rest/v1/operation_team_codes") return Response.json([]);
+    throw new Error(`unexpected fetch: ${rawUrl}`);
+  };
+  return { selects, impl };
+}
+
+async function listOwnerAccounts(options = {}) {
+  const stub = ownerListStub(options);
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(new Request(SUPER_ADMIN_API_URL, {
+      headers: {
+        "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+        "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+      },
+    })),
+  ));
+  return { stub, response, payload: await response.json() };
+}
+
+test("마이그레이션이 끝난 DB 에서는 첫 단에서 한도까지 한 번에 읽는다", async () => {
+  const result = await listOwnerAccounts();
+  assert.equal(result.response.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.ok(!result.payload.schemaPending);
+
+  assert.equal(result.stub.selects.length, 1);
+  assert.match(result.stub.selects[0], /rank_keyword_limit/);
+
+  const [owner, team] = result.payload.clients;
+  assert.equal(owner.rankKeywordLimit, 120);
+  assert.equal(owner.issuedByTeamCode, null);
+  assert.equal(team.issuedByTeamCode, "mml93-t01");
+  assert.equal(team.disconnectedAt, "2026-08-20T00:00:00.000Z");
+  assert.equal(team.rankKeywordLimit, null);
+});
+
+test("한도 열만 없는 배포 직후에도 운영팀 발급 표시는 그대로 살아 있다", async () => {
+  const result = await listOwnerAccounts({ missingClientColumns: ["rank_keyword_limit"] });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.schemaPending, true);
+
+  // 첫 단은 한도까지, 두 번째 단은 한도만 뺀 기존 전체 열이어야 한다.
+  assert.equal(result.stub.selects.length, 2);
+  assert.match(result.stub.selects[0], /rank_keyword_limit/);
+  assert.doesNotMatch(result.stub.selects[1], /rank_keyword_limit/);
+  assert.match(result.stub.selects[1], /issued_by_team_code/);
+  assert.match(result.stub.selects[1], /disconnected_at/);
+
+  const [owner, team] = result.payload.clients;
+  assert.equal(owner.issuedByTeamCode, null);
+  assert.equal(owner.rankKeywordLimit, null);
+  // 이 한 줄이 이번 수정의 이유다. 여기가 undefined 로 오면 화면이
+  // 운영팀 발급 광고주를 '직접 발급' 으로 잘못 표시한다.
+  assert.equal(team.issuedByTeamCode, "mml93-t01");
+  assert.equal(team.disconnectedAt, "2026-08-20T00:00:00.000Z");
+  assert.equal(team.rankKeywordLimit, null);
+});
+
+test("운영팀 열까지 없는 옛 DB 는 마지막 단으로 내려가되 깨지지 않는다", async () => {
+  const result = await listOwnerAccounts({
+    missingClientColumns: ["rank_keyword_limit", "issued_by_team_code", "disconnected_at"],
+  });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.schemaPending, true);
+
+  assert.equal(result.stub.selects.length, 3);
+  assert.doesNotMatch(result.stub.selects[2], /rank_keyword_limit|issued_by_team_code|disconnected_at/);
+
+  assert.equal(result.payload.clients.length, 2);
+  assert.equal(result.payload.clients[1].agencyCode, "mml93-c02");
+  assert.equal(result.payload.clients[1].rankKeywordLimit, null);
+});

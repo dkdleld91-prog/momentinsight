@@ -1189,6 +1189,10 @@ test("hybrid create registers an unleased new-first row and wakes the scheduler 
           };
           return query;
         }
+        if (table === "operation_team_codes") {
+          const query = { select() { return query; }, eq() { return query; }, async maybeSingle() { return { data: null, error: null }; } };
+          return query;
+        }
         assert.equal(table, SNAPSHOTS);
         const query = {
           select() { return query; },
@@ -1368,6 +1372,10 @@ test("hybrid create atomically reactivates the same normalized paused target wit
             eq() { return query; },
             async maybeSingle() { return { data: null, error: null }; },
           };
+          return query;
+        }
+        if (table === "operation_team_codes") {
+          const query = { select() { return query; }, eq() { return query; }, async maybeSingle() { return { data: null, error: null }; } };
           return query;
         }
         assert.equal(table, SNAPSHOTS);
@@ -3633,4 +3641,336 @@ test("product due refresh stays global for cron and accepts any advertiser scope
     { column: "agency_code", values: ["agency-b02"] },
     { column: "agency_code", values: ["agency-b02"] },
   ]);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 계정별 키워드 등록 한도 (총관리자가 콘솔에서 지정)
+//
+// 지금까지 두 곳에 50 이 박혀 있었다. 이제 clients.rank_keyword_limit /
+// operation_team_codes.rank_keyword_limit 이 있으면 그 값을 쓰고, 컬럼이 없는
+// DB(마이그레이션 적용 전)에서는 예전과 똑같이 50 으로 동작해야 한다.
+// ─────────────────────────────────────────────────────────────
+function quotaTrackerContext(options = {}) {
+  const trackerRows = [...(options.trackerRows || [])];
+  const activeCount = Number(options.activeCount || 0);
+  const state = { quotaLookups: [], wakeSources: [], inserted: [] };
+
+  function trackerQuery() {
+    const query = {
+      operation: "select",
+      values: null,
+      head: false,
+      select(_columns, opts = {}) {
+        query.head = opts.head === true;
+        return query;
+      },
+      insert(values) { query.operation = "insert"; query.values = values; return query; },
+      update(values) { query.operation = "update"; query.values = values; return query; },
+      eq() { return query; },
+      in() { return query; },
+      order() { return query; },
+      limit() { return query; },
+      single() { return query.execute(true); },
+      maybeSingle() { return query.execute(true, true); },
+      then(resolve, reject) { return query.execute(false).then(resolve, reject); },
+      async execute(single, allowMissing = false) {
+        if (query.head) return { data: null, error: null, count: activeCount };
+        if (query.operation === "insert") {
+          if (options.insertError) return { data: null, error: options.insertError };
+          const inserted = {
+            id: "10000000-0000-4000-8000-0000000000aa",
+            current_rank: null,
+            best_rank: null,
+            worst_rank: null,
+            check_count: 0,
+            found_count: 0,
+            retry_count: 0,
+            sort_order: 100,
+            created_at: "2026-08-28T00:00:00.000Z",
+            updated_at: "2026-08-28T00:00:00.000Z",
+            ...query.values,
+          };
+          state.inserted.push(inserted);
+          trackerRows.push(inserted);
+          return { data: inserted, error: null };
+        }
+        if (query.operation === "update") {
+          if (options.reactivationError) return { data: null, error: options.reactivationError };
+          const target = trackerRows.find((row) => row.status === "paused");
+          if (target) target.status = "active";
+          return single ? { data: target || null, error: null } : { data: target ? [target] : [], error: null };
+        }
+        const selected = trackerRows.filter((row) => row.status === "active" || row.status === "paused");
+        if (single) return selected.length === 1 ? { data: selected[0], error: null } : (allowMissing ? { data: null, error: null } : { data: null, error: { message: "single row not found" } });
+        return { data: selected, error: null };
+      },
+    };
+    return query;
+  }
+
+  const ctx = {
+    supabaseAdmin: {
+      async rpc(name, args) {
+        state.wakeSources.push(args?.p_source || name);
+        return { data: true, error: null };
+      },
+      from(table) {
+        if (table === TRACKERS) return trackerQuery();
+        if (table === "clients") {
+          const query = {
+            columns: "",
+            select(columns) { query.columns = String(columns || ""); return query; },
+            eq() { return query; },
+            async maybeSingle() {
+              // findClientId 와 한도 조회가 같은 표를 본다. 고르는 열로 갈라 본다.
+              if (query.columns.includes("rank_keyword_limit")) {
+                state.quotaLookups.push("clients");
+                if (options.clientQuotaError) return { data: null, error: options.clientQuotaError };
+                return { data: options.clientQuotaRow ?? null, error: null };
+              }
+              return { data: { id: "client-1", status: "active", disconnected_at: null }, error: null };
+            },
+          };
+          return query;
+        }
+        if (table === "operation_team_codes") {
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() {
+              state.quotaLookups.push("operation_team_codes");
+              return { data: options.teamQuotaRow ?? null, error: null };
+            },
+          };
+          return query;
+        }
+        assert.equal(table, SNAPSHOTS);
+        const query = {
+          select() { return query; },
+          in() { return query; },
+          gte() { return query; },
+          lte() { return query; },
+          order() { return query; },
+          range() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+  return { ctx, state };
+}
+
+function quotaCreateBody(overrides = {}) {
+  return { action: "create", keyword: "한도 시험 키워드", productId: "9876543210", ...overrides };
+}
+
+function productOwnerRequest(method, body) {
+  return new Request("https://example.com/api/naver-rank-trackers", {
+    method,
+    headers: {
+      "content-type": "application/json",
+      "x-demo-admin-code": "owner-quota-test-code",
+      "x-mi-agency-code": "mml93-a01",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+test("총관리자가 올려 준 한도만큼 상품 순위 키워드를 더 등록할 수 있다", async () => {
+  const { ctx, state } = quotaTrackerContext({ activeCount: 60, clientQuotaRow: { rank_keyword_limit: 100 } });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 201);
+  const body = await response.json();
+  assert.equal(body.ok, true);
+  // 광고주 행이 값을 갖고 있으면 운영팀 표는 보지 않는다.
+  assert.deepEqual(state.quotaLookups, ["clients"]);
+});
+
+test("한도를 다 쓴 계정은 실제 한도 숫자와 다음 방법을 담은 403 을 받는다", async () => {
+  const { ctx } = quotaTrackerContext({ activeCount: 100, clientQuotaRow: { rank_keyword_limit: 100 } });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 100);
+  assert.equal(body.count, 100);
+  assert.ok(body.message.includes("100개"));
+  assert.equal(body.message, "키워드 등록 한도 100개를 모두 사용했습니다. 한도 상향이 필요하시면 관리자에게 문의해주세요.");
+});
+
+test("한도 컬럼이 없는 DB 에서는 예전과 똑같이 50 에서 막힌다", async () => {
+  const { ctx } = quotaTrackerContext({
+    activeCount: 50,
+    clientQuotaError: { code: "42703", message: "column clients.rank_keyword_limit does not exist" },
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.limit, 50);
+  assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
+});
+
+test("총관리자 코드는 한도를 조회하지도 않고 계속 무제한이다", async () => {
+  const previousAdminCode = process.env.MI_RANK_ADMIN_CODE;
+  const previousPrimary = process.env.MI_PRIMARY_AGENCY_CODE;
+  process.env.MI_RANK_ADMIN_CODE = "owner-quota-test-code";
+  process.env.MI_PRIMARY_AGENCY_CODE = "mml93-a01";
+  try {
+    const { ctx, state } = quotaTrackerContext({ activeCount: 500 });
+    const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+      productOwnerRequest("POST", quotaCreateBody()),
+      ctx,
+    ));
+    assert.equal(response.status, 201);
+    assert.deepEqual(state.quotaLookups, []);
+  } finally {
+    if (previousAdminCode === undefined) delete process.env.MI_RANK_ADMIN_CODE;
+    else process.env.MI_RANK_ADMIN_CODE = previousAdminCode;
+    if (previousPrimary === undefined) delete process.env.MI_PRIMARY_AGENCY_CODE;
+    else process.env.MI_PRIMARY_AGENCY_CODE = previousPrimary;
+  }
+});
+
+test("일시중지 추적 재개가 DB 한도에 막히면 500 이 아니라 같은 안내로 돌아온다", async () => {
+  // reactivatePausedTracker 는 JS 개수 검사보다 먼저 paused → active 를 뒤집어서
+  // 트리거(P0001)만이 막는다. 한도를 낮춘 계정에서 여기가 500 이 되면 안 된다.
+  const { ctx } = quotaTrackerContext({
+    activeCount: 200,
+    clientQuotaRow: { rank_keyword_limit: 200 },
+    trackerRows: [{
+      id: "10000000-0000-4000-8000-0000000000bb",
+      agency_code: "mml93-t01",
+      keyword: "한도 시험 키워드",
+      product_id: "9876543210",
+      product_url: null,
+      mall_name: null,
+      status: "paused",
+    }],
+    reactivationError: { code: "P0001", message: "키워드 등록 한도 200개를 모두 사용했습니다. 한도 상향이 필요하시면 관리자에게 문의해주세요." },
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 200);
+  assert.ok(body.message.includes("관리자에게 문의해주세요"));
+});
+
+test("등록 순간 트리거와 부딪혀도(경합) 같은 403 안내로 내려간다", async () => {
+  const { ctx } = quotaTrackerContext({
+    activeCount: 99,
+    clientQuotaRow: { rank_keyword_limit: 100 },
+    insertError: { code: "P0001", message: "키워드 등록 한도 100개를 모두 사용했습니다. 한도 상향이 필요하시면 관리자에게 문의해주세요." },
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 100);
+  assert.equal(body.count, 99);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 한도를 현재 활성 개수보다 낮게 내려 잡은 계정
+//
+// 총관리자가 한도를 12 → 10 으로 내리면 이미 활성인 12건은 그대로 돌아야 한다.
+// 한도는 '새로 활성이 되는 순간'에만 걸리는 문이지, 기존 행의 갱신을 멈추는
+// 스위치가 아니다. 수집기(updateTrackerAfterCheck)는 회차마다 status 를 다시
+// 써넣는데 그 칼럼에 DB 트리거가 걸려 있어, 서버·DB 양쪽 모두 전환일 때만
+// 세어야 한다. 아래 두 시험은 그 한 쌍(기존 갱신 통과 / 신규 활성 차단)이다.
+// ─────────────────────────────────────────────────────────────
+function overQuotaCollectorContext(tracker) {
+  const base = testContext(tracker);
+  base.state.quotaLookups = [];
+  return {
+    state: base.state,
+    ctx: {
+      supabaseAdmin: {
+        from(table) {
+          if (table === "clients" || table === "operation_team_codes") {
+            base.state.quotaLookups.push(table);
+            throw new Error(`수집 갱신 경로가 한도 표(${table})를 조회했다`);
+          }
+          return base.ctx.supabaseAdmin.from(table);
+        },
+      },
+    },
+  };
+}
+
+test("한도를 내려 잡아도 이미 활성인 상품 추적의 수집 갱신은 그대로 성공한다", async () => {
+  const tracker = trackerRow({ id: "over-quota-active", agency_code: "mml93-t01" });
+  const { ctx, state } = overQuotaCollectorContext(tracker);
+
+  const result = await runTrackerCheck(ctx, tracker, {
+    env: COLLECTOR_ENV,
+    findShoppingRank: async () => ({
+      matched: true,
+      rank: 12,
+      checkedCount: 300,
+      total: 300,
+      complete: true,
+      partial: false,
+      source: "naver_shopping_results_collector",
+      rankEvidence: "naver_shopping_organic_list",
+      collectionId: "over-quota-collection",
+      productExposureItems: [{
+        rank: 12,
+        productId: tracker.product_id,
+        title: tracker.product_title,
+        isExactTarget: true,
+        isOrganic: true,
+      }],
+      topItems: [],
+    }),
+  });
+
+  assert.equal(result.ok, true);
+  // 갱신 경로는 한도를 조회하지도 않는다. 조회했다면 위 컨텍스트가 던져서 ok 가 false 다.
+  assert.deepEqual(state.quotaLookups, []);
+  assert.equal(state.tables[SNAPSHOTS].length, 1);
+
+  const current = state.tables[TRACKERS][0];
+  assert.equal(current.status, "active");
+  assert.equal(current.current_rank, 12);
+  assert.equal(current.check_count, tracker.check_count + 1);
+  assert.notEqual(current.last_checked_at, tracker.last_checked_at);
+
+  // 트리거가 걸린 status 칼럼을 값이 같아도 매번 다시 대입한다. `update of status` 는
+  // 이 대입만으로 깨어나므로, DB 쪽 게이트도 '전환일 때만' 이어야 한다.
+  const trackerUpdate = state.updates.find((entry) => entry.table === TRACKERS);
+  assert.equal(trackerUpdate.values.status, "active");
+});
+
+test("한도를 내려 잡은 같은 계정에서 새 상품 키워드 등록만 403 으로 막힌다", async () => {
+  const { ctx } = quotaTrackerContext({ activeCount: 12, clientQuotaRow: { rank_keyword_limit: 10 } });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody()),
+    ctx,
+  ));
+  assert.equal(response.status, 403);
+  const body = await response.json();
+  assert.equal(body.ok, false);
+  assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
+  assert.equal(body.limit, 10);
+  assert.equal(body.count, 12);
 });

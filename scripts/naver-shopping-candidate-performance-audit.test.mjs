@@ -122,6 +122,11 @@ test("builds one fixed-wall read-only candidate audit with the full integrity co
   assert.match(sql, /missing_or_identity_mismatch/);
   assert.match(sql, /c\.updated_at/);
   assert.match(sql, /cp\.updated_at <= p\.observed_at/);
+  assert.match(sql, /\(c\.lease_token is null\) as lease_token_is_null/);
+  assert.match(sql, /cp\.lease_token_is_null/);
+  assert.equal((sql.match(/\bc\.lease_token\b/gu) || []).length, 1);
+  assert.doesNotMatch(sql, /\n\s*c\.lease_token,\n/u);
+  assert.doesNotMatch(sql, /cp\.lease_token is null/u);
   assert.match(sql, /pg_catalog\.jsonb_array_elements\(\s*case/);
   assert.match(sql, /n30_candidate_performance_audit_v1/);
   assert.match(sql, /candidate_success/);

@@ -896,7 +896,7 @@ control_plane as (
     c.circuit_reason,
     c.cooldown_until,
     c.lease_worker_id,
-    c.lease_token,
+    (c.lease_token is null) as lease_token_is_null,
     c.lease_until,
     c.run_id,
     c.current_stage,
@@ -971,7 +971,7 @@ verdict as (
       and cp.cooldown_until is null
       and cp.processing_count = 0
       and cp.lease_worker_id is null
-      and cp.lease_token is null
+      and cp.lease_token_is_null
       and cp.lease_until is null
       and cp.run_id is null
       and cp.current_stage is null

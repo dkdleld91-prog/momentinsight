@@ -75,6 +75,7 @@ const files = {
   shoppingStableFiniteWindowRuntime1115Migration: "supabase/migrations/20260826083450_naver_shopping_runtime_1_1_15_stable_finite_third_pass.sql",
   shoppingExactParentRelationGuardMigration: "supabase/migrations/20260827050000_naver_shopping_exact_parent_relation_guard.sql",
   shoppingStableFiniteWindowRuntime1116Migration: "supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql",
+  shoppingNextDataSchemaDriftRecoveryMigration: "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
   shoppingCandidatePerformanceAudit: "scripts/naver-shopping-candidate-performance-audit.mjs",
   shoppingWorkerCandidate111ExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
   shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
@@ -182,6 +183,7 @@ const shoppingStableFiniteWindowMigration = fs.readFileSync(files.shoppingStable
 const shoppingStableFiniteWindowRuntime1115Migration = fs.readFileSync(files.shoppingStableFiniteWindowRuntime1115Migration, "utf8");
 const shoppingExactParentRelationGuardMigration = fs.readFileSync(files.shoppingExactParentRelationGuardMigration, "utf8");
 const shoppingStableFiniteWindowRuntime1116Migration = fs.readFileSync(files.shoppingStableFiniteWindowRuntime1116Migration, "utf8");
+const shoppingNextDataSchemaDriftRecoveryMigration = fs.readFileSync(files.shoppingNextDataSchemaDriftRecoveryMigration, "utf8");
 const shoppingCandidatePerformanceAudit = fs.readFileSync(files.shoppingCandidatePerformanceAudit, "utf8");
 const shoppingWorkerCandidate111ExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidate111ExactIdentityMigration, "utf8");
 const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
@@ -1150,14 +1152,25 @@ check(
       /from public, anon, authenticated, service_role/,
       /to service_role/,
     ])
-    && shoppingStableFiniteWindowRuntime1116Migration.includes(shoppingWorkerRuntime1116Fingerprint)
+    && shoppingStableFiniteWindowRuntime1116Migration.includes(
+      "570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f",
+    )
+    && hasAll(shoppingNextDataSchemaDriftRecoveryMigration, [
+      /570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f/,
+      /naver_next_data_schema_drift:compositelist_list_\[0-9\]\+_type/,
+      /last_checked_count is distinct from 300/,
+      /circuit_state = 'closed'/,
+      /runtime_fingerprint = null/,
+    ])
+    && shoppingNextDataSchemaDriftRecoveryMigration.includes(shoppingWorkerRuntime1116Fingerprint)
     && shoppingCandidatePerformanceAudit.includes(
       `export const N30_TARGET_RUNTIME_VERSION = "1.1.16";`,
     )
     && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1116Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
-    && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
-  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}`,
+    && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
+    && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
+  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}, ${files.shoppingNextDataSchemaDriftRecoveryMigration}`,
 );
 check(
   "N Shopping prior runtime 1.1.11 exact candidate gate remains unchanged",

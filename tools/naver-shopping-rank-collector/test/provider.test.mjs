@@ -101,6 +101,17 @@ function nextDataAd(index = 1) {
   };
 }
 
+function nextDataAuxiliary(index = 1, overrides = {}) {
+  return {
+    type: "recommendation",
+    item: {
+      collection: "recommendation",
+      moduleIndex: index,
+    },
+    ...overrides,
+  };
+}
+
 function nextDataCatalog(rank, overrides = {}) {
   const productId = String(91000000000 + rank);
   return nextDataProduct(rank, {
@@ -360,6 +371,42 @@ test("parses __NEXT_DATA__ in document order and excludes explicit adId rows", (
   assert.equal(parsed.rows[1].lprice, 10001);
 });
 
+test("ignores non-product composite helpers only when they contain no organic product evidence", () => {
+  const parsed = parseNaverNextDataPage(nextDataFixture({
+    total: 2,
+    entries: [
+      nextDataAuxiliary(1),
+      nextDataProduct(1),
+      nextDataAuxiliary(2, { item: null }),
+      nextDataProduct(2),
+    ],
+  }), { pageIndex: 1, keyword: "온열찜질기" });
+
+  assert.equal(parsed.marketTotal, 2);
+  assert.deepEqual(parsed.rows.map((row) => row.sourceRank), [1, 2]);
+  assert.deepEqual(parsed.rows.map((row) => row.productId), ["91000000001", "91000000002"]);
+});
+
+test("fails closed when a non-product composite row carries organic product evidence", () => {
+  const productLike = nextDataAuxiliary(1, {
+    item: {
+      collection: "product",
+      rank: 1,
+      mallProductId: "12000000001",
+      productTitle: "상품처럼 보이는 비허용 행",
+    },
+  });
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 1,
+      entries: [productLike],
+    }), { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_schema_drift"
+      && error.detail === "compositeList.list.0.type.recommendation",
+  );
+});
+
 test("accepts Naver's internal spacing normalization only for the submitted query", () => {
   const parsed = parseNaverNextDataPage(nextDataFixture({
     total: 1,
@@ -576,6 +623,29 @@ test("builds an exact contiguous 1..300 window from eight frontend partial respo
   }
 
   assert.equal(state.items.length, 300);
+  assert.deepEqual(
+    state.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+});
+
+test("builds an exact 1..300 SSR window while excluding rankless composite helpers", () => {
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  for (let pageIndex = 1; pageIndex <= 8; pageIndex += 1) {
+    const startRank = ((pageIndex - 1) * 40) + 1;
+    const page = parseNaverNextDataPage(nextDataFixture({
+      pageIndex,
+      total: 10_000,
+      entries: [
+        nextDataAuxiliary(pageIndex),
+        ...Array.from({ length: 40 }, (_, index) => nextDataProduct(startRank + index)),
+      ],
+    }), { pageIndex, keyword: "온열찜질기" });
+    appendNormalizedPage(state, page, { pageIndex, limit: 300 });
+  }
+
+  assert.equal(state.items.length, 300);
+  assert.equal(state.excludedAdCount, 0);
   assert.deepEqual(
     state.items.map((item) => item.organicRank),
     Array.from({ length: 300 }, (_, index) => index + 1),

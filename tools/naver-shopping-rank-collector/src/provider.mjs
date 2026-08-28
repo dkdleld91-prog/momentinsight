@@ -405,6 +405,37 @@ function nextDataCatalogSellerProductIds(value, detail) {
   return ids;
 }
 
+function nextDataCompositeType(value, detail) {
+  if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9_-]{0,79}$/u.test(value)) {
+    throw nextDataSchemaError(detail);
+  }
+  return value.toLowerCase();
+}
+
+function assertRanklessNonProductComposite(entry, detail) {
+  const type = nextDataCompositeType(entry.type, `${detail}.type`);
+  const item = entry.item;
+  const productContainers = [entry.product, entry.products, entry.items];
+  if (productContainers.some((value) => value != null)) {
+    throw nextDataSchemaError(`${detail}.type.${type}`);
+  }
+  if (item == null) return;
+  const record = nextDataRecord(item, `${detail}.item`);
+  const productSignals = [
+    record.rank,
+    record.parentCatalogId,
+    record.mallProductId,
+    record.stdCatalogMatchType,
+    record.productTitle,
+    record.mallId,
+    record.lowMallList,
+  ];
+  if (record.collection === "product"
+    || productSignals.some((value) => value != null && value !== "")) {
+    throw nextDataSchemaError(`${detail}.type.${type}`);
+  }
+}
+
 /**
  * Parse the current Naver Shopping SSR contract without guessing through the DOM.
  * `compositeList.list` is already in rendered document order. Ads carry `adId`,
@@ -460,7 +491,14 @@ export function parseNaverNextDataPage(payload, {
   for (let index = 0; index < compositeList.list.length; index += 1) {
     const entryDetail = `compositeList.list.${index}`;
     const entry = nextDataRecord(compositeList.list[index], entryDetail);
-    if (entry.type !== "product") throw nextDataSchemaError(`${entryDetail}.type`);
+    if (entry.type !== "product") {
+      // Naver may interleave rankless display helpers with the authoritative
+      // product list. Exclude only helpers that carry no product container,
+      // absolute rank, seller/catalog identity, or product metadata. The page
+      // still has to prove its complete contiguous organic rank count below.
+      assertRanklessNonProductComposite(entry, entryDetail);
+      continue;
+    }
     const item = nextDataRecord(entry.item, `${entryDetail}.item`);
     if (item.collection !== "product") throw nextDataSchemaError(`${entryDetail}.item.collection`);
 

@@ -97,6 +97,16 @@ function productItem(rank) {
   };
 }
 
+function ranklessCompositeHelper(pageIndex) {
+  return {
+    type: "recommendation",
+    item: {
+      collection: "recommendation",
+      moduleIndex: pageIndex,
+    },
+  };
+}
+
 function page(pageIndex, options = {}) {
   const startRank = ((pageIndex - 1) * 40) + 1;
   const list = [0, 1, 2, 3].map((index) => ({
@@ -317,6 +327,48 @@ test("builds one strict 300-rank window from the normal Chrome profile pages", (
   assert.equal(result.items[90].organicRank, 91);
   assert.equal(result.items[90].sellerProductId, "12149720593");
   assert.match(result.collectionId, /^pw-chrome-/u);
+});
+
+test("builds one strict 300-rank window while excluding rankless composite helpers", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const pages = Array.from({ length: 8 }, (_, index) => {
+    const payload = page(index + 1);
+    const data = JSON.parse(payload.nextDataText);
+    data.props.pageProps.compositeList.list.splice(1, 0, ranklessCompositeHelper(index + 1));
+    return { ...payload, nextDataText: JSON.stringify(data) };
+  });
+
+  const result = buildNativeWindowFromPages(request(nowMs), pages, { nowMs });
+
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.rawCount, 332);
+  assert.equal(result.excludedAdCount, 32);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+});
+
+test("fails closed when a non-product composite helper carries product evidence", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+  const data = JSON.parse(pages[0].nextDataText);
+  data.props.pageProps.compositeList.list.splice(1, 0, {
+    type: "recommendation",
+    item: {
+      collection: "product",
+      rank: 1,
+      mallProductId: "19999999999",
+      productTitle: "상품 증거가 섞인 비허용 행",
+    },
+  });
+  pages[0] = { ...pages[0], nextDataText: JSON.stringify(data) };
+
+  assert.throws(
+    () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+    (error) => error?.code === "naver_next_data_schema_drift"
+      && error?.detail === "compositeList.list.1.type.recommendation",
+  );
 });
 
 test("fails closed without padding when Naver exposes fewer than 300 organic slots", () => {

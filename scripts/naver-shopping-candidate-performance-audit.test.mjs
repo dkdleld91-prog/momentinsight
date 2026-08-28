@@ -67,7 +67,7 @@ test("builds one fixed-wall read-only candidate audit with the full integrity co
   assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.16");
   assert.equal(
     N30_TARGET_RUNTIME_FINGERPRINT,
-    "570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f",
+    "8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1",
   );
   const sql = buildN30CandidatePerformanceAuditSql(validOptions);
 

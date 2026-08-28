@@ -77,6 +77,7 @@ const files = {
   shoppingStableFiniteWindowRuntime1116Migration: "supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql",
   shoppingNextDataSchemaDriftRecoveryMigration: "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
   shoppingSupersavingCompositeRecoveryMigration: "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
+  shoppingExactParentGuardRuntimeRecoveryMigration: "supabase/migrations/20260828034500_naver_shopping_exact_parent_guard_runtime_recovery.sql",
   shoppingCandidatePerformanceAudit: "scripts/naver-shopping-candidate-performance-audit.mjs",
   shoppingWorkerCandidate111ExactIdentityMigration: "supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql",
   shoppingWorkerCandidateExactIdentityMigration: "supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql",
@@ -186,6 +187,7 @@ const shoppingExactParentRelationGuardMigration = fs.readFileSync(files.shopping
 const shoppingStableFiniteWindowRuntime1116Migration = fs.readFileSync(files.shoppingStableFiniteWindowRuntime1116Migration, "utf8");
 const shoppingNextDataSchemaDriftRecoveryMigration = fs.readFileSync(files.shoppingNextDataSchemaDriftRecoveryMigration, "utf8");
 const shoppingSupersavingCompositeRecoveryMigration = fs.readFileSync(files.shoppingSupersavingCompositeRecoveryMigration, "utf8");
+const shoppingExactParentGuardRuntimeRecoveryMigration = fs.readFileSync(files.shoppingExactParentGuardRuntimeRecoveryMigration, "utf8");
 const shoppingCandidatePerformanceAudit = fs.readFileSync(files.shoppingCandidatePerformanceAudit, "utf8");
 const shoppingWorkerCandidate111ExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidate111ExactIdentityMigration, "utf8");
 const shoppingWorkerCandidateExactIdentityMigration = fs.readFileSync(files.shoppingWorkerCandidateExactIdentityMigration, "utf8");
@@ -1181,6 +1183,27 @@ check(
     && !/update public\.naver_rank_trackers|update public\.naver_shopping_rank_lookup_jobs|insert into public\.naver_shopping_worker_events|create or replace function public\./iu.test(
       shoppingSupersavingCompositeRecoveryMigration,
     )
+    && hasAll(shoppingExactParentGuardRuntimeRecoveryMigration, [
+      /create or replace function mi_internal\.mi_guard_naver_shopping_exact_parent_snapshot\(\)/,
+      /trackingRankSource'[\s\S]*'related_catalog'/,
+      /relatedCatalogRelationBasis'[\s\S]*'catalog_seller_product_id'/,
+      /catalogSellerProductIds'[\s\S]*jsonb_build_array/,
+      /selected_catalog_id is distinct from related_catalog_id/,
+      /pg_catalog\.strpos\(function_definition, 'pg_catalog\.nullif'\)/,
+      /pg_catalog\.strpos\(function_definition, 'pg_catalog\.coalesce'\)/,
+      /trigger_row\.tgfoid = pg_catalog\.to_regprocedure/,
+      /trigger_row\.tgtype = 23/,
+      /trigger_row\.tgenabled <> 'D'/,
+      /exact_trigger_count <> 1/,
+      /security invoker/,
+      /set search_path = ''/,
+    ])
+    && !/pg_catalog\.(?:nullif|coalesce)\s*\(/iu.test(
+      shoppingExactParentGuardRuntimeRecoveryMigration,
+    )
+    && !/drop\s+trigger|create\s+trigger|update\s+public\.|insert\s+into\s+public\.|delete\s+from\s+public\./iu.test(
+      shoppingExactParentGuardRuntimeRecoveryMigration,
+    )
     && shoppingCandidatePerformanceAudit.includes(
       `export const N30_TARGET_RUNTIME_VERSION = "1.1.16";`,
     )
@@ -1189,7 +1212,7 @@ check(
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingSupersavingCompositeRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
-  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}, ${files.shoppingNextDataSchemaDriftRecoveryMigration}, ${files.shoppingSupersavingCompositeRecoveryMigration}`,
+  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}, ${files.shoppingNextDataSchemaDriftRecoveryMigration}, ${files.shoppingSupersavingCompositeRecoveryMigration}, ${files.shoppingExactParentGuardRuntimeRecoveryMigration}`,
 );
 check(
   "N Shopping prior runtime 1.1.11 exact candidate gate remains unchanged",

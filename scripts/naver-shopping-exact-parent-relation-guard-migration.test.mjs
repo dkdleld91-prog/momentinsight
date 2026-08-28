@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 
 const migrationPath = "supabase/migrations/20260827050000_naver_shopping_exact_parent_relation_guard.sql";
+const recoveryMigrationPath = "supabase/migrations/20260828034500_naver_shopping_exact_parent_guard_runtime_recovery.sql";
 const rankerPath = "src/server/handlers/naver-shopping-rank.mjs";
 
 test("exact parent snapshot guard accepts only a direct seller-to-catalog relationship for every tracker", () => {
@@ -28,4 +29,23 @@ test("the ranker contains no switch that can restore metadata-based parent infer
     source,
     /(?:^|[^A-Za-z0-9_$])relatedCatalogItemsFromOrganic|requireDirectCatalogRelation/iu,
   );
+});
+
+test("runtime recovery keeps the exact-id guard while avoiding pseudo pg_catalog functions", () => {
+  const sql = fs.readFileSync(recoveryMigrationPath, "utf8");
+  assert.match(sql, /^begin;/imu);
+  assert.match(sql, /commit;\s*$/iu);
+  assert.match(sql, /create or replace function mi_internal\.mi_guard_naver_shopping_exact_parent_snapshot\(\)/iu);
+  assert.match(sql, /security invoker\s+set search_path = ''/iu);
+  assert.match(sql, /trackingRankSource'\s+is distinct from\s+'related_catalog'/iu);
+  assert.match(sql, /relatedCatalogRelationBasis'\s+is distinct from\s+'catalog_seller_product_id'/iu);
+  assert.match(sql, /catalogSellerProductIds'[\s\S]*@>[\s\S]*jsonb_build_array\([\s\S]*target_product_id[\s\S]*\)/iu);
+  assert.match(sql, /selected_catalog_id\s+is distinct from\s+related_catalog_id/iu);
+  assert.match(sql, /raise exception 'naver_shopping_exact_parent_relation_invalid'/iu);
+  assert.match(sql, /trigger_row\.tgfoid\s*=\s*pg_catalog\.to_regprocedure/iu);
+  assert.match(sql, /trigger_row\.tgtype\s*=\s*23/iu);
+  assert.match(sql, /trigger_row\.tgenabled\s*<>\s*'D'/iu);
+  assert.doesNotMatch(sql, /pg_catalog\.(?:nullif|coalesce)\s*\(/iu);
+  assert.doesNotMatch(sql, /drop\s+trigger|create\s+trigger|update\s+public\.|insert\s+into\s+public\.|delete\s+from\s+public\./iu);
+  assert.doesNotMatch(sql, /thumbnail|image|product_title|model|brand|category|keyword/iu);
 });

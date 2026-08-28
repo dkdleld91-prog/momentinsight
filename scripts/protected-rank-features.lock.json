@@ -744,6 +744,12 @@
       "file": "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
       "sha256": "3faad589beb318b8b0eaa8c87b2d0b890f717f4ac5af81c0f2eece22b15fb0bf",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-exact-parent-guard-runtime-recovery",
+      "file": "supabase/migrations/20260828034500_naver_shopping_exact_parent_guard_runtime_recovery.sql",
+      "sha256": "02c5b06284bf651dc09aeb2b193e02cf12265194dfa7fef70f10ad82241e66e9",
+      "rankMigration": true
     }
   ]
 }

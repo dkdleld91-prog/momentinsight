@@ -236,6 +236,7 @@ const shoppingExactParentRelationGuardMigration = read("supabase/migrations/2026
 const shoppingStableFiniteWindowRuntime1116Migration = read("supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql");
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
 const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
+const shoppingExactParentGuardRuntimeRecoveryMigration = read("supabase/migrations/20260828034500_naver_shopping_exact_parent_guard_runtime_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
 const shoppingWorkerCandidate111ExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql");
@@ -2072,6 +2073,22 @@ const checks = {
     && shoppingSupersavingCompositeRecoveryMigration.includes("post_row.last_failure_code is distinct from prior_row.last_failure_code")
     && !/update public\.naver_rank_trackers|update public\.naver_shopping_rank_lookup_jobs|insert into public\.naver_shopping_worker_events|create or replace function public\./iu.test(
       shoppingSupersavingCompositeRecoveryMigration,
+    )
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("mi_guard_naver_shopping_exact_parent_snapshot")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("catalog_seller_product_id")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("catalogSellerProductIds")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("selected_catalog_id is distinct from related_catalog_id")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("pg_catalog.strpos(function_definition, 'pg_catalog.nullif')")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("pg_catalog.strpos(function_definition, 'pg_catalog.coalesce')")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("trigger_row.tgfoid = pg_catalog.to_regprocedure")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("trigger_row.tgtype = 23")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("trigger_row.tgenabled <> 'D'")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("exact_trigger_count <> 1")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("security invoker")
+    && shoppingExactParentGuardRuntimeRecoveryMigration.includes("set search_path = ''")
+    && !/pg_catalog\.(?:nullif|coalesce)\s*\(/iu.test(shoppingExactParentGuardRuntimeRecoveryMigration)
+    && !/drop\s+trigger|create\s+trigger|update\s+public\.|insert\s+into\s+public\.|delete\s+from\s+public\./iu.test(
+      shoppingExactParentGuardRuntimeRecoveryMigration,
     )
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("security invoker")

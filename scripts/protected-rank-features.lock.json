@@ -212,7 +212,7 @@
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "61dda2a09ec4f6ea2a879292341ca0f08bd4bcfbb3a09904205d93aaac592784"
+      "sha256": "647432fa1e0ec81d322464460592212ccf7ce6adc237ba64efbe7e0fdadf143c"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -737,6 +737,12 @@
       "id": "shopping-next-data-schema-drift-recovery",
       "file": "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
       "sha256": "179c17d3130eccebb14fcb7b33810db035a04ebc7515a01fddf2f4e6c40b1806",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-supersaving-composite-recovery",
+      "file": "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
+      "sha256": "3faad589beb318b8b0eaa8c87b2d0b890f717f4ac5af81c0f2eece22b15fb0bf",
       "rankMigration": true
     }
   ]

@@ -8,17 +8,22 @@ import { fileURLToPath } from "node:url";
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDirectory = path.join(repositoryRoot, "supabase", "migrations");
 const exactParentMigrationName = "20260827050000_naver_shopping_exact_parent_relation_guard.sql";
-const recoveryMigrationName = "20260827194500_naver_shopping_next_data_schema_drift_recovery.sql";
+const schemaDriftRecoveryMigrationName = "20260827194500_naver_shopping_next_data_schema_drift_recovery.sql";
+const supersavingRecoveryMigrationName = "20260828025000_naver_shopping_supersaving_composite_recovery.sql";
 const migrationNames = fs.readdirSync(migrationDirectory)
   .filter((name) => /^\d{14}_naver_shopping_runtime_1_1_16(?:_[a-z0-9_]+)?\.sql$/u.test(name));
 const migrationName = migrationNames[0] || "";
 const migration = migrationName
   ? fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8")
   : "";
-const recoveryMigration = fs.readFileSync(
-  path.join(migrationDirectory, recoveryMigrationName),
+const schemaDriftRecoveryMigration = fs.readFileSync(
+  path.join(migrationDirectory, schemaDriftRecoveryMigrationName),
   "utf8",
 );
+const supersavingRecoveryMigrationPath = path.join(migrationDirectory, supersavingRecoveryMigrationName);
+const supersavingRecoveryMigration = fs.existsSync(supersavingRecoveryMigrationPath)
+  ? fs.readFileSync(supersavingRecoveryMigrationPath, "utf8")
+  : "";
 
 const runtimeFiles = [
   "tools/naver-shopping-chrome-extension/service-worker.js",
@@ -97,7 +102,7 @@ test("binds runtime 1.1.16 to the canonical Windows byte fingerprint everywhere"
   assert.match(parentAudit, /export const N30_PARENT_CANARY_RUNTIME_VERSION = "1\.1\.16";/u);
   assert.match(parentAudit, new RegExp(expectedRuntime.fingerprint, "u"));
   assert.match(
-    recoveryMigration,
+    supersavingRecoveryMigration,
     new RegExp(`runtime_fingerprint\\s*=\\s*'${expectedRuntime.fingerprint}'`, "iu"),
   );
   assert.match(
@@ -106,9 +111,8 @@ test("binds runtime 1.1.16 to the canonical Windows byte fingerprint everywhere"
   );
 });
 
-test("recovers only the exact idle schema-drift circuit and preserves last-good evidence", () => {
-  const expectedRuntime = runtimeFixture("1.1.16");
-  requireAll(recoveryMigration, [
+test("keeps the first exact idle schema-drift recovery immutable", () => {
+  requireAll(schemaDriftRecoveryMigration, [
     /^begin;/imu,
     /commit;\s*$/iu,
     /set local lock_timeout = '5s'/iu,
@@ -140,7 +144,7 @@ test("recovers only the exact idle schema-drift circuit and preserves last-good 
     /get diagnostics coordination_updated_count = row_count/iu,
     /target_updated_count <> 1/iu,
     /coordination_updated_count <> 1/iu,
-    new RegExp(expectedRuntime.fingerprint, "u"),
+    /8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1/u,
     /cadence_mode = 'baseline'/iu,
     /cadence_minutes = 10/iu,
     /stability_started_at = null/iu,
@@ -157,10 +161,82 @@ test("recovers only the exact idle schema-drift circuit and preserves last-good 
     /post_row\.last_failure_code is distinct from prior_row\.last_failure_code/iu,
   ]);
 
-  assert.doesNotMatch(recoveryMigration, /update public\.naver_rank_trackers/iu);
-  assert.doesNotMatch(recoveryMigration, /update public\.naver_shopping_rank_lookup_jobs/iu);
-  assert.doesNotMatch(recoveryMigration, /insert into public\.naver_shopping_worker_events/iu);
-  assert.doesNotMatch(recoveryMigration, /create or replace function public\./iu);
+  assert.doesNotMatch(schemaDriftRecoveryMigration, /update public\.naver_rank_trackers/iu);
+  assert.doesNotMatch(schemaDriftRecoveryMigration, /update public\.naver_shopping_rank_lookup_jobs/iu);
+  assert.doesNotMatch(schemaDriftRecoveryMigration, /insert into public\.naver_shopping_worker_events/iu);
+  assert.doesNotMatch(schemaDriftRecoveryMigration, /create or replace function public\./iu);
+});
+
+test("recovers only the exact idle supersaving circuit and preserves all evidence", () => {
+  const expectedRuntime = runtimeFixture("1.1.16");
+  assert.ok(supersavingRecoveryMigration, "supersaving recovery migration must be readable");
+  assert.ok(
+    supersavingRecoveryMigrationName > schemaDriftRecoveryMigrationName,
+    "supersaving recovery must follow the first schema-drift recovery",
+  );
+  requireAll(supersavingRecoveryMigration, [
+    /^begin;/imu,
+    /commit;\s*$/iu,
+    /set local lock_timeout = '5s'/iu,
+    /lock table public\.naver_shopping_worker_coordination in access exclusive mode/iu,
+    /where lane_key = 'global'[\s\S]*for update/iu,
+    /prior_target\.runtime_version is distinct from '1\.1\.16'/iu,
+    /8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1/u,
+    /prior_row\.circuit_state is distinct from 'open'/iu,
+    /prior_row\.circuit_reason is distinct from prior_row\.failure_signature/iu,
+    /prior_row\.circuit_reason is distinct from\s*\('collecting:' \|\| coalesce\(prior_row\.last_failure_code, ''\)\)/iu,
+    /\^collecting:naver_next_data_schema_drift:compositelist_list_\[0-9\]\+_type_supersaving\$/u,
+    /\^naver_next_data_schema_drift:compositelist_list_\[0-9\]\+_type_supersaving\$/u,
+    /prior_row\.current_stage is distinct from 'failed'/iu,
+    /prior_row\.current_page is distinct from 8/iu,
+    /processing_count <> 0/iu,
+    /prior_row\.lease_worker_id is not null/iu,
+    /prior_row\.lease_token is not null/iu,
+    /prior_row\.lease_until is not null/iu,
+    /prior_row\.run_id is not null/iu,
+    /prior_row\.current_job_kind is not null/iu,
+    /prior_row\.current_tracker_id is not null/iu,
+    /prior_row\.current_job_started_at is not null/iu,
+    /prior_row\.probe_tracker_id is not null/iu,
+    /prior_row\.probe_started_at is not null/iu,
+    /prior_row\.last_collection_id !~ '\^pw-chrome-'/iu,
+    /prior_row\.last_checked_count is distinct from 300/iu,
+    /prior_row\.last_excluded_ad_count is null/iu,
+    /prior_row\.last_duration_ms is null/iu,
+    /prior_row\.last_source is distinct from 'naver_shopping_results_collector'/iu,
+    /prior_row\.last_failure_at <= prior_row\.last_success_at/iu,
+    /get diagnostics target_updated_count = row_count/iu,
+    /get diagnostics coordination_updated_count = row_count/iu,
+    /target_updated_count <> 1/iu,
+    /coordination_updated_count <> 1/iu,
+    new RegExp(expectedRuntime.fingerprint, "u"),
+    /cadence_mode = 'baseline'/iu,
+    /cadence_minutes = 10/iu,
+    /stability_started_at = null/iu,
+    /success_streak = 0/iu,
+    /runtime_version = null/iu,
+    /runtime_fingerprint = null/iu,
+    /circuit_state = 'closed'/iu,
+    /circuit_reason = null/iu,
+    /failure_signature = null/iu,
+    /failure_streak = 0/iu,
+    /current_stage = null/iu,
+    /current_page = 0/iu,
+    /post_row\.last_success_at is distinct from prior_row\.last_success_at/iu,
+    /post_row\.last_collection_id is distinct from prior_row\.last_collection_id/iu,
+    /post_row\.last_failure_at is distinct from prior_row\.last_failure_at/iu,
+    /post_row\.last_failure_code is distinct from prior_row\.last_failure_code/iu,
+    /to_jsonb\(post_target\) - 'runtime_fingerprint'/iu,
+    /to_jsonb\(prior_target\) - 'runtime_fingerprint'/iu,
+    /to_jsonb\(post_row\) - array\[/iu,
+    /to_jsonb\(prior_row\) - array\[/iu,
+    /post_row\.scheduler_cycle_cursor_tracker_id is distinct from prior_row\.scheduler_cycle_cursor_tracker_id/iu,
+  ]);
+
+  assert.doesNotMatch(supersavingRecoveryMigration, /update public\.naver_rank_trackers/iu);
+  assert.doesNotMatch(supersavingRecoveryMigration, /update public\.naver_shopping_rank_lookup_jobs/iu);
+  assert.doesNotMatch(supersavingRecoveryMigration, /insert into public\.naver_shopping_worker_events/iu);
+  assert.doesNotMatch(supersavingRecoveryMigration, /create or replace function public\./iu);
 });
 
 test("transitions only from exact runtime 1.1.15 while idle and resets cadence proof", () => {

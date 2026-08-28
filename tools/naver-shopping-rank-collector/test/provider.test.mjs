@@ -387,6 +387,46 @@ test("ignores non-product composite helpers only when they contain no organic pr
   assert.deepEqual(parsed.rows.map((row) => row.productId), ["91000000001", "91000000002"]);
 });
 
+test("excludes an explicit supersaving composite even when it carries product metadata", () => {
+  const parsed = parseNaverNextDataPage(nextDataFixture({
+    total: 1,
+    entries: [
+      {
+        type: "supersaving",
+        item: {
+          collection: "product",
+          rank: 1,
+          id: "99999999998",
+          parentCatalogId: "59776958987",
+          mallProductId: "99999999999",
+          productTitle: "NEXT 상품 1",
+          imageUrl: "https://shopping-phinf.pstatic.net/91000000001.jpg",
+        },
+      },
+      nextDataProduct(1),
+    ],
+  }), { pageIndex: 1, keyword: "온열찜질기" });
+
+  assert.deepEqual(parsed.rows[0], {
+    rowSource: "next_data_composite_v1",
+    extractionKey: "next:1:ad:0:type:supersaving",
+    isAd: true,
+    isOrganic: false,
+  });
+  assert.equal(parsed.rows[0].catalogId, undefined);
+  assert.equal(parsed.rows[0].sellerProductId, undefined);
+  assert.equal(parsed.rows[0].title, undefined);
+  assert.deepEqual(
+    parsed.rows.filter((row) => row.isOrganic).map((row) => row.productId),
+    ["91000000001"],
+  );
+
+  const state = { items: [], identities: new Set(), rawCount: 0, excludedAdCount: 0 };
+  appendNormalizedPage(state, parsed, { pageIndex: 1, limit: 1 });
+  assert.equal(state.excludedAdCount, 1);
+  assert.deepEqual(state.items.map((item) => item.productId), ["91000000001"]);
+});
+
 test("fails closed when a non-product composite row carries organic product evidence", () => {
   const productLike = nextDataAuxiliary(1, {
     item: {
@@ -405,6 +445,109 @@ test("fails closed when a non-product composite row carries organic product evid
       && error.code === "naver_next_data_schema_drift"
       && error.detail === "compositeList.list.0.type.recommendation",
   );
+});
+
+test("fails closed for an unknown same-title wrong-seller composite with product evidence", () => {
+  const maliciousUnknown = {
+    type: "recommendation",
+    item: {
+      collection: "product",
+      rank: 1,
+      id: "99999999998",
+      parentCatalogId: "59776958987",
+      mallProductId: "99999999999",
+      productTitle: "NEXT 상품 1",
+      imageUrl: "https://shopping-phinf.pstatic.net/91000000001.jpg",
+    },
+  };
+
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 1,
+      entries: [maliciousUnknown, nextDataProduct(1)],
+    }), { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_schema_drift"
+      && error.detail === "compositeList.list.0.type.recommendation",
+  );
+});
+
+test("fails closed when an unknown composite carries any direct product signal", () => {
+  const directProductSignals = [
+    ["id", "99999999998"],
+    ["productId", "99999999998"],
+    ["catalogId", "59776958987"],
+    ["linkedCatalogId", "59776958987"],
+    ["parentId", "59776958987"],
+    ["sellerProductId", "99999999999"],
+    ["mallProductUrl", "https://smartstore.naver.com/example/products/99999999999"],
+    ["mallProdMblUrl", "https://m.smartstore.naver.com/example/products/99999999999"],
+    ["mblProdUrl", "https://m.smartstore.naver.com/example/products/99999999999"],
+    ["mallPcUrl", "https://smartstore.naver.com/example/products/99999999999"],
+    ["imageUrl", "https://shopping-phinf.pstatic.net/99999999998.jpg"],
+  ];
+
+  for (const [field, value] of directProductSignals) {
+    assert.throws(
+      () => parseNaverNextDataPage(nextDataFixture({
+        total: 1,
+        entries: [{
+          type: "recommendation",
+          item: { collection: "recommendation", [field]: value },
+        }, nextDataProduct(1)],
+      }), { pageIndex: 1, keyword: "온열찜질기" }),
+      (error) => error instanceof ProviderError
+        && error.code === "naver_next_data_schema_drift"
+        && error.detail === "compositeList.list.0.type.recommendation",
+      `unknown composite with ${field} must fail closed`,
+    );
+  }
+});
+
+test("fails closed when an unknown composite nests a product container inside item", () => {
+  const nestedProductContainers = [
+    ["product", { id: "99999999998", mallProductId: "99999999999" }],
+    ["products", [{ id: "99999999998", mallProductId: "99999999999" }]],
+    ["items", [{ id: "99999999998", mallProductId: "99999999999" }]],
+  ];
+
+  for (const [field, value] of nestedProductContainers) {
+    assert.throws(
+      () => parseNaverNextDataPage(nextDataFixture({
+        total: 1,
+        entries: [{
+          type: "recommendation",
+          item: { collection: "recommendation", [field]: value },
+        }, nextDataProduct(1)],
+      }), { pageIndex: 1, keyword: "온열찜질기" }),
+      (error) => error instanceof ProviderError
+        && error.code === "naver_next_data_schema_drift"
+        && error.detail === "compositeList.list.0.type.recommendation",
+      `unknown composite with nested item.${field} must fail closed`,
+    );
+  }
+});
+
+test("does not widen the strict SSR allowlist to ad-like unknown composite names", () => {
+  for (const type of ["foo_supersaving", "recommendation_paid", "brand_ad_module"]) {
+    assert.throws(
+      () => parseNaverNextDataPage(nextDataFixture({
+        total: 1,
+        entries: [{
+          type,
+          item: {
+            collection: "product",
+            rank: 1,
+            mallProductId: "99999999999",
+            productTitle: "NEXT 상품 1",
+          },
+        }, nextDataProduct(1)],
+      }), { pageIndex: 1, keyword: "온열찜질기" }),
+      (error) => error instanceof ProviderError
+        && error.code === "naver_next_data_schema_drift"
+        && error.detail === `compositeList.list.0.type.${type}`,
+    );
+  }
 });
 
 test("accepts Naver's internal spacing normalization only for the submitted query", () => {

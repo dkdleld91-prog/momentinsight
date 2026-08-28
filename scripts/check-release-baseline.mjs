@@ -235,6 +235,7 @@ const shoppingStableFiniteWindowRuntime1115Migration = read("supabase/migrations
 const shoppingExactParentRelationGuardMigration = read("supabase/migrations/20260827050000_naver_shopping_exact_parent_relation_guard.sql");
 const shoppingStableFiniteWindowRuntime1116Migration = read("supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql");
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
+const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
 const shoppingWorkerCandidate111ExactIdentityMigration = read("supabase/migrations/20260822061741_naver_shopping_candidate_exact_identity_gate.sql");
 const shoppingWorkerCandidateExactIdentityMigration = read("supabase/migrations/20260824042232_naver_shopping_runtime_1_1_12_exact_candidate_gate.sql");
@@ -2053,11 +2054,25 @@ const checks = {
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set runtime_version = '1.1.16'")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f")
     && shoppingNextDataSchemaDriftRecoveryMigration.includes("570ffc52d411f2ae34e247b77d7fb645d36f4478b624ed56926a6ccc00b6159f")
-    && shoppingNextDataSchemaDriftRecoveryMigration.includes(shoppingWorkerRuntime1116Fingerprint)
+    && shoppingNextDataSchemaDriftRecoveryMigration.includes("8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1")
     && shoppingNextDataSchemaDriftRecoveryMigration.includes("naver_next_data_schema_drift:compositelist_list_[0-9]+_type")
     && shoppingNextDataSchemaDriftRecoveryMigration.includes("last_checked_count is distinct from 300")
     && shoppingNextDataSchemaDriftRecoveryMigration.includes("circuit_state = 'closed'")
     && shoppingNextDataSchemaDriftRecoveryMigration.includes("runtime_fingerprint = null")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1")
+    && shoppingSupersavingCompositeRecoveryMigration.includes(shoppingWorkerRuntime1116Fingerprint)
+    && shoppingSupersavingCompositeRecoveryMigration.includes("^collecting:naver_next_data_schema_drift:compositelist_list_[0-9]+_type_supersaving$")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("^naver_next_data_schema_drift:compositelist_list_[0-9]+_type_supersaving$")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("last_checked_count is distinct from 300")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("set cadence_mode = 'baseline'")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("circuit_state = 'closed'")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("runtime_fingerprint = null")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("post_row.scheduler_cycle_cursor_tracker_id is distinct from prior_row.scheduler_cycle_cursor_tracker_id")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("post_row.last_collection_id is distinct from prior_row.last_collection_id")
+    && shoppingSupersavingCompositeRecoveryMigration.includes("post_row.last_failure_code is distinct from prior_row.last_failure_code")
+    && !/update public\.naver_rank_trackers|update public\.naver_shopping_rank_lookup_jobs|insert into public\.naver_shopping_worker_events|create or replace function public\./iu.test(
+      shoppingSupersavingCompositeRecoveryMigration,
+    )
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("security invoker")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set search_path = ''")
@@ -2065,7 +2080,8 @@ const checks = {
     && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1116Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
-    && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
+    && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
+    && !shoppingSupersavingCompositeRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
   shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.12 exact candidate gate")
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2

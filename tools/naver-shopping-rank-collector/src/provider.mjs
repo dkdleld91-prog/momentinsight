@@ -39,6 +39,7 @@ const BLOCK_TEXT_PATTERNS = [
 const EMPTY_TEXT_PATTERN = /검색\s*결과가\s*없|조건에\s*맞는\s*상품이\s*없|상품을\s*찾을\s*수\s*없/i;
 const EXPLICIT_AD_TEXT_PATTERN = /^(?:광고|ad|sponsored|스폰서)$/i;
 const NON_ORGANIC_TYPE_PATTERN = /(?:^|[_-])(?:supersaving|brand[_-]?ad|powerlink|sponsored|paid)(?:$|[_-])/i;
+const NEXT_DATA_NON_ORGANIC_COMPOSITE_TYPES = new Set(["supersaving"]);
 
 export class ProviderError extends Error {
   constructor(code, detail = "") {
@@ -412,19 +413,35 @@ function nextDataCompositeType(value, detail) {
   return value.toLowerCase();
 }
 
-function assertRanklessNonProductComposite(entry, detail) {
+function classifyRanklessNonProductComposite(entry, detail) {
   const type = nextDataCompositeType(entry.type, `${detail}.type`);
+  if (NEXT_DATA_NON_ORGANIC_COMPOSITE_TYPES.has(type)) return { type, isAd: true };
   const item = entry.item;
   const productContainers = [entry.product, entry.products, entry.items];
   if (productContainers.some((value) => value != null)) {
     throw nextDataSchemaError(`${detail}.type.${type}`);
   }
-  if (item == null) return;
+  if (item == null) return { type, isAd: false };
   const record = nextDataRecord(item, `${detail}.item`);
+  const nestedProductContainers = [record.product, record.products, record.items];
+  if (nestedProductContainers.some((value) => value != null)) {
+    throw nextDataSchemaError(`${detail}.type.${type}`);
+  }
   const productSignals = [
+    record.id,
+    record.productId,
+    record.sellerProductId,
+    record.catalogId,
+    record.linkedCatalogId,
+    record.parentId,
     record.rank,
     record.parentCatalogId,
     record.mallProductId,
+    record.mallProductUrl,
+    record.mallProdMblUrl,
+    record.mblProdUrl,
+    record.mallPcUrl,
+    record.imageUrl,
     record.stdCatalogMatchType,
     record.productTitle,
     record.mallId,
@@ -434,6 +451,7 @@ function assertRanklessNonProductComposite(entry, detail) {
     || productSignals.some((value) => value != null && value !== "")) {
     throw nextDataSchemaError(`${detail}.type.${type}`);
   }
+  return { type, isAd: false };
 }
 
 /**
@@ -492,11 +510,20 @@ export function parseNaverNextDataPage(payload, {
     const entryDetail = `compositeList.list.${index}`;
     const entry = nextDataRecord(compositeList.list[index], entryDetail);
     if (entry.type !== "product") {
+      const classification = classifyRanklessNonProductComposite(entry, entryDetail);
+      if (classification.isAd) {
+        rows.push({
+          rowSource: NEXT_DATA_ROW_SOURCE,
+          extractionKey: `next:${expectedPage}:ad:${index}:type:${classification.type}`,
+          isAd: true,
+          isOrganic: false,
+        });
+        continue;
+      }
       // Naver may interleave rankless display helpers with the authoritative
       // product list. Exclude only helpers that carry no product container,
       // absolute rank, seller/catalog identity, or product metadata. The page
       // still has to prove its complete contiguous organic rank count below.
-      assertRanklessNonProductComposite(entry, entryDetail);
       continue;
     }
     const item = nextDataRecord(entry.item, `${entryDetail}.item`);

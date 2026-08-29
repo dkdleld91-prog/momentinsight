@@ -4,9 +4,9 @@ const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 const FINGERPRINT_PATTERN = /^[a-f0-9]{64}$/;
 
 export const N30_TARGET_WORKER_ID = "windows-desktop-primary";
-export const N30_TARGET_RUNTIME_VERSION = "1.1.16";
+export const N30_TARGET_RUNTIME_VERSION = "1.1.17";
 export const N30_TARGET_RUNTIME_FINGERPRINT =
-  "8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1";
+  "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7";
 
 function requireUtcTimestamp(value, fieldName) {
   if (typeof value !== "string" || !ISO_UTC_PATTERN.test(value) || !Number.isFinite(Date.parse(value))) {
@@ -896,7 +896,7 @@ control_plane as (
     c.circuit_reason,
     c.cooldown_until,
     c.lease_worker_id,
-    c.lease_token,
+    (c.lease_token is null) as lease_token_is_null,
     c.lease_until,
     c.run_id,
     c.current_stage,
@@ -971,7 +971,7 @@ verdict as (
       and cp.cooldown_until is null
       and cp.processing_count = 0
       and cp.lease_worker_id is null
-      and cp.lease_token is null
+      and cp.lease_token_is_null
       and cp.lease_until is null
       and cp.run_id is null
       and cp.current_stage is null

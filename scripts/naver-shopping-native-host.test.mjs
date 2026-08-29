@@ -28,6 +28,11 @@ import {
   SCHEMA_VERSION,
   STABLE_FINITE_WINDOW_PROOF_VERSION,
 } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
+import {
+  buildRankTarget,
+  productExposureItemsFromOrganic,
+} from "../src/server/handlers/naver-shopping-rank.mjs";
+import { selectRepresentativeTrackingRank } from "../src/server/handlers/naver-rank-trackers.mjs";
 
 function assertZshSyntax(scriptPath, source) {
   const lint = spawnSync("/bin/zsh", ["-n", scriptPath], { encoding: "utf8" });
@@ -103,6 +108,25 @@ function ranklessCompositeHelper(pageIndex) {
     item: {
       collection: "recommendation",
       moduleIndex: pageIndex,
+    },
+  };
+}
+
+function supersavingComposite(pageIndex) {
+  return {
+    type: "supersaving",
+    item: {
+      collection: "product",
+      rank: ((pageIndex - 1) * 40) + 1,
+      id: String(99000000000 + pageIndex),
+      parentCatalogId: "59776958987",
+      mallProductId: "99999999999",
+      mallId: "naver_model",
+      stdCatalogMatchType: "2",
+      lowMallList: [{ mallPid: "13327339525" }],
+      mallProductUrl: "https://smartstore.naver.com/example/products/99999999999",
+      productTitle: "온열찜질기 테스트 1",
+      imageUrl: "https://shopping-phinf.pstatic.net/main/1.jpg",
     },
   };
 }
@@ -347,6 +371,50 @@ test("builds one strict 300-rank window while excluding rankless composite helpe
     result.items.map((item) => item.organicRank),
     Array.from({ length: 300 }, (_, index) => index + 1),
   );
+});
+
+test("builds one strict 300-rank window while excluding exact supersaving inventory", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const pages = Array.from({ length: 8 }, (_, index) => {
+    const payload = page(index + 1);
+    const data = JSON.parse(payload.nextDataText);
+    data.props.pageProps.compositeList.list.splice(0, 0, supersavingComposite(index + 1));
+    return { ...payload, nextDataText: JSON.stringify(data) };
+  });
+
+  const result = buildNativeWindowFromPages(request(nowMs), pages, { nowMs });
+
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.rawCount, 340);
+  assert.equal(result.excludedAdCount, 40);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  assert.equal(result.items.some((item) => item.sellerProductId === "99999999999"), false);
+  assert.equal(result.items.some((item) => item.catalogId === "59776958987"), false);
+  assert.equal(
+    result.items.some((item) => item.catalogSellerProductIds?.includes("13327339525")),
+    false,
+  );
+
+  const targetProductId = "13327339525";
+  const productExposureItems = productExposureItemsFromOrganic(
+    result.items.map((item) => ({ rank: item.organicRank, isOrganic: true, item })),
+    null,
+    buildRankTarget({ targetProductId }),
+  );
+  const representative = selectRepresentativeTrackingRank({
+    matched: false,
+    rank: null,
+    targetProductId,
+    productExposureItems,
+  });
+  assert.deepEqual(productExposureItems, []);
+  assert.equal(representative.matched, false);
+  assert.equal(representative.rank, null);
+  assert.equal(representative.trackingRankSource, "not_found");
+  assert.equal(representative.relatedCatalogRank, null);
 });
 
 test("fails closed when a non-product composite helper carries product evidence", () => {
@@ -1079,7 +1147,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.16");
+  assert.equal(manifest.version, "1.1.17");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2387,7 +2455,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.16");
+  assert.equal(manifest.version, "1.1.17");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2562,7 +2630,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.16",
+    runtimeVersion: "1.1.17",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

@@ -64,10 +64,10 @@ function isExactFiniteNeutralFailureFixture(fixture) {
 }
 
 test("builds one fixed-wall read-only candidate audit with the full integrity contract", () => {
-  assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.16");
+  assert.equal(N30_TARGET_RUNTIME_VERSION, "1.1.17");
   assert.equal(
     N30_TARGET_RUNTIME_FINGERPRINT,
-    "8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1",
+    "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7",
   );
   const sql = buildN30CandidatePerformanceAuditSql(validOptions);
 
@@ -122,6 +122,11 @@ test("builds one fixed-wall read-only candidate audit with the full integrity co
   assert.match(sql, /missing_or_identity_mismatch/);
   assert.match(sql, /c\.updated_at/);
   assert.match(sql, /cp\.updated_at <= p\.observed_at/);
+  assert.match(sql, /\(c\.lease_token is null\) as lease_token_is_null/);
+  assert.match(sql, /cp\.lease_token_is_null/);
+  assert.equal((sql.match(/\bc\.lease_token\b/gu) || []).length, 1);
+  assert.doesNotMatch(sql, /\n\s*c\.lease_token,\n/u);
+  assert.doesNotMatch(sql, /cp\.lease_token is null/u);
   assert.match(sql, /pg_catalog\.jsonb_array_elements\(\s*case/);
   assert.match(sql, /n30_candidate_performance_audit_v1/);
   assert.match(sql, /candidate_success/);

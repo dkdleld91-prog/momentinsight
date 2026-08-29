@@ -125,7 +125,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "windows-desktop-primary",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.16",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.17",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
     MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-catch-up",
   };
@@ -306,7 +306,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.16");
+  assert.equal(lane.runtimeVersion, "1.1.17");
   assert.equal(lane.runTrigger, "rank-catch-up");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
@@ -427,7 +427,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.16");
+  assert.equal(coordination[0].runtimeVersion, "1.1.17");
   assert.equal(coordination[0].runTrigger, "rank-catch-up");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
@@ -475,7 +475,7 @@ test("submits one stable finite canary without recording an atomic300 success", 
   assert.deepEqual(finiteModes, [true]);
   assert.equal(calls.coordination[0].runTrigger, "rank-catch-up");
   assert.equal(calls.coordination[0].workerId, "windows-desktop-primary");
-  assert.equal(calls.coordination[0].runtimeVersion, "1.1.16");
+  assert.equal(calls.coordination[0].runtimeVersion, "1.1.17");
   assert.equal(calls.coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
   assert.equal(calls.coordination.at(-1).action, "release-lane");
@@ -1980,6 +1980,65 @@ test("isolates malformed provider rows to their keyword group and continues the 
       assert.equal(calls.coordination.filter((call) => call.action === "record-success").length, 1);
     });
   }
+});
+
+test("isolates an exact rank-drift group and continues the next scheduled keyword", async () => {
+  const calls = [];
+  const firstJob = JOB;
+  const nextJob = {
+    ...JOB,
+    keyword: "남자팬티",
+    claims: [{
+      ...JOB.claims[0],
+      trackerId: "123e4567-e89b-42d3-a456-426614174004",
+    }],
+  };
+  let collectCount = 0;
+  const provider = {
+    async collect(request) {
+      collectCount += 1;
+      if (collectCount === 1) {
+        const error = new Error("naver_next_data_rank_drift");
+        error.code = "naver_next_data_rank_drift";
+        error.detail = "p1:i17:r10:e9:a1:h0:s1";
+        throw error;
+      }
+      return { ...completeWindow(), keyword: request.keyword };
+    },
+    async close() {},
+  };
+
+  const summary = await runLocalShoppingWorker({
+    env: { ...workerEnv(), MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS: "2" },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: firstJob } },
+      { body: { ok: true, releasedCount: 1 } },
+      { body: { ok: true, job: nextJob } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+      } },
+    ], calls),
+    provider,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.deepEqual(summary, {
+    status: "completed", claimed: 2, submitted: 1, failed: 1, releaseFailed: 0, atomicSuccesses: 1,
+  });
+  assert.equal(collectCount, 2);
+  assert.deepEqual(calls.map((call) => call.action), ["claim", "fail", "claim", "submit"]);
+  assert.equal(calls[1].errorCode, "naver_next_data_rank_drift:p1:i17:r10:e9:a1:h0:s1");
+  const failure = calls.coordination.find((call) => call.action === "record-failure");
+  assert.equal(failure.scope, "tracker");
+  assert.equal(calls.coordination.some((call) => call.action === "block-lane"), false);
+  assert.equal(calls.coordination.filter((call) => call.action === "record-success").length, 1);
 });
 
 test("stops the batch after Naver requests verification and preserves all unclaimed work", async () => {

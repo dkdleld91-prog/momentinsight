@@ -39,6 +39,7 @@ const BLOCK_TEXT_PATTERNS = [
 const EMPTY_TEXT_PATTERN = /검색\s*결과가\s*없|조건에\s*맞는\s*상품이\s*없|상품을\s*찾을\s*수\s*없/i;
 const EXPLICIT_AD_TEXT_PATTERN = /^(?:광고|ad|sponsored|스폰서)$/i;
 const NON_ORGANIC_TYPE_PATTERN = /(?:^|[_-])(?:supersaving|brand[_-]?ad|powerlink|sponsored|paid)(?:$|[_-])/i;
+const NEXT_DATA_NON_ORGANIC_COMPOSITE_TYPES = new Set(["supersaving"]);
 
 export class ProviderError extends Error {
   constructor(code, detail = "") {
@@ -412,19 +413,35 @@ function nextDataCompositeType(value, detail) {
   return value.toLowerCase();
 }
 
-function assertRanklessNonProductComposite(entry, detail) {
+function classifyRanklessNonProductComposite(entry, detail) {
   const type = nextDataCompositeType(entry.type, `${detail}.type`);
+  if (NEXT_DATA_NON_ORGANIC_COMPOSITE_TYPES.has(type)) return { type, isAd: true };
   const item = entry.item;
   const productContainers = [entry.product, entry.products, entry.items];
   if (productContainers.some((value) => value != null)) {
     throw nextDataSchemaError(`${detail}.type.${type}`);
   }
-  if (item == null) return;
+  if (item == null) return { type, isAd: false };
   const record = nextDataRecord(item, `${detail}.item`);
+  const nestedProductContainers = [record.product, record.products, record.items];
+  if (nestedProductContainers.some((value) => value != null)) {
+    throw nextDataSchemaError(`${detail}.type.${type}`);
+  }
   const productSignals = [
+    record.id,
+    record.productId,
+    record.sellerProductId,
+    record.catalogId,
+    record.linkedCatalogId,
+    record.parentId,
     record.rank,
     record.parentCatalogId,
     record.mallProductId,
+    record.mallProductUrl,
+    record.mallProdMblUrl,
+    record.mblProdUrl,
+    record.mallPcUrl,
+    record.imageUrl,
     record.stdCatalogMatchType,
     record.productTitle,
     record.mallId,
@@ -434,13 +451,16 @@ function assertRanklessNonProductComposite(entry, detail) {
     || productSignals.some((value) => value != null && value !== "")) {
     throw nextDataSchemaError(`${detail}.type.${type}`);
   }
+  return { type, isAd: false };
 }
 
 /**
  * Parse the current Naver Shopping SSR contract without guessing through the DOM.
  * `compositeList.list` is already in rendered document order. Ads carry `adId`,
- * while organic products carry an absolute `rank` that must remain contiguous
- * across pagingIndex values (1..300 for the collector contract).
+ * while organic products carry an absolute `rank`. A paid row may consume one
+ * provider rank slot; only a preceding, explicitly classified paid row with a
+ * bounded numeric rank may explain that offset. The emitted source ranks stay
+ * contiguous organic positions across pagingIndex values (1..300).
  */
 export function parseNaverNextDataPage(payload, {
   pageIndex = 1,
@@ -487,16 +507,45 @@ export function parseNaverNextDataPage(payload, {
   const expectedStartRank = ((expectedPage - 1) * expectedPageSize) + 1;
   const rows = [];
   let organicCount = 0;
+  let adSlotCount = 0;
+  const rankedAdRanks = new Set();
+  const observedOrganicRawRanks = new Set();
+  let acceptedRankOffset = 0;
+  let helperSlotCount = 0;
+  let supersavingSlotCount = 0;
+
+  const countRankedAdSlot = (entry, detail) => {
+    if (entry.item == null) return;
+    const adItem = nextDataRecord(entry.item, `${detail}.item`);
+    if (adItem.rank == null) return;
+    if (!Number.isSafeInteger(adItem.rank) || adItem.rank < 1 || adItem.rank > 400) {
+      throw nextDataSchemaError(`${detail}.item.rank`);
+    }
+    rankedAdRanks.add(adItem.rank);
+  };
 
   for (let index = 0; index < compositeList.list.length; index += 1) {
     const entryDetail = `compositeList.list.${index}`;
     const entry = nextDataRecord(compositeList.list[index], entryDetail);
     if (entry.type !== "product") {
+      const classification = classifyRanklessNonProductComposite(entry, entryDetail);
+      if (classification.isAd) {
+        adSlotCount += 1;
+        countRankedAdSlot(entry, entryDetail);
+        if (classification.type === "supersaving") supersavingSlotCount += 1;
+        rows.push({
+          rowSource: NEXT_DATA_ROW_SOURCE,
+          extractionKey: `next:${expectedPage}:ad:${index}:type:${classification.type}`,
+          isAd: true,
+          isOrganic: false,
+        });
+        continue;
+      }
       // Naver may interleave rankless display helpers with the authoritative
       // product list. Exclude only helpers that carry no product container,
       // absolute rank, seller/catalog identity, or product metadata. The page
       // still has to prove its complete contiguous organic rank count below.
-      assertRanklessNonProductComposite(entry, entryDetail);
+      helperSlotCount += 1;
       continue;
     }
     const item = nextDataRecord(entry.item, `${entryDetail}.item`);
@@ -504,6 +553,8 @@ export function parseNaverNextDataPage(payload, {
 
     const adId = nextDataOptionalString(item.adId, `${entryDetail}.item.adId`, 200);
     if (adId) {
+      adSlotCount += 1;
+      countRankedAdSlot(entry, entryDetail);
       rows.push({
         rowSource: NEXT_DATA_ROW_SOURCE,
         extractionKey: `next:${expectedPage}:ad:${index}:${adId}`,
@@ -514,12 +565,44 @@ export function parseNaverNextDataPage(payload, {
     }
 
     const expectedRank = expectedStartRank + organicCount;
-    if (!Number.isInteger(item.rank) || item.rank !== expectedRank) {
+    const actualRank = Number.isSafeInteger(item.rank) && item.rank >= 1 && item.rank <= 400
+      ? item.rank
+      : null;
+    const observedRankOffset = actualRank == null ? null : actualRank - expectedRank;
+    const rawRankSlotsAreContiguous = actualRank != null
+      && (() => {
+        for (let rank = expectedStartRank; rank <= actualRank; rank += 1) {
+          if (rank !== actualRank
+            && !observedOrganicRawRanks.has(rank)
+            && !rankedAdRanks.has(rank)) {
+            return false;
+          }
+        }
+        return true;
+      })();
+    if (observedRankOffset == null
+      || observedRankOffset < acceptedRankOffset
+      || !rawRankSlotsAreContiguous) {
+      const actualRank = Number.isSafeInteger(item.rank) && item.rank >= 1 && item.rank <= 300
+        ? item.rank
+        : "x";
       throw new ProviderError(
         "naver_next_data_rank_drift",
-        `${entryDetail}.item.rank:${String(item.rank)}!=${expectedRank}`,
+        [
+          `p${expectedPage}`,
+          `i${index}`,
+          `r${actualRank}`,
+          `e${expectedRank}`,
+          `a${adSlotCount}`,
+          `q${rankedAdRanks.size}`,
+          `h${helperSlotCount}`,
+          `s${supersavingSlotCount}`,
+          `o${acceptedRankOffset}`,
+        ].join(":"),
       );
     }
+    acceptedRankOffset = observedRankOffset;
+    observedOrganicRawRanks.add(actualRank);
     const productId = nextDataNumericId(item.id, `${entryDetail}.item.id`, { required: true });
     const parentCatalogId = nextDataNumericId(
       item.parentCatalogId,
@@ -578,7 +661,10 @@ export function parseNaverNextDataPage(payload, {
     const row = {
       rowSource: NEXT_DATA_ROW_SOURCE,
       extractionKey: `next:${expectedPage}:organic:${item.rank}:${productId}`,
-      sourceRank: item.rank,
+      // `item.rank` may include an explicitly identified paid slot. Once the
+      // bounded offset is fully accounted for by preceding ranked ad rows, the
+      // persisted rank remains the contiguous organic-only position.
+      sourceRank: expectedRank,
       isAd: false,
       isOrganic: true,
       productId,
@@ -609,7 +695,16 @@ export function parseNaverNextDataPage(payload, {
   if (organicCount !== expectedOrganicCount) {
     throw new ProviderError(
       "naver_next_data_rank_drift",
-      `page:${expectedPage}:count:${organicCount}!=${expectedOrganicCount}`,
+      [
+        `p${expectedPage}`,
+        `c${organicCount}`,
+        `e${expectedOrganicCount}`,
+        `a${adSlotCount}`,
+        `q${rankedAdRanks.size}`,
+        `h${helperSlotCount}`,
+        `s${supersavingSlotCount}`,
+        `o${acceptedRankOffset}`,
+      ].join(":"),
     );
   }
 
@@ -1534,7 +1629,6 @@ export function createPlaywrightProvider(options = {}) {
     } else if (
       code === "naver_frontend_schema_drift"
       || code === "naver_next_data_schema_drift"
-      || code === "naver_next_data_rank_drift"
       || code === "naver_selector_drift"
     ) {
       cooldownUntil = Math.max(cooldownUntil, now() + config.schemaCooldownMs);

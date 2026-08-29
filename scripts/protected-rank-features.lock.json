@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "a6eeec16f1ccee58d5f4bafa99d76b8dad4ca8d3e713b89848501b69bbcd8a44"
+      "sha256": "fbfce524be75620363b0e34df5c58dcdcdea3ea4672abc792899eb21cefed7fa"
     },
     {
       "id": "product-organic-rank-server",
@@ -212,7 +212,7 @@
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "61dda2a09ec4f6ea2a879292341ca0f08bd4bcfbb3a09904205d93aaac592784"
+      "sha256": "240127d9ca206867542e11fa451af5b3e03419ce313919d95ece86f393aa830b"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "085290017ee4fb0753bf6dcaa446ec89e07d6ecf543badaccf8ea910151a5cf2"
+      "sha256": "2781a138d24d231da076c0d9a10e46893d086bdd0e01c3edb4cbc890dd18def2"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "355550ac33b0aa5c56aef2a699f7516076d6006129441bb5c39061cb712c9a91"
+      "sha256": "5b38ccf88d90400de1cd8f86c885ef9ddcc4a38d6e447d716f3eee7e5a1e2405"
     },
     {
       "id": "shopping-cloud-worker",
@@ -625,7 +625,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "fc0885c00d660fdc2ed6b316b6cbb27f4b787573a8f69ffe067a9339763ec03f"
+      "sha256": "2b7030ec6e9c85cd958b6d5d58e5d48a9624b5a021a34115272d2230ef460025"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -743,6 +743,24 @@
       "id": "shopping-next-data-schema-drift-recovery",
       "file": "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
       "sha256": "179c17d3130eccebb14fcb7b33810db035a04ebc7515a01fddf2f4e6c40b1806",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-supersaving-composite-recovery",
+      "file": "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
+      "sha256": "3faad589beb318b8b0eaa8c87b2d0b890f717f4ac5af81c0f2eece22b15fb0bf",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-finite-commit-checked-count-ambiguity",
+      "file": "supabase/migrations/20260828082130_naver_shopping_finite_commit_checked_count_ambiguity.sql",
+      "sha256": "f83b300b67f649f6ef36276b1ada669cf9baa488c3f9a2b7c69d3062df078be4",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-17-rank-drift-isolation",
+      "file": "supabase/migrations/20260829140000_naver_shopping_runtime_1_1_17_rank_drift_isolation.sql",
+      "sha256": "a08a93202dcae57c98d2e44eebd79c745d93f8139190ac4a142e6470550fa1f5",
       "rankMigration": true
     }
   ]

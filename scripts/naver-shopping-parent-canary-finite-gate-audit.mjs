@@ -5,7 +5,7 @@ const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/;
 export const N30_PARENT_CANARY_WORKER_ID = "windows-desktop-primary";
 export const N30_PARENT_CANARY_RUNTIME_VERSION = "1.1.16";
 export const N30_PARENT_CANARY_RUNTIME_FINGERPRINT =
-  "8772da2f70e2e7aa0d35d4cfd4b09436d3da5a1211e83f687c9a6e9bcf9e0bd1";
+  "9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478";
 export const N30_PARENT_CANARY = Object.freeze({
   trackerId: "c0ccded2-9bf7-488e-af8d-00898c0a1ff8",
   normalizedKeyword: "아이쉘차량용거치대",

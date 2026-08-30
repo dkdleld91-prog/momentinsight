@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "f08746a781276e0a45c2dcae613a863de652fdc4ab679ff2ace5a505c13531e4"
+      "sha256": "7d10f92d041b31679ff1b718f2ebe49fb77400c612437b7864768ed3ee96bc62"
     },
     {
       "id": "shopping-worker-wake-server",

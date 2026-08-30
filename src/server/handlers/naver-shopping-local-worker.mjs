@@ -544,7 +544,8 @@ async function claimCycleKeyword(ctx, body) {
   const rawClaims = Array.isArray(data.claims) ? data.claims : [];
   const cycleId = cycleUuid(cycleValue(data, "cycleId", "cycle_id"));
   const priority = String(data.priority || "").trim().toLowerCase();
-  if ((!cycleId && priority !== "probe") || !["new", "resume", "normal", "probe"].includes(priority)
+  if ((!cycleId && priority !== "probe")
+    || !["new", "resume", "normal", "probe", "repair"].includes(priority)
     || rawClaims.length < 1 || rawClaims.length > 100) {
     throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
   }

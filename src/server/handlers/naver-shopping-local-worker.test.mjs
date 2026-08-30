@@ -1086,6 +1086,34 @@ test("cycle RPC is the canonical authority for whitespace-normalized keyword gro
   });
 });
 
+test("active-cycle runtime recovery accepts the bounded repair priority returned by the cycle RPC", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 35 * 60_000).toISOString();
+    const ctx = cycleClaimContext({
+      cycleId: CYCLE_ID,
+      status: "claimed",
+      priority: "repair",
+      keyword: "온열찜질기",
+      claims: [
+        { trackerId: TRACKER_ID, leaseStartedAt, leaseUntil },
+        { trackerId: SECOND_TRACKER_ID, leaseStartedAt, leaseUntil },
+      ],
+    });
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "claim", schedulerVersion: "v2" }),
+      ctx,
+    );
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.job.keyword, "온열찜질기");
+    assert.deepEqual(
+      body.job.claims.map((claim) => claim.trackerId),
+      [TRACKER_ID, SECOND_TRACKER_ID],
+    );
+  });
+});
+
 test("cycle claim surfaces the next deterministic group after database lease contention", async () => {
   await withWorkerEnv(async () => {
     const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();

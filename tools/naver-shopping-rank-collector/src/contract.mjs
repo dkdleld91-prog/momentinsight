@@ -5,6 +5,7 @@ export const SOURCE = "naver_shopping_results_collector";
 export const RANK_EVIDENCE = "naver_shopping_organic_list";
 export const STABLE_FULL_WINDOW_PROOF_VERSION = "stable-full-window-v1";
 export const STABLE_FINITE_WINDOW_PROOF_VERSION = "stable-finite-window-v1";
+export const STABLE_RENDERED_ORDER_PROOF_VERSION = "stable-rendered-order-v1";
 const MAX_RANK_LIMIT = 300;
 const NAVER_SHOPPING_PAGE_SIZE = 40;
 const NAVER_SHOPPING_PAGE_COUNT = 8;
@@ -288,6 +289,29 @@ function stableRankSlot(item) {
   ].join("\u001f");
 }
 
+function renderedOrderIdentitySignal(item) {
+  const isCatalogResult = [1, 4, 7, 10].includes(Number(item.productType));
+  if (isCatalogResult) {
+    if (!item.catalogId) {
+      throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
+    }
+    return `catalog:${item.catalogId}`;
+  }
+  if (!item.sellerProductId) {
+    throw new ContractError("invalid_provider_response", "renderedOrderProof.direct_identity");
+  }
+  return `seller:${item.sellerProductId}`;
+}
+
+function stableRenderedOrderRankSlot(item) {
+  return [
+    item.organicRank,
+    renderedOrderIdentitySignal(item),
+    Number(item.productType || 0),
+    item.linkedCatalogId || "",
+  ].join("\u001f");
+}
+
 function stableCrossPageCollisions(items) {
   const origins = new Map();
   const collisions = [];
@@ -313,6 +337,25 @@ export function stableWindowDigest(items, options = {}) {
     keyword,
     String(MAX_RANK_LIMIT),
     ...normalizedItems.map(stableRankSlot),
+  ].join("\n"), "utf8").digest("hex");
+}
+
+export function stableRenderedOrderWindowDigest(items, options = {}) {
+  const normalizedItems = stableWindowItems(items);
+  const keyword = stableProofKeyword(options.keyword);
+  const identities = new Set();
+  for (const item of normalizedItems) {
+    const signal = renderedOrderIdentitySignal(item);
+    if (identities.has(signal)) {
+      throw new ContractError("invalid_provider_response", "renderedOrderProof.duplicate_identity");
+    }
+    identities.add(signal);
+  }
+  return crypto.createHash("sha256").update([
+    STABLE_RENDERED_ORDER_PROOF_VERSION,
+    keyword,
+    String(MAX_RANK_LIMIT),
+    ...normalizedItems.map(stableRenderedOrderRankSlot),
   ].join("\n"), "utf8").digest("hex");
 }
 
@@ -465,6 +508,54 @@ function validateStableFiniteWindowProof(value, items, keyword, marketTotal) {
   };
 }
 
+function validateStableRenderedOrderProof(value, items, keyword) {
+  if (!isRecord(value)) {
+    throw new ContractError("invalid_provider_response", "renderedOrderProof");
+  }
+  const allowedKeys = new Set([
+    "version",
+    "passCount",
+    "pageCount",
+    "pageSize",
+    "captureIds",
+    "passDigests",
+    "structureDigests",
+  ]);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    throw new ContractError("invalid_provider_response", "renderedOrderProof.unexpected");
+  }
+  const captureIds = Array.isArray(value.captureIds) ? value.captureIds : [];
+  const passDigests = Array.isArray(value.passDigests) ? value.passDigests : [];
+  const structureDigests = Array.isArray(value.structureDigests) ? value.structureDigests : [];
+  if (value.version !== STABLE_RENDERED_ORDER_PROOF_VERSION
+    || value.passCount !== STABLE_FULL_WINDOW_PASS_COUNT
+    || value.pageCount !== NAVER_SHOPPING_PAGE_COUNT
+    || value.pageSize !== NAVER_SHOPPING_PAGE_SIZE
+    || captureIds.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !captureIds.every((captureId) => typeof captureId === "string" && CAPTURE_ID_PATTERN.test(captureId))
+    || captureIds[0] === captureIds[1]
+    || passDigests.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !passDigests.every((digest) => typeof digest === "string" && SHA256_PATTERN.test(digest))
+    || structureDigests.length !== STABLE_FULL_WINDOW_PASS_COUNT
+    || !structureDigests.every((digest) => typeof digest === "string" && SHA256_PATTERN.test(digest))) {
+    throw new ContractError("invalid_provider_response", "renderedOrderProof");
+  }
+  const digest = stableRenderedOrderWindowDigest(items, { keyword });
+  if (passDigests[0] !== passDigests[1]
+    || passDigests[0] !== digest) {
+    throw new ContractError("invalid_provider_response", "renderedOrderProof.mismatch");
+  }
+  return {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: STABLE_FULL_WINDOW_PASS_COUNT,
+    pageCount: NAVER_SHOPPING_PAGE_COUNT,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: passDigests.slice(),
+    structureDigests: structureDigests.slice(),
+  };
+}
+
 export function validateProviderWindow(value, request) {
   if (!isRecord(value)) throw new ContractError("invalid_provider_response", "body");
   if (value.ok !== true) throw new ContractError("invalid_provider_response", "ok");
@@ -571,6 +662,24 @@ export function validateProviderWindow(value, request) {
   } else if (value.finiteWindowProof !== undefined) {
     throw new ContractError("invalid_provider_response", "finiteWindowProof.unexpected");
   }
+  let renderedOrderProof;
+  if (value.renderedOrderProof !== undefined) {
+    if (request.limit !== MAX_RANK_LIMIT
+      || items.length !== MAX_RANK_LIMIT
+      || marketTotalStatus !== "verified"
+      || !Number.isInteger(marketTotal)
+      || marketTotal < MAX_RANK_LIMIT
+      || crossPageDuplicate
+      || crossPageProof
+      || finiteWindowProof) {
+      throw new ContractError("invalid_provider_response", "renderedOrderProof.coverage");
+    }
+    renderedOrderProof = validateStableRenderedOrderProof(
+      value.renderedOrderProof,
+      items,
+      request.keyword,
+    );
+  }
 
   return {
     ok: true,
@@ -591,5 +700,6 @@ export function validateProviderWindow(value, request) {
     items,
     ...(crossPageProof ? { crossPageProof } : {}),
     ...(finiteWindowProof ? { finiteWindowProof } : {}),
+    ...(renderedOrderProof ? { renderedOrderProof } : {}),
   };
 }

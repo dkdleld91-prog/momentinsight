@@ -27,6 +27,7 @@ import {
 import {
   SCHEMA_VERSION,
   STABLE_FINITE_WINDOW_PROOF_VERSION,
+  STABLE_RENDERED_ORDER_PROOF_VERSION,
 } from "../tools/naver-shopping-rank-collector/src/contract.mjs";
 import {
   buildRankTarget,
@@ -163,6 +164,73 @@ function page(pageIndex, options = {}) {
       },
     }),
   };
+}
+
+// Generalized from the sanitized eight-page Production shape: every page has
+// fifteen explicit adId products, one explicit supersaving row and forty
+// organic products in document order. The organic raw ranks have one bounded
+// hole per page, so the strict parser rejects the payload while the candidate
+// parser can only become authoritative after an independent matching pass.
+function renderedOrderDriftPage(pageIndex) {
+  const rawBase = (pageIndex - 1) * 41;
+  let adSequence = 0;
+  const rankedAd = (localRank) => ({
+    type: "product",
+    item: {
+      collection: "product",
+      rank: rawBase + localRank,
+      adId: `rendered-ad-${pageIndex}-${++adSequence}`,
+    },
+  });
+  const supersaving = supersavingComposite(pageIndex);
+  supersaving.item.rank = rawBase + 4;
+  const organic = (localRank) => ({
+    type: "product",
+    item: productItem(rawBase + localRank),
+  });
+  const list = [
+    rankedAd(3),
+    supersaving,
+    ...[1, 4, 9, 11, 5, 10, 4].map(rankedAd),
+    ...Array.from({ length: 12 }, (_, index) => organic(index + 1)),
+    ...[14, 15, 16].map(organic),
+    ...[8, 14, 22, 21, 37, 31, 18].map(rankedAd),
+    ...Array.from({ length: 25 }, (_, index) => organic(index + 17)),
+  ];
+  return {
+    pageIndex,
+    nextDataText: JSON.stringify({
+      props: {
+        pageProps: {
+          searchParam: {
+            sort: "rel",
+            pagingIndex: pageIndex,
+            pagingSize: 40,
+            viewType: "list",
+            productSet: "total",
+            query: KEYWORD,
+          },
+          compositeList: { total: 204582, list },
+        },
+      },
+    }),
+  };
+}
+
+function renderedOrderDriftPages(mutate = null) {
+  const pages = Array.from({ length: 8 }, (_, index) => renderedOrderDriftPage(index + 1));
+  if (typeof mutate === "function") mutate(pages);
+  return pages;
+}
+
+function mutateRenderedPage(pages, pageIndex, mutate) {
+  const pagePayload = JSON.parse(pages[pageIndex - 1].nextDataText);
+  mutate(pagePayload.props.pageProps.compositeList.list);
+  pages[pageIndex - 1].nextDataText = JSON.stringify(pagePayload);
+}
+
+function renderedOrganicEntries(entries) {
+  return entries.filter((entry) => entry.type === "product" && !entry.item.adId);
 }
 
 function finiteMarketPages(total) {
@@ -555,6 +623,241 @@ test("native provider exchanges only a bounded public page collection", async ()
   assert.equal(exchanged.type, "collect");
   assert.equal(exchanged.request.keyword, KEYWORD);
   assert.equal(result.checkedCount, 300);
+});
+
+test("public native builder never accepts one unproven rendered-order candidate", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  assert.throws(
+    () => buildNativeWindowFromPages(request(nowMs), renderedOrderDriftPages(), {
+      nowMs,
+      renderedOrderCandidate: true,
+    }),
+    (error) => error?.code === "provider_stable_rendered_order_unproven"
+      && error?.detail === "proof_missing",
+  );
+});
+
+test("native provider accepts rendered order only after two distinct matching rank-drift passes", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const passes = [renderedOrderDriftPages(), renderedOrderDriftPages()];
+  for (const pages of passes) {
+    assert.throws(
+      () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+      (error) => error?.code === "naver_next_data_rank_drift",
+      "each pass must remain rejected by the strict parser",
+    );
+  }
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "rendered-order proof must never start a third capture");
+      return {
+        type: "collection",
+        captureId: `rendered-capture-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd, stableProofPass }) => (
+    [pageStart, pageEnd, stableProofPass]
+  )), [
+    [undefined, undefined, undefined],
+    [1, 8, 2],
+  ]);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  assert.equal(result.renderedOrderProof?.version, STABLE_RENDERED_ORDER_PROOF_VERSION);
+  assert.equal(result.renderedOrderProof?.passCount, 2);
+  assert.deepEqual(
+    result.renderedOrderProof?.captureIds,
+    ["rendered-capture-1", "rendered-capture-2"],
+  );
+  assert.equal(
+    result.renderedOrderProof?.passDigests[0],
+    result.renderedOrderProof?.passDigests[1],
+  );
+  assert.equal(
+    result.renderedOrderProof?.structureDigests[0],
+    result.renderedOrderProof?.structureDigests[1],
+  );
+});
+
+test("native provider never accepts one rendered-order capture near the shared deadline", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let clockReads = 0;
+  let exchanges = 0;
+  const provider = createChromeNativeProvider({
+    nowMs: () => (clockReads++ === 0 ? nowMs : nowMs + 178_000),
+    async exchange() {
+      exchanges += 1;
+      return {
+        type: "collection",
+        captureId: "rendered-capture-only",
+        pages: renderedOrderDriftPages(),
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+  assert.equal(exchanges, 1);
+});
+
+test("native provider accepts matching direct-ID order across volatile rendered structures", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const firstPages = renderedOrderDriftPages();
+  const secondPages = renderedOrderDriftPages((pages) => {
+    for (const pagePayload of pages) {
+      const data = JSON.parse(pagePayload.nextDataText);
+      data.props.pageProps.compositeList.total += 1;
+      pagePayload.nextDataText = JSON.stringify(data);
+    }
+    mutateRenderedPage(pages, 4, (entries) => {
+      const rankedAdIndex = entries.findIndex(
+        (entry) => entry.type === "product" && entry.item.adId,
+      );
+      entries.splice(rankedAdIndex, 1);
+      renderedOrganicEntries(entries)[12].item.rank -= 1;
+    });
+  });
+  const passes = [firstPages, secondPages];
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "rendered-order proof must remain bounded to two captures");
+      return {
+        type: "collection",
+        captureId: `rendered-volatile-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  assert.equal(
+    result.renderedOrderProof?.passDigests[0],
+    result.renderedOrderProof?.passDigests[1],
+  );
+  assert.notEqual(
+    result.renderedOrderProof?.structureDigests[0],
+    result.renderedOrderProof?.structureDigests[1],
+  );
+});
+
+test("native provider fails closed for every unsafe rendered-order second pass without a third capture", async (t) => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const scenarios = [
+    {
+      name: "direct identity order mismatch",
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "digest_mismatch",
+      secondPages() {
+        return renderedOrderDriftPages((pages) => {
+          mutateRenderedPage(pages, 3, (entries) => {
+            const [first, second] = renderedOrganicEntries(entries);
+            for (const field of ["id", "mallProductId", "mallPcUrl"]) {
+              [first.item[field], second.item[field]] = [second.item[field], first.item[field]];
+            }
+          });
+        });
+      },
+    },
+    {
+      name: "capture replay",
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "capture_ids",
+      captureId: () => "rendered-capture-replayed",
+      secondPages: () => renderedOrderDriftPages(),
+    },
+    {
+      name: "cross-page direct identity overlap",
+      expectedCode: "provider_duplicate_identity",
+      secondPages() {
+        return renderedOrderDriftPages((pages) => {
+          mutateRenderedPage(pages, 2, (entries) => {
+            const target = renderedOrganicEntries(entries)[0].item;
+            const duplicate = productItem(1);
+            for (const field of ["id", "mallProductId", "mallPcUrl"]) {
+              target[field] = duplicate[field];
+            }
+          });
+        });
+      },
+    },
+    {
+      name: "rankless helper",
+      expectedCode: "provider_rendered_order_candidate_invalid",
+      secondPages() {
+        return renderedOrderDriftPages((pages) => {
+          mutateRenderedPage(pages, 5, (entries) => {
+            entries.splice(10, 0, ranklessCompositeHelper(5));
+          });
+        });
+      },
+    },
+    {
+      name: "partial organic page",
+      expectedCode: "provider_rendered_order_candidate_invalid",
+      secondPages() {
+        return renderedOrderDriftPages((pages) => {
+          mutateRenderedPage(pages, 6, (entries) => {
+            const lastOrganicIndex = entries.findLastIndex(
+              (entry) => entry.type === "product" && !entry.item.adId,
+            );
+            entries.splice(lastOrganicIndex, 1);
+          });
+        });
+      },
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const messages = [];
+      const passes = [renderedOrderDriftPages(), scenario.secondPages()];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 2, "unsafe rendered order must never start a third capture");
+          return {
+            type: "collection",
+            captureId: scenario.captureId?.(messages.length)
+              || `rendered-capture-${messages.length}`,
+            pages: passes[messages.length - 1],
+          };
+        },
+      });
+
+      await assert.rejects(
+        () => provider.collect(request(nowMs)),
+        (error) => error?.code === scenario.expectedCode
+          && (scenario.expectedDetail == null || error?.detail === scenario.expectedDetail),
+        scenario.name,
+      );
+      assert.equal(messages.length, 2, `${scenario.name} must stop after pass B`);
+    });
+  }
 });
 
 test("native provider discards one partial pass and retries one independent full window", async () => {
@@ -1206,7 +1509,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.18");
+  assert.equal(manifest.version, "1.1.19");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2514,7 +2817,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.18");
+  assert.equal(manifest.version, "1.1.19");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2689,7 +2992,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.18",
+    runtimeVersion: "1.1.19",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

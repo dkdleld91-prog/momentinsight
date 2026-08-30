@@ -55,6 +55,9 @@ const claimFunction = latestPublicFunctionDefinition("mi_claim_naver_shopping_cy
 const recoveryEligibilityFunction = latestPublicFunctionDefinition(
   "mi_naver_shopping_cycle_runtime_recovery_eligible",
 );
+const orphanRecoveryEligibilityFunction = latestPublicFunctionDefinition(
+  "mi_naver_shopping_cycle_orphan_recovery_eligible",
+);
 const laneClaimFunction = latestPublicFunctionDefinition("mi_claim_naver_shopping_worker_lane");
 const progressFunction = latestPublicFunctionDefinition("mi_report_naver_shopping_worker_progress");
 const runtimeVersion = progressFunction.sql.match(
@@ -142,8 +145,12 @@ async function createSchedulerDatabase(worker = workerA) {
       occurred_at timestamptz not null default clock_timestamp(),
       event_type text not null,
       cycle_id uuid,
+      claim_id uuid,
       run_id uuid,
-      tracker_id uuid
+      tracker_id uuid,
+      roster_state text,
+      priority text,
+      lease_until timestamptz
     );
 
     insert into public.naver_shopping_worker_coordination(lane_key)
@@ -151,6 +158,7 @@ async function createSchedulerDatabase(worker = workerA) {
   `);
   await database.exec(queueFunction.sql);
   await database.exec(recoveryEligibilityFunction.sql);
+  await database.exec(orphanRecoveryEligibilityFunction.sql);
   await database.exec(claimFunction.sql);
   await database.exec(laneClaimFunction.sql);
   await database.exec(progressFunction.sql);
@@ -200,7 +208,24 @@ async function queueCycle(database) {
   const result = await database.query(
     "select public.mi_queue_naver_shopping_cycle() as result",
   );
-  return result.rows[0].result;
+  const cycle = result.rows[0].result;
+  if (cycle.started === true) {
+    await database.query(`
+      insert into public.naver_shopping_scheduler_events (
+        event_type, cycle_id, tracker_id, roster_state
+      )
+      select
+        'cycle_rostered', $1::uuid, tracker.id,
+        case
+          when tracker.worker_quarantined_until > clock_timestamp()
+            then 'quarantined'
+          else 'eligible'
+        end
+      from public.naver_rank_trackers as tracker
+      where tracker.status = 'active'
+    `, [cycle.cycleId]);
+  }
+  return cycle;
 }
 
 async function claimNext(database, worker = workerA) {
@@ -245,10 +270,12 @@ test("executes the latest canonical scheduler function bodies", () => {
   assert.match(claimFunction.sql, /for update skip locked/iu);
   assert.match(claimFunction.sql, /scheduler_cycle_resume_cursor/iu);
   assert.match(recoveryEligibilityFunction.sql, /tracker_claimed/iu);
+  assert.match(orphanRecoveryEligibilityFunction.sql, /processing_until/iu);
+  assert.match(orphanRecoveryEligibilityFunction.sql, /unmatched_claims/iu);
   assert.match(laneClaimFunction.sql, /current_row\.lease_until > v_now/iu);
 });
 
-test("sustained new registrations alternate with and cannot starve old A/B/C", async (t) => {
+test("cycle-start cohort completes in canonical order before later registrations join next cycle", async (t) => {
   const database = await createSchedulerDatabase();
   t.after(() => database.close());
 
@@ -267,72 +294,137 @@ test("sustained new registrations alternate with and cannot starve old A/B/C", a
   assert.equal(cycle.started, true);
   assert.equal(cycle.total, 3);
 
-  const claimed = [];
-  const take = async (id, priority) => {
+  // Make the cohort boundary explicit and deterministic: every tracker below
+  // is registered after this already-active cycle started.
+  await database.query(`
+    update public.naver_shopping_worker_coordination
+    set scheduler_cycle_started_at = clock_timestamp() - interval '1 minute'
+    where lane_key = 'global'
+  `);
+
+  const firstCycleClaims = [];
+  const takeFirstCycle = async (id, priority) => {
     await expectClaim(database, id, priority);
-    claimed.push(id);
+    firstCycleClaims.push(id);
   };
+
+  const registeredAt = new Date((await database.query(
+    "select clock_timestamp() as registered_at",
+  )).rows[0].registered_at).toISOString();
 
   await insertTracker(database, {
     id: trackerIds.new1,
     keyword: "new-1",
     sortOrder: 101,
-    createdAt: "2030-01-01T00:00:01Z",
+    createdAt: registeredAt,
     lastCheckedAt: null,
   });
-  await take(trackerIds.new1, "new");
+  await takeFirstCycle(trackerIds.oldA, "normal");
 
   await insertTracker(database, {
     id: trackerIds.new2,
     keyword: "new-2",
     sortOrder: 102,
-    createdAt: "2030-01-01T00:00:02Z",
+    createdAt: registeredAt,
     lastCheckedAt: null,
   });
-  await take(trackerIds.oldA, "resume");
+  await takeFirstCycle(trackerIds.oldB, "normal");
 
   await insertTracker(database, {
     id: trackerIds.new3,
     keyword: "new-3",
     sortOrder: 103,
-    createdAt: "2030-01-01T00:00:03Z",
+    createdAt: registeredAt,
     lastCheckedAt: null,
   });
-  await take(trackerIds.new2, "new");
+  await takeFirstCycle(trackerIds.oldC, "normal");
 
   await insertTracker(database, {
     id: trackerIds.new4,
     keyword: "new-4",
     sortOrder: 104,
-    createdAt: "2030-01-01T00:00:04Z",
+    createdAt: registeredAt,
     lastCheckedAt: null,
   });
-  await take(trackerIds.oldB, "resume");
-  await take(trackerIds.new3, "new");
-  await take(trackerIds.oldC, "resume");
-  await take(trackerIds.new4, "new");
-
-  assert.deepEqual(claimed, [
-    trackerIds.new1,
+  assert.deepEqual(firstCycleClaims, [
     trackerIds.oldA,
-    trackerIds.new2,
     trackerIds.oldB,
-    trackerIds.new3,
     trackerIds.oldC,
-    trackerIds.new4,
   ]);
-  assert.equal(new Set(claimed).size, claimed.length, "same-cycle claims must be unique");
+  assert.equal(new Set(firstCycleClaims).size, firstCycleClaims.length);
 
   const completed = await claimNext(database);
   assert.equal(completed.status, "cycle_completed");
 
-  const roster = await database.query(`
+  const firstRoster = await database.query(`
     select id::text, worker_last_cycle_id::text as cycle_id
     from public.naver_rank_trackers
     order by id
   `);
-  assert.equal(roster.rows.length, claimed.length);
-  assert.ok(roster.rows.every((row) => row.cycle_id === cycle.cycleId));
+  assert.deepEqual(
+    firstRoster.rows.filter((row) => row.cycle_id === cycle.cycleId).map((row) => row.id),
+    [trackerIds.oldA, trackerIds.oldB, trackerIds.oldC],
+  );
+  assert.ok(firstRoster.rows
+    .filter((row) => row.id.startsWith("40000000-"))
+    .every((row) => row.cycle_id === null));
+
+  const nextCycle = await queueCycle(database);
+  assert.equal(nextCycle.started, true);
+  const secondCycleClaims = [];
+  for (const id of [
+    trackerIds.oldA,
+    trackerIds.oldB,
+    trackerIds.oldC,
+    trackerIds.new1,
+    trackerIds.new2,
+    trackerIds.new3,
+    trackerIds.new4,
+  ]) {
+    await expectClaim(database, id, "normal");
+    secondCycleClaims.push(id);
+  }
+  assert.equal(new Set(secondCycleClaims).size, secondCycleClaims.length);
+  assert.equal((await claimNext(database)).status, "cycle_completed");
+});
+
+test("a paused pre-existing tracker reactivated after cycle start waits for the next cycle", async (t) => {
+  const database = await createSchedulerDatabase();
+  t.after(() => database.close());
+
+  await insertTracker(database, {
+    id: trackerIds.oldA, keyword: "active-at-start", sortOrder: 10,
+  });
+  await insertTracker(database, {
+    id: trackerIds.oldB, keyword: "paused-at-start", sortOrder: 20,
+  });
+  await database.query(`
+    update public.naver_rank_trackers
+    set status = 'paused'
+    where id = $1::uuid
+  `, [trackerIds.oldB]);
+
+  const cycle = await queueCycle(database);
+  await database.query(`
+    update public.naver_rank_trackers
+    set status = 'active'
+    where id = $1::uuid
+  `, [trackerIds.oldB]);
+
+  await expectClaim(database, trackerIds.oldA, "normal");
+  assert.equal((await claimNext(database)).status, "cycle_completed");
+  const deferred = await database.query(`
+    select worker_last_cycle_id::text as cycle_id
+    from public.naver_rank_trackers
+    where id = $1::uuid
+  `, [trackerIds.oldB]);
+  assert.equal(deferred.rows[0].cycle_id, null);
+
+  const nextCycle = await queueCycle(database);
+  assert.notEqual(nextCycle.cycleId, cycle.cycleId);
+  await expectClaim(database, trackerIds.oldA, "normal");
+  await expectClaim(database, trackerIds.oldB, "normal");
+  assert.equal((await claimNext(database)).status, "cycle_completed");
 });
 
 test("quarantine exclusion becomes eligible after expiry and wraps behind the saved cursor", async (t) => {
@@ -469,6 +561,71 @@ test("canonical lane handoff after an expired runtime lease preserves the active
   ]);
 });
 
+test("an expired orphan claim gets one same-cycle repair opportunity and cannot loop", async (t) => {
+  const database = await createSchedulerDatabase();
+  t.after(() => database.close());
+
+  await insertTracker(database, {
+    id: trackerIds.oldA, keyword: "orphan-a", sortOrder: 10,
+  });
+  await insertTracker(database, {
+    id: trackerIds.oldB, keyword: "next-b", sortOrder: 20,
+  });
+
+  const cycle = await queueCycle(database);
+  const firstClaim = await claimNext(database);
+  assert.equal(firstClaim.status, "claimed");
+  assert.equal(firstClaim.priority, "normal");
+  assert.deepEqual(firstClaim.claims.map((member) => member.trackerId), [trackerIds.oldA]);
+
+  const originalClaimId = "60000000-0000-4000-8000-000000000001";
+  await database.query(`
+    update public.naver_rank_trackers
+    set processing_until = clock_timestamp() - interval '1 second'
+    where id = $1::uuid
+  `, [trackerIds.oldA]);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, claim_id, run_id, tracker_id, priority, lease_until
+    ) values (
+      'tracker_claimed', $2::uuid, $3::uuid, $4::uuid, $1::uuid,
+      'normal', clock_timestamp() - interval '1 second'
+    );
+  `, [trackerIds.oldA, cycle.cycleId, originalClaimId, workerA.runId]);
+
+  const repairClaim = await claimNext(database);
+  assert.equal(repairClaim.status, "claimed");
+  assert.equal(repairClaim.priority, "repair");
+  assert.deepEqual(repairClaim.claims.map((member) => member.trackerId), [trackerIds.oldA]);
+
+  const repairClaimId = "60000000-0000-4000-8000-000000000002";
+  await database.query(`
+    update public.naver_rank_trackers
+    set processing_until = clock_timestamp() - interval '1 second'
+    where id = $1::uuid
+  `, [trackerIds.oldA]);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, claim_id, run_id, tracker_id, priority, lease_until
+    ) values (
+      'tracker_claimed', $2::uuid, $3::uuid, $4::uuid, $1::uuid,
+      'repair', clock_timestamp() - interval '1 second'
+    );
+  `, [trackerIds.oldA, cycle.cycleId, repairClaimId, workerA.runId]);
+
+  await expectClaim(database, trackerIds.oldB, "normal");
+  assert.equal((await claimNext(database)).status, "cycle_completed");
+
+  const attempts = await database.query(`
+    select count(*)::integer as claim_count
+    from public.naver_shopping_scheduler_events
+    where cycle_id = $1::uuid
+      and tracker_id = $2::uuid
+      and event_type = 'tracker_claimed'
+  `, [cycle.cycleId, trackerIds.oldA]);
+  assert.equal(attempts.rows[0].claim_count, 2);
+});
+
 test("an old-runtime failure already marked in the active cycle gets one current-runtime natural retry", async (t) => {
   const database = await createSchedulerDatabase();
   t.after(() => database.close());
@@ -561,6 +718,72 @@ test("an old-runtime failure already marked in the active cycle gets one current
   assert.equal(recoveryState.rows[0].eligible, false);
   const completed = await claimNext(database);
   assert.equal(completed.status, "cycle_completed");
+});
+
+test("a repaired same-keyword row cannot defer an unclaimed ordinary cohort member", async (t) => {
+  const database = await createSchedulerDatabase();
+  t.after(() => database.close());
+
+  await insertTracker(database, {
+    id: trackerIds.oldA, keyword: "shared-keyword", sortOrder: 10,
+  });
+  await insertTracker(database, {
+    id: trackerIds.oldB, keyword: "shared-keyword", sortOrder: 20,
+  });
+
+  const cycle = await queueCycle(database);
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_last_cycle_id = $1::uuid,
+        worker_last_cycle_claimed_at = clock_timestamp() - interval '2 hours'
+    where id = $2::uuid
+  `, [cycle.cycleId, trackerIds.oldA]);
+  await database.query(`
+    insert into public.naver_shopping_worker_runs (
+      run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at
+    ) values (
+      $1::uuid, 'scheduler-worker-a', 'rank-remote', '1.1.17', repeat('1', 64),
+      clock_timestamp() - interval '2 hours'
+    )
+  `, [legacyFailureRunId]);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, run_id, tracker_id, occurred_at
+    ) values (
+      'job_failed', $1::uuid, $2::uuid, $3::uuid,
+      clock_timestamp() - interval '119 minutes'
+    )
+  `, [cycle.cycleId, legacyFailureRunId, trackerIds.oldA]);
+
+  await expectClaim(database, trackerIds.oldA, "repair");
+
+  const repairClaimId = "60000000-0000-4000-8000-000000000003";
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, claim_id, run_id, tracker_id
+    ) values
+      ('tracker_claimed', $1::uuid, $2::uuid, $3::uuid, $4::uuid),
+      ('tracker_committed', $1::uuid, $2::uuid, $3::uuid, $4::uuid)
+  `, [cycle.cycleId, repairClaimId, workerA.runId, trackerIds.oldA]);
+
+  await expectClaim(database, trackerIds.oldB, "normal");
+  assert.equal((await claimNext(database)).status, "cycle_completed");
+
+  const state = await database.query(`
+    select id::text, worker_last_cycle_id::text as cycle_id,
+           worker_last_cycle_deferred_at
+    from public.naver_rank_trackers
+    where id in ($1::uuid, $2::uuid)
+    order by sort_order
+  `, [trackerIds.oldA, trackerIds.oldB]);
+  assert.deepEqual(state.rows.map((row) => ({
+    id: row.id,
+    cycle_id: row.cycle_id,
+    deferred: row.worker_last_cycle_deferred_at,
+  })), [
+    { id: trackerIds.oldA, cycle_id: cycle.cycleId, deferred: null },
+    { id: trackerIds.oldB, cycle_id: cycle.cycleId, deferred: null },
+  ]);
 });
 
 test("a newer terminal without run provenance fails closed instead of replaying an older failure", async (t) => {

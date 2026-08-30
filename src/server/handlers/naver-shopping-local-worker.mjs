@@ -15,6 +15,7 @@ import {
 import { claimShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import { protectedJson } from "../security.mjs";
 import {
+  buildRankTarget,
   findShoppingRankFromWindow,
   normalizeText,
   shoppingRankMessage,
@@ -36,7 +37,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.18";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.19";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -648,6 +649,13 @@ async function submitWindow(ctx, rawJob, rawWindow) {
       }
       const checkedAt = window.collectedAt;
       const verifiedRelatedCatalogId = verifiedCatalogs.get(String(tracker.id).toLowerCase()) || "";
+      const directTarget = buildRankTarget({
+        targetProductId: tracker.product_id,
+        targetUrl: tracker.product_url,
+      });
+      if (directTarget.hasDirectTarget !== true || directTarget.productIds.length < 1) {
+        throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
+      }
       // The worker already supplied a fresh trusted 300-item window and the DB
       // row contains the canonical target. Never perform public product/store
       // fetches during submit: they are both unnecessary and 429/timeout prone.
@@ -943,6 +951,15 @@ async function submitLookupWindow(ctx, job, window) {
     || normalizedKeywordKey(lookup.keyword) !== normalizedKeywordKey(job.keyword)
     || new Date(lookup.processing_started_at).toISOString() !== claim.leaseStartedAt) {
     throw workerError("LOCAL_WORKER_LOOKUP_MISMATCH", 409);
+  }
+
+  const directTarget = buildRankTarget({
+    targetProductId: lookup.product_id,
+    targetUrl: lookup.product_url,
+    targetCatalogId: lookup.target_catalog_id,
+  });
+  if (directTarget.hasDirectTarget !== true || directTarget.productIds.length < 1) {
+    throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
   }
 
   const result = await findShoppingRankFromWindow(window, {

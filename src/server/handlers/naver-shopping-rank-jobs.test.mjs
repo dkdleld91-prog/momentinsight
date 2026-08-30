@@ -77,6 +77,44 @@ test("enqueues one exact 300 lookup without storing a raw account code", async (
   assert.deepEqual(wakeArgs, { p_source: "rank-lookup" });
 });
 
+test("rejects weak or conflicting lookup identities before enqueue and wake", async () => {
+  let rpcCount = 0;
+  const ctx = {
+    supabaseAdmin: {
+      async rpc() {
+        rpcCount += 1;
+        throw new Error("lookup identity validation must run before RPC");
+      },
+    },
+  };
+  const requests = [
+    {
+      keyword: "온열찜질기",
+      mallName: "동일 판매처",
+      productTitle: "완전히 동일한 상품명",
+    },
+    {
+      keyword: "온열찜질기",
+      productId: "12149720593",
+      targetUrl: "https://smartstore.naver.com/example/products/99999999999",
+    },
+  ];
+
+  for (const body of requests) {
+    // eslint-disable-next-line no-await-in-loop
+    const response = await handleShoppingRankJobsRequest(sessionRequest("", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }), ctx);
+    // eslint-disable-next-line no-await-in-loop
+    const payload = await response.json();
+    assert.equal(response.status, 400);
+    assert.equal(payload.code, "RANK_LOOKUP_INPUT_INVALID");
+  }
+  assert.equal(rpcCount, 0);
+});
+
 test("poll returns a completed result only inside the same hashed scope", async () => {
   const filters = [];
   const query = {

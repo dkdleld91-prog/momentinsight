@@ -9,6 +9,42 @@ function restoreEnv(name, value) {
   else process.env[name] = value;
 }
 
+test("single rank lookup rejects weak or conflicting identity before collector access", async () => {
+  const previousUrl = process.env.NAVER_SHOPPING_RANK_API_URL;
+  const previousKey = process.env.NAVER_SHOPPING_RANK_API_KEY;
+  const previousMode = process.env.NAVER_SHOPPING_RANK_MODE;
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  process.env.NAVER_SHOPPING_RANK_API_URL = "https://collector.example/rank";
+  process.env.NAVER_SHOPPING_RANK_API_KEY = "collector-secret";
+  process.env.NAVER_SHOPPING_RANK_MODE = "provider";
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    throw new Error("collector must not be called");
+  };
+
+  try {
+    const requests = [
+      "http://localhost/api/naver-shopping-rank?keyword=test&mallName=same&productTitle=same",
+      "http://localhost/api/naver-shopping-rank?keyword=test&productId=12149720593&targetUrl=https%3A%2F%2Fsmartstore.naver.com%2Fexample%2Fproducts%2F99999999999",
+    ];
+    for (const requestUrl of requests) {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await shoppingRankHandler.fetch(new Request(requestUrl));
+      // eslint-disable-next-line no-await-in-loop
+      const payload = await response.json();
+      assert.equal(response.status, 400);
+      assert.equal(payload.ok, false);
+    }
+    assert.equal(fetchCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv("NAVER_SHOPPING_RANK_API_URL", previousUrl);
+    restoreEnv("NAVER_SHOPPING_RANK_API_KEY", previousKey);
+    restoreEnv("NAVER_SHOPPING_RANK_MODE", previousMode);
+  }
+});
+
 test("single rank lookup reports an unverified cold provider as retryable warming", async () => {
   const previousUrl = process.env.NAVER_SHOPPING_RANK_API_URL;
   const previousKey = process.env.NAVER_SHOPPING_RANK_API_KEY;

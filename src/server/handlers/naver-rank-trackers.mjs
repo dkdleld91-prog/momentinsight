@@ -19,6 +19,7 @@ import {
   resolveRankKeywordLimit,
 } from "../rank-keyword-limit.mjs";
 import {
+  buildRankTarget,
   classifyNaverProductType,
   extractProductId,
   findShoppingRank,
@@ -52,7 +53,7 @@ const SHOPPING_WORKER_BLOCK_CODES = new Set([
   "naver_verification_required",
 ]);
 const SHOPPING_WORKER_CIRCUIT_STATES = new Set(["closed", "open", "half_open"]);
-const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.18";
+const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.19";
 const SHOPPING_WORKER_TOTAL_PAGES = 8;
 const SHOPPING_WORKER_CONTROL_ACTIONS = new Set([
   "worker-stop",
@@ -1016,6 +1017,7 @@ export function buildProductRankSnapshotRecord(tracker, checkedAt, result, messa
   const source = normalizeText(result?.source) || "naver_shopping_results_collector";
   const crossPageProofVersion = normalizeText(result?.crossPageProofVersion);
   const finiteWindowProofVersion = normalizeText(result?.finiteWindowProofVersion);
+  const renderedOrderProofVersion = normalizeText(result?.renderedOrderProofVersion);
   const safeResultItem = isOrganicTrackingItem(result?.item) ? result.item : {};
   const item = {
     ...safeResultItem,
@@ -1027,6 +1029,9 @@ export function buildProductRankSnapshotRecord(tracker, checkedAt, result, messa
     collectedAt: normalizeText(result?.collectedAt) || null,
     excludedAdCount: Number(result?.excludedAdCount || 0),
     ...(crossPageProofVersion === "stable-full-window-v1" ? { crossPageProofVersion } : {}),
+    ...(renderedOrderProofVersion === "stable-rendered-order-v1" ? {
+      renderedOrderProofVersion,
+    } : {}),
     ...(finiteWindowProofVersion === "stable-finite-window-v1" ? {
       finiteWindowProofVersion,
       sourceExhausted: result?.sourceExhausted === true,
@@ -1132,6 +1137,15 @@ function isOrganicTrackingItem(item) {
   );
 }
 
+function hasDirectLegacyExactEvidence(result, targetProductId = "") {
+  const exactTargetProductId = normalizeText(targetProductId);
+  const matchedProductId = normalizeText(result?.matchedProductId);
+  const relationBasis = normalizeText(result?.matchEvidence || result?.relationBasis);
+  return /^[0-9]{5,}$/.test(exactTargetProductId)
+    && matchedProductId === exactTargetProductId
+    && ["seller_link_product_id", "catalog_id"].includes(relationBasis);
+}
+
 function sanitizeOrganicTrackingItems(items) {
   return (Array.isArray(items) ? items : []).filter(isOrganicTrackingItem);
 }
@@ -1160,7 +1174,8 @@ export function selectRepresentativeTrackingRank(result = {}, trackerProductId =
   const safeExactItem = isOrganicTrackingItem(explicitExactItem) ? explicitExactItem : exactExposure;
   const legacyExactAllowed = !explicitExactItem
     && !exactExposureRejectedAsAd
-    && (!result?.item || isOrganicTrackingItem(result.item));
+    && (!result?.item || isOrganicTrackingItem(result.item))
+    && hasDirectLegacyExactEvidence(result, exactTargetProductId);
   const exactProductRank = exactExposure?.rank
     || (safeExactItem ? positiveRank(safeExactItem.rank) || positiveRank(result?.exactProductRank) : null)
     || (legacyExactAllowed
@@ -1419,6 +1434,15 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
   }
 
   try {
+    const directTarget = buildRankTarget({
+      targetProductId: tracker.product_id,
+      targetUrl: tracker.product_url,
+    });
+    if (directTarget.hasDirectTarget !== true || directTarget.identityConflict === true) {
+      const identityError = new Error("shopping_rank_target_identity_invalid");
+      identityError.code = "SHOPPING_RANK_TARGET_IDENTITY_INVALID";
+      throw identityError;
+    }
     const verifiedRelatedCatalogId = await loadVerifiedRelatedCatalogId(ctx, tracker, checkedAt);
     const lookupResult = await findShoppingRankImpl(env, {
       keyword: tracker.keyword,
@@ -1518,6 +1542,10 @@ export async function runTrackerCheck(ctx, tracker, options = {}) {
 }
 
 async function loadTrackerRegistrationMatches(ctx, agencyCode, keyword, productUrl, productId, mallName) {
+  const requestedTarget = buildRankTarget({
+    targetProductId: productId,
+    targetUrl: productUrl,
+  });
   const baseQuery = () => ctx.supabaseAdmin
     .from("naver_rank_trackers")
     .select(TRACKER_SELECT)
@@ -1534,10 +1562,16 @@ async function loadTrackerRegistrationMatches(ctx, agencyCode, keyword, productU
   const normalizedKeyword = normalizeKeywordCompare(keyword);
   const matches = new Map();
   results.flatMap((result) => result.data || []).forEach((row) => {
-    const rowProductId = normalizeText(row.product_id) || extractProductId(row.product_url);
-    const sameTarget = (productId && rowProductId === productId)
-      || (productUrl && row.product_url === productUrl)
-      || (!productId && !productUrl && mallName && row.mall_name === mallName);
+    const rowTarget = buildRankTarget({
+      targetProductId: row.product_id,
+      targetUrl: row.product_url,
+    });
+    const sameTarget = requestedTarget.hasDirectTarget === true
+      && requestedTarget.identityConflict !== true
+      && rowTarget.hasDirectTarget === true
+      && rowTarget.identityConflict !== true
+      && rowTarget.targetMode === requestedTarget.targetMode
+      && rowTarget.productIds.some((id) => requestedTarget.productIds.includes(id));
     if (sameTarget && normalizeKeywordCompare(row.keyword) === normalizedKeyword) matches.set(row.id, row);
   });
   return [...matches.values()];
@@ -1567,14 +1601,18 @@ async function createTracker(request, ctx, body, access = {}) {
   const agencyCode = requestAgencyCode(request, body);
   const keyword = normalizeText(body.keyword);
   const productUrl = normalizeText(body.targetUrl || body.productUrl || body.product_url);
-  const productId = normalizeText(body.productId || body.product_id) || extractProductId(productUrl);
+  const directTarget = buildRankTarget({
+    targetProductId: body.productId || body.product_id,
+    targetUrl: productUrl,
+  });
+  const productId = directTarget.productId;
   const mallName = normalizeText(body.mallName || body.mall_name);
   const productTitle = normalizeText(body.productTitle || body.product_title);
   const groupName = normalizeRankGroupName(body.groupName || body.group_name || body.group);
 
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
-  if (!productUrl && !productId && !mallName) {
-    return json(request, { ok: false, message: "상품 URL 또는 상품ID를 입력해주세요." }, 400);
+  if (directTarget.hasDirectTarget !== true || directTarget.identityConflict === true || !productId) {
+    return json(request, { ok: false, message: "네이버 상품 URL 또는 숫자 상품ID를 입력해주세요." }, 400);
   }
 
   const registrationMatches = await loadTrackerRegistrationMatches(

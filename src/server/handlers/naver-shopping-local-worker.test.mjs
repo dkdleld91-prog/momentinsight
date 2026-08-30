@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.18",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.19",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -156,6 +156,66 @@ function completeWindow() {
     items,
   };
 }
+
+test("rejects missing or conflicting direct identity before any rank snapshot commit", async () => {
+  await withWorkerEnv(async () => {
+    for (const identity of [
+      {
+        product_id: null,
+        product_url: null,
+        mall_name: "예시몰",
+        product_title: "온열찜질기 11",
+      },
+      {
+        product_id: "2000000011",
+        product_url: "https://smartstore.naver.com/example/products/99999999999",
+      },
+    ]) {
+      const invalidTracker = tracker(identity);
+      const job = {
+        keyword: invalidTracker.keyword,
+        limit: 300,
+        claims: [{
+          trackerId: invalidTracker.id,
+          leaseStartedAt: invalidTracker.processing_started_at,
+          leaseUntil: invalidTracker.processing_until,
+        }],
+      };
+      let commitCount = 0;
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name) {
+            if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+            if (name === "mi_load_naver_shopping_worker_catalog_history") {
+              return { data: [], error: null };
+            }
+            if (name === "mi_commit_naver_shopping_worker_result") commitCount += 1;
+            throw new Error(`unexpected rpc:${name}`);
+          },
+          from(table) {
+            assert.equal(table, "naver_rank_trackers");
+            return resolvingQuery({ data: [invalidTracker], error: null });
+          },
+        },
+      };
+
+      // eslint-disable-next-line no-await-in-loop
+      const response = await handleLocalWorkerRequest(signedRequest({
+        action: "submit",
+        job,
+        window: completeWindow(),
+      }), ctx);
+      // eslint-disable-next-line no-await-in-loop
+      const body = await response.json();
+
+      assert.equal(response.status, 409);
+      assert.equal(body.code, "LOCAL_WORKER_SUBMIT_PARTIAL");
+      assert.equal(body.partial.causeCode, "LOCAL_WORKER_MATCH_RESULT_INCOMPLETE");
+      assert.equal(body.partial.processedCount, 0);
+      assert.equal(commitCount, 0);
+    }
+  });
+});
 
 function stableFiniteParentWindow(options = {}) {
   const items = Array.from({ length: 93 }, (_, index) => ({
@@ -591,7 +651,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.18");
+          assert.equal(args.p_runtime_version, "1.1.19");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -717,7 +777,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.18",
+      runtimeVersion: "1.1.19",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -777,7 +837,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.18",
+      runtimeVersion: "1.1.19",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -819,7 +879,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.18",
+      runtimeVersion: "1.1.19",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -861,7 +921,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.18",
+      runtimeVersion: "1.1.19",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -2647,7 +2707,11 @@ test("maps allowlisted and unexpected submit exceptions without leaking internal
 
     for (const { rawCode, expectedCauseCode } of cases) {
       const first = tracker();
-      const second = tracker({ id: SECOND_TRACKER_ID, product_id: "2000000012" });
+      const second = tracker({
+        id: SECOND_TRACKER_ID,
+        product_id: "2000000012",
+        product_url: "https://smartstore.naver.com/example/products/2000000012",
+      });
       const job = {
         keyword: first.keyword,
         limit: 300,

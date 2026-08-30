@@ -8,6 +8,8 @@ import {
   SCHEMA_VERSION,
   SOURCE,
   STABLE_FULL_WINDOW_PROOF_VERSION,
+  STABLE_RENDERED_ORDER_PROOF_VERSION,
+  stableRenderedOrderWindowDigest,
   stableFullWindowEvidence,
   validateProviderWindow,
 } from "./contract.mjs";
@@ -614,6 +616,56 @@ function classifyRanklessNonProductComposite(entry, detail) {
   return { type, isAd: false };
 }
 
+function assertRenderedOrderAdClassification(item, adId, detail) {
+  const expectedAd = Boolean(adId);
+  for (const field of [
+    "isAd",
+    "isAdProduct",
+    "isAdvertisement",
+    "advertising",
+    "sponsored",
+    "paid",
+    "adProduct",
+  ]) {
+    if (!Object.hasOwn(item, field) || item[field] == null) continue;
+    if (typeof item[field] !== "boolean" || item[field] !== expectedAd) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${detail}:ad_classification`,
+      );
+    }
+  }
+  for (const field of ["advertisingId"]) {
+    if (!Object.hasOwn(item, field) || item[field] == null || item[field] === "") continue;
+    throw new ProviderError(
+      "provider_rendered_order_candidate_invalid",
+      `${detail}:ad_classification`,
+    );
+  }
+  for (const field of ["contentType", "productContentType", "sourceType"]) {
+    if (!Object.hasOwn(item, field) || item[field] == null || item[field] === "") continue;
+    if (typeof item[field] !== "string"
+      || NON_ORGANIC_TYPE_PATTERN.test(normalizeString(item[field], 100))) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${detail}:ad_classification`,
+      );
+    }
+  }
+  if (Object.hasOwn(item, "badgeTexts") && item.badgeTexts != null) {
+    if (!Array.isArray(item.badgeTexts)
+      || item.badgeTexts.some((value) => (
+        typeof value !== "string"
+        || EXPLICIT_AD_TEXT_PATTERN.test(normalizeString(value, 50))
+      ))) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${detail}:ad_classification`,
+      );
+    }
+  }
+}
+
 /**
  * Parse the current Naver Shopping SSR contract without guessing through the DOM.
  * `compositeList.list` is already in rendered document order. Ads carry `adId`,
@@ -622,12 +674,17 @@ function classifyRanklessNonProductComposite(entry, detail) {
  * bounded numeric rank may explain that offset. The emitted source ranks stay
  * contiguous organic positions across pagingIndex values (1..300).
  */
-export function parseNaverNextDataPage(payload, {
+function parseNaverNextDataPageInternal(payload, {
   pageIndex = 1,
   pageSize = NAVER_SHOPPING_PAGE_SIZE,
   keyword = "",
   previousRankStructureSummary = null,
+  rankMode = "strict",
 } = {}) {
+  const renderedOrderCandidate = rankMode === "rendered-order-candidate";
+  if (rankMode !== "strict" && !renderedOrderCandidate) {
+    throw new ProviderError("provider_rank_mode_invalid");
+  }
   let data = payload;
   if (typeof payload === "string") {
     try {
@@ -676,6 +733,8 @@ export function parseNaverNextDataPage(payload, {
   let supersavingSlotCount = 0;
   let duplicateRankedAdCount = 0;
   let previousOrganicRawRank = null;
+  let firstOrganicRawRank = null;
+  const organicRawRanks = [];
   let supersavingSincePreviousOrganicCount = 0;
   let firstSupersavingSincePreviousOrganicIndex = null;
   let lastSupersavingSincePreviousOrganicIndex = null;
@@ -718,6 +777,12 @@ export function parseNaverNextDataPage(payload, {
         });
         continue;
       }
+      if (renderedOrderCandidate) {
+        throw new ProviderError(
+          "provider_rendered_order_candidate_invalid",
+          `${expectedPage}:${index}:helper`,
+        );
+      }
       // Naver may interleave rankless display helpers with the authoritative
       // product list. Exclude only helpers that carry no product container,
       // absolute rank, seller/catalog identity, or product metadata. The page
@@ -729,6 +794,9 @@ export function parseNaverNextDataPage(payload, {
     if (item.collection !== "product") throw nextDataSchemaError(`${entryDetail}.item.collection`);
 
     const adId = nextDataOptionalString(item.adId, `${entryDetail}.item.adId`, 200);
+    if (renderedOrderCandidate) {
+      assertRenderedOrderAdClassification(item, adId, `${expectedPage}:${index}`);
+    }
     if (adId) {
       adSlotCount += 1;
       countRankedAdSlot(entry, entryDetail);
@@ -758,9 +826,21 @@ export function parseNaverNextDataPage(payload, {
         }
         return true;
       })();
-    if (observedRankOffset == null
+    const renderedRankInvalid = renderedOrderCandidate && (
+      actualRank == null
+      || actualRank < expectedStartRank
+      || observedOrganicRawRanks.has(actualRank)
+      || (previousOrganicRawRank != null && actualRank <= previousOrganicRawRank)
+    );
+    if (renderedRankInvalid) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${expectedPage}:${index}:raw_rank`,
+      );
+    }
+    if (!renderedOrderCandidate && (observedRankOffset == null
       || observedRankOffset < acceptedRankOffset
-      || !rawRankSlotsAreContiguous) {
+      || !rawRankSlotsAreContiguous)) {
       const currentDiagnostic = {
         page: expectedPage,
         index,
@@ -788,7 +868,9 @@ export function parseNaverNextDataPage(payload, {
           : currentPageRankDriftDetail(currentDiagnostic),
       );
     }
-    acceptedRankOffset = observedRankOffset;
+    acceptedRankOffset = renderedOrderCandidate ? 0 : observedRankOffset;
+    if (firstOrganicRawRank == null) firstOrganicRawRank = actualRank;
+    organicRawRanks.push(actualRank);
     observedOrganicRawRanks.add(actualRank);
     previousOrganicRawRank = actualRank;
     supersavingSincePreviousOrganicCount = 0;
@@ -885,6 +967,12 @@ export function parseNaverNextDataPage(payload, {
   const remaining = Math.max(0, marketTotal - ((expectedPage - 1) * expectedPageSize));
   const expectedOrganicCount = Math.min(expectedPageSize, remaining);
   if (organicCount !== expectedOrganicCount) {
+    if (renderedOrderCandidate) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${expectedPage}:organic_count`,
+      );
+    }
     throw new ProviderError(
       "naver_next_data_rank_drift",
       currentPageRankDriftDetail({
@@ -907,12 +995,29 @@ export function parseNaverNextDataPage(payload, {
       }),
     );
   }
+  if (renderedOrderCandidate) {
+    const rawRankSpan = firstOrganicRawRank == null || previousOrganicRawRank == null
+      ? null
+      : previousOrganicRawRank - firstOrganicRawRank + 1;
+    if (rawRankSpan == null || rawRankSpan > organicCount + adSlotCount) {
+      throw new ProviderError(
+        "provider_rendered_order_candidate_invalid",
+        `${expectedPage}:raw_rank_span`,
+      );
+    }
+  }
 
   return {
     rows,
     marketTotal,
     sourceExhausted: organicCount < expectedPageSize,
     rankStructureSummary: {
+      ...(renderedOrderCandidate ? {
+        mode: "rendered_order_candidate_v1",
+        firstOrganicRawRank,
+        organicCount,
+        rawRankDigest: sha256(organicRawRanks.join(",")),
+      } : {}),
       lastOrganicRawRank: previousOrganicRawRank,
       adSlotCount,
       uniqueRankedAdCount: rankedAdRanks.size,
@@ -921,6 +1026,22 @@ export function parseNaverNextDataPage(payload, {
       acceptedRankOffset,
     },
   };
+}
+
+export function parseNaverNextDataPage(payload, options = {}) {
+  return parseNaverNextDataPageInternal(payload, options);
+}
+
+// This parser only produces a candidate ordinal window. It deliberately does
+// not relax the strict parser and must never be accepted after one capture.
+// The native host may use it only for two distinct, bounded 1..8 captures that
+// produce the same strong-ID order while each capture independently proves a
+// valid raw-rank structure. Volatile ad counts and market totals may differ.
+export function parseNaverRenderedOrderCandidatePage(payload, options = {}) {
+  return parseNaverNextDataPageInternal(payload, {
+    ...options,
+    rankMode: "rendered-order-candidate",
+  });
 }
 
 /**
@@ -1136,6 +1257,7 @@ export function appendNormalizedPage(state, pageResult, {
   pageIndex = 1,
   limit = 300,
   crossPageMode = "reject",
+  rejectAllIdentityDuplicates = false,
 } = {}) {
   if (!pageResult || typeof pageResult !== "object" || !Array.isArray(pageResult.rows)) {
     throw new ProviderError("naver_selector_drift", `page:${pageIndex}`);
@@ -1175,6 +1297,12 @@ export function appendNormalizedPage(state, pageResult, {
       const collisionKind = origin?.pageIndex === pageIndex
         ? "duplicate_row"
         : "page_overlap";
+      if (rejectAllIdentityDuplicates) {
+        throw new ProviderError(
+          "provider_duplicate_identity",
+          `${pageIndex}:${index}:${collisionKind}${origin?.pageIndex ? `:${origin.pageIndex}` : ""}`,
+        );
+      }
       // `compositeList.list` is one authoritative SSR page and every organic
       // row above already proved its absolute Naver rank. If Naver itself
       // places the same strong identity twice on that one page, preserve both
@@ -1237,6 +1365,50 @@ export function buildStableFullWindowProof(firstItems, secondItems, options = {}
     captureIds: captureIds.slice(),
     passDigests: [first.passDigest, second.passDigest],
     collisionDigest: first.collisionDigest,
+  };
+}
+
+export function buildStableRenderedOrderProof(firstItems, secondItems, options = {}) {
+  const captureIds = Array.isArray(options.captureIds) ? options.captureIds : [];
+  const structureDigests = Array.isArray(options.structureDigests)
+    ? options.structureDigests
+    : [];
+  const captureIdPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/u;
+  const digestPattern = /^[a-f0-9]{64}$/u;
+  if (captureIds.length !== 2
+    || !captureIds.every((captureId) => typeof captureId === "string" && captureIdPattern.test(captureId))
+    || captureIds[0] === captureIds[1]) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "capture_ids");
+  }
+  // These attest each independently validated capture. Market totals, paid-slot
+  // counts and raw-rank layout may vary; cross-pass authority comes from the
+  // identical ordered direct-ID digest below, never from weak product fields.
+  if (structureDigests.length !== 2
+    || !structureDigests.every((digest) => typeof digest === "string" && digestPattern.test(digest))) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "structure_mismatch");
+  }
+  let firstDigest;
+  let secondDigest;
+  try {
+    firstDigest = stableRenderedOrderWindowDigest(firstItems, { keyword: options.keyword });
+    secondDigest = stableRenderedOrderWindowDigest(secondItems, { keyword: options.keyword });
+  } catch (error) {
+    throw new ProviderError(
+      "provider_stable_rendered_order_unproven",
+      String(error?.detail || error?.code || "invalid_window"),
+    );
+  }
+  if (firstDigest !== secondDigest) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "digest_mismatch");
+  }
+  return {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: 2,
+    pageCount: NAVER_SHOPPING_MAX_PAGES,
+    pageSize: NAVER_SHOPPING_PAGE_SIZE,
+    captureIds: captureIds.slice(),
+    passDigests: [firstDigest, secondDigest],
+    structureDigests: structureDigests.slice(),
   };
 }
 

@@ -13,8 +13,10 @@ import {
 import {
   ProviderError,
   appendNormalizedPage,
+  buildStableRenderedOrderProof,
   buildStableFullWindowProof,
   parseNaverNextDataPage,
+  parseNaverRenderedOrderCandidatePage,
 } from "../tools/naver-shopping-rank-collector/src/provider.mjs";
 
 const PAGE_SIZE = 40;
@@ -147,6 +149,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   if (request.limit !== REQUIRED_LIMIT) throw new ProviderError("native_host_limit_invalid");
   const pages = (Array.isArray(rawPages) ? rawPages : []).map(pagePayload);
   if (pages.length !== MAX_PAGES) throw new ProviderError("native_host_pages_incomplete");
+  const receivedPageOrder = pages.map(({ pageIndex }) => pageIndex);
   pages.sort((left, right) => left.pageIndex - right.pageIndex);
 
   const state = {
@@ -159,6 +162,13 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   let marketTotalVerified = true;
   let sourceExhausted = false;
   let previousRankStructureSummary = null;
+  let previousRenderedStructureSummary = null;
+  const renderedPageStructures = [];
+  const renderedOrderCandidate = options.renderedOrderCandidate === true;
+  if (renderedOrderCandidate
+    && receivedPageOrder.some((pageIndex, index) => pageIndex !== index + 1)) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "page_order");
+  }
 
   for (let index = 0; index < pages.length && state.items.length < request.limit; index += 1) {
     const page = pages[index];
@@ -166,12 +176,47 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     if (page.pageIndex !== expectedPageIndex) {
       throw new ProviderError("native_host_pages_out_of_order", `page:${page.pageIndex}`);
     }
-    const parsed = parseNaverNextDataPage(page.nextDataText, {
+    const parsed = (renderedOrderCandidate
+      ? parseNaverRenderedOrderCandidatePage
+      : parseNaverNextDataPage)(page.nextDataText, {
       pageIndex: page.pageIndex,
       pageSize: PAGE_SIZE,
       keyword: request.keyword,
       previousRankStructureSummary,
     });
+    if (renderedOrderCandidate) {
+      const structure = parsed.rankStructureSummary;
+      const expectedOrganicCount = Math.min(
+        PAGE_SIZE,
+        Math.max(0, parsed.marketTotal - ((page.pageIndex - 1) * PAGE_SIZE)),
+      );
+      const boundaryGap = previousRenderedStructureSummary
+        ? structure.firstOrganicRawRank - previousRenderedStructureSummary.lastOrganicRawRank
+        : structure.firstOrganicRawRank;
+      const boundaryLimit = previousRenderedStructureSummary
+        ? previousRenderedStructureSummary.adSlotCount + structure.adSlotCount + 1
+        : 1;
+      if (structure.mode !== "rendered_order_candidate_v1"
+        || structure.helperSlotCount !== 0
+        || structure.organicCount !== expectedOrganicCount
+        || boundaryGap < 1
+        || boundaryGap > boundaryLimit) {
+        throw new ProviderError(
+          "provider_stable_rendered_order_unproven",
+          `page_boundary:${page.pageIndex}`,
+        );
+      }
+      renderedPageStructures.push([
+        page.pageIndex,
+        parsed.marketTotal,
+        structure.organicCount,
+        structure.adSlotCount,
+        structure.firstOrganicRawRank,
+        structure.lastOrganicRawRank,
+        structure.rawRankDigest,
+      ]);
+      previousRenderedStructureSummary = structure;
+    }
     previousRankStructureSummary = parsed.rankStructureSummary;
     if (marketTotal == null) marketTotal = parsed.marketTotal;
     else if (marketTotal !== parsed.marketTotal) {
@@ -182,6 +227,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
       pageIndex: page.pageIndex,
       limit: request.limit,
       crossPageMode: options.crossPageMode || "reject",
+      rejectAllIdentityDuplicates: renderedOrderCandidate,
     });
     sourceExhausted = parsed.sourceExhausted === true;
   }
@@ -191,6 +237,9 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     && options.allowStableFiniteCandidate === true;
   if (state.items.length !== REQUIRED_LIMIT && !finiteCandidate) {
     throw new ProviderError("provider_partial_window", `${state.items.length}/${REQUIRED_LIMIT}`);
+  }
+  if (renderedOrderCandidate && !marketTotalVerified) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "market_total");
   }
   if (finiteCandidate && (
     sourceExhausted !== true
@@ -225,11 +274,21 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
     items: state.items,
     ...(options.crossPageProof ? { crossPageProof: options.crossPageProof } : {}),
     ...(options.finiteWindowProof ? { finiteWindowProof: options.finiteWindowProof } : {}),
+    ...(options.renderedOrderProof ? { renderedOrderProof: options.renderedOrderProof } : {}),
     },
+    ...(renderedOrderCandidate ? {
+      renderedOrderStructureDigest: crypto.createHash("sha256").update([
+        request.keyword,
+        JSON.stringify(renderedPageStructures),
+      ].join("\n"), "utf8").digest("hex"),
+    } : {}),
   };
 }
 
 export function buildNativeWindowFromPages(rawRequest, rawPages, options = {}) {
+  if (options.renderedOrderCandidate === true && !options.renderedOrderProof) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "proof_missing");
+  }
   const { request, payload } = nativeWindowPayloadFromPages(rawRequest, rawPages, options);
   return validateProviderWindow(payload, request);
 }
@@ -295,6 +354,10 @@ function overlapBoundary(error) {
 
 function isPartialWindow(error) {
   return error instanceof ProviderError && error.code === "provider_partial_window";
+}
+
+function isNextDataRankDrift(error) {
+  return error instanceof ProviderError && error.code === "naver_next_data_rank_drift";
 }
 
 function buildStableFiniteWindowProof(firstPayload, secondPayload, captureIds, keyword) {
@@ -438,7 +501,8 @@ export function createChromeNativeProvider(options = {}) {
           nowMs: options.nowMs?.() ?? Date.now(),
         });
       } catch (error) {
-        if (overlapBoundary(error)) recoveryReason = "stable-proof";
+        if (isNextDataRankDrift(error)) recoveryReason = "rendered-order";
+        else if (overlapBoundary(error)) recoveryReason = "stable-proof";
         else if (isPartialWindow(error)) recoveryReason = "partial-window";
         else throw error;
       }
@@ -457,7 +521,9 @@ export function createChromeNativeProvider(options = {}) {
         request,
         pageStart: 1,
         pageEnd: MAX_PAGES,
-        ...(recoveryReason === "stable-proof" ? { stableProofPass: 2 } : {}),
+        ...(["stable-proof", "rendered-order"].includes(recoveryReason)
+          ? { stableProofPass: 2 }
+          : {}),
       });
       if (!secondResponse
         || secondResponse.type !== "collection"
@@ -479,18 +545,50 @@ export function createChromeNativeProvider(options = {}) {
         });
       } catch (error) {
         secondFailure = error;
-        if (!overlapBoundary(error) && !isPartialWindow(error)) throw error;
-        if (recoveryReason === "partial-window") {
-          if (!isPartialWindow(error)) {
-            // A partial pass followed by an overlap cannot prove either a
-            // coherent full window or one stable finite market.
-            if (collectOptions.allowStableFinite !== true) {
-              throw new ProviderError("provider_stable_window_unproven", "page_budget");
+        if (recoveryReason === "rendered-order") {
+          if (!isNextDataRankDrift(error)) throw error;
+        } else {
+          if (!overlapBoundary(error) && !isPartialWindow(error)) throw error;
+          if (recoveryReason === "partial-window") {
+            if (!isPartialWindow(error)) {
+              // A partial pass followed by an overlap cannot prove either a
+              // coherent full window or one stable finite market.
+              if (collectOptions.allowStableFinite !== true) {
+                throw new ProviderError("provider_stable_window_unproven", "page_budget");
+              }
             }
+          } else if (isPartialWindow(error) && collectOptions.allowStableFinite !== true) {
+            throw error;
           }
-        } else if (isPartialWindow(error) && collectOptions.allowStableFinite !== true) {
-          throw error;
         }
+      }
+
+      if (recoveryReason === "rendered-order") {
+        const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          renderedOrderCandidate: true,
+        });
+        const secondCandidate = nativeWindowPayloadFromPages(request, secondResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          renderedOrderCandidate: true,
+        });
+        const renderedOrderProof = buildStableRenderedOrderProof(
+          firstCandidate.payload.items,
+          secondCandidate.payload.items,
+          {
+            keyword: request.keyword,
+            captureIds: [response.captureId, secondResponse.captureId],
+            structureDigests: [
+              firstCandidate.renderedOrderStructureDigest,
+              secondCandidate.renderedOrderStructureDigest,
+            ],
+          },
+        );
+        return buildNativeWindowFromPages(request, secondResponse.pages, {
+          nowMs: options.nowMs?.() ?? Date.now(),
+          renderedOrderCandidate: true,
+          renderedOrderProof,
+        });
       }
 
       const finiteArbitration = collectOptions.allowStableFinite === true

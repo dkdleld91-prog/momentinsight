@@ -158,7 +158,7 @@ const highestRelatedCatalogWins = selectRepresentativeTrackingRank({
 assert.equal(highestRelatedCatalogWins.rank, 8);
 assert.equal(highestRelatedCatalogWins.relatedCatalogProductId, "22222222222");
 
-const exactProductWinsTie = selectRepresentativeTrackingRank({
+const relatedCatalogWinsWithoutDirectExactTie = selectRepresentativeTrackingRank({
   matched: true,
   rank: 10,
   targetProductId: "5145848584",
@@ -173,8 +173,9 @@ const exactProductWinsTie = selectRepresentativeTrackingRank({
     },
   ],
 });
-assert.equal(exactProductWinsTie.rank, 10);
-assert.equal(exactProductWinsTie.trackingRankSource, "exact_product");
+assert.equal(relatedCatalogWinsWithoutDirectExactTie.rank, 10);
+assert.equal(relatedCatalogWinsWithoutDirectExactTie.trackingRankSource, "related_catalog");
+assert.equal(relatedCatalogWinsWithoutDirectExactTie.exactProductRank, null);
 
 const unrelatedCandidateDoesNotCreateRank = selectRepresentativeTrackingRank({
   matched: false,
@@ -514,13 +515,24 @@ assert.equal(higomSellerAliasTarget.targetMode, "product");
 assert.equal(higomSellerAliasTarget.catalogId, "");
 assert.deepEqual(higomSellerAliasTarget.productIds, ["10289183039"]);
 
-const exactLavTarget = buildRankTarget({
+const conflictingLavTarget = buildRankTarget({
   targetProductId: "59606749556",
   targetUrl: "https://brand.naver.com/lav/products/5145848584",
 });
+assert.equal(conflictingLavTarget.targetMode, "product");
+assert.equal(conflictingLavTarget.catalogId, "");
+assert.deepEqual(conflictingLavTarget.productIds, []);
+assert.equal(conflictingLavTarget.hasDirectTarget, false);
+assert.equal(conflictingLavTarget.identityConflict, true);
+
+const exactLavTarget = buildRankTarget({
+  targetProductId: "5145848584",
+  targetUrl: "https://brand.naver.com/lav/products/5145848584",
+});
 assert.equal(exactLavTarget.targetMode, "product");
-assert.equal(exactLavTarget.catalogId, "");
 assert.deepEqual(exactLavTarget.productIds, ["5145848584"]);
+assert.equal(exactLavTarget.hasDirectTarget, true);
+assert.equal(exactLavTarget.identityConflict, false);
 
 const electricToothbrushTarget = buildRankTarget({
   targetUrl: "https://brand.naver.com/lav/products/12649811979",

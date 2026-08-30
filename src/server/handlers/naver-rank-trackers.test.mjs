@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  buildProductRankSnapshotRecord,
   claimDueTracker,
   controlShoppingWorker,
   handleRankTrackersRequest,
@@ -23,17 +24,19 @@ import {
   isShoppingRankSourceUnavailable,
   shoppingRankSourceStatus,
 } from "../naver-shopping/source-status.mjs";
-import {
+import shoppingRankHandler, {
   buildRankTarget,
   findShoppingRank,
   findShoppingRankFromWindow,
   isAdItem,
+  matchTargetItem,
   NAVER_SHOPPING_ORGANIC_WINDOW_SCHEMA,
   shoppingProviderPageCache,
   trustedCollectorWindow,
 } from "./naver-shopping-rank.mjs";
 import {
   stableCollisionDigest,
+  stableRenderedOrderWindowDigest,
   stableWindowDigest,
 } from "../../../tools/naver-shopping-rank-collector/src/contract.mjs";
 
@@ -247,7 +250,7 @@ test("candidate readiness remains informational while activation stays canonical
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.18",
+            runtime_version: "1.1.19",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -274,7 +277,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.18",
+              runtime_version: "1.1.19",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",
@@ -542,6 +545,191 @@ test("non-Naver catalog URLs cannot poison exact catalog matching", () => {
   assert.equal(target.targetMode, "product");
 });
 
+test("mall and title similarity never create a shopping-rank target", () => {
+  const target = buildRankTarget({
+    targetMallName: "동일 판매처",
+    targetProductTitle: "완전히 동일한 온열찜질기 상품명",
+  });
+  const matched = matchTargetItem({
+    sellerProductId: "99999999999",
+    link: "https://smartstore.naver.com/example/products/99999999999",
+    mallName: "동일 판매처",
+    title: "완전히 동일한 온열찜질기 상품명",
+    productType: "2",
+  }, target);
+
+  assert.equal(target.hasDirectTarget, false);
+  assert.deepEqual(target.productIds, []);
+  assert.deepEqual(target.urlKeys, []);
+  assert.equal(matched.matched, false);
+  assert.equal(matched.matchType, "");
+});
+
+test("a wrong seller id never matches even when mall and title are identical", () => {
+  const target = buildRankTarget({
+    targetProductId: "12149720593",
+    targetMallName: "동일 판매처",
+    targetProductTitle: "완전히 동일한 온열찜질기 상품명",
+  });
+  const matched = matchTargetItem({
+    sellerProductId: "99999999999",
+    link: "https://smartstore.naver.com/example/products/99999999999",
+    mallName: "동일 판매처",
+    title: "완전히 동일한 온열찜질기 상품명",
+    productType: "2",
+  }, target);
+
+  assert.equal(target.hasDirectTarget, true);
+  assert.equal(matched.matched, false);
+});
+
+test("canonical URL equality cannot override a different seller id", () => {
+  const target = buildRankTarget({
+    targetProductId: "12149720593",
+    targetUrl: "https://merchant.example/items/shared",
+  });
+  const matched = matchTargetItem({
+    sellerProductId: "99999999999",
+    link: "https://merchant.example/items/shared",
+    title: "동일 상품명",
+    mallName: "동일 판매처",
+    productType: "2",
+  }, target);
+
+  assert.equal(target.hasDirectTarget, true);
+  assert.equal(matched.matched, false);
+});
+
+test("conflicting explicit and trusted URL product ids fail closed", () => {
+  const target = buildRankTarget({
+    targetProductId: "12149720593",
+    targetUrl: "https://smartstore.naver.com/example/products/99999999999",
+  });
+  const matched = matchTargetItem({
+    sellerProductId: "99999999999",
+    link: "https://smartstore.naver.com/example/products/99999999999",
+    productType: "2",
+  }, target);
+
+  assert.equal(target.identityConflict, true);
+  assert.equal(target.hasDirectTarget, false);
+  assert.deepEqual(target.productIds, []);
+  assert.equal(matched.matched, false);
+});
+
+test("a trusted Naver product URL alone still matches its exact seller id", () => {
+  const target = buildRankTarget({
+    targetUrl: "https://smartstore.naver.com/example/products/12149720593",
+  });
+  const matched = matchTargetItem({
+    sellerProductId: "12149720593",
+    link: "https://smartstore.naver.com/example/products/12149720593",
+    productType: "2",
+  }, target);
+
+  assert.equal(target.identityConflict, false);
+  assert.deepEqual(target.productIds, ["12149720593"]);
+  assert.equal(matched.matched, true);
+  assert.equal(matched.matchEvidence, "seller_link_product_id");
+});
+
+test("direct GET and the central window matcher reject weak or conflicting identity before collection", async () => {
+  const previousMode = process.env.NAVER_SHOPPING_RANK_MODE;
+  const previousUrl = process.env.NAVER_SHOPPING_RANK_API_URL;
+  const previousKey = process.env.NAVER_SHOPPING_RANK_API_KEY;
+  const originalFetch = globalThis.fetch;
+  let providerCalls = 0;
+  process.env.NAVER_SHOPPING_RANK_MODE = "provider";
+  process.env.NAVER_SHOPPING_RANK_API_URL = "https://collector.example/rank";
+  process.env.NAVER_SHOPPING_RANK_API_KEY = "collector-key";
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    throw new Error("provider_must_not_run");
+  };
+
+  try {
+    for (const query of [
+      "keyword=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0&mallName=%EB%8F%99%EC%9D%BC%EB%AA%B0&productTitle=%EB%8F%99%EC%9D%BC%EC%83%81%ED%92%88",
+      "keyword=%EC%98%A8%EC%97%B4%EC%B0%9C%EC%A7%88%EA%B8%B0&productId=12149720593&targetUrl=https%3A%2F%2Fsmartstore.naver.com%2Fexample%2Fproducts%2F99999999999",
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await shoppingRankHandler.fetch(new Request(`https://example.com/api/naver-shopping-rank?${query}`));
+      // eslint-disable-next-line no-await-in-loop
+      const payload = await response.json();
+      assert.equal(response.status, 400);
+      assert.equal(payload.ok, false);
+    }
+    assert.equal(providerCalls, 0);
+
+    for (const options of [
+      {
+        keyword: "온열찜질기",
+        targetMallName: "동일몰",
+        targetProductTitle: "동일상품",
+        skipTargetMetadata: true,
+      },
+      {
+        keyword: "온열찜질기",
+        targetProductId: "12149720593",
+        targetUrl: "https://smartstore.naver.com/example/products/99999999999",
+        skipTargetMetadata: true,
+      },
+    ]) {
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(
+        findShoppingRankFromWindow({}, options),
+        (error) => error?.code === "SHOPPING_RANK_TARGET_IDENTITY_INVALID" && error?.status === 400,
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousMode === undefined) delete process.env.NAVER_SHOPPING_RANK_MODE;
+    else process.env.NAVER_SHOPPING_RANK_MODE = previousMode;
+    if (previousUrl === undefined) delete process.env.NAVER_SHOPPING_RANK_API_URL;
+    else process.env.NAVER_SHOPPING_RANK_API_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.NAVER_SHOPPING_RANK_API_KEY;
+    else process.env.NAVER_SHOPPING_RANK_API_KEY = previousKey;
+  }
+});
+
+test("URL-only seller and catalog targets keep exact matching compatibility", async () => {
+  const sellerProductId = "12149720593";
+  const catalogId = "59031763223";
+  const window = collectorWindow("온열찜질기", [
+    shoppingResultItem(0, {
+      sellerProductId,
+      link: `https://smartstore.naver.com/example/products/${sellerProductId}`,
+      productType: "2",
+    }),
+    shoppingResultItem(1, {
+      productId: catalogId,
+      catalogId,
+      link: `https://search.shopping.naver.com/catalog/${catalogId}`,
+      productType: "1",
+    }),
+  ], { limit: 2 });
+
+  const seller = await findShoppingRankFromWindow(window, {
+    keyword: "온열찜질기",
+    targetUrl: `https://smartstore.naver.com/example/products/${sellerProductId}`,
+    maxRank: 2,
+    skipTargetMetadata: true,
+  });
+  const catalog = await findShoppingRankFromWindow(window, {
+    keyword: "온열찜질기",
+    targetUrl: `https://search.shopping.naver.com/catalog/${catalogId}`,
+    maxRank: 2,
+    skipTargetMetadata: true,
+  });
+
+  assert.equal(seller.matched, true);
+  assert.equal(seller.rank, 1);
+  assert.equal(seller.matchEvidence, "seller_link_product_id");
+  assert.equal(catalog.matched, true);
+  assert.equal(catalog.rank, 2);
+  assert.equal(catalog.matchEvidence, "catalog_id");
+});
+
 test("trusted product-rank headers override conflicting body scope", () => {
   const request = new Request("https://example.com/api/naver-rank-trackers?agencyCode=mml93-a98", {
     headers: {
@@ -678,6 +866,43 @@ function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {
     body: body ? JSON.stringify(body) : undefined,
   });
 }
+
+test("new shopping trackers require an authoritative numeric product identity", async () => {
+  const guardedContext = {
+    supabaseAdmin: {
+      from() {
+        throw new Error("registration must fail before database access");
+      },
+    },
+  };
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", {
+      action: "create",
+      keyword: "온열찜질기",
+      mallName: "동일 판매처",
+      productTitle: "완전히 동일한 온열찜질기 상품명",
+    }),
+    guardedContext,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 400);
+  assert.equal(body.ok, false);
+  assert.equal(body.message, "네이버 상품 URL 또는 숫자 상품ID를 입력해주세요.");
+
+  const conflictResponse = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", {
+      action: "create",
+      keyword: "온열찜질기",
+      productId: "12149720593",
+      productUrl: "https://smartstore.naver.com/example/products/99999999999",
+    }),
+    guardedContext,
+  ));
+  const conflictBody = await conflictResponse.json();
+  assert.equal(conflictResponse.status, 400);
+  assert.equal(conflictBody.ok, false);
+});
 
 test("an account-only team reaches every product-rank action without advertiser scope", async () => {
   const forbiddenDb = {
@@ -2009,7 +2234,10 @@ test("a tracker reuses the exact prior catalog id when the seller product is out
 });
 
 test("a complete miss clears the current rank only after exact product and verified catalog are both absent", async () => {
-  const tracker = trackerRow({ product_id: "12649811979" });
+  const tracker = trackerRow({
+    product_id: "12649811979",
+    product_url: "https://smartstore.naver.com/lav/products/12649811979",
+  });
   const { ctx, state } = testContext(tracker, [verifiedCatalogSnapshot()]);
 
   const result = await runTrackerCheck(ctx, tracker, {
@@ -2034,6 +2262,40 @@ test("a complete miss clears the current rank only after exact product and verif
   assert.equal(state.tables[TRACKERS][0].found_count, tracker.found_count);
   assert.equal(state.tables[SNAPSHOTS].length, 2);
   assert.equal(state.tables[SNAPSHOTS][1].matched, false);
+});
+
+test("remote tracker checks preserve history when direct identity is missing or conflicting", async () => {
+  const cases = [
+    trackerRow({
+      product_id: null,
+      product_url: null,
+      mall_name: "동일 판매처",
+      product_title: "완전히 동일한 상품명",
+    }),
+    trackerRow({
+      product_id: "12149720593",
+      product_url: "https://smartstore.naver.com/example/products/99999999999",
+    }),
+  ];
+
+  for (const tracker of cases) {
+    const { ctx, state } = testContext(tracker);
+    let lookupCalled = false;
+    // eslint-disable-next-line no-await-in-loop
+    const result = await runTrackerCheck(ctx, tracker, {
+      env: COLLECTOR_ENV,
+      findShoppingRank: async () => {
+        lookupCalled = true;
+        return {};
+      },
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "shopping_rank_target_identity_invalid");
+    assert.equal(lookupCalled, false);
+    assert.equal(state.tables[SNAPSHOTS].length, 0);
+    assertPreserved(tracker, state.tables[TRACKERS][0]);
+  }
 });
 
 test("missing shopping API config preserves the last good rank and schedules a five-minute retry", async () => {
@@ -2344,6 +2606,74 @@ test("the external shopping collector requires native organic evidence", () => {
     trustedCollectorWindow(weakProductCollision, { keyword: "테스트 상품", maxRank: 2 }).items.length,
     2,
   );
+});
+
+test("rendered-order evidence stays fail-closed at the handler and records only its proven version", async () => {
+  const keyword = "테스트 상품";
+  const rawItems = Array.from({ length: 300 }, (_, index) => {
+    const sellerProductId = String(80000000000 + index);
+    return shoppingResultItem(index, {
+      sellerProductId,
+      link: `https://smartstore.naver.com/other-store/products/${sellerProductId}`,
+      productType: 2,
+    });
+  });
+  const window = collectorWindow(keyword, rawItems, { limit: 300 });
+  const passDigest = stableRenderedOrderWindowDigest(window.items, { keyword });
+  const renderedOrderProof = {
+    version: "stable-rendered-order-v1",
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["rendered-capture-0001", "rendered-capture-0002"],
+    passDigests: [passDigest, passDigest],
+    structureDigests: ["a".repeat(64), "b".repeat(64)],
+  };
+  window.renderedOrderProof = renderedOrderProof;
+
+  const trusted = trustedCollectorWindow(window, { keyword, maxRank: 300 });
+  assert.deepEqual(trusted.renderedOrderProof, renderedOrderProof);
+
+  for (const proofOverride of [
+    { captureIds: ["rendered-capture-0001", "rendered-capture-0001"] },
+    { passDigests: [passDigest, "b".repeat(64)] },
+    { structureDigests: ["a".repeat(64), "not-a-sha256"] },
+    { unexpected: true },
+  ]) {
+    assert.throws(() => trustedCollectorWindow({
+      ...window,
+      renderedOrderProof: { ...renderedOrderProof, ...proofOverride },
+    }, { keyword, maxRank: 300 }), /shopping_rank_provider_untrusted_evidence/u);
+  }
+
+  const directIdentityDrift = structuredClone(window);
+  directIdentityDrift.items[0].sellerProductId = "99999999999";
+  directIdentityDrift.items[0].link = "https://smartstore.naver.com/other-store/products/99999999999";
+  assert.equal(directIdentityDrift.items[0].title, window.items[0].title);
+  assert.throws(() => trustedCollectorWindow(directIdentityDrift, {
+    keyword,
+    maxRank: 300,
+  }), /shopping_rank_provider_untrusted_evidence/u);
+
+  const result = await findShoppingRankFromWindow(trusted, {
+    keyword,
+    targetProductId: rawItems[0].sellerProductId,
+    targetUrl: rawItems[0].link,
+    maxRank: 300,
+    skipTargetMetadata: true,
+  });
+  assert.equal(result.rank, 1);
+  assert.equal(result.renderedOrderProofVersion, "stable-rendered-order-v1");
+  assert.equal("renderedOrderProof" in result, false);
+
+  const record = buildProductRankSnapshotRecord(
+    trackerRow({ product_id: rawItems[0].sellerProductId, product_url: rawItems[0].link }),
+    "2026-08-01T00:00:00.000Z",
+    result,
+    "입력 상품의 네이버쇼핑 오가닉 순위는 1위입니다.",
+  );
+  assert.equal(record.item.renderedOrderProofVersion, "stable-rendered-order-v1");
+  assert.equal("renderedOrderProof" in record.item, false);
 });
 
 test("a catalog target matches only the real catalog card, never a linked seller", async () => {
@@ -2906,6 +3236,48 @@ test("shopping lookup bootstraps a folded parent catalog from its exact seller-p
     assert.equal(tracking.trackingRankSource, "related_catalog");
     assert.equal(tracking.trackingRankSourceLabel, "관련 원부 기준");
   });
+});
+
+test("legacy representative fallback requires exact numeric relation evidence", () => {
+  const targetProductId = "12149720593";
+  const base = {
+    matched: true,
+    rank: 7,
+    exactProductRank: 7,
+    trackingRankSource: "exact_product",
+    matchedProductId: targetProductId,
+    item: {
+      rank: 7,
+      isOrganic: true,
+      isAd: false,
+      mallName: "동일 판매처",
+      title: "동일 상품명",
+    },
+  };
+
+  const weak = selectRepresentativeTrackingRank({
+    ...base,
+    matchEvidence: "mall_title",
+  }, targetProductId);
+  assert.equal(weak.matched, false);
+  assert.equal(weak.rank, null);
+  assert.equal(weak.trackingRankSource, "not_found");
+
+  const wrongId = selectRepresentativeTrackingRank({
+    ...base,
+    matchedProductId: "99999999999",
+    matchEvidence: "seller_link_product_id",
+  }, targetProductId);
+  assert.equal(wrongId.matched, false);
+  assert.equal(wrongId.rank, null);
+
+  const direct = selectRepresentativeTrackingRank({
+    ...base,
+    matchEvidence: "seller_link_product_id",
+  }, targetProductId);
+  assert.equal(direct.matched, true);
+  assert.equal(direct.rank, 7);
+  assert.equal(direct.trackingRankSource, "exact_product");
 });
 
 test("shopping lookup compares the exact seller product and verified catalog in one 300-result pass", async () => {
@@ -3790,6 +4162,94 @@ test("총관리자가 올려 준 한도만큼 상품 순위 키워드를 더 등
   assert.equal(body.ok, true);
   // 광고주 행이 값을 갖고 있으면 운영팀 표는 보지 않는다.
   assert.deepEqual(state.quotaLookups, ["clients"]);
+});
+
+test("registration never reuses a legacy row whose product id conflicts with its URL", async () => {
+  const corruptRow = trackerRow({
+    id: "10000000-0000-4000-8000-0000000000ab",
+    keyword: "한도 시험 키워드",
+    product_id: "99999999999",
+    product_url: "https://smartstore.naver.com/example/products/9876543210",
+    status: "active",
+  });
+  const { ctx, state } = quotaTrackerContext({
+    activeCount: 1,
+    clientQuotaRow: { rank_keyword_limit: 100 },
+    trackerRows: [corruptRow],
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody({
+      productUrl: "https://smartstore.naver.com/example/products/9876543210",
+    })),
+    ctx,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.ok, true);
+  assert.equal(state.inserted.length, 1);
+  assert.equal(state.inserted[0].product_id, "9876543210");
+});
+
+test("registration reuses a valid legacy seller URL-only row", async () => {
+  const productUrl = "https://smartstore.naver.com/example/products/9876543210";
+  const legacyRow = trackerRow({
+    id: "10000000-0000-4000-8000-0000000000ac",
+    agency_code: "mml93-t01",
+    keyword: "한도 시험 키워드",
+    product_id: null,
+    product_url: productUrl,
+    status: "active",
+  });
+  const { ctx, state } = quotaTrackerContext({
+    activeCount: 1,
+    clientQuotaRow: { rank_keyword_limit: 100 },
+    trackerRows: [legacyRow],
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody({
+      productId: undefined,
+      productUrl,
+    })),
+    ctx,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(body.tracker.id, legacyRow.id);
+  assert.equal(state.inserted.length, 0);
+});
+
+test("registration does not reuse the same numeric id across product and catalog modes", async () => {
+  const catalogRow = trackerRow({
+    id: "10000000-0000-4000-8000-0000000000ad",
+    agency_code: "mml93-t01",
+    keyword: "한도 시험 키워드",
+    product_id: "9876543210",
+    product_url: "https://search.shopping.naver.com/catalog/9876543210",
+    status: "active",
+  });
+  const { ctx, state } = quotaTrackerContext({
+    activeCount: 1,
+    clientQuotaRow: { rank_keyword_limit: 100 },
+    trackerRows: [catalogRow],
+  });
+  const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+    productTeamAccountRequest("POST", quotaCreateBody({
+      productId: "9876543210",
+      productUrl: undefined,
+    })),
+    ctx,
+  ));
+  const body = await response.json();
+
+  assert.equal(response.status, 201);
+  assert.equal(body.ok, true);
+  assert.equal(state.inserted.length, 1);
+  assert.notEqual(body.tracker.id, catalogRow.id);
+  assert.equal(state.inserted[0].product_id, "9876543210");
+  assert.equal(state.inserted[0].product_url, null);
 });
 
 test("한도를 다 쓴 계정은 실제 한도 숫자와 다음 방법을 담은 403 을 받는다", async () => {

@@ -68,6 +68,8 @@ const SAFE_FAILURE_CODES = new Set([
   "naver_next_data_rank_drift",
   "provider_duplicate_identity",
   "provider_stable_window_unproven",
+  "provider_stable_rendered_order_unproven",
+  "provider_rendered_order_candidate_invalid",
   "provider_stable_finite_window_unproven",
   "provider_row_invalid",
   "provider_row_title_missing",
@@ -108,6 +110,8 @@ const TRACKER_ISOLATED_FAILURE_CODES = new Set([
   "local_worker_match_result_incomplete",
   "provider_duplicate_identity",
   "provider_stable_window_unproven",
+  "provider_stable_rendered_order_unproven",
+  "provider_rendered_order_candidate_invalid",
   "provider_stable_finite_window_unproven",
   "local_worker_finite_match_invalid",
   "naver_next_data_rank_drift",
@@ -157,7 +161,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.18";
+const EXPECTED_RUNTIME_VERSION = "1.1.19";
 const STABLE_FINITE_RUN_TRIGGER = "rank-catch-up";
 const STABLE_FINITE_WORKER_ID = "windows-desktop-primary";
 const WORKER_RUN_TRIGGERS = new Set([
@@ -408,6 +412,21 @@ function safeFailureCode(error) {
   if (baseCode === "provider_stable_window_unproven") {
     const detail = String(error?.detail || "").trim().toLowerCase();
     return /^(?:capture_ids|digest_mismatch|page_budget)$/u.test(detail)
+      ? `${baseCode}:${detail}`
+      : baseCode;
+  }
+  if (baseCode === "provider_stable_rendered_order_unproven") {
+    const detail = String(error?.detail || "")
+      .trim()
+      .toLowerCase()
+      .replaceAll(".", "_");
+    return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|market_total|page_boundary:[1-8]|renderedorderproof_duplicate_identity)$/u.test(detail)
+      ? `${baseCode}:${detail}`
+      : baseCode;
+  }
+  if (baseCode === "provider_rendered_order_candidate_invalid") {
+    const detail = String(error?.detail || "").trim().toLowerCase();
+    return /^(?:[1-8]:(?:organic_count|raw_rank_span)|[1-8]:[0-9]{1,2}:(?:helper|ad_classification|raw_rank))$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }
@@ -765,7 +784,7 @@ export async function runLocalShoppingWorker(options = {}) {
         await reportProgress("navigating", 0, job);
         // claim-lane synchronously registers this exact runtime identity before
         // the first job claim. The server releases the lane and rejects the
-        // action when the finalized fingerprint is not in its 1.1.18 allowlist,
+        // action when the finalized fingerprint is not in its 1.1.19 allowlist,
         // so reaching collection preserves that registration-before-claim gate.
         const finiteCanaryJob = stableFinitePrecollectionAllowed(job, {
           runTrigger,

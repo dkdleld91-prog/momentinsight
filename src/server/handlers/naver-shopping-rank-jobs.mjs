@@ -4,6 +4,7 @@ import { withSupabase } from "@supabase/server";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import {
+  buildRankTarget,
   extractProductId,
   normalizeText,
 } from "./naver-shopping-rank.mjs";
@@ -72,12 +73,18 @@ export function rankLookupScopeHash(request) {
 function lookupRequest(body = {}) {
   const keyword = bounded(body.keyword, 100);
   const productUrl = bounded(body.targetUrl || body.productUrl, 1000);
-  const productId = numericId(body.productId) || extractProductId(productUrl);
+  const explicitProductId = numericId(body.productId);
   const targetCatalogId = numericId(body.targetCatalogId);
+  const directTarget = buildRankTarget({
+    targetProductId: explicitProductId,
+    targetUrl: productUrl,
+    targetCatalogId,
+  });
+  const productId = explicitProductId || extractProductId(productUrl);
   const mallName = bounded(body.mallName, 120);
   const productTitle = bounded(body.productTitle, 300);
   if (!keyword) return { error: "키워드를 입력해주세요." };
-  if (!productUrl && !productId && !targetCatalogId) {
+  if (directTarget.hasDirectTarget !== true || directTarget.identityConflict === true) {
     return { error: "네이버 상품 URL 또는 상품ID를 입력해주세요." };
   }
   return {

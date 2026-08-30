@@ -26,6 +26,7 @@ import {
   marketTotalFromTexts,
   parseNaverFrontendPage,
   parseNaverNextDataPage,
+  parseNaverRenderedOrderCandidatePage,
   validateNaverShoppingProfileDir,
 } from "../src/provider.mjs";
 
@@ -132,6 +133,29 @@ function productionRankDriftEntries({
     () => nextDataSupersaving(15),
   );
   return [...regularAds, ...organics, ...supersaving, nextDataProduct(expectedRank + 1)];
+}
+
+// Sanitized from the bounded Production page-1 structure. It preserves only
+// composite type, document order and raw rank: 15 explicit adId products, one
+// explicit supersaving row, and 40 organic products whose raw ranks are
+// 1..12,14..41 (gap 13). No Production keyword, title, image, seller, catalog
+// or ad identity is retained.
+function sanitizedRenderedOrderCandidateEntries() {
+  let adSequence = 0;
+  const rankedAd = (rank) => {
+    const entry = nextDataAd(++adSequence);
+    entry.item.rank = rank;
+    return entry;
+  };
+  return [
+    rankedAd(3),
+    nextDataSupersaving(4),
+    ...[1, 4, 9, 11, 5, 10, 4].map(rankedAd),
+    ...Array.from({ length: 12 }, (_, index) => nextDataProduct(index + 1)),
+    ...[14, 15, 16].map((rank) => nextDataProduct(rank)),
+    ...[8, 14, 22, 21, 37, 31, 18].map(rankedAd),
+    ...Array.from({ length: 25 }, (_, index) => nextDataProduct(index + 17)),
+  ];
 }
 
 function nextDataAuxiliary(index = 1, overrides = {}) {
@@ -512,6 +536,147 @@ test("fails closed when a product rank shift has no explicit ranked ad explanati
       && error.detail === "p1:i1:r2:e1:o0:m1:f-:z-:u-:d0:v-:n0:a0:q0:h1:s0"
       && `${error.code}:${error.detail}`.length <= 80,
   );
+});
+
+test("keeps the strict parser fail-closed but derives a bounded rendered-order candidate from the sanitized mixed-ad structure", () => {
+  const payload = nextDataFixture({
+    total: 300,
+    entries: sanitizedRenderedOrderCandidateEntries(),
+  });
+
+  assert.throws(
+    () => parseNaverNextDataPage(payload, { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_rank_drift",
+  );
+  assert.equal(
+    typeof parseNaverRenderedOrderCandidatePage,
+    "function",
+    "the rendered-order parser must be an explicit candidate-only API",
+  );
+
+  const parsed = parseNaverRenderedOrderCandidatePage(payload, {
+    pageIndex: 1,
+    keyword: "온열찜질기",
+  });
+  const organicRows = parsed.rows.filter((row) => row.isOrganic);
+  const adRows = parsed.rows.filter((row) => row.isAd);
+
+  assert.equal(parsed.marketTotal, 300);
+  assert.equal(parsed.sourceExhausted, false);
+  assert.equal(organicRows.length, 40);
+  assert.equal(adRows.length, 16);
+  assert.deepEqual(
+    organicRows.map((row) => row.sourceRank),
+    Array.from({ length: 40 }, (_, index) => index + 1),
+  );
+  assert.deepEqual(
+    organicRows.map((row) => row.productId),
+    [
+      ...Array.from({ length: 12 }, (_, index) => String(91000000001 + index)),
+      ...Array.from({ length: 28 }, (_, index) => String(91000000014 + index)),
+    ],
+  );
+  assert.equal(adRows.every((row) => row.isOrganic === false), true);
+  assert.equal(adRows.every((row) => row.productId == null), true);
+  assert.equal(adRows.every((row) => row.sellerProductId == null), true);
+  assert.equal(adRows.every((row) => row.title == null), true);
+  assert.deepEqual({
+    mode: parsed.rankStructureSummary.mode,
+    firstOrganicRawRank: parsed.rankStructureSummary.firstOrganicRawRank,
+    lastOrganicRawRank: parsed.rankStructureSummary.lastOrganicRawRank,
+    organicCount: parsed.rankStructureSummary.organicCount,
+    adSlotCount: parsed.rankStructureSummary.adSlotCount,
+    helperSlotCount: parsed.rankStructureSummary.helperSlotCount,
+  }, {
+    mode: "rendered_order_candidate_v1",
+    firstOrganicRawRank: 1,
+    lastOrganicRawRank: 41,
+    organicCount: 40,
+    adSlotCount: 16,
+    helperSlotCount: 0,
+  });
+});
+
+test("rejects unsafe rendered-order candidates before they can be considered for paired acceptance", async (t) => {
+  assert.equal(
+    typeof parseNaverRenderedOrderCandidatePage,
+    "function",
+    "the rendered-order parser must be an explicit candidate-only API",
+  );
+  const baseEntries = sanitizedRenderedOrderCandidateEntries();
+  const fixtures = [
+    {
+      detail: "organic_raw_rank_order",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && !entry.item.adId && entry.item.rank === 22).item.rank = 13;
+      },
+    },
+    {
+      detail: "organic_raw_rank_duplicate",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && !entry.item.adId && entry.item.rank === 22).item.rank = 21;
+      },
+    },
+    {
+      detail: "unknown_helper",
+      mutate(entries) {
+        entries.splice(10, 0, {
+          type: "unknown_helper",
+          item: { collection: "ui", moduleIndex: 99 },
+        });
+      },
+    },
+    {
+      detail: "explicit_ad_classification",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && entry.item.adId).item.isAd = false;
+      },
+    },
+    {
+      detail: "hidden_sponsored_flag",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && !entry.item.adId).item.sponsored = true;
+      },
+    },
+    {
+      detail: "non_boolean_ad_flag",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && !entry.item.adId).item.isAdvertisement = "false";
+      },
+    },
+    {
+      detail: "alternate_ad_id",
+      mutate(entries) {
+        entries.find((entry) => entry.type === "product" && !entry.item.adId).item.advertisingId = "paid-2";
+      },
+    },
+    {
+      detail: "organic_count",
+      mutate(entries) {
+        const lastOrganicIndex = entries.findLastIndex(
+          (entry) => entry.type === "product" && !entry.item.adId,
+        );
+        entries.splice(lastOrganicIndex, 1);
+      },
+    },
+  ];
+
+  for (const fixture of fixtures) {
+    await t.test(fixture.detail, () => {
+      const entries = structuredClone(baseEntries);
+      fixture.mutate(entries);
+      assert.throws(
+        () => parseNaverRenderedOrderCandidatePage(nextDataFixture({
+          total: 300,
+          entries,
+        }), { pageIndex: 1, keyword: "온열찜질기" }),
+        (error) => error instanceof ProviderError
+          && error.code === "provider_rendered_order_candidate_invalid",
+        fixture.detail,
+      );
+    });
+  }
 });
 
 test("reports bounded structural diagnostics for each observed mixed-ad rank drift shape", () => {

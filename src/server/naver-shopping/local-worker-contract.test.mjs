@@ -22,8 +22,10 @@ import {
   SCHEMA_VERSION,
   SOURCE,
   STABLE_FINITE_WINDOW_PROOF_VERSION,
+  STABLE_RENDERED_ORDER_PROOF_VERSION,
   stableFiniteWindowDigest,
   stableCollisionDigest,
+  stableRenderedOrderWindowDigest,
   stableWindowDigest,
   validateProviderWindow,
   validateRankRequest,
@@ -339,6 +341,113 @@ test("signed submit evidence fails closed when a stable cross-page proof is tamp
       MI_NAVER_SHOPPING_LOCAL_WORKER_SECRET: secret,
     },
   }).code, "LOCAL_WORKER_SIGNATURE_INVALID");
+});
+
+test("server accepts only a fully proven rendered-order window and preserves its bounded proof", () => {
+  const items = Array.from({ length: 300 }, (_, index) => ({
+    ...item(index + 1),
+    productType: 2,
+  }));
+  const passDigest = stableRenderedOrderWindowDigest(items, { keyword: "온열찜질기" });
+  const renderedOrderProof = {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["rendered-capture-0001", "rendered-capture-0002"],
+    passDigests: [passDigest, passDigest],
+    structureDigests: ["a".repeat(64), "b".repeat(64)],
+  };
+  const accepted = validateStrictLocalWorkerWindow(windowFixture({
+    items,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    renderedOrderProof,
+  }), { keyword: "온열찜질기", nowMs: NOW });
+
+  assert.equal(accepted.items.length, 300);
+  assert.deepEqual(accepted.renderedOrderProof, renderedOrderProof);
+});
+
+test("server rejects every unproven or extended rendered-order field", () => {
+  const items = Array.from({ length: 300 }, (_, index) => ({
+    ...item(index + 1),
+    productType: 2,
+  }));
+  const passDigest = stableRenderedOrderWindowDigest(items, { keyword: "온열찜질기" });
+  const proof = {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["rendered-capture-0001", "rendered-capture-0002"],
+    passDigests: [passDigest, passDigest],
+    structureDigests: ["a".repeat(64), "a".repeat(64)],
+  };
+  const invalidProofs = [
+    {},
+    { ...proof, captureIds: ["rendered-capture-0001", "rendered-capture-0001"] },
+    { ...proof, passDigests: [passDigest, "b".repeat(64)] },
+    { ...proof, structureDigests: ["a".repeat(64), "not-a-sha256"] },
+    { ...proof, unexpected: true },
+  ];
+  for (const renderedOrderProof of invalidProofs) {
+    assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+      items,
+      marketTotal: 300,
+      marketTotalStatus: "verified",
+      renderedOrderProof,
+    }), { keyword: "온열찜질기", nowMs: NOW }));
+  }
+
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items,
+    renderedOrderProof: proof,
+    marketTotal: null,
+    marketTotalStatus: "unavailable",
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+
+  const identityDrift = structuredClone(items);
+  identityDrift[299].sellerProductId = "99999999999";
+  identityDrift[299].link = "https://smartstore.naver.com/example/products/99999999999";
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items: identityDrift,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    renderedOrderProof: proof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+
+  const duplicateIdentity = structuredClone(items);
+  duplicateIdentity[1].sellerProductId = duplicateIdentity[0].sellerProductId;
+  duplicateIdentity[1].link = duplicateIdentity[0].link;
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items: duplicateIdentity,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    renderedOrderProof: proof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+
+  const weakSellerIdentity = structuredClone(items);
+  weakSellerIdentity[0].sellerProductId = "";
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items: weakSellerIdentity,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    renderedOrderProof: proof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
+
+  const weakCatalogIdentity = structuredClone(items);
+  weakCatalogIdentity[0] = {
+    ...weakCatalogIdentity[0],
+    productType: 1,
+    catalogId: "",
+  };
+  assert.throws(() => validateStrictLocalWorkerWindow(windowFixture({
+    items: weakCatalogIdentity,
+    marketTotal: 300,
+    marketTotalStatus: "verified",
+    renderedOrderProof: proof,
+  }), { keyword: "온열찜질기", nowMs: NOW }));
 });
 
 test("rejects a source-exhausted short window even when the base collector marks it complete", () => {

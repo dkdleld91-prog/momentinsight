@@ -7,7 +7,9 @@ import {
   SCHEMA_VERSION,
   SOURCE,
   STABLE_FULL_WINDOW_PROOF_VERSION,
+  STABLE_RENDERED_ORDER_PROOF_VERSION,
   stableCollisionDigest,
+  stableRenderedOrderWindowDigest,
   stableWindowDigest,
   validateProviderWindow,
   validateRankRequest,
@@ -219,6 +221,118 @@ test("fails closed for missing, forged, stale-pass, and unnecessary stable full-
     () => validateProviderWindow({ ...validWindow(300), crossPageProof: proof }, request),
     "invalid_provider_response",
     "crossPageProof.unexpected",
+  );
+});
+
+test("accepts and preserves one exact paired rendered-order proof for a full 300 window", () => {
+  const request = validateRankRequest(rankRequest({ limit: 300 }), { nowMs: NOW_MS });
+  const window = validWindow(300);
+  window.items = window.items.map((item) => ({ ...item, productType: 2 }));
+  const passDigest = stableRenderedOrderWindowDigest(window.items, { keyword: window.keyword });
+  window.renderedOrderProof = {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["rendered-capture-0001", "rendered-capture-0002"],
+    passDigests: [passDigest, passDigest],
+    structureDigests: ["a".repeat(64), "b".repeat(64)],
+  };
+
+  const result = validateProviderWindow(window, request);
+  assert.equal(result.items.length, 300);
+  assert.deepEqual(result.renderedOrderProof, window.renderedOrderProof);
+});
+
+test("fails closed for replayed, digest-mismatched, malformed, duplicate, and extended rendered-order proofs", () => {
+  const request = validateRankRequest(rankRequest({ limit: 300 }), { nowMs: NOW_MS });
+  const window = validWindow(300);
+  window.items = window.items.map((item) => ({ ...item, productType: 2 }));
+  const passDigest = stableRenderedOrderWindowDigest(window.items, { keyword: window.keyword });
+  const proof = {
+    version: STABLE_RENDERED_ORDER_PROOF_VERSION,
+    passCount: 2,
+    pageCount: 8,
+    pageSize: 40,
+    captureIds: ["rendered-capture-0001", "rendered-capture-0002"],
+    passDigests: [passDigest, passDigest],
+    structureDigests: ["a".repeat(64), "a".repeat(64)],
+  };
+
+  const cases = [
+    [
+      { ...proof, captureIds: ["rendered-capture-0001", "rendered-capture-0001"] },
+      "renderedOrderProof",
+    ],
+    [
+      { ...proof, passDigests: [passDigest, "b".repeat(64)] },
+      "renderedOrderProof.mismatch",
+    ],
+    [
+      { ...proof, structureDigests: ["a".repeat(64), "not-a-sha256"] },
+      "renderedOrderProof",
+    ],
+    [
+      { ...proof, unexpected: true },
+      "renderedOrderProof.unexpected",
+    ],
+  ];
+  for (const [renderedOrderProof, detail] of cases) {
+    assertContractError(
+      () => validateProviderWindow({ ...window, renderedOrderProof }, request),
+      "invalid_provider_response",
+      detail,
+    );
+  }
+
+  const identityDrift = structuredClone(window);
+  identityDrift.items[299].sellerProductId = "99999999999";
+  identityDrift.items[299].link = "https://smartstore.naver.com/example/products/99999999999";
+  assertContractError(
+    () => validateProviderWindow({ ...identityDrift, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.mismatch",
+  );
+
+  const duplicateIdentity = structuredClone(window);
+  duplicateIdentity.items[1].sellerProductId = duplicateIdentity.items[0].sellerProductId;
+  duplicateIdentity.items[1].link = duplicateIdentity.items[0].link;
+  assertContractError(
+    () => validateProviderWindow({ ...duplicateIdentity, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.duplicate_identity",
+  );
+
+  for (const weakIdentity of [
+    { sellerProductId: "" },
+    { sellerProductId: "", link: "" },
+  ]) {
+    const weakSeller = structuredClone(window);
+    Object.assign(weakSeller.items[0], weakIdentity);
+    assertContractError(
+      () => validateProviderWindow({ ...weakSeller, renderedOrderProof: proof }, request),
+      "invalid_provider_response",
+      "renderedOrderProof.direct_identity",
+    );
+  }
+
+  const weakCatalog = structuredClone(window);
+  weakCatalog.items[0] = {
+    ...weakCatalog.items[0],
+    productType: 1,
+    catalogId: "",
+  };
+  assertContractError(
+    () => validateProviderWindow({ ...weakCatalog, renderedOrderProof: proof }, request),
+    "invalid_provider_response",
+    "renderedOrderProof.direct_identity",
+  );
+
+  assertContractError(
+    () => validateProviderWindow({ ...validWindow(2), renderedOrderProof: proof },
+      validateRankRequest(rankRequest(), { nowMs: NOW_MS })),
+    "invalid_provider_response",
+    "renderedOrderProof.coverage",
   );
 });
 

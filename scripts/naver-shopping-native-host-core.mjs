@@ -158,6 +158,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   let marketTotal = null;
   let marketTotalVerified = true;
   let sourceExhausted = false;
+  let previousRankStructureSummary = null;
 
   for (let index = 0; index < pages.length && state.items.length < request.limit; index += 1) {
     const page = pages[index];
@@ -169,7 +170,9 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
       pageIndex: page.pageIndex,
       pageSize: PAGE_SIZE,
       keyword: request.keyword,
+      previousRankStructureSummary,
     });
+    previousRankStructureSummary = parsed.rankStructureSummary;
     if (marketTotal == null) marketTotal = parsed.marketTotal;
     else if (marketTotal !== parsed.marketTotal) {
       marketTotal = null;

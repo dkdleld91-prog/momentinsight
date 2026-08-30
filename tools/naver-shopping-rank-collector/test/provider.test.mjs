@@ -20,6 +20,7 @@ import {
   buildNaverShoppingSearchUrl,
   classifyNaverPage,
   createPlaywrightProvider,
+  decodeNaverRankDriftDetail,
   defaultNaverShoppingProfileDir,
   defaultCollectPage,
   marketTotalFromTexts,
@@ -99,6 +100,38 @@ function nextDataAd(index = 1) {
       productTitle: `광고 ${index}`,
     },
   };
+}
+
+function nextDataSupersaving(rank) {
+  return {
+    type: "supersaving",
+    item: {
+      collection: "product",
+      rank,
+      id: String(99500000000 + rank),
+    },
+  };
+}
+
+function productionRankDriftEntries({
+  expectedRank,
+  adSlotCount,
+  supersavingSlotCount,
+}) {
+  const regularAdCount = adSlotCount - supersavingSlotCount;
+  const regularAds = Array.from(
+    { length: regularAdCount },
+    (_, index) => nextDataAd(index + 1),
+  );
+  const organics = Array.from(
+    { length: expectedRank - 1 },
+    (_, index) => nextDataProduct(index + 1),
+  );
+  const supersaving = Array.from(
+    { length: supersavingSlotCount },
+    () => nextDataSupersaving(15),
+  );
+  return [...regularAds, ...organics, ...supersaving, nextDataProduct(expectedRank + 1)];
 }
 
 function nextDataAuxiliary(index = 1, overrides = {}) {
@@ -454,6 +487,14 @@ test("normalizes only the rank shift accounted for by an explicit ranked ad slot
     [1],
   );
   assert.equal(parsed.rows.find((row) => row.isOrganic).productId, "91000000002");
+  assert.deepEqual(parsed.rankStructureSummary, {
+    lastOrganicRawRank: 2,
+    adSlotCount: 1,
+    uniqueRankedAdCount: 1,
+    helperSlotCount: 1,
+    supersavingSlotCount: 1,
+    acceptedRankOffset: 1,
+  });
   assert.equal(JSON.stringify(parsed).includes("99999999999"), false);
   assert.equal(JSON.stringify(parsed).includes("private-image"), false);
 });
@@ -468,8 +509,141 @@ test("fails closed when a product rank shift has no explicit ranked ad explanati
     () => parseNaverNextDataPage(payload, { pageIndex: 1, keyword: "온열찜질기" }),
     (error) => error instanceof ProviderError
       && error.code === "naver_next_data_rank_drift"
-      && error.detail === "p1:i1:r2:e1:a0:q0:h1:s0:o0"
-      && error.detail.length <= 40,
+      && error.detail === "p1:i1:r2:e1:o0:m1:f-:z-:u-:d0:v-:n0:a0:q0:h1:s0"
+      && `${error.code}:${error.detail}`.length <= 80,
+  );
+});
+
+test("reports bounded structural diagnostics for each observed mixed-ad rank drift shape", () => {
+  const fixtures = [
+    { index: 34, expectedRank: 20, adSlotCount: 15, supersavingSlotCount: 1, first: 33, last: 33, duplicate: 0 },
+    { index: 36, expectedRank: 21, adSlotCount: 16, supersavingSlotCount: 1, first: 35, last: 35, duplicate: 1 },
+    { index: 38, expectedRank: 23, adSlotCount: 16, supersavingSlotCount: 1, first: 37, last: 37, duplicate: 1 },
+    { index: 46, expectedRank: 31, adSlotCount: 16, supersavingSlotCount: 2, first: 44, last: 45, duplicate: 1 },
+    { index: 47, expectedRank: 32, adSlotCount: 16, supersavingSlotCount: 2, first: 45, last: 46, duplicate: 1 },
+  ];
+
+  for (const fixture of fixtures) {
+    const expectedDetail = [
+      "p1",
+      `i${fixture.index.toString(36)}`,
+      `r${(fixture.expectedRank + 1).toString(36)}`,
+      `e${fixture.expectedRank.toString(36)}`,
+      "o0",
+      `m${fixture.expectedRank.toString(36)}`,
+      `f${fixture.first.toString(36)}`,
+      `z${fixture.last.toString(36)}`,
+      "uf",
+      `d${fixture.duplicate.toString(36)}`,
+      `v${(fixture.expectedRank - 1).toString(36)}`,
+      `n${fixture.supersavingSlotCount.toString(36)}`,
+      `a${fixture.adSlotCount.toString(36)}`,
+      "qf",
+      "h0",
+      `s${fixture.supersavingSlotCount.toString(36)}`,
+    ].join(":");
+    assert.throws(
+      () => parseNaverNextDataPage(nextDataFixture({
+        total: 300,
+        entries: productionRankDriftEntries(fixture),
+      }), { pageIndex: 1, keyword: "온열찜질기" }),
+      (error) => error instanceof ProviderError
+        && error.code === "naver_next_data_rank_drift"
+        && error.detail === expectedDetail
+        && `${error.code}:${error.detail}`.length <= 80,
+      expectedDetail,
+    );
+  }
+});
+
+test("rank drift diagnostics never contain product fields and have a fixed bounded grammar", () => {
+  const entries = productionRankDriftEntries({
+    expectedRank: 20,
+    adSlotCount: 15,
+    supersavingSlotCount: 1,
+  });
+  entries.at(-1).item.productTitle = "PRIVATE_TITLE_MUST_NOT_APPEAR";
+  entries.at(-1).item.imageUrl = "https://private.invalid/PRIVATE_IMAGE";
+  entries.at(-1).item.mallProductId = "987654321012345";
+  entries.at(-1).item.parentCatalogId = "876543210123456";
+
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 300,
+      entries,
+      keyword: "PRIVATE_KEYWORD_MUST_NOT_APPEAR",
+    }), {
+      pageIndex: 1,
+      keyword: "PRIVATE_KEYWORD_MUST_NOT_APPEAR",
+    }),
+    (error) => {
+      const persisted = `${error.code}:${error.detail}`;
+      return error instanceof ProviderError
+        && error.code === "naver_next_data_rank_drift"
+        && /^p[1-8]:i(?:-|[0-9a-z]{1,2}):r(?:-|[0-9a-z]{1,2}):e(?:-|[0-9a-z]{1,2}):o(?:-|[0-9a-z]{1,2}):m(?:-|[0-9a-z]{1,2}):f(?:-|[0-9a-z]{1,2}):z(?:-|[0-9a-z]{1,2}):u(?:-|[0-9a-z]{1,2}):d(?:-|[0-9a-z]{1,2}):v(?:-|[0-9a-z]{1,2}):n(?:-|[0-9a-z]{1,2}):a(?:-|[0-9a-z]{1,2}):q(?:-|[0-9a-z]{1,2}):h(?:-|[0-9a-z]{1,2}):s(?:-|[0-9a-z]{1,2})$/u.test(error.detail)
+        && persisted.length <= 80
+        && !/private|987654321012345|876543210123456/iu.test(persisted);
+    },
+  );
+});
+
+test("rank drift diagnostics replace oversized structural counters instead of exceeding 80 characters", () => {
+  const entries = [
+    ...Array.from({ length: 100 }, () => nextDataAd(1)),
+    ...Array.from({ length: 99 }, (_, index) => nextDataProduct(index + 1)),
+    ...Array.from({ length: 100 }, () => nextDataSupersaving(15)),
+    nextDataProduct(101),
+  ];
+
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({ total: 300, entries }), {
+      pageIndex: 1,
+      keyword: "온열찜질기",
+    }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_rank_drift"
+      && decodeNaverRankDriftDetail(error.detail)?.variant === "current-page"
+      && `${error.code}:${error.detail}`.length <= 80
+      && /^[a-z0-9:-]+$/u.test(error.detail),
+  );
+});
+
+test("rank drift detail codec round-trips both variants and rejects non-canonical input", () => {
+  const current = "p1:iy:rl:ek:o0:mk:fx:zx:uf:d0:vj:n1:af:qf:h0:s1";
+  assert.deepEqual(decodeNaverRankDriftDetail(current), {
+    variant: "current-page",
+    values: {
+      p: 1, i: 34, r: 21, e: 20, o: 0, m: 20, f: 33, z: 33,
+      u: 15, d: 0, v: 19, n: 1, a: 15, q: 15, h: 0, s: 1,
+    },
+  });
+  const previous = "p2:i0:r16:e15:o0:m15:a0:q0:h0:s0:l15:b1:c1:g1:t0:y1";
+  assert.equal(decodeNaverRankDriftDetail(previous)?.variant, "previous-page");
+  const worstCase = "p8:i-:rb4:eb4:ob4:mb4:a-:q-:h-:s-:lb4:bb4:c-:g-:t-:y-";
+  assert.equal(worstCase.length, 53);
+  assert.equal(`naver_next_data_rank_drift:${worstCase}`.length, 80);
+  assert.match(`naver_next_data_rank_drift:${worstCase}`, /^[a-z0-9_:-]{3,80}$/u);
+  assert.equal(decodeNaverRankDriftDetail(worstCase)?.variant, "previous-page");
+  for (const invalid of [
+    `${current}:x0`,
+    current.toUpperCase(),
+    current.replace("iy", "i00"),
+    current.replace("iy", "iPRIVATE"),
+    "p1:i-:r-:e-",
+  ]) assert.equal(decodeNaverRankDriftDetail(invalid), null);
+});
+
+test("count mismatch uses the same bounded rank-drift formatter", () => {
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 1,
+      entries: [nextDataProduct(1), nextDataProduct(2)],
+    }), { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError
+      && error.code === "naver_next_data_rank_drift"
+      && error.detail === "p1:i-:r2:e1:o0:m-:f-:z-:u-:d0:v2:n0:a0:q0:h0:s0"
+      && decodeNaverRankDriftDetail(error.detail)?.variant === "current-page"
+      && `${error.code}:${error.detail}`.length <= 80,
   );
 });
 
@@ -489,7 +663,7 @@ test("fails closed when rank drift exceeds the explicit ranked ad budget", () =>
     () => parseNaverNextDataPage(payload, { pageIndex: 1, keyword: "온열찜질기" }),
     (error) => error instanceof ProviderError
       && error.code === "naver_next_data_rank_drift"
-      && error.detail === "p1:i1:r3:e1:a1:q1:h0:s1:o0",
+      && error.detail === "p1:i1:r3:e1:o0:m2:f0:z0:u1:d0:v-:n1:a1:q1:h0:s1",
   );
 });
 
@@ -542,7 +716,7 @@ test("never exposes identifier-sized malformed ranks in drift diagnostics", () =
     () => parseNaverNextDataPage(payload, { pageIndex: 1, keyword: "온열찜질기" }),
     (error) => error instanceof ProviderError
       && error.code === "naver_next_data_rank_drift"
-      && error.detail === "p1:i0:rx:e1:a0:q0:h0:s0:o0"
+      && error.detail === "p1:i0:r-:e1:o0:m-:f-:z-:u-:d0:v-:n0:a0:q0:h0:s0"
       && !error.detail.includes("9999999999"),
   );
 });

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
 import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
+import { calculateN30RuntimeFingerprint } from "./naver-shopping-runtime-fingerprint.mjs";
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -235,6 +236,7 @@ const shoppingStableFiniteWindowRuntime1115Migration = read("supabase/migrations
 const shoppingExactParentRelationGuardMigration = read("supabase/migrations/20260827050000_naver_shopping_exact_parent_relation_guard.sql");
 const shoppingStableFiniteWindowRuntime1116Migration = read("supabase/migrations/20260827051000_naver_shopping_runtime_1_1_16_exact_parent.sql");
 const shoppingStableFiniteWindowRuntime1117Migration = read("supabase/migrations/20260829140000_naver_shopping_runtime_1_1_17_rank_drift_isolation.sql");
+const shoppingStableFiniteWindowRuntime1118Migration = read("supabase/migrations/20260830064426_naver_shopping_runtime_1_1_18_rank_drift_diagnostics.sql");
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
 const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
@@ -257,24 +259,12 @@ const shoppingWorkerRuntime1115Fingerprint =
   "c7941930ccabd1206f19cc9ae5cfcd744f12313974c37d5143ed5f795ec9b46c";
 const shoppingWorkerRuntime1116Fingerprint =
   "9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478";
-const shoppingWorkerRuntime1117Fingerprint = crypto.createHash("sha256").update([
-  "1.1.17",
-  "tools/naver-shopping-chrome-extension/service-worker.js",
-  "scripts/naver-shopping-native-host.mjs",
-  "scripts/naver-shopping-native-host-core.mjs",
-  "scripts/naver-shopping-local-worker.mjs",
-  "src/server/local-worker-auth.mjs",
-  "src/server/naver-shopping/local-worker-contract.mjs",
-  "src/server/handlers/naver-shopping-rank.mjs",
-  "src/server/security.mjs",
-  "src/server/naver-shopping/source-status.mjs",
-  "src/server/naver-shopping/provider-runtime.mjs",
-  "src/server/naver-shopping/mobile-top-fallback.mjs",
-  "tools/naver-shopping-rank-collector/src/provider.mjs",
-  "tools/naver-shopping-rank-collector/src/contract.mjs",
-].map((value, index) => index === 0 ? value : crypto.createHash("sha256")
-  .update(fs.readFileSync(value))
-  .digest("hex")).join("\n"), "utf8").digest("hex");
+const shoppingWorkerRuntime1117Fingerprint =
+  "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7";
+const shoppingWorkerRuntime1118Fingerprint = calculateN30RuntimeFingerprint({
+  repositoryRoot: process.cwd(),
+  version: "1.1.18",
+}).fingerprint;
 const shoppingErrorTaxonomyLookupBranch = shoppingErrorTaxonomyHardeningMigration.match(
   /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/u,
 )?.[0] || "";
@@ -1669,7 +1659,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.17"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.18"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1682,9 +1672,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.17";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.17";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.17";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.18";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.18";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.18";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -2083,11 +2073,19 @@ const checks = {
     && shoppingStableFiniteWindowRuntime1117Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
     && shoppingStableFiniteWindowRuntime1117Migration.includes("security invoker")
     && shoppingStableFiniteWindowRuntime1117Migration.includes("set search_path = ''")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("current_row.runtime_version is distinct from '1.1.17'")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes(shoppingWorkerRuntime1117Fingerprint)
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("set runtime_version = '1.1.18'")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes(shoppingWorkerRuntime1118Fingerprint)
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("expected_runtime_version constant text := '1.1.18'")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("target_updated_count <> prior_target_count")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("security invoker")
+    && shoppingStableFiniteWindowRuntime1118Migration.includes("set search_path = ''")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set cadence_mode = 'candidate', cadence_minutes = 6")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("security invoker")
     && shoppingStableFiniteWindowRuntime1116Migration.includes("set search_path = ''")
-    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.17";')
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1117Fingerprint)
+    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.18";')
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1118Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
@@ -2181,7 +2179,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.17"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.18"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -12,24 +13,53 @@ const supersavingRecoveryMigration = fs.readFileSync(
   path.join(migrationDirectory, "20260828025000_naver_shopping_supersaving_composite_recovery.sql"),
   "utf8",
 );
-const priorMigrationName = "20260828082130_naver_shopping_finite_commit_checked_count_ambiguity.sql";
+const finiteCommitMigrationName = "20260828082130_naver_shopping_finite_commit_checked_count_ambiguity.sql";
+const finiteCommitMigration = fs.readFileSync(path.join(migrationDirectory, finiteCommitMigrationName), "utf8");
+const priorMigrationName = "20260829140000_naver_shopping_runtime_1_1_17_rank_drift_isolation.sql";
 const priorMigration = fs.readFileSync(path.join(migrationDirectory, priorMigrationName), "utf8");
 const migrationNames = fs.readdirSync(migrationDirectory)
-  .filter((name) => /^\d{14}_naver_shopping_runtime_1_1_17(?:_[a-z0-9_]+)?\.sql$/u.test(name));
+  .filter((name) => /^\d{14}_naver_shopping_runtime_1_1_18(?:_[a-z0-9_]+)?\.sql$/u.test(name));
 const migrationName = migrationNames[0] || "";
 const migration = migrationName
   ? fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8")
   : "";
 
-const deployedRuntime = Object.freeze({
-  version: "1.1.17",
-  fingerprint: "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7",
-});
+const runtimeFiles = [
+  "tools/naver-shopping-chrome-extension/service-worker.js",
+  "scripts/naver-shopping-native-host.mjs",
+  "scripts/naver-shopping-native-host-core.mjs",
+  "scripts/naver-shopping-local-worker.mjs",
+  "src/server/local-worker-auth.mjs",
+  "src/server/naver-shopping/local-worker-contract.mjs",
+  "src/server/handlers/naver-shopping-rank.mjs",
+  "src/server/security.mjs",
+  "src/server/naver-shopping/source-status.mjs",
+  "src/server/naver-shopping/provider-runtime.mjs",
+  "src/server/naver-shopping/mobile-top-fallback.mjs",
+  "tools/naver-shopping-rank-collector/src/provider.mjs",
+  "tools/naver-shopping-rank-collector/src/contract.mjs",
+];
+
+function read(relativePath) {
+  return fs.readFileSync(path.join(repositoryRoot, relativePath), "utf8");
+}
+
+function runtimeFixture(version) {
+  const componentDigests = runtimeFiles.map((name) => crypto.createHash("sha256")
+    .update(fs.readFileSync(path.join(repositoryRoot, name)))
+    .digest("hex"));
+  return Object.freeze({
+    version,
+    fingerprint: crypto.createHash("sha256")
+      .update([version, ...componentDigests].join("\n"), "utf8")
+      .digest("hex"),
+  });
+}
 
 function requireMigration() {
-  assert.equal(migrationNames.length, 1, "one additive runtime 1.1.17 migration is required");
-  assert.ok(migrationName > priorMigrationName, "runtime 1.1.17 must follow the finite commit fix");
-  assert.ok(migration, "runtime 1.1.17 migration must be readable");
+  assert.equal(migrationNames.length, 1, "one additive runtime 1.1.18 migration is required");
+  assert.ok(migrationName > priorMigrationName, "runtime 1.1.18 must follow runtime 1.1.17");
+  assert.ok(migration, "runtime 1.1.18 migration must be readable");
 }
 
 function functionBlocks(source, name) {
@@ -111,6 +141,7 @@ async function createRuntimeMigrationFixture(database) {
     );
 
     create table public.naver_shopping_rank_lookup_jobs (
+      id uuid,
       status text,
       processing_until timestamptz,
       available_at timestamptz,
@@ -220,20 +251,41 @@ async function createRuntimeMigrationFixture(database) {
   `);
 }
 
-test("adds one runtime 1.1.17 migration behind an exact full-idle guard", () => {
+async function prepareRuntime1117(database) {
+  await createRuntimeMigrationFixture(database);
+  await database.exec(supersavingRecoveryMigration);
+  await database.exec(`
+    update public.naver_shopping_worker_coordination
+    set runtime_version = '1.1.16',
+        runtime_fingerprint = '9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478'
+    where lane_key = 'global';
+  `);
+  await database.exec(finiteCommitMigration);
+  await database.exec(priorMigration);
+  await database.exec(`
+    update public.naver_shopping_worker_coordination
+    set runtime_version = '1.1.17',
+        runtime_fingerprint = '1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7'
+    where lane_key = 'global';
+  `);
+}
+
+test("adds one runtime 1.1.18 migration behind an exact full-idle guard", () => {
   requireMigration();
   assert.match(migration, /^begin;/imu);
   assert.match(migration, /commit;\s*$/iu);
   assert.match(migration, /lock table public\.naver_shopping_worker_coordination in access exclusive mode/iu);
+  assert.match(migration, /lock table public\.naver_shopping_finite_window_targets in share row exclusive mode/iu);
   assert.match(migration, /where lane_key = 'global'[\s\S]*for update/iu);
+  assert.match(migration, /current_row\.runtime_version is distinct from '1\.1\.17'/iu);
   assert.match(
     migration,
-    /from public\.naver_shopping_finite_window_targets[\s\S]*enabled = true\s+for update/iu,
+    /1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7/u,
   );
-  assert.match(migration, /target\.runtime_version is distinct from '1\.1\.16'/iu);
-  assert.match(
-    migration,
-    /9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478/u,
+  assert.match(migration, /target_updated_count <> prior_target_count/iu);
+  assert.doesNotMatch(
+    migration.split("create or replace function")[0],
+    /c0ccded2-9bf7-488e-af8d-00898c0a1ff8/u,
   );
   assert.match(migration, /processing_count <> 0/iu);
   assert.match(migration, /current_row\.cadence_mode is distinct from 'baseline'/iu);
@@ -247,14 +299,24 @@ test("adds one runtime 1.1.17 migration behind an exact full-idle guard", () => 
   }
 });
 
-test("pins the immutable deployed runtime 1.1.17 identity in its historical migration", () => {
+test("binds every trusted surface to one canonical runtime 1.1.18 fingerprint", () => {
   requireMigration();
-  assert.match(migration, new RegExp(deployedRuntime.fingerprint, "u"));
-  assert.match(migration, /runtime_version = '1\.1\.17'/u);
-  assert.match(
-    migration,
-    /runtime_fingerprint\s*=\s*'1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7'/u,
-  );
+  const expected = runtimeFixture("1.1.18");
+  const manifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
+  assert.equal(manifest.version, expected.version);
+
+  const bindings = [
+    ["scripts/naver-shopping-local-worker.mjs", /const EXPECTED_RUNTIME_VERSION = "1\.1\.18";/u],
+    ["src/server/handlers/naver-shopping-local-worker.mjs", /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.18";/u],
+    ["src/server/handlers/naver-rank-trackers.mjs", /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.18";/u],
+    ["scripts/naver-shopping-candidate-performance-audit.mjs", /export const N30_TARGET_RUNTIME_VERSION = "1\.1\.18";/u],
+    ["scripts/naver-shopping-account-rank-health-audit.mjs", /export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1\.1\.18";/u],
+  ];
+  for (const [file, pattern] of bindings) assert.match(read(file), pattern);
+  for (const file of bindings.slice(3).map(([file]) => file)) {
+    assert.match(read(file), new RegExp(expected.fingerprint, "u"));
+  }
+  assert.match(migration, new RegExp(expected.fingerprint, "u"));
 });
 
 test("replaces all runtime-sensitive control functions without weakening grants", () => {
@@ -270,8 +332,13 @@ test("replaces all runtime-sensitive control functions without weakening grants"
     assert.equal(blocks.length, 1, `${name} must be replaced exactly once`);
     assert.match(blocks[0], /security invoker/iu);
     assert.match(blocks[0], /set search_path = ''/iu);
-    assert.doesNotMatch(blocks[0], /'1\.1\.16'/u);
-    assert.match(blocks[0], /'1\.1\.17'/u);
+    assert.doesNotMatch(blocks[0], /'1\.1\.17'/u);
+    assert.match(blocks[0], /'1\.1\.18'/u);
+  }
+  for (const name of functions.slice(0, 3)) {
+    const [block] = functionBlocks(migration, name);
+    assert.doesNotMatch(block, /naver_shopping_finite_window_targets|c0ccded2/iu);
+    assert.match(block, new RegExp(runtimeFixture("1.1.18").fingerprint, "u"));
   }
   assert.doesNotMatch(migration, /create or replace function public\.mi_commit_naver_shopping_finite_worker_result/iu);
   assert.doesNotMatch(migration, /grant execute[\s\S]*to (?:public|anon|authenticated)/iu);
@@ -289,7 +356,7 @@ test("preserves baseline10 candidate6 and resets only runtime stability state", 
   assert.match(migration, /runtime_fingerprint = null/iu);
   assert.match(
     migration,
-    /and runtime_version = '1\.1\.16'[\s\S]*and runtime_fingerprint = '9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478';/iu,
+    /and runtime_version = '1\.1\.17'[\s\S]*and runtime_fingerprint = '1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7';/iu,
   );
   assert.match(migration, /get diagnostics coordination_updated_count = row_count/iu);
   assert.match(migration, /coordination_updated_count <> 1/iu);
@@ -306,38 +373,83 @@ test("preserves baseline10 candidate6 and resets only runtime stability state", 
   );
 });
 
+test("PGlite rejects wrong identity, busy processing, live lease, and open circuit", async (t) => {
+  const cases = [
+    ["wrong_identity", "update public.naver_shopping_worker_coordination set runtime_fingerprint = 'f' || repeat('0', 63) where lane_key = 'global'"],
+    ["busy_processing", "insert into public.naver_shopping_rank_lookup_jobs (id, status, processing_until) values ('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'processing', clock_timestamp() + interval '5 minutes')"],
+    ["live_lease", "update public.naver_shopping_worker_coordination set lease_worker_id = 'windows-desktop-primary', lease_token = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', lease_until = clock_timestamp() + interval '5 minutes' where lane_key = 'global'"],
+    ["open_circuit", "update public.naver_shopping_worker_coordination set circuit_state = 'open', circuit_reason = 'test' where lane_key = 'global'"],
+  ];
+  for (const [name, mutation] of cases) {
+    const database = new PGlite();
+    t.after(async () => database.close());
+    await prepareRuntime1117(database);
+    await database.exec(mutation);
+    await assert.rejects(database.exec(migration), /naver_shopping_runtime_1_1_18_requires_idle_control_plane/u, name);
+  }
+});
+
+test("global runtime control no longer depends on the optional finite canary row", async (t) => {
+  requireMigration();
+  const database = new PGlite();
+  t.after(async () => database.close());
+  await prepareRuntime1117(database);
+  await database.exec("delete from public.naver_shopping_finite_window_targets");
+  await database.exec(migration);
+
+  const runtime = runtimeFixture("1.1.18");
+  const targetCount = await database.query(
+    "select count(*)::integer as count from public.naver_shopping_finite_window_targets",
+  );
+  assert.equal(targetCount.rows[0].count, 0);
+
+  const laneToken = "67676767-6767-4767-8767-676767676767";
+  const runId = "68686868-6868-4868-8868-686868686868";
+  await database.exec(`
+    update public.naver_shopping_worker_coordination
+    set lease_worker_id = 'windows-desktop-primary',
+        lease_token = '${laneToken}',
+        lease_until = clock_timestamp() + interval '5 minutes'
+    where lane_key = 'global';
+  `);
+  const progress = await database.query(`
+    select public.mi_report_naver_shopping_worker_progress(
+      'windows-desktop-primary', '${laneToken}', '${runId}', 'navigating', 1,
+      'tracker', null, '1.1.18', '${runtime.fingerprint}', 'rank-catch-up'
+    ) as accepted
+  `);
+  assert.equal(progress.rows[0].accepted, true);
+  const operations = await database.query(
+    "select public.mi_get_naver_shopping_worker_operations() as result",
+  );
+  assert.equal(operations.rows[0].result.runtime_version, "1.1.18");
+  assert.equal(operations.rows[0].result.runtime_fingerprint, runtime.fingerprint);
+});
+
 test("compiles and invokes runtime RPCs while preserving the corrected finite commit", async (t) => {
   requireMigration();
   const database = new PGlite();
   t.after(async () => database.close());
-  await createRuntimeMigrationFixture(database);
-  await database.exec(supersavingRecoveryMigration);
+  await prepareRuntime1117(database);
   const recovered = await database.query(`
     select runtime_version, runtime_fingerprint
     from public.naver_shopping_finite_window_targets
     where tracker_id = 'c0ccded2-9bf7-488e-af8d-00898c0a1ff8'
   `);
   assert.deepEqual(recovered.rows, [{
-    runtime_version: "1.1.16",
-    runtime_fingerprint: "9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478",
+    runtime_version: "1.1.17",
+    runtime_fingerprint: "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7",
   }]);
-  await database.exec(`
-    update public.naver_shopping_worker_coordination
-    set runtime_version = '1.1.16',
-        runtime_fingerprint = '9680164f90965609896b72c05b09e67946bc51d1df44c76d0cb5b9e5f0085478'
-    where lane_key = 'global';
-  `);
-  await database.exec(priorMigration);
   await database.exec(migration);
 
-  const runtime = deployedRuntime;
+  const runtime = runtimeFixture("1.1.18");
   const target = await database.query(`
     select runtime_version, runtime_fingerprint
     from public.naver_shopping_finite_window_targets
     where tracker_id = 'c0ccded2-9bf7-488e-af8d-00898c0a1ff8'
   `);
   assert.deepEqual(target.rows, [{
-    runtime_version: "1.1.17",
+    runtime_version: "1.1.18",
     runtime_fingerprint: runtime.fingerprint,
   }]);
 
@@ -370,7 +482,7 @@ test("compiles and invokes runtime RPCs while preserving the corrected finite co
     select public.mi_report_naver_shopping_worker_progress(
       'windows-desktop-primary', '${laneToken}', '${runId}', 'navigating', 1,
       'tracker', 'c0ccded2-9bf7-488e-af8d-00898c0a1ff8',
-      '1.1.17', '${runtime.fingerprint}', 'rank-catch-up'
+      '1.1.18', '${runtime.fingerprint}', 'rank-catch-up'
     ) as accepted
   `);
   assert.equal(progress.rows[0].accepted, true);
@@ -427,7 +539,7 @@ test("compiles and invokes runtime RPCs while preserving the corrected finite co
       run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at
     ) values (
       '${finiteRunId}', 'windows-desktop-primary', 'rank-catch-up',
-      '1.1.17', '${runtime.fingerprint}', '${leaseStartedAt}'::timestamptz
+      '1.1.18', '${runtime.fingerprint}', '${leaseStartedAt}'::timestamptz
     );
     insert into public.naver_shopping_scheduler_events (
       event_id, event_type, claim_id, run_id, worker_id, tracker_id,

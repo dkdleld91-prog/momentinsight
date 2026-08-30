@@ -413,6 +413,166 @@ function nextDataCompositeType(value, detail) {
   return value.toLowerCase();
 }
 
+const RANK_DRIFT_DETAIL_MAX_LENGTH = 53;
+const RANK_DRIFT_CURRENT_KEYS = ["p", "i", "r", "e", "o", "m", "f", "z", "u", "d", "v", "n", "a", "q", "h", "s"];
+const RANK_DRIFT_PREVIOUS_PAGE_KEYS = ["p", "i", "r", "e", "o", "m", "a", "q", "h", "s", "l", "b", "c", "g", "t", "y"];
+const RANK_DRIFT_FIELD_MAX = Object.freeze({
+  p: NAVER_SHOPPING_MAX_PAGES,
+  i: 1_295,
+  r: 400,
+  e: 400,
+  o: 400,
+  m: 400,
+  f: 1_295,
+  z: 1_295,
+  u: 400,
+  d: 1_295,
+  v: 400,
+  n: 1_295,
+  a: 1_295,
+  q: 1_295,
+  h: 1_295,
+  s: 1_295,
+  l: 400,
+  b: 400,
+  c: 1_295,
+  g: 1_295,
+  t: 1_295,
+  y: 1_295,
+});
+
+function encodeRankDriftNumber(key, value) {
+  const maximum = RANK_DRIFT_FIELD_MAX[key];
+  return Number.isSafeInteger(value) && value >= 0 && value <= maximum
+    ? value.toString(36)
+    : "-";
+}
+
+function encodeRankDriftFields(keys, values) {
+  const encoded = Object.fromEntries(keys.map((key) => [key, encodeRankDriftNumber(key, values[key])]));
+  const compactionOrder = ["h", "q", "a", "s", "d", "n", "f", "z", "t", "g", "c", "y", "i", "u", "v", "l", "b", "m", "r", "e", "o"];
+  const build = () => keys.map((key) => `${key}${encoded[key]}`).join(":");
+  let detail = build();
+  for (const key of compactionOrder) {
+    if (detail.length <= RANK_DRIFT_DETAIL_MAX_LENGTH) break;
+    if (keys.includes(key) && encoded[key].length > 1) {
+      encoded[key] = "-";
+      detail = build();
+    }
+  }
+  if (detail.length > RANK_DRIFT_DETAIL_MAX_LENGTH
+    || !/^[a-z0-9:-]{3,53}$/u.test(detail)) {
+    throw new ProviderError("naver_next_data_rank_drift_diagnostic_invalid");
+  }
+  return detail;
+}
+
+export function decodeNaverRankDriftDetail(detail) {
+  const text = String(detail || "");
+  if (text.length > RANK_DRIFT_DETAIL_MAX_LENGTH || !/^[a-z0-9:-]{3,53}$/u.test(text)) return null;
+  const tokens = text.split(":");
+  const keys = tokens.map((token) => token.slice(0, 1));
+  const expectedKeys = keys.join("") === RANK_DRIFT_CURRENT_KEYS.join("")
+    ? RANK_DRIFT_CURRENT_KEYS
+    : keys.join("") === RANK_DRIFT_PREVIOUS_PAGE_KEYS.join("")
+      ? RANK_DRIFT_PREVIOUS_PAGE_KEYS
+      : null;
+  if (!expectedKeys) return null;
+  const values = {};
+  for (let index = 0; index < tokens.length; index += 1) {
+    const key = expectedKeys[index];
+    const encoded = tokens[index].slice(1);
+    if (!encoded || !/^(?:-|[0-9a-z]{1,2})$/u.test(encoded)) return null;
+    if (encoded === "-") values[key] = null;
+    else {
+      const value = Number.parseInt(encoded, 36);
+      if (!Number.isSafeInteger(value)
+        || value < 0
+        || value > RANK_DRIFT_FIELD_MAX[key]
+        || value.toString(36) !== encoded) return null;
+      values[key] = value;
+    }
+  }
+  return {
+    variant: expectedKeys === RANK_DRIFT_CURRENT_KEYS ? "current-page" : "previous-page",
+    values,
+  };
+}
+
+function currentPageRankDriftDetail({
+  page,
+  index,
+  actualRank,
+  expectedRank,
+  acceptedRankOffset,
+  firstMissingRank,
+  firstSupersavingIndex,
+  lastSupersavingIndex,
+  lastSupersavingRank,
+  duplicateRankedAdCount,
+  previousOrganicRawRank,
+  supersavingSincePreviousOrganicCount,
+  adSlotCount,
+  uniqueRankedAdCount,
+  helperSlotCount,
+  supersavingSlotCount,
+}) {
+  return encodeRankDriftFields(RANK_DRIFT_CURRENT_KEYS, {
+    p: page,
+    i: index,
+    r: actualRank,
+    e: expectedRank,
+    o: acceptedRankOffset,
+    m: firstMissingRank,
+    f: firstSupersavingIndex,
+    z: lastSupersavingIndex,
+    u: lastSupersavingRank,
+    d: duplicateRankedAdCount,
+    v: previousOrganicRawRank,
+    n: supersavingSincePreviousOrganicCount,
+    a: adSlotCount,
+    q: uniqueRankedAdCount,
+    h: helperSlotCount,
+    s: supersavingSlotCount,
+  });
+}
+
+function previousPageRankDriftDetail(current, previous) {
+  return encodeRankDriftFields(RANK_DRIFT_PREVIOUS_PAGE_KEYS, {
+    p: current.page,
+    i: current.index,
+    r: current.actualRank,
+    e: current.expectedRank,
+    o: current.acceptedRankOffset,
+    m: current.firstMissingRank,
+    a: current.adSlotCount,
+    q: current.uniqueRankedAdCount,
+    h: current.helperSlotCount,
+    s: current.supersavingSlotCount,
+    l: previous.lastOrganicRawRank,
+    b: previous.acceptedRankOffset,
+    c: previous.adSlotCount,
+    g: previous.uniqueRankedAdCount,
+    t: previous.helperSlotCount,
+    y: previous.supersavingSlotCount,
+  });
+}
+
+function validRankStructureSummary(value) {
+  const fields = [
+    ["lastOrganicRawRank", 1, 400],
+    ["acceptedRankOffset", 0, 400],
+    ["adSlotCount", 0, 1_295],
+    ["uniqueRankedAdCount", 0, 1_295],
+    ["helperSlotCount", 0, 1_295],
+    ["supersavingSlotCount", 0, 1_295],
+  ];
+  return value && typeof value === "object" && !Array.isArray(value)
+    && fields.every(([field, minimum, maximum]) => Number.isSafeInteger(value[field])
+      && value[field] >= minimum
+      && value[field] <= maximum);
+}
+
 function classifyRanklessNonProductComposite(entry, detail) {
   const type = nextDataCompositeType(entry.type, `${detail}.type`);
   if (NEXT_DATA_NON_ORGANIC_COMPOSITE_TYPES.has(type)) return { type, isAd: true };
@@ -466,6 +626,7 @@ export function parseNaverNextDataPage(payload, {
   pageIndex = 1,
   pageSize = NAVER_SHOPPING_PAGE_SIZE,
   keyword = "",
+  previousRankStructureSummary = null,
 } = {}) {
   let data = payload;
   if (typeof payload === "string") {
@@ -513,15 +674,23 @@ export function parseNaverNextDataPage(payload, {
   let acceptedRankOffset = 0;
   let helperSlotCount = 0;
   let supersavingSlotCount = 0;
+  let duplicateRankedAdCount = 0;
+  let previousOrganicRawRank = null;
+  let supersavingSincePreviousOrganicCount = 0;
+  let firstSupersavingSincePreviousOrganicIndex = null;
+  let lastSupersavingSincePreviousOrganicIndex = null;
+  let lastSupersavingSincePreviousOrganicRank = null;
 
   const countRankedAdSlot = (entry, detail) => {
-    if (entry.item == null) return;
+    if (entry.item == null) return null;
     const adItem = nextDataRecord(entry.item, `${detail}.item`);
-    if (adItem.rank == null) return;
+    if (adItem.rank == null) return null;
     if (!Number.isSafeInteger(adItem.rank) || adItem.rank < 1 || adItem.rank > 400) {
       throw nextDataSchemaError(`${detail}.item.rank`);
     }
+    if (rankedAdRanks.has(adItem.rank)) duplicateRankedAdCount += 1;
     rankedAdRanks.add(adItem.rank);
+    return adItem.rank;
   };
 
   for (let index = 0; index < compositeList.list.length; index += 1) {
@@ -531,8 +700,16 @@ export function parseNaverNextDataPage(payload, {
       const classification = classifyRanklessNonProductComposite(entry, entryDetail);
       if (classification.isAd) {
         adSlotCount += 1;
-        countRankedAdSlot(entry, entryDetail);
-        if (classification.type === "supersaving") supersavingSlotCount += 1;
+        const rankedAdRank = countRankedAdSlot(entry, entryDetail);
+        if (classification.type === "supersaving") {
+          supersavingSlotCount += 1;
+          supersavingSincePreviousOrganicCount += 1;
+          if (firstSupersavingSincePreviousOrganicIndex == null) {
+            firstSupersavingSincePreviousOrganicIndex = index;
+          }
+          lastSupersavingSincePreviousOrganicIndex = index;
+          lastSupersavingSincePreviousOrganicRank = rankedAdRank;
+        }
         rows.push({
           rowSource: NEXT_DATA_ROW_SOURCE,
           extractionKey: `next:${expectedPage}:ad:${index}:type:${classification.type}`,
@@ -569,12 +746,13 @@ export function parseNaverNextDataPage(payload, {
       ? item.rank
       : null;
     const observedRankOffset = actualRank == null ? null : actualRank - expectedRank;
-    const rawRankSlotsAreContiguous = actualRank != null
-      && (() => {
+    let firstMissingRank = null;
+    const rawRankSlotsAreContiguous = actualRank != null && (() => {
         for (let rank = expectedStartRank; rank <= actualRank; rank += 1) {
           if (rank !== actualRank
             && !observedOrganicRawRanks.has(rank)
             && !rankedAdRanks.has(rank)) {
+            firstMissingRank = rank;
             return false;
           }
         }
@@ -583,26 +761,40 @@ export function parseNaverNextDataPage(payload, {
     if (observedRankOffset == null
       || observedRankOffset < acceptedRankOffset
       || !rawRankSlotsAreContiguous) {
-      const actualRank = Number.isSafeInteger(item.rank) && item.rank >= 1 && item.rank <= 300
-        ? item.rank
-        : "x";
+      const currentDiagnostic = {
+        page: expectedPage,
+        index,
+        actualRank,
+        expectedRank,
+        acceptedRankOffset,
+        firstMissingRank,
+        firstSupersavingIndex: firstSupersavingSincePreviousOrganicIndex,
+        lastSupersavingIndex: lastSupersavingSincePreviousOrganicIndex,
+        lastSupersavingRank: lastSupersavingSincePreviousOrganicRank,
+        duplicateRankedAdCount,
+        previousOrganicRawRank,
+        supersavingSincePreviousOrganicCount,
+        adSlotCount,
+        uniqueRankedAdCount: rankedAdRanks.size,
+        helperSlotCount,
+        supersavingSlotCount,
+      };
       throw new ProviderError(
         "naver_next_data_rank_drift",
-        [
-          `p${expectedPage}`,
-          `i${index}`,
-          `r${actualRank}`,
-          `e${expectedRank}`,
-          `a${adSlotCount}`,
-          `q${rankedAdRanks.size}`,
-          `h${helperSlotCount}`,
-          `s${supersavingSlotCount}`,
-          `o${acceptedRankOffset}`,
-        ].join(":"),
+        expectedPage > 1
+          && previousOrganicRawRank == null
+          && validRankStructureSummary(previousRankStructureSummary)
+          ? previousPageRankDriftDetail(currentDiagnostic, previousRankStructureSummary)
+          : currentPageRankDriftDetail(currentDiagnostic),
       );
     }
     acceptedRankOffset = observedRankOffset;
     observedOrganicRawRanks.add(actualRank);
+    previousOrganicRawRank = actualRank;
+    supersavingSincePreviousOrganicCount = 0;
+    firstSupersavingSincePreviousOrganicIndex = null;
+    lastSupersavingSincePreviousOrganicIndex = null;
+    lastSupersavingSincePreviousOrganicRank = null;
     const productId = nextDataNumericId(item.id, `${entryDetail}.item.id`, { required: true });
     const parentCatalogId = nextDataNumericId(
       item.parentCatalogId,
@@ -695,16 +887,24 @@ export function parseNaverNextDataPage(payload, {
   if (organicCount !== expectedOrganicCount) {
     throw new ProviderError(
       "naver_next_data_rank_drift",
-      [
-        `p${expectedPage}`,
-        `c${organicCount}`,
-        `e${expectedOrganicCount}`,
-        `a${adSlotCount}`,
-        `q${rankedAdRanks.size}`,
-        `h${helperSlotCount}`,
-        `s${supersavingSlotCount}`,
-        `o${acceptedRankOffset}`,
-      ].join(":"),
+      currentPageRankDriftDetail({
+        page: expectedPage,
+        index: null,
+        actualRank: organicCount,
+        expectedRank: expectedOrganicCount,
+        acceptedRankOffset,
+        firstMissingRank: null,
+        firstSupersavingIndex: firstSupersavingSincePreviousOrganicIndex,
+        lastSupersavingIndex: lastSupersavingSincePreviousOrganicIndex,
+        lastSupersavingRank: lastSupersavingSincePreviousOrganicRank,
+        duplicateRankedAdCount,
+        previousOrganicRawRank,
+        supersavingSincePreviousOrganicCount,
+        adSlotCount,
+        uniqueRankedAdCount: rankedAdRanks.size,
+        helperSlotCount,
+        supersavingSlotCount,
+      }),
     );
   }
 
@@ -712,6 +912,14 @@ export function parseNaverNextDataPage(payload, {
     rows,
     marketTotal,
     sourceExhausted: organicCount < expectedPageSize,
+    rankStructureSummary: {
+      lastOrganicRawRank: previousOrganicRawRank,
+      adSlotCount,
+      uniqueRankedAdCount: rankedAdRanks.size,
+      helperSlotCount,
+      supersavingSlotCount,
+      acceptedRankOffset,
+    },
   };
 }
 

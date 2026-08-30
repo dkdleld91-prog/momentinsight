@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "fbfce524be75620363b0e34df5c58dcdcdea3ea4672abc792899eb21cefed7fa"
+      "sha256": "833d66adbead8be2c4fb4055e76c2feb2c1d232ce3ad01f5437db33ef872d914"
     },
     {
       "id": "product-organic-rank-server",
@@ -212,7 +212,7 @@
     {
       "id": "shopping-collector-provider",
       "file": "tools/naver-shopping-rank-collector/src/provider.mjs",
-      "sha256": "240127d9ca206867542e11fa451af5b3e03419ce313919d95ece86f393aa830b"
+      "sha256": "ce78a7726b0bd6c6722ab782fee08251ed7e233dd597c1f73c0d698536acae81"
     },
     {
       "id": "shopping-collector-live-gate",
@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "2781a138d24d231da076c0d9a10e46893d086bdd0e01c3edb4cbc890dd18def2"
+      "sha256": "f08746a781276e0a45c2dcae613a863de652fdc4ab679ff2ace5a505c13531e4"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "5b38ccf88d90400de1cd8f86c885ef9ddcc4a38d6e447d716f3eee7e5a1e2405"
+      "sha256": "0b9532156ea75a2dc7e8648ee7d053a1aeb72dd17bbfe489a14069a63ebdb3c8"
     },
     {
       "id": "shopping-cloud-worker",
@@ -580,7 +580,7 @@
     {
       "id": "shopping-chrome-native-host-core",
       "file": "scripts/naver-shopping-native-host-core.mjs",
-      "sha256": "07c0b4b7603d9ab4ab466d0f5316cf5d69c257fb6b10ee35c418ad8feede7a85"
+      "sha256": "bc139396153d85931d744d9c94590f31a0e5ea3b08df58c8a9f566c12d674538"
     },
     {
       "id": "shopping-chrome-native-host-wrapper",
@@ -625,7 +625,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "2b7030ec6e9c85cd958b6d5d58e5d48a9624b5a021a34115272d2230ef460025"
+      "sha256": "445134fefb17e6c195bca3963b7a2fc6971cf49e8ae2456ad6447ebddfb31ed1"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -761,6 +761,12 @@
       "id": "shopping-worker-runtime-1-1-17-rank-drift-isolation",
       "file": "supabase/migrations/20260829140000_naver_shopping_runtime_1_1_17_rank_drift_isolation.sql",
       "sha256": "a08a93202dcae57c98d2e44eebd79c745d93f8139190ac4a142e6470550fa1f5",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-18-rank-drift-diagnostics",
+      "file": "supabase/migrations/20260830064426_naver_shopping_runtime_1_1_18_rank_drift_diagnostics.sql",
+      "sha256": "65528349d00e473bb954eb7a4a55d730f9f7a776dbe2754aaf49d3252675435d",
       "rankMigration": true
     }
   ]

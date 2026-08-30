@@ -417,6 +417,65 @@ test("builds one strict 300-rank window while excluding exact supersaving invent
   assert.equal(representative.relatedCatalogRank, null);
 });
 
+test("fails closed with bounded diagnostics for an eight-page mixed-ad rank shift", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+  const data = JSON.parse(pages[0].nextDataText);
+  const rankedAds = Array.from({ length: 15 }, (_, index) => ({
+    type: "product",
+    item: {
+      collection: "product",
+      rank: index + 1,
+      adId: `mixed-ad-${index + 1}`,
+    },
+  }));
+  const organics = Array.from({ length: 40 }, (_, index) => ({
+    type: "product",
+    item: productItem(index < 20 ? index + 1 : index + 2),
+  }));
+  data.props.pageProps.compositeList.list = [
+    ...rankedAds,
+    ...organics.slice(0, 20),
+    supersavingComposite(1),
+    ...organics.slice(20),
+  ];
+  pages[0] = { ...pages[0], nextDataText: JSON.stringify(data) };
+
+  assert.throws(
+    () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+    (error) => error?.code === "naver_next_data_rank_drift"
+      && error?.detail === "p1:i10:rm:el:o0:ml:fz:zz:u1:d1:vk:n1:ag:qf:h0:s1"
+      && `${error.code}:${error.detail}`.length <= 80,
+  );
+});
+
+test("page-two first-organic drift includes the previous successful page structure", () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
+  const first = JSON.parse(pages[0].nextDataText);
+  first.props.pageProps.compositeList.list = [
+    supersavingComposite(1),
+    ...Array.from({ length: 40 }, (_, index) => ({
+      type: "product",
+      item: productItem(index + 2),
+    })),
+  ];
+  pages[0] = { ...pages[0], nextDataText: JSON.stringify(first) };
+  const second = JSON.parse(pages[1].nextDataText);
+  second.props.pageProps.compositeList.list = Array.from({ length: 40 }, (_, index) => ({
+    type: "product",
+    item: productItem(index + 42),
+  }));
+  pages[1] = { ...pages[1], nextDataText: JSON.stringify(second) };
+
+  assert.throws(
+    () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+    (error) => error?.code === "naver_next_data_rank_drift"
+      && error?.detail === "p2:i0:r16:e15:o0:m15:a0:q0:h0:s0:l15:b1:c1:g1:t0:y1"
+      && `${error.code}:${error.detail}`.length <= 80,
+  );
+});
+
 test("fails closed when a non-product composite helper carries product evidence", () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const pages = Array.from({ length: 8 }, (_, index) => page(index + 1));
@@ -1147,7 +1206,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.17");
+  assert.equal(manifest.version, "1.1.18");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2455,7 +2514,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.17");
+  assert.equal(manifest.version, "1.1.18");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2630,7 +2689,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.17",
+    runtimeVersion: "1.1.18",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

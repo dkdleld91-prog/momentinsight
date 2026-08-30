@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { PGlite } from "@electric-sql/pglite";
+import "./naver-shopping-active-cycle-runtime-recovery-migration.test.mjs";
 
 const migrationDirectory = new URL("../supabase/migrations/", import.meta.url);
 const workerA = Object.freeze({
@@ -26,6 +27,9 @@ const trackerIds = Object.freeze({
   new4: "40000000-0000-4000-8000-000000000004",
 });
 
+const legacyFailureRunId = "50000000-0000-4000-8000-000000000001";
+const missingTerminalRunId = "50000000-0000-4000-8000-000000000002";
+
 function latestPublicFunctionDefinition(name) {
   const pattern = new RegExp(
     `create or replace function public\\.${name}\\([\\s\\S]*?\\n\\$\\$;`,
@@ -48,6 +52,9 @@ function latestPublicFunctionDefinition(name) {
 
 const queueFunction = latestPublicFunctionDefinition("mi_queue_naver_shopping_cycle");
 const claimFunction = latestPublicFunctionDefinition("mi_claim_naver_shopping_cycle_keyword");
+const recoveryEligibilityFunction = latestPublicFunctionDefinition(
+  "mi_naver_shopping_cycle_runtime_recovery_eligible",
+);
 const laneClaimFunction = latestPublicFunctionDefinition("mi_claim_naver_shopping_worker_lane");
 const progressFunction = latestPublicFunctionDefinition("mi_report_naver_shopping_worker_progress");
 const runtimeVersion = progressFunction.sql.match(
@@ -130,10 +137,20 @@ async function createSchedulerDatabase(worker = workerA) {
       started_at timestamptz not null
     );
 
+    create table public.naver_shopping_scheduler_events (
+      event_id bigint generated always as identity primary key,
+      occurred_at timestamptz not null default clock_timestamp(),
+      event_type text not null,
+      cycle_id uuid,
+      run_id uuid,
+      tracker_id uuid
+    );
+
     insert into public.naver_shopping_worker_coordination(lane_key)
     values ('global');
   `);
   await database.exec(queueFunction.sql);
+  await database.exec(recoveryEligibilityFunction.sql);
   await database.exec(claimFunction.sql);
   await database.exec(laneClaimFunction.sql);
   await database.exec(progressFunction.sql);
@@ -227,6 +244,7 @@ test("executes the latest canonical scheduler function bodies", () => {
   assert.match(progressFunction.file, /^\d{14}_.+\.sql$/u);
   assert.match(claimFunction.sql, /for update skip locked/iu);
   assert.match(claimFunction.sql, /scheduler_cycle_resume_cursor/iu);
+  assert.match(recoveryEligibilityFunction.sql, /tracker_claimed/iu);
   assert.match(laneClaimFunction.sql, /current_row\.lease_until > v_now/iu);
 });
 
@@ -449,6 +467,147 @@ test("canonical lane handoff after an expired runtime lease preserves the active
     trackerIds.oldB,
     trackerIds.oldC,
   ]);
+});
+
+test("an old-runtime failure already marked in the active cycle gets one current-runtime natural retry", async (t) => {
+  const database = await createSchedulerDatabase();
+  t.after(() => database.close());
+
+  await insertTracker(database, {
+    id: trackerIds.oldA, keyword: "old-runtime-failure", sortOrder: 10,
+  });
+  await insertTracker(database, {
+    id: trackerIds.oldB, keyword: "second-old-runtime-failure", sortOrder: 20,
+  });
+  await insertTracker(database, {
+    id: trackerIds.oldC, keyword: "cursor-already-passed", sortOrder: 30,
+  });
+
+  const cycle = await queueCycle(database);
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_last_cycle_id = $1::uuid,
+        worker_last_cycle_claimed_at = clock_timestamp() - interval '2 hours'
+    where id in ($2::uuid, $3::uuid, $4::uuid)
+  `, [cycle.cycleId, trackerIds.oldA, trackerIds.oldB, trackerIds.oldC]);
+  await database.query(`
+    update public.naver_shopping_worker_coordination
+    set scheduler_cycle_cursor_sort_order = 30,
+        scheduler_cycle_cursor_created_at = '2020-01-01T00:00:00Z'::timestamptz,
+        scheduler_cycle_cursor_tracker_id = $1::uuid
+    where lane_key = 'global'
+  `, [trackerIds.oldC]);
+  await database.query(`
+    insert into public.naver_shopping_worker_runs (
+      run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at
+    ) values (
+      $1::uuid, 'scheduler-worker-a', 'rank-remote', '1.1.17', repeat('1', 64),
+      clock_timestamp() - interval '2 hours'
+    )
+  `, [legacyFailureRunId]);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, run_id, tracker_id, occurred_at
+    ) values
+      (
+        'job_failed', $1::uuid, $2::uuid, $3::uuid,
+        clock_timestamp() - interval '119 minutes'
+      ),
+      (
+        'job_failed', $1::uuid, $2::uuid, $4::uuid,
+        clock_timestamp() - interval '118 minutes'
+      )
+  `, [cycle.cycleId, legacyFailureRunId, trackerIds.oldA, trackerIds.oldB]);
+
+  const cursorBeforeRecovery = await database.query(`
+    select scheduler_cycle_cursor_tracker_id
+    from public.naver_shopping_worker_coordination
+    where lane_key = 'global'
+  `);
+
+  await expectClaim(database, trackerIds.oldA, "repair");
+  const cursorAfterRecovery = await database.query(`
+    select scheduler_cycle_cursor_tracker_id
+    from public.naver_shopping_worker_coordination
+    where lane_key = 'global'
+  `);
+  assert.equal(
+    cursorAfterRecovery.rows[0].scheduler_cycle_cursor_tracker_id,
+    cursorBeforeRecovery.rows[0].scheduler_cycle_cursor_tracker_id,
+  );
+
+  // The immutable later claim closes A even when navigation never registers a
+  // worker-run row or terminal, allowing B to recover next in stable order.
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, run_id, tracker_id
+    ) values
+      ('tracker_claimed', $1::uuid, $2::uuid, $3::uuid)
+  `, [cycle.cycleId, workerA.runId, trackerIds.oldA]);
+  await expectClaim(database, trackerIds.oldB, "repair");
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, run_id, tracker_id
+    ) values
+      ('tracker_claimed', $1::uuid, $2::uuid, $3::uuid)
+  `, [cycle.cycleId, workerA.runId, trackerIds.oldB]);
+
+  // Neither post-failure recovery claim may loop a second time.
+  const recoveryState = await database.query(`
+    select public.mi_naver_shopping_cycle_runtime_recovery_eligible(
+      $1::uuid, $2::uuid, $3::text, $4::text
+    ) as eligible
+  `, [trackerIds.oldA, cycle.cycleId, runtimeVersion, runtimeFingerprint]);
+  assert.equal(recoveryState.rows[0].eligible, false);
+  const completed = await claimNext(database);
+  assert.equal(completed.status, "cycle_completed");
+});
+
+test("a newer terminal without run provenance fails closed instead of replaying an older failure", async (t) => {
+  const database = await createSchedulerDatabase();
+  t.after(() => database.close());
+
+  await insertTracker(database, {
+    id: trackerIds.oldA, keyword: "latest-terminal-missing-provenance", sortOrder: 10,
+  });
+  const cycle = await queueCycle(database);
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_last_cycle_id = $1::uuid,
+        worker_last_cycle_claimed_at = clock_timestamp() - interval '2 hours'
+    where id = $2::uuid
+  `, [cycle.cycleId, trackerIds.oldA]);
+  await database.query(`
+    insert into public.naver_shopping_worker_runs (
+      run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at
+    ) values (
+      $1::uuid, 'scheduler-worker-a', 'rank-remote', '1.1.17', repeat('1', 64),
+      clock_timestamp() - interval '2 hours'
+    )
+  `, [legacyFailureRunId]);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events (
+      event_type, cycle_id, run_id, tracker_id, occurred_at
+    ) values
+      (
+        'job_failed', $1::uuid, $2::uuid, $3::uuid,
+        clock_timestamp() - interval '119 minutes'
+      ),
+      (
+        'job_failed', $1::uuid, $4::uuid, $3::uuid,
+        clock_timestamp() - interval '118 minutes'
+      )
+  `, [cycle.cycleId, legacyFailureRunId, trackerIds.oldA, missingTerminalRunId]);
+
+  const eligibility = await database.query(`
+    select public.mi_naver_shopping_cycle_runtime_recovery_eligible(
+      $1::uuid, $2::uuid, $3::text, $4::text
+    ) as eligible
+  `, [trackerIds.oldA, cycle.cycleId, runtimeVersion, runtimeFingerprint]);
+  assert.equal(eligibility.rows[0].eligible, false);
+
+  const completed = await claimNext(database);
+  assert.equal(completed.status, "cycle_completed");
 });
 
 // PGlite exposes one exclusive database connection. This suite deliberately

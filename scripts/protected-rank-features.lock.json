@@ -768,6 +768,12 @@
       "file": "supabase/migrations/20260830064426_naver_shopping_runtime_1_1_18_rank_drift_diagnostics.sql",
       "sha256": "65528349d00e473bb954eb7a4a55d730f9f7a776dbe2754aaf49d3252675435d",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-active-cycle-runtime-recovery",
+      "file": "supabase/migrations/20260831003000_naver_shopping_active_cycle_runtime_recovery.sql",
+      "sha256": "2a0d21a060daf56425b3af139561e9c4d15db62fd123ec5401847ca17ffceda2",
+      "rankMigration": true
     }
   ]
 }

@@ -114,7 +114,11 @@ test("builds one fixed-time fail-closed account audit without exposing lease tok
   assert.match(sql, /snapshot\.matched is true/iu);
   assert.match(sql, /snapshot\.matched is false/iu);
   assert.match(sql, /snapshot\.item ->> 'trackingRankSource' = 'exact_product'/iu);
-  assert.match(sql, /snapshot\.item ->> 'productId' = tracker\.product_id/iu);
+  assert.match(sql, /snapshot\.item ->> 'sellerProductId' = tracker\.product_id/iu);
+  assert.match(
+    sql,
+    /coalesce\(snapshot\.item ->> 'sellerProductId', ''\) = ''[\s\S]*?snapshot\.item ->> 'productId' = tracker\.product_id/iu,
+  );
   assert.match(sql, /snapshot\.item ->> 'trackingRankSource' = 'related_catalog'/iu);
   assert.match(sql, /snapshot\.item ->> 'relatedCatalogRelationBasis' = 'catalog_seller_product_id'/iu);
   assert.match(sql, /snapshot\.item ->> 'sourceLabel' = '원부'/iu);

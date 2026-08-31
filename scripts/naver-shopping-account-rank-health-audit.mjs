@@ -276,7 +276,13 @@ function atomicSnapshotProof(alias, productExpression) {
           and (
             (
               ${alias}.item ->> 'trackingRankSource' = 'exact_product'
-              and ${alias}.item ->> 'productId' = ${productExpression}
+              and (
+                ${alias}.item ->> 'sellerProductId' = ${productExpression}
+                or (
+                  coalesce(${alias}.item ->> 'sellerProductId', '') = ''
+                  and ${alias}.item ->> 'productId' = ${productExpression}
+                )
+              )
             )
             or (${relatedCatalogProof(alias, productExpression)})
           )

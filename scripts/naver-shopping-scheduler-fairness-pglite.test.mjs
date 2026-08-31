@@ -42,6 +42,11 @@ function latestPublicFunctionDefinition(name) {
     .sort()) {
     const source = readFileSync(new URL(file, migrationDirectory), "utf8");
     for (const match of source.matchAll(pattern)) {
+      // Account-priority transport wrappers delegate to the unchanged
+      // canonical scheduler body moved into mi_internal.  This fixture proves
+      // that scheduler body in isolation, while the wrapper and its gate have
+      // their own executable account-priority suite.
+      if (match[0].includes("_pre_account_trigger_gate")) continue;
       latest = { file, sql: match[0] };
     }
   }

@@ -1721,7 +1721,7 @@ const checks = {
     && shoppingLocalWorker.includes("TRACKER_ISOLATED_FAILURE_CODES")
     && shoppingLocalWorker.includes('"provider_duplicate_identity"')
     && shoppingLocalWorkerHandler.includes('body.action === "claim-wake"')
-    && shoppingLocalWorkerHandler.includes('claimShoppingWorkerWake(ctx)')
+    && shoppingLocalWorkerHandler.includes('claimShoppingWorkerWake(ctx, control)')
     && shoppingWorkerWake.includes('mi_request_naver_shopping_worker_wake')
     && shoppingWorkerWake.includes('mi_claim_naver_shopping_worker_wake')
     && shoppingWorkerWakeMigration.includes('force row level security')

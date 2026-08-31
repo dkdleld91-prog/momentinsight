@@ -141,16 +141,37 @@ function cycleUuid(value) {
 }
 
 async function queueAllActiveTrackers(ctx, body) {
-  workerControlInput(body);
-  const { data, error } = await ctx.supabaseAdmin.rpc("mi_queue_naver_shopping_cycle");
+  const control = workerControlInput(body);
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_queue_naver_shopping_cycle", {
+    p_worker_id: control.workerId,
+    p_lane_token: control.laneToken,
+    p_run_id: control.runId,
+    p_run_trigger: control.runTrigger,
+  });
   if (error) throw workerError("LOCAL_WORKER_CYCLE_UNAVAILABLE", 503);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
   }
 
   const status = String(data.status || "").trim().toLowerCase();
-  if (!["active", "empty"].includes(status)) {
+  if (!["active", "empty", "waiting"].includes(status)) {
     throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+  }
+  if (status === "waiting") {
+    const reason = String(data.reason || "").trim().toLowerCase();
+    if (!["account_priority_active", "account_priority_expiry_reconciled"].includes(reason)) {
+      throw workerError("LOCAL_WORKER_CYCLE_INVALID", 503);
+    }
+    return {
+      total: 0,
+      queued: 0,
+      alreadyQueued: 0,
+      alreadyProcessing: 0,
+      cycleId: null,
+      cycleStartedAt: null,
+      waiting: true,
+      reason,
+    };
   }
   const cycleId = cycleUuid(cycleValue(data, "cycleId", "cycle_id"));
   const cycleStartedAtValue = cycleValue(data, "cycleStartedAt", "cycle_started_at");
@@ -441,8 +462,13 @@ async function consumeNonce(ctx, auth) {
   if (data !== true) throw workerError("LOCAL_WORKER_REPLAY_REJECTED", 409);
 }
 
-async function claimOneLookupJob(ctx) {
+async function claimOneLookupJob(ctx, body) {
+  const control = workerControlInput(body);
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_rank_lookup_job", {
+    p_worker_id: control.workerId,
+    p_lane_token: control.laneToken,
+    p_run_id: control.runId,
+    p_run_trigger: control.runTrigger,
     p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
   });
   if (error) {
@@ -463,13 +489,15 @@ async function claimOneLookupJob(ctx) {
   };
 }
 
-async function claimRepairPriority(ctx, body) {
+async function claimRepairPriority(ctx, body, options = {}) {
   const control = workerControlInput(body);
   const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_repair_priority", {
     p_worker_id: control.workerId,
     p_lane_token: control.laneToken,
     p_run_id: control.runId,
+    p_run_trigger: control.runTrigger,
     p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
+    p_account_only: options.accountOnly === true,
   });
   if (error) throw workerError("LOCAL_WORKER_REPAIR_UNAVAILABLE", 503);
   if (!data || typeof data !== "object" || Array.isArray(data)) {
@@ -488,6 +516,7 @@ async function claimRepairPriority(ctx, body) {
   }
   if (status !== "claimed"
     || priority !== "repair"
+    || (accountPriority && control.runTrigger !== "rank-catch-up")
     || (accountPriority
       ? rawClaims.length < 1 || rawClaims.length > 100
       : rawClaims.length !== 1)) {
@@ -532,6 +561,7 @@ async function claimCycleKeyword(ctx, body) {
     p_worker_id: control.workerId,
     p_lane_token: control.laneToken,
     p_run_id: control.runId,
+    p_run_trigger: control.runTrigger,
     p_probe_tracker_id: probeTrackerId,
     p_lease_seconds: WORKER_COLLECTION_LEASE_SECONDS,
   });
@@ -1100,13 +1130,26 @@ export async function handleLocalWorkerRequest(request, ctx) {
       return json(request, { ok: true, ...(await recordWorkerFailure(ctx, body)) });
     }
     if (body.action === "claim-wake") {
-      workerControlInput(body);
+      const control = workerControlInput(body);
       await touchWorkerLane(ctx, body);
-      return json(request, { ok: true, wake: await claimShoppingWorkerWake(ctx) });
+      return json(request, { ok: true, wake: await claimShoppingWorkerWake(ctx, control) });
     }
     if (body.action === "claim") {
       workerControlInput(body);
       await touchWorkerLane(ctx, body);
+      if (body.schedulerVersion !== "v2") {
+        throw workerError("LOCAL_WORKER_SCHEDULER_VERSION_STALE", 409);
+      }
+      // A bounded runner may drain more than one job under the same signed
+      // lane/run. Re-register the exact idle claim envelope before every DB
+      // selector call so a completed prior job cannot strand the next turn.
+      await reportWorkerProgress(ctx, {
+        ...body,
+        stage: "claiming",
+        page: 0,
+        jobKind: "",
+        trackerId: null,
+      });
       let job;
       if (body.schedulerVersion === "v2") {
         const probeTrackerId = optionalUuid(body?.probeTrackerId, "LOCAL_WORKER_PROBE_TRACKER_INVALID");
@@ -1114,9 +1157,19 @@ export async function handleLocalWorkerRequest(request, ctx) {
           throw workerError("LOCAL_WORKER_RECOVERY_FLAG_INVALID", 400);
         }
         const autoRecovery = body.autoRecovery === true;
-        if (probeTrackerId || autoRecovery) {
-          // Circuit-breaker proof is safety-critical and must never wait behind
-          // an operator repair batch or fall through to an unrelated lookup.
+        if (autoRecovery) {
+          // During an active account request, the frozen account member is the
+          // only allowed half-open probe.  If no account request remains after
+          // reconciliation, fall through once to the existing cycle probe.
+          const accountProbe = await claimRepairPriority(ctx, body, { accountOnly: true });
+          job = accountProbe.job;
+          if (accountProbe.status === "empty") {
+            job = (await claimCycleKeyword(ctx, body)).job;
+          }
+        } else if (probeTrackerId) {
+          // An explicit canary remains direct when no account request is
+          // active. The DB cycle gate returns waiting without mutation while
+          // account priority is active.
           job = (await claimCycleKeyword(ctx, body)).job;
         } else {
           const repairTurn = await claimRepairPriority(ctx, body);
@@ -1125,12 +1178,10 @@ export async function handleLocalWorkerRequest(request, ctx) {
             const cycleTurn = await claimCycleKeyword(ctx, body);
             job = cycleTurn.job;
             if (!job && ["cycle_completed", "no_cycle"].includes(cycleTurn.status)) {
-              job = await claimOneLookupJob(ctx);
+              job = await claimOneLookupJob(ctx, body);
             }
           }
         }
-      } else {
-        throw workerError("LOCAL_WORKER_SCHEDULER_VERSION_STALE", 409);
       }
       return json(request, { ok: true, job });
     }

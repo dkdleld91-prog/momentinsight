@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "9e163fd61db96275191a589165facbc0257ebeff58ca268a78bbe416e2fadca8"
+      "sha256": "92b0cc3c5e87cc092d77c5797040acb5d6caaaf79e14e4f82bef2054114eb075"
     },
     {
       "id": "product-organic-rank-server",
@@ -187,7 +187,7 @@
     {
       "id": "place-tracker-server",
       "file": "src/server/handlers/naver-place-rank-trackers.mjs",
-      "sha256": "404b6c06fb043ef420c84b8219e80778af5cc2c0da6cff1a56ec2f0718021c9a"
+      "sha256": "1fa36fe77bc749b5f9a75db31faa7065b28ce0d81c10a1bf466c8dd99232727e"
     },
     {
       "id": "place-rank-cron-server",

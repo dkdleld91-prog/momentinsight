@@ -852,6 +852,160 @@ test("only a primary owner list receives worker operations", async () => {
   }
 });
 
+function productOwnerSessionRequest(method, body, options = {}) {
+  const headers = {
+    "content-type": "application/json",
+    "x-mi-session-role": options.role || "owner",
+    "x-mi-session-scope": "advertiser",
+    "x-demo-admin-code": "owner-test-code",
+  };
+  if (options.ownerAgencyCode !== null) {
+    headers["x-mi-owner-agency-code"] = options.ownerAgencyCode || "mml93-a01";
+  }
+  const targetCode = "agencyCode" in options ? options.agencyCode : "owner-session";
+  if (targetCode) headers["x-mi-agency-code"] = targetCode;
+  return new Request("https://example.com/api/naver-rank-trackers", {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+function productOwnerListContext(scopes = []) {
+  return {
+    supabaseAdmin: {
+      async rpc() {
+        return { data: { circuit_state: "closed", cadence_mode: "baseline", cadence_minutes: 10 }, error: null };
+      },
+      from(table) {
+        if (table === "naver_shopping_worker_coordination") {
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() {
+              return { data: { lane_key: "global", circuit_state: "closed" }, error: null };
+            },
+          };
+          return query;
+        }
+        if (table === "clients") {
+          const query = {
+            select() { return query; },
+            eq() { return query; },
+            async maybeSingle() { return { data: null, error: null }; },
+          };
+          return query;
+        }
+        assert.equal(table, TRACKERS);
+        const query = {
+          select() { return query; },
+          in(column, values) {
+            assert.equal(column, "agency_code");
+            scopes.push([...values]);
+            return query;
+          },
+          order() { return query; },
+          limit() { return query; },
+          then(resolve, reject) {
+            return Promise.resolve({ data: [], error: null, count: 0 }).then(resolve, reject);
+          },
+        };
+        return query;
+      },
+    },
+  };
+}
+
+async function withOwnerRankEnv(callback) {
+  const previousAdminCode = process.env.MI_RANK_ADMIN_CODE;
+  const previousPrimary = process.env.MI_PRIMARY_AGENCY_CODE;
+  process.env.MI_RANK_ADMIN_CODE = "owner-test-code";
+  process.env.MI_PRIMARY_AGENCY_CODE = "mml93-a01";
+  try {
+    return await callback();
+  } finally {
+    if (previousAdminCode === undefined) delete process.env.MI_RANK_ADMIN_CODE;
+    else process.env.MI_RANK_ADMIN_CODE = previousAdminCode;
+    if (previousPrimary === undefined) delete process.env.MI_PRIMARY_AGENCY_CODE;
+    else process.env.MI_PRIMARY_AGENCY_CODE = previousPrimary;
+  }
+}
+
+test("총관리자 세션의 내부 범위 자리표시자는 대표 대행사 상품 순위 목록으로 열린다", async () => {
+  await withOwnerRankEnv(async () => {
+    for (const agencyCode of ["owner-session", "session", ""]) {
+      const label = agencyCode || "(empty)";
+      const scopes = [];
+      const ctx = productOwnerListContext(scopes);
+      const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+        productOwnerSessionRequest("GET", null, { agencyCode }),
+        ctx,
+      ));
+      const body = await response.json();
+      assert.equal(response.status, 200, `${label} must list`);
+      assert.equal(body.scopeMode, "owner", `${label} scope mode`);
+      assert.equal(body.scopeAgencyCode, "mml93-a01", `${label} scope agency code`);
+      assert.equal(body.scopeKey, "mml93-a01", `${label} scope key`);
+      assert.equal(body.scopeClientId, "", `${label} scope client id`);
+      assert.deepEqual(scopes, [["mml93-a01"]], `${label} query scope`);
+    }
+  });
+});
+
+test("총관리자 표식이 없는 세션은 같은 자리표시자를 보내도 상품 순위에서 막힌다", async () => {
+  await withOwnerRankEnv(async () => {
+    const rejected = [
+      ["team", new Request("https://example.com/api/naver-rank-trackers", {
+        headers: {
+          "x-mi-session-role": "team",
+          "x-mi-session-scope": "account-only",
+          "x-mi-team-code": "mml93-t01",
+          "x-mi-agency-code": "owner-session",
+          "x-mi-rank-access-code": "mml93-t01",
+        },
+      })],
+      ["client", new Request("https://example.com/api/naver-rank-trackers", {
+        headers: {
+          "x-mi-session-role": "client",
+          "x-mi-session-scope": "advertiser",
+          "x-mi-agency-code": "owner-session",
+          "x-mi-rank-access-code": "owner-session",
+        },
+      })],
+      ["owner-role-without-marker", productOwnerSessionRequest("GET", null, { ownerAgencyCode: null })],
+      ["owner-marker-mismatch", productOwnerSessionRequest("GET", null, { ownerAgencyCode: "attacker-a01" })],
+    ];
+    for (const [label, request] of rejected) {
+      const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+        request,
+        productOwnerListContext(),
+      ));
+      const body = await response.json();
+      assert.equal(response.status, 403, `${label} must stay rejected`);
+      assert.equal(body.ok, false, `${label} payload`);
+      assert.equal(body.message, "등록된 대행사 코드를 확인할 수 없습니다.", `${label} message`);
+    }
+  });
+});
+
+test("총관리자 자리표시자 번역은 총관리자 세션에서만 일어난다", async () => {
+  await withOwnerRankEnv(() => {
+    assert.equal(requestAgencyCode(productOwnerSessionRequest("GET", null, { agencyCode: "owner-session" })), "mml93-a01");
+    assert.equal(requestAgencyCode(productOwnerSessionRequest("GET", null, { agencyCode: "" })), "mml93-a01");
+    assert.equal(requestAgencyCode(productOwnerSessionRequest("GET", null, { agencyCode: "ishell" })), "ishell");
+    assert.equal(requestAgencyCode(productOwnerSessionRequest("GET", null, { ownerAgencyCode: null })), "owner-session");
+    const teamRequest = new Request("https://example.com/api/naver-rank-trackers", {
+      headers: {
+        "x-mi-session-role": "team",
+        "x-mi-session-scope": "account-only",
+        "x-mi-team-code": "mml93-t01",
+        "x-mi-agency-code": "owner-session",
+      },
+    });
+    assert.equal(requestAgencyCode(teamRequest), "owner-session");
+  });
+});
+
 function productTeamAccountRequest(method, body, teamCode = "mml93-t01") {
   return new Request("https://example.com/api/naver-rank-trackers", {
     method,

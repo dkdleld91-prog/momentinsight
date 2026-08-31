@@ -672,6 +672,90 @@ test("an account-only team lists an isolated place-rank scope without a client r
   assert.equal(result.body.complete, true);
 });
 
+function placeOwnerSessionRequest(method, body, options = {}) {
+  const headers = {
+    "content-type": "application/json",
+    "x-mi-session-role": options.role || "owner",
+    "x-mi-session-scope": "advertiser",
+    "x-demo-admin-code": ADMIN_CODE,
+  };
+  if (options.ownerAgencyCode !== null) {
+    headers["x-mi-owner-agency-code"] = options.ownerAgencyCode || AGENCY_CODE;
+  }
+  const targetCode = "agencyCode" in options ? options.agencyCode : "owner-session";
+  if (targetCode) headers["x-mi-agency-code"] = targetCode;
+  return new Request("http://localhost/api/naver-place-rank-trackers", {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+test("총관리자 세션의 내부 범위 자리표시자는 대표 대행사 플레이스 순위 목록으로 열린다", async () => {
+  for (const agencyCode of ["owner-session", "session", ""]) {
+    const label = agencyCode || "(empty)";
+    const { ctx } = testContext([{ id: "owner-place-tracker" }]);
+    const result = await payload(await handlePlaceRankTrackersRequest(
+      placeOwnerSessionRequest("GET", null, { agencyCode }),
+      ctx,
+    ));
+    assert.equal(result.status, 200, `${label} must list`);
+    assert.equal(result.body.scopeMode, "owner", `${label} scope mode`);
+    assert.equal(result.body.scopeAgencyCode, AGENCY_CODE, `${label} scope agency code`);
+    assert.equal(result.body.scopeKey, AGENCY_CODE, `${label} scope key`);
+    assert.equal(result.body.scopeClientId, "", `${label} scope client id`);
+    assert.equal(result.body.returnedCount, 1, `${label} returned count`);
+    assert.equal(result.body.complete, true, `${label} completeness`);
+  }
+});
+
+test("총관리자 표식이 없는 세션은 같은 자리표시자를 보내도 플레이스 순위에서 막힌다", async () => {
+  const rejected = [
+    ["team", new Request("http://localhost/api/naver-place-rank-trackers", {
+      headers: {
+        "x-mi-session-role": "team",
+        "x-mi-session-scope": "account-only",
+        "x-mi-team-code": "mml93-t01",
+        "x-mi-agency-code": "owner-session",
+        "x-mi-rank-access-code": "mml93-t01",
+      },
+    })],
+    ["client", new Request("http://localhost/api/naver-place-rank-trackers", {
+      headers: {
+        "x-mi-session-role": "client",
+        "x-mi-session-scope": "advertiser",
+        "x-mi-agency-code": "owner-session",
+        "x-mi-rank-access-code": "owner-session",
+      },
+    })],
+    ["owner-role-without-marker", placeOwnerSessionRequest("GET", null, { ownerAgencyCode: null })],
+    ["owner-marker-mismatch", placeOwnerSessionRequest("GET", null, { ownerAgencyCode: "attacker-a01" })],
+  ];
+  for (const [label, request] of rejected) {
+    const { ctx } = testContext([{ id: "owner-place-tracker" }]);
+    const result = await payload(await handlePlaceRankTrackersRequest(request, ctx));
+    assert.equal(result.status, 403, `${label} must stay rejected`);
+    assert.equal(result.body.ok, false, `${label} payload`);
+    assert.equal(result.body.message, "등록된 대행사 코드를 확인할 수 없습니다.", `${label} message`);
+  }
+});
+
+test("플레이스 자리표시자 번역도 총관리자 세션에서만 일어난다", () => {
+  assert.equal(requestAgencyCode(placeOwnerSessionRequest("GET", null, { agencyCode: "owner-session" })), AGENCY_CODE);
+  assert.equal(requestAgencyCode(placeOwnerSessionRequest("GET", null, { agencyCode: "" })), AGENCY_CODE);
+  assert.equal(requestAgencyCode(placeOwnerSessionRequest("GET", null, { agencyCode: "ishell" })), "ishell");
+  assert.equal(requestAgencyCode(placeOwnerSessionRequest("GET", null, { ownerAgencyCode: null })), "owner-session");
+  const teamRequest = new Request("http://localhost/api/naver-place-rank-trackers", {
+    headers: {
+      "x-mi-session-role": "team",
+      "x-mi-session-scope": "account-only",
+      "x-mi-team-code": "mml93-t01",
+      "x-mi-agency-code": "owner-session",
+    },
+  });
+  assert.equal(requestAgencyCode(teamRequest), "owner-session");
+});
+
 test("an account-only team reaches every place-rank action without advertiser scope", async () => {
   const forbiddenDb = {
     supabaseAdmin: {

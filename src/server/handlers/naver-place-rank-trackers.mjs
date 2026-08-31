@@ -138,11 +138,27 @@ function isPrimaryAgencyCode(agencyCode) {
   return safeEqual(canonicalAgencyCode(agencyCode), primaryAgencyCode());
 }
 
+// 총관리자 화면은 "총관리자 내부" 범위를 owner-session 같은 자리표시자 문자열로
+// 보낸다. 세션 게이트가 직접 심어 주는 총관리자 표식이 확인될 때에만 그 자리표시자를
+// 대표 대행사 코드로 되돌린다. 다른 역할의 세션이 같은 문자열을 보내도 이 경로는
+// 열리지 않는다.
+const OWNER_SCOPE_PLACEHOLDER_CODES = new Set(["owner-session", "session"]);
+
+function ownerSessionRequest(request) {
+  return String(request.headers.get("x-mi-session-role") || "").trim().toLowerCase() === "owner"
+    && safeEqual(normalizeAgencyCode(request.headers.get("x-mi-owner-agency-code") || ""), primaryAgencyCode());
+}
+
+function isOwnerScopePlaceholder(value) {
+  const code = normalizeAgencyCode(value);
+  return !code || OWNER_SCOPE_PLACEHOLDER_CODES.has(code);
+}
+
 export function requestAgencyCode(request, body = {}) {
   const url = new URL(request.url);
   const trustedSession = Boolean(request.headers.get("x-mi-session-role"));
   const trustedAgencyCode = request.headers.get("x-mi-agency-code") || "";
-  return canonicalAgencyCode(
+  const agencyCode = canonicalAgencyCode(
     trustedAgencyCode ||
       (trustedSession ? "" : (
       body.agencyCode ||
@@ -151,6 +167,8 @@ export function requestAgencyCode(request, body = {}) {
       url.searchParams.get("agency_code")
       ))
   );
+  if (ownerSessionRequest(request) && isOwnerScopePlaceholder(agencyCode)) return primaryAgencyCode();
+  return agencyCode;
 }
 
 export function requestAccessCode(request, body = {}) {

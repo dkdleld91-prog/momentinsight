@@ -153,6 +153,20 @@ async function createSchedulerDatabase(worker = workerA) {
       lease_until timestamptz
     );
 
+    -- The latest recovery predicates exclude exact one-shot account-priority
+    -- claims. This fairness fixture does not enqueue such a request, but the
+    -- canonical function bodies must still compile against their dependencies.
+    create table public.naver_shopping_account_priority_requests (
+      request_id uuid primary key,
+      state text not null
+    );
+
+    create table public.naver_shopping_account_priority_members (
+      request_id uuid not null,
+      tracker_id uuid not null,
+      claimed_cycle_id uuid
+    );
+
     insert into public.naver_shopping_worker_coordination(lane_key)
     values ('global');
   `);

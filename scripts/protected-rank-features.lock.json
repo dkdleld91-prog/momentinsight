@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "1dc1c6a8f865e1789f37ed568be575db9d2427c09b5643fbd062c02569a9c3d8"
+      "sha256": "1cf5b4994da68a069225eb8ab6dd0e8716de99ba29c8252f933565a93391eb00"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -779,6 +779,12 @@
       "id": "shopping-worker-runtime-1-1-19-stable-rendered-order",
       "file": "supabase/migrations/20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql",
       "sha256": "abdbc43e9e5852c99942aabbfdd70f16fd99c58f7b206adf2d7bc5aff543cc7b",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-account-one-shot-priority",
+      "file": "supabase/migrations/20260831033617_naver_shopping_account_one_shot_priority.sql",
+      "sha256": "d3736efbd5706eceb25cf38dd7542c9d9017787adde0a2a56a1ace43336a2b95",
       "rankMigration": true
     }
   ]

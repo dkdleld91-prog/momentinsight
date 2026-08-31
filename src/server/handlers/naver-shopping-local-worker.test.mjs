@@ -1017,6 +1017,55 @@ test("repair priority claims one selected tracker before the durable cycle and s
   });
 });
 
+test("one-shot account priority accepts one bounded same-keyword group while legacy repair remains single", async () => {
+  await withWorkerEnv(async () => {
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const leaseUntil = new Date(Date.now() + 35 * 60_000).toISOString();
+    const calls = [];
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          calls.push(name);
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+          assert.equal(name, "mi_claim_naver_shopping_repair_priority");
+          return {
+            data: {
+              status: "claimed",
+              priority: "repair",
+              accountPriority: true,
+              cycleId: CYCLE_ID,
+              requestId: REPAIR_REQUEST_ID,
+              position: 28,
+              keyword: "동일 계정 공통 키워드",
+              claims: [
+                { trackerId: TRACKER_ID, leaseStartedAt, leaseUntil },
+                { trackerId: SECOND_TRACKER_ID, leaseStartedAt, leaseUntil },
+              ],
+            },
+            error: null,
+          };
+        },
+        from() { throw new Error("account_priority_claim_must_not_load_raw_tracker_payload"); },
+      },
+    };
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "claim", schedulerVersion: "v2" }),
+      ctx,
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).job, {
+      keyword: "동일 계정 공통 키워드",
+      limit: 300,
+      claims: [
+        { trackerId: TRACKER_ID, leaseStartedAt, leaseUntil },
+        { trackerId: SECOND_TRACKER_ID, leaseStartedAt, leaseUntil },
+      ],
+    });
+    assert.equal(calls.includes("mi_claim_naver_shopping_cycle_keyword"), false);
+  });
+});
+
 test("repair priority waiting blocks the normal cycle without requeue or lookup bypass", async () => {
   await withWorkerEnv(async () => {
     const calls = [];
@@ -1045,7 +1094,7 @@ test("repair priority waiting blocks the normal cycle without requeue or lookup 
   });
 });
 
-test("an empty repair queue falls through once to the existing durable cycle", async () => {
+test("an empty one-shot account priority falls through once to the existing durable cycle", async () => {
   await withWorkerEnv(async () => {
     const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
     const leaseUntil = new Date(Date.now() + 35 * 60_000).toISOString();
@@ -1057,7 +1106,15 @@ test("an empty repair queue falls through once to the existing durable cycle", a
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
           if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           if (name === "mi_claim_naver_shopping_repair_priority") {
-            return { data: { status: "empty", priority: "repair", claims: [] }, error: null };
+            return {
+              data: {
+                status: "empty",
+                priority: "repair",
+                accountPriority: true,
+                claims: [],
+              },
+              error: null,
+            };
           }
           assert.equal(name, "mi_claim_naver_shopping_cycle_keyword");
           return {
@@ -1085,6 +1142,57 @@ test("an empty repair queue falls through once to the existing durable cycle", a
       "mi_claim_naver_shopping_cycle_keyword",
     ]);
   });
+});
+
+test("repair transport rejects multi-claim legacy and over-100 account batches", async () => {
+  const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+  const leaseUntil = new Date(Date.now() + 35 * 60_000).toISOString();
+  const validClaims = Array.from({ length: 101 }, (_, index) => ({
+    trackerId: `90000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+    leaseStartedAt,
+    leaseUntil,
+  }));
+  for (const data of [
+    {
+      status: "claimed",
+      priority: "repair",
+      requestId: REPAIR_REQUEST_ID,
+      position: 1,
+      keyword: "legacy overflow",
+      claims: validClaims.slice(0, 2),
+    },
+    {
+      status: "claimed",
+      priority: "repair",
+      accountPriority: true,
+      requestId: REPAIR_REQUEST_ID,
+      position: 1,
+      keyword: "account overflow",
+      claims: validClaims,
+    },
+  ]) {
+    await withWorkerEnv(async () => {
+      const calls = [];
+      const ctx = {
+        supabaseAdmin: {
+          async rpc(name) {
+            calls.push(name);
+            if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+            if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
+            assert.equal(name, "mi_claim_naver_shopping_repair_priority");
+            return { data, error: null };
+          },
+        },
+      };
+      const response = await handleLocalWorkerRequest(
+        signedRequest({ action: "claim", schedulerVersion: "v2" }),
+        ctx,
+      );
+      assert.equal(response.status, 503);
+      assert.equal((await response.json()).code, "LOCAL_WORKER_REPAIR_INVALID");
+      assert.equal(calls.includes("mi_claim_naver_shopping_cycle_keyword"), false);
+    });
+  }
 });
 
 test("malformed repair claims fail closed before any normal cycle claim", async () => {

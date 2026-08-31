@@ -478,6 +478,7 @@ async function claimRepairPriority(ctx, body) {
 
   const status = String(data.status || "").trim().toLowerCase();
   const priority = String(data.priority || "").trim().toLowerCase();
+  const accountPriority = data.accountPriority === true;
   const rawClaims = Array.isArray(data.claims) ? data.claims : [];
   if (["empty", "waiting"].includes(status)) {
     if (priority !== "repair" || rawClaims.length !== 0) {
@@ -485,7 +486,11 @@ async function claimRepairPriority(ctx, body) {
     }
     return { status, job: null };
   }
-  if (status !== "claimed" || priority !== "repair" || rawClaims.length !== 1) {
+  if (status !== "claimed"
+    || priority !== "repair"
+    || (accountPriority
+      ? rawClaims.length < 1 || rawClaims.length > 100
+      : rawClaims.length !== 1)) {
     throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
   }
 
@@ -494,22 +499,21 @@ async function claimRepairPriority(ctx, body) {
   if (!WORKER_RUN_ID_PATTERN.test(requestId)
     || !Number.isSafeInteger(position)
     || position < 1
-    || position > 10) {
+    || position > (accountPriority ? 1_000 : 10)) {
     throw workerError("LOCAL_WORKER_REPAIR_INVALID", 503);
   }
 
   // Only the bounded lease envelope crosses into the worker job. Canonical
   // tracker fields are loaded from naver_rank_trackers after the claim; any
   // extra/raw tracker payload returned by the RPC is deliberately discarded.
-  const claim = rawClaims[0];
   const job = {
     keyword: normalizeText(data.keyword),
     limit: LOCAL_WORKER_ORGANIC_LIMIT,
-    claims: [{
+    claims: rawClaims.map((claim) => ({
       trackerId: cycleValue(claim, "trackerId", "tracker_id"),
       leaseStartedAt: cycleValue(claim, "leaseStartedAt", "lease_started_at"),
       leaseUntil: cycleValue(claim, "leaseUntil", "lease_until"),
-    }],
+    })),
   };
   try {
     return {

@@ -349,7 +349,7 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "1cf5b4994da68a069225eb8ab6dd0e8716de99ba29c8252f933565a93391eb00"
+      "sha256": "fa669dc37305a1c23e532c450c3ffff1e5ad1a9b7216adf0b96be0d8abdfaf26"
     },
     {
       "id": "shopping-worker-wake-server",
@@ -364,7 +364,7 @@
     {
       "id": "shopping-local-worker-runner",
       "file": "scripts/naver-shopping-local-worker.mjs",
-      "sha256": "9a415de52b6a937346bc197f5c34b20e3b7970e9ed3d05d0d9ac767660a2e889"
+      "sha256": "d785c393e0fa9301ddd3cdeb257ce22d45e11cef31cf9a0018259eb8aaecc903"
     },
     {
       "id": "shopping-cloud-worker",
@@ -580,7 +580,7 @@
     {
       "id": "shopping-chrome-native-host-core",
       "file": "scripts/naver-shopping-native-host-core.mjs",
-      "sha256": "deee88469e5184f4fc216be9798a4af246aa5694634992368e2f0c73c3c808b3"
+      "sha256": "b52ce0d1de1a5ea0c2293a6fe15329d97dc1273023df78646d575d38def0ebd8"
     },
     {
       "id": "shopping-chrome-native-host-wrapper",
@@ -625,7 +625,7 @@
     {
       "id": "shopping-chrome-extension-manifest",
       "file": "tools/naver-shopping-chrome-extension/manifest.json",
-      "sha256": "ad4ce2eac7008322cee4a21d50bc942c54b0db78fd3a67305bffcfc3aee9e993"
+      "sha256": "50c88998b45bceb51d648ea4d0b56721409bdbf2f9c93da0775bac935e2904d0"
     },
     {
       "id": "shopping-chrome-extension-worker",
@@ -785,6 +785,12 @@
       "id": "shopping-account-one-shot-priority",
       "file": "supabase/migrations/20260831033617_naver_shopping_account_one_shot_priority.sql",
       "sha256": "d3736efbd5706eceb25cf38dd7542c9d9017787adde0a2a56a1ace43336a2b95",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-worker-runtime-1-1-20-rendered-boundary-consensus",
+      "file": "supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql",
+      "sha256": "39451ebb764297af4db0676dc94b9e4160fe0164739dfbc174e20153c0ac5560",
       "rankMigration": true
     }
   ]

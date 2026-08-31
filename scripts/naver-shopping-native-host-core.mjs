@@ -27,6 +27,7 @@ const ROWS_MAX_BYTES = 2 * 1024 * 1024;
 const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
 const STABLE_FINITE_PAGE_NAVIGATION_BUDGET = 24;
+const RENDERED_ORDER_PAGE_NAVIGATION_BUDGET = 24;
 const DEADLINE_GUARD_MS = 3_000;
 export const COLLECTION_PROTOCOL = "range-v1";
 
@@ -201,9 +202,10 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
         || structure.organicCount !== expectedOrganicCount
         || boundaryGap < 1
         || boundaryGap > boundaryLimit) {
+        const encodedGap = boundaryGap < 0 ? `m${Math.abs(boundaryGap)}` : String(boundaryGap);
         throw new ProviderError(
           "provider_stable_rendered_order_unproven",
-          `page_boundary:${page.pageIndex}`,
+          `page_boundary:${page.pageIndex}:g${encodedGap}:l${boundaryLimit}`,
         );
       }
       renderedPageStructures.push([
@@ -358,6 +360,68 @@ function isPartialWindow(error) {
 
 function isNextDataRankDrift(error) {
   return error instanceof ProviderError && error.code === "naver_next_data_rank_drift";
+}
+
+function renderedPageBoundaryEvidence(error) {
+  if (!(error instanceof ProviderError)
+    || error.code !== "provider_stable_rendered_order_unproven") return null;
+  const match = String(error.detail || "").match(
+    /^page_boundary:(?<pageIndex>[1-8]):g(?<gap>m?[0-9]{1,3}):l(?<limit>[0-9]{1,3})$/u,
+  );
+  if (!match) return null;
+  const gap = match.groups.gap.startsWith("m")
+    ? -Number(match.groups.gap.slice(1))
+    : Number(match.groups.gap);
+  const limit = Number(match.groups.limit);
+  return {
+    pageIndex: Number(match.groups.pageIndex),
+    gap,
+    limit,
+  };
+}
+
+function renderedOrderCandidateAttempt(request, response, nowMs) {
+  try {
+    return {
+      candidate: nativeWindowPayloadFromPages(request, response.pages, {
+        nowMs,
+        renderedOrderCandidate: true,
+      }),
+      boundaryError: null,
+    };
+  } catch (error) {
+    if (!renderedPageBoundaryEvidence(error)) throw error;
+    return { candidate: null, boundaryError: error };
+  }
+}
+
+function assertDistinctRenderedCaptureIds(responses) {
+  const captureIds = responses.map(({ captureId }) => captureId);
+  if (captureIds.some((captureId) => typeof captureId !== "string" || !captureId)
+    || new Set(captureIds).size !== captureIds.length) {
+    throw new ProviderError("provider_stable_rendered_order_unproven", "capture_ids");
+  }
+}
+
+function buildRenderedOrderResult(request, firstResponse, firstCandidate, secondResponse,
+  secondCandidate, nowMs) {
+  const renderedOrderProof = buildStableRenderedOrderProof(
+    firstCandidate.payload.items,
+    secondCandidate.payload.items,
+    {
+      keyword: request.keyword,
+      captureIds: [firstResponse.captureId, secondResponse.captureId],
+      structureDigests: [
+        firstCandidate.renderedOrderStructureDigest,
+        secondCandidate.renderedOrderStructureDigest,
+      ],
+    },
+  );
+  return buildNativeWindowFromPages(request, secondResponse.pages, {
+    nowMs,
+    renderedOrderCandidate: true,
+    renderedOrderProof,
+  });
 }
 
 function buildStableFiniteWindowProof(firstPayload, secondPayload, captureIds, keyword) {
@@ -564,31 +628,89 @@ export function createChromeNativeProvider(options = {}) {
       }
 
       if (recoveryReason === "rendered-order") {
-        const firstCandidate = nativeWindowPayloadFromPages(request, latestPages, {
-          nowMs: options.nowMs?.() ?? Date.now(),
-          renderedOrderCandidate: true,
+        const candidateNowMs = options.nowMs?.() ?? Date.now();
+        const attempts = [
+          renderedOrderCandidateAttempt(request, response, candidateNowMs),
+          renderedOrderCandidateAttempt(request, secondResponse, candidateNowMs),
+        ];
+        if (attempts.every(({ candidate }) => candidate != null)) {
+          return buildRenderedOrderResult(
+            request,
+            response,
+            attempts[0].candidate,
+            secondResponse,
+            attempts[1].candidate,
+            candidateNowMs,
+          );
+        }
+
+        const validIndex = attempts.findIndex(({ candidate }) => candidate != null);
+        const invalidIndex = attempts.findIndex(({ boundaryError }) => boundaryError != null);
+        const recoverableSingleBoundary = validIndex >= 0
+          && invalidIndex >= 0
+          && attempts.filter(({ candidate }) => candidate != null).length === 1
+          && attempts.filter(({ boundaryError }) => boundaryError != null).length === 1
+          && renderedPageBoundaryEvidence(attempts[invalidIndex].boundaryError) != null;
+        if (!recoverableSingleBoundary) {
+          throw attempts[invalidIndex]?.boundaryError
+            || new ProviderError("provider_stable_rendered_order_unproven", "page_boundary");
+        }
+
+        // A single page-boundary-invalid pass is never accepted or repaired.
+        // Discard it, collect one final independent 1..8 pass, and require that
+        // pass to match the one already-valid direct-ID order. This is a fixed
+        // 24-page ceiling, not a retry loop or a rank-gap correction.
+        assertCollectionDeadline(request, options.nowMs?.() ?? Date.now());
+        if (navigatedPages + MAX_PAGES > RENDERED_ORDER_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_rendered_order_unproven", "page_budget");
+        }
+        const thirdResponse = await options.exchange({
+          type: "collect",
+          request,
+          pageStart: 1,
+          pageEnd: MAX_PAGES,
         });
-        const secondCandidate = nativeWindowPayloadFromPages(request, secondResponse.pages, {
-          nowMs: options.nowMs?.() ?? Date.now(),
-          renderedOrderCandidate: true,
-        });
-        const renderedOrderProof = buildStableRenderedOrderProof(
-          firstCandidate.payload.items,
-          secondCandidate.payload.items,
-          {
-            keyword: request.keyword,
-            captureIds: [response.captureId, secondResponse.captureId],
-            structureDigests: [
-              firstCandidate.renderedOrderStructureDigest,
-              secondCandidate.renderedOrderStructureDigest,
-            ],
-          },
+        if (!thirdResponse
+          || thirdResponse.type !== "collection"
+          || Array.isArray(thirdResponse.rows)
+          || !Array.isArray(thirdResponse.pages)) {
+          throw new ProviderError("native_host_collection_invalid");
+        }
+        navigatedPages += thirdResponse.pages.length;
+        if (navigatedPages !== RENDERED_ORDER_PAGE_NAVIGATION_BUDGET) {
+          throw new ProviderError("provider_stable_rendered_order_unproven", "page_budget");
+        }
+
+        // The final capture must be independent even when it happens to
+        // produce a strict 300-row window. Never let a replayed capture bypass
+        // the rendered-order proof path merely because its raw ranks validate.
+        assertDistinctRenderedCaptureIds([response, secondResponse, thirdResponse]);
+
+        // A strict third pass is independently authoritative and needs no
+        // rendered-order arbitration.
+        try {
+          return buildNativeWindowFromPages(request, thirdResponse.pages, {
+            nowMs: options.nowMs?.() ?? Date.now(),
+          });
+        } catch (error) {
+          if (!isNextDataRankDrift(error)) throw error;
+        }
+
+        const thirdAttempt = renderedOrderCandidateAttempt(
+          request,
+          thirdResponse,
+          options.nowMs?.() ?? Date.now(),
         );
-        return buildNativeWindowFromPages(request, secondResponse.pages, {
-          nowMs: options.nowMs?.() ?? Date.now(),
-          renderedOrderCandidate: true,
-          renderedOrderProof,
-        });
+        if (!thirdAttempt.candidate) throw thirdAttempt.boundaryError;
+        const validResponses = [response, secondResponse];
+        return buildRenderedOrderResult(
+          request,
+          validResponses[validIndex],
+          attempts[validIndex].candidate,
+          thirdResponse,
+          thirdAttempt.candidate,
+          options.nowMs?.() ?? Date.now(),
+        );
       }
 
       const finiteArbitration = collectOptions.allowStableFinite === true

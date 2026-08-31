@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
@@ -34,36 +33,18 @@ const migration = migrationName
   ? fs.readFileSync(path.join(migrationDirectory, migrationName), "utf8")
   : "";
 
-const runtimeFiles = [
-  "tools/naver-shopping-chrome-extension/service-worker.js",
-  "scripts/naver-shopping-native-host.mjs",
-  "scripts/naver-shopping-native-host-core.mjs",
-  "scripts/naver-shopping-local-worker.mjs",
-  "src/server/local-worker-auth.mjs",
-  "src/server/naver-shopping/local-worker-contract.mjs",
-  "src/server/handlers/naver-shopping-rank.mjs",
-  "src/server/security.mjs",
-  "src/server/naver-shopping/source-status.mjs",
-  "src/server/naver-shopping/provider-runtime.mjs",
-  "src/server/naver-shopping/mobile-top-fallback.mjs",
-  "tools/naver-shopping-rank-collector/src/provider.mjs",
-  "tools/naver-shopping-rank-collector/src/contract.mjs",
-];
+const HISTORICAL_RUNTIME_1_1_19 = Object.freeze({
+  version: "1.1.19",
+  fingerprint: "631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e",
+});
 
 function read(relativePath) {
   return fs.readFileSync(path.join(repositoryRoot, relativePath), "utf8");
 }
 
 function runtimeFixture(version) {
-  const componentDigests = runtimeFiles.map((name) => crypto.createHash("sha256")
-    .update(fs.readFileSync(path.join(repositoryRoot, name)))
-    .digest("hex"));
-  return Object.freeze({
-    version,
-    fingerprint: crypto.createHash("sha256")
-      .update([version, ...componentDigests].join("\n"), "utf8")
-      .digest("hex"),
-  });
+  assert.equal(version, HISTORICAL_RUNTIME_1_1_19.version);
+  return HISTORICAL_RUNTIME_1_1_19;
 }
 
 function requireMigration() {
@@ -324,24 +305,10 @@ test("adds one runtime 1.1.19 migration behind an exact full-idle guard", () => 
   }
 });
 
-test("binds every trusted surface to one canonical runtime 1.1.19 fingerprint", () => {
+test("keeps the archived runtime 1.1.19 migration pinned to its historical fingerprint", () => {
   requireMigration();
-  const expected = runtimeFixture("1.1.19");
-  const manifest = JSON.parse(read("tools/naver-shopping-chrome-extension/manifest.json"));
-  assert.equal(manifest.version, expected.version);
-
-  const bindings = [
-    ["scripts/naver-shopping-local-worker.mjs", /const EXPECTED_RUNTIME_VERSION = "1\.1\.19";/u],
-    ["src/server/handlers/naver-shopping-local-worker.mjs", /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.19";/u],
-    ["src/server/handlers/naver-rank-trackers.mjs", /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.19";/u],
-    ["scripts/naver-shopping-candidate-performance-audit.mjs", /export const N30_TARGET_RUNTIME_VERSION = "1\.1\.19";/u],
-    ["scripts/naver-shopping-account-rank-health-audit.mjs", /export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1\.1\.19";/u],
-  ];
-  for (const [file, pattern] of bindings) assert.match(read(file), pattern);
-  for (const file of bindings.slice(3).map(([file]) => file)) {
-    assert.match(read(file), new RegExp(expected.fingerprint, "u"));
-  }
-  assert.match(migration, new RegExp(expected.fingerprint, "u"));
+  assert.match(migration, new RegExp(HISTORICAL_RUNTIME_1_1_19.fingerprint, "u"));
+  assert.doesNotMatch(migration, /1\.1\.20/u);
 });
 
 test("replaces all runtime-sensitive control functions without weakening grants", () => {

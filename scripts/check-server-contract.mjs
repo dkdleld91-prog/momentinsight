@@ -79,6 +79,7 @@ const files = {
   shoppingStableFiniteWindowRuntime1117Migration: "supabase/migrations/20260829140000_naver_shopping_runtime_1_1_17_rank_drift_isolation.sql",
   shoppingStableFiniteWindowRuntime1118Migration: "supabase/migrations/20260830064426_naver_shopping_runtime_1_1_18_rank_drift_diagnostics.sql",
   shoppingStableRenderedOrderRuntime1119Migration: "supabase/migrations/20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql",
+  shoppingRenderedBoundaryConsensusRuntime1120Migration: "supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql",
   shoppingNextDataSchemaDriftRecoveryMigration: "supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql",
   shoppingSupersavingCompositeRecoveryMigration: "supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql",
   shoppingCandidatePerformanceAudit: "scripts/naver-shopping-candidate-performance-audit.mjs",
@@ -191,6 +192,7 @@ const shoppingStableFiniteWindowRuntime1116Migration = fs.readFileSync(files.sho
 const shoppingStableFiniteWindowRuntime1117Migration = fs.readFileSync(files.shoppingStableFiniteWindowRuntime1117Migration, "utf8");
 const shoppingStableFiniteWindowRuntime1118Migration = fs.readFileSync(files.shoppingStableFiniteWindowRuntime1118Migration, "utf8");
 const shoppingStableRenderedOrderRuntime1119Migration = fs.readFileSync(files.shoppingStableRenderedOrderRuntime1119Migration, "utf8");
+const shoppingRenderedBoundaryConsensusRuntime1120Migration = fs.readFileSync(files.shoppingRenderedBoundaryConsensusRuntime1120Migration, "utf8");
 const shoppingNextDataSchemaDriftRecoveryMigration = fs.readFileSync(files.shoppingNextDataSchemaDriftRecoveryMigration, "utf8");
 const shoppingSupersavingCompositeRecoveryMigration = fs.readFileSync(files.shoppingSupersavingCompositeRecoveryMigration, "utf8");
 const shoppingCandidatePerformanceAudit = fs.readFileSync(files.shoppingCandidatePerformanceAudit, "utf8");
@@ -234,9 +236,11 @@ const shoppingWorkerRuntime1117Fingerprint =
   "1f24b246d5ad3fe6c36607f03521b93d0c645eb0a9e1af43627482c6c66bd4e7";
 const shoppingWorkerRuntime1118Fingerprint =
   "65e3f53a81dd71ff33e7a200344d5cb7f50833d182965fbe8e66b698c3eb9d2c";
-const shoppingWorkerRuntime1119Fingerprint = calculateN30RuntimeFingerprint({
+const shoppingWorkerRuntime1119Fingerprint =
+  "631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e";
+const shoppingWorkerRuntime1120Fingerprint = calculateN30RuntimeFingerprint({
   repositoryRoot: process.cwd(),
-  version: "1.1.19",
+  version: "1.1.20",
 }).fingerprint;
 const naverEnvExample = fs.readFileSync(files.naverEnvExample, "utf8");
 const adminPage = fs.readFileSync(files.adminPage, "utf8");
@@ -1106,7 +1110,7 @@ check(
   files.shoppingWorkerRuntime1113Candidate6Migration,
 );
 check(
-  "N Shopping runtime 1.1.19 adds bounded rendered-order recovery and keeps exact-parent identity",
+  "N Shopping runtime 1.1.20 adds bounded rendered-boundary consensus and keeps exact-parent identity",
   hasAll(shoppingStableFiniteWindowMigration, [
     /stable-finite-window-v1/,
     /'c0ccded2-9bf7-488e-af8d-00898c0a1ff8'/,
@@ -1225,15 +1229,27 @@ check(
     ])
     && shoppingStableRenderedOrderRuntime1119Migration.includes(shoppingWorkerRuntime1118Fingerprint)
     && shoppingStableRenderedOrderRuntime1119Migration.includes(shoppingWorkerRuntime1119Fingerprint)
+    && hasAll(shoppingRenderedBoundaryConsensusRuntime1120Migration, [
+      /current_row\.runtime_version is distinct from '1\.1\.19'/,
+      /set runtime_version = '1\.1\.20'/,
+      /expected_runtime_version constant text := '1\.1\.20'/,
+      /naver_shopping_runtime_1_1_20_requires_completed_account_priority/,
+      /security invoker/,
+      /set search_path = ''/,
+      /from public, anon, authenticated, service_role/,
+      /to service_role/,
+    ])
+    && shoppingRenderedBoundaryConsensusRuntime1120Migration.includes(shoppingWorkerRuntime1119Fingerprint)
+    && shoppingRenderedBoundaryConsensusRuntime1120Migration.includes(shoppingWorkerRuntime1120Fingerprint)
     && shoppingCandidatePerformanceAudit.includes(
-      `export const N30_TARGET_RUNTIME_VERSION = "1.1.19";`,
+      `export const N30_TARGET_RUNTIME_VERSION = "1.1.20";`,
     )
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1119Fingerprint)
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1120Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingSupersavingCompositeRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
-  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}, ${files.shoppingStableFiniteWindowRuntime1117Migration}, ${files.shoppingStableFiniteWindowRuntime1118Migration}, ${files.shoppingStableRenderedOrderRuntime1119Migration}, ${files.shoppingNextDataSchemaDriftRecoveryMigration}, ${files.shoppingSupersavingCompositeRecoveryMigration}`,
+  `${files.shoppingStableFiniteWindowMigration}, ${files.shoppingStableFiniteWindowRuntime1115Migration}, ${files.shoppingExactParentRelationGuardMigration}, ${files.shoppingStableFiniteWindowRuntime1116Migration}, ${files.shoppingStableFiniteWindowRuntime1117Migration}, ${files.shoppingStableFiniteWindowRuntime1118Migration}, ${files.shoppingStableRenderedOrderRuntime1119Migration}, ${files.shoppingRenderedBoundaryConsensusRuntime1120Migration}, ${files.shoppingNextDataSchemaDriftRecoveryMigration}, ${files.shoppingSupersavingCompositeRecoveryMigration}`,
 );
 check(
   "N Shopping prior runtime 1.1.11 exact candidate gate remains unchanged",
@@ -1645,7 +1661,7 @@ check(
 );
 check(
   "N Shopping website wakes the development Chrome profile within one minute and runs one job",
-  shoppingChromeManifest.version === "1.1.19"
+  shoppingChromeManifest.version === "1.1.20"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && /\["rank-remote", \{ delayInMinutes: 1, periodInMinutes: 1 \}\]/.test(shoppingChromeWorker)
@@ -1658,9 +1674,9 @@ check(
     && /WORKER_COLLECTION_LEASE_SECONDS = 35 \* 60/.test(shoppingLocalWorkerHandler)
     && /MIN_RANK_TRACKER_LEASE_MS = 1000 \* 60 \* 35/.test(productTrackers)
     && /port\.postMessage\(\{ action: "run", trigger, \.\.\.runtimeIdentity \}\)/.test(shoppingChromeWorker)
-    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.19";/.test(shoppingLocalWorker)
-    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.19";/.test(shoppingLocalWorkerHandler)
-    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.19";/.test(productTrackers)
+    && /const EXPECTED_RUNTIME_VERSION = "1\.1\.20";/.test(shoppingLocalWorker)
+    && /const EXPECTED_WORKER_RUNTIME_VERSION = "1\.1\.20";/.test(shoppingLocalWorkerHandler)
+    && /const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1\.1\.20";/.test(productTrackers)
     && /chrome\.runtime\.getManifest\(\)\.version/.test(shoppingChromeWorker)
     && /crypto\.subtle\.digest/.test(shoppingChromeWorker)
     && /async function requestWorkerRun\(trigger\)[\s\S]*?void runWorker\(trigger\)/.test(shoppingChromeWorker)

@@ -223,6 +223,41 @@ function renderedOrderDriftPages(mutate = null) {
   return pages;
 }
 
+function renderedOrderBoundaryGapZeroPages() {
+  return renderedOrderDriftPages((pages) => {
+    mutateRenderedPage(pages, 2, (entries) => {
+      for (const entry of renderedOrganicEntries(entries)) entry.item.rank -= 1;
+    });
+  });
+}
+
+function renderedOrderBoundaryGapAboveLimitPages() {
+  return renderedOrderDriftPages((pages) => {
+    mutateRenderedPage(pages, 2, (entries) => {
+      for (const entry of renderedOrganicEntries(entries)) entry.item.rank += 40;
+    });
+  });
+}
+
+function renderedOrderBoundaryNegativeGapPages() {
+  return renderedOrderDriftPages((pages) => {
+    mutateRenderedPage(pages, 1, (entries) => {
+      renderedOrganicEntries(entries).at(-1).item.rank += 2;
+    });
+  });
+}
+
+function renderedOrderIdentitySwapPages() {
+  return renderedOrderDriftPages((pages) => {
+    mutateRenderedPage(pages, 3, (entries) => {
+      const [first, second] = renderedOrganicEntries(entries);
+      for (const field of ["id", "mallProductId", "mallPcUrl"]) {
+        [first.item[field], second.item[field]] = [second.item[field], first.item[field]];
+      }
+    });
+  });
+}
+
 function mutateRenderedPage(pages, pageIndex, mutate) {
   const pagePayload = JSON.parse(pages[pageIndex - 1].nextDataText);
   mutate(pagePayload.props.pageProps.compositeList.list);
@@ -689,6 +724,270 @@ test("native provider accepts rendered order only after two distinct matching ra
     result.renderedOrderProof?.structureDigests[0],
     result.renderedOrderProof?.structureDigests[1],
   );
+});
+
+test("native provider recovers one transient rendered page boundary only with a matching third pass", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const passes = [
+    renderedOrderBoundaryGapZeroPages(),
+    renderedOrderDriftPages(),
+    renderedOrderDriftPages(),
+  ];
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 3, "rendered-order recovery must remain bounded");
+      return {
+        type: "collection",
+        captureId: `rendered-boundary-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 3);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd, stableProofPass }) => (
+    [pageStart, pageEnd, stableProofPass]
+  )), [
+    [undefined, undefined, undefined],
+    [1, 8, 2],
+    [1, 8, undefined],
+  ]);
+  assert.equal(result.checkedCount, 300);
+  assert.equal(result.renderedOrderProof?.passCount, 2);
+  assert.deepEqual(
+    result.renderedOrderProof?.captureIds,
+    ["rendered-boundary-2", "rendered-boundary-3"],
+  );
+  assert.equal(
+    result.renderedOrderProof?.passDigests[0],
+    result.renderedOrderProof?.passDigests[1],
+  );
+});
+
+test("native provider discards any one boundary-invalid A or B and proves only valid plus C", async (t) => {
+  for (const scenario of [
+    {
+      name: "negative A, valid B",
+      passes: [
+        renderedOrderBoundaryNegativeGapPages(),
+        renderedOrderDriftPages(),
+        renderedOrderDriftPages(),
+      ],
+      proofCaptureIds: ["rendered-boundary-2", "rendered-boundary-3"],
+    },
+    {
+      name: "valid A, negative B",
+      passes: [
+        renderedOrderDriftPages(),
+        renderedOrderBoundaryNegativeGapPages(),
+        renderedOrderDriftPages(),
+      ],
+      proofCaptureIds: ["rendered-boundary-1", "rendered-boundary-3"],
+    },
+    {
+      name: "above-limit A, valid B",
+      passes: [
+        renderedOrderBoundaryGapAboveLimitPages(),
+        renderedOrderDriftPages(),
+        renderedOrderDriftPages(),
+      ],
+      proofCaptureIds: ["rendered-boundary-2", "rendered-boundary-3"],
+    },
+    {
+      name: "valid A, above-limit B",
+      passes: [
+        renderedOrderDriftPages(),
+        renderedOrderBoundaryGapAboveLimitPages(),
+        renderedOrderDriftPages(),
+      ],
+      proofCaptureIds: ["rendered-boundary-1", "rendered-boundary-3"],
+    },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+      const messages = [];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 3, "boundary arbitration must never start pass D");
+          return {
+            type: "collection",
+            captureId: `rendered-boundary-${messages.length}`,
+            pages: scenario.passes[messages.length - 1],
+          };
+        },
+      });
+
+      const result = await provider.collect(request(nowMs));
+
+      assert.equal(messages.length, 3);
+      assert.equal(result.checkedCount, 300);
+      assert.deepEqual(
+        result.renderedOrderProof?.captureIds,
+        scenario.proofCaptureIds,
+      );
+      assert.equal(
+        result.renderedOrderProof?.passDigests[0],
+        result.renderedOrderProof?.passDigests[1],
+      );
+    });
+  }
+});
+
+test("native provider never starts C when both rendered-order passes are boundary-invalid", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const passes = [
+    renderedOrderBoundaryNegativeGapPages(),
+    renderedOrderBoundaryGapAboveLimitPages(),
+  ];
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "two invalid passes must never start pass C");
+      return {
+        type: "collection",
+        captureId: `rendered-double-boundary-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_stable_rendered_order_unproven"
+      && /^page_boundary:[1-8]:g(?:m?[0-9]{1,3}):l[0-9]{1,3}$/u
+        .test(String(error?.detail || "")),
+  );
+  assert.equal(messages.length, 2);
+});
+
+test("native provider rejects every unsafe third rendered-order pass without a fourth capture", async (t) => {
+  const scenarios = [
+    {
+      name: "direct identity order mismatch",
+      thirdPages: renderedOrderIdentitySwapPages,
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "digest_mismatch",
+    },
+    {
+      name: "capture replay",
+      thirdPages: renderedOrderDriftPages,
+      captureId: () => "rendered-third-1",
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "capture_ids",
+    },
+    {
+      name: "strict third capture replay",
+      thirdPages: () => Array.from({ length: 8 }, (_, index) => page(index + 1)),
+      captureId: (pass) => (pass === 3 ? "rendered-third-2" : `rendered-third-${pass}`),
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "capture_ids",
+    },
+    {
+      name: "second zero-gap boundary",
+      thirdPages: renderedOrderBoundaryGapZeroPages,
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: /^page_boundary:2:g0:l[0-9]{1,3}$/u,
+    },
+    {
+      name: "cross-page direct identity overlap",
+      thirdPages() {
+        return renderedOrderDriftPages((pages) => {
+          mutateRenderedPage(pages, 2, (entries) => {
+            const target = renderedOrganicEntries(entries)[0].item;
+            const duplicate = productItem(1);
+            for (const field of ["id", "mallProductId", "mallPcUrl"]) {
+              target[field] = duplicate[field];
+            }
+          });
+        });
+      },
+      expectedCode: "provider_duplicate_identity",
+    },
+    {
+      name: "partial third pass",
+      thirdPages: () => finiteMarketPages(299),
+      expectedCode: "provider_partial_window",
+      expectedDetail: "299/300",
+    },
+    {
+      name: "third pass page budget",
+      thirdPages: () => renderedOrderDriftPages().slice(0, 7),
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: "page_budget",
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    await t.test(scenario.name, async () => {
+      const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+      const passes = [
+        renderedOrderBoundaryGapZeroPages(),
+        renderedOrderDriftPages(),
+        scenario.thirdPages(),
+      ];
+      const messages = [];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 3, "unsafe pass C must never start pass D");
+          return {
+            type: "collection",
+            captureId: scenario.captureId?.(messages.length)
+              || `rendered-third-${messages.length}`,
+            pages: passes[messages.length - 1],
+          };
+        },
+      });
+
+      await assert.rejects(
+        () => provider.collect(request(nowMs)),
+        (error) => error?.code === scenario.expectedCode
+          && (scenario.expectedDetail == null
+            || (scenario.expectedDetail instanceof RegExp
+              ? scenario.expectedDetail.test(String(error?.detail || ""))
+              : error?.detail === scenario.expectedDetail)),
+        scenario.name,
+      );
+      assert.equal(messages.length, 3);
+    });
+  }
+});
+
+test("native provider does not start C when its final deadline guard is reached", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  let nearDeadline = false;
+  const messages = [];
+  const passes = [renderedOrderBoundaryGapZeroPages(), renderedOrderDriftPages()];
+  const provider = createChromeNativeProvider({
+    nowMs: () => (nearDeadline ? nowMs + 178_000 : nowMs),
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "deadline guard must prevent pass C");
+      const response = {
+        type: "collection",
+        captureId: `rendered-deadline-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+      if (messages.length === 2) nearDeadline = true;
+      return response;
+    },
+  });
+
+  await assert.rejects(
+    () => provider.collect(request(nowMs)),
+    (error) => error?.code === "provider_deadline_exceeded",
+  );
+  assert.equal(messages.length, 2);
 });
 
 test("native provider never accepts one rendered-order capture near the shared deadline", async () => {
@@ -1509,7 +1808,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.19");
+  assert.equal(manifest.version, "1.1.20");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -2817,7 +3116,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.19");
+  assert.equal(manifest.version, "1.1.20");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -2992,7 +3291,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.19",
+    runtimeVersion: "1.1.20",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

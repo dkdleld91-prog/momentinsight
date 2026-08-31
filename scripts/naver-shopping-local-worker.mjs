@@ -161,7 +161,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.19";
+const EXPECTED_RUNTIME_VERSION = "1.1.20";
 const STABLE_FINITE_RUN_TRIGGER = "rank-catch-up";
 const STABLE_FINITE_WORKER_ID = "windows-desktop-primary";
 const WORKER_RUN_TRIGGERS = new Set([
@@ -420,7 +420,7 @@ function safeFailureCode(error) {
       .trim()
       .toLowerCase()
       .replaceAll(".", "_");
-    return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|market_total|page_boundary:[1-8]|renderedorderproof_duplicate_identity)$/u.test(detail)
+    return /^(?:proof_missing|capture_ids|structure_mismatch|digest_mismatch|page_order|market_total|page_boundary:[1-8](?::g(?:m?[0-9]{1,3}):l[0-9]{1,3})?|renderedorderproof_duplicate_identity)$/u.test(detail)
       ? `${baseCode}:${detail}`
       : baseCode;
   }
@@ -784,7 +784,7 @@ export async function runLocalShoppingWorker(options = {}) {
         await reportProgress("navigating", 0, job);
         // claim-lane synchronously registers this exact runtime identity before
         // the first job claim. The server releases the lane and rejects the
-        // action when the finalized fingerprint is not in its 1.1.19 allowlist,
+        // action when the finalized fingerprint is not in its 1.1.20 allowlist,
         // so reaching collection preserves that registration-before-claim gate.
         const finiteCanaryJob = stableFinitePrecollectionAllowed(job, {
           runTrigger,

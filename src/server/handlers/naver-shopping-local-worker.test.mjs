@@ -1066,7 +1066,7 @@ test("one-shot account priority accepts one bounded same-keyword group while leg
   });
 });
 
-test("repair priority waiting blocks the normal cycle without requeue or lookup bypass", async () => {
+test("account cycle handoff waiting blocks the normal cycle without requeue or lookup bypass", async () => {
   await withWorkerEnv(async () => {
     const calls = [];
     const ctx = {
@@ -1077,7 +1077,15 @@ test("repair priority waiting blocks the normal cycle without requeue or lookup 
           if (name === "mi_touch_naver_shopping_worker_lane") return { data: true, error: null };
           assert.equal(name, "mi_claim_naver_shopping_repair_priority");
           return {
-            data: { status: "waiting", priority: "repair", claims: [] },
+            data: {
+              intercept: true,
+              status: "waiting",
+              priority: "repair",
+              claims: [],
+              accountPriority: true,
+              reason: "account_cycle_handoff",
+              cycleId: CYCLE_ID,
+            },
             error: null,
           };
         },
@@ -1091,6 +1099,10 @@ test("repair priority waiting blocks the normal cycle without requeue or lookup 
     assert.equal((await response.json()).job, null);
     assert.equal(calls.includes("mi_claim_naver_shopping_cycle_keyword"), false);
     assert.equal(calls.includes("mi_claim_naver_shopping_rank_lookup_job"), false);
+    assert.equal(
+      calls.filter((name) => name === "mi_claim_naver_shopping_repair_priority").length,
+      1,
+    );
   });
 });
 

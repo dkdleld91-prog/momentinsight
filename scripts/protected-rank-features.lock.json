@@ -349,12 +349,12 @@
     {
       "id": "shopping-local-worker-handler",
       "file": "src/server/handlers/naver-shopping-local-worker.mjs",
-      "sha256": "fa669dc37305a1c23e532c450c3ffff1e5ad1a9b7216adf0b96be0d8abdfaf26"
+      "sha256": "9a396d0659ffe6c1a73fe78265417b7d30eaaedea38f4152cf8dce630b65e88d"
     },
     {
       "id": "shopping-worker-wake-server",
       "file": "src/server/naver-shopping/worker-wake.mjs",
-      "sha256": "fd6d5faa02712aef691e4a11a05ea9937750eafb7aa52946dbea705da5c71229"
+      "sha256": "600a94c92864b1ab42a04353766e4cbf21bcb45fc7bb1c489dddcb4cefee9a5b"
     },
     {
       "id": "shopping-rank-lookup-handler",
@@ -797,6 +797,12 @@
       "id": "shopping-worker-runtime-1-1-20-rendered-boundary-consensus",
       "file": "supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql",
       "sha256": "39451ebb764297af4db0676dc94b9e4160fe0164739dfbc174e20153c0ac5560",
+      "rankMigration": true
+    },
+    {
+      "id": "shopping-account-priority-rank-catch-up-gate",
+      "file": "supabase/migrations/20260831100525_naver_shopping_account_priority_rank_catch_up_gate.sql",
+      "sha256": "8558df0db5ce1626e0517749ec5f2678470180cc910d4b635ea1a6242f96b74c",
       "rankMigration": true
     }
   ]

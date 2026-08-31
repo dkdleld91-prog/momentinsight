@@ -14,8 +14,13 @@ export async function requestShoppingWorkerWake(ctx, source) {
   return data === true;
 }
 
-export async function claimShoppingWorkerWake(ctx) {
-  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_worker_wake");
+export async function claimShoppingWorkerWake(ctx, control) {
+  const { data, error } = await ctx.supabaseAdmin.rpc("mi_claim_naver_shopping_worker_wake", {
+    p_worker_id: control.workerId,
+    p_lane_token: control.laneToken,
+    p_run_id: control.runId,
+    p_run_trigger: control.runTrigger,
+  });
   if (error) throw error;
   return data === true;
 }

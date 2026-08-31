@@ -831,6 +831,110 @@ test("one approved manual run queues every active tracker before the bounded dra
   ]);
 });
 
+test("a non-catch-up account-priority wait exits bounded, opens no provider and releases the lane", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-remote",
+    },
+    fetchImpl: authenticatedFetch([
+      { body: {
+        ok: true,
+        total: 0,
+        queued: 0,
+        alreadyQueued: 0,
+        alreadyProcessing: 0,
+        waiting: true,
+        reason: "account_priority_active",
+      } },
+      { body: { ok: true, job: null } },
+    ], calls),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    queueAllTrackers: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed",
+    claimed: 0,
+    submitted: 0,
+    failed: 0,
+    releaseFailed: 0,
+    atomicSuccesses: 0,
+    queuedTotal: 0,
+    queued: 0,
+    alreadyQueued: 0,
+    alreadyProcessing: 0,
+  });
+  assert.equal(collectCount, 0);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+  ]);
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
+test("an expiry-reconciled queue wait continues claim under the same bounded run", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const completed = {
+    ok: true,
+    committedCount: 1,
+    alreadyCommittedCount: 0,
+    leaseLostCount: 0,
+    collectionConflictCount: 0,
+    processedCount: 1,
+  };
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: {
+        ok: true,
+        total: 0,
+        queued: 0,
+        alreadyQueued: 0,
+        alreadyProcessing: 0,
+        waiting: true,
+        reason: "account_priority_expiry_reconciled",
+      } },
+      { body: { ok: true, job: JOB } },
+      { body: completed },
+      { body: { ok: true, job: null } },
+    ], calls),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    queueAllTrackers: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.submitted, 1);
+  assert.equal(summary.atomicSuccesses, 1);
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+    "claim",
+  ]);
+  const queue = calls[0];
+  const claims = calls.filter((call) => call.action === "claim");
+  assert.equal(queue.runId, claims[0].runId);
+  assert.equal(claims[0].runId, claims[1].runId);
+  assert.equal(queue.runTrigger, "rank-catch-up");
+  assert.equal(claims[0].runTrigger, "rank-catch-up");
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
 test("remote polling exits without opening Naver when no wake is pending", async () => {
   const calls = [];
   let collectCount = 0;
@@ -1008,7 +1112,7 @@ test("an automatic circuit recovery queues trackers first and runs exactly one p
   assert.equal(calls.find((call) => call.action === "claim")?.autoRecovery, true);
 });
 
-test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
+test("a bounded runner repeats claim under one signed run while preserving the 30-day turn", async () => {
   const calls = [];
   const secondJob = {
     ...JOB,
@@ -1045,8 +1149,13 @@ test("a two-job safety budget still reserves one claim for 30-day trackers", asy
   });
   assert.equal(summary.submitted, 2);
   assert.equal(summary.atomicSuccesses, 2);
+  const claims = calls.filter((call) => call.action === "claim");
+  assert.equal(claims.length, 2);
+  assert.equal(claims[0].runId, claims[1].runId);
+  assert.equal(claims[0].runTrigger, "rank-catch-up");
+  assert.equal(claims[1].runTrigger, "rank-catch-up");
   assert.deepEqual(
-    calls.filter((call) => call.action === "claim").map((call) => call.preferLookup),
+    claims.map((call) => call.preferLookup),
     [true, false],
   );
 });

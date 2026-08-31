@@ -788,6 +788,12 @@
       "rankMigration": true
     },
     {
+      "id": "shopping-account-priority-cycle-handoff",
+      "file": "supabase/migrations/20260831050000_naver_shopping_account_priority_cycle_handoff.sql",
+      "sha256": "106d17153048fcd264f39c37407df86189f78a51643caa489b946f355ffabe43",
+      "rankMigration": true
+    },
+    {
       "id": "shopping-worker-runtime-1-1-20-rendered-boundary-consensus",
       "file": "supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql",
       "sha256": "39451ebb764297af4db0676dc94b9e4160fe0164739dfbc174e20153c0ac5560",

@@ -12,6 +12,12 @@ const migration = fs.readFileSync(
   path.join(root, "supabase", "migrations", migrationName),
   "utf8",
 );
+const handoffMigrationName =
+  "20260831050000_naver_shopping_account_priority_cycle_handoff.sql";
+const handoffMigration = fs.readFileSync(
+  path.join(root, "supabase", "migrations", handoffMigrationName),
+  "utf8",
+);
 
 const ids = Object.freeze({
   request: "10000000-0000-4000-8000-000000000001",
@@ -34,6 +40,13 @@ function executableMigration() {
   return migration
     .replace(/set local lock_timeout = '5s';\s*/iu, "")
     .replace(/lock table public\.naver_shopping_worker_coordination in access exclusive mode;\s*/iu, "")
+    .replace(/do \$migration_guard\$[\s\S]*?\$migration_guard\$;\s*/iu, "");
+}
+
+function executableHandoffMigration() {
+  return handoffMigration
+    .replace(/set local lock_timeout = '5s';\s*/iu, "")
+    .replace(/lock table [^;]+;\s*/giu, "")
     .replace(/do \$migration_guard\$[\s\S]*?\$migration_guard\$;\s*/iu, "");
 }
 
@@ -71,10 +84,12 @@ async function createDatabase({ legacyQueued = false } = {}) {
       scheduler_cycle_number bigint not null default 0,
       scheduler_cycle_status text not null default 'idle',
       scheduler_cycle_started_at timestamptz,
+      scheduler_cycle_completed_at timestamptz,
       scheduler_cycle_cursor_sort_order integer,
       scheduler_cycle_cursor_created_at timestamptz,
       scheduler_cycle_cursor_tracker_id uuid,
-      scheduler_cycle_resume_cursor boolean not null default false
+      scheduler_cycle_resume_cursor boolean not null default false,
+      updated_at timestamptz not null default clock_timestamp()
     );
 
     create table public.naver_shopping_rank_lookup_jobs (
@@ -284,10 +299,80 @@ async function createDatabase({ legacyQueued = false } = {}) {
     create trigger trg_test_account_claim_event
     after update on public.naver_rank_trackers
     for each row execute function public.test_account_claim_event();
+
+    create function public.test_cycle_completed_event()
+    returns trigger language plpgsql security invoker set search_path = '' as $$
+    begin
+      if new.scheduler_cycle_status = 'completed'
+        and new.scheduler_cycle_id is not null
+        and (
+          old.scheduler_cycle_id is distinct from new.scheduler_cycle_id
+          or old.scheduler_cycle_status is distinct from 'completed'
+        ) then
+        insert into public.naver_shopping_scheduler_events(
+          event_type, cycle_id, cycle_number
+        ) values (
+          'cycle_completed', new.scheduler_cycle_id, new.scheduler_cycle_number
+        );
+      end if;
+      return null;
+    end;
+    $$;
+    create trigger trg_test_cycle_completed_event
+    after update on public.naver_shopping_worker_coordination
+    for each row execute function public.test_cycle_completed_event();
+
+    create function public.test_queue_next_natural_cycle()
+    returns jsonb language plpgsql security invoker set search_path = '' as $$
+    declare
+      current_row public.naver_shopping_worker_coordination%rowtype;
+      next_cycle_id uuid := gen_random_uuid();
+    begin
+      select * into current_row
+      from public.naver_shopping_worker_coordination
+      where lane_key = 'global'
+      for update;
+      if current_row.scheduler_cycle_status <> 'completed' then
+        return jsonb_build_object(
+          'started', false, 'cycleId', current_row.scheduler_cycle_id
+        );
+      end if;
+      update public.naver_shopping_worker_coordination
+      set scheduler_cycle_id = next_cycle_id,
+          scheduler_cycle_number = current_row.scheduler_cycle_number + 1,
+          scheduler_cycle_status = 'active',
+          scheduler_cycle_started_at = clock_timestamp(),
+          scheduler_cycle_completed_at = null,
+          scheduler_cycle_cursor_sort_order = null,
+          scheduler_cycle_cursor_created_at = null,
+          scheduler_cycle_cursor_tracker_id = null,
+          scheduler_cycle_resume_cursor = false,
+          updated_at = clock_timestamp()
+      where lane_key = 'global';
+      insert into public.naver_shopping_scheduler_events(
+        event_type, cycle_id, cycle_number, tracker_id, agency_code, roster_state
+      )
+      select 'cycle_rostered', next_cycle_id,
+             current_row.scheduler_cycle_number + 1,
+             tracker.id, tracker.agency_code,
+             case when tracker.worker_quarantined_until > clock_timestamp()
+               then 'quarantined' else 'eligible' end
+      from public.naver_rank_trackers as tracker
+      where tracker.status = 'active';
+      return jsonb_build_object(
+        'started', true, 'cycleId', next_cycle_id,
+        'cycleNumber', current_row.scheduler_cycle_number + 1
+      );
+    end;
+    $$;
   `);
 
   await database.exec(executableMigration());
   return database;
+}
+
+async function applyHandoffMigration(database) {
+  await database.exec(executableHandoffMigration());
 }
 
 async function enqueue(database, requestId = ids.request) {
@@ -348,6 +433,21 @@ async function recordNavigatingRun(database, runId = ids.run, {
 
 async function startRun(database, runId = ids.run) {
   await registerClaimingLane(database, runId);
+}
+
+async function releaseLane(database) {
+  await database.exec(`
+    update public.naver_shopping_worker_coordination
+    set lease_worker_id = null,
+        lease_token = null,
+        lease_until = null,
+        run_id = null,
+        current_stage = null,
+        current_page = 0,
+        current_job_kind = null,
+        current_tracker_id = null
+    where lane_key = 'global'
+  `);
 }
 
 async function claim(database, runId = ids.run) {
@@ -429,6 +529,50 @@ test("static contract isolates one-shot account evidence and preserves scheduler
   assert.match(reconcileFunction, /terminal\.run_id = member\.claimed_run_id/iu);
   assert.match(reconcileFunction, /terminal\.worker_id = member\.claimed_worker_id/iu);
   assert.match(reconcileFunction, /terminal\.lease_started_at = member\.claimed_lease_started_at/iu);
+});
+
+test("cycle handoff is exact-runtime, single-request-cycle, and mutation bounded", () => {
+  assert.ok(
+    handoffMigrationName <
+      "20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql",
+    "the 1.1.19 handoff bridge must precede the 1.1.20 runtime transition",
+  );
+  const wrapper = handoffMigration.match(
+    /create or replace function mi_internal\.mi_claim_naver_shopping_account_priority[\s\S]*?\n\$\$;/iu,
+  )?.[0] || "";
+  assert.match(handoffMigration, /runtime_version is distinct from '1\.1\.19'/iu);
+  assert.match(
+    handoffMigration,
+    /631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e/iu,
+  );
+  assert.match(wrapper, /active_request\.requested_cycle_id = current_row\.scheduler_cycle_id/iu);
+  assert.match(
+    wrapper,
+    /active_request\.requested_cycle_number\s*=\s*current_row\.scheduler_cycle_number/iu,
+  );
+  assert.match(wrapper, /v_safe_blocked_partition_count = v_pending_count/iu);
+  assert.match(wrapper, /v_rollover_beneficiary_count > 0/iu);
+  assert.match(wrapper, /v_current_eligible_count = 0/iu);
+  assert.match(wrapper, /v_open_claim_count = 0/iu);
+  assert.match(wrapper, /v_processing_count = 0/iu);
+  assert.match(wrapper, /v_cycle_completed_event_count <> 1/iu);
+  for (const field of [
+    "scheduler_cycle_cursor_sort_order",
+    "scheduler_cycle_cursor_created_at",
+    "scheduler_cycle_cursor_tracker_id",
+    "scheduler_cycle_resume_cursor",
+  ]) {
+    assert.match(
+      wrapper,
+      new RegExp(`post_row\\.${field} is distinct from\\s*current_row\\.${field}`, "iu"),
+    );
+  }
+  assert.match(wrapper, /'reason', 'account_cycle_handoff'/iu);
+  assert.doesNotMatch(wrapper, /update public\.naver_rank_trackers/iu);
+  assert.doesNotMatch(wrapper, /update public\.naver_shopping_account_priority_(?:requests|members)/iu);
+  assert.doesNotMatch(wrapper, /scheduler_cycle_cursor_(?:sort_order|created_at|tracker_id|resume_cursor)\s*=/iu);
+  assert.doesNotMatch(wrapper, /worker_quarantined_until\s*=|sort_order\s*=|next_check_at\s*=/iu);
+  assert.doesNotMatch(wrapper, /mi_request_naver_shopping_worker_wake/iu);
 });
 
 test("real worker sequence claims before navigating run exists, then reconciles exact terminal", async (t) => {
@@ -922,6 +1066,212 @@ test("already-processed and new-after-start members wait unchanged for the next 
     cursor_tracker_id_before: ids.other,
     cursor_tracker_id_after: ids.other,
   });
+});
+
+test("mixed consumed and future-quarantined members hand off exactly once to the next natural cycle", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_last_cycle_id = $1::uuid,
+        worker_last_cycle_claimed_at = clock_timestamp() - interval '2 minutes',
+        worker_last_cycle_deferred_at = clock_timestamp() - interval '1 minute'
+    where id = $2::uuid
+  `, [ids.cycle, ids.mmlA]);
+  await enqueue(database);
+  await startRun(database);
+  const red = await claim(database);
+  assert.equal(red.status, "empty");
+  assert.equal(red.accountPriority, true);
+  await releaseLane(database);
+  await applyHandoffMigration(database);
+
+  const before = (await database.query(`
+    select jsonb_build_object(
+      'cursorSort', coordination.scheduler_cycle_cursor_sort_order,
+      'cursorCreated', coordination.scheduler_cycle_cursor_created_at,
+      'cursorTracker', coordination.scheduler_cycle_cursor_tracker_id,
+      'cursorResume', coordination.scheduler_cycle_resume_cursor,
+      'members', (
+        select jsonb_agg(jsonb_build_object(
+          'position', member.position,
+          'trackerId', member.tracker_id,
+          'state', member.state,
+          'sortOrder', tracker.sort_order,
+          'createdAt', tracker.created_at,
+          'quarantinedUntil', tracker.worker_quarantined_until,
+          'lastCycleId', tracker.worker_last_cycle_id,
+          'lastCycleClaimedAt', tracker.worker_last_cycle_claimed_at,
+          'lastCycleDeferredAt', tracker.worker_last_cycle_deferred_at
+        ) order by member.position)
+        from public.naver_shopping_account_priority_members as member
+        join public.naver_rank_trackers as tracker on tracker.id = member.tracker_id
+        where member.request_id = $1::uuid
+      )
+    ) as state
+    from public.naver_shopping_worker_coordination as coordination
+    where coordination.lane_key = 'global'
+  `, [ids.request])).rows[0].state;
+
+  await startRun(database);
+  const handoff = await claim(database);
+  assert.deepEqual(handoff, {
+    status: "waiting",
+    priority: "repair",
+    claims: [],
+    accountPriority: true,
+    reason: "account_cycle_handoff",
+    cycleId: ids.cycle,
+  });
+
+  const after = (await database.query(`
+    select jsonb_build_object(
+      'cursorSort', coordination.scheduler_cycle_cursor_sort_order,
+      'cursorCreated', coordination.scheduler_cycle_cursor_created_at,
+      'cursorTracker', coordination.scheduler_cycle_cursor_tracker_id,
+      'cursorResume', coordination.scheduler_cycle_resume_cursor,
+      'members', (
+        select jsonb_agg(jsonb_build_object(
+          'position', member.position,
+          'trackerId', member.tracker_id,
+          'state', member.state,
+          'sortOrder', tracker.sort_order,
+          'createdAt', tracker.created_at,
+          'quarantinedUntil', tracker.worker_quarantined_until,
+          'lastCycleId', tracker.worker_last_cycle_id,
+          'lastCycleClaimedAt', tracker.worker_last_cycle_claimed_at,
+          'lastCycleDeferredAt', tracker.worker_last_cycle_deferred_at
+        ) order by member.position)
+        from public.naver_shopping_account_priority_members as member
+        join public.naver_rank_trackers as tracker on tracker.id = member.tracker_id
+        where member.request_id = $1::uuid
+      )
+    ) as state
+    from public.naver_shopping_worker_coordination as coordination
+    where coordination.lane_key = 'global'
+  `, [ids.request])).rows[0].state;
+  assert.deepEqual(after, before);
+  assert.deepEqual((await database.query(`
+    select scheduler_cycle_status as status,
+           scheduler_cycle_id::text as cycle_id,
+           scheduler_cycle_number as cycle_number,
+           count(event.event_id)::integer as completed_events
+    from public.naver_shopping_worker_coordination as coordination
+    left join public.naver_shopping_scheduler_events as event
+      on event.event_type = 'cycle_completed'
+     and event.cycle_id = coordination.scheduler_cycle_id
+     and event.cycle_number = coordination.scheduler_cycle_number
+    where coordination.lane_key = 'global'
+    group by coordination.lane_key, coordination.scheduler_cycle_status,
+             coordination.scheduler_cycle_id,
+             coordination.scheduler_cycle_number
+  `)).rows[0], {
+    status: "completed",
+    cycle_id: ids.cycle,
+    cycle_number: 47,
+    completed_events: 1,
+  });
+  assert.equal((await database.query(`
+    select count(*)::integer as count from public.test_wakes
+  `)).rows[0].count, 0);
+
+  await releaseLane(database);
+  const queued = (await database.query(`
+    select public.test_queue_next_natural_cycle() as result
+  `)).rows[0].result;
+  assert.equal(queued.started, true);
+  assert.notEqual(queued.cycleId, ids.cycle);
+  assert.equal(queued.cycleNumber, 48);
+  assert.equal((await database.query(`
+    select count(*)::integer as count from public.test_wakes
+  `)).rows[0].count, 0);
+
+  await startRun(database, ids.nextRun);
+  const next = await claim(database, ids.nextRun);
+  assert.equal(next.status, "claimed");
+  assert.deepEqual(next.claims.map((entry) => entry.trackerId), [ids.mmlA]);
+  await recordNavigatingRun(database, ids.nextRun);
+  await terminal(database, ids.mmlA, "tracker_committed");
+
+  const finalRun = "40000000-0000-4000-8000-000000000004";
+  await startRun(database, finalRun);
+  const futureOnly = await claim(database, finalRun);
+  assert.equal(futureOnly.status, "waiting");
+  assert.equal(futureOnly.reason, "account_members_not_yet_eligible");
+  assert.deepEqual((await database.query(`
+    select scheduler_cycle_status as status,
+           count(event.event_id)::integer as completed_events
+    from public.naver_shopping_worker_coordination as coordination
+    left join public.naver_shopping_scheduler_events as event
+      on event.event_type = 'cycle_completed'
+     and event.cycle_id = coordination.scheduler_cycle_id
+    where coordination.lane_key = 'global'
+    group by coordination.lane_key, coordination.scheduler_cycle_status
+  `)).rows[0], { status: "active", completed_events: 0 });
+});
+
+test("handoff fails closed when the current cycle has an unmatched tracker claim", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_last_cycle_id = $1::uuid
+    where id = $2::uuid
+  `, [ids.cycle, ids.mmlA]);
+  await enqueue(database);
+  await applyHandoffMigration(database);
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events(
+      event_type, cycle_id, cycle_number, claim_id, run_id, worker_id,
+      tracker_id, agency_code, priority, lease_started_at, lease_until
+    ) values (
+      'tracker_claimed', $1::uuid, 47, gen_random_uuid(), $2::uuid,
+      'windows-desktop-primary', $3::uuid, 'other-a01', 'normal',
+      clock_timestamp() - interval '2 minutes',
+      clock_timestamp() - interval '1 minute'
+    )
+  `, [ids.cycle, ids.oldRun, ids.other]);
+  await startRun(database);
+  const blocked = await claim(database);
+  assert.equal(blocked.status, "waiting");
+  assert.equal(blocked.reason, "account_members_not_yet_eligible");
+  assert.deepEqual((await database.query(`
+    select scheduler_cycle_status as status,
+           count(event.event_id)::integer as completed_events
+    from public.naver_shopping_worker_coordination as coordination
+    left join public.naver_shopping_scheduler_events as event
+      on event.event_type = 'cycle_completed'
+     and event.cycle_id = coordination.scheduler_cycle_id
+    where coordination.lane_key = 'global'
+    group by coordination.lane_key, coordination.scheduler_cycle_status
+  `)).rows[0], { status: "active", completed_events: 0 });
+});
+
+test("future-quarantine-only pending members cannot trigger a rollover", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await database.query(`
+    update public.naver_rank_trackers
+    set worker_quarantined_until = clock_timestamp() + interval '2 hours',
+        worker_last_cycle_id = $1::uuid
+    where agency_code = 'mml93-a01'
+  `, [ids.cycle]);
+  await enqueue(database);
+  await applyHandoffMigration(database);
+  await startRun(database);
+  const blocked = await claim(database);
+  assert.equal(blocked.status, "waiting");
+  assert.equal(blocked.reason, "account_members_not_yet_eligible");
+  assert.deepEqual((await database.query(`
+    select scheduler_cycle_status as status,
+           count(event.event_id)::integer as completed_events
+    from public.naver_shopping_worker_coordination as coordination
+    left join public.naver_shopping_scheduler_events as event
+      on event.event_type = 'cycle_completed'
+     and event.cycle_id = coordination.scheduler_cycle_id
+    where coordination.lane_key = 'global'
+    group by coordination.lane_key, coordination.scheduler_cycle_status
+  `)).rows[0], { status: "active", completed_events: 0 });
 });
 
 test("future quarantine is preserved, becomes naturally eligible, and terminal outcomes are finite", async (t) => {

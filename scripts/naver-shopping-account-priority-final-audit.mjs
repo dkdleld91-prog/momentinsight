@@ -365,7 +365,7 @@ member_evidence as (
       and snapshot.checked_at <= params.observed_at
   ) as snapshot_counts on true
 ),
-member_verdicts as (
+member_subconditions as (
   select
     evidence.*,
     coalesce((
@@ -381,7 +381,6 @@ member_verdicts as (
     ), false) as proof_cardinality_contract,
     coalesce((
       evidence.actual_claim_event_id = evidence.claim_event_id
-      and evidence.actual_claim_at = evidence.claimed_at
       and evidence.actual_claim_id = evidence.claim_id
       and evidence.actual_claim_run_id = evidence.claimed_run_id
       and evidence.actual_claim_worker_id = params.worker_id
@@ -391,22 +390,35 @@ member_verdicts as (
       and evidence.actual_claim_cycle_id is not distinct from evidence.claimed_cycle_id
       and evidence.actual_claim_cycle_number is not distinct from evidence.claimed_cycle_number
       and evidence.actual_claim_group_fingerprint is not null
+    ), false) as proof_claim_identity_contract,
+    coalesce((
+      evidence.claimed_at = evidence.claimed_lease_started_at
       and evidence.actual_claim_lease_started_at = evidence.claimed_lease_started_at
       and evidence.actual_claim_lease_until = evidence.claimed_lease_until
-    ), false) as proof_claim_contract,
+      and evidence.actual_claim_at >= evidence.claimed_at
+      and evidence.actual_claim_at <= evidence.claimed_lease_until
+    ), false) as proof_claim_lease_contract,
     coalesce((
-      evidence.group_at >= evidence.request_requested_at
-      and evidence.claimed_at >= evidence.request_requested_at
+      evidence.claimed_at >= evidence.request_requested_at
+      and evidence.group_at >= evidence.request_requested_at
+      and evidence.actual_claim_at >= evidence.request_requested_at
       and evidence.actual_terminal_at >= evidence.request_requested_at
-      and evidence.group_at <= coalesce(evidence.request_completed_at, params.observed_at)
       and evidence.claimed_at <= coalesce(evidence.request_completed_at, params.observed_at)
+      and evidence.group_at <= coalesce(evidence.request_completed_at, params.observed_at)
+      and evidence.actual_claim_at <= coalesce(
+        evidence.request_completed_at, params.observed_at
+      )
       and evidence.actual_terminal_at <= coalesce(
         evidence.request_completed_at, params.observed_at
       )
-      and evidence.group_event_id < evidence.claim_event_id
+    ), false) as proof_window_bounds_contract,
+    coalesce((
+      evidence.group_event_id < evidence.claim_event_id
       and evidence.claim_event_id < evidence.actual_terminal_event_id
-      and evidence.group_at <= evidence.claimed_at
-    ), false) as proof_window_order_contract,
+      and evidence.claimed_at <= evidence.group_at
+      and evidence.group_at <= evidence.actual_claim_at
+      and evidence.actual_claim_at <= evidence.actual_terminal_at
+    ), false) as proof_event_order_contract,
     coalesce((
       evidence.group_run_id = evidence.claimed_run_id
       and evidence.group_worker_id = params.worker_id
@@ -423,7 +435,7 @@ member_verdicts as (
       and evidence.run_trigger = 'rank-catch-up'
       and evidence.runtime_version = params.runtime_version
       and evidence.runtime_fingerprint = params.runtime_fingerprint
-      and evidence.claimed_at <= evidence.run_started_at
+      and evidence.actual_claim_at <= evidence.run_started_at
       and evidence.run_started_at <= evidence.actual_terminal_at
       and evidence.actual_terminal_at <= evidence.claimed_lease_until
     ), false) as proof_run_contract,
@@ -458,86 +470,44 @@ member_verdicts as (
       and evidence.cursor_created_at_before is not distinct from evidence.cursor_created_at_after
       and evidence.cursor_tracker_id_before is not distinct from evidence.cursor_tracker_id_after
       and evidence.cursor_resume_before is not distinct from evidence.cursor_resume_after
-    ), false) as proof_cursor_contract,
+    ), false) as proof_cursor_contract
+  from member_evidence as evidence
+  cross join params
+),
+member_contracts as (
+  select
+    subcondition.*,
     coalesce((
-      evidence.state = 'terminal_success'
-      and evidence.terminal_code is null
-      and evidence.tracker_agency_code = params.agency_code
-      and evidence.tracker_status = 'active'
-      and evidence.claim_count = 1
-      and evidence.request_claim_count = 1
-      and evidence.group_count = 1
-      and evidence.terminal_count = 1
-      and evidence.actual_claim_event_id = evidence.claim_event_id
-      and evidence.actual_claim_at = evidence.claimed_at
-      and evidence.actual_claim_id = evidence.claim_id
-      and evidence.actual_claim_run_id = evidence.claimed_run_id
-      and evidence.actual_claim_worker_id = params.worker_id
-      and evidence.actual_claim_worker_id = evidence.claimed_worker_id
-      and evidence.actual_claim_tracker_id = evidence.tracker_id
-      and evidence.actual_claim_agency_code = params.agency_code
-      and evidence.actual_claim_cycle_id is not distinct from evidence.claimed_cycle_id
-      and evidence.actual_claim_cycle_number is not distinct from evidence.claimed_cycle_number
-      and evidence.actual_claim_group_fingerprint is not null
-      and evidence.actual_claim_lease_started_at = evidence.claimed_lease_started_at
-      and evidence.actual_claim_lease_until = evidence.claimed_lease_until
-      and evidence.group_at >= evidence.request_requested_at
-      and evidence.claimed_at >= evidence.request_requested_at
-      and evidence.actual_terminal_at >= evidence.request_requested_at
-      and evidence.group_at <= coalesce(evidence.request_completed_at, params.observed_at)
-      and evidence.claimed_at <= coalesce(evidence.request_completed_at, params.observed_at)
-      and evidence.actual_terminal_at <= coalesce(
-        evidence.request_completed_at, params.observed_at
-      )
-      and evidence.group_event_id < evidence.claim_event_id
-      and evidence.claim_event_id < evidence.actual_terminal_event_id
-      and evidence.group_at <= evidence.claimed_at
-      and evidence.group_run_id = evidence.claimed_run_id
-      and evidence.group_worker_id = params.worker_id
-      and evidence.group_agency_code is null
-      and evidence.group_cycle_id is not distinct from evidence.claimed_cycle_id
-      and evidence.group_cycle_number is not distinct from evidence.claimed_cycle_number
-      and evidence.group_fingerprint is not distinct from evidence.actual_claim_group_fingerprint
-      and evidence.group_priority is not distinct from evidence.actual_claim_priority
-      and evidence.group_lease_started_at = evidence.claimed_lease_started_at
-      and evidence.group_lease_until = evidence.claimed_lease_until
-      and evidence.run_worker_id = params.worker_id
-      and evidence.run_trigger = 'rank-catch-up'
-      and evidence.runtime_version = params.runtime_version
-      and evidence.runtime_fingerprint = params.runtime_fingerprint
-      and evidence.claimed_at <= evidence.run_started_at
-      and evidence.run_started_at <= evidence.actual_terminal_at
-      and evidence.actual_terminal_at <= evidence.claimed_lease_until
-      and evidence.actual_terminal_event_id = evidence.terminal_event_id
-      and evidence.actual_terminal_at = evidence.terminal_at
-      and evidence.actual_terminal_type = 'tracker_committed'
-      and evidence.actual_terminal_type = evidence.terminal_event_type
-      and evidence.terminal_run_id = evidence.claimed_run_id
-      and evidence.terminal_worker_id = params.worker_id
-      and evidence.terminal_tracker_id = evidence.tracker_id
-      and evidence.terminal_agency_code = params.agency_code
-      and evidence.terminal_cycle_id is not distinct from evidence.claimed_cycle_id
-      and evidence.terminal_cycle_number is not distinct from evidence.claimed_cycle_number
-      and evidence.terminal_group_fingerprint is not distinct from evidence.actual_claim_group_fingerprint
-      and evidence.terminal_priority is not distinct from evidence.actual_claim_priority
-      and evidence.terminal_lease_started_at = evidence.claimed_lease_started_at
-      and evidence.terminal_lease_until = evidence.claimed_lease_until
-      and evidence.terminal_checked_count = 300
-      and evidence.claim_window_snapshot_count = 1
-      and evidence.terminal_snapshot_count = 1
-      and evidence.valid_atomic_snapshot_count = 1
-      and evidence.current_rank is not distinct from evidence.snapshot_rank
-      and evidence.last_checked_at is not distinct from evidence.snapshot_checked_at
-      and evidence.cursor_sort_order_before is not distinct from evidence.cursor_sort_order_after
-      and evidence.cursor_created_at_before is not distinct from evidence.cursor_created_at_after
-      and evidence.cursor_tracker_id_before is not distinct from evidence.cursor_tracker_id_after
-      and evidence.cursor_resume_before is not distinct from evidence.cursor_resume_after
+      subcondition.proof_claim_identity_contract
+      and subcondition.proof_claim_lease_contract
+    ), false) as proof_claim_contract,
+    coalesce((
+      subcondition.proof_window_bounds_contract
+      and subcondition.proof_event_order_contract
+    ), false) as proof_window_order_contract
+  from member_subconditions as subcondition
+),
+member_verdicts as (
+  select
+    contract.*,
+    coalesce((
+      contract.state = 'terminal_success'
+      and contract.proof_tracker_contract
+      and contract.proof_cardinality_contract
+      and contract.proof_claim_contract
+      and contract.proof_window_order_contract
+      and contract.proof_group_contract
+      and contract.proof_run_contract
+      and contract.proof_terminal_contract
+      and contract.proof_snapshot_contract
+      and contract.proof_materialization_contract
+      and contract.proof_cursor_contract
     ), false) as proof_success,
     (
-      evidence.last_checked_at is null
-      or evidence.last_checked_at < params.observed_at - interval '24 hours'
+      contract.last_checked_at is null
+      or contract.last_checked_at < params.observed_at - interval '24 hours'
     ) as stale_24h
-  from member_evidence as evidence
+  from member_contracts as contract
   cross join params
 ),
 proof_partition as (
@@ -561,8 +531,20 @@ proof_partition as (
       where state = 'terminal_success' and not proof_claim_contract
     )::integer as invalid_success_claim_contract_count,
     count(*) filter (
+      where state = 'terminal_success' and not proof_claim_identity_contract
+    )::integer as invalid_success_claim_identity_contract_count,
+    count(*) filter (
+      where state = 'terminal_success' and not proof_claim_lease_contract
+    )::integer as invalid_success_claim_lease_contract_count,
+    count(*) filter (
       where state = 'terminal_success' and not proof_window_order_contract
     )::integer as invalid_success_window_order_contract_count,
+    count(*) filter (
+      where state = 'terminal_success' and not proof_window_bounds_contract
+    )::integer as invalid_success_window_bounds_contract_count,
+    count(*) filter (
+      where state = 'terminal_success' and not proof_event_order_contract
+    )::integer as invalid_success_event_order_contract_count,
     count(*) filter (
       where state = 'terminal_success' and not proof_group_contract
     )::integer as invalid_success_group_contract_count,
@@ -883,7 +865,11 @@ select pg_catalog.jsonb_build_object(
   'invalidSuccessTrackerContractCount', verdict.invalid_success_tracker_contract_count,
   'invalidSuccessCardinalityContractCount', verdict.invalid_success_cardinality_contract_count,
   'invalidSuccessClaimContractCount', verdict.invalid_success_claim_contract_count,
+  'invalidSuccessClaimIdentityContractCount', verdict.invalid_success_claim_identity_contract_count,
+  'invalidSuccessClaimLeaseContractCount', verdict.invalid_success_claim_lease_contract_count,
   'invalidSuccessWindowOrderContractCount', verdict.invalid_success_window_order_contract_count,
+  'invalidSuccessWindowBoundsContractCount', verdict.invalid_success_window_bounds_contract_count,
+  'invalidSuccessEventOrderContractCount', verdict.invalid_success_event_order_contract_count,
   'invalidSuccessGroupContractCount', verdict.invalid_success_group_contract_count,
   'invalidSuccessRunContractCount', verdict.invalid_success_run_contract_count,
   'invalidSuccessTerminalContractCount', verdict.invalid_success_terminal_contract_count,

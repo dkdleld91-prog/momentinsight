@@ -125,7 +125,8 @@ async function seedSuccessfulFinalRequest(database) {
     const snapshotId = uuid(5, position);
     const productId = String(12149720000 + position);
     const eventBase = 20000 + position * 10;
-    const groupAt = iso(base + position * 5_000);
+    const leaseStartedAt = iso(base + position * 5_000);
+    const groupAt = iso(base + position * 5_000 + 500);
     const claimAt = iso(base + position * 5_000 + 1_000);
     const runAt = iso(base + position * 5_000 + 1_500);
     const terminalAt = iso(base + position * 5_000 + 2_500);
@@ -152,8 +153,8 @@ async function seedSuccessfulFinalRequest(database) {
     );
     memberRows.push(`(
       '${N30_ACCOUNT_PRIORITY_FINAL_REQUEST_ID}', ${position}, '${trackerId}',
-      'terminal_success', '${claimAt}', '${cycleId}', ${position}, '${runId}',
-      '${N30_ACCOUNT_PRIORITY_FINAL_WORKER_ID}', '${groupAt}', '${leaseUntil}',
+      'terminal_success', '${leaseStartedAt}', '${cycleId}', ${position}, '${runId}',
+      '${N30_ACCOUNT_PRIORITY_FINAL_WORKER_ID}', '${leaseStartedAt}', '${leaseUntil}',
       ${eventBase + 1}, '${claimId}', '${terminalAt}', ${eventBase + 2},
       'tracker_committed', null,
       777, '2026-08-31T04:40:00Z', '${cursorTrackerId}', true,
@@ -162,17 +163,17 @@ async function seedSuccessfulFinalRequest(database) {
     eventRows.push(
       `(${eventBase}, '${groupAt}', 'group_claimed', '${cycleId}', ${position}, `
         + `'${claimId}', '${runId}', '${N30_ACCOUNT_PRIORITY_FINAL_WORKER_ID}', `
-        + `null, null, '${groupFingerprint}', 'repair', '${groupAt}', `
+        + `null, null, '${groupFingerprint}', 'normal', '${leaseStartedAt}', `
         + `'${leaseUntil}', null, null, null, '{}'::jsonb)`,
       `(${eventBase + 1}, '${claimAt}', 'tracker_claimed', '${cycleId}', ${position}, `
         + `'${claimId}', '${runId}', '${N30_ACCOUNT_PRIORITY_FINAL_WORKER_ID}', `
         + `'${trackerId}', '${N30_ACCOUNT_PRIORITY_FINAL_AGENCY_CODE}', `
-        + `'${groupFingerprint}', 'repair', '${groupAt}', '${leaseUntil}', `
+        + `'${groupFingerprint}', 'normal', '${leaseStartedAt}', '${leaseUntil}', `
         + `null, null, null, '{}'::jsonb)`,
       `(${eventBase + 2}, '${terminalAt}', 'tracker_committed', '${cycleId}', ${position}, `
         + `'${claimId}', '${runId}', '${N30_ACCOUNT_PRIORITY_FINAL_WORKER_ID}', `
         + `'${trackerId}', '${N30_ACCOUNT_PRIORITY_FINAL_AGENCY_CODE}', `
-        + `'${groupFingerprint}', 'repair', '${groupAt}', '${leaseUntil}', `
+        + `'${groupFingerprint}', 'normal', '${leaseStartedAt}', '${leaseUntil}', `
         + `'${collectionId}', 300, null, '{}'::jsonb)`,
     );
     runRows.push(
@@ -260,7 +261,9 @@ test("builds a fixed one-transaction final audit without sensitive payloads or w
     sql,
     /evidence\.actual_terminal_at <= coalesce\([\s\S]*?evidence\.request_completed_at, params\.observed_at/iu,
   );
-  assert.match(sql, /evidence\.claimed_at <= evidence\.run_started_at/iu);
+  assert.match(sql, /evidence\.claimed_at <= evidence\.group_at/iu);
+  assert.match(sql, /evidence\.group_at <= evidence\.actual_claim_at/iu);
+  assert.match(sql, /evidence\.actual_claim_at <= evidence\.run_started_at/iu);
   assert.match(sql, /evidence\.actual_terminal_at <= evidence\.claimed_lease_until/iu);
   assert.match(sql, /claim_duplicate_count/iu);
   assert.match(sql, /terminal_duplicate_count/iu);
@@ -355,6 +358,171 @@ test("accepts exactly 28 proven members and a later non-account global resume", 
       resumeObserved: true,
     },
   );
+});
+
+test("accepts the canonical lease then group then claim trigger timing with aggregate-only subconditions", async (t) => {
+  const database = await createAuditDatabase();
+  t.after(() => database.close());
+  await seedSuccessfulFinalRequest(database);
+
+  const audit = extractAudit(await database.exec(
+    buildN30AccountPriorityFinalAuditSql({ observedAt }),
+  ));
+  assert.deepEqual(
+    {
+      proofSuccessCount: audit.proofSuccessCount,
+      invalidSuccessClaimContractCount: audit.invalidSuccessClaimContractCount,
+      invalidSuccessClaimIdentityContractCount:
+        audit.invalidSuccessClaimIdentityContractCount,
+      invalidSuccessClaimLeaseContractCount: audit.invalidSuccessClaimLeaseContractCount,
+      invalidSuccessWindowOrderContractCount: audit.invalidSuccessWindowOrderContractCount,
+      invalidSuccessWindowBoundsContractCount: audit.invalidSuccessWindowBoundsContractCount,
+      invalidSuccessEventOrderContractCount: audit.invalidSuccessEventOrderContractCount,
+      invalidSuccessRunContractCount: audit.invalidSuccessRunContractCount,
+      accountSuccess: audit.accountSuccess,
+    },
+    {
+      proofSuccessCount: 28,
+      invalidSuccessClaimContractCount: 0,
+      invalidSuccessClaimIdentityContractCount: 0,
+      invalidSuccessClaimLeaseContractCount: 0,
+      invalidSuccessWindowOrderContractCount: 0,
+      invalidSuccessWindowBoundsContractCount: 0,
+      invalidSuccessEventOrderContractCount: 0,
+      invalidSuccessRunContractCount: 0,
+      accountSuccess: true,
+    },
+  );
+});
+
+test("aggregate-only subconditions still reject lease and event-order corruption", async (t) => {
+  await t.test("claim-event lease drift", async () => {
+    const database = await createAuditDatabase();
+    try {
+      await seedSuccessfulFinalRequest(database);
+      await database.exec(`
+        update naver_shopping_scheduler_events
+        set lease_started_at = lease_started_at + interval '1 millisecond'
+        where event_id = 20011
+      `);
+
+      const audit = extractAudit(await database.exec(
+        buildN30AccountPriorityFinalAuditSql({ observedAt }),
+      ));
+      assert.deepEqual(
+        {
+          proofSuccessCount: audit.proofSuccessCount,
+          invalidClaim: audit.invalidSuccessClaimContractCount,
+          invalidClaimIdentity: audit.invalidSuccessClaimIdentityContractCount,
+          invalidClaimLease: audit.invalidSuccessClaimLeaseContractCount,
+          invalidWindow: audit.invalidSuccessWindowOrderContractCount,
+          invalidWindowBounds: audit.invalidSuccessWindowBoundsContractCount,
+          invalidEventOrder: audit.invalidSuccessEventOrderContractCount,
+          invalidRun: audit.invalidSuccessRunContractCount,
+        },
+        {
+          proofSuccessCount: 27,
+          invalidClaim: 1,
+          invalidClaimIdentity: 0,
+          invalidClaimLease: 1,
+          invalidWindow: 0,
+          invalidWindowBounds: 0,
+          invalidEventOrder: 0,
+          invalidRun: 0,
+        },
+      );
+    } finally {
+      await database.close();
+    }
+  });
+
+  await t.test("group event before frozen lease", async () => {
+    const database = await createAuditDatabase();
+    try {
+      await seedSuccessfulFinalRequest(database);
+      await database.exec(`
+        update naver_shopping_scheduler_events
+        set occurred_at = lease_started_at - interval '1 millisecond'
+        where event_id = 20010
+      `);
+
+      const audit = extractAudit(await database.exec(
+        buildN30AccountPriorityFinalAuditSql({ observedAt }),
+      ));
+      assert.deepEqual(
+        {
+          proofSuccessCount: audit.proofSuccessCount,
+          invalidClaim: audit.invalidSuccessClaimContractCount,
+          invalidClaimIdentity: audit.invalidSuccessClaimIdentityContractCount,
+          invalidClaimLease: audit.invalidSuccessClaimLeaseContractCount,
+          invalidWindow: audit.invalidSuccessWindowOrderContractCount,
+          invalidWindowBounds: audit.invalidSuccessWindowBoundsContractCount,
+          invalidEventOrder: audit.invalidSuccessEventOrderContractCount,
+          invalidRun: audit.invalidSuccessRunContractCount,
+        },
+        {
+          proofSuccessCount: 27,
+          invalidClaim: 0,
+          invalidClaimIdentity: 0,
+          invalidClaimLease: 0,
+          invalidWindow: 1,
+          invalidWindowBounds: 0,
+          invalidEventOrder: 1,
+          invalidRun: 0,
+        },
+      );
+    } finally {
+      await database.close();
+    }
+  });
+});
+
+test("terminal and materialization guards remain fail closed", async (t) => {
+  await t.test("terminal worker identity drift", async () => {
+    const database = await createAuditDatabase();
+    try {
+      await seedSuccessfulFinalRequest(database);
+      await database.exec(`
+        update naver_shopping_scheduler_events
+        set worker_id = 'windows-desktop-standby'
+        where event_id = 20012
+      `);
+
+      const audit = extractAudit(await database.exec(
+        buildN30AccountPriorityFinalAuditSql({ observedAt }),
+      ));
+      assert.equal(audit.proofSuccessCount, 27);
+      assert.equal(audit.invalidSuccessTerminalContractCount, 1);
+      assert.equal(audit.invalidSuccessSnapshotContractCount, 0);
+      assert.equal(audit.invalidSuccessMaterializationContractCount, 0);
+      assert.equal(audit.invalidSuccessCursorContractCount, 0);
+    } finally {
+      await database.close();
+    }
+  });
+
+  await t.test("materialized tracker rank drift", async () => {
+    const database = await createAuditDatabase();
+    try {
+      await seedSuccessfulFinalRequest(database);
+      await database.exec(`
+        update naver_rank_trackers
+        set current_rank = current_rank + 1
+        where id = '${uuid(1, 1)}'
+      `);
+
+      const audit = extractAudit(await database.exec(
+        buildN30AccountPriorityFinalAuditSql({ observedAt }),
+      ));
+      assert.equal(audit.proofSuccessCount, 27);
+      assert.equal(audit.invalidSuccessTerminalContractCount, 0);
+      assert.equal(audit.invalidSuccessSnapshotContractCount, 0);
+      assert.equal(audit.invalidSuccessMaterializationContractCount, 1);
+      assert.equal(audit.invalidSuccessCursorContractCount, 0);
+    } finally {
+      await database.close();
+    }
+  });
 });
 
 test("keeps an active request contract valid while withholding final success", async (t) => {

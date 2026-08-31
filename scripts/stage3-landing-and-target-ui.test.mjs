@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 
 // UI 고도화 3단계: 역할별 착지 화면과 "대상 광고주 한 번만 고르기" 계약을 지킨다.
 // 잠긴 함수(bindOwnerAssistant · initRankTracking · initPlaceRankTracking)는 건드리지 않고,
@@ -104,4 +105,159 @@ test("locked owner assistant binding stays free of the new picker glue", () => {
   for (const marker of ["data-mi-target-select", "applyGlobalAdvertiserTarget", "renderGlobalAdvertiserPicker"]) {
     assert.ok(!ownerAssistantSource.includes(marker), `bindOwnerAssistant must not carry ${marker}`);
   }
+});
+
+// ── 순위 조회 범위 계약 ──────────────────────────────────────────
+// 문자열 대조가 아니라 admin.html 원본에서 함수를 그대로 떼어 내 실행한다.
+// 화면은 대표 코드를 알지 못한다: "총관리자 내부"는 자리표시자만 보내고,
+// 서버가 대표 코드로 풀어 되돌려 준 응답을 그대로 받아들여야 한다.
+const PAGE_FUNCTION_CLOSE = "\n      }";
+
+function pageFunction(name) {
+  const marker = `\n      function ${name}(`;
+  const from = source.indexOf(marker);
+  assert.ok(from >= 0, `page function not found: ${name}`);
+  const to = source.indexOf(PAGE_FUNCTION_CLOSE + "\n", from);
+  assert.ok(to > from, `page function end not found: ${name}`);
+  return source.slice(from + 1, to + PAGE_FUNCTION_CLOSE.length);
+}
+
+function rankScopeSandbox(options) {
+  const settings = options || {};
+  const context = {
+    root: {
+      classList: { contains: (name) => Boolean(settings.locked) && name === "is-locked" },
+      querySelector: (selector) => (selector === "[data-admin-code]" ? { value: settings.publicCode || "" } : null),
+    },
+    secureSession: Object.assign({ role: "", scopeKey: "", clientId: "", teamId: "" }, settings.session || {}),
+    primaryAgencyCode: Object.prototype.hasOwnProperty.call(settings, "primaryAgencyCode")
+      ? settings.primaryAgencyCode
+      : "owner-session",
+    ownerCodeSnapshot: settings.ownerCodeSnapshot || null,
+    currentOperationTeam: settings.operationTeam || null,
+  };
+  vm.createContext(context);
+  vm.runInContext([
+    pageFunction("normalizeStorageCode"),
+    pageFunction("isOwnerScopePlaceholder"),
+    pageFunction("operationTeamClientCode"),
+    pageFunction("ownerTargetAgencyCode"),
+    pageFunction("currentPublicCode"),
+    pageFunction("ownerTargetClientId"),
+    pageFunction("rankAgencyCode"),
+    pageFunction("verifiedRankTrackerScope"),
+    pageFunction("scopedRankTrackerPayload"),
+    // readState 는 저장소 접근만 감싸므로 코드 계산 경로만 그대로 재현한다.
+    "function readState() { return { code: currentPublicCode() }; }",
+  ].join("\n\n"), context);
+  return context;
+}
+
+function scopeSnapshot(options) {
+  const scope = rankScopeSandbox(options).verifiedRankTrackerScope();
+  return scope === null ? null : JSON.parse(JSON.stringify(scope));
+}
+
+function trackerPayload(scopeAgencyCode) {
+  return { ok: true, trackers: [{ id: "tracker-1" }], returnedCount: 1, scopeAgencyCode: scopeAgencyCode };
+}
+
+const OWNER_INTERNAL_SCOPE = {
+  key: "owner-internal",
+  role: "owner",
+  agencyCode: "owner-session",
+  clientId: "",
+};
+
+test("총관리자 내부 범위는 자리표시자 코드를 가진 정식 순위 범위다", () => {
+  // 활성 계정 목록을 받기 전: 공개 코드 입력은 아직 자리표시자다.
+  assert.deepEqual(
+    scopeSnapshot({ session: { role: "owner", scopeKey: "owner" }, publicCode: "owner-session" }),
+    OWNER_INTERNAL_SCOPE,
+  );
+  // 활성 계정 목록을 받은 뒤: 입력은 대표 코드지만 화면 밖으로는 자리표시자만 나간다.
+  assert.deepEqual(
+    scopeSnapshot({
+      session: { role: "owner", scopeKey: "owner" },
+      publicCode: "mml93-a01",
+      primaryAgencyCode: "mml93-a01",
+    }),
+    OWNER_INTERNAL_SCOPE,
+  );
+  // 대표 코드는 페이지 원본 어디에도 박혀 있지 않다.
+  assert.ok(!source.includes("mml93-a01"));
+});
+
+test("광고주를 고른 총관리자 범위와 운영팀 범위는 그대로다", () => {
+  assert.deepEqual(
+    scopeSnapshot({
+      session: { role: "owner", scopeKey: "owner" },
+      publicCode: "hadn-a02",
+      primaryAgencyCode: "mml93-a01",
+      ownerCodeSnapshot: { clients: [{ id: "client-hadn", agencyCode: "hadn-a02" }] },
+    }),
+    { key: "owner:hadn-a02", role: "owner", agencyCode: "hadn-a02", clientId: "" },
+  );
+  // 활성 계정 목록에 없는 코드는 여전히 조회 범위로 인정하지 않는다.
+  assert.equal(
+    scopeSnapshot({
+      session: { role: "owner", scopeKey: "owner" },
+      publicCode: "unknown-a09",
+      primaryAgencyCode: "mml93-a01",
+      ownerCodeSnapshot: { clients: [{ id: "client-hadn", agencyCode: "hadn-a02" }] },
+    }),
+    null,
+  );
+  // 운영팀은 손대지 않았다.
+  assert.deepEqual(
+    scopeSnapshot({ session: { role: "team", teamId: "team-7", clientId: "client-9" } }),
+    { key: "team:client-9", role: "team", agencyCode: "", clientId: "client-9", accountOnly: false },
+  );
+  assert.deepEqual(
+    scopeSnapshot({ session: { role: "team", teamId: "team-7" } }),
+    { key: "team-account:team-7", role: "team", agencyCode: "", clientId: "", accountOnly: true },
+  );
+  // 잠긴 화면은 어떤 역할이든 범위를 만들지 않는다.
+  assert.equal(scopeSnapshot({ session: { role: "owner" }, publicCode: "hadn-a02", locked: true }), null);
+});
+
+test("서버가 대표 코드로 풀어 되돌려 준 내부 범위 응답을 받아들인다", () => {
+  const unresolved = rankScopeSandbox({ session: { role: "owner", scopeKey: "owner" }, publicCode: "owner-session" });
+  const internalScope = unresolved.verifiedRankTrackerScope();
+  // 요청은 owner-session, 응답은 대표 코드 — 이 어긋남 때문에 내부 범위가 0건으로 보였다.
+  assert.equal(unresolved.scopedRankTrackerPayload(trackerPayload("mml93-a01"), internalScope), true);
+  assert.equal(unresolved.scopedRankTrackerPayload(trackerPayload(""), internalScope), false);
+
+  // 대표 코드를 이미 받아 둔 화면은 그 값과 정확히 대조한다.
+  const resolved = rankScopeSandbox({
+    session: { role: "owner", scopeKey: "owner" },
+    publicCode: "mml93-a01",
+    primaryAgencyCode: "mml93-a01",
+  });
+  const resolvedInternalScope = resolved.verifiedRankTrackerScope();
+  assert.equal(resolved.scopedRankTrackerPayload(trackerPayload("mml93-a01"), resolvedInternalScope), true);
+  assert.equal(resolved.scopedRankTrackerPayload(trackerPayload("hadn-a02"), resolvedInternalScope), false);
+
+  // 광고주를 고른 범위는 예전 그대로 정확 일치만 인정한다.
+  const advertiser = rankScopeSandbox({
+    session: { role: "owner", scopeKey: "owner" },
+    publicCode: "hadn-a02",
+    primaryAgencyCode: "mml93-a01",
+    ownerCodeSnapshot: { clients: [{ id: "client-hadn", agencyCode: "hadn-a02" }] },
+  });
+  const advertiserScope = advertiser.verifiedRankTrackerScope();
+  assert.equal(advertiser.scopedRankTrackerPayload(trackerPayload("hadn-a02"), advertiserScope), true);
+  assert.equal(advertiser.scopedRankTrackerPayload(trackerPayload("mml93-a01"), advertiserScope), false);
+});
+
+test("N 30일과 N 플레이스 30일이 같은 범위 계약을 쓴다", () => {
+  const productLoad = block("async function loadRankTrackers(silent) {", "async function refreshAllRankTrackers(refreshAllButton) {");
+  const placeLoad = block("async function loadPlaceTrackers(silent) {", "function syncPlaceKeywordFromMain() {");
+  for (const [name, loadSource] of [["product", productLoad], ["place", placeLoad]]) {
+    assert.ok(loadSource.includes("completeRankTrackerPayload(payload, scope)"), `${name} load lost the scope guard`);
+  }
+  assert.ok(block("async function requestRankTrackers(method, body, expectedScope) {", "async function runRankWorkerControl(")
+    .includes('"x-mi-agency-code": agencyCode'));
+  assert.ok(block("async function requestPlaceTrackers(method, body, expectedScope) {", "function activatePlaceTrackerScope() {")
+    .includes('"x-mi-agency-code": agencyCode'));
 });

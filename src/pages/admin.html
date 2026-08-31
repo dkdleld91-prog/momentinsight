@@ -20483,6 +20483,16 @@
         if (secureSession.role === "owner") {
           var ownerAgencyCode = normalizeStorageCode(rankAgencyCode());
           var ownerClientId = ownerTargetClientId();
+          // 총관리자 내부(광고주 미선택)도 정식 순위 조회 범위다. 화면은 대표 코드를 알지 못하므로
+          // 자리표시자만 보내고, 총관리자 세션을 확인한 서버가 대표 코드로 풀어 준다.
+          if (ownerClientId === "owner-self") {
+            return {
+              key: "owner-internal",
+              role: "owner",
+              agencyCode: "owner-session",
+              clientId: ""
+            };
+          }
           if (!ownerAgencyCode || !ownerClientId) return null;
           return {
             key: "owner:" + ownerAgencyCode,
@@ -20600,7 +20610,13 @@
           trackerIds.add(trackerId);
         }
         if (scope.role === "owner") {
-          return normalizeStorageCode(payload.scopeAgencyCode) === scope.agencyCode;
+          var echoedAgencyCode = normalizeStorageCode(payload.scopeAgencyCode);
+          // 자리표시자로 보낸 내부 범위는 서버가 대표 코드로 풀어 되돌려 준다.
+          // 대표 코드를 이미 받아 둔 화면은 그 값과 대조하고, 아직 모르면 비어 있지 않은 응답 범위만 인정한다.
+          if (!isOwnerScopePlaceholder(scope.agencyCode)) return echoedAgencyCode === scope.agencyCode;
+          var resolvedOwnerCode = normalizeStorageCode(primaryAgencyCode);
+          if (!isOwnerScopePlaceholder(resolvedOwnerCode)) return echoedAgencyCode === resolvedOwnerCode;
+          return Boolean(echoedAgencyCode);
         }
         if (scope.accountOnly) {
           return payload.scopeMode === "team-account" && !normalizeStorageCode(payload.scopeClientId);

@@ -10937,12 +10937,12 @@
           <form class="mi-work-slot" id="mi-work-slot-form" data-work-slot-form hidden>
             <div class="mi-work-slot-grid">
               <label class="mi-work-field"><span>사이트명</span><input class="mi-input" data-work-slot-site maxlength="40" required placeholder="예: 프라다" autocomplete="off" /></label>
-              <label class="mi-work-field"><span>계정ID</span><input class="mi-input" data-work-slot-account maxlength="40" required placeholder="예: prada01" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+              <label class="mi-work-field"><span>업체/수량</span><input class="mi-input" data-work-slot-vendor maxlength="40" required placeholder="예: 거보 10슬롯" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
               <label class="mi-work-field"><span>시작일</span><input class="mi-input" type="date" data-work-slot-start required /></label>
               <label class="mi-work-field"><span>일수 · 1~365</span><input class="mi-input" type="number" min="1" max="365" step="1" value="30" data-work-slot-days required /></label>
             </div>
             <div class="mi-work-slot-actions">
-              <button class="mi-link-button is-primary" type="submit" data-work-slot-submit>슬롯 일정 2건 등록</button>
+              <button class="mi-link-button is-primary" type="submit" data-work-slot-submit>슬롯 일정 등록</button>
               <span class="mi-work-slot-status" data-work-slot-status aria-live="polite"></span>
             </div>
           </form>
@@ -12933,6 +12933,8 @@
       var workGcalAclRules = [];
       var workAttendeeDraft = [];
       var workEventColorDraft = "";
+      // 슬롯 도우미가 고정으로 쓰는 노란색. 구글 이벤트 팔레트 id "5"(Banana · 바나나).
+      var WORK_SLOT_COLOR_ID = "5";
       var workRecurrenceSnapshotBeforeEdit = null;
       var workDialogRecurringInstance = false;
       // "" | "save" | "delete" — 반복 범위 확인창이 무엇을 기다리는지.
@@ -13193,20 +13195,20 @@
         return moved.toISOString().slice(0, 10);
       }
 
-      // 슬롯 2건(기간 일정 + 연장 결정)의 제목과 날짜를 한 번에 정한다.
-      // 종료일 = 시작일 + 일수 - 1(시작일 포함), 연장 결정일 = 종료일 - 3일이며
-      // 일수가 3 이하라 시작일보다 앞서면 시작일 당일로 끌어올린다.
-      function workSlotPlan(siteName, accountId, startKey, days) {
+      // 슬롯 2건(기간 일정 + 연장 결정 알림)의 제목과 날짜를 한 번에 정한다.
+      // 종료일 = 시작일 + 일수 - 1(시작일 포함), 연장 결정일 = 종료일 - 1일이며
+      // 일수가 1이라 시작일보다 앞서면 시작일 당일로 끌어올린다.
+      function workSlotPlan(siteName, vendorLabel, startKey, days) {
         var site = String(siteName || "").trim();
-        var account = String(accountId || "").trim();
+        var vendor = String(vendorLabel || "").trim();
         var start = String(startKey || "").slice(0, 10);
         var span = Math.trunc(Number(days));
         if (!site) return { ok: false, message: "사이트명을 입력해주세요." };
-        if (!account) return { ok: false, message: "계정ID를 입력해주세요." };
+        if (!vendor) return { ok: false, message: "업체/수량을 입력해주세요." };
         if (workSlotDateKey(start, 0) !== start || !start) return { ok: false, message: "시작일을 확인해주세요." };
         if (!Number.isFinite(span) || span < 1 || span > 365) return { ok: false, message: "일수는 1~365 사이로 입력해주세요." };
         var endKey = workSlotDateKey(start, span - 1);
-        var decisionKey = workSlotDateKey(endKey, -3);
+        var decisionKey = workSlotDateKey(endKey, -1);
         if (!endKey || !decisionKey) return { ok: false, message: "슬롯 기간을 계산할 수 없습니다." };
         return {
           ok: true,
@@ -13214,8 +13216,8 @@
           startKey: start,
           endKey: endKey,
           decisionKey: decisionKey < start ? start : decisionKey,
-          slotTitle: "[" + site + "] " + account + " 슬롯",
-          decisionTitle: "[" + site + "] " + account + " 연장 결정 (종료 D-3)"
+          slotTitle: "[" + site + "] " + vendor + " 슬롯",
+          decisionTitle: "[" + site + "] " + vendor + " 연장 결정 (종료 D-1)"
         };
       }
 
@@ -15266,12 +15268,28 @@
         node.classList.toggle("is-warn", Boolean(message) && state === "warn");
       }
 
+      // 슬롯 2건은 일정 등록창 색상 팔레트의 노란색으로 고정한다. 구글 이벤트
+      // 팔레트에서 노란색은 id "5"(Banana · 바나나)다 — google-calendar-client.mjs
+      // EVENT_COLOR_PALETTE 와 같은 표를 쓰므로 스와치에서 고른 것과 같은 값이다.
+      // colorId 는 workFormPayload 와 마찬가지로 구글 연동 세션에서만 싣는다
+      // (미연동 분기는 색 필드를 보내지 않는 것이 기존 계약이다).
+      function workSlotItemPayload(title, startKey, endKey) {
+        var payload = workItemPayload({
+          title: title,
+          startsAt: startKey,
+          endsAt: endKey,
+          isAllDay: true
+        });
+        if (workGoogleConnected()) payload.colorId = WORK_SLOT_COLOR_ID;
+        return payload;
+      }
+
       // 두 건을 따로 보낸다. 하나만 성공하는 부분 실패를 합치지 않고 그대로
       // 알려야 대표님이 무엇을 다시 등록해야 하는지 알 수 있다.
       async function submitWorkSlotSchedule() {
         var plan = workSlotPlan(
           workNodeValue("[data-work-slot-site]"),
-          workNodeValue("[data-work-slot-account]"),
+          workNodeValue("[data-work-slot-vendor]"),
           workNodeValue("[data-work-slot-start]"),
           workNodeValue("[data-work-slot-days]")
         );
@@ -15285,23 +15303,13 @@
         var created = 0;
         var failures = [];
         try {
-          await requestWorkItems("POST", workItemPayload({
-            title: plan.slotTitle,
-            startsAt: plan.startKey,
-            endsAt: plan.endKey,
-            isAllDay: true
-          }));
+          await requestWorkItems("POST", workSlotItemPayload(plan.slotTitle, plan.startKey, plan.endKey));
           created += 1;
         } catch (error) {
           failures.push("슬롯 기간(" + plan.startKey + "~" + plan.endKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
         }
         try {
-          await requestWorkItems("POST", workItemPayload({
-            title: plan.decisionTitle,
-            startsAt: plan.decisionKey,
-            endsAt: plan.decisionKey,
-            isAllDay: true
-          }));
+          await requestWorkItems("POST", workSlotItemPayload(plan.decisionTitle, plan.decisionKey, plan.decisionKey));
           created += 1;
         } catch (error) {
           failures.push("연장 결정(" + plan.decisionKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));

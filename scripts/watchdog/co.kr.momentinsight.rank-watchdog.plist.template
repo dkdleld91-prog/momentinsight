@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>co.kr.momentinsight.rank-watchdog</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <!-- 저장소 워킹트리가 아니라 설치 시 복사한 런타임 사본을 실행한다. -->
+    <string>__WATCHDOG_SCRIPT_PATH__</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__WATCHDOG_RUNTIME_DIRECTORY__</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <!-- 10분마다 집계 엔드포인트만 확인한다. 재기동은 60분 연속 정체 + 3시간 쿨다운
+       조건을 모두 통과했을 때만 스크립트 안에서 일어난다. -->
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>ThrottleInterval</key>
+  <integer>60</integer>
+  <key>LowPriorityIO</key>
+  <true/>
+  <!-- 스크립트 로그(mi-rank-watchdog.log)는 자체 로테이션한다. launchd 가 fd 를
+       잡고 있으면 로테이션 후 쓰기가 유실되므로 반드시 다른 파일을 쓴다. -->
+  <key>StandardOutPath</key>
+  <string>__LOG_DIRECTORY__/mi-rank-watchdog.launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG_DIRECTORY__/mi-rank-watchdog.launchd.error.log</string>
+</dict>
+</plist>

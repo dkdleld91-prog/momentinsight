@@ -2,6 +2,7 @@ import { withSupabase } from "@supabase/server";
 import { cronAuthorized } from "../cron-auth.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { runDuePlaceTrackers } from "./naver-place-rank-trackers.mjs";
+import { runPlaceRequeuePass } from "../naver-rank-requeue.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 
@@ -96,6 +97,7 @@ export default {
     try {
       const url = new URL(request.url);
       const drainMode = url.searchParams.get("mode") === "drain";
+      await runPlaceRequeuePass(ctx);
       const summary = await runDuePlaceTrackers(ctx, {
         agencyCode: url.searchParams.get("agencyCode") || "",
         limit: DEFAULT_CRON_BATCH,

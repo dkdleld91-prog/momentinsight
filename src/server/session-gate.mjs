@@ -28,6 +28,8 @@ const SESSION_FREE_PATHS = new Set([
   "/api/naver-rank-cron",
   "/api/naver-place-rank-cron",
   "/api/naver-shopping-local-worker",
+  // 수집 정체 워치독이 무세션으로 폴링하는 집계 전용 경로. 계정 데이터를 반환하지 않는다.
+  "/api/rank-collection-health",
   // 구글 OAuth 콜백은 구글이 세션 쿠키 없이 GET으로 호출하며, 서명된 state로 자체 검증한다.
   "/api/google-oauth/callback",
   // 구글 로그인 시작은 무세션 공개 진입점으로, 구글 인증 화면으로의 302만 반환한다.

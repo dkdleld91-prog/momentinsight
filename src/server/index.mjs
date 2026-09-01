@@ -26,6 +26,7 @@ const handlerLoaders = {
   naverPlaceRankTrackers: () => import("./handlers/naver-place-rank-trackers.mjs"),
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
+  rankCollectionHealth: () => import("./handlers/rank-collection-health.mjs"),
   naverShoppingRank: () => import("./handlers/naver-shopping-rank.mjs"),
   naverShoppingRankJobs: () => import("./handlers/naver-shopping-rank-jobs.mjs"),
   naverShoppingLocalWorker: () => import("./handlers/naver-shopping-local-worker.mjs"),
@@ -171,6 +172,10 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/my/assistant-chat") {
       return dispatch("personalAssistantApi", request);
+    }
+
+    if (url.pathname === "/api/rank-collection-health") {
+      return dispatch("rankCollectionHealth", request);
     }
 
     if (url.pathname === "/api/integration-status") {

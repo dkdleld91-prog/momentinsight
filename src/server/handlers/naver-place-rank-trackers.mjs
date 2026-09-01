@@ -16,6 +16,7 @@ import {
   rankKeywordLimitMessage,
   resolveRankKeywordLimit,
 } from "../rank-keyword-limit.mjs";
+import { RANK_RETRY_EXHAUSTED_AT } from "../naver-rank-requeue.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 const MAX_CRON_BATCH = 10;
@@ -646,6 +647,11 @@ export function placeTrackerPayload(row, snapshots = []) {
     foundCount: row.found_count,
     lastMessage: row.last_message,
     lastError: row.last_error || null,
+    // 원시 retry_count 는 내보내지 않는다. 화면의 placeTrackerNeedsAttention 이
+    // retryCount > 0 을 "점검 필요"로 단정하는데, retry_count 는 성공하면 0 으로
+    // 돌아가는 일시적 사다리 값이라 일시 실패 1회만으로 광고주 화면이 붉어진다.
+    // 사다리 포화(소진) 여부만 파생 불리언으로 내보내 대표실 F1 집계에서만 쓴다.
+    retryExhausted: Number(row.retry_count || 0) >= RANK_RETRY_EXHAUSTED_AT,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

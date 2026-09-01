@@ -22,6 +22,10 @@ jobs:
     timeout-minutes: 180
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
+      # 스텝 if 조건은 secrets 컨텍스트를 읽지 못한다. 여기서 env 로 승격해야
+      # 시크릿 미등록 상태에서 알림 스텝이 조용히 건너뛴다(워크플로는 깨지지 않는다).
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Validate cron secret
         run: |
@@ -102,8 +106,22 @@ jobs:
               && payload.summary
               && typeof payload.summary === "object"
               && !Array.isArray(payload.summary);
+            const workerSilentResponse = response.status === 503
+              && payload.ok === false
+              && payloadCode === "NAVER_RANK_WORKER_SILENT";
+            // 하트비트를 읽지 못한 경우(권한·스키마 드리프트·DB 5xx)는 워커 침묵과
+            // 원인이 다르다. 둘 다 실패로 다루되 메시지를 분리해야 오진하지 않는다.
+            const workerSignalUnknownResponse = response.status === 503
+              && payload.ok === false
+              && payloadCode === "NAVER_RANK_WORKER_SIGNAL_UNKNOWN";
             if (providerNotConfiguredResponse) {
               throw new Error("rank cron provider is not configured");
+            }
+            if (workerSilentResponse) {
+              throw new Error("rank cron worker stopped signing requests: NAVER_RANK_WORKER_SILENT");
+            }
+            if (workerSignalUnknownResponse) {
+              throw new Error("rank cron could not read the worker heartbeat (check Supabase, not Chrome): NAVER_RANK_WORKER_SIGNAL_UNKNOWN");
             }
             if (!response.ok && !itemFailureResponse) {
               throw new Error(`rank cron returned HTTP ${response.status}`);
@@ -165,3 +183,15 @@ jobs:
             throw new Error(`Naver rank cron drained the queue with ${totals.failed} failed tracker(s)`);
           }
           NODE
+
+      # 시크릿이 없으면 조건이 거짓이 되어 스텝 자체가 건너뛰어진다. 등록 전에도
+      # 워크플로는 그대로 동작하고, 등록되는 순간부터 실패가 폰으로 즉시 온다.
+      - name: Notify Telegram on failure
+        if: ${{ failure() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=[모먼트 인사이트] 상품 순위 수집 크론 실패 · ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output /dev/null

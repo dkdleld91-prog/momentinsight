@@ -16,10 +16,13 @@ import { runDueTrackers } from "./naver-rank-trackers.mjs";
 const DEFAULT_CRON_BATCH = 1;
 const MAX_CRON_BATCH = 5;
 const HYBRID_WORKER_GRACE_MINUTES = 60;
+export const HYBRID_WORKER_SILENCE_MINUTES = 30;
 export const NAVER_RANK_PROVIDER_NOT_CONFIGURED = "NAVER_RANK_PROVIDER_NOT_CONFIGURED";
 export const NAVER_RANK_PROVIDER_WARMING = "NAVER_RANK_PROVIDER_WARMING";
 export const NAVER_RANK_PROVIDER_UNAVAILABLE = "NAVER_RANK_PROVIDER_UNAVAILABLE";
 export const NAVER_RANK_CRON_ITEM_FAILURE = "NAVER_RANK_CRON_ITEM_FAILURE";
+export const NAVER_RANK_WORKER_SILENT = "NAVER_RANK_WORKER_SILENT";
+export const NAVER_RANK_WORKER_SIGNAL_UNKNOWN = "NAVER_RANK_WORKER_SIGNAL_UNKNOWN";
 
 export function productRankCronBatchLimit(url) {
   const requested = Number(url.searchParams.get("limit"));
@@ -106,23 +109,80 @@ export function productRankCronExecutionMode(readiness = {}, options = {}) {
   return { run: false, mobileTopFallbackOnly: false };
 }
 
-export async function hybridWorkerRecentlyActive(ctx, date = new Date()) {
-  const slotMs = Date.parse(latestLocalWorkerSlotAt(date));
-  if (!ctx?.supabaseAdmin || !Number.isFinite(slotMs)) return false;
-  const since = new Date(slotMs - 60_000).toISOString();
+// 워커 신호는 3상태다: active / silent / unknown.
+// unknown(supabaseAdmin 부재 · PostgREST error · throw)을 silent 로 뭉치면 권한 문제나
+// 스키마 드리프트, 일시적 DB 5xx 를 "중앙 Chrome 이 죽었다"고 단정해 진단이 한 단계
+// 어긋난다. 두 상태 모두 크론은 실패로 다루되(fail-closed) 코드와 메시지를 분리한다.
+//
+// 판정 근거는 "서명(nonce)"이 아니라 "진척"이다. nonce 는 서명 검증 직후, 본문
+// JSON.parse 와 모든 action 분기보다 먼저 삽입되므로(naver-shopping-local-worker.mjs 의
+// consumeNonce) 서명만 반복하고 아무 일도 하지 못하는 워커도 매분 nonce 를 남긴다.
+// 실측(2026-09-01T08:30Z 프로덕션 읽기 전용 조회): 최신 nonce 는 54초 전인데
+// naver_rank_snapshots 최신 checked_at 은 15.1시간 전, worker_coordination.primary_seen_at
+// 은 14.4시간 전, last_success_at 은 15.1시간 전, 깨우기 요청은 2.5시간째 미소비였다.
+// nonce 기준으로는 이 15시간 중단이 그대로 202 ok 로 나간다.
+// 그래서 코디네이션 행의 두 진척 표식을 본다.
+//   primary_seen_at — primary 워커가 전역 레인을 claim 할 때만 갱신된다
+//     (mi_claim_naver_shopping_worker_lane). 일이 없어도 워커가 살아 있으면 갱신된다.
+//   last_success_at — 실제 수집 성공 시각.
+// 둘 중 최신값이 HYBRID_WORKER_SILENCE_MINUTES 안이면 active 다.
+const WORKER_COORDINATION_TABLE = "naver_shopping_worker_coordination";
+
+export function hybridWorkerProgressAt(row) {
+  const stamps = [row?.primary_seen_at, row?.last_success_at]
+    .map((value) => Date.parse(String(value || "")))
+    .filter((value) => Number.isFinite(value));
+  return stamps.length ? Math.max(...stamps) : 0;
+}
+
+export async function hybridWorkerSignal(ctx, date = new Date()) {
+  const nowMs = date.getTime();
+  if (!ctx?.supabaseAdmin || !Number.isFinite(nowMs)) return "unknown";
+  const cutoffMs = nowMs - HYBRID_WORKER_SILENCE_MINUTES * 60_000;
   try {
     const { data, error } = await ctx.supabaseAdmin
-      .from("naver_shopping_worker_nonces")
-      .select("created_at")
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
+      .from(WORKER_COORDINATION_TABLE)
+      .select("primary_seen_at, last_success_at")
+      .eq("lane_key", "global")
       .limit(1);
-    return !error && Array.isArray(data) && data.length > 0;
+    if (error) return "unknown";
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return "unknown";
+    const progressMs = hybridWorkerProgressAt(row);
+    // 두 표식이 모두 비어 있으면(최초 배치 직후 등) 침묵이라 단정하지 않는다.
+    if (progressMs <= 0) return "unknown";
+    return progressMs >= cutoffMs ? "active" : "silent";
   } catch {
-    // A missing heartbeat table or transient DB read must never suppress the
-    // server fallback. This is the fail-safe path during staged rollout.
-    return false;
+    // A missing coordination row or transient DB read must never be reported as
+    // a dead collector. This is the fail-safe path during staged rollout.
+    return "unknown";
   }
+}
+
+export async function hybridWorkerRecentlyActive(ctx, date = new Date()) {
+  return (await hybridWorkerSignal(ctx, date)) === "active";
+}
+
+// 하이브리드 모드의 실패 신호. 유예(HYBRID_WORKER_GRACE_MINUTES) 안에서는 워커가 아직
+// 첫 레인을 잡지 않았을 수 있으므로 판정하지 않는다 — 크론 슬롯(:05/:10/:15)이
+// 깨우기 직후라서 매 슬롯마다 거짓 실패가 난다. 유예가 끝났는데도 최근 진척이 없으면
+// 그 상태를 202 ok 로 감추지 않고 실패로 보고하되, 판독 불가는 침묵과 구분해 보고한다.
+export async function hybridWorkerFailure(ctx, date = new Date()) {
+  if (hybridWorkerGraceActive(date)) return null;
+  const signal = await hybridWorkerSignal(ctx, date);
+  if (signal === "active") return null;
+  if (signal === "unknown") {
+    return {
+      code: NAVER_RANK_WORKER_SIGNAL_UNKNOWN,
+      status: "worker_signal_unknown",
+      message: "중앙 Chrome 자동 순환 작업기의 진척 기록을 읽지 못했습니다. 수집기 상태를 단정할 수 없습니다.",
+    };
+  }
+  return {
+    code: NAVER_RANK_WORKER_SILENT,
+    status: "worker_silent",
+    message: `중앙 Chrome 자동 순환 작업기가 ${HYBRID_WORKER_SILENCE_MINUTES}분 넘게 레인 확보도 수집 성공도 기록하지 않아 순위 수집이 멈췄습니다.`,
+  };
 }
 
 function safeCount(value) {
@@ -181,11 +241,26 @@ export default {
             claimed: 0,
           }, 503);
         }
+        const workerFailure = await hybridWorkerFailure(ctx, new Date());
+        if (workerFailure) {
+          return json(request, {
+            ok: false,
+            code: workerFailure.code,
+            message: workerFailure.message,
+            claimed: 0,
+            sourceStatus: {
+              shoppingRank: { status: workerFailure.status },
+            },
+          }, 503);
+        }
         return json(request, {
           ok: true,
           deferred: true,
           remoteWakeRequested: true,
-          message: "중앙 Chrome 300위 자동 순환을 깨웠으며 기존 순서를 유지합니다.",
+          // 깨우기 "요청을 기록했다"까지가 확인된 사실이다. 요청이 실제로 소비됐는지는
+          // 이 응답 시점에 확인되지 않는다(실측: 미소비 깨우기가 2.5시간 남아 있던 사례).
+          // 단정은 바로 위에서 확인한 진척 기록까지만 한다.
+          message: `중앙 Chrome 300위 자동 순환에 깨우기를 요청했고 작업기는 최근 ${HYBRID_WORKER_SILENCE_MINUTES}분 이내 진척을 기록했습니다. 기존 순서를 유지합니다.`,
           summary: safeProductRankCronSummary({
             now: new Date().toISOString(),
             checked: 0,

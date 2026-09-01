@@ -1,0 +1,122 @@
+name: Naver Rank Residual Audit
+
+on:
+  schedule:
+    # KST 09:40 (00:40 UTC). 09:00 슬롯의 durable cycle 이 돌기 시작한 뒤에
+    # 재시도가 소진된 채 남은 추적기를 하루 1회 센다.
+    - cron: "40 0 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: naver-rank-residual-audit
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  audit-residual-failures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # 스텝 if 조건은 secrets 컨텍스트를 읽지 못한다. 여기서 env 로 승격해야
+      # 시크릿 미등록 상태에서 알림 스텝이 조용히 건너뛴다(워크플로는 깨지지 않는다).
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # SUPABASE_* 값은 job env 로 올리지 않는다. 이 키는 service_role 권한(RLS 우회,
+      # 전 테이블 접근)이라 checkout·setup-node 를 포함한 모든 스텝 프로세스에 실릴
+      # 이유가 없다. 실제로 필요한 스텝(잔존 건수 집계) 하나에만 step env 로 준다.
+      # 등록 시 SUPABASE_RANK_AUDIT_KEY 를 먼저 찾는다 — 두 테이블 select 만 가능한
+      # 좁은 키를 등록하면 service_role 키를 Actions 에 반입하지 않아도 된다.
+      # 여기 올리는 것은 키가 아니라 "등록 여부" 불리언뿐이다.
+      SUPABASE_AUDIT_CONFIGURED: ${{ (secrets.SUPABASE_URL != '' && (secrets.SUPABASE_RANK_AUDIT_KEY != '' || secrets.SUPABASE_SECRET_KEY != '')) && 'true' || 'false' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      # 시크릿 미등록은 "잔존 실패가 있다"는 발견이 아니다. 그것으로 매일 job 을
+      # 붉게 만들면 붉은색이 정보를 잃고, 알림도 매일 거짓으로 울린다. 그래서 여기서는
+      # 실패시키지 않고 경고 + 잡 요약으로 "감사 미실행 · 잔존 건수 미확인"을 명시한다.
+      # 초록이 "잔존 0건"을 뜻하지 않도록 요약 문장에서 두 경우를 갈라 적는다.
+      - name: Report audit precondition
+        run: |
+          set -euo pipefail
+          if [ "${SUPABASE_AUDIT_CONFIGURED}" = "true" ]; then
+            echo "잔존 실패 감사 전제 충족: Supabase 시크릿 등록됨."
+          else
+            echo "::warning::GitHub Actions secrets SUPABASE_URL / SUPABASE_RANK_AUDIT_KEY(또는 SUPABASE_SECRET_KEY) 가 없어 잔존 건수를 세지 못했습니다. 감사 미실행 — 잔존 건수 미확인."
+            echo "잔존 실패 감사 **미실행**: Supabase 시크릿 미등록. 잔존 건수 **미확인**(0건이라는 뜻이 아님)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # 잔존 실패 감사 스크립트 2종은 실행 결과로 판독용 SQL 만 낸다(직접 DB 에 붙지 않는다).
+      # 여기서 두 생성기를 그대로 돌려 계약이 살아 있는지 확인하고, 실제 건수는 다음 스텝이 센다.
+      - name: Emit residual failure audit SQL
+        run: |
+          set -euo pipefail
+          mkdir -p audit-out
+          node scripts/naver-shopping-account-rank-health-audit.mjs "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > audit-out/account-rank-health-audit.sql
+          node scripts/naver-shopping-residual-finite-gate-audit.mjs > audit-out/residual-finite-gate-audit.sql
+          wc -c audit-out/account-rank-health-audit.sql audit-out/residual-finite-gate-audit.sql
+          # 두 생성기의 CLI 진입 조건은 체크아웃 경로에 따라 조용히 거짓이 될 수 있다
+          # (import.meta.url 은 퍼센트 인코딩되고 비-ASCII 경로에서는 file://+argv[1] 과
+          # 일치하지 않는다). 빈 파일이 감사 통과로 보이지 않도록 여기서 fail-closed 한다.
+          for sql in audit-out/account-rank-health-audit.sql audit-out/residual-finite-gate-audit.sql; do
+            if [ ! -s "$sql" ]; then
+              echo "::error::${sql} is empty. The audit SQL generator did not run."
+              exit 1
+            fi
+          done
+
+      # 잔존 건수 단정은 이 스텁이 실제로 >0 을 반환한 경우에만 한다. 스크립트는
+      # 시크릿 부재·쿼리 실패·잔존 존재를 모두 exit 1 로 내므로, 출력의 code 로
+      # 세 경우를 갈라 아래 알림이 원인을 잘못 단정하지 않게 한다.
+      - name: Count residual rank failures
+        id: residual
+        if: ${{ env.SUPABASE_AUDIT_CONFIGURED == 'true' }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_RANK_AUDIT_KEY || secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          set -uo pipefail
+          mkdir -p audit-out
+          code=0
+          node scripts/check-rank-residual-failures.mjs > audit-out/residual.json 2>&1 || code=$?
+          cat audit-out/residual.json
+          if grep -q 'RANK_RESIDUAL_FAILURES_PRESENT' audit-out/residual.json; then
+            echo "residual_present=true" >> "$GITHUB_OUTPUT"
+            echo "재시도 소진 잔존 추적기 **발견**. 실행 로그의 lanes 를 확인하세요." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$code" -eq 0 ]; then
+            echo "잔존 실패 감사 실행: 잔존 **0건** 확인." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "잔존 실패 감사 **실패**(집계 자체가 끝나지 않음). 잔존 건수 **미확인**." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$code"
+
+      # 시크릿이 없으면 조건이 거짓이 되어 스텝 자체가 건너뛰어진다. 등록 전에도
+      # 워크플로는 그대로 동작하고, 등록되는 순간부터 실패가 폰으로 즉시 온다.
+      # 본문은 job 수준 서술이 기본이다. 잔존 건수 단정은 집계 스텝이 실제로 잔존을
+      # 찾은 경우에만 붙인다 — 시크릿·쿼리·생성기 실패까지 "잔존이 있다"고 알리면
+      # 폰에 도착하는 것은 사실이 아니라 오진이 된다.
+      - name: Notify Telegram on failure
+        if: ${{ failure() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        env:
+          RESIDUAL_PRESENT: ${{ steps.residual.outputs.residual_present }}
+        run: |
+          set -euo pipefail
+          if [ "${RESIDUAL_PRESENT:-}" = "true" ]; then
+            summary="재시도 소진 잔존 추적기가 남아 있습니다"
+          else
+            summary="잔존 실패 감사 워크플로가 실패했습니다(원인 미확정 · 잔존 건수 미확인)"
+          fi
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=[모먼트 인사이트] ${summary} · ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output /dev/null

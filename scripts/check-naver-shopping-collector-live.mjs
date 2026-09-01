@@ -206,10 +206,29 @@ if (isMobileTopFallbackMode(shoppingRank)) {
       }), null, 2));
       process.exit(0);
     } catch (error) {
+      // 수집기 24시간 증거는 사고 감지 신호이지 배포 차단 사유가 아니다. 이 게이트가
+      // 차단으로 남아 있으면 수집기가 멈춘 순간 그 수집기를 고치는 배포조차 막힌다.
+      // 우회는 조용히 통과하지 않는다 — 사유를 빌드 로그에 경고 JSON 으로 강제 기록한다.
+      if (String(env.MI_ALLOW_STALE_WORKER_PROOF || "").trim() === "1") {
+        console.warn(JSON.stringify({
+          ok: true,
+          warning: true,
+          code: "SHOPPING_RANK_HYBRID_WORKER_PROOF_BYPASSED",
+          bypass: "MI_ALLOW_STALE_WORKER_PROOF=1",
+          reason: String(error?.message || "hybrid_worker_live_check_failed"),
+          message: "수집기 24시간 증거가 없지만 명시적 우회 변수로 배포를 통과시켰습니다. 수집기 상태를 즉시 확인하세요.",
+          keyword,
+          vercelEnv: String(env.VERCEL_ENV || "local"),
+          checkedAt: new Date().toISOString(),
+          latencyMs: Date.now() - startedAt,
+        }, null, 2));
+        process.exit(0);
+      }
       console.error(JSON.stringify({
         ok: false,
         code: "SHOPPING_RANK_HYBRID_WORKER_NOT_READY",
         message: String(error?.message || "hybrid_worker_live_check_failed"),
+        bypassHint: "MI_ALLOW_STALE_WORKER_PROOF=1",
         keyword,
         latencyMs: Date.now() - startedAt,
       }, null, 2));

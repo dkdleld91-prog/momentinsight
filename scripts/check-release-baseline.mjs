@@ -1469,7 +1469,8 @@ const checks = {
     && !staticBuildScript.includes('"/all.html"'),
   productionBuildRunsRuntimeEnvGate: vercelConfig.buildCommand === "npm run check:vercel-deploy"
     && packageConfig.scripts?.["check:vercel-env"] === "node scripts/check-runtime-env.mjs --vercel-build"
-    && packageConfig.scripts?.["check:vercel-deploy"] === "npm run check:vercel-env && npm run check:release && node scripts/check-naver-shopping-collector-live.mjs --vercel-build"
+    && packageConfig.scripts?.["check:deploy-branch"] === "node scripts/check-deploy-branch.mjs"
+    && packageConfig.scripts?.["check:vercel-deploy"] === "npm run check:deploy-branch && npm run check:vercel-env && npm run check:release && node scripts/check-naver-shopping-collector-live.mjs --vercel-build"
     && packageConfig.scripts?.["check:release"] === "npm run check:quality && npm run check:production-auth"
     && runtimeEnvCheck.includes('const vercelBuildMode = process.argv.includes("--vercel-build")')
     && runtimeEnvCheck.includes('vercelBuildMode && env.VERCEL_ENV !== "production"')

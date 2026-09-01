@@ -26,6 +26,10 @@ jobs:
     timeout-minutes: 100
     env:
       MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
+      # 스텝 if 조건은 secrets 컨텍스트를 읽지 못한다. 여기서 env 로 승격해야
+      # 시크릿 미등록 상태에서 알림 스텝이 조용히 건너뛴다(워크플로는 깨지지 않는다).
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     steps:
       - name: Validate cron secret
         run: |
@@ -178,3 +182,15 @@ jobs:
             throw new Error(`Naver place rank cron completed with ${totals.partial} partial tracker result(s)`);
           }
           NODE
+
+      # 시크릿이 없으면 조건이 거짓이 되어 스텝 자체가 건너뛰어진다. 등록 전에도
+      # 워크플로는 그대로 동작하고, 등록되는 순간부터 실패가 폰으로 즉시 온다.
+      - name: Notify Telegram on failure
+        if: ${{ failure() && env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '' }}
+        run: |
+          set -euo pipefail
+          curl -sS --max-time 20 -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=[모먼트 인사이트] 플레이스 순위 수집 크론 실패 · ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --output /dev/null

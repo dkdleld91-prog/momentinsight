@@ -182,7 +182,7 @@
     {
       "id": "product-rank-cron-server",
       "file": "src/server/handlers/naver-rank-cron.mjs",
-      "sha256": "50841711043ebe71cb9f73f16b02c110e10bea54de34a66c374f322e950f0467"
+      "sha256": "53583c05f9aefbc7a51ed3a0957e071aa913ab30bfe99a3c8b9a591de63e926c"
     },
     {
       "id": "place-tracker-server",
@@ -217,7 +217,7 @@
     {
       "id": "shopping-collector-live-gate",
       "file": "scripts/check-naver-shopping-collector-live.mjs",
-      "sha256": "b9055b394f4fe30ff3b190c2bd3b7f2e0db79dfcbdc7df83775b04a242caf221"
+      "sha256": "5da0f2cbdd3b9fad10b68afc44d5bc17bcd5e414e99a2744166e446e1f70193a"
     },
     {
       "id": "shopping-collector-live-gate-policy",
@@ -227,12 +227,12 @@
     {
       "id": "product-cron-workflow",
       "file": ".github/workflows/naver-rank-cron.yml",
-      "sha256": "2f9bc0a2c31249a0cf9b11bcf6df09b7fd745c7935860205b2cd701b8e59b495"
+      "sha256": "c09fdb05702446386fa2b61ecc4987c15b715d180b4a1b6fc9a090ac8c14daa8"
     },
     {
       "id": "place-cron-workflow",
       "file": ".github/workflows/naver-place-rank-cron.yml",
-      "sha256": "094fd635a9b1910156e347879751da86b35345b9c00be68068ab248bc2dac0f5"
+      "sha256": "ee0f1be8df9249151f1c1552c77911f50d959405375669eadcb78b5afb767288"
     },
     {
       "id": "product-rank-schema",

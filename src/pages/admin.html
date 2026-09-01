@@ -8284,6 +8284,49 @@
       font-weight: 800;
     }
 
+    /* 슬롯 일정 도우미. 대표실 일정 추가 버튼 옆에서 펼쳐지는 접이식 폼이라
+       기본은 접힌 상태이고, 대표(owner) 세션에서만 버튼이 보인다. */
+    #mi-admin .mi-work-slot[hidden] {
+      display: none;
+    }
+
+    #mi-admin .mi-work-slot {
+      display: grid;
+      gap: 12px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-work-slot-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    #mi-admin .mi-work-slot-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    #mi-admin .mi-work-slot-status {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    #mi-admin .mi-work-slot-status.is-ok {
+      color: var(--mi-green);
+    }
+
+    #mi-admin .mi-work-slot-status.is-warn {
+      color: var(--mi-orange);
+    }
+
     #mi-admin .mi-work-summary {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -10527,6 +10570,10 @@
         width: 100%;
       }
 
+      #mi-admin .mi-work-slot-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
       #mi-admin .mi-work-summary {
         grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 8px;
@@ -10882,9 +10929,23 @@
               </label>
               <button class="mi-work-gcal-drawer" type="button" data-work-gcal-drawer aria-expanded="false" aria-controls="mi-work-gcal-rail" hidden>캘린더</button>
               <button class="mi-link-button" type="button" data-work-today>오늘</button>
+              <button class="mi-link-button" type="button" data-work-slot-toggle aria-expanded="false" aria-controls="mi-work-slot-form" hidden>슬롯 일정 추가</button>
               <button class="mi-link-button is-primary" type="button" data-work-create>일정 추가</button>
             </div>
           </header>
+
+          <form class="mi-work-slot" id="mi-work-slot-form" data-work-slot-form hidden>
+            <div class="mi-work-slot-grid">
+              <label class="mi-work-field"><span>사이트명</span><input class="mi-input" data-work-slot-site maxlength="40" required placeholder="예: 프라다" autocomplete="off" /></label>
+              <label class="mi-work-field"><span>계정ID</span><input class="mi-input" data-work-slot-account maxlength="40" required placeholder="예: prada01" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+              <label class="mi-work-field"><span>시작일</span><input class="mi-input" type="date" data-work-slot-start required /></label>
+              <label class="mi-work-field"><span>일수 · 1~365</span><input class="mi-input" type="number" min="1" max="365" step="1" value="30" data-work-slot-days required /></label>
+            </div>
+            <div class="mi-work-slot-actions">
+              <button class="mi-link-button is-primary" type="submit" data-work-slot-submit>슬롯 일정 2건 등록</button>
+              <span class="mi-work-slot-status" data-work-slot-status aria-live="polite"></span>
+            </div>
+          </form>
 
           <div class="mi-work-summary" aria-label="업무 현황 필터">
             <button class="mi-work-summary-button" type="button" data-work-summary-filter="today" aria-pressed="false"><span>오늘 업무</span><strong data-work-summary-today>0</strong><small>오늘 처리할 업무</small></button>
@@ -13117,6 +13178,47 @@
         return base;
       }
 
+      // 슬롯 날짜 계산은 화면 상태를 전혀 읽지 않는 순수 함수다. UTC 자정으로
+      // 옮겨 더하고 빼기 때문에 서머타임·월말·윤년에서도 하루가 밀리지 않는다.
+      function workSlotDateKey(dateKey, offsetDays) {
+        var parts = String(dateKey || "").split("-");
+        if (parts.length !== 3) return "";
+        var year = Number(parts[0]);
+        var month = Number(parts[1]);
+        var day = Number(parts[2]);
+        if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return "";
+        var moved = new Date(Date.UTC(year, month - 1, day));
+        if (Number.isNaN(moved.getTime())) return "";
+        moved.setUTCDate(moved.getUTCDate() + (Number(offsetDays) || 0));
+        return moved.toISOString().slice(0, 10);
+      }
+
+      // 슬롯 2건(기간 일정 + 연장 결정)의 제목과 날짜를 한 번에 정한다.
+      // 종료일 = 시작일 + 일수 - 1(시작일 포함), 연장 결정일 = 종료일 - 3일이며
+      // 일수가 3 이하라 시작일보다 앞서면 시작일 당일로 끌어올린다.
+      function workSlotPlan(siteName, accountId, startKey, days) {
+        var site = String(siteName || "").trim();
+        var account = String(accountId || "").trim();
+        var start = String(startKey || "").slice(0, 10);
+        var span = Math.trunc(Number(days));
+        if (!site) return { ok: false, message: "사이트명을 입력해주세요." };
+        if (!account) return { ok: false, message: "계정ID를 입력해주세요." };
+        if (workSlotDateKey(start, 0) !== start || !start) return { ok: false, message: "시작일을 확인해주세요." };
+        if (!Number.isFinite(span) || span < 1 || span > 365) return { ok: false, message: "일수는 1~365 사이로 입력해주세요." };
+        var endKey = workSlotDateKey(start, span - 1);
+        var decisionKey = workSlotDateKey(endKey, -3);
+        if (!endKey || !decisionKey) return { ok: false, message: "슬롯 기간을 계산할 수 없습니다." };
+        return {
+          ok: true,
+          days: span,
+          startKey: start,
+          endKey: endKey,
+          decisionKey: decisionKey < start ? start : decisionKey,
+          slotTitle: "[" + site + "] " + account + " 슬롯",
+          decisionTitle: "[" + site + "] " + account + " 연장 결정 (종료 D-3)"
+        };
+      }
+
       function clearWorkDragState() {
         window.clearTimeout(workPointerTimer);
         workPointerTimer = 0;
@@ -13215,6 +13317,14 @@
       function syncWorkOwnerScope() {
         var wrap = root.querySelector("[data-work-owner-scope]");
         if (wrap) wrap.hidden = secureSession.role !== "owner";
+        // 슬롯 도우미는 대표실 전용이다. 대표가 아니면 버튼도 폼도 접어 둔다.
+        var slotToggle = root.querySelector("[data-work-slot-toggle]");
+        var slotForm = root.querySelector("[data-work-slot-form]");
+        if (slotToggle) slotToggle.hidden = secureSession.role !== "owner";
+        if (slotForm && secureSession.role !== "owner") {
+          slotForm.hidden = true;
+          if (slotToggle) slotToggle.setAttribute("aria-expanded", "false");
+        }
       }
 
       function deactivateWorkOperation() {
@@ -15145,6 +15255,82 @@
           applyGlobalAdvertiserTarget(workOwnerClientInput.value, { force: true, reloadWork: false });
           workMonthCursor = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
           loadWorkItems();
+        });
+      }
+
+      function setWorkSlotStatus(message, state) {
+        var node = root.querySelector("[data-work-slot-status]");
+        if (!node) return;
+        node.textContent = message || "";
+        node.classList.toggle("is-ok", Boolean(message) && state === "ok");
+        node.classList.toggle("is-warn", Boolean(message) && state === "warn");
+      }
+
+      // 두 건을 따로 보낸다. 하나만 성공하는 부분 실패를 합치지 않고 그대로
+      // 알려야 대표님이 무엇을 다시 등록해야 하는지 알 수 있다.
+      async function submitWorkSlotSchedule() {
+        var plan = workSlotPlan(
+          workNodeValue("[data-work-slot-site]"),
+          workNodeValue("[data-work-slot-account]"),
+          workNodeValue("[data-work-slot-start]"),
+          workNodeValue("[data-work-slot-days]")
+        );
+        if (!plan.ok) {
+          setWorkSlotStatus(plan.message, "warn");
+          return;
+        }
+        var submit = root.querySelector("[data-work-slot-submit]");
+        if (submit) submit.disabled = true;
+        setWorkSlotStatus("슬롯 일정 2건을 등록하는 중입니다.", "");
+        var created = 0;
+        var failures = [];
+        try {
+          await requestWorkItems("POST", workItemPayload({
+            title: plan.slotTitle,
+            startsAt: plan.startKey,
+            endsAt: plan.endKey,
+            isAllDay: true
+          }));
+          created += 1;
+        } catch (error) {
+          failures.push("슬롯 기간(" + plan.startKey + "~" + plan.endKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
+        }
+        try {
+          await requestWorkItems("POST", workItemPayload({
+            title: plan.decisionTitle,
+            startsAt: plan.decisionKey,
+            endsAt: plan.decisionKey,
+            isAllDay: true
+          }));
+          created += 1;
+        } catch (error) {
+          failures.push("연장 결정(" + plan.decisionKey + "): " + (error && error.message ? error.message : "등록에 실패했습니다."));
+        }
+        if (submit) submit.disabled = false;
+        if (created) await loadWorkItems();
+        if (!failures.length) {
+          setWorkSlotStatus("슬롯 일정 2건을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok");
+          return;
+        }
+        setWorkSlotStatus((created ? "2건 중 " + created + "건만 등록했습니다. " : "2건 모두 등록하지 못했습니다. ") + failures.join(" / "), "warn");
+      }
+
+      var workSlotToggle = root.querySelector("[data-work-slot-toggle]");
+      var workSlotForm = root.querySelector("[data-work-slot-form]");
+      if (workSlotToggle && workSlotForm) {
+        workSlotToggle.addEventListener("click", function () {
+          var opening = workSlotForm.hidden;
+          workSlotForm.hidden = !opening;
+          workSlotToggle.setAttribute("aria-expanded", opening ? "true" : "false");
+          if (!opening) return;
+          var startInput = root.querySelector("[data-work-slot-start]");
+          if (startInput && !startInput.value) startInput.value = workDateKey(new Date());
+          var siteInput = root.querySelector("[data-work-slot-site]");
+          if (siteInput) siteInput.focus();
+        });
+        workSlotForm.addEventListener("submit", function (event) {
+          event.preventDefault();
+          submitWorkSlotSchedule();
         });
       }
 

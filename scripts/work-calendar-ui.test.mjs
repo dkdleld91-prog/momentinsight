@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 
 import { EVENT_COLOR_PALETTE, EVENT_COLOR_DISPLAY_ORDER } from "../src/server/google-calendar-client.mjs";
 
@@ -1111,4 +1112,176 @@ test("the colour choice travels as colorId and edit mode preselects the current 
   // 미연동 사용자는 색 줄 자체가 없으므로 legacy 분기에는 colorId 가 나가지 않는다.
   const legacyBranch = formPayloadSource.slice(formPayloadSource.indexOf("payload.repeat = repeatMonthly"));
   assert.equal(legacyBranch.includes("payload.colorId"), false, "미연동 분기는 colorId 를 보내지 않는다");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 슬롯 일정 도우미 (대표실 · 일정 추가 버튼 옆 접이식 폼)
+//
+// 날짜 계산은 화면 상태를 읽지 않는 순수 함수라 admin.html 원본을 그대로
+// 샌드박스에서 실행해 값으로 검증한다(rank-collection-stability.test.mjs 규약).
+// ─────────────────────────────────────────────────────────────
+const PAGE_FUNCTION_CLOSE = "\n      }";
+
+function slotPageFunction(name) {
+  const marker = `\n      function ${name}(`;
+  const from = source.indexOf(marker);
+  assert.ok(from >= 0, `page function not found: ${name}`);
+  const to = source.indexOf(PAGE_FUNCTION_CLOSE + "\n", from);
+  assert.ok(to > from, `page function end not found: ${name}`);
+  return source.slice(from + 1, to + PAGE_FUNCTION_CLOSE.length);
+}
+
+function slotPlanContext() {
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(slotPageFunction("workSlotDateKey"), context);
+  vm.runInContext(slotPageFunction("workSlotPlan"), context);
+  return context;
+}
+
+function slotPlan(site, account, startKey, days) {
+  const context = slotPlanContext();
+  Object.assign(context, { __site: site, __account: account, __start: startKey, __days: days });
+  // 샌드박스가 만든 객체는 프로토타입이 달라 deepStrictEqual 이 걸린다. 값만 옮겨 담는다.
+  return { ...vm.runInContext("workSlotPlan(__site, __account, __start, __days)", context) };
+}
+
+const workSlotScopeSource = source.slice(
+  source.indexOf("function syncWorkOwnerScope() {"),
+  source.indexOf("function deactivateWorkOperation() {")
+);
+const workSlotSubmitSource = source.slice(
+  source.indexOf("async function submitWorkSlotSchedule() {"),
+  source.indexOf('var workSlotToggle = root.querySelector("[data-work-slot-toggle]");')
+);
+const workSlotBindingSource = source.slice(
+  source.indexOf('var workSlotToggle = root.querySelector("[data-work-slot-toggle]");'),
+  source.indexOf('window.addEventListener("keydown", function (event) {', source.indexOf('var workSlotToggle = root.querySelector("[data-work-slot-toggle]");'))
+);
+
+test("slot helper sits beside the representative schedule create button and stays collapsed", () => {
+  // 일정 추가 버튼 바로 앞에 붙는다 — 대표실 일정 등록 동선을 벗어나지 않는다.
+  assert.match(
+    workViewMarkup,
+    /<button class="mi-link-button" type="button" data-work-slot-toggle aria-expanded="false" aria-controls="mi-work-slot-form" hidden>슬롯 일정 추가<\/button>\s*<button class="mi-link-button is-primary" type="button" data-work-create>일정 추가<\/button>/
+  );
+  // 폼은 접힌 채로 시작한다(hidden). 헤더 바깥의 독립 form 이라 편집 다이얼로그와 섞이지 않는다.
+  assert.match(workViewMarkup, /<form class="mi-work-slot" id="mi-work-slot-form" data-work-slot-form hidden>/);
+  assert.ok(workViewMarkup.indexOf("data-work-slot-form") > workViewMarkup.indexOf("</header>"));
+
+  for (const [selector, pattern] of [
+    ["data-work-slot-site", /<span>사이트명<\/span><input class="mi-input" data-work-slot-site maxlength="40" required/],
+    ["data-work-slot-account", /<span>계정ID<\/span><input class="mi-input" data-work-slot-account maxlength="40" required/],
+    ["data-work-slot-start", /<span>시작일<\/span><input class="mi-input" type="date" data-work-slot-start required/],
+    ["data-work-slot-days", /<input class="mi-input" type="number" min="1" max="365" step="1" value="30" data-work-slot-days required/]
+  ]) {
+    assert.ok(workViewMarkup.includes(selector), `슬롯 폼 입력이 없다: ${selector}`);
+    assert.match(workViewMarkup, pattern);
+  }
+  assert.match(workViewMarkup, /<button class="mi-link-button is-primary" type="submit" data-work-slot-submit>슬롯 일정 2건 등록<\/button>/);
+  assert.match(workViewMarkup, /<span class="mi-work-slot-status" data-work-slot-status aria-live="polite"><\/span>/);
+  // 인라인 핸들러를 쓰지 않는다(CSP script-src-attr 'none').
+  assert.equal(/\son(?:click|change|input|submit|focus|blur|keydown|keyup)\s*=/i.test(workViewMarkup.slice(workViewMarkup.indexOf("data-work-slot-form"))), false);
+
+  // 토큰만 쓰고 새 색을 만들지 않는다.
+  assert.match(source, /#mi-admin \.mi-work-slot \{[\s\S]{0,260}border: 1px solid var\(--line\);[\s\S]{0,120}background: var\(--mi-panel\);/);
+  assert.match(source, /#mi-admin \.mi-work-slot-status\.is-ok \{\s*color: var\(--mi-green\);/);
+  assert.match(source, /#mi-admin \.mi-work-slot-status\.is-warn \{\s*color: var\(--mi-orange\);/);
+});
+
+test("slot helper is representative-only and the toggle drives aria-expanded", () => {
+  assert.match(workSlotScopeSource, /slotToggle\.hidden = secureSession\.role !== "owner";/);
+  assert.match(workSlotScopeSource, /if \(slotForm && secureSession\.role !== "owner"\) \{\s*slotForm\.hidden = true;/);
+  assert.match(workSlotScopeSource, /slotToggle\.setAttribute\("aria-expanded", "false"\)/);
+
+  assert.match(workSlotBindingSource, /var opening = workSlotForm\.hidden;\s*workSlotForm\.hidden = !opening;\s*workSlotToggle\.setAttribute\("aria-expanded", opening \? "true" : "false"\);/);
+  // 처음 펼치면 오늘 날짜를 채워 두고 첫 입력으로 포커스를 옮긴다.
+  assert.match(workSlotBindingSource, /if \(startInput && !startInput\.value\) startInput\.value = workDateKey\(new Date\(\)\);/);
+  assert.match(workSlotBindingSource, /if \(siteInput\) siteInput\.focus\(\);/);
+  assert.match(workSlotBindingSource, /workSlotForm\.addEventListener\("submit", function \(event\) \{\s*event\.preventDefault\(\);\s*submitWorkSlotSchedule\(\);/);
+});
+
+test("slot helper reuses the existing work item creation path for two all-day events", () => {
+  // 대표실 일정 초안 저장과 같은 경로다: requestWorkItems("POST", workItemPayload(...)).
+  const posts = workSlotSubmitSource.match(/await requestWorkItems\("POST", workItemPayload\(\{/g) || [];
+  assert.equal(posts.length, 2, "슬롯 등록은 기존 생성 경로로 2건을 보낸다");
+  assert.equal(workSlotSubmitSource.includes("fetch("), false, "새 API 호출을 만들지 않는다");
+
+  // A: 기간 종일 일정(시작일~종료일). 기존 경로가 종일 기간을 그대로 지원한다.
+  assert.match(
+    workSlotSubmitSource,
+    /title: plan\.slotTitle,\s*startsAt: plan\.startKey,\s*endsAt: plan\.endKey,\s*isAllDay: true/
+  );
+  // B: 연장 결정 — 하루짜리 종일 일정.
+  assert.match(
+    workSlotSubmitSource,
+    /title: plan\.decisionTitle,\s*startsAt: plan\.decisionKey,\s*endsAt: plan\.decisionKey,\s*isAllDay: true/
+  );
+});
+
+test("slot helper reports success, server messages and partial failure honestly", () => {
+  assert.match(workSlotSubmitSource, /setWorkSlotStatus\("슬롯 일정 2건을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok"\)/);
+  // 실패 문구는 서버 message 를 그대로 싣는다.
+  const serverMessagePassthrough = workSlotSubmitSource.match(/error && error\.message \? error\.message : "등록에 실패했습니다\."/g) || [];
+  assert.equal(serverMessagePassthrough.length, 2);
+  // 한 건만 성공해도 합쳐서 성공이라고 말하지 않는다.
+  assert.match(workSlotSubmitSource, /created \? "2건 중 " \+ created \+ "건만 등록했습니다\. " : "2건 모두 등록하지 못했습니다\. "/);
+  assert.match(workSlotSubmitSource, /if \(created\) await loadWorkItems\(\);/);
+  assert.match(source, /function setWorkSlotStatus\(message, state\)[\s\S]{0,420}classList\.toggle\("is-warn", Boolean\(message\) && state === "warn"\)/);
+});
+
+test("slot dates cover month end, leap day, year rollover and the D-3 clamp", () => {
+  const base = slotPlan("프라다", "prada01", "2026-09-01", 30);
+  assert.equal(base.ok, true);
+  assert.equal(base.endKey, "2026-09-30");
+  assert.equal(base.decisionKey, "2026-09-27");
+  assert.equal(base.slotTitle, "[프라다] prada01 슬롯");
+  assert.equal(base.decisionTitle, "[프라다] prada01 연장 결정 (종료 D-3)");
+
+  // 월말 넘김: 1월 31일 + 30일 = 3월 1일(2026 년은 평년).
+  const monthEnd = slotPlan("프라다", "prada01", "2026-01-31", 30);
+  assert.equal(monthEnd.endKey, "2026-03-01");
+  assert.equal(monthEnd.decisionKey, "2026-02-26");
+
+  // 윤년: 2028 년 2 월은 29 일까지라 2월 1일 + 30일 = 3월 1일.
+  const leap = slotPlan("프라다", "prada01", "2028-02-01", 30);
+  assert.equal(leap.endKey, "2028-03-01");
+  assert.equal(leap.decisionKey, "2028-02-27");
+
+  // 윤일 시작 + 1일 → 같은 날 종료, D-3 은 시작일보다 앞서므로 시작일로 보정.
+  const leapDay = slotPlan("프라다", "prada01", "2028-02-29", 1);
+  assert.equal(leapDay.endKey, "2028-02-29");
+  assert.equal(leapDay.decisionKey, "2028-02-29");
+
+  // 연도 넘김.
+  const yearRoll = slotPlan("프라다", "prada01", "2026-12-20", 30);
+  assert.equal(yearRoll.endKey, "2027-01-18");
+  assert.equal(yearRoll.decisionKey, "2027-01-15");
+
+  // 상한 365 일.
+  const full = slotPlan("프라다", "prada01", "2027-01-01", 365);
+  assert.equal(full.endKey, "2027-12-31");
+  assert.equal(full.decisionKey, "2027-12-28");
+
+  // D-3 보정 경계: 3일이면 시작일로 끌어올리고 4일이면 마침 시작일과 같아진다.
+  assert.equal(slotPlan("프라다", "prada01", "2026-09-01", 3).decisionKey, "2026-09-01");
+  assert.equal(slotPlan("프라다", "prada01", "2026-09-01", 4).decisionKey, "2026-09-01");
+  assert.equal(slotPlan("프라다", "prada01", "2026-09-01", 5).decisionKey, "2026-09-02");
+});
+
+test("slot plan refuses missing names, impossible dates and out-of-range spans", () => {
+  assert.deepEqual(slotPlan("", "prada01", "2026-09-01", 30), { ok: false, message: "사이트명을 입력해주세요." });
+  assert.deepEqual(slotPlan("프라다", "  ", "2026-09-01", 30), { ok: false, message: "계정ID를 입력해주세요." });
+  // 달력에 없는 날짜는 3월 2일로 굴러가지 않고 그대로 거절된다.
+  assert.deepEqual(slotPlan("프라다", "prada01", "2026-02-30", 30), { ok: false, message: "시작일을 확인해주세요." });
+  assert.deepEqual(slotPlan("프라다", "prada01", "", 30), { ok: false, message: "시작일을 확인해주세요." });
+  for (const days of [0, -1, 366, "", "abc"]) {
+    assert.deepEqual(
+      slotPlan("프라다", "prada01", "2026-09-01", days),
+      { ok: false, message: "일수는 1~365 사이로 입력해주세요." },
+      `일수 ${JSON.stringify(days)} 는 거절한다`
+    );
+  }
+  // 소수는 잘라서 판정한다(30.9 → 30일).
+  assert.equal(slotPlan("프라다", "prada01", "2026-09-01", 30.9).endKey, "2026-09-30");
 });

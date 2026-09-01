@@ -1,6 +1,10 @@
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { RANK_OVERDUE_THRESHOLD_MS } from "../naver-rank-requeue.mjs";
+import {
+  heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
+  workerOutdatedFromSignals,
+} from "../naver-shopping/worker-runtime-expectation.mjs";
 
 const CACHE_TTL_MS = 60_000;
 // 실패 응답도 짧게 캐시한다. 성공만 캐시하면 Supabase 장애 중 무인증 요청 1건마다
@@ -16,6 +20,11 @@ const CACHE_CONTROL = "public, max-age=60, s-maxage=60, stale-while-revalidate=1
 const CORS_OPTIONS = { methods: "GET, OPTIONS", headers: "content-type" };
 const RANK_TABLES = ["naver_rank_trackers", "naver_place_rank_trackers"];
 const WORKER_COORDINATION_TABLE = "naver_shopping_worker_coordination";
+// 낡은 실행본 관측에 쓰는 두 표. runs 는 진척이 stage='navigating' 에 닿아야 행이
+// 생기므로 버전이 어긋난 구간에는 새 행이 없고 최신 행의 runtime_version 이 낡은 값에
+// 멈춘다. nonces 는 그 구간에도 매분 한 줄씩 계속 쌓인다.
+const WORKER_RUNS_TABLE = "naver_shopping_worker_runs";
+const WORKER_NONCE_TABLE = "naver_shopping_worker_nonces";
 // 사람이 의도적으로 세울 때만 남는 사유. 그 외 circuit_reason 은 전부 수집기 자신의
 // 실패로 자동 설정된다(아래 deliberateWorkerStopFromRow 주석의 실측 근거 참고).
 const DELIBERATE_CIRCUIT_REASONS = new Set(["manual_stop", "manual_canary"]);
@@ -45,8 +54,24 @@ let cached = null;
 // 를 Math.max 로 합치면 상품 수집기가 48시간 죽어 있어도 플레이스가 정상 슬롯을
 // 도는 동안 queueStalled=false 가 되어 하루 24시간 중 13시간의 정체가 은폐되고,
 // 워치독의 "60분 연속" 조건도 하루 두 번 리셋되어 영원히 채워지지 않았다.
-// 응답 표면은 워치독 계약대로 4키를 유지하되, lastSuccessAt/stalledMinutes 는
-// 가장 나쁜 레인(타임스탬프가 있는 레인 중 last_checked_at 이 가장 오래된 쪽)에서 낸다.
+// lastSuccessAt/stalledMinutes 는 가장 나쁜 레인(타임스탬프가 있는 레인 중
+// last_checked_at 이 가장 오래된 쪽)에서 낸다.
+//
+// ── 응답 표면은 정확히 6키다 (ok, lastSuccessAt, stalledMinutes, queueStalled,
+//    workerOutdated, heartbeatAgeMinutes). 이 순서는 200/503 양쪽에서 동일하다.
+// 앞 4키는 워치독 계약 그대로 이름·순서·의미를 한 글자도 바꾸지 않는다. 뒤 2키가
+// "상태 필드는 늘리지 않는다"는 원칙의 유일한 예외인 이유는 앞 4키로는 원리적으로
+// 볼 수 없는 사각지대가 실제로 17시간 열려 있었기 때문이다.
+// 2026-09-01: 윈도우 수집 작업기가 서버 기대 실행본보다 낮은 버전이라 서버가 요청을
+// 전부 400 으로 거부했다. 거부는 claim RPC 앞에서 일어나므로 진척 표식은 얼어붙는데,
+// 작업기 자신은 1분마다 서명을 계속 보내 살아 있었다. 실측(2026-09-01T08:30Z):
+// 최신 nonce 54초 전 / primary_seen_at 14.4시간 전. 앞 4키만으로는 이 상태가
+// "정상 유휴"와 구분되지 않는다 — queueStalled 는 대기 중인 일이 없으면 거짓이고,
+// stalledMinutes 는 레인 표에서 나오므로 작업기의 거부 사실을 담지 못한다.
+//   workerOutdated      — 위 두 신호의 AND 로만 참이 되는 집계 불리언.
+//   heartbeatAgeMinutes — 코디네이션 진척이 몇 분째 멈춰 있는지의 정수.
+// 두 키 모두 버전 문자열도, 작업기/기기 식별자도 절대 담지 않는다. 이 엔드포인트는
+// 무인증 공개 표면이므로 노출은 집계 값까지만 허용된다.
 export function rankCollectionHealthBody(input = {}) {
   const now = Number(input.now || Date.now());
   const lanes = (Array.isArray(input.lanes) ? input.lanes : []).map((lane) => {
@@ -73,6 +98,20 @@ export function rankCollectionHealthBody(input = {}) {
     stalledMinutes: worst ? Math.max(0, Math.floor((now - worst.lastCheckedAt) / 60000)) : 0,
     // 타임스탬프가 있는 레인이 하나도 없으면 laneStalled 도 전부 거짓이므로 자연히 false 다.
     queueStalled: lanes.some((lane) => lane.laneStalled) && !input.deliberateStop,
+    // 판정은 전부 순수 모듈이 한다. 여기서는 조회 결과를 그대로 넘기기만 한다.
+    workerOutdated: workerOutdatedFromSignals({
+      lastRunRuntimeVersion: input.lastRunRuntimeVersion,
+      lastSignatureAt: input.lastSignatureAt,
+      now,
+    }),
+    // 주의: input.lastSuccessAt 은 코디네이션 행의 last_success_at 이고, 위 출력 키
+    // lastSuccessAt(레인 표의 worst.lastCheckedAt 에서 나온다)과는 완전히 다른 값이다.
+    // 이름이 겹칠 뿐 서로 섞이지 않으며, 새 입력이 기존 출력 키를 바꾸지 않는다.
+    heartbeatAgeMinutes: heartbeatAgeMinutesFromStamps({
+      primarySeenAt: input.primarySeenAt,
+      lastSuccessAt: input.lastSuccessAt,
+      now,
+    }),
   };
 }
 
@@ -100,11 +139,16 @@ export function deliberateWorkerStopFromRow(row, now) {
 
 // 조회만 담당하는 얇은 래퍼. 판정은 전부 위 순수 함수가 한다(테스트가 실행 검증한다).
 // 읽기에 실패하거나 행이 없으면 "의도된 정지 아님"으로 두어 정체 감지 자체는 살려 둔다.
+// 같은 행에 heartbeatAgeMinutes 의 두 재료(primary_seen_at, last_success_at)가 있으므로
+// 왕복을 늘리지 않고 select 만 넓혀 함께 읽는다. 반환은 불리언이 아니라 객체다.
+// 열이 아직 없는 환경으로 내려오면 cooldown_until 만 다시 읽는 축약 경로가 그대로
+// 살아 있고, 그 경로에서는 두 표식이 단순히 비어 있다(= heartbeat 신호 없음 → 0).
 async function deliberateWorkerStop(ctx, now) {
+  const empty = { deliberateStop: false, primarySeenAt: "", lastSuccessAt: "" };
   try {
     let { data, error } = await ctx.supabaseAdmin
       .from(WORKER_COORDINATION_TABLE)
-      .select("circuit_state, circuit_reason, cooldown_until")
+      .select("circuit_state, circuit_reason, cooldown_until, primary_seen_at, last_success_at")
       .eq("lane_key", "global")
       .maybeSingle();
     if (error && /circuit_state|circuit_reason|schema cache|does not exist/i.test(error.message || "")) {
@@ -114,10 +158,53 @@ async function deliberateWorkerStop(ctx, now) {
         .eq("lane_key", "global")
         .maybeSingle());
     }
-    if (error || !data) return false;
-    return deliberateWorkerStopFromRow(data, now);
+    if (error || !data) return empty;
+    return {
+      deliberateStop: deliberateWorkerStopFromRow(data, now),
+      primarySeenAt: String(data.primary_seen_at || ""),
+      lastSuccessAt: String(data.last_success_at || ""),
+    };
   } catch {
-    return false;
+    return empty;
+  }
+}
+
+// 아래 두 조회는 관측 전용이다. 어떤 실패도 200 을 503 으로 뒤집어서는 안 된다.
+// 표가 없든, PostgREST 가 권한을 거부하든, 클라이언트 체인이 throw 하든 결과는 하나 —
+// 빈 문자열, 즉 "신호 없음"이다. 신호가 없으면 workerOutdatedFromSignals 가 false 로
+// 물러나므로 판독 실패가 거짓 경보로 번지지 않는다. latestCheckedAt/hasOverdueActive 가
+// throw 를 그대로 올려 503 을 내는 것과는 의도적으로 반대 방향이다: 저 둘은 이 응답의
+// 본체이고, 이 둘은 곁다리 관측이다.
+async function latestWorkerRunVersion(ctx) {
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from(WORKER_RUNS_TABLE)
+      .select("runtime_version")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (error) return "";
+    const row = Array.isArray(data) ? data[0] : data;
+    return String(row?.runtime_version || "");
+  } catch {
+    return "";
+  }
+}
+
+// 서명(nonce)은 진척이 아니다 — 서명 검증 직후, 본문 파싱과 모든 분기보다 먼저
+// 삽입되므로 서버에 400 으로 거부당하는 작업기도 매분 한 줄을 남긴다. 바로 그래서
+// "작업기가 아직 켜져 있다"는 사실만큼은 이 표가 유일하게 정직하게 말해 준다.
+async function latestWorkerSignatureAt(ctx) {
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from(WORKER_NONCE_TABLE)
+      .select("created_at")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) return "";
+    const row = Array.isArray(data) ? data[0] : data;
+    return String(row?.created_at || "");
+  } catch {
+    return "";
   }
 }
 
@@ -164,12 +251,22 @@ export default {
 
     try {
       const cutoffIso = new Date(now - RANK_OVERDUE_THRESHOLD_MS).toISOString();
-      const [productLatest, placeLatest, productOverdue, placeOverdue, deliberateStop] = await Promise.all([
+      const [
+        productLatest,
+        placeLatest,
+        productOverdue,
+        placeOverdue,
+        coordination,
+        lastRunRuntimeVersion,
+        lastSignatureAt,
+      ] = await Promise.all([
         latestCheckedAt(ctx, RANK_TABLES[0]),
         latestCheckedAt(ctx, RANK_TABLES[1]),
         hasOverdueActive(ctx, RANK_TABLES[0], cutoffIso),
         hasOverdueActive(ctx, RANK_TABLES[1], cutoffIso),
         deliberateWorkerStop(ctx, now),
+        latestWorkerRunVersion(ctx),
+        latestWorkerSignatureAt(ctx),
       ]);
       const body = rankCollectionHealthBody({
         now,
@@ -177,7 +274,13 @@ export default {
           { key: "product", lastCheckedAt: productLatest, overdue: productOverdue },
           { key: "place", lastCheckedAt: placeLatest, overdue: placeOverdue },
         ],
-        deliberateStop,
+        deliberateStop: coordination.deliberateStop,
+        primarySeenAt: coordination.primarySeenAt,
+        // 코디네이션 행의 last_success_at 이다. 위 lanes 에서 나오는 출력 키
+        // lastSuccessAt 과 이름만 같을 뿐 heartbeatAgeMinutes 에만 쓰인다.
+        lastSuccessAt: coordination.lastSuccessAt,
+        lastRunRuntimeVersion,
+        lastSignatureAt,
       });
       cached = {
         body,
@@ -191,11 +294,15 @@ export default {
       });
     } catch {
       // 조회 실패는 "정체"가 아니다. 워치독이 아무 동작도 하지 않도록 non-2xx 로 알린다.
+      // 200 과 키 순서까지 동일하게 유지한다. 워치독·verify:live 는 키 집합을 계약으로
+      // 읽으므로 상태코드에 따라 표면이 달라지면 안 된다. 관측 두 키는 안전값으로 낸다.
       const body = {
         ok: false,
         lastSuccessAt: null,
         stalledMinutes: 0,
         queueStalled: false,
+        workerOutdated: false,
+        heartbeatAgeMinutes: 0,
       };
       cached = {
         body,

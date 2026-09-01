@@ -182,7 +182,7 @@
     {
       "id": "product-rank-cron-server",
       "file": "src/server/handlers/naver-rank-cron.mjs",
-      "sha256": "53583c05f9aefbc7a51ed3a0957e071aa913ab30bfe99a3c8b9a591de63e926c"
+      "sha256": "34b74d16ef8fb8f6410bac37b11affac5727dff758c283da611b1dc833f48791"
     },
     {
       "id": "place-tracker-server",
@@ -192,7 +192,7 @@
     {
       "id": "place-rank-cron-server",
       "file": "src/server/handlers/naver-place-rank-cron.mjs",
-      "sha256": "55e4b7298db03160f6717a0ea9f2270276ba7b7e60f602ef9aaf468226379927"
+      "sha256": "66c1574a6bc77d9e90f48ada68b0fe1a162d1e0d8bfbcd36f019aae7af55cca6"
     },
     {
       "id": "place-collector",
@@ -227,12 +227,12 @@
     {
       "id": "product-cron-workflow",
       "file": ".github/workflows/naver-rank-cron.yml",
-      "sha256": "c09fdb05702446386fa2b61ecc4987c15b715d180b4a1b6fc9a090ac8c14daa8"
+      "sha256": "9dc01ed3b5a99343bd9ff8ca27e78c24237ae887e9ea8e56e17e1046955492fc"
     },
     {
       "id": "place-cron-workflow",
       "file": ".github/workflows/naver-place-rank-cron.yml",
-      "sha256": "ee0f1be8df9249151f1c1552c77911f50d959405375669eadcb78b5afb767288"
+      "sha256": "c37cc0268f967f9e2a035953cb1e83110aec545484bd433b588dde2d2774d98c"
     },
     {
       "id": "product-rank-schema",

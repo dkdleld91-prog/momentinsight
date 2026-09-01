@@ -6,6 +6,7 @@ import {
   isMissingRankKeywordLimitSchema,
   parseRankKeywordLimitInput,
 } from "../rank-keyword-limit.mjs";
+import { RANK_CHRONIC_ISOLATION_MS, RANK_RETRY_EXHAUSTED_AT } from "../naver-rank-requeue.mjs";
 
 function boundedInteger(value, fallback, minimum, maximum) {
   if (value === undefined || value === null || String(value).trim() === "") return fallback;
@@ -397,11 +398,14 @@ async function safeCount(query) {
 
 async function loadOwnerHealth(ctx) {
   const nowIso = new Date().toISOString();
+  // 만성 실패 격리 기준선. 페이로드 전체가 같은 시계를 쓰도록 nowIso 에서 파생한다.
+  const chronicCutoffIso = new Date(Date.parse(nowIso) - RANK_CHRONIC_ISOLATION_MS).toISOString();
   const [
     activeClients,
     activeTeams,
     dueTrackers,
     failedTrackers,
+    chronicTrackers,
     sourceFiles,
     publicReports,
   ] = await Promise.all([
@@ -424,6 +428,22 @@ async function loadOwnerHealth(ctx) {
       .select("id", { count: "exact", head: true })
       .eq("status", "active")
       .not("last_error", "is", null)),
+    // 만성 실패(격리 대상) 추적기 수: 재시도가 소진된 채 성공 기록(last_checked_at)이
+    // 격리 기간 이상 끊긴 활성 추적기. failedTrackers 의 부분집합이며, 잔존 실패 감사
+    // 스크립트·수집 상태 화면과 같은 상수·같은 기준선을 쓰므로 세 화면이 대조된다.
+    //
+    // OR 의 두 갈래는 chronicIsolationCandidate 의 앵커 규칙을 그대로 옮긴 것이다:
+    // 성공한 적 있으면 last_checked_at 이 앵커고, 한 번도 성공한 적 없으면(null)
+    // created_at 이 앵커다. 여기서 last_checked_at.is.null 만 쓰면 10분 전에 만들어져
+    // 8번 실패한 추적기까지 만성으로 세어 순수 판정(false)과 화면(1건)이 갈라진다.
+    // 그래서 null 갈래에는 반드시 created_at 컷오프를 묶는다.
+    safeCount(ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .not("last_error", "is", null)
+      .gte("retry_count", RANK_RETRY_EXHAUSTED_AT)
+      .or(`last_checked_at.lt.${chronicCutoffIso},and(last_checked_at.is.null,created_at.lt.${chronicCutoffIso})`)),
     safeCount(ctx.supabaseAdmin
       .from("files")
       .select("id", { count: "exact", head: true })
@@ -441,6 +461,7 @@ async function loadOwnerHealth(ctx) {
     activeTeams,
     dueTrackers,
     failedTrackers,
+    chronicTrackers,
     sourceFiles,
     publicReports,
   };

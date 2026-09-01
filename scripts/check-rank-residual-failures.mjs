@@ -11,12 +11,27 @@
 //   status = 'active' AND last_error IS NOT NULL AND retry_count >= RANK_RETRY_EXHAUSTED_AT
 // 임계값은 하드코딩하지 않고 서버 상수를 그대로 가져온다(상수가 바뀌면 같이 움직인다).
 //
+// 두 번째 숫자(isolatedCount)에 대하여: 위 잔존 조건에 "성공 기록이 끊긴 기간"까지
+// 더한 만성 실패 격리 대상 수다.
+//   ... AND (last_checked_at IS NULL OR last_checked_at < now - RANK_CHRONIC_ISOLATION_MS)
+// last_checked_at 은 성공 시에만 찍히는 도장이라(실패 기록 경로는 건드리지 않는다)
+// 연속 실패 기간의 기준점으로 쓸 수 있다. 따라서 isolated 는 residual 의 부분집합이며
+// (격리 대상은 언제나 잔존 실패이기도 하다), 대표님 화면의 만성 실패 수치와 대조하기
+// 위해서만 함께 보고한다. 합격/불합격 판정은 이전과 동일하게 residual 로만 정한다 —
+// isolatedCount 는 종료 코드에 영향을 주지 않는다.
+// 기간 상수 역시 하드코딩하지 않고 서버 상수를 그대로 가져와 격리 기준선과 어긋날 수
+// 없게 한다.
+//
 // 읽기 전용이다. select 만 하고 limit=0 + Prefer: count=exact 로 개수만 받는다 —
 // 추적기 id·키워드·상품번호 같은 계정 데이터를 로그에 남기지 않는다.
 import fs from "node:fs";
 import path from "node:path";
 
-import { RANK_RETRY_EXHAUSTED_AT } from "../src/server/naver-rank-requeue.mjs";
+import {
+  RANK_CHRONIC_ISOLATION_DAYS,
+  RANK_CHRONIC_ISOLATION_MS,
+  RANK_RETRY_EXHAUSTED_AT,
+} from "../src/server/naver-rank-requeue.mjs";
 
 const LANES = [
   { key: "product", table: "naver_rank_trackers" },
@@ -51,6 +66,8 @@ const env = {
 const supabaseUrl = String(env.SUPABASE_URL || "").trim();
 const serviceKey = String(env.SUPABASE_SECRET_KEY || "").trim();
 const checkedAt = new Date().toISOString();
+// 두 레인·두 질의가 같은 시계를 쓰도록 컷오프를 한 번만 계산한다.
+const chronicCutoffAt = new Date(Date.parse(checkedAt) - RANK_CHRONIC_ISOLATION_MS).toISOString();
 
 function fail(code, message) {
   console.error(JSON.stringify({ ok: false, code, message, checkedAt }, null, 2));
@@ -64,13 +81,18 @@ if (!supabaseUrl || !serviceKey) {
   );
 }
 
-async function laneResidualCount(table) {
+// 잔존 실패 기준선(공통) + 호출자가 얹는 추가 필터로 개수만 세는 단일 헬퍼.
+// extraFilters 는 PostgREST 질의 파라미터 그대로다(예: { or: "(a.is.null,b.lt.…)" }).
+async function laneCount(table, extraFilters = {}) {
   const url = new URL(`/rest/v1/${table}`, supabaseUrl);
   url.searchParams.set("select", "id");
   url.searchParams.set("limit", "0");
   url.searchParams.set("status", "eq.active");
   url.searchParams.set("last_error", "not.is.null");
   url.searchParams.set("retry_count", `gte.${RANK_RETRY_EXHAUSTED_AT}`);
+  for (const [key, value] of Object.entries(extraFilters)) {
+    url.searchParams.set(key, value);
+  }
   const response = await fetch(url, {
     headers: {
       accept: "application/json",
@@ -90,21 +112,35 @@ async function laneResidualCount(table) {
 
 let lanes;
 try {
-  lanes = await Promise.all(LANES.map(async (lane) => ({
-    lane: lane.key,
-    table: lane.table,
-    residualCount: await laneResidualCount(lane.table),
-  })));
+  lanes = await Promise.all(LANES.map(async (lane) => {
+    const [residualCount, isolatedCount] = await Promise.all([
+      laneCount(lane.table),
+      // 격리 대상 = 잔존 조건 + 성공 도장(last_checked_at)이 끊긴 기간.
+      // OR 의 두 갈래는 chronicIsolationCandidate 의 앵커 규칙을 그대로 옮긴 것이다:
+      // 성공 이력이 있으면 last_checked_at 이 앵커, 한 번도 성공한 적 없으면(null)
+      // created_at 이 앵커다. last_checked_at.is.null 만 쓰면 방금 만들어져 8번 실패한
+      // 신규 추적기까지 만성으로 세어 순수 판정(false)과 감사(1건)가 갈라지므로,
+      // null 갈래에는 반드시 created_at 컷오프를 묶는다.
+      laneCount(lane.table, {
+        or: `(last_checked_at.lt.${chronicCutoffAt},and(last_checked_at.is.null,created_at.lt.${chronicCutoffAt}))`,
+      }),
+    ]);
+    return { lane: lane.key, table: lane.table, residualCount, isolatedCount };
+  }));
 } catch (error) {
   fail("RANK_RESIDUAL_AUDIT_QUERY_FAILED", String(error?.message || "residual_query_failed"));
 }
 
 const residualCount = lanes.reduce((sum, lane) => sum + lane.residualCount, 0);
+// 보고만 한다. 합격/불합격은 residualCount 로만 정한다(isolated 는 그 부분집합).
+const isolatedCount = lanes.reduce((sum, lane) => sum + lane.isolatedCount, 0);
 const report = {
   ok: residualCount === 0,
   code: residualCount === 0 ? "RANK_RESIDUAL_NONE" : "RANK_RESIDUAL_FAILURES_PRESENT",
   residualCount,
+  isolatedCount,
   retryExhaustedAt: RANK_RETRY_EXHAUSTED_AT,
+  chronicIsolationDays: RANK_CHRONIC_ISOLATION_DAYS,
   lanes,
   checkedAt,
 };

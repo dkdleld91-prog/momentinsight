@@ -21069,9 +21069,41 @@
       // cooldown 은 네이버 접속 제한을 워커가 살아서 보고한 상태이고 이때 추가 활동은
       // 해로우므로 이 상태에서만 억제한다(살아 있는 retryAt 동반 조건은 아래 참조).
       var RANK_DELIBERATE_STOP_STATES = ["cooldown"];
+      // 수집기 하트비트 정체 임계값. 15분은 큐가 정체(queueStalled)로 판정되기 전에
+      // 신호 두절을 먼저 잡기 위한 값이고, queueStalled 와 독립으로 판정한다 —
+      // 신호가 끊긴 뒤 큐가 실제로 밀리기까지 몇 시간이 걸리므로 정체에 종속시키면
+      // 경보가 그 시간만큼 통째로 늦는다.
+      var RANK_HEARTBEAT_STALE_MINUTES = 15;
+      // 만성 실패 격리 상수. RANK_CHRONIC_ISOLATION_* 는 서버
+      // src/server/naver-rank-requeue.mjs 와 같은 값이어야 하며 테스트가 대조한다.
+      var RANK_CHRONIC_ISOLATION_DAYS = 3;
+      var RANK_CHRONIC_ISOLATION_MS = 259200000;
+      var RANK_CHRONIC_ISOLATION_LABEL = "수집 방식 점검 중";
+      // 수집기 건강 신호의 화면 사본. refreshRankCollectionHealthSignal 이 채운다.
+      // heartbeatAgeMinutes 0 은 "신호를 읽을 수 없음"이라 경보하지 않는다 —
+      // 서버 stalledMinutes 0 과 같은 fail-safe 규약이다.
+      var rankCollectionHealthSignal = { workerOutdated: false, heartbeatAgeMinutes: 0, ok: false, fetchedAt: 0 };
 
       function rankTrackerAutoRequeued(tracker) {
         return String((tracker && tracker.lastMessage) || "").indexOf(RANK_AUTO_REQUEUE_MARKER) === 0;
+      }
+
+      // 만성 실패 격리 상태인가. 서버 chronicIsolationCandidate 와 같은 판정을 화면
+      // payload 필드 이름으로 옮긴 것이다. 표식 문자열(lastMessage)이 아니라
+      // lastError · retryCount · retryExhausted 를 읽는다 — 상품 payload 의 lastMessage 는
+      // 신뢰 snapshot 이 있으면 snapshot 메시지로 대체되어 표식이 화면까지 도달하지 못한다.
+      // 앵커는 성공 전용 도장인 lastCheckedAt, 없으면 createdAt 이고 둘 다 파싱되지
+      // 않으면 false 다 — 증거가 없을 때 격리로 단정하지 않는다.
+      function rankTrackerChronicIsolated(tracker, now) {
+        if (!tracker || tracker.status !== "active") return false;
+        if (!String(tracker.lastError || "").trim()) return false;
+        var exhausted = tracker.retryExhausted === true || Number(tracker.retryCount || 0) >= RANK_RETRY_EXHAUSTED_AT;
+        if (!exhausted) return false;
+        var nowMs = Number.isFinite(now) ? Number(now) : Date.now();
+        var checked = Date.parse(tracker.lastCheckedAt || "");
+        var anchor = Number.isFinite(checked) && checked > 0 ? checked : Date.parse(tracker.createdAt || "");
+        if (!Number.isFinite(anchor) || anchor <= 0) return false;
+        return nowMs - anchor >= RANK_CHRONIC_ISOLATION_MS;
       }
 
       function rankCollectionStallSummary(trackers, workerStatus) {
@@ -21080,6 +21112,7 @@
         var overdue = 0;
         var parked = 0;
         var requeued = 0;
+        var isolated = 0;
         var latestCheckedAt = 0;
         for (var i = 0; i < list.length; i += 1) {
           var tracker = list[i];
@@ -21093,6 +21126,8 @@
           var exhausted = tracker.retryExhausted === true || Number(tracker.retryCount || 0) >= RANK_RETRY_EXHAUSTED_AT;
           if (String(tracker.lastError || "") && exhausted) parked += 1;
           if (rankTrackerAutoRequeued(tracker)) requeued += 1;
+          // 위 continue 가 이미 active 가 아닌 추적기를 걸러 냈다 — 격리 판정과 같은 전제다.
+          if (rankTrackerChronicIsolated(tracker, now)) isolated += 1;
         }
         var state = workerStatus && workerStatus.state ? String(workerStatus.state) : "";
         // 억제 판정은 상태 이름만으로 하지 않는다. 같은 파일 rankTrackerOpsSummary 의
@@ -21110,10 +21145,20 @@
         var stalled = !deliberateStop && overdue > 0 && listStale;
         // 한 번도 수집된 적이 없으면(latestCheckedAt 0) 정체로 단정하지 않는다.
         var showParked = !deliberateStop && parked > 0;
+        var health = rankCollectionHealthSignal || {};
+        var workerOutdated = health.workerOutdated === true;
+        var heartbeatAgeMinutes = Math.max(0, Math.floor(Number(health.heartbeatAgeMinutes) || 0));
+        // 하트비트 정체는 queueStalled/stalled 와 독립으로 판정한다 — 신호 두절이
+        // 큐 정체보다 몇 시간 앞서기 때문에 stalled 에 종속시키면 경보가 늦는다.
+        var heartbeatStale = !deliberateStop && heartbeatAgeMinutes > RANK_HEARTBEAT_STALE_MINUTES;
         return {
           overdue: overdue,
           parked: parked,
           requeued: requeued,
+          isolated: isolated,
+          workerOutdated: workerOutdated,
+          heartbeatAgeMinutes: heartbeatAgeMinutes,
+          heartbeatStale: heartbeatStale,
           staleMinutes: staleMinutes,
           hasCheckedAt: latestCheckedAt > 0,
           deliberateStop: deliberateStop,
@@ -21121,7 +21166,7 @@
           // 억제 대상이 아니지만 안내 문구는 달라야 한다.
           workerState: state,
           stalled: stalled,
-          total: (stalled ? 1 : 0) + (showParked ? 1 : 0),
+          total: (stalled ? 1 : 0) + (showParked ? 1 : 0) + (workerOutdated ? 1 : 0) + (heartbeatStale ? 1 : 0) + (isolated ? 1 : 0),
         };
       }
 
@@ -21198,9 +21243,34 @@
         var requeueValueText = isPlaceLane ? (stall.requeued + "개") : "해당 없음";
         var requeueNoteText = isPlaceLane ? "플레이스 자동 재큐" : "상품은 자동 재큐 대상 아님";
         var requeueClass = isPlaceLane && stall.requeued ? " is-warn" : " is-ok";
+        // 워커 구버전·신호 지연은 상품 레인 전용이다. 플레이스는 서버 크론이 수집하므로
+        // 그 레인에서 "윈도우 워커"를 언급하면 잘못된 행동 지시가 된다.
+        var showWorkerOutdated = !isPlaceLane && stall.workerOutdated;
+        var showHeartbeatStale = !isPlaceLane && stall.heartbeatStale;
+        // 기존 머리글(재시도 소진/수집 멈춤)은 그 두 신호가 실제로 성립할 때만 참이다.
+        // 새 신호만으로 배너가 켜졌을 때 그대로 쓰면 "…멈춘 추적 0개입니다"처럼
+        // 사실이 아닌 문장이 나가므로 중립 머리글로 갈아 끼운다.
+        var stallCore = stall.stalled || (stall.parked > 0 && !stall.deliberateStop);
+        var stallHead = stallCore
+          ? '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status is-warn">' + escapeHtml(stallPill) + '</span>' +
+            '<strong>' + escapeHtml(stallTitle) + '</strong><small>' + escapeHtml(stallHint) + '</small></div>'
+          : '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status is-warn">' + escapeHtml("수집기 점검") + '</span>' +
+            '<strong>' + escapeHtml("수집기 상태를 확인해주세요") + '</strong></div>';
+        // 버전 문자열·기기명은 절대 함께 적지 않는다(운영 텔레메트리 노출 금지).
+        var workerOutdatedLine = showWorkerOutdated
+          ? '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status is-warn">' + escapeHtml("업데이트 필요") + '</span><small>' + escapeHtml("수집기 업데이트 필요 — 윈도우 워커가 구버전입니다") + '</small></div>'
+          : '';
+        var heartbeatStaleLine = showHeartbeatStale
+          ? '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status is-warn">' + escapeHtml("신호 지연") + '</span><small>' + escapeHtml("수집기 신호가 " + stall.heartbeatAgeMinutes + "분째 확인되지 않습니다. 큐가 멈추기 전에 수집기 상태를 확인해주세요.") + '</small></div>'
+          : '';
+        // 배너 개폐는 레인까지 반영해야 한다. stall.total 은 레인 인자가 없어 상품 전용
+        // 신호(workerOutdated·heartbeatStale)도 세는데, 그 두 문구는 아래에서
+        // !isPlaceLane 게이트에 막힌다. 그래서 total 만으로 열면 플레이스 레인에서
+        // 설명 줄이 하나도 없는 배너가 뜬다(근거 없는 경고 금지).
+        // bannerOpen 은 total 의 진부분집합이라 아래 삼항의 결과를 좁히기만 한다.
+        var bannerOpen = stallCore || stall.isolated > 0 || showWorkerOutdated || showHeartbeatStale;
         var stallBanner = stall.total ? '<div class="mi-rank-auto-center mi-rank-stall-banner" data-rank-stall-banner role="status">' +
-          '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status is-warn">' + escapeHtml(stallPill) + '</span>' +
-          '<strong>' + escapeHtml(stallTitle) + '</strong><small>' + escapeHtml(stallHint) + '</small></div>' +
+          stallHead + workerOutdatedLine + heartbeatStaleLine +
           '<div class="mi-rank-auto-metrics">' +
           '<div class="mi-rank-auto-metric' + (stall.stalled ? " is-warn" : " is-ok") + '"><span>마지막 수집</span><strong>' +
           escapeHtml(stallLastText) + '</strong><small>' + escapeHtml("예정 초과 " + stall.overdue + "개") + '</small></div>' +
@@ -21208,7 +21278,11 @@
           escapeHtml(stall.parked + "개") + '</strong><small>' + escapeHtml(RANK_RETRY_EXHAUSTED_AT + "회 이상 실패") + '</small></div>' +
           '<div class="mi-rank-auto-metric' + requeueClass + '"><span>자동 재시도 예정</span><strong>' +
           escapeHtml(requeueValueText) + '</strong><small>' + escapeHtml(requeueNoteText) + '</small></div>' +
+          '<div class="mi-rank-auto-metric' + (stall.isolated ? " is-warn" : " is-ok") + '"><span>' + escapeHtml(RANK_CHRONIC_ISOLATION_LABEL) + '</span><strong>' + escapeHtml(stall.isolated + "개") + '</strong><small>' + escapeHtml(RANK_CHRONIC_ISOLATION_DAYS + "일 이상 같은 실패") + '</small></div>' +
           '</div></div>' : '';
+        // 레인 게이트. 플레이스 레인에서 상품 전용 신호만 켜졌으면 설명 줄이 전부
+        // 눌려 빈 배너가 되므로 아예 열지 않는다.
+        if (!bannerOpen) stallBanner = '';
         return stallBanner + '<div class="mi-rank-auto-center">' +
           '<div class="mi-rank-auto-head"><span class="mi-rank-auto-status' + statusClass + '">' + escapeHtml(statusLabel) +
           '</span><strong>자동추적</strong><small>' + escapeHtml(summaryText) + '</small></div>' +
@@ -21217,6 +21291,43 @@
           '<div class="mi-rank-auto-metric' + (workerStopped ? " is-error" : (workerVerifying || workerCoolingDown || due ? " is-warn" : " is-ok")) + '"><span>다음 갱신</span><strong>' + escapeHtml(nextText) + '</strong><small>' + escapeHtml(nextNote) + '</small></div>' +
           '<div class="mi-rank-auto-metric' + (errors ? " is-error" : " is-ok") + '"><span>확인 필요</span><strong>' + escapeHtml(errors + "개") + '</strong><small>운영 코드 기준</small></div>' +
           '</div></div>';
+      }
+
+      // 수집기 건강 신호를 읽어 화면 사본(rankCollectionHealthSignal)만 갱신한다.
+      // 어떤 실패(네트워크·비200·JSON 파손)에서도 기존 값을 그대로 두고 throw 하지 않는다 —
+      // 신호를 못 읽은 것을 "이상 없음"이나 "이상 있음" 어느 쪽으로도 단정하지 않는다.
+      // 재렌더는 새 통로를 만들지 않고 이미 있는 mi:rank-scope-changed 이벤트를 쓴다
+      // (잠금 초기화 함수가 이 이벤트로 loadRankTrackers(false) 를 돌린다).
+      async function refreshRankCollectionHealthSignal() {
+        var payload = null;
+        try {
+          var response = await fetch("/api/rank-collection-health", { credentials: "omit" });
+          if (!response || !response.ok) return;
+          payload = await response.json();
+        } catch (error) {
+          return;
+        }
+        if (!payload || typeof payload !== "object") return;
+        var next = {
+          workerOutdated: payload.workerOutdated === true,
+          heartbeatAgeMinutes: Math.max(0, Math.floor(Number(payload.heartbeatAgeMinutes) || 0)),
+          ok: payload.ok === true,
+          fetchedAt: Date.now(),
+        };
+        var previous = rankCollectionHealthSignal || {};
+        var changed = previous.workerOutdated !== next.workerOutdated
+          || previous.heartbeatAgeMinutes !== next.heartbeatAgeMinutes
+          || previous.ok !== next.ok;
+        rankCollectionHealthSignal = next;
+        // 값이 그대로면 재렌더하지 않는다. 매 폴링마다 발행하면 60초마다 목록 재조회가
+        // 무한히 돈다. 마운트된 순위 카드가 없을 때도 발행하지 않는다.
+        if (!changed) return;
+        try {
+          if (!document.querySelector("[data-rank-worker-state]")) return;
+          window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
+        } catch (error) {
+          // 재렌더 실패는 이미 갱신한 신호 값을 되돌리지 않는다.
+        }
       }
 
       function rankDateKey(date) {
@@ -21564,10 +21675,15 @@
         // 재큐 표식을 단다. 재큐를 먼저 반환하면 조치가 필요한 추적이 "자동 재시도 예정"
         // (조치 불필요)으로 읽히므로 점검 필요를 우선하고 둘 다면 병기한다.
         var autoRequeued = rankTrackerAutoRequeued(tracker);
+        // 만성 격리는 재큐 구간 뒤에 덧붙인다. 둘 다면 "점검 필요 · 자동 재시도 예정 ·
+        // 수집 방식 점검 중"이 되고, 격리만이면 재큐 배지 다음 순위의 경고로 낸다.
+        var chronic = rankTrackerChronicIsolated(tracker, Date.now());
         if (placeTrackerNeedsAttention(tracker)) {
-          return { label: autoRequeued ? "점검 필요 · 자동 재시도 예정" : "점검 필요", className: "is-error" };
+          var attentionLabel = autoRequeued ? "점검 필요 · 자동 재시도 예정" : "점검 필요";
+          return { label: chronic ? attentionLabel + " · " + RANK_CHRONIC_ISOLATION_LABEL : attentionLabel, className: "is-error" };
         }
         if (autoRequeued) return { label: "자동 재시도 예정", className: "is-warn" };
+        if (chronic) return { label: RANK_CHRONIC_ISOLATION_LABEL, className: "is-warn" };
         var trend = placeTrackerTrend(tracker);
         if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
         if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
@@ -21619,7 +21735,12 @@
         // 상품에는 자동 재큐 배지를 두지 않는다. 자동 재큐는 플레이스 전용이고,
         // 상품 payload 의 lastMessage 는 신뢰 snapshot 이 있으면 snapshot 메시지로
         // 대체되므로 표식이 화면까지 도달하지 못한다(표시되지 않는 배지 금지).
-        if (rankTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        // 만성 격리는 표식이 아니라 lastError·retryCount 로 판정하므로 상품에도 붙는다.
+        var chronic = rankTrackerChronicIsolated(tracker, Date.now());
+        if (rankTrackerNeedsAttention(tracker)) {
+          return { label: chronic ? "점검 필요 · " + RANK_CHRONIC_ISOLATION_LABEL : "점검 필요", className: "is-error" };
+        }
+        if (chronic) return { label: RANK_CHRONIC_ISOLATION_LABEL, className: "is-warn" };
         var trend = rankTrackerTrend(tracker);
         if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
         if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
@@ -24898,6 +25019,19 @@
       initRankCheck(keywordInput);
       initRankTracking(keywordInput);
       initPlaceRankTracking(keywordInput);
+      // 수집기 건강 신호 폴링. 60초는 /api/rank-collection-health 의 서버 캐시(60초)와
+      // 같은 주기다 — 더 촘촘히 돌면 캐시 미스만 늘고 새로 얻는 값이 없다.
+      var rankCollectionHealthTimer = 0;
+      try {
+        refreshRankCollectionHealthSignal();
+        rankCollectionHealthTimer = window.setInterval(refreshRankCollectionHealthSignal, 60000);
+        window.addEventListener("pagehide", function () {
+          window.clearInterval(rankCollectionHealthTimer);
+          rankCollectionHealthTimer = 0;
+        });
+      } catch (error) {
+        // fetch·setInterval 이 없는 환경에서도 페이지 초기화는 계속돼야 한다.
+      }
       initMetaAdsTool();
 
       function csvValue(value) {

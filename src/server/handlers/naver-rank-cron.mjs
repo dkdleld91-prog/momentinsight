@@ -9,6 +9,10 @@ import {
   shoppingRankConfig,
 } from "../naver-shopping/source-status.mjs";
 import { latestLocalWorkerSlotAt } from "../naver-shopping/local-worker-schedule.mjs";
+import {
+  EXPECTED_WORKER_RUNTIME_VERSION,
+  workerOutdatedFromSignals,
+} from "../naver-shopping/worker-runtime-expectation.mjs";
 import { prewarmShoppingRankProvider } from "../naver-shopping/provider-runtime.mjs";
 import { requestShoppingWorkerWake } from "../naver-shopping/worker-wake.mjs";
 import { runDueTrackers } from "./naver-rank-trackers.mjs";
@@ -23,6 +27,7 @@ export const NAVER_RANK_PROVIDER_UNAVAILABLE = "NAVER_RANK_PROVIDER_UNAVAILABLE"
 export const NAVER_RANK_CRON_ITEM_FAILURE = "NAVER_RANK_CRON_ITEM_FAILURE";
 export const NAVER_RANK_WORKER_SILENT = "NAVER_RANK_WORKER_SILENT";
 export const NAVER_RANK_WORKER_SIGNAL_UNKNOWN = "NAVER_RANK_WORKER_SIGNAL_UNKNOWN";
+export const NAVER_RANK_WORKER_OUTDATED = "NAVER_RANK_WORKER_OUTDATED";
 
 export function productRankCronBatchLimit(url) {
   const requested = Number(url.searchParams.get("limit"));
@@ -127,6 +132,8 @@ export function productRankCronExecutionMode(readiness = {}, options = {}) {
 //   last_success_at — 실제 수집 성공 시각.
 // 둘 중 최신값이 HYBRID_WORKER_SILENCE_MINUTES 안이면 active 다.
 const WORKER_COORDINATION_TABLE = "naver_shopping_worker_coordination";
+const WORKER_RUNS_TABLE = "naver_shopping_worker_runs";
+const WORKER_NONCE_TABLE = "naver_shopping_worker_nonces";
 
 export function hybridWorkerProgressAt(row) {
   const stamps = [row?.primary_seen_at, row?.last_success_at]
@@ -163,11 +170,74 @@ export async function hybridWorkerRecentlyActive(ctx, date = new Date()) {
   return (await hybridWorkerSignal(ctx, date)) === "active";
 }
 
+// 낡은 실행본 판정. 순수 함수이므로 유예 창(hybridWorkerGraceActive)도, 날짜 계산도
+// 전혀 참조하지 않는다 — 그 독립성 자체가 계약이다. 버전 불일치는 예열 상태가 아니다.
+// 메시지에는 버전 문자열도 기기 이름도 담지 않는다. 크론 응답은 대표님 화면까지
+// 흘러갈 수 있는 표면이라, 조치 문장만 남기고 식별 정보는 서버 안에 둔다.
+export function hybridWorkerOutdatedFailure(input = {}) {
+  const outdated = workerOutdatedFromSignals({
+    lastRunRuntimeVersion: input.lastRunRuntimeVersion,
+    lastSignatureAt: input.lastSignatureAt,
+    now: input.now,
+  });
+  if (!outdated) return null;
+  return {
+    code: NAVER_RANK_WORKER_OUTDATED,
+    status: "worker_outdated",
+    message: "윈도우 수집 작업기가 서버가 요구하는 최신 실행본보다 낮은 버전이라 서버가 요청을 거부하고 있습니다. 수집기를 업데이트해주세요.",
+  };
+}
+
+// 판정 재료 두 가지를 읽어 온다. 어떤 실패도 판정으로 번지지 않게 전부 null 로 접는다
+// (supabaseAdmin 부재 · PostgREST error · 체인 throw). 여기서 "모르겠음"을 낡음으로
+// 오해하면 크론이 매 슬롯 503 을 쏘는 거짓 경보가 되므로, 이 경로는 절대 fail-open
+// 하지 않는다.
+// 서명 표는 버전이 실제로 어긋났을 때만 읽는다. 버전이 같거나 실행 이력이 없으면
+// 판정은 이미 "낡지 않음"으로 끝났고, 서명은 그 결론을 뒤집지 못한다(AND 조건이다).
+// 정상 구간에서 왕복 1회로 끝난다는 뜻이기도 하다.
+export async function hybridWorkerRuntimeSignals(ctx) {
+  if (!ctx?.supabaseAdmin) return null;
+  try {
+    const runs = await ctx.supabaseAdmin
+      .from(WORKER_RUNS_TABLE)
+      .select("runtime_version")
+      .order("started_at", { ascending: false })
+      .limit(1);
+    if (runs?.error) return null;
+    const runRow = Array.isArray(runs?.data) ? runs.data[0] : runs?.data;
+    const lastRunRuntimeVersion = String(runRow?.runtime_version || "");
+    if (!lastRunRuntimeVersion || lastRunRuntimeVersion === EXPECTED_WORKER_RUNTIME_VERSION) {
+      return { lastRunRuntimeVersion, lastSignatureAt: "" };
+    }
+    const nonces = await ctx.supabaseAdmin
+      .from(WORKER_NONCE_TABLE)
+      .select("created_at")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (nonces?.error) return null;
+    const nonceRow = Array.isArray(nonces?.data) ? nonces.data[0] : nonces?.data;
+    return { lastRunRuntimeVersion, lastSignatureAt: String(nonceRow?.created_at || "") };
+  } catch {
+    return null;
+  }
+}
+
 // 하이브리드 모드의 실패 신호. 유예(HYBRID_WORKER_GRACE_MINUTES) 안에서는 워커가 아직
 // 첫 레인을 잡지 않았을 수 있으므로 판정하지 않는다 — 크론 슬롯(:05/:10/:15)이
 // 깨우기 직후라서 매 슬롯마다 거짓 실패가 난다. 유예가 끝났는데도 최근 진척이 없으면
 // 그 상태를 202 ok 로 감추지 않고 실패로 보고하되, 판독 불가는 침묵과 구분해 보고한다.
+//
+// 낡은 실행본 검사만은 유예보다 먼저, 유예와 무관하게 돌린다. 버전 불일치는 "아직
+// 첫 레인을 잡는 중"이 아니라 서버가 매 요청을 400 으로 거부하는 확정 상태라서,
+// 시간이 지나도 저절로 낫지 않는다. 실제로 2026-09-01 의 17시간 중단을 감춘 것이
+// 바로 이 60분 유예였다 — 09:00 슬롯 직후 유예가 열리고, 유예가 끝나면 침묵 판정이
+// 나가야 하는데 그 사이 매 슬롯이 유예에 걸려 계속 202 ok 로 빠져나갔다.
 export async function hybridWorkerFailure(ctx, date = new Date()) {
+  const runtimeSignals = await hybridWorkerRuntimeSignals(ctx);
+  if (runtimeSignals) {
+    const outdated = hybridWorkerOutdatedFailure({ ...runtimeSignals, now: date });
+    if (outdated) return outdated;
+  }
   if (hybridWorkerGraceActive(date)) return null;
   const signal = await hybridWorkerSignal(ctx, date);
   if (signal === "active") return null;

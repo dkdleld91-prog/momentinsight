@@ -1,7 +1,7 @@
 #!/bin/zsh
 # 순위 수집 정체 워치독.
 # 공개 집계 엔드포인트(/api/rank-collection-health)만 폴링해 대기열 정체를 판정하고,
-# 정체가 60분 이상 연속으로 관측될 때만 Chrome 을 정상 종료 후 다시 연다.
+# 정체가 30분 이상 연속으로 관측될 때만 Chrome 을 정상 종료 후 다시 연다.
 # 강제 종료 폴백은 두지 않는다. 모든 분기는 반드시 한 줄을 로그로 남긴다.
 set -euo pipefail
 umask 077
@@ -15,7 +15,7 @@ LOG_DIRECTORY="${USER_HOME}/Library/Logs/MomentInsight"
 LOG_PATH="${LOG_DIRECTORY}/mi-rank-watchdog.log"
 
 PRODUCTION_HEALTH_URL="https://insight.momentlabs.co.kr/api/rank-collection-health"
-STALL_REQUIRED_SECONDS=3600
+STALL_REQUIRED_SECONDS=1800
 RESTART_COOLDOWN_SECONDS=10800
 CURL_MAX_SECONDS=15
 QUIT_SETTLE_SECONDS=8

@@ -20,6 +20,7 @@ import productRankCronHandler, {
   hybridWorkerSignal,
   safeProductRankCronSummary,
 } from "./naver-rank-cron.mjs";
+import { EXPECTED_WORKER_RUNTIME_VERSION } from "../naver-shopping/worker-runtime-expectation.mjs";
 
 const HYBRID_CRON_ENV_KEYS = [
   "NAVER_SHOPPING_RANK_MODE",
@@ -37,10 +38,15 @@ const HYBRID_CRON_SECRET = "unit-test-rank-cron-secret-0123456789";
 // Supabase REST 호출은 전부 이 스텁이 가로채므로 네트워크에 나가지 않는다.
 // 스텁은 nonce 테이블도 "매분 서명이 들어오는" 프로덕션 상태 그대로 응답한다 —
 // 크론이 그 표를 보고 살아 있다고 오판하지 않는 것까지 검증하기 위해서다.
+// worker_runs 는 기본값으로 "서버 기대와 같은 실행본"을 돌려준다 — 프로덕션의 정상
+// 상태이고, 이 갈래에서는 낡은 실행본 판정이 성립하지 않아 아래 분기들이 원래 의도대로
+// 검증된다. 라우트를 비워 두면 postgrest-js 가 throw 를 3회 재시도하며 1s·2s·4s 를
+// 실제로 기다려 핸들러 테스트마다 7초가 붙는다(실측: 파일 전체 0.3초 → 28초).
 function stubHybridCronEnvironment({
   coordinationRows = [],
   wakeGranted = true,
   coordinationStatus = 200,
+  workerRunRows = [{ runtime_version: EXPECTED_WORKER_RUNTIME_VERSION }],
 }) {
   const previousEnv = Object.fromEntries(HYBRID_CRON_ENV_KEYS.map((key) => [key, process.env[key]]));
   const previousFetch = globalThis.fetch;
@@ -72,6 +78,12 @@ function stubHybridCronEnvironment({
         );
       }
       return new Response(JSON.stringify(coordinationRows), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.includes("/rest/v1/naver_shopping_worker_runs")) {
+      return new Response(JSON.stringify(workerRunRows), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -346,7 +358,9 @@ test("product cron answers 503 while the worker keeps signing but records no pro
     assert.equal(body.sourceStatus.shoppingRank.status, "worker_silent");
     assert.equal(body.deferred, undefined);
     assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_coordination")));
-    // 서명 표는 판정 근거가 아니다 — 조회조차 하지 않는다.
+    // 서명 표는 침묵 판정의 근거가 아니다 — 이 갈래에서는 조회조차 하지 않는다.
+    // (서명은 낡은 실행본 판정의 두 번째 조건일 뿐이고, 실행본이 서버 기대와 같은
+    //  여기서는 그 판정이 첫 조건에서 이미 끝나 서명 표까지 내려가지 않는다.)
     assert.ok(!stub.calls.some((url) => url.includes("naver_shopping_worker_nonces")));
   } finally {
     stub.restore();

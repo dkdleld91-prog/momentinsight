@@ -3,12 +3,24 @@
 //   ① /health.release == git rev-parse --short=12 origin/main  (잘못된 브랜치·미배포 탐지)
 //   ② /ready ok:true                                            (의존성 준비 상태)
 //   ③ /admin·/client 200 · 비인증 /api/session 401              (화면 생존 + 인증 경계)
-//   ④ /api/rank-collection-health 200 + 워치독 4키 계약           (워치독이 읽는 표면)
+//   ④ /api/rank-collection-health 200 + 워치독 6키 계약           (워치독이 읽는 표면)
 // 하나라도 실패하면 exit 1. 비교 기준은 MI_VERIFY_LIVE_RELEASE 로 덮어쓸 수 있다.
 import { execFileSync } from "node:child_process";
 
 const BASE = String(process.env.MI_VERIFY_LIVE_BASE_URL || "https://insight.momentlabs.co.kr").replace(/\/+$/, "");
-const RANK_HEALTH_KEYS = ["lastSuccessAt", "ok", "queueStalled", "stalledMinutes"];
+// 정렬된 6키 계약. 앞의 4키는 워치독(mi-rank-watchdog.sh)이 grep 으로 직접 읽는 표면이라
+// 이름·의미를 바꾸지 않는다. 뒤의 2키는 2026-09-01 버전 불일치 17시간 정지(서버 1.1.20 /
+// 윈도우 워커 1.1.19)를 조기에 드러내려고 이번에 추가한 집계값이다 — workerOutdated 는
+// 버전 문자열·기기명을 노출하지 않는 boolean 이고, heartbeatAgeMinutes 는 정수 분이다.
+// 이 배열은 정렬 비교에 쓰이므로 사전순을 유지해야 한다.
+const RANK_HEALTH_KEYS = [
+  "heartbeatAgeMinutes",
+  "lastSuccessAt",
+  "ok",
+  "queueStalled",
+  "stalledMinutes",
+  "workerOutdated",
+];
 const results = [];
 
 function record(name, ok, detail) {

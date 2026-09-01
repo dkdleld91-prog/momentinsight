@@ -8225,6 +8225,32 @@
         return latest < previous ? "improved" : "dropped";
       }
 
+      // 재시도 소진 기준선. 서버 src/server/naver-rank-requeue.mjs 와 같은 값이다.
+      var RANK_RETRY_EXHAUSTED_AT = 8;
+      // 만성 실패 격리 상수. RANK_CHRONIC_ISOLATION_* 는 서버
+      // src/server/naver-rank-requeue.mjs 와 같은 값이어야 하며 테스트가 대조한다.
+      var RANK_CHRONIC_ISOLATION_DAYS = 3;
+      var RANK_CHRONIC_ISOLATION_MS = 259200000;
+      var RANK_CHRONIC_ISOLATION_LABEL = "수집 방식 점검 중";
+
+      // 만성 실패 격리 상태인가. 서버 chronicIsolationCandidate 와 같은 판정을 화면
+      // payload 필드 이름으로 옮긴 것이다. 표식 문자열(lastMessage)이 아니라
+      // lastError · retryCount · retryExhausted 를 읽는다 — 상품 payload 의 lastMessage 는
+      // 신뢰 snapshot 이 있으면 snapshot 메시지로 대체되어 표식이 화면까지 도달하지 못한다.
+      // 앵커는 성공 전용 도장인 lastCheckedAt, 없으면 createdAt 이고 둘 다 파싱되지
+      // 않으면 false 다 — 증거가 없을 때 격리로 단정하지 않는다.
+      function rankTrackerChronicIsolated(tracker, now) {
+        if (!tracker || tracker.status !== "active") return false;
+        if (!String(tracker.lastError || "").trim()) return false;
+        var exhausted = tracker.retryExhausted === true || Number(tracker.retryCount || 0) >= RANK_RETRY_EXHAUSTED_AT;
+        if (!exhausted) return false;
+        var nowMs = Number.isFinite(now) ? Number(now) : Date.now();
+        var checked = Date.parse(tracker.lastCheckedAt || "");
+        var anchor = Number.isFinite(checked) && checked > 0 ? checked : Date.parse(tracker.createdAt || "");
+        if (!Number.isFinite(anchor) || anchor <= 0) return false;
+        return nowMs - anchor >= RANK_CHRONIC_ISOLATION_MS;
+      }
+
       function placeTrackerNeedsAttention(tracker) {
         var message = String(tracker.lastMessage || tracker.lastError || "");
         var retryCount = Number(tracker.retryCount || 0);
@@ -8232,7 +8258,13 @@
       }
 
       function placeTrackerInsight(tracker) {
-        if (placeTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        // 만성 격리는 점검 필요보다 뒤다. 둘 다면 "점검 필요 · 수집 방식 점검 중"이고,
+        // 격리만이면 경고 배지로 낸다(조치 대상이지만 원인은 수집 방식이다).
+        var chronic = rankTrackerChronicIsolated(tracker, Date.now());
+        if (placeTrackerNeedsAttention(tracker)) {
+          return { label: chronic ? "점검 필요 · " + RANK_CHRONIC_ISOLATION_LABEL : "점검 필요", className: "is-error" };
+        }
+        if (chronic) return { label: RANK_CHRONIC_ISOLATION_LABEL, className: "is-warn" };
         var trend = placeTrackerTrend(tracker);
         if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
         if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };
@@ -8281,7 +8313,13 @@
       }
 
       function rankTrackerInsight(tracker) {
-        if (rankTrackerNeedsAttention(tracker)) return { label: "점검 필요", className: "is-error" };
+        // 만성 격리는 점검 필요보다 뒤다. 둘 다면 "점검 필요 · 수집 방식 점검 중"이고,
+        // 격리만이면 경고 배지로 낸다(조치 대상이지만 원인은 수집 방식이다).
+        var chronic = rankTrackerChronicIsolated(tracker, Date.now());
+        if (rankTrackerNeedsAttention(tracker)) {
+          return { label: chronic ? "점검 필요 · " + RANK_CHRONIC_ISOLATION_LABEL : "점검 필요", className: "is-error" };
+        }
+        if (chronic) return { label: RANK_CHRONIC_ISOLATION_LABEL, className: "is-warn" };
         var trend = rankTrackerTrend(tracker);
         if (trend === "improved") return { label: "상승 흐름", className: "is-ok" };
         if (trend === "dropped") return { label: "하락 확인", className: "is-warn" };

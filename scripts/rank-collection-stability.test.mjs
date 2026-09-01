@@ -27,6 +27,21 @@ import rankCollectionHealthHandler, {
   rankCollectionHealthBody,
 } from "../src/server/handlers/rank-collection-health.mjs";
 import { placeTrackerPayload } from "../src/server/handlers/naver-place-rank-trackers.mjs";
+import {
+  EXPECTED_WORKER_RUNTIME_VERSION,
+  WORKER_HEARTBEAT_STALE_MINUTES,
+  WORKER_OUTDATED_SIGNING_WINDOW_MS,
+  heartbeatAgeMinutes,
+  workerOutdatedFromSignals,
+} from "../src/server/naver-shopping/worker-runtime-expectation.mjs";
+import {
+  NAVER_RANK_WORKER_OUTDATED,
+  NAVER_RANK_WORKER_SILENT,
+  hybridWorkerFailure,
+  hybridWorkerGraceActive,
+  hybridWorkerOutdatedFailure,
+  hybridWorkerRuntimeSignals,
+} from "../src/server/handlers/naver-rank-cron.mjs";
 
 const repositoryRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const readRepoFile = (relative) => fs.readFileSync(path.join(repositoryRoot, relative), "utf8");
@@ -680,7 +695,10 @@ test("F3: 플레이스 SELECT 는 lease·last_attempt_at 컬럼까지 읽는다"
   await runPlaceRequeuePass(ctx, { force: true, now: NOW });
   const requeueSource = readRepoFile("src/server/naver-rank-requeue.mjs");
   assert.ok(requeueSource.includes("`${BASE_COLUMNS}, last_attempt_at, processing_until`"));
-  assert.ok(requeueSource.includes('const BASE_COLUMNS = "id, status, last_error, retry_count, next_check_at, last_message";'));
+  // last_checked_at·created_at 은 만성 실패 격리(chronicIsolationCandidate)가 연속 실패
+  // 기간을 재는 기준점이다. BASE_COLUMNS 에서 빠지면 재큐 SELECT 에 앵커가 실리지 않아
+  // requeueEligible 의 격리행 배제가 실운영에서 조용히 무력화된다.
+  assert.ok(requeueSource.includes('const BASE_COLUMNS = "id, status, last_error, retry_count, next_check_at, last_message, last_checked_at, created_at";'));
 });
 
 test("F3: 조회 실패는 throw 하지 않고 failed 로 돌아온다(크론 보호)", async () => {
@@ -708,9 +726,16 @@ test("F3: 플레이스 크론만 재큐 패스를 호출한다(상품 크론은 
   const placeCron = readRepoFile("src/server/handlers/naver-place-rank-cron.mjs");
   assert.ok(!productCron.includes("naver-rank-requeue.mjs"), "상품 크론은 재큐를 호출하지 않는다");
   assert.ok(!productCron.includes("RequeuePass"));
-  assert.ok(placeCron.includes('import { runPlaceRequeuePass } from "../naver-rank-requeue.mjs";'));
+  // 플레이스 크론은 재큐와 함께 만성 실패 격리 패스도 부른다. 격리는 두 레인 모두를
+  // 여기서 돌린다 — 하이브리드 모드의 상품 크론은 runDueTrackers 에 닿기 전에
+  // 202/503 으로 단락되므로(naver-rank-cron.mjs 의 deferredToLocalWorker 분기)
+  // 추적기 유지보수를 항상 수행하는 서버 크론 경로가 이 파일뿐이다.
+  assert.ok(placeCron.includes('import { runChronicIsolationPass, runPlaceRequeuePass } from "../naver-rank-requeue.mjs";'));
+  const placeIsolationAt = placeCron.indexOf("runChronicIsolationPass(ctx,");
   const placeRequeueAt = placeCron.indexOf("await runPlaceRequeuePass(ctx);");
   const placeRunAt = placeCron.indexOf("const summary = await runDuePlaceTrackers(");
+  // 순서가 뒤집히면 같은 요청 안에서 방금 격리된 추적기를 재큐가 도로 끌어온다.
+  assert.ok(placeIsolationAt > 0 && placeRequeueAt > placeIsolationAt);
   assert.ok(placeRequeueAt > 0 && placeRunAt > placeRequeueAt);
 });
 
@@ -795,9 +820,35 @@ test("F1: 플레이스 payload 는 광고주 화면의 '점검 필요'를 켜지
 // ─────────────────────────────────────────────────────────────
 const lane = (key, lastCheckedAt, overdue) => ({ key, lastCheckedAt, overdue });
 
-test("F2: 응답 키 집합은 정확히 4개다", () => {
+const HEALTH_KEYS_IN_ORDER = [
+  "ok",
+  "lastSuccessAt",
+  "stalledMinutes",
+  "queueStalled",
+  "workerOutdated",
+  "heartbeatAgeMinutes",
+];
+const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
+
+test("F2: 응답 키 집합은 정확히 6개이며 순서까지 고정이다", () => {
   const body = rankCollectionHealthBody({ now: NOW, lanes: [] });
-  assert.deepEqual(Object.keys(body).sort(), ["lastSuccessAt", "ok", "queueStalled", "stalledMinutes"]);
+  // 정렬 없이 비교한다 — scripts/verify-live.mjs 는 정렬 키 배열과 개수를 함께 보고,
+  // 워치독 셸은 본문을 grep 으로 읽으므로 키가 늘거나 순서가 흔들리면 둘 다 깨진다.
+  assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+  assert.deepEqual(Object.keys(body).sort(), HEALTH_KEYS_SORTED);
+  // 앞 4키의 의미는 그대로다: 데이터가 없으면 null·0·false.
+  assert.equal(body.ok, true);
+  assert.equal(body.lastSuccessAt, null);
+  assert.equal(body.stalledMinutes, 0);
+  assert.equal(body.queueStalled, false);
+  // 뒤 2키도 신호가 없으면 단정하지 않는다.
+  assert.equal(body.workerOutdated, false);
+  assert.equal(body.heartbeatAgeMinutes, 0);
+  // verify-live 의 계약 배열과 실제 응답이 같은 집합인지 소스로 대조한다.
+  const verifyLive = readRepoFile("scripts/verify-live.mjs");
+  for (const key of HEALTH_KEYS_SORTED) {
+    assert.ok(verifyLive.includes(`"${key}"`), `verify-live 계약에 ${key} 가 있어야 한다`);
+  }
 });
 
 test("F2: 가장 오래된(worst) 레인이 lastSuccessAt 이다", () => {
@@ -875,7 +926,7 @@ test("F2: deliberateStop 이 참이면 queueStalled 를 눌러 둔다(상태 필
   // 무엇이 deliberateStop 인지는 아래 deliberateWorkerStopFromRow 테스트가 고정한다.
   assert.deepEqual(
     Object.keys(rankCollectionHealthBody({ ...stalled, deliberateStop: true })).sort(),
-    ["lastSuccessAt", "ok", "queueStalled", "stalledMinutes"],
+    HEALTH_KEYS_SORTED,
   );
 });
 
@@ -934,15 +985,18 @@ test("F2: 회로 사유 목록이 마이그레이션 원본과 일치한다", ()
 test("F2: 핸들러가 의도된 정지 상태를 실제로 읽어 전달한다", () => {
   assert.ok(healthHandlerSource.includes('const WORKER_COORDINATION_TABLE = "naver_shopping_worker_coordination";'));
   assert.ok(healthHandlerSource.includes("async function deliberateWorkerStop(ctx, now)"));
-  assert.ok(healthHandlerSource.includes('.select("circuit_state, circuit_reason, cooldown_until")'));
-  assert.ok(healthHandlerSource.includes("return deliberateWorkerStopFromRow(data, now);"));
+  // heartbeatAgeMinutes 의 두 재료를 같은 행에서 함께 읽는다 — 왕복은 늘리지 않는다.
+  assert.ok(healthHandlerSource.includes('.select("circuit_state, circuit_reason, cooldown_until, primary_seen_at, last_success_at")'));
+  assert.ok(healthHandlerSource.includes("deliberateStop: deliberateWorkerStopFromRow(data, now),"));
   assert.ok(healthHandlerSource.includes("deliberateWorkerStop(ctx, now),"));
   assert.ok(healthHandlerSource.includes("deliberateStop,"));
   // 컬럼이 아직 없는 환경에서는 cooldown_until 만 다시 읽는다.
   assert.ok(healthHandlerSource.includes('/circuit_state|circuit_reason|schema cache|does not exist/i.test(error.message || "")'));
   assert.ok(healthHandlerSource.includes('.select("cooldown_until")'));
   // 읽기 실패는 "의도된 정지 아님"으로 두어 정체 감지를 죽이지 않는다.
-  assert.ok(healthHandlerSource.includes("if (error || !data) return false;"));
+  // 반환이 객체가 된 뒤에도 안전 기본값(empty)의 deliberateStop 은 false 그대로다.
+  assert.ok(healthHandlerSource.includes("if (error || !data) return empty;"));
+  assert.ok(healthHandlerSource.includes('const empty = { deliberateStop: false, primarySeenAt: "", lastSuccessAt: "" };'));
   // circuit_state 만으로 억제하던 옛 규칙은 남아 있으면 안 된다.
   assert.ok(!healthHandlerSource.includes('if (circuitState === "open" || circuitState === "half_open") return true;'));
 });
@@ -1001,14 +1055,29 @@ test("F2: 실패 응답도 캐시해 장애를 증폭시키지 않는다(실행 
     const first = await rankCollectionHealthHandler.fetch(new Request("https://example.com/api/rank-collection-health"));
     assert.equal(first.status, 503);
     assert.equal(first.headers.get("retry-after"), "60");
-    assert.deepEqual(await first.json(), { ok: false, lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
+    // 503 도 200 과 같은 6키·같은 순서다. 관측 두 키는 안전값으로 나간다.
+    assert.deepEqual(await first.json(), {
+      ok: false,
+      lastSuccessAt: null,
+      stalledMinutes: 0,
+      queueStalled: false,
+      workerOutdated: false,
+      heartbeatAgeMinutes: 0,
+    });
     assert.ok(dbCalls > 0, "첫 요청은 실제로 DB 를 친다");
 
     const before = dbCalls;
     const second = await rankCollectionHealthHandler.fetch(new Request("https://example.com/api/rank-collection-health"));
     assert.equal(second.status, 503, "캐시 히트도 같은 상태코드를 재현한다");
     assert.equal(second.headers.get("retry-after"), "60");
-    assert.deepEqual(await second.json(), { ok: false, lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
+    assert.deepEqual(await second.json(), {
+      ok: false,
+      lastSuccessAt: null,
+      stalledMinutes: 0,
+      queueStalled: false,
+      workerOutdated: false,
+      heartbeatAgeMinutes: 0,
+    });
     assert.equal(dbCalls - before, 0, "두 번째 요청은 DB 를 다시 치지 않는다");
   } finally {
     globalThis.fetch = previousFetch;
@@ -1047,11 +1116,387 @@ test("F2: api/ 아래에 새 물리 파일을 만들지 않았다(12함수 한�
 });
 
 // ─────────────────────────────────────────────────────────────
+// (E-2) 낡은 실행본 관측 — 2026-09-01 17시간 중단의 사각지대
+// 게이트(naver-shopping-local-worker.mjs)는 runtimeVersion 이 기대값과 다르면 claim RPC
+// 앞에서 400 으로 끊는다 → primary_seen_at 이 얼어붙는다. 그런데 nonce 소비는 그 검사보다
+// 먼저라 거부당하는 워커도 매분 서명을 남긴다. 실측(2026-09-01T08:30Z): nonce 54초 전 /
+// primary_seen_at 14.4시간 전. 이 동시 성립만이 "낡은 실행본"의 지문이다.
+// ─────────────────────────────────────────────────────────────
+const SIGNING_WINDOW_MINUTES = WORKER_OUTDATED_SIGNING_WINDOW_MS / 60_000;
+const OUTDATED_VERSION = "1.1.19"; // 사고 당시 윈도우 워커가 실제로 돌던 실행본
+
+test("F2: 관측자 상수가 게이트·크론과 같은 축을 쓴다", () => {
+  assert.equal(WORKER_OUTDATED_SIGNING_WINDOW_MS, 1_800_000);
+  assert.equal(SIGNING_WINDOW_MINUTES, 30, "HYBRID_WORKER_SILENCE_MINUTES 와 같은 30분이다");
+  assert.equal(WORKER_HEARTBEAT_STALE_MINUTES, 15);
+  assert.notEqual(OUTDATED_VERSION, EXPECTED_WORKER_RUNTIME_VERSION, "재현용 버전은 기대값과 달라야 한다");
+});
+
+test("F2: workerOutdated 는 '버전 불일치 AND 최근 서명' 일 때만 참이다", () => {
+  const judge = (lastRunRuntimeVersion, lastSignatureAt) => workerOutdatedFromSignals({
+    lastRunRuntimeVersion,
+    lastSignatureAt,
+    now: NOW,
+    expectedRuntimeVersion: EXPECTED_WORKER_RUNTIME_VERSION,
+  });
+
+  // 참이 되는 유일한 자리: 아직 매분 서명하는데 마지막으로 받아들여진 실행 기록이 낡았다.
+  assert.equal(judge(OUTDATED_VERSION, at(-54_000)), true, "실측 지문(서명 54초 전)");
+  assert.equal(judge(OUTDATED_VERSION, at(-(SIGNING_WINDOW_MINUTES - 1) * 60 * 1000)), true, "창 안쪽 경계");
+  assert.equal(judge(OUTDATED_VERSION, at(60 * 1000)), true, "미래 시각 서명은 신선한 것으로 센다");
+
+  // 버전이 같으면 서명이 아무리 신선해도 거짓이다.
+  assert.equal(judge(EXPECTED_WORKER_RUNTIME_VERSION, at(-54_000)), false);
+
+  // 꺼 둔 작업기 / 막 배포된 서버. 최신 실행 기록은 낡은 채 멈춰 있지만 서명이 끊겼다.
+  // 이 자리를 참으로 두면 대표님이 의도적으로 꺼 둔 밤 내내 거짓 지시가 뜬다.
+  assert.equal(judge(OUTDATED_VERSION, at(-(SIGNING_WINDOW_MINUTES + 1) * 60 * 1000)), false, "꺼진 작업기");
+  assert.equal(judge(OUTDATED_VERSION, at(-24 * HOUR)), false, "하루째 꺼져 있는 작업기");
+  assert.equal(judge(OUTDATED_VERSION, ""), false, "서명 없음");
+  assert.equal(judge(OUTDATED_VERSION, null), false);
+  assert.equal(judge(OUTDATED_VERSION, "not-a-date"), false);
+
+  // 실행 이력이 없으면 판정 자체가 성립하지 않는다.
+  assert.equal(judge("", at(-54_000)), false, "실행 이력 없음");
+  assert.equal(judge(null, at(-54_000)), false);
+  assert.equal(judge("   ", at(-54_000)), false);
+  assert.equal(judge("1.1", at(-54_000)), false, "파싱 불가한 버전");
+  assert.equal(judge("latest", at(-54_000)), false);
+
+  // 기대값 자체를 읽지 못하면 비교가 성립하지 않는다.
+  assert.equal(workerOutdatedFromSignals({
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-54_000),
+    now: NOW,
+    expectedRuntimeVersion: "garbage",
+  }), false);
+  // 기대값을 생략하면 관측자 기본값(게이트 사본)을 쓴다.
+  assert.equal(workerOutdatedFromSignals({
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-54_000),
+    now: NOW,
+  }), true);
+  assert.equal(workerOutdatedFromSignals({}), false, "입력이 비면 절대 단정하지 않는다");
+});
+
+test("F2: 2026-09-01 사고 수치 재현 — 서명 54초 / 진척 14.4시간", () => {
+  const body = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [],
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-54_000),      // 최신 nonce 54초 전
+    primarySeenAt: at(-14.4 * HOUR),   // primary_seen_at 14.4시간 전
+  });
+  assert.equal(body.workerOutdated, true);
+  assert.equal(body.heartbeatAgeMinutes, 864, "14.4시간 = 864분");
+  // 앞 4키는 이 신호에 전혀 영향받지 않는다 — 레인 표가 비었으므로 그대로 null·0·false.
+  assert.equal(body.ok, true);
+  assert.equal(body.lastSuccessAt, null);
+  assert.equal(body.stalledMinutes, 0);
+  assert.equal(body.queueStalled, false, "대기 중인 일이 없으면 정체가 아니다 — 그래서 사각지대였다");
+  // 버전 문자열도 기기 식별자도 응답에 실리지 않는다.
+  assert.ok(!JSON.stringify(body).includes(OUTDATED_VERSION));
+  assert.ok(!JSON.stringify(body).includes(EXPECTED_WORKER_RUNTIME_VERSION));
+});
+
+test("F2: heartbeatAgeMinutes 는 두 표식 중 최신 기준의 비음수 정수다", () => {
+  // 둘 중 더 최신을 쓴다. 오래된 쪽을 쓰면 한창 수집 중인 워커가 늙어 보인다.
+  assert.equal(heartbeatAgeMinutes({
+    primarySeenAt: at(-14.4 * HOUR),
+    lastSuccessAt: at(-30 * 60 * 1000),
+    now: NOW,
+  }), 30);
+  assert.equal(heartbeatAgeMinutes({
+    primarySeenAt: at(-30 * 60 * 1000),
+    lastSuccessAt: at(-14.4 * HOUR),
+    now: NOW,
+  }), 30);
+  // 한쪽만 있어도 그 값으로 잰다.
+  assert.equal(heartbeatAgeMinutes({ primarySeenAt: at(-14.4 * HOUR), lastSuccessAt: null, now: NOW }), 864);
+  assert.equal(heartbeatAgeMinutes({ primarySeenAt: "", lastSuccessAt: at(-2 * HOUR), now: NOW }), 120);
+  // 내림이다.
+  assert.equal(heartbeatAgeMinutes({ primarySeenAt: at(-(119 * 60 * 1000 + 59_000)), now: NOW }), 119);
+  // 판독 불가는 0 이다 — stalledMinutes 와 같은 안전 방향. 큰 숫자로 부풀리면 스키마
+  // 드리프트 한 번에 워치독이 Chrome 을 재기동한다.
+  assert.equal(heartbeatAgeMinutes({ now: NOW }), 0);
+  assert.equal(heartbeatAgeMinutes({ primarySeenAt: null, lastSuccessAt: "", now: NOW }), 0);
+  assert.equal(heartbeatAgeMinutes({ primarySeenAt: "not-a-date", now: NOW }), 0);
+  assert.equal(heartbeatAgeMinutes({}), 0);
+  // 미래 시각(작업기 시계 앞섬)은 음수 대신 0 으로 누른다.
+  const future = heartbeatAgeMinutes({ primarySeenAt: at(90 * 60 * 1000), now: NOW });
+  assert.equal(future, 0);
+  assert.ok(Number.isInteger(future) && future >= 0);
+});
+
+// 핸들러 레벨. 모듈 최상단 cached(성공 60초/실패 15초)는 URL 로 갈리지 않고 시간으로만
+// 만료되므로, 위 실패 캐시 테스트와 섞이면 서로의 응답을 재현해 버린다. 쿼리스트링을
+// 붙여 ESM 인스턴스를 따로 받아 각자의 cached 를 갖게 한다(핸들러에 테스트 전용
+// 초기화 export 를 추가하지 않기 위한 방법이다).
+const HEALTH_ENV_NAMES = ["SUPABASE_URL", "SUPABASE_SECRET_KEY", "SUPABASE_PUBLISHABLE_KEY"];
+const jsonRows = (rows) => new Response(JSON.stringify(rows), {
+  status: 200,
+  headers: { "content-type": "application/json" },
+});
+
+async function freshRankHealthHandler(tag) {
+  const module = await import(`../src/server/handlers/rank-collection-health.mjs?observer=${tag}`);
+  return module.default;
+}
+
+function stubHealthSupabase(routes) {
+  const previousEnv = Object.fromEntries(HEALTH_ENV_NAMES.map((name) => [name, process.env[name]]));
+  const previousFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    SUPABASE_URL: "http://127.0.0.1:2",
+    SUPABASE_SECRET_KEY: "sb_secret_rank_health_observer_test",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_rank_health_observer_test",
+  });
+  const calls = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input?.url || input || "");
+    calls.push(url);
+    for (const [table, respond] of Object.entries(routes)) {
+      if (url.includes(`/rest/v1/${table}`)) return respond();
+    }
+    return jsonRows([]);
+  };
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = previousFetch;
+      for (const name of HEALTH_ENV_NAMES) {
+        if (previousEnv[name] === undefined) delete process.env[name];
+        else process.env[name] = previousEnv[name];
+      }
+    },
+  };
+}
+
+test("F2: 핸들러가 두 관측 키를 실제 조회 결과로 채운다(사고 재현)", async () => {
+  const now = Date.now();
+  const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const stub = stubHealthSupabase({
+    naver_shopping_worker_runs: () => jsonRows([{ runtime_version: OUTDATED_VERSION }]),
+    naver_shopping_worker_nonces: () => jsonRows([{ created_at: iso(-54_000) }]),
+    naver_shopping_worker_coordination: () => jsonRows([{
+      circuit_state: null,
+      circuit_reason: null,
+      cooldown_until: null,
+      primary_seen_at: iso(-14.4 * HOUR),
+      last_success_at: null,
+    }]),
+  });
+  try {
+    const handler = await freshRankHealthHandler("incident");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    assert.equal(body.workerOutdated, true);
+    assert.equal(body.heartbeatAgeMinutes, 864);
+    // 왕복은 실제로 세 표를 모두 친다.
+    assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_runs")));
+    assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_nonces")));
+    assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_coordination")));
+    // 코디네이션은 한 번만 읽는다 — select 만 넓혔고 왕복은 늘리지 않았다.
+    assert.equal(stub.calls.filter((url) => url.includes("naver_shopping_worker_coordination")).length, 1);
+    // 공개 표면에 버전도 기기 식별자도 실리지 않는다.
+    assert.ok(!JSON.stringify(body).includes(OUTDATED_VERSION));
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: 관측 조회가 실패해도 200 을 503 으로 뒤집지 않는다", async () => {
+  const stub = stubHealthSupabase({
+    naver_shopping_worker_runs: () => {
+      // postgrest-js 는 fetch throw 를 3회 재시도하며 1s·2s·4s 를 실제로 기다린다
+      // (dist/index.mjs executeWithRetry). AbortError 이름만 예외로 즉시 되던진다.
+      // 어느 쪽이든 관측자에 닿는 결과는 같으므로(둘 다 error 로 접힌다) 7초를 태우지 않는다.
+      const failure = new Error("worker_runs_read_failed");
+      failure.name = "AbortError";
+      throw failure;
+    },
+    naver_shopping_worker_nonces: () => new Response(
+      JSON.stringify({ message: 'relation "public.naver_shopping_worker_nonces" does not exist' }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    ),
+  });
+  try {
+    const handler = await freshRankHealthHandler("degraded");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200, "관측 조회 실패는 정체도 장애도 아니다");
+    assert.equal(body.ok, true);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    assert.equal(body.workerOutdated, false, "신호가 없으면 단정하지 않는다");
+    assert.equal(body.heartbeatAgeMinutes, 0);
+    assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_runs")), "실제로 조회를 시도했다");
+  } finally {
+    stub.restore();
+  }
+});
+
+// 크론 쪽 판정. 유예(60분)는 정확히 이 사고를 감춘 장치였으므로 낡은 실행본 검사는
+// 유예보다 먼저, 유예와 무관하게 돌아야 한다.
+function runtimeSignalCtx({ runVersion = "", signatureAt = "", coordinationRows = [] } = {}) {
+  const tables = [];
+  const rowsFor = (rows) => ({
+    select() { return this; },
+    order() { return this; },
+    eq() { return this; },
+    async limit() { return { data: rows, error: null }; },
+  });
+  return {
+    tables,
+    supabaseAdmin: {
+      from(table) {
+        tables.push(table);
+        if (table === "naver_shopping_worker_runs") {
+          return rowsFor(runVersion ? [{ runtime_version: runVersion }] : []);
+        }
+        if (table === "naver_shopping_worker_nonces") {
+          return rowsFor(signatureAt ? [{ created_at: signatureAt }] : []);
+        }
+        return rowsFor(coordinationRows);
+      },
+    },
+  };
+}
+
+test("F2: NAVER_RANK_WORKER_OUTDATED 순수 판정은 날짜 유예와 무관하다", () => {
+  assert.equal(NAVER_RANK_WORKER_OUTDATED, "NAVER_RANK_WORKER_OUTDATED");
+  const failure = hybridWorkerOutdatedFailure({
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-54_000),
+    now: NOW,
+  });
+  assert.deepEqual(failure, {
+    code: NAVER_RANK_WORKER_OUTDATED,
+    status: "worker_outdated",
+    message: "윈도우 수집 작업기가 서버가 요구하는 최신 실행본보다 낮은 버전이라 서버가 요청을 거부하고 있습니다. 수집기를 업데이트해주세요.",
+  });
+  // 메시지에 버전도 기기 이름도 없다.
+  assert.ok(!failure.message.includes(OUTDATED_VERSION));
+  assert.ok(!failure.message.includes(EXPECTED_WORKER_RUNTIME_VERSION));
+
+  // 나머지는 전부 null 이다.
+  assert.equal(hybridWorkerOutdatedFailure({
+    lastRunRuntimeVersion: EXPECTED_WORKER_RUNTIME_VERSION,
+    lastSignatureAt: at(-54_000),
+    now: NOW,
+  }), null);
+  assert.equal(hybridWorkerOutdatedFailure({
+    lastRunRuntimeVersion: OUTDATED_VERSION,
+    lastSignatureAt: at(-2 * HOUR),
+    now: NOW,
+  }), null, "서명이 끊긴 작업기는 낡음이 아니라 침묵이다");
+  assert.equal(hybridWorkerOutdatedFailure({}), null);
+
+  // 순수 함수라는 사실을 소스로도 고정한다 — 유예 함수를 참조하지 않는다.
+  const cronSource = readRepoFile("src/server/handlers/naver-rank-cron.mjs");
+  const from = cronSource.indexOf("export function hybridWorkerOutdatedFailure(");
+  const to = cronSource.indexOf("\n}", from);
+  assert.ok(from > 0 && to > from);
+  const judgment = cronSource.slice(from, to);
+  assert.ok(!judgment.includes("hybridWorkerGraceActive"));
+  assert.ok(!judgment.includes("latestLocalWorkerSlotAt"));
+});
+
+test("F2: 낡은 실행본은 60분 유예 안에서도 크론 503 으로 나간다", async () => {
+  const insideGrace = new Date(NOW); // 09:00 KST 슬롯 직후 = 유예 한복판
+  assert.equal(hybridWorkerGraceActive(insideGrace), true, "이 시각은 실제로 유예 안이다");
+
+  // 전제 반전. 유예가 낡은 실행본까지 눌렀기 때문에 2026-09-01 의 17시간이 202 ok 로
+  // 빠져나갔다. 이제는 유예 안에서도 낡음이 먼저 잡힌다.
+  const outdatedCtx = runtimeSignalCtx({
+    runVersion: OUTDATED_VERSION,
+    signatureAt: new Date(NOW - 54_000).toISOString(),
+  });
+  const failure = await hybridWorkerFailure(outdatedCtx, insideGrace);
+  assert.equal(failure.code, NAVER_RANK_WORKER_OUTDATED);
+  assert.equal(failure.status, "worker_outdated");
+  // 낡음이 확정되면 침묵 판정까지 내려가지 않는다 — 코디네이션은 읽히지도 않는다.
+  assert.ok(!outdatedCtx.tables.includes("naver_shopping_worker_coordination"));
+
+  // 실행본이 기대와 같으면 유예는 원래대로 침묵을 누른다.
+  const currentCtx = runtimeSignalCtx({ runVersion: EXPECTED_WORKER_RUNTIME_VERSION });
+  assert.equal(await hybridWorkerFailure(currentCtx, insideGrace), null);
+  // 그리고 서명 표까지 내려가지 않는다(정상 구간 왕복 1회).
+  assert.ok(!currentCtx.tables.includes("naver_shopping_worker_nonces"));
+
+  // 유예 밖에서는 기존 침묵 판정이 그대로 살아 있다.
+  const afterGrace = new Date(NOW + 3 * HOUR);
+  assert.equal(hybridWorkerGraceActive(afterGrace), false);
+  const silentCtx = runtimeSignalCtx({
+    runVersion: EXPECTED_WORKER_RUNTIME_VERSION,
+    coordinationRows: [{
+      primary_seen_at: new Date(NOW - 20 * HOUR).toISOString(),
+      last_success_at: new Date(NOW - 20 * HOUR).toISOString(),
+    }],
+  });
+  assert.equal((await hybridWorkerFailure(silentCtx, afterGrace)).code, NAVER_RANK_WORKER_SILENT);
+});
+
+test("F2: 크론 관측 조회는 어떤 실패에서도 판정을 만들지 않는다", async () => {
+  // 전제: fail-open 이 되면 매 슬롯 503 이 쏟아지는 거짓 경보가 된다.
+  assert.equal(await hybridWorkerRuntimeSignals(null), null);
+  assert.equal(await hybridWorkerRuntimeSignals({}), null, "supabaseAdmin 부재");
+  assert.equal(await hybridWorkerRuntimeSignals({ supabaseAdmin: {} }), null, "from 부재 → throw → null");
+  // PostgREST error.
+  assert.equal(await hybridWorkerRuntimeSignals({
+    supabaseAdmin: {
+      from() {
+        return {
+          select() { return this; },
+          order() { return this; },
+          async limit() { return { data: null, error: { message: "permission denied" } }; },
+        };
+      },
+    },
+  }), null);
+  // .order() 가 없는 옛 체인(스키마·클라이언트 드리프트)도 조용히 null 이다.
+  assert.equal(await hybridWorkerRuntimeSignals({
+    supabaseAdmin: {
+      from() {
+        return {
+          select() { return this; },
+          eq() { return this; },
+          async limit() { return { data: [], error: null }; },
+        };
+      },
+    },
+  }), null);
+  // 읽기가 성공하면 그대로 돌려준다.
+  assert.deepEqual(
+    await hybridWorkerRuntimeSignals(runtimeSignalCtx({ runVersion: OUTDATED_VERSION, signatureAt: at(-54_000) })),
+    { lastRunRuntimeVersion: OUTDATED_VERSION, lastSignatureAt: at(-54_000) },
+  );
+});
+
+test("F2: 관측자 기대 실행본이 게이트 원본과 드리프트하지 않는다", () => {
+  // 원본은 export 할 수 없다 — 릴리스 게이트 두 곳이 그 선언 문자열 그대로를 검사한다.
+  // 그래서 사본을 두고, 사본이 낡는 위험은 이 테스트가 소스 파싱으로 막는다.
+  const gateSource = readRepoFile("src/server/handlers/naver-shopping-local-worker.mjs");
+  const parsed = gateSource.match(/const EXPECTED_WORKER_RUNTIME_VERSION = "(\d+\.\d+\.\d+)";/);
+  assert.ok(parsed, "게이트 원본에서 기대 실행본을 파싱하지 못했다");
+  assert.equal(EXPECTED_WORKER_RUNTIME_VERSION, parsed[1]);
+  assert.ok(!gateSource.includes("export const EXPECTED_WORKER_RUNTIME_VERSION"), "원본에 export 를 붙이면 릴리스 게이트가 깨진다");
+  assert.ok(readRepoFile("scripts/check-release-baseline.mjs")
+    .includes(`const EXPECTED_WORKER_RUNTIME_VERSION = "${parsed[1]}";`));
+  assert.ok(readRepoFile("scripts/check-server-contract.mjs")
+    .includes("EXPECTED_WORKER_RUNTIME_VERSION"));
+  // 게이트가 버전 불일치를 claim 앞에서 400 으로 끊는다는 사실이 이 관측의 전제다.
+  assert.ok(gateSource.includes("runtimeVersion !== EXPECTED_WORKER_RUNTIME_VERSION"));
+  assert.ok(gateSource.includes('throw workerError("LOCAL_WORKER_RUNTIME_IDENTITY_INVALID", 400);'));
+});
+
+// ─────────────────────────────────────────────────────────────
 // (F) F2 워치독 셸 — 소스 단언
 // ─────────────────────────────────────────────────────────────
 test("F2: 워치독 상수와 임계값", () => {
   for (const marker of [
-    "STALL_REQUIRED_SECONDS=3600",
+    "STALL_REQUIRED_SECONDS=1800",
     "RESTART_COOLDOWN_SECONDS=10800",
     "LOG_MAX_BYTES=1048576",
     "CURL_MAX_SECONDS=15",
@@ -1124,6 +1569,16 @@ test("F2: 강제 종료 폴백이 없다", () => {
   for (const forbidden of ["pkill", "kill -9", "killall"]) {
     assert.ok(!watchdogSource.includes(forbidden), `watchdog must not use ${forbidden}`);
   }
+});
+
+test("F2: 워치독은 관측 키 두 개를 판정에 쓰지 않는다(맥 재기동으로 고칠 수 없다)", () => {
+  // 응답이 6개 키로 늘었지만 워치독의 판정 축은 queueStalled 하나뿐이다.
+  // workerOutdated 는 윈도우 워커가 낡은 실행본을 돌린다는 뜻이고, 맥에서 Chrome 을
+  // 다시 여는 것으로는 절대 고쳐지지 않는다. 고쳐지지도 않을 일에 재기동을 쓰면
+  // 3시간 쿨다운만 태워, 정작 진짜 대기열 정체가 왔을 때 손을 못 쓰게 된다.
+  // heartbeatAgeMinutes 도 같은 이유로 사람이 보는 관측값일 뿐이다.
+  assert.ok(!watchdogSource.includes("workerOutdated"), "워치독이 workerOutdated 를 읽으면 안 된다");
+  assert.ok(!watchdogSource.includes("heartbeatAgeMinutes"), "워치독이 heartbeatAgeMinutes 를 읽으면 안 된다");
 });
 
 test("F2: 드라이런 진입점이 있다", () => {
@@ -1276,25 +1731,36 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
   });
   const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
   const nowSeconds = Math.floor(Date.now() / 1000);
-  const body = (queueStalled, stalledMinutes) => JSON.stringify({
+  // 실제 응답은 키 6개다. 워치독은 /usr/bin/grep -Eq 와 sed 로 본문 텍스트를 그대로
+  // 훑으므로, 옛 4개 키의 이름과 순서를 바이트 단위로 고정한 채 관측 키 2개만 뒤에 붙인다.
+  const body = (queueStalled, stalledMinutes, workerOutdated = false, heartbeatAgeMinutes = 0) => JSON.stringify({
     ok: true,
     lastSuccessAt: new Date().toISOString(),
     stalledMinutes,
     queueStalled,
+    workerOutdated,
+    heartbeatAgeMinutes,
   });
 
   const scenarios = [
     { label: "(a) 정상 + 상태 없음", stalled: false, minutes: 3, state: null, expect: "healthy" },
     { label: "(b) 정상 + 정체 기록 있음", stalled: false, minutes: 3, state: { stalledSince: nowSeconds - 5000, lastRestartAt: 0 }, expect: "stall_cleared" },
     { label: "(c) 정체 첫 관측", stalled: true, minutes: 700, state: null, expect: "stall_started" },
-    { label: "(d) 정체 30분", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 1800, lastRestartAt: 0 }, expect: "stall_pending" },
+    { label: "(d) 정체 15분", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 900, lastRestartAt: 0 }, expect: "stall_pending" },
+    // 임계값을 3600 → 1800 으로 내린 회귀를 고정한다. 2000초는 옛 임계에서 stall_pending
+    // 이었고, 지금은 재기동 분기까지 실제로 도달해야 한다. 이 줄이 초록이면 하향이 먹은 것이다.
+    { label: "(d2) 정체 2000초 — 30분 임계에서 재기동 진입", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 2000, lastRestartAt: 0 }, expect: "dry_run restart_would_run" },
     { label: "(e) 정체 4000초 + 재기동 이력 없음", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, expect: "dry_run restart_would_run" },
     { label: "(f) 위 + 10분 전 재기동", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds - 600 }, expect: "restart_suppressed_cooldown" },
     { label: "(g) 위 + 시계 역행(미래 재기동 시각)", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds + 600 }, expect: "restart_cooldown_clock_reset" },
+    // 맥에서 Chrome 을 다시 열어도 윈도우 워커의 낡은 실행본은 고쳐지지 않는다. 고쳐지지도
+    // 않을 일에 재기동을 쓰면 3시간 쿨다운만 태워 진짜 정체 때 손을 못 쓴다. 관측 키가
+    // 켜져 있어도 대기열이 정상이면 워치독은 healthy 로 물러나야 한다.
+    { label: "(k) 낡은 워커 경보만 켜짐 + 대기열 정상", stalled: false, minutes: 3, state: null, workerOutdated: true, heartbeatAgeMinutes: 864, expect: "healthy" },
   ];
 
   for (const scenario of scenarios) {
-    responseBody = body(scenario.stalled, scenario.minutes);
+    responseBody = body(scenario.stalled, scenario.minutes, scenario.workerOutdated, scenario.heartbeatAgeMinutes);
     const home = createWatchdogHome(scenario.state);
     homes.push(home);
     // eslint-disable-next-line no-await-in-loop

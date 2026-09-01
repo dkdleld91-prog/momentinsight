@@ -51,6 +51,8 @@ const clientSource = readRepoFile("src/pages/client.html");
 const watchdogSource = readRepoFile("scripts/watchdog/mi-rank-watchdog.sh");
 const watchdogPlistSource = readRepoFile("scripts/watchdog/co.kr.momentinsight.rank-watchdog.plist.template");
 const watchdogInstallSource = readRepoFile("scripts/watchdog/install-mi-rank-watchdog.sh");
+const bridgeInstallerSource = readRepoFile("scripts/install-naver-shopping-chrome-bridge.mjs");
+const packageManifest = JSON.parse(readRepoFile("package.json"));
 const healthHandlerSource = readRepoFile("src/server/handlers/rank-collection-health.mjs");
 const sessionGateSource = readRepoFile("src/server/session-gate.mjs");
 const serverIndexSource = readRepoFile("src/server/index.mjs");
@@ -1500,6 +1502,10 @@ test("F2: 워치독 상수와 임계값", () => {
     "RESTART_COOLDOWN_SECONDS=10800",
     "LOG_MAX_BYTES=1048576",
     "CURL_MAX_SECONDS=15",
+    // 런타임 드리프트 동기화(웨이브 3). 동기화 쿨다운은 재기동 쿨다운과 같은 3시간이고,
+    // 설치 스크립트가 매달리면 10분 주기 tick 이 겹쳐 쌓이므로 180초에서 잘라낸다.
+    "SYNC_COOLDOWN_SECONDS=10800",
+    "SYNC_INSTALL_TIMEOUT_SECONDS=180",
     "https://insight.momentlabs.co.kr/api/rank-collection-health",
   ]) {
     assert.ok(watchdogSource.includes(marker), `watchdog must include ${marker}`);
@@ -1528,9 +1534,128 @@ test("F2: 모든 판정 분기가 고유 로그 코드를 남긴다", () => {
     "chrome_quit_unauthorized",
     "chrome_start_failed",
     "chrome_restarted",
+    // ── 런타임 드리프트 동기화(웨이브 3) ────────────────────────
+    // 값이 런타임에 정해지는 자리(<N>, <n>, <경로>)는 뺀 최대 리터럴 접두사만 고정한다.
+    "sync_disabled",
+    "sync_check_failed reason=sync_source_unresolved",
+    "sync_check_failed reason=runtime_copy_missing",
+    "sync_check_failed reason=hash_unreadable file=",
+    "sync_check_failed reason=not_a_git_worktree",
+    "sync_check_failed reason=node_missing",
+    "sync_check_failed reason=backup_failed",
+    "runtime_in_sync files=",
+    "drift_detected files=",
+    "sync_skipped=repository_dirty",
+    "sync_skipped=collection_active",
+    "sync_suppressed_cooldown seconds_left=",
+    "sync_cooldown_clock_reset previous=",
+    "dry_run drift_sync_would_run files=",
+    "drift_sync_failed status=",
+    "drift_sync_ok files=",
+    "sync_chrome_restart_skipped reason=not_running",
+    "sync_chrome_restart_suppressed_cooldown seconds_left=",
+    "sync_chrome_restart_begin",
   ]) {
     assert.ok(watchdogSource.includes(code), `watchdog must log ${code}`);
   }
+});
+
+test("F2: 동기화 경로 상수와 탈출구 환경변수", () => {
+  for (const marker of [
+    'RUNTIME_COPY_PATH="${SUPPORT_DIRECTORY}/NaverShoppingBridge"',
+    'SYNC_CONF_PATH="${SUPPORT_DIRECTORY}/mi-rank-runtime-sync.conf"',
+    "MI_RANK_WATCHDOG_SYNC_SOURCE_PATH",
+    "MI_RANK_WATCHDOG_SYNC_DISABLED",
+  ]) {
+    assert.ok(watchdogSource.includes(marker), `watchdog must include ${marker}`);
+  }
+});
+
+// ── 런타임 파일 목록 이중화 방지 ────────────────────────────────
+// 워치독은 설치 스크립트가 실제로 설치하는 파일을 그대로 해싱해야 한다. 두 목록이
+// 갈라지면 워치독은 "동기화됨"이라 말하면서 정작 바뀐 파일을 못 보는 최악의 침묵을
+// 만든다. 그래서 테스트에 목록을 세 번째로 베껴 쓰지 않고 양쪽 원본에서 파싱해 맞춘다.
+function bridgeRuntimeFilePaths() {
+  const marker = "const RUNTIME_FILES = Object.freeze([";
+  const from = bridgeInstallerSource.indexOf(marker);
+  assert.ok(from >= 0, "설치 스크립트에서 RUNTIME_FILES 배열을 찾지 못했다");
+  const to = bridgeInstallerSource.indexOf("]);", from);
+  assert.ok(to > from, "RUNTIME_FILES 배열의 끝을 찾지 못했다");
+  const block = bridgeInstallerSource.slice(from + marker.length, to);
+  return [...block.matchAll(/\[\s*"([^"]+)"/gu)].map((match) => match[1]);
+}
+
+function watchdogRuntimeSyncFilePaths() {
+  const marker = "RUNTIME_SYNC_FILES=(";
+  const from = watchdogSource.indexOf(marker);
+  assert.ok(from >= 0, "워치독에서 RUNTIME_SYNC_FILES 배열을 찾지 못했다");
+  const to = watchdogSource.indexOf("\n)", from);
+  assert.ok(to > from, "RUNTIME_SYNC_FILES 배열의 끝을 찾지 못했다");
+  const block = watchdogSource.slice(from + marker.length, to);
+  return [...block.matchAll(/"([^"]+)"/gu)].map((match) => match[1]);
+}
+
+test("F2: 워치독 동기화 목록이 설치 스크립트 런타임 목록과 완전히 같다", () => {
+  const bridgeFiles = bridgeRuntimeFilePaths();
+  assert.equal(bridgeFiles.length, 14, "설치 런타임 파일은 14개다");
+  // 순서까지 같아야 한다. 순서가 갈라지면 사람이 두 목록을 눈으로 대조할 수 없다.
+  assert.deepEqual(watchdogRuntimeSyncFilePaths(), bridgeFiles);
+});
+
+test("F2: 워치독이 직접 호출하는 설치 스크립트가 npm 스크립트와 같은 파일이다", () => {
+  const wired = packageManifest.scripts["install:naver-shopping-chrome-bridge"];
+  assert.ok(wired, "package.json 에 install:naver-shopping-chrome-bridge 가 있어야 한다");
+  // 워치독은 npm 을 거치지 않고 이 파일을 직접 실행한다. npm 스크립트가 다른 파일을
+  // 가리키게 되는 순간 사람이 손으로 돌리는 설치와 워치독의 자가치유가 갈라진다.
+  assert.ok(
+    wired.includes("scripts/install-naver-shopping-chrome-bridge.mjs"),
+    `npm 스크립트가 다른 파일을 가리킨다: ${wired}`,
+  );
+  assert.ok(fs.existsSync(path.join(repositoryRoot, "scripts/install-naver-shopping-chrome-bridge.mjs")));
+});
+
+test("F2: 자가치유는 설치 스크립트를 CLI 로 부르지 않고 옵션을 박아 import 한다", () => {
+  // 설치 스크립트는 process.argv[1] 로 "직접 실행" 여부를 판정한다(:296-297). 경로를
+  // 위치 인자로 넘기면 argv[1] 이 채워져 installChromeBridge() 가 전체 기본값으로 돌고,
+  // 그 순간 워치독이 스스로 읽는 naver-shopping-chrome-scheduler.conf 를 다시 쓰고
+  // launchctl 로 에이전트를 띄워 1분 안에 Chrome 과 수집을 시작한다. 드리프트 한 줄을
+  // 맞추려다 수집을 건드리는 셈이다. 그래서 경로는 환경변수로만 넘긴다.
+  for (const marker of [
+    "MI_BRIDGE_INSTALLER",
+    "process.env.MI_BRIDGE_INSTALLER",
+    "pathToFileURL",
+    "--input-type=module",
+    "installChromeScheduler: false",
+    // 설치 스크립트 :262 는 options.disableOldAutomaticWorker !== false 로 가드한다.
+    // 생략하면 동기화 때마다 옛 에이전트에 launchctl bootout/disable 이 나간다.
+    "disableOldAutomaticWorker: false",
+  ]) {
+    assert.ok(watchdogSource.includes(marker), `watchdog must include ${marker}`);
+  }
+  // 음성 단언은 반드시 주석을 뺀 실행 줄에만 걸어야 한다. "이렇게 부르지 않는다" 라고
+  // 적어 둔 설명 주석까지 걸면, 이유를 남긴 코드가 오히려 빨개진다.
+  const codeLines = watchdogSource.split("\n").filter((line) => !/^\s*#/u.test(line));
+  const watchdogCode = codeLines.join("\n");
+  // 금지되는 것은 "node 호출 뒤에 경로가 오는" 순서다. 그게 곧 위치 인자이고 argv[1] 이다.
+  // 환경변수 형태(MI_BRIDGE_INSTALLER=... 뒤에 node)는 경로가 앞서므로 걸리지 않는다.
+  // 경로 자체를 금지하면 안 된다 — 원본 검증 가드는 이 경로가 있는지 -f 로 봐야 하고,
+  // 그게 sync_check_failed reason=sync_source_unresolved 의 판정 근거다.
+  assert.ok(
+    !/(?:NODE_BIN|\/node\b|(?<![\w/.\-])node\s)[^\n]*install-naver-shopping-chrome-bridge\.mjs/u
+      .test(watchdogCode),
+    "설치 스크립트를 node 의 위치 인자로 넘기면 argv[1] 이 채워져 전체 기본값으로 실행된다",
+  );
+  assert.ok(
+    !watchdogCode.includes("npm run install:naver-shopping-chrome-bridge"),
+    "npm 을 거쳐도 설치기 경로가 argv[1] 에 실린다",
+  );
+  // 그리고 환경변수 경로가 실제로 존재해야 한다(위 음성 단언만으로는 호출이 사라져도 초록이다).
+  const mentions = codeLines.filter((line) => line.includes("install-naver-shopping-chrome-bridge.mjs"));
+  assert.ok(mentions.length > 0, "워치독이 설치 스크립트를 전혀 참조하지 않는다");
+  assert.ok(
+    mentions.some((line) => line.includes("MI_BRIDGE_INSTALLER=")),
+    "설치 스크립트 경로를 MI_BRIDGE_INSTALLER 환경변수로 넘기는 줄이 없다",
+  );
 });
 
 test("F2: 엔드포인트 무응답이면 상태를 쓰지 않고 exit 0 이다", () => {
@@ -1653,6 +1778,27 @@ test("F2: 설치본은 저장소가 아니라 Application Support 사본을 laun
   assert.ok(watchdogInstallSource.includes("/bin/launchctl bootstrap"));
 });
 
+test("F2: 설치기가 동기화 원본 경로를 conf 로 남긴다", () => {
+  // launchd 는 저장소를 실행하지 않지만(위 테스트), 워치독은 드리프트를 재기 위해
+  // 저장소가 "어디"인지는 알아야 한다. 실행 경로가 아니라 읽기 전용 좌표로만 넘긴다.
+  assert.ok(watchdogInstallSource.includes('RUNTIME_SYNC_SOURCE_PATH="${SCRIPT_DIR:h:h}"'));
+  assert.ok(watchdogInstallSource.includes('SYNC_CONF_PATH="${SUPPORT_DIRECTORY}/mi-rank-runtime-sync.conf"'));
+  assert.ok(watchdogInstallSource.includes("mi-rank-runtime-sync.conf"));
+  assert.ok(watchdogInstallSource.includes("rank_watchdog_sync_source_invalid"));
+  // conf 도 plist 와 같은 방식(mktemp → install -m 600)으로 원자적으로 쓴다.
+  assert.ok(watchdogInstallSource.includes("/usr/bin/mktemp"));
+  assert.ok(watchdogInstallSource.includes("/usr/bin/install -m 600"));
+  // 위 테스트의 음성 단언을 여기서 다시 못 박는다. 동기화 원본을 넘기게 되었다고 해서
+  // launchd 실행 경로가 저장소로 되돌아가면 안 된다. 둘은 서로 다른 변수여야 한다.
+  assert.ok(!watchdogInstallSource.includes('REPOSITORY_PATH="${SCRIPT_DIR:h:h}"'));
+});
+
+test("F2: plist 주석이 낮춘 임계값(30분)을 말한다", () => {
+  // 주석이 옛 60분을 말하면 사람이 로그의 stall_pending 을 오독한다.
+  assert.ok(!watchdogPlistSource.includes("60분"), "plist 주석에 옛 60분 임계가 남아 있다");
+  assert.ok(watchdogPlistSource.includes("30분"), "plist 주석은 30분 임계를 말해야 한다");
+});
+
 test("F2: 기존 n30 스케줄러 파일은 손대지 않는다", () => {
   const scheduler = readRepoFile("scripts/run-naver-shopping-chrome-scheduler.sh");
   assert.ok(!scheduler.includes("mi-rank-watchdog"));
@@ -1675,19 +1821,72 @@ function createWatchdogHome(state) {
   const supportDirectory = path.join(home, "Library/Application Support/MomentInsight");
   fs.mkdirSync(supportDirectory, { recursive: true });
   if (state) {
-    fs.writeFileSync(
-      path.join(supportDirectory, "mi-rank-watchdog.state"),
-      `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\n`,
-    );
+    // lastSyncAt 을 주지 않으면 웨이브 2 의 옛 2줄 형식을 그대로 쓴다. 아래 의사결정표
+    // 9개 시나리오가 전부 옛 형식으로 도는 덕분에 하위호환이 표 전체로 증명된다.
+    const body = "lastSyncAt" in state
+      ? `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\nlast_sync_at=${state.lastSyncAt}\n`
+      : `stalled_since=${state.stalledSince}\nlast_restart_at=${state.lastRestartAt}\n`;
+    fs.writeFileSync(path.join(supportDirectory, "mi-rank-watchdog.state"), body);
   }
   return home;
+}
+
+// 워치독이 해싱할 14개 파일은 설치 스크립트 원본에서 가져온다(테스트에 목록을 베끼지 않는다).
+const RUNTIME_SYNC_RELATIVE_PATHS = bridgeRuntimeFilePaths();
+// 워치독의 git status 경로지정(pathspec)에 항상 걸리는 디렉터리. 없으면 zsh 가
+// "unknown pathspec" 으로 죽어 시나리오가 엉뚱한 이유로 실패한다.
+const SYNC_EXTENSION_MANIFEST = "tools/naver-shopping-chrome-extension/manifest.json";
+
+function writeSeedFile(root, relative, content) {
+  const target = path.join(root, relative);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content);
+}
+
+// 임시 $HOME 안에 가짜 "저장소 + 설치본" 한 쌍을 만든다. 실제 저장소도 실제 설치본도
+// 절대 건드리지 않는다(드라이런이라 설치 스크립트 자체는 어차피 돌지 않는다).
+function seedRuntimeSync(home, options = {}) {
+  const { drift = false, missingFile = false, gitInit = false, dirty = false, copyMissing = false } = options;
+  const source = path.join(home, "sync-source");
+  const runtimeCopy = path.join(home, "Library/Application Support/MomentInsight/NaverShoppingBridge");
+
+  writeSeedFile(source, "scripts/install-naver-shopping-chrome-bridge.mjs", "// stub installer\n");
+  writeSeedFile(source, SYNC_EXTENSION_MANIFEST, '{"manifest_version":3}\n');
+  for (const relative of RUNTIME_SYNC_RELATIVE_PATHS) {
+    writeSeedFile(source, relative, `// seed ${relative}\n`);
+  }
+
+  const first = RUNTIME_SYNC_RELATIVE_PATHS[0];
+  if (!copyMissing) {
+    for (const relative of RUNTIME_SYNC_RELATIVE_PATHS) {
+      writeSeedFile(runtimeCopy, relative, `// seed ${relative}\n`);
+    }
+    if (drift) writeSeedFile(runtimeCopy, first, `// drifted ${first}\n`);
+    if (missingFile) fs.rmSync(path.join(runtimeCopy, first), { force: true });
+  }
+
+  if (gitInit) {
+    const gitEnv = { ...process.env, HOME: home };
+    for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_CONFIG_GLOBAL"]) delete gitEnv[key];
+    const git = (...args) => execFileSync(
+      "git",
+      ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "commit.gpgsign=false", ...args],
+      { cwd: source, stdio: "pipe", env: gitEnv },
+    );
+    git("init", "-q", "-b", "main");
+    git("add", "-A");
+    git("commit", "-q", "-m", "x");
+    // 커밋한 뒤에 손대야 워킹트리가 더러워진다. 14개 목록 밖 파일이라 드리프트 수는 그대로다.
+    if (dirty) writeSeedFile(source, SYNC_EXTENSION_MANIFEST, '{"manifest_version":3,"dirty":true}\n');
+  }
+  return source;
 }
 
 // 스텁 서버가 이 프로세스 안에서 돌기 때문에 동기 실행(execFileSync)을 쓰면 안 된다.
 // 이벤트 루프가 막혀 커넥션이 수락되지 않고 curl 이 15초 타임아웃(28)으로 죽는다.
 const execFileAsync = promisify(execFile);
 
-async function runWatchdog(home, healthUrl) {
+async function runWatchdog(home, healthUrl, options = {}) {
   let status = 0;
   try {
     await execFileAsync("zsh", [WATCHDOG_SCRIPT], {
@@ -1697,6 +1896,10 @@ async function runWatchdog(home, healthUrl) {
         HOME: home,
         MI_RANK_WATCHDOG_DRY_RUN: "1",
         MI_RANK_WATCHDOG_HEALTH_URL: healthUrl,
+        // process.env 를 펼쳐 넣기 때문에 두 키는 "요청하지 않을 때"도 반드시 빈 문자열로
+        // 못 박아야 한다. 개발자 셸에 이 변수가 떠 있으면 아래 의사결정표 9개가 조용히 깨진다.
+        MI_RANK_WATCHDOG_SYNC_SOURCE_PATH: options.syncSourcePath ?? "",
+        MI_RANK_WATCHDOG_SYNC_DISABLED: options.syncDisabled ?? "",
       },
     });
   } catch (error) {
@@ -1809,6 +2012,76 @@ test("F2: 워치독은 장애·불량 본문·허용목록 위반에서 안전�
   const invalid = await runWatchdog(home(), "http://example.com/api/rank-collection-health");
   assert.equal(invalid.status, 1);
   assert.ok(invalid.events[0].startsWith("health_url_invalid"), invalid.raw);
+});
+
+test("F2: 런타임 드리프트 동기화 패스가 실제 실행으로 고정된다", darwinOnly, async (t) => {
+  // 전부 MI_RANK_WATCHDOG_DRY_RUN=1 이다. 설치 스크립트는 절대 돌지 않고 Chrome 도
+  // 건드리지 않는다. 판정에 쓰는 저장소·설치본은 전부 임시 $HOME 안의 가짜다.
+  const server = await startHealthServer(() => JSON.stringify({
+    ok: true,
+    lastSuccessAt: new Date().toISOString(),
+    stalledMinutes: 3,
+    queueStalled: false,
+    workerOutdated: false,
+    heartbeatAgeMinutes: 0,
+  }));
+  const homes = [];
+  t.after(() => {
+    server.close();
+    for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+  });
+  const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+
+  const scenarios = [
+    { label: "(a) 14개 전부 동일", seed: { gitInit: true }, expect: "runtime_in_sync" },
+    { label: "(b) 1개 드리프트 + 깨끗한 워킹트리", seed: { drift: true, gitInit: true }, expect: "dry_run drift_sync_would_run files=1" },
+    { label: "(c) 드리프트 + 커밋 안 된 변경", seed: { drift: true, gitInit: true, dirty: true }, expect: "drift_detected", contains: "sync_skipped=repository_dirty" },
+    { label: "(d) 드리프트 + git 워킹트리가 아님", seed: { drift: true }, expect: "sync_check_failed reason=not_a_git_worktree" },
+    { label: "(e) 설치본에 14개 중 하나가 없다", seed: { missingFile: true, gitInit: true }, expect: "sync_check_failed reason=hash_unreadable" },
+    { label: "(f) 설치본 디렉터리 자체가 없다", seed: { copyMissing: true, gitInit: true }, expect: "sync_check_failed reason=runtime_copy_missing" },
+    // 원본이 "정해졌는데 쓸 수 없는" 경우에만 소리를 낸다. 아예 정해지지 않은 경우는
+    // 아래 의사결정표 9개가 증명하듯 완전 무음이어야 한다(둘을 섞으면 로그가 매 tick 운다).
+    { label: "(g) 동기화 원본이 없는 경로", sourceOverride: "no-such-sync-source", expect: "sync_check_failed reason=sync_source_unresolved" },
+    { label: "(h) 탈출구 환경변수로 끔", seed: { drift: true, gitInit: true }, syncDisabled: "1", expect: "sync_disabled" },
+    { label: "(i) 드리프트 + 1시간 전 동기화", seed: { drift: true, gitInit: true }, state: { stalledSince: 0, lastRestartAt: 0, lastSyncAt: nowSeconds - 3600 }, expect: "drift_detected", contains: "sync_suppressed_cooldown" },
+    { label: "(j) 드리프트 + 시계 역행(미래 동기화 시각)", seed: { drift: true, gitInit: true }, state: { stalledSince: 0, lastRestartAt: 0, lastSyncAt: nowSeconds + 600 }, expect: "sync_cooldown_clock_reset" },
+    // 옛 2줄 상태 파일이 그대로 읽혀야 한다. stalled_since 가 실제로 읽혔다는 증거로
+    // stall_cleared 까지 확인한다(안 읽혔다면 healthy 가 찍힌다).
+    { label: "(k) 옛 2줄 상태 파일 하위호환", seed: { gitInit: true }, state: { stalledSince: nowSeconds - 5000, lastRestartAt: 0 }, expect: "runtime_in_sync", verdict: "stall_cleared" },
+  ];
+
+  for (const scenario of scenarios) {
+    const home = createWatchdogHome(scenario.state ?? null);
+    homes.push(home);
+    const seeded = scenario.seed ? seedRuntimeSync(home, scenario.seed) : "";
+    const syncSourcePath = scenario.sourceOverride ? path.join(home, scenario.sourceOverride) : seeded;
+    // eslint-disable-next-line no-await-in-loop
+    const { status, events, raw } = await runWatchdog(home, healthUrl, {
+      syncSourcePath,
+      syncDisabled: scenario.syncDisabled ?? "",
+    });
+    assert.equal(status, 0, `${scenario.label} 은 exit 0 이어야 한다 :: ${raw}`);
+    assert.ok(events.length > 0, `${scenario.label} 은 반드시 한 줄을 남긴다`);
+    assert.ok(
+      events[0].startsWith(scenario.expect),
+      `${scenario.label} → "${scenario.expect}" 로 시작해야 하는데 "${events[0]}" 였다`
+        + " (sync_skipped=collection_active 가 나왔다면 이 맥에서 실제 수집이 돌고 있거나"
+        + " moment-insight-n-shopping-worker.lock 이 살아 있는 것이다 — 단언을 약화하지 말고 그대로 보고할 것)",
+    );
+    if (scenario.contains) {
+      assert.ok(
+        events[0].includes(scenario.contains),
+        `${scenario.label} → "${scenario.contains}" 를 포함해야 하는데 "${events[0]}" 였다`,
+      );
+    }
+    if (scenario.verdict) {
+      assert.ok(
+        events.some((event) => event.startsWith(scenario.verdict)),
+        `${scenario.label} 은 ${scenario.verdict} 판정까지 도달해야 한다 :: ${raw}`,
+      );
+    }
+  }
 });
 
 // ─────────────────────────────────────────────────────────────

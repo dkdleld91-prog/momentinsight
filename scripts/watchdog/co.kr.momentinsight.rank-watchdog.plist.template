@@ -14,7 +14,7 @@
   <string>__WATCHDOG_RUNTIME_DIRECTORY__</string>
   <key>RunAtLoad</key>
   <true/>
-  <!-- 10분마다 집계 엔드포인트만 확인한다. 재기동은 60분 연속 정체 + 3시간 쿨다운
+  <!-- 10분마다 집계 엔드포인트만 확인한다. 재기동은 30분 연속 정체 + 3시간 쿨다운
        조건을 모두 통과했을 때만 스크립트 안에서 일어난다. -->
   <key>StartInterval</key>
   <integer>600</integer>

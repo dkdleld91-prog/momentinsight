@@ -1348,7 +1348,7 @@ test("F2: 워치독은 장애·불량 본문·허용목록 위반에서 안전�
 // ─────────────────────────────────────────────────────────────
 // (H) 셸 문법 점검
 // ─────────────────────────────────────────────────────────────
-test("F2: 워치독 셸 두 개가 zsh -n 을 통과한다", () => {
+test("F2: 워치독 셸 두 개가 zsh -n 을 통과한다", darwinOnly, () => {
   for (const relative of [
     "scripts/watchdog/mi-rank-watchdog.sh",
     "scripts/watchdog/install-mi-rank-watchdog.sh",

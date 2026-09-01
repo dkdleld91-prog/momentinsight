@@ -125,7 +125,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "windows-desktop-primary",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.19",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.20",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
     MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-catch-up",
   };
@@ -306,7 +306,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.19");
+  assert.equal(lane.runtimeVersion, "1.1.20");
   assert.equal(lane.runTrigger, "rank-catch-up");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
@@ -427,7 +427,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.19");
+  assert.equal(coordination[0].runtimeVersion, "1.1.20");
   assert.equal(coordination[0].runTrigger, "rank-catch-up");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
@@ -475,7 +475,7 @@ test("submits one stable finite canary without recording an atomic300 success", 
   assert.deepEqual(finiteModes, [true]);
   assert.equal(calls.coordination[0].runTrigger, "rank-catch-up");
   assert.equal(calls.coordination[0].workerId, "windows-desktop-primary");
-  assert.equal(calls.coordination[0].runtimeVersion, "1.1.19");
+  assert.equal(calls.coordination[0].runtimeVersion, "1.1.20");
   assert.equal(calls.coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
   assert.equal(calls.coordination.at(-1).action, "release-lane");
@@ -831,6 +831,110 @@ test("one approved manual run queues every active tracker before the bounded dra
   ]);
 });
 
+test("a non-catch-up account-priority wait exits bounded, opens no provider and releases the lane", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-remote",
+    },
+    fetchImpl: authenticatedFetch([
+      { body: {
+        ok: true,
+        total: 0,
+        queued: 0,
+        alreadyQueued: 0,
+        alreadyProcessing: 0,
+        waiting: true,
+        reason: "account_priority_active",
+      } },
+      { body: { ok: true, job: null } },
+    ], calls),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    queueAllTrackers: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+  assert.deepEqual(summary, {
+    status: "completed",
+    claimed: 0,
+    submitted: 0,
+    failed: 0,
+    releaseFailed: 0,
+    atomicSuccesses: 0,
+    queuedTotal: 0,
+    queued: 0,
+    alreadyQueued: 0,
+    alreadyProcessing: 0,
+  });
+  assert.equal(collectCount, 0);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+  ]);
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
+test("an expiry-reconciled queue wait continues claim under the same bounded run", async () => {
+  const calls = [];
+  let collectCount = 0;
+  const completed = {
+    ok: true,
+    committedCount: 1,
+    alreadyCommittedCount: 0,
+    leaseLostCount: 0,
+    collectionConflictCount: 0,
+    processedCount: 1,
+  };
+  const summary = await runLocalShoppingWorker({
+    env: workerEnv(),
+    fetchImpl: authenticatedFetch([
+      { body: {
+        ok: true,
+        total: 0,
+        queued: 0,
+        alreadyQueued: 0,
+        alreadyProcessing: 0,
+        waiting: true,
+        reason: "account_priority_expiry_reconciled",
+      } },
+      { body: { ok: true, job: JOB } },
+      { body: completed },
+      { body: { ok: true, job: null } },
+    ], calls),
+    provider: {
+      async collect() { collectCount += 1; return completeWindow(); },
+      async close() {},
+    },
+    queueAllTrackers: true,
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.submitted, 1);
+  assert.equal(summary.atomicSuccesses, 1);
+  assert.equal(collectCount, 1);
+  assert.deepEqual(calls.map((call) => call.action), [
+    "queue-all-active-trackers",
+    "claim",
+    "submit",
+    "claim",
+  ]);
+  const queue = calls[0];
+  const claims = calls.filter((call) => call.action === "claim");
+  assert.equal(queue.runId, claims[0].runId);
+  assert.equal(claims[0].runId, claims[1].runId);
+  assert.equal(queue.runTrigger, "rank-catch-up");
+  assert.equal(claims[0].runTrigger, "rank-catch-up");
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
+});
+
 test("remote polling exits without opening Naver when no wake is pending", async () => {
   const calls = [];
   let collectCount = 0;
@@ -1008,7 +1112,7 @@ test("an automatic circuit recovery queues trackers first and runs exactly one p
   assert.equal(calls.find((call) => call.action === "claim")?.autoRecovery, true);
 });
 
-test("a two-job safety budget still reserves one claim for 30-day trackers", async () => {
+test("a bounded runner repeats claim under one signed run while preserving the 30-day turn", async () => {
   const calls = [];
   const secondJob = {
     ...JOB,
@@ -1045,8 +1149,13 @@ test("a two-job safety budget still reserves one claim for 30-day trackers", asy
   });
   assert.equal(summary.submitted, 2);
   assert.equal(summary.atomicSuccesses, 2);
+  const claims = calls.filter((call) => call.action === "claim");
+  assert.equal(claims.length, 2);
+  assert.equal(claims[0].runId, claims[1].runId);
+  assert.equal(claims[0].runTrigger, "rank-catch-up");
+  assert.equal(claims[1].runTrigger, "rank-catch-up");
   assert.deepEqual(
-    calls.filter((call) => call.action === "claim").map((call) => call.preferLookup),
+    claims.map((call) => call.preferLookup),
     [true, false],
   );
 });
@@ -1653,6 +1762,11 @@ test("isolates every rendered-order proof failure and continues the next schedul
       code: "provider_stable_rendered_order_unproven",
       detail: "structure_mismatch",
       expected: "provider_stable_rendered_order_unproven:structure_mismatch",
+    },
+    {
+      code: "provider_stable_rendered_order_unproven",
+      detail: "page_boundary:2:g0:l13",
+      expected: "provider_stable_rendered_order_unproven:page_boundary:2:g0:l13",
     },
     {
       code: "provider_rendered_order_candidate_invalid",

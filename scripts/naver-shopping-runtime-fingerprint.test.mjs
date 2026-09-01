@@ -9,11 +9,11 @@ import { calculateN30RuntimeFingerprint, N30_RUNTIME_COMPONENTS } from "./naver-
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 test("calculates a deterministic version plus thirteen-component fingerprint", () => {
-  const actual = calculateN30RuntimeFingerprint({ repositoryRoot: root, version: "1.1.19" });
+  const actual = calculateN30RuntimeFingerprint({ repositoryRoot: root, version: "1.1.20" });
   assert.equal(actual.components.length, 13);
   assert.match(actual.fingerprint, /^[a-f0-9]{64}$/u);
   assert.deepEqual(actual.components.map(({ relativePath }) => relativePath), N30_RUNTIME_COMPONENTS);
-  assert.equal(calculateN30RuntimeFingerprint({ repositoryRoot: root, version: "1.1.19" }).fingerprint, actual.fingerprint);
+  assert.equal(calculateN30RuntimeFingerprint({ repositoryRoot: root, version: "1.1.20" }).fingerprint, actual.fingerprint);
   assert.throws(() => calculateN30RuntimeFingerprint({ repositoryRoot: root, version: "1.1.x" }), /runtime_version_invalid/u);
 });
 

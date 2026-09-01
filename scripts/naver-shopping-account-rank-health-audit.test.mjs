@@ -62,7 +62,7 @@ test("builds one fixed-time fail-closed account audit without exposing lease tok
   const sql = buildN30AccountRankHealthAuditSql({ observedAt });
 
   assert.equal(N30_ACCOUNT_HEALTH_AGENCY_CODE, "mml93-a01");
-  assert.equal(N30_ACCOUNT_HEALTH_RUNTIME_VERSION, "1.1.19");
+  assert.equal(N30_ACCOUNT_HEALTH_RUNTIME_VERSION, "1.1.20");
   assert.equal(N30_ACCOUNT_HEALTH_WORKER_ID, "windows-desktop-primary");
   assert.match(N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT, /^[a-f0-9]{64}$/u);
   assert.match(
@@ -114,7 +114,11 @@ test("builds one fixed-time fail-closed account audit without exposing lease tok
   assert.match(sql, /snapshot\.matched is true/iu);
   assert.match(sql, /snapshot\.matched is false/iu);
   assert.match(sql, /snapshot\.item ->> 'trackingRankSource' = 'exact_product'/iu);
-  assert.match(sql, /snapshot\.item ->> 'productId' = tracker\.product_id/iu);
+  assert.match(sql, /snapshot\.item ->> 'sellerProductId' = tracker\.product_id/iu);
+  assert.match(
+    sql,
+    /coalesce\(snapshot\.item ->> 'sellerProductId', ''\) = ''[\s\S]*?snapshot\.item ->> 'productId' = tracker\.product_id/iu,
+  );
   assert.match(sql, /snapshot\.item ->> 'trackingRankSource' = 'related_catalog'/iu);
   assert.match(sql, /snapshot\.item ->> 'relatedCatalogRelationBasis' = 'catalog_seller_product_id'/iu);
   assert.match(sql, /snapshot\.item ->> 'sourceLabel' = '원부'/iu);
@@ -238,11 +242,11 @@ test("SQL and JavaScript agree on all four open and integrity partitions", async
       insert into naver_shopping_worker_runs(
         run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at
       ) values
-        ('${runIds[0]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.19',
+        ('${runIds[0]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.20',
           '${N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT}', '2026-08-29T12:03:30Z'),
-        ('${runIds[1]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.19',
+        ('${runIds[1]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.20',
           '${N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT}', '2026-08-29T12:05:30Z'),
-        ('${runIds[2]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.19',
+        ('${runIds[2]}', 'windows-desktop-primary', 'rank-catch-up', '1.1.20',
           '${N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT}', '2026-08-29T12:07:30Z');
       insert into naver_shopping_scheduler_events(
         event_id, occurred_at, event_type, cycle_id, cycle_number, claim_id, run_id,
@@ -301,7 +305,7 @@ test("SQL and JavaScript agree on all four open and integrity partitions", async
         probe_tracker_id, probe_started_at
       ) values (
         'global', 'windows-desktop-primary', '2026-08-29T13:25:00Z', 'closed', null,
-        null, '1.1.19', '${N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT}',
+        null, '1.1.20', '${N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT}',
         '2026-08-29T13:25:00Z', null, null, null, null, null, 0, null, null, null, null, null
       );
     `);

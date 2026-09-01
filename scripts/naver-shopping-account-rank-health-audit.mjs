@@ -2,9 +2,9 @@ const ISO_UTC_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$/u;
 
 export const N30_ACCOUNT_HEALTH_AGENCY_CODE = "mml93-a01";
 export const N30_ACCOUNT_HEALTH_WORKER_ID = "windows-desktop-primary";
-export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1.1.19";
+export const N30_ACCOUNT_HEALTH_RUNTIME_VERSION = "1.1.20";
 export const N30_ACCOUNT_HEALTH_RUNTIME_FINGERPRINT =
-  "631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e";
+  "4e0f5fbde16a892e44986b2325865f33d61bdf7a5a13d3d7adcd501608aa8e5b";
 
 function requireObservedAt(value) {
   if (typeof value !== "string" || !ISO_UTC_PATTERN.test(value) || !Number.isFinite(Date.parse(value))) {
@@ -276,7 +276,13 @@ function atomicSnapshotProof(alias, productExpression) {
           and (
             (
               ${alias}.item ->> 'trackingRankSource' = 'exact_product'
-              and ${alias}.item ->> 'productId' = ${productExpression}
+              and (
+                ${alias}.item ->> 'sellerProductId' = ${productExpression}
+                or (
+                  coalesce(${alias}.item ->> 'sellerProductId', '') = ''
+                  and ${alias}.item ->> 'productId' = ${productExpression}
+                )
+              )
             )
             or (${relatedCatalogProof(alias, productExpression)})
           )

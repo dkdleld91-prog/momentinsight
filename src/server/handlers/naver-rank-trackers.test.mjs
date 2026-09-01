@@ -250,7 +250,7 @@ test("candidate readiness remains informational while activation stays canonical
         return {
           data: {
             circuit_state: "closed",
-            runtime_version: "1.1.19",
+            runtime_version: "1.1.20",
             runtime_fingerprint: "a".repeat(64),
             last_checked_count: 300,
             last_source: "naver_shopping_results_collector",
@@ -277,7 +277,7 @@ test("candidate cadence fails closed when database eligibility is missing or mal
           return {
             data: {
               circuit_state: "closed",
-              runtime_version: "1.1.19",
+              runtime_version: "1.1.20",
               runtime_fingerprint: "b".repeat(64),
               last_checked_count: 300,
               last_source: "naver_shopping_results_collector",

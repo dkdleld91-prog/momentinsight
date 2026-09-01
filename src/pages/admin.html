@@ -10936,8 +10936,8 @@
 
           <form class="mi-work-slot" id="mi-work-slot-form" data-work-slot-form hidden>
             <div class="mi-work-slot-grid">
-              <label class="mi-work-field"><span>사이트명</span><input class="mi-input" data-work-slot-site maxlength="40" required placeholder="예: 프라다" autocomplete="off" /></label>
-              <label class="mi-work-field"><span>업체/수량</span><input class="mi-input" data-work-slot-vendor maxlength="40" required placeholder="예: 거보 10슬롯" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
+              <label class="mi-work-field"><span>사이트명</span><input class="mi-input" data-work-slot-site maxlength="40" required placeholder="예: 트래픽" autocomplete="off" /></label>
+              <label class="mi-work-field"><span>업체/수량</span><input class="mi-input" data-work-slot-vendor maxlength="40" required placeholder="예: 업체 00슬롯" autocomplete="off" autocapitalize="none" spellcheck="false" /></label>
               <label class="mi-work-field"><span>시작일</span><input class="mi-input" type="date" data-work-slot-start required /></label>
               <label class="mi-work-field"><span>일수 · 1~365</span><input class="mi-input" type="number" min="1" max="365" step="1" value="30" data-work-slot-days required /></label>
             </div>
@@ -15317,7 +15317,7 @@
         if (submit) submit.disabled = false;
         if (created) await loadWorkItems();
         if (!failures.length) {
-          setWorkSlotStatus("슬롯 일정 2건을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok");
+          setWorkSlotStatus("슬롯 일정을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok");
           return;
         }
         setWorkSlotStatus((created ? "2건 중 " + created + "건만 등록했습니다. " : "2건 모두 등록하지 못했습니다. ") + failures.join(" / "), "warn");

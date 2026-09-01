@@ -1175,7 +1175,7 @@ test("slot helper sits beside the representative schedule create button and stay
 
   for (const [selector, pattern] of [
     ["data-work-slot-site", /<span>사이트명<\/span><input class="mi-input" data-work-slot-site maxlength="40" required/],
-    ["data-work-slot-vendor", /<span>업체\/수량<\/span><input class="mi-input" data-work-slot-vendor maxlength="40" required placeholder="예: 거보 10슬롯"/],
+    ["data-work-slot-vendor", /<span>업체\/수량<\/span><input class="mi-input" data-work-slot-vendor maxlength="40" required placeholder="예: 업체 00슬롯"/],
     ["data-work-slot-start", /<span>시작일<\/span><input class="mi-input" type="date" data-work-slot-start required/],
     ["data-work-slot-days", /<input class="mi-input" type="number" min="1" max="365" step="1" value="30" data-work-slot-days required/]
   ]) {
@@ -1240,7 +1240,9 @@ test("slot events are pinned to the dialog palette yellow (google event colour 5
 });
 
 test("slot helper reports success, server messages and partial failure honestly", () => {
-  assert.match(workSlotSubmitSource, /setWorkSlotStatus\("슬롯 일정 2건을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok"\)/);
+  // 성공 문구는 건수를 세지 않는다("2건을" 제거). 부분·전체 실패 문구는 건수를 그대로 남긴다.
+  assert.match(workSlotSubmitSource, /setWorkSlotStatus\("슬롯 일정을 등록했습니다 — 구글 캘린더에 곧 반영됩니다", "ok"\)/);
+  assert.equal(workSlotSubmitSource.includes("슬롯 일정 2건을 등록했습니다"), false);
   // 실패 문구는 서버 message 를 그대로 싣는다.
   const serverMessagePassthrough = workSlotSubmitSource.match(/error && error\.message \? error\.message : "등록에 실패했습니다\."/g) || [];
   assert.equal(serverMessagePassthrough.length, 2);

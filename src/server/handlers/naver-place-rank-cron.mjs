@@ -3,6 +3,9 @@ import { cronAuthorized } from "../cron-auth.mjs";
 import { corsHeaders, protectedJson } from "../security.mjs";
 import { runDuePlaceTrackers } from "./naver-place-rank-trackers.mjs";
 import { runChronicIsolationPass, runPlaceRequeuePass } from "../naver-rank-requeue.mjs";
+// 별도 import 줄인 이유: 위 줄은 scripts/rank-collection-stability.test.mjs F3 가 문자열
+// 그대로 대조하는 계약이라 손대지 않는다(같은 모듈을 두 번 import 하는 것은 ESM 에서 적법하다).
+import { runProductAutoRepairPass } from "../naver-rank-requeue.mjs";
 
 const DEFAULT_CRON_BATCH = 1;
 
@@ -110,9 +113,15 @@ export default {
       // 레인의 결과를 즉시 버리므로, 훗날 패스가 동기 단계에서 던지도록 바뀌면
       // 플레이스 실패가 상품 격리를 조용히 취소시킨다. allSettled 는 두 레인이 항상
       // 끝까지 각자 돈다는 것을 구조적으로 보장한다(유지보수 실패가 크론을 죽이지도 않는다).
+      // 상품 자동 재검증(C3 결함 F)도 같은 allSettled 안에서 돈다. 이 패스는 추적기 행을
+      // 쓰지 않고 repair 큐에만 넣으므로(retry_count < 8 만 골라 격리 모집단과 배타적)
+      // 상품 격리와 동시에 돌아도 같은 행을 두 패스가 건드리지 않는다. 플레이스 표에는
+      // 전혀 닿지 않아 remaining/drained 판정(아래 503 분기)에도 영향이 없고, 스스로
+      // 던지지 않으며 설령 던져도 allSettled 가 삼킨다.
       await Promise.allSettled([
         runChronicIsolationPass(ctx, "naver_place_rank_trackers"),
         runChronicIsolationPass(ctx, "naver_rank_trackers"),
+        runProductAutoRepairPass(ctx),
       ]);
       await runPlaceRequeuePass(ctx);
       const summary = await runDuePlaceTrackers(ctx, {

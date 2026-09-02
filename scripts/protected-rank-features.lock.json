@@ -172,7 +172,7 @@
     {
       "id": "product-tracker-server",
       "file": "src/server/handlers/naver-rank-trackers.mjs",
-      "sha256": "715e59aeddd06f013e8f2d5aaa8f180965e22bf2358af7339aec52fddb226f50"
+      "sha256": "e31bc9a58070d3a111e0f1f9ada0bd8eff20471fda714b5c9d2a65f35283f8f8"
     },
     {
       "id": "product-organic-rank-server",
@@ -192,7 +192,7 @@
     {
       "id": "place-rank-cron-server",
       "file": "src/server/handlers/naver-place-rank-cron.mjs",
-      "sha256": "66c1574a6bc77d9e90f48ada68b0fe1a162d1e0d8bfbcd36f019aae7af55cca6"
+      "sha256": "5b1c71befdc306e2937fc08553537c801d1526f6dfa9ae1c2cec09b51e74c21c"
     },
     {
       "id": "place-collector",
@@ -590,7 +590,7 @@
     {
       "id": "shopping-chrome-native-host-installer",
       "file": "scripts/install-naver-shopping-chrome-bridge.mjs",
-      "sha256": "a9524e5de15ec934ece22fd6414ba30f6f6daf5108c6a08093e1ddbb8dc38e13"
+      "sha256": "c8f2b7ce8b3a1eaacacd529b79cfd24114bda91633ed0963ea121562e446863c"
     },
     {
       "id": "shopping-chrome-scheduler-wrapper",

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import {
+  RANK_CHRONIC_ISOLATION_MS,
+  RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_RETRY_EXHAUSTED_AT,
+  RANK_STUCK_TRACKER_MS,
+} from "../naver-rank-requeue.mjs";
 import handler, {
   adminRateConfiguration,
   auditActionLabel,
@@ -802,4 +808,134 @@ test("운영팀 열까지 없는 옛 DB 는 마지막 단으로 내려가되 깨
   assert.equal(result.payload.clients.length, 2);
   assert.equal(result.payload.clients[1].agencyCode, "mml93-c02");
   assert.equal(result.payload.clients[1].rankKeywordLimit, null);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 총관리자 요약 카운터 — neverFoundTrackers · stuckTrackers (C2 결함 E)
+//
+// chronicTrackers 와 같은 패턴이다: safeCount(HEAD · count=exact) 한 번, 실패는
+// { count:null, error } 로 접히고 응답은 200 을 유지한다. 임계값은 서버 상수를 그대로
+// 쓰므로 잔존 감사 스크립트·헬스 API 와 같은 행을 센다.
+// ─────────────────────────────────────────────────────────────
+const countResponse = (total) => new Response(null, { status: 200, headers: { "content-range": `*/${total}` } });
+
+function ownerHealthStub(resolveCount) {
+  const heads = [];
+  const base = ownerListStub();
+  const impl = async (input, init = {}) => {
+    const method = String(init.method || "GET").toUpperCase();
+    if (method === "HEAD") {
+      const url = new URL(typeof input === "string" ? input : String(input.url));
+      heads.push(url);
+      return resolveCount(url);
+    }
+    return base.impl(input, init);
+  };
+  return { heads, impl };
+}
+
+async function listOwnerAccountsWith(impl) {
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    impl,
+    () => handler.fetch(new Request(SUPER_ADMIN_API_URL, {
+      headers: {
+        "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+        "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+      },
+    })),
+  ));
+  return { response, payload: await response.json() };
+}
+
+const isProductTrackers = (url) => url.pathname === "/rest/v1/naver_rank_trackers";
+const isNeverFoundQuery = (url) => isProductTrackers(url) && url.searchParams.has("check_count");
+const isStuckQuery = (url) => isProductTrackers(url) && url.searchParams.has("or") && !url.searchParams.has("retry_count");
+const isChronicQuery = (url) => isProductTrackers(url) && url.searchParams.has("or") && url.searchParams.has("retry_count");
+
+test("총관리자 요약에 neverFoundTrackers·stuckTrackers 가 chronicTrackers 와 같은 방식으로 실린다", async () => {
+  const stub = ownerHealthStub((url) => {
+    if (isNeverFoundQuery(url)) return countResponse(5);
+    if (isStuckQuery(url)) return countResponse(2);
+    if (isChronicQuery(url)) return countResponse(1);
+    return countResponse(0);
+  });
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  const health = payload.health;
+  assert.deepEqual(health.chronicTrackers, { count: 1, error: null });
+  assert.deepEqual(health.neverFoundTrackers, { count: 5, error: null });
+  assert.deepEqual(health.stuckTrackers, { count: 2, error: null });
+  // 기존 키·순서 뒤에 append 한다.
+  assert.deepEqual(Object.keys(health), [
+    "checkedAt",
+    "activeClients",
+    "activeTeams",
+    "dueTrackers",
+    "failedTrackers",
+    "chronicTrackers",
+    "neverFoundTrackers",
+    "stuckTrackers",
+    "sourceFiles",
+    "publicReports",
+  ]);
+
+  // 질의 모양: 상품 표만, 각각 정확히 한 번.
+  const neverFoundQueries = stub.heads.filter(isNeverFoundQuery);
+  const stuckQueries = stub.heads.filter(isStuckQuery);
+  assert.equal(neverFoundQueries.length, 1);
+  assert.equal(stuckQueries.length, 1);
+  assert.ok(stub.heads.every((url) => url.pathname !== "/rest/v1/naver_place_rank_trackers"));
+
+  const [neverFound] = neverFoundQueries;
+  assert.equal(neverFound.searchParams.get("status"), "eq.active");
+  assert.equal(neverFound.searchParams.get("check_count"), `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`);
+  assert.equal(neverFound.searchParams.get("found_count"), "eq.0");
+  assert.equal(neverFound.searchParams.has("last_error"), false);
+
+  const [stuck] = stuckQueries;
+  assert.equal(stuck.searchParams.get("status"), "eq.active");
+  assert.equal(stuck.searchParams.get("last_error"), "not.is.null");
+  assert.equal(stuck.searchParams.has("retry_count"), false, "재시도 소진과 무관하게 멈춘 추적기를 센다");
+  const or = stuck.searchParams.get("or");
+  assert.ok(or.includes("last_checked_at.lt."), or);
+  assert.ok(or.includes("and(last_checked_at.is.null,created_at.lt."), or);
+  // 컷오프는 checkedAt 에서 유도되므로 정확히 checkedAt - 36h 다(서버 상수와 값 일치).
+  const expectedCutoff = new Date(Date.parse(health.checkedAt) - RANK_STUCK_TRACKER_MS).toISOString();
+  const cutoffs = [...or.matchAll(/\.lt\.([0-9TZ:.\-]+)/g)].map((match) => match[1]);
+  assert.deepEqual(cutoffs, [expectedCutoff, expectedCutoff]);
+  // 만성 카운트의 컷오프(3일)와는 다른 값이어야 한다 — 두 집계가 같은 질의를 복사한 게 아니다.
+  const chronicCutoff = new Date(Date.parse(health.checkedAt) - RANK_CHRONIC_ISOLATION_MS).toISOString();
+  assert.notEqual(expectedCutoff, chronicCutoff);
+  const [chronic] = stub.heads.filter(isChronicQuery);
+  assert.equal(chronic.searchParams.get("retry_count"), `gte.${RANK_RETRY_EXHAUSTED_AT}`);
+  assert.ok(chronic.searchParams.get("or").includes(chronicCutoff));
+});
+
+test("두 카운터의 조회 실패는 count:null·error 로 접히고 응답은 200 이다(fail-safe)", async () => {
+  const stub = ownerHealthStub((url) => {
+    if (isNeverFoundQuery(url) || isStuckQuery(url)) {
+      return Response.json(
+        { code: "42703", message: "column naver_rank_trackers.check_count does not exist", details: null, hint: null },
+        { status: 400 },
+      );
+    }
+    return countResponse(0);
+  });
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.health.neverFoundTrackers.count, null);
+  assert.match(String(payload.health.neverFoundTrackers.error), /does not exist/);
+  assert.equal(payload.health.stuckTrackers.count, null);
+  assert.match(String(payload.health.stuckTrackers.error), /does not exist/);
+  // 다른 카운터는 영향받지 않는다.
+  assert.deepEqual(payload.health.chronicTrackers, { count: 0, error: null });
+});
+
+test("경계: 0건이면 count:0 이고 null 이 아니다", async () => {
+  const stub = ownerHealthStub(() => countResponse(0));
+  const { payload } = await listOwnerAccountsWith(stub.impl);
+  assert.deepEqual(payload.health.neverFoundTrackers, { count: 0, error: null });
+  assert.deepEqual(payload.health.stuckTrackers, { count: 0, error: null });
 });

@@ -22,6 +22,18 @@
 // 기간 상수 역시 하드코딩하지 않고 서버 상수를 그대로 가져와 격리 기준선과 어긋날 수
 // 없게 한다.
 //
+// 세 번째·네 번째 숫자(stuckCount, neverFoundCount — 2026-09-02, C2 결함 D)에 대하여:
+// 위 잔존 판정은 retry_count >= 8 만 세므로, 상품 레인에서 격리 코드로 며칠씩 멈춘 채
+// retry_count 가 8 에 닿지 않은 추적기는 잡지 못했다(레인 전체는 돌아서 queueStalled
+// 도 거짓이다). 상품 추적기(naver_rank_trackers)에 한해 두 집계를 더 센다.
+//   stuck      = status='active' AND last_error IS NOT NULL
+//                AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS
+//   neverFound = status='active' AND check_count >= RANK_NEVER_FOUND_MIN_CHECKS AND found_count = 0
+// stuckCount > 0 이면 exit 1 이고 보고에 RANK_STUCK_TRACKERS_PRESENT 마커가 실린다
+// (잔존 판정·코드·마커는 그대로다 — 두 축은 서로 독립이며 code 는 여전히 잔존만 말한다).
+// neverFoundCount 는 보고만 하고 종료 코드에 영향을 주지 않는다. 임계값은 전부 서버
+// 상수를 import 하므로 헬스 API(trackers)·총관리자 카운터와 같은 행을 센다.
+//
 // 읽기 전용이다. select 만 하고 limit=0 + Prefer: count=exact 로 개수만 받는다 —
 // 추적기 id·키워드·상품번호 같은 계정 데이터를 로그에 남기지 않는다.
 import fs from "node:fs";
@@ -30,13 +42,18 @@ import path from "node:path";
 import {
   RANK_CHRONIC_ISOLATION_DAYS,
   RANK_CHRONIC_ISOLATION_MS,
+  RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_RETRY_EXHAUSTED_AT,
+  RANK_STUCK_TRACKER_HOURS,
+  RANK_STUCK_TRACKER_MS,
 } from "../src/server/naver-rank-requeue.mjs";
 
 const LANES = [
   { key: "product", table: "naver_rank_trackers" },
   { key: "place", table: "naver_place_rank_trackers" },
 ];
+// stuck·neverFound 는 상품 레인에만 정의된다.
+const PRODUCT_TABLE = LANES[0].table;
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -66,8 +83,9 @@ const env = {
 const supabaseUrl = String(env.SUPABASE_URL || "").trim();
 const serviceKey = String(env.SUPABASE_SECRET_KEY || "").trim();
 const checkedAt = new Date().toISOString();
-// 두 레인·두 질의가 같은 시계를 쓰도록 컷오프를 한 번만 계산한다.
+// 두 레인·모든 질의가 같은 시계를 쓰도록 컷오프를 한 번만 계산한다.
 const chronicCutoffAt = new Date(Date.parse(checkedAt) - RANK_CHRONIC_ISOLATION_MS).toISOString();
+const stuckCutoffAt = new Date(Date.parse(checkedAt) - RANK_STUCK_TRACKER_MS).toISOString();
 
 function fail(code, message) {
   console.error(JSON.stringify({ ok: false, code, message, checkedAt }, null, 2));
@@ -81,16 +99,14 @@ if (!supabaseUrl || !serviceKey) {
   );
 }
 
-// 잔존 실패 기준선(공통) + 호출자가 얹는 추가 필터로 개수만 세는 단일 헬퍼.
-// extraFilters 는 PostgREST 질의 파라미터 그대로다(예: { or: "(a.is.null,b.lt.…)" }).
-async function laneCount(table, extraFilters = {}) {
+// active 추적기 개수만 세는 공통 헬퍼. filters 는 PostgREST 질의 파라미터 그대로다
+// (예: { or: "(a.is.null,b.lt.…)" }). select=id · limit=0 · count=exact 로 행 본문은 받지 않는다.
+async function countActive(table, filters = {}) {
   const url = new URL(`/rest/v1/${table}`, supabaseUrl);
   url.searchParams.set("select", "id");
   url.searchParams.set("limit", "0");
   url.searchParams.set("status", "eq.active");
-  url.searchParams.set("last_error", "not.is.null");
-  url.searchParams.set("retry_count", `gte.${RANK_RETRY_EXHAUSTED_AT}`);
-  for (const [key, value] of Object.entries(extraFilters)) {
+  for (const [key, value] of Object.entries(filters)) {
     url.searchParams.set(key, value);
   }
   const response = await fetch(url, {
@@ -110,9 +126,21 @@ async function laneCount(table, extraFilters = {}) {
   return total;
 }
 
+// 잔존 실패 기준선(공통) + 호출자가 얹는 추가 필터.
+async function laneCount(table, extraFilters = {}) {
+  return countActive(table, {
+    last_error: "not.is.null",
+    retry_count: `gte.${RANK_RETRY_EXHAUSTED_AT}`,
+    ...extraFilters,
+  });
+}
+
 let lanes;
+let stuckCount;
+let neverFoundCount;
 try {
-  lanes = await Promise.all(LANES.map(async (lane) => {
+  [lanes, stuckCount, neverFoundCount] = await Promise.all([
+    Promise.all(LANES.map(async (lane) => {
     const [residualCount, isolatedCount] = await Promise.all([
       laneCount(lane.table),
       // 격리 대상 = 잔존 조건 + 성공 도장(last_checked_at)이 끊긴 기간.
@@ -125,29 +153,54 @@ try {
         or: `(last_checked_at.lt.${chronicCutoffAt},and(last_checked_at.is.null,created_at.lt.${chronicCutoffAt}))`,
       }),
     ]);
-    return { lane: lane.key, table: lane.table, residualCount, isolatedCount };
-  }));
+      return { lane: lane.key, table: lane.table, residualCount, isolatedCount };
+    })),
+    // 멈춘 상품 추적기. 잔존 기준선(retry_count>=8)을 일부러 쓰지 않는다 — 소진 전에
+    // 멈춘 행을 잡는 것이 이 집계의 존재 이유다. OR 의 두 갈래는 위 격리 질의와 같은
+    // 앵커 규칙이다(성공 이력이 있으면 last_checked_at, 없으면 created_at).
+    countActive(PRODUCT_TABLE, {
+      last_error: "not.is.null",
+      or: `(last_checked_at.lt.${stuckCutoffAt},and(last_checked_at.is.null,created_at.lt.${stuckCutoffAt}))`,
+    }),
+    // 한 번도 찾지 못한 상품 추적기(보고 전용).
+    countActive(PRODUCT_TABLE, {
+      check_count: `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`,
+      found_count: "eq.0",
+    }),
+  ]);
 } catch (error) {
   fail("RANK_RESIDUAL_AUDIT_QUERY_FAILED", String(error?.message || "residual_query_failed"));
 }
 
 const residualCount = lanes.reduce((sum, lane) => sum + lane.residualCount, 0);
-// 보고만 한다. 합격/불합격은 residualCount 로만 정한다(isolated 는 그 부분집합).
+// 보고만 한다. 잔존 합격/불합격은 residualCount 로만 정한다(isolated 는 그 부분집합).
 const isolatedCount = lanes.reduce((sum, lane) => sum + lane.isolatedCount, 0);
 const report = {
-  ok: residualCount === 0,
+  // 종료 코드와 같은 뜻이다: 잔존도 0, 멈춘 추적기도 0 일 때만 참.
+  ok: residualCount === 0 && stuckCount === 0,
+  // code 는 예전 그대로 잔존 축만 말한다(워크플로 grep 계약). 멈춘 추적기 축은 stuckCode 다.
   code: residualCount === 0 ? "RANK_RESIDUAL_NONE" : "RANK_RESIDUAL_FAILURES_PRESENT",
   residualCount,
   isolatedCount,
+  stuckCode: stuckCount === 0 ? "RANK_STUCK_NONE" : "RANK_STUCK_TRACKERS_PRESENT",
+  stuckCount,
+  neverFoundCount,
   retryExhaustedAt: RANK_RETRY_EXHAUSTED_AT,
   chronicIsolationDays: RANK_CHRONIC_ISOLATION_DAYS,
+  stuckHours: RANK_STUCK_TRACKER_HOURS,
+  neverFoundMinChecks: RANK_NEVER_FOUND_MIN_CHECKS,
   lanes,
   checkedAt,
 };
 
-if (residualCount > 0) {
+if (residualCount > 0 || stuckCount > 0) {
   console.error(JSON.stringify(report, null, 2));
-  console.error(`재시도가 소진된 순위 추적기가 ${residualCount}건 남아 있습니다. docs/RUNBOOK.md 증상 ④를 따르세요.`);
+  if (residualCount > 0) {
+    console.error(`재시도가 소진된 순위 추적기가 ${residualCount}건 남아 있습니다. docs/RUNBOOK.md 증상 ④를 따르세요.`);
+  }
+  if (stuckCount > 0) {
+    console.error(`${RANK_STUCK_TRACKER_HOURS}시간 넘게 멈춘 상품 순위 추적기가 ${stuckCount}건 있습니다(RANK_STUCK_TRACKERS_PRESENT). 대표실 수집 상태 화면의 stuckTrackers 와 대조하세요.`);
+  }
   process.exit(1);
 }
 

@@ -125,6 +125,22 @@ export const RANK_CHRONIC_ISOLATION_MARKER = "수집 방식 점검 중";
 // 날짜·연속 실패 일수·retry_count 같은 내부 텔레메트리는 절대 넣지 않는다.
 export const RANK_CHRONIC_ISOLATION_MESSAGE = `${RANK_CHRONIC_ISOLATION_MARKER} · 순위 수집을 잠시 빠른 주기에서 제외하고 하루 한 번 다시 확인합니다.`;
 
+// "며칠째 멈춘(stuck)" 상품 추적기 기준. 만성 격리(3일·retry_count>=8)보다 짧고 재시도
+// 횟수를 보지 않는다 — 상품 레인은 격리 코드가 많아 retry_count 가 8 에 닿지 않은 채
+// last_error 만 남기고 며칠씩 멈춘 행이 생기는데, 그 행은 잔존 감사(retry>=8)에도
+// queueStalled(레인 전체 무수집)에도 잡히지 않았다(C2 결함 D). 정의:
+//   status='active' AND last_error IS NOT NULL
+//   AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS
+// 36시간 = 09:00 정시 슬롯 기준 "어제 슬롯도 오늘 슬롯도 놓쳤다" 를 뜻한다. 헬스 API·
+// 잔존 감사·총관리자 카운터가 전부 이 값을 import 하므로 세 화면이 같은 행을 센다.
+export const RANK_STUCK_TRACKER_HOURS = 36;
+export const RANK_STUCK_TRACKER_MS = RANK_STUCK_TRACKER_HOURS * 60 * 60 * 1000;
+// "한 번도 찾지 못한(neverFound)" 상품 추적기의 최소 확인 횟수. 정의:
+//   status='active' AND check_count >= RANK_NEVER_FOUND_MIN_CHECKS AND found_count = 0
+// naver-rank-trackers.mjs trackerPayload 의 neverFound(checkCount >= 3 && foundCount === 0)
+// 와 같은 값이어야 한다(그 파일은 잠금이라 상수를 import 하지 않고 테스트가 소스로 대조한다).
+export const RANK_NEVER_FOUND_MIN_CHECKS = 3;
+
 // last_checked_at·created_at 을 함께 읽는다. 둘은 만성 실패 구간의 앵커라 격리 판정에
 // 필수이고, requeueEligible 이 격리 후보를 잘라내려면 재큐 SELECT 에도 실려 있어야 한다
 // (컬럼이 없으면 앵커가 파싱되지 않아 격리 판정이 항상 false 로 무력화된다).
@@ -380,5 +396,215 @@ export async function runChronicIsolationPass(ctx, table, options = {}) {
     // 격리 실패가 순위 갱신 크론을 절대 죽이지 않는다(재큐 패스와 같은 자세).
     console.warn(`mi-rank-chronic-failed table=${table} message=${error?.message || "unknown"}`);
     return { table, scanned: 0, isolated: 0, skipped: 0, failed: true };
+  }
+}
+
+// ── 상품 레인 자동 재검증(auto repair) ─────────────────────────────────────
+// 상품 추적기는 실패가 거듭되면 worker_quarantined_until 로 주차될 뿐 스스로 재검증되지
+// 않았다(C3 결함 F). 운영자가 수동 SQL 로 mi_enqueue_naver_shopping_repair_priority 를
+// 부르는 것이 유일한 복구 경로였다. 이 패스는 그 RPC 를 하루 한 번 자동으로 부른다.
+// 설계 원칙:
+//   (j) 추적기 행을 직접 쓰지 않는다. next_check_at·retry_count·worker_quarantined_until 은
+//       durable cycle 소유이므로(맨 위 근거 1~3) 여기서는 오직 "repair 큐에 넣기"만 한다.
+//       큐 소비·lease·계정우선 게이트는 기존 RPC 와 워커가 그대로 담당한다.
+//   (k) 새 테이블·마이그레이션 없음. "하루 1회" 판정은 requests 표의 requested_at
+//       (reason='auto_repair') 으로 한다 — 그 표는 RPC 가 이미 쓰고 service_role 이 select
+//       할 수 있다(20260813063518:76-79). 인스턴스 메모리는 서버리스라 신뢰하지 않는다.
+//   (l) 모집단은 만성 격리와 배타적이다: retry_count < RANK_RETRY_EXHAUSTED_AT(8) 만 고른다.
+//       8 이상은 격리 담당이고, 격리 표식(RANK_CHRONIC_ISOLATION_MARKER 접두사 last_message)
+//       이 붙은 행도 제외한다 — 격리가 주차한 행을 재검증이 되살리면 격리가 무효가 된다.
+//   (m) 정체 기준은 stuck 과 같은 36시간(RANK_STUCK_TRACKER_MS)·같은 앵커(last_checked_at,
+//       없으면 created_at)·같은 방향(lt) 이다. 헬스 API·잔존 감사가 세는 stuck 행 중
+//       retry_count 가 8 미만인 것이 정확히 이 패스의 후보다.
+//   (n) 최근 24시간 안에 repair 큐에 있었던 추적기(지금 queued · consumed_at 이 24h 안 ·
+//       24h 안의 요청에 속함)는 다시 넣지 않는다. 방금 소비된 항목을 또 넣으면 큐가 같은
+//       키워드로 돌고, 지금 queued 인 항목을 넣으면 RPC 가 배치 전체를 거절한다.
+//   (o) 절대 던지지 않는다. RPC 거절(계정우선 게이트·already_queued·기타)·읽기 실패·네트워크
+//       오류는 전부 결과 객체와 로그로만 남긴다. 게이트에 막히면 이번 틱은 건너뛴다.
+export const RANK_AUTO_REPAIR_RPC = "mi_enqueue_naver_shopping_repair_priority";
+export const RANK_AUTO_REPAIR_REASON = "auto_repair";
+// RPC 의 tracker_count 제약(between 1 and 10)과 같다.
+export const RANK_AUTO_REPAIR_BATCH_LIMIT = 10;
+// 하루 1회 게이트이자 24h 중복 제외 창. 하나만 정하고 둘 다 여기서 쓴다.
+export const RANK_AUTO_REPAIR_INTERVAL_MS = 24 * 60 * 60 * 1000;
+// 후보 스캔 상한. 24h 중복 제외로 일부가 빠져도 배치 10건을 채울 여유를 둔다.
+const RANK_AUTO_REPAIR_SCAN_LIMIT = 40;
+const RANK_AUTO_REPAIR_RECENT_REQUEST_LIMIT = 200;
+const AUTO_REPAIR_REQUESTS_TABLE = "naver_shopping_repair_priority_requests";
+const AUTO_REPAIR_ITEMS_TABLE = "naver_shopping_repair_priority_items";
+const AUTO_REPAIR_COLUMNS = "id, status, last_error, retry_count, last_checked_at, created_at, last_message, worker_quarantined_until";
+
+function generatedRequestId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  // Node 19+ 는 항상 위 경로다. 폴백은 v4 형식을 흉내 내되 RPC 가 uuid 로 받으므로 형식만 지킨다.
+  const hex = () => Math.floor(Math.random() * 0x10000).toString(16).padStart(4, "0");
+  return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${(8 + Math.floor(Math.random() * 4)).toString(16)}${hex().slice(1)}-${hex()}${hex()}${hex()}`;
+}
+
+// 자동 재검증 후보인가. 순수 함수 — DB 도 시계도 건드리지 않는다(now 는 주입).
+// 판정 순서는 싼 것부터: active → last_error → retry_count → 격리 표식 → 정체 기간.
+export function productAutoRepairCandidate(row, options = {}) {
+  const now = Number(options.now || Date.now());
+  const stuckMs = Number(options.stuckMs || RANK_STUCK_TRACKER_MS);
+  if (!row || row.status !== "active") return false;
+  if (!String(row.last_error || "").trim()) return false;
+  if (Number(row.retry_count || 0) >= RANK_RETRY_EXHAUSTED_AT) return false;
+  if (String(row.last_message || "").indexOf(RANK_CHRONIC_ISOLATION_MARKER) === 0) return false;
+  const checked = new Date(row.last_checked_at || 0).getTime();
+  const anchor = Number.isFinite(checked) && checked > 0
+    ? checked
+    : new Date(row.created_at || 0).getTime();
+  if (!Number.isFinite(anchor) || anchor <= 0) return false;
+  // SQL 의 coalesce(last_checked_at, created_at) < now - 36h 와 같은 strict 방향이다.
+  return now - anchor > stuckMs;
+}
+
+function autoRepairResult(extra = {}) {
+  return {
+    table: "naver_rank_trackers",
+    scanned: 0,
+    candidates: 0,
+    recentlyQueued: 0,
+    selected: 0,
+    enqueued: 0,
+    accepted: false,
+    blockedByAccountPriority: false,
+    alreadyQueued: false,
+    ranToday: false,
+    ...extra,
+  };
+}
+
+async function productAutoRepairPass(ctx, options = {}) {
+  const now = Number(options.now || Date.now());
+  const batchLimit = Math.max(1, Math.min(RANK_AUTO_REPAIR_BATCH_LIMIT, Number(options.batchLimit || RANK_AUTO_REPAIR_BATCH_LIMIT)));
+  const dayCutoffIso = new Date(now - RANK_AUTO_REPAIR_INTERVAL_MS).toISOString();
+  const stuckCutoffIso = new Date(now - RANK_STUCK_TRACKER_MS).toISOString();
+  const admin = ctx.supabaseAdmin;
+
+  // 1) 최근 24h 의 repair 요청. 하루 1회 게이트(reason=auto_repair)와 24h 중복 제외(모든
+  //    reason)를 한 번의 읽기로 같이 얻는다.
+  const { data: recentRequests, error: requestsError } = await admin
+    .from(AUTO_REPAIR_REQUESTS_TABLE)
+    .select("request_id, reason, requested_at")
+    .gte("requested_at", dayCutoffIso)
+    .order("requested_at", { ascending: false })
+    .limit(RANK_AUTO_REPAIR_RECENT_REQUEST_LIMIT);
+  if (requestsError) throw requestsError;
+  const dayCutoff = now - RANK_AUTO_REPAIR_INTERVAL_MS;
+  const recentAuto = (recentRequests || []).find((request) => {
+    if (String(request?.reason || "") !== RANK_AUTO_REPAIR_REASON) return false;
+    const at = new Date(request?.requested_at || 0).getTime();
+    return Number.isFinite(at) && at >= dayCutoff;
+  });
+  if (recentAuto) {
+    return autoRepairResult({ ranToday: true, lastRequestedAt: recentAuto.requested_at });
+  }
+
+  // 2) 후보 SELECT. DB 로 밀 수 있는 술어는 다 밀고(status·last_error·retry_count·36h 컷오프),
+  //    격리 표식 같은 문자열 판정은 JS 순수 함수가 다시 거른다. 가장 오래 정체된 행부터.
+  const { data: rows, error: rowsError } = await admin
+    .from("naver_rank_trackers")
+    .select(AUTO_REPAIR_COLUMNS)
+    .eq("status", "active")
+    .not("last_error", "is", null)
+    .lt("retry_count", RANK_RETRY_EXHAUSTED_AT)
+    .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)
+    .order("last_checked_at", { ascending: true, nullsFirst: true })
+    .limit(RANK_AUTO_REPAIR_SCAN_LIMIT);
+  if (rowsError) throw rowsError;
+  const scanned = (rows || []).length;
+  const candidates = (rows || []).filter((row) => productAutoRepairCandidate(row, { now }));
+  if (!candidates.length) {
+    return autoRepairResult({ scanned, candidates: 0 });
+  }
+
+  // 3) 24h 중복 제외. 후보 id 로 한정해 세 갈래(queued · consumed_at · 최근 요청 소속)를 DB 로 민다.
+  const candidateIds = candidates.map((row) => row.id);
+  const recentRequestIds = (recentRequests || [])
+    .map((request) => String(request?.request_id || ""))
+    .filter(Boolean);
+  const orBranches = [`state.eq.queued`, `consumed_at.gte.${dayCutoffIso}`];
+  if (recentRequestIds.length) orBranches.push(`request_id.in.(${recentRequestIds.join(",")})`);
+  const { data: recentItems, error: itemsError } = await admin
+    .from(AUTO_REPAIR_ITEMS_TABLE)
+    .select("tracker_id, state, consumed_at, request_id")
+    .in("tracker_id", candidateIds)
+    .or(orBranches.join(","));
+  if (itemsError) throw itemsError;
+  // DB 술어와 같은 세 갈래를 JS 에서 다시 판정한다 — 후보 SELECT 와 같은 이중 판정 자세다.
+  const recentRequestIdSet = new Set(recentRequestIds);
+  const recentlyQueuedIds = new Set((recentItems || [])
+    .filter((item) => {
+      if (String(item?.state || "") === "queued") return true;
+      const consumedAt = new Date(item?.consumed_at || 0).getTime();
+      if (Number.isFinite(consumedAt) && consumedAt >= dayCutoff) return true;
+      return recentRequestIdSet.has(String(item?.request_id || ""));
+    })
+    .map((item) => String(item?.tracker_id || "")));
+  const eligible = candidates.filter((row) => !recentlyQueuedIds.has(String(row.id)));
+  const selectedIds = eligible.slice(0, batchLimit).map((row) => row.id);
+  const base = {
+    scanned,
+    candidates: candidates.length,
+    recentlyQueued: candidates.length - eligible.length,
+    selected: selectedIds.length,
+  };
+  if (!selectedIds.length) return autoRepairResult(base);
+
+  // 4) 기존 RPC 호출. 실패·거절은 전부 결과로 접는다(위 (o)).
+  const requestId = String(options.requestId || generatedRequestId());
+  const { data, error } = await admin.rpc(RANK_AUTO_REPAIR_RPC, {
+    p_request_id: requestId,
+    p_tracker_ids: selectedIds,
+    p_reason: RANK_AUTO_REPAIR_REASON,
+  });
+  if (error) {
+    const message = String(error?.message || error || "unknown");
+    if (message.includes("already_queued")) {
+      return autoRepairResult({ ...base, requestId, alreadyQueued: true });
+    }
+    return autoRepairResult({ ...base, requestId, failed: true, error: message });
+  }
+  const accepted = data?.accepted === true;
+  const blockedByAccountPriority = data?.blockedByAccountPriority === true;
+  const queuedCount = Number(data?.queuedCount);
+  const enqueued = accepted
+    ? (Number.isFinite(queuedCount) && queuedCount >= 0 ? queuedCount : selectedIds.length)
+    : 0;
+  return autoRepairResult({
+    ...base,
+    requestId,
+    accepted,
+    blockedByAccountPriority,
+    enqueued,
+    idempotent: data?.idempotent === true,
+  });
+}
+
+// 매 크론 틱에서 불러도 안전하다: 인스턴스 스로틀(5분) → DB 하루 1회 게이트 → 후보 →
+// 24h 중복 제외 → RPC. 어느 단계에서도 던지지 않는다.
+export async function runProductAutoRepairPass(ctx, options = {}) {
+  const now = Number(options.now || Date.now());
+  const memoKey = "autoRepair:naver_rank_trackers";
+  const nextAllowedAt = passMemo.get(memoKey) || 0;
+  if (!options.force && nextAllowedAt > now) {
+    return autoRepairResult({ throttled: true });
+  }
+  passMemo.set(memoKey, now + RANK_REQUEUE_MIN_INTERVAL_MS);
+  try {
+    if (!ctx?.supabaseAdmin) throw new Error("supabaseAdmin unavailable");
+    const result = await productAutoRepairPass(ctx, { ...options, now });
+    if (result.selected || result.failed) {
+      console.log(
+        `mi-rank-auto-repair scanned=${result.scanned} candidates=${result.candidates} recentlyQueued=${result.recentlyQueued} selected=${result.selected} accepted=${result.accepted} blocked=${result.blockedByAccountPriority} alreadyQueued=${result.alreadyQueued} enqueued=${result.enqueued}${result.failed ? ` failed=true error=${result.error}` : ""}`,
+      );
+    }
+    return result;
+  } catch (error) {
+    // 자동 재검증 실패가 순위 갱신 크론을 절대 죽이지 않는다(재큐·격리 패스와 같은 자세).
+    const message = error?.message || String(error || "unknown");
+    console.warn(`mi-rank-auto-repair-failed message=${message}`);
+    return autoRepairResult({ failed: true, error: message });
   }
 }

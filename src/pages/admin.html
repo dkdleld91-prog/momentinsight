@@ -4118,6 +4118,16 @@
       background: rgba(255, 241, 241, 0.74);
     }
 
+    #mi-admin .mi-rank-catalog-hint {
+      padding: 6px 12px 8px;
+      border-bottom: 1px solid #fed7aa;
+      background: rgba(255, 247, 237, 0.72);
+      color: var(--mi-orange);
+      font-size: 11px;
+      line-height: 1.5;
+      word-break: break-all;
+    }
+
     #mi-admin .mi-rank-ops-row .mi-rank-ops-message {
       max-width: min(420px, 100%);
       overflow: hidden;
@@ -11563,7 +11573,7 @@
               <div class="mi-card-head">
                 <div>
                   <h3 data-owner-list-title>활성 계정</h3>
-                  <p data-owner-list-desc>현재 운영 중인 운영팀과 광고주 수를 확인합니다.</p>
+                  <p data-owner-list-desc>현재 운영 중인 운영팀·광고주 수와 상품 추적기 집계를 확인합니다.</p>
                 </div>
                 <div class="mi-card-actions">
                   <button class="mi-button is-ghost mi-button-small" type="button" data-owner-list-open>전체보기</button>
@@ -12228,11 +12238,11 @@
             </div>
             <div class="mi-rank-form is-tracking">
               <input class="mi-input" data-rank-keyword aria-label="순위 추적 키워드" placeholder="키워드" />
-              <input class="mi-input" data-rank-url aria-label="네이버 상품 URL" placeholder="네이버 상품 URL 붙여넣기" />
+              <input class="mi-input" data-rank-url aria-label="네이버 상품 URL 또는 원부(카탈로그) URL" placeholder="상품 URL 또는 원부(카탈로그) URL 붙여넣기" />
               <span class="mi-rank-fixed-range" data-rank-fixed-range aria-label="조회 범위 상위 300개">상위 300개</span>
               <button class="mi-button" type="button" data-rank-run>순위 추적</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 네이버 상품 URL을 입력하면 최근 30일 순위 기록을 표시합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-rank-status aria-live="polite">키워드와 상품 URL 또는 원부(카탈로그) URL을 입력하면 최근 30일 순위 기록을 표시합니다. 검색 결과에 원부(가격비교) 카드로만 노출되는 상품은 원부 URL로 등록하세요.</p>
             <div class="mi-rank-grid">
               <div class="mi-rank-panel mi-rank-history">
                 <h3>상품별 일별 대표 순위</h3>
@@ -17042,7 +17052,7 @@
         if (listTitle) listTitle.textContent = ownerMode ? "연결 현황" : "연결 상태";
         if (listDesc) {
           listDesc.textContent = ownerMode
-            ? "운영팀과 광고주의 활성 상태를 확인합니다."
+            ? "운영팀과 광고주의 활성 상태, 상품 추적기 집계를 확인합니다."
             : "현재 운영팀에 연결된 광고주 상태입니다.";
         }
         if (refresh) refresh.style.display = ownerMode ? "" : "none";
@@ -17166,6 +17176,26 @@
         }
       }
 
+      // 총관리자 활성 계정 요약의 추적기 집계 행. 서버 loadOwnerHealth 의 safeCount 결과
+      // ({count, error})를 그대로 받는다. count null(조회 실패)은 0 으로 위장하지 않고
+      // "조회 실패"로 적으며 오류 원문은 화면에 싣지 않는다. health 가 없으면(구 서버) 행 없음.
+      function ownerHealthTrackerRows(health) {
+        if (!health || typeof health !== "object") return [];
+        var entries = [
+          ["원부 확인 필요 추적기", health.neverFoundTrackers],
+          [RANK_STUCK_TRACKER_HOURS + "시간 넘게 멈춘 추적기", health.stuckTrackers],
+        ];
+        var rows = [];
+        for (var i = 0; i < entries.length; i += 1) {
+          var item = entries[i][1];
+          if (!item || typeof item !== "object") continue;
+          var count = item.count === null || item.count === undefined ? NaN : Number(item.count);
+          var text = Number.isFinite(count) && count >= 0 ? Math.floor(count) + "개" : "조회 실패";
+          rows.push('<div class="mi-row"><span>' + escapeHtml(entries[i][0]) + '</span><strong>' + escapeHtml(text) + '</strong></div>');
+        }
+        return rows;
+      }
+
       function renderOwnerCodeList(payload) {
         ownerCodeSnapshot = payload || null;
         var list = root.querySelector("[data-owner-code-list]");
@@ -17196,6 +17226,7 @@
         }
         rows.push('<div class="mi-row"><span>운영팀</span><strong>' + activeTeams.length + '팀 운영 중</strong></div>');
         rows.push('<div class="mi-row"><span>광고주</span><strong>' + activeClients.length + '곳 운영 중</strong></div>');
+        rows = rows.concat(ownerHealthTrackerRows(payload && payload.health));
         list.innerHTML = rows.join("");
         renderOwnerFullAccountView(payload);
         syncOwnerCodeDefaults(payload);
@@ -21079,10 +21110,79 @@
       var RANK_CHRONIC_ISOLATION_DAYS = 3;
       var RANK_CHRONIC_ISOLATION_MS = 259200000;
       var RANK_CHRONIC_ISOLATION_LABEL = "수집 방식 점검 중";
+      // 멈춘 추적기 기준(시간)·한 번도 못 찾은 추적기 최소 확인 횟수. 서버
+      // src/server/naver-rank-requeue.mjs 의 RANK_STUCK_TRACKER_HOURS · RANK_NEVER_FOUND_MIN_CHECKS
+      // 사본이다(테스트가 값 일치를 고정한다). 화면은 판정하지 않고 문구·타일 라벨에만 쓴다.
+      var RANK_STUCK_TRACKER_HOURS = 36;
+      var RANK_NEVER_FOUND_MIN_CHECKS = 3;
       // 수집기 건강 신호의 화면 사본. refreshRankCollectionHealthSignal 이 채운다.
       // heartbeatAgeMinutes 0 은 "신호를 읽을 수 없음"이라 경보하지 않는다 —
       // 서버 stalledMinutes 0 과 같은 fail-safe 규약이다.
-      var rankCollectionHealthSignal = { workerOutdated: false, heartbeatAgeMinutes: 0, ok: false, fetchedAt: 0 };
+      // lanes · trackers 는 헬스 API 7·8번째 키의 사본이다(rankCollectionHealthLane ·
+      // rankCollectionHealthCount 로 정규화). 레인 정체는 서버 queueStalled 불리언만 믿는다.
+      var rankCollectionHealthSignal = {
+        workerOutdated: false,
+        heartbeatAgeMinutes: 0,
+        ok: false,
+        fetchedAt: 0,
+        lanes: { product: { lastSuccessAt: null, stalledMinutes: 0, queueStalled: false }, place: { lastSuccessAt: null, stalledMinutes: 0, queueStalled: false } },
+        trackers: { neverFound: 0, stuck: 0 },
+      };
+
+      // 헬스 API lanes.<key> 한 레인의 안전 정규화. 없거나 깨진 값은 {null, 0, false} 다 —
+      // 서버 FAILSAFE_LANE 과 같은 모양이라 "신호 없음"이 어느 쪽으로도 단정되지 않는다.
+      function rankCollectionHealthLane(lane) {
+        var source = lane && typeof lane === "object" ? lane : {};
+        var lastSuccessAt = typeof source.lastSuccessAt === "string" && source.lastSuccessAt ? source.lastSuccessAt : null;
+        return {
+          lastSuccessAt: lastSuccessAt,
+          stalledMinutes: Math.max(0, Math.floor(Number(source.stalledMinutes) || 0)),
+          queueStalled: source.queueStalled === true,
+        };
+      }
+
+      // 헬스 API trackers 집계의 안전 정수 변환. NaN·음수·null·무한대는 0 이다.
+      function rankCollectionHealthCount(value) {
+        var count = Number(value);
+        return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+      }
+
+      // lanes·trackers 중 화면 분기에 실제로 쓰이는 값만 문자열 키로 만든다.
+      // refreshRankCollectionHealthSignal 의 changed 판정 전용이다. stalledMinutes 는 넣지
+      // 않는다 — 서버가 floor((now - lastCheckedAt)/60000) 으로 계산하므로 수집 사이클
+      // (09:00/15:00) 사이에 매 분 1씩 오르고, 그 값을 대조하면 60초 폴링마다 changed 가 참이
+      // 되어 mi:rank-scope-changed → 목록 재조회가 무한히 돈다. 레인 문장의 분 표기는 다른
+      // 이유로 재렌더될 때 자연히 갱신된다. lastSuccessAt 은 유무만 본다("성공 기록 없음"
+      // 문장 분기가 그 유무에 걸린다).
+      function rankCollectionHealthRenderKey(lanes, trackers) {
+        var source = lanes && typeof lanes === "object" ? lanes : {};
+        var product = rankCollectionHealthLane(source.product);
+        var place = rankCollectionHealthLane(source.place);
+        var counts = trackers && typeof trackers === "object" ? trackers : {};
+        return [
+          product.queueStalled ? 1 : 0,
+          product.lastSuccessAt ? 1 : 0,
+          place.queueStalled ? 1 : 0,
+          place.lastSuccessAt ? 1 : 0,
+          rankCollectionHealthCount(counts.neverFound),
+          rankCollectionHealthCount(counts.stuck),
+        ].join("|");
+      }
+
+      // 레인 한 줄 문장. 서버 판정(queueStalled)을 그대로 옮기고, 마지막 성공 시각이 없으면
+      // "성공 기록 없음"으로 적어 0분 전 같은 거짓 시각을 만들지 않는다.
+      // stalled 는 화면 억제(살아 있는 cooldown)를 거친 최종 판정이고, lane.queueStalled 는
+      // 서버 원시 값이다 — 억제된 레인은 정상으로 위장하지 않고 일시정지로 적는다.
+      function rankCollectionLaneLine(key, lane, stalled) {
+        var noun = key === "place" ? "플레이스 레인" : "상품 레인";
+        var verdict = stalled
+          ? " 큐가 정체 상태입니다"
+          : (lane.queueStalled ? " 큐 정체 신호가 있으나 의도된 일시정지 중입니다" : " 큐는 정상입니다");
+        var since = lane.lastSuccessAt ? "마지막 성공 " + lane.stalledMinutes + "분 전" : "성공 기록 없음";
+        return '<div class="mi-rank-auto-head" data-rank-lane-line="' + escapeHtml(key) + '"><span class="mi-rank-auto-status' +
+          (stalled ? " is-warn" : " is-ok") + '">' + escapeHtml(noun) + '</span><small>' +
+          escapeHtml(noun + verdict + "(서버 헬스 기준, " + since + ").") + '</small></div>';
+      }
 
       function rankTrackerAutoRequeued(tracker) {
         return String((tracker && tracker.lastMessage) || "").indexOf(RANK_AUTO_REQUEUE_MARKER) === 0;
@@ -21151,6 +21251,17 @@
         // 하트비트 정체는 queueStalled/stalled 와 독립으로 판정한다 — 신호 두절이
         // 큐 정체보다 몇 시간 앞서기 때문에 stalled 에 종속시키면 경보가 늦는다.
         var heartbeatStale = !deliberateStop && heartbeatAgeMinutes > RANK_HEARTBEAT_STALE_MINUTES;
+        // 레인별 정체는 서버가 레인을 분리해 판정한 queueStalled 불리언만 믿는다(화면 재계산 없음).
+        // 억제는 하트비트와 같은 규약(살아 있는 cooldown)이다.
+        var healthLanes = health.lanes && typeof health.lanes === "object" ? health.lanes : {};
+        var productLane = rankCollectionHealthLane(healthLanes.product);
+        var placeLane = rankCollectionHealthLane(healthLanes.place);
+        var productLaneStalled = !deliberateStop && productLane.queueStalled;
+        var placeLaneStalled = !deliberateStop && placeLane.queueStalled;
+        // 추적기 집계는 요약 줄 전용이라 total 에 넣지 않는다 — 집계만으로 배너를 열지 않는다.
+        var healthTrackers = health.trackers && typeof health.trackers === "object" ? health.trackers : {};
+        var neverFoundTrackers = rankCollectionHealthCount(healthTrackers.neverFound);
+        var stuckTrackers = rankCollectionHealthCount(healthTrackers.stuck);
         return {
           overdue: overdue,
           parked: parked,
@@ -21166,7 +21277,13 @@
           // 억제 대상이 아니지만 안내 문구는 달라야 한다.
           workerState: state,
           stalled: stalled,
-          total: (stalled ? 1 : 0) + (showParked ? 1 : 0) + (workerOutdated ? 1 : 0) + (heartbeatStale ? 1 : 0) + (isolated ? 1 : 0),
+          lanes: { product: productLane, place: placeLane },
+          productLaneStalled: productLaneStalled,
+          placeLaneStalled: placeLaneStalled,
+          neverFoundTrackers: neverFoundTrackers,
+          stuckTrackers: stuckTrackers,
+          total: (stalled ? 1 : 0) + (showParked ? 1 : 0) + (workerOutdated ? 1 : 0) + (heartbeatStale ? 1 : 0) + (isolated ? 1 : 0)
+            + (productLaneStalled ? 1 : 0) + (placeLaneStalled ? 1 : 0),
         };
       }
 
@@ -21268,9 +21385,26 @@
         // !isPlaceLane 게이트에 막힌다. 그래서 total 만으로 열면 플레이스 레인에서
         // 설명 줄이 하나도 없는 배너가 뜬다(근거 없는 경고 금지).
         // bannerOpen 은 total 의 진부분집합이라 아래 삼항의 결과를 좁히기만 한다.
-        var bannerOpen = stallCore || stall.isolated > 0 || showWorkerOutdated || showHeartbeatStale;
+        // 레인 문장은 서버 헬스 lanes 를 그대로 옮긴 것이라 두 레인 화면 어디서나 같다 —
+        // 문장이 레인 이름을 앞세우므로 잘못된 행동 지시가 되지 않는다. 어느 레인도 정체가
+        // 아니면 문장 자체를 내지 않는다(둘 다 정상이면 배너 없음).
+        var anyLaneStalled = stall.productLaneStalled || stall.placeLaneStalled;
+        var laneLines = anyLaneStalled
+          ? rankCollectionLaneLine("product", stall.lanes.product, stall.productLaneStalled) +
+            rankCollectionLaneLine("place", stall.lanes.place, stall.placeLaneStalled)
+          : '';
+        // 추적기 집계 요약은 상품 추적기(naver_rank_trackers) 수치라 상품 레인에서만, 그리고
+        // 다른 신호로 배너가 이미 열렸을 때만 덧붙인다 — 집계 단독으로는 경보하지 않는다.
+        var trackerSummaryParts = [];
+        if (stall.neverFoundTrackers > 0) trackerSummaryParts.push("원부 확인 필요 " + stall.neverFoundTrackers + "개");
+        if (stall.stuckTrackers > 0) trackerSummaryParts.push(RANK_STUCK_TRACKER_HOURS + "시간 넘게 멈춘 추적기 " + stall.stuckTrackers + "개");
+        var bannerOpen = stallCore || stall.isolated > 0 || showWorkerOutdated || showHeartbeatStale || anyLaneStalled;
+        var trackerSummaryLine = !isPlaceLane && bannerOpen && trackerSummaryParts.length
+          ? '<div class="mi-rank-auto-head" data-rank-tracker-summary><span class="mi-rank-auto-status is-warn">' + escapeHtml("추적기 집계") + '</span><small>' +
+            escapeHtml(trackerSummaryParts.join(" · ") + " — 각 추적 카드의 배지와 메시지를 확인해주세요.") + '</small></div>'
+          : '';
         var stallBanner = stall.total ? '<div class="mi-rank-auto-center mi-rank-stall-banner" data-rank-stall-banner role="status">' +
-          stallHead + workerOutdatedLine + heartbeatStaleLine +
+          stallHead + workerOutdatedLine + heartbeatStaleLine + laneLines + trackerSummaryLine +
           '<div class="mi-rank-auto-metrics">' +
           '<div class="mi-rank-auto-metric' + (stall.stalled ? " is-warn" : " is-ok") + '"><span>마지막 수집</span><strong>' +
           escapeHtml(stallLastText) + '</strong><small>' + escapeHtml("예정 초과 " + stall.overdue + "개") + '</small></div>' +
@@ -21308,16 +21442,23 @@
           return;
         }
         if (!payload || typeof payload !== "object") return;
+        var lanesPayload = payload.lanes && typeof payload.lanes === "object" ? payload.lanes : {};
+        var trackersPayload = payload.trackers && typeof payload.trackers === "object" ? payload.trackers : {};
         var next = {
           workerOutdated: payload.workerOutdated === true,
           heartbeatAgeMinutes: Math.max(0, Math.floor(Number(payload.heartbeatAgeMinutes) || 0)),
           ok: payload.ok === true,
           fetchedAt: Date.now(),
+          lanes: { product: rankCollectionHealthLane(lanesPayload.product), place: rankCollectionHealthLane(lanesPayload.place) },
+          trackers: { neverFound: rankCollectionHealthCount(trackersPayload.neverFound), stuck: rankCollectionHealthCount(trackersPayload.stuck) },
         };
         var previous = rankCollectionHealthSignal || {};
+        // lanes·trackers 는 전체 비교가 아니라 렌더 분기 값만 대조한다(rankCollectionHealthRenderKey).
+        // lanes.<key>.stalledMinutes 는 매 분 오르므로 전체 비교하면 매 폴링이 changed 가 된다.
         var changed = previous.workerOutdated !== next.workerOutdated
           || previous.heartbeatAgeMinutes !== next.heartbeatAgeMinutes
-          || previous.ok !== next.ok;
+          || previous.ok !== next.ok
+          || rankCollectionHealthRenderKey(previous.lanes, previous.trackers) !== rankCollectionHealthRenderKey(next.lanes, next.trackers);
         rankCollectionHealthSignal = next;
         // 값이 그대로면 재렌더하지 않는다. 매 폴링마다 발행하면 60초마다 목록 재조회가
         // 무한히 돈다. 마운트된 순위 카드가 없을 때도 발행하지 않는다.
@@ -21956,6 +22097,20 @@
           '<button class="mi-rank-share-image" type="button" data-rank-download-selected>선택 이미지 저장</button></div></div>';
       }
 
+      // 원부(카탈로그) 안내. 서버 trackerPayload 의 neverFound(check_count >= 3 && found_count === 0)
+      // 를 그대로 믿는다 — 화면에서 재계산하지 않고, 불리언 true 가 아니면 근거가 없다고 본다.
+      // 검색 결과에 원부(가격비교) 카드로만 노출되는 상품은 상품 URL 로는 영영 찾지 못하므로
+      // 원부 URL 재등록을 안내한다. 기존 "점검 필요" 판정(rankTrackerInsight)과는 독립이며,
+      // 플레이스 payload 에는 이 필드가 없어 자연히 붙지 않는다.
+      function rankTrackerCatalogHint(tracker) {
+        if (!tracker || tracker.neverFound !== true) return null;
+        return {
+          label: "원부 확인 필요",
+          note: "검색 결과에 원부(가격비교) 카드로만 노출되는 상품이면 https://search.shopping.naver.com/catalog/원부번호 형태의 원부 URL로 등록하세요",
+          className: "is-warn",
+        };
+      }
+
       function renderRankTrackerCard(tracker, selectedSet) {
         var title = rankTrackerTitle(tracker);
         var mallName = rankTrackerMallName(tracker);
@@ -21963,6 +22118,7 @@
         var lastMessage = tracker.lastMessage || ((tracker.snapshots || [])[0] || {}).message || "자동 갱신 대기";
         var avgRank = rankTrackerAverageRank(tracker, 14);
         var insight = rankTrackerInsight(tracker);
+        var catalogHint = rankTrackerCatalogHint(tracker);
         var actionNote = rankTrackerActionNote(tracker);
         var currentSource = rankTrackerCurrentSourceLabel(tracker);
         var isSelected = selectedSet && selectedSet.has(tracker.id) ? " checked" : "";
@@ -21975,7 +22131,8 @@
           escapeHtml(tracker.id) + '">갱신</button><button class="mi-link-button is-danger" type="button" data-rank-delete="' +
           escapeHtml(tracker.id) + '">삭제</button></div></div><div class="mi-rank-ops-row"><span class="' +
           rankTrackerStatusClass(tracker) + '">상태 ' + escapeHtml(rankTrackerStatus(tracker)) + '</span><span class="mi-rank-insight-pill ' +
-          escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span><span>' +
+          escapeHtml(insight.className) + '">' + escapeHtml(insight.label) + '</span>' +
+          (catalogHint ? '<span class="mi-rank-insight-pill ' + escapeHtml(catalogHint.className) + '">' + escapeHtml(catalogHint.label) + '</span>' : '') + '<span>' +
           escapeHtml(rankTrackerChangeLabel(tracker)) + '</span><span>7일 평균 ' +
           escapeHtml(avgRank ? rankText(avgRank) : "-") + '</span><span>그룹 ' +
           escapeHtml(rankGroupDisplayName(rankTrackerGroupName(tracker))) + '</span><button class="mi-rank-group-edit" type="button" data-rank-group-edit="' +
@@ -21984,6 +22141,7 @@
           escapeHtml(formatRankRemain(tracker.nextCheckAt)) + '</span><span class="mi-rank-action-note ' +
           escapeHtml(actionNote.className) + '">권고 ' + escapeHtml(actionNote.label) + '</span><span class="mi-rank-ops-message" title="' +
           escapeHtml(lastMessage) + '">메시지 ' + escapeHtml(lastMessage) + '</span></div>' +
+          (catalogHint ? '<div class="mi-rank-catalog-hint" data-rank-catalog-hint>' + escapeHtml(catalogHint.note) + '</div>' : '') +
           renderTrackerDailyBoard(tracker) + '</section>';
       }
 

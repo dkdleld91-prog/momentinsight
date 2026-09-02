@@ -13,10 +13,12 @@ import {
   PLACE_RETRY_BACKOFF_MINUTES,
   RANK_AUTO_REQUEUE_MARKER,
   RANK_AUTO_REQUEUE_MESSAGE,
+  RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_OVERDUE_THRESHOLD_MS,
   RANK_REQUEUE_DAILY_CAP,
   RANK_REQUEUE_MIN_IDLE_MS,
   RANK_RETRY_EXHAUSTED_AT,
+  RANK_STUCK_TRACKER_MS,
   requeueEligible,
   requeueMinIntervalMs,
   runPlaceRequeuePass,
@@ -822,6 +824,9 @@ test("F1: 플레이스 payload 는 광고주 화면의 '점검 필요'를 켜지
 // ─────────────────────────────────────────────────────────────
 const lane = (key, lastCheckedAt, overdue) => ({ key, lastCheckedAt, overdue });
 
+// 2026-09-02(C2 결함 C·K4): 앞 6키는 이름·순서·의미 불변. 뒤 2키(lanes, trackers)는
+// "최악 레인만 보고"의 사각지대(한 레인이 죽어도 다른 레인이 정상이면 사람이 어느
+// 레인인지 알 수 없다)와 "며칠째 멈춘/한 번도 못 찾은 추적기"를 드러내는 집계다.
 const HEALTH_KEYS_IN_ORDER = [
   "ok",
   "lastSuccessAt",
@@ -829,10 +834,27 @@ const HEALTH_KEYS_IN_ORDER = [
   "queueStalled",
   "workerOutdated",
   "heartbeatAgeMinutes",
+  "lanes",
+  "trackers",
 ];
 const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
+const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
+const HEALTH_FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
+const HEALTH_FAILSAFE_LANES = Object.freeze({ product: HEALTH_FAILSAFE_LANE, place: HEALTH_FAILSAFE_LANE });
+const HEALTH_FAILSAFE_TRACKERS = Object.freeze({ neverFound: 0, stuck: 0 });
+// 503 본문. 200 과 같은 8키·같은 순서이며 전부 안전값이다.
+const HEALTH_FAILSAFE_BODY = Object.freeze({
+  ok: false,
+  lastSuccessAt: null,
+  stalledMinutes: 0,
+  queueStalled: false,
+  workerOutdated: false,
+  heartbeatAgeMinutes: 0,
+  lanes: HEALTH_FAILSAFE_LANES,
+  trackers: HEALTH_FAILSAFE_TRACKERS,
+});
 
-test("F2: 응답 키 집합은 정확히 6개이며 순서까지 고정이다", () => {
+test("F2: 응답 키 집합은 정확히 8개이며 순서까지 고정이다", () => {
   const body = rankCollectionHealthBody({ now: NOW, lanes: [] });
   // 정렬 없이 비교한다 — scripts/verify-live.mjs 는 정렬 키 배열과 개수를 함께 보고,
   // 워치독 셸은 본문을 grep 으로 읽으므로 키가 늘거나 순서가 흔들리면 둘 다 깨진다.
@@ -846,11 +868,20 @@ test("F2: 응답 키 집합은 정확히 6개이며 순서까지 고정이다", 
   // 뒤 2키도 신호가 없으면 단정하지 않는다.
   assert.equal(body.workerOutdated, false);
   assert.equal(body.heartbeatAgeMinutes, 0);
+  // 7·8번째 키도 입력이 없으면 안전값이다.
+  assert.deepEqual(body.lanes, HEALTH_FAILSAFE_LANES);
+  assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
   // verify-live 의 계약 배열과 실제 응답이 같은 집합인지 소스로 대조한다.
   const verifyLive = readRepoFile("scripts/verify-live.mjs");
   for (const key of HEALTH_KEYS_SORTED) {
     assert.ok(verifyLive.includes(`"${key}"`), `verify-live 계약에 ${key} 가 있어야 한다`);
   }
+  // verify-live 는 개수 정확 대조를 유지한다(8키 초과·미달 모두 FAIL).
+  assert.ok(verifyLive.includes("rankKeys.length === RANK_HEALTH_KEYS.length"));
+  const arrayStart = verifyLive.indexOf("const RANK_HEALTH_KEYS = [");
+  const arrayEnd = verifyLive.indexOf("];", arrayStart);
+  const declared = [...verifyLive.slice(arrayStart, arrayEnd).matchAll(/"([A-Za-z]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(declared, HEALTH_KEYS_SORTED, "verify-live 계약 배열은 정렬된 8키와 정확히 같아야 한다");
 });
 
 test("F2: 가장 오래된(worst) 레인이 lastSuccessAt 이다", () => {
@@ -1021,6 +1052,121 @@ test("F2: stalledMinutes 는 분 단위 내림이다", () => {
   assert.equal(body.stalledMinutes, 119);
 });
 
+// ── 7번째 키 lanes (C2 결함 C·K4) ──
+test("F2: lanes 는 레인별 lastSuccessAt·stalledMinutes·queueStalled 를 각각 낸다", () => {
+  // 상품 10시간 정체 + 플레이스 30분 전 정상. 최상위 4키는 최악 레인(상품)만 말하고,
+  // lanes 는 두 레인을 각각 말한다 — 어느 레인이 죽었는지 이 응답만으로 알 수 있다.
+  const body = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [lane("product", at(-10 * HOUR), true), lane("place", at(-30 * 60 * 1000), true)],
+  });
+  assert.deepEqual(Object.keys(body.lanes), ["product", "place"]);
+  assert.deepEqual(Object.keys(body.lanes.product), HEALTH_LANE_KEYS_IN_ORDER);
+  assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
+  assert.deepEqual(body.lanes.product, { lastSuccessAt: at(-10 * HOUR), stalledMinutes: 600, queueStalled: true });
+  assert.deepEqual(body.lanes.place, { lastSuccessAt: at(-30 * 60 * 1000), stalledMinutes: 30, queueStalled: false });
+  // 기존 4키의 의미는 그대로다(최악 레인).
+  assert.equal(body.lastSuccessAt, at(-10 * HOUR));
+  assert.equal(body.stalledMinutes, 600);
+  assert.equal(body.queueStalled, true);
+  // 반대 방향(플레이스만 죽음)도 대칭이다.
+  const placeDead = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [lane("product", at(-30 * 60 * 1000), true), lane("place", at(-10 * HOUR), true)],
+  });
+  assert.equal(placeDead.lanes.product.queueStalled, false);
+  assert.equal(placeDead.lanes.place.queueStalled, true);
+  assert.equal(placeDead.lanes.place.stalledMinutes, 600);
+  assert.equal(placeDead.queueStalled, true);
+});
+
+test("F2: 최상위 queueStalled 는 레인 queueStalled 의 OR 과 항상 같다(워치독 grep 안전)", () => {
+  // 워치독은 본문 전체를 grep -Eq '"queueStalled": true' 로 읽는다. 중첩된 true 가 최상위
+  // false 와 공존하면 오탐이 난다. 그래서 "최상위 = OR(레인)" 을 불변식으로 고정한다.
+  // 의도된 정지(deliberateStop)도 레인까지 함께 눌러야 불변식이 유지된다.
+  const stalledAt = at(-10 * HOUR);
+  const freshAt = at(-30 * 60 * 1000);
+  const variants = [[stalledAt, true], [freshAt, true], [stalledAt, false], ["", true], [null, false]];
+  let checked = 0;
+  for (const product of variants) {
+    for (const place of variants) {
+      for (const deliberateStop of [false, true]) {
+        const body = rankCollectionHealthBody({
+          now: NOW,
+          lanes: [lane("product", ...product), lane("place", ...place)],
+          deliberateStop,
+        });
+        const laneOr = body.lanes.product.queueStalled || body.lanes.place.queueStalled;
+        assert.equal(body.queueStalled, laneOr, JSON.stringify({ product, place, deliberateStop }));
+        if (deliberateStop) {
+          assert.equal(body.lanes.product.queueStalled, false);
+          assert.equal(body.lanes.place.queueStalled, false);
+        }
+        checked += 1;
+      }
+    }
+  }
+  assert.equal(checked, variants.length * variants.length * 2);
+});
+
+test("F2: 입력 레인이 비어 있거나 이력이 없어도 lanes 두 키는 항상 안전값으로 있다", () => {
+  const empty = rankCollectionHealthBody({ now: NOW, lanes: [] });
+  assert.deepEqual(empty.lanes, HEALTH_FAILSAFE_LANES);
+  const noHistory = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [lane("product", "", true), lane("place", null, true)],
+  });
+  assert.deepEqual(noHistory.lanes, HEALTH_FAILSAFE_LANES, "수집 이력이 없는 레인은 정체로 단정하지 않는다");
+  const missingInput = rankCollectionHealthBody({ now: NOW });
+  assert.deepEqual(missingInput.lanes, HEALTH_FAILSAFE_LANES);
+  // 한 레인만 들어와도 다른 레인 키는 사라지지 않는다.
+  const onlyProduct = rankCollectionHealthBody({ now: NOW, lanes: [lane("product", at(-HOUR), false)] });
+  assert.deepEqual(Object.keys(onlyProduct.lanes), ["product", "place"]);
+  assert.deepEqual(onlyProduct.lanes.place, HEALTH_FAILSAFE_LANE);
+  assert.equal(onlyProduct.lanes.product.stalledMinutes, 60);
+});
+
+test("F2: 레인 stalledMinutes 도 분 단위 내림이며 6시간 경계는 초과여야 정체다", () => {
+  const body = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [
+      lane("product", at(-(119 * 60 * 1000 + 59_000)), true),
+      lane("place", at(-RANK_OVERDUE_THRESHOLD_MS), true),
+    ],
+  });
+  assert.equal(body.lanes.product.stalledMinutes, 119);
+  assert.equal(body.lanes.product.queueStalled, false, "6시간 미만 무수집은 정체가 아니다");
+  assert.equal(body.lanes.place.stalledMinutes, 360);
+  assert.equal(body.lanes.place.queueStalled, false, "정확히 6시간은 초과가 아니다");
+  const over = rankCollectionHealthBody({
+    now: NOW,
+    lanes: [lane("place", at(-(RANK_OVERDUE_THRESHOLD_MS + 1000)), true)],
+  });
+  assert.equal(over.lanes.place.queueStalled, true);
+});
+
+// ── 8번째 키 trackers (C2 결함 C) ──
+test("F2: trackers 는 비음수 정수만 받고 그 외는 0 으로 접는다(fail-safe)", () => {
+  const base = { now: NOW, lanes: [] };
+  assert.deepEqual(rankCollectionHealthBody(base).trackers, HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(Object.keys(rankCollectionHealthBody(base).trackers), ["neverFound", "stuck"]);
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: 3, stuck: 2 } }).trackers, { neverFound: 3, stuck: 2 });
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: 0, stuck: 0 } }).trackers, { neverFound: 0, stuck: 0 });
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: NaN, stuck: -1 } }).trackers, HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: null, stuck: undefined } }).trackers, HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: Infinity, stuck: "x" } }).trackers, HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: "4", stuck: 2.7 } }).trackers, { neverFound: 4, stuck: 2 });
+  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: null }).trackers, HEALTH_FAILSAFE_TRACKERS);
+});
+
+test("F2: 추적기 집계 기준은 서버 상수를 import 한다(하드코딩 금지)", () => {
+  assert.ok(healthHandlerSource.includes("RANK_STUCK_TRACKER_MS"), "36시간 기준은 naver-rank-requeue.mjs 상수여야 한다");
+  assert.ok(healthHandlerSource.includes("RANK_NEVER_FOUND_MIN_CHECKS"), "최소 확인 횟수도 상수여야 한다");
+  assert.ok(!/36\s*\*\s*60/.test(healthHandlerSource), "핸들러 안에서 36시간을 다시 곱하지 않는다");
+  // 두 집계는 관측 전용이다 — 조회 실패가 503 으로 번지면 안 되므로 try/catch 로 접는다.
+  assert.ok(healthHandlerSource.includes("async function countActiveTrackers("));
+});
+
 test("F2: 엔드포인트는 계정 데이터를 노출하지 않는다", () => {
   for (const forbidden of ["agency", "client", "keyword", "place_name", "product_title"]) {
     assert.ok(!healthHandlerSource.includes(forbidden), `health handler must not mention ${forbidden}`);
@@ -1057,29 +1203,15 @@ test("F2: 실패 응답도 캐시해 장애를 증폭시키지 않는다(실행 
     const first = await rankCollectionHealthHandler.fetch(new Request("https://example.com/api/rank-collection-health"));
     assert.equal(first.status, 503);
     assert.equal(first.headers.get("retry-after"), "60");
-    // 503 도 200 과 같은 6키·같은 순서다. 관측 두 키는 안전값으로 나간다.
-    assert.deepEqual(await first.json(), {
-      ok: false,
-      lastSuccessAt: null,
-      stalledMinutes: 0,
-      queueStalled: false,
-      workerOutdated: false,
-      heartbeatAgeMinutes: 0,
-    });
+    // 503 도 200 과 같은 8키·같은 순서다. 관측 키·레인·추적기 집계는 전부 안전값으로 나간다.
+    assert.deepEqual(await first.json(), HEALTH_FAILSAFE_BODY);
     assert.ok(dbCalls > 0, "첫 요청은 실제로 DB 를 친다");
 
     const before = dbCalls;
     const second = await rankCollectionHealthHandler.fetch(new Request("https://example.com/api/rank-collection-health"));
     assert.equal(second.status, 503, "캐시 히트도 같은 상태코드를 재현한다");
     assert.equal(second.headers.get("retry-after"), "60");
-    assert.deepEqual(await second.json(), {
-      ok: false,
-      lastSuccessAt: null,
-      stalledMinutes: 0,
-      queueStalled: false,
-      workerOutdated: false,
-      heartbeatAgeMinutes: 0,
-    });
+    assert.deepEqual(await second.json(), HEALTH_FAILSAFE_BODY);
     assert.equal(dbCalls - before, 0, "두 번째 요청은 DB 를 다시 치지 않는다");
   } finally {
     globalThis.fetch = previousFetch;
@@ -1334,6 +1466,150 @@ test("F2: 관측 조회가 실패해도 200 을 503 으로 뒤집지 않는다",
     assert.equal(body.workerOutdated, false, "신호가 없으면 단정하지 않는다");
     assert.equal(body.heartbeatAgeMinutes, 0);
     assert.ok(stub.calls.some((url) => url.includes("naver_shopping_worker_runs")), "실제로 조회를 시도했다");
+  } finally {
+    stub.restore();
+  }
+});
+
+// lanes·trackers 핸들러 실행 검증. 위 stubHealthSupabase 는 표 이름만 보지만 여기서는
+// 같은 표(naver_rank_trackers)에 GET 두 종류·HEAD(count) 두 종류가 나가므로
+// 메서드와 질의 파라미터까지 보고 갈라야 한다.
+const countRows = (total) => new Response(null, { status: 200, headers: { "content-range": `*/${total}` } });
+
+function stubHealthRest(router) {
+  const previousEnv = Object.fromEntries(HEALTH_ENV_NAMES.map((name) => [name, process.env[name]]));
+  const previousFetch = globalThis.fetch;
+  Object.assign(process.env, {
+    SUPABASE_URL: "http://127.0.0.1:2",
+    SUPABASE_SECRET_KEY: "sb_secret_rank_health_lanes_test",
+    SUPABASE_PUBLISHABLE_KEY: "sb_publishable_rank_health_lanes_test",
+  });
+  const calls = [];
+  globalThis.fetch = async (input, init = {}) => {
+    const raw = String(input?.url || input || "");
+    const method = String(init.method || input?.method || "GET").toUpperCase();
+    calls.push({ url: raw, method });
+    return (await router(new URL(raw), method)) || jsonRows([]);
+  };
+  return {
+    calls,
+    restore() {
+      globalThis.fetch = previousFetch;
+      for (const name of HEALTH_ENV_NAMES) {
+        if (previousEnv[name] === undefined) delete process.env[name];
+        else process.env[name] = previousEnv[name];
+      }
+    },
+  };
+}
+
+test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상품 죽음·플레이스 정상)", async () => {
+  const now = Date.now();
+  const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const stub = stubHealthRest((url, method) => {
+    const product = url.pathname === "/rest/v1/naver_rank_trackers";
+    const place = url.pathname === "/rest/v1/naver_place_rank_trackers";
+    if (!product && !place) return null;
+    if (method === "HEAD") {
+      if (url.searchParams.has("check_count")) return countRows(3);
+      if (url.searchParams.has("last_error")) return countRows(2);
+      return countRows(0);
+    }
+    const select = url.searchParams.get("select");
+    if (select === "last_checked_at") return jsonRows([{ last_checked_at: iso(product ? -10 * HOUR : -30 * 60 * 1000) }]);
+    if (select === "next_check_at") return jsonRows([{ next_check_at: iso(-7 * HOUR) }]);
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("lanes");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    // 최상위는 최악(상품)만 말한다. 옛 6키 계약 그대로.
+    assert.equal(body.queueStalled, true);
+    assert.equal(body.stalledMinutes, 600);
+    // lanes 가 어느 레인인지 말한다.
+    assert.equal(body.lanes.product.queueStalled, true);
+    assert.equal(body.lanes.product.stalledMinutes, 600);
+    assert.equal(body.lanes.place.queueStalled, false);
+    assert.equal(body.lanes.place.stalledMinutes, 30);
+    assert.deepEqual(body.trackers, { neverFound: 3, stuck: 2 });
+
+    // 두 집계는 상품 표에만, HEAD(count=exact) 로 정확히 한 번씩 나간다.
+    const heads = stub.calls.filter((call) => call.method === "HEAD").map((call) => new URL(call.url));
+    assert.equal(heads.length, 2);
+    assert.ok(heads.every((url) => url.pathname === "/rest/v1/naver_rank_trackers"));
+
+    const neverFoundQuery = heads.find((url) => url.searchParams.has("check_count"));
+    assert.ok(neverFoundQuery, "neverFound 집계 질의가 나가야 한다");
+    assert.equal(neverFoundQuery.searchParams.get("status"), "eq.active");
+    assert.equal(neverFoundQuery.searchParams.get("check_count"), `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`);
+    assert.equal(neverFoundQuery.searchParams.get("found_count"), "eq.0");
+    assert.equal(neverFoundQuery.searchParams.has("last_error"), false);
+    assert.equal(neverFoundQuery.searchParams.has("retry_count"), false);
+
+    const stuckQuery = heads.find((url) => url.searchParams.has("last_error"));
+    assert.ok(stuckQuery, "stuck 집계 질의가 나가야 한다");
+    assert.equal(stuckQuery.searchParams.get("status"), "eq.active");
+    assert.equal(stuckQuery.searchParams.get("last_error"), "not.is.null");
+    assert.equal(stuckQuery.searchParams.has("retry_count"), false, "재시도 소진 여부와 무관하게 멈춘 추적기를 잡는다");
+    const or = stuckQuery.searchParams.get("or") || "";
+    assert.ok(or.includes("last_checked_at.lt."), or);
+    assert.ok(or.includes("and(last_checked_at.is.null,created_at.lt."), or);
+    const cutoffs = [...or.matchAll(/\.lt\.([0-9TZ:.\-]+)/g)].map((match) => Date.parse(match[1]));
+    assert.equal(cutoffs.length, 2);
+    for (const cutoff of cutoffs) {
+      assert.ok(Number.isFinite(cutoff));
+      assert.ok(Math.abs((now - cutoff) - RANK_STUCK_TRACKER_MS) < 10_000, `컷오프는 now-36h 여야 한다: ${or}`);
+    }
+    // 공개 표면에는 집계 정수만 실린다.
+    assert.ok(!JSON.stringify(body).includes("created_at"));
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유지한다(fail-safe)", async () => {
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") {
+      return new Response(
+        JSON.stringify({ message: "column naver_rank_trackers.check_count does not exist" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("trackers-degraded");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200, "집계 조회 실패는 정체도 장애도 아니다");
+    assert.equal(body.ok, true);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
+    assert.deepEqual(body.lanes, HEALTH_FAILSAFE_LANES);
+    assert.ok(stub.calls.some((call) => call.method === "HEAD"), "실제로 집계를 시도했다");
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F2: 추적기 집계 fetch 가 throw 해도 200 을 유지한다(fail-safe)", async () => {
+  const stub = stubHealthRest((url, method) => {
+    if (method === "HEAD") {
+      const failure = new Error("count_unreachable");
+      failure.name = "AbortError";
+      throw failure;
+    }
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("trackers-throw");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
   } finally {
     stub.restore();
   }
@@ -1934,8 +2210,10 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
   });
   const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
   const nowSeconds = Math.floor(Date.now() / 1000);
-  // 실제 응답은 키 6개다. 워치독은 /usr/bin/grep -Eq 와 sed 로 본문 텍스트를 그대로
-  // 훑으므로, 옛 4개 키의 이름과 순서를 바이트 단위로 고정한 채 관측 키 2개만 뒤에 붙인다.
+  // 실제 응답은 키 8개다. 워치독은 /usr/bin/grep -Eq 와 sed 로 본문 텍스트를 그대로
+  // 훑으므로, 옛 4개 키의 이름과 순서를 바이트 단위로 고정한 채 나머지 키를 뒤에 붙인다.
+  // lanes 안의 중첩 queueStalled 는 최상위와 OR 불변식(최상위 = OR(레인))을 지키므로
+  // grep 판정이 흔들리지 않는다 — 여기서도 그 불변식대로 본문을 만든다.
   const body = (queueStalled, stalledMinutes, workerOutdated = false, heartbeatAgeMinutes = 0) => JSON.stringify({
     ok: true,
     lastSuccessAt: new Date().toISOString(),
@@ -1943,6 +2221,11 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
     queueStalled,
     workerOutdated,
     heartbeatAgeMinutes,
+    lanes: {
+      product: { lastSuccessAt: new Date().toISOString(), stalledMinutes, queueStalled },
+      place: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 0, queueStalled: false },
+    },
+    trackers: { neverFound: 0, stuck: 0 },
   });
 
   const scenarios = [

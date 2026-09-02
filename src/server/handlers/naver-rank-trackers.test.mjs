@@ -5,8 +5,10 @@ import test from "node:test";
 import {
   buildProductRankSnapshotRecord,
   claimDueTracker,
+  clearKeywordVolumeCache,
   controlShoppingWorker,
   handleRankTrackersRequest,
+  loadKeywordVolumes,
   loadShoppingWorkerOperations,
   loadShoppingWorkerStatus,
   loadSnapshots as loadProductSnapshots,
@@ -4587,4 +4589,260 @@ test("한도를 내려 잡은 같은 계정에서 새 상품 키워드 등록만
   assert.equal(body.code, "RANK_KEYWORD_LIMIT_REACHED");
   assert.equal(body.limit, 10);
   assert.equal(body.count, 12);
+});
+
+// ---------------------------------------------------------------------------
+// C1 결함 A — 키워드 검색량 조회: 청크·동시성·백오프·시간상한·캐시
+// ---------------------------------------------------------------------------
+
+const SEARCHAD_ENV_KEYS = ["NAVER_SEARCHAD_API_KEY", "NAVER_SEARCHAD_SECRET_KEY", "NAVER_SEARCHAD_CUSTOMER_ID"];
+
+async function withSearchAdEnv(callback) {
+  const previous = Object.fromEntries(SEARCHAD_ENV_KEYS.map((key) => [key, process.env[key]]));
+  process.env.NAVER_SEARCHAD_API_KEY = "test-searchad-key";
+  process.env.NAVER_SEARCHAD_SECRET_KEY = "test-searchad-secret";
+  process.env.NAVER_SEARCHAD_CUSTOMER_ID = "123456";
+  const originalFetch = globalThis.fetch;
+  clearKeywordVolumeCache();
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearKeywordVolumeCache();
+    for (const key of SEARCHAD_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+}
+
+function searchAdHintKeyword(input) {
+  return new URL(String(input)).searchParams.get("hintKeywords") || "";
+}
+
+function searchAdVolumeResponse(keyword, pc = 100, mobile = 200) {
+  return new Response(JSON.stringify({
+    keywordList: [{ relKeyword: keyword, monthlyPcQcCnt: pc, monthlyMobileQcCnt: mobile }],
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+function sleepMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+test("keyword volume lookup queries every unique keyword in small concurrent chunks", async () => {
+  await withSearchAdEnv(async () => {
+    const keywords = Array.from({ length: 120 }, (_, index) => `청크키워드${index}`);
+    const requested = [];
+    let active = 0;
+    let maxActive = 0;
+    globalThis.fetch = async (input) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      const keyword = searchAdHintKeyword(input);
+      requested.push(keyword);
+      await sleepMs(2);
+      active -= 1;
+      return searchAdVolumeResponse(keyword);
+    };
+
+    // 중복 키워드·공백 차이는 한 번만 조회한다.
+    const result = await loadKeywordVolumes([...keywords, "청크키워드0", " 청크키워드1 "], { concurrency: 3, budgetMs: 8000 });
+
+    assert.equal(requested.length, 120);
+    assert.equal(new Set(requested).size, 120);
+    assert.ok(maxActive <= 3, `동시 호출 ${maxActive}건은 상한 3을 넘는다`);
+    assert.ok(maxActive >= 2, "청크가 순차로만 돌면 동시성 제한이 무의미하다");
+    assert.equal(result.size, 120);
+    for (const keyword of keywords) {
+      const entry = result.get(keyword.toLowerCase());
+      assert.equal(entry.status, "ok");
+      assert.equal(entry.value, 300);
+      assert.equal(entry.label, "300");
+    }
+  });
+});
+
+test("keyword volume lookup retries 429 and 5xx once with a short backoff and never retries 4xx", async () => {
+  await withSearchAdEnv(async () => {
+    const calls = new Map();
+    const stamps = new Map();
+    globalThis.fetch = async (input) => {
+      const keyword = searchAdHintKeyword(input);
+      const count = (calls.get(keyword) || 0) + 1;
+      calls.set(keyword, count);
+      stamps.set(keyword, [...(stamps.get(keyword) || []), Date.now()]);
+      if (keyword === "재시도성공") {
+        if (count === 1) return new Response(JSON.stringify({ code: 429, message: "Too Many Requests" }), { status: 429 });
+        return searchAdVolumeResponse(keyword);
+      }
+      if (keyword === "재시도실패") return new Response(JSON.stringify({ message: "Internal Error" }), { status: 500 });
+      if (keyword === "즉시실패") return new Response(JSON.stringify({ message: "Bad Request" }), { status: 400 });
+      return searchAdVolumeResponse(keyword);
+    };
+
+    const result = await loadKeywordVolumes(["재시도성공", "재시도실패", "즉시실패"], {
+      concurrency: 3,
+      budgetMs: 8000,
+      retryDelayMs: 30,
+    });
+
+    assert.equal(calls.get("재시도성공"), 2);
+    assert.equal(result.get("재시도성공").status, "ok");
+    assert.equal(result.get("재시도성공").value, 300);
+    const retryStamps = stamps.get("재시도성공");
+    assert.ok(retryStamps[1] - retryStamps[0] >= 25, `백오프 대기 ${retryStamps[1] - retryStamps[0]}ms 가 너무 짧다`);
+
+    assert.equal(calls.get("재시도실패"), 2);
+    assert.deepEqual(result.get("재시도실패"), { value: null, label: "조회 필요", status: "error" });
+
+    assert.equal(calls.get("즉시실패"), 1);
+    assert.deepEqual(result.get("즉시실패"), { value: null, label: "조회 필요", status: "error" });
+  });
+});
+
+test("keyword volume lookup stops at the time budget and reports the rest as pending", async () => {
+  await withSearchAdEnv(async () => {
+    const keywords = Array.from({ length: 12 }, (_, index) => `예산키워드${index}`);
+    let requests = 0;
+    globalThis.fetch = async (input) => {
+      requests += 1;
+      await sleepMs(60);
+      return searchAdVolumeResponse(searchAdHintKeyword(input));
+    };
+
+    const startedAt = Date.now();
+    const result = await loadKeywordVolumes(keywords, { concurrency: 2, budgetMs: 150 });
+    const elapsed = Date.now() - startedAt;
+
+    assert.ok(elapsed < 600, `시간상한 150ms 인데 ${elapsed}ms 걸렸다`);
+    assert.equal(result.size, 12, "예산 초과 키워드도 응답에는 포함되어야 한다");
+    const statuses = keywords.map((keyword) => result.get(keyword.toLowerCase()));
+    const ready = statuses.filter((entry) => entry.status === "ok");
+    const pending = statuses.filter((entry) => entry.status === "pending");
+    assert.ok(ready.length >= 2, "예산 안에서 끝난 키워드는 정상 값이어야 한다");
+    assert.ok(pending.length >= 1, "예산을 넘긴 키워드는 pending 으로 남아야 한다");
+    assert.equal(ready.length + pending.length, 12);
+    for (const entry of pending) assert.deepEqual(entry, { value: null, label: "조회 중", status: "pending" });
+    assert.ok(requests < 12, `예산이 끝난 뒤에도 새 호출을 시작했다 (${requests}건)`);
+  });
+});
+
+test("cached keyword volumes are served without calling the search-ad API again", async () => {
+  await withSearchAdEnv(async () => {
+    let requests = 0;
+    globalThis.fetch = async (input) => {
+      requests += 1;
+      return searchAdVolumeResponse(searchAdHintKeyword(input));
+    };
+
+    const first = await loadKeywordVolumes(["캐시키워드A", "캐시키워드B"], { concurrency: 2, budgetMs: 8000 });
+    assert.equal(requests, 2);
+    assert.equal(first.get("캐시키워드a").status, "ok");
+
+    const second = await loadKeywordVolumes(["캐시키워드A", "캐시 키워드 B"], { concurrency: 2, budgetMs: 8000 });
+    assert.equal(requests, 2, "캐시 히트는 API 를 호출하지 않는다");
+    assert.deepEqual(second.get("캐시키워드a"), first.get("캐시키워드a"));
+    assert.deepEqual(second.get("캐시키워드b"), first.get("캐시키워드b"));
+
+    // 캐시 히트는 시간 예산을 소모하지 않고, 신규 키워드만 조회한다.
+    const third = await loadKeywordVolumes(["캐시키워드A", "캐시키워드C"], { concurrency: 2, budgetMs: 8000 });
+    assert.equal(requests, 3);
+    assert.equal(third.get("캐시키워드c").status, "ok");
+  });
+});
+
+test("keyword volume lookup stays empty without search-ad configuration", async () => {
+  const previous = Object.fromEntries(SEARCHAD_ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of SEARCHAD_ENV_KEYS) delete process.env[key];
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response("{}", { status: 200 });
+  };
+  try {
+    const result = await loadKeywordVolumes(["미설정키워드"]);
+    assert.equal(result.size, 0);
+    assert.equal(requests, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of SEARCHAD_ENV_KEYS) {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// C1 결함 B — 미발견 감지: neverFound / foundRate / lastFoundAt
+// ---------------------------------------------------------------------------
+
+function foundSnapshot(id, checkedAt, matched, values = {}) {
+  return {
+    id,
+    tracker_id: "tracker-1",
+    checked_at: checkedAt,
+    rank: matched ? 12 : null,
+    page: matched ? 1 : null,
+    position: matched ? 12 : null,
+    matched,
+    checked_count: 300,
+    total: 300,
+    item: matched ? { productId: "1234567890" } : null,
+    message: matched ? "12위" : "300위 안에 없습니다.",
+    source: "naver_shopping_results_collector",
+    created_at: checkedAt,
+    ...values,
+  };
+}
+
+test("tracker payload flags a tracker that was checked at least three times without ever being found", () => {
+  assert.equal(trackerPayload(trackerRow({ check_count: 3, found_count: 0 })).neverFound, true);
+  assert.equal(trackerPayload(trackerRow({ check_count: 12, found_count: 0 })).neverFound, true);
+  assert.equal(trackerPayload(trackerRow({ check_count: 2, found_count: 0 })).neverFound, false);
+  assert.equal(trackerPayload(trackerRow({ check_count: 0, found_count: 0 })).neverFound, false);
+  assert.equal(trackerPayload(trackerRow({ check_count: 3, found_count: 1 })).neverFound, false);
+  assert.equal(trackerPayload(trackerRow({ check_count: 9, found_count: 8 })).neverFound, false);
+  assert.equal(trackerPayload(trackerRow({ check_count: null, found_count: null })).neverFound, false);
+});
+
+test("tracker payload reports the found rate rounded to two decimals or null without checks", () => {
+  assert.equal(trackerPayload(trackerRow({ check_count: 9, found_count: 8 })).foundRate, 0.89);
+  assert.equal(trackerPayload(trackerRow({ check_count: 3, found_count: 1 })).foundRate, 0.33);
+  assert.equal(trackerPayload(trackerRow({ check_count: 4, found_count: 4 })).foundRate, 1);
+  assert.equal(trackerPayload(trackerRow({ check_count: 5, found_count: 0 })).foundRate, 0);
+  assert.equal(trackerPayload(trackerRow({ check_count: 0, found_count: 0 })).foundRate, null);
+  assert.equal(trackerPayload(trackerRow({ check_count: null, found_count: null })).foundRate, null);
+});
+
+test("tracker payload derives the last found time from loaded snapshots without another query", () => {
+  const now = Date.now();
+  const iso = (minutesAgo) => new Date(now - minutesAgo * 60 * 1000).toISOString();
+  const snapshots = [
+    foundSnapshot("s-latest-miss", iso(10), false),
+    foundSnapshot("s-found-older", iso(600), true),
+    foundSnapshot("s-found-newest", iso(120), true),
+    foundSnapshot("s-miss-older", iso(900), false),
+  ];
+
+  const payload = trackerPayload(trackerRow(), snapshots);
+  assert.equal(payload.lastFoundAt, iso(120));
+
+  assert.equal(trackerPayload(trackerRow(), [foundSnapshot("s-miss", iso(5), false)]).lastFoundAt, null);
+  assert.equal(trackerPayload(trackerRow(), []).lastFoundAt, null);
+  assert.equal(trackerPayload(trackerRow(), [undefined]).lastFoundAt, null);
+});
+
+test("tracker payload keeps its existing fields in order and appends the not-found detection fields", () => {
+  const before = [
+    "id", "keyword", "groupName", "keywordVolume", "keywordVolumeLabel", "keywordVolumeStatus",
+    "productUrl", "productId", "mallName", "productTitle", "maxRank", "status", "startedAt", "endsAt",
+    "lastCheckedAt", "nextCheckAt", "currentRank", "currentRankSource", "currentRankSourceLabel",
+    "exactProductRank", "relatedCatalogRank", "bestRank", "worstRank", "checkCount", "foundCount",
+    "lastMessage", "lastError", "retryCount", "sortOrder", "createdAt", "updatedAt", "snapshots",
+  ];
+  const keys = Object.keys(trackerPayload(trackerRow(), []));
+  assert.deepEqual(keys.slice(0, before.length), before);
+  assert.deepEqual(keys.slice(before.length), ["neverFound", "foundRate", "lastFoundAt"]);
 });

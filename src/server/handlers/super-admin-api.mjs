@@ -6,7 +6,12 @@ import {
   isMissingRankKeywordLimitSchema,
   parseRankKeywordLimitInput,
 } from "../rank-keyword-limit.mjs";
-import { RANK_CHRONIC_ISOLATION_MS, RANK_RETRY_EXHAUSTED_AT } from "../naver-rank-requeue.mjs";
+import {
+  RANK_CHRONIC_ISOLATION_MS,
+  RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_RETRY_EXHAUSTED_AT,
+  RANK_STUCK_TRACKER_MS,
+} from "../naver-rank-requeue.mjs";
 
 function boundedInteger(value, fallback, minimum, maximum) {
   if (value === undefined || value === null || String(value).trim() === "") return fallback;
@@ -400,12 +405,16 @@ async function loadOwnerHealth(ctx) {
   const nowIso = new Date().toISOString();
   // 만성 실패 격리 기준선. 페이로드 전체가 같은 시계를 쓰도록 nowIso 에서 파생한다.
   const chronicCutoffIso = new Date(Date.parse(nowIso) - RANK_CHRONIC_ISOLATION_MS).toISOString();
+  // 멈춘 추적기 기준선(36시간). 같은 시계에서 파생한다.
+  const stuckCutoffIso = new Date(Date.parse(nowIso) - RANK_STUCK_TRACKER_MS).toISOString();
   const [
     activeClients,
     activeTeams,
     dueTrackers,
     failedTrackers,
     chronicTrackers,
+    neverFoundTrackers,
+    stuckTrackers,
     sourceFiles,
     publicReports,
   ] = await Promise.all([
@@ -444,6 +453,25 @@ async function loadOwnerHealth(ctx) {
       .not("last_error", "is", null)
       .gte("retry_count", RANK_RETRY_EXHAUSTED_AT)
       .or(`last_checked_at.lt.${chronicCutoffIso},and(last_checked_at.is.null,created_at.lt.${chronicCutoffIso})`)),
+    // 한 번도 찾지 못한 상품 추적기 수(2026-09-02, C2 결함 E): 확인은 충분히 했는데
+    // 발견 0건인 활성 추적기. 잔존 감사 스크립트(neverFoundCount)·헬스 API
+    // (trackers.neverFound)와 같은 상수를 쓰므로 세 화면이 대조된다.
+    safeCount(ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .gte("check_count", RANK_NEVER_FOUND_MIN_CHECKS)
+      .eq("found_count", 0)),
+    // 멈춘 상품 추적기 수: 오류가 남은 채 성공 도장(last_checked_at, 없으면 created_at)이
+    // 36시간 넘게 끊긴 활성 추적기. chronicTrackers 와 달리 retry_count 를 보지 않는다 —
+    // 소진 전에 멈춘 행을 잡는 것이 목적이다. 잔존 감사(stuckCount)·헬스 API(trackers.stuck)
+    // 와 같은 상수·같은 앵커 규칙(null 갈래에는 created_at 컷오프를 묶는다)을 쓴다.
+    safeCount(ctx.supabaseAdmin
+      .from("naver_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .not("last_error", "is", null)
+      .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
     safeCount(ctx.supabaseAdmin
       .from("files")
       .select("id", { count: "exact", head: true })
@@ -462,6 +490,8 @@ async function loadOwnerHealth(ctx) {
     dueTrackers,
     failedTrackers,
     chronicTrackers,
+    neverFoundTrackers,
+    stuckTrackers,
     sourceFiles,
     publicReports,
   };

@@ -10,9 +10,12 @@
 //   6) 잔존 실패 감사·오너 화면의 SQL 컷오프가 순수 판정과 드리프트하지 않는다.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
 import path from "node:path";
 import test from "node:test";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 import {
   RANK_CHRONIC_ISOLATION_DAYS,
@@ -20,7 +23,10 @@ import {
   RANK_CHRONIC_ISOLATION_MESSAGE,
   RANK_CHRONIC_ISOLATION_MS,
   RANK_CHRONIC_PARK_MS,
+  RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_RETRY_EXHAUSTED_AT,
+  RANK_STUCK_TRACKER_HOURS,
+  RANK_STUCK_TRACKER_MS,
   chronicIsolationCandidate,
   requeueEligible,
   runChronicIsolationPass,
@@ -461,4 +467,232 @@ test("격리 패스는 상품 레인도 지원한다(재큐와 달리 fail-close
     requeueSource.includes('table !== "naver_rank_trackers" && table !== "naver_place_rank_trackers"'),
     "격리 패스는 두 레인만 허용하는 fail-closed 가드를 가져야 한다",
   );
+});
+
+// ─────────────────────────────────────────────────────────────
+// 6. 멈춘 추적기(stuck)·미발견 추적기(neverFound) — C2 결함 D·E
+//
+// 잔존 감사는 retry_count >= 8 만 세어 왔다. 상품 레인은 격리 코드가 많아 retry_count
+// 가 8 에 닿지 않은 채 며칠씩 last_error 만 남기고 멈춘 추적기가 생기는데, 그 행은
+// residual 에도 queueStalled 에도 잡히지 않았다. stuck 의 정의:
+//   status='active' AND last_error IS NOT NULL
+//   AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS(36h)
+// neverFound 의 정의: status='active' AND check_count >= 3 AND found_count = 0.
+// 두 정의는 상품 추적기(naver_rank_trackers)에만 적용한다.
+// ─────────────────────────────────────────────────────────────
+const execFileAsync = promisify(execFile);
+const trackersHandlerSource = readRepoFile("src/server/handlers/naver-rank-trackers.mjs");
+const healthHandlerSource = readRepoFile("src/server/handlers/rank-collection-health.mjs");
+
+test("stuck·neverFound 상수는 naver-rank-requeue.mjs 한 곳에서만 정한다", () => {
+  assert.equal(RANK_STUCK_TRACKER_HOURS, 36);
+  assert.equal(RANK_STUCK_TRACKER_MS, 36 * HOUR);
+  assert.equal(RANK_NEVER_FOUND_MIN_CHECKS, 3);
+  // 잠금 파일(naver-rank-trackers.mjs)의 payload 판정은 상수를 import 하지 않는다(파일
+  // 잠금이라 손대지 않는다). 대신 소스 문자열로 값이 같은지 대조한다.
+  assert.ok(
+    trackersHandlerSource.includes(`checkCount >= ${RANK_NEVER_FOUND_MIN_CHECKS} && foundCount === 0`),
+    "trackerPayload.neverFound 판정과 RANK_NEVER_FOUND_MIN_CHECKS 가 어긋났다",
+  );
+  for (const [label, source] of [
+    ["check-rank-residual-failures.mjs", residualAuditSource],
+    ["super-admin-api.mjs", superAdminSource],
+    ["rank-collection-health.mjs", healthHandlerSource],
+  ]) {
+    assert.ok(source.includes("RANK_STUCK_TRACKER_MS"), `${label} 은 RANK_STUCK_TRACKER_MS 를 import 해야 한다`);
+    assert.ok(source.includes("RANK_NEVER_FOUND_MIN_CHECKS"), `${label} 은 RANK_NEVER_FOUND_MIN_CHECKS 를 import 해야 한다`);
+    assert.ok(!/36\s*\*\s*60/.test(source), `${label} 은 36시간을 다시 곱하지 않는다`);
+    assert.ok(!/check_count["'`]?,\s*["'`]?gte\.?["'`]?,?\s*3\b/.test(source), `${label} 은 최소 확인 횟수 3 을 하드코딩하지 않는다`);
+  }
+});
+
+test("잔존 감사는 stuck 마커 문자열을 유지한다(워크플로 grep 계약)", () => {
+  for (const code of ["RANK_STUCK_TRACKERS_PRESENT", "RANK_STUCK_NONE"]) {
+    assert.ok(residualAuditSource.includes(code), `${code} 문자열이 사라지면 워크플로 요약이 깨진다`);
+  }
+});
+
+test("오너 화면 카운터에 neverFoundTrackers·stuckTrackers 가 chronicTrackers 와 같은 패턴으로 있다", () => {
+  const start = superAdminSource.indexOf("async function loadOwnerHealth(");
+  const end = superAdminSource.indexOf("async function listClients(", start);
+  assert.ok(start >= 0 && end > start);
+  const block = superAdminSource.slice(start, end);
+  for (const name of ["chronicTrackers", "neverFoundTrackers", "stuckTrackers"]) {
+    assert.ok(block.includes(`    ${name},`), `loadOwnerHealth 는 ${name} 을 safeCount 결과로 실어야 한다`);
+  }
+  assert.ok(block.indexOf("neverFoundTrackers") > block.indexOf("chronicTrackers"));
+  assert.ok(block.indexOf("stuckTrackers") > block.indexOf("neverFoundTrackers"));
+  // 두 카운터 모두 상품 표만 본다.
+  assert.ok(!block.includes("naver_place_rank_trackers"));
+});
+
+// ── 감사 스크립트 실행 검증. 가짜 PostgREST(count=exact → content-range) 를 로컬에
+//    띄우고 스크립트를 자식 프로세스로 돌려 exit 코드·마커·질의 모양을 함께 고정한다.
+function classifyAuditQuery(url) {
+  const table = url.pathname.replace("/rest/v1/", "");
+  const params = url.searchParams;
+  if (params.has("check_count")) return `${table}:neverFound`;
+  if (params.has("retry_count") && params.has("or")) return `${table}:isolated`;
+  if (params.has("retry_count")) return `${table}:residual`;
+  if (params.has("or")) return `${table}:stuck`;
+  return `${table}:unknown`;
+}
+
+function startAuditRest(counts) {
+  return new Promise((resolve) => {
+    const requests = [];
+    const server = http.createServer((request, response) => {
+      const url = new URL(request.url, "http://127.0.0.1");
+      requests.push(url);
+      const total = counts[classifyAuditQuery(url)];
+      if (total === undefined) {
+        response.writeHead(500, { "content-type": "application/json" });
+        response.end('{"message":"unexpected_query"}');
+        return;
+      }
+      response.writeHead(200, { "content-type": "application/json", "content-range": `*/${total}` });
+      response.end("[]");
+    });
+    server.listen(0, "127.0.0.1", () => resolve({
+      server,
+      requests,
+      baseUrl: `http://127.0.0.1:${server.address().port}`,
+    }));
+  });
+}
+
+async function runResidualAudit(baseUrl) {
+  const env = { ...process.env, SUPABASE_URL: baseUrl, SUPABASE_SECRET_KEY: "sb_secret_residual_audit_test" };
+  try {
+    const { stdout, stderr } = await execFileAsync(
+      process.execPath,
+      ["scripts/check-rank-residual-failures.mjs"],
+      { cwd: repositoryRoot, env, timeout: 30_000 },
+    );
+    return { status: 0, stdout, stderr };
+  } catch (error) {
+    return { status: error.code, stdout: String(error.stdout || ""), stderr: String(error.stderr || "") };
+  }
+}
+
+function reportFrom(text) {
+  const from = text.indexOf("{");
+  const to = text.lastIndexOf("}");
+  assert.ok(from >= 0 && to > from, `보고 JSON 을 찾지 못했다: ${text}`);
+  return JSON.parse(text.slice(from, to + 1));
+}
+
+const ZERO_COUNTS = {
+  "naver_rank_trackers:residual": 0,
+  "naver_rank_trackers:isolated": 0,
+  "naver_place_rank_trackers:residual": 0,
+  "naver_place_rank_trackers:isolated": 0,
+  "naver_rank_trackers:neverFound": 0,
+  "naver_rank_trackers:stuck": 0,
+};
+
+test("잔존 감사(실행): 전부 0 이면 exit 0 이고 stuck·neverFound 를 함께 보고한다", async (t) => {
+  const rest = await startAuditRest(ZERO_COUNTS);
+  t.after(() => rest.server.close());
+  const startedAt = Date.now();
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 0, run.stderr);
+  const report = reportFrom(run.stdout);
+  assert.equal(report.ok, true);
+  assert.equal(report.code, "RANK_RESIDUAL_NONE");
+  assert.equal(report.stuckCode, "RANK_STUCK_NONE");
+  assert.equal(report.residualCount, 0);
+  assert.equal(report.stuckCount, 0);
+  assert.equal(report.neverFoundCount, 0);
+  assert.equal(report.stuckHours, RANK_STUCK_TRACKER_HOURS);
+  assert.equal(report.neverFoundMinChecks, RANK_NEVER_FOUND_MIN_CHECKS);
+  assert.equal(report.retryExhaustedAt, RANK_RETRY_EXHAUSTED_AT);
+
+  // 질의 모양. 두 새 집계는 상품 표에만 나간다.
+  const kinds = rest.requests.map(classifyAuditQuery);
+  assert.equal(kinds.filter((kind) => kind === "naver_rank_trackers:stuck").length, 1);
+  assert.equal(kinds.filter((kind) => kind === "naver_rank_trackers:neverFound").length, 1);
+  assert.ok(!kinds.includes("naver_place_rank_trackers:stuck"));
+  assert.ok(!kinds.includes("naver_place_rank_trackers:neverFound"));
+  assert.ok(!kinds.some((kind) => kind.endsWith(":unknown")));
+
+  const stuck = rest.requests.find((url) => classifyAuditQuery(url) === "naver_rank_trackers:stuck");
+  assert.equal(stuck.searchParams.get("status"), "eq.active");
+  assert.equal(stuck.searchParams.get("last_error"), "not.is.null");
+  assert.equal(stuck.searchParams.has("retry_count"), false, "stuck 은 재시도 소진과 무관하다");
+  assert.equal(stuck.searchParams.get("limit"), "0");
+  const or = stuck.searchParams.get("or");
+  assert.ok(or.startsWith("(last_checked_at.lt."), or);
+  assert.ok(or.includes("and(last_checked_at.is.null,created_at.lt."), or);
+  const cutoffs = [...or.matchAll(/\.lt\.([0-9TZ:.\-]+)/g)].map((match) => Date.parse(match[1]));
+  assert.equal(cutoffs.length, 2);
+  assert.equal(cutoffs[0], cutoffs[1], "두 갈래는 같은 컷오프를 쓴다");
+  assert.ok(Math.abs((startedAt - cutoffs[0]) - RANK_STUCK_TRACKER_MS) < 30_000, `컷오프는 now-36h: ${or}`);
+
+  const neverFound = rest.requests.find((url) => classifyAuditQuery(url) === "naver_rank_trackers:neverFound");
+  assert.equal(neverFound.searchParams.get("status"), "eq.active");
+  assert.equal(neverFound.searchParams.get("check_count"), `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`);
+  assert.equal(neverFound.searchParams.get("found_count"), "eq.0");
+  assert.equal(neverFound.searchParams.has("last_error"), false);
+  assert.equal(neverFound.searchParams.has("retry_count"), false);
+  // 읽기 전용·개수만: 어느 질의도 id 외 열을 요구하지 않는다.
+  for (const url of rest.requests) assert.equal(url.searchParams.get("select"), "id");
+});
+
+test("잔존 감사(실행): stuck>0 이면 residual 이 0 이어도 exit 1 + RANK_STUCK_TRACKERS_PRESENT", async (t) => {
+  const rest = await startAuditRest({ ...ZERO_COUNTS, "naver_rank_trackers:stuck": 2, "naver_rank_trackers:neverFound": 5 });
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes("RANK_STUCK_TRACKERS_PRESENT"), run.stderr);
+  assert.ok(run.stderr.includes("RANK_RESIDUAL_NONE"), "잔존 판정은 그대로 0 이다");
+  assert.ok(!run.stderr.includes("RANK_RESIDUAL_FAILURES_PRESENT"), "stuck 을 잔존으로 오진하지 않는다");
+  const report = reportFrom(run.stderr);
+  assert.equal(report.ok, false);
+  assert.equal(report.code, "RANK_RESIDUAL_NONE");
+  assert.equal(report.stuckCode, "RANK_STUCK_TRACKERS_PRESENT");
+  assert.equal(report.stuckCount, 2);
+  assert.equal(report.neverFoundCount, 5);
+  assert.equal(report.residualCount, 0);
+  assert.equal(run.stdout.trim(), "", "실패 보고는 stderr 로만 낸다(기존 규약)");
+});
+
+test("잔존 감사(실행): neverFound 만 있으면 보고만 하고 exit 0 이다", async (t) => {
+  const rest = await startAuditRest({ ...ZERO_COUNTS, "naver_rank_trackers:neverFound": 4 });
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 0, run.stderr);
+  const report = reportFrom(run.stdout);
+  assert.equal(report.ok, true);
+  assert.equal(report.neverFoundCount, 4);
+  assert.equal(report.stuckCode, "RANK_STUCK_NONE");
+  assert.ok(!run.stdout.includes("RANK_STUCK_TRACKERS_PRESENT"));
+});
+
+test("잔존 감사(실행): residual>0 판정·마커·exit 코드는 이전과 같다", async (t) => {
+  const rest = await startAuditRest({ ...ZERO_COUNTS, "naver_rank_trackers:residual": 1, "naver_rank_trackers:isolated": 1 });
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes("RANK_RESIDUAL_FAILURES_PRESENT"), run.stderr);
+  assert.ok(run.stderr.includes("docs/RUNBOOK.md 증상 ④"));
+  const report = reportFrom(run.stderr);
+  assert.equal(report.ok, false);
+  assert.equal(report.code, "RANK_RESIDUAL_FAILURES_PRESENT");
+  assert.equal(report.residualCount, 1);
+  assert.equal(report.isolatedCount, 1);
+  assert.equal(report.stuckCode, "RANK_STUCK_NONE");
+  assert.equal(report.stuckCount, 0);
+});
+
+test("잔존 감사(실행): stuck 질의 실패는 RANK_RESIDUAL_AUDIT_QUERY_FAILED 로 exit 1 이다(단정 금지)", async (t) => {
+  const counts = { ...ZERO_COUNTS };
+  delete counts["naver_rank_trackers:stuck"];
+  const rest = await startAuditRest(counts);
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes("RANK_RESIDUAL_AUDIT_QUERY_FAILED"), run.stderr);
+  assert.ok(!run.stderr.includes("RANK_STUCK_TRACKERS_PRESENT"), "집계가 끝나지 않았는데 stuck 을 단정하면 안 된다");
+  assert.ok(!run.stderr.includes("RANK_RESIDUAL_NONE"), "집계가 끝나지 않았는데 잔존 0 을 단정하면 안 된다");
 });

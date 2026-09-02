@@ -1,6 +1,10 @@
 import { withSupabase } from "@supabase/server";
 import { corsHeaders, protectedJson } from "../security.mjs";
-import { RANK_OVERDUE_THRESHOLD_MS } from "../naver-rank-requeue.mjs";
+import {
+  RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_OVERDUE_THRESHOLD_MS,
+  RANK_STUCK_TRACKER_MS,
+} from "../naver-rank-requeue.mjs";
 import {
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
   workerOutdatedFromSignals,
@@ -33,6 +37,17 @@ const DELIBERATE_CIRCUIT_REASONS = new Set(["manual_stop", "manual_canary"]);
 // 엔트리에 status 와 헤더를 함께 담아 캐시 히트 시 원래 응답(200/503)을 그대로 재현한다.
 let cached = null;
 
+// lanes 의 두 키. 입력 레인이 비어 있어도 공개 표면에는 이 두 키가 항상 실린다.
+const LANE_KEYS = ["product", "place"];
+const FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
+
+// trackers 집계 정수의 안전 변환. 조회 실패·null·NaN·음수·무한대는 전부 0 이다 —
+// "모른다" 를 0 으로 내는 것은 이 엔드포인트의 fail-safe 규약(관측 실패는 경보가 아니다)이다.
+function nonNegativeInteger(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
 // 레인별 queueStalled 는 두 조건의 AND 다. 어느 한쪽만으로는 절대 true 가 되지 않는다.
 //   (1) 예정 시각을 6시간 넘긴 active 추적기가 그 레인에 1건이라도 있다 ← "일이 밀려 있다"
 //   (2) 그 레인의 MAX(last_checked_at) 도 6시간을 넘겼다                 ← "그동안 아무것도 수집되지 않았다"
@@ -57,11 +72,27 @@ let cached = null;
 // lastSuccessAt/stalledMinutes 는 가장 나쁜 레인(타임스탬프가 있는 레인 중
 // last_checked_at 이 가장 오래된 쪽)에서 낸다.
 //
-// ── 응답 표면은 정확히 6키다 (ok, lastSuccessAt, stalledMinutes, queueStalled,
-//    workerOutdated, heartbeatAgeMinutes). 이 순서는 200/503 양쪽에서 동일하다.
-// 앞 4키는 워치독 계약 그대로 이름·순서·의미를 한 글자도 바꾸지 않는다. 뒤 2키가
-// "상태 필드는 늘리지 않는다"는 원칙의 유일한 예외인 이유는 앞 4키로는 원리적으로
+// ── 응답 표면은 정확히 8키다 (ok, lastSuccessAt, stalledMinutes, queueStalled,
+//    workerOutdated, heartbeatAgeMinutes, lanes, trackers). 이 순서는 200/503 양쪽에서
+//    동일하다.
+// 앞 4키는 워치독 계약 그대로 이름·순서·의미를 한 글자도 바꾸지 않는다. 5·6번째 키가
+// "상태 필드는 늘리지 않는다"는 원칙의 첫 예외인 이유는 앞 4키로는 원리적으로
 // 볼 수 없는 사각지대가 실제로 17시간 열려 있었기 때문이다.
+// 2026-09-02(C2 결함 C·K4): 7·8번째 키를 붙인다.
+//   lanes    — { product:{lastSuccessAt, stalledMinutes, queueStalled}, place:{…} }.
+//              앞 4키는 "가장 나쁜 레인"만 말하므로 어느 레인이 죽었는지 이 응답만으로는
+//              알 수 없었다. 레인별 값은 위 최악-레인 계산과 같은 재료에서 나오며,
+//              불변식 최상위 queueStalled === (lanes.product.queueStalled || lanes.place.queueStalled)
+//              을 반드시 지킨다 — 워치독은 본문 전체를 grep 으로 읽으므로 중첩된
+//              "queueStalled": true 가 최상위 false 와 공존하면 오탐이 난다. 그래서
+//              의도된 정지(deliberateStop)도 레인까지 함께 누른다.
+//   trackers — { neverFound:int, stuck:int }. 상품 추적기 집계 두 개.
+//              neverFound = active AND check_count >= RANK_NEVER_FOUND_MIN_CHECKS AND found_count = 0
+//              stuck      = active AND last_error IS NOT NULL
+//                           AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS
+//              레인 전체는 돌고 있는데(queueStalled=false) 개별 추적기가 며칠째 멈춘 상태는
+//              앞 6키로는 원리적으로 보이지 않는다. 두 집계는 관측 전용이라 조회 실패는
+//              0 으로 접히고(fail-safe) 절대 503 을 만들지 않는다. 식별자·문구 없이 정수만 낸다.
 // 2026-09-01: 윈도우 수집 작업기가 서버 기대 실행본보다 낮은 버전이라 서버가 요청을
 // 전부 400 으로 거부했다. 거부는 claim RPC 앞에서 일어나므로 진척 표식은 얼어붙는데,
 // 작업기 자신은 1분마다 서명을 계속 보내 살아 있었다. 실측(2026-09-01T08:30Z):
@@ -92,12 +123,26 @@ export function rankCollectionHealthBody(input = {}) {
     ? timestamped.reduce((oldest, lane) => (lane.lastCheckedAt < oldest.lastCheckedAt ? lane : oldest))
     : null;
 
+  const deliberateStop = Boolean(input.deliberateStop);
+  // 레인별 표면. 이력이 없는 레인(lastCheckedAt=0)은 최악-레인 후보에서 빠지는 것과 같은
+  // 이유로 안전값이다. queueStalled 는 최상위와 같은 deliberateStop 억제를 받는다(OR 불변식).
+  const laneBody = (key) => {
+    const found = lanes.find((lane) => lane.key === key);
+    if (!found || !(found.lastCheckedAt > 0)) return { ...FAILSAFE_LANE };
+    return {
+      lastSuccessAt: new Date(found.lastCheckedAt).toISOString(),
+      stalledMinutes: Math.max(0, Math.floor((now - found.lastCheckedAt) / 60000)),
+      queueStalled: found.laneStalled && !deliberateStop,
+    };
+  };
+  const trackersInput = input.trackers && typeof input.trackers === "object" ? input.trackers : {};
+
   return {
     ok: true,
     lastSuccessAt: worst ? new Date(worst.lastCheckedAt).toISOString() : null,
     stalledMinutes: worst ? Math.max(0, Math.floor((now - worst.lastCheckedAt) / 60000)) : 0,
     // 타임스탬프가 있는 레인이 하나도 없으면 laneStalled 도 전부 거짓이므로 자연히 false 다.
-    queueStalled: lanes.some((lane) => lane.laneStalled) && !input.deliberateStop,
+    queueStalled: lanes.some((lane) => lane.laneStalled) && !deliberateStop,
     // 판정은 전부 순수 모듈이 한다. 여기서는 조회 결과를 그대로 넘기기만 한다.
     workerOutdated: workerOutdatedFromSignals({
       lastRunRuntimeVersion: input.lastRunRuntimeVersion,
@@ -112,7 +157,17 @@ export function rankCollectionHealthBody(input = {}) {
       lastSuccessAt: input.lastSuccessAt,
       now,
     }),
+    lanes: Object.fromEntries(LANE_KEYS.map((key) => [key, laneBody(key)])),
+    trackers: {
+      neverFound: nonNegativeInteger(trackersInput.neverFound),
+      stuck: nonNegativeInteger(trackersInput.stuck),
+    },
   };
+}
+
+// 503 본문과 조회 실패 시 쓰는 안전값. 200 과 같은 모양이다.
+function failSafeLanes() {
+  return Object.fromEntries(LANE_KEYS.map((key) => [key, { ...FAILSAFE_LANE }]));
 }
 
 // "대표가 의도한 정지"는 아래 둘뿐이다.
@@ -208,6 +263,23 @@ async function latestWorkerSignatureAt(ctx) {
   }
 }
 
+// trackers 집계 두 개가 쓰는 관측 전용 카운트. select head + count=exact 로 행 본문을
+// 받지 않고 개수만 받는다. 위 두 관측 조회와 같은 fail-safe 방향이다 — 표·열이 없든,
+// 권한이 거부되든, 체인이 throw 하든 결과는 0(신호 없음)이고 절대 503 으로 번지지 않는다.
+async function countActiveTrackers(ctx, table, applyFilters) {
+  try {
+    const base = ctx.supabaseAdmin
+      .from(table)
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active");
+    const { count, error } = await applyFilters(base);
+    if (error) return 0;
+    return nonNegativeInteger(count);
+  } catch {
+    return 0;
+  }
+}
+
 async function latestCheckedAt(ctx, table) {
   const { data, error } = await ctx.supabaseAdmin
     .from(table)
@@ -251,6 +323,7 @@ export default {
 
     try {
       const cutoffIso = new Date(now - RANK_OVERDUE_THRESHOLD_MS).toISOString();
+      const stuckCutoffIso = new Date(now - RANK_STUCK_TRACKER_MS).toISOString();
       const [
         productLatest,
         placeLatest,
@@ -259,6 +332,8 @@ export default {
         coordination,
         lastRunRuntimeVersion,
         lastSignatureAt,
+        neverFoundTrackers,
+        stuckTrackers,
       ] = await Promise.all([
         latestCheckedAt(ctx, RANK_TABLES[0]),
         latestCheckedAt(ctx, RANK_TABLES[1]),
@@ -267,6 +342,16 @@ export default {
         deliberateWorkerStop(ctx, now),
         latestWorkerRunVersion(ctx),
         latestWorkerSignatureAt(ctx),
+        // 두 집계는 상품 표(RANK_TABLES[0])만 본다. 임계값은 서버 상수 그대로다.
+        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
+          .gte("check_count", RANK_NEVER_FOUND_MIN_CHECKS)
+          .eq("found_count", 0)),
+        // OR 의 두 갈래는 만성 격리(chronicIsolationCandidate)의 앵커 규칙과 같다:
+        // 성공 이력이 있으면 last_checked_at, 없으면(null) created_at 이 앵커다.
+        // retry_count 는 보지 않는다 — 소진 전에 멈춘 행을 잡는 것이 이 집계의 존재 이유다.
+        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
+          .not("last_error", "is", null)
+          .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
       ]);
       const body = rankCollectionHealthBody({
         now,
@@ -281,6 +366,7 @@ export default {
         lastSuccessAt: coordination.lastSuccessAt,
         lastRunRuntimeVersion,
         lastSignatureAt,
+        trackers: { neverFound: neverFoundTrackers, stuck: stuckTrackers },
       });
       cached = {
         body,
@@ -295,7 +381,7 @@ export default {
     } catch {
       // 조회 실패는 "정체"가 아니다. 워치독이 아무 동작도 하지 않도록 non-2xx 로 알린다.
       // 200 과 키 순서까지 동일하게 유지한다. 워치독·verify:live 는 키 집합을 계약으로
-      // 읽으므로 상태코드에 따라 표면이 달라지면 안 된다. 관측 두 키는 안전값으로 낸다.
+      // 읽으므로 상태코드에 따라 표면이 달라지면 안 된다. 관측 키·레인·집계는 안전값으로 낸다.
       const body = {
         ok: false,
         lastSuccessAt: null,
@@ -303,6 +389,8 @@ export default {
         queueStalled: false,
         workerOutdated: false,
         heartbeatAgeMinutes: 0,
+        lanes: failSafeLanes(),
+        trackers: { neverFound: 0, stuck: 0 },
       };
       cached = {
         body,

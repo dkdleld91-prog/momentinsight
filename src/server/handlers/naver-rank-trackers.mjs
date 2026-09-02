@@ -30,7 +30,22 @@ import {
 
 const SEARCHAD_BASE_URL = "https://api.searchad.naver.com";
 const KEYWORD_VOLUME_CACHE_TTL_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_TTL_MS || 1000 * 60 * 30);
-const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 300);
+const KEYWORD_VOLUME_CACHE_MAX = Number(process.env.MI_RANK_KEYWORD_VOLUME_CACHE_MAX || 1000);
+// 검색광고 키워드도구는 계정 단위 속도제한(429)이 있어 동시성을 3~4 로 묶고,
+// 429/5xx 는 짧은 지수 백오프로 한 번만 재시도한다. 전체 소요가 예산을 넘기면
+// 남은 키워드는 "조회 중"(pending) 으로 돌려보내 화면이 흐림 대신 대기로 표시한다.
+const KEYWORD_VOLUME_LOOKUP_LIMIT_MIN = 100;
+const KEYWORD_VOLUME_LOOKUP_LIMIT = Math.max(
+  KEYWORD_VOLUME_LOOKUP_LIMIT_MIN,
+  Number(process.env.MI_RANK_KEYWORD_VOLUME_LOOKUP_LIMIT) || 500,
+);
+const KEYWORD_VOLUME_CONCURRENCY_MAX = 4;
+const KEYWORD_VOLUME_CONCURRENCY = Number(process.env.MI_RANK_KEYWORD_VOLUME_CONCURRENCY) || 3;
+const KEYWORD_VOLUME_TIME_BUDGET_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_TIME_BUDGET_MS) || 8000;
+const KEYWORD_VOLUME_RETRY_DELAY_MS = Number(process.env.MI_RANK_KEYWORD_VOLUME_RETRY_DELAY_MS) || 400;
+const KEYWORD_VOLUME_MAX_RETRIES = 1;
+const KEYWORD_VOLUME_PENDING = Object.freeze({ value: null, label: "조회 중", status: "pending" });
+const KEYWORD_VOLUME_ERROR = Object.freeze({ value: null, label: "조회 필요", status: "error" });
 const MIN_RANK_TRACKER_LEASE_MS = 1000 * 60 * 35;
 const configuredRankTrackerLeaseMs = Number(process.env.MI_RANK_TRACKER_LEASE_MS || MIN_RANK_TRACKER_LEASE_MS);
 const RANK_TRACKER_LEASE_MS = Number.isFinite(configuredRankTrackerLeaseMs)
@@ -249,10 +264,19 @@ function naverSearchAdHeaders(env, method, path) {
   };
 }
 
-async function fetchSearchAdKeywordVolume(env, keyword) {
-  const cached = getKeywordVolumeCache(keyword);
-  if (cached) return cached;
+export function clearKeywordVolumeCache() {
+  keywordVolumeCache.clear();
+}
 
+function isRetryableSearchAdStatus(status) {
+  return status === 429 || (status >= 500 && status <= 599);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function requestSearchAdKeywordVolume(env, keyword) {
   const path = "/keywordstool";
   const params = new URLSearchParams({ hintKeywords: normalizeSearchAdKeyword(keyword), showDetail: "1" });
   const controller = new AbortController();
@@ -265,36 +289,115 @@ async function fetchSearchAdKeywordVolume(env, keyword) {
       signal: controller.signal,
     });
     const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
-    if (!response.ok) throw new Error(payload?.errorMessage || payload?.message || "HTTP " + response.status);
+    let payload = {};
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch {
+      payload = {};
+    }
+    if (!response.ok) {
+      const error = new Error(payload?.errorMessage || payload?.message || "HTTP " + response.status);
+      error.status = response.status;
+      error.retryable = isRetryableSearchAdStatus(response.status);
+      throw error;
+    }
 
     const list = Array.isArray(payload?.keywordList) ? payload.keywordList : [];
     const exact = list.find((item) => normalizeKeywordCompare(item.relKeyword) === normalizeKeywordCompare(keyword));
     const metric = exact ? searchVolumeMetric(exact.monthlyPcQcCnt, exact.monthlyMobileQcCnt) : null;
-    const value = metric
+    return metric
       ? { value: metric.value, label: metric.label, status: metric.isUnderThreshold ? "range" : "ok" }
       : { value: null, label: "조회 필요", status: "not_found" };
-    setKeywordVolumeCache(keyword, value);
-    return value;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function loadKeywordVolumes(keywords) {
+async function fetchSearchAdKeywordVolume(env, keyword, options = {}) {
+  const cached = getKeywordVolumeCache(keyword);
+  if (cached) return cached;
+
+  const retryDelayMs = Math.max(0, Number(options.retryDelayMs ?? KEYWORD_VOLUME_RETRY_DELAY_MS) || 0);
+  const maxRetries = KEYWORD_VOLUME_MAX_RETRIES;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const value = await requestSearchAdKeywordVolume(env, keyword);
+      setKeywordVolumeCache(keyword, value);
+      return value;
+    } catch (error) {
+      if (attempt >= maxRetries || error?.retryable !== true) throw error;
+      await sleep(retryDelayMs * 2 ** attempt);
+    }
+  }
+}
+
+function keywordVolumeLookupOptions(options = {}) {
+  const concurrency = Math.max(1, Math.min(
+    KEYWORD_VOLUME_CONCURRENCY_MAX,
+    Math.floor(Number(options.concurrency ?? KEYWORD_VOLUME_CONCURRENCY) || KEYWORD_VOLUME_CONCURRENCY),
+  ));
+  const budgetMs = Math.max(0, Number(options.budgetMs ?? KEYWORD_VOLUME_TIME_BUDGET_MS) || KEYWORD_VOLUME_TIME_BUDGET_MS);
+  const lookupLimit = Math.max(
+    KEYWORD_VOLUME_LOOKUP_LIMIT_MIN,
+    Math.floor(Number(options.lookupLimit ?? KEYWORD_VOLUME_LOOKUP_LIMIT) || KEYWORD_VOLUME_LOOKUP_LIMIT),
+  );
+  return { concurrency, budgetMs, lookupLimit, retryDelayMs: options.retryDelayMs };
+}
+
+export async function loadKeywordVolumes(keywords, options = {}) {
   const env = searchAdConfig();
   const result = new Map();
-  const lookupLimit = Math.max(1, Math.min(100, Number(process.env.MI_RANK_KEYWORD_VOLUME_LOOKUP_LIMIT || 50)));
   const uniqueKeywords = [...new Set((keywords || []).map((keyword) => normalizeText(keyword)).filter(Boolean))];
   if (!hasSearchAdConfig(env)) return result;
 
-  await Promise.all(uniqueKeywords.slice(0, lookupLimit).map(async (keyword) => {
-    try {
-      result.set(normalizeKeywordCompare(keyword), await fetchSearchAdKeywordVolume(env, keyword));
-    } catch {
-      result.set(normalizeKeywordCompare(keyword), { value: null, label: "조회 필요", status: "error" });
+  const { concurrency, budgetMs, lookupLimit, retryDelayMs } = keywordVolumeLookupOptions(options);
+  const queue = [];
+  const seen = new Set();
+  for (const keyword of uniqueKeywords.slice(0, lookupLimit)) {
+    const key = normalizeKeywordCompare(keyword);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const cached = getKeywordVolumeCache(keyword);
+    if (cached) result.set(key, cached);
+    else queue.push({ key, keyword });
+  }
+  if (!queue.length) return result;
+
+  const deadline = Date.now() + budgetMs;
+  let settled = false;
+  let cursor = 0;
+  const worker = async () => {
+    while (!settled && cursor < queue.length && Date.now() < deadline) {
+      const { key, keyword } = queue[cursor];
+      cursor += 1;
+      let value;
+      try {
+        value = await fetchSearchAdKeywordVolume(env, keyword, { retryDelayMs });
+      } catch {
+        value = KEYWORD_VOLUME_ERROR;
+      }
+      // 예산이 끝난 뒤 도착한 값은 캐시에만 남기고(다음 조회 즉시 히트) 이번 응답은 건드리지 않는다.
+      if (!settled) result.set(key, value);
     }
-  }));
+  };
+
+  let budgetTimer = null;
+  const budget = new Promise((resolve) => {
+    budgetTimer = setTimeout(resolve, Math.max(0, deadline - Date.now()));
+  });
+  try {
+    await Promise.race([
+      Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, () => worker())),
+      budget,
+    ]);
+  } finally {
+    settled = true;
+    clearTimeout(budgetTimer);
+  }
+
+  for (const { key } of queue) {
+    if (!result.has(key)) result.set(key, KEYWORD_VOLUME_PENDING);
+  }
   return result;
 }
 
@@ -478,6 +581,8 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
   const latestTrackingItem = displayProductRankItem(recentSnapshots[0]?.item, row.product_id) || {};
   const trustedRanks = recentSnapshots.map((snapshot) => positiveRank(snapshot?.rank)).filter(Boolean);
   const hasTrustedSnapshot = recentSnapshots.length > 0;
+  const checkCount = nonNegativeCount(row.check_count);
+  const foundCount = nonNegativeCount(row.found_count);
   return {
     id: row.id,
     keyword: row.keyword,
@@ -517,7 +622,30 @@ export function trackerPayload(row, snapshots = [], keywordVolume = null) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     snapshots: recentSnapshots.map((snapshot) => snapshotPayload(snapshot, row.product_id)),
+    neverFound: checkCount >= 3 && foundCount === 0,
+    foundRate: checkCount > 0 ? Math.round((foundCount / checkCount) * 100) / 100 : null,
+    lastFoundAt: lastFoundAtFromSnapshots(snapshots),
   };
+}
+
+function nonNegativeCount(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+}
+
+// 이미 로드된 스냅샷만 본다(추가 조회 없음). matched 스냅샷 가운데 가장 최신 checked_at.
+function lastFoundAtFromSnapshots(snapshots = []) {
+  let latest = null;
+  let latestTime = -Infinity;
+  for (const snapshot of snapshots || []) {
+    if (!snapshot || snapshot.matched !== true) continue;
+    const checkedAt = snapshot.checked_at || snapshot.checkedAt || null;
+    const time = new Date(checkedAt || 0).getTime();
+    if (!checkedAt || !Number.isFinite(time) || time <= latestTime) continue;
+    latestTime = time;
+    latest = checkedAt;
+  }
+  return latest;
 }
 
 function snapshotPayload(row, trackerProductId = "") {

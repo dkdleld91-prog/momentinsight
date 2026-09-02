@@ -95,6 +95,9 @@ jobs:
           if grep -q 'RANK_RESIDUAL_FAILURES_PRESENT' audit-out/residual.json; then
             echo "residual_present=true" >> "$GITHUB_OUTPUT"
             echo "재시도 소진 잔존 추적기 **발견**. 실행 로그의 lanes 를 확인하세요." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -q 'RANK_STUCK_TRACKERS_PRESENT' audit-out/residual.json; then
+            echo "stuck_present=true" >> "$GITHUB_OUTPUT"
+            echo "36시간 넘게 멈춘 상품 순위 추적기 **발견**(stuckCount). 실행 로그의 stuckCount·neverFoundCount 를 확인하세요." >> "$GITHUB_STEP_SUMMARY"
           elif [ "$code" -eq 0 ]; then
             echo "잔존 실패 감사 실행: 잔존 **0건** 확인." >> "$GITHUB_STEP_SUMMARY"
           else
@@ -112,10 +115,13 @@ jobs:
         if: ${{ failure() && (env.DISCORD_WEBHOOK_URL != '' || (env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '')) }}
         env:
           RESIDUAL_PRESENT: ${{ steps.residual.outputs.residual_present }}
+          STUCK_PRESENT: ${{ steps.residual.outputs.stuck_present }}
         run: |
           set -euo pipefail
           if [ "${RESIDUAL_PRESENT:-}" = "true" ]; then
             summary="재시도 소진 잔존 추적기가 남아 있습니다"
+          elif [ "${STUCK_PRESENT:-}" = "true" ]; then
+            summary="36시간 넘게 멈춘 상품 순위 추적기가 있습니다"
           else
             summary="잔존 실패 감사 워크플로가 실패했습니다(원인 미확정 · 잔존 건수 미확인)"
           fi

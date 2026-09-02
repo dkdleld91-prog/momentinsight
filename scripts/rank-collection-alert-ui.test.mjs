@@ -694,7 +694,7 @@ test("H1b·H2·H3: 새 문구에 버전 문자열도 기기 식별자도 없다"
   assert.equal(smallTextContaining(html, WORKER_NOUN), WORKER_OUTDATED_LINE);
 });
 
-test("H1b·H2: refreshRankCollectionHealthSignal 은 문서화된 4개 필드만 쓴다", () => {
+test("H1b·H2: refreshRankCollectionHealthSignal 은 문서화된 6개 필드만 쓴다", () => {
   const block = functionBlock(adminSource, "refreshRankCollectionHealthSignal");
   assert.ok(block.length > 500, "추출 블록이 너무 작다");
 
@@ -707,12 +707,12 @@ test("H1b·H2: refreshRankCollectionHealthSignal 은 문서화된 4개 필드만
   const assignments = [...block.matchAll(/rankCollectionHealthSignal\s*=\s*([A-Za-z0-9_$]+)\s*;/g)].map((m) => m[1]);
   assert.deepEqual(assignments, ["next"], "신호 객체 대입은 next 한 번뿐이어야 한다");
 
-  // next 객체의 키 집합이 문서화된 4개와 정확히 같다.
+  // next 객체의 키 집합이 문서화된 6개와 정확히 같다(C5 에서 lanes·trackers 추가).
   const objectStart = block.indexOf("var next = {");
   assert.ok(objectStart >= 0, "next 객체 리터럴을 찾지 못했다");
   const objectEnd = block.indexOf("};", objectStart);
   assert.ok(objectEnd > objectStart, "next 객체 리터럴 끝을 찾지 못했다");
   const objectBody = block.slice(objectStart, objectEnd);
   const keys = [...objectBody.matchAll(/^\s{2,}([A-Za-z0-9_$]+):/gm)].map((m) => m[1]);
-  assert.deepEqual(keys.sort(), ["fetchedAt", "heartbeatAgeMinutes", "ok", "workerOutdated"]);
+  assert.deepEqual(keys.sort(), ["fetchedAt", "heartbeatAgeMinutes", "lanes", "ok", "trackers", "workerOutdated"]);
 });

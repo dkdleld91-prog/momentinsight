@@ -9,6 +9,9 @@ const NATIVE_HOST_NAME = "co.kr.momentinsight.naver_shopping";
 const OLD_AGENT_LABEL = "co.kr.momentinsight.naver-shopping-local-worker";
 const CHROME_SCHEDULER_LABEL = "co.kr.momentinsight.naver-shopping-chrome-scheduler";
 const RUNTIME_DIRECTORY_NAME = "NaverShoppingBridge";
+const CHROME_SCHEDULER_CONFIG_NAME = "naver-shopping-chrome-scheduler.conf";
+const CHROME_PROFILE_DIRECTORY_ENV = "MI_CHROME_PROFILE_DIRECTORY";
+const CHROME_PROFILE_DIRECTORY_FLAG = "--profile-directory";
 const RUNTIME_FILES = Object.freeze([
   ["scripts/run-naver-shopping-native-host.sh", 0o700],
   ["scripts/run-naver-shopping-chrome-scheduler.sh", 0o700],
@@ -67,6 +70,46 @@ export function resolveChromeProfileDirectory(homeDirectory, options = {}) {
     // A fresh Chrome profile may not have Local State yet.
   }
   return "Default";
+}
+
+function chromeSchedulerConfigPath(homeDirectory) {
+  return path.join(homeDirectory, "Library", "Application Support", "MomentInsight", CHROME_SCHEDULER_CONFIG_NAME);
+}
+
+// 기존 conf 2행(프로필 디렉터리)을 읽는다. 파일이 없거나 값이 규칙에 맞지 않으면 null.
+export function readChromeSchedulerProfileDirectory(homeDirectory) {
+  try {
+    const lines = fs.readFileSync(chromeSchedulerConfigPath(homeDirectory), "utf8").split("\n");
+    const candidate = String(lines[1] ?? "").trim();
+    return validChromeProfileDirectory(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+// 우선순위: 명시 옵션(CLI 인자·env 포함) > 기존 conf 보존 > Local State 탐지.
+// 재설치가 실제 수집 확장이 있는 프로필을 기본값(Default)으로 되돌리지 않게 한다.
+export function resolveChromeSchedulerProfileSelection(homeDirectory, options = {}) {
+  const previousProfileDirectory = readChromeSchedulerProfileDirectory(homeDirectory);
+  const explicit = String(options.profileDirectory || "").trim();
+  let profileDirectory;
+  let profileSource;
+  if (explicit) {
+    profileDirectory = resolveChromeProfileDirectory(homeDirectory, options);
+    profileSource = String(options.profileDirectorySource || "option");
+  } else if (previousProfileDirectory) {
+    profileDirectory = previousProfileDirectory;
+    profileSource = "preserved";
+  } else {
+    profileDirectory = resolveChromeProfileDirectory(homeDirectory, options);
+    profileSource = "detected";
+  }
+  return {
+    profileDirectory,
+    profileSource,
+    previousProfileDirectory,
+    profileChanged: previousProfileDirectory !== null && previousProfileDirectory !== profileDirectory,
+  };
 }
 
 export function resolveChromeApplicationPath(homeDirectory, options = {}) {
@@ -134,9 +177,12 @@ function installChromeScheduler(options) {
     runtimePath,
     chromeApplicationPath,
     profileDirectory,
+    profileSource = "option",
+    previousProfileDirectory = null,
+    profileChanged = false,
   } = options;
   const applicationDirectory = path.dirname(runtimePath);
-  const configPath = path.join(applicationDirectory, "naver-shopping-chrome-scheduler.conf");
+  const configPath = path.join(applicationDirectory, CHROME_SCHEDULER_CONFIG_NAME);
   fs.writeFileSync(configPath, `${chromeApplicationPath}\n${profileDirectory}\n`, { mode: 0o600 });
   fs.chmodSync(configPath, 0o600);
 
@@ -162,7 +208,15 @@ function installChromeScheduler(options) {
     execFileSync("/bin/launchctl", ["kickstart", `${domain}/${CHROME_SCHEDULER_LABEL}`], { stdio: "ignore" });
   }
 
-  return { configPath, launchAgentPath, chromeApplicationPath, profileDirectory };
+  return {
+    configPath,
+    launchAgentPath,
+    chromeApplicationPath,
+    profileDirectory,
+    profileSource,
+    previousProfileDirectory,
+    profileChanged,
+  };
 }
 
 export function deriveChromeExtensionId(publicKeyBase64) {
@@ -278,7 +332,7 @@ export function installChromeBridge(options = {}) {
     homeDirectory,
     runtimePath,
     chromeApplicationPath: resolveChromeApplicationPath(homeDirectory, options),
-    profileDirectory: resolveChromeProfileDirectory(homeDirectory, options),
+    ...resolveChromeSchedulerProfileSelection(homeDirectory, options),
     activate: options.activateChromeScheduler !== false,
   });
 
@@ -293,13 +347,65 @@ export function installChromeBridge(options = {}) {
   };
 }
 
+// CLI 전용: --profile-directory=<dir> 인자, 없으면 env MI_CHROME_PROFILE_DIRECTORY.
+// 모듈 호출(워치독 드리프트 동기화)은 이 함수를 거치지 않으므로 env 의 영향을 받지 않는다.
+export function parseInstallerCliOptions(argv = [], env = {}) {
+  const options = {};
+  for (const argument of argv.slice(2)) {
+    if (argument.startsWith(`${CHROME_PROFILE_DIRECTORY_FLAG}=`)) {
+      const value = argument.slice(CHROME_PROFILE_DIRECTORY_FLAG.length + 1).trim();
+      if (!validChromeProfileDirectory(value)) throw new Error("chrome_profile_directory_invalid");
+      options.profileDirectory = value;
+      options.profileDirectorySource = "cli";
+      continue;
+    }
+    throw new Error(`chrome_bridge_install_argument_unknown:${argument}`);
+  }
+  if (!options.profileDirectory) {
+    const fromEnvironment = String(env[CHROME_PROFILE_DIRECTORY_ENV] || "").trim();
+    if (fromEnvironment) {
+      if (!validChromeProfileDirectory(fromEnvironment)) throw new Error("chrome_profile_directory_invalid");
+      options.profileDirectory = fromEnvironment;
+      options.profileDirectorySource = "env";
+    }
+  }
+  return options;
+}
+
+// 보존/변경 사실을 stdout 한 줄로 요약한다. 스케줄러를 설치하지 않았으면 null.
+export function describeChromeProfileDecision(scheduler) {
+  const profileDirectory = String(scheduler?.profileDirectory || "").trim();
+  if (!profileDirectory) return null;
+  const source = String(scheduler.profileSource || "option");
+  const previous = scheduler.previousProfileDirectory ?? null;
+  let verdict = "set";
+  if (source === "preserved") verdict = "preserved";
+  else if (scheduler.profileChanged) verdict = "changed";
+  else if (previous !== null) verdict = "kept";
+  return `chrome_profile_directory ${verdict}: ${profileDirectory} (source=${source}, previous=${previous ?? "none"})`;
+}
+
+export function runInstallerCli({
+  argv = process.argv,
+  env = process.env,
+  install = installChromeBridge,
+  stdout = (line) => console.log(line),
+  stderr = (line) => console.error(line),
+} = {}) {
+  try {
+    const result = install(parseInstallerCliOptions(argv, env));
+    const decision = describeChromeProfileDecision(result?.scheduler);
+    if (decision) stdout(decision);
+    stdout(JSON.stringify(result, null, 2));
+    return 0;
+  } catch (error) {
+    stderr(error?.message || "chrome_bridge_install_failed");
+    return 1;
+  }
+}
+
 const directlyExecuted = process.argv[1]
   && path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (directlyExecuted) {
-  try {
-    console.log(JSON.stringify(installChromeBridge(), null, 2));
-  } catch (error) {
-    console.error(error?.message || "chrome_bridge_install_failed");
-    process.exitCode = 1;
-  }
+  process.exitCode = runInstallerCli();
 }

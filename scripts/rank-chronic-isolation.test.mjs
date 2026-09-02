@@ -8,6 +8,8 @@
 //   4) 주차 컬럼은 레인마다 다르며 상대 레인의 컬럼은 절대 쓰지 않는다.
 //   5) 패스는 멱등이고, 읽기가 실패해도 던지지 않는다.
 //   6) 잔존 실패 감사·오너 화면의 SQL 컷오프가 순수 판정과 드리프트하지 않는다.
+//   7) 주차가 만료돼도 만료 이후 시도 흔적이 없으면 재주차하지 않는다(F1/F8).
+//      흔적은 플레이스 last_attempt_at, 상품 worker_last_cycle_claimed_at 이다.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import http from "node:http";
@@ -18,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import {
+  PLACE_RETRY_BACKOFF_MINUTES,
   RANK_CHRONIC_ISOLATION_DAYS,
   RANK_CHRONIC_ISOLATION_MARKER,
   RANK_CHRONIC_ISOLATION_MESSAGE,
@@ -276,9 +279,22 @@ test("상품 레인은 worker_quarantined_until 로 주차하고 next_check_at �
   assert.equal(Object.prototype.hasOwnProperty.call(patch, "retry_count"), false);
 });
 
+// 플레이스 첫 격리 기준 행: 사다리 끝(360분)까지 기다렸다가 방금 due 가 된 행.
+// last_attempt_at 은 실패 경로가 next_check_at 을 "시도 + 360분"으로 미는 실제 모양을 따른다.
+const PLACE_LADDER_MS = PLACE_RETRY_BACKOFF_MINUTES[PLACE_RETRY_BACKOFF_MINUTES.length - 1] * 60 * 1000;
+function placeLadderRow(overrides = {}) {
+  return chronicRow({
+    id: "p1",
+    last_attempt_at: ago(2 * HOUR + PLACE_LADDER_MS),
+    next_check_at: ago(2 * HOUR),
+    last_message: "네이버 플레이스 순위 갱신을 다시 시도할 예정입니다.",
+    ...overrides,
+  });
+}
+
 test("플레이스 레인은 next_check_at 로 주차하고 worker_quarantined_until 은 쓰지 않는다", async () => {
   const stub = createSupabaseStub({
-    rows: [chronicRow({ id: "p1", next_check_at: ago(2 * HOUR) })],
+    rows: [placeLadderRow()],
   });
   const result = await runChronicIsolationPass(stub.ctx, "naver_place_rank_trackers", passOptions());
 
@@ -327,12 +343,156 @@ test("이미 주차된 행은 다시 쓰지 않는다(멱등) — 영구 주차�
   assert.equal(placeStub.calls.updates.length, 0);
 });
 
-test("주차가 만료된 행은 다시 주차된다 — 하루 1회 재시도가 실제로 일어난다", async () => {
+// ── F1/F8: 주차 만료 직후의 재주차가 영구 정지를 만든다 ─────────────────────
+// 플레이스는 같은 크론 요청 안에서 격리 패스가 claim 보다 먼저 돌고, 상품은 만료 후
+// durable cycle 커서가 닿기 전에 이 패스가 먼저 닿는다. 그 순간 "parkedUntil <= now"
+// 만 보고 24시간을 다시 얹으면 그 행은 영원히 due 가 되지 못한다. 그래서 만료 이후
+// 시도 흔적(claim 도장)이 없는 행은 재주차하지 않고 수집 주기에 넘긴다.
+test("[상품] 주차가 만료됐어도 만료 후 claim 흔적이 없으면 재주차하지 않는다(F1/F8)", async () => {
   const stub = createSupabaseStub({
-    rows: [chronicRow({ worker_quarantined_until: ago(1 * HOUR) })],
+    rows: [chronicRow({
+      worker_quarantined_until: ago(1 * HOUR),
+      // 마지막 claim 은 주차보다 앞선다 — 만료 뒤에 아무도 시도하지 않았다.
+      worker_last_cycle_claimed_at: ago(2 * DAY),
+    })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_rank_trackers", passOptions());
+  assert.equal(result.isolated, 0);
+  assert.equal(result.skipped, 1);
+  assert.equal(stub.calls.updates.length, 0, "미시도 행에 UPDATE 가 나가면 durable cycle 이 영영 닿지 못한다");
+});
+
+test("[상품] claim 도장이 아예 없으면(null) 흔적 없음으로 보고 재주차하지 않는다", async () => {
+  const stub = createSupabaseStub({
+    rows: [chronicRow({ worker_quarantined_until: ago(1 * HOUR), worker_last_cycle_claimed_at: null })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_rank_trackers", passOptions());
+  assert.equal(result.isolated, 0);
+  assert.equal(stub.calls.updates.length, 0);
+});
+
+test("[상품] 만료 후 claim 흔적이 있는 행(시도했는데 또 실패)은 기존대로 재주차한다", async () => {
+  const stub = createSupabaseStub({
+    rows: [chronicRow({
+      worker_quarantined_until: ago(1 * HOUR),
+      worker_last_cycle_claimed_at: ago(30 * 60 * 1000),
+    })],
   });
   const result = await runChronicIsolationPass(stub.ctx, "naver_rank_trackers", passOptions());
   assert.equal(result.isolated, 1);
+  assert.equal(stub.calls.updates.length, 1);
+  const { patch } = stub.calls.updates[0];
+  assert.equal(Date.parse(patch.worker_quarantined_until), NOW + RANK_CHRONIC_PARK_MS);
+  assert.equal(patch.last_message, RANK_CHRONIC_ISOLATION_MESSAGE);
+});
+
+test("[상품] 흔적 경계: claim 도장이 만료 시각과 같으면 흔적이고, 1ms 앞서면 흔적이 아니다", async () => {
+  const expiredAt = ago(1 * HOUR);
+  const same = createSupabaseStub({
+    rows: [chronicRow({ worker_quarantined_until: expiredAt, worker_last_cycle_claimed_at: expiredAt })],
+  });
+  assert.equal((await runChronicIsolationPass(same.ctx, "naver_rank_trackers", passOptions())).isolated, 1);
+
+  const before = createSupabaseStub({
+    rows: [chronicRow({
+      worker_quarantined_until: expiredAt,
+      worker_last_cycle_claimed_at: new Date(Date.parse(expiredAt) - 1).toISOString(),
+    })],
+  });
+  assert.equal((await runChronicIsolationPass(before.ctx, "naver_rank_trackers", passOptions())).isolated, 0);
+});
+
+test("[상품] 처음 격리(주차 없음)는 claim 흔적과 무관하게 기존대로 주차한다", async () => {
+  for (const claimedAt of [null, ago(2 * DAY)]) {
+    const stub = createSupabaseStub({
+      rows: [chronicRow({ worker_quarantined_until: null, worker_last_cycle_claimed_at: claimedAt })],
+    });
+    const result = await runChronicIsolationPass(stub.ctx, "naver_rank_trackers", passOptions());
+    assert.equal(result.isolated, 1, `첫 격리는 claimed_at=${JSON.stringify(claimedAt)} 이어도 주차해야 한다`);
+    assert.equal(Date.parse(stub.calls.updates[0].patch.worker_quarantined_until), NOW + RANK_CHRONIC_PARK_MS);
+  }
+});
+
+// 플레이스는 next_check_at 이 주차 컬럼이자 사다리 컬럼이다. 만료 후 시도가 실패하면
+// 실패 경로가 next_check_at 을 "시도 + 360분"으로 덮어써 주차 시각(P)이 사라지므로,
+// "만료 이후 시도" 는 주차 시작 시각(next_check_at - RANK_CHRONIC_PARK_MS) 이후의
+// last_attempt_at 으로 판정한다. 플레이스는 주차 중 claim 이 구조적으로 불가능하므로
+// (claim 술어 next_check_at <= now) 이 판정은 "만료 이후 시도" 와 같다.
+test("[플레이스] 주차가 만료됐어도 만료 후 시도 흔적이 없으면 재주차하지 않는다(F1/F8)", async () => {
+  const stub = createSupabaseStub({
+    rows: [chronicRow({
+      id: "p1",
+      // 25시간 전에 주차됐고(P = now - 1h) 그 뒤로 claim 이 없었다 — 같은 크론 요청에서
+      // 격리 패스가 claim 보다 먼저 닿는 바로 그 순간이다.
+      next_check_at: ago(1 * HOUR),
+      last_attempt_at: ago(26 * HOUR),
+      last_message: RANK_CHRONIC_ISOLATION_MESSAGE,
+    })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_place_rank_trackers", passOptions());
+  assert.equal(result.isolated, 0);
+  assert.equal(result.skipped, 1);
+  assert.equal(stub.calls.updates.length, 0, "미시도 행에 UPDATE 가 나가면 claim 이 영영 오지 못한다");
+});
+
+test("[플레이스] last_attempt_at 이 없으면(null) 흔적 없음으로 보고 재주차하지 않는다", async () => {
+  const stub = createSupabaseStub({
+    rows: [chronicRow({ id: "p1", next_check_at: ago(1 * HOUR), last_attempt_at: null })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_place_rank_trackers", passOptions());
+  assert.equal(result.isolated, 0);
+  assert.equal(stub.calls.updates.length, 0);
+});
+
+test("[플레이스] 만료 후 시도했다가 다시 실패한 행(사다리 next_check_at)은 기존대로 재주차한다", async () => {
+  // 주차 만료 → claim(last_attempt_at) → 실패 경로가 next_check_at = 시도 + 360분 → 그 사다리도 만료.
+  const stub = createSupabaseStub({
+    rows: [placeLadderRow({ last_attempt_at: ago(1 * HOUR + PLACE_LADDER_MS), next_check_at: ago(1 * HOUR) })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_place_rank_trackers", passOptions());
+  assert.equal(result.isolated, 1);
+  const { patch } = stub.calls.updates[0];
+  assert.equal(Date.parse(patch.next_check_at), NOW + RANK_CHRONIC_PARK_MS);
+  assert.equal(Object.prototype.hasOwnProperty.call(patch, "worker_quarantined_until"), false);
+});
+
+test("[플레이스] 시도 도장이 next_check_at 이후여도(수동 갱신 경로) 흔적으로 보고 재주차한다", async () => {
+  const stub = createSupabaseStub({
+    rows: [chronicRow({ id: "p1", next_check_at: ago(1 * HOUR), last_attempt_at: ago(30 * 60 * 1000) })],
+  });
+  const result = await runChronicIsolationPass(stub.ctx, "naver_place_rank_trackers", passOptions());
+  assert.equal(result.isolated, 1);
+});
+
+test("[플레이스] 흔적 경계: 주차 시작 시각(next_check_at - 24h)과 같은 시도는 흔적, 1ms 앞서면 아니다", async () => {
+  const parkStartedAt = NOW - 1 * HOUR - RANK_CHRONIC_PARK_MS;
+  const same = createSupabaseStub({
+    rows: [chronicRow({ id: "p1", next_check_at: ago(1 * HOUR), last_attempt_at: new Date(parkStartedAt).toISOString() })],
+  });
+  assert.equal((await runChronicIsolationPass(same.ctx, "naver_place_rank_trackers", passOptions())).isolated, 1);
+
+  const before = createSupabaseStub({
+    rows: [chronicRow({ id: "p1", next_check_at: ago(1 * HOUR), last_attempt_at: new Date(parkStartedAt - 1).toISOString() })],
+  });
+  assert.equal((await runChronicIsolationPass(before.ctx, "naver_place_rank_trackers", passOptions())).isolated, 0);
+});
+
+test("플레이스 판정의 전제: 백오프 사다리 최댓값이 주차 창(24h)보다 짧다", () => {
+  // 사다리 값(시도 + 최대 360분)은 항상 주차 시작 시각 이후이고, 순수 주차(시도 < 주차 시작)는
+  // 그렇지 않다 — 이 부등식이 깨지면 두 경우를 last_attempt_at 으로 가를 수 없다.
+  assert.ok(PLACE_LADDER_MS < RANK_CHRONIC_PARK_MS);
+});
+
+test("흔적이 있어도 주차 창이 아직 남아 있으면 두 레인 모두 건너뛴다(기존 멱등성 유지)", async () => {
+  // 남은 주차를 다시 미는 것은 영구 주차다 — 흔적 판정은 만료된 주차에만 적용된다.
+  const productStub = createSupabaseStub({
+    rows: [chronicRow({ worker_quarantined_until: ahead(1 * HOUR), worker_last_cycle_claimed_at: ago(1 * HOUR) })],
+  });
+  assert.equal((await runChronicIsolationPass(productStub.ctx, "naver_rank_trackers", passOptions())).isolated, 0);
+  const placeStub = createSupabaseStub({
+    rows: [chronicRow({ id: "p1", next_check_at: ahead(1 * HOUR), last_attempt_at: ago(1 * HOUR) })],
+  });
+  assert.equal((await runChronicIsolationPass(placeStub.ctx, "naver_place_rank_trackers", passOptions())).isolated, 0);
 });
 
 test("격리 대상이 아닌 행은 스캔만 되고 주차되지 않는다", async () => {
@@ -391,6 +551,22 @@ test("패스는 status·last_error·retry_count 를 DB 로 밀어 스캔을 싸�
   // 앵커 컬럼이 실려야 JS 판정이 성립한다.
   assert.ok(read.columns.includes("last_checked_at"), "SELECT 에 last_checked_at 이 실려야 한다");
   assert.ok(read.columns.includes("created_at"), "SELECT 에 created_at 이 실려야 한다");
+});
+
+test("격리 SELECT 는 레인별 주차 컬럼과 시도 흔적 컬럼을 싣고 상대 레인 컬럼은 싣지 않는다", async () => {
+  const productStub = createSupabaseStub({ rows: [] });
+  await runChronicIsolationPass(productStub.ctx, "naver_rank_trackers", passOptions());
+  const productColumns = productStub.calls.reads[0].columns;
+  assert.ok(productColumns.includes("worker_quarantined_until"));
+  assert.ok(productColumns.includes("worker_last_cycle_claimed_at"), "상품 흔적 컬럼(20260812060826) 이 실려야 한다");
+  assert.ok(!productColumns.includes("last_attempt_at"), "상품 표에는 last_attempt_at 이 없다");
+
+  const placeStub = createSupabaseStub({ rows: [] });
+  await runChronicIsolationPass(placeStub.ctx, "naver_place_rank_trackers", passOptions());
+  const placeColumns = placeStub.calls.reads[0].columns;
+  assert.ok(placeColumns.includes("next_check_at"));
+  assert.ok(placeColumns.includes("last_attempt_at"), "플레이스 흔적 컬럼(20260711173414) 이 실려야 한다");
+  assert.ok(!placeColumns.includes("worker_"), "플레이스 표에는 worker_* 컬럼이 없다(쓰면 400)");
 });
 
 // ─────────────────────────────────────────────────────────────

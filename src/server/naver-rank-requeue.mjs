@@ -91,6 +91,27 @@
 // (i) 주차는 24시간이고 절대 영구가 아니다. 원인이 고쳐지면 다음 날 시도가 성공하고,
 //     성공 경로가 last_checked_at 을 찍고 retry_count 를 0 으로 되돌리는 순간 격리
 //     판정이 스스로 거짓이 된다 — 사람이 풀어 줄 필요가 없다.
+// (i-2) 재주차는 "만료 이후 실제로 시도했다"는 흔적이 있을 때만 한다(F1/F8). 막 만료된
+//     행을 "parkedUntil <= now" 만 보고 다시 24시간 밀면 주차가 사실상 영구가 된다:
+//     플레이스는 같은 크론 요청 안에서 이 패스가 claim(runDuePlaceTrackers) 보다 먼저
+//     돌아 만료 직후의 claim 이 영영 오지 못하고, 상품은 durable cycle 커서가 만료 후
+//     한 시간 안에 닿지 못하면 매일 같은 일이 반복된다. 흔적은 claim 경로가 찍는 도장이다:
+//       - 상품: worker_last_cycle_claimed_at (20260812060826:21). durable cycle 의 일반
+//         claim(p_probe_tracker_id null) 이 v_now 를 찍고(20260831014800:1268), 계정 우선
+//         claim 도 찍는다(20260831033617:850). 만료 시각(worker_quarantined_until) 이후의
+//         도장이 있어야 재주차한다. probe claim 은 도장을 보존하므로 흔적으로 세지 않는다
+//         — 모르면 재주차하지 않는 쪽(fail-open)이다.
+//       - 플레이스: last_attempt_at (20260711173414:58, claim 마다 now(); 수동 갱신·등록
+//         경로도 같은 도장을 찍는다). 단 플레이스는 next_check_at 이 주차 컬럼이자 백오프
+//         사다리 컬럼이라, 만료 후 시도가 실패하면 updateTrackerAfterFailure
+//         (naver-place-rank-trackers.mjs:920-937)가 next_check_at 을 "시도 + 최대 360분"
+//         으로 덮어써 주차 시각 자체가 사라진다. 그래서 비교 기준을 만료 시각이 아니라
+//         주차 시작 시각(next_check_at - RANK_CHRONIC_PARK_MS)으로 둔다. 순수 주차 행은
+//         시도가 주차 시작보다 앞서고(claim 술어가 next_check_at <= now() 라 주차 중
+//         claim 이 불가능), 사다리 행은 시도가 항상 그 뒤다(사다리 최댓값 360분 < 24시간).
+//         즉 이 판정은 플레이스에서 "만료 이후 시도" 와 정확히 같다.
+//     처음 격리(주차 컬럼이 비어 있음)는 흔적과 무관하게 기존대로 주차한다. 도장이 null
+//     이거나 파싱되지 않으면 증거가 없는 것이므로 재주차하지 않는다((e) 와 같은 자세).
 
 export const RANK_OVERDUE_THRESHOLD_MS = 6 * 60 * 60 * 1000;
 // 8 은 기존 상한이 아니다. rankRetryAt/placeRetryAt 의 백오프 표
@@ -147,7 +168,7 @@ export const RANK_NEVER_FOUND_MIN_CHECKS = 3;
 // 두 컬럼은 상품·플레이스 테이블 모두에 존재한다
 // (20260624003000_naver_rank_tracking.sql / 20260707000100_naver_place_rank_tracking.sql).
 const BASE_COLUMNS = "id, status, last_error, retry_count, next_check_at, last_message, last_checked_at, created_at";
-// 격리 패스가 읽는 최소 컬럼. 여기에 레인별 주차 컬럼 하나만 더 붙인다.
+// 격리 패스가 읽는 최소 컬럼. 여기에 레인별 주차 컬럼과 시도 흔적 컬럼(위 (i-2)) 둘만 더 붙인다.
 const CHRONIC_COLUMNS = "id, status, last_error, retry_count, last_checked_at, created_at";
 const passMemo = new Map();
 
@@ -306,10 +327,29 @@ function chronicParkColumn(table) {
   return table === "naver_rank_trackers" ? "worker_quarantined_until" : "next_check_at";
 }
 
+// 레인별 시도 흔적 컬럼(위 (i-2)). claim 경로가 찍는 도장으로, 주차 만료 이후 실제 시도가
+// 있었는지를 가른다. 상대 레인의 컬럼은 SELECT 에도 싣지 않는다(없는 컬럼은 400).
+function chronicAttemptColumn(table) {
+  return table === "naver_rank_trackers" ? "worker_last_cycle_claimed_at" : "last_attempt_at";
+}
+
+// 만료된 주차 이후에 시도 흔적이 있는가(위 (i-2)). 도장이 없거나 파싱되지 않으면 false —
+// 증거가 없으면 재주차하지 않는다. 순수 함수이며 parkedUntil 은 호출자가 파싱해 넘긴다.
+function attemptedSincePark(table, row, parkedUntil) {
+  const stamp = row[chronicAttemptColumn(table)];
+  if (!stamp) return false;
+  const attemptedAt = new Date(stamp).getTime();
+  if (!Number.isFinite(attemptedAt) || attemptedAt <= 0) return false;
+  // 상품은 만료 시각 이후의 claim, 플레이스는 주차 시작 시각 이후의 claim 이다(사유는 (i-2)).
+  const threshold = table === "naver_rank_trackers" ? parkedUntil : parkedUntil - RANK_CHRONIC_PARK_MS;
+  return attemptedAt >= threshold;
+}
+
 async function chronicIsolationPass(ctx, table, options = {}) {
   const now = Number(options.now || Date.now());
   const isolationMs = Number(options.isolationMs || RANK_CHRONIC_ISOLATION_MS);
   const parkColumn = chronicParkColumn(table);
+  const attemptColumn = chronicAttemptColumn(table);
   const parkIso = new Date(now + RANK_CHRONIC_PARK_MS).toISOString();
 
   // DB 로 밀 수 있는 술어는 다 민다(status·last_error·retry_count). 기간 조건은 앵커가
@@ -319,7 +359,7 @@ async function chronicIsolationPass(ctx, table, options = {}) {
   // 안에서 실제로 손댈 수 있는 행이 우선 잡힌다.
   const { data, error } = await ctx.supabaseAdmin
     .from(table)
-    .select(`${CHRONIC_COLUMNS}, ${parkColumn}`)
+    .select(`${CHRONIC_COLUMNS}, ${parkColumn}, ${attemptColumn}`)
     .eq("status", "active")
     .not("last_error", "is", null)
     .gte("retry_count", RANK_RETRY_EXHAUSTED_AT)
@@ -337,12 +377,16 @@ async function chronicIsolationPass(ctx, table, options = {}) {
     // 얹으므로 그 행은 영영 due 가 되지 않는다. 상품 레인은 실패 RPC 자체가 24시간
     // 격리를 걸어(retry_count >= 2) 항상 그 상태이므로 이 함정이 특히 잘 걸린다.
     // 반대로 이 기준이면 한 번 주차한 행은 창이 끝날 때까지 손대지 않으므로 반드시
-    // 다시 due 가 되고, 하루 한 번 재시도가 실제로 일어난다(위 (i)).
-    // 남는 한계도 적어 둔다: 주차가 막 만료된 순간에 수집 주기보다 이 패스가 먼저 닿으면
-    // 그 회차 재시도를 한 번 더 미루게 된다. 수집 주기가 이 패스보다 훨씬 자주 돌아
-    // 실제로는 드물고, 최악이어도 하루 더 미뤄질 뿐 주기에서 영구히 빠지지는 않는다.
+    // 다시 due 가 된다(위 (i)).
     const parkedUntil = new Date(row[parkColumn] || 0).getTime();
-    if (Number.isFinite(parkedUntil) && parkedUntil > now) { skipped += 1; continue; }
+    const parked = Number.isFinite(parkedUntil) && parkedUntil > 0;
+    if (parked && parkedUntil > now) { skipped += 1; continue; }
+    // 주차가 만료됐어도 만료 이후 시도 흔적이 없으면 재주차하지 않는다(F1/F8, 위 (i-2)).
+    // 여기서 24시간을 다시 얹으면 플레이스는 같은 요청의 claim 이, 상품은 durable cycle 이
+    // 이 행에 영영 닿지 못한다(크론 순서는 격리 → 재큐 → claim 으로 고정이라 순서로는
+    // 풀 수 없다). 흔적이 있으면(=시도했는데 또 실패) 기존대로 재주차하고, 처음 격리
+    // (주차 컬럼 비어 있음)는 흔적과 무관하게 주차한다.
+    if (parked && !attemptedSincePark(table, row, parkedUntil)) { skipped += 1; continue; }
 
     // 레인별로 건드리는 컬럼을 문자열이 아니라 객체로 못박는다(엉뚱한 레인의 컬럼을
     // 쓰는 사고를 구조적으로 막는다). last_error 는 보존한다 — 원인 진단을 지우지 않는다.

@@ -6,6 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+// 실제 설치 경로(installChromeScheduler)는 plutil·launchctl 을 호출하므로 macOS 에서만
+// 실행한다. 리눅스 빌드 서버(Vercel)에서는 건너뛴다 — 기존 워치독 테스트와 같은 규약.
+const darwinOnly = { skip: process.platform !== "darwin" ? "macOS(plutil/launchctl) 전용 설치기" : false };
+
 import {
   describeChromeProfileDecision,
   installChromeBridge,
@@ -154,7 +158,7 @@ test("G: CLI 인자 --profile-directory= 와 env MI_CHROME_PROFILE_DIRECTORY 를
   );
 });
 
-test("G: 설치기 재실행이 기존 conf 의 Profile 5 를 Default 로 되돌리지 않는다", async (context) => {
+test("G: 설치기 재실행이 기존 conf 의 Profile 5 를 Default 로 되돌리지 않는다", darwinOnly, async (context) => {
   const { homeDirectory, chromeApplicationPath } = await makeHome(context, {
     conf: "/Applications/Google Chrome.app\nProfile 5\n",
     localState: { profile: { info_cache: { Default: { name: "동빈" } } } },
@@ -170,7 +174,7 @@ test("G: 설치기 재실행이 기존 conf 의 Profile 5 를 Default 로 되돌
   assert.equal(result.scheduler.configPath, schedulerConfigPath(homeDirectory));
 });
 
-test("G: 명시 프로필 옵션은 conf 를 바꾸고 변경 사실을 결과에 남긴다", async (context) => {
+test("G: 명시 프로필 옵션은 conf 를 바꾸고 변경 사실을 결과에 남긴다", darwinOnly, async (context) => {
   const { homeDirectory, chromeApplicationPath } = await makeHome(context, {
     conf: "/Applications/Google Chrome.app\nProfile 5\n",
   });

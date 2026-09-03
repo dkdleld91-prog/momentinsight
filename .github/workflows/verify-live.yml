@@ -1,0 +1,113 @@
+name: Verify Live
+
+on:
+  workflow_dispatch:
+  schedule:
+    # KST 10:23 / 22:23 (01:23 · 13:23 UTC). 정시 크론 슬롯(순위 수집 00:00·06:00 UTC,
+    # 잔존 감사 00:40 UTC)과 겹치지 않는 분을 골라, 수집이 몰리는 시각을 피해
+    # 라이브 표면만 훑는다.
+    - cron: "23 1,13 * * *"
+  # 배포가 끝나면 GitHub 이 deployment_status 를 쏜다. 배포 직후 1회 검증이
+  # 이 워크플로의 본래 목적이다.
+  deployment_status:
+
+concurrency:
+  group: verify-live
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # deployment_status 는 Preview 배포에서도, pending·in_progress·error 같은
+    # 진행 중 상태에서도 온다. 성공한 production 배포만 통과시킨다. contains 는
+    # 대소문자를 구분하지 않으므로 Vercel 이 보내는 'Production' 과도 맞는다.
+    if: ${{ github.event_name != 'deployment_status' || (github.event.deployment_status.state == 'success' && contains(github.event.deployment.environment, 'production')) }}
+    env:
+      # 스텝 if 조건은 secrets 컨텍스트를 읽지 못한다. 여기서 env 로 승격해야
+      # 시크릿 미등록 상태에서 알림 스텝이 조용히 건너뛴다(워크플로는 깨지지 않는다).
+      # 디스코드 웹훅 URL 도 같은 이유로 승격한다 — 스텝 if 가 secrets 를 못 읽으므로
+      # 채널 선택(디스코드 우선 · 텔레그램 대체)을 env 로만 판정할 수 있다.
+      DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # 데이터베이스 자격증명은 이 워크플로에 올리지 않는다. 라이브 검증은 공개 HTTP
+      # 표면(/health · /ready · /admin · /client · /api/*)만 읽으므로 DB 키가 어떤
+      # 스텝 프로세스에도 실릴 이유가 없다.
+      # 검증 대상은 repo variable 로 바꿀 수 있고, 없으면 프로덕션 도메인을 쓴다.
+      MI_VERIFY_LIVE_BASE_URL: ${{ vars.MI_VERIFY_LIVE_BASE_URL || 'https://insight.momentlabs.co.kr' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          # 프로덕션 release 를 origin/main 해시와 대조하므로 전체 ref 가 필요하다.
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install platform dependencies
+        run: npm ci --ignore-scripts
+
+      # 배포 직후에는 별칭 전파가 몇 초에서 수십 초 늦고, 일시적인 네트워크 오류도
+      # 섞인다. 한 번의 실패로 알림을 울리면 그것은 발견이 아니라 오탐이 되므로
+      # 최대 3회까지 60초 간격으로 다시 시도하고, 마지막 시도의 종료 코드를 그대로
+      # 잡의 결론으로 삼는다.
+      - name: Verify live
+        env:
+          # 바로 위 actions/checkout 이 fetch-depth 0 으로 모든 ref 를 방금 받았고
+          # persist-credentials: false 라 스크립트 안의 git fetch 는 자격증명 없이
+          # 실패한다. 체크아웃이 신선함을 여기서 보증하므로 fetch 를 건너뛴다.
+          MI_VERIFY_LIVE_SKIP_FETCH: "1"
+        run: |
+          set -uo pipefail
+          code=0
+          for attempt in 1 2 3; do
+            code=0
+            npm run verify:live || code=$?
+            if [ "$code" -eq 0 ]; then
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::verify:live 실패(시도 ${attempt}/3 · code ${code}). 60초 후 다시 시도합니다."
+              sleep 60
+            fi
+          done
+          exit "$code"
+
+      # 알림 채널은 세 갈래로 고른다. 디스코드 웹훅이 등록돼 있으면 디스코드로,
+      # 없고 텔레그램 두 값이 다 있으면 텔레그램으로 보낸다. 둘 다 없으면 조용히
+      # 건너뛴다 — 미등록은 실패가 아니므로 알림이 초록 실행을 붉게 만들지 않는다.
+      - name: Notify alert channel on failure
+        if: ${{ failure() && (env.DISCORD_WEBHOOK_URL != '' || (env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != '')) }}
+        run: |
+          set -euo pipefail
+          summary="배포 후 라이브 검증(verify:live)이 실패했습니다 · 대상 ${MI_VERIFY_LIVE_BASE_URL} · 트리거 ${GITHUB_EVENT_NAME}"
+          message="[모먼트 인사이트] ${summary} · 워크플로 ${GITHUB_WORKFLOW} · 작업 ${GITHUB_JOB} · ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "${DISCORD_WEBHOOK_URL:-}" ]; then
+            # 웹훅 URL 자체가 시크릿이다. URL 은 인용된 환경변수로만 curl 에 넘기고
+            # 로그에 남는 것은 JSON 본문뿐이다(요청 상세 출력 옵션 금지 ·
+            # --output /dev/null 유지). 본문은 jq 가 이스케이프하므로 워크플로
+            # 이름에 따옴표·역슬래시가 들어와도 JSON 이 깨지지 않는다.
+            jq -n --arg content "$message" '{content: $content}' \
+              | curl -sS --max-time 20 -X POST \
+                  -H 'Content-Type: application/json' \
+                  --data @- \
+                  --output /dev/null \
+                  "${DISCORD_WEBHOOK_URL}" || true
+          elif [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
+            curl -sS --max-time 20 -X POST \
+              "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+              --data-urlencode "text=${message}" \
+              --output /dev/null || true
+          fi
+          # 알림 실패가 잡의 결론을 바꾸지 않도록 여기서 항상 0 으로 끝낸다.
+          exit 0

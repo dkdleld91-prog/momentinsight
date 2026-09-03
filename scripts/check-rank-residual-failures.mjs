@@ -34,6 +34,18 @@
 // neverFoundCount 는 보고만 하고 종료 코드에 영향을 주지 않는다. 임계값은 전부 서버
 // 상수를 import 하므로 헬스 API(trackers)·총관리자 카운터와 같은 행을 센다.
 //
+// 다섯 번째 숫자(placePartialCount — 2026-09-03, F18)에 대하여: 플레이스 추적기의 partial
+// 결과 경로(naver-place-rank-trackers.mjs updateTrackerAfterPartial)는 last_error 를 null 로
+// 둔 채 retry_count 만 +1 한다. 그래서 partial 만 반복하는 추적기는 위 잔존(last_error IS
+// NOT NULL)·stuck·격리 어느 집계에도 걸리지 않았다. 플레이스 추적기에 한해 한 집계를 더 센다.
+//   placePartial = status='active' AND last_error IS NULL
+//                  AND retry_count >= RANK_PLACE_PARTIAL_MIN_RETRIES
+// 관측 전용이다: ok·code·stuckCode·마커 문자열·종료 코드에 전혀 손대지 않으므로
+// placePartialCount 가 0 이 아니어도 exit 0 이고 보고는 그대로 stdout 으로 나간다.
+// 이 질의가 실패하면 기존 Promise.all 규약대로 RANK_RESIDUAL_AUDIT_QUERY_FAILED 로 exit 1 이다
+// (집계가 끝나지 않았으므로 어떤 숫자도 단정하지 않는다). 임계값은 서버 상수를 import 하므로
+// 총관리자 카운터(placePartialTrackers)·헬스 API 와 같은 행을 센다.
+//
 // 읽기 전용이다. select 만 하고 limit=0 + Prefer: count=exact 로 개수만 받는다 —
 // 추적기 id·키워드·상품번호 같은 계정 데이터를 로그에 남기지 않는다.
 import fs from "node:fs";
@@ -43,6 +55,7 @@ import {
   RANK_CHRONIC_ISOLATION_DAYS,
   RANK_CHRONIC_ISOLATION_MS,
   RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_RETRY_EXHAUSTED_AT,
   RANK_STUCK_TRACKER_HOURS,
   RANK_STUCK_TRACKER_MS,
@@ -54,6 +67,8 @@ const LANES = [
 ];
 // stuck·neverFound 는 상품 레인에만 정의된다.
 const PRODUCT_TABLE = LANES[0].table;
+// placePartial 은 플레이스 레인에만 정의된다(partial 결과 경로가 그쪽에만 있다).
+const PLACE_TABLE = LANES[1].table;
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
@@ -138,8 +153,9 @@ async function laneCount(table, extraFilters = {}) {
 let lanes;
 let stuckCount;
 let neverFoundCount;
+let placePartialCount;
 try {
-  [lanes, stuckCount, neverFoundCount] = await Promise.all([
+  [lanes, stuckCount, neverFoundCount, placePartialCount] = await Promise.all([
     Promise.all(LANES.map(async (lane) => {
     const [residualCount, isolatedCount] = await Promise.all([
       laneCount(lane.table),
@@ -167,6 +183,12 @@ try {
       check_count: `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`,
       found_count: "eq.0",
     }),
+    // partial 을 반복 중인 플레이스 추적기(보고 전용). last_error 가 null 이라는 점이
+    // 위 세 집계와 정반대라, 잔존 기준선(laneCount)을 쓰지 않고 직접 센다.
+    countActive(PLACE_TABLE, {
+      last_error: "is.null",
+      retry_count: `gte.${RANK_PLACE_PARTIAL_MIN_RETRIES}`,
+    }),
   ]);
 } catch (error) {
   fail("RANK_RESIDUAL_AUDIT_QUERY_FAILED", String(error?.message || "residual_query_failed"));
@@ -185,10 +207,13 @@ const report = {
   stuckCode: stuckCount === 0 ? "RANK_STUCK_NONE" : "RANK_STUCK_TRACKERS_PRESENT",
   stuckCount,
   neverFoundCount,
+  // 관측 전용(F18). ok·code·stuckCode·exit 코드에는 쓰지 않는다.
+  placePartialCount,
   retryExhaustedAt: RANK_RETRY_EXHAUSTED_AT,
   chronicIsolationDays: RANK_CHRONIC_ISOLATION_DAYS,
   stuckHours: RANK_STUCK_TRACKER_HOURS,
   neverFoundMinChecks: RANK_NEVER_FOUND_MIN_CHECKS,
+  placePartialMinRetries: RANK_PLACE_PARTIAL_MIN_RETRIES,
   lanes,
   checkedAt,
 };

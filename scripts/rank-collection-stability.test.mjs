@@ -15,6 +15,7 @@ import {
   RANK_AUTO_REQUEUE_MESSAGE,
   RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_OVERDUE_THRESHOLD_MS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_REQUEUE_DAILY_CAP,
   RANK_REQUEUE_MIN_IDLE_MS,
   RANK_RETRY_EXHAUSTED_AT,
@@ -28,6 +29,12 @@ import rankCollectionHealthHandler, {
   deliberateWorkerStopFromRow,
   rankCollectionHealthBody,
 } from "../src/server/handlers/rank-collection-health.mjs";
+import {
+  RANK_KEYWORD_GROUP_MAX_PAGES,
+  RANK_KEYWORD_GROUP_PAGE_SIZE,
+  countActiveProductKeywordGroups,
+  normalizedRankKeywordKey,
+} from "../src/server/rank-capacity.mjs";
 import { placeTrackerPayload } from "../src/server/handlers/naver-place-rank-trackers.mjs";
 import {
   EXPECTED_WORKER_RUNTIME_VERSION,
@@ -56,6 +63,11 @@ const watchdogInstallSource = readRepoFile("scripts/watchdog/install-mi-rank-wat
 const bridgeInstallerSource = readRepoFile("scripts/install-naver-shopping-chrome-bridge.mjs");
 const packageManifest = JSON.parse(readRepoFile("package.json"));
 const healthHandlerSource = readRepoFile("src/server/handlers/rank-collection-health.mjs");
+const rankCapacitySource = readRepoFile("src/server/rank-capacity.mjs");
+// 정규화 규약의 원본은 잠금 파일 두 곳이다. 용량 모듈은 그 의미를 복제하므로
+// 원본 문자열이 바뀌면(=규약이 움직이면) 아래 드리프트 가드가 먼저 깨진다.
+const localWorkerSource = readRepoFile("src/server/handlers/naver-shopping-local-worker.mjs");
+const shoppingRankSource = readRepoFile("src/server/handlers/naver-shopping-rank.mjs");
 const sessionGateSource = readRepoFile("src/server/session-gate.mjs");
 const serverIndexSource = readRepoFile("src/server/index.mjs");
 
@@ -841,7 +853,22 @@ const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
 const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
 const HEALTH_FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
 const HEALTH_FAILSAFE_LANES = Object.freeze({ product: HEALTH_FAILSAFE_LANE, place: HEALTH_FAILSAFE_LANE });
-const HEALTH_FAILSAFE_TRACKERS = Object.freeze({ neverFound: 0, stuck: 0 });
+// 2026-09-03(F7): trackers 는 5키다. 앞 2키(neverFound, stuck)는 이름·의미 불변이고
+// 뒤 3키는 전부 관측 전용 정수다 — 상한 판단도 경보도 하지 않는다.
+const HEALTH_TRACKER_KEYS_IN_ORDER = [
+  "neverFound",
+  "stuck",
+  "placePartial",
+  "activeProduct",
+  "activeProductKeywordGroups",
+];
+const HEALTH_FAILSAFE_TRACKERS = Object.freeze({
+  neverFound: 0,
+  stuck: 0,
+  placePartial: 0,
+  activeProduct: 0,
+  activeProductKeywordGroups: 0,
+});
 // 503 본문. 200 과 같은 8키·같은 순서이며 전부 안전값이다.
 const HEALTH_FAILSAFE_BODY = Object.freeze({
   ok: false,
@@ -1148,15 +1175,40 @@ test("F2: 레인 stalledMinutes 도 분 단위 내림이며 6시간 경계는 �
 // ── 8번째 키 trackers (C2 결함 C) ──
 test("F2: trackers 는 비음수 정수만 받고 그 외는 0 으로 접는다(fail-safe)", () => {
   const base = { now: NOW, lanes: [] };
+  const trackersOf = (trackers) => rankCollectionHealthBody({ ...base, trackers }).trackers;
+  const full = (patch) => ({ ...HEALTH_FAILSAFE_TRACKERS, ...patch });
   assert.deepEqual(rankCollectionHealthBody(base).trackers, HEALTH_FAILSAFE_TRACKERS);
-  assert.deepEqual(Object.keys(rankCollectionHealthBody(base).trackers), ["neverFound", "stuck"]);
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: 3, stuck: 2 } }).trackers, { neverFound: 3, stuck: 2 });
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: 0, stuck: 0 } }).trackers, { neverFound: 0, stuck: 0 });
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: NaN, stuck: -1 } }).trackers, HEALTH_FAILSAFE_TRACKERS);
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: null, stuck: undefined } }).trackers, HEALTH_FAILSAFE_TRACKERS);
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: Infinity, stuck: "x" } }).trackers, HEALTH_FAILSAFE_TRACKERS);
-  assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: { neverFound: "4", stuck: 2.7 } }).trackers, { neverFound: 4, stuck: 2 });
+  // 키 이름뿐 아니라 순서까지 고정한다 — 앞 2키는 워치독이 이미 읽는 자리다.
+  assert.deepEqual(Object.keys(rankCollectionHealthBody(base).trackers), HEALTH_TRACKER_KEYS_IN_ORDER);
+  assert.deepEqual(trackersOf({ neverFound: 3, stuck: 2 }), full({ neverFound: 3, stuck: 2 }));
+  assert.deepEqual(trackersOf({ neverFound: 0, stuck: 0 }), HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(trackersOf({ neverFound: NaN, stuck: -1 }), HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(trackersOf({ neverFound: null, stuck: undefined }), HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(trackersOf({ neverFound: Infinity, stuck: "x" }), HEALTH_FAILSAFE_TRACKERS);
+  assert.deepEqual(trackersOf({ neverFound: "4", stuck: 2.7 }), full({ neverFound: 4, stuck: 2 }));
   assert.deepEqual(rankCollectionHealthBody({ ...base, trackers: null }).trackers, HEALTH_FAILSAFE_TRACKERS);
+
+  // 새 3키도 같은 규약을 그대로 받는다.
+  assert.deepEqual(
+    trackersOf({ placePartial: 4, activeProduct: 71, activeProductKeywordGroups: 58 }),
+    full({ placePartial: 4, activeProduct: 71, activeProductKeywordGroups: 58 }),
+  );
+  assert.deepEqual(
+    trackersOf({ placePartial: NaN, activeProduct: -1, activeProductKeywordGroups: Infinity }),
+    HEALTH_FAILSAFE_TRACKERS,
+  );
+  assert.deepEqual(
+    trackersOf({ placePartial: "x", activeProduct: null, activeProductKeywordGroups: undefined }),
+    HEALTH_FAILSAFE_TRACKERS,
+  );
+  assert.deepEqual(
+    trackersOf({ placePartial: "5", activeProduct: 71.9, activeProductKeywordGroups: "58" }),
+    full({ placePartial: 5, activeProduct: 71, activeProductKeywordGroups: 58 }),
+  );
+  // 5키 전부 정수다(공개 표면에 소수·문자열이 새지 않는다).
+  for (const value of Object.values(trackersOf({ placePartial: "5", activeProduct: 71.9, activeProductKeywordGroups: "58" }))) {
+    assert.ok(Number.isInteger(value) && value >= 0, String(value));
+  }
 });
 
 test("F2: 추적기 집계 기준은 서버 상수를 import 한다(하드코딩 금지)", () => {
@@ -1165,12 +1217,36 @@ test("F2: 추적기 집계 기준은 서버 상수를 import 한다(하드코딩
   assert.ok(!/36\s*\*\s*60/.test(healthHandlerSource), "핸들러 안에서 36시간을 다시 곱하지 않는다");
   // 두 집계는 관측 전용이다 — 조회 실패가 503 으로 번지면 안 되므로 try/catch 로 접는다.
   assert.ok(healthHandlerSource.includes("async function countActiveTrackers("));
+  // placePartial 임계값도 서버 상수다. 4 를 핸들러에 다시 적어 두면 잔존 감사·총관리자
+  // 카운터와 조용히 어긋난다(세 화면이 같은 행을 세야 한다).
+  assert.equal(RANK_PLACE_PARTIAL_MIN_RETRIES, 4);
+  assert.ok(healthHandlerSource.includes("RANK_PLACE_PARTIAL_MIN_RETRIES"), "partial 임계값은 상수 import 여야 한다");
+  assert.ok(!healthHandlerSource.includes('retry_count", 4'), "임계값을 핸들러에 하드코딩하지 않는다");
+  assert.ok(!healthHandlerSource.includes("gte.4"), "질의 문자열에도 4 를 박아 두지 않는다");
 });
 
 test("F2: 엔드포인트는 계정 데이터를 노출하지 않는다", () => {
   for (const forbidden of ["agency", "client", "keyword", "place_name", "product_title"]) {
     assert.ok(!healthHandlerSource.includes(forbidden), `health handler must not mention ${forbidden}`);
   }
+});
+
+test("F7: 용량 모듈은 행 본문을 남기지 않고 정수만 돌려준다", async () => {
+  // 계정 데이터 열을 읽는 코드는 핸들러가 아니라 이 모듈에 둔다. 위 가드(핸들러 소스에
+  // 금지어가 없어야 한다)를 지키면서도 열을 읽어야 하므로 파일명·식별자에 소문자 금지어를
+  // 쓰지 않는다. 대신 이 모듈에는 로그가 한 줄도 없어야 한다.
+  assert.ok(!rankCapacitySource.includes("console."), "용량 모듈은 무엇도 로그하지 않는다");
+  assert.ok(!rankCapacitySource.includes("JSON.stringify"), "행 본문을 직렬화하지 않는다");
+  // 핸들러가 import 하는 경로·식별자에도 소문자 금지어가 없다.
+  assert.ok(healthHandlerSource.includes('from "../rank-capacity.mjs"'));
+  assert.ok(healthHandlerSource.includes("countActiveProductKeywordGroups"));
+
+  // 성공 경로도 실패 경로도 반환은 언제나 정수다.
+  const ok = await countActiveProductKeywordGroups(capacityClient([[{ keyword: "아이폰 케이스" }]]).client);
+  assert.ok(Number.isInteger(ok) && ok >= 0);
+  const failed = await countActiveProductKeywordGroups(null);
+  assert.equal(failed, 0);
+  assert.ok(Number.isInteger(failed));
 });
 
 test("F2: 캐시 헤더와 TTL 이 계약대로다", () => {
@@ -1472,9 +1548,31 @@ test("F2: 관측 조회가 실패해도 200 을 503 으로 뒤집지 않는다",
 });
 
 // lanes·trackers 핸들러 실행 검증. 위 stubHealthSupabase 는 표 이름만 보지만 여기서는
-// 같은 표(naver_rank_trackers)에 GET 두 종류·HEAD(count) 두 종류가 나가므로
-// 메서드와 질의 파라미터까지 보고 갈라야 한다.
+// 같은 표(naver_rank_trackers)에 GET 세 종류(last_checked_at·next_check_at·키워드 열)와
+// HEAD(count) 세 종류가, 플레이스 표에도 HEAD 한 종류가 나가므로 메서드와 질의
+// 파라미터의 값까지 보고 갈라야 한다(2026-09-03 F7 로 HEAD 2건 → 4건).
 const countRows = (total) => new Response(null, { status: 200, headers: { "content-range": `*/${total}` } });
+
+// 정규화하면 같은 키가 되는 변형 3개. 실제 운영 데이터에도 띄어쓰기 변형이 섞여 있다.
+const KEYWORD_GROUP_VARIANTS = ["아이폰 케이스", "아이폰케이스", "아이폰 케이스 "];
+const capacityRows = (values) => values.map((value) => ({ keyword: value }));
+// 1페이지는 정확히 페이지 크기만큼 채워 "다음 페이지가 있다"를 만든다.
+const KEYWORD_PAGE_ONE = capacityRows([
+  ...KEYWORD_GROUP_VARIANTS,
+  "   ",
+  ...Array.from({ length: 996 }, (_, index) => `상품 키워드 ${index}`),
+]);
+const KEYWORD_PAGE_TWO = capacityRows([
+  "갤럭시 케이스",
+  "갤럭시케이스",
+  "iPhone Case",
+  "IPHONECASE",
+  "상품 키워드 0",
+  "   ",
+]);
+// 1페이지 고유 = 아이폰케이스 1 + 상품키워드N 996 = 997 (공백뿐인 값은 세지 않는다).
+// 2페이지 신규 = 갤럭시케이스 1 + iphonecase 1 = 2 ("상품 키워드 0" 은 1페이지와 같은 키).
+const EXPECTED_KEYWORD_GROUPS = 999;
 
 function stubHealthRest(router) {
   const previousEnv = Object.fromEntries(HEALTH_ENV_NAMES.map((name) => [name, process.env[name]]));
@@ -1506,18 +1604,29 @@ function stubHealthRest(router) {
 test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상품 죽음·플레이스 정상)", async () => {
   const now = Date.now();
   const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  assert.equal(KEYWORD_PAGE_ONE.length, RANK_KEYWORD_GROUP_PAGE_SIZE, "1페이지는 꽉 차야 2페이지를 부른다");
+  assert.ok(KEYWORD_PAGE_TWO.length < RANK_KEYWORD_GROUP_PAGE_SIZE, "2페이지에서 순회가 끝난다");
   const stub = stubHealthRest((url, method) => {
     const product = url.pathname === "/rest/v1/naver_rank_trackers";
     const place = url.pathname === "/rest/v1/naver_place_rank_trackers";
     if (!product && !place) return null;
     if (method === "HEAD") {
+      // 네 집계는 표와 필터 조합으로만 갈린다. status=eq.active 는 넷 모두에 붙는다.
       if (url.searchParams.has("check_count")) return countRows(3);
-      if (url.searchParams.has("last_error")) return countRows(2);
-      return countRows(0);
+      const lastError = url.searchParams.get("last_error");
+      if (lastError === "not.is.null") return countRows(2);
+      if (lastError === "is.null") return place ? countRows(4) : countRows(0);
+      return product ? countRows(7) : countRows(0);
     }
     const select = url.searchParams.get("select");
     if (select === "last_checked_at") return jsonRows([{ last_checked_at: iso(product ? -10 * HOUR : -30 * 60 * 1000) }]);
     if (select === "next_check_at") return jsonRows([{ next_check_at: iso(-7 * HOUR) }]);
+    if (select === "keyword" && product) {
+      const offset = url.searchParams.get("offset");
+      if (offset === "0") return jsonRows(KEYWORD_PAGE_ONE);
+      if (offset === "1000") return jsonRows(KEYWORD_PAGE_TWO);
+      return jsonRows([]);
+    }
     return null;
   });
   try {
@@ -1534,25 +1643,35 @@ test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상
     assert.equal(body.lanes.product.stalledMinutes, 600);
     assert.equal(body.lanes.place.queueStalled, false);
     assert.equal(body.lanes.place.stalledMinutes, 30);
-    assert.deepEqual(body.trackers, { neverFound: 3, stuck: 2 });
+    assert.deepEqual(body.trackers, {
+      neverFound: 3,
+      stuck: 2,
+      placePartial: 4,
+      activeProduct: 7,
+      activeProductKeywordGroups: EXPECTED_KEYWORD_GROUPS,
+    });
+    assert.deepEqual(Object.keys(body.trackers), HEALTH_TRACKER_KEYS_IN_ORDER);
 
-    // 두 집계는 상품 표에만, HEAD(count=exact) 로 정확히 한 번씩 나간다.
+    // 네 집계는 HEAD(count=exact) 로 정확히 한 번씩 나간다. 상품 표 3건 + 플레이스 표 1건.
     const heads = stub.calls.filter((call) => call.method === "HEAD").map((call) => new URL(call.url));
-    assert.equal(heads.length, 2);
-    assert.ok(heads.every((url) => url.pathname === "/rest/v1/naver_rank_trackers"));
+    assert.equal(heads.length, 4);
+    assert.equal(heads.filter((url) => url.pathname === "/rest/v1/naver_rank_trackers").length, 3);
+    assert.equal(heads.filter((url) => url.pathname === "/rest/v1/naver_place_rank_trackers").length, 1);
+    assert.ok(heads.every((url) => url.searchParams.get("status") === "eq.active"), "네 집계 모두 active 만 센다");
 
     const neverFoundQuery = heads.find((url) => url.searchParams.has("check_count"));
     assert.ok(neverFoundQuery, "neverFound 집계 질의가 나가야 한다");
+    assert.equal(neverFoundQuery.pathname, "/rest/v1/naver_rank_trackers");
     assert.equal(neverFoundQuery.searchParams.get("status"), "eq.active");
     assert.equal(neverFoundQuery.searchParams.get("check_count"), `gte.${RANK_NEVER_FOUND_MIN_CHECKS}`);
     assert.equal(neverFoundQuery.searchParams.get("found_count"), "eq.0");
     assert.equal(neverFoundQuery.searchParams.has("last_error"), false);
     assert.equal(neverFoundQuery.searchParams.has("retry_count"), false);
 
-    const stuckQuery = heads.find((url) => url.searchParams.has("last_error"));
+    const stuckQuery = heads.find((url) => url.searchParams.get("last_error") === "not.is.null");
     assert.ok(stuckQuery, "stuck 집계 질의가 나가야 한다");
+    assert.equal(stuckQuery.pathname, "/rest/v1/naver_rank_trackers");
     assert.equal(stuckQuery.searchParams.get("status"), "eq.active");
-    assert.equal(stuckQuery.searchParams.get("last_error"), "not.is.null");
     assert.equal(stuckQuery.searchParams.has("retry_count"), false, "재시도 소진 여부와 무관하게 멈춘 추적기를 잡는다");
     const or = stuckQuery.searchParams.get("or") || "";
     assert.ok(or.includes("last_checked_at.lt."), or);
@@ -1563,8 +1682,45 @@ test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상
       assert.ok(Number.isFinite(cutoff));
       assert.ok(Math.abs((now - cutoff) - RANK_STUCK_TRACKER_MS) < 10_000, `컷오프는 now-36h 여야 한다: ${or}`);
     }
-    // 공개 표면에는 집계 정수만 실린다.
-    assert.ok(!JSON.stringify(body).includes("created_at"));
+
+    // placePartial 은 플레이스 표만 본다 — last_error 가 null 인 채 retry_count 만 오른 행이다.
+    const placePartialQuery = heads.find((url) => url.searchParams.get("last_error") === "is.null");
+    assert.ok(placePartialQuery, "placePartial 집계 질의가 나가야 한다");
+    assert.equal(placePartialQuery.pathname, "/rest/v1/naver_place_rank_trackers", "partial 은 플레이스 표의 결함이다");
+    assert.equal(placePartialQuery.searchParams.get("status"), "eq.active");
+    assert.equal(placePartialQuery.searchParams.get("retry_count"), `gte.${RANK_PLACE_PARTIAL_MIN_RETRIES}`);
+    assert.equal(placePartialQuery.searchParams.has("check_count"), false);
+    assert.equal(placePartialQuery.searchParams.has("or"), false);
+
+    // activeProduct 는 필터가 status 하나뿐인 상품 표 집계다(용량의 분모).
+    const activeProductQuery = heads.find(
+      (url) => !url.searchParams.has("check_count") && !url.searchParams.has("last_error"),
+    );
+    assert.ok(activeProductQuery, "activeProduct 집계 질의가 나가야 한다");
+    assert.equal(activeProductQuery.pathname, "/rest/v1/naver_rank_trackers");
+    assert.equal(activeProductQuery.searchParams.get("status"), "eq.active");
+    assert.equal(activeProductQuery.searchParams.has("retry_count"), false);
+    assert.equal(activeProductQuery.searchParams.has("found_count"), false);
+    assert.equal(activeProductQuery.searchParams.has("or"), false);
+
+    // 키워드 열은 count distinct 가 없으므로 페이지로 읽는다. 상품 표 · active · 그 열만.
+    const keywordGets = stub.calls
+      .filter((call) => call.method === "GET")
+      .map((call) => new URL(call.url))
+      .filter((url) => url.searchParams.get("select") === "keyword");
+    assert.equal(keywordGets.length, 2, "가득 찬 1페이지 뒤에만 2페이지를 읽는다");
+    assert.ok(keywordGets.every((url) => url.pathname === "/rest/v1/naver_rank_trackers"));
+    assert.ok(keywordGets.every((url) => url.searchParams.get("status") === "eq.active"));
+    assert.deepEqual(keywordGets.map((url) => url.searchParams.get("offset")), ["0", "1000"]);
+    assert.deepEqual(keywordGets.map((url) => url.searchParams.get("limit")), ["1000", "1000"]);
+
+    // 공개 표면에는 집계 정수만 실린다 — 읽은 키워드 문자열은 한 개도 새지 않는다.
+    const serialized = JSON.stringify(body);
+    assert.ok(!serialized.includes("created_at"));
+    for (const row of [...KEYWORD_PAGE_ONE, ...KEYWORD_PAGE_TWO]) {
+      const value = String(row.keyword).trim();
+      if (value) assert.ok(!serialized.includes(value), `공개 표면에 ${value} 가 있으면 안 된다`);
+    }
   } finally {
     stub.restore();
   }
@@ -1575,6 +1731,13 @@ test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유
     if (method === "HEAD") {
       return new Response(
         JSON.stringify({ message: "column naver_rank_trackers.check_count does not exist" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (url.searchParams.get("select") === "keyword") {
+      // 열이 없는 환경으로 내려와도 관측 실패는 경보가 아니다.
+      return new Response(
+        JSON.stringify({ message: "column naver_rank_trackers.keyword does not exist" }),
         { status: 400, headers: { "content-type": "application/json" } },
       );
     }
@@ -1590,6 +1753,7 @@ test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유
     assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
     assert.deepEqual(body.lanes, HEALTH_FAILSAFE_LANES);
     assert.ok(stub.calls.some((call) => call.method === "HEAD"), "실제로 집계를 시도했다");
+    assert.ok(stub.calls.some((call) => call.url.includes("select=keyword")), "실제로 용량 조회를 시도했다");
   } finally {
     stub.restore();
   }
@@ -1602,6 +1766,11 @@ test("F2: 추적기 집계 fetch 가 throw 해도 200 을 유지한다(fail-safe
       failure.name = "AbortError";
       throw failure;
     }
+    if (url.searchParams.get("select") === "keyword") {
+      const failure = new Error("capacity_unreachable");
+      failure.name = "AbortError";
+      throw failure;
+    }
     return null;
   });
   try {
@@ -1610,9 +1779,146 @@ test("F2: 추적기 집계 fetch 가 throw 해도 200 을 유지한다(fail-safe
     const body = await response.json();
     assert.equal(response.status, 200);
     assert.deepEqual(body.trackers, HEALTH_FAILSAFE_TRACKERS);
+    assert.ok(stub.calls.some((call) => call.url.includes("select=keyword")));
   } finally {
     stub.restore();
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// (E-3) F7 용량 가시화 — src/server/rank-capacity.mjs 단위 검증
+// PostgREST 는 count distinct 를 못 하므로 active 행의 키워드 열만 페이지로 읽어
+// 프로세스 안에서 정규화 distinct 를 센다. 수치 관측 전용이다(상한 판단·경보 없음).
+// ─────────────────────────────────────────────────────────────
+
+// 가짜 supabaseAdmin. 실제 클라이언트와 같은 체인(from → select → eq → range)만 흉내내고
+// 호출 인자를 그대로 기록한다. range 는 await 되므로 async 로 둔다.
+function capacityClient(pages, options = {}) {
+  const calls = [];
+  const client = {
+    from(table) {
+      const call = { table, select: null, filters: [], range: null };
+      calls.push(call);
+      const builder = {
+        select(columns) { call.select = columns; return builder; },
+        eq(column, value) { call.filters.push([column, value]); return builder; },
+        async range(from, to) {
+          call.range = [from, to];
+          const index = calls.length - 1;
+          if (options.throwAt === index) throw new Error("capacity_unreachable");
+          if (options.errorAt === index) return { data: null, error: { message: "capacity_read_failed" } };
+          if (options.notArrayAt === index) return { data: { rows: [] }, error: null };
+          const page = typeof pages === "function" ? pages(index) : pages[index];
+          return { data: page || [], error: null };
+        },
+      };
+      return builder;
+    },
+  };
+  return { calls, client };
+}
+
+const filledCapacityPage = (label) => capacityRows(
+  Array.from({ length: RANK_KEYWORD_GROUP_PAGE_SIZE }, (_, index) => `${label}-${index}`),
+);
+
+test("F7: 페이지 상수는 계약값이다", () => {
+  assert.equal(RANK_KEYWORD_GROUP_PAGE_SIZE, 1000);
+  assert.equal(RANK_KEYWORD_GROUP_MAX_PAGES, 10);
+});
+
+test("F7: 키워드 정규화는 공백 제거 + 소문자화다", () => {
+  assert.equal(normalizedRankKeywordKey(" 아이폰  케이스 "), "아이폰케이스");
+  assert.equal(normalizedRankKeywordKey("아이폰\t케이스\n"), "아이폰케이스");
+  assert.equal(normalizedRankKeywordKey("아이폰케이스"), "아이폰케이스");
+  assert.equal(normalizedRankKeywordKey("iPhone Case"), "iphonecase");
+  assert.equal(normalizedRankKeywordKey("IPHONECASE"), "iphonecase");
+  assert.equal(normalizedRankKeywordKey(null), "");
+  assert.equal(normalizedRankKeywordKey(undefined), "");
+  assert.equal(normalizedRankKeywordKey(""), "");
+  assert.equal(normalizedRankKeywordKey("   "), "");
+});
+
+test("F7: 정규화 드리프트 가드 — 잠금 파일 두 곳의 원본이 그대로다", () => {
+  // 서버가 실제로 쓰는 정규화는 잠금 파일 안의 비-export 함수라 import 할 수 없다.
+  // 복제한 이상, 원본이 움직이면 이 가드가 먼저 깨져야 한다.
+  assert.ok(
+    localWorkerSource.includes(String.raw`return normalizeText(value).replace(/\s/g, "").toLowerCase();`),
+    "naver-shopping-local-worker.mjs 의 정규화가 바뀌면 용량 모듈도 함께 고쳐야 한다",
+  );
+  assert.ok(
+    shoppingRankSource.includes(String.raw`return String(value || "").replace(/\s+/g, " ").trim();`),
+    "naver-shopping-rank.mjs 의 normalizeText 가 바뀌면 용량 모듈도 함께 고쳐야 한다",
+  );
+  // 두 잠금 규약의 합성은 아래 한 줄과 동치다. 용량 모듈은 그 한 줄을 복제한다.
+  assert.ok(rankCapacitySource.includes(String.raw`String(value || "").replace(/\s/g, "").toLowerCase()`));
+});
+
+test("F7: 활성 상품 키워드 그룹을 페이지로 훑어 정규화 distinct 로 센다", async () => {
+  const fake = capacityClient([KEYWORD_PAGE_ONE, KEYWORD_PAGE_TWO]);
+  assert.equal(await countActiveProductKeywordGroups(fake.client), EXPECTED_KEYWORD_GROUPS);
+  assert.equal(fake.calls.length, 2, "가득 찬 페이지 다음에만 다음 페이지를 읽는다");
+  assert.ok(fake.calls.every((call) => call.table === "naver_rank_trackers"));
+  assert.ok(fake.calls.every((call) => call.select === "keyword"), "필요한 열 하나만 읽는다");
+  assert.deepEqual(fake.calls.map((call) => call.filters), [[["status", "active"]], [["status", "active"]]]);
+  assert.deepEqual(fake.calls.map((call) => call.range), [[0, 999], [1000, 1999]]);
+});
+
+test("F7: 한 페이지로 끝나면 다음 페이지를 부르지 않는다", async () => {
+  const fake = capacityClient([capacityRows(["가방", "가 방", "신발"])]);
+  assert.equal(await countActiveProductKeywordGroups(fake.client), 2);
+  assert.equal(fake.calls.length, 1);
+  const empty = capacityClient([[]]);
+  assert.equal(await countActiveProductKeywordGroups(empty.client), 0);
+  assert.equal(empty.calls.length, 1);
+});
+
+test("F7: 빈 정규화 키는 세지 않는다", async () => {
+  const fake = capacityClient([[
+    { keyword: "" },
+    { keyword: "   " },
+    { keyword: "\t\n" },
+    { keyword: null },
+    { keyword: undefined },
+    {},
+    { keyword: "가방" },
+  ]]);
+  assert.equal(await countActiveProductKeywordGroups(fake.client), 1);
+});
+
+test("F7: 최대 페이지에서 멈추고 그때까지의 하한값을 낸다", async () => {
+  const fake = capacityClient((index) => filledCapacityPage(`p${index}`));
+  const total = await countActiveProductKeywordGroups(fake.client);
+  assert.equal(fake.calls.length, RANK_KEYWORD_GROUP_MAX_PAGES, "상한을 넘겨 계속 읽지 않는다");
+  assert.equal(total, RANK_KEYWORD_GROUP_PAGE_SIZE * RANK_KEYWORD_GROUP_MAX_PAGES);
+  assert.deepEqual(
+    fake.calls.at(-1).range,
+    [RANK_KEYWORD_GROUP_PAGE_SIZE * (RANK_KEYWORD_GROUP_MAX_PAGES - 1), RANK_KEYWORD_GROUP_PAGE_SIZE * RANK_KEYWORD_GROUP_MAX_PAGES - 1],
+  );
+  // 상한에 닿아도 0 이 아니라 그때까지 센 수를 낸다 — 그 값이 하한이라는 사실을 주석이 말한다.
+  assert.ok(rankCapacitySource.includes("하한"), "상한 도달 시 하한값이라는 사실을 주석에 남긴다");
+});
+
+test("F7: 어떤 조회 실패도 0 으로 접힌다(fail-safe)", async () => {
+  const firstPageError = capacityClient([KEYWORD_PAGE_ONE, KEYWORD_PAGE_TWO], { errorAt: 0 });
+  assert.equal(await countActiveProductKeywordGroups(firstPageError.client), 0);
+  const secondPageError = capacityClient([KEYWORD_PAGE_ONE, KEYWORD_PAGE_TWO], { errorAt: 1 });
+  assert.equal(await countActiveProductKeywordGroups(secondPageError.client), 0, "중간에 깨지면 부분 집계를 내지 않는다");
+  const thrown = capacityClient([KEYWORD_PAGE_ONE], { throwAt: 0 });
+  assert.equal(await countActiveProductKeywordGroups(thrown.client), 0);
+  const notArray = capacityClient([], { notArrayAt: 0 });
+  assert.equal(await countActiveProductKeywordGroups(notArray.client), 0);
+  assert.equal(await countActiveProductKeywordGroups(undefined), 0, "클라이언트가 없어도 throw 하지 않는다");
+  assert.equal(await countActiveProductKeywordGroups({ from() { throw new Error("no_table"); } }), 0);
+});
+
+test("F7: 표 이름은 인자로 받고 기본값은 상품 표다", async () => {
+  const fake = capacityClient([capacityRows(["가방"])]);
+  await countActiveProductKeywordGroups(fake.client);
+  assert.equal(fake.calls[0].table, "naver_rank_trackers");
+  const explicit = capacityClient([capacityRows(["가방"])]);
+  await countActiveProductKeywordGroups(explicit.client, "naver_rank_trackers_shadow");
+  assert.equal(explicit.calls[0].table, "naver_rank_trackers_shadow");
 });
 
 // 크론 쪽 판정. 유예(60분)는 정확히 이 사고를 감춘 장치였으므로 낡은 실행본 검사는

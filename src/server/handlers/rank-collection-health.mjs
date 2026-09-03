@@ -3,8 +3,12 @@ import { corsHeaders, protectedJson } from "../security.mjs";
 import {
   RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_OVERDUE_THRESHOLD_MS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
+// 계정 데이터 열을 실제로 읽는 코드는 이 파일에 두지 않는다(아래 trackers 주석 참고).
+// 여기서는 집계된 정수 하나만 돌려받는다.
+import { countActiveProductKeywordGroups } from "../rank-capacity.mjs";
 import {
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
   workerOutdatedFromSignals,
@@ -86,13 +90,29 @@ function nonNegativeInteger(value) {
 //              을 반드시 지킨다 — 워치독은 본문 전체를 grep 으로 읽으므로 중첩된
 //              "queueStalled": true 가 최상위 false 와 공존하면 오탐이 난다. 그래서
 //              의도된 정지(deliberateStop)도 레인까지 함께 누른다.
-//   trackers — { neverFound:int, stuck:int }. 상품 추적기 집계 두 개.
-//              neverFound = active AND check_count >= RANK_NEVER_FOUND_MIN_CHECKS AND found_count = 0
-//              stuck      = active AND last_error IS NOT NULL
-//                           AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS
+//   trackers — 관측 전용 정수 5개. 순서는 아래 그대로 고정이다.
+//              neverFound   = 상품 표 active AND check_count >= RANK_NEVER_FOUND_MIN_CHECKS
+//                             AND found_count = 0
+//              stuck        = 상품 표 active AND last_error IS NOT NULL
+//                             AND coalesce(last_checked_at, created_at) < now - RANK_STUCK_TRACKER_MS
 //              레인 전체는 돌고 있는데(queueStalled=false) 개별 추적기가 며칠째 멈춘 상태는
-//              앞 6키로는 원리적으로 보이지 않는다. 두 집계는 관측 전용이라 조회 실패는
-//              0 으로 접히고(fail-safe) 절대 503 을 만들지 않는다. 식별자·문구 없이 정수만 낸다.
+//              앞 6키로는 원리적으로 보이지 않는다.
+// 2026-09-03(F18·F7): 같은 이유로 세 정수를 뒤에 붙인다. 앞 두 키는 이름·의미 불변이다.
+//              placePartial = 플레이스 표 active AND last_error IS NULL
+//                             AND retry_count >= RANK_PLACE_PARTIAL_MIN_RETRIES.
+//                             플레이스 partial 결과는 last_error 를 null 로 둔 채 retry_count 만
+//                             올리기 때문에 잔존 감사(last_error IS NOT NULL)에도 stuck 에도
+//                             만성 격리에도 잡히지 않았다. 상품 표가 아니라 플레이스 표를 본다.
+//              activeProduct = 상품 표 active 행 수. 아래 용량 값과 짝을 이루는 분모다.
+//              activeProductKeywordGroups = 상품 표 active 행의 정규화 검색어 distinct 수.
+//                             PostgREST 에 count(distinct) 가 없어 별도 모듈
+//                             (src/server/rank-capacity.mjs)이 해당 열만 페이지로 읽어 센다.
+//                             이 파일은 계정 데이터 열 이름을 한 글자도 담지 않는다는 가드
+//                             (테스트 F2)를 받으므로 읽는 코드를 그쪽에 두고 정수만 받는다.
+//                             수집 1회전이 도는 묶음 수, 즉 용량 감각의 재료다 —
+//                             상한 판단도 경보도 하지 않는다. 수치만 낸다.
+//              다섯 집계 모두 관측 전용이라 조회 실패는 0 으로 접히고(fail-safe) 절대 503 을
+//              만들지 않는다. 식별자·문구 없이 정수만 낸다.
 // 2026-09-01: 윈도우 수집 작업기가 서버 기대 실행본보다 낮은 버전이라 서버가 요청을
 // 전부 400 으로 거부했다. 거부는 claim RPC 앞에서 일어나므로 진척 표식은 얼어붙는데,
 // 작업기 자신은 1분마다 서명을 계속 보내 살아 있었다. 실측(2026-09-01T08:30Z):
@@ -161,6 +181,9 @@ export function rankCollectionHealthBody(input = {}) {
     trackers: {
       neverFound: nonNegativeInteger(trackersInput.neverFound),
       stuck: nonNegativeInteger(trackersInput.stuck),
+      placePartial: nonNegativeInteger(trackersInput.placePartial),
+      activeProduct: nonNegativeInteger(trackersInput.activeProduct),
+      activeProductKeywordGroups: nonNegativeInteger(trackersInput.activeProductKeywordGroups),
     },
   };
 }
@@ -263,8 +286,8 @@ async function latestWorkerSignatureAt(ctx) {
   }
 }
 
-// trackers 집계 두 개가 쓰는 관측 전용 카운트. select head + count=exact 로 행 본문을
-// 받지 않고 개수만 받는다. 위 두 관측 조회와 같은 fail-safe 방향이다 — 표·열이 없든,
+// trackers 집계 넷이 쓰는 관측 전용 카운트(표는 상품·플레이스 둘 다 온다).
+// select head + count=exact 로 행 본문을 받지 않고 개수만 받는다. 위 두 관측 조회와 같은 fail-safe 방향이다 — 표·열이 없든,
 // 권한이 거부되든, 체인이 throw 하든 결과는 0(신호 없음)이고 절대 503 으로 번지지 않는다.
 async function countActiveTrackers(ctx, table, applyFilters) {
   try {
@@ -334,6 +357,9 @@ export default {
         lastSignatureAt,
         neverFoundTrackers,
         stuckTrackers,
+        placePartialTrackers,
+        activeProductTrackers,
+        activeProductKeywordGroups,
       ] = await Promise.all([
         latestCheckedAt(ctx, RANK_TABLES[0]),
         latestCheckedAt(ctx, RANK_TABLES[1]),
@@ -342,7 +368,7 @@ export default {
         deliberateWorkerStop(ctx, now),
         latestWorkerRunVersion(ctx),
         latestWorkerSignatureAt(ctx),
-        // 두 집계는 상품 표(RANK_TABLES[0])만 본다. 임계값은 서버 상수 그대로다.
+        // 앞 두 집계는 상품 표(RANK_TABLES[0])만 본다. 임계값은 서버 상수 그대로다.
         countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
           .gte("check_count", RANK_NEVER_FOUND_MIN_CHECKS)
           .eq("found_count", 0)),
@@ -352,6 +378,14 @@ export default {
         countActiveTrackers(ctx, RANK_TABLES[0], (query) => query
           .not("last_error", "is", null)
           .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
+        // partial 반복은 플레이스 표(RANK_TABLES[1])의 결함이다 — 오류 없이 재시도만 쌓인다.
+        countActiveTrackers(ctx, RANK_TABLES[1], (query) => query
+          .is("last_error", null)
+          .gte("retry_count", RANK_PLACE_PARTIAL_MIN_RETRIES)),
+        // 용량의 분모. 필터는 status 하나뿐이다.
+        countActiveTrackers(ctx, RANK_TABLES[0], (query) => query),
+        // 용량의 분자. 읽기·집계는 전부 별도 모듈이 하고 여기로는 정수만 돌아온다.
+        countActiveProductKeywordGroups(ctx.supabaseAdmin, RANK_TABLES[0]),
       ]);
       const body = rankCollectionHealthBody({
         now,
@@ -366,7 +400,13 @@ export default {
         lastSuccessAt: coordination.lastSuccessAt,
         lastRunRuntimeVersion,
         lastSignatureAt,
-        trackers: { neverFound: neverFoundTrackers, stuck: stuckTrackers },
+        trackers: {
+          neverFound: neverFoundTrackers,
+          stuck: stuckTrackers,
+          placePartial: placePartialTrackers,
+          activeProduct: activeProductTrackers,
+          activeProductKeywordGroups,
+        },
       });
       cached = {
         body,
@@ -390,7 +430,13 @@ export default {
         workerOutdated: false,
         heartbeatAgeMinutes: 0,
         lanes: failSafeLanes(),
-        trackers: { neverFound: 0, stuck: 0 },
+        trackers: {
+          neverFound: 0,
+          stuck: 0,
+          placePartial: 0,
+          activeProduct: 0,
+          activeProductKeywordGroups: 0,
+        },
       };
       cached = {
         body,

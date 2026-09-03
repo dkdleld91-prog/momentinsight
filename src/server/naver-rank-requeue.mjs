@@ -161,6 +161,14 @@ export const RANK_STUCK_TRACKER_MS = RANK_STUCK_TRACKER_HOURS * 60 * 60 * 1000;
 // naver-rank-trackers.mjs trackerPayload 의 neverFound(checkCount >= 3 && foundCount === 0)
 // 와 같은 값이어야 한다(그 파일은 잠금이라 상수를 import 하지 않고 테스트가 소스로 대조한다).
 export const RANK_NEVER_FOUND_MIN_CHECKS = 3;
+// "partial 반복(placePartial)" 플레이스 추적기의 최소 재시도 횟수(2026-09-03, F18). 정의:
+//   status='active' AND last_error IS NULL AND retry_count >= RANK_PLACE_PARTIAL_MIN_RETRIES
+// 플레이스 partial 결과(naver-place-rank-trackers.mjs updateTrackerAfterPartial)는 last_error
+// 를 null 로 두고 retry_count 만 올리므로, 잔존(last_error IS NOT NULL)·stuck·만성 격리
+// 어느 감사에도 잡히지 않았다. 관측 전용이다 — 헬스 API(trackers.placePartial)·잔존 감사
+// (placePartialCount)·총관리자 카운터(placePartialTrackers)가 전부 이 값을 import 하므로
+// 세 화면이 같은 행을 센다. 합격 판정·경보·exit 코드에는 쓰지 않는다.
+export const RANK_PLACE_PARTIAL_MIN_RETRIES = 4;
 
 // last_checked_at·created_at 을 함께 읽는다. 둘은 만성 실패 구간의 앵커라 격리 판정에
 // 필수이고, requeueEligible 이 격리 후보를 잘라내려면 재큐 SELECT 에도 실려 있어야 한다

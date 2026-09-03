@@ -9,6 +9,7 @@ import {
 import {
   RANK_CHRONIC_ISOLATION_MS,
   RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_RETRY_EXHAUSTED_AT,
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
@@ -415,6 +416,7 @@ async function loadOwnerHealth(ctx) {
     chronicTrackers,
     neverFoundTrackers,
     stuckTrackers,
+    placePartialTrackers,
     sourceFiles,
     publicReports,
   ] = await Promise.all([
@@ -472,6 +474,17 @@ async function loadOwnerHealth(ctx) {
       .eq("status", "active")
       .not("last_error", "is", null)
       .or(`last_checked_at.lt.${stuckCutoffIso},and(last_checked_at.is.null,created_at.lt.${stuckCutoffIso})`)),
+    // partial 을 반복 중인 플레이스 추적기 수(2026-09-03, F18): partial 결과 경로는
+    // last_error 를 null 로 둔 채 retry_count 만 올려서 위 잔존·stuck·만성 집계 어디에도
+    // 걸리지 않는다. loadOwnerHealth 에서 플레이스 표를 보는 유일한 카운터다(나머지는
+    // 전부 상품 표). 잔존 감사(placePartialCount)·헬스 API(trackers.placePartial)와 같은
+    // 서버 상수를 쓰므로 세 화면이 같은 행을 센다.
+    safeCount(ctx.supabaseAdmin
+      .from("naver_place_rank_trackers")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active")
+      .is("last_error", null)
+      .gte("retry_count", RANK_PLACE_PARTIAL_MIN_RETRIES)),
     safeCount(ctx.supabaseAdmin
       .from("files")
       .select("id", { count: "exact", head: true })
@@ -492,6 +505,7 @@ async function loadOwnerHealth(ctx) {
     chronicTrackers,
     neverFoundTrackers,
     stuckTrackers,
+    placePartialTrackers,
     sourceFiles,
     publicReports,
   };

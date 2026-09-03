@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   RANK_CHRONIC_ISOLATION_MS,
   RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_RETRY_EXHAUSTED_AT,
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
@@ -851,6 +852,9 @@ const isProductTrackers = (url) => url.pathname === "/rest/v1/naver_rank_tracker
 const isNeverFoundQuery = (url) => isProductTrackers(url) && url.searchParams.has("check_count");
 const isStuckQuery = (url) => isProductTrackers(url) && url.searchParams.has("or") && !url.searchParams.has("retry_count");
 const isChronicQuery = (url) => isProductTrackers(url) && url.searchParams.has("or") && url.searchParams.has("retry_count");
+// loadOwnerHealth 에서 플레이스 표를 보는 유일한 질의(F18, partial 반복).
+const isPlacePartialQuery = (url) => url.pathname === "/rest/v1/naver_place_rank_trackers"
+  && url.searchParams.get("last_error") === "is.null";
 
 test("총관리자 요약에 neverFoundTrackers·stuckTrackers 가 chronicTrackers 와 같은 방식으로 실린다", async () => {
   const stub = ownerHealthStub((url) => {
@@ -876,6 +880,7 @@ test("총관리자 요약에 neverFoundTrackers·stuckTrackers 가 chronicTracke
     "chronicTrackers",
     "neverFoundTrackers",
     "stuckTrackers",
+    "placePartialTrackers",
     "sourceFiles",
     "publicReports",
   ]);
@@ -885,7 +890,8 @@ test("총관리자 요약에 neverFoundTrackers·stuckTrackers 가 chronicTracke
   const stuckQueries = stub.heads.filter(isStuckQuery);
   assert.equal(neverFoundQueries.length, 1);
   assert.equal(stuckQueries.length, 1);
-  assert.ok(stub.heads.every((url) => url.pathname !== "/rest/v1/naver_place_rank_trackers"));
+  // placePartial 질의 외에는 플레이스 표를 보지 않는다.
+  assert.ok(stub.heads.every((url) => url.pathname !== "/rest/v1/naver_place_rank_trackers" || isPlacePartialQuery(url)));
 
   const [neverFound] = neverFoundQueries;
   assert.equal(neverFound.searchParams.get("status"), "eq.active");
@@ -936,6 +942,53 @@ test("두 카운터의 조회 실패는 count:null·error 로 접히고 응답�
 test("경계: 0건이면 count:0 이고 null 이 아니다", async () => {
   const stub = ownerHealthStub(() => countResponse(0));
   const { payload } = await listOwnerAccountsWith(stub.impl);
+  assert.deepEqual(payload.health.neverFoundTrackers, { count: 0, error: null });
+  assert.deepEqual(payload.health.stuckTrackers, { count: 0, error: null });
+  assert.deepEqual(payload.health.placePartialTrackers, { count: 0, error: null });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 총관리자 요약 카운터 — placePartialTrackers (F18)
+//
+// 플레이스 partial 결과는 last_error 를 null 로 둔 채 retry_count 만 올려서 잔존·stuck
+// 어느 집계에도 잡히지 않는다. 이 카운터가 loadOwnerHealth 에서 플레이스 표를 보는
+// 유일한 질의이고, 잔존 감사(placePartialCount)와 같은 서버 상수를 쓴다.
+// ─────────────────────────────────────────────────────────────
+test("총관리자 요약에 placePartialTrackers 가 실리고 플레이스 표는 그 한 번만 본다", async () => {
+  const stub = ownerHealthStub((url) => (isPlacePartialQuery(url) ? countResponse(7) : countResponse(0)));
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.deepEqual(payload.health.placePartialTrackers, { count: 7, error: null });
+
+  const placePartialQueries = stub.heads.filter(isPlacePartialQuery);
+  assert.equal(placePartialQueries.length, 1);
+  const [placePartial] = placePartialQueries;
+  assert.equal(placePartial.searchParams.get("status"), "eq.active");
+  assert.equal(placePartial.searchParams.get("last_error"), "is.null");
+  assert.equal(placePartial.searchParams.get("retry_count"), `gte.${RANK_PLACE_PARTIAL_MIN_RETRIES}`);
+  assert.equal(placePartial.searchParams.has("or"), false, "partial 반복은 앵커 컷오프를 보지 않는다");
+  assert.equal(placePartial.searchParams.has("check_count"), false);
+  // 플레이스 표로 나가는 질의는 이것 하나뿐이다.
+  assert.equal(stub.heads.filter((url) => url.pathname === "/rest/v1/naver_place_rank_trackers").length, 1);
+});
+
+test("placePartial 조회 실패도 count:null·error 로 접히고 다른 카운터는 그대로다", async () => {
+  const stub = ownerHealthStub((url) => {
+    if (isPlacePartialQuery(url)) {
+      return Response.json(
+        { code: "42P01", message: "relation naver_place_rank_trackers does not exist", details: null, hint: null },
+        { status: 400 },
+      );
+    }
+    return countResponse(0);
+  });
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.health.placePartialTrackers.count, null);
+  assert.match(String(payload.health.placePartialTrackers.error), /does not exist/);
+  assert.deepEqual(payload.health.chronicTrackers, { count: 0, error: null });
   assert.deepEqual(payload.health.neverFoundTrackers, { count: 0, error: null });
   assert.deepEqual(payload.health.stuckTrackers, { count: 0, error: null });
 });

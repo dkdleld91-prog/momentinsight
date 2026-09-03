@@ -27,6 +27,7 @@ import {
   RANK_CHRONIC_ISOLATION_MS,
   RANK_CHRONIC_PARK_MS,
   RANK_NEVER_FOUND_MIN_CHECKS,
+  RANK_PLACE_PARTIAL_MIN_RETRIES,
   RANK_RETRY_EXHAUSTED_AT,
   RANK_STUCK_TRACKER_HOURS,
   RANK_STUCK_TRACKER_MS,
@@ -693,13 +694,19 @@ test("오너 화면 카운터에 neverFoundTrackers·stuckTrackers 가 chronicTr
   const end = superAdminSource.indexOf("async function listClients(", start);
   assert.ok(start >= 0 && end > start);
   const block = superAdminSource.slice(start, end);
-  for (const name of ["chronicTrackers", "neverFoundTrackers", "stuckTrackers"]) {
+  for (const name of ["chronicTrackers", "neverFoundTrackers", "stuckTrackers", "placePartialTrackers"]) {
     assert.ok(block.includes(`    ${name},`), `loadOwnerHealth 는 ${name} 을 safeCount 결과로 실어야 한다`);
   }
   assert.ok(block.indexOf("neverFoundTrackers") > block.indexOf("chronicTrackers"));
   assert.ok(block.indexOf("stuckTrackers") > block.indexOf("neverFoundTrackers"));
-  // 두 카운터 모두 상품 표만 본다.
-  assert.ok(!block.includes("naver_place_rank_trackers"));
+  assert.ok(block.indexOf("placePartialTrackers") > block.indexOf("stuckTrackers"));
+  // 플레이스 표를 보는 카운터는 placePartial 하나뿐이다(나머지는 전부 상품 표).
+  // 질의는 한 번만 나가므로 표 이름도 정확히 한 번만 등장해야 한다.
+  assert.equal(
+    block.split("naver_place_rank_trackers").length - 1,
+    1,
+    "loadOwnerHealth 에서 플레이스 표를 보는 카운터는 placePartial 하나여야 한다",
+  );
 });
 
 // ── 감사 스크립트 실행 검증. 가짜 PostgREST(count=exact → content-range) 를 로컬에
@@ -707,6 +714,9 @@ test("오너 화면 카운터에 neverFoundTrackers·stuckTrackers 가 chronicTr
 function classifyAuditQuery(url) {
   const table = url.pathname.replace("/rest/v1/", "");
   const params = url.searchParams;
+  // placePartial 은 last_error IS NULL 로 판별한다. 반드시 retry_count 분기보다 먼저 봐야
+  // 한다 — 이 질의도 retry_count 를 실어 보내므로 뒤에 두면 residual 로 오분류된다.
+  if (params.get("last_error") === "is.null") return `${table}:placePartial`;
   if (params.has("check_count")) return `${table}:neverFound`;
   if (params.has("retry_count") && params.has("or")) return `${table}:isolated`;
   if (params.has("retry_count")) return `${table}:residual`;
@@ -765,6 +775,7 @@ const ZERO_COUNTS = {
   "naver_place_rank_trackers:isolated": 0,
   "naver_rank_trackers:neverFound": 0,
   "naver_rank_trackers:stuck": 0,
+  "naver_place_rank_trackers:placePartial": 0,
 };
 
 test("잔존 감사(실행): 전부 0 이면 exit 0 이고 stuck·neverFound 를 함께 보고한다", async (t) => {
@@ -780,8 +791,10 @@ test("잔존 감사(실행): 전부 0 이면 exit 0 이고 stuck·neverFound 를
   assert.equal(report.residualCount, 0);
   assert.equal(report.stuckCount, 0);
   assert.equal(report.neverFoundCount, 0);
+  assert.equal(report.placePartialCount, 0);
   assert.equal(report.stuckHours, RANK_STUCK_TRACKER_HOURS);
   assert.equal(report.neverFoundMinChecks, RANK_NEVER_FOUND_MIN_CHECKS);
+  assert.equal(report.placePartialMinRetries, RANK_PLACE_PARTIAL_MIN_RETRIES);
   assert.equal(report.retryExhaustedAt, RANK_RETRY_EXHAUSTED_AT);
 
   // 질의 모양. 두 새 집계는 상품 표에만 나간다.
@@ -811,6 +824,19 @@ test("잔존 감사(실행): 전부 0 이면 exit 0 이고 stuck·neverFound 를
   assert.equal(neverFound.searchParams.get("found_count"), "eq.0");
   assert.equal(neverFound.searchParams.has("last_error"), false);
   assert.equal(neverFound.searchParams.has("retry_count"), false);
+
+  // placePartial(F18)은 플레이스 표에만 정확히 1회 나간다. 상품 표에는 이 집계가 없다.
+  assert.equal(kinds.filter((kind) => kind === "naver_place_rank_trackers:placePartial").length, 1);
+  assert.ok(!kinds.includes("naver_rank_trackers:placePartial"), "partial 반복은 플레이스 레인만의 현상이다");
+  const placePartial = rest.requests.find((url) => classifyAuditQuery(url) === "naver_place_rank_trackers:placePartial");
+  assert.equal(placePartial.searchParams.get("status"), "eq.active");
+  assert.equal(placePartial.searchParams.get("last_error"), "is.null");
+  assert.equal(placePartial.searchParams.get("retry_count"), `gte.${RANK_PLACE_PARTIAL_MIN_RETRIES}`);
+  assert.equal(placePartial.searchParams.get("select"), "id");
+  assert.equal(placePartial.searchParams.get("limit"), "0");
+  assert.equal(placePartial.searchParams.has("or"), false, "partial 반복은 앵커 컷오프를 보지 않는다");
+  assert.equal(placePartial.searchParams.has("check_count"), false);
+
   // 읽기 전용·개수만: 어느 질의도 id 외 열을 요구하지 않는다.
   for (const url of rest.requests) assert.equal(url.searchParams.get("select"), "id");
 });
@@ -870,5 +896,61 @@ test("잔존 감사(실행): stuck 질의 실패는 RANK_RESIDUAL_AUDIT_QUERY_FA
   assert.equal(run.status, 1);
   assert.ok(run.stderr.includes("RANK_RESIDUAL_AUDIT_QUERY_FAILED"), run.stderr);
   assert.ok(!run.stderr.includes("RANK_STUCK_TRACKERS_PRESENT"), "집계가 끝나지 않았는데 stuck 을 단정하면 안 된다");
+  assert.ok(!run.stderr.includes("RANK_RESIDUAL_NONE"), "집계가 끝나지 않았는데 잔존 0 을 단정하면 안 된다");
+});
+
+// ─────────────────────────────────────────────────────────────
+// 7. 플레이스 partial 반복(placePartial) — F18
+//
+// 플레이스 추적기의 partial 결과 경로(updateTrackerAfterPartial)는 last_error 를 null 로
+// 둔 채 retry_count 만 +1 한다. 그래서 partial 만 반복하는 추적기는 잔존(last_error IS NOT
+// NULL)·stuck·만성 격리 어느 감사에도 걸리지 않았다 — 관측 사각지대다. 정의:
+//   status='active' AND last_error IS NULL AND retry_count >= RANK_PLACE_PARTIAL_MIN_RETRIES
+// 관측 전용이다: 합격 판정·exit 코드·경보 문자열 어디에도 쓰지 않는다.
+// ─────────────────────────────────────────────────────────────
+test("placePartial 임계값은 naver-rank-requeue.mjs 한 곳에서만 정한다", () => {
+  assert.equal(RANK_PLACE_PARTIAL_MIN_RETRIES, 4);
+  for (const [label, source] of [
+    ["check-rank-residual-failures.mjs", residualAuditSource],
+    ["super-admin-api.mjs", superAdminSource],
+  ]) {
+    assert.ok(
+      source.includes("RANK_PLACE_PARTIAL_MIN_RETRIES"),
+      `${label} 은 RANK_PLACE_PARTIAL_MIN_RETRIES 를 import 해서 써야 한다`,
+    );
+    assert.ok(!/gte\.4\b/.test(source), `${label} 은 PostgREST 필터에 gte.4 를 하드코딩하지 않는다`);
+    assert.ok(
+      !/retry_count["'`]\s*,\s*4\b/.test(source),
+      `${label} 은 최소 재시도 횟수 4 를 하드코딩하지 않는다`,
+    );
+  }
+});
+
+test("잔존 감사(실행): placePartial 만 있으면 보고만 하고 exit 0 이다", async (t) => {
+  const rest = await startAuditRest({ ...ZERO_COUNTS, "naver_place_rank_trackers:placePartial": 3 });
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 0, run.stderr);
+  const report = reportFrom(run.stdout);
+  assert.equal(report.placePartialCount, 3);
+  assert.equal(report.placePartialMinRetries, RANK_PLACE_PARTIAL_MIN_RETRIES);
+  // 관측 전용: 판정·코드·마커 어디에도 번지지 않는다.
+  assert.equal(report.ok, true);
+  assert.equal(report.code, "RANK_RESIDUAL_NONE");
+  assert.equal(report.stuckCode, "RANK_STUCK_NONE");
+  assert.equal(report.residualCount, 0);
+  assert.equal(report.stuckCount, 0);
+  assert.ok(!run.stdout.includes("RANK_RESIDUAL_FAILURES_PRESENT"));
+  assert.ok(!run.stdout.includes("RANK_STUCK_TRACKERS_PRESENT"));
+});
+
+test("잔존 감사(실행): placePartial 질의 실패는 RANK_RESIDUAL_AUDIT_QUERY_FAILED 로 exit 1 이다(단정 금지)", async (t) => {
+  const counts = { ...ZERO_COUNTS };
+  delete counts["naver_place_rank_trackers:placePartial"];
+  const rest = await startAuditRest(counts);
+  t.after(() => rest.server.close());
+  const run = await runResidualAudit(rest.baseUrl);
+  assert.equal(run.status, 1);
+  assert.ok(run.stderr.includes("RANK_RESIDUAL_AUDIT_QUERY_FAILED"), run.stderr);
   assert.ok(!run.stderr.includes("RANK_RESIDUAL_NONE"), "집계가 끝나지 않았는데 잔존 0 을 단정하면 안 된다");
 });

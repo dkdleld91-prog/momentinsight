@@ -5,6 +5,7 @@ async function healthHandler() {
     service: "moment-insight-api",
     region: String(process.env.VERCEL_REGION || "local"),
     release: String(process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT_SHA || "local").slice(0, 12),
+    branch: String(process.env.VERCEL_GIT_COMMIT_REF || ""),
     time: new Date().toISOString()
   });
 }

@@ -828,6 +828,12 @@
       "file": "supabase/migrations/20260903190000_naver_shopping_account_priority_cohort_eligibility_and_cycle_resume.sql",
       "sha256": "e9c617baa4d805e056d7e2a68a0c5daad2654e12202b418f92b68ec8f8ae28a1",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-runtime-neutral-admission-rpcs",
+      "file": "supabase/migrations/20260903213000_naver_shopping_runtime_neutral_admission_rpcs.sql",
+      "sha256": "e4f8345d24e100c846f924ca4887a5959555d1efdb79d9aedf84e1c64b805402",
+      "rankMigration": true
     }
   ]
 }

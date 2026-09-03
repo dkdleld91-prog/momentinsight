@@ -3,6 +3,11 @@ import crypto from "node:crypto";
 import { shoppingCollectorFailureStatus } from "../src/server/naver-shopping/source-status.mjs";
 import { shoppingProviderRuntimeConfig } from "../src/server/naver-shopping/provider-runtime.mjs";
 import { calculateN30RuntimeFingerprint } from "./naver-shopping-runtime-fingerprint.mjs";
+import {
+  RUNTIME_LITERAL_ALLOWLIST,
+  auditMigrationRuntimeLiterals,
+  formatRuntimeLiteralAudit,
+} from "./migration-runtime-literal-audit.mjs";
 
 function read(path) {
   return fs.readFileSync(path, "utf8");
@@ -256,6 +261,22 @@ const shoppingAccountPriorityGateDeclarationFiles = fs.readdirSync("supabase/mig
 const shoppingAccountPriorityGateFinalDefinition = (read(
   `supabase/migrations/${shoppingAccountPriorityGateDeclarationFiles[shoppingAccountPriorityGateDeclarationFiles.length - 1] || shoppingAccountPriorityGateRuntimeNeutralMigrationName}`,
 ).match(/create or replace function mi_internal\.mi_naver_shopping_account_priority_trigger_gate[\s\S]*?\n\$\$;/gu) || []).slice(-1)[0] || "";
+// supabase/migrations 전체 정적 감사: "최종 재선언" 함수 본문에 런타임 semver /
+// 64자리 지문 리터럴이 조건으로 남아 있으면 실패한다.  의도적으로 버전에 고정할
+// 함수는 scripts/migration-runtime-literal-audit.mjs 의 허용목록에 사유와 함께
+// 올려야 하고, 허용목록이 낡으면(리터럴이 사라졌거나 함수가 없어졌으면) 역시 실패한다.
+const migrationRuntimeLiteralAudit = auditMigrationRuntimeLiterals({
+  migrationDirectory: "supabase/migrations",
+});
+if (!migrationRuntimeLiteralAudit.ok) {
+  console.error("supabase/migrations 런타임 리터럴 감사 실패");
+  console.error(formatRuntimeLiteralAudit(migrationRuntimeLiteralAudit));
+}
+// 계정 우선 등록·후보 케이던스·운영 조회 RPC 의 런타임 중립 재선언(2026-09-03).
+const shoppingRuntimeNeutralAdmissionMigrationName =
+  "20260903213000_naver_shopping_runtime_neutral_admission_rpcs.sql";
+const shoppingRuntimeNeutralAdmissionMigration =
+  read(`supabase/migrations/${shoppingRuntimeNeutralAdmissionMigrationName}`);
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
 const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
@@ -2163,6 +2184,59 @@ const checks = {
     && shoppingAccountPriorityGateFinalDefinition.length > 0
     && !/'\d+\.\d+\.\d+'/u.test(shoppingAccountPriorityGateFinalDefinition)
     && !/[0-9a-f]{64}/iu.test(shoppingAccountPriorityGateFinalDefinition),
+  // supabase/migrations 전수 정적 검사: 최종 재선언 함수 본문에 런타임 semver·
+  // 64자리 지문 리터럴이 남지 않는다(주석 제외).  예외는 런타임 입구 게이트
+  // mi_report_naver_shopping_worker_progress 하나뿐이고, 허용목록은
+  // scripts/migration-runtime-literal-audit.mjs 에 사유와 함께 명시한다.
+  // 허용목록에 없는 새 리터럴이 생기거나 허용목록이 낡으면 여기서 실패한다.
+  migrationsCarryNoRuntimeLiteralsOutsideAllowlist: migrationRuntimeLiteralAudit.ok
+    && migrationRuntimeLiteralAudit.violations.length === 0
+    && migrationRuntimeLiteralAudit.staleAllowlist.length === 0
+    && migrationRuntimeLiteralAudit.missingReasons.length === 0
+    && migrationRuntimeLiteralAudit.bodylessFunctions.length === 0
+    && migrationRuntimeLiteralAudit.functionCount > 50
+    && RUNTIME_LITERAL_ALLOWLIST.length === 1
+    && RUNTIME_LITERAL_ALLOWLIST[0].function === "public.mi_report_naver_shopping_worker_progress"
+    && String(RUNTIME_LITERAL_ALLOWLIST[0].reason || "").trim().length > 20
+    && migrationRuntimeLiteralAudit.carriers.length === 1
+    && migrationRuntimeLiteralAudit.carriers[0].function
+      === "public.mi_report_naver_shopping_worker_progress"
+    && migrationRuntimeLiteralAudit.carriers[0].fingerprints
+      .includes(shoppingWorkerRuntime1121Fingerprint),
+  // 런타임 리터럴을 걷어낸 재선언본 자체의 계약 고정.  세 RPC 만 재선언하고,
+  // 호출자 런타임은 형식 검사로만 받으며(실제 일치는 coordination 현재값 대조가
+  // 지킨다), 실행 권한은 service_role 로만 남는다.
+  shoppingRuntimeNeutralAdmissionRpcs:
+    (shoppingRuntimeNeutralAdmissionMigration.match(
+      /create or replace function public\.mi_(?:enqueue_naver_shopping_account_priority|set_naver_shopping_worker_cadence|get_naver_shopping_worker_operations)\(/gu,
+    ) || []).length === 3
+    && (shoppingRuntimeNeutralAdmissionMigration.match(/create or replace function /gu) || []).length === 3
+    && (shoppingRuntimeNeutralAdmissionMigration.match(/security invoker/gu) || []).length === 3
+    && (shoppingRuntimeNeutralAdmissionMigration.match(/set search_path = ''/gu) || []).length === 3
+    && (shoppingRuntimeNeutralAdmissionMigration.match(/to service_role;/gu) || []).length === 3
+    && !/grant execute[\s\S]*to (?:public|anon|authenticated);/iu.test(shoppingRuntimeNeutralAdmissionMigration)
+    && shoppingRuntimeNeutralAdmissionMigration.includes(
+      "or v_expected_runtime_version !~ '^[0-9]+\\.[0-9]+\\.[0-9]+$'",
+    )
+    && shoppingRuntimeNeutralAdmissionMigration.includes(
+      "or v_expected_runtime_fingerprint !~ '^[a-f0-9]{64}$'",
+    )
+    && shoppingRuntimeNeutralAdmissionMigration.includes(
+      "or current_row.runtime_version is distinct from v_expected_runtime_version",
+    )
+    && (shoppingRuntimeNeutralAdmissionMigration.match(
+      /current_row\.runtime_version ~ '\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$'/gu,
+    ) || []).length === 2
+    && (shoppingRuntimeNeutralAdmissionMigration.match(
+      /current_row\.runtime_fingerprint ~ '\^\[a-f0-9\]\{64\}\$'/gu,
+    ) || []).length === 2
+    && shoppingRuntimeNeutralAdmissionMigration.includes(
+      "naver_shopping_runtime_neutral_admission_requires_existing_rpcs",
+    )
+    && shoppingRuntimeNeutralAdmissionMigration.includes(
+      "naver_shopping_runtime_neutral_admission_requires_coordination",
+    )
+    && !/expected_runtime_(?:version|fingerprint)\s+constant/u.test(shoppingRuntimeNeutralAdmissionMigration),
   shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.12 exact candidate gate")
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2

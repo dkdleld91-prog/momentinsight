@@ -822,6 +822,12 @@
       "file": "supabase/migrations/20260903160000_naver_shopping_transient_page_half_open_and_tracker_lifecycle_lease.sql",
       "sha256": "13801b3b015dc3be528004acdadb092028cc89ce0365f292a4348ced10762a6c",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-account-priority-cohort-eligibility-and-cycle-resume",
+      "file": "supabase/migrations/20260903190000_naver_shopping_account_priority_cohort_eligibility_and_cycle_resume.sql",
+      "sha256": "e9c617baa4d805e056d7e2a68a0c5daad2654e12202b418f92b68ec8f8ae28a1",
+      "rankMigration": true
     }
   ]
 }

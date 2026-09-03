@@ -36,9 +36,16 @@ export const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";
 // 같은 정상 흔들림은 흡수한다.
 export const WORKER_OUTDATED_SIGNING_WINDOW_MS = 1_800_000;
 
-// heartbeatAgeMinutes 를 사람이 "낡았다"고 읽기 시작하는 기준선. 판정에는 쓰지 않고
-// 보고 값의 해석 기준으로만 둔다 — 이 관측자는 숫자만 내고 임계 판단은 워치독이 한다.
+// heartbeatAgeMinutes 를 "낡았다"고 읽기 시작하는 기준선. 2026-09-03(F11)부터는
+// 아래 workerCommitStalledFromSignals 의 "하트비트 신선" 판정에도 같은 값을 쓴다 —
+// 헬스·크론·워치독이 서로 다른 신선 기준을 쓰면 한쪽은 생존, 다른 쪽은 침묵이라고
+// 동시에 보고하는 구간이 생기기 때문에 축은 이 상수 하나로 고정한다.
 export const WORKER_HEARTBEAT_STALE_MINUTES = 15;
+
+// "레인은 잡히는데 커밋이 없다"를 정체로 읽기 시작하는 커밋 나이(분). 초과여야 정체다.
+// 90분 근거: 정상 수집 중 커밋(last_success_at)은 약 11분 간격으로 갱신되므로 8배 여유이고,
+// 슬롯 직후의 정상 무커밋 구간은 유예(HYBRID_WORKER_GRACE_MINUTES=60)가 이미 막는다.
+export const WORKER_COMMIT_STALL_MINUTES = 90;
 
 const RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 
@@ -106,4 +113,41 @@ export function heartbeatAgeMinutes(input = {}) {
   const now = Number(input.now ?? Date.now());
   if (!Number.isFinite(now)) return 0;
   return Math.max(0, Math.floor((now - Math.max(...stamps)) / 60_000));
+}
+
+// 입력 { lastSuccessAt, now } → 커밋 나이(비음수 정수 분) 또는 null.
+// heartbeatAgeMinutes 와 달리 "판독 불가"를 0 이 아니라 null 로 낸다 — 이 값의 소비자
+// (commitStalled, lastCommitAgeMinutes)에게 0 은 "방금 커밋했다"는 정반대 단정이기
+// 때문이다. null 은 아래 판정기에서 자연히 "단정하지 않음"으로 접힌다(fail-safe).
+// 미래 시각(작업기 시계 앞섬)은 음수 대신 0 으로 눌러 비음수 계약을 지킨다.
+export function commitAgeMinutes(input = {}) {
+  const committedAt = parsedInstant(input.lastSuccessAt);
+  if (committedAt === null) return null;
+  const now = Number(input.now ?? Date.now());
+  if (!Number.isFinite(now)) return null;
+  return Math.max(0, Math.floor((now - committedAt) / 60_000));
+}
+
+// 입력 { primarySeenAt, lastSuccessAt, now } → boolean.
+// true 는 "레인 확보(하트비트)는 15분 안쪽으로 신선한데, 마지막 수집 성공(커밋)은
+// 90분 넘게 없다"는 한 가지 상태만 뜻한다 — 2026-09-03 게이트 장애(트래커 격리 코드로
+// 전 키워드 실패, 레인은 매분 claim·커밋 0·2시간)의 지문이다. 이 상태에서는
+//   · queueStalled 가 원리적으로 못 본다(상품 실패 경로가 next_check_at 을 +5분씩
+//     재갱신해 due 적체 조건이 영원히 거짓이다),
+//   · 크론 진척 판정도 active 로 남는다(primary_seen_at 이 계속 갱신되므로).
+// 거짓으로 물러나는 자리들: 하트비트가 낡으면(수집기 자체가 죽음) 침묵 축의 일이고,
+// 커밋 기록이 아예 없으면(최초 배치 등) 단정할 근거가 없다. 판정 재료가 하나라도
+// 파싱되지 않으면 절대 참이 되지 않는다.
+// 하트비트가 신선한 한 커밋 나이는 last_success_at 단독에서 나온다는 점에 주의 —
+// heartbeatAgeMinutes 는 두 표식 중 최신을 쓰므로, 커밋이 신선하면 둘 다 신선이고
+// 이 판정은 자연히 거짓이다(모순 조합이 존재하지 않는다).
+export function workerCommitStalledFromSignals(input = {}) {
+  const commitAge = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now: input.now });
+  if (commitAge === null || commitAge <= WORKER_COMMIT_STALL_MINUTES) return false;
+  const heartbeatAge = heartbeatAgeMinutes({
+    primarySeenAt: input.primarySeenAt,
+    lastSuccessAt: input.lastSuccessAt,
+    now: input.now,
+  });
+  return heartbeatAge < WORKER_HEARTBEAT_STALE_MINUTES;
 }

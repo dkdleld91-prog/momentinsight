@@ -182,7 +182,7 @@
     {
       "id": "product-rank-cron-server",
       "file": "src/server/handlers/naver-rank-cron.mjs",
-      "sha256": "34b74d16ef8fb8f6410bac37b11affac5727dff758c283da611b1dc833f48791"
+      "sha256": "d54e078e2a6175674de6e6615d15da5acdadc41be7f5daa55a26bad71c183af3"
     },
     {
       "id": "place-tracker-server",

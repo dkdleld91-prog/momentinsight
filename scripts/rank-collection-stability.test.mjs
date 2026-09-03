@@ -38,9 +38,12 @@ import {
 import { placeTrackerPayload } from "../src/server/handlers/naver-place-rank-trackers.mjs";
 import {
   EXPECTED_WORKER_RUNTIME_VERSION,
+  WORKER_COMMIT_STALL_MINUTES,
   WORKER_HEARTBEAT_STALE_MINUTES,
   WORKER_OUTDATED_SIGNING_WINDOW_MS,
+  commitAgeMinutes,
   heartbeatAgeMinutes,
+  workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../src/server/naver-shopping/worker-runtime-expectation.mjs";
 import {
@@ -851,8 +854,18 @@ const HEALTH_KEYS_IN_ORDER = [
 ];
 const HEALTH_KEYS_SORTED = [...HEALTH_KEYS_IN_ORDER].sort();
 const HEALTH_LANE_KEYS_IN_ORDER = ["lastSuccessAt", "stalledMinutes", "queueStalled"];
+// 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 앞 3키는 이름·순서·의미 불변.
+//   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). fail-safe null.
+//   commitStalled        — "하트비트 신선 AND 커밋 90분+ 없음 AND 활성 상품 추적기 > 0".
+//                          queueStalled 와 독립이고 최상위 ok 를 절대 뒤집지 않는다.
+const HEALTH_PRODUCT_LANE_KEYS_IN_ORDER = [...HEALTH_LANE_KEYS_IN_ORDER, "lastCommitAgeMinutes", "commitStalled"];
 const HEALTH_FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
-const HEALTH_FAILSAFE_LANES = Object.freeze({ product: HEALTH_FAILSAFE_LANE, place: HEALTH_FAILSAFE_LANE });
+const HEALTH_FAILSAFE_PRODUCT_LANE = Object.freeze({
+  ...HEALTH_FAILSAFE_LANE,
+  lastCommitAgeMinutes: null,
+  commitStalled: false,
+});
+const HEALTH_FAILSAFE_LANES = Object.freeze({ product: HEALTH_FAILSAFE_PRODUCT_LANE, place: HEALTH_FAILSAFE_LANE });
 // 2026-09-03(F7): trackers 는 5키다. 앞 2키(neverFound, stuck)는 이름·의미 불변이고
 // 뒤 3키는 전부 관측 전용 정수다 — 상한 판단도 경보도 하지 않는다.
 const HEALTH_TRACKER_KEYS_IN_ORDER = [
@@ -1088,9 +1101,15 @@ test("F2: lanes 는 레인별 lastSuccessAt·stalledMinutes·queueStalled 를 �
     lanes: [lane("product", at(-10 * HOUR), true), lane("place", at(-30 * 60 * 1000), true)],
   });
   assert.deepEqual(Object.keys(body.lanes), ["product", "place"]);
-  assert.deepEqual(Object.keys(body.lanes.product), HEALTH_LANE_KEYS_IN_ORDER);
+  assert.deepEqual(Object.keys(body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
   assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
-  assert.deepEqual(body.lanes.product, { lastSuccessAt: at(-10 * HOUR), stalledMinutes: 600, queueStalled: true });
+  assert.deepEqual(body.lanes.product, {
+    lastSuccessAt: at(-10 * HOUR),
+    stalledMinutes: 600,
+    queueStalled: true,
+    lastCommitAgeMinutes: null,
+    commitStalled: false,
+  });
   assert.deepEqual(body.lanes.place, { lastSuccessAt: at(-30 * 60 * 1000), stalledMinutes: 30, queueStalled: false });
   // 기존 4키의 의미는 그대로다(최악 레인).
   assert.equal(body.lastSuccessAt, at(-10 * HOUR));
@@ -1170,6 +1189,92 @@ test("F2: 레인 stalledMinutes 도 분 단위 내림이며 6시간 경계는 �
     lanes: [lane("place", at(-(RANK_OVERDUE_THRESHOLD_MS + 1000)), true)],
   });
   assert.equal(over.lanes.place.queueStalled, true);
+});
+
+// ── 상품 레인 커밋 축 (F11) ──
+// 2026-09-03 게이트 장애(2시간): 트래커 격리 코드로 전 키워드가 실패해도 레인 claim 은
+// 매분 갱신되고(primary_seen_at 신선), 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해
+// queueStalled 조건 (1)("due 적체")이 영원히 거짓이었다 — 커밋 0 인데 모든 감시가 정상.
+// 그 사각지대를 "하트비트는 신선한데 커밋이 90분+ 없다"는 새 축으로 드러낸다.
+test("F11: 오늘 장애 재현 — primary_seen_at 신선·last_success_at 2시간 전이면 commitStalled:true", () => {
+  const body = rankCollectionHealthBody({
+    now: NOW,
+    // 상품 레인: 커밋이 없으니 last_checked_at 도 2시간 전에 멈췄지만 due 적체가 없어
+    // overdue=false — queueStalled 는 원리적으로 이 상태를 못 본다(그래서 사각지대였다).
+    lanes: [lane("product", at(-2 * HOUR), false), lane("place", at(-10 * 60 * 1000), false)],
+    primarySeenAt: at(-60_000),        // 레인 claim 은 매분 갱신 중
+    lastSuccessAt: at(-2 * HOUR),      // 코디네이션 last_success_at 은 2시간째 정지
+    trackers: { activeProduct: 86 },
+  });
+  assert.equal(body.lanes.product.commitStalled, true);
+  assert.equal(body.lanes.product.lastCommitAgeMinutes, 120);
+  assert.equal(body.queueStalled, false, "commitStalled 는 queueStalled 와 독립이다");
+  assert.equal(body.lanes.product.queueStalled, false);
+  assert.equal(body.ok, true, "최상위 ok 는 불변 — 판단은 소비자가 한다");
+  assert.equal(body.heartbeatAgeMinutes, 1);
+  assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER, "최상위 8키 이름·순서 불변");
+  assert.deepEqual(Object.keys(body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
+  assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER, "place 레인은 3키 그대로다");
+});
+
+test("F11: commitStalled 는 세 조건의 AND — 하나라도 빠지면 거짓이다", () => {
+  const base = {
+    now: NOW,
+    lanes: [],
+    primarySeenAt: at(-60_000),
+    lastSuccessAt: at(-2 * HOUR),
+    trackers: { activeProduct: 86 },
+  };
+  assert.equal(rankCollectionHealthBody(base).lanes.product.commitStalled, true);
+  // 하트비트까지 낡았으면 수집기 자체가 죽은 것 — 침묵 축(queueStalled·크론 SILENT)의 일이다.
+  assert.equal(rankCollectionHealthBody({ ...base, primarySeenAt: at(-2 * HOUR) }).lanes.product.commitStalled, false);
+  // 활성 상품 추적기가 없으면 커밋이 없는 것이 정상이다.
+  assert.equal(rankCollectionHealthBody({ ...base, trackers: { activeProduct: 0 } }).lanes.product.commitStalled, false);
+  assert.equal(rankCollectionHealthBody({ ...base, trackers: {} }).lanes.product.commitStalled, false);
+  // 커밋 기록이 아예 없으면(신규 배치 등) 단정하지 않는다 — fail-safe null.
+  const noStamp = rankCollectionHealthBody({ ...base, lastSuccessAt: "" });
+  assert.equal(noStamp.lanes.product.lastCommitAgeMinutes, null);
+  assert.equal(noStamp.lanes.product.commitStalled, false);
+  // 90분 경계는 초과여야 한다.
+  assert.equal(rankCollectionHealthBody({ ...base, lastSuccessAt: at(-90 * 60 * 1000) }).lanes.product.commitStalled, false);
+  assert.equal(
+    rankCollectionHealthBody({ ...base, lastSuccessAt: at(-(90 * 60 * 1000 + 60_000)) }).lanes.product.commitStalled,
+    true,
+  );
+});
+
+test("F11: lastCommitAgeMinutes 는 코디네이션 last_success_at 기준 내림 정수·fail-safe null 이다", () => {
+  const of = (lastSuccessAt) => rankCollectionHealthBody({ now: NOW, lanes: [], lastSuccessAt })
+    .lanes.product.lastCommitAgeMinutes;
+  assert.equal(of(at(-2 * HOUR)), 120);
+  assert.equal(of(at(-(119 * 60 * 1000 + 59_000))), 119, "분 단위 내림이다");
+  assert.equal(of(at(90 * 60 * 1000)), 0, "미래 시각(시계 앞섬)은 0 으로 누른다");
+  assert.equal(of(""), null);
+  assert.equal(of(undefined), null);
+  assert.equal(of("not-a-date"), null);
+  // 레인 표(last_checked_at) 입력과 무관한 코디네이션 축이다. place 레인에는 붙지 않는다.
+  const idle = rankCollectionHealthBody({ now: NOW, lanes: [lane("product", "", false)], lastSuccessAt: at(-2 * HOUR) });
+  assert.equal(idle.lanes.product.lastCommitAgeMinutes, 120);
+  assert.ok(!("lastCommitAgeMinutes" in idle.lanes.place));
+  assert.ok(!("commitStalled" in idle.lanes.place));
+});
+
+test("F11: 커밋 정체 순수 판정기 — commitAgeMinutes·workerCommitStalledFromSignals", () => {
+  assert.equal(WORKER_COMMIT_STALL_MINUTES, 90);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(-2 * HOUR), now: NOW }), 120);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(-(119 * 60 * 1000 + 59_000)), now: NOW }), 119);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: at(60_000), now: NOW }), 0, "미래 시각은 0");
+  assert.equal(commitAgeMinutes({ lastSuccessAt: "", now: NOW }), null);
+  assert.equal(commitAgeMinutes({ lastSuccessAt: "not-a-date", now: NOW }), null);
+  assert.equal(commitAgeMinutes({ now: NOW }), null);
+
+  const judge = (primarySeenAt, lastSuccessAt) => workerCommitStalledFromSignals({ primarySeenAt, lastSuccessAt, now: NOW });
+  assert.equal(judge(at(-60_000), at(-2 * HOUR)), true, "오늘 장애의 지문");
+  assert.equal(judge(at(-20 * 60 * 1000), at(-2 * HOUR)), false, "하트비트 15분+ 는 이 축이 아니다");
+  assert.equal(judge(at(-60_000), at(-90 * 60 * 1000)), false, "정확히 90분은 초과가 아니다");
+  assert.equal(judge(at(-60_000), at(-(90 * 60 * 1000 + 60_000))), true);
+  assert.equal(judge(at(-60_000), ""), false, "커밋 기록 없음은 단정하지 않는다");
+  assert.equal(workerCommitStalledFromSignals({}), false, "입력이 비면 절대 단정하지 않는다");
 });
 
 // ── 8번째 키 trackers (C2 결함 C) ──
@@ -1726,6 +1831,61 @@ test("F2: 핸들러가 lanes·trackers 를 실제 조회 결과로 채운다(상
   }
 });
 
+test("F11: 핸들러가 오늘 장애를 실제 조회로 재현한다 — primary 신선·runs 없음·last_success 2시간 전", async () => {
+  const now = Date.now();
+  const iso = (offsetMs) => new Date(now + offsetMs).toISOString();
+  const stub = stubHealthRest((url, method) => {
+    if (url.pathname === "/rest/v1/naver_shopping_worker_coordination") {
+      return jsonRows([{
+        circuit_state: null,
+        circuit_reason: null,
+        cooldown_until: null,
+        primary_seen_at: iso(-60_000),   // 레인 claim 은 매분 갱신 중이었다
+        last_success_at: iso(-2 * HOUR), // 커밋은 2시간째 0
+      }]);
+    }
+    // runs 없음(진척이 navigating 에 닿지 못해 새 행이 없다) · 서명 표도 비움.
+    if (url.pathname === "/rest/v1/naver_shopping_worker_runs") return jsonRows([]);
+    if (url.pathname === "/rest/v1/naver_shopping_worker_nonces") return jsonRows([]);
+    const product = url.pathname === "/rest/v1/naver_rank_trackers";
+    const place = url.pathname === "/rest/v1/naver_place_rank_trackers";
+    if (!product && !place) return null;
+    if (method === "HEAD") {
+      if (url.searchParams.has("check_count")) return countRows(0);
+      const lastError = url.searchParams.get("last_error");
+      if (lastError === "not.is.null" || lastError === "is.null") return countRows(0);
+      return product ? countRows(86) : countRows(0);
+    }
+    const select = url.searchParams.get("select");
+    // 커밋이 없으니 last_checked_at 도 함께 멈춰 있다(장애 실측과 같은 모양).
+    if (select === "last_checked_at") return jsonRows([{ last_checked_at: iso(product ? -2 * HOUR : -10 * 60 * 1000) }]);
+    // 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해 due 적체가 성립하지 않았다.
+    if (select === "next_check_at") return jsonRows([]);
+    if (select === "keyword") return jsonRows([]);
+    return null;
+  });
+  try {
+    const handler = await freshRankHealthHandler("commit-stall-incident");
+    const response = await handler.fetch(new Request("https://example.com/api/rank-collection-health"));
+    const body = await response.json();
+    assert.equal(response.status, 200);
+    assert.deepEqual(Object.keys(body), HEALTH_KEYS_IN_ORDER);
+    // 기존 감시축은 전부 "정상"이라고 말한다 — 바로 그것이 오늘의 사각지대였다.
+    assert.equal(body.ok, true);
+    assert.equal(body.queueStalled, false);
+    assert.equal(body.workerOutdated, false);
+    assert.equal(body.heartbeatAgeMinutes, 1);
+    // 새 축만이 정지를 드러낸다.
+    assert.equal(body.lanes.product.lastCommitAgeMinutes, 120);
+    assert.equal(body.lanes.product.commitStalled, true);
+    assert.equal(body.trackers.activeProduct, 86);
+    assert.deepEqual(Object.keys(body.lanes.product), HEALTH_PRODUCT_LANE_KEYS_IN_ORDER);
+    assert.deepEqual(Object.keys(body.lanes.place), HEALTH_LANE_KEYS_IN_ORDER);
+  } finally {
+    stub.restore();
+  }
+});
+
 test("F2: 추적기 집계 조회가 실패해도 0 으로 접히고 200 을 유지한다(fail-safe)", async () => {
   const stub = stubHealthRest((url, method) => {
     if (method === "HEAD") {
@@ -2109,6 +2269,9 @@ test("F2: 모든 판정 분기가 고유 로그 코드를 남긴다", () => {
     "stall_pending",
     "restart_cooldown_clock_reset",
     "restart_suppressed_cooldown",
+    // ── 재기동 무효/유해 가드(F12) ──────────────────────────────
+    "restart_deferred_collection_active",
+    "restart_skipped_lane_alive",
     "dry_run restart_would_run",
     "chrome_config_invalid",
     "restart_begin",
@@ -2278,14 +2441,52 @@ test("F2: 강제 종료 폴백이 없다", () => {
   }
 });
 
-test("F2: 워치독은 관측 키 두 개를 판정에 쓰지 않는다(맥 재기동으로 고칠 수 없다)", () => {
-  // 응답이 6개 키로 늘었지만 워치독의 판정 축은 queueStalled 하나뿐이다.
+test("F2/F12: 관측 키는 재기동을 '생략'할 때만 읽고 '유발'에는 절대 쓰지 않는다", () => {
+  // 재기동을 유발하는 판정 축은 지금도 queueStalled 하나뿐이다.
   // workerOutdated 는 윈도우 워커가 낡은 실행본을 돌린다는 뜻이고, 맥에서 Chrome 을
   // 다시 여는 것으로는 절대 고쳐지지 않는다. 고쳐지지도 않을 일에 재기동을 쓰면
   // 3시간 쿨다운만 태워, 정작 진짜 대기열 정체가 왔을 때 손을 못 쓰게 된다.
-  // heartbeatAgeMinutes 도 같은 이유로 사람이 보는 관측값일 뿐이다.
   assert.ok(!watchdogSource.includes("workerOutdated"), "워치독이 workerOutdated 를 읽으면 안 된다");
-  assert.ok(!watchdogSource.includes("heartbeatAgeMinutes"), "워치독이 heartbeatAgeMinutes 를 읽으면 안 된다");
+  // F12: heartbeatAgeMinutes(및 lanes.product.commitStalled)는 정반대 방향으로만 읽는다 —
+  // "레인이 살아 있는데 커밋만 없는" 정체에서는 Chrome 재기동이 무효이므로 물러난다.
+  assert.ok(watchdogSource.includes('"heartbeatAgeMinutes"'), "F12: 재기동 생략 판정에 heartbeatAgeMinutes 를 읽는다");
+  assert.ok(watchdogSource.includes('"commitStalled"'), "F12: 재기동 생략 판정에 commitStalled 를 읽는다");
+  assert.ok(watchdogSource.includes("HEARTBEAT_FRESH_MINUTES=15"), "신선 기준은 15분(WORKER_HEARTBEAT_STALE_MINUTES)이다");
+  // 두 관측 키의 파싱은 재기동 임계(30분 연속)와 쿨다운 판정을 모두 통과한 뒤에만 나온다 —
+  // 그 앞에서 읽으면 관측 키가 판정 축으로 승격될 위험이 생긴다.
+  const cooldownIndex = watchdogSource.indexOf('log_event "restart_suppressed_cooldown');
+  const deferIndex = watchdogSource.indexOf("restart_deferred_collection_active");
+  const skipIndex = watchdogSource.indexOf("restart_skipped_lane_alive");
+  const heartbeatIndex = watchdogSource.indexOf('"heartbeatAgeMinutes"');
+  const restartIndex = watchdogSource.indexOf('restart_begin stalled_seconds');
+  assert.ok(cooldownIndex > 0 && deferIndex > 0 && skipIndex > 0 && heartbeatIndex > 0 && restartIndex > 0);
+  assert.ok(cooldownIndex < deferIndex, "수집-중 가드는 쿨다운 판정 뒤다");
+  assert.ok(deferIndex < skipIndex, "수집-중 가드가 레인 생존 가드보다 먼저다");
+  assert.ok(cooldownIndex < heartbeatIndex, "관측 키 파싱은 쿨다운 판정 뒤다");
+  assert.ok(skipIndex < restartIndex, "두 가드 모두 실제 재기동보다 앞이다");
+});
+
+test("F12: 재기동 가드 두 분기는 상태를 쓰지 않는다(쿨다운·정체 시작점 미소모)", () => {
+  for (const marker of ["restart_deferred_collection_active", "restart_skipped_lane_alive"]) {
+    const from = watchdogSource.indexOf(`log_event "${marker}`);
+    assert.ok(from > 0, `${marker} 분기가 있어야 한다`);
+    const to = watchdogSource.indexOf("\nfi", from);
+    const branch = watchdogSource.slice(from, to);
+    assert.ok(!branch.includes("write_state"), `${marker} 는 상태 파일을 건드리면 안 된다`);
+    assert.ok(branch.includes("exit 0"), `${marker} 는 이번 틱을 조용히 끝낸다`);
+    assert.ok(!branch.includes("osascript"), `${marker} 분기에서 Chrome 을 건드리면 안 된다`);
+  }
+});
+
+test("F12: 수집-중 판정은 드리프트 경로와 같은 단일 구현을 쓴다", () => {
+  // 판정 구현이 둘로 갈라지면 한쪽만 고쳐져 "드리프트는 피하는데 재기동은 수집을
+  // 죽이는" 비대칭이 재발한다. 함수 하나를 두 경로가 함께 호출해야 한다.
+  assert.ok(watchdogSource.includes("collection_in_progress()"), "판정 함수가 있어야 한다");
+  const callCount = (watchdogSource.match(/if collection_in_progress; then/g) || []).length;
+  assert.equal(callCount, 2, "드리프트 경로와 정체 재기동 경로가 각각 한 번씩 부른다");
+  // 신호 두 개(네이티브 호스트 프로세스 + 워커 잠금 디렉터리)는 함수 안에 그대로 있다.
+  assert.ok(watchdogSource.includes("naver-shopping-native-host\\.mjs"));
+  assert.ok(watchdogSource.includes("moment-insight-n-shopping-worker.lock"));
 });
 
 test("F2: 드라이런 진입점이 있다", () => {
@@ -2482,6 +2683,9 @@ async function runWatchdog(home, healthUrl, options = {}) {
         // 못 박아야 한다. 개발자 셸에 이 변수가 떠 있으면 아래 의사결정표 9개가 조용히 깨진다.
         MI_RANK_WATCHDOG_SYNC_SOURCE_PATH: options.syncSourcePath ?? "",
         MI_RANK_WATCHDOG_SYNC_DISABLED: options.syncDisabled ?? "",
+        // F12 수집-중 가드는 ${TMPDIR}/moment-insight-n-shopping-worker.lock 을 본다.
+        // 워치독의 잠금 후보 첫 자리가 TMPDIR 이므로, 테스트가 가짜 잠금을 심을 수 있다.
+        ...(options.tmpdir ? { TMPDIR: options.tmpdir } : {}),
       },
     });
   } catch (error) {
@@ -2520,15 +2724,26 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
   // 훑으므로, 옛 4개 키의 이름과 순서를 바이트 단위로 고정한 채 나머지 키를 뒤에 붙인다.
   // lanes 안의 중첩 queueStalled 는 최상위와 OR 불변식(최상위 = OR(레인))을 지키므로
   // grep 판정이 흔들리지 않는다 — 여기서도 그 불변식대로 본문을 만든다.
-  const body = (queueStalled, stalledMinutes, workerOutdated = false, heartbeatAgeMinutes = 0) => JSON.stringify({
+  // F11 이후 상품 레인에는 lastCommitAgeMinutes·commitStalled 두 키가 더 실린다.
+  // 정체 시나리오의 heartbeatAgeMinutes 기본값은 "Chrome 이 죽어 진척이 멈춘" 실제
+  // 정체와 같은 낡은 값(700)이다 — 신선(<15)이면 F12 가드가 재기동을 생략한다.
+  const body = (queueStalled, stalledMinutes, options = {}) => JSON.stringify({
     ok: true,
     lastSuccessAt: new Date().toISOString(),
     stalledMinutes,
     queueStalled,
-    workerOutdated,
-    heartbeatAgeMinutes,
+    workerOutdated: options.workerOutdated === true,
+    heartbeatAgeMinutes: Number.isInteger(options.heartbeatAgeMinutes)
+      ? options.heartbeatAgeMinutes
+      : (queueStalled ? 700 : 0),
     lanes: {
-      product: { lastSuccessAt: new Date().toISOString(), stalledMinutes, queueStalled },
+      product: {
+        lastSuccessAt: new Date().toISOString(),
+        stalledMinutes,
+        queueStalled,
+        lastCommitAgeMinutes: Number.isInteger(options.lastCommitAgeMinutes) ? options.lastCommitAgeMinutes : null,
+        commitStalled: options.commitStalled === true,
+      },
       place: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 0, queueStalled: false },
     },
     trackers: { neverFound: 0, stuck: 0 },
@@ -2548,11 +2763,21 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
     // 맥에서 Chrome 을 다시 열어도 윈도우 워커의 낡은 실행본은 고쳐지지 않는다. 고쳐지지도
     // 않을 일에 재기동을 쓰면 3시간 쿨다운만 태워 진짜 정체 때 손을 못 쓴다. 관측 키가
     // 켜져 있어도 대기열이 정상이면 워치독은 healthy 로 물러나야 한다.
-    { label: "(k) 낡은 워커 경보만 켜짐 + 대기열 정상", stalled: false, minutes: 3, state: null, workerOutdated: true, heartbeatAgeMinutes: 864, expect: "healthy" },
+    { label: "(k) 낡은 워커 경보만 켜짐 + 대기열 정상", stalled: false, minutes: 3, state: null, options: { workerOutdated: true, heartbeatAgeMinutes: 864 }, expect: "healthy" },
+    // ── F12: 레인이 살아 있으면 Chrome 재기동은 무효다 ──
+    // 오늘 장애의 모양: 정체 판정은 성립했는데 하트비트는 매분 갱신 중(레인 claim).
+    // 이때 Chrome 을 다시 열어도 커밋은 돌아오지 않고 수집 사이클만 끊긴다.
+    { label: "(l) 정체 4000초 + 하트비트 3분(레인 생존)", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 3 }, expect: "restart_skipped_lane_alive" },
+    { label: "(m) 정체 4000초 + commitStalled true", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 700, lastCommitAgeMinutes: 120, commitStalled: true }, expect: "restart_skipped_lane_alive" },
+    // 15분 경계: 14분은 신선(생략), 15분부터는 낡음(재기동 진행).
+    { label: "(n) 정체 4000초 + 하트비트 14분 — 경계 안쪽", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 14 }, expect: "restart_skipped_lane_alive" },
+    { label: "(o) 정체 4000초 + 하트비트 15분 — 경계 바깥", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: 0 }, options: { heartbeatAgeMinutes: 15 }, expect: "dry_run restart_would_run" },
+    // 가드보다 쿨다운 판정이 먼저다 — 순서가 뒤집히면 쿨다운 로그가 사라져 판독이 흐려진다.
+    { label: "(p) 정체 4000초 + 10분 전 재기동 + 하트비트 3분", stalled: true, minutes: 700, state: { stalledSince: nowSeconds - 4000, lastRestartAt: nowSeconds - 600 }, options: { heartbeatAgeMinutes: 3 }, expect: "restart_suppressed_cooldown" },
   ];
 
   for (const scenario of scenarios) {
-    responseBody = body(scenario.stalled, scenario.minutes, scenario.workerOutdated, scenario.heartbeatAgeMinutes);
+    responseBody = body(scenario.stalled, scenario.minutes, scenario.options ?? {});
     const home = createWatchdogHome(scenario.state);
     homes.push(home);
     // eslint-disable-next-line no-await-in-loop
@@ -2568,6 +2793,69 @@ test("F2: 워치독 드라이런 의사결정표가 실제 실행으로 고정�
       assert.ok(event.startsWith("dry_run state_write_skipped"), `${scenario.label} 부가 로그: ${event}`);
     }
   }
+});
+
+test("F12: 수집 중이면 정체 재기동을 이번 틱만 미룬다(워커 잠금 신호, 실행 검증)", darwinOnly, async (t) => {
+  // 드리프트 경로와 같은 잠금 판정을 재기동 직전에도 수행하는지 실제 실행으로 고정한다.
+  // ${TMPDIR}/moment-insight-n-shopping-worker.lock/owner.json 의 pid 가 살아 있으면
+  // 이 맥이 수집 중이라는 뜻이고, 그 순간 Chrome 을 끄면 수집이 도중에 죽는다.
+  const server = await startHealthServer(() => JSON.stringify({
+    ok: true,
+    lastSuccessAt: new Date().toISOString(),
+    stalledMinutes: 700,
+    queueStalled: true,
+    workerOutdated: false,
+    heartbeatAgeMinutes: 700,
+    lanes: {
+      product: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 700, queueStalled: true, lastCommitAgeMinutes: null, commitStalled: false },
+      place: { lastSuccessAt: new Date().toISOString(), stalledMinutes: 0, queueStalled: false },
+    },
+    trackers: { neverFound: 0, stuck: 0 },
+  }));
+  const homes = [];
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  t.after(() => {
+    server.close();
+    for (const home of homes) fs.rmSync(home, { recursive: true, force: true });
+  });
+  const healthUrl = `http://127.0.0.1:${server.address().port}/api/rank-collection-health`;
+
+  // 잠금이 살아 있으면(이 테스트 프로세스의 pid) 재기동 임계를 넘겨도 미룬다.
+  const lockedHome = createWatchdogHome({ stalledSince: nowSeconds - 4000, lastRestartAt: 0 });
+  homes.push(lockedHome);
+  const lockRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mi-watchdog-lock-"));
+  homes.push(lockRoot);
+  fs.mkdirSync(path.join(lockRoot, "moment-insight-n-shopping-worker.lock"));
+  fs.writeFileSync(
+    path.join(lockRoot, "moment-insight-n-shopping-worker.lock/owner.json"),
+    JSON.stringify({ pid: process.pid }),
+  );
+  const deferred = await runWatchdog(lockedHome, healthUrl, { tmpdir: lockRoot });
+  assert.equal(deferred.status, 0);
+  assert.ok(
+    deferred.events[0].startsWith("restart_deferred_collection_active"),
+    `수집 중에는 재기동을 미뤄야 한다: ${deferred.raw}`,
+  );
+  assert.equal(deferred.events.length, 1, "쿨다운·정체 시작점을 소모하지 않는다(상태 쓰기 없음)");
+
+  // 잠금의 pid 가 죽어 있으면(수집 중 아님) 같은 입력에서 재기동 분기까지 간다.
+  const staleHome = createWatchdogHome({ stalledSince: nowSeconds - 4000, lastRestartAt: 0 });
+  homes.push(staleHome);
+  const staleRoot = fs.mkdtempSync(path.join(os.tmpdir(), "mi-watchdog-stale-lock-"));
+  homes.push(staleRoot);
+  fs.mkdirSync(path.join(staleRoot, "moment-insight-n-shopping-worker.lock"));
+  fs.writeFileSync(
+    path.join(staleRoot, "moment-insight-n-shopping-worker.lock/owner.json"),
+    JSON.stringify({ pid: 99999999 }),
+  );
+  const proceeded = await runWatchdog(staleHome, healthUrl, { tmpdir: staleRoot });
+  assert.equal(proceeded.status, 0);
+  assert.ok(
+    proceeded.events[0].startsWith("dry_run restart_would_run"),
+    `죽은 소유자의 잠금은 수집 중이 아니다: ${proceeded.raw}`
+      + " (restart_deferred_collection_active 가 나왔다면 이 맥에서 실제 수집이 돌고 있는"
+      + " 것이다 — 단언을 약화하지 말고 그대로 보고할 것)",
+  );
 });
 
 test("F2: 워치독은 장애·불량 본문·허용목록 위반에서 안전하게 물러난다", darwinOnly, async (t) => {

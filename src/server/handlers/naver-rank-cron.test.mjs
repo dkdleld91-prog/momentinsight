@@ -11,10 +11,12 @@ import productRankCronHandler, {
   productRankCronProviderConfigured,
   productRankCronProviderReadiness,
   HYBRID_WORKER_SILENCE_MINUTES,
+  NAVER_RANK_WORKER_NO_COMMIT,
   NAVER_RANK_WORKER_SIGNAL_UNKNOWN,
   NAVER_RANK_WORKER_SILENT,
   hybridWorkerFailure,
   hybridWorkerGraceActive,
+  hybridWorkerNoCommitFailure,
   hybridWorkerProgressAt,
   hybridWorkerRecentlyActive,
   hybridWorkerSignal,
@@ -422,6 +424,71 @@ test("product cron keeps its 202 deferral while the hybrid worker keeps making p
   } finally {
     stub.restore();
   }
+});
+
+// ── F11: "레인은 잡히는데 커밋 0" 축 ─────────────────────────────
+// 2026-09-03 게이트 장애(2시간): 트래커 격리 코드로 전 키워드가 실패해도 primary_seen_at
+// 은 레인 claim 시 매분 갱신돼 진척 판정이 "active" 로 남았고, 크론은 영구 202 를 냈다.
+// 하트비트가 신선한데 last_success_at(커밋)이 90분+ 멈춘 상태는 202 로 감추지 않고
+// 새 코드 NAVER_RANK_WORKER_NO_COMMIT(503) 으로 보고한다. 기존 SILENT 의 의미·문구는 불변이다.
+test("F11: 레인은 매분 잡히는데 커밋이 90분+ 없으면 202 대신 503 NAVER_RANK_WORKER_NO_COMMIT", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-08-01T02:00:00.000Z") }); // 11:00 KST, 유예 밖
+  const stub = stubHybridCronEnvironment({
+    coordinationRows: [{
+      primary_seen_at: "2026-08-01T01:59:00.000Z", // 1분 전 — 레인 claim 은 계속된다
+      last_success_at: "2026-08-01T00:00:00.000Z", // 2시간 전 — 커밋 0
+    }],
+  });
+  try {
+    const response = await productRankCronHandler.fetch(hybridCronRequest());
+    const body = await response.json();
+    assert.equal(response.status, 503);
+    assert.equal(body.ok, false);
+    assert.equal(body.code, NAVER_RANK_WORKER_NO_COMMIT);
+    assert.equal(body.sourceStatus.shoppingRank.status, "worker_no_commit");
+    assert.equal(body.claimed, 0);
+    assert.equal(body.deferred, undefined);
+    assert.equal(NAVER_RANK_WORKER_NO_COMMIT, "NAVER_RANK_WORKER_NO_COMMIT");
+    // 기존 침묵 코드와 절대 섞이지 않는다 — 침묵은 "레인 확보도 없음", 여기는 "확보만 있음".
+    assert.notEqual(body.code, NAVER_RANK_WORKER_SILENT);
+    assert.ok(!body.message.includes(`${HYBRID_WORKER_SILENCE_MINUTES}분 넘게 레인 확보도`), "SILENT 문구를 재사용하면 안 된다");
+  } finally {
+    stub.restore();
+  }
+});
+
+test("F11: 커밋 정체 판정은 90분 초과·하트비트 신선·기록 존재를 모두 요구한다", () => {
+  const judge = (primary, success, date) => hybridWorkerNoCommitFailure(
+    { primary_seen_at: primary, last_success_at: success },
+    date,
+  );
+  const now = new Date("2026-08-01T02:00:00.000Z"); // 11:00 KST
+  // 오늘 장애의 지문: 레인 claim 1분 전 · 커밋 2시간 전.
+  const incident = judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:00:00.000Z", now);
+  assert.equal(incident.code, NAVER_RANK_WORKER_NO_COMMIT);
+  assert.equal(incident.status, "worker_no_commit");
+  // 정확히 90분은 초과가 아니다.
+  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:30:00.000Z", now), null);
+  assert.equal(judge("2026-08-01T01:59:00.000Z", "2026-08-01T00:29:00.000Z", now).code, NAVER_RANK_WORKER_NO_COMMIT);
+  // 하트비트 자체가 낡으면(15분+) 이 축이 아니라 침묵 축의 일이다.
+  assert.equal(judge("2026-08-01T01:40:00.000Z", "2026-08-01T00:00:00.000Z", now), null);
+  // 커밋 기록이 아예 없으면(최초 배치 등) 단정하지 않는다 — fail-safe.
+  assert.equal(judge("2026-08-01T01:59:00.000Z", null, now), null);
+  assert.equal(judge(null, null, now), null);
+  assert.equal(hybridWorkerNoCommitFailure(null, now), null);
+});
+
+test("F11: 유예 창 안에서는 커밋 정체를 판정하지 않고, 유예 밖에서만 실패다", async () => {
+  // 슬롯 직후에는 밤새 커밋이 없던 것이 정상이다(첫 커밋까지 수 분). 유예가 그 구간을 막는다.
+  const rows = [{ primary_seen_at: "2026-08-01T00:29:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
+  const insideGrace = new Date("2026-08-01T00:30:00.000Z"); // 09:30 KST
+  assert.equal(await hybridWorkerFailure(coordinationCtx(rows), insideGrace), null);
+  const afterGrace = new Date("2026-08-01T02:00:00.000Z"); // 11:00 KST
+  const stalled = [{ primary_seen_at: "2026-08-01T01:59:00.000Z", last_success_at: "2026-07-31T20:00:00.000Z" }];
+  assert.equal((await hybridWorkerFailure(coordinationCtx(stalled), afterGrace)).code, NAVER_RANK_WORKER_NO_COMMIT);
+  // 커밋이 90분 안이면 202 경로 그대로다.
+  const committing = [{ primary_seen_at: "2026-08-01T01:59:00.000Z", last_success_at: "2026-08-01T01:50:00.000Z" }];
+  assert.equal(await hybridWorkerFailure(coordinationCtx(committing), afterGrace), null);
 });
 
 test("product cron accepts the explicit fallback without prewarming a provider", async () => {

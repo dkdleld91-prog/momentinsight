@@ -11,6 +11,8 @@ import {
 import { latestLocalWorkerSlotAt } from "../naver-shopping/local-worker-schedule.mjs";
 import {
   EXPECTED_WORKER_RUNTIME_VERSION,
+  WORKER_COMMIT_STALL_MINUTES,
+  workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../naver-shopping/worker-runtime-expectation.mjs";
 import { prewarmShoppingRankProvider } from "../naver-shopping/provider-runtime.mjs";
@@ -28,6 +30,11 @@ export const NAVER_RANK_CRON_ITEM_FAILURE = "NAVER_RANK_CRON_ITEM_FAILURE";
 export const NAVER_RANK_WORKER_SILENT = "NAVER_RANK_WORKER_SILENT";
 export const NAVER_RANK_WORKER_SIGNAL_UNKNOWN = "NAVER_RANK_WORKER_SIGNAL_UNKNOWN";
 export const NAVER_RANK_WORKER_OUTDATED = "NAVER_RANK_WORKER_OUTDATED";
+// 2026-09-03(F11): SILENT(진척 표식 자체가 낡음)와 구분되는 네 번째 실패 축.
+// "레인 확보(primary_seen_at)는 매분 갱신되는데 수집 성공(last_success_at)이 90분+
+// 없다" — 트래커 격리 코드로 전 키워드가 실패한 게이트 장애(2시간)에서 진척 판정이
+// active 로 남아 크론이 영구 202 를 내던 사각지대다. 기존 SILENT 의 의미·문구는 불변이다.
+export const NAVER_RANK_WORKER_NO_COMMIT = "NAVER_RANK_WORKER_NO_COMMIT";
 
 export function productRankCronBatchLimit(url) {
   const requested = Number(url.searchParams.get("limit"));
@@ -142,28 +149,68 @@ export function hybridWorkerProgressAt(row) {
   return stamps.length ? Math.max(...stamps) : 0;
 }
 
-export async function hybridWorkerSignal(ctx, date = new Date()) {
-  const nowMs = date.getTime();
-  if (!ctx?.supabaseAdmin || !Number.isFinite(nowMs)) return "unknown";
-  const cutoffMs = nowMs - HYBRID_WORKER_SILENCE_MINUTES * 60_000;
+// 코디네이션 행 한 줄 읽기. 어떤 실패(supabaseAdmin 부재 · PostgREST error · 체인
+// throw · 행 없음)도 전부 null 로 접는다 — 조회 실패를 "수집기 사망"으로 번역하면
+// 스키마 드리프트나 권한 문제 한 번이 곧바로 503 거짓 경보가 된다.
+// 2026-09-03(F11): 판정이 둘(침묵 축·커밋 축)로 늘면서 같은 행을 두 번 읽지 않도록
+// 조회를 이 함수 하나로 모았다. 아래 두 판정기는 모두 이 행 하나에서 나온다.
+async function hybridWorkerCoordinationRow(ctx) {
+  if (!ctx?.supabaseAdmin) return null;
   try {
     const { data, error } = await ctx.supabaseAdmin
       .from(WORKER_COORDINATION_TABLE)
       .select("primary_seen_at, last_success_at")
       .eq("lane_key", "global")
       .limit(1);
-    if (error) return "unknown";
+    if (error) return null;
     const row = Array.isArray(data) ? data[0] : data;
-    if (!row) return "unknown";
-    const progressMs = hybridWorkerProgressAt(row);
-    // 두 표식이 모두 비어 있으면(최초 배치 직후 등) 침묵이라 단정하지 않는다.
-    if (progressMs <= 0) return "unknown";
-    return progressMs >= cutoffMs ? "active" : "silent";
+    return row || null;
   } catch {
     // A missing coordination row or transient DB read must never be reported as
     // a dead collector. This is the fail-safe path during staged rollout.
-    return "unknown";
+    return null;
   }
+}
+
+// 행 → "active" | "silent" | "unknown". 순수 판정이라 조회 실패를 볼 일이 없다.
+function hybridWorkerSignalFromRow(row, date = new Date()) {
+  const nowMs = date.getTime();
+  if (!row || !Number.isFinite(nowMs)) return "unknown";
+  const progressMs = hybridWorkerProgressAt(row);
+  // 두 표식이 모두 비어 있으면(최초 배치 직후 등) 침묵이라 단정하지 않는다.
+  if (progressMs <= 0) return "unknown";
+  return progressMs >= nowMs - HYBRID_WORKER_SILENCE_MINUTES * 60_000 ? "active" : "silent";
+}
+
+export async function hybridWorkerSignal(ctx, date = new Date()) {
+  if (!ctx?.supabaseAdmin || !Number.isFinite(date.getTime())) return "unknown";
+  return hybridWorkerSignalFromRow(await hybridWorkerCoordinationRow(ctx), date);
+}
+
+// 2026-09-03(F11): "레인은 잡히는데 커밋이 없다" 판정. 순수 함수이고 판정 자체는
+// workerCommitStalledFromSignals(단일 구현)에 맡긴다 — 헬스 API 의
+// lanes.product.commitStalled 와 축이 갈라지면 한쪽은 정지, 다른 쪽은 정상이라고
+// 동시에 보고하는 구간이 생기기 때문이다.
+// 이 축이 필요한 이유(2026-09-03 게이트 장애 2시간): 트래커 격리 코드로 전 키워드가
+// 실패해도 primary_seen_at 은 레인 claim 시 매분 갱신돼 위 진척 판정이 active 로 남고,
+// 크론은 영구 202 ok 를 냈다. 침묵(SILENT)은 "레인 확보조차 없음"이고 여기는 "확보만
+// 있고 성과가 없음"이라, 두 코드는 절대 섞이지 않는다.
+// 행이 없거나 표식이 파싱되지 않으면 null(단정하지 않음)이다.
+export function hybridWorkerNoCommitFailure(row, date = new Date()) {
+  if (!row) return null;
+  const nowMs = date instanceof Date ? date.getTime() : Number(date);
+  if (!Number.isFinite(nowMs)) return null;
+  const stalled = workerCommitStalledFromSignals({
+    primarySeenAt: row.primary_seen_at,
+    lastSuccessAt: row.last_success_at,
+    now: nowMs,
+  });
+  if (!stalled) return null;
+  return {
+    code: NAVER_RANK_WORKER_NO_COMMIT,
+    status: "worker_no_commit",
+    message: `중앙 Chrome 자동 순환 작업기가 레인은 계속 확보하는데 ${WORKER_COMMIT_STALL_MINUTES}분 넘게 수집 성공을 한 건도 기록하지 못했습니다. 수집 게이트 상태를 확인해주세요.`,
+  };
 }
 
 export async function hybridWorkerRecentlyActive(ctx, date = new Date()) {
@@ -239,8 +286,12 @@ export async function hybridWorkerFailure(ctx, date = new Date()) {
     if (outdated) return outdated;
   }
   if (hybridWorkerGraceActive(date)) return null;
-  const signal = await hybridWorkerSignal(ctx, date);
-  if (signal === "active") return null;
+  const row = await hybridWorkerCoordinationRow(ctx);
+  const signal = hybridWorkerSignalFromRow(row, date);
+  // 진척이 active 여도 끝이 아니다 — 커밋 축(F11)이 남아 있다. 유예 안에서는 이 축도
+  // 판정하지 않는다(슬롯 직후 첫 커밋까지 몇 분은 정상 무커밋 구간이다). 커밋이
+  // 90분 안이면 여기서 null 로 빠져 기존 202 경로 그대로다.
+  if (signal === "active") return hybridWorkerNoCommitFailure(row, date);
   if (signal === "unknown") {
     return {
       code: NAVER_RANK_WORKER_SIGNAL_UNKNOWN,

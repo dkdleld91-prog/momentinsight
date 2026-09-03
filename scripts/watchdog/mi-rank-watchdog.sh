@@ -101,6 +101,62 @@ write_state() {   # $1=stalled_since $2=last_restart_at $3=last_sync_at
   /bin/mv -f "${temp}" "${STATE_PATH}"
 }
 
+# ── 수집 진행 중 판정(드리프트 경로와 정체 재기동 경로가 함께 쓰는 단 하나의 구현) ──
+# 참이면(return 0) "지금 이 맥이 순위 수집을 돌리고 있다"는 뜻이다. 두 경로가 이 판정을
+# 각자 구현하면 한쪽만 고쳐져 "드리프트는 피하는데 재기동은 수집을 죽이는" 비대칭이
+# 생기므로 구현은 여기 하나뿐이고 두 호출자가 같은 함수를 부른다.
+#
+# 신호 (1) 네이티브 호스트 프로세스. 확장이 chrome.runtime.connectNative 로 포트를
+# 열고 있는 동안에만 존재한다
+# (tools/naver-shopping-chrome-extension/service-worker.js:816, :530 주석).
+# 프로세스 argv 에는 상대 경로가 들어가므로 반드시 파일명만으로 맞춰야 한다.
+#
+# 신호 (2) 워커 잠금. moment-insight-n-shopping-worker.lock 은 owner.json 을 담은
+# 디렉터리다(scripts/naver-shopping-local-worker.mjs:540-551). :638 에서 claim-lane
+# 이전에 잠그고 :1149 에서 release-lane 이후에 푸므로 잠금 구간이 리스 구간을 완전히
+# 포함한다 — 잠금이 없으면 이 맥은 리스를 쥐고 있지 않다(안전한 방향의 판정이다).
+# LaunchAgent 의 TMPDIR 이 Chrome 자식 프로세스와 다른 /var/folders 경로로 풀릴 수
+# 있어 후보 세 곳을 차례로 본다. 죽은 소유자의 잠금은 최대 8시간
+# (DEFAULT_LOCK_STALE_MS, :24) 남을 수 있으므로, 디렉터리가 있고 owner.json 의 pid
+# 가 살아 있을 때만 유효한 잠금으로 친다.
+#
+# fail-safe 방향은 "거짓"이다. 판정 재료를 하나도 못 읽으면 수집 중이 아니라고 답한다 —
+# 이 함수가 참을 남발하면 드리프트 복구도 정체 재기동도 영원히 멈추기 때문이다.
+# 어떤 단계가 실패해도 셸이 통째로 죽지 않도록 함수 안에서 errexit 를 끈다
+# (setopt localoptions 로 옵션 변경은 반환 시 자동으로 되돌아간다).
+collection_in_progress() {
+  setopt localoptions
+  set +e
+
+  if /usr/bin/pgrep -f 'naver-shopping-native-host\.mjs' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local DARWIN_TEMP_DIRECTORY=""
+  DARWIN_TEMP_DIRECTORY="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" || DARWIN_TEMP_DIRECTORY=""
+  local -a LOCK_ROOTS=()
+  if [[ -n "${TMPDIR:-}" ]]; then
+    LOCK_ROOTS+=("${TMPDIR%/}")
+  fi
+  if [[ -n "${DARWIN_TEMP_DIRECTORY}" ]]; then
+    LOCK_ROOTS+=("${DARWIN_TEMP_DIRECTORY%/}")
+  fi
+  LOCK_ROOTS+=("/tmp")
+  local LOCK_ROOT="" LOCK_DIRECTORY="" OWNER_JSON="" OWNER_PID=""
+  for LOCK_ROOT in "${LOCK_ROOTS[@]}"; do
+    LOCK_DIRECTORY="${LOCK_ROOT}/moment-insight-n-shopping-worker.lock"
+    [[ -d "${LOCK_DIRECTORY}" ]] || continue
+    OWNER_JSON="$(/bin/cat "${LOCK_DIRECTORY}/owner.json" 2>/dev/null)" || OWNER_JSON=""
+    [[ -n "${OWNER_JSON}" ]] || continue
+    [[ "${OWNER_JSON}" =~ '"pid"[[:space:]]*:[[:space:]]*([0-9]+)' ]] || continue
+    OWNER_PID="${match[1]}"
+    if kill -0 "${OWNER_PID}" 2>/dev/null; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # ── Chrome 재기동(정체 경로와 동기화 경로가 함께 쓰는 단 하나의 구현) ──────────
 # scripts/rank-collection-stability.test.mjs 는 이 함수 안의 두 문자열을 원문 그대로
 # 찾는다. (1) 여덟 줄 아래의 /usr/bin/open 호출 첫 줄 — n30 스케줄러 원본과 바이트가
@@ -254,56 +310,14 @@ runtime_drift_pass() {
   fi
 
   # guard 1 — 수집 진행 중. 신호 두 개 중 하나라도 잡히면 이번 틱은 손대지 않는다.
+  # 판정은 위 collection_in_progress() 하나뿐이다(신호 두 개의 근거는 그 함수 주석 참조).
   # 이것이 낭비 방지가 아니라 손상 방지인 이유:
   # installRuntime(scripts/install-naver-shopping-chrome-bridge.mjs:207-215)은
   # 스테이징 없이 copyFileSync 로 목적지를 제자리에서 덮어쓴다. 그리고 목록 1번이
   # scripts/run-naver-shopping-native-host.sh — 바로 그 순간 Chrome 이 실행하고 있을
   # 수 있는 zsh 스크립트다. zsh 는 스크립트를 오프셋 단위로 나눠 읽으므로, 돌고 있는
   # 인터프리터 밑에서 그 아이노드를 잘라내고 다시 쓰면 쓰레기를 읽을 수 있다.
-  #
-  # 신호 (1) 네이티브 호스트 프로세스. 확장이 chrome.runtime.connectNative 로 포트를
-  # 열고 있는 동안에만 존재한다
-  # (tools/naver-shopping-chrome-extension/service-worker.js:816, :530 주석).
-  # 프로세스 argv 에는 상대 경로가 들어가므로 반드시 파일명만으로 맞춰야 한다.
-  #
-  # 신호 (2) 워커 잠금. moment-insight-n-shopping-worker.lock 은 owner.json 을 담은
-  # 디렉터리다(scripts/naver-shopping-local-worker.mjs:540-551). :638 에서 claim-lane
-  # 이전에 잠그고 :1149 에서 release-lane 이후에 푸므로 잠금 구간이 리스 구간을 완전히
-  # 포함한다 — 잠금이 없으면 이 맥은 리스를 쥐고 있지 않다(안전한 방향의 판정이다).
-  # LaunchAgent 의 TMPDIR 이 Chrome 자식 프로세스와 다른 /var/folders 경로로 풀릴 수
-  # 있어 후보 세 곳을 차례로 본다. 죽은 소유자의 잠금은 최대 8시간
-  # (DEFAULT_LOCK_STALE_MS, :24) 남을 수 있으므로, 디렉터리가 있고 owner.json 의 pid
-  # 가 살아 있을 때만 유효한 잠금으로 친다.
-  local COLLECTION_ACTIVE=0
-  if /usr/bin/pgrep -f 'naver-shopping-native-host\.mjs' >/dev/null 2>&1; then
-    COLLECTION_ACTIVE=1
-  fi
-  if (( COLLECTION_ACTIVE == 0 )); then
-    local DARWIN_TEMP_DIRECTORY=""
-    DARWIN_TEMP_DIRECTORY="$(/usr/bin/getconf DARWIN_USER_TEMP_DIR 2>/dev/null)" || DARWIN_TEMP_DIRECTORY=""
-    local -a LOCK_ROOTS=()
-    if [[ -n "${TMPDIR:-}" ]]; then
-      LOCK_ROOTS+=("${TMPDIR%/}")
-    fi
-    if [[ -n "${DARWIN_TEMP_DIRECTORY}" ]]; then
-      LOCK_ROOTS+=("${DARWIN_TEMP_DIRECTORY%/}")
-    fi
-    LOCK_ROOTS+=("/tmp")
-    local LOCK_ROOT="" LOCK_DIRECTORY="" OWNER_JSON="" OWNER_PID=""
-    for LOCK_ROOT in "${LOCK_ROOTS[@]}"; do
-      LOCK_DIRECTORY="${LOCK_ROOT}/moment-insight-n-shopping-worker.lock"
-      [[ -d "${LOCK_DIRECTORY}" ]] || continue
-      OWNER_JSON="$(/bin/cat "${LOCK_DIRECTORY}/owner.json" 2>/dev/null)" || OWNER_JSON=""
-      [[ -n "${OWNER_JSON}" ]] || continue
-      [[ "${OWNER_JSON}" =~ '"pid"[[:space:]]*:[[:space:]]*([0-9]+)' ]] || continue
-      OWNER_PID="${match[1]}"
-      if kill -0 "${OWNER_PID}" 2>/dev/null; then
-        COLLECTION_ACTIVE=1
-        break
-      fi
-    done
-  fi
-  if (( COLLECTION_ACTIVE == 1 )); then
+  if collection_in_progress; then
     log_event "drift_detected files=${DRIFT_COUNT} sync_skipped=collection_active"
     return 0
   fi
@@ -537,6 +551,53 @@ if (( LAST_RESTART_AT > 0 && COOLDOWN_ELAPSED < 0 )); then
 fi
 if (( LAST_RESTART_AT > 0 && COOLDOWN_ELAPSED < RESTART_COOLDOWN_SECONDS )); then
   log_event "restart_suppressed_cooldown seconds_left=$(( RESTART_COOLDOWN_SECONDS - COOLDOWN_ELAPSED ))"
+  exit 0
+fi
+
+# ── 재기동 무효/유해 가드 ────────────────────────────────────
+# 여기까지 왔다는 것은 "대기열 정체가 30분 이상 이어졌고 쿨다운도 비었다"는 뜻이다.
+# 그래도 Chrome 을 다시 여는 것이 유해하거나(수집을 도중에 절단) 무효인(레인은 살아
+# 있고 커밋만 없어 재기동으로는 아무것도 안 고쳐짐) 두 상태가 있다.
+# 두 분기 모두 상태 파일을 쓰지 않는다 — 쿨다운(last_restart_at)을 태우면 정작 재기동이
+# 유효해지는 순간에 3시간을 손 놓게 되고, 정체 시작점(stalled_since)을 지우면 30분
+# 누적이 리셋돼 다음 틱이 다시 stall_started 부터 시작한다. 둘 다 이번 틱만 물러난다.
+# 판정 축은 지금도 queueStalled 하나뿐이다 — 아래 두 관측은 재기동을 '생략'시킬 뿐
+# 절대 '유발'하지 않으므로, 임계·쿨다운 판정을 모두 통과한 이 자리에서만 읽는다.
+
+# 가드 1 — 이 맥이 지금 수집 중이다. 드리프트 경로와 완전히 같은 판정을 그대로 쓴다.
+# 정체 판정은 서버가 본 전체 대기열 이야기이고, 이 신호는 "그 정체를 지금 풀고 있는
+# 수집이 이 맥에서 돌고 있다"는 국지적 사실이다. 그 순간 Chrome 을 끄면 진행 중인
+# 수집 사이클이 통째로 죽어 정체가 오히려 길어진다.
+if collection_in_progress; then
+  log_event "restart_deferred_collection_active stalled_seconds=${STALLED_SECONDS}"
+  exit 0
+fi
+
+# 가드 2 — 레인이 살아 있다(= Chrome 재기동이 무효인 정체).
+# 헬스 본문 파싱은 이 스크립트의 기존 방식(jq 없이 grep/sed)을 그대로 따른다.
+# 신선 기준 15분은 서버의 WORKER_HEARTBEAT_STALE_MINUTES 와 같은 값이다
+# (src/server/naver-shopping/worker-runtime-expectation.mjs). 축이 갈라지면 한쪽은
+# 생존, 다른 쪽은 침묵이라고 동시에 보고하는 구간이 생긴다.
+# 두 신호 중 하나라도 서면 레인 생존으로 본다.
+#   · 하트비트가 15분 안쪽 — 수집기 프로세스는 매분 레인을 잡고 있다. Chrome 을 다시
+#     열어도 죽어 있던 것이 없으니 되살아날 것도 없다.
+#   · lanes.product.commitStalled — "레인은 잡히는데 커밋이 90분+ 없다"는 F11 축.
+#     2026-09-03 게이트 장애의 지문이고, 원인이 서버/게이트 쪽이라 맥 재기동으로는
+#     고쳐지지 않는다.
+# fail-safe: 파싱이 실패해 값이 비면 신선하다고 단정하지 않는다(= 재기동을 그대로
+# 진행). 이 가드의 오작동이 정체 감시를 멈추는 일은 없어야 한다.
+HEARTBEAT_FRESH_MINUTES=15
+# BSD sed(1) 은 라벨 없는 t 를 세미콜론으로 끝낼 수 없다. -n 과 p 플래그로 추출한다.
+HEARTBEAT_AGE_MINUTES="$(print -r -- "${BODY}" | /usr/bin/sed -n -E 's/.*"heartbeatAgeMinutes"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p')"
+LANE_ALIVE=0
+if [[ "${HEARTBEAT_AGE_MINUTES}" =~ '^[0-9]+$' ]] && (( HEARTBEAT_AGE_MINUTES < HEARTBEAT_FRESH_MINUTES )); then
+  LANE_ALIVE=1
+fi
+if print -r -- "${BODY}" | /usr/bin/grep -Eq '"commitStalled"[[:space:]]*:[[:space:]]*true'; then
+  LANE_ALIVE=1
+fi
+if (( LANE_ALIVE == 1 )); then
+  log_event "restart_skipped_lane_alive heartbeat_age_minutes=${HEARTBEAT_AGE_MINUTES:-unknown} stalled_seconds=${STALLED_SECONDS}"
   exit 0
 fi
 

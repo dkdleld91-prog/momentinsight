@@ -10,7 +10,9 @@ import {
 // 여기서는 집계된 정수 하나만 돌려받는다.
 import { countActiveProductKeywordGroups } from "../rank-capacity.mjs";
 import {
+  commitAgeMinutes,
   heartbeatAgeMinutes as heartbeatAgeMinutesFromStamps,
+  workerCommitStalledFromSignals,
   workerOutdatedFromSignals,
 } from "../naver-shopping/worker-runtime-expectation.mjs";
 
@@ -44,6 +46,23 @@ let cached = null;
 // lanes 의 두 키. 입력 레인이 비어 있어도 공개 표면에는 이 두 키가 항상 실린다.
 const LANE_KEYS = ["product", "place"];
 const FAILSAFE_LANE = Object.freeze({ lastSuccessAt: null, stalledMinutes: 0, queueStalled: false });
+// 2026-09-03(F11): 상품 레인에만 두 키를 뒤에 붙인다. 최상위 8키와 앞 3키는 불변이다.
+//   lastCommitAgeMinutes — 코디네이션 last_success_at 기준 커밋 나이(분). 레인 표의
+//                          lastSuccessAt(last_checked_at)과 이름만 비슷할 뿐 축이 다르다.
+//                          판독 불가는 null — 0 으로 접으면 "방금 커밋했다"는 정반대
+//                          단정이 되므로 trackers 의 0-fail-safe 규약을 따르지 않는다.
+//   commitStalled        — "하트비트 신선(<15분) AND 커밋 90분+ 없음 AND 활성 상품
+//                          추적기 > 0". queueStalled 와 독립인 새 불리언이고 최상위
+//                          ok 를 절대 뒤집지 않는다 — 판단은 소비자(워치독·사람)가 한다.
+// 이 축이 필요한 이유(2026-09-03 게이트 장애 2시간): 트래커 격리 코드로 전 키워드가
+// 실패하면 레인 claim(primary_seen_at)은 매분 갱신되는데 커밋은 0 이다. 그 상태에서
+// 상품 실패 경로가 next_check_at 을 +5분씩 재갱신해 아래 queueStalled 조건 (1)이 영원히
+// 거짓이 되므로, 기존 8키 어디에도 정지가 드러나지 않았다(ok:true·크론 202 지속).
+const FAILSAFE_PRODUCT_LANE = Object.freeze({
+  ...FAILSAFE_LANE,
+  lastCommitAgeMinutes: null,
+  commitStalled: false,
+});
 
 // trackers 집계 정수의 안전 변환. 조회 실패·null·NaN·음수·무한대는 전부 0 이다 —
 // "모른다" 를 0 으로 내는 것은 이 엔드포인트의 fail-safe 규약(관측 실패는 경보가 아니다)이다.
@@ -83,7 +102,10 @@ function nonNegativeInteger(value) {
 // "상태 필드는 늘리지 않는다"는 원칙의 첫 예외인 이유는 앞 4키로는 원리적으로
 // 볼 수 없는 사각지대가 실제로 17시간 열려 있었기 때문이다.
 // 2026-09-02(C2 결함 C·K4): 7·8번째 키를 붙인다.
-//   lanes    — { product:{lastSuccessAt, stalledMinutes, queueStalled}, place:{…} }.
+//   lanes    — { product:{lastSuccessAt, stalledMinutes, queueStalled,
+//              lastCommitAgeMinutes, commitStalled}, place:{lastSuccessAt,
+//              stalledMinutes, queueStalled} }. 상품 레인 뒤 2키는 2026-09-03(F11)
+//              커밋 축 — 위 FAILSAFE_PRODUCT_LANE 주석 참조.
 //              앞 4키는 "가장 나쁜 레인"만 말하므로 어느 레인이 죽었는지 이 응답만으로는
 //              알 수 없었다. 레인별 값은 위 최악-레인 계산과 같은 재료에서 나오며,
 //              불변식 최상위 queueStalled === (lanes.product.queueStalled || lanes.place.queueStalled)
@@ -144,18 +166,35 @@ export function rankCollectionHealthBody(input = {}) {
     : null;
 
   const deliberateStop = Boolean(input.deliberateStop);
+  const trackersInput = input.trackers && typeof input.trackers === "object" ? input.trackers : {};
+  const activeProduct = nonNegativeInteger(trackersInput.activeProduct);
+  // F11 커밋 축. 판정은 전부 순수 모듈(workerCommitStalledFromSignals)이 하고 여기서는
+  // 조회 결과를 넘기기만 한다. 세 번째 조건(활성 상품 추적기 > 0)만 이 자리의 몫이다 —
+  // 추적기가 하나도 없으면 커밋이 없는 것이 정상이라 단정하지 않는다. 관측 실패는
+  // activeProduct 가 0 으로 접혀(fail-safe) 자연히 거짓이 된다.
+  // deliberateStop 으로 누르지 않는다 — queueStalled 와 달리 이 키는 재기동을 유발하는
+  // 축이 아니라 "재기동이 무효인 정체"를 알리는 관측이고, 워치독 grep 계약(queueStalled
+  // 문자열)과도 겹치지 않는다.
+  const lastCommitAgeMinutes = commitAgeMinutes({ lastSuccessAt: input.lastSuccessAt, now });
+  const commitStalled = activeProduct > 0 && workerCommitStalledFromSignals({
+    primarySeenAt: input.primarySeenAt,
+    lastSuccessAt: input.lastSuccessAt,
+    now,
+  });
   // 레인별 표면. 이력이 없는 레인(lastCheckedAt=0)은 최악-레인 후보에서 빠지는 것과 같은
   // 이유로 안전값이다. queueStalled 는 최상위와 같은 deliberateStop 억제를 받는다(OR 불변식).
+  // 상품 레인의 커밋 축 두 키는 레인 표가 아니라 코디네이션에서 나오므로, 레인 이력
+  // 유무와 무관하게 항상 실린다.
   const laneBody = (key) => {
     const found = lanes.find((lane) => lane.key === key);
-    if (!found || !(found.lastCheckedAt > 0)) return { ...FAILSAFE_LANE };
-    return {
+    const base = !found || !(found.lastCheckedAt > 0) ? { ...FAILSAFE_LANE } : {
       lastSuccessAt: new Date(found.lastCheckedAt).toISOString(),
       stalledMinutes: Math.max(0, Math.floor((now - found.lastCheckedAt) / 60000)),
       queueStalled: found.laneStalled && !deliberateStop,
     };
+    if (key !== "product") return base;
+    return { ...base, lastCommitAgeMinutes, commitStalled };
   };
-  const trackersInput = input.trackers && typeof input.trackers === "object" ? input.trackers : {};
 
   return {
     ok: true,
@@ -182,15 +221,18 @@ export function rankCollectionHealthBody(input = {}) {
       neverFound: nonNegativeInteger(trackersInput.neverFound),
       stuck: nonNegativeInteger(trackersInput.stuck),
       placePartial: nonNegativeInteger(trackersInput.placePartial),
-      activeProduct: nonNegativeInteger(trackersInput.activeProduct),
+      activeProduct,
       activeProductKeywordGroups: nonNegativeInteger(trackersInput.activeProductKeywordGroups),
     },
   };
 }
 
-// 503 본문과 조회 실패 시 쓰는 안전값. 200 과 같은 모양이다.
+// 503 본문과 조회 실패 시 쓰는 안전값. 200 과 같은 모양이다(상품 레인은 5키).
 function failSafeLanes() {
-  return Object.fromEntries(LANE_KEYS.map((key) => [key, { ...FAILSAFE_LANE }]));
+  return Object.fromEntries(LANE_KEYS.map((key) => [
+    key,
+    key === "product" ? { ...FAILSAFE_PRODUCT_LANE } : { ...FAILSAFE_LANE },
+  ]));
 }
 
 // "대표가 의도한 정지"는 아래 둘뿐이다.

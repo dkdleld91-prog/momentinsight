@@ -393,7 +393,7 @@ function nextDataOptionalString(value, detail, max = 500) {
 
 function nextDataCatalogSellerProductIds(value, detail) {
   if (value == null) return [];
-  if (!Array.isArray(value) || value.length > 100) throw nextDataSchemaError(detail);
+  if (!Array.isArray(value) || value.length > 300) throw nextDataSchemaError(detail);
   const ids = [];
   for (let index = 0; index < value.length; index += 1) {
     const offer = nextDataRecord(value[index], `${detail}.${index}`);

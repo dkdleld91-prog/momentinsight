@@ -7,7 +7,6 @@ import { signLocalWorkerRequest } from "../src/server/local-worker-auth.mjs";
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ENDPOINT_PATH,
-  isStableFiniteCanaryJob,
   localWorkerRankRequest,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
@@ -161,9 +160,7 @@ const SECURITY_FAILURE_CODES = new Set([
   "naver_verification_required",
   "naver_network_restricted",
 ]);
-const EXPECTED_RUNTIME_VERSION = "1.1.20";
-const STABLE_FINITE_RUN_TRIGGER = "rank-catch-up";
-const STABLE_FINITE_WORKER_ID = "windows-desktop-primary";
+const EXPECTED_RUNTIME_VERSION = "1.1.21";
 const WORKER_RUN_TRIGGERS = new Set([
   "manual",
   "rank-catch-up",
@@ -191,7 +188,10 @@ const SUBMIT_PARTIAL_CAUSE_CODES = new Set([
   "local_worker_submit_failed",
 ]);
 const STRICT_TRACKER_PARTIAL_WINDOW_PATTERN = /^provider_partial_window:([1-9]|[1-9][0-9]|[12][0-9]{2})_300$/u;
-const FINITE_CANARY_CADENCE_NEUTRAL_FAILURE_CODES = new Set([
+// A finite market that fails its two-capture proof or its exact match says
+// nothing about the collector's ability to walk a full 300-window, so these
+// tracker-scoped failures never count against the global cadence evidence.
+const FINITE_WINDOW_CADENCE_NEUTRAL_FAILURE_CODES = new Set([
   "provider_stable_finite_window_unproven",
   "local_worker_finite_match_invalid",
 ]);
@@ -234,10 +234,14 @@ function runTriggerInput(options, env) {
   return trigger;
 }
 
+// Every tracker job may prove a stable finite market (fewer than 300 organic
+// rows) on any trigger and any worker. The proof itself — two independent
+// captures with identical ordered direct-ID digests, a verified market total
+// equal to the row count and an exhausted source — is what keeps the finite
+// path safe; no allowlist of trackers, workers or triggers is consulted. A
+// one-off lookup still requires a strict 300-window.
 function stableFinitePrecollectionAllowed(job, context) {
-  return isStableFiniteCanaryJob(job)
-    && context.runTrigger === STABLE_FINITE_RUN_TRIGGER
-    && context.workerId === STABLE_FINITE_WORKER_ID
+  return job?.kind !== "lookup"
     && context.runtimeVersion === EXPECTED_RUNTIME_VERSION
     && RUNTIME_FINGERPRINT_PATTERN.test(context.runtimeFingerprint);
 }
@@ -336,8 +340,8 @@ function isCadenceNeutralTrackerFailure(job, scope, failureCode) {
   if (isStrictTrackerPartialWindowFailure(scope, failureCode)) return true;
   const baseCode = String(failureCode || "").split(":", 1)[0];
   return scope === "tracker"
-    && isStableFiniteCanaryJob(job)
-    && FINITE_CANARY_CADENCE_NEUTRAL_FAILURE_CODES.has(baseCode);
+    && job?.kind !== "lookup"
+    && FINITE_WINDOW_CADENCE_NEUTRAL_FAILURE_CODES.has(baseCode);
 }
 
 function workerCoordinationIdentity(env) {
@@ -784,9 +788,9 @@ export async function runLocalShoppingWorker(options = {}) {
         await reportProgress("navigating", 0, job);
         // claim-lane synchronously registers this exact runtime identity before
         // the first job claim. The server releases the lane and rejects the
-        // action when the finalized fingerprint is not in its 1.1.20 allowlist,
+        // action when the finalized fingerprint is not the expected runtime,
         // so reaching collection preserves that registration-before-claim gate.
-        const finiteCanaryJob = stableFinitePrecollectionAllowed(job, {
+        const allowStableFinite = stableFinitePrecollectionAllowed(job, {
           runTrigger,
           workerId: workerIdentity.workerId,
           runtimeVersion: runtimeIdentity.version,
@@ -803,12 +807,12 @@ export async function runLocalShoppingWorker(options = {}) {
           ),
         );
         const rawWindow = await provider.collect(request, {
-          allowStableFinite: finiteCanaryJob,
+          allowStableFinite,
         });
         const strictWindow = validateStrictLocalWorkerWindow(rawWindow, {
           keyword: job.keyword,
           nowMs: options.nowMs?.() ?? Date.now(),
-          allowStableFinite: finiteCanaryJob,
+          allowStableFinite,
         });
         finiteWindow = strictWindow.finiteWindowProof?.version === "stable-finite-window-v1";
         await reportProgress("submitting", 8, job);

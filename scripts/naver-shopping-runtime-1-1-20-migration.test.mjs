@@ -6,8 +6,6 @@ import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
 
-import { calculateN30RuntimeFingerprint } from "./naver-shopping-runtime-fingerprint.mjs";
-
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationDirectory = path.join(root, "supabase", "migrations");
 const migrationName = "20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql";
@@ -375,25 +373,17 @@ test("replaces only the five runtime-sensitive public functions with locked-down
   assert.equal((migration.match(/to service_role;/giu) || []).length, 6);
 });
 
-test("runtime fingerprint and live surfaces are 1.1.20 while archived evidence stays 1.1.19", () => {
-  assert.deepEqual(calculateN30RuntimeFingerprint({
-    repositoryRoot: root,
-    version: NEW_RUNTIME.version,
-  }).fingerprint, NEW_RUNTIME.fingerprint);
-  assert.match(read("tools/naver-shopping-chrome-extension/manifest.json"), /"version": "1\.1\.20"/u);
-  for (const relativePath of [
-    "scripts/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-shopping-local-worker.mjs",
-    "src/server/handlers/naver-rank-trackers.mjs",
-  ]) {
-    assert.match(read(relativePath), /1\.1\.20/u, relativePath);
-  }
+test("keeps the archived runtime 1.1.20 migration pinned to its historical fingerprint", () => {
+  // 1.1.20 is archived evidence: its migration keeps the fingerprint of the
+  // runtime that produced it, and never learns about the 1.1.21 successor.
+  assert.match(migration, new RegExp(NEW_RUNTIME.fingerprint, "u"));
+  assert.doesNotMatch(migration, /1\.1\.21/u);
   assert.match(priorMigration, new RegExp(OLD_RUNTIME.fingerprint, "u"));
   assert.doesNotMatch(priorMigration, /1\.1\.20/u);
   const finalAudit = read("scripts/naver-shopping-account-priority-final-audit.mjs");
   assert.match(finalAudit, /1\.1\.19/u);
   assert.match(finalAudit, new RegExp(OLD_RUNTIME.fingerprint, "u"));
-  assert.doesNotMatch(finalAudit, /1\.1\.20/u);
+  assert.doesNotMatch(finalAudit, /1\.1\.2[01]/u);
 });
 
 test("PGlite rejects an active request without mutating its frozen evidence", async (t) => {

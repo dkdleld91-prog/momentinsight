@@ -1,6 +1,6 @@
 # 운영 장애 런북 (1페이지)
 
-증상 6개. 각 항목은 **판정 기준 / 확인 명령 1줄 / 조치 / 안 되면 다음** 순서다.
+증상 7개. 각 항목은 **판정 기준 / 확인 명령 1줄 / 조치 / 안 되면 다음** 순서다.
 모든 명령은 저장소 루트(`~/Desktop/개발/모먼트 인사이트 개발`)에서 실행한다.
 아래 "관측된 출력"은 2026-09-01 06:31 UTC에 실제로 1회 실행해 받은 값이다.
 
@@ -76,6 +76,30 @@
   워치독은 헬스 엔드포인트가 401이면 조용히 물러나므로, 증상 ①의 401이 먼저 풀려야 의미가 있다.
 - **안 되면 다음**: 워치독은 증상을 알리는 장치일 뿐이다 — 수집 자체는 증상 ①,
   서버는 증상 ③, 배포는 증상 ②로 각각 판정한다.
+
+## ⑦ 런타임 버전 불일치 (서명은 오는데 수집이 멈춤)
+
+- **판정 기준**: `workerOutdated: true` 또는 `heartbeatAgeMinutes`가 계속 커지는데 nonce 서명은 매분
+  들어온다. 서버·DB·확장(맥/윈도우) 세 곳의 런타임 버전(예: `1.1.21`)이 하나라도 다르면 이 증상이다.
+  서버 코드만 새 버전이면 HTTP 관문은 통과하지만 progress RPC 상수가 옛 버전이라
+  `LOCAL_WORKER_LANE_LOST(409)`가 반복되고, DB만 새 버전이면 HTTP 관문이
+  `LOCAL_WORKER_RUNTIME_IDENTITY_INVALID(400)`으로 끊는다. 2026-09-01의 17시간 정지가 정확히 이 증상이다.
+- **확인 명령**: `node scripts/verify-live.mjs` (`workerOutdated`·`heartbeatAgeMinutes` 행) — DB 쪽은
+  Supabase SQL 편집기에서 `select runtime_version, runtime_fingerprint, primary_seen_at, last_success_at from naver_shopping_worker_coordination where lane_key='global';`
+- **기대 출력 형식** (실측 아님): 정상이면 `workerOutdated: false`, `heartbeatAgeMinutes < 15`, DB 행의
+  `runtime_version`이 서버 상수(`src/server/handlers/naver-shopping-local-worker.mjs`의
+  `EXPECTED_WORKER_RUNTIME_VERSION`)와 같다. 불일치면 `runtime_version`이 옛 버전이거나 `null`로 남는다.
+- **조치**: 세 곳을 같은 버전으로 맞춘다. 순서는 ① 맥·윈도우 Chrome 종료 → ② 제어 평면 유휴 확인
+  (`lease_worker_id`·`run_id`·`current_stage`·`probe_tracker_id` 전부 null, `circuit_state='closed'`) →
+  ③ `main` 배포(증상 ②의 검사 1 PASS) → ④ 해당 런타임 마이그레이션 1회 적용(증상 ⑤) → ⑤ 윈도우는
+  관리자 PowerShell `mi-update.ps1 -ReleaseCommit <main 40자 해시> -ExpectedVersion <버전>` 출력의
+  `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
+  `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
+  `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
+- **안 되면 다음**: 마이그레이션 관문이 `requires_idle_control_plane`으로 거부하면 lease 만료(최대 35분,
+  `WORKER_COLLECTION_LEASE_SECONDS`)를 기다린 뒤 재적용한다. 되돌려야 하면 사전에 작성한 역전환 SQL을
+  같은 정지 창 안에서 적용하고 직전 `main` 커밋으로 ③·⑤를 반복한다. 서명만 오고 진척이 없는 상태는
+  증상 ①의 `NAVER_RANK_WORKER_SILENT`와 겹치므로 버전 대조를 먼저 끝낸 뒤 ①로 넘어간다.
 
 ---
 

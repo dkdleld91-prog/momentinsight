@@ -28,6 +28,14 @@ const ROWS_MAX_COUNT = 500;
 const PAGE_NAVIGATION_BUDGET = 16;
 const STABLE_FINITE_PAGE_NAVIGATION_BUDGET = 24;
 const RENDERED_ORDER_PAGE_NAVIGATION_BUDGET = 24;
+// A zero raw-rank gap on a page seam means Naver reused the previous page's
+// last organic number for the next page's first organic row. Coverage, raw-rank
+// span, cross-page identity rejection and the two-capture direct-ID digest still
+// hold, so a bounded number of seams per capture is tolerated instead of failing
+// the capture. Negative gaps (regression) and over-limit gaps (missing rows) stay
+// fatal. Seven seams exist in one 1..8 capture; more than two reused seams is
+// treated as structural drift.
+const MAX_RENDERED_SEAM_OVERLAP_COUNT = 2;
 const DEADLINE_GUARD_MS = 3_000;
 export const COLLECTION_PROTOCOL = "range-v1";
 
@@ -164,6 +172,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
   let sourceExhausted = false;
   let previousRankStructureSummary = null;
   let previousRenderedStructureSummary = null;
+  let seamOverlapCount = 0;
   const renderedPageStructures = [];
   const renderedOrderCandidate = options.renderedOrderCandidate === true;
   if (renderedOrderCandidate
@@ -197,11 +206,16 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
       const boundaryLimit = previousRenderedStructureSummary
         ? previousRenderedStructureSummary.adSlotCount + structure.adSlotCount + 1
         : 1;
+      // Only a seam between two pages may reuse a raw number; the first page
+      // must still start at raw rank 1 or later.
+      const seamOverlap = previousRenderedStructureSummary != null && boundaryGap === 0;
+      if (seamOverlap) seamOverlapCount += 1;
       if (structure.mode !== "rendered_order_candidate_v1"
         || structure.helperSlotCount !== 0
         || structure.organicCount !== expectedOrganicCount
-        || boundaryGap < 1
-        || boundaryGap > boundaryLimit) {
+        || (boundaryGap < 1 && !seamOverlap)
+        || boundaryGap > boundaryLimit
+        || seamOverlapCount > MAX_RENDERED_SEAM_OVERLAP_COUNT) {
         const encodedGap = boundaryGap < 0 ? `m${Math.abs(boundaryGap)}` : String(boundaryGap);
         throw new ProviderError(
           "provider_stable_rendered_order_unproven",
@@ -216,6 +230,7 @@ function nativeWindowPayloadFromPages(rawRequest, rawPages, options = {}) {
         structure.firstOrganicRawRank,
         structure.lastOrganicRawRank,
         structure.rawRankDigest,
+        seamOverlapCount,
       ]);
       previousRenderedStructureSummary = structure;
     }

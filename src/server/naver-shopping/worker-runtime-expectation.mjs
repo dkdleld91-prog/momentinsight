@@ -23,11 +23,11 @@
 
 // 게이트 상수의 관측자 쪽 사본. 원본(naver-shopping-local-worker.mjs)은 export 하지
 // 않는다 — scripts/check-release-baseline.mjs 와 scripts/check-server-contract.mjs 가
-// `const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.20";` 문자열을 그대로 검사하기 때문에
+// `const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";` 문자열을 그대로 검사하기 때문에
 // export 키워드를 붙이는 순간 두 릴리스 게이트가 깨진다. 사본이 낡는 위험은
 // scripts/rank-collection-stability.test.mjs 의 드리프트 가드가 원본 소스를 정규식으로
 // 파싱해 이 값과 대조하는 방식으로 막는다.
-export const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.20";
+export const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";
 
 // 서명이 이 창 안에 들어와 있어야 "아직 켜진 채 거부당하는 중"이라고 본다.
 // 30분 = HYBRID_WORKER_SILENCE_MINUTES(naver-rank-cron.mjs) 와 같은 길이로 맞춘다.

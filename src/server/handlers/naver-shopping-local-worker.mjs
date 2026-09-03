@@ -4,10 +4,6 @@ import { localWorkerAuthInput, verifyLocalWorkerSignature } from "../local-worke
 import {
   LOCAL_WORKER_BODY_MAX_BYTES,
   LOCAL_WORKER_ORGANIC_LIMIT,
-  STABLE_FINITE_CANARY_PARENT_CATALOG_ID,
-  STABLE_FINITE_CANARY_SELLER_PRODUCT_ID,
-  STABLE_FINITE_CANARY_TRACKER_ID,
-  isStableFiniteCanaryJob,
   localWorkerCollectionKey,
   validateLocalWorkerJob,
   validateStrictLocalWorkerWindow,
@@ -37,7 +33,7 @@ const SNAPSHOT_HISTORY_PER_TRACKER = 120;
 const SAFE_FAILURE_PATTERN = /^[a-z0-9_:-]{3,80}$/u;
 const WORKER_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{2,63}$/u;
 const WORKER_LANE_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
-const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.20";
+const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";
 const WORKER_RUNTIME_VERSION_PATTERN = /^\d+\.\d+\.\d+$/u;
 const WORKER_RUNTIME_FINGERPRINT_PATTERN = /^(?!0{64}$)[0-9a-f]{64}$/u;
 const WORKER_RUN_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -655,10 +651,11 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     requireActiveLease: true,
     nowMs: Date.now(),
   });
-  const finiteCanaryJob = isStableFiniteCanaryJob(job);
+  // Every tracker job may submit a proven stable finite market; a one-off
+  // lookup still requires the strict 300-window.
   const window = validateStrictLocalWorkerWindow(rawWindow, {
     keyword: job.keyword,
-    allowStableFinite: finiteCanaryJob,
+    allowStableFinite: job.kind !== "lookup",
   });
   const finiteWindow = window.finiteWindowProof?.version === "stable-finite-window-v1";
   const counts = {
@@ -675,12 +672,6 @@ async function submitWindow(ctx, rawJob, rawWindow) {
     const claimTrackers = await loadClaimTrackers(ctx, job);
     const verifiedCatalogs = await loadVerifiedCatalogs(ctx, claimTrackers, window.collectedAt);
     for (const { claim, tracker } of claimTrackers) {
-      if (finiteWindow && (
-        tracker.id !== STABLE_FINITE_CANARY_TRACKER_ID
-        || String(tracker.product_id || "").trim() !== STABLE_FINITE_CANARY_SELLER_PRODUCT_ID
-      )) {
-        throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
-      }
       const checkedAt = window.collectedAt;
       const verifiedRelatedCatalogId = verifiedCatalogs.get(String(tracker.id).toLowerCase()) || "";
       const directTarget = buildRankTarget({
@@ -720,20 +711,11 @@ async function submitWindow(ctx, rawJob, rawWindow) {
       if (result.trackingRankSource === "related_catalog" && !exactDirectCatalogRelationship) {
         throw workerError("LOCAL_WORKER_MATCH_RESULT_INCOMPLETE", 422);
       }
-      const exactParentRelationship = exactDirectCatalogRelationship
-        && String(tracker.product_id || "").trim() === STABLE_FINITE_CANARY_SELLER_PRODUCT_ID
-        && relatedCatalogId === STABLE_FINITE_CANARY_PARENT_CATALOG_ID;
-      if (finiteCanaryJob && result.trackingRankSource === "related_catalog" && !exactParentRelationship) {
-        throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
-      }
-      if (finiteWindow && (
-        result.matched !== true
-        || Number(result.rank) < 1
-        || Number(result.rank) > window.checkedCount
-        || result.sourceExhausted !== true
-        || result.finiteWindowProofVersion !== "stable-finite-window-v1"
-        || !exactParentRelationship
-      )) {
+      // A proven finite market commits whatever it truthfully shows: the exact
+      // seller product, a directly linked parent catalog, or "not found" with
+      // no rank. The proof (two identical direct-ID captures, verified market
+      // total, exhausted source) is the safety boundary, not the outcome.
+      if (finiteWindow && !isValidFiniteMatchResult(result, window.checkedCount)) {
         throw workerError("LOCAL_WORKER_FINITE_MATCH_INVALID", 422);
       }
       const message = representativeTrackingRankMessage(result);
@@ -796,22 +778,35 @@ function reconciledSubmitCounts(claimResults) {
   };
 }
 
-function isExactFiniteCanarySnapshot(row) {
+const FINITE_TRACKING_RANK_SOURCES = new Set(["exact_product", "related_catalog", "not_found"]);
+
+function isValidFiniteMatchResult(result, checkedCount) {
+  const source = result?.trackingRankSource;
+  if (result?.sourceExhausted !== true
+    || result?.finiteWindowProofVersion !== "stable-finite-window-v1"
+    || !FINITE_TRACKING_RANK_SOURCES.has(source)) return false;
+  if (result.matched === true) {
+    const rank = Number(result.rank);
+    return source !== "not_found"
+      && Number.isSafeInteger(rank)
+      && rank >= 1
+      && rank <= checkedCount;
+  }
+  return result.matched === false && result.rank == null && source === "not_found";
+}
+
+function isExactFiniteSnapshot(row) {
   const checkedCount = row?.checked_count;
   const rank = row?.rank;
   const total = row?.total;
   const item = row?.item;
+  const source = item?.trackingRankSource;
   const sellerProductIds = item?.catalogSellerProductIds;
-  return Number.isSafeInteger(checkedCount)
+  const baseShape = Number.isSafeInteger(checkedCount)
     && checkedCount >= 1
     && checkedCount < LOCAL_WORKER_ORGANIC_LIMIT
-    && String(row?.tracker_id || "").toLowerCase() === STABLE_FINITE_CANARY_TRACKER_ID
     && /^pw-chrome-/u.test(String(row?.collection_id || ""))
     && row?.source === "naver_shopping_results_collector"
-    && row?.matched === true
-    && Number.isSafeInteger(rank)
-    && rank >= 1
-    && rank <= checkedCount
     && total === checkedCount
     && Array.isArray(row?.top_items)
     && row.top_items.every((topItem) => topItem?.isOrganic === true && topItem?.isAd === false)
@@ -823,21 +818,31 @@ function isExactFiniteCanarySnapshot(row) {
     && Number.isSafeInteger(item.finiteMarketTotal)
     && item.finiteMarketTotal === checkedCount
     && item.atomicSuccessEligible === false
-    && item.trackingRankSource === "related_catalog"
-    && String(item.relatedCatalogProductId || "") === STABLE_FINITE_CANARY_PARENT_CATALOG_ID
-    && item.relatedCatalogRelationBasis === "catalog_seller_product_id"
-    && String(item.catalogId || "") === STABLE_FINITE_CANARY_PARENT_CATALOG_ID
-    && Array.isArray(sellerProductIds)
-    && sellerProductIds.length >= 1
-    && sellerProductIds.length <= 100
-    && sellerProductIds.every((sellerId) => /^[0-9]{5,80}$/u.test(String(sellerId || "")))
-    && sellerProductIds.includes(STABLE_FINITE_CANARY_SELLER_PRODUCT_ID)
     && item.rankPolicy === "organic_only"
     && item.adExcluded === true
     && item.rankEvidence === "naver_shopping_organic_list"
     && item.collectionId === row.collection_id
+    && FINITE_TRACKING_RANK_SOURCES.has(source);
+  if (!baseShape) return false;
+  if (row.matched !== true) {
+    return row.matched === false && rank == null && source === "not_found";
+  }
+  const matchedShape = source !== "not_found"
+    && Number.isSafeInteger(rank)
+    && rank >= 1
+    && rank <= checkedCount
     && item.isOrganic === true
     && item.isAd === false;
+  if (!matchedShape) return false;
+  if (source !== "related_catalog") return true;
+  const relatedCatalogId = String(item.relatedCatalogProductId || "");
+  return relatedCatalogId !== ""
+    && item.relatedCatalogRelationBasis === "catalog_seller_product_id"
+    && String(item.catalogId || "") === relatedCatalogId
+    && Array.isArray(sellerProductIds)
+    && sellerProductIds.length >= 1
+    && sellerProductIds.length <= 300
+    && sellerProductIds.every((sellerId) => /^[0-9]{5,80}$/u.test(String(sellerId || "")));
 }
 
 function isExactTrackerClaimLedger(row, context) {
@@ -867,12 +872,16 @@ function isExactFiniteCommitLedger(row, context) {
     && row?.details?.sourceExhausted === true
     && Number.isSafeInteger(row?.details?.marketTotal)
     && row.details.marketTotal === checkedCount
-    && row?.details?.matched === true
-    && Number.isSafeInteger(rank)
-    && rank === context.snapshot.rank
-    && rank >= 1
-    && rank <= checkedCount
-    && row?.details?.relationBasis === "catalog_seller_product_id"
+    && row?.details?.matched === context.snapshot.matched
+    && (context.snapshot.matched === true
+      ? (Number.isSafeInteger(rank)
+        && rank === context.snapshot.rank
+        && rank >= 1
+        && rank <= checkedCount)
+      : (rank == null && context.snapshot.rank == null))
+    && (context.snapshot.item?.trackingRankSource === "related_catalog"
+      ? row?.details?.relationBasis === "catalog_seller_product_id"
+      : row?.details?.relationBasis == null)
     && row?.details?.atomicSuccessEligible === false;
 }
 
@@ -913,10 +922,15 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId, control = {}) {
   if (snapshotError) throw workerError("LOCAL_WORKER_COORDINATION_UNAVAILABLE", 503);
   const committedIds = new Set((snapshots || []).map((row) => String(row?.tracker_id || "").toLowerCase()));
   const exactFiniteSnapshots = new Map((snapshots || [])
-    .filter(isExactFiniteCanarySnapshot)
+    .filter(isExactFiniteSnapshot)
     .map((row) => [String(row?.tracker_id || "").toLowerCase(), row]));
+  // Only a finite-looking snapshot needs its scheduler ledger to confirm the
+  // finite terminal; atomic 300 snapshots reconcile from the snapshot alone.
+  const finiteLooking = (snapshots || []).some((row) => (
+    row?.item?.finiteWindowProofVersion === "stable-finite-window-v1"
+  ));
   let schedulerLedgers = [];
-  if (isStableFiniteCanaryJob(job)) {
+  if (finiteLooking) {
     const { data, error } = await ctx.supabaseAdmin
       .from("naver_shopping_scheduler_events")
       .select("event_type, claim_id, run_id, worker_id, tracker_id, lease_started_at, collection_id, checked_count, details")
@@ -946,7 +960,7 @@ async function reconcileSubmit(ctx, rawJob, rawCollectionId, control = {}) {
     };
   });
   const counts = reconciledSubmitCounts(claimResults);
-  if (!isStableFiniteCanaryJob(job)) return counts;
+  if (!finiteLooking) return counts;
   const finiteCommittedCount = claimResults.filter((result) => {
     if (result.status !== "already_committed") return false;
     const snapshot = exactFiniteSnapshots.get(result.claimId);

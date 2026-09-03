@@ -231,6 +231,18 @@ function renderedOrderBoundaryGapZeroPages() {
   });
 }
 
+// Deterministic seam reuse: every page after the first starts at the previous
+// page's last organic raw number (gap 0) for `seamCount` consecutive seams.
+function renderedOrderSeamOverlapPages(seamCount = 1) {
+  return renderedOrderDriftPages((pages) => {
+    for (let seam = 1; seam <= seamCount; seam += 1) {
+      mutateRenderedPage(pages, seam + 1, (entries) => {
+        for (const entry of renderedOrganicEntries(entries)) entry.item.rank -= seam;
+      });
+    }
+  });
+}
+
 function renderedOrderBoundaryGapAboveLimitPages() {
   return renderedOrderDriftPages((pages) => {
     mutateRenderedPage(pages, 2, (entries) => {
@@ -726,10 +738,194 @@ test("native provider accepts rendered order only after two distinct matching ra
   );
 });
 
-test("native provider recovers one transient rendered page boundary only with a matching third pass", async () => {
+test("native provider accepts one zero-gap page seam as a valid capture without a third pass", async () => {
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   const passes = [
     renderedOrderBoundaryGapZeroPages(),
+    renderedOrderDriftPages(),
+  ];
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "a zero-gap seam must not require a third capture");
+      return {
+        type: "collection",
+        captureId: `rendered-boundary-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 2);
+  assert.deepEqual(messages.map(({ pageStart, pageEnd, stableProofPass }) => (
+    [pageStart, pageEnd, stableProofPass]
+  )), [
+    [undefined, undefined, undefined],
+    [1, 8, 2],
+  ]);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  assert.equal(result.renderedOrderProof?.passCount, 2);
+  assert.deepEqual(
+    result.renderedOrderProof?.captureIds,
+    ["rendered-boundary-1", "rendered-boundary-2"],
+  );
+  assert.equal(
+    result.renderedOrderProof?.passDigests[0],
+    result.renderedOrderProof?.passDigests[1],
+  );
+});
+
+test("native provider proves a deterministic zero-gap seam from two matching captures", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  // The Production `page_boundary:2:g0:l29` signature repeats identically on
+  // every capture, so both passes carry the same seam reuse.
+  const passes = [renderedOrderSeamOverlapPages(1), renderedOrderSeamOverlapPages(1)];
+  for (const pages of passes) {
+    assert.throws(
+      () => buildNativeWindowFromPages(request(nowMs), pages, { nowMs }),
+      (error) => error?.code === "naver_next_data_rank_drift",
+      "each seam pass must remain rejected by the strict parser",
+    );
+  }
+  const messages = [];
+  const provider = createChromeNativeProvider({
+    nowMs: () => nowMs,
+    async exchange(message) {
+      messages.push(message);
+      assert.ok(messages.length <= 2, "identical seam captures must never start a third capture");
+      return {
+        type: "collection",
+        captureId: `rendered-seam-${messages.length}`,
+        pages: passes[messages.length - 1],
+      };
+    },
+  });
+
+  const result = await provider.collect(request(nowMs));
+
+  assert.equal(messages.length, 2);
+  assert.equal(result.checkedCount, 300);
+  assert.deepEqual(
+    result.items.map((item) => item.organicRank),
+    Array.from({ length: 300 }, (_, index) => index + 1),
+  );
+  assert.equal(result.renderedOrderProof?.version, STABLE_RENDERED_ORDER_PROOF_VERSION);
+  assert.deepEqual(result.renderedOrderProof?.captureIds, ["rendered-seam-1", "rendered-seam-2"]);
+  assert.equal(
+    result.renderedOrderProof?.passDigests[0],
+    result.renderedOrderProof?.passDigests[1],
+  );
+  assert.equal(
+    result.renderedOrderProof?.structureDigests[0],
+    result.renderedOrderProof?.structureDigests[1],
+  );
+});
+
+test("native provider bounds zero-gap seam tolerance to two seams per capture", async (t) => {
+  await t.test("two seams stay valid", async () => {
+    const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+    const passes = [renderedOrderSeamOverlapPages(2), renderedOrderSeamOverlapPages(2)];
+    const messages = [];
+    const provider = createChromeNativeProvider({
+      nowMs: () => nowMs,
+      async exchange(message) {
+        messages.push(message);
+        return {
+          type: "collection",
+          captureId: `rendered-two-seams-${messages.length}`,
+          pages: passes[messages.length - 1],
+        };
+      },
+    });
+    const result = await provider.collect(request(nowMs));
+    assert.equal(messages.length, 2);
+    assert.equal(result.checkedCount, 300);
+    assert.equal(result.renderedOrderProof?.passCount, 2);
+  });
+
+  await t.test("a third seam is a numeric boundary failure", async () => {
+    const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+    const passes = [renderedOrderSeamOverlapPages(3), renderedOrderSeamOverlapPages(3)];
+    const messages = [];
+    const provider = createChromeNativeProvider({
+      nowMs: () => nowMs,
+      async exchange(message) {
+        messages.push(message);
+        assert.ok(messages.length <= 2, "two seam-overflow passes must never start pass C");
+        return {
+          type: "collection",
+          captureId: `rendered-three-seams-${messages.length}`,
+          pages: passes[messages.length - 1],
+        };
+      },
+    });
+    await assert.rejects(
+      () => provider.collect(request(nowMs)),
+      (error) => error?.code === "provider_stable_rendered_order_unproven"
+        && /^page_boundary:4:g0:l[0-9]{1,3}$/u.test(String(error?.detail || "")),
+    );
+    assert.equal(messages.length, 2);
+  });
+});
+
+test("native provider keeps negative, over-limit and digest-mismatch seams fatal after the zero-gap tolerance", async (t) => {
+  for (const scenario of [
+    {
+      name: "negative gap in both passes",
+      passes: [renderedOrderBoundaryNegativeGapPages(), renderedOrderBoundaryNegativeGapPages()],
+      expectedDetail: /^page_boundary:2:gm1:l[0-9]{1,3}$/u,
+    },
+    {
+      name: "gap above the ad-slot limit in both passes",
+      passes: [renderedOrderBoundaryGapAboveLimitPages(), renderedOrderBoundaryGapAboveLimitPages()],
+      expectedDetail: /^page_boundary:2:g4[0-9]:l[0-9]{1,3}$/u,
+    },
+    {
+      name: "zero-gap seam whose direct-ID order differs between captures",
+      passes: [renderedOrderBoundaryGapZeroPages(), renderedOrderIdentitySwapPages()],
+      expectedDetail: "digest_mismatch",
+    },
+  ]) {
+    await t.test(scenario.name, async () => {
+      const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+      const messages = [];
+      const provider = createChromeNativeProvider({
+        nowMs: () => nowMs,
+        async exchange(message) {
+          messages.push(message);
+          assert.ok(messages.length <= 2, "fatal seams must never start pass C");
+          return {
+            type: "collection",
+            captureId: `rendered-fatal-seam-${messages.length}`,
+            pages: scenario.passes[messages.length - 1],
+          };
+        },
+      });
+      await assert.rejects(
+        () => provider.collect(request(nowMs)),
+        (error) => error?.code === "provider_stable_rendered_order_unproven"
+          && (scenario.expectedDetail instanceof RegExp
+            ? scenario.expectedDetail.test(String(error?.detail || ""))
+            : error?.detail === scenario.expectedDetail),
+        scenario.name,
+      );
+      assert.equal(messages.length, 2);
+    });
+  }
+});
+
+test("native provider recovers one transient negative rendered page boundary only with a matching third pass", async () => {
+  const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
+  const passes = [
+    renderedOrderBoundaryNegativeGapPages(),
     renderedOrderDriftPages(),
     renderedOrderDriftPages(),
   ];
@@ -892,10 +1088,16 @@ test("native provider rejects every unsafe third rendered-order pass without a f
       expectedDetail: "capture_ids",
     },
     {
-      name: "second zero-gap boundary",
-      thirdPages: renderedOrderBoundaryGapZeroPages,
+      name: "second negative-gap boundary",
+      thirdPages: renderedOrderBoundaryNegativeGapPages,
       expectedCode: "provider_stable_rendered_order_unproven",
-      expectedDetail: /^page_boundary:2:g0:l[0-9]{1,3}$/u,
+      expectedDetail: /^page_boundary:2:gm1:l[0-9]{1,3}$/u,
+    },
+    {
+      name: "zero-gap seam overflow in the third pass",
+      thirdPages: () => renderedOrderSeamOverlapPages(3),
+      expectedCode: "provider_stable_rendered_order_unproven",
+      expectedDetail: /^page_boundary:4:g0:l[0-9]{1,3}$/u,
     },
     {
       name: "cross-page direct identity overlap",
@@ -930,7 +1132,7 @@ test("native provider rejects every unsafe third rendered-order pass without a f
     await t.test(scenario.name, async () => {
       const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
       const passes = [
-        renderedOrderBoundaryGapZeroPages(),
+        renderedOrderBoundaryNegativeGapPages(),
         renderedOrderDriftPages(),
         scenario.thirdPages(),
       ];
@@ -967,7 +1169,7 @@ test("native provider does not start C when its final deadline guard is reached"
   const nowMs = Date.parse("2026-08-02T08:00:00.000Z");
   let nearDeadline = false;
   const messages = [];
-  const passes = [renderedOrderBoundaryGapZeroPages(), renderedOrderDriftPages()];
+  const passes = [renderedOrderBoundaryNegativeGapPages(), renderedOrderDriftPages()];
   const provider = createChromeNativeProvider({
     nowMs: () => (nearDeadline ? nowMs + 178_000 : nowMs),
     async exchange(message) {
@@ -1808,7 +2010,7 @@ test("Chrome extension restores the direct eight-page price-comparison route wit
   const localWorkerContract = fs.readFileSync(new URL("../src/server/naver-shopping/local-worker-contract.mjs", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(path.join(extensionDirectory, "manifest.json"), "utf8"));
 
-  assert.equal(manifest.version, "1.1.20");
+  assert.equal(manifest.version, "1.1.21");
   assert.deepEqual(manifest.host_permissions, ["https://search.shopping.naver.com/*"]);
   assert.match(serviceWorker, /function searchUrl\(keyword, pageIndex\)/u);
   assert.match(serviceWorker, /new URL\("https:\/\/search\.shopping\.naver\.com\/search\/all"\)/u);
@@ -3116,7 +3318,7 @@ test("Chrome worker removes legacy controller tabs and only surfaces Naver verif
   const verificationSurfaceSource = serviceWorker.slice(verificationSurfaceStart, verificationSurfaceEnd);
   const nonVerificationSurfaceSource = `${serviceWorker.slice(0, verificationSurfaceStart)}${serviceWorker.slice(verificationSurfaceEnd)}`;
 
-  assert.equal(manifest.version, "1.1.20");
+  assert.equal(manifest.version, "1.1.21");
   assert.match(verificationGuardSource, /if \(trigger === "manual"\) return false/u);
   assert.match(verificationGuardSource, /await verificationState\(\)/u);
   assert.match(verificationGuardSource, /verification\.blockedUntil > Date\.now\(\)/u);
@@ -3291,7 +3493,7 @@ test("native host rejects an unknown run trigger before runtime handoff", () => 
   const body = Buffer.from(JSON.stringify({
     action: "run",
     trigger: "unknown-trigger",
-    runtimeVersion: "1.1.20",
+    runtimeVersion: "1.1.21",
     serviceWorkerSha256: "0".repeat(64),
   }), "utf8");
   const header = Buffer.alloc(4);

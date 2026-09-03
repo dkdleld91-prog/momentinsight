@@ -239,6 +239,7 @@ const shoppingStableFiniteWindowRuntime1117Migration = read("supabase/migrations
 const shoppingStableFiniteWindowRuntime1118Migration = read("supabase/migrations/20260830064426_naver_shopping_runtime_1_1_18_rank_drift_diagnostics.sql");
 const shoppingStableRenderedOrderRuntime1119Migration = read("supabase/migrations/20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql");
 const shoppingRenderedBoundaryConsensusRuntime1120Migration = read("supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql");
+const shoppingFiniteGeneralRuntime1121Migration = read("supabase/migrations/20260903090000_naver_shopping_runtime_1_1_21_finite_general_and_seam_tolerance.sql");
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
 const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
@@ -267,9 +268,11 @@ const shoppingWorkerRuntime1118Fingerprint =
   "65e3f53a81dd71ff33e7a200344d5cb7f50833d182965fbe8e66b698c3eb9d2c";
 const shoppingWorkerRuntime1119Fingerprint =
   "631f2a556a1337ed9e9e9a72c8f07ed607928e97853b7d93611be04d97bfa13e";
-const shoppingWorkerRuntime1120Fingerprint = calculateN30RuntimeFingerprint({
+const shoppingWorkerRuntime1120Fingerprint =
+  "4e0f5fbde16a892e44986b2325865f33d61bdf7a5a13d3d7adcd501608aa8e5b";
+const shoppingWorkerRuntime1121Fingerprint = calculateN30RuntimeFingerprint({
   repositoryRoot: process.cwd(),
-  version: "1.1.20",
+  version: "1.1.21",
 }).fingerprint;
 const shoppingErrorTaxonomyLookupBranch = shoppingErrorTaxonomyHardeningMigration.match(
   /if normalized_scope = 'lookup' then[\s\S]*?\n  end if;/u,
@@ -1666,7 +1669,7 @@ const checks = {
     && shoppingChromeWorker.includes("NAVER_ACCESS_COOLDOWN_CODES")
     && shoppingNativeHostWrapper.includes('MI_NAVER_SHOPPING_LOCAL_WORKER_MAX_JOBS="1"')
     && shoppingChromeWorker.includes('failed > 0 ? "partial" : "completed"'),
-  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.20"
+  shoppingRemoteWakeIsAtomicAndOneJobBounded: shoppingChromeManifest.version === "1.1.21"
     && shoppingChromeManifest.icons?.[16] === "icon16.png"
     && shoppingChromeManifest.icons?.[128] === "icon128.png"
     && shoppingChromeWorker.includes('["rank-remote", { delayInMinutes: 1, periodInMinutes: 1 }]')
@@ -1679,9 +1682,9 @@ const checks = {
     && shoppingChromeWorker.includes('port.postMessage(nativeReadyAcknowledgement(message))')
     && shoppingChromeWorker.includes('return { action: "ready_ack", collectionProtocol: COLLECTION_PROTOCOL }')
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
-    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.20";')
-    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.20";')
-    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.20";')
+    && shoppingLocalWorker.includes('const EXPECTED_RUNTIME_VERSION = "1.1.21";')
+    && shoppingLocalWorkerHandler.includes('const EXPECTED_WORKER_RUNTIME_VERSION = "1.1.21";')
+    && rankServer.includes('const SHOPPING_WORKER_EXPECTED_RUNTIME_VERSION = "1.1.21";')
     && shoppingChromeWorker.includes("chrome.runtime.getManifest().version")
     && shoppingChromeWorker.includes('crypto.subtle.digest(\n        "SHA-256"')
     && shoppingNativeHost.includes("async function runtimeIdentity(start)")
@@ -2109,8 +2112,21 @@ const checks = {
     && shoppingRenderedBoundaryConsensusRuntime1120Migration.includes("naver_shopping_runtime_1_1_20_requires_completed_account_priority")
     && shoppingRenderedBoundaryConsensusRuntime1120Migration.includes("security invoker")
     && shoppingRenderedBoundaryConsensusRuntime1120Migration.includes("set search_path = ''")
-    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.20";')
-    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1120Fingerprint)
+    && shoppingFiniteGeneralRuntime1121Migration.includes("current_row.runtime_version is distinct from '1.1.20'")
+    && shoppingFiniteGeneralRuntime1121Migration.includes(shoppingWorkerRuntime1120Fingerprint)
+    && shoppingFiniteGeneralRuntime1121Migration.includes("set runtime_version = '1.1.21'")
+    && shoppingFiniteGeneralRuntime1121Migration.includes(shoppingWorkerRuntime1121Fingerprint)
+    && shoppingFiniteGeneralRuntime1121Migration.includes("expected_runtime_version constant text := '1.1.21'")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("naver_shopping_runtime_1_1_21_requires_completed_account_priority")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("create or replace function public.mi_commit_naver_shopping_finite_worker_result(")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("tracking_rank_source not in ('exact_product', 'related_catalog')")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("finite_checked_count not between 1 and 299")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("jsonb_array_length(item -> 'catalogSellerProductIds') not between 1 and 300")
+    && !shoppingFiniteGeneralRuntime1121Migration.includes("create or replace function public.mi_commit_naver_shopping_worker_result(")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("security invoker")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("set search_path = ''")
+    && shoppingCandidatePerformanceAudit.includes('export const N30_TARGET_RUNTIME_VERSION = "1.1.21";')
+    && shoppingCandidatePerformanceAudit.includes(shoppingWorkerRuntime1121Fingerprint)
     && !shoppingStableFiniteWindowMigration.includes("__N30_RUNTIME_1_1_14_FINGERPRINT__")
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
@@ -2204,7 +2220,7 @@ const checks = {
     && shoppingLocalWorker.includes("processedCount !== job.claims.length")
     && shoppingNativeHostCore.includes("native_host_request_id_mismatch")
     && serverIndex.includes("LOCAL_WORKER_BODY_MAX_BYTES"),
-  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.20"
+  shoppingManualExtensionQueuesEntireTrackerSite: shoppingChromeManifest.version === "1.1.21"
     && shoppingChromeWorker.includes('port.postMessage({ action: "run", trigger, ...runtimeIdentity })')
     && shoppingChromeWorker.includes('setTimeout(() => finish(new Error("native_host_timeout")), 30 * 60_000)')
     && shoppingLocalWorkerHandler.includes("WORKER_COLLECTION_LEASE_SECONDS = 35 * 60")

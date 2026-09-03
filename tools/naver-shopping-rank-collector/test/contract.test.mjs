@@ -376,6 +376,33 @@ test("preserves only bounded numeric seller-product ids proven inside a catalog 
   );
 });
 
+test("accepts up to 300 catalog seller-product ids per card and rejects 301", () => {
+  const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
+  const sellerIds = (count) => Array.from({ length: count }, (_, index) => String(20000000000 + index));
+  const window = validWindow();
+  window.items[0] = {
+    ...window.items[0],
+    productType: 1,
+    catalogId: window.items[0].productId,
+    catalogSellerProductIds: sellerIds(300),
+  };
+  const result = validateProviderWindow(window, request);
+  assert.equal(result.items[0].catalogSellerProductIds.length, 300);
+  assert.equal(result.items[0].catalogSellerProductIds[299], "20000000299");
+
+  assertContractError(
+    () => validateProviderWindow({
+      ...window,
+      items: [{
+        ...window.items[0],
+        catalogSellerProductIds: sellerIds(301),
+      }, window.items[1]],
+    }, request),
+    "invalid_provider_response",
+    "items.1.catalogSellerProductIds",
+  );
+});
+
 test("keeps a complete rank window when the optional market total is unavailable", () => {
   const request = validateRankRequest(rankRequest(), { nowMs: NOW_MS });
   const result = validateProviderWindow({

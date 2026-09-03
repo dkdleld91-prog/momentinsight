@@ -1059,6 +1059,28 @@ test("maps explicit parentCatalogId and product shape without treating parentId 
   assert.equal(matchedSingle.productType, 3);
 });
 
+test("accepts up to 300 direct catalog seller ids and fails closed at 301", () => {
+  const lowMallList = (count) => Array.from({ length: count }, (_, index) => ({
+    nvMid: String(60000000000 + index),
+    mallPid: String(20000000000 + index),
+  }));
+  const parsed = parseNaverNextDataPage(nextDataFixture({
+    total: 1,
+    entries: [nextDataCatalog(1, { lowMallList: lowMallList(300) })],
+  }), { pageIndex: 1, keyword: "온열찜질기" });
+  assert.equal(parsed.rows[0].catalogSellerProductIds.length, 300);
+  assert.equal(parsed.rows[0].catalogSellerProductIds[0], "20000000000");
+  assert.equal(parsed.rows[0].catalogSellerProductIds[299], "20000000299");
+
+  assert.throws(
+    () => parseNaverNextDataPage(nextDataFixture({
+      total: 1,
+      entries: [nextDataCatalog(1, { lowMallList: lowMallList(301) })],
+    }), { pageIndex: 1, keyword: "온열찜질기" }),
+    (error) => error instanceof ProviderError && error.code === "naver_next_data_schema_drift",
+  );
+});
+
 test("fails closed when mallProductId conflicts with a direct seller-product link", () => {
   const payload = nextDataFixture({
     total: 1,

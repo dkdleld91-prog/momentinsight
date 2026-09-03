@@ -125,6 +125,10 @@ export function validateStrictLocalWorkerWindow(payload, options = {}) {
   return trusted;
 }
 
+// Audit-only identity of the original stable-finite canary. Since runtime
+// 1.1.21 no collector, handler or database gate consults it: every tracker job
+// may commit a proven finite market. It remains exported so archived audits
+// and tests can keep naming the canary that produced the historical evidence.
 export function isStableFiniteCanaryJob(job = {}) {
   return job?.kind !== "lookup"
     && normalizeText(job?.keyword) === STABLE_FINITE_CANARY_KEYWORD

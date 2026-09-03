@@ -49,7 +49,7 @@ function signedRequest(payload, options = {}) {
     coordinatedPayload = {
       ...coordinatedPayload,
       runId: coordinatedPayload.runId || RUN_ID,
-      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.20",
+      runtimeVersion: coordinatedPayload.runtimeVersion || "1.1.21",
       runtimeFingerprint: coordinatedPayload.runtimeFingerprint || RUNTIME_FINGERPRINT,
       runTrigger: coordinatedPayload.runTrigger || "rank-catch-up",
     };
@@ -291,6 +291,44 @@ function stableFiniteParentWindow(options = {}) {
   };
 }
 
+// One proven finite market for the default "온열찜질기" tracker: 27 organic rows
+// whose seller ids start at `sellerOffset + 1`. With the default offset the
+// tracked seller product 2000000011 sits at organic rank 11; with offset 100
+// the market never lists it.
+function stableFiniteExactWindow(options = {}) {
+  const count = options.count || 27;
+  const sellerOffset = options.sellerOffset || 0;
+  const items = Array.from({ length: count }, (_, index) => ({
+    ...organicItem(sellerOffset + index + 1),
+    organicRank: index + 1,
+    productType: 2,
+  }));
+  const digest = stableFiniteWindowDigest(items, {
+    keyword: "온열찜질기",
+    marketTotal: items.length,
+  });
+  return {
+    ...completeWindow(),
+    collectionId: `pw-chrome-${Date.now()}-finite-exact-test`,
+    sourceExhausted: true,
+    marketTotal: items.length,
+    marketTotalStatus: "verified",
+    checkedCount: items.length,
+    rawCount: items.length,
+    items,
+    finiteWindowProof: {
+      version: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      passCount: 2,
+      pageCount: 8,
+      pageSize: 40,
+      captureIds: ["finite-capture-0001", "finite-capture-0002"],
+      passDigests: [digest, digest],
+      marketTotal: items.length,
+      checkedCount: items.length,
+    },
+  };
+}
+
 function strictParentWindow(options = {}) {
   const window = completeWindow();
   const keyword = options.keyword || FINITE_CANARY_KEYWORD;
@@ -312,7 +350,8 @@ function strictParentWindow(options = {}) {
     sellerProductId: "",
     catalogId: parentCatalogId,
     linkedCatalogId: parentCatalogId,
-    catalogSellerProductIds: [options.relatedSellerProductId || sellerProductId],
+    catalogSellerProductIds: options.catalogSellerProductIds
+      || [options.relatedSellerProductId || sellerProductId],
     title: sharedTitle,
     image: sharedImage,
     mallName: "네이버",
@@ -661,7 +700,7 @@ test("primary worker claims the global lane through the service-role-only RPC", 
             };
           }
           assert.equal(name, "mi_report_naver_shopping_worker_progress");
-          assert.equal(args.p_runtime_version, "1.1.20");
+          assert.equal(args.p_runtime_version, "1.1.21");
           assert.equal(args.p_runtime_fingerprint, RUNTIME_FINGERPRINT);
           assert.equal(args.p_run_trigger, "rank-catch-up");
           assert.equal(args.p_stage, "claiming");
@@ -787,7 +826,7 @@ test("records signed progress and atomic 300 success evidence against the active
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.20",
+      runtimeVersion: "1.1.21",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
     };
     const progressResponse = await handleLocalWorkerRequest(signedRequest({
@@ -847,7 +886,7 @@ test("records typed tracker failures without changing rank data in the HTTP hand
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.20",
+      runtimeVersion: "1.1.21",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "온열찜질기",
@@ -889,7 +928,7 @@ test("records an isolated lookup failure without assigning it a tracker id", asy
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.20",
+      runtimeVersion: "1.1.21",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         kind: "lookup",
@@ -931,7 +970,7 @@ test("forwards a bounded duplicate-identity suffix as one tracker-scoped failure
       workerId: WORKER_ID,
       laneToken: LANE_TOKEN,
       runId: RUN_ID,
-      runtimeVersion: "1.1.20",
+      runtimeVersion: "1.1.21",
       runtimeFingerprint: RUNTIME_FINGERPRINT,
       job: {
         keyword: "남성 사각팬티",
@@ -1020,7 +1059,7 @@ test("claim resets the exact signed idle envelope after touch and before repair 
       p_page: 0,
       p_job_kind: null,
       p_tracker_id: null,
-      p_runtime_version: "1.1.20",
+      p_runtime_version: "1.1.21",
       p_runtime_fingerprint: RUNTIME_FINGERPRINT,
       p_run_trigger: "rank-catch-up",
     });
@@ -2549,7 +2588,7 @@ test("prefers the exact catalog seller-product parent at rank 9 over an unrelate
   });
 });
 
-test("rejects a same-title same-thumbnail catalog when the exact seller-product relationship id differs", async () => {
+test("records a same-title same-thumbnail catalog as not found when the exact seller-product relationship id differs", async () => {
   await withWorkerEnv(async () => {
     const row = tracker({
       id: FINITE_CANARY_TRACKER_ID,
@@ -2567,18 +2606,20 @@ test("rejects a same-title same-thumbnail catalog when the exact seller-product 
         leaseUntil: row.processing_until,
       }],
     };
-    let commitCalled = false;
+    let finiteCommitArgs = null;
     const ctx = {
       supabaseAdmin: {
-        async rpc(name) {
+        async rpc(name, args) {
           if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
           if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
-          commitCalled = true;
-          return { data: null, error: null };
+          assert.equal(name, "mi_commit_naver_shopping_finite_worker_result");
+          finiteCommitArgs = args;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
         },
         from(table) {
-          assert.equal(table, "naver_rank_trackers");
-          return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
         },
       },
     };
@@ -2592,9 +2633,15 @@ test("rejects a same-title same-thumbnail catalog when the exact seller-product 
       ctx,
     );
 
-    assert.equal(response.status, 422);
-    assert.equal((await response.json()).code, "LOCAL_WORKER_FINITE_MATCH_INVALID");
-    assert.equal(commitCalled, false);
+    // The market is fully proven and the tracked seller product is absent from
+    // every card, so the truthful finite outcome is "not found" — never an
+    // inferred parent rank from shared titles or thumbnails.
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).finiteCommittedCount, 1);
+    assert.equal(finiteCommitArgs.p_snapshot.matched, false);
+    assert.equal(finiteCommitArgs.p_snapshot.rank, null);
+    assert.equal(finiteCommitArgs.p_snapshot.item.trackingRankSource, "not_found");
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogProductId, null);
   });
 });
 
@@ -2811,6 +2858,364 @@ test("strict 300 accepts a directly linked parent for a non-canary seller tracke
     assert.equal(commitArgs.p_snapshot.item.relatedCatalogProductId, parentCatalogId);
     assert.equal(commitArgs.p_snapshot.item.relatedCatalogRelationBasis, "catalog_seller_product_id");
     assert.deepEqual(commitArgs.p_snapshot.item.catalogSellerProductIds, [sellerProductId]);
+  });
+});
+
+test("strict 300 accepts a directly linked parent listing 300 sellers and rejects 301", async (t) => {
+  // 301 seller ids fail the trusted-window contract itself, which the handler
+  // reports as one generic request failure without reaching any commit.
+  for (const [sellerCount, expectedStatus] of [[300, 200], [301, 500]]) {
+    await t.test(`${sellerCount} sellers`, async () => {
+      await withWorkerEnv(async () => {
+        const sellerProductId = "14444444444";
+        const parentCatalogId = "58888888888";
+        const row = tracker({
+          id: TRACKER_ID,
+          keyword: "비캐니 차량용 거치대",
+          product_id: sellerProductId,
+          product_url: `https://smartstore.naver.com/example/products/${sellerProductId}`,
+          product_title: "비캐니 차량용 거치대 X2000",
+        });
+        const job = {
+          keyword: row.keyword,
+          limit: 300,
+          claims: [{
+            trackerId: row.id,
+            leaseStartedAt: row.processing_started_at,
+            leaseUntil: row.processing_until,
+          }],
+        };
+        let commitArgs = null;
+        const ctx = {
+          supabaseAdmin: {
+            async rpc(name, args) {
+              if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+              if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+              assert.equal(name, "mi_commit_naver_shopping_worker_result");
+              commitArgs = args;
+              return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+            },
+            from(table) {
+              assert.equal(table, "naver_rank_trackers");
+              return resolvingQuery({ data: [row], error: null });
+            },
+          },
+        };
+        const catalogSellerProductIds = [
+          ...Array.from({ length: sellerCount - 1 }, (_, index) => String(20000000000 + index)),
+          sellerProductId,
+        ];
+
+        const response = await handleLocalWorkerRequest(signedRequest({
+          action: "submit",
+          job,
+          window: strictParentWindow({
+            keyword: row.keyword,
+            sellerProductId,
+            parentCatalogId,
+            catalogSellerProductIds,
+            sharedTitle: row.product_title,
+          }),
+        }), ctx);
+
+        assert.equal(response.status, expectedStatus);
+        if (expectedStatus === 200) {
+          assert.equal(commitArgs.p_snapshot.rank, 1);
+          assert.equal(commitArgs.p_snapshot.item.trackingRankSource, "related_catalog");
+          assert.equal(commitArgs.p_snapshot.item.catalogSellerProductIds.length, 300);
+        } else {
+          assert.equal((await response.json()).code, "LOCAL_WORKER_REQUEST_FAILED");
+          assert.equal(commitArgs, null);
+        }
+      });
+    });
+  }
+});
+
+test("commits an ordinary tracker's stable finite window through its exact seller product", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const window = stableFiniteExactWindow();
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let finiteCommitArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          assert.equal(name, "mi_commit_naver_shopping_finite_worker_result");
+          finiteCommitArgs = args;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "submit", job, window }),
+      ctx,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.committedCount, 1);
+    assert.equal(body.finiteCommittedCount, 1);
+    assert.equal(finiteCommitArgs.p_tracker_id, TRACKER_ID);
+    assert.equal(finiteCommitArgs.p_snapshot.checked_count, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.total, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.matched, true);
+    assert.equal(finiteCommitArgs.p_snapshot.rank, 11);
+    assert.equal(finiteCommitArgs.p_snapshot.item.trackingRankSource, "exact_product");
+    assert.equal(finiteCommitArgs.p_snapshot.item.finiteWindowProofVersion, STABLE_FINITE_WINDOW_PROOF_VERSION);
+    assert.equal(finiteCommitArgs.p_snapshot.item.sourceExhausted, true);
+    assert.equal(finiteCommitArgs.p_snapshot.item.finiteMarketTotal, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.item.atomicSuccessEligible, false);
+    assert.equal(finiteCommitArgs.p_snapshot.item.relatedCatalogProductId, null);
+    assert.equal(JSON.stringify(finiteCommitArgs.p_snapshot).includes("finite-capture-0001"), false);
+  });
+});
+
+test("commits a not-found stable finite window with a null rank instead of failing the match", async () => {
+  await withWorkerEnv(async () => {
+    const row = tracker();
+    const window = stableFiniteExactWindow({ sellerOffset: 100 });
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: row.processing_started_at,
+        leaseUntil: row.processing_until,
+      }],
+    };
+    let finiteCommitArgs = null;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name, args) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          if (name === "mi_load_naver_shopping_worker_catalog_history") return { data: [], error: null };
+          assert.equal(name, "mi_commit_naver_shopping_finite_worker_result");
+          finiteCommitArgs = args;
+          return { data: { status: "committed", snapshotId: crypto.randomUUID() }, error: null };
+        },
+        from(table) {
+          if (table === "naver_rank_trackers") return resolvingQuery({ data: [row], error: null });
+          if (table === "naver_rank_snapshots") return resolvingQuery({ data: [], error: null });
+          throw new Error(`unexpected table ${table}`);
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "submit", job, window }),
+      ctx,
+    );
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.committedCount, 1);
+    assert.equal(body.finiteCommittedCount, 1);
+    assert.equal(finiteCommitArgs.p_snapshot.checked_count, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.total, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.matched, false);
+    assert.equal(finiteCommitArgs.p_snapshot.rank, null);
+    assert.equal(finiteCommitArgs.p_snapshot.page, null);
+    assert.equal(finiteCommitArgs.p_snapshot.position, null);
+    assert.equal(finiteCommitArgs.p_snapshot.item.trackingRankSource, "not_found");
+    assert.equal(finiteCommitArgs.p_snapshot.item.finiteWindowProofVersion, STABLE_FINITE_WINDOW_PROOF_VERSION);
+    assert.equal(finiteCommitArgs.p_snapshot.item.sourceExhausted, true);
+    assert.equal(finiteCommitArgs.p_snapshot.item.finiteMarketTotal, 27);
+    assert.equal(finiteCommitArgs.p_snapshot.item.atomicSuccessEligible, false);
+    assert.equal(finiteCommitArgs.p_snapshot.top_items.every((item) => item.isOrganic && !item.isAd), true);
+  });
+});
+
+test("never commits a stable finite window for a lookup job", async () => {
+  await withWorkerEnv(async () => {
+    const lookupJobId = "623e4567-e89b-42d3-a456-426614174000";
+    const leaseStartedAt = new Date(Date.now() - 60_000).toISOString();
+    const job = {
+      kind: "lookup",
+      keyword: "온열찜질기",
+      limit: 300,
+      claims: [{
+        lookupJobId,
+        leaseStartedAt,
+        leaseUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      }],
+    };
+    let commitCalled = false;
+    const ctx = {
+      supabaseAdmin: {
+        async rpc(name) {
+          if (name === "mi_consume_naver_shopping_worker_nonce") return { data: true, error: null };
+          commitCalled = true;
+          return { data: null, error: null };
+        },
+        from() {
+          commitCalled = true;
+          return resolvingQuery({ data: [], error: null });
+        },
+      },
+    };
+
+    const response = await handleLocalWorkerRequest(
+      signedRequest({ action: "submit", job, window: stableFiniteExactWindow() }),
+      ctx,
+    );
+
+    // The strict-window contract rejects the finite window for a lookup before
+    // any database read; the handler reports it as a generic request failure.
+    assert.equal(response.status, 500);
+    assert.equal((await response.json()).code, "LOCAL_WORKER_REQUEST_FAILED");
+    assert.equal(commitCalled, false);
+  });
+});
+
+test("reconciles an ordinary tracker's finite commit from its exact snapshot and ledger shape", async (t) => {
+  await withWorkerEnv(async () => {
+    const row = tracker({ processing_started_at: null, processing_until: null });
+    const job = {
+      keyword: row.keyword,
+      limit: 300,
+      claims: [{
+        trackerId: row.id,
+        leaseStartedAt: new Date(Date.now() - 60_000).toISOString(),
+        leaseUntil: new Date(Date.now() + 30 * 60_000).toISOString(),
+      }],
+    };
+    const collectionId = `pw-chrome-${Date.now()}-finite-general-reconcile`;
+    const baseItem = {
+      finiteWindowProofVersion: STABLE_FINITE_WINDOW_PROOF_VERSION,
+      sourceExhausted: true,
+      finiteMarketTotal: 27,
+      atomicSuccessEligible: false,
+      rankPolicy: "organic_only",
+      adExcluded: true,
+      rankEvidence: "naver_shopping_organic_list",
+      collectionId,
+    };
+    const exactSnapshot = {
+      tracker_id: row.id,
+      collection_id: collectionId,
+      checked_count: 27,
+      total: 27,
+      source: "naver_shopping_results_collector",
+      matched: true,
+      rank: 11,
+      top_items: [{ isOrganic: true, isAd: false }],
+      item: { ...baseItem, trackingRankSource: "exact_product", isOrganic: true, isAd: false },
+    };
+    const notFoundSnapshot = {
+      ...exactSnapshot,
+      matched: false,
+      rank: null,
+      item: { ...baseItem, trackingRankSource: "not_found" },
+    };
+    const claim = {
+      event_type: "tracker_claimed",
+      claim_id: FINITE_CLAIM_ID,
+      run_id: RUN_ID,
+      worker_id: WORKER_ID,
+      tracker_id: row.id,
+      lease_started_at: job.claims[0].leaseStartedAt,
+    };
+    const ledger = (details) => ({
+      event_type: "finite_window_committed",
+      claim_id: FINITE_CLAIM_ID,
+      run_id: RUN_ID,
+      worker_id: WORKER_ID,
+      tracker_id: row.id,
+      lease_started_at: job.claims[0].leaseStartedAt,
+      collection_id: collectionId,
+      checked_count: 27,
+      details: {
+        source: "naver_shopping_results_collector",
+        finiteWindowProofVersion: STABLE_FINITE_WINDOW_PROOF_VERSION,
+        sourceExhausted: true,
+        marketTotal: 27,
+        atomicSuccessEligible: false,
+        ...details,
+      },
+    });
+    for (const scenario of [
+      {
+        name: "exact product snapshot with its exact ledger",
+        snapshot: exactSnapshot,
+        ledger: [claim, ledger({ matched: true, rank: 11 })],
+        expectedFiniteCount: 1,
+      },
+      {
+        name: "not-found snapshot with a rankless ledger",
+        snapshot: notFoundSnapshot,
+        ledger: [claim, ledger({ matched: false })],
+        expectedFiniteCount: 1,
+      },
+      {
+        name: "not-found snapshot with a ledger that claims a rank",
+        snapshot: notFoundSnapshot,
+        ledger: [claim, ledger({ matched: false, rank: 11 })],
+        expectedFiniteCount: 0,
+      },
+      {
+        name: "exact product ledger that carries a catalog relation basis",
+        snapshot: exactSnapshot,
+        ledger: [claim, ledger({ matched: true, rank: 11, relationBasis: "catalog_seller_product_id" })],
+        expectedFiniteCount: 0,
+      },
+      {
+        name: "matched snapshot without organic evidence",
+        snapshot: { ...exactSnapshot, item: { ...exactSnapshot.item, isOrganic: undefined } },
+        ledger: [claim, ledger({ matched: true, rank: 11 })],
+        expectedFiniteCount: 0,
+      },
+    ]) {
+      await t.test(scenario.name, async () => {
+        const ctx = {
+          supabaseAdmin: {
+            async rpc(name) {
+              assert.equal(name, "mi_consume_naver_shopping_worker_nonce");
+              return { data: true, error: null };
+            },
+            from(table) {
+              if (table === "naver_rank_snapshots") {
+                return resolvingQuery({ data: [scenario.snapshot], error: null });
+              }
+              if (table === "naver_shopping_scheduler_events") {
+                return resolvingQuery({ data: scenario.ledger, error: null });
+              }
+              if (table === "naver_rank_trackers") {
+                return resolvingQuery({ data: [row], error: null });
+              }
+              throw new Error(`unexpected table ${table}`);
+            },
+          },
+        };
+
+        const response = await handleLocalWorkerRequest(signedRequest({
+          action: "reconcile-submit",
+          job,
+          collectionId,
+        }), ctx);
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.alreadyCommittedCount, 1);
+        assert.equal(body.finiteCommittedCount, scenario.expectedFiniteCount);
+      });
+    }
   });
 });
 

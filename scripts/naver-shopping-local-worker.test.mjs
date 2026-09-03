@@ -88,19 +88,19 @@ function completeWindow(count = 300) {
   };
 }
 
-function stableFiniteWindow() {
+function stableFiniteWindow(keyword = STABLE_FINITE_CANARY_KEYWORD) {
   const items = Array.from({ length: 93 }, (_, index) => ({
     ...item(index + 1),
-    title: `아이쉘 차량용 거치대 ${index + 1}`,
+    title: `${keyword} ${index + 1}`,
     productType: 2,
   }));
   const digest = stableFiniteWindowDigest(items, {
-    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    keyword,
     marketTotal: items.length,
   });
   return {
     ...completeWindow(items.length),
-    keyword: STABLE_FINITE_CANARY_KEYWORD,
+    keyword,
     collectionId: "pw-1785564000000-stablefinite0001",
     marketTotal: items.length,
     marketTotalStatus: "verified",
@@ -125,7 +125,7 @@ function workerEnv() {
     MI_NAVER_SHOPPING_LOCAL_WORKER_API_URL: "https://insight.momentlabs.co.kr/api/naver-shopping-local-worker",
     MI_NAVER_SHOPPING_WORKER_ID: "windows-desktop-primary",
     MI_NAVER_SHOPPING_WORKER_ROLE: "primary",
-    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.20",
+    MI_NAVER_SHOPPING_RUNTIME_VERSION: "1.1.21",
     MI_NAVER_SHOPPING_RUNTIME_FINGERPRINT: RUNTIME_FINGERPRINT,
     MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-catch-up",
   };
@@ -306,7 +306,7 @@ test("derives a content fingerprint for the direct Mac standby fallback", async 
   });
   assert.equal(summary.status, "completed");
   const lane = calls.coordination.find((call) => call.action === "claim-lane");
-  assert.equal(lane.runtimeVersion, "1.1.20");
+  assert.equal(lane.runtimeVersion, "1.1.21");
   assert.equal(lane.runTrigger, "rank-catch-up");
   assert.match(lane.runtimeFingerprint, /^(?!0{64}$)[a-f0-9]{64}$/u);
 });
@@ -427,7 +427,7 @@ test("claims one canonical keyword, submits one strict 300 window and drains cat
   assert.equal(calls[1].window.collectionId, "pw-1785564000000-workerfixture0001");
   assert.equal(calls[0].schedulerVersion, "v2");
   const coordination = calls.coordination;
-  assert.equal(coordination[0].runtimeVersion, "1.1.20");
+  assert.equal(coordination[0].runtimeVersion, "1.1.21");
   assert.equal(coordination[0].runTrigger, "rank-catch-up");
   assert.equal(coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.deepEqual(
@@ -475,13 +475,13 @@ test("submits one stable finite canary without recording an atomic300 success", 
   assert.deepEqual(finiteModes, [true]);
   assert.equal(calls.coordination[0].runTrigger, "rank-catch-up");
   assert.equal(calls.coordination[0].workerId, "windows-desktop-primary");
-  assert.equal(calls.coordination[0].runtimeVersion, "1.1.20");
+  assert.equal(calls.coordination[0].runtimeVersion, "1.1.21");
   assert.equal(calls.coordination[0].runtimeFingerprint, RUNTIME_FINGERPRINT);
   assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
   assert.equal(calls.coordination.at(-1).action, "release-lane");
 });
 
-test("keeps stable finite pre-collection disabled outside the exact Windows catch-up identity", async (t) => {
+test("enables stable finite pre-collection for every tracker job and never for a lookup", async (t) => {
   for (const scenario of [
     { name: "rank-0900", env: { MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-0900" } },
     { name: "rank-1500", env: { MI_NAVER_SHOPPING_RUN_TRIGGER: "rank-1500" } },
@@ -495,18 +495,20 @@ test("keeps stable finite pre-collection disabled outside the exact Windows catc
       },
     },
     { name: "other worker", env: { MI_NAVER_SHOPPING_WORKER_ID: "other-primary-worker" } },
+    { name: "ordinary keyword", env: {}, job: JOB },
   ]) {
     await t.test(scenario.name, async () => {
       const calls = [];
       const finiteModes = [];
-      const ordinaryCanaryWindow = {
+      const job = scenario.job || FINITE_CANARY_JOB;
+      const ordinaryWindow = {
         ...completeWindow(),
-        keyword: STABLE_FINITE_CANARY_KEYWORD,
+        keyword: job.keyword,
       };
       const summary = await runLocalShoppingWorker({
         env: { ...workerEnv(), ...scenario.env },
         fetchImpl: authenticatedFetch([
-          { body: { ok: true, job: FINITE_CANARY_JOB } },
+          { body: { ok: true, job } },
           { body: {
             ok: true,
             committedCount: 1,
@@ -520,7 +522,7 @@ test("keeps stable finite pre-collection disabled outside the exact Windows catc
         provider: {
           async collect(_request, options) {
             finiteModes.push(options?.allowStableFinite);
-            return ordinaryCanaryWindow;
+            return ordinaryWindow;
           },
           async close() {},
         },
@@ -529,12 +531,94 @@ test("keeps stable finite pre-collection disabled outside the exact Windows catc
         skipLock: true,
       });
 
+      // A strict 300 window still commits atomically; the finite allowance only
+      // changes what the provider may prove, never what a full market records.
       assert.equal(summary.submitted, 1);
       assert.equal(summary.atomicSuccesses, 1);
-      assert.deepEqual(finiteModes, [false]);
+      assert.deepEqual(finiteModes, [true]);
       assert.equal(calls[1].window.finiteWindowProof, undefined);
     });
   }
+
+  await t.test("lookup", async () => {
+    const calls = [];
+    const finiteModes = [];
+    const summary = await runLocalShoppingWorker({
+      env: workerEnv(),
+      fetchImpl: authenticatedFetch([
+        { body: { ok: true, job: LOOKUP_JOB } },
+        { body: {
+          ok: true,
+          committedCount: 1,
+          alreadyCommittedCount: 0,
+          leaseLostCount: 0,
+          collectionConflictCount: 0,
+          processedCount: 1,
+        } },
+        { body: { ok: true, job: null } },
+      ], calls),
+      provider: {
+        async collect(_request, options) {
+          finiteModes.push(options?.allowStableFinite);
+          return completeWindow();
+        },
+        async close() {},
+      },
+      nowMs: () => NOW,
+      randomUUID: uuidSequence(),
+      skipLock: true,
+    });
+
+    assert.equal(summary.submitted, 1);
+    assert.equal(summary.atomicSuccesses, 0);
+    assert.deepEqual(finiteModes, [false]);
+  });
+});
+
+test("submits an ordinary keyword's stable finite window from the Mac standby without an atomic300 success", async () => {
+  const calls = [];
+  const finiteModes = [];
+  const summary = await runLocalShoppingWorker({
+    env: {
+      ...workerEnv(),
+      MI_NAVER_SHOPPING_RUN_TRIGGER: "mac-standby",
+      MI_NAVER_SHOPPING_WORKER_ID: "macbook-standby",
+    },
+    fetchImpl: authenticatedFetch([
+      { body: { ok: true, job: JOB } },
+      { body: {
+        ok: true,
+        committedCount: 1,
+        alreadyCommittedCount: 0,
+        leaseLostCount: 0,
+        collectionConflictCount: 0,
+        processedCount: 1,
+        finiteCommittedCount: 1,
+      } },
+      { body: { ok: true, job: null } },
+    ], calls),
+    provider: {
+      async collect(_request, options) {
+        finiteModes.push(options?.allowStableFinite);
+        return stableFiniteWindow(JOB.keyword);
+      },
+      async close() {},
+    },
+    nowMs: () => NOW,
+    randomUUID: uuidSequence(),
+    skipLock: true,
+  });
+
+  assert.equal(summary.submitted, 1);
+  assert.equal(summary.atomicSuccesses, 0);
+  assert.equal(summary.finiteWindowCommits, 1);
+  assert.deepEqual(finiteModes, [true]);
+  assert.equal(calls[1].window.finiteWindowProof.version, STABLE_FINITE_WINDOW_PROOF_VERSION);
+  assert.equal(calls[1].window.checkedCount, 93);
+  assert.equal(calls.coordination[0].runTrigger, "mac-standby");
+  assert.equal(calls.coordination[0].workerId, "macbook-standby");
+  assert.equal(calls.coordination.some((call) => call.action === "record-success"), false);
+  assert.equal(calls.coordination.at(-1).action, "release-lane");
 });
 
 test("never reaches stable finite collection when registration rejects a wrong runtime fingerprint", async () => {
@@ -573,12 +657,13 @@ test("never reaches stable finite collection when registration rejects a wrong r
 });
 
 test("keeps stable finite proof and exact-match failures tracker-isolated and cadence-neutral", async (t) => {
-  for (const scenario of [
-    {
-      name: "two-capture proof rejected",
+  const scenarios = [];
+  for (const [jobName, job] of [["canary", FINITE_CANARY_JOB], ["ordinary keyword", JOB]]) {
+    scenarios.push({
+      name: `${jobName}: two-capture proof rejected`,
       expectedCode: "provider_stable_finite_window_unproven",
       responses: [
-        { body: { ok: true, job: FINITE_CANARY_JOB } },
+        { body: { ok: true, job } },
         { body: { ok: true, releasedCount: 1 } },
         { body: { ok: true, job: null } },
       ],
@@ -591,22 +676,22 @@ test("keeps stable finite proof and exact-match failures tracker-isolated and ca
         },
         async close() {},
       },
-    },
-    {
-      name: "exact finite parent match rejected",
+    }, {
+      name: `${jobName}: exact finite match rejected`,
       expectedCode: "local_worker_finite_match_invalid",
       responses: [
-        { body: { ok: true, job: FINITE_CANARY_JOB } },
+        { body: { ok: true, job } },
         { status: 422, body: { ok: false, code: "LOCAL_WORKER_FINITE_MATCH_INVALID" } },
         { body: { ok: true, releasedCount: 1 } },
         { body: { ok: true, job: null } },
       ],
       provider: {
-        async collect() { return stableFiniteWindow(); },
+        async collect() { return stableFiniteWindow(job.keyword); },
         async close() {},
       },
-    },
-  ]) {
+    });
+  }
+  for (const scenario of scenarios) {
     await t.test(scenario.name, async () => {
       const calls = [];
       const summary = await runLocalShoppingWorker({

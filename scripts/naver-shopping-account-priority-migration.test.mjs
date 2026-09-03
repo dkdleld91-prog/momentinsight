@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 
 import { PGlite } from "@electric-sql/pglite";
 
+import { EXPECTED_WORKER_RUNTIME_VERSION } from "../src/server/naver-shopping/worker-runtime-expectation.mjs";
+import { calculateN30RuntimeFingerprint } from "./naver-shopping-runtime-fingerprint.mjs";
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const migrationName = "20260831033617_naver_shopping_account_one_shot_priority.sql";
 const migration = fs.readFileSync(
@@ -24,6 +27,14 @@ const triggerGateMigration = fs.readFileSync(
   path.join(root, "supabase", "migrations", triggerGateMigrationName),
   "utf8",
 );
+const runtimeNeutralGateMigrationName =
+  "20260903113000_naver_shopping_account_priority_gate_runtime_neutral.sql";
+const runtimeNeutralGateMigration = fs.readFileSync(
+  path.join(root, "supabase", "migrations", runtimeNeutralGateMigrationName),
+  "utf8",
+);
+const gateDefinitionPattern =
+  /create or replace function mi_internal\.mi_naver_shopping_account_priority_trigger_gate[\s\S]*?\n\$\$;/giu;
 
 const ids = Object.freeze({
   request: "10000000-0000-4000-8000-000000000001",
@@ -503,6 +514,11 @@ async function applyHandoffMigration(database) {
 
 async function applyTriggerGateMigration(database) {
   await database.exec(executableTriggerGateMigration());
+}
+
+async function applyRuntimeNeutralGateMigration(database) {
+  // 2026-09-03 핫픽스 정식 편입본: begin/commit 만 있고 lock·guard 가 없어 원문 그대로 실행한다.
+  await database.exec(runtimeNeutralGateMigration);
 }
 
 async function prepareTriggerGateGuardMarkers(database) {
@@ -3025,4 +3041,94 @@ test("expiry reconciliation failure rolls back ledger and never delegates", asyn
     select call_count from public.test_account_gate_transport_calls
     where transport = 'queue'
   `)).rows[0].call_count, 0);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 2026-09-03 핫픽스 회귀 가드 — 게이트의 런타임 리터럴 하드코딩 재발 방지
+// (1.1.20 리터럴이 1.1.21 전환 직후 모든 수집 클레임을 P0001 로 거부한 사고)
+// ─────────────────────────────────────────────────────────────
+
+test("runtime-neutral gate delegates at the current EXPECTED coordination runtime without raising", async (t) => {
+  const expectedFingerprint = calculateN30RuntimeFingerprint({
+    repositoryRoot: root,
+    version: EXPECTED_WORKER_RUNTIME_VERSION,
+  }).fingerprint;
+  // 재발 전제: 픽스처의 게이트 원본 리터럴(1.1.20)과 현재 EXPECTED 가 달라야
+  // 아래 재현·수정 대조가 의미를 가진다. 같아지면 이 케이스 자체를 재검토한다.
+  assert.notEqual(EXPECTED_WORKER_RUNTIME_VERSION, runtimeVersion);
+
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await registerClaimingLane(database);
+  await applyHandoffMigration(database);
+  await applyTriggerGateMigration(database);
+  await database.query(`
+    update public.naver_shopping_worker_coordination
+    set runtime_version = $1, runtime_fingerprint = $2
+    where lane_key = 'global'
+  `, [EXPECTED_WORKER_RUNTIME_VERSION, expectedFingerprint]);
+
+  // 사고 재현: 1.1.20 리터럴을 품은 원본 게이트는 현재 EXPECTED 런타임을
+  // lane_lost 로 거부한다(2026-09-03 프로덕션 P0001 거부와 동일 경로).
+  await assert.rejects(
+    () => queueWithTrigger(database, "rank-remote"),
+    /naver_shopping_account_priority_trigger_gate_lane_lost/u,
+  );
+
+  // 핫픽스 편입본 적용 후에는 같은 상태에서 예외 없이 각 전송을 1회씩 위임한다.
+  await applyRuntimeNeutralGateMigration(database);
+  assert.equal((await queueWithTrigger(database, "rank-remote")).status, "active");
+  assert.equal((await cycleWithTrigger(database, "rank-remote")).status, "no_cycle");
+  assert.deepEqual(await lookupWithTrigger(database, "rank-remote"), []);
+  assert.equal(await wakeWithTrigger(database, "rank-remote"), true);
+  assert.deepEqual((await database.query(`
+    select transport, call_count
+    from public.test_account_gate_transport_calls order by transport
+  `)).rows, [
+    { transport: "cycle", call_count: 1 },
+    { transport: "lookup", call_count: 1 },
+    { transport: "queue", call_count: 1 },
+    { transport: "wake", call_count: 1 },
+  ]);
+});
+
+test("runtime-neutral gate migration carries no runtime version or fingerprint literal", () => {
+  const gateFunction = runtimeNeutralGateMigration.match(gateDefinitionPattern)?.[0] ?? "";
+  assert.ok(gateFunction.length > 0, "편입본에서 게이트 함수 정의를 찾지 못했다");
+  assert.doesNotMatch(gateFunction, /'\d+\.\d+\.\d+'/u, "게이트 정의에 runtime 버전 리터럴이 있다");
+  assert.doesNotMatch(gateFunction, /[0-9a-f]{64}/iu, "게이트 정의에 runtime 지문 리터럴이 있다");
+  // 완화는 정확히 "레인이 런타임 아이덴티티를 등록했는가" 두 줄이다.
+  assert.ok(gateFunction.includes("or current_row.runtime_version is null"));
+  assert.ok(gateFunction.includes("or current_row.runtime_fingerprint is null"));
+  // 계정우선 코호트 정합성(required_runtime_* 동등 검사)은 그대로 유지된다.
+  assert.ok(gateFunction.includes("active_request.required_runtime_version"));
+  assert.ok(gateFunction.includes("active_request.required_runtime_fingerprint"));
+});
+
+test("final account-priority gate definition across all migrations stays runtime neutral", () => {
+  // rank-collection-stability.test.mjs 의 버전 드리프트 가드 패턴을 따르는 정적 가드:
+  // 런타임 범프 마이그레이션이 게이트를 버전 리터럴로 재선언하면 여기서 즉시 실패한다.
+  const directory = path.join(root, "supabase", "migrations");
+  const declaringFiles = fs.readdirSync(directory)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()
+    .filter((name) => new RegExp(gateDefinitionPattern.source, "iu").test(
+      fs.readFileSync(path.join(directory, name), "utf8"),
+    ));
+  assert.deepEqual(
+    declaringFiles.slice(0, 2),
+    [triggerGateMigrationName, runtimeNeutralGateMigrationName],
+    "게이트 선언 마이그레이션 목록이 예상과 다르다",
+  );
+  const finalFile = declaringFiles[declaringFiles.length - 1];
+  const definitions = fs.readFileSync(path.join(directory, finalFile), "utf8")
+    .match(gateDefinitionPattern) ?? [];
+  assert.ok(definitions.length >= 1, `${finalFile} 에서 게이트 정의를 찾지 못했다`);
+  // 최종 정의 = 파일명 정렬 마지막 파일의 마지막 재선언.
+  const finalDefinition = definitions[definitions.length - 1];
+  assert.doesNotMatch(
+    finalDefinition,
+    /'\d+\.\d+\.\d+'/u,
+    `${finalFile} 의 최종 게이트 정의에 runtime 버전 리터럴이 있다 — 버전 범프 시 게이트를 함께 검토할 것`,
+  );
 });

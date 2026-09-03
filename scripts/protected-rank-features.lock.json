@@ -810,6 +810,12 @@
       "file": "supabase/migrations/20260903090000_naver_shopping_runtime_1_1_21_finite_general_and_seam_tolerance.sql",
       "sha256": "f9db75a6cae1b32727405648add566aa8b264a92c7a7962754c3feb2a639aab0",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-account-priority-gate-runtime-neutral",
+      "file": "supabase/migrations/20260903113000_naver_shopping_account_priority_gate_runtime_neutral.sql",
+      "sha256": "1ae22739dcf9fad953cd58617b2552797cf9f34a2d8b3f37c6abf73f24a35755",
+      "rankMigration": true
     }
   ]
 }

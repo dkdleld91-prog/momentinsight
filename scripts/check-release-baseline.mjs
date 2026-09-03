@@ -240,6 +240,22 @@ const shoppingStableFiniteWindowRuntime1118Migration = read("supabase/migrations
 const shoppingStableRenderedOrderRuntime1119Migration = read("supabase/migrations/20260831014800_naver_shopping_runtime_1_1_19_stable_rendered_order.sql");
 const shoppingRenderedBoundaryConsensusRuntime1120Migration = read("supabase/migrations/20260831052231_naver_shopping_runtime_1_1_20_rendered_boundary_consensus.sql");
 const shoppingFiniteGeneralRuntime1121Migration = read("supabase/migrations/20260903090000_naver_shopping_runtime_1_1_21_finite_general_and_seam_tolerance.sql");
+// account-priority 트리거 게이트의 최종 재선언(2026-09-03 핫픽스 정식 편입본).
+// 게이트를 재선언하는 마이그레이션이 새로 생기면 아래 파일명 대조가 실패하므로,
+// 런타임 범프 때 이 상수와 무버전 리터럴 검사를 함께 갱신·검토해야 한다.
+const shoppingAccountPriorityGateRuntimeNeutralMigrationName =
+  "20260903113000_naver_shopping_account_priority_gate_runtime_neutral.sql";
+const shoppingAccountPriorityGateRuntimeNeutralMigration =
+  read(`supabase/migrations/${shoppingAccountPriorityGateRuntimeNeutralMigrationName}`);
+const shoppingAccountPriorityGateDeclarationFiles = fs.readdirSync("supabase/migrations")
+  .filter((name) => name.endsWith(".sql"))
+  .sort()
+  .filter((name) => read(`supabase/migrations/${name}`).includes(
+    "create or replace function mi_internal.mi_naver_shopping_account_priority_trigger_gate(",
+  ));
+const shoppingAccountPriorityGateFinalDefinition = (read(
+  `supabase/migrations/${shoppingAccountPriorityGateDeclarationFiles[shoppingAccountPriorityGateDeclarationFiles.length - 1] || shoppingAccountPriorityGateRuntimeNeutralMigrationName}`,
+).match(/create or replace function mi_internal\.mi_naver_shopping_account_priority_trigger_gate[\s\S]*?\n\$\$;/gu) || []).slice(-1)[0] || "";
 const shoppingNextDataSchemaDriftRecoveryMigration = read("supabase/migrations/20260827194500_naver_shopping_next_data_schema_drift_recovery.sql");
 const shoppingSupersavingCompositeRecoveryMigration = read("supabase/migrations/20260828025000_naver_shopping_supersaving_composite_recovery.sql");
 const shoppingCandidatePerformanceAudit = read("scripts/naver-shopping-candidate-performance-audit.mjs");
@@ -2131,6 +2147,22 @@ const checks = {
     && !shoppingStableFiniteWindowRuntime1116Migration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingNextDataSchemaDriftRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__")
     && !shoppingSupersavingCompositeRecoveryMigration.includes("__N30_RUNTIME_1_1_16_FINGERPRINT__"),
+  // 런타임 범프 시 account-priority 게이트 동반 검토 강제(2026-09-03 1.1.21 전환 P0001 사고 재발 방지).
+  // 게이트를 재선언하는 새 마이그레이션이 생기면 파일명 대조가, 최종 정의에 버전·지문 리터럴이
+  // 돌아오면 무버전 검사가 여기서 실패한다 — 범프 체크리스트에서 이 상수를 함께 갱신할 것.
+  shoppingAccountPriorityGateRuntimeNeutralOnRuntimeBump:
+    shoppingAccountPriorityGateDeclarationFiles[shoppingAccountPriorityGateDeclarationFiles.length - 1]
+      === shoppingAccountPriorityGateRuntimeNeutralMigrationName
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("프로덕션 2026-09-03 08:00Z 선적용(핫픽스), 본 파일은 정식 편입.")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("or current_row.runtime_version is null")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("or current_row.runtime_fingerprint is null")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("active_request.required_runtime_version")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("active_request.required_runtime_fingerprint")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("security invoker")
+    && shoppingAccountPriorityGateRuntimeNeutralMigration.includes("set search_path = ''")
+    && shoppingAccountPriorityGateFinalDefinition.length > 0
+    && !/'\d+\.\d+\.\d+'/u.test(shoppingAccountPriorityGateFinalDefinition)
+    && !/[0-9a-f]{64}/iu.test(shoppingAccountPriorityGateFinalDefinition),
   shoppingCandidateCadenceExactIdentityAndIdle: shoppingWorkerCandidateExactIdentityMigration.includes("-- Runtime 1.1.12 exact candidate gate")
     && (shoppingWorkerCandidateExactIdentityMigration.match(/create or replace function public\./gu) || []).length === 2
     && (shoppingWorkerCandidateExactIdentityMigration.match(/security invoker/gu) || []).length === 2

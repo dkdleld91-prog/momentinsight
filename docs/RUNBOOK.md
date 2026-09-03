@@ -96,6 +96,7 @@
   `MI_EXTENSION_UPDATE_OK ... version=<버전> runtime_fingerprint=<지문>` 확인, 맥은 워치독 로그의
   `drift_sync_ok` → `chrome_restarted` 확인 → ⑥ Chrome 실행 → 첫 progress 보고 뒤 DB 행의
   `runtime_version`·`runtime_fingerprint`가 새 값으로 채워지는지 본다.
+- **재발 방지**: 버전 인상 시 account-priority 게이트 등 runtime 리터럴을 품은 DB 함수를 전수 grep 한다 (`grep -rn "runtime_version is distinct from '" supabase/migrations` — 최종 정의의 무버전 유지는 `npm run check:release` 의 `shoppingAccountPriorityGateRuntimeNeutralOnRuntimeBump` 검사가 강제).
 - **안 되면 다음**: 마이그레이션 관문이 `requires_idle_control_plane`으로 거부하면 lease 만료(최대 35분,
   `WORKER_COLLECTION_LEASE_SECONDS`)를 기다린 뒤 재적용한다. 되돌려야 하면 사전에 작성한 역전환 SQL을
   같은 정지 창 안에서 적용하고 직전 `main` 커밋으로 ③·⑤를 반복한다. 서명만 오고 진척이 없는 상태는

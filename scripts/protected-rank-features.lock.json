@@ -816,6 +816,12 @@
       "file": "supabase/migrations/20260903113000_naver_shopping_account_priority_gate_runtime_neutral.sql",
       "sha256": "1ae22739dcf9fad953cd58617b2552797cf9f34a2d8b3f37c6abf73f24a35755",
       "rankMigration": true
+    },
+    {
+      "id": "shopping-transient-page-half-open-and-tracker-lifecycle-lease",
+      "file": "supabase/migrations/20260903160000_naver_shopping_transient_page_half_open_and_tracker_lifecycle_lease.sql",
+      "sha256": "13801b3b015dc3be528004acdadb092028cc89ce0365f292a4348ced10762a6c",
+      "rankMigration": true
     }
   ]
 }

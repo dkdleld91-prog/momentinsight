@@ -306,7 +306,7 @@ claim_facts as (
               and s.item ->> 'relatedCatalogProductId' = target.parent_catalog_id
               and s.item ->> 'catalogId' = target.parent_catalog_id
               and pg_catalog.jsonb_typeof(s.item -> 'catalogSellerProductIds') = 'array'
-              and pg_catalog.jsonb_array_length(s.item -> 'catalogSellerProductIds') between 1 and 100
+              and pg_catalog.jsonb_array_length(s.item -> 'catalogSellerProductIds') between 1 and 300
               and exists (
                 select 1
                 from pg_catalog.jsonb_array_elements_text(

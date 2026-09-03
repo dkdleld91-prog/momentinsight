@@ -1252,7 +1252,7 @@ check(
       /expected_runtime_version constant text := '1\.1\.21'/,
       /naver_shopping_runtime_1_1_21_requires_completed_account_priority/,
       /create or replace function public\.mi_commit_naver_shopping_finite_worker_result\(/,
-      /tracking_rank_source not in \('exact_product', 'related_catalog'\)/,
+      /coalesce\(tracking_rank_source, ''\) not in \('exact_product', 'related_catalog'\)/,
       /finite_checked_count not between 1 and 299/,
       /jsonb_array_length\(item -> 'catalogSellerProductIds'\) not between 1 and 300/,
       /create or replace function mi_internal\.mi_audit_naver_shopping_snapshot_commit\(\)/,

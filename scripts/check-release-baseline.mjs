@@ -2119,7 +2119,7 @@ const checks = {
     && shoppingFiniteGeneralRuntime1121Migration.includes("expected_runtime_version constant text := '1.1.21'")
     && shoppingFiniteGeneralRuntime1121Migration.includes("naver_shopping_runtime_1_1_21_requires_completed_account_priority")
     && shoppingFiniteGeneralRuntime1121Migration.includes("create or replace function public.mi_commit_naver_shopping_finite_worker_result(")
-    && shoppingFiniteGeneralRuntime1121Migration.includes("tracking_rank_source not in ('exact_product', 'related_catalog')")
+    && shoppingFiniteGeneralRuntime1121Migration.includes("coalesce(tracking_rank_source, '') not in ('exact_product', 'related_catalog')")
     && shoppingFiniteGeneralRuntime1121Migration.includes("finite_checked_count not between 1 and 299")
     && shoppingFiniteGeneralRuntime1121Migration.includes("jsonb_array_length(item -> 'catalogSellerProductIds') not between 1 and 300")
     && !shoppingFiniteGeneralRuntime1121Migration.includes("create or replace function public.mi_commit_naver_shopping_worker_result(")

@@ -243,7 +243,7 @@ function relatedCatalogProof(alias, productExpression) {
       and ${alias}.item ->> 'catalogId' <> ${productExpression}
       and case
         when pg_catalog.jsonb_typeof(${alias}.item -> 'catalogSellerProductIds') = 'array' then (
-          pg_catalog.jsonb_array_length(${alias}.item -> 'catalogSellerProductIds') between 1 and 100
+          pg_catalog.jsonb_array_length(${alias}.item -> 'catalogSellerProductIds') between 1 and 300
           and exists (
             select 1
             from pg_catalog.jsonb_array_elements_text(

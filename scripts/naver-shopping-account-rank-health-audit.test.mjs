@@ -125,7 +125,7 @@ test("builds one fixed-time fail-closed account audit without exposing lease tok
   assert.match(sql, /snapshot\.item ->> 'relatedCatalogProductId' ~ '\^\[0-9\]\{5,80\}\$'/iu);
   assert.match(sql, /snapshot\.item ->> 'catalogId' ~ '\^\[0-9\]\{5,80\}\$'/iu);
   assert.match(sql, /snapshot\.item ->> 'catalogId' <> tracker\.product_id/iu);
-  assert.match(sql, /jsonb_array_length\(snapshot\.item -> 'catalogSellerProductIds'\) between 1 and 100/iu);
+  assert.match(sql, /jsonb_array_length\(snapshot\.item -> 'catalogSellerProductIds'\) between 1 and 300/iu);
   assert.match(
     sql,
     /jsonb_array_elements_text\([\s\S]*?snapshot\.item -> 'catalogSellerProductIds'[\s\S]*?\)/iu,

@@ -268,7 +268,7 @@ begin
     or (finite_matched and (
       matched_rank is null
       or matched_rank not between 1 and finite_checked_count
-      or tracking_rank_source not in ('exact_product', 'related_catalog')
+      or coalesce(tracking_rank_source, '') not in ('exact_product', 'related_catalog')
       or item -> 'isOrganic' is distinct from 'true'::jsonb
       or item -> 'isAd' is distinct from 'false'::jsonb
     ))
@@ -414,6 +414,7 @@ begin
             from public.naver_shopping_scheduler_events as claimed
             where claimed.event_type = 'tracker_claimed'
               and claimed.claim_id = committed.claim_id
+              and claimed.tracker_id = committed.tracker_id
           ) = 1
           and (
             select count(*)
@@ -455,10 +456,13 @@ begin
     raise exception 'local_worker_finite_claim_invalid';
   end if;
 
+  -- One claim_id covers every tracker of a keyword group, so uniqueness is
+  -- per (claim_id, tracker_id), exactly like the exact300 ledger.
   select count(*)::integer into tracker_claim_count
   from public.naver_shopping_scheduler_events as claimed
   where claimed.event_type = 'tracker_claimed'
-    and claimed.claim_id = claim.claim_id;
+    and claimed.claim_id = claim.claim_id
+    and claimed.tracker_id = p_tracker_id;
   if tracker_claim_count <> 1 then
     raise exception 'local_worker_finite_group_invalid';
   end if;
@@ -492,6 +496,7 @@ begin
       from public.naver_shopping_scheduler_events as failed
       where failed.event_type = 'job_failed'
         and failed.claim_id = claim.claim_id
+        and failed.tracker_id = p_tracker_id
     ) then
     raise exception 'local_worker_finite_control_invalid';
   end if;
@@ -757,12 +762,14 @@ begin
       from public.naver_shopping_scheduler_events as claimed
       where claimed.event_type = 'tracker_claimed'
         and claimed.claim_id = claim.claim_id
+        and claimed.tracker_id = snapshot.tracker_id
     ) = 1
     and not exists (
       select 1
       from public.naver_shopping_scheduler_events as failed
       where failed.event_type = 'job_failed'
         and failed.claim_id = claim.claim_id
+        and failed.tracker_id = snapshot.tracker_id
     );
 
   return null;
@@ -1242,7 +1249,6 @@ set search_path = ''
 as $$
 declare
   current_row public.naver_shopping_worker_coordination%rowtype;
-  target public.naver_shopping_finite_window_targets%rowtype;
   expected_runtime_version constant text := '1.1.21';
   expected_runtime_fingerprint constant text :=
     '84334f5a68291a170b57c999840d50b42c0ef1301b2c3e817190bc7f242f20e0';
@@ -1254,14 +1260,11 @@ declare
   should_open boolean := false;
   partial_window_failure boolean := normalized_scope = 'tracker'
     and normalized_error ~ '^provider_partial_window:([1-9]|[1-9][0-9]|[12][0-9]{2})_300$';
-  finite_canary_failure boolean := normalized_scope = 'tracker'
-    and p_tracker_id = 'c0ccded2-9bf7-488e-af8d-00898c0a1ff8'::uuid
+  finite_failure boolean := normalized_scope = 'tracker'
     and normalized_error in (
       'provider_stable_finite_window_unproven',
       'local_worker_finite_match_invalid'
     );
-  finite_target_available boolean := false;
-  finite_tracker_exact boolean := false;
   cadence_proof_preserved boolean := false;
   v_now timestamptz := clock_timestamp();
 begin
@@ -1287,39 +1290,12 @@ begin
     return pg_catalog.jsonb_build_object('recorded', false, 'reason', 'lease_lost');
   end if;
 
-  select * into target
-  from public.naver_shopping_finite_window_targets
-  where tracker_id = 'c0ccded2-9bf7-488e-af8d-00898c0a1ff8'::uuid
-    and seller_product_id = '13327339525'
-    and parent_catalog_id = '59776958987'
-    and proof_version = 'stable-finite-window-v1'
-    and runtime_version = expected_runtime_version
-    and runtime_fingerprint = expected_runtime_fingerprint
-    and enabled = true;
-  finite_target_available := found;
-
-  select exists (
-    select 1
-    from public.naver_rank_trackers as tracker
-    where tracker.id = p_tracker_id
-      and tracker.status = 'active'
-      and tracker.product_id = target.seller_product_id
-      and pg_catalog.regexp_replace(
-        pg_catalog.lower(pg_catalog.btrim(tracker.keyword)),
-        '\s+',
-        '',
-        'g'
-      ) = target.normalized_keyword
-  ) into finite_tracker_exact;
-
   if normalized_scope = 'tracker' then
     update public.naver_rank_trackers
     set worker_quarantined_until = case
-      when finite_canary_failure
-        and finite_target_available
-        and finite_tracker_exact
-        and current_row.runtime_version = target.runtime_version
-        and current_row.runtime_fingerprint = target.runtime_fingerprint
+      when finite_failure
+        and current_row.runtime_version = expected_runtime_version
+        and current_row.runtime_fingerprint = expected_runtime_fingerprint
       then v_now + interval '30 minutes'
       when pg_catalog.split_part(normalized_error, ':', 1) in (
         'provider_duplicate_identity',
@@ -1396,9 +1372,7 @@ begin
           )
         )
         or (
-          finite_canary_failure
-          and finite_tracker_exact
-          and current_row.current_tracker_id = p_tracker_id
+          finite_failure
           and current_row.current_page between 1 and 8
           and (
             (
@@ -1427,19 +1401,10 @@ begin
              and representative_claim.tracker_id = p_tracker_id
              and representative_claim.worker_id = failed_event.worker_id
              and representative_claim.event_id < failed_event.event_id
-             and representative_claim.priority in ('new', 'resume', 'normal')
-            join public.naver_shopping_scheduler_events as grouped
-              on grouped.event_type = 'group_claimed'
-             and grouped.claim_id = representative_claim.claim_id
-             and grouped.run_id = representative_claim.run_id
-             and grouped.worker_id = representative_claim.worker_id
-             and grouped.group_fingerprint = representative_claim.group_fingerprint
-             and grouped.details -> 'memberCount' = pg_catalog.to_jsonb(1)
-             and grouped.event_id < representative_claim.event_id
+             and representative_claim.priority in ('new', 'resume', 'normal', 'repair')
             join public.naver_shopping_worker_runs as runs
               on runs.run_id = failed_event.run_id
              and runs.worker_id = failed_event.worker_id
-             and runs.run_trigger = 'rank-catch-up'
              and runs.runtime_version = expected_runtime_version
              and runs.runtime_fingerprint = expected_runtime_fingerprint
             where failed_event.event_type = 'job_failed'
@@ -1452,6 +1417,7 @@ begin
                 from public.naver_shopping_scheduler_events as claimed
                 where claimed.event_type = 'tracker_claimed'
                   and claimed.claim_id = representative_claim.claim_id
+                  and claimed.tracker_id = p_tracker_id
               ) = 1
               and not exists (
                 select 1

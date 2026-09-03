@@ -381,8 +381,30 @@ async function insertCompletedOldRequest(database, requestId = ids.requestOld) {
 // One migrated lane holding a claimed tracker on the Mac standby worker. The
 // keyword group has three members so the finite commit must not depend on a
 // single-member group or on the lane's current tracker.
-async function prepareFiniteLane(database, { workerId = "macbook-standby", priority = "normal" } = {}) {
+const GROUP_MEMBERS = Object.freeze([
+  ids.tracker,
+  "50000000-0000-4000-8000-000000000002",
+  "50000000-0000-4000-8000-000000000003",
+]);
+const MEMBER_PRODUCT_IDS = Object.freeze({
+  [ids.tracker]: TRACKER_PRODUCT_ID,
+  "50000000-0000-4000-8000-000000000002": "12149720594",
+  "50000000-0000-4000-8000-000000000003": "12149720595",
+});
+
+async function prepareFiniteLane(database, {
+  workerId = "macbook-standby",
+  priority = "normal",
+  members = [ids.tracker],
+} = {}) {
   await database.exec(migration);
+  for (const trackerId of members.filter((member) => member !== ids.tracker)) {
+    await database.query(`
+      insert into public.naver_rank_trackers (
+        id, agency_code, status, product_id, keyword, sort_order, created_at, next_check_at
+      ) values ($1::uuid, 'mml93-a01', 'active', $2, '허리찜질기', 1200, '2026-08-01T00:00:00Z', clock_timestamp())
+    `, [trackerId, MEMBER_PRODUCT_IDS[trackerId]]);
+  }
   await database.query(`
     update public.naver_shopping_worker_coordination
     set runtime_version = $1,
@@ -407,28 +429,32 @@ async function prepareFiniteLane(database, { workerId = "macbook-standby", prior
     update public.naver_rank_trackers
     set processing_started_at = $1::timestamptz,
         processing_until = clock_timestamp() + interval '30 minutes'
-    where id = $2::uuid
-  `, [LEASE_STARTED_AT, ids.tracker]);
+    where id = any($2::uuid[])
+  `, [LEASE_STARTED_AT, members]);
+  // One claim_id covers the whole keyword group: one group_claimed row and one
+  // tracker_claimed row per member, all sharing claim_id (20260814130826).
   await database.query(`
     insert into public.naver_shopping_scheduler_events(
       occurred_at, event_type, cycle_id, cycle_number, claim_id, run_id,
       worker_id, group_fingerprint, priority, details
     ) values (
       clock_timestamp(), 'group_claimed', $1::uuid, 52, $2::uuid, $3::uuid,
-      $4, 'group-fingerprint-1', $5, '{"memberCount": 3}'::jsonb
+      $4, 'group-fingerprint-1', $5, $6::jsonb
     )
-  `, [ids.cycle, ids.claim, ids.run, workerId, priority]);
-  await database.query(`
-    insert into public.naver_shopping_scheduler_events(
-      occurred_at, event_type, cycle_id, cycle_number, claim_id, run_id,
-      worker_id, tracker_id, agency_code, group_fingerprint, priority,
-      lease_started_at, lease_until
-    ) values (
-      clock_timestamp(), 'tracker_claimed', $1::uuid, 52, $2::uuid, $3::uuid,
-      $4, $5::uuid, 'mml93-a01', 'group-fingerprint-1', $6,
-      $7::timestamptz, clock_timestamp() + interval '30 minutes'
-    )
-  `, [ids.cycle, ids.claim, ids.run, workerId, ids.tracker, priority, LEASE_STARTED_AT]);
+  `, [ids.cycle, ids.claim, ids.run, workerId, priority, JSON.stringify({ memberCount: members.length })]);
+  for (const trackerId of members) {
+    await database.query(`
+      insert into public.naver_shopping_scheduler_events(
+        occurred_at, event_type, cycle_id, cycle_number, claim_id, run_id,
+        worker_id, tracker_id, agency_code, group_fingerprint, priority,
+        lease_started_at, lease_until
+      ) values (
+        clock_timestamp(), 'tracker_claimed', $1::uuid, 52, $2::uuid, $3::uuid,
+        $4, $5::uuid, 'mml93-a01', 'group-fingerprint-1', $6,
+        $7::timestamptz, clock_timestamp() + interval '30 minutes'
+      )
+    `, [ids.cycle, ids.claim, ids.run, workerId, trackerId, priority, LEASE_STARTED_AT]);
+  }
 }
 
 function finiteSnapshot(overrides = {}, itemOverrides = {}) {
@@ -491,13 +517,13 @@ function notFoundSnapshot(overrides = {}) {
   });
 }
 
-async function commitFinite(database, snapshot, collectionId) {
+async function commitFinite(database, snapshot, collectionId, trackerId = ids.tracker) {
   return (await database.query(`
     select public.mi_commit_naver_shopping_finite_worker_result(
       $1::uuid, $2::timestamptz, $3, $4::timestamptz,
       $4::timestamptz + interval '6 hours', $5::jsonb, $6, null, null
     ) as result
-  `, [ids.tracker, LEASE_STARTED_AT, collectionId, CHECKED_AT, JSON.stringify(snapshot), TRACKER_PRODUCT_ID]))
+  `, [trackerId, LEASE_STARTED_AT, collectionId, CHECKED_AT, JSON.stringify(snapshot), MEMBER_PRODUCT_IDS[trackerId]]))
     .rows[0].result;
 }
 
@@ -575,6 +601,29 @@ test("replaces the five runtime-sensitive functions plus the finite commit RPC, 
   assert.doesNotMatch(migration, /create trigger|drop trigger/iu);
 });
 
+test("failure RPC treats finite-window failures as cadence-neutral for every tracker", () => {
+  const failure = functionBlock(migration, "mi_record_naver_shopping_worker_failure");
+  const priorFailure = functionBlock(priorMigration, "mi_record_naver_shopping_worker_failure");
+  assert.ok(failure);
+  assert.match(priorFailure, /finite_canary_failure|naver_shopping_finite_window_targets/u);
+  assert.doesNotMatch(
+    failure,
+    /c0ccded2-9bf7-488e-af8d-00898c0a1ff8|13327339525|59776958987|naver_shopping_finite_window_targets|finite_canary_failure|finite_target_available|finite_tracker_exact|memberCount|rank-catch-up/u,
+  );
+  assert.match(failure, /finite_failure boolean := normalized_scope = 'tracker'\s+and normalized_error in \(\s+'provider_stable_finite_window_unproven',\s+'local_worker_finite_match_invalid'\s+\)/u);
+  assert.match(failure, /when finite_failure\s+and current_row\.runtime_version = expected_runtime_version/u);
+  assert.match(failure, /representative_claim\.priority in \('new', 'resume', 'normal', 'repair'\)/u);
+  assert.match(failure, /claimed\.claim_id = representative_claim\.claim_id\s+and claimed\.tracker_id = p_tracker_id/u);
+  // Everything outside the finite branch is byte-identical to 1.1.20 apart from
+  // the runtime constants.
+  const partialBranch = (source) => source.slice(
+    source.indexOf("partial_window_failure\n          and current_row.current_page = 8"),
+    source.indexOf("        or (\n          finite_"),
+  );
+  assert.ok(partialBranch(failure).length > 100);
+  assert.equal(partialBranch(failure), partialBranch(priorFailure));
+});
+
 test("re-declares the exact-parent guard with plain NULLIF/COALESCE and otherwise identical logic", () => {
   const guard = functionBlock(migration, "mi_guard_naver_shopping_exact_parent_snapshot");
   const deployedGuard = functionBlock(exactParentGuardMigration, "mi_guard_naver_shopping_exact_parent_snapshot");
@@ -601,7 +650,9 @@ test("finite commit RPC drops the canary allowlist while keeping every proof pre
   assert.match(finiteCommit, /finite_checked_count not between 1 and 299/u);
   assert.match(finiteCommit, /market_total is distinct from finite_checked_count/u);
   assert.match(finiteCommit, /matched_rank not between 1 and finite_checked_count/u);
-  assert.match(finiteCommit, /tracking_rank_source not in \('exact_product', 'related_catalog'\)/u);
+  assert.match(finiteCommit, /coalesce\(tracking_rank_source, ''\) not in \('exact_product', 'related_catalog'\)/u);
+  assert.match(finiteCommit, /claimed\.claim_id = claim\.claim_id\s+and claimed\.tracker_id = p_tracker_id/u);
+  assert.match(finiteCommit, /failed\.claim_id = claim\.claim_id\s+and failed\.tracker_id = p_tracker_id/u);
   assert.match(finiteCommit, /tracking_rank_source is distinct from 'not_found'/u);
   assert.match(finiteCommit, /item ->> 'finiteWindowProofVersion' is distinct from 'stable-finite-window-v1'/u);
   assert.match(finiteCommit, /item -> 'sourceExhausted' is distinct from 'true'::jsonb/u);
@@ -655,6 +706,8 @@ test("finite ledger CHECK and snapshot audit accept not-found terminals and keep
   assert.equal((audit.match(/'finite_window_committed'/gu) || []).length, 1);
   assert.doesNotMatch(audit, /naver_shopping_finite_window_targets|naver_shopping_worker_runs|naver_shopping_worker_coordination|memberCount|rank-catch-up/u);
   assert.match(audit, /claim\.priority in \('new', 'resume', 'normal', 'repair'\)/u);
+  assert.match(audit, /claimed\.claim_id = claim\.claim_id\s+and claimed\.tracker_id = snapshot\.tracker_id/u);
+  assert.match(audit, /failed\.claim_id = claim\.claim_id\s+and failed\.tracker_id = snapshot\.tracker_id/u);
   assert.match(audit, /snapshot\.matched = false\s+and snapshot\.rank is null\s+and snapshot\.item ->> 'trackingRankSource' = 'not_found'/u);
   assert.match(audit, /jsonb_array_length\(snapshot\.item -> 'catalogSellerProductIds'\) between 1 and 300/u);
   assert.match(audit, /pg_catalog\.jsonb_strip_nulls\(pg_catalog\.jsonb_build_object\(\s*'matched', snapshot\.matched/u);
@@ -1031,6 +1084,129 @@ test("PGlite commits an ordinary tracker's exact-product finite market on the Ma
   `)).rows, cadenceBefore);
   assert.equal(cadenceBefore[0].cadence_mode, "baseline");
   assert.equal(cadenceBefore[0].success_streak, 0);
+});
+
+test("PGlite commits every tracker of a three-member keyword group under one shared claim id", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await prepareFiniteLane(database, { members: GROUP_MEMBERS });
+  const collectionId = "pw-chrome-1757000000000-finitegroup00001";
+  // The same proven window commits once per member; only the tracked product
+  // differs, so members two and three are "not found" in this market.
+  const first = await commitFinite(database, finiteSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[0]);
+  const second = await commitFinite(database, notFoundSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[1]);
+  const third = await commitFinite(database, notFoundSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[2]);
+  assert.deepEqual([first.status, second.status, third.status], ["committed", "committed", "committed"]);
+  assert.deepEqual((await database.query(`
+    select tracker_id::text, matched, rank
+    from public.naver_rank_snapshots order by tracker_id
+  `)).rows, [
+    { tracker_id: GROUP_MEMBERS[0], matched: true, rank: 5 },
+    { tracker_id: GROUP_MEMBERS[1], matched: false, rank: null },
+    { tracker_id: GROUP_MEMBERS[2], matched: false, rank: null },
+  ]);
+  assert.deepEqual((await database.query(`
+    select tracker_id::text, claim_id::text, details -> 'matched' as matched
+    from public.naver_shopping_scheduler_events
+    where event_type = 'finite_window_committed' order by tracker_id
+  `)).rows, [
+    { tracker_id: GROUP_MEMBERS[0], claim_id: ids.claim, matched: true },
+    { tracker_id: GROUP_MEMBERS[1], claim_id: ids.claim, matched: false },
+    { tracker_id: GROUP_MEMBERS[2], claim_id: ids.claim, matched: false },
+  ]);
+  assert.deepEqual((await database.query(`
+    select count(*)::integer as leased from public.naver_rank_trackers where processing_started_at is not null
+  `)).rows, [{ leased: 0 }]);
+});
+
+test("PGlite: a failed sibling in the same claim does not block the other group members", async (t) => {
+  const database = await createDatabase();
+  t.after(() => database.close());
+  await prepareFiniteLane(database, { members: GROUP_MEMBERS });
+  await database.query(`
+    insert into public.naver_shopping_scheduler_events(
+      event_type, claim_id, run_id, worker_id, tracker_id, occurred_at, error_code
+    ) values ('job_failed', $1::uuid, $2::uuid, 'macbook-standby', $3::uuid, clock_timestamp(), 'provider_stable_finite_window_unproven')
+  `, [ids.claim, ids.run, GROUP_MEMBERS[1]]);
+  const collectionId = "pw-chrome-1757000000000-finitegroup00002";
+  await assert.rejects(
+    commitFinite(database, notFoundSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[1]),
+    /local_worker_finite_control_invalid/u,
+  );
+  const first = await commitFinite(database, finiteSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[0]);
+  const third = await commitFinite(database, notFoundSnapshot({ collectionId }).snapshot, collectionId, GROUP_MEMBERS[2]);
+  assert.deepEqual([first.status, third.status], ["committed", "committed"]);
+  assert.equal((await database.query(`
+    select count(*)::integer as count from public.naver_shopping_scheduler_events
+    where event_type = 'finite_window_committed'
+  `)).rows[0].count, 2);
+});
+
+test("PGlite keeps cadence proof on a finite-window failure for an ordinary tracker on the primary", async (t) => {
+  for (const scenario of [
+    // The worker reports finite proof failures without their detail suffix.
+    { code: "provider_stable_finite_window_unproven", stage: "collecting", preserved: true },
+    { code: "local_worker_finite_match_invalid", stage: "submitting", preserved: true },
+    { code: "provider_stable_window_unproven:digest_mismatch", stage: "collecting", preserved: false },
+  ]) {
+    await t.test(scenario.code, async () => {
+      const database = await createDatabase();
+      t.after(() => database.close());
+      await database.exec(migration);
+      const workerId = "windows-desktop-primary";
+      await database.query(`
+        update public.naver_shopping_worker_coordination
+        set runtime_version = $1, runtime_fingerprint = $2,
+            primary_worker_id = $3, primary_seen_at = clock_timestamp(),
+            lease_worker_id = $3, lease_token = $4::uuid,
+            lease_until = clock_timestamp() + interval '5 minutes', run_id = $5::uuid,
+            current_stage = $6, current_page = 3, current_job_kind = 'tracker',
+            current_tracker_id = '70000000-0000-4000-8000-000000000009'::uuid,
+            current_job_started_at = clock_timestamp(),
+            cadence_mode = 'candidate', cadence_minutes = 6,
+            stability_started_at = clock_timestamp() - interval '2 days', success_streak = 7,
+            last_success_at = clock_timestamp() - interval '4 minutes',
+            last_collection_id = 'pw-chrome-last-good', last_checked_count = 300,
+            last_source = 'naver_shopping_results_collector'
+        where lane_key = 'global'
+      `, [NEW_RUNTIME.version, NEW_RUNTIME.fingerprint, workerId, ids.lane, ids.run, scenario.stage]);
+      await database.query(`
+        insert into public.naver_shopping_worker_runs(run_id, worker_id, run_trigger, runtime_version, runtime_fingerprint, started_at)
+        values ($1::uuid, $2, 'rank-0900', $3, $4, clock_timestamp())
+      `, [ids.run, workerId, NEW_RUNTIME.version, NEW_RUNTIME.fingerprint]);
+      await database.query(`
+        insert into public.naver_shopping_scheduler_events(
+          occurred_at, event_type, claim_id, run_id, worker_id, tracker_id, group_fingerprint, priority, lease_started_at
+        ) values (clock_timestamp(), 'tracker_claimed', $1::uuid, $2::uuid, $3, $4::uuid, 'group-fingerprint-1', 'normal', $5::timestamptz)
+      `, [ids.claim, ids.run, workerId, ids.tracker, LEASE_STARTED_AT]);
+      const normalizedCode = scenario.code;
+      await database.query(`
+        insert into public.naver_shopping_scheduler_events(
+          occurred_at, event_type, claim_id, run_id, worker_id, tracker_id, group_fingerprint, error_code
+        ) values (clock_timestamp(), 'job_failed', $1::uuid, $2::uuid, $3, $4::uuid, 'group-fingerprint-1', $5)
+      `, [ids.claim, ids.run, workerId, ids.tracker, normalizedCode]);
+
+      const result = (await database.query(`
+        select public.mi_record_naver_shopping_worker_failure($1, $2::uuid, $3::uuid, $4, 'tracker', $5::uuid) as result
+      `, [workerId, ids.lane, ids.run, scenario.code, ids.tracker])).rows[0].result;
+
+      assert.equal(result.recorded, true);
+      assert.equal(result.quarantined, true);
+      assert.equal(result.circuitState, "closed");
+      assert.equal(result.cadenceProofPreserved, scenario.preserved);
+      assert.deepEqual((await database.query(`
+        select coordination.cadence_mode, coordination.cadence_minutes, coordination.success_streak,
+               coordination.circuit_state,
+               tracker.worker_quarantined_until > clock_timestamp() + interval '29 minutes'
+                 and tracker.worker_quarantined_until <= clock_timestamp() + interval '31 minutes' as bounded
+        from public.naver_shopping_worker_coordination as coordination
+        cross join public.naver_rank_trackers as tracker
+        where coordination.lane_key = 'global' and tracker.id = $1::uuid
+      `, [ids.tracker])).rows, [scenario.preserved
+        ? { cadence_mode: "candidate", cadence_minutes: 6, success_streak: 7, circuit_state: "closed", bounded: true }
+        : { cadence_mode: "baseline", cadence_minutes: 10, success_streak: 0, circuit_state: "closed", bounded: true }]);
+    });
+  }
 });
 
 test("PGlite commits a not-found finite market with a null rank and a rankless ledger", async (t) => {

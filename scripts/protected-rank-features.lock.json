@@ -808,7 +808,7 @@
     {
       "id": "shopping-worker-runtime-1-1-21-finite-general-and-seam-tolerance",
       "file": "supabase/migrations/20260903090000_naver_shopping_runtime_1_1_21_finite_general_and_seam_tolerance.sql",
-      "sha256": "6e0d67ebfa9b5fb0b53e985e677806063b7f1cad0ad413c1142d7e7d005d118b",
+      "sha256": "f9db75a6cae1b32727405648add566aa8b264a92c7a7962754c3feb2a639aab0",
       "rankMigration": true
     }
   ]

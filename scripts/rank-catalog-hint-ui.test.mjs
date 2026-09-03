@@ -203,6 +203,8 @@ function ownerRows(health) {
     stallConstantsBlock(),
     htmlFunction(adminSource, "escapeHtml"),
     htmlFunction(adminSource, "ownerHealthTrackerRows"),
+    // 연결 전 코드(F17) 안내 행. 집계 행 함수가 직접 부르므로 같은 컨텍스트에 올린다.
+    htmlFunction(adminSource, "ownerUnlinkedScopeRows"),
   ].join("\n\n"), context);
   context.__health = health;
   // vm 컨텍스트의 Array 는 프로토타입이 다른 realm 이라 deepEqual 이 실패한다. 값만 옮긴다.
@@ -537,6 +539,52 @@ test("C5d: ownerHealthTrackerRows 는 두 집계를 행으로 내고 조회 실�
   for (const value of [null, undefined, "x", {}]) {
     assert.deepEqual(ownerRows(value), [], JSON.stringify(value));
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// (e) 연결 전 코드로 등록된 추적기 (F17)
+// 운영팀이 광고주 연결 전 팀코드로 등록한 추적기는 어느 화면에도 뜨지 않으면서
+// 수집만 계속된다. 총관리자 요약이 건수와 조회 경로를 함께 내야 한다.
+// ─────────────────────────────────────────────────────────────
+test("C5e: 연결 전 코드 건수와 조회 경로가 총관리자 집계 뒤에 붙는다", () => {
+  const rows = ownerRows({
+    neverFoundTrackers: { count: 0, error: null },
+    stuckTrackers: { count: 0, error: null },
+    unlinkedScopeTrackers: {
+      count: 3,
+      error: null,
+      codes: [
+        { agencyCode: "MML93-T01", teamName: "운영팀 1", teamStatus: "active", trackerCount: 2 },
+        { agencyCode: "mml93-t02", teamName: "운영팀 2", teamStatus: "revoked", trackerCount: 1 },
+      ],
+    },
+  });
+  assert.equal(rows.length, 5);
+  assert.ok(rows[2].includes("<span>연결 전 코드로 등록된 추적기</span>"), rows[2]);
+  assert.ok(rows[2].includes("<strong>3개</strong>"), rows[2]);
+  assert.ok(rows[3].includes("mml93-t01 2건"), rows[3]);
+  assert.ok(rows[3].includes("mml93-t02 1건"), rows[3]);
+  assert.ok(rows[4].includes("대상 코드 칸"), rows[4]);
+  for (const row of rows) assert.ok(row.startsWith('<div class="mi-row">') && row.endsWith("</div>"), row);
+
+  // 0건이면 건수 행만 남고 안내 행은 붙지 않는다.
+  const empty = ownerRows({
+    neverFoundTrackers: { count: 0, error: null },
+    stuckTrackers: { count: 0, error: null },
+    unlinkedScopeTrackers: { count: 0, error: null, codes: [] },
+  });
+  assert.equal(empty.length, 3);
+  assert.ok(empty[2].includes("<strong>0개</strong>"), empty[2]);
+
+  // 조회 실패는 0 으로 위장하지 않고, 코드가 없으면 안내도 없다.
+  const failed = ownerRows({
+    neverFoundTrackers: { count: 0, error: null },
+    stuckTrackers: { count: 0, error: null },
+    unlinkedScopeTrackers: { count: null, error: "relation does not exist", codes: [] },
+  });
+  assert.equal(failed.length, 3);
+  assert.ok(failed[2].includes("<strong>조회 실패</strong>"), failed[2]);
+  assert.equal(failed[2].includes("relation"), false, "오류 원문은 화면에 싣지 않는다");
 });
 
 test("C5d: renderOwnerCodeList 는 운영팀·광고주 행 뒤에 집계 행을 잇는다", () => {

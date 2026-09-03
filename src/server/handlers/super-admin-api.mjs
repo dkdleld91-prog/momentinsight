@@ -7,6 +7,10 @@ import {
   parseRankKeywordLimitInput,
 } from "../rank-keyword-limit.mjs";
 import {
+  pauseAccountRankTrackers,
+  resumeAccountRankTrackers,
+} from "../rank-tracker-account-suspension.mjs";
+import {
   RANK_CHRONIC_ISOLATION_MS,
   RANK_NEVER_FOUND_MIN_CHECKS,
   RANK_PLACE_PARTIAL_MIN_RETRIES,
@@ -402,6 +406,56 @@ async function safeCount(query) {
   return { count: Number(count || 0), error: null };
 }
 
+// F17: 운영팀 코드(agency_code = 팀코드)로 등록된 추적기 가운데, 그 팀이 광고주와
+// 연결됐거나 권한이 해제돼 "아무 화면에도 뜨지 않는" 것들을 센다. 팀이 활성이고
+// 미연결이면 그 팀 계정 화면에 그대로 보이므로 여기서 세지 않는다.
+// 결과는 safeCount 와 같은 { count, error } 모양이라 총관리자 화면이 그대로 쓴다.
+async function loadUnlinkedScopeTrackers(ctx) {
+  const teams = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .select("team_code, team_name, status, client_id")
+    .eq("owner_agency_code", primaryAgencyCode())
+    .limit(200);
+  if (teams.error) return { count: null, error: teams.error.message, codes: [] };
+
+  const hidden = new Map();
+  (teams.data || []).forEach((team) => {
+    const code = String(team.team_code || "").trim().toLowerCase();
+    const hiddenScope = Boolean(team.client_id) || String(team.status || "") !== "active";
+    if (code && hiddenScope && !hidden.has(code)) hidden.set(code, team);
+  });
+  if (!hidden.size) return { count: 0, error: null, codes: [] };
+
+  const codes = [...hidden.keys()];
+  const [product, place] = await Promise.all([
+    ctx.supabaseAdmin.from("naver_rank_trackers").select("agency_code").in("agency_code", codes).eq("status", "active").limit(1000),
+    ctx.supabaseAdmin.from("naver_place_rank_trackers").select("agency_code").in("agency_code", codes).eq("status", "active").limit(1000),
+  ]);
+  const failure = product.error || place.error;
+  if (failure) return { count: null, error: failure.message, codes: [] };
+
+  const counts = new Map();
+  [...(product.data || []), ...(place.data || [])].forEach((row) => {
+    const code = String(row.agency_code || "").trim().toLowerCase();
+    if (hidden.has(code)) counts.set(code, (counts.get(code) || 0) + 1);
+  });
+
+  const scopes = [...counts.entries()]
+    .map(([agencyCode, trackerCount]) => ({
+      agencyCode,
+      teamName: hidden.get(agencyCode).team_name || "",
+      teamStatus: hidden.get(agencyCode).status || "",
+      trackerCount,
+    }))
+    .sort((left, right) => right.trackerCount - left.trackerCount);
+
+  return {
+    count: scopes.reduce((total, scope) => total + scope.trackerCount, 0),
+    error: null,
+    codes: scopes,
+  };
+}
+
 async function loadOwnerHealth(ctx) {
   const nowIso = new Date().toISOString();
   // 만성 실패 격리 기준선. 페이로드 전체가 같은 시계를 쓰도록 nowIso 에서 파생한다.
@@ -419,6 +473,7 @@ async function loadOwnerHealth(ctx) {
     placePartialTrackers,
     sourceFiles,
     publicReports,
+    unlinkedScopeTrackers,
   ] = await Promise.all([
     safeCount(ctx.supabaseAdmin
       .from("clients")
@@ -494,6 +549,7 @@ async function loadOwnerHealth(ctx) {
       .from("reports")
       .select("id", { count: "exact", head: true })
       .eq("visibility", "client_visible")),
+    loadUnlinkedScopeTrackers(ctx),
   ]);
 
   return {
@@ -508,6 +564,7 @@ async function loadOwnerHealth(ctx) {
     placePartialTrackers,
     sourceFiles,
     publicReports,
+    unlinkedScopeTrackers,
   };
 }
 
@@ -628,14 +685,23 @@ async function createClient(request, ctx, body) {
       if (error) {
         return json(request, { ok: false, message: "광고주 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
       }
+      // F16: 해지 때 자동 중지한 추적기만 되돌린다. 한도가 가득 차 되돌리지 못한
+      // 행은 그 사유를 last_message 로 남기고 나머지는 계속 복구한다(부분 성공).
+      const trackerRestore = await resumeAccountRankTrackers(ctx, [data.agency_code]);
       const auditLogged = await recordAuditLog(ctx, {
         action: "client.reactivated_by_owner",
         clientId: data.id,
         targetTable: "clients",
         targetId: data.id,
-        metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), agencyCode: data.agency_code },
+        metadata: {
+          source: "super-admin-api",
+          ownerAgencyCode: primaryAgencyCode(),
+          agencyCode: data.agency_code,
+          resumedTrackers: String(trackerRestore.resumed),
+          limitedTrackers: String(trackerRestore.limited),
+        },
       });
-      return json(request, { ok: true, reactivated: true, client: clientPayload(data), auditLogged }, 200);
+      return json(request, { ok: true, reactivated: true, client: clientPayload(data), trackerRestore, auditLogged }, 200);
     }
 
   const { data, error } = await ctx.supabaseAdmin
@@ -695,13 +761,23 @@ async function createTeam(request, ctx, body) {
       .select("id, owner_agency_code, team_name, team_code, status, client_id, created_at, updated_at, revoked_at")
       .single();
       if (error) return json(request, { ok: false, message: "운영팀 코드 재활성화에 실패했습니다.", detail: error.message }, 500);
+      // F16: 권한 해제 때 팀 코드로 자동 중지한 추적기를 되돌린다. 연결 광고주는
+      // 해제 시 끊겼으므로(client_id = null) 여기서는 팀 코드만 복구한다.
+      const trackerRestore = await resumeAccountRankTrackers(ctx, [data.team_code]);
       const auditLogged = await recordAuditLog(ctx, {
         action: "operation_team.reactivated",
         targetTable: "operation_team_codes",
         targetId: data.id,
-        metadata: { source: "super-admin-api", ownerAgencyCode: primaryAgencyCode(), teamCode: data.team_code, teamName: data.team_name },
+        metadata: {
+          source: "super-admin-api",
+          ownerAgencyCode: primaryAgencyCode(),
+          teamCode: data.team_code,
+          teamName: data.team_name,
+          resumedTrackers: String(trackerRestore.resumed),
+          limitedTrackers: String(trackerRestore.limited),
+        },
       });
-      return json(request, { ok: true, reactivated: true, team: teamPayload(data), auditLogged }, 200);
+      return json(request, { ok: true, reactivated: true, team: teamPayload(data), trackerRestore, auditLogged }, 200);
     }
 
   const { data, error } = await ctx.supabaseAdmin
@@ -883,18 +959,30 @@ async function disconnectTeamClient(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 연결 해지 저장에 실패했습니다.", detail: teamError.message }, 500);
 
+    // F16: 연결이 끊긴 광고주 코드의 추적기는 아무도 조회·중지할 수 없는데 수집
+    // 명단에는 남는다. 그 코드의 활성 추적기를 자동 일시중지한다(팀 코드는 그대로
+    // 활성이라 팀 화면에서 계속 보이므로 건드리지 않는다).
+    const trackerSuspension = await pauseAccountRankTrackers(ctx, [client.agency_code]);
     const auditLogged = await recordAuditLog(ctx, {
       action: "operation_team.client_disconnected",
       clientId: client.id,
       targetTable: "clients",
       targetId: client.id,
-      metadata: { source: "super-admin-api", teamCode: teamResult.data.team_code, teamId: teamResult.data.id, agencyCode: client.agency_code },
+      metadata: {
+        source: "super-admin-api",
+        teamCode: teamResult.data.team_code,
+        teamId: teamResult.data.id,
+        agencyCode: client.agency_code,
+        pausedTrackers: String(trackerSuspension.paused),
+        busyTrackers: String(trackerSuspension.busySkipped),
+      },
     });
     return json(request, {
       ok: true,
       message: "운영팀과 광고주 연결을 해지했습니다. 광고주 코드는 더 이상 접속할 수 없습니다.",
       team: teamActionPayload(team, access),
       client: teamActionClientPayload(client, access),
+      trackerSuspension,
       auditLogged,
     });
   }
@@ -950,6 +1038,13 @@ async function revokeTeam(request, ctx, body) {
     .single();
   if (teamError) return json(request, { ok: false, message: "운영팀 권한 해제 저장에 실패했습니다.", detail: teamError.message }, 500);
 
+    // F16: 권한이 해제된 광고주 코드와 팀 코드 양쪽의 활성 추적기를 자동 중지한다.
+    // 팀 코드로 등록된 추적기(F17 의 '연결 전 코드')는 권한 해제 뒤 누구의 화면에도
+    // 뜨지 않으면서 수집만 계속되므로 여기서 함께 멈춘다.
+    const trackerSuspension = await pauseAccountRankTrackers(ctx, [
+      ...revokedClients.map((client) => client.agency_code),
+      team.team_code,
+    ]);
     const auditLogged = await recordAuditLog(ctx, {
       action: "operation_team.revoked",
       targetTable: "operation_team_codes",
@@ -959,6 +1054,8 @@ async function revokeTeam(request, ctx, body) {
         teamCode: team.team_code,
         revokedClientIds: revokedClients.map((client) => client.id),
         revokedAgencyCodes: revokedClients.map((client) => client.agency_code),
+        pausedTrackers: String(trackerSuspension.paused),
+        busyTrackers: String(trackerSuspension.busySkipped),
       },
     });
 
@@ -967,6 +1064,7 @@ async function revokeTeam(request, ctx, body) {
       message: "운영팀 권한을 해제했습니다. 연결된 광고주 코드는 더 이상 접속할 수 없습니다.",
       team: teamPayload(team),
       clients: revokedClients.map(clientPayload),
+      trackerSuspension,
       auditLogged,
     });
   }
@@ -1090,12 +1188,20 @@ async function revokeClient(request, ctx, body) {
     team = teamResult.data ? teamPayload(teamResult.data) : null;
   }
 
+    // F16: 권한이 해제된 광고주 코드의 활성 추적기를 자동 일시중지한다.
+    const trackerSuspension = await pauseAccountRankTrackers(ctx, [client.agency_code]);
     const auditLogged = await recordAuditLog(ctx, {
       action: "client.revoked",
       clientId: client.id,
       targetTable: "clients",
       targetId: client.id,
-      metadata: { source: "super-admin-api", agencyCode: client.agency_code, issuedByTeamCode: client.issued_by_team_code || null },
+      metadata: {
+        source: "super-admin-api",
+        agencyCode: client.agency_code,
+        issuedByTeamCode: client.issued_by_team_code || null,
+        pausedTrackers: String(trackerSuspension.paused),
+        busyTrackers: String(trackerSuspension.busySkipped),
+      },
     });
 
     return json(request, {
@@ -1103,6 +1209,7 @@ async function revokeClient(request, ctx, body) {
       message: "광고주 권한을 해제했습니다. 해당 코드는 더 이상 접속할 수 없습니다.",
       client: clientPayload(client),
       team,
+      trackerSuspension,
       auditLogged,
     });
   }

@@ -8,6 +8,11 @@ import {
   RANK_RETRY_EXHAUSTED_AT,
   RANK_STUCK_TRACKER_MS,
 } from "../naver-rank-requeue.mjs";
+import {
+  RANK_TRACKER_AUTO_PAUSE_MARK,
+  RANK_TRACKER_AUTO_PAUSE_MESSAGE,
+  RANK_TRACKER_AUTO_RESUME_MESSAGE,
+} from "../rank-tracker-account-suspension.mjs";
 import handler, {
   adminRateConfiguration,
   auditActionLabel,
@@ -883,6 +888,7 @@ test("총관리자 요약에 neverFoundTrackers·stuckTrackers 가 chronicTracke
     "placePartialTrackers",
     "sourceFiles",
     "publicReports",
+    "unlinkedScopeTrackers",
   ]);
 
   // 질의 모양: 상품 표만, 각각 정확히 한 번.
@@ -991,4 +997,287 @@ test("placePartial 조회 실패도 count:null·error 로 접히고 다른 카�
   assert.deepEqual(payload.health.chronicTrackers, { count: 0, error: null });
   assert.deepEqual(payload.health.neverFoundTrackers, { count: 0, error: null });
   assert.deepEqual(payload.health.stuckTrackers, { count: 0, error: null });
+});
+
+// ─────────────────────────────────────────────────────────────
+// 연결 전 코드로 등록된 추적기 요약 (F17)
+//
+// 운영팀이 광고주 연결 전에 팀코드로 등록한 추적기는 연결 후 그 팀 화면에서 사라지고
+// 총관리자 화면에도 뜨지 않는데 수집은 계속된다. 총관리자 요약이 그 건수와 코드를
+// 실어 주고, 총관리자는 그 코드를 대상 코드 칸에 넣어 조회·중지한다.
+// ─────────────────────────────────────────────────────────────
+function unlinkedScopeStub({ teams = [], productRows = [], placeRows = [], teamError = null, trackerError = null }) {
+  const gets = [];
+  const impl = async (input, init = {}) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    const url = new URL(rawUrl);
+    const method = String(init.method || "GET").toUpperCase();
+    if (method === "HEAD") return new Response(null, { status: 200, headers: { "content-range": "*/0" } });
+    gets.push(url);
+    if (url.pathname === "/rest/v1/clients") {
+      const select = url.searchParams.get("select") || "";
+      return Response.json(LIST_CLIENT_ROWS.map((row) => projectClientRow(row, select)));
+    }
+    if (url.pathname === "/rest/v1/operation_team_codes") {
+      if (teamError) return Response.json(teamError, { status: 400 });
+      return Response.json(teams);
+    }
+    if (url.pathname === "/rest/v1/naver_rank_trackers") {
+      if (trackerError) return Response.json(trackerError, { status: 400 });
+      return Response.json(productRows);
+    }
+    if (url.pathname === "/rest/v1/naver_place_rank_trackers") return Response.json(placeRows);
+    throw new Error(`unexpected fetch: ${rawUrl}`);
+  };
+  return { gets, impl };
+}
+
+test("연결 전 코드로 등록된 추적기 건수와 코드가 총관리자 요약에 실린다", async () => {
+  const stub = unlinkedScopeStub({
+    teams: [
+      // 광고주와 연결된 팀 — 팀 화면에서 팀코드 추적기가 사라진다.
+      { team_code: "mml93-t01", team_name: "운영팀 1", status: "active", client_id: "client-team-1" },
+      // 권한이 해제된 팀 — 아무도 못 보는데 수집만 계속된다.
+      { team_code: "mml93-t02", team_name: "운영팀 2", status: "revoked", client_id: null },
+      // 활성·미연결 팀은 자기 화면에서 그대로 보이므로 세지 않는다.
+      { team_code: "mml93-t03", team_name: "운영팀 3", status: "active", client_id: null },
+    ],
+    productRows: [
+      { agency_code: "mml93-t01" },
+      { agency_code: "mml93-t01" },
+      { agency_code: "mml93-t03" },
+    ],
+    placeRows: [{ agency_code: "mml93-t02" }],
+  });
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+
+  assert.equal(response.status, 200);
+  const unlinked = payload.health.unlinkedScopeTrackers;
+  assert.equal(unlinked.count, 3);
+  assert.equal(unlinked.error, null);
+  assert.deepEqual(unlinked.codes, [
+    { agencyCode: "mml93-t01", teamName: "운영팀 1", teamStatus: "active", trackerCount: 2 },
+    { agencyCode: "mml93-t02", teamName: "운영팀 2", teamStatus: "revoked", trackerCount: 1 },
+  ]);
+
+  // 두 레인 모두 숨은 팀코드만, 활성 행만 본다.
+  const trackerQueries = stub.gets.filter((url) => url.pathname.startsWith("/rest/v1/naver_"));
+  assert.equal(trackerQueries.length, 2);
+  trackerQueries.forEach((url) => {
+    assert.equal(url.searchParams.get("status"), "eq.active");
+    assert.equal(url.searchParams.get("agency_code"), "in.(mml93-t01,mml93-t02)");
+  });
+});
+
+test("숨은 팀코드가 없으면 추적기 표를 보지 않고 0 을 돌려준다", async () => {
+  const stub = unlinkedScopeStub({
+    teams: [{ team_code: "mml93-t03", team_name: "운영팀 3", status: "active", client_id: null }],
+  });
+  const { payload } = await listOwnerAccountsWith(stub.impl);
+  assert.deepEqual(payload.health.unlinkedScopeTrackers, { count: 0, error: null, codes: [] });
+  assert.equal(stub.gets.filter((url) => url.pathname.startsWith("/rest/v1/naver_")).length, 0);
+});
+
+test("연결 전 코드 집계 실패는 count:null 로 접히고 응답은 200 이다", async () => {
+  const stub = unlinkedScopeStub({
+    teams: [{ team_code: "mml93-t01", team_name: "운영팀 1", status: "active", client_id: "client-team-1" }],
+    trackerError: { code: "42P01", message: "relation naver_rank_trackers does not exist", details: null, hint: null },
+  });
+  const { response, payload } = await listOwnerAccountsWith(stub.impl);
+  assert.equal(response.status, 200);
+  assert.equal(payload.health.unlinkedScopeTrackers.count, null);
+  assert.match(String(payload.health.unlinkedScopeTrackers.error), /does not exist/);
+});
+
+// ─────────────────────────────────────────────────────────────
+// 해지·연결 해제 시 추적기 자동 일시중지 / 재활성화 시 자동 복구 (F16)
+//
+// 해지 핸들러가 clients 만 바꾸면 그 계정의 추적기는 아무도 조회·중지할 수 없는데
+// 수집 명단(status='active')에는 남는다. 여기서는 핸들러가 두 레인에 실제로 어떤
+// 질의를 보내는지(범위·리스 조건·표식)와 응답 요약을 함께 고정한다.
+// ─────────────────────────────────────────────────────────────
+const SUSPENSION_CLIENT = {
+  id: "client-suspend-1",
+  name: "해지 대상 광고주",
+  business_name: "해지 대상 상호",
+  agency_code: "mml93-c02",
+  status: "active",
+  issued_by_team_code: null,
+  disconnected_at: null,
+  public_summary: null,
+  created_at: "2026-08-01T00:00:00.000Z",
+  updated_at: "2026-08-28T00:00:00.000Z",
+  rank_keyword_limit: null,
+};
+
+function superAdminPost(body) {
+  return new Request(SUPER_ADMIN_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+      "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+function trackerLifecycleStub({
+  client = SUSPENSION_CLIENT,
+  patchedClient = null,
+  productRows = [],
+  placeRows = [],
+  productBusy = 0,
+  productActive = 0,
+  keywordLimit = null,
+} = {}) {
+  const calls = [];
+  const impl = async (input, init = {}) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    const url = new URL(rawUrl);
+    const method = String(init.method || "GET").toUpperCase();
+    const accept = String(new Headers(init.headers || {}).get("accept") || "");
+    const single = accept.includes("vnd.pgrst.object+json");
+    const body = init.body ? JSON.parse(String(init.body)) : null;
+    calls.push({ method, url, body });
+
+    if (method === "HEAD") {
+      const total = url.pathname === "/rest/v1/naver_rank_trackers"
+        ? (url.searchParams.has("processing_until") ? productBusy : productActive)
+        : 0;
+      return new Response(null, { status: 200, headers: { "content-range": `*/${total}` } });
+    }
+    if (url.pathname === "/rest/v1/clients") {
+      if (method === "PATCH") {
+        const row = patchedClient || { ...client, status: "paused" };
+        return single ? Response.json(row) : Response.json([row]);
+      }
+      // 한도 조회는 열 하나만 읽는다.
+      if ((url.searchParams.get("select") || "") === "rank_keyword_limit") {
+        return Response.json([{ rank_keyword_limit: keywordLimit }]);
+      }
+      return Response.json([client]);
+    }
+    if (url.pathname === "/rest/v1/naver_rank_trackers") return Response.json(productRows);
+    if (url.pathname === "/rest/v1/naver_place_rank_trackers") return Response.json(placeRows);
+    if (url.pathname === "/rest/v1/audit_logs") return Response.json([], { status: 201 });
+    throw new Error(`unexpected fetch: ${method} ${rawUrl}`);
+  };
+  return { calls, impl };
+}
+
+async function runSuperAdminAction(body, impl) {
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    impl,
+    () => handler.fetch(superAdminPost(body)),
+  ));
+  return { response, payload: await response.json() };
+}
+
+test("광고주 권한 해제는 두 레인의 활성 추적기를 표식과 함께 중지한다", async () => {
+  const stub = trackerLifecycleStub({
+    productRows: [{ id: "p1" }, { id: "p2" }],
+    placeRows: [{ id: "l1" }],
+    productBusy: 1,
+  });
+  const { response, payload } = await runSuperAdminAction({ action: "revoke-client", agencyCode: "mml93-c02" }, stub.impl);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.trackerSuspension.paused, 3);
+  assert.equal(payload.trackerSuspension.busySkipped, 1);
+  assert.deepEqual(payload.trackerSuspension.errors, []);
+
+  const patches = stub.calls.filter((call) => call.method === "PATCH" && call.url.pathname.startsWith("/rest/v1/naver_"));
+  assert.equal(patches.length, 2);
+  patches.forEach((call) => {
+    assert.equal(call.url.searchParams.get("agency_code"), "in.(mml93-c02)");
+    assert.equal(call.url.searchParams.get("status"), "eq.active");
+    // 진행 중 수집(미래 리스)은 건드리지 않는다.
+    assert.match(call.url.searchParams.get("or"), /^\(processing_until\.is\.null,processing_until\.lt\.20/);
+    assert.equal(call.body.status, "paused");
+    assert.equal(call.body.last_message, RANK_TRACKER_AUTO_PAUSE_MESSAGE);
+    assert.ok(String(call.body.last_message).startsWith(RANK_TRACKER_AUTO_PAUSE_MARK));
+  });
+
+  // 진행 중 수집 건수는 별도 질의로 세고 그대로 보고한다.
+  const busyQueries = stub.calls.filter((call) => call.method === "HEAD" && call.url.searchParams.has("processing_until"));
+  assert.equal(busyQueries.length, 2);
+  assert.match(busyQueries[0].url.searchParams.get("processing_until"), /^gte\.20/);
+});
+
+test("총관리자 재활성화는 그때 자동 중지한 추적기만 되돌린다", async () => {
+  const stub = trackerLifecycleStub({
+    client: { ...SUSPENSION_CLIENT, status: "paused", disconnected_at: "2026-09-01T00:00:00.000Z" },
+    patchedClient: { ...SUSPENSION_CLIENT, status: "active" },
+    productRows: [{ id: "p1", agency_code: "mml93-c02", last_message: RANK_TRACKER_AUTO_PAUSE_MESSAGE }],
+    placeRows: [],
+    productActive: 0,
+  });
+  const { response, payload } = await runSuperAdminAction({
+    action: "create-client",
+    name: "해지 대상 광고주",
+    agencyCode: "mml93-c02",
+  }, stub.impl);
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.reactivated, true);
+  assert.equal(payload.trackerRestore.resumed, 1);
+  assert.equal(payload.trackerRestore.limited, 0);
+
+  const markedQueries = stub.calls.filter((call) => call.method === "GET"
+    && call.url.pathname.startsWith("/rest/v1/naver_")
+    && call.url.searchParams.has("last_message"));
+  assert.equal(markedQueries.length, 2, "두 레인 모두 표식으로만 대상을 찾는다");
+  markedQueries.forEach((call) => {
+    assert.equal(call.url.searchParams.get("status"), "eq.paused");
+    assert.equal(call.url.searchParams.get("last_message"), `like.${RANK_TRACKER_AUTO_PAUSE_MARK}%`);
+  });
+
+  const restorePatch = stub.calls.find((call) => call.method === "PATCH" && call.url.pathname === "/rest/v1/naver_rank_trackers");
+  assert.equal(restorePatch.url.searchParams.get("id"), "eq.p1");
+  assert.equal(restorePatch.url.searchParams.get("status"), "eq.paused");
+  assert.equal(restorePatch.body.status, "active");
+  assert.equal(restorePatch.body.last_message, RANK_TRACKER_AUTO_RESUME_MESSAGE);
+  assert.equal(restorePatch.body.processing_until, null);
+});
+
+test("한도가 가득 차면 복구를 멈추고 사유만 남긴다(부분 성공)", async () => {
+  const stub = trackerLifecycleStub({
+    client: { ...SUSPENSION_CLIENT, status: "paused" },
+    patchedClient: { ...SUSPENSION_CLIENT, status: "active" },
+    productRows: [{ id: "p1", agency_code: "mml93-c02", last_message: RANK_TRACKER_AUTO_PAUSE_MESSAGE }],
+    keywordLimit: 2,
+    productActive: 2,
+  });
+  const { payload } = await runSuperAdminAction({
+    action: "create-client",
+    name: "해지 대상 광고주",
+    agencyCode: "mml93-c02",
+  }, stub.impl);
+
+  assert.equal(payload.trackerRestore.resumed, 0);
+  assert.equal(payload.trackerRestore.limited, 1);
+  const patch = stub.calls.find((call) => call.method === "PATCH" && call.url.pathname === "/rest/v1/naver_rank_trackers");
+  assert.equal(patch.body.status, undefined, "한도 초과 행은 활성으로 되돌리지 않는다");
+  assert.ok(String(patch.body.last_message).startsWith(RANK_TRACKER_AUTO_PAUSE_MARK));
+  assert.match(String(patch.body.last_message), /키워드 한도/);
+});
+
+test("총관리자 화면만 연결 전 코드 건수와 조회 경로를 보여 준다", async () => {
+  const [adminSource, clientSource, serverSource] = await Promise.all([
+    readFile(new URL("../../pages/admin.html", import.meta.url), "utf8"),
+    readFile(new URL("../../pages/client.html", import.meta.url), "utf8"),
+    readFile(new URL("./super-admin-api.mjs", import.meta.url), "utf8"),
+  ]);
+
+  // 서버 키와 화면이 읽는 키가 같아야 한다.
+  assert.ok(serverSource.includes("unlinkedScopeTrackers"));
+  assert.ok(adminSource.includes('["연결 전 코드로 등록된 추적기", health.unlinkedScopeTrackers]'));
+  assert.ok(adminSource.includes("function ownerUnlinkedScopeRows(summary)"));
+  assert.ok(adminSource.includes("rows = rows.concat(ownerUnlinkedScopeRows(health.unlinkedScopeTrackers));"));
+  // 목록 접근 경로 안내(잠금 함수 initRankTracking 은 건드리지 않는다).
+  assert.match(adminSource, /위 대상 코드 칸에 해당 코드를 넣고 N 상품·플레이스 순위 추적을 열면 조회·중지할 수 있습니다\./);
+  // 광고주 화면에는 다른 계정의 코드가 절대 실리지 않는다.
+  assert.equal(clientSource.includes("unlinkedScopeTrackers"), false);
 });

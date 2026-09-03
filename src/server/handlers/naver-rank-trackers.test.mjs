@@ -873,7 +873,7 @@ function productOwnerSessionRequest(method, body, options = {}) {
   });
 }
 
-function productOwnerListContext(scopes = []) {
+function productOwnerListContext(scopes = [], options = {}) {
   return {
     supabaseAdmin: {
       async rpc() {
@@ -895,6 +895,21 @@ function productOwnerListContext(scopes = []) {
             select() { return query; },
             eq() { return query; },
             async maybeSingle() { return { data: null, error: null }; },
+          };
+          return query;
+        }
+        // F17: 광고주 행이 없을 때 총관리자만 운영팀 코드 범위를 열 수 있다.
+        // teamRow 가 없으면(등록된 팀코드가 아니면) 지금까지처럼 403 이어야 한다.
+        if (table === "operation_team_codes") {
+          const filters = [];
+          const query = {
+            select() { return query; },
+            eq(column, value) { filters.push([column, value]); return query; },
+            limit() { return query; },
+            async maybeSingle() {
+              if (options.teamLookups) options.teamLookups.push(filters.map((filter) => [...filter]));
+              return { data: options.teamRow || null, error: null };
+            },
           };
           return query;
         }
@@ -990,6 +1005,63 @@ test("총관리자 표식이 없는 세션은 같은 자리표시자를 보내�
   });
 });
 
+test("총관리자는 광고주 연결 전 팀코드로 등록된 추적기를 그 코드로 조회할 수 있다", async () => {
+  await withOwnerRankEnv(async () => {
+    const scopes = [];
+    const teamLookups = [];
+    const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+      productOwnerSessionRequest("GET", null, { agencyCode: "mml93-t01" }),
+      productOwnerListContext(scopes, { teamRow: { id: "team-1" }, teamLookups }),
+    ));
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    // 조회 범위는 그 팀코드 그대로다(대표 코드로 넓히지 않는다).
+    assert.deepEqual(scopes, [["mml93-t01"]]);
+    assert.equal(body.scopeAgencyCode, "mml93-t01");
+    assert.equal(body.scopeClientId, "");
+    // 팀코드 확인은 총관리자가 소유한 운영팀만 대상으로 한다.
+    assert.deepEqual(teamLookups, [[["team_code", "mml93-t01"], ["owner_agency_code", "mml93-a01"]]]);
+    // 총관리자 전용 운영 제어는 대표 코드 범위에서만 열린다.
+    assert.equal("workerOperations" in body, false);
+  });
+});
+
+test("등록되지 않은 코드는 총관리자 코드로도 계속 막힌다", async () => {
+  await withOwnerRankEnv(async () => {
+    const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+      productOwnerSessionRequest("GET", null, { agencyCode: "mml93-t99" }),
+      productOwnerListContext([], { teamRow: null }),
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(body.message, "등록된 대행사 코드를 확인할 수 없습니다.");
+  });
+});
+
+test("팀코드 범위는 총관리자 코드 없이는 열리지 않는다", async () => {
+  await withOwnerRankEnv(async () => {
+    const request = new Request("https://example.com/api/naver-rank-trackers", {
+      headers: {
+        "x-mi-session-role": "client",
+        "x-mi-session-scope": "advertiser",
+        "x-mi-agency-code": "mml93-t01",
+        "x-mi-rank-access-code": "mml93-t01",
+      },
+    });
+    const response = await withoutShoppingCollector(() => handleRankTrackersRequest(
+      request,
+      // 운영팀 조회가 일어나면 스텁이 팀 행을 돌려주지만, 총관리자 코드가 없으므로
+      // 그 경로에 들어가서는 안 된다.
+      productOwnerListContext([], { teamRow: { id: "team-1" } }),
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 403);
+    assert.equal(body.message, "등록된 대행사 코드를 확인할 수 없습니다.");
+  });
+});
+
 test("총관리자 자리표시자 번역은 총관리자 세션에서만 일어난다", async () => {
   await withOwnerRankEnv(() => {
     assert.equal(requestAgencyCode(productOwnerSessionRequest("GET", null, { agencyCode: "owner-session" })), "mml93-a01");
@@ -1058,6 +1130,58 @@ test("new shopping trackers require an authoritative numeric product identity", 
   const conflictBody = await conflictResponse.json();
   assert.equal(conflictResponse.status, 400);
   assert.equal(conflictBody.ok, false);
+});
+
+test("카테고리·검색·기획전 URL 은 등록 전에 400 으로 막힌다", async () => {
+  const guardedContext = {
+    supabaseAdmin: {
+      from() {
+        throw new Error("registration must fail before database access");
+      },
+    },
+  };
+  // 8자리 숫자 폴백이 식별자를 집어 주기 때문에 기존 게이트는 이 URL 들을 통과시킨다.
+  const rejected = [
+    "https://shopping.naver.com/ns/category/50000167",
+    "https://smartstore.naver.com/haedenprime/category/50000000",
+    "https://shopping.naver.com/exhibition/12345678",
+  ];
+  for (const productUrl of rejected) {
+    const response = await withShoppingHybrid(() => handleRankTrackersRequest(
+      productTeamAccountRequest("POST", { action: "create", keyword: "온열찜질기", productUrl }),
+      guardedContext,
+    ));
+    const body = await response.json();
+    assert.equal(response.status, 400, `${productUrl} 는 막혀야 한다`);
+    assert.equal(body.ok, false);
+    assert.equal(body.code, "RANK_PRODUCT_URL_UNSUPPORTED");
+    assert.equal(body.message, "상품 URL 또는 원부(카탈로그) URL을 입력해주세요.");
+  }
+});
+
+test("정상 상품·원부 URL 은 URL 형태 게이트를 통과해 등록 경로로 들어간다", async () => {
+  const guardedContext = {
+    supabaseAdmin: {
+      from() {
+        throw new Error("reached-registration");
+      },
+    },
+  };
+  const allowed = [
+    "https://smartstore.naver.com/haedenprime/products/12149720593",
+    "https://search.shopping.naver.com/catalog/57907660073",
+    "https://shopping.naver.com/window-products/style/12345678",
+  ];
+  for (const productUrl of allowed) {
+    await assert.rejects(
+      () => withShoppingHybrid(() => handleRankTrackersRequest(
+        productTeamAccountRequest("POST", { action: "create", keyword: "온열찜질기", productUrl }),
+        guardedContext,
+      )),
+      /reached-registration/,
+      `${productUrl} 는 막히면 안 된다`,
+    );
+  }
 });
 
 test("an account-only team reaches every product-rank action without advertiser scope", async () => {

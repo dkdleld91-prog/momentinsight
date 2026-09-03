@@ -19,6 +19,10 @@ import {
   resolveRankKeywordLimit,
 } from "../rank-keyword-limit.mjs";
 import {
+  RANK_PRODUCT_URL_REJECTION_CODE,
+  rankProductUrlRejection,
+} from "../rank-target-url.mjs";
+import {
   buildRankTarget,
   classifyNaverProductType,
   extractProductId,
@@ -719,6 +723,22 @@ async function findClientId(ctx, agencyCode) {
   return null;
 }
 
+// 총관리자가 소유한 운영팀 코드인지 확인한다. 상태(active/revoked)는 보지 않는다 —
+// 권한이 해제된 팀의 코드로 등록돼 아무도 못 보는 추적기야말로 열어야 할 대상이다.
+async function isOwnerOperationTeamCode(ctx, agencyCode) {
+  const code = canonicalAgencyCode(agencyCode);
+  if (!code) return false;
+  const { data, error } = await ctx.supabaseAdmin
+    .from("operation_team_codes")
+    .select("id")
+    .eq("team_code", code)
+    .eq("owner_agency_code", primaryAgencyCode())
+    .limit(1)
+    .maybeSingle();
+  if (error) return false;
+  return Boolean(data && data.id);
+}
+
 async function requireRankAccess(request, ctx, body = {}, options = {}) {
   const agencyCode = requestAgencyCode(request, body);
   if (!agencyCode) {
@@ -745,6 +765,13 @@ async function requireRankAccess(request, ctx, body = {}, options = {}) {
 
   const clientId = await findClientId(ctx, agencyCode);
   if (!clientId) {
+    // F17: 운영팀이 광고주 연결 전에 팀코드로 등록한 추적기는 연결 후 그 팀 화면에서
+    // 사라지고 총관리자도 못 보는데 수집은 계속된다. 총관리자 코드를 가진 요청에
+    // 한해 그 팀코드 범위를 열어 조회·중지할 수 있게 한다(광고주 코드가 아니므로
+    // clientId 는 없고, 아래 광고주 접속 코드 경로는 그대로 닫혀 있다).
+    if (adminAuthorized && await isOwnerOperationTeamCode(ctx, agencyCode)) {
+      return { ok: true, agencyCode, clientId: null, admin: true, teamCodeScope: true };
+    }
     return {
       ok: false,
       response: json(request, { ok: false, message: "등록된 대행사 코드를 확인할 수 없습니다." }, 403),
@@ -1759,6 +1786,17 @@ async function createTracker(request, ctx, body, access = {}) {
   if (!keyword) return json(request, { ok: false, message: "키워드를 입력해주세요." }, 400);
   if (directTarget.hasDirectTarget !== true || directTarget.identityConflict === true || !productId) {
     return json(request, { ok: false, message: "네이버 상품 URL 또는 숫자 상품ID를 입력해주세요." }, 400);
+  }
+  // F13: 신뢰 호스트의 카테고리·검색·기획전 URL 은 8자리 숫자 폴백에 걸려 식별자가
+  // 잡히므로 위 게이트를 통과한다. 등록되면 영원히 못 찾는 product 모드 추적기가 돼
+  // 한도와 수집 용량만 먹으므로 여기서 형태를 확인해 되돌린다.
+  const productUrlRejection = rankProductUrlRejection(productUrl);
+  if (productUrlRejection) {
+    return json(request, {
+      ok: false,
+      code: RANK_PRODUCT_URL_REJECTION_CODE,
+      message: productUrlRejection,
+    }, 400);
   }
 
   const registrationMatches = await loadTrackerRegistrationMatches(

@@ -610,7 +610,8 @@ async function loadKeywordNews(config, keywords, trackers, nowMs, deadlineMs) {
     for (const tracker of trackers) {
       const keyword = String(tracker?.keyword || "").trim();
       const rank = Number(tracker?.current_rank);
-      if (keyword && Number.isFinite(rank) && !rankByKeyword.has(keyword)) rankByKeyword.set(keyword, rank);
+      // current_rank 0 은 미발견(순위 아님) → null 로 두어 화면이 "순위 미확인"을 보이게 한다.
+      if (keyword && Number.isFinite(rank) && rank >= 1 && !rankByKeyword.has(keyword)) rankByKeyword.set(keyword, rank);
     }
     const items = [];
     for (const keyword of keywords) {

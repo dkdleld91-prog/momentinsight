@@ -26,6 +26,9 @@
     },
     "api/client/home-feed.mjs": {
       "maxDuration": 60
+    },
+    "api/client/public-state.mjs": {
+      "maxDuration": 30
     }
   },
   "crons": [

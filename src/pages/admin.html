@@ -10718,6 +10718,22 @@
        업무 운영 묶음의 작은 글자 규칙은 이 <style> 안(위쪽)에 있고 미디어
        쿼리는 특이도를 올려 주지 않는다. 그래서 같은 선택자를 그 규칙보다
        뒤에서 다시 적어야 순서로 이긴다 — 앞쪽 묶음에 적으면 지고 만다. */
+    /* 시장 홈 반응형. 이 묶음은 아래 업무 다이얼로그 900px 묶음보다 반드시 앞에 둔다 —
+       check-release-baseline.mjs 가 "마지막 900px 묶음"을 업무 다이얼로그 규칙으로 보고
+       잘라 읽기 때문에, 뒤에 두면 그 검사가 엉뚱한 블록을 집는다. */
+    @media (max-width: 1180px) {
+      #mi-admin .mi-home-m3 {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 900px) {
+      #mi-admin .mi-home-news2,
+      #mi-admin .mi-home-m3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 900px) {
       #mi-admin .mi-work-dialog .mi-input,
       #mi-admin .mi-work-dialog .mi-textarea,
@@ -10727,6 +10743,494 @@
         font-size: 16px;
       }
     }
+
+    /* ── 시장 홈 ────────────────────────────────────────────────
+       기사·지표·키워드 뉴스. 브랜드색(네이버/쿠팡)은 면(글로우·상단 엣지)에만 쓰고
+       초록·빨강은 상승·하락에만 쓴다. 그 밖의 색은 기존 #mi-admin 토큰만 쓴다. */
+    #mi-admin .mi-ops-home {
+      /* 상승·하락·정보 색은 이 페이지에 이미 있는 값을 그대로 쓴다(새 색을 늘리지 않는다).
+         네이버·쿠팡 두 색만 브랜드 식별을 위해 새로 들인다. */
+      --mi-home-red: #991b1b;
+      --mi-home-red-bg: #fee2e2;
+      --mi-home-blue: #24415f;
+      --mi-home-blue-bg: #e8eef6;
+      --mi-home-naver: #03c75a;
+      --mi-home-coupang: #4a9ed2;
+    }
+
+    #mi-admin .mi-home-strip {
+      display: flex;
+      overflow-x: auto;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 10px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      padding: 12px 18px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-home-strip-label {
+      display: flex;
+      flex: none;
+      align-items: center;
+      gap: 8px;
+      color: var(--mi-navy);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    #mi-admin .mi-home-strip-label span {
+      color: var(--mi-muted);
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-sep {
+      flex: none;
+      width: 1px;
+      height: 20px;
+      background: var(--mi-line);
+    }
+
+    #mi-admin .mi-home-ditem {
+      display: flex;
+      flex: none;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-home-ditem .mi-home-time {
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mi-admin .mi-home-ditem .mi-home-who {
+      color: var(--mi-muted);
+      font-size: 11.5px;
+    }
+
+    #mi-admin .mi-home-more {
+      flex: none;
+      margin-left: auto;
+      color: var(--mi-muted);
+      font-size: 12.5px;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-home-board {
+      margin-top: 22px;
+      border: 1px solid var(--mi-line);
+      border-radius: 18px;
+      padding: 24px;
+      background: var(--mi-panel);
+      box-shadow: var(--mi-shadow);
+    }
+
+    #mi-admin .mi-home-bhead {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    #mi-admin .mi-home-bhead > strong {
+      color: var(--mi-navy);
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-home-lead-note {
+      color: var(--mi-muted);
+      font-size: 12.5px;
+    }
+
+    #mi-admin .mi-home-rt {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+      color: var(--mi-muted);
+      font-size: 12.5px;
+    }
+
+    #mi-admin .mi-home-live {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--mi-green);
+    }
+
+    #mi-admin .mi-home-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      padding: 4px 10px;
+      color: var(--mi-muted);
+      background: var(--mi-gold-soft);
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-home-pill.is-ok {
+      color: var(--mi-green);
+      background: var(--mi-green-bg);
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-pill.is-bad {
+      color: var(--mi-home-red);
+      background: var(--mi-home-red-bg);
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-pill.is-info {
+      color: var(--mi-home-blue);
+      background: var(--mi-home-blue-bg);
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-pill.is-warn {
+      color: var(--mi-orange);
+      background: var(--mi-orange-bg);
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-pill.is-topic {
+      border: 1px solid var(--mi-line);
+      color: #475569;
+      background: var(--mi-panel);
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-dot {
+      display: inline-block;
+      flex: none;
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+    }
+
+    #mi-admin .mi-home-news2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+    }
+
+    #mi-admin .mi-home-pcol {
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+      border: 1px solid var(--mi-line);
+      border-radius: 16px;
+      padding: 18px 20px 12px;
+      background: linear-gradient(180deg, #fff 0%, var(--mi-grey-50) 100%);
+    }
+
+    #mi-admin .mi-home-pcol::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      pointer-events: none;
+    }
+
+    #mi-admin .mi-home-pcol.is-naver {
+      box-shadow: inset 0 3px 0 var(--mi-home-naver);
+    }
+
+    #mi-admin .mi-home-pcol.is-naver::before {
+      background: radial-gradient(circle at 90% -6%, rgba(3, 199, 90, 0.17), transparent 48%);
+    }
+
+    #mi-admin .mi-home-pcol.is-coupang {
+      box-shadow: inset 0 3px 0 var(--mi-home-coupang);
+    }
+
+    #mi-admin .mi-home-pcol.is-coupang::before {
+      background: radial-gradient(circle at 90% -6%, rgba(74, 158, 210, 0.26), transparent 50%);
+    }
+
+    #mi-admin .mi-home-pcol > * {
+      position: relative;
+    }
+
+    #mi-admin .mi-home-phead {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin-bottom: 14px;
+      border-bottom: 1.5px solid var(--mi-line);
+      padding-bottom: 11px;
+    }
+
+    #mi-admin .mi-home-pcol.is-naver .mi-home-phead {
+      border-bottom-color: rgba(3, 199, 90, 0.5);
+    }
+
+    #mi-admin .mi-home-pcol.is-coupang .mi-home-phead {
+      border-bottom-color: rgba(74, 158, 210, 0.6);
+    }
+
+    #mi-admin .mi-home-phead b {
+      color: var(--mi-navy);
+      font-size: 16px;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-home-cnt {
+      margin-left: auto;
+      color: var(--mi-muted);
+      font-size: 12px;
+    }
+
+    #mi-admin .mi-home-pcol.is-naver .mi-home-cnt {
+      color: #057a3b;
+    }
+
+    #mi-admin .mi-home-pcol.is-coupang .mi-home-cnt {
+      color: #2d6ac5;
+    }
+
+    #mi-admin .mi-home-leadart {
+      display: block;
+      margin-bottom: 4px;
+      border: 1px solid var(--mi-line);
+      border-radius: 13px;
+      padding: 16px 17px 14px;
+      background: var(--mi-panel);
+      box-shadow: 0 6px 18px rgba(6, 26, 58, 0.06);
+      transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+    }
+
+    #mi-admin .mi-home-leadart:hover {
+      transform: translateY(-1px);
+      border-color: rgba(15, 39, 73, 0.2);
+      box-shadow: 0 12px 26px rgba(6, 26, 58, 0.1);
+    }
+
+    #mi-admin .mi-home-leadart .mi-home-h {
+      margin: 0 0 8px;
+      color: var(--mi-navy);
+      font-size: 19px;
+      font-weight: 700;
+      line-height: 1.35;
+      letter-spacing: -0.028em;
+    }
+
+    #mi-admin .mi-home-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      color: var(--mi-muted);
+      font-size: 11.5px;
+    }
+
+    #mi-admin .mi-home-src {
+      color: #475569;
+      font-weight: 500;
+    }
+
+    #mi-admin .mi-home-art {
+      display: flex;
+      gap: 12px;
+      margin: 0 -8px;
+      border-bottom: 1px solid var(--mi-line);
+      border-radius: 10px;
+      padding: 12px 8px;
+      transition: background 160ms ease;
+    }
+
+    #mi-admin .mi-home-art:hover {
+      background: rgba(255, 255, 255, 0.85);
+    }
+
+    #mi-admin .mi-home-tm {
+      flex: none;
+      width: 44px;
+      padding-top: 3px;
+      color: var(--mi-muted);
+      font-size: 11.5px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mi-admin .mi-home-artbody {
+      min-width: 0;
+      flex: 1;
+    }
+
+    #mi-admin .mi-home-art .mi-home-h {
+      margin: 0 0 6px;
+      color: var(--mi-ink);
+      font-size: 14.5px;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-home-art .mi-home-meta {
+      font-size: 11px;
+    }
+
+    #mi-admin .mi-home-scope {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 14px;
+      border-radius: 10px;
+      padding: 9px 14px;
+      color: var(--mi-home-blue);
+      background: var(--mi-home-blue-bg);
+      font-size: 12.5px;
+    }
+
+    #mi-admin .mi-home-m3 {
+      display: grid;
+      grid-template-columns: 1.05fr 1.25fr 0.9fr;
+      gap: 14px;
+    }
+
+    #mi-admin .mi-home-mbox {
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      padding: 17px 18px;
+      background: var(--mi-grey-50);
+    }
+
+    #mi-admin .mi-home-mbox h4 {
+      margin: 0 0 5px;
+      color: var(--mi-navy);
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    #mi-admin .mi-home-sub {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 13px;
+      color: var(--mi-muted);
+      font-size: 11.5px;
+    }
+
+    #mi-admin .mi-home-vrow {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 0;
+    }
+
+    #mi-admin .mi-home-kw {
+      overflow: hidden;
+      flex: none;
+      width: 88px;
+      font-size: 13.5px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #mi-admin .mi-home-bar {
+      overflow: hidden;
+      flex: 1;
+      height: 7px;
+      border-radius: 4px;
+      background: #e8edf3;
+    }
+
+    #mi-admin .mi-home-bar i {
+      display: block;
+      height: 100%;
+      border-radius: 4px;
+      background: var(--mi-muted);
+    }
+
+    #mi-admin .mi-home-pc {
+      width: 46px;
+      font-size: 12.5px;
+      font-weight: 700;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mi-admin .mi-home-vol {
+      width: 56px;
+      color: var(--mi-muted);
+      font-size: 11.5px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #mi-admin .mi-home-vrow.is-up .mi-home-bar i {
+      background: var(--mi-green);
+    }
+
+    #mi-admin .mi-home-vrow.is-up .mi-home-pc {
+      color: var(--mi-green);
+    }
+
+    #mi-admin .mi-home-vrow.is-down .mi-home-bar i {
+      background: var(--mi-home-red);
+    }
+
+    #mi-admin .mi-home-vrow.is-down .mi-home-pc {
+      color: var(--mi-home-red);
+    }
+
+    #mi-admin .mi-home-kn {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(276px, 1fr));
+      gap: 14px;
+    }
+
+    #mi-admin .mi-home-kncard {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      padding: 17px 18px;
+      background: var(--mi-grey-50);
+    }
+
+    #mi-admin .mi-home-kncard .mi-home-h {
+      margin: 0;
+      color: var(--mi-ink);
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.5;
+    }
+
+    #mi-admin .mi-home-empty {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      border: 1px solid var(--mi-line);
+      border-radius: 14px;
+      padding: 16px 17px;
+      background: var(--mi-panel);
+    }
+
+    #mi-admin .mi-home-empty-title {
+      color: var(--mi-navy);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.015em;
+    }
+
+    #mi-admin .mi-home-empty-detail {
+      color: var(--mi-muted);
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+
   </style>
 
   <div class="mi-login" aria-label="운영팀 로그인 화면">
@@ -10838,8 +11342,8 @@
           <header class="mi-head mi-ops-home-head">
             <div>
               <span class="mi-kicker">운영 워크스페이스</span>
-              <h1>오늘 운영 흐름을 한 화면에서 확인합니다.</h1>
-              <p>연결·입력·검수·공개 순서만 남겨 필요한 화면으로 바로 이동합니다.</p>
+              <h1>시장과 내 광고주 상태를 한 화면에서 봅니다.</h1>
+              <p>오늘 일정과 순위 급변, 셀러 관련 기사와 등록 키워드 지표만 남겼습니다.</p>
             </div>
             <div class="mi-ops-home-actions">
               <a class="mi-link-button" href="#mi-admin-excel" data-mi-admin-screen="excel">운영 입력</a>
@@ -10847,82 +11351,107 @@
             </div>
           </header>
 
-          <section class="mi-ops-status-board" aria-label="지금 상황">
-            <div class="mi-ops-status-head">
-              <strong>지금 상황</strong>
-              <span data-ops-home-period>기준 월 확인 중</span>
+          <div class="mi-home-strip" data-home-schedule-strip>
+            <span class="mi-home-strip-label">오늘 일정 <span data-home-schedule-count>확인 중</span></span>
+            <span class="mi-home-sep"></span>
+            <span class="mi-home-ditem" data-home-schedule-items>
+              <span class="mi-home-who">오늘 일정을 불러오는 중입니다.</span>
+            </span>
+            <a class="mi-home-more" href="#mi-admin-my-calendar" data-home-schedule-link>캘린더 →</a>
+          </div>
+
+          <div class="mi-home-strip" data-home-swing-strip>
+            <span class="mi-home-strip-label">순위 급변 <span data-home-swing-count>어제 대비 ±10위 이상</span></span>
+            <span class="mi-home-sep"></span>
+            <span class="mi-home-ditem" data-home-swing-items>
+              <span class="mi-home-who">순위 변동을 불러오는 중입니다.</span>
+            </span>
+            <a class="mi-home-more" href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking">N 30일 순위 →</a>
+          </div>
+
+          <section class="mi-home-board" data-home-feed-news aria-label="온라인 기사">
+            <div class="mi-home-bhead">
+              <strong>온라인 기사</strong>
+              <span class="mi-home-lead-note">최근 7일 · 셀러 관련 기사만 · 맨 위는 관련도 1위(동률이면 최신)</span>
+              <span class="mi-home-rt"><span class="mi-home-live"></span><span data-home-news-updated>갱신 확인 중 · 1시간마다</span></span>
             </div>
-            <div class="mi-ops-status-grid">
-              <a class="mi-ops-status-card" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code" data-ops-home-client-card>
-                <div><span>담당 광고주</span><b data-ops-home-client-state data-state="idle">확인 중</b></div>
-                <strong data-ops-home-client-title>광고주 연결 확인 중</strong>
-                <small data-ops-home-client-detail>보안 세션이 확인한 연결 상태 기준</small>
-              </a>
-              <a class="mi-ops-status-card" href="#mi-admin-excel" data-mi-admin-screen="excel">
-                <div><span>매출 입력</span><b data-ops-home-sales-state data-state="idle">확인 중</b></div>
-                <strong data-ops-home-sales-title>매출 상태 확인 중</strong>
-                <small data-ops-home-sales-detail>저장된 공개 매출과 입력일 기준</small>
-              </a>
-              <a class="mi-ops-status-card" href="#mi-admin-reports" data-mi-admin-screen="reports">
-                <div><span>보고서 제출</span><b data-ops-home-report-state data-state="idle">로그인 후</b></div>
-                <strong data-ops-home-report-title>보고서 상태 확인 대기</strong>
-                <small data-ops-home-report-detail>서버 보고서함의 이번 달 기록 기준</small>
-              </a>
-              <a class="mi-ops-status-card" href="#mi-admin-my-calendar" data-ops-home-schedule-card>
-                <div><span>오늘 일정</span><b data-ops-home-schedule-state data-state="idle">확인 중</b></div>
-                <strong data-ops-home-schedule-title>오늘 일정 확인 중</strong>
-                <small data-ops-home-schedule-detail>내 캘린더의 오늘 일정 기준</small>
-              </a>
-              <a class="mi-ops-status-card" href="#mi-admin-naver-rank-tracking" data-mi-admin-screen="naver-rank-tracking" data-ops-home-rank-card>
-                <div><span>순위 급변</span><b data-ops-home-rank-state data-state="idle">확인 중</b></div>
-                <strong data-ops-home-rank-title>순위 신호 확인 중</strong>
-                <small data-ops-home-rank-detail>등록된 30일 추적의 전회 대비 변동 기준</small>
-              </a>
+            <div class="mi-home-news2">
+              <div class="mi-home-pcol is-naver">
+                <div class="mi-home-phead">
+                  <span class="mi-home-dot" style="background: #03c75a;"></span>
+                  <b>네이버</b>
+                  <span class="mi-home-cnt" data-home-news-naver-count>확인 중</span>
+                </div>
+                <div data-home-news-naver>
+                  <div class="mi-home-empty">
+                    <span class="mi-home-empty-title">기사를 불러오는 중입니다</span>
+                    <span class="mi-home-empty-detail">최근 7일 기준</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mi-home-pcol is-coupang">
+                <div class="mi-home-phead">
+                  <span class="mi-home-dot" style="background: #4a9ed2;"></span>
+                  <b>쿠팡</b>
+                  <span class="mi-home-cnt" data-home-news-coupang-count>확인 중</span>
+                </div>
+                <div data-home-news-coupang>
+                  <div class="mi-home-empty">
+                    <span class="mi-home-empty-title">기사를 불러오는 중입니다</span>
+                    <span class="mi-home-empty-detail">최근 7일 기준</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </section>
 
-          <div class="mi-ops-quick-grid" data-admin-home-truthful-state aria-label="빠른 실행">
-            <a class="mi-ops-quick-card" href="#mi-admin-agency-code" data-mi-admin-screen="agency-code"><span>01</span><strong>광고주 연결</strong><small>운영팀·광고주 권한 관계 확인</small><b aria-hidden="true">→</b></a>
-            <a class="mi-ops-quick-card" href="#mi-admin-excel" data-mi-admin-screen="excel"><span>02</span><strong>운영 데이터</strong><small>원본 입력과 공개값 검수</small><b aria-hidden="true">→</b></a>
-            <a class="mi-ops-quick-card" href="#mi-admin-publish" data-mi-admin-screen="publish"><span>03</span><strong>공개 관리</strong><small>승인·공유 조건 최종 확인</small><b aria-hidden="true">→</b></a>
-            <a class="mi-ops-quick-card" href="#mi-admin-reports" data-mi-admin-screen="reports"><span>04</span><strong>보고서 관리</strong><small>검수 완료 파일 전달</small><b aria-hidden="true">→</b></a>
-          </div>
-
-          <article class="mi-ops-flow-card">
-            <span class="mi-kicker">운영 루틴</span>
-            <h2>한 방향으로만 진행합니다.</h2>
-            <p>계정 범위부터 광고주 공개까지 순서를 고정해 누락을 줄입니다.</p>
-            <div class="mi-ops-flow">
-              <div class="mi-ops-flow-step"><span>STEP 01</span><strong>범위 확인</strong><small>계정·광고주</small></div>
-              <div class="mi-ops-flow-step"><span>STEP 02</span><strong>데이터 정리</strong><small>원본·공개값</small></div>
-              <div class="mi-ops-flow-step"><span>STEP 03</span><strong>승인 검수</strong><small>보고서·공유</small></div>
-              <div class="mi-ops-flow-step"><span>STEP 04</span><strong>공개 확인</strong><small>광고주 화면</small></div>
+          <section class="mi-home-board" data-home-feed-metrics data-admin-home-truthful-state aria-label="내 키워드 지표">
+            <div class="mi-home-bhead">
+              <strong>내 키워드 지표</strong>
+              <span class="mi-home-lead-note">등록한 키워드만 집계합니다</span>
+              <span class="mi-home-rt"><span class="mi-home-live"></span>매일 04:10 갱신 · 분야는 키워드 조회 기준 자동 분류</span>
             </div>
-            <div class="mi-ops-truth-note">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
-          </article>
-
-          <aside class="mi-ops-check-card">
-            <div class="mi-card-head">
-              <div>
-                <h2>공개 전 확인</h2>
-                <p>광고주에게 보이기 전 필요한 기준만 확인합니다.</p>
+            <div class="mi-home-lead-note" style="margin-bottom: 12px;">실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다.</div>
+            <div class="mi-home-scope" data-home-scope>집계 범위 — 대상 광고주를 확인하는 중입니다 · 전체 시장 통계가 아닙니다</div>
+            <div class="mi-home-m3">
+              <div class="mi-home-mbox">
+                <h4>검색량 증감 TOP</h4>
+                <div class="mi-home-sub"><span class="mi-home-pill is-info">내 등록 키워드</span>검색 관심도 · 지난주 대비 · 데이터랩 상대지수</div>
+                <div data-home-volume-rows>
+                  <div class="mi-home-empty-detail">지표를 불러오는 중입니다.</div>
+                </div>
               </div>
-              <span class="mi-badge">4단계</span>
-            </div>
-            <div class="mi-ops-check-list">
-              <div class="mi-ops-check-item"><span>01</span><div><strong>데이터 범위</strong><small>광고주 ID 기준으로 분리</small></div></div>
-              <div class="mi-ops-check-item"><span>02</span><div><strong>공개 조건</strong><small>승인 + 공유 Y 항목만 노출</small></div></div>
-              <div class="mi-ops-check-item"><span>03</span><div><strong>파일 검수</strong><small>최종 보고서만 전달</small></div></div>
-              <div class="mi-ops-check-item"><span>04</span><div><strong>변경 기록</strong><small>저장 시간과 수정 이력 보관</small></div></div>
-            </div>
-            <div class="mi-ops-check-action">
-              <div>
-                <strong>광고주 화면에서 마지막 확인</strong>
-                <span>같은 공개 결과를 직접 검수합니다.</span>
+              <div class="mi-home-mbox">
+                <h4>분야 트렌드</h4>
+                <div class="mi-home-sub"><span class="mi-home-pill">내 키워드가 속한 분야</span>클릭 추이 · 14일 · 상대지수</div>
+                <div data-home-category-trend>
+                  <div class="mi-home-empty-detail">다음 배포에서 연결됩니다</div>
+                </div>
               </div>
-              <a class="mi-link-button" href="#mi-admin-client-preview" data-mi-admin-screen="client-preview">미리보기</a>
+              <div class="mi-home-mbox">
+                <h4>구매층 비중</h4>
+                <div class="mi-home-sub"><span class="mi-home-pill">내 키워드 분야 기준</span>최근 7일</div>
+                <div data-home-demographics>
+                  <div class="mi-home-empty-detail">다음 배포에서 연결됩니다</div>
+                </div>
+              </div>
             </div>
-          </aside>
+          </section>
+
+          <section class="mi-home-board" data-home-feed-keyword-news aria-label="내 키워드 뉴스">
+            <div class="mi-home-bhead">
+              <strong>내 키워드 뉴스</strong>
+              <span class="mi-home-lead-note">등록한 키워드와 겹치는 기사만</span>
+              <span class="mi-home-rt"><span class="mi-home-live"></span>매일 갱신 · 최근 7일</span>
+            </div>
+            <div class="mi-home-kn" data-home-keyword-news>
+              <div class="mi-home-empty">
+                <span class="mi-home-empty-title">기사를 불러오는 중입니다</span>
+                <span class="mi-home-empty-detail">등록 키워드 기준 · 최근 7일</span>
+              </div>
+            </div>
+          </section>
+
         </section>
 
         <section class="mi-view mi-work-shell" data-mi-admin-view="work" id="mi-admin-work">
@@ -18310,11 +18839,307 @@
         }
       }
 
+      // ── 시장 홈 피드 ──────────────────────────────────────────
+      // 서버 /api/client/home-feed 는 섹션별로 독립해서 성공·실패한다. 한 섹션이
+      // 비어도 나머지는 그대로 그리고, 전체가 실패해도 홈 밖 화면에는 영향이 없다.
+      // 모든 진입점은 try/catch 로 감싸 초기화 흐름을 절대 막지 않는다.
+      var homeFeedRequest = 0;
+      var homeScheduleStripRequest = 0;
+
+      function getHomeFeedApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/home-feed";
+        return "http://127.0.0.1:8790/api/client/home-feed";
+      }
+
+      function homeNode(tag, className, text) {
+        var node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined && text !== null) node.textContent = String(text);
+        return node;
+      }
+
+      function homeEmptyBox(title, detail) {
+        var box = homeNode("div", "mi-home-empty");
+        box.appendChild(homeNode("span", "mi-home-empty-title", title));
+        if (detail) box.appendChild(homeNode("span", "mi-home-empty-detail", detail));
+        return box;
+      }
+
+      function homeReplace(node, child) {
+        if (!node) return;
+        node.textContent = "";
+        if (child) node.appendChild(child);
+      }
+
+      function homeShortDate(value) {
+        var ms = Date.parse(String(value || ""));
+        if (!isFinite(ms)) return "";
+        var date = new Date(ms);
+        return (date.getMonth() + 1) + "/" + date.getDate();
+      }
+
+      function homeArticleLink(article, className) {
+        var link = homeNode("a", className);
+        link.href = article && article.link ? article.link : "#";
+        link.target = "_blank";
+        link.rel = "noopener";
+        return link;
+      }
+
+      function homeArticleMeta(article, extraPill) {
+        var meta = homeNode("div", "mi-home-meta");
+        if (article.source) meta.appendChild(homeNode("span", "mi-home-src", article.source));
+        var when = homeShortDate(article.publishedAt);
+        if (when) meta.appendChild(homeNode("span", "", when));
+        if (article.topic) meta.appendChild(homeNode("span", "mi-home-pill is-topic", article.topic));
+        if (extraPill) meta.appendChild(homeNode("span", "mi-home-pill is-info", extraPill));
+        return meta;
+      }
+
+      function renderHomeNewsColumn(container, countNode, section, brandLabel) {
+        if (!container) return;
+        if (!section || section.ok === false) {
+          if (countNode) countNode.textContent = "확인 필요";
+          homeReplace(container, homeEmptyBox("기사를 불러오지 못했습니다", "잠시 후 자동으로 다시 확인합니다."));
+          return;
+        }
+        var count = Number(section.count7d || 0);
+        if (countNode) countNode.textContent = "7일 " + count + "건";
+        if (!section.lead) {
+          homeReplace(container, homeEmptyBox("이번 주 셀러 관련 기사가 없습니다", "최근 7일 기준 · " + brandLabel));
+          return;
+        }
+        container.textContent = "";
+        var lead = homeArticleLink(section.lead, "mi-home-leadart");
+        lead.appendChild(homeNode("p", "mi-home-h", section.lead.title));
+        lead.appendChild(homeArticleMeta(section.lead, "관련도 1위"));
+        container.appendChild(lead);
+        (section.items || []).forEach(function (article) {
+          var row = homeNode("div", "mi-home-art");
+          row.appendChild(homeNode("span", "mi-home-tm", homeShortDate(article.publishedAt)));
+          var body = homeNode("div", "mi-home-artbody");
+          var link = homeArticleLink(article, "");
+          link.appendChild(homeNode("p", "mi-home-h", article.title));
+          body.appendChild(link);
+          body.appendChild(homeArticleMeta(article, ""));
+          row.appendChild(body);
+          container.appendChild(row);
+        });
+      }
+
+      function renderHomeVolumeRows(container, metrics) {
+        if (!container) return;
+        if (!metrics || metrics.ok === false || !(metrics.volumeChange || []).length) {
+          homeReplace(container, homeNode("div", "mi-home-empty-detail", "비교 기준을 쌓는 중입니다. 완결된 두 주가 모이면 증감이 표시됩니다."));
+          return;
+        }
+        var rows = metrics.volumeChange;
+        var widest = rows.reduce(function (max, row) {
+          return Math.max(max, Math.abs(Number(row.changePct || 0)));
+        }, 0) || 1;
+        container.textContent = "";
+        rows.forEach(function (row) {
+          var pct = Number(row.changePct || 0);
+          var line = homeNode("div", "mi-home-vrow " + (pct < 0 ? "is-down" : "is-up"));
+          line.appendChild(homeNode("span", "mi-home-kw", row.keyword));
+          var bar = homeNode("span", "mi-home-bar");
+          var fill = document.createElement("i");
+          fill.style.width = Math.round((Math.abs(pct) / widest) * 100) + "%";
+          bar.appendChild(fill);
+          line.appendChild(bar);
+          line.appendChild(homeNode("span", "mi-home-pc", row.changePct === null ? "-" : (pct < 0 ? "▼" : "▲") + Math.abs(pct) + "%"));
+          line.appendChild(homeNode("span", "mi-home-vol", row.monthlyVolume === null ? "조회 필요" : Number(row.monthlyVolume).toLocaleString("ko-KR")));
+          container.appendChild(line);
+        });
+      }
+
+      function renderHomeKeywordNews(container, keywordNews) {
+        if (!container) return;
+        var items = keywordNews && keywordNews.ok !== false ? (keywordNews.items || []) : [];
+        if (!items.length) {
+          homeReplace(container, homeEmptyBox("겹치는 기사가 없습니다", "등록 키워드 기준 · 최근 7일"));
+          return;
+        }
+        container.textContent = "";
+        items.forEach(function (item) {
+          var card = homeNode("div", "mi-home-kncard");
+          var head = homeNode("div", "mi-home-meta");
+          head.appendChild(homeNode("span", "mi-home-pill is-ok", item.keyword));
+          var src = homeNode("span", "mi-home-src", (item.source || "") + " · " + homeShortDate(item.publishedAt));
+          src.style.marginLeft = "auto";
+          head.appendChild(src);
+          card.appendChild(head);
+          var link = homeArticleLink(item, "");
+          link.appendChild(homeNode("p", "mi-home-h", item.title));
+          card.appendChild(link);
+          var foot = homeNode("div", "mi-home-meta");
+          foot.appendChild(item.myRank === null || item.myRank === undefined
+            ? homeNode("span", "mi-home-pill", "순위 미확인 · 원부 미매칭")
+            : homeNode("span", "mi-home-pill is-info", "내 순위 " + item.myRank + "위"));
+          card.appendChild(foot);
+          container.appendChild(card);
+        });
+      }
+
+      function renderHomeSwings(container, countNode, rank) {
+        if (!container) return;
+        var swings = rank && rank.ok !== false ? (rank.swings || []) : null;
+        if (!swings) {
+          if (countNode) countNode.textContent = "어제 대비 ±10위 이상";
+          homeReplace(container, homeNode("span", "mi-home-who", "순위 변동을 확인하지 못했습니다."));
+          return;
+        }
+        if (countNode) countNode.textContent = "어제 대비 ±10위 이상 · " + swings.length + "건";
+        if (!swings.length) {
+          homeReplace(container, homeNode("span", "mi-home-who", "어제 대비 ±10위 변동 없음"));
+          return;
+        }
+        container.textContent = "";
+        swings.forEach(function (swing, index) {
+          if (index > 0) container.appendChild(homeNode("span", "mi-home-sep"));
+          var up = Number(swing.delta) > 0;
+          container.appendChild(homeNode("span", "mi-home-pill " + (up ? "is-ok" : "is-bad"), (up ? "▲ " : "▼ ") + Math.abs(Number(swing.delta))));
+          container.appendChild(homeNode("span", "", swing.keyword + " " + swing.fromRank + " → " + swing.toRank + "위"));
+          if (swing.accountCode) container.appendChild(homeNode("span", "mi-home-who", swing.accountCode));
+        });
+      }
+
+      function renderHomeScope(node, metrics) {
+        if (!node) return;
+        if (!metrics || metrics.ok === false) {
+          node.textContent = "집계 범위 — 대상 광고주를 먼저 선택하면 등록 키워드 기준으로 집계합니다 · 전체 시장 통계가 아닙니다";
+          return;
+        }
+        var count = Number((metrics.scope && metrics.scope.keywordCount) || 0);
+        var label = globalAdvertiserTargetLabel();
+        node.textContent = "집계 범위 — " + label + "이(가) 등록한 키워드 " + count + "개 기준 · 최근 7일 · 전체 시장 통계가 아닙니다";
+      }
+
+      function renderHomeFeed(payload) {
+        var newsUpdated = root.querySelector("[data-home-news-updated]");
+        if (newsUpdated) {
+          var stamp = payload.news && payload.news.updatedAt ? new Date(payload.news.updatedAt) : null;
+          newsUpdated.textContent = (stamp && isFinite(stamp.getTime())
+            ? stamp.toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }) + " 갱신"
+            : "갱신 확인 중") + " · 1시간마다";
+        }
+        renderHomeNewsColumn(
+          root.querySelector("[data-home-news-naver]"),
+          root.querySelector("[data-home-news-naver-count]"),
+          payload.news && payload.news.ok !== false ? payload.news.naver : null,
+          "네이버"
+        );
+        renderHomeNewsColumn(
+          root.querySelector("[data-home-news-coupang]"),
+          root.querySelector("[data-home-news-coupang-count]"),
+          payload.news && payload.news.ok !== false ? payload.news.coupang : null,
+          "쿠팡"
+        );
+        renderHomeScope(root.querySelector("[data-home-scope]"), payload.metrics);
+        renderHomeVolumeRows(root.querySelector("[data-home-volume-rows]"), payload.metrics);
+        renderHomeKeywordNews(root.querySelector("[data-home-keyword-news]"), payload.keywordNews);
+        renderHomeSwings(
+          root.querySelector("[data-home-swing-items]"),
+          root.querySelector("[data-home-swing-count]"),
+          payload.rank
+        );
+      }
+
+      function renderHomeFeedFailure() {
+        try {
+          renderHomeNewsColumn(root.querySelector("[data-home-news-naver]"), root.querySelector("[data-home-news-naver-count]"), { ok: false }, "네이버");
+          renderHomeNewsColumn(root.querySelector("[data-home-news-coupang]"), root.querySelector("[data-home-news-coupang-count]"), { ok: false }, "쿠팡");
+          renderHomeScope(root.querySelector("[data-home-scope]"), null);
+          renderHomeVolumeRows(root.querySelector("[data-home-volume-rows]"), null);
+          renderHomeKeywordNews(root.querySelector("[data-home-keyword-news]"), null);
+          renderHomeSwings(root.querySelector("[data-home-swing-items]"), root.querySelector("[data-home-swing-count]"), null);
+        } catch (error) {
+          /* 홈 렌더 실패가 다른 화면을 막지 않는다 */
+        }
+      }
+
+      async function refreshHomeFeed() {
+        var requestId = ++homeFeedRequest;
+        var session = captureAdminSession();
+        if (!session.role) return;
+        try {
+          var headers = new Headers();
+          var targetCode = normalizeStorageCode(globalAdvertiserTarget);
+          // 대상 광고주는 총관리자만 헤더로 바꿀 수 있다. 운영팀·광고주는 세션이 정한다.
+          if (secureSession.role === "owner" && targetCode) headers.set("x-mi-agency-code", targetCode);
+          var response = await miFetch(getHomeFeedApiUrl(), { method: "GET", cache: "no-store", headers: headers });
+          var payload = await readApiPayload(response, "시장 홈 데이터를 확인할 수 없습니다.");
+          if (requestId !== homeFeedRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          if (!payload.ok) throw new Error(payload.message || "시장 홈 데이터를 불러오지 못했습니다.");
+          renderHomeFeed(payload);
+        } catch (error) {
+          if (requestId !== homeFeedRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          renderHomeFeedFailure();
+        }
+      }
+
+      // 오늘 일정 띠는 서버를 새로 만들지 않고 기존 운영 홈 로더와 같은 /api/my/work-items 를 쓴다.
+      async function refreshHomeScheduleStrip() {
+        var container = root.querySelector("[data-home-schedule-items]");
+        var countNode = root.querySelector("[data-home-schedule-count]");
+        var link = root.querySelector("[data-home-schedule-link]");
+        if (!container) return;
+        var requestId = ++homeScheduleStripRequest;
+        var session = captureAdminSession();
+        if (link) {
+          var scheduleScreen = secureSession.role === "owner" ? "owner-assistant" : "my-calendar";
+          link.setAttribute("data-mi-admin-screen", scheduleScreen);
+          link.setAttribute("href", "#mi-admin-" + scheduleScreen);
+        }
+        if (!session.role) {
+          if (countNode) countNode.textContent = "로그인 후";
+          homeReplace(container, homeNode("span", "mi-home-who", "로그인하면 오늘 일정을 확인합니다."));
+          return;
+        }
+        try {
+          var today = operationHomeTodayKey();
+          var endpoint = new URL(getMyWorkItemsApiUrl(), window.location.origin);
+          endpoint.searchParams.set("from", today);
+          endpoint.searchParams.set("to", today);
+          var response = await miFetch(endpoint.toString(), { method: "GET", cache: "no-store" });
+          var payload = await readApiPayload(response, "오늘 일정 조회 응답을 확인할 수 없습니다.");
+          if (requestId !== homeScheduleStripRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          if (!payload.ok) throw new Error(payload.message || "오늘 일정 조회에 실패했습니다.");
+          var items = Array.isArray(payload.items) ? payload.items : [];
+          if (countNode) countNode.textContent = (secureSession.role === "owner" ? "전체 광고주 · " : "담당 광고주 · ") + items.length + "건";
+          if (!items.length) {
+            homeReplace(container, homeNode("span", "mi-home-who", "오늘 일정이 없습니다. 캘린더에서 추가하면 여기에 표시됩니다."));
+            return;
+          }
+          container.textContent = "";
+          items.slice(0, 4).forEach(function (item, index) {
+            if (index > 0) container.appendChild(homeNode("span", "mi-home-sep"));
+            var time = item.isAllDay ? "종일" : workTimeLabel(item.startsAt);
+            if (time) container.appendChild(homeNode("span", "mi-home-time", time));
+            container.appendChild(homeNode("span", "", item.title || "제목 없음"));
+            var who = payload.client && payload.client.name ? payload.client.name : (payload.accountLabel || "");
+            if (who) container.appendChild(homeNode("span", "mi-home-who", who));
+          });
+        } catch (error) {
+          if (requestId !== homeScheduleStripRequest || !adminSessionIsCurrent(session.generation, session.role, session.scopeKey)) return;
+          if (countNode) countNode.textContent = "확인 필요";
+          homeReplace(container, homeNode("span", "mi-home-who", "오늘 일정을 불러오지 못했습니다."));
+        }
+      }
+
       function refreshOperationHomeStatus() {
         renderOperationHomeClientStatus();
         refreshOperationHomeReportStatus();
         refreshOperationHomeScheduleStatus();
         refreshOperationHomeRankSignal();
+        // 홈 피드는 실패해도 위 상태 갱신과 페이지 초기화를 막지 않는다.
+        try {
+          refreshHomeScheduleStrip();
+          refreshHomeFeed();
+        } catch (error) {
+          renderHomeFeedFailure();
+        }
       }
 
       function applyState(state) {

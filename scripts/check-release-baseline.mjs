@@ -1008,29 +1008,39 @@ const checks = {
     && !adminSource.includes("브랜드 A 입력값 확인")
     && !adminSource.includes("신규브랜드 A")
     && !adminSource.includes("리텐션브랜드 B"),
+  // 시장 홈 13안: 운영 홈은 "지금 상황" 5카드·빠른 실행·운영 루틴·공개 전 확인 대신
+  // 오늘 일정 띠 → 순위 급변 띠 → 온라인 기사 → 내 키워드 지표 → 내 키워드 뉴스로 간다.
+  // 옛 카드 묶음이 되살아나지 않았는지도 함께 못 박는다.
   adminHomePremiumOperatingFlow: adminSource.includes("mi-ops-home")
-    && adminSource.includes("mi-ops-quick-grid")
-    && adminSource.includes("mi-ops-flow")
-    && adminSource.includes("mi-ops-check-list")
-    && adminSource.includes("빠른 실행")
-    && adminSource.includes("운영 루틴")
-    && adminSource.includes("공개 전 확인")
+    && adminSource.includes("data-home-schedule-strip")
+    && adminSource.includes("data-home-swing-strip")
+    && adminSource.includes("data-home-feed-news")
+    && adminSource.includes("data-home-feed-metrics")
+    && adminSource.includes("data-home-feed-keyword-news")
+    && adminSource.includes("온라인 기사")
+    && adminSource.includes("내 키워드 지표")
+    && adminSource.includes("내 키워드 뉴스")
+    && !adminSource.includes('class="mi-ops-status-board"')
+    && !adminSource.includes('class="mi-ops-quick-grid"')
     && !adminSource.includes("보고서·공개 승인 큐")
     && !adminSource.includes("운영 신뢰 체크")
     && !adminSource.includes("실제 상태 확인"),
-  adminHomeUsesRealMonthlyOperationStatus: adminSource.includes("data-ops-home-sales-state")
-    && adminSource.includes("data-ops-home-report-state")
-    && adminSource.includes("function renderOperationHomeSalesStatus")
+  // 홈 피드는 서버에서 섹션별로 성공·실패하고, 화면은 실패한 섹션만 빈 상태로 둔다.
+  // 대상 광고주는 총관리자만 헤더로 바꿀 수 있어야 한다(운영팀·광고주는 세션이 정함).
+  adminHomeUsesRealMonthlyOperationStatus: adminSource.includes("function renderOperationHomeSalesStatus")
     && adminSource.includes("function refreshOperationHomeReportStatus")
     && adminSource.includes('endpoint.searchParams.set("from", month.from)')
     && adminSource.includes('report.visibility === "client_visible"')
     && adminSource.includes("이번 달 매출 미입력")
     && adminSource.includes("이번 달 보고서 없음")
+    && adminSource.includes("function refreshHomeFeed")
+    && adminSource.includes('if (secureSession.role === "owner" && targetCode) headers.set("x-mi-agency-code", targetCode);')
     && !adminSource.includes("<strong>매출 입력 완료</strong>")
     && !adminSource.includes("<strong>보고서 제출 완료</strong>"),
-  adminHomeStatusLeadsOperatingHierarchy: adminSource.indexOf('class="mi-ops-status-board"') < adminSource.indexOf('class="mi-ops-quick-grid"')
-    && adminSource.indexOf('class="mi-ops-quick-grid"') < adminSource.indexOf('class="mi-ops-flow-card"')
-    && adminSource.indexOf('class="mi-ops-flow-card"') < adminSource.indexOf('class="mi-ops-check-card"')
+  adminHomeStatusLeadsOperatingHierarchy: adminSource.indexOf("data-home-schedule-strip") < adminSource.indexOf("data-home-swing-strip")
+    && adminSource.indexOf("data-home-swing-strip") < adminSource.indexOf("data-home-feed-news")
+    && adminSource.indexOf("data-home-feed-news") < adminSource.indexOf("data-home-feed-metrics")
+    && adminSource.indexOf("data-home-feed-metrics") < adminSource.indexOf("data-home-feed-keyword-news")
     && adminSource.includes("grid-template-columns: repeat(2, minmax(0, 1fr));"),
   // 3단계: 역할마다 "지금 상황"에서 시작하고, 대상 광고주는 한 번만 고른다.
   adminOwnerLandsInExecutiveRoom: adminSource.includes('if (!ownerLandingHash && ownerToolScreens.indexOf("owner-assistant") >= 0) {')
@@ -1038,15 +1048,16 @@ const checks = {
     && adminSource.includes('data-mi-admin-screen="home">운영 홈</a>'),
   adminTeamLandsOnStatusSummaryHome: adminSource.includes('setScreen(personalCalendarNoticePending() ? "my-calendar" : "home", !restored);')
     && !adminSource.includes('teamHasClient ? "agency-code" : "home"')
-    && adminSource.includes("<strong>지금 상황</strong>")
-    && ["client", "sales", "report", "schedule", "rank"].every((hook) => adminSource.includes(`data-ops-home-${hook}-state`))
     && adminSource.includes("function renderOperationHomeClientStatus")
     && adminSource.includes("function refreshOperationHomeScheduleStatus")
     && adminSource.includes("function refreshOperationHomeRankSignal")
     && adminSource.includes('rankTrackerTrend(tracker) === "dropped"')
     && adminSource.includes('placeTrackerTrend(tracker) === "dropped"')
+    // 오늘 일정 띠는 서버를 새로 만들지 않고 기존 개인 일정 경로를 그대로 재사용한다.
     && adminSource.includes('return window.location.origin + "/api/my/work-items";')
-    && adminSource.includes('class="mi-ops-quick-grid" data-admin-home-truthful-state'),
+    && adminSource.includes("function refreshHomeScheduleStrip")
+    && adminSource.includes("data-home-schedule-strip")
+    && adminSource.includes("data-admin-home-truthful-state"),
   adminGlobalAdvertiserTargetIsSingleSource: adminSource.includes("data-mi-target-picker")
     && adminSource.includes("data-mi-target-select")
     && adminSource.includes("data-mi-target-manual")

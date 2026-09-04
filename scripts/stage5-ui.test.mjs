@@ -7,6 +7,10 @@ import test from "node:test";
 // 값이 없을 때는 기존 빈 상태 문구를 그대로 지킨다는 계약을 원본 HTML에서 확인한다.
 const clientSource = fs.readFileSync(new URL("../src/pages/client.html", import.meta.url), "utf8");
 
+// 시장 홈의 기사 카드는 출처를 색으로 구분한다. 네이버·쿠팡 두 브랜드색만 예외로 허용하고,
+// 그 밖의 새 색은 여전히 막는다. 상승·하락·정보 색은 페이지에 이미 있는 값을 재사용해야 한다.
+const MARKET_HOME_BRAND_COLORS = new Set(["#03c75a", "#4a9ed2"]);
+
 function clientBlock(start, end) {
   const from = clientSource.indexOf(start);
   const to = clientSource.indexOf(end, from);
@@ -77,7 +81,7 @@ test("client.html 에 새 색상 리터럴이 늘지 않았다", () => {
   const literals = (text) => new Set((text.match(HEX) || []).map((value) => value.toLowerCase()));
   const current = literals(clientSource);
   const head = literals(headSource);
-  const added = [...current].filter((value) => !head.has(value));
+  const added = [...current].filter((value) => !head.has(value) && !MARKET_HOME_BRAND_COLORS.has(value));
   assert.deepEqual(added, [], `새 색상 리터럴이 추가됨: ${added.join(", ")}`);
 });
 
@@ -266,7 +270,7 @@ test("admin.html 에 새 색상 리터럴이 늘지 않았다", () => {
   const literals = (text) => new Set((text.match(HEX) || []).map((value) => value.toLowerCase()));
   const current = literals(adminSource);
   const head = literals(headSource);
-  const added = [...current].filter((value) => !head.has(value));
+  const added = [...current].filter((value) => !head.has(value) && !MARKET_HOME_BRAND_COLORS.has(value));
   assert.deepEqual(added, [], `새 색상 리터럴이 추가됨: ${added.join(", ")}`);
 });
 

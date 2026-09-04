@@ -16,7 +16,7 @@ function block(start, end) {
 }
 
 const activateSessionSource = block("async function activateAdminSession(payload, restored, requestGeneration) {", "async function logoutAdmin() {");
-const statusBoardMarkup = block('<section class="mi-ops-status-board"', "</section>");
+const homeFeedMarkup = block('<section class="mi-view is-active mi-ops-home"', "<section class=\"mi-view mi-work-shell\"");
 const modeStripMarkup = block('<div class="mi-mode-strip"', "</div>\n\n        <section");
 const targetGlueSource = block("var GLOBAL_ADVERTISER_MANUAL_VALUE", 'var codeSaveButton = root.querySelector("[data-admin-code-save]");');
 const homeStatusSource = block("function renderOperationHomeClientStatus() {", "function applyState(state) {");
@@ -36,16 +36,47 @@ test("team session lands on the operations home summary regardless of client lin
   assert.ok(!activateSessionSource.includes('teamHasClient ? "agency-code" : "home"'));
 });
 
-test("the operations home leads with a five card 지금 상황 summary and keeps the quick links", () => {
-  assert.ok(statusBoardMarkup.includes("<strong>지금 상황</strong>"));
-  for (const hook of ["client", "sales", "report", "schedule", "rank"]) {
-    assert.ok(statusBoardMarkup.includes(`data-ops-home-${hook}-state`), `missing card: ${hook}`);
-    assert.ok(statusBoardMarkup.includes(`data-ops-home-${hook}-title`), `missing card title: ${hook}`);
-    assert.ok(statusBoardMarkup.includes(`data-ops-home-${hook}-detail`), `missing card detail: ${hook}`);
+// 시장 홈 13안: "지금 상황" 5카드·빠른 실행·운영 루틴·공개 전 확인 묶음은 걷어내고
+// 오늘 일정 → 순위 급변 → 온라인 기사 → 내 키워드 지표 → 내 키워드 뉴스 순서로 간다.
+test("the operations home leads with today's schedule and rank swings, then the market sections", () => {
+  for (const hook of [
+    "data-home-schedule-strip",
+    "data-home-swing-strip",
+    "data-home-feed-news",
+    "data-home-feed-metrics",
+    "data-home-feed-keyword-news",
+  ]) {
+    assert.ok(homeFeedMarkup.includes(hook), `missing home section: ${hook}`);
   }
-  // 요약이 먼저, 기존 빠른 실행은 그대로 아래에 남는다.
-  assert.ok(source.indexOf('class="mi-ops-status-board"') < source.indexOf('class="mi-ops-quick-grid"'));
-  assert.ok(source.includes('class="mi-ops-quick-grid" data-admin-home-truthful-state'));
+  const order = [
+    "data-home-schedule-strip",
+    "data-home-swing-strip",
+    "data-home-feed-news",
+    "data-home-feed-metrics",
+    "data-home-feed-keyword-news",
+  ].map((hook) => homeFeedMarkup.indexOf(hook));
+  assert.deepEqual(order, [...order].sort((a, b) => a - b), "홈 섹션 순서가 시안과 다릅니다.");
+
+  // 옛 카드 묶음은 되살아나지 않는다.
+  assert.ok(!source.includes('class="mi-ops-status-board"'));
+  assert.ok(!source.includes('class="mi-ops-quick-grid"'));
+  // 임의 집계 금지 표식은 새 홈으로 옮겨서 그대로 남는다.
+  assert.ok(homeFeedMarkup.includes("data-admin-home-truthful-state"));
+  assert.ok(homeFeedMarkup.includes("실제 연결 데이터가 없는 수치는 임의 집계하지 않습니다."));
+  // 기사 링크는 새 탭으로 열되 opener 를 넘기지 않는다.
+  assert.ok(!/<a\b[^>]*target="_blank"(?![^>]*rel="noopener")/u.test(homeFeedMarkup));
+});
+
+test("the home feed asks the server and lets only the owner retarget the advertiser", () => {
+  const feedSource = block("async function refreshHomeFeed() {", "// 오늘 일정 띠는 서버를");
+  // 라우터가 잠겨 있어 이미 열린 /api/client 접두사에 얹는다.
+  assert.ok(source.includes('return window.location.origin + "/api/client/home-feed";'));
+  // 운영팀·광고주 세션은 대상을 헤더로 바꿀 수 없다(서버 세션이 정한다).
+  assert.ok(feedSource.includes('if (secureSession.role === "owner" && targetCode) headers.set("x-mi-agency-code", targetCode);'));
+  // 세션이 바뀐 뒤 도착한 늦은 응답은 그리지 않는다.
+  assert.ok(feedSource.includes("adminSessionIsCurrent(session.generation, session.role, session.scopeKey)"));
+  // 홈이 실패해도 다른 화면 초기화를 막지 않는다.
+  assert.ok(source.includes("          renderHomeFeedFailure();"));
 });
 
 test("summary cards read existing sources only and invent no new detection", () => {

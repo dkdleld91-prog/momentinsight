@@ -754,10 +754,20 @@ export async function handleClientApiRequest(request, ctx) {
 const userScopedFetch = withSupabase({ auth: "user" }, handleClientApiRequest);
 const sessionScopedFetch = withSupabase({ auth: "none" }, handleClientPublicStateRequest);
 
+// 시장 홈 피드도 public-state 와 같은 이유로 코드 세션에서 들어온다(사용자 토큰 없음).
+// 라우터(src/server/index.mjs)는 순위 수집 보호를 위해 파일 단위로 잠겨 있어 손대지
+// 않는다. 대신 이미 열려 있는 /api/client/ 접두사에 얹고, 역할·대상 광고주 판정은
+// 전부 서버에서 세션 게이트가 심은 헤더로만 한다. 홈 전용 의존성은 늦게 부른다.
+async function homeFeedFetch(request) {
+  const module = await import("./home-feed.mjs");
+  return module.default.fetch(request);
+}
+
 export default {
   fetch(request) {
     const { resource } = routeParts(request, "/api/client");
     if (resource === "public-state") return sessionScopedFetch(request);
+    if (resource === "home-feed") return homeFeedFetch(request);
     return userScopedFetch(request);
   }
 };

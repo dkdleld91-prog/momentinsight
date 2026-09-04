@@ -28,7 +28,7 @@ test("owner session lands in the executive room, not the operations home", () =>
     /var ownerLandingHash = \(window\.location\.hash \|\| ""\)\.replace\("#mi-admin-", ""\);\s*\n\s*if \(!ownerLandingHash && ownerToolScreens\.indexOf\("owner-assistant"\) >= 0\) \{\s*\n\s*setScreen\("owner-assistant", !restored\);/u,
   );
   // 운영 홈은 메뉴에서 사라지지 않는다.
-  assert.ok(source.includes('data-mi-admin-screen="home">운영 홈</a>'));
+  assert.ok(source.includes('data-mi-admin-screen="home">뉴스</a>'));
 });
 
 test("team session lands on the operations home summary regardless of client linkage", () => {

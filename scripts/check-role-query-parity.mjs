@@ -297,7 +297,7 @@ const checks = {
     && !staticAdminProductRankView.test(adminSource)
     && !staticClientProductRankView.test(clientSource)
     && includesAll(adminSetScreen, ['target === "naver-rank"', "rejectedProductRankTarget", 'target = "home"', "window.history.replaceState"])
-    && includesAll(clientSetScreen, ['target === "naver-rank"', "rejectedProductRankTarget", 'target = "dashboard"', "window.history.replaceState"])
+    && includesAll(clientSetScreen, ['target === "naver-rank"', "rejectedProductRankTarget", 'target = "news"', "window.history.replaceState"])
     && sessionGateSource.includes('if (role === "owner") return true;')
     && includesAll(sessionGateSource, [
       '"/api/naver-keyword"',

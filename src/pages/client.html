@@ -5986,7 +5986,7 @@
       <nav class="mi-nav">
         <div class="mi-nav-group">
           <p class="mi-nav-title">운영</p>
-          <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
+          <a class="is-active" href="#mi-news" data-mi-screen="news">뉴스</a>
           <a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>
           <a href="#mi-agency-code" data-mi-screen="agency-code">대행사 연결</a>
         </div>
@@ -6011,6 +6011,7 @@
             <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>
             <!-- 매출 현황은 아직 쓰지 않아 실험실로 내린다(2026-09-04 대표 지시). 화면은 그대로 열린다. -->
             <a href="#mi-sales" data-mi-screen="sales">매출 현황 <small>(개발중)</small></a>
+            <a href="#mi-dashboard" data-mi-screen="dashboard">대시보드 <small>(개발중)</small></a>
           </div>
         </div>
       </nav>
@@ -6022,7 +6023,7 @@
       </div>
 
       <nav class="mi-mobile-nav" aria-label="모바일 메뉴">
-        <a class="is-active" href="#mi-dashboard" data-mi-screen="dashboard">대시보드</a>
+        <a class="is-active" href="#mi-news" data-mi-screen="news">뉴스</a>
         <a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>
         <a href="#mi-agency-code" data-mi-screen="agency-code">코드</a>
         <a href="#mi-keyword-tool" data-mi-screen="keyword-tool">키워드 조회</a>
@@ -6031,22 +6032,22 @@
         <a href="#mi-seo-check" data-mi-screen="seo-check">SEO 확인 (개발중)</a>
         <a href="#mi-meta-ads" data-mi-screen="meta-ads">메타광고</a>
         <a href="#mi-sales" data-mi-screen="sales">매출 (개발중)</a>
+        <a href="#mi-dashboard" data-mi-screen="dashboard">대시보드 (개발중)</a>
       </nav>
     </aside>
 
     <main class="mi-main">
       <div class="mi-wrap">
-        <section class="mi-view is-active" id="mi-dashboard" data-mi-view="dashboard" aria-label="광고주 대시보드 화면">
+        <section class="mi-view is-active" id="mi-news" data-mi-view="news" aria-label="광고주 뉴스 화면">
           <header class="mi-screen-head">
             <div>
-              <span class="mi-kicker">광고주 홈</span>
-              <h1><span data-mi-public="client">연결 광고주</span> 대시보드</h1>
-              <p>성과와 다음 할 일만 확인합니다.</p>
+              <span class="mi-kicker">뉴스</span>
+              <h1><span data-mi-public="client">연결 광고주</span> 시장 뉴스</h1>
+              <p>네이버·쿠팡 기사와 내 키워드 지표, 내 순위를 한 화면에서 봅니다.</p>
             </div>
-            <span class="mi-period" data-mi-update-state>업데이트 완료</span>
           </header>
 
-          <!-- 시장 홈이 먼저 보인다(2026-09-04 대표 지시). 매출 요약 카드는 그 아래로 내렸다. -->
+          <!-- 뉴스 화면(2026-09-04 대표 지시): 기사·지표·키워드 뉴스가 광고주의 첫 화면이다. -->
           <div class="mi-home-feed" data-home-feed>
             <div class="mi-home-strip" data-home-rank-strip>
               <span class="mi-home-strip-label">내 순위 요약 <span data-home-rank-count>확인 중</span></span>
@@ -6140,6 +6141,18 @@
               </div>
             </section>
           </div>
+        </section>
+
+        <!-- 대시보드(성과 공개)는 실험실로 내렸다(2026-09-04 대표 지시). 화면·데이터 배선은 그대로다. -->
+        <section class="mi-view" id="mi-dashboard" data-mi-view="dashboard" aria-label="광고주 대시보드 화면">
+          <header class="mi-screen-head">
+            <div>
+              <span class="mi-kicker">실험실 · 개발 중</span>
+              <h1>대시보드</h1>
+              <p>성과 공개 화면은 다시 기획 중입니다. 운영팀이 입력한 값만 표시합니다.</p>
+            </div>
+            <span class="mi-period" data-mi-update-state>업데이트 완료</span>
+          </header>
 
           <div class="mi-hero">
             <article class="mi-summary" data-mi-summary-card>
@@ -11543,7 +11556,7 @@
         if (loginButton) loginButton.disabled = true;
         setStatus(loginStatus, "로그인 화면으로 안전하게 전환했습니다. 세션을 종료 중입니다.", "");
         setStatus(connectStatus, "코드 연결 전입니다.", "");
-        setScreen("dashboard", false);
+        setScreen("news", false);
         window.dispatchEvent(new CustomEvent("mi:rank-scope-changed"));
         if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
         window.requestAnimationFrame(function () {
@@ -11739,15 +11752,15 @@
       }
 
       function setScreen(name, shouldPushHash) {
-        var target = name || "dashboard";
+        var target = name || "news";
         var rejectedProductRankTarget = target === "naver-rank";
         // 옛 "공개 일정" 화면은 대표 결재(2026-08-25)로 개인 캘린더에 자리를 넘겼다.
         // 마크업과 렌더러는 그대로 두되(레거시 데이터 보존) 진입 경로만 돌린다.
         var retiredScheduleTarget = target === "schedule";
-        if (rejectedProductRankTarget) target = "dashboard";
+        if (rejectedProductRankTarget) target = "news";
         if (retiredScheduleTarget) target = "my-calendar";
         var rejectedPersonalTarget = target === "my-calendar" && !personalCalendarEnabled();
-        if (rejectedPersonalTarget) target = "dashboard";
+        if (rejectedPersonalTarget) target = "news";
         var found = false;
 
         views.forEach(function (view) {
@@ -11757,7 +11770,7 @@
         });
 
         if (!found) {
-          target = "dashboard";
+          target = "news";
           views.forEach(function (view) {
             view.classList.toggle("is-active", view.getAttribute("data-mi-view") === target);
           });
@@ -13284,7 +13297,7 @@
       });
 
       var initial = (window.location.hash || "").replace("#mi-", "");
-      setScreen(initial || "dashboard", false);
+      setScreen(initial || "news", false);
     })();
   </script>
 </section>

@@ -271,7 +271,7 @@ const clientRouterEnd = clientSource.indexOf('      links.forEach(function (link
 assert.equal(clientRouterStart >= 0 && clientRouterEnd > clientRouterStart, true, "client screen router boundaries");
 const clientScreenRouter = clientSource.slice(clientRouterStart, clientRouterEnd);
 assert.equal(clientScreenRouter.includes('target === "naver-rank"'), true, "client hidden product rank hash guard");
-assert.equal(clientScreenRouter.includes('target = "dashboard"'), true, "client hidden product rank hash fallback");
+assert.equal(clientScreenRouter.includes('target = "news"'), true, "client hidden product rank hash fallback");
 assert.equal(clientScreenRouter.includes("window.history.replaceState"), true, "client hidden product rank hash canonical replacement");
 
 assert.match(adminSource, /root\.querySelector\(\s*['"][^'"]*\[data-rank-worker-operations\][^'"]*['"]\s*\)/u, "global worker operations lookup");

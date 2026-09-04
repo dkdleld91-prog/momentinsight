@@ -404,7 +404,7 @@ const checks = {
     && !adminScreens.includes("naver-rank"),
   adminNavigationTaxonomy: orderedIncludes(adminSource, [
     '<p class="mi-nav-title">운영</p>',
-    'data-mi-admin-screen="home">운영 홈</a>',
+    'data-mi-admin-screen="home">뉴스</a>',
     'data-mi-admin-screen="work">업무 운영</a>',
     'data-mi-admin-screen="my-calendar">내 캘린더</a>',
     'data-mi-admin-screen="client-preview">광고주 미리보기</a>',
@@ -589,7 +589,8 @@ const checks = {
   clientLoginGate: clientSource.includes("data-mi-login-code") && clientSource.includes("data-mi-login-button"),
   clientNavigationTaxonomy: orderedIncludes(clientSource, [
     '<p class="mi-nav-title">운영</p>',
-    'data-mi-screen="dashboard">대시보드</a>',
+    // 대표 지시(2026-09-04): 광고주 첫 화면은 뉴스(기사·지표·키워드 뉴스). 대시보드(성과 공개)는 실험실로.
+    'data-mi-screen="news">뉴스</a>',
     // 대표 결재(2026-08-25): 광고주의 "공개 일정" 메뉴는 개인 캘린더가 대체한다.
     'data-mi-screen="my-calendar">내 캘린더</a>',
     'data-mi-screen="agency-code">대행사 연결</a>',
@@ -605,9 +606,12 @@ const checks = {
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
     // 대표 지시(2026-09-04): 매출 현황은 아직 쓰지 않아 실험실로 내린다. 광고주는 시장 홈을 먼저 본다.
     'data-mi-screen="sales">매출 현황 <small>(개발중)</small></a>',
+    'data-mi-screen="dashboard">대시보드 <small>(개발중)</small></a>',
   ]),
-  clientDashboardLeadsWithMarketHome: clientSource.indexOf('<div class="mi-home-feed" data-home-feed>')
-    < clientSource.indexOf('<article class="mi-summary" data-mi-summary-card>'),
+  // 뉴스 화면이 첫 화면이고, 시장 홈 블록은 뉴스 화면 안에, 대시보드는 그 뒤에 온다.
+  clientNewsScreenLeads: clientSource.includes('<section class="mi-view is-active" id="mi-news" data-mi-view="news"')
+    && clientSource.indexOf('<div class="mi-home-feed" data-home-feed>') < clientSource.indexOf('id="mi-dashboard" data-mi-view="dashboard"')
+    && clientSource.includes('setScreen(initial || "news", false);'),
   roleSidebarsSharePremiumShell: adminSource.includes('data-mi-shell="premium-sidebar"')
     && clientSource.includes('data-mi-shell="premium-sidebar"'),
   roleNavigationResetsScroll: [adminSource, clientSource].every((source) => source.includes('window.scrollTo({ top: 0, left: 0, behavior: "auto" })')),
@@ -1048,7 +1052,7 @@ const checks = {
   // 3단계: 역할마다 "지금 상황"에서 시작하고, 대상 광고주는 한 번만 고른다.
   adminOwnerLandsInExecutiveRoom: adminSource.includes('if (!ownerLandingHash && ownerToolScreens.indexOf("owner-assistant") >= 0) {')
     && adminSource.includes('setScreen("owner-assistant", !restored);')
-    && adminSource.includes('data-mi-admin-screen="home">운영 홈</a>'),
+    && adminSource.includes('data-mi-admin-screen="home">뉴스</a>'),
   adminTeamLandsOnStatusSummaryHome: adminSource.includes('setScreen(personalCalendarNoticePending() ? "my-calendar" : "home", !restored);')
     && !adminSource.includes('teamHasClient ? "agency-code" : "home"')
     && adminSource.includes("function renderOperationHomeClientStatus")

@@ -243,7 +243,7 @@ test("resolveScope resolves the owner placeholder only for a verified owner sess
     "x-mi-owner-agency-code": "mml93-a01",
     "x-mi-agency-code": "owner-session",
   }));
-  assert.equal(verified.accountCode, "", "자리표시자는 대상 미선택으로 본다");
+  assert.equal(verified.accountCode, "mml93-a01", "자리표시자는 총관리자 내부 계정(primary)으로 본다");
 
   const unverified = resolveScope(requestWith({
     "x-mi-session-role": "owner",

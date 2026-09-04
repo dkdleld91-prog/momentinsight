@@ -374,7 +374,8 @@ export function resolveScope(request, env = process.env) {
   if (role === "team") return { ok: true, role, accountCode: headerCode || teamCode };
   if (role === "owner") {
     const placeholder = !headerCode || headerCode === "owner-session" || headerCode === "session";
-    return { ok: true, role, accountCode: placeholder && ownerSession ? "" : headerCode };
+    // 총관리자가 대상을 비우면("총관리자 내부") 본인 내부 계정(primary)의 추적 키워드를 집계한다.
+    return { ok: true, role, accountCode: placeholder && ownerSession ? primary : headerCode };
   }
   return { ok: false, role: "", accountCode: "" };
 }

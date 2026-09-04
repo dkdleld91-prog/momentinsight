@@ -308,6 +308,17 @@ test("trackerNeverFound follows the shared neverFound rule", () => {
   assert.equal(trackerNeverFound({ check_count: 9, found_count: 1 }), false);
 });
 
+test("rank 0 (not found) is never treated as a rank in swings or summary", () => {
+  const trackers = [{ id: "z", keyword: "차량용 맥세이프 거치대", agency_code: "mml93-a01" }];
+  const snapshots = [
+    { tracker_id: "z", checked_at: "2026-09-03T04:00:00Z", rank: 289, matched: true },
+    { tracker_id: "z", checked_at: "2026-09-04T04:00:00Z", rank: 0, matched: false },
+  ];
+  assert.deepEqual(computeRankSwings(trackers, snapshots), []);
+  const summary = computeRankSummary(trackers, snapshots);
+  assert.equal(summary.up + summary.down + summary.unchanged, 0);
+});
+
 test("computeRankSummary reports unmatched once a tracker has never been found", () => {
   const summary = computeRankSummary([{ id: "x", keyword: "k", check_count: 4, found_count: 0 }], []);
   assert.equal(summary.unmatched, 1);

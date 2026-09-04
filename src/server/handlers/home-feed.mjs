@@ -294,7 +294,8 @@ export function latestTwoDayRanks(snapshots) {
     if (!existing || checkedMs > existing.checkedMs) {
       days.set(day, {
         checkedMs,
-        rank: Number.isFinite(Number(snapshot.rank)) ? Number(snapshot.rank) : null,
+        // rank 0 은 "검사 범위 안에서 못 찾음"이라 순위가 아니다 — 급변·요약 비교에서 제외한다.
+        rank: Number.isFinite(Number(snapshot.rank)) && Number(snapshot.rank) >= 1 ? Number(snapshot.rank) : null,
         matched: snapshot.matched === true,
       });
     }

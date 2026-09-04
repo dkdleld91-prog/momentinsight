@@ -410,10 +410,13 @@ test("client exposes 내 캘린더 in both navs, in place of the retired 일정�
   const menus = [...clientSource.matchAll(/data-mi-screen="my-calendar">내 캘린더<\/a>/g)];
   assert.equal(menus.length, 2, "사이드바와 모바일 내비 두 곳에 있어야 합니다.");
   assert.ok(clientSource.includes('<a class="mi-nav-personal" hidden href="#mi-my-calendar" data-mi-screen="my-calendar">내 캘린더</a>'));
-  const salesAt = clientSource.indexOf('data-mi-screen="sales">매출 현황</a>');
+  // 대표 지시(2026-09-04): 매출 현황은 실험실로 내려갔다. 운영 그룹은 대시보드 → 내 캘린더 → 대행사 연결.
+  const dashboardAt = clientSource.indexOf('data-mi-screen="dashboard">대시보드</a>');
   const personalAt = clientSource.indexOf('data-mi-screen="my-calendar">내 캘린더</a>');
   const agencyAt = clientSource.indexOf('data-mi-screen="agency-code">대행사 연결</a>');
-  assert.ok(salesAt > -1 && personalAt > salesAt && agencyAt > personalAt, "메뉴 순서: 매출 현황 → 내 캘린더 → 대행사 연결");
+  const salesAt = clientSource.indexOf('data-mi-screen="sales">매출 현황 <small>(개발중)</small></a>');
+  assert.ok(dashboardAt > -1 && personalAt > dashboardAt && agencyAt > personalAt, "메뉴 순서: 대시보드 → 내 캘린더 → 대행사 연결");
+  assert.ok(salesAt > agencyAt, "매출 현황은 실험실 그룹(대행사 연결 아래)에 있어야 합니다.");
   assert.ok(clientSource.includes('<section class="mi-view" data-mi-view="my-calendar" id="mi-my-calendar">'));
   assert.ok(clientSource.includes("[data-mi-personal-calendar]"));
   // .mi-nav a / .mi-mobile-nav a 가 display:flex 라 [hidden] 만으로는 감춰지지 않는다.

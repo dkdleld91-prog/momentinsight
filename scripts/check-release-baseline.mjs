@@ -590,7 +590,6 @@ const checks = {
   clientNavigationTaxonomy: orderedIncludes(clientSource, [
     '<p class="mi-nav-title">운영</p>',
     'data-mi-screen="dashboard">대시보드</a>',
-    'data-mi-screen="sales">매출 현황</a>',
     // 대표 결재(2026-08-25): 광고주의 "공개 일정" 메뉴는 개인 캘린더가 대체한다.
     'data-mi-screen="my-calendar">내 캘린더</a>',
     'data-mi-screen="agency-code">대행사 연결</a>',
@@ -604,7 +603,11 @@ const checks = {
     '실험실 · 개발 중',
     'data-mi-screen="seo-check">SEO 확인 (개발중)</a>',
     'data-mi-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
+    // 대표 지시(2026-09-04): 매출 현황은 아직 쓰지 않아 실험실로 내린다. 광고주는 시장 홈을 먼저 본다.
+    'data-mi-screen="sales">매출 현황 <small>(개발중)</small></a>',
   ]),
+  clientDashboardLeadsWithMarketHome: clientSource.indexOf('<div class="mi-home-feed" data-home-feed>')
+    < clientSource.indexOf('<article class="mi-summary" data-mi-summary-card>'),
   roleSidebarsSharePremiumShell: adminSource.includes('data-mi-shell="premium-sidebar"')
     && clientSource.includes('data-mi-shell="premium-sidebar"'),
   roleNavigationResetsScroll: [adminSource, clientSource].every((source) => source.includes('window.scrollTo({ top: 0, left: 0, behavior: "auto" })')),

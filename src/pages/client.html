@@ -11676,6 +11676,9 @@
               : "연결 완료: " + state.client + " 승인 데이터가 반영되었습니다."),
           (publicStateSyncFailed || reportSyncFailed) ? "is-warn" : "is-ok"
         );
+        // 코드 로그인 직후에는 항상 뉴스가 메인이다(2026-09-04 대표 지시). 남아 있던 해시는 지운다.
+        setScreen("news", false);
+        if (window.location.hash) window.history.replaceState(null, "", window.location.pathname + window.location.search);
         window.dispatchEvent(new CustomEvent("mi:rank-auth-ready"));
         return true;
       }
@@ -13297,6 +13300,8 @@
       });
 
       var initial = (window.location.hash || "").replace("#mi-", "");
+      // 옛 기본 화면이던 #mi-dashboard 북마크·잔여 해시는 뉴스로 보낸다(2026-09-04 대표 지시: 로그인하면 뉴스가 메인).
+      if (initial === "dashboard") initial = "news";
       setScreen(initial || "news", false);
     })();
   </script>

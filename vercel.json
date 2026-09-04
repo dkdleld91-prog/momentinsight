@@ -23,6 +23,9 @@
     },
     "api/my/assistant-chat.mjs": {
       "maxDuration": 60
+    },
+    "api/client/home-feed.mjs": {
+      "maxDuration": 60
     }
   },
   "crons": [

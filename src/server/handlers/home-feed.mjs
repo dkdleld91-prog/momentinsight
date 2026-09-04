@@ -27,7 +27,7 @@ const METRIC_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 지표·키워드 뉴스 24�
 const NEWS_FETCH_TIMEOUT_MS = 4000;
 const SEARCHAD_TIMEOUT_MS = 4000;
 const DATALAB_TIMEOUT_MS = 6000;
-const HANDLER_BUDGET_MS = 25000;
+const HANDLER_BUDGET_MS = 15000; // 화면 miFetch 기본 타임아웃(20초)보다 짧게 — 초과분은 부분 결과
 
 const VOLUME_KEYWORD_LIMIT = 20; // 비용 보호: 검색량 조회는 최대 20개
 const KEYWORD_NEWS_LIMIT = 6;

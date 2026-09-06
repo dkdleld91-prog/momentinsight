@@ -11034,6 +11034,7 @@
       border-radius: 50%;
     }
 
+    #mi-admin button.mi-home-more { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
     #mi-admin .mi-home-news2 {
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -11490,7 +11491,7 @@
               <strong>온라인 기사</strong>
               <span class="mi-home-lead-note">최근 7일 · 셀러 관련 기사만 · 맨 위는 관련도 1위(동률이면 최신)</span>
               <span class="mi-home-rt"><span class="mi-home-live"></span><span data-home-news-updated>갱신 확인 중 · 1시간마다</span></span>
-              <a class="mi-home-more" href="/news" target="_blank" rel="noopener">뉴스 전체 보기 →</a>
+              <button type="button" class="mi-home-more" data-home-news-expand>뉴스 전체 보기 →</button>
             </div>
             <div class="mi-home-news2">
               <div class="mi-home-pcol is-naver">
@@ -19045,6 +19046,8 @@
       // 비어도 나머지는 그대로 그리고, 전체가 실패해도 홈 밖 화면에는 영향이 없다.
       // 모든 진입점은 try/catch 로 감싸 초기화 흐름을 절대 막지 않는다.
       var homeFeedRequest = 0;
+      var homeNewsExpanded = false;
+      var homeFeedLastPayload = null;
       var homeScheduleStripRequest = 0;
 
       function getHomeFeedApiUrl() {
@@ -19116,7 +19119,9 @@
         lead.appendChild(homeNode("p", "mi-home-h", section.lead.title));
         lead.appendChild(homeArticleMeta(section.lead, "관련도 1위"));
         container.appendChild(lead);
-        (section.items || []).forEach(function (article) {
+        var others = homeNewsExpanded && Array.isArray(section.all) && section.all.length
+          ? section.all.filter(function (article) { return !section.lead || article.link !== section.lead.link; }) : (section.items || []);
+        others.forEach(function (article) {
           var row = homeNode("div", "mi-home-art");
           row.appendChild(homeNode("span", "mi-home-tm", homeShortDate(article.publishedAt)));
           var body = homeNode("div", "mi-home-artbody");
@@ -19218,6 +19223,7 @@
       }
 
       function renderHomeFeed(payload) {
+        homeFeedLastPayload = payload;
         var newsUpdated = root.querySelector("[data-home-news-updated]");
         if (newsUpdated) {
           var stamp = payload.news && payload.news.updatedAt ? new Date(payload.news.updatedAt) : null;
@@ -19267,6 +19273,14 @@
         }
       }
 
+      // 뉴스 전체 보기(2026-09-07): 로그인 화면에서만 7일치 전체를 펼친다. 공개 /news 는 플랫폼별 3건 미리보기.
+      document.addEventListener("click", function (event) {
+        var toggle = event.target.closest("[data-home-news-expand]");
+        if (!toggle) return;
+        homeNewsExpanded = !homeNewsExpanded;
+        toggle.textContent = homeNewsExpanded ? "간단히 보기 ←" : "뉴스 전체 보기 →";
+        if (homeFeedLastPayload) renderHomeFeed(homeFeedLastPayload);
+      });
       // 로그인 복원과 순위 인증 준비 이벤트가 거의 동시에 홈 피드를 두 번 부르던 중복을 막는다(10초 안 재호출 무시).
       var homeFeedStartedAt = 0;
       async function refreshHomeFeed() {

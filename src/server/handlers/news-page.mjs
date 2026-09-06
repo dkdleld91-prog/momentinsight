@@ -25,12 +25,13 @@ function dateLabel(iso) {
   return `${date.getMonth() + 1}/${date.getDate()}`;
 }
 
-export function collectArticles(news) {
+// 2026-09-07 대표 결정: 로그인 없이 보이는 /news 는 플랫폼별 최신 3건(리드+2)만. 7일치 전체는 로그인 후 뉴스 화면에서.
+export function collectArticles(news, { full = false } = {}) {
   const out = [];
   for (const key of ["naver", "coupang", "elevenst", "gmarket"]) {
     const section = news?.[key];
     if (!section || section.ok === false) continue;
-    const items = Array.isArray(section.all) && section.all.length
+    const items = full && Array.isArray(section.all) && section.all.length
       ? section.all
       : [section.lead, ...(section.items || [])].filter(Boolean);
     for (const item of items) {
@@ -116,7 +117,15 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   const coupang = news?.coupang && news.coupang.ok !== false ? Number(news.coupang.count7d || 0) : 0;
   const elevenst = news?.elevenst && news.elevenst.ok !== false ? Number(news.elevenst.count7d || 0) : 0;
   const gmarket = news?.gmarket && news.gmarket.ok !== false ? Number(news.gmarket.count7d || 0) : 0;
-  const payload = { ok: true, news: news && news.ok !== false ? news : { ok: false, reason: "news_unavailable" } };
+  // 페이지에 심는 데이터도 미리보기 분량만(7일치 전체 목록은 소스에도 싣지 않는다).
+  const teaser = {};
+  for (const key of ["naver", "coupang", "elevenst", "gmarket", "openmarket"]) {
+    const section = news?.[key];
+    if (!section) continue;
+    teaser[key] = section.ok === false ? section : { ok: true, count7d: section.count7d, lead: section.lead, items: section.items };
+  }
+  const total = naver + coupang + elevenst + gmarket;
+  const payload = { ok: true, news: news && news.ok !== false ? { ...teaser, updatedAt: news.updatedAt } : { ok: false, reason: "news_unavailable" } };
   const embedded = JSON.stringify(payload).replace(/</g, "\\u003c");
   const description = `네이버·쿠팡·11번가·G마켓 셀러에게 필요한 정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 최근 7일 네이버 ${naver}건 · 쿠팡 ${coupang}건 · 11번가 ${elevenst}건 · G마켓 ${gmarket}건.`;
   return `<!doctype html>
@@ -150,8 +159,8 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   <main class="shell" id="news">
     <div class="head">
       <span class="kicker">셀러 뉴스 · 로그인 없이 누구나</span>
-      <h1>네이버·쿠팡·11번가·G마켓 셀러 관련 기사, 최근 7일치</h1>
-      <p>정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 기사를 누르면 언론사 원문으로 이동합니다.</p>
+      <h1>네이버·쿠팡·11번가·G마켓 셀러 관련 기사</h1>
+      <p>정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 로그인 없이 플랫폼별 최신 3건, 로그인하면 최근 7일치 전체를 봅니다.</p>
     </div>
 
     <div class="bar" data-news-filters>
@@ -167,8 +176,9 @@ export function renderNewsPage(news, nowMs = Date.now()) {
     <div class="list" data-news-list>${rows(items)}</div>
 
     <div class="cta">
-      <div><b>로그인하면 내 키워드 뉴스까지.</b><br /><span>추적 중인 키워드와 관련된 기사, 검색량 증감, 30일 순위를 첫 화면에서 봅니다.</span></div>
+      <div><b>최근 7일 전체 ${total}건은 도입 후 로그인하면 열립니다.</b><br /><span>지금은 플랫폼별 최신 3건만 보입니다. 로그인하면 7일치 전체와 내 키워드 관련 기사, 검색량 증감을 첫 화면에서 봅니다.</span></div>
       <a class="btn primary" href="${KAKAO}" target="_blank" rel="noopener">도입 문의 · 카카오 채널</a>
+      <a class="btn" href="/client">광고주 로그인</a>
     </div>
   </main>
 

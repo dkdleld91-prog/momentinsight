@@ -13,13 +13,13 @@
       "id": "operation-keyword-lookup",
       "file": "src/pages/admin.html",
       "name": "runKeywordLookup",
-      "sha256": "1f080593d1269937b00a3140d40473b35d05ba5c8d6389b782e9c2e7d5fb1dfb"
+      "sha256": "ba19443a2638a5fd4330d863e2f631570ae98f48b58c8d9c8ed18db16878f5b3"
     },
     {
       "id": "advertiser-keyword-lookup",
       "file": "src/pages/client.html",
       "name": "runKeywordLookup",
-      "sha256": "2d8a53a04c21352541739a45011b91382b652692284a9726755f9a5107ff88fe"
+      "sha256": "cb423b1e7eb36a21d12435d26c360af0da928e7ac9cf1bc1dadb599968a3961e"
     },
     {
       "id": "operation-seo-entry",

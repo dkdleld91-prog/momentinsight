@@ -89,9 +89,33 @@
     }
     ticker.hidden = false;
   }
+  // 실제 운영 집계 띠: 추적 그룹·수집 시각은 공개 상태 API, 기사 수는 뉴스 응답에서. 고객명·키워드는 나가지 않는다.
+  function renderStats(news) {
+    var box = document.querySelector("[data-hp-live-stats]");
+    if (!box) return;
+    var two = function (value) { return String(value).replace(/^(\d)$/, "0$1"); };
+    var set = function (key, value) {
+      var node = box.querySelector('[data-hp-stat="' + key + '"]');
+      if (node) node.textContent = value;
+    };
+    var naver = news && news.naver && news.naver.ok !== false ? Number(news.naver.count7d || 0) : null;
+    var coupang = news && news.coupang && news.coupang.ok !== false ? Number(news.coupang.count7d || 0) : null;
+    set("news", naver === null && coupang === null ? "확인 필요" : "네이버 " + (naver || 0) + "건 · 쿠팡 " + (coupang || 0) + "건");
+    fetch("/api/rank-collection-health", { credentials: "omit", cache: "no-store" })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (health) {
+        if (!health || !health.trackers) { set("groups", "확인 필요"); set("collect", "확인 필요"); return; }
+        set("groups", Number(health.trackers.activeProductKeywordGroups || 0) + "개 · 상품 " + Number(health.trackers.activeProduct || 0) + "개");
+        var last = health.lanes && health.lanes.product && health.lanes.product.lastSuccessAt ? new Date(health.lanes.product.lastSuccessAt) : null;
+        var clock = last && isFinite(last.getTime()) ? two(last.getHours()) + ":" + two(last.getMinutes()) : "";
+        set("collect", (clock ? "마지막 성공 " + clock + " · " : "") + "하루 2회 09:00 · 15:00");
+      })
+      .catch(function () { set("groups", "확인 필요"); set("collect", "확인 필요"); });
+  }
   function fail() {
     renderBrand("naver", null);
     renderBrand("coupang", null);
+    renderStats(null);
     text(updated, "잠시 후 다시 확인");
   }
   fetch("/api/public/market-news", { credentials: "omit", cache: "no-store" })
@@ -102,6 +126,7 @@
       renderBrand("naver", news.naver);
       renderBrand("coupang", news.coupang);
       renderTicker(news);
+      renderStats(news);
       text(updated, news.updatedAt ? minutesAgo(news.updatedAt) : "갱신 시각 확인 중");
     })
     .catch(fail);

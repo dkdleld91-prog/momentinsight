@@ -4074,6 +4074,23 @@
     #mi-clean .mi-related-table > div > span[data-related-sort-key] { cursor: pointer; }
     #mi-clean .mi-related-table > div > span.is-sorted { color: var(--mi-navy); font-weight: 700; }
     #mi-clean .mi-compare-note { font-size: 12.5px; color: var(--mi-muted); padding: 10px 8px; margin: 0; }
+    #mi-clean .mi-kw-summary-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+    #mi-clean .mi-kw-summary-head h2 { margin: 0; font-size: 17px; color: var(--mi-navy); }
+    #mi-clean .mi-kw-summary-head p { margin: 0; font-size: 12.5px; color: var(--mi-muted); }
+    #mi-clean .mi-kw-summary-rows { display: grid; gap: 8px; }
+    #mi-clean .mi-kw-summary-row { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; padding: 9px 12px; border: 1px solid var(--mi-line); border-radius: 10px; background: #fff; color: var(--mi-navy); font-size: 14px; text-decoration: none; word-break: keep-all; }
+    #mi-clean .mi-kw-summary-row:hover { border-color: #2d6ac5; }
+    #mi-clean .mi-kw-summary-row i { font-style: normal; font-weight: 800; color: #2d6ac5; }
+    #mi-clean .mi-kw-notes-bar { display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    #mi-clean .mi-kw-notes { margin-top: 10px; border-top: 1px dashed var(--mi-line); padding-top: 8px; }
+    #mi-clean .mi-kw-notes-head { font-size: 12px; color: var(--mi-muted); margin-bottom: 4px; }
+    #mi-clean .mi-kw-notes-list { list-style: none; margin: 0; padding: 0; }
+    #mi-clean .mi-kw-notes-list li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px dashed var(--mi-line); font-size: 13px; flex-wrap: wrap; }
+    #mi-clean .mi-kw-notes-list li b { color: var(--mi-navy); }
+    #mi-clean .mi-kw-notes-list li .r { margin-left: auto; color: var(--mi-muted); font-size: 12px; }
+    #mi-clean .mi-kw-notes-list li button { font: inherit; font-size: 12px; border: 1px solid var(--mi-line); background: #fff; border-radius: 8px; padding: 3px 9px; cursor: pointer; color: var(--mi-navy); }
+    #mi-clean .mi-kw-notes-list li button.is-danger { color: var(--mi-muted); }
+    #mi-clean .mi-kw-tile em { display: block; font-style: normal; font-size: 11.5px; color: var(--mi-muted); margin-top: 3px; line-height: 1.4; }
     @media (max-width: 900px) { #mi-clean .mi-kw-g2, #mi-clean .mi-kw-g2.is-bid, #mi-clean .mi-kw-g3 { grid-template-columns: 1fr; } }
 
     #mi-clean .mi-market-kpis {
@@ -6457,11 +6474,30 @@
               <input class="mi-input" data-mi-keyword-input aria-label="키워드 입력" placeholder="키워드 입력 · 쉼표로 최대 5개 비교" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
+            <div class="mi-kw-notes-bar">
+              <button class="mi-button secondary" type="button" data-keyword-note-save disabled>조사 노트에 저장</button>
+              <span class="mi-code-status" data-keyword-note-status>조회한 뒤 저장할 수 있습니다 · 검색량이 함께 기록됩니다</span>
+            </div>
+            <div class="mi-kw-notes" data-keyword-notes hidden>
+              <div class="mi-kw-notes-head">최근 조사</div>
+              <ul class="mi-kw-notes-list" data-keyword-notes-list></ul>
+            </div>
             <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드를 입력하면(쉼표로 최대 5개) 공식 데이터 기준 검색량과 검색 비율을 확인합니다.</p>
           </article>
 
           <!-- 키워드 조회 6안(2026-09-06): 블록 순서 = 1 얼마나 → 2 추이 → 3 언제 → 4 누가 → 5 광고·콘텐츠 → 6 비교 → 7 연관 → 8 시즌 -->
-          <div class="mi-kw-sec"><span class="n">1</span><div><h2>얼마나 검색하고, 얼마나 누르나</h2><p>검색광고 키워드도구 · 월 검색수 · 광고 평균 클릭 · 광고 노출 깊이</p></div></div>
+          <!-- 조회 직후 4줄 요약(2026-09-06 피드백 1): 줄을 누르면 근거 블록으로 이동 -->
+          <article class="mi-card mi-card-pad mi-kw-summary" data-keyword-summary hidden style="margin-bottom:16px;">
+            <div class="mi-kw-summary-head"><h2>핵심 4줄</h2><p>아래 블록이 근거입니다 · 줄을 누르면 이동</p></div>
+            <div class="mi-kw-summary-rows">
+              <a class="mi-kw-summary-row" href="#" data-kw-jump="3"><i>언제</i><span data-keyword-summary="when">조회 후 표시</span></a>
+              <a class="mi-kw-summary-row" href="#" data-kw-jump="4"><i>누가</i><span data-keyword-summary="who">조회 후 표시</span></a>
+              <a class="mi-kw-summary-row" href="#" data-kw-jump="5"><i>얼마</i><span data-keyword-summary="cost">조회 후 표시</span></a>
+              <a class="mi-kw-summary-row" href="#" data-kw-jump="6"><i>대안</i><span data-keyword-summary="alt">조회 후 표시</span></a>
+            </div>
+          </article>
+
+          <div class="mi-kw-sec"><span class="n">1</span><div><h2>얼마나 검색하고, 얼마나 드나</h2><p>검색광고 키워드도구 · 월 검색수 · 1위 입찰가 · 한 달 예상 비용 · 광고 노출 깊이</p></div></div>
           <article class="mi-card mi-keyword-market" data-keyword-market>
             <div class="mi-market-head">
               <section class="mi-market-title" aria-labelledby="mi-client-keyword-market-title">
@@ -6479,8 +6515,8 @@
               </section>
               <!-- 클릭수·클릭률·피크 달·노출 깊이 — 검색광고 응답과 월별 비율에서 바로 계산 -->
               <div class="mi-market-kpis" data-keyword-kpis hidden aria-label="클릭·시즌 요약">
-                <div class="mi-market-kpi"><span>광고 평균 클릭</span><b data-keyword-kpi="clicks">—</b><em>광고 1개가 한 달에 받는 평균 클릭 · 검색 클릭 아님</em></div>
-                <div class="mi-market-kpi"><span>광고 클릭률</span><b data-keyword-kpi="ctr">—</b><em>광고 노출 대비 클릭 비율 · 검색광고 키워드도구</em></div>
+                <div class="mi-market-kpi"><span>1위 노출 입찰가</span><b data-keyword-kpi="bid1">—</b><em>모바일 · 클릭당 · 검색광고 추정치</em></div>
+                <div class="mi-market-kpi"><span>한 달 예상 비용</span><b data-keyword-kpi="cost">—</b><em data-keyword-kpi="costNote">1위 노출 기준 · 검색광고 추정치</em></div>
                 <div class="mi-market-kpi"><span>광고 노출 깊이</span><b data-keyword-kpi="depth">—</b><em>검색 결과 상단에 붙는 광고 수 · 검색광고</em></div>
                 <div class="mi-market-kpi"><span>가장 많이 찾는 달</span><b data-keyword-kpi="peakMonth">—</b><em data-keyword-kpi="peakNote">월별 검색 비율 기준</em></div>
               </div>
@@ -6582,6 +6618,10 @@
                 <h3>노출 순위별 예상 입찰가 <span class="mi-badge" data-keyword-research-state>조회 후 표시</span></h3>
                 <p class="mi-kw-why">1위에 붙으려면 클릭당 이 정도 · 모바일 기준.</p>
                 <div class="mi-bid-row" data-keyword-bids><span class="mi-research-note">조회 후 표시</span></div>
+                <div class="mi-kw-tiles" style="margin-top:12px;">
+                  <div class="mi-kw-tile"><span>광고 평균 클릭</span><b data-keyword-kpi="clicks">—</b><em>광고 1개가 한 달에 받는 평균 클릭 · 검색 클릭 아님</em></div>
+                  <div class="mi-kw-tile"><span>광고 클릭률</span><b data-keyword-kpi="ctr">—</b><em>광고 노출 대비 클릭 비율</em></div>
+                </div>
               </div>
               <div class="mi-kw-chart">
                 <h3>1위 노출 시 한 달 예상</h3>
@@ -8279,6 +8319,18 @@
             }
           }
 
+          // 핵심 4줄(피드백 1): 언제·누가는 위 결론 문장을 그대로, 얼마·대안은 입찰가·비교가 오면 채운다.
+          var summaryCard = root.querySelector("[data-keyword-summary]");
+          if (summaryCard) {
+            summaryCard.hidden = false;
+            setKeywordText('[data-keyword-summary="when"]', monthNote && !monthNote.hidden ? monthNote.textContent : "월별 검색 비율은 연결 후 표시됩니다");
+            setKeywordText('[data-keyword-summary="who"]', ageNote && !ageNote.hidden ? ageNote.textContent : "연령 데이터는 연결 후 표시됩니다");
+            setKeywordText('[data-keyword-summary="cost"]', "입찰가 불러오는 중");
+            setKeywordText('[data-keyword-summary="alt"]', "후보 비교 불러오는 중");
+          }
+          var noteSave = root.querySelector("[data-keyword-note-save]");
+          if (noteSave) noteSave.disabled = false;
+          if (keywordNotesState.ready) keywordNoteStatus("조사 노트에 저장할 수 있습니다 · 검색량이 함께 기록됩니다", "");
           // 한 블록이 실패해도 나머지 블록은 그린다(6·9번 미표시 방지).
           [function () { renderKeywordYoy(data); }, function () { renderKeywordSeason(items); }, function () { loadKeywordCompare(items); }, function () { loadKeywordResearch(item.keyword); }].forEach(function (step) {
             try { step(); } catch (error) { if (window.console && console.warn) console.warn("keyword extras step failed", error); }
@@ -8480,6 +8532,99 @@
       function keywordCount(value, suffix) {
         return value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : formatNumber(Math.round(Number(value))) + (suffix || "");
       }
+      // 핵심 4줄 → 근거 블록으로 이동
+      root.addEventListener("click", function (event) {
+        var jump = event.target.closest("[data-kw-jump]");
+        if (!jump || !root.contains(jump)) return;
+        event.preventDefault();
+        var index = Number(jump.getAttribute("data-kw-jump") || 0) - 1;
+        var sections = root.querySelectorAll(".mi-kw-sec");
+        if (sections[index]) sections[index].scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      // 조사 노트(피드백 4): /api/client/keyword-notes — 저장·목록·삭제·불러오기. 표가 아직 없으면 안내만 보인다.
+      function getKeywordNotesApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/keyword-notes";
+        return "http://127.0.0.1:8790/api/client/keyword-notes";
+      }
+      var keywordNotesState = { items: [], ready: false };
+      function keywordNoteStatus(text, tone) {
+        var node = root.querySelector("[data-keyword-note-status]");
+        if (node) { node.textContent = text; node.className = "mi-code-status" + (tone ? " " + tone : ""); }
+      }
+      function renderKeywordNotes() {
+        var box = root.querySelector("[data-keyword-notes]");
+        var list = root.querySelector("[data-keyword-notes-list]");
+        if (!box || !list) return;
+        var items = keywordNotesState.items || [];
+        box.hidden = !items.length;
+        list.innerHTML = items.slice(0, 8).map(function (note) {
+          var snaps = Array.isArray(note.snapshots) ? note.snapshots : [];
+          var first = snaps[0] || {};
+          var when = note.created_at ? String(note.created_at).slice(5, 10).replace("-", "/") : "";
+          return '<li><b>' + escapeHtml(note.title || "") + '</b><span>' + escapeHtml((note.keywords || []).join(" · ")) + '</span><span class="r">' + escapeHtml(when) + (first.volume ? " · " + escapeHtml(first.keyword || "") + " " + formatNumber(Number(first.volume)) : "") + '</span><button type="button" data-keyword-note-load="' + escapeHtml(String(note.id)) + '">불러오기</button><button type="button" class="is-danger" data-keyword-note-delete="' + escapeHtml(String(note.id)) + '">삭제</button></li>';
+        }).join("");
+      }
+      function loadKeywordNotes() {
+        miFetch(getKeywordNotesApiUrl(), { method: "GET", cache: "no-store" }).then(function (response) {
+          return response.json().catch(function () { return null; });
+        }).then(function (payload) {
+          if (!payload || payload.ok !== true) {
+            keywordNotesState.ready = false;
+            if (payload && payload.reason === "table_missing") keywordNoteStatus("조사 노트 저장은 DB 표 준비 후 열립니다", "is-warn");
+            return;
+          }
+          keywordNotesState.ready = true;
+          keywordNotesState.items = Array.isArray(payload.items) ? payload.items : [];
+          renderKeywordNotes();
+        }).catch(function () {});
+      }
+      function saveKeywordNote() {
+        var button = root.querySelector("[data-keyword-note-save]");
+        var items = keywordDatasets || [];
+        if (!items.length) { keywordNoteStatus("먼저 조회하세요", "is-warn"); return; }
+        var keywords = items.map(function (item) { return item.keyword; });
+        var snapshots = items.map(function (item) {
+          var data = item.data || {};
+          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
+          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
+          var peak = -1; var peakValue = 0;
+          month.forEach(function (value, i) { if (value > peakValue) { peakValue = value; peak = i; } });
+          return { keyword: item.keyword, volume: keywordNumber(data.volume), peakMonth: peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "", checkedAt: new Date().toISOString() };
+        });
+        var title = window.prompt("조사 노트 제목", keywords.join(" · ").slice(0, 60));
+        if (title === null) return;
+        if (button) button.disabled = true;
+        keywordNoteStatus("저장 중", "");
+        miFetch(getKeywordNotesApiUrl(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: title || keywords.join(" · "), keywords: keywords, snapshots: snapshots }) }).then(function (response) {
+          return response.json().catch(function () { return null; });
+        }).then(function (payload) {
+          if (button) button.disabled = false;
+          if (!payload || payload.ok !== true) { keywordNoteStatus(payload && payload.reason === "table_missing" ? "조사 노트 저장은 DB 표 준비 후 열립니다" : "저장하지 못했습니다", "is-warn"); return; }
+          keywordNoteStatus("저장했습니다 · 검색량 " + snapshots.length + "건 기록", "is-ok");
+          loadKeywordNotes();
+        }).catch(function () { if (button) button.disabled = false; keywordNoteStatus("저장하지 못했습니다", "is-warn"); });
+      }
+      root.addEventListener("click", function (event) {
+        var save = event.target.closest("[data-keyword-note-save]");
+        if (save && root.contains(save)) { saveKeywordNote(); return; }
+        var load = event.target.closest("[data-keyword-note-load]");
+        if (load && root.contains(load)) {
+          var note = (keywordNotesState.items || []).filter(function (item) { return String(item.id) === load.getAttribute("data-keyword-note-load"); })[0];
+          var input = root.querySelector("[data-mi-keyword-input], [data-admin-keyword-input]");
+          var button = root.querySelector("[data-mi-keyword-search], [data-admin-keyword-search]");
+          if (note && input) { input.value = (note.keywords || []).join(", "); input.dispatchEvent(new Event("input", { bubbles: true })); if (button) button.click(); }
+          return;
+        }
+        var remove = event.target.closest("[data-keyword-note-delete]");
+        if (remove && root.contains(remove)) {
+          if (!window.confirm("이 조사 노트를 삭제할까요?")) return;
+          miFetch(getKeywordNotesApiUrl() + "?id=" + encodeURIComponent(remove.getAttribute("data-keyword-note-delete") || ""), { method: "DELETE" }).then(function () { loadKeywordNotes(); }).catch(function () {});
+        }
+      });
+      window.setTimeout(loadKeywordNotes, 4000);
+
       // 최근 3개월 합계 vs 그 전 3개월 합계(진행 중인 달 제외) — 후보 비교 표의 "3개월 추이".
       function keywordRecentTrend(data) {
         var series = Array.isArray(data && data.series) ? data.series.map(keywordNumber) : [];
@@ -8499,10 +8644,11 @@
         if (!card || !table) return;
         var rows = (items || []).filter(function (entry) { return entry && entry.data; });
         if (!rows.length) { card.hidden = true; return; }
-        var foot = rows.length < 2 ? '<tfoot><tr><td colspan="7" class="mi-compare-note">쉼표로 키워드를 더 입력하면 여기서 나란히 비교됩니다 · 최대 5개</td></tr></tfoot>' : "";
+        var foot = rows.length < 2 ? '<tfoot><tr><td colspan="8" class="mi-compare-note">쉼표로 키워드를 더 입력하면 여기서 나란히 비교됩니다 · 최대 5개</td></tr></tfoot>' : "";
         var ageLabels = ["10대", "20대", "30대", "40대", "50대 이상"];
-        var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>광고 평균 클릭</th><th>광고 클릭률</th><th>주 연령</th><th>피크 달</th><th>3개월 추이</th></tr></thead>";
-        var body = rows.map(function (entry) {
+        var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>광고 평균 클릭</th><th>광고 클릭률</th><th>주 연령</th><th>피크 달</th><th>3개월 추이</th><th>1위 입찰가</th></tr></thead>";
+        var altParts = [];
+        var body = rows.map(function (entry, index) {
           var data = entry.data || {};
           var naver = data.naver || {};
           var clicks = keywordNumber(naver.monthlyAvePcClkCnt) + keywordNumber(naver.monthlyAveMobileClkCnt);
@@ -8517,8 +8663,19 @@
           month.forEach(function (value, index) { if (value > peakValue) { peakValue = value; peak = index; } });
           return "<tr><td>" + escapeHtml(entry.keyword) + "</td><td>" + escapeHtml(volume ? formatNumber(volume) : (data.volumeLabel || "확인 필요")) + "</td><td>" + escapeHtml(clicks ? formatNumber(Math.round(clicks)) : "—") +
             "</td><td>" + escapeHtml(ctr ? keywordPercent(ctr, 1) : "—") + "</td><td>" + escapeHtml(topAge >= 0 ? ageLabels[topAge] : "—") + "</td><td>" + escapeHtml(peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "—") +
-            "</td><td>" + escapeHtml(keywordRecentTrend(data)) + "</td></tr>";
+            "</td><td>" + escapeHtml(keywordRecentTrend(data)) + "</td><td>" + escapeHtml(keywordWon(entry.research && entry.research.ads && entry.research.ads.bids && entry.research.ads.bids.ok ? entry.research.ads.bids.bids[1] : null)) + "</td></tr>";
         }).join("");
+        rows.forEach(function (entry, index) {
+          if (index === 0) return;
+          var data = entry.data || {};
+          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
+          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
+          var peak = -1; var peakValue = 0;
+          month.forEach(function (value, i) { if (value > peakValue) { peakValue = value; peak = i; } });
+          var volume = keywordNumber(data.volume);
+          altParts.push(entry.keyword + "(" + (volume ? formatNumber(volume) : "—") + (peak >= 0 ? " · " + keywordMonthLabel(labels[peak], peak) + " 피크" : "") + ")");
+        });
+        setKeywordText('[data-keyword-summary="alt"]', altParts.length ? altParts.join(" · ") + " → 시즌이 다른 후보는 세트·순차 행사 후보" : "쉼표로 후보를 더 입력하면 대안을 제안합니다");
         table.innerHTML = head + "<tbody>" + body + "</tbody>" + foot;
         card.hidden = false;
       }
@@ -8570,11 +8727,18 @@
             var hasExpected = (expected.clicks !== null && expected.clicks !== undefined) || (expected.cost !== null && expected.cost !== undefined);
             setKeywordText('[data-keyword-expected="clicks"]', expected.clicks === null || expected.clicks === undefined ? "—" : keywordCount(expected.clicks, "회"));
             setKeywordText('[data-keyword-expected="cost"]', expected.cost === null || expected.cost === undefined ? "—" : keywordWon(expected.cost));
+            setKeywordText('[data-keyword-kpi="bid1"]', keywordWon(bids.bids[1]));
+            setKeywordText('[data-keyword-kpi="cost"]', expected.cost === null || expected.cost === undefined ? "—" : keywordWon(expected.cost));
+            setKeywordText('[data-keyword-kpi="costNote"]', hasExpected ? "1위 노출 · 월 " + keywordCount(expected.clicks, "회") + " 클릭 기준" : "1위 노출 기준 · 검색광고 추정치");
+            setKeywordText('[data-keyword-summary="cost"]', "1위 노출 입찰가 " + keywordWon(bids.bids[1]) + (hasExpected ? " · 한 달 예상 " + keywordCount(expected.clicks, "회") + " 클릭 / " + keywordWon(expected.cost) : " · 예상 실적 없음"));
             if (bidNote) bidNote.textContent = hasExpected ? "검색광고 예상 실적 API · 모바일 · 1위 입찰가 기준 한 달 추정치" : "예상 클릭·비용은 이 키워드에 제공되지 않았습니다.";
           } else {
             bidRow.innerHTML = '<span class="mi-research-note">' + escapeHtml(ads.bids && ads.bids.reason === "not_configured" ? "검색광고 연결 필요" : "이 키워드는 입찰가 추정치가 없습니다.") + "</span>";
             setKeywordText('[data-keyword-expected="clicks"]', "—");
             setKeywordText('[data-keyword-expected="cost"]', "—");
+            setKeywordText('[data-keyword-kpi="bid1"]', "—");
+            setKeywordText('[data-keyword-kpi="cost"]', "—");
+            setKeywordText('[data-keyword-summary="cost"]', "이 키워드는 입찰가 추정치가 없습니다");
             if (bidNote) bidNote.textContent = "";
           }
         }
@@ -8622,23 +8786,35 @@
         var input = root.querySelector("[data-mi-keyword-input], [data-admin-keyword-input]");
         var keywords = parseKeywordInput(input ? input.value : "").filter(function (keyword) { return keyword !== first.keyword; }).slice(0, 4);
         var requestId = ++keywordCompareRequest;
-        if (!keywords.length) { renderKeywordCompare([first]); return; }
         // 조회 흐름이 이미 받아온 키워드는 다시 부르지 않는다(중복 호출·호출 제한 방지).
         var known = {};
         (items || []).forEach(function (entry) { if (entry && entry.keyword && entry.data) known[entry.keyword] = entry; });
-        var missing = keywords.filter(function (keyword) { return !known[keyword]; });
+        known[first.keyword] = first;
+        var all = function () { return [first].concat(keywords.map(function (keyword) { return known[keyword] || null; }).filter(Boolean)); };
         var finish = function () {
           if (requestId !== keywordCompareRequest) return;
-          var all = [first].concat(keywords.map(function (keyword) { return known[keyword] || null; }).filter(Boolean));
-          renderKeywordCompare(all);
-          renderKeywordSeason(all);
+          renderKeywordCompare(all());
+          renderKeywordSeason(all());
         };
-        if (!missing.length) { finish(); return; }
-        Promise.all(missing.map(function (keyword) {
-          return fetchKeywordData(keyword, "compare").then(function (payload) {
+        // 비교 키워드는 연령이 비어 있으면 전체 프로필로 다시 받는다(피드백 3). 키워드당 호출 +1.
+        var profileJobs = keywords.map(function (keyword) {
+          var entry = known[keyword];
+          if (entry && entry.data && hasRatioValues(entry.data.age || [])) return Promise.resolve();
+          return fetchKeywordData(keyword, "full").then(function (payload) {
             known[keyword] = { keyword: keyword, data: normalizeKeywordApiData(payload, buildKeywordFallback(keyword)) };
           }).catch(function () { return null; });
-        })).then(finish);
+        });
+        Promise.all(profileJobs).then(function () {
+          finish();
+          // 1위 입찰가 열: 키워드마다 조사 API(서버 24시간 캐시)를 받아 붙인다.
+          return Promise.all(all().map(function (entry) {
+            var url = getKeywordResearchApiUrl() + "?keyword=" + encodeURIComponent(entry.keyword);
+            return keywordFetchWithRetry(function () { return fetch(url, { method: "GET", cache: "no-store", credentials: "same-origin" }); })
+              .then(function (response) { return response.json().catch(function () { return null; }); })
+              .then(function (payload) { if (payload && payload.ok === true) entry.research = payload; })
+              .catch(function () { return null; });
+          }));
+        }).then(function () { if (requestId === keywordCompareRequest) renderKeywordCompare(all()); });
       }
 
       function getKeywordApiUrl() {
@@ -12741,7 +12917,7 @@
           var requestSession = captureClientSession();
           if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           keywordButton.disabled = true;
-          setStatus(keywordStatus, "키워드 데이터를 조회 중입니다. 1개 키워드 기준으로 계산합니다.", "");
+          setStatus(keywordStatus, keywords.length + "개 키워드 조회 중 · 첫 키워드는 전체 지표, 나머지는 비교용 · 보통 5~10초", "");
           try {
             var items = await Promise.all(keywords.map(resolveKeywordItem));
             if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
@@ -12767,7 +12943,7 @@
             } else if (missingProfile) {
               setStatus(keywordStatus, "조회 완료: 일부 검색 비율 데이터는 연결 후 표시됩니다.", "is-warn");
             } else {
-              setStatus(keywordStatus, "조회 완료: 월 검색량과 검색 비율을 1개 키워드 기준으로 표시합니다.", "is-ok");
+              setStatus(keywordStatus, keywords.length > 1 ? "조회 완료: 첫 키워드는 전체 지표, 나머지 " + (keywords.length - 1) + "개는 비교 표·시즌 캘린더에 표시합니다." : "조회 완료: 월 검색량과 검색 비율을 표시합니다.", "is-ok");
             }
           } catch (error) {
             if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;

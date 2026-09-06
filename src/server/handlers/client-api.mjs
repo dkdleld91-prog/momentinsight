@@ -769,12 +769,19 @@ async function keywordResearchFetch(request) {
   return module.default.fetch(request);
 }
 
+// 조사 노트(2026-09-06): 키워드 조회 결과 저장·목록·삭제. 표가 없으면 안내만 돌려준다.
+async function keywordNotesFetch(request) {
+  const module = await import("./keyword-notes.mjs");
+  return module.default.fetch(request);
+}
+
 export default {
   fetch(request) {
     const { resource } = routeParts(request, "/api/client");
     if (resource === "public-state") return sessionScopedFetch(request);
     if (resource === "home-feed") return homeFeedFetch(request);
     if (resource === "keyword-research") return keywordResearchFetch(request);
+    if (resource === "keyword-notes") return keywordNotesFetch(request);
     return userScopedFetch(request);
   }
 };

@@ -819,7 +819,6 @@ const checks = {
     && homeSource.includes('<a class="mi-button primary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>')
     && homeSource.includes('<a class="mi-button" href="/client">광고주 로그인</a>'),
   homePremiumHierarchyVisible: homeSource.includes("통합 마케팅 운영 플랫폼")
-    && homeSource.includes("샘플 화면")
     && homeSource.includes("예시 데이터")
     && homeSource.includes("#mi-home-trust .mi-grid-3")
     && homeSource.includes("#mi-home .mi-cta .mi-button.primary")
@@ -847,8 +846,8 @@ const checks = {
     && homeSource.indexOf('id="mi-home-features"') < homeSource.indexOf('id="mi-home-trust"')
     // 5안(2026-09-06): 카드 3개(뉴스·키워드 조사·순위 추적) 뒤에 잠금 띠. 잠금 띠는 카카오 링크가 있어 예시 구간 밖에 둔다.
     && homeSource.includes('class="mi-hp-lockbar"')
-    && homeSource.includes("예시 키워드 A")
-    && homeSource.includes("예시 키워드 C")
+    && homeSource.includes("data-hp-live-stats")
+    && homeSource.includes('data-hp-stat="groups"')
     && homeSource.indexOf("<!-- mi-feature-showcase:end -->") < homeSource.indexOf('class="mi-hp-lockbar"')
     && homeSource.indexOf('class="mi-hp-lockbar"') < homeSource.indexOf('id="mi-home-trust"'),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")

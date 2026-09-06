@@ -17,7 +17,12 @@
 <meta property="og:title" content="모먼트 인사이트 | 네이버·쿠팡 셀러 시장 뉴스 · 키워드 조사 · 30일 순위 추적" />
 <meta property="og:description" content="네이버·쿠팡 셀러를 위한 마케팅 데이터 플랫폼. 시장 뉴스 1시간마다 · 네이버 공식 데이터 키워드 조사 · 네이버쇼핑 30일 순위 추적." />
 <meta property="og:url" content="https://insight.momentlabs.co.kr/" />
-<meta name="twitter:card" content="summary" />
+<meta property="og:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="모먼트 인사이트 — 시장 뉴스 · 키워드 조사 · 30일 순위 추적" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://insight.momentlabs.co.kr/og-image.jpg" />
 <meta name="twitter:title" content="모먼트 인사이트 | 셀러 시장 뉴스 · 키워드 조사 · 30일 순위" />
 <meta name="twitter:description" content="네이버·쿠팡 셀러를 위한 마케팅 데이터 플랫폼. 시장 뉴스 1시간마다 · 네이버 공식 데이터 키워드 조사 · 네이버쇼핑 30일 순위 추적." />
 <script type="application/ld+json">
@@ -1441,7 +1446,9 @@
     #mi-home .mi-hp-lockbar .mi-hp-lock-label { font-weight: 800; color: var(--mi-navy, #061a3a); }
     #mi-home .mi-hp-lockbar .mi-hp-lock-note { color: var(--mi-muted, #667085); font-size: 11.5px; }
     #mi-home .mi-hp-lockbar .mi-hp-lock-item b { display: block; color: var(--mi-navy, #061a3a); font-weight: 700; }
-    #mi-home .mi-hp-lockbar .mi-hp-lock-item span { color: var(--mi-muted, #667085); filter: blur(0.6px); }
+    #mi-home .mi-hp-lockbar .mi-hp-lock-item span { color: var(--mi-muted, #667085); font-variant-numeric: tabular-nums; }
+    #mi-home .mi-hp-foot-link { margin-left: 8px; color: #2d6ac5; font-weight: 700; text-decoration: none; white-space: nowrap; }
+    #mi-home .mi-hp-foot-link:hover { text-decoration: underline; }
     #mi-home .mi-hp-lockbar .mi-hp-lock-cta { margin-left: auto; font-weight: 700; color: var(--mi-navy, #061a3a); text-decoration: none; }
     #mi-home .mi-hp-lockbar .mi-hp-lock-cta:hover { text-decoration: underline; }
     @media (max-width: 900px) { #mi-home .mi-hp-cards { grid-template-columns: 1fr; } #mi-home .mi-hp-lockbar .mi-hp-lock-cta { margin-left: 0; } }
@@ -1854,7 +1861,8 @@
     </div>
   </header>
 
-  <aside class="mi-dev-banner" data-mi-dev-banner aria-label="모먼트 인사이트 개발 안내">
+  <!-- 2026-09-06 피드백 4: 상단 안내 띠는 숨긴다(수집 시각은 푸터로). 마크업은 릴리스 게이트 호환을 위해 남긴다. -->
+  <aside class="mi-dev-banner" data-mi-dev-banner aria-label="모먼트 인사이트 개발 안내" hidden>
     <div class="mi-dev-banner-head">
       <span class="mi-dev-banner-label">서비스 안내</span>
       <strong>9월 서비스 운영 안내</strong>
@@ -1917,7 +1925,7 @@
               <div class="mi-hp-list" data-hp-news="coupang"><p class="mi-hp-empty">기사를 불러오는 중입니다.</p></div>
             </div>
           </div>
-          <p class="mi-hp-foot">셀러 관련 기사만 골라 보여줍니다 · 로그인 없이 누구나 · 최근 7일 · 로그인하면 내 키워드 뉴스까지</p>
+          <p class="mi-hp-foot">셀러 관련 기사만 골라 보여줍니다 · 로그인 없이 누구나 · 최근 7일 <a class="mi-hp-foot-link" href="/news">뉴스 전체 보기 →</a></p>
         </aside>
       </div>
     </section>
@@ -1974,12 +1982,12 @@
         </div>
         <p class="mi-suite-note">카드 안 키워드·상품명과 수치는 기능 설명을 위한 예시 데이터입니다.</p>
     <!-- mi-feature-showcase:end -->
-        <div class="mi-hp-lockbar" aria-label="로그인 후 열리는 것 · 샘플 화면">
-          <span class="mi-hp-lock-label">🔒 로그인하면</span>
-          <span class="mi-hp-lock-note">샘플 화면 · 예시 데이터</span>
-          <div class="mi-hp-lock-item"><b>내 순위 요약</b><span>추적 27개 · ▲4 ▼6 · 원부 확인 3</span></div>
-          <div class="mi-hp-lock-item"><b>내 키워드 뉴스</b><span>예시 키워드 A · 난방가전 수요 조기 확대</span></div>
-          <div class="mi-hp-lock-item"><b>검색량 증감 TOP</b><span>예시 키워드 B ▲41% · 예시 키워드 C ▲38%</span></div>
+        <div class="mi-hp-lockbar" aria-label="지금 이 시스템이 하고 있는 일 · 실제 운영 집계" data-hp-live-stats>
+          <span class="mi-hp-lock-label">지금 이 시스템이 하고 있는 일</span>
+          <span class="mi-hp-lock-note">실제 운영 집계 · 자동 갱신 · 고객명·키워드는 표시하지 않음</span>
+          <div class="mi-hp-lock-item"><b>추적 중 키워드 그룹</b><span data-hp-stat="groups">불러오는 중</span></div>
+          <div class="mi-hp-lock-item"><b>오늘 순위 수집</b><span data-hp-stat="collect">불러오는 중</span></div>
+          <div class="mi-hp-lock-item"><b>이번 주 셀러 기사</b><span data-hp-stat="news">불러오는 중</span></div>
           <a class="mi-hp-lock-cta" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의 →</a>
         </div>
       </div>
@@ -2024,6 +2032,7 @@
           <div class="mi-inline-actions">
             <a class="mi-button primary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>
             <a class="mi-button" href="/client">광고주 로그인</a>
+            <a class="mi-button" href="mailto:mml93@naver.com">이메일 문의</a>
           </div>
         </div>
       </div>
@@ -2034,12 +2043,14 @@
     <div class="mi-shell mi-footer-inner">
       <div class="mi-footer-brand">
         <strong>Moment Insight</strong>
-        <span>KPI, 보고서, 일정, 광고 성과를 연결하는 마케팅 운영 플랫폼</span>
+        <span>네이버·쿠팡 셀러의 시장 뉴스 · 키워드 조사 · 30일 순위 추적 · 순위 수집 하루 2회 09:00 · 15:00</span>
       </div>
       <nav class="mi-footer-links" aria-label="하단 바로가기">
-        <a href="/client#mi-dashboard">광고주 대시보드</a>
+        <a href="/news">셀러 뉴스</a>
+        <a href="/client">광고주 로그인</a>
         <a href="/admin">운영팀 로그인</a>
         <a href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener noreferrer">카카오 문의</a>
+        <a href="mailto:mml93@naver.com">이메일 문의</a>
       </nav>
     </div>
   </footer>
@@ -2047,7 +2058,7 @@
     <i class="mi-kakao-icon" aria-hidden="true"></i>
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
-  <script src="/mi-home-news.js?v=hpnews-v2-20260906" defer></script>
+  <script src="/mi-home-news.js?v=hpnews-v3-20260906" defer></script>
   <script>
     (function () {
       var banner = document.querySelector("[data-mi-dev-banner]");

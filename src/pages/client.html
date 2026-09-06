@@ -4272,6 +4272,31 @@
       background: #fff7ed;
     }
 
+    /* 키워드 조회 1차 고도화(2026-09-06): 클릭 요약·전년 대비·결론 한 줄·시즌 캘린더·연관 정렬 도구 */
+    #mi-clean .mi-market-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    #mi-clean .mi-market-kpi { border: 1px solid var(--mi-line); border-radius: 12px; background: var(--mi-grey-50); padding: 10px 12px; min-width: 0; }
+    #mi-clean .mi-market-kpi span { display: block; font-size: 11.5px; color: var(--mi-muted); margin-bottom: 4px; }
+    #mi-clean .mi-market-kpi b { display: block; font-size: 17px; font-weight: 700; color: var(--mi-navy); letter-spacing: -0.02em; line-height: 1.15; }
+    #mi-clean .mi-market-kpi em { display: block; font-style: normal; font-size: 11.5px; color: var(--mi-muted); margin-top: 3px; line-height: 1.4; }
+    #mi-clean .mi-yoy { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 6px 0 12px; }
+    #mi-clean .mi-yoy-item { border: 1px solid var(--mi-line); border-radius: 12px; background: #fff; padding: 10px 12px; min-width: 0; }
+    #mi-clean .mi-yoy-item span { display: block; font-size: 11.5px; color: var(--mi-muted); margin-bottom: 4px; }
+    #mi-clean .mi-yoy-item b { display: block; font-size: 17px; font-weight: 700; color: var(--mi-navy); letter-spacing: -0.02em; }
+    #mi-clean .mi-yoy-item em { display: block; font-style: normal; font-size: 11.5px; color: var(--mi-muted); margin-top: 3px; }
+    #mi-clean .mi-ratio-note { margin: 8px 0 0; font-size: 12.5px; color: var(--mi-navy); font-weight: 600; }
+    #mi-clean .mi-related-tools { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+    #mi-clean .mi-related-tools button { border: 1px solid var(--mi-line); background: #fff; border-radius: 999px; padding: 5px 11px; font-size: 12px; color: var(--mi-muted); cursor: pointer; }
+    #mi-clean .mi-related-tools button.is-active { background: var(--mi-navy); border-color: var(--mi-navy); color: #fff; font-weight: 600; }
+    #mi-clean .mi-season { display: grid; gap: 4px; overflow-x: auto; }
+    #mi-clean .mi-season-row { display: grid; grid-template-columns: 150px repeat(12, minmax(34px, 1fr)); gap: 4px; align-items: stretch; }
+    #mi-clean .mi-season-row.is-head span { font-size: 11.5px; color: var(--mi-muted); text-align: center; padding: 4px 0; }
+    #mi-clean .mi-season-row.is-head span:first-child { text-align: left; }
+    #mi-clean .mi-season-kw { font-size: 13px; font-weight: 600; color: var(--mi-navy); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #mi-clean .mi-season-cell { height: 30px; border-radius: 6px; background: #2d6ac5; opacity: var(--alpha, 0.1); display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; }
+    #mi-clean .mi-season-cell.is-peak { opacity: 1; }
+    #mi-clean .mi-market-kpis[hidden], #mi-clean .mi-yoy[hidden], #mi-clean .mi-related-tools[hidden], #mi-clean .mi-ratio-note[hidden], #mi-clean [data-keyword-season-card][hidden] { display: none; }
+    @media (max-width: 760px) { #mi-clean .mi-market-kpis, #mi-clean .mi-yoy { grid-template-columns: 1fr 1fr; } }
+
     #mi-clean .mi-market-bars {
       display: grid;
       gap: 11px;
@@ -6389,11 +6414,22 @@
                   </div>
                 </div>
                 <div class="mi-market-basis"><span data-keyword-market-basis>월 검색량·경쟁도·상품수 기반</span><span data-keyword-market-disclaimer>실제 매출 전환율이 아닙니다.</span></div>
+                <!-- 키워드 조회 1차 고도화(2026-09-06): 검색광고 응답에 이미 있는 클릭수·클릭률과 월별 비율의 피크 달을 바로 보여준다. -->
+                <div class="mi-market-kpis" data-keyword-kpis hidden aria-label="클릭·시즌 요약">
+                  <div class="mi-market-kpi"><span>월 클릭수</span><b data-keyword-kpi="clicks">—</b><em>검색한 사람 중 실제로 누른 수 · 검색광고</em></div>
+                  <div class="mi-market-kpi"><span>클릭률</span><b data-keyword-kpi="ctr">—</b><em>검색 대비 클릭 · PC·모바일 합산</em></div>
+                  <div class="mi-market-kpi"><span>가장 많이 찾는 달</span><b data-keyword-kpi="peakMonth">—</b><em data-keyword-kpi="peakNote">월별 검색 비율 기준</em></div>
+                </div>
               </section>
               <aside class="mi-market-related">
                 <div class="mi-related-head">
                   <h3>연관 키워드 미리보기</h3>
                   <a class="mi-related-more" href="#mi-related-keywords" data-mi-screen="related-keywords">더보기</a>
+                </div>
+                <div class="mi-related-tools" data-keyword-related-tools hidden>
+                  <button type="button" class="is-active" data-keyword-related-sort="volume">검색수순</button>
+                  <button type="button" data-keyword-related-sort="name">가나다순</button>
+                  <button type="button" data-keyword-csv>CSV 내보내기</button>
                 </div>
                 <div class="mi-related-table" data-keyword-related>
                   <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
@@ -6423,6 +6459,12 @@
               </div>
               <div class="mi-chart-legend" data-keyword-legend>
                 <span><i class="mi-dot"></i>월별 검색량</span>
+              </div>
+              <div class="mi-yoy" data-keyword-yoy hidden aria-label="전년 대비">
+                <div class="mi-yoy-item"><span>전년 동월 대비</span><b data-keyword-yoy="sameMonth">—</b><em data-keyword-yoy="sameMonthNote"></em></div>
+                <div class="mi-yoy-item"><span>작년 피크 대비</span><b data-keyword-yoy="peak">—</b><em data-keyword-yoy="peakNote"></em></div>
+                <div class="mi-yoy-item"><span>3년 추세</span><b data-keyword-yoy="trend">—</b><em data-keyword-yoy="trendNote"></em></div>
+                <div class="mi-yoy-item"><span>피크 → 저점</span><b data-keyword-yoy="swing">—</b><em data-keyword-yoy="swingNote"></em></div>
               </div>
 
               <div class="mi-line-chart" aria-label="월별 검색량 차트">
@@ -6461,16 +6503,32 @@
               <div class="mi-ratio-card">
                 <div class="mi-ratio-title">월별 검색 비율 <span class="mi-ratio-help" title="검색량 트렌드와는 다르게 2016년부터 현재까지 데이터를 종합한 결과입니다. 월별 검색 비율로 키워드의 시즈널리티를 확인합니다." aria-label="2016년부터 현재까지의 월별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="month" style="--ratio-cols:12;"></div>
+                <p class="mi-ratio-note" data-keyword-ratio-note="month" hidden></p>
               </div>
               <div class="mi-ratio-card">
                 <div class="mi-ratio-title">요일별 검색 비율 <span class="mi-ratio-help" title="2016년부터 현재까지의 데이터를 기반으로 산출한 요일별 검색 비율입니다." aria-label="2016년부터 현재까지의 요일별 검색 비율 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="week" style="--ratio-cols:7;"></div>
+                <p class="mi-ratio-note" data-keyword-ratio-note="week" hidden></p>
               </div>
               <div class="mi-ratio-card is-wide">
                 <div class="mi-ratio-title">연령별 쇼핑 클릭 비중 <span class="mi-ratio-help" title="네이버 쇼핑인사이트의 최신 완료 월을 기준으로 연령별 클릭 비중을 표시합니다. 진행 중인 이번 달은 제외합니다." aria-label="최신 완료 월 기준 연령별 쇼핑 클릭 비중 설명">?</span></div>
                 <div class="mi-ratio-chart" data-keyword-ratio-chart="age" style="--ratio-cols:5;"></div>
+                <p class="mi-ratio-note" data-keyword-ratio-note="age" hidden></p>
               </div>
             </aside>
+          </article>
+
+          <!-- 시즌 캘린더(2026-09-06): 조회한 키워드들의 월별 검색 비율을 한 장에. 새 API 없이 이미 받은 month 배열만 쓴다. -->
+          <article class="mi-card mi-card-pad" data-keyword-season-card hidden style="margin-bottom:16px;">
+            <div class="mi-card-head">
+              <div>
+                <h2>시즌 캘린더</h2>
+                <p>조회한 키워드의 월별 검색 비율을 한 장에 봅니다. 진할수록 검색이 몰리는 달입니다.</p>
+              </div>
+              <span class="mi-badge">월별 비율 · 2016년~</span>
+            </div>
+            <div class="mi-season" data-keyword-season></div>
+            <p class="mi-code-status" style="margin-top:10px;" data-keyword-season-note></p>
           </article>
 
           <div class="mi-split">
@@ -7788,6 +7846,13 @@
         if (relatedTitle) {
           relatedTitle.textContent = market.keyword + " 연관 키워드";
         }
+        // 1차 고도화: 연관 목록을 보관해 정렬·CSV에 쓰고, 클릭·전년 대비·시즌 캘린더를 그린다.
+        keywordRelatedCache = related;
+        keywordRelatedSort = "volume";
+        root.querySelectorAll("[data-keyword-related-sort]").forEach(function (button) {
+          button.classList.toggle("is-active", button.getAttribute("data-keyword-related-sort") === "volume");
+        });
+        renderKeywordExtras(items);
       }
 
       function clearKeywordDataView(message) {
@@ -8035,6 +8100,239 @@
           renderRatioPlaceholder("age", "조회 후 표시");
         }
       }
+
+      // ── 키워드 조회 1차 고도화(2026-09-06) ─────────────────────────────────
+      // 새 API 없이, 이미 받은 응답(검색광고 클릭·클릭률, 36개월 시리즈, 월별·요일·연령 비율)만으로
+      // 클릭 요약 · 결론 한 줄 · 전년 대비 · 시즌 캘린더 · 연관 정렬/CSV를 그린다. 실패해도 조회 결과를 막지 않는다.
+      var keywordRelatedCache = [];
+      var keywordRelatedSort = "volume";
+      function keywordNumber(value) {
+        var number = Number(String(value === undefined || value === null ? "" : value).replace(/[^0-9.\-]/g, ""));
+        return Number.isFinite(number) ? number : 0;
+      }
+      function keywordPercent(value, digits) {
+        var factor = Math.pow(10, digits || 0);
+        return (Math.round(value * factor) / factor).toLocaleString("ko-KR") + "%";
+      }
+      function keywordSigned(pct) {
+        if (!Number.isFinite(pct)) return "—";
+        var rounded = Math.round(pct);
+        return (rounded > 0 ? "▲ " : rounded < 0 ? "▼ " : "") + Math.abs(rounded) + "%";
+      }
+      function keywordMonthLabel(label, index) {
+        var match = String(label || "").match(/(\d{1,2})\s*월/);
+        if (match) return match[1] + "월";
+        return String(label || "") || ((index % 12) + 1) + "월";
+      }
+      function setKeywordText(selector, text) {
+        var node = root.querySelector(selector);
+        if (node) node.textContent = text;
+        return node;
+      }
+      function renderKeywordExtras(items) {
+        try {
+          var item = items && items[0];
+          var data = item && item.data ? item.data : null;
+          var kpis = root.querySelector("[data-keyword-kpis]");
+          if (!data) {
+            if (kpis) kpis.hidden = true;
+            return;
+          }
+          var naver = data.naver || {};
+          var clicks = keywordNumber(naver.monthlyAvePcClkCnt) + keywordNumber(naver.monthlyAveMobileClkCnt);
+          var volume = keywordNumber(data.volume);
+          var ctr = volume > 0 && clicks > 0
+            ? (clicks / volume) * 100
+            : (keywordNumber(naver.monthlyAvePcCtr) + keywordNumber(naver.monthlyAveMobileCtr)) / 2;
+          var hasClicks = clicks > 0 || ctr > 0;
+          setKeywordText('[data-keyword-kpi="clicks"]', hasClicks ? formatNumber(Math.round(clicks)) + "회" : "확인 필요");
+          setKeywordText('[data-keyword-kpi="ctr"]', hasClicks ? keywordPercent(ctr, 1) : "확인 필요");
+
+          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
+          var monthLabels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
+          var peakIndex = -1;
+          var peakValue = 0;
+          month.forEach(function (value, index) {
+            if (value > peakValue) { peakValue = value; peakIndex = index; }
+          });
+          var peakLabel = peakIndex >= 0 ? keywordMonthLabel(monthLabels[peakIndex], peakIndex) : "";
+          setKeywordText('[data-keyword-kpi="peakMonth"]', peakLabel || "확인 필요");
+          setKeywordText('[data-keyword-kpi="peakNote"]', peakLabel ? "월별 검색 비율 " + keywordPercent(peakValue, 0) + " · 행사·광고는 한 달 앞서 준비" : "월별 검색 비율 기준");
+          if (kpis) kpis.hidden = false;
+
+          var monthNote = root.querySelector('[data-keyword-ratio-note="month"]');
+          if (monthNote) {
+            monthNote.hidden = !peakLabel;
+            if (peakLabel) monthNote.textContent = peakLabel + "에 검색이 가장 몰립니다 → 행사·광고는 한 달 앞서 세팅";
+          }
+          var week = Array.isArray(data.week) ? data.week.map(keywordNumber) : [];
+          var weekNote = root.querySelector('[data-keyword-ratio-note="week"]');
+          if (weekNote) {
+            var weekIndex = -1;
+            var weekValue = 0;
+            week.forEach(function (value, index) {
+              if (value > weekValue) { weekValue = value; weekIndex = index; }
+            });
+            var dayNames = ["월", "화", "수", "목", "금", "토", "일"];
+            weekNote.hidden = weekIndex < 0;
+            if (weekIndex >= 0) weekNote.textContent = dayNames[weekIndex] + "요일 최다 · 주말 비중 " + keywordPercent((week[5] || 0) + (week[6] || 0), 0);
+          }
+          var age = Array.isArray(data.age) ? data.age.map(keywordNumber) : [];
+          var ageNote = root.querySelector('[data-keyword-ratio-note="age"]');
+          if (ageNote) {
+            var ageLabels = ["10대", "20대", "30대", "40대", "50대 이상"];
+            var ranked = age.slice(0, 5).map(function (value, index) { return { value: value, index: index }; })
+              .sort(function (a, b) { return b.value - a.value; });
+            var hasAge = Boolean(ranked[0] && ranked[0].value > 0);
+            ageNote.hidden = !hasAge;
+            if (hasAge) {
+              var topTwo = ranked.slice(0, 2);
+              ageNote.textContent = topTwo.map(function (entry) { return ageLabels[entry.index]; }).join("·") + "가 " +
+                keywordPercent(topTwo.reduce(function (sum, entry) { return sum + entry.value; }, 0), 0) + " → 상세페이지 톤·이미지 기준";
+            }
+          }
+
+          renderKeywordYoy(data);
+          renderKeywordSeason(items);
+          var tools = root.querySelector("[data-keyword-related-tools]");
+          if (tools) tools.hidden = !(keywordRelatedCache && keywordRelatedCache.length);
+        } catch (error) {
+          /* 부가 요약 실패가 조회 결과를 막지 않는다 */
+        }
+      }
+      function renderKeywordYoy(data) {
+        var box = root.querySelector("[data-keyword-yoy]");
+        if (!box) return;
+        var series = Array.isArray(data.series) ? data.series.map(keywordNumber) : [];
+        if (series.length < 24) { box.hidden = true; return; }
+        var last12 = series.slice(-12);
+        var prev12 = series.slice(-24, -12);
+        var first12 = series.length >= 36 ? series.slice(-36, -24) : null;
+        var unit = data.trendUnit === "monthly_search_volume_estimate" ? "추정 검색량" : "검색 지수";
+        var current = last12[11];
+        var sameMonth = prev12[11];
+        var sameMonthPct = sameMonth > 0 ? ((current - sameMonth) / sameMonth) * 100 : NaN;
+        setKeywordText('[data-keyword-yoy="sameMonth"]', keywordSigned(sameMonthPct));
+        setKeywordText('[data-keyword-yoy="sameMonthNote"]', sameMonth > 0 ? "작년 " + formatNumber(Math.round(sameMonth)) + " → 올해 " + formatNumber(Math.round(current)) + " · " + unit : "비교 데이터 없음");
+        var peakNow = Math.max.apply(null, last12);
+        var peakPrev = Math.max.apply(null, prev12);
+        var peakPct = peakPrev > 0 ? ((peakNow - peakPrev) / peakPrev) * 100 : NaN;
+        setKeywordText('[data-keyword-yoy="peak"]', keywordSigned(peakPct));
+        setKeywordText('[data-keyword-yoy="peakNote"]', peakPrev > 0 ? "작년 최고 " + formatNumber(Math.round(peakPrev)) + " → 최근 12개월 최고 " + formatNumber(Math.round(peakNow)) : "비교 데이터 없음");
+        var sumOf = function (list) { return list.reduce(function (sum, value) { return sum + value; }, 0); };
+        var year1 = first12 ? sumOf(first12) : 0;
+        var year2 = sumOf(prev12);
+        var year3 = sumOf(last12);
+        var trend;
+        if (first12) {
+          trend = year3 > year2 * 1.05 && year2 > year1 * 1.05 ? "성장"
+            : year3 < year2 * 0.95 && year2 < year1 * 0.95 ? "하락"
+              : year3 > year2 * 1.05 ? "회복" : year3 < year2 * 0.95 ? "둔화" : "보합";
+        } else {
+          trend = year3 > year2 * 1.05 ? "성장" : year3 < year2 * 0.95 ? "하락" : "보합";
+        }
+        setKeywordText('[data-keyword-yoy="trend"]', trend);
+        setKeywordText('[data-keyword-yoy="trendNote"]', (first12 ? "연간 합계 3년 비교 · " : "연간 합계 2년 비교 · ") + unit);
+        var low = Math.min.apply(null, last12);
+        var swing = peakNow > 0 ? ((low - peakNow) / peakNow) * 100 : NaN;
+        setKeywordText('[data-keyword-yoy="swing"]', keywordSigned(swing));
+        setKeywordText('[data-keyword-yoy="swingNote"]', Number.isFinite(swing)
+          ? (swing <= -60 ? "계절성 강함" : swing <= -30 ? "계절성 있음" : "연중 고른 편") + " · 최근 12개월 최고 대비 최저"
+          : "비교 데이터 없음");
+        box.hidden = false;
+      }
+      function renderKeywordSeason(items) {
+        var card = root.querySelector("[data-keyword-season-card]");
+        var grid = root.querySelector("[data-keyword-season]");
+        var note = root.querySelector("[data-keyword-season-note]");
+        if (!card || !grid) return;
+        var rows = (items || []).map(function (entry) {
+          var data = entry && entry.data ? entry.data : {};
+          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
+          if (!hasRatioValues(month)) return null;
+          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
+          var byMonth = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+          month.forEach(function (value, index) {
+            var match = String(labels[index] || "").match(/(\d{1,2})\s*월/);
+            var slot = match ? Number(match[1]) - 1 : index % 12;
+            if (slot >= 0 && slot < 12) byMonth[slot] = value;
+          });
+          var max = Math.max.apply(null, byMonth) || 1;
+          return { keyword: entry.keyword, values: byMonth, max: max, peak: byMonth.indexOf(max) };
+        }).filter(Boolean);
+        if (!rows.length) { card.hidden = true; return; }
+        var headCells = [];
+        for (var monthIndex = 0; monthIndex < 12; monthIndex += 1) headCells.push("<span>" + (monthIndex + 1) + "월</span>");
+        grid.innerHTML = '<div class="mi-season-row is-head"><span>키워드</span>' + headCells.join("") + "</div>" + rows.map(function (row) {
+          return '<div class="mi-season-row"><span class="mi-season-kw">' + escapeHtml(row.keyword) + "</span>" + row.values.map(function (value, index) {
+            var ratio = row.max ? value / row.max : 0;
+            var alpha = ratio <= 0 ? 0.06 : 0.12 + ratio * 0.78;
+            return '<span class="mi-season-cell' + (index === row.peak ? " is-peak" : "") + '" style="--alpha:' + alpha.toFixed(2) + ';" title="' +
+              escapeHtml(row.keyword + " " + (index + 1) + "월 " + keywordPercent(value, 0)) + '">' + (index === row.peak ? "피크" : "") + "</span>";
+          }).join("") + "</div>";
+        }).join("");
+        var nowMonth = new Date().getMonth();
+        var soon = rows.filter(function (row) {
+          var gap = (row.peak - nowMonth + 12) % 12;
+          return gap >= 1 && gap <= 2;
+        }).map(function (row) { return row.keyword + "(" + (row.peak + 1) + "월 피크)"; });
+        var flat = rows.filter(function (row) {
+          var min = Math.min.apply(null, row.values);
+          return row.max > 0 && min / row.max >= 0.6;
+        }).map(function (row) { return row.keyword; });
+        if (note) {
+          note.textContent = (soon.length ? "이달 준비할 것: " + soon.join(", ") + " → 행사·광고는 피크 한 달 전 세팅. " : "다음 1~2개월 안에 피크가 오는 키워드는 없습니다. ") +
+            (flat.length ? "계절성 없음(상시): " + flat.join(", ") : "");
+        }
+        card.hidden = false;
+      }
+      function renderRelatedTables(list) {
+        var relatedNode = root.querySelector("[data-keyword-related]");
+        var relatedFullNode = root.querySelector("[data-keyword-related-full]");
+        var head = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>';
+        var row = function (entry) {
+          var volume = Number(entry.volume || 0);
+          return '<div><span>' + escapeHtml(entry.keyword || "") + '</span><span>' + escapeHtml(entry.volumeLabel || (volume ? formatNumber(volume) : "확인 필요")) +
+            '</span><span>' + escapeHtml(entry.comp || "확인 필요") + '</span><span>' + escapeHtml(relatedJudgement(entry)) + '</span></div>';
+        };
+        if (relatedNode) relatedNode.innerHTML = head + list.slice(0, 4).map(row).join("");
+        if (relatedFullNode) relatedFullNode.innerHTML = head + list.map(row).join("");
+      }
+      function sortedRelatedKeywords(mode) {
+        var list = (keywordRelatedCache || []).slice();
+        if (mode === "name") list.sort(function (a, b) { return String(a.keyword || "").localeCompare(String(b.keyword || ""), "ko"); });
+        else list.sort(function (a, b) { return Number(b.volume || 0) - Number(a.volume || 0); });
+        return list;
+      }
+      root.addEventListener("click", function (event) {
+        var sortButton = event.target.closest("[data-keyword-related-sort]");
+        if (sortButton && root.contains(sortButton)) {
+          keywordRelatedSort = sortButton.getAttribute("data-keyword-related-sort") || "volume";
+          root.querySelectorAll("[data-keyword-related-sort]").forEach(function (button) {
+            button.classList.toggle("is-active", button === sortButton);
+          });
+          renderRelatedTables(sortedRelatedKeywords(keywordRelatedSort));
+          return;
+        }
+        var csvButton = event.target.closest("[data-keyword-csv]");
+        if (!csvButton || !root.contains(csvButton)) return;
+        var list = sortedRelatedKeywords(keywordRelatedSort);
+        if (!list.length) return;
+        var lines = [["키워드", "월 검색수", "경쟁도", "판단"].join(",")].concat(list.map(function (entry) {
+          return [entry.keyword || "", Number(entry.volume || 0), entry.comp || "", relatedJudgement(entry)].map(function (cell) {
+            return '"' + String(cell).replace(/"/g, '""') + '"';
+          }).join(",");
+        }));
+        var blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+        var url = URL.createObjectURL(blob);
+        var link = document.createElement("a");
+        link.href = url;
+        link.download = "연관키워드-" + new Date().toISOString().slice(0, 10) + ".csv";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      });
 
       function getKeywordApiUrl() {
         if (window.MI_NAVER_KEYWORD_API_URL) return window.MI_NAVER_KEYWORD_API_URL;

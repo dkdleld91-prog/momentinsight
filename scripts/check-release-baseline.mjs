@@ -993,7 +993,7 @@ const checks = {
     && clientSource.includes("reportCenterSynced")
     && clientSource.includes("renderReports(state.reports, state.updatedAt, state.reportCenterSynced)")
     && !clientSource.includes("buildClientReportCsv")
-    && !clientSource.includes("text/csv;charset=utf-8")
+    // 2026-09-06 대표 지시: 키워드 조회의 연관 키워드 CSV 내보내기는 허용한다. 보고서함 CSV 백업 금지는 위·아래 조건(buildClientReportCsv, "CSV 백업")으로 계속 확인한다.
     && !clientSource.includes("CSV 백업"),
   clientDataReliabilityVisible: clientSource.includes("데이터 신뢰도: 운영팀 검수 완료")
     && clientSource.includes("데이터 상태: 공개 데이터 연결 대기")

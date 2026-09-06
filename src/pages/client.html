@@ -8582,7 +8582,7 @@
       }
       function saveKeywordNote() {
         var button = root.querySelector("[data-keyword-note-save]");
-        var items = keywordDatasets || [];
+        var items = (keywordCompareItems && keywordCompareItems.length ? keywordCompareItems : keywordDatasets) || [];
         if (!items.length) { keywordNoteStatus("먼저 조회하세요", "is-warn"); return; }
         var keywords = items.map(function (item) { return item.keyword; });
         var snapshots = items.map(function (item) {
@@ -8780,6 +8780,7 @@
 
       // 후보 비교: 잠긴 조회 흐름은 첫 키워드만 조회하므로, 나머지 키워드는 여기서 compare 프로필로 따로 받아 붙인다.
       var keywordCompareRequest = 0;
+      var keywordCompareItems = [];
       function loadKeywordCompare(items) {
         var first = items && items[0];
         if (!first || !first.data) return;
@@ -8793,6 +8794,7 @@
         var all = function () { return [first].concat(keywords.map(function (keyword) { return known[keyword] || null; }).filter(Boolean)); };
         var finish = function () {
           if (requestId !== keywordCompareRequest) return;
+          keywordCompareItems = all();
           renderKeywordCompare(all());
           renderKeywordSeason(all());
         };

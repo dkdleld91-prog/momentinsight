@@ -21,8 +21,24 @@ function send(res, status, body, cacheControl) {
 
 export default async function handler(req, res) {
   const resource = resourceOf(req);
-  if (!RESOURCE_PATTERN.test(resource) || resource !== "market-news") return send(res, 404, { ok: false, message: "Not found" });
+  if (!RESOURCE_PATTERN.test(resource) || (resource !== "market-news" && resource !== "news-page")) return send(res, 404, { ok: false, message: "Not found" });
   if ((req.method || "GET") !== "GET") return send(res, 405, { ok: false, message: "Method not allowed" });
+  // /news → 서버가 기사 목록을 넣은 HTML을 보낸다(검색 로봇용). 실패해도 빈 목록 페이지를 200으로 돌려준다.
+  if (resource === "news-page") {
+    const { renderNewsPage } = await import("../../src/server/handlers/news-page.mjs");
+    let news = null;
+    try {
+      news = await loadPublicMarketNews();
+    } catch (error) {
+      news = { ok: false, reason: "news_unavailable" };
+    }
+    res.statusCode = 200;
+    res.setHeader("content-type", "text/html; charset=utf-8");
+    res.setHeader("x-content-type-options", "nosniff");
+    res.setHeader("cache-control", news && news.ok !== false ? "public, s-maxage=3600, stale-while-revalidate=600" : "public, s-maxage=300");
+    res.end(renderNewsPage(news, Date.now()));
+    return;
+  }
   try {
     const news = await loadPublicMarketNews();
     return send(res, 200, { ok: true, news }, "public, s-maxage=3600, stale-while-revalidate=600");

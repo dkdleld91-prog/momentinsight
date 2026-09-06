@@ -113,16 +113,25 @@
   bind(filters, "data-news-platform", "platform");
   bind(topics, "data-news-topic", "topic");
 
+  function start(payload) {
+    var news = payload && payload.ok && payload.news ? payload.news : null;
+    if (!news || news.ok === false) throw new Error("news_unavailable");
+    state.items = collect(news);
+    state.updatedAt = news.updatedAt || "";
+    renderTopics();
+    render();
+  }
+  // 서버가 HTML에 넣어 준 데이터(#news-data)가 있으면 그대로 쓰고, 없을 때만 API를 부른다.
+  var embedded = document.getElementById("news-data");
+  if (embedded) {
+    try {
+      start(JSON.parse(embedded.textContent || ""));
+      return;
+    } catch (error) {}
+  }
   fetch("/api/public/market-news", { credentials: "omit", cache: "no-store" })
     .then(function (response) { return response.ok ? response.json() : null; })
-    .then(function (payload) {
-      var news = payload && payload.ok && payload.news ? payload.news : null;
-      if (!news) throw new Error("news_unavailable");
-      state.items = collect(news);
-      state.updatedAt = news.updatedAt || "";
-      renderTopics();
-      render();
-    })
+    .then(function (payload) { start(payload); })
     .catch(function () {
       list.innerHTML = '<div class="empty">기사를 불러오지 못했습니다. 잠시 후 다시 확인해주세요.</div>';
       if (meta) meta.textContent = "확인 필요";

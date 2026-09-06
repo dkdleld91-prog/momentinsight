@@ -8246,7 +8246,7 @@
 
           renderKeywordYoy(data);
           renderKeywordSeason(items);
-          renderKeywordCompare(items);
+          loadKeywordCompare(items);
           loadKeywordResearch(item.keyword);
           var tools = root.querySelector("[data-keyword-related-tools]");
           if (tools) tools.hidden = !(keywordRelatedCache && keywordRelatedCache.length);
@@ -8504,6 +8504,27 @@
         }).catch(function () {
           if (requestId !== keywordResearchRequest) return;
           if (state) state.textContent = "확인 필요";
+        });
+      }
+
+      // 후보 비교: 잠긴 조회 흐름은 첫 키워드만 조회하므로, 나머지 키워드는 여기서 compare 프로필로 따로 받아 붙인다.
+      var keywordCompareRequest = 0;
+      function loadKeywordCompare(items) {
+        var first = items && items[0];
+        if (!first || !first.data) return;
+        var input = root.querySelector("[data-mi-keyword-input], [data-admin-keyword-input]");
+        var keywords = parseKeywordInput(input ? input.value : "").filter(function (keyword) { return keyword !== first.keyword; }).slice(0, 4);
+        var requestId = ++keywordCompareRequest;
+        if (!keywords.length) { renderKeywordCompare([first]); return; }
+        Promise.all(keywords.map(function (keyword) {
+          return fetchKeywordData(keyword, "compare").then(function (payload) {
+            return { keyword: keyword, data: normalizeKeywordApiData(payload, buildKeywordFallback(keyword)) };
+          }).catch(function () { return null; });
+        })).then(function (extra) {
+          if (requestId !== keywordCompareRequest) return;
+          var all = [first].concat(extra.filter(Boolean));
+          renderKeywordCompare(all);
+          renderKeywordSeason(all);
         });
       }
 

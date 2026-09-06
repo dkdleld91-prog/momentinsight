@@ -1421,9 +1421,12 @@
     #mi-home .mi-hp-live .mi-hp-lock { margin-bottom: 12px; }
 
     /* 5안 히어로 3줄 설명 · 제공 기능 카드 3개 · 잠금 띠 */
-    #mi-home .mi-hp-h1 { font-size: 40px; line-height: 1.15; letter-spacing: -0.03em; }
+    /* 제목은 구(句) 단위로만 줄이 바뀐다: "30일 순위 / 추적" 같은 어색한 끊김 방지(2026-09-06 대표 피드백). */
+    #mi-home .mi-hp-h1 { font-size: clamp(26px, 5.2vw, 40px); line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
     #mi-home .mi-hp-h1 em { font-style: normal; color: var(--mi-blue); }
-    @media (max-width: 640px) { #mi-home .mi-hp-h1 { font-size: 30px; } }
+    #mi-home .mi-hp-h1-row { display: block; }
+    #mi-home .mi-hp-h1-row + .mi-hp-h1-row { margin-top: 4px; }
+    #mi-home .mi-nb { white-space: nowrap; }
     #mi-home .mi-hp-sub { display: grid; gap: 4px; margin: 14px 0 18px; font-size: 14px; color: var(--mi-muted, #667085); }
     #mi-home .mi-hp-sub span { word-break: keep-all; }
     #mi-home .mi-hp-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -1892,7 +1895,10 @@
         <div>
           <span class="mi-kicker">통합 마케팅 운영 플랫폼 · 네이버·쿠팡 셀러용</span>
           <h1 class="mi-hero-title">
-            <span class="mi-title-main mi-hp-h1">시장 뉴스 · 키워드 조사 · <em>30일 순위 추적</em>,<br>셀러가 매일 보는 것을 한 곳에.</span>
+            <span class="mi-title-main mi-hp-h1">
+              <span class="mi-hp-h1-row"><span class="mi-nb">시장 뉴스</span> · <span class="mi-nb">키워드 조사</span> · <em class="mi-nb">30일 순위 추적</em>,</span>
+              <span class="mi-hp-h1-row">셀러가 매일 보는 것을 한 곳에.</span>
+            </span>
           </h1>
           <div class="mi-hp-sub" aria-label="핵심 사실">
             <span>· 시장 뉴스는 1시간마다 갱신</span>

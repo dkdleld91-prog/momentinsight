@@ -763,11 +763,18 @@ async function homeFeedFetch(request) {
   return module.default.fetch(request);
 }
 
+// 키워드 조회 2차 보조 데이터(입찰가·노출 깊이·콘텐츠 시장). DB 없음, 세션 역할만 확인한다.
+async function keywordResearchFetch(request) {
+  const module = await import("./keyword-research.mjs");
+  return module.default.fetch(request);
+}
+
 export default {
   fetch(request) {
     const { resource } = routeParts(request, "/api/client");
     if (resource === "public-state") return sessionScopedFetch(request);
     if (resource === "home-feed") return homeFeedFetch(request);
+    if (resource === "keyword-research") return keywordResearchFetch(request);
     return userScopedFetch(request);
   }
 };

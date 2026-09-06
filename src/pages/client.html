@@ -4273,7 +4273,7 @@
     }
 
     /* 키워드 조회 1차 고도화(2026-09-06): 클릭 요약·전년 대비·결론 한 줄·시즌 캘린더·연관 정렬 도구 */
-    #mi-clean .mi-market-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    #mi-clean .mi-market-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
     #mi-clean .mi-market-kpi { border: 1px solid var(--mi-line); border-radius: 12px; background: var(--mi-grey-50); padding: 10px 12px; min-width: 0; }
     #mi-clean .mi-market-kpi span { display: block; font-size: 11.5px; color: var(--mi-muted); margin-bottom: 4px; }
     #mi-clean .mi-market-kpi b { display: block; font-size: 17px; font-weight: 700; color: var(--mi-navy); letter-spacing: -0.02em; line-height: 1.15; }
@@ -4294,6 +4294,25 @@
     #mi-clean .mi-season-kw { font-size: 13px; font-weight: 600; color: var(--mi-navy); display: flex; align-items: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #mi-clean .mi-season-cell { height: 30px; border-radius: 6px; background: #2d6ac5; opacity: var(--alpha, 0.1); display: flex; align-items: center; justify-content: center; font-size: 11px; color: #fff; font-weight: 700; }
     #mi-clean .mi-season-cell.is-peak { opacity: 1; }
+    #mi-clean .mi-compare-wrap { overflow-x: auto; }
+    #mi-clean .mi-compare { width: 100%; border-collapse: collapse; font-size: 13px; }
+    #mi-clean .mi-compare th { text-align: left; font-size: 11.5px; color: var(--mi-muted); font-weight: 600; padding: 8px 10px; border-bottom: 1.5px solid var(--mi-line); white-space: nowrap; }
+    #mi-clean .mi-compare td { padding: 10px; border-bottom: 1px solid var(--mi-line); white-space: nowrap; }
+    #mi-clean .mi-compare td:first-child { font-weight: 600; color: var(--mi-navy); }
+    #mi-clean .mi-research-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; }
+    #mi-clean .mi-research-box { border: 1px solid var(--mi-line); border-radius: 14px; background: var(--mi-grey-50); padding: 14px 16px; min-width: 0; }
+    #mi-clean .mi-research-box h4 { margin: 0 0 8px; font-size: 13.5px; color: var(--mi-navy); }
+    #mi-clean .mi-research-box h4 small { font-weight: 500; color: var(--mi-muted); margin-left: 6px; }
+    #mi-clean .mi-research-big { display: block; font-size: 22px; font-weight: 700; color: var(--mi-navy); letter-spacing: -0.02em; line-height: 1.15; }
+    #mi-clean .mi-research-note { margin: 6px 0 0; font-size: 12px; color: var(--mi-muted); line-height: 1.45; }
+    #mi-clean .mi-bid-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    #mi-clean .mi-bid { background: #fff; border: 1px solid var(--mi-line); border-radius: 10px; padding: 8px 10px; text-align: center; }
+    #mi-clean .mi-bid span { display: block; font-size: 11.5px; color: var(--mi-muted); }
+    #mi-clean .mi-bid b { font-size: 16px; color: var(--mi-navy); }
+    #mi-clean .mi-kin-list { display: grid; gap: 4px; margin-top: 8px; }
+    #mi-clean .mi-kin-list a { font-size: 12.5px; color: var(--mi-navy); text-decoration: none; border-top: 1px dashed var(--mi-line); padding-top: 5px; }
+    #mi-clean [data-keyword-compare-card][hidden], #mi-clean [data-keyword-research-card][hidden] { display: none; }
+    @media (max-width: 760px) { #mi-clean .mi-research-grid { grid-template-columns: 1fr 1fr; } }
     #mi-clean .mi-market-kpis[hidden], #mi-clean .mi-yoy[hidden], #mi-clean .mi-related-tools[hidden], #mi-clean .mi-ratio-note[hidden], #mi-clean [data-keyword-season-card][hidden] { display: none; }
     @media (max-width: 760px) { #mi-clean .mi-market-kpis, #mi-clean .mi-yoy { grid-template-columns: 1fr 1fr; } }
 
@@ -6380,10 +6399,10 @@
               <span class="mi-period">1개 키워드</span>
             </div>
             <div class="mi-form-row">
-              <input class="mi-input" data-mi-keyword-input aria-label="키워드 입력" placeholder="키워드 1개 입력" />
+              <input class="mi-input" data-mi-keyword-input aria-label="키워드 입력" placeholder="키워드 입력 · 쉼표로 최대 5개 비교" />
               <button class="mi-button" type="button" data-mi-keyword-search>조회</button>
             </div>
-            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드 1개를 입력하면 공식 데이터 기준 검색량과 검색 비율을 확인합니다.</p>
+            <p class="mi-code-status" style="margin-top:10px;" data-mi-keyword-status aria-live="polite">키워드를 입력하면(쉼표로 최대 5개) 공식 데이터 기준 검색량과 검색 비율을 확인합니다.</p>
           </article>
 
           <article class="mi-card mi-keyword-market" data-keyword-market>
@@ -6419,6 +6438,7 @@
                   <div class="mi-market-kpi"><span>월 클릭수</span><b data-keyword-kpi="clicks">—</b><em>검색한 사람 중 실제로 누른 수 · 검색광고</em></div>
                   <div class="mi-market-kpi"><span>클릭률</span><b data-keyword-kpi="ctr">—</b><em>검색 대비 클릭 · PC·모바일 합산</em></div>
                   <div class="mi-market-kpi"><span>가장 많이 찾는 달</span><b data-keyword-kpi="peakMonth">—</b><em data-keyword-kpi="peakNote">월별 검색 비율 기준</em></div>
+                  <div class="mi-market-kpi"><span>광고 노출 깊이</span><b data-keyword-kpi="depth">—</b><em>검색 결과 상단에 붙는 광고 수 · 검색광고</em></div>
                 </div>
               </section>
               <aside class="mi-market-related">
@@ -6529,6 +6549,38 @@
             </div>
             <div class="mi-season" data-keyword-season></div>
             <p class="mi-code-status" style="margin-top:10px;" data-keyword-season-note></p>
+          </article>
+
+          <!-- 2차(2026-09-06): 후보 비교는 조회 응답만으로, 입찰가·노출 깊이·콘텐츠 시장은 /api/client/keyword-research 로. -->
+          <article class="mi-card mi-card-pad" data-keyword-compare-card hidden style="margin-bottom:16px;">
+            <div class="mi-card-head">
+              <div>
+                <h2>후보 키워드 비교</h2>
+                <p>쉼표로 나눠 입력한 키워드를 같은 기준으로 나란히 봅니다. 최대 5개.</p>
+              </div>
+              <span class="mi-badge">같은 기준</span>
+            </div>
+            <div class="mi-compare-wrap"><table class="mi-compare" data-keyword-compare></table></div>
+          </article>
+
+          <article class="mi-card mi-card-pad" data-keyword-research-card hidden style="margin-bottom:16px;">
+            <div class="mi-card-head">
+              <div>
+                <h2>광고를 건다면 얼마인가 · 콘텐츠는 얼마나 있나</h2>
+                <p>검색광고 입찰가·예상 실적과 네이버 블로그·카페·지식iN 검색 총량입니다. 이미 연동된 API에서 가져옵니다.</p>
+              </div>
+              <span class="mi-badge" data-keyword-research-state>불러오는 중</span>
+            </div>
+            <div class="mi-research-grid">
+              <div class="mi-research-box">
+                <h4>노출 순위별 예상 입찰가 <small>모바일 · 클릭당</small></h4>
+                <div class="mi-bid-row" data-keyword-bids><span class="mi-research-note">불러오는 중</span></div>
+                <p class="mi-research-note" data-keyword-bid-note></p>
+              </div>
+              <div class="mi-research-box"><h4>블로그</h4><b class="mi-research-big" data-keyword-content="blog">—</b><p class="mi-research-note" data-keyword-content="blogNote">글 총량 · 최근 30일 발행</p></div>
+              <div class="mi-research-box"><h4>카페</h4><b class="mi-research-big" data-keyword-content="cafe">—</b><p class="mi-research-note">언급 글 총량</p></div>
+              <div class="mi-research-box"><h4>지식iN</h4><b class="mi-research-big" data-keyword-content="kin">—</b><div class="mi-kin-list" data-keyword-content="kinList"></div></div>
+            </div>
           </article>
 
           <div class="mi-split">
@@ -7380,8 +7432,8 @@
             if (!keyword || seen[keyword]) return false;
             seen[keyword] = true;
             return true;
-          })
-          .slice(0, 1);
+                    })
+          .slice(0, 5); // 2026-09-06: 후보 비교를 위해 최대 5개
       }
 
       function pickKeywordScale(maxValue) {
@@ -8194,6 +8246,8 @@
 
           renderKeywordYoy(data);
           renderKeywordSeason(items);
+          renderKeywordCompare(items);
+          loadKeywordResearch(item.keyword);
           var tools = root.querySelector("[data-keyword-related-tools]");
           if (tools) tools.hidden = !(keywordRelatedCache && keywordRelatedCache.length);
         } catch (error) {
@@ -8339,6 +8393,119 @@
         link.remove();
         window.setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
       });
+
+      // ── 키워드 조회 2차(2026-09-06): 조회 재시도 · 후보 비교 · 입찰가/노출 깊이/콘텐츠 시장 ──
+      function keywordFetchWithRetry(run) {
+        return run().then(function (response) {
+          var retryable = !response || response.status === 401 || response.status === 429 || response.status >= 500;
+          if (!retryable) return response;
+          return new Promise(function (resolve) { window.setTimeout(resolve, 1500); }).then(run);
+        }, function () {
+          return new Promise(function (resolve) { window.setTimeout(resolve, 1500); }).then(run);
+        });
+      }
+      function getKeywordResearchApiUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/client/keyword-research";
+        return "http://127.0.0.1:8790/api/client/keyword-research";
+      }
+      var keywordResearchRequest = 0;
+      function keywordWon(value) {
+        return value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : formatNumber(Math.round(Number(value))) + "원";
+      }
+      function keywordCount(value, suffix) {
+        return value === null || value === undefined || !Number.isFinite(Number(value)) ? "—" : formatNumber(Math.round(Number(value))) + (suffix || "");
+      }
+      function renderKeywordCompare(items) {
+        var card = root.querySelector("[data-keyword-compare-card]");
+        var table = root.querySelector("[data-keyword-compare]");
+        if (!card || !table) return;
+        var rows = (items || []).filter(function (entry) { return entry && entry.data; });
+        if (rows.length < 2) { card.hidden = true; return; }
+        var ageLabels = ["10대", "20대", "30대", "40대", "50대 이상"];
+        var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>월 클릭</th><th>클릭률</th><th>주 연령</th><th>피크 달</th><th>광고 경쟁도</th></tr></thead>";
+        var body = rows.map(function (entry) {
+          var data = entry.data || {};
+          var naver = data.naver || {};
+          var clicks = keywordNumber(naver.monthlyAvePcClkCnt) + keywordNumber(naver.monthlyAveMobileClkCnt);
+          var volume = keywordNumber(data.volume);
+          var ctr = volume > 0 && clicks > 0 ? (clicks / volume) * 100 : 0;
+          var age = Array.isArray(data.age) ? data.age.map(keywordNumber) : [];
+          var topAge = -1; var topAgeValue = 0;
+          age.slice(0, 5).forEach(function (value, index) { if (value > topAgeValue) { topAgeValue = value; topAge = index; } });
+          var month = Array.isArray(data.month) ? data.month.map(keywordNumber) : [];
+          var labels = Array.isArray(data.monthLabels) ? data.monthLabels : [];
+          var peak = -1; var peakValue = 0;
+          month.forEach(function (value, index) { if (value > peakValue) { peakValue = value; peak = index; } });
+          return "<tr><td>" + escapeHtml(entry.keyword) + "</td><td>" + escapeHtml(volume ? formatNumber(volume) : (data.volumeLabel || "확인 필요")) + "</td><td>" + escapeHtml(clicks ? formatNumber(Math.round(clicks)) : "—") +
+            "</td><td>" + escapeHtml(ctr ? keywordPercent(ctr, 1) : "—") + "</td><td>" + escapeHtml(topAge >= 0 ? ageLabels[topAge] : "—") + "</td><td>" + escapeHtml(peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "—") +
+            "</td><td>" + escapeHtml(keywordMarketCompetitionLabel(data)) + "</td></tr>";
+        }).join("");
+        table.innerHTML = head + "<tbody>" + body + "</tbody>";
+        card.hidden = false;
+      }
+      function renderKeywordResearch(payload) {
+        var card = root.querySelector("[data-keyword-research-card]");
+        if (!card) return;
+        var state = root.querySelector("[data-keyword-research-state]");
+        var ads = payload && payload.ads ? payload.ads : {};
+        var depth = ads.depth && ads.depth.ok ? ads.depth : null;
+        var bids = ads.bids && ads.bids.ok ? ads.bids : null;
+        var content = payload && payload.content && payload.content.ok ? payload.content : null;
+        setKeywordText('[data-keyword-kpi="depth"]', depth && depth.depth !== null ? keywordCount(depth.depth, "개") : "확인 필요");
+        var bidRow = root.querySelector("[data-keyword-bids]");
+        var bidNote = root.querySelector("[data-keyword-bid-note]");
+        if (bidRow) {
+          if (bids && bids.bids) {
+            bidRow.innerHTML = [1, 3, 5].map(function (position) {
+              return '<div class="mi-bid"><span>' + position + '위</span><b>' + escapeHtml(keywordWon(bids.bids[position])) + '</b></div>';
+            }).join("");
+            if (bidNote) {
+              var expected = bids.expected;
+              bidNote.textContent = expected && (expected.clicks !== null || expected.cost !== null)
+                ? "1위 노출 시 월 예상 클릭 " + keywordCount(expected.clicks, "회") + " · 예상 비용 " + keywordWon(expected.cost) + " · 검색광고 추정치"
+                : "예상 클릭·비용은 이 키워드에 제공되지 않았습니다.";
+            }
+          } else {
+            bidRow.innerHTML = '<span class="mi-research-note">' + escapeHtml(ads.bids && ads.bids.reason === "not_configured" ? "검색광고 연결 필요" : "이 키워드는 입찰가 추정치가 없습니다.") + "</span>";
+            if (bidNote) bidNote.textContent = "";
+          }
+        }
+        var blogTotal = content && content.blog ? content.blog.total : null;
+        var blogRecent = content && content.blog ? content.blog.recent30d : null;
+        setKeywordText('[data-keyword-content="blog"]', keywordCount(blogTotal, "건"));
+        setKeywordText('[data-keyword-content="blogNote"]', blogRecent === null || blogRecent === undefined ? "글 총량" : "최근 30일 " + (blogRecent >= 100 ? "100건 이상" : keywordCount(blogRecent, "건")) + " 발행 · " + (blogRecent >= 100 ? "체험단·리뷰 포화" : blogRecent >= 30 ? "활발" : "여유"));
+        setKeywordText('[data-keyword-content="cafe"]', keywordCount(content && content.cafe ? content.cafe.total : null, "건"));
+        setKeywordText('[data-keyword-content="kin"]', keywordCount(content && content.kin ? content.kin.total : null, "건"));
+        var kinList = root.querySelector('[data-keyword-content="kinList"]');
+        if (kinList) {
+          var questions = content && content.kin && Array.isArray(content.kin.questions) ? content.kin.questions : [];
+          kinList.innerHTML = questions.map(function (question) {
+            return '<a href="' + escapeHtml(question.link || "#") + '" target="_blank" rel="noopener">' + escapeHtml(question.title || "") + "</a>";
+          }).join("") || '<span class="mi-research-note">최근 질문 없음</span>';
+        }
+        if (state) state.textContent = (bids || depth) && content ? "확인됨" : (bids || depth || content) ? "일부 확인" : "확인 필요";
+        card.hidden = false;
+      }
+      function loadKeywordResearch(keyword) {
+        var card = root.querySelector("[data-keyword-research-card]");
+        if (!card || !keyword) return;
+        var requestId = ++keywordResearchRequest;
+        var state = root.querySelector("[data-keyword-research-state]");
+        if (state) state.textContent = "불러오는 중";
+        card.hidden = false;
+        var url = getKeywordResearchApiUrl() + "?keyword=" + encodeURIComponent(keyword);
+        fetch(url, { method: "GET", cache: "no-store", credentials: "same-origin" }).then(function (response) {
+          return response.json().catch(function () { return null; });
+        }).then(function (payload) {
+          if (requestId !== keywordResearchRequest) return;
+          if (!payload || payload.ok !== true) throw new Error("research_unavailable");
+          renderKeywordResearch(payload);
+        }).catch(function () {
+          if (requestId !== keywordResearchRequest) return;
+          if (state) state.textContent = "확인 필요";
+        });
+      }
 
       function getKeywordApiUrl() {
         if (window.MI_NAVER_KEYWORD_API_URL) return window.MI_NAVER_KEYWORD_API_URL;
@@ -11129,7 +11296,7 @@
 
       async function fetchKeywordData(keyword, profileMode) {
         var url = getKeywordApiUrl() + "?keyword=" + encodeURIComponent(keyword) + "&profile=" + encodeURIComponent(profileMode || "full");
-        var response = await miFetch(url, { method: "GET", cache: "no-store" });
+        var response = await keywordFetchWithRetry(function () { return miFetch(url, { method: "GET", cache: "no-store" }); });
         var payload = await response.json().catch(function () {
           return null;
         });

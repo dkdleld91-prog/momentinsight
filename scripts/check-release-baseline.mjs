@@ -136,16 +136,6 @@ const homeFeatureShowcaseSource = functionBody(
   "<!-- mi-feature-showcase:start -->",
   "<!-- mi-feature-showcase:end -->",
 );
-const homeSnapshotShowcaseSource = functionBody(
-  homeFeatureShowcaseSource,
-  'data-mi-showcase-group="snapshot"',
-  "</section>",
-);
-const homeTrackingShowcaseSource = functionBody(
-  homeFeatureShowcaseSource,
-  'data-mi-showcase-group="tracking"',
-  "</section>",
-);
 const normalizedHomeFeatureShowcase = normalizeIdentityText(homeFeatureShowcaseSource);
 const prohibitedHomeShowcaseFragments = [
   "물티슈",
@@ -723,7 +713,7 @@ const checks = {
     "loginButton.disabled = false;",
     "return;",
   ]),
-  homeDevelopmentNoticeVisible: homeSource.includes("8월 서비스 운영 안내")
+  homeDevelopmentNoticeVisible: homeSource.includes("9월 서비스 운영 안내")
     && homeDevelopmentNoticeMarkupSource.includes("키워드 조회는 네이버 공식 API 연결 기준으로 제공")
     && homeDevelopmentNoticeMarkupSource.includes("매일 오전 9시와 오후 3시, 하루 두 차례 자동 갱신됩니다.")
     && homeDevelopmentNoticeMarkupSource.includes('<span data-status="공식 API">키워드 조회</span>')
@@ -838,18 +828,13 @@ const checks = {
   homeAnonymousFeatureShowcase: homeFeatureShowcaseSource.includes('data-mi-showcase-privacy="synthetic-only"')
     && homeFeatureShowcaseSource.includes("예시 데이터")
     && homeFeatureShowcaseSource.includes("실고객 정보 미사용")
-    && homeFeatureShowcaseSource.includes("예시 키워드 A")
     && homeFeatureShowcaseSource.includes("예시 키워드 B")
-    && homeFeatureShowcaseSource.includes("예시 키워드 C")
     && homeFeatureShowcaseSource.includes("예시 상품 A")
-    && homeFeatureShowcaseSource.includes("예시 매장 A")
-    && homeFeatureShowcaseSource.includes("30일 오가닉 순위 추적")
-    && homeFeatureShowcaseSource.includes("자동 300위 확인")
-    && homeFeatureShowcaseSource.includes("상품 순위 추적")
-    && homeFeatureShowcaseSource.includes("플레이스 순위 추적")
-    && homeFeatureShowcaseSource.includes("키워드 시장 분석")
+    && homeFeatureShowcaseSource.includes("네이버·쿠팡 시장 뉴스")
+    && homeFeatureShowcaseSource.includes("누가 · 언제 · 얼마나 검색하나")
+    && homeFeatureShowcaseSource.includes("N 30일 순위")
     && homeFeatureShowcaseSource.includes("기능 설명을 위한 예시 데이터입니다.")
-    && (homeFeatureShowcaseSource.match(/class="mi-suite-card /g) || []).length === 4
+    && (homeFeatureShowcaseSource.match(/class="mi-hp-card"/g) || []).length === 3
     && !/<img\b/i.test(homeFeatureShowcaseSource)
     && !/https?:\/\//i.test(homeFeatureShowcaseSource)
     && !/\b\d{9,}\b/.test(homeFeatureShowcaseSource)
@@ -860,19 +845,12 @@ const checks = {
   homeFeatureShowcasePriorityAndGroups: homeSource.indexOf('id="mi-home-features"') !== -1
     && homeSource.indexOf('id="mi-home-trust"') !== -1
     && homeSource.indexOf('id="mi-home-features"') < homeSource.indexOf('id="mi-home-trust"')
-    && homeFeatureShowcaseSource.includes('data-mi-showcase-group="snapshot"')
-    && homeFeatureShowcaseSource.includes('data-mi-showcase-group="tracking"')
-    && homeFeatureShowcaseSource.includes("현재 데이터")
-    && homeFeatureShowcaseSource.includes("30일 순위 추적")
-    && (homeFeatureShowcaseSource.match(/class="mi-suite-grid"/g) || []).length === 2
-    && homeSnapshotShowcaseSource.includes('class="mi-suite-card rank"')
-    && homeSnapshotShowcaseSource.includes('class="mi-suite-card keyword"')
-    && !homeSnapshotShowcaseSource.includes('class="mi-suite-card trend"')
-    && !homeSnapshotShowcaseSource.includes('class="mi-suite-card place"')
-    && homeTrackingShowcaseSource.includes('class="mi-suite-card trend"')
-    && homeTrackingShowcaseSource.includes('class="mi-suite-card place"')
-    && !homeTrackingShowcaseSource.includes('class="mi-suite-card rank"')
-    && !homeTrackingShowcaseSource.includes('class="mi-suite-card keyword"'),
+    // 5안(2026-09-06): 카드 3개(뉴스·키워드 조사·순위 추적) 뒤에 잠금 띠. 잠금 띠는 카카오 링크가 있어 예시 구간 밖에 둔다.
+    && homeSource.includes('class="mi-hp-lockbar"')
+    && homeSource.includes("예시 키워드 A")
+    && homeSource.includes("예시 키워드 C")
+    && homeSource.indexOf("<!-- mi-feature-showcase:end -->") < homeSource.indexOf('class="mi-hp-lockbar"')
+    && homeSource.indexOf('class="mi-hp-lockbar"') < homeSource.indexOf('id="mi-home-trust"'),
   metaAdsMarkedInDevelopment: [adminSource, clientSource].every((source) => source.includes("메타 광고 조사 <small>(개발중)</small>")
     && source.includes('<span class="mi-badge warn">개발중</span>')),
   placeRankReleased: [adminSource, clientSource].every((source) => source.includes("N 플레이스 30일 순위</a>")
@@ -1179,7 +1157,7 @@ const checks = {
     "KEYWORD MARKET",
     "function setKeywordMarketIndicator(",
     'data-keyword-related-sort="clicks"',
-    "<span>월 클릭</span><span>클릭률</span>",
+    "<span>광고 평균 클릭</span><span>광고 클릭률</span>",
   ].every((marker) => source.includes(marker)))
     && keywordServer.includes("export function keywordMarketIndicators(")
     && keywordServer.includes("market: keywordMarketIndicators({")

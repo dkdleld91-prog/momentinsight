@@ -94,6 +94,14 @@ export function numberOrNull(value) {
 }
 
 // 연관 키워드 지표(6안 7번 블록): 같은 keywordstool 응답에서 검색수·클릭·클릭률·노출 깊이를 뽑는다. 추가 호출 없음.
+// 광고 클릭률: PC·모바일 클릭률(노출 대비, %)을 클릭수 가중으로 합친다. 검색수 대비가 아니다.
+export function adCtr(pcClicks, pcCtr, mobileClicks, mobileCtr) {
+  const impressions = (pcCtr > 0 && pcClicks > 0 ? pcClicks / (pcCtr / 100) : 0) + (mobileCtr > 0 && mobileClicks > 0 ? mobileClicks / (mobileCtr / 100) : 0);
+  if (impressions > 0) return Math.round((((pcClicks || 0) + (mobileClicks || 0)) / impressions) * 10000) / 100;
+  const parts = [pcCtr, mobileCtr].filter((value) => Number.isFinite(value) && value > 0);
+  return parts.length ? Math.round((parts.reduce((sum, value) => sum + value, 0) / parts.length) * 100) / 100 : null;
+}
+
 export function relatedKeywordMetrics(keywordList, keyword, limit = 40) {
   const target = compactKeyword(keyword);
   const rows = Array.isArray(keywordList) ? keywordList : [];
@@ -107,7 +115,9 @@ export function relatedKeywordMetrics(keywordList, keyword, limit = 40) {
     const pcClicks = numberOrNull(row.monthlyAvePcClkCnt);
     const mobileClicks = numberOrNull(row.monthlyAveMobileClkCnt);
     const clicks = pcClicks === null && mobileClicks === null ? null : Math.round(((pcClicks || 0) + (mobileClicks || 0)) * 10) / 10;
-    const ctr = volume && clicks !== null ? Math.round((clicks / volume) * 10000) / 100 : null;
+    const pcCtr = numberOrNull(row.monthlyAvePcCtr);
+    const mobileCtr = numberOrNull(row.monthlyAveMobileCtr);
+    const ctr = adCtr(pcClicks, pcCtr, mobileClicks, mobileCtr);
     out.push({ keyword: name, volume, pcVolume: pc, mobileVolume: mobile, clicks, ctr, depth: numberOrNull(row.plAvgDepth), competition: String(row.compIdx || "") });
     if (out.length >= limit) break;
   }

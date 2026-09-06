@@ -71,6 +71,7 @@
     var entries = [];
     sectionItems(news.naver, 6).forEach(function (item) { entries.push({ brand: "네이버", item: item }); });
     sectionItems(news.coupang, 6).forEach(function (item) { entries.push({ brand: "쿠팡", item: item }); });
+    sectionItems(news.openmarket, 4).forEach(function (item) { entries.push({ brand: "11번가·G마켓", item: item }); });
     if (!entries.length) return;
     track.textContent = "";
     for (var copy = 0; copy < 2; copy += 1) {
@@ -100,7 +101,8 @@
     };
     var naver = news && news.naver && news.naver.ok !== false ? Number(news.naver.count7d || 0) : null;
     var coupang = news && news.coupang && news.coupang.ok !== false ? Number(news.coupang.count7d || 0) : null;
-    set("news", naver === null && coupang === null ? "확인 필요" : "네이버 " + (naver || 0) + "건 · 쿠팡 " + (coupang || 0) + "건");
+    var openmarket = news && news.openmarket && news.openmarket.ok !== false ? Number(news.openmarket.count7d || 0) : null;
+    set("news", naver === null && coupang === null ? "확인 필요" : "네이버 " + (naver || 0) + " · 쿠팡 " + (coupang || 0) + " · 11번가·G마켓 " + (openmarket || 0) + "건");
     fetch("/api/rank-collection-health", { credentials: "omit", cache: "no-store" })
       .then(function (response) { return response.ok ? response.json() : null; })
       .then(function (health) {
@@ -115,6 +117,7 @@
   function fail() {
     renderBrand("naver", null);
     renderBrand("coupang", null);
+    renderBrand("openmarket", null);
     renderStats(null);
     text(updated, "잠시 후 다시 확인");
   }
@@ -125,6 +128,7 @@
       if (!news) return fail();
       renderBrand("naver", news.naver);
       renderBrand("coupang", news.coupang);
+      renderBrand("openmarket", news.openmarket);
       renderTicker(news);
       renderStats(news);
       text(updated, news.updatedAt ? minutesAgo(news.updatedAt) : "갱신 시각 확인 중");

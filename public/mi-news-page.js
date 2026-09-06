@@ -20,7 +20,7 @@
   }
   function collect(news) {
     var out = [];
-    ["naver", "coupang"].forEach(function (key) {
+    ["naver", "coupang", "openmarket"].forEach(function (key) {
       var section = news[key];
       if (!section || section.ok === false) return;
       var items = [];
@@ -53,7 +53,7 @@
     }
     items.forEach(function (item) {
       var a = document.createElement("a");
-      a.className = "row" + (item.platform === "coupang" ? " is-coupang" : "");
+      a.className = "row" + (item.platform === "coupang" ? " is-coupang" : item.platform === "openmarket" ? " is-open" : "");
       a.href = item.link;
       a.target = "_blank";
       a.rel = "noopener nofollow";
@@ -61,7 +61,7 @@
       src.className = "src";
       var dot = document.createElement("i");
       src.appendChild(dot);
-      src.appendChild(document.createTextNode(item.platform === "coupang" ? "쿠팡" : "네이버"));
+      src.appendChild(document.createTextNode(item.platform === "coupang" ? "쿠팡" : item.platform === "openmarket" ? "11번가·G마켓" : "네이버"));
       var t = document.createElement("span");
       t.className = "t";
       t.textContent = item.title;

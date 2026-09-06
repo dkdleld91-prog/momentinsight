@@ -11036,7 +11036,7 @@
 
     #mi-admin .mi-home-news2 {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 18px;
     }
 
@@ -11512,6 +11512,19 @@
                   <span class="mi-home-cnt" data-home-news-coupang-count>확인 중</span>
                 </div>
                 <div data-home-news-coupang>
+                  <div class="mi-home-empty">
+                    <span class="mi-home-empty-title">기사를 불러오는 중입니다</span>
+                    <span class="mi-home-empty-detail">최근 7일 기준</span>
+                  </div>
+                </div>
+              </div>
+              <div class="mi-home-pcol is-open">
+                <div class="mi-home-phead">
+                  <span class="mi-home-dot" style="background: var(--mi-orange);"></span>
+                  <b>11번가 · G마켓</b>
+                  <span class="mi-home-cnt" data-home-news-openmarket-count>확인 중</span>
+                </div>
+                <div data-home-news-openmarket>
                   <div class="mi-home-empty">
                     <span class="mi-home-empty-title">기사를 불러오는 중입니다</span>
                     <span class="mi-home-empty-detail">최근 7일 기준</span>
@@ -19223,6 +19236,12 @@
           payload.news && payload.news.ok !== false ? payload.news.coupang : null,
           "쿠팡"
         );
+        renderHomeNewsColumn(
+          root.querySelector("[data-home-news-openmarket]"),
+          root.querySelector("[data-home-news-openmarket-count]"),
+          payload.news && payload.news.ok !== false ? payload.news.openmarket : null,
+          "11번가 · G마켓"
+        );
         renderHomeScope(root.querySelector("[data-home-scope]"), payload.metrics);
         renderHomeVolumeRows(root.querySelector("[data-home-volume-rows]"), payload.metrics);
         renderHomeKeywordNews(root.querySelector("[data-home-keyword-news]"), payload.keywordNews);
@@ -19237,6 +19256,7 @@
         try {
           renderHomeNewsColumn(root.querySelector("[data-home-news-naver]"), root.querySelector("[data-home-news-naver-count]"), { ok: false }, "네이버");
           renderHomeNewsColumn(root.querySelector("[data-home-news-coupang]"), root.querySelector("[data-home-news-coupang-count]"), { ok: false }, "쿠팡");
+          renderHomeNewsColumn(root.querySelector("[data-home-news-openmarket]"), root.querySelector("[data-home-news-openmarket-count]"), { ok: false }, "11번가 · G마켓");
           renderHomeScope(root.querySelector("[data-home-scope]"), null);
           renderHomeVolumeRows(root.querySelector("[data-home-volume-rows]"), null);
           renderHomeKeywordNews(root.querySelector("[data-home-keyword-news]"), null);

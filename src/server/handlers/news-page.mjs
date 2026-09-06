@@ -27,7 +27,7 @@ function dateLabel(iso) {
 
 export function collectArticles(news) {
   const out = [];
-  for (const key of ["naver", "coupang"]) {
+  for (const key of ["naver", "coupang", "openmarket"]) {
     const section = news?.[key];
     if (!section || section.ok === false) continue;
     const items = Array.isArray(section.all) && section.all.length
@@ -60,7 +60,7 @@ function topicChips(items) {
 
 function rows(items) {
   if (!items.length) return `<div class="empty">이번 주 셀러 관련 기사가 없습니다.</div>`;
-  return items.map((item) => `<a class="row${item.platform === "coupang" ? " is-coupang" : ""}" href="${escapeHtml(item.link)}" target="_blank" rel="noopener nofollow"><span class="src"><i></i>${item.platform === "coupang" ? "쿠팡" : "네이버"}</span><span class="t">${escapeHtml(item.title)}<small>${escapeHtml([item.source, item.topic].filter(Boolean).join(" · "))}</small></span><span class="d">${escapeHtml(dateLabel(item.publishedAt))}</span></a>`).join("");
+  return items.map((item) => `<a class="row${item.platform === "coupang" ? " is-coupang" : item.platform === "openmarket" ? " is-open" : ""}" href="${escapeHtml(item.link)}" target="_blank" rel="noopener nofollow"><span class="src"><i></i>${item.platform === "coupang" ? "쿠팡" : item.platform === "openmarket" ? "11번가·G마켓" : "네이버"}</span><span class="t">${escapeHtml(item.title)}<small>${escapeHtml([item.source, item.topic].filter(Boolean).join(" · "))}</small></span><span class="d">${escapeHtml(dateLabel(item.publishedAt))}</span></a>`).join("");
 }
 
 const STYLE = `
@@ -85,11 +85,12 @@ const STYLE = `
   .chip.on { background: var(--navy); color: #fff; border-color: transparent; }
   .bar .meta { margin-left: auto; font-size: 12.5px; color: var(--muted); }
   .list { display: grid; gap: 8px; margin: 0 0 40px; }
-  .row { display: grid; grid-template-columns: 64px 1fr 130px; gap: 12px; align-items: center; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; }
+  .row { display: grid; grid-template-columns: 96px 1fr 130px; gap: 12px; align-items: center; padding: 12px 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; }
   .row:hover { border-color: var(--blue); }
   .row .src { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
   .row .src i { width: 8px; height: 8px; border-radius: 50%; background: var(--naver); }
   .row.is-coupang .src i { background: var(--coupang); }
+  .row.is-open .src i { background: #ef7d1a; }
   .row .t { font-size: 15px; font-weight: 700; color: var(--navy); }
   .row .t small { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--muted); }
   .row .d { text-align: right; font-size: 12px; color: var(--muted); }
@@ -108,9 +109,10 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   const items = collectArticles(news);
   const naver = news?.naver && news.naver.ok !== false ? Number(news.naver.count7d || 0) : 0;
   const coupang = news?.coupang && news.coupang.ok !== false ? Number(news.coupang.count7d || 0) : 0;
+  const openmarket = news?.openmarket && news.openmarket.ok !== false ? Number(news.openmarket.count7d || 0) : 0;
   const payload = { ok: true, news: news && news.ok !== false ? news : { ok: false, reason: "news_unavailable" } };
   const embedded = JSON.stringify(payload).replace(/</g, "\\u003c");
-  const description = `네이버·쿠팡 셀러에게 필요한 정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 최근 7일 네이버 ${naver}건 · 쿠팡 ${coupang}건.`;
+  const description = `네이버·쿠팡·11번가·G마켓 셀러에게 필요한 정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 최근 7일 네이버 ${naver}건 · 쿠팡 ${coupang}건 · 11번가·G마켓 ${openmarket}건.`;
   return `<!doctype html>
 <html lang="ko">
 <head>
@@ -142,7 +144,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   <main class="shell" id="news">
     <div class="head">
       <span class="kicker">셀러 뉴스 · 로그인 없이 누구나</span>
-      <h1>네이버·쿠팡 셀러 관련 기사, 최근 7일치</h1>
+      <h1>네이버·쿠팡·11번가·G마켓 셀러 관련 기사, 최근 7일치</h1>
       <p>정산·수수료·규제·물류·광고 기사만 골라 1시간마다 갱신합니다. 기사를 누르면 언론사 원문으로 이동합니다.</p>
     </div>
 
@@ -150,6 +152,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
       <button class="chip on" type="button" data-news-platform="all">전체</button>
       <button class="chip" type="button" data-news-platform="naver">네이버</button>
       <button class="chip" type="button" data-news-platform="coupang">쿠팡</button>
+      <button class="chip" type="button" data-news-platform="openmarket">11번가·G마켓</button>
       <span class="meta" data-news-meta>${items.length}건 표시 · 전체 ${items.length}건</span>
     </div>
     <div class="bar" data-news-topics>${topicChips(items)}</div>
@@ -172,7 +175,7 @@ export function renderNewsPage(news, nowMs = Date.now()) {
   </footer>
 
   <script type="application/json" id="news-data">${embedded}</script>
-  <script src="/mi-news-page.js?v=news-v3-20260906" defer></script>
+  <script src="/mi-news-page.js?v=news-v4-20260906" defer></script>
   <script src="/mi-analytics.js?v=ga-v1-20260906" defer></script>
 </body>
 </html>

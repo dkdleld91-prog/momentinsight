@@ -103,6 +103,13 @@ test("similarTitles folds rewrites of the same event", () => {
   assert.equal(similarTitles("네이버 커머스 수수료 개편", "스마트스토어 정산 주기 단축"), false);
 });
 
+test("openmarket titles need 11번가/G마켓 plus seller context", () => {
+  assert.equal(passesBrandTitleGate("openmarket", "11번가 입점 셀러 수수료 인하"), true);
+  assert.equal(passesBrandTitleGate("openmarket", "G마켓, 판매자 정산 주기 단축"), true);
+  assert.equal(passesBrandTitleGate("openmarket", "11번가 신사옥 이전"), false);
+  assert.equal(passesBrandTitleGate("openmarket", "쿠팡 입점 셀러 수수료 조정"), false);
+});
+
 test("commerce gate requires context and rejects entertainment or delivery-brand noise", () => {
   assert.equal(passesCommerceGate("쿠팡 수수료", "입점 셀러 부담"), true);
   assert.equal(passesCommerceGate("쿠팡 드라마 흥행", "셀러"), false);

@@ -1386,6 +1386,13 @@
     #mi-home .mi-hp-col { position: relative; border: 1px solid var(--mi-line, #dfe5ef); border-radius: 12px; padding: 10px 12px 6px; overflow: hidden; background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%); }
     #mi-home .mi-hp-col.is-naver { box-shadow: inset 0 3px 0 #03c75a; }
     #mi-home .mi-hp-col.is-coupang { box-shadow: inset 0 3px 0 #4a9ed2; }
+    #mi-home .mi-hp-col.is-open { box-shadow: inset 0 3px 0 #ef7d1a; }
+    #mi-home .mi-hp-dot.is-open { background: #ef7d1a; }
+    /* 2026-09-06: 11번가·G마켓 칸 추가 — 네이버·쿠팡은 나란히, 11번가·G마켓은 그 아래 한 줄 전체 폭. */
+    #mi-home .mi-hp-col.is-open { grid-column: 1 / -1; }
+    #mi-home .mi-hp-col.is-open .mi-hp-list { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 14px; }
+    #mi-home .mi-hp-col.is-open .mi-hp-list a { border-bottom: 0; }
+    @media (max-width: 720px) { #mi-home .mi-hp-col.is-open .mi-hp-list { grid-template-columns: 1fr; } #mi-home .mi-hp-col.is-open .mi-hp-list a { border-bottom: 1px solid var(--mi-line, #dfe5ef); } }
     #mi-home .mi-hp-col-head { display: flex; align-items: center; gap: 6px; padding-bottom: 7px; margin-bottom: 4px; border-bottom: 1.5px solid var(--mi-line, #dfe5ef); font-size: 13px; }
     #mi-home .mi-hp-col-head b { color: var(--mi-navy, #061a3a); }
     #mi-home .mi-hp-col-head span { margin-left: auto; font-size: 11px; color: var(--mi-muted, #667085); }
@@ -1422,7 +1429,7 @@
 
     /* 5안 히어로 3줄 설명 · 제공 기능 카드 3개 · 잠금 띠 */
     /* 제목은 구(句) 단위로만 줄이 바뀐다: "30일 순위 / 추적" 같은 어색한 끊김 방지(2026-09-06 대표 피드백). */
-    #mi-home .mi-hp-h1 { font-size: clamp(26px, 5.2vw, 40px); line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
+    #mi-home .mi-title-main.mi-hp-h1 { font-size: clamp(30px, 8vw, 40px); line-height: 1.18; letter-spacing: -0.03em; word-break: keep-all; }
     #mi-home .mi-hp-h1 em { font-style: normal; color: var(--mi-blue); }
     #mi-home .mi-hp-h1-row { display: block; }
     #mi-home .mi-hp-h1-row + .mi-hp-h1-row { margin-top: 4px; }
@@ -1897,7 +1904,7 @@
           <h1 class="mi-hero-title">
             <span class="mi-title-main mi-hp-h1">
               <span class="mi-hp-h1-row"><span class="mi-nb">시장 뉴스</span> · <span class="mi-nb">키워드 조사</span> · <em class="mi-nb">30일 순위 추적</em>,</span>
-              <span class="mi-hp-h1-row">셀러가 매일 보는 것을 한 곳에.</span>
+              <span class="mi-hp-h1-row">셀러가 매일 보는 것을 <span class="mi-nb">한 곳에.</span></span>
             </span>
           </h1>
           <div class="mi-hp-sub" aria-label="핵심 사실">
@@ -1930,6 +1937,10 @@
               <div class="mi-hp-col-head"><i class="mi-hp-dot is-coupang"></i><b>쿠팡</b><span data-hp-news-count="coupang">—</span></div>
               <div class="mi-hp-list" data-hp-news="coupang"><p class="mi-hp-empty">기사를 불러오는 중입니다.</p></div>
             </div>
+            <div class="mi-hp-col is-open">
+              <div class="mi-hp-col-head"><i class="mi-hp-dot is-open"></i><b>11번가 · G마켓</b><span data-hp-news-count="openmarket">—</span></div>
+              <div class="mi-hp-list" data-hp-news="openmarket"><p class="mi-hp-empty">기사를 불러오는 중입니다.</p></div>
+            </div>
           </div>
           <p class="mi-hp-foot">셀러 관련 기사만 골라 보여줍니다 · 로그인 없이 누구나 · 최근 7일 <a class="mi-hp-foot-link" href="/news">뉴스 전체 보기 →</a></p>
         </aside>
@@ -1960,7 +1971,7 @@
               <li><b>필터</b><span>정산·수수료·규제·물류 등 셀러 관련 기사만</span></li>
               <li><b>갱신</b><span>1시간마다 · 최근 7일</span></li>
             </ul>
-            <div class="mi-hp-viz"><span><i class="mi-hp-dot is-naver"></i> 네이버 · <i class="mi-hp-dot is-coupang"></i> 쿠팡 각각 리드 1건 + 최신 2건</span><span class="mi-hp-cap">위 패널이 실제 기사 · 7일 건수 표시</span></div>
+            <div class="mi-hp-viz"><span><i class="mi-hp-dot is-naver"></i> 네이버 · <i class="mi-hp-dot is-coupang"></i> 쿠팡 · <i class="mi-hp-dot is-open"></i> 11번가·G마켓 각각 리드 1건 + 최신 2건</span><span class="mi-hp-cap">위 패널이 실제 기사 · 7일 건수 표시</span></div>
             <p class="mi-hp-more">로그인 없이 누구나 · 로그인하면 내 키워드 뉴스까지</p>
           </article>
           <article class="mi-hp-card">
@@ -2064,7 +2075,7 @@
     <i class="mi-kakao-icon" aria-hidden="true"></i>
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
-  <script src="/mi-home-news.js?v=hpnews-v3-20260906" defer></script>
+  <script src="/mi-home-news.js?v=hpnews-v4-20260906" defer></script>
   <!-- 방문 통계(GA4): 공개 페이지에만. 로그인 안쪽에는 넣지 않는다. -->
   <script src="/mi-analytics.js?v=ga-v1-20260906" defer></script>
   <script>

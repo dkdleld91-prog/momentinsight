@@ -53,6 +53,11 @@ const COMMERCE_EXCLUDE_RE = /드라마|배우|영화|예능|OTT|아이돌|가수
 const NAVER_TITLE_RE = /네이버|스마트스토어/;
 const COUPANG_SELLER_RE = /셀러|판매자|입점|수수료|정산|납품|마켓플레이스|공정위|규제|법안|검색|노출|리뷰|광고|가격|플랫폼|이커머스|커머스|유통업계|점유율|거래액/;
 const COUPANG_PR_RE = /로지스틱스|CLS|봉사|기부|후원|지원|채용|인재|어워즈|선정|새단장|장학|캠페인/;
+// 셀러 영향 신호(강): 있으면 홍보성 표현이 섞여도 남긴다. 없고 홍보성(적립·포인트·팝업·새단장 등)만 있으면 버린다.
+// 2026-09-06 대표 지시: 우리(셀러)에게 영향 있을 법안·규제·이커머스 기사만, 필요 없는 기사는 제외.
+const SELLER_STRONG_RE = /정산|수수료|입점|판매자|셀러|규제|법안|공정위|과징금|광고비|물류비|배송비|정책|약관|알고리즘|플랫폼법|온플법|유통법|중복규제|현장조사|지위남용|납품|거래액|점유율|제재|고발/;
+const PROMO_RE = /적립|페이백|포인트|증권|카드사|이벤트|경품|팝업|쿠폰|할인 ?혜택|새단장|런칭|출시 기념|공식 ?스토어|리뉴얼/;
+const NAVER_SELLER_RE = /셀러|판매자|입점|수수료|정산|납품|마켓플레이스|공정위|규제|법안|검색|노출|리뷰|광고|가격|플랫폼|이커머스|커머스|유통업계|점유율|거래액|스마트스토어|멤버십|배송|물류|알고리즘|정책|약관|과징금|경쟁|추격|연합|제휴|장보기|풀필먼트/;
 const TOPIC_KEYWORDS = ["정산", "수수료", "물류", "규제", "광고", "시장", "결제", "기획전", "커머스"];
 
 const NEWS_WINDOW_DAYS = 7;
@@ -120,7 +125,9 @@ export function isWithinWindow(publishedMs, nowMs, days = NEWS_WINDOW_DAYS) {
 
 export function passesBrandTitleGate(brand, title) {
   const text = String(title || "");
-  if (brand === "naver") return NAVER_TITLE_RE.test(text);
+  // 셀러 영향 신호 없이 홍보성 표현만 있는 기사(적립·팝업·새단장 등)는 브랜드와 무관하게 버린다.
+  if (!SELLER_STRONG_RE.test(text) && PROMO_RE.test(text)) return false;
+  if (brand === "naver") return NAVER_TITLE_RE.test(text) && NAVER_SELLER_RE.test(text);
   if (brand === "coupang") {
     return text.includes("쿠팡") && COUPANG_SELLER_RE.test(text) && !COUPANG_PR_RE.test(text);
   }
@@ -136,6 +143,20 @@ export function passesCommerceGate(title, description) {
 
 // 질의 순서를 우선하고, 같은 질의 안에서는 API 반환 순서(=관련도)를 우선한다.
 // 그 다음 중복을 제거한다. 결과 배열의 0번이 곧 관련도 1위다.
+// 같은 사건을 다르게 쓴 제목(같은 보도자료를 받아쓴 기사 여러 건)을 한 건만 남긴다. 낱말 겹침 비율 ≥ 0.5 = 같은 기사.
+const TITLE_STOP_RE = /^(네이버|쿠팡|기사|뉴스|단독|속보|기획|종합)/;
+export function titleTokens(title) {
+  return new Set(String(title || "").toLowerCase().replace(/[^0-9a-z가-힣\s]/g, " ").split(/\s+/).filter((token) => token.length >= 2 && !TITLE_STOP_RE.test(token)));
+}
+export function similarTitles(a, b) {
+  const left = titleTokens(a);
+  const right = titleTokens(b);
+  if (left.size < 3 || right.size < 3) return false;
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared += 1;
+  return shared >= 3 && shared / Math.min(left.size, right.size) >= 0.5;
+}
+
 export function collectArticles(brand, groups, nowMs) {
   const seen = new Set();
   const articles = [];
@@ -151,6 +172,7 @@ export function collectArticles(brand, groups, nowMs) {
       const key = dedupeKey(title);
       if (!key || seen.has(key)) return;
       seen.add(key);
+      if (articles.some((kept) => similarTitles(kept.title, title))) return;
       const link = String(item?.originallink || item?.link || "");
       articles.push({
         title,

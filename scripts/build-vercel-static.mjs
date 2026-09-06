@@ -12,7 +12,6 @@ const pages = {
   admin: "admin.html",
   client: "client.html",
   privacy: "privacy.html",
-  news: "news.html",
 };
 
 async function exists(filePath) {
@@ -106,6 +105,5 @@ console.log(JSON.stringify({
     "/home.html": "home.html",
     "/admin.html": "admin.html",
     "/client.html": "client.html",
-    "/news.html": "news.html",
   },
 }, null, 2));

@@ -5,6 +5,7 @@ import {
   agencyCodeScope,
   articleTopic,
   buildBrandSection,
+  similarTitles,
   chunk,
   collectArticles,
   computeRankSummary,
@@ -88,6 +89,18 @@ test("coupang titles need 쿠팡 plus seller context and must not be PR", () => 
   // PR 배제어가 있으면 셀러 문맥어가 있어도 버린다.
   assert.equal(passesBrandTitleGate("coupang", "쿠팡 판매자 대상 장학 캠페인"), false);
   assert.equal(passesBrandTitleGate("coupang", "쿠팡 로지스틱스 채용 확대 입점"), false);
+});
+
+test("promo-only titles are dropped while seller-impact titles stay", () => {
+  assert.equal(passesBrandTitleGate("naver", "키움증권 앱에서 네이버 쇼핑하면 최대 4% 적립"), false);
+  assert.equal(passesBrandTitleGate("naver", "보배반점, 공식 스마트스토어 새단장"), false);
+  assert.equal(passesBrandTitleGate("naver", "네이버 스마트스토어 수수료 인상 예고"), true);
+  assert.equal(passesBrandTitleGate("naver", "네이버 유료 회원만 새벽배송"), true);
+});
+
+test("similarTitles folds rewrites of the same event", () => {
+  assert.equal(similarTitles("쿠팡에 과징금·고발·조사까지…플랫폼 중복규제 이대로 좋은가?", "쿠팡에 과징금·고발·부처 조사까지...플랫폼 '중복규제' 논란"), true);
+  assert.equal(similarTitles("네이버 커머스 수수료 개편", "스마트스토어 정산 주기 단축"), false);
 });
 
 test("commerce gate requires context and rejects entertainment or delivery-brand noise", () => {

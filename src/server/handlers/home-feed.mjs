@@ -191,6 +191,8 @@ export function buildBrandSection(brand, groups, nowMs) {
     count7d: articles.length,
     lead: lead ? publicArticle(lead) : null,
     items: rest.map(publicArticle),
+    // 공개 /news 페이지용 7일치 전체(최신순). 홈 패널·로그인 뉴스 화면은 lead·items만 쓴다.
+    all: articles.slice().sort((a, b) => b.publishedMs - a.publishedMs).map(publicArticle),
   };
 }
 

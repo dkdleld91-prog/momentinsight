@@ -24,8 +24,12 @@
       var section = news[key];
       if (!section || section.ok === false) return;
       var items = [];
-      if (section.lead) items.push(section.lead);
-      (section.items || []).forEach(function (item) { items.push(item); });
+      if (Array.isArray(section.all) && section.all.length) {
+        section.all.forEach(function (item) { items.push(item); });
+      } else {
+        if (section.lead) items.push(section.lead);
+        (section.items || []).forEach(function (item) { items.push(item); });
+      }
       items.forEach(function (item) { out.push({ platform: key, title: item.title || "", link: item.link || "#", source: item.source || "", publishedAt: item.publishedAt || "", topic: item.topic || "" }); });
     });
     out.sort(function (a, b) { return new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(); });

@@ -155,7 +155,7 @@ test("buildBrandSection returns a lead plus at most three newest others", () => 
 
 test("buildBrandSection reports an empty section rather than inventing rows", () => {
   const section = buildBrandSection("naver", [[]], NOW);
-  assert.deepEqual(section, { count7d: 0, lead: null, items: [] });
+  assert.deepEqual(section, { count7d: 0, lead: null, items: [], all: [] });
 });
 
 // ── 주간 트렌드 ──────────────────────────────────────────────────

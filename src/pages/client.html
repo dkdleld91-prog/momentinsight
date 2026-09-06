@@ -4073,6 +4073,7 @@
     #mi-clean .mi-kw-chart .mi-research-big { font-size: 30px; letter-spacing: -0.03em; line-height: 1.1; }
     #mi-clean .mi-related-table > div > span[data-related-sort-key] { cursor: pointer; }
     #mi-clean .mi-related-table > div > span.is-sorted { color: var(--mi-navy); font-weight: 700; }
+    #mi-clean .mi-compare-note { font-size: 12.5px; color: var(--mi-muted); padding: 10px 8px; margin: 0; }
     @media (max-width: 900px) { #mi-clean .mi-kw-g2, #mi-clean .mi-kw-g2.is-bid, #mi-clean .mi-kw-g3 { grid-template-columns: 1fr; } }
 
     #mi-clean .mi-market-kpis {
@@ -6595,8 +6596,8 @@
           </article>
 
           <div class="mi-kw-sec"><span class="n">6</span><div><h2>후보 키워드 비교</h2><p>쉼표로 나눠 입력한 키워드를 같은 기준으로 · 최대 5개</p></div></div>
-          <article class="mi-card mi-card-pad" data-keyword-compare-card hidden style="margin-bottom:16px;">
-            <div class="mi-compare-wrap"><table class="mi-compare" data-keyword-compare></table></div>
+          <article class="mi-card mi-card-pad" data-keyword-compare-card style="margin-bottom:16px;">
+            <div class="mi-compare-wrap"><table class="mi-compare" data-keyword-compare><tbody><tr><td class="mi-compare-note">조회하면 입력한 키워드를 나란히 비교합니다 · 쉼표로 최대 5개</td></tr></tbody></table></div>
           </article>
 
           <div class="mi-kw-sec"><span class="n">7</span><div><h2>연관 키워드</h2><p>검색광고 키워드도구 · 정렬 · CSV</p></div></div>
@@ -6627,8 +6628,8 @@
           </article>
 
           <div class="mi-kw-sec"><span class="n">9</span><div><h2>시즌 캘린더</h2><p>조회한 키워드의 월별 검색 비율을 한 장에 · 진할수록 검색이 몰리는 달</p></div></div>
-          <article class="mi-card mi-card-pad" data-keyword-season-card hidden style="margin-bottom:16px;">
-            <div class="mi-season" data-keyword-season></div>
+          <article class="mi-card mi-card-pad" data-keyword-season-card style="margin-bottom:16px;">
+            <div class="mi-season" data-keyword-season><p class="mi-compare-note">조회하면 키워드별 월별 검색 비율을 한 장에 보여줍니다 · 진할수록 검색이 몰리는 달</p></div>
             <p class="mi-code-status" style="margin-top:10px;" data-keyword-season-note></p>
           </article>
 
@@ -8267,10 +8268,10 @@
             }
           }
 
-          renderKeywordYoy(data);
-          renderKeywordSeason(items);
-          loadKeywordCompare(items);
-          loadKeywordResearch(item.keyword);
+          // 한 블록이 실패해도 나머지 블록은 그린다(6·9번 미표시 방지).
+          [function () { renderKeywordYoy(data); }, function () { renderKeywordSeason(items); }, function () { loadKeywordCompare(items); }, function () { loadKeywordResearch(item.keyword); }].forEach(function (step) {
+            try { step(); } catch (error) { if (window.console && console.warn) console.warn("keyword extras step failed", error); }
+          });
           var tools = root.querySelector("[data-keyword-related-tools]");
           if (tools) tools.hidden = !(keywordRelatedCache && keywordRelatedCache.length);
         } catch (error) {
@@ -8486,7 +8487,8 @@
         var table = root.querySelector("[data-keyword-compare]");
         if (!card || !table) return;
         var rows = (items || []).filter(function (entry) { return entry && entry.data; });
-        if (rows.length < 2) { card.hidden = true; return; }
+        if (!rows.length) { card.hidden = true; return; }
+        var foot = rows.length < 2 ? '<tfoot><tr><td colspan="7" class="mi-compare-note">쉼표로 키워드를 더 입력하면 여기서 나란히 비교됩니다 · 최대 5개</td></tr></tfoot>' : "";
         var ageLabels = ["10대", "20대", "30대", "40대", "50대 이상"];
         var head = "<thead><tr><th>키워드</th><th>월 검색수</th><th>월 클릭</th><th>클릭률</th><th>주 연령</th><th>피크 달</th><th>3개월 추이</th></tr></thead>";
         var body = rows.map(function (entry) {
@@ -8506,7 +8508,7 @@
             "</td><td>" + escapeHtml(ctr ? keywordPercent(ctr, 1) : "—") + "</td><td>" + escapeHtml(topAge >= 0 ? ageLabels[topAge] : "—") + "</td><td>" + escapeHtml(peak >= 0 ? keywordMonthLabel(labels[peak], peak) : "—") +
             "</td><td>" + escapeHtml(keywordRecentTrend(data)) + "</td></tr>";
         }).join("");
-        table.innerHTML = head + "<tbody>" + body + "</tbody>";
+        table.innerHTML = head + "<tbody>" + body + "</tbody>" + foot;
         card.hidden = false;
       }
       // 6안 7번: 연관 키워드에 PC/모바일·클릭·클릭률을 붙인다(keyword-research 응답의 keywordstool 행). 검색량 미제공 자리표시 항목은 실제 행으로 대체.
@@ -13846,7 +13848,11 @@
         }
       }
 
+      // 로그인 복원과 순위 인증 준비 이벤트가 거의 동시에 홈 피드를 두 번 부르던 중복을 막는다(10초 안 재호출 무시).
+      var homeFeedStartedAt = 0;
       async function refreshHomeFeed() {
+        if (homeFeedStartedAt && Date.now() - homeFeedStartedAt < 10000) return;
+        homeFeedStartedAt = Date.now();
         var requestId = ++homeFeedRequest;
         var requestSession = captureClientSession();
         if (!clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;

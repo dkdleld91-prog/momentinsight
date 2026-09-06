@@ -4908,7 +4908,7 @@
 
     #mi-admin .mi-related-table div {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 96px 70px 96px;
+      grid-template-columns: minmax(0, 1fr) 84px 64px 64px 72px 60px;
       gap: 10px;
       align-items: center;
       padding: 10px 0;
@@ -8264,7 +8264,7 @@
       }
 
       #mi-admin .mi-related-table div {
-        grid-template-columns: minmax(100px, 1fr) 58px 38px 74px;
+        grid-template-columns: minmax(84px, 1fr) 50px 42px 42px 48px 44px;
         gap: 6px;
         font-size: 11px;
       }
@@ -12575,26 +12575,12 @@
                   <span class="mi-market-chip" data-keyword-market-chip>조회 전</span>
                 </div>
                 <h3 id="mi-admin-keyword-market-title" data-keyword-market-title>키워드 시장 분석</h3>
-                <p data-keyword-market-path>키워드를 입력하면 세 가지 핵심 지표를 표시합니다.</p>
+                <p data-keyword-market-path>키워드를 입력하면 월 검색수와 클릭 지표를 표시합니다.</p>
                 <div class="mi-market-value">
                   <strong data-keyword-market-volume>조회 후 표시</strong>
                   <span class="mi-market-status" data-keyword-market-status>분석 대기</span>
                 </div>
-                <div class="mi-market-bars" aria-label="키워드 시장 핵심 지표">
-                  <div class="mi-market-bar" data-keyword-market-indicator="demand">
-                    <div class="mi-market-bar-label"><span>검색 수요</span><strong data-keyword-market-demand>—</strong></div>
-                    <span class="mi-market-track" role="progressbar" aria-label="검색 수요" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
-                  </div>
-                  <div class="mi-market-bar is-competition" data-keyword-market-indicator="competition">
-                    <div class="mi-market-bar-label"><span>경쟁 강도</span><strong data-keyword-market-competition>—</strong></div>
-                    <span class="mi-market-track" role="progressbar" aria-label="경쟁 강도" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
-                  </div>
-                  <div class="mi-market-bar is-opportunity" data-keyword-market-indicator="salesOpportunity">
-                    <div class="mi-market-bar-label"><span>판매 기회율</span><strong data-keyword-market-opportunity>—</strong></div>
-                    <span class="mi-market-track" role="progressbar" aria-label="판매 기회율" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></span>
-                  </div>
-                </div>
-                <div class="mi-market-basis"><span data-keyword-market-basis>월 검색량·경쟁도·상품수 기반</span><span data-keyword-market-disclaimer>실제 매출 전환율이 아닙니다.</span></div>
+                <div class="mi-market-basis"><span data-keyword-market-basis>검색광고 키워드도구 · 최근 30일 · PC·모바일 합산</span><span data-keyword-market-disclaimer></span></div>
               </section>
               <!-- 클릭수·클릭률·피크 달·노출 깊이 — 검색광고 응답과 월별 비율에서 바로 계산 -->
               <div class="mi-market-kpis" data-keyword-kpis hidden aria-label="클릭·시즌 요약">
@@ -12729,11 +12715,12 @@
             <div class="mi-related-tools" data-keyword-related-tools hidden>
               <button type="button" class="is-active" data-keyword-related-sort="volume">검색수순</button>
               <button type="button" data-keyword-related-sort="name">가나다순</button>
+              <button type="button" data-keyword-related-sort="clicks">클릭순</button>
               <button type="button" data-keyword-csv>CSV 내보내기</button>
             </div>
             <div class="mi-related-table" data-keyword-related>
-              <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
-              <div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span></div>
+              <div><span>키워드</span><span>월 검색수</span><span>PC</span><span>모바일</span><span>월 클릭</span><span>클릭률</span></div>
+              <div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></div>
             </div>
           </article>
 
@@ -13033,7 +13020,7 @@
                 <span class="mi-badge">확장 리스트</span>
               </div>
               <div class="mi-related-table mi-related-large" data-keyword-related-full>
-                <div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>
+                <div><span>키워드</span><span>월 검색수</span><span>PC</span><span>모바일</span><span>월 클릭</span><span>클릭률</span></div>
               </div>
             </article>
 
@@ -21295,8 +21282,8 @@
           demand: indicators.demand || null,
           competition: indicators.competition || null,
           salesOpportunity: indicators.salesOpportunity || null,
-          basis: indicators.basis || "월 검색량·검색광고 경쟁도·쇼핑 상품수 기반 참고 지표",
-          disclaimer: indicators.disclaimer || "판매 기회율은 실제 매출 전환율이 아닙니다."
+          basis: "검색광고 키워드도구 · 최근 30일 · PC·모바일 합산",
+          disclaimer: ""
         };
       }
 
@@ -21336,19 +21323,16 @@
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
 
         if (title) title.textContent = market.keyword;
-        if (path) path.textContent = market.keyword + "의 수요와 경쟁 환경을 간결하게 비교합니다.";
+        if (path) path.textContent = market.keyword + " · 월 검색수 · PC·모바일 합산 · 검색광고 키워드도구 최근 30일";
         if (volume) volume.textContent = market.volumeText;
         if (chip) chip.textContent = market.keyword;
         if (basis) basis.textContent = market.basis;
         if (disclaimer) disclaimer.textContent = market.disclaimer;
         var availableCount = 0;
-        if (setKeywordMarketIndicator("demand", market.demand, "[data-keyword-market-demand]")) availableCount += 1;
-        if (setKeywordMarketIndicator("competition", market.competition, "[data-keyword-market-competition]")) availableCount += 1;
-        if (setKeywordMarketIndicator("salesOpportunity", market.salesOpportunity, "[data-keyword-market-opportunity]")) availableCount += 1;
+        // 6안(2026-09-06): 경쟁·기회 막대는 뺐다. 검색수 사실만 남긴다.
         if (status) {
-          var competitionScore = market.competition && market.competition.score !== null ? Number(market.competition.score) : null;
-          status.textContent = Number.isFinite(competitionScore) ? "경쟁강도 " + market.competition.label : availableCount ? "일부 확인" : "확인 필요";
-          status.classList.toggle("is-high", Number.isFinite(competitionScore) && competitionScore >= 75);
+          status.textContent = "PC·모바일 합산 · 최근 30일";
+          status.classList.remove("is-high");
         }
 
         var related = makeRelatedKeywords(item);
@@ -21361,16 +21345,7 @@
             return '<div><span>' + escapeHtml(name) + '</span><span>' + escapeHtml(volumeText) + '</span><span>' + escapeHtml(compText) + '</span><span>' + escapeHtml(judge) + '</span></div>';
         }
 
-        if (relatedNode) {
-          relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.slice(0, 4).map(function (entry) {
-            return relatedRow(entry);
-          }).join("");
-        }
-        if (relatedFullNode) {
-          relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>' + related.map(function (entry) {
-            return relatedRow(entry);
-          }).join("");
-        }
+        if (relatedNode || relatedFullNode) renderRelatedTables(related);
         if (relatedTitle) {
           relatedTitle.textContent = market.keyword + " 연관 키워드";
         }
@@ -21387,15 +21362,15 @@
         var clearText = message || "키워드를 조회하면 실제 데이터로 표시됩니다.";
         var fields = [
           ["[data-keyword-market-title]", "키워드 시장 분석"],
-          ["[data-keyword-market-path]", "키워드를 입력하면 세 가지 핵심 지표를 표시합니다."],
+          ["[data-keyword-market-path]", "키워드를 입력하면 월 검색수와 클릭 지표를 표시합니다."],
           ["[data-keyword-market-volume]", "조회 후 표시"],
           ["[data-keyword-market-chip]", "조회 전"],
           ["[data-keyword-market-status]", "분석 대기"],
           ["[data-keyword-market-demand]", "—"],
           ["[data-keyword-market-competition]", "—"],
           ["[data-keyword-market-opportunity]", "—"],
-          ["[data-keyword-market-basis]", "월 검색량·경쟁도·상품수 기반"],
-          ["[data-keyword-market-disclaimer]", "실제 매출 전환율이 아닙니다."],
+          ["[data-keyword-market-basis]", "검색광고 키워드도구 · 최근 30일 · PC·모바일 합산"],
+          ["[data-keyword-market-disclaimer]", ""],
           ["[data-keyword-label]", "키워드 조회 전"],
           ["[data-keyword-volume]", "조회 후 표시"],
           ["[data-keyword-change]", "-"],
@@ -21422,9 +21397,9 @@
         var marketStatus = root.querySelector("[data-keyword-market-status]");
         if (marketStatus) marketStatus.classList.remove("is-high");
         var relatedNode = root.querySelector("[data-keyword-related]");
-        if (relatedNode) relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div><div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span></div>';
+        if (relatedNode) relatedNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>PC</span><span>모바일</span><span>월 클릭</span><span>클릭률</span></div><div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></div>';
         var relatedFullNode = root.querySelector("[data-keyword-related-full]");
-        if (relatedFullNode) relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div><div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span></div>';
+        if (relatedFullNode) relatedFullNode.innerHTML = '<div><span>키워드</span><span>월 검색수</span><span>PC</span><span>모바일</span><span>월 클릭</span><span>클릭률</span></div><div><span>조회 후 표시</span><span>-</span><span>-</span><span>-</span><span>-</span><span>-</span></div>';
         var relatedTitle = root.querySelector("[data-keyword-related-title]");
         if (relatedTitle) relatedTitle.textContent = "연관 키워드 조회 전";
         var legend = root.querySelector("[data-keyword-legend]");
@@ -21825,11 +21800,16 @@
       function renderRelatedTables(list) {
         var relatedNode = root.querySelector("[data-keyword-related]");
         var relatedFullNode = root.querySelector("[data-keyword-related-full]");
-        var head = '<div><span>키워드</span><span>월 검색수</span><span>경쟁도</span><span>판단</span></div>';
+        var head = '<div><span>키워드</span><span>월 검색수</span><span>PC</span><span>모바일</span><span>월 클릭</span><span>클릭률</span></div>';
+        var cell = function (value, suffix) {
+          return value === null || value === undefined || value === "" || !Number.isFinite(Number(value)) ? "—" : formatNumber(Number(value)) + (suffix || "");
+        };
         var row = function (entry) {
           var volume = Number(entry.volume || 0);
-          return '<div><span>' + escapeHtml(entry.keyword || "") + '</span><span>' + escapeHtml(entry.volumeLabel || (volume ? formatNumber(volume) : "확인 필요")) +
-            '</span><span>' + escapeHtml(entry.comp || "확인 필요") + '</span><span>' + escapeHtml(relatedJudgement(entry)) + '</span></div>';
+          return '<div><span>' + escapeHtml(entry.keyword || "") + '</span><span>' + escapeHtml(entry.volumeLabel || (volume ? formatNumber(volume) : "—")) +
+            '</span><span>' + cell(volume ? entry.pcVolume : null) + '</span><span>' + cell(volume ? entry.mobileVolume : null) + '</span><span>' +
+            cell(entry.clicks === null || entry.clicks === undefined ? null : Math.round(Number(entry.clicks)), "회") + '</span><span>' +
+            (entry.ctr === null || entry.ctr === undefined ? "—" : escapeHtml(String(entry.ctr)) + "%") + '</span></div>';
         };
         if (relatedNode) relatedNode.innerHTML = head + list.slice(0, 4).map(row).join("");
         if (relatedFullNode) relatedFullNode.innerHTML = head + list.map(row).join("");
@@ -21837,6 +21817,7 @@
       function sortedRelatedKeywords(mode) {
         var list = (keywordRelatedCache || []).slice();
         if (mode === "name") list.sort(function (a, b) { return String(a.keyword || "").localeCompare(String(b.keyword || ""), "ko"); });
+        else if (mode === "clicks") list.sort(function (a, b) { return Number(b.clicks || 0) - Number(a.clicks || 0); });
         else list.sort(function (a, b) { return Number(b.volume || 0) - Number(a.volume || 0); });
         return list;
       }
@@ -21854,8 +21835,9 @@
         if (!csvButton || !root.contains(csvButton)) return;
         var list = sortedRelatedKeywords(keywordRelatedSort);
         if (!list.length) return;
-        var lines = [["키워드", "월 검색수", "경쟁도", "판단"].join(",")].concat(list.map(function (entry) {
-          return [entry.keyword || "", Number(entry.volume || 0), entry.comp || "", relatedJudgement(entry)].map(function (cell) {
+        var blank = function (value) { return value === null || value === undefined ? "" : value; };
+        var lines = [["키워드", "월 검색수", "PC", "모바일", "월 클릭", "클릭률(%)"].join(",")].concat(list.map(function (entry) {
+          return [entry.keyword || "", Number(entry.volume || 0), blank(entry.pcVolume), blank(entry.mobileVolume), blank(entry.clicks), blank(entry.ctr)].map(function (cell) {
             return '"' + String(cell).replace(/"/g, '""') + '"';
           }).join(",");
         }));
@@ -21920,6 +21902,33 @@
         table.innerHTML = head + "<tbody>" + body + "</tbody>";
         card.hidden = false;
       }
+      // 6안 7번: 연관 키워드에 PC/모바일·클릭·클릭률을 붙인다(keyword-research 응답의 keywordstool 행). 검색량 미제공 자리표시 항목은 실제 행으로 대체.
+      function keywordRelatedKey(value) { return String(value || "").replace(/\s+/g, "").toLowerCase(); }
+      function mergeRelatedMetrics(list) {
+        if (!Array.isArray(list) || !list.length) return;
+        var byKey = {};
+        var kept = (keywordRelatedCache || []).filter(function (entry) {
+          return entry && entry.source !== "개별 조회 필요" && entry.source !== "검색량 미제공";
+        });
+        kept.forEach(function (entry) { byKey[keywordRelatedKey(entry.keyword)] = entry; });
+        list.forEach(function (metric) {
+          var key = keywordRelatedKey(metric.keyword);
+          var entry = byKey[key];
+          if (!entry) {
+            entry = { keyword: metric.keyword, volume: null, volumeLabel: "", comp: "", source: "keywordstool" };
+            byKey[key] = entry;
+            kept.push(entry);
+          }
+          if (!entry.volume && metric.volume !== null && metric.volume !== undefined) entry.volume = metric.volume;
+          entry.pcVolume = metric.pcVolume;
+          entry.mobileVolume = metric.mobileVolume;
+          entry.clicks = metric.clicks;
+          entry.ctr = metric.ctr;
+          entry.depth = metric.depth;
+        });
+        keywordRelatedCache = kept;
+        renderRelatedTables(sortedRelatedKeywords(keywordRelatedSort));
+      }
       function renderKeywordResearch(payload) {
         var card = root.querySelector("[data-keyword-research-card]");
         if (!card) return;
@@ -21928,6 +21937,7 @@
         var depth = ads.depth && ads.depth.ok ? ads.depth : null;
         var bids = ads.bids && ads.bids.ok ? ads.bids : null;
         var content = payload && payload.content && payload.content.ok ? payload.content : null;
+        mergeRelatedMetrics(ads.depth && Array.isArray(ads.depth.related) ? ads.depth.related : []);
         setKeywordText('[data-keyword-kpi="depth"]', depth && depth.depth !== null ? keywordCount(depth.depth, "개") : "확인 필요");
         var bidRow = root.querySelector("[data-keyword-bids]");
         var bidNote = root.querySelector("[data-keyword-bid-note]");

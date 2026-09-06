@@ -1177,15 +1177,9 @@ const checks = {
     && keywordServer.includes("seriesPeriods: datalabProfile?.seriesPeriods || []"),
   keywordMarketPremiumSummary: [adminSource, clientSource].every((source) => [
     "KEYWORD MARKET",
-    'data-keyword-market-indicator="demand"',
-    'data-keyword-market-indicator="competition"',
-    'data-keyword-market-indicator="salesOpportunity"',
-    "검색 수요",
-    "경쟁 강도",
-    "판매 기회율",
-    "판매 기회율은 실제 매출 전환율이 아닙니다.",
-    "grid-template-columns: minmax(100px, 1fr) 58px 38px 74px;",
     "function setKeywordMarketIndicator(",
+    'data-keyword-related-sort="clicks"',
+    "<span>월 클릭</span><span>클릭률</span>",
   ].every((marker) => source.includes(marker)))
     && keywordServer.includes("export function keywordMarketIndicators(")
     && keywordServer.includes("market: keywordMarketIndicators({")

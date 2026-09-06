@@ -93,19 +93,42 @@ export function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+// 연관 키워드 지표(6안 7번 블록): 같은 keywordstool 응답에서 검색수·클릭·클릭률·노출 깊이를 뽑는다. 추가 호출 없음.
+export function relatedKeywordMetrics(keywordList, keyword, limit = 40) {
+  const target = compactKeyword(keyword);
+  const rows = Array.isArray(keywordList) ? keywordList : [];
+  const out = [];
+  for (const row of rows) {
+    const name = String(row?.relKeyword || "").trim();
+    if (!name || compactKeyword(name) === target) continue;
+    const pc = numberOrNull(row.monthlyPcQcCnt);
+    const mobile = numberOrNull(row.monthlyMobileQcCnt);
+    const volume = pc === null && mobile === null ? null : (pc || 0) + (mobile || 0);
+    const pcClicks = numberOrNull(row.monthlyAvePcClkCnt);
+    const mobileClicks = numberOrNull(row.monthlyAveMobileClkCnt);
+    const clicks = pcClicks === null && mobileClicks === null ? null : Math.round(((pcClicks || 0) + (mobileClicks || 0)) * 10) / 10;
+    const ctr = volume && clicks !== null ? Math.round((clicks / volume) * 10000) / 100 : null;
+    out.push({ keyword: name, volume, pcVolume: pc, mobileVolume: mobile, clicks, ctr, depth: numberOrNull(row.plAvgDepth), competition: String(row.compIdx || "") });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
 async function loadAdDepth(env, keyword) {
   if (!searchAdConfigured(env)) return { ok: false, reason: "not_configured" };
   const payload = await searchAdRequest(env, "GET", "/keywordstool", {
     query: { hintKeywords: keyword.replace(/\s+/g, ""), showDetail: 1 },
   });
+  const related = relatedKeywordMetrics(payload?.keywordList, keyword);
   const row = pickExactKeywordRow(payload?.keywordList, keyword);
-  if (!row) return { ok: false, reason: "no_exact_match" };
+  if (!row) return { ok: false, reason: "no_exact_match", related };
   return {
     ok: true,
     depth: numberOrNull(row.plAvgDepth),
     competition: String(row.compIdx || ""),
     monthlyPcClicks: numberOrNull(row.monthlyAvePcClkCnt),
     monthlyMobileClicks: numberOrNull(row.monthlyAveMobileClkCnt),
+    related,
   };
 }
 

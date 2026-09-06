@@ -44,7 +44,7 @@
       "publisher": {
         "@id": "https://insight.momentlabs.co.kr/#organization"
       },
-      "description": "모먼트 인사이트는 광고 성과와 KPI를 확인하는 마케팅 사이트입니다."
+      "description": "네이버·쿠팡 셀러를 위한 시장 뉴스·키워드 조사·30일 순위 추적 도구, 모먼트 인사이트."
     },
     {
       "@type": "SoftwareApplication",
@@ -55,7 +55,7 @@
       "publisher": {
         "@id": "https://insight.momentlabs.co.kr/#organization"
       },
-      "description": "마케팅 대행사와 광고주가 매출, 광고 성과, KPI, 보고서, 일정, 키워드 분석을 확인하는 B2B SaaS 대시보드입니다."
+      "description": "네이버·쿠팡 셀러가 셀러 관련 시장 뉴스를 보고, 네이버 검색광고·데이터랩 공식 데이터로 키워드를 조사하고, 광고를 제외한 오가닉 순위를 30일 동안 추적하는 B2B SaaS입니다."
     }
   ]
 }
@@ -1402,6 +1402,45 @@
     #mi-home .mi-hp-lock-row b { color: var(--mi-navy, #061a3a); font-weight: 600; }
     #mi-home .mi-hp-blur { color: #3d4658; filter: blur(3px); user-select: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     @media (max-width: 720px) { #mi-home .mi-hp-cols { grid-template-columns: 1fr; } }
+    /* 뉴스 강조(2026-09-06 5안): LIVE 띠·큰 제목·헤드라인 티커 · 기능 스펙 행 · 도입 절차 */
+    #mi-home .mi-hp-live { border: 2px solid var(--mi-navy, #061a3a); box-shadow: 0 18px 40px rgba(6, 26, 58, 0.16); }
+    #mi-home .mi-hp-live .mi-preview-top { background: var(--mi-navy, #061a3a); color: #fff; border-bottom: 0; min-height: 52px; }
+    #mi-home .mi-hp-live .mi-preview-top strong { color: #fff; font-size: 16.5px; letter-spacing: -0.01em; display: inline-flex; align-items: center; gap: 8px; }
+    #mi-home .mi-hp-live .mi-preview-top strong::before { content: "LIVE"; padding: 2px 7px; border-radius: 999px; background: #e5484d; color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: 0.06em; line-height: 1.4; }
+    #mi-home .mi-hp-live .mi-preview-top .mi-badge { background: rgba(255, 255, 255, 0.16); color: #fff; border-color: transparent; }
+    #mi-home .mi-hp-live .mi-hp-cols { padding: 0 12px; }
+    #mi-home .mi-hp-live .mi-hp-col-head { font-size: 14px; }
+    #mi-home .mi-hp-list a.is-lead .mi-hp-title { font-size: 15px; -webkit-line-clamp: 3; }
+    #mi-home .mi-hp-list a:hover .mi-hp-title { text-decoration: underline; }
+    #mi-home .mi-hp-live .mi-hp-foot, #mi-home .mi-hp-live .mi-hp-lock { margin-left: 12px; margin-right: 12px; }
+    #mi-home .mi-hp-live .mi-hp-lock { margin-bottom: 12px; }
+
+    #mi-home .mi-hp-ticker { background: var(--mi-navy, #061a3a); color: #fff; }
+    #mi-home .mi-hp-ticker[hidden] { display: none; }
+    #mi-home .mi-hp-ticker-inner { display: flex; align-items: center; gap: 14px; padding-top: 9px; padding-bottom: 9px; }
+    #mi-home .mi-hp-ticker-label { flex: 0 0 auto; font-size: 12px; font-weight: 800; letter-spacing: 0.04em; padding: 3px 10px; border-radius: 999px; background: #e5484d; }
+    #mi-home .mi-hp-ticker-viewport { flex: 1 1 auto; min-width: 0; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); mask-image: linear-gradient(90deg, transparent, #000 4%, #000 96%, transparent); }
+    #mi-home .mi-hp-ticker-track { display: inline-flex; white-space: nowrap; animation: mi-hp-scroll 70s linear infinite; }
+    #mi-home .mi-hp-ticker:hover .mi-hp-ticker-track { animation-play-state: paused; }
+    #mi-home .mi-hp-ticker-track a { color: #fff; text-decoration: none; font-size: 13.5px; padding-right: 40px; }
+    #mi-home .mi-hp-ticker-track a b { font-weight: 800; margin-right: 6px; opacity: 0.8; }
+    #mi-home .mi-hp-ticker-track a:hover { text-decoration: underline; }
+    @keyframes mi-hp-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+    @media (prefers-reduced-motion: reduce) { #mi-home .mi-hp-ticker-track { animation: none; } }
+
+    #mi-home .mi-hp-tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 0 0 22px; }
+    #mi-home .mi-hp-tool { border: 1px solid var(--mi-line, #dfe5ef); border-radius: 12px; padding: 12px 14px; background: #fff; }
+    #mi-home .mi-hp-tool b { display: block; font-size: 14.5px; color: var(--mi-navy, #061a3a); margin-bottom: 4px; }
+    #mi-home .mi-hp-tool span { font-size: 12.5px; color: var(--mi-muted, #667085); line-height: 1.5; word-break: keep-all; }
+    #mi-home .mi-hp-spec { margin: 10px 0 12px; padding: 0; display: grid; gap: 3px; }
+    #mi-home .mi-hp-spec > div { display: grid; grid-template-columns: 34px 1fr; gap: 8px; font-size: 12px; line-height: 1.45; word-break: keep-all; }
+    #mi-home .mi-hp-spec dt { font-weight: 700; opacity: 0.6; }
+    #mi-home .mi-hp-spec dd { margin: 0; }
+    #mi-home .mi-hp-steps-note { margin: 14px 0 0; font-size: 12.5px; color: var(--mi-muted, #667085); }
+    #mi-home .mi-hp-step h3 { margin: 8px 0 6px; font-size: 16px; }
+    #mi-home .mi-hp-step p { margin: 0; font-size: 13.5px; line-height: 1.55; word-break: keep-all; }
+    @media (max-width: 900px) { #mi-home .mi-hp-tools { grid-template-columns: 1fr; } }
+
     #mi-home .mi-footer {
       padding: 32px 0 40px;
       border-top: 1px solid var(--mi-line);
@@ -1865,13 +1904,26 @@
       </div>
     </section>
 
+    <div class="mi-hp-ticker" data-hp-ticker hidden aria-label="최근 셀러 뉴스 헤드라인">
+      <div class="mi-shell mi-hp-ticker-inner">
+        <span class="mi-hp-ticker-label">지금 셀러 뉴스</span>
+        <div class="mi-hp-ticker-viewport"><div class="mi-hp-ticker-track" data-hp-ticker-track></div></div>
+      </div>
+    </div>
+
     <!-- mi-feature-showcase:start -->
     <section class="mi-section compact" id="mi-home-features" data-mi-feature-showcase data-mi-showcase-privacy="synthetic-only">
       <div class="mi-shell">
         <div class="mi-section-head">
-          <span class="mi-kicker">Product Intelligence</span>
-          <h2>순위부터 시장 흐름까지, 한 번에 봅니다.</h2>
-          <p>광고를 제외한 오가닉 순위와 30일 변화, 검색 수요를 함께 확인합니다.</p>
+          <span class="mi-kicker">제공 기능</span>
+          <h2>이런 것을 합니다.</h2>
+          <p>어떤 데이터를 어디서 가져와 얼마나 자주 갱신하는지만 적었습니다. 아래 화면의 수치는 예시입니다.</p>
+        </div>
+
+        <div class="mi-hp-tools" aria-label="도구 세 가지">
+          <div class="mi-hp-tool"><b>1 · 시장 뉴스</b><span>네이버·쿠팡 셀러 관련 기사만 골라 1시간 단위로 갱신합니다. 로그인 없이 누구나 봅니다.</span></div>
+          <div class="mi-hp-tool"><b>2 · 키워드 조사</b><span>누가·언제·얼마나 검색하는지, 네이버 검색광고·데이터랩 공식 데이터로 확인합니다.</span></div>
+          <div class="mi-hp-tool"><b>3 · 30일 순위 추적</b><span>광고를 제외한 오가닉 순위를 하루 2회 기록합니다. 상품과 플레이스 모두.</span></div>
         </div>
 
         <div class="mi-suite">
@@ -1890,7 +1942,7 @@
             <section class="mi-suite-group" data-mi-showcase-group="snapshot">
               <div class="mi-suite-group-head">
                 <div><small>Data Snapshot</small><strong>현재 데이터</strong></div>
-                <p>순위·검색 수요</p>
+                <p>순위 스냅샷 · 키워드 조사</p>
               </div>
               <div class="mi-suite-grid" aria-label="현재 데이터 기능 예시">
                 <article class="mi-suite-card rank">
@@ -1901,12 +1953,17 @@
                     </div>
                     <span class="mi-suite-chip">광고 제외</span>
                   </div>
+                  <dl class="mi-hp-spec">
+                    <div><dt>출처</dt><dd>네이버 쇼핑 검색 결과를 직접 수집</dd></div>
+                    <div><dt>내용</dt><dd>키워드별 내 상품의 오가닉 순위, 원부·정확 상품 비교</dd></div>
+                    <div><dt>갱신</dt><dd>하루 2회(오전·오후), 300위까지 자동 확인</dd></div>
+                  </dl>
                   <div class="mi-suite-rank-main">
                     <div class="mi-suite-thumb" aria-hidden="true">MI</div>
                     <div>
                       <span class="mi-suite-label">예시 키워드 A · 예시 상품 A</span>
                       <strong class="mi-suite-rank-value">7위</strong>
-                      <p>자동 수집한 원부와 정확 상품을 비교해 최근 30일의 대표 오가닉 순위를 보여줍니다.</p>
+                      <p>최근 30일의 대표 오가닉 순위</p>
                     </div>
                   </div>
                   <div class="mi-suite-pills">
@@ -1919,21 +1976,26 @@
                 <article class="mi-suite-card keyword">
                   <div class="mi-suite-card-head">
                     <div>
-                      <small>Keyword Market</small>
+                      <small>Keyword Research</small>
                       <h3>키워드 시장 분석</h3>
                     </div>
                     <span class="mi-suite-chip">예시 키워드 B</span>
                   </div>
+                  <dl class="mi-hp-spec">
+                    <div><dt>출처</dt><dd>네이버 검색광고 키워드도구 · 데이터랩 · 쇼핑인사이트</dd></div>
+                    <div><dt>내용</dt><dd>월 검색수 · 클릭 · 클릭률 · 12개월 추이 · 월별/요일별 · 연령/기기/성별 · 입찰가 · 연관 키워드</dd></div>
+                    <div><dt>갱신</dt><dd>조회할 때마다 최신값, 후보 5개까지 비교</dd></div>
+                  </dl>
                   <div class="mi-suite-market-value">
                     <strong>18,400회</strong>
-                    <span>경쟁도 보통</span>
+                    <span>월 검색수 · 예시</span>
                   </div>
                   <div class="mi-suite-bars" aria-label="예시 키워드 분석 지표">
-                    <div class="mi-suite-bar"><span>검색 수요</span><i style="--mi-bar: 72%"></i><b>72</b></div>
-                    <div class="mi-suite-bar"><span>노출 경쟁</span><i style="--mi-bar: 48%"></i><b>48</b></div>
-                    <div class="mi-suite-bar"><span>SEO 기회</span><i style="--mi-bar: 66%"></i><b>66</b></div>
+                    <div class="mi-suite-bar"><span>PC</span><i style="--mi-bar: 28%"></i><b>28</b></div>
+                    <div class="mi-suite-bar"><span>모바일</span><i style="--mi-bar: 72%"></i><b>72</b></div>
+                    <div class="mi-suite-bar"><span>피크 달</span><i style="--mi-bar: 100%"></i><b>11월</b></div>
                   </div>
-                  <div class="mi-suite-pills"><span>수요 비교</span><span>SEO 후보 분류</span></div>
+                  <div class="mi-suite-pills"><span>누가 · 언제 · 얼마나</span><span>후보 비교</span></div>
                 </article>
               </div>
             </section>
@@ -1941,7 +2003,7 @@
             <section class="mi-suite-group" data-mi-showcase-group="tracking">
               <div class="mi-suite-group-head">
                 <div><small>30 Day Tracking</small><strong>30일 순위 추적</strong></div>
-                <p>상품·플레이스 변화</p>
+                <p>상품 · 플레이스 변화</p>
               </div>
               <div class="mi-suite-grid" aria-label="30일 순위 추적 기능 예시">
                 <article class="mi-suite-card trend">
@@ -1952,6 +2014,11 @@
                     </div>
                     <span class="mi-suite-chip">오전·오후 기록</span>
                   </div>
+                  <dl class="mi-hp-spec">
+                    <div><dt>출처</dt><dd>자체 수집한 순위 기록</dd></div>
+                    <div><dt>내용</dt><dd>30일 변화 그래프, 현재·최고·7일 평균, 상승·하락 표시</dd></div>
+                    <div><dt>갱신</dt><dd>하루 2회 기록, 30일 보관</dd></div>
+                  </dl>
                   <div class="mi-suite-chart" aria-hidden="true">
                     <svg viewBox="0 0 520 76" preserveAspectRatio="none">
                       <path class="grid" d="M0 18H520 M0 42H520 M0 66H520"></path>
@@ -1981,6 +2048,11 @@
                     </div>
                     <span class="mi-suite-chip">예시 매장 A</span>
                   </div>
+                  <dl class="mi-hp-spec">
+                    <div><dt>출처</dt><dd>네이버 플레이스 검색 결과</dd></div>
+                    <div><dt>내용</dt><dd>키워드별 매장 오가닉 순위, 최고 순위, 30일 변화</dd></div>
+                    <div><dt>갱신</dt><dd>하루 2회, 300위까지</dd></div>
+                  </dl>
                   <div class="mi-suite-place-rank">
                     <div><span>예시 키워드 C</span><strong>12위</strong></div>
                     <span>현재 오가닉</span>
@@ -2004,89 +2076,42 @@
     <section class="mi-section compact" id="mi-home-trust">
       <div class="mi-shell">
         <div class="mi-section-head">
-          <span class="mi-kicker">Trust Standard</span>
-          <h2>보여주는 데이터보다, 공개 기준을 먼저 관리합니다.</h2>
-          <p>광고주 화면에는 운영팀이 검수하고 공개 승인한 정보만 노출됩니다.</p>
+          <span class="mi-kicker">도입 절차</span>
+          <h2>회원가입이 없습니다. 코드로 들어옵니다.</h2>
+          <p>문의 → 접속 코드 발급 → 로그인. 카드 등록 화면이나 약관 동의 화면이 없습니다.</p>
         </div>
-
-        <div class="mi-grid-3">
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">01</span>
-              <h3>공개 전 검수</h3>
-              <p>매출, 보고서, 일정은 운영팀 확인 후 공유합니다.</p>
-            </div>
-            <div class="mi-role-list">
-              <span>수치 <strong>확인</strong></span>
-              <span>파일 <strong>검수</strong></span>
-              <span>공개 <strong>승인</strong></span>
-            </div>
+        <div class="mi-grid-3 mi-hp-steps">
+          <article class="mi-card mi-hp-step">
+            <span class="mi-card-number">1</span>
+            <h3>도입 문의</h3>
+            <p>카카오 채널로 판매 채널(네이버·쿠팡)과 추적할 키워드 수를 알려주세요.</p>
           </article>
-
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">02</span>
-              <h3>계정별 분리</h3>
-              <p>광고주는 본인 브랜드 데이터와 공개 자료만 확인합니다.</p>
-            </div>
-            <div class="mi-role-list">
-              <span>광고주 <strong>전용</strong></span>
-              <span>운영팀 <strong>분리</strong></span>
-              <span>권한 <strong>관리</strong></span>
-            </div>
+          <article class="mi-card mi-hp-step">
+            <span class="mi-card-number">2</span>
+            <h3>접속 코드 발급</h3>
+            <p>광고주 전용 접속 코드를 드립니다. 운영팀이 키워드와 상품 원부를 먼저 등록합니다.</p>
           </article>
-
-          <article class="mi-card mi-role-card">
-            <div>
-              <span class="mi-card-number">03</span>
-              <h3>근거 보관</h3>
-              <p>보고서와 순위 이력을 남겨 운영 흐름을 추적합니다.</p>
-            </div>
-            <div class="mi-role-list">
-              <span>보고서 <strong>보관</strong></span>
-              <span>순위 <strong>기록</strong></span>
-              <span>변경 <strong>확인</strong></span>
-            </div>
+          <article class="mi-card mi-hp-step">
+            <span class="mi-card-number">3</span>
+            <h3>로그인 후 바로 사용</h3>
+            <p>첫 화면은 뉴스입니다. 키워드 조회와 30일 순위 추적은 왼쪽 메뉴에서 바로 엽니다.</p>
           </article>
         </div>
+        <p class="mi-hp-steps-note">순위는 등록 다음 수집부터 쌓입니다. 과거 순위는 소급되지 않습니다.</p>
       </div>
     </section>
 
-    <section class="mi-section" id="mi-home-flow">
-      <div class="mi-shell mi-split">
-        <div class="mi-section-head">
-          <span class="mi-kicker">Workflow</span>
-          <h2>확인해야 할 순서가 정해져 있습니다.</h2>
-          <p>데이터, 보고서, 일정, 실행으로 이어집니다.</p>
-        </div>
-
-        <div class="mi-flow" aria-label="운영 흐름">
-          <div class="mi-flow-step">
-            <div><strong>성과 데이터 정리</strong><p>매출과 KPI를 모읍니다.</p></div>
-          </div>
-          <div class="mi-flow-step">
-            <div><strong>보고서와 일정 연결</strong><p>자료와 일정을 묶습니다.</p></div>
-          </div>
-          <div class="mi-flow-step">
-            <div><strong>핵심 인사이트 확인</strong><p>개선 지표를 빠르게 봅니다.</p></div>
-          </div>
-          <div class="mi-flow-step">
-            <div><strong>다음 실행 계획 공유</strong><p>다음 행동을 정리합니다.</p></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="mi-section compact" id="mi-home-start">
+    <section class="mi-section" id="mi-home-start">
       <div class="mi-shell">
         <div class="mi-cta">
           <div>
-            <h2>브랜드 성과 관리 화면을 확인해보세요.</h2>
-            <p>숫자, 보고서, 일정이 어떻게 정리되는지 확인할 수 있습니다.</p>
+            <span class="mi-kicker">시작</span>
+            <h2>지금은 뉴스만 열려 있습니다.</h2>
+            <p>키워드 조사와 30일 순위 추적은 도입 후 열립니다. 문의는 카카오 채널로 받습니다.</p>
           </div>
           <div class="mi-inline-actions">
-            <a class="mi-button primary" href="/client">대시보드 미리보기</a>
-            <a class="mi-button secondary" href="#mi-home-features">기능 다시 보기</a>
+            <a class="mi-button primary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>
+            <a class="mi-button" href="/client">광고주 로그인</a>
           </div>
         </div>
       </div>
@@ -2110,7 +2135,7 @@
     <i class="mi-kakao-icon" aria-hidden="true"></i>
     <span><b>채널 문의</b>카카오톡 상담</span>
   </a>
-  <script src="/mi-home-news.js?v=hpnews-v1-20260906" defer></script>
+  <script src="/mi-home-news.js?v=hpnews-v2-20260906" defer></script>
   <script>
     (function () {
       var banner = document.querySelector("[data-mi-dev-banner]");

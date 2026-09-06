@@ -826,8 +826,8 @@ const checks = {
     && homeDevelopmentNoticeScriptSource.includes('toggle.setAttribute("aria-expanded", String(!expanded));')
     && homeDevelopmentNoticeScriptSource.includes('toggleLabel.textContent = expanded ? "자세히" : "접기";')
     && homeDevelopmentNoticeScriptSource.includes("details.hidden = expanded;")
-    && homeSource.includes('<a class="mi-button primary" href="/client">대시보드 미리보기</a>')
-    && homeSource.includes('<a class="mi-button secondary" href="#mi-home-features">기능 다시 보기</a>'),
+    && homeSource.includes('<a class="mi-button primary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>')
+    && homeSource.includes('<a class="mi-button" href="/client">광고주 로그인</a>'),
   homePremiumHierarchyVisible: homeSource.includes("통합 마케팅 운영 플랫폼")
     && homeSource.includes("샘플 화면")
     && homeSource.includes("예시 데이터")

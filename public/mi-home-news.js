@@ -32,6 +32,13 @@
     a.appendChild(meta);
     return a;
   }
+  function sectionItems(section, limit) {
+    var list = [];
+    if (!section || section.ok === false) return list;
+    if (section.lead) list.push(section.lead);
+    (section.items || []).forEach(function (item) { list.push(item); });
+    return list.slice(0, limit);
+  }
   function renderBrand(key, section) {
     var list = panel.querySelector('[data-hp-news="' + key + '"]');
     var count = panel.querySelector('[data-hp-news-count="' + key + '"]');
@@ -45,18 +52,42 @@
       text(count, "확인 필요");
       return;
     }
-    var items = [];
-    if (section.lead) items.push({ item: section.lead, lead: true });
-    (section.items || []).slice(0, 2).forEach(function (item) { items.push({ item: item, lead: false }); });
+    var items = sectionItems(section, 3);
     if (!items.length) {
       var empty = document.createElement("p");
       empty.className = "mi-hp-empty";
       empty.textContent = "이번 주 셀러 관련 기사가 없습니다.";
       list.appendChild(empty);
     } else {
-      items.forEach(function (entry) { list.appendChild(article(entry.item, entry.lead)); });
+      items.forEach(function (item, index) { list.appendChild(article(item, index === 0)); });
     }
     text(count, "7일 " + Number(section.count7d || 0) + "건");
+  }
+  // 히어로 아래 헤드라인 티커: 네이버·쿠팡 기사 제목을 한 줄로 흘려 보여준다(두 벌 복제해 끊김 없이 순환).
+  function renderTicker(news) {
+    var ticker = document.querySelector("[data-hp-ticker]");
+    var track = ticker && ticker.querySelector("[data-hp-ticker-track]");
+    if (!ticker || !track) return;
+    var entries = [];
+    sectionItems(news.naver, 6).forEach(function (item) { entries.push({ brand: "네이버", item: item }); });
+    sectionItems(news.coupang, 6).forEach(function (item) { entries.push({ brand: "쿠팡", item: item }); });
+    if (!entries.length) return;
+    track.textContent = "";
+    for (var copy = 0; copy < 2; copy += 1) {
+      entries.forEach(function (entry) {
+        var a = document.createElement("a");
+        a.href = entry.item.link || "#";
+        a.target = "_blank";
+        a.rel = "noopener nofollow";
+        if (copy === 1) a.setAttribute("aria-hidden", "true");
+        var brand = document.createElement("b");
+        brand.textContent = entry.brand;
+        a.appendChild(brand);
+        a.appendChild(document.createTextNode(entry.item.title || ""));
+        track.appendChild(a);
+      });
+    }
+    ticker.hidden = false;
   }
   function fail() {
     renderBrand("naver", null);
@@ -70,6 +101,7 @@
       if (!news) return fail();
       renderBrand("naver", news.naver);
       renderBrand("coupang", news.coupang);
+      renderTicker(news);
       text(updated, news.updatedAt ? minutesAgo(news.updatedAt) : "갱신 시각 확인 중");
     })
     .catch(fail);

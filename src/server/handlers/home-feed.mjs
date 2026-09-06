@@ -150,17 +150,26 @@ export function passesCommerceGate(title, description) {
 // 질의 순서를 우선하고, 같은 질의 안에서는 API 반환 순서(=관련도)를 우선한다.
 // 그 다음 중복을 제거한다. 결과 배열의 0번이 곧 관련도 1위다.
 // 같은 사건을 다르게 쓴 제목(같은 보도자료를 받아쓴 기사 여러 건)을 한 건만 남긴다. 낱말 겹침 비율 ≥ 0.5 = 같은 기사.
-const TITLE_STOP_RE = /^(네이버|쿠팡|기사|뉴스|단독|속보|기획|종합)/;
-export function titleTokens(title) {
-  return new Set(String(title || "").toLowerCase().replace(/[^0-9a-z가-힣\s]/g, " ").split(/\s+/).filter((token) => token.length >= 2 && !TITLE_STOP_RE.test(token)));
+const TITLE_STOP_RE = /^(네이버|쿠팡|11번가|g마켓|지마켓|옥션|기사|뉴스|단독|속보|기획|종합)/;
+const TITLE_PARTICLE_RE = /(에서|으로|에게|부터|까지|서|에|은|는|이|가|을|를|도|로|와|과)$/;
+function normalizeToken(token) {
+  let text = String(token || "").replace(/챗gpt/g, "chatgpt");
+  if (text.length > 2) text = text.replace(TITLE_PARTICLE_RE, "");
+  return text;
 }
-export function similarTitles(a, b) {
+export function titleTokens(title) {
+  return new Set(String(title || "").toLowerCase().replace(/[^0-9a-z가-힣\s]/g, " ").split(/\s+/).map(normalizeToken).filter((token) => token.length >= 2 && !TITLE_STOP_RE.test(token)));
+}
+// 같은 날 나온 기사는 낱말 2개만 겹쳐도 같은 보도자료로 본다(다른 날이면 3개).
+export function similarTitles(a, b, aMs = NaN, bMs = NaN) {
   const left = titleTokens(a);
   const right = titleTokens(b);
   if (left.size < 3 || right.size < 3) return false;
   let shared = 0;
   for (const token of left) if (right.has(token)) shared += 1;
-  return shared >= 3 && shared / Math.min(left.size, right.size) >= 0.5;
+  const sameDay = Number.isFinite(aMs) && Number.isFinite(bMs) && Math.abs(aMs - bMs) < 24 * 60 * 60 * 1000;
+  const need = sameDay ? 2 : 3;
+  return shared >= need && shared / Math.min(left.size, right.size) >= 0.5;
 }
 
 export function collectArticles(brand, groups, nowMs) {
@@ -178,7 +187,7 @@ export function collectArticles(brand, groups, nowMs) {
       const key = dedupeKey(title);
       if (!key || seen.has(key)) return;
       seen.add(key);
-      if (articles.some((kept) => similarTitles(kept.title, title))) return;
+      if (articles.some((kept) => similarTitles(kept.title, title, kept.publishedMs, publishedMs))) return;
       const link = String(item?.originallink || item?.link || "");
       articles.push({
         title,

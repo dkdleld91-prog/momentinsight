@@ -51,7 +51,12 @@ export const COUPANG_NEWS_QUERIES = [
 const COMMERCE_CONTEXT_RE = /셀러|판매자|입점|수수료|정산|물류|배송|풀필먼트|커머스|쇼핑|마켓플레이스|이커머스|스마트스토어|오픈마켓|유통|납품|가격비교|검색 ?광고|공정위|거래액|플랫폼/;
 const COMMERCE_EXCLUDE_RE = /드라마|배우|영화|예능|OTT|아이돌|가수|앨범|콘서트|시청률|야구|축구|파병|국방|외교|로또|코인|쿠팡이츠|쿠팡플레이|와우 ?히어로|쿠팡친구|쿠팡맨|도로|개통|화재 진압|최대 \d+% ?할인|할인전|기념 이벤트/;
 // 11번가·G마켓(오픈마켓) — 2026-09-06 대표 요청. 셀러 영향 기사만(쿠팡과 같은 셀러 문맥·PR 배제 규칙).
-export const OPENMARKET_NEWS_QUERIES = ['"11번가" 셀러', '"11번가" 판매자', '"11번가" 수수료', '"11번가" 정산', '"G마켓" 셀러', '"G마켓" 판매자', '"G마켓" 수수료', '"지마켓" 정산'];
+// 2026-09-07: 전체보기(/news)에서 11번가·G마켓을 나눠 보이도록 각각 수집한다. 홈 패널·로그인 화면의 "11번가 · G마켓" 칸은 둘을 합친 openmarket 을 그대로 쓴다.
+export const ELEVENST_NEWS_QUERIES = ['"11번가" 셀러', '"11번가" 판매자', '"11번가" 수수료', '"11번가" 정산'];
+export const GMARKET_NEWS_QUERIES = ['"G마켓" 셀러', '"G마켓" 판매자', '"G마켓" 수수료', '"지마켓" 정산'];
+export const OPENMARKET_NEWS_QUERIES = [...ELEVENST_NEWS_QUERIES, ...GMARKET_NEWS_QUERIES];
+const ELEVENST_TITLE_RE = /11번가/;
+const GMARKET_TITLE_RE = /G마켓|지마켓|옥션/;
 const OPENMARKET_TITLE_RE = /11번가|G마켓|지마켓|옥션/;
 const NAVER_TITLE_RE = /네이버|스마트스토어/;
 const COUPANG_SELLER_RE = /셀러|판매자|입점|수수료|정산|납품|마켓플레이스|공정위|규제|법안|검색|노출|리뷰|광고|가격|플랫폼|이커머스|커머스|유통업계|점유율|거래액/;
@@ -136,6 +141,12 @@ export function passesBrandTitleGate(brand, title) {
   }
   if (brand === "openmarket") {
     return OPENMARKET_TITLE_RE.test(text) && COUPANG_SELLER_RE.test(text) && !COUPANG_PR_RE.test(text);
+  }
+  if (brand === "elevenst") {
+    return ELEVENST_TITLE_RE.test(text) && COUPANG_SELLER_RE.test(text) && !COUPANG_PR_RE.test(text);
+  }
+  if (brand === "gmarket") {
+    return GMARKET_TITLE_RE.test(text) && COUPANG_SELLER_RE.test(text) && !COUPANG_PR_RE.test(text);
   }
   return false;
 }
@@ -446,14 +457,18 @@ async function loadNewsSection(config, nowMs) {
   const cached = cacheRead(newsCache, cacheKey, NEWS_CACHE_TTL_MS, nowMs);
   if (cached.fresh) return cached.fresh;
   try {
-    const [naverGroups, coupangGroups, openmarketGroups] = await Promise.all([
+    const [naverGroups, coupangGroups, elevenstGroups, gmarketGroups] = await Promise.all([
       Promise.all(NAVER_NEWS_QUERIES.map((query) => searchNews(config, query, 30).catch(() => []))),
       Promise.all(COUPANG_NEWS_QUERIES.map((query) => searchNews(config, query, 30).catch(() => []))),
-      Promise.all(OPENMARKET_NEWS_QUERIES.map((query) => searchNews(config, query, 30).catch(() => []))),
+      Promise.all(ELEVENST_NEWS_QUERIES.map((query) => searchNews(config, query, 30).catch(() => []))),
+      Promise.all(GMARKET_NEWS_QUERIES.map((query) => searchNews(config, query, 30).catch(() => []))),
     ]);
     const naver = buildBrandSection("naver", naverGroups, nowMs);
     const coupang = buildBrandSection("coupang", coupangGroups, nowMs);
-    const openmarket = buildBrandSection("openmarket", openmarketGroups, nowMs);
+    const elevenst = buildBrandSection("elevenst", elevenstGroups, nowMs);
+    const gmarket = buildBrandSection("gmarket", gmarketGroups, nowMs);
+    // 합본(11번가 · G마켓): 홈 패널·로그인 화면 칸용. 추가 호출 없이 같은 결과를 다시 거른다.
+    const openmarket = buildBrandSection("openmarket", [...elevenstGroups, ...gmarketGroups], nowMs);
     if (!naver.count7d && !coupang.count7d && !openmarket.count7d && cached.stale) return cached.stale;
     return cacheWrite(newsCache, cacheKey, {
       ok: true,
@@ -461,6 +476,8 @@ async function loadNewsSection(config, nowMs) {
       naver,
       coupang,
       openmarket,
+      elevenst,
+      gmarket,
     }, nowMs);
   } catch (error) {
     if (cached.stale) return cached.stale;

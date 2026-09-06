@@ -108,6 +108,10 @@ test("openmarket titles need 11번가/G마켓 plus seller context", () => {
   assert.equal(passesBrandTitleGate("openmarket", "G마켓, 판매자 정산 주기 단축"), true);
   assert.equal(passesBrandTitleGate("openmarket", "11번가 신사옥 이전"), false);
   assert.equal(passesBrandTitleGate("openmarket", "쿠팡 입점 셀러 수수료 조정"), false);
+  assert.equal(passesBrandTitleGate("elevenst", "11번가 입점 셀러 수수료 인하"), true);
+  assert.equal(passesBrandTitleGate("elevenst", "G마켓, 판매자 정산 주기 단축"), false);
+  assert.equal(passesBrandTitleGate("gmarket", "G마켓, 판매자 정산 주기 단축"), true);
+  assert.equal(passesBrandTitleGate("gmarket", "11번가 입점 셀러 수수료 인하"), false);
 });
 
 test("commerce gate requires context and rejects entertainment or delivery-brand noise", () => {

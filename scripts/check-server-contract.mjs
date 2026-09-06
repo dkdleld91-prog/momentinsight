@@ -16,7 +16,7 @@ const files = {
   ownerTool: "src/server/handlers/owner-tool-api.mjs",
   ownerToolAdapter: "api/owner/tool.mjs",
   personalAssistant: "src/server/handlers/personal-assistant-api.mjs",
-  personalAssistantAdapter: "api/my/assistant-chat.mjs",
+  personalAssistantAdapter: "api/my/[resource].mjs", // 2026-09-06 /api/my/* 를 동적 함수 하나로 통합(함수 상한 12)
   sessionAdapter: "api/session.mjs",
   responseAdapter: "api/_response-adapter.mjs",
   runtime: "src/server/runtime.mjs",
@@ -592,7 +592,7 @@ check(
     /claude-haiku-4-5/,
   ]) && hasAll(personalAssistantAdapter, [
     /createHandler/,
-    /createHandler\("\/api\/my\/assistant-chat"\)/,
+    /createHandler\(`\/api\/my\/\$\{resource\}`\)/,
   // 개인 비서는 브라우저가 보낸 스냅샷만 본다. 서버가 일정 행을 직접 읽는 순간
   // 다른 계정의 행이 프롬프트로 새는 경로가 생기므로 그 부재를 계약으로 못 박는다.
   ]) && !/supabaseAdmin\.from\(|schedule_items/.test(personalAssistant),

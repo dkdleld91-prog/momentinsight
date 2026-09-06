@@ -713,6 +713,12 @@ export async function handleHomeFeedRequest(request, ctx) {
 
 const homeFeedFetch = withSupabase({ auth: "none" }, handleHomeFeedRequest);
 
+
+// 공개 홈페이지용: 세션 없이 플랫폼 뉴스만 돌려준다(광고주 데이터 없음). api/public/[resource].mjs 가 직접 호출한다.
+export async function loadPublicMarketNews(nowMs = Date.now()) {
+  return loadNewsSection(naverApiProviderConfig(process.env), nowMs);
+}
+
 export default {
   fetch(request) {
     if (request.method === "OPTIONS") {

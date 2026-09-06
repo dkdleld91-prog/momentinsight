@@ -18,11 +18,11 @@
     "api/owner/google-calendar.mjs": {
       "maxDuration": 60
     },
-    "api/my/google-calendar.mjs": {
+    "api/my/*.mjs": {
       "maxDuration": 60
     },
-    "api/my/assistant-chat.mjs": {
-      "maxDuration": 60
+    "api/public/*.mjs": {
+      "maxDuration": 30
     },
     "api/client/*.mjs": {
       "maxDuration": 60

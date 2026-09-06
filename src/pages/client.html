@@ -8204,6 +8204,12 @@
         var box = root.querySelector("[data-keyword-yoy]");
         if (!box) return;
         var series = Array.isArray(data.series) ? data.series.map(keywordNumber) : [];
+        // 진행 중인 이번 달은 값이 덜 쌓여 전년 대비·저점이 급락처럼 보인다. 완결된 달까지만 비교한다.
+        var periods = Array.isArray(data.seriesPeriods) ? data.seriesPeriods : [];
+        var now = new Date();
+        var currentPeriod = now.getFullYear() + "-" + String(now.getMonth() + 1).replace(/^(\d)$/, "0$1");
+        if (periods.length === series.length && String(periods[periods.length - 1] || "").indexOf(currentPeriod) === 0) series = series.slice(0, -1);
+        else if (series.length >= 3 && series[series.length - 1] < series[series.length - 2] * 0.4) series = series.slice(0, -1);
         if (series.length < 24) { box.hidden = true; return; }
         var last12 = series.slice(-12);
         var prev12 = series.slice(-24, -12);
@@ -8213,7 +8219,7 @@
         var sameMonth = prev12[11];
         var sameMonthPct = sameMonth > 0 ? ((current - sameMonth) / sameMonth) * 100 : NaN;
         setKeywordText('[data-keyword-yoy="sameMonth"]', keywordSigned(sameMonthPct));
-        setKeywordText('[data-keyword-yoy="sameMonthNote"]', sameMonth > 0 ? "작년 " + formatNumber(Math.round(sameMonth)) + " → 올해 " + formatNumber(Math.round(current)) + " · " + unit : "비교 데이터 없음");
+        setKeywordText('[data-keyword-yoy="sameMonthNote"]', sameMonth > 0 ? "작년 같은 달 " + formatNumber(Math.round(sameMonth)) + " → 최근 완결 월 " + formatNumber(Math.round(current)) + " · " + unit : "비교 데이터 없음");
         var peakNow = Math.max.apply(null, last12);
         var peakPrev = Math.max.apply(null, prev12);
         var peakPct = peakPrev > 0 ? ((peakNow - peakPrev) / peakPrev) * 100 : NaN;

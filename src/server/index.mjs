@@ -23,6 +23,7 @@ const handlerLoaders = {
   naverKeyword: () => import("./handlers/naver-keyword.mjs"),
   naverProductSeoAudit: () => import("./handlers/naver-product-seo-audit.mjs"),
   naverPlaceRankCron: () => import("./handlers/naver-place-rank-cron.mjs"),
+  accountExpiryCron: () => import("./handlers/account-expiry-cron.mjs"),
   naverPlaceRankTrackers: () => import("./handlers/naver-place-rank-trackers.mjs"),
   naverRankCron: () => import("./handlers/naver-rank-cron.mjs"),
   naverRankTrackers: () => import("./handlers/naver-rank-trackers.mjs"),
@@ -156,6 +157,11 @@ async function routeRequest(request) {
 
     if (url.pathname === "/api/naver-place-rank-cron") {
       return dispatch("naverPlaceRankCron", request);
+    }
+
+    // 이용 기간 만료 + 유예 5일 지난 광고주 데이터 정리(대표 결정 2026-09-07). 크론 비밀키로만 열린다.
+    if (url.pathname === "/api/account-expiry-cron") {
+      return dispatch("accountExpiryCron", request);
     }
 
     if (url.pathname === "/api/meta-ads") {

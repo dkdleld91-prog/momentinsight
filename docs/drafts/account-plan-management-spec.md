@@ -25,8 +25,8 @@
 - 광고주(`client.html`): 사이드바 로그아웃 위에 "이용 기간 · D-12 (09/19까지)" / "무기한" / 체험은 "체험 계정" 칩 그대로. D-3 이내: 하루 한 번 팝업(제목 "이용 기간이 N일 남았습니다", 만료일, "만료 후 5일 안에 연장하지 않으면 계정과 데이터가 삭제됩니다", "연장 문의는 카카오톡 채널" 버튼). 만료 후: 모든 화면 위 띠 "이용 기간이 끝났습니다 · N일 안에 연장하지 않으면 데이터가 삭제됩니다 · 연장 문의 카카오톡 채널".
 - 총관리자(`admin.html` 대행사 연결 화면): 상단 검색칸(운영팀·광고주 이름·코드·구글 이메일), 각 카드에 구글 이메일 줄, 광고주 카드에 플랜 줄(플랜 · 만료일 · D-n, 만료 임박 붉게) + 기간(일) 입력 + 플랜 선택 + [오픈·연장] + 만료일 직접 지정 + [무기한], 새 카드 "무료 체험 계정"(이메일·가입일·오늘 조회) + [정식 전환](광고주명·플랜·기간·한도 입력).
 
-## 5. 2단계 (별도 승인 필요 — 순위 표 삭제)
-- 일 1회 크론 `/api/account-expiry-cron`(캐치올 단일 경로): `delete_due` 광고주의 데이터 삭제 — 조사 노트·체험 한도·login_identities·clients 행 + **naver_rank_trackers/snapshots(순위 표)**. 삭제 전 감사 로그. 총관리자 화면에 "삭제 예정 N일 후" 표시.
+## 5. 2단계 — 유예 뒤 데이터 삭제 (대표 결정 2026-09-07 "살릴 필요 없음, 서버·저장공간만 무거워짐" → 실행 승인)
+- 일 1회 Vercel 크론 `/api/account-expiry-cron`(매일 03:30 KST, `Authorization: Bearer CRON_SECRET`, 세션 무관): `src/server/handlers/account-expiry-cron.mjs`. `plan_expires_at + 5일 < now` 이고 planStatus 가 `delete_due` 인 광고주(총관리자 코드 제외, 한 번에 20개)를 지운다 — 순서: naver_rank_trackers → naver_place_rank_trackers(스냅샷 FK cascade) → keyword_research_notes → login_identities(role client) → trial_keyword_quota(그 구글 sub) → clients 행(brands·reports·kpi 등 cascade, 운영팀 client_id set null) → audit_logs `client.deleted_after_grace`. 한 단계라도 실패하면 계정 행은 남겨 다음 날 재시도. `?dryRun=1` 은 대상만 보고, `MI_ACCOUNT_EXPIRY_DELETE_DISABLED=true` 면 항상 dryRun. 복구 기능은 두지 않는다.
 
 ## 6. 검증
 - 단위: account-plan(planStatus 경계), super-admin-api(set-plan/open-trial), code-session-api(session.plan), session-gate(PLAN_EXPIRED). 실측: 총관리자 화면에서 체험 계정 정식 전환 → 광고주 화면 D-day 표시 → 만료일을 오늘로 지정해 팝업·띠 확인.

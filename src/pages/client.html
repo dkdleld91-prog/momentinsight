@@ -261,6 +261,36 @@
       accent-color: var(--mi-navy-2);
     }
 
+    /* 가입 경로(대표 지시 2026-09-07): 코드 접속 아래에 "무료 체험 가입" 블록을 따로 둔다. */
+    #mi-clean .mi-login-divider {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 18px;
+      color: var(--mi-muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    #mi-clean .mi-login-divider::before,
+    #mi-clean .mi-login-divider::after { content: ""; flex: 1; height: 1px; background: var(--mi-line); }
+    #mi-clean .mi-login-signup {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      padding: 16px;
+      border: 1px solid var(--mi-line);
+      border-radius: 10px;
+      background: #fff;
+    }
+    #mi-clean .mi-login-signup strong { color: var(--mi-navy); font-size: 15px; }
+    #mi-clean .mi-login-signup p { margin: 0; color: var(--mi-muted); font-size: 13px; line-height: 1.55; }
+    #mi-clean .mi-login-signup small { color: var(--mi-muted); font-size: 11px; line-height: 1.5; }
+    #mi-clean .mi-login-signup small a { color: inherit; }
+    #mi-clean .mi-login-signup[hidden],
+    #mi-clean .mi-login-divider[hidden] { display: none; }
+    #mi-clean .mi-login-card.is-signup .mi-login-signup { border-color: var(--mi-navy); box-shadow: 0 0 0 3px rgba(6, 26, 58, 0.08); }
+
     #mi-clean .mi-kakao-floating {
       position: fixed;
       right: 22px;
@@ -6160,9 +6190,17 @@
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.</div>
-          <button class="mi-button is-ghost" type="button" data-google-login-start>Google로 시작하기 · 무료 체험</button>
-          <small class="mi-login-google-note">처음이면 체험 계정이 열립니다(키워드 조회 하루 5회) · 연결해 둔 계정은 바로 로그인</small>
+          <button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>
+          <small class="mi-login-google-note">연결해 둔 계정은 바로 로그인 · 처음이면 체험 계정으로 열립니다</small>
           <label class="mi-login-persist"><input type="checkbox" data-google-login-persist />자동 로그인 · 이 기기에서 30일 유지</label>
+        </div>
+        <!-- 가입 경로(대표 지시 2026-09-07): 구글 계정으로 가입하면 체험 계정(키워드 조회 하루 5회)이 바로 열린다. -->
+        <div class="mi-login-divider" data-client-signup-divider aria-hidden="true">처음이신가요?</div>
+        <div class="mi-login-signup" data-client-signup>
+          <strong>무료 체험 가입</strong>
+          <p>구글 계정으로 가입하면 키워드 조회를 하루 5회 쓸 수 있습니다. 순위 추적 등 전체 기능은 도입 후 열립니다.</p>
+          <button class="mi-button" type="button" data-google-signup-start>Google로 가입하고 시작하기</button>
+          <small>가입하면 구글 계정의 이메일이 저장됩니다 · <a href="/privacy" target="_blank" rel="noopener">개인정보 처리방침</a> · 위의 "자동 로그인" 체크가 함께 적용됩니다</small>
         </div>
       </aside>
     </div>
@@ -12896,9 +12934,12 @@
             loginCode.setAttribute("aria-hidden", "true");
           }
           if (loginButton) loginButton.textContent = "운영팀 화면으로 이동";
+          // 운영팀 모드에서는 광고주 체험 가입 블록을 접는다.
+          root.querySelectorAll("[data-client-signup], [data-client-signup-divider]").forEach(function (node) { node.hidden = true; });
           setStatus(loginStatus, "운영팀 화면에서 운영팀 또는 총관리자 코드를 입력합니다.", "");
           return;
         }
+        root.querySelectorAll("[data-client-signup], [data-client-signup-divider]").forEach(function (node) { node.hidden = false; });
 
         if (loginKicker) loginKicker.textContent = "광고주 전용";
         if (loginTitle) loginTitle.textContent = "대행사 코드 접속";
@@ -12922,17 +12963,38 @@
       setClientLoginMode("client");
 
       var googleLoginStartButton = root.querySelector("[data-google-login-start]");
+      var googleSignupStartButton = root.querySelector("[data-google-signup-start]");
       var googleLoginPersist = root.querySelector("[data-google-login-persist]");
-      if (googleLoginStartButton) {
-        googleLoginStartButton.addEventListener("click", function () {
-          // 목적지는 두 개의 고정 주소 중 하나다 — 주소를 문자열로 잇지 않는다.
-          // mode=trial: 연결해 둔 계정은 그대로 로그인, 처음 보는 구글 계정은 체험 계정으로 연다(대표 승인 2026-09-07).
-          if (googleLoginPersist && googleLoginPersist.checked === true) {
-            window.location.href = "/api/google-login/start?mode=trial&persist=1";
-            return;
-          }
-          window.location.href = "/api/google-login/start?mode=trial";
-        });
+      // 로그인 버튼과 가입 버튼은 같은 구글 시작 주소로 간다. 연결해 둔 계정은 그 역할로 로그인되고,
+      // 처음 보는 구글 계정은 체험 계정으로 열린다(대표 승인 2026-09-07). 둘은 문구만 다르다.
+      function startGoogleLogin() {
+        // 목적지는 두 개의 고정 주소 중 하나다 — 주소를 문자열로 잇지 않는다.
+        if (googleLoginPersist && googleLoginPersist.checked === true) {
+          window.location.href = "/api/google-login/start?mode=trial&persist=1";
+          return;
+        }
+        window.location.href = "/api/google-login/start?mode=trial";
+      }
+      if (googleLoginStartButton) googleLoginStartButton.addEventListener("click", startGoogleLogin);
+      if (googleSignupStartButton) googleSignupStartButton.addEventListener("click", startGoogleLogin);
+
+      // 홈의 "무료 체험 가입" 은 /client?signup=1 로 들어온다. 가입 블록을 앞세우고 주소는 정리한다.
+      function consumeSignupIntent() {
+        try {
+          if (root.classList.contains("is-authed") || secureClientSession.role) return;
+          var pageUrl = new URL(window.location.href);
+          if (pageUrl.searchParams.get("signup") !== "1") return;
+          var card = root.querySelector(".mi-login-card");
+          if (card) card.classList.add("is-signup");
+          if (loginKicker) loginKicker.textContent = "무료 체험 가입";
+          if (loginTitle) loginTitle.textContent = "구글로 가입하고 바로 시작";
+          if (loginDesc) loginDesc.textContent = "키워드 조회 하루 5회는 지금 바로, 전체 기능은 도입 후 열립니다. 접속 코드를 받으셨다면 코드로 들어오세요.";
+          pageUrl.searchParams.delete("signup");
+          var cleanQuery = pageUrl.searchParams.toString();
+          window.history.replaceState(null, "", pageUrl.pathname + (cleanQuery ? "?" + cleanQuery : "") + pageUrl.hash);
+          var signup = root.querySelector("[data-client-signup]");
+          if (signup && typeof signup.scrollIntoView === "function") signup.scrollIntoView({ block: "center" });
+        } catch (error) {}
       }
 
       // ── 구글 로그인 연동 안내 팝업 글루 ─────────────────────
@@ -14360,6 +14422,7 @@
         setStatus(loginStatus, "세션 연결을 확인하지 못했습니다. 기존 인증은 유지하며 잠시 후 다시 확인해주세요.", "is-warn");
       }).then(function (restored) {
         if (restored !== true) consumeLoginGoogleNotice();
+        if (restored !== true) consumeSignupIntent();
         // 홈 피드는 로그인 복원 뒤에 붙는다. 실패해도 초기화 흐름을 막지 않는다.
         try {
           if (restored === true) refreshHomeFeed();

@@ -22,7 +22,7 @@ const PAGES = [["admin.html", adminSource, "#mi-admin"], ["client.html", clientS
 // 광고주 화면의 구글 버튼은 체험 가입 진입점을 겸한다(대표 승인 2026-09-07). 총관리자 화면은 연결된 계정만 로그인한다.
 const GOOGLE_COPY = {
   "admin.html": { button: "Google 계정으로 로그인", note: "연결해 둔 계정만 로그인됩니다", start: '"/api/google-login/start"', persist: '"/api/google-login/start?persist=1"' },
-  "client.html": { button: "Google로 시작하기 · 무료 체험", note: "처음이면 체험 계정이 열립니다(키워드 조회 하루 5회) · 연결해 둔 계정은 바로 로그인", start: '"/api/google-login/start?mode=trial"', persist: '"/api/google-login/start?mode=trial&persist=1"' },
+  "client.html": { button: "Google 계정으로 로그인", note: "연결해 둔 계정은 바로 로그인 · 처음이면 체험 계정으로 열립니다", start: '"/api/google-login/start?mode=trial"', persist: '"/api/google-login/start?mode=trial&persist=1"' },
 };
 
 function occurrences(source, needle) {

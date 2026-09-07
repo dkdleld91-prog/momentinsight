@@ -48,6 +48,11 @@
       gtag("event", "inquiry_click", { place: place(link), label: "email" });
       return;
     }
+    // 가입 경로(2026-09-07): 홈의 "무료 체험 가입" 은 /client?signup=1 로 간다. 로그인 클릭과 따로 센다.
+    if (/[?&]signup=1(?:&|$)/.test(href)) {
+      gtag("event", "signup_click", { place: place(link), label: text });
+      return;
+    }
     if (href === "/client" || href.indexOf("/client") === 0) {
       gtag("event", "login_click", { place: place(link), role: "client" });
       return;

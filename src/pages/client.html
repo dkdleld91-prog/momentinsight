@@ -6145,7 +6145,7 @@
       box-shadow: var(--mi-shadow);
     }
     #mi-clean.is-trial .mi-trial-lock.is-compact { padding: 16px 18px; max-width: none; }
-    #mi-clean .mi-trial-lock .mi-kicker { color: var(--mi-orange); }
+    #mi-clean .mi-trial-lock .mi-kicker { color: var(--mi-orange); justify-self: start; }
     #mi-clean .mi-trial-lock h3 { margin: 0; font-size: 18px; letter-spacing: -0.02em; color: var(--mi-navy); }
     #mi-clean .mi-trial-lock ul { margin: 0; padding-left: 18px; color: var(--mi-ink); font-size: 14px; line-height: 1.6; }
     #mi-clean .mi-trial-lock p { margin: 0; color: var(--mi-muted); font-size: 13px; line-height: 1.55; }
@@ -6196,7 +6196,21 @@
     #mi-clean .mi-plan-bar strong { color: var(--mi-navy); font-size: 14px; }
     #mi-clean .mi-plan-bar-desc { flex: 1 1 320px; color: var(--mi-muted); font-size: 12px; line-height: 1.5; }
     #mi-clean .mi-plan-bar a.mi-button { margin-left: auto; text-decoration: none; white-space: nowrap; }
-    #mi-clean .mi-trial-modal .mi-trial-lock { display: grid; margin: 0; width: min(560px, 100%); position: relative; }
+    /* 모달 카드는 체험(.is-trial) 여부와 상관없이 카드 모양을 갖는다 — 이용 기간 안내 팝업이 정식 광고주에게
+       배경·여백 없이 글자만 떠 보이던 결함(2026-09-07 대표 보고). */
+    #mi-clean .mi-trial-modal .mi-trial-lock {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      width: min(560px, 100%);
+      max-width: none;
+      position: relative;
+      padding: 22px 24px;
+      border: 1px solid var(--mi-line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-gold-soft) 100%);
+      box-shadow: var(--mi-shadow);
+    }
     #mi-clean .mi-trial-modal-close {
       position: absolute;
       top: 10px;

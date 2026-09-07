@@ -11371,6 +11371,11 @@
     #mi-admin .mi-account-plan-row .mi-plan-name-input { width: 160px; }
     #mi-admin .mi-account-plan-row .mi-plan-select { width: auto; min-width: 96px; text-align: left; }
     #mi-admin .mi-account-plan-row .mi-plan-date { width: 150px; text-align: left; }
+    #mi-admin .mi-plan-label { color: var(--mi-muted); font-size: 12px; font-weight: 800; }
+    #mi-admin .mi-plan-msg { flex-basis: 100%; font-size: 12px; font-weight: 700; color: var(--mi-muted); }
+    #mi-admin .mi-plan-msg:empty { display: none; }
+    #mi-admin .mi-plan-msg.is-ok { color: var(--mi-green); }
+    #mi-admin .mi-plan-msg.is-warn { color: var(--mi-orange); }
 
   </style>
 
@@ -17923,21 +17928,43 @@
           }).join("") + '</select>';
       }
 
+      // 연장 일수는 고르기만 하면 되게 30·60·90·120일 보기로 둔다(대표 피드백 2026-09-07). 계정에 다른 일수가 저장돼 있으면 그 값도 보기에 넣는다.
+      function ownerPlanDaysSelect(attribute, code, selected) {
+        var presets = [30, 60, 90, 120];
+        var current = Number(selected) || 30;
+        var options = presets.indexOf(current) === -1 ? presets.concat([current]).sort(function (a, b) { return a - b; }) : presets;
+        return '<select class="mi-input mi-quota-input mi-plan-select" aria-label="연장 일수" ' + attribute + '="' + escapeHtml(code) + '">' +
+          options.map(function (days) {
+            return '<option value="' + days + '"' + (days === current ? ' selected' : '') + '>' + days + '일</option>';
+          }).join("") + '</select>';
+      }
+
       function ownerPlanControl(client) {
         var code = String(client && client.agencyCode || "");
         if (!code) return "";
         var plan = client.plan || {};
-        var days = plan.days || 30;
-        return '<label class="mi-account-slot-quota"><span>기간(일)</span>' +
-          '<input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="3650" step="1" value="' + escapeHtml(String(days)) +
-          '" aria-label="이용 기간 일수" data-owner-plan-days="' + escapeHtml(code) + '" /></label>' +
+        var active = Boolean(plan.state && plan.state !== "none");
+        return '<span class="mi-plan-label">연장</span>' +
+          ownerPlanDaysSelect("data-owner-plan-days", code, plan.days || 30) +
+          '<button class="mi-button mi-button-small" type="button" data-owner-plan-extend="' + escapeHtml(code) + '">' + (active ? "연장하기" : "오픈하기") + '</button>' +
+          '<span class="mi-plan-label">플랜</span>' +
           ownerPlanSelect("data-owner-plan-name", code, plan.name || "basic") +
-          '<button class="mi-button mi-button-small" type="button" data-owner-plan-extend="' + escapeHtml(code) + '">' + (plan.state && plan.state !== "none" ? "연장" : "오픈") + '</button>' +
+          '<span class="mi-plan-label">만료일</span>' +
           '<input class="mi-input mi-quota-input mi-plan-date" type="date" aria-label="만료일 직접 지정" data-owner-plan-until="' + escapeHtml(code) + '" />' +
           '<button class="mi-button mi-button-small" type="button" data-owner-plan-set="' + escapeHtml(code) + '">만료일 지정</button>' +
-          (plan.state && plan.state !== "none"
+          (active
             ? '<button class="mi-button mi-button-small is-ghost" type="button" data-owner-plan-clear="' + escapeHtml(code) + '">무기한</button>'
-            : '');
+            : '') +
+          '<span class="mi-plan-msg" data-owner-plan-msg="' + escapeHtml(code) + '" aria-live="polite"></span>';
+      }
+
+      // 결과 문구를 그 카드 줄에 바로 적는다(맨 위 상태 줄은 멀어서 안 보인다).
+      function showOwnerPlanMessage(code, slot, text, type) {
+        var node = code ? root.querySelector('[data-owner-plan-msg="' + code + '"]') : null;
+        if (!node && slot) node = slot.querySelector("[data-owner-plan-msg]");
+        if (!node) return;
+        node.textContent = text || "";
+        node.className = "mi-plan-msg" + (type ? " " + type : "");
       }
 
       function ownerSearchText(parts) {
@@ -17967,10 +17994,11 @@
             '<div class="mi-account-slot-actions"><span class="mi-status-pill is-warn">체험</span></div>' +
             '<div class="mi-account-plan-row">' +
             '<input class="mi-input mi-quota-input mi-plan-name-input" type="text" placeholder="광고주명" aria-label="광고주명" data-owner-trial-name="' + escapeHtml(sub) + '" />' +
-            '<label class="mi-account-slot-quota"><span>기간(일)</span><input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="3650" step="1" value="30" aria-label="이용 기간 일수" data-owner-trial-days="' + escapeHtml(sub) + '" /></label>' +
-            ownerPlanSelect("data-owner-trial-plan", sub, "basic") +
+            '<span class="mi-plan-label">기간</span>' + ownerPlanDaysSelect("data-owner-trial-days", sub, 30) +
+            '<span class="mi-plan-label">플랜</span>' + ownerPlanSelect("data-owner-trial-plan", sub, "basic") +
             '<label class="mi-account-slot-quota"><span>키워드 한도</span><input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="1000" step="1" placeholder="기본 50" aria-label="키워드 등록 한도" data-owner-trial-limit="' + escapeHtml(sub) + '" /></label>' +
-            '<button class="mi-button mi-button-small" type="button" data-owner-trial-open="' + escapeHtml(sub) + '">정식 전환</button></div></div>';
+            '<button class="mi-button mi-button-small" type="button" data-owner-trial-open="' + escapeHtml(sub) + '">정식 전환</button>' +
+            '<span class="mi-plan-msg" data-owner-plan-msg="" aria-live="polite"></span></div></div>';
         }).join("");
       }
 
@@ -20844,10 +20872,12 @@
           body = { action: "open-trial", googleSub: googleSub, name: clientName, planDays: field("[data-owner-trial-days]") || undefined, planName: field("[data-owner-trial-plan]") || undefined, rankKeywordLimit: field("[data-owner-trial-limit]") || undefined };
           working = "체험 계정을 정식 광고주로 전환 중입니다.";
         }
+        var messageCode = body.action === "open-trial" ? "" : String(body.agencyCode || "");
         var actionSession = captureAdminSession();
         if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
         target.disabled = true;
         setStatus(ownerStatus, working, "");
+        showOwnerPlanMessage(messageCode, slot, working, "");
         try {
           var payload = await requestOwnerCodes("POST", body);
           if (payload.staleSession) return;
@@ -20855,9 +20885,11 @@
           await loadOwnerCodes(true);
           if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
           setStatus(ownerStatus, payload.message || "저장했습니다.", "is-ok");
+          showOwnerPlanMessage(messageCode, null, payload.message || "저장했습니다.", "is-ok");
         } catch (error) {
           if (!adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) return;
           setStatus(ownerStatus, error.message || "저장에 실패했습니다.", "is-warn");
+          showOwnerPlanMessage(messageCode, slot, error.message || "저장에 실패했습니다.", "is-warn");
         } finally {
           if (adminSessionIsCurrent(actionSession.generation, actionSession.role, actionSession.scopeKey)) {
             target.disabled = false;

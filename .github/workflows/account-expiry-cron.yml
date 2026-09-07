@@ -1,0 +1,60 @@
+name: Account Expiry Cleanup
+
+# 이용 기간 만료 + 유예 5일이 지난 광고주 데이터 정리(대표 결정 2026-09-07).
+# Vercel 크론(vercel.json)과 같은 엔드포인트를 GitHub Actions 에서도 부른다 — 순위 크론과 같은 방식·같은 비밀키.
+# 두 곳이 모두 돌아도 같은 계정을 두 번 지우지 않는다(이미 지워진 행은 대상에 없다).
+on:
+  schedule:
+    # KST 03:40 (UTC 18:40) 하루 한 번
+    - cron: "40 18 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: account-expiry-cleanup
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      MI_RANK_CRON_SECRET: ${{ secrets.MI_RANK_CRON_SECRET }}
+    steps:
+      - name: Validate cron secret
+        run: |
+          if [ -z "${MI_RANK_CRON_SECRET:-}" ]; then
+            echo "::error::GitHub Actions secret MI_RANK_CRON_SECRET is missing. Add the same value used in Vercel Production."
+            exit 1
+          fi
+
+      - name: Delete accounts past the grace period
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const endpoint = "https://insight.momentlabs.co.kr/api/account-expiry-cron";
+          const secret = process.env.MI_RANK_CRON_SECRET;
+          const response = await fetch(endpoint, {
+            method: "POST",
+            headers: { authorization: `Bearer ${secret}`, "content-type": "application/json" },
+            signal: AbortSignal.timeout(120000),
+          });
+          const text = await response.text();
+          let payload = null;
+          try { payload = JSON.parse(text); } catch { payload = null; }
+          if (!response.ok || !payload || payload.ok !== true) {
+            console.error(`account-expiry-cron failed: HTTP ${response.status} ${text.slice(0, 400)}`);
+            process.exit(1);
+          }
+          console.log(JSON.stringify({
+            dryRun: payload.dryRun,
+            due: (payload.due || []).length,
+            deleted: payload.deleted || [],
+            failed: payload.failed || [],
+          }));
+          if ((payload.failed || []).length) {
+            console.error("some accounts could not be deleted; they stay for the next run");
+            process.exit(1);
+          }
+          NODE

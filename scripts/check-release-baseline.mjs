@@ -817,8 +817,9 @@ const checks = {
     && homeDevelopmentNoticeScriptSource.includes('toggle.setAttribute("aria-expanded", String(!expanded));')
     && homeDevelopmentNoticeScriptSource.includes('toggleLabel.textContent = expanded ? "자세히" : "접기";')
     && homeDevelopmentNoticeScriptSource.includes("details.hidden = expanded;")
-    && homeSource.includes('<a class="mi-button primary" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>')
-    && homeSource.includes('<a class="mi-button" href="/client">광고주 로그인</a>'),
+    // 2026-09-07 대표 확정: 시작 섹션 1순위는 무료 체험 가입, 도입 문의는 바로 옆. 로그인은 헤더로 옮겼다.
+    && homeSource.includes('<a class="mi-button primary" href="/client?signup=1">무료 체험 가입</a>')
+    && homeSource.includes('<a class="mi-button" href="https://pf.kakao.com/_ixoLxfX" target="_blank" rel="noopener">도입 문의</a>'),
   homePremiumHierarchyVisible: homeSource.includes("통합 마케팅 운영 플랫폼")
     && homeSource.includes("예시 데이터")
     && homeSource.includes("#mi-home-trust .mi-grid-3")
@@ -1458,7 +1459,8 @@ const checks = {
     source.includes('return "광고 제외 오가닉 순위 " + formatNumber(rankResult.rank) + "위 · " + seoRankMatchLabel(rankResult.matchType);')
     && !source.includes('return "공식 검색 API 기준 순위 " + formatNumber(rankResult.rank)')
   )),
-  homeRoutesExist: homeSource.includes('href="/client#mi-dashboard"') && homeSource.includes('href="/admin"'),
+  // 헤더 우측은 로그인·무료 체험 가입, 운영팀 진입은 푸터 링크(/admin)만 남긴다(2026-09-07).
+  homeRoutesExist: homeSource.includes('href="/client"') && homeSource.includes('href="/client?signup=1"') && homeSource.includes('href="/admin"'),
   rankOwnerAccessBypassesClientRow: rankServer.includes("adminAuthorized && isPrimaryAgencyCode(agencyCode)") && rankServer.includes("clientId: null"),
   rankOwnerCreateLimitBypass: rankServer.includes("const unlimitedOwner") && rankServer.includes("!unlimitedOwner"),
   rankTrackerCompleteListLimit500: rankServer.includes("const TRACKER_LIST_MAX = 500")

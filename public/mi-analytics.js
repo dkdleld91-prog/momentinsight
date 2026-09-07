@@ -22,6 +22,7 @@
     if (node.closest("[data-hp-ticker]")) return "ticker";
     if (node.closest("[data-hp-live-stats]")) return "stats_bar";
     if (node.closest("#mi-home-start")) return "cta";
+    if (node.closest(".mi-topbar")) return "topbar";
     if (node.closest("footer, .mi-footer")) return "footer";
     if (node.closest(".mi-hero")) return "hero";
     if (node.closest("#news")) return "news_page";

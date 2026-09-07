@@ -10,6 +10,7 @@ import {
   sessionConfiguration,
   sessionCookie,
   sessionFromRequest,
+  trialKeywordDailyLimit,
 } from "../code-session.mjs";
 import {
   ownerClaimsMatchPrimary,
@@ -308,7 +309,55 @@ function visibleClient(client) {
     name: client.name || "",
     businessName: client.business_name || "",
     status: client.status || "active",
+    ...(client.trial === true ? { trial: true } : {}),
   };
+}
+
+// 체험 계정은 clients 행이 없다. login_identities 의 (role=trial, google_sub) 행이 곧 계정이다.
+export async function activeTrialByGoogleSub(ctx, googleSub) {
+  const sub = String(googleSub || "").trim();
+  if (!sub) return { data: null, error: null };
+  const { data, error } = await ctx.supabaseAdmin
+    .from("login_identities")
+    .select("google_sub, google_email, role, code, linked_at")
+    .eq("role", "trial")
+    .eq("google_sub", sub)
+    .maybeSingle();
+  if (error) return { data: null, error };
+  return { data: data || null, error: null };
+}
+
+export function trialClient(claims) {
+  return {
+    id: `trial:${String(claims?.gsub || "").slice(0, 32)}`,
+    agency_code: String(claims?.agencyCode || ""),
+    name: "체험 계정",
+    business_name: "",
+    status: "active",
+    trial: true,
+  };
+}
+
+export function seoulDay(now = Date.now()) {
+  return new Date(now).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+}
+
+// 오늘 쓴 횟수만 읽는다. 소비(증가)는 세션 게이트의 mi_trial_keyword_consume 만 한다.
+export async function trialKeywordQuota(ctx, googleSub, env = process.env) {
+  const limit = trialKeywordDailyLimit(env);
+  const day = seoulDay();
+  try {
+    const { data, error } = await ctx.supabaseAdmin
+      .from("trial_keyword_quota")
+      .select("used")
+      .eq("google_sub", String(googleSub || ""))
+      .eq("day", day)
+      .maybeSingle();
+    if (error) return { used: null, limit, day };
+    return { used: Number(data?.used || 0), limit, day };
+  } catch {
+    return { used: null, limit, day };
+  }
 }
 
 function visibleTeam(team) {
@@ -332,6 +381,12 @@ export async function sessionActivityState(ctx, claims) {
   }
 
   try {
+    if (claims.role === "client" && claims.trial === 1) {
+      const result = await activeTrialByGoogleSub(ctx, claims.gsub);
+      if (result.error) return { state: SESSION_ACTIVITY_UNAVAILABLE, active: null, error: result.error };
+      const active = result.data ? { role: "client", trial: true, client: trialClient(claims) } : null;
+      return { state: active ? SESSION_ACTIVITY_ACTIVE : SESSION_ACTIVITY_REVOKED, active };
+    }
     if (claims.role === "team") {
       const result = await activeTeamByCode(ctx, claims.teamCode);
       if (result.error) return { state: SESSION_ACTIVITY_UNAVAILABLE, active: null, error: result.error };
@@ -472,11 +527,14 @@ async function currentSession(request, ctx) {
       cookies.push(sessionCookie(sealSession(responseClaims), process.env, { maxAge: reissue.ttlSeconds }));
     }
   }
+  // 체험 계정: 오늘 조회 횟수를 같이 실어 화면 칩("오늘 조회 n/5")이 별도 호출 없이 그려지게 한다.
+  const trialQuota = claims.trial === 1 ? await trialKeywordQuota(ctx, claims.gsub) : null;
   return response(request, {
     ok: true,
     session: publicSession(responseClaims),
     client: visibleClient(active.client),
     team: visibleTeam(active.team),
+    ...(trialQuota ? { trialQuota } : {}),
   }, 200, cookies);
 }
 

@@ -1,4 +1,4 @@
-import { csrfMatches, sessionFromRequest } from "./code-session.mjs";
+import { csrfMatches, sessionFromRequest, trialKeywordDailyLimit } from "./code-session.mjs";
 import {
   ownerClaimsMatchPrimary,
   PRIMARY_AGENCY_CODE,
@@ -57,6 +57,26 @@ const ACCOUNT_ONLY_PERSONAL_PATHS = new Set([
   "/api/my/google-login",
   "/api/my/assistant-chat",
 ]);
+// 광고주 미연결 운영팀 세션에서도 열려야 하는 광고주 화면 공용 경로(2026-09-07 대표 보고: 운영팀
+// 콘솔 뉴스가 "불러오지 못했습니다"). 홈 피드의 뉴스는 플랫폼 공통이고 내 키워드 지표는 핸들러가
+// no_target_account 로 비운다. 키워드 조사·조사 노트는 키워드 조회 도구의 일부라 팀 코드 범위로 저장된다.
+const ACCOUNT_ONLY_CLIENT_TOOL_PATHS = new Set([
+  "/api/client/home-feed",
+  "/api/client/keyword-research",
+  "/api/client/keyword-notes",
+]);
+// 체험 계정(구글 가입, 대표 승인 2026-09-07)은 키워드 조회 도구만 연다. 순위 추적·보고서·
+// 일정 등 광고주 데이터 경로는 403 TRIAL_LOCKED 로 막고, 화면은 도입 문의 카드를 보여 준다.
+const TRIAL_ALLOWED_PATHS = new Set([
+  "/api/session",
+  "/api/naver-keyword",
+  "/api/client/keyword-research",
+  "/api/client/keyword-notes",
+  "/api/client/public-state",
+  "/api/client/home-feed",
+]);
+const TRIAL_KEYWORD_LOOKUP_PATH = "/api/naver-keyword";
+const TRIAL_QUOTA_RPC = "mi_trial_keyword_consume";
 
 export const SESSION_ACTIVITY_ACTIVE = "active";
 export const SESSION_ACTIVITY_REVOKED = "revoked";
@@ -113,7 +133,16 @@ export function sessionScopeAllowsPath(claims, path) {
   return path.startsWith("/api/team/")
     || path === "/api/team-agency-codes"
     || TEAM_ACCOUNT_ONLY_TOOL_PATHS.has(path)
-    || ACCOUNT_ONLY_PERSONAL_PATHS.has(path);
+    || ACCOUNT_ONLY_PERSONAL_PATHS.has(path)
+    || ACCOUNT_ONLY_CLIENT_TOOL_PATHS.has(path);
+}
+
+export function isTrialClaims(claims) {
+  return claims?.role === "client" && claims.trial === 1 && Boolean(claims.gsub);
+}
+
+export function trialAllowsPath(path) {
+  return TRIAL_ALLOWED_PATHS.has(path);
 }
 
 function mutationOriginAllowed(request) {
@@ -182,8 +211,75 @@ async function selectSessionRows(table, filters, env = process.env, fetchImpl = 
   }
 }
 
+// 세션 게이트가 부르는 유일한 쓰기: 체험 계정 하루 한도 1회 소비(원자적 RPC). 표·함수는
+// supabase/migrations/20260907013000_trial_keyword_quota.sql 이고 service_role 만 실행할 수 있다.
+async function callSessionRpc(name, body, env = process.env, fetchImpl = globalThis.fetch) {
+  const baseUrl = supabaseUrl(env);
+  const key = secretKey(env);
+  if (!baseUrl || !key || typeof fetchImpl !== "function") return { ok: false, configuration: true };
+
+  const headers = { accept: "application/json", "content-type": "application/json", apikey: key };
+  if (legacyJwtKey(key)) headers.authorization = `Bearer ${key}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetchImpl(`${baseUrl}/rest/v1/rpc/${name}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      return { ok: false, status: response.status, errorCode: String(payload?.code || "") };
+    }
+    const rows = await response.json().catch(() => null);
+    return { ok: Array.isArray(rows), rows: Array.isArray(rows) ? rows : [] };
+  } catch {
+    return { ok: false, network: true };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function optionalColumnUnavailable(result) {
   return result?.status === 400 && ["42703", "PGRST204"].includes(result.errorCode);
+}
+
+// 체험 계정은 clients 행이 없다. login_identities 의 (role=trial, google_sub) 행이 곧 계정이라
+// 그 행이 지워지면(대표 정리·본인 해지) 세션도 같은 요청에서 끝난다.
+async function activeTrialForClaims(claims, env, fetchImpl) {
+  if (!claims.gsub) return SESSION_ACTIVITY_REVOKED;
+  const result = await selectSessionRows("login_identities", {
+    select: "google_sub,role,code",
+    google_sub: `eq.${claims.gsub}`,
+    role: "eq.trial",
+    limit: "1",
+  }, env, fetchImpl);
+  if (!result.ok) return SESSION_ACTIVITY_UNAVAILABLE;
+  return result.rows.length === 1 && String(result.rows[0]?.google_sub || "") === String(claims.gsub)
+    ? SESSION_ACTIVITY_ACTIVE
+    : SESSION_ACTIVITY_REVOKED;
+}
+
+function trialKeywordLookupRequest(request, path) {
+  if (path !== TRIAL_KEYWORD_LOOKUP_PATH || request.method !== "GET") return false;
+  // 비교용 프로필(두 번째 키워드부터)은 세지 않는다. 전체 지표 조회만 하루 한도에 든다.
+  return new URL(request.url).searchParams.get("profile") !== "compare";
+}
+
+async function consumeTrialKeywordQuota(claims, env, options = {}) {
+  const limit = trialKeywordDailyLimit(env);
+  const result = await callSessionRpc(
+    TRIAL_QUOTA_RPC,
+    { p_sub: claims.gsub, p_limit: limit },
+    env,
+    options.fetchImpl || globalThis.fetch,
+  );
+  // 한도 함수가 잠시 안 되면 막지 않는다(fail-open). 체험은 도입 상담용이라 오류로 잠그는 손해가 더 크다.
+  if (!result.ok || result.rows.length !== 1) return { allowed: true, used: null, limit, unavailable: true };
+  const row = result.rows[0];
+  return { allowed: row?.allowed !== false, used: Number(row?.used_count ?? 0), limit };
 }
 
 async function activeClientForClaims(claims, env, fetchImpl) {
@@ -237,6 +333,7 @@ export async function sessionActivityState(claims, env = process.env, options = 
     return hostedEnvironment(env) ? SESSION_ACTIVITY_UNAVAILABLE : SESSION_ACTIVITY_ACTIVE;
   }
   const fetchImpl = options.fetchImpl || globalThis.fetch;
+  if (isTrialClaims(claims)) return activeTrialForClaims(claims, env, fetchImpl);
   if (claims.role === "client") return activeClientForClaims(claims, env, fetchImpl);
   if (claims.role !== "team" || !claims.teamId || !claims.teamCode) return SESSION_ACTIVITY_REVOKED;
 
@@ -275,8 +372,9 @@ export function internalRequestForSession(request, claims, env = process.env) {
   const headers = new Headers(request.headers);
   for (const name of CREDENTIAL_HEADERS) headers.delete(name);
   headers.delete("x-mi-csrf");
+  const trial = isTrialClaims(claims);
   headers.set("x-mi-session-role", claims.role);
-  headers.set("x-mi-session-scope", claims.agencyCode ? "advertiser" : "account-only");
+  headers.set("x-mi-session-scope", trial ? "trial" : (claims.agencyCode ? "advertiser" : "account-only"));
 
   if (claims.role === "owner") {
     const ownerCode = primaryAgencyCode(env);
@@ -299,6 +397,10 @@ export function internalRequestForSession(request, claims, env = process.env) {
       headers.set("x-mi-agency-code", claims.teamCode);
       headers.set("x-mi-rank-access-code", claims.teamCode);
     }
+  } else if (claims.role === "client" && trial) {
+    // 체험 계정: 대행사 코드 자리에 trial-xxxxxxxx 를 실어 조사 노트·홈 피드 범위를 가른다.
+    // 순위 접근 코드는 주지 않는다 — 순위 경로 자체가 TRIAL_LOCKED 로 닫혀 있다.
+    if (claims.agencyCode) headers.set("x-mi-agency-code", claims.agencyCode);
   } else if (claims.role === "client" && claims.agencyCode) {
     headers.set("x-mi-agency-code", claims.agencyCode);
     headers.set("x-mi-rank-access-code", claims.agencyCode);
@@ -325,6 +427,16 @@ export async function authorizeCodeSession(request, env = process.env, options =
     return {
       ok: false,
       response: protectedJson(request, { ok: false, message: "이 계정에는 해당 작업 권한이 없습니다." }, 403),
+    };
+  }
+  if (isTrialClaims(claims) && !trialAllowsPath(path)) {
+    return {
+      ok: false,
+      response: protectedJson(request, {
+        ok: false,
+        code: "TRIAL_LOCKED",
+        message: "체험 계정은 키워드 조회만 열려 있습니다. 순위 추적·보고서 등은 도입 문의 후 이용할 수 있습니다.",
+      }, 403),
     };
   }
   if (!sessionScopeAllowsPath(claims, path)) {
@@ -369,6 +481,21 @@ export async function authorizeCodeSession(request, env = process.env, options =
         message: "계정 연결 상태가 변경되어 다시 접속해야 합니다.",
       }, 401),
     };
+  }
+  if (isTrialClaims(claims) && trialKeywordLookupRequest(request, path)) {
+    const quota = await consumeTrialKeywordQuota(claims, env, options);
+    if (!quota.allowed) {
+      return {
+        ok: false,
+        response: protectedJson(request, {
+          ok: false,
+          code: "TRIAL_QUOTA",
+          message: `오늘 체험 조회 ${quota.limit}회를 모두 썼습니다. 내일 다시 열리거나, 도입 문의로 제한 없이 이용하세요.`,
+          used: quota.used,
+          limit: quota.limit,
+        }, 429, { extraHeaders: { "x-mi-trial-quota": `${quota.used}/${quota.limit}` } }),
+      };
+    }
   }
   return { ok: true, request: internalRequestForSession(request, claims, env), session: claims };
 }

@@ -12,6 +12,7 @@ import {
   sessionConfiguration,
   sessionCookie,
   sessionFromRequest,
+  trialKeywordDailyLimit,
 } from "./code-session.mjs";
 
 const ENV = {
@@ -183,4 +184,37 @@ test("재발급은 자동 로그인의 원래 만료를 물려주고 늘리지 �
   );
   // 코드 로그인(비지속) 은 오늘과 같은 모양이다.
   assert.deepEqual(reissueSessionOptions({ role: "team" }, ENV), { ttlSeconds: sessionConfiguration(ENV).ttl });
+});
+
+test("trial claims carry the trial marker and the google subject, code claims do not", () => {
+  const trial = createSessionClaims({
+    role: "client",
+    agencyCode: "trial-10293847",
+    trial: true,
+    googleSub: "102938475647382910111",
+  }, { now: 1_800_000_000_000, ttlSeconds: 3600 });
+  assert.equal(trial.trial, 1);
+  assert.equal(trial.gsub, "102938475647382910111");
+  assert.equal(trial.clientId, "");
+  const token = sealSession(trial, ENV);
+  assert.equal(token.includes("102938475647382910111"), false);
+  assert.deepEqual(openSession(token, ENV, { now: 1_800_000_100_000 }), trial);
+  const visible = publicSession(trial);
+  assert.equal(visible.trial, true);
+  assert.equal("gsub" in visible, false);
+
+  const code = createSessionClaims({ role: "client", agencyCode: "mml93-a02", clientId: "client-1" });
+  assert.equal("trial" in code, false);
+  assert.equal("gsub" in code, false);
+  assert.equal(publicSession(code).trial, false);
+  const noSub = createSessionClaims({ role: "client", agencyCode: "trial-x", trial: true });
+  assert.equal("trial" in noSub, false);
+});
+
+test("trial keyword daily limit reads only a sane integer from the environment", () => {
+  assert.equal(trialKeywordDailyLimit({}), 5);
+  assert.equal(trialKeywordDailyLimit({ MI_TRIAL_KEYWORD_DAILY_LIMIT: "8" }), 8);
+  assert.equal(trialKeywordDailyLimit({ MI_TRIAL_KEYWORD_DAILY_LIMIT: "0" }), 5);
+  assert.equal(trialKeywordDailyLimit({ MI_TRIAL_KEYWORD_DAILY_LIMIT: "500" }), 5);
+  assert.equal(trialKeywordDailyLimit({ MI_TRIAL_KEYWORD_DAILY_LIMIT: "abc" }), 5);
 });

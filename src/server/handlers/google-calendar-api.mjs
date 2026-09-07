@@ -209,7 +209,7 @@ function stateSignature(payloadText, secret) {
 // 브라우저 헤더에서 한 글자라도 받으면 아무나 남의 계정으로 서명된 state 를
 // 받아 가 그 계정에 구글을 연동할 수 있다. 서명(클라이언트 시크릿 HMAC-SHA256)이
 // 이 값들의 유일한 권위다 — 콜백에는 세션 쿠키가 오지 않기 때문이다.
-export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar", role = "owner", persist = false) {
+export function signOauthState(ownerCode, env = process.env, now = Date.now(), purpose = "calendar", role = "owner", persist = false, trial = false) {
   const config = googleOauthConfig(env);
   if (!config.clientSecret) return "";
   const payloadText = JSON.stringify({
@@ -219,6 +219,8 @@ export function signOauthState(ownerCode, env = process.env, now = Date.now(), p
     exp: now + STATE_TTL_MS,
     nonce: crypto.randomBytes(12).toString("base64url"),
     ...(persist === true ? { k: 1 } : {}),
+    // 체험 가입 표식. 로그인 목적 state 에서만 의미가 있다(대표 승인 2026-09-07).
+    ...(trial === true ? { t: 1 } : {}),
   });
   const encoded = base64UrlEncode(payloadText);
   return `${encoded}.${stateSignature(encoded, config.clientSecret)}`;
@@ -243,6 +245,8 @@ export function verifyOauthState(state, env = process.env, now = Date.now()) {
     if (!PERSONAL_ROLES.has(payload.r)) return null;
     // 자동 로그인 표식은 서명된 1 만 인정한다. 없거나 다른 값이면 전부 비지속이다.
     payload.k = payload.k === 1 ? 1 : 0;
+    // 체험 가입 표식(t)도 서명된 1 만 인정하고, 로그인 목적이 아니면 버린다.
+    payload.t = payload.t === 1 && payload.p === "login" ? 1 : 0;
     return payload;
   } catch (error) {
     return null;
@@ -342,11 +346,30 @@ function googleLoginRoles(env = process.env) {
   return new Set(configured.length ? configured : [DEFAULT_GOOGLE_LOGIN_ROLES]);
 }
 
+// 체험 계정 세션 접근권. 역할은 client 로 두어 광고주 화면이 그대로 열리고, 세션 게이트는
+// trial 표식으로 키워드 조회만 허용한다(대표 승인 2026-09-07).
+export function trialLoginAccess(googleSub) {
+  const sub = cleanText(googleSub, 128);
+  return {
+    role: "client",
+    clientId: "",
+    agencyCode: `trial-${sub.toLowerCase().slice(0, 8)}`,
+    trial: true,
+    googleSub: sub,
+  };
+}
+
 // Returns the same access shape code login builds, so the session claims a
 // google login mints are indistinguishable from a code login for that account.
 export async function resolveGoogleLoginAccess(identity, ctx, env = process.env) {
   const role = cleanText(identity?.role).toLowerCase();
   const code = cleanText(identity?.code).toLowerCase();
+  if (role === "trial") {
+    // 체험 역할은 MI_GOOGLE_LOGIN_ROLES 와 무관하게 늘 열린다. 코드 계정 전환 정책과 별개다.
+    const sub = cleanText(identity?.google_sub, 128) || code;
+    if (!sub) return { ok: false, reason: "not-ready" };
+    return { ok: true, access: trialLoginAccess(sub) };
+  }
   if (!googleLoginRoles(env).has(role)) return { ok: false, reason: "not-ready" };
 
   if (role === "owner") {
@@ -891,8 +914,12 @@ function handleLoginStart(request) {
   const config = googleOauthConfig();
   if (!config.clientId || !config.clientSecret) return loginRedirect("not-configured");
   // 자동 로그인 선택은 쿼리 한 글자로만 들어오고, 이 서버가 서명한 state 안에서만 살아남는다.
-  const persist = cleanText(new URL(request.url).searchParams.get("persist")) === "1";
-  const state = signOauthState(primaryAgencyCode(), process.env, Date.now(), "login", "owner", persist);
+  const params = new URL(request.url).searchParams;
+  const persist = cleanText(params.get("persist")) === "1";
+  // 광고주 로그인 화면의 구글 버튼은 mode=trial 로 들어온다. 연결된 계정이면 그대로 로그인하고,
+  // 처음 보는 구글 계정이면 체험 계정을 만든다(대표 승인 2026-09-07).
+  const trial = cleanText(params.get("mode")) === "trial";
+  const state = signOauthState(primaryAgencyCode(), process.env, Date.now(), "login", "owner", persist, trial);
   const url = buildGoogleAuthUrl(state, process.env, LOGIN_SCOPE, "login");
   if (!url) return loginRedirect("not-configured");
   return new Response(null, {
@@ -998,8 +1025,21 @@ async function handleLoginCallback(request, ctx, code, state) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "no-identity" });
     return loginRedirect("no-identity");
   }
-  const { identity, error } = await findLoginIdentity(ctx, profile.sub);
-  if (error) return loginRedirect("lookup-failed");
+  const found = await findLoginIdentity(ctx, profile.sub);
+  if (found.error) return loginRedirect("lookup-failed");
+  let identity = found.identity;
+  if (!identity && state?.t === 1) {
+    // 체험 가입: 처음 보는 구글 계정을 login_identities 에 role=trial 로 남기고 바로 세션을 연다.
+    const created = await upsertLoginIdentity(ctx, {
+      googleSub: profile.sub,
+      googleEmail: profile.email,
+      role: "trial",
+      code: profile.sub,
+    });
+    if (!created) return loginRedirect("lookup-failed", [], "client");
+    await recordLoginAudit(ctx, "google_trial_signup", { role: "trial" });
+    identity = { google_sub: profile.sub, google_email: profile.email || null, role: "trial", code: profile.sub };
+  }
   if (!identity) {
     await recordLoginAudit(ctx, "google_login_failed", { reason: "unlinked" });
     return loginRedirect("unlinked");
@@ -1018,7 +1058,7 @@ async function handleLoginCallback(request, ctx, code, state) {
   } catch (sealError) {
     return loginRedirect("session-unavailable");
   }
-  await recordLoginAudit(ctx, "google_login_succeeded", { role: resolved.access.role });
+  await recordLoginAudit(ctx, "google_login_succeeded", { role: resolved.access.trial === true ? "trial" : resolved.access.role });
   // 로그인 목적의 state 는 시작 시점에 누가 누를지 모르므로 owner 로 서명된다.
   // 목적지는 그 state 가 아니라 방금 확정된 계정 역할이 정한다 — 그러지 않으면
   // 구글로 로그인한 광고주가 자기 화면이 아닌 /admin 으로 떨어진다.

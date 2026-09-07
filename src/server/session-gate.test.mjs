@@ -8,11 +8,13 @@ import {
   authorizeCodeSession,
   boundedApiRequest,
   internalRequestForSession,
+  isTrialClaims,
   requiresCodeSession,
   roleAllowsPath,
   sessionScopeAllowsPath,
   sessionActivityState,
   sessionActivityValid,
+  trialAllowsPath,
 } from "./session-gate.mjs";
 
 const ENV = {
@@ -102,6 +104,12 @@ test("an unlinked team can use isolated rank trackers without crossing advertise
   assert.equal(sessionScopeAllowsPath(claims, "/api/meta-ads"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-keyword/private"), false);
   assert.equal(sessionScopeAllowsPath(claims, "/api/report-center"), false);
+  // 2026-09-07: 광고주 미연결 운영팀도 뉴스(홈 피드)·키워드 조사·조사 노트는 연다. 보고서·공개 상태는 여전히 닫힌다.
+  assert.equal(sessionScopeAllowsPath(claims, "/api/client/home-feed"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/client/keyword-research"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/client/keyword-notes"), true);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/client/public-state"), false);
+  assert.equal(sessionScopeAllowsPath(claims, "/api/client/work-items"), false);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-rank-trackers"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/naver-place-rank-trackers"), true);
   assert.equal(sessionScopeAllowsPath(claims, "/api/demo/public-state"), false);
@@ -308,4 +316,113 @@ test("oversized or compressed API bodies fail before handlers", async () => {
     body: "x".repeat(20_000),
   });
   assert.equal((await boundedApiRequest(invalidLimit, { maxBytes: "not-a-number" })).response.status, 413);
+});
+
+function trialClaims() {
+  return createSessionClaims({
+    role: "client",
+    agencyCode: "trial-10293847",
+    trial: true,
+    googleSub: "102938475647382910111",
+  });
+}
+
+test("trial sessions carry the trial marker and only open the keyword tool paths", async () => {
+  const claims = trialClaims();
+  assert.equal(claims.trial, 1);
+  assert.equal(claims.gsub, "102938475647382910111");
+  assert.equal(isTrialClaims(claims), true);
+  assert.equal(isTrialClaims(createSessionClaims({ role: "client", clientId: "client-1", agencyCode: "mml93-a02" })), false);
+  ["/api/naver-keyword", "/api/client/keyword-research", "/api/client/keyword-notes", "/api/client/public-state", "/api/client/home-feed"]
+    .forEach((path) => assert.equal(trialAllowsPath(path), true, path));
+  ["/api/naver-rank-trackers", "/api/naver-place-rank-trackers", "/api/naver-shopping-rank", "/api/report-center", "/api/work-items", "/api/my/google-login", "/api/client/work-items"]
+    .forEach((path) => assert.equal(trialAllowsPath(path), false, path));
+
+  const locked = await authorizeCodeSession(requestWithSession("/api/naver-rank-trackers", claims), ENV, { activityCheck: async () => true });
+  assert.equal(locked.ok, false);
+  assert.equal(locked.response.status, 403);
+  assert.equal((await locked.response.json()).code, "TRIAL_LOCKED");
+});
+
+test("trial keyword lookups consume the daily quota through the rpc and stop at the limit", async () => {
+  const claims = trialClaims();
+  const rpcCalls = [];
+  const fetchFor = (allowed, used) => async (url, init = {}) => {
+    const parsed = new URL(url);
+    if (parsed.pathname.endsWith("/rpc/mi_trial_keyword_consume")) {
+      rpcCalls.push(JSON.parse(String(init.body)));
+      assert.equal(init.method, "POST");
+      return Response.json([{ allowed, used_count: used }]);
+    }
+    assert.fail(`unexpected fetch ${parsed.pathname}`);
+  };
+  const env = { ...ENV, SUPABASE_URL: "https://project.supabase.co" };
+
+  const full = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=full", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: fetchFor(true, 1),
+  });
+  assert.equal(full.ok, true);
+  assert.deepEqual(rpcCalls, [{ p_sub: "102938475647382910111", p_limit: 5 }]);
+  assert.equal(full.request.headers.get("x-mi-session-role"), "client");
+  assert.equal(full.request.headers.get("x-mi-session-scope"), "trial");
+  assert.equal(full.request.headers.get("x-mi-agency-code"), "trial-10293847");
+  assert.equal(full.request.headers.get("x-mi-rank-access-code"), null);
+
+  const compare = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90&profile=compare", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: fetchFor(true, 2),
+  });
+  assert.equal(compare.ok, true);
+  assert.equal(rpcCalls.length, 1);
+
+  const exhausted = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: fetchFor(false, 5),
+  });
+  assert.equal(exhausted.ok, false);
+  assert.equal(exhausted.response.status, 429);
+  assert.equal(exhausted.response.headers.get("x-mi-trial-quota"), "5/5");
+  const body = await exhausted.response.json();
+  assert.equal(body.code, "TRIAL_QUOTA");
+  assert.equal(body.used, 5);
+  assert.equal(body.limit, 5);
+
+  const outage = await authorizeCodeSession(requestWithSession("/api/naver-keyword?keyword=%EC%9B%90%EB%91%90", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: async () => new Response("down", { status: 503 }),
+  });
+  assert.equal(outage.ok, true);
+
+  const research = await authorizeCodeSession(requestWithSession("/api/client/keyword-research?keyword=%EC%9B%90%EB%91%90", claims), env, {
+    activityCheck: async () => true,
+    fetchImpl: fetchFor(false, 5),
+  });
+  assert.equal(research.ok, true);
+  // 전체 조회 1건 + 한도 초과 확인 1건. 비교 프로필·조사 API·장애 응답은 세지 않았다.
+  assert.equal(rpcCalls.length, 2);
+});
+
+test("trial session activity follows the trial login identity row", async () => {
+  const claims = trialClaims();
+  const env = {
+    VERCEL_ENV: "preview",
+    SUPABASE_URL: "https://project.supabase.co",
+    SUPABASE_SECRET_KEY: "sb_secret_test_only",
+  };
+  const activeFetch = async (url) => {
+    const parsed = new URL(url);
+    assert.match(parsed.pathname, /login_identities/);
+    assert.equal(parsed.searchParams.get("google_sub"), "eq.102938475647382910111");
+    assert.equal(parsed.searchParams.get("role"), "eq.trial");
+    return Response.json([{ google_sub: "102938475647382910111", role: "trial", code: "102938475647382910111" }]);
+  };
+  const revokedFetch = async () => Response.json([]);
+  const unavailableFetch = async () => new Response(JSON.stringify({ code: "PGRST000" }), {
+    status: 503,
+    headers: { "content-type": "application/json" },
+  });
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: activeFetch }), SESSION_ACTIVITY_ACTIVE);
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: revokedFetch }), SESSION_ACTIVITY_REVOKED);
+  assert.equal(await sessionActivityState(claims, env, { fetchImpl: unavailableFetch }), SESSION_ACTIVITY_UNAVAILABLE);
 });

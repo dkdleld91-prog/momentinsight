@@ -2435,3 +2435,104 @@ test("서명이 깨진 자동 로그인 state 는 세션을 만들지 않는다"
   assert.match(response.headers.get("location"), /invalid/);
   assert.equal(sessionCookies(response).length, 0);
 });
+
+test("oauth state carries the trial marker only when the login start asked for it", () => {
+  const now = 1_700_000_000_000;
+  const trial = verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "login", "owner", false, true), GOOGLE_ENV, now);
+  assert.equal(trial.t, 1);
+  assert.equal(trial.k, 0);
+  assert.equal(trial.p, "login");
+  const plain = verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "login", "owner", true), GOOGLE_ENV, now);
+  assert.equal(plain.t, 0);
+  assert.equal(plain.k, 1);
+  // 캘린더 목적 state 에 t 를 끼워 넣어도 무시된다.
+  const calendar = verifyOauthState(signOauthState("mml93-a01", GOOGLE_ENV, now, "calendar", "owner", false, true), GOOGLE_ENV, now);
+  assert.equal(calendar.t, 0);
+});
+
+test("login start with mode=trial signs a trial state and keeps the login purpose", async () => {
+  const { response } = await callLoginHandler(`${LOGIN_START_URL}?mode=trial&persist=1`);
+  assert.equal(response.status, 302);
+  const location = new URL(response.headers.get("location"));
+  const statePayload = verifyOauthState(location.searchParams.get("state"), GOOGLE_ENV);
+  assert.equal(statePayload.p, "login");
+  assert.equal(statePayload.t, 1);
+  assert.equal(statePayload.k, 1);
+  const plain = await callLoginHandler(LOGIN_START_URL);
+  const plainState = verifyOauthState(new URL(plain.response.headers.get("location")).searchParams.get("state"), GOOGLE_ENV);
+  assert.equal(plainState.t, 0);
+});
+
+function trialLoginState(persist = false) {
+  const state = signOauthState("mml93-a01", GOOGLE_ENV, Date.now(), "login", "owner", persist, true);
+  return { state, nonce: oauthStateNonce(state), url: `${OAUTH_CALLBACK_URL}?code=auth-1&state=${encodeURIComponent(state)}` };
+}
+
+test("trial login callback creates a trial identity for an unknown google account and opens a client session", async () => {
+  const audits = [];
+  const upserts = [];
+  const login = trialLoginState();
+  const { response } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    routes: [
+      googleTokenRoute({ sub: "999000111222333", email: "Trial@Example.com" }),
+      identityRoute([], "999000111222333"),
+      ["POST", IDENTITY_REST_URL, (call) => { upserts.push(JSON.parse(String(call.body))); return restCreated(); }],
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(response.status, 302);
+  assert.equal(response.headers.get("location"), "/client?glogin=success");
+  assert.equal(upserts.length, 1);
+  const row = Array.isArray(upserts[0]) ? upserts[0][0] : upserts[0];
+  assert.equal(row.role, "trial");
+  assert.equal(row.google_sub, "999000111222333");
+  assert.equal(row.code, "999000111222333");
+  assert.equal(row.google_email, "trial@example.com");
+  assert.deepEqual(audits.map((audit) => audit.action), ["google_trial_signup", "google_login_succeeded"]);
+
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const cookie = sessionCookies(response)[0];
+  const claims = openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
+  assert.equal(claims.role, "client");
+  assert.equal(claims.trial, 1);
+  assert.equal(claims.gsub, "999000111222333");
+  assert.equal(claims.agencyCode, "trial-99900011");
+  assert.equal(claims.clientId, "");
+});
+
+test("login callback without the trial marker still refuses an unknown google account", async () => {
+  const audits = [];
+  const login = loginState();
+  const { response } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    routes: [
+      googleTokenRoute({ sub: "999000111222333", email: "trial@example.com" }),
+      identityRoute([], "999000111222333"),
+      auditRoute(audits),
+    ],
+  });
+  assert.equal(response.headers.get("location"), "/admin?glogin=unlinked");
+  assert.equal(sessionCookies(response).length, 0);
+  assert.deepEqual(audits[0].metadata, { reason: "unlinked" });
+});
+
+test("an existing trial identity logs in as a trial client session regardless of the google login roles", async () => {
+  const login = trialLoginState(true);
+  const { response } = await callLoginHandler(login.url, {
+    nonce: login.nonce,
+    env: { MI_GOOGLE_LOGIN_ROLES: "owner" },
+    routes: [
+      googleTokenRoute({ sub: "999000111222333", email: "trial@example.com" }),
+      identityRoute([{ google_sub: "999000111222333", google_email: "trial@example.com", role: "trial", code: "999000111222333", linked_at: null }], "999000111222333"),
+      ["POST", AUDIT_REST_URL, () => restCreated()],
+    ],
+  });
+  assert.equal(response.headers.get("location"), "/client?glogin=success");
+  const cookieName = sessionConfiguration(SESSION_ENV).cookieName;
+  const cookie = sessionCookies(response)[0];
+  assert.match(cookie, /Max-Age=2592000/);
+  const claims = openSession(cookie.split(";")[0].slice(cookieName.length + 1), SESSION_ENV);
+  assert.equal(claims.trial, 1);
+  assert.equal(claims.pst, 1);
+});

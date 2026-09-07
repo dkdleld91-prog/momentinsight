@@ -13,6 +13,7 @@ import {
   sessionActivityState,
   sessionStillActive,
 } from "./code-session-api.mjs";
+import { SESSION_ACTIVITY_UNAVAILABLE } from "../session-gate.mjs";
 
 function contextWithRows(rows) {
   let index = 0;
@@ -208,4 +209,26 @@ test("restored sessions distinguish database outages from confirmed revocation",
   }]), claims);
   assert.equal(active.state, "active");
   assert.equal(active.active.client.id, "client-2");
+});
+
+test("trial sessions stay active only while their trial login identity row exists", async () => {
+  const claims = { role: "client", agencyCode: "trial-10293847", trial: 1, gsub: "102938475647382910111" };
+  const active = await sessionStillActive(contextWithRows([{
+    data: { google_sub: "102938475647382910111", google_email: "trial@example.com", role: "trial", code: "102938475647382910111", linked_at: null },
+    error: null,
+  }]), claims);
+  assert.equal(active.role, "client");
+  assert.equal(active.trial, true);
+  assert.equal(active.client.name, "체험 계정");
+  assert.equal(active.client.trial, true);
+  assert.equal(active.client.agency_code, "trial-10293847");
+
+  const removed = await sessionStillActive(contextWithRows([{ data: null, error: null }]), claims);
+  assert.equal(removed, null);
+
+  const outage = await sessionActivityState(contextWithRows([{ data: null, error: { message: "down" } }]), claims);
+  assert.equal(outage.state, SESSION_ACTIVITY_UNAVAILABLE);
+
+  const missingSub = await sessionStillActive(contextWithRows([]), { role: "client", agencyCode: "trial-x", trial: 1, gsub: "" });
+  assert.equal(missingSub, null);
 });

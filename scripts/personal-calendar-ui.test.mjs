@@ -486,10 +486,11 @@ test("the retired 공개 일정 view keeps its markup but loses every entry path
   assert.equal(clientLegacyScheduleView.includes("data-mi-personal-calendar"), false);
 });
 
-test("client login screen offers google sign-in with the same copy as admin", () => {
-  assert.ok(clientSource.includes('<button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>'));
-  assert.ok(clientSource.includes('<small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>'));
-  assert.ok(clientSource.includes('window.location.href = "/api/google-login/start";'));
+test("client login screen offers google sign-in as the trial entry point", () => {
+  // 광고주 화면의 구글 버튼은 체험 가입 진입점을 겸한다(mode=trial, 대표 승인 2026-09-07).
+  assert.ok(clientSource.includes('<button class="mi-button is-ghost" type="button" data-google-login-start>Google로 시작하기 · 무료 체험</button>'));
+  assert.ok(clientSource.includes('<small class="mi-login-google-note">처음이면 체험 계정이 열립니다(키워드 조회 하루 5회) · 연결해 둔 계정은 바로 로그인</small>'));
+  assert.ok(clientSource.includes('window.location.href = "/api/google-login/start?mode=trial";'));
   assert.ok(clientSource.includes("if (restored !== true) consumeLoginGoogleNotice();"));
   // 역할이 로그인 대상이 아니면 서버가 glogin=not-ready 로 되돌린다 — 문구가 준비돼 있어야 한다.
   assert.deepEqual(labelTable(clientLoginNoticeBlock), labelTable(adminLoginNoticeBlock));

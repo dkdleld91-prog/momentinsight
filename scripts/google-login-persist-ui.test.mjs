@@ -19,6 +19,12 @@ const packageJson = JSON.parse(fs.readFileSync(new URL("../package.json", import
 const PERSIST_LABEL = '<label class="mi-login-persist"><input type="checkbox" data-google-login-persist />자동 로그인 · 이 기기에서 30일 유지</label>';
 const PAGES = [["admin.html", adminSource, "#mi-admin"], ["client.html", clientSource, "#mi-clean"]];
 
+// 광고주 화면의 구글 버튼은 체험 가입 진입점을 겸한다(대표 승인 2026-09-07). 총관리자 화면은 연결된 계정만 로그인한다.
+const GOOGLE_COPY = {
+  "admin.html": { button: "Google 계정으로 로그인", note: "연결해 둔 계정만 로그인됩니다", start: '"/api/google-login/start"', persist: '"/api/google-login/start?persist=1"' },
+  "client.html": { button: "Google로 시작하기 · 무료 체험", note: "처음이면 체험 계정이 열립니다(키워드 조회 하루 5회) · 연결해 둔 계정은 바로 로그인", start: '"/api/google-login/start?mode=trial"', persist: '"/api/google-login/start?mode=trial&persist=1"' },
+};
+
 function occurrences(source, needle) {
   let count = 0;
   let from = 0;
@@ -46,8 +52,10 @@ test("두 로그인 화면에 같은 자동 로그인 체크박스가 한 번씩
     assert.equal(occurrences(page, "data-google-login-persist"), 2, `${label}: 속성이 두 번(마크업·선택자)만 나와야 합니다.`);
     assert.equal(occurrences(page, PERSIST_LABEL), 1, `${label}: 라벨이 두 번 그려졌습니다.`);
     // 승인된 기존 두 줄은 그대로 남고 뒤에 붙기만 했다.
-    assert.ok(page.includes('<button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>'));
-    assert.ok(page.includes('<small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>'));
+    const google = GOOGLE_COPY[label];
+    assert.ok(google, `${label}: 구글 문구 기대값이 없습니다.`);
+    assert.ok(page.includes(`<button class="mi-button is-ghost" type="button" data-google-login-start>${google.button}</button>`), `${label}: 구글 버튼 문구가 다릅니다.`);
+    assert.ok(page.includes(`<small class="mi-login-google-note">${google.note}</small>`), `${label}: 구글 안내 문구가 다릅니다.`);
     const noteAt = page.indexOf('<small class="mi-login-google-note">');
     assert.ok(noteAt >= 0 && page.indexOf(PERSIST_LABEL) > noteAt, `${label}: 체크박스는 안내 문구 다음이어야 합니다.`);
   }
@@ -57,9 +65,10 @@ test("체크했을 때만 persist=1 로 가고, 체크 해제 경로는 그대�
   for (const [label, page] of PAGES) {
     assert.ok(page.includes('var googleLoginPersist = root.querySelector("[data-google-login-persist]");'), `${label}: 선택자 바인딩이 없습니다.`);
     assert.ok(page.includes("if (googleLoginPersist && googleLoginPersist.checked === true) {"), `${label}: 체크 판정이 없습니다.`);
-    assert.ok(page.includes('window.location.href = "/api/google-login/start?persist=1";'), `${label}: 자동 로그인 목적지가 없습니다.`);
+    const google = GOOGLE_COPY[label];
+    assert.ok(page.includes(`window.location.href = ${google.persist};`), `${label}: 자동 로그인 목적지가 없습니다.`);
     // 체크하지 않은 경로는 오늘의 리터럴 그대로여야 한다(기존 핀 테스트와 같은 문자열).
-    assert.ok(page.includes('window.location.href = "/api/google-login/start";'), `${label}: 기존 목적지가 사라졌습니다.`);
+    assert.ok(page.includes(`window.location.href = ${google.start};`), `${label}: 기존 목적지가 사라졌습니다.`);
     // 주소를 문자열로 잇지 않는다 — 목적지는 고정된 두 개뿐이다.
     assert.equal(/location\.href\s*=\s*"\/api\/google-login\/start[^"]*"\s*\+/.test(page), false, `${label}: 목적지를 문자열로 이었습니다.`);
     assert.equal(occurrences(page, '"/api/google-login/start'), 2, `${label}: 구글 로그인 시작 주소는 두 개뿐이어야 합니다.`);

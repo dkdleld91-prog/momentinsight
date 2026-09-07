@@ -710,6 +710,19 @@ function json(request, body, status = 200) {
   });
 }
 
+// 체험 계정 응답에서 플랫폼별 7일 전체 목록(all)만 떼어 낸다. lead·items(메인에 뜬 기사)는 그대로다.
+export function withoutFullNews(news) {
+  if (!news || typeof news !== "object" || Array.isArray(news)) return news;
+  const copy = { ...news };
+  for (const [key, value] of Object.entries(copy)) {
+    if (value && typeof value === "object" && !Array.isArray(value) && Array.isArray(value.all)) {
+      const { all, ...rest } = value;
+      copy[key] = rest;
+    }
+  }
+  return copy;
+}
+
 export async function handleHomeFeedRequest(request, ctx) {
   if (request.method !== "GET") return json(request, { ok: false, message: "Method not allowed" }, 405);
 
@@ -759,11 +772,14 @@ export async function handleHomeFeedRequest(request, ctx) {
 
   const [news, metrics, keywordNews] = await Promise.all([newsPromise, metricsPromise, keywordNewsPromise]);
 
+  // 체험 계정은 메인에 뜬 기사(플랫폼별 lead+items)만 본다. 7일 전체(all)는 도입 후 계정에만 실린다(대표 결정 2026-09-07).
+  const trial = String(request.headers.get("x-mi-session-scope") || "").trim().toLowerCase() === "trial";
+
   return json(request, {
     ok: true,
     role: scope.role,
     accountCode: scope.accountCode || null,
-    news,
+    news: trial ? withoutFullNews(news) : news,
     metrics,
     keywordNews,
     rank,

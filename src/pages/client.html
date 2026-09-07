@@ -6052,6 +6052,81 @@
         grid-template-columns: 1fr;
       }
     }
+
+    /* ── 체험 계정(구글 가입) ─────────────────────────────
+       키워드 조회만 열리고 나머지는 잠금 카드로 도입 문의를 받는다(대표 승인 2026-09-07).
+       실제 차단은 서버 세션 게이트(403 TRIAL_LOCKED · 429 TRIAL_QUOTA)가 한다. */
+    #mi-clean .mi-trial-chip {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--mi-orange-bg);
+      color: var(--mi-orange);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    #mi-clean.is-trial .mi-trial-chip { display: inline-flex; }
+    #mi-clean.is-trial .mi-view.is-trial-locked > :not(.mi-trial-lock),
+    #mi-clean.is-trial .is-trial-locked[data-home-rank-strip] > :not(.mi-trial-lock),
+    #mi-clean.is-trial .is-trial-locked[data-home-feed-metrics] > :not(.mi-trial-lock),
+    #mi-clean.is-trial .is-trial-locked[data-home-feed-keyword-news] > :not(.mi-trial-lock) { display: none !important; }
+    #mi-clean .mi-trial-lock { display: none; }
+    #mi-clean.is-trial .mi-trial-lock {
+      display: grid;
+      gap: 12px;
+      max-width: 560px;
+      margin: 8px 0 0;
+      padding: 22px 24px;
+      border: 1px solid var(--mi-line);
+      border-radius: 16px;
+      background: linear-gradient(180deg, #ffffff 0%, var(--mi-gold-soft) 100%);
+      box-shadow: var(--mi-shadow);
+    }
+    #mi-clean.is-trial .mi-trial-lock.is-compact { padding: 16px 18px; max-width: none; }
+    #mi-clean .mi-trial-lock .mi-kicker { color: var(--mi-orange); }
+    #mi-clean .mi-trial-lock h3 { margin: 0; font-size: 18px; letter-spacing: -0.02em; color: var(--mi-navy); }
+    #mi-clean .mi-trial-lock ul { margin: 0; padding-left: 18px; color: var(--mi-ink); font-size: 14px; line-height: 1.6; }
+    #mi-clean .mi-trial-lock p { margin: 0; color: var(--mi-muted); font-size: 13px; line-height: 1.55; }
+    #mi-clean .mi-trial-lock-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    #mi-clean .mi-trial-lock-actions a { text-decoration: none; }
+    #mi-clean.is-trial .mi-nav a.is-trial-nav-locked::after,
+    #mi-clean.is-trial .mi-mobile-nav a.is-trial-nav-locked::after {
+      content: "잠김";
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: var(--mi-grey-50, #f4f6fa);
+      color: var(--mi-muted);
+      font-size: 10px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    #mi-clean .mi-trial-modal {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(6, 26, 58, 0.45);
+    }
+    #mi-clean .mi-trial-modal.is-open { display: flex; }
+    #mi-clean .mi-trial-modal .mi-trial-lock { display: grid; margin: 0; width: min(560px, 100%); position: relative; }
+    #mi-clean .mi-trial-modal-close {
+      position: absolute;
+      top: 10px;
+      right: 12px;
+      border: 0;
+      background: transparent;
+      color: var(--mi-muted);
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+    }
   </style>
 
   <div class="mi-login" aria-label="광고주 로그인 화면">
@@ -6085,8 +6160,8 @@
           <input class="mi-input" data-mi-login-code placeholder="대행사 코드 입력" aria-label="대행사 코드" />
           <button class="mi-button" type="button" data-mi-login-button data-client-login-button>광고주 대시보드 보기</button>
           <div class="mi-code-status" data-mi-login-status aria-live="polite">담당자에게 받은 코드를 입력하면 광고주 화면이 열립니다.</div>
-          <button class="mi-button is-ghost" type="button" data-google-login-start>Google 계정으로 로그인</button>
-          <small class="mi-login-google-note">연결해 둔 계정만 로그인됩니다</small>
+          <button class="mi-button is-ghost" type="button" data-google-login-start>Google로 시작하기 · 무료 체험</button>
+          <small class="mi-login-google-note">처음이면 체험 계정이 열립니다(키워드 조회 하루 5회) · 연결해 둔 계정은 바로 로그인</small>
           <label class="mi-login-persist"><input type="checkbox" data-google-login-persist />자동 로그인 · 이 기기에서 30일 유지</label>
         </div>
       </aside>
@@ -6136,6 +6211,7 @@
       <div class="mi-auth-panel" aria-label="현재 광고주 접속 정보">
         <span>현재 접속 코드</span>
         <strong data-mi-current-code>미연결</strong>
+        <span class="mi-trial-chip" data-trial-chip>체험 계정</span>
         <button type="button" data-mi-logout>로그아웃</button>
       </div>
 
@@ -7126,8 +7202,11 @@
         role: "",
         scopeKey: "",
         clientId: "",
-        teamId: ""
+        teamId: "",
+        trial: false
       };
+      // 체험 계정의 오늘 조회 횟수 { used, limit } — /api/session 응답의 trialQuota 를 그대로 둔다.
+      var trialQuota = null;
       var clientSessionGeneration = 0;
       var clientWorkItems = [];
       var clientWorkItemsLoaded = false;
@@ -7234,6 +7313,11 @@
         secureClientSession.scopeKey = String(session.scopeKey || "");
         secureClientSession.clientId = String(session.clientId || "");
         secureClientSession.teamId = String(session.teamId || "");
+        // 체험 계정(구글 가입): 키워드 조회만 열리고 나머지는 잠금 카드로 안내한다(대표 승인 2026-09-07).
+        secureClientSession.trial = session.trial === true;
+        trialQuota = payload && payload.trialQuota && typeof payload.trialQuota === "object" ? payload.trialQuota : null;
+        // 넛지 회귀 테스트가 이 함수만 떼어 실행한다 — 화면 글루가 없는 곳에서는 조용히 넘어간다.
+        if (typeof applyTrialMode === "function") applyTrialMode();
         return session;
       }
 
@@ -7243,6 +7327,9 @@
         secureClientSession.scopeKey = "";
         secureClientSession.clientId = "";
         secureClientSession.teamId = "";
+        secureClientSession.trial = false;
+        trialQuota = null;
+        applyTrialMode();
         try {
           window.localStorage.removeItem(selectedCodeKey);
           window.localStorage.removeItem("miRankAccessCode");
@@ -7253,6 +7340,142 @@
         } catch (error) {}
         clientPublicStateRequest += 1;
         resetClientWorkItems();
+      }
+
+      // ── 체험 계정(구글 가입) 화면 ─────────────────────────
+      // 서버 게이트가 실제 접근을 막는다(403 TRIAL_LOCKED · 429 TRIAL_QUOTA). 여기서는 무엇이 열리는지
+      // 설명하는 잠금 카드와 "오늘 조회 n/5" 칩만 그린다. 뉴스는 메인에 뜬 기사까지만 보인다.
+      var TRIAL_INQUIRY_KAKAO = "https://pf.kakao.com/_ixoLxfX";
+      var TRIAL_INQUIRY_MAIL = "mailto:mml93@naver.com";
+      var TRIAL_LOCKED_SCREENS = ["naver-rank-tracking", "naver-place-rank-tracking", "seo-check", "meta-ads", "sales", "dashboard", "agency-code", "my-calendar", "schedule"];
+      var TRIAL_LOCK_COPY = {
+        "naver-rank-tracking": { title: "N 30일 순위 추적은 도입 후 열립니다", lines: ["등록한 키워드의 네이버 쇼핑 순위를 30일 동안 매일 자동 수집", "내 상품과 경쟁 상품의 순위 변화를 한 표에서 비교", "급등·급락은 뉴스 화면 '내 순위 요약'에 바로 표시"] },
+        "naver-place-rank-tracking": { title: "N 플레이스 30일 순위는 도입 후 열립니다", lines: ["플레이스(지도) 키워드 순위를 30일 동안 매일 자동 수집", "지역 키워드별 순위 변화 추이", "급등·급락은 뉴스 화면에 바로 표시"] },
+        "seo-check": { title: "SEO 확인은 도입 후 열립니다", lines: ["상품명·카테고리·리뷰 기준 노출 준비도 점검", "키워드 기준 보완 우선순위 제안"] },
+        "meta-ads": { title: "메타 광고 조사는 도입 후 열립니다", lines: ["경쟁사 메타(인스타·페이스북) 광고 소재 조사", "소재별 게재 기간·형식 정리"] },
+        "sales": { title: "매출 현황은 도입 후 열립니다", lines: ["광고비·매출·ROAS를 운영팀이 매월 정리", "목표 대비 달성률을 한 화면에서 확인"] },
+        "dashboard": { title: "대시보드는 도입 후 열립니다", lines: ["핵심 지표 요약과 운영팀 공개 코멘트", "보고서·실행 계획·일정을 한 화면에서 확인"] },
+        "agency-code": { title: "대행사 연결은 도입 계정에서 합니다", lines: ["도입하면 담당자가 접속 코드를 발급합니다", "이미 코드를 받으셨다면 로그아웃 후 코드로 접속하세요"] },
+        "my-calendar": { title: "내 캘린더는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정·할 일", "구글 캘린더 연동"] },
+        "schedule": { title: "일정표는 도입 후 열립니다", lines: ["운영팀과 공유하는 일정"] },
+        "news": { title: "뉴스 전체 보기는 도입 후 열립니다", lines: ["최근 7일 플랫폼별 전체 기사(네이버·쿠팡·11번가·G마켓)", "내가 등록한 키워드와 겹치는 기사만 모아 보는 '내 키워드 뉴스'", "등록 키워드 검색량 증감·분야 트렌드·내 순위 요약"] },
+        "quota": { title: "오늘 체험 조회 횟수를 모두 썼습니다", lines: ["체험 계정은 키워드 조회가 하루 5회입니다(자정 이후 다시 열림)", "도입하면 횟수 제한 없이 조회하고 30일 순위 추적까지 이용"] }
+      };
+
+      function trialLockCard(kind, compact) {
+        var copy = TRIAL_LOCK_COPY[kind] || TRIAL_LOCK_COPY.news;
+        var card = document.createElement("div");
+        card.className = "mi-trial-lock" + (compact ? " is-compact" : "");
+        card.setAttribute("data-trial-lock", kind);
+        var kicker = document.createElement("span");
+        kicker.className = "mi-kicker";
+        kicker.textContent = "체험 계정 · 도입하면 열리는 기능";
+        var title = document.createElement("h3");
+        title.textContent = copy.title;
+        var list = document.createElement("ul");
+        copy.lines.forEach(function (line) {
+          var item = document.createElement("li");
+          item.textContent = line;
+          list.appendChild(item);
+        });
+        var note = document.createElement("p");
+        note.textContent = "체험 계정은 키워드 조회(하루 5회)와 메인 뉴스만 열려 있습니다. 도입 문의를 남기면 담당자가 연락드립니다.";
+        var actions = document.createElement("div");
+        actions.className = "mi-trial-lock-actions";
+        var kakao = document.createElement("a");
+        kakao.className = "mi-button";
+        kakao.href = TRIAL_INQUIRY_KAKAO;
+        kakao.target = "_blank";
+        kakao.rel = "noopener";
+        kakao.textContent = "도입 문의 · 카카오 채널";
+        var mail = document.createElement("a");
+        mail.className = "mi-button is-ghost";
+        mail.href = TRIAL_INQUIRY_MAIL;
+        mail.textContent = "이메일 문의";
+        actions.appendChild(kakao);
+        actions.appendChild(mail);
+        card.appendChild(kicker);
+        card.appendChild(title);
+        card.appendChild(list);
+        card.appendChild(note);
+        card.appendChild(actions);
+        return card;
+      }
+
+      function ensureTrialLock(container, kind, compact) {
+        if (!container) return;
+        container.classList.add("is-trial-locked");
+        if (container.querySelector(":scope > [data-trial-lock]")) return;
+        container.insertBefore(trialLockCard(kind, compact), container.firstChild);
+      }
+
+      function renderTrialQuota() {
+        var chip = root.querySelector("[data-trial-chip]");
+        if (!chip) return;
+        var used = trialQuota && Number.isFinite(Number(trialQuota.used)) && trialQuota.used !== null ? Number(trialQuota.used) : null;
+        var limit = trialQuota && Number(trialQuota.limit) > 0 ? Number(trialQuota.limit) : 5;
+        chip.textContent = used === null ? "체험 계정 · 키워드 조회 하루 " + limit + "회" : "체험 계정 · 오늘 조회 " + used + "/" + limit;
+      }
+
+      function applyTrialMode() {
+        var trial = secureClientSession.trial === true;
+        root.classList.toggle("is-trial", trial);
+        if (!trial) return;
+        TRIAL_LOCKED_SCREENS.forEach(function (name) {
+          ensureTrialLock(root.querySelector('[data-mi-view="' + name + '"]'), name, false);
+        });
+        root.querySelectorAll("[data-mi-screen]").forEach(function (link) {
+          link.classList.toggle("is-trial-nav-locked", TRIAL_LOCKED_SCREENS.indexOf(link.getAttribute("data-mi-screen")) > -1);
+        });
+        ensureTrialLock(root.querySelector("[data-home-rank-strip]"), "news", true);
+        ensureTrialLock(root.querySelector("[data-home-feed-metrics]"), "news", true);
+        ensureTrialLock(root.querySelector("[data-home-feed-keyword-news]"), "news", true);
+        renderTrialQuota();
+      }
+
+      var trialModal = null;
+      function openTrialInquiry(kind) {
+        if (!trialModal) {
+          trialModal = document.createElement("div");
+          trialModal.className = "mi-trial-modal";
+          trialModal.setAttribute("role", "dialog");
+          trialModal.setAttribute("aria-modal", "true");
+          trialModal.addEventListener("click", function (event) {
+            if (event.target === trialModal || event.target.closest("[data-trial-modal-close]")) closeTrialInquiry();
+          });
+          root.appendChild(trialModal);
+        }
+        trialModal.textContent = "";
+        var card = trialLockCard(kind, false);
+        var close = document.createElement("button");
+        close.type = "button";
+        close.className = "mi-trial-modal-close";
+        close.setAttribute("data-trial-modal-close", "");
+        close.setAttribute("aria-label", "닫기");
+        close.textContent = "×";
+        card.appendChild(close);
+        trialModal.appendChild(card);
+        trialModal.classList.add("is-open");
+      }
+      function closeTrialInquiry() {
+        if (trialModal) trialModal.classList.remove("is-open");
+      }
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeTrialInquiry();
+      });
+
+      // 전체 지표 조회 뒤 세션을 다시 읽어 칩의 "오늘 조회 n/5" 를 맞춘다(서버가 센 값만 보여 준다).
+      var trialQuotaRefreshTimer = 0;
+      function refreshTrialQuota() {
+        if (secureClientSession.trial !== true) return;
+        window.clearTimeout(trialQuotaRefreshTimer);
+        trialQuotaRefreshTimer = window.setTimeout(function () {
+          restoreClientSession().then(function (payload) {
+            if (!payload || payload.ok !== true || secureClientSession.trial !== true) return;
+            if (payload.trialQuota && typeof payload.trialQuota === "object") trialQuota = payload.trialQuota;
+            renderTrialQuota();
+          }).catch(function () {});
+        }, 800);
       }
 
       function blankPublicState(code) {
@@ -8526,6 +8749,8 @@
         var wait = function (ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); };
         return run().then(function (response) {
           var retryable = !response || response.status === 401 || response.status === 429 || response.status >= 500;
+          // 체험 한도 초과(429 + x-mi-trial-quota)는 기다려도 풀리지 않는다. 바로 돌려 안내 카드를 띄운다.
+          if (response && response.status === 429 && response.headers && response.headers.get("x-mi-trial-quota")) return response;
           if (!retryable || attempt >= 3) return response;
           var after = response && response.headers ? Number(response.headers.get("retry-after") || 0) : 0;
           var delay = after > 0 ? Math.min(8000, after * 1000) : 1500 * (attempt + 1);
@@ -8817,6 +9042,8 @@
         var profileJobs = keywords.map(function (keyword) {
           var entry = known[keyword];
           if (entry && entry.data && hasRatioValues(entry.data.age || [])) return Promise.resolve();
+          // 체험 계정은 비교 키워드의 전체 프로필 재조회를 건너뛴다(한도 1회 = 첫 키워드 전체 조회 1건).
+          if (secureClientSession.trial === true) return Promise.resolve();
           return fetchKeywordData(keyword, "full").then(function (payload) {
             known[keyword] = { keyword: keyword, data: normalizeKeywordApiData(payload, buildKeywordFallback(keyword)) };
           }).catch(function () { return null; });
@@ -11628,8 +11855,15 @@
           return null;
         });
         if (!response.ok || !payload || payload.ok === false) {
+          if (payload && payload.code === "TRIAL_QUOTA") {
+            trialQuota = { used: payload.used, limit: payload.limit };
+            renderTrialQuota();
+            openTrialInquiry("quota");
+          }
           throw new Error((payload && payload.message) || "키워드 데이터 응답이 올바르지 않습니다.");
         }
+        // 체험 계정: 전체 지표 조회 1건이 하루 한도 1회다. 칩의 "오늘 조회 n/5" 를 세션에서 다시 읽는다.
+        if (secureClientSession.trial === true && (profileMode || "full") !== "compare") refreshTrialQuota();
         return payload;
       }
 
@@ -12692,11 +12926,12 @@
       if (googleLoginStartButton) {
         googleLoginStartButton.addEventListener("click", function () {
           // 목적지는 두 개의 고정 주소 중 하나다 — 주소를 문자열로 잇지 않는다.
+          // mode=trial: 연결해 둔 계정은 그대로 로그인, 처음 보는 구글 계정은 체험 계정으로 연다(대표 승인 2026-09-07).
           if (googleLoginPersist && googleLoginPersist.checked === true) {
-            window.location.href = "/api/google-login/start?persist=1";
+            window.location.href = "/api/google-login/start?mode=trial&persist=1";
             return;
           }
-          window.location.href = "/api/google-login/start";
+          window.location.href = "/api/google-login/start?mode=trial";
         });
       }
 
@@ -12834,7 +13069,8 @@
         var reportSyncFailed = false;
         var preservedApprovedState = false;
         try {
-          await syncReportCenterReports(requestGeneration, sessionScope);
+          // 체험 계정은 보고서·공유 일정 경로가 잠겨 있다(403 TRIAL_LOCKED). 부르지 않는다.
+          if (secureClientSession.trial !== true) await syncReportCenterReports(requestGeneration, sessionScope);
         } catch (error) {
           if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
           reportSyncFailed = true;
@@ -12848,17 +13084,26 @@
           applyState(state);
         }
         if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
-        await loadClientWorkItems(requestGeneration, sessionScope);
+        if (secureClientSession.trial !== true) await loadClientWorkItems(requestGeneration, sessionScope);
         if (!clientSessionIsCurrent(requestGeneration, sessionScope)) return false;
         root.classList.remove("is-locked");
         root.classList.add("is-authed");
         syncPersonalCalendarMenu();
         // 새 세션이 적용되고 화면이 열린 직후에 평가한다 — 뒤쪽에 붙는 코드가
         // 이 호출을 건너뛰게 만들 수 없다(화면 안 로그아웃 → 재로그인 회귀).
-        maybeShowGoogleNudge();
+        // 체험 계정은 구글로 이미 들어왔으니 연동 안내가 없다.
+        if (secureClientSession.trial !== true) maybeShowGoogleNudge();
         // 구글 콜백은 /client?glogin=... · /client?gcal=... 으로 돌아온다(해시 없음).
         if (personalCalendarNoticePending()) setScreen("my-calendar", false);
         updateClientAuthPanel(state.client);
+        if (secureClientSession.trial === true) {
+          // 체험 계정은 키워드 조회가 시작 화면이다(해시 없이 들어온 첫 착지만). 순위 추적 준비
+          // 이벤트는 쏘지 않는다 — 순위 경로는 잠겨 있고, 홈 피드는 부팅 흐름이 따로 부른다.
+          if (!window.location.hash) setScreen("keyword-tool", true);
+          setStatus(loginStatus, "체험 계정으로 접속했습니다. 키워드 조회는 하루 5회, 나머지 기능은 도입 후 열립니다.", "is-ok");
+          loginButton.disabled = false;
+          return true;
+        }
         setStatus(loginStatus, publicStateSyncFailed
           ? "서버에서 공개 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."
           : (reportSyncFailed
@@ -14068,6 +14313,8 @@
       document.addEventListener("click", function (event) {
         var toggle = event.target.closest("[data-home-news-expand]");
         if (!toggle) return;
+        // 체험 계정: 7일 전체 목록은 도입 후. 서버 응답에도 all 이 없으니 안내 카드만 띄운다.
+        if (secureClientSession.trial === true) { openTrialInquiry("news"); return; }
         homeNewsExpanded = !homeNewsExpanded;
         toggle.textContent = homeNewsExpanded ? "간단히 보기 ←" : "뉴스 전체 보기 →";
         if (homeFeedLastPayload) renderHomeFeed(homeFeedLastPayload);

@@ -399,9 +399,6 @@ const checks = {
     'data-mi-admin-screen="my-calendar">내 캘린더</a>',
     'data-mi-admin-screen="client-preview">광고주 미리보기</a>',
     'data-mi-admin-screen="agency-code">대행사 연결</a>',
-    'data-mi-admin-screen="excel">운영 입력</a>',
-    'data-mi-admin-screen="reports">보고서 관리</a>',
-    'data-mi-admin-screen="publish">공개 관리</a>',
     '<p class="mi-nav-title">키워드·SEO</p>',
     'data-mi-admin-screen="keyword">키워드 조회</a>',
     '<p class="mi-nav-title">순위 조회·추적</p>',
@@ -413,6 +410,10 @@ const checks = {
     '실험실 · 개발 중',
     'data-mi-admin-screen="seo-check">SEO 확인 (개발중)</a>',
     'data-mi-admin-screen="meta-ads">메타 광고 조사 <small>(개발중)</small></a>',
+    // 운영 입력·보고서 관리·공개 관리는 아직 쓰지 않아 실험실로 내렸다(2026-09-07 대표 지시).
+    'data-mi-admin-screen="excel">운영 입력</a>',
+    'data-mi-admin-screen="reports">보고서 관리</a>',
+    'data-mi-admin-screen="publish">공개 관리</a>',
   // 보고서는 생성 시점에 visibility=client_visible 로 저장된다. 승인 단계는
   // 코드에 존재한 적이 없으므로, 화면 문구도 그 사실만 말해야 한다.
   ]) && adminSource.includes('<h1>보고서 관리</h1>')

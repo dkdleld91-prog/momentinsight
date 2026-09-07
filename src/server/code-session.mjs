@@ -92,7 +92,19 @@ export function createSessionClaims(input, options = {}) {
     iat: Math.floor(now / 1000),
     exp: Math.floor(now / 1000) + ttlSeconds,
     ...(persist ? { pst: 1 } : {}),
+    // 체험(구글 가입) 계정 표식. 코드 계정 클레임에는 아예 실리지 않는다(대표 승인 2026-09-07).
+    ...(input.trial === true && input.googleSub
+      ? { trial: 1, gsub: String(input.googleSub).slice(0, 128) }
+      : {}),
   };
+}
+
+// 체험 계정 하루 키워드 조회 한도. 환경변수로만 바꾼다(기본 5, 1~100).
+export const TRIAL_KEYWORD_DAILY_LIMIT = 5;
+
+export function trialKeywordDailyLimit(env = process.env) {
+  const parsed = Number(env.MI_TRIAL_KEYWORD_DAILY_LIMIT);
+  return Number.isInteger(parsed) && parsed > 0 && parsed <= 100 ? parsed : TRIAL_KEYWORD_DAILY_LIMIT;
 }
 
 export function sealSession(claims, env = process.env) {
@@ -222,6 +234,7 @@ export function publicSession(claims) {
     scopeKey,
     clientId: claims.clientId || "",
     teamId: claims.teamId || "",
+    trial: claims.trial === 1,
     csrfToken: claims.csrf,
     expiresAt: new Date(claims.exp * 1000).toISOString(),
   };

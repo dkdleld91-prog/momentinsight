@@ -114,6 +114,26 @@ function sessionAgencyCode(request) {
   return String(request.headers.get("x-mi-agency-code") || "").trim().toLowerCase();
 }
 
+function sessionScope(request) {
+  return String(request.headers.get("x-mi-session-scope") || "").trim().toLowerCase();
+}
+
+// 체험 계정(구글 가입)은 clients 행이 없다. 광고주 화면 초기화가 막히지 않도록 빈 공개 상태를 합성한다.
+// 숫자를 지어내지 않는다 — 모든 지표는 buildClientPublicState 의 빈 행 경로 그대로 null 이다.
+function trialPublicState(request) {
+  const agencyCode = sessionAgencyCode(request);
+  const client = { id: null, name: "체험 계정", business_name: "", agency_code: agencyCode, status: "active" };
+  const data = {
+    dashboard: [], schedule: [], reports: [], actionPlans: [], adPerformance: [], keywords: [], kpiTarget: [], kpiResult: []
+  };
+  return {
+    ok: true,
+    access: { role: sessionRole(request), clientId: null, clientName: "체험 계정", agencyCode, trial: true },
+    metrics: { available: false, period: null },
+    publicState: { ...buildClientPublicState(client, data), trial: true }
+  };
+}
+
 function cleanText(value) {
   const text = String(value ?? "").trim();
   return text || null;
@@ -654,6 +674,11 @@ export async function handleClientPublicStateRequest(request, ctx) {
     return json({ ok: false, code: "SESSION_REQUIRED", message: "안전한 접속 세션이 필요합니다." }, 401);
   }
 
+  if (sessionScope(request) === "trial") {
+    if (request.method === "GET") return json(trialPublicState(request));
+    if (request.method !== "POST") return methodNotAllowed(["GET", "POST"]);
+    return json({ ok: false, code: "PUBLIC_STATE_READ_ONLY", message: "체험 계정은 공개 데이터를 저장할 수 없습니다." }, 403);
+  }
   if (request.method === "GET") return readClientPublicState(request, ctx);
   if (request.method !== "POST") return methodNotAllowed(["GET", "POST"]);
 

@@ -679,3 +679,43 @@ test("a POST without the kpi action still saves dashboard numbers exactly as bef
   assert.equal(recorder.writes[0][0], "dashboard_snapshots");
   assert.equal(recorder.writes[0][2].sales, 32800000);
 });
+
+test("public-state serves a synthetic empty state to a trial session without touching the database", async () => {
+  const ctx = { supabaseAdmin: { from() { throw new Error("trial public-state must not query"); } } };
+  const read = await handleClientPublicStateRequest(
+    new Request("https://insight.momentlabs.co.kr/api/client/public-state", {
+      method: "GET",
+      headers: {
+        "x-mi-session-scope": "trial",
+        "x-mi-session-role": "client",
+        "x-mi-agency-code": "trial-10293847"
+      }
+    }),
+    ctx
+  );
+  assert.equal(read.status, 200);
+  const payload = await read.json();
+  assert.equal(payload.ok, true);
+  assert.equal(payload.access.trial, true);
+  assert.equal(payload.access.clientId, null);
+  assert.equal(payload.publicState.client, "체험 계정");
+  assert.equal(payload.publicState.trial, true);
+  assert.equal(payload.publicState.sales, null);
+  assert.deepEqual(payload.publicState.reports, []);
+
+  const write = await handleClientPublicStateRequest(
+    new Request("https://insight.momentlabs.co.kr/api/client/public-state", {
+      method: "POST",
+      headers: {
+        "x-mi-session-scope": "trial",
+        "x-mi-session-role": "client",
+        "x-mi-agency-code": "trial-10293847",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ action: "save" })
+    }),
+    ctx
+  );
+  assert.equal(write.status, 403);
+  assert.equal((await write.json()).code, "PUBLIC_STATE_READ_ONLY");
+});

@@ -17936,7 +17936,7 @@
         return '<select class="mi-input mi-quota-input mi-plan-select" aria-label="연장 일수" ' + attribute + '="' + escapeHtml(code) + '">' +
           options.map(function (days) {
             return '<option value="' + days + '"' + (days === current ? ' selected' : '') + '>' + days + '일</option>';
-          }).join("") + '</select>';
+          }).join("") + '<option value="unlimited">무기한</option></select>';
       }
 
       function ownerPlanControl(client) {
@@ -17952,9 +17952,6 @@
           '<span class="mi-plan-label">만료일</span>' +
           '<input class="mi-input mi-quota-input mi-plan-date" type="date" aria-label="만료일 직접 지정" data-owner-plan-until="' + escapeHtml(code) + '" />' +
           '<button class="mi-button mi-button-small" type="button" data-owner-plan-set="' + escapeHtml(code) + '">만료일 지정</button>' +
-          (active
-            ? '<button class="mi-button mi-button-small is-ghost" type="button" data-owner-plan-clear="' + escapeHtml(code) + '">무기한</button>'
-            : '') +
           '<span class="mi-plan-msg" data-owner-plan-msg="' + escapeHtml(code) + '" aria-live="polite"></span>';
       }
 
@@ -20846,8 +20843,16 @@
         var working = "";
         if (target.hasAttribute("data-owner-plan-extend")) {
           var extendCode = target.getAttribute("data-owner-plan-extend") || "";
-          body = { action: "set-plan", mode: "extend", agencyCode: extendCode, planDays: field("[data-owner-plan-days]") || undefined, planName: field("[data-owner-plan-name]") || undefined };
-          working = extendCode + " 이용 기간을 저장 중입니다.";
+          var extendDays = field("[data-owner-plan-days]");
+          if (extendDays === "unlimited") {
+            // 연장 칸에서 "무기한"을 고르면 만료일을 지운다. 기간이 잡혀 있던 계정만 한 번 더 묻는다.
+            if (target.textContent.trim() === "연장하기" && !window.confirm(extendCode + " 이용 기간을 해제해 무기한으로 둘까요?")) return;
+            body = { action: "clear-plan", agencyCode: extendCode };
+            working = extendCode + " 이용 기간을 무기한으로 바꾸는 중입니다.";
+          } else {
+            body = { action: "set-plan", mode: "extend", agencyCode: extendCode, planDays: extendDays || undefined, planName: field("[data-owner-plan-name]") || undefined };
+            working = extendCode + " 이용 기간을 저장 중입니다.";
+          }
         } else if (target.hasAttribute("data-owner-plan-set")) {
           var setCode = target.getAttribute("data-owner-plan-set") || "";
           var until = field("[data-owner-plan-until]");
@@ -20869,7 +20874,8 @@
             setStatus(ownerStatus, "광고주명을 먼저 입력하세요.", "is-warn");
             return;
           }
-          body = { action: "open-trial", googleSub: googleSub, name: clientName, planDays: field("[data-owner-trial-days]") || undefined, planName: field("[data-owner-trial-plan]") || undefined, rankKeywordLimit: field("[data-owner-trial-limit]") || undefined };
+          var trialDays = field("[data-owner-trial-days]");
+          body = { action: "open-trial", googleSub: googleSub, name: clientName, planDays: trialDays === "unlimited" ? undefined : (trialDays || undefined), unlimited: trialDays === "unlimited", planName: field("[data-owner-trial-plan]") || undefined, rankKeywordLimit: field("[data-owner-trial-limit]") || undefined };
           working = "체험 계정을 정식 광고주로 전환 중입니다.";
         }
         var messageCode = body.action === "open-trial" ? "" : String(body.agencyCode || "");

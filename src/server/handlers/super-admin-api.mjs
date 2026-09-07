@@ -1185,8 +1185,15 @@ function planExpiryText(iso) {
   return new Date(ms).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
+// 이미 있는 계정을 고르는 조작(이용 기간·한도)은 옛 5자 코드(예: ofyou)도 받는다. 새 코드 발급 규칙(6자 이상,
+// normalizeAgencyCode)은 그대로다. 2026-09-07 대표 보고: ofyou 계정에서 "광고주 코드를 입력해주세요" 가 떴다.
+export function existingAccountCode(value) {
+  const code = String(value || "").trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9.~!@#$^&*+=:-]{4,127}$/.test(code) ? code : "";
+}
+
 async function setPlan(request, ctx, body) {
-  const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
+  const agencyCode = existingAccountCode(body.agencyCode || body.agency_code || body.code);
   if (!agencyCode) return json(request, { ok: false, message: "이용 기간을 지정할 광고주 코드를 입력해주세요." }, 400);
   if (agencyCode === primaryAgencyCode()) {
     return json(request, { ok: false, message: "총관리자 코드는 기간 없이 사용합니다." }, 400);
@@ -1250,7 +1257,7 @@ async function setPlan(request, ctx, body) {
 }
 
 async function clearPlan(request, ctx, body) {
-  const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
+  const agencyCode = existingAccountCode(body.agencyCode || body.agency_code || body.code);
   if (!agencyCode) return json(request, { ok: false, message: "광고주 코드를 입력해주세요." }, 400);
   const updated = await ctx.supabaseAdmin
     .from("clients")
@@ -1288,7 +1295,9 @@ async function openTrial(request, ctx, body) {
   const name = String(body.name || body.clientName || "").trim();
   if (!googleSub) return json(request, { ok: false, message: "전환할 체험 계정을 선택해주세요." }, 400);
   if (!name) return json(request, { ok: false, message: "광고주명을 입력해주세요." }, 400);
-  const planDays = normalizePlanDays(body.planDays ?? body.plan_days, PLAN_DEFAULT_DAYS);
+  // "무기한" 선택(2026-09-07 대표 요청): 만료일 없이 오픈한다. planDays 가 "unlimited" 이거나 unlimited=true.
+  const unlimited = body.unlimited === true || String(body.planDays ?? body.plan_days ?? "").trim().toLowerCase() === "unlimited";
+  const planDays = unlimited ? null : normalizePlanDays(body.planDays ?? body.plan_days, PLAN_DEFAULT_DAYS);
   const planName = normalizePlanName(body.planName ?? body.plan_name) || "basic";
   let rankKeywordLimit = null;
   if (body.rankKeywordLimit !== undefined && body.rankKeywordLimit !== null && String(body.rankKeywordLimit).trim() !== "") {
@@ -1330,8 +1339,8 @@ async function openTrial(request, ctx, body) {
       rank_keyword_limit: rankKeywordLimit,
       plan_name: planName,
       plan_days: planDays,
-      plan_started_at: nowIso,
-      plan_expires_at: new Date(nowMs + planDays * 24 * 60 * 60 * 1000).toISOString(),
+      plan_started_at: unlimited ? null : nowIso,
+      plan_expires_at: unlimited ? null : new Date(nowMs + planDays * 24 * 60 * 60 * 1000).toISOString(),
       plan_note: String(body.planNote || "").trim().slice(0, 500) || null,
       plan_updated_at: nowIso,
     })
@@ -1363,20 +1372,21 @@ async function openTrial(request, ctx, body) {
       agencyCode,
       googleEmail: identity.data.google_email || "",
       planName,
-      planDays: String(planDays),
+      planDays: unlimited ? "unlimited" : String(planDays),
       rankKeywordLimit: rankKeywordLimit === null ? "default" : String(rankKeywordLimit),
     },
   });
   return json(request, {
     ok: true,
-    message: `체험 계정을 정식 광고주로 전환했습니다(코드 ${agencyCode}, ${planExpiryText(inserted.data.plan_expires_at)}까지). 구글 로그인은 그대로 됩니다.`,
+    message: `체험 계정을 정식 광고주로 전환했습니다(코드 ${agencyCode}, ${unlimited ? "무기한" : `${planExpiryText(inserted.data.plan_expires_at)}까지`}). 구글 로그인은 그대로 됩니다.`,
     client: { ...clientPayload(inserted.data), googleEmail: identity.data.google_email || null },
     auditLogged,
   });
 }
 
 async function setRankKeywordLimit(request, ctx, body) {
-  const agencyCode = normalizeAgencyCode(
+  // 옛 5자 광고주 코드에도 한도를 저장할 수 있어야 한다(이용 기간과 같은 결함, 2026-09-07).
+  const agencyCode = existingAccountCode(
     body.agencyCode || body.agency_code || body.code || body.teamCode || body.team_code,
   );
   if (!agencyCode) return json(request, { ok: false, message: "한도를 지정할 코드를 입력해주세요." }, 400);
@@ -1456,7 +1466,7 @@ async function setRankKeywordLimit(request, ctx, body) {
 }
 
 async function revokeClient(request, ctx, body) {
-  const agencyCode = normalizeAgencyCode(body.agencyCode || body.agency_code || body.code);
+  const agencyCode = existingAccountCode(body.agencyCode || body.agency_code || body.code);
   if (!agencyCode) return json(request, { ok: false, message: "권한 해제할 광고주 코드를 입력해주세요." }, 400);
 
   const clientResult = await ctx.supabaseAdmin

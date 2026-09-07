@@ -15,6 +15,8 @@
 - GET 목록: 광고주·운영팀 payload 에 `googleEmail`(login_identities 조인), 광고주에 `plan`(planStatus). 추가로 `trials`: `[{ googleSub, googleEmail, linkedAt, todayUsed }]`.
 - POST `set-plan` `{ agencyCode, planName?, planDays?, expiresAt?, mode: "extend"|"set" }`: extend = max(now, 기존 만료)+days, set = expiresAt 직접 지정. `plan_started_at` 이 비어 있으면 now. 감사 `client.plan_updated`.
 - POST `clear-plan` `{ agencyCode }`: 무기한으로 되돌림. 감사 `client.plan_cleared`.
+- 코드 규칙(2026-09-07 결함 수정): set-plan·clear-plan·set-rank-keyword-limit·revoke-client 처럼 "이미 있는 계정"을 고르는 조작은 `existingAccountCode`(5자 이상)로 받는다. 옛 5자 코드(ofyou 등)가 `normalizeAgencyCode`(6자 이상, 새 코드 발급 규칙)에 걸려 "광고주 코드를 입력해주세요"로 거부되던 문제.
+- 무기한 오픈(2026-09-07 대표 요청): 연장 일수 칸에 `무기한` 항목. 광고주 카드에서 고르고 [오픈하기/연장하기] → `clear-plan`(기간이 있던 계정은 confirm 1회). 체험 전환에서 고르면 `open-trial { unlimited: true }` → `plan_expires_at`/`plan_started_at`/`plan_days` null.
 - POST `open-trial` `{ googleSub, name, planName, planDays, rankKeywordLimit? }`: 무작위 코드(12자) 생성 → clients insert(plan 포함, rank_keyword_limit) → login_identities(role trial, google_sub) 를 role client/code 로 update → 감사 `client.created_from_trial`. 코드 자동 생성은 이 액션에서만(코드 로그인 정책 테스트는 create-client 에만 해당).
 
 ## 3. 세션·게이트

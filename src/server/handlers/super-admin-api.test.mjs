@@ -17,6 +17,7 @@ import handler, {
   adminRateConfiguration,
   auditActionLabel,
   auditLogQueryOptions,
+  existingAccountCode,
   normalizeAgencyCode,
   teamActionAccess,
   teamActionPayload,
@@ -1280,4 +1281,138 @@ test("총관리자 화면만 연결 전 코드 건수와 조회 경로를 보여
   assert.match(adminSource, /위 대상 코드 칸에 해당 코드를 넣고 N 상품·플레이스 순위 추적을 열면 조회·중지할 수 있습니다\./);
   // 광고주 화면에는 다른 계정의 코드가 절대 실리지 않는다.
   assert.equal(clientSource.includes("unlinkedScopeTrackers"), false);
+});
+
+// ── 옛 5자 광고주 코드(예: ofyou) 와 "무기한" 오픈 (2026-09-07 대표 보고: ofyou 카드에서 "광고주 코드를 입력해주세요") ──
+test("existingAccountCode keeps legacy five-character codes but still rejects blanks and junk", () => {
+  assert.equal(existingAccountCode("ofyou"), "ofyou");
+  assert.equal(existingAccountCode(" OFYOU "), "ofyou");
+  assert.equal(existingAccountCode("mml93-a01"), "mml93-a01");
+  assert.equal(existingAccountCode("abcd"), "");
+  assert.equal(existingAccountCode(""), "");
+  assert.equal(existingAccountCode("bad code"), "");
+  assert.equal(normalizeAgencyCode("ofyou"), "", "새 코드 발급 규칙(6자 이상)은 그대로다");
+});
+
+function planActionStub(routes) {
+  const calls = [];
+  const impl = async (input, init = {}) => {
+    const rawUrl = typeof input === "string" ? input : String(input.url);
+    const url = new URL(rawUrl);
+    const method = String(init.method || "GET").toUpperCase();
+    const accept = new Headers(init.headers || {}).get("accept") || "";
+    const bodyText = init.body ? String(init.body) : "";
+    const body = bodyText ? JSON.parse(bodyText) : null;
+    calls.push({ pathname: url.pathname, method, searchParams: url.searchParams, body });
+    if (url.pathname === "/rest/v1/audit_logs") return Response.json([], { status: 201 });
+    const routeKey = `${method} ${url.pathname}`;
+    if (!Object.prototype.hasOwnProperty.call(routes, routeKey)) throw new Error(`unexpected fetch: ${method} ${rawUrl}`);
+    const route = routes[routeKey];
+    const row = typeof route === "function" ? route(body) : route;
+    if (row === null) return Response.json(null);
+    if (row === "empty") return new Response(null, { status: 204 });
+    return accept.includes("object") ? Response.json(row) : Response.json([row]);
+  };
+  return { calls, impl };
+}
+
+function planActionRequest(body) {
+  return new Request(SUPER_ADMIN_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-mi-super-admin-code": SUPER_ADMIN_TEST_CODE,
+      "x-mi-owner-agency-code": OWNER_AGENCY_TEST_CODE,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+const LEGACY_PLAN_ROW = {
+  id: "client-legacy-ofyou",
+  name: "양해강",
+  business_name: "오브유",
+  agency_code: "ofyou",
+  status: "active",
+  rank_keyword_limit: null,
+  plan_name: null,
+  plan_days: null,
+  plan_started_at: null,
+  plan_expires_at: null,
+  plan_note: null,
+  plan_updated_at: null,
+};
+
+test("set-plan accepts a legacy five-character agency code such as ofyou", async () => {
+  const stub = planActionStub({
+    "GET /rest/v1/clients": LEGACY_PLAN_ROW,
+    "PATCH /rest/v1/clients": (body) => ({ ...LEGACY_PLAN_ROW, ...body }),
+  });
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(planActionRequest({ action: "set-plan", mode: "extend", agencyCode: "ofyou", planDays: 30, planName: "basic" })),
+  ));
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.ok, true);
+  const lookup = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "GET");
+  assert.equal(lookup.searchParams.get("agency_code"), "eq.ofyou", "5자 코드를 그대로 조회한다");
+  const patch = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "PATCH");
+  assert.ok(patch, "clients 행을 갱신한다");
+  assert.equal(patch.searchParams.get("id"), "eq.client-legacy-ofyou");
+  assert.equal(patch.body.plan_days, 30);
+  assert.ok(patch.body.plan_expires_at, "연장하면 만료일이 생긴다");
+  assert.equal(payload.client.plan.state, "active");
+});
+
+test("clear-plan accepts a legacy five-character agency code", async () => {
+  const stub = planActionStub({
+    "PATCH /rest/v1/clients": (body) => ({ ...LEGACY_PLAN_ROW, plan_expires_at: "2026-10-07T14:59:59.000Z", ...body }),
+  });
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(planActionRequest({ action: "clear-plan", agencyCode: "ofyou" })),
+  ));
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const patch = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "PATCH");
+  assert.equal(patch.searchParams.get("agency_code"), "eq.ofyou");
+  assert.equal(patch.body.plan_expires_at, null);
+  assert.equal(payload.client.plan.state, "none");
+});
+
+test("open-trial with unlimited opens the client without an expiry date", async () => {
+  const stub = planActionStub({
+    "GET /rest/v1/login_identities": { google_sub: "sub-unlimited", google_email: "trial@example.com", role: "trial", code: null },
+    "GET /rest/v1/clients": null,
+    "POST /rest/v1/clients": (body) => ({
+      id: "client-unlimited-1",
+      name: body.name,
+      business_name: body.business_name,
+      agency_code: body.agency_code,
+      status: "active",
+      rank_keyword_limit: body.rank_keyword_limit ?? null,
+      plan_name: body.plan_name,
+      plan_days: body.plan_days,
+      plan_started_at: body.plan_started_at,
+      plan_expires_at: body.plan_expires_at,
+      plan_note: body.plan_note ?? null,
+      plan_updated_at: body.plan_updated_at,
+    }),
+    "PATCH /rest/v1/login_identities": "empty",
+  });
+  const response = await withEnv(AUDIT_HANDLER_ENV, () => withGlobalFetch(
+    stub.impl,
+    () => handler.fetch(planActionRequest({ action: "open-trial", googleSub: "sub-unlimited", name: "무기한 광고주", unlimited: true, planName: "basic" })),
+  ));
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const insert = stub.calls.find((call) => call.pathname === "/rest/v1/clients" && call.method === "POST");
+  assert.ok(insert, "clients 행을 만든다");
+  assert.equal(insert.body.plan_expires_at, null);
+  assert.equal(insert.body.plan_started_at, null);
+  assert.equal(insert.body.plan_days, null);
+  assert.equal(insert.body.plan_name, "basic");
+  assert.equal(payload.client.plan.state, "none");
+  assert.match(payload.message, /무기한/);
 });

@@ -14383,6 +14383,27 @@
       });
       // 로그인 복원과 순위 인증 준비 이벤트가 거의 동시에 홈 피드를 두 번 부르던 중복을 막는다(10초 안 재호출 무시).
       var homeFeedStartedAt = 0;
+      // 뉴스는 코드 계정 전원에게 보여야 한다(대표 지시 2026-09-07). 홈 피드가 통째로 실패하거나 뉴스 칸만
+      // 비면, 세션이 필요 없는 공개 뉴스(/api/public/market-news · 1시간 캐시)로 뉴스 칸을 채운다.
+      function getPublicMarketNewsUrl() {
+        var host = window.location && window.location.hostname;
+        if (host && host !== "127.0.0.1" && host !== "localhost") return window.location.origin + "/api/public/market-news";
+        return "http://127.0.0.1:8790/api/public/market-news";
+      }
+      async function fetchPublicMarketNews() {
+        try {
+          var response = await miFetch(getPublicMarketNewsUrl(), { method: "GET", cache: "no-store" });
+          var payload = await response.json().catch(function () { return null; });
+          if (!response.ok || !payload || payload.ok !== true || !payload.news || payload.news.ok === false) return null;
+          return payload.news;
+        } catch (error) {
+          return null;
+        }
+      }
+      function homeFeedNewsOnlyPayload(news) {
+        var unavailable = { ok: false, reason: "home_feed_unavailable" };
+        return { ok: true, newsFallback: true, news: news, metrics: unavailable, keywordNews: unavailable, rank: unavailable };
+      }
       async function refreshHomeFeed() {
         if (homeFeedStartedAt && Date.now() - homeFeedStartedAt < 10000) return;
         homeFeedStartedAt = Date.now();
@@ -14400,10 +14421,18 @@
           }
           if (requestId !== homeFeedRequest || !clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           if (!response.ok || !payload || payload.ok !== true) throw new Error("home_feed_unavailable");
+          if (!payload.news || payload.news.ok === false) {
+            var replacementNews = await fetchPublicMarketNews();
+            if (requestId !== homeFeedRequest || !clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
+            if (replacementNews) payload.news = replacementNews;
+          }
           renderHomeFeed(payload);
         } catch (error) {
           if (requestId !== homeFeedRequest || !clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
           renderHomeFeedFailure();
+          var fallbackNews = await fetchPublicMarketNews();
+          if (requestId !== homeFeedRequest || !clientSessionIsCurrent(requestSession.generation, requestSession.scopeKey)) return;
+          if (fallbackNews) renderHomeFeed(homeFeedNewsOnlyPayload(fallbackNews));
         }
       }
 

@@ -12181,6 +12181,21 @@
             <span class="mi-badge" data-agency-code-badge>연동 관리</span>
           </header>
 
+          <!-- 오늘 현황(대표 지시 2026-09-07): 공개 페이지 방문·가입 클릭·문의 클릭·체험 가입·로그인 계정. 서버 site_events 집계, 어제와 비교.
+               총관리자 요약 화면 맨 위(전체보기 안이 아니라 첫 화면)에 둔다. 총관리자 세션에서만 채워진다. -->
+          <article class="mi-card mi-card-pad" data-owner-site-summary data-owner-only hidden style="margin-bottom:16px;">
+            <div class="mi-card-head">
+              <div>
+                <h2>오늘 현황</h2>
+                <p data-owner-site-summary-note>공개 페이지 방문과 가입·문의 흐름 · 자정(KST) 기준 · 어제와 비교</p>
+              </div>
+              <div class="mi-card-actions">
+                <button class="mi-button mi-button-small is-ghost" type="button" data-owner-site-summary-refresh>새로고침</button>
+              </div>
+            </div>
+            <div class="mi-market-kpis mi-site-kpis" data-owner-site-kpis aria-live="polite"></div>
+          </article>
+
           <div class="mi-split mi-owner-account-layout">
             <article class="mi-card mi-card-pad mi-owner-command-card">
               <div class="mi-card-head">
@@ -12295,19 +12310,6 @@
           </header>
 
           <div class="mi-account-board">
-            <!-- 오늘 현황(대표 지시 2026-09-07): 공개 페이지 방문·가입 클릭·문의 클릭·체험 가입·로그인 계정. 서버 site_events 집계, 어제와 비교. -->
-            <article class="mi-card mi-card-pad" data-owner-site-summary hidden>
-              <div class="mi-card-head">
-                <div>
-                  <h2>오늘 현황</h2>
-                  <p data-owner-site-summary-note>공개 페이지 방문과 가입·문의 흐름 · 자정(KST) 기준 · 어제와 비교</p>
-                </div>
-                <div class="mi-card-actions">
-                  <button class="mi-button mi-button-small is-ghost" type="button" data-owner-site-summary-refresh>새로고침</button>
-                </div>
-              </div>
-              <div class="mi-market-kpis mi-site-kpis" data-owner-site-kpis aria-live="polite"></div>
-            </article>
             <article class="mi-card mi-card-pad">
               <div class="mi-card-head">
                 <div>

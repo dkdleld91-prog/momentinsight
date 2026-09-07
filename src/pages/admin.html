@@ -11358,10 +11358,19 @@
     #mi-admin .mi-account-plan { display: block; }
     #mi-admin .mi-account-plan.is-warn { color: var(--mi-orange); font-weight: 700; }
     #mi-admin .mi-account-plan.is-danger { color: var(--mi-orange); font-weight: 800; text-decoration: underline; }
-    #mi-admin .mi-plan-controls { flex-wrap: wrap; row-gap: 8px; }
-    #mi-admin .mi-plan-name-input { width: 150px; }
-    #mi-admin .mi-plan-select { min-width: 96px; }
-    #mi-admin .mi-plan-date { width: 150px; }
+    /* 기간 조작 칸은 카드 3열(번호·본문·동작) 아래 한 줄을 통째로 쓴다 — 동작 열에 넣으면 본문 열이 눌려 글자가 세로로 깨진다. */
+    #mi-admin .mi-account-plan-row {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--mi-line);
+    }
+    #mi-admin .mi-account-plan-row .mi-plan-name-input { width: 160px; }
+    #mi-admin .mi-account-plan-row .mi-plan-select { width: auto; min-width: 96px; text-align: left; }
+    #mi-admin .mi-account-plan-row .mi-plan-date { width: 150px; text-align: left; }
 
   </style>
 
@@ -17955,7 +17964,8 @@
           return '<div class="mi-account-slot" data-owner-search-text="' + ownerSearchText([email, sub]) + '"><span class="mi-account-slot-number">' + (index + 1) +
             '번 체험</span><div class="mi-account-slot-main"><span>구글 가입 · ' + escapeHtml(ownerShortDate(trial.linkedAt)) + '</span><strong>' + escapeHtml(email) +
             '</strong><small>오늘 키워드 조회 ' + Number(trial.todayUsed || 0) + '/5 · 정식 전환하면 같은 구글 로그인이 광고주 계정이 됩니다</small></div>' +
-            '<div class="mi-account-slot-actions mi-plan-controls">' +
+            '<div class="mi-account-slot-actions"><span class="mi-status-pill is-warn">체험</span></div>' +
+            '<div class="mi-account-plan-row">' +
             '<input class="mi-input mi-quota-input mi-plan-name-input" type="text" placeholder="광고주명" aria-label="광고주명" data-owner-trial-name="' + escapeHtml(sub) + '" />' +
             '<label class="mi-account-slot-quota"><span>기간(일)</span><input class="mi-input mi-quota-input" type="number" inputmode="numeric" min="1" max="3650" step="1" value="30" aria-label="이용 기간 일수" data-owner-trial-days="' + escapeHtml(sub) + '" /></label>' +
             ownerPlanSelect("data-owner-trial-plan", sub, "basic") +
@@ -18024,13 +18034,15 @@
                 '</strong><small>광고주: ' + escapeHtml(clientText) + '</small>' +
                 ownerGoogleLine(team.googleEmail, "운영팀 구글") +
                 (client ? ownerGoogleLine(client.googleEmail, "광고주 구글") + ownerPlanLine(client) : "") +
-                '</div><div class="mi-account-slot-actions mi-plan-controls">' +
+                '</div><div class="mi-account-slot-actions">' +
                 ownerQuotaControl(
                   client ? (client.agencyCode || "") : (team.teamCode || ""),
                   client ? client.rankKeywordLimit : team.rankKeywordLimit,
-                ) + (client ? ownerPlanControl(client) : "") + status +
+                ) + status +
                 '<button class="mi-button mi-button-small mi-button-danger" type="button" data-owner-revoke-team="' +
-                escapeHtml(team.teamCode || "") + '">권한 해제</button></div></div>';
+                escapeHtml(team.teamCode || "") + '">권한 해제</button></div>' +
+                (client ? '<div class="mi-account-plan-row">' + ownerPlanControl(client) + '</div>' : '') +
+                '</div>';
             }).join("");
           }
         }
@@ -18053,10 +18065,11 @@
                 escapeHtml(client.name || client.businessName || "광고주") + ' · ' + escapeHtml(client.agencyCode || "-") +
                 '</strong><small>' + escapeHtml(ownerClientIssuedText(client)) + '</small>' +
                 ownerGoogleLine(client.googleEmail, "구글") + (isOwnerClient ? '' : ownerPlanLine(client)) +
-                '</div><div class="mi-account-slot-actions mi-plan-controls"><span class="mi-status-pill">활성</span>' +
+                '</div><div class="mi-account-slot-actions"><span class="mi-status-pill">활성</span>' +
                 (isOwnerClient ? '' : ownerQuotaControl(client.agencyCode || "", client.rankKeywordLimit)) +
-                (isOwnerClient ? '' : ownerPlanControl(client)) +
-                action + '</div></div>';
+                action + '</div>' +
+                (isOwnerClient ? '' : '<div class="mi-account-plan-row">' + ownerPlanControl(client) + '</div>') +
+                '</div>';
             }).join("");
           }
         }

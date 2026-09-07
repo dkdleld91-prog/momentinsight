@@ -791,7 +791,9 @@ const homeFeedFetch = withSupabase({ auth: "none" }, handleHomeFeedRequest);
 
 // 공개 홈페이지용: 세션 없이 플랫폼 뉴스만 돌려준다(광고주 데이터 없음). api/public/[resource].mjs 가 직접 호출한다.
 export async function loadPublicMarketNews(nowMs = Date.now()) {
-  return loadNewsSection(naverApiProviderConfig(process.env), nowMs);
+  // A안(대표 결정 2026-09-07): 공개 JSON에도 7일 전체 목록(all)을 싣지 않는다. "전체 보기는 로그인 후만"이
+  // 화면뿐 아니라 주소 단위까지 같아진다. count7d·lead·items(플랫폼별 미리보기)는 그대로다.
+  return withoutFullNews(await loadNewsSection(naverApiProviderConfig(process.env), nowMs));
 }
 
 export default {

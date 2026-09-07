@@ -24,6 +24,7 @@ import {
   trackerNeverFound,
   weekIsComplete,
   weeklyChangePct,
+  withoutFullNews,
 } from "./home-feed.mjs";
 
 const NOW = Date.parse("2026-09-04T01:00:00Z");
@@ -347,4 +348,28 @@ test("computeRankSummary reports unmatched once a tracker has never been found",
   const summary = computeRankSummary([{ id: "x", keyword: "k", check_count: 4, found_count: 0 }], []);
   assert.equal(summary.unmatched, 1);
   assert.equal(summary.lastCollectedAt, null);
+});
+
+// A안(대표 결정 2026-09-07): 공개 JSON·체험 세션에는 플랫폼별 7일 전체 목록(all)을 싣지 않는다.
+// 건수·리드·미리보기 3건은 그대로고, 실패 응답·배열은 손대지 않는다.
+test("withoutFullNews strips only the per-platform full lists and keeps counts, lead and items", () => {
+  const lead = { title: "리드", link: "https://a.example/1" };
+  const items = [{ title: "둘", link: "https://a.example/2" }];
+  const all = [lead, ...items, { title: "셋", link: "https://a.example/3" }];
+  const news = {
+    ok: true,
+    updatedAt: "2026-09-07T01:00:00.000Z",
+    naver: { count7d: 3, lead, items, all },
+    coupang: { count7d: 0, lead: null, items: [], all: [] },
+  };
+  const stripped = withoutFullNews(news);
+  assert.deepEqual(stripped.naver, { count7d: 3, lead, items });
+  assert.deepEqual(stripped.coupang, { count7d: 0, lead: null, items: [] });
+  assert.equal(stripped.ok, true);
+  assert.equal(stripped.updatedAt, news.updatedAt);
+  // 원본은 그대로다 — 로그인 세션의 응답이 같은 캐시 객체를 쓴다.
+  assert.equal(news.naver.all.length, 3);
+  assert.deepEqual(withoutFullNews({ ok: false, reason: "news_unavailable" }), { ok: false, reason: "news_unavailable" });
+  assert.equal(withoutFullNews(null), null);
+  assert.deepEqual(withoutFullNews([1]), [1]);
 });
